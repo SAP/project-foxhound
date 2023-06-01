@@ -1,12 +1,12 @@
 #[cfg(feature = "trace")]
 use crate::device::trace::Command as TraceCommand;
 use crate::{
-    command::{CommandBuffer, CommandEncoderError},
+    command::{clear_texture, CommandBuffer, CommandEncoderError},
     conv,
-    device::Device,
+    device::{Device, MissingDownlevelFlags},
     error::{ErrorFormatter, PrettyError},
     hub::{Global, GlobalIdentityHandlerFactory, HalApi, Storage, Token},
-    id::{BufferId, CommandEncoderId, Id, TextureId, Valid},
+    id::{BufferId, CommandEncoderId, TextureId, Valid},
     init_tracker::{
         has_copy_partial_init_tracker_coverage, MemoryInitKind, TextureInitRange,
         TextureInitTrackerAction,
@@ -15,18 +15,18 @@ use crate::{
     track::TextureSelector,
 };
 
+use arrayvec::ArrayVec;
 use hal::CommandEncoder as _;
 use thiserror::Error;
 use wgt::{BufferAddress, BufferUsages, Extent3d, TextureUsages};
 
 use std::iter;
 
-use super::clear::clear_texture;
-
 pub type ImageCopyBuffer = wgt::ImageCopyBuffer<BufferId>;
 pub type ImageCopyTexture = wgt::ImageCopyTexture<TextureId>;
+pub type ImageCopyTextureTagged = wgt::ImageCopyTextureTagged<TextureId>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum CopySide {
     Source,
     Destination,
@@ -45,6 +45,8 @@ pub enum TransferError {
     MissingCopySrcUsageFlag,
     #[error("destination buffer/texture is missing the `COPY_DST` usage flag")]
     MissingCopyDstUsageFlag(Option<BufferId>, Option<TextureId>),
+    #[error("destination texture is missing the `RENDER_ATTACHMENT` usage flag")]
+    MissingRenderAttachmentUsageFlag(TextureId),
     #[error("copy of {start_offset}..{end_offset} would end up overrunning the bounds of the {side:?} buffer of size {buffer_size}")]
     BufferOverrun {
         start_offset: BufferAddress,
@@ -67,6 +69,8 @@ pub enum TransferError {
     },
     #[error("unable to select texture mip level {level} out of {total}")]
     InvalidTextureMipLevel { level: u32, total: u32 },
+    #[error("texture dimension must be 2D when copying from an external texture")]
+    InvalidDimensionExternal(TextureId),
     #[error("buffer offset {0} is not aligned to block size or `COPY_BUFFER_ALIGNMENT`")]
     UnalignedBufferOffset(BufferAddress),
     #[error("copy size {0} does not respect `COPY_BUFFER_ALIGNMENT`")]
@@ -91,12 +95,26 @@ pub enum TransferError {
     InvalidCopySize,
     #[error("number of rows per image is invalid")]
     InvalidRowsPerImage,
-    #[error("source and destination layers have different aspects")]
-    MismatchedAspects,
-    #[error("copying from textures with format {0:?} is forbidden")]
-    CopyFromForbiddenTextureFormat(wgt::TextureFormat),
-    #[error("copying to textures with format {0:?} is forbidden")]
-    CopyToForbiddenTextureFormat(wgt::TextureFormat),
+    #[error("copy source aspects must refer to all aspects of the source texture format")]
+    CopySrcMissingAspects,
+    #[error(
+        "copy destination aspects must refer to all aspects of the destination texture format"
+    )]
+    CopyDstMissingAspects,
+    #[error("copying from textures with format {format:?} and aspect {aspect:?} is forbidden")]
+    CopyFromForbiddenTextureFormat {
+        format: wgt::TextureFormat,
+        aspect: wgt::TextureAspect,
+    },
+    #[error("copying to textures with format {format:?} and aspect {aspect:?} is forbidden")]
+    CopyToForbiddenTextureFormat {
+        format: wgt::TextureFormat,
+        aspect: wgt::TextureAspect,
+    },
+    #[error(
+        "copying to textures with format {0:?} is forbidden when copying from external texture"
+    )]
+    ExternalCopyToForbiddenTextureFormat(wgt::TextureFormat),
     #[error("the entire texture must be copied when copying from depth texture")]
     InvalidDepthTextureExtent,
     #[error(
@@ -108,6 +126,12 @@ pub enum TransferError {
     },
     #[error(transparent)]
     MemoryInitFailure(#[from] super::ClearError),
+    #[error("Cannot encode this copy because of a missing downelevel flag")]
+    MissingDownlevelFlags(#[from] MissingDownlevelFlags),
+    #[error("Source texture sample count must be 1, got {sample_count}")]
+    InvalidSampleCount { sample_count: u32 },
+    #[error("Requested mip level {requested} does no exist (count: {count})")]
+    InvalidMipLevel { requested: u32, count: u32 },
 }
 
 impl PrettyError for TransferError {
@@ -154,12 +178,8 @@ pub enum CopyError {
 pub(crate) fn extract_texture_selector<A: hal::Api>(
     copy_texture: &ImageCopyTexture,
     copy_size: &Extent3d,
-    texture_guard: &Storage<Texture<A>, TextureId>,
+    texture: &Texture<A>,
 ) -> Result<(TextureSelector, hal::TextureCopyBase, wgt::TextureFormat), TransferError> {
-    let texture = texture_guard
-        .get(copy_texture.texture)
-        .map_err(|_| TransferError::InvalidTexture(copy_texture.texture))?;
-
     let format = texture.desc.format;
     let copy_aspect =
         hal::FormatAspects::from(format) & hal::FormatAspects::from(copy_texture.aspect);
@@ -171,7 +191,8 @@ pub(crate) fn extract_texture_selector<A: hal::Api>(
     }
 
     let (layers, origin_z) = match texture.desc.dimension {
-        wgt::TextureDimension::D1 | wgt::TextureDimension::D2 => (
+        wgt::TextureDimension::D1 => (0..1, 0),
+        wgt::TextureDimension::D2 => (
             copy_texture.origin.z..copy_texture.origin.z + copy_size.depth_or_array_layers,
             0,
         ),
@@ -189,15 +210,22 @@ pub(crate) fn extract_texture_selector<A: hal::Api>(
         aspect: copy_aspect,
     };
     let selector = TextureSelector {
-        levels: copy_texture.mip_level..copy_texture.mip_level + 1,
+        mips: copy_texture.mip_level..copy_texture.mip_level + 1,
         layers,
     };
 
     Ok((selector, base, format))
 }
 
-/// Function copied with some modifications from webgpu standard <https://gpuweb.github.io/gpuweb/#copy-between-buffer-texture>
-/// If successful, returns (number of buffer bytes required for this copy, number of bytes between array layers).
+/// WebGPU's [validating linear texture data][vltd] algorithm.
+///
+/// Copied with some modifications from WebGPU standard.
+///
+/// If successful, returns a pair `(bytes, stride)`, where:
+/// - `bytes` is the number of buffer bytes required for this copy, and
+/// - `stride` number of bytes between array layers.
+///
+/// [vltd]: https://gpuweb.github.io/gpuweb/#abstract-opdef-validating-linear-texture-data
 pub(crate) fn validate_linear_texture_data(
     layout: &wgt::ImageDataLayout,
     format: wgt::TextureFormat,
@@ -207,7 +235,10 @@ pub(crate) fn validate_linear_texture_data(
     copy_size: &Extent3d,
     need_copy_aligned_rows: bool,
 ) -> Result<(BufferAddress, BufferAddress), TransferError> {
-    // Convert all inputs to BufferAddress (u64) to prevent overflow issues
+    // Convert all inputs to BufferAddress (u64) to avoid some of the overflow issues
+    // Note: u64 is not always enough to prevent overflow, especially when multiplying
+    // something with a potentially large depth value, so it is preferrable to validate
+    // the copy size before calling this function (for example via `validate_texture_copy_range`).
     let copy_width = copy_size.width as BufferAddress;
     let copy_height = copy_size.height as BufferAddress;
     let copy_depth = copy_size.depth_or_array_layers as BufferAddress;
@@ -287,11 +318,16 @@ pub(crate) fn validate_linear_texture_data(
     Ok((required_bytes_in_copy, bytes_per_image))
 }
 
-/// Function copied with minor modifications from webgpu standard <https://gpuweb.github.io/gpuweb/#valid-texture-copy-range>
+/// WebGPU's [validating texture copy range][vtcr] algorithm.
+///
+/// Copied with minor modifications from WebGPU standard.
+///
 /// Returns the HAL copy extent and the layer count.
+///
+/// [vtcr]: https://gpuweb.github.io/gpuweb/#validating-texture-copy-range
 pub(crate) fn validate_texture_copy_range(
     texture_copy_view: &ImageCopyTexture,
-    desc: &wgt::TextureDescriptor<()>,
+    desc: &wgt::TextureDescriptor<(), Vec<wgt::TextureFormat>>,
     texture_side: CopySide,
     copy_size: &Extent3d,
 ) -> Result<(hal::CopyExtent, u32), TransferError> {
@@ -309,7 +345,10 @@ pub(crate) fn validate_texture_copy_range(
     let extent = extent_virtual.physical_size(desc.format);
 
     match desc.format {
-        wgt::TextureFormat::Depth32Float
+        wgt::TextureFormat::Stencil8
+        | wgt::TextureFormat::Depth16Unorm
+        | wgt::TextureFormat::Depth32Float
+        | wgt::TextureFormat::Depth32FloatStencil8
         | wgt::TextureFormat::Depth24Plus
         | wgt::TextureFormat::Depth24PlusStencil8 => {
             if *copy_size != extent {
@@ -319,36 +358,51 @@ pub(crate) fn validate_texture_copy_range(
         _ => {}
     }
 
-    let x_copy_max = texture_copy_view.origin.x + copy_size.width;
-    if x_copy_max > extent.width {
-        return Err(TransferError::TextureOverrun {
-            start_offset: texture_copy_view.origin.x,
-            end_offset: x_copy_max,
-            texture_size: extent.width,
-            dimension: TextureErrorDimension::X,
-            side: texture_side,
-        });
+    /// Return `Ok` if a run `size` texels long starting at `start_offset` falls
+    /// entirely within `texture_size`. Otherwise, return an appropriate a`Err`.
+    fn check_dimension(
+        dimension: TextureErrorDimension,
+        side: CopySide,
+        start_offset: u32,
+        size: u32,
+        texture_size: u32,
+    ) -> Result<(), TransferError> {
+        // Avoid underflow in the subtraction by checking start_offset against
+        // texture_size first.
+        if start_offset <= texture_size && size <= texture_size - start_offset {
+            Ok(())
+        } else {
+            Err(TransferError::TextureOverrun {
+                start_offset,
+                end_offset: start_offset.wrapping_add(size),
+                texture_size,
+                dimension,
+                side,
+            })
+        }
     }
-    let y_copy_max = texture_copy_view.origin.y + copy_size.height;
-    if y_copy_max > extent.height {
-        return Err(TransferError::TextureOverrun {
-            start_offset: texture_copy_view.origin.y,
-            end_offset: y_copy_max,
-            texture_size: extent.height,
-            dimension: TextureErrorDimension::Y,
-            side: texture_side,
-        });
-    }
-    let z_copy_max = texture_copy_view.origin.z + copy_size.depth_or_array_layers;
-    if z_copy_max > extent.depth_or_array_layers {
-        return Err(TransferError::TextureOverrun {
-            start_offset: texture_copy_view.origin.z,
-            end_offset: z_copy_max,
-            texture_size: extent.depth_or_array_layers,
-            dimension: TextureErrorDimension::Z,
-            side: texture_side,
-        });
-    }
+
+    check_dimension(
+        TextureErrorDimension::X,
+        texture_side,
+        texture_copy_view.origin.x,
+        copy_size.width,
+        extent.width,
+    )?;
+    check_dimension(
+        TextureErrorDimension::Y,
+        texture_side,
+        texture_copy_view.origin.y,
+        copy_size.height,
+        extent.height,
+    )?;
+    check_dimension(
+        TextureErrorDimension::Z,
+        texture_side,
+        texture_copy_view.origin.z,
+        copy_size.depth_or_array_layers,
+        extent.depth_or_array_layers,
+    )?;
 
     if texture_copy_view.origin.x % block_width != 0 {
         return Err(TransferError::UnalignedCopyOriginX);
@@ -364,9 +418,8 @@ pub(crate) fn validate_texture_copy_range(
     }
 
     let (depth, array_layer_count) = match desc.dimension {
-        wgt::TextureDimension::D1 | wgt::TextureDimension::D2 => {
-            (1, copy_size.depth_or_array_layers)
-        }
+        wgt::TextureDimension::D1 => (1, 1),
+        wgt::TextureDimension::D2 => (1, copy_size.depth_or_array_layers),
         wgt::TextureDimension::D3 => (copy_size.depth_or_array_layers, 1),
     };
 
@@ -378,14 +431,13 @@ pub(crate) fn validate_texture_copy_range(
     Ok((copy_extent, array_layer_count))
 }
 
-fn handle_texture_init<A: hal::Api>(
+fn handle_texture_init<A: HalApi>(
     init_kind: MemoryInitKind,
     cmd_buf: &mut CommandBuffer<A>,
     device: &Device<A>,
     copy_texture: &ImageCopyTexture,
     copy_size: &Extent3d,
-    texture_guard: &Storage<Texture<A>, Id<Texture<hal::api::Empty>>>,
-    texture: &Texture<A>,
+    texture_guard: &Storage<Texture<A>, TextureId>,
 ) {
     let init_action = TextureInitTrackerAction {
         id: copy_texture.texture,
@@ -407,30 +459,34 @@ fn handle_texture_init<A: hal::Api>(
         let cmd_buf_raw = cmd_buf.encoder.open();
         for init in immediate_inits {
             clear_texture(
+                texture_guard,
                 Valid(init.texture),
-                texture,
                 TextureInitRange {
                     mip_range: init.mip_level..(init.mip_level + 1),
                     layer_range: init.layer..(init.layer + 1),
                 },
                 cmd_buf_raw,
                 &mut cmd_buf.trackers.textures,
-                device,
+                &device.alignments,
+                &device.zero_buffer,
             )
             .unwrap();
         }
     }
 }
 
-// Ensures the source texture of a transfer is in the right initialization state and records the state for after the transfer operation.
-fn handle_src_texture_init<A: hal::Api>(
+/// Prepare a transfer's source texture.
+///
+/// Ensure the source texture of a transfer is in the right initialization
+/// state, and record the state for after the transfer operation.
+fn handle_src_texture_init<A: HalApi>(
     cmd_buf: &mut CommandBuffer<A>,
     device: &Device<A>,
     source: &ImageCopyTexture,
     copy_size: &Extent3d,
     texture_guard: &Storage<Texture<A>, TextureId>,
 ) -> Result<(), TransferError> {
-    let texture = texture_guard
+    let _ = texture_guard
         .get(source.texture)
         .map_err(|_| TransferError::InvalidTexture(source.texture))?;
 
@@ -441,13 +497,15 @@ fn handle_src_texture_init<A: hal::Api>(
         source,
         copy_size,
         texture_guard,
-        texture,
     );
     Ok(())
 }
 
-// Ensures the destination texture of a transfer is in the right initialization state and records the state for after the transfer operation.
-fn handle_dst_texture_init<A: hal::Api>(
+/// Prepare a transfer's destination texture.
+///
+/// Ensure the destination texture of a transfer is in the right initialization
+/// state, and record the state for after the transfer operation.
+fn handle_dst_texture_init<A: HalApi>(
     cmd_buf: &mut CommandBuffer<A>,
     device: &Device<A>,
     destination: &ImageCopyTexture,
@@ -458,8 +516,10 @@ fn handle_dst_texture_init<A: hal::Api>(
         .get(destination.texture)
         .map_err(|_| TransferError::InvalidTexture(destination.texture))?;
 
-    // Attention: If we don't write full texture subresources, we need to a full clear first since we don't track subrects.
-    // This means that in rare cases even a *destination* texture of a transfer may need an immediate texture init.
+    // Attention: If we don't write full texture subresources, we need to a full
+    // clear first since we don't track subrects. This means that in rare cases
+    // even a *destination* texture of a transfer may need an immediate texture
+    // init.
     let dst_init_kind = if has_copy_partial_init_tracker_coverage(
         copy_size,
         destination.mip_level,
@@ -477,7 +537,6 @@ fn handle_dst_texture_init<A: hal::Api>(
         destination,
         copy_size,
         texture_guard,
-        texture,
     );
     Ok(())
 }
@@ -492,7 +551,7 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         destination_offset: BufferAddress,
         size: BufferAddress,
     ) -> Result<(), CopyError> {
-        profiling::scope!("copy_buffer_to_buffer", "CommandEncoder");
+        profiling::scope!("CommandEncoder::copy_buffer_to_buffer");
 
         if source == destination {
             return Err(TransferError::SameSourceDestinationBuffer.into());
@@ -500,9 +559,12 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         let hub = A::hub(self);
         let mut token = Token::root();
 
+        let (device_guard, mut token) = hub.devices.read(&mut token);
         let (mut cmd_buf_guard, mut token) = hub.command_buffers.write(&mut token);
         let cmd_buf = CommandBuffer::get_encoder_mut(&mut *cmd_buf_guard, command_encoder_id)?;
         let (buffer_guard, _) = hub.buffers.read(&mut token);
+
+        let device = &device_guard[cmd_buf.device_id.value];
 
         #[cfg(feature = "trace")]
         if let Some(ref mut list) = cmd_buf.commands {
@@ -518,8 +580,8 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         let (src_buffer, src_pending) = cmd_buf
             .trackers
             .buffers
-            .use_replace(&*buffer_guard, source, (), hal::BufferUses::COPY_SRC)
-            .map_err(TransferError::InvalidBuffer)?;
+            .set_single(&*buffer_guard, source, hal::BufferUses::COPY_SRC)
+            .ok_or(TransferError::InvalidBuffer(source))?;
         let src_raw = src_buffer
             .raw
             .as_ref()
@@ -528,15 +590,13 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
             return Err(TransferError::MissingCopySrcUsageFlag.into());
         }
         // expecting only a single barrier
-        let src_barrier = src_pending
-            .map(|pending| pending.into_hal(src_buffer))
-            .next();
+        let src_barrier = src_pending.map(|pending| pending.into_hal(src_buffer));
 
         let (dst_buffer, dst_pending) = cmd_buf
             .trackers
             .buffers
-            .use_replace(&*buffer_guard, destination, (), hal::BufferUses::COPY_DST)
-            .map_err(TransferError::InvalidBuffer)?;
+            .set_single(&*buffer_guard, destination, hal::BufferUses::COPY_DST)
+            .ok_or(TransferError::InvalidBuffer(destination))?;
         let dst_raw = dst_buffer
             .raw
             .as_ref()
@@ -544,9 +604,7 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         if !dst_buffer.usage.contains(BufferUsages::COPY_DST) {
             return Err(TransferError::MissingCopyDstUsageFlag(Some(destination), None).into());
         }
-        let dst_barrier = dst_pending
-            .map(|pending| pending.into_hal(dst_buffer))
-            .next();
+        let dst_barrier = dst_pending.map(|pending| pending.into_hal(dst_buffer));
 
         if size % wgt::COPY_BUFFER_ALIGNMENT != 0 {
             return Err(TransferError::UnalignedCopySize(size).into());
@@ -556,6 +614,26 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         }
         if destination_offset % wgt::COPY_BUFFER_ALIGNMENT != 0 {
             return Err(TransferError::UnalignedBufferOffset(destination_offset).into());
+        }
+        if !device
+            .downlevel
+            .flags
+            .contains(wgt::DownlevelFlags::UNRESTRICTED_INDEX_BUFFER)
+            && (src_buffer.usage.contains(wgt::BufferUsages::INDEX)
+                || dst_buffer.usage.contains(wgt::BufferUsages::INDEX))
+        {
+            let forbidden_usages = wgt::BufferUsages::VERTEX
+                | wgt::BufferUsages::UNIFORM
+                | wgt::BufferUsages::INDIRECT
+                | wgt::BufferUsages::STORAGE;
+            if src_buffer.usage.intersects(forbidden_usages)
+                || dst_buffer.usage.intersects(forbidden_usages)
+            {
+                return Err(TransferError::MissingDownlevelFlags(MissingDownlevelFlags(
+                    wgt::DownlevelFlags::UNRESTRICTED_INDEX_BUFFER,
+                ))
+                .into());
+            }
         }
 
         let source_end_offset = source_offset + size;
@@ -620,7 +698,7 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         destination: &ImageCopyTexture,
         copy_size: &Extent3d,
     ) -> Result<(), CopyError> {
-        profiling::scope!("copy_buffer_to_texture", "CommandEncoder");
+        profiling::scope!("CommandEncoder::copy_buffer_to_texture");
 
         let hub = A::hub(self);
         let mut token = Token::root();
@@ -636,8 +714,8 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         #[cfg(feature = "trace")]
         if let Some(ref mut list) = cmd_buf.commands {
             list.push(TraceCommand::CopyBufferToTexture {
-                src: source.clone(),
-                dst: destination.clone(),
+                src: *source,
+                dst: *destination,
                 size: *copy_size,
             });
         }
@@ -647,17 +725,30 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
             return Ok(());
         }
 
-        let (dst_range, dst_base, _) =
-            extract_texture_selector(destination, copy_size, &*texture_guard)?;
+        let dst_texture = texture_guard
+            .get(destination.texture)
+            .map_err(|_| TransferError::InvalidTexture(destination.texture))?;
 
-        // Handle texture init *before* dealing with barrier transitions so we have an easier time inserting "immediate-inits" that may be required by prior discards in rare cases.
+        let (hal_copy_size, array_layer_count) = validate_texture_copy_range(
+            destination,
+            &dst_texture.desc,
+            CopySide::Destination,
+            copy_size,
+        )?;
+
+        let (dst_range, dst_base, _) =
+            extract_texture_selector(destination, copy_size, dst_texture)?;
+
+        // Handle texture init *before* dealing with barrier transitions so we
+        // have an easier time inserting "immediate-inits" that may be required
+        // by prior discards in rare cases.
         handle_dst_texture_init(cmd_buf, device, destination, copy_size, &texture_guard)?;
 
         let (src_buffer, src_pending) = cmd_buf
             .trackers
             .buffers
-            .use_replace(&*buffer_guard, source.buffer, (), hal::BufferUses::COPY_SRC)
-            .map_err(TransferError::InvalidBuffer)?;
+            .set_single(&*buffer_guard, source.buffer, hal::BufferUses::COPY_SRC)
+            .ok_or(TransferError::InvalidBuffer(source.buffer))?;
         let src_raw = src_buffer
             .raw
             .as_ref()
@@ -665,18 +756,18 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         if !src_buffer.usage.contains(BufferUsages::COPY_SRC) {
             return Err(TransferError::MissingCopySrcUsageFlag.into());
         }
-        let src_barriers = src_pending.map(|pending| pending.into_hal(src_buffer));
+        let src_barrier = src_pending.map(|pending| pending.into_hal(src_buffer));
 
-        let (dst_texture, dst_pending) = cmd_buf
+        let dst_pending = cmd_buf
             .trackers
             .textures
-            .use_replace(
-                &*texture_guard,
+            .set_single(
+                dst_texture,
                 destination.texture,
                 dst_range,
                 hal::TextureUses::COPY_DST,
             )
-            .unwrap();
+            .ok_or(TransferError::InvalidTexture(destination.texture))?;
         let dst_raw = dst_texture
             .inner
             .as_raw()
@@ -686,15 +777,9 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
                 TransferError::MissingCopyDstUsageFlag(None, Some(destination.texture)).into(),
             );
         }
-        let dst_barriers = dst_pending.map(|pending| pending.into_hal(dst_texture));
+        let dst_barrier = dst_pending.map(|pending| pending.into_hal(dst_texture));
 
         let format_desc = dst_texture.desc.format.describe();
-        let (hal_copy_size, array_layer_count) = validate_texture_copy_range(
-            destination,
-            &dst_texture.desc,
-            CopySide::Destination,
-            copy_size,
-        )?;
         let (required_buffer_bytes_in_copy, bytes_per_array_layer) = validate_linear_texture_data(
             &source.layout,
             dst_texture.desc.format,
@@ -705,10 +790,12 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
             true,
         )?;
 
-        if !conv::is_valid_copy_dst_texture_format(dst_texture.desc.format) {
-            return Err(
-                TransferError::CopyToForbiddenTextureFormat(dst_texture.desc.format).into(),
-            );
+        if !conv::is_valid_copy_dst_texture_format(dst_texture.desc.format, destination.aspect) {
+            return Err(TransferError::CopyToForbiddenTextureFormat {
+                format: dst_texture.desc.format,
+                aspect: destination.aspect,
+            }
+            .into());
         }
 
         cmd_buf
@@ -733,8 +820,8 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
 
         let cmd_buf_raw = cmd_buf.encoder.open();
         unsafe {
-            cmd_buf_raw.transition_textures(dst_barriers);
-            cmd_buf_raw.transition_buffers(src_barriers);
+            cmd_buf_raw.transition_textures(dst_barrier.into_iter());
+            cmd_buf_raw.transition_buffers(src_barrier.into_iter());
             cmd_buf_raw.copy_buffer_to_texture(src_raw, dst_raw, regions);
         }
         Ok(())
@@ -747,7 +834,7 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         destination: &ImageCopyBuffer,
         copy_size: &Extent3d,
     ) -> Result<(), CopyError> {
-        profiling::scope!("copy_texture_to_buffer", "CommandEncoder");
+        profiling::scope!("CommandEncoder::copy_texture_to_buffer");
 
         let hub = A::hub(self);
         let mut token = Token::root();
@@ -763,8 +850,8 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         #[cfg(feature = "trace")]
         if let Some(ref mut list) = cmd_buf.commands {
             list.push(TraceCommand::CopyTextureToBuffer {
-                src: source.clone(),
-                dst: destination.clone(),
+                src: *source,
+                dst: *destination,
                 size: *copy_size,
             });
         }
@@ -774,22 +861,30 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
             return Ok(());
         }
 
-        let (src_range, src_base, _) =
-            extract_texture_selector(source, copy_size, &*texture_guard)?;
+        let src_texture = texture_guard
+            .get(source.texture)
+            .map_err(|_| TransferError::InvalidTexture(source.texture))?;
 
-        // Handle texture init *before* dealing with barrier transitions so we have an easier time inserting "immediate-inits" that may be required by prior discards in rare cases.
+        let (hal_copy_size, array_layer_count) =
+            validate_texture_copy_range(source, &src_texture.desc, CopySide::Source, copy_size)?;
+
+        let (src_range, src_base, _) = extract_texture_selector(source, copy_size, src_texture)?;
+
+        // Handle texture init *before* dealing with barrier transitions so we
+        // have an easier time inserting "immediate-inits" that may be required
+        // by prior discards in rare cases.
         handle_src_texture_init(cmd_buf, device, source, copy_size, &texture_guard)?;
 
-        let (src_texture, src_pending) = cmd_buf
+        let src_pending = cmd_buf
             .trackers
             .textures
-            .use_replace(
-                &*texture_guard,
+            .set_single(
+                src_texture,
                 source.texture,
                 src_range,
                 hal::TextureUses::COPY_SRC,
             )
-            .unwrap();
+            .ok_or(TransferError::InvalidTexture(source.texture))?;
         let src_raw = src_texture
             .inner
             .as_raw()
@@ -797,18 +892,30 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         if !src_texture.desc.usage.contains(TextureUsages::COPY_SRC) {
             return Err(TransferError::MissingCopySrcUsageFlag.into());
         }
-        let src_barriers = src_pending.map(|pending| pending.into_hal(src_texture));
+        if src_texture.desc.sample_count != 1 {
+            return Err(TransferError::InvalidSampleCount {
+                sample_count: src_texture.desc.sample_count,
+            }
+            .into());
+        }
+        if source.mip_level >= src_texture.desc.mip_level_count {
+            return Err(TransferError::InvalidMipLevel {
+                requested: source.mip_level,
+                count: src_texture.desc.mip_level_count,
+            }
+            .into());
+        }
+        let src_barrier = src_pending.map(|pending| pending.into_hal(src_texture));
 
         let (dst_buffer, dst_pending) = cmd_buf
             .trackers
             .buffers
-            .use_replace(
+            .set_single(
                 &*buffer_guard,
                 destination.buffer,
-                (),
                 hal::BufferUses::COPY_DST,
             )
-            .map_err(TransferError::InvalidBuffer)?;
+            .ok_or(TransferError::InvalidBuffer(destination.buffer))?;
         let dst_raw = dst_buffer
             .raw
             .as_ref()
@@ -818,11 +925,9 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
                 TransferError::MissingCopyDstUsageFlag(Some(destination.buffer), None).into(),
             );
         }
-        let dst_barriers = dst_pending.map(|pending| pending.into_hal(dst_buffer));
+        let dst_barrier = dst_pending.map(|pending| pending.into_hal(dst_buffer));
 
         let format_desc = src_texture.desc.format.describe();
-        let (hal_copy_size, array_layer_count) =
-            validate_texture_copy_range(source, &src_texture.desc, CopySide::Source, copy_size)?;
         let (required_buffer_bytes_in_copy, bytes_per_array_layer) = validate_linear_texture_data(
             &destination.layout,
             src_texture.desc.format,
@@ -833,10 +938,24 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
             true,
         )?;
 
-        if !conv::is_valid_copy_src_texture_format(src_texture.desc.format) {
-            return Err(
-                TransferError::CopyFromForbiddenTextureFormat(src_texture.desc.format).into(),
-            );
+        if !conv::is_valid_copy_src_texture_format(src_texture.desc.format, source.aspect) {
+            return Err(TransferError::CopyFromForbiddenTextureFormat {
+                format: src_texture.desc.format,
+                aspect: source.aspect,
+            }
+            .into());
+        }
+
+        if format_desc.sample_type == wgt::TextureSampleType::Depth
+            && !device
+                .downlevel
+                .flags
+                .contains(wgt::DownlevelFlags::DEPTH_TEXTURE_AND_BUFFER_COPIES)
+        {
+            return Err(TransferError::MissingDownlevelFlags(MissingDownlevelFlags(
+                wgt::DownlevelFlags::DEPTH_TEXTURE_AND_BUFFER_COPIES,
+            ))
+            .into());
         }
 
         cmd_buf
@@ -861,8 +980,8 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         });
         let cmd_buf_raw = cmd_buf.encoder.open();
         unsafe {
-            cmd_buf_raw.transition_buffers(dst_barriers);
-            cmd_buf_raw.transition_textures(src_barriers);
+            cmd_buf_raw.transition_buffers(dst_barrier.into_iter());
+            cmd_buf_raw.transition_textures(src_barrier.into_iter());
             cmd_buf_raw.copy_texture_to_buffer(
                 src_raw,
                 hal::TextureUses::COPY_SRC,
@@ -880,7 +999,7 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         destination: &ImageCopyTexture,
         copy_size: &Extent3d,
     ) -> Result<(), CopyError> {
-        profiling::scope!("copy_texture_to_texture", "CommandEncoder");
+        profiling::scope!("CommandEncoder::copy_texture_to_texture");
 
         let hub = A::hub(self);
         let mut token = Token::root();
@@ -896,8 +1015,8 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         #[cfg(feature = "trace")]
         if let Some(ref mut list) = cmd_buf.commands {
             list.push(TraceCommand::CopyTextureToTexture {
-                src: source.clone(),
-                dst: destination.clone(),
+                src: *source,
+                dst: *destination,
                 size: *copy_size,
             });
         }
@@ -907,28 +1026,62 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
             return Ok(());
         }
 
-        let (src_range, src_tex_base, _) =
-            extract_texture_selector(source, copy_size, &*texture_guard)?;
-        let (dst_range, dst_tex_base, _) =
-            extract_texture_selector(destination, copy_size, &*texture_guard)?;
-        if src_tex_base.aspect != dst_tex_base.aspect {
-            return Err(TransferError::MismatchedAspects.into());
+        let src_texture = texture_guard
+            .get(source.texture)
+            .map_err(|_| TransferError::InvalidTexture(source.texture))?;
+        let dst_texture = texture_guard
+            .get(destination.texture)
+            .map_err(|_| TransferError::InvalidTexture(source.texture))?;
+
+        // src and dst texture format must be the same.
+        let src_format = src_texture.desc.format;
+        let dst_format = dst_texture.desc.format;
+        if src_format != dst_format {
+            return Err(TransferError::MismatchedTextureFormats {
+                src_format,
+                dst_format,
+            }
+            .into());
         }
 
-        // Handle texture init *before* dealing with barrier transitions so we have an easier time inserting "immediate-inits" that may be required by prior discards in rare cases.
+        let (src_copy_size, array_layer_count) =
+            validate_texture_copy_range(source, &src_texture.desc, CopySide::Source, copy_size)?;
+        let (dst_copy_size, _) = validate_texture_copy_range(
+            destination,
+            &dst_texture.desc,
+            CopySide::Destination,
+            copy_size,
+        )?;
+
+        let (src_range, src_tex_base, _) =
+            extract_texture_selector(source, copy_size, src_texture)?;
+        let (dst_range, dst_tex_base, _) =
+            extract_texture_selector(destination, copy_size, dst_texture)?;
+        let src_texture_aspects = hal::FormatAspects::from(src_texture.desc.format);
+        let dst_texture_aspects = hal::FormatAspects::from(dst_texture.desc.format);
+        if src_tex_base.aspect != src_texture_aspects {
+            return Err(TransferError::CopySrcMissingAspects.into());
+        }
+        if dst_tex_base.aspect != dst_texture_aspects {
+            return Err(TransferError::CopyDstMissingAspects.into());
+        }
+
+        // Handle texture init *before* dealing with barrier transitions so we
+        // have an easier time inserting "immediate-inits" that may be required
+        // by prior discards in rare cases.
         handle_src_texture_init(cmd_buf, device, source, copy_size, &texture_guard)?;
         handle_dst_texture_init(cmd_buf, device, destination, copy_size, &texture_guard)?;
 
-        let (src_texture, src_pending) = cmd_buf
+        let src_pending = cmd_buf
             .trackers
             .textures
-            .use_replace(
-                &*texture_guard,
+            .set_single(
+                src_texture,
                 source.texture,
                 src_range,
                 hal::TextureUses::COPY_SRC,
             )
-            .unwrap();
+            .ok_or(TransferError::InvalidTexture(source.texture))?;
         let src_raw = src_texture
             .inner
             .as_raw()
@@ -939,20 +1092,21 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
 
         //TODO: try to avoid this the collection. It's needed because both
         // `src_pending` and `dst_pending` try to hold `trackers.textures` mutably.
-        let mut barriers = src_pending
+        let mut barriers: ArrayVec<_, 2> = src_pending
             .map(|pending| pending.into_hal(src_texture))
-            .collect::<Vec<_>>();
+            .into_iter()
+            .collect();
 
-        let (dst_texture, dst_pending) = cmd_buf
+        let dst_pending = cmd_buf
             .trackers
             .textures
-            .use_replace(
-                &*texture_guard,
+            .set_single(
+                dst_texture,
                 destination.texture,
                 dst_range,
                 hal::TextureUses::COPY_DST,
             )
-            .unwrap();
+            .ok_or(TransferError::InvalidTexture(destination.texture))?;
         let dst_raw = dst_texture
             .inner
             .as_raw()
@@ -963,28 +1117,7 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
             );
         }
 
-        // src and dst texture format must be the same.
-        let src_format = src_texture.desc.format;
-        let dst_format = dst_texture.desc.format;
-
-        if src_format != dst_format {
-            return Err(TransferError::MismatchedTextureFormats {
-                src_format,
-                dst_format,
-            }
-            .into());
-        }
-
         barriers.extend(dst_pending.map(|pending| pending.into_hal(dst_texture)));
-
-        let (src_copy_size, array_layer_count) =
-            validate_texture_copy_range(source, &src_texture.desc, CopySide::Source, copy_size)?;
-        let (dst_copy_size, _) = validate_texture_copy_range(
-            destination,
-            &dst_texture.desc,
-            CopySide::Destination,
-            copy_size,
-        )?;
 
         let hal_copy_size = hal::CopyExtent {
             width: src_copy_size.width.min(dst_copy_size.width),

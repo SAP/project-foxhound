@@ -22,7 +22,16 @@ add_task(async function() {
         `cross-origin site and then navigating back`
     );
 
-    BrowserTestUtils.loadURI(browser, URL1);
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        [
+          "privacy.partition.always_partition_third_party_non_cookie_storage",
+          false,
+        ],
+      ],
+    });
+
+    BrowserTestUtils.loadURIString(browser, URL1);
     await BrowserTestUtils.browserLoaded(browser);
 
     await SpecialPowers.spawn(
@@ -51,7 +60,7 @@ add_task(async function() {
       }
     );
 
-    BrowserTestUtils.loadURI(browser, URL2);
+    BrowserTestUtils.loadURIString(browser, URL2);
     await BrowserTestUtils.browserLoaded(browser);
 
     await SpecialPowers.spawn(
@@ -70,7 +79,7 @@ add_task(async function() {
       }
     );
 
-    BrowserTestUtils.loadURI(browser, URL1);
+    BrowserTestUtils.loadURIString(browser, URL1);
     await BrowserTestUtils.browserLoaded(browser);
 
     await SpecialPowers.spawn(
@@ -90,7 +99,7 @@ add_task(async function() {
 
     info(`Verifying sessionStorage is preserved for ${URL1} after navigating`);
 
-    BrowserTestUtils.loadURI(browser, URL2);
+    BrowserTestUtils.loadURIString(browser, URL2);
     await BrowserTestUtils.browserLoaded(browser);
 
     await SpecialPowers.spawn(
@@ -140,7 +149,7 @@ add_task(async function() {
 
     info(`Verifying SSCache is loaded to the content process only once`);
 
-    BrowserTestUtils.loadURI(browser, URL1);
+    BrowserTestUtils.loadURIString(browser, URL1);
     await BrowserTestUtils.browserLoaded(browser);
 
     await SpecialPowers.spawn(
@@ -187,7 +196,7 @@ add_task(async function() {
     const anotherKey = `anotherKey`;
     const anotherValue = `anotherValue;`;
 
-    BrowserTestUtils.loadURI(browser, URL1_WITH_COOP_COEP);
+    BrowserTestUtils.loadURIString(browser, URL1_WITH_COOP_COEP);
     await BrowserTestUtils.browserLoaded(browser);
 
     await SpecialPowers.spawn(
@@ -228,7 +237,7 @@ add_task(async function() {
       }
     );
 
-    BrowserTestUtils.loadURI(browser, URL1);
+    BrowserTestUtils.loadURIString(browser, URL1);
     await BrowserTestUtils.browserLoaded(browser);
 
     await SpecialPowers.spawn(

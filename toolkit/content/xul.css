@@ -16,8 +16,6 @@
  * browser.css.
  */
 
-@import url("chrome://global/skin/tooltip.css");
-
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"); /* set default namespace to XUL */
 @namespace html url("http://www.w3.org/1999/xhtml"); /* namespace for HTML elements */
 
@@ -26,11 +24,14 @@
  */
 *|*:root {
   --animation-easing-function: cubic-bezier(.07, .95, 0, 1);
+  -moz-box-flex: 1;
 }
 
 :root {
   text-rendering: optimizeLegibility;
   -moz-control-character-visibility: visible;
+  width: 100%;
+  height: 100%;
 }
 
 :root:-moz-locale-dir(rtl) {
@@ -90,10 +91,23 @@ button,
 checkbox,
 menulist,
 radiogroup,
+richlistbox,
 tree,
 browser,
 editor,
-iframe {
+iframe,
+label:is(.text-link, [onclick]),
+tab[selected="true"]:not([ignorefocus="true"]) {
+  -moz-user-focus: normal;
+}
+
+/* Avoid losing focus on tabs by keeping them focusable, since some browser
+ * tests rely on this.
+ *
+ * TODO(emilio): Remove this and fix the tests / front-end code:
+ *  * browser/base/content/test/general/browser_tabfocus.js
+ */
+tab:focus {
   -moz-user-focus: normal;
 }
 
@@ -120,21 +134,109 @@ description {
   display: flow-root;
 }
 
-label.text-link, label[onclick] {
-  -moz-user-focus: normal;
-}
-
 label html|span.accesskey {
   text-decoration: underline;
   text-decoration-skip-ink: none;
 }
 
+description:where([value]) {
+  /* Preserves legacy behavior, maybe could be removed */
+  display: -moz-box;
+}
+
+label:where([value]) {
+  /* Preserves legacy behavior, maybe could be removed */
+  display: -moz-inline-box;
+}
+
+:is(label, description)[value] {
+  white-space: nowrap;
+}
+
+:is(label, description)[value]::before {
+  /* This displays the value attribute, along with the underlined
+   * accesskey if needed */
+  content: -moz-label-content;
+  display: block;
+}
+
+label[value=""]::before {
+  content: "\200b" !important; /* zwsp */
+}
+
+:is(label, description)[value][crop] {
+  min-width: 0;
+}
+
+:is(label, description)[value][crop]::before {
+  min-width: 0;
+  max-width: 100%;
+  /* This implements crop=end */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Invert the direction to clip at the start rather than end */
+:is(label, description)[value][crop="start"]::before {
+  direction: rtl;
+  /* Mark text as ltr to preserve punctuation/numeric order */
+  content: "\200e" -moz-label-content;
+}
+
+:is(label, description)[value][crop="start"]:-moz-locale-dir(rtl)::before {
+  direction: ltr;
+  /* Mark text as rtl to preserve punctuation/numeric order */
+  content: "\200f" -moz-label-content;
+}
+
+.checkbox-label-box,
+.radio-label-box {
+  min-width: 0;
+}
+
 /********** toolbarbutton **********/
+
+toolbarbutton {
+  -moz-box-align: center;
+  -moz-box-pack: center;
+}
+
+toolbarbutton.tabbable {
+  -moz-user-focus: normal !important;
+}
+
+toolbarbutton[crop] {
+  min-width: 0;
+}
+
+.toolbarbutton-text {
+  display: block;
+  text-align: center;
+}
 
 toolbar[mode="icons"] .toolbarbutton-text,
 toolbar[mode="text"] .toolbarbutton-icon,
 html|label.toolbarbutton-badge:empty {
   display: none;
+}
+
+.toolbarbutton-icon,
+.toolbarbutton-text,
+.toolbarbutton-badge-stack,
+.toolbarbutton-menu-dropmarker,
+.treecol-text,
+.treecol-sortdirection,
+.menubar-left,
+.menubar-text,
+.menu-text,
+.menu-iconic-text,
+.menu-iconic-highlightable-text,
+.menu-iconic-left,
+.menu-right,
+.menu-accel-container,
+.button-box {
+  /* Preserves legacy behavior */
+  pointer-events: none;
 }
 
 /********** button **********/
@@ -152,11 +254,9 @@ iframe {
   display: inline;
 }
 
-@supports -moz-bool-pref("layout.css.emulate-moz-box-with-flex") {
-  browser,
-  editor,
-  iframe {
-    display: block;
+@media (-moz-box-flexbox-emulation) {
+  *|*:root {
+    -moz-box-layout: flex;
   }
 }
 
@@ -167,6 +267,7 @@ browser {
   justify-self: stretch;
   min-height: 0;
   min-width: 0;
+  contain: size;
 }
 
 /*********** popup notification ************/
@@ -192,12 +293,9 @@ groupbox {
 
 /******** draggable elements *********/
 
-%ifndef MOZ_WIDGET_GTK
-titlebar,
 toolbar:not([nowindowdrag="true"], [customizing="true"]) {
   -moz-window-dragging: drag;
 }
-%endif
 
 /* The list below is non-comprehensive and will probably need some tweaking. */
 toolbaritem,
@@ -209,6 +307,7 @@ html|input,
 tab,
 radio,
 splitter,
+menu,
 menulist {
   -moz-window-dragging: no-drag;
 }
@@ -223,12 +322,12 @@ toolbox {
   -moz-box-orient: vertical;
 }
 
-%ifdef XP_MACOSX
-toolbar[type="menubar"] {
-  min-height: 0 !important;
-  border: 0 !important;
+@media (-moz-platform: macos) {
+  toolbar[type="menubar"] {
+    min-height: 0 !important;
+    border: 0 !important;
+  }
 }
-%endif
 
 toolbarspring {
   -moz-box-flex: 1000;
@@ -254,25 +353,72 @@ panel {
 menupopup,
 panel,
 tooltip {
-  display: -moz-popup;
+  position: fixed;
+  -moz-top-layer: top;
+  /* Popups can't have overflow */
+  contain: paint;
   z-index: 2147483647;
   text-shadow: none;
 }
 
 tooltip {
+  appearance: auto;
+  -moz-default-appearance: tooltip;
+  -moz-font-smoothing-background-color: -moz-mac-tooltip;
+
   -moz-box-orient: vertical;
   white-space: pre-wrap;
+
+  background-color: InfoBackground;
+  color: InfoText;
+  font: message-box;
+  padding: 2px 3px;
+  max-width: 40em;
+  overflow: clip;
+  pointer-events: none;
 }
 
 tooltip:not([position]) {
   margin-top: 21px;
 }
 
-% excluding Android here to work around bug 1637975:
-%ifndef ANDROID
-@supports -moz-bool-pref("xul.panel-animations.enabled") {
-@media (prefers-reduced-motion: no-preference) {
-%ifdef MOZ_WIDGET_COCOA
+/**
+ * It's important that these styles are in a UA sheet, because the default
+ * tooltip is native anonymous content
+ */
+@media (-moz-platform: linux) {
+  tooltip {
+    padding: 6px 10px; /* Matches Adwaita. */
+    line-height: 1.2;
+  }
+}
+
+@media (-moz-platform: windows) {
+  tooltip {
+    appearance: none;
+    border: 1px solid;
+  }
+
+  @media (-moz-windows-default-theme) {
+    tooltip {
+      background-color: #f9f9fb;
+      color: black;
+      border-color: #67676c;
+      border-radius: 4px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      tooltip {
+        background-color: #2b2a33;
+        color: white;
+        border-color: #f9f9fb;
+      }
+    }
+  }
+}
+
+@media (-moz-panel-animations) and (prefers-reduced-motion: no-preference) {
+@media (-moz-platform: macos) {
   /* On Mac, use the properties "-moz-window-transform" and "-moz-window-opacity"
      instead of "transform" and "opacity" for these animations.
      The -moz-window* properties apply to the whole window including the window's
@@ -315,7 +461,9 @@ tooltip:not([position]) {
     -moz-window-opacity: 0;
     -moz-window-transform: none;
   }
-%else
+} /* end of macOS rules */
+
+@media not (-moz-platform: macos) {
   panel[type="arrow"]:not([animate="false"]) {
     opacity: 0;
     transform: translateY(-70px);
@@ -323,6 +471,7 @@ tooltip:not([position]) {
     transition-duration: 0.18s, 0.18s;
     transition-timing-function:
       var(--animation-easing-function), ease-out;
+    will-change: transform, opacity;
   }
 
   panel[type="arrow"][side="bottom"]:not([animate="false"]) {
@@ -342,10 +491,8 @@ tooltip:not([position]) {
   panel[type="arrow"][animate][animate="cancel"] {
     transform: none;
   }
-%endif
+} /* end of non-macOS rules */
 }
-}
-%endif
 
 panel[type="arrow"][animating] {
   pointer-events: none;
@@ -365,8 +512,6 @@ treechildren {
 
 tree {
   -moz-box-orient: vertical;
-  width: 10px;
-  height: 10px;
 }
 
 tree[hidecolumnpicker="true"] treecolpicker {
@@ -391,18 +536,34 @@ treechildren::-moz-tree-cell(ltr) {
   direction: ltr !important;
 }
 
-/********** deck & stack *********/
+/********** deck, tabpanels & stack *********/
 
-deck {
-  display: -moz-deck;
+tabpanels > *|*:not(:-moz-native-anonymous) {
+  /* tabpanels is special: we want to avoid displaying them, but we still want
+   * the hidden children to be accessible */
+  -moz-subtree-hidden-only-visually: 1;
 }
 
+deck > *|*:not(:-moz-native-anonymous) {
+  visibility: hidden;
+}
+
+tabpanels > .deck-selected,
+deck > .deck-selected {
+  -moz-subtree-hidden-only-visually: 0;
+  visibility: inherit;
+}
+
+tabpanels,
+deck,
 stack {
   display: grid;
   position: relative;
 }
 
-/* We shouldn't style native anonymous children like scrollbars or what not */
+/* We shouldn't style native anonymous children like scrollbars or what not. */
+tabpanels > *|*:not(:-moz-native-anonymous),
+deck > *|*:not(:-moz-native-anonymous),
 stack > *|*:not(:-moz-native-anonymous) {
   grid-area: 1 / 1;
   z-index: 0;
@@ -421,6 +582,11 @@ stack > *|*:not(:-moz-native-anonymous) {
 
 tabbox {
   -moz-box-orient: vertical;
+  min-height: 0;
+}
+
+tabpanels {
+  min-height: 0;
 }
 
 tabs {
@@ -430,14 +596,6 @@ tabs {
 tab {
   -moz-box-align: center;
   -moz-box-pack: center;
-}
-
-tab[selected="true"]:not([ignorefocus="true"]) {
-  -moz-user-focus: normal;
-}
-
-tabpanels {
-  display: -moz-deck;
 }
 
 /********** tooltip *********/
@@ -469,22 +627,12 @@ search-textbox {
   resize: none;
 }
 
-@supports -moz-bool-pref("layout.css.emulate-moz-box-with-flex") {
-  html|*.textbox-input {
-    /* Be block-level, so that -moz-box-flex can take effect, when we are an item
-       in a -moz-box being emulated by modified modern flex. */
-    display: block;
-  }
-}
-
 /********** autocomplete textbox **********/
-
-/* SeaMonkey uses its own autocomplete and the toolkit's autocomplete widget */
-%ifndef MOZ_SUITE
 
 .autocomplete-richlistbox {
   -moz-user-focus: ignore;
   overflow-x: hidden !important;
+  -moz-box-flex: 1;
 }
 
 .autocomplete-richlistitem {
@@ -492,8 +640,6 @@ search-textbox {
   -moz-box-align: center;
   overflow: clip;
 }
-
-%endif
 
 /* The following rule is here to fix bug 96899 (and now 117952).
    Somehow trees create a situation
@@ -520,10 +666,12 @@ menulist[popuponly] {
 /********** splitter **********/
 
 .tree-splitter {
-  width: 0px;
-  max-width: 0px;
-  min-width: 0% ! important;
-  min-height: 0% ! important;
+  width: 0;
+  max-width: 0;
+  appearance: none !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  border: none !important;
   -moz-box-ordinal-group: 2147483646;
 }
 
@@ -542,8 +690,10 @@ scrollbox {
   overflow: hidden;
 }
 
-scrollbox[smoothscroll=true] {
-  scroll-behavior: smooth;
+@media (prefers-reduced-motion: no-preference) {
+  scrollbox[smoothscroll=true] {
+    scroll-behavior: smooth;
+  }
 }
 
 /********** stringbundle **********/
@@ -565,8 +715,16 @@ dialog {
 wizard {
   -moz-box-flex: 1;
   -moz-box-orient: vertical;
-  width: 40em;
-  height: 30em;
+  contain: inline-size;
+  min-width: 40em;
+  min-height: 30em;
+}
+
+.wizard-window {
+  /* TODO: This can be removed once
+   * layout.css.moz-box-flexbox-emulation.enabled
+   * is true unconditionally */
+  -moz-box-layout: flex;
 }
 
 wizard > wizardpage {
@@ -586,13 +744,16 @@ wizardpage {
 /********** Rich Listbox ********/
 
 richlistbox {
-  -moz-user-focus: normal;
   -moz-box-orient: vertical;
+  overflow: auto;
+  min-width: 0;
+  min-height: 0;
 }
 
 /*********** findbar ************/
 findbar {
   overflow-x: hidden;
+  contain: inline-size;
 }
 
 /* Some elements that in HTML blocks should be inline-level by default */
@@ -618,22 +779,5 @@ button, image {
 [pack="center"] { -moz-box-pack: center !important; }
 [pack="end"] { -moz-box-pack: end !important; }
 
-@supports -moz-bool-pref("layout.css.emulate-moz-box-with-flex") {
-  /* This isn't a real solution for [flex] and [ordinal], but it covers enough
-     cases to render the browser chrome for us to test emulated flex mode without
-     mass-changing existing markup and CSS.
-     If we get attr() in Bug 435426 this could  work for all cases. */
-  [flex="1"] { -moz-box-flex: 1; }
-  [flex="2"] { -moz-box-flex: 2; }
-  [flex="3"] { -moz-box-flex: 3; }
-  [flex="4"] { -moz-box-flex: 4; }
-  [flex="5"] { -moz-box-flex: 5; }
-  [flex="6"] { -moz-box-flex: 6; }
-  [flex="7"] { -moz-box-flex: 7; }
-  [flex="8"] { -moz-box-flex: 8; }
-  [flex="9"] { -moz-box-flex: 9; }
-  [flex="100"] { -moz-box-flex: 100; }
-  [flex="400"] { -moz-box-flex: 400; }
-  [flex="1000"] { -moz-box-flex: 1000; }
-  [flex="10000"] { -moz-box-flex: 10000; }
-}
+[flex="0"] { -moz-box-flex: 0 !important; }
+[flex="1"] { -moz-box-flex: 1 !important; }

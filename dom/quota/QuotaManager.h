@@ -14,11 +14,13 @@
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/InitializedOnce.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Result.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/ipc/IdType.h"
+#include "mozilla/dom/quota/Assertions.h"
 #include "mozilla/dom/quota/CommonMetadata.h"
 #include "mozilla/dom/quota/ForwardDecls.h"
 #include "mozilla/dom/quota/InitializationTypes.h"
@@ -61,6 +63,7 @@ class PrincipalInfo;
 
 namespace mozilla::dom::quota {
 
+class CanonicalQuotaObject;
 class ClientUsageArray;
 class ClientDirectoryLock;
 class DirectoryLockImpl;
@@ -73,10 +76,10 @@ class QuotaObject;
 class UniversalDirectoryLock;
 
 class QuotaManager final : public BackgroundThreadObject {
+  friend class CanonicalQuotaObject;
   friend class DirectoryLockImpl;
   friend class GroupInfo;
   friend class OriginInfo;
-  friend class QuotaObject;
 
   using PrincipalInfo = mozilla::ipc::PrincipalInfo;
   using DirectoryLockTable =
@@ -103,6 +106,7 @@ class QuotaManager final : public BackgroundThreadObject {
   }
 
   static const char kReplaceChars[];
+  static const char16_t kReplaceChars16[];
 
   static Result<MovingNotNull<RefPtr<QuotaManager>>, nsresult> GetOrCreate();
 
@@ -111,10 +115,16 @@ class QuotaManager final : public BackgroundThreadObject {
   // Returns a non-owning reference.
   static QuotaManager* Get();
 
+  // Use only in gtests!
+  static nsIObserver* GetObserver();
+
   // Returns true if we've begun the shutdown process.
   static bool IsShuttingDown();
 
   static void ShutdownInstance();
+
+  // Use only in gtests!
+  static void Reset();
 
   static bool IsOSMetadata(const nsAString& aFileName);
 
@@ -183,7 +193,7 @@ class QuotaManager final : public BackgroundThreadObject {
   void RemoveQuotaForOrigin(PersistenceType aPersistenceType,
                             const OriginMetadata& aOriginMetadata) {
     MutexAutoLock lock(mQuotaMutex);
-    LockedRemoveQuotaForOrigin(aPersistenceType, aOriginMetadata);
+    LockedRemoveQuotaForOrigin(aOriginMetadata);
   }
 
   nsresult LoadQuota();
@@ -299,7 +309,9 @@ class QuotaManager final : public BackgroundThreadObject {
 
   nsresult EnsureTemporaryStorageIsInitialized();
 
-  void ShutdownStorage();
+  RefPtr<BoolPromise> ShutdownStorage();
+
+  void ShutdownStorageInternal();
 
   // Returns a bool indicating whether the directory was newly created.
   Result<bool, nsresult> EnsureOriginDirectory(nsIFile& aDirectory);
@@ -381,6 +393,9 @@ class QuotaManager final : public BackgroundThreadObject {
   static void SafeMaybeRecordQuotaClientShutdownStep(
       Client::Type aClientType, const nsACString& aStepDescription);
 
+  // Record a quota manager shutdown step, use only if shutdown is active.
+  void RecordQuotaManagerShutdownStep(const nsACString& aStepDescription);
+
   // Record a quota manager shutdown step, if shutting down.
   void MaybeRecordQuotaManagerShutdownStep(const nsACString& aStepDescription);
 
@@ -440,8 +455,7 @@ class QuotaManager final : public BackgroundThreadObject {
       uint64_t aMinSizeToBeFreed,
       nsTArray<RefPtr<OriginDirectoryLock>>& aLocks);
 
-  void LockedRemoveQuotaForOrigin(PersistenceType aPersistenceType,
-                                  const OriginMetadata& aOriginMetadata);
+  void LockedRemoveQuotaForOrigin(const OriginMetadata& aOriginMetadata);
 
   already_AddRefed<GroupInfo> LockedGetOrCreateGroupInfo(
       PersistenceType aPersistenceType, const nsACString& aSuffix,
@@ -587,9 +601,6 @@ class QuotaManager final : public BackgroundThreadObject {
 
   nsCOMPtr<mozIStorageConnection> mStorageConnection;
 
-  // A timer that gets activated at shutdown to ensure we close all storages.
-  LazyInitializedOnceNotNull<const nsCOMPtr<nsITimer>> mShutdownTimer;
-
   EnumeratedArray<Client::Type, Client::TYPE_MAX, nsCString> mShutdownSteps;
   LazyInitializedOnce<const TimeStamp> mShutdownStartedAt;
   Atomic<bool> mShutdownStarted;
@@ -597,7 +608,7 @@ class QuotaManager final : public BackgroundThreadObject {
   // Accesses to mQuotaManagerShutdownSteps must be protected by mQuotaMutex.
   nsCString mQuotaManagerShutdownSteps;
 
-  mutable mozilla::Mutex mQuotaMutex;
+  mutable mozilla::Mutex mQuotaMutex MOZ_UNANNOTATED;
 
   nsClassHashtable<nsCStringHashKey, GroupInfoPair> mGroupInfoPairs;
 
@@ -650,11 +661,14 @@ class QuotaManager final : public BackgroundThreadObject {
   LazyInitializedOnce<const nsString> mTemporaryStoragePath;
   LazyInitializedOnce<const nsString> mDefaultStoragePath;
 
+  MozPromiseHolder<BoolPromise> mShutdownStoragePromiseHolder;
+
   uint64_t mTemporaryStorageLimit;
   uint64_t mTemporaryStorageUsage;
   int64_t mNextDirectoryLockId;
   bool mTemporaryStorageInitialized;
   bool mCacheUsable;
+  bool mShuttingDownStorage;
 };
 
 }  // namespace mozilla::dom::quota

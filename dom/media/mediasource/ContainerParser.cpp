@@ -19,9 +19,9 @@
 #ifdef MOZ_FMP4
 #  include "AtomType.h"
 #  include "BufferReader.h"
-#  include "Index.h"
-#  include "MP4Interval.h"
 #  include "ByteStream.h"
+#  include "MP4Interval.h"
+#  include "SampleIterator.h"
 #endif
 #include "SourceBufferResource.h"
 #include <algorithm>
@@ -116,12 +116,9 @@ class WebMContainerParser
 
     WebMBufferedParser parser(0);
     nsTArray<WebMTimeDataOffset> mapping;
-    ReentrantMonitor dummy("dummy");
-    bool result =
-        parser.Append(aData.Elements(), aData.Length(), mapping, dummy);
-    if (!result) {
-      return MediaResult(NS_ERROR_FAILURE,
-                         RESULT_DETAIL("Invalid webm content"));
+    if (auto result = parser.Append(aData.Elements(), aData.Length(), mapping);
+        NS_FAILED(result)) {
+      return result;
     }
     return parser.mInitEndOffset > 0 ? NS_OK : NS_ERROR_NOT_AVAILABLE;
   }
@@ -134,13 +131,10 @@ class WebMContainerParser
 
     WebMBufferedParser parser(0);
     nsTArray<WebMTimeDataOffset> mapping;
-    ReentrantMonitor dummy("dummy");
     parser.AppendMediaSegmentOnly();
-    bool result =
-        parser.Append(aData.Elements(), aData.Length(), mapping, dummy);
-    if (!result) {
-      return MediaResult(NS_ERROR_FAILURE,
-                         RESULT_DETAIL("Invalid webm content"));
+    if (auto result = parser.Append(aData.Elements(), aData.Length(), mapping);
+        NS_FAILED(result)) {
+      return result;
     }
     return parser.GetClusterOffset() >= 0 ? NS_OK : NS_ERROR_NOT_AVAILABLE;
   }
@@ -182,8 +176,10 @@ class WebMContainerParser
     nsTArray<WebMTimeDataOffset> mapping;
     mapping.AppendElements(mOverlappedMapping);
     mOverlappedMapping.Clear();
-    ReentrantMonitor dummy("dummy");
-    mParser.Append(aData.Elements(), aData.Length(), mapping, dummy);
+    if (auto result = mParser.Append(aData.Elements(), aData.Length(), mapping);
+        NS_FAILED(result)) {
+      return result;
+    }
     if (mResource) {
       mResource->AppendData(aData);
     }

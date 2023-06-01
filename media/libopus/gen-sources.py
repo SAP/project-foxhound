@@ -8,10 +8,23 @@
 import sys
 import re
 
+# These files are not used, ignore them.
+ignore_list = [
+    'silk/float/regularize_correlations_FLP.c',
+    'silk/float/LPC_inv_pred_gain_FLP.c',
+    'src/opus_projection_encoder.c',
+    'silk/debug.c',
+    'src/mapping_matrix.c',
+    'src/opus_projection_decoder.c',
+]
+
+def should_ignore(value):
+    return any(item in value for item in ignore_list)
+
 def add_value(values, text):
     text = text.replace('\\', '')
     text = text.strip()
-    if text:
+    if text and not should_ignore(text):
         values.append(text)
 
 def write_values(output, values):
@@ -64,7 +77,7 @@ def generate_sources_mozbuild(path):
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:
-        print "Usage: %s /path/to/opus" % (sys.argv[0])
+        print("Usage: %s /path/to/opus" % (sys.argv[0]))
         sys.exit(1)
 
     generate_sources_mozbuild(sys.argv[1])

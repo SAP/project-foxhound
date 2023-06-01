@@ -46,6 +46,15 @@ class LogicalPixelSize {
     }
   }
 
+  gfx::Size PhysicalSize(WritingMode aWM) const {
+    if (!aWM.IsVertical()) {
+      return mSize;
+    }
+    gfx::Size result(mSize);
+    std::swap(result.width, result.height);
+    return result;
+  }
+
   bool operator==(const LogicalPixelSize& aOther) const {
     return mSize == aOther.mSize;
   }
@@ -71,8 +80,7 @@ class ResizeObservation final : public LinkedListElement<ResizeObservation> {
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(ResizeObservation)
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(ResizeObservation)
 
-  ResizeObservation(Element&, ResizeObserver&, ResizeObserverBoxOptions,
-                    WritingMode);
+  ResizeObservation(Element&, ResizeObserver&, ResizeObserverBoxOptions);
 
   Element* Target() const { return mTarget; }
 
@@ -85,9 +93,9 @@ class ResizeObservation final : public LinkedListElement<ResizeObservation> {
   bool IsActive() const;
 
   /**
-   * Update current mLastReportedSize with size from aSize.
+   * Update current mLastReportedSize to aSize.
    */
-  void UpdateLastReportedSize(const gfx::Size& aSize);
+  void UpdateLastReportedSize(const nsTArray<LogicalPixelSize>& aSize);
 
   enum class RemoveFromObserver : bool { No, Yes };
   void Unlink(RemoveFromObserver);
@@ -105,9 +113,7 @@ class ResizeObservation final : public LinkedListElement<ResizeObservation> {
   // The latest recorded of observed target.
   // This will be CSS pixels for border-box/content-box, or device pixels for
   // device-pixel-content-box.
-  // Note: We use default constructor for this because we want to start with a
-  // (0, 0) size, per the spec.
-  LogicalPixelSize mLastReportedSize;
+  AutoTArray<LogicalPixelSize, 1> mLastReportedSize;
 };
 
 /**
@@ -115,13 +121,19 @@ class ResizeObservation final : public LinkedListElement<ResizeObservation> {
  * https://drafts.csswg.org/resize-observer/#api
  */
 class ResizeObserver final : public nsISupports, public nsWrapperCache {
+  using NativeCallback = void (*)(
+      const Sequence<OwningNonNull<ResizeObserverEntry>>&, ResizeObserver&);
+  ResizeObserver(Document& aDocument, NativeCallback aCallback);
+
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(ResizeObserver)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ResizeObserver)
 
   ResizeObserver(nsCOMPtr<nsPIDOMWindowInner>&& aOwner, Document* aDocument,
                  ResizeObserverCallback& aCb)
-      : mOwner(std::move(aOwner)), mDocument(aDocument), mCallback(&aCb) {
+      : mOwner(std::move(aOwner)),
+        mDocument(aDocument),
+        mCallback(RefPtr<ResizeObserverCallback>(&aCb)) {
     MOZ_ASSERT(mOwner, "Need a non-null owner window");
     MOZ_ASSERT(mDocument, "Need a non-null doc");
     MOZ_ASSERT(mDocument == mOwner->GetExtantDoc());
@@ -138,10 +150,8 @@ class ResizeObserver final : public nsISupports, public nsWrapperCache {
       const GlobalObject& aGlobal, ResizeObserverCallback& aCb,
       ErrorResult& aRv);
 
-  void Observe(Element& aTarget, const ResizeObserverOptions& aOptions,
-               ErrorResult& aRv);
-
-  void Unobserve(Element& target, ErrorResult& aRv);
+  void Observe(Element&, const ResizeObserverOptions&);
+  void Unobserve(Element&);
 
   void Disconnect();
 
@@ -167,6 +177,11 @@ class ResizeObserver final : public nsISupports, public nsWrapperCache {
   bool HasSkippedObservations() const { return mHasSkippedTargets; }
 
   /**
+   * Returns whether this is an internal ResizeObserver with a native callback.
+   */
+  bool HasNativeCallback() const { return mCallback.is<NativeCallback>(); }
+
+  /**
    * Invoke the callback function in JavaScript for all active observations
    * and pass the sequence of ResizeObserverEntry so JavaScript can access them.
    * The active observations' mLastReportedSize fields will be updated, and
@@ -176,19 +191,22 @@ class ResizeObserver final : public nsISupports, public nsWrapperCache {
    */
   MOZ_CAN_RUN_SCRIPT uint32_t BroadcastActiveObservations();
 
+  static already_AddRefed<ResizeObserver> CreateLastRememberedSizeObserver(
+      Document&);
+
  protected:
   ~ResizeObserver() { Disconnect(); }
 
   nsCOMPtr<nsPIDOMWindowInner> mOwner;
   // The window's document at the time of ResizeObserver creation.
   RefPtr<Document> mDocument;
-  RefPtr<ResizeObserverCallback> mCallback;
+  Variant<RefPtr<ResizeObserverCallback>, NativeCallback> mCallback;
   nsTArray<RefPtr<ResizeObservation>> mActiveTargets;
   // The spec uses a list to store the skipped targets. However, it seems what
   // we want is to check if there are any skipped targets (i.e. existence).
   // Therefore, we use a boolean value to represent the existence of skipped
   // targets.
-  bool mHasSkippedTargets;
+  bool mHasSkippedTargets = false;
 
   // Combination of HashTable and LinkedList so we can iterate through
   // the elements of HashTable in order of insertion time, so we can deliver
@@ -208,12 +226,13 @@ class ResizeObserver final : public nsISupports, public nsWrapperCache {
 class ResizeObserverEntry final : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(ResizeObserverEntry)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ResizeObserverEntry)
 
-  ResizeObserverEntry(nsISupports* aOwner, Element& aTarget,
-                      const gfx::Size& aBorderBoxSize,
-                      const gfx::Size& aContentBoxSize,
-                      const gfx::Size& aDevicePixelContentBoxSize)
+  ResizeObserverEntry(
+      nsISupports* aOwner, Element& aTarget,
+      const nsTArray<LogicalPixelSize>& aBorderBoxSize,
+      const nsTArray<LogicalPixelSize>& aContentBoxSize,
+      const nsTArray<LogicalPixelSize>& aDevicePixelContentBoxSize)
       : mOwner(aOwner), mTarget(&aTarget) {
     MOZ_ASSERT(mOwner, "Need a non-null owner");
     MOZ_ASSERT(mTarget, "Need a non-null target element");
@@ -251,29 +270,28 @@ class ResizeObserverEntry final : public nsISupports, public nsWrapperCache {
   ~ResizeObserverEntry() = default;
 
   // Set borderBoxSize.
-  void SetBorderBoxSize(const gfx::Size& aSize);
+  void SetBorderBoxSize(const nsTArray<LogicalPixelSize>& aSize);
   // Set contentRect and contentBoxSize.
-  void SetContentRectAndSize(const gfx::Size& aSize);
+  void SetContentRectAndSize(const nsTArray<LogicalPixelSize>& aSize);
   // Set devicePixelContentBoxSize.
-  void SetDevicePixelContentSize(const gfx::Size& aSize);
+  void SetDevicePixelContentSize(const nsTArray<LogicalPixelSize>& aSize);
 
   nsCOMPtr<nsISupports> mOwner;
   nsCOMPtr<Element> mTarget;
 
   RefPtr<DOMRectReadOnly> mContentRect;
-  RefPtr<ResizeObserverSize> mBorderBoxSize;
-  RefPtr<ResizeObserverSize> mContentBoxSize;
-  RefPtr<ResizeObserverSize> mDevicePixelContentBoxSize;
+  AutoTArray<RefPtr<ResizeObserverSize>, 1> mBorderBoxSize;
+  AutoTArray<RefPtr<ResizeObserverSize>, 1> mContentBoxSize;
+  AutoTArray<RefPtr<ResizeObserverSize>, 1> mDevicePixelContentBoxSize;
 };
 
 class ResizeObserverSize final : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(ResizeObserverSize)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ResizeObserverSize)
 
-  ResizeObserverSize(nsISupports* aOwner, const gfx::Size& aSize,
-                     const WritingMode aWM)
-      : mOwner(aOwner), mSize(aWM, aSize) {
+  ResizeObserverSize(nsISupports* aOwner, const LogicalPixelSize& aSize)
+      : mOwner(aOwner), mSize(aSize) {
     MOZ_ASSERT(mOwner, "Need a non-null owner");
   }
 
@@ -284,8 +302,8 @@ class ResizeObserverSize final : public nsISupports, public nsWrapperCache {
     return ResizeObserverSize_Binding::Wrap(aCx, this, aGivenProto);
   }
 
-  double InlineSize() const { return mSize.ISize(); }
-  double BlockSize() const { return mSize.BSize(); }
+  float InlineSize() const { return mSize.ISize(); }
+  float BlockSize() const { return mSize.BSize(); }
 
  protected:
   ~ResizeObserverSize() = default;

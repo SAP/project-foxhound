@@ -22,7 +22,7 @@ const TEST_URL =
 function clickDoorhangerButton(aButtonIndex) {
   let popup = PopupNotifications.getNotification("web-notifications");
   let notifications = popup.owner.panel.childNodes;
-  ok(notifications.length > 0, "at least one notification displayed");
+  ok(notifications.length, "at least one notification displayed");
   ok(true, notifications.length + " notification(s)");
   let notification = notifications[0];
 
@@ -93,7 +93,7 @@ function tabWithRequest(task, permission) {
   );
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   Services.prefs.setBoolPref(
     "dom.webnotifications.requireuserinteraction",
     false

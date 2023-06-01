@@ -156,13 +156,13 @@ class UrlClassifierPrefixSetTest : public ::testing::TestWithParam<uint32_t> {
     mArray = aArray.Clone();
     PrefixArrayToPrefixStringMap(mArray, mMap);
 
-    ASSERT_TRUE(NS_SUCCEEDED(mCache->Build(mMap)));
+    ASSERT_NS_SUCCEEDED(mCache->Build(mMap));
     Verify();
   }
 
   void SetupPrefixesAndVerify(_PrefixArray&& aArray) {
     nsresult rv = SetupPrefixes(std::move(aArray));
-    ASSERT_TRUE(NS_SUCCEEDED(rv));
+    ASSERT_NS_SUCCEEDED(rv);
     Verify();
   }
 
@@ -171,7 +171,7 @@ class UrlClassifierPrefixSetTest : public ::testing::TestWithParam<uint32_t> {
     RandomPrefixes(N, MIN, MAX, mArray);
     PrefixArrayToPrefixStringMap(mArray, mMap);
 
-    ASSERT_TRUE(NS_SUCCEEDED(mCache->Build(mMap)));
+    ASSERT_NS_SUCCEEDED(mCache->Build(mMap));
     Verify();
   }
 
@@ -317,11 +317,11 @@ TEST_P(UrlClassifierPrefixSetTest, MinMaxPrefixSet) {
 
   // Prefix size less than 4-bytes should fail
   nsresult rv = SetupPrefixes({_Prefix("123")});
-  ASSERT_TRUE(NS_FAILED(rv));
+  ASSERT_NS_FAILED(rv);
 
   // Prefix size greater than 32-bytes should fail
   rv = SetupPrefixes({_Prefix("1aaa2bbb3ccc4ddd5eee6fff7ggg8hhh9")});
-  ASSERT_TRUE(NS_FAILED(rv));
+  ASSERT_NS_FAILED(rv);
 }
 
 // Test save then load prefix set with only 4-bytes prefixes
@@ -482,5 +482,5 @@ TEST_P(UrlClassifierPrefixSetTest, LoadSaveNoDelta) {
 
 // To run the same test for different configurations of
 // "browser_safebrowsing_prefixset_max_array_size"
-INSTANTIATE_TEST_CASE_P(UrlClassifierPrefixSetTest, UrlClassifierPrefixSetTest,
-                        ::testing::Values(0, UINT32_MAX));
+INSTANTIATE_TEST_SUITE_P(UrlClassifierPrefixSetTest, UrlClassifierPrefixSetTest,
+                         ::testing::Values(0, UINT32_MAX));

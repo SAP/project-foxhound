@@ -9,54 +9,37 @@ const { RemoteSettings } = ChromeUtils.import(
   "resource://services-settings/remote-settings.js"
 );
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 const { X509 } = ChromeUtils.import("resource://gre/modules/psm/X509.jsm");
 
-const INTERMEDIATES_BUCKET_PREF =
-  "security.remote_settings.intermediates.bucket";
-const INTERMEDIATES_CHECKED_SECONDS_PREF =
-  "security.remote_settings.intermediates.checked";
-const INTERMEDIATES_COLLECTION_PREF =
-  "security.remote_settings.intermediates.collection";
+const SECURITY_STATE_BUCKET = "security-state";
+const SECURITY_STATE_SIGNER = "onecrl.content-signature.mozilla.org";
+
 const INTERMEDIATES_DL_PER_POLL_PREF =
   "security.remote_settings.intermediates.downloads_per_poll";
 const INTERMEDIATES_DL_PARALLEL_REQUESTS =
   "security.remote_settings.intermediates.parallel_downloads";
 const INTERMEDIATES_ENABLED_PREF =
   "security.remote_settings.intermediates.enabled";
-const INTERMEDIATES_SIGNER_PREF =
-  "security.remote_settings.intermediates.signer";
 const LOGLEVEL_PREF = "browser.policies.loglevel";
 
-const ONECRL_BUCKET_PREF = "services.settings.security.onecrl.bucket";
-const ONECRL_COLLECTION_PREF = "services.settings.security.onecrl.collection";
-const ONECRL_SIGNER_PREF = "services.settings.security.onecrl.signer";
-const ONECRL_CHECKED_PREF = "services.settings.security.onecrl.checked";
-
-const CRLITE_FILTERS_BUCKET_PREF =
-  "security.remote_settings.crlite_filters.bucket";
-const CRLITE_FILTERS_CHECKED_SECONDS_PREF =
-  "security.remote_settings.crlite_filters.checked";
-const CRLITE_FILTERS_COLLECTION_PREF =
-  "security.remote_settings.crlite_filters.collection";
 const CRLITE_FILTERS_ENABLED_PREF =
   "security.remote_settings.crlite_filters.enabled";
-const CRLITE_FILTERS_SIGNER_PREF =
-  "security.remote_settings.crlite_filters.signer";
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
+const lazy = {};
 
-XPCOMUtils.defineLazyGetter(this, "gTextDecoder", () => new TextDecoder());
+XPCOMUtils.defineLazyGetter(lazy, "gTextDecoder", () => new TextDecoder());
 
-XPCOMUtils.defineLazyGetter(this, "log", () => {
-  let { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm");
+XPCOMUtils.defineLazyGetter(lazy, "log", () => {
+  let { ConsoleAPI } = ChromeUtils.importESModule(
+    "resource://gre/modules/Console.sys.mjs"
+  );
   return new ConsoleAPI({
     prefix: "RemoteSecuritySettings.jsm",
     // tip: set maxLogLevel to "debug" and use log.debug() to create detailed
-    // messages during development. See LOG_LEVELS in Console.jsm for details.
+    // messages during development. See LOG_LEVELS in Console.sys.mjs for details.
     maxLogLevel: "error",
     maxLogLevelPref: LOGLEVEL_PREF,
   });
@@ -79,17 +62,6 @@ function bytesToString(bytes) {
   }
   return String.fromCharCode.apply(null, bytes);
 }
-
-class CRLiteState {
-  constructor(subject, spkiHash, state) {
-    this.subject = subject;
-    this.spkiHash = spkiHash;
-    this.state = state;
-  }
-}
-CRLiteState.prototype.QueryInterface = ChromeUtils.generateQI([
-  "nsICRLiteState",
-]);
 
 class CRLiteCoverage {
   constructor(b64LogID, minTimestamp, maxTimestamp) {
@@ -152,7 +124,7 @@ function setRevocations(certStorage, revocations) {
  * @param {Integer} dataType a Ci.nsICertStorage.DATA_TYPE_* constant
  *                           indicating the type of data
 
- * @return {Promise} a promise that will resolve with true if the data type is
+ * @returns {Promise} a promise that will resolve with true if the data type is
  *                   present
  */
 function hasPriorData(dataType) {
@@ -175,7 +147,12 @@ function hasPriorData(dataType) {
 /**
  * Revoke the appropriate certificates based on the records from the blocklist.
  *
- * @param {Object} data   Current records in the local db.
+ * @param {object} options
+ * @param {object} options.data Current records in the local db.
+ * @param {Array} options.data.current
+ * @param {Array} options.data.created
+ * @param {Array} options.data.updated
+ * @param {Array} options.data.deleted
  */
 const updateCertBlocklist = async function({
   data: { current, created, updated, deleted },
@@ -195,7 +172,8 @@ const updateCertBlocklist = async function({
     created = current;
   }
 
-  for (let item of deleted) {
+  let toDelete = deleted.concat(updated.map(u => u.old));
+  for (let item of toDelete) {
     if (item.issuerName && item.serialNumber) {
       items.push(
         new IssuerAndSerialRevocationState(
@@ -243,54 +221,51 @@ const updateCertBlocklist = async function({
     );
     await setRevocations(certList, items);
   } catch (e) {
-    Cu.reportError(e);
+    lazy.log.error(e);
   }
 };
 
 var RemoteSecuritySettings = {
+  _initialized: false,
+  OneCRLBlocklistClient: null,
+  IntermediatePreloadsClient: null,
+  CRLiteFiltersClient: null,
+
   /**
    * Initialize the clients (cheap instantiation) and setup their sync event.
-   * This static method is called from BrowserGlue.jsm soon after startup.
+   * This static method is called from BrowserGlue.sys.mjs soon after startup.
    *
-   * @returns {Object} intantiated clients for security remote settings.
+   * @returns {object} instantiated clients for security remote settings.
    */
   init() {
-    const OneCRLBlocklistClient = RemoteSettings(
-      Services.prefs.getCharPref(ONECRL_COLLECTION_PREF),
-      {
-        bucketNamePref: ONECRL_BUCKET_PREF,
-        lastCheckTimePref: ONECRL_CHECKED_PREF,
-        signerName: Services.prefs.getCharPref(ONECRL_SIGNER_PREF),
-      }
-    );
-    OneCRLBlocklistClient.on("sync", updateCertBlocklist);
+    // Avoid repeated initialization (work-around for bug 1730026).
+    if (this._initialized) {
+      return this;
+    }
+    this._initialized = true;
 
-    let IntermediatePreloadsClient = new IntermediatePreloads();
-    let CRLiteFiltersClient = new CRLiteFilters();
+    this.OneCRLBlocklistClient = RemoteSettings("onecrl", {
+      bucketName: SECURITY_STATE_BUCKET,
+      signerName: SECURITY_STATE_SIGNER,
+    });
+    this.OneCRLBlocklistClient.on("sync", updateCertBlocklist);
 
-    this.OneCRLBlocklistClient = OneCRLBlocklistClient;
-    this.IntermediatePreloadsClient = IntermediatePreloadsClient;
-    this.CRLiteFiltersClient = CRLiteFiltersClient;
+    this.IntermediatePreloadsClient = new IntermediatePreloads();
 
-    return {
-      OneCRLBlocklistClient,
-      IntermediatePreloadsClient,
-      CRLiteFiltersClient,
-    };
+    this.CRLiteFiltersClient = new CRLiteFilters();
+    this.CRLiteFiltersClient.cleanAttachmentCache();
+
+    return this;
   },
 };
 
 class IntermediatePreloads {
   constructor() {
-    this.client = RemoteSettings(
-      Services.prefs.getCharPref(INTERMEDIATES_COLLECTION_PREF),
-      {
-        bucketNamePref: INTERMEDIATES_BUCKET_PREF,
-        lastCheckTimePref: INTERMEDIATES_CHECKED_SECONDS_PREF,
-        signerName: Services.prefs.getCharPref(INTERMEDIATES_SIGNER_PREF),
-        localFields: ["cert_import_complete"],
-      }
-    );
+    this.client = RemoteSettings("intermediates", {
+      bucketName: SECURITY_STATE_BUCKET,
+      signerName: SECURITY_STATE_SIGNER,
+      localFields: ["cert_import_complete"],
+    });
 
     this.client.on("sync", this.onSync.bind(this));
     Services.obs.addObserver(
@@ -298,12 +273,12 @@ class IntermediatePreloads {
       "remote-settings:changes-poll-end"
     );
 
-    log.debug("Intermediate Preloading: constructor");
+    lazy.log.debug("Intermediate Preloading: constructor");
   }
 
   async updatePreloadedIntermediates() {
     if (!Services.prefs.getBoolPref(INTERMEDIATES_ENABLED_PREF, true)) {
-      log.debug("Intermediate Preloading is disabled");
+      lazy.log.debug("Intermediate Preloading is disabled");
       Services.obs.notifyObservers(
         null,
         "remote-security-settings:intermediates-updated",
@@ -337,7 +312,9 @@ class IntermediatePreloads {
       try {
         current = await this.client.db.list();
       } catch (err) {
-        log.warn(`Unable to list intermediate preloading collection: ${err}`);
+        lazy.log.warn(
+          `Unable to list intermediate preloading collection: ${err}`
+        );
         return;
       }
       const toReset = current.filter(record => record.cert_import_complete);
@@ -348,7 +325,9 @@ class IntermediatePreloads {
           toReset.map(r => ({ ...r, cert_import_complete: false }))
         );
       } catch (err) {
-        log.warn(`Unable to update intermediate preloading collection: ${err}`);
+        lazy.log.warn(
+          `Unable to update intermediate preloading collection: ${err}`
+        );
         return;
       }
     }
@@ -356,13 +335,17 @@ class IntermediatePreloads {
     try {
       current = await this.client.db.list();
     } catch (err) {
-      log.warn(`Unable to list intermediate preloading collection: ${err}`);
+      lazy.log.warn(
+        `Unable to list intermediate preloading collection: ${err}`
+      );
       return;
     }
     const waiting = current.filter(record => !record.cert_import_complete);
 
-    log.debug(`There are ${waiting.length} intermediates awaiting download.`);
-    if (waiting.length == 0) {
+    lazy.log.debug(
+      `There are ${waiting.length} intermediates awaiting download.`
+    );
+    if (!waiting.length) {
       // Nothing to do.
       Services.obs.notifyObservers(
         null,
@@ -397,7 +380,7 @@ class IntermediatePreloads {
       certStorage.addCerts(certInfos, resolve);
     }).catch(err => err);
     if (result != Cr.NS_OK) {
-      Cu.reportError(`certStorage.addCerts failed: ${result}`);
+      lazy.log.error(`certStorage.addCerts failed: ${result}`);
       return;
     }
     try {
@@ -407,7 +390,9 @@ class IntermediatePreloads {
         recordsToUpdate.map(r => ({ ...r, cert_import_complete: true }))
       );
     } catch (err) {
-      log.warn(`Unable to update intermediate preloading collection: ${err}`);
+      lazy.log.warn(
+        `Unable to update intermediate preloading collection: ${err}`
+      );
       return;
     }
 
@@ -419,66 +404,33 @@ class IntermediatePreloads {
   }
 
   async onObservePollEnd(subject, topic, data) {
-    log.debug(`onObservePollEnd ${subject} ${topic}`);
+    lazy.log.debug(`onObservePollEnd ${subject} ${topic}`);
 
     try {
       await this.updatePreloadedIntermediates();
     } catch (err) {
-      log.warn(`Unable to update intermediate preloads: ${err}`);
+      lazy.log.warn(`Unable to update intermediate preloads: ${err}`);
     }
   }
 
   // This method returns a promise to RemoteSettingsClient.maybeSync method.
   async onSync({ data: { current, created, updated, deleted } }) {
     if (!Services.prefs.getBoolPref(INTERMEDIATES_ENABLED_PREF, true)) {
-      log.debug("Intermediate Preloading is disabled");
+      lazy.log.debug("Intermediate Preloading is disabled");
       return;
     }
 
-    log.debug(`Removing ${deleted.length} Intermediate certificates`);
+    lazy.log.debug(`Removing ${deleted.length} Intermediate certificates`);
     await this.removeCerts(deleted);
-    let hasPriorCRLiteData = await hasPriorData(
-      Ci.nsICertStorage.DATA_TYPE_CRLITE
-    );
-    if (!hasPriorCRLiteData) {
-      deleted = [];
-      updated = [];
-      created = current;
-    }
-    const toAdd = created.concat(updated.map(u => u.new));
-    let entries = [];
-    for (let entry of deleted) {
-      entries.push(
-        new CRLiteState(
-          entry.subjectDN,
-          entry.pubKeyHash,
-          Ci.nsICertStorage.STATE_UNSET
-        )
-      );
-    }
-    for (let entry of toAdd) {
-      entries.push(
-        new CRLiteState(
-          entry.subjectDN,
-          entry.pubKeyHash,
-          entry.crlite_enrolled
-            ? Ci.nsICertStorage.STATE_ENFORCE
-            : Ci.nsICertStorage.STATE_UNSET
-        )
-      );
-    }
-    let certStorage = Cc["@mozilla.org/security/certstorage;1"].getService(
-      Ci.nsICertStorage
-    );
-    await new Promise(resolve => certStorage.setCRLiteState(entries, resolve));
   }
 
   /**
    * Attempts to download the attachment, assuming it's not been processed
    * already. Does not retry, and always resolves (e.g., does not reject upon
-   * failure.) Errors are reported via Cu.reportError.
+   * failure.) Errors are reported via console.error.
+   *
    * @param  {AttachmentRecord} record defines which data to obtain
-   * @return {Promise}          a Promise that will resolve to an object with the properties
+   * @returns {Promise}          a Promise that will resolve to an object with the properties
    *                            record, cert, and subject. record is the original record.
    *                            cert is the base64-encoded bytes of the downloaded certificate (if
    *                            downloading was successful), and null otherwise.
@@ -493,12 +445,12 @@ class IntermediatePreloads {
       let buffer = await this.client.attachments.downloadAsBytes(record, {
         retries: 0,
       });
-      dataAsString = gTextDecoder.decode(new Uint8Array(buffer));
+      dataAsString = lazy.gTextDecoder.decode(new Uint8Array(buffer));
     } catch (err) {
       if (err.name == "BadContentError") {
-        log.debug(`Bad attachment content.`);
+        lazy.log.debug(`Bad attachment content.`);
       } else {
-        Cu.reportError(`Failed to download attachment: ${err}`);
+        lazy.log.error(`Failed to download attachment: ${err}`);
       }
       return result;
     }
@@ -518,7 +470,7 @@ class IntermediatePreloads {
         bytesToString(cert.tbsCertificate.subject._der._bytes)
       );
     } catch (err) {
-      Cu.reportError(`Failed to decode cert: ${err}`);
+      lazy.log.error(`Failed to decode cert: ${err}`);
       return result;
     }
     result.cert = certBase64;
@@ -539,7 +491,7 @@ class IntermediatePreloads {
       certStorage.removeCertsByHashes(hashes, resolve);
     }).catch(err => err);
     if (result != Cr.NS_OK) {
-      Cu.reportError(`Failed to remove some intermediate certificates`);
+      lazy.log.error(`Failed to remove some intermediate certificates`);
     }
   }
 }
@@ -552,15 +504,11 @@ function compareFilters(filterA, filterB) {
 
 class CRLiteFilters {
   constructor() {
-    this.client = RemoteSettings(
-      Services.prefs.getCharPref(CRLITE_FILTERS_COLLECTION_PREF),
-      {
-        bucketNamePref: CRLITE_FILTERS_BUCKET_PREF,
-        lastCheckTimePref: CRLITE_FILTERS_CHECKED_SECONDS_PREF,
-        signerName: Services.prefs.getCharPref(CRLITE_FILTERS_SIGNER_PREF),
-        localFields: ["loaded_into_cert_storage"],
-      }
-    );
+    this.client = RemoteSettings("cert-revocations", {
+      bucketName: SECURITY_STATE_BUCKET,
+      signerName: SECURITY_STATE_SIGNER,
+      localFields: ["loaded_into_cert_storage"],
+    });
 
     Services.obs.addObserver(
       this.onObservePollEnd.bind(this),
@@ -568,9 +516,41 @@ class CRLiteFilters {
     );
   }
 
+  async cleanAttachmentCache() {
+    // Bug 1795710 - misuse of Remote Settings `downloadToDisk` caused us to
+    // keep filters and stashes on disk indefinitely. We're no longer caching
+    // these downloads, so if there are any filters still in the cache they can
+    // be removed.
+    let cachePath = PathUtils.join(
+      PathUtils.localProfileDir,
+      ...this.client.attachments.folders
+    );
+
+    try {
+      let needCleanup = await IOUtils.exists(cachePath);
+      if (needCleanup) {
+        let cacheFiles = await IOUtils.getChildren(cachePath);
+        let staleFilters = cacheFiles.filter(
+          path => path.endsWith("filter") || path.endsWith("filter.stash")
+        );
+        if (cacheFiles.length == staleFilters.length) {
+          // Expected case. No files other than filters, we can remove the
+          // entire directory
+          await IOUtils.remove(cachePath, { recursive: true });
+        } else {
+          for (let filter of staleFilters) {
+            await IOUtils.remove(filter);
+          }
+        }
+      }
+    } catch (e) {
+      lazy.log.error("Could not clean cert-revocations attachment cache", e);
+    }
+  }
+
   async onObservePollEnd(subject, topic, data) {
     if (!Services.prefs.getBoolPref(CRLITE_FILTERS_ENABLED_PREF, true)) {
-      log.debug("CRLite filter downloading is disabled");
+      lazy.log.debug("CRLite filter downloading is disabled");
       Services.obs.notifyObservers(
         null,
         "remote-security-settings:crlite-filters-downloaded",
@@ -611,7 +591,7 @@ class CRLiteFilters {
     let current = await this.client.db.list();
     let fullFilters = current.filter(filter => !filter.incremental);
     if (fullFilters.length < 1) {
-      log.debug("no full CRLite filters to download?");
+      lazy.log.debug("no full CRLite filters to download?");
       Services.obs.notifyObservers(
         null,
         "remote-security-settings:crlite-filters-downloaded",
@@ -620,7 +600,7 @@ class CRLiteFilters {
       return;
     }
     fullFilters.sort(compareFilters);
-    log.debug("fullFilters:", fullFilters);
+    lazy.log.debug("fullFilters:", fullFilters);
     let fullFilter = fullFilters.pop(); // the most recent filter sorts last
     let incrementalFilters = current.filter(
       filter =>
@@ -633,7 +613,7 @@ class CRLiteFilters {
     let parentIdMap = {};
     for (let filter of incrementalFilters) {
       if (filter.parent in parentIdMap) {
-        log.debug(`filter with parent id ${filter.parent} already seen?`);
+        lazy.log.debug(`filter with parent id ${filter.parent} already seen?`);
       } else {
         parentIdMap[filter.parent] = filter;
       }
@@ -650,28 +630,27 @@ class CRLiteFilters {
     filtersToDownload = filtersToDownload.filter(
       filter => !filter.loaded_into_cert_storage
     );
-    log.debug("filtersToDownload:", filtersToDownload);
+    lazy.log.debug("filtersToDownload:", filtersToDownload);
     let filtersDownloaded = [];
     for (let filter of filtersToDownload) {
       try {
-        // If we've already downloaded this, the backend should just grab it from its cache.
-        let localURI = await this.client.attachments.download(filter);
-        let buffer = await (await fetch(localURI)).arrayBuffer();
-        let bytes = new Uint8Array(buffer);
-        log.debug(`Downloaded ${filter.details.name}: ${bytes.length} bytes`);
+        let attachment = await this.client.attachments.downloadAsBytes(filter);
+        let bytes = new Uint8Array(attachment);
+        lazy.log.debug(
+          `Downloaded ${filter.details.name}: ${bytes.length} bytes`
+        );
         filter.bytes = bytes;
         filtersDownloaded.push(filter);
       } catch (e) {
-        log.debug(e);
-        Cu.reportError("failed to download CRLite filter", e);
+        lazy.log.error("failed to download CRLite filter", e);
       }
     }
     let fullFiltersDownloaded = filtersDownloaded.filter(
       filter => !filter.incremental
     );
-    if (fullFiltersDownloaded.length > 0) {
+    if (fullFiltersDownloaded.length) {
       if (fullFiltersDownloaded.length > 1) {
-        log.warn("trying to install more than one full CRLite filter?");
+        lazy.log.warn("trying to install more than one full CRLite filter?");
       }
       let filter = fullFiltersDownloaded[0];
 
@@ -687,10 +666,11 @@ class CRLiteFilters {
           );
         }
       }
+      let enrollment = filter.enrolledIssuers ? filter.enrolledIssuers : [];
 
       await new Promise(resolve => {
-        certList.setFullCRLiteFilter(filter.bytes, coverage, rv => {
-          log.debug(`setFullCRLiteFilter: ${rv}`);
+        certList.setFullCRLiteFilter(filter.bytes, enrollment, coverage, rv => {
+          lazy.log.debug(`setFullCRLiteFilter: ${rv}`);
           resolve();
         });
       });
@@ -706,13 +686,13 @@ class CRLiteFilters {
       concatenatedStashes.set(filter.bytes, offset);
       offset += filter.bytes.length;
     }
-    if (concatenatedStashes.length > 0) {
-      log.debug(
+    if (concatenatedStashes.length) {
+      lazy.log.debug(
         `adding concatenated incremental updates of total length ${concatenatedStashes.length}`
       );
       await new Promise(resolve => {
         certList.addCRLiteStash(concatenatedStashes, rv => {
-          log.debug(`addCRLiteStash: ${rv}`);
+          lazy.log.debug(`addCRLiteStash: ${rv}`);
           resolve();
         });
       });

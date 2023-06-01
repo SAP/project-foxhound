@@ -12,12 +12,12 @@ const nsLoginInfo = new Components.Constructor(
   "init"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  Region: "resource://gre/modules/Region.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  Region: "resource://gre/modules/Region.sys.mjs",
 });
 
-const { SearchTestUtils } = ChromeUtils.import(
-  "resource://testing-common/SearchTestUtils.jsm"
+const { SearchTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/SearchTestUtils.sys.mjs"
 );
 
 const TEST_LOGIN1 = new nsLoginInfo(
@@ -39,12 +39,6 @@ const TEST_LOGIN2 = new nsLoginInfo(
   "username",
   "password"
 );
-
-async function reloadTab(tab) {
-  const tabReloaded = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-  gBrowser.reloadTab(tab);
-  await tabReloaded;
-}
 
 // Used to replace AboutProtectionsHandler.getLoginData in front-end tests.
 const mockGetLoginDataWithSyncedDevices = (
@@ -86,14 +80,11 @@ registerCleanupFunction(function head_cleanup() {
   Services.logins.removeAllUserFacingLogins();
 });
 
-// Used to replace AboutProtectionsParent.VPNSubStatus and Region.current
-const getVPNOverrides = (hasSubscription = false, location = "us") => {
+// Used to replace AboutProtectionsParent.VPNSubStatus
+const getVPNOverrides = (hasSubscription = false) => {
   return {
     vpnOverrides: () => {
-      return {
-        hasSubscription,
-        location,
-      };
+      return hasSubscription;
     },
   };
 };

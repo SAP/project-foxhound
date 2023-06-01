@@ -4,41 +4,33 @@
 
 "use strict";
 
-const protocol = require("devtools/shared/protocol");
-const { ActorClassWithSpec, Actor } = protocol;
-const { cssPropertiesSpec } = require("devtools/shared/specs/css-properties");
-const { cssColors } = require("devtools/shared/css/color-db");
-const InspectorUtils = require("InspectorUtils");
+const { Actor } = require("resource://devtools/shared/protocol.js");
+const {
+  cssPropertiesSpec,
+} = require("resource://devtools/shared/specs/css-properties.js");
+
+const { cssColors } = require("resource://devtools/shared/css/color-db.js");
 
 loader.lazyRequireGetter(
   this,
   "CSS_TYPES",
-  "devtools/shared/css/constants",
+  "resource://devtools/shared/css/constants.js",
   true
 );
 
-exports.CssPropertiesActor = ActorClassWithSpec(cssPropertiesSpec, {
-  initialize(conn) {
-    Actor.prototype.initialize.call(this, conn);
-  },
-
-  destroy() {
-    Actor.prototype.destroy.call(this);
-  },
+class CssPropertiesActor extends Actor {
+  constructor(conn) {
+    super(conn, cssPropertiesSpec);
+  }
 
   getCSSDatabase() {
     const properties = generateCssProperties();
     const pseudoElements = InspectorUtils.getCSSPseudoElementNames();
-    const supportedFeature = {
-      // checking for css-color-4 color function support.
-      "css-color-4-color-function": InspectorUtils.isValidCSSColor(
-        "rgb(1 1 1 / 100%)"
-      ),
-    };
 
-    return { properties, pseudoElements, supportedFeature };
-  },
-});
+    return { properties, pseudoElements };
+  }
+}
+exports.CssPropertiesActor = CssPropertiesActor;
 
 /**
  * Generate the CSS properties object. Every key is the property name, while

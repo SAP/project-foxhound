@@ -12,12 +12,6 @@
 
 const EXPORTED_SYMBOLS = ["PasswordGenerator"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-
-XPCOMUtils.defineLazyGlobalGetters(this, ["crypto"]);
-
 const DEFAULT_PASSWORD_LENGTH = 15;
 const MAX_UINT8 = Math.pow(2, 8) - 1;
 const MAX_UINT32 = Math.pow(2, 32) - 1;
@@ -27,8 +21,6 @@ const LOWER_CASE_ALPHA = "abcdefghijkmnpqrstuvwxyz"; // no 'l' or 'o'
 const UPPER_CASE_ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ"; // no 'I' or 'O'
 const DIGITS = "23456789"; // no '1' or '0'
 const SPECIAL_CHARACTERS = " -~!@#$%^&*_+=`|(){}[:;\"'<>,.?]";
-const ALPHANUMERIC_CHARACTERS = LOWER_CASE_ALPHA + UPPER_CASE_ALPHA + DIGITS;
-const ALL_CHARACTERS = ALPHANUMERIC_CHARACTERS + SPECIAL_CHARACTERS;
 
 const REQUIRED_CHARACTER_CLASSES = [LOWER_CASE_ALPHA, UPPER_CASE_ALPHA, DIGITS];
 
@@ -48,7 +40,7 @@ DEFAULT_RULES.set(MIN_LENGTH, REQUIRED_CHARACTER_CLASSES.length);
 DEFAULT_RULES.set(MAX_LENGTH, MAX_UINT8);
 DEFAULT_RULES.set(REQUIRED, [UPPER, LOWER, DIGIT]);
 
-this.PasswordGenerator = {
+const PasswordGenerator = {
   /**
    * @param {Object} options
    * @param {number} options.length - length of the generated password if there are no rules that override the length

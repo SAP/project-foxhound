@@ -2,14 +2,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { GeckoViewActorChild } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewActorChild.jsm"
+const { GeckoViewActorChild } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewActorChild.sys.mjs"
 );
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  LayoutUtils: "resource://gre/modules/LayoutUtils.sys.mjs",
+});
+
 const EXPORTED_SYMBOLS = ["SelectionActionDelegateChild"];
+
+const MAGNIFIER_PREF = "layout.accessiblecaret.magnifier.enabled";
+const ACCESSIBLECARET_HEIGHT_PREF = "layout.accessiblecaret.height";
+const PREFS = [MAGNIFIER_PREF, ACCESSIBLECARET_HEIGHT_PREF];
 
 // Dispatches GeckoView:ShowSelectionAction and GeckoView:HideSelectionAction to
 // the GeckoSession on accessible caret changes.
@@ -17,9 +24,30 @@ class SelectionActionDelegateChild extends GeckoViewActorChild {
   constructor(aModuleName, aMessageManager) {
     super(aModuleName, aMessageManager);
 
-    this._seqNo = 0;
+    this._actionCallback = () => {};
     this._isActive = false;
     this._previousMessage = "";
+
+    // Bug 1570744 - JSWindowActorChild's cannot be used as nsIObserver's
+    // directly, so we create a new function here instead to act as our
+    // nsIObserver, which forwards the notification to the observe method.
+    this._observerFunction = (subject, topic, data) => {
+      this.observe(subject, topic, data);
+    };
+    for (const pref of PREFS) {
+      Services.prefs.addObserver(pref, this._observerFunction);
+    }
+
+    this._magnifierEnabled = Services.prefs.getBoolPref(MAGNIFIER_PREF);
+    this._accessiblecaretHeight = parseFloat(
+      Services.prefs.getCharPref(ACCESSIBLECARET_HEIGHT_PREF, "0")
+    );
+  }
+
+  didDestroy() {
+    for (const pref of PREFS) {
+      Services.prefs.removeObserver(pref, this._observerFunction);
+    }
   }
 
   _actions = [
@@ -44,7 +72,7 @@ class SelectionActionDelegateChild extends GeckoViewActorChild {
       predicate: e =>
         e.selectionEditable &&
         Services.clipboard.hasDataMatchingFlavors(
-          ["text/unicode"],
+          ["text/plain"],
           Ci.nsIClipboard.kGlobalClipboard
         ),
       perform: _ => this._performPaste(),
@@ -108,6 +136,16 @@ class SelectionActionDelegateChild extends GeckoViewActorChild {
     },
   ];
 
+  receiveMessage({ name, data }) {
+    debug`receiveMessage ${name}`;
+
+    switch (name) {
+      case "ExecuteSelectionAction": {
+        this._actionCallback(data);
+      }
+    }
+  }
+
   _performPaste() {
     this.handleEvent({ type: "pagehide" });
     this.docShell.doCommand("cmd_paste");
@@ -128,7 +166,7 @@ class SelectionActionDelegateChild extends GeckoViewActorChild {
     return (
       win &&
       win.HTMLInputElement &&
-      focus instanceof win.HTMLInputElement &&
+      win.HTMLInputElement.isInstance(focus) &&
       !focus.mozIsTextField(/* excludePassword */ true)
     );
   }
@@ -149,8 +187,8 @@ class SelectionActionDelegateChild extends GeckoViewActorChild {
       win &&
       win.HTMLInputElement &&
       win.HTMLTextAreaElement &&
-      !(focus instanceof win.HTMLInputElement) &&
-      !(focus instanceof win.HTMLTextAreaElement)
+      !win.HTMLInputElement.isInstance(focus) &&
+      !win.HTMLTextAreaElement.isInstance(focus)
     );
   }
 
@@ -201,6 +239,93 @@ class SelectionActionDelegateChild extends GeckoViewActorChild {
     return offset;
   }
 
+  _getDefaultMagnifierPoint(aEvent) {
+    const rect = lazy.LayoutUtils.rectToScreenRect(aEvent.target.ownerGlobal, {
+      left: aEvent.clientX,
+      top: aEvent.clientY - this._accessiblecaretHeight,
+      width: 0,
+      height: 0,
+    });
+    return { x: rect.left, y: rect.top };
+  }
+
+  _getBetterMagnifierPoint(aEvent) {
+    const win = aEvent.target.defaultView;
+    if (!win) {
+      return this._getDefaultMagnifierPoint(aEvent);
+    }
+
+    const focus = aEvent.target.activeElement;
+    if (
+      win.HTMLInputElement?.isInstance(focus) &&
+      focus.mozIsTextField(false)
+    ) {
+      // <input> element. Use vertical center position of input element.
+      const bounds = focus.getBoundingClientRect();
+      const rect = lazy.LayoutUtils.rectToScreenRect(
+        aEvent.target.ownerGlobal,
+        {
+          left: aEvent.clientX,
+          top: bounds.top,
+          width: 0,
+          height: bounds.height,
+        }
+      );
+      return { x: rect.left, y: rect.top + rect.height / 2 };
+    }
+
+    if (win.HTMLTextAreaElement?.isInstance(focus)) {
+      // TODO:
+      // <textarea> element. How to get better selection bounds?
+      return this._getDefaultMagnifierPoint(aEvent);
+    }
+
+    const selection = win.getSelection();
+    if (selection.rangeCount != 1) {
+      // When selecting text using accessible caret, selection count will be 1.
+      // This situation means that current selection isn't into text.
+      return this._getDefaultMagnifierPoint(aEvent);
+    }
+
+    // We are looking for better selection bounds, then use it.
+    const bounds = (() => {
+      const range = selection.getRangeAt(0);
+      let distance = Number.MAX_SAFE_INTEGER;
+      let y = aEvent.clientY;
+      const rectList = range.getClientRects();
+      for (const rect of rectList) {
+        const newDistance = Math.abs(aEvent.clientY - rect.bottom);
+        if (distance > newDistance) {
+          y = rect.top + rect.height / 2;
+          distance = newDistance;
+        }
+      }
+      return { left: aEvent.clientX, top: y, width: 0, height: 0 };
+    })();
+
+    const rect = lazy.LayoutUtils.rectToScreenRect(
+      aEvent.target.ownerGlobal,
+      bounds
+    );
+    return { x: rect.left, y: rect.top };
+  }
+
+  _handleMagnifier(aEvent) {
+    if (["presscaret", "dragcaret"].includes(aEvent.reason)) {
+      debug`_handleMagnifier: ${aEvent.reason}`;
+      const screenPoint = this._getBetterMagnifierPoint(aEvent);
+      this.eventDispatcher.sendRequest({
+        type: "GeckoView:ShowMagnifier",
+        screenPoint,
+      });
+    } else if (aEvent.reason == "releasecaret") {
+      debug`_handleMagnifier: ${aEvent.reason}`;
+      this.eventDispatcher.sendRequest({
+        type: "GeckoView:HideMagnifier",
+      });
+    }
+  }
+
   /**
    * Receive and act on AccessibleCarets caret state-change
    * (mozcaretstatechanged and pagehide) events.
@@ -243,6 +368,10 @@ class SelectionActionDelegateChild extends GeckoViewActorChild {
 
     debug`handleEvent: ${reason}`;
 
+    if (this._magnifierEnabled) {
+      this._handleMagnifier(aEvent);
+    }
+
     if (
       [
         "longpressonemptycontent",
@@ -255,63 +384,73 @@ class SelectionActionDelegateChild extends GeckoViewActorChild {
         action.predicate.call(this, aEvent)
       );
 
-      const offset = this._getFrameOffset(aEvent);
+      const screenRect = (() => {
+        const boundingRect = aEvent.boundingClientRect;
+        if (!boundingRect) {
+          return null;
+        }
+        const rect = lazy.LayoutUtils.rectToScreenRect(
+          aEvent.target.ownerGlobal,
+          boundingRect
+        );
+        return {
+          left: rect.left,
+          top: rect.top,
+          right: rect.right,
+          bottom: rect.bottom + this._accessiblecaretHeight,
+        };
+      })();
+
+      const clientRect = (() => {
+        const boundingRect = aEvent.boundingClientRect;
+        if (!boundingRect) {
+          return null;
+        }
+        const offset = this._getFrameOffset(aEvent);
+        return {
+          left: aEvent.boundingClientRect.left + offset.left,
+          top: aEvent.boundingClientRect.top + offset.top,
+          right: aEvent.boundingClientRect.right + offset.left,
+          bottom:
+            aEvent.boundingClientRect.bottom +
+            offset.top +
+            this._accessiblecaretHeight,
+        };
+      })();
+
       const password = this._isPasswordField(aEvent);
 
       const msg = {
-        type: "GeckoView:ShowSelectionAction",
-        seqNo: this._seqNo,
         collapsed: aEvent.collapsed,
         editable: aEvent.selectionEditable,
         password,
         selection: password ? "" : aEvent.selectedTextContent,
-        clientRect: !aEvent.boundingClientRect
-          ? null
-          : {
-              left: aEvent.boundingClientRect.left + offset.left,
-              top: aEvent.boundingClientRect.top + offset.top,
-              right: aEvent.boundingClientRect.right + offset.left,
-              bottom: aEvent.boundingClientRect.bottom + offset.top,
-            },
+        // clientRect is deprecated
+        clientRect,
+        screenRect,
         actions: actions.map(action => action.id),
       };
-
-      try {
-        if (msg.clientRect) {
-          msg.clientRect.bottom += parseFloat(
-            Services.prefs.getCharPref("layout.accessiblecaret.height", "0")
-          );
-        }
-      } catch (e) {}
 
       if (this._isActive && JSON.stringify(msg) === this._previousMessage) {
         // Don't call again if we're already active and things haven't changed.
         return;
       }
 
-      msg.seqNo = ++this._seqNo;
       this._isActive = true;
       this._previousMessage = JSON.stringify(msg);
 
-      this.eventDispatcher.sendRequest(msg, {
-        onSuccess: response => {
-          if (response.seqNo !== this._seqNo) {
-            // Stale action.
-            warn`Stale response ${response.id}`;
-            return;
-          }
-          const action = actions.find(action => action.id === response.id);
-          if (action) {
-            debug`Performing ${response.id}`;
-            action.perform.call(this, aEvent, response);
-          } else {
-            warn`Invalid action ${response.id}`;
-          }
-        },
-        onError: _ => {
-          // Do nothing; we can get here if the delegate was just unregistered.
-        },
-      });
+      // We can't just listen to the response of the message because we accept
+      // multiple callbacks.
+      this._actionCallback = data => {
+        const action = actions.find(action => action.id === data.id);
+        if (action) {
+          debug`Performing ${data.id}`;
+          action.perform.call(this, aEvent);
+        } else {
+          warn`Invalid action ${data.id}`;
+        }
+      };
+      this.sendAsyncMessage("ShowSelectionAction", msg);
     } else if (
       [
         "invisibleselection",
@@ -323,7 +462,6 @@ class SelectionActionDelegateChild extends GeckoViewActorChild {
       if (!this._isActive) {
         return;
       }
-
       this._isActive = false;
 
       // Mark previous actions as stale. Don't do this for "invisibleselection"
@@ -333,13 +471,33 @@ class SelectionActionDelegateChild extends GeckoViewActorChild {
         this._seqNo++;
       }
 
-      this.eventDispatcher.sendRequest({
-        type: "GeckoView:HideSelectionAction",
-        reason,
-      });
+      this.sendAsyncMessage("HideSelectionAction", { reason });
+    } else if (reason == "dragcaret") {
+      // nothing for selection action
     } else {
       warn`Unknown reason: ${reason}`;
     }
+  }
+
+  observe(aSubject, aTopic, aData) {
+    if (aTopic != "nsPref:changed") {
+      return;
+    }
+
+    switch (aData) {
+      case ACCESSIBLECARET_HEIGHT_PREF:
+        this._accessiblecaretHeight = parseFloat(
+          Services.prefs.getCharPref(ACCESSIBLECARET_HEIGHT_PREF, "0")
+        );
+        break;
+      case MAGNIFIER_PREF:
+        this._magnifierEnabled = Services.prefs.getBoolPref(MAGNIFIER_PREF);
+        break;
+    }
+    // Reset magnifier
+    this.eventDispatcher.sendRequest({
+      type: "GeckoView:HideMagnifier",
+    });
   }
 }
 

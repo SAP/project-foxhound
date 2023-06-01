@@ -3,7 +3,6 @@
 
 /* eslint-env browser */
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
-/* import-globals-from ../../../shared/test/shared-head.js */
 
 "use strict";
 
@@ -36,8 +35,8 @@ async function enableServiceWorkerDebugging() {
 
 async function enableApplicationPanel() {
   // FIXME bug 1575427 this rejection is very common.
-  const { PromiseTestUtils } = ChromeUtils.import(
-    "resource://testing-common/PromiseTestUtils.jsm"
+  const { PromiseTestUtils } = ChromeUtils.importESModule(
+    "resource://testing-common/PromiseTestUtils.sys.mjs"
   );
   PromiseTestUtils.allowMatchingRejectionsGlobally(
     /this._frontCreationListeners is null/

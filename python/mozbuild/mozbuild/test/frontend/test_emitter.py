@@ -2,12 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import os
-import six
 import unittest
 
+import mozpack.path as mozpath
+import six
 from mozunit import main
 
 from mozbuild.frontend.context import ObjDirPath, Path
@@ -19,7 +18,6 @@ from mozbuild.frontend.data import (
     Exports,
     FinalTargetPreprocessedFiles,
     GeneratedFile,
-    GeneratedSources,
     HostProgram,
     HostRustLibrary,
     HostRustProgram,
@@ -48,11 +46,7 @@ from mozbuild.frontend.reader import (
     BuildReaderError,
     SandboxValidationError,
 )
-
 from mozbuild.test.common import MockConfig
-
-import mozpack.path as mozpath
-
 
 data_path = mozpath.abspath(mozpath.dirname(__file__))
 data_path = mozpath.join(data_path, "data")
@@ -623,7 +617,7 @@ class TestEmitterBasic(unittest.TestCase):
         o = objs[0]
         self.assertIsInstance(o, GeneratedFile)
         self.assertEqual(o.outputs, ("bar.c",))
-        self.assertRegexpMatches(o.script, "script.py$")
+        self.assertRegex(o.script, "script.py$")
         self.assertEqual(o.method, "make_bar")
         self.assertEqual(o.inputs, [])
 
@@ -1059,27 +1053,6 @@ class TestEmitterBasic(unittest.TestCase):
         expected = set(["bar/bar1.ipdl", "foo/foo1.ipdl"])
         self.assertEqual(pp_ipdls, expected)
 
-        generated_sources = set(ipdl_collection.all_generated_sources())
-        expected = set(
-            [
-                "bar.cpp",
-                "barChild.cpp",
-                "barParent.cpp",
-                "bar1.cpp",
-                "bar1Child.cpp",
-                "bar1Parent.cpp",
-                "bar2.cpp",
-                "foo.cpp",
-                "fooChild.cpp",
-                "fooParent.cpp",
-                "foo1.cpp",
-                "foo1Child.cpp",
-                "foo1Parent.cpp",
-                "foo2.cpp",
-            ]
-        )
-        self.assertEqual(generated_sources, expected)
-
     def test_local_includes(self):
         """Test that LOCAL_INCLUDES is emitted correctly."""
         reader = self.reader("local_includes")
@@ -1305,7 +1278,7 @@ class TestEmitterBasic(unittest.TestCase):
         for obj in self.read_topsrcdir(reader):
             if isinstance(obj, SharedLibrary):
                 if obj.basename == "cxx_shared":
-                    self.assertEquals(
+                    self.assertEqual(
                         obj.name,
                         "%scxx_shared%s"
                         % (reader.config.dll_prefix, reader.config.dll_suffix),
@@ -1313,7 +1286,7 @@ class TestEmitterBasic(unittest.TestCase):
                     self.assertTrue(obj.cxx_link)
                     got_results += 1
                 elif obj.basename == "just_c_shared":
-                    self.assertEquals(
+                    self.assertEqual(
                         obj.name,
                         "%sjust_c_shared%s"
                         % (reader.config.dll_prefix, reader.config.dll_suffix),
@@ -1338,7 +1311,9 @@ class TestEmitterBasic(unittest.TestCase):
         self.assertIsInstance(flags, ComputedFlags)
         self.assertEqual(len(objs), 6)
 
-        generated_sources = [o for o in objs if isinstance(o, GeneratedSources)]
+        generated_sources = [
+            o for o in objs if isinstance(o, Sources) and o.generated_files
+        ]
         self.assertEqual(len(generated_sources), 6)
 
         suffix_map = {obj.canonical_suffix: obj for obj in generated_sources}
@@ -1355,7 +1330,8 @@ class TestEmitterBasic(unittest.TestCase):
         for suffix, files in expected.items():
             sources = suffix_map[suffix]
             self.assertEqual(
-                sources.files, [mozpath.join(reader.config.topobjdir, f) for f in files]
+                sources.generated_files,
+                [mozpath.join(reader.config.topobjdir, f) for f in files],
             )
 
             for f in files:
@@ -1672,14 +1648,15 @@ class TestEmitterBasic(unittest.TestCase):
         )
         objs = self.read_topsrcdir(reader)
 
-        self.assertEqual(len(objs), 3)
-        ldflags, lib, cflags = objs
+        self.assertEqual(len(objs), 4)
+        ldflags, host_cflags, lib, cflags = objs
         self.assertIsInstance(ldflags, ComputedFlags)
         self.assertIsInstance(cflags, ComputedFlags)
+        self.assertIsInstance(host_cflags, ComputedFlags)
         self.assertIsInstance(lib, RustLibrary)
-        self.assertRegexpMatches(lib.lib_name, "random_crate")
-        self.assertRegexpMatches(lib.import_name, "random_crate")
-        self.assertRegexpMatches(lib.basename, "random-crate")
+        self.assertRegex(lib.lib_name, "random_crate")
+        self.assertRegex(lib.import_name, "random_crate")
+        self.assertRegex(lib.basename, "random-crate")
 
     def test_multiple_rust_libraries(self):
         """Test that linking multiple Rust libraries throws an error"""
@@ -1700,10 +1677,11 @@ class TestEmitterBasic(unittest.TestCase):
         )
         objs = self.read_topsrcdir(reader)
 
-        self.assertEqual(len(objs), 3)
-        ldflags, lib, cflags = objs
+        self.assertEqual(len(objs), 4)
+        ldflags, host_cflags, lib, cflags = objs
         self.assertIsInstance(ldflags, ComputedFlags)
         self.assertIsInstance(cflags, ComputedFlags)
+        self.assertIsInstance(host_cflags, ComputedFlags)
         self.assertIsInstance(lib, RustLibrary)
         self.assertEqual(lib.features, ["musthave", "cantlivewithout"])
 
@@ -1759,10 +1737,11 @@ class TestEmitterBasic(unittest.TestCase):
         )
         objs = self.read_topsrcdir(reader)
 
-        self.assertEqual(len(objs), 3)
-        ldflags, cflags, prog = objs
+        self.assertEqual(len(objs), 4)
+        ldflags, host_cflags, cflags, prog = objs
         self.assertIsInstance(ldflags, ComputedFlags)
         self.assertIsInstance(cflags, ComputedFlags)
+        self.assertIsInstance(host_cflags, ComputedFlags)
         self.assertIsInstance(prog, RustProgram)
         self.assertEqual(prog.name, "some")
 
@@ -1795,13 +1774,14 @@ class TestEmitterBasic(unittest.TestCase):
         )
         objs = self.read_topsrcdir(reader)
 
-        self.assertEqual(len(objs), 3)
-        ldflags, lib, cflags = objs
+        self.assertEqual(len(objs), 4)
+        ldflags, host_cflags, lib, cflags = objs
         self.assertIsInstance(ldflags, ComputedFlags)
         self.assertIsInstance(cflags, ComputedFlags)
+        self.assertIsInstance(host_cflags, ComputedFlags)
         self.assertIsInstance(lib, HostRustLibrary)
-        self.assertRegexpMatches(lib.lib_name, "host_lib")
-        self.assertRegexpMatches(lib.import_name, "host_lib")
+        self.assertRegex(lib.lib_name, "host_lib")
+        self.assertRegex(lib.import_name, "host_lib")
 
     def test_crate_dependency_path_resolution(self):
         """Test recursive dependencies resolve with the correct paths."""
@@ -1811,10 +1791,11 @@ class TestEmitterBasic(unittest.TestCase):
         )
         objs = self.read_topsrcdir(reader)
 
-        self.assertEqual(len(objs), 3)
-        ldflags, lib, cflags = objs
+        self.assertEqual(len(objs), 4)
+        ldflags, host_cflags, lib, cflags = objs
         self.assertIsInstance(ldflags, ComputedFlags)
         self.assertIsInstance(cflags, ComputedFlags)
+        self.assertIsInstance(host_cflags, ComputedFlags)
         self.assertIsInstance(lib, RustLibrary)
 
     def test_install_shared_lib(self):

@@ -11,7 +11,9 @@
 
 var EXPORTED_SYMBOLS = ["DeclinedEngines"];
 
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
+);
 const { CommonUtils } = ChromeUtils.import(
   "resource://services-common/utils.js"
 );
@@ -25,7 +27,7 @@ var DeclinedEngines = function(service) {
 
   this.service = service;
 };
-this.DeclinedEngines.prototype = {
+DeclinedEngines.prototype = {
   updateDeclined(meta, engineManager = this.service.engineManager) {
     let enabled = new Set(engineManager.getEnabled().map(e => e.name));
     let known = new Set(engineManager.getAll().map(e => e.name));

@@ -7,12 +7,6 @@ var EXPORTED_SYMBOLS = ["IDBHelpers"];
 const DB_NAME = "remote-settings";
 const DB_VERSION = 3;
 
-// `indexedDB` is accessible in the worker global, but not the JSM global,
-// where we have to import it - and the worker global doesn't have Cu.
-if (typeof indexedDB == "undefined") {
-  Cu.importGlobalProperties(["indexedDB"]);
-}
-
 /**
  * Wrap IndexedDB errors to catch them more easily.
  */
@@ -103,7 +97,7 @@ function executeIDB(db, storeNames, mode, callback, desc) {
       try {
         transaction.abort();
       } catch (ex) {
-        Cu.reportError(ex);
+        console.error(ex);
       }
     };
     // Add all the handlers before using the stores.
@@ -202,10 +196,19 @@ async function openIDB(allowUpgrades = true) {
   });
 }
 
+function destroyIDB() {
+  const request = indexedDB.deleteDatabase(DB_NAME);
+  return new Promise((resolve, reject) => {
+    request.onerror = event => reject(new IndexedDBError(event.target.error));
+    request.onsuccess = () => resolve();
+  });
+}
+
 var IDBHelpers = {
   bulkOperationHelper,
   executeIDB,
   openIDB,
+  destroyIDB,
   IndexedDBError,
   ShutdownError,
 };

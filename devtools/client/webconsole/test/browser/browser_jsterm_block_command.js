@@ -16,13 +16,18 @@ add_task(async function() {
 
   info("Before blocking");
   await tryFetching();
-  const resp1 = await waitFor(() => findMessage(hud, "successful"));
+  const resp1 = await waitFor(() => findConsoleAPIMessage(hud, "successful"));
   ok(resp1, "the request was not blocked");
   info(`Execute the :block command and try to do execute a network request`);
-  await executeAndWaitForMessage(hud, blockCommand, "are now blocked");
+  await executeAndWaitForMessageByType(
+    hud,
+    blockCommand,
+    "are now blocked",
+    ".console-api"
+  );
   await tryFetching();
 
-  const resp2 = await waitFor(() => findMessage(hud, "blocked"));
+  const resp2 = await waitFor(() => findConsoleAPIMessage(hud, "blocked"));
   ok(resp2, "the request was blocked as expected");
 
   info("Open netmonitor check the blocked filter is registered in its state");
@@ -31,9 +36,7 @@ add_task(async function() {
   nmStore.dispatch(panelWin.actions.toggleRequestBlockingPanel());
   //await waitForTime(1e7);
   // wait until the blockedUrls property is populated
-  await waitFor(
-    () => nmStore.getState().requestBlocking.blockedUrls.length > 0
-  );
+  await waitFor(() => !!nmStore.getState().requestBlocking.blockedUrls.length);
   const netMonitorState1 = nmStore.getState();
   is(
     netMonitorState1.requestBlocking.blockedUrls[0].url,
@@ -45,7 +48,12 @@ add_task(async function() {
   await hud.toolbox.selectTool("webconsole");
 
   // :unblock
-  await executeAndWaitForMessage(hud, unblockCommand, "Removed blocking");
+  await executeAndWaitForMessageByType(
+    hud,
+    unblockCommand,
+    "Removed blocking",
+    ".console-api"
+  );
   info("After unblocking");
 
   const netMonitorState2 = nmStore.getState();
@@ -57,7 +65,7 @@ add_task(async function() {
 
   await tryFetching();
 
-  const resp3 = await waitFor(() => findMessage(hud, "successful"));
+  const resp3 = await waitFor(() => findConsoleAPIMessage(hud, "successful"));
   ok(resp3, "the request was not blocked");
 });
 

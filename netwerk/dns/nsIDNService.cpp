@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MainThreadUtils.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Preferences.h"
 #include "nsIDNService.h"
 #include "nsReadableUtils.h"
@@ -15,6 +16,7 @@
 #include "punycode.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Casting.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/Utf8.h"
 #include "mozilla/intl/FormatBuffer.h"
@@ -38,19 +40,19 @@ const intl::IDNA::ProcessingType kIDNA2008_DefaultProcessingType =
     intl::IDNA::ProcessingType::NonTransitional;
 
 //-----------------------------------------------------------------------------
-// RFC 1034 - 3.1. Name space specifications and terminology
-static const uint32_t kMaxDNSNodeLen = 63;
+// According to RFC 1034 - 3.1. Name space specifications and terminology
+// the maximum label size would be 63. However, this is enforced at the DNS
+// level and none of the other browsers seem to not enforce the VerifyDnsLength
+// check in https://unicode.org/reports/tr46/#ToASCII
+// Instead, we choose a rather arbitrary but larger size.
+static const uint32_t kMaxULabelSize = 256;
 // RFC 3490 - 5.   ACE prefix
 static const char kACEPrefix[] = "xn--";
-#define kACEPrefixLen 4
 
 //-----------------------------------------------------------------------------
 
 #define NS_NET_PREF_EXTRAALLOWED "network.IDN.extra_allowed_chars"
 #define NS_NET_PREF_EXTRABLOCKED "network.IDN.extra_blocked_chars"
-#define NS_NET_PREF_SHOWPUNYCODE "network.IDN_show_punycode"
-#define NS_NET_PREF_IDNWHITELIST "network.IDN.whitelist."
-#define NS_NET_PREF_IDNUSEWHITELIST "network.IDN.use_whitelist"
 #define NS_NET_PREF_IDNRESTRICTION "network.IDN.restriction_profile"
 
 static inline bool isOnlySafeChars(const nsString& in,
@@ -74,52 +76,42 @@ static inline bool isOnlySafeChars(const nsString& in,
 //-----------------------------------------------------------------------------
 
 /* Implementation file */
-NS_IMPL_ISUPPORTS(nsIDNService, nsIIDNService, nsISupportsWeakReference)
+NS_IMPL_ISUPPORTS(nsIDNService, nsIIDNService)
 
 static const char* gCallbackPrefs[] = {
-    NS_NET_PREF_EXTRAALLOWED,    NS_NET_PREF_EXTRABLOCKED,
-    NS_NET_PREF_SHOWPUNYCODE,    NS_NET_PREF_IDNRESTRICTION,
-    NS_NET_PREF_IDNUSEWHITELIST, nullptr,
+    NS_NET_PREF_EXTRAALLOWED,
+    NS_NET_PREF_EXTRABLOCKED,
+    NS_NET_PREF_IDNRESTRICTION,
+    nullptr,
 };
 
 nsresult nsIDNService::Init() {
   MOZ_ASSERT(NS_IsMainThread());
-  MutexAutoLock lock(mLock);
-
-  nsCOMPtr<nsIPrefService> prefs(do_GetService(NS_PREFSERVICE_CONTRACTID));
-  if (prefs) {
-    prefs->GetBranch(NS_NET_PREF_IDNWHITELIST,
-                     getter_AddRefs(mIDNWhitelistPrefBranch));
-  }
-
+  // Take a strong reference for our listener with the preferences service,
+  // which we will release on shutdown.
+  // It's OK if we remove the observer a bit early, as it just means we won't
+  // respond to `network.IDN.extra_{allowed,blocked}_chars` and
+  // `network.IDN.restriction_profile` pref changes during shutdown.
   Preferences::RegisterPrefixCallbacks(PrefChanged, gCallbackPrefs, this);
+  RunOnShutdown(
+      [self = RefPtr{this}]() mutable {
+        Preferences::UnregisterPrefixCallbacks(PrefChanged, gCallbackPrefs,
+                                               self.get());
+        self = nullptr;
+      },
+      ShutdownPhase::XPCOMWillShutdown);
   prefsChanged(nullptr);
-  InitializeBlocklist(mIDNBlocklist);
 
   return NS_OK;
 }
 
 void nsIDNService::prefsChanged(const char* pref) {
   MOZ_ASSERT(NS_IsMainThread());
-  mLock.AssertCurrentThreadOwns();
+  AutoWriteLock lock(mLock);
 
-  if (pref && nsLiteralCString(NS_NET_PREF_EXTRAALLOWED).Equals(pref)) {
+  if (!pref || nsLiteralCString(NS_NET_PREF_EXTRAALLOWED).Equals(pref) ||
+      nsLiteralCString(NS_NET_PREF_EXTRABLOCKED).Equals(pref)) {
     InitializeBlocklist(mIDNBlocklist);
-  }
-  if (pref && nsLiteralCString(NS_NET_PREF_EXTRABLOCKED).Equals(pref)) {
-    InitializeBlocklist(mIDNBlocklist);
-  }
-  if (!pref || nsLiteralCString(NS_NET_PREF_SHOWPUNYCODE).Equals(pref)) {
-    bool val;
-    if (NS_SUCCEEDED(Preferences::GetBool(NS_NET_PREF_SHOWPUNYCODE, &val))) {
-      mShowPunycode = val;
-    }
-  }
-  if (!pref || nsLiteralCString(NS_NET_PREF_IDNUSEWHITELIST).Equals(pref)) {
-    bool val;
-    if (NS_SUCCEEDED(Preferences::GetBool(NS_NET_PREF_IDNUSEWHITELIST, &val))) {
-      mIDNUseWhitelist = val;
-    }
   }
   if (!pref || nsLiteralCString(NS_NET_PREF_IDNRESTRICTION).Equals(pref)) {
     nsAutoCString profile;
@@ -146,11 +138,7 @@ nsIDNService::nsIDNService() {
   mIDNA = createResult.unwrap();
 }
 
-nsIDNService::~nsIDNService() {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  Preferences::UnregisterPrefixCallbacks(PrefChanged, gCallbackPrefs, this);
-}
+nsIDNService::~nsIDNService() = default;
 
 nsresult nsIDNService::IDNA2008ToUnicode(const nsACString& input,
                                          nsAString& output) {
@@ -200,8 +188,8 @@ nsresult nsIDNService::IDNA2008StringPrep(const nsAString& input,
   // appears to get an appended U+FFFD REPLACEMENT CHARACTER, which will
   // confuse our subsequent processing, so we drop that.
   // (https://bugzilla.mozilla.org/show_bug.cgi?id=1399540#c9)
-  if (info.HasInvalidPunycode() && !output.IsEmpty() &&
-      output.Last() == 0xfffd) {
+  if ((info.HasInvalidPunycode() || info.HasInvalidAceLabel()) &&
+      !output.IsEmpty() && output.Last() == 0xfffd) {
     output.Truncate(output.Length() - 1);
   }
 
@@ -338,13 +326,16 @@ NS_IMETHODIMP nsIDNService::IsACE(const nsACString& input, bool* _retval) {
   auto stringContains = [](const nsACString& haystack,
                            const nsACString& needle) {
     return std::search(haystack.BeginReading(), haystack.EndReading(),
-                       needle.BeginReading(),
-                       needle.EndReading()) != haystack.EndReading();
+                       needle.BeginReading(), needle.EndReading(),
+                       [](unsigned char ch1, unsigned char ch2) {
+                         return tolower(ch1) == tolower(ch2);
+                       }) != haystack.EndReading();
   };
 
-  *_retval = StringBeginsWith(input, "xn--"_ns) ||
-             (!input.IsEmpty() && input[0] != '.' &&
-              stringContains(input, ".xn--"_ns));
+  *_retval =
+      StringBeginsWith(input, "xn--"_ns, nsCaseInsensitiveCStringComparator) ||
+      (!input.IsEmpty() && input[0] != '.' &&
+       stringContains(input, ".xn--"_ns));
   return NS_OK;
 }
 
@@ -390,38 +381,9 @@ NS_IMETHODIMP nsIDNService::Normalize(const nsACString& input,
   return NS_OK;
 }
 
-namespace {
-
-class MOZ_STACK_CLASS MutexSettableAutoUnlock final {
- private:
-  Mutex* mMutex = nullptr;
-
- public:
-  MutexSettableAutoUnlock() = default;
-
-  void Acquire(mozilla::Mutex& aMutex) {
-    MOZ_ASSERT(!mMutex);
-    mMutex = &aMutex;
-    mMutex->Lock();
-  }
-
-  ~MutexSettableAutoUnlock() {
-    if (mMutex) {
-      mMutex->Unlock();
-    }
-  }
-};
-
-}  // anonymous namespace
-
 NS_IMETHODIMP nsIDNService::ConvertToDisplayIDN(const nsACString& input,
                                                 bool* _isASCII,
                                                 nsACString& _retval) {
-  MutexSettableAutoUnlock lock;
-  if (!NS_IsMainThread()) {
-    lock.Acquire(mLock);
-  }
-
   // If host is ACE, then convert to UTF-8 if the host is in the IDN whitelist.
   // Else, if host is already UTF-8, then make sure it is normalized per IDN.
 
@@ -437,15 +399,12 @@ NS_IMETHODIMP nsIDNService::ConvertToDisplayIDN(const nsACString& input,
     _retval = input;
     ToLowerCase(_retval);
 
-    if (isACE && !mShowPunycode) {
+    if (isACE && !StaticPrefs::network_IDN_show_punycode()) {
       // ACEtoUTF8() can't fail, but might return the original ACE string
       nsAutoCString temp(_retval);
-      // If the domain is in the whitelist, return the host in UTF-8.
-      // Otherwise convert from ACE to UTF8 only those labels which are
-      // considered safe for display
-      ACEtoUTF8(
-          temp, _retval,
-          isInWhitelist(temp) ? eStringPrepIgnoreErrors : eStringPrepForUI);
+      // Convert from ACE to UTF8 only those labels which are considered safe
+      // for display
+      ACEtoUTF8(temp, _retval, eStringPrepForUI);
       *_isASCII = IsAscii(_retval);
     } else {
       *_isASCII = true;
@@ -468,7 +427,7 @@ NS_IMETHODIMP nsIDNService::ConvertToDisplayIDN(const nsACString& input,
       return rv;
     }
 
-    if (mShowPunycode &&
+    if (StaticPrefs::network_IDN_show_punycode() &&
         NS_SUCCEEDED(UTF8toACE(_retval, _retval, eStringPrepIgnoreErrors))) {
       *_isASCII = true;
       return NS_OK;
@@ -479,7 +438,7 @@ NS_IMETHODIMP nsIDNService::ConvertToDisplayIDN(const nsACString& input,
     // unsafe characters, so leave it ACE encoded. see bug 283016, bug 301694,
     // and bug 309311.
     *_isASCII = IsAscii(_retval);
-    if (!*_isASCII && !isInWhitelist(_retval)) {
+    if (!*_isASCII) {
       // UTF8toACE with eStringPrepForUI may return a domain name where
       // some labels are in UTF-8 and some are in ACE, depending on
       // whether they are considered safe for display
@@ -490,7 +449,7 @@ NS_IMETHODIMP nsIDNService::ConvertToDisplayIDN(const nsACString& input,
   }
 
   return NS_OK;
-}
+}  // Will generate a mutex still-held warning
 
 //-----------------------------------------------------------------------------
 
@@ -524,14 +483,14 @@ static nsresult utf16ToUcs4(const nsAString& in, uint32_t* out,
 }
 
 static nsresult punycode(const nsAString& in, nsACString& out) {
-  uint32_t ucs4Buf[kMaxDNSNodeLen + 1];
+  uint32_t ucs4Buf[kMaxULabelSize + 1];
   uint32_t ucs4Len = 0u;
-  nsresult rv = utf16ToUcs4(in, ucs4Buf, kMaxDNSNodeLen, &ucs4Len);
+  nsresult rv = utf16ToUcs4(in, ucs4Buf, kMaxULabelSize, &ucs4Len);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // need maximum 20 bits to encode 16 bit Unicode character
   // (include null terminator)
-  const uint32_t kEncodedBufSize = kMaxDNSNodeLen * 20 / 8 + 1 + 1;
+  const uint32_t kEncodedBufSize = kMaxULabelSize * 20 / 8 + 1 + 1;
   char encodedBuf[kEncodedBufSize];
   punycode_uint encodedLength = kEncodedBufSize;
 
@@ -580,14 +539,12 @@ nsresult nsIDNService::stringPrepAndACE(const nsAString& in, nsACString& out,
 
   out.Truncate();
 
-  if (in.Length() > kMaxDNSNodeLen) {
-    NS_WARNING("IDN node too large");
-    return NS_ERROR_MALFORMED_URI;
-  }
-
   if (IsAscii(in)) {
     LossyCopyUTF16toASCII(in, out);
-    return NS_OK;
+    // If label begins with xn-- we still want to check its validity
+    if (!StringBeginsWith(in, u"xn--"_ns, nsCaseInsensitiveStringComparator)) {
+      return NS_OK;
+    }
   }
 
   nsAutoString strPrep;
@@ -606,20 +563,7 @@ nsresult nsIDNService::stringPrepAndACE(const nsAString& in, nsACString& out,
     return NS_OK;
   }
 
-  rv = punycode(strPrep, out);
-  // Check that the encoded output isn't larger than the maximum length
-  // of a DNS node per RFC 1034.
-  // This test isn't necessary in the code paths above where the input
-  // is ASCII (since the output will be the same length as the input) or
-  // where we convert to UTF-8 (since the output is only used for
-  // display in the UI and not passed to DNS and can legitimately be
-  // longer than the limit).
-  if (out.Length() > kMaxDNSNodeLen) {
-    NS_WARNING("IDN node too large");
-    return NS_ERROR_MALFORMED_URI;
-  }
-
-  return rv;
+  return punycode(strPrep, out);
 }
 
 // RFC 3490
@@ -682,41 +626,30 @@ nsresult nsIDNService::decodeACE(const nsACString& in, nsACString& out,
   return NS_OK;
 }
 
-bool nsIDNService::isInWhitelist(const nsACString& host) {
-  if (!NS_IsMainThread()) {
-    mLock.AssertCurrentThreadOwns();
-  }
+namespace mozilla::net {
 
-  if (mIDNUseWhitelist && mIDNWhitelistPrefBranch) {
-    nsAutoCString tld(host);
-    // make sure the host is ACE for lookup and check that there are no
-    // unassigned codepoints
-    if (!IsAscii(tld) && NS_FAILED(UTF8toACE(tld, tld, eStringPrepForDNS))) {
-      return false;
-    }
+enum ScriptCombo : int32_t {
+  UNSET = -1,
+  BOPO = 0,
+  CYRL = 1,
+  GREK = 2,
+  HANG = 3,
+  HANI = 4,
+  HIRA = 5,
+  KATA = 6,
+  LATN = 7,
+  OTHR = 8,
+  JPAN = 9,   // Latin + Han + Hiragana + Katakana
+  CHNA = 10,  // Latin + Han + Bopomofo
+  KORE = 11,  // Latin + Han + Hangul
+  HNLT = 12,  // Latin + Han (could be any of the above combinations)
+  FAIL = 13,
+};
 
-    // truncate trailing dots first
-    tld.Trim(".");
-    int32_t pos = tld.RFind(".");
-    if (pos == kNotFound) {
-      return false;
-    }
-
-    tld.Cut(0, pos + 1);
-
-    bool safe;
-    if (NS_SUCCEEDED(mIDNWhitelistPrefBranch->GetBoolPref(tld.get(), &safe))) {
-      return safe;
-    }
-  }
-
-  return false;
-}
+}  // namespace mozilla::net
 
 bool nsIDNService::isLabelSafe(const nsAString& label) {
-  if (!NS_IsMainThread()) {
-    mLock.AssertCurrentThreadOwns();
-  }
+  AutoReadLock lock(mLock);
 
   if (!isOnlySafeChars(PromiseFlatString(label), mIDNBlocklist)) {
     return false;
@@ -741,7 +674,7 @@ bool nsIDNService::isLabelSafe(const nsAString& label) {
   HanVariantType savedHanVariant = HVT_NotHan;
 #endif
 
-  int32_t savedScript = -1;
+  ScriptCombo savedScript = ScriptCombo::UNSET;
 
   while (current != end) {
     uint32_t ch = *current++;
@@ -763,6 +696,17 @@ bool nsIDNService::isLabelSafe(const nsAString& label) {
       if (illegalScriptCombo(script, savedScript)) {
         return false;
       }
+    }
+
+    // U+30FC should be preceded by a Hiragana/Katakana.
+    if (ch == 0x30fc && lastScript != Script::HIRAGANA &&
+        lastScript != Script::KATAKANA) {
+      return false;
+    }
+
+    if (ch == 0x307 &&
+        (previousChar == 'i' || previousChar == 'j' || previousChar == 'l')) {
+      return false;
     }
 
     // Check for mixed numbering systems
@@ -846,36 +790,30 @@ bool nsIDNService::isLabelSafe(const nsAString& label) {
 }
 
 // Scripts that we care about in illegalScriptCombo
-static const Script scriptTable[] = {
-    Script::BOPOMOFO, Script::CYRILLIC, Script::GREEK,    Script::HANGUL,
-    Script::HAN,      Script::HIRAGANA, Script::KATAKANA, Script::LATIN};
-
-#define BOPO 0
-#define CYRL 1
-#define GREK 2
-#define HANG 3
-#define HANI 4
-#define HIRA 5
-#define KATA 6
-#define LATN 7
-#define OTHR 8
-#define JPAN 9   // Latin + Han + Hiragana + Katakana
-#define CHNA 10  // Latin + Han + Bopomofo
-#define KORE 11  // Latin + Han + Hangul
-#define HNLT 12  // Latin + Han (could be any of the above combinations)
-#define FAIL 13
-
-static inline int32_t findScriptIndex(Script aScript) {
-  int32_t tableLength = mozilla::ArrayLength(scriptTable);
-  for (int32_t index = 0; index < tableLength; ++index) {
-    if (aScript == scriptTable[index]) {
-      return index;
-    }
+static inline ScriptCombo findScriptIndex(Script aScript) {
+  switch (aScript) {
+    case Script::BOPOMOFO:
+      return ScriptCombo::BOPO;
+    case Script::CYRILLIC:
+      return ScriptCombo::CYRL;
+    case Script::GREEK:
+      return ScriptCombo::GREK;
+    case Script::HANGUL:
+      return ScriptCombo::HANG;
+    case Script::HAN:
+      return ScriptCombo::HANI;
+    case Script::HIRAGANA:
+      return ScriptCombo::HIRA;
+    case Script::KATAKANA:
+      return ScriptCombo::KATA;
+    case Script::LATIN:
+      return ScriptCombo::LATN;
+    default:
+      return ScriptCombo::OTHR;
   }
-  return OTHR;
 }
 
-static const int32_t scriptComboTable[13][9] = {
+static const ScriptCombo scriptComboTable[13][9] = {
     /* thisScript: BOPO  CYRL  GREK  HANG  HANI  HIRA  KATA  LATN  OTHR
      * savedScript */
     /* BOPO */ {BOPO, FAIL, FAIL, FAIL, CHNA, FAIL, FAIL, CHNA, FAIL},
@@ -892,12 +830,8 @@ static const int32_t scriptComboTable[13][9] = {
     /* KORE */ {FAIL, FAIL, FAIL, KORE, KORE, FAIL, FAIL, KORE, FAIL},
     /* HNLT */ {CHNA, FAIL, FAIL, KORE, HNLT, JPAN, JPAN, HNLT, FAIL}};
 
-bool nsIDNService::illegalScriptCombo(Script script, int32_t& savedScript) {
-  if (!NS_IsMainThread()) {
-    mLock.AssertCurrentThreadOwns();
-  }
-
-  if (savedScript == -1) {
+bool nsIDNService::illegalScriptCombo(Script script, ScriptCombo& savedScript) {
+  if (savedScript == ScriptCombo::UNSET) {
     savedScript = findScriptIndex(script);
     return false;
   }
@@ -915,18 +849,3 @@ bool nsIDNService::illegalScriptCombo(Script script, int32_t& savedScript) {
            mRestrictionProfile == eHighlyRestrictiveProfile) ||
           savedScript == FAIL);
 }
-
-#undef BOPO
-#undef CYRL
-#undef GREK
-#undef HANG
-#undef HANI
-#undef HIRA
-#undef KATA
-#undef LATN
-#undef OTHR
-#undef JPAN
-#undef CHNA
-#undef KORE
-#undef HNLT
-#undef FAIL

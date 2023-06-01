@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/ArrayUtils.h"
-#include "mozilla/EventStates.h"
 
 #include "inLayoutUtils.h"
 
@@ -53,7 +52,7 @@ using namespace mozilla::dom;
 namespace mozilla {
 namespace dom {
 
-static already_AddRefed<ComputedStyle> GetCleanComputedStyleForElement(
+static already_AddRefed<const ComputedStyle> GetCleanComputedStyleForElement(
     dom::Element* aElement, PseudoStyleType aPseudo) {
   MOZ_ASSERT(aElement);
 
@@ -83,6 +82,7 @@ void InspectorUtils::GetAllStyleSheets(GlobalObject& aGlobalObject,
                                        nsTArray<RefPtr<StyleSheet>>& aResult) {
   // Get the agent, then user and finally xbl sheets in the style set.
   PresShell* presShell = aDocument.GetPresShell();
+  nsTHashSet<StyleSheet*> sheetSet;
 
   if (presShell) {
     ServoStyleSet* styleSet = presShell->StyleSet();
@@ -101,8 +101,8 @@ void InspectorUtils::GetAllStyleSheets(GlobalObject& aGlobalObject,
     AutoTArray<StyleSheet*, 32> nonDocumentSheets;
     styleSet->AppendAllNonDocumentAuthorSheets(nonDocumentSheets);
 
-    // The non-document stylesheet array can't have duplicates right now, but it
-    // could once we include adopted stylesheets.
+    // The non-document stylesheet array can have duplicates due to adopted
+    // stylesheets.
     nsTHashSet<StyleSheet*> sheetSet;
     for (StyleSheet* sheet : nonDocumentSheets) {
       if (sheetSet.EnsureInserted(sheet)) {
@@ -116,9 +116,11 @@ void InspectorUtils::GetAllStyleSheets(GlobalObject& aGlobalObject,
     aResult.AppendElement(aDocument.SheetAt(i));
   }
 
-  // FIXME(emilio, bug 1617948): This doesn't deal with adopted stylesheets, and
-  // it should. It should also handle duplicates correctly when it does, see
-  // above.
+  for (auto& sheet : aDocument.AdoptedStyleSheets()) {
+    if (sheetSet.EnsureInserted(sheet)) {
+      aResult.AppendElement(sheet);
+    }
+  }
 }
 
 bool InspectorUtils::IsIgnorableWhitespace(CharacterData& aDataNode) {
@@ -186,7 +188,7 @@ void InspectorUtils::GetCSSStyleRules(
     return;
   }
 
-  RefPtr<ComputedStyle> computedStyle =
+  RefPtr<const ComputedStyle> computedStyle =
       GetCleanComputedStyleForElement(&aElement, *type);
   if (!computedStyle) {
     // This can fail for elements that are not in the document or
@@ -504,15 +506,13 @@ void InspectorUtils::GetCSSValuesForProperty(GlobalObject& aGlobalObject,
 /* static */
 void InspectorUtils::RgbToColorName(GlobalObject& aGlobalObject, uint8_t aR,
                                     uint8_t aG, uint8_t aB,
-                                    nsAString& aColorName, ErrorResult& aRv) {
+                                    nsAString& aColorName) {
   const char* color = NS_RGBToColorName(NS_RGB(aR, aG, aB));
   if (!color) {
     aColorName.Truncate();
-    aRv.Throw(NS_ERROR_INVALID_ARG);
-    return;
+  } else {
+    aColorName.AssignASCII(color);
   }
-
-  aColorName.AssignASCII(color);
 }
 
 /* static */
@@ -553,7 +553,7 @@ bool InspectorUtils::SetContentState(GlobalObject& aGlobalObject,
                                      ErrorResult& aRv) {
   RefPtr<EventStateManager> esm =
       inLayoutUtils::GetEventStateManagerFor(aElement);
-  EventStates state(aState);
+  ElementState state(aState);
   if (!esm || !EventStateManager::ManagesState(state)) {
     aRv.Throw(NS_ERROR_INVALID_ARG);
     return false;
@@ -568,7 +568,7 @@ bool InspectorUtils::RemoveContentState(GlobalObject& aGlobalObject,
                                         ErrorResult& aRv) {
   RefPtr<EventStateManager> esm =
       inLayoutUtils::GetEventStateManagerFor(aElement);
-  EventStates state(aState);
+  ElementState state(aState);
   if (!esm || !EventStateManager::ManagesState(state)) {
     aRv.Throw(NS_ERROR_INVALID_ARG);
     return false;
@@ -576,7 +576,7 @@ bool InspectorUtils::RemoveContentState(GlobalObject& aGlobalObject,
 
   bool result = esm->SetContentState(nullptr, state);
 
-  if (aClearActiveDocument && state == NS_EVENT_STATE_ACTIVE) {
+  if (aClearActiveDocument && state == ElementState::ACTIVE) {
     EventStateManager* activeESM = static_cast<EventStateManager*>(
         EventStateManager::GetActiveEventStateManager());
     if (activeESM == esm) {
@@ -591,7 +591,7 @@ bool InspectorUtils::RemoveContentState(GlobalObject& aGlobalObject,
 uint64_t InspectorUtils::GetContentState(GlobalObject& aGlobalObject,
                                          Element& aElement) {
   // NOTE: if this method is removed,
-  // please remove GetInternalValue from EventStates
+  // please remove GetInternalValue from ElementState
   return aElement.State().GetInternalValue();
 }
 
@@ -609,12 +609,12 @@ void InspectorUtils::GetUsedFontFaces(GlobalObject& aGlobalObject,
   }
 }
 
-static EventStates GetStatesForPseudoClass(const nsAString& aStatePseudo) {
+static ElementState GetStatesForPseudoClass(const nsAString& aStatePseudo) {
   if (aStatePseudo.IsEmpty() || aStatePseudo[0] != u':') {
-    return EventStates();
+    return ElementState();
   }
   NS_ConvertUTF16toUTF8 statePseudo(Substring(aStatePseudo, 1));
-  return EventStates(Servo_PseudoClass_GetStates(&statePseudo));
+  return ElementState(Servo_PseudoClass_GetStates(&statePseudo));
 }
 
 /* static */
@@ -640,7 +640,7 @@ void InspectorUtils::AddPseudoClassLock(GlobalObject& aGlobalObject,
                                         Element& aElement,
                                         const nsAString& aPseudoClass,
                                         bool aEnabled) {
-  EventStates state = GetStatesForPseudoClass(aPseudoClass);
+  ElementState state = GetStatesForPseudoClass(aPseudoClass);
   if (state.IsEmpty()) {
     return;
   }
@@ -652,7 +652,7 @@ void InspectorUtils::AddPseudoClassLock(GlobalObject& aGlobalObject,
 void InspectorUtils::RemovePseudoClassLock(GlobalObject& aGlobal,
                                            Element& aElement,
                                            const nsAString& aPseudoClass) {
-  EventStates state = GetStatesForPseudoClass(aPseudoClass);
+  ElementState state = GetStatesForPseudoClass(aPseudoClass);
   if (state.IsEmpty()) {
     return;
   }
@@ -664,12 +664,12 @@ void InspectorUtils::RemovePseudoClassLock(GlobalObject& aGlobal,
 bool InspectorUtils::HasPseudoClassLock(GlobalObject& aGlobalObject,
                                         Element& aElement,
                                         const nsAString& aPseudoClass) {
-  EventStates state = GetStatesForPseudoClass(aPseudoClass);
+  ElementState state = GetStatesForPseudoClass(aPseudoClass);
   if (state.IsEmpty()) {
     return false;
   }
 
-  EventStates locks = aElement.LockedStyleStates().mLocks;
+  ElementState locks = aElement.LockedStyleStates().mLocks;
   return locks.HasAllStates(state);
 }
 

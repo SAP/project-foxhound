@@ -53,22 +53,12 @@ function do_state_read(aSubject, aTopic, aData) {
 
   ok(
     gSSService.isSecureURI(
-      Services.io.newURI("https://frequentlyused.example.com"),
-      0
+      Services.io.newURI("https://frequentlyused.example.com")
     )
   );
-  let secInfo = Cc[
-    "@mozilla.org/security/transportsecurityinfo;1"
-  ].createInstance(Ci.nsITransportSecurityInfo);
   for (let i = 0; i < 2000; i++) {
     let uri = Services.io.newURI("http://bad" + i + ".example.com");
-    gSSService.processHeader(
-      uri,
-      "max-age=1000",
-      secInfo,
-      0,
-      Ci.nsISiteSecurityService.SOURCE_ORGANIC_REQUEST
-    );
+    gSSService.processHeader(uri, "max-age=1000");
   }
   do_test_pending();
   Services.obs.addObserver(do_state_written, "data-storage-written");

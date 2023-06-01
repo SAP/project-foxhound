@@ -7,13 +7,15 @@
 /**
  * Test simple requests using the protocol helpers.
  */
-var protocol = require("devtools/shared/protocol");
+var protocol = require("resource://devtools/shared/protocol.js");
 var { RetVal, Arg } = protocol;
-var EventEmitter = require("devtools/shared/event-emitter");
-var { LongStringActor } = require("devtools/server/actors/string");
+var EventEmitter = require("resource://devtools/shared/event-emitter.js");
+var {
+  LongStringActor,
+} = require("resource://devtools/server/actors/string.js");
 
 // The test implicitly relies on this.
-require("devtools/client/fronts/string");
+require("resource://devtools/client/fronts/string.js");
 
 function simpleHello() {
   return {
@@ -56,7 +58,7 @@ const rootSpec = protocol.generateActorSpec({
 });
 
 var RootActor = protocol.ActorClassWithSpec(rootSpec, {
-  initialize: function(conn) {
+  initialize(conn) {
     rootActor = this;
     protocol.Actor.prototype.initialize.call(this, conn);
     // Root actor owns itself.
@@ -66,15 +68,15 @@ var RootActor = protocol.ActorClassWithSpec(rootSpec, {
 
   sayHello: simpleHello,
 
-  shortString: function() {
+  shortString() {
     return new LongStringActor(this.conn, SHORT_STR);
   },
 
-  longString: function() {
+  longString() {
     return new LongStringActor(this.conn, LONG_STR);
   },
 
-  emitShortString: function() {
+  emitShortString() {
     EventEmitter.emit(
       this,
       "string-event",
@@ -82,7 +84,7 @@ var RootActor = protocol.ActorClassWithSpec(rootSpec, {
     );
   },
 
-  emitLongString: function() {
+  emitLongString() {
     EventEmitter.emit(
       this,
       "string-event",

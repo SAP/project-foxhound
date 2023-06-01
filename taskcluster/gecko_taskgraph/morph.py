@@ -23,13 +23,12 @@ import logging
 import os
 import re
 
-
 from slugid import nice as slugid
+from taskgraph.graph import Graph
+from taskgraph.morph import register_morph
+from taskgraph.task import Task
+from taskgraph.taskgraph import TaskGraph
 
-from .task import Task
-from .graph import Graph
-from .taskgraph import TaskGraph
-from .util.attributes import release_level
 from .util.workertypes import get_worker_type
 
 here = os.path.abspath(os.path.dirname(__file__))
@@ -71,7 +70,9 @@ def derive_misc_task(
     image_taskid = label_to_taskid["docker-image-" + image]
 
     provisioner_id, worker_type = get_worker_type(
-        graph_config, "misc", parameters["level"], release_level(parameters["project"])
+        graph_config,
+        parameters,
+        "misc",
     )
 
     deps = copy.copy(dependencies)
@@ -173,9 +174,8 @@ def make_index_task(
     return task
 
 
-def add_index_tasks(
-    taskgraph, label_to_taskid, parameters, graph_config, decision_task_id
-):
+@register_morph
+def add_index_tasks(taskgraph, label_to_taskid, parameters, graph_config):
     """
     The TaskCluster queue only allows 10 routes on a task, but we have tasks
     with many more routes, for purposes of indexing. This graph morph adds
@@ -216,9 +216,8 @@ def add_index_tasks(
     return taskgraph, label_to_taskid
 
 
-def add_eager_cache_index_tasks(
-    taskgraph, label_to_taskid, parameters, graph_config, decision_task_id
-):
+@register_morph
+def add_eager_cache_index_tasks(taskgraph, label_to_taskid, parameters, graph_config):
     """
     Some tasks (e.g. cached tasks) we want to exist in the index before they even
     run/complete. Our current use is to allow us to depend on an unfinished cached
@@ -253,28 +252,12 @@ def add_eager_cache_index_tasks(
     return taskgraph, label_to_taskid
 
 
-def add_try_task_duplicates(
-    taskgraph, label_to_taskid, parameters, graph_config, decision_task_id
-):
+@register_morph
+def add_try_task_duplicates(taskgraph, label_to_taskid, parameters, graph_config):
     try_config = parameters["try_task_config"]
     rebuild = try_config.get("rebuild")
     if rebuild:
         for task in taskgraph.tasks.values():
             if task.label in try_config.get("tasks", []):
                 task.attributes["task_duplicates"] = rebuild
-    return taskgraph, label_to_taskid
-
-
-def morph(taskgraph, label_to_taskid, parameters, graph_config, decision_task_id):
-    """Apply all morphs"""
-    morphs = [
-        add_eager_cache_index_tasks,
-        add_index_tasks,
-        add_try_task_duplicates,
-    ]
-
-    for m in morphs:
-        taskgraph, label_to_taskid = m(
-            taskgraph, label_to_taskid, parameters, graph_config, decision_task_id
-        )
     return taskgraph, label_to_taskid

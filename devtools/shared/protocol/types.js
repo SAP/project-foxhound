@@ -4,8 +4,11 @@
 
 "use strict";
 
-var { Actor } = require("devtools/shared/protocol/Actor");
-var { lazyLoadSpec, lazyLoadFront } = require("devtools/shared/specs/index");
+var { Actor } = require("resource://devtools/shared/protocol/Actor.js");
+var {
+  lazyLoadSpec,
+  lazyLoadFront,
+} = require("resource://devtools/shared/specs/index.js");
 
 /**
  * Types: named marshallers/demarshallers.
@@ -150,7 +153,7 @@ types.addType = function(name, typeObject = {}, options = {}) {
       toString() {
         return "[protocol type:" + name + "]";
       },
-      name: name,
+      name,
       primitive: !(typeObject.read || typeObject.write),
       read: identityWrite,
       write: identityWrite,

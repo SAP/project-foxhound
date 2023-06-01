@@ -18,9 +18,13 @@ const require = (window.windowRequire = BrowserLoader({
   window,
 }).require);
 
-const { NetMonitorAPI } = require("devtools/client/netmonitor/src/api");
-const { NetMonitorApp } = require("devtools/client/netmonitor/src/app");
-const EventEmitter = require("devtools/shared/event-emitter");
+const {
+  NetMonitorAPI,
+} = require("resource://devtools/client/netmonitor/src/api.js");
+const {
+  NetMonitorApp,
+} = require("resource://devtools/client/netmonitor/src/app.js");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
 // Inject EventEmitter into global window.
 EventEmitter.decorate(window);
@@ -73,17 +77,13 @@ const url = new window.URL(href);
 // is running in standalone.
 if (window.location.protocol === "chrome:" && url.search.length > 1) {
   const {
-    descriptorFromURL,
-  } = require("devtools/client/framework/descriptor-from-url");
-  const {
-    createCommandsDictionary,
-  } = require("devtools/shared/commands/index");
+    commandsFromURL,
+  } = require("resource://devtools/client/framework/commands-from-url.js");
 
   (async function() {
     try {
-      const descriptor = await descriptorFromURL(url);
-      const target = await descriptor.getTarget();
-      const commands = await createCommandsDictionary(descriptor);
+      const commands = await commandsFromURL(url);
+      const target = await commands.descriptorFront.getTarget();
       // Create a fake toolbox object
       const toolbox = {
         target,

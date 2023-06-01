@@ -6,8 +6,10 @@
 
 #ifdef ACCESSIBILITY
 #  include "mozilla/a11y/DocAccessibleParent.h"
+#  include "nsAccessibilityService.h"
 #endif
 
+#include "mozilla/Monitor.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/dom/BrowserBridgeParent.h"
 #include "mozilla/dom/BrowserParent.h"
@@ -83,6 +85,9 @@ nsresult BrowserBridgeParent::InitWithProcess(
   }
 
   ContentProcessManager* cpm = ContentProcessManager::GetSingleton();
+  if (!cpm) {
+    return NS_ERROR_UNEXPECTED;
+  }
   cpm->RegisterRemoteFrame(browserParent);
 
   RefPtr<WindowGlobalParent> windowParent =
@@ -252,6 +257,12 @@ IPCResult BrowserBridgeParent::RecvSetIsUnderHiddenEmbedderElement(
   return IPC_OK();
 }
 
+mozilla::ipc::IPCResult BrowserBridgeParent::RecvUpdateRemoteStyle(
+    const StyleImageRendering& aImageRendering) {
+  Unused << mBrowserParent->SendUpdateRemoteStyle(aImageRendering);
+  return IPC_OK();
+}
+
 #ifdef ACCESSIBILITY
 a11y::DocAccessibleParent* BrowserBridgeParent::GetDocAccessibleParent() {
   auto* embeddedBrowser = GetBrowserParent();
@@ -265,6 +276,9 @@ a11y::DocAccessibleParent* BrowserBridgeParent::GetDocAccessibleParent() {
 
 IPCResult BrowserBridgeParent::RecvSetEmbedderAccessible(
     PDocAccessibleParent* aDoc, uint64_t aID) {
+#  if defined(ANDROID)
+  MonitorAutoLock mal(nsAccessibilityService::GetAndroidMonitor());
+#  endif
   MOZ_ASSERT(aDoc || mEmbedderAccessibleDoc,
              "Embedder doc shouldn't be cleared if it wasn't set");
   MOZ_ASSERT(!mEmbedderAccessibleDoc || !aDoc || mEmbedderAccessibleDoc == aDoc,

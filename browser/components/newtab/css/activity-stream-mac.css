@@ -37,21 +37,24 @@ input {
   display: none !important;
 }
 
-body {
+:root {
   --newtab-background-color: #F9F9FB;
   --newtab-background-color-secondary: #FFF;
   --newtab-text-primary-color: #15141a;
   --newtab-primary-action-background: #0061e0;
-  --newtab-text-secondary-color: color-mix(in srgb, var(--newtab-text-primary-color) 80%, transparent);
-  --newtab-element-hover-color: color-mix(in srgb, var(--newtab-background-color) 95%, #000);
-  --newtab-element-active-color: color-mix(in srgb, var(--newtab-background-color) 90%, #000);
+  --newtab-primary-action-background-pocket: #008078;
+  --newtab-text-secondary-color: color-mix(in srgb, var(--newtab-text-primary-color) 70%, transparent);
+  --newtab-element-hover-color: color-mix(in srgb, var(--newtab-background-color) 90%, #000);
+  --newtab-element-active-color: color-mix(in srgb, var(--newtab-background-color) 80%, #000);
   --newtab-element-secondary-color: color-mix(in srgb, currentColor 5%, transparent);
   --newtab-element-secondary-hover-color: color-mix(in srgb, currentColor 12%, transparent);
   --newtab-element-secondary-active-color: color-mix(in srgb, currentColor 25%, transparent);
   --newtab-primary-element-hover-color: color-mix(in srgb, var(--newtab-primary-action-background) 90%, #000);
+  --newtab-primary-element-hover-pocket-color: color-mix(in srgb, var(--newtab-primary-action-background-pocket) 90%, #000);
   --newtab-primary-element-active-color: color-mix(in srgb, var(--newtab-primary-action-background) 80%, #000);
   --newtab-primary-element-text-color: #FFF;
   --newtab-primary-action-background-dimmed: color-mix(in srgb, var(--newtab-primary-action-background) 25%, transparent);
+  --newtab-primary-action-background-pocket-dimmed: color-mix(in srgb, var(--newtab-primary-action-background-pocket) 25%, transparent);
   --newtab-border-color: color-mix(in srgb, var(--newtab-background-color) 75%, #000);
   --newtab-wordmark-color: #20123A;
   --newtab-status-success: #058B00;
@@ -64,13 +67,17 @@ body {
   --newtab-textbox-focus-boxshadow: 0 0 0 1px var(--newtab-primary-action-background), 0 0 0 4px rgba(var(--newtab-primary-action-background), 0.3);
   --newtab-button-secondary-color: inherit;
 }
-body[lwt-newtab-brighttext] {
+:root[lwt-newtab-brighttext] {
   --newtab-background-color: #2B2A33;
   --newtab-background-color-secondary: #42414d;
   --newtab-text-primary-color: #fbfbfe;
   --newtab-primary-action-background: #00ddff;
-  --newtab-element-hover-color: color-mix(in srgb, var(--newtab-background-color) 95%, #FFF);
-  --newtab-element-active-color: color-mix(in srgb, var(--newtab-background-color) 90%, #FFF);
+  --newtab-primary-action-background-pocket: #00ddff;
+  --newtab-primary-action-background-pocket-dimmed: color-mix(in srgb, var(--newtab-primary-action-background) 25%, transparent);
+  --newtab-primary-element-hover-color: color-mix(in srgb, var(--newtab-primary-action-background) 55%, #FFF);
+  --newtab-primary-element-hover-pocket-color: color-mix(in srgb, var(--newtab-primary-action-background-pocket) 55%, #FFF);
+  --newtab-element-hover-color: color-mix(in srgb, var(--newtab-background-color) 80%, #FFF);
+  --newtab-element-active-color: color-mix(in srgb, var(--newtab-background-color) 60%, #FFF);
   --newtab-element-secondary-color: color-mix(in srgb, currentColor 10%, transparent);
   --newtab-element-secondary-hover-color: color-mix(in srgb, currentColor 17%, transparent);
   --newtab-element-secondary-active-color: color-mix(in srgb, currentColor 30%, transparent);
@@ -80,6 +87,11 @@ body[lwt-newtab-brighttext] {
   --newtab-status-success: #7C6;
 }
 
+@media (prefers-contrast) {
+  :root {
+    --newtab-text-secondary-color: var(--newtab-text-primary-color);
+  }
+}
 .icon {
   background-position: center center;
   background-repeat: no-repeat;
@@ -112,7 +124,7 @@ body[lwt-newtab-brighttext] {
   background-image: url("chrome://browser/skin/bookmark-hollow.svg");
 }
 .icon.icon-clear-input {
-  background-image: url("chrome://activity-stream/content/data/content/assets/glyph-cancel-16.svg");
+  background-image: url("chrome://global/skin/icons/close-fill.svg");
 }
 .icon.icon-delete {
   background-image: url("chrome://global/skin/icons/delete.svg");
@@ -122,7 +134,7 @@ body[lwt-newtab-brighttext] {
 }
 .icon.icon-modal-delete {
   flex-shrink: 0;
-  background-image: url("chrome://activity-stream/content/data/content/assets/glyph-modal-delete-32.svg");
+  background-image: url("chrome://activity-stream/content/data/content/assets/glyph-modal-delete-20.svg");
   background-size: 32px;
   height: 32px;
   width: 32px;
@@ -161,13 +173,14 @@ body[lwt-newtab-brighttext] {
   transform: scaleX(-1);
 }
 .icon.icon-edit {
-  background-image: url("chrome://activity-stream/content/data/content/assets/glyph-edit-16.svg");
+  background-image: url("chrome://global/skin/icons/edit.svg");
 }
 .icon.icon-pocket {
   background-image: url("chrome://global/skin/icons/pocket.svg");
 }
 .icon.icon-pocket-save {
-  background-image: url("chrome://global/skin/icons/pocket-outline.svg");
+  background-image: url("chrome://global/skin/icons/pocket.svg");
+  fill: #FFF;
 }
 .icon.icon-pocket-delete {
   background-image: url("chrome://activity-stream/content/data/content/assets/glyph-pocket-delete-16.svg");
@@ -179,14 +192,14 @@ body[lwt-newtab-brighttext] {
   background-image: url("chrome://browser/skin/history.svg");
 }
 .icon.icon-trending {
-  background-image: url("chrome://activity-stream/content/data/content/assets/glyph-trending-16.svg");
+  background-image: url("chrome://browser/skin/trending.svg");
   transform: translateY(2px);
 }
 .icon.icon-now {
   background-image: url("chrome://browser/skin/history.svg");
 }
 .icon.icon-topsites {
-  background-image: url("chrome://activity-stream/content/data/content/assets/glyph-topsites-16.svg");
+  background-image: url("chrome://browser/skin/topsites.svg");
 }
 .icon.icon-pin-small {
   background-image: url("chrome://browser/skin/pin-12.svg");
@@ -755,7 +768,7 @@ main.has-snippet {
   background-color: #FFF;
 }
 .top-site-outer .edit-button {
-  background-image: url("chrome://activity-stream/content/data/content/assets/glyph-edit-16.svg");
+  background-image: url("chrome://global/skin/icons/edit.svg");
 }
 .top-site-outer.dragged .tile *, .top-site-outer.dragged .tile::before {
   display: none;
@@ -1821,36 +1834,15 @@ main.has-snippet {
 .home-section .section .more-info-pocket-wrapper {
   margin-inline-start: -2px;
   overflow: hidden;
-  transition: max-height 250ms cubic-bezier(0.82, 0.085, 0.395, 0.895);
-}
-.home-section .section .more-info-top-wrapper.shrink,
-.home-section .section .more-info-pocket-wrapper.shrink {
-  max-height: 0;
 }
 .home-section .section .more-info-top-wrapper .more-information,
 .home-section .section .more-info-pocket-wrapper .more-information {
   padding-top: 12px;
   position: relative;
-  transition: top 250ms cubic-bezier(0.82, 0.085, 0.395, 0.895);
-}
-.home-section .section .more-info-top-wrapper .more-information.expand,
-.home-section .section .more-info-pocket-wrapper .more-information.expand {
-  top: 0;
-}
-.home-section .section .more-info-top-wrapper {
-  max-height: 78px;
-}
-.home-section .section .more-info-top-wrapper .more-information {
-  top: -77px;
+  transition: margin-top 250ms cubic-bezier(0.82, 0.085, 0.395, 0.895);
 }
 .home-section .section .more-info-top-wrapper .check-wrapper {
   margin-top: 10px;
-}
-.home-section .section .more-info-pocket-wrapper {
-  max-height: 35px;
-}
-.home-section .section .more-info-pocket-wrapper .more-information {
-  top: -35px;
 }
 .home-section .divider {
   border-top: 1px var(--newtab-border-color) solid;
@@ -2635,63 +2627,17 @@ main.has-snippet {
 .ds-card-grid.ds-card-grid-compact {
   grid-gap: 20px;
 }
+@media (min-width: 610px) and (max-width: 866px) {
+  .ds-card-grid.ds-card-grid-recent-saves .ds-card:last-child:nth-child(2n-1) {
+    display: none;
+  }
+}
 .ds-card-grid .ds-card {
   background: #FFF;
   border-radius: 4px;
 }
 [lwt-newtab-brighttext] .ds-card-grid .ds-card {
   background: none;
-}
-.ds-card-grid .ds-sub-header {
-  grid-column: 1/-1;
-  margin-bottom: -7px;
-}
-@media (min-width: 866px) {
-  .ds-column-12 .ds-card-grid.ds-card-grid-hero {
-    grid-template-columns: repeat(12, 1fr);
-  }
-  .ds-column-12 .ds-card-grid.ds-card-grid-hero .ds-card:nth-child(1) {
-    grid-column-start: 1;
-    grid-column-end: span 6;
-    grid-row-start: 1;
-    grid-row-end: span 2;
-  }
-  .ds-column-12 .ds-card-grid.ds-card-grid-hero .ds-card:nth-child(1) .excerpt {
-    -webkit-line-clamp: 4;
-  }
-  .ds-column-12 .ds-card-grid.ds-card-grid-hero .ds-card:nth-child(2),
-.ds-column-12 .ds-card-grid.ds-card-grid-hero .ds-card:nth-child(4) {
-    grid-column-start: 7;
-    grid-column-end: span 3;
-  }
-  .ds-column-12 .ds-card-grid.ds-card-grid-hero .ds-card:nth-child(3),
-.ds-column-12 .ds-card-grid.ds-card-grid-hero .ds-card:nth-child(5) {
-    grid-column-start: 10;
-    grid-column-end: span 3;
-  }
-  .ds-column-12 .ds-card-grid.ds-card-grid-hero .ds-card:nth-child(n+2):nth-child(-n+5) .excerpt {
-    display: none;
-  }
-  .ds-column-12 .ds-card-grid.ds-card-grid-hero .ds-card:nth-child(n+2):nth-child(-n+5) .meta {
-    padding: 8px;
-  }
-  .ds-column-12 .ds-card-grid.ds-card-grid-hero .ds-card:nth-child(n+2):nth-child(-n+5) .meta .title {
-    font-size: 13px;
-    line-height: 19px;
-  }
-  .ds-column-12 .ds-card-grid.ds-card-grid-hero .ds-card:nth-child(n+2):nth-child(-n+5) .meta .story-sponsored-label {
-    -webkit-line-clamp: none;
-    line-height: 19px;
-  }
-  .ds-column-12 .ds-card-grid.ds-card-grid-hero .ds-card:nth-child(n+6) {
-    grid-column-start: auto;
-    grid-column-end: span 4;
-  }
-}
-@media (min-width: 1122px) {
-  .ds-column-12 .ds-card-grid.ds-card-grid-hero .ds-card:nth-child(n+2):nth-child(-n+5) {
-    min-height: 222px;
-  }
 }
 .ds-card-grid.ds-card-grid-border .ds-card:not(.placeholder) {
   border-radius: 8px;
@@ -2700,14 +2646,9 @@ main.has-snippet {
 [lwt-newtab-brighttext] .ds-card-grid.ds-card-grid-border .ds-card:not(.placeholder) {
   background: var(--newtab-background-color-secondary);
 }
-.ds-card-grid.ds-card-grid-border .ds-card:not(.placeholder) .img-wrapper .img img {
+.ds-card-grid.ds-card-grid-border .ds-card:not(.placeholder) .img-wrapper .img img,
+.ds-card-grid.ds-card-grid-border .ds-card:not(.placeholder) .img-wrapper .img .placeholder-image {
   border-radius: 8px 8px 0 0;
-}
-.ds-card-grid.ds-card-grid-no-border .ds-card {
-  background: none;
-}
-.ds-card-grid.ds-card-grid-no-border .ds-card .meta {
-  padding: 12px 0;
 }
 .ds-card-grid .ds-card-link:focus {
   border: 0;
@@ -2769,14 +2710,12 @@ main.has-snippet {
   margin-top: 8px;
 }
 .ds-card-grid.ds-card-grid-four-card-variant .ds-card .meta .source,
-.ds-card-grid.ds-card-grid-four-card-variant .ds-card .meta .ds-last-card-desc,
 .ds-card-grid.ds-card-grid-four-card-variant .ds-card .meta .story-sponsored-label,
 .ds-card-grid.ds-card-grid-four-card-variant .ds-card .meta .status-message .story-context-label {
   color: var(--newtab-text-secondary-color);
   -webkit-line-clamp: 2;
 }
 .ds-card-grid.ds-card-grid-four-card-variant .ds-card .meta .source,
-.ds-card-grid.ds-card-grid-four-card-variant .ds-card .meta .ds-last-card-desc,
 .ds-card-grid.ds-card-grid-four-card-variant .ds-card .meta .story-sponsored-label {
   font-size: 13px;
 }
@@ -2823,29 +2762,21 @@ main.has-snippet {
     margin-top: 8px;
   }
   .ds-column-9 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .source,
-.ds-column-9 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .ds-last-card-desc,
 .ds-column-9 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .story-sponsored-label,
 .ds-column-9 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .status-message .story-context-label, .ds-column-10 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .source,
-.ds-column-10 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .ds-last-card-desc,
 .ds-column-10 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .story-sponsored-label,
 .ds-column-10 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .status-message .story-context-label, .ds-column-11 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .source,
-.ds-column-11 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .ds-last-card-desc,
 .ds-column-11 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .story-sponsored-label,
 .ds-column-11 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .status-message .story-context-label, .ds-column-12 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .source,
-.ds-column-12 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .ds-last-card-desc,
 .ds-column-12 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .story-sponsored-label,
 .ds-column-12 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .status-message .story-context-label {
     color: var(--newtab-text-secondary-color);
     -webkit-line-clamp: 2;
   }
   .ds-column-9 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .source,
-.ds-column-9 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .ds-last-card-desc,
 .ds-column-9 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .story-sponsored-label, .ds-column-10 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .source,
-.ds-column-10 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .ds-last-card-desc,
 .ds-column-10 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .story-sponsored-label, .ds-column-11 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .source,
-.ds-column-11 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .ds-last-card-desc,
 .ds-column-11 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .story-sponsored-label, .ds-column-12 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .source,
-.ds-column-12 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .ds-last-card-desc,
 .ds-column-12 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .story-sponsored-label {
     font-size: 13px;
   }
@@ -2878,29 +2809,21 @@ main.has-snippet {
     margin-top: 8px;
   }
   .ds-column-9 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .source,
-.ds-column-9 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .ds-last-card-desc,
 .ds-column-9 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .story-sponsored-label,
 .ds-column-9 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .status-message .story-context-label, .ds-column-10 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .source,
-.ds-column-10 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .ds-last-card-desc,
 .ds-column-10 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .story-sponsored-label,
 .ds-column-10 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .status-message .story-context-label, .ds-column-11 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .source,
-.ds-column-11 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .ds-last-card-desc,
 .ds-column-11 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .story-sponsored-label,
 .ds-column-11 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .status-message .story-context-label, .ds-column-12 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .source,
-.ds-column-12 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .ds-last-card-desc,
 .ds-column-12 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .story-sponsored-label,
 .ds-column-12 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .status-message .story-context-label {
     color: var(--newtab-text-secondary-color);
     -webkit-line-clamp: 2;
   }
   .ds-column-9 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .source,
-.ds-column-9 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .ds-last-card-desc,
 .ds-column-9 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .story-sponsored-label, .ds-column-10 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .source,
-.ds-column-10 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .ds-last-card-desc,
 .ds-column-10 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .story-sponsored-label, .ds-column-11 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .source,
-.ds-column-11 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .ds-last-card-desc,
 .ds-column-11 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .story-sponsored-label, .ds-column-12 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .source,
-.ds-column-12 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .ds-last-card-desc,
 .ds-column-12 .ds-card-grid.ds-card-grid-hybrid-layout .ds-card .meta .story-sponsored-label {
     font-size: 13px;
   }
@@ -2943,23 +2866,31 @@ main.has-snippet {
   border-radius: 8px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
-.outer-wrapper .ds-card-grid.ds-card-grid-hide-background.ds-card-grid-border .ds-card:not(.placeholder) .img-wrapper .img img.last-card-message-image,
-.outer-wrapper.newtab-experience .ds-card-grid.ds-card-grid-hide-background.ds-card-grid-border .ds-card:not(.placeholder) .img-wrapper .img img.last-card-message-image {
-  background: transparent;
-  box-shadow: none;
-  object-fit: contain;
-}
 .outer-wrapper .ds-card-grid.ds-card-grid-hide-background.ds-card-grid-border .ds-card:not(.placeholder) .meta,
 .outer-wrapper.newtab-experience .ds-card-grid.ds-card-grid-hide-background.ds-card-grid-border .ds-card:not(.placeholder) .meta {
   padding: 12px 0 0;
 }
 
-.ds-layout .ds-card-grid-load-more-button {
-  display: block;
-  margin: 32px auto 0;
-  font-size: 13px;
+.ds-layout .ds-sub-header {
+  margin-top: 24px;
+}
+.ds-layout .ds-sub-header .section-title-container {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  display: flex;
+}
+.ds-layout .ds-sub-header .section-sub-link {
+  color: var(--newtab-primary-action-background);
+  font-size: 14px;
   line-height: 16px;
-  border-radius: 4px;
+  cursor: pointer;
+}
+.ds-layout .ds-sub-header .section-sub-link:hover {
+  text-decoration: underline;
+}
+.ds-layout .ds-sub-header .section-sub-link:active {
+  color: var(--newtab-primary-element-active-color);
 }
 
 .ds-dismiss.ds-dismiss-ds-collection .ds-dismiss-button {
@@ -3346,34 +3277,6 @@ main.has-snippet {
   flex-direction: column;
   position: relative;
 }
-.ds-card .playhead {
-  background: var(--newtab-primary-action-background) url("chrome://activity-stream/content/data/content/assets/glyph-playhead.svg") no-repeat 12px center;
-  border-radius: 20px;
-  bottom: -16px;
-  color: color-mix(in srgb, var(--newtab-primary-element-text-color) 0%, transparent);
-  display: flex;
-  flex-direction: column;
-  height: 40px;
-  justify-content: center;
-  left: 16px;
-  min-width: 40px;
-  padding: 0 0 0 40px;
-  position: absolute;
-  transition: padding 100ms ease-in-out 0ms, color 100ms linear 100ms;
-}
-.ds-card .playhead:hover {
-  color: var(--newtab-primary-element-text-color);
-  padding: 0 20px 0 40px;
-}
-.ds-card .playhead span {
-  display: none;
-}
-.ds-card .playhead:hover span {
-  display: inline;
-  font-style: normal;
-  font-weight: 600;
-  font-size: 13px;
-}
 .ds-card.placeholder {
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--newtab-inner-box-shadow-color);
@@ -3395,16 +3298,14 @@ main.has-snippet {
   padding-top: 50%;
   pointer-events: none;
   background: rgba(0, 0, 0, 0.4);
-  border-radius: 8px;
+  border-radius: 8px 8px 0 0;
 }
 .ds-card .card-stp-button-hover-background .card-stp-button-position-wrapper {
   position: absolute;
-  margin-top: -16px;
-  left: 0;
-  right: 0;
-  top: 50%;
+  inset-inline-end: 10px;
+  top: 10px;
   display: flex;
-  justify-content: center;
+  justify-content: end;
   align-items: center;
 }
 .ds-card .card-stp-button-hover-background .icon-pocket-save,
@@ -3413,13 +3314,12 @@ main.has-snippet {
   height: 15px;
   width: 15px;
   background-size: 15px;
-}
-.ds-card .card-stp-button-hover-background .icon-pocket {
-  fill: #EF4056;
+  fill: #FFF;
 }
 .ds-card .card-stp-button-hover-background .context-menu-button {
   position: static;
   transition: none;
+  border-radius: 3px;
 }
 .ds-card .card-stp-button-hover-background .context-menu-position-container {
   position: relative;
@@ -3432,18 +3332,16 @@ main.has-snippet {
 }
 .ds-card .card-stp-button-hover-background .card-stp-button {
   display: flex;
-  margin-inline-end: 12px;
+  margin-inline-end: 7px;
   font-weight: 400;
   font-size: 13px;
   line-height: 16px;
-  background-color: var(--newtab-background-color-secondary);
+  background-color: #EF4056;
   border: 0;
   border-radius: 4px;
-  padding: 8px;
+  padding: 6px;
   white-space: nowrap;
-}
-.ds-card .card-stp-button-hover-background .card-stp-button:hover .icon-pocket-save {
-  fill: #EF4056;
+  color: #FFF;
 }
 .ds-card .card-stp-button-hover-background button,
 .ds-card .card-stp-button-hover-background .context-menu {
@@ -3489,22 +3387,6 @@ main.has-snippet {
 .ds-card .ds-card-link:active header {
   color: var(--newtab-primary-element-active-color);
 }
-.ds-card.video-card .meta {
-  margin-top: 4px;
-}
-.ds-card.last-card-message .ds-last-card-desc {
-  font-size: 13px;
-  color: var(--newtab-text-secondary-color);
-}
-.ds-card.last-card-message .ds-last-card-desc,
-.ds-card.last-card-message .title {
-  text-align: center;
-}
-.ds-card.last-card-message .last-card-message-image {
-  object-fit: contain;
-  background: transparent;
-  box-shadow: none;
-}
 .ds-card .meta {
   display: flex;
   flex-direction: column;
@@ -3531,49 +3413,12 @@ main.has-snippet {
   font-size: 13px;
   color: var(--newtab-text-secondary-color);
 }
+.ds-card .meta .source span {
+  display: inline-block;
+}
 .ds-card .meta .new-sponsored-label {
   font-size: 13px;
   margin-bottom: 2px;
-}
-.ds-card .meta .cta-button {
-  background-color: var(--newtab-button-secondary-color);
-  width: 100%;
-  margin: 12px 0 4px;
-  box-shadow: none;
-  border-radius: 4px;
-  height: 32px;
-  font-size: 14px;
-  font-weight: 600;
-  padding: 5px 8px 7px;
-  border: 1px solid var(--newtab-border-color);
-}
-.ds-card .meta .cta-button:active {
-  box-shadow: 0 0 0 5px var(--newtab-element-secondary-color);
-}
-.ds-card .meta .cta-link {
-  color: var(--newtab-primary-action-background);
-  fill: var(--newtab-primary-action-background);
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 24px;
-  height: 24px;
-  width: auto;
-  background-size: auto;
-  background-position: right 1.5px;
-  padding-right: 9px;
-}
-.ds-card .meta .cta-link:focus {
-  box-shadow: 0 0 0 5px var(--newtab-element-secondary-color);
-  border-radius: 4px;
-  outline: 0;
-}
-.ds-card .meta .cta-link:active {
-  color: var(--newtab-primary-element-active-color);
-  fill: var(--newtab-primary-element-active-color);
-  box-shadow: none;
-}
-.ds-card .meta .cta-link:hover {
-  text-decoration: underline;
 }
 .ds-card.ds-card-title-lines-2 .meta .title {
   font-size: 17px;
@@ -3622,8 +3467,10 @@ main.has-snippet {
   margin-top: 12px;
   position: relative;
 }
+.story-footer .story-sponsored-label span {
+  display: inline-block;
+}
 .story-footer .story-sponsored-label,
-.story-footer .story-view-count,
 .story-footer .status-message {
   -webkit-line-clamp: 1;
   font-size: 13px;
@@ -3699,6 +3546,7 @@ main.has-snippet {
   opacity: 1;
 }
 .ds-image img,
+.ds-image .placeholder-image,
 .ds-image .broken-image {
   background-color: var(--newtab-element-secondary-color);
   position: absolute;
@@ -3706,6 +3554,25 @@ main.has-snippet {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+.ds-image .placeholder-image {
+  overflow: hidden;
+  background-color: var(--placeholderBackgroundColor);
+}
+.ds-image .placeholder-image::before {
+  content: "";
+  background-image: url("chrome://activity-stream/content/data/content/assets/pocket-swoosh.svg");
+  background-repeat: no-repeat;
+  background-position: center;
+  transform: rotate(var(--placeholderBackgroundRotation));
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  margin-left: var(--placeholderBackgroundOffsetx);
+  margin-top: var(--placeholderBackgroundOffsety);
+  background-size: var(--placeholderBackgroundScale);
 }
 
 .ds-dismiss {
@@ -4047,6 +3914,85 @@ main.has-snippet {
 }
 .ds-privacy-link a:hover {
   text-decoration: underline;
+}
+
+.ds-topics-widget {
+  display: flex;
+  position: relative;
+  flex-direction: column;
+}
+.ds-topics-widget .ds-topics-widget-header {
+  font-size: 18px;
+  line-height: 20px;
+}
+.ds-topics-widget hr {
+  background-color: color-mix(in srgb, var(--newtab-border-color) 52%, transparent);
+  height: 1px;
+  border: 0;
+  margin: 10px 0 0;
+}
+.ds-topics-widget .ds-topics-widget-list-container {
+  flex-grow: 1;
+}
+.ds-topics-widget .ds-topics-widget-list-container ul {
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  grid-gap: 10px;
+  flex-wrap: wrap;
+}
+.ds-topics-widget .ds-topics-widget-list-container ul li {
+  display: flex;
+}
+.ds-topics-widget .ds-topics-widget-list-container ul li a {
+  font-size: 14px;
+  line-height: 16px;
+  text-decoration: none;
+  padding: 8px 15px;
+  background: var(--newtab-background-color-secondary);
+  border: 1px solid color-mix(in srgb, var(--newtab-border-color) 52%, transparent);
+  color: var(--newtab-text-primary-color);
+  border-radius: 8px;
+}
+.ds-topics-widget .ds-topics-widget-list-container ul li a:hover {
+  background: var(--newtab-element-hover-color);
+}
+.ds-topics-widget .ds-topics-widget-list-container ul li a:focus {
+  outline: 0;
+  box-shadow: 0 0 0 3px var(--newtab-primary-action-background-dimmed), 0 0 0 1px var(--newtab-primary-action-background);
+  transition: box-shadow 150ms;
+}
+.ds-topics-widget .ds-topics-widget-list-container ul .ds-topics-widget-list-overflow-item {
+  display: flex;
+}
+@media (min-width: 610px) {
+  .ds-topics-widget .ds-topics-widget-list-container ul .ds-topics-widget-list-overflow-item {
+    display: none;
+  }
+}
+@media (min-width: 1122px) {
+  .ds-topics-widget .ds-topics-widget-list-container ul .ds-topics-widget-list-overflow-item {
+    display: flex;
+  }
+}
+.ds-topics-widget .ds-topics-widget-button {
+  margin: 14px 0 0;
+  font-size: 16px;
+  line-height: 24px;
+  text-align: center;
+  padding: 8px;
+  border-radius: 4px;
+  background-color: var(--newtab-primary-action-background-pocket);
+  border: 0;
+}
+.ds-topics-widget .ds-topics-widget-button:hover {
+  background: var(--newtab-primary-element-hover-pocket-color);
+}
+.ds-topics-widget .ds-topics-widget-button:focus {
+  outline: 0;
+  box-shadow: 0 0 0 3px var(--newtab-primary-action-background-pocket-dimmed), 0 0 0 1px var(--newtab-primary-action-background-pocket);
+  transition: box-shadow 150ms;
 }
 
 .ASRouterButton {

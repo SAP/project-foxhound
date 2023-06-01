@@ -22,7 +22,7 @@ async function reInitSessionFile() {
   await SessionFile.read();
 }
 
-add_task(async function init() {
+add_setup(async function() {
   // Make sure that we are not racing with SessionSaver's time based
   // saves.
   Services.prefs.setIntPref(PREF_SS_INTERVAL, 10000000);
@@ -33,11 +33,10 @@ add_task(async function test_creation() {
   // Cancel all pending session saves so they won't get in our way.
   SessionSaver.cancel();
 
-  let PROFILE_DIR = await PathUtils.getProfileDir();
   // Create dummy sessionstore backups
-  let OLD_BACKUP = PathUtils.join(PROFILE_DIR, "sessionstore.baklz4");
+  let OLD_BACKUP = PathUtils.join(PathUtils.profileDir, "sessionstore.baklz4");
   let OLD_UPGRADE_BACKUP = PathUtils.join(
-    PROFILE_DIR,
+    PathUtils.profileDir,
     "sessionstore.baklz4-0000000"
   );
 
@@ -94,7 +93,7 @@ add_task(async function test_creation() {
   // Open a second tab, save session, ensure that the correct files exist.
   info("Testing situation after a second write");
   let URL2 = URL_BASE + "?second_write";
-  BrowserTestUtils.loadURI(tab.linkedBrowser, URL2);
+  BrowserTestUtils.loadURIString(tab.linkedBrowser, URL2);
   await promiseBrowserLoaded(tab.linkedBrowser);
   await TabStateFlusher.flush(tab.linkedBrowser);
   await SessionSaver.run();

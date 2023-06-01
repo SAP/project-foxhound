@@ -44,7 +44,7 @@ struct MiscContainer final {
         uint32_t mEnumValue;
         mozilla::DeclarationBlock* mCSSDeclaration;
         nsIURI* mURL;
-        mozilla::AtomArray* mAtomArray;
+        mozilla::AttrAtomArray* mAtomArray;
         nsIntMargin* mIntMargin;
         const mozilla::ShadowParts* mShadowParts;
         const mozilla::SVGAnimatedIntegerPair* mSVGAnimatedIntegerPair;
@@ -88,6 +88,26 @@ struct MiscContainer final {
 
  public:
   bool GetString(nsAString& aString) const;
+
+  void* GetStringOrAtomPtr(bool& aIsString) const {
+    uintptr_t bits = mStringBits;
+    aIsString =
+        nsAttrValue::ValueBaseType(mStringBits & NS_ATTRVALUE_BASETYPE_MASK) ==
+        nsAttrValue::eStringBase;
+    return reinterpret_cast<void*>(bits & NS_ATTRVALUE_POINTERVALUE_MASK);
+  }
+
+  nsAtom* GetStoredAtom() const {
+    bool isString = false;
+    void* ptr = GetStringOrAtomPtr(isString);
+    return isString ? nullptr : static_cast<nsAtom*>(ptr);
+  }
+
+  nsStringBuffer* GetStoredStringBuffer() const {
+    bool isString = false;
+    void* ptr = GetStringOrAtomPtr(isString);
+    return isString ? static_cast<nsStringBuffer*>(ptr) : nullptr;
+  }
 
   void SetStringBitsMainThread(uintptr_t aBits) {
     // mStringBits is atomic, but the callers of this function are
@@ -147,7 +167,7 @@ inline double nsAttrValue::GetPercentValue() const {
   return GetMiscContainer()->mDoubleValue / 100.0f;
 }
 
-inline mozilla::AtomArray* nsAttrValue::GetAtomArrayValue() const {
+inline mozilla::AttrAtomArray* nsAttrValue::GetAtomArrayValue() const {
   MOZ_ASSERT(Type() == eAtomArray, "wrong type");
   return GetMiscContainer()->mValue.mAtomArray;
 }

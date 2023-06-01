@@ -8,6 +8,9 @@ package org.mozilla.geckoview;
 import android.content.Context;
 import android.graphics.BlendMode;
 import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
 import android.graphics.Rect;
 import android.os.Build;
 import android.widget.EdgeEffect;
@@ -15,7 +18,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.UiThread;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import org.mozilla.gecko.util.ThreadUtils;
 
 @UiThread
@@ -32,48 +34,37 @@ public final class OverscrollEdgeEffect {
   // All four edges of the screen
   private final EdgeEffect[] mEdges = new EdgeEffect[4];
 
-  private final GeckoSession mSession;
+  private GeckoSession mSession;
   private Runnable mInvalidationCallback;
   private int mWidth;
   private int mHeight;
 
-  /* package */ OverscrollEdgeEffect(final GeckoSession session) {
-    mSession = session;
-  }
+  /* package */ OverscrollEdgeEffect() {}
 
   private static Field sPaintField;
-  private static Method sSetType;
-
-  // By default on SDK_INT 31 and above the edge effect default changed to "TYPE_STRETCH"
-  // which is an effect that we can't support due to using SurfaceTexture.
-  // This restores the edge effect type to TYPE_GLOW which is the default (and only option) on
-  // lower versions.
-  private void setType(final EdgeEffect edgeEffect) {
-    if (Build.VERSION.SDK_INT < 31 && !Build.VERSION.CODENAME.equals("S")) {
-      // setType is only available on 31 (early builds advertise themselves as 30,
-      // with codename S)
-      return;
-    }
-
-    // TODO: remove reflection once 31 is stable
-    if (sSetType == null) {
-      try {
-        sSetType = EdgeEffect.class.getDeclaredMethod("setType", int.class);
-      } catch (final NoSuchMethodException e) {
-        // Nothing we can do here
-        return;
-      }
-    }
-
-    try {
-      sSetType.invoke(edgeEffect, /* TYPE_GLOW */ 0);
-    } catch (final Exception ex) {
-    }
-  }
 
   private void setBlendMode(final EdgeEffect edgeEffect) {
     if (Build.VERSION.SDK_INT < 29) {
       // setBlendMode is only supported on SDK_INT >= 29 and above.
+
+      if (sPaintField == null) {
+        try {
+          sPaintField = EdgeEffect.class.getDeclaredField("mPaint");
+          sPaintField.setAccessible(true);
+        } catch (final NoSuchFieldException e) {
+          // Cannot get the field, nothing we can do here
+          return;
+        }
+      }
+
+      try {
+        final Paint paint = (Paint) sPaintField.get(edgeEffect);
+        final PorterDuffXfermode mode = new PorterDuffXfermode(PorterDuff.Mode.SRC);
+        paint.setXfermode(mode);
+      } catch (final IllegalAccessException ex) {
+        // Nothing we can do
+      }
+
       return;
     }
 
@@ -90,10 +81,16 @@ public final class OverscrollEdgeEffect {
 
     for (int i = 0; i < mEdges.length; i++) {
       final EdgeEffect edgeEffect = new EdgeEffect(context);
+      if (mWidth != 0 || mHeight != 0) {
+        edgeEffect.setSize(mWidth, mHeight);
+      }
       setBlendMode(edgeEffect);
-      setType(edgeEffect);
       mEdges[i] = edgeEffect;
     }
+  }
+
+  /* package */ void setSession(final @Nullable GeckoSession session) {
+    mSession = session;
   }
 
   /**
@@ -147,6 +144,21 @@ public final class OverscrollEdgeEffect {
   }
 
   /* package */ void setVelocity(final float velocity, final int axis) {
+    if (velocity == 0.0f) {
+      if (axis == AXIS_Y) {
+        mEdges[TOP].onRelease();
+        mEdges[BOTTOM].onRelease();
+      } else {
+        mEdges[LEFT].onRelease();
+        mEdges[RIGHT].onRelease();
+      }
+
+      if (mInvalidationCallback != null) {
+        mInvalidationCallback.run();
+      }
+      return;
+    }
+
     final EdgeEffect edge = getEdgeForAxisAndSide(axis, velocity);
 
     // If we're showing overscroll already, start fading it out.
@@ -183,6 +195,10 @@ public final class OverscrollEdgeEffect {
    */
   public void draw(final @NonNull Canvas canvas) {
     ThreadUtils.assertOnUiThread();
+
+    if (mSession == null) {
+      return;
+    }
 
     final Rect pageRect = new Rect();
     mSession.getSurfaceBounds(pageRect);

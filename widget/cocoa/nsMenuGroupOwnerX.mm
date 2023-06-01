@@ -24,7 +24,7 @@
 
 using namespace mozilla;
 
-NS_IMPL_ISUPPORTS(nsMenuGroupOwnerX, nsIMutationObserver)
+NS_IMPL_ISUPPORTS(nsMenuGroupOwnerX, nsIObserver, nsIMutationObserver)
 
 nsMenuGroupOwnerX::nsMenuGroupOwnerX(mozilla::dom::Element* aElement, nsMenuBarX* aMenuBarIfMenuBar)
     : mContent(aElement), mMenuBar(aMenuBarIfMenuBar) {
@@ -53,7 +53,7 @@ void nsMenuGroupOwnerX::ContentAppended(nsIContent* aFirstNewContent) {
   }
 }
 
-void nsMenuGroupOwnerX::NodeWillBeDestroyed(const nsINode* aNode) {}
+void nsMenuGroupOwnerX::NodeWillBeDestroyed(nsINode* aNode) {}
 
 void nsMenuGroupOwnerX::AttributeWillChange(dom::Element* aElement, int32_t aNameSpaceID,
                                             nsAtom* aAttribute, int32_t aModType) {}
@@ -120,6 +120,12 @@ void nsMenuGroupOwnerX::ContentInserted(nsIContent* aChild) {
 
 void nsMenuGroupOwnerX::ParentChainChanged(nsIContent* aContent) {}
 
+void nsMenuGroupOwnerX::ARIAAttributeDefaultWillChange(mozilla::dom::Element* aElement,
+                                                       nsAtom* aAttribute, int32_t aModType) {}
+
+void nsMenuGroupOwnerX::ARIAAttributeDefaultChanged(mozilla::dom::Element* aElement,
+                                                    nsAtom* aAttribute, int32_t aModType) {}
+
 // For change management, we don't use a |nsSupportsHashtable| because
 // we know that the lifetime of all these items is bounded by the
 // lifetime of the menubar. No need to add any more strong refs to the
@@ -137,6 +143,29 @@ void nsMenuGroupOwnerX::UnregisterForContentChanges(nsIContent* aContent) {
     aContent->RemoveMutationObserver(this);
   }
   mContentToObserverTable.Remove(aContent);
+}
+
+void nsMenuGroupOwnerX::RegisterForLocaleChanges() {
+  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+  if (obs) {
+    obs->AddObserver(this, "intl:app-locales-changed", false);
+  }
+}
+
+void nsMenuGroupOwnerX::UnregisterForLocaleChanges() {
+  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+  if (obs) {
+    obs->RemoveObserver(this, "intl:app-locales-changed");
+  }
+}
+
+NS_IMETHODIMP
+nsMenuGroupOwnerX::Observe(nsISupports* aSubject, const char* aTopic, const char16_t* aData) {
+  if (mMenuBar && !strcmp(aTopic, "intl:app-locales-changed")) {
+    // Rebuild the menu with the new locale strings.
+    mMenuBar->SetNeedsRebuild();
+  }
+  return NS_OK;
 }
 
 nsChangeObserver* nsMenuGroupOwnerX::LookupContentChangeObserver(nsIContent* aContent) {

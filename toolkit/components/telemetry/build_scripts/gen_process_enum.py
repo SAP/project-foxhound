@@ -5,11 +5,10 @@
 # Write out processes data for C++. The processes are defined
 # in a file provided as a command-line argument.
 
-from __future__ import print_function
-from mozparsers.shared_telemetry_utils import ParserError, load_yaml_file
-
-import sys
 import collections
+import sys
+
+from mozparsers.shared_telemetry_utils import ParserError, load_yaml_file
 
 # The banner/text at the top of the generated file.
 banner = """/* This file is auto-generated from Telemetry build scripts,
@@ -19,6 +18,8 @@ banner = """/* This file is auto-generated from Telemetry build scripts,
 file_header = """\
 #ifndef mozilla_TelemetryProcessEnums_h
 #define mozilla_TelemetryProcessEnums_h
+
+#include <cstdint>
 
 namespace mozilla {
 namespace Telemetry {

@@ -6,9 +6,8 @@
 const { BrowserUsageTelemetry } = ChromeUtils.import(
   "resource:///modules/BrowserUsageTelemetry.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 const PROFILE_COUNT_SCALAR = "browser.engagement.profile_count";
@@ -58,15 +57,6 @@ function getDummyTelemetryClientId() {
 }
 function setNewDummyTelemetryClientId() {
   ++gDummyTelemetryClientId;
-}
-
-// This function clears the pref that prevents this profile from being counted
-// more than once per installation.
-function clearProfileCountedPref() {
-  const updateDirectory = getDummyUpdateDirectory();
-  const hash = updateDirectory.leafName;
-  const prefName = `browser.engagement.profileCounted.${hash}`;
-  Services.prefs.clearUserPref(prefName);
 }
 
 // Returns null if the (fake) profile count file hasn't been created yet.

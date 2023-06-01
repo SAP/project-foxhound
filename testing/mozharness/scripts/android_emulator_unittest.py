@@ -5,13 +5,12 @@
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 # ***** END LICENSE BLOCK *****
 
-from __future__ import absolute_import
 import copy
 import datetime
 import json
 import os
-import sys
 import subprocess
+import sys
 
 # load modules from parent dir
 here = os.path.abspath(os.path.dirname(__file__))
@@ -22,15 +21,14 @@ from mozharness.base.script import BaseScript, PreScriptAction
 from mozharness.mozilla.automation import TBPL_RETRY
 from mozharness.mozilla.mozbase import MozbaseMixin
 from mozharness.mozilla.testing.android import AndroidMixin
-from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
 from mozharness.mozilla.testing.codecoverage import (
     CodeCoverageMixin,
     code_coverage_config_options,
 )
+from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
 
-PY2 = sys.version_info.major == 2
 SUITE_DEFAULT_E10S = ["geckoview-junit", "mochitest", "reftest"]
-SUITE_NO_E10S = ["cppunittest", "geckoview-junit", "xpcshell"]
+SUITE_NO_E10S = ["cppunittest", "gtest", "jittest", "xpcshell"]
 SUITE_REPEATABLE = ["mochitest", "reftest"]
 
 
@@ -69,6 +67,15 @@ class AndroidEmulatorTest(
                 },
             ],
             [
+                ["--enable-xorigin-tests"],
+                {
+                    "action": "store_true",
+                    "dest": "enable_xorigin_tests",
+                    "default": False,
+                    "help": "Run tests in a cross origin iframe.",
+                },
+            ],
+            [
                 ["--gpu-required"],
                 {
                     "action": "store_true",
@@ -96,12 +103,32 @@ class AndroidEmulatorTest(
                 },
             ],
             [
-                ["--enable-fission"],
+                ["--disable-e10s"],
+                {
+                    "action": "store_false",
+                    "dest": "e10s",
+                    "default": True,
+                    "help": "Run tests without multiple processes (e10s).",
+                },
+            ],
+            [
+                ["--disable-fission"],
                 {
                     "action": "store_true",
-                    "dest": "enable_fission",
+                    "dest": "disable_fission",
                     "default": False,
-                    "help": "Run with Fission enabled.",
+                    "help": "Run without Fission enabled.",
+                },
+            ],
+            [
+                ["--web-content-isolation-strategy"],
+                {
+                    "action": "store",
+                    "type": "int",
+                    "dest": "web_content_isolation_strategy",
+                    "help": "Strategy used to determine whether or not a particular site should"
+                    "load into a webIsolated content process, see "
+                    "fission.webContentIsolationStrategy.",
                 },
             ],
             [
@@ -168,7 +195,9 @@ class AndroidEmulatorTest(
         # AndroidMixin uses this when launching the emulator. We only want
         # GLES3 if we're running WebRender (default)
         self.use_gles3 = True
-        self.enable_fission = c.get("enable_fission")
+        self.disable_e10s = c.get("disable_e10s")
+        self.disable_fission = c.get("disable_fission")
+        self.web_content_isolation_strategy = c.get("web_content_isolation_strategy")
         self.extra_prefs = c.get("extra_prefs")
 
     def query_abs_dirs(self):
@@ -292,6 +321,15 @@ class AndroidEmulatorTest(
             else:
                 self.log("--repeat not supported in {}".format(category), level=WARNING)
 
+        # do not add --disable fission if we don't have --disable-e10s
+        if c["disable_fission"] and category not in ["gtest", "cppunittest"]:
+            cmd.append("--disable-fission")
+
+        if "web_content_isolation_strategy" in c:
+            cmd.append(
+                "--web-content-isolation-strategy=%s"
+                % c["web_content_isolation_strategy"]
+            )
         cmd.extend(["--setpref={}".format(p) for p in self.extra_prefs])
 
         if not (self.verify_enabled or self.per_test_coverage):
@@ -303,8 +341,14 @@ class AndroidEmulatorTest(
                 if self.total_chunks is not None:
                     cmd.extend(["--total-chunks", self.total_chunks])
 
-        if self.enable_fission:
-            cmd.extend(["--enable-fission"])
+        if category not in SUITE_NO_E10S:
+            if category in SUITE_DEFAULT_E10S and not c["e10s"]:
+                cmd.append("--disable-e10s")
+            elif category not in SUITE_DEFAULT_E10S and c["e10s"]:
+                cmd.append("--e10s")
+
+        if c.get("enable_xorigin_tests"):
+            cmd.extend(["--enable-xorigin-tests"])
 
         try_options, try_tests = self.try_args(self.test_suite)
         cmd.extend(try_options)
@@ -382,16 +426,12 @@ class AndroidEmulatorTest(
         dirs = self.query_abs_dirs()
         requirements = None
         suites = self._query_suites()
-        if PY2:
-            wspb_requirements = "websocketprocessbridge_requirements.txt"
-        else:
-            wspb_requirements = "websocketprocessbridge_requirements_3.txt"
         if ("mochitest-media", "mochitest-media") in suites:
             # mochitest-media is the only thing that needs this
             requirements = os.path.join(
                 dirs["abs_mochitest_dir"],
                 "websocketprocessbridge",
-                wspb_requirements,
+                "websocketprocessbridge_requirements_3.txt",
             )
         if requirements:
             self.register_virtualenv_module(requirements=[requirements], two_pass=True)
@@ -498,10 +538,10 @@ class AndroidEmulatorTest(
                         return
                 else:
                     self.record_status(tbpl_status, level=log_level)
-                    self.log(
+                    # report as INFO instead of log_level to avoid extra Treeherder lines
+                    self.info(
                         "The %s suite: %s ran with return status: %s"
                         % (suite_category, suite, tbpl_status),
-                        level=log_level,
                     )
 
 

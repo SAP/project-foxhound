@@ -30,6 +30,9 @@ static const uint32_t MAX_BYTES_SNIFFED = 512;
 // bitstream.
 // This is 320kbps * 144 / 32kHz + 1 padding byte + 4 bytes of capture pattern.
 static const uint32_t MAX_BYTES_SNIFFED_MP3 = 320 * 144 / 32 + 1 + 4;
+// Multi-channel low sample-rate AAC packets can be huge, have a higher maximum
+// size.
+static const uint32_t MAX_BYTES_SNIFFED_ADTS = 8096;
 
 NS_IMPL_ISUPPORTS(nsMediaSniffer, nsIContentSniffer)
 
@@ -81,15 +84,11 @@ nsMediaSnifferFtypEntry sFtypEntries[] = {
      PatternLabel::ftyp_3gp4},  // 3gp4 is based on MP4
     {PATTERN_ENTRY("\xFF\xFF\xFF", "3gp", VIDEO_3GPP),
      PatternLabel::ftyp_3gp},  // Could be 3gp5, ...
-    {PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "M4V ", VIDEO_MP4),
-     PatternLabel::ftyp_M4V},
-    {PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "M4A ", AUDIO_MP4),
-     PatternLabel::ftyp_M4A},
-    {PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "M4P ", AUDIO_MP4),
-     PatternLabel::ftyp_M4P},
-    {PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "qt  ", VIDEO_QUICKTIME),
-     PatternLabel::ftyp_qt},
-    {PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "crx ", APPLICATION_OCTET_STREAM),
+    {PATTERN_ENTRY("\xFF\xFF\xFF", "M4V", VIDEO_MP4), PatternLabel::ftyp_M4V},
+    {PATTERN_ENTRY("\xFF\xFF\xFF", "M4A", AUDIO_MP4), PatternLabel::ftyp_M4A},
+    {PATTERN_ENTRY("\xFF\xFF\xFF", "M4P", AUDIO_MP4), PatternLabel::ftyp_M4P},
+    {PATTERN_ENTRY("\xFF\xFF", "qt", VIDEO_QUICKTIME), PatternLabel::ftyp_qt},
+    {PATTERN_ENTRY("\xFF\xFF\xFF", "crx", APPLICATION_OCTET_STREAM),
      PatternLabel::ftyp_crx},
     {PATTERN_ENTRY("\xFF\xFF\xFF", "iso", VIDEO_MP4),
      PatternLabel::ftyp_iso},  // Could be isom or iso2.
@@ -232,7 +231,7 @@ nsMediaSniffer::GetMIMETypeFromContent(nsIRequest* aRequest,
     return NS_OK;
   }
 
-  if (MatchesADTS(aData, clampedLength)) {
+  if (MatchesADTS(aData, std::min(aLength, MAX_BYTES_SNIFFED_ADTS))) {
     aSniffedType.AssignLiteral(AUDIO_AAC);
     return NS_OK;
   }

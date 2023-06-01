@@ -9,6 +9,7 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/Variant.h"
 
 #include <new>
 #include <stddef.h>
@@ -372,6 +373,11 @@ class TypedRegisterSet {
     return T::ReduceSetForPush(*this);
   }
   uint32_t getPushSizeInBytes() const { return T::GetPushSizeInBytes(*this); }
+
+  size_t offsetOfPushedRegister(RegType reg) const {
+    MOZ_ASSERT(hasRegisterIndex(reg));
+    return T::OffsetOfPushedRegister(bits(), reg);
+  }
 };
 
 using GeneralRegisterSet = TypedRegisterSet<Register>;
@@ -1312,7 +1318,8 @@ inline LiveGeneralRegisterSet SavedNonVolatileRegisters(
   result.add(Register::FromCode(Registers::lr));
 #elif defined(JS_CODEGEN_ARM64)
   result.add(Register::FromCode(Registers::lr));
-#elif defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64)
+#elif defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64) || \
+    defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_RISCV64)
   result.add(Register::FromCode(Registers::ra));
 #endif
 

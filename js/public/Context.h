@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+ /* vim: set ts=8 sts=2 et sw=2 tw=80:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -88,6 +87,23 @@ JS_PUBLIC_API void AssertObjectBelongsToCurrentThread(JSObject* obj);
 using FilenameValidationCallback = bool (*)(JSContext* cx,
                                             const char* filename);
 JS_PUBLIC_API void SetFilenameValidationCallback(FilenameValidationCallback cb);
+
+/**
+ * Install an context wide callback that implements the ECMA262 specification
+ * host hook `HostEnsureCanAddPrivateElement`.
+ *
+ * This hook, which should only be overriden for Web Browsers, examines the
+ * provided object to determine if the addition of a private field is allowed,
+ * throwing an exception and returning false if not.
+ *
+ * The default implementation of this hook, which will be used unless overriden,
+ * examines only proxy objects, and throws if the proxy handler returns true
+ * from the handler method `throwOnPrivateField()`.
+ */
+using EnsureCanAddPrivateElementOp = bool (*)(JSContext* cx, HandleValue val);
+
+JS_PUBLIC_API void SetHostEnsureCanAddPrivateElementHook(
+    JSContext* cx, EnsureCanAddPrivateElementOp op);
 
 } /* namespace JS */
 

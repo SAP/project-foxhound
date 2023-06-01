@@ -17,9 +17,7 @@
 
 <script src="head.js"></script>
 <script class="testbody" type="text/javascript">
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const {BrowserTestUtils} = ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 var mainWindow = window.browsingContext.topChromeWindow;
 
@@ -200,7 +198,7 @@ function testOnWindow(aTestData) {
       };
       win.gBrowser.addProgressListener(progressListener, Ci.nsIWebProgress.NOTIFY_CONTENT_BLOCKING);
 
-      BrowserTestUtils.loadURI(browser, aTestData.url);
+      BrowserTestUtils.loadURIString(browser, aTestData.url);
       await BrowserTestUtils.browserLoaded(
         browser,
         false,

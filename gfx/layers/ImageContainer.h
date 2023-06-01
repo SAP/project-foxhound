@@ -56,6 +56,7 @@ class KnowsCompositor;
 class NVImage;
 class MemoryOrShmem;
 #ifdef XP_WIN
+class D3D11RecycleAllocator;
 class D3D11YCbCrRecycleAllocator;
 #endif
 #ifdef XP_MACOSX
@@ -108,6 +109,9 @@ class Image {
     return gfx::IntRect(GetOrigin().x, GetOrigin().y, GetSize().width,
                         GetSize().height);
   }
+  virtual gfx::ColorDepth GetColorDepth() const {
+    return gfx::ColorDepth::COLOR_8;
+  }
 
   ImageBackendData* GetBackendData(LayersBackend aBackend) {
     return mBackendData[aBackend].get();
@@ -117,6 +121,9 @@ class Image {
   }
 
   int32_t GetSerial() const { return mSerial; }
+
+  bool IsDRM() const { return mIsDRM; }
+  void SetIsDRM(bool aIsDRM) { mIsDRM = aIsDRM; }
 
   virtual already_AddRefed<gfx::SourceSurface> GetAsSourceSurface() = 0;
 
@@ -152,7 +159,10 @@ class Image {
       TextureClient* tcOverride = nullptr);
 
   Image(void* aImplData, ImageFormat aFormat)
-      : mImplData(aImplData), mSerial(++sSerialCounter), mFormat(aFormat) {}
+      : mImplData(aImplData),
+        mSerial(++sSerialCounter),
+        mFormat(aFormat),
+        mIsDRM(false) {}
 
   // Protected destructor, to discourage deletion outside of Release():
   virtual ~Image() = default;
@@ -165,6 +175,7 @@ class Image {
   void* mImplData;
   int32_t mSerial;
   ImageFormat mFormat;
+  bool mIsDRM;
 
   static mozilla::Atomic<int32_t> sSerialCounter;
 };
@@ -197,7 +208,7 @@ class BufferRecycleBin final {
 
   // This protects mRecycledBuffers, mRecycledBufferSize, mRecycledTextures
   // and mRecycledTextureSizes
-  Mutex mLock;
+  Mutex mLock MOZ_UNANNOTATED;
 
   // We should probably do something to prune this list on a timer so we don't
   // eat excess memory while video is paused...
@@ -251,7 +262,7 @@ class ImageContainerListener final {
 
   ~ImageContainerListener();
 
-  Mutex mLock;
+  Mutex mLock MOZ_UNANNOTATED;
   ImageContainer* mImageContainer;
 };
 
@@ -281,7 +292,6 @@ class ImageContainer final : public SupportsThreadSafeWeakPtr<ImageContainer> {
   friend class ImageContainerChild;
 
  public:
-  MOZ_DECLARE_THREADSAFEWEAKREFERENCE_TYPENAME(ImageContainer)
   MOZ_DECLARE_REFCOUNTED_TYPENAME(ImageContainer)
 
   enum Mode { SYNCHRONOUS = 0x0, ASYNCHRONOUS = 0x01 };
@@ -467,6 +477,8 @@ class ImageContainer final : public SupportsThreadSafeWeakPtr<ImageContainer> {
   void EnsureRecycleAllocatorForRDD(KnowsCompositor* aKnowsCompositor);
 
 #ifdef XP_WIN
+  RefPtr<D3D11RecycleAllocator> GetD3D11RecycleAllocator(
+      KnowsCompositor* aKnowsCompositor, gfx::SurfaceFormat aPreferredFormat);
   D3D11YCbCrRecycleAllocator* GetD3D11YCbCrRecycleAllocator(
       KnowsCompositor* aKnowsCompositor);
 #endif
@@ -543,11 +555,13 @@ class ImageContainer final : public SupportsThreadSafeWeakPtr<ImageContainer> {
 
   // RecursiveMutex to protect thread safe access to the "current
   // image", and any other state which is shared between threads.
-  RecursiveMutex mRecursiveMutex;
+  RecursiveMutex mRecursiveMutex MOZ_UNANNOTATED;
 
   RefPtr<TextureClientRecycleAllocator> mRecycleAllocator;
 
 #ifdef XP_WIN
+  RefPtr<D3D11RecycleAllocator> mD3D11RecycleAllocator;
+
   RefPtr<D3D11YCbCrRecycleAllocator> mD3D11YCbCrRecycleAllocator;
 #endif
 #ifdef XP_MACOSX
@@ -634,48 +648,58 @@ class AutoLockImage {
   AutoTArray<ImageContainer::OwningImage, 4> mImages;
 };
 
-struct PlanarYCbCrData {
-  // Luminance buffer
-  uint8_t* mYChannel = nullptr;
-  int32_t mYStride = 0;
-  gfx::IntSize mYSize = gfx::IntSize(0, 0);
-  int32_t mYSkip = 0;
-  // Chroma buffers
-  uint8_t* mCbChannel = nullptr;
-  uint8_t* mCrChannel = nullptr;
-  int32_t mCbCrStride = 0;
-  gfx::IntSize mCbCrSize = gfx::IntSize(0, 0);
-  int32_t mCbSkip = 0;
-  int32_t mCrSkip = 0;
-  // Picture region
-  uint32_t mPicX = 0;
-  uint32_t mPicY = 0;
-  gfx::IntSize mPicSize = gfx::IntSize(0, 0);
-  StereoMode mStereoMode = StereoMode::MONO;
-  gfx::ColorDepth mColorDepth = gfx::ColorDepth::COLOR_8;
-  gfx::YUVColorSpace mYUVColorSpace = gfx::YUVColorSpace::Default;
-  gfx::ColorRange mColorRange = gfx::ColorRange::LIMITED;
-
-  gfx::IntRect GetPictureRect() const {
-    return gfx::IntRect(mPicX, mPicY, mPicSize.width, mPicSize.height);
-  }
-
-  static Maybe<PlanarYCbCrData> From(const SurfaceDescriptorBuffer&);
-
-  // We would use mPicSize, but that's not hooked up in WR for RawData
-  // ExternalImages, so we manually clip sizes later on. We should fix WR,
-  // but not in this patch. Do not use unless mPicSize doesn't work for you.
-  Maybe<gfx::IntSize> mCroppedYSize;
-  Maybe<gfx::IntSize> mCroppedCbCrSize;
-};
-
-// This type is currently only used for AVIF and therefore makes some
-// AVIF-specific assumptions (e.g., Alpha's bpc and stride is equal to Y's one)
+// This type is currently only used for AVIF and WebCodecs therefore makes some
+// specific assumptions (e.g., Alpha's bpc and stride is equal to Y's one)
 struct PlanarAlphaData {
   uint8_t* mChannel = nullptr;
   gfx::IntSize mSize = gfx::IntSize(0, 0);
   gfx::ColorDepth mDepth = gfx::ColorDepth::COLOR_8;
   bool mPremultiplied = false;
+};
+struct PlanarYCbCrData {
+  // Luminance buffer
+  uint8_t* mYChannel = nullptr;
+  int32_t mYStride = 0;
+  int32_t mYSkip = 0;
+  // Chroma buffers
+  uint8_t* mCbChannel = nullptr;
+  uint8_t* mCrChannel = nullptr;
+  int32_t mCbCrStride = 0;
+  int32_t mCbSkip = 0;
+  int32_t mCrSkip = 0;
+  // Alpha buffer and its metadata
+  Maybe<PlanarAlphaData> mAlpha = Nothing();
+  // Picture region
+  gfx::IntRect mPictureRect = gfx::IntRect(0, 0, 0, 0);
+  StereoMode mStereoMode = StereoMode::MONO;
+  gfx::ColorDepth mColorDepth = gfx::ColorDepth::COLOR_8;
+  gfx::YUVColorSpace mYUVColorSpace = gfx::YUVColorSpace::Default;
+  gfx::ColorSpace2 mColorPrimaries = gfx::ColorSpace2::UNKNOWN;
+  gfx::TransferFunction mTransferFunction = gfx::TransferFunction::BT709;
+  gfx::ColorRange mColorRange = gfx::ColorRange::LIMITED;
+  gfx::ChromaSubsampling mChromaSubsampling = gfx::ChromaSubsampling::FULL;
+
+  // The cropped picture size of the Y channel.
+  gfx::IntSize YPictureSize() const { return mPictureRect.Size(); }
+
+  // The cropped picture size of the Cb/Cr channels.
+  gfx::IntSize CbCrPictureSize() const {
+    return mCbCrStride > 0 ? gfx::ChromaSize(YPictureSize(), mChromaSubsampling)
+                           : gfx::IntSize(0, 0);
+  }
+
+  // The total uncropped size of data in the Y channel.
+  gfx::IntSize YDataSize() const {
+    return gfx::IntSize(mPictureRect.XMost(), mPictureRect.YMost());
+  }
+
+  // The total uncropped size of data in the Cb/Cr channels.
+  gfx::IntSize CbCrDataSize() const {
+    return mCbCrStride > 0 ? gfx::ChromaSize(YDataSize(), mChromaSubsampling)
+                           : gfx::IntSize(0, 0);
+  }
+
+  static Maybe<PlanarYCbCrData> From(const SurfaceDescriptorBuffer&);
 };
 
 /****** Image subtypes for the different formats ******/
@@ -690,12 +714,9 @@ struct PlanarAlphaData {
  * 4:2:2 - CbCr width is half that of Y. Height is the same.
  * 4:2:0 - CbCr width and height is half that of Y.
  *
- * The color format is detected based on the height/width ratios
- * defined above.
+ * mChromaSubsampling specifies which YCbCr subsampling scheme to use.
  *
- * The Image that is rendered is the picture region defined by
- * mPicX, mPicY and mPicSize. The size of the rendered image is
- * mPicSize, not mYSize or mCbCrSize.
+ * The Image that is rendered is the picture region defined by mPictureRect.
  *
  * mYSkip, mCbSkip, mCrSkip are added to support various output
  * formats from hardware decoder. They are per-pixel skips in the
@@ -705,7 +726,7 @@ struct PlanarAlphaData {
  * the mYChannel buffer looks like:
  *
  * |<----------------------- mYStride ----------------------------->|
- * |<----------------- mYSize.width --------------->|
+ * |<----------------- YDataSize().width ---------->|
  *  0   3   6   9   12  15  18  21                639             669
  * |----------------------------------------------------------------|
  * |Y___Y___Y___Y___Y___Y___Y___Y...                |%%%%%%%%%%%%%%%|
@@ -736,14 +757,13 @@ class PlanarYCbCrImage : public Image {
   /**
    * This will create an empty data buffers according to the input data's size.
    */
-  virtual bool CreateEmptyBuffer(const Data& aData) { return false; }
-
-  /**
-   * Ask this Image to not convert YUV to RGB during SetData, and make
-   * the original data available through GetData. This is optional,
-   * and not all PlanarYCbCrImages will support it.
-   */
-  virtual void SetDelayedConversion(bool aDelayed) {}
+  virtual bool CreateEmptyBuffer(const Data& aData, const gfx::IntSize& aYSize,
+                                 const gfx::IntSize& aCbCrSize) {
+    return false;
+  }
+  bool CreateEmptyBuffer(const Data& aData) {
+    return CreateEmptyBuffer(aData, aData.YDataSize(), aData.CbCrDataSize());
+  }
 
   /**
    * Grab the original YUV data. This is optional.

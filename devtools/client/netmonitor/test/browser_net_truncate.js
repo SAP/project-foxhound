@@ -15,7 +15,9 @@ add_task(async function() {
 
   info("Starting test... ");
 
-  const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+  const {
+    L10N,
+  } = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 
   const { document } = monitor.panelWin;
 
@@ -43,12 +45,12 @@ add_task(async function() {
   );
   is(
     transferred,
-    L10N.getFormatStrWithNumbers("networkMenu.sizeMB", 2),
+    L10N.getFormatStrWithNumbers("networkMenu.sizeMB", 2.1),
     "Transferred size should be rendered correctly."
   );
   is(
     size,
-    L10N.getFormatStrWithNumbers("networkMenu.sizeMB", 2),
+    L10N.getFormatStrWithNumbers("networkMenu.sizeMB", 2.1),
     "Size should be rendered correctly."
   );
 

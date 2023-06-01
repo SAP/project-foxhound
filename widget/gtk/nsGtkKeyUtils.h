@@ -13,11 +13,14 @@
 #include "nsTArray.h"
 
 #include <gdk/gdk.h>
-#include <X11/XKBlib.h>
+#ifdef MOZ_X11
+#  include <X11/XKBlib.h>
+#endif
 #ifdef MOZ_WAYLAND
 #  include <gdk/gdkwayland.h>
 #  include <xkbcommon/xkbcommon.h>
 #endif
+#include "X11UndefineNone.h"
 
 class nsWindow;
 
@@ -248,8 +251,10 @@ class KeymapWrapper {
    * Initializing methods.
    */
   void Init();
+#ifdef MOZ_X11
   void InitXKBExtension();
   void InitBySystemSettingsX11();
+#endif
 #ifdef MOZ_WAYLAND
   void InitBySystemSettingsWayland();
 #endif
@@ -325,6 +330,7 @@ class KeymapWrapper {
    */
   int mXKBBaseEventCode;
 
+#ifdef MOZ_X11
   /**
    * Only auto_repeats[] stores valid value.  If you need to use other
    * members, you need to listen notification events for them.
@@ -332,6 +338,7 @@ class KeymapWrapper {
    * InitXKBExtension().
    */
   XKeyboardState mKeyboardState;
+#endif
 
   /**
    * Pointer of the singleton instance.
@@ -342,7 +349,9 @@ class KeymapWrapper {
    * Auto key repeat management.
    */
   static guint sLastRepeatableHardwareKeyCode;
+#ifdef MOZ_X11
   static Time sLastRepeatableKeyTime;
+#endif
   enum RepeatState { NOT_PRESSED, FIRST_PRESS, REPEATING };
   static RepeatState sRepeatState;
 
@@ -448,6 +457,7 @@ class KeymapWrapper {
    */
   static uint32_t GetDOMKeyCodeFromKeyPairs(guint aGdkKeyval);
 
+#ifdef MOZ_X11
   /**
    * FilterEvents() listens all events on all our windows.
    * Be careful, this may make damage to performance if you add expensive
@@ -455,6 +465,7 @@ class KeymapWrapper {
    */
   static GdkFilterReturn FilterEvents(GdkXEvent* aXEvent, GdkEvent* aGdkEvent,
                                       gpointer aData);
+#endif
 
   /**
    * MaybeDispatchContextMenuEvent() may dispatch eContextMenu event if

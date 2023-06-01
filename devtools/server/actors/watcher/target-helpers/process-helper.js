@@ -4,15 +4,19 @@
 
 "use strict";
 
-const Services = require("Services");
-const {
-  WatcherRegistry,
-} = require("devtools/server/actors/watcher/WatcherRegistry.jsm");
+const { WatcherRegistry } = ChromeUtils.importESModule(
+  "resource://devtools/server/actors/watcher/WatcherRegistry.sys.mjs",
+  {
+    // WatcherRegistry needs to be a true singleton and loads ActorManagerParent
+    // which also has to be a true singleton.
+    loadInDevToolsLoader: false,
+  }
+);
 
 loader.lazyRequireGetter(
   this,
   "ChildDebuggerTransport",
-  "devtools/shared/transport/child-transport",
+  "resource://devtools/shared/transport/child-transport.js",
   true
 );
 
@@ -77,9 +81,29 @@ function onContentProcessActorCreated(msg) {
   watcher.notifyTargetAvailable(actor);
 }
 
+function onContentProcessActorDestroyed(msg) {
+  const { watcherActorID } = msg.data;
+  const watcher = WatcherRegistry.getWatcher(watcherActorID);
+  if (!watcher) {
+    throw new Error(
+      `Receiving a content process actor destruction without a watcher actor ${watcherActorID}`
+    );
+  }
+  // Ignore watchers of other connections.
+  // We may have two browser toolbox connected to the same process.
+  // This will spawn two distinct Watcher actor and two distinct process target helper module.
+  // Avoid processing the event many times, otherwise we will notify about the same target
+  // multiple times.
+  if (!watchers.has(watcher)) {
+    return;
+  }
+  const messageManager = msg.target;
+  unregisterWatcherForMessageManager(watcher, messageManager);
+}
+
 function onMessageManagerClose(messageManager, topic, data) {
   const list = actors.get(messageManager);
-  if (!list || list.length == 0) {
+  if (!list || !list.length) {
     return;
   }
   for (const { prefix, childTransport, actor, watcher } of list) {
@@ -93,38 +117,63 @@ function onMessageManagerClose(messageManager, topic, data) {
   actors.delete(messageManager);
 }
 
-function closeWatcherTransports(watcher) {
+/**
+ * Unregister everything created for a given watcher against a precise message manager:
+ * - clear up things from `actors` WeakMap,
+ * - notify all related target actors as being destroyed,
+ * - close all DevTools Transports being created for each Message Manager.
+ *
+ * @param {WatcherActor} watcher
+ * @param {MessageManager}
+ * @param {object} options
+ * @param {boolean} options.isModeSwitching
+ *        true when this is called as the result of a change to the devtools.browsertoolbox.scope pref
+ */
+function unregisterWatcherForMessageManager(watcher, messageManager, options) {
+  const targetActorDescriptions = actors.get(messageManager);
+  if (!targetActorDescriptions || !targetActorDescriptions.length) {
+    return;
+  }
+
+  // Destroy all transports related to this watcher and tells the client to purge all related actors
+  const matchingTargetActorDescriptions = targetActorDescriptions.filter(
+    item => item.watcher === watcher
+  );
+  for (const {
+    prefix,
+    childTransport,
+    actor,
+  } of matchingTargetActorDescriptions) {
+    watcher.notifyTargetDestroyed(actor, options);
+
+    childTransport.close();
+    watcher.conn.cancelForwarding(prefix);
+  }
+
+  // Then update global `actors` WeakMap by stripping all data about this watcher
+  const remainingTargetActorDescriptions = targetActorDescriptions.filter(
+    item => item.watcher !== watcher
+  );
+  if (!remainingTargetActorDescriptions.length) {
+    actors.delete(messageManager);
+  } else {
+    actors.set(messageManager, remainingTargetActorDescriptions);
+  }
+}
+
+/**
+ * Destroy everything related to a given watcher that has been created in this module:
+ * (See unregisterWatcherForMessageManager)
+ *
+ * @param {WatcherActor} watcher
+ * @param {object} options
+ * @param {boolean} options.isModeSwitching
+ *        true when this is called as the result of a change to the devtools.browsertoolbox.scope pref
+ */
+function closeWatcherTransports(watcher, options) {
   for (let i = 0; i < Services.ppmm.childCount; i++) {
     const messageManager = Services.ppmm.getChildAt(i);
-    const targetActorDescriptions = actors.get(messageManager);
-    if (!targetActorDescriptions || targetActorDescriptions.length == 0) {
-      continue;
-    }
-
-    // Destroy all transports related to this watcher and tells the client to purge all related actors
-    const matchingTargetActorDescriptions = targetActorDescriptions.filter(
-      item => item.watcher === watcher
-    );
-    for (const {
-      prefix,
-      childTransport,
-      actor,
-    } of matchingTargetActorDescriptions) {
-      watcher.notifyTargetDestroyed(actor);
-
-      childTransport.close();
-      watcher.conn.cancelForwarding(prefix);
-    }
-
-    // Then update global `actors` WeakMap by stripping all data about this watcher
-    const remainingTargetActorDescriptions = targetActorDescriptions.filter(
-      item => item.watcher !== watcher
-    );
-    if (remainingTargetActorDescriptions.length == 0) {
-      actors.delete(messageManager);
-    } else {
-      actors.set(messageManager, remainingTargetActorDescriptions);
-    }
+    unregisterWatcherForMessageManager(watcher, messageManager, options);
   }
 }
 
@@ -135,6 +184,10 @@ function maybeRegisterMessageListeners(watcher) {
     Services.ppmm.addMessageListener(
       "debug:content-process-actor",
       onContentProcessActorCreated
+    );
+    Services.ppmm.addMessageListener(
+      "debug:content-process-actor-destroyed",
+      onContentProcessActorDestroyed
     );
     Services.obs.addObserver(onMessageManagerClose, "message-manager-close");
 
@@ -151,15 +204,26 @@ function maybeRegisterMessageListeners(watcher) {
     }
   }
 }
-function maybeUnregisterMessageListeners(watcher) {
+
+/**
+ * @param {WatcherActor} watcher
+ * @param {object} options
+ * @param {boolean} options.isModeSwitching
+ *        true when this is called as the result of a change to the devtools.browsertoolbox.scope pref
+ */
+function maybeUnregisterMessageListeners(watcher, options = {}) {
   const sizeBefore = watchers.size;
   watchers.delete(watcher);
-  closeWatcherTransports(watcher);
+  closeWatcherTransports(watcher, options);
 
   if (sizeBefore == 1 && watchers.size == 0) {
     Services.ppmm.removeMessageListener(
       "debug:content-process-actor",
       onContentProcessActorCreated
+    );
+    Services.ppmm.removeMessageListener(
+      "debug:content-process-actor-destroyed",
+      onContentProcessActorDestroyed
     );
     Services.obs.removeObserver(onMessageManagerClose, "message-manager-close");
 
@@ -170,7 +234,9 @@ function maybeUnregisterMessageListeners(watcher) {
     // module unregister the last watcher of all.
     Services.ppmm.removeDelayedProcessScript(CONTENT_PROCESS_SCRIPT);
 
-    Services.ppmm.broadcastAsyncMessage("debug:destroy-process-script");
+    Services.ppmm.broadcastAsyncMessage("debug:destroy-process-script", {
+      options,
+    });
   }
 }
 
@@ -221,8 +287,14 @@ async function createTargets(watcher) {
   await onTargetsCreated;
 }
 
-function destroyTargets(watcher) {
-  maybeUnregisterMessageListeners(watcher);
+/**
+ * @param {WatcherActor} watcher
+ * @param {object} options
+ * @param {boolean} options.isModeSwitching
+ *        true when this is called as the result of a change to the devtools.browsertoolbox.scope pref
+ */
+function destroyTargets(watcher, options) {
+  maybeUnregisterMessageListeners(watcher, options);
 
   Services.ppmm.broadcastAsyncMessage("debug:destroy-target", {
     watcherActorID: watcher.actorID,

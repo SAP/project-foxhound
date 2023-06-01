@@ -108,44 +108,16 @@ jobs:
             - deb11-valgrind
     lint:
         symbol: I(lnt)
-        parent: ubuntu1804-base
-    # Neither the debian10-raw nor the debian10-packages images can have
-    # packages dependencies.
-    debian10-raw:
-        symbol: I(deb10-raw)
-        definition: debian-raw
-        args:
-            BASE_IMAGE: debian:buster-20210816
-            DIST: buster
-            SNAPSHOT: '20210816T214117Z'
-    debian10-packages:
-        symbol: I(deb10-pkg)
-        definition: debian-packages
-        parent: debian10-raw
-    debian10-base:
-        symbol: I(deb10-base)
-        definition: debian-base
-        parent: debian10-raw
-        packages:
-            - deb10-mercurial
-            - deb10-python-zstandard
-    debian10-test:
-        symbol: I(deb10-test)
-        parent: debian10-base
-    debian10-test-iris:
-        symbol: I(deb10-ti)
-        parent: debian10-test
-        packages:
-            - deb10-python-zstandard
+        parent: debian11-base
     # Neither the debian11-raw nor the debian11-packages images can have
     # packages dependencies.
     debian11-raw:
         symbol: I(deb11-raw)
         definition: debian-raw
         args:
-            BASE_IMAGE: debian:bullseye-20210816
+            BASE_IMAGE: debian:bullseye-20221205
             DIST: bullseye
-            SNAPSHOT: '20210816T214117Z'
+            SNAPSHOT: '20221204T212138Z'
     debian11-packages:
         symbol: I(deb11-pkg)
         definition: debian-packages
@@ -161,10 +133,18 @@ jobs:
         symbol: I(deb11)
         parent: debian11-base
         definition: debian-build
+    debian11-repackage:
+        symbol: I(deb11-rpk)
+        parent: debian11-base
+        definition: debian-repackage
+        packages:
+            - deb11-mercurial
     deb11-toolchain-build:
         symbol: I(deb11-toolchain)
         parent: debian11-base
         definition: toolchain-build
+        packages:
+            - deb11-cmake
     android-build:
         symbol: I(agb)
         parent: debian11-base
@@ -192,42 +172,42 @@ jobs:
         parent: debian11-base
     partner-repack:
         symbol: I(PR)
-        parent: debian10-base
+        parent: debian11-base
         definition: partner-repack
     updatebot:
         symbol: I(3rdp)
         parent: push-to-try
     periodic-updates:
         symbol: I(file)
-        parent: ubuntu1804-base
+        parent: debian11-base
     firefox-snap:
         symbol: I(snap)
     firefox-flatpak:
         symbol: I(flatpak)
     webrender:
         symbol: I(webrender)
-        parent: debian10-base
+        parent: debian11-base
     condprof:
         symbol: I(condprof)
         parent: ubuntu1804-test
-    visual-metrics:
-        symbol: I(visual-metrics)
-        parent: debian10-base
     github-sync:
         symbol: I(github-sync)
-        parent: debian10-base
+        parent: debian11-base
     sentry:
         symbol: I(sentry)
-        parent: debian10-base
+        parent: debian11-base
     system-symbols-mac:
         symbol: I(system-symbols-mac)
-        parent: debian10-base
+        parent: debian11-base
     system-symbols-win:
         symbol: I(system-symbols-win)
-        parent: debian10-base
+        parent: debian11-base
+    system-symbols-linux-scraper:
+        symbol: I(system-symbols-linux)
+        parent: debian11-base
     push-to-try:
         symbol: I(push-to-try)
-        parent: debian10-base
+        parent: debian11-base
     decision:
         symbol: I(decision)
-        parent: ubuntu1804-base
+        parent: ubuntu2004-base

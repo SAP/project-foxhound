@@ -11,8 +11,7 @@
 class nsWindow;
 class gfxASurface;
 
-namespace mozilla {
-namespace widget {
+namespace mozilla::widget {
 
 // This is the Windows-specific implementation of CompositorWidget. For
 // the most part it only requires an HWND, however it maintains extra state
@@ -47,7 +46,7 @@ class InProcessWinCompositorWidget final
   void OnDestroyWindow() override;
   bool OnWindowResize(const LayoutDeviceIntSize& aSize) override;
   void OnWindowModeChange(nsSizeMode aSizeMode) override;
-  void UpdateTransparency(nsTransparencyMode aMode) override;
+  void UpdateTransparency(TransparencyMode aMode) override;
   void NotifyVisibilityUpdated(nsSizeMode aSizeMode,
                                bool aIsFullyOccluded) override;
   void ClearTransparentWindow() override;
@@ -88,9 +87,12 @@ class InProcessWinCompositorWidget final
   gfx::CriticalSection mPresentLock;
 
   // Transparency handling.
-  mozilla::Mutex mTransparentSurfaceLock;
-  mozilla::Atomic<nsTransparencyMode, MemoryOrdering::Relaxed>
-      mTransparencyMode;
+  mozilla::Mutex mTransparentSurfaceLock MOZ_UNANNOTATED;
+  mozilla::Atomic<uint32_t, MemoryOrdering::Relaxed> mTransparencyMode;
+
+  bool TransparencyModeIs(TransparencyMode aMode) const {
+    return TransparencyMode(uint32_t(mTransparencyMode)) == aMode;
+  }
 
   // Visibility handling.
   mozilla::Atomic<nsSizeMode, MemoryOrdering::Relaxed> mSizeMode;
@@ -106,7 +108,6 @@ class InProcessWinCompositorWidget final
   bool mNotDeferEndRemoteDrawing;
 };
 
-}  // namespace widget
-}  // namespace mozilla
+}  // namespace mozilla::widget
 
 #endif  // widget_windows_InProcessWinCompositorWidget_h

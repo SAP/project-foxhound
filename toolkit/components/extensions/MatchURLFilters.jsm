@@ -4,12 +4,6 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
-
 /* exported MatchURLFilters */
 
 var EXPORTED_SYMBOLS = ["MatchURLFilters"];
@@ -89,12 +83,12 @@ class MatchURLFilters {
         if (["resource", "chrome"].includes(uri.scheme)) {
           port = undefined;
         } else {
-          port = Services.io.getProtocolHandler(uri.scheme).defaultPort;
+          port = Services.io.getDefaultPort(uri.scheme);
         }
       }
 
       // Return false if none of the ports (or port ranges) is verified
-      return filter.ports.some(filterPort => {
+      const portMatch = filter.ports.some(filterPort => {
         if (Array.isArray(filterPort)) {
           let [lower, upper] = filterPort;
           return port >= lower && port <= upper;
@@ -102,6 +96,10 @@ class MatchURLFilters {
 
         return port === filterPort;
       });
+
+      if (!portMatch) {
+        return false;
+      }
     }
 
     // Filters on host, url, path, query:

@@ -33,30 +33,6 @@ namespace wr {
 MOZ_DEFINE_MALLOC_SIZE_OF(WebRenderMallocSizeOf)
 MOZ_DEFINE_MALLOC_ENCLOSING_SIZE_OF(WebRenderMallocEnclosingSizeOf)
 
-enum SideBitsPacked {
-  eSideBitsPackedTop = 0x1000,
-  eSideBitsPackedRight = 0x2000,
-  eSideBitsPackedBottom = 0x4000,
-  eSideBitsPackedLeft = 0x8000
-};
-
-static uint16_t SideBitsToHitInfoBits(SideBits aSideBits) {
-  uint16_t ret = 0;
-  if (aSideBits & SideBits::eTop) {
-    ret |= eSideBitsPackedTop;
-  }
-  if (aSideBits & SideBits::eRight) {
-    ret |= eSideBitsPackedRight;
-  }
-  if (aSideBits & SideBits::eBottom) {
-    ret |= eSideBitsPackedBottom;
-  }
-  if (aSideBits & SideBits::eLeft) {
-    ret |= eSideBitsPackedLeft;
-  }
-  return ret;
-}
-
 class NewRenderer : public RendererEvent {
  public:
   NewRenderer(wr::DocumentHandle** aDocHandle,
@@ -458,26 +434,10 @@ void WebRenderAPI::UpdateDebugFlags(uint32_t aFlags) {
 }
 
 void WebRenderAPI::SendTransaction(TransactionBuilder& aTxn) {
+  if (mRootApi && mRootApi->mRendererDestroyed) {
+    return;
+  }
   wr_api_send_transaction(mDocHandle, aTxn.Raw(), aTxn.UseSceneBuilderThread());
-}
-
-SideBits ExtractSideBitsFromHitInfoBits(uint16_t& aHitInfoBits) {
-  SideBits sideBits = SideBits::eNone;
-  if (aHitInfoBits & eSideBitsPackedTop) {
-    sideBits |= SideBits::eTop;
-  }
-  if (aHitInfoBits & eSideBitsPackedRight) {
-    sideBits |= SideBits::eRight;
-  }
-  if (aHitInfoBits & eSideBitsPackedBottom) {
-    sideBits |= SideBits::eBottom;
-  }
-  if (aHitInfoBits & eSideBitsPackedLeft) {
-    sideBits |= SideBits::eLeft;
-  }
-
-  aHitInfoBits &= 0x0fff;
-  return sideBits;
 }
 
 std::vector<WrHitResult> WebRenderAPI::HitTest(const wr::WorldPoint& aPoint) {
@@ -494,8 +454,14 @@ std::vector<WrHitResult> WebRenderAPI::HitTest(const wr::WorldPoint& aPoint) {
     geckoResult.mLayersId = wr::AsLayersId(wrResult.pipeline_id);
     geckoResult.mScrollId =
         static_cast<layers::ScrollableLayerGuid::ViewID>(wrResult.scroll_id);
-    geckoResult.mSideBits = ExtractSideBitsFromHitInfoBits(wrResult.hit_info);
-    geckoResult.mHitInfo.deserialize(wrResult.hit_info);
+    geckoResult.mHitInfo.deserialize(wrResult.hit_info & 0x0fff);
+    geckoResult.mSideBits = static_cast<SideBits>(wrResult.hit_info >> 12);
+
+    if (wrResult.animation_id != 0) {
+      geckoResult.mAnimationId = Some(wrResult.animation_id);
+    } else {
+      geckoResult.mAnimationId = Nothing();
+    }
     geckoResults.push_back(geckoResult);
   }
   return geckoResults;
@@ -575,7 +541,7 @@ void WebRenderAPI::SetClearColor(const gfx::DeviceColor& aColor) {
   RenderThread::Get()->SetClearColor(mId, ToColorF(aColor));
 }
 
-void WebRenderAPI::SetProfilerUI(const nsCString& aUIString) {
+void WebRenderAPI::SetProfilerUI(const nsACString& aUIString) {
   RenderThread::Get()->SetProfilerUI(mId, aUIString);
 }
 
@@ -686,7 +652,7 @@ void WebRenderAPI::Capture() {
   wr_api_capture(mDocHandle, path, bits);
 }
 
-void WebRenderAPI::StartCaptureSequence(const nsCString& aPath,
+void WebRenderAPI::StartCaptureSequence(const nsACString& aPath,
                                         uint32_t aFlags) {
   if (mCaptureSequence) {
     wr_api_stop_capture_sequence(mDocHandle);
@@ -1035,9 +1001,11 @@ Maybe<wr::WrSpatialId> DisplayListBuilder::PushStackingContext(
   MOZ_ASSERT(mClipChainLeaf.isNothing(),
              "Non-empty leaf from clip chain given, but not used with SC!");
 
-  WRDL_LOG("PushStackingContext b=%s t=%s\n", mWrState,
-           ToString(aBounds).c_str(),
-           transform ? ToString(*transform).c_str() : "none");
+  WRDL_LOG(
+      "PushStackingContext b=%s t=%s id=0x%" PRIx64 "\n", mWrState,
+      ToString(aBounds).c_str(),
+      aParams.mTransformPtr ? ToString(*aParams.mTransformPtr).c_str() : "none",
+      aParams.animation ? aParams.animation->id : 0);
 
   auto spatialId = wr_dp_push_stacking_context(
       mWrState, aBounds, mCurrentSpaceAndClipChain.space, &aParams,
@@ -1075,7 +1043,7 @@ wr::WrClipId DisplayListBuilder::DefineImageMaskClip(
   CancelGroup();
 
   WrClipId clipId = wr_dp_define_image_mask_clip_with_parent_clip_chain(
-      mWrState, &mCurrentSpaceAndClipChain, aMask, aPoints.Elements(),
+      mWrState, mCurrentSpaceAndClipChain.space, aMask, aPoints.Elements(),
       aPoints.Length(), aFillRule);
 
   return clipId;
@@ -1089,8 +1057,8 @@ wr::WrClipId DisplayListBuilder::DefineRoundedRectClip(
   if (aSpace) {
     clipId = wr_dp_define_rounded_rect_clip(mWrState, *aSpace, aComplex);
   } else {
-    clipId = wr_dp_define_rounded_rect_clip_with_parent_clip_chain(
-        mWrState, &mCurrentSpaceAndClipChain, aComplex);
+    clipId = wr_dp_define_rounded_rect_clip(
+        mWrState, mCurrentSpaceAndClipChain.space, aComplex);
   }
 
   return clipId;
@@ -1104,8 +1072,8 @@ wr::WrClipId DisplayListBuilder::DefineRectClip(Maybe<wr::WrSpatialId> aSpace,
   if (aSpace) {
     clipId = wr_dp_define_rect_clip(mWrState, *aSpace, aClipRect);
   } else {
-    clipId = wr_dp_define_rect_clip_with_parent_clip_chain(
-        mWrState, &mCurrentSpaceAndClipChain, aClipRect);
+    clipId = wr_dp_define_rect_clip(mWrState, mCurrentSpaceAndClipChain.space,
+                                    aClipRect);
   }
 
   return clipId;
@@ -1171,8 +1139,8 @@ wr::WrSpatialId DisplayListBuilder::DefineScrollLayer(
 
   WRDL_LOG("DefineScrollLayer id=%" PRIu64
            "/%zu p=%s co=%s cl=%s generation=%s hasScrollLinkedEffect=%s\n",
-           mWrState, aViewId, space->id,
-           aParent ? ToString(aParent->space.id).c_str() : "(nil)",
+           mWrState, aViewId, space.id,
+           aParent ? ToString(aParent->id).c_str() : "(nil)",
            ToString(aContentRect).c_str(), ToString(aClipRect).c_str(),
            ToString(aScrollOffsetGeneration).c_str(),
            ToString(aHasScrollLinkedEffect).c_str());
@@ -1184,11 +1152,13 @@ wr::WrSpatialId DisplayListBuilder::DefineScrollLayer(
 void DisplayListBuilder::PushRect(const wr::LayoutRect& aBounds,
                                   const wr::LayoutRect& aClip,
                                   bool aIsBackfaceVisible,
+                                  bool aForceAntiAliasing, bool aIsCheckerboard,
                                   const wr::ColorF& aColor) {
   wr::LayoutRect clip = MergeClipLeaf(aClip);
   WRDL_LOG("PushRect b=%s cl=%s c=%s\n", mWrState, ToString(aBounds).c_str(),
            ToString(clip).c_str(), ToString(aColor).c_str());
   wr_dp_push_rect(mWrState, aBounds, clip, aIsBackfaceVisible,
+                  aForceAntiAliasing, aIsCheckerboard,
                   &mCurrentSpaceAndClipChain, aColor);
 }
 
@@ -1225,7 +1195,7 @@ void DisplayListBuilder::PushHitTest(
     const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
     bool aIsBackfaceVisible,
     const layers::ScrollableLayerGuid::ViewID& aScrollId,
-    gfx::CompositorHitTestInfo aHitInfo, SideBits aSideBits) {
+    const gfx::CompositorHitTestInfo& aHitInfo, SideBits aSideBits) {
   wr::LayoutRect clip = MergeClipLeaf(aClip);
   WRDL_LOG("PushHitTest b=%s cl=%s\n", mWrState, ToString(aBounds).c_str(),
            ToString(clip).c_str());
@@ -1235,7 +1205,7 @@ void DisplayListBuilder::PushHitTest(
                 "of bits in uint16_t minus 4 for SideBitsPacked");
 
   uint16_t hitInfoBits = static_cast<uint16_t>(aHitInfo.serialize()) |
-                         SideBitsToHitInfoBits(aSideBits);
+                         (static_cast<uint16_t>(aSideBits) << 12);
 
   wr_dp_push_hit_test(mWrState, aBounds, clip, aIsBackfaceVisible,
                       &mCurrentSpaceAndClipChain, aScrollId, hitInfoBits);
@@ -1318,16 +1288,17 @@ void DisplayListBuilder::PushConicGradient(
 
 void DisplayListBuilder::PushImage(
     const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
-    bool aIsBackfaceVisible, wr::ImageRendering aFilter, wr::ImageKey aImage,
-    bool aPremultipliedAlpha, const wr::ColorF& aColor,
-    bool aPreferCompositorSurface, bool aSupportsExternalCompositing) {
+    bool aIsBackfaceVisible, bool aForceAntiAliasing,
+    wr::ImageRendering aFilter, wr::ImageKey aImage, bool aPremultipliedAlpha,
+    const wr::ColorF& aColor, bool aPreferCompositorSurface,
+    bool aSupportsExternalCompositing) {
   wr::LayoutRect clip = MergeClipLeaf(aClip);
   WRDL_LOG("PushImage b=%s cl=%s\n", mWrState, ToString(aBounds).c_str(),
            ToString(clip).c_str());
   wr_dp_push_image(mWrState, aBounds, clip, aIsBackfaceVisible,
-                   &mCurrentSpaceAndClipChain, aFilter, aImage,
-                   aPremultipliedAlpha, aColor, aPreferCompositorSurface,
-                   aSupportsExternalCompositing);
+                   aForceAntiAliasing, &mCurrentSpaceAndClipChain, aFilter,
+                   aImage, aPremultipliedAlpha, aColor,
+                   aPreferCompositorSurface, aSupportsExternalCompositing);
 }
 
 void DisplayListBuilder::PushRepeatingImage(
@@ -1372,6 +1343,20 @@ void DisplayListBuilder::PushNV12Image(
       aSupportsExternalCompositing);
 }
 
+void DisplayListBuilder::PushP010Image(
+    const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
+    bool aIsBackfaceVisible, wr::ImageKey aImageChannel0,
+    wr::ImageKey aImageChannel1, wr::WrColorDepth aColorDepth,
+    wr::WrYuvColorSpace aColorSpace, wr::WrColorRange aColorRange,
+    wr::ImageRendering aRendering, bool aPreferCompositorSurface,
+    bool aSupportsExternalCompositing) {
+  wr_dp_push_yuv_P010_image(
+      mWrState, aBounds, MergeClipLeaf(aClip), aIsBackfaceVisible,
+      &mCurrentSpaceAndClipChain, aImageChannel0, aImageChannel1, aColorDepth,
+      aColorSpace, aColorRange, aRendering, aPreferCompositorSurface,
+      aSupportsExternalCompositing);
+}
+
 void DisplayListBuilder::PushYCbCrInterleavedImage(
     const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
     bool aIsBackfaceVisible, wr::ImageKey aImageChannel0,
@@ -1385,13 +1370,26 @@ void DisplayListBuilder::PushYCbCrInterleavedImage(
       aSupportsExternalCompositing);
 }
 
-void DisplayListBuilder::PushIFrame(const wr::LayoutRect& aBounds,
+void DisplayListBuilder::PushIFrame(const LayoutDeviceRect& aDevPxBounds,
                                     bool aIsBackfaceVisible,
                                     PipelineId aPipeline,
                                     bool aIgnoreMissingPipeline) {
   mRemotePipelineIds.AppendElement(aPipeline);
-  wr_dp_push_iframe(mWrState, aBounds, MergeClipLeaf(aBounds),
-                    aIsBackfaceVisible, &mCurrentSpaceAndClipChain, aPipeline,
+  // If the incoming bounds size has decimals (As it could when zoom is
+  // involved), and is pushed straight through here, the compositor would end up
+  // calculating the destination rect to paint the rendered iframe into
+  // with those decimal values, rounding the result, instead of snapping. This
+  // can cause the rendered iframe rect and its destination rect to be
+  // mismatched, resulting in interpolation artifacts.
+  auto snapped = aDevPxBounds;
+  auto tl = snapped.TopLeft().Round();
+  auto br = snapped.BottomRight().Round();
+
+  snapped.SizeTo(LayoutDeviceSize(br.x - tl.x, br.y - tl.y));
+
+  const auto bounds = wr::ToLayoutRect(snapped);
+  wr_dp_push_iframe(mWrState, bounds, MergeClipLeaf(bounds), aIsBackfaceVisible,
+                    &mCurrentSpaceAndClipChain, aPipeline,
                     aIgnoreMissingPipeline);
 }
 

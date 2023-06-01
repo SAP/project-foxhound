@@ -7,6 +7,7 @@ const TEST_PAGE_1 =
   "http://mochi.test:8888/browser/docshell/test/browser/dummy_page.html";
 
 const TEST_PAGE_2 =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com/browser/docshell/test/browser/dummy_page.html";
 
 add_task(async function test() {
@@ -15,7 +16,7 @@ add_task(async function test() {
     await SpecialPowers.spawn(browser, [], () => {
       content.addEventListener("unload", e => e.currentTarget.stop(), true);
     });
-    BrowserTestUtils.loadURI(browser, TEST_PAGE_2);
+    BrowserTestUtils.loadURIString(browser, TEST_PAGE_2);
     await loaded;
     ok(true, "Page loaded successfully");
   });

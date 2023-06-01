@@ -1,7 +1,7 @@
 "use strict";
 
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 
 const server = createHttpServer();
@@ -67,7 +67,7 @@ let extensionData = {
   },
 
   manifest: {
-    applications: {
+    browser_specific_settings: {
       gecko: {
         id: "i18n_css@mochi.test",
       },

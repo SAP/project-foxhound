@@ -1,6 +1,12 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
+extern crate firefox_on_glean;
+use firefox_on_glean::metrics;
+
+extern crate nsstring;
+use nsstring::nsString;
+
 fn nonfatal_fail(msg: String) {
     extern "C" {
         fn GTest_FOG_ExpectFailure(message: *const ::std::os::raw::c_char);
@@ -28,17 +34,22 @@ macro_rules! expect {
 }
 
 #[no_mangle]
-pub extern "C" fn Rust_MeasureInitializeTime() {
-    // At this point FOG is already initialized.
-    // We still need for it to finish, as it is running in a separate thread.
+pub extern "C" fn Rust_TestRustInGTest() {
+    // Just a smoke test, we show here how tests might work that both
+    // a) Are in Rust, and
+    // b) Require Gecko
+    // This demonstration doesn't actually require Gecko. But we pretend it
+    // does so we remember how to do this rust-in-gtest pattern.
+    metrics::test_only::bad_code.add(12);
+    expect!(metrics::test_only::bad_code.test_get_value(None) == Some(12));
+}
 
-    let metric = &*fog::metrics::fog::initialization;
-    while metric.test_get_value("metrics").is_none() {
-        // We _know_ this value is recorded early, so let's just yield
-        // and try again quickly.
-        std::thread::yield_now();
-    }
-
-    let value = metric.test_get_value("metrics").unwrap();
-    expect!(value > 0);
+#[no_mangle]
+pub extern "C" fn Rust_TestJogfile() {
+    // Ensure that the generated jogfile in t/c/g/tests/pytest
+    // (which is installed nearby using TEST_HARNESS_FILES)
+    // can be consumed by JOG's inner workings
+    //
+    // If it can't, that's perhaps a sign that the inner workings need to be updated.
+    expect!(jog::jog_load_jogfile(&nsString::from("jogfile_output")));
 }

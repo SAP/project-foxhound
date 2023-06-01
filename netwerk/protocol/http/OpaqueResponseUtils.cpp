@@ -6,14 +6,23 @@
 
 #include "mozilla/net/OpaqueResponseUtils.h"
 
-#include "mozilla/Telemetry.h"
-#include "mozilla/TelemetryHistogramEnums.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/dom/JSValidatorParent.h"
+#include "ErrorList.h"
 #include "nsContentUtils.h"
 #include "nsHttpResponseHead.h"
+#include "nsISupports.h"
 #include "nsMimeTypes.h"
+#include "nsThreadUtils.h"
+#include "nsStringStream.h"
+#include "HttpBaseChannel.h"
 
-namespace mozilla {
-namespace net {
+#define LOGORB(msg, ...)            \
+  MOZ_LOG(gORBLog, LogLevel::Debug, \
+          ("%s: %p " msg, __func__, this, ##__VA_ARGS__))
+
+namespace mozilla::net {
 
 static bool IsOpaqueSafeListedMIMEType(const nsACString& aContentType) {
   if (aContentType.EqualsLiteral(TEXT_CSS) ||
@@ -43,6 +52,7 @@ static bool IsOpaqueBlockListedNeverSniffedMIMEType(
          aContentType.EqualsLiteral(APPLICATION_MSWORD) ||
          aContentType.EqualsLiteral(APPLICATION_MSWORD_TEMPLATE) ||
          aContentType.EqualsLiteral(APPLICATION_PDF) ||
+         aContentType.EqualsLiteral(APPLICATION_MPEGURL) ||
          aContentType.EqualsLiteral(APPLICATION_VND_CES_QUICKPOINT) ||
          aContentType.EqualsLiteral(APPLICATION_VND_CES_QUICKSHEET) ||
          aContentType.EqualsLiteral(APPLICATION_VND_CES_QUICKWORD) ||
@@ -69,39 +79,37 @@ static bool IsOpaqueBlockListedNeverSniffedMIMEType(
          aContentType.EqualsLiteral(APPLICATION_VND_WORDPROSSING_OPENXML) ||
          aContentType.EqualsLiteral(APPLICATION_GZIP) ||
          aContentType.EqualsLiteral(APPLICATION_XPROTOBUF) ||
+         aContentType.EqualsLiteral(APPLICATION_XPROTOBUFFER) ||
          aContentType.EqualsLiteral(APPLICATION_ZIP) ||
+         aContentType.EqualsLiteral(AUDIO_MPEG_URL) ||
          aContentType.EqualsLiteral(MULTIPART_BYTERANGES) ||
          aContentType.EqualsLiteral(MULTIPART_SIGNED) ||
          aContentType.EqualsLiteral(TEXT_EVENT_STREAM) ||
-         aContentType.EqualsLiteral(TEXT_CSV);
+         aContentType.EqualsLiteral(TEXT_CSV) ||
+         aContentType.EqualsLiteral(TEXT_VTT);
 }
 
 OpaqueResponseBlockedReason GetOpaqueResponseBlockedReason(
-    const nsHttpResponseHead& aResponseHead) {
-  nsAutoCString contentType;
-  aResponseHead.ContentType(contentType);
-  if (contentType.IsEmpty()) {
+    const nsACString& aContentType, uint16_t aStatus, bool aNoSniff) {
+  if (aContentType.IsEmpty()) {
     return OpaqueResponseBlockedReason::BLOCKED_SHOULD_SNIFF;
   }
 
-  if (IsOpaqueSafeListedMIMEType(contentType)) {
+  if (IsOpaqueSafeListedMIMEType(aContentType)) {
     return OpaqueResponseBlockedReason::ALLOWED_SAFE_LISTED;
   }
 
-  if (IsOpaqueBlockListedNeverSniffedMIMEType(contentType)) {
+  if (IsOpaqueBlockListedNeverSniffedMIMEType(aContentType)) {
     return OpaqueResponseBlockedReason::BLOCKED_BLOCKLISTED_NEVER_SNIFFED;
   }
 
-  if (aResponseHead.Status() == 206 &&
-      IsOpaqueBlockListedMIMEType(contentType)) {
+  if (aStatus == 206 && IsOpaqueBlockListedMIMEType(aContentType)) {
     return OpaqueResponseBlockedReason::BLOCKED_206_AND_BLOCKLISTED;
   }
 
   nsAutoCString contentTypeOptionsHeader;
-  if (aResponseHead.GetContentTypeOptionsHeader(contentTypeOptionsHeader) &&
-      contentTypeOptionsHeader.EqualsIgnoreCase("nosniff") &&
-      (IsOpaqueBlockListedMIMEType(contentType) ||
-       contentType.EqualsLiteral(TEXT_PLAIN))) {
+  if (aNoSniff && (IsOpaqueBlockListedMIMEType(aContentType) ||
+                   aContentType.EqualsLiteral(TEXT_PLAIN))) {
     return OpaqueResponseBlockedReason::
         BLOCKED_NOSNIFF_AND_EITHER_BLOCKLISTED_OR_TEXTPLAIN;
   }
@@ -109,12 +117,26 @@ OpaqueResponseBlockedReason GetOpaqueResponseBlockedReason(
   return OpaqueResponseBlockedReason::BLOCKED_SHOULD_SNIFF;
 }
 
+OpaqueResponseBlockedReason GetOpaqueResponseBlockedReason(
+    const nsHttpResponseHead& aResponseHead) {
+  nsAutoCString contentType;
+  aResponseHead.ContentType(contentType);
+
+  nsAutoCString contentTypeOptionsHeader;
+  bool nosniff =
+      aResponseHead.GetContentTypeOptionsHeader(contentTypeOptionsHeader) &&
+      contentTypeOptionsHeader.EqualsIgnoreCase("nosniff");
+
+  return GetOpaqueResponseBlockedReason(contentType, aResponseHead.Status(),
+                                        nosniff);
+}
+
 Result<std::tuple<int64_t, int64_t, int64_t>, nsresult>
 ParseContentRangeHeaderString(const nsAutoCString& aRangeStr) {
   // Parse the range header: e.g. Content-Range: bytes 7000-7999/8000.
   const int32_t spacePos = aRangeStr.Find(" "_ns);
-  const int32_t dashPos = aRangeStr.Find("-"_ns, true, spacePos);
-  const int32_t slashPos = aRangeStr.Find("/"_ns, true, dashPos);
+  const int32_t dashPos = aRangeStr.Find("-"_ns, spacePos);
+  const int32_t slashPos = aRangeStr.Find("/"_ns, dashPos);
 
   nsAutoCString rangeStartText;
   aRangeStr.Mid(rangeStartText, spacePos + 1, dashPos - (spacePos + 1));
@@ -134,7 +156,7 @@ ParseContentRangeHeaderString(const nsAutoCString& aRangeStr) {
   if (NS_FAILED(rv)) {
     return Err(rv);
   }
-  if (rangeStart >= rangeEnd) {
+  if (rangeStart > rangeEnd) {
     return Err(NS_ERROR_ILLEGAL_VALUE);
   }
 
@@ -170,87 +192,348 @@ bool IsFirstPartialResponse(nsHttpResponseHead& aResponseHead) {
   return responseFirstBytePos == 0;
 }
 
-OpaqueResponseBlockingInfo::OpaqueResponseBlockingInfo(
-    ExtContentPolicyType aContentPolicyType)
-    : mStartTime(TimeStamp::Now()) {
-  switch (aContentPolicyType) {
-    case ExtContentPolicy::TYPE_OTHER:
-      mDestination = Telemetry::LABELS_OPAQUE_RESPONSE_BLOCKING::Other;
+void LogORBError(nsILoadInfo* aLoadInfo, nsIURI* aURI) {
+  RefPtr<dom::Document> doc;
+  aLoadInfo->GetLoadingDocument(getter_AddRefs(doc));
+
+  nsAutoCString uri;
+  nsresult rv = nsContentUtils::AnonymizeURI(aURI, uri);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
+
+  AutoTArray<nsString, 1> params;
+  CopyUTF8toUTF16(uri, *params.AppendElement());
+
+  MOZ_LOG(gORBLog, LogLevel::Debug,
+          ("%s: Resource blocked: %s ", __func__, uri.get()));
+  nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "ORB"_ns, doc,
+                                  nsContentUtils::eNECKO_PROPERTIES,
+                                  "ResourceBlockedCORS", params);
+}
+
+OpaqueResponseBlocker::OpaqueResponseBlocker(nsIStreamListener* aNext,
+                                             HttpBaseChannel* aChannel,
+                                             const nsCString& aContentType,
+                                             bool aNoSniff)
+    : mNext(aNext), mContentType(aContentType), mNoSniff(aNoSniff) {
+  // Storing aChannel as a member is tricky as aChannel owns us and it's
+  // hard to ensure aChannel is alive when we about to use it without
+  // creating a cycle. This is all doable but need some extra efforts.
+  //
+  // So we are just passing aChannel from the caller when we need to use it.
+  MOZ_ASSERT(aChannel);
+
+  if (MOZ_UNLIKELY(MOZ_LOG_TEST(gORBLog, LogLevel::Debug))) {
+    nsCOMPtr<nsIURI> uri;
+    aChannel->GetURI(getter_AddRefs(uri));
+    if (uri) {
+      LOGORB(" channel=%p, uri=%s", aChannel, uri->GetSpecOrDefault().get());
+    }
+  }
+  MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess());
+  MOZ_DIAGNOSTIC_ASSERT(aChannel->CachedOpaqueResponseBlockingPref());
+}
+
+NS_IMETHODIMP
+OpaqueResponseBlocker::OnStartRequest(nsIRequest* aRequest) {
+  LOGORB();
+
+  if (mState == State::Sniffing) {
+    Unused << EnsureOpaqueResponseIsAllowedAfterSniff(aRequest);
+  }
+
+  // mState will remain State::Sniffing if we need to wait
+  // for JS validator to make a decision.
+  //
+  // When the state is Sniffing, we can't call mNext->OnStartRequest
+  // because fetch requests need the cancellation to be done
+  // before its FetchDriver::OnStartRequest is called, otherwise it'll
+  // resolve the promise regardless the decision of JS validator.
+  if (mState != State::Sniffing) {
+    nsresult rv = mNext->OnStartRequest(aRequest);
+    return NS_SUCCEEDED(mStatus) ? rv : mStatus;
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+OpaqueResponseBlocker::OnStopRequest(nsIRequest* aRequest,
+                                     nsresult aStatusCode) {
+  LOGORB();
+
+  nsresult statusForStop = aStatusCode;
+
+  if (mState == State::Blocked && NS_FAILED(mStatus)) {
+    statusForStop = mStatus;
+  }
+
+  if (mState == State::Sniffing) {
+    // It is the call to JSValidatorParent::OnStopRequest that will trigger the
+    // JS parser.
+    mStartOfJavaScriptValidation = TimeStamp::Now();
+
+    MOZ_ASSERT(mJSValidator);
+    mPendingOnStopRequestStatus = Some(aStatusCode);
+    mJSValidator->OnStopRequest(aStatusCode);
+    return NS_OK;
+  }
+
+  return mNext->OnStopRequest(aRequest, statusForStop);
+}
+
+NS_IMETHODIMP
+OpaqueResponseBlocker::OnDataAvailable(nsIRequest* aRequest,
+                                       nsIInputStream* aInputStream,
+                                       uint64_t aOffset, uint32_t aCount) {
+  LOGORB();
+
+  if (mState == State::Allowed) {
+    return mNext->OnDataAvailable(aRequest, aInputStream, aOffset, aCount);
+  }
+
+  if (mState == State::Blocked) {
+    return NS_ERROR_FAILURE;
+  }
+
+  MOZ_ASSERT(mState == State::Sniffing);
+
+  nsCString data;
+  if (!data.SetLength(aCount, fallible)) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+
+  uint32_t read;
+  nsresult rv = aInputStream->Read(data.BeginWriting(), aCount, &read);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  MOZ_ASSERT(mJSValidator);
+
+  mJSValidator->OnDataAvailable(data);
+
+  return NS_OK;
+}
+
+nsresult OpaqueResponseBlocker::EnsureOpaqueResponseIsAllowedAfterSniff(
+    nsIRequest* aRequest) {
+  nsCOMPtr<HttpBaseChannel> httpBaseChannel = do_QueryInterface(aRequest);
+  MOZ_ASSERT(httpBaseChannel);
+
+  // The `AfterSniff` check shouldn't be run when
+  // 1. We have made a decision already
+  // 2. The JS validator is running, so we should wait
+  // for its result.
+  if (mState != State::Sniffing || mJSValidator) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsILoadInfo> loadInfo;
+
+  nsresult rv =
+      httpBaseChannel->GetLoadInfo(getter_AddRefs<nsILoadInfo>(loadInfo));
+  if (NS_FAILED(rv)) {
+    LOGORB("Failed to get LoadInfo");
+    BlockResponse(httpBaseChannel, rv);
+    return rv;
+  }
+
+  nsCOMPtr<nsIURI> uri;
+  rv = httpBaseChannel->GetURI(getter_AddRefs<nsIURI>(uri));
+  if (NS_FAILED(rv)) {
+    LOGORB("Failed to get uri");
+    BlockResponse(httpBaseChannel, rv);
+    return rv;
+  }
+
+  switch (httpBaseChannel->PerformOpaqueResponseSafelistCheckAfterSniff(
+      mContentType, mNoSniff)) {
+    case OpaqueResponse::Block:
+      BlockResponse(httpBaseChannel, NS_ERROR_FAILURE);
+      return NS_ERROR_FAILURE;
+    case OpaqueResponse::Allow:
+      AllowResponse();
+      return NS_OK;
+    case OpaqueResponse::Sniff:
+    case OpaqueResponse::SniffCompressed:
       break;
-    case ExtContentPolicy::TYPE_SCRIPT:
-      mDestination = Telemetry::LABELS_OPAQUE_RESPONSE_BLOCKING::Script;
-      break;
-    case ExtContentPolicy::TYPE_IMAGE:
-    case ExtContentPolicy::TYPE_IMAGESET:
-      mDestination = Telemetry::LABELS_OPAQUE_RESPONSE_BLOCKING::Image;
-      break;
-    case ExtContentPolicy::TYPE_STYLESHEET:
-      mDestination = Telemetry::LABELS_OPAQUE_RESPONSE_BLOCKING::Style;
-      break;
-    case ExtContentPolicy::TYPE_OBJECT:
-      mDestination = Telemetry::LABELS_OPAQUE_RESPONSE_BLOCKING::Object;
-      break;
-    case ExtContentPolicy::TYPE_DOCUMENT:
-      mDestination = Telemetry::LABELS_OPAQUE_RESPONSE_BLOCKING::Document;
-      break;
-    case ExtContentPolicy::TYPE_SUBDOCUMENT:
-      mDestination = Telemetry::LABELS_OPAQUE_RESPONSE_BLOCKING::Subdocument;
-      break;
-    case ExtContentPolicy::TYPE_PING:
-      mDestination = Telemetry::LABELS_OPAQUE_RESPONSE_BLOCKING::Ping;
-      break;
-    case ExtContentPolicy::TYPE_XMLHTTPREQUEST:
-      mDestination = Telemetry::LABELS_OPAQUE_RESPONSE_BLOCKING::XHR;
-      break;
-    case ExtContentPolicy::TYPE_OBJECT_SUBREQUEST:
-      mDestination =
-          Telemetry::LABELS_OPAQUE_RESPONSE_BLOCKING::ObjectSubrequest;
-      break;
-    case ExtContentPolicy::TYPE_DTD:
-      mDestination = Telemetry::LABELS_OPAQUE_RESPONSE_BLOCKING::DTD;
-      break;
-    case ExtContentPolicy::TYPE_FONT:
-      mDestination = Telemetry::LABELS_OPAQUE_RESPONSE_BLOCKING::Font;
-      break;
-    case ExtContentPolicy::TYPE_MEDIA:
-      mDestination = Telemetry::LABELS_OPAQUE_RESPONSE_BLOCKING::Media;
-      break;
-    case ExtContentPolicy::TYPE_WEBSOCKET:
-      mDestination = Telemetry::LABELS_OPAQUE_RESPONSE_BLOCKING::Websocket;
-      break;
-    case ExtContentPolicy::TYPE_CSP_REPORT:
-      mDestination = Telemetry::LABELS_OPAQUE_RESPONSE_BLOCKING::CspReport;
-      break;
-    case ExtContentPolicy::TYPE_XSLT:
-      mDestination = Telemetry::LABELS_OPAQUE_RESPONSE_BLOCKING::XSLT;
-      break;
-    case ExtContentPolicy::TYPE_BEACON:
-      mDestination = Telemetry::LABELS_OPAQUE_RESPONSE_BLOCKING::Beacon;
-      break;
-    case ExtContentPolicy::TYPE_FETCH:
-      mDestination = Telemetry::LABELS_OPAQUE_RESPONSE_BLOCKING::Fetch;
-      break;
-    case ExtContentPolicy::TYPE_WEB_MANIFEST:
-      mDestination = Telemetry::LABELS_OPAQUE_RESPONSE_BLOCKING::WebManifest;
-      break;
-    default:
-      mDestination = Telemetry::LABELS_OPAQUE_RESPONSE_BLOCKING::Unexpected;
-      break;
+  }
+
+  MOZ_ASSERT(mState == State::Sniffing);
+  return ValidateJavaScript(httpBaseChannel, uri, loadInfo);
+}
+
+static void RecordTelemetry(const TimeStamp& aStartOfValidation,
+                            const TimeStamp& aStartOfJavaScriptValidation,
+                            OpaqueResponseBlocker::ValidatorResult aResult) {
+  using ValidatorResult = OpaqueResponseBlocker::ValidatorResult;
+  MOZ_DIAGNOSTIC_ASSERT(aStartOfValidation);
+
+  auto key = [aResult]() {
+    switch (aResult) {
+      case ValidatorResult::JavaScript:
+        return "javascript"_ns;
+      case ValidatorResult::JSON:
+        return "json"_ns;
+      case ValidatorResult::Other:
+        return "other"_ns;
+      case ValidatorResult::Failure:
+        return "failure"_ns;
+    }
+    MOZ_ASSERT_UNREACHABLE("Switch statement should be saturated");
+    return "failure"_ns;
+  }();
+
+  TimeStamp now = TimeStamp::Now();
+  PROFILER_MARKER_TEXT(
+      "ORB safelist check", NETWORK,
+      MarkerTiming::Interval(aStartOfValidation, aStartOfJavaScriptValidation),
+      nsPrintfCString("Receive data for validation (%s)", key.get()));
+
+  PROFILER_MARKER_TEXT(
+      "ORB safelist check", NETWORK,
+      MarkerTiming::Interval(aStartOfJavaScriptValidation, now),
+      nsPrintfCString("JS Validation (%s)", key.get()));
+
+  Telemetry::AccumulateTimeDelta(Telemetry::ORB_RECEIVE_DATA_FOR_VALIDATION_MS,
+                                 key, aStartOfValidation,
+                                 aStartOfJavaScriptValidation);
+
+  Telemetry::AccumulateTimeDelta(Telemetry::ORB_JAVASCRIPT_VALIDATION_MS, key,
+                                 aStartOfJavaScriptValidation, now);
+}
+
+// The specification for ORB is currently being written:
+// https://whatpr.org/fetch/1442.html#orb-algorithm
+// The `opaque-response-safelist check` is implemented in:
+// * `HttpBaseChannel::OpaqueResponseSafelistCheckBeforeSniff`
+// * `nsHttpChannel::DisableIsOpaqueResponseAllowedAfterSniffCheck`
+// * `HttpBaseChannel::OpaqueResponseSafelistCheckAfterSniff`
+// * `OpaqueResponseBlocker::ValidateJavaScript`
+nsresult OpaqueResponseBlocker::ValidateJavaScript(HttpBaseChannel* aChannel,
+                                                   nsIURI* aURI,
+                                                   nsILoadInfo* aLoadInfo) {
+  MOZ_DIAGNOSTIC_ASSERT(aChannel);
+  MOZ_ASSERT(aURI && aLoadInfo);
+
+  if (!StaticPrefs::browser_opaqueResponseBlocking_javascriptValidator()) {
+    LOGORB("Allowed: JS Validator is disabled");
+    AllowResponse();
+    return NS_OK;
+  }
+
+  int64_t contentLength;
+  nsresult rv = aChannel->GetContentLength(&contentLength);
+  if (NS_FAILED(rv)) {
+    LOGORB("Blocked: No Content Length");
+    BlockResponse(aChannel, rv);
+    return rv;
+  }
+
+  Telemetry::ScalarAdd(
+      Telemetry::ScalarID::OPAQUE_RESPONSE_BLOCKING_JAVASCRIPT_VALIDATION_COUNT,
+      1);
+
+  LOGORB("Send %s to the validator", aURI->GetSpecOrDefault().get());
+  // https://whatpr.org/fetch/1442.html#orb-algorithm, step 15
+  mJSValidator = dom::JSValidatorParent::Create();
+  mJSValidator->IsOpaqueResponseAllowed(
+      [self = RefPtr{this}, channel = nsCOMPtr{aChannel}, uri = nsCOMPtr{aURI},
+       loadInfo = nsCOMPtr{aLoadInfo}, startOfValidation = TimeStamp::Now()](
+          Maybe<ipc::Shmem> aSharedData, ValidatorResult aResult) {
+        MOZ_LOG(gORBLog, LogLevel::Debug,
+                ("JSValidator resolved for %s with %s",
+                 uri->GetSpecOrDefault().get(),
+                 aSharedData.isSome() ? "true" : "false"));
+        bool allowed = aResult == ValidatorResult::JavaScript;
+        if (allowed) {
+          self->AllowResponse();
+        } else {
+          self->BlockResponse(channel, NS_ERROR_FAILURE);
+          LogORBError(loadInfo, uri);
+        }
+        self->ResolveAndProcessData(channel, allowed, aSharedData);
+        if (aSharedData.isSome()) {
+          self->mJSValidator->DeallocShmem(aSharedData.ref());
+        }
+
+        RecordTelemetry(startOfValidation, self->mStartOfJavaScriptValidation,
+                        aResult);
+
+        Unused << dom::PJSValidatorParent::Send__delete__(self->mJSValidator);
+        self->mJSValidator = nullptr;
+      });
+
+  return NS_OK;
+}
+
+bool OpaqueResponseBlocker::IsSniffing() const {
+  return mState == State::Sniffing;
+}
+
+void OpaqueResponseBlocker::AllowResponse() {
+  LOGORB("Sniffer is done, allow response, this=%p", this);
+  MOZ_ASSERT(mState == State::Sniffing);
+  mState = State::Allowed;
+}
+
+void OpaqueResponseBlocker::BlockResponse(HttpBaseChannel* aChannel,
+                                          nsresult aReason) {
+  LOGORB("Sniffer is done, block response, this=%p", this);
+  MOZ_ASSERT(mState == State::Sniffing);
+  mState = State::Blocked;
+  mStatus = aReason;
+  aChannel->SetChannelBlockedByOpaqueResponse();
+  aChannel->CancelWithReason(mStatus,
+                             "OpaqueResponseBlocker::BlockResponse"_ns);
+}
+
+void OpaqueResponseBlocker::ResolveAndProcessData(
+    HttpBaseChannel* aChannel, bool aAllowed, Maybe<ipc::Shmem>& aSharedData) {
+  nsresult rv = OnStartRequest(aChannel);
+
+  if (!aAllowed || NS_FAILED(rv)) {
+    MOZ_ASSERT_IF(!aAllowed, mState == State::Blocked);
+    MaybeRunOnStopRequest(aChannel);
+    return;
+  }
+
+  MOZ_ASSERT(mState == State::Allowed);
+
+  if (aSharedData.isNothing()) {
+    MaybeRunOnStopRequest(aChannel);
+    return;
+  }
+
+  const ipc::Shmem& mem = aSharedData.ref();
+  nsCOMPtr<nsIInputStream> input;
+  rv = NS_NewByteInputStream(getter_AddRefs(input),
+                             Span(mem.get<char>(), mem.Size<char>()),
+                             NS_ASSIGNMENT_DEPEND);
+
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    BlockResponse(aChannel, rv);
+    MaybeRunOnStopRequest(aChannel);
+    return;
+  }
+
+  // When this line reaches, the state is either State::Allowed or
+  // State::Blocked. The OnDataAvailable call will either call
+  // the next listener or reject the request.
+  OnDataAvailable(aChannel, input, 0, mem.Size<char>());
+
+  MaybeRunOnStopRequest(aChannel);
+}
+
+void OpaqueResponseBlocker::MaybeRunOnStopRequest(HttpBaseChannel* aChannel) {
+  MOZ_ASSERT(mState != State::Sniffing);
+  if (mPendingOnStopRequestStatus.isSome()) {
+    OnStopRequest(aChannel, mPendingOnStopRequestStatus.value());
   }
 }
 
-void OpaqueResponseBlockingInfo::Report(const nsCString& aKey) {
-  Telemetry::AccumulateCategoricalKeyed(aKey, mDestination);
+NS_IMPL_ISUPPORTS(OpaqueResponseBlocker, nsIStreamListener, nsIRequestObserver)
 
-  AccumulateTimeDelta(Telemetry::OPAQUE_RESPONSE_BLOCKING_TIME_MS, mStartTime);
-}
-
-void OpaqueResponseBlockingInfo::ReportContentLength(int64_t aContentLength) {
-  // XXX: We might want to filter negative cases (when the content length is
-  // unknown).
-  Telemetry::ScalarAdd(
-      Telemetry::ScalarID::OPAQUE_RESPONSE_BLOCKING_PARSING_SIZE_KB,
-      aContentLength > 0 ? aContentLength >> 10 : aContentLength);
-}
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net

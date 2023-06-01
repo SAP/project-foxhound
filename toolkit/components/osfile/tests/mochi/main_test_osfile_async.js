@@ -5,10 +5,9 @@ const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 // The following are used to compare against a well-tested reference
 // implementation of file I/O.
 const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var myok = ok;
 var myis = is;

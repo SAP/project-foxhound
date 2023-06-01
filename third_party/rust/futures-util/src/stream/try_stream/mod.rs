@@ -736,17 +736,21 @@ pub trait TryStreamExt: TryStream {
     /// thread::spawn(move || {
     ///     tx2.unbounded_send(Ok(2)).unwrap();
     ///     tx2.unbounded_send(Err(3)).unwrap();
+    ///     tx2.unbounded_send(Ok(4)).unwrap();
     /// });
     /// thread::spawn(move || {
     ///     tx3.unbounded_send(Ok(rx1)).unwrap();
     ///     tx3.unbounded_send(Ok(rx2)).unwrap();
-    ///     tx3.unbounded_send(Err(4)).unwrap();
+    ///     tx3.unbounded_send(Err(5)).unwrap();
     /// });
     ///
     /// let mut stream = rx3.try_flatten();
     /// assert_eq!(stream.next().await, Some(Ok(1)));
     /// assert_eq!(stream.next().await, Some(Ok(2)));
     /// assert_eq!(stream.next().await, Some(Err(3)));
+    /// assert_eq!(stream.next().await, Some(Ok(4)));
+    /// assert_eq!(stream.next().await, Some(Err(5)));
+    /// assert_eq!(stream.next().await, None);
     /// # });
     /// ```
     fn try_flatten(self) -> TryFlatten<Self>
@@ -914,7 +918,7 @@ pub trait TryStreamExt: TryStream {
     /// that matches the stream's `Error` type.
     ///
     /// This adaptor will buffer up to `n` futures and then return their
-    /// outputs in the order. If the underlying stream returns an error, it will
+    /// outputs in the same order as the underlying stream. If the underlying stream returns an error, it will
     /// be immediately propagated.
     ///
     /// The returned stream will be a stream of results, each containing either
@@ -1001,6 +1005,7 @@ pub trait TryStreamExt: TryStream {
     /// Wraps a [`TryStream`] into a stream compatible with libraries using
     /// futures 0.1 `Stream`. Requires the `compat` feature to be enabled.
     /// ```
+    /// # if cfg!(miri) { return; } // Miri does not support epoll
     /// use futures::future::{FutureExt, TryFutureExt};
     /// # let (tx, rx) = futures::channel::oneshot::channel();
     ///
@@ -1026,12 +1031,7 @@ pub trait TryStreamExt: TryStream {
         Compat::new(self)
     }
 
-    /// Adapter that converts this stream into an [`AsyncRead`](crate::io::AsyncRead).
-    ///
-    /// Note that because `into_async_read` moves the stream, the [`Stream`](futures_core::stream::Stream) type must be
-    /// [`Unpin`]. If you want to use `into_async_read` with a [`!Unpin`](Unpin) stream, you'll
-    /// first have to pin the stream. This can be done by boxing the stream using [`Box::pin`]
-    /// or pinning it to the stack using the `pin_mut!` macro from the `pin_utils` crate.
+    /// Adapter that converts this stream into an [`AsyncBufRead`](crate::io::AsyncBufRead).
     ///
     /// This method is only available when the `std` feature of this
     /// library is activated, and it is activated by default.
@@ -1043,12 +1043,12 @@ pub trait TryStreamExt: TryStream {
     /// use futures::stream::{self, TryStreamExt};
     /// use futures::io::AsyncReadExt;
     ///
-    /// let stream = stream::iter(vec![Ok(vec![1, 2, 3, 4, 5])]);
+    /// let stream = stream::iter([Ok(vec![1, 2, 3]), Ok(vec![4, 5])]);
     /// let mut reader = stream.into_async_read();
-    /// let mut buf = Vec::new();
     ///
-    /// assert!(reader.read_to_end(&mut buf).await.is_ok());
-    /// assert_eq!(buf, &[1, 2, 3, 4, 5]);
+    /// let mut buf = Vec::new();
+    /// reader.read_to_end(&mut buf).await.unwrap();
+    /// assert_eq!(buf, [1, 2, 3, 4, 5]);
     /// # })
     /// ```
     #[cfg(feature = "io")]
@@ -1056,7 +1056,7 @@ pub trait TryStreamExt: TryStream {
     #[cfg(feature = "std")]
     fn into_async_read(self) -> IntoAsyncRead<Self>
     where
-        Self: Sized + TryStreamExt<Error = std::io::Error> + Unpin,
+        Self: Sized + TryStreamExt<Error = std::io::Error>,
         Self::Ok: AsRef<[u8]>,
     {
         crate::io::assert_read(IntoAsyncRead::new(self))

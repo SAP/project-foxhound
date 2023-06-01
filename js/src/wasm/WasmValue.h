@@ -22,6 +22,7 @@
 #include "js/Class.h"  // JSClassOps, ClassSpec
 #include "vm/JSObject.h"
 #include "vm/NativeObject.h"  // NativeObject
+#include "wasm/WasmSerialize.h"
 #include "wasm/WasmValType.h"
 
 namespace js {
@@ -30,20 +31,20 @@ namespace wasm {
 // A V128 value.
 
 struct V128 {
-  uint8_t bytes[16];  // Little-endian
+  uint8_t bytes[16] = {};  // Little-endian
 
-  V128() { memset(bytes, 0, sizeof(bytes)); }
+  WASM_CHECK_CACHEABLE_POD(bytes);
+
+  V128() = default;
 
   explicit V128(uint8_t splatValue) {
     memset(bytes, int(splatValue), sizeof(bytes));
   }
 
   template <typename T>
-  T extractLane(unsigned lane) const {
-    T result;
+  void extractLane(unsigned lane, T* result) const {
     MOZ_ASSERT(lane < 16 / sizeof(T));
-    memcpy(&result, bytes + sizeof(T) * lane, sizeof(T));
-    return result;
+    memcpy(result, bytes + sizeof(T) * lane, sizeof(T));
   }
 
   template <typename T>
@@ -63,6 +64,8 @@ struct V128 {
 
   bool operator!=(const V128& rhs) const { return !(*this == rhs); }
 };
+
+WASM_DECLARE_CACHEABLE_POD(V128);
 
 static_assert(sizeof(V128) == 16, "Invariant");
 
@@ -262,14 +265,21 @@ Value UnboxFuncRef(FuncRef val);
 class LitVal {
  public:
   union Cell {
-    int32_t i32_;
-    int64_t i64_;
+    uint32_t i32_;
+    uint64_t i64_;
     float f32_;
     double f64_;
     wasm::V128 v128_;
     wasm::AnyRef ref_;
+
     Cell() : v128_() {}
     ~Cell() = default;
+
+    WASM_CHECK_CACHEABLE_POD(i32_, i64_, f32_, f64_, v128_);
+    WASM_ALLOW_NON_CACHEABLE_POD_FIELD(
+        ref_,
+        "The pointer value in ref_ is guaranteed to always be null in a "
+        "LitVal.");
   };
 
  protected:
@@ -280,7 +290,6 @@ class LitVal {
   LitVal() : type_(ValType()), cell_{} {}
 
   explicit LitVal(ValType type) : type_(type) {
-    MOZ_ASSERT(type.isDefaultable());
     switch (type.kind()) {
       case ValType::Kind::I32: {
         cell_.i32_ = 0;
@@ -305,9 +314,6 @@ class LitVal {
       case ValType::Kind::Ref: {
         cell_.ref_ = AnyRef::null();
         break;
-      }
-      case ValType::Kind::Rtt: {
-        MOZ_CRASH("not defaultable");
       }
     }
   }
@@ -357,7 +363,11 @@ class LitVal {
     MOZ_ASSERT(type_ == ValType::V128);
     return cell_.v128_;
   }
+
+  WASM_DECLARE_FRIEND_SERIALIZE(LitVal);
 };
+
+WASM_DECLARE_CACHEABLE_POD(LitVal::Cell);
 
 // A Val is a LitVal that can contain (non-null) pointers to GC things. All Vals
 // must be used with the rooting APIs as they may contain JS objects.
@@ -399,7 +409,6 @@ class MOZ_NON_PARAM Val : public LitVal {
         return cell_.f64_ == rhs.cell_.f64_;
       case ValType::V128:
         return cell_.v128_ == rhs.cell_.v128_;
-      case ValType::Rtt:
       case ValType::Ref:
         return cell_.ref_ == rhs.cell_.ref_;
     }
@@ -421,8 +430,20 @@ class MOZ_NON_PARAM Val : public LitVal {
     return cell_.ref_.asJSObjectAddress();
   }
 
+  // Read from `loc` which is a rooted location and needs no barriers.
   void readFromRootedLocation(const void* loc);
+
+  // Initialize from `loc` which is a rooted location and needs no barriers.
+  void initFromRootedLocation(ValType type, const void* loc);
+  void initFromHeapLocation(ValType type, const void* loc);
+
+  // Write to `loc` which is a rooted location and needs no barriers.
   void writeToRootedLocation(void* loc, bool mustWrite64) const;
+
+  // Read from `loc` which is in the heap.
+  void readFromHeapLocation(const void* loc);
+  // Write to `loc` which is in the heap and must be barriered.
+  void writeToHeapLocation(void* loc) const;
 
   // See the comment for `ToWebAssemblyValue` below.
   static bool fromJSValue(JSContext* cx, ValType targetType, HandleValue val,
@@ -442,6 +463,11 @@ using ValVector = GCVector<Val, 0, SystemAllocPolicy>;
 using RootedValVector = Rooted<ValVector>;
 using HandleValVector = Handle<ValVector>;
 using MutableHandleValVector = MutableHandle<ValVector>;
+
+template <int N>
+using ValVectorN = GCVector<Val, N, SystemAllocPolicy>;
+template <int N>
+using RootedValVectorN = Rooted<ValVectorN<N>>;
 
 // Check a value against the given reference type.  If the targetType
 // is RefType::Extern then the test always passes, but the value may be boxed.
@@ -545,6 +571,43 @@ struct InternalBarrierMethods<wasm::Val> {
 #ifdef DEBUG
   static void assertThingIsNotGray(const wasm::Val& v) {
     if (v.isJSObject()) {
+      JS::AssertObjectIsNotGray(v.asJSObject());
+    }
+  }
+#endif
+};
+
+template <>
+struct InternalBarrierMethods<wasm::AnyRef> {
+  STATIC_ASSERT_ANYREF_IS_JSOBJECT;
+
+  static bool isMarkable(const wasm::AnyRef v) { return !v.isNull(); }
+
+  static void preBarrier(const wasm::AnyRef v) {
+    if (!v.isNull()) {
+      gc::PreWriteBarrier(v.asJSObject());
+    }
+  }
+
+  static MOZ_ALWAYS_INLINE void postBarrier(wasm::AnyRef* vp,
+                                            const wasm::AnyRef prev,
+                                            const wasm::AnyRef next) {
+    JSObject* prevObj = !prev.isNull() ? prev.asJSObject() : nullptr;
+    JSObject* nextObj = !next.isNull() ? next.asJSObject() : nullptr;
+    if (nextObj) {
+      JSObject::postWriteBarrier(vp->asJSObjectAddress(), prevObj, nextObj);
+    }
+  }
+
+  static void readBarrier(const wasm::AnyRef v) {
+    if (!v.isNull()) {
+      gc::ReadBarrier(v.asJSObject());
+    }
+  }
+
+#ifdef DEBUG
+  static void assertThingIsNotGray(const wasm::AnyRef v) {
+    if (!v.isNull()) {
       JS::AssertObjectIsNotGray(v.asJSObject());
     }
   }

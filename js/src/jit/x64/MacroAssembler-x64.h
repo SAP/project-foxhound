@@ -10,7 +10,6 @@
 #include "jit/x86-shared/MacroAssembler-x86-shared.h"
 #include "js/HeapAPI.h"
 #include "wasm/WasmBuiltins.h"
-#include "wasm/WasmTlsData.h"
 
 namespace js {
 namespace jit {
@@ -137,7 +136,6 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   /////////////////////////////////////////////////////////////////
   // X86/X64-common interface.
   /////////////////////////////////////////////////////////////////
-  Address ToPayload(Address value) { return value; }
 
   void storeValue(ValueOperand val, Operand dest) {
     movq(val.valueReg(), dest);
@@ -905,6 +903,17 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
     andq(src.valueReg(), dest);
   }
 
+  // Like unboxGCThingForGCBarrier, but loads the GC thing's chunk base.
+  void getGCThingValueChunk(const Address& src, Register dest) {
+    movq(ImmWord(JS::detail::ValueGCThingPayloadChunkMask), dest);
+    andq(Operand(src), dest);
+  }
+  void getGCThingValueChunk(const ValueOperand& src, Register dest) {
+    MOZ_ASSERT(src.valueReg() != dest);
+    movq(ImmWord(JS::detail::ValueGCThingPayloadChunkMask), dest);
+    andq(src.valueReg(), dest);
+  }
+
   inline void fallibleUnboxPtrImpl(const Operand& src, Register dest,
                                    JSValueType type, Label* fail);
 
@@ -1059,6 +1068,10 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
                      FloatRegister dest);
   void vmulpdSimd128(const SimdConstant& v, FloatRegister lhs,
                      FloatRegister dest);
+  void vandpdSimd128(const SimdConstant& v, FloatRegister lhs,
+                     FloatRegister dest);
+  void vminpdSimd128(const SimdConstant& v, FloatRegister lhs,
+                     FloatRegister dest);
   void vpacksswbSimd128(const SimdConstant& v, FloatRegister lhs,
                         FloatRegister dest);
   void vpackuswbSimd128(const SimdConstant& v, FloatRegister lhs,
@@ -1066,6 +1079,10 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   void vpackssdwSimd128(const SimdConstant& v, FloatRegister lhs,
                         FloatRegister dest);
   void vpackusdwSimd128(const SimdConstant& v, FloatRegister lhs,
+                        FloatRegister dest);
+  void vpunpckldqSimd128(const SimdConstant& v, FloatRegister lhs,
+                         FloatRegister dest);
+  void vunpcklpsSimd128(const SimdConstant& v, FloatRegister lhs,
                         FloatRegister dest);
   void vpshufbSimd128(const SimdConstant& v, FloatRegister lhs,
                       FloatRegister dest);
@@ -1092,6 +1109,8 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
                        FloatRegister dest);
   void vcmplepsSimd128(const SimdConstant& v, FloatRegister lhs,
                        FloatRegister dest);
+  void vcmpgepsSimd128(const SimdConstant& v, FloatRegister lhs,
+                       FloatRegister dest);
   void vcmpeqpdSimd128(const SimdConstant& v, FloatRegister lhs,
                        FloatRegister dest);
   void vcmpneqpdSimd128(const SimdConstant& v, FloatRegister lhs,
@@ -1100,10 +1119,10 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
                        FloatRegister dest);
   void vcmplepdSimd128(const SimdConstant& v, FloatRegister lhs,
                        FloatRegister dest);
-
-  void loadWasmPinnedRegsFromTls() {
-    loadPtr(Address(WasmTlsReg, offsetof(wasm::TlsData, memoryBase)), HeapReg);
-  }
+  void vpmaddubswSimd128(const SimdConstant& v, FloatRegister lhs,
+                         FloatRegister dest);
+  void vpmuludqSimd128(const SimdConstant& v, FloatRegister lhs,
+                       FloatRegister dest);
 
  public:
   Condition testInt32Truthy(bool truthy, const ValueOperand& operand) {
@@ -1153,10 +1172,6 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
     }
   }
 
-  void loadInstructionPointerAfterCall(Register dest) {
-    loadPtr(Address(StackPointer, 0x0), dest);
-  }
-
   // Checks whether a double is representable as a 64-bit integer. If so, the
   // integer is written to the output register. Otherwise, a bailout is taken to
   // the given snapshot. This function overwrites the scratch float register.
@@ -1183,7 +1198,8 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
                            Label* failure);
 
  public:
-  void handleFailureWithHandlerTail(Label* profilerExitTail);
+  void handleFailureWithHandlerTail(Label* profilerExitTail,
+                                    Label* bailoutTail);
 
   // Instrumentation for entering and leaving the profiler.
   void profilerEnterFrame(Register framePtr, Register scratch);

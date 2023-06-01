@@ -168,11 +168,6 @@ GfxInfo::GetWindowProtocol(nsAString& aWindowProtocol) {
 }
 
 NS_IMETHODIMP
-GfxInfo::GetDesktopEnvironment(nsAString& aDesktopEnvironment) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
 GfxInfo::GetTestType(nsAString& aTestType) { return NS_ERROR_NOT_IMPLEMENTED; }
 
 void GfxInfo::EnsureInitialized() {
@@ -199,7 +194,7 @@ void GfxInfo::EnsureInitialized() {
   mAdapterDescription.AppendPrintf(
       ", Manufacturer: %s", NS_LossyConvertUTF16toASCII(mManufacturer).get());
 
-  mSDKVersion = java::sdk::VERSION::SDK_INT();
+  mSDKVersion = java::sdk::Build::VERSION::SDK_INT();
   // the HARDWARE field isn't available on Android SDK < 8, but we require 9+
   // anyway.
   MOZ_ASSERT(mSDKVersion >= 8);
@@ -208,7 +203,7 @@ void GfxInfo::EnsureInitialized() {
   mAdapterDescription.AppendPrintf(
       ", Hardware: %s", NS_LossyConvertUTF16toASCII(mHardware).get());
 
-  jni::String::LocalRef release = java::sdk::VERSION::RELEASE();
+  jni::String::LocalRef release = java::sdk::Build::VERSION::RELEASE();
   mOSVersion = release->ToCString();
 
   mOSVersionInteger = 0;
@@ -227,12 +222,6 @@ void GfxInfo::EnsureInitialized() {
       mGLStrings->Renderer().get(), mGLStrings->Version().get());
 
   AddCrashReportAnnotations();
-
-  java::sdk::Rect::LocalRef screenrect = java::GeckoAppShell::GetScreenSize();
-  mScreenInfo.mScreenDimensions =
-      gfx::Rect(screenrect->Left(), screenrect->Top(), screenrect->Width(),
-                screenrect->Height());
-
   mInitialized = true;
 }
 
@@ -356,29 +345,6 @@ NS_IMETHODIMP
 GfxInfo::GetIsGPU2Active(bool* aIsGPU2Active) {
   EnsureInitialized();
   return NS_ERROR_FAILURE;
-}
-
-NS_IMETHODIMP
-GfxInfo::GetDisplayInfo(nsTArray<nsString>& aDisplayInfo) {
-  EnsureInitialized();
-  nsString displayInfo;
-  displayInfo.AppendPrintf("%dx%d",
-                           (int32_t)mScreenInfo.mScreenDimensions.width,
-                           (int32_t)mScreenInfo.mScreenDimensions.height);
-  aDisplayInfo.AppendElement(displayInfo);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-GfxInfo::GetDisplayWidth(nsTArray<uint32_t>& aDisplayWidth) {
-  aDisplayWidth.AppendElement((uint32_t)mScreenInfo.mScreenDimensions.width);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-GfxInfo::GetDisplayHeight(nsTArray<uint32_t>& aDisplayHeight) {
-  aDisplayHeight.AppendElement((uint32_t)mScreenInfo.mScreenDimensions.height);
-  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -510,9 +476,9 @@ nsresult GfxInfo::GetFeatureStatusImpl(
                                                       // have
                                                       // manufacturer=amazon
 
-        if (cModel.Find("SGH-I717", true) != -1 ||
-            cModel.Find("SGH-I727", true) != -1 ||
-            cModel.Find("SGH-I757", true) != -1) {
+        if (cModel.LowerCaseFindASCII("sgh-i717") != -1 ||
+            cModel.LowerCaseFindASCII("sgh-i727") != -1 ||
+            cModel.LowerCaseFindASCII("sgh-i757") != -1) {
           isWhitelisted = false;
         }
 
@@ -527,13 +493,13 @@ nsresult GfxInfo::GetFeatureStatusImpl(
         // Blocklist:
         //   Samsung devices from bug 812881 and 853522.
         //   Motorola XT890 from bug 882342.
-        bool isBlocklisted = cModel.Find("GT-P3100", true) != -1 ||
-                             cModel.Find("GT-P3110", true) != -1 ||
-                             cModel.Find("GT-P3113", true) != -1 ||
-                             cModel.Find("GT-P5100", true) != -1 ||
-                             cModel.Find("GT-P5110", true) != -1 ||
-                             cModel.Find("GT-P5113", true) != -1 ||
-                             cModel.Find("XT890", true) != -1;
+        bool isBlocklisted = cModel.LowerCaseFindASCII("gt-p3100") != -1 ||
+                             cModel.LowerCaseFindASCII("gt-p3110") != -1 ||
+                             cModel.LowerCaseFindASCII("gt-p3113") != -1 ||
+                             cModel.LowerCaseFindASCII("gt-p5100") != -1 ||
+                             cModel.LowerCaseFindASCII("gt-p5110") != -1 ||
+                             cModel.LowerCaseFindASCII("gt-p5113") != -1 ||
+                             cModel.LowerCaseFindASCII("xt890") != -1;
 
         if (isBlocklisted) {
           *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
@@ -542,7 +508,7 @@ nsresult GfxInfo::GetFeatureStatusImpl(
         }
       } else if (CompareVersions(mOSVersion.get(), "4.3.0") < 0) {
         // Blocklist all Sony devices
-        if (cManufacturer.Find("Sony", true) != -1) {
+        if (cManufacturer.LowerCaseFindASCII("sony") != -1) {
           *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
           aFailureId = "FEATURE_FAILURE_4_3_SONY";
           return NS_OK;
@@ -589,15 +555,25 @@ nsresult GfxInfo::GetFeatureStatusImpl(
 
     if (aFeature == FEATURE_WEBRENDER) {
       const bool isMali4xx =
-          mGLStrings->Renderer().Find("Mali-4", /*ignoreCase*/ true) >= 0;
+          mGLStrings->Renderer().LowerCaseFindASCII("mali-4") >= 0;
 
       const bool isPowerVrG6110 =
-          mGLStrings->Renderer().Find("PowerVR Rogue G6110",
-                                      /* ignoreCase */ true) >= 0;
+          mGLStrings->Renderer().LowerCaseFindASCII("powervr rogue g6110") >= 0;
 
       const bool isVivanteGC7000UL =
-          mGLStrings->Renderer().Find("Vivante GC7000UL",
-                                      /* ignoreCase */ true) >= 0;
+          mGLStrings->Renderer().LowerCaseFindASCII("vivante gc7000ul") >= 0;
+
+      const bool isPowerVrFenceSyncCrash =
+          (mGLStrings->Renderer().LowerCaseFindASCII("powervr rogue g6200") >=
+               0 ||
+           mGLStrings->Renderer().LowerCaseFindASCII("powervr rogue g6430") >=
+               0 ||
+           mGLStrings->Renderer().LowerCaseFindASCII("powervr rogue gx6250") >=
+               0) &&
+          (mGLStrings->Version().Find("3283119") >= 0 ||
+           mGLStrings->Version().Find("3443629") >= 0 ||
+           mGLStrings->Version().Find("3573678") >= 0 ||
+           mGLStrings->Version().Find("3830101") >= 0);
 
       if (isMali4xx) {
         // Mali 4xx does not support GLES 3.
@@ -611,8 +587,12 @@ nsresult GfxInfo::GetFeatureStatusImpl(
         // Blocked on Vivante GC7000UL due to bug 1719327.
         *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
         aFailureId = "FEATURE_FAILURE_VIVANTE_GC7000UL";
+      } else if (isPowerVrFenceSyncCrash) {
+        // Blocked on various PowerVR GPUs due to bug 1773128.
+        *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
+        aFailureId = "FEATURE_FAILURE_POWERVR_FENCE_SYNC_CRASH";
       } else {
-        *aStatus = nsIGfxInfo::FEATURE_ALLOW_QUALIFIED;
+        *aStatus = nsIGfxInfo::FEATURE_STATUS_OK;
       }
       return NS_OK;
     }
@@ -638,8 +618,8 @@ nsresult GfxInfo::GetFeatureStatusImpl(
       // encountered any correctness or stability issues with them, loading them
       // fails more often than not, so is a waste of time. Better to just not
       // even attempt to cache them. See bug 1615574.
-      const bool isAdreno3xx = mGLStrings->Renderer().Find(
-                                   "Adreno (TM) 3", /*ignoreCase*/ true) >= 0;
+      const bool isAdreno3xx =
+          mGLStrings->Renderer().LowerCaseFindASCII("adreno (tm) 3") >= 0;
       if (isAdreno3xx) {
         *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
         aFailureId = "FEATURE_FAILURE_ADRENO_3XX";
@@ -655,7 +635,7 @@ nsresult GfxInfo::GetFeatureStatusImpl(
       // disable for all Mali-T regardless of version. See bug 1689064 and bug
       // 1707283 for details.
       const bool isMaliT =
-          mGLStrings->Renderer().Find("Mali-T", /*ignoreCase*/ true) >= 0;
+          mGLStrings->Renderer().LowerCaseFindASCII("mali-t") >= 0;
       if (isMaliT) {
         *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
         aFailureId = "FEATURE_FAILURE_BUG_1689064";
@@ -670,9 +650,9 @@ nsresult GfxInfo::GetFeatureStatusImpl(
       // On Mali-Txxx due to bug 1680087 and bug 1707815.
       // On Adreno 3xx GPUs due to bug 1695771.
       const bool isMaliT =
-          mGLStrings->Renderer().Find("Mali-T", /*ignoreCase*/ true) >= 0;
-      const bool isAdreno3xx = mGLStrings->Renderer().Find(
-                                   "Adreno (TM) 3", /*ignoreCase*/ true) >= 0;
+          mGLStrings->Renderer().LowerCaseFindASCII("mali-t") >= 0;
+      const bool isAdreno3xx =
+          mGLStrings->Renderer().LowerCaseFindASCII("adreno (tm) 3") >= 0;
       if (isMaliT || isAdreno3xx) {
         *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
         aFailureId = "FEATURE_FAILURE_BUG_1680087_1695771_1707815";
@@ -687,7 +667,7 @@ nsresult GfxInfo::GetFeatureStatusImpl(
     // Swizzling appears to be buggy on PowerVR Rogue devices with webrender.
     // See bug 1704783.
     const bool isPowerVRRogue =
-        mGLStrings->Renderer().Find("PowerVR Rogue", /*ignoreCase*/ true) >= 0;
+        mGLStrings->Renderer().LowerCaseFindASCII("powervr rogue") >= 0;
     if (isPowerVRRogue) {
       *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
       aFailureId = "FEATURE_FAILURE_POWERVR_ROGUE";
@@ -709,6 +689,14 @@ static nsCString FeatureCacheOsVerPrefName(int32_t aFeature) {
   return osPrefName;
 }
 
+static nsCString FeatureCacheAppVerPrefName(int32_t aFeature) {
+  nsCString osPrefName;
+  osPrefName.AppendASCII("gfxinfo.cache.");
+  osPrefName.AppendInt(aFeature);
+  osPrefName.AppendASCII(".appver");
+  return osPrefName;
+}
+
 static nsCString FeatureCacheValuePrefName(int32_t aFeature) {
   nsCString osPrefName;
   osPrefName.AppendASCII("gfxinfo.cache.");
@@ -718,11 +706,20 @@ static nsCString FeatureCacheValuePrefName(int32_t aFeature) {
 }
 
 static bool GetCachedFeatureVal(int32_t aFeature, uint32_t aExpectedOsVer,
+                                const nsCString& aCurrentAppVer,
                                 int32_t& aOutStatus) {
   uint32_t osVer = 0;
   nsresult rv =
       Preferences::GetUint(FeatureCacheOsVerPrefName(aFeature).get(), &osVer);
   if (NS_FAILED(rv) || osVer != aExpectedOsVer) {
+    return false;
+  }
+  // Bug 1804287 requires we invalidate cached values for new builds to allow
+  // for code changes to modify the features support.
+  nsAutoCString cachedAppVersion;
+  rv = Preferences::GetCString(FeatureCacheAppVerPrefName(aFeature).get(),
+                               cachedAppVersion);
+  if (NS_FAILED(rv) || !aCurrentAppVer.Equals(cachedAppVersion)) {
     return false;
   }
   int32_t status = 0;
@@ -735,9 +732,12 @@ static bool GetCachedFeatureVal(int32_t aFeature, uint32_t aExpectedOsVer,
 }
 
 static void SetCachedFeatureVal(int32_t aFeature, uint32_t aOsVer,
+                                const nsCString& aCurrentAppVer,
                                 int32_t aStatus) {
   // Ignore failures; not much we can do anyway.
   Preferences::SetUint(FeatureCacheOsVerPrefName(aFeature).get(), aOsVer);
+  Preferences::SetCString(FeatureCacheAppVerPrefName(aFeature).get(),
+                          aCurrentAppVer);
   Preferences::SetInt(FeatureCacheValuePrefName(aFeature).get(), aStatus);
 }
 
@@ -748,8 +748,9 @@ int32_t GfxInfo::WebRtcHwVp8EncodeSupported() {
   // in preferences, invalidating if the OS version changes.
 
   int32_t status = 0;
+  const auto& currentAppVersion = GfxInfoBase::GetApplicationVersion();
   if (GetCachedFeatureVal(FEATURE_WEBRTC_HW_ACCELERATION_ENCODE,
-                          mOSVersionInteger, status)) {
+                          mOSVersionInteger, currentAppVersion, status)) {
     return status;
   }
 
@@ -758,7 +759,7 @@ int32_t GfxInfo::WebRtcHwVp8EncodeSupported() {
                : nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
 
   SetCachedFeatureVal(FEATURE_WEBRTC_HW_ACCELERATION_ENCODE, mOSVersionInteger,
-                      status);
+                      currentAppVersion, status);
 
   return status;
 }
@@ -770,8 +771,9 @@ int32_t GfxInfo::WebRtcHwVp8DecodeSupported() {
   // in preferences, invalidating if the OS version changes.
 
   int32_t status = 0;
+  const auto& appVersion = GfxInfoBase::GetApplicationVersion();
   if (GetCachedFeatureVal(FEATURE_WEBRTC_HW_ACCELERATION_DECODE,
-                          mOSVersionInteger, status)) {
+                          mOSVersionInteger, appVersion, status)) {
     return status;
   }
 
@@ -780,7 +782,7 @@ int32_t GfxInfo::WebRtcHwVp8DecodeSupported() {
                : nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
 
   SetCachedFeatureVal(FEATURE_WEBRTC_HW_ACCELERATION_DECODE, mOSVersionInteger,
-                      status);
+                      appVersion, status);
 
   return status;
 }
@@ -792,8 +794,9 @@ int32_t GfxInfo::WebRtcHwH264Supported() {
   // in preferences, invalidating if the OS version changes.
 
   int32_t status = 0;
+  const auto& currentAppVersion = GfxInfoBase::GetApplicationVersion();
   if (GetCachedFeatureVal(FEATURE_WEBRTC_HW_ACCELERATION_H264,
-                          mOSVersionInteger, status)) {
+                          mOSVersionInteger, currentAppVersion, status)) {
     return status;
   }
 
@@ -802,7 +805,7 @@ int32_t GfxInfo::WebRtcHwH264Supported() {
                : nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
 
   SetCachedFeatureVal(FEATURE_WEBRTC_HW_ACCELERATION_H264, mOSVersionInteger,
-                      status);
+                      currentAppVersion, status);
 
   return status;
 }

@@ -1,18 +1,16 @@
-from __future__ import absolute_import, unicode_literals
-
 import os
 import sys
 import threading
 import time
 import traceback
 from unittest import mock
-import pytest
 from unittest.mock import Mock
-from six import reraise
 
 import mozunit
+import pytest
 from mozprofile import BaseProfile
 from mozrunner.errors import RunnerNotStartedError
+from six import reraise
 
 # need this so the raptor unit tests can find output & filter classes
 here = os.path.abspath(os.path.dirname(__file__))
@@ -20,13 +18,12 @@ raptor_dir = os.path.join(os.path.dirname(here), "raptor")
 sys.path.insert(0, raptor_dir)
 
 
-from browsertime import BrowsertimeDesktop, BrowsertimeAndroid
+from browsertime import BrowsertimeAndroid, BrowsertimeDesktop
 from webextension import (
-    WebExtensionFirefox,
-    WebExtensionDesktopChrome,
     WebExtensionAndroid,
+    WebExtensionDesktopChrome,
+    WebExtensionFirefox,
 )
-
 
 DEFAULT_TIMEOUT = 125
 
@@ -255,7 +252,7 @@ def test_cmd_arguments(ConcreteBrowsertime, browsertime_options, mock_test):
         "--timeouts.script",
         str(DEFAULT_TIMEOUT),
         "--resultDir",
-        "-n",
+        "--iterations",
         "1",
     }
     if browsertime_options.get("app") in ["chrome", "chrome-m"]:
@@ -280,8 +277,8 @@ def extract_arg_value(cmd, arg):
 @pytest.mark.parametrize(
     "arg_to_test, expected, test_patch, options_patch",
     [
-        ["-n", "1", {}, {"browser_cycles": None}],
-        ["-n", "123", {"browser_cycles": 123}, {}],
+        ["--iterations", "1", {}, {"browser_cycles": None}],
+        ["--iterations", "123", {"browser_cycles": 123}, {}],
         ["--video", "false", {}, {"browsertime_video": None}],
         ["--video", "true", {}, {"browsertime_video": "dummy_value"}],
         ["--timeouts.script", str(DEFAULT_TIMEOUT), {}, {"page_cycles": None}],
@@ -314,9 +311,9 @@ def test_browsertime_arguments(
 @pytest.mark.parametrize(
     "timeout, expected_timeout, test_patch, options_patch",
     [
-        [0, 20, {}, {}],
-        [0, 20, {}, {"gecko_profile": False}],
-        [1000, 321, {}, {"gecko_profile": True}],
+        [0, 80, {}, {}],
+        [0, 80, {}, {"gecko_profile": False}],
+        [1000, 381, {}, {"gecko_profile": True}],
     ],
 )
 def test_compute_process_timeout(
@@ -343,7 +340,10 @@ def test_compute_process_timeout(
 )
 def test_android_reverse_ports(host, playback, benchmark):
     raptor = WebExtensionAndroid(
-        "geckoview", "org.mozilla.geckoview_example", host=host
+        "geckoview",
+        "org.mozilla.geckoview_example",
+        host=host,
+        extra_prefs={},
     )
     if benchmark:
         benchmark_mock = mock.patch("raptor.raptor.benchmark.Benchmark")
@@ -370,7 +370,10 @@ def test_android_reverse_ports(host, playback, benchmark):
 
 def test_android_reverse_ports_non_local_host():
     raptor = WebExtensionAndroid(
-        "geckoview", "org.mozilla.geckoview_example", host="192.168.100.10"
+        "geckoview",
+        "org.mozilla.geckoview_example",
+        host="192.168.100.10",
+        extra_prefs={},
     )
 
     raptor.set_reverse_port = Mock()

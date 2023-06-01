@@ -6,6 +6,7 @@
 #include "plugins/gimp/file-jxl-save.h"
 
 #include <cmath>
+#include <utility>
 
 #include "gobject/gsignal.h"
 
@@ -116,8 +117,7 @@ bool JpegXlSaveGui::GuiOnChangeQuality(GtkAdjustment* adj_qual,
   g_clear_signal_handler(&self->handle_toggle_lossless, self->toggle_lossless);
 
   GtkAdjustment* adj_dist = self->entry_distance;
-  jxl_save_opts.quality = gtk_adjustment_get_value(adj_qual);
-  jxl_save_opts.UpdateDistance();
+  jxl_save_opts.SetQuality(gtk_adjustment_get_value(adj_qual));
   gtk_adjustment_set_value(adj_dist, jxl_save_opts.distance);
 
   self->handle_toggle_lossless = g_signal_connect(
@@ -140,8 +140,7 @@ bool JpegXlSaveGui::GuiOnChangeDistance(GtkAdjustment* adj_dist,
   g_clear_signal_handler(&self->handle_entry_quality, self->entry_quality);
   g_clear_signal_handler(&self->handle_toggle_lossless, self->toggle_lossless);
 
-  jxl_save_opts.distance = gtk_adjustment_get_value(adj_dist);
-  jxl_save_opts.UpdateQuality();
+  jxl_save_opts.SetDistance(gtk_adjustment_get_value(adj_dist));
   gtk_adjustment_set_value(adj_qual, jxl_save_opts.quality);
 
   if (!(jxl_save_opts.distance < 0.001)) {
@@ -519,8 +518,8 @@ bool JpegXlSaveOpts::UpdateQuality() {
 
   if (distance < 0.1) {
     qual = 100;
-  } else if (distance > 6.56) {
-    qual = 30 - 5 * log(abs(6.25 * distance - 40)) / log(2.5);
+  } else if (distance > 6.4) {
+    qual = -5.0 / 53.0 * sqrt(6360.0 * distance - 39975.0) + 1725.0 / 53.0;
     lossless = false;
   } else {
     qual = 100 - (distance - 0.1) / 0.09;
@@ -543,11 +542,11 @@ bool JpegXlSaveOpts::UpdateDistance() {
   if (quality >= 30) {
     dist = 0.1 + (100 - quality) * 0.09;
   } else {
-    dist = 6.4 + pow(2.5, (30 - quality) / 5.0) / 6.25;
+    dist = 53.0 / 3000.0 * quality * quality - 23.0 / 20.0 * quality + 25.0;
   }
 
-  if (dist > 15) {
-    distance = 15;
+  if (dist > 25) {
+    distance = 25;
   } else {
     distance = dist;
   }
@@ -602,12 +601,12 @@ bool JpegXlSaveOpts::UpdateBablFormat() {
 }
 
 bool JpegXlSaveOpts::SetBablModel(std::string model) {
-  babl_model_str = model;
+  babl_model_str = std::move(model);
   return UpdateBablFormat();
 }
 
 bool JpegXlSaveOpts::SetBablType(std::string type) {
-  babl_type_str = type;
+  babl_type_str = std::move(type);
   return UpdateBablFormat();
 }
 
@@ -728,7 +727,7 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
   }
 
   // try to use ICC profile
-  if (icc.size() > 0 && !jxl_save_opts.is_gray) {
+  if (!icc.empty() && !jxl_save_opts.is_gray) {
     if (JXL_ENC_SUCCESS ==
         JxlEncoderSetICCProfile(enc.get(), icc.data(), icc.size())) {
       jxl_save_opts.icc_attached = true;

@@ -24,12 +24,7 @@ interface Animation : EventTarget {
   [Func="Document::IsWebAnimationsEnabled", Pure]
   attribute AnimationEffect? effect;
   [Func="Document::AreWebAnimationsTimelinesEnabled"]
-#ifdef NIGHTLY_BUILD
-  // Animation.timeline setter is supported only on Nightly.
   attribute AnimationTimeline? timeline;
-#else
-  readonly attribute AnimationTimeline? timeline;
-#endif
 
   [BinaryName="startTimeAsDouble"]
   attribute double? startTime;
@@ -51,20 +46,20 @@ interface Animation : EventTarget {
            attribute EventHandler       oncancel;
   [Pref="dom.animations-api.autoremove.enabled"]
            attribute EventHandler       onremove;
-  void cancel();
+  undefined cancel();
   [Throws]
-  void finish();
+  undefined finish();
   [Throws, BinaryName="playFromJS"]
-  void play();
+  undefined play();
   [Throws, BinaryName="pauseFromJS"]
-  void pause();
-  void updatePlaybackRate (double playbackRate);
+  undefined pause();
+  undefined updatePlaybackRate (double playbackRate);
   [Throws]
-  void reverse();
+  undefined reverse();
   [Pref="dom.animations-api.autoremove.enabled"]
-  void persist();
-  [Pref="dom.animations-api.autoremove.enabled", Throws]
-  void commitStyles();
+  undefined persist();
+  [CEReactions, Pref="dom.animations-api.autoremove.enabled", Throws]
+  undefined commitStyles();
 };
 
 // Non-standard extensions

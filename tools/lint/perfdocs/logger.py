@@ -1,9 +1,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import absolute_import
-
-import re
+import pathlib
 
 
 class PerfDocLogger(object):
@@ -37,7 +35,7 @@ class PerfDocLogger(object):
         """
         self.logger.info(msg)
 
-    def warning(self, msg, files):
+    def warning(self, msg, files, restricted=True):
         """
         Logs a validation warning message. The warning message is
         used as the error message that is output in the reviewbot.
@@ -45,6 +43,7 @@ class PerfDocLogger(object):
         :param str msg: Message to log, it's also used as the error message
             for the issue that is output by the reviewbot.
         :param list/str files: The file(s) that this warning is about.
+        :param boolean restricted: If the param is False, the lint error can be used anywhere.
         """
         if type(files) != list:
             files = [files]
@@ -52,12 +51,12 @@ class PerfDocLogger(object):
         # Add a reviewbot error for each file that is given
         for file in files:
             # Get a relative path (reviewbot can't handle absolute paths)
-            fpath = re.sub(PerfDocLogger.TOP_DIR, "", file)
+            fpath = str(file).replace(str(PerfDocLogger.TOP_DIR), "")
 
             # Filter out any issues that do not relate to the paths
             # that are being linted
             for path in PerfDocLogger.PATHS:
-                if path not in file:
+                if restricted and str(path) not in str(file):
                     continue
 
                 # Output error entry
@@ -65,7 +64,7 @@ class PerfDocLogger(object):
                     message=msg,
                     lineno=0,
                     column=None,
-                    path=fpath,
+                    path=str(pathlib.PurePosixPath(fpath)),
                     linter="perfdocs",
                     rule="Flawless performance docs.",
                 )

@@ -85,9 +85,7 @@ hasJsx: false
 
 hasTypes: false
 
-loading: false
-
-framework: undefined"
+framework: null"
 `;
 
 exports[`Parser.getSymbols call expression 1`] = `
@@ -153,9 +151,7 @@ hasJsx: false
 
 hasTypes: false
 
-loading: false
-
-framework: undefined"
+framework: null"
 `;
 
 exports[`Parser.getSymbols call sites 1`] = `
@@ -201,9 +197,7 @@ hasJsx: false
 
 hasTypes: false
 
-loading: false
-
-framework: undefined"
+framework: null"
 `;
 
 exports[`Parser.getSymbols class 1`] = `
@@ -271,9 +265,7 @@ hasJsx: false
 
 hasTypes: false
 
-loading: false
-
-framework: undefined"
+framework: null"
 `;
 
 exports[`Parser.getSymbols component 1`] = `
@@ -435,9 +427,7 @@ hasJsx: true
 
 hasTypes: false
 
-loading: false
-
-framework: undefined"
+framework: null"
 `;
 
 exports[`Parser.getSymbols destruct 1`] = `
@@ -526,9 +516,7 @@ hasJsx: false
 
 hasTypes: false
 
-loading: false
-
-framework: undefined"
+framework: null"
 `;
 
 exports[`Parser.getSymbols es6 1`] = `
@@ -566,9 +554,7 @@ hasJsx: false
 
 hasTypes: false
 
-loading: false
-
-framework: undefined"
+framework: null"
 `;
 
 exports[`Parser.getSymbols expression 1`] = `
@@ -749,9 +735,7 @@ hasJsx: false
 
 hasTypes: false
 
-loading: false
-
-framework: undefined"
+framework: null"
 `;
 
 exports[`Parser.getSymbols finds symbols in an html file 1`] = `
@@ -831,9 +815,7 @@ hasJsx: false
 
 hasTypes: false
 
-loading: false
-
-framework: undefined"
+framework: null"
 `;
 
 exports[`Parser.getSymbols flow 1`] = `
@@ -873,9 +855,7 @@ hasJsx: false
 
 hasTypes: true
 
-loading: false
-
-framework: undefined"
+framework: null"
 `;
 
 exports[`Parser.getSymbols func 1`] = `
@@ -958,9 +938,7 @@ hasJsx: false
 
 hasTypes: false
 
-loading: false
-
-framework: undefined"
+framework: null"
 `;
 
 exports[`Parser.getSymbols function names 1`] = `
@@ -1085,9 +1063,7 @@ hasJsx: false
 
 hasTypes: false
 
-loading: false
-
-framework: undefined"
+framework: null"
 `;
 
 exports[`Parser.getSymbols jsx 1`] = `
@@ -1125,9 +1101,7 @@ hasJsx: true
 
 hasTypes: false
 
-loading: false
-
-framework: undefined"
+framework: null"
 `;
 
 exports[`Parser.getSymbols math 1`] = `
@@ -1180,9 +1154,7 @@ hasJsx: false
 
 hasTypes: false
 
-loading: false
-
-framework: undefined"
+framework: null"
 `;
 
 exports[`Parser.getSymbols object expressions 1`] = `
@@ -1264,9 +1236,7 @@ hasJsx: false
 
 hasTypes: false
 
-loading: false
-
-framework: undefined"
+framework: null"
 `;
 
 exports[`Parser.getSymbols optional chaining 1`] = `
@@ -1308,9 +1278,7 @@ hasJsx: false
 
 hasTypes: false
 
-loading: false
-
-framework: undefined"
+framework: null"
 `;
 
 exports[`Parser.getSymbols private fields 1`] = `
@@ -1385,9 +1353,7 @@ hasJsx: false
 
 hasTypes: false
 
-loading: false
-
-framework: undefined"
+framework: null"
 `;
 
 exports[`Parser.getSymbols proto 1`] = `
@@ -1446,9 +1412,7 @@ hasJsx: false
 
 hasTypes: false
 
-loading: false
-
-framework: undefined"
+framework: null"
 `;
 
 exports[`Parser.getSymbols react component 1`] = `
@@ -1485,8 +1449,6 @@ literals:
 hasJsx: false
 
 hasTypes: false
-
-loading: false
 
 framework: React"
 `;
@@ -1556,7 +1518,5 @@ hasJsx: false
 
 hasTypes: false
 
-loading: false
-
-framework: undefined"
+framework: null"
 `;

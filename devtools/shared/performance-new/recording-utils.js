@@ -14,36 +14,11 @@
  */
 
 /**
- * TS-TODO
- *
- * This function replaces lazyRequireGetter, and TypeScript can understand it. It's
- * currently duplicated until we have consensus that TypeScript is a good idea.
- *
- * @template T
- * @type {(callback: () => T) => () => T}
- */
-function requireLazy(callback) {
-  /** @type {T | undefined} */
-  let cache;
-  return () => {
-    if (cache === undefined) {
-      cache = callback();
-    }
-    return cache;
-  };
-}
-
-const lazyServices = requireLazy(() =>
-  require("resource://gre/modules/Services.jsm")
-);
-
-/**
  * Gets the ID of active tab from the browser.
  *
  * @type {GetActiveBrowserID}
  */
 function getActiveBrowserID() {
-  const { Services } = lazyServices();
   const win = Services.wm.getMostRecentWindow("navigator:browser");
 
   if (win?.gBrowser?.selectedBrowser?.browsingContext?.browserId) {

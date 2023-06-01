@@ -41,34 +41,35 @@
     simple digit mappings and verifies that it's in sync with ICU/CLDR.
 """
 
-from __future__ import print_function
-import os
-import re
 import io
 import json
+import os
+import re
 import sys
 import tarfile
 import tempfile
-import yaml
 from contextlib import closing
 from functools import partial, total_ordering
 from itertools import chain, groupby, tee
 from operator import attrgetter, itemgetter
 from zipfile import ZipFile
 
+import yaml
+
 if sys.version_info.major == 2:
-    from itertools import (
-        ifilter as filter,
-        ifilterfalse as filterfalse,
-        imap as map,
-        izip_longest as zip_longest,
-    )
-    from urllib2 import urlopen, Request as UrlRequest
+    from itertools import ifilter as filter
+    from itertools import ifilterfalse as filterfalse
+    from itertools import imap as map
+    from itertools import izip_longest as zip_longest
+
+    from urllib2 import Request as UrlRequest
+    from urllib2 import urlopen
     from urlparse import urlsplit
 else:
     from itertools import filterfalse, zip_longest
-    from urllib.request import urlopen, Request as UrlRequest
     from urllib.parse import urlsplit
+    from urllib.request import Request as UrlRequest
+    from urllib.request import urlopen
 
 
 # From https://docs.python.org/3/library/itertools.html
@@ -3136,8 +3137,8 @@ def writeCurrencyFile(published, currencies, out):
             sorted(currencies, key=itemgetter(0)), itemgetter(0)
         ):
             for (_, minorUnits, currencyName, countryName) in entries:
-                println("    // {} ({})".format(currencyName, countryName))
-            println("    {}: {},".format(currency, minorUnits))
+                println("  // {} ({})".format(currencyName, countryName))
+            println("  {}: {},".format(currency, minorUnits))
         println("};")
 
 
@@ -3562,7 +3563,7 @@ def writeSanctionedSimpleUnitIdentifiersFiles(all_units, sanctioned_units):
         sanctioned_units_object = json.dumps(
             {unit: True for unit in sorted(sanctioned_units)},
             sort_keys=True,
-            indent=4,
+            indent=2,
             separators=(",", ": "),
         )
 
@@ -3577,9 +3578,11 @@ def writeSanctionedSimpleUnitIdentifiersFiles(all_units, sanctioned_units):
  */"""
         )
 
+        println("/* eslint-disable prettier/prettier */")
         println(
             "var sanctionedSimpleUnitIdentifiers = {};".format(sanctioned_units_object)
         )
+        println("/* eslint-enable prettier/prettier */")
 
     sanctioned_h_file = os.path.join(intl_components_src_dir, "MeasureUnitGenerated.h")
     with io.open(sanctioned_h_file, mode="w", encoding="utf-8", newline="") as f:

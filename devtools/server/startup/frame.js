@@ -2,10 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* eslint-env mozilla/frame-script */
+
 "use strict";
 
-/* global content, addEventListener, addMessageListener, removeMessageListener,
-  sendAsyncMessage */
+/* global addEventListener */
 
 /*
  * Frame script that listens for requests to start a `DevToolsServer` for a frame in a
@@ -26,23 +27,23 @@ try {
     let loader,
       customLoader = false;
     if (content.document.nodePrincipal.isSystemPrincipal) {
-      const { DevToolsLoader } = ChromeUtils.import(
-        "resource://devtools/shared/loader/Loader.jsm"
+      const { useDistinctSystemPrincipalLoader } = ChromeUtils.importESModule(
+        "resource://devtools/shared/loader/DistinctSystemPrincipalLoader.sys.mjs"
       );
-      loader = new DevToolsLoader({
-        invisibleToDebugger: true,
-      });
+      loader = useDistinctSystemPrincipalLoader(chromeGlobal);
       customLoader = true;
     } else {
       // Otherwise, use the shared loader.
-      loader = ChromeUtils.import(
-        "resource://devtools/shared/loader/Loader.jsm"
+      loader = ChromeUtils.importESModule(
+        "resource://devtools/shared/loader/Loader.sys.mjs"
       );
     }
     const { require } = loader;
 
-    const DevToolsUtils = require("devtools/shared/DevToolsUtils");
-    const { DevToolsServer } = require("devtools/server/devtools-server");
+    const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
+    const {
+      DevToolsServer,
+    } = require("resource://devtools/server/devtools-server.js");
 
     DevToolsServer.init();
     // We want a special server without any root actor and only target-scoped actors.
@@ -70,7 +71,6 @@ try {
       removeMessageListener("debug:connect", onConnect);
 
       const conn = DevToolsServer.connectToParent(prefix, mm);
-      conn.parentMessageManager = mm;
       connections.set(prefix, conn);
 
       let actor;
@@ -78,32 +78,62 @@ try {
       if (addonId) {
         const {
           WebExtensionTargetActor,
-        } = require("devtools/server/actors/targets/webextension");
+        } = require("resource://devtools/server/actors/targets/webextension.js");
+        const {
+          createWebExtensionSessionContext,
+        } = require("resource://devtools/server/actors/watcher/session-context.js");
+        const { browsingContext } = docShell;
         actor = new WebExtensionTargetActor(conn, {
           addonId,
           addonBrowsingContextGroupId,
           chromeGlobal,
           isTopLevelTarget: true,
           prefix,
+          sessionContext: createWebExtensionSessionContext(
+            {
+              addonId,
+              browsingContextID: browsingContext.id,
+              innerWindowId: browsingContext.currentWindowContext.innerWindowId,
+            },
+            {
+              isServerTargetSwitchingEnabled:
+                msg.data.isServerTargetSwitchingEnabled,
+            }
+          ),
         });
       } else {
         const {
           WindowGlobalTargetActor,
-        } = require("devtools/server/actors/targets/window-global");
+        } = require("resource://devtools/server/actors/targets/window-global.js");
+        const {
+          createBrowserElementSessionContext,
+        } = require("resource://devtools/server/actors/watcher/session-context.js");
+
         const { docShell } = chromeGlobal;
         // For a script loaded via loadFrameScript, the global is the content
         // message manager.
         // All WindowGlobalTarget actors created via the framescript are top-level
         // targets. Non top-level WindowGlobalTarget actors are all created by the
         // DevToolsFrameChild actor.
+        //
+        // createBrowserElementSessionContext only reads browserId attribute
+        const fakeBrowserElement = {
+          browserId: docShell.browsingContext.browserId,
+        };
         actor = new WindowGlobalTargetActor(conn, {
           docShell,
           isTopLevelTarget: true,
+          // This is only used when server target switching is off and we create
+          // the target from TabDescriptor. So all config attributes are false.
+          sessionContext: createBrowserElementSessionContext(
+            fakeBrowserElement,
+            {}
+          ),
         });
       }
       actor.manage(actor);
 
-      sendAsyncMessage("debug:actor", { actor: actor.form(), prefix: prefix });
+      sendAsyncMessage("debug:actor", { actor: actor.form(), prefix });
     });
 
     addMessageListener("debug:connect", onConnect);
@@ -139,21 +169,25 @@ try {
 
     // Destroy the server once its last connection closes. Note that multiple frame
     // scripts may be running in parallel and reuse the same server.
-    function destroyServer() {
+    function destroyLoader() {
       // Only destroy the server if there is no more connections to it. It may be used
       // to debug another tab running in the same process.
       if (DevToolsServer.hasConnection() || DevToolsServer.keepAlive) {
         return;
       }
-      DevToolsServer.off("connectionchange", destroyServer);
-      DevToolsServer.destroy();
+      DevToolsServer.off("connectionchange", destroyLoader);
 
       // When debugging chrome pages, we initialized a dedicated loader, also destroy it
       if (customLoader) {
-        loader.destroy();
+        const {
+          releaseDistinctSystemPrincipalLoader,
+        } = ChromeUtils.importESModule(
+          "resource://devtools/shared/loader/DistinctSystemPrincipalLoader.sys.mjs"
+        );
+        releaseDistinctSystemPrincipalLoader(chromeGlobal);
       }
     }
-    DevToolsServer.on("connectionchange", destroyServer);
+    DevToolsServer.on("connectionchange", destroyLoader);
   })();
 } catch (e) {
   dump(`Exception in DevTools frame startup: ${e}\n`);

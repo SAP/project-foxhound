@@ -21,7 +21,6 @@
 #include "nsXULAppAPI.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/dom/MediaStreamBinding.h"
 #include "mozilla/dom/MediaStreamTrackBinding.h"
@@ -32,6 +31,7 @@
 #include "mozilla/Logging.h"
 #include "mozilla/UniquePtr.h"
 #include "DOMMediaStream.h"
+#include "PerformanceRecorder.h"
 
 #ifdef MOZ_WEBRTC
 #  include "transport/runnable_utils.h"
@@ -77,9 +77,16 @@ class MediaDevice final {
    * Whether source device does end-run around cross origin restrictions.
    */
   enum class IsScary { No, Yes };
+
+  /**
+   * Whether source device can use OS level selection prompt
+   */
+  enum class OsPromptable { No, Yes };
+
   MediaDevice(MediaEngine* aEngine, dom::MediaSourceEnum aMediaSource,
               const nsString& aRawName, const nsString& aRawID,
-              const nsString& aRawGroupID, IsScary aIsScary);
+              const nsString& aRawGroupID, IsScary aIsScary,
+              const OsPromptable canRequestOsLevelPrompt);
 
   MediaDevice(MediaEngine* aEngine,
               const RefPtr<AudioDeviceInfo>& aAudioDeviceInfo,
@@ -99,6 +106,7 @@ class MediaDevice final {
   const dom::MediaSourceEnum mMediaSource;
   const dom::MediaDeviceKind mKind;
   const bool mScary;
+  const bool mCanRequestOsLevelPrompt;
   const bool mIsFake;
   const nsString mType;
   const nsString mRawID;
@@ -140,6 +148,7 @@ class LocalMediaDevice final : public nsIMediaDevice {
 
   void GetSettings(dom::MediaTrackSettings& aOutSettings);
   MediaEngineSource* Source();
+  const TrackingId& GetTrackingId() const;
   // Returns null if not a physical audio device.
   AudioDeviceInfo* GetAudioDeviceInfo() const {
     return mRawDevice->mAudioDeviceInfo;
@@ -218,7 +227,6 @@ class MediaManager final : public nsIMediaManagerService,
   NS_DECL_NSIMEDIAMANAGERSERVICE
 
   media::Parent<media::NonE10s>* GetNonE10sParent();
-  MediaEngine* GetBackend();
 
   // If the window has not been destroyed, then return the
   // GetUserMediaWindowListener for this window.
@@ -302,7 +310,6 @@ class MediaManager final : public nsIMediaManagerService,
 
  private:
   static nsresult GenerateUUID(nsAString& aResult);
-  static nsresult AnonymizeId(nsAString& aId, const nsACString& aOriginKey);
 
  public:
   /**
@@ -366,6 +373,9 @@ class MediaManager final : public nsIMediaManagerService,
   void NotifyAllowed(const nsString& aCallID,
                      const LocalMediaDeviceSet& aDevices);
 
+  // Media thread only
+  MediaEngine* GetBackend();
+
   MOZ_DEFINE_MALLOC_SIZE_OF(MallocSizeOf);
 
   // ONLY access from MainThread so we don't need to lock
@@ -390,8 +400,10 @@ class MediaManager final : public nsIMediaManagerService,
   // ONLY accessed from MediaManagerThread
   RefPtr<MediaEngine> mBackend;
 
+  // Accessed only on main thread and mMediaThread.
+  // Set before mMediaThread is created, and cleared on main thread after last
+  // mMediaThread task is run.
   static StaticRefPtr<MediaManager> sSingleton;
-  static StaticMutex sSingletonMutex;
 
   // Connect/Disconnect on media thread only
   MediaEventListener mDeviceListChangeListener;

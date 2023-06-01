@@ -21,7 +21,7 @@ function checkStateRead(aSubject, aTopic, aData) {
   ];
   for (let host of HSTS_HOSTS) {
     ok(
-      gSSService.isSecureURI(Services.io.newURI(host), 0),
+      gSSService.isSecureURI(Services.io.newURI(host)),
       `${host} should be HSTS enabled`
     );
   }
@@ -41,20 +41,13 @@ function checkStateRead(aSubject, aTopic, aData) {
   ];
   for (let host of NOT_HSTS_HOSTS) {
     ok(
-      !gSSService.isSecureURI(Services.io.newURI(host), 0),
+      !gSSService.isSecureURI(Services.io.newURI(host)),
       `${host} should not be HSTS enabled`
     );
   }
 
   do_test_finished();
 }
-
-const PINNING_ROOT_KEY_HASH = "VCIlmPM9NkgFQtrs4Oa5TeFcDu6MWRTKSNdePEhOgD8=";
-const BASE64_BUT_NOT_SHA256 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-const STARTS_WITH_NUMBER = "1ABC23defG/hiJKlmNoP+QRStuVwxYZ9a+bcD/+/EFg=";
-const STARTS_WITH_SYMBOL = "+ABC23defG/hiJKlmNoP+QRStuVwxYZ9a+bcD/+/EFg=";
-const MULTIPLE_KEYS =
-  PINNING_ROOT_KEY_HASH + STARTS_WITH_NUMBER + STARTS_WITH_SYMBOL;
 
 function run_test() {
   Services.prefs.setBoolPref("security.cert_pinning.hpkp.enabled", true);

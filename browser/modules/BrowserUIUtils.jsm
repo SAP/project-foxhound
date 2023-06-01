@@ -5,8 +5,8 @@
 
 "use strict";
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 var EXPORTED_SYMBOLS = ["BrowserUIUtils"];
@@ -135,7 +135,7 @@ var BrowserUIUtils = {
     }
     let numberOfInsertionPoints = msg.match(/%\d+\$S/g).length;
     if (numberOfInsertionPoints != nodesOrStrings.length) {
-      Cu.reportError(
+      console.error(
         `Message has ${numberOfInsertionPoints} insertion points, ` +
           `but got ${nodesOrStrings.length} replacement parameters!`
       );

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { BookmarkHTMLUtils } = ChromeUtils.import(
-  "resource://gre/modules/BookmarkHTMLUtils.jsm"
+const { BookmarkHTMLUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/BookmarkHTMLUtils.sys.mjs"
 );
 
 /**
@@ -52,7 +52,7 @@ async function addBookmarks() {
  * @resolves to an OS.File path
  */
 async function promiseFile(aBasename) {
-  let path = OS.Path.join(OS.Constants.Path.profileDir, aBasename);
+  let path = PathUtils.join(PathUtils.profileDir, aBasename);
   info("opening " + path);
 
   await IOUtils.writeUTF8(path, "");

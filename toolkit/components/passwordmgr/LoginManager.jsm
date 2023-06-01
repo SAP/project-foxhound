@@ -7,29 +7,20 @@
 const PERMISSION_SAVE_LOGINS = "login-saving";
 const MAX_DATE_MS = 8640000000000000;
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "LoginHelper",
   "resource://gre/modules/LoginHelper.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "LoginFormFactory",
-  "resource://gre/modules/LoginFormFactory.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "InsecurePasswordUtils",
-  "resource://gre/modules/InsecurePasswordUtils.jsm"
-);
 
-XPCOMUtils.defineLazyGetter(this, "log", () => {
-  let logger = LoginHelper.createLogger("LoginManager");
+XPCOMUtils.defineLazyGetter(lazy, "log", () => {
+  let logger = lazy.LoginHelper.createLogger("LoginManager");
   return logger;
 });
 
@@ -96,12 +87,12 @@ LoginManager.prototype = {
     ].createInstance(Ci.nsILoginManagerStorage);
     this.initializationPromise = this._storage.initialize();
     this.initializationPromise.then(() => {
-      log.debug(
-        "initializationPromise is resolved, updating isMasterPasswordSet in sharedData"
+      lazy.log.debug(
+        "initializationPromise is resolved, updating isPrimaryPasswordSet in sharedData"
       );
       Services.ppmm.sharedData.set(
-        "isMasterPasswordSet",
-        LoginHelper.isMasterPasswordSet()
+        "isPrimaryPasswordSet",
+        lazy.LoginHelper.isPrimaryPasswordSet()
       );
     });
   },
@@ -142,7 +133,7 @@ LoginManager.prototype = {
           data ? parseInt(data) : new Date().getTime()
         );
       } else {
-        log.debug("Oops! Unexpected notification:", topic);
+        lazy.log.debug(`Unexpected notification: ${topic}.`);
       }
     },
   },
@@ -188,7 +179,7 @@ LoginManager.prototype = {
 
     // This is a boolean histogram, and not a flag, because we don't want to
     // record any value if _gatherTelemetry is not called.
-    clearAndGetHistogram("PWMGR_SAVING_ENABLED").add(LoginHelper.enabled);
+    clearAndGetHistogram("PWMGR_SAVING_ENABLED").add(lazy.LoginHelper.enabled);
     Services.obs.notifyObservers(
       null,
       "weave:telemetry:histogram",
@@ -320,9 +311,9 @@ LoginManager.prototype = {
 
     let matchingLogin = logins.find(l => login.matches(l, true));
     if (matchingLogin) {
-      throw LoginHelper.createLoginAlreadyExistsError(matchingLogin.guid);
+      throw lazy.LoginHelper.createLoginAlreadyExistsError(matchingLogin.guid);
     }
-    log.debug("Adding login");
+    lazy.log.debug("Adding login");
     return this._storage.addLogin(login);
   },
 
@@ -341,7 +332,7 @@ LoginManager.prototype = {
       try {
         this._checkLogin(logins[i]);
       } catch (e) {
-        Cu.reportError(e);
+        console.error(e);
         continue;
       }
 
@@ -349,7 +340,7 @@ LoginManager.prototype = {
       let plaintextPassword = logins[i].password;
       logins[i].username = usernames[i];
       logins[i].password = passwords[i];
-      log.debug("Adding login");
+      lazy.log.debug("Adding login");
       let resultLogin = this._storage.addLogin(
         logins[i],
         true,
@@ -371,7 +362,10 @@ LoginManager.prototype = {
    * Remove the specified login from the stored logins.
    */
   removeLogin(login) {
-    log.debug("Removing login", login.QueryInterface(Ci.nsILoginMetaInfo).guid);
+    lazy.log.debug(
+      "Removing login",
+      login.QueryInterface(Ci.nsILoginMetaInfo).guid
+    );
     return this._storage.removeLogin(login);
   },
 
@@ -379,7 +373,7 @@ LoginManager.prototype = {
    * Change the specified login to match the new login or new properties.
    */
   modifyLogin(oldLogin, newLogin) {
-    log.debug(
+    lazy.log.debug(
       "Modifying login",
       oldLogin.QueryInterface(Ci.nsILoginMetaInfo).guid
     );
@@ -395,7 +389,7 @@ LoginManager.prototype = {
     loginType,
     filled
   ) {
-    log.debug(
+    lazy.log.debug(
       "Recording password use",
       loginType,
       login.QueryInterface(Ci.nsILoginMetaInfo).guid
@@ -422,7 +416,7 @@ LoginManager.prototype = {
    * @return {nsILoginInfo[]} - If there are no logins, the array is empty.
    */
   getAllLogins() {
-    log.debug("Getting a list of all logins");
+    lazy.log.debug("Getting a list of all logins.");
     return this._storage.getAllLogins();
   },
 
@@ -432,7 +426,7 @@ LoginManager.prototype = {
    * @return {nsILoginInfo[]} - If there are no logins, the array is empty.
    */
   async getAllLoginsAsync() {
-    log.debug("Getting a list of all logins asynchronously");
+    lazy.log.debug("Getting a list of all logins asynchronously.");
     return this._storage.getAllLoginsAsync();
   },
 
@@ -440,7 +434,7 @@ LoginManager.prototype = {
    * Get a dump of all stored logins asynchronously. Used by the login detection service.
    */
   getAllLoginsWithCallbackAsync(aCallback) {
-    log.debug("Searching a list of all logins asynchronously");
+    lazy.log.debug("Searching a list of all logins asynchronously.");
     this._storage.getAllLoginsAsync().then(logins => {
       aCallback.onSearchComplete(logins);
     });
@@ -452,7 +446,7 @@ LoginManager.prototype = {
    * This will not remove the FxA Sync key, which is stored with the rest of a user's logins.
    */
   removeAllUserFacingLogins() {
-    log.debug("Removing all user facing logins");
+    lazy.log.debug("Removing all user facing logins.");
     this._storage.removeAllUserFacingLogins();
   },
 
@@ -464,7 +458,7 @@ LoginManager.prototype = {
    * e.g. bookmarks, history, open tabs, logins and passwords, add-ons, and options
    */
   removeAllLogins() {
-    log.debug("Removing all logins from local store, including FxA key");
+    lazy.log.debug("Removing all logins from local store, including FxA key.");
     this._storage.removeAllLogins();
   },
 
@@ -477,7 +471,7 @@ LoginManager.prototype = {
    *                    the array is empty.
    */
   getAllDisabledHosts() {
-    log.debug("Getting a list of all disabled origins");
+    lazy.log.debug("Getting a list of all disabled origins.");
 
     let disabledHosts = [];
     for (let perm of Services.perms.all) {
@@ -489,11 +483,7 @@ LoginManager.prototype = {
       }
     }
 
-    log.debug(
-      "getAllDisabledHosts: returning",
-      disabledHosts.length,
-      "disabled hosts."
-    );
+    lazy.log.debug(`Returning ${disabledHosts.length} disabled hosts.`);
     return disabledHosts;
   },
 
@@ -501,7 +491,7 @@ LoginManager.prototype = {
    * Search for the known logins for entries matching the specified criteria.
    */
   findLogins(origin, formActionOrigin, httpRealm) {
-    log.debug(
+    lazy.log.debug(
       "Searching for logins matching origin:",
       origin,
       "formActionOrigin:",
@@ -514,7 +504,9 @@ LoginManager.prototype = {
   },
 
   async searchLoginsAsync(matchData) {
-    log.debug("searchLoginsAsync:", matchData);
+    lazy.log.debug(
+      `Searching for matching logins for origin: ${matchData.origin}`
+    );
 
     if (!matchData.origin) {
       throw new Error("searchLoginsAsync: An `origin` is required");
@@ -527,12 +519,14 @@ LoginManager.prototype = {
    * @return {nsILoginInfo[]} which are decrypted.
    */
   searchLogins(matchData) {
-    log.debug("Searching for logins");
+    lazy.log.debug(
+      `Searching for matching logins for origin: ${matchData.origin}`
+    );
 
     matchData.QueryInterface(Ci.nsIPropertyBag2);
     if (!matchData.hasKey("guid")) {
       if (!matchData.hasKey("origin")) {
-        log.warn("searchLogins: An `origin` is recommended");
+        lazy.log.warn("An `origin` field is recommended.");
       }
     }
 
@@ -544,16 +538,17 @@ LoginManager.prototype = {
    * returns only the count.
    */
   countLogins(origin, formActionOrigin, httpRealm) {
-    log.debug(
-      "Counting logins matching origin:",
+    const loginsCount = this._storage.countLogins(
       origin,
-      "formActionOrigin:",
       formActionOrigin,
-      "httpRealm:",
       httpRealm
     );
 
-    return this._storage.countLogins(origin, formActionOrigin, httpRealm);
+    lazy.log.debug(
+      `Found ${loginsCount} matching origin: ${origin}, formActionOrigin: ${formActionOrigin} and realm: ${httpRealm}`
+    );
+
+    return loginsCount;
   },
 
   /* Sync metadata functions - see nsILoginManagerStorage for details */
@@ -578,7 +573,9 @@ LoginManager.prototype = {
     if (existingSyncID == newSyncID) {
       return existingSyncID;
     }
-    log.debug("Engine syncIDs: " + [newSyncID, existingSyncID]);
+    lazy.log.debug(
+      `ensureCurrentSyncID: newSyncID: ${newSyncID} existingSyncID: ${existingSyncID}`
+    );
 
     await this.setSyncID(newSyncID);
     await this.setLastSync(0);
@@ -597,22 +594,29 @@ LoginManager.prototype = {
    * Check to see if user has disabled saving logins for the origin.
    */
   getLoginSavingEnabled(origin) {
-    log.debug("Checking if logins to", origin, "can be saved.");
-    if (!LoginHelper.enabled) {
+    lazy.log.debug(`Checking if logins to ${origin} can be saved.`);
+    if (!lazy.LoginHelper.enabled) {
       return false;
     }
 
-    let uri = Services.io.newURI(origin);
-    let principal = Services.scriptSecurityManager.createContentPrincipal(
-      uri,
-      {}
-    );
-    return (
-      Services.perms.testPermissionFromPrincipal(
-        principal,
-        PERMISSION_SAVE_LOGINS
-      ) != Services.perms.DENY_ACTION
-    );
+    try {
+      let uri = Services.io.newURI(origin);
+      let principal = Services.scriptSecurityManager.createContentPrincipal(
+        uri,
+        {}
+      );
+      return (
+        Services.perms.testPermissionFromPrincipal(
+          principal,
+          PERMISSION_SAVE_LOGINS
+        ) != Services.perms.DENY_ACTION
+      );
+    } catch (ex) {
+      if (!origin.startsWith("chrome:")) {
+        console.error(ex);
+      }
+      return false;
+    }
   },
 
   /**
@@ -620,7 +624,7 @@ LoginManager.prototype = {
    */
   setLoginSavingEnabled(origin, enabled) {
     // Throws if there are bogus values.
-    LoginHelper.checkOriginValue(origin);
+    lazy.LoginHelper.checkOriginValue(origin);
 
     let uri = Services.io.newURI(origin);
     let principal = Services.scriptSecurityManager.createContentPrincipal(
@@ -637,8 +641,10 @@ LoginManager.prototype = {
       );
     }
 
-    log.debug("Login saving for", origin, "now enabled?", enabled);
-    LoginHelper.notifyStorageChanged(
+    lazy.log.debug(
+      `Enabling login saving for ${origin} now enabled? ${enabled}.`
+    );
+    lazy.LoginHelper.notifyStorageChanged(
       enabled ? "hostSavingEnabled" : "hostSavingDisabled",
       origin
     );

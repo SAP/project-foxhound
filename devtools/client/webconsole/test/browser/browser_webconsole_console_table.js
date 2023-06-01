@@ -345,7 +345,7 @@ add_task(async function() {
         columns: ["(index)", "a"],
         rows: [["0", "Object { b: 34 }"]],
       },
-      additionalTest: async function(node) {
+      async additionalTest(node) {
         info("Check that object in a cell can be expanded");
         const objectNode = node.querySelector(".tree .node");
         objectNode.click();
@@ -415,55 +415,45 @@ add_task(async function() {
       });
     }
   );
-  const nodes = [];
-  for (const testCase of testCases) {
-    const node = await waitFor(() =>
-      findConsoleTable(hud.ui.outputNode, testCases.indexOf(testCase))
-    );
-    nodes.push(node);
-  }
-  const consoleTableNodes = hud.ui.outputNode.querySelectorAll(
-    ".message .new-consoletable"
-  );
-  is(
-    consoleTableNodes.length,
-    testCases.length,
-    "console has the expected number of consoleTable items"
-  );
-
+  const messages = await waitFor(async () => {
+    const msgs = await findAllMessagesVirtualized(hud);
+    if (msgs.length === testCases.length) {
+      return msgs;
+    }
+    return null;
+  });
   for (const [index, testCase] of testCases.entries()) {
-    await testItem(testCase, nodes[index]);
+    // Refresh the reference to the message, as it may have been scrolled out of existence.
+    const node = await findMessageVirtualizedById({
+      hud,
+      messageId: messages[index].getAttribute("data-message-id"),
+    });
+    await testItem(testCase, node.querySelector(".consoletable"));
   }
 });
 
-async function testItem(testCase, node) {
+async function testItem(testCase, tableNode) {
   info(testCase.info);
 
-  const columns = Array.from(node.querySelectorAll("[role=columnheader]"));
-  const columnsNumber = columns.length;
-  const cells = Array.from(node.querySelectorAll("[role=gridcell]"));
+  const ths = Array.from(tableNode.querySelectorAll("th"));
+  const trs = Array.from(tableNode.querySelectorAll("tbody tr"));
 
   is(
-    JSON.stringify(columns.map(column => column.textContent)),
+    JSON.stringify(ths.map(column => column.textContent)),
     JSON.stringify(testCase.expected.columns),
     `${testCase.info} | table has the expected columns`
   );
 
-  // We don't really have rows since we are using a CSS grid in order to have a sticky
-  // header on the table. So we check the "rows" by dividing the number of cells by the
-  // number of columns.
   is(
-    cells.length / columnsNumber,
+    trs.length,
     testCase.expected.rows.length,
     `${testCase.info} | table has the expected number of rows`
   );
 
   testCase.expected.rows.forEach((expectedRow, rowIndex) => {
-    const startIndex = rowIndex * columnsNumber;
-    // Slicing the cells array so we can get the current "row".
-    const rowCells = cells
-      .slice(startIndex, startIndex + columnsNumber)
-      .map(x => x.textContent);
+    const rowCells = Array.from(trs[rowIndex].querySelectorAll("td")).map(
+      x => x.textContent
+    );
 
     const isRegex = x => x && x.constructor.name === "RegExp";
     const hasRegExp = expectedRow.find(isRegex);
@@ -493,18 +483,22 @@ async function testItem(testCase, node) {
   });
 
   if (testCase.expected.overflow) {
-    ok(node.scrollHeight > node.clientHeight, "table overflows");
-    ok(getComputedStyle(node).overflowY !== "hidden", "table can be scrolled");
+    ok(
+      tableNode.isConnected,
+      "Node must be connected to test overflow. It is likely scrolled out of view."
+    );
+    const tableWrapperNode = tableNode.closest(".consoletable-wrapper");
+    ok(
+      tableWrapperNode.scrollHeight > tableWrapperNode.clientHeight,
+      testCase.info + " table overflows"
+    );
+    ok(
+      getComputedStyle(tableWrapperNode).overflowY !== "hidden",
+      "table can be scrolled"
+    );
   }
 
   if (typeof testCase.additionalTest === "function") {
-    await testCase.additionalTest(node);
+    await testCase.additionalTest(tableNode);
   }
-}
-
-function findConsoleTable(node, index) {
-  const condition = node.querySelector(
-    `.message:nth-of-type(${index + 1}) .new-consoletable`
-  );
-  return condition;
 }

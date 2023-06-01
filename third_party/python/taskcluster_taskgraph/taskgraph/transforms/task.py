@@ -16,23 +16,24 @@ import time
 from copy import deepcopy
 
 import attr
+from voluptuous import All, Any, Extra, NotIn, Optional, Required
 
+from taskgraph import MAX_DEPENDENCIES
+from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.hash import hash_path
 from taskgraph.util.keyed_by import evaluate_keyed_by
 from taskgraph.util.memoize import memoize
-from taskgraph.util.treeherder import split_symbol
-from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.schema import (
-    validate_schema,
+    OptimizationSchema,
     Schema,
     optionally_keyed_by,
     resolve_keyed_by,
-    OptimizationSchema,
     taskref_or_string,
+    validate_schema,
 )
+from taskgraph.util.treeherder import split_symbol
 from taskgraph.util.workertypes import worker_type_implementation
-from voluptuous import Any, Required, Optional, Extra, All, NotIn
-from taskgraph import MAX_DEPENDENCIES
+
 from ..util import docker as dockerutil
 from ..util.workertypes import get_worker_type
 
@@ -57,7 +58,7 @@ task_description_schema = Schema(
         # attributes for this task
         Optional("attributes"): {str: object},
         # relative path (from config.path) to the file task was defined in
-        Optional("job-from"): str,
+        Optional("task-from"): str,
         # dependencies of this task, keyed by name; these are passed through
         # verbatim and subject to the interpretation of the Task's get_dependencies
         # method.
@@ -66,12 +67,14 @@ task_description_schema = Schema(
                 str,
                 NotIn(
                     ["self", "decision"],
-                    "Can't use 'self` or 'decision' as depdency names.",
+                    "Can't use 'self` or 'decision' as dependency names.",
                 ),
             ): object,
         },
         # Soft dependencies of this task, as a list of tasks labels
         Optional("soft-dependencies"): [str],
+        # Dependencies that must be scheduled in order for this task to run.
+        Optional("if-dependencies"): [str],
         Optional("requires"): Any("all-completed", "all-resolved"),
         # expiration and deadline times, relative to task creation, with units
         # (e.g., "14 days").  Defaults are set based on the project.
@@ -116,7 +119,7 @@ task_description_schema = Schema(
             # Type of gecko v2 index to use
             "type": str,
             # The rank that the task will receive in the TaskCluster
-            # index.  A newly completed task supercedes the currently
+            # index.  A newly completed task supersedes the currently
             # indexed task iff it has a higher rank.  If unspecified,
             # 'by-tier' behavior will be used.
             "rank": Any(
@@ -265,6 +268,7 @@ def verify_index(config, index):
         Required("loopback-audio"): bool,
         Required("docker-in-docker"): bool,  # (aka 'dind')
         Required("privileged"): bool,
+        Required("disable-seccomp"): bool,
         # Paths to Docker volumes.
         #
         # For in-tree Docker images, volumes can be parsed from Dockerfile.
@@ -315,7 +319,7 @@ def verify_index(config, index):
         # the exit status code(s) that indicates the caches used by the task
         # should be purged
         Optional("purge-caches-exit-status"): [int],
-        # Wether any artifacts are assigned to this worker
+        # Whether any artifacts are assigned to this worker
         Optional("skip-artifacts"): bool,
     },
 )
@@ -403,6 +407,10 @@ def build_docker_worker_payload(config, task, task_def):
         capabilities["privileged"] = True
         task_def["scopes"].append("docker-worker:capability:privileged")
 
+    if worker.get("disable-seccomp"):
+        capabilities["disableSeccomp"] = True
+        task_def["scopes"].append("docker-worker:capability:disableSeccomp")
+
     task_def["payload"] = payload = {
         "image": image,
         "env": worker["env"],
@@ -480,7 +488,9 @@ def build_docker_worker_payload(config, task, task_def):
             suffix = f"{cache_version}-{_run_task_suffix()}"
 
             if out_of_tree_image:
-                name_hash = hashlib.sha256(out_of_tree_image).hexdigest()
+                name_hash = hashlib.sha256(
+                    out_of_tree_image.encode("utf-8")
+                ).hexdigest()
                 suffix += name_hash[0:12]
 
         else:
@@ -595,7 +605,7 @@ def build_docker_worker_payload(config, task, task_def):
         # optional features
         Required("chain-of-trust"): bool,
         Optional("taskcluster-proxy"): bool,
-        # Wether any artifacts are assigned to this worker
+        # Whether any artifacts are assigned to this worker
         Optional("skip-artifacts"): bool,
     },
 )
@@ -607,15 +617,20 @@ def build_generic_worker_payload(config, task, task_def):
         "maxRunTime": worker["max-run-time"],
     }
 
+    on_exit_status = {}
+    if "retry-exit-status" in worker:
+        on_exit_status["retry"] = worker["retry-exit-status"]
     if worker["os"] == "windows":
-        task_def["payload"]["onExitStatus"] = {
-            "retry": [
+        on_exit_status.setdefault("retry", []).extend(
+            [
                 # These codes (on windows) indicate a process interruption,
                 # rather than a task run failure. See bug 1544403.
                 1073807364,  # process force-killed due to system shutdown
                 3221225786,  # sigint (any interrupt)
             ]
-        }
+        )
+    if on_exit_status:
+        task_def["payload"]["onExitStatus"] = on_exit_status
 
     env = worker.get("env", {})
 
@@ -821,6 +836,7 @@ def set_defaults(config, tasks):
             worker.setdefault("loopback-audio", False)
             worker.setdefault("docker-in-docker", False)
             worker.setdefault("privileged", False)
+            worker.setdefault("disable-seccomp", False)
             worker.setdefault("volumes", [])
             worker.setdefault("env", {})
             if "caches" in worker:
@@ -965,7 +981,7 @@ def build_task(config, tasks):
             if groupSymbol != "?":
                 treeherder["groupSymbol"] = groupSymbol
                 if groupSymbol not in group_names:
-                    path = os.path.join(config.path, task.get("job-from", ""))
+                    path = os.path.join(config.path, task.get("task-from", ""))
                     raise Exception(UNKNOWN_GROUP_NAME.format(groupSymbol, path))
                 treeherder["groupName"] = group_names[groupSymbol]
             treeherder["symbol"] = symbol
@@ -982,12 +998,14 @@ def build_task(config, tasks):
 
             branch_rev = get_branch_rev(config)
 
-            if config.params["tasks_for"] == "github-pull-request":
+            if config.params["tasks_for"].startswith("github-pull-request"):
                 # In the past we used `project` for this, but that ends up being
                 # set to the repository name of the _head_ repo, which is not correct
                 # (and causes scope issues) if it doesn't match the name of the
                 # base repo
                 base_project = config.params["base_repository"].split("/")[-1]
+                if base_project.endswith(".git"):
+                    base_project = base_project[:-4]
                 th_project_suffix = "-pr"
             else:
                 base_project = config.params["project"]
@@ -1088,10 +1106,27 @@ def build_task(config, tasks):
                 env = payload.setdefault("env", {})
                 env["MOZ_AUTOMATION"] = "1"
 
+        dependencies = task.get("dependencies", {})
+        if_dependencies = task.get("if-dependencies", [])
+        if if_dependencies:
+            for i, dep in enumerate(if_dependencies):
+                if dep in dependencies:
+                    if_dependencies[i] = dependencies[dep]
+                    continue
+
+                raise Exception(
+                    "{label} specifies '{dep}' in if-dependencies, "
+                    "but {dep} is not a dependency!".format(
+                        label=task["label"], dep=dep
+                    )
+                )
+
         yield {
             "label": task["label"],
+            "description": task["description"],
             "task": task_def,
-            "dependencies": task.get("dependencies", {}),
+            "dependencies": dependencies,
+            "if-dependencies": if_dependencies,
             "soft-dependencies": task.get("soft-dependencies", []),
             "attributes": attributes,
             "optimization": task.get("optimization", None),

@@ -6,8 +6,6 @@
 
 #include "vm/HelperThreads.h"
 
-#include "mozilla/DebugOnly.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/ReverseIterator.h"  // mozilla::Reversed(...)
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Span.h"  // mozilla::Span<TaggedScriptThingIndex>
@@ -18,8 +16,12 @@
 #include "frontend/BytecodeCompilation.h"  // frontend::{CompileGlobalScriptToExtensibleStencil, FireOnNewScript}
 #include "frontend/BytecodeCompiler.h"  // frontend::ParseModuleToExtensibleStencil
 #include "frontend/CompilationStencil.h"  // frontend::{CompilationStencil, ExtensibleCompilationStencil, CompilationInput, BorrowingCompilationStencil, ScriptStencilRef}
+#include "frontend/FrontendContext.h"
+#include "frontend/ScopeBindingCache.h"  // frontend::ScopeBindingCache
+#include "gc/GC.h"
 #include "jit/IonCompileTask.h"
 #include "jit/JitRuntime.h"
+#include "jit/JitScript.h"
 #include "js/CompileOptions.h"  // JS::CompileOptions, JS::DecodeOptions, JS::ReadOnlyCompileOptions
 #include "js/ContextOptions.h"  // JS::ContextOptions
 #include "js/experimental/JSStencil.h"
@@ -37,27 +39,16 @@
 #include "vm/HelperThreadState.h"
 #include "vm/InternalThreadPool.h"
 #include "vm/MutexIDs.h"
-#include "vm/SharedImmutableStringsCache.h"
-#include "vm/Time.h"
-#include "vm/TraceLogging.h"
 #include "wasm/WasmGenerator.h"
-
-#include "debugger/DebugAPI-inl.h"
-#include "gc/ArenaList-inl.h"
-#include "vm/JSContext-inl.h"
-#include "vm/JSObject-inl.h"
-#include "vm/JSScript-inl.h"
-#include "vm/NativeObject-inl.h"
-#include "vm/Realm-inl.h"
 
 using namespace js;
 
-using mozilla::Maybe;
 using mozilla::TimeDuration;
 using mozilla::TimeStamp;
 using mozilla::Utf8Unit;
 
 using JS::CompileOptions;
+using JS::DispatchReason;
 using JS::ReadOnlyCompileOptions;
 
 namespace js {
@@ -177,7 +168,7 @@ bool GlobalHelperThreadState::submitTask(wasm::CompileTask* task,
     return false;
   }
 
-  dispatch(lock);
+  dispatch(DispatchReason::NewTask, lock);
   return true;
 }
 
@@ -205,7 +196,7 @@ bool GlobalHelperThreadState::submitTask(wasm::UniqueTier2GeneratorTask task) {
   }
   (void)task.release();
 
-  dispatch(lock);
+  dispatch(DispatchReason::NewTask, lock);
   return true;
 }
 
@@ -278,7 +269,7 @@ bool GlobalHelperThreadState::submitTask(
   // unwanted mutations.
   task->alloc().lifoAlloc()->setReadOnly();
 
-  dispatch(locked);
+  dispatch(DispatchReason::NewTask, locked);
   return true;
 }
 
@@ -301,7 +292,7 @@ bool GlobalHelperThreadState::submitTask(
     return false;
   }
 
-  dispatch(locked);
+  dispatch(DispatchReason::NewTask, locked);
   return true;
 }
 
@@ -495,25 +486,21 @@ bool js::HasOffThreadIonCompile(Realm* realm) {
 }
 #endif
 
-struct MOZ_RAII AutoSetContextOffThreadFrontendErrors {
-  explicit AutoSetContextOffThreadFrontendErrors(
-      OffThreadFrontendErrors* errors) {
-    TlsContext.get()->setOffThreadFrontendErrors(errors);
+struct MOZ_RAII AutoSetContextFrontendErrors {
+  explicit AutoSetContextFrontendErrors(FrontendContext* fc) {
+    fc->linkWithJSContext(TlsContext.get());
   }
-  ~AutoSetContextOffThreadFrontendErrors() {
-    TlsContext.get()->setOffThreadFrontendErrors(nullptr);
+  ~AutoSetContextFrontendErrors() {
+    TlsContext.get()->setFrontendErrors(nullptr);
   }
 };
 
 AutoSetHelperThreadContext::AutoSetHelperThreadContext(
-    AutoLockHelperThreadState& lock)
+    const JS::ContextOptions& options, AutoLockHelperThreadState& lock)
     : lock(lock) {
   cx = HelperThreadState().getFirstUnusedContext(lock);
   MOZ_ASSERT(cx);
-  cx->setHelperThread(lock);
-  // When we set the JSContext, we need to reset the computed stack limits for
-  // the current thread, so we also set the native stack quota.
-  JS_SetNativeStackQuota(cx, HelperThreadState().stackQuota);
+  cx->setHelperThread(options, lock);
 }
 
 AutoSetHelperThreadContext::~AutoSetHelperThreadContext() {
@@ -528,7 +515,11 @@ AutoSetHelperThreadContext::~AutoSetHelperThreadContext() {
 
 ParseTask::ParseTask(ParseTaskKind kind, JSContext* cx,
                      JS::OffThreadCompileCallback callback, void* callbackData)
-    : kind(kind), options(cx), callback(callback), callbackData(callbackData) {
+    : kind(kind),
+      options(cx),
+      contextOptions(cx->options()),
+      callback(callback),
+      callbackData(callbackData) {
   // Note that |cx| is the main thread context here but the parse task will
   // run with a different, helper thread, context.
   MOZ_ASSERT(!cx->isHelperThreadContext());
@@ -542,6 +533,11 @@ bool ParseTask::init(JSContext* cx, const ReadOnlyCompileOptions& options) {
   }
 
   runtime = cx->runtime();
+
+  if (!fc_.allocateOwnedPool()) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
 
   // MultiStencilsDecode doesn't support JS::InstantiationStorage.
   MOZ_ASSERT_IF(this->options.allocateInstantiationStorage,
@@ -561,11 +557,11 @@ void ParseTask::moveGCOutputInto(JS::InstantiationStorage& storage) {
   storage.gcOutput_ = gcOutput_.release();
 }
 
-void ParseTask::activate(JSRuntime* rt) { rt->addParseTaskRef(); }
-
-void ParseTask::deactivate(JSRuntime* rt) { rt->decParseTaskRef(); }
-
-ParseTask::~ParseTask() = default;
+ParseTask::~ParseTask() {
+  // The LinkedListElement destructor will remove us from any list we are part
+  // of without synchronization, so ensure that doesn't happen.
+  MOZ_DIAGNOSTIC_ASSERT(!isInList());
+}
 
 void ParseTask::trace(JSTracer* trc) {
   if (runtime != trc->runtime()) {
@@ -613,21 +609,29 @@ void ParseTask::runHelperThreadTask(AutoLockHelperThreadState& locked) {
   HelperThreadState().parseFinishedList(locked).insertBack(this);
 }
 
+static inline JS::NativeStackLimit GetStackLimit() {
+  return JS::GetNativeStackLimit(GetNativeStackBase(),
+                                 HelperThreadState().stackQuota);
+}
+
 void ParseTask::runTask(AutoLockHelperThreadState& lock) {
-  AutoSetHelperThreadContext usesContext(lock);
+  stackLimit = GetStackLimit();
+
+  AutoSetHelperThreadContext usesContext(contextOptions, lock);
 
   AutoUnlockHelperThreadState unlock(lock);
 
   JSContext* cx = TlsContext.get();
 
   AutoSetContextRuntime ascr(runtime);
-  AutoSetContextOffThreadFrontendErrors recordErrors(&this->errors);
+  fc_.linkWithJSContext(cx);
 
-  parse(cx);
+  parse(cx, &fc_);
 
   MOZ_ASSERT(cx->tempLifoAlloc().isEmpty());
   cx->tempLifoAlloc().freeAll();
   cx->frontendCollectionPool().purge();
+  fc_.nameCollectionPool().purge();
 }
 
 void ParseTask::scheduleDelazifyTask(AutoLockHelperThreadState& lock) {
@@ -644,50 +648,20 @@ void ParseTask::scheduleDelazifyTask(AutoLockHelperThreadState& lock) {
 
   UniquePtr<DelazifyTask> task;
   {
-    AutoSetHelperThreadContext usesContext(lock);
+    AutoSetHelperThreadContext usesContext(contextOptions, lock);
     AutoUnlockHelperThreadState unlock(lock);
-    JSContext* cx = TlsContext.get();
     AutoSetContextRuntime ascr(runtime);
 
-    // DelazifyTask are capturing errors. This is created here to capture errors
-    // as-if they were part of the to-be constructed DelazifyTask. This is also
-    // the reason why we move this structure to the DelazifyTask once created.
-    //
-    // In case of early failure, no errors are reported, as a DelazifyTask is an
-    // optimization and the VM should remain working even without this
-    // optimization in place.
-    OffThreadFrontendErrors errors;
-    AutoSetContextOffThreadFrontendErrors recordErrors(&errors);
-
-    task.reset(js_new<DelazifyTask>(runtime));
+    task = DelazifyTask::Create(runtime, contextOptions, options, *stencil_);
     if (!task) {
       return;
     }
-
-    RefPtr<ScriptSource> source(stencil_->source);
-    StencilCache& cache = runtime->caches().delazificationCache;
-    if (!cache.startCaching(std::move(source))) {
-      return;
-    }
-
-    // Clone the extensible stencil to be used for eager delazification.
-    auto initial = cx->make_unique<frontend::ExtensibleCompilationStencil>(
-        cx, options, stencil_->source);
-    if (!initial->cloneFrom(cx, *stencil_)) {
-      // In case of errors, skip this and delazify on-demand.
-      return;
-    }
-
-    if (!task->init(cx, options, std::move(initial))) {
-      // In case of errors, skip this and delazify on-demand.
-      return;
-    }
-
-    task->errors_ = std::move(errors);
   }
 
-  // Schedule delazification task.
-  HelperThreadState().submitTask(task.release(), lock);
+  // Schedule delazification task if there is any function to delazify.
+  if (!task->strategy->done()) {
+    HelperThreadState().submitTask(task.release(), lock);
+  }
 }
 
 template <typename Unit>
@@ -697,7 +671,7 @@ struct CompileToStencilTask : public ParseTask {
   CompileToStencilTask(JSContext* cx, JS::SourceText<Unit>& srcBuf,
                        JS::OffThreadCompileCallback callback,
                        void* callbackData);
-  void parse(JSContext* cx) override;
+  void parse(JSContext* cx, FrontendContext* fc) override;
 };
 
 template <typename Unit>
@@ -707,7 +681,7 @@ struct CompileModuleToStencilTask : public ParseTask {
   CompileModuleToStencilTask(JSContext* cx, JS::SourceText<Unit>& srcBuf,
                              JS::OffThreadCompileCallback callback,
                              void* callbackData);
-  void parse(JSContext* cx) override;
+  void parse(JSContext* cx, FrontendContext* fc) override;
 };
 
 struct DecodeStencilTask : public ParseTask {
@@ -715,7 +689,7 @@ struct DecodeStencilTask : public ParseTask {
 
   DecodeStencilTask(JSContext* cx, const JS::TranscodeRange& range,
                     JS::OffThreadCompileCallback callback, void* callbackData);
-  void parse(JSContext* cx) override;
+  void parse(JSContext* cx, FrontendContext* fc) override;
 };
 
 struct MultiStencilsDecodeTask : public ParseTask {
@@ -724,7 +698,7 @@ struct MultiStencilsDecodeTask : public ParseTask {
   MultiStencilsDecodeTask(JSContext* cx, JS::TranscodeSources& sources,
                           JS::OffThreadCompileCallback callback,
                           void* callbackData);
-  void parse(JSContext* cx) override;
+  void parse(JSContext* cx, FrontendContext* fc) override;
 };
 
 template <typename Unit>
@@ -735,25 +709,29 @@ CompileToStencilTask<Unit>::CompileToStencilTask(
       data(std::move(srcBuf)) {}
 
 template <typename Unit>
-void CompileToStencilTask<Unit>::parse(JSContext* cx) {
+void CompileToStencilTask<Unit>::parse(JSContext* cx, FrontendContext* fc) {
   MOZ_ASSERT(cx->isHelperThreadContext());
 
   ScopeKind scopeKind =
       options.nonSyntacticScope ? ScopeKind::NonSyntactic : ScopeKind::Global;
 
-  stencilInput_ = cx->make_unique<frontend::CompilationInput>(options);
+  stencilInput_ =
+      fc->getAllocator()->make_unique<frontend::CompilationInput>(options);
   if (!stencilInput_) {
     return;
   }
 
-  stencil_ = frontend::CompileGlobalScriptToStencil(cx, *stencilInput_, data,
-                                                    scopeKind);
+  frontend::NoScopeBindingCache scopeCache;
+  js::LifoAlloc tempLifoAlloc(JSContext::TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE);
+  stencil_ = frontend::CompileGlobalScriptToStencil(
+      cx, fc, stackLimit, tempLifoAlloc, *stencilInput_, &scopeCache, data,
+      scopeKind);
   if (!stencil_) {
     return;
   }
 
   if (options.allocateInstantiationStorage) {
-    if (!frontend::PrepareForInstantiate(cx, *stencilInput_, *stencil_,
+    if (!frontend::PrepareForInstantiate(cx, fc, *stencilInput_, *stencil_,
                                          *gcOutput_)) {
       stencil_ = nullptr;
     }
@@ -768,21 +746,25 @@ CompileModuleToStencilTask<Unit>::CompileModuleToStencilTask(
       data(std::move(srcBuf)) {}
 
 template <typename Unit>
-void CompileModuleToStencilTask<Unit>::parse(JSContext* cx) {
+void CompileModuleToStencilTask<Unit>::parse(JSContext* cx,
+                                             FrontendContext* fc) {
   MOZ_ASSERT(cx->isHelperThreadContext());
 
-  stencilInput_ = cx->make_unique<frontend::CompilationInput>(options);
+  stencilInput_ =
+      fc->getAllocator()->make_unique<frontend::CompilationInput>(options);
   if (!stencilInput_) {
     return;
   }
 
-  stencil_ = frontend::ParseModuleToStencil(cx, *stencilInput_, data);
+  frontend::NoScopeBindingCache scopeCache;
+  stencil_ = frontend::ParseModuleToStencil(cx, fc, stackLimit, *stencilInput_,
+                                            &scopeCache, data);
   if (!stencil_) {
     return;
   }
 
   if (options.allocateInstantiationStorage) {
-    if (!frontend::PrepareForInstantiate(cx, *stencilInput_, *stencil_,
+    if (!frontend::PrepareForInstantiate(cx, fc, *stencilInput_, *stencil_,
                                          *gcOutput_)) {
       stencil_ = nullptr;
     }
@@ -798,31 +780,34 @@ DecodeStencilTask::DecodeStencilTask(JSContext* cx,
   MOZ_ASSERT(JS::IsTranscodingBytecodeAligned(range.begin().get()));
 }
 
-void DecodeStencilTask::parse(JSContext* cx) {
+void DecodeStencilTask::parse(JSContext* cx, FrontendContext* fc) {
   MOZ_ASSERT(cx->isHelperThreadContext());
 
-  stencilInput_ = cx->make_unique<frontend::CompilationInput>(options);
+  stencilInput_ =
+      fc->getAllocator()->make_unique<frontend::CompilationInput>(options);
   if (!stencilInput_) {
     return;
   }
-  if (!stencilInput_->initForGlobal(cx)) {
+  if (!stencilInput_->initForGlobal(fc)) {
     return;
   }
 
-  stencil_ = cx->new_<frontend::CompilationStencil>(stencilInput_->source);
+  stencil_ = fc->getAllocator()->new_<frontend::CompilationStencil>(
+      stencilInput_->source);
   if (!stencil_) {
     return;
   }
 
   bool succeeded = false;
-  (void)stencil_->deserializeStencils(cx, *stencilInput_, range, &succeeded);
+  (void)stencil_->deserializeStencils(cx, fc, *stencilInput_, range,
+                                      &succeeded);
   if (!succeeded) {
     stencil_ = nullptr;
     return;
   }
 
   if (options.allocateInstantiationStorage) {
-    if (!frontend::PrepareForInstantiate(cx, *stencilInput_, *stencil_,
+    if (!frontend::PrepareForInstantiate(cx, fc, *stencilInput_, *stencil_,
                                          *gcOutput_)) {
       stencil_ = nullptr;
     }
@@ -835,34 +820,75 @@ MultiStencilsDecodeTask::MultiStencilsDecodeTask(
     : ParseTask(ParseTaskKind::MultiStencilsDecode, cx, callback, callbackData),
       sources(&sources) {}
 
-void MultiStencilsDecodeTask::parse(JSContext* cx) {
+void MultiStencilsDecodeTask::parse(JSContext* cx, FrontendContext* fc) {
   MOZ_ASSERT(cx->isHelperThreadContext());
 
   if (!stencils.reserve(sources->length())) {
-    ReportOutOfMemory(cx);  // This sets |outOfMemory|.
+    ReportOutOfMemory(fc);  // This sets |outOfMemory|.
     return;
   }
 
   for (auto& source : *sources) {
-    JS::DecodeOptions decodeOptions(options);
-    RefPtr<JS::Stencil> stencil;
-    if (JS::DecodeStencil(cx, decodeOptions, source.range,
-                          getter_AddRefs(stencil)) != JS::TranscodeResult::Ok) {
+    frontend::CompilationInput stencilInput(options);
+    if (!stencilInput.initForGlobal(fc)) {
       break;
     }
 
-    if (stencil) {
-      stencils.infallibleEmplaceBack(stencil.forget());
-    } else {
+    RefPtr<frontend::CompilationStencil> stencil =
+        fc->getAllocator()->new_<frontend::CompilationStencil>(
+            stencilInput.source);
+    if (!stencil) {
+      break;
+    }
+    bool succeeded = false;
+    (void)stencil->deserializeStencils(cx, fc, stencilInput, source.range,
+                                       &succeeded);
+    if (!succeeded) {
       // If any decodes fail, don't process the rest. We likely are hitting OOM.
       break;
     }
+    stencils.infallibleEmplaceBack(stencil.forget());
   }
 }
 
-bool DepthFirstDelazification::add(JSContext* cx,
-                                   const frontend::CompilationStencil& stencil,
-                                   ScriptIndex index) {
+void js::StartOffThreadDelazification(
+    JSContext* cx, const ReadOnlyCompileOptions& options,
+    const frontend::CompilationStencil& stencil) {
+  // Skip delazify tasks if we parse everything on-demand or ahead.
+  auto strategy = options.eagerDelazificationStrategy();
+  if (strategy == JS::DelazificationOption::OnDemandOnly ||
+      strategy == JS::DelazificationOption::ParseEverythingEagerly) {
+    return;
+  }
+
+  // Skip delazify task if code coverage is enabled.
+  if (cx->realm()->collectCoverageForDebug()) {
+    return;
+  }
+
+  if (!CanUseExtraThreads()) {
+    return;
+  }
+
+  AutoAssertNoPendingException aanpe(cx);
+
+  JSRuntime* runtime = cx->runtime();
+  UniquePtr<DelazifyTask> task;
+  task = DelazifyTask::Create(runtime, cx->options(), options, stencil);
+  if (!task) {
+    return;
+  }
+
+  // Schedule delazification task if there is any function to delazify.
+  if (!task->strategy->done()) {
+    AutoLockHelperThreadState lock;
+    HelperThreadState().submitTask(task.release(), lock);
+  }
+}
+
+bool DelazifyStrategy::add(FrontendContext* fc,
+                           const frontend::CompilationStencil& stencil,
+                           ScriptIndex index) {
   using namespace js::frontend;
   ScriptStencilRef scriptRef{stencil, index};
 
@@ -883,20 +909,22 @@ bool DepthFirstDelazification::add(JSContext* cx,
 
     ScriptIndex innerScriptIndex = index.toFunction();
     ScriptStencilRef innerScriptRef{stencil, innerScriptIndex};
-    if (innerScriptRef.scriptData().isGhost()) {
+    if (innerScriptRef.scriptData().isGhost() ||
+        !innerScriptRef.scriptData().functionFlags.isInterpreted()) {
       continue;
     }
     if (innerScriptRef.scriptData().hasSharedData()) {
       // The top-level parse decided to eagerly parse this function, thus we
       // should visit its inner function the same way.
-      if (!add(cx, stencil, innerScriptIndex)) {
+      if (!add(fc, stencil, innerScriptIndex)) {
         return false;
       }
       continue;
     }
 
-    if (!stack.append(innerScriptIndex)) {
-      ReportOutOfMemory(cx);
+    // Maybe insert the new script index in the queue of functions to delazify.
+    if (!insert(innerScriptIndex, innerScriptRef)) {
+      ReportOutOfMemory(fc);
       return false;
     }
   }
@@ -904,17 +932,129 @@ bool DepthFirstDelazification::add(JSContext* cx,
   return true;
 }
 
-DelazifyTask::DelazifyTask(JSRuntime* runtime)
-    : runtime(runtime), merger(), errors_() {
-  AutoLockScriptData alsd(runtime);
-  runtime->addParseTaskRef();
+DelazifyStrategy::ScriptIndex LargeFirstDelazification::next() {
+  std::swap(heap.back(), heap[0]);
+  ScriptIndex result = heap.popCopy().second;
+
+  // NOTE: These are a heap indexes offseted by 1, such that we can manipulate
+  // the tree of heap-sorted values which bubble up the largest values towards
+  // the root of the tree.
+  size_t len = heap.length();
+  size_t i = 1;
+  while (true) {
+    // NOTE: We write (n + 1) - 1, instead of n, to explicit that the
+    // manipualted indexes are all offseted by 1.
+    size_t n = 2 * i;
+    size_t largest;
+    if (n + 1 <= len && heap[(n + 1) - 1].first > heap[n - 1].first) {
+      largest = n + 1;
+    } else if (n <= len) {
+      // The condition is n <= len in case n + 1 is out of the heap vector, but
+      // not n, in which case we still want to check if the last element of the
+      // heap vector should be swapped. Otherwise heap[n - 1] represents a
+      // larger function than heap[(n + 1) - 1].
+      largest = n;
+    } else {
+      // n is out-side the heap vector, thus our element is already in a leaf
+      // position and would not be moved any more.
+      break;
+    }
+
+    if (heap[i - 1].first < heap[largest - 1].first) {
+      // We found a function which has a larger body as a child of the current
+      // element. we swap it with the current element, such that the largest
+      // element is closer to the root of the tree.
+      std::swap(heap[i - 1], heap[largest - 1]);
+      i = largest;
+    } else {
+      // The largest function found as a child of the current node is smaller
+      // than the current node's function size. The heap tree is now organized
+      // as expected.
+      break;
+    }
+  }
+
+  return result;
+}
+
+bool LargeFirstDelazification::insert(ScriptIndex index,
+                                      frontend::ScriptStencilRef& ref) {
+  const frontend::ScriptStencilExtra& extra = ref.scriptExtra();
+  SourceSize size = extra.extent.sourceEnd - extra.extent.sourceStart;
+  if (!heap.append(std::pair(size, index))) {
+    return false;
+  }
+
+  // NOTE: These are a heap indexes offseted by 1, such that we can manipulate
+  // the tree of heap-sorted values which bubble up the largest values towards
+  // the root of the tree.
+  size_t i = heap.length();
+  while (i > 1) {
+    if (heap[i - 1].first <= heap[(i / 2) - 1].first) {
+      return true;
+    }
+
+    std::swap(heap[i - 1], heap[(i / 2) - 1]);
+    i /= 2;
+  }
+
+  return true;
+}
+
+UniquePtr<DelazifyTask> DelazifyTask::Create(
+    JSRuntime* runtime, const JS::ContextOptions& contextOptions,
+    const JS::ReadOnlyCompileOptions& options,
+    const frontend::CompilationStencil& stencil) {
+  UniquePtr<DelazifyTask> task;
+  task.reset(js_new<DelazifyTask>(runtime, contextOptions));
+  if (!task) {
+    return nullptr;
+  }
+
+  AutoSetContextFrontendErrors recordErrors(&task->fc_);
+  RefPtr<ScriptSource> source(stencil.source);
+  StencilCache& cache = runtime->caches().delazificationCache;
+  if (!cache.startCaching(std::move(source))) {
+    return nullptr;
+  }
+
+  // Clone the extensible stencil to be used for eager delazification.
+  auto initial = task->fc_.getAllocator()
+                     ->make_unique<frontend::ExtensibleCompilationStencil>(
+                         options, stencil.source);
+  if (!initial || !initial->cloneFrom(&task->fc_, stencil)) {
+    // In case of errors, skip this and delazify on-demand.
+    return nullptr;
+  }
+
+  if (!task->init(options, std::move(initial))) {
+    // In case of errors, skip this and delazify on-demand.
+    return nullptr;
+  }
+
+  return task;
+}
+
+DelazifyTask::DelazifyTask(JSRuntime* runtime,
+                           const JS::ContextOptions& options)
+    : runtime(runtime), contextOptions(options), merger() {}
+
+DelazifyTask::~DelazifyTask() {
+  // The LinkedListElement destructor will remove us from any list we are part
+  // of without synchronization, so ensure that doesn't happen.
+  MOZ_DIAGNOSTIC_ASSERT(!isInList());
 }
 
 bool DelazifyTask::init(
-    JSContext* cx, const JS::ReadOnlyCompileOptions& options,
+    const JS::ReadOnlyCompileOptions& options,
     UniquePtr<frontend::ExtensibleCompilationStencil>&& initial) {
   using namespace js::frontend;
-  if (!merger.setInitial(cx, std::move(initial))) {
+
+  if (!fc_.allocateOwnedPool()) {
+    return false;
+  }
+
+  if (!merger.setInitial(&fc_, std::move(initial))) {
     return false;
   }
 
@@ -924,21 +1064,16 @@ bool DelazifyTask::init(
       // execution on the main thread.
       MOZ_CRASH("OnDemandOnly should not create a DelazifyTask.");
       break;
+    case JS::DelazificationOption::CheckConcurrentWithOnDemand:
     case JS::DelazificationOption::ConcurrentDepthFirst:
       // ConcurrentDepthFirst visit all functions to be delazified, visiting the
       // inner functions before the siblings functions.
-      strategy = cx->make_unique<DepthFirstDelazification>();
+      strategy = fc_.getAllocator()->make_unique<DepthFirstDelazification>();
       break;
-    case JS::DelazificationOption::ConcurrentBreathFirst:
-      // ConcurrentDepthFirst visit all functions to be delazified, visiting the
-      // siblings functions before the inner functions.
-      MOZ_CRASH("Strategy is not yet implemented");
-      break;
-    case JS::DelazificationOption::ConcurrentMostFrequentNameFirst:
-      // ConcurrentMostFrequentNameFirst uses the frequency of names to
-      // determine the order in which functions should be delazified. Unamed
-      // functions are delazified first.
-      MOZ_CRASH("Strategy is not yet implemented");
+    case JS::DelazificationOption::ConcurrentLargeFirst:
+      // ConcurrentLargeFirst visit all functions to be delazified, visiting the
+      // largest function first.
+      strategy = fc_.getAllocator()->make_unique<LargeFirstDelazification>();
       break;
     case JS::DelazificationOption::ParseEverythingEagerly:
       // ParseEverythingEagerly parse all functions eagerly, thus leaving no
@@ -947,10 +1082,14 @@ bool DelazifyTask::init(
       break;
   }
 
+  if (!strategy) {
+    return false;
+  }
+
   // Queue functions from the top-level to be delazify.
   BorrowingCompilationStencil borrow(merger.getResult());
   ScriptIndex topLevel{0};
-  return strategy->add(cx, borrow, topLevel);
+  return strategy->add(&fc_, borrow, topLevel);
 }
 
 size_t DelazifyTask::sizeOfExcludingThis(
@@ -961,7 +1100,7 @@ size_t DelazifyTask::sizeOfExcludingThis(
 
 void DelazifyTask::runHelperThreadTask(AutoLockHelperThreadState& lock) {
   {
-    AutoSetHelperThreadContext usesContext(lock);
+    AutoSetHelperThreadContext usesContext(contextOptions, lock);
     AutoUnlockHelperThreadState unlock(lock);
     JSContext* cx = TlsContext.get();
     if (!runTask(cx)) {
@@ -973,10 +1112,13 @@ void DelazifyTask::runHelperThreadTask(AutoLockHelperThreadState& lock) {
     MOZ_ASSERT(cx->tempLifoAlloc().isEmpty());
     cx->tempLifoAlloc().freeAll();
     cx->frontendCollectionPool().purge();
+    fc_.nameCollectionPool().purge();
   }
 
   // If we should continue to delazify even more functions, then re-add this
-  // task to the vector of delazification tasks.
+  // task to the vector of delazification tasks. This might happen when the
+  // DelazifyTask is interrupted by a higher priority task. (see
+  // mozilla::TaskController & mozilla::Task)
   if (!strategy->done()) {
     HelperThreadState().submitTask(this, lock);
   } else {
@@ -988,55 +1130,68 @@ void DelazifyTask::runHelperThreadTask(AutoLockHelperThreadState& lock) {
 }
 
 bool DelazifyTask::runTask(JSContext* cx) {
+  stackLimit = GetStackLimit();
+
   AutoSetContextRuntime ascr(runtime);
-  AutoSetContextOffThreadFrontendErrors recordErrors(&this->errors_);
-  gc::AutoSuppressNurseryCellAlloc noNurseryAlloc(cx);
+  AutoSetContextFrontendErrors recordErrors(&this->fc_);
 
   using namespace js::frontend;
-  RefPtr<CompilationStencil> innerStencil;
-  ScriptIndex scriptIndex = strategy->next();
-  {
-    BorrowingCompilationStencil borrow(merger.getResult());
 
-    // Take the next inner function to be delazified.
-    ScriptStencilRef scriptRef{borrow, scriptIndex};
-    MOZ_ASSERT(!scriptRef.scriptData().isGhost());
-    MOZ_ASSERT(!scriptRef.scriptData().hasSharedData());
+  // Create a scope-binding cache dedicated to this Delazification task. The
+  // memory would be reclaimed if the task is interrupted or if all
+  // delazification are completed.
+  //
+  // We do not use the one from the JSContext/Runtime, as it is not thread safe
+  // to use it, as it could be purged by a GC in the mean time.
+  StencilScopeBindingCache scopeCache(merger);
 
-    // Parse and generate bytecode for the inner function.
-    innerStencil = DelazifyCanonicalScriptedFunction(cx, borrow, scriptIndex);
-    if (!innerStencil) {
-      return false;
-    }
+  while (!strategy->done() || isInterrupted()) {
+    RefPtr<CompilationStencil> innerStencil;
+    ScriptIndex scriptIndex = strategy->next();
+    {
+      BorrowingCompilationStencil borrow(merger.getResult());
 
-    // Add the generated stencil to the cache, to be consumed by the main
-    // thread.
-    StencilCache& cache = runtime->caches().delazificationCache;
-    StencilContext key(borrow.source, scriptRef.scriptExtra().extent);
-    if (auto guard = cache.isSourceCached(borrow.source)) {
-      if (!cache.putNew(guard, key, innerStencil.get())) {
-        ReportOutOfMemory(cx);
+      // Take the next inner function to be delazified.
+      ScriptStencilRef scriptRef{borrow, scriptIndex};
+      MOZ_ASSERT(!scriptRef.scriptData().isGhost());
+      MOZ_ASSERT(!scriptRef.scriptData().hasSharedData());
+
+      // Parse and generate bytecode for the inner function.
+      innerStencil = DelazifyCanonicalScriptedFunction(
+          cx, &fc_, stackLimit, &scopeCache, borrow, scriptIndex);
+      if (!innerStencil) {
         return false;
       }
-    } else {
-      // Stencils for this source are not longer accepted in the cache, thus
-      // there is no reason to keep our eager delazification going.
-      strategy->clear();
-      return true;
+
+      // Add the generated stencil to the cache, to be consumed by the main
+      // thread.
+      StencilCache& cache = runtime->caches().delazificationCache;
+      StencilContext key(borrow.source, scriptRef.scriptExtra().extent);
+      if (auto guard = cache.isSourceCached(borrow.source)) {
+        if (!cache.putNew(guard, key, innerStencil.get())) {
+          ReportOutOfMemory(&fc_);
+          return false;
+        }
+      } else {
+        // Stencils for this source are no longer accepted in the cache, thus
+        // there is no reason to keep our eager delazification going.
+        strategy->clear();
+        return true;
+      }
     }
-  }
 
-  // We are merging the delazification now, while this could be post-poned until
-  // we have to look at inner functions, this is simpler to do it now than
-  // querying the cache for every enclosing script.
-  if (!merger.addDelazification(cx, *innerStencil)) {
-    return false;
-  }
-
-  {
-    BorrowingCompilationStencil borrow(merger.getResult());
-    if (!strategy->add(cx, borrow, scriptIndex)) {
+    // We are merging the delazification now, while this could be post-poned
+    // until we have to look at inner functions, this is simpler to do it now
+    // than querying the cache for every enclosing script.
+    if (!merger.addDelazification(&this->fc_, *innerStencil)) {
       return false;
+    }
+
+    {
+      BorrowingCompilationStencil borrow(merger.getResult());
+      if (!strategy->add(&fc_, borrow, scriptIndex)) {
+        return false;
+      }
     }
   }
 
@@ -1229,6 +1384,39 @@ void js::CancelOffThreadDelazify(JSRuntime* runtime) {
   WaitUntilEmptyFreeDelazifyTaskVector(lock);
 }
 
+static bool HasAnyDelazifyTask(JSRuntime* rt, AutoLockHelperThreadState& lock) {
+  auto& delazifyList = HelperThreadState().delazifyWorklist(lock);
+  for (auto task : delazifyList) {
+    if (task->runtimeMatches(rt)) {
+      return true;
+    }
+  }
+
+  for (auto* helper : HelperThreadState().helperTasks(lock)) {
+    if (helper->is<DelazifyTask>() &&
+        helper->as<DelazifyTask>()->runtimeMatches(rt)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void js::WaitForAllDelazifyTasks(JSRuntime* rt) {
+  AutoLockHelperThreadState lock;
+  if (!HelperThreadState().isInitialized(lock)) {
+    return;
+  }
+
+  while (true) {
+    if (!HasAnyDelazifyTask(rt, lock)) {
+      break;
+    }
+
+    HelperThreadState().wait(lock);
+  }
+}
+
 static bool QueueOffThreadParseTask(JSContext* cx, UniquePtr<ParseTask> task) {
   AutoLockHelperThreadState lock;
 
@@ -1248,16 +1436,14 @@ bool GlobalHelperThreadState::submitTask(
     return false;
   }
 
-  parseWorklist(locked).back()->activate(rt);
-
-  dispatch(locked);
+  dispatch(DispatchReason::NewTask, locked);
   return true;
 }
 
 void GlobalHelperThreadState::submitTask(
     DelazifyTask* task, const AutoLockHelperThreadState& locked) {
   delazifyWorklist(locked).insertBack(task);
-  dispatch(locked);
+  dispatch(DispatchReason::NewTask, locked);
 }
 
 bool GlobalHelperThreadState::submitTask(
@@ -1265,7 +1451,7 @@ bool GlobalHelperThreadState::submitTask(
   if (!freeDelazifyTaskVector(locked).append(std::move(task))) {
     return false;
   }
-  dispatch(locked);
+  dispatch(DispatchReason::NewTask, locked);
   return true;
 }
 
@@ -1385,7 +1571,7 @@ JS::OffThreadToken* js::StartOffThreadDecodeMultiStencils(
 bool js::CurrentThreadIsParseThread() {
   JSContext* cx = TlsContext.get();
   // Check whether this is a ParseTask or a DelazifyTask.
-  return cx->isHelperThreadContext() && cx->offThreadFrontendErrors();
+  return cx && cx->isHelperThreadContext() && cx->frontendErrors();
 }
 
 bool GlobalHelperThreadState::ensureInitialized() {
@@ -1423,10 +1609,6 @@ bool GlobalHelperThreadState::ensureInitialized() {
 
 bool GlobalHelperThreadState::ensureThreadCount(
     size_t count, AutoLockHelperThreadState& lock) {
-  if (!ensureContextList(count, lock)) {
-    return false;
-  }
-
   if (!helperTasks_.reserve(count)) {
     return false;
   }
@@ -1490,19 +1672,6 @@ void GlobalHelperThreadState::finishThreads(AutoLockHelperThreadState& lock) {
   }
 }
 
-bool GlobalHelperThreadState::ensureContextList(
-    size_t count, const AutoLockHelperThreadState& lock) {
-  while (helperContexts_.length() < count) {
-    auto cx = js::MakeUnique<JSContext>(nullptr, JS::ContextOptions());
-    if (!cx || !cx->init(ContextKind::HelperThread) ||
-        !helperContexts_.append(cx.release())) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 JSContext* GlobalHelperThreadState::getFirstUnusedContext(
     AutoLockHelperThreadState& locked) {
   for (auto& cx : helperContexts_) {
@@ -1510,7 +1679,17 @@ JSContext* GlobalHelperThreadState::getFirstUnusedContext(
       return cx;
     }
   }
-  MOZ_CRASH("Expected available JSContext");
+
+  MOZ_ASSERT(helperContexts_.length() < threadCount);
+
+  AutoEnterOOMUnsafeRegion oomUnsafe;
+  auto cx = js::MakeUnique<JSContext>(nullptr, JS::ContextOptions());
+  if (!cx || !cx->init(ContextKind::HelperThread) ||
+      !helperContexts_.append(cx.get())) {
+    oomUnsafe.crash("GlobalHelperThreadState::getFirstUnusedContext");
+  }
+
+  return cx.release();
 }
 
 void GlobalHelperThreadState::destroyHelperContexts(
@@ -1527,7 +1706,7 @@ void GlobalHelperThreadState::assertIsLockedByCurrentThread() const {
 #endif  // DEBUG
 
 void GlobalHelperThreadState::dispatch(
-    const AutoLockHelperThreadState& locked) {
+    DispatchReason reason, const AutoLockHelperThreadState& locked) {
   if (canStartTasks(locked) && tasksPending_ < threadCount) {
     // This doesn't guarantee that we don't dispatch more tasks to the external
     // pool than necessary if tasks are taking a long time to start, but it does
@@ -1537,7 +1716,7 @@ void GlobalHelperThreadState::dispatch(
     // The hazard analysis can't tell that the callback doesn't GC.
     JS::AutoSuppressGCAnalysis nogc;
 
-    dispatchTaskCallback();
+    dispatchTaskCallback(reason);
   }
 }
 
@@ -1579,7 +1758,7 @@ void GlobalHelperThreadState::waitForAllTasksLocked(
     wait(lock);
   }
 
-  MOZ_ASSERT(gcParallelWorklist(lock).isEmpty());
+  MOZ_ASSERT(gcParallelWorklist().isEmpty(lock));
   MOZ_ASSERT(ionWorklist(lock).empty());
   MOZ_ASSERT(wasmWorklist(lock, wasm::CompileMode::Tier1).empty());
   MOZ_ASSERT(promiseHelperTasks(lock).empty());
@@ -1669,7 +1848,7 @@ static inline bool IsHelperThreadSimulatingOOM(js::ThreadType threadType) {
 }
 
 void GlobalHelperThreadState::addSizeOfIncludingThis(
-    JS::GlobalStats* stats, AutoLockHelperThreadState& lock) const {
+    JS::GlobalStats* stats, const AutoLockHelperThreadState& lock) const {
 #ifdef DEBUG
   assertIsLockedByCurrentThread();
 #endif
@@ -1698,7 +1877,7 @@ void GlobalHelperThreadState::addSizeOfIncludingThis(
       compressionPendingList_.sizeOfExcludingThis(mallocSizeOf) +
       compressionWorklist_.sizeOfExcludingThis(mallocSizeOf) +
       compressionFinishedList_.sizeOfExcludingThis(mallocSizeOf) +
-      gcParallelWorklist_.sizeOfExcludingThis(mallocSizeOf) +
+      gcParallelWorklist_.sizeOfExcludingThis(mallocSizeOf, lock) +
       helperContexts_.sizeOfExcludingThis(mallocSizeOf) +
       helperTasks_.sizeOfExcludingThis(mallocSizeOf);
 
@@ -2105,14 +2284,14 @@ bool GlobalHelperThreadState::submitTask(
     return false;
   }
 
-  dispatch(locked);
+  dispatch(DispatchReason::NewTask, locked);
   return true;
 }
 
 bool GlobalHelperThreadState::submitTask(
     GCParallelTask* task, const AutoLockHelperThreadState& locked) {
-  gcParallelWorklist(locked).insertBack(task);
-  dispatch(locked);
+  gcParallelWorklist().insertBack(task, locked);
+  dispatch(DispatchReason::NewTask, locked);
   return true;
 }
 
@@ -2122,25 +2301,24 @@ HelperThreadTask* GlobalHelperThreadState::maybeGetGCParallelTask(
     return nullptr;
   }
 
-  return gcParallelWorklist(lock).popFirst();
+  return gcParallelWorklist().popFirst(lock);
 }
 
 bool GlobalHelperThreadState::canStartGCParallelTask(
     const AutoLockHelperThreadState& lock) {
-  return !gcParallelWorklist(lock).isEmpty() &&
+  return !gcParallelWorklist().isEmpty(lock) &&
          checkTaskThreadLimit(THREAD_TYPE_GCPARALLEL,
                               maxGCParallelThreads(lock), lock);
 }
 
 ParseTask* GlobalHelperThreadState::removeFinishedParseTask(
-    JSContext* cx, ParseTaskKind kind, JS::OffThreadToken* token) {
+    JSContext* cx, JS::OffThreadToken* token) {
   // The token is really a ParseTask* which should be in the finished list.
   auto task = static_cast<ParseTask*>(token);
 
   // The token was passed in from the browser. Check that the pointer is likely
   // a valid parse task of the expected kind.
   MOZ_RELEASE_ASSERT(task->runtime == cx->runtime());
-  MOZ_RELEASE_ASSERT(task->kind == kind);
 
   // Remove the task from the finished list.
   AutoLockHelperThreadState lock;
@@ -2150,26 +2328,15 @@ ParseTask* GlobalHelperThreadState::removeFinishedParseTask(
 }
 
 UniquePtr<ParseTask> GlobalHelperThreadState::finishParseTaskCommon(
-    JSContext* cx, ParseTaskKind kind, JS::OffThreadToken* token) {
+    JSContext* cx, JS::OffThreadToken* token) {
   MOZ_ASSERT(!cx->isHelperThreadContext());
   MOZ_ASSERT(cx->realm());
 
-  Rooted<UniquePtr<ParseTask>> parseTask(
-      cx, removeFinishedParseTask(cx, kind, token));
+  Rooted<UniquePtr<ParseTask>> parseTask(cx,
+                                         removeFinishedParseTask(cx, token));
 
-  // Report out of memory errors eagerly, or errors could be malformed.
-  if (parseTask->errors.outOfMemory) {
-    ReportOutOfMemory(cx);
-    return nullptr;
-  }
+  parseTask->fc_.convertToRuntimeError(cx);
 
-  // Report any error or warnings generated during the parse.
-  for (UniquePtr<CompileError>& error : parseTask->errors.errors) {
-    error->throwError(cx);
-  }
-  if (parseTask->errors.overRecursed) {
-    ReportOverRecursed(cx);
-  }
   if (cx->isExceptionPending()) {
     return nullptr;
   }
@@ -2178,11 +2345,10 @@ UniquePtr<ParseTask> GlobalHelperThreadState::finishParseTaskCommon(
 }
 
 already_AddRefed<frontend::CompilationStencil>
-GlobalHelperThreadState::finishCompileToStencilTask(
-    JSContext* cx, ParseTaskKind kind, JS::OffThreadToken* token,
-    JS::InstantiationStorage* storage) {
-  Rooted<UniquePtr<ParseTask>> parseTask(
-      cx, finishParseTaskCommon(cx, kind, token));
+GlobalHelperThreadState::finishStencilTask(JSContext* cx,
+                                           JS::OffThreadToken* token,
+                                           JS::InstantiationStorage* storage) {
+  Rooted<UniquePtr<ParseTask>> parseTask(cx, finishParseTaskCommon(cx, token));
   if (!parseTask) {
     return nullptr;
   }
@@ -2202,8 +2368,7 @@ bool GlobalHelperThreadState::finishMultiParseTask(
     JSContext* cx, ParseTaskKind kind, JS::OffThreadToken* token,
     mozilla::Vector<RefPtr<JS::Stencil>>* stencils) {
   MOZ_ASSERT(stencils);
-  Rooted<UniquePtr<ParseTask>> parseTask(
-      cx, finishParseTaskCommon(cx, kind, token));
+  Rooted<UniquePtr<ParseTask>> parseTask(cx, finishParseTaskCommon(cx, token));
   if (!parseTask) {
     return false;
   }
@@ -2232,42 +2397,6 @@ bool GlobalHelperThreadState::finishMultiParseTask(
   return true;
 }
 
-already_AddRefed<frontend::CompilationStencil>
-GlobalHelperThreadState::finishCompileToStencilTask(
-    JSContext* cx, JS::OffThreadToken* token,
-    JS::InstantiationStorage* storage) {
-  return finishCompileToStencilTask(cx, ParseTaskKind::ScriptStencil, token,
-                                    storage);
-}
-
-already_AddRefed<frontend::CompilationStencil>
-GlobalHelperThreadState::finishCompileModuleToStencilTask(
-    JSContext* cx, JS::OffThreadToken* token,
-    JS::InstantiationStorage* storage) {
-  return finishCompileToStencilTask(cx, ParseTaskKind::ModuleStencil, token,
-                                    storage);
-}
-
-already_AddRefed<frontend::CompilationStencil>
-GlobalHelperThreadState::finishDecodeStencilTask(
-    JSContext* cx, JS::OffThreadToken* token,
-    JS::InstantiationStorage* storage) {
-  Rooted<UniquePtr<ParseTask>> parseTask(
-      cx, finishParseTaskCommon(cx, ParseTaskKind::StencilDecode, token));
-  if (!parseTask) {
-    return nullptr;
-  }
-
-  MOZ_ASSERT(parseTask->stencil_.get());
-
-  if (storage) {
-    MOZ_ASSERT(parseTask->options.allocateInstantiationStorage);
-    parseTask->moveGCOutputInto(*storage);
-  }
-
-  return parseTask->stencil_.forget();
-}
-
 bool GlobalHelperThreadState::finishMultiStencilsDecodeTask(
     JSContext* cx, JS::OffThreadToken* token,
     mozilla::Vector<RefPtr<JS::Stencil>>* stencils) {
@@ -2275,7 +2404,7 @@ bool GlobalHelperThreadState::finishMultiStencilsDecodeTask(
                               stencils);
 }
 
-void GlobalHelperThreadState::cancelParseTask(JSRuntime* rt, ParseTaskKind kind,
+void GlobalHelperThreadState::cancelParseTask(JSRuntime* rt,
                                               JS::OffThreadToken* token) {
   AutoLockHelperThreadState lock;
   MOZ_ASSERT(token);
@@ -2286,9 +2415,7 @@ void GlobalHelperThreadState::cancelParseTask(JSRuntime* rt, ParseTaskKind kind,
       HelperThreadState().parseWorklist(lock);
   for (size_t i = 0; i < worklist.length(); i++) {
     if (task == worklist[i]) {
-      MOZ_ASSERT(task->kind == kind);
       MOZ_ASSERT(task->runtimeMatches(rt));
-      task->deactivate(rt);
       HelperThreadState().remove(worklist, &i);
       return;
     }
@@ -2299,7 +2426,6 @@ void GlobalHelperThreadState::cancelParseTask(JSRuntime* rt, ParseTaskKind kind,
     bool foundTask = false;
     for (auto* helper : HelperThreadState().helperTasks(lock)) {
       if (helper->is<ParseTask>() && helper->as<ParseTask>() == task) {
-        MOZ_ASSERT(helper->as<ParseTask>()->kind == kind);
         MOZ_ASSERT(helper->as<ParseTask>()->runtimeMatches(rt));
         foundTask = true;
         break;
@@ -2316,7 +2442,6 @@ void GlobalHelperThreadState::cancelParseTask(JSRuntime* rt, ParseTaskKind kind,
   auto& finished = HelperThreadState().parseFinishedList(lock);
   for (auto* t : finished) {
     if (task == t) {
-      MOZ_ASSERT(task->kind == kind);
       MOZ_ASSERT(task->runtimeMatches(rt));
       task->remove();
       HelperThreadState().destroyParseTask(rt, task);
@@ -2328,25 +2453,7 @@ void GlobalHelperThreadState::cancelParseTask(JSRuntime* rt, ParseTaskKind kind,
 void GlobalHelperThreadState::destroyParseTask(JSRuntime* rt,
                                                ParseTask* parseTask) {
   MOZ_ASSERT(!parseTask->isInList());
-  parseTask->deactivate(rt);
   js_delete(parseTask);
-}
-
-bool JSContext::addPendingCompileError(js::CompileError** error) {
-  auto errorPtr = make_unique<js::CompileError>();
-  if (!errorPtr) {
-    return false;
-  }
-  if (!errors_->errors.append(std::move(errorPtr))) {
-    ReportOutOfMemory(this);
-    return false;
-  }
-  *error = errors_->errors.back().get();
-  return true;
-}
-
-bool JSContext::isCompileErrorPending() const {
-  return errors_->errors.length() > 0;
 }
 
 void JSContext::addPendingOverRecursed() {
@@ -2364,13 +2471,13 @@ void JSContext::addPendingOutOfMemory() {
 
 bool js::EnqueueOffThreadCompression(JSContext* cx,
                                      UniquePtr<SourceCompressionTask> task) {
+  MOZ_ASSERT(cx->isMainThreadContext());
+
   AutoLockHelperThreadState lock;
 
   auto& pending = HelperThreadState().compressionPendingList(lock);
   if (!pending.append(std::move(task))) {
-    if (!cx->isHelperThreadContext()) {
-      ReportOutOfMemory(cx);
-    }
+    ReportOutOfMemory(cx);
     return false;
   }
 
@@ -2521,7 +2628,7 @@ bool GlobalHelperThreadState::submitTask(PromiseHelperTask* task) {
     return false;
   }
 
-  dispatch(lock);
+  dispatch(DispatchReason::NewTask, lock);
   return true;
 }
 
@@ -2627,7 +2734,7 @@ void GlobalHelperThreadState::runOneTask(AutoLockHelperThreadState& lock) {
   HelperThreadTask* task = findHighestPriorityTask(lock);
   if (task) {
     runTaskLocked(task, lock);
-    dispatch(lock);
+    dispatch(DispatchReason::FinishedTask, lock);
   }
 
   notifyAll(lock);

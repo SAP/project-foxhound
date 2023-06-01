@@ -17,21 +17,20 @@
 #include "NamespaceImports.h"
 
 #include "gc/Barrier.h"
-#include "gc/Marking.h"
 #include "gc/MaybeRooted.h"
 #include "gc/ZoneAllocator.h"
 #include "js/shadow/Object.h"  // JS::shadow::Object
 #include "js/shadow/Zone.h"    // JS::shadow::Zone
 #include "js/Value.h"
 #include "vm/GetterSetter.h"
+#include "vm/JSAtom.h"
 #include "vm/JSObject.h"
-#include "vm/PropertyResult.h"
 #include "vm/Shape.h"
 #include "vm/StringType.h"
 
 namespace js {
 
-class Shape;
+class PropertyResult;
 class TenuringTracer;
 
 #ifdef ENABLE_RECORD_TUPLE
@@ -62,8 +61,8 @@ static MOZ_ALWAYS_INLINE void Debug_SetValueRangeToCrashOnTouch(Value* vec,
 #endif
 }
 
-static MOZ_ALWAYS_INLINE void Debug_SetValueRangeToCrashOnTouch(GCPtrValue* vec,
-                                                                size_t len) {
+static MOZ_ALWAYS_INLINE void Debug_SetValueRangeToCrashOnTouch(
+    GCPtr<Value>* vec, size_t len) {
 #ifdef DEBUG
   Debug_SetValueRangeToCrashOnTouch((Value*)vec, len);
 #endif
@@ -188,7 +187,12 @@ extern bool ArraySetLength(JSContext* cx, Handle<ArrayObject*> obj, HandleId id,
 class ObjectElements {
  public:
   enum Flags : uint16_t {
-    // (0x1 is unused)
+    // Elements are stored inline in the object allocation.
+    // An object allocated with the FIXED flag set can have the flag unset later
+    // if `growElements()` is called to increase the capacity beyond what was
+    // initially allocated. Once the flag is unset, it will remain so for the
+    // rest of the lifetime of the object.
+    FIXED = 0x1,
 
     // Present only if these elements correspond to an array with
     // non-writable length; never present for non-arrays.
@@ -393,7 +397,8 @@ class ObjectElements {
 
   static void PrepareForPreventExtensions(JSContext* cx, NativeObject* obj);
   static void PreventExtensions(NativeObject* obj);
-  [[nodiscard]] static bool FreezeOrSeal(JSContext* cx, HandleNativeObject obj,
+  [[nodiscard]] static bool FreezeOrSeal(JSContext* cx,
+                                         Handle<NativeObject*> obj,
                                          IntegrityLevel level);
 
   bool isSealed() const { return flags & SEALED; }
@@ -500,9 +505,6 @@ extern HeapSlot* const emptyObjectSlotsForDictionaryObject[];
 
 class AutoCheckShapeConsistency;
 class GCMarker;
-class Shape;
-
-class NewObjectCache;
 
 // Operations which change an object's dense elements can either succeed, fail,
 // or be unable to complete. The latter is used when the object's elements must
@@ -585,6 +587,10 @@ class NativeObject : public JSObject {
   }
 
  public:
+  NativeShape* shape() const { return &JSObject::shape()->asNative(); }
+  SharedShape* sharedShape() const { return &shape()->asShared(); }
+  DictionaryShape* dictionaryShape() const { return &shape()->asDictionary(); }
+
   PropertyInfoWithKey getLastProperty() const {
     return shape()->lastProperty();
   }
@@ -606,18 +612,24 @@ class NativeObject : public JSObject {
 
   bool isSharedMemory() const { return getElementsHeader()->isSharedMemory(); }
 
-  // Update the object's shape, keeping the number of allocated slots in sync
-  // with the object's new slot span.
-  MOZ_ALWAYS_INLINE bool setShapeAndUpdateSlots(JSContext* cx, Shape* newShape);
+  // Update the object's shape and allocate slots if needed to match the shape's
+  // slot span.
+  MOZ_ALWAYS_INLINE bool setShapeAndAddNewSlots(JSContext* cx,
+                                                SharedShape* newShape,
+                                                uint32_t oldSpan,
+                                                uint32_t newSpan);
 
-  // Optimized version of setShapeAndUpdateSlots for adding a single property
-  // with a slot.
-  MOZ_ALWAYS_INLINE bool setShapeAndUpdateSlotsForNewSlot(JSContext* cx,
-                                                          Shape* newShape,
-                                                          uint32_t slot);
+  // Methods optimized for adding/removing a single slot. Must only be used for
+  // non-dictionary objects.
+  MOZ_ALWAYS_INLINE bool setShapeAndAddNewSlot(JSContext* cx,
+                                               SharedShape* newShape,
+                                               uint32_t slot);
+  void setShapeAndRemoveLastSlot(JSContext* cx, SharedShape* newShape,
+                                 uint32_t slot);
 
-  MOZ_ALWAYS_INLINE bool canReuseShapeForNewProperties(Shape* newShape) const {
-    Shape* oldShape = shape();
+  MOZ_ALWAYS_INLINE bool canReuseShapeForNewProperties(
+      NativeShape* newShape) const {
+    NativeShape* oldShape = shape();
     MOZ_ASSERT(oldShape->propMapLength() == 0,
                "object must have no properties");
     MOZ_ASSERT(newShape->propMapLength() > 0,
@@ -655,7 +667,8 @@ class NativeObject : public JSObject {
   inline bool isInWholeCellBuffer() const;
 
   static inline NativeObject* create(JSContext* cx, gc::AllocKind kind,
-                                     gc::InitialHeap heap, HandleShape shape,
+                                     gc::InitialHeap heap,
+                                     Handle<SharedShape*> shape,
                                      gc::AllocSite* site = nullptr);
 
 #ifdef DEBUG
@@ -670,14 +683,11 @@ class NativeObject : public JSObject {
   void checkShapeConsistency() {}
 #endif
 
-  /*
-   * Update the slot span directly for a dictionary object, and allocate
-   * slots to cover the new span if necessary.
-   */
-  bool ensureSlotsForDictionaryObject(JSContext* cx, uint32_t span);
+  void maybeFreeDictionaryPropSlots(JSContext* cx, DictionaryPropMap* map,
+                                    uint32_t mapLength);
 
   [[nodiscard]] static bool toDictionaryMode(JSContext* cx,
-                                             HandleNativeObject obj);
+                                             Handle<NativeObject*> obj);
 
  private:
   inline void setEmptyDynamicSlots(uint32_t dictonarySlotSpan);
@@ -715,7 +725,6 @@ class NativeObject : public JSObject {
   friend class DictionaryPropMap;
   friend class GCMarker;
   friend class Shape;
-  friend class NewObjectCache;
 
   void invalidateSlotRange(uint32_t start, uint32_t end) {
 #ifdef DEBUG
@@ -733,7 +742,7 @@ class NativeObject : public JSObject {
     }
   }
   void initDynamicSlots(uint32_t numSlots) {
-    MOZ_ASSERT(numSlots == shape()->slotSpan() - numFixedSlots());
+    MOZ_ASSERT(numSlots == sharedShape()->slotSpan() - numFixedSlots());
     HeapSlot* slots = slots_;
     for (uint32_t i = 0; i < numSlots; i++) {
       slots[i].initAsUndefined();
@@ -786,8 +795,8 @@ class NativeObject : public JSObject {
   }
   inline void initEmptyDynamicSlots();
 
-  [[nodiscard]] static bool generateNewDictionaryShape(JSContext* cx,
-                                                       HandleNativeObject obj);
+  [[nodiscard]] static bool generateNewDictionaryShape(
+      JSContext* cx, Handle<NativeObject*> obj);
 
   // The maximum number of slots in an object.
   // |MAX_SLOTS_COUNT * sizeof(JS::Value)| shouldn't overflow
@@ -814,7 +823,7 @@ class NativeObject : public JSObject {
   inline uint32_t numFixedSlotsMaybeForwarded() const;
 
   uint32_t numUsedFixedSlots() const {
-    uint32_t nslots = shape()->slotSpan();
+    uint32_t nslots = sharedShape()->slotSpan();
     return std::min(nslots, numFixedSlots());
   }
 
@@ -823,7 +832,7 @@ class NativeObject : public JSObject {
       return dictionaryModeSlotSpan();
     }
     MOZ_ASSERT(getSlotsHeader()->dictionarySlotSpan() == 0);
-    return shape()->slotSpan();
+    return sharedShape()->slotSpan();
   }
 
   uint32_t dictionaryModeSlotSpan() const {
@@ -866,7 +875,8 @@ class NativeObject : public JSObject {
     return hasFlag(ObjectFlag::HasEnumerable);
   }
 
-  static bool setHadGetterSetterChange(JSContext* cx, HandleNativeObject obj) {
+  static bool setHadGetterSetterChange(JSContext* cx,
+                                       Handle<NativeObject*> obj) {
     return setFlag(cx, obj, ObjectFlag::HadGetterSetterChange);
   }
   bool hadGetterSetterChange() const {
@@ -879,6 +889,7 @@ class NativeObject : public JSObject {
    * the slots must track changes in the slot span.
    */
   bool growSlots(JSContext* cx, uint32_t oldCapacity, uint32_t newCapacity);
+  bool growSlotsForNewSlot(JSContext* cx, uint32_t numFixed, uint32_t slot);
   void shrinkSlots(JSContext* cx, uint32_t oldCapacity, uint32_t newCapacity);
 
   bool allocateSlots(JSContext* cx, uint32_t newCapacity);
@@ -941,66 +952,71 @@ class NativeObject : public JSObject {
    * after calling object-parameter-free shape methods, avoiding coupling
    * logic across the object vs. shape module wall.
    */
-  static bool allocDictionarySlot(JSContext* cx, HandleNativeObject obj,
+  static bool allocDictionarySlot(JSContext* cx, Handle<NativeObject*> obj,
                                   uint32_t* slotp);
 
   void freeDictionarySlot(uint32_t slot);
 
   static MOZ_ALWAYS_INLINE bool maybeConvertToDictionaryForAdd(
-      JSContext* cx, HandleNativeObject obj);
+      JSContext* cx, Handle<NativeObject*> obj);
 
  public:
   // Add a new property. Must only be used when the |id| is not already present
   // in the object's shape. Checks for non-extensibility must be done by the
   // callers.
-  static bool addProperty(JSContext* cx, HandleNativeObject obj, HandleId id,
+  static bool addProperty(JSContext* cx, Handle<NativeObject*> obj, HandleId id,
                           PropertyFlags flags, uint32_t* slotOut);
 
-  static bool addProperty(JSContext* cx, HandleNativeObject obj,
-                          HandlePropertyName name, PropertyFlags flags,
+  static bool addProperty(JSContext* cx, Handle<NativeObject*> obj,
+                          Handle<PropertyName*> name, PropertyFlags flags,
                           uint32_t* slotOut) {
     RootedId id(cx, NameToId(name));
     return addProperty(cx, obj, id, flags, slotOut);
   }
 
-  static bool addPropertyInReservedSlot(JSContext* cx, HandleNativeObject obj,
-                                        HandleId id, uint32_t slot,
-                                        PropertyFlags flags);
-  static bool addPropertyInReservedSlot(JSContext* cx, HandleNativeObject obj,
-                                        HandlePropertyName name, uint32_t slot,
-                                        PropertyFlags flags) {
+  static bool addPropertyInReservedSlot(JSContext* cx,
+                                        Handle<NativeObject*> obj, HandleId id,
+                                        uint32_t slot, PropertyFlags flags);
+  static bool addPropertyInReservedSlot(JSContext* cx,
+                                        Handle<NativeObject*> obj,
+                                        Handle<PropertyName*> name,
+                                        uint32_t slot, PropertyFlags flags) {
     RootedId id(cx, NameToId(name));
     return addPropertyInReservedSlot(cx, obj, id, slot, flags);
   }
 
-  static bool addCustomDataProperty(JSContext* cx, HandleNativeObject obj,
+  static bool addCustomDataProperty(JSContext* cx, Handle<NativeObject*> obj,
                                     HandleId id, PropertyFlags flags);
 
   // Change a property with key |id| in this object. The object must already
   // have a property (stored in the shape tree) with this |id|.
-  static bool changeProperty(JSContext* cx, HandleNativeObject obj, HandleId id,
-                             PropertyFlags flags, uint32_t* slotOut);
+  static bool changeProperty(JSContext* cx, Handle<NativeObject*> obj,
+                             HandleId id, PropertyFlags flags,
+                             uint32_t* slotOut);
 
   static bool changeCustomDataPropAttributes(JSContext* cx,
-                                             HandleNativeObject obj,
+                                             Handle<NativeObject*> obj,
                                              HandleId id, PropertyFlags flags);
 
   // Remove the property named by id from this object.
-  static bool removeProperty(JSContext* cx, HandleNativeObject obj,
+  static bool removeProperty(JSContext* cx, Handle<NativeObject*> obj,
                              HandleId id);
 
-  static bool freezeOrSealProperties(JSContext* cx, HandleNativeObject obj,
+  static bool freezeOrSealProperties(JSContext* cx, Handle<NativeObject*> obj,
                                      IntegrityLevel level);
 
  protected:
   static bool changeNumFixedSlotsAfterSwap(JSContext* cx,
-                                           HandleNativeObject obj,
+                                           Handle<NativeObject*> obj,
                                            uint32_t nfixed);
 
-  [[nodiscard]] static bool fillInAfterSwap(JSContext* cx,
-                                            HandleNativeObject obj,
-                                            NativeObject* old,
-                                            HandleValueVector values);
+  // For use from JSObject::swap.
+  [[nodiscard]] bool prepareForSwap(JSContext* cx,
+                                    MutableHandleValueVector slotValuesOut);
+  [[nodiscard]] static bool fixupAfterSwap(JSContext* cx,
+                                           Handle<NativeObject*> obj,
+                                           gc::AllocKind kind,
+                                           HandleValueVector slotValues);
 
  public:
   // Return true if this object has been converted from shared-immutable
@@ -1139,10 +1155,6 @@ class NativeObject : public JSObject {
   static constexpr uint32_t MAX_FIXED_SLOTS =
       JS::shadow::Object::MAX_FIXED_SLOTS;
 
- protected:
-  MOZ_ALWAYS_INLINE bool updateSlotsForSpan(JSContext* cx, size_t oldSpan,
-                                            size_t newSpan);
-
  private:
   void prepareElementRangeForOverwrite(size_t start, size_t end) {
     MOZ_ASSERT(end <= getDenseInitializedLength());
@@ -1220,10 +1232,26 @@ class NativeObject : public JSObject {
     fixedSlots()[slot].set(this, HeapSlot::Slot, slot, value);
   }
 
+  void setDynamicSlot(uint32_t numFixed, uint32_t slot, const Value& value) {
+    MOZ_ASSERT(numFixedSlots() == numFixed);
+    MOZ_ASSERT(slot >= numFixed);
+    MOZ_ASSERT(slot - numFixed < getSlotsHeader()->capacity());
+    checkStoredValue(value);
+    slots_[slot - numFixed].set(this, HeapSlot::Slot, slot, value);
+  }
+
   void initFixedSlot(uint32_t slot, const Value& value) {
     MOZ_ASSERT(slotIsFixed(slot));
     checkStoredValue(value);
     fixedSlots()[slot].init(this, HeapSlot::Slot, slot, value);
+  }
+
+  void initDynamicSlot(uint32_t numFixed, uint32_t slot, const Value& value) {
+    MOZ_ASSERT(numFixedSlots() == numFixed);
+    MOZ_ASSERT(slot >= numFixed);
+    MOZ_ASSERT(slot - numFixed < getSlotsHeader()->capacity());
+    checkStoredValue(value);
+    slots_[slot - numFixed].init(this, HeapSlot::Slot, slot, value);
   }
 
   template <typename T>
@@ -1239,7 +1267,7 @@ class NativeObject : public JSObject {
   static MOZ_ALWAYS_INLINE uint32_t calculateDynamicSlots(uint32_t nfixed,
                                                           uint32_t span,
                                                           const JSClass* clasp);
-  static MOZ_ALWAYS_INLINE uint32_t calculateDynamicSlots(Shape* shape);
+  static MOZ_ALWAYS_INLINE uint32_t calculateDynamicSlots(SharedShape* shape);
 
   ObjectSlots* getSlotsHeader() const { return ObjectSlots::fromSlots(slots_); }
 
@@ -1346,8 +1374,6 @@ class NativeObject : public JSObject {
   inline void ensureDenseInitializedLength(uint32_t index, uint32_t extra);
 
   void setDenseElement(uint32_t index, const Value& val) {
-    // Note: Streams code can call this for the internal ListObject type with
-    // MagicValue(JS_WRITABLESTREAM_CLOSE_RECORD).
     MOZ_ASSERT_IF(val.isMagic(), val.whyMagic() != JS_ELEMENTS_HOLE);
     setDenseElementUnchecked(index, val);
   }
@@ -1468,9 +1494,9 @@ class NativeObject : public JSObject {
    * After adding a sparse index to obj, see if it should be converted to use
    * dense elements.
    */
-  static DenseElementResult maybeDensifySparseElements(JSContext* cx,
-                                                       HandleNativeObject obj);
-  static bool densifySparseElements(JSContext* cx, HandleNativeObject obj);
+  static DenseElementResult maybeDensifySparseElements(
+      JSContext* cx, Handle<NativeObject*> obj);
+  static bool densifySparseElements(JSContext* cx, Handle<NativeObject*> obj);
 
   inline HeapSlot* fixedElements() const {
     static_assert(2 * sizeof(Value) == sizeof(ObjectElements),
@@ -1485,6 +1511,11 @@ class NativeObject : public JSObject {
 
   void setEmptyElements() { elements_ = emptyObjectElements; }
 
+  void initFixedElements(gc::AllocKind kind, uint32_t length);
+
+  // Update the elements pointer to use the fixed elements storage. The caller
+  // is responsible for initializing the elements themselves and setting the
+  // FIXED flag.
   void setFixedElements(uint32_t numShifted = 0) {
     MOZ_ASSERT(canHaveNonEmptyElements());
     elements_ = fixedElements() + numShifted;
@@ -1502,7 +1533,9 @@ class NativeObject : public JSObject {
   }
 
   inline bool hasFixedElements() const {
-    return unshiftedElements() == fixedElements();
+    bool fixed = getElementsHeader()->flags & ObjectElements::FIXED;
+    MOZ_ASSERT_IF(fixed, unshiftedElements() == fixedElements());
+    return fixed;
   }
 
   inline bool hasEmptyElements() const {
@@ -1606,54 +1639,55 @@ inline void NativeObject::privatePreWriteBarrier(HeapSlot* pprivate) {
  * (9.4.2), Strings (9.4.3), and so on.
  */
 
-extern bool NativeDefineProperty(JSContext* cx, HandleNativeObject obj,
+extern bool NativeDefineProperty(JSContext* cx, Handle<NativeObject*> obj,
                                  HandleId id,
                                  Handle<JS::PropertyDescriptor> desc,
                                  ObjectOpResult& result);
 
-extern bool NativeDefineDataProperty(JSContext* cx, HandleNativeObject obj,
+extern bool NativeDefineDataProperty(JSContext* cx, Handle<NativeObject*> obj,
                                      HandleId id, HandleValue value,
                                      unsigned attrs, ObjectOpResult& result);
 
 /* If the result out-param is omitted, throw on failure. */
 
-extern bool NativeDefineAccessorProperty(JSContext* cx, HandleNativeObject obj,
-                                         HandleId id, HandleObject getter,
+extern bool NativeDefineAccessorProperty(JSContext* cx,
+                                         Handle<NativeObject*> obj, HandleId id,
+                                         HandleObject getter,
                                          HandleObject setter, unsigned attrs);
 
-extern bool NativeDefineDataProperty(JSContext* cx, HandleNativeObject obj,
+extern bool NativeDefineDataProperty(JSContext* cx, Handle<NativeObject*> obj,
                                      HandleId id, HandleValue value,
                                      unsigned attrs);
 
-extern bool NativeDefineDataProperty(JSContext* cx, HandleNativeObject obj,
+extern bool NativeDefineDataProperty(JSContext* cx, Handle<NativeObject*> obj,
                                      PropertyName* name, HandleValue value,
                                      unsigned attrs);
 
-extern bool NativeHasProperty(JSContext* cx, HandleNativeObject obj,
+extern bool NativeHasProperty(JSContext* cx, Handle<NativeObject*> obj,
                               HandleId id, bool* foundp);
 
 extern bool NativeGetOwnPropertyDescriptor(
-    JSContext* cx, HandleNativeObject obj, HandleId id,
+    JSContext* cx, Handle<NativeObject*> obj, HandleId id,
     MutableHandle<mozilla::Maybe<JS::PropertyDescriptor>> desc);
 
-extern bool NativeGetProperty(JSContext* cx, HandleNativeObject obj,
+extern bool NativeGetProperty(JSContext* cx, Handle<NativeObject*> obj,
                               HandleValue receiver, HandleId id,
                               MutableHandleValue vp);
 
 extern bool NativeGetPropertyNoGC(JSContext* cx, NativeObject* obj,
                                   const Value& receiver, jsid id, Value* vp);
 
-inline bool NativeGetProperty(JSContext* cx, HandleNativeObject obj,
+inline bool NativeGetProperty(JSContext* cx, Handle<NativeObject*> obj,
                               HandleId id, MutableHandleValue vp) {
   RootedValue receiver(cx, ObjectValue(*obj));
   return NativeGetProperty(cx, obj, receiver, id, vp);
 }
 
-extern bool NativeGetElement(JSContext* cx, HandleNativeObject obj,
+extern bool NativeGetElement(JSContext* cx, Handle<NativeObject*> obj,
                              HandleValue receiver, int32_t index,
                              MutableHandleValue vp);
 
-bool GetSparseElementHelper(JSContext* cx, HandleArrayObject obj,
+bool GetSparseElementHelper(JSContext* cx, Handle<NativeObject*> obj,
                             int32_t int_id, MutableHandleValue result);
 
 bool SetPropertyByDefining(JSContext* cx, HandleId id, HandleValue v,
@@ -1663,7 +1697,7 @@ bool SetPropertyOnProto(JSContext* cx, HandleObject obj, HandleId id,
                         HandleValue v, HandleValue receiver,
                         ObjectOpResult& result);
 
-bool AddOrUpdateSparseElementHelper(JSContext* cx, HandleArrayObject obj,
+bool AddOrUpdateSparseElementHelper(JSContext* cx, Handle<NativeObject*> obj,
                                     int32_t int_id, HandleValue v, bool strict);
 
 /*
@@ -1676,15 +1710,15 @@ bool AddOrUpdateSparseElementHelper(JSContext* cx, HandleArrayObject obj,
 enum QualifiedBool { Unqualified = 0, Qualified = 1 };
 
 template <QualifiedBool Qualified>
-extern bool NativeSetProperty(JSContext* cx, HandleNativeObject obj,
+extern bool NativeSetProperty(JSContext* cx, Handle<NativeObject*> obj,
                               HandleId id, HandleValue v, HandleValue receiver,
                               ObjectOpResult& result);
 
-extern bool NativeSetElement(JSContext* cx, HandleNativeObject obj,
+extern bool NativeSetElement(JSContext* cx, Handle<NativeObject*> obj,
                              uint32_t index, HandleValue v,
                              HandleValue receiver, ObjectOpResult& result);
 
-extern bool NativeDeleteProperty(JSContext* cx, HandleNativeObject obj,
+extern bool NativeDeleteProperty(JSContext* cx, Handle<NativeObject*> obj,
                                  HandleId id, ObjectOpResult& result);
 
 /*** SpiderMonkey nonstandard internal methods ******************************/
@@ -1701,7 +1735,7 @@ extern bool NativeLookupOwnProperty(
  * `prop` must be present in obj's shape.
  */
 extern bool NativeGetExistingProperty(JSContext* cx, HandleObject receiver,
-                                      HandleNativeObject obj, HandleId id,
+                                      Handle<NativeObject*> obj, HandleId id,
                                       PropertyInfo prop, MutableHandleValue vp);
 
 /* * */
@@ -1713,7 +1747,7 @@ extern bool GetNameBoundInEnvironment(JSContext* cx, HandleObject env,
 
 template <>
 inline bool JSObject::is<js::NativeObject>() const {
-  return getClass()->isNativeObject();
+  return shape()->isNative();
 }
 
 namespace js {
@@ -1729,8 +1763,8 @@ bool IsPackedArray(JSObject* obj);
 // Initialize an object's reserved slot with a private value pointing to
 // malloc-allocated memory and associate the memory with the object.
 //
-// This call should be matched with a call to JSFreeOp::free_/delete_ in the
-// object's finalizer to free the memory and update the memory accounting.
+// This call should be matched with a call to JS::GCContext::free_/delete_ in
+// the object's finalizer to free the memory and update the memory accounting.
 
 inline void InitReservedSlot(NativeObject* obj, uint32_t slot, void* ptr,
                              size_t nbytes, MemoryUse use) {
@@ -1743,8 +1777,8 @@ inline void InitReservedSlot(NativeObject* obj, uint32_t slot, T* ptr,
   InitReservedSlot(obj, slot, ptr, sizeof(T), use);
 }
 
-bool AddSlotAndCallAddPropHook(JSContext* cx, HandleNativeObject obj,
-                               HandleValue v, HandleShape newShape);
+bool AddSlotAndCallAddPropHook(JSContext* cx, Handle<NativeObject*> obj,
+                               HandleValue v, Handle<Shape*> newShape);
 
 }  // namespace js
 

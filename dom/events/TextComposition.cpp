@@ -9,6 +9,7 @@
 #include "IMEStateManager.h"
 #include "nsContentUtils.h"
 #include "nsIContent.h"
+#include "nsIMutationObserver.h"
 #include "nsPresContext.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/EditorBase.h"
@@ -87,6 +88,82 @@ void TextComposition::Destroy() {
   //       this being destroyed for cleaning up the stuff.
 }
 
+void TextComposition::OnCharacterDataChanged(
+    Text& aText, const CharacterDataChangeInfo& aInfo) {
+  if (mContainerTextNode != &aText ||
+      mCompositionStartOffsetInTextNode == UINT32_MAX ||
+      mCompositionLengthInTextNode == UINT32_MAX) {
+    return;
+  }
+
+  // Ignore changes after composition string.
+  if (aInfo.mChangeStart >=
+      mCompositionStartOffsetInTextNode + mCompositionLengthInTextNode) {
+    return;
+  }
+
+  // If the change ends before the composition string, we need only to adjust
+  // the start offset.
+  if (aInfo.mChangeEnd <= mCompositionStartOffsetInTextNode) {
+    MOZ_ASSERT(aInfo.LengthOfRemovedText() <=
+               mCompositionStartOffsetInTextNode);
+    mCompositionStartOffsetInTextNode -= aInfo.LengthOfRemovedText();
+    mCompositionStartOffsetInTextNode += aInfo.mReplaceLength;
+    return;
+  }
+
+  // If this is caused by a splitting text node, the composition string
+  // may be split out to the new right node.  In the case,
+  // CompositionTransaction::DoTransaction handles it with warking the
+  // following text nodes.  Therefore, we should NOT shrink the composing
+  // range for avoind breaking the fix of bug 1310912.  Although the handling
+  // looks buggy so that we need to move the handling into here later.
+  if (aInfo.mDetails &&
+      aInfo.mDetails->mType == CharacterDataChangeInfo::Details::eSplit) {
+    return;
+  }
+
+  // If the change removes/replaces the last character of the composition
+  // string, we should shrink the composition range before the change start.
+  // Then, the replace string will be never updated by coming composition
+  // updates.
+  if (aInfo.mChangeEnd >=
+      mCompositionStartOffsetInTextNode + mCompositionLengthInTextNode) {
+    // If deleting the first character of the composition string, collapse IME
+    // selection temporarily.  Updating composition string will insert new
+    // composition string there.
+    if (aInfo.mChangeStart <= mCompositionStartOffsetInTextNode) {
+      mCompositionStartOffsetInTextNode = aInfo.mChangeStart;
+      mCompositionLengthInTextNode = 0u;
+      return;
+    }
+    // If some characters in the composition still stay, composition range
+    // should be shrunken.
+    MOZ_ASSERT(aInfo.mChangeStart > mCompositionStartOffsetInTextNode);
+    mCompositionLengthInTextNode =
+        aInfo.mChangeStart - mCompositionStartOffsetInTextNode;
+    return;
+  }
+
+  // If removed range starts in the composition string, we need only adjust
+  // the length to make composition range contain the replace string.
+  if (aInfo.mChangeStart >= mCompositionStartOffsetInTextNode) {
+    MOZ_ASSERT(aInfo.LengthOfRemovedText() <= mCompositionLengthInTextNode);
+    mCompositionLengthInTextNode -= aInfo.LengthOfRemovedText();
+    mCompositionLengthInTextNode += aInfo.mReplaceLength;
+    return;
+  }
+
+  // If preceding characers of the composition string is also removed,  new
+  // composition start will be there and new composition ends at current
+  // position.
+  const uint32_t removedLengthInCompositionString =
+      aInfo.mChangeEnd - mCompositionStartOffsetInTextNode;
+  mCompositionStartOffsetInTextNode = aInfo.mChangeStart;
+  mCompositionLengthInTextNode -= removedLengthInCompositionString;
+  mCompositionLengthInTextNode += aInfo.mReplaceLength;
+}
+
 bool TextComposition::IsValidStateForComposition(nsIWidget* aWidget) const {
   return !Destroyed() && aWidget && !aWidget->Destroyed() &&
          mPresContext->GetPresShell() &&
@@ -125,7 +202,6 @@ BaseEventFlags TextComposition::CloneAndDispatchAs(
 
   WidgetCompositionEvent compositionEvent(aCompositionEvent->IsTrusted(),
                                           aMessage, aCompositionEvent->mWidget);
-  compositionEvent.mTime = aCompositionEvent->mTime;
   compositionEvent.mTimeStamp = aCompositionEvent->mTimeStamp;
   compositionEvent.mData = aCompositionEvent->mData;
   compositionEvent.mNativeIMEContext = aCompositionEvent->mNativeIMEContext;
@@ -468,7 +544,7 @@ uint32_t TextComposition::GetSelectionStartOffset() {
       IMEStateManager::GetActiveContentObserver();
   bool doQuerySelection = true;
   if (contentObserver) {
-    if (contentObserver->IsManaging(this)) {
+    if (contentObserver->IsManaging(*this)) {
       doQuerySelection = false;
       contentObserver->HandleQueryContentEvent(&querySelectedTextEvent);
     }
@@ -489,7 +565,7 @@ uint32_t TextComposition::GetSelectionStartOffset() {
   if (NS_WARN_IF(querySelectedTextEvent.DidNotFindSelection())) {
     return 0;  // XXX Is this okay?
   }
-  return querySelectedTextEvent.mReply->SelectionStartOffset();
+  return querySelectedTextEvent.mReply->AnchorOffset();
 }
 
 void TextComposition::OnCompositionEventDispatched(
@@ -544,7 +620,7 @@ void TextComposition::MaybeNotifyIMEOfCompositionEventHandled(
   //     event handled.  Although, this is a bug but it should be okay since
   //     destroying IMEContentObserver notifies IME of blur.  So, native IME
   //     handler can treat it as this notification too.
-  if (contentObserver && contentObserver->IsManaging(this)) {
+  if (contentObserver && contentObserver->IsManaging(*this)) {
     contentObserver->MaybeNotifyCompositionEventHandled();
     return;
   }
@@ -676,7 +752,7 @@ bool TextComposition::HasEditor() const {
   return mEditorBaseWeak && mEditorBaseWeak->IsAlive();
 }
 
-RawRangeBoundary TextComposition::GetStartRef() const {
+RawRangeBoundary TextComposition::FirstIMESelectionStartRef() const {
   RefPtr<EditorBase> editorBase = GetEditorBase();
   if (!editorBase) {
     return RawRangeBoundary();
@@ -737,7 +813,7 @@ RawRangeBoundary TextComposition::GetStartRef() const {
   return firstRange ? firstRange->StartRef().AsRaw() : RawRangeBoundary();
 }
 
-RawRangeBoundary TextComposition::GetEndRef() const {
+RawRangeBoundary TextComposition::LastIMESelectionEndRef() const {
   RefPtr<EditorBase> editorBase = GetEditorBase();
   if (!editorBase) {
     return RawRangeBoundary();

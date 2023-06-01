@@ -1,16 +1,22 @@
-//! Front end for consuming the OpenGl Shading language (GLSL).
-//!
-//! To begin take a look at the documentation for the [`Parser`](Parser).
-//!
-//! # Supported versions
-//! Currently only the versions 450 and 460 are supported and 440 is partially
-//! supported, furthermore the vulkan flavor is assumed.
+/*!
+Frontend for [GLSL][glsl] (OpenGL Shading Language).
+
+To begin, take a look at the documentation for the [`Frontend`].
+
+# Supported versions
+## Vulkan
+- 440 (partial)
+- 450
+- 460
+
+[glsl]: https://www.khronos.org/registry/OpenGL/index_gl.php
+*/
 
 pub use ast::{Precision, Profile};
 pub use error::{Error, ErrorKind, ExpectedToken};
 pub use token::TokenValue;
 
-use crate::{FastHashMap, FastHashSet, Handle, Module, ShaderStage, Span, Type};
+use crate::{proc::Layouter, FastHashMap, FastHashSet, Handle, Module, ShaderStage, Span, Type};
 use ast::{EntryArg, FunctionDeclaration, GlobalLookup};
 use parser::ParsingContext;
 
@@ -31,7 +37,7 @@ mod variables;
 
 type Result<T> = std::result::Result<T, Error>;
 
-/// Per shader options passed to [`parse`](Parser::parse)
+/// Per-shader options passed to [`parse`](Frontend::parse).
 ///
 /// The [`From`](From) trait is implemented for [`ShaderStage`](ShaderStage) to
 /// provide a quick way to create a Options instance.
@@ -61,27 +67,27 @@ impl From<ShaderStage> for Options {
     }
 }
 
-/// Additional information about the glsl shader
+/// Additional information about the GLSL shader.
 ///
-/// Stores additional information about the glsl shader which might not be
+/// Stores additional information about the GLSL shader which might not be
 /// stored in the shader [`Module`](Module).
 #[derive(Debug)]
 pub struct ShaderMetadata {
-    /// The glsl version specified in the shader trought the use of the
+    /// The GLSL version specified in the shader trough the use of the
     /// `#version` preprocessor directive.
     pub version: u16,
-    /// The glsl profile specified in the shader trought the use of the
+    /// The GLSL profile specified in the shader trough the use of the
     /// `#version` preprocessor directive.
     pub profile: Profile,
-    /// The shader stage in the pipeline, passed to the [`parse`](Parser::parse)
+    /// The shader stage in the pipeline, passed to the [`parse`](Frontend::parse)
     /// method via the [`Options`](Options) struct.
     pub stage: ShaderStage,
 
     /// The workgroup size for compute shaders, defaults to `[1; 3]` for
     /// compute shaders and `[0; 3]` for non compute shaders.
     pub workgroup_size: [u32; 3],
-    /// Wether or not early fragment tests where requested by the shader,
-    /// defaults to `false`.
+    /// Whether or not early fragment tests where requested by the shader.
+    /// Defaults to `false`.
     pub early_fragment_tests: bool,
 
     /// The shader can request extensions via the
@@ -99,7 +105,7 @@ impl ShaderMetadata {
         self.version = 0;
         self.profile = Profile::Core;
         self.stage = stage;
-        self.workgroup_size = [if stage == ShaderStage::Compute { 1 } else { 0 }; 3];
+        self.workgroup_size = [u32::from(stage == ShaderStage::Compute); 3];
         self.early_fragment_tests = false;
         self.extensions.clear();
     }
@@ -118,16 +124,16 @@ impl Default for ShaderMetadata {
     }
 }
 
-/// The `Parser` is the central structure of the glsl frontend.
+/// The `Frontend` is the central structure of the GLSL frontend.
 ///
-/// To instantiate a new `Parser` the [`Default`](Default) trait is used, so a
-/// call to the associated function [`Parser::default`](Parser::default) will
-/// return a new `Parser` instance.
+/// To instantiate a new `Frontend` the [`Default`](Default) trait is used, so a
+/// call to the associated function [`Frontend::default`](Frontend::default) will
+/// return a new `Frontend` instance.
 ///
-/// To parse a shader simply call the [`parse`](Parser::parse) method with a
+/// To parse a shader simply call the [`parse`](Frontend::parse) method with a
 /// [`Options`](Options) struct and a [`&str`](str) holding the glsl code.
 ///
-/// The `Parser` also provides the [`metadata`](Parser::metadata) to get some
+/// The `Frontend` also provides the [`metadata`](Frontend::metadata) to get some
 /// further information about the previously parsed shader, like version and
 /// extensions used (see the documentation for
 /// [`ShaderMetadata`](ShaderMetadata) to see all the returned information)
@@ -135,7 +141,7 @@ impl Default for ShaderMetadata {
 /// # Example usage
 /// ```rust
 /// use naga::ShaderStage;
-/// use naga::front::glsl::{Parser, Options};
+/// use naga::front::glsl::{Frontend, Options};
 ///
 /// let glsl = r#"
 ///     #version 450 core
@@ -143,20 +149,20 @@ impl Default for ShaderMetadata {
 ///     void main() {}
 /// "#;
 ///
-/// let mut parser = Parser::default();
+/// let mut frontend = Frontend::default();
 /// let options = Options::from(ShaderStage::Vertex);
-/// parser.parse(&options, glsl);
+/// frontend.parse(&options, glsl);
 /// ```
 ///
 /// # Reusability
 ///
-/// If there's a need to parse more than one shader reusing the same `Parser`
+/// If there's a need to parse more than one shader reusing the same `Frontend`
 /// instance may be beneficial since internal allocations will be reused.
 ///
-/// Calling the [`parse`](Parser::parse) method multiple times will reset the
-/// `Parser` so no extra care is needed when reusing.
+/// Calling the [`parse`](Frontend::parse) method multiple times will reset the
+/// `Frontend` so no extra care is needed when reusing.
 #[derive(Debug, Default)]
-pub struct Parser {
+pub struct Frontend {
     meta: ShaderMetadata,
 
     lookup_function: FastHashMap<String, FunctionDeclaration>,
@@ -166,12 +172,14 @@ pub struct Parser {
 
     entry_args: Vec<EntryArg>,
 
+    layouter: Layouter,
+
     errors: Vec<Error>,
 
     module: Module,
 }
 
-impl Parser {
+impl Frontend {
     fn reset(&mut self, stage: ShaderStage) {
         self.meta.reset(stage);
 
@@ -179,16 +187,17 @@ impl Parser {
         self.lookup_type.clear();
         self.global_variables.clear();
         self.entry_args.clear();
+        self.layouter.clear();
 
         // This is necessary because if the last parsing errored out, the module
-        // wouldn't have been swapped
+        // wouldn't have been taken
         self.module = Module::default();
     }
 
     /// Parses a shader either outputting a shader [`Module`](Module) or a list
     /// of [`Error`](Error)s.
     ///
-    /// Multiple calls using the same `Parser` and different shaders are supported.
+    /// Multiple calls using the same `Frontend` and different shaders are supported.
     pub fn parse(
         &mut self,
         options: &Options,
@@ -204,13 +213,9 @@ impl Parser {
         }
 
         if self.errors.is_empty() {
-            let mut module = Module::default();
-            std::mem::swap(&mut self.module, &mut module);
-            Ok(module)
+            Ok(std::mem::take(&mut self.module))
         } else {
-            let mut errors = Vec::new();
-            std::mem::swap(&mut self.errors, &mut errors);
-            Err(errors)
+            Err(std::mem::take(&mut self.errors))
         }
     }
 
@@ -221,10 +226,10 @@ impl Parser {
     ///
     /// # Notes
     ///
-    /// Following an unsuccessful parsing the state of the returned infomration
+    /// Following an unsuccessful parsing the state of the returned information
     /// is undefined, it might contain only partial information about the
     /// current shader, the previous shader or both.
-    pub fn metadata(&self) -> &ShaderMetadata {
+    pub const fn metadata(&self) -> &ShaderMetadata {
         &self.meta
     }
 }

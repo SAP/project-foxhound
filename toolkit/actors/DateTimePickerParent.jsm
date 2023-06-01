@@ -13,12 +13,10 @@ function debug(aStr) {
 
 var EXPORTED_SYMBOLS = ["DateTimePickerParent"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
-  "DateTimePickerPanel",
-  "resource://gre/modules/DateTimePickerPanel.jsm"
-);
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  DateTimePickerPanel: "resource://gre/modules/DateTimePickerPanel.sys.mjs",
+});
 
 /*
  * DateTimePickerParent receives message from content side (input box) and
@@ -103,7 +101,8 @@ class DateTimePickerParent extends JSWindowActorParent {
       debug("aBrowser.dateTimePicker not found, exiting now.");
       return;
     }
-    this._picker = new DateTimePickerPanel(panel);
+    this.oldFocus = window.document.activeElement;
+    this._picker = new lazy.DateTimePickerPanel(panel);
     this._picker.openPicker(type, rect, detail);
 
     this.addPickerListeners();
@@ -111,6 +110,11 @@ class DateTimePickerParent extends JSWindowActorParent {
 
   // Picker is closed, do some cleanup.
   close() {
+    if (this.oldFocus) {
+      // Restore focus to where it was before the picker opened.
+      this.oldFocus.focus();
+      this.oldFocus = null;
+    }
     this.removePickerListeners();
     this._picker = null;
   }

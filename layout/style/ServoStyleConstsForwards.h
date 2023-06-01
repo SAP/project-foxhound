@@ -45,7 +45,6 @@ class nsPresContext;
 class nsSimpleContentList;
 class imgRequestProxy;
 struct nsCSSValueSharedList;
-struct nsTimingFunction;
 
 class gfxFontFeatureValueSet;
 struct gfxFontFeature;
@@ -209,6 +208,22 @@ using StyleMatrixTransformOperator =
 #  undef SERVO_BOXED_TYPE
 
 using StyleAtomicUsize = std::atomic<size_t>;
+
+#  define SERVO_FIXED_POINT_HELPERS(T, RawT, FractionBits)                     \
+    static constexpr RawT kPointFive = 1 << (FractionBits - 1);                \
+    static constexpr uint16_t kScale = 1 << FractionBits;                      \
+    static constexpr float kInverseScale = 1.0f / kScale;                      \
+    static T FromRaw(RawT aRaw) { return {{aRaw}}; }                           \
+    static T FromFloat(float aFloat) {                                         \
+      return FromRaw(RawT(aFloat * kScale));                                   \
+    }                                                                          \
+    static T FromInt(RawT aInt) { return FromRaw(RawT(aInt * kScale)); }       \
+    RawT Raw() const { return _0.value; }                                      \
+    uint16_t UnsignedRaw() const { return uint16_t(Raw()); }                   \
+    float ToFloat() const { return Raw() * kInverseScale; }                    \
+    RawT ToIntRounded() const { return (Raw() + kPointFive) >> FractionBits; } \
+    bool IsNormal() const { return *this == NORMAL; }                          \
+    inline void ToString(nsACString&) const;
 
 }  // namespace mozilla
 

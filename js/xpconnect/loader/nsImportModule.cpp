@@ -7,7 +7,7 @@
 #include "nsImportModule.h"
 
 #include "mozilla/dom/ScriptSettings.h"
-#include "mozJSComponentLoader.h"
+#include "mozJSModuleLoader.h"
 #include "nsContentUtils.h"
 #include "nsExceptionHandler.h"
 #include "nsPrintfCString.h"
@@ -52,8 +52,8 @@ nsresult ImportModule(const char* aURI, const char* aExportName,
 
   JS::RootedObject global(cx);
   JS::RootedObject exports(cx);
-  nsresult rv = mozJSComponentLoader::Get()->Import(
-      cx, nsDependentCString(aURI), &global, &exports);
+  nsresult rv = mozJSModuleLoader::Get()->Import(cx, nsDependentCString(aURI),
+                                                 &global, &exports);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     if (aInfallible) {
       AnnotateCrashReportWithJSException(cx, aURI);
@@ -75,6 +75,38 @@ nsresult ImportModule(const char* aURI, const char* aExportName,
   }
 
   return nsXPConnect::XPConnect()->WrapJS(cx, exports, aIID, aResult);
+}
+
+nsresult ImportESModule(const char* aURI, const char* aExportName,
+                        const nsIID& aIID, void** aResult, bool aInfallible) {
+  AutoJSAPI jsapi;
+  MOZ_ALWAYS_TRUE(jsapi.Init(xpc::PrivilegedJunkScope()));
+  JSContext* cx = jsapi.cx();
+
+  JS::RootedObject moduleNamespace(cx);
+  nsresult rv = mozJSModuleLoader::Get()->ImportESModule(
+      cx, nsDependentCString(aURI), &moduleNamespace);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    if (aInfallible) {
+      AnnotateCrashReportWithJSException(cx, aURI);
+
+      MOZ_CRASH_UNSAFE_PRINTF("Failed to load critical module \"%s\"", aURI);
+    }
+    return rv;
+  }
+
+  if (aExportName) {
+    JS::RootedValue namedExport(cx);
+    if (!JS_GetProperty(cx, moduleNamespace, aExportName, &namedExport)) {
+      return NS_ERROR_FAILURE;
+    }
+    if (!namedExport.isObject()) {
+      return NS_ERROR_XPC_BAD_CONVERT_JS;
+    }
+    moduleNamespace.set(&namedExport.toObject());
+  }
+
+  return nsXPConnect::XPConnect()->WrapJS(cx, moduleNamespace, aIID, aResult);
 }
 
 }  // namespace loader

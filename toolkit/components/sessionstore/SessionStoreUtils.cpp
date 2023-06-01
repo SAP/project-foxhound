@@ -7,6 +7,7 @@
 #include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject
 #include "js/JSON.h"
 #include "js/PropertyAndElement.h"  // JS_GetElement
+#include "js/TypeDecls.h"
 #include "jsapi.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/AutocompleteInfoBinding.h"
@@ -19,6 +20,8 @@
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/SessionStorageManager.h"
 #include "mozilla/dom/PBackgroundSessionStorageCache.h"
+#include "mozilla/dom/SessionStoreChangeListener.h"
+#include "mozilla/dom/SessionStoreChild.h"
 #include "mozilla/dom/SessionStoreUtils.h"
 #include "mozilla/dom/txIXPathContext.h"
 #include "mozilla/dom/WindowGlobalParent.h"
@@ -300,6 +303,10 @@ void SessionStoreUtils::RestoreScrollPosition(const GlobalObject& aGlobal,
 /* static */
 void SessionStoreUtils::RestoreScrollPosition(
     nsGlobalWindowInner& aWindow, const nsCString& aScrollPosition) {
+  using Change = mozilla::dom::SessionStoreChangeListener::Change;
+  SessionStoreChangeListener::CollectSessionStoreData(
+      aWindow.GetWindowContext(), EnumSet<Change>(Change::Scroll));
+
   nsCCharSeparatedTokenizer tokenizer(aScrollPosition, ',');
   nsAutoCString token(tokenizer.nextToken());
   int pos_X = atoi(token.get());
@@ -963,29 +970,19 @@ static void CollectCurrentFormData(JSContext* aCx, Document& aDocument,
 MOZ_CAN_RUN_SCRIPT
 static void SetElementAsString(Element* aElement, const nsAString& aValue) {
   IgnoredErrorResult rv;
-  HTMLTextAreaElement* textArea = HTMLTextAreaElement::FromNode(aElement);
-  if (textArea) {
+  if (auto* textArea = HTMLTextAreaElement::FromNode(aElement)) {
     textArea->SetValue(aValue, rv);
     if (!rv.Failed()) {
       nsContentUtils::DispatchInputEvent(aElement);
     }
     return;
   }
-  HTMLInputElement* input = HTMLInputElement::FromNode(aElement);
-  if (input) {
-    input->SetValue(aValue, CallerType::NonSystem, rv);
-    if (!rv.Failed()) {
-      nsContentUtils::DispatchInputEvent(aElement);
-      return;
-    }
-  }
-  input = HTMLInputElement::FromNodeOrNull(
-      nsFocusManager::GetRedirectedFocus(aElement));
-  if (input) {
+  if (auto* input = HTMLInputElement::FromNode(aElement)) {
     input->SetValue(aValue, CallerType::NonSystem, rv);
     if (!rv.Failed()) {
       nsContentUtils::DispatchInputEvent(aElement);
     }
+    return;
   }
 }
 
@@ -1203,6 +1200,7 @@ bool SessionStoreUtils::RestoreFormData(const GlobalObject& aGlobal,
   if (!aData.mUrl.WasPassed()) {
     return true;
   }
+
   // Don't restore any data for the given frame if the URL
   // stored in the form data doesn't match its current URL.
   nsAutoCString url;
@@ -1210,6 +1208,11 @@ bool SessionStoreUtils::RestoreFormData(const GlobalObject& aGlobal,
   if (!aData.mUrl.Value().Equals(url)) {
     return false;
   }
+
+  using Change = SessionStoreChangeListener::Change;
+  SessionStoreChangeListener::CollectSessionStoreData(
+      aDocument.GetWindowContext(), EnumSet<Change>(Change::Input));
+
   if (aData.mInnerHTML.WasPassed()) {
     SetInnerHTML(aDocument, aData.mInnerHTML.Value());
   }
@@ -1311,6 +1314,10 @@ void RestoreFormEntry(Element* aNode, const FormEntryValue& aValue) {
 void SessionStoreUtils::RestoreFormData(
     Document& aDocument, const nsString& aInnerHTML,
     const nsTArray<SessionStoreRestoreData::Entry>& aEntries) {
+  using Change = SessionStoreChangeListener::Change;
+  SessionStoreChangeListener::CollectSessionStoreData(
+      aDocument.GetWindowContext(), EnumSet<Change>(Change::Input));
+
   if (!aInnerHTML.IsEmpty()) {
     SetInnerHTML(aDocument, aInnerHTML);
   }
@@ -1489,7 +1496,7 @@ void SessionStoreUtils::RestoreDocShellState(
     nsIDocShell* aDocShell, const DocShellRestoreState& aState) {
   if (aDocShell) {
     if (aState.URI()) {
-      aDocShell->SetCurrentURI(aState.URI());
+      aDocShell->SetCurrentURIForSessionStore(aState.URI());
     }
     RestoreDocShellCapabilities(aDocShell, aState.docShellCaps());
   }
@@ -1698,20 +1705,31 @@ nsresult SessionStoreUtils::ConstructSessionStorageValues(
   return NS_OK;
 }
 
-/* static */ void SessionStoreUtils::ResetSessionStore(
-    BrowsingContext* aContext) {
-  MOZ_RELEASE_ASSERT(NATIVE_LISTENER);
-  WindowContext* windowContext = aContext->GetCurrentWindowContext();
-  if (!windowContext) {
-    return;
+/* static */
+bool SessionStoreUtils::CopyProperty(JSContext* aCx, JS::Handle<JSObject*> aDst,
+                                     JS::Handle<JSObject*> aSrc,
+                                     const nsAString& aName) {
+  JS::Rooted<JS::PropertyKey> name(aCx);
+  const char16_t* data;
+  size_t length = aName.GetData(&data);
+
+  if (!JS_CharsToId(aCx, JS::TwoByteChars(data, length), &name)) {
+    return false;
   }
 
-  WindowGlobalChild* windowChild = windowContext->GetWindowGlobalChild();
-  if (!windowChild || !windowChild->CanSend()) {
-    return;
+  bool found = false;
+  if (!JS_HasPropertyById(aCx, aSrc, name, &found) || !found) {
+    return true;
   }
 
-  uint32_t epoch = aContext->GetSessionStoreEpoch();
+  JS::Rooted<JS::Value> value(aCx);
+  if (!JS_GetPropertyById(aCx, aSrc, name, &value)) {
+    return false;
+  }
 
-  Unused << windowChild->SendResetSessionStore(epoch);
+  if (value.isNullOrUndefined()) {
+    return true;
+  }
+
+  return JS_DefinePropertyById(aCx, aDst, name, value, JSPROP_ENUMERATE);
 }

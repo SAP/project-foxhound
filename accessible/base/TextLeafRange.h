@@ -13,8 +13,16 @@
 #include "nsDirection.h"
 #include "nsIAccessibleText.h"
 
-namespace mozilla::a11y {
+class nsRange;
+
+namespace mozilla {
+namespace dom {
+class Document;
+}
+
+namespace a11y {
 class Accessible;
+class LocalAccessible;
 
 /**
  * Represents a point within accessible text.
@@ -58,6 +66,8 @@ class TextLeafPoint final {
 
   bool operator<(const TextLeafPoint& aPoint) const;
 
+  bool operator<=(const TextLeafPoint& aPoint) const;
+
   /**
    * A valid TextLeafPoint evaluates to true. An invalid TextLeafPoint
    * evaluates to false.
@@ -85,10 +95,13 @@ class TextLeafPoint final {
    * (depending on the direction).
    * If aIncludeorigin is true and this is at a boundary, this will be
    * returned unchanged.
+   * If aStopInEditable is true the boundary returned will be within the
+   * current editable (if this point is in an editable).
    */
   TextLeafPoint FindBoundary(AccessibleTextBoundary aBoundaryType,
                              nsDirection aDirection,
-                             bool aIncludeOrigin = false) const;
+                             bool aIncludeOrigin = false,
+                             bool aStopInEditable = false) const;
 
   /**
    * These two functions find a line start boundary within the same
@@ -127,27 +140,58 @@ class TextLeafPoint final {
       bool aIncludeDefaults = true) const;
 
   /**
+   * Get the offsets of all spelling errors in a given LocalAccessible. This
+   * should only be used when pushing the cache. Most callers will want
+   * FindTextAttrsStart instead.
+   */
+  static nsTArray<int32_t> GetSpellingErrorOffsets(LocalAccessible* aAcc);
+
+  /**
+   * Queue a cache update for a spelling error in a given DOM range.
+   */
+  static void UpdateCachedSpellingError(dom::Document* aDocument,
+                                        const nsRange& aRange);
+
+  /**
    * Find the start of a run of text attributes in a specific direction.
    * A text attributes run is a span of text where the attributes are the same.
    * If no boundary is found, the start/end of the container is returned
    * (depending on the direction).
    * If aIncludeorigin is true and this is at a boundary, this will be
    * returned unchanged.
-   * aOriginAttrs allows the caller to supply the text attributes for this (as
-   * retrieved by GetTextAttributes). This can be used to avoid fetching the
-   * attributes twice if they are also to be used for something else; e.g.
-   * returning the attributes to a client. If aOriginAttrs is null, this method
-   * will fetch the attributes itself.
-   * aIncludeDefaults specifies whether aOriginAttrs includes default
-   * attributes.
    */
   TextLeafPoint FindTextAttrsStart(nsDirection aDirection,
-                                   bool aIncludeOrigin = false,
-                                   const AccAttributes* aOriginAttrs = nullptr,
-                                   bool aIncludeDefaults = true) const;
+                                   bool aIncludeOrigin = false) const;
+
+  /**
+   * Returns a rect (in dev pixels) describing position and size of
+   * the character at mOffset in mAcc. This rect is screen-relative.
+   * This function only works on remote accessibles, and assumes caching
+   * is enabled.
+   */
+  LayoutDeviceIntRect CharBounds();
+
+  /**
+   * Returns true if the given point (in screen coords) is contained
+   * in the char bounds of the current TextLeafPoint. Returns false otherwise.
+   * If the current point is an empty container, we use the acc's bounds instead
+   * of char bounds. Because this depends on CharBounds, this function only
+   * works on remote accessibles, and assumes caching is enabled.
+   */
+  bool ContainsPoint(int32_t aX, int32_t aY);
+
+  bool IsLineFeedChar() const { return GetChar() == '\n'; }
+
+  bool IsSpace() const;
+
+  bool IsParagraphStart() const {
+    return mOffset == 0 && FindParagraphSameAcc(eDirPrevious, true);
+  }
 
  private:
   bool IsEmptyLastLine() const;
+
+  char16_t GetChar() const;
 
   TextLeafPoint FindLineStartSameRemoteAcc(nsDirection aDirection,
                                            bool aIncludeOrigin) const;
@@ -158,6 +202,24 @@ class TextLeafPoint final {
    */
   TextLeafPoint FindLineStartSameAcc(nsDirection aDirection,
                                      bool aIncludeOrigin) const;
+
+  TextLeafPoint FindLineEnd(nsDirection aDirection, bool aIncludeOrigin,
+                            bool aStopInEditable) const;
+  TextLeafPoint FindWordEnd(nsDirection aDirection, bool aIncludeOrigin,
+                            bool aStopInEditable) const;
+
+  TextLeafPoint FindParagraphSameAcc(nsDirection aDirection,
+                                     bool aIncludeOrigin) const;
+
+  bool IsInSpellingError() const;
+
+  /**
+   * Find a spelling error boundary in the same Accessible. This function
+   * searches for either start or end points, since either means a change in
+   * text attributes.
+   */
+  TextLeafPoint FindSpellingErrorSameAcc(nsDirection aDirection,
+                                         bool aIncludeOrigin) const;
 };
 
 /**
@@ -170,17 +232,88 @@ class TextLeafRange final {
       : mStart(aStart), mEnd(aEnd) {}
   explicit TextLeafRange(const TextLeafPoint& aStart)
       : mStart(aStart), mEnd(aStart) {}
+  explicit TextLeafRange() {}
 
-  TextLeafPoint Start() { return mStart; }
+  /**
+   * A valid TextLeafRange evaluates to true. An invalid TextLeafRange
+   * evaluates to false.
+   */
+  explicit operator bool() const { return !!mStart && !!mEnd; }
+
+  bool operator!=(const TextLeafRange& aOther) const {
+    return mEnd != aOther.mEnd || mStart != aOther.mStart;
+  }
+
+  TextLeafPoint Start() const { return mStart; }
   void SetStart(const TextLeafPoint& aStart) { mStart = aStart; }
-  TextLeafPoint End() { return mEnd; }
+  TextLeafPoint End() const { return mEnd; }
   void SetEnd(const TextLeafPoint& aEnd) { mEnd = aEnd; }
+
+  /**
+   * Returns a union rect (in dev pixels) of all character bounds in this range.
+   * This rect is screen-relative and inclusive of mEnd. This function only
+   * works on remote accessibles, and assumes caching is enabled.
+   */
+  LayoutDeviceIntRect Bounds() const;
+
+  /**
+   * Set range as DOM selection.
+   * aSelectionNum is the selection index to use. If aSelectionNum is
+   * out of bounds for current selection ranges, or is -1, a new selection
+   * range is created.
+   */
+  MOZ_CAN_RUN_SCRIPT bool SetSelection(int32_t aSelectionNum) const;
 
  private:
   TextLeafPoint mStart;
   TextLeafPoint mEnd;
+
+ public:
+  /**
+   * A TextLeafRange iterator will iterate through single leaf segments of the
+   * given range.
+   */
+
+  class Iterator {
+   public:
+    Iterator(Iterator&& aOther)
+        : mRange(aOther.mRange),
+          mSegmentStart(aOther.mSegmentStart),
+          mSegmentEnd(aOther.mSegmentEnd) {}
+
+    static Iterator BeginIterator(const TextLeafRange& aRange);
+
+    static Iterator EndIterator(const TextLeafRange& aRange);
+
+    Iterator& operator++();
+
+    bool operator!=(const Iterator& aOther) const {
+      return mRange != aOther.mRange || mSegmentStart != aOther.mSegmentStart ||
+             mSegmentEnd != aOther.mSegmentEnd;
+    }
+
+    TextLeafRange operator*() {
+      return TextLeafRange(mSegmentStart, mSegmentEnd);
+    }
+
+   private:
+    explicit Iterator(const TextLeafRange& aRange) : mRange(aRange) {}
+
+    Iterator() = delete;
+    Iterator(const Iterator&) = delete;
+    Iterator& operator=(const Iterator&) = delete;
+    Iterator& operator=(const Iterator&&) = delete;
+
+    const TextLeafRange& mRange;
+    TextLeafPoint mSegmentStart;
+    TextLeafPoint mSegmentEnd;
+  };
+
+  Iterator begin() const { return Iterator::BeginIterator(*this); }
+  Iterator end() const { return Iterator::EndIterator(*this); }
 };
 
-}  // namespace mozilla::a11y
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

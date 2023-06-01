@@ -28,6 +28,22 @@ namespace mozilla {
 /* static*/
 void CSSClipPathInstance::ApplyBasicShapeOrPathClip(
     gfxContext& aContext, nsIFrame* aFrame, const gfxMatrix& aTransform) {
+  RefPtr<Path> path =
+      CreateClipPathForFrame(aContext.GetDrawTarget(), aFrame, aTransform);
+  if (!path) {
+    // This behavior matches |SVGClipPathFrame::ApplyClipPath()|.
+    // https://www.w3.org/TR/css-masking-1/#ClipPathElement:
+    // "An empty clipping path will completely clip away the element that had
+    // the clip-path property applied."
+    aContext.Clip(Rect());
+    return;
+  }
+  aContext.Clip(path);
+}
+
+/* static*/
+RefPtr<Path> CSSClipPathInstance::CreateClipPathForFrame(
+    gfx::DrawTarget* aDt, nsIFrame* aFrame, const gfxMatrix& aTransform) {
   const auto& clipPathStyle = aFrame->StyleSVGReset()->mClipPath;
   MOZ_ASSERT(clipPathStyle.IsShape() || clipPathStyle.IsBox() ||
                  clipPathStyle.IsPath(),
@@ -35,14 +51,7 @@ void CSSClipPathInstance::ApplyBasicShapeOrPathClip(
 
   CSSClipPathInstance instance(aFrame, clipPathStyle);
 
-  aContext.NewPath();
-  RefPtr<Path> path =
-      instance.CreateClipPath(aContext.GetDrawTarget(), aTransform);
-  if (!path) {
-    return;
-  }
-  aContext.SetPath(path);
-  aContext.Clip();
+  return instance.CreateClipPath(aDt, aTransform);
 }
 
 /* static*/
@@ -50,11 +59,7 @@ bool CSSClipPathInstance::HitTestBasicShapeOrPathClip(nsIFrame* aFrame,
                                                       const gfxPoint& aPoint) {
   const auto& clipPathStyle = aFrame->StyleSVGReset()->mClipPath;
   MOZ_ASSERT(!clipPathStyle.IsNone(), "unexpected none value");
-  // In the future CSSClipPathInstance may handle <clipPath> references as
-  // well. For the time being return early.
-  if (clipPathStyle.IsUrl()) {
-    return false;
-  }
+  MOZ_ASSERT(!clipPathStyle.IsUrl(), "unexpected url value");
 
   CSSClipPathInstance instance(aFrame, clipPathStyle);
 
@@ -205,11 +210,12 @@ already_AddRefed<Path> CSSClipPathInstance::CreateClipPathInset(
   nscoord appUnitsPerDevPixel =
       mTargetFrame->PresContext()->AppUnitsPerDevPixel();
 
-  nsRect insetRect = ShapeUtils::ComputeInsetRect(basicShape, aRefBox);
+  const nsRect insetRect = ShapeUtils::ComputeInsetRect(basicShape, aRefBox);
   const Rect insetRectPixels = NSRectToRect(insetRect, appUnitsPerDevPixel);
   nscoord appUnitsRadii[8];
 
-  if (ShapeUtils::ComputeInsetRadii(basicShape, aRefBox, appUnitsRadii)) {
+  if (ShapeUtils::ComputeInsetRadii(basicShape, aRefBox, insetRect,
+                                    appUnitsRadii)) {
     RectCornerRadii corners;
     nsCSSRendering::ComputePixelRadii(appUnitsRadii, appUnitsPerDevPixel,
                                       &corners);

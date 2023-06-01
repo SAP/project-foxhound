@@ -14,30 +14,26 @@ MOCHITEST_CHROME_MANIFESTS += ["tests/chrome.ini"]
 BROWSER_CHROME_MANIFESTS += ["tests/browser.ini"]
 
 EXPORTS.mozilla += [
-    "ChangeStyleTransaction.h",
-    "CSSEditUtils.h",
     "EditAction.h",
     "EditorBase.h",
     "EditorCommands.h",
     "EditorController.h",
     "EditorDOMPoint.h",
-    "EditorUtils.h",
+    "EditorForwards.h",
     "EditTransactionBase.h",
-    "HTMLEditHelpers.h",
     "HTMLEditor.h",
     "HTMLEditorController.h",
-    "HTMLEditUtils.h",
     "ManualNAC.h",
+    "PendingStyles.h",
     "SelectionState.h",
     "TextEditor.h",
-    "TypeInState.h",
 ]
 
 UNIFIED_SOURCES += [
+    "AutoRangeArray.cpp",
     "ChangeAttributeTransaction.cpp",
     "ChangeStyleTransaction.cpp",
     "CompositionTransaction.cpp",
-    "CreateElementTransaction.cpp",
     "CSSEditUtils.cpp",
     "DeleteNodeTransaction.cpp",
     "DeleteRangeTransaction.cpp",
@@ -69,7 +65,9 @@ UNIFIED_SOURCES += [
     "InsertNodeTransaction.cpp",
     "InsertTextTransaction.cpp",
     "InternetCiter.cpp",
-    "JoinNodeTransaction.cpp",
+    "JoinNodesTransaction.cpp",
+    "MoveNodeTransaction.cpp",
+    "PendingStyles.cpp",
     "PlaceholderTransaction.cpp",
     "ReplaceTextTransaction.cpp",
     "SelectionState.cpp",
@@ -77,7 +75,6 @@ UNIFIED_SOURCES += [
     "TextEditor.cpp",
     "TextEditorDataTransfer.cpp",
     "TextEditSubActionHandler.cpp",
-    "TypeInState.cpp",
     "WSRunObject.cpp",
 ]
 

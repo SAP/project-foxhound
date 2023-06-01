@@ -25,10 +25,10 @@ interface nsIXPConnectWrappedNative;
 [ptr] native JSContextPtr(JSContext);
 [ptr] native JSObjectPtr(JSObject);
 [ptr] native JSValPtr(JS::Value);
-[ptr] native JSFreeOpPtr(JSFreeOp);
+[ptr] native JSGCContextPtr(JS::GCContext);
 [ref] native JSCallArgsRef(const JS::CallArgs);
 [ptr] native JSClassPtr(const JSClass);
-      native JSMutableHandleIdVector(JS::MutableHandleIdVector);
+      native JSMutableHandleIdVector(JS::MutableHandleVector<JS::PropertyKey>);
 
 %{ C++
     // nsIXPCScriptable flags (only 32 bits available!). They are defined via
@@ -62,7 +62,7 @@ interface nsIXPConnectWrappedNative;
  * boolean to PR_TRUE before making the call.  Implementations may skip writing
  * to *_retval unless they want to return PR_FALSE.
  */
-[builtinclass, uuid(19b70b26-7c3f-437f-a04a-2a8f9e28b617)]
+[uuid(19b70b26-7c3f-437f-a04a-2a8f9e28b617)]
 interface nsIXPCScriptable : nsISupports
 {
     readonly attribute AUTF8String className;
@@ -73,28 +73,28 @@ interface nsIXPCScriptable : nsISupports
                      in JSObjectPtr globalObj, out JSObjectPtr parentObj);
 
     boolean newEnumerate(in nsIXPConnectWrappedNative wrapper,
-                        in JSContextPtr cx, in JSObjectPtr obj,
-                        in JSMutableHandleIdVector properties,
-                        in boolean enumerableOnly);
+                         in JSContextPtr cx, in JSObjectPtr obj,
+                         in JSMutableHandleIdVector properties,
+                         in boolean enumerableOnly);
 
     boolean resolve(in nsIXPConnectWrappedNative wrapper,
                     in JSContextPtr cx, in JSObjectPtr obj, in jsid id,
                     out boolean resolvedp);
 
     void   finalize(in nsIXPConnectWrappedNative wrapper,
-                    in JSFreeOpPtr fop, in JSObjectPtr obj);
+                    in JSGCContextPtr gcx, in JSObjectPtr obj);
 
     boolean call(in nsIXPConnectWrappedNative wrapper,
-                in JSContextPtr cx, in JSObjectPtr obj,
-                in JSCallArgsRef args);
+                 in JSContextPtr cx, in JSObjectPtr obj,
+                 in JSCallArgsRef args);
 
     boolean construct(in nsIXPConnectWrappedNative wrapper,
-                     in JSContextPtr cx, in JSObjectPtr obj,
-                     in JSCallArgsRef args);
+                      in JSContextPtr cx, in JSObjectPtr obj,
+                      in JSCallArgsRef args);
 
     boolean hasInstance(in nsIXPConnectWrappedNative wrapper,
-                       in JSContextPtr cx, in JSObjectPtr obj,
-                       in jsval val, out boolean bp);
+                        in JSContextPtr cx, in JSObjectPtr obj,
+                        in jsval val, out boolean bp);
 
 %{ C++
     #define GET_IT(f_, c_) \

@@ -24,6 +24,7 @@
 template <class>
 struct already_AddRefed;
 using FlushFOGDataPromise = mozilla::dom::ContentParent::FlushFOGDataPromise;
+using ContentParent = mozilla::dom::ContentParent;
 
 namespace mozilla {
 class OriginAttributesPattern;
@@ -73,7 +74,10 @@ class GeckoMediaPluginServiceParent final
   void ServiceUserCreated(GMPServiceParent* aServiceParent);
   void ServiceUserDestroyed(GMPServiceParent* aServiceParent);
 
-  void UpdateContentProcessGMPCapabilities();
+  // If aContentProcess is specified, this will only update GMP caps in that
+  // content process, otherwise will update all content processes.
+  void UpdateContentProcessGMPCapabilities(
+      ContentParent* aContentProcess = nullptr);
 
   void SendFlushFOGData(nsTArray<RefPtr<FlushFOGDataPromise>>& promises);
 
@@ -92,11 +96,11 @@ class GeckoMediaPluginServiceParent final
   void ClearStorage();
 
   already_AddRefed<GMPParent> SelectPluginForAPI(
-      const nsACString& aNodeId, const nsCString& aAPI,
+      const nsACString& aNodeId, const nsACString& aAPI,
       const nsTArray<nsCString>& aTags);
 
   already_AddRefed<GMPParent> FindPluginForAPIFrom(
-      size_t aSearchStartIndex, const nsCString& aAPI,
+      size_t aSearchStartIndex, const nsACString& aAPI,
       const nsTArray<nsCString>& aTags, size_t* aOutPluginIndex);
 
   nsresult GetNodeId(const nsAString& aOrigin, const nsAString& aTopLevelOrigin,
@@ -134,7 +138,7 @@ class GeckoMediaPluginServiceParent final
 
   RefPtr<GetGMPContentParentPromise> GetContentParent(
       GMPCrashHelper* aHelper, const NodeIdVariant& aNodeIdVariant,
-      const nsCString& aAPI, const nsTArray<nsCString>& aTags) override;
+      const nsACString& aAPI, const nsTArray<nsCString>& aTags) override;
 
  private:
   // Creates a copy of aOriginal. Note that the caller is responsible for
@@ -211,7 +215,7 @@ class GeckoMediaPluginServiceParent final
 
   // Synchronization for barrier that ensures we've loaded GMPs from
   // MOZ_GMP_PATH before allowing GetContentParentFrom() to proceed.
-  Monitor mInitPromiseMonitor;
+  Monitor mInitPromiseMonitor MOZ_UNANNOTATED;
   MozMonitoredPromiseHolder<GenericPromise> mInitPromise;
   bool mLoadPluginsFromDiskComplete;
 
@@ -222,10 +226,13 @@ class GeckoMediaPluginServiceParent final
   // processes we have. When this is empty we can safely shut down.
   // Synchronized across thread via mMutex in base class.
   nsTArray<GMPServiceParent*> mServiceParents;
+
+  uint32_t mDirectoriesAdded = 0;
+  uint32_t mDirectoriesInProgress = 0;
 };
 
-nsresult WriteToFile(nsIFile* aPath, const nsCString& aFileName,
-                     const nsCString& aData);
+nsresult WriteToFile(nsIFile* aPath, const nsACString& aFileName,
+                     const nsACString& aData);
 nsresult ReadSalt(nsIFile* aPath, nsACString& aOutData);
 bool MatchOrigin(nsIFile* aPath, const nsACString& aSite,
                  const mozilla::OriginAttributesPattern& aPattern);
@@ -246,15 +253,15 @@ class GMPServiceParent final : public PGMPServiceParent {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING_WITH_DELETE_ON_MAIN_THREAD(
       GMPServiceParent, final);
 
-  ipc::IPCResult RecvGetGMPNodeId(const nsString& aOrigin,
-                                  const nsString& aTopLevelOrigin,
-                                  const nsString& aGMPName,
+  ipc::IPCResult RecvGetGMPNodeId(const nsAString& aOrigin,
+                                  const nsAString& aTopLevelOrigin,
+                                  const nsAString& aGMPName,
                                   nsCString* aID) override;
 
   static bool Create(Endpoint<PGMPServiceParent>&& aGMPService);
 
   ipc::IPCResult RecvLaunchGMP(
-      const NodeIdVariant& aNodeIdVariant, const nsCString& aAPI,
+      const NodeIdVariant& aNodeIdVariant, const nsACString& aAPI,
       nsTArray<nsCString>&& aTags, nsTArray<ProcessId>&& aAlreadyBridgedTo,
       uint32_t* aOutPluginId, ProcessId* aOutProcessId,
       nsCString* aOutDisplayName, Endpoint<PGMPContentParent>* aOutEndpoint,

@@ -153,7 +153,7 @@ static void ScheduleReflow(PresShell* aPresShell, nsIFrame* aFrame) {
     }
   }
 
-  aPresShell->FrameNeedsReflow(f, IntrinsicDirty::StyleChange,
+  aPresShell->FrameNeedsReflow(f, IntrinsicDirty::FrameAncestorsAndDescendants,
                                NS_FRAME_IS_DIRTY);
 }
 
@@ -171,6 +171,8 @@ void nsFontFaceUtils::MarkDirtyForFontChange(nsIFrame* aSubtreeRoot,
 
   nsPresContext* pc = aSubtreeRoot->PresContext();
   PresShell* presShell = pc->PresShell();
+
+  const bool usesMetricsFromStyle = pc->StyleSet()->UsesFontMetrics();
 
   // StyleSingleFontFamily::IsNamedFamily expects a UTF-16 string. Convert it
   // once here rather than on each call.
@@ -210,7 +212,7 @@ void nsFontFaceUtils::MarkDirtyForFontChange(nsIFrame* aSubtreeRoot,
       }
 
       if (alreadyScheduled == ReflowAlreadyScheduled::No ||
-          pc->UsesFontMetricDependentFontUnits()) {
+          usesMetricsFromStyle) {
         if (f->IsPlaceholderFrame()) {
           nsIFrame* oof = nsPlaceholderFrame::GetRealFrameForPlaceholder(f);
           if (!nsLayoutUtils::IsProperAncestorFrame(subtreeRoot, oof)) {

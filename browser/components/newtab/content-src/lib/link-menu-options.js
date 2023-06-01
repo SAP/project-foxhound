@@ -2,7 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
+import {
+  actionCreators as ac,
+  actionTypes as at,
+} from "common/Actions.sys.mjs";
 
 const _OpenInPrivateWindow = site => ({
   id: "newtab-menu-open-new-private-window",
@@ -65,6 +68,7 @@ export const LinkMenuOptions = {
         referrer: site.referrer,
         typedBonus: site.typedBonus,
         url: site.url,
+        sponsored_tile_id: site.sponsored_tile_id,
       },
     }),
     userEvent: "OPEN_NEW_WINDOW",
@@ -216,7 +220,9 @@ export const LinkMenuOptions = {
     icon: "pocket-save",
     action: ac.AlsoToMain({
       type: at.SAVE_TO_POCKET,
-      data: { site: { url: site.url, title: site.title } },
+      data: {
+        site: { url: site.url, title: site.title },
+      },
     }),
     impression: ac.ImpressionStats({
       source: eventSource,

@@ -9,9 +9,10 @@
 // List of Features
 #include "UrlClassifierFeatureCryptominingAnnotation.h"
 #include "UrlClassifierFeatureCryptominingProtection.h"
+#include "UrlClassifierFeatureEmailTrackingDataCollection.h"
+#include "UrlClassifierFeatureEmailTrackingProtection.h"
 #include "UrlClassifierFeatureFingerprintingAnnotation.h"
 #include "UrlClassifierFeatureFingerprintingProtection.h"
-#include "UrlClassifierFeatureFlash.h"
 #include "UrlClassifierFeatureLoginReputation.h"
 #include "UrlClassifierFeaturePhishingProtection.h"
 #include "UrlClassifierFeatureSocialTrackingAnnotation.h"
@@ -35,9 +36,10 @@ void UrlClassifierFeatureFactory::Shutdown() {
 
   UrlClassifierFeatureCryptominingAnnotation::MaybeShutdown();
   UrlClassifierFeatureCryptominingProtection::MaybeShutdown();
+  UrlClassifierFeatureEmailTrackingDataCollection::MaybeShutdown();
+  UrlClassifierFeatureEmailTrackingProtection::MaybeShutdown();
   UrlClassifierFeatureFingerprintingAnnotation::MaybeShutdown();
   UrlClassifierFeatureFingerprintingProtection::MaybeShutdown();
-  UrlClassifierFeatureFlash::MaybeShutdown();
   UrlClassifierFeatureLoginReputation::MaybeShutdown();
   UrlClassifierFeaturePhishingProtection::MaybeShutdown();
   UrlClassifierFeatureSocialTrackingAnnotation::MaybeShutdown();
@@ -59,6 +61,22 @@ void UrlClassifierFeatureFactory::GetFeaturesFromChannel(
   // 1 feature classifies the channel, we call ::ProcessChannel() following this
   // feature order, and this could produce different results with a different
   // feature ordering.
+
+  // Email Tracking Data Collection
+  // This needs to be run before other features so that other blocking features
+  // won't stop us to collect data for email trackers. Note that this feature
+  // is not a blocking feature.
+  feature =
+      UrlClassifierFeatureEmailTrackingDataCollection::MaybeCreate(aChannel);
+  if (feature) {
+    aFeatures.AppendElement(feature);
+  }
+
+  // Email Tracking Protection
+  feature = UrlClassifierFeatureEmailTrackingProtection::MaybeCreate(aChannel);
+  if (feature) {
+    aFeatures.AppendElement(feature);
+  }
 
   // Cryptomining Protection
   feature = UrlClassifierFeatureCryptominingProtection::MaybeCreate(aChannel);
@@ -107,11 +125,6 @@ void UrlClassifierFeatureFactory::GetFeaturesFromChannel(
   if (feature) {
     aFeatures.AppendElement(feature);
   }
-
-  // Flash
-  nsTArray<nsCOMPtr<nsIUrlClassifierFeature>> flashFeatures;
-  UrlClassifierFeatureFlash::MaybeCreate(aChannel, flashFeatures);
-  aFeatures.AppendElements(flashFeatures);
 }
 
 /* static */
@@ -143,6 +156,20 @@ UrlClassifierFeatureFactory::GetFeatureByName(const nsACString& aName) {
 
   // Cryptomining Protection
   feature = UrlClassifierFeatureCryptominingProtection::GetIfNameMatches(aName);
+  if (feature) {
+    return feature.forget();
+  }
+
+  // Email Tracking Data Collection
+  feature =
+      UrlClassifierFeatureEmailTrackingDataCollection::GetIfNameMatches(aName);
+  if (feature) {
+    return feature.forget();
+  }
+
+  // Email Tracking Protection
+  feature =
+      UrlClassifierFeatureEmailTrackingProtection::GetIfNameMatches(aName);
   if (feature) {
     return feature.forget();
   }
@@ -193,12 +220,6 @@ UrlClassifierFeatureFactory::GetFeatureByName(const nsACString& aName) {
     return feature.forget();
   }
 
-  // We use Flash feature just for document loading.
-  feature = UrlClassifierFeatureFlash::GetIfNameMatches(aName);
-  if (feature) {
-    return feature.forget();
-  }
-
   // PhishingProtection features
   feature = UrlClassifierFeaturePhishingProtection::GetIfNameMatches(aName);
   if (feature) {
@@ -224,6 +245,18 @@ void UrlClassifierFeatureFactory::GetFeatureNames(nsTArray<nsCString>& aArray) {
 
   // Cryptomining Protection
   name.Assign(UrlClassifierFeatureCryptominingProtection::Name());
+  if (!name.IsEmpty()) {
+    aArray.AppendElement(name);
+  }
+
+  // Email Tracking Data Collection
+  name.Assign(UrlClassifierFeatureEmailTrackingDataCollection::Name());
+  if (!name.IsEmpty()) {
+    aArray.AppendElement(name);
+  }
+
+  // Email Tracking Protection
+  name.Assign(UrlClassifierFeatureEmailTrackingProtection::Name());
   if (!name.IsEmpty()) {
     aArray.AppendElement(name);
   }
@@ -270,13 +303,6 @@ void UrlClassifierFeatureFactory::GetFeatureNames(nsTArray<nsCString>& aArray) {
     aArray.AppendElement(name);
   }
 
-  // Flash features
-  {
-    nsTArray<nsCString> features;
-    UrlClassifierFeatureFlash::GetFeatureNames(features);
-    aArray.AppendElements(features);
-  }
-
   // PhishingProtection features
   {
     nsTArray<nsCString> features;
@@ -317,6 +343,9 @@ static const BlockingErrorCode sBlockingErrorCodes[] = {
      "TrackerUriBlocked", "Tracking Protection"_ns},
     {NS_ERROR_SOCIALTRACKING_URI,
      nsIWebProgressListener::STATE_BLOCKED_SOCIALTRACKING_CONTENT,
+     "TrackerUriBlocked", "Tracking Protection"_ns},
+    {NS_ERROR_EMAILTRACKING_URI,
+     nsIWebProgressListener::STATE_BLOCKED_EMAILTRACKING_CONTENT,
      "TrackerUriBlocked", "Tracking Protection"_ns},
 };
 

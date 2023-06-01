@@ -3,9 +3,9 @@
 
 "use strict";
 
-const { Toolbox } = require("devtools/client/framework/toolbox");
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { Toolbox } = require("resource://devtools/client/framework/toolbox.js");
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 const URL = "data:text/html;charset=utf8,browser_toolbox_telemetry_close.js";

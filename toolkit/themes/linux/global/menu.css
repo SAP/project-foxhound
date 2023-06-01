@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+@import url("chrome://global/skin/menu-scrolling.css");
+
 /* ===== menu.css =======================================================
   == Styles used by XUL menu-related elements.
   ======================================================================= */
@@ -15,16 +17,13 @@ menubar {
   font: menu;
 }
 
-menuitem {
-  padding: 4px 6px;
-}
-
 menu,
 menuitem,
 menucaption {
   appearance: auto;
   -moz-default-appearance: menuitem;
   -moz-box-align: center;
+  padding: 4px 6px;
   max-width: 42em;
   list-style-image: none;
   -moz-image-region: auto;
@@ -35,27 +34,29 @@ menucaption {
   background-color: initial;
 }
 
-menu[_moz-menuactive="true"],
-menuitem[_moz-menuactive="true"] {
+menu:where([_moz-menuactive="true"]),
+menuitem:where([_moz-menuactive="true"]) {
   color: -moz-menuhovertext;
   background-color: -moz-menuhover;
 }
 
-menuitem[customoptionstyling="true"] {
+menuitem[customoptionstyling="true"],
+menucaption[customoptionstyling="true"] {
   appearance: none;
 }
 
-menu[disabled="true"],
-menuitem[disabled="true"],
-menucaption[disabled="true"] {
+menu:where([disabled="true"]),
+menuitem:where([disabled="true"]),
+menucaption:where([disabled="true"]) {
   color: GrayText;
 }
 
 menubar > menu {
-  padding: 0 4px;
+  padding: .3em .4em;
 }
 
 menubar:-moz-lwtheme > menu {
+  appearance: none;
   text-shadow: none;
 }
 
@@ -84,10 +85,7 @@ menulist > menupopup {
   font: inherit;
 }
 
-menulist > menupopup > menuitem,
-menulist > menupopup > menucaption,
-menulist > menupopup > menu {
-  padding: 1px 5px;
+menulist > menupopup > :is(menuitem, menucaption, menu) {
   max-width: none;
 }
 
@@ -119,7 +117,7 @@ menulist > menupopup > menu {
 }
 
 .menu-iconic-left {
-  width: 16px;
+  min-width: 16px;
   /* We can only hardcode this, to make the default GTK icon<->label spacing */
   padding-inline-end: 3px !important;
 }
@@ -155,9 +153,7 @@ menulist > menupopup > menu {
 }
 
 
-menulist > menupopup > menuitem > .menu-iconic-left,
-menulist > menupopup > menucaption > .menu-iconic-left,
-menulist > menupopup > menu > .menu-iconic-left {
+menulist > menupopup > :is(menuitem, menucaption, menu) > .menu-iconic-left {
   display: none;
 }
 
@@ -178,8 +174,6 @@ menuitem[type="radio"] {
 /* ::::: menuseparator ::::: */
 
 menuseparator {
-  appearance: auto !important;
-  -moz-default-appearance: menuseparator !important;
+  appearance: auto;
+  -moz-default-appearance: menuseparator;
 }
-
-%include ../../shared/menu-scrolling.inc.css

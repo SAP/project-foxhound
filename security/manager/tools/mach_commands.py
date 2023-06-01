@@ -4,15 +4,10 @@
 
 import os
 
+from mach.decorators import Command, CommandArgument
 from mach.util import UserError
 from mozpack.files import FileFinder
 from mozpack.path import basedir
-
-
-from mach.decorators import (
-    CommandArgument,
-    Command,
-)
 
 
 def run_module_main_on(module, input_filename):
@@ -69,8 +64,6 @@ def is_excluded_directory(directory, exclusions):
 )
 def generate_test_certs(command_context, specifications):
     """Generate test certificates and keys from specifications."""
-
-    command_context.activate_virtualenv()
     import pycert
     import pykey
 
@@ -99,6 +92,7 @@ def find_all_specifications(command_context):
         "security/manager/ssl/tests",
         "services/settings/test/unit/test_remote_settings_signatures",
         "testing/xpcshell/moz-http2",
+        "toolkit/mozapps/extensions/test/xpcshell/data/productaddons",
     ]
     exclusions = ["security/manager/ssl/tests/unit/test_signed_apps"]
     finder = FileFinder(command_context.topsrcdir)

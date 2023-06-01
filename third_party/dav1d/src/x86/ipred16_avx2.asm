@@ -26,7 +26,7 @@
 %include "config.asm"
 %include "ext/x86/x86inc.asm"
 
-SECTION_RODATA 32
+SECTION_RODATA 64
 
 %macro SMOOTH_WEIGHTS 1-*
 const smooth_weights_1d_16bpc ; sm_weights[] << 7
@@ -133,14 +133,6 @@ cextern dr_intra_derivative
 cextern filter_intra_taps
 
 SECTION .text
-
-%macro REPX 2-*
-    %xdefine %%f(x) %1
-%rep %0 - 1
-    %rotate 1
-    %%f(%1)
-%endrep
-%endmacro
 
 INIT_YMM avx2
 cglobal ipred_dc_top_16bpc, 3, 7, 6, dst, stride, tl, w, h
@@ -1944,11 +1936,7 @@ ALIGN function_align
 .upsample_left: ; h4/h8
     mova                xm0, [tlq-16]            ; 8 7 6 5 4 3 2 1
     movu                xm1, [tlq-14]            ; 7 6 5 4 3 2 1 0
-%if STACK_ALIGNMENT < 32
     vpbroadcastw        xm4, r8m ; pixel_max
-%else
-    vpbroadcastw        xm4, r9m ; r8m -> r9m due to call
-%endif
     cmp                  hd, 8
     je .upsample_left_h8
     pshufhw             xm2, xm0, q2100          ; _ _ _ _ 4 4 3 2

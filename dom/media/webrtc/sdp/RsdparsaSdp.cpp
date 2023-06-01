@@ -12,7 +12,6 @@
 #include "nsError.h"
 #include <iostream>
 
-#include "sdp/SdpParser.h"
 #include "sdp/RsdparsaSdpInc.h"
 #include "sdp/RsdparsaSdpMediaSection.h"
 
@@ -46,6 +45,12 @@ RsdparsaSdp::RsdparsaSdp(RsdparsaSessionHandle session, const SdpOrigin& origin)
     mMediaSections.emplace_back(sdpMediaSection);
   }
 }
+
+RsdparsaSdp::RsdparsaSdp(const RsdparsaSdp& aOrig)
+    : RsdparsaSdp(RsdparsaSessionHandle(create_sdp_clone(aOrig.mSession.get())),
+                  aOrig.mOrigin) {}
+
+Sdp* RsdparsaSdp::Clone() const { return new RsdparsaSdp(*this); }
 
 const SdpOrigin& RsdparsaSdp::GetOrigin() const { return mOrigin; }
 

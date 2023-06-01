@@ -14,6 +14,9 @@ AddonTestUtils.initMochitest(this);
 // Tests installing an unsigned add-on through an InstallTrigger call in web
 // content.
 function test() {
+  // This test depends on InstallTrigger.install availability.
+  setInstallTriggerPrefs();
+
   Harness.installConfirmCallback = confirm_install;
   Harness.installEndedCallback = install_ended;
   Harness.installsCompletedCallback = finish_test;
@@ -38,7 +41,7 @@ function test() {
     })
   );
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.loadURIString(
     gBrowser,
     TESTROOT + "installtrigger.html?" + triggers
   );

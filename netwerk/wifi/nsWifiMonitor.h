@@ -30,6 +30,12 @@ class nsWifiAccessPoint;
 
 #define kDefaultWifiScanInterval 5 /* seconds */
 
+#ifdef XP_MACOSX
+// Use a larger stack size for the monitor thread on macOS 13+
+// to accommodate Core WLAN making large stack allocations.
+#  define kMacOS13MonitorStackSize (512 * 1024)
+#endif
+
 class nsWifiListener {
  public:
   explicit nsWifiListener(nsMainThreadPtrHolder<nsIWifiListener>* aListener) {
@@ -59,11 +65,13 @@ class nsWifiMonitor final : nsIRunnable, nsIWifiMonitor, nsIObserver {
   nsresult CallWifiListeners(const nsCOMArray<nsWifiAccessPoint>& aAccessPoints,
                              bool aAccessPointsChanged);
 
+  uint32_t GetMonitorThreadStackSize();
+
   mozilla::Atomic<bool> mKeepGoing;
   mozilla::Atomic<bool> mThreadComplete;
-  nsCOMPtr<nsIThread> mThread;
+  nsCOMPtr<nsIThread> mThread;  // only accessed on MainThread
 
-  nsTArray<nsWifiListener> mListeners;
+  nsTArray<nsWifiListener> mListeners MOZ_GUARDED_BY(mReentrantMonitor);
 
   mozilla::ReentrantMonitor mReentrantMonitor;
 

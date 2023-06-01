@@ -5,22 +5,17 @@
 Transform the repackage task into an actual task description.
 """
 
-
-import copy
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.schema import optionally_keyed_by, resolve_keyed_by
+from taskgraph.util.taskcluster import get_artifact_prefix
+from voluptuous import Extra, Optional, Required
 
 from gecko_taskgraph.loader.single_dep import schema
-from gecko_taskgraph.transforms.base import TransformSequence
-from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
-from gecko_taskgraph.util.schema import (
-    optionally_keyed_by,
-    resolve_keyed_by,
-)
-from gecko_taskgraph.util.taskcluster import get_artifact_prefix
-from gecko_taskgraph.util.platforms import archive_format, architecture
-from gecko_taskgraph.util.workertypes import worker_type_implementation
 from gecko_taskgraph.transforms.job import job_description_schema
-from voluptuous import Required, Optional, Extra
-
+from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
+from gecko_taskgraph.util.copy_task import copy_task
+from gecko_taskgraph.util.platforms import architecture, archive_format
+from gecko_taskgraph.util.workertypes import worker_type_implementation
 
 packaging_description_schema = schema.extend(
     {
@@ -92,6 +87,8 @@ packaging_description_schema = schema.extend(
             # if true, perform a checkout of a comm-central based branch inside the
             # gecko checkout
             Optional("comm-checkout"): bool,
+            Optional("run-as-root"): bool,
+            Optional("use-caches"): bool,
         },
     }
 )
@@ -199,6 +196,13 @@ PACKAGE_FORMATS = {
         },
         "output": "target.dmg",
     },
+    "pkg": {
+        "args": ["pkg"],
+        "inputs": {
+            "input": "target{archive_format}",
+        },
+        "output": "target.pkg",
+    },
     "installer": {
         "args": [
             "installer",
@@ -228,6 +232,19 @@ PACKAGE_FORMATS = {
         },
         "output": "target.stub-installer.exe",
     },
+    "deb": {
+        "args": [
+            "deb",
+            "--arch",
+            "{architecture}",
+            "--templates",
+            "browser/installer/linux/debian",
+        ],
+        "inputs": {
+            "input": "target{archive_format}",
+        },
+        "output": "target.deb",
+    },
 }
 MOZHARNESS_EXPANSIONS = [
     "package-name",
@@ -254,15 +271,15 @@ def copy_in_useful_magic(config, jobs):
 
 @transforms.add
 def handle_keyed_by(config, jobs):
-    """Resolve fields that can be keyed by platform, etc, but not `msix.*` fields that can be keyed by
-    `package-format`.  Such fields are handled specially below.
+    """Resolve fields that can be keyed by platform, etc, but not `msix.*` fields
+    that can be keyed by `package-format`.  Such fields are handled specially below.
     """
     fields = [
         "mozharness.config",
         "package-formats",
     ]
     for job in jobs:
-        job = copy.deepcopy(job)  # don't overwrite dict values here
+        job = copy_task(job)  # don't overwrite dict values here
         for field in fields:
             resolve_keyed_by(
                 item=job,
@@ -384,6 +401,16 @@ def make_job_description(config, jobs):
                     }
                 )
 
+        elif config.kind == "repackage-deb":
+            attributes["repackage_type"] = "repackage-deb"
+            description = (
+                "Repackaging the '{build_platform}/{build_type}' "
+                "build into a '.deb' package"
+            ).format(
+                build_platform=attributes.get("build_platform"),
+                build_type=attributes.get("build_type"),
+            )
+
         _fetch_subst_locale = "en-US"
         if locale:
             _fetch_subst_locale = locale
@@ -399,7 +426,7 @@ def make_job_description(config, jobs):
             # if repackage_signing_task doesn't exists, generate the stub installer
             package_formats += ["installer-stub"]
         for format in package_formats:
-            command = copy.deepcopy(PACKAGE_FORMATS[format])
+            command = copy_task(PACKAGE_FORMATS[format])
             substs = {
                 "archive_format": archive_format(build_platform),
                 "_locale": _fetch_subst_locale,
@@ -413,7 +440,7 @@ def make_job_description(config, jobs):
 
             # We need to resolve `msix.*` values keyed by `package-format` for each format, not
             # just once, so we update a temporary copy just for extracting these values.
-            temp_job = copy.deepcopy(job)
+            temp_job = copy_task(job)
             for msix_key in (
                 "channel",
                 "identity-name",
@@ -458,6 +485,8 @@ def make_job_description(config, jobs):
                 "extra-config": {
                     "repackage_config": repackage_config,
                 },
+                "run-as-root": run.get("run-as-root", False),
+                "use-caches": run.get("use-caches", True),
             }
         )
 
@@ -477,10 +506,13 @@ def make_job_description(config, jobs):
 
         worker["artifacts"] = _generate_task_output_files(
             dep_job,
-            worker_type_implementation(config.graph_config, worker_type),
+            worker_type_implementation(config.graph_config, config.params, worker_type),
             repackage_config=repackage_config,
             locale=locale,
         )
+        attributes["release_artifacts"] = [
+            artifact["name"] for artifact in worker["artifacts"]
+        ]
 
         task = {
             "label": job["label"],
@@ -507,7 +539,6 @@ def make_job_description(config, jobs):
                 project=config.params["project"],
                 existing_fetch=job.get("fetches"),
             ),
-            "release-artifacts": [artifact["name"] for artifact in worker["artifacts"]],
         }
 
         if build_platform.startswith("macosx"):
@@ -516,6 +547,8 @@ def make_job_description(config, jobs):
                     "linux64-libdmg",
                     "linux64-hfsplus",
                     "linux64-node",
+                    "linux64-xar",
+                    "linux64-mkbom",
                 ]
             )
         yield task

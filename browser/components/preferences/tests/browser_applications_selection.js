@@ -1,6 +1,6 @@
 SimpleTest.requestCompleteLog();
-const { HandlerServiceTestUtils } = ChromeUtils.import(
-  "resource://testing-common/HandlerServiceTestUtils.jsm"
+const { HandlerServiceTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/HandlerServiceTestUtils.sys.mjs"
 );
 
 let gHandlerService = Cc["@mozilla.org/uriloader/handler-service;1"].getService(
@@ -65,7 +65,7 @@ function scrubMailtoHandlers(handlerInfo) {
   }
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   // Create our dummy handlers
   let handler1 = Cc["@mozilla.org/uriloader/web-handler-app;1"].createInstance(
     Ci.nsIWebHandlerApp
@@ -120,8 +120,7 @@ async function selectStandardOptions(itemToUse) {
     if (typeof item == "function") {
       item = item();
     }
-    item.click();
-    popup.hidePopup();
+    popup.activateItem(item);
     await popupHidden;
     return item;
   }

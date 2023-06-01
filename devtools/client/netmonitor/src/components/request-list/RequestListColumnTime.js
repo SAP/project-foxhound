@@ -4,18 +4,20 @@
 
 "use strict";
 
-const { Component } = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+const {
+  Component,
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 const {
   getFormattedTime,
-} = require("devtools/client/netmonitor/src/utils/format-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/format-utils.js");
 const {
   fetchNetworkUpdatePacket,
   getResponseTime,
   getStartTime,
   getEndTime,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 
 /**
  * This component represents a column displaying selected
@@ -43,7 +45,8 @@ class RequestListColumnTime extends Component {
     fetchNetworkUpdatePacket(connector.requestData, item, ["eventTimings"]);
   }
 
-  componentWillReceiveProps(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
     const { item, connector } = nextProps;
     fetchNetworkUpdatePacket(connector.requestData, item, ["eventTimings"]);
   }

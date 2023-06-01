@@ -127,9 +127,9 @@ nsFontMetrics::nsFontMetrics(const nsFont& aFont, const Params& aParams,
                      gfxFloat(aFont.size.ToAppUnits()) / mP2A, aFont.sizeAdjust,
                      aFont.family.is_system_font,
                      aContext->DeviceContext()->IsPrinterContext(),
-                     aFont.synthesis & NS_FONT_SYNTHESIS_WEIGHT,
-                     aFont.synthesis & NS_FONT_SYNTHESIS_STYLE,
-                     aFont.synthesis & NS_FONT_SYNTHESIS_SMALL_CAPS,
+                     aFont.synthesisWeight == StyleFontSynthesis::Auto,
+                     aFont.synthesisStyle == StyleFontSynthesis::Auto,
+                     aFont.synthesisSmallCaps == StyleFontSynthesis::Auto,
                      aFont.languageOverride);
 
   aFont.AddFontFeaturesToStyle(&style, mOrientation == eVertical);
@@ -138,9 +138,9 @@ nsFontMetrics::nsFontMetrics(const nsFont& aFont, const Params& aParams,
   aFont.AddFontVariationsToStyle(&style);
 
   gfxFloat devToCssSize = gfxFloat(mP2A) / gfxFloat(AppUnitsPerCSSPixel());
-  mFontGroup = gfxPlatform::GetPlatform()->CreateFontGroup(
+  mFontGroup = new gfxFontGroup(
       mPresContext, aFont.family.families, &style, mLanguage, mExplicitLanguage,
-      aParams.textPerf, aParams.userFontSet, devToCssSize);
+      aParams.textPerf, aParams.userFontSet, devToCssSize, aFont.variantEmoji);
 }
 
 nsFontMetrics::~nsFontMetrics() {
@@ -159,8 +159,9 @@ void nsFontMetrics::Destroy() { mPresContext = nullptr; }
 
 static const gfxFont::Metrics& GetMetrics(
     nsFontMetrics* aFontMetrics, nsFontMetrics::FontOrientation aOrientation) {
-  return aFontMetrics->GetThebesFontGroup()->GetFirstValidFont()->GetMetrics(
-      aOrientation);
+  RefPtr<gfxFont> font =
+      aFontMetrics->GetThebesFontGroup()->GetFirstValidFont();
+  return font->GetMetrics(aOrientation);
 }
 
 static const gfxFont::Metrics& GetMetrics(nsFontMetrics* aFontMetrics) {

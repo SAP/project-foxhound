@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
 import os
 
 try:
@@ -12,14 +10,14 @@ try:
 except ImportError:
     # Python3
     from io import StringIO
+
 from functools import partial
 
 import mozunit
 import pytest
-from moztest.selftest.output import get_mozharness_status, filter_action
-
-from mozharness.base.log import INFO, WARNING, ERROR
-from mozharness.mozilla.automation import TBPL_SUCCESS, TBPL_WARNING, TBPL_FAILURE
+from mozharness.base.log import ERROR, INFO, WARNING
+from mozharness.mozilla.automation import TBPL_FAILURE, TBPL_SUCCESS, TBPL_WARNING
+from moztest.selftest.output import filter_action, get_mozharness_status
 
 here = os.path.abspath(os.path.dirname(__file__))
 get_mozharness_status = partial(get_mozharness_status, "reftest")
@@ -76,7 +74,7 @@ def test_output_crash(runtests):
     status, lines = runtests(
         "reftest-crash.list", environment=["MOZ_CRASHREPORTER_SHUTDOWN=1"]
     )
-    assert status == 1
+    assert status == 245
 
     tbpl_status, log_level, summary = get_mozharness_status(lines, status)
     assert tbpl_status == TBPL_FAILURE
@@ -97,7 +95,7 @@ def test_output_asan(runtests):
     status, lines = runtests(
         "reftest-crash.list", environment=["MOZ_CRASHREPORTER_SHUTDOWN=1"]
     )
-    assert status == 0
+    assert status == 245
 
     tbpl_status, log_level, summary = get_mozharness_status(lines, status)
     assert tbpl_status == TBPL_FAILURE

@@ -8,9 +8,7 @@ const {
   DEBUG_TARGET_PANE,
   PREFERENCES,
   RUNTIMES,
-} = require("devtools/client/aboutdebugging/src/constants");
-
-const Services = require("Services");
+} = require("resource://devtools/client/aboutdebugging/src/constants.js");
 
 // Process target debugging is disabled by default.
 function isProcessDebuggingSupported() {

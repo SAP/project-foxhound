@@ -121,7 +121,7 @@ struct nsWebBrowserPersist::OutputData {
   nsCOMPtr<nsIURI> mFile;
   nsCOMPtr<nsIURI> mOriginalLocation;
   nsCOMPtr<nsIOutputStream> mStream;
-  Mutex mStreamMutex;
+  Mutex mStreamMutex MOZ_UNANNOTATED;
   int64_t mSelfProgress;
   int64_t mSelfProgressMax;
   bool mCalcFileExt;
@@ -1343,10 +1343,22 @@ nsresult nsWebBrowserPersist::SaveURIInternal(
   // current state of the prefs/permissions.
   nsCOMPtr<nsICookieJarSettings> cookieJarSettings = aCookieJarSettings;
   if (!cookieJarSettings) {
+    // Although the variable is called 'triggering principal', it is used as the
+    // loading principal in the download channel, so we treat it as a loading
+    // principal also.
+    bool shouldResistFingerprinting =
+        nsContentUtils::ShouldResistFingerprinting_dangerous(
+            aTriggeringPrincipal,
+            "We are creating a new CookieJar Settings, so none exists "
+            "currently. Although the variable is called 'triggering principal',"
+            "it is used as the loading principal in the download channel, so we"
+            "treat it as a loading principal also.");
     cookieJarSettings =
         aIsPrivate
-            ? net::CookieJarSettings::Create(net::CookieJarSettings::ePrivate)
-            : net::CookieJarSettings::Create(net::CookieJarSettings::eRegular);
+            ? net::CookieJarSettings::Create(net::CookieJarSettings::ePrivate,
+                                             shouldResistFingerprinting)
+            : net::CookieJarSettings::Create(net::CookieJarSettings::eRegular,
+                                             shouldResistFingerprinting);
   }
 
   // Open a channel to the URI
@@ -1376,6 +1388,9 @@ nsresult nsWebBrowserPersist::SaveURIInternal(
       encodedChannel->SetApplyConversion(false);
     }
   }
+
+  nsCOMPtr<nsILoadInfo> loadInfo = inputChannel->LoadInfo();
+  loadInfo->SetIsUserTriggeredSave(true);
 
   // Set the referrer, post data and headers if any
   nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(inputChannel));
@@ -1415,7 +1430,7 @@ nsresult nsWebBrowserPersist::SaveURIInternal(
       const char* kWhitespace = "\b\t\r\n ";
       nsAutoCString extraHeaders(aExtraHeaders);
       while (true) {
-        crlf = extraHeaders.Find("\r\n", true);
+        crlf = extraHeaders.Find("\r\n");
         if (crlf == -1) break;
         extraHeaders.Mid(oneHeader, 0, crlf);
         extraHeaders.Cut(0, crlf + 2);
@@ -1454,8 +1469,7 @@ nsresult nsWebBrowserPersist::SaveChannelInternal(nsIChannel* aChannel,
 
   if (fc && !fu) {
     nsCOMPtr<nsIInputStream> fileInputStream, bufferedInputStream;
-    nsresult rv =
-        NS_MaybeOpenChannelUsingOpen(aChannel, getter_AddRefs(fileInputStream));
+    nsresult rv = aChannel->Open(getter_AddRefs(fileInputStream));
     NS_ENSURE_SUCCESS(rv, rv);
     rv = NS_NewBufferedInputStream(getter_AddRefs(bufferedInputStream),
                                    fileInputStream.forget(),
@@ -1473,7 +1487,7 @@ nsresult nsWebBrowserPersist::SaveChannelInternal(nsIChannel* aChannel,
   }
 
   // Read from the input channel
-  nsresult rv = NS_MaybeOpenChannelUsingAsyncOpen(aChannel, this);
+  nsresult rv = aChannel->AsyncOpen(this);
   if (rv == NS_ERROR_NO_CONTENT) {
     // Assume this is a protocol such as mailto: which does not feed out
     // data and just ignore it.
@@ -2152,78 +2166,26 @@ nsresult nsWebBrowserPersist::CalculateAndAppendFileExt(
     mMIMEService->GetTypeFromURI(uri, contentType);
   }
 
-  // Append the extension onto the file
+  // Validate the filename
   if (!contentType.IsEmpty()) {
-    nsCOMPtr<nsIMIMEInfo> mimeInfo;
-    mMIMEService->GetFromTypeAndExtension(contentType, ""_ns,
-                                          getter_AddRefs(mimeInfo));
+    nsAutoString newFileName;
+    if (NS_SUCCEEDED(mMIMEService->GetValidFileName(
+            aChannel, contentType, aOriginalURIWithExtension,
+            nsIMIMEService::VALIDATE_DEFAULT, newFileName))) {
+      nsCOMPtr<nsIFile> localFile;
+      GetLocalFileFromURI(aURI, getter_AddRefs(localFile));
+      if (localFile) {
+        localFile->SetLeafName(newFileName);
 
-    nsCOMPtr<nsIFile> localFile;
-    GetLocalFileFromURI(aURI, getter_AddRefs(localFile));
-
-    if (mimeInfo) {
-      nsCOMPtr<nsIURL> url(do_QueryInterface(aURI));
-      NS_ENSURE_TRUE(url, NS_ERROR_FAILURE);
-
-      nsAutoCString newFileName;
-      url->GetFileName(newFileName);
-
-      // Test if the current extension is current for the mime type
-      bool hasExtension = false;
-      int32_t ext = newFileName.RFind(".");
-      if (ext != -1) {
-        mimeInfo->ExtensionExists(Substring(newFileName, ext + 1),
-                                  &hasExtension);
-      }
-
-      // Append the mime file extension
-      nsAutoCString fileExt;
-      if (!hasExtension) {
-        // Test if previous extension is acceptable
-        nsCOMPtr<nsIURL> oldurl(do_QueryInterface(aOriginalURIWithExtension));
-        NS_ENSURE_TRUE(oldurl, NS_ERROR_FAILURE);
-        oldurl->GetFileExtension(fileExt);
-        bool useOldExt = false;
-        if (!fileExt.IsEmpty()) {
-          mimeInfo->ExtensionExists(fileExt, &useOldExt);
-        }
-
-        // If the url doesn't have an extension, or we don't know the extension,
-        // try to use the primary extension for the type. If we don't know the
-        // primary extension for the type, just continue with the url extension.
-        if (!useOldExt) {
-          nsAutoCString primaryExt;
-          mimeInfo->GetPrimaryExtension(primaryExt);
-          if (!primaryExt.IsEmpty()) {
-            fileExt = primaryExt;
-          }
-        }
-
-        if (!fileExt.IsEmpty()) {
-          uint32_t newLength = newFileName.Length() + fileExt.Length() + 1;
-          if (newLength > kDefaultMaxFilenameLength) {
-            if (fileExt.Length() > kDefaultMaxFilenameLength / 2)
-              fileExt.Truncate(kDefaultMaxFilenameLength / 2);
-
-            uint32_t diff = kDefaultMaxFilenameLength - 1 - fileExt.Length();
-            if (newFileName.Length() > diff) newFileName.Truncate(diff);
-          }
-          newFileName.Append('.');
-          newFileName.Append(fileExt);
-        }
-
-        if (localFile) {
-          localFile->SetLeafName(NS_ConvertUTF8toUTF16(newFileName));
-
-          // Resync the URI with the file after the extension has been appended
-          return NS_MutateURI(url)
-              .Apply(&nsIFileURLMutator::SetFile, localFile)
-              .Finalize(aOutURI);
-        }
-        return NS_MutateURI(url)
-            .Apply(&nsIURLMutator::SetFileName, newFileName, nullptr)
+        // Resync the URI with the file after the extension has been appended
+        return NS_MutateURI(aURI)
+            .Apply(&nsIFileURLMutator::SetFile, localFile)
             .Finalize(aOutURI);
       }
+      return NS_MutateURI(aURI)
+          .Apply(&nsIURLMutator::SetFileName,
+                 NS_ConvertUTF16toUTF8(newFileName), nullptr)
+          .Finalize(aOutURI);
     }
   }
 

@@ -14,6 +14,7 @@
 #define FragmentOrElement_h___
 
 #include "mozilla/Attributes.h"
+#include "mozilla/EnumSet.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCycleCollectionParticipant.h"  // NS_DECL_CYCLE_*
@@ -33,6 +34,8 @@ class nsIURI;
 
 namespace mozilla {
 class DeclarationBlock;
+enum class ContentRelevancyReason;
+using ContentRelevancy = EnumSet<ContentRelevancyReason, uint8_t>;
 namespace dom {
 struct CustomElementData;
 class Element;
@@ -64,8 +67,7 @@ class nsNodeSupportsWeakRefTearoff final : public nsISupportsWeakReference {
  * A generic base class for DOM elements and document fragments,
  * implementing many nsIContent, nsINode and Element methods.
  */
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ShadowRoot;
 
@@ -97,7 +99,6 @@ class FragmentOrElement : public nsIContent {
   virtual uint32_t TextLength() const override;
   virtual bool TextIsOnlyWhitespace() override;
   virtual bool ThreadSafeTextIsOnlyWhitespace() const override;
-  virtual bool IsLink(nsIURI** aURI) const override;
 
   virtual void DestroyContent() override;
   virtual void SaveSubtreeState() override;
@@ -118,14 +119,8 @@ class FragmentOrElement : public nsIContent {
   static void FireNodeInserted(Document* aDoc, nsINode* aParent,
                                nsTArray<nsCOMPtr<nsIContent> >& aNodes);
 
-  NS_DECL_CYCLE_COLLECTION_SKIPPABLE_SCRIPT_HOLDER_CLASS_INHERITED(
+  NS_DECL_CYCLE_COLLECTION_SKIPPABLE_WRAPPERCACHE_CLASS_INHERITED(
       FragmentOrElement, nsIContent)
-
-  /**
-   * Fire a DOMNodeRemoved mutation event for all children of this node
-   * TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
-   */
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void FireNodeRemovedForChildren();
 
   static void ClearContentUnbinder();
   static bool CanSkip(nsINode* aNode, bool aRemovingAllowed);
@@ -199,6 +194,25 @@ class FragmentOrElement : public nsIContent {
      * Web components custom element data.
      */
     UniquePtr<CustomElementData> mCustomElementData;
+
+    /**
+     * Last remembered size (in CSS pixels) for the element.
+     * @see {@link https://drafts.csswg.org/css-sizing-4/#last-remembered}
+     */
+    Maybe<float> mLastRememberedBSize;
+    Maybe<float> mLastRememberedISize;
+
+    /**
+     * Whether the content of this element is relevant for the purposes
+     * of `content-visibility: auto.
+     */
+    Maybe<ContentRelevancy> mContentRelevancy;
+
+    /**
+     * Whether the content of this element is considered visible for
+     * the purposes of `content-visibility: auto.
+     */
+    Maybe<bool> mVisibleForContentVisibility;
   };
 
   class nsDOMSlots : public nsIContent::nsContentSlots {
@@ -307,8 +321,7 @@ class FragmentOrElement : public nsIContent {
   friend class ::ContentUnbinder;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #define NS_ELEMENT_INTERFACE_TABLE_TO_MAP_SEGUE               \
   if (NS_SUCCEEDED(rv)) return rv;                            \

@@ -11,6 +11,8 @@
 #include <shobjidl.h>
 #include <uxtheme.h>
 #include <dwmapi.h>
+#include <unordered_map>
+#include <utility>
 
 // Undo the windows.h damage
 #undef GetMessage
@@ -35,11 +37,37 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
+#include "mozilla/HalScreenConfiguration.h"
+#include "mozilla/HashTable.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Vector.h"
 #include "mozilla/WindowsDpiAwareness.h"
 #include "mozilla/WindowsProcessMitigations.h"
 #include "mozilla/gfx/2D.h"
+
+// Starting with version 10.0.22621.0 of the Windows SDK the AR_STATE enum and
+// types are only defined when building for Windows 8 instead of Windows 7
+// (although they are always defined for MinGW)
+#if (WDK_NTDDI_VERSION >= 0x0A00000C) && (WINVER < 0x0602) && \
+    (!defined(__MINGW32__))
+
+enum tagAR_STATE {
+  AR_ENABLED = 0x0,
+  AR_DISABLED = 0x1,
+  AR_SUPPRESSED = 0x2,
+  AR_REMOTESESSION = 0x4,
+  AR_MULTIMON = 0x8,
+  AR_NOSENSOR = 0x10,
+  AR_NOT_SUPPORTED = 0x20,
+  AR_DOCKED = 0x40,
+  AR_LAPTOP = 0x80
+};
+
+typedef enum tagAR_STATE AR_STATE;
+
+using PAR_STATE = enum tagAR_STATE*;
+
+#endif  // (WDK_NTDDI_VERSION >= 0x0A00000C) && (WINVER < 0x0602)
 
 /**
  * NS_INLINE_DECL_IUNKNOWN_REFCOUNTING should be used for defining and
@@ -78,7 +106,6 @@
  public:
 
 class nsWindow;
-class nsWindowBase;
 struct KeyPair;
 
 namespace mozilla {
@@ -89,14 +116,37 @@ class LocalAccessible;
 }  // namespace a11y
 #endif  // defined(ACCESSIBILITY)
 
-namespace widget {
+// Helper function: enumerate all the toplevel HWNDs attached to the current
+// thread via ::EnumThreadWindows().
+//
+// Note that this use of ::EnumThreadWindows() is, unfortunately, not an
+// abstract implementation detail.
+template <typename F>
+void EnumerateThreadWindows(F&& f)
+// requires requires(F f, HWND h) { f(h); }
+{
+  class Impl {
+   public:
+    F f;
+    explicit Impl(F&& f) : f(std::forward<F>(f)) {}
 
-// Windows message debugging data
-typedef struct {
-  const char* mStr;
-  UINT mId;
-} EventMsgInfo;
-extern EventMsgInfo gAllEvents[];
+    void invoke() {
+      WNDENUMPROC proc = &Impl::Callback;
+      ::EnumThreadWindows(::GetCurrentThreadId(), proc,
+                          reinterpret_cast<LPARAM>(&f));
+    }
+
+   private:
+    static BOOL CALLBACK Callback(HWND hwnd, LPARAM lp) {
+      (*reinterpret_cast<F*>(lp))(hwnd);
+      return TRUE;
+    }
+  };
+
+  Impl(std::forward<F>(f)).invoke();
+}
+
+namespace widget {
 
 // More complete QS definitions for MsgWaitForMultipleObjects() and
 // GetQueueStatus() that include newer win8 specific defines.
@@ -210,6 +260,13 @@ class WinUtils {
   static int GetSystemMetricsForDpi(int nIndex, UINT dpi);
 
   /**
+   * @param msg Windows event message
+   * @return User-friendly event name, or nullptr if no
+   *         match is found.
+   */
+  static const char* WinEventToEventName(UINT msg);
+
+  /**
    * @param aHdc HDC for printer
    * @return unwritable margins for currently set page on aHdc or empty margins
    *         if aHdc is null
@@ -314,14 +371,18 @@ class WinUtils {
                               bool aStopIfNotPopup = true);
 
   /**
-   * SetNSWindowBasePtr() associates an nsWindowBase to aWnd.  If aWidget is
-   * nullptr, it dissociate any nsBaseWidget pointer from aWnd.
-   * GetNSWindowBasePtr() returns an nsWindowBase pointer which was associated
-   * by SetNSWindowBasePtr(). GetNSWindowPtr() is a legacy api for win32
-   * nsWindow and should be avoided outside of nsWindow src.
+   * SetNSWindowPtr() associates aWindow with aWnd. If aWidget is nullptr, it
+   * instead dissociates any nsWindow from aWnd.
+   *
+   * No AddRef is performed. May not be used off of the main thread.
    */
-  static bool SetNSWindowBasePtr(HWND aWnd, nsWindowBase* aWidget);
-  static nsWindowBase* GetNSWindowBasePtr(HWND aWnd);
+  static void SetNSWindowPtr(HWND aWnd, nsWindow* aWindow);
+  /**
+   * GetNSWindowPtr() returns a pointer to the associated nsWindow pointer, if
+   * one exists, or nullptr, if not.
+   *
+   * No AddRef is performed. May not be used off of the main thread.
+   */
   static nsWindow* GetNSWindowPtr(HWND aWnd);
 
   /**
@@ -563,6 +624,15 @@ class WinUtils {
   static bool GetClassName(HWND aHwnd, nsAString& aName);
 
   static void EnableWindowOcclusion(const bool aEnable);
+
+  static bool GetTimezoneName(wchar_t* aBuffer);
+
+#ifdef DEBUG
+  static nsresult SetHiDPIMode(bool aHiDPI);
+  static nsresult RestoreHiDPIMode();
+#endif
+
+  static bool GetAutoRotationState(AR_STATE* aRotationState);
 
  private:
   static WhitelistVec BuildWhitelist();

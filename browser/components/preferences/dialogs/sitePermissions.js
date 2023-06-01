@@ -4,9 +4,8 @@
 
 /* import-globals-from ../extensionControlled.js */
 
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+var { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 const { SitePermissions } = ChromeUtils.import(
   "resource:///modules/SitePermissions.jsm"
@@ -14,37 +13,37 @@ const { SitePermissions } = ChromeUtils.import(
 
 const sitePermissionsL10n = {
   "desktop-notification": {
-    window: "permissions-site-notification-window",
+    window: "permissions-site-notification-window2",
     description: "permissions-site-notification-desc",
     disableLabel: "permissions-site-notification-disable-label",
     disableDescription: "permissions-site-notification-disable-desc",
   },
   geo: {
-    window: "permissions-site-location-window",
+    window: "permissions-site-location-window2",
     description: "permissions-site-location-desc",
     disableLabel: "permissions-site-location-disable-label",
     disableDescription: "permissions-site-location-disable-desc",
   },
   xr: {
-    window: "permissions-site-xr-window",
+    window: "permissions-site-xr-window2",
     description: "permissions-site-xr-desc",
     disableLabel: "permissions-site-xr-disable-label",
     disableDescription: "permissions-site-xr-disable-desc",
   },
   camera: {
-    window: "permissions-site-camera-window",
+    window: "permissions-site-camera-window2",
     description: "permissions-site-camera-desc",
     disableLabel: "permissions-site-camera-disable-label",
     disableDescription: "permissions-site-camera-disable-desc",
   },
   microphone: {
-    window: "permissions-site-microphone-window",
+    window: "permissions-site-microphone-window2",
     description: "permissions-site-microphone-desc",
     disableLabel: "permissions-site-microphone-disable-label",
     disableDescription: "permissions-site-microphone-disable-desc",
   },
   "autoplay-media": {
-    window: "permissions-site-autoplay-window",
+    window: "permissions-site-autoplay-window2",
     description: "permissions-site-autoplay-desc",
   },
 };
@@ -129,6 +128,7 @@ var gSitePermissionsManager = {
 
     let permissionsText = document.getElementById("permissionsText");
 
+    document.l10n.pauseObserving();
     let l10n = sitePermissionsL10n[this._type];
     document.l10n.setAttributes(permissionsText, l10n.description);
     if (l10n.disableLabel) {
@@ -148,6 +148,7 @@ var gSitePermissionsManager = {
       this._permissionsDisableDescription,
       document.documentElement,
     ]);
+    document.l10n.resumeObserving();
 
     // Initialize the checkbox state and handle showing notification permission UI
     // when it is disabled by an extension.
@@ -158,7 +159,7 @@ var gSitePermissionsManager = {
     this.buildPermissionsList();
 
     if (params.permissionType == "autoplay-media") {
-      this.buildAutoplayMenulist();
+      await this.buildAutoplayMenulist();
       this._setAutoplayPref.hidden = false;
     }
 
@@ -348,23 +349,23 @@ var gSitePermissionsManager = {
   },
 
   _createPermissionListItem(permission) {
-    let width = "75";
+    let width = "75px";
     let richlistitem = document.createXULElement("richlistitem");
     richlistitem.setAttribute("origin", permission.origin);
     let row = document.createXULElement("hbox");
-    row.setAttribute("flex", "1");
+    row.setAttribute("style", "-moz-box-flex: 1");
 
     let hbox = document.createXULElement("hbox");
     let website = document.createXULElement("label");
     website.setAttribute("value", permission.origin);
-    website.setAttribute("width", width);
+    // TODO(bug 1802993): Seems this could be on the hbox instead or something?
+    website.setAttribute("style", `width: ${width}`);
     hbox.setAttribute("class", "website-name");
-    hbox.setAttribute("flex", "3");
+    hbox.setAttribute("style", `-moz-box-flex: 3`);
     hbox.appendChild(website);
 
     let menulist = document.createXULElement("menulist");
-    menulist.setAttribute("flex", "1");
-    menulist.setAttribute("width", width);
+    menulist.setAttribute("style", `-moz-box-flex: 1; width: ${width}`);
     menulist.setAttribute("class", "website-status");
     let states = SitePermissions.getAvailableStates(permission.type);
     for (let state of states) {
@@ -445,17 +446,6 @@ var gSitePermissionsManager = {
 
   onPermissionSelect() {
     this._setRemoveButtonState();
-
-    // If any item is selected, it should be the only item tabable
-    // in the richlistbox for accessibility reasons.
-    this._list.itemChildren.forEach(item => {
-      let menulist = item.getElementsByTagName("menulist")[0];
-      if (!item.selected) {
-        menulist.setAttribute("tabindex", -1);
-      } else {
-        menulist.removeAttribute("tabindex");
-      }
-    });
   },
 
   onPermissionChange(perm, capability) {
@@ -526,9 +516,10 @@ var gSitePermissionsManager = {
     this._setRemoveButtonState();
   },
 
-  buildAutoplayMenulist() {
+  async buildAutoplayMenulist() {
     let menulist = document.createXULElement("menulist");
     let states = SitePermissions.getAvailableStates("autoplay-media");
+    document.l10n.pauseObserving();
     for (let state of states) {
       let m = menulist.appendItem(undefined, state);
       document.l10n.setAttributes(
@@ -548,6 +539,8 @@ var gSitePermissionsManager = {
     menulist.disabled = Services.prefs.prefIsLocked(AUTOPLAY_PREF);
 
     document.getElementById("setAutoplayPref").appendChild(menulist);
+    await document.l10n.translateFragment(menulist);
+    document.l10n.resumeObserving();
   },
 
   _sortPermissions(list, frag, column) {

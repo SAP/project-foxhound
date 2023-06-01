@@ -125,6 +125,7 @@ class RangeAnalysis {
   [[nodiscard]] bool truncate();
   [[nodiscard]] bool removeUnnecessaryBitops();
 
+ private:
   bool canTruncate(MDefinition* def, TruncateKind kind) const;
   void adjustTruncatedInputs(MDefinition* def);
 
@@ -178,11 +179,11 @@ class Range : public TempObject {
   static const int64_t NoInt32UpperBound = int64_t(JSVAL_INT_MAX) + 1;
   static const int64_t NoInt32LowerBound = int64_t(JSVAL_INT_MIN) - 1;
 
-  enum FractionalPartFlag {
+  enum FractionalPartFlag : bool {
     ExcludesFractionalParts = false,
     IncludesFractionalParts = true
   };
-  enum NegativeZeroFlag {
+  enum NegativeZeroFlag : bool {
     ExcludesNegativeZero = false,
     IncludesNegativeZero = true
   };

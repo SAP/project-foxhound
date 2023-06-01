@@ -8,22 +8,22 @@
 
 "use strict";
 
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+var { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-var { FileUtils } = ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
+var { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
+);
 var { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-var { OS, require } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-const { HandlerServiceTestUtils } = ChromeUtils.import(
-  "resource://testing-common/HandlerServiceTestUtils.jsm"
+const { HandlerServiceTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/HandlerServiceTestUtils.sys.mjs"
 );
-var { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+var { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -35,7 +35,7 @@ XPCOMUtils.defineLazyServiceGetter(
 
 do_get_profile();
 
-let jsonPath = OS.Path.join(OS.Constants.Path.profileDir, "handlers.json");
+let jsonPath = PathUtils.join(PathUtils.profileDir, "handlers.json");
 
 /**
  * Unloads the nsIHandlerService data store, so the back-end file can be
@@ -58,7 +58,7 @@ let unloadHandlerStore = async function() {
 let deleteHandlerStore = async function() {
   await unloadHandlerStore();
 
-  await OS.File.remove(jsonPath, { ignoreAbsent: true });
+  await IOUtils.remove(jsonPath, { ignoreAbsent: true });
 
   Services.prefs.clearUserPref("gecko.handlerService.defaultHandlersVersion");
 };
@@ -69,7 +69,7 @@ let deleteHandlerStore = async function() {
 let copyTestDataToHandlerStore = async function() {
   await unloadHandlerStore();
 
-  await OS.File.copy(do_get_file("handlers.json").path, jsonPath);
+  await IOUtils.copy(do_get_file("handlers.json").path, jsonPath);
 
   Services.prefs.setIntPref("gecko.handlerService.defaultHandlersVersion", 100);
 };

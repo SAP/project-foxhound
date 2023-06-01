@@ -7,20 +7,30 @@ const {
   generateActorSpec,
   RetVal,
   Option,
-} = require("devtools/shared/protocol");
+} = require("resource://devtools/shared/protocol.js");
 
 const processDescriptorSpec = generateActorSpec({
   typeName: "processDescriptor",
 
   methods: {
     getTarget: {
-      request: {},
+      // @backward-compat { version 110 } isBrowserToolboxFission is no longer
+      // necessary for servers with version 110 or newer. Replace this with
+      // `request: {},` when 110 reaches the release channel.
+      request: {
+        isBrowserToolboxFission: Option(0, "boolean"),
+      },
       response: {
         process: RetVal("json"),
       },
     },
     getWatcher: {
-      request: {},
+      // @backward-compat { version 110 } isBrowserToolboxFission is no longer
+      // necessary for servers with version 110 or newer. Replace this with
+      // `request: {},` when 110 reaches the release channel.
+      request: {
+        isBrowserToolboxFission: Option(0, "boolean"),
+      },
       response: RetVal("watcher"),
     },
     reloadDescriptor: {

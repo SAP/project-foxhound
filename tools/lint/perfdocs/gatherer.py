@@ -1,20 +1,18 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import absolute_import
-
 import os
 import pathlib
 
-from perfdocs.logger import PerfDocLogger
-from perfdocs.utils import read_yaml
 from perfdocs.framework_gatherers import (
+    AwsyGatherer,
     MozperftestGatherer,
     RaptorGatherer,
     StaticGatherer,
     TalosGatherer,
-    AwsyGatherer,
 )
+from perfdocs.logger import PerfDocLogger
+from perfdocs.utils import read_yaml
 
 logger = PerfDocLogger()
 
@@ -25,6 +23,9 @@ frameworks = {
     "talos": TalosGatherer,
     "awsy": AwsyGatherer,
 }
+
+# List of file types allowed to be used as static files
+ALLOWED_STATIC_FILETYPES = ("rst", "png")
 
 
 class Gatherer(object):
@@ -77,9 +78,9 @@ class Gatherer(object):
         the perfdocs_tree attribute.
         """
         exclude_dir = [
-            ".hg",
-            os.path.join("tools", "lint"),
-            os.path.join("testing", "perfdocs"),
+            str(pathlib.Path(self.workspace_dir, ".hg")),
+            str(pathlib.Path("tools", "lint")),
+            str(pathlib.Path("testing", "perfdocs")),
         ]
 
         for path in pathlib.Path(self.workspace_dir).rglob("perfdocs"):
@@ -94,7 +95,7 @@ class Gatherer(object):
                     matched["yml"] = file
                 elif file == "index.rst":
                     matched["rst"] = file
-                elif file.endswith(".rst"):
+                elif file.split(".")[-1] in ALLOWED_STATIC_FILETYPES:
                     matched["static"].append(file)
 
             # Append to structdocs if all the searched files were found
@@ -122,7 +123,7 @@ class Gatherer(object):
         """
 
         # If it was computed before, return it
-        yaml_path = os.path.join(sdt_entry["path"], sdt_entry["yml"])
+        yaml_path = pathlib.Path(sdt_entry["path"], sdt_entry["yml"])
         for entry in self._test_list:
             if entry["yml_path"] == yaml_path:
                 return entry

@@ -5,8 +5,10 @@
 const PREF = "privacy.trackingprotection.enabled";
 const DTSCBN_PREF = "dom.testing.sync-content-blocking-notifications";
 const BENIGN_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://tracking.example.org/browser/browser/base/content/test/protectionsUI/benignPage.html";
 const TRACKING_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://tracking.example.org/browser/browser/base/content/test/protectionsUI/trackingPage.html";
 
 /**
@@ -29,7 +31,7 @@ function getShieldCounts() {
   return getShieldHistogram().snapshot().values;
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   await UrlClassifierTestUtils.addTestTrackers();
   Services.prefs.setBoolPref(DTSCBN_PREF, true);
 

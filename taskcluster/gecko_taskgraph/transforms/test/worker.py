@@ -2,8 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from gecko_taskgraph.transforms.base import TransformSequence
-
+from taskgraph.transforms.base import TransformSequence
 
 # default worker types keyed by instance-size
 LINUX_WORKER_TYPES = {
@@ -151,7 +150,7 @@ WINDOWS_WORKER_TYPES = {
 # os x worker types keyed by test-platform
 MACOSX_WORKER_TYPES = {
     "macosx1014-64": "t-osx-1014",
-    "macosx1014-64-power": "t-osx-1014-power",
+    "macosx1015-64-power": "t-osx-1015-power",
     "macosx1015-64": "t-osx-1015-r8",
     "macosx1100-64": "t-osx-1100-m1",
 }
@@ -166,14 +165,15 @@ def set_worker_type(config, tasks):
         # during the taskcluster migration, this is a bit tortured, but it
         # will get simpler eventually!
         test_platform = task["test-platform"]
-        if task.get("worker-type"):
+        if task.get("worker-type") and task.get("worker-type") != "default":
             # This test already has its worker type defined, so just use that (yields below)
+            # Unless the value is set to "default", in that case ignore it.
             pass
         elif test_platform.startswith("macosx1014-64"):
             task["worker-type"] = MACOSX_WORKER_TYPES["macosx1014-64"]
         elif test_platform.startswith("macosx1015-64"):
             if "--power-test" in task["mozharness"]["extra-options"]:
-                task["worker-type"] = MACOSX_WORKER_TYPES["macosx1014-64-power"]
+                task["worker-type"] = MACOSX_WORKER_TYPES["macosx1015-64-power"]
             else:
                 task["worker-type"] = MACOSX_WORKER_TYPES["macosx1015-64"]
         elif test_platform.startswith("macosx1100-64"):
@@ -197,6 +197,12 @@ def set_worker_type(config, tasks):
                 win_worker_type_platform = WINDOWS_WORKER_TYPES[
                     test_platform.split("/")[0]
                 ]
+                if task[
+                    "virtualization"
+                ] == "virtual-with-gpu" and test_platform.startswith("windows10"):
+                    # add in `--requires-gpu` to the mozharness options
+                    task["mozharness"]["extra-options"].append("--requires-gpu")
+
             # now we have the right platform set the worker type accordingly
             task["worker-type"] = win_worker_type_platform[task["virtualization"]]
         elif test_platform.startswith("android-hw-g5"):
@@ -204,18 +210,18 @@ def set_worker_type(config, tasks):
                 task["worker-type"] = "t-bitbar-gw-unit-g5"
             else:
                 task["worker-type"] = "t-bitbar-gw-perf-g5"
-        elif test_platform.startswith("android-hw-p2"):
+        elif test_platform.startswith("android-hw-p5"):
             if task["suite"] != "raptor":
-                task["worker-type"] = "t-bitbar-gw-unit-p2"
+                task["worker-type"] = "t-bitbar-gw-unit-p5"
             else:
-                task["worker-type"] = "t-bitbar-gw-perf-p2"
-        elif test_platform.startswith("android-hw-s7"):
+                task["worker-type"] = "t-bitbar-gw-perf-p5"
+        elif test_platform.startswith("android-hw-a51"):
             if task["suite"] != "raptor":
-                task["worker-type"] = "t-bitbar-gw-unit-s7"
+                task["worker-type"] = "t-bitbar-gw-unit-a51"
             else:
-                task["worker-type"] = "t-bitbar-gw-perf-s7"
+                task["worker-type"] = "t-bitbar-gw-perf-a51"
         elif test_platform.startswith("android-em-7.0-x86"):
-            task["worker-type"] = "t-linux-metal"
+            task["worker-type"] = "t-linux-kvm"
         elif test_platform.startswith("linux") or test_platform.startswith("android"):
             if task.get("suite", "") in ["talos", "raptor"] and not task[
                 "build-platform"

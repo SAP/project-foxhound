@@ -6,7 +6,6 @@
 
   <browser id="thebrowser" type="content" remote="true" />
   <script type="application/javascript"><![CDATA[
-    const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
     const {BrowserTestUtils} = ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
 
     const ok = window.arguments[0].ok;
@@ -33,10 +32,6 @@
           if ('nsICrashReporter' in Ci) {
             dumpID = subject.getPropertyAsAString('dumpID');
             ok(dumpID, "dumpID is present and not an empty string");
-
-            // Let's check whether we have correctly reported OOM.
-            var isLikelyOOM = subject.getPropertyAsBool('isLikelyOOM');
-            is(isLikelyOOM, crashType == 'CRASH_OOM', 'isLikelyOOM is correct');
           }
 
           Services.obs.removeObserver(crashObserver, 'ipc:content-shutdown');

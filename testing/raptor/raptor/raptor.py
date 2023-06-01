@@ -4,8 +4,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import os
 import shutil
 import sys
@@ -24,19 +22,18 @@ try:
 except ImportError:
     build = None
 
-from mozlog import commandline
-from mozprofile.cli import parse_preferences, parse_key_value
-
-from browsertime import BrowsertimeDesktop, BrowsertimeAndroid
-from cmdline import parse_args, CHROMIUM_DISTROS
+from browsertime import BrowsertimeAndroid, BrowsertimeDesktop
+from cmdline import CHROMIUM_DISTROS, DESKTOP_APPS, parse_args
 from logger.logger import RaptorLogger
 from manifest import get_raptor_test_list
+from mozlog import commandline
+from mozprofile.cli import parse_key_value, parse_preferences
 from signal_handler import SignalHandler
 from utils import view_gecko_profile_from_raptor
 from webextension import (
-    WebExtensionFirefox,
-    WebExtensionDesktopChrome,
     WebExtensionAndroid,
+    WebExtensionDesktopChrome,
+    WebExtensionFirefox,
 )
 
 LOG = RaptorLogger(component="raptor-main")
@@ -53,19 +50,6 @@ def main(args=sys.argv[1:]):
                 "marionette.log.level": "Trace",
             }
         )
-
-    # if fission.autostart not specified by --setpref, update pref to match
-    # args.fission
-    if args.extra_prefs and "fission.autostart" not in args.extra_prefs:
-        args.extra_prefs.update(
-            {
-                "fission.autostart": args.fission,
-            }
-        )
-
-    # if fission.autostart=False then make sure fission disabled
-    if args.extra_prefs and not args.extra_prefs.get("fission.autostart", True):
-        args.fission = False
 
     args.environment = dict(parse_key_value(args.environment or [], context="--setenv"))
 
@@ -108,7 +92,7 @@ def main(args=sys.argv[1:]):
                 if key.startswith("browsertime_"):
                     inner_kwargs[key] = outer_kwargs.get(key)
 
-            if args.app == "firefox" or args.app in CHROMIUM_DISTROS:
+            if args.app in DESKTOP_APPS:
                 klass = BrowsertimeDesktop
             else:
                 klass = BrowsertimeAndroid
@@ -129,6 +113,7 @@ def main(args=sys.argv[1:]):
             gecko_profile_extra_threads=args.gecko_profile_extra_threads,
             gecko_profile_threads=args.gecko_profile_threads,
             gecko_profile_features=args.gecko_profile_features,
+            extra_profiler_run=args.extra_profiler_run,
             symbols_path=args.symbols_path,
             host=args.host,
             power_test=args.power_test,
@@ -147,9 +132,12 @@ def main(args=sys.argv[1:]):
             device_name=args.device_name,
             disable_perf_tuning=args.disable_perf_tuning,
             conditioned_profile=args.conditioned_profile,
+            test_bytecode_cache=args.test_bytecode_cache,
             chimera=args.chimera,
             project=args.project,
             verbose=args.verbose,
+            fission=args.fission,
+            extra_summary_methods=args.extra_summary_methods,
         )
     except Exception:
         traceback.print_exc()
@@ -158,6 +146,7 @@ def main(args=sys.argv[1:]):
         )
         os.sys.exit(1)
 
+    raptor.results_handler.use_existing_results(args.browsertime_existing_results)
     success = raptor.run_tests(raptor_test_list, raptor_test_names)
 
     if not success:

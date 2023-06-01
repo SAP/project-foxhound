@@ -1,10 +1,10 @@
+// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
 "use strict";
 
 function check_ip(s, v, ip) {
-  let secInfo = Cc[
-    "@mozilla.org/security/transportsecurityinfo;1"
-  ].createInstance(Ci.nsITransportSecurityInfo);
-
   let str = "https://";
   if (v == 6) {
     str += "[";
@@ -16,22 +16,19 @@ function check_ip(s, v, ip) {
   str += "/";
 
   let uri = Services.io.newURI(str);
-  ok(!s.isSecureURI(uri, 0));
+  ok(!s.isSecureURI(uri));
 
   let parsedMaxAge = {};
   let parsedIncludeSubdomains = {};
   s.processHeader(
     uri,
     "max-age=1000;includeSubdomains",
-    secInfo,
-    0,
-    Ci.nsISiteSecurityService.SOURCE_ORGANIC_REQUEST,
     {},
     parsedMaxAge,
     parsedIncludeSubdomains
   );
   ok(
-    !s.isSecureURI(uri, 0),
+    !s.isSecureURI(uri),
     "URI should not be secure if it contains an IP address"
   );
 

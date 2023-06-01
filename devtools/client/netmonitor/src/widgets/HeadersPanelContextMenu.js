@@ -4,21 +4,23 @@
 
 "use strict";
 
-const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+const {
+  L10N,
+} = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 const {
   contextMenuFormatters,
-} = require("devtools/client/netmonitor/src/utils/context-menu-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/context-menu-utils.js");
 
 loader.lazyRequireGetter(
   this,
   "copyString",
-  "devtools/shared/platform/clipboard",
+  "resource://devtools/shared/platform/clipboard.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "showMenu",
-  "devtools/client/shared/components/menu/utils",
+  "resource://devtools/client/shared/components/menu/utils.js",
   true
 );
 
@@ -26,7 +28,7 @@ class HeadersPanelContextMenu {
   constructor(props = {}) {
     this.props = props;
     this.copyAll = this.copyAll.bind(this);
-    this.copy = this.copy.bind(this);
+    this.copyValue = this.copyValue.bind(this);
   }
 
   /**
@@ -38,14 +40,14 @@ class HeadersPanelContextMenu {
     const { target } = event;
     const menuItems = [
       {
-        id: "headers-panel-context-menu-copy",
-        label: L10N.getStr("netmonitor.context.copy"),
-        accesskey: L10N.getStr("netmonitor.context.copy.accesskey"),
+        id: "headers-panel-context-menu-copyvalue",
+        label: L10N.getStr("netmonitor.context.copyValue"),
+        accesskey: L10N.getStr("netmonitor.context.copyValue.accesskey"),
         click: () => {
           const { name, value } = getSummaryContent(
             target.closest(".tabpanel-summary-container")
           );
-          this.copy(
+          this.copyValue(
             { name, value, object: null, hasChildren: false },
             selection
           );
@@ -101,11 +103,11 @@ class HeadersPanelContextMenu {
   }
 
   /**
-   * Copies single item.
+   * Copies the value of a single item.
    * @param {Object} object data object for specific node
    * @param {Object} selection object representing the current selection
    */
-  copy(object, selection) {
+  copyValue(object, selection) {
     let buffer = "";
     if (selection.toString() !== "") {
       buffer = selection.toString();

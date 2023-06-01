@@ -9,6 +9,8 @@
  */
 
 #include "mozilla/dom/Selection.h"
+
+#include "LayoutConstants.h"
 #include "mozilla/intl/BidiEmbeddingLevel.h"
 
 #include "mozilla/AccessibleCaretEventHub.h"
@@ -22,7 +24,6 @@
 #include "mozilla/dom/SelectionBinding.h"
 #include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/HTMLEditor.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/Logging.h"
@@ -58,7 +59,6 @@
 #include "nsBidiPresUtils.h"
 #include "nsTextFrame.h"
 
-#include "nsContentUtils.h"
 #include "nsThreadUtils.h"
 
 #include "nsPresContext.h"
@@ -84,7 +84,7 @@ using namespace mozilla::dom;
 
 static LazyLogModule sSelectionLog("Selection");
 
-//#define DEBUG_TABLE 1
+// #define DEBUG_TABLE 1
 
 #ifdef PRINT_RANGE
 static void printRange(nsRange* aDomRange);
@@ -98,11 +98,11 @@ static constexpr nsLiteralCString kNoDocumentTypeNodeError =
 static constexpr nsLiteralCString kNoRangeExistsError =
     "No selection range exists"_ns;
 
+namespace mozilla {
+
 /******************************************************************************
  * Utility methods defined in nsISelectionController.idl
  ******************************************************************************/
-
-namespace mozilla {
 
 const char* ToChar(SelectionType aSelectionType) {
   switch (aSelectionType) {
@@ -135,12 +135,54 @@ const char* ToChar(SelectionType aSelectionType) {
   }
 }
 
+/******************************************************************************
+ * Utility methods defined in nsISelectionListener.idl
+ ******************************************************************************/
+
+nsCString SelectionChangeReasonsToCString(int16_t aReasons) {
+  nsCString reasons;
+  if (!aReasons) {
+    reasons.AssignLiteral("NO_REASON");
+    return reasons;
+  }
+  auto EnsureSeparator = [](nsCString& aString) -> void {
+    if (!aString.IsEmpty()) {
+      aString.AppendLiteral(" | ");
+    }
+  };
+  struct ReasonData {
+    int16_t mReason;
+    const char* mReasonStr;
+
+    ReasonData(int16_t aReason, const char* aReasonStr)
+        : mReason(aReason), mReasonStr(aReasonStr) {}
+  };
+  for (const ReasonData& reason :
+       {ReasonData(nsISelectionListener::DRAG_REASON, "DRAG_REASON"),
+        ReasonData(nsISelectionListener::MOUSEDOWN_REASON, "MOUSEDOWN_REASON"),
+        ReasonData(nsISelectionListener::MOUSEUP_REASON, "MOUSEUP_REASON"),
+        ReasonData(nsISelectionListener::KEYPRESS_REASON, "KEYPRESS_REASON"),
+        ReasonData(nsISelectionListener::SELECTALL_REASON, "SELECTALL_REASON"),
+        ReasonData(nsISelectionListener::COLLAPSETOSTART_REASON,
+                   "COLLAPSETOSTART_REASON"),
+        ReasonData(nsISelectionListener::COLLAPSETOEND_REASON,
+                   "COLLAPSETOEND_REASON"),
+        ReasonData(nsISelectionListener::IME_REASON, "IME_REASON"),
+        ReasonData(nsISelectionListener::JS_REASON, "JS_REASON")}) {
+    if (aReasons & reason.mReason) {
+      EnsureSeparator(reasons);
+      reasons.Append(reason.mReasonStr);
+    }
+  }
+  return reasons;
+}
+
 }  // namespace mozilla
 
-//#define DEBUG_SELECTION // uncomment for printf describing every collapse and
-// extend. #define DEBUG_NAVIGATION
+// #define DEBUG_SELECTION // uncomment for printf describing every collapse and
+//  extend. #define DEBUG_NAVIGATION
 
-//#define DEBUG_TABLE_SELECTION 1
+// #define DEBUG_TABLE_SELECTION 1
 
 struct CachedOffsetForFrame {
   CachedOffsetForFrame()
@@ -340,26 +382,46 @@ void Selection::ToStringWithFormat(const nsAString& aFormatType,
   }
 }
 
-void Selection::SetInterlinePosition(bool aHintRight, ErrorResult& aRv) {
+nsresult Selection::SetInterlinePosition(InterlinePosition aInterlinePosition) {
   MOZ_ASSERT(mSelectionType == SelectionType::eNormal);
+  MOZ_ASSERT(aInterlinePosition != InterlinePosition::Undefined);
 
   if (!mFrameSelection) {
-    aRv.Throw(NS_ERROR_NOT_INITIALIZED);  // Can't do selection
-    return;
+    return NS_ERROR_NOT_INITIALIZED;  // Can't do selection
   }
 
-  mFrameSelection->SetHint(aHintRight ? CARET_ASSOCIATE_AFTER
-                                      : CARET_ASSOCIATE_BEFORE);
+  mFrameSelection->SetHint(aInterlinePosition ==
+                                   InterlinePosition::StartOfNextLine
+                               ? CARET_ASSOCIATE_AFTER
+                               : CARET_ASSOCIATE_BEFORE);
+  return NS_OK;
 }
 
-bool Selection::GetInterlinePosition(ErrorResult& aRv) {
+Selection::InterlinePosition Selection::GetInterlinePosition() const {
   MOZ_ASSERT(mSelectionType == SelectionType::eNormal);
 
   if (!mFrameSelection) {
+    return InterlinePosition::Undefined;
+  }
+  return mFrameSelection->GetHint() == CARET_ASSOCIATE_AFTER
+             ? InterlinePosition::StartOfNextLine
+             : InterlinePosition::EndOfLine;
+}
+
+void Selection::SetInterlinePositionJS(bool aHintRight, ErrorResult& aRv) {
+  MOZ_ASSERT(mSelectionType == SelectionType::eNormal);
+
+  aRv = SetInterlinePosition(aHintRight ? InterlinePosition::StartOfNextLine
+                                        : InterlinePosition::EndOfLine);
+}
+
+bool Selection::GetInterlinePositionJS(ErrorResult& aRv) const {
+  const InterlinePosition interlinePosition = GetInterlinePosition();
+  if (interlinePosition == InterlinePosition::Undefined) {
     aRv.Throw(NS_ERROR_NOT_INITIALIZED);  // Can't do selection
     return false;
   }
-  return mFrameSelection->GetHint() == CARET_ASSOCIATE_AFTER;
+  return interlinePosition == InterlinePosition::StartOfNextLine;
 }
 
 static bool IsEditorNode(const nsINode* aNode) {
@@ -372,7 +434,7 @@ static bool IsEditorNode(const nsINode* aNode) {
   }
 
   auto* element = Element::FromNode(aNode);
-  return element && element->State().HasState(NS_EVENT_STATE_READWRITE);
+  return element && element->State().HasState(ElementState::READWRITE);
 }
 
 bool Selection::IsEditorSelection() const {
@@ -447,14 +509,13 @@ static nsresult GetTableSelectionMode(const nsRange& aRange,
     return NS_OK;
   }
 
-  nsIContent* startContent = static_cast<nsIContent*>(startNode);
-  if (!(startNode->IsElement() && startContent->IsHTMLElement())) {
+  if (!startNode->IsHTMLElement()) {
     // Implies a check for being an element; if we ever make this work
     // for non-HTML, need to keep checking for elements.
     return NS_OK;
   }
 
-  if (startContent->IsHTMLElement(nsGkAtoms::tr)) {
+  if (startNode->IsHTMLElement(nsGkAtoms::tr)) {
     *aTableSelectionType = TableSelectionMode::Cell;
   } else  // check to see if we are selecting a table or row (column and all
           // cells not done yet)
@@ -551,7 +612,7 @@ DocGroup* Selection::GetDocGroup() const {
   return doc ? doc->GetDocGroup() : nullptr;
 }
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(Selection)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Selection)
 
 MOZ_CAN_RUN_SCRIPT_BOUNDARY
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Selection)
@@ -582,7 +643,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Selection)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSelectionChangeEventDispatcher)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSelectionListeners)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(Selection)
 
 // QueryInterface implementation for Selection
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(Selection)
@@ -633,17 +693,10 @@ static int32_t CompareToRangeStart(const nsINode& aCompareNode,
                                    const nsRange& aRange) {
   MOZ_ASSERT(aRange.GetStartContainer());
   nsINode* start = aRange.GetStartContainer();
-  // If the nodes that we're comparing are not in the same document or in the
-  // same subtree, assume that aCompareNode will fall at the end of the ranges.
-  // NOTE(emilio): This is broken (bug 1590379). When fixed, shadow-including
-  // tree order[1] seems the most reasonable order, but if we choose other order
-  // than that code in nsPrintJob.cpp to deal with selection printing might need
-  // to be fixed.
-  //
-  // [1]: https://dom.spec.whatwg.org/#concept-shadow-including-tree-order
+  // If the nodes that we're comparing are not in the same document, assume that
+  // aCompareNode will fall at the end of the ranges.
   if (aCompareNode.GetComposedDoc() != start->GetComposedDoc() ||
-      !start->GetComposedDoc() ||
-      aCompareNode.SubtreeRoot() != start->SubtreeRoot()) {
+      !start->GetComposedDoc()) {
     NS_WARNING(
         "`CompareToRangeStart` couldn't compare nodes, pretending some order.");
     return 1;
@@ -662,8 +715,7 @@ static int32_t CompareToRangeEnd(const nsINode& aCompareNode,
   // If the nodes that we're comparing are not in the same document or in the
   // same subtree, assume that aCompareNode will fall at the end of the ranges.
   if (aCompareNode.GetComposedDoc() != end->GetComposedDoc() ||
-      !end->GetComposedDoc() ||
-      aCompareNode.SubtreeRoot() != end->SubtreeRoot()) {
+      !end->GetComposedDoc()) {
     NS_WARNING(
         "`CompareToRangeEnd` couldn't compare nodes, pretending some order.");
     return 1;
@@ -715,9 +767,16 @@ size_t Selection::StyledRanges::FindInsertionPoint(
 nsresult Selection::StyledRanges::SubtractRange(
     StyledRange& aRange, nsRange& aSubtract, nsTArray<StyledRange>* aOutput) {
   nsRange* range = aRange.mRange;
-
   if (NS_WARN_IF(!range->IsPositioned())) {
     return NS_ERROR_UNEXPECTED;
+  }
+
+  if (range->GetStartContainer()->SubtreeRoot() !=
+      aSubtract.GetStartContainer()->SubtreeRoot()) {
+    // These are ranges for different shadow trees, we can't subtract them in
+    // any sensible way.
+    aOutput->InsertElementAt(0, aRange);
+    return NS_OK;
   }
 
   // First we want to compare to the range start
@@ -982,13 +1041,11 @@ nsresult Selection::StyledRanges::MaybeAddRangeAndTruncateOverlaps(
   if (maybeEndIndex.isNothing()) {
     // All ranges start after the given range. We can insert our range at
     // position 0, knowing there are no overlaps (handled below)
-    startIndex = 0;
-    endIndex = 0;
+    startIndex = endIndex = 0;
   } else if (maybeStartIndex.isNothing()) {
     // All ranges end before the given range. We can insert our range at
     // the end of the array, knowing there are no overlaps (handled below)
-    startIndex = mRanges.Length();
-    endIndex = startIndex;
+    startIndex = endIndex = mRanges.Length();
   } else {
     startIndex = *maybeStartIndex;
     endIndex = *maybeEndIndex;
@@ -1017,16 +1074,11 @@ nsresult Selection::StyledRanges::MaybeAddRangeAndTruncateOverlaps(
   // the two end points, startIndex and endIndex - 1 (which may point to the
   // same range) as these may partially overlap the new range. Any ranges
   // between these indices are fully overlapped by the new range, and so can be
-  // removed
-  nsTArray<StyledRange> overlaps;
-  // XXX(Bug 1631371) Check if this should use a fallible operation as it
-  // pretended earlier.
-  overlaps.InsertElementAt(0, mRanges[startIndex]);
-
+  // removed.
+  AutoTArray<StyledRange, 2> overlaps;
+  overlaps.AppendElement(mRanges[startIndex]);
   if (endIndex - 1 != startIndex) {
-    // XXX(Bug 1631371) Check if this should use a fallible operation as it
-    // pretended earlier.
-    overlaps.InsertElementAt(1, mRanges[endIndex - 1]);
+    overlaps.AppendElement(mRanges[endIndex - 1]);
   }
 
   // Remove all the overlapping ranges
@@ -1035,7 +1087,7 @@ nsresult Selection::StyledRanges::MaybeAddRangeAndTruncateOverlaps(
   }
   mRanges.RemoveElementsAt(startIndex, endIndex - startIndex);
 
-  nsTArray<StyledRange> temp;
+  AutoTArray<StyledRange, 3> temp;
   for (const size_t i : Reversed(IntegerRange(overlaps.Length()))) {
     nsresult rv = SubtractRange(overlaps[i], *aRange, &temp);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -1047,13 +1099,9 @@ nsresult Selection::StyledRanges::MaybeAddRangeAndTruncateOverlaps(
                                            aRange->StartOffset(),
                                            CompareToRangeStart)};
 
-  // XXX(Bug 1631371) Check if this should use a fallible operation as it
-  // pretended earlier.
   temp.InsertElementAt(insertionPoint, StyledRange(aRange));
 
   // Merge the leftovers back in to mRanges
-  // XXX(Bug 1631371) Check if this should use a fallible operation as it
-  // pretended earlier.
   mRanges.InsertElementsAt(startIndex, temp);
 
   for (uint32_t i = 0; i < temp.Length(); ++i) {
@@ -1649,6 +1697,7 @@ UniquePtr<SelectionDetails> Selection::LookUpSelection(
     newHead->mStart = AssertedCast<int32_t>(*start);
     newHead->mEnd = AssertedCast<int32_t>(*end);
     newHead->mSelectionType = aSelectionType;
+    newHead->mHighlightName = mHighlightName;
     StyledRange* rd = mStyledRanges.FindRangeData(range);
     if (rd) {
       newHead->mTextRangeStyle = rd->mTextRangeStyle;
@@ -1822,9 +1871,9 @@ nsresult AutoScroller::DoAutoScroll(nsIFrame* aFrame, nsPoint aPoint) {
   bool done = false;
   bool didScroll;
   while (true) {
-    didScroll = presShell->ScrollFrameRectIntoView(
-        aFrame, nsRect(aPoint, nsSize(0, 0)), nsMargin(), ScrollAxis(),
-        ScrollAxis(), ScrollFlags::None);
+    didScroll = presShell->ScrollFrameIntoView(
+        aFrame, Some(nsRect(aPoint, nsSize())), ScrollAxis(), ScrollAxis(),
+        ScrollFlags::None);
     if (!weakFrame || !weakRootFrame) {
       return NS_OK;
     }
@@ -1900,7 +1949,11 @@ void Selection::AddRangeAndSelectFramesAndNotifyListeners(nsRange& aRange,
   // If the given range is part of another Selection, we need to clone the
   // range first.
   RefPtr<nsRange> range;
-  if (aRange.IsInSelection() && aRange.GetSelection() != this) {
+  if (aRange.IsInSelection()) {
+    // If we already have the range, we don't need to handle this.
+    if (aRange.GetSelection() == this) {
+      return;
+    }
     // Because of performance reason, when there is a cached range, let's use
     // it.  Otherwise, clone the range.
     range = aRange.CloneRange();
@@ -1948,7 +2001,7 @@ void Selection::AddRangeAndSelectFramesAndNotifyListeners(nsRange& aRange,
 
   // Make sure the caret appears on the next line, if at a newline
   if (mSelectionType == SelectionType::eNormal) {
-    SetInterlinePosition(true, IgnoreErrors());
+    SetInterlinePosition(InterlinePosition::StartOfNextLine);
   }
 
   if (!mFrameSelection) {
@@ -2934,11 +2987,15 @@ nsresult Selection::PostScrollSelectionIntoViewEvent(SelectionRegion aRegion,
 }
 
 void Selection::ScrollIntoView(int16_t aRegion, bool aIsSynchronous,
-                               WhereToScroll aVPercent, WhereToScroll aHPercent,
+                               int16_t aVPercent, int16_t aHPercent,
                                ErrorResult& aRv) {
   int32_t flags = aIsSynchronous ? Selection::SCROLL_SYNCHRONOUS : 0;
-  nsresult rv = ScrollIntoView(aRegion, ScrollAxis(aVPercent),
-                               ScrollAxis(aHPercent), flags);
+  // -1 means nearest in this API.
+  const auto v =
+      aVPercent == -1 ? WhereToScroll::Nearest : WhereToScroll(aVPercent);
+  const auto h =
+      aHPercent == -1 ? WhereToScroll::Nearest : WhereToScroll(aHPercent);
+  nsresult rv = ScrollIntoView(aRegion, ScrollAxis(v), ScrollAxis(h), flags);
   if (NS_FAILED(rv)) {
     aRv.Throw(rv);
   }
@@ -3005,8 +3062,8 @@ nsresult Selection::ScrollIntoView(SelectionRegion aRegion,
     scrollFlags |= ScrollFlags::ScrollOverflowHidden;
   }
 
-  presShell->ScrollFrameRectIntoView(frame, rect, nsMargin(), aVertical,
-                                     aHorizontal, scrollFlags);
+  presShell->ScrollFrameIntoView(frame, Some(rect), aVertical, aHorizontal,
+                                 scrollFlags);
   return NS_OK;
 }
 
@@ -3131,19 +3188,25 @@ void Selection::NotifySelectionListeners() {
   }
 
   RefPtr<nsFrameSelection> frameSelection = mFrameSelection;
+
+  // This flag will be set to true if a selection by double click is detected.
+  // As soon as the selection is modified, it needs to be set to false.
+  frameSelection->SetIsDoubleClickSelection(false);
+
   if (frameSelection->IsBatching()) {
     frameSelection->SetChangesDuringBatchingFlag();
     return;
   }
-  if (mSelectionListeners.IsEmpty()) {
+  if (mSelectionListeners.IsEmpty() && !mNotifyAutoCopy &&
+      !mAccessibleCaretEventHub && !mSelectionChangeEventDispatcher) {
     // If there are no selection listeners, we're done!
     return;
   }
 
   nsCOMPtr<Document> doc;
-  PresShell* presShell = GetPresShell();
-  if (presShell) {
+  if (PresShell* presShell = GetPresShell()) {
     doc = presShell->GetDocument();
+    presShell->ScheduleContentRelevancyUpdate(ContentRelevancyReason::Selected);
   }
 
   // We've notified all selection listeners even when some of them are removed
@@ -3156,6 +3219,8 @@ void Selection::NotifySelectionListeners() {
   if (calledByJSRestorer.SavedValue()) {
     reason |= nsISelectionListener::JS_REASON;
   }
+
+  int32_t amount = static_cast<int32_t>(frameSelection->GetCaretMoveAmount());
 
   if (mNotifyAutoCopy) {
     AutoCopyListener::OnSelectionChange(doc, *this, reason);
@@ -3171,27 +3236,28 @@ void Selection::NotifySelectionListeners() {
         mSelectionChangeEventDispatcher);
     dispatcher->OnSelectionChange(doc, this, reason);
   }
+
   for (const auto& listener : selectionListeners) {
     // MOZ_KnownLive because 'selectionListeners' is guaranteed to
     // keep it alive.
     //
     // This can go away once
     // https://bugzilla.mozilla.org/show_bug.cgi?id=1620312 is fixed.
-    MOZ_KnownLive(listener)->NotifySelectionChanged(doc, this, reason);
+    MOZ_KnownLive(listener)->NotifySelectionChanged(doc, this, reason, amount);
   }
 }
 
-void Selection::StartBatchChanges() {
+void Selection::StartBatchChanges(const char* aDetails) {
   if (mFrameSelection) {
     RefPtr<nsFrameSelection> frameSelection = mFrameSelection;
-    frameSelection->StartBatchChanges();
+    frameSelection->StartBatchChanges(aDetails);
   }
 }
 
-void Selection::EndBatchChanges(int16_t aReason) {
+void Selection::EndBatchChanges(const char* aDetails, int16_t aReasons) {
   if (mFrameSelection) {
     RefPtr<nsFrameSelection> frameSelection = mFrameSelection;
-    frameSelection->EndBatchChanges(aReason);
+    frameSelection->EndBatchChanges(aDetails, aReasons);
   }
 }
 
@@ -3404,7 +3470,7 @@ void Selection::SetBaseAndExtentInternal(InLimiter aInLimiter,
   // after we set the direction.
   // XXX If they are disconnected, shouldn't we return error before allocating
   //     new nsRange instance?
-  SelectionBatcher batch(this);
+  SelectionBatcher batch(this, __FUNCTION__);
   const Maybe<int32_t> order =
       nsContentUtils::ComparePoints(aAnchorRef, aFocusRef);
   if (order && (*order <= 0)) {
@@ -3443,7 +3509,7 @@ void Selection::SetStartAndEndInternal(InLimiter aInLimiter,
   }
 
   // Don't fire "selectionchange" event until everything done.
-  SelectionBatcher batch(this);
+  SelectionBatcher batch(this, __FUNCTION__);
 
   if (aInLimiter == InLimiter::eYes) {
     if (!mFrameSelection ||
@@ -3640,6 +3706,11 @@ void Selection::SetColors(const nsAString& aForegroundColor,
 }
 
 void Selection::ResetColors(ErrorResult& aRv) { mCustomColors = nullptr; }
+
+void Selection::SetHighlightName(const nsAtom* aHighlightName) {
+  MOZ_ASSERT(mSelectionType == SelectionType::eHighlight);
+  mHighlightName = aHighlightName;
+}
 
 JSObject* Selection::WrapObject(JSContext* aCx,
                                 JS::Handle<JSObject*> aGivenProto) {

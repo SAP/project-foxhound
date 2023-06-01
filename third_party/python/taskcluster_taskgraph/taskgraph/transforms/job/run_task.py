@@ -9,13 +9,18 @@ Support for running jobs that are invoked via the `run-task` script.
 import os
 
 import attr
+from voluptuous import Any, Optional, Required
 
-from taskgraph.transforms.task import taskref_or_string
 from taskgraph.transforms.job import run_job_using
-from taskgraph.util import path
-from taskgraph.util.schema import Schema
 from taskgraph.transforms.job.common import support_vcs_checkout
-from voluptuous import Required, Any, Optional
+from taskgraph.transforms.task import taskref_or_string
+from taskgraph.util import path, taskcluster
+from taskgraph.util.schema import Schema
+
+EXEC_COMMANDS = {
+    "bash": ["bash", "-cx"],
+    "powershell": ["powershell.exe", "-ExecutionPolicy", "Bypass"],
+}
 
 run_task_schema = Schema(
     {
@@ -38,12 +43,15 @@ run_task_schema = Schema(
         Required("sparse-profile"): Any(str, None),
         # The command arguments to pass to the `run-task` script, after the
         # checkout arguments.  If a list, it will be passed directly; otherwise
-        # it will be included in a single argument to `bash -cx`.
+        # it will be included in a single argument to the command specified by
+        # `exec-with`.
         Required("command"): Any([taskref_or_string], taskref_or_string),
         # Context to substitute into the command using format string
         # substitution (e.g {value}). This is useful if certain aspects of the
         # command need to be generated in transforms.
         Optional("command-context"): dict,
+        # What to execute the command with in the event command is a string.
+        Optional("exec-with"): Any(*list(EXEC_COMMANDS)),
         # Base work directory used to set up the task.
         Required("workdir"): str,
         # Whether to run as root. (defaults to False)
@@ -57,14 +65,14 @@ def common_setup(config, job, taskdesc, command):
     if run["checkout"]:
         repo_configs = config.repo_configs
         if len(repo_configs) > 1 and run["checkout"] is True:
-            raise Exception("Must explicitly sepcify checkouts with multiple repos.")
+            raise Exception("Must explicitly specify checkouts with multiple repos.")
         elif run["checkout"] is not True:
             repo_configs = {
                 repo: attr.evolve(repo_configs[repo], **config)
                 for (repo, config) in run["checkout"].items()
             }
 
-        vcs_path = support_vcs_checkout(
+        support_vcs_checkout(
             config,
             job,
             taskdesc,
@@ -110,30 +118,14 @@ worker_defaults = {
 
 
 def script_url(config, script):
-    # This logic is a bit of a hack, and should be replaced by something better.
-    # TASK_ID is used as a proxy for running in automation.  In that case, we
-    # want to use the run-task/fetch-content corresponding to the taskgraph
-    # version we are running, and otherwise, we aren't going to run the task we
-    # generate, so the exact version doesn't matter.
-    # If we checked out the taskgraph code with run-task in the decision task,
-    # we can use TASKGRAPH_* to find the right version, which covers the
-    # existing use case.
-    if "TASK_ID" in os.environ:
-        if (
-            "TASKGRAPH_HEAD_REPOSITORY" not in os.environ
-            or "TASKGRAPH_HEAD_REV" not in os.environ
-        ):
-            raise Exception(
-                "Must specify 'TASKGRAPH_HEAD_REPOSITORY' and 'TASKGRAPH_HEAD_REV' "
-                "to use run-task on generic-worker."
-            )
-    taskgraph_repo = os.environ.get(
-        "TASKGRAPH_HEAD_REPOSITORY", "https://hg.mozilla.org/ci/taskgraph"
-    )
-    taskgraph_rev = os.environ.get("TASKGRAPH_HEAD_REV", "default")
-    return "{}/raw-file/{}/src/taskgraph/run-task/{}".format(
-        taskgraph_repo, taskgraph_rev, script
-    )
+    if "MOZ_AUTOMATION" in os.environ and "TASK_ID" not in os.environ:
+        raise Exception("TASK_ID must be defined to use run-task on generic-worker")
+    task_id = os.environ.get("TASK_ID", "<TASK_ID>")
+    # use_proxy = False to avoid having all generic-workers turn on proxy
+    # Assumes the cluster allows anonymous downloads of public artifacts
+    tc_url = taskcluster.get_root_url(False)
+    # TODO: Use util/taskcluster.py:get_artifact_url once hack for Bug 1405889 is removed
+    return f"{tc_url}/api/queue/v1/task/{task_id}/artifacts/public/{script}"
 
 
 @run_job_using(
@@ -163,8 +155,8 @@ def docker_worker_run_task(config, job, taskdesc):
 
     # dict is for the case of `{'task-reference': str}`.
     if isinstance(run_command, str) or isinstance(run_command, dict):
-        run_command = ["bash", "-cx", run_command]
-    command.append("--fetch-hgfingerprint")
+        exec_cmd = EXEC_COMMANDS[run.pop("exec-with", "bash")]
+        run_command = exec_cmd + [run_command]
     if run["run-as-root"]:
         command.extend(("--user", "root", "--group", "root"))
     command.append("--")
@@ -222,7 +214,8 @@ def generic_worker_run_task(config, job, taskdesc):
     if isinstance(run_command, str):
         if is_win:
             run_command = f'"{run_command}"'
-        run_command = ["bash", "-cx", run_command]
+        exec_cmd = EXEC_COMMANDS[run.pop("exec-with", "bash")]
+        run_command = exec_cmd + [run_command]
 
     command_context = run.get("command-context")
     if command_context:

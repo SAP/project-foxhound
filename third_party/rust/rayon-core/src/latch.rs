@@ -189,7 +189,7 @@ impl<'r> Latch for SpinLatch<'r> {
     fn set(&self) {
         let cross_registry;
 
-        let registry = if self.cross {
+        let registry: &Registry = if self.cross {
             // Ensure the registry stays alive while we notify it.
             // Otherwise, it would be possible that we set the spin
             // latch and the other thread sees it and exits, causing
@@ -200,7 +200,9 @@ impl<'r> Latch for SpinLatch<'r> {
         } else {
             // If this is not a "cross-registry" spin-latch, then the
             // thread which is performing `set` is itself ensuring
-            // that the registry stays alive.
+            // that the registry stays alive. However, that doesn't
+            // include this *particular* `Arc` handle if the waiting
+            // thread then exits, so we must completely dereference it.
             self.registry
         };
         let target_worker_index = self.target_worker_index;
@@ -284,9 +286,14 @@ pub(super) struct CountLatch {
 impl CountLatch {
     #[inline]
     pub(super) fn new() -> CountLatch {
+        Self::with_count(1)
+    }
+
+    #[inline]
+    pub(super) fn with_count(n: usize) -> CountLatch {
         CountLatch {
             core_latch: CoreLatch::new(),
-            counter: AtomicUsize::new(1),
+            counter: AtomicUsize::new(n),
         }
     }
 
@@ -335,10 +342,10 @@ pub(super) struct CountLockLatch {
 
 impl CountLockLatch {
     #[inline]
-    pub(super) fn new() -> CountLockLatch {
+    pub(super) fn with_count(n: usize) -> CountLockLatch {
         CountLockLatch {
             lock_latch: LockLatch::new(),
-            counter: AtomicUsize::new(1),
+            counter: AtomicUsize::new(n),
         }
     }
 

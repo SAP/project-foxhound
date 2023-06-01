@@ -13,6 +13,7 @@
 #include "gfxUtils.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/intl/BidiEmbeddingLevel.h"
+#include "mozilla/StaticPrefs_bidi.h"
 #include "nsCOMPtr.h"
 #include "nsFontMetrics.h"
 #include "nsITimer.h"
@@ -105,7 +106,7 @@ static void AdjustCaretFrameForLineEnd(nsIFrame** aFrame, int32_t* aOffset) {
   }
 }
 
-static bool IsBidiUI() { return Preferences::GetBool("bidi.browser.ui"); }
+static bool IsBidiUI() { return StaticPrefs::bidi_browser_ui(); }
 
 nsCaret::nsCaret()
     : mOverrideOffset(0),
@@ -569,8 +570,8 @@ void nsCaret::PaintCaret(DrawTarget& aDrawTarget, nsIFrame* aForFrame,
 }
 
 NS_IMETHODIMP
-nsCaret::NotifySelectionChanged(Document*, Selection* aDomSel,
-                                int16_t aReason) {
+nsCaret::NotifySelectionChanged(Document*, Selection* aDomSel, int16_t aReason,
+                                int32_t aAmount) {
   // Note that aDomSel, per the comment below may not be the same as our
   // selection, but that's OK since if that is the case, it wouldn't have
   // mattered what IsVisible() returns here, so we just opt for checking
@@ -887,7 +888,7 @@ bool nsCaret::IsMenuPopupHidingCaret() {
       return false;
     }
 
-    if (popupFrame->PopupType() == ePopupTypeMenu &&
+    if (popupFrame->GetPopupType() == widget::PopupType::Menu &&
         !popupFrame->IsContextMenu()) {
       // This is an open menu popup. It does not contain the caret (else we'd
       // have returned above). Even if the caret is in a subsequent popup,

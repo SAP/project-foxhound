@@ -6,17 +6,20 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 include protocol PSocketProcess;
-include protocol PFileDescriptorSet; // FIXME: bug #792908
 include protocol PInputChannelThrottleQueue;
 
 include IPCStream;
 include NeckoChannelParams;
 
+include "mozilla/ipc/TransportSecurityInfoUtils.h";
 include "mozilla/net/NeckoMessageUtils.h";
+include "mozilla/net/ClassOfService.h";
 
 using class mozilla::net::nsHttpRequestHead from "nsHttpRequestHead.h";
-using class nsHttpHeaderArray from "nsHttpHeaderArray.h";
+using class mozilla::net::nsHttpHeaderArray from "nsHttpHeaderArray.h";
 using mozilla::net::NetAddr from "mozilla/net/DNS.h";
+using mozilla::net::ClassOfService from "mozilla/net/ClassOfService.h";
+[RefCounted] using class nsITransportSecurityInfo from "nsITransportSecurityInfo.h";
 
 namespace mozilla {
 namespace net {
@@ -33,14 +36,14 @@ struct NetworkAddressArg {
   bool echConfigUsed;
 };
 
-[RefCounted] protocol PHttpTransaction
+protocol PHttpTransaction
 {
   manager PSocketProcess;
 
 parent:
   async OnStartRequest(nsresult                   status,
                        nsHttpResponseHead?        responseHead,
-                       nsCString                  securityInfoSerialization,
+                       nsITransportSecurityInfo   securityInfo,
                        bool                       proxyConnectFailed,
                        TimingStructArgs           timings,
                        int32_t                    proxyConnectResponseCode,
@@ -70,7 +73,7 @@ parent:
   async OnH2PushStream(uint32_t pushedStreamId,
                        nsCString resourceUrl,
                        nsCString requestString);
-  async EarlyHint(nsCString value);
+  async EarlyHint(nsCString linkHeader, nsCString referrerPolicy, nsCString cspHeader);
 
 child:
   async __delete__();
@@ -83,7 +86,7 @@ child:
              uint64_t topLevelOuterContentWindowId,
              uint8_t httpTrafficCategory,
              uint64_t requestContextID,
-             uint32_t classOfService,
+             ClassOfService classOfService,
              uint32_t initialRwin,
              bool responseTimeoutEnabled,
              uint64_t channelId,

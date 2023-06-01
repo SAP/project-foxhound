@@ -30,17 +30,18 @@ class MockWinWidget : public nsBaseWidget {
   HWND GetWnd() { return mWnd; }
 
   nsSizeMode SizeMode() override;
+  void SetSizeMode(nsSizeMode aMode) override {}
 
   void* GetNativeData(uint32_t aDataType) override { return nullptr; }
 
   virtual nsresult Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
                           const LayoutDeviceIntRect& aRect,
-                          nsWidgetInitData* aInitData = nullptr) override {
+                          InitData* aInitData = nullptr) override {
     return NS_OK;
   }
   virtual nsresult Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
                           const DesktopIntRect& aRect,
-                          nsWidgetInitData* aInitData = nullptr) override {
+                          InitData* aInitData = nullptr) override {
     return NS_OK;
   }
   virtual void Show(bool aState) override {}

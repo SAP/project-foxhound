@@ -84,7 +84,16 @@ class BindAnglePlanes final {
                   const EGLAttrib* const* postAttribsList = nullptr)
       : mParent(*parent),
         mNumPlanes(numPlanes),
-        mMultiTex(mParent.mGL, mNumPlanes, LOCAL_GL_TEXTURE_EXTERNAL),
+        mMultiTex(
+            mParent.mGL,
+            [&]() {
+              std::vector<uint8_t> ret;
+              for (int i = 0; i < numPlanes; i++) {
+                ret.push_back(i);
+              }
+              return ret;
+            }(),
+            LOCAL_GL_TEXTURE_EXTERNAL),
         mTempTexs{0},
         mStreams{0},
         mSuccess(true) {
@@ -161,18 +170,35 @@ ID3D11Device* GLBlitHelper::GetD3D11() const {
   EGLDeviceEXT deviceEGL = 0;
   NOTE_IF_FALSE(egl->fQueryDisplayAttribEXT(LOCAL_EGL_DEVICE_EXT,
                                             (EGLAttrib*)&deviceEGL));
-  if (!egl->mLib->fQueryDeviceAttribEXT(
-          deviceEGL, LOCAL_EGL_D3D11_DEVICE_ANGLE,
-          (EGLAttrib*)(ID3D11Device**)getter_AddRefs(mD3D11))) {
+  ID3D11Device* device = nullptr;
+  // ANGLE does not `AddRef` its returned pointer for `QueryDeviceAttrib`, so no
+  // `getter_AddRefs`.
+  if (!egl->mLib->fQueryDeviceAttribEXT(deviceEGL, LOCAL_EGL_D3D11_DEVICE_ANGLE,
+                                        (EGLAttrib*)&device)) {
     MOZ_ASSERT(false, "d3d9?");
     return nullptr;
   }
+  mD3D11 = device;
   return mD3D11;
 }
 
 // -------------------------------------
 
 bool GLBlitHelper::BlitImage(layers::D3D11ShareHandleImage* const srcImage,
+                             const gfx::IntSize& destSize,
+                             const OriginPos destOrigin) const {
+  const auto& data = srcImage->GetData();
+  if (!data) return false;
+
+  layers::SurfaceDescriptorD3D10 desc;
+  if (!data->SerializeSpecific(&desc)) return false;
+
+  return BlitDescriptor(desc, destSize, destOrigin);
+}
+
+// -------------------------------------
+
+bool GLBlitHelper::BlitImage(layers::D3D11TextureIMFSampleImage* const srcImage,
                              const gfx::IntSize& destSize,
                              const OriginPos destOrigin) const {
   const auto& data = srcImage->GetData();
@@ -195,9 +221,9 @@ bool GLBlitHelper::BlitImage(layers::D3D11YCbCrImage* const srcImage,
   const WindowsHandle handles[3] = {(WindowsHandle)data->mHandles[0],
                                     (WindowsHandle)data->mHandles[1],
                                     (WindowsHandle)data->mHandles[2]};
-  return BlitAngleYCbCr(handles, srcImage->mPictureRect, srcImage->mYSize,
-                        srcImage->mCbCrSize, srcImage->mColorSpace, destSize,
-                        destOrigin);
+  return BlitAngleYCbCr(handles, srcImage->mPictureRect, srcImage->GetYSize(),
+                        srcImage->GetCbCrSize(), srcImage->mColorSpace,
+                        destSize, destOrigin);
 }
 
 // -------------------------------------
@@ -209,12 +235,14 @@ bool GLBlitHelper::BlitDescriptor(const layers::SurfaceDescriptorD3D10& desc,
   if (!d3d) return false;
 
   const auto& handle = desc.handle();
+  const auto& gpuProcessTextureId = desc.gpuProcessTextureId();
+  const auto& arrayIndex = desc.arrayIndex();
   const auto& format = desc.format();
   const auto& clipSize = desc.size();
 
   const auto srcOrigin = OriginPos::BottomLeft;
   const gfx::IntRect clipRect(0, 0, clipSize.width, clipSize.height);
-  const auto colorSpace = desc.yUVColorSpace();
+  const auto colorSpace = desc.colorSpace();
 
   if (format != gfx::SurfaceFormat::NV12 &&
       format != gfx::SurfaceFormat::P010 &&
@@ -224,15 +252,31 @@ bool GLBlitHelper::BlitDescriptor(const layers::SurfaceDescriptorD3D10& desc,
     return false;
   }
 
-  const auto tex = OpenSharedTexture(d3d, handle);
+  RefPtr<ID3D11Texture2D> tex;
+  if (gpuProcessTextureId.isSome()) {
+    auto* textureMap = layers::GpuProcessD3D11TextureMap::Get();
+    if (textureMap) {
+      Maybe<HANDLE> handle =
+          textureMap->GetSharedHandleOfCopiedTexture(gpuProcessTextureId.ref());
+      if (handle.isSome()) {
+        tex = OpenSharedTexture(d3d, (WindowsHandle)handle.ref());
+      }
+    }
+  } else {
+    tex = OpenSharedTexture(d3d, handle);
+  }
   if (!tex) {
     MOZ_GL_ASSERT(mGL, false);  // Get a nullptr from OpenSharedResource.
     return false;
   }
   const RefPtr<ID3D11Texture2D> texList[2] = {tex, tex};
   const EGLAttrib postAttribs0[] = {LOCAL_EGL_NATIVE_BUFFER_PLANE_OFFSET_IMG, 0,
+                                    LOCAL_EGL_D3D_TEXTURE_SUBRESOURCE_ID_ANGLE,
+                                    static_cast<EGLAttrib>(arrayIndex),
                                     LOCAL_EGL_NONE};
   const EGLAttrib postAttribs1[] = {LOCAL_EGL_NATIVE_BUFFER_PLANE_OFFSET_IMG, 1,
+                                    LOCAL_EGL_D3D_TEXTURE_SUBRESOURCE_ID_ANGLE,
+                                    static_cast<EGLAttrib>(arrayIndex),
                                     LOCAL_EGL_NONE};
   const EGLAttrib* const postAttribsList[2] = {postAttribs0, postAttribs1};
   // /layers/d3d11/CompositorD3D11.cpp uses bt601 for EffectTypes::NV12.
@@ -254,13 +298,30 @@ bool GLBlitHelper::BlitDescriptor(const layers::SurfaceDescriptorD3D10& desc,
   const gfx::IntSize uvSize(ySize.width / divisors.width,
                             ySize.height / divisors.height);
 
+  const auto yuvColorSpace = [&]() {
+    switch (colorSpace) {
+      case gfx::ColorSpace2::UNKNOWN:
+      case gfx::ColorSpace2::SRGB:
+      case gfx::ColorSpace2::DISPLAY_P3:
+        MOZ_CRASH("Expected BT* colorspace");
+      case gfx::ColorSpace2::BT601_525:
+        return gfx::YUVColorSpace::BT601;
+      case gfx::ColorSpace2::BT709:
+        return gfx::YUVColorSpace::BT709;
+      case gfx::ColorSpace2::BT2020:
+        return gfx::YUVColorSpace::BT2020;
+    }
+    MOZ_ASSERT_UNREACHABLE();
+  }();
+
   const bool yFlip = destOrigin != srcOrigin;
   const DrawBlitProg::BaseArgs baseArgs = {SubRectMat3(clipRect, ySize), yFlip,
                                            destSize, Nothing()};
   const DrawBlitProg::YUVArgs yuvArgs = {
-      SubRectMat3(clipRect, uvSize, divisors), colorSpace};
+      SubRectMat3(clipRect, uvSize, divisors), Some(yuvColorSpace)};
 
-  const auto& prog = GetDrawBlitProg({kFragHeader_TexExt, kFragBody_NV12});
+  const auto& prog = GetDrawBlitProg(
+      {kFragHeader_TexExt, {kFragSample_TwoPlane, kFragConvert_ColorMatrix}});
   prog->Draw(baseArgs, &yuvArgs);
   return true;
 }
@@ -308,9 +369,10 @@ bool GLBlitHelper::BlitAngleYCbCr(const WindowsHandle (&handleList)[3],
   const DrawBlitProg::BaseArgs baseArgs = {SubRectMat3(clipRect, ySize), yFlip,
                                            destSize, Nothing()};
   const DrawBlitProg::YUVArgs yuvArgs = {
-      SubRectMat3(clipRect, uvSize, divisors), colorSpace};
+      SubRectMat3(clipRect, uvSize, divisors), Some(colorSpace)};
 
-  const auto& prog = GetDrawBlitProg({kFragHeader_TexExt, kFragBody_PlanarYUV});
+  const auto& prog = GetDrawBlitProg(
+      {kFragHeader_TexExt, {kFragSample_ThreePlane, kFragConvert_ColorMatrix}});
   prog->Draw(baseArgs, &yuvArgs);
   return true;
 }

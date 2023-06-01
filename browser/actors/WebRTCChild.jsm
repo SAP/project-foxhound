@@ -6,15 +6,15 @@
 
 var EXPORTED_SYMBOLS = ["WebRTCChild"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
+const lazy = {};
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "MediaManagerService",
   "@mozilla.org/mediaManagerService;1",
   "nsIMediaManagerService"
@@ -274,6 +274,7 @@ function handleGUMRequest(aSubject, aTopic, aData) {
     aSubject.windowID,
     aSubject.callID,
     constraints,
+    aSubject.getAudioOutputOptions(),
     aSubject.devices,
     aSubject.isSecure,
     aSubject.isHandlingUserInput
@@ -286,6 +287,7 @@ function prompt(
   aWindowID,
   aCallID,
   aConstraints,
+  aAudioOutputOptions,
   aDevices,
   aSecure,
   aIsHandlingUserInput
@@ -321,8 +323,10 @@ function prompt(
     let deviceObject = {
       name: device.rawName, // unfiltered device name to show to the user
       deviceIndex: devices.length,
-      id: device.rawId,
+      rawId: device.rawId,
+      id: device.id,
       mediaSource: device.mediaSource,
+      canRequestOsLevelPrompt: device.canRequestOsLevelPrompt,
     };
     switch (device.type) {
       case "audioinput":
@@ -423,6 +427,7 @@ function prompt(
     audioOutputDevices,
     hasInherentAudioConstraints,
     hasInherentVideoConstraints,
+    audioOutputId: aAudioOutputOptions.deviceId,
   };
 
   let actor = getActorForWindow(aContentWindow);
@@ -535,7 +540,7 @@ function getTabStateForContentWindow(aContentWindow, aForRemove = false) {
     window = {},
     browser = {},
     devices = {};
-  MediaManagerService.mediaCaptureWindowState(
+  lazy.MediaManagerService.mediaCaptureWindowState(
     aContentWindow,
     camera,
     microphone,
@@ -546,11 +551,11 @@ function getTabStateForContentWindow(aContentWindow, aForRemove = false) {
   );
 
   if (
-    camera.value == MediaManagerService.STATE_NOCAPTURE &&
-    microphone.value == MediaManagerService.STATE_NOCAPTURE &&
-    screen.value == MediaManagerService.STATE_NOCAPTURE &&
-    window.value == MediaManagerService.STATE_NOCAPTURE &&
-    browser.value == MediaManagerService.STATE_NOCAPTURE
+    camera.value == lazy.MediaManagerService.STATE_NOCAPTURE &&
+    microphone.value == lazy.MediaManagerService.STATE_NOCAPTURE &&
+    screen.value == lazy.MediaManagerService.STATE_NOCAPTURE &&
+    window.value == lazy.MediaManagerService.STATE_NOCAPTURE &&
+    browser.value == lazy.MediaManagerService.STATE_NOCAPTURE
   ) {
     return { remove: true };
   }

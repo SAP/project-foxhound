@@ -374,7 +374,7 @@ bool nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(nsIURI* aURI) {
  * Return the URI of the precusor principal or the URI of aPrincipal if there is
  * no precursor URI.
  */
-static already_AddRefed<nsIURI> GetPrincipalURIOrPrecursorPrincialURI(
+static already_AddRefed<nsIURI> GetPrincipalURIOrPrecursorPrincipalURI(
     nsIPrincipal* aPrincipal) {
   nsCOMPtr<nsIURI> precursorURI = nullptr;
   if (aPrincipal->GetIsNullPrincipal()) {
@@ -443,6 +443,8 @@ nsresult nsMixedContentBlocker::ShouldLoad(bool aHadInsecureImageRedirect,
   // external type in all cases right now.
   bool isWorkerType =
       internalContentType == nsIContentPolicy::TYPE_INTERNAL_WORKER ||
+      internalContentType ==
+          nsIContentPolicy::TYPE_INTERNAL_WORKER_STATIC_MODULE ||
       internalContentType == nsIContentPolicy::TYPE_INTERNAL_SHARED_WORKER ||
       internalContentType == nsIContentPolicy::TYPE_INTERNAL_SERVICE_WORKER;
   ExtContentPolicyType contentType =
@@ -645,13 +647,13 @@ nsresult nsMixedContentBlocker::ShouldLoad(bool aHadInsecureImageRedirect,
   auto* baseLoadingPrincipal = BasePrincipal::Cast(loadingPrincipal);
   if (baseLoadingPrincipal) {
     requestingLocation =
-        GetPrincipalURIOrPrecursorPrincialURI(baseLoadingPrincipal);
+        GetPrincipalURIOrPrecursorPrincipalURI(baseLoadingPrincipal);
   }
   if (!requestingLocation) {
     auto* baseTriggeringPrincipal = BasePrincipal::Cast(triggeringPrincipal);
     if (baseTriggeringPrincipal) {
       requestingLocation =
-          GetPrincipalURIOrPrecursorPrincialURI(baseTriggeringPrincipal);
+          GetPrincipalURIOrPrecursorPrincipalURI(baseTriggeringPrincipal);
     }
   }
 
@@ -1012,7 +1014,7 @@ void nsMixedContentBlocker::AccumulateMixedContentHSTS(
   if (NS_FAILED(rv)) {
     return;
   }
-  rv = sss->IsSecureURI(aURI, 0, aOriginAttributes, nullptr, nullptr, &hsts);
+  rv = sss->IsSecureURI(aURI, aOriginAttributes, &hsts);
   if (NS_FAILED(rv)) {
     return;
   }

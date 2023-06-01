@@ -11,6 +11,7 @@
 #include "DocAccessible.h"
 #include "nsMai.h"
 #include "RemoteAccessible.h"
+#include "mozilla/a11y/DocAccessibleParent.h"
 #include "mozilla/Likely.h"
 
 using namespace mozilla::a11y;
@@ -43,11 +44,9 @@ void documentInterfaceInitCB(AtkDocumentIface* aIface) {
 
 const gchar* getDocumentLocaleCB(AtkDocument* aDocument) {
   nsAutoString locale;
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aDocument));
-  if (accWrap) {
-    accWrap->Language(locale);
-  } else if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aDocument))) {
-    proxy->Language(locale);
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aDocument));
+  if (acc) {
+    acc->Language(locale);
   }
 
   return locale.IsEmpty() ? nullptr : AccessibleWrap::ReturnString(locale);
@@ -111,6 +110,7 @@ const gchar* getDocumentAttributeValueCB(AtkDocument* aDocument,
     if (!proxy) {
       return nullptr;
     }
+    MOZ_ASSERT(proxy->IsDoc());
   }
 
   nsAutoString attrValue;
@@ -124,7 +124,7 @@ const gchar* getDocumentAttributeValueCB(AtkDocument* aDocument,
     if (document) {
       document->URL(attrValue);
     } else {
-      proxy->URL(attrValue);
+      proxy->AsDoc()->URL(attrValue);
     }
   } else if (!strcasecmp(aAttrName, kMimeTypeName)) {
     if (document) {

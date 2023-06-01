@@ -5,63 +5,63 @@
 "use strict";
 
 ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-var { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
+);
 
 let h2Port;
 let h3Port;
 let h3NoResponsePort;
 let trrServer;
 
-const dns = Cc["@mozilla.org/network/dns-service;1"].getService(
-  Ci.nsIDNSService
-);
 const certOverrideService = Cc[
   "@mozilla.org/security/certoverride;1"
 ].getService(Ci.nsICertOverrideService);
 
-function setup() {
+add_setup(async function setup() {
   trr_test_setup();
 
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  h2Port = env.get("MOZHTTP2_PORT");
+  h2Port = Services.env.get("MOZHTTP2_PORT");
   Assert.notEqual(h2Port, null);
   Assert.notEqual(h2Port, "");
 
-  h3Port = env.get("MOZHTTP3_PORT");
+  h3Port = Services.env.get("MOZHTTP3_PORT");
   Assert.notEqual(h3Port, null);
   Assert.notEqual(h3Port, "");
 
-  h3NoResponsePort = env.get("MOZHTTP3_PORT_NO_RESPONSE");
+  h3NoResponsePort = Services.env.get("MOZHTTP3_PORT_NO_RESPONSE");
   Assert.notEqual(h3NoResponsePort, null);
   Assert.notEqual(h3NoResponsePort, "");
-
-  Services.prefs.setIntPref("network.trr.mode", Ci.nsIDNSService.MODE_TRRFIRST);
 
   Services.prefs.setBoolPref("network.dns.upgrade_with_https_rr", true);
   Services.prefs.setBoolPref("network.dns.use_https_rr_as_altsvc", true);
   Services.prefs.setBoolPref("network.dns.echconfig.enabled", true);
-}
 
-setup();
-registerCleanupFunction(async () => {
-  trr_clear_prefs();
-  Services.prefs.clearUserPref("network.dns.upgrade_with_https_rr");
-  Services.prefs.clearUserPref("network.dns.use_https_rr_as_altsvc");
-  Services.prefs.clearUserPref("network.dns.echconfig.enabled");
-  Services.prefs.clearUserPref("network.dns.echconfig.fallback_to_origin");
-  Services.prefs.clearUserPref("network.dns.httpssvc.reset_exclustion_list");
-  Services.prefs.clearUserPref("network.http.http3.enable");
-  Services.prefs.clearUserPref(
-    "network.dns.httpssvc.http3_fast_fallback_timeout"
-  );
-  Services.prefs.clearUserPref("network.http.speculative-parallel-limit");
-  Services.prefs.clearUserPref("network.dns.localDomains");
-  Services.prefs.clearUserPref("network.dns.http3_echconfig.enabled");
-  if (trrServer) {
-    await trrServer.stop();
+  registerCleanupFunction(async () => {
+    trr_clear_prefs();
+    Services.prefs.clearUserPref("network.dns.upgrade_with_https_rr");
+    Services.prefs.clearUserPref("network.dns.use_https_rr_as_altsvc");
+    Services.prefs.clearUserPref("network.dns.echconfig.enabled");
+    Services.prefs.clearUserPref("network.dns.echconfig.fallback_to_origin");
+    Services.prefs.clearUserPref("network.dns.httpssvc.reset_exclustion_list");
+    Services.prefs.clearUserPref("network.http.http3.enable");
+    Services.prefs.clearUserPref(
+      "network.dns.httpssvc.http3_fast_fallback_timeout"
+    );
+    Services.prefs.clearUserPref("network.http.speculative-parallel-limit");
+    Services.prefs.clearUserPref("network.dns.localDomains");
+    Services.prefs.clearUserPref("network.dns.http3_echconfig.enabled");
+    if (trrServer) {
+      await trrServer.stop();
+    }
+  });
+
+  if (mozinfo.socketprocess_networking) {
+    Services.dns; // Needed to trigger socket process.
+    await TestUtils.waitForCondition(() => Services.io.socketProcessLaunched);
   }
+
+  Services.prefs.setIntPref("network.trr.mode", Ci.nsIDNSService.MODE_TRRFIRST);
 });
 
 function makeChan(url) {
@@ -394,7 +394,7 @@ add_task(async function testFallbackToTheOrigin2() {
 // Test when some records have echConfig and some not, we directly fallback to
 // the origin one.
 add_task(async function testFallbackToTheOrigin3() {
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
 
   trrServer = new TRRServer();
   await trrServer.start();
@@ -711,7 +711,7 @@ add_task(async function testFastfallbackToH2() {
 add_task(async function testFailedH3Connection() {
   trrServer = new TRRServer();
   await trrServer.start();
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
@@ -758,7 +758,7 @@ add_task(async function testFailedH3Connection() {
 add_task(async function testHttp3ExcludedList() {
   trrServer = new TRRServer();
   await trrServer.start();
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
@@ -830,7 +830,7 @@ add_task(async function testHttp3ExcludedList() {
 add_task(async function testAllRecordsInHttp3ExcludedList() {
   trrServer = new TRRServer();
   await trrServer.start();
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setBoolPref("network.dns.http3_echconfig.enabled", true);
   Services.prefs.setCharPref(
@@ -922,7 +922,7 @@ add_task(async function testAllRecordsInHttp3ExcludedList() {
     type: Ci.nsIDNSService.RESOLVE_TYPE_HTTPSSVC,
   });
 
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
   Services.prefs.setIntPref("network.http.speculative-parallel-limit", 0);
   Services.obs.notifyObservers(null, "net:prune-all-connections");
 
@@ -950,6 +950,86 @@ add_task(async function testAllRecordsInHttp3ExcludedList() {
   Assert.equal(req.protocolVersion, "h3-29");
   let internal = req.QueryInterface(Ci.nsIHttpChannelInternal);
   Assert.equal(internal.remotePort, h3Port);
+
+  await trrServer.stop();
+});
+
+WebSocketListener.prototype = {
+  onAcknowledge(aContext, aSize) {},
+  onBinaryMessageAvailable(aContext, aMsg) {},
+  onMessageAvailable(aContext, aMsg) {},
+  onServerClose(aContext, aCode, aReason) {},
+  onStart(aContext) {
+    this.finish();
+  },
+  onStop(aContext, aStatusCode) {},
+};
+
+add_task(async function testUpgradeNotUsingHTTPSRR() {
+  trrServer = new TRRServer();
+  await trrServer.start();
+  Services.prefs.setIntPref("network.trr.mode", 3);
+  Services.prefs.setCharPref(
+    "network.trr.uri",
+    `https://foo.example.com:${trrServer.port}/dns-query`
+  );
+
+  await trrServer.registerDoHAnswers("test.ws.com", "HTTPS", {
+    answers: [
+      {
+        name: "test.ws.com",
+        ttl: 55,
+        type: "HTTPS",
+        flush: false,
+        data: {
+          priority: 1,
+          name: "test.ws1.com",
+          values: [{ key: "port", value: ["8888"] }],
+        },
+      },
+    ],
+  });
+
+  await new TRRDNSListener("test.ws.com", {
+    type: Ci.nsIDNSService.RESOLVE_TYPE_HTTPSSVC,
+  });
+
+  await trrServer.registerDoHAnswers("test.ws.com", "A", {
+    answers: [
+      {
+        name: "test.ws.com",
+        ttl: 55,
+        type: "A",
+        flush: false,
+        data: "127.0.0.1",
+      },
+    ],
+  });
+
+  let wssUri = "wss://test.ws.com:" + h2Port + "/websocket";
+  let chan = Cc["@mozilla.org/network/protocol;1?name=wss"].createInstance(
+    Ci.nsIWebSocketChannel
+  );
+  chan.initLoadInfo(
+    null, // aLoadingNode
+    Services.scriptSecurityManager.getSystemPrincipal(),
+    null, // aTriggeringPrincipal
+    Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
+    Ci.nsIContentPolicy.TYPE_DOCUMENT
+  );
+
+  var uri = Services.io.newURI(wssUri);
+  var wsListener = new WebSocketListener();
+  certOverrideService.setDisableAllSecurityChecksAndLetAttackersInterceptMyData(
+    false
+  );
+  await new Promise(resolve => {
+    wsListener.finish = resolve;
+    chan.asyncOpen(uri, wssUri, {}, 0, wsListener, null);
+    certOverrideService.setDisableAllSecurityChecksAndLetAttackersInterceptMyData(
+      true
+    );
+  });
 
   await trrServer.stop();
 });

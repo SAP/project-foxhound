@@ -5,7 +5,9 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebAuthnCoseIdentifiers.h"
+#include "WebAuthnEnumStrings.h"
 #include "mozilla/dom/U2FSoftTokenManager.h"
+#include "mozilla/dom/WebAuthnUtil.h"
 #include "CryptoBuffer.h"
 #include "mozilla/Base64.h"
 #include "mozilla/Casting.h"
@@ -19,8 +21,7 @@
 
 #define PREF_U2F_NSSTOKEN_COUNTER "security.webauth.softtoken_counter"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using namespace mozilla;
 using mozilla::dom::CreateECParamsForCurve;
@@ -196,7 +197,7 @@ nsresult U2FSoftTokenManager::GetOrCreateWrappingKey(
   MOZ_LOG(gNSSTokenLog, LogLevel::Debug,
           ("Key stored, nickname set to %s.", mSecretNickname.get()));
 
-  GetMainThreadEventTarget()->Dispatch(NS_NewRunnableFunction(
+  GetMainThreadSerialEventTarget()->Dispatch(NS_NewRunnableFunction(
       "dom::U2FSoftTokenManager::GetOrCreateWrappingKey", []() {
         MOZ_ASSERT(NS_IsMainThread());
         Preferences::SetUint(PREF_U2F_NSSTOKEN_COUNTER, 0);
@@ -569,7 +570,8 @@ nsresult U2FSoftTokenManager::IsRegistered(const nsTArray<uint8_t>& aKeyHandle,
 // *      attestation signature
 //
 RefPtr<U2FRegisterPromise> U2FSoftTokenManager::Register(
-    const WebAuthnMakeCredentialInfo& aInfo, bool aForceNoneAttestation) {
+    const WebAuthnMakeCredentialInfo& aInfo, bool aForceNoneAttestation,
+    void _ctap2_status_callback(rust_ctap2_status_update_res*)) {
   if (!mInitialized) {
     nsresult rv = Init();
     if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -581,17 +583,16 @@ RefPtr<U2FRegisterPromise> U2FSoftTokenManager::Register(
     const auto& extra = aInfo.Extra().ref();
     const WebAuthnAuthenticatorSelection& sel = extra.AuthenticatorSelection();
 
-    UserVerificationRequirement userVerificaitonRequirement =
-        sel.userVerificationRequirement();
-
     bool requireUserVerification =
-        userVerificaitonRequirement == UserVerificationRequirement::Required;
+        sel.userVerificationRequirement().EqualsLiteral(
+            MOZ_WEBAUTHN_USER_VERIFICATION_REQUIREMENT_REQUIRED);
 
     bool requirePlatformAttachment = false;
     if (sel.authenticatorAttachment().isSome()) {
-      const AuthenticatorAttachment authenticatorAttachment =
+      const nsString& authenticatorAttachment =
           sel.authenticatorAttachment().value();
-      if (authenticatorAttachment == AuthenticatorAttachment::Platform) {
+      if (authenticatorAttachment.EqualsLiteral(
+              MOZ_WEBAUTHN_AUTHENTICATOR_ATTACHMENT_PLATFORM)) {
         requirePlatformAttachment = true;
       }
     }
@@ -799,7 +800,8 @@ bool U2FSoftTokenManager::FindRegisteredKeyHandle(
 //  *     Signature
 //
 RefPtr<U2FSignPromise> U2FSoftTokenManager::Sign(
-    const WebAuthnGetAssertionInfo& aInfo) {
+    const WebAuthnGetAssertionInfo& aInfo,
+    void _ctap2_status_callback(rust_ctap2_status_update_res*)) {
   if (!mInitialized) {
     nsresult rv = Init();
     if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -823,11 +825,9 @@ RefPtr<U2FSignPromise> U2FSoftTokenManager::Sign(
   if (aInfo.Extra().isSome()) {
     const auto& extra = aInfo.Extra().ref();
 
-    UserVerificationRequirement userVerificaitonReq =
-        extra.userVerificationRequirement();
-
     // The U2F softtoken doesn't support user verification.
-    if (userVerificaitonReq == UserVerificationRequirement::Required) {
+    if (extra.userVerificationRequirement().EqualsLiteral(
+            MOZ_WEBAUTHN_USER_VERIFICATION_REQUIREMENT_REQUIRED)) {
       return U2FSignPromise::CreateAndReject(NS_ERROR_DOM_NOT_ALLOWED_ERR,
                                              __func__);
     }
@@ -884,7 +884,7 @@ RefPtr<U2FSignPromise> U2FSoftTokenManager::Sign(
   counterItem.data[2] = (mCounter >> 8) & 0xFF;
   counterItem.data[3] = (mCounter >> 0) & 0xFF;
   uint32_t counter = mCounter;
-  GetMainThreadEventTarget()->Dispatch(
+  GetMainThreadSerialEventTarget()->Dispatch(
       NS_NewRunnableFunction("dom::U2FSoftTokenManager::Sign", [counter]() {
         MOZ_ASSERT(NS_IsMainThread());
         Preferences::SetUint(PREF_U2F_NSSTOKEN_COUNTER, counter);
@@ -977,12 +977,13 @@ RefPtr<U2FSignPromise> U2FSoftTokenManager::Sign(
   WebAuthnGetAssertionResult result(aInfo.ClientDataJSON(), keyHandle,
                                     signatureBuf, authenticatorData, extensions,
                                     signatureDataBuf, userHandle);
-  return U2FSignPromise::CreateAndResolve(std::move(result), __func__);
+  nsTArray<WebAuthnGetAssertionResultWrapper> results = {
+      {result, mozilla::Nothing()}};
+  return U2FSignPromise::CreateAndResolve(std::move(results), __func__);
 }
 
 void U2FSoftTokenManager::Cancel() {
   // This implementation is sync, requests can't be aborted.
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

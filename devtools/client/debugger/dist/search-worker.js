@@ -79,89 +79,127 @@ return /******/ (function(modules) { // webpackBootstrap
 /************************************************************************/
 /******/ ({
 
-/***/ 560:
+/***/ 1059:
 /***/ (function(module, exports, __webpack_require__) {
 
+"use strict";
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-const networkRequest = __webpack_require__(567);
 
-const workerUtils = __webpack_require__(568);
 
-module.exports = {
-  networkRequest,
-  workerUtils
-};
+function _classPrivateFieldInitSpec(obj, privateMap, value) { _checkPrivateRedeclaration(obj, privateMap); privateMap.set(obj, value); }
 
-/***/ }),
+function _checkPrivateRedeclaration(obj, privateCollection) { if (privateCollection.has(obj)) { throw new TypeError("Cannot initialize the same private elements twice on an object"); } }
 
-/***/ 567:
-/***/ (function(module, exports) {
+function _classPrivateFieldGet(receiver, privateMap) { var descriptor = _classExtractFieldDescriptor(receiver, privateMap, "get"); return _classApplyDescriptorGet(receiver, descriptor); }
 
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-function networkRequest(url, opts) {
-  return fetch(url, {
-    cache: opts.loadFromCache ? "default" : "no-cache"
-  }).then(res => {
-    if (res.status >= 200 && res.status < 300) {
-      if (res.headers.get("Content-Type") === "application/wasm") {
-        return res.arrayBuffer().then(buffer => ({
-          content: buffer,
-          isDwarf: true
-        }));
+function _classApplyDescriptorGet(receiver, descriptor) { if (descriptor.get) { return descriptor.get.call(receiver); } return descriptor.value; }
+
+function _classPrivateFieldSet(receiver, privateMap, value) { var descriptor = _classExtractFieldDescriptor(receiver, privateMap, "set"); _classApplyDescriptorSet(receiver, descriptor, value); return value; }
+
+function _classExtractFieldDescriptor(receiver, privateMap, action) { if (!privateMap.has(receiver)) { throw new TypeError("attempted to " + action + " private field on non-instance"); } return privateMap.get(receiver); }
+
+function _classApplyDescriptorSet(receiver, descriptor, value) { if (descriptor.set) { descriptor.set.call(receiver, value); } else { if (!descriptor.writable) { throw new TypeError("attempted to set read only private field"); } descriptor.value = value; } }
+
+var _msgId = /*#__PURE__*/new WeakMap();
+
+var _worker = /*#__PURE__*/new WeakMap();
+
+var _pendingCalls = /*#__PURE__*/new WeakMap();
+
+var _url = /*#__PURE__*/new WeakMap();
+
+var _onMessage = /*#__PURE__*/new WeakMap();
+
+class WorkerDispatcher {
+  // Map of message ids -> promise resolution functions, for dispatching worker responses
+  constructor(url) {
+    _classPrivateFieldInitSpec(this, _msgId, {
+      writable: true,
+      value: 1
+    });
+
+    _classPrivateFieldInitSpec(this, _worker, {
+      writable: true,
+      value: null
+    });
+
+    _classPrivateFieldInitSpec(this, _pendingCalls, {
+      writable: true,
+      value: new Map()
+    });
+
+    _classPrivateFieldInitSpec(this, _url, {
+      writable: true,
+      value: ""
+    });
+
+    _classPrivateFieldInitSpec(this, _onMessage, {
+      writable: true,
+      value: ({
+        data: result
+      }) => {
+        const items = _classPrivateFieldGet(this, _pendingCalls).get(result.id);
+
+        _classPrivateFieldGet(this, _pendingCalls).delete(result.id);
+
+        if (!items) {
+          return;
+        }
+
+        if (!_classPrivateFieldGet(this, _worker)) {
+          return;
+        }
+
+        result.results.forEach((resultData, i) => {
+          const {
+            resolve,
+            reject
+          } = items[i];
+
+          if (resultData.error) {
+            const err = new Error(resultData.message);
+            err.metadata = resultData.metadata;
+            reject(err);
+          } else {
+            resolve(resultData.response);
+          }
+        });
       }
+    });
 
-      return res.text().then(text => ({
-        content: text
-      }));
+    _classPrivateFieldSet(this, _url, url);
+  }
+
+  start() {
+    // When running in debugger jest test, we don't have access to ChromeWorker
+    if (typeof ChromeWorker == "function") {
+      _classPrivateFieldSet(this, _worker, new ChromeWorker(_classPrivateFieldGet(this, _url)));
+    } else {
+      _classPrivateFieldSet(this, _worker, new Worker(_classPrivateFieldGet(this, _url)));
     }
 
-    return Promise.reject(`request failed with status ${res.status}`);
-  });
-}
-
-module.exports = networkRequest;
-
-/***/ }),
-
-/***/ 568:
-/***/ (function(module, exports) {
-
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-function WorkerDispatcher() {
-  this.msgId = 1;
-  this.worker = null; // Map of message ids -> promise resolution functions, for dispatching worker responses
-
-  this.pendingCalls = new Map();
-  this._onMessage = this._onMessage.bind(this);
-}
-
-WorkerDispatcher.prototype = {
-  start(url, win = window) {
-    this.worker = new win.Worker(url);
-
-    this.worker.onerror = err => {
-      console.error(`Error in worker ${url}`, err.message);
+    _classPrivateFieldGet(this, _worker).onerror = err => {
+      console.error(`Error in worker ${_classPrivateFieldGet(this, _url)}`, err.message);
     };
 
-    this.worker.addEventListener("message", this._onMessage);
-  },
+    _classPrivateFieldGet(this, _worker).addEventListener("message", _classPrivateFieldGet(this, _onMessage));
+  }
 
   stop() {
-    if (!this.worker) {
+    if (!_classPrivateFieldGet(this, _worker)) {
       return;
     }
 
-    this.worker.removeEventListener("message", this._onMessage);
-    this.worker.terminate();
-    this.worker = null;
-    this.pendingCalls.clear();
-  },
+    _classPrivateFieldGet(this, _worker).removeEventListener("message", _classPrivateFieldGet(this, _onMessage));
+
+    _classPrivateFieldGet(this, _worker).terminate();
+
+    _classPrivateFieldSet(this, _worker, null);
+
+    _classPrivateFieldGet(this, _pendingCalls).clear();
+  }
 
   task(method, {
     queue = false
@@ -187,60 +225,34 @@ WorkerDispatcher.prototype = {
     };
 
     const flush = () => {
+      var _this$msgId;
+
       const items = calls.slice();
       calls.length = 0;
 
-      if (!this.worker) {
-        return;
+      if (!_classPrivateFieldGet(this, _worker)) {
+        this.start();
       }
 
-      const id = this.msgId++;
-      this.worker.postMessage({
+      const id = (_classPrivateFieldSet(this, _msgId, (_this$msgId = +_classPrivateFieldGet(this, _msgId)) + 1), _this$msgId);
+
+      _classPrivateFieldGet(this, _worker).postMessage({
         id,
         method,
         calls: items.map(item => item.args)
       });
-      this.pendingCalls.set(id, items);
+
+      _classPrivateFieldGet(this, _pendingCalls).set(id, items);
     };
 
     return (...args) => push(args);
-  },
+  }
 
   invoke(method, ...args) {
     return this.task(method)(...args);
-  },
-
-  _onMessage({
-    data: result
-  }) {
-    const items = this.pendingCalls.get(result.id);
-    this.pendingCalls.delete(result.id);
-
-    if (!items) {
-      return;
-    }
-
-    if (!this.worker) {
-      return;
-    }
-
-    result.results.forEach((resultData, i) => {
-      const {
-        resolve,
-        reject
-      } = items[i];
-
-      if (resultData.error) {
-        const err = new Error(resultData.message);
-        err.metadata = resultData.metadata;
-        reject(err);
-      } else {
-        resolve(resultData.response);
-      }
-    });
   }
 
-};
+}
 
 function workerHandler(publicInterface) {
   return function (msg) {
@@ -290,12 +302,15 @@ function asErrorMessage(error) {
     message: error == null ? error : error.toString(),
     metadata: undefined
   };
-}
+} // Might be loaded within a worker thread where `module` isn't available.
 
-module.exports = {
-  WorkerDispatcher,
-  workerHandler
-};
+
+if (true) {
+  module.exports = {
+    WorkerDispatcher,
+    workerHandler
+  };
+}
 
 /***/ }),
 
@@ -568,17 +583,14 @@ var _getMatches = _interopRequireDefault(__webpack_require__(701));
 
 var _projectSearch = __webpack_require__(909);
 
-var _devtoolsUtils = __webpack_require__(560);
+var _workerUtils = __webpack_require__(1059);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-const {
-  workerHandler
-} = _devtoolsUtils.workerUtils;
-self.onmessage = workerHandler({
+self.onmessage = (0, _workerUtils.workerHandler)({
   getMatches: _getMatches.default,
   findSourceMatches: _projectSearch.findSourceMatches
 });
@@ -659,6 +671,8 @@ function buildFlags(caseSensitive, isGlobal) {
   if (!caseSensitive && !isGlobal) {
     return "i";
   }
+
+  return null;
 }
 
 function buildQuery(originalQuery, modifiers, {

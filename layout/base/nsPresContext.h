@@ -12,6 +12,7 @@
 #include "mozilla/intl/Bidi.h"
 #include "mozilla/AppUnits.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/DepthOrderedFrameList.h"
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/MediaEmulationData.h"
 #include "mozilla/MemoryReporting.h"
@@ -92,6 +93,9 @@ class Document;
 class Element;
 enum class PrefersColorSchemeOverride : uint8_t;
 }  // namespace dom
+namespace gfx {
+class FontPaletteValueSet;
+}  // namespace gfx
 }  // namespace mozilla
 
 // supported values for cached integer pref types
@@ -234,13 +238,13 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   /**
    * Returns the root widget for this.
    */
-  already_AddRefed<nsIWidget> GetRootWidget() const;
+  nsIWidget* GetRootWidget() const;
 
   /**
    * Returns the widget which may have native focus and handles text input
    * like keyboard input, IME, etc.
    */
-  already_AddRefed<nsIWidget> GetTextInputHandlingWidget() const {
+  nsIWidget* GetTextInputHandlingWidget() const {
     // Currently, root widget for each PresContext handles text input.
     return GetRootWidget();
   }
@@ -267,7 +271,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
     return !!mPendingMediaFeatureValuesChange;
   }
 
-  inline nsCSSFrameConstructor* FrameConstructor();
+  inline nsCSSFrameConstructor* FrameConstructor() const;
 
   mozilla::AnimationEventDispatcher* AnimationEventDispatcher() {
     return mAnimationEventDispatcher;
@@ -345,7 +349,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   /**
    * Get medium of presentation
    */
-  const nsAtom* Medium() {
+  const nsAtom* Medium() const {
     MOZ_ASSERT(mMedium);
     return mMediaEmulationData.mMedium ? mMediaEmulationData.mMedium.get()
                                        : mMedium;
@@ -385,6 +389,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
            !PrefSheetPrefs().mUseDocumentColors;
   }
 
+  mozilla::ColorScheme DefaultBackgroundColorScheme() const;
   nscolor DefaultBackgroundColor() const;
 
   nsISupports* GetContainerWeak() const;
@@ -580,17 +585,22 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
 
   float GetOverrideDPPX() const { return mMediaEmulationData.mDPPX; }
 
-  // Gets the forced color-scheme if any via either DevTools emulation or
-  // printing.
+  // Gets the forced color-scheme if any via either our embedder, or DevTools
+  // emulation, or printing.
   //
   // NOTE(emilio): This might be called from an stylo thread.
-  Maybe<mozilla::ColorScheme> GetOverriddenColorScheme() const;
+  Maybe<mozilla::ColorScheme> GetOverriddenOrEmbedderColorScheme() const;
 
   /**
    * Recomputes the data dependent on the browsing context, like zoom and text
    * zoom.
    */
   void RecomputeBrowsingContextDependentData();
+
+  /**
+   * Sets the effective color scheme override, and invalidate stuff as needed.
+   */
+  void SetColorSchemeOverride(mozilla::dom::PrefersColorSchemeOverride);
 
   mozilla::CSSCoord GetAutoQualityMinFontSize() const {
     return DevPixelsToFloatCSSPixels(mAutoQualityMinFontSizePixelsPref);
@@ -900,8 +910,6 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   // Is this presentation in a chrome docshell?
   bool IsChrome() const;
 
-  bool SuppressingResizeReflow() const { return mSuppressResizeReflow; }
-
   gfxUserFontSet* GetUserFontSet();
 
   // Should be called whenever the set of fonts available in the user
@@ -918,6 +926,9 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
 
   void FlushFontFeatureValues();
   void MarkFontFeatureValuesDirty() { mFontFeatureValuesDirty = true; }
+
+  void FlushFontPaletteValues();
+  void MarkFontPaletteValuesDirty() { mFontPaletteValuesDirty = true; }
 
   // Ensure that it is safe to hand out CSS rules outside the layout
   // engine by ensuring that all CSS style sheets have unique inners
@@ -1025,12 +1036,6 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   }
 
   /**
-   * Deprecated. Please use the InProcess or CrossProcess variants
-   * to specify which behaviour you want.
-   */
-  bool IsRootContentDocument() const;
-
-  /**
    * We are a root content document in process if: we are not a resource doc, we
    * are not chrome, and we either have no parent in the current process or our
    * parent is chrome.
@@ -1054,23 +1059,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   bool HasEverBuiltInvisibleText() const { return mHasEverBuiltInvisibleText; }
   void SetBuiltInvisibleText() { mHasEverBuiltInvisibleText = true; }
 
-  bool UsesFontMetricDependentFontUnits() const {
-    return mUsesFontMetricDependentFontUnits;
-  }
-
-  void SetUsesFontMetricDependentFontUnits(bool aValue) {
-    mUsesFontMetricDependentFontUnits = aValue;
-  }
-
   bool IsDeviceSizePageSize();
-
-  bool HasWarnedAboutPositionedTableParts() const {
-    return mHasWarnedAboutPositionedTableParts;
-  }
-
-  void SetHasWarnedAboutPositionedTableParts() {
-    mHasWarnedAboutPositionedTableParts = true;
-  }
 
   bool HasWarnedAboutTooLargeDashedOrDottedRadius() const {
     return mHasWarnedAboutTooLargeDashedOrDottedRadius;
@@ -1080,10 +1069,24 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
     mHasWarnedAboutTooLargeDashedOrDottedRadius = true;
   }
 
+  void RegisterContainerQueryFrame(nsIFrame* aFrame);
+  void UnregisterContainerQueryFrame(nsIFrame* aFrame);
+  bool HasContainerQueryFrames() const {
+    return !mContainerQueryFrames.IsEmpty();
+  }
+
+  void FinishedContainerQueryUpdate();
+
+  bool UpdateContainerQueryStyles();
+
   mozilla::intl::Bidi& GetBidiEngine();
 
   gfxFontFeatureValueSet* GetFontFeatureValuesLookup() const {
     return mFontFeatureValuesLookup;
+  }
+
+  mozilla::gfx::FontPaletteValueSet* GetFontPaletteValueSet() const {
+    return mFontPaletteValueSet;
   }
 
  protected:
@@ -1091,12 +1094,8 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   void ThemeChangedInternal();
   void RefreshSystemMetrics();
 
-  // update device context's resolution from the widget
+  // Update device context's resolution from the widget
   void UIResolutionChangedInternal();
-
-  // if aScale > 0.0, use it as resolution scale factor to the device context
-  // (otherwise get it from the widget)
-  void UIResolutionChangedInternalScale(double aScale);
 
   void SetImgAnimations(nsIContent* aParent, uint16_t aMode);
   void SetSMILAnimations(mozilla::dom::Document* aDoc, uint16_t aNewMode,
@@ -1129,10 +1128,10 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   }
 
   void DidUseFrameRateMultiplier() {
-    if (!mNextFrameRateMultiplier) {
-      mNextFrameRateMultiplier = 1;
-    } else if (mNextFrameRateMultiplier < 8) {
-      mNextFrameRateMultiplier = mNextFrameRateMultiplier * 2;
+    // This heuristic is used to reduce frame rate between fcp and the end of
+    // the page load.
+    if (mNextFrameRateMultiplier < 8) {
+      ++mNextFrameRateMultiplier;
     }
   }
 
@@ -1191,6 +1190,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   RefPtr<mozilla::CounterStyleManager> mCounterStyleManager;
   const nsStaticAtom* mMedium;
   RefPtr<gfxFontFeatureValueSet> mFontFeatureValuesLookup;
+  RefPtr<mozilla::gfx::FontPaletteValueSet> mFontPaletteValueSet;
 
   // TODO(emilio): Maybe lazily create and put under a UniquePtr if this grows a
   // lot?
@@ -1288,6 +1288,14 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   // that we can avoid repeatedly reporting the same font.
   nsTHashSet<nsCString> mBlockedFonts;
 
+  // The set of container query boxes currently in the document, sorted by
+  // depth.
+  mozilla::DepthOrderedFrameList mContainerQueryFrames;
+  // The set of container query elements currently in the document that have
+  // been updated so far. This is necessary to avoid reentering on container
+  // query style changes which cause us to do frame reconstruction.
+  nsTHashSet<nsIContent*> mUpdatedContainerQueryContents;
+
   ScrollStyles mViewportScrollStyles;
 
   uint16_t mImageAnimationMode;
@@ -1333,25 +1341,16 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   // Are we currently drawing an SVG glyph?
   unsigned mIsGlyph : 1;
 
-  // Does the associated document use ex or ch units?
-  //
-  // TODO(emilio): It's a bit weird that this lives here but all the other
-  // relevant bits live in Device on the rust side.
-  unsigned mUsesFontMetricDependentFontUnits : 1;
-
   // Is the current mCounterStyleManager valid?
   unsigned mCounterStylesDirty : 1;
 
   // Is the current mFontFeatureValuesLookup valid?
   unsigned mFontFeatureValuesDirty : 1;
 
-  // resize reflow is suppressed when the only change has been to zoom
-  // the document rather than to change the document's dimensions
-  unsigned mSuppressResizeReflow : 1;
+  // Is the current mFontFeatureValueSet valid?
+  unsigned mFontPaletteValuesDirty : 1;
 
   unsigned mIsVisual : 1;
-
-  unsigned mHasWarnedAboutPositionedTableParts : 1;
 
   unsigned mHasWarnedAboutTooLargeDashedOrDottedRadius : 1;
 
@@ -1377,7 +1376,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   // FIXME(emilio): These would be better packed on top of the bitfields, but
   // that breaks bindgen in win32.
   FontVisibility mFontVisibility = FontVisibility::Unknown;
-  mozilla::dom::PrefersColorSchemeOverride mColorSchemeOverride;
+  mozilla::dom::PrefersColorSchemeOverride mOverriddenOrEmbedderColorScheme;
 
  protected:
   virtual ~nsPresContext();

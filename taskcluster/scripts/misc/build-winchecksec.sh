@@ -5,14 +5,14 @@ mkdir -p $UPLOAD_DIR
 
 cd $MOZ_FETCHES_DIR/winchecksec
 
-if test -n "$TOOLTOOL_MANIFEST"; then
+SUFFIX=
+
+case "$1" in
+x86_64-pc-windows-msvc)
+    SUFFIX=.exe
     export PATH="$MOZ_FETCHES_DIR/clang/bin:$PATH"
 
-    export LD_PRELOAD=$MOZ_FETCHES_DIR/liblowercase/liblowercase.so
-    export LOWERCASE_DIRS=$MOZ_FETCHES_DIR/vs2017_15.9.6
-
     . $GECKO_PATH/taskcluster/scripts/misc/vs-setup.sh
-    . $GECKO_PATH/taskcluster/scripts/misc/tooltool-download.sh
 
     # Patch pe-parse because clang-cl doesn't support /analyze.
     patch -p1 <<'EOF'
@@ -31,14 +31,15 @@ EOF
       -DCMAKE_CXX_COMPILER=clang-cl
       -DCMAKE_C_COMPILER=clang-cl
       -DCMAKE_LINKER=lld-link
-      -DCMAKE_C_FLAGS=-fuse-ld=lld
-      -DCMAKE_CXX_FLAGS="-fuse-ld=lld -EHsc"
+      -DCMAKE_C_FLAGS="-fuse-ld=lld -Xclang -ivfsoverlay -Xclang $MOZ_FETCHES_DIR/vs/overlay.yaml"
+      -DCMAKE_CXX_FLAGS="-fuse-ld=lld -EHsc -Xclang -ivfsoverlay -Xclang $MOZ_FETCHES_DIR/vs/overlay.yaml"
       -DCMAKE_RC_COMPILER=llvm-rc
       -DCMAKE_MT=llvm-mt
       -DCMAKE_SYSTEM_NAME=Windows
       -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
     '
-fi
+    ;;
+esac
 
 eval cmake \
   -GNinja \
@@ -49,5 +50,5 @@ eval cmake \
 ninja -v
 
 cd ..
-tar -caf winchecksec.tar.zst winchecksec/winchecksec${TOOLTOOL_MANIFEST:+.exe}
+tar -caf winchecksec.tar.zst winchecksec/winchecksec${SUFFIX}
 cp winchecksec.tar.zst $UPLOAD_DIR/

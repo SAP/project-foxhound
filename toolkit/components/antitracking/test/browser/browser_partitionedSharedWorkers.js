@@ -1,5 +1,3 @@
-/* import-globals-from partitionedstorage_head.js */
-
 PartitionedStorageHelper.runTestInNormalAndPrivateMode(
   "SharedWorkers",
   async (win3rdParty, win1stParty, allowed) => {
@@ -26,11 +24,7 @@ PartitionedStorageHelper.runTestInNormalAndPrivateMode(
     let sh3 = new win3rdParty.SharedWorker("sharedWorker.js");
     await new Promise(resolve => {
       sh3.port.onmessage = e => {
-        is(
-          e.data,
-          allowed ? 2 : 1,
-          `We expected ${allowed ? 2 : 1} connection for 3rd party SharedWorker`
-        );
+        is(e.data, 1, `We expected 1 connection for 3rd party SharedWorker`);
         resolve();
       };
       sh3.onerror = _ => {

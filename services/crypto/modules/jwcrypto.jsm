@@ -4,12 +4,6 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-
-XPCOMUtils.defineLazyGlobalGetters(this, ["crypto"]);
-
 const EXPORTED_SYMBOLS = ["jwcrypto"];
 
 const ECDH_PARAMS = {
@@ -128,11 +122,7 @@ class JWCrypto {
         ChromeUtils.base64URLDecode(header, { padding: "reject" })
       )
     );
-    if (
-      cek.length > 0 ||
-      header.enc !== "A256GCM" ||
-      header.alg !== "ECDH-ES"
-    ) {
+    if (!!cek.length || header.enc !== "A256GCM" || header.alg !== "ECDH-ES") {
       throw new Error("Unknown algorithm.");
     }
     if ("apu" in header || "apv" in header) {

@@ -112,8 +112,9 @@ class nsPageFrame;
 nsPageFrame* NS_NewPageFrame(mozilla::PresShell* aPresShell,
                              mozilla::ComputedStyle* aStyle);
 class nsPageContentFrame;
-nsPageContentFrame* NS_NewPageContentFrame(mozilla::PresShell* aPresShell,
-                                           mozilla::ComputedStyle* aStyle);
+nsPageContentFrame* NS_NewPageContentFrame(
+    mozilla::PresShell* aPresShell, mozilla::ComputedStyle* aStyle,
+    already_AddRefed<const nsAtom> aPageName);
 nsIFrame* NS_NewPageBreakFrame(mozilla::PresShell* aPresShell,
                                mozilla::ComputedStyle* aStyle);
 class nsFirstLetterFrame;
@@ -157,8 +158,6 @@ nsIFrame* NS_NewDateTimeControlFrame(mozilla::PresShell* aPresShell,
                                      mozilla::ComputedStyle* aStyle);
 nsIFrame* NS_NewSearchControlFrame(mozilla::PresShell* aPresShell,
                                    mozilla::ComputedStyle* aStyle);
-nsBlockFrame* NS_NewDetailsFrame(mozilla::PresShell* aPresShell,
-                                 mozilla::ComputedStyle* aStyle);
 
 // Table frame factories
 class nsTableWrapperFrame;

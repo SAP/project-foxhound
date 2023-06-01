@@ -10,14 +10,15 @@ with Files("**"):
 DIRS += ["tests"]
 
 XPIDL_SOURCES += [
+    "nsIDNSAdditionalInfo.idl",
     "nsIDNSByTypeRecord.idl",
     "nsIDNSListener.idl",
     "nsIDNSRecord.idl",
-    "nsIDNSResolverInfo.idl",
     "nsIDNSService.idl",
     "nsIEffectiveTLDService.idl",
     "nsIIDNService.idl",
     "nsINativeDNSResolverOverride.idl",
+    "nsITRRSkipReason.idl",
     "nsPIDNSService.idl",
 ]
 
@@ -42,6 +43,7 @@ EXPORTS.mozilla.net += [
     "DNSRequestBase.h",
     "DNSRequestChild.h",
     "DNSRequestParent.h",
+    "DNSServiceBase.h",
     "HTTPSSVC.h",
     "IDNBlocklistUtils.h",
     "NativeDNSResolverOverrideChild.h",
@@ -60,11 +62,11 @@ SOURCES += [
 UNIFIED_SOURCES += [
     "ChildDNSService.cpp",
     "DNS.cpp",
+    "DNSAdditionalInfo.cpp",
     "DNSListenerProxy.cpp",
     "DNSPacket.cpp",
     "DNSRequestChild.cpp",
     "DNSRequestParent.cpp",
-    "DNSResolverInfo.cpp",
     "DNSServiceBase.cpp",
     "DNSUtils.cpp",
     "HostRecordQueue.cpp",

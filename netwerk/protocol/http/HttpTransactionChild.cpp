@@ -29,8 +29,7 @@
 
 using mozilla::ipc::BackgroundParent;
 
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 
 NS_IMPL_ISUPPORTS(HttpTransactionChild, nsIRequestObserver, nsIStreamListener,
                   nsITransportEventSink, nsIThrottledInputChannel,
@@ -70,8 +69,8 @@ nsresult HttpTransactionChild::InitInternal(
     nsHttpRequestHead* requestHead, nsIInputStream* requestBody,
     uint64_t requestContentLength, bool requestBodyHasHeaders,
     uint64_t topLevelOuterContentWindowId, uint8_t httpTrafficCategory,
-    uint64_t requestContextID, uint32_t classOfService, uint32_t initialRwin,
-    bool responseTimeoutEnabled, uint64_t channelId,
+    uint64_t requestContextID, ClassOfService classOfService,
+    uint32_t initialRwin, bool responseTimeoutEnabled, uint64_t channelId,
     bool aHasTransactionObserver,
     const Maybe<H2PushedStreamArg>& aPushedStreamArg) {
   LOG(("HttpTransactionChild::InitInternal [this=%p caps=%x]\n", this, caps));
@@ -117,7 +116,7 @@ nsresult HttpTransactionChild::InitInternal(
 
   nsresult rv = mTransaction->Init(
       caps, cinfo, requestHead, requestBody, requestContentLength,
-      requestBodyHasHeaders, GetCurrentEventTarget(),
+      requestBodyHasHeaders, GetCurrentSerialEventTarget(),
       nullptr,  // TODO: security callback, fix in bug 1512479.
       this, topLevelOuterContentWindowId,
       static_cast<HttpTrafficCategory>(httpTrafficCategory), rc, classOfService,
@@ -173,7 +172,7 @@ mozilla::ipc::IPCResult HttpTransactionChild::RecvInit(
     const uint64_t& aReqContentLength, const bool& aReqBodyIncludesHeaders,
     const uint64_t& aTopLevelOuterContentWindowId,
     const uint8_t& aHttpTrafficCategory, const uint64_t& aRequestContextID,
-    const uint32_t& aClassOfService, const uint32_t& aInitialRwin,
+    const ClassOfService& aClassOfService, const uint32_t& aInitialRwin,
     const bool& aResponseTimeoutEnabled, const uint64_t& aChannelId,
     const bool& aHasTransactionObserver,
     const Maybe<H2PushedStreamArg>& aPushedStreamArg,
@@ -409,21 +408,12 @@ HttpTransactionChild::OnStartRequest(nsIRequest* aRequest) {
 
   mProtocolVersion.Truncate();
 
-  nsCString serializedSecurityInfoOut;
-  nsCOMPtr<nsISupports> secInfoSupp = mTransaction->SecurityInfo();
-  if (secInfoSupp) {
-    nsCOMPtr<nsITransportSecurityInfo> info = do_QueryInterface(secInfoSupp);
+  nsCOMPtr<nsITransportSecurityInfo> securityInfo(mTransaction->SecurityInfo());
+  if (securityInfo) {
     nsAutoCString protocol;
-    if (info && NS_SUCCEEDED(info->GetNegotiatedNPN(protocol)) &&
+    if (NS_SUCCEEDED(securityInfo->GetNegotiatedNPN(protocol)) &&
         !protocol.IsEmpty()) {
       mProtocolVersion.Assign(protocol);
-    }
-    // Make sure peerId is generated.
-    nsAutoCString unused;
-    info->GetPeerId(unused);
-    nsCOMPtr<nsISerializable> secInfoSer = do_QueryInterface(secInfoSupp);
-    if (secInfoSer) {
-      NS_SerializeToString(secInfoSer, serializedSecurityInfoOut);
     }
   }
 
@@ -481,8 +471,7 @@ HttpTransactionChild::OnStartRequest(nsIRequest* aRequest) {
       mTransaction->GetProxyConnectResponseCode();
 
   Unused << SendOnStartRequest(
-      status, optionalHead, serializedSecurityInfoOut,
-      mTransaction->ProxyConnectFailed(),
+      status, optionalHead, securityInfo, mTransaction->ProxyConnectFailed(),
       ToTimingStructArgs(mTransaction->Timings()), proxyConnectResponseCode,
       dataForSniffer, optionalAltSvcUsed, !!mDataBridgeParent,
       mTransaction->TakeRestartedState(), mTransaction->HTTPSSVCReceivedStage(),
@@ -640,13 +629,14 @@ HttpTransactionChild::CheckListenerChain() {
 }
 
 NS_IMETHODIMP
-HttpTransactionChild::EarlyHint(const nsACString& value) {
+HttpTransactionChild::EarlyHint(const nsACString& aValue,
+                                const nsACString& aReferrerPolicy,
+                                const nsACString& aCSPHeader) {
   LOG(("HttpTransactionChild::EarlyHint"));
   if (CanSend()) {
-    Unused << SendEarlyHint(PromiseFlatCString(value));
+    Unused << SendEarlyHint(aValue, aReferrerPolicy, aCSPHeader);
   }
   return NS_OK;
 }
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net

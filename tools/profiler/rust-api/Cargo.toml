@@ -3,6 +3,7 @@ name = "gecko-profiler"
 version = "0.1.0"
 authors = ["The Mozilla Project Developers"]
 edition = "2018"
+license = "MPL-2.0"
 
 [dependencies]
 profiler-macros = { path = "./macros" }
@@ -13,7 +14,7 @@ mozbuild = "0.1"
 
 [build-dependencies]
 lazy_static = "1"
-bindgen = {version = "0.56", default-features = false}
+bindgen = {version = "0.63", default-features = false}
 mozbuild = "0.1"
 
 [features]

@@ -67,6 +67,16 @@ void TRRLoadInfo::ResetSandboxedNullPrincipalID() {}
 nsIPrincipal* TRRLoadInfo::GetTopLevelPrincipal() { return nullptr; }
 
 NS_IMETHODIMP
+TRRLoadInfo::GetTriggeringRemoteType(nsACString& aTriggeringRemoteType) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetTriggeringRemoteType(const nsACString& aTriggeringRemoteType) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
 TRRLoadInfo::GetLoadingDocument(Document** aResult) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -565,6 +575,12 @@ TRRLoadInfo::GetIsFromObjectOrEmbed(bool* aIsFromObjectOrEmbed) {
 }
 
 NS_IMETHODIMP
+TRRLoadInfo::GetShouldSkipCheckForBrokenURLOrZeroSized(
+    bool* aShouldSkipCheckForBrokenURLOrZeroSized) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
 TRRLoadInfo::GetResultPrincipalURI(nsIURI** aURI) {
   nsCOMPtr<nsIURI> uri = mResultPrincipalURI;
   uri.forget(aURI);
@@ -699,6 +715,16 @@ TRRLoadInfo::SetAllowDeprecatedSystemRequests(
 }
 
 NS_IMETHODIMP
+TRRLoadInfo::GetIsUserTriggeredSave(bool* aIsUserTriggeredSave) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetIsUserTriggeredSave(bool aIsUserTriggeredSave) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
 TRRLoadInfo::GetIsInDevToolsContext(bool* aIsInDevToolsContext) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -731,12 +757,39 @@ TRRLoadInfo::SetLoadingEmbedderPolicy(
 }
 
 NS_IMETHODIMP
+TRRLoadInfo::GetIsOriginTrialCoepCredentiallessEnabledForTopLevel(
+    bool* aIsOriginTrialCoepCredentiallessEnabledForTopLevel) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetIsOriginTrialCoepCredentiallessEnabledForTopLevel(
+    bool aIsOriginTrialCoepCredentiallessEnabledForTopLevel) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
 TRRLoadInfo::GetUnstrippedURI(nsIURI** aURI) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
 TRRLoadInfo::SetUnstrippedURI(nsIURI* aURI) { return NS_ERROR_NOT_IMPLEMENTED; }
+
+nsIInterceptionInfo* TRRLoadInfo::InterceptionInfo() { return nullptr; }
+void TRRLoadInfo::SetInterceptionInfo(nsIInterceptionInfo* aPrincipla) {}
+
+NS_IMETHODIMP
+TRRLoadInfo::GetHasInjectedCookieForCookieBannerHandling(
+    bool* aHasInjectedCookieForCookieBannerHandling) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetHasInjectedCookieForCookieBannerHandling(
+    bool aHasInjectedCookieForCookieBannerHandling) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
 
 }  // namespace net
 }  // namespace mozilla

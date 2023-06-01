@@ -10,8 +10,8 @@
 
 "use strict";
 
-const { getAppInfo } = ChromeUtils.import(
-  "resource://testing-common/AppInfo.jsm"
+const { getAppInfo } = ChromeUtils.importESModule(
+  "resource://testing-common/AppInfo.sys.mjs"
 );
 
 const enginesSettings = {
@@ -91,7 +91,7 @@ add_task(async function setup() {
   enginesSettings.appVersion = appInfo.version;
 
   await IOUtils.writeJSON(
-    PathUtils.join(await PathUtils.getProfileDir(), SETTINGS_FILENAME),
+    PathUtils.join(PathUtils.profileDir, SETTINGS_FILENAME),
     enginesSettings,
     { compress: true }
   );

@@ -5,7 +5,7 @@ use crate::{
     binding_model::{LateMinBufferBindingSizeMismatch, PushConstantUploadError},
     error::ErrorFormatter,
     id,
-    track::UseExtendError,
+    track::UsageConflict,
     validation::{MissingBufferUsageError, MissingTextureUsageError},
 };
 use wgt::{BufferAddress, BufferSize, Color};
@@ -13,10 +13,8 @@ use wgt::{BufferAddress, BufferSize, Color};
 use std::num::NonZeroU32;
 use thiserror::Error;
 
-pub type BufferError = UseExtendError<hal::BufferUses>;
-
 /// Error validating a draw call.
-#[derive(Clone, Debug, Error, PartialEq)]
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum DrawError {
     #[error("blend constant needs to be set")]
     MissingBlendConstant,
@@ -26,7 +24,7 @@ pub enum DrawError {
     MissingVertexBuffer { index: u32 },
     #[error("index buffer must be set")]
     MissingIndexBuffer,
-    #[error("current render pipeline has a layout which is incompatible with a currently set bind group, first differing at entry index {index}")]
+    #[error("the pipeline layout, associated with the current render pipeline, contains a bind group layout at index {index} which is incompatible with the bind group layout associated with the bind group at {index}")]
     IncompatibleBindGroup {
         index: u32,
         //expected: BindGroupLayoutId,
@@ -79,8 +77,8 @@ pub enum RenderCommandError {
     IncompatiblePipelineTargets(#[from] crate::device::RenderPassCompatibilityError),
     #[error("pipeline writes to depth/stencil, while the pass has read-only depth/stencil")]
     IncompatiblePipelineRods,
-    #[error("buffer {0:?} is in error {1:?}")]
-    Buffer(id::BufferId, BufferError),
+    #[error(transparent)]
+    UsageConflict(#[from] UsageConflict),
     #[error("buffer {0:?} is destroyed")]
     DestroyedBuffer(id::BufferId),
     #[error(transparent)]
@@ -89,10 +87,12 @@ pub enum RenderCommandError {
     MissingTextureUsage(#[from] MissingTextureUsageError),
     #[error(transparent)]
     PushConstants(#[from] PushConstantUploadError),
-    #[error("Invalid Viewport parameters")]
-    InvalidViewport,
-    #[error("Invalid ScissorRect parameters")]
-    InvalidScissorRect,
+    #[error("Viewport width {0} and/or height {1} are less than or equal to 0")]
+    InvalidViewportDimension(f32, f32),
+    #[error("Viewport minDepth {0} and/or maxDepth {1} are not in [0, 1]")]
+    InvalidViewportDepth(f32, f32),
+    #[error("Scissor {0:?} is not contained in the render target {1:?}")]
+    InvalidScissorRect(Rect<u32>, wgt::Extent3d),
     #[error("Support for {0} is not implemented yet")]
     Unimplemented(&'static str),
 }
@@ -106,7 +106,11 @@ impl crate::error::PrettyError for RenderCommandError {
             Self::InvalidPipeline(id) => {
                 fmt.render_pipeline_label(&id);
             }
-            Self::Buffer(id, ..) | Self::DestroyedBuffer(id) => {
+            Self::UsageConflict(UsageConflict::TextureInvalid { id }) => {
+                fmt.texture_label(&id);
+            }
+            Self::UsageConflict(UsageConflict::BufferInvalid { id })
+            | Self::DestroyedBuffer(id) => {
                 fmt.buffer_label(&id);
             }
             _ => {}
@@ -168,13 +172,32 @@ pub enum RenderCommand {
         depth_max: f32,
     },
     SetScissor(Rect<u32>),
+
+    /// Set a range of push constants to values stored in [`BasePass::push_constant_data`].
+    ///
+    /// See [`wgpu::RenderPass::set_push_constants`] for a detailed explanation
+    /// of the restrictions these commands must satisfy.
     SetPushConstant {
+        /// Which stages we are setting push constant values for.
         stages: wgt::ShaderStages,
+
+        /// The byte offset within the push constant storage to write to.  This
+        /// must be a multiple of four.
         offset: u32,
+
+        /// The number of bytes to write. This must be a multiple of four.
         size_bytes: u32,
-        /// None means there is no data and the data should be an array of zeros.
+
+        /// Index in [`BasePass::push_constant_data`] of the start of the data
+        /// to be written.
         ///
-        /// Facilitates clears in renderbundles which explicitly do their clears.
+        /// Note: this is not a byte offset like `offset`. Rather, it is the
+        /// index of the first `u32` element in `push_constant_data` to read.
+        ///
+        /// `None` means zeros should be written to the destination range, and
+        /// there is no corresponding data in `push_constant_data`. This is used
+        /// by render bundles, which explicitly clear out any state that
+        /// post-bundle code might see.
         values_offset: Option<u32>,
     },
     Draw {

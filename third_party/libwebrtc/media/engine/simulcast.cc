@@ -15,31 +15,28 @@
 
 #include <algorithm>
 #include <string>
+#include <vector>
 
+#include "absl/strings/match.h"
 #include "absl/types/optional.h"
 #include "api/video/video_codec_constants.h"
 #include "media/base/media_constants.h"
 #include "modules/video_coding/utility/simulcast_rate_allocator.h"
-#include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/experiments/field_trial_parser.h"
 #include "rtc_base/experiments/min_video_bitrate_experiment.h"
 #include "rtc_base/experiments/normalize_simulcast_size_experiment.h"
 #include "rtc_base/experiments/rate_control_settings.h"
 #include "rtc_base/logging.h"
-#include "system_wrappers/include/field_trial.h"
 
 namespace cricket {
 
 namespace {
 
-constexpr webrtc::DataRate Interpolate(const webrtc::DataRate& a,
-                                       const webrtc::DataRate& b,
-                                       float rate) {
-  return a * (1.0 - rate) + b * rate;
-}
-
 constexpr char kUseLegacySimulcastLayerLimitFieldTrial[] =
     "WebRTC-LegacySimulcastLayerLimit";
+
+constexpr double kDefaultMaxRoundupRate = 0.1;
 
 // Limits for legacy conference screensharing mode. Currently used for the
 // lower of the two simulcast streams.
@@ -55,22 +52,24 @@ constexpr webrtc::DataRate kScreenshareHighStreamMinBitrate =
 constexpr webrtc::DataRate kScreenshareHighStreamMaxBitrate =
     webrtc::DataRate::KilobitsPerSec(1250);
 
-}  // namespace
+constexpr int kDefaultNumTemporalLayers = 3;
+constexpr int kScreenshareMaxSimulcastLayers = 2;
+constexpr int kScreenshareTemporalLayers = 2;
 
 struct SimulcastFormat {
   int width;
   int height;
   // The maximum number of simulcast layers can be used for
-  // resolutions at |widthxheigh| for legacy applications.
+  // resolutions at `widthxheight` for legacy applications.
   size_t max_layers;
-  // The maximum bitrate for encoding stream at |widthxheight|, when we are
+  // The maximum bitrate for encoding stream at `widthxheight`, when we are
   // not sending the next higher spatial stream.
   webrtc::DataRate max_bitrate;
-  // The target bitrate for encoding stream at |widthxheight|, when this layer
+  // The target bitrate for encoding stream at `widthxheight`, when this layer
   // is not the highest layer (i.e., when we are sending another higher spatial
   // stream).
   webrtc::DataRate target_bitrate;
-  // The minimum bitrate needed for encoding stream at |widthxheight|.
+  // The minimum bitrate needed for encoding stream at `widthxheight`.
   webrtc::DataRate min_bitrate;
 };
 
@@ -96,32 +95,49 @@ constexpr const SimulcastFormat kSimulcastFormats[] = {
     {320, 180, 1, webrtc::DataRate::KilobitsPerSec(200),
      webrtc::DataRate::KilobitsPerSec(150),
      webrtc::DataRate::KilobitsPerSec(30)},
-    {0, 0, 1, webrtc::DataRate::KilobitsPerSec(200),
-     webrtc::DataRate::KilobitsPerSec(150),
+    // As the resolution goes down, interpolate the target and max bitrates down
+    // towards zero. The min bitrate is still limited at 30 kbps and the target
+    // and the max will be capped from below accordingly.
+    {0, 0, 1, webrtc::DataRate::KilobitsPerSec(0),
+     webrtc::DataRate::KilobitsPerSec(0),
      webrtc::DataRate::KilobitsPerSec(30)}};
 
-const int kMaxScreenshareSimulcastLayers = 2;
+constexpr webrtc::DataRate Interpolate(const webrtc::DataRate& a,
+                                       const webrtc::DataRate& b,
+                                       float rate) {
+  return a * (1.0 - rate) + b * rate;
+}
+
+// TODO(webrtc:12415): Flip this to a kill switch when this feature launches.
+bool EnableLowresBitrateInterpolation(const webrtc::FieldTrialsView& trials) {
+  return absl::StartsWith(
+      trials.Lookup("WebRTC-LowresSimulcastBitrateInterpolation"), "Enabled");
+}
+
+std::vector<SimulcastFormat> GetSimulcastFormats(
+    bool enable_lowres_bitrate_interpolation) {
+  std::vector<SimulcastFormat> formats;
+  formats.insert(formats.begin(), std::begin(kSimulcastFormats),
+                 std::end(kSimulcastFormats));
+  if (!enable_lowres_bitrate_interpolation) {
+    RTC_CHECK_GE(formats.size(), 2u);
+    SimulcastFormat& format0x0 = formats[formats.size() - 1];
+    const SimulcastFormat& format_prev = formats[formats.size() - 2];
+    format0x0.max_bitrate = format_prev.max_bitrate;
+    format0x0.target_bitrate = format_prev.target_bitrate;
+    format0x0.min_bitrate = format_prev.min_bitrate;
+  }
+  return formats;
+}
 
 // Multiway: Number of temporal layers for each simulcast stream.
-int DefaultNumberOfTemporalLayers(int simulcast_id, bool screenshare) {
-  RTC_CHECK_GE(simulcast_id, 0);
-  RTC_CHECK_LT(simulcast_id, webrtc::kMaxSimulcastStreams);
-
-  const int kDefaultNumTemporalLayers = 3;
-  const int kDefaultNumScreenshareTemporalLayers = 2;
-  int default_num_temporal_layers = screenshare
-                                        ? kDefaultNumScreenshareTemporalLayers
-                                        : kDefaultNumTemporalLayers;
-
+int DefaultNumberOfTemporalLayers(const webrtc::FieldTrialsView& trials) {
   const std::string group_name =
-      screenshare ? webrtc::field_trial::FindFullName(
-                        "WebRTC-VP8ScreenshareTemporalLayers")
-                  : webrtc::field_trial::FindFullName(
-                        "WebRTC-VP8ConferenceTemporalLayers");
+      trials.Lookup("WebRTC-VP8ConferenceTemporalLayers");
   if (group_name.empty())
-    return default_num_temporal_layers;
+    return kDefaultNumTemporalLayers;
 
-  int num_temporal_layers = default_num_temporal_layers;
+  int num_temporal_layers = kDefaultNumTemporalLayers;
   if (sscanf(group_name.c_str(), "%d", &num_temporal_layers) == 1 &&
       num_temporal_layers > 0 &&
       num_temporal_layers <= webrtc::kMaxTemporalStreams) {
@@ -132,21 +148,25 @@ int DefaultNumberOfTemporalLayers(int simulcast_id, bool screenshare) {
                          "incorrect value: "
                       << group_name;
 
-  return default_num_temporal_layers;
+  return kDefaultNumTemporalLayers;
 }
 
-int FindSimulcastFormatIndex(int width, int height) {
+int FindSimulcastFormatIndex(int width,
+                             int height,
+                             bool enable_lowres_bitrate_interpolation) {
   RTC_DCHECK_GE(width, 0);
   RTC_DCHECK_GE(height, 0);
-  for (uint32_t i = 0; i < arraysize(kSimulcastFormats); ++i) {
-    if (width * height >=
-        kSimulcastFormats[i].width * kSimulcastFormats[i].height) {
+  const auto formats = GetSimulcastFormats(enable_lowres_bitrate_interpolation);
+  for (uint32_t i = 0; i < formats.size(); ++i) {
+    if (width * height >= formats[i].width * formats[i].height) {
       return i;
     }
   }
-  RTC_NOTREACHED();
+  RTC_DCHECK_NOTREACHED();
   return -1;
 }
+
+}  // namespace
 
 // Round size to nearest simulcast-friendly size.
 // Simulcast stream width and height must both be dividable by
@@ -162,42 +182,70 @@ int NormalizeSimulcastSize(int size, size_t simulcast_layers) {
   return ((size >> base2_exponent) << base2_exponent);
 }
 
-SimulcastFormat InterpolateSimulcastFormat(int width, int height) {
-  const int index = FindSimulcastFormatIndex(width, height);
+SimulcastFormat InterpolateSimulcastFormat(
+    int width,
+    int height,
+    absl::optional<double> max_roundup_rate,
+    bool enable_lowres_bitrate_interpolation) {
+  const auto formats = GetSimulcastFormats(enable_lowres_bitrate_interpolation);
+  const int index = FindSimulcastFormatIndex(
+      width, height, enable_lowres_bitrate_interpolation);
   if (index == 0)
-    return kSimulcastFormats[index];
+    return formats[index];
   const int total_pixels_up =
-      kSimulcastFormats[index - 1].width * kSimulcastFormats[index - 1].height;
-  const int total_pixels_down =
-      kSimulcastFormats[index].width * kSimulcastFormats[index].height;
+      formats[index - 1].width * formats[index - 1].height;
+  const int total_pixels_down = formats[index].width * formats[index].height;
   const int total_pixels = width * height;
   const float rate = (total_pixels_up - total_pixels) /
                      static_cast<float>(total_pixels_up - total_pixels_down);
 
-  size_t max_layers = kSimulcastFormats[index].max_layers;
-  webrtc::DataRate max_bitrate =
-      Interpolate(kSimulcastFormats[index - 1].max_bitrate,
-                  kSimulcastFormats[index].max_bitrate, rate);
-  webrtc::DataRate target_bitrate =
-      Interpolate(kSimulcastFormats[index - 1].target_bitrate,
-                  kSimulcastFormats[index].target_bitrate, rate);
-  webrtc::DataRate min_bitrate =
-      Interpolate(kSimulcastFormats[index - 1].min_bitrate,
-                  kSimulcastFormats[index].min_bitrate, rate);
+  // Use upper resolution if `rate` is below the configured threshold.
+  size_t max_layers = (rate < max_roundup_rate.value_or(kDefaultMaxRoundupRate))
+                          ? formats[index - 1].max_layers
+                          : formats[index].max_layers;
+  webrtc::DataRate max_bitrate = Interpolate(formats[index - 1].max_bitrate,
+                                             formats[index].max_bitrate, rate);
+  webrtc::DataRate target_bitrate = Interpolate(
+      formats[index - 1].target_bitrate, formats[index].target_bitrate, rate);
+  webrtc::DataRate min_bitrate = Interpolate(formats[index - 1].min_bitrate,
+                                             formats[index].min_bitrate, rate);
 
   return {width, height, max_layers, max_bitrate, target_bitrate, min_bitrate};
 }
 
-webrtc::DataRate FindSimulcastMaxBitrate(int width, int height) {
-  return InterpolateSimulcastFormat(width, height).max_bitrate;
+SimulcastFormat InterpolateSimulcastFormat(
+    int width,
+    int height,
+    bool enable_lowres_bitrate_interpolation) {
+  return InterpolateSimulcastFormat(width, height, absl::nullopt,
+                                    enable_lowres_bitrate_interpolation);
 }
 
-webrtc::DataRate FindSimulcastTargetBitrate(int width, int height) {
-  return InterpolateSimulcastFormat(width, height).target_bitrate;
+webrtc::DataRate FindSimulcastMaxBitrate(
+    int width,
+    int height,
+    bool enable_lowres_bitrate_interpolation) {
+  return InterpolateSimulcastFormat(width, height,
+                                    enable_lowres_bitrate_interpolation)
+      .max_bitrate;
 }
 
-webrtc::DataRate FindSimulcastMinBitrate(int width, int height) {
-  return InterpolateSimulcastFormat(width, height).min_bitrate;
+webrtc::DataRate FindSimulcastTargetBitrate(
+    int width,
+    int height,
+    bool enable_lowres_bitrate_interpolation) {
+  return InterpolateSimulcastFormat(width, height,
+                                    enable_lowres_bitrate_interpolation)
+      .target_bitrate;
+}
+
+webrtc::DataRate FindSimulcastMinBitrate(
+    int width,
+    int height,
+    bool enable_lowres_bitrate_interpolation) {
+  return InterpolateSimulcastFormat(width, height,
+                                    enable_lowres_bitrate_interpolation)
+      .min_bitrate;
 }
 
 void BoostMaxSimulcastLayer(webrtc::DataRate max_bitrate,
@@ -231,12 +279,25 @@ webrtc::DataRate GetTotalMaxBitrate(
 size_t LimitSimulcastLayerCount(int width,
                                 int height,
                                 size_t need_layers,
-                                size_t layer_count) {
-  if (!webrtc::field_trial::IsDisabled(
-          kUseLegacySimulcastLayerLimitFieldTrial)) {
+                                size_t layer_count,
+                                const webrtc::FieldTrialsView& trials) {
+  if (!absl::StartsWith(trials.Lookup(kUseLegacySimulcastLayerLimitFieldTrial),
+                        "Disabled")) {
+    // Max layers from one higher resolution in kSimulcastFormats will be used
+    // if the ratio (pixels_up - pixels) / (pixels_up - pixels_down) is less
+    // than configured `max_ratio`. pixels_down is the selected index in
+    // kSimulcastFormats based on pixels.
+    webrtc::FieldTrialOptional<double> max_ratio("max_ratio");
+    webrtc::ParseFieldTrial({&max_ratio},
+                            trials.Lookup("WebRTC-SimulcastLayerLimitRoundUp"));
+
+    const bool enable_lowres_bitrate_interpolation =
+        EnableLowresBitrateInterpolation(trials);
     size_t adaptive_layer_count = std::max(
         need_layers,
-        kSimulcastFormats[FindSimulcastFormatIndex(width, height)].max_layers);
+        InterpolateSimulcastFormat(width, height, max_ratio.GetOptional(),
+                                   enable_lowres_bitrate_interpolation)
+            .max_layers);
     if (layer_count > adaptive_layer_count) {
       RTC_LOG(LS_WARNING) << "Reducing simulcast layer count from "
                           << layer_count << " to " << adaptive_layer_count;
@@ -254,27 +315,28 @@ std::vector<webrtc::VideoStream> GetSimulcastConfig(
     double bitrate_priority,
     int max_qp,
     bool is_screenshare_with_conference_mode,
-    bool temporal_layers_supported) {
+    bool temporal_layers_supported,
+    const webrtc::FieldTrialsView& trials) {
   RTC_DCHECK_LE(min_layers, max_layers);
   RTC_DCHECK(max_layers > 1 || is_screenshare_with_conference_mode);
 
   const bool base_heavy_tl3_rate_alloc =
-      webrtc::RateControlSettings::ParseFromFieldTrials()
+      webrtc::RateControlSettings::ParseFromKeyValueConfig(&trials)
           .Vp8BaseHeavyTl3RateAllocation();
   if (is_screenshare_with_conference_mode) {
     return GetScreenshareLayers(max_layers, width, height, bitrate_priority,
                                 max_qp, temporal_layers_supported,
-                                base_heavy_tl3_rate_alloc);
+                                base_heavy_tl3_rate_alloc, trials);
   } else {
     // Some applications rely on the old behavior limiting the simulcast layer
     // count based on the resolution automatically, which they can get through
     // the WebRTC-LegacySimulcastLayerLimit field trial until they update.
     max_layers =
-        LimitSimulcastLayerCount(width, height, min_layers, max_layers);
+        LimitSimulcastLayerCount(width, height, min_layers, max_layers, trials);
 
     return GetNormalSimulcastLayers(max_layers, width, height, bitrate_priority,
                                     max_qp, temporal_layers_supported,
-                                    base_heavy_tl3_rate_alloc);
+                                    base_heavy_tl3_rate_alloc, trials);
   }
 }
 
@@ -285,26 +347,35 @@ std::vector<webrtc::VideoStream> GetNormalSimulcastLayers(
     double bitrate_priority,
     int max_qp,
     bool temporal_layers_supported,
-    bool base_heavy_tl3_rate_alloc) {
+    bool base_heavy_tl3_rate_alloc,
+    const webrtc::FieldTrialsView& trials) {
   std::vector<webrtc::VideoStream> layers(layer_count);
+
+  const bool enable_lowres_bitrate_interpolation =
+      EnableLowresBitrateInterpolation(trials);
 
   // Format width and height has to be divisible by |2 ^ num_simulcast_layers -
   // 1|.
   width = NormalizeSimulcastSize(width, layer_count);
   height = NormalizeSimulcastSize(height, layer_count);
-  // Add simulcast streams, from highest resolution (|s| = num_simulcast_layers
-  // -1) to lowest resolution at |s| = 0.
+  // Add simulcast streams, from highest resolution (`s` = num_simulcast_layers
+  // -1) to lowest resolution at `s` = 0.
   for (size_t s = layer_count - 1;; --s) {
     layers[s].width = width;
     layers[s].height = height;
     // TODO(pbos): Fill actual temporal-layer bitrate thresholds.
     layers[s].max_qp = max_qp;
     layers[s].num_temporal_layers =
-        temporal_layers_supported ? DefaultNumberOfTemporalLayers(s, false) : 1;
-    layers[s].max_bitrate_bps = FindSimulcastMaxBitrate(width, height).bps();
+        temporal_layers_supported ? DefaultNumberOfTemporalLayers(trials) : 1;
+    layers[s].max_bitrate_bps =
+        FindSimulcastMaxBitrate(width, height,
+                                enable_lowres_bitrate_interpolation)
+            .bps();
     layers[s].target_bitrate_bps =
-        FindSimulcastTargetBitrate(width, height).bps();
-    int num_temporal_layers = DefaultNumberOfTemporalLayers(s, false);
+        FindSimulcastTargetBitrate(width, height,
+                                   enable_lowres_bitrate_interpolation)
+            .bps();
+    int num_temporal_layers = DefaultNumberOfTemporalLayers(trials);
     if (s == 0) {
       // If alternative temporal rate allocation is selected, adjust the
       // bitrate of the lowest simulcast stream so that absolute bitrate for
@@ -330,7 +401,17 @@ std::vector<webrtc::VideoStream> GetNormalSimulcastLayers(
       layers[s].target_bitrate_bps =
           static_cast<int>(layers[s].target_bitrate_bps * rate_factor);
     }
-    layers[s].min_bitrate_bps = FindSimulcastMinBitrate(width, height).bps();
+    layers[s].min_bitrate_bps =
+        FindSimulcastMinBitrate(width, height,
+                                enable_lowres_bitrate_interpolation)
+            .bps();
+
+    // Ensure consistency.
+    layers[s].max_bitrate_bps =
+        std::max(layers[s].min_bitrate_bps, layers[s].max_bitrate_bps);
+    layers[s].target_bitrate_bps =
+        std::max(layers[s].min_bitrate_bps, layers[s].target_bitrate_bps);
+
     layers[s].max_framerate = kDefaultVideoMaxFramerate;
 
     width /= 2;
@@ -356,10 +437,10 @@ std::vector<webrtc::VideoStream> GetScreenshareLayers(
     double bitrate_priority,
     int max_qp,
     bool temporal_layers_supported,
-    bool base_heavy_tl3_rate_alloc) {
-  auto max_screenshare_layers = kMaxScreenshareSimulcastLayers;
+    bool base_heavy_tl3_rate_alloc,
+    const webrtc::FieldTrialsView& trials) {
   size_t num_simulcast_layers =
-      std::min<int>(max_layers, max_screenshare_layers);
+      std::min<int>(max_layers, kScreenshareMaxSimulcastLayers);
 
   std::vector<webrtc::VideoStream> layers(num_simulcast_layers);
   // For legacy screenshare in conference mode, tl0 and tl1 bitrates are
@@ -377,9 +458,8 @@ std::vector<webrtc::VideoStream> GetScreenshareLayers(
   // With simulcast enabled, add another spatial layer. This one will have a
   // more normal layout, with the regular 3 temporal layer pattern and no fps
   // restrictions. The base simulcast layer will still use legacy setup.
-  if (num_simulcast_layers == kMaxScreenshareSimulcastLayers) {
+  if (num_simulcast_layers == kScreenshareMaxSimulcastLayers) {
     // Add optional upper simulcast layer.
-    const int num_temporal_layers = DefaultNumberOfTemporalLayers(1, true);
     int max_bitrate_bps;
     bool using_boosted_bitrate = false;
     if (!temporal_layers_supported) {
@@ -388,20 +468,11 @@ std::vector<webrtc::VideoStream> GetScreenshareLayers(
       max_bitrate_bps = static_cast<int>(
           kScreenshareHighStreamMaxBitrate.bps() *
           webrtc::SimulcastRateAllocator::GetTemporalRateAllocation(
-              num_temporal_layers, 0, base_heavy_tl3_rate_alloc));
-    } else if (DefaultNumberOfTemporalLayers(1, true) != 3 ||
-               base_heavy_tl3_rate_alloc) {
+              kScreenshareTemporalLayers, 0, base_heavy_tl3_rate_alloc));
+    } else {
       // Experimental temporal layer mode used, use increased max bitrate.
       max_bitrate_bps = kScreenshareHighStreamMaxBitrate.bps();
       using_boosted_bitrate = true;
-    } else {
-      // Keep current bitrates with default 3tl/8 frame settings.
-      // Lowest temporal layers of a 3 layer setup will have 40% of the total
-      // bitrate allocation for that simulcast layer. Make sure the gap between
-      // the target of the lower simulcast layer and first temporal layer of the
-      // higher one is at most 2x the bitrate, so that upswitching is not
-      // hampered by stalled bitrate estimates.
-      max_bitrate_bps = 2 * ((layers[0].target_bitrate_bps * 10) / 4);
     }
 
     layers[1].width = width;
@@ -409,18 +480,10 @@ std::vector<webrtc::VideoStream> GetScreenshareLayers(
     layers[1].max_qp = max_qp;
     layers[1].max_framerate = kDefaultVideoMaxFramerate;
     layers[1].num_temporal_layers =
-        temporal_layers_supported ? DefaultNumberOfTemporalLayers(1, true) : 1;
+        temporal_layers_supported ? kScreenshareTemporalLayers : 1;
     layers[1].min_bitrate_bps = using_boosted_bitrate
                                     ? kScreenshareHighStreamMinBitrate.bps()
                                     : layers[0].target_bitrate_bps * 2;
-
-    // Cap max bitrate so it isn't overly high for the given resolution.
-    int resolution_limited_bitrate =
-        std::max<int>(FindSimulcastMaxBitrate(width, height).bps(),
-                      layers[1].min_bitrate_bps);
-    max_bitrate_bps =
-        std::min<int>(max_bitrate_bps, resolution_limited_bitrate);
-
     layers[1].target_bitrate_bps = max_bitrate_bps;
     layers[1].max_bitrate_bps = max_bitrate_bps;
   }

@@ -6,9 +6,8 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
 const { SCOPE_OLD_SYNC, LEGACY_SCOPE_WEBEXT_SYNC } = ChromeUtils.import(
@@ -43,11 +42,9 @@ const MOCK_ACCOUNT_KEYS = {
 (function initFxAccountsTestingInfrastructure() {
   do_get_profile();
 
-  let ns = {};
-  ChromeUtils.import(
-    "resource://testing-common/services/common/logging.js",
-    ns
+  let { initTestLogging } = ChromeUtils.import(
+    "resource://testing-common/services/common/logging.js"
   );
 
-  ns.initTestLogging("Trace");
+  initTestLogging("Trace");
 }.call(this));

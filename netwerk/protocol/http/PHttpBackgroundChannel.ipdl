@@ -13,13 +13,11 @@ include PURLClassifierInfo;
 
 include "mozilla/net/NeckoMessageUtils.h";
 
-using nsIHttpChannel::FlashPluginState from "nsIHttpChannel.h";
-
 namespace mozilla {
 namespace net {
 
 //-------------------------------------------------------------------
-[RefCounted] async protocol PHttpBackgroundChannel
+async protocol PHttpBackgroundChannel
 {
   manager PBackground;
 
@@ -36,7 +34,7 @@ child:
                            nsresult  transportStatus,
                            uint64_t  offset,
                            uint32_t  count,
-                           nsDependentCSubstring data,
+                           nsCString data,
                            bool dataFromSocketProcess);
 
 
@@ -61,10 +59,6 @@ child:
   // Tell the child that the resource being loaded has been classified.
   async NotifyClassificationFlags(uint32_t aClassificationFlags, bool aIsThirdParty);
 
-  // Tell the child that the current channel's document is not allowed to load
-  // flash content.
-  async NotifyFlashPluginStateChanged(FlashPluginState aState);
-
   // Tell the child information of matched URL againts SafeBrowsing list
   async SetClassifierMatchedInfo(ClassifierInfo info);
 
@@ -72,6 +66,8 @@ child:
   async SetClassifierMatchedTrackingInfo(ClassifierInfo info);
 
   async AttachStreamFilter(Endpoint<PStreamFilterParent> aEndpoint);
+
+  async DetachStreamFilters();
 
   async __delete__();
 

@@ -21,6 +21,7 @@
 #include "gc/GC.h"
 #include "js/AllocPolicy.h"
 #include "js/CharacterEncoding.h"
+#include "js/Conversions.h"
 #include "js/Equality.h"      // JS::SameValue
 #include "js/GlobalObject.h"  // JS::DefaultGlobalClassOps
 #include "js/RegExpFlags.h"   // JS::RegExpFlags
@@ -149,25 +150,25 @@ class JSAPITest {
 
   JSAPITestString toSource(long v) {
     char buf[40];
-    sprintf(buf, "%ld", v);
+    SprintfLiteral(buf, "%ld", v);
     return JSAPITestString(buf);
   }
 
   JSAPITestString toSource(unsigned long v) {
     char buf[40];
-    sprintf(buf, "%lu", v);
+    SprintfLiteral(buf, "%lu", v);
     return JSAPITestString(buf);
   }
 
   JSAPITestString toSource(long long v) {
     char buf[40];
-    sprintf(buf, "%lld", v);
+    SprintfLiteral(buf, "%lld", v);
     return JSAPITestString(buf);
   }
 
   JSAPITestString toSource(unsigned long long v) {
     char buf[40];
-    sprintf(buf, "%llu", v);
+    SprintfLiteral(buf, "%llu", v);
     return JSAPITestString(buf);
   }
 
@@ -288,7 +289,7 @@ class JSAPITest {
   bool fail(const JSAPITestString& msg = JSAPITestString(),
             const char* filename = "-", int lineno = 0) {
     char location[256];
-    snprintf(location, std::size(location), "%s:%d:", filename, lineno);
+    SprintfLiteral(location, "%s:%d:", filename, lineno);
 
     JSAPITestString message(location);
     message += msg;

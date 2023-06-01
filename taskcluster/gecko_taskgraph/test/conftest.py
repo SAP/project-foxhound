@@ -6,20 +6,16 @@ import os
 import pytest
 from mach.logging import LoggingManager
 from responses import RequestsMock
-from taskgraph.config import GraphConfig
-
+from taskgraph import generator as generator_mod
+from taskgraph import target_tasks as target_tasks_mod
+from taskgraph.config import GraphConfig, load_graph_config
+from taskgraph.generator import Kind, TaskGraphGenerator
+from taskgraph.optimize import base as optimize_mod
+from taskgraph.optimize.base import OptimizationStrategy
 from taskgraph.parameters import Parameters
 
-from gecko_taskgraph import (
-    GECKO,
-    generator,
-    optimize as optimize_mod,
-    target_tasks as target_tasks_mod,
-)
+from gecko_taskgraph import GECKO
 from gecko_taskgraph.actions import render_actions_json
-from gecko_taskgraph.config import load_graph_config
-from gecko_taskgraph.generator import TaskGraphGenerator, Kind
-from gecko_taskgraph.optimize import OptimizationStrategy
 from gecko_taskgraph.util.templates import merge
 
 
@@ -123,6 +119,8 @@ class FakeParameters(dict):
 
 
 class FakeOptimization(OptimizationStrategy):
+    description = "Fake strategy for testing"
+
     def __init__(self, mode, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.mode = mode
@@ -158,6 +156,7 @@ def maketgg(monkeypatch):
             {
                 "_kinds": kinds,
                 "backstop": False,
+                "enable_always_target": False,
                 "target_tasks_method": "test_method",
                 "test_manifest_loader": "default",
                 "try_mode": None,
@@ -168,7 +167,7 @@ def maketgg(monkeypatch):
         )
         parameters.update(params)
 
-        monkeypatch.setattr(generator, "load_graph_config", fake_load_graph_config)
+        monkeypatch.setattr(generator_mod, "load_graph_config", fake_load_graph_config)
 
         tgg = WithFakeKind("/root", parameters)
         tgg.loaded_kinds = loaded_kinds

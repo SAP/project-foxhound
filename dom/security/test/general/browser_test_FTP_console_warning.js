@@ -2,12 +2,6 @@
 //   Ensure that FTP subresource loads trigger a warning in the webconsole.
 "use strict";
 
-function scopedCuImport(path) {
-  const scope = {};
-  ChromeUtils.import(path, scope);
-  return scope;
-}
-
 // These files don't actually exist, we are just looking for messages
 // that indicate that loading those files would have been blocked.
 var seen_files = ["a.html", "b.html", "c.html", "d.png"];
@@ -37,7 +31,7 @@ add_task(async function() {
 
   Services.console.registerListener(on_new_message);
 
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, kTestURI);
+  BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, kTestURI);
   await BrowserTestUtils.waitForCondition(() => seen_files.length === 0);
   is(seen_files.length, 0, "All FTP subresources should be blocked");
 

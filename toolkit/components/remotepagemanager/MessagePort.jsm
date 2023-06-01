@@ -6,11 +6,11 @@
 
 var EXPORTED_SYMBOLS = ["MessagePort", "MessageListener"];
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "PromiseUtils",
-  "resource://gre/modules/PromiseUtils.jsm"
-);
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
+});
 
 class MessageListener {
   constructor() {
@@ -35,7 +35,7 @@ class MessageListener {
       try {
         listener(message);
       } catch (e) {
-        Cu.reportError(e);
+        console.error(e);
       }
     }
   }
@@ -135,7 +135,7 @@ class MessagePort {
       );
     }
 
-    let deferred = PromiseUtils.defer();
+    let deferred = lazy.PromiseUtils.defer();
     this.requests.push(deferred);
 
     this.messageManager.sendAsyncMessage("RemotePage:Request", {
@@ -179,7 +179,7 @@ class MessagePort {
 
     let deferred = this.requests[messagedata.requestID];
     if (!deferred) {
-      Cu.reportError("Received a response to an unknown request.");
+      console.error("Received a response to an unknown request.");
       return;
     }
 

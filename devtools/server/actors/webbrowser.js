@@ -4,50 +4,53 @@
 
 "use strict";
 
-var { Ci } = require("chrome");
-var Services = require("Services");
-var { DevToolsServer } = require("devtools/server/devtools-server");
-var { ActorRegistry } = require("devtools/server/actors/utils/actor-registry");
-var DevToolsUtils = require("devtools/shared/DevToolsUtils");
+var {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
+var {
+  ActorRegistry,
+} = require("resource://devtools/server/actors/utils/actor-registry.js");
+var DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 
 loader.lazyRequireGetter(
   this,
   "RootActor",
-  "devtools/server/actors/root",
+  "resource://devtools/server/actors/root.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "TabDescriptorActor",
-  "devtools/server/actors/descriptors/tab",
+  "resource://devtools/server/actors/descriptors/tab.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "WebExtensionDescriptorActor",
-  "devtools/server/actors/descriptors/webextension",
+  "resource://devtools/server/actors/descriptors/webextension.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "WorkerDescriptorActorList",
-  "devtools/server/actors/worker/worker-descriptor-actor-list",
+  "resource://devtools/server/actors/worker/worker-descriptor-actor-list.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "ServiceWorkerRegistrationActorList",
-  "devtools/server/actors/worker/service-worker-registration-list",
+  "resource://devtools/server/actors/worker/service-worker-registration-list.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "ProcessActorList",
-  "devtools/server/actors/process",
+  "resource://devtools/server/actors/process.js",
   true
 );
-loader.lazyImporter(
-  this,
+const lazy = {};
+ChromeUtils.defineModuleGetter(
+  lazy,
   "AddonManager",
   "resource://gre/modules/AddonManager.jsm"
 );
@@ -321,48 +324,30 @@ BrowserTabList.prototype._getActorForBrowser = async function(browser) {
   return actor;
 };
 
-BrowserTabList.prototype.getTab = function({ outerWindowID, tabId }) {
-  if (typeof outerWindowID == "number") {
-    // First look for in-process frames with this ID
-    const window = Services.wm.getOuterWindowWithId(outerWindowID);
-    // Safety check to prevent debugging top level window via getTab
-    if (window?.isChromeWindow) {
+/**
+ * Return the tab descriptor :
+ * - for the tab matching a browserId if one is passed
+ * - OR the currently selected tab if no browserId is passed.
+ *
+ * @param {Number} browserId: use to match any tab
+ */
+BrowserTabList.prototype.getTab = function({ browserId }) {
+  if (typeof browserId == "number") {
+    const browsingContext = BrowsingContext.getCurrentTopByBrowserId(browserId);
+    if (!browsingContext) {
       return Promise.reject({
-        error: "forbidden",
-        message: "Window with outerWindowID '" + outerWindowID + "' is chrome",
+        error: "noTab",
+        message: `Unable to find tab with browserId '${browserId}' (no browsing-context)`,
       });
     }
-    if (window) {
-      const iframe = window.browsingContext.embedderElement;
-      if (iframe) {
-        return this._getActorForBrowser(iframe);
-      }
+    const browser = browsingContext.embedderElement;
+    if (!browser) {
+      return Promise.reject({
+        error: "noTab",
+        message: `Unable to find tab with browserId '${browserId}' (no embedder element)`,
+      });
     }
-    // Then also look on registered <xul:browsers> when using outerWindowID for
-    // OOP tabs
-    for (const browser of this._getBrowsers()) {
-      if (browser.outerWindowID == outerWindowID) {
-        return this._getActorForBrowser(browser);
-      }
-    }
-    return Promise.reject({
-      error: "noTab",
-      message: "Unable to find tab with outerWindowID '" + outerWindowID + "'",
-    });
-  } else if (typeof tabId == "number") {
-    // Tabs OOP
-    for (const browser of this._getBrowsers()) {
-      if (
-        browser.frameLoader?.remoteTab &&
-        browser.frameLoader.remoteTab.tabId === tabId
-      ) {
-        return this._getActorForBrowser(browser);
-      }
-    }
-    return Promise.reject({
-      error: "noTab",
-      message: "Unable to find tab with tabId '" + tabId + "'",
-    });
+    return this._getActorForBrowser(browser);
   }
 
   const topAppWindow = Services.wm.getMostRecentWindow(
@@ -692,7 +677,7 @@ function BrowserAddonList(connection) {
 }
 
 BrowserAddonList.prototype.getList = async function() {
-  const addons = await AddonManager.getAllAddons();
+  const addons = await lazy.AddonManager.getAllAddons();
   for (const addon of addons) {
     let actor = this._actorByAddonId.get(addon.id);
     if (!actor) {
@@ -779,11 +764,11 @@ BrowserAddonList.prototype._adjustListener = function() {
   if (this._onListChanged) {
     // As long as the callback exists, we need to listen for changes
     // so we can notify about add-on changes.
-    AddonManager.addAddonListener(this);
+    lazy.AddonManager.addAddonListener(this);
   } else if (this._actorByAddonId.size === 0) {
     // When the callback does not exist, we only need to keep listening
     // if the actor cache will need adjusting when add-ons change.
-    AddonManager.removeAddonListener(this);
+    lazy.AddonManager.removeAddonListener(this);
   }
 };
 

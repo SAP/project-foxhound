@@ -1,4 +1,4 @@
-/* Copyright 2021 Mozilla Foundation
+/* Copyright 2023 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,10 @@ class SandboxSupportBase {
   this.commFun = null;
  }
  destroy() {
-  this.commFunc = null;
-  this.timeoutIds.forEach(([_, id]) => this.win.clearTimeout(id));
+  this.commFun = null;
+  for (const id of this.timeoutIds.values()) {
+   this.win.clearTimeout(id);
+  }
   this.timeoutIds = null;
  }
  exportValueToSandbox(val) {
@@ -47,6 +49,9 @@ class SandboxSupportBase {
     if (typeof callbackId !== "number" || typeof nMilliseconds !== "number") {
      return;
     }
+    if (callbackId === 0) {
+     this.win.clearTimeout(this.timeoutIds.get(callbackId));
+    }
     const id = this.win.setTimeout(() => {
      this.timeoutIds.delete(callbackId);
      this.callSandboxFunction("timeoutCb", {
@@ -56,9 +61,9 @@ class SandboxSupportBase {
     }, nMilliseconds);
     this.timeoutIds.set(callbackId, id);
    },
-   clearTimeout: id => {
-    this.win.clearTimeout(this.timeoutIds.get(id));
-    this.timeoutIds.delete(id);
+   clearTimeout: callbackId => {
+    this.win.clearTimeout(this.timeoutIds.get(callbackId));
+    this.timeoutIds.delete(callbackId);
    },
    setInterval: (callbackId, nMilliseconds) => {
     if (typeof callbackId !== "number" || typeof nMilliseconds !== "number") {
@@ -72,9 +77,9 @@ class SandboxSupportBase {
     }, nMilliseconds);
     this.timeoutIds.set(callbackId, id);
    },
-   clearInterval: id => {
-    this.win.clearInterval(this.timeoutIds.get(id));
-    this.timeoutIds.delete(id);
+   clearInterval: callbackId => {
+    this.win.clearInterval(this.timeoutIds.get(callbackId));
+    this.timeoutIds.delete(callbackId);
    },
    alert: cMsg => {
     if (typeof cMsg !== "string") {

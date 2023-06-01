@@ -24,6 +24,10 @@ Getting attention: If a reviewer doesn't respond within a week, or so of the rev
   * Join developers on `Mozilla's Matrix server <https://chat.mozilla.org>`_, and ask if anyone knows why a review may be delayed. Please link to the bug too.
   * If the review is still not addressed, mail the reviewer directly, asking if/when they'll have time to review the patch, or might otherwise be able to review it.
 
+For simple documentation changes, reviews are not required.
+
+For more information about the review process, see the :ref:`Code Review FAQ`.
+
 Review groups
 -------------
 
@@ -64,6 +68,9 @@ Review groups
    * - #gfx-reviewers
      - Changes to Graphics code
      - `Member list <https://phabricator.services.mozilla.com/project/members/122/>`__
+   * - #webgpu-reviewers
+     - Changes to WebGPU code
+     - `Member list <https://phabricator.services.mozilla.com/project/members/170/>`__
    * - #intermittent-reviewers
      - Test manifest changes
      - `Member list <https://phabricator.services.mozilla.com/project/members/110/>`__
@@ -73,12 +80,18 @@ Review groups
    * - #linter-reviewers
      - tools/lint/*
      - `Member list <https://phabricator.services.mozilla.com/project/members/119/>`__
+   * - #mac-reviewers
+     - Changes to Mac-specific code
+     - `Member list <https://phabricator.services.mozilla.com/project/members/149/>`__
    * - #mozbase
      - Changes to Mozbase
      - `Member list <https://phabricator.services.mozilla.com/project/members/113/>`__
    * - #mozbase-rust
      - Changes to Mozbase in Rust
      - `Member list <https://phabricator.services.mozilla.com/project/members/114/>`__
+   * - #necko-reviewers
+     - Changes to network code (aka necko, aka netwerk)
+     - `Member list <https://phabricator.services.mozilla.com/project/members/127/>`__
    * - #nss-reviewers
      - Changes to Network Security Services (NSS)
      - `Member list <https://phabricator.services.mozilla.com/project/members/156/>`__
@@ -118,6 +131,9 @@ Review groups
    * - #media-playback-reviewers
      - `Media playback <https://wiki.mozilla.org/Modules/All#Media_Playback>`__
      - `Member list <https://phabricator.services.mozilla.com/project/profile/159/>`__
+   * - #cubeb-reviewers
+     - Changes related to cubeb, Gecko's audio input/output library and associated projects (audioipc, cubeb-rs, rust cubeb backends)
+     - `Member list <https://phabricator.services.mozilla.com/project/profile/129/>`__
 
 To create a new group, fill a `new bug in Conduit::Administration <https://bugzilla.mozilla.org/enter_bug.cgi?product=Conduit&component=Administration>`__.
 See `bug 1613306 <https://bugzilla.mozilla.org/show_bug.cgi?id=1613306>`__ as example.

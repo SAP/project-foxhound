@@ -11,14 +11,16 @@
  * JS function definitions.
  */
 
-#include <iterator>
+#include <string_view>
 
 #include "jstypes.h"
 
+#include "gc/Policy.h"
 #include "js/shadow/Function.h"        // JS::shadow::Function
 #include "vm/FunctionFlags.h"          // FunctionFlags
 #include "vm/FunctionPrefixKind.h"     // FunctionPrefixKind
 #include "vm/GeneratorAndAsyncKind.h"  // GeneratorKind, FunctionAsyncKind
+#include "vm/JSAtom.h"
 #include "vm/JSObject.h"
 #include "vm/JSScript.h"
 
@@ -35,13 +37,18 @@ static constexpr uint32_t BoundFunctionEnvTargetSlot = 2;
 static constexpr uint32_t BoundFunctionEnvThisSlot = 3;
 static constexpr uint32_t BoundFunctionEnvArgsSlot = 4;
 
-static const char FunctionConstructorMedialSigils[] = ") {\n";
-static const char FunctionConstructorFinalBrace[] = "\n}";
+static constexpr std::string_view FunctionConstructorMedialSigils = ") {\n";
+static constexpr std::string_view FunctionConstructorFinalBrace = "\n}";
 
 // JSFunctions can have one of two classes:
 extern const JSClass FunctionClass;
 extern const JSClass ExtendedFunctionClass;
 
+namespace wasm {
+
+class Instance;
+
+}  // namespace wasm
 }  // namespace js
 
 class JSFunction : public js::NativeObject {
@@ -145,7 +152,7 @@ class JSFunction : public js::NativeObject {
  public:
   static inline JSFunction* create(JSContext* cx, js::gc::AllocKind kind,
                                    js::gc::InitialHeap heap,
-                                   js::HandleShape shape);
+                                   js::Handle<js::SharedShape*> shape);
 
   /* Call objects must be created for each invocation of this function. */
   bool needsCallObject() const;
@@ -637,6 +644,7 @@ class JSFunction : public js::NativeObject {
     MOZ_ASSERT(isWasmWithJitEntry());
     return static_cast<void**>(nativeJitInfoOrInterpretedScript());
   }
+  inline js::wasm::Instance& wasmInstance() const;
 
   bool isDerivedClassConstructor() const;
   bool isSyntheticFunction() const;
@@ -730,14 +738,14 @@ extern bool AsyncGeneratorConstructor(JSContext* cx, unsigned argc, Value* vp);
 
 extern JSFunction* NewFunctionWithProto(
     JSContext* cx, JSNative native, unsigned nargs, FunctionFlags flags,
-    HandleObject enclosingEnv, HandleAtom atom, HandleObject proto,
+    HandleObject enclosingEnv, Handle<JSAtom*> atom, HandleObject proto,
     gc::AllocKind allocKind = gc::AllocKind::FUNCTION,
     NewObjectKind newKind = GenericObject);
 
 // Allocate a new function backed by a JSNative.  Note that by default this
 // creates a tenured object.
 inline JSFunction* NewNativeFunction(
-    JSContext* cx, JSNative native, unsigned nargs, HandleAtom atom,
+    JSContext* cx, JSNative native, unsigned nargs, Handle<JSAtom*> atom,
     gc::AllocKind allocKind = gc::AllocKind::FUNCTION,
     NewObjectKind newKind = TenuredObject,
     FunctionFlags flags = FunctionFlags::NATIVE_FUN) {
@@ -749,7 +757,7 @@ inline JSFunction* NewNativeFunction(
 // Allocate a new constructor backed by a JSNative.  Note that by default this
 // creates a tenured object.
 inline JSFunction* NewNativeConstructor(
-    JSContext* cx, JSNative native, unsigned nargs, HandleAtom atom,
+    JSContext* cx, JSNative native, unsigned nargs, Handle<JSAtom*> atom,
     gc::AllocKind allocKind = gc::AllocKind::FUNCTION,
     NewObjectKind newKind = TenuredObject,
     FunctionFlags flags = FunctionFlags::NATIVE_CTOR) {
@@ -803,23 +811,20 @@ class FunctionExtended : public JSFunction {
 
   static const uint32_t NUM_EXTENDED_SLOTS = 2;
 
-  // Arrow functions store their lexical new.target in the first extended
-  // slot.
-  static const uint32_t ARROW_NEWTARGET_SLOT = 0;
-
   static const uint32_t METHOD_HOMEOBJECT_SLOT = 0;
 
   // Stores the length for bound functions, so the .length property doesn't need
   // to be resolved eagerly.
   static const uint32_t BOUND_FUNCTION_LENGTH_SLOT = 1;
 
-  // Exported asm.js/wasm functions store their WasmInstanceObject in the
-  // first slot.
-  static const uint32_t WASM_INSTANCE_SLOT = 0;
+  // wasm/asm.js exported functions store a code pointer to their direct entry
+  // point (see CodeRange::funcUncheckedCallEntry()) to support the call_ref
+  // instruction.
+  static const uint32_t WASM_FUNC_UNCHECKED_ENTRY_SLOT = 0;
 
-  // wasm/asm.js exported functions store the wasm::TlsData pointer of their
+  // wasm/asm.js exported functions store the wasm::Instance pointer of their
   // instance.
-  static const uint32_t WASM_TLSDATA_SLOT = 1;
+  static const uint32_t WASM_INSTANCE_SLOT = 1;
 
   // asm.js module functions store their WasmModuleObject in the first slot.
   static const uint32_t ASMJS_MODULE_SLOT = 0;
@@ -831,9 +836,6 @@ class FunctionExtended : public JSFunction {
     MOZ_ASSERT(which < NUM_EXTENDED_SLOTS);
     return getFixedSlotOffset(FirstExtendedSlot + which);
   }
-  static inline size_t offsetOfArrowNewTargetSlot() {
-    return offsetOfExtendedSlot(ARROW_NEWTARGET_SLOT);
-  }
   static inline size_t offsetOfMethodHomeObjectSlot() {
     return offsetOfExtendedSlot(METHOD_HOMEOBJECT_SLOT);
   }
@@ -844,9 +846,6 @@ class FunctionExtended : public JSFunction {
  private:
   friend class JSFunction;
 };
-
-extern bool CanReuseScriptForClone(JS::Realm* realm, HandleFunction fun,
-                                   HandleObject newEnclosingEnv);
 
 extern JSFunction* CloneFunctionReuseScript(JSContext* cx, HandleFunction fun,
                                             HandleObject enclosingEnv,
@@ -879,6 +878,14 @@ inline const js::Value& JSFunction::getExtendedSlot(uint32_t which) const {
   MOZ_ASSERT(isExtended());
   MOZ_ASSERT(which < js::FunctionExtended::NUM_EXTENDED_SLOTS);
   return getFixedSlot(js::FunctionExtended::FirstExtendedSlot + which);
+}
+
+inline js::wasm::Instance& JSFunction::wasmInstance() const {
+  MOZ_ASSERT(isWasm() || isAsmJSNative());
+  MOZ_ASSERT(
+      !getExtendedSlot(js::FunctionExtended::WASM_INSTANCE_SLOT).isUndefined());
+  return *static_cast<js::wasm::Instance*>(
+      getExtendedSlot(js::FunctionExtended::WASM_INSTANCE_SLOT).toPrivate());
 }
 
 namespace js {

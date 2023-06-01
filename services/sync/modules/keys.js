@@ -9,9 +9,10 @@ var EXPORTED_SYMBOLS = ["BulkKeyBundle"];
 const { CommonUtils } = ChromeUtils.import(
   "resource://services-common/utils.js"
 );
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
+);
 const { Weave } = ChromeUtils.import("resource://services-sync/main.js");
-const { Utils } = ChromeUtils.import("resource://services-sync/util.js");
 
 /**
  * Represents a pair of keys.
@@ -28,16 +29,12 @@ function KeyBundle() {
   this._encryptB64 = null;
   this._hmac = null;
   this._hmacB64 = null;
-  this._hmacObj = null;
-  this._sha256HMACHasher = null;
 }
 KeyBundle.prototype = {
   _encrypt: null,
   _encryptB64: null,
   _hmac: null,
   _hmacB64: null,
-  _hmacObj: null,
-  _sha256HMACHasher: null,
 
   equals: function equals(bundle) {
     return (
@@ -86,22 +83,10 @@ KeyBundle.prototype = {
 
     this._hmac = value;
     this._hmacB64 = btoa(value);
-    this._hmacObj = value ? Utils.makeHMACKey(value) : null;
-    this._sha256HMACHasher = value
-      ? Utils.makeHMACHasher(Ci.nsICryptoHMAC.SHA256, this._hmacObj)
-      : null;
   },
 
   get hmacKeyB64() {
     return this._hmacB64;
-  },
-
-  get hmacKeyObject() {
-    return this._hmacObj;
-  },
-
-  get sha256HMACHasher() {
-    return this._sha256HMACHasher;
   },
 
   /**
@@ -146,8 +131,6 @@ BulkKeyBundle.fromJWK = function(jwk) {
 };
 
 BulkKeyBundle.prototype = {
-  __proto__: KeyBundle.prototype,
-
   get collection() {
     return this._collection;
   },
@@ -185,3 +168,5 @@ BulkKeyBundle.prototype = {
     this.hmacKey = CommonUtils.safeAtoB(value[1]);
   },
 };
+
+Object.setPrototypeOf(BulkKeyBundle.prototype, KeyBundle.prototype);

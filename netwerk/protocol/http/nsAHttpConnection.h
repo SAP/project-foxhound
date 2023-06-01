@@ -9,11 +9,13 @@
 #include "nsHttp.h"
 #include "nsISupports.h"
 #include "nsAHttpTransaction.h"
+#include "Http3WebTransportSession.h"
 #include "HttpTrafficAnalyzer.h"
 
-class nsISocketTransport;
 class nsIAsyncInputStream;
 class nsIAsyncOutputStream;
+class nsISocketTransport;
+class nsITLSSocketControl;
 
 namespace mozilla {
 namespace net {
@@ -105,8 +107,11 @@ class nsAHttpConnection : public nsISupports {
                                                nsIAsyncInputStream**,
                                                nsIAsyncOutputStream**) = 0;
 
-  // called by a transaction to get the security info from the socket.
-  virtual void GetSecurityInfo(nsISupports**) = 0;
+  [[nodiscard]] virtual Http3WebTransportSession* GetWebTransportSession(
+      nsAHttpTransaction* aTransaction) = 0;
+
+  // called by a transaction to get the TLS socket control from the socket.
+  virtual void GetTLSSocketControl(nsITLSSocketControl**) = 0;
 
   // called by a transaction to determine whether or not the connection is
   // persistent... important in determining the end of a response.
@@ -164,6 +169,7 @@ class nsAHttpConnection : public nsISupports {
   virtual nsresult GetPeerAddr(NetAddr* addr) = 0;
   virtual bool ResolvedByTRR() = 0;
   virtual bool GetEchConfigUsed() = 0;
+  virtual PRIntervalTime LastWriteTime() = 0;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsAHttpConnection, NS_AHTTPCONNECTION_IID)
@@ -176,6 +182,8 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsAHttpConnection, NS_AHTTPCONNECTION_IID)
   [[nodiscard]] nsresult TakeTransport(                                      \
       nsISocketTransport**, nsIAsyncInputStream**, nsIAsyncOutputStream**)   \
       override;                                                              \
+  [[nodiscard]] Http3WebTransportSession* GetWebTransportSession(            \
+      nsAHttpTransaction* aTransaction) override;                            \
   bool IsPersistent() override;                                              \
   bool IsReused() override;                                                  \
   void DontReuse() override;                                                 \
@@ -194,12 +202,12 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsAHttpConnection, NS_AHTTPCONNECTION_IID)
     }                                                                        \
     return (fwdObject)->GetConnectionInfo(result);                           \
   }                                                                          \
-  void GetSecurityInfo(nsISupports** result) override {                      \
+  void GetTLSSocketControl(nsITLSSocketControl** result) override {          \
     if (!(fwdObject)) {                                                      \
       *result = nullptr;                                                     \
       return;                                                                \
     }                                                                        \
-    return (fwdObject)->GetSecurityInfo(result);                             \
+    return (fwdObject)->GetTLSSocketControl(result);                         \
   }                                                                          \
   [[nodiscard]] nsresult ResumeSend() override {                             \
     if (!(fwdObject)) return NS_ERROR_FAILURE;                               \
@@ -257,7 +265,8 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsAHttpConnection, NS_AHTTPCONNECTION_IID)
   }                                                                          \
   bool GetEchConfigUsed() override {                                         \
     return (!(fwdObject)) ? false : (fwdObject)->GetEchConfigUsed();         \
-  }
+  }                                                                          \
+  PRIntervalTime LastWriteTime() override;
 
 // ThrottleResponse deliberately ommited since we want different implementation
 // for h1 and h2 connections.

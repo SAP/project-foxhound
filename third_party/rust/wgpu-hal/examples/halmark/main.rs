@@ -5,8 +5,15 @@ extern crate wgpu_hal as hal;
 use hal::{
     Adapter as _, CommandEncoder as _, Device as _, Instance as _, Queue as _, Surface as _,
 };
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
-use std::{borrow::Borrow, iter, mem, num::NonZeroU32, ptr, time::Instant};
+use std::{
+    borrow::{Borrow, Cow},
+    iter, mem,
+    num::NonZeroU32,
+    ptr,
+    time::Instant,
+};
 
 const MAX_BUNNIES: usize = 1 << 20;
 const BUNNY_SIZE: f32 = 0.15 * 256.0;
@@ -69,7 +76,7 @@ struct Example<A: hal::Api> {
     pipeline: A::RenderPipeline,
     bunnies: Vec<Locals>,
     local_buffer: A::Buffer,
-    local_alignment: wgt::BufferAddress,
+    local_alignment: u32,
     global_buffer: A::Buffer,
     sampler: A::Sampler,
     texture: A::Texture,
@@ -89,9 +96,15 @@ impl<A: hal::Api> Example<A> {
             } else {
                 hal::InstanceFlags::empty()
             },
+            // Can't rely on having DXC available, so use FXC instead
+            dx12_shader_compiler: wgt::Dx12Compiler::Fxc,
         };
         let instance = unsafe { A::Instance::init(&instance_desc)? };
-        let mut surface = unsafe { instance.create_surface(window).unwrap() };
+        let mut surface = unsafe {
+            instance
+                .create_surface(window.raw_display_handle(), window.raw_window_handle())
+                .unwrap()
+        };
 
         let (adapter, capabilities) = unsafe {
             let mut adapters = instance.enumerate_adapters();
@@ -113,11 +126,12 @@ impl<A: hal::Api> Example<A> {
 
         let window_size: (u32, u32) = window.inner_size().into();
         let surface_config = hal::SurfaceConfiguration {
-            swap_chain_size: DESIRED_FRAMES
-                .max(*surface_caps.swap_chain_sizes.start())
-                .min(*surface_caps.swap_chain_sizes.end()),
+            swap_chain_size: DESIRED_FRAMES.clamp(
+                *surface_caps.swap_chain_sizes.start(),
+                *surface_caps.swap_chain_sizes.end(),
+            ),
             present_mode: wgt::PresentMode::Fifo,
-            composite_alpha_mode: hal::CompositeAlphaMode::Opaque,
+            composite_alpha_mode: wgt::CompositeAlphaMode::Opaque,
             format: wgt::TextureFormat::Bgra8UnormSrgb,
             extent: wgt::Extent3d {
                 width: window_size.0,
@@ -125,6 +139,7 @@ impl<A: hal::Api> Example<A> {
                 depth_or_array_layers: 1,
             },
             usage: hal::TextureUses::COLOR_TARGET,
+            view_formats: vec![],
         };
         unsafe {
             surface.configure(&device, &surface_config).unwrap();
@@ -136,14 +151,17 @@ impl<A: hal::Api> Example<A> {
                 .join("halmark")
                 .join("shader.wgsl");
             let source = std::fs::read_to_string(shader_file).unwrap();
-            let module = naga::front::wgsl::Parser::new().parse(&source).unwrap();
+            let module = naga::front::wgsl::Frontend::new().parse(&source).unwrap();
             let info = naga::valid::Validator::new(
                 naga::valid::ValidationFlags::all(),
                 naga::valid::Capabilities::empty(),
             )
             .validate(&module)
             .unwrap();
-            hal::NagaShader { module, info }
+            hal::NagaShader {
+                module: Cow::Owned(module),
+                info,
+            }
         };
         let shader_desc = hal::ShaderModuleDescriptor {
             label: None,
@@ -238,11 +256,11 @@ impl<A: hal::Api> Example<A> {
             },
             depth_stencil: None,
             multisample: wgt::MultisampleState::default(),
-            color_targets: &[wgt::ColorTargetState {
+            color_targets: &[Some(wgt::ColorTargetState {
                 format: surface_config.format,
                 blend: Some(wgt::BlendState::ALPHA_BLENDING),
                 write_mask: wgt::ColorWrites::default(),
-            }],
+            })],
             multiview: None,
         };
         let pipeline = unsafe { device.create_render_pipeline(&pipeline_desc).unwrap() };
@@ -282,6 +300,7 @@ impl<A: hal::Api> Example<A> {
             format: wgt::TextureFormat::Rgba8UnormSrgb,
             usage: hal::TextureUses::COPY_DST | hal::TextureUses::RESOURCE,
             memory_flags: hal::MemoryFlags::empty(),
+            view_formats: vec![],
         };
         let texture = unsafe { device.create_texture(&texture_desc).unwrap() };
 
@@ -378,22 +397,13 @@ impl<A: hal::Api> Example<A> {
             buffer
         };
 
-        fn align_to(
-            value: wgt::BufferAddress,
-            alignment: wgt::BufferAddress,
-        ) -> wgt::BufferAddress {
-            match value % alignment {
-                0 => value,
-                other => value - other + alignment,
-            }
-        }
-        let local_alignment = align_to(
-            mem::size_of::<Locals>() as _,
-            capabilities.limits.min_uniform_buffer_offset_alignment as _,
+        let local_alignment = hal::auxil::align_to(
+            mem::size_of::<Locals>() as u32,
+            capabilities.limits.min_uniform_buffer_offset_alignment,
         );
         let local_buffer_desc = hal::BufferDescriptor {
             label: Some("local"),
-            size: (MAX_BUNNIES as wgt::BufferAddress) * local_alignment,
+            size: (MAX_BUNNIES as wgt::BufferAddress) * (local_alignment as wgt::BufferAddress),
             usage: hal::BufferUses::MAP_WRITE | hal::BufferUses::UNIFORM,
             memory_flags: hal::MemoryFlags::PREFER_COHERENT,
         };
@@ -623,7 +633,7 @@ impl<A: hal::Api> Example<A> {
 
         let ctx = &mut self.contexts[self.context_index];
 
-        let surface_tex = unsafe { self.surface.acquire_texture(!0).unwrap().unwrap().texture };
+        let surface_tex = unsafe { self.surface.acquire_texture(None).unwrap().unwrap().texture };
 
         let target_barrier0 = hal::TextureBarrier {
             texture: surface_tex.borrow(),
@@ -655,7 +665,7 @@ impl<A: hal::Api> Example<A> {
                 depth_or_array_layers: 1,
             },
             sample_count: 1,
-            color_attachments: &[hal::ColorAttachment {
+            color_attachments: &[Some(hal::ColorAttachment {
                 target: hal::Attachment {
                     view: &surface_tex_view,
                     usage: hal::TextureUses::COLOR_TARGET,
@@ -668,7 +678,7 @@ impl<A: hal::Api> Example<A> {
                     b: 0.3,
                     a: 1.0,
                 },
-            }],
+            })],
             depth_stencil_attachment: None,
             multiview: None,
         };
@@ -694,7 +704,7 @@ impl<A: hal::Api> Example<A> {
         let target_barrier1 = hal::TextureBarrier {
             texture: surface_tex.borrow(),
             range: wgt::ImageSubresourceRange::default(),
-            usage: hal::TextureUses::COLOR_TARGET..hal::TextureUses::empty(),
+            usage: hal::TextureUses::COLOR_TARGET..hal::TextureUses::PRESENT,
         };
         unsafe {
             ctx.encoder.end_render_pass();

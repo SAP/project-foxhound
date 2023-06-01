@@ -40,8 +40,9 @@ add_task(async function() {
           Assert.ok(acceptBtn.disabled, "Accept button is disabled");
 
           let promiseKeywordNotification = PlacesTestUtils.waitForNotification(
-            "onItemChanged",
-            (itemId, prop, isAnno, val) => prop == "keyword" && val == "kw"
+            "bookmark-keyword-changed",
+            events => events.some(event => event.keyword === "kw"),
+            "places"
           );
 
           fillBookmarkTextField("editBMPanel_keywordField", "kw", dialogWin);
@@ -128,18 +129,15 @@ add_task(async function reopen_same_field() {
           contentAreaContextMenu.hidePopup();
         },
         async function(dialogWin) {
-          let acceptBtn = dialogWin.document
-            .getElementById("bookmarkpropertiesdialog")
-            .getButton("accept");
-          ok(acceptBtn.disabled, "Accept button is disabled");
-
           let elt = dialogWin.document.getElementById(
             "editBMPanel_keywordField"
           );
-          await TestUtils.waitForCondition(
-            () => elt.value == "kw",
-            "Keyword should be the previous value"
-          );
+          Assert.equal(elt.value, "kw", "Keyword should be the previous value");
+
+          let acceptBtn = dialogWin.document
+            .getElementById("bookmarkpropertiesdialog")
+            .getButton("accept");
+          ok(!acceptBtn.disabled, "Accept button is enabled");
         },
         closeHandler
       );

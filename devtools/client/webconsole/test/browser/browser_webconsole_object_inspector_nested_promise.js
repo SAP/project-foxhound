@@ -22,7 +22,7 @@ add_task(async function testExpandNestedPromise() {
     content.wrappedJSObject.console.log("oi-test", nestedPromise);
   });
 
-  const node = await waitFor(() => findMessage(hud, "oi-test"));
+  const node = await waitFor(() => findConsoleAPIMessage(hud, "oi-test"));
   const oi = node.querySelector(".tree");
   const [promiseNode] = getObjectInspectorNodes(oi);
 
@@ -32,7 +32,7 @@ add_task(async function testExpandNestedPromise() {
 
   const valueNode = findObjectInspectorNode(oi, "<value>");
   expandObjectInspectorNode(valueNode);
-  await waitFor(() => getObjectInspectorChildrenNodes(valueNode).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(valueNode).length);
   checkChildren(valueNode, [`1`, `<state>`, `<value>`]);
 });
 
@@ -54,7 +54,7 @@ add_task(async function testExpandCyclicPromise() {
     content.wrappedJSObject.console.log("oi-test", cyclicPromise);
   });
 
-  const node = await waitFor(() => findMessage(hud, "oi-test"));
+  const node = await waitFor(() => findConsoleAPIMessage(hud, "oi-test"));
   const oi = node.querySelector(".tree");
   const [promiseNode] = getObjectInspectorNodes(oi);
 
@@ -64,12 +64,12 @@ add_task(async function testExpandCyclicPromise() {
 
   const valueNode = findObjectInspectorNode(oi, "<value>");
   expandObjectInspectorNode(valueNode);
-  await waitFor(() => getObjectInspectorChildrenNodes(valueNode).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(valueNode).length);
   checkChildren(valueNode, [`bar`, `<state>`, `<reason>`]);
 
   const reasonNode = findObjectInspectorNode(oi, "<reason>");
   expandObjectInspectorNode(reasonNode);
-  await waitFor(() => getObjectInspectorChildrenNodes(reasonNode).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(reasonNode).length);
   checkChildren(reasonNode, [`foo`, `<state>`, `<value>`]);
 });
 

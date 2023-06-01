@@ -8,7 +8,7 @@
 <?xml-stylesheet href="chrome://global/content/commonDialog.css" type="text/css"?>
 <?xml-stylesheet href="chrome://global/skin/commonDialog.css" type="text/css"?>
 
-<!DOCTYPE window SYSTEM "chrome://global/locale/commonDialog.dtd">
+<!DOCTYPE window>
 
 <window id="commonDialogWindow"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
@@ -45,41 +45,36 @@
     <menupopup id="contentAreaContextMenu"
                onpopupshowing="goUpdateCommand('cmd_copy')">
       <menuitem id="context-copy"
-                label="&copyCmd.label;"
-                accesskey="&copyCmd.accesskey;"
+                data-l10n-id="common-dialog-copy-cmd"
                 command="cmd_copy"
                 disabled="true"/>
       <menuitem id="context-selectall"
-                label="&selectAllCmd.label;"
-                accesskey="&selectAllCmd.accesskey;"
+                data-l10n-id="common-dialog-select-all-cmd"
                 command="cmd_selectAll"/>
     </menupopup>
   </popupset>
 
-  <!-- The <div> was added in bug 1606617 to workaround bug 1614447 -->
-  <div xmlns="http://www.w3.org/1999/xhtml">
-    <div id="dialogGrid">
-      <div class="dialogRow" id="infoRow" hidden="hidden">
-        <div id="iconContainer">
-          <xul:image id="infoIcon"/>
-        </div>
-        <div id="infoContainer">
-          <xul:description id="infoTitle"/>
-          <xul:description id="infoBody" context="contentAreaContextMenu" noinitialfocus="true"/>
-        </div>
+  <div xmlns="http://www.w3.org/1999/xhtml" id="dialogGrid">
+    <div class="dialogRow" id="infoRow" hidden="hidden">
+      <div id="iconContainer">
+        <xul:image id="infoIcon"/>
       </div>
-      <div id="loginContainer" class="dialogRow" hidden="hidden">
-        <xul:label id="loginLabel" data-l10n-id="common-dialog-username" control="loginTextbox"/>
-        <input type="text" id="loginTextbox" dir="ltr"/>
+      <div id="infoContainer">
+        <xul:description id="infoTitle"/>
+        <xul:description id="infoBody" context="contentAreaContextMenu" noinitialfocus="true"/>
       </div>
-      <div id="password1Container" class="dialogRow" hidden="hidden">
-        <xul:label id="password1Label" data-l10n-id="common-dialog-password" control="password1Textbox"/>
-        <input type="password" id="password1Textbox" dir="ltr"/>
-      </div>
-      <div id="checkboxContainer" class="dialogRow" hidden="hidden">
-        <div/> <!-- spacer -->
-        <xul:checkbox id="checkbox" oncommand="Dialog.onCheckbox()"/>
-      </div>
+    </div>
+    <div id="loginContainer" class="dialogRow" hidden="hidden">
+      <xul:label id="loginLabel" data-l10n-id="common-dialog-username" control="loginTextbox"/>
+      <input type="text" id="loginTextbox" dir="ltr"/>
+    </div>
+    <div id="password1Container" class="dialogRow" hidden="hidden">
+      <xul:label id="password1Label" data-l10n-id="common-dialog-password" control="password1Textbox"/>
+      <input type="password" id="password1Textbox" dir="ltr"/>
+    </div>
+    <div id="checkboxContainer" class="dialogRow" hidden="hidden">
+      <div/> <!-- spacer -->
+      <xul:checkbox id="checkbox" oncommand="Dialog.onCheckbox()"/>
     </div>
   </div>
 </dialog>

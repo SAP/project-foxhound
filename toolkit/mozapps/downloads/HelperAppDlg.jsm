@@ -2,34 +2,41 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "EnableDelayHelper",
-  "resource://gre/modules/SharedPromptUtils.jsm"
+const { BrowserUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/BrowserUtils.sys.mjs"
 );
 
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  EnableDelayHelper: "resource://gre/modules/PromptUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "gReputationService",
   "@mozilla.org/reputationservice/application-reputation-service;1",
   Ci.nsIApplicationReputationService
 );
-
-const { Integration } = ChromeUtils.import(
-  "resource://gre/modules/Integration.jsm"
+XPCOMUtils.defineLazyServiceGetter(
+  lazy,
+  "gMIMEService",
+  "@mozilla.org/mime;1",
+  Ci.nsIMIMEService
 );
-/* global DownloadIntegration */
-Integration.downloads.defineModuleGetter(
-  this,
+
+const { Integration } = ChromeUtils.importESModule(
+  "resource://gre/modules/Integration.sys.mjs"
+);
+Integration.downloads.defineESModuleGetter(
+  lazy,
   "DownloadIntegration",
-  "resource://gre/modules/DownloadIntegration.jsm"
+  "resource://gre/modules/DownloadIntegration.sys.mjs"
 );
 
 // /////////////////////////////////////////////////////////////////////////////
@@ -111,9 +118,6 @@ nsUnknownContentTypeDialogProgressListener.prototype = {
  * comprised of:
  *   - a JS constructor function
  *   - a prototype providing all the interface methods and implementation stuff
- *
- * In addition, this file implements an nsIModule object that registers the
- * nsUnknownContentTypeDialog component.
  */
 
 const PREF_BD_USEDOWNLOADDIR = "browser.download.useDownloadDir";
@@ -122,17 +126,17 @@ const nsITimer = Ci.nsITimer;
 var downloadModule = ChromeUtils.import(
   "resource://gre/modules/DownloadLastDir.jsm"
 );
-const { DownloadPaths } = ChromeUtils.import(
-  "resource://gre/modules/DownloadPaths.jsm"
+const { DownloadPaths } = ChromeUtils.importESModule(
+  "resource://gre/modules/DownloadPaths.sys.mjs"
 );
 const { DownloadUtils } = ChromeUtils.import(
   "resource://gre/modules/DownloadUtils.jsm"
 );
-const { Downloads } = ChromeUtils.import(
-  "resource://gre/modules/Downloads.jsm"
+const { Downloads } = ChromeUtils.importESModule(
+  "resource://gre/modules/Downloads.sys.mjs"
 );
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
 
 /* ctor
@@ -173,7 +177,7 @@ nsUnknownContentTypeDialog.prototype = {
       let parent = aContext.getInterface(Ci.nsIDOMWindow);
       this._mDownloadDir = new downloadModule.DownloadLastDir(parent);
     } catch (ex) {
-      Cu.reportError(
+      console.error(
         "Missing window information when showing nsIHelperAppLauncherDialog: " +
           ex
       );
@@ -272,7 +276,7 @@ nsUnknownContentTypeDialog.prototype = {
         }
       }
       if (!parent) {
-        Cu.reportError(
+        console.error(
           "No candidate parent windows were found for the save filepicker." +
             "This should never happen."
         );
@@ -294,11 +298,13 @@ nsUnknownContentTypeDialog.prototype = {
           let defaultFolder = new FileUtils.File(preferredDir);
 
           try {
-            result = this.validateLeafName(
-              defaultFolder,
-              aDefaultFileName,
-              aSuggestedFileExtension
-            );
+            if (aDefaultFileName) {
+              result = this.validateLeafName(
+                defaultFolder,
+                aDefaultFileName,
+                aSuggestedFileExtension
+              );
+            }
           } catch (ex) {
             // When the default download directory is write-protected,
             // prompt the user for a different target file.
@@ -306,13 +312,6 @@ nsUnknownContentTypeDialog.prototype = {
 
           // Check to make sure we have a valid directory, otherwise, prompt
           if (result) {
-            // Notifications for CloudStorage API consumers to show offer
-            // prompts while downloading. See Bug 1365129
-            Services.obs.notifyObservers(
-              null,
-              "cloudstorage-prompt-notification",
-              result.path
-            );
             // This path is taken when we have a writable default download directory.
             aLauncher.saveDestinationAvailable(result);
             return;
@@ -414,10 +413,11 @@ nsUnknownContentTypeDialog.prototype = {
               }
             }
           }
-          aLauncher.saveDestinationAvailable(result);
+          // Don't pop up the downloads panel redundantly.
+          aLauncher.saveDestinationAvailable(result, true);
         });
       });
-    })().catch(Cu.reportError);
+    })().catch(console.error);
   },
 
   getFinalLeafName(aLeafName, aFileExt) {
@@ -466,29 +466,6 @@ nsUnknownContentTypeDialog.prototype = {
       validatedFile = aLocalFolder;
     }
 
-    if (AppConstants.platform == "win") {
-      let ext;
-      try {
-        // We can fail here if there's no primary extension set
-        ext = "." + this.mLauncher.MIMEInfo.primaryExtension;
-      } catch (e) {}
-
-      // Append a file extension if it's an executable that doesn't have one
-      // but make sure we actually have an extension to add
-      let leaf = validatedFile.leafName;
-      if (
-        ext &&
-        !leaf.toLowerCase().endsWith(ext.toLowerCase()) &&
-        validatedFile.isExecutable()
-      ) {
-        validatedFile.remove(false);
-        aLocalFolder.leafName = leaf + ext;
-        if (!aAllowExisting) {
-          validatedFile = DownloadPaths.createNiceUniqueFile(aLocalFolder);
-        }
-      }
-    }
-
     return validatedFile;
   },
 
@@ -502,41 +479,39 @@ nsUnknownContentTypeDialog.prototype = {
     this.mDialog.document.addEventListener("dialogaccept", this);
     this.mDialog.document.addEventListener("dialogcancel", this);
 
-    var url = this.mLauncher.source;
+    let url = this.mLauncher.source;
+
     if (url instanceof Ci.nsINestedURI) {
       url = url.innermostURI;
     }
-    if (url.scheme == "blob") {
-      let origin = new URL(url.spec).origin;
-      // Origin can be "null" for blob URIs from a sandbox.
-      if (origin != "null") {
-        // `newURI` can throw (like for null) and throwing here breaks...
-        // a lot of stuff. So let's avoid doing that in case there are other
-        // edgecases we're missing here.
-        try {
-          url = Services.io.newURI(origin);
-        } catch (ex) {
-          Cu.reportError(ex);
-        }
-      }
+
+    let iconPath = "goat";
+    let fname = "";
+    if (suggestedFileName) {
+      fname = iconPath = suggestedFileName;
+    } else if (url instanceof Ci.nsIURL) {
+      // A url, use file name from it.
+      fname = iconPath = url.fileName;
+    } else if (["data", "blob"].includes(url.scheme)) {
+      // The path is useless for these, so use a reasonable default.
+      let { MIMEType } = this.mLauncher.MIMEInfo;
+      fname = lazy.gMIMEService.getValidFileName(null, MIMEType, url, 0);
+    } else {
+      fname = url.pathQueryRef;
     }
 
-    var fname = "";
-    var iconPath = "goat";
     this.mSourcePath = url.prePath;
     // Some URIs do not implement nsIURL, so we can't just QI.
     if (url instanceof Ci.nsIURL) {
-      // A url, use file name from it.
-      fname = iconPath = url.fileName;
       this.mSourcePath += url.directory;
     } else {
-      // A generic uri, use path.
-      fname = url.pathQueryRef;
-      this.mSourcePath += url.pathQueryRef;
-    }
-
-    if (suggestedFileName) {
-      fname = iconPath = suggestedFileName;
+      // Don't make the url excessively long (e.g. for data URIs)
+      // (this doesn't use a temp var to avoid copying a potentially
+      // several mb-long string)
+      this.mSourcePath +=
+        url.pathQueryRef.length > 500
+          ? url.pathQueryRef.substring(0, 500) + "\u2026"
+          : url.pathQueryRef;
     }
 
     var displayName = fname.replace(/ +/g, " ");
@@ -547,7 +522,7 @@ nsUnknownContentTypeDialog.prototype = {
     this.mDialog.document.title = this.mTitle;
 
     // Put content type, filename and location into intro.
-    this.initIntro(url, fname, displayName);
+    this.initIntro(url, displayName);
 
     var iconString =
       "moz-icon://" +
@@ -562,13 +537,20 @@ nsUnknownContentTypeDialog.prototype = {
     // then set up simple ui
     var mimeType = this.mLauncher.MIMEInfo.MIMEType;
     let isPlain = mimeType == "text/plain";
+
+    this.isExemptExecutableExtension = Services.policies.isExemptExecutableExtension(
+      url.spec,
+      fname?.split(".").at(-1)
+    );
+
     var shouldntRememberChoice =
       mimeType == "application/octet-stream" ||
       mimeType == "application/x-msdownload" ||
-      this.mLauncher.targetFileIsExecutable ||
+      (this.mLauncher.targetFileIsExecutable &&
+        !this.isExemptExecutableExtension) ||
       // Do not offer to remember text/plain mimetype choices if the file
       // isn't actually a 'plain' text file.
-      (isPlain && gReputationService.isBinary(suggestedFileName));
+      (isPlain && lazy.gReputationService.isBinary(suggestedFileName));
     if (
       (shouldntRememberChoice && !this.openWithDefaultOK()) ||
       Services.prefs.getBoolPref("browser.download.forbid_open_with")
@@ -629,7 +611,7 @@ nsUnknownContentTypeDialog.prototype = {
       this.dialog.postShowCallback();
     }, 0);
 
-    this.delayHelper = new EnableDelayHelper({
+    this.delayHelper = new lazy.EnableDelayHelper({
       disableDialog: () => {
         dialog.getButton("accept").disabled = true;
       },
@@ -662,14 +644,13 @@ nsUnknownContentTypeDialog.prototype = {
     this.dialogElement("mode").focus();
   },
 
-  initIntro(url, filename, displayname) {
-    this.dialogElement("location").value = displayname;
-    this.dialogElement("location").setAttribute("realname", filename);
-    this.dialogElement("location").setAttribute("tooltiptext", displayname);
+  initIntro(url, displayName) {
+    this.dialogElement("location").value = displayName;
+    this.dialogElement("location").setAttribute("tooltiptext", displayName);
 
     // if mSourcePath is a local file, then let's use the pretty path name
     // instead of an ugly url...
-    var pathString;
+    let pathString;
     if (url instanceof Ci.nsIFileURL) {
       try {
         // Getting .file might throw, or .parent could be null
@@ -678,15 +659,9 @@ nsUnknownContentTypeDialog.prototype = {
     }
 
     if (!pathString) {
-      // wasn't a fileURL
-      var tmpurl = url; // don't want to change the real url
-      try {
-        tmpurl = tmpurl
-          .mutate()
-          .setUserPass("")
-          .finalize();
-      } catch (ex) {}
-      pathString = tmpurl.prePath;
+      pathString = BrowserUtils.formatURIForDisplay(url, {
+        showInsecureHTTP: true,
+      });
     }
 
     // Set the location text, which is separate from the intro text so it can be cropped
@@ -742,7 +717,10 @@ nsUnknownContentTypeDialog.prototype = {
       // in that case).
 
       //  Default is Ok if the file isn't executable (and vice-versa).
-      return !this.mLauncher.targetFileIsExecutable;
+      return (
+        !this.mLauncher.targetFileIsExecutable ||
+        this.isExemptExecutableExtension
+      );
     }
     // On other platforms, default is Ok if there is a default app.
     // Note that nsIMIMEInfo providers need to ensure that this holds true
@@ -783,7 +761,8 @@ nsUnknownContentTypeDialog.prototype = {
     var mimeType = this.mLauncher.MIMEInfo.MIMEType;
     var openHandler = this.dialogElement("openHandler");
     if (
-      this.mLauncher.targetFileIsExecutable ||
+      (this.mLauncher.targetFileIsExecutable &&
+        !this.isExemptExecutableExtension) ||
       ((mimeType == "application/octet-stream" ||
         mimeType == "application/x-msdos-program" ||
         mimeType == "application/x-msdownload") &&
@@ -1118,7 +1097,9 @@ nsUnknownContentTypeDialog.prototype = {
       ) {
         this.updateHelperAppPref();
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error(e);
+    }
 
     this.onUnload();
   },
@@ -1130,7 +1111,10 @@ nsUnknownContentTypeDialog.prototype = {
     // Cancel app launcher.
     try {
       this.mLauncher.cancel(Cr.NS_BINDING_ABORTED);
-    } catch (exception) {}
+    } catch (e) {
+      console.error(e);
+    }
+
     this.onUnload();
   },
 
@@ -1343,7 +1327,7 @@ nsUnknownContentTypeDialog.prototype = {
         "browser.helperApps.showOpenOptionForViewableInternally",
         false
       ) &&
-      DownloadIntegration.shouldViewDownloadInternally(
+      lazy.DownloadIntegration.shouldViewDownloadInternally(
         this.mLauncher.MIMEInfo.MIMEType,
         primaryExtension
       )

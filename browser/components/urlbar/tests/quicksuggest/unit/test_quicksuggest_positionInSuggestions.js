@@ -7,17 +7,15 @@
  * Tests for quick suggest result position specified in suggestions.
  */
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+ChromeUtils.defineESModuleGetters(this, {
   UrlbarProviderHeuristicFallback:
-    "resource:///modules/UrlbarProviderHeuristicFallback.jsm",
-  UrlbarProviderPlaces: "resource:///modules/UrlbarProviderPlaces.jsm",
-  UrlbarProviderQuickSuggest:
-    "resource:///modules/UrlbarProviderQuickSuggest.jsm",
+    "resource:///modules/UrlbarProviderHeuristicFallback.sys.mjs",
+  UrlbarProviderPlaces: "resource:///modules/UrlbarProviderPlaces.sys.mjs",
   UrlbarProviderTabToSearch:
-    "resource:///modules/UrlbarProviderTabToSearch.jsm",
+    "resource:///modules/UrlbarProviderTabToSearch.sys.mjs",
 });
 
-const SPONSORED_SECOND_POSITION_SUGGEST = {
+const SPONSORED_SECOND_POSITION_RESULT = {
   id: 1,
   url: "http://example.com/?q=sponsored-second",
   title: "sponsored second",
@@ -25,9 +23,10 @@ const SPONSORED_SECOND_POSITION_SUGGEST = {
   click_url: "http://click.reporting.test.com/",
   impression_url: "http://impression.reporting.test.com/",
   advertiser: "TestAdvertiser",
+  iab_category: "22 - Shopping",
   position: 1,
 };
-const SPONSORED_NORMAL_POSITION_SUGGEST = {
+const SPONSORED_NORMAL_POSITION_RESULT = {
   id: 2,
   url: "http://example.com/?q=sponsored-normal",
   title: "sponsored normal",
@@ -35,8 +34,9 @@ const SPONSORED_NORMAL_POSITION_SUGGEST = {
   click_url: "http://click.reporting.test.com/",
   impression_url: "http://impression.reporting.test.com/",
   advertiser: "TestAdvertiser",
+  iab_category: "22 - Shopping",
 };
-const NONSPONSORED_SECOND_POSITION_SUGGEST = {
+const NONSPONSORED_SECOND_POSITION_RESULT = {
   id: 3,
   url: "http://example.com/?q=nonsponsored-second",
   title: "nonsponsored second",
@@ -47,7 +47,7 @@ const NONSPONSORED_SECOND_POSITION_SUGGEST = {
   iab_category: "5 - Education",
   position: 1,
 };
-const NONSPONSORED_NORMAL_POSITION_SUGGEST = {
+const NONSPONSORED_NORMAL_POSITION_RESULT = {
   id: 4,
   url: "http://example.com/?q=nonsponsored-normal",
   title: "nonsponsored normal",
@@ -57,7 +57,7 @@ const NONSPONSORED_NORMAL_POSITION_SUGGEST = {
   advertiser: "TestAdvertiserNonSponsored",
   iab_category: "5 - Education",
 };
-const FIRST_POSITION_SUGGEST = {
+const FIRST_POSITION_RESULT = {
   id: 5,
   url: "http://example.com/?q=first-position",
   title: "first position suggest",
@@ -65,9 +65,10 @@ const FIRST_POSITION_SUGGEST = {
   click_url: "http://click.reporting.test.com/first-position",
   impression_url: "http://impression.reporting.test.com/first-position",
   advertiser: "TestAdvertiserFirstPositionQuickSuggest",
+  iab_category: "22 - Shopping",
   position: 0,
 };
-const SECOND_POSITION_SUGGEST = {
+const SECOND_POSITION_RESULT = {
   id: 6,
   url: "http://example.com/?q=second-position",
   title: "second position suggest",
@@ -75,9 +76,10 @@ const SECOND_POSITION_SUGGEST = {
   click_url: "http://click.reporting.test.com/second-position",
   impression_url: "http://impression.reporting.test.com/second-position",
   advertiser: "TestAdvertiserSecondPositionQuickSuggest",
+  iab_category: "22 - Shopping",
   position: 1,
 };
-const THIRD_POSITION_SUGGEST = {
+const THIRD_POSITION_RESULT = {
   id: 7,
   url: "http://example.com/?q=third-position",
   title: "third position suggest",
@@ -85,6 +87,7 @@ const THIRD_POSITION_SUGGEST = {
   click_url: "http://click.reporting.test.com/third-position",
   impression_url: "http://impression.reporting.test.com/third-position",
   advertiser: "TestAdvertiserThirdPositionQuickSuggest",
+  iab_category: "22 - Shopping",
   position: 2,
 };
 
@@ -145,14 +148,26 @@ function createExpectedQuickSuggestResult(suggest) {
       qsSuggestion: suggest.keywords[0],
       title: suggest.title,
       url: suggest.url,
+      originalUrl: suggest.url,
       icon: null,
       sponsoredImpressionUrl: suggest.impression_url,
       sponsoredClickUrl: suggest.click_url,
       sponsoredBlockId: suggest.id,
       sponsoredAdvertiser: suggest.advertiser,
+      sponsoredIabCategory: suggest.iab_category,
       isSponsored: suggest.iab_category !== "5 - Education",
-      helpUrl: UrlbarProviderQuickSuggest.helpUrl,
-      helpL10nId: "firefox-suggest-urlbar-learn-more",
+      helpUrl: QuickSuggest.HELP_URL,
+      helpL10n: {
+        id: UrlbarPrefs.get("resultMenu")
+          ? "urlbar-result-menu-learn-more-about-firefox-suggest"
+          : "firefox-suggest-urlbar-learn-more",
+      },
+      isBlockable: false,
+      blockL10n: {
+        id: UrlbarPrefs.get("resultMenu")
+          ? "urlbar-result-menu-dismiss-firefox-suggest"
+          : "firefox-suggest-urlbar-block",
+      },
       displayUrl: suggest.url,
       source: "remote-settings",
     },
@@ -162,7 +177,7 @@ function createExpectedQuickSuggestResult(suggest) {
 const TEST_CASES = [
   {
     description: "Test for second placable sponsored suggest",
-    input: SPONSORED_SECOND_POSITION_SUGGEST.keywords[0],
+    input: SPONSORED_SECOND_POSITION_RESULT.keywords[0],
     prefs: {
       "quicksuggest.allowPositionInSuggestions": true,
       "suggest.quicksuggest.sponsored": true,
@@ -174,13 +189,13 @@ const TEST_CASES = [
     ],
     expected: [
       EXPECTED_GENERAL_HEURISTIC_RESULT,
-      createExpectedQuickSuggestResult(SPONSORED_SECOND_POSITION_SUGGEST),
+      createExpectedQuickSuggestResult(SPONSORED_SECOND_POSITION_RESULT),
       EXPECTED_GENERAL_PLACES_RESULT,
     ],
   },
   {
     description: "Test for normal sponsored suggest",
-    input: SPONSORED_NORMAL_POSITION_SUGGEST.keywords[0],
+    input: SPONSORED_NORMAL_POSITION_RESULT.keywords[0],
     prefs: {
       "quicksuggest.allowPositionInSuggestions": true,
       "suggest.quicksuggest.sponsored": true,
@@ -193,12 +208,12 @@ const TEST_CASES = [
     expected: [
       EXPECTED_GENERAL_HEURISTIC_RESULT,
       EXPECTED_GENERAL_PLACES_RESULT,
-      createExpectedQuickSuggestResult(SPONSORED_NORMAL_POSITION_SUGGEST),
+      createExpectedQuickSuggestResult(SPONSORED_NORMAL_POSITION_RESULT),
     ],
   },
   {
     description: "Test for second placable nonsponsored suggest",
-    input: NONSPONSORED_SECOND_POSITION_SUGGEST.keywords[0],
+    input: NONSPONSORED_SECOND_POSITION_RESULT.keywords[0],
     prefs: {
       "quicksuggest.allowPositionInSuggestions": true,
       "suggest.quicksuggest.nonsponsored": true,
@@ -210,13 +225,13 @@ const TEST_CASES = [
     ],
     expected: [
       EXPECTED_GENERAL_HEURISTIC_RESULT,
-      createExpectedQuickSuggestResult(NONSPONSORED_SECOND_POSITION_SUGGEST),
+      createExpectedQuickSuggestResult(NONSPONSORED_SECOND_POSITION_RESULT),
       EXPECTED_GENERAL_PLACES_RESULT,
     ],
   },
   {
     description: "Test for normal nonsponsored suggest",
-    input: NONSPONSORED_NORMAL_POSITION_SUGGEST.keywords[0],
+    input: NONSPONSORED_NORMAL_POSITION_RESULT.keywords[0],
     prefs: {
       "quicksuggest.allowPositionInSuggestions": true,
       "suggest.quicksuggest.nonsponsored": true,
@@ -229,13 +244,13 @@ const TEST_CASES = [
     expected: [
       EXPECTED_GENERAL_HEURISTIC_RESULT,
       EXPECTED_GENERAL_PLACES_RESULT,
-      createExpectedQuickSuggestResult(NONSPONSORED_NORMAL_POSITION_SUGGEST),
+      createExpectedQuickSuggestResult(NONSPONSORED_NORMAL_POSITION_RESULT),
     ],
   },
   {
     description:
       "Test for second placable sponsored suggest but secondPosition pref is disabled",
-    input: SPONSORED_SECOND_POSITION_SUGGEST.keywords[0],
+    input: SPONSORED_SECOND_POSITION_RESULT.keywords[0],
     prefs: {
       "quicksuggest.allowPositionInSuggestions": false,
       "suggest.quicksuggest.sponsored": true,
@@ -248,12 +263,12 @@ const TEST_CASES = [
     expected: [
       EXPECTED_GENERAL_HEURISTIC_RESULT,
       EXPECTED_GENERAL_PLACES_RESULT,
-      createExpectedQuickSuggestResult(SPONSORED_SECOND_POSITION_SUGGEST),
+      createExpectedQuickSuggestResult(SPONSORED_SECOND_POSITION_RESULT),
     ],
   },
   {
     description: "Test the results with multi providers having same index",
-    input: SECOND_POSITION_SUGGEST.keywords[0],
+    input: SECOND_POSITION_RESULT.keywords[0],
     prefs: {
       "quicksuggest.allowPositionInSuggestions": true,
       "suggest.quicksuggest.sponsored": true,
@@ -265,13 +280,13 @@ const TEST_CASES = [
     ],
     expected: [
       EXPECTED_GENERAL_TABTOSEARCH_RESULT,
-      createExpectedQuickSuggestResult(SECOND_POSITION_SUGGEST),
+      createExpectedQuickSuggestResult(SECOND_POSITION_RESULT),
       EXPECTED_GENERAL_INTERVENTION_RESULT,
     ],
   },
   {
     description: "Test the results with tab-to-search",
-    input: SECOND_POSITION_SUGGEST.keywords[0],
+    input: SECOND_POSITION_RESULT.keywords[0],
     prefs: {
       "quicksuggest.allowPositionInSuggestions": true,
       "suggest.quicksuggest.sponsored": true,
@@ -282,12 +297,12 @@ const TEST_CASES = [
     ],
     expected: [
       EXPECTED_GENERAL_TABTOSEARCH_RESULT,
-      createExpectedQuickSuggestResult(SECOND_POSITION_SUGGEST),
+      createExpectedQuickSuggestResult(SECOND_POSITION_RESULT),
     ],
   },
   {
     description: "Test the results with another intervention",
-    input: SECOND_POSITION_SUGGEST.keywords[0],
+    input: SECOND_POSITION_RESULT.keywords[0],
     prefs: {
       "quicksuggest.allowPositionInSuggestions": true,
       "suggest.quicksuggest.sponsored": true,
@@ -297,13 +312,13 @@ const TEST_CASES = [
       SECOND_POSITION_INTERVENTION_RESULT_PROVIDER.name,
     ],
     expected: [
-      createExpectedQuickSuggestResult(SECOND_POSITION_SUGGEST),
+      createExpectedQuickSuggestResult(SECOND_POSITION_RESULT),
       EXPECTED_GENERAL_INTERVENTION_RESULT,
     ],
   },
   {
     description: "Test the results with heuristic and tab-to-search",
-    input: SECOND_POSITION_SUGGEST.keywords[0],
+    input: SECOND_POSITION_RESULT.keywords[0],
     prefs: {
       "quicksuggest.allowPositionInSuggestions": true,
       "suggest.quicksuggest.sponsored": true,
@@ -316,12 +331,12 @@ const TEST_CASES = [
     expected: [
       EXPECTED_GENERAL_HEURISTIC_RESULT,
       EXPECTED_GENERAL_TABTOSEARCH_RESULT,
-      createExpectedQuickSuggestResult(SECOND_POSITION_SUGGEST),
+      createExpectedQuickSuggestResult(SECOND_POSITION_RESULT),
     ],
   },
   {
     description: "Test the results with heuristic tab-to-search and places",
-    input: SECOND_POSITION_SUGGEST.keywords[0],
+    input: SECOND_POSITION_RESULT.keywords[0],
     prefs: {
       "quicksuggest.allowPositionInSuggestions": true,
       "suggest.quicksuggest.sponsored": true,
@@ -335,13 +350,13 @@ const TEST_CASES = [
     expected: [
       EXPECTED_GENERAL_HEURISTIC_RESULT,
       EXPECTED_GENERAL_TABTOSEARCH_RESULT,
-      createExpectedQuickSuggestResult(SECOND_POSITION_SUGGEST),
+      createExpectedQuickSuggestResult(SECOND_POSITION_RESULT),
       EXPECTED_GENERAL_PLACES_RESULT,
     ],
   },
   {
     description: "Test the results with heuristic and another intervention",
-    input: SECOND_POSITION_SUGGEST.keywords[0],
+    input: SECOND_POSITION_RESULT.keywords[0],
     prefs: {
       "quicksuggest.allowPositionInSuggestions": true,
       "suggest.quicksuggest.sponsored": true,
@@ -353,14 +368,14 @@ const TEST_CASES = [
     ],
     expected: [
       EXPECTED_GENERAL_HEURISTIC_RESULT,
-      createExpectedQuickSuggestResult(SECOND_POSITION_SUGGEST),
+      createExpectedQuickSuggestResult(SECOND_POSITION_RESULT),
       EXPECTED_GENERAL_INTERVENTION_RESULT,
     ],
   },
   {
     description:
       "Test the results with heuristic, another intervention and places",
-    input: SECOND_POSITION_SUGGEST.keywords[0],
+    input: SECOND_POSITION_RESULT.keywords[0],
     prefs: {
       "quicksuggest.allowPositionInSuggestions": true,
       "suggest.quicksuggest.sponsored": true,
@@ -373,14 +388,14 @@ const TEST_CASES = [
     ],
     expected: [
       EXPECTED_GENERAL_HEURISTIC_RESULT,
-      createExpectedQuickSuggestResult(SECOND_POSITION_SUGGEST),
+      createExpectedQuickSuggestResult(SECOND_POSITION_RESULT),
       EXPECTED_GENERAL_INTERVENTION_RESULT,
       EXPECTED_GENERAL_PLACES_RESULT,
     ],
   },
   {
     description: "Test for 0 indexed quick suggest",
-    input: FIRST_POSITION_SUGGEST.keywords[0],
+    input: FIRST_POSITION_RESULT.keywords[0],
     prefs: {
       "quicksuggest.allowPositionInSuggestions": true,
       "suggest.quicksuggest.sponsored": true,
@@ -390,13 +405,13 @@ const TEST_CASES = [
       UrlbarProviderQuickSuggest.name,
     ],
     expected: [
-      createExpectedQuickSuggestResult(FIRST_POSITION_SUGGEST),
+      createExpectedQuickSuggestResult(FIRST_POSITION_RESULT),
       EXPECTED_GENERAL_TABTOSEARCH_RESULT,
     ],
   },
   {
     description: "Test for 2 indexed quick suggest",
-    input: THIRD_POSITION_SUGGEST.keywords[0],
+    input: THIRD_POSITION_RESULT.keywords[0],
     prefs: {
       "quicksuggest.allowPositionInSuggestions": true,
       "suggest.quicksuggest.sponsored": true,
@@ -407,7 +422,7 @@ const TEST_CASES = [
     ],
     expected: [
       EXPECTED_GENERAL_INTERVENTION_RESULT,
-      createExpectedQuickSuggestResult(THIRD_POSITION_SUGGEST),
+      createExpectedQuickSuggestResult(THIRD_POSITION_RESULT),
     ],
   },
 ];
@@ -416,24 +431,26 @@ add_task(async function setup() {
   UrlbarPrefs.set("quicksuggest.enabled", true);
 
   // Setup for quick suggest result.
-  await QuickSuggestTestUtils.ensureQuickSuggestInit([
-    SPONSORED_SECOND_POSITION_SUGGEST,
-    SPONSORED_NORMAL_POSITION_SUGGEST,
-    NONSPONSORED_SECOND_POSITION_SUGGEST,
-    NONSPONSORED_NORMAL_POSITION_SUGGEST,
-    FIRST_POSITION_SUGGEST,
-    SECOND_POSITION_SUGGEST,
-    THIRD_POSITION_SUGGEST,
-  ]);
+  await QuickSuggestTestUtils.ensureQuickSuggestInit({
+    remoteSettingsResults: [
+      SPONSORED_SECOND_POSITION_RESULT,
+      SPONSORED_NORMAL_POSITION_RESULT,
+      NONSPONSORED_SECOND_POSITION_RESULT,
+      NONSPONSORED_NORMAL_POSITION_RESULT,
+      FIRST_POSITION_RESULT,
+      SECOND_POSITION_RESULT,
+      THIRD_POSITION_RESULT,
+    ],
+  });
 
   // Setup for places result.
   await PlacesUtils.history.clear();
   await PlacesTestUtils.addVisits([
-    "http://example.com/" + SPONSORED_SECOND_POSITION_SUGGEST.keywords[0],
-    "http://example.com/" + SPONSORED_NORMAL_POSITION_SUGGEST.keywords[0],
-    "http://example.com/" + NONSPONSORED_SECOND_POSITION_SUGGEST.keywords[0],
-    "http://example.com/" + NONSPONSORED_NORMAL_POSITION_SUGGEST.keywords[0],
-    "http://example.com/" + SECOND_POSITION_SUGGEST.keywords[0],
+    "http://example.com/" + SPONSORED_SECOND_POSITION_RESULT.keywords[0],
+    "http://example.com/" + SPONSORED_NORMAL_POSITION_RESULT.keywords[0],
+    "http://example.com/" + NONSPONSORED_SECOND_POSITION_RESULT.keywords[0],
+    "http://example.com/" + NONSPONSORED_NORMAL_POSITION_RESULT.keywords[0],
+    "http://example.com/" + SECOND_POSITION_RESULT.keywords[0],
   ]);
 
   // Setup for tab-to-search result.

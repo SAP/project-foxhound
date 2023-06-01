@@ -2,16 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  Services: "resource://gre/modules/Services.jsm",
-});
-
-XPCOMUtils.defineLazyGlobalGetters(this, ["fetch", "URL"]);
-
 const TIPPYTOP_PATH = "chrome://activity-stream/content/data/content/tippytop/";
 const TIPPYTOP_JSON_PATH =
   "chrome://activity-stream/content/data/content/tippytop/top_sites.json";
@@ -34,7 +24,7 @@ function getDomain(url, strip = "www.") {
   return domain;
 }
 
-this.TippyTopProvider = class TippyTopProvider {
+class TippyTopProvider {
   constructor() {
     this._sitesByDomain = new Map();
     this.initialized = false;
@@ -54,7 +44,7 @@ this.TippyTopProvider = class TippyTopProvider {
       }
       this.initialized = true;
     } catch (error) {
-      Cu.reportError("Failed to load tippy top manifest.");
+      console.error("Failed to load tippy top manifest.");
     }
   }
 
@@ -67,6 +57,6 @@ this.TippyTopProvider = class TippyTopProvider {
     }
     return site;
   }
-};
+}
 
 const EXPORTED_SYMBOLS = ["TippyTopProvider", "getDomain"];

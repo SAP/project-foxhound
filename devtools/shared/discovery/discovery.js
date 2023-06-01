@@ -31,11 +31,9 @@
  * is then available to scanning devices.
  */
 
-const { Cu, CC, Cc, Ci } = require("chrome");
-const EventEmitter = require("devtools/shared/event-emitter");
-const Services = require("Services");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
-const UDPSocket = CC(
+const UDPSocket = Components.Constructor(
   "@mozilla.org/network/udp-socket;1",
   "nsIUDPSocket",
   "init"
@@ -45,16 +43,6 @@ const SCAN_PORT = 50624;
 const UPDATE_PORT = 50625;
 const ADDRESS = "224.0.0.115";
 const REPLY_TIMEOUT = 5000;
-
-const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyGetter(this, "converter", () => {
-  const conv = Cc[
-    "@mozilla.org/intl/scriptableunicodeconverter"
-  ].createInstance(Ci.nsIScriptableUnicodeConverter);
-  conv.charset = "utf8";
-  return conv;
-});
 
 var logging = Services.prefs.getBoolPref("devtools.discovery.log");
 function log(msg) {
@@ -91,12 +79,12 @@ Transport.prototype = {
    * @param port integer
    *        UDP port to send the message to
    */
-  send: function(object, port) {
+  send(object, port) {
     if (logging) {
       log("Send to " + port + ":\n" + JSON.stringify(object, null, 2));
     }
     const message = JSON.stringify(object);
-    const rawMessage = converter.convertToByteArray(message);
+    const rawMessage = Uint8Array.from(message, x => x.charCodeAt(0));
     try {
       this.socket.send(ADDRESS, port, rawMessage, rawMessage.length);
     } catch (e) {
@@ -104,13 +92,13 @@ Transport.prototype = {
     }
   },
 
-  destroy: function() {
+  destroy() {
     this.socket.close();
   },
 
   // nsIUDPSocketListener
 
-  onPacketReceived: function(socket, message) {
+  onPacketReceived(socket, message) {
     const messageData = message.data;
     const object = JSON.parse(messageData);
     object.from = message.fromAddr.address;
@@ -127,7 +115,7 @@ Transport.prototype = {
     this.emit("message", object);
   },
 
-  onStopListening: function() {},
+  onStopListening() {},
 };
 
 /**
@@ -144,7 +132,7 @@ function LocalDevice() {
 LocalDevice.UNKNOWN = "unknown";
 
 LocalDevice.prototype = {
-  _get: function() {
+  _get() {
     // Without Settings API, just generate a name and stop, since the value
     // can't be persisted.
     this._generate();
@@ -154,15 +142,13 @@ LocalDevice.prototype = {
    * Generate a new device name from various platform-specific properties.
    * Triggers the |name| setter to persist if needed.
    */
-  _generate: function() {
+  _generate() {
     if (Services.appinfo.widgetToolkit == "android") {
       // For Firefox for Android, use the device's model name.
       // TODO: Bug 1180997: Find the right way to expose an editable name
       this.name = Services.sysinfo.get("device");
     } else {
-      this.name = Cc["@mozilla.org/network/dns-service;1"].getService(
-        Ci.nsIDNSService
-      ).myHostName;
+      this.name = Services.dns.myHostName;
     }
   },
 
@@ -185,7 +171,7 @@ function Discovery() {
   this.replyTimeout = REPLY_TIMEOUT;
 
   // Defaulted to Transport, but can be altered by tests
-  this._factories = { Transport: Transport };
+  this._factories = { Transport };
 
   this._transports = {
     scan: null,
@@ -208,7 +194,7 @@ Discovery.prototype = {
    * @param info object
    *        Arbitrary data about the service to announce to scanning devices
    */
-  addService: function(service, info) {
+  addService(service, info) {
     log("ADDING LOCAL SERVICE");
     if (Object.keys(this.localServices).length === 0) {
       this._startListeningForScan();
@@ -221,7 +207,7 @@ Discovery.prototype = {
    * @param service string
    *        Name of the service
    */
-  removeService: function(service) {
+  removeService(service) {
     delete this.localServices[service];
     if (Object.keys(this.localServices).length === 0) {
       this._stopListeningForScan();
@@ -231,7 +217,7 @@ Discovery.prototype = {
   /**
    * Scan for service updates from other devices.
    */
-  scan: function() {
+  scan() {
     this._startListeningForUpdate();
     this._waitForReplies();
     // TODO Bug 1027457: Use timer to debounce
@@ -241,7 +227,7 @@ Discovery.prototype = {
   /**
    * Get a list of all remote devices currently offering some service.:w
    */
-  getRemoteDevices: function() {
+  getRemoteDevices() {
     const devices = new Set();
     for (const service in this.remoteServices) {
       for (const device in this.remoteServices[service]) {
@@ -254,7 +240,7 @@ Discovery.prototype = {
   /**
    * Get a list of all remote devices currently offering a particular service.
    */
-  getRemoteDevicesWithService: function(service) {
+  getRemoteDevicesWithService(service) {
     const devicesWithService = this.remoteServices[service] || {};
     return Object.keys(devicesWithService);
   },
@@ -263,12 +249,12 @@ Discovery.prototype = {
    * Get service info (any details registered by the remote device) for a given
    * service on a device.
    */
-  getRemoteService: function(service, device) {
+  getRemoteService(service, device) {
     const devicesWithService = this.remoteServices[service] || {};
     return devicesWithService[device];
   },
 
-  _waitForReplies: function() {
+  _waitForReplies() {
     clearTimeout(this._expectingReplies.timer);
     this._expectingReplies.from = new Set(this.getRemoteDevices());
     this._expectingReplies.timer = setTimeout(
@@ -281,7 +267,7 @@ Discovery.prototype = {
     return this._factories.Transport;
   },
 
-  _startListeningForScan: function() {
+  _startListeningForScan() {
     if (this._transports.scan) {
       // Already listening
       return;
@@ -291,7 +277,7 @@ Discovery.prototype = {
     this._transports.scan.on("message", this._onRemoteScan);
   },
 
-  _stopListeningForScan: function() {
+  _stopListeningForScan() {
     if (!this._transports.scan) {
       // Not listening
       return;
@@ -301,7 +287,7 @@ Discovery.prototype = {
     this._transports.scan = null;
   },
 
-  _startListeningForUpdate: function() {
+  _startListeningForUpdate() {
     if (this._transports.update) {
       // Already listening
       return;
@@ -311,7 +297,7 @@ Discovery.prototype = {
     this._transports.update.on("message", this._onRemoteUpdate);
   },
 
-  _stopListeningForUpdate: function() {
+  _stopListeningForUpdate() {
     if (!this._transports.update) {
       // Not listening
       return;
@@ -321,7 +307,7 @@ Discovery.prototype = {
     this._transports.update = null;
   },
 
-  _restartListening: function() {
+  _restartListening() {
     if (this._transports.scan) {
       this._stopListeningForScan();
       this._startListeningForScan();
@@ -346,7 +332,7 @@ Discovery.prototype = {
     return null;
   },
 
-  _sendStatusTo: function(port) {
+  _sendStatusTo(port) {
     const status = {
       device: this.device.name,
       services: this.localServices,
@@ -354,13 +340,13 @@ Discovery.prototype = {
     this._outgoingTransport.send(status, port);
   },
 
-  _onRemoteScan: function() {
+  _onRemoteScan() {
     // Send my own status in response
     log("GOT SCAN REQUEST");
     this._sendStatusTo(UPDATE_PORT);
   },
 
-  _onRemoteUpdate: function(update) {
+  _onRemoteUpdate(update) {
     log("GOT REMOTE UPDATE");
 
     const remoteDevice = update.device;
@@ -419,7 +405,7 @@ Discovery.prototype = {
     }
   },
 
-  _purgeMissingDevices: function() {
+  _purgeMissingDevices() {
     log("PURGING MISSING DEVICES");
     for (const service in this.remoteServices) {
       const devicesWithService = this.remoteServices[service];

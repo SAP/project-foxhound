@@ -12,6 +12,7 @@
 #include "mozilla/BinarySearch.h"
 #include "mozilla/ImportDir.h"
 #include "mozilla/NativeNt.h"
+#include "mozilla/PolicyChecks.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Types.h"
 #include "mozilla/WindowsDllBlocklist.h"
@@ -30,12 +31,14 @@ namespace mozilla {
 // Also, AArch64 has not been tested with this.
 LauncherVoidResultWithLineInfo InitializeDllBlocklistOOP(
     const wchar_t* aFullImagePath, HANDLE aChildProcess,
-    const IMAGE_THUNK_DATA*) {
+    const IMAGE_THUNK_DATA*, const GeckoProcessType aProcessType) {
   return mozilla::Ok();
 }
 
 LauncherVoidResultWithLineInfo InitializeDllBlocklistOOPFromLauncher(
-    const wchar_t* aFullImagePath, HANDLE aChildProcess) {
+    const wchar_t* aFullImagePath, HANDLE aChildProcess,
+    const bool aDisableDynamicBlocklist,
+    Maybe<std::wstring> aBlocklistFileName) {
   return mozilla::Ok();
 }
 
@@ -43,7 +46,8 @@ LauncherVoidResultWithLineInfo InitializeDllBlocklistOOPFromLauncher(
 
 static LauncherVoidResultWithLineInfo InitializeDllBlocklistOOPInternal(
     const wchar_t* aFullImagePath, nt::CrossExecTransferManager& aTransferMgr,
-    const IMAGE_THUNK_DATA* aCachedNtdllThunk) {
+    const IMAGE_THUNK_DATA* aCachedNtdllThunk,
+    const GeckoProcessType aProcessType) {
   CrossProcessDllInterceptor intcpt(aTransferMgr.RemoteProcess());
   intcpt.Init(L"ntdll.dll");
 
@@ -138,6 +142,8 @@ static LauncherVoidResultWithLineInfo InitializeDllBlocklistOOPInternal(
     newFlags |= eDllBlocklistInitFlagIsChildProcess;
   }
 
+  SetDllBlocklistProcessTypeFlags(newFlags, aProcessType);
+
   LauncherVoidResult writeResult =
       aTransferMgr.Transfer(&gBlocklistInitFlags, &newFlags, sizeof(newFlags));
   if (writeResult.isErr()) {
@@ -149,7 +155,8 @@ static LauncherVoidResultWithLineInfo InitializeDllBlocklistOOPInternal(
 
 LauncherVoidResultWithLineInfo InitializeDllBlocklistOOP(
     const wchar_t* aFullImagePath, HANDLE aChildProcess,
-    const IMAGE_THUNK_DATA* aCachedNtdllThunk) {
+    const IMAGE_THUNK_DATA* aCachedNtdllThunk,
+    const GeckoProcessType aProcessType) {
   nt::CrossExecTransferManager transferMgr(aChildProcess);
   if (!transferMgr) {
     return LAUNCHER_ERROR_FROM_WIN32(ERROR_BAD_EXE_FORMAT);
@@ -172,11 +179,13 @@ LauncherVoidResultWithLineInfo InitializeDllBlocklistOOP(
   }
 
   return InitializeDllBlocklistOOPInternal(aFullImagePath, transferMgr,
-                                           aCachedNtdllThunk);
+                                           aCachedNtdllThunk, aProcessType);
 }
 
 LauncherVoidResultWithLineInfo InitializeDllBlocklistOOPFromLauncher(
-    const wchar_t* aFullImagePath, HANDLE aChildProcess) {
+    const wchar_t* aFullImagePath, HANDLE aChildProcess,
+    const bool aDisableDynamicBlocklist,
+    Maybe<std::wstring> aBlocklistFileName) {
   nt::CrossExecTransferManager transferMgr(aChildProcess);
   if (!transferMgr) {
     return LAUNCHER_ERROR_FROM_WIN32(ERROR_BAD_EXE_FORMAT);
@@ -185,10 +194,19 @@ LauncherVoidResultWithLineInfo InitializeDllBlocklistOOPFromLauncher(
   // The launcher process initializes a section object, whose handle is
   // transferred to the browser process, and that transferred handle in
   // the browser process is transferred to the sandbox processes.
-  LauncherVoidResultWithLineInfo result =
-      freestanding::gSharedSection.Init(transferMgr.LocalPEHeaders());
+  LauncherVoidResultWithLineInfo result = freestanding::gSharedSection.Init();
   if (result.isErr()) {
-    return result.propagateErr();
+    return result;
+  }
+
+  if (aBlocklistFileName.isSome() &&
+      !PolicyCheckBoolean(L"DisableThirdPartyModuleBlocking")) {
+    DynamicBlockList blockList(aBlocklistFileName->c_str());
+    result = freestanding::gSharedSection.SetBlocklist(
+        blockList, aDisableDynamicBlocklist);
+    if (result.isErr()) {
+      return result;
+    }
   }
 
   // Transfer a writable handle to the main process because it needs to append
@@ -204,8 +222,8 @@ LauncherVoidResultWithLineInfo InitializeDllBlocklistOOPFromLauncher(
     // After transfer, the launcher process does not need the object anymore.
     freestanding::gSharedSection.Reset(nullptr);
   });
-  return InitializeDllBlocklistOOPInternal(aFullImagePath, transferMgr,
-                                           nullptr);
+  return InitializeDllBlocklistOOPInternal(aFullImagePath, transferMgr, nullptr,
+                                           GeckoProcessType_Default);
 }
 
 #endif  // defined(MOZ_ASAN) || defined(_M_ARM64)

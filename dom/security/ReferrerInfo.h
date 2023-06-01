@@ -42,8 +42,7 @@ class nsHttpChannel;
 
 using mozilla::Maybe;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /**
  * The ReferrerInfo class holds the raw referrer and potentially a referrer
@@ -227,7 +226,16 @@ class ReferrerInfo : public nsIReferrerInfo {
    */
   static ReferrerPolicyEnum GetDefaultReferrerPolicy(
       nsIHttpChannel* aChannel = nullptr, nsIURI* aURI = nullptr,
-      bool privateBrowsing = false);
+      bool aPrivateBrowsing = false);
+
+  /**
+   * Return default referrer policy for third party which is controlled by user
+   * prefs:
+   * network.http.referer.defaultPolicy.trackers for regular mode
+   * network.http.referer.defaultPolicy.trackers.pbmode for private mode
+   */
+  static ReferrerPolicyEnum GetDefaultThirdPartyReferrerPolicy(
+      bool aPrivateBrowsing = false);
 
   /*
    * Helper function to parse ReferrerPolicy from meta tag referrer content.
@@ -282,16 +290,6 @@ class ReferrerInfo : public nsIReferrerInfo {
   virtual ~ReferrerInfo() = default;
 
   ReferrerInfo(const ReferrerInfo& rhs);
-
-  /*
-   * Default referrer policy to use
-   */
-  enum DefaultReferrerPolicy : uint32_t {
-    eDefaultPolicyNoReferrer = 0,
-    eDefaultPolicySameOrgin = 1,
-    eDefaultPolicyStrictWhenXorigin = 2,
-    eDefaultPolicyNoReferrerWhenDownGrade = 3,
-  };
 
   /*
    * Trimming policy when compute referrer, indicate how much information in the
@@ -431,6 +429,13 @@ class ReferrerInfo : public nsIReferrerInfo {
                                TrimmingPolicy aTrimmingPolicy,
                                nsACString& aInAndOutTrimmedReferrer) const;
 
+  /**
+   * The helper function to read the old data format before gecko 100 for
+   * deserialization.
+   */
+  nsresult ReadTailDataBeforeGecko100(const uint32_t& aData,
+                                      nsIObjectInputStream* aInputStream);
+
   /*
    * Write message to the error console
    */
@@ -442,6 +447,12 @@ class ReferrerInfo : public nsIReferrerInfo {
   nsCOMPtr<nsIURI> mOriginalReferrer;
 
   ReferrerPolicyEnum mPolicy;
+
+  // The referrer policy that has been set originally for the channel. Note that
+  // the policy may have been overridden by the default referrer policy, so we
+  // need to keep track of this if we need to recover the original referrer
+  // policy.
+  ReferrerPolicyEnum mOriginalPolicy;
 
   // Indicates if the referrer should be sent or not even when it's available
   // (default is true).
@@ -465,7 +476,6 @@ class ReferrerInfo : public nsIReferrerInfo {
 #endif  // DEBUG
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_ReferrerInfo_h

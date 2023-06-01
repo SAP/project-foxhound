@@ -9,8 +9,6 @@
   }],
 */
 
-/* import-globals-from ../../../../testing/mochitest/tests/SimpleTest/SimpleTest.js */
-
 var gPopupShownExpected = false;
 var gPopupShownListener;
 var gLastAutoCompleteResults;
@@ -25,29 +23,17 @@ const TelemetryFilterPropsAC = Object.freeze({
 /*
  * Returns the element with the specified |name| attribute.
  */
-function $_(formNum, name) {
-  let form = document.getElementById("form" + formNum);
-  if (!form) {
-    ok(false, "$_ couldn't find requested form " + formNum);
+function getFormElementByName(formNum, name) {
+  const formElement = document.querySelector(
+    `#form${formNum} [name="${name}"]`
+  );
+
+  if (!formElement) {
+    ok(false, `getFormElementByName: Couldn't find specified CSS selector.`);
     return null;
   }
 
-  let element = form.elements.namedItem(name);
-  if (!element) {
-    ok(false, "$_ couldn't find requested element " + name);
-    return null;
-  }
-
-  // Note that namedItem is a bit stupid, and will prefer an
-  // |id| attribute over a |name| attribute when looking for
-  // the element.
-
-  if (element.hasAttribute("name") && element.getAttribute("name") != name) {
-    ok(false, "$_ got confused.");
-    return null;
-  }
-
-  return element;
+  return formElement;
 }
 
 function registerPopupShownListener(listener) {
@@ -68,71 +54,28 @@ function getMenuEntries() {
   return results;
 }
 
-function checkArrayValues(actualValues, expectedValues, msg) {
-  is(
-    actualValues.length,
-    expectedValues.length,
-    "Checking array values: " + msg
-  );
-  for (let i = 0; i < expectedValues.length; i++) {
-    is(actualValues[i], expectedValues[i], msg + " Checking array entry #" + i);
-  }
-}
+class StorageEventsObserver {
+  promisesToResolve = [];
 
-var checkObserver = {
-  verifyStack: [],
-  callback: null,
-
-  init() {
+  constructor() {
     gChromeScript.sendAsyncMessage("addObserver");
     gChromeScript.addMessageListener(
       "satchel-storage-changed",
       this.observe.bind(this)
     );
-  },
+  }
 
-  uninit() {
-    gChromeScript.sendAsyncMessage("removeObserver");
-  },
-
-  waitForChecks(callback) {
-    if (!this.verifyStack.length) {
-      callback();
-    } else {
-      this.callback = callback;
-    }
-  },
+  async cleanup() {
+    await gChromeScript.sendQuery("removeObserver");
+  }
 
   observe({ subject, topic, data }) {
-    if (data != "formhistory-add" && data != "formhistory-update") {
-      return;
-    }
-    ok(!!this.verifyStack.length, "checking if saved form data was expected");
+    this.promisesToResolve.shift()?.({ subject, topic, data });
+  }
 
-    // Make sure that every piece of data we expect to be saved is saved, and no
-    // more. Here it is assumed that for every entry satchel saves or modifies, a
-    // message is sent.
-    //
-    // We don't actually check the content of the message, but just that the right
-    // quantity of messages is received.
-    // - if there are too few messages, test will time out
-    // - if there are too many messages, test will error out here
-    //
-    let expected = this.verifyStack.shift();
-
-    countEntries(expected.name, expected.value, function(num) {
-      ok(num > 0, expected.message);
-      if (!checkObserver.verifyStack.length) {
-        let callback = checkObserver.callback;
-        checkObserver.callback = null;
-        callback();
-      }
-    });
-  },
-};
-
-function checkForSave(name, value, message) {
-  checkObserver.verifyStack.push({ name, value, message });
+  promiseNextStorageEvent() {
+    return new Promise(resolve => this.promisesToResolve.push(resolve));
+  }
 }
 
 function getFormSubmitButton(formNum) {
@@ -270,6 +213,7 @@ async function promiseNoUnexpectedPopupShown() {
 
 /**
  * Resolve at the next popupshown event for the autocomplete popup
+ *
  * @returns {Promise} with the results
  */
 function promiseACShown() {
@@ -280,6 +224,19 @@ function promiseACShown() {
       resolve(results);
     };
   });
+}
+
+/**
+ * Open autocomplete popup on a field (if it exists) and wait for it to be shown
+ *
+ * @param {HTMLInputElement} input - input field to open autocomplete popup on
+ * @returns {Promise} of autocomplete items shown
+ */
+function openAutocompletePopup(input) {
+  input?.focus();
+  const promisePopupShown = promiseACShown();
+  synthesizeKey("KEY_ArrowDown");
+  return promisePopupShown;
 }
 
 function checkACTelemetryEvent(actualEvent, input, augmentedExtra) {
@@ -297,6 +254,12 @@ function checkACTelemetryEvent(actualEvent, input, augmentedExtra) {
   isDeeply(actualEvent[5], expectedExtra, "Check event extra object");
 }
 
+let gStorageEventsObserver;
+
+function promiseNextStorageEvent() {
+  return gStorageEventsObserver.promiseNextStorageEvent();
+}
+
 function satchelCommonSetup() {
   let chromeURL = SimpleTest.getTestFileURL("parent_utils.js");
   gChromeScript = SpecialPowers.loadChromeScript(chromeURL);
@@ -307,15 +270,12 @@ function satchelCommonSetup() {
     }
   });
 
-  SimpleTest.registerCleanupFunction(() => {
-    gChromeScript.sendAsyncMessage("cleanup");
-    return new Promise(resolve => {
-      gChromeScript.addMessageListener("cleanup-done", function done() {
-        gChromeScript.removeMessageListener("cleanup-done", done);
-        gChromeScript.destroy();
-        resolve();
-      });
-    });
+  gStorageEventsObserver = new StorageEventsObserver();
+
+  SimpleTest.registerCleanupFunction(async () => {
+    await gStorageEventsObserver.cleanup();
+    await gChromeScript.sendQuery("cleanup");
+    gChromeScript.destroy();
   });
 }
 

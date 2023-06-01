@@ -5,10 +5,21 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-/* exported LIBC, Win, createPipe, libc */
+if (typeof Components !== "undefined") {
+  /* global OS */
+  Cc["@mozilla.org/net/osfileconstantsservice;1"]
+    .getService(Ci.nsIOSFileConstantsService)
+    .init();
+}
 
-// This file is loaded into the same scope as subprocess_win.jsm
-/* import-globals-from subprocess_win.jsm */
+/* exported LIBC, Win, createPipe, libc, win32 */
+
+// ctypes is either already available in the chrome worker scope, or defined
+// in scope via loadSubScript.
+/* global ctypes */
+
+// This file is loaded into the same scope as subprocess_shared.js.
+/* import-globals-from subprocess_shared.js */
 
 const LIBC = OS.Constants.libc;
 

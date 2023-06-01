@@ -1362,9 +1362,8 @@ Decoder.decode = function(bits) {
 };
 
 // mozilla: Get access to a window
-var Services = require("Services");
 
-var DevToolsServer = require("devtools/server/devtools-server").DevToolsServer;
+var DevToolsServer = require("resource://devtools/server/devtools-server.js").DevToolsServer;
 
 var window = Services.wm.getMostRecentWindow(DevToolsServer.chromeWindowType);
 

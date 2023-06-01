@@ -39,6 +39,11 @@
 #include <algorithm>
 #include <limits>
 
+extern mozilla::LazyLogModule gMediaElementLog;
+#define LOG(msg, ...)                        \
+  MOZ_LOG(gMediaElementLog, LogLevel::Debug, \
+          ("HTMLVideoElement=%p, " msg, this, ##__VA_ARGS__))
+
 nsGenericHTMLElement* NS_NewHTMLVideoElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
     mozilla::dom::FromParser aFromParser) {
@@ -215,13 +220,51 @@ bool HTMLVideoElement::IsInteractiveHTMLContent() const {
          HTMLMediaElement::IsInteractiveHTMLContent();
 }
 
+gfx::IntSize HTMLVideoElement::GetVideoIntrinsicDimensions() {
+  layers::ImageContainer* container = GetImageContainer();
+  // Prefer the size of the container as it's more up to date.
+  if (container && container->GetCurrentSize().width != 0) {
+    // But adjust to the aspect ratio of the container.
+    float dar = static_cast<float>(mMediaInfo.mVideo.mDisplay.width) /
+                mMediaInfo.mVideo.mDisplay.height;
+    gfx::IntSize size = container->GetCurrentSize();
+    float imageDar = static_cast<float>(size.width) / size.height;
+    return gfx::IntSize(int(size.width * (dar / imageDar)), size.height);
+  }
+  return mMediaInfo.mVideo.mDisplay;
+}
+
+uint32_t HTMLVideoElement::VideoWidth() {
+  if (!mMediaInfo.HasVideo()) {
+    return 0;
+  }
+  gfx::IntSize size = GetVideoIntrinsicDimensions();
+  if (mMediaInfo.mVideo.mRotation == VideoInfo::Rotation::kDegree_90 ||
+      mMediaInfo.mVideo.mRotation == VideoInfo::Rotation::kDegree_270) {
+    return size.height;
+  }
+  return size.width;
+}
+
+uint32_t HTMLVideoElement::VideoHeight() {
+  if (!mMediaInfo.HasVideo()) {
+    return 0;
+  }
+  gfx::IntSize size = GetVideoIntrinsicDimensions();
+  if (mMediaInfo.mVideo.mRotation == VideoInfo::Rotation::kDegree_90 ||
+      mMediaInfo.mVideo.mRotation == VideoInfo::Rotation::kDegree_270) {
+    return size.width;
+  }
+  return size.height;
+}
+
 uint32_t HTMLVideoElement::MozParsedFrames() const {
   MOZ_ASSERT(NS_IsMainThread(), "Should be on main thread.");
   if (!IsVideoStatsEnabled()) {
     return 0;
   }
 
-  if (nsContentUtils::ShouldResistFingerprinting(OwnerDoc())) {
+  if (OwnerDoc()->ShouldResistFingerprinting()) {
     return nsRFPService::GetSpoofedTotalFrames(TotalPlayTime());
   }
 
@@ -234,20 +277,20 @@ uint32_t HTMLVideoElement::MozDecodedFrames() const {
     return 0;
   }
 
-  if (nsContentUtils::ShouldResistFingerprinting(OwnerDoc())) {
+  if (OwnerDoc()->ShouldResistFingerprinting()) {
     return nsRFPService::GetSpoofedTotalFrames(TotalPlayTime());
   }
 
   return mDecoder ? mDecoder->GetFrameStatistics().GetDecodedFrames() : 0;
 }
 
-uint32_t HTMLVideoElement::MozPresentedFrames() const {
+uint32_t HTMLVideoElement::MozPresentedFrames() {
   MOZ_ASSERT(NS_IsMainThread(), "Should be on main thread.");
   if (!IsVideoStatsEnabled()) {
     return 0;
   }
 
-  if (nsContentUtils::ShouldResistFingerprinting(OwnerDoc())) {
+  if (OwnerDoc()->ShouldResistFingerprinting()) {
     return nsRFPService::GetSpoofedPresentedFrames(TotalPlayTime(),
                                                    VideoWidth(), VideoHeight());
   }
@@ -261,7 +304,7 @@ uint32_t HTMLVideoElement::MozPaintedFrames() {
     return 0;
   }
 
-  if (nsContentUtils::ShouldResistFingerprinting(OwnerDoc())) {
+  if (OwnerDoc()->ShouldResistFingerprinting()) {
     return nsRFPService::GetSpoofedPresentedFrames(TotalPlayTime(),
                                                    VideoWidth(), VideoHeight());
   }
@@ -273,8 +316,7 @@ uint32_t HTMLVideoElement::MozPaintedFrames() {
 double HTMLVideoElement::MozFrameDelay() {
   MOZ_ASSERT(NS_IsMainThread(), "Should be on main thread.");
 
-  if (!IsVideoStatsEnabled() ||
-      nsContentUtils::ShouldResistFingerprinting(OwnerDoc())) {
+  if (!IsVideoStatsEnabled() || OwnerDoc()->ShouldResistFingerprinting()) {
     return 0.0;
   }
 
@@ -311,7 +353,7 @@ HTMLVideoElement::GetVideoPlaybackQuality() {
     }
 
     if (mDecoder) {
-      if (nsContentUtils::ShouldResistFingerprinting(OwnerDoc())) {
+      if (OwnerDoc()->ShouldResistFingerprinting()) {
         totalFrames = nsRFPService::GetSpoofedTotalFrames(TotalPlayTime());
         droppedFrames = nsRFPService::GetSpoofedDroppedFrames(
             TotalPlayTime(), VideoWidth(), VideoHeight());
@@ -333,6 +375,9 @@ HTMLVideoElement::GetVideoPlaybackQuality() {
             droppedFrames = uint32_t(double(stats->GetDroppedFrames()) * ratio);
           }
         }
+      }
+      if (!StaticPrefs::media_video_dropped_frame_stats_enabled()) {
+        droppedFrames = 0;
       }
     }
   }
@@ -357,15 +402,21 @@ void HTMLVideoElement::UpdateWakeLock() {
 }
 
 bool HTMLVideoElement::ShouldCreateVideoWakeLock() const {
-  // Only request wake lock for video with audio or video from media stream,
-  // because non-stream video without audio is often used as a background image.
+  if (!StaticPrefs::media_video_wakelock()) {
+    return false;
+  }
+  // Only request wake lock for video with audio or video from media
+  // stream, because non-stream video without audio is often used as a
+  // background image.
   //
-  // Some web conferencing sites route audio outside the video element, and
-  // would not be detected unless we check for media stream, so do that below.
+  // Some web conferencing sites route audio outside the video element,
+  // and would not be detected unless we check for media stream, so do
+  // that below.
   //
-  // Media streams generally aren't used as background images, though if they
-  // were we'd get false positives. If this is an issue, we could check for
-  // media stream AND document has audio playing (but that was tricky to do).
+  // Media streams generally aren't used as background images, though if
+  // they were we'd get false positives. If this is an issue, we could
+  // check for media stream AND document has audio playing (but that was
+  // tricky to do).
   return HasVideo() && (mSrcStream || HasAudio());
 }
 
@@ -597,4 +648,37 @@ void HTMLVideoElement::OnSecondaryVideoOutputFirstFrameRendered() {
       mVisualCloneTarget->GetVideoFrameContainer());
 }
 
+void HTMLVideoElement::OnVisibilityChange(Visibility aNewVisibility) {
+  HTMLMediaElement::OnVisibilityChange(aNewVisibility);
+
+  // See the alternative part after step 4, but we only pause/resume invisible
+  // autoplay for non-audible video, which is different from the spec. This
+  // behavior seems aiming to reduce the power consumption without interering
+  // users, and Chrome and Safari also chose to do that only for non-audible
+  // video, so we want to match them in order to reduce webcompat issue.
+  // https://html.spec.whatwg.org/multipage/media.html#ready-states:eligible-for-autoplay-2
+  if (!HasAttr(nsGkAtoms::autoplay) || IsAudible()) {
+    return;
+  }
+
+  if (aNewVisibility == Visibility::ApproximatelyVisible && mPaused &&
+      IsEligibleForAutoplay() && AllowedToPlay()) {
+    LOG("resume invisible paused autoplay video");
+    RunAutoplay();
+  }
+
+  // We need to consider the Pip window as well, which won't reflect in the
+  // visibility event.
+  if ((aNewVisibility == Visibility::ApproximatelyNonVisible &&
+       !IsCloningElementVisually()) &&
+      mCanAutoplayFlag) {
+    LOG("pause non-audible autoplay video when it's invisible");
+    PauseInternal();
+    mCanAutoplayFlag = true;
+    return;
+  }
+}
+
 }  // namespace mozilla::dom
+
+#undef LOG

@@ -12,6 +12,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/Decimal.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/TextControlElement.h"
 #include "mozilla/TextControlState.h"
 #include "mozilla/UniquePtr.h"
@@ -172,6 +173,13 @@ class HTMLInputElement final : public TextControlElement,
                       const nsAString& aValue,
                       nsIPrincipal* aMaybeScriptedPrincipal,
                       nsAttrValue& aResult) override;
+
+  bool LastValueChangeWasInteractive() const {
+    return mLastValueChangeWasInteractive;
+  }
+
+  void GetLastInteractiveValue(nsAString&);
+
   nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
                                       int32_t aModType) const override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
@@ -182,6 +190,9 @@ class HTMLInputElement final : public TextControlElement,
   nsresult PreHandleEvent(EventChainVisitor& aVisitor) override;
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
+  MOZ_CAN_RUN_SCRIPT
+  nsresult MaybeHandleRadioButtonNavigation(EventChainPostVisitor&,
+                                            uint32_t aKeyCode);
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   void PostHandleEventForRangeThumb(EventChainPostVisitor& aVisitor);
   MOZ_CAN_RUN_SCRIPT
@@ -190,8 +201,11 @@ class HTMLInputElement final : public TextControlElement,
   void FinishRangeThumbDrag(WidgetGUIEvent* aEvent = nullptr);
   MOZ_CAN_RUN_SCRIPT
   void CancelRangeThumbDrag(bool aIsForUserEvent = true);
+
+  enum class SnapToTickMarks : bool { No, Yes };
   MOZ_CAN_RUN_SCRIPT
-  void SetValueOfRangeForUserEvent(Decimal aValue);
+  void SetValueOfRangeForUserEvent(Decimal aValue,
+                                   SnapToTickMarks = SnapToTickMarks::No);
 
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
   void UnbindFromTree(bool aNullParent = true) override;
@@ -201,7 +215,7 @@ class HTMLInputElement final : public TextControlElement,
 
   void DestroyContent() override;
 
-  EventStates IntrinsicState() const override;
+  ElementState IntrinsicState() const override;
 
   void SetLastValueChangeWasInteractive(bool);
 
@@ -305,10 +319,11 @@ class HTMLInputElement final : public TextControlElement,
   bool IsTooShort();
   bool IsValueMissing() const;
   bool HasTypeMismatch() const;
-  mozilla::Maybe<bool> HasPatternMismatch() const;
+  Maybe<bool> HasPatternMismatch() const;
   bool IsRangeOverflow() const;
   bool IsRangeUnderflow() const;
-  bool HasStepMismatch(bool aUseZeroIfValueNaN = false) const;
+  bool ValueIsStepMismatch(const Decimal& aValue) const;
+  bool HasStepMismatch() const;
   bool HasBadInput() const;
   void UpdateTooLongValidityState();
   void UpdateTooShortValidityState();
@@ -444,12 +459,6 @@ class HTMLInputElement final : public TextControlElement,
 
   void GetAutocompleteInfo(Nullable<AutocompleteInfo>& aInfo);
 
-  bool Autofocus() const { return GetBoolAttr(nsGkAtoms::autofocus); }
-
-  void SetAutofocus(bool aValue, ErrorResult& aRv) {
-    SetHTMLBoolAttr(nsGkAtoms::autofocus, aValue, aRv);
-  }
-
   void GetCapture(nsAString& aValue);
   void SetCapture(const nsAString& aValue, ErrorResult& aRv) {
     SetHTMLAttr(nsGkAtoms::capture, aValue, aRv);
@@ -513,7 +522,7 @@ class HTMLInputElement final : public TextControlElement,
   bool IsDraggingRange() const { return mIsDraggingRange; }
   void SetIndeterminate(bool aValue);
 
-  nsGenericHTMLElement* GetList() const;
+  HTMLDataListElement* GetList() const;
 
   void GetMax(nsAString& aValue) { GetHTMLAttr(nsGkAtoms::max, aValue); }
   void SetMax(const nsAString& aValue, ErrorResult& aRv) {
@@ -699,13 +708,7 @@ class HTMLInputElement final : public TextControlElement,
                                        SelectionMode aSelectMode,
                                        ErrorResult& aRv);
 
-  bool Allowdirs() const {
-    return HasAttr(kNameSpaceID_None, nsGkAtoms::allowdirs);
-  }
-
-  void SetAllowdirs(bool aValue, ErrorResult& aRv) {
-    SetHTMLBoolAttr(nsGkAtoms::allowdirs, aValue, aRv);
-  }
+  void ShowPicker(ErrorResult& aRv);
 
   bool WebkitDirectoryAttr() const {
     return HasAttr(kNameSpaceID_None, nsGkAtoms::webkitdirectory);
@@ -717,13 +720,7 @@ class HTMLInputElement final : public TextControlElement,
 
   void GetWebkitEntries(nsTArray<RefPtr<FileSystemEntry>>& aSequence);
 
-  bool IsFilesAndDirectoriesSupported() const;
-
   already_AddRefed<Promise> GetFilesAndDirectories(ErrorResult& aRv);
-
-  already_AddRefed<Promise> GetFiles(bool aRecursiveFlag, ErrorResult& aRv);
-
-  void ChooseDirectory(ErrorResult& aRv);
 
   void GetAlign(nsAString& aValue) { GetHTMLAttr(nsGkAtoms::align, aValue); }
   void SetAlign(const nsAString& aValue, ErrorResult& aRv) {
@@ -847,7 +844,7 @@ class HTMLInputElement final : public TextControlElement,
    * that @required attribute applies and the attribute is set; in contrast,
    * Required() returns true whenever @required attribute is set.
    */
-  bool IsRequired() const { return State().HasState(NS_EVENT_STATE_REQUIRED); }
+  bool IsRequired() const { return State().HasState(ElementState::REQUIRED); }
 
   bool HasBeenTypePassword() const { return mHasBeenTypePassword; }
 
@@ -858,6 +855,9 @@ class HTMLInputElement final : public TextControlElement,
    * @return whether the current value is the empty string.
    */
   bool IsValueEmpty() const;
+
+  // Parse a simple (hex) color.
+  static mozilla::Maybe<nscolor> ParseSimpleColor(const nsAString& aColor);
 
  protected:
   MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual ~HTMLInputElement();
@@ -967,12 +967,6 @@ class HTMLInputElement final : public TextControlElement,
 
   void ResultForDialogSubmit(nsAString& aResult) override;
 
-  /**
-   * Dispatch a select event.
-   * XXX: This dispatches select event synchronously, see bug 1679474.
-   */
-  MOZ_CAN_RUN_SCRIPT void DispatchSelectEvent(nsPresContext* aPresContext);
-
   void SelectAll(nsPresContext* aPresContext);
   bool IsImage() const {
     return AttrValueIs(kNameSpaceID_None, nsGkAtoms::type, nsGkAtoms::image,
@@ -1014,11 +1008,6 @@ class HTMLInputElement final : public TextControlElement,
   MOZ_CAN_RUN_SCRIPT void MaybeSubmitForm(nsPresContext* aPresContext);
 
   /**
-   * Update mFileList with the currently selected file.
-   */
-  void UpdateFileList();
-
-  /**
    * Called after calling one of the SetFilesOrDirectories() functions.
    * This method can explore the directory recursively if needed.
    */
@@ -1046,7 +1035,7 @@ class HTMLInputElement final : public TextControlElement,
    * When the element isn't mutable (immutable), the value or checkedness
    * should not be changed by the user.
    *
-   * See: http://dev.w3.org/html5/spec/forms.html#concept-input-mutable
+   * See: https://html.spec.whatwg.org/#concept-fe-mutable
    */
   bool IsMutable() const;
 
@@ -1078,7 +1067,7 @@ class HTMLInputElement final : public TextControlElement,
   MOZ_CAN_RUN_SCRIPT void FreeData();
   TextControlState* GetEditorState() const;
 
-  MOZ_CAN_RUN_SCRIPT mozilla::TextEditor* GetTextEditorFromState();
+  MOZ_CAN_RUN_SCRIPT TextEditor* GetTextEditorFromState();
 
   /**
    * Manages the internal data storage across type changes.
@@ -1087,6 +1076,13 @@ class HTMLInputElement final : public TextControlElement,
   void HandleTypeChange(FormControlType aNewType, bool aNotify);
 
   enum class ForValueGetter { No, Yes };
+
+  /**
+   * If the input range has a list, this function will snap the given value to
+   * the nearest tick mark, but only if the given value is close enough to that
+   * tick mark.
+   */
+  void MaybeSnapToTickMark(Decimal& aValue);
 
   /**
    * Sanitize the value of the element depending of its current type.
@@ -1397,6 +1393,11 @@ class HTMLInputElement final : public TextControlElement,
    */
   nsresult MaybeInitPickers(EventChainPostVisitor& aVisitor);
 
+  /**
+   * Returns all valid colors in the <datalist> for the input with type=color.
+   */
+  nsTArray<nsString> GetColorsFromList();
+
   enum FilePickerType { FILE_PICKER_FILE, FILE_PICKER_DIRECTORY };
   nsresult InitFilePicker(FilePickerType aType);
   nsresult InitColorPicker();
@@ -1487,13 +1488,13 @@ class HTMLInputElement final : public TextControlElement,
   UniquePtr<InputType, InputType::DoNotDelete> mInputType;
 
   static constexpr size_t INPUT_TYPE_SIZE =
-      sizeof(mozilla::Variant<
-             TextInputType, SearchInputType, TelInputType, URLInputType,
-             EmailInputType, PasswordInputType, NumberInputType, RangeInputType,
-             RadioInputType, CheckboxInputType, ButtonInputType, ImageInputType,
-             ResetInputType, SubmitInputType, DateInputType, TimeInputType,
-             WeekInputType, MonthInputType, DateTimeLocalInputType,
-             FileInputType, ColorInputType, HiddenInputType>);
+      sizeof(Variant<TextInputType, SearchInputType, TelInputType, URLInputType,
+                     EmailInputType, PasswordInputType, NumberInputType,
+                     RangeInputType, RadioInputType, CheckboxInputType,
+                     ButtonInputType, ImageInputType, ResetInputType,
+                     SubmitInputType, DateInputType, TimeInputType,
+                     WeekInputType, MonthInputType, DateTimeLocalInputType,
+                     FileInputType, ColorInputType, HiddenInputType>);
 
   // Memory allocated for mInputType, reused when type changes.
   char mInputTypeMem[INPUT_TYPE_SIZE];
@@ -1587,8 +1588,7 @@ class HTMLInputElement final : public TextControlElement,
   static bool CreatesDateTimeWidget(FormControlType aType) {
     return aType == FormControlType::InputDate ||
            aType == FormControlType::InputTime ||
-           (aType == FormControlType::InputDatetimeLocal &&
-            StaticPrefs::dom_forms_datetime_local_widget());
+           aType == FormControlType::InputDatetimeLocal;
   }
 
   bool CreatesDateTimeWidget() const { return CreatesDateTimeWidget(mType); }

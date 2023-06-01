@@ -13,6 +13,7 @@
 #include <string>
 #include <utility>
 
+#include "absl/strings/string_view.h"
 #include "modules/audio_coding/audio_network_adaptor/mock/mock_controller.h"
 #include "modules/audio_coding/audio_network_adaptor/mock/mock_debug_dump_writer.h"
 #include "rtc_base/fake_clock.h"
@@ -43,7 +44,7 @@ constexpr int kMinReorderingTimeMs = 200;
 constexpr int kFactor = 100;
 constexpr float kMinReorderingSquareDistance = 1.0f / kFactor / kFactor;
 
-// |kMinUplinkBandwidthBps| and |kMaxUplinkBandwidthBps| are copied from
+// `kMinUplinkBandwidthBps` and `kMaxUplinkBandwidthBps` are copied from
 // controller_manager.cc
 constexpr int kMinUplinkBandwidthBps = 0;
 constexpr int kMaxUplinkBandwidthBps = 120000;
@@ -82,7 +83,7 @@ ControllerManagerStates CreateControllerManager() {
   return states;
 }
 
-// |expected_order| contains the expected indices of all controllers in the
+// `expected_order` contains the expected indices of all controllers in the
 // vector of controllers returned by GetSortedControllers(). A negative index
 // means that we do not care about its exact place, but we do check that it
 // exists in the vector.
@@ -112,8 +113,8 @@ void CheckControllersOrder(
 TEST(ControllerManagerTest, GetControllersReturnAllControllers) {
   auto states = CreateControllerManager();
   auto check = states.controller_manager->GetControllers();
-  // Verify that controllers in |check| are one-to-one mapped to those in
-  // |mock_controllers_|.
+  // Verify that controllers in `check` are one-to-one mapped to those in
+  // `mock_controllers_`.
   EXPECT_EQ(states.mock_controllers.size(), check.size());
   for (auto& controller : check)
     EXPECT_NE(states.mock_controllers.end(),
@@ -123,7 +124,7 @@ TEST(ControllerManagerTest, GetControllersReturnAllControllers) {
 
 TEST(ControllerManagerTest, ControllersInDefaultOrderOnEmptyNetworkMetrics) {
   auto states = CreateControllerManager();
-  // |network_metrics| are empty, and the controllers are supposed to follow the
+  // `network_metrics` are empty, and the controllers are supposed to follow the
   // default order.
   CheckControllersOrder(&states, absl::nullopt, absl::nullopt, {0, 1, 2, 3});
 }
@@ -276,7 +277,7 @@ constexpr int kInitialFrameLengthMs = 60;
 constexpr int kMinBitrateBps = 6000;
 
 ControllerManagerStates CreateControllerManager(
-    const std::string& config_string) {
+    absl::string_view config_string) {
   ControllerManagerStates states;
   constexpr size_t kNumEncoderChannels = 2;
   const std::vector<int> encoder_frame_lengths_ms = {20, 60};
@@ -304,7 +305,7 @@ void CheckControllersOrder(const std::vector<Controller*>& controllers,
 
   for (size_t i = 0; i < controllers.size(); ++i) {
     AudioEncoderRuntimeConfig encoder_config;
-    // We check the order of |controllers| by judging their decisions.
+    // We check the order of `controllers` by judging their decisions.
     controllers[i]->MakeDecision(&encoder_config);
 
     // Since controllers are not provided with network metrics, they give the

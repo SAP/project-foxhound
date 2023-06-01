@@ -4,11 +4,11 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "AsyncShutdown",
-  "resource://gre/modules/AsyncShutdown.jsm"
-);
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
+});
 
 var EXPORTED_SYMBOLS = ["CleanupManager"];
 
@@ -33,14 +33,14 @@ class CleanupManagerClass {
           try {
             await handler();
           } catch (ex) {
-            Cu.reportError(ex);
+            console.error(ex);
           }
         }
       })();
 
       // Block shutdown to ensure any cleanup tasks that write data are
       // finished.
-      AsyncShutdown.profileBeforeChange.addBlocker(
+      lazy.AsyncShutdown.profileBeforeChange.addBlocker(
         "ShieldRecipeClient: Cleaning up",
         this.cleanupPromise
       );

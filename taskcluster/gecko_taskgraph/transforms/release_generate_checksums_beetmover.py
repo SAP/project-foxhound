@@ -5,18 +5,19 @@
 Transform the `release-generate-checksums-beetmover` task to also append `build` as dependency
 """
 
+from taskgraph.transforms.base import TransformSequence
+from voluptuous import Optional
+
 from gecko_taskgraph.loader.single_dep import schema
-from gecko_taskgraph.transforms.base import TransformSequence
+from gecko_taskgraph.transforms.beetmover import craft_release_properties
+from gecko_taskgraph.transforms.task import task_description_schema
 from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 from gecko_taskgraph.util.scriptworker import (
     generate_beetmover_artifact_map,
     generate_beetmover_upstream_artifacts,
-    get_beetmover_bucket_scope,
     get_beetmover_action_scope,
+    get_beetmover_bucket_scope,
 )
-from gecko_taskgraph.transforms.beetmover import craft_release_properties
-from gecko_taskgraph.transforms.task import task_description_schema
-from voluptuous import Optional
 
 transforms = TransformSequence()
 

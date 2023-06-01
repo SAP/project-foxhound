@@ -8,9 +8,10 @@
 
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/MidiPermissionStatus.h"
 #include "mozilla/dom/PermissionMessageUtils.h"
-#include "mozilla/dom/PermissionsBinding.h"
 #include "mozilla/dom/PermissionStatus.h"
+#include "mozilla/dom/PermissionsBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/Components.h"
 #include "nsIPermissionManager.h"
@@ -50,6 +51,16 @@ already_AddRefed<PermissionStatus> CreatePermissionStatus(
   }
 
   switch (permission.mName) {
+    case PermissionName::Midi: {
+      MidiPermissionDescriptor midiPerm;
+      if (NS_WARN_IF(!midiPerm.Init(aCx, value))) {
+        aRv.NoteJSContextException(aCx);
+        return nullptr;
+      }
+
+      bool sysex = midiPerm.mSysex.WasPassed() && midiPerm.mSysex.Value();
+      return MidiPermissionStatus::Create(aWindow, sysex, aRv);
+    }
     case PermissionName::Geolocation:
     case PermissionName::Notifications:
     case PermissionName::Push:
@@ -68,8 +79,8 @@ already_AddRefed<PermissionStatus> CreatePermissionStatus(
 already_AddRefed<Promise> Permissions::Query(JSContext* aCx,
                                              JS::Handle<JSObject*> aPermission,
                                              ErrorResult& aRv) {
-  if (!mWindow) {
-    aRv.Throw(NS_ERROR_UNEXPECTED);
+  if (!mWindow || !mWindow->IsFullyActive()) {
+    aRv.ThrowInvalidStateError("The document is not fully active.");
     return nullptr;
   }
 
@@ -148,7 +159,7 @@ already_AddRefed<Promise> Permissions::Revoke(JSContext* aCx,
     // to the parent; `ContentParent::RecvRemovePermission` will call
     // `RemovePermission`.
     ContentChild::GetSingleton()->SendRemovePermission(
-        IPC::Principal(document->NodePrincipal()), permissionType, &rv);
+        document->NodePrincipal(), permissionType, &rv);
   }
 
   if (NS_WARN_IF(NS_FAILED(rv))) {

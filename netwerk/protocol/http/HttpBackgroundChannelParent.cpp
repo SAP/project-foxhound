@@ -172,7 +172,6 @@ bool HttpBackgroundChannelParent::OnStartRequest(
   }
 
   HttpChannelAltDataStream altData;
-  ipc::AutoIPCStream altDataInputStream(true /* delay start */);
   if (aAltDataSource) {
     nsAutoCString altDataType;
     Unused << aAltDataSource->GetAltDataType(altDataType);
@@ -182,11 +181,12 @@ bool HttpBackgroundChannelParent::OnStartRequest(
       nsresult rv = aAltDataSource->OpenAlternativeInputStream(
           altDataType, getter_AddRefs(inputStream));
       if (NS_SUCCEEDED(rv)) {
-        Unused << altDataInputStream.Serialize(inputStream, Manager());
+        Unused << mozilla::ipc::SerializeIPCStream(inputStream.forget(),
+                                                   altData.altDataInputStream(),
+                                                   /* aAllowLazy */ true);
       }
     }
   }
-  altData.altDataInputStream() = altDataInputStream.TakeOptionalValue();
 
   return SendOnStartRequest(aResponseHead, aUseResponseHead, aRequestHeaders,
                             aArgs, altData);
@@ -392,37 +392,6 @@ bool HttpBackgroundChannelParent::OnNotifyClassificationFlags(
   return SendNotifyClassificationFlags(aClassificationFlags, aIsThirdParty);
 }
 
-bool HttpBackgroundChannelParent::OnNotifyFlashPluginStateChanged(
-    nsIHttpChannel::FlashPluginState aState) {
-  LOG(
-      ("HttpBackgroundChannelParent::OnNotifyFlashPluginStateChanged "
-       "[this=%p]\n",
-       this));
-  AssertIsInMainProcess();
-
-  if (NS_WARN_IF(!mIPCOpened)) {
-    return false;
-  }
-
-  if (!IsOnBackgroundThread()) {
-    MutexAutoLock lock(mBgThreadMutex);
-    RefPtr<HttpBackgroundChannelParent> self = this;
-    nsresult rv = mBackgroundThread->Dispatch(
-        NS_NewRunnableFunction(
-            "net::HttpBackgroundChannelParent::OnNotifyFlashPluginStateChanged",
-            [self, aState]() {
-              self->OnNotifyFlashPluginStateChanged(aState);
-            }),
-        NS_DISPATCH_NORMAL);
-
-    MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-
-    return NS_SUCCEEDED(rv);
-  }
-
-  return SendNotifyFlashPluginStateChanged(aState);
-}
-
 bool HttpBackgroundChannelParent::OnSetClassifierMatchedInfo(
     const nsACString& aList, const nsACString& aProvider,
     const nsACString& aFullHash) {
@@ -510,6 +479,16 @@ auto HttpBackgroundChannelParent::AttachStreamFilter(
 
   return ChildEndpointPromise::CreateAndResolve(std::move(aChildEndpoint),
                                                 __func__);
+}
+
+auto HttpBackgroundChannelParent::DetachStreamFilters()
+    -> RefPtr<GenericPromise> {
+  LOG(("HttpBackgroundChannelParent::DetachStreamFilters [this=%p]\n", this));
+  if (NS_WARN_IF(!mIPCOpened) || !SendDetachStreamFilters()) {
+    return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
+  }
+
+  return GenericPromise::CreateAndResolve(true, __func__);
 }
 
 void HttpBackgroundChannelParent::ActorDestroy(ActorDestroyReason aWhy) {

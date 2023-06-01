@@ -23,8 +23,8 @@
 #include <string>
 #include <type_traits>
 
-#include "absl/base/internal/bits.h"
 #include "absl/base/optimization.h"
+#include "absl/numeric/bits.h"
 
 namespace absl {
 ABSL_NAMESPACE_BEGIN
@@ -42,12 +42,12 @@ namespace {
 //   Returns: 2
 inline ABSL_ATTRIBUTE_ALWAYS_INLINE int Fls128(uint128 n) {
   if (uint64_t hi = Uint128High64(n)) {
-    ABSL_INTERNAL_ASSUME(hi != 0);
-    return 127 - base_internal::CountLeadingZeros64(hi);
+    ABSL_ASSUME(hi != 0);
+    return 127 - countl_zero(hi);
   }
   const uint64_t low = Uint128Low64(n);
-  ABSL_INTERNAL_ASSUME(low != 0);
-  return 63 - base_internal::CountLeadingZeros64(low);
+  ABSL_ASSUME(low != 0);
+  return 63 - countl_zero(low);
 }
 
 // Long division/modulo for uint128 implemented using the shift-subtract
@@ -138,28 +138,21 @@ uint128::uint128(float v) : uint128(MakeUint128FromFloat(v)) {}
 uint128::uint128(double v) : uint128(MakeUint128FromFloat(v)) {}
 uint128::uint128(long double v) : uint128(MakeUint128FromFloat(v)) {}
 
+#if !defined(ABSL_HAVE_INTRINSIC_INT128)
 uint128 operator/(uint128 lhs, uint128 rhs) {
-#if defined(ABSL_HAVE_INTRINSIC_INT128)
-  return static_cast<unsigned __int128>(lhs) /
-         static_cast<unsigned __int128>(rhs);
-#else  // ABSL_HAVE_INTRINSIC_INT128
   uint128 quotient = 0;
   uint128 remainder = 0;
   DivModImpl(lhs, rhs, &quotient, &remainder);
   return quotient;
-#endif  // ABSL_HAVE_INTRINSIC_INT128
 }
+
 uint128 operator%(uint128 lhs, uint128 rhs) {
-#if defined(ABSL_HAVE_INTRINSIC_INT128)
-  return static_cast<unsigned __int128>(lhs) %
-         static_cast<unsigned __int128>(rhs);
-#else  // ABSL_HAVE_INTRINSIC_INT128
   uint128 quotient = 0;
   uint128 remainder = 0;
   DivModImpl(lhs, rhs, &quotient, &remainder);
   return remainder;
-#endif  // ABSL_HAVE_INTRINSIC_INT128
 }
+#endif  // !defined(ABSL_HAVE_INTRINSIC_INT128)
 
 namespace {
 
@@ -339,6 +332,7 @@ std::ostream& operator<<(std::ostream& os, int128 v) {
 ABSL_NAMESPACE_END
 }  // namespace absl
 
+#ifdef ABSL_INTERNAL_NEED_REDUNDANT_CONSTEXPR_DECL
 namespace std {
 constexpr bool numeric_limits<absl::uint128>::is_specialized;
 constexpr bool numeric_limits<absl::uint128>::is_signed;
@@ -388,3 +382,4 @@ constexpr int numeric_limits<absl::int128>::max_exponent10;
 constexpr bool numeric_limits<absl::int128>::traps;
 constexpr bool numeric_limits<absl::int128>::tinyness_before;
 }  // namespace std
+#endif

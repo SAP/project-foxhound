@@ -2,6 +2,7 @@
 
 const TEST_PATH = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com"
 );
 const HTML_URI = TEST_PATH + "file_data_load_inherit_csp.html";
@@ -35,7 +36,7 @@ function verifyCSP(aTestName, aBrowser, aDataURI) {
   );
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   // allow top level data: URI navigations, otherwise clicking data: link fails
   await SpecialPowers.pushPrefEnv({
     set: [["security.data_uri.block_toplevel_data_uri_navigations", false]],

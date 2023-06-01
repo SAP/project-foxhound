@@ -26,7 +26,6 @@ class GfxInfo final : public GfxInfoBase {
   NS_IMETHOD GetHasBattery(bool* aHasBattery) override;
   NS_IMETHOD GetCleartypeParameters(nsAString& aCleartypeParams) override;
   NS_IMETHOD GetWindowProtocol(nsAString& aWindowProtocol) override;
-  NS_IMETHOD GetDesktopEnvironment(nsAString& aDesktopEnvironment) override;
   NS_IMETHOD GetTestType(nsAString& aTestType) override;
   NS_IMETHOD GetAdapterDescription(nsAString& aAdapterDescription) override;
   NS_IMETHOD GetAdapterDriver(nsAString& aAdapterDriver) override;
@@ -48,9 +47,6 @@ class GfxInfo final : public GfxInfoBase {
       nsAString& aAdapterDriverVersion) override;
   NS_IMETHOD GetAdapterDriverDate2(nsAString& aAdapterDriverDate) override;
   NS_IMETHOD GetIsGPU2Active(bool* aIsGPU2Active) override;
-  NS_IMETHOD GetDisplayInfo(nsTArray<nsString>& aDisplayInfo) override;
-  NS_IMETHOD GetDisplayWidth(nsTArray<uint32_t>& aDisplayWidth) override;
-  NS_IMETHOD GetDisplayHeight(nsTArray<uint32_t>& aDisplayHeight) override;
   NS_IMETHOD GetDrmRenderDevice(nsACString& aDrmRenderDevice) override;
   using GfxInfoBase::GetFeatureStatus;
   using GfxInfoBase::GetFeatureSuggestedDriverVersion;
@@ -67,6 +63,9 @@ class GfxInfo final : public GfxInfoBase {
  protected:
   ~GfxInfo() = default;
 
+  OperatingSystem GetOperatingSystem() override {
+    return OperatingSystem::Linux;
+  }
   virtual nsresult GetFeatureStatusImpl(
       int32_t aFeature, int32_t* aStatus, nsAString& aSuggestedDriverVersion,
       const nsTArray<GfxDriverInfo>& aDriverInfo, nsACString& aFailureId,
@@ -89,7 +88,6 @@ class GfxInfo final : public GfxInfoBase {
   uint32_t mAdapterRAM;
   nsCString mOS;
   nsCString mOSRelease;
-  nsAutoCStringN<16> mDesktopEnvironment;
   nsCString mTestType;
 
   nsCString mSecondaryVendorId;
@@ -114,6 +112,7 @@ class GfxInfo final : public GfxInfoBase {
   bool mIsXWayland;
   bool mHasMultipleGPUs;
   bool mGlxTestError;
+  bool mIsVAAPISupported;
 
   void AddCrashReportAnnotations();
 };

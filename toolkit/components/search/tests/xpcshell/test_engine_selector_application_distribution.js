@@ -3,11 +3,9 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.sys.mjs",
 });
-
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const CONFIG = [
   {

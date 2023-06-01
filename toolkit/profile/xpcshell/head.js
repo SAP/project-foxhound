@@ -1,17 +1,15 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 const NS_ERROR_START_PROFILE_MANAGER = 0x805800c9;
@@ -39,11 +37,7 @@ const ShellService = {
     let registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
 
     let factory = {
-      createInstance(outer, iid) {
-        if (outer != null) {
-          throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
-        }
-
+      createInstance(iid) {
         return ShellService.QueryInterface(iid);
       },
     };
@@ -69,20 +63,8 @@ ShellService.register();
 
 let gIsLegacy = false;
 
-function simulateSnapEnvironment() {
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  env.set("SNAP_NAME", AppConstants.MOZ_APP_NAME);
-
-  gIsLegacy = true;
-}
-
 function enableLegacyProfiles() {
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  env.set("MOZ_LEGACY_PROFILES", "1");
+  Services.env.set("MOZ_LEGACY_PROFILES", "1");
 
   gIsLegacy = true;
 }
@@ -98,6 +80,40 @@ let DEDICATED_NAME = `default-${UPDATE_CHANNEL}`;
 if (AppConstants.MOZ_DEV_EDITION) {
   DEDICATED_NAME = PROFILE_DEFAULT = "dev-edition-default";
 }
+
+// Shared data for backgroundtasks tests.
+const BACKGROUNDTASKS_PROFILE_DATA = (() => {
+  let hash = xreDirProvider.getInstallHash();
+  let profileData = {
+    options: {
+      startWithLastProfile: true,
+    },
+    profiles: [
+      {
+        name: "Profile1",
+        path: "Path1",
+        default: false,
+      },
+      {
+        name: "Profile3",
+        path: "Path3",
+        default: false,
+      },
+    ],
+    installs: {
+      [hash]: {
+        default: "Path1",
+      },
+    },
+    backgroundTasksProfiles: [
+      {
+        name: `MozillaBackgroundTask-${hash}-unrelated_task`,
+        path: `saltsalt.MozillaBackgroundTask-${hash}-unrelated_task`,
+      },
+    ],
+  };
+  return profileData;
+})();
 
 /**
  * Creates a random profile path for use.
@@ -226,7 +242,12 @@ function writeProfilesIni(profileData) {
   );
   let ini = factory.createINIParser().QueryInterface(Ci.nsIINIParserWriter);
 
-  const { options = {}, profiles = [], installs = null } = profileData;
+  const {
+    options = {},
+    profiles = [],
+    installs = null,
+    backgroundTasksProfiles = null,
+  } = profileData;
 
   let { startWithLastProfile = true } = options;
   ini.setString(
@@ -245,6 +266,17 @@ function writeProfilesIni(profileData) {
 
     if (profile.default) {
       ini.setString(section, "Default", "1");
+    }
+  }
+
+  if (backgroundTasksProfiles) {
+    let section = "BackgroundTasksProfiles";
+    for (let backgroundTasksProfile of backgroundTasksProfiles) {
+      ini.setString(
+        section,
+        backgroundTasksProfile.name,
+        backgroundTasksProfile.path
+      );
     }
   }
 
@@ -354,6 +386,19 @@ function readProfilesIni() {
       if (locked !== null) {
         profileData.installs[section.substring(7)].locked = locked;
       }
+    }
+
+    if (section == "BackgroundTasksProfiles") {
+      profileData.backgroundTasksProfiles = [];
+      let backgroundTasksProfiles = ini.getKeys(section);
+      while (backgroundTasksProfiles.hasMore()) {
+        let name = backgroundTasksProfiles.getNext();
+        let path = ini.getString(section, name);
+        profileData.backgroundTasksProfiles.push({ name, path });
+      }
+      profileData.backgroundTasksProfiles.sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
     }
   }
 
@@ -528,7 +573,7 @@ function checkProfileService(
     }
   }
 
-  if (gIsLegacy) {
+  if (gIsLegacy || Services.env.get("SNAP_NAME")) {
     Assert.equal(
       service.defaultProfile,
       legacyProfile,
@@ -545,15 +590,6 @@ function checkProfileService(
   if (verifyBackup) {
     checkBackup(profileData);
   }
-}
-
-/**
- * Asynchronously reads an nsIFile from disk.
- */
-async function readFile(file) {
-  let decoder = new TextDecoder();
-  let data = await OS.File.read(file.path);
-  return decoder.decode(data);
 }
 
 function checkStartupReason(expected = undefined) {

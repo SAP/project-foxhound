@@ -10,12 +10,10 @@
 #include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "js/PropertySpec.h"
 #include "vm/GlobalObject.h"
-#include "vm/Iteration.h"
 #include "vm/JSContext.h"
 #include "vm/SelfHosting.h"
 
 #include "builtin/WeakMapObject-inl.h"
-#include "vm/Interpreter-inl.h"
 #include "vm/JSObject-inl.h"
 #include "vm/NativeObject-inl.h"
 
@@ -193,7 +191,7 @@ bool WeakSetObject::construct(JSContext* cx, unsigned argc, Value* vp) {
     if (optimized) {
       RootedValue keyVal(cx);
       RootedObject keyObject(cx);
-      RootedArrayObject array(cx, &iterable.toObject().as<ArrayObject>());
+      Rooted<ArrayObject*> array(cx, &iterable.toObject().as<ArrayObject>());
       for (uint32_t index = 0; index < array->getDenseInitializedLength();
            ++index) {
         keyVal.set(array->getDenseElement(index));

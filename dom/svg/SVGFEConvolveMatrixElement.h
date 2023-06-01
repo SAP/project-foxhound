@@ -19,9 +19,7 @@
 nsresult NS_NewSVGFEConvolveMatrixElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
-namespace mozilla {
-
-namespace dom {
+namespace mozilla::dom {
 class DOMSVGAnimatedNumberList;
 class DOMSVGAnimatedBoolean;
 
@@ -36,24 +34,24 @@ class SVGFEConvolveMatrixElement : public SVGFEConvolveMatrixElementBase {
   explicit SVGFEConvolveMatrixElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
       : SVGFEConvolveMatrixElementBase(std::move(aNodeInfo)) {}
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* aCx,
+                     JS::Handle<JSObject*> aGivenProto) override;
 
  public:
-  virtual FilterPrimitiveDescription GetPrimitiveDescription(
+  FilterPrimitiveDescription GetPrimitiveDescription(
       SVGFilterInstance* aInstance, const IntRect& aFilterSubregion,
       const nsTArray<bool>& aInputsAreTainted,
       nsTArray<RefPtr<SourceSurface>>& aInputImages) override;
-  virtual bool AttributeAffectsRendering(int32_t aNameSpaceID,
-                                         nsAtom* aAttribute) const override;
-  virtual SVGAnimatedString& GetResultImageName() override {
+  bool AttributeAffectsRendering(int32_t aNameSpaceID,
+                                 nsAtom* aAttribute) const override;
+  SVGAnimatedString& GetResultImageName() override {
     return mStringAttributes[RESULT];
   }
-  virtual void GetSourceImageNames(nsTArray<SVGStringInfo>& aSources) override;
+  void GetSourceImageNames(nsTArray<SVGStringInfo>& aSources) override;
 
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  virtual nsresult BindToTree(BindContext& aCtx, nsINode& aParent) override;
+  nsresult BindToTree(BindContext& aCtx, nsINode& aParent) override;
 
   // WebIDL
   already_AddRefed<DOMSVGAnimatedString> In1();
@@ -70,14 +68,14 @@ class SVGFEConvolveMatrixElement : public SVGFEConvolveMatrixElementBase {
   already_AddRefed<DOMSVGAnimatedNumber> KernelUnitLengthY();
 
  protected:
-  virtual NumberAttributesInfo GetNumberInfo() override;
-  virtual NumberPairAttributesInfo GetNumberPairInfo() override;
-  virtual IntegerAttributesInfo GetIntegerInfo() override;
-  virtual IntegerPairAttributesInfo GetIntegerPairInfo() override;
-  virtual BooleanAttributesInfo GetBooleanInfo() override;
-  virtual EnumAttributesInfo GetEnumInfo() override;
-  virtual StringAttributesInfo GetStringInfo() override;
-  virtual NumberListAttributesInfo GetNumberListInfo() override;
+  NumberAttributesInfo GetNumberInfo() override;
+  NumberPairAttributesInfo GetNumberPairInfo() override;
+  IntegerAttributesInfo GetIntegerInfo() override;
+  IntegerPairAttributesInfo GetIntegerPairInfo() override;
+  BooleanAttributesInfo GetBooleanInfo() override;
+  EnumAttributesInfo GetEnumInfo() override;
+  StringAttributesInfo GetStringInfo() override;
+  NumberListAttributesInfo GetNumberListInfo() override;
 
   enum { DIVISOR, BIAS };
   SVGAnimatedNumber mNumberAttributes[2];
@@ -113,7 +111,6 @@ class SVGFEConvolveMatrixElement : public SVGFEConvolveMatrixElementBase {
   static NumberListInfo sNumberListInfo[1];
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // DOM_SVG_SVGFECONVOLVEMATRIXELEMENT_H_

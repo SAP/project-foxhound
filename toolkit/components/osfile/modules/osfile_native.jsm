@@ -14,29 +14,29 @@ var { Constants } = ChromeUtils.import(
   "resource://gre/modules/osfile/osfile_shared_allthreads.jsm"
 );
 
-var SysAll = {};
+var SysAll;
 if (Constants.Win) {
-  ChromeUtils.import(
-    "resource://gre/modules/osfile/osfile_win_allthreads.jsm",
-    SysAll
+  SysAll = ChromeUtils.import(
+    "resource://gre/modules/osfile/osfile_win_allthreads.jsm"
   );
 } else if (Constants.libc) {
-  ChromeUtils.import(
-    "resource://gre/modules/osfile/osfile_unix_allthreads.jsm",
-    SysAll
+  SysAll = ChromeUtils.import(
+    "resource://gre/modules/osfile/osfile_unix_allthreads.jsm"
   );
 } else {
   throw new Error("I am neither under Windows nor under a Posix system");
 }
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
+
+const lazy = {};
 
 /**
  * The native service holding the implementation of the functions.
  */
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "Internals",
   "@mozilla.org/toolkit/osfile/native-internals;1",
   "nsINativeOSFileInternalsService"
@@ -60,7 +60,7 @@ var read = function(path, options = {}) {
   }
 
   return new Promise((resolve, reject) => {
-    Internals.read(
+    lazy.Internals.read(
       path,
       options,
       function onSuccess(success) {
@@ -92,8 +92,7 @@ var writeAtomic = function(path, buffer, options = {}) {
 
   if (typeof buffer == "string") {
     // Normalize buffer to a C buffer by encoding it
-    let encoding = options.encoding || "utf-8";
-    buffer = new TextEncoder(encoding).encode(buffer);
+    buffer = new TextEncoder().encode(buffer);
   }
 
   if (ArrayBuffer.isView(buffer)) {
@@ -107,7 +106,7 @@ var writeAtomic = function(path, buffer, options = {}) {
   }
 
   return new Promise((resolve, reject) => {
-    Internals.writeAtomic(
+    lazy.Internals.writeAtomic(
       path,
       buffer,
       options,

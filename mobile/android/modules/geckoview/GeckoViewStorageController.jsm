@@ -6,15 +6,33 @@
 
 var EXPORTED_SYMBOLS = ["GeckoViewStorageController"];
 
-const { GeckoViewUtils } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+const lazy = {};
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "serviceMode",
+  "cookiebanners.service.mode",
+  Ci.nsICookieBannerService.MODE_DISABLED
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "serviceModePBM",
+  "cookiebanners.service.mode.privateBrowsing",
+  Ci.nsICookieBannerService.MODE_DISABLED
+);
+const { GeckoViewUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewUtils.sys.mjs"
+);
 const { PrincipalsCollector } = ChromeUtils.import(
   "resource://gre/modules/PrincipalsCollector.jsm"
 );
-const { E10SUtils } = ChromeUtils.import(
-  "resource://gre/modules/E10SUtils.jsm"
+const { E10SUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/E10SUtils.sys.mjs"
 );
 
 const { debug, warn } = GeckoViewUtils.initLogging(
@@ -134,7 +152,12 @@ const GeckoViewStorageController = {
         const uri = Services.io.newURI(aData.uri);
         const principal = Services.scriptSecurityManager.createContentPrincipal(
           uri,
-          aData.contextId ? { geckoViewSessionContextId: aData.contextId } : {}
+          aData.contextId
+            ? {
+                geckoViewSessionContextId: aData.contextId,
+                privateBrowsingId: aData.privateBrowsingId,
+              }
+            : { privateBrowsingId: aData.privateBrowsingId }
         );
         const rawPerms = Services.perms.getAllForPrincipal(principal);
         const permissions = rawPerms.map(p => {
@@ -163,17 +186,23 @@ const GeckoViewStorageController = {
             aData.newValue
           );
         } else {
+          const expirePolicy = aData.privateMode
+            ? Ci.nsIPermissionManager.EXPIRE_SESSION
+            : Ci.nsIPermissionManager.EXPIRE_NEVER;
           Services.perms.addFromPrincipal(
             principal,
             key,
             aData.newValue,
-            Ci.nsIPermissionManager.EXPIRE_NEVER
+            expirePolicy
           );
         }
         break;
       }
       case "GeckoView:SetPermissionByURI": {
         const uri = Services.io.newURI(aData.uri);
+        const expirePolicy = aData.privateId
+          ? Ci.nsIPermissionManager.EXPIRE_SESSION
+          : Ci.nsIPermissionManager.EXPIRE_NEVER;
         const principal = Services.scriptSecurityManager.createContentPrincipal(
           uri,
           {
@@ -185,8 +214,74 @@ const GeckoViewStorageController = {
           principal,
           aData.perm,
           aData.newValue,
-          Ci.nsIPermissionManager.EXPIRE_NEVER
+          expirePolicy
         );
+        break;
+      }
+
+      case "GeckoView:SetCookieBannerModeForDomain": {
+        let exceptionLabel = "SetCookieBannerModeForDomain";
+        try {
+          const uri = Services.io.newURI(aData.uri);
+          if (aData.allowPermanentPrivateBrowsing) {
+            exceptionLabel = "setDomainPrefAndPersistInPrivateBrowsing";
+            Services.cookieBanners.setDomainPrefAndPersistInPrivateBrowsing(
+              uri,
+              aData.mode
+            );
+          } else {
+            Services.cookieBanners.setDomainPref(
+              uri,
+              aData.mode,
+              aData.isPrivateBrowsing
+            );
+          }
+          aCallback.onSuccess();
+        } catch (ex) {
+          debug`Failed ${exceptionLabel} ${ex}`;
+        }
+        break;
+      }
+
+      case "GeckoView:RemoveCookieBannerModeForDomain": {
+        try {
+          const uri = Services.io.newURI(aData.uri);
+          Services.cookieBanners.removeDomainPref(uri, aData.isPrivateBrowsing);
+          aCallback.onSuccess();
+        } catch (ex) {
+          debug`Failed RemoveCookieBannerModeForDomain ${ex}`;
+        }
+        break;
+      }
+
+      case "GeckoView:GetCookieBannerModeForDomain": {
+        try {
+          let globalMode;
+          if (aData.isPrivateBrowsing) {
+            globalMode = lazy.serviceModePBM;
+          } else {
+            globalMode = lazy.serviceMode;
+          }
+
+          if (globalMode === Ci.nsICookieBannerService.MODE_DISABLED) {
+            aCallback.onSuccess({ mode: globalMode });
+            return;
+          }
+
+          const uri = Services.io.newURI(aData.uri);
+          const mode = Services.cookieBanners.getDomainPref(
+            uri,
+            aData.isPrivateBrowsing
+          );
+          if (mode !== Ci.nsICookieBannerService.MODE_UNSET) {
+            aCallback.onSuccess({ mode });
+          } else {
+            aCallback.onSuccess({ mode: globalMode });
+          }
+        } catch (ex) {
+          aCallback.onError(`Unexpected error: ${ex}`);
+          debug`Failed GetCookieBannerModeForDomain ${ex}`;
+        }
         break;
       }
     }

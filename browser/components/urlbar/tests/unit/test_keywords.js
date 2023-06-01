@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const ENGINE_NAME = "engine-suggestions.xml";
-
 testEngine_setup();
 
 add_task(async function test_non_keyword() {
@@ -22,7 +20,7 @@ add_task(async function test_non_keyword() {
     matches: [
       makeVisitResult(context, {
         uri: "http://mozilla.org/",
-        title: "mozilla.org",
+        fallbackTitle: "mozilla.org",
         heuristic: true,
       }),
       makeBookmarkResult(context, {
@@ -75,7 +73,7 @@ add_task(async function test_more_than_keyword() {
     matches: [
       makeVisitResult(context, {
         uri: "http://mozilla.org/",
-        title: "mozilla.org",
+        fallbackTitle: "mozilla.org",
         heuristic: true,
       }),
       makeBookmarkResult(context, {
@@ -105,7 +103,7 @@ add_task(async function test_less_than_keyword() {
     matches: [
       makeVisitResult(context, {
         uri: "http://mozilla.org/",
-        title: "mozilla.org",
+        fallbackTitle: "mozilla.org",
         heuristic: true,
       }),
       makeBookmarkResult(context, {
@@ -161,7 +159,7 @@ add_task(async function test_less_then_equal_than_keyword_bug_1124238() {
     matches: [
       makeVisitResult(context, {
         uri: "http://mozilla.com/",
-        title: "mozilla.com",
+        title: "test visit for http://mozilla.com/",
         heuristic: true,
       }),
       makeVisitResult(context, {
@@ -200,7 +198,7 @@ add_task(async function test_less_then_equal_than_keyword_bug_1124238() {
     matches: [
       makeVisitResult(context, {
         uri: "http://mozilla.com/",
-        title: "mozilla.com",
+        title: "A bookmark",
         heuristic: true,
       }),
       makeVisitResult(context, {

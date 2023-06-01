@@ -4,17 +4,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, with_statement
-import sys
 import os
+import sys
 from optparse import OptionParser
 from os import environ as env
+
 import manifestparser
-import mozprocess
-import mozinfo
 import mozcrash
 import mozfile
+import mozinfo
 import mozlog
+import mozprocess
 import mozrunner.utils
 
 SCRIPT_DIR = os.path.abspath(os.path.realpath(os.path.dirname(__file__)))
@@ -143,21 +143,25 @@ class CPPUnitTests(object):
             else:
                 env[pathvar] = libpath
 
+        symbolizer_path = None
         if mozinfo.info["asan"]:
-            # Use llvm-symbolizer for ASan if available/required
-            llvmsym = os.path.join(
-                self.xre_path, "llvm-symbolizer" + mozinfo.info["bin_suffix"]
-            )
-            if os.path.isfile(llvmsym):
-                env["ASAN_SYMBOLIZER_PATH"] = llvmsym
-                self.log.info("ASan using symbolizer at %s" % llvmsym)
-            else:
-                self.log.info("Failed to find ASan symbolizer at %s" % llvmsym)
+            symbolizer_path = "ASAN_SYMBOLIZER_PATH"
+        elif mozinfo.info["tsan"]:
+            symbolizer_path = "TSAN_SYMBOLIZER_PATH"
 
-            # dom/media/webrtc/transport tests statically link in NSS, which
-            # causes ODR violations. See bug 1215679.
-            assert "ASAN_OPTIONS" not in env
-            env["ASAN_OPTIONS"] = "detect_leaks=0:detect_odr_violation=0"
+        if symbolizer_path is not None:
+            # Use llvm-symbolizer for ASan/TSan if available/required
+            if symbolizer_path in env and os.path.isfile(env[symbolizer_path]):
+                llvmsym = env[symbolizer_path]
+            else:
+                llvmsym = os.path.join(
+                    self.xre_path, "llvm-symbolizer" + mozinfo.info["bin_suffix"]
+                )
+            if os.path.isfile(llvmsym):
+                env[symbolizer_path] = llvmsym
+                self.log.info("Using LLVM symbolizer at %s" % llvmsym)
+            else:
+                self.log.info("Failed to find LLVM symbolizer at %s" % llvmsym)
 
         return env
 
@@ -272,8 +276,8 @@ def extract_unittests_from_args(args, environ, manifest_path):
             else:
                 tests.append((os.path.abspath(p), 1))
 
-    # we skip the existence check here because not all tests are built
-    # for all platforms (and it will fail on Windows anyway)
+    # We don't use the manifest parser's existence-check only because it will
+    # fail on Windows due to the `.exe` suffix.
     active_tests = mp.active_tests(exists=False, disabled=False, **environ)
     suffix = ".exe" if mozinfo.isWin else ""
     if binary_path:
@@ -294,16 +298,18 @@ def extract_unittests_from_args(args, environ, manifest_path):
             ]
         )
 
-    # skip and warn for any tests in the manifest that are not found
-    final_tests = []
+    # Manually confirm that all tests named in the manifest exist.
+    errors = False
     log = mozlog.get_default_logger()
     for test in tests:
-        if os.path.isfile(test[0]):
-            final_tests.append(test)
-        else:
-            log.warning("test file not found: %s - skipped" % test[0])
+        if not os.path.isfile(test[0]):
+            errors = True
+            log.error("test file not found: %s" % test[0])
 
-    return final_tests
+    if errors:
+        raise RuntimeError("One or more cppunittests not found; aborting.")
+
+    return tests
 
 
 def update_mozinfo():

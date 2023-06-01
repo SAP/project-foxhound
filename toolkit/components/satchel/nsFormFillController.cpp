@@ -12,6 +12,7 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"  // for Event
+#include "mozilla/dom/HTMLDataListElement.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/KeyboardEvent.h"
 #include "mozilla/dom/KeyboardEventBinding.h"
@@ -24,16 +25,11 @@
 #include "nsCRT.h"
 #include "nsIFormAutoComplete.h"
 #include "nsIInputListAutoComplete.h"
-#include "nsIAutoCompleteSimpleResult.h"
 #include "nsString.h"
-#include "nsReadableUtils.h"
-#include "nsIInterfaceRequestor.h"
-#include "nsIInterfaceRequestorUtils.h"
 #include "nsPIDOMWindow.h"
+#include "nsIAutoCompleteResult.h"
 #include "nsIContent.h"
-#include "nsRect.h"
-#include "nsToolkitCompsCID.h"
-#include "nsEmbedCID.h"
+#include "nsInterfaceHashtable.h"
 #include "nsContentUtils.h"
 #include "nsGenericHTMLElement.h"
 #include "nsILoadContext.h"
@@ -204,11 +200,18 @@ void nsFormFillController::NativeAnonymousChildListChange(nsIContent* aContent,
 
 void nsFormFillController::ParentChainChanged(nsIContent* aContent) {}
 
+void nsFormFillController::ARIAAttributeDefaultWillChange(
+    mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) {}
+
+void nsFormFillController::ARIAAttributeDefaultChanged(
+    mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) {}
+
 MOZ_CAN_RUN_SCRIPT_BOUNDARY
-void nsFormFillController::NodeWillBeDestroyed(const nsINode* aNode) {
+void nsFormFillController::NodeWillBeDestroyed(nsINode* aNode) {
   MOZ_LOG(sLogger, LogLevel::Verbose, ("NodeWillBeDestroyed: %p", aNode));
   mPwmgrInputs.Remove(aNode);
   mAutofillInputs.Remove(aNode);
+  MaybeRemoveMutationObserver(aNode);
   if (aNode == mListNode) {
     mListNode = nullptr;
     RevalidateDataList();
@@ -296,6 +299,12 @@ nsFormFillController::MarkAsLoginManagerField(HTMLInputElement* aInput) {
         do_GetService("@mozilla.org/login-manager/autocompletesearch;1");
   }
 
+  return NS_OK;
+}
+
+MOZ_CAN_RUN_SCRIPT NS_IMETHODIMP nsFormFillController::IsLoginManagerField(
+    HTMLInputElement* aInput, bool* isLoginManagerField) {
+  *isLoginManagerField = mPwmgrInputs.Get(aInput);
   return NS_OK;
 }
 
@@ -387,8 +396,9 @@ nsFormFillController::SetPopupOpen(bool aPopupOpen) {
       RefPtr<PresShell> presShell = docShell->GetPresShell();
       NS_ENSURE_STATE(presShell);
       presShell->ScrollContentIntoView(
-          content, ScrollAxis(kScrollMinimum, WhenToScroll::IfNotVisible),
-          ScrollAxis(kScrollMinimum, WhenToScroll::IfNotVisible),
+          content,
+          ScrollAxis(WhereToScroll::Nearest, WhenToScroll::IfNotVisible),
+          ScrollAxis(WhereToScroll::Nearest, WhenToScroll::IfNotVisible),
           ScrollFlags::ScrollOverflowHidden);
       // mFocusedPopup can be destroyed after ScrollContentIntoView, see bug
       // 420089
@@ -554,12 +564,6 @@ nsFormFillController::SetTextValue(const nsAString& aTextValue) {
 }
 
 NS_IMETHODIMP
-nsFormFillController::SetTextValueWithReason(const nsAString& aTextValue,
-                                             uint16_t aReason) {
-  return SetTextValue(aTextValue);
-}
-
-NS_IMETHODIMP
 nsFormFillController::GetSelectionStart(int32_t* aSelectionStart) {
   if (!mFocusedInput) {
     return NS_ERROR_UNEXPECTED;
@@ -682,6 +686,13 @@ nsFormFillController::GetUserContextId(uint32_t* aUserContextId) {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsFormFillController::GetInvalidatePreviousResult(
+    bool* aInvalidatePreviousResult) {
+  *aInvalidatePreviousResult = mInvalidatePreviousResult;
+  return NS_OK;
+}
+
 ////////////////////////////////////////////////////////////////////////
 //// nsIAutoCompleteSearch
 
@@ -790,6 +801,8 @@ void nsFormFillController::RevalidateDataList() {
     return;
   }
 
+  // We cannot use previous result since any items in search target are updated.
+  mInvalidatePreviousResult = true;
   controller->StartSearch(mLastSearchString);
 }
 
@@ -856,6 +869,8 @@ NS_IMETHODIMP
 nsFormFillController::HandleEvent(Event* aEvent) {
   EventTarget* target = aEvent->GetOriginalTarget();
   NS_ENSURE_STATE(target);
+
+  mInvalidatePreviousResult = false;
 
   nsCOMPtr<nsPIDOMWindowInner> inner =
       do_QueryInterface(target->GetOwnerGlobal());
@@ -1002,13 +1017,17 @@ void nsFormFillController::MaybeStartControllingInput(
     return;
   }
 
+  bool hasList = !!aInput->GetList();
+
   if (!IsTextControl(aInput)) {
+    // Even if this is not a text control yet, it can become one in the future
+    if (hasList) {
+      StartControllingInput(aInput);
+    }
     return;
   }
 
   bool autocomplete = nsContentUtils::IsAutocompleteEnabled(aInput);
-
-  bool hasList = !!aInput->GetList();
 
   bool isPwmgrInput = false;
   if (mPwmgrInputs.Get(aInput) || aInput->HasBeenTypePassword()) {

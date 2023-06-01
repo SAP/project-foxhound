@@ -33,6 +33,7 @@ Ensure you've checked the following items for installation:
 -  In the Workloads tab:
     -  Desktop development with C++.
 -  In the Individual components tab:
+    -  MSVC v143 - VS 2022 C++ x64/x86 build tools.
     -  Windows 10 SDK (at least **10.0.19041.0**).
     -  C++ ATL for v143 build tools (x86 and x64).
 
@@ -48,7 +49,7 @@ Ensure you've checked the following items for installation:
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 Install `MozillaBuild
-<https://ftp.mozilla.org/pub/mozilla.org/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe>`_.
+<https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe>`_.
 
 Accept the default installation directory.
 Windows may prompt you to "reinstall with the correct settings", which you
@@ -78,6 +79,13 @@ the interactive setup process.
     cd mozilla-source
     wget https://hg.mozilla.org/mozilla-central/raw-file/default/python/mozboot/bin/bootstrap.py
     python3 bootstrap.py
+.. note::
+
+    When running ``bootstrap.py`` there will be a `UAC (User Account Control) prompt <https://docs.microsoft.com/en-us/windows/security/identity-protection/user-account-control/how-user-account-control-works>`_ for PowerShell after
+    selecting the destination directory for the source code clone. This is
+    necessary to add the Microsoft Defender Antivirus exclusions automatically. You
+    should select ``Yes`` on the UAC prompt, otherwise you will need
+    to :ref:`follow some manual steps below <Ensure antivirus exclusions>`.
 
 .. note::
 
@@ -98,37 +106,33 @@ If you aren't modifying the Firefox backend, then select one of the
 :ref:`Artifact Mode <Understanding Artifact Builds>` options. If you are
 building Firefox for Android, you should also see the :ref:`GeckoView Contributor Guide`.
 
-Set antivirus exclusions
-~~~~~~~~~~~~~~~~~~~~~~~~
+.. _Ensure antivirus exclusions:
 
-Windows Defender and some scanning antivirus products are known to significantly degrade
-build times and sometimes even cause failed builds (due to a "missing file").
-This is usually because we have tests for well-known security bugs that have
-code samples that antivirus software identifies as a threat, automatically
-quarantining/corrupting the files.
+Ensure antivirus exclusions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-To avoid this, add two folders to your antivirus exclusion list:
+Microsoft Defender Antivirus and some third-party antivirus products
+are known to significantly degrade build times and sometimes even cause failed
+builds (due to a "missing file"). This is usually because we have tests for
+well-known security bugs that have code samples that antivirus software identifies
+as a threat, automatically quarantining/corrupting the files.
+
+To avoid this, add the following folders to your third-party antivirus exclusion list:
 
 -  The ``C:\mozilla-build`` folder.
 -  The directory where the Firefox code is (probably ``C:\mozilla-source``).
+-  The ``%USERPROFILE%/.mozbuild`` directory (probably ``C:\Users\<user>\.mozbuild``).
 
-If you haven't installed an antivirus, then you will need to `add the exclusions
-to Windows Defender
+The ``bootstrap.py`` script attempts to add the above folders to the Microsoft
+Defender Antivirus exclusion list automatically. You should check that they were
+successfully added, but if they're missing you will need to `add the exclusions to
+Microsoft Defender Antivirus manually
 <https://support.microsoft.com/en-ca/help/4028485/windows-10-add-an-exclusion-to-windows-security>`_.
 
 .. note::
 
     If you're already missing files (you'll see them listed in ``hg status``, you can have them
     brought back by reverting your source tree: ``hg update -C``).
-
-Cleanup
-~~~~~~~
-
-After finishing the bootstrap process, ``bootstrap.py`` can be removed.
-
-.. code-block:: shell
-
-    rm c:/mozilla-source/bootstrap.py
 
 3. Build
 --------
@@ -138,6 +142,7 @@ Now that your system is bootstrapped, you should be able to build!
 .. code-block:: shell
 
     cd c:/mozilla-source/mozilla-unified
+    hg up -C central
     ./mach build
     ./mach run
 

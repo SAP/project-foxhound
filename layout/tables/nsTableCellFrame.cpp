@@ -9,6 +9,7 @@
 #include "gfxUtils.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Helpers.h"
 #include "nsTableFrame.h"
@@ -168,7 +169,7 @@ nsresult nsTableCellFrame::AttributeChanged(int32_t aNameSpaceID,
   // BasicTableLayoutStrategy
   if (aNameSpaceID == kNameSpaceID_None && aAttribute == nsGkAtoms::nowrap &&
       PresContext()->CompatibilityMode() == eCompatibility_NavQuirks) {
-    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::TreeChange,
+    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::FrameAndAncestors,
                                   NS_FRAME_IS_DIRTY);
   }
 
@@ -215,13 +216,13 @@ void nsTableCellFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
 
 #ifdef DEBUG
 void nsTableCellFrame::AppendFrames(ChildListID aListID,
-                                    nsFrameList& aFrameList) {
+                                    nsFrameList&& aFrameList) {
   MOZ_CRASH("unsupported operation");
 }
 
 void nsTableCellFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                                     const nsLineList::iterator* aPrevFrameLine,
-                                    nsFrameList& aFrameList) {
+                                    nsFrameList&& aFrameList) {
   MOZ_CRASH("unsupported operation");
 }
 
@@ -533,13 +534,16 @@ nscoord nsTableCellFrame::GetCellBaseline() const {
   // Ignore the position of the inner frame relative to the cell frame
   // since we want the position as though the inner were top-aligned.
   nsIFrame* inner = mFrames.FirstChild();
-  nscoord borderPadding = GetUsedBorderAndPadding().top;
+  const auto wm = GetWritingMode();
+  const auto borderPadding = GetLogicalUsedBorderAndPadding(wm);
   nscoord result;
   if (!StyleDisplay()->IsContainLayout() &&
-      nsLayoutUtils::GetFirstLineBaseline(GetWritingMode(), inner, &result)) {
-    return result + borderPadding;
+      nsLayoutUtils::GetFirstLineBaseline(wm, inner, &result)) {
+    return result + borderPadding.BStart(wm);
   }
-  return inner->GetContentRectRelativeToSelf().YMost() + borderPadding;
+  const auto logicalSize = inner->GetLogicalSize(wm);
+  // ::-moz-cell-content shouldn't have any border/padding.
+  return logicalSize.BSize(wm) + borderPadding.BStart(wm);
 }
 
 int32_t nsTableCellFrame::GetRowSpan() {
@@ -680,7 +684,6 @@ void nsTableCellFrame::Reflow(nsPresContext* aPresContext,
       aReflowInput.ComputedLogicalPadding(wm) + GetBorderWidth(wm);
 
   ReflowOutput kidSize(wm);
-  kidSize.ClearSize();
   SetPriorAvailISize(aReflowInput.AvailableISize());
   nsIFrame* firstKid = mFrames.FirstChild();
   NS_ASSERTION(
@@ -852,8 +855,6 @@ void nsTableCellFrame::Reflow(nsPresContext* aPresContext,
   // nsIFrame::FixupPositionedTableParts in another pass, so propagate our
   // dirtiness to them before our parent clears our dirty bits.
   PushDirtyBitToAbsoluteFrames();
-
-  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aDesiredSize);
 }
 
 /* ----- global methods ----- */
@@ -1046,14 +1047,9 @@ void nsTableCellFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     nsRect bgRect = GetRectRelativeToSelf() + aBuilder->ToReferenceFrame(this);
 
     // display background if we need to.
-    AppendedBackgroundType result = AppendedBackgroundType::None;
-    if (aBuilder->IsForEventDelivery() ||
-        !StyleBackground()->IsTransparent(this) ||
-        StyleDisplay()->HasAppearance()) {
-      result = nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
-          aBuilder, this, bgRect, aLists.BorderBackground());
-    }
-
+    const AppendedBackgroundType result =
+        nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
+            aBuilder, this, bgRect, aLists.BorderBackground());
     if (result == AppendedBackgroundType::None) {
       aBuilder->BuildCompositorHitTestInfoIfNeeded(this,
                                                    aLists.BorderBackground());
@@ -1066,7 +1062,8 @@ void nsTableCellFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     }
 
     // display borders if we need to
-    ProcessBorders(GetTableFrame(), aBuilder, aLists);
+    nsTableFrame* tableFrame = GetTableFrame();
+    ProcessBorders(tableFrame, aBuilder, aLists);
 
     // and display the selection border if we need to
     if (IsSelected()) {
@@ -1093,6 +1090,28 @@ void nsTableCellFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
       bgRect += backgrounds->TableToReferenceFrame();
 
+      DisplayListClipState::AutoSaveRestore clipState(aBuilder);
+      nsDisplayListBuilder::AutoCurrentActiveScrolledRootSetter asrSetter(
+          aBuilder);
+      if (IsStackingContext() || row->IsStackingContext() ||
+          rowGroup->IsStackingContext() || tableFrame->IsStackingContext()) {
+        // The col/colgroup items we create below will be inserted directly into
+        // the BorderBackgrounds list of the table frame. That means that
+        // they'll be moved *outside* of any wrapper items created for any
+        // frames between this table cell frame and the table wrapper frame, and
+        // will not participate in those frames's opacity / transform / filter /
+        // mask effects. If one of those frames is a stacking context, then we
+        // may have one or more of those wrapper items, and one of them may have
+        // captured a clip. In order to ensure correct clipping and scrolling of
+        // the col/colgroup items, restore the clip and ASR that we observed
+        // when we entered the table frame. If that frame is a stacking context
+        // but doesn't have any clip capturing wrapper items, then we'll
+        // double-apply the clip. That's ok.
+        clipState.SetClipChainForContainingBlockDescendants(
+            backgrounds->GetTableClipChain());
+        asrSetter.SetCurrentActiveScrolledRoot(backgrounds->GetTableASR());
+      }
+
       // Create backgrounds items as needed for the column and column
       // group that this cell occupies.
       nsTableColFrame* col = backgrounds->GetColForIndex(ColIndex());
@@ -1101,12 +1120,12 @@ void nsTableCellFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
       Maybe<nsDisplayListBuilder::AutoBuildingDisplayList> buildingForColGroup;
       nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
           aBuilder, colGroup, bgRect, backgrounds->ColGroupBackgrounds(), false,
-          nullptr, colGroup->GetRect() + backgrounds->TableToReferenceFrame(),
-          this, &buildingForColGroup);
+          colGroup->GetRect() + backgrounds->TableToReferenceFrame(), this,
+          &buildingForColGroup);
 
       Maybe<nsDisplayListBuilder::AutoBuildingDisplayList> buildingForCol;
       nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
-          aBuilder, col, bgRect, backgrounds->ColBackgrounds(), false, nullptr,
+          aBuilder, col, bgRect, backgrounds->ColBackgrounds(), false,
           col->GetRect() + colGroup->GetPosition() +
               backgrounds->TableToReferenceFrame(),
           this, &buildingForCol);

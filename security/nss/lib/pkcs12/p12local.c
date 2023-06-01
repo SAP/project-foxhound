@@ -908,8 +908,12 @@ sec_pkcs12_find_object(SEC_PKCS12SafeContents *safe,
     return NULL;
 }
 
-/* this function converts a password to unicode and encures that the
- * required double 0 byte be placed at the end of the string
+/* this function converts a password to UCS2 and ensures that the
+ * required double 0 byte be placed at the end of the string (if zeroTerm
+ * is set), or the 0 bytes at the end are dropped (if zeroTerm is not set).
+ * If toUnicode is false, we convert from UCS2 to UTF8/ASCII (latter is a
+ * proper subset of the former) depending on the state of the asciiCovert
+ * flag)
  */
 PRBool
 sec_pkcs12_convert_item_to_unicode(PLArenaPool *arena, SECItem *dest,
@@ -917,12 +921,15 @@ sec_pkcs12_convert_item_to_unicode(PLArenaPool *arena, SECItem *dest,
                                    PRBool asciiConvert, PRBool toUnicode)
 {
     PRBool success = PR_FALSE;
+    int bufferSize;
+
     if (!src || !dest) {
         PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return PR_FALSE;
     }
 
-    dest->len = src->len * 3 + 2;
+    bufferSize = src->len * 3 + 2;
+    dest->len = bufferSize;
     if (arena) {
         dest->data = (unsigned char *)PORT_ArenaZAlloc(arena, dest->len);
     } else {
@@ -956,24 +963,35 @@ sec_pkcs12_convert_item_to_unicode(PLArenaPool *arena, SECItem *dest,
         return PR_FALSE;
     }
 
-    if ((dest->len >= 2) &&
-        (dest->data[dest->len - 1] || dest->data[dest->len - 2]) && zeroTerm) {
-        if (dest->len + 2 > 3 * src->len) {
-            if (arena) {
-                dest->data = (unsigned char *)PORT_ArenaGrow(arena,
-                                                             dest->data, dest->len,
-                                                             dest->len + 2);
-            } else {
-                dest->data = (unsigned char *)PORT_Realloc(dest->data,
-                                                           dest->len + 2);
+    /* in some cases we need to add NULL terminations and in others
+     * we need to drop null terminations */
+    if (zeroTerm) {
+        /* unicode adds two nulls at the end */
+        if (toUnicode) {
+            if ((dest->len < 2) || dest->data[dest->len - 1] || dest->data[dest->len - 2]) {
+                /* we've already allocated space for these new NULLs */
+                PORT_Assert(dest->len + 2 <= bufferSize);
+                dest->len += 2;
+                dest->data[dest->len - 1] = dest->data[dest->len - 2] = 0;
             }
-
-            if (!dest->data) {
-                return PR_FALSE;
+            /* ascii/utf-8 adds just 1 */
+        } else if (!dest->len || dest->data[dest->len - 1]) {
+            PORT_Assert(dest->len + 1 <= bufferSize);
+            dest->len++;
+            dest->data[dest->len - 1] = 0;
+        }
+    } else {
+        /* handle the drop case, no need to do any allocations here. */
+        if (toUnicode) {
+            while ((dest->len >= 2) && !dest->data[dest->len - 1] &&
+                   !dest->data[dest->len - 2]) {
+                dest->len -= 2;
+            }
+        } else {
+            while (dest->len && !dest->data[dest->len - 1]) {
+                dest->len--;
             }
         }
-        dest->len += 2;
-        dest->data[dest->len - 1] = dest->data[dest->len - 2] = 0;
     }
 
     return PR_TRUE;
@@ -1011,7 +1029,8 @@ sec_pkcs12_is_pkcs12_pbe_algorithm(SECOidTag algorithm)
  *
  * we assume that the pwitem is already encoded in Unicode by the
  * caller.  if the encryption scheme is not the one defined in PKCS
- * #12, decode the pwitem back into UTF-8. */
+ * #12, decode the pwitem back into UTF-8. NOTE: UTF-8 strings are
+ * used in the PRF without the trailing NULL */
 PRBool
 sec_pkcs12_decode_password(PLArenaPool *arena,
                            SECItem *result,
@@ -1021,7 +1040,7 @@ sec_pkcs12_decode_password(PLArenaPool *arena,
     if (!sec_pkcs12_is_pkcs12_pbe_algorithm(algorithm))
         return sec_pkcs12_convert_item_to_unicode(arena, result,
                                                   (SECItem *)pwitem,
-                                                  PR_TRUE, PR_FALSE, PR_FALSE);
+                                                  PR_FALSE, PR_FALSE, PR_FALSE);
 
     return SECITEM_CopyItem(arena, result, pwitem) == SECSuccess;
 }
@@ -1050,117 +1069,106 @@ sec_pkcs12_encode_password(PLArenaPool *arena,
 static const SEC_ASN1TemplateChooserPtr sec_pkcs12_shroud_chooser =
     sec_pkcs12_choose_shroud_type;
 
-const SEC_ASN1Template SEC_PKCS12CodedSafeBagTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12SafeBag) },
-      { SEC_ASN1_OBJECT_ID, offsetof(SEC_PKCS12SafeBag, safeBagType) },
-      { SEC_ASN1_ANY, offsetof(SEC_PKCS12SafeBag, derSafeContent) },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12CodedSafeBagTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12SafeBag) },
+    { SEC_ASN1_OBJECT_ID, offsetof(SEC_PKCS12SafeBag, safeBagType) },
+    { SEC_ASN1_ANY, offsetof(SEC_PKCS12SafeBag, derSafeContent) },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12CodedCertBagTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12CertAndCRL) },
-      { SEC_ASN1_OBJECT_ID, offsetof(SEC_PKCS12CertAndCRL, BagID) },
-      { SEC_ASN1_ANY, offsetof(SEC_PKCS12CertAndCRL, derValue) },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12CodedCertBagTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12CertAndCRL) },
+    { SEC_ASN1_OBJECT_ID, offsetof(SEC_PKCS12CertAndCRL, BagID) },
+    { SEC_ASN1_ANY, offsetof(SEC_PKCS12CertAndCRL, derValue) },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12CodedCertAndCRLBagTemplate[] =
-    {
-      { SEC_ASN1_SET_OF, offsetof(SEC_PKCS12CertAndCRLBag, certAndCRLs),
-        SEC_PKCS12CodedCertBagTemplate },
-    };
+const SEC_ASN1Template SEC_PKCS12CodedCertAndCRLBagTemplate[] = {
+    { SEC_ASN1_SET_OF, offsetof(SEC_PKCS12CertAndCRLBag, certAndCRLs),
+      SEC_PKCS12CodedCertBagTemplate },
+};
 
-const SEC_ASN1Template SEC_PKCS12ESPVKItemTemplate_OLD[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12ESPVKItem) },
-      { SEC_ASN1_OBJECT_ID, offsetof(SEC_PKCS12ESPVKItem, espvkOID) },
-      { SEC_ASN1_INLINE, offsetof(SEC_PKCS12ESPVKItem, espvkData),
-        SEC_PKCS12PVKSupportingDataTemplate_OLD },
-      { SEC_ASN1_EXPLICIT | SEC_ASN1_CONSTRUCTED | SEC_ASN1_CONTEXT_SPECIFIC |
-            SEC_ASN1_DYNAMIC | 0,
-        offsetof(SEC_PKCS12ESPVKItem, espvkCipherText),
-        &sec_pkcs12_shroud_chooser },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12ESPVKItemTemplate_OLD[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12ESPVKItem) },
+    { SEC_ASN1_OBJECT_ID, offsetof(SEC_PKCS12ESPVKItem, espvkOID) },
+    { SEC_ASN1_INLINE, offsetof(SEC_PKCS12ESPVKItem, espvkData),
+      SEC_PKCS12PVKSupportingDataTemplate_OLD },
+    { SEC_ASN1_EXPLICIT | SEC_ASN1_CONSTRUCTED | SEC_ASN1_CONTEXT_SPECIFIC |
+          SEC_ASN1_DYNAMIC | 0,
+      offsetof(SEC_PKCS12ESPVKItem, espvkCipherText),
+      &sec_pkcs12_shroud_chooser },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12ESPVKItemTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12ESPVKItem) },
-      { SEC_ASN1_OBJECT_ID, offsetof(SEC_PKCS12ESPVKItem, espvkOID) },
-      { SEC_ASN1_INLINE, offsetof(SEC_PKCS12ESPVKItem, espvkData),
-        SEC_PKCS12PVKSupportingDataTemplate },
-      { SEC_ASN1_EXPLICIT | SEC_ASN1_CONSTRUCTED | SEC_ASN1_CONTEXT_SPECIFIC |
-            SEC_ASN1_DYNAMIC | 0,
-        offsetof(SEC_PKCS12ESPVKItem, espvkCipherText),
-        &sec_pkcs12_shroud_chooser },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12ESPVKItemTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12ESPVKItem) },
+    { SEC_ASN1_OBJECT_ID, offsetof(SEC_PKCS12ESPVKItem, espvkOID) },
+    { SEC_ASN1_INLINE, offsetof(SEC_PKCS12ESPVKItem, espvkData),
+      SEC_PKCS12PVKSupportingDataTemplate },
+    { SEC_ASN1_EXPLICIT | SEC_ASN1_CONSTRUCTED | SEC_ASN1_CONTEXT_SPECIFIC |
+          SEC_ASN1_DYNAMIC | 0,
+      offsetof(SEC_PKCS12ESPVKItem, espvkCipherText),
+      &sec_pkcs12_shroud_chooser },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12PVKAdditionalDataTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12PVKAdditionalData) },
-      { SEC_ASN1_OBJECT_ID,
-        offsetof(SEC_PKCS12PVKAdditionalData, pvkAdditionalType) },
-      { SEC_ASN1_CONSTRUCTED | SEC_ASN1_CONTEXT_SPECIFIC | 0,
-        offsetof(SEC_PKCS12PVKAdditionalData, pvkAdditionalContent) },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12PVKAdditionalDataTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12PVKAdditionalData) },
+    { SEC_ASN1_OBJECT_ID,
+      offsetof(SEC_PKCS12PVKAdditionalData, pvkAdditionalType) },
+    { SEC_ASN1_CONSTRUCTED | SEC_ASN1_CONTEXT_SPECIFIC | 0,
+      offsetof(SEC_PKCS12PVKAdditionalData, pvkAdditionalContent) },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12PVKSupportingDataTemplate_OLD[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12PVKSupportingData) },
-      { SEC_ASN1_SET_OF | SEC_ASN1_XTRN,
-        offsetof(SEC_PKCS12PVKSupportingData, assocCerts),
-        SEC_ASN1_SUB(sgn_DigestInfoTemplate) },
-      { SEC_ASN1_OPTIONAL | SEC_ASN1_BOOLEAN,
-        offsetof(SEC_PKCS12PVKSupportingData, regenerable) },
-      { SEC_ASN1_PRINTABLE_STRING,
-        offsetof(SEC_PKCS12PVKSupportingData, nickname) },
-      { SEC_ASN1_ANY | SEC_ASN1_OPTIONAL,
-        offsetof(SEC_PKCS12PVKSupportingData, pvkAdditionalDER) },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12PVKSupportingDataTemplate_OLD[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12PVKSupportingData) },
+    { SEC_ASN1_SET_OF | SEC_ASN1_XTRN,
+      offsetof(SEC_PKCS12PVKSupportingData, assocCerts),
+      SEC_ASN1_SUB(sgn_DigestInfoTemplate) },
+    { SEC_ASN1_OPTIONAL | SEC_ASN1_BOOLEAN,
+      offsetof(SEC_PKCS12PVKSupportingData, regenerable) },
+    { SEC_ASN1_PRINTABLE_STRING,
+      offsetof(SEC_PKCS12PVKSupportingData, nickname) },
+    { SEC_ASN1_ANY | SEC_ASN1_OPTIONAL,
+      offsetof(SEC_PKCS12PVKSupportingData, pvkAdditionalDER) },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12PVKSupportingDataTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12PVKSupportingData) },
-      { SEC_ASN1_SET_OF | SEC_ASN1_XTRN,
-        offsetof(SEC_PKCS12PVKSupportingData, assocCerts),
-        SEC_ASN1_SUB(sgn_DigestInfoTemplate) },
-      { SEC_ASN1_OPTIONAL | SEC_ASN1_BOOLEAN,
-        offsetof(SEC_PKCS12PVKSupportingData, regenerable) },
-      { SEC_ASN1_BMP_STRING,
-        offsetof(SEC_PKCS12PVKSupportingData, uniNickName) },
-      { SEC_ASN1_ANY | SEC_ASN1_OPTIONAL,
-        offsetof(SEC_PKCS12PVKSupportingData, pvkAdditionalDER) },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12PVKSupportingDataTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12PVKSupportingData) },
+    { SEC_ASN1_SET_OF | SEC_ASN1_XTRN,
+      offsetof(SEC_PKCS12PVKSupportingData, assocCerts),
+      SEC_ASN1_SUB(sgn_DigestInfoTemplate) },
+    { SEC_ASN1_OPTIONAL | SEC_ASN1_BOOLEAN,
+      offsetof(SEC_PKCS12PVKSupportingData, regenerable) },
+    { SEC_ASN1_BMP_STRING,
+      offsetof(SEC_PKCS12PVKSupportingData, uniNickName) },
+    { SEC_ASN1_ANY | SEC_ASN1_OPTIONAL,
+      offsetof(SEC_PKCS12PVKSupportingData, pvkAdditionalDER) },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12BaggageItemTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12BaggageItem) },
-      { SEC_ASN1_SET_OF, offsetof(SEC_PKCS12BaggageItem, espvks),
-        SEC_PKCS12ESPVKItemTemplate },
-      { SEC_ASN1_SET_OF, offsetof(SEC_PKCS12BaggageItem, unencSecrets),
-        SEC_PKCS12SafeBagTemplate },
-      /*{ SEC_ASN1_SET_OF, offsetof(SEC_PKCS12BaggageItem, unencSecrets),
+const SEC_ASN1Template SEC_PKCS12BaggageItemTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12BaggageItem) },
+    { SEC_ASN1_SET_OF, offsetof(SEC_PKCS12BaggageItem, espvks),
+      SEC_PKCS12ESPVKItemTemplate },
+    { SEC_ASN1_SET_OF, offsetof(SEC_PKCS12BaggageItem, unencSecrets),
+      SEC_PKCS12SafeBagTemplate },
+    /*{ SEC_ASN1_SET_OF, offsetof(SEC_PKCS12BaggageItem, unencSecrets),
         SEC_PKCS12CodedSafeBagTemplate }, */
-      { 0 }
-    };
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12BaggageTemplate[] =
-    {
-      { SEC_ASN1_SET_OF, offsetof(SEC_PKCS12Baggage, bags),
-        SEC_PKCS12BaggageItemTemplate },
-    };
+const SEC_ASN1Template SEC_PKCS12BaggageTemplate[] = {
+    { SEC_ASN1_SET_OF, offsetof(SEC_PKCS12Baggage, bags),
+      SEC_PKCS12BaggageItemTemplate },
+};
 
-const SEC_ASN1Template SEC_PKCS12BaggageTemplate_OLD[] =
-    {
-      { SEC_ASN1_SET_OF, offsetof(SEC_PKCS12Baggage_OLD, espvks),
-        SEC_PKCS12ESPVKItemTemplate_OLD },
-    };
+const SEC_ASN1Template SEC_PKCS12BaggageTemplate_OLD[] = {
+    { SEC_ASN1_SET_OF, offsetof(SEC_PKCS12Baggage_OLD, espvks),
+      SEC_PKCS12ESPVKItemTemplate_OLD },
+};
 
 static const SEC_ASN1TemplateChooserPtr sec_pkcs12_bag_chooser =
     sec_pkcs12_choose_bag_type;
@@ -1168,87 +1176,78 @@ static const SEC_ASN1TemplateChooserPtr sec_pkcs12_bag_chooser =
 static const SEC_ASN1TemplateChooserPtr sec_pkcs12_bag_chooser_old =
     sec_pkcs12_choose_bag_type_old;
 
-const SEC_ASN1Template SEC_PKCS12SafeBagTemplate_OLD[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12SafeBag) },
-      { SEC_ASN1_OBJECT_ID, offsetof(SEC_PKCS12SafeBag, safeBagType) },
-      { SEC_ASN1_DYNAMIC | SEC_ASN1_CONSTRUCTED | SEC_ASN1_EXPLICIT |
-            SEC_ASN1_CONTEXT_SPECIFIC | 0,
-        offsetof(SEC_PKCS12SafeBag, safeContent),
-        &sec_pkcs12_bag_chooser_old },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12SafeBagTemplate_OLD[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12SafeBag) },
+    { SEC_ASN1_OBJECT_ID, offsetof(SEC_PKCS12SafeBag, safeBagType) },
+    { SEC_ASN1_DYNAMIC | SEC_ASN1_CONSTRUCTED | SEC_ASN1_EXPLICIT |
+          SEC_ASN1_CONTEXT_SPECIFIC | 0,
+      offsetof(SEC_PKCS12SafeBag, safeContent),
+      &sec_pkcs12_bag_chooser_old },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12SafeBagTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12SafeBag) },
-      { SEC_ASN1_OBJECT_ID, offsetof(SEC_PKCS12SafeBag, safeBagType) },
-      { SEC_ASN1_DYNAMIC | SEC_ASN1_POINTER,
-        offsetof(SEC_PKCS12SafeBag, safeContent),
-        &sec_pkcs12_bag_chooser },
-      { SEC_ASN1_OPTIONAL | SEC_ASN1_BMP_STRING,
-        offsetof(SEC_PKCS12SafeBag, uniSafeBagName) },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12SafeBagTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12SafeBag) },
+    { SEC_ASN1_OBJECT_ID, offsetof(SEC_PKCS12SafeBag, safeBagType) },
+    { SEC_ASN1_DYNAMIC | SEC_ASN1_POINTER,
+      offsetof(SEC_PKCS12SafeBag, safeContent),
+      &sec_pkcs12_bag_chooser },
+    { SEC_ASN1_OPTIONAL | SEC_ASN1_BMP_STRING,
+      offsetof(SEC_PKCS12SafeBag, uniSafeBagName) },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12SafeContentsTemplate_OLD[] =
-    {
-      { SEC_ASN1_SET_OF,
-        offsetof(SEC_PKCS12SafeContents, contents),
-        SEC_PKCS12SafeBagTemplate_OLD }
-    };
+const SEC_ASN1Template SEC_PKCS12SafeContentsTemplate_OLD[] = {
+    { SEC_ASN1_SET_OF,
+      offsetof(SEC_PKCS12SafeContents, contents),
+      SEC_PKCS12SafeBagTemplate_OLD }
+};
 
-const SEC_ASN1Template SEC_PKCS12SafeContentsTemplate[] =
-    {
-      { SEC_ASN1_SET_OF,
-        offsetof(SEC_PKCS12SafeContents, contents),
-        SEC_PKCS12SafeBagTemplate } /* here */
-    };
+const SEC_ASN1Template SEC_PKCS12SafeContentsTemplate[] = {
+    { SEC_ASN1_SET_OF,
+      offsetof(SEC_PKCS12SafeContents, contents),
+      SEC_PKCS12SafeBagTemplate } /* here */
+};
 
-const SEC_ASN1Template SEC_PKCS12PrivateKeyTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12PrivateKey) },
-      { SEC_ASN1_INLINE, offsetof(SEC_PKCS12PrivateKey, pvkData),
-        SEC_PKCS12PVKSupportingDataTemplate },
-      { SEC_ASN1_INLINE | SEC_ASN1_XTRN,
-        offsetof(SEC_PKCS12PrivateKey, pkcs8data),
-        SEC_ASN1_SUB(SECKEY_PrivateKeyInfoTemplate) },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12PrivateKeyTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12PrivateKey) },
+    { SEC_ASN1_INLINE, offsetof(SEC_PKCS12PrivateKey, pvkData),
+      SEC_PKCS12PVKSupportingDataTemplate },
+    { SEC_ASN1_INLINE | SEC_ASN1_XTRN,
+      offsetof(SEC_PKCS12PrivateKey, pkcs8data),
+      SEC_ASN1_SUB(SECKEY_PrivateKeyInfoTemplate) },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12PrivateKeyBagTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12PrivateKeyBag) },
-      { SEC_ASN1_SET_OF, offsetof(SEC_PKCS12PrivateKeyBag, privateKeys),
-        SEC_PKCS12PrivateKeyTemplate },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12PrivateKeyBagTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12PrivateKeyBag) },
+    { SEC_ASN1_SET_OF, offsetof(SEC_PKCS12PrivateKeyBag, privateKeys),
+      SEC_PKCS12PrivateKeyTemplate },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12X509CertCRLTemplate_OLD[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12X509CertCRL) },
-      { SEC_ASN1_INLINE, offsetof(SEC_PKCS12X509CertCRL, certOrCRL),
-        sec_PKCS7ContentInfoTemplate },
-      { SEC_ASN1_INLINE | SEC_ASN1_XTRN,
-        offsetof(SEC_PKCS12X509CertCRL, thumbprint),
-        SEC_ASN1_SUB(sgn_DigestInfoTemplate) },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12X509CertCRLTemplate_OLD[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12X509CertCRL) },
+    { SEC_ASN1_INLINE, offsetof(SEC_PKCS12X509CertCRL, certOrCRL),
+      sec_PKCS7ContentInfoTemplate },
+    { SEC_ASN1_INLINE | SEC_ASN1_XTRN,
+      offsetof(SEC_PKCS12X509CertCRL, thumbprint),
+      SEC_ASN1_SUB(sgn_DigestInfoTemplate) },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12X509CertCRLTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12X509CertCRL) },
-      { SEC_ASN1_INLINE, offsetof(SEC_PKCS12X509CertCRL, certOrCRL),
-        sec_PKCS7ContentInfoTemplate },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12X509CertCRLTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12X509CertCRL) },
+    { SEC_ASN1_INLINE, offsetof(SEC_PKCS12X509CertCRL, certOrCRL),
+      sec_PKCS7ContentInfoTemplate },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12SDSICertTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12X509CertCRL) },
-      { SEC_ASN1_IA5_STRING, offsetof(SEC_PKCS12SDSICert, value) },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12SDSICertTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12X509CertCRL) },
+    { SEC_ASN1_IA5_STRING, offsetof(SEC_PKCS12SDSICert, value) },
+    { 0 }
+};
 
 static const SEC_ASN1TemplateChooserPtr sec_pkcs12_cert_crl_chooser_old =
     sec_pkcs12_choose_cert_crl_type_old;
@@ -1256,183 +1255,163 @@ static const SEC_ASN1TemplateChooserPtr sec_pkcs12_cert_crl_chooser_old =
 static const SEC_ASN1TemplateChooserPtr sec_pkcs12_cert_crl_chooser =
     sec_pkcs12_choose_cert_crl_type;
 
-const SEC_ASN1Template SEC_PKCS12CertAndCRLTemplate_OLD[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12CertAndCRL) },
-      { SEC_ASN1_OBJECT_ID, offsetof(SEC_PKCS12CertAndCRL, BagID) },
-      { SEC_ASN1_CONTEXT_SPECIFIC | SEC_ASN1_EXPLICIT |
-            SEC_ASN1_DYNAMIC | SEC_ASN1_CONSTRUCTED | 0,
-        offsetof(SEC_PKCS12CertAndCRL, value),
-        &sec_pkcs12_cert_crl_chooser_old },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12CertAndCRLTemplate_OLD[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12CertAndCRL) },
+    { SEC_ASN1_OBJECT_ID, offsetof(SEC_PKCS12CertAndCRL, BagID) },
+    { SEC_ASN1_CONTEXT_SPECIFIC | SEC_ASN1_EXPLICIT |
+          SEC_ASN1_DYNAMIC | SEC_ASN1_CONSTRUCTED | 0,
+      offsetof(SEC_PKCS12CertAndCRL, value),
+      &sec_pkcs12_cert_crl_chooser_old },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12CertAndCRLTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12CertAndCRL) },
-      { SEC_ASN1_OBJECT_ID, offsetof(SEC_PKCS12CertAndCRL, BagID) },
-      { SEC_ASN1_DYNAMIC | SEC_ASN1_CONSTRUCTED | SEC_ASN1_EXPLICIT |
-            SEC_ASN1_CONTEXT_SPECIFIC | 0,
-        offsetof(SEC_PKCS12CertAndCRL, value),
-        &sec_pkcs12_cert_crl_chooser },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12CertAndCRLTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12CertAndCRL) },
+    { SEC_ASN1_OBJECT_ID, offsetof(SEC_PKCS12CertAndCRL, BagID) },
+    { SEC_ASN1_DYNAMIC | SEC_ASN1_CONSTRUCTED | SEC_ASN1_EXPLICIT |
+          SEC_ASN1_CONTEXT_SPECIFIC | 0,
+      offsetof(SEC_PKCS12CertAndCRL, value),
+      &sec_pkcs12_cert_crl_chooser },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12CertAndCRLBagTemplate[] =
-    {
-      { SEC_ASN1_SET_OF, offsetof(SEC_PKCS12CertAndCRLBag, certAndCRLs),
-        SEC_PKCS12CertAndCRLTemplate },
-    };
+const SEC_ASN1Template SEC_PKCS12CertAndCRLBagTemplate[] = {
+    { SEC_ASN1_SET_OF, offsetof(SEC_PKCS12CertAndCRLBag, certAndCRLs),
+      SEC_PKCS12CertAndCRLTemplate },
+};
 
-const SEC_ASN1Template SEC_PKCS12CertAndCRLBagTemplate_OLD[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12CertAndCRLBag) },
-      { SEC_ASN1_SET_OF, offsetof(SEC_PKCS12CertAndCRLBag, certAndCRLs),
-        SEC_PKCS12CertAndCRLTemplate_OLD },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12CertAndCRLBagTemplate_OLD[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12CertAndCRLBag) },
+    { SEC_ASN1_SET_OF, offsetof(SEC_PKCS12CertAndCRLBag, certAndCRLs),
+      SEC_PKCS12CertAndCRLTemplate_OLD },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12SecretAdditionalTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12SecretAdditional) },
-      { SEC_ASN1_OBJECT_ID,
-        offsetof(SEC_PKCS12SecretAdditional, secretAdditionalType) },
-      { SEC_ASN1_CONTEXT_SPECIFIC | SEC_ASN1_EXPLICIT,
-        offsetof(SEC_PKCS12SecretAdditional, secretAdditionalContent) },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12SecretAdditionalTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12SecretAdditional) },
+    { SEC_ASN1_OBJECT_ID,
+      offsetof(SEC_PKCS12SecretAdditional, secretAdditionalType) },
+    { SEC_ASN1_CONTEXT_SPECIFIC | SEC_ASN1_EXPLICIT,
+      offsetof(SEC_PKCS12SecretAdditional, secretAdditionalContent) },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12SecretTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12Secret) },
-      { SEC_ASN1_BMP_STRING, offsetof(SEC_PKCS12Secret, uniSecretName) },
-      { SEC_ASN1_ANY, offsetof(SEC_PKCS12Secret, value) },
-      { SEC_ASN1_INLINE | SEC_ASN1_OPTIONAL,
-        offsetof(SEC_PKCS12Secret, secretAdditional),
-        SEC_PKCS12SecretAdditionalTemplate },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12SecretTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12Secret) },
+    { SEC_ASN1_BMP_STRING, offsetof(SEC_PKCS12Secret, uniSecretName) },
+    { SEC_ASN1_ANY, offsetof(SEC_PKCS12Secret, value) },
+    { SEC_ASN1_INLINE | SEC_ASN1_OPTIONAL,
+      offsetof(SEC_PKCS12Secret, secretAdditional),
+      SEC_PKCS12SecretAdditionalTemplate },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12SecretItemTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12Secret) },
-      { SEC_ASN1_INLINE | SEC_ASN1_CONTEXT_SPECIFIC | 0,
-        offsetof(SEC_PKCS12SecretItem, secret), SEC_PKCS12SecretTemplate },
-      { SEC_ASN1_INLINE | SEC_ASN1_CONTEXT_SPECIFIC | 1,
-        offsetof(SEC_PKCS12SecretItem, subFolder), SEC_PKCS12SafeBagTemplate },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12SecretItemTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12Secret) },
+    { SEC_ASN1_INLINE | SEC_ASN1_CONTEXT_SPECIFIC | 0,
+      offsetof(SEC_PKCS12SecretItem, secret), SEC_PKCS12SecretTemplate },
+    { SEC_ASN1_INLINE | SEC_ASN1_CONTEXT_SPECIFIC | 1,
+      offsetof(SEC_PKCS12SecretItem, subFolder), SEC_PKCS12SafeBagTemplate },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12SecretBagTemplate[] =
-    {
-      { SEC_ASN1_SET_OF, offsetof(SEC_PKCS12SecretBag, secrets),
-        SEC_PKCS12SecretItemTemplate },
-    };
+const SEC_ASN1Template SEC_PKCS12SecretBagTemplate[] = {
+    { SEC_ASN1_SET_OF, offsetof(SEC_PKCS12SecretBag, secrets),
+      SEC_PKCS12SecretItemTemplate },
+};
 
-const SEC_ASN1Template SEC_PKCS12MacDataTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12PFXItem) },
-      { SEC_ASN1_INLINE | SEC_ASN1_XTRN, offsetof(SEC_PKCS12MacData, safeMac),
-        SEC_ASN1_SUB(sgn_DigestInfoTemplate) },
-      { SEC_ASN1_BIT_STRING, offsetof(SEC_PKCS12MacData, macSalt) },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12MacDataTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12PFXItem) },
+    { SEC_ASN1_INLINE | SEC_ASN1_XTRN, offsetof(SEC_PKCS12MacData, safeMac),
+      SEC_ASN1_SUB(sgn_DigestInfoTemplate) },
+    { SEC_ASN1_BIT_STRING, offsetof(SEC_PKCS12MacData, macSalt) },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12PFXItemTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12PFXItem) },
-      { SEC_ASN1_OPTIONAL |
-            SEC_ASN1_CONSTRUCTED | SEC_ASN1_CONTEXT_SPECIFIC | 0,
-        offsetof(SEC_PKCS12PFXItem, macData), SEC_PKCS12MacDataTemplate },
-      { SEC_ASN1_CONSTRUCTED | SEC_ASN1_CONTEXT_SPECIFIC | 1,
-        offsetof(SEC_PKCS12PFXItem, authSafe),
-        sec_PKCS7ContentInfoTemplate },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12PFXItemTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12PFXItem) },
+    { SEC_ASN1_OPTIONAL |
+          SEC_ASN1_CONSTRUCTED | SEC_ASN1_CONTEXT_SPECIFIC | 0,
+      offsetof(SEC_PKCS12PFXItem, macData), SEC_PKCS12MacDataTemplate },
+    { SEC_ASN1_CONSTRUCTED | SEC_ASN1_CONTEXT_SPECIFIC | 1,
+      offsetof(SEC_PKCS12PFXItem, authSafe),
+      sec_PKCS7ContentInfoTemplate },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12PFXItemTemplate_OLD[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12PFXItem) },
-      { SEC_ASN1_OPTIONAL |
-            SEC_ASN1_CONSTRUCTED | SEC_ASN1_CONTEXT_SPECIFIC | SEC_ASN1_XTRN | 0,
-        offsetof(SEC_PKCS12PFXItem, old_safeMac),
-        SEC_ASN1_SUB(sgn_DigestInfoTemplate) },
-      { SEC_ASN1_OPTIONAL | SEC_ASN1_BIT_STRING,
-        offsetof(SEC_PKCS12PFXItem, old_macSalt) },
-      { SEC_ASN1_CONSTRUCTED | SEC_ASN1_CONTEXT_SPECIFIC | 1,
-        offsetof(SEC_PKCS12PFXItem, authSafe),
-        sec_PKCS7ContentInfoTemplate },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12PFXItemTemplate_OLD[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12PFXItem) },
+    { SEC_ASN1_OPTIONAL |
+          SEC_ASN1_CONSTRUCTED | SEC_ASN1_CONTEXT_SPECIFIC | SEC_ASN1_XTRN | 0,
+      offsetof(SEC_PKCS12PFXItem, old_safeMac),
+      SEC_ASN1_SUB(sgn_DigestInfoTemplate) },
+    { SEC_ASN1_OPTIONAL | SEC_ASN1_BIT_STRING,
+      offsetof(SEC_PKCS12PFXItem, old_macSalt) },
+    { SEC_ASN1_CONSTRUCTED | SEC_ASN1_CONTEXT_SPECIFIC | 1,
+      offsetof(SEC_PKCS12PFXItem, authSafe),
+      sec_PKCS7ContentInfoTemplate },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12AuthenticatedSafeTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12AuthenticatedSafe) },
-      { SEC_ASN1_OPTIONAL | SEC_ASN1_INTEGER,
-        offsetof(SEC_PKCS12AuthenticatedSafe, version) },
-      { SEC_ASN1_OPTIONAL | SEC_ASN1_OBJECT_ID,
-        offsetof(SEC_PKCS12AuthenticatedSafe, transportMode) },
-      { SEC_ASN1_BIT_STRING | SEC_ASN1_OPTIONAL,
-        offsetof(SEC_PKCS12AuthenticatedSafe, privacySalt) },
-      { SEC_ASN1_OPTIONAL | SEC_ASN1_SET_OF,
-        offsetof(SEC_PKCS12AuthenticatedSafe, baggage.bags),
-        SEC_PKCS12BaggageItemTemplate },
-      { SEC_ASN1_POINTER,
-        offsetof(SEC_PKCS12AuthenticatedSafe, safe),
-        sec_PKCS7ContentInfoTemplate },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12AuthenticatedSafeTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12AuthenticatedSafe) },
+    { SEC_ASN1_OPTIONAL | SEC_ASN1_INTEGER,
+      offsetof(SEC_PKCS12AuthenticatedSafe, version) },
+    { SEC_ASN1_OPTIONAL | SEC_ASN1_OBJECT_ID,
+      offsetof(SEC_PKCS12AuthenticatedSafe, transportMode) },
+    { SEC_ASN1_BIT_STRING | SEC_ASN1_OPTIONAL,
+      offsetof(SEC_PKCS12AuthenticatedSafe, privacySalt) },
+    { SEC_ASN1_OPTIONAL | SEC_ASN1_SET_OF,
+      offsetof(SEC_PKCS12AuthenticatedSafe, baggage.bags),
+      SEC_PKCS12BaggageItemTemplate },
+    { SEC_ASN1_POINTER,
+      offsetof(SEC_PKCS12AuthenticatedSafe, safe),
+      sec_PKCS7ContentInfoTemplate },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PKCS12AuthenticatedSafeTemplate_OLD[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12AuthenticatedSafe) },
-      { SEC_ASN1_OPTIONAL | SEC_ASN1_INTEGER,
-        offsetof(SEC_PKCS12AuthenticatedSafe, version) },
-      { SEC_ASN1_OPTIONAL | SEC_ASN1_INTEGER,
-        offsetof(SEC_PKCS12AuthenticatedSafe, transportMode) },
-      { SEC_ASN1_BIT_STRING,
-        offsetof(SEC_PKCS12AuthenticatedSafe, privacySalt) },
-      { SEC_ASN1_OPTIONAL | SEC_ASN1_CONSTRUCTED |
-            SEC_ASN1_CONTEXT_SPECIFIC | 0,
-        offsetof(SEC_PKCS12AuthenticatedSafe, old_baggage),
-        SEC_PKCS12BaggageTemplate_OLD },
-      { SEC_ASN1_CONSTRUCTED | SEC_ASN1_CONTEXT_SPECIFIC | 1,
-        offsetof(SEC_PKCS12AuthenticatedSafe, old_safe),
-        sec_PKCS7ContentInfoTemplate },
-      { 0 }
-    };
+const SEC_ASN1Template SEC_PKCS12AuthenticatedSafeTemplate_OLD[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SEC_PKCS12AuthenticatedSafe) },
+    { SEC_ASN1_OPTIONAL | SEC_ASN1_INTEGER,
+      offsetof(SEC_PKCS12AuthenticatedSafe, version) },
+    { SEC_ASN1_OPTIONAL | SEC_ASN1_INTEGER,
+      offsetof(SEC_PKCS12AuthenticatedSafe, transportMode) },
+    { SEC_ASN1_BIT_STRING,
+      offsetof(SEC_PKCS12AuthenticatedSafe, privacySalt) },
+    { SEC_ASN1_OPTIONAL | SEC_ASN1_CONSTRUCTED |
+          SEC_ASN1_CONTEXT_SPECIFIC | 0,
+      offsetof(SEC_PKCS12AuthenticatedSafe, old_baggage),
+      SEC_PKCS12BaggageTemplate_OLD },
+    { SEC_ASN1_CONSTRUCTED | SEC_ASN1_CONTEXT_SPECIFIC | 1,
+      offsetof(SEC_PKCS12AuthenticatedSafe, old_safe),
+      sec_PKCS7ContentInfoTemplate },
+    { 0 }
+};
 
-const SEC_ASN1Template SEC_PointerToPKCS12KeyBagTemplate[] =
-    {
-      { SEC_ASN1_POINTER, 0, SEC_PKCS12PrivateKeyBagTemplate }
-    };
+const SEC_ASN1Template SEC_PointerToPKCS12KeyBagTemplate[] = {
+    { SEC_ASN1_POINTER, 0, SEC_PKCS12PrivateKeyBagTemplate }
+};
 
-const SEC_ASN1Template SEC_PointerToPKCS12CertAndCRLBagTemplate_OLD[] =
-    {
-      { SEC_ASN1_POINTER, 0, SEC_PKCS12CertAndCRLBagTemplate_OLD }
-    };
+const SEC_ASN1Template SEC_PointerToPKCS12CertAndCRLBagTemplate_OLD[] = {
+    { SEC_ASN1_POINTER, 0, SEC_PKCS12CertAndCRLBagTemplate_OLD }
+};
 
-const SEC_ASN1Template SEC_PointerToPKCS12CertAndCRLBagTemplate[] =
-    {
-      { SEC_ASN1_POINTER, 0, SEC_PKCS12CertAndCRLBagTemplate }
-    };
+const SEC_ASN1Template SEC_PointerToPKCS12CertAndCRLBagTemplate[] = {
+    { SEC_ASN1_POINTER, 0, SEC_PKCS12CertAndCRLBagTemplate }
+};
 
-const SEC_ASN1Template SEC_PointerToPKCS12SecretBagTemplate[] =
-    {
-      { SEC_ASN1_POINTER, 0, SEC_PKCS12SecretBagTemplate }
-    };
+const SEC_ASN1Template SEC_PointerToPKCS12SecretBagTemplate[] = {
+    { SEC_ASN1_POINTER, 0, SEC_PKCS12SecretBagTemplate }
+};
 
-const SEC_ASN1Template SEC_PointerToPKCS12X509CertCRLTemplate_OLD[] =
-    {
-      { SEC_ASN1_POINTER, 0, SEC_PKCS12X509CertCRLTemplate_OLD }
-    };
+const SEC_ASN1Template SEC_PointerToPKCS12X509CertCRLTemplate_OLD[] = {
+    { SEC_ASN1_POINTER, 0, SEC_PKCS12X509CertCRLTemplate_OLD }
+};
 
-const SEC_ASN1Template SEC_PointerToPKCS12X509CertCRLTemplate[] =
-    {
-      { SEC_ASN1_POINTER, 0, SEC_PKCS12X509CertCRLTemplate }
-    };
+const SEC_ASN1Template SEC_PointerToPKCS12X509CertCRLTemplate[] = {
+    { SEC_ASN1_POINTER, 0, SEC_PKCS12X509CertCRLTemplate }
+};
 
-const SEC_ASN1Template SEC_PointerToPKCS12SDSICertTemplate[] =
-    {
-      { SEC_ASN1_POINTER, 0, SEC_PKCS12SDSICertTemplate }
-    };
+const SEC_ASN1Template SEC_PointerToPKCS12SDSICertTemplate[] = {
+    { SEC_ASN1_POINTER, 0, SEC_PKCS12SDSICertTemplate }
+};

@@ -22,18 +22,15 @@ bugzilla-components:
     description: Generate metadata about source files and Bugzilla
     treeherder:
         symbol: Bugzilla
-        tier: 2
+        tier: 1
     index:
         product: source
         job-name: source-bugzilla-info
     run:
         mach: file-info bugzilla-automation /builds/worker/artifacts
     worker:
-        max-run-time: 2700
-    run-on-projects: ['mozilla-central']
-    when:
-        files-changed:
-            - "**"
+        max-run-time: 1800
+    run-on-projects: ['autoland', 'mozilla-central']
 
 test-info-xorigin:
     description: Generate test manifest metadata for tests disabled on cross-origin
@@ -121,5 +118,6 @@ test-info-all:
         cwd: '{checkout}'
         command: >-
             source taskcluster/scripts/misc/source-test-common.sh &&
-            ./mach test-info report --show-tests --show-summary --verbose --output-file /builds/worker/artifacts/test-info-all-tests.json &&
+            ./mach test-info testrun-report --output-file /builds/worker/artifacts/test-run-info.json &&
+            ./mach test-info report --show-tests --show-summary --show-testruns --verbose --output-file /builds/worker/artifacts/test-info-all-tests.json &&
             ./mach test-info report --show-annotations --output-file /builds/worker/artifacts/test-info-manifest-conditions.json

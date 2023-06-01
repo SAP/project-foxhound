@@ -70,7 +70,7 @@ export class ReturnToAMO extends React.PureComponent {
     if (content?.primary_button.label) {
       content.primary_button.label.string_id = type.includes("theme")
         ? "return-to-amo-add-theme-label"
-        : "return-to-amo-add-extension-label";
+        : "mr1-return-to-amo-add-extension-label";
     }
 
     // For experiments, when needed below rendered UI allows settings hard coded strings
@@ -78,18 +78,21 @@ export class ReturnToAMO extends React.PureComponent {
     return (
       <div
         className={"outer-wrapper onboardingContainer proton"}
-        style={{
-          backgroundImage: `url(${content.background_url})`,
-        }}
+        style={content.backdrop ? { background: content.backdrop } : {}}
       >
         <MultiStageProtonScreen
           content={content}
           isRtamo={true}
+          isTheme={type.includes("theme")}
           id={this.props.messageId}
           order={this.props.order}
           totalNumberOfScreens={this.props.totalNumberOfScreens}
-          autoClose={this.props.autoClose}
-          iconURL={this.props.iconURL}
+          autoAdvance={this.props.auto_advance}
+          iconURL={
+            type.includes("theme")
+              ? this.props.themeScreenshots[0]?.url
+              : this.props.iconURL
+          }
           addonName={this.props.name}
           handleAction={this.handleAction}
           addExtension={this.onClickAddExtension}

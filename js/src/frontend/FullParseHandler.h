@@ -22,8 +22,6 @@
 #include "frontend/SharedContext.h"
 #include "frontend/Stencil.h"
 
-struct JS_PUBLIC_API JSContext;
-
 namespace js {
 namespace frontend {
 
@@ -104,8 +102,8 @@ class FullParseHandler {
                                   node->isKind(ParseNodeKind::ArrayExpr));
   }
 
-  FullParseHandler(JSContext* cx, CompilationState& compilationState)
-      : allocator(cx, compilationState.parserAllocScope.alloc()),
+  FullParseHandler(FrontendContext* fc, CompilationState& compilationState)
+      : allocator(fc, compilationState.parserAllocScope.alloc()),
         previousParseCache_(compilationState.previousParseCache),
         lazyInnerFunctionIndex(0),
         lazyClosedOverBindingIndex(0),
@@ -372,8 +370,15 @@ class FullParseHandler {
 
   ClassNodeType newClass(Node name, Node heritage,
                          LexicalScopeNodeType memberBlock,
+#ifdef ENABLE_DECORATORS
+                         ListNodeType decorators,
+#endif
                          const TokenPos& pos) {
-    return new_<ClassNode>(name, heritage, memberBlock, pos);
+    return new_<ClassNode>(name, heritage, memberBlock,
+#ifdef ENABLE_DECORATORS
+                           decorators,
+#endif
+                           pos);
   }
   ListNodeType newClassMemberList(uint32_t begin) {
     return new_<ListNode>(ParseNodeKind::ClassMemberList,
@@ -382,10 +387,10 @@ class FullParseHandler {
   ClassNamesType newClassNames(Node outer, Node inner, const TokenPos& pos) {
     return new_<ClassNames>(outer, inner, pos);
   }
-  BinaryNodeType newNewTarget(NullaryNodeType newHolder,
-                              NullaryNodeType targetHolder) {
-    return new_<BinaryNode>(ParseNodeKind::NewTargetExpr, newHolder,
-                            targetHolder);
+  NewTargetNodeType newNewTarget(NullaryNodeType newHolder,
+                                 NullaryNodeType targetHolder,
+                                 NameNodeType newTargetName) {
+    return new_<NewTargetNode>(newHolder, targetHolder, newTargetName);
   }
   NullaryNodeType newPosHolder(const TokenPos& pos) {
     return new_<NullaryNode>(ParseNodeKind::PosHolder, pos);
@@ -494,31 +499,61 @@ class FullParseHandler {
 
     checkAndSetIsDirectRHSAnonFunction(funNode);
 
-    return new_<ClassMethod>(ParseNodeKind::DefaultConstructor, key, funNode,
-                             AccessorType::None,
-                             /* isStatic = */ false, nullptr);
+    return new_<ClassMethod>(
+        ParseNodeKind::DefaultConstructor, key, funNode, AccessorType::None,
+        /* isStatic = */ false, /* initializeIfPrivate = */ nullptr
+#ifdef ENABLE_DECORATORS
+        ,
+        /* decorators = */ nullptr
+#endif
+    );
   }
 
   [[nodiscard]] ClassMethod* newClassMethodDefinition(
       Node key, FunctionNodeType funNode, AccessorType atype, bool isStatic,
-      mozilla::Maybe<FunctionNodeType> initializerIfPrivate) {
+      mozilla::Maybe<FunctionNodeType> initializerIfPrivate
+#ifdef ENABLE_DECORATORS
+      ,
+      ListNodeType decorators
+#endif
+  ) {
     MOZ_ASSERT(isUsableAsObjectPropertyName(key));
 
     checkAndSetIsDirectRHSAnonFunction(funNode);
 
     if (initializerIfPrivate.isSome()) {
       return new_<ClassMethod>(ParseNodeKind::ClassMethod, key, funNode, atype,
-                               isStatic, initializerIfPrivate.value());
+                               isStatic, initializerIfPrivate.value()
+#ifdef ENABLE_DECORATORS
+                                             ,
+                               decorators
+#endif
+      );
     }
     return new_<ClassMethod>(ParseNodeKind::ClassMethod, key, funNode, atype,
-                             isStatic, nullptr);
+                             isStatic, /* initializeIfPrivate = */ nullptr
+#ifdef ENABLE_DECORATORS
+                             ,
+                             decorators
+#endif
+    );
   }
 
   [[nodiscard]] ClassField* newClassFieldDefinition(
-      Node name, FunctionNodeType initializer, bool isStatic) {
+      Node name, FunctionNodeType initializer, bool isStatic
+#ifdef ENABLE_DECORATORS
+      ,
+      ListNodeType decorators, bool hasAccessor
+#endif
+  ) {
     MOZ_ASSERT(isUsableAsObjectPropertyName(name));
 
-    return new_<ClassField>(name, initializer, isStatic);
+    return new_<ClassField>(name, initializer, isStatic
+#if ENABLE_DECORATORS
+                            ,
+                            decorators, hasAccessor
+#endif
+    );
   }
 
   [[nodiscard]] StaticClassBlock* newStaticClassBlock(FunctionNodeType block) {
@@ -881,6 +916,10 @@ class FullParseHandler {
     }
   }
 
+  ParamsBodyNodeType newParamsBody(const TokenPos& pos) {
+    return new_<ParamsBodyNode>(pos);
+  }
+
   FunctionNodeType newFunction(FunctionSyntaxKind syntaxKind,
                                const TokenPos& pos) {
     return new_<FunctionNode>(syntaxKind, pos);
@@ -894,8 +933,7 @@ class FullParseHandler {
   }
 
   void setFunctionFormalParametersAndBody(FunctionNodeType funNode,
-                                          ListNodeType paramsBody) {
-    MOZ_ASSERT_IF(paramsBody, paramsBody->isKind(ParseNodeKind::ParamsBody));
+                                          ParamsBodyNodeType paramsBody) {
     funNode->setBody(paramsBody);
   }
   void setFunctionBox(FunctionNodeType funNode, FunctionBox* funbox) {
@@ -906,7 +944,6 @@ class FullParseHandler {
     addList(/* list = */ funNode->body(), /* kid = */ argpn);
   }
   void setFunctionBody(FunctionNodeType funNode, LexicalScopeNodeType body) {
-    MOZ_ASSERT(funNode->body()->isKind(ParseNodeKind::ParamsBody));
     addList(/* list = */ funNode->body(), /* kid = */ body);
   }
 
@@ -936,13 +973,17 @@ class FullParseHandler {
     if ((kind == ParseNodeKind::AssignExpr ||
          kind == ParseNodeKind::CoalesceAssignExpr ||
          kind == ParseNodeKind::OrAssignExpr ||
-         kind == ParseNodeKind::AndAssignExpr ||
-         kind == ParseNodeKind::InitExpr) &&
+         kind == ParseNodeKind::AndAssignExpr) &&
         lhs->isKind(ParseNodeKind::Name) && !lhs->isInParens()) {
       checkAndSetIsDirectRHSAnonFunction(rhs);
     }
 
     return new_<AssignmentNode>(kind, lhs, rhs);
+  }
+
+  BinaryNodeType newInitExpr(Node lhs, Node rhs) {
+    TokenPos pos(lhs->pn_pos.begin, rhs->pn_pos.end);
+    return new_<BinaryNode>(ParseNodeKind::InitExpr, pos, lhs, rhs);
   }
 
   bool isUnparenthesizedAssignment(Node node) {
@@ -1018,35 +1059,23 @@ class FullParseHandler {
     return func->pn_pos.begin;
   }
 
-  bool isDeclarationKind(ParseNodeKind kind) {
-    return kind == ParseNodeKind::VarStmt || kind == ParseNodeKind::LetDecl ||
-           kind == ParseNodeKind::ConstDecl;
-  }
-
   ListNodeType newList(ParseNodeKind kind, const TokenPos& pos) {
-    MOZ_ASSERT(!isDeclarationKind(kind));
-    return new_<ListNode>(kind, pos);
+    auto* list = new_<ListNode>(kind, pos);
+    MOZ_ASSERT_IF(list, !list->is<DeclarationListNode>());
+    MOZ_ASSERT_IF(list, !list->is<ParamsBodyNode>());
+    return list;
   }
 
- public:
   ListNodeType newList(ParseNodeKind kind, Node kid) {
-    MOZ_ASSERT(!isDeclarationKind(kind));
-    return new_<ListNode>(kind, kid);
+    auto* list = new_<ListNode>(kind, kid);
+    MOZ_ASSERT_IF(list, !list->is<DeclarationListNode>());
+    MOZ_ASSERT_IF(list, !list->is<ParamsBodyNode>());
+    return list;
   }
 
-  ListNodeType newDeclarationList(ParseNodeKind kind, const TokenPos& pos) {
-    MOZ_ASSERT(isDeclarationKind(kind));
-    return new_<ListNode>(kind, pos);
-  }
-
-  bool isDeclarationList(Node node) {
-    return isDeclarationKind(node->getKind());
-  }
-
-  Node singleBindingFromDeclaration(ListNodeType decl) {
-    MOZ_ASSERT(isDeclarationList(decl));
-    MOZ_ASSERT(decl->count() == 1);
-    return decl->head();
+  DeclarationListNodeType newDeclarationList(ParseNodeKind kind,
+                                             const TokenPos& pos) {
+    return new_<DeclarationListNode>(kind, pos);
   }
 
   ListNodeType newCommaExpressionList(Node kid) {
@@ -1149,7 +1178,7 @@ class FullParseHandler {
 
 inline bool FullParseHandler::setLastFunctionFormalParameterDefault(
     FunctionNodeType funNode, Node defaultValue) {
-  ListNode* body = funNode->body();
+  ParamsBodyNode* body = funNode->body();
   ParseNode* arg = body->last();
   ParseNode* pn = newAssignment(ParseNodeKind::AssignExpr, arg, defaultValue);
   if (!pn) {

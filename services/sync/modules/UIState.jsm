@@ -16,9 +16,9 @@
 
 var EXPORTED_SYMBOLS = ["UIState"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const lazy = {};
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "Weave",
   "resource://services-sync/main.js"
 );
@@ -80,7 +80,7 @@ const UIStateInternal = {
     // that time, so we refresh the state after the browser has settled.
     Services.tm.idleDispatchToMainThread(() => {
       this.refreshState().catch(e => {
-        Cu.reportError(e);
+        console.error(e);
       });
     }, 2000);
   },
@@ -103,7 +103,7 @@ const UIStateInternal = {
         break;
       default:
         this.refreshState().catch(e => {
-          Cu.reportError(e);
+          console.error(e);
         });
         break;
     }
@@ -190,13 +190,13 @@ const UIStateInternal = {
       // The most likely scenario is a user logged out, so reflect that.
       // Bug 995134 calls for better errors so we could retry if we were
       // sure this was the failure reason.
-      Cu.reportError("Error updating FxA account info: " + e);
+      console.error("Error updating FxA account info: " + e);
       return null;
     }
   },
 
   _setLastSyncTime(state) {
-    if (state.status == UIState.STATUS_SIGNED_IN) {
+    if (state?.status == UIState.STATUS_SIGNED_IN) {
       const lastSync = Services.prefs.getCharPref(
         "services.sync.lastSync",
         null
@@ -225,7 +225,7 @@ const UIStateInternal = {
     // LOGIN_FAILED_LOGIN_REJECTED explicitly means "you must log back in".
     // All other login failures are assumed to be transient and should go
     // away by themselves, so aren't reflected here.
-    return Weave.Status.login == Weave.LOGIN_FAILED_LOGIN_REJECTED;
+    return lazy.Weave.Status.login == lazy.Weave.LOGIN_FAILED_LOGIN_REJECTED;
   },
 
   set fxAccounts(mockFxAccounts) {
@@ -234,11 +234,14 @@ const UIStateInternal = {
   },
 };
 
-ChromeUtils.defineModuleGetter(
-  UIStateInternal,
-  "fxAccounts",
-  "resource://gre/modules/FxAccounts.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
+XPCOMUtils.defineLazyGetter(UIStateInternal, "fxAccounts", () => {
+  return ChromeUtils.import(
+    "resource://gre/modules/FxAccounts.jsm"
+  ).getFxAccountsSingleton();
+});
 
 for (let topic of TOPICS) {
   Services.obs.addObserver(UIStateInternal, topic);

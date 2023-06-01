@@ -10,8 +10,8 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsITrackingDBService"
 );
 
-const { AboutProtectionsParent } = ChromeUtils.import(
-  "resource:///actors/AboutProtectionsParent.jsm"
+const { AboutProtectionsParent } = ChromeUtils.importESModule(
+  "resource:///actors/AboutProtectionsParent.sys.mjs"
 );
 
 const LOG = {
@@ -43,11 +43,15 @@ const LOG = {
 
 requestLongerTimeout(2);
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
+      ["browser.vpn_promo.enabled", true],
       ["browser.contentblocking.report.vpn_regions", "us,ca,nz,sg,my,gb"],
-      ["browser.contentblocking.report.vpn_platforms", "win"],
+      [
+        "browser.vpn_promo.disallowed_regions",
+        "ae,by,cn,cu,iq,ir,kp,om,ru,sd,sy,tm,tr,ua",
+      ],
 
       // Change the endpoints to prevent non-local network connections when landing on the page.
       ["browser.contentblocking.report.monitor.url", ""],
@@ -83,7 +87,7 @@ add_task(async function checkTelemetryLoadEvents() {
       ["browser.contentblocking.report.monitor.enabled", false],
       ["browser.contentblocking.report.lockwise.enabled", false],
       ["browser.contentblocking.report.proxy.enabled", false],
-      ["browser.contentblocking.report.vpn.enabled", false],
+      ["browser.vpn_promo.enabled", false],
     ],
   });
   await addArbitraryTimeout();
@@ -122,7 +126,7 @@ add_task(async function checkTelemetryLoadEvents() {
   }, "recorded telemetry for showing the report");
 
   is(loadEvents.length, 1, `recorded telemetry for showing the report`);
-  await reloadTab(tab);
+  await BrowserTestUtils.reloadTab(tab);
   loadEvents = await TestUtils.waitForCondition(() => {
     let events = Services.telemetry.snapshotEvents(
       Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
@@ -180,7 +184,7 @@ add_task(async function checkTelemetryClickEvents() {
       ["browser.contentblocking.report.monitor.enabled", true],
       ["browser.contentblocking.report.lockwise.enabled", true],
       ["browser.contentblocking.report.proxy.enabled", true],
-      ["browser.contentblocking.report.vpn.enabled", false],
+      ["browser.vpn_promo.enabled", false],
     ],
   });
   await addArbitraryTimeout();
@@ -204,7 +208,7 @@ add_task(async function checkTelemetryClickEvents() {
 
   // Add user logins.
   Services.logins.addLogin(TEST_LOGIN1);
-  await reloadTab(tab);
+  await BrowserTestUtils.reloadTab(tab);
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     const managePasswordsButton = await ContentTaskUtils.waitForCondition(
       () => {
@@ -238,7 +242,7 @@ add_task(async function checkTelemetryClickEvents() {
   AboutProtectionsParent.setTestOverride(
     mockGetLoginDataWithSyncedDevices(false, 4)
   );
-  await reloadTab(tab);
+  await BrowserTestUtils.reloadTab(tab);
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     const managePasswordsButton = await ContentTaskUtils.waitForCondition(
       () => {
@@ -269,7 +273,7 @@ add_task(async function checkTelemetryClickEvents() {
   AboutProtectionsParent.setTestOverride(null);
   Services.logins.removeLogin(TEST_LOGIN1);
   await BrowserTestUtils.removeTab(gBrowser.selectedTab);
-  await reloadTab(tab);
+  await BrowserTestUtils.reloadTab(tab);
 
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     // Show all elements, so we can click on them, even though our user is not logged in.
@@ -523,7 +527,7 @@ add_task(async function checkTelemetryClickEvents() {
       numBreachesResolved: 1,
     })
   );
-  await reloadTab(tab);
+  await BrowserTestUtils.reloadTab(tab);
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     const resolveBreachesButton = await ContentTaskUtils.waitForCondition(
       () => {
@@ -606,7 +610,7 @@ add_task(async function checkTelemetryClickEvents() {
       numBreachesResolved: 0,
     })
   );
-  await reloadTab(tab);
+  await BrowserTestUtils.reloadTab(tab);
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     const manageBreachesButton = await ContentTaskUtils.waitForCondition(() => {
       return content.document.getElementById("monitor-breaches-link");
@@ -638,7 +642,7 @@ add_task(async function checkTelemetryClickEvents() {
       numBreachesResolved: 3,
     })
   );
-  await reloadTab(tab);
+  await BrowserTestUtils.reloadTab(tab);
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     const viewReportButton = await ContentTaskUtils.waitForCondition(() => {
       return content.document.getElementById("monitor-breaches-link");
@@ -669,7 +673,7 @@ add_task(async function checkTelemetryClickEvents() {
       numBreachesResolved: 0,
     })
   );
-  await reloadTab(tab);
+  await BrowserTestUtils.reloadTab(tab);
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     const viewReportButton = await ContentTaskUtils.waitForCondition(() => {
       return content.document.getElementById("monitor-breaches-link");
@@ -787,7 +791,7 @@ add_task(async function checkTelemetryLoadEventForEntrypoint() {
       ["browser.contentblocking.report.monitor.enabled", false],
       ["browser.contentblocking.report.lockwise.enabled", false],
       ["browser.contentblocking.report.proxy.enabled", false],
-      ["browser.contentblocking.report.vpn.enabled", false],
+      ["browser.vpn_promo.enabled", false],
     ],
   });
   await addArbitraryTimeout();
@@ -892,13 +896,16 @@ add_task(async function checkTelemetryClickEventsVPN() {
   AboutProtectionsParent.setTestOverride(getVPNOverrides(false, "us"));
   await SpecialPowers.pushPrefEnv({
     set: [
+      ["browser.vpn_promo.enabled", true],
+      [
+        "browser.vpn_promo.disallowed_regions",
+        "ae,by,cn,cu,iq,ir,kp,om,ru,sd,sy,tm,tr,ua",
+      ],
+      ["browser.contentblocking.report.vpn_regions", "us,ca,nz,sg,my,gb"],
       ["browser.contentblocking.database.enabled", false],
       ["browser.contentblocking.report.monitor.enabled", false],
       ["browser.contentblocking.report.lockwise.enabled", false],
       ["browser.contentblocking.report.proxy.enabled", false],
-      ["browser.contentblocking.report.vpn.enabled", true],
-      ["browser.contentblocking.report.vpn_regions", "us,ca,nz,sg,my,gb,cn"],
-      ["browser.contentblocking.report.vpn_platforms", "win"],
       ["browser.contentblocking.report.hide_vpn_banner", true],
       ["browser.contentblocking.report.vpn-android.url", ""],
       ["browser.contentblocking.report.vpn-ios.url", ""],
@@ -945,7 +952,7 @@ add_task(async function checkTelemetryClickEventsVPN() {
 
   // User is subscribed to VPN
   AboutProtectionsParent.setTestOverride(getVPNOverrides(true, "us"));
-  await reloadTab(tab);
+  await BrowserTestUtils.reloadTab(tab);
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     const androidVPNLink = await ContentTaskUtils.waitForCondition(() => {
       return content.document.getElementById("vpn-google-playstore-link");
@@ -1020,13 +1027,16 @@ add_task(async function checkTelemetryEventsVPNBanner() {
   AboutProtectionsParent.setTestOverride(getVPNOverrides(false, "us"));
   await SpecialPowers.pushPrefEnv({
     set: [
+      ["browser.vpn_promo.enabled", true],
+      ["browser.contentblocking.report.vpn_regions", "us,ca,nz,sg,my,gb"],
+      [
+        "browser.vpn_promo.disallowed_regions",
+        "ae,by,cn,cu,iq,ir,kp,om,ru,sd,sy,tm,tr,ua",
+      ],
       ["browser.contentblocking.database.enabled", false],
       ["browser.contentblocking.report.monitor.enabled", false],
       ["browser.contentblocking.report.lockwise.enabled", false],
       ["browser.contentblocking.report.proxy.enabled", false],
-      ["browser.contentblocking.report.vpn.enabled", true],
-      ["browser.contentblocking.report.vpn_regions", "us,ca,nz,sg,my,gb"],
-      ["browser.contentblocking.report.vpn_platforms", "win"],
       ["browser.contentblocking.report.hide_vpn_banner", false],
       ["browser.contentblocking.report.vpn-promo.url", ""],
     ],
@@ -1085,7 +1095,7 @@ add_task(async function checkTelemetryEventsVPNBanner() {
     set: [["browser.contentblocking.report.hide_vpn_banner", false]],
   });
 
-  await reloadTab(tab);
+  await BrowserTestUtils.reloadTab(tab);
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     const bannerExitLink = await ContentTaskUtils.waitForCondition(() => {
       return content.document.querySelector(".vpn-banner .exit-icon");

@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "rtc_base/checks.h"
+#include "system_wrappers/include/field_trial.h"
 
 #ifdef WEBRTC_ENABLE_RTC_EVENT_LOG
 #include "logging/rtc_event_log/rtc_event_log_impl.h"
@@ -26,13 +27,21 @@ RtcEventLogFactory::RtcEventLogFactory(TaskQueueFactory* task_queue_factory)
   RTC_DCHECK(task_queue_factory_);
 }
 
-std::unique_ptr<RtcEventLog> RtcEventLogFactory::CreateRtcEventLog(
-    RtcEventLog::EncodingType encoding_type) {
+std::unique_ptr<RtcEventLog> RtcEventLogFactory::Create(
+    RtcEventLog::EncodingType encoding_type) const {
 #ifdef WEBRTC_ENABLE_RTC_EVENT_LOG
+  if (field_trial::IsEnabled("WebRTC-RtcEventLogKillSwitch")) {
+    return std::make_unique<RtcEventLogNull>();
+  }
   return std::make_unique<RtcEventLogImpl>(encoding_type, task_queue_factory_);
 #else
   return std::make_unique<RtcEventLogNull>();
 #endif
+}
+
+std::unique_ptr<RtcEventLog> RtcEventLogFactory::CreateRtcEventLog(
+    RtcEventLog::EncodingType encoding_type) {
+  return Create(encoding_type);
 }
 
 }  // namespace webrtc

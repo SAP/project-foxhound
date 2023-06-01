@@ -1,8 +1,6 @@
-ChromeUtils.defineModuleGetter(
-  this,
-  "PromiseUtils",
-  "resource://gre/modules/PromiseUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
+});
 
 /* exported promiseTabLoadEvent, is_element_visible, is_element_hidden */
 
@@ -46,7 +44,7 @@ function promiseTabLoadEvent(tab, url) {
   });
 
   if (url) {
-    BrowserTestUtils.loadURI(tab.linkedBrowser, url);
+    BrowserTestUtils.loadURIString(tab.linkedBrowser, url);
   }
 
   // Promise.all rejects if either promise rejects (i.e. if we time out) and

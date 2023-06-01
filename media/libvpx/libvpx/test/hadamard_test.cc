@@ -233,14 +233,14 @@ TEST_P(HadamardLowbdTest, DISABLED_Speed) {
   SpeedTest(10000000);
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     C, HadamardLowbdTest,
     ::testing::Values(HadamardFuncWithSize(&vpx_hadamard_8x8_c, 8),
                       HadamardFuncWithSize(&vpx_hadamard_16x16_c, 16),
                       HadamardFuncWithSize(&vpx_hadamard_32x32_c, 32)));
 
 #if HAVE_SSE2
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     SSE2, HadamardLowbdTest,
     ::testing::Values(HadamardFuncWithSize(&vpx_hadamard_8x8_sse2, 8),
                       HadamardFuncWithSize(&vpx_hadamard_16x16_sse2, 16),
@@ -248,30 +248,31 @@ INSTANTIATE_TEST_CASE_P(
 #endif  // HAVE_SSE2
 
 #if HAVE_AVX2
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AVX2, HadamardLowbdTest,
     ::testing::Values(HadamardFuncWithSize(&vpx_hadamard_16x16_avx2, 16),
                       HadamardFuncWithSize(&vpx_hadamard_32x32_avx2, 32)));
 #endif  // HAVE_AVX2
 
 #if HAVE_SSSE3 && VPX_ARCH_X86_64
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     SSSE3, HadamardLowbdTest,
     ::testing::Values(HadamardFuncWithSize(&vpx_hadamard_8x8_ssse3, 8)));
 #endif  // HAVE_SSSE3 && VPX_ARCH_X86_64
 
 #if HAVE_NEON
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     NEON, HadamardLowbdTest,
     ::testing::Values(HadamardFuncWithSize(&vpx_hadamard_8x8_neon, 8),
-                      HadamardFuncWithSize(&vpx_hadamard_16x16_neon, 16)));
+                      HadamardFuncWithSize(&vpx_hadamard_16x16_neon, 16),
+                      HadamardFuncWithSize(&vpx_hadamard_32x32_neon, 32)));
 #endif  // HAVE_NEON
 
 // TODO(jingning): Remove highbitdepth flag when the SIMD functions are
 // in place and turn on the unit test.
 #if !CONFIG_VP9_HIGHBITDEPTH
 #if HAVE_MSA
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     MSA, HadamardLowbdTest,
     ::testing::Values(HadamardFuncWithSize(&vpx_hadamard_8x8_msa, 8),
                       HadamardFuncWithSize(&vpx_hadamard_16x16_msa, 16)));
@@ -279,11 +280,18 @@ INSTANTIATE_TEST_CASE_P(
 #endif  // !CONFIG_VP9_HIGHBITDEPTH
 
 #if HAVE_VSX
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     VSX, HadamardLowbdTest,
     ::testing::Values(HadamardFuncWithSize(&vpx_hadamard_8x8_vsx, 8),
                       HadamardFuncWithSize(&vpx_hadamard_16x16_vsx, 16)));
 #endif  // HAVE_VSX
+
+#if HAVE_LSX
+INSTANTIATE_TEST_SUITE_P(
+    LSX, HadamardLowbdTest,
+    ::testing::Values(HadamardFuncWithSize(&vpx_hadamard_8x8_lsx, 8),
+                      HadamardFuncWithSize(&vpx_hadamard_16x16_lsx, 16)));
+#endif  // HAVE_LSX
 
 #if CONFIG_VP9_HIGHBITDEPTH
 class HadamardHighbdTest : public HadamardTestBase {
@@ -301,14 +309,14 @@ TEST_P(HadamardHighbdTest, DISABLED_Speed) {
   SpeedTest(10000000);
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     C, HadamardHighbdTest,
     ::testing::Values(HadamardFuncWithSize(&vpx_highbd_hadamard_8x8_c, 8),
                       HadamardFuncWithSize(&vpx_highbd_hadamard_16x16_c, 16),
                       HadamardFuncWithSize(&vpx_highbd_hadamard_32x32_c, 32)));
 
 #if HAVE_AVX2
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AVX2, HadamardHighbdTest,
     ::testing::Values(HadamardFuncWithSize(&vpx_highbd_hadamard_8x8_avx2, 8),
                       HadamardFuncWithSize(&vpx_highbd_hadamard_16x16_avx2, 16),

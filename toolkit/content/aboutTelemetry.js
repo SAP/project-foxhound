@@ -4,41 +4,35 @@
 
 "use strict";
 
-const { BrowserUtils } = ChromeUtils.import(
-  "resource://gre/modules/BrowserUtils.jsm"
+const { BrowserUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/BrowserUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { TelemetryTimestamps } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryTimestamps.jsm"
+const { TelemetryTimestamps } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryTimestamps.sys.mjs"
 );
-const { TelemetryController } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryController.jsm"
+const { TelemetryController } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryController.sys.mjs"
 );
-const { TelemetryArchive } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryArchive.jsm"
+const { TelemetryArchive } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryArchive.sys.mjs"
 );
-const { TelemetrySend } = ChromeUtils.import(
-  "resource://gre/modules/TelemetrySend.jsm"
+const { TelemetrySend } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetrySend.sys.mjs"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppConstants",
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
+ChromeUtils.defineESModuleGetters(this, {
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
   this,
-  "Preferences",
-  "resource://gre/modules/Preferences.jsm"
+  "ObjectUtils",
+  "resource://gre/modules/ObjectUtils.jsm"
 );
 
 const Telemetry = Services.telemetry;
-const bundle = Services.strings.createBundle(
-  "chrome://global/locale/aboutTelemetry.properties"
-);
-const brandBundle = Services.strings.createBundle(
-  "chrome://branding/locale/brand.properties"
-);
 
 // Maximum height of a histogram bar (in em for html, in chars for text)
 const MAX_BAR_HEIGHT = 8;
@@ -182,8 +176,8 @@ var Settings = {
       el.parentElement.addEventListener("click", function(event) {
         if (event.target.localName === "a") {
           if (AppConstants.platform == "android") {
-            var { EventDispatcher } = ChromeUtils.import(
-              "resource://gre/modules/Messaging.jsm"
+            var { EventDispatcher } = ChromeUtils.importESModule(
+              "resource://gre/modules/Messaging.sys.mjs"
             );
             EventDispatcher.instance.sendRequest({
               type: "Settings:Show",
@@ -419,10 +413,6 @@ var PingPicker = {
         );
       }
     }
-
-    // augment "current ping payload" with origin telemetry
-    const originSnapshot = Telemetry.getOriginSnapshot(false /* clear */);
-    ping.payload.origins = originSnapshot;
 
     displayPingData(ping, true);
   },
@@ -946,19 +936,21 @@ var StackRenderer = {
    * Renders the title of the stack: e.g. "Late Write #1" or
    * "Hang Report #1 (6 seconds)".
    *
-   * @param aFormatArgs formating args to be passed to formatStringFromName.
+   * @param aDivId The id of the div to append the header to.
+   * @param aL10nId The l10n id of the message to use for the title.
+   * @param aL10nArgs The l10n args for the provided message id.
    */
-  renderHeader: function StackRenderer_renderHeader(aPrefix, aFormatArgs) {
-    let div = document.getElementById(aPrefix);
+  renderHeader: function StackRenderer_renderHeader(
+    aDivId,
+    aL10nId,
+    aL10nArgs
+  ) {
+    let div = document.getElementById(aDivId);
 
     let titleElement = document.createElement("span");
     titleElement.className = "stack-title";
 
-    let titleText = bundle.formatStringFromName(
-      aPrefix + "-title",
-      aFormatArgs
-    );
-    titleElement.appendChild(document.createTextNode(titleText));
+    document.l10n.setAttributes(titleElement, aL10nId, aL10nArgs);
 
     div.appendChild(titleElement);
     div.appendChild(document.createElement("br"));
@@ -1803,7 +1795,7 @@ class Section {
       data = isCurrentPayload
         ? this.dataFiltering(payload, selectedStore, process)
         : this.archivePingDataFiltering(aPayload, process);
-      hasData = hasData || data !== {};
+      hasData = hasData || !ObjectUtils.isEmpty(data);
       this.renderContent(data, process, div, section, this.renderData);
     }
     setHasData(section, hasData);
@@ -1919,8 +1911,8 @@ var Events = {
     if (payload) {
       for (const process of Object.keys(aPayload.processes)) {
         let data = aPayload.processes[process].events;
-        hasData = hasData || data !== {};
         if (data && Object.keys(data).length) {
+          hasData = true;
           let s = GenericSubsection.renderSubsectionHeader(
             process,
             true,
@@ -1941,8 +1933,8 @@ var Events = {
       // handle archived ping
       for (const process of Object.keys(aPayload.events)) {
         let data = process;
-        hasData = hasData || data !== {};
         if (data && Object.keys(data).length) {
+          hasData = true;
           let s = GenericSubsection.renderSubsectionHeader(
             process,
             true,
@@ -1960,34 +1952,6 @@ var Events = {
       }
     }
     setHasData("events-section", hasData);
-  },
-};
-
-var Origins = {
-  render(aOrigins) {
-    let originSection = document.getElementById("origins");
-    removeAllChildNodes(originSection);
-
-    const headings = [
-      "about-telemetry-origin-origin",
-      "about-telemetry-origin-count",
-    ];
-
-    let hasData = false;
-    for (let [metric, origins] of Object.entries(aOrigins || {})) {
-      if (!Object.entries(origins).length) {
-        continue;
-      }
-      hasData = true;
-      const metricHeader = document.createElement("caption");
-      metricHeader.appendChild(document.createTextNode(metric));
-
-      const table = GenericTable.render(Object.entries(origins), headings);
-      table.appendChild(metricHeader);
-      originSection.appendChild(table);
-    }
-
-    setHasData("origin-telemetry-section", hasData);
   },
 };
 
@@ -2327,7 +2291,11 @@ function onLoad() {
 
 var LateWritesSingleton = {
   renderHeader: function LateWritesSingleton_renderHeader(aIndex) {
-    StackRenderer.renderHeader("late-writes", [aIndex + 1]);
+    StackRenderer.renderHeader(
+      "late-writes",
+      "about-telemetry-late-writes-title",
+      { lateWriteCount: aIndex + 1 }
+    );
   },
 
   renderLateWrites: function LateWritesSingleton_renderLateWrites(lateWrites) {
@@ -2643,9 +2611,6 @@ function displayRichPingData(ping, updatePayloadList) {
   Events.render(payload);
 
   LateWritesSingleton.renderLateWrites(payload.lateWrites);
-
-  // Show origin telemetry.
-  Origins.render(payload.origins);
 
   // Show simple measurements
   SimpleMeasurements.render(payload);

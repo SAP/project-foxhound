@@ -14,7 +14,6 @@ use api::{ExtendMode, GradientStop, LineOrientation, PremultipliedColorF, ColorF
 use api::units::*;
 use crate::scene_building::IsVisible;
 use crate::frame_builder::FrameBuildingState;
-use crate::gpu_cache::{GpuCache, GpuCacheHandle};
 use crate::intern::{Internable, InternDebug, Handle as InternHandle};
 use crate::internal_types::LayoutPrimitiveInfo;
 use crate::image_tiling::simplify_repeated_primitive;
@@ -25,6 +24,8 @@ use crate::prim_store::{NinePatchDescriptor, PointKey, SizeKey, InternablePrimit
 use crate::render_task::{RenderTask, RenderTaskKind};
 use crate::render_task_graph::RenderTaskId;
 use crate::render_task_cache::{RenderTaskCacheKeyKind, RenderTaskCacheKey, RenderTaskParent};
+use crate::renderer::GpuBufferAddress;
+use crate::segment::EdgeAaSegmentMask;
 use crate::picture::{SurfaceIndex};
 use crate::util::pack_as_float;
 use super::{stops_and_min_alpha, GradientStopKey, GradientGpuBlockBuilder, apply_gradient_local_clip};
@@ -48,6 +49,7 @@ pub struct LinearGradientKey {
     pub reverse_stops: bool,
     pub cached: bool,
     pub nine_patch: Option<Box<NinePatchDescriptor>>,
+    pub edge_aa_mask: EdgeAaSegmentMask,
 }
 
 impl LinearGradientKey {
@@ -66,6 +68,7 @@ impl LinearGradientKey {
             reverse_stops: linear_grad.reverse_stops,
             cached: linear_grad.cached,
             nine_patch: linear_grad.nine_patch,
+            edge_aa_mask: linear_grad.edge_aa_mask,
         }
     }
 }
@@ -90,7 +93,6 @@ pub struct LinearGradientTemplate {
     pub reverse_stops: bool,
     pub is_fast_path: bool,
     pub cached: bool,
-    pub stops_handle: GpuCacheHandle,
     pub src_color: Option<RenderTaskId>,
 }
 
@@ -121,7 +123,7 @@ pub fn optimize_linear_gradient(
     extend_mode: ExtendMode,
     stops: &mut [GradientStopKey],
     // Callback called for each fast-path segment (rect, start end, stops).
-    callback: &mut dyn FnMut(&LayoutRect, LayoutPoint, LayoutPoint, &[GradientStopKey])
+    callback: &mut dyn FnMut(&LayoutRect, LayoutPoint, LayoutPoint, &[GradientStopKey], EdgeAaSegmentMask)
 ) -> bool {
     // First sanitize the gradient parameters. See if we can remove repetitions,
     // tighten the primitive bounds, etc.
@@ -250,6 +252,22 @@ pub fn optimize_linear_gradient(
         last.offset = 1.0 - last.offset;
     }
 
+    let (side_edges, first_edge, last_edge) = if vertical {
+        (
+            EdgeAaSegmentMask::LEFT | EdgeAaSegmentMask::RIGHT,
+            EdgeAaSegmentMask::TOP,
+            EdgeAaSegmentMask::BOTTOM
+        )
+    } else {
+        (
+            EdgeAaSegmentMask::TOP | EdgeAaSegmentMask::BOTTOM,
+            EdgeAaSegmentMask::LEFT,
+            EdgeAaSegmentMask::RIGHT
+        )
+    };
+
+    let mut is_first = true;
+    let last_offset = last.offset;
     for stop in stops.iter().chain((&[last]).iter()) {
         let prev_stop = prev;
         prev = *stop;
@@ -295,6 +313,15 @@ pub fn optimize_linear_gradient(
         start -= offset;
         end -= offset;
 
+        let mut edge_flags = side_edges;
+        if is_first {
+            edge_flags |= first_edge;
+            is_first = false;
+        }
+        if stop.offset == last_offset {
+            edge_flags |= last_edge;
+        }
+
         callback(
             &segment_rect,
             start,
@@ -303,6 +330,7 @@ pub fn optimize_linear_gradient(
                 GradientStopKey { offset: 0.0, .. prev_stop },
                 GradientStopKey { offset: 1.0, .. *stop },
             ],
+            edge_flags,
         );
     }
 
@@ -312,7 +340,8 @@ pub fn optimize_linear_gradient(
 impl From<LinearGradientKey> for LinearGradientTemplate {
     fn from(item: LinearGradientKey) -> Self {
 
-        let common = PrimTemplateCommonData::with_key_common(item.common);
+        let mut common = PrimTemplateCommonData::with_key_common(item.common);
+        common.edge_aa_mask = item.edge_aa_mask;
 
         let (mut stops, min_alpha) = stops_and_min_alpha(&item.stops);
 
@@ -408,7 +437,6 @@ impl From<LinearGradientKey> for LinearGradientTemplate {
             reverse_stops: item.reverse_stops,
             is_fast_path,
             cached: item.cached,
-            stops_handle: GpuCacheHandle::new(),
             src_color: None,
         }
     }
@@ -465,17 +493,6 @@ impl LinearGradientTemplate {
             }
         }
 
-        // The fast path passes gradient stops as vertex attributes directly.
-        if !self.is_fast_path {
-            if let Some(mut request) = frame_state.gpu_cache.request(&mut self.stops_handle) {
-                GradientGpuBlockBuilder::build(
-                    self.reverse_stops,
-                    &mut request,
-                    &self.stops,
-                );
-            }
-        }
-
         // Tile spacing is always handled by decomposing into separate draw calls so the
         // primitive opacity is equivalent to stops opacity. This might change to being
         // set to non-opaque in the presence of tile spacing if/when tile spacing is handled
@@ -505,12 +522,13 @@ impl LinearGradientTemplate {
                     kind: RenderTaskCacheKeyKind::FastLinearGradient(gradient),
                 },
                 frame_state.gpu_cache,
+                frame_state.frame_gpu_data,
                 frame_state.rg_builder,
                 None,
                 false,
                 RenderTaskParent::Surface(parent_surface),
-                frame_state.surfaces,
-                |rg_builder| {
+                &mut frame_state.surface_builder,
+                |rg_builder, _| {
                     rg_builder.add().init(RenderTask::new_dynamic(
                         self.task_size,
                         RenderTaskKind::FastLinearGradient(gradient),
@@ -534,12 +552,19 @@ impl LinearGradientTemplate {
                     kind: RenderTaskCacheKeyKind::LinearGradient(cache_key),
                 },
                 frame_state.gpu_cache,
+                frame_state.frame_gpu_data,
                 frame_state.rg_builder,
                 None,
                 false,
                 RenderTaskParent::Surface(parent_surface),
-                frame_state.surfaces,
-                |rg_builder| {
+                &mut frame_state.surface_builder,
+                |rg_builder, gpu_buffer_builder| {
+                    let stops = Some(GradientGpuBlockBuilder::build(
+                        self.reverse_stops,
+                        gpu_buffer_builder,
+                        &self.stops,
+                    ));
+
                     rg_builder.add().init(RenderTask::new_dynamic(
                         self.task_size,
                         RenderTaskKind::LinearGradient(LinearGradientTask {
@@ -547,7 +572,7 @@ impl LinearGradientTemplate {
                             end: self.end_point,
                             scale: self.scale,
                             extend_mode: self.extend_mode,
-                            stops: self.stops_handle,
+                            stops: stops.unwrap(),
                         }),
                     ))
                 }
@@ -573,6 +598,7 @@ pub struct LinearGradient {
     pub reverse_stops: bool,
     pub nine_patch: Option<Box<NinePatchDescriptor>>,
     pub cached: bool,
+    pub edge_aa_mask: EdgeAaSegmentMask,
 }
 
 impl Internable for LinearGradient {
@@ -678,18 +704,18 @@ pub struct LinearGradientTask {
     pub end: DevicePoint,
     pub scale: DeviceVector2D,
     pub extend_mode: ExtendMode,
-    pub stops: GpuCacheHandle,
+    pub stops: GpuBufferAddress,
 }
 
 impl LinearGradientTask {
-    pub fn to_instance(&self, target_rect: &DeviceIntRect, gpu_cache: &mut GpuCache) -> LinearGradientInstance {
+    pub fn to_instance(&self, target_rect: &DeviceIntRect) -> LinearGradientInstance {
         LinearGradientInstance {
             task_rect: target_rect.to_f32(),
             start: self.start,
             end: self.end,
             scale: self.scale,
             extend_mode: self.extend_mode as i32,
-            gradient_stops_address: self.stops.as_int(gpu_cache),
+            gradient_stops_address: self.stops.as_int(),
         }
     }
 }

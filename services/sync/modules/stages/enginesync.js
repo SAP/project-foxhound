@@ -8,7 +8,9 @@
 
 var EXPORTED_SYMBOLS = ["EngineSynchronizer"];
 
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
+);
 const {
   ABORT_SYNC_COMMAND,
   LOGIN_FAILED_NETWORK_ERROR,
@@ -21,8 +23,9 @@ const {
 } = ChromeUtils.import("resource://services-sync/constants.js");
 const { Svc, Utils } = ChromeUtils.import("resource://services-sync/util.js");
 const { Async } = ChromeUtils.import("resource://services-common/async.js");
+const lazy = {};
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "Doctor",
   "resource://services-sync/doctor.js"
 );
@@ -212,7 +215,7 @@ EngineSynchronizer.prototype = {
       }
 
       if (!fastSync) {
-        await Doctor.consult(enginesToValidate);
+        await lazy.Doctor.consult(enginesToValidate);
       }
 
       // If there were no sync engine failures

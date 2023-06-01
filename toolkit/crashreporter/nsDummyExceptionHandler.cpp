@@ -55,6 +55,10 @@ nsresult AnnotateCrashReport(Annotation key, const nsACString& data) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
+nsresult AppendToCrashReportAnnotation(Annotation key, const nsACString& data) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
 nsresult RemoveCrashReportAnnotation(Annotation key) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -166,9 +170,13 @@ nsresult GetDefaultMemoryReportFile(nsIFile** aFile) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-void DeleteMinidumpFilesForID(const nsAString& id) {}
+void DeleteMinidumpFilesForID(const nsAString& aId,
+                              const Maybe<nsString>& aAdditionalMinidump) {}
 
-bool GetMinidumpForID(const nsAString& id, nsIFile** minidump) { return false; }
+bool GetMinidumpForID(const nsAString& id, nsIFile** minidump,
+                      const Maybe<nsString>& aAdditionalMinidump) {
+  return false;
+}
 
 bool GetIDFromMinidump(nsIFile* minidump, nsAString& id) { return false; }
 
@@ -236,16 +244,8 @@ bool TakeMinidump(nsIFile** aResult, bool aMoveToPending) { return false; }
 bool CreateMinidumpsAndPair(ProcessHandle aTargetPid,
                             ThreadId aTargetBlamedThread,
                             const nsACString& aIncomingPairName,
-                            nsIFile* aIncomingDumpToPair,
                             AnnotationTable& aTargetAnnotations,
                             nsIFile** aTargetDumpOut) {
-  return false;
-}
-
-bool CreateAdditionalChildMinidump(ProcessHandle childPid,
-                                   ThreadId childBlamedThread,
-                                   nsIFile* parentMinidump,
-                                   const nsACString& name) {
   return false;
 }
 
@@ -259,16 +259,5 @@ void SetCrashAnnotationPipeForChild(FileHandle childCrashAnnotationFd) {}
 void AddLibraryMapping(const char* library_name, uintptr_t start_address,
                        size_t mapping_length, size_t file_offset) {}
 #endif
-
-// From ThreadAnnotation.cpp
-
-void InitThreadAnnotation() {}
-
-void SetCurrentThreadName(const char* aName) {}
-
-void GetFlatThreadAnnotation(
-    const std::function<void(const char*)>& aCallback) {}
-
-void ShutdownThreadAnnotation() {}
 
 }  // namespace CrashReporter

@@ -4,16 +4,17 @@
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   ActivityStream: "resource://activity-stream/lib/ActivityStream.jsm",
   ObjectUtils: "resource://gre/modules/ObjectUtils.jsm",
   RemotePages:
@@ -97,7 +98,7 @@ const AboutNewTab = {
 
     this.pageListener =
       pageListener ||
-      new RemotePages(["about:home", "about:newtab", "about:welcome"]);
+      new lazy.RemotePages(["about:home", "about:newtab", "about:welcome"]);
   },
 
   /**
@@ -176,12 +177,12 @@ const AboutNewTab = {
       return;
     }
 
-    this.activityStream = new ActivityStream();
+    this.activityStream = new lazy.ActivityStream();
     try {
       this.activityStream.init();
       this._subscribeToActivityStream();
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
     }
   },
 
@@ -199,7 +200,7 @@ const AboutNewTab = {
           delete site.screenshot;
           return site;
         });
-      if (!ObjectUtils.deepEqual(topSites, this._cachedTopSites)) {
+      if (!lazy.ObjectUtils.deepEqual(topSites, this._cachedTopSites)) {
         this._cachedTopSites = topSites;
         Services.obs.notifyObservers(null, "newtab-top-sites-changed");
       }
@@ -208,7 +209,7 @@ const AboutNewTab = {
       try {
         unsubscribe();
       } catch (e) {
-        Cu.reportError(e);
+        console.error(e);
       }
     };
   },

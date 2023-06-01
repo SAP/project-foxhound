@@ -58,13 +58,13 @@ add_task(function makeResultGroups_true() {
             { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_AUTOFILL },
             { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_PRELOADED },
             { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_TOKEN_ALIAS_ENGINE },
+            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_HISTORY_URL },
             { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_FALLBACK },
           ],
         },
         // extensions using the omnibox API
         {
           group: UrlbarUtils.RESULT_GROUP.OMNIBOX,
-          availableSpan: UrlbarUtils.MAX_OMNIBOX_RESULT_COUNT - 1,
         },
         // main group
         {
@@ -154,13 +154,13 @@ add_task(function makeResultGroups_false() {
             { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_AUTOFILL },
             { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_PRELOADED },
             { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_TOKEN_ALIAS_ENGINE },
+            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_HISTORY_URL },
             { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_FALLBACK },
           ],
         },
         // extensions using the omnibox API
         {
           group: UrlbarUtils.RESULT_GROUP.OMNIBOX,
-          availableSpan: UrlbarUtils.MAX_OMNIBOX_RESULT_COUNT - 1,
         },
         // main group
         {
@@ -238,20 +238,16 @@ add_task(function showSearchSuggestionsFirst_resultGroups() {
     true,
     "showSearchSuggestionsFirst is true initially"
   );
-  Assert.equal(
-    Services.prefs.getCharPref("browser.urlbar.resultGroups", ""),
-    "",
-    "resultGroups is empty initially"
+  Assert.deepEqual(
+    UrlbarPrefs.resultGroups,
+    UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: true }),
+    "resultGroups is the same as the groups for which howSearchSuggestionsFirst is true"
   );
 
   // Set showSearchSuggestionsFirst = false.
   UrlbarPrefs.set("showSearchSuggestionsFirst", false);
-  Assert.ok(
-    Services.prefs.getCharPref("browser.urlbar.resultGroups", ""),
-    "resultGroups should exist after setting showSearchSuggestionsFirst"
-  );
   Assert.deepEqual(
-    JSON.parse(Services.prefs.getCharPref("browser.urlbar.resultGroups")),
+    UrlbarPrefs.resultGroups,
     UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: false }),
     "resultGroups is updated after setting showSearchSuggestionsFirst = false"
   );
@@ -259,7 +255,7 @@ add_task(function showSearchSuggestionsFirst_resultGroups() {
   // Set showSearchSuggestionsFirst = true.
   UrlbarPrefs.set("showSearchSuggestionsFirst", true);
   Assert.deepEqual(
-    JSON.parse(Services.prefs.getCharPref("browser.urlbar.resultGroups")),
+    UrlbarPrefs.resultGroups,
     UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: true }),
     "resultGroups is updated after setting showSearchSuggestionsFirst = true"
   );
@@ -267,7 +263,7 @@ add_task(function showSearchSuggestionsFirst_resultGroups() {
   // Set showSearchSuggestionsFirst = false again so we can clear it next.
   UrlbarPrefs.set("showSearchSuggestionsFirst", false);
   Assert.deepEqual(
-    JSON.parse(Services.prefs.getCharPref("browser.urlbar.resultGroups")),
+    UrlbarPrefs.resultGroups,
     UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: false }),
     "resultGroups is updated after setting showSearchSuggestionsFirst = false"
   );
@@ -275,7 +271,7 @@ add_task(function showSearchSuggestionsFirst_resultGroups() {
   // Clear showSearchSuggestionsFirst.
   Services.prefs.clearUserPref("browser.urlbar.showSearchSuggestionsFirst");
   Assert.deepEqual(
-    JSON.parse(Services.prefs.getCharPref("browser.urlbar.resultGroups")),
+    UrlbarPrefs.resultGroups,
     UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: true }),
     "resultGroups is updated immediately after clearing showSearchSuggestionsFirst"
   );
@@ -285,7 +281,7 @@ add_task(function showSearchSuggestionsFirst_resultGroups() {
     "showSearchSuggestionsFirst defaults to true after clearing it"
   );
   Assert.deepEqual(
-    JSON.parse(Services.prefs.getCharPref("browser.urlbar.resultGroups")),
+    UrlbarPrefs.resultGroups,
     UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: true }),
     "resultGroups remains correct after getting showSearchSuggestionsFirst"
   );
@@ -348,7 +344,7 @@ add_task(function initializeShowSearchSuggestionsFirstPref() {
       "showSearchSuggestionsFirst has the expected value"
     );
     Assert.deepEqual(
-      JSON.parse(Services.prefs.getCharPref("browser.urlbar.resultGroups")),
+      UrlbarPrefs.resultGroups,
       UrlbarPrefs.makeResultGroups({
         showSearchSuggestionsFirst: expectedValue,
       }),

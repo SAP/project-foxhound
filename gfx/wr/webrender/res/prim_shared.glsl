@@ -27,15 +27,14 @@ varying vec2 vClipMaskUv;
 
 #define COLOR_MODE_FROM_PASS            0
 #define COLOR_MODE_ALPHA                1
-#define COLOR_MODE_SUBPX_CONST_COLOR    2
-#define COLOR_MODE_SUBPX_BG_PASS0       3
-#define COLOR_MODE_SUBPX_BG_PASS1       4
-#define COLOR_MODE_SUBPX_BG_PASS2       5
-#define COLOR_MODE_SUBPX_DUAL_SOURCE    6
-#define COLOR_MODE_BITMAP_SHADOW        7
-#define COLOR_MODE_COLOR_BITMAP         8
-#define COLOR_MODE_IMAGE                9
-#define COLOR_MODE_MULTIPLY_DUAL_SOURCE 10
+#define COLOR_MODE_SUBPX_BG_PASS0       2
+#define COLOR_MODE_SUBPX_BG_PASS1       3
+#define COLOR_MODE_SUBPX_BG_PASS2       4
+#define COLOR_MODE_SUBPX_DUAL_SOURCE    5
+#define COLOR_MODE_BITMAP_SHADOW        6
+#define COLOR_MODE_COLOR_BITMAP         7
+#define COLOR_MODE_IMAGE                8
+#define COLOR_MODE_MULTIPLY_DUAL_SOURCE 9
 
 uniform HIGHP_SAMPLER_FLOAT sampler2D sPrimitiveHeadersF;
 uniform HIGHP_SAMPLER_FLOAT isampler2D sPrimitiveHeadersI;
@@ -132,36 +131,13 @@ VertexInfo write_vertex(vec2 local_pos,
     return vi;
 }
 
-float cross2(vec2 v0, vec2 v1) {
-    return v0.x * v1.y - v0.y * v1.x;
-}
-
-// Return intersection of line (p0,p1) and line (p2,p3)
-vec2 intersect_lines(vec2 p0, vec2 p1, vec2 p2, vec2 p3) {
-    vec2 d0 = p0 - p1;
-    vec2 d1 = p2 - p3;
-
-    float s0 = cross2(p0, p1);
-    float s1 = cross2(p2, p3);
-
-    float d = cross2(d0, d1);
-    float nx = s0 * d1.x - d0.x * s1;
-    float ny = s0 * d1.y - d0.y * s1;
-
-    return vec2(nx / d, ny / d);
-}
-
-VertexInfo write_transform_vertex(RectWithEndpoint local_segment_rect,
-                                  RectWithEndpoint local_prim_rect,
-                                  RectWithEndpoint local_clip_rect,
-                                  int edge_flags,
-                                  float z,
-                                  Transform transform,
-                                  PictureTask task) {
-    // Calculate a clip rect from local_rect + local clip
-    RectWithEndpoint clip_rect = local_clip_rect;
-    RectWithEndpoint segment_rect = local_segment_rect;
-
+RectWithEndpoint clip_and_init_antialiasing(RectWithEndpoint segment_rect,
+                                            RectWithEndpoint prim_rect,
+                                            RectWithEndpoint clip_rect,
+                                            int edge_flags,
+                                            float z,
+                                            Transform transform,
+                                            PictureTask task) {
 #ifdef SWGL_ANTIALIAS
     // Check if the bounds are smaller than the unmodified segment rect. If so,
     // it is safe to enable AA on those edges.
@@ -174,11 +150,7 @@ VertexInfo write_transform_vertex(RectWithEndpoint local_segment_rect,
     segment_rect.p0 = clamp(segment_rect.p0, clip_rect.p0, clip_rect.p1);
     segment_rect.p1 = clamp(segment_rect.p1, clip_rect.p0, clip_rect.p1);
 
-#ifdef SWGL_ANTIALIAS
-    // Trim the segment geometry to the clipped bounds.
-    local_segment_rect = segment_rect;
-#else
-    RectWithEndpoint prim_rect = local_prim_rect;
+#ifndef SWGL_ANTIALIAS
     prim_rect.p0 = clamp(prim_rect.p0, clip_rect.p0, clip_rect.p1);
     prim_rect.p1 = clamp(prim_rect.p1, clip_rect.p0, clip_rect.p1);
 
@@ -188,7 +160,7 @@ VertexInfo write_transform_vertex(RectWithEndpoint local_segment_rect,
     // compilation crashes on some Adreno devices. See bug 1715746.
     bvec4 clip_edge_mask = bvec4(bool(edge_flags & 1), bool(edge_flags & 2), bool(edge_flags & 4), bool(edge_flags & 8));
     init_transform_vs(mix(
-        vec4(prim_rect.p0, prim_rect.p1),
+        vec4(vec2(-1e16), vec2(1e16)),
         vec4(segment_rect.p0, segment_rect.p1),
         clip_edge_mask
     ));
@@ -205,32 +177,11 @@ VertexInfo write_transform_vertex(RectWithEndpoint local_segment_rect,
     // Only extrude along edges where we are going to apply AA.
     float extrude_amount = 2.0;
     vec4 extrude_distance = mix(vec4(0.0), vec4(extrude_amount), clip_edge_mask);
-    local_segment_rect.p0 -= extrude_distance.xy;
-    local_segment_rect.p1 += extrude_distance.zw;
+    segment_rect.p0 -= extrude_distance.xy;
+    segment_rect.p1 += extrude_distance.zw;
 #endif
 
-    // Select the corner of the local rect that we are processing.
-    vec2 local_pos = mix(local_segment_rect.p0, local_segment_rect.p1, aPosition.xy);
-
-    // Convert the world positions to device pixel space.
-    vec2 task_offset = task.task_rect.p0 - task.content_origin;
-
-    // Transform the current vertex to world space.
-    vec4 world_pos = transform.m * vec4(local_pos, 0.0, 1.0);
-    vec4 final_pos = vec4(
-        world_pos.xy * task.device_pixel_scale + task_offset * world_pos.w,
-        z * world_pos.w,
-        world_pos.w
-    );
-
-    gl_Position = uTransform * final_pos;
-
-    VertexInfo vi = VertexInfo(
-        local_pos,
-        world_pos
-    );
-
-    return vi;
+    return segment_rect;
 }
 
 void write_clip(vec4 world_pos, ClipArea area, PictureTask task) {

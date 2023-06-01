@@ -13,8 +13,7 @@
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/WeakPtr.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class GamepadChangeEvent;
 class GamepadManager;
@@ -82,7 +81,8 @@ class GamepadServiceTest final : public DOMEventTargetHelper,
   static already_AddRefed<GamepadServiceTest> CreateTestService(
       nsPIDOMWindowInner* aWindow);
   nsPIDOMWindowInner* GetParentObject() const { return mWindow; }
-  JSObject* WrapObject(JSContext* aCx, JS::HandleObject aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
  private:
   // Hold a reference to the gamepad service so we don't have to worry about
@@ -110,7 +110,6 @@ class GamepadServiceTest final : public DOMEventTargetHelper,
   GamepadHandle GetHandleInSlot(uint32_t aHandleSlot) const;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif

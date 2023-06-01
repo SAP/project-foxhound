@@ -7,34 +7,32 @@
 const { BaseAction } = ChromeUtils.import(
   "resource://normandy/actions/BaseAction.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
-  this,
-  "TelemetryEnvironment",
-  "resource://gre/modules/TelemetryEnvironment.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "PreferenceRollouts",
   "resource://normandy/lib/PreferenceRollouts.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "PrefUtils",
   "resource://normandy/lib/PrefUtils.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "ActionSchemas",
   "resource://normandy/actions/schemas/index.js"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "TelemetryEvents",
   "resource://normandy/lib/TelemetryEvents.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "NormandyUtils",
   "resource://normandy/lib/NormandyUtils.jsm"
 );
@@ -49,14 +47,14 @@ const PREFERENCE_TYPE_MAP = {
 
 class PreferenceRolloutAction extends BaseAction {
   get schema() {
-    return ActionSchemas["preference-rollout"];
+    return lazy.ActionSchemas["preference-rollout"];
   }
 
   async _run(recipe) {
     const args = recipe.arguments;
 
     // Check if the rollout is on the list of rollouts to stop applying.
-    if (PreferenceRollouts.GRADUATION_SET.has(args.slug)) {
+    if (lazy.PreferenceRollouts.GRADUATION_SET.has(args.slug)) {
       this.log.debug(
         `Skipping rollout "${args.slug}" because it is in the graduation set.`
       );
@@ -73,11 +71,13 @@ class PreferenceRolloutAction extends BaseAction {
       preferences: args.preferences.map(({ preferenceName, value }) => ({
         preferenceName,
         value,
-        previousValue: PrefUtils.getPref(preferenceName, { branch: "default" }),
+        previousValue: lazy.PrefUtils.getPref(preferenceName, {
+          branch: "default",
+        }),
       })),
     };
 
-    const existingRollout = await PreferenceRollouts.get(args.slug);
+    const existingRollout = await lazy.PreferenceRollouts.get(args.slug);
     if (existingRollout) {
       const anyChanged = await this._updatePrefsForExistingRollout(
         existingRollout,
@@ -86,22 +86,27 @@ class PreferenceRolloutAction extends BaseAction {
 
       // If anything was different about the new rollout, write it to the db and send an event about it
       if (anyChanged) {
-        await PreferenceRollouts.update(newRollout);
-        TelemetryEvents.sendEvent("update", "preference_rollout", args.slug, {
-          previousState: existingRollout.state,
-          enrollmentId:
-            existingRollout.enrollmentId ||
-            TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
-        });
+        await lazy.PreferenceRollouts.update(newRollout);
+        lazy.TelemetryEvents.sendEvent(
+          "update",
+          "preference_rollout",
+          args.slug,
+          {
+            previousState: existingRollout.state,
+            enrollmentId:
+              existingRollout.enrollmentId ||
+              lazy.TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
+          }
+        );
 
         switch (existingRollout.state) {
-          case PreferenceRollouts.STATE_ACTIVE: {
+          case lazy.PreferenceRollouts.STATE_ACTIVE: {
             this.log.debug(`Updated preference rollout ${args.slug}`);
             break;
           }
-          case PreferenceRollouts.STATE_GRADUATED: {
+          case lazy.PreferenceRollouts.STATE_GRADUATED: {
             this.log.debug(`Ungraduated preference rollout ${args.slug}`);
-            TelemetryEnvironment.setExperimentActive(
+            lazy.TelemetryEnvironment.setExperimentActive(
               args.slug,
               newRollout.state,
               { type: "normandy-prefrollout" }
@@ -109,7 +114,7 @@ class PreferenceRolloutAction extends BaseAction {
             break;
           }
           default: {
-            Cu.reportError(
+            console.error(
               new Error(
                 `Updated pref rollout in unexpected state: ${existingRollout.state}`
               )
@@ -127,7 +132,7 @@ class PreferenceRolloutAction extends BaseAction {
           ({ value, previousValue }) => value === previousValue
         )
       ) {
-        TelemetryEvents.sendEvent(
+        lazy.TelemetryEvents.sendEvent(
           "enrollFailed",
           "preference_rollout",
           args.slug,
@@ -139,23 +144,34 @@ class PreferenceRolloutAction extends BaseAction {
         );
       }
 
-      let enrollmentId = NormandyUtils.generateUuid();
+      let enrollmentId = lazy.NormandyUtils.generateUuid();
       newRollout.enrollmentId = enrollmentId;
 
-      await PreferenceRollouts.add(newRollout);
+      await lazy.PreferenceRollouts.add(newRollout);
 
       for (const { preferenceName, value } of args.preferences) {
-        PrefUtils.setPref(preferenceName, value, { branch: "default" });
+        lazy.PrefUtils.setPref(preferenceName, value, { branch: "default" });
       }
 
       this.log.debug(`Enrolled in preference rollout ${args.slug}`);
-      TelemetryEnvironment.setExperimentActive(args.slug, newRollout.state, {
-        type: "normandy-prefrollout",
-        enrollmentId: enrollmentId || TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
-      });
-      TelemetryEvents.sendEvent("enroll", "preference_rollout", args.slug, {
-        enrollmentId: enrollmentId || TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
-      });
+      lazy.TelemetryEnvironment.setExperimentActive(
+        args.slug,
+        newRollout.state,
+        {
+          type: "normandy-prefrollout",
+          enrollmentId:
+            enrollmentId || lazy.TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
+        }
+      );
+      lazy.TelemetryEvents.sendEvent(
+        "enroll",
+        "preference_rollout",
+        args.slug,
+        {
+          enrollmentId:
+            enrollmentId || lazy.TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
+        }
+      );
     }
   }
 
@@ -168,7 +184,7 @@ class PreferenceRolloutAction extends BaseAction {
    */
   async _verifyRolloutPrefs({ slug, preferences }) {
     const existingManagedPrefs = new Set();
-    for (const rollout of await PreferenceRollouts.getAllActive()) {
+    for (const rollout of await lazy.PreferenceRollouts.getAllActive()) {
       if (rollout.slug === slug) {
         continue;
       }
@@ -179,10 +195,15 @@ class PreferenceRolloutAction extends BaseAction {
 
     for (const prefSpec of preferences) {
       if (existingManagedPrefs.has(prefSpec.preferenceName)) {
-        TelemetryEvents.sendEvent("enrollFailed", "preference_rollout", slug, {
-          reason: "conflict",
-          preference: prefSpec.preferenceName,
-        });
+        lazy.TelemetryEvents.sendEvent(
+          "enrollFailed",
+          "preference_rollout",
+          slug,
+          {
+            reason: "conflict",
+            preference: prefSpec.preferenceName,
+          }
+        );
         // Throw so that this recipe execution is marked as a failure
         throw new Error(
           `Cannot start rollout ${slug}. Preference ${prefSpec.preferenceName} is already managed.`
@@ -197,10 +218,15 @@ class PreferenceRolloutAction extends BaseAction {
         existingPrefType !== Services.prefs.PREF_INVALID &&
         existingPrefType !== rolloutPrefType
       ) {
-        TelemetryEvents.sendEvent("enrollFailed", "preference_rollout", slug, {
-          reason: "invalid type",
-          preference: prefSpec.preferenceName,
-        });
+        lazy.TelemetryEvents.sendEvent(
+          "enrollFailed",
+          "preference_rollout",
+          slug,
+          {
+            reason: "invalid type",
+            preference: prefSpec.preferenceName,
+          }
+        );
         // Throw so that this recipe execution is marked as a failure
         throw new Error(
           `Cannot start rollout "${slug}" on "${prefSpec.preferenceName}". ` +
@@ -227,7 +253,9 @@ class PreferenceRolloutAction extends BaseAction {
           `updating ${existingRollout.slug}: ${preferenceName} no longer exists`
         );
         anyChanged = true;
-        PrefUtils.setPref(preferenceName, previousValue, { branch: "default" });
+        lazy.PrefUtils.setPref(preferenceName, previousValue, {
+          branch: "default",
+        });
       }
     }
 
@@ -248,7 +276,7 @@ class PreferenceRolloutAction extends BaseAction {
         this.log.debug(
           `updating ${existingRollout.slug}: ${prefSpec.preferenceName} value changed from ${oldValue} to ${prefSpec.value}`
         );
-        PrefUtils.setPref(prefSpec.preferenceName, prefSpec.value, {
+        lazy.PrefUtils.setPref(prefSpec.preferenceName, prefSpec.value, {
           branch: "default",
         });
       }
@@ -257,6 +285,6 @@ class PreferenceRolloutAction extends BaseAction {
   }
 
   async _finalize() {
-    await PreferenceRollouts.saveStartupPrefs();
+    await lazy.PreferenceRollouts.saveStartupPrefs();
   }
 }

@@ -53,7 +53,8 @@ nsTArray<RefPtr<PerformanceInfoPromise>> CollectPerformanceInfo() {
   return promises;
 }
 
-void AddWindowTabSizes(nsGlobalWindowOuter* aWindow, nsTabSizes* aSizes) {
+static void AddWindowTabSizes(nsGlobalWindowOuter* aWindow,
+                              nsTabSizes* aSizes) {
   Document* document = aWindow->GetDocument();
   if (document && document->GetCachedSizes(aSizes)) {
     // We got a cached version
@@ -82,90 +83,104 @@ void AddWindowTabSizes(nsGlobalWindowOuter* aWindow, nsTabSizes* aSizes) {
   aSizes->mOther += sizes.mOther;
 }
 
-nsresult GetTabSizes(BrowsingContext* aContext, nsTabSizes* aSizes) {
-  if (!aContext) {
-    return NS_OK;
-  }
-
-  // Add the window (and inner window) sizes. Might be cached.
-  nsGlobalWindowOuter* window =
-      nsGlobalWindowOuter::Cast(aContext->GetDOMWindow());
-  if (window) {
-    AddWindowTabSizes(window, aSizes);
-  }
-
-  // Measure this window's descendents.
-  for (const auto& child : aContext->Children()) {
-    MOZ_TRY(GetTabSizes(child, aSizes));
-  }
-  return NS_OK;
-}
-
 RefPtr<MemoryPromise> CollectMemoryInfo(
     const RefPtr<DocGroup>& aDocGroup,
     const RefPtr<AbstractThread>& aEventTarget) {
-  // Getting Dom sizes. -- XXX should we reimplement GetTabSizes to async here ?
+  // Getting Dom sizes.
   nsTabSizes sizes;
 
+  using WindowSet = mozilla::HashSet<nsGlobalWindowOuter*>;
+  WindowSet windowsVisited;
   for (const auto& document : *aDocGroup) {
     nsGlobalWindowOuter* window =
         document ? nsGlobalWindowOuter::Cast(document->GetWindow()) : nullptr;
     if (window) {
-      AddWindowTabSizes(window, &sizes);
+      WindowSet::AddPtr p = windowsVisited.lookupForAdd(window);
+      if (!p) {
+        // We have not seen this window before.
+        AddWindowTabSizes(window, &sizes);
+        if (!windowsVisited.add(p, window)) {
+          // OOM.  Let us stop counting memory, we may undercount.
+          break;
+        }
+      }
     }
   }
 
-  BrowsingContextGroup* group = aDocGroup->GetBrowsingContextGroup();
-  // Getting GC Heap Usage
-  uint64_t GCHeapUsage = 0;
-  JSObject* object = group->GetWrapper();
-  if (object != nullptr) {
-    GCHeapUsage = js::GetGCHeapUsageForObjectZone(object);
+  using ZoneSet = mozilla::HashSet<JS::Zone*>;
+  using SharedSet = mozilla::HashSet<void*>;
+  ZoneSet zonesVisited;
+  SharedSet sharedVisited;
+  // Getting JS-related memory usage
+  uint64_t jsMemUsed = 0;
+  nsTArray<RefPtr<MediaMemoryPromise>> mediaMemoryPromises;
+  for (auto* doc : *aDocGroup) {
+    bool unused;
+    nsIGlobalObject* globalObject = doc->GetScriptHandlingObject(unused);
+    if (globalObject) {
+      JSObject* object = globalObject->GetGlobalJSObject();
+      if (object != nullptr) {
+        MOZ_ASSERT(NS_IsMainThread(),
+                   "We cannot get the object zone on another thread");
+        JS::Zone* zone = JS::GetObjectZone(object);
+        ZoneSet::AddPtr addZone = zonesVisited.lookupForAdd(zone);
+        if (!addZone) {
+          // We have not checked this zone before.
+          jsMemUsed += js::GetMemoryUsageForZone(zone);
+          if (!zonesVisited.add(addZone, zone)) {
+            // OOM.  Let us stop counting memory, we may undercount.
+            break;
+          }
+
+          const js::gc::SharedMemoryMap& shared =
+              js::GetSharedMemoryUsageForZone(zone);
+          for (auto iter = shared.iter(); !iter.done(); iter.next()) {
+            void* sharedMem = iter.get().key();
+            SharedSet::AddPtr addShared = sharedVisited.lookupForAdd(sharedMem);
+            if (addShared) {
+              // We *have* seen this shared memory before.
+
+              // Because shared memory is already included in
+              // js::GetMemoryUsageForZone() above, and we've seen it for a
+              // previous zone, we subtract it here so it's not counted more
+              // than once.
+              jsMemUsed -= iter.get().value().nbytes;
+            } else if (!sharedVisited.add(addShared, sharedMem)) {
+              // As above, abort with an under-estimate.
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    mediaMemoryPromises.AppendElement(GetMediaMemorySizes(doc));
   }
 
   // Getting Media sizes.
-  return GetMediaMemorySizes()->Then(
-      aEventTarget, __func__,
-      [GCHeapUsage, sizes](const MediaMemoryInfo& media) {
-        return MemoryPromise::CreateAndResolve(
-            PerformanceMemoryInfo(media, sizes.mDom, sizes.mStyle, sizes.mOther,
-                                  GCHeapUsage),
-            __func__);
-      },
-      [](const nsresult rv) {
-        return MemoryPromise::CreateAndReject(rv, __func__);
-      });
-}
+  return MediaMemoryPromise::All(aEventTarget, mediaMemoryPromises)
+      ->Then(
+          aEventTarget, __func__,
+          [jsMemUsed, sizes](const nsTArray<MediaMemoryInfo> mediaArray) {
+            size_t audioSize = 0;
+            size_t videoSize = 0;
+            size_t resourcesSize = 0;
 
-RefPtr<MemoryPromise> CollectMemoryInfo(
-    const RefPtr<BrowsingContext>& aContext,
-    const RefPtr<AbstractThread>& aEventTarget) {
-  // Getting Dom sizes. -- XXX should we reimplement GetTabSizes to async here ?
-  nsTabSizes sizes;
-  nsresult rv = GetTabSizes(aContext, &sizes);
-  if (NS_FAILED(rv)) {
-    return MemoryPromise::CreateAndReject(rv, __func__);
-  }
+            for (auto media : mediaArray) {
+              audioSize += media.audioSize();
+              videoSize += media.videoSize();
+              resourcesSize += media.resourcesSize();
+            }
 
-  // Getting GC Heap Usage
-  JSObject* obj = aContext->GetWrapper();
-  uint64_t GCHeapUsage = 0;
-  if (obj != nullptr) {
-    GCHeapUsage = js::GetGCHeapUsageForObjectZone(obj);
-  }
-
-  // Getting Media sizes.
-  return GetMediaMemorySizes()->Then(
-      aEventTarget, __func__,
-      [GCHeapUsage, sizes](const MediaMemoryInfo& media) {
-        return MemoryPromise::CreateAndResolve(
-            PerformanceMemoryInfo(media, sizes.mDom, sizes.mStyle, sizes.mOther,
-                                  GCHeapUsage),
-            __func__);
-      },
-      [](const nsresult rv) {
-        return MemoryPromise::CreateAndReject(rv, __func__);
-      });
+            return MemoryPromise::CreateAndResolve(
+                PerformanceMemoryInfo(
+                    MediaMemoryInfo(audioSize, videoSize, resourcesSize),
+                    sizes.mDom, sizes.mStyle, sizes.mOther, jsMemUsed),
+                __func__);
+          },
+          [](const nsresult rv) {
+            return MemoryPromise::CreateAndReject(rv, __func__);
+          });
 }
 
 }  // namespace mozilla

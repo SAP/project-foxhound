@@ -3,10 +3,6 @@
 
 "use strict";
 
-const { ContentTaskUtils } = ChromeUtils.import(
-  "resource://testing-common/ContentTaskUtils.jsm"
-);
-
 add_task(async function testStartingAutoScrollInAboutContent() {
   await SpecialPowers.pushPrefEnv({
     set: [

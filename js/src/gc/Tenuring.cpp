@@ -12,7 +12,6 @@
 
 #include "mozilla/PodOperations.h"
 
-#include "gc/Allocator.h"
 #include "gc/Cell.h"
 #include "gc/GCInternals.h"
 #include "gc/GCProbes.h"
@@ -30,9 +29,12 @@
 #include "gc/Marking-inl.h"
 #include "gc/ObjectKind-inl.h"
 #include "gc/StoreBuffer-inl.h"
-#include "vm/JSContext-inl.h"
+#include "gc/TraceMethods-inl.h"
 #include "vm/JSObject-inl.h"
 #include "vm/PlainObject-inl.h"
+#ifdef ENABLE_RECORD_TUPLE
+#  include "vm/TupleType.h"
+#endif
 
 using namespace js;
 using namespace js::gc;
@@ -42,8 +44,8 @@ using mozilla::PodCopy;
 constexpr size_t MAX_DEDUPLICATABLE_STRING_LENGTH = 500;
 
 TenuringTracer::TenuringTracer(JSRuntime* rt, Nursery* nursery)
-    : GenericTracer(rt, JS::TracerKind::Tenuring,
-                    JS::WeakMapTraceAction::TraceKeysAndValues),
+    : JSTracer(rt, JS::TracerKind::Tenuring,
+               JS::WeakMapTraceAction::TraceKeysAndValues),
       nursery_(*nursery) {}
 
 size_t TenuringTracer::getTenuredSize() const {
@@ -57,14 +59,16 @@ static inline void UpdateAllocSiteOnTenure(Cell* cell) {
   site->incTenuredCount();
 }
 
-JSObject* TenuringTracer::onObjectEdge(JSObject* obj) {
+void TenuringTracer::onObjectEdge(JSObject** objp, const char* name) {
+  JSObject* obj = *objp;
   if (!IsInsideNursery(obj)) {
-    return obj;
+    return;
   }
 
   if (obj->isForwarded()) {
     const gc::RelocationOverlay* overlay = gc::RelocationOverlay::fromCell(obj);
-    return static_cast<JSObject*>(overlay->forwardingAddress());
+    *objp = static_cast<JSObject*>(overlay->forwardingAddress());
+    return;
   }
 
   UpdateAllocSiteOnTenure(obj);
@@ -72,59 +76,57 @@ JSObject* TenuringTracer::onObjectEdge(JSObject* obj) {
   // Take a fast path for tenuring a plain object which is by far the most
   // common case.
   if (obj->is<PlainObject>()) {
-    return movePlainObjectToTenured(&obj->as<PlainObject>());
+    *objp = movePlainObjectToTenured(&obj->as<PlainObject>());
+    return;
   }
 
-  return moveToTenuredSlow(obj);
+  *objp = moveToTenuredSlow(obj);
 }
 
-JSString* TenuringTracer::onStringEdge(JSString* str) {
+void TenuringTracer::onStringEdge(JSString** strp, const char* name) {
+  JSString* str = *strp;
   if (!IsInsideNursery(str)) {
-    return str;
+    return;
   }
 
   if (str->isForwarded()) {
     const gc::RelocationOverlay* overlay = gc::RelocationOverlay::fromCell(str);
-    return static_cast<JSString*>(overlay->forwardingAddress());
+    *strp = static_cast<JSString*>(overlay->forwardingAddress());
+    return;
   }
 
   UpdateAllocSiteOnTenure(str);
 
-  return moveToTenured(str);
+  *strp = moveToTenured(str);
 }
 
-JS::BigInt* TenuringTracer::onBigIntEdge(JS::BigInt* bi) {
+void TenuringTracer::onBigIntEdge(JS::BigInt** bip, const char* name) {
+  JS::BigInt* bi = *bip;
   if (!IsInsideNursery(bi)) {
-    return bi;
+    return;
   }
 
   if (bi->isForwarded()) {
     const gc::RelocationOverlay* overlay = gc::RelocationOverlay::fromCell(bi);
-    return static_cast<JS::BigInt*>(overlay->forwardingAddress());
+    *bip = static_cast<JS::BigInt*>(overlay->forwardingAddress());
+    return;
   }
 
   UpdateAllocSiteOnTenure(bi);
 
-  return moveToTenured(bi);
+  *bip = moveToTenured(bi);
 }
 
-JS::Symbol* TenuringTracer::onSymbolEdge(JS::Symbol* sym) { return sym; }
-js::BaseScript* TenuringTracer::onScriptEdge(BaseScript* script) {
-  return script;
-}
-js::Shape* TenuringTracer::onShapeEdge(Shape* shape) { return shape; }
-js::RegExpShared* TenuringTracer::onRegExpSharedEdge(RegExpShared* shared) {
-  return shared;
-}
-js::BaseShape* TenuringTracer::onBaseShapeEdge(BaseShape* base) { return base; }
-js::GetterSetter* TenuringTracer::onGetterSetterEdge(GetterSetter* gs) {
-  return gs;
-}
-js::PropMap* TenuringTracer::onPropMapEdge(PropMap* map) { return map; }
-js::jit::JitCode* TenuringTracer::onJitCodeEdge(jit::JitCode* code) {
-  return code;
-}
-js::Scope* TenuringTracer::onScopeEdge(Scope* scope) { return scope; }
+void TenuringTracer::onSymbolEdge(JS::Symbol** symp, const char* name) {}
+void TenuringTracer::onScriptEdge(BaseScript** scriptp, const char* name) {}
+void TenuringTracer::onShapeEdge(Shape** shapep, const char* name) {}
+void TenuringTracer::onRegExpSharedEdge(RegExpShared** sharedp,
+                                        const char* name) {}
+void TenuringTracer::onBaseShapeEdge(BaseShape** basep, const char* name) {}
+void TenuringTracer::onGetterSetterEdge(GetterSetter** gsp, const char* name) {}
+void TenuringTracer::onPropMapEdge(PropMap** mapp, const char* name) {}
+void TenuringTracer::onJitCodeEdge(jit::JitCode** codep, const char* name) {}
+void TenuringTracer::onScopeEdge(Scope** scopep, const char* name) {}
 
 void TenuringTracer::traverse(JS::Value* thingp) {
   MOZ_ASSERT(!nursery().isInside(thingp));
@@ -136,19 +138,27 @@ void TenuringTracer::traverse(JS::Value* thingp) {
   // tighter code than using MapGCThingTyped.
   Value post;
   if (value.isObject()) {
-    post = JS::ObjectValue(*onObjectEdge(&value.toObject()));
+    JSObject* obj = &value.toObject();
+    onObjectEdge(&obj, "value");
+    post = JS::ObjectValue(*obj);
   }
 #ifdef ENABLE_RECORD_TUPLE
   else if (value.isExtendedPrimitive()) {
-    post =
-        JS::ExtendedPrimitiveValue(*onObjectEdge(&value.toExtendedPrimitive()));
+    JSObject* obj = &value.toExtendedPrimitive();
+    onObjectEdge(&obj, "value");
+    post = JS::ExtendedPrimitiveValue(*obj);
   }
 #endif
   else if (value.isString()) {
-    post = JS::StringValue(onStringEdge(value.toString()));
+    JSString* str = value.toString();
+    onStringEdge(&str, "value");
+    post = JS::StringValue(str);
   } else if (value.isBigInt()) {
-    post = JS::BigIntValue(onBigIntEdge(value.toBigInt()));
+    JS::BigInt* bi = value.toBigInt();
+    onBigIntEdge(&bi, "value");
+    post = JS::BigIntValue(bi);
   } else {
+    MOZ_ASSERT_IF(value.isGCThing(), !IsInsideNursery(value.toGCThing()));
     return;
   }
 
@@ -394,7 +404,7 @@ void js::gc::StoreBuffer::CellPtrEdge<T>::trace(TenuringTracer& mover) const {
         edge, JS::TraceKind::String));
   }
 
-  *edge = DispatchToOnEdge(&mover, thing);
+  DispatchToOnEdge(&mover, edge, "CellPtrEdge");
 }
 
 void js::gc::StoreBuffer::ValueEdge::trace(TenuringTracer& mover) const {
@@ -491,16 +501,14 @@ JSObject* js::TenuringTracer::moveToTenuredSlow(JSObject* src) {
 
   size_t srcSize = Arena::thingSize(dstKind);
 
-  // Arrays do not necessarily have the same AllocKind between src and dst. We
-  // deal with this by copying elements manually, possibly re-inlining them if
-  // there is adequate room inline in dst.
+  // Arrays and Tuples do not necessarily have the same AllocKind between src
+  // and dst. We deal with this by copying elements manually, possibly
+  // re-inlining them if there is adequate room inline in dst.
   //
-  // For Arrays we're reducing tenuredSize to the smaller srcSize because
-  // moveElementsToTenured() accounts for all Array elements, even if they are
-  // inlined.
-  if (src->is<ArrayObject>()) {
-    srcSize = sizeof(NativeObject);
-  } else if (src->is<TypedArrayObject>()) {
+  // For Arrays and Tuples we're reducing tenuredSize to the smaller srcSize
+  // because moveElementsToTenured() accounts for all Array or Tuple elements,
+  // even if they are inlined.
+  if (src->is<TypedArrayObject>()) {
     TypedArrayObject* tarray = &src->as<TypedArrayObject>();
     // Typed arrays with inline data do not necessarily have the same
     // AllocKind between src and dst. The nursery does not allocate an
@@ -515,6 +523,8 @@ JSObject* js::TenuringTracer::moveToTenuredSlow(JSObject* src) {
       size_t headerSize = Arena::thingSize(srcKind);
       srcSize = headerSize + tarray->byteLength();
     }
+  } else if (src->canHaveFixedElements()) {
+    srcSize = sizeof(NativeObject);
   }
 
   tenuredSize += srcSize;
@@ -531,9 +541,6 @@ JSObject* js::TenuringTracer::moveToTenuredSlow(JSObject* src) {
     NativeObject* nsrc = &src->as<NativeObject>();
     tenuredSize += moveSlotsToTenured(ndst, nsrc);
     tenuredSize += moveElementsToTenured(ndst, nsrc, dstKind);
-
-    // There is a pointer into a dictionary mode object from the head of its
-    // shape list. This is updated in Nursery::sweepDictionaryModeObjects().
   }
 
   JSObjectMovedOp op = dst->getClass()->extObjectMovedOp();
@@ -651,11 +658,12 @@ size_t js::TenuringTracer::moveElementsToTenured(NativeObject* dst,
   // Shifted elements are copied too.
   uint32_t numShifted = srcHeader->numShiftedElements();
 
-  /* Unlike other objects, Arrays can have fixed elements. */
-  if (src->is<ArrayObject>() && nslots <= GetGCKindSlots(dstKind)) {
-    dst->as<ArrayObject>().setFixedElements();
+  /* Unlike other objects, Arrays and Tuples can have fixed elements. */
+  if (src->canHaveFixedElements() && nslots <= GetGCKindSlots(dstKind)) {
+    dst->as<NativeObject>().setFixedElements();
     js_memcpy(dst->getElementsHeader(), srcAllocatedHeader, allocSize);
     dst->elements_ += numShifted;
+    dst->getElementsHeader()->flags |= ObjectElements::FIXED;
     nursery().setElementsForwardingPointer(srcHeader, dst->getElementsHeader(),
                                            srcHeader->capacity);
     return allocSize;
@@ -677,6 +685,7 @@ size_t js::TenuringTracer::moveElementsToTenured(NativeObject* dst,
 
   js_memcpy(dstHeader, srcAllocatedHeader, allocSize);
   dst->elements_ = dstHeader->elements() + numShifted;
+  dst->getElementsHeader()->flags &= ~ObjectElements::FIXED;
   nursery().setElementsForwardingPointer(srcHeader, dst->getElementsHeader(),
                                          srcHeader->capacity);
   return allocSize;
@@ -699,10 +708,10 @@ JSString* js::TenuringTracer::moveToTenured(JSString* src) {
   // the atom. Don't do this for dependent strings because they're more
   // complicated. See StringRelocationOverlay and DeduplicationStringHasher
   // comments.
-  if (src->inStringToAtomCache() && src->isDeduplicatable() &&
-      !src->hasBase() && !src->taint().hasTaint()) {
+  if (src->isLinear() && src->inStringToAtomCache() &&
+      src->isDeduplicatable() && !src->hasBase() && !src->taint().hasTaint()) {
     JSLinearString* linear = &src->asLinear();
-    JSAtom* atom = runtime()->caches().stringToAtomCache.lookup(linear);
+    JSAtom* atom = runtime()->caches().stringToAtomCache.lookupInMap(linear);
     MOZ_ASSERT(atom, "Why was the cache purged before minor GC?");
 
     // Only deduplicate if both strings have the same encoding, to not confuse
@@ -986,14 +995,16 @@ MinorSweepingTracer::MinorSweepingTracer(JSRuntime* rt)
 }
 
 template <typename T>
-inline T* MinorSweepingTracer::onEdge(T* thing) {
+inline void MinorSweepingTracer::onEdge(T** thingp, const char* name) {
+  T* thing = *thingp;
   if (thing->isTenured()) {
-    return thing;
+    return;
   }
 
   if (IsForwarded(thing)) {
-    return Forwarded(thing);
+    *thingp = Forwarded(thing);
+    return;
   }
 
-  return nullptr;
+  *thingp = nullptr;
 }

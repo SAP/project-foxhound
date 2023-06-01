@@ -7,14 +7,15 @@
 #ifndef mozilla_ServoStyleSet_h
 #define mozilla_ServoStyleSet_h
 
+#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/AnonymousContentKey.h"
 #include "mozilla/AtomArray.h"
 #include "mozilla/EnumeratedArray.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/PostTraversalTask.h"
 #include "mozilla/ServoBindingTypes.h"
 #include "mozilla/ServoUtils.h"
+#include "mozilla/dom/RustTypes.h"
 #include "mozilla/UniquePtr.h"
 #include "MainThreadUtils.h"
 #include "nsCSSPseudoElements.h"
@@ -28,8 +29,15 @@
 
 namespace mozilla {
 enum class MediaFeatureChangeReason : uint16_t;
-enum class StyleOrientation : uint8_t;
+enum class StylePageSizeOrientation : uint8_t;
 enum class StyleRuleChangeKind : uint32_t;
+
+template <typename Integer, typename Number, typename LinearStops>
+struct StyleTimingFunction;
+struct StylePiecewiseLinearFunction;
+using StyleComputedTimingFunction =
+    StyleTimingFunction<int32_t, float, StylePiecewiseLinearFunction>;
+
 namespace css {
 class Rule;
 }  // namespace css
@@ -38,6 +46,9 @@ class CSSImportRule;
 class Element;
 class ShadowRoot;
 }  // namespace dom
+namespace gfx {
+class FontPaletteValueSet;
+}  // namespace gfx
 class StyleSheet;
 struct Keyframe;
 class ServoElementSnapshotTable;
@@ -50,7 +61,6 @@ class nsIContent;
 
 class nsPresContext;
 class nsWindowSizes;
-struct nsTimingFunction;
 struct TreeMatchContext;
 
 namespace mozilla {
@@ -125,7 +135,8 @@ class ServoStyleSet {
   void ImportRuleLoaded(dom::CSSImportRule&, StyleSheet&);
 
   // Runs style invalidation due to document state changes.
-  void InvalidateStyleForDocumentStateChanges(EventStates aStatesChanged);
+  void InvalidateStyleForDocumentStateChanges(
+      dom::DocumentState aStatesChanged);
 
   void RecordShadowStyleChange(dom::ShadowRoot&);
 
@@ -145,6 +156,8 @@ class ServoStyleSet {
   const RawServoStyleSet* RawSet() const { return mRawSet.get(); }
 
   bool GetAuthorStyleDisabled() const { return mAuthorStyleDisabled; }
+
+  bool UsesFontMetrics() const;
 
   void SetAuthorStyleDisabled(bool aStyleDisabled);
 
@@ -208,6 +221,18 @@ class ServoStyleSet {
                                      IsProbe::Yes);
   }
 
+  /**
+   * @brief Get a style for a highlight pseudo element.
+   *
+   * The highlight is identified by its name `aHighlightName`.
+   *
+   * Returns null if there are no rules matching for the highlight pseudo
+   * element.
+   */
+  already_AddRefed<ComputedStyle> ProbeHighlightPseudoElementStyle(
+      const dom::Element& aOriginatingElement, const nsAtom* aHighlightName,
+      ComputedStyle* aParentStyle);
+
   // Resolves style for a (possibly-pseudo) Element without assuming that the
   // style has been resolved. If the element was unstyled and a new style
   // was resolved, it is not stored in the DOM. (That is, the element remains
@@ -224,7 +249,15 @@ class ServoStyleSet {
   // Get a ComputedStyle for an anonymous box. The pseudo type must be
   // a non-inheriting anon box.
   already_AddRefed<ComputedStyle> ResolveNonInheritingAnonymousBoxStyle(
-      PseudoStyleType);
+      PseudoStyleType aType) {
+    return ResolveNonInheritingAnonymousBoxStyle(aType, nullptr);
+  }
+
+  already_AddRefed<ComputedStyle> ResolvePageContentStyle(
+      const nsAtom* aPageName) {
+    return ResolveNonInheritingAnonymousBoxStyle(PseudoStyleType::pageContent,
+                                                 aPageName);
+  }
 
   already_AddRefed<ComputedStyle> ResolveXULTreePseudoStyle(
       dom::Element* aParentElement, nsCSSAnonBoxPseudoStaticAtom* aPseudoTag,
@@ -233,12 +266,13 @@ class ServoStyleSet {
   size_t SheetCount(Origin) const;
   StyleSheet* SheetAt(Origin, size_t aIndex) const;
 
-  // Gets the default orientation of unnamed CSS pages.
+  // Gets the default orientation of CSS pages.
   // This will return portrait or landscape both for a landscape/portrait
   // value to page-size, as well as for an explicit size or paper name which
   // is not square.
   // If the value is auto or square, then returns nothing.
-  Maybe<StyleOrientation> GetDefaultPageOrientation();
+  Maybe<StylePageSizeOrientation> GetDefaultPageSizeOrientation(
+      const nsAtom* aFirstPageName);
 
   void AppendAllNonDocumentAuthorSheets(nsTArray<StyleSheet*>& aArray) const;
 
@@ -338,7 +372,7 @@ class ServoStyleSet {
 
   bool GetKeyframesForName(const dom::Element&, const ComputedStyle&,
                            nsAtom* aName,
-                           const nsTimingFunction& aTimingFunction,
+                           const StyleComputedTimingFunction& aTimingFunction,
                            nsTArray<Keyframe>& aKeyframes);
 
   nsTArray<ComputedKeyframeValues> GetComputedKeyframeValuesFor(
@@ -354,10 +388,11 @@ class ServoStyleSet {
 
   const RawServoCounterStyleRule* CounterStyleRuleForName(nsAtom* aName);
 
-  const RawServoScrollTimelineRule* ScrollTimelineRuleForName(nsAtom* aName);
-
   // Get all the currently-active font feature values set.
   already_AddRefed<gfxFontFeatureValueSet> BuildFontFeatureValueSet();
+
+  // Get the set of all currently-active font-palette-values.
+  already_AddRefed<gfx::FontPaletteValueSet> BuildFontPaletteValueSet();
 
   already_AddRefed<ComputedStyle> GetBaseContextForElement(
       dom::Element* aElement, const ComputedStyle* aStyle);
@@ -428,13 +463,13 @@ class ServoStyleSet {
    * the changed state isn't depended upon by any pseudo-class selectors
    * in a style sheet.
    */
-  bool HasStateDependency(const dom::Element&, EventStates) const;
+  bool HasStateDependency(const dom::Element&, dom::ElementState) const;
 
   /**
    * Returns true if a change in document state might require us to restyle the
    * document.
    */
-  bool HasDocumentStateDependency(EventStates aState) const;
+  bool HasDocumentStateDependency(dom::DocumentState) const;
 
   /**
    * Get a new ComputedStyle that uses the same rules as the given ComputedStyle
@@ -448,6 +483,12 @@ class ServoStyleSet {
       ComputedStyle* aComputedStyle, ComputedStyle* aNewParent,
       ComputedStyle* aNewParentIgnoringFirstLine,
       ComputedStyle* aNewLayoutParent, dom::Element* aElement);
+
+  /**
+   * Invalidate styles where there's any viewport units dependent style.
+   */
+  enum class OnlyDynamic : bool { No, Yes };
+  void InvalidateForViewportUnits(OnlyDynamic);
 
  private:
   friend class AutoSetInServoTraversal;
@@ -567,6 +608,9 @@ class ServoStyleSet {
   EnumeratedArray<nsCSSAnonBoxes::NonInheriting,
                   nsCSSAnonBoxes::NonInheriting::_Count, RefPtr<ComputedStyle>>
       mNonInheritingComputedStyles;
+
+  already_AddRefed<ComputedStyle> ResolveNonInheritingAnonymousBoxStyle(
+      PseudoStyleType aType, const nsAtom* aPageName);
 
  public:
   void PutCachedAnonymousContentStyles(

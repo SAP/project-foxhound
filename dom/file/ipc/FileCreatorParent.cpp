@@ -13,12 +13,12 @@
 namespace mozilla::dom {
 
 FileCreatorParent::FileCreatorParent()
-    : mBackgroundEventTarget(GetCurrentEventTarget()), mIPCActive(true) {}
+    : mBackgroundEventTarget(GetCurrentSerialEventTarget()), mIPCActive(true) {}
 
 FileCreatorParent::~FileCreatorParent() = default;
 
 mozilla::ipc::IPCResult FileCreatorParent::CreateAndShareFile(
-    const nsString& aFullPath, const nsString& aType, const nsString& aName,
+    const nsAString& aFullPath, const nsAString& aType, const nsAString& aName,
     const Maybe<int64_t>& aLastModified, const bool& aExistenceCheck,
     const bool& aIsFromNsIFile) {
   RefPtr<dom::BlobImpl> blobImpl;
@@ -47,8 +47,7 @@ mozilla::ipc::IPCResult FileCreatorParent::CreateAndShareFile(
             "FileCreatorParent::CreateAndShareFile return", [self, blobImpl]() {
               if (self->mIPCActive) {
                 IPCBlob ipcBlob;
-                nsresult rv = dom::IPCBlobUtils::Serialize(
-                    blobImpl, self->Manager(), ipcBlob);
+                nsresult rv = dom::IPCBlobUtils::Serialize(blobImpl, ipcBlob);
                 if (NS_WARN_IF(NS_FAILED(rv))) {
                   Unused << Send__delete__(self, FileCreationErrorResult(rv));
                   return;

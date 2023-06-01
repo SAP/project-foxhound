@@ -17,13 +17,13 @@ const TEST_URI =
 const STUB_FILE = "consoleApi.js";
 
 add_task(async function() {
-  const isStubsUpdate = env.get(STUBS_UPDATE_ENV) == "true";
+  const isStubsUpdate = Services.env.get(STUBS_UPDATE_ENV) == "true";
   info(`${isStubsUpdate ? "Update" : "Check"} ${STUB_FILE}`);
 
   const generatedStubs = await generateConsoleApiStubs();
 
   if (isStubsUpdate) {
-    await writeStubsToFile(env, STUB_FILE, generatedStubs);
+    await writeStubsToFile(STUB_FILE, generatedStubs);
     ok(true, `${STUB_FILE} was updated`);
     return;
   }
@@ -261,7 +261,7 @@ function getCommands() {
       code: `
   console.log(
     "%cfoo%cbar",
-    "color:blue; font-size:1.3em; background:url('https://example.com/test'); position:absolute; top:10px; ",
+    "color:blue; font-size:1.3em; background:url('data:image/png,base64,iVBORw0KGgoAAAAN'), url('https://example.com/test'); position:absolute; top:10px; ",
     "color:red; line-height: 1.5; background:\\165rl('https://example.com/test')"
   );
   `,

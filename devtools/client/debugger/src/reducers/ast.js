@@ -11,6 +11,9 @@ import { makeBreakpointId } from "../utils/breakpoint";
 
 export function initialASTState() {
   return {
+    // Internal map of the source id to the specific source actor
+    // that loads the text for these symbols.
+    actors: {},
     symbols: {},
     inScopeLines: {},
   };
@@ -19,17 +22,15 @@ export function initialASTState() {
 function update(state = initialASTState(), action) {
   switch (action.type) {
     case "SET_SYMBOLS": {
-      const { sourceId } = action;
+      const { sourceId, sourceActorId } = action;
       if (action.status === "start") {
-        return {
-          ...state,
-          symbols: { ...state.symbols, [sourceId]: { loading: true } },
-        };
+        return state;
       }
 
       const value = action.value;
       return {
         ...state,
+        actors: { ...state.actors, [sourceId]: sourceActorId },
         symbols: { ...state.symbols, [sourceId]: value },
       };
     }

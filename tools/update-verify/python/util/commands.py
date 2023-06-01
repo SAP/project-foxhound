@@ -4,12 +4,11 @@
 
 """Functions for running commands"""
 
-from __future__ import absolute_import, print_function
-
-import subprocess
-import os
-import time
 import logging
+import os
+import subprocess
+import time
+
 import six
 
 log = logging.getLogger(__name__)

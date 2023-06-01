@@ -156,7 +156,7 @@ void a11y::ProxyStateChangeEvent(RemoteAccessible* aTarget, uint64_t, bool) {
 void a11y::ProxyFocusEvent(RemoteAccessible* aTarget,
                            const LayoutDeviceIntRect& aCaretRect) {
   FocusManager* focusMgr = FocusMgr();
-  if (focusMgr && focusMgr->FocusedAccessible()) {
+  if (focusMgr && focusMgr->FocusedLocalAccessible()) {
     // This is a focus event from a remote document, but focus has moved out
     // of that document into the chrome since that event was sent. For example,
     // this can happen when choosing File menu -> New Tab. See bug 1471466.
@@ -172,13 +172,14 @@ void a11y::ProxyFocusEvent(RemoteAccessible* aTarget,
 }
 
 void a11y::ProxyCaretMoveEvent(RemoteAccessible* aTarget,
-                               const LayoutDeviceIntRect& aCaretRect) {
+                               const LayoutDeviceIntRect& aCaretRect,
+                               int32_t aGranularity) {
   AccessibleWrap::UpdateSystemCaretFor(aTarget, aCaretRect);
   MsaaAccessible::FireWinEvent(aTarget,
                                nsIAccessibleEvent::EVENT_TEXT_CARET_MOVED);
 }
 
-void a11y::ProxyTextChangeEvent(RemoteAccessible* aText, const nsString& aStr,
+void a11y::ProxyTextChangeEvent(RemoteAccessible* aText, const nsAString& aStr,
                                 int32_t aStart, uint32_t aLen, bool aInsert,
                                 bool) {
   uint32_t eventType = aInsert ? nsIAccessibleEvent::EVENT_TEXT_INSERTED
@@ -193,8 +194,11 @@ void a11y::ProxyTextChangeEvent(RemoteAccessible* aText, const nsString& aStr,
     return;
   }
 
-  // XXX Call ia2AccessibleText::UpdateTextChangeData once that works for
-  // RemoteAccessible.
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    MOZ_ASSERT(aText->IsHyperText());
+    ia2AccessibleText::UpdateTextChangeData(aText->AsHyperTextBase(), aInsert,
+                                            aStr, aStart, aLen);
+  }
   MsaaAccessible::FireWinEvent(aText, eventType);
 }
 

@@ -1,10 +1,7 @@
 const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var httpserver = null;
 var geolocation = null;
-var success = false;
-var watchId = -1;
 
 function geoHandler(metadata, response) {
   var georesponse = {

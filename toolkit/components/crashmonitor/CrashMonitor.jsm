@@ -33,13 +33,12 @@
 
 var EXPORTED_SYMBOLS = ["CrashMonitor"];
 
-const { PrivateBrowsingUtils } = ChromeUtils.import(
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
+const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PrivateBrowsingUtils.sys.mjs"
 );
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const SESSIONSTORE_WINDOWS_RESTORED_TOPIC = "sessionstore-windows-restored";
 const SESSIONSTORE_FINAL_STATE_WRITE_COMPLETE_TOPIC =
@@ -109,7 +108,7 @@ var CrashMonitorInternal = {
       } catch (ex) {
         // Ignore file not found errors, but report all others.
         if (ex.name !== "NotFoundError") {
-          Cu.reportError(
+          console.error(
             `Error while loading crash monitor data: ${ex.message}`
           );
         }
@@ -118,7 +117,7 @@ var CrashMonitorInternal = {
 
       // If `notifications` isn't an object, then the monitor data isn't valid.
       if (Object(notifications) !== notifications) {
-        Cu.reportError(
+        console.error(
           "Error while parsing crash monitor data: invalid monitor data"
         );
         return null;

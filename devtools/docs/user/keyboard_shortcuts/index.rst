@@ -22,7 +22,7 @@ Opening and closing tools
 These shortcuts work in the main browser window to open the specified tool. The same shortcuts will work to close tools hosted in the Toolbox, if the tool is active. For tools like the Browser Console that open in a new window, you have to close the window to close the tool.
 
 .. list-table::
-  :widths: 40 20 20 20
+  :widths: 25 25 25 25
   :header-rows: 1
 
   * - **Command**
@@ -114,7 +114,7 @@ These shortcuts work whenever the toolbox is open, no matter which tool is activ
 
 
 .. list-table::
-  :widths: 40 20 20 20
+  :widths: 25 25 25 25
   :header-rows: 1
 
   * - **Command**
@@ -151,7 +151,7 @@ These shortcuts work whenever the toolbox is open, no matter which tool is activ
 These shortcuts work in all tools that are hosted in the toolbox.
 
 .. list-table::
-  :widths: 40 20 20 20
+  :widths: 25 25 25 25
   :header-rows: 1
 
   * - **Command**
@@ -412,7 +412,7 @@ These shortcuts work while you're in the :doc:`Inspector's HTML pane <../page_in
 
   * - Copy the selected node's outer HTML
     - :kbd:`Ctrl` + :kbd:`C`
-    - :kbd:`Cmd`+ :kbd:`C`
+    - :kbd:`Cmd` + :kbd:`C`
     - :kbd:`Ctrl` + :kbd:`C`
 
   * - Scroll the selected node into view
@@ -528,14 +528,14 @@ These shortcuts work when you're in the :doc:`Inspector's CSS panel <../page_ins
     - :kbd:`↓`
 
   * - Increment selected value by 100
-    - :kbd:`Shift` + :kbd:`Page Up`
-    - :kbd:`Shift` + :kbd:`Page Up`
-    - :kbd:`Shift` + :kbd:`Page Up`
+    - :kbd:`Shift` + :kbd:`PageUp`
+    - :kbd:`Shift` + :kbd:`PageUp`
+    - :kbd:`Shift` + :kbd:`PageUp`
 
   * - Decrement selected value by 100
-    - :kbd:`Shift` + :kbd:`Page Down`
-    - :kbd:`Shift` + :kbd:`Page Down`
-    - :kbd:`Shift` + :kbd:`Page Down`
+    - :kbd:`Shift` + :kbd:`PageDown`
+    - :kbd:`Shift` + :kbd:`PageDown`
+    - :kbd:`Shift` + :kbd:`PageDown`
 
   * - Increment selected value by 10
     - :kbd:`Shift` + :kbd:`↑`
@@ -581,7 +581,7 @@ Debugger
 Keyboard shortcuts for the :doc:`Firefox JavaScript Debugger <../debugger/index>`.
 
 .. list-table::
-  :widths: 40 20 20 20
+  :widths: 25 25 25 25
   :header-rows: 1
 
   * - **Command**
@@ -838,7 +838,7 @@ Style Editor
 Keyboard shortcuts for the :doc:`Style editor <../style_editor/index>`.
 
 .. list-table::
-  :widths: 40 20 20 20
+  :widths: 25 25 25 25
   :header-rows: 1
 
   * - **Command**
@@ -856,6 +856,30 @@ Keyboard shortcuts for the :doc:`Style editor <../style_editor/index>`.
     - :kbd:`Cmd` + :kbd:`Space`
     - :kbd:`Ctrl` + :kbd:`Space`
 
+  * - Find Next
+    - :kbd:`Ctrl` + :kbd:`G`
+    - :kbd:`Cmd` + :kbd:`G`
+    - :kbd:`Ctrl` + :kbd:`G`
+
+  * - Find Previous
+    - :kbd:`Shift` + :kbd:`Ctrl` + :kbd:`G`
+    - :kbd:`Shift` + :kbd:`Cmd` + :kbd:`G`
+    - :kbd:`Shift` + :kbd:`Ctrl` + :kbd:`G`
+
+  * - Replace
+    - :kbd:`Shift` + :kbd:`Ctrl` + :kbd:`F`
+    - :kbd:`Cmd` + :kbd:`Option` + :kbd:`F`
+    - :kbd:`Shift` + :kbd:`Ctrl` + :kbd:`F`
+
+  * - Focus the filter input
+    - :kbd:`Ctrl` + :kbd:`P`
+    - :kbd:`Cmd` + :kbd:`P`
+    - :kbd:`Ctrl` + :kbd:`P`
+
+  * - Save file to disk
+    - :kbd:`Ctrl` + :kbd:`S`
+    - :kbd:`Cmd` + :kbd:`S`
+    - :kbd:`Ctrl` + :kbd:`S`
 
 .. _keyboard-shortcuts-eyedropper:
 
@@ -865,7 +889,7 @@ Eyedropper
 Keyboard shortcuts for the :doc:`Eyedropper <../eyedropper/index>`.
 
 .. list-table::
-  :widths: 40 20 20 20
+  :widths: 25 25 25 25
   :header-rows: 1
 
   * - **Command**
@@ -884,11 +908,11 @@ Keyboard shortcuts for the :doc:`Eyedropper <../eyedropper/index>`.
     - :kbd:`Esc`
 
   * - Move by 1 pixel
-    - :kbd:`Arrow keys`
-    - :kbd:`Arrow keys`
-    - :kbd:`Arrow keys`
+    - :kbd:`ArrowKeys`
+    - :kbd:`ArrowKeys`
+    - :kbd:`ArrowKeys`
 
   * - Move by 10 pixels
-    - :kbd:`Shift` + :kbd:`arrow keys`
-    - :kbd:`Shift` + :kbd:`arrow keys`
-    - :kbd:`Shift` + :kbd:`arrow keys`
+    - :kbd:`Shift` + :kbd:`ArrowKeys`
+    - :kbd:`Shift` + :kbd:`ArrowKeys`
+    - :kbd:`Shift` + :kbd:`ArrowKeys`

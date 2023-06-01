@@ -143,7 +143,7 @@ MaybeStackVector<Measure> ComplexUnitsConverter::convert(double quantity,
     // TODO: return an error for "foot-and-foot"?
     MaybeStackVector<Measure> result;
     int sign = 1;
-    if (quantity < 0) {
+    if (quantity < 0 && unitsConverters_.length() > 1) {
         quantity *= -1;
         sign = -1;
     }
@@ -183,7 +183,7 @@ MaybeStackVector<Measure> ComplexUnitsConverter::convert(double quantity,
             } else {
                 quantity = remainder;
             }
-        }   
+        }
     }
 
     applyRounder(intValues, quantity, rounder, status);
@@ -210,7 +210,6 @@ MaybeStackVector<Measure> ComplexUnitsConverter::convert(double quantity,
         }
     }
 
-
     // Transfer values into result and return:
     for(int32_t i = 0, n = unitsConverters_.length(); i < n; ++i) {
         U_ASSERT(tmpResult[i] != nullptr);
@@ -224,6 +223,12 @@ MaybeStackVector<Measure> ComplexUnitsConverter::convert(double quantity,
 void ComplexUnitsConverter::applyRounder(MaybeStackArray<int64_t, 5> &intValues, double &quantity,
                                          icu::number::impl::RoundingImpl *rounder,
                                          UErrorCode &status) const {
+    if (uprv_isInfinite(quantity) || uprv_isNaN(quantity)) {
+        // Inf and NaN can't be rounded, and calculating `carry` below is known
+        // to fail on Gentoo on HPPA and OpenSUSE on riscv64. Nothing to do.
+        return;
+    }
+
     if (rounder == nullptr) {
         // Nothing to do for the quantity.
         return;

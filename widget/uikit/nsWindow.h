@@ -29,7 +29,7 @@ class nsWindow final : public nsBaseWidget {
 
   [[nodiscard]] virtual nsresult Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
                                         const LayoutDeviceIntRect& aRect,
-                                        nsWidgetInitData* aInitData = nullptr) override;
+                                        widget::InitData* aInitData = nullptr) override;
   virtual void Destroy() override;
   virtual void Show(bool aState) override;
   virtual void Enable(bool aState) override {}
@@ -42,6 +42,7 @@ class nsWindow final : public nsBaseWidget {
   virtual void* GetNativeData(uint32_t aDataType) override;
 
   virtual void Move(double aX, double aY) override;
+  virtual nsSizeMode SizeMode() override { return mSizeMode; }
   virtual void SetSizeMode(nsSizeMode aMode) override;
   void EnteredFullScreen(bool aFullScreen);
   virtual void Resize(double aWidth, double aHeight, bool aRepaint) override;
@@ -94,6 +95,7 @@ class nsWindow final : public nsBaseWidget {
 
   ChildView* mNativeView;
   bool mVisible;
+  nsSizeMode mSizeMode;
   nsTArray<nsWindow*> mChildren;
   nsWindow* mParent;
   InputContext mInputContext;

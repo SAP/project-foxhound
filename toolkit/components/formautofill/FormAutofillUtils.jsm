@@ -4,7 +4,12 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = ["FormAutofillUtils", "AddressDataLoader"];
+const EXPORTED_SYMBOLS = [
+  "FormAutofillUtils",
+  "AddressDataLoader",
+  "LabelUtils",
+];
+let FormAutofillUtils;
 
 const ADDRESS_METADATA_PATH = "resource://autofill/addressmetadata/";
 const ADDRESS_REFERENCES = "addressReferences.js";
@@ -12,35 +17,35 @@ const ADDRESS_REFERENCES_EXT = "addressReferencesExt.js";
 
 const ADDRESSES_COLLECTION_NAME = "addresses";
 const CREDITCARDS_COLLECTION_NAME = "creditCards";
-const MANAGE_ADDRESSES_KEYWORDS = [
-  "manageAddressesTitle",
-  "addNewAddressTitle",
+const MANAGE_ADDRESSES_L10N_IDS = [
+  "autofill-add-new-address-title",
+  "autofill-manage-addresses-title",
 ];
-const EDIT_ADDRESS_KEYWORDS = [
-  "givenName",
-  "additionalName",
-  "familyName",
-  "organization2",
-  "streetAddress",
-  "state",
-  "province",
-  "city",
-  "country",
-  "zip",
-  "postalCode",
-  "email",
-  "tel",
+const EDIT_ADDRESS_L10N_IDS = [
+  "autofill-address-given-name",
+  "autofill-address-additional-name",
+  "autofill-address-family-name",
+  "autofill-address-organization",
+  "autofill-address-street",
+  "autofill-address-state",
+  "autofill-address-province",
+  "autofill-address-city",
+  "autofill-address-country",
+  "autofill-address-zip",
+  "autofill-address-postal-code",
+  "autofill-address-email",
+  "autofill-address-tel",
 ];
-const MANAGE_CREDITCARDS_KEYWORDS = [
-  "manageCreditCardsTitle",
-  "addNewCreditCardTitle",
+const MANAGE_CREDITCARDS_L10N_IDS = [
+  "autofill-add-new-card-title",
+  "autofill-manage-credit-cards-title",
 ];
-const EDIT_CREDITCARD_KEYWORDS = [
-  "cardNumber",
-  "nameOnCard",
-  "cardExpiresMonth",
-  "cardExpiresYear",
-  "cardNetwork",
+const EDIT_CREDITCARD_L10N_IDS = [
+  "autofill-card-number",
+  "autofill-card-name-on-card",
+  "autofill-card-expires-month",
+  "autofill-card-expires-year",
+  "autofill-card-network",
 ];
 const FIELD_STATES = {
   NORMAL: "NORMAL",
@@ -52,20 +57,23 @@ const SECTION_TYPES = {
   CREDIT_CARD: "creditCard",
 };
 
+const ELIGIBLE_INPUT_TYPES = ["text", "email", "tel", "number", "month"];
+
 // The maximum length of data to be saved in a single field for preventing DoS
 // attacks that fill the user's hard drive(s).
 const MAX_FIELD_VALUE_LENGTH = 200;
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { FormAutofill } = ChromeUtils.import(
   "resource://autofill/FormAutofill.jsm"
 );
-XPCOMUtils.defineLazyModuleGetters(this, {
-  CreditCard: "resource://gre/modules/CreditCard.jsm",
-  OSKeyStore: "resource://gre/modules/OSKeyStore.jsm",
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  CreditCard: "resource://gre/modules/CreditCard.sys.mjs",
+  OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
 });
 
 let AddressDataLoader = {
@@ -80,6 +88,7 @@ let AddressDataLoader = {
 
   /**
    * Load address data and extension script into a sandbox from different paths.
+   *
    * @param   {string} path
    *          The path for address data and extension script. It could be root of the address
    *          metadata folder(addressmetadata/) or under specific country(addressmetadata/TW/).
@@ -117,6 +126,7 @@ let AddressDataLoader = {
   /**
    * Convert certain properties' string value into array. We should make sure
    * the cached data is parsed.
+   *
    * @param   {object} data Original metadata from addressReferences.
    * @returns {object} parsed metadata with property value that converts to array.
    */
@@ -156,6 +166,7 @@ let AddressDataLoader = {
    *               "data/TW": {} // Other supported country metadata
    *               "data/TW/台北市": {} // Other supported country level 1 metadata
    *              }
+   *
    * @param   {string} country
    * @param   {string?} level1
    * @returns {object} Default locale metadata
@@ -183,6 +194,7 @@ let AddressDataLoader = {
 
   /**
    * Return the region metadata with default locale and other locales (if exists).
+   *
    * @param   {string} country
    * @param   {string?} level1
    * @returns {object} Return default locale and other locales metadata.
@@ -207,17 +219,17 @@ let AddressDataLoader = {
   },
 };
 
-this.FormAutofillUtils = {
+FormAutofillUtils = {
   get AUTOFILL_FIELDS_THRESHOLD() {
     return 3;
   },
 
   ADDRESSES_COLLECTION_NAME,
   CREDITCARDS_COLLECTION_NAME,
-  MANAGE_ADDRESSES_KEYWORDS,
-  EDIT_ADDRESS_KEYWORDS,
-  MANAGE_CREDITCARDS_KEYWORDS,
-  EDIT_CREDITCARD_KEYWORDS,
+  MANAGE_ADDRESSES_L10N_IDS,
+  EDIT_ADDRESS_L10N_IDS,
+  MANAGE_CREDITCARDS_L10N_IDS,
+  EDIT_CREDITCARD_L10N_IDS,
   MAX_FIELD_VALUE_LENGTH,
   FIELD_STATES,
   SECTION_TYPES,
@@ -271,11 +283,11 @@ this.FormAutofillUtils = {
   },
 
   isCCNumber(ccNumber) {
-    return CreditCard.isValidNumber(ccNumber);
+    return lazy.CreditCard.isValidNumber(ccNumber);
   },
 
   ensureLoggedIn(promptMessage) {
-    return OSKeyStore.ensureLoggedIn(
+    return lazy.OSKeyStore.ensureLoggedIn(
       this._reauthEnabledByUser && promptMessage ? promptMessage : false
     );
   },
@@ -286,7 +298,7 @@ this.FormAutofillUtils = {
    * @returns {Array}
    */
   getCreditCardNetworks() {
-    return CreditCard.SUPPORTED_NETWORKS;
+    return lazy.CreditCard.getSupportedNetworks();
   },
 
   getCategoryFromFieldName(fieldName) {
@@ -361,6 +373,7 @@ this.FormAutofillUtils = {
   /**
    * Internal method to split an address to multiple parts per the provided delimiter,
    * removing blank parts.
+   *
    * @param {string} address The address the split
    * @param {string} [delimiter] The separator that is used between lines in the address
    * @returns {string[]}
@@ -376,6 +389,7 @@ this.FormAutofillUtils = {
 
   /**
    * Converts a street address to a single line, removing linebreaks marked by the delimiter
+   *
    * @param {string} address The address the convert
    * @param {string} [delimiter] The separator that is used between lines in the address
    * @returns {string}
@@ -387,9 +401,10 @@ this.FormAutofillUtils = {
 
   /**
    * Compares two addresses, removing internal whitespace
+   *
    * @param {string} a The first address to compare
    * @param {string} b The second address to compare
-   * @param {array} collators Search collators that will be used for comparison
+   * @param {Array} collators Search collators that will be used for comparison
    * @param {string} [delimiter="\n"] The separator that is used between lines in the address
    * @returns {boolean} True if the addresses are equal, false otherwise
    */
@@ -406,6 +421,7 @@ this.FormAutofillUtils = {
   /**
    * In-place concatenate tel-related components into a single "tel" field and
    * delete unnecessary fields.
+   *
    * @param {object} address An address record.
    */
   compressTel(address) {
@@ -438,13 +454,24 @@ this.FormAutofillUtils = {
   },
 
   /**
+   * Determines if an element can be autofilled or not.
+   *
+   * @param {HTMLElement} element
+   * @returns {boolean} true if the element can be autofilled
+   */
+  isFieldAutofillable(element) {
+    return element && !element.readOnly && !element.disabled;
+  },
+
+  /**
    *  Determines if an element is visually hidden or not.
    *
    * NOTE: this does not encompass every possible way of hiding an element.
    * Instead, we check some of the more common methods of hiding for performance reasons.
    * See Bug 1727832 for follow up.
+   *
    * @param {HTMLElement} element
-   * @returns {boolean}
+   * @returns {boolean} true if the element is visible
    */
   isFieldVisible(element) {
     if (element.hidden) {
@@ -456,19 +483,26 @@ this.FormAutofillUtils = {
     return true;
   },
 
-  ALLOWED_TYPES: ["text", "email", "tel", "number", "month"],
-  isFieldEligibleForAutofill(element) {
-    let tagName = element.tagName;
-    if (tagName == "INPUT") {
+  /**
+   * Determines if an element is eligible to be used by credit card or address autofill.
+   *
+   * @param {HTMLElement} element
+   * @returns {boolean} true if element can be used by credit card or address autofill
+   */
+  isCreditCardOrAddressFieldType(element) {
+    if (!element) {
+      return false;
+    }
+    if (HTMLInputElement.isInstance(element)) {
       // `element.type` can be recognized as `text`, if it's missing or invalid.
-      if (!this.ALLOWED_TYPES.includes(element.type)) {
+      if (!ELIGIBLE_INPUT_TYPES.includes(element.type)) {
         return false;
       }
       // If the field is visually invisible, we do not want to autofill into it.
       if (!this.isFieldVisible(element)) {
         return false;
       }
-    } else if (tagName != "SELECT") {
+    } else if (!HTMLSelectElement.isInstance(element)) {
       return false;
     }
 
@@ -483,6 +517,7 @@ this.FormAutofillUtils = {
   /**
    * Get country address data and fallback to US if not found.
    * See AddressDataLoader._loadData for more details of addressData structure.
+   *
    * @param {string} [country=FormAutofill.DEFAULT_REGION]
    *        The country code for requesting specific country's metadata. It'll be
    *        default region if parameter is not set.
@@ -518,6 +553,7 @@ this.FormAutofillUtils = {
 
   /**
    * Get country address data with default locale.
+   *
    * @param {string} country
    * @param {string} level1
    * @returns {object|null} Return metadata of specific region with default locale.
@@ -532,9 +568,10 @@ this.FormAutofillUtils = {
 
   /**
    * Get country address data with all locales.
+   *
    * @param {string} country
    * @param {string} level1
-   * @returns {array<object>|null}
+   * @returns {Array<object> | null}
    *          Return metadata of specific region with all the locales.
    *          NOTE: The returned data may be for a default region if the
    *          specified one cannot be found. Callers who only want the specific
@@ -547,8 +584,9 @@ this.FormAutofillUtils = {
 
   /**
    * Get the collators based on the specified country.
+   *
    * @param   {string} country The specified country.
-   * @returns {array} An array containing several collator objects.
+   * @returns {Array} An array containing several collator objects.
    */
   getSearchCollators(country) {
     // TODO: Only one language should be used at a time per country. The locale
@@ -595,7 +633,7 @@ this.FormAutofillUtils = {
    * ]
    *
    * @param   {string} fmt Country address format string
-   * @returns {array<object>} List of fields
+   * @returns {Array<object>} List of fields
    */
   parseAddressFormat(fmt) {
     if (!fmt) {
@@ -622,7 +660,7 @@ this.FormAutofillUtils = {
   },
 
   /**
-   * Used to populate dropdowns in the UI (e.g. FormAutofill preferences, Web Payments).
+   * Used to populate dropdowns in the UI (e.g. FormAutofill preferences).
    * Use findAddressSelectOption for matching a value to a region.
    *
    * @param {string[]} subKeys An array of regionCode strings
@@ -665,7 +703,7 @@ this.FormAutofillUtils = {
    * ["street-address", "address-level2", "address-level1"]
    *
    * @param   {string} requireString Country address require string
-   * @returns {array<string>} List of fields
+   * @returns {Array<string>} List of fields
    */
   parseRequireString(requireString) {
     if (!requireString) {
@@ -678,6 +716,7 @@ this.FormAutofillUtils = {
   /**
    * Use alternative country name list to identify a country code from a
    * specified country name.
+   *
    * @param   {string} countryName A country name to be identified
    * @param   {string} [countrySpecified] A country code indicating that we only
    *                                      search its alternative names if specified.
@@ -744,6 +783,7 @@ this.FormAutofillUtils = {
 
   /**
    * Try to find the abbreviation of the given sub-region name
+   *
    * @param   {string[]} subregionValues A list of inferable sub-region values.
    * @param   {string} [country] A country name to be identified.
    * @returns {string} The matching sub-region abbreviation.
@@ -806,6 +846,7 @@ this.FormAutofillUtils = {
    * 2. First pass try to find exact match.
    * 3. Second pass try to identify values from address value and options,
    *    and look for a match.
+   *
    * @param   {DOMElement} selectEl
    * @param   {object} address
    * @param   {string} fieldName
@@ -980,7 +1021,7 @@ this.FormAutofillUtils = {
         for (let option of options) {
           if (
             [option.text, option.label, option.value].some(
-              s => CreditCard.getNetworkFromName(s) == network
+              s => lazy.CreditCard.getNetworkFromName(s) == network
             )
           ) {
             return option;
@@ -995,10 +1036,11 @@ this.FormAutofillUtils = {
 
   /**
    * Try to match value with keys and names, but always return the key.
-   * @param   {array<string>} keys
-   * @param   {array<string>} names
+   *
+   * @param   {Array<string>} keys
+   * @param   {Array<string>} names
    * @param   {string} value
-   * @param   {array} collators
+   * @param   {Array} collators
    * @returns {string}
    */
   identifyValue(keys, names, value, collators) {
@@ -1019,9 +1061,10 @@ this.FormAutofillUtils = {
 
   /**
    * Compare if two strings are the same.
+   *
    * @param   {string} a
    * @param   {string} b
-   * @param   {array} collators
+   * @param   {Array} collators
    * @returns {boolean}
    */
   strCompare(a = "", b = "", collators) {
@@ -1031,6 +1074,7 @@ this.FormAutofillUtils = {
   /**
    * Escaping user input to be treated as a literal string within a regular
    * expression.
+   *
    * @param   {string} string
    * @returns {string}
    */
@@ -1040,13 +1084,14 @@ this.FormAutofillUtils = {
 
   /**
    * Get formatting information of a given country
+   *
    * @param   {string} country
    * @returns {object}
    *         {
-   *           {string} addressLevel3Label
-   *           {string} addressLevel2Label
-   *           {string} addressLevel1Label
-   *           {string} postalCodeLabel
+   *           {string} addressLevel3L10nId
+   *           {string} addressLevel2L10nId
+   *           {string} addressLevel1L10nId
+   *           {string} postalCodeL10nId
    *           {object} fieldsOrder
    *           {string} postalCodePattern
    *         }
@@ -1070,9 +1115,15 @@ this.FormAutofillUtils = {
       // When particular values are missing for a country, the
       // data/ZZ value should be used instead:
       // https://chromium-i18n.appspot.com/ssl-aggregate-address/data/ZZ
-      addressLevel3Label: dataset.sublocality_name_type || "suburb",
-      addressLevel2Label: dataset.locality_name_type || "city",
-      addressLevel1Label: dataset.state_name_type || "province",
+      addressLevel3L10nId: this.getAddressFieldL10nId(
+        dataset.sublocality_name_type || "suburb"
+      ),
+      addressLevel2L10nId: this.getAddressFieldL10nId(
+        dataset.locality_name_type || "city"
+      ),
+      addressLevel1L10nId: this.getAddressFieldL10nId(
+        dataset.state_name_type || "province"
+      ),
       addressLevel1Options: this.buildRegionMapIfAvailable(
         dataset.sub_keys,
         dataset.sub_isoids,
@@ -1081,57 +1132,154 @@ this.FormAutofillUtils = {
       ),
       countryRequiredFields: this.parseRequireString(dataset.require || "AC"),
       fieldsOrder: this.parseAddressFormat(dataset.fmt || "%N%n%O%n%A%n%C"),
-      postalCodeLabel: dataset.zip_name_type || "postalCode",
+      postalCodeL10nId: this.getAddressFieldL10nId(
+        dataset.zip_name_type || "postal-code"
+      ),
       postalCodePattern: dataset.zip,
     };
   },
 
-  /**
-   * Localize "data-localization" or "data-localization-region" attributes.
-   * @param {Element} element
-   * @param {string} attributeName
-   */
-  localizeAttributeForElement(element, attributeName) {
-    switch (attributeName) {
-      case "data-localization": {
-        element.textContent = this.stringBundle.GetStringFromName(
-          element.getAttribute(attributeName)
-        );
-        element.removeAttribute(attributeName);
-        break;
-      }
-      case "data-localization-region": {
-        let regionCode = element.getAttribute(attributeName);
-        element.textContent = Services.intl.getRegionDisplayNames(undefined, [
-          regionCode,
-        ]);
-        element.removeAttribute(attributeName);
-        return;
-      }
-      default:
-        throw new Error("Unexpected attributeName");
-    }
+  getAddressFieldL10nId(type) {
+    return "autofill-address-" + type.replace(/_/g, "-");
+  },
+
+  CC_FATHOM_NONE: 0,
+  CC_FATHOM_JS: 1,
+  CC_FATHOM_NATIVE: 2,
+  isFathomCreditCardsEnabled() {
+    return this.ccHeuristicsMode != this.CC_FATHOM_NONE;
   },
 
   /**
-   * Localize elements with "data-localization" or "data-localization-region" attributes.
-   * @param {Element} root
+   * Transform the key in FormAutofillConfidences (defined in ChromeUtils.webidl)
+   * to fathom recognized field type.
+   *
+   * @param {string} key key from FormAutofillConfidences dictionary
+   * @returns {string} fathom field type
    */
-  localizeMarkup(root) {
-    let elements = root.querySelectorAll("[data-localization]");
-    for (let element of elements) {
-      this.localizeAttributeForElement(element, "data-localization");
-    }
-
-    elements = root.querySelectorAll("[data-localization-region]");
-    for (let element of elements) {
-      this.localizeAttributeForElement(element, "data-localization-region");
-    }
+  formAutofillConfidencesKeyToCCFieldType(key) {
+    const MAP = {
+      ccNumber: "cc-number",
+      ccName: "cc-name",
+      ccType: "cc-type",
+      ccExp: "cc-exp",
+      ccExpMonth: "cc-exp-month",
+      ccExpYear: "cc-exp-year",
+    };
+    return MAP[key];
   },
 };
 
-this.log = null;
-FormAutofill.defineLazyLogGetter(this, EXPORTED_SYMBOLS[0]);
+const LabelUtils = {
+  // The tag name list is from Chromium except for "STYLE":
+  // eslint-disable-next-line max-len
+  // https://cs.chromium.org/chromium/src/components/autofill/content/renderer/form_autofill_util.cc?l=216&rcl=d33a171b7c308a64dc3372fac3da2179c63b419e
+  EXCLUDED_TAGS: ["SCRIPT", "NOSCRIPT", "OPTION", "STYLE"],
+
+  // A map object, whose keys are the id's of form fields and each value is an
+  // array consisting of label elements correponding to the id.
+  // @type {Map<string, array>}
+  _mappedLabels: null,
+
+  // An array consisting of label elements whose correponding form field doesn't
+  // have an id attribute.
+  // @type {Array<[HTMLLabelElement, HTMLElement]>}
+  _unmappedLabelControls: null,
+
+  // A weak map consisting of label element and extracted strings pairs.
+  // @type {WeakMap<HTMLLabelElement, array>}
+  _labelStrings: null,
+
+  /**
+   * Extract all strings of an element's children to an array.
+   * "element.textContent" is a string which is merged of all children nodes,
+   * and this function provides an array of the strings contains in an element.
+   *
+   * @param  {object} element
+   *         A DOM element to be extracted.
+   * @returns {Array}
+   *          All strings in an element.
+   */
+  extractLabelStrings(element) {
+    if (this._labelStrings.has(element)) {
+      return this._labelStrings.get(element);
+    }
+    let strings = [];
+    let _extractLabelStrings = el => {
+      if (this.EXCLUDED_TAGS.includes(el.tagName)) {
+        return;
+      }
+
+      if (el.nodeType == el.TEXT_NODE || !el.childNodes.length) {
+        let trimmedText = el.textContent.trim();
+        if (trimmedText) {
+          strings.push(trimmedText);
+        }
+        return;
+      }
+
+      for (let node of el.childNodes) {
+        let nodeType = node.nodeType;
+        if (nodeType != node.ELEMENT_NODE && nodeType != node.TEXT_NODE) {
+          continue;
+        }
+        _extractLabelStrings(node);
+      }
+    };
+    _extractLabelStrings(element);
+    this._labelStrings.set(element, strings);
+    return strings;
+  },
+
+  generateLabelMap(doc) {
+    this._mappedLabels = new Map();
+    this._unmappedLabelControls = [];
+    this._labelStrings = new WeakMap();
+
+    for (let label of doc.querySelectorAll("label")) {
+      let id = label.htmlFor;
+      let control;
+      if (!id) {
+        control = label.control;
+        if (!control) {
+          continue;
+        }
+        id = control.id;
+      }
+      if (id) {
+        let labels = this._mappedLabels.get(id);
+        if (labels) {
+          labels.push(label);
+        } else {
+          this._mappedLabels.set(id, [label]);
+        }
+      } else {
+        // control must be non-empty here
+        this._unmappedLabelControls.push({ label, control });
+      }
+    }
+  },
+
+  clearLabelMap() {
+    this._mappedLabels = null;
+    this._unmappedLabelControls = null;
+    this._labelStrings = null;
+  },
+
+  findLabelElements(element) {
+    if (!this._mappedLabels) {
+      this.generateLabelMap(element.ownerDocument);
+    }
+
+    let id = element.id;
+    if (!id) {
+      return this._unmappedLabelControls
+        .filter(lc => lc.control == element)
+        .map(lc => lc.label);
+    }
+    return this._mappedLabels.get(id) || [];
+  },
+};
 
 XPCOMUtils.defineLazyGetter(FormAutofillUtils, "stringBundle", function() {
   return Services.strings.createBundle(
@@ -1150,4 +1298,38 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "_reauthEnabledByUser",
   "extensions.formautofill.reauth.enabled",
   false
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  FormAutofillUtils,
+  "ccHeuristicsMode",
+  "extensions.formautofill.creditCards.heuristics.mode",
+  0
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  FormAutofillUtils,
+  "ccFathomConfidenceThreshold",
+  "extensions.formautofill.creditCards.heuristics.fathom.confidenceThreshold",
+  null,
+  null,
+  pref => parseFloat(pref)
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  FormAutofillUtils,
+  "ccFathomHighConfidenceThreshold",
+  "extensions.formautofill.creditCards.heuristics.fathom.highConfidenceThreshold",
+  null,
+  null,
+  pref => parseFloat(pref)
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  FormAutofillUtils,
+  "ccFathomTestConfidence",
+  "extensions.formautofill.creditCards.heuristics.fathom.testConfidence",
+  null,
+  null,
+  pref => parseFloat(pref)
 );

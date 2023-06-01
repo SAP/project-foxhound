@@ -30,8 +30,7 @@ class AutoSetInstantiatingToFalse;
 class nsIPrincipal;
 class nsFrameLoader;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 struct BindContext;
 template <typename T>
 class Sequence;
@@ -41,8 +40,7 @@ template <typename T>
 struct Nullable;
 class WindowProxyHolder;
 class XULFrameElement;
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 class nsObjectLoadingContent : public nsImageLoadingContent,
                                public nsIStreamListener,
@@ -90,7 +88,7 @@ class nsObjectLoadingContent : public nsImageLoadingContent,
    * Object state. This is a bitmask of NS_EVENT_STATEs epresenting the
    * current state of the object.
    */
-  mozilla::EventStates ObjectState() const;
+  mozilla::dom::ElementState ObjectState() const;
 
   ObjectType Type() const { return mType; }
 
@@ -190,6 +188,8 @@ class nsObjectLoadingContent : public nsImageLoadingContent,
   void SubdocumentIntrinsicSizeOrRatioChanged(
       const mozilla::Maybe<mozilla::IntrinsicSize>& aIntrinsicSize,
       const mozilla::Maybe<mozilla::AspectRatio>& aIntrinsicRatio);
+
+  void SubdocumentImageLoadComplete(nsresult aResult);
 
  protected:
   /**
@@ -373,6 +373,12 @@ class nsObjectLoadingContent : public nsImageLoadingContent,
    */
   void QueueCheckPluginStopEvent();
 
+ public:
+  bool IsAboutBlankLoadOntoInitialAboutBlank(nsIURI* aURI,
+                                             bool aInheritPrincipal,
+                                             nsIPrincipal* aPrincipalToInherit);
+
+ private:
   /**
    * Opens the channel pointed to by mURI into mChannel.
    */
@@ -443,8 +449,9 @@ class nsObjectLoadingContent : public nsImageLoadingContent,
    *
    * @param aNotify if false, only need to update the state of our element.
    */
-  void NotifyStateChanged(ObjectType aOldType, mozilla::EventStates aOldState,
-                          bool aNotify);
+  void NotifyStateChanged(ObjectType aOldType,
+                          mozilla::dom::ElementState aOldState, bool aNotify,
+                          bool aForceRestyle);
 
   /**
    * Returns a ObjectType value corresponding to the type of content we would
@@ -485,6 +492,12 @@ class nsObjectLoadingContent : public nsImageLoadingContent,
 
   // Utility for firing an error event, if we're an <object>.
   void MaybeFireErrorEvent();
+
+  /**
+   * Store feature policy in container browsing context so that it can be
+   * accessed cross process.
+   */
+  void MaybeStoreCrossOriginFeaturePolicy();
 
   // The final listener for mChannel (uriloader, pluginstreamlistener, etc.)
   nsCOMPtr<nsIStreamListener> mFinalListener;
@@ -563,6 +576,8 @@ class nsObjectLoadingContent : public nsImageLoadingContent,
   // comments for details), we change these to try to load HTML5 versions of
   // videos.
   bool mRewrittenYoutubeEmbed : 1;
+
+  bool mLoadingSyntheticDocument : 1;
 
   nsTArray<mozilla::dom::MozPluginParameter> mCachedAttributes;
   nsTArray<mozilla::dom::MozPluginParameter> mCachedParameters;

@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { RetVal, types } = require("devtools/shared/protocol");
+const { RetVal, types } = require("resource://devtools/shared/protocol.js");
 
 // Predeclare the domstylerule actor type
 types.addActorType("domstylerule");
@@ -33,7 +33,6 @@ types.addDictType("matchedselector", {
 types.addDictType("appliedStylesReturn", {
   entries: "array:appliedstyle",
   rules: "array:domstylerule",
-  sheets: "array:stylesheet",
 });
 
 types.addDictType("modifiedStylesReturn", {

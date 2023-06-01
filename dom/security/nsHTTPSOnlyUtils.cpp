@@ -691,9 +691,9 @@ void nsHTTPSOnlyUtils::LogMessage(const nsAString& aMessage, uint32_t aFlags,
   message.Append(aMessage);
 
   // Allow for easy distinction in devtools code.
-  nsCString category(aUseHttpsFirst ? "HTTPSFirst" : "HTTPSOnly");
+  auto category = aUseHttpsFirst ? "HTTPSFirst"_ns : "HTTPSOnly"_ns;
 
-  uint32_t innerWindowId = aLoadInfo->GetInnerWindowID();
+  uint64_t innerWindowId = aLoadInfo->GetInnerWindowID();
   if (innerWindowId > 0) {
     // Send to content console
     nsContentUtils::ReportToConsoleByWindowID(message, aFlags, category,
@@ -701,7 +701,7 @@ void nsHTTPSOnlyUtils::LogMessage(const nsAString& aMessage, uint32_t aFlags,
   } else {
     // Send to browser console
     bool isPrivateWin = aLoadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;
-    nsContentUtils::LogSimpleConsoleError(message, category.get(), isPrivateWin,
+    nsContentUtils::LogSimpleConsoleError(message, category, isPrivateWin,
                                           true /* from chrome context */,
                                           aFlags);
   }
@@ -995,8 +995,7 @@ TestHTTPAnswerRunnable::Notify(nsITimer* aTimer) {
   }
 
   mozilla::OriginAttributes attrs = origLoadInfo->GetOriginAttributes();
-  RefPtr<nsIPrincipal> nullPrincipal =
-      mozilla::NullPrincipal::CreateWithInheritedAttributes(attrs);
+  RefPtr<nsIPrincipal> nullPrincipal = mozilla::NullPrincipal::Create(attrs);
 
   uint32_t loadFlags =
       nsIRequest::LOAD_ANONYMOUS | nsIRequest::INHIBIT_CACHING |

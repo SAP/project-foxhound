@@ -2,14 +2,11 @@ if (SpecialPowers.useRemoteSubframes) {
   requestLongerTimeout(2);
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   Services.prefs.setBoolPref("privacy.firstparty.isolate", true);
-  // Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
-  Services.prefs.setBoolPref("network.cookie.sameSite.laxByDefault", false);
 
   registerCleanupFunction(function() {
     Services.prefs.clearUserPref("privacy.firstparty.isolate");
-    Services.prefs.clearUserPref("network.cookie.sameSite.laxByDefault");
   });
 });
 
@@ -131,12 +128,12 @@ add_task(async function test_remote_window_open_data_uri2() {
   let win = await BrowserTestUtils.openNewBrowserWindow({ remote: true });
   let browser = win.gBrowser.selectedBrowser;
   const TEST_PAGE =
-    "http://mochi.test:8888/browser/browser/components/originattributes/test/browser/test2.html";
+    "https://example.net/browser/browser/components/originattributes/test/browser/test2.html";
 
   // The iframe test2.html will fetch test2.js, which will have cookies.
   const DATA_URI = `data:text/html,
                     <iframe id="iframe1" src="${TEST_PAGE}"></iframe>`;
-  BrowserTestUtils.loadURI(browser, DATA_URI);
+  BrowserTestUtils.loadURIString(browser, DATA_URI);
   await BrowserTestUtils.browserLoaded(browser, true, TEST_PAGE);
 
   await SpecialPowers.spawn(browser, [], async function() {

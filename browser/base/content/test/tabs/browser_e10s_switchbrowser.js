@@ -1,5 +1,3 @@
-/* eslint-env mozilla/frame-script */
-
 requestLongerTimeout(2);
 
 const DUMMY_PATH = "browser/browser/base/content/test/general/dummy_page.html";
@@ -166,6 +164,7 @@ add_task(async function test_navigation() {
     skipAnimation: true,
   });
   let { permanentKey } = gBrowser.selectedBrowser;
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   await waitForLoad("http://example.org/" + DUMMY_PATH);
   is(
     gBrowser.selectedBrowser.isRemoteBrowser,
@@ -180,6 +179,7 @@ add_task(async function test_navigation() {
 
   info("2");
   // Load another page
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   await waitForLoad("http://example.com/" + DUMMY_PATH);
   is(
     gBrowser.selectedBrowser.isRemoteBrowser,
@@ -214,6 +214,7 @@ add_task(async function test_navigation() {
 
   info("4");
   // Load a remote page
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   await waitForLoad("http://example.org/" + DUMMY_PATH);
   is(
     gBrowser.selectedBrowser.isRemoteBrowser,
@@ -312,6 +313,7 @@ add_task(async function test_navigation() {
   info("10");
   // Load a new remote page, this should replace the last history entry
   gExpectedHistory.entries.splice(gExpectedHistory.entries.length - 1, 1);
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   await waitForLoad("http://example.com/" + DUMMY_PATH);
   is(
     gBrowser.selectedBrowser.isRemoteBrowser,
@@ -341,6 +343,7 @@ add_task(async function test_synchronous() {
     skipAnimation: true,
   });
   let { permanentKey } = gBrowser.selectedBrowser;
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   await waitForLoad("http://example.org/" + DUMMY_PATH);
   is(
     gBrowser.selectedBrowser.isRemoteBrowser,
@@ -356,7 +359,7 @@ add_task(async function test_synchronous() {
   info("2");
   // Load another page
   info("Loading about:robots");
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:robots");
+  BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, "about:robots");
   await BrowserTestUtils.browserStopped(gBrowser);
   is(
     gBrowser.selectedBrowser.isRemoteBrowser,
@@ -372,8 +375,9 @@ add_task(async function test_synchronous() {
   info("3");
   // Load the remote page again
   info("Loading http://example.org/" + DUMMY_PATH);
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.loadURIString(
     gBrowser.selectedBrowser,
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.org/" + DUMMY_PATH
   );
   await BrowserTestUtils.browserStopped(gBrowser);
@@ -418,6 +422,7 @@ add_task(async function test_loadflags() {
   info("2");
   // Load a page in the remote process with some custom flags
   await waitForLoadWithFlags(
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com/" + DUMMY_PATH,
     Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_HISTORY
   );
@@ -445,6 +450,7 @@ add_task(async function test_loadflags() {
   info("4");
   // Load another remote page
   await waitForLoadWithFlags(
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.org/" + DUMMY_PATH,
     Ci.nsIWebNavigation.LOAD_FLAGS_REPLACE_HISTORY
   );
@@ -458,6 +464,7 @@ add_task(async function test_loadflags() {
   info("5");
   // Load another remote page from a different origin
   await waitForLoadWithFlags(
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com/" + DUMMY_PATH,
     Ci.nsIWebNavigation.LOAD_FLAGS_REPLACE_HISTORY
   );

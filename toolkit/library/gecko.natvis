@@ -3,6 +3,28 @@
 
   <!-- Mozilla Gecko Visualizers -->
 
+  <Type Name="mozilla::Maybe&lt;*&gt;">
+    <DisplayString Condition="mIsSome == false">Nothing</DisplayString>
+    <DisplayString Condition="mIsSome == true">Some({*($T1 *)&amp;mStorage.val})</DisplayString>
+    <Expand>
+      <ExpandedItem Condition="mIsSome == true">*($T1 *)&amp;mStorage.val</ExpandedItem>
+    </Expand>
+    </Type>
+
+  <Type Name="mozilla::Result&lt;*,*&gt;">
+    <DisplayString>{mImpl}</DisplayString>
+  </Type>
+
+  <Type Name="mozilla::detail::ResultImplementation&lt;*,*,mozilla::detail::PackingStrategy::Variant&gt;">
+    <DisplayString Condition="mStorage.tag == false">ok: {*($T1 *)(mStorage.rawData)}</DisplayString>
+    <DisplayString Condition="mStorage.tag == true">err: {*($T2 *)(mStorage.rawData)}</DisplayString>
+    <DisplayString>%% invalid storage tag in variant %%</DisplayString>
+    <Expand>
+      <ExpandedItem Condition="mStorage.tag == false">*($T1 *)(mStorage.rawData)</ExpandedItem>
+      <ExpandedItem Condition="mStorage.tag == true">*($T2 *)(mStorage.rawData)</ExpandedItem>
+    </Expand>
+  </Type>
+
   <!-- nsTArray -->
   <Type Name="nsTArray&lt;*&gt;">
     <DisplayString Condition="mHdr-&gt;mLength == 0 &amp;&amp; mHdr-&gt;mCapacity == 0">empty</DisplayString>
@@ -48,30 +70,40 @@
   </Type>
 
   <!-- strings -->
-  <Type Name="nsACString">
-    <AlternativeType Name="nsACString_internal" />
-    <AlternativeType Name="nsCString" />
-    <AlternativeType Name="nsLiteralCString" />
+  <Type Name="nsTString&lt;char&gt;">
+    <AlternativeType Name="nsTLiteralString&lt;char&gt;" />
+    <AlternativeType Name="mozilla::detail::nsTStringRepr&lt;char&gt;" />
+    <AlternativeType Name="nsTSubstring&lt;char&gt;" />
 
     <DisplayString>{mData,s}</DisplayString>
     <StringView>mData,s</StringView>
     <Expand>
       <Item Name="Length">mLength</Item>
-      <Item Name="Flags">mFlags</Item>
+      <Item Name="Flags">mDataFlags</Item>
     </Expand>
   </Type>
 
-  <Type Name="nsAString">
-    <AlternativeType Name="nsAString_internal" />
-    <AlternativeType Name="nsString" />
-    <AlternativeType Name="nsLiteralString" />
+  <Type Name="nsTSubstringTuple&lt;char&gt;">
+    <DisplayString Condition="mHead != nullptr">{mHead,na} {mFragB-&gt;mData,s}</DisplayString>
+    <DisplayString Condition="mHead == nullptr">{mFragA-&gt;mData,s} {mFragB-&gt;mData,s}</DisplayString>
+  </Type>
+
+  <Type Name="nsTString&lt;char16_t&gt;">
+    <AlternativeType Name="nsTLiteralString&lt;char16_t&gt;" />
+    <AlternativeType Name="mozilla::detail::nsTStringRepr&lt;char16_t&gt;" />
+    <AlternativeType Name="nsTSubstring&lt;char16_t&gt;" />
 
     <DisplayString>{mData,su}</DisplayString>
     <StringView>mData,su</StringView>
     <Expand>
       <Item Name="Length">mLength</Item>
-      <Item Name="Flags">mFlags</Item>
+      <Item Name="Flags">mDataFlags</Item>
     </Expand>
+  </Type>
+
+  <Type Name="nsTSubstringTuple&lt;char16_t&gt;">
+    <DisplayString Condition="mHead != nullptr">{mHead,na} {mFragB-&gt;mData,su}</DisplayString>
+    <DisplayString Condition="mHead == nullptr">{mFragA-&gt;mData,su} {mFragB-&gt;mData,su}</DisplayString>
   </Type>
 
   <!-- rects, points, etc. -->

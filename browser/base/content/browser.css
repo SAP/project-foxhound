@@ -17,6 +17,11 @@ body {
   text-rendering: optimizeLegibility;
   min-height: 95px;
   min-width: 95px;
+
+  /* z-indices that fight on the browser stack */
+  --browser-stack-z-index-devtools-splitter: 1;
+  --browser-stack-z-index-dialog-stack: 2;
+  --browser-stack-z-index-rdm-toolbar: 3;
 }
 
 :root:-moz-locale-dir(rtl) {
@@ -28,12 +33,38 @@ body {
   min-height: 120px;
 }
 
-:root[customizing] {
-  min-width: -moz-fit-content;
+#appcontent,
+#browser,
+#tabbrowser-tabbox,
+#tabbrowser-tabpanels,
+.browserSidebarContainer {
+  /* Allow devtools with large specified width/height to shrink */
+  min-width: 0;
+  min-height: 0;
 }
 
-/* Prevent shrinking the page content to 0 height and width */
+.browserContainer {
+  /* .browserContainer only contains the devtools when docked horizontally */
+  min-height: 0;
+}
+
+/* We set large flex on both containers to allow the devtools toolbox to
+ * set a flex value itself. We don't want the toolbox to actually take up free
+ * space, but we do want it to collapse when the window shrinks, and with
+ * flex: 0 it can't.
+ *
+ * When the toolbox is on the bottom it's a sibling of browserStack, and when
+ * it's on the side it's a sibling of browserContainer.
+ */
+.browserContainer {
+  -moz-box-flex: 10000;
+  /* To contain the status panel */
+  position: relative;
+}
+
 .browserStack {
+  -moz-box-flex: 10000;
+  /* Prevent shrinking the page content to 0 height and width */
   min-height: 25px;
   min-width: 25px;
 }
@@ -54,8 +85,8 @@ body {
    with the ruleset above. We must set background properties on :root and not
    #navigator-toolbox on Windows 7/8 due to a WebRender bug that hides the
    minimize/maximize/close buttons. */
-@media not (-moz-os-version: windows-win7) {
-  @media not (-moz-os-version: windows-win8) {
+@media not (-moz-platform: windows-win7) {
+  @media not (-moz-platform: windows-win8) {
     #navigator-toolbox:-moz-lwtheme {
       background-color: var(--lwt-accent-color);
     }
@@ -74,8 +105,8 @@ body {
   }
 }
 /* TODO bug 1695280: Remove this block. */
-@media (-moz-os-version: windows-win7),
-       (-moz-os-version: windows-win8) {
+@media (-moz-platform: windows-win7),
+       (-moz-platform: windows-win8) {
   :root:-moz-lwtheme {
     background-color: var(--lwt-accent-color);
     background-image: var(--lwt-additional-images);
@@ -94,7 +125,10 @@ body {
   }
 }
 
-%ifdef MENUBAR_CAN_AUTOHIDE
+#titlebar {
+  -moz-window-dragging: drag;
+}
+
 #toolbar-menubar[autohide="true"] {
   overflow: hidden;
 }
@@ -102,18 +136,18 @@ body {
 #toolbar-menubar[autohide="true"][inactive="true"]:not([customizing="true"]) {
   min-height: 0 !important;
   height: 0 !important;
+  padding: 0 !important;
   appearance: none !important;
 }
-%endif
 
-%ifdef XP_MACOSX
-#toolbar-menubar {
+#toolbar-menubar:not([autohide]) {
   visibility: collapse;
 }
-%endif
 
 panelmultiview {
   -moz-box-align: start;
+  min-width: 0;
+  min-height: 0;
 }
 
 panelmultiview[transitioning] {
@@ -128,13 +162,10 @@ panelview:not([visible]) {
   visibility: collapse;
 }
 
-/* Hide the header when a subview is reused as a main view. */
-panelview[mainview] > .panel-header {
-  display: none;
-}
-
 .panel-viewcontainer {
   overflow: hidden;
+  min-width: 0;
+  min-height: 0;
 }
 
 .panel-viewcontainer[panelopen] {
@@ -153,17 +184,6 @@ panelview[mainview] > .panel-header {
   transition: height var(--panelui-subview-transition-duration);
 }
 
-@supports -moz-bool-pref("layout.css.emulate-moz-box-with-flex") {
-  #tabbrowser-tabs {
-    /* Without this, the tabs container width extends beyond the window width */
-    width: 0;
-  }
-  .tab-stack {
-    /* Without this, pinned tabs get a bit too tall when the tabstrip overflows. */
-    vertical-align: top;
-  }
-}
-
 @supports not -moz-bool-pref("browser.tabs.tabmanager.enabled") {
   #tabbrowser-tabs:not([overflow="true"], [hashiddentabs]) ~ #alltabs-button {
     display: none;
@@ -176,8 +196,8 @@ panelview[mainview] > .panel-header {
 }
 
 #tabbrowser-tabs[hasadjacentnewtabbutton]:not([overflow="true"]) ~ #new-tab-button,
-#tabbrowser-tabs[overflow="true"] > #tabbrowser-arrowscrollbox > #tabs-newtab-button,
-#tabbrowser-tabs:not([hasadjacentnewtabbutton]) > #tabbrowser-arrowscrollbox > #tabs-newtab-button,
+#tabbrowser-tabs[overflow="true"] > #tabbrowser-arrowscrollbox > #tabbrowser-arrowscrollbox-periphery > #tabs-newtab-button,
+#tabbrowser-tabs:not([hasadjacentnewtabbutton]) > #tabbrowser-arrowscrollbox > #tabbrowser-arrowscrollbox-periphery > #tabs-newtab-button,
 #TabsToolbar[customizing="true"] #tabs-newtab-button {
   display: none;
 }
@@ -215,14 +235,6 @@ panelview[mainview] > .panel-header {
   display: none;
 }
 
-%ifdef NIGHTLY_BUILD
-@supports -moz-bool-pref("browser.tabs.hideThrobber") {
-  .tab-throbber {
-    display: none !important;
-  }
-}
-%endif
-
 #tabbrowser-tabs[positionpinnedtabs] > #tabbrowser-arrowscrollbox > .tabbrowser-tab[pinned] {
   position: absolute !important;
   display: block;
@@ -255,6 +267,13 @@ panelview[mainview] > .panel-header {
 
 #navigator-toolbox[movingtab] > #nav-bar {
   pointer-events: none;
+}
+
+#nav-bar-customization-target {
+  /* Don't grow if potentially-user-sized elements (like the searchbar or the
+   * bookmarks toolbar item list) are too wide. This forces them to flex to the
+   * available space as much as possible, see bug 1795260. */
+  min-width: 0;
 }
 
 /* Allow dropping a tab on buttons with associated drop actions. */
@@ -299,51 +318,47 @@ toolbar[customizing] #whats-new-menu-button {
   display: none;
 }
 
-
-%ifdef MENUBAR_CAN_AUTOHIDE
 /* Hide the TabsToolbar titlebar controls if the menubar is permanently shown.
  * (That is, if the menu bar doesn't autohide, and we're not in a fullscreen or
  * popup window.) */
-:root:not([chromehidden~="menubar"], [inFullscreen]) #toolbar-menubar:not([autohide=true]) + #TabsToolbar > :is(.titlebar-buttonbox-container, .titlebar-spacer),
-%endif
-%ifndef MOZ_WIDGET_COCOA
-%ifndef MOZ_WIDGET_GTK
-:root:not([sizemode=normal]) .titlebar-spacer[type="pre-tabs"],
-%endif
-%endif
+:root:not([chromehidden~="menubar"], [inFullscreen]) #toolbar-menubar[autohide="false"] + #TabsToolbar > :is(.titlebar-buttonbox-container, .titlebar-spacer) {
+  display: none;
+}
+
 :root:not([chromemargin], [inFullscreen]) .titlebar-buttonbox-container,
 :root[inFullscreen] .titlebar-spacer,
 :root:not([tabsintitlebar]) .titlebar-spacer {
   display: none;
 }
-%ifdef MOZ_WIDGET_GTK
-@media (-moz-gtk-csd-reversed-placement: 0) {
-  :root:not([sizemode=normal]) .titlebar-spacer[type="pre-tabs"],
-  :root[gtktiledwindow=true] .titlebar-spacer[type="pre-tabs"] {
+
+@media (-moz-platform: windows) {
+  :root:not([sizemode=normal]) .titlebar-spacer[type="pre-tabs"] {
     display: none;
   }
 }
-@media (-moz-gtk-csd-reversed-placement) {
-  :root:not([sizemode=normal]) .titlebar-spacer[type="post-tabs"],
-  :root[gtktiledwindow=true] .titlebar-spacer[type="post-tabs"] {
-    display: none;
+
+@media (-moz-platform: linux) {
+  @media (-moz-gtk-csd-reversed-placement: 0) {
+    :root:not([sizemode=normal]) .titlebar-spacer[type="pre-tabs"],
+    :root[gtktiledwindow=true] .titlebar-spacer[type="pre-tabs"] {
+      display: none;
+    }
+  }
+  @media (-moz-gtk-csd-reversed-placement) {
+    :root:not([sizemode=normal]) .titlebar-spacer[type="post-tabs"],
+    :root[gtktiledwindow=true] .titlebar-spacer[type="post-tabs"] {
+      display: none;
+    }
   }
 }
-%endif
 
 :root:not([sizemode=maximized], [sizemode=fullscreen]) .titlebar-restore,
 :root:is([sizemode=maximized], [sizemode=fullscreen]) .titlebar-max {
   display: none;
 }
 
-%ifdef MENUBAR_CAN_AUTOHIDE
-#toolbar-menubar[autohide=true]:not([inactive]) + #TabsToolbar > .titlebar-buttonbox-container {
+#toolbar-menubar[autohide="true"]:not([inactive]) + #TabsToolbar > .titlebar-buttonbox-container {
   visibility: hidden;
-}
-%endif
-
-#titlebar {
-  -moz-window-dragging: drag;
 }
 
 :root[tabsintitlebar] .titlebar-buttonbox {
@@ -377,21 +392,19 @@ toolbarpaletteitem {
   -moz-box-ordinal-group: 1000;
 }
 
-%ifdef XP_MACOSX
+@media (-moz-platform: macos) {
+  @media not (-moz-mac-rtl) {
+    .titlebar-buttonbox-container:-moz-locale-dir(ltr) {
+      -moz-box-ordinal-group: 0;
+    }
+  }
 
-@media not (-moz-mac-rtl) {
-  .titlebar-buttonbox-container:-moz-locale-dir(ltr) {
-    -moz-box-ordinal-group: 0;
+  @media (-moz-mac-rtl) {
+    .titlebar-buttonbox-container:-moz-locale-dir(rtl) {
+      -moz-box-ordinal-group: 0;
+    }
   }
 }
-
-@media (-moz-mac-rtl) {
-  .titlebar-buttonbox-container:-moz-locale-dir(rtl) {
-    -moz-box-ordinal-group: 0;
-  }
-}
-
-%endif
 
 :root[inDOMFullscreen] #navigator-toolbox,
 :root[inDOMFullscreen] #fullscr-toggler,
@@ -426,15 +439,15 @@ toolbarpaletteitem {
     list-style-image: var(--webextension-toolbar-image-dark, inherit);
   }
 
-  .webextension-browser-action[cui-areatype="menu-panel"] {
+  toolbaritem:is([overflowedItem="true"], [cui-areatype="panel"]) > .webextension-browser-action {
     list-style-image: var(--webextension-menupanel-image, inherit);
   }
 
-  :root[lwt-popup-brighttext] .webextension-browser-action[cui-areatype="menu-panel"] {
+  :root[lwt-popup-brighttext] toolbaritem:is([overflowedItem="true"], [cui-areatype="panel"]) > .webextension-browser-action {
     list-style-image: var(--webextension-menupanel-image-light, inherit);
   }
 
-  :root:not([lwt-popup-brighttext]) .webextension-browser-action[cui-areatype="menu-panel"]:-moz-lwtheme {
+  :root:not([lwt-popup-brighttext]) toolbaritem:is([overflowedItem="true"], [cui-areatype="panel"]) > .webextension-browser-action:-moz-lwtheme  {
     list-style-image: var(--webextension-menupanel-image-dark, inherit);
   }
 
@@ -456,15 +469,15 @@ toolbarpaletteitem {
     list-style-image: var(--webextension-toolbar-image-2x-dark, inherit);
   }
 
-  .webextension-browser-action[cui-areatype="menu-panel"] {
+  toolbaritem:is([overflowedItem="true"], [cui-areatype="panel"]) > .webextension-browser-action {
     list-style-image: var(--webextension-menupanel-image-2x, inherit);
   }
 
-  :root[lwt-popup-brighttext] .webextension-browser-action[cui-areatype="menu-panel"] {
+  :root[lwt-popup-brighttext] toolbaritem:is([overflowedItem="true"], [cui-areatype="panel"]) > .webextension-browser-action {
     list-style-image: var(--webextension-menupanel-image-2x-light, inherit);
   }
 
-  :root:not([lwt-popup-brighttext]) .webextension-browser-action[cui-areatype="menu-panel"]:-moz-lwtheme {
+  :root:not([lwt-popup-brighttext]) toolbaritem:is([overflowedItem="true"], [cui-areatype="panel"]) > .webextension-browser-action:-moz-lwtheme {
     list-style-image: var(--webextension-menupanel-image-2x-dark, inherit);
   }
 
@@ -482,24 +495,24 @@ toolbarpaletteitem[removable="false"] {
   opacity: 0.5;
 }
 
-%ifndef XP_MACOSX
-toolbarpaletteitem[place="palette"],
-toolbarpaletteitem[place="menu-panel"],
-toolbarpaletteitem[place="toolbar"] {
-  -moz-user-focus: normal;
+@media not (-moz-platform: macos) {
+  toolbarpaletteitem[place="palette"],
+  toolbarpaletteitem[place="panel"],
+  toolbarpaletteitem[place="toolbar"] {
+    -moz-user-focus: normal;
+  }
 }
-%endif
 
 #bookmarks-toolbar-placeholder,
 #bookmarks-toolbar-button,
 toolbarpaletteitem > #personal-bookmarks > #PlacesToolbar,
-#personal-bookmarks:is([overflowedItem=true], [cui-areatype="menu-panel"]) > #PlacesToolbar {
+#personal-bookmarks:is([overflowedItem=true], [cui-areatype="panel"]) > #PlacesToolbar {
   display: none;
 }
 
 toolbarpaletteitem[place="toolbar"] > #personal-bookmarks > #bookmarks-toolbar-placeholder,
 toolbarpaletteitem[place="palette"] > #personal-bookmarks > #bookmarks-toolbar-button,
-#personal-bookmarks:is([overflowedItem=true], [cui-areatype="menu-panel"]) > #bookmarks-toolbar-button {
+#personal-bookmarks:is([overflowedItem=true], [cui-areatype="panel"]) > #bookmarks-toolbar-button {
   display: -moz-box;
 }
 
@@ -510,6 +523,27 @@ toolbarpaletteitem[place="palette"] > #personal-bookmarks > #bookmarks-toolbar-b
 #PlacesToolbarDropIndicatorHolder {
   display: block;
   position: absolute;
+}
+
+#allTabsMenu-dropIndicatorHolder {
+  display: block;
+  position: relative;
+}
+
+#allTabsMenu-dropIndicator {
+  background: url(chrome://browser/skin/tabbrowser/tab-drag-indicator.svg) no-repeat center;
+  display: block;
+  position: absolute;
+  transform: rotate(-90deg);
+  width: 12px;
+  height: 29px;
+  inset-inline-start: 8px;
+  top: 0;
+  pointer-events: none;
+}
+
+#allTabsMenu-dropIndicator:-moz-locale-dir(rtl) {
+  transform: rotate(90deg);
 }
 
 #nav-bar-customization-target > #personal-bookmarks,
@@ -540,11 +574,11 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
   -moz-box-flex: 1;
 }
 
-%ifdef XP_MACOSX
-:root[inFullscreen="true"] {
-  padding-top: 0; /* override drawintitlebar="true" */
+@media (-moz-platform: macos) {
+  :root[inFullscreen="true"] {
+    padding-top: 0; /* override drawintitlebar="true" */
+  }
 }
-%endif
 
 /* Hide menu elements intended for keyboard access support */
 #main-menubar[openedwithkey=false] .show-only-for-keyboard {
@@ -730,22 +764,31 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
   -moz-user-focus: normal;
 }
 
-/* We leave 350px plus whatever space the download button will need when it
- * appears. Normally this should be 16px for the icon, plus 2 * 2px padding
- * plus the toolbarbutton-inner-padding. We're adding 4px to ensure things
- * like rounding on hidpi don't accidentally result in the button going
- * into overflow.
+/* We leave 310px plus whatever space the download and unified extensions
+ * buttons will need when they *both* appear. Normally, for each button, this
+ * should be 16px for the icon, plus 2 * 2px padding plus the
+ * toolbarbutton-inner-padding. We're adding 4px to ensure things like rounding
+ * on hidpi don't accidentally result in the buttons going into overflow.
  */
- #urlbar-container {
-  min-width: calc(350px + 24px + 2 * var(--toolbarbutton-inner-padding));
+#urlbar-container {
+  min-width: calc(310px + 2 * (24px + 2 * var(--toolbarbutton-inner-padding)));
 }
 
-#nav-bar[downloadsbuttonshown] #urlbar-container {
-  min-width: 350px;
+/* When the download button OR the unified extensions button is shown, we leave
+ * 310px plus the space needed for a single button as described above. */
+#nav-bar[downloadsbuttonshown] #urlbar-container,
+#nav-bar[unifiedextensionsbuttonshown] #urlbar-container {
+  min-width: calc(310px + 24px + 2 * var(--toolbarbutton-inner-padding));
+}
+
+/* When both the download and unified extensions buttons are visible, we use
+ * the base min-width value. */
+#nav-bar[downloadsbuttonshown][unifiedextensionsbuttonshown] #urlbar-container {
+  min-width: 310px;
 }
 
 /* Customize mode is difficult to use at moderate window width if the Urlbar
-   remains 350px wide. */
+   remains 310px wide. */
 :root[customizing] #urlbar-container {
   min-width: 280px;
 }
@@ -756,10 +799,14 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
 
 @media (max-width: 770px) {
   #urlbar-container {
-    min-width: calc(280px + 24px + 2 * var(--toolbarbutton-inner-padding));
+    min-width: calc(240px + 2 * (24px + 2 * var(--toolbarbutton-inner-padding)));
   }
-  #nav-bar[downloadsbuttonshown] #urlbar-container {
-    min-width: 280px;
+  #nav-bar[downloadsbuttonshown] #urlbar-container,
+  #nav-bar[unifiedextensionsbuttonshown] #urlbar-container {
+    min-width: calc(240px + 24px + 2 * var(--toolbarbutton-inner-padding));
+  }
+  #nav-bar[downloadsbuttonshown][unifiedextensionsbuttonshown] #urlbar-container {
+    min-width: 240px;
   }
   :root[customizing] #urlbar-container {
     min-width: 245px;
@@ -796,10 +843,14 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
 }
 @media (max-width: 550px) {
   #urlbar-container {
-    min-width: calc(216px + 24px + 2 * var(--toolbarbutton-inner-padding));
+    min-width: calc(176px + 2 * (24px + 2 * var(--toolbarbutton-inner-padding)));
   }
-  #nav-bar[downloadsbuttonshown] #urlbar-container {
-    min-width: 216px;
+  #nav-bar[downloadsbuttonshown] #urlbar-container,
+  #nav-bar[unifiedextensionsbuttonshown] #urlbar-container {
+    min-width: calc(176px + 24px + 2 * var(--toolbarbutton-inner-padding));
+  }
+  #nav-bar[downloadsbuttonshown][unifiedextensionsbuttonshown] #urlbar-container {
+    min-width: 176px;
   }
   #identity-icon-box {
     max-width: 70px;
@@ -843,6 +894,8 @@ toolbarspring {
   /* ensure we use the direction of the bookmarks label instead of the
    * browser locale */
   unicode-bidi: plaintext;
+  /* Preserve whitespace in bookmark names */
+  white-space: pre;
 }
 
 /* Apply crisp rendering for favicons at exactly 2dppx resolution */
@@ -876,16 +929,6 @@ menupopup[emptyplacesresult="true"] > .hide-if-empty-places-result {
 #historySwipeAnimationContainer {
   overflow: hidden;
   pointer-events: none;
-}
-
-#historySwipeAnimationPreviousArrow {
-  background: url("chrome://browser/content/history-swipe-arrow.svg")
-              center left / 64px 128px no-repeat transparent;
-}
-#historySwipeAnimationNextArrow {
-  background: url("chrome://browser/content/history-swipe-arrow.svg")
-              center left / 64px 128px no-repeat transparent;
-  transform: rotate(180deg);
 }
 
 /*  Full Screen UI */
@@ -978,17 +1021,25 @@ browser[tabmodalPromptShowing], browser[tabDialogShowing] {
 
 /* Status panel */
 
-#statuspanel {
+#statuspanel:not([hidden]) {
   display: block;
-  position: fixed;
-  margin-top: -3em;
+
   max-width: calc(100% - 5px);
   pointer-events: none;
+
+  /* Take a bit more space vertically for the mouse tracker to hit us more
+   * easily */
+  padding-top: 2em;
+
+  position: absolute;
+  bottom: 0;
+  left: 0;
 }
 
-#statuspanel[mirror] {
-  inset-inline-start: auto;
-  inset-inline-end: 0;
+#statuspanel:not([mirror]):-moz-locale-dir(rtl),
+#statuspanel[mirror]:-moz-locale-dir(ltr) {
+  left: auto;
+  right: 0;
 }
 
 #statuspanel[sizelimit] {
@@ -996,20 +1047,14 @@ browser[tabmodalPromptShowing], browser[tabDialogShowing] {
 }
 
 #statuspanel[type=status] {
-  min-width: 23em;
-}
-
-@media all and (max-width: 800px) {
-  #statuspanel[type=status] {
-    min-width: 33%;
-  }
+  min-width: min(23em, 33%);
 }
 
 #statuspanel[type=overLink] {
   transition: opacity 120ms ease-out, visibility 120ms;
 }
 
-#statuspanel:is([type=overLink], [inactive][previoustype=overLink]) > #statuspanel-inner {
+#statuspanel:is([type=overLink], [inactive][previoustype=overLink]) {
   direction: ltr;
 }
 
@@ -1021,12 +1066,6 @@ browser[tabmodalPromptShowing], browser[tabDialogShowing] {
 
 #statuspanel[inactive][previoustype=overLink] {
   transition: opacity 200ms ease-out, visibility 200ms;
-}
-
-#statuspanel-inner {
-  height: 3em;
-  width: 100%;
-  -moz-box-align: end;
 }
 
 /*** Visibility of downloads indicator controls ***/
@@ -1044,21 +1083,8 @@ toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > .toolbarbut
   display: none;
 }
 
-/* Give these menupopups an arrow panel styling */
-#BMB_bookmarksPopup,
-#PlacesToolbar menupopup {
-  background: transparent;
-  border: none;
-}
-
-#BMB_bookmarksPopup,
-#BMB_bookmarksPopup menupopup {
-  appearance: none;
-}
-
-@supports -moz-bool-pref("xul.panel-animations.enabled") {
-@media (prefers-reduced-motion: no-preference) {
-%ifdef MOZ_WIDGET_COCOA
+@media (-moz-panel-animations) and (prefers-reduced-motion: no-preference) {
+@media (-moz-platform: macos) {
   /* On Mac, use the properties "-moz-window-transform" and "-moz-window-opacity"
      instead of "transform" and "opacity" for these animations.
      The -moz-window* properties apply to the whole window including the window's
@@ -1101,7 +1127,8 @@ toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > .toolbarbut
     -moz-window-opacity: 0;
     -moz-window-transform: none;
   }
-%else
+}
+@media not (-moz-platform: macos) {
   #BMB_bookmarksPopup:not([animate="false"]) {
     opacity: 0;
     transform: translateY(-70px);
@@ -1109,6 +1136,7 @@ toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > .toolbarbut
     transition-duration: 0.18s, 0.18s;
     transition-timing-function:
       var(--animation-easing-function), ease-out;
+    will-change: transform, opacity;
   }
 
   #BMB_bookmarksPopup[side="bottom"]:not([animate="false"]) {
@@ -1128,7 +1156,6 @@ toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > .toolbarbut
   #BMB_bookmarksPopup[animate][animate="cancel"] {
     transform: none;
   }
-%endif
 }
 }
 
@@ -1145,6 +1172,7 @@ toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > .toolbarbut
 #customization-container {
   -moz-box-orient: horizontal;
   flex-direction: column;
+  min-height: 0;
 }
 
 #customization-container:not([hidden]) {
@@ -1165,7 +1193,7 @@ toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > .toolbarbut
 }
 
 #customization-panelHolder > #widget-overflow-fixed-list {
-  flex: 1 1 auto; /* Grow within the available space, and allow ourselves to shrink */
+  flex: 1; /* Grow within the available space, and allow ourselves to shrink */
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -1181,7 +1209,7 @@ toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > .toolbarbut
 }
 
 #customization-panelWrapper {
-  flex: 1 1 auto;
+  flex: 1;
   height: 0; /* Don't let my contents affect ancestors' content-based sizing */
   align-items: end; /* align to the end on the cross-axis (affects arrow) */
 }
@@ -1245,7 +1273,7 @@ toolbarpaletteitem[place="palette"] {
   margin-bottom: 5px;
   margin-inline-end: 24px;
   overflow: visible;
-  display: inline-block;
+  display: -moz-inline-box;
   vertical-align: top;
 }
 
@@ -1266,6 +1294,12 @@ toolbarpaletteitem:not([place="palette"]) > #stop-reload-button {
 
 :root[customizing=true] .addon-banner-item,
 :root[customizing=true] .panel-banner-item {
+  display: none;
+}
+
+/* Firefox View */
+:root[firefoxviewhidden] #wrapper-firefox-view-button,
+:root[firefoxviewhidden] #firefox-view-button {
   display: none;
 }
 
@@ -1456,6 +1490,12 @@ printpreview-pagination:focus-within,
   }
 }
 
+#sidebar-box {
+  min-width: 14em;
+  max-width: 36em;
+  width: 18em;
+}
+
 /* WebExtension Sidebars */
 #sidebar-box[sidebarcommand$="-sidebar-action"] > #sidebar-header > #sidebar-switcher-target > #sidebar-icon {
   list-style-image: var(--webextension-menuitem-image, inherit);
@@ -1475,26 +1515,14 @@ toolbar[keyNav=true]:not([collapsed=true], [customizing=true]) toolbartabstop {
   -moz-user-focus: normal;
 }
 
-/* Frame used for rendering the DevTools inspector highlighters */
-:root > iframe.devtools-highlighter-renderer {
-  border: none;
-  pointer-events: none;
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 2;
-}
-
 /**
  * Dialogs
  */
 
 .dialogStack {
-  /* Should outrank the z-index values of other UI elements, particularly the devtools
-     splitter element. */
-  z-index: 2;
+  z-index: var(--browser-stack-z-index-dialog-stack);
+  position: absolute;
+  inset: 0;
 }
 
 .dialogStack.temporarilyHidden {
@@ -1513,33 +1541,25 @@ toolbar[keyNav=true]:not([collapsed=true], [customizing=true]) toolbartabstop {
 
 .dialogBox {
   background-clip: content-box;
-  box-shadow: 0 2px 14px 0 rgba(0, 0, 0, 0.2);
   display: -moz-box;
-  margin: 0;
+  margin: 0 3vw;
   padding: 0;
   overflow-x: auto;
+}
+
+.dialogBox:not(.spotlightBox) {
+  box-shadow: 0 2px 14px 0 rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
 }
 
 /*
  * In High Contrast Mode, this prevents a dialog from visually bleeding into
  * the window behind it, which looks jarring.
- *
- * In some ideal world, we would also put a transparent border in the general
- * case for .dialogBox, so that everything would layout the same either way,
- * which would presumably make it easier for prefers-contrast renderings to
- * Just Work. Doing that _would_ change the layout for any existing subdialog
- * in the tree which doesn't already have a border of some sort, but we could
- * choose to bite the bullet at some point, as it may turn out to not cause
- * any real problems.
  */
 @media (prefers-contrast) {
 .dialogBox {
-  border: 1px solid WindowText;
+  outline: 1px solid WindowText;
 }
-}
-
-.dialogBox {
-  border-radius: 8px;
 }
 
 .dialogBox[resizable="true"] {
@@ -1549,6 +1569,7 @@ toolbar[keyNav=true]:not([collapsed=true], [customizing=true]) toolbartabstop {
 }
 
 .dialogBox[sizeto="available"] {
+  --box-top-px: 0px; /* Overridden using inline style */
   --box-inline-margin: 4px;
   --box-block-margin: 4px;
   --box-ideal-width: 1000;
@@ -1557,10 +1578,17 @@ toolbar[keyNav=true]:not([collapsed=true], [customizing=true]) toolbartabstop {
   --box-max-height-margin: calc(100vh - var(--box-top-px) - var(--box-block-margin));
   --box-max-width-ratio: 70vw;
   --box-max-height-ratio: calc(var(--box-ideal-height) / var(--box-ideal-width) * var(--box-max-width-ratio));
-  max-width: min(max(var(--box-ideal-width) * 1px, var(--box-max-width-ratio)), var(--box-max-width-margin));
-  max-height: min(max(var(--box-ideal-height) * 1px, var(--box-max-height-ratio)), var(--box-max-height-margin));
+  --box-max-height-requested: 100vh;
+  --box-max-width-requested: 100vw;
+  --box-max-height-remaining: calc(100vh - var(--box-top-px));
   width: 100vw;
   height: 100vh;
+  margin: 0;
+}
+
+.dialogBox:not(.spotlightBox)[sizeto="available"] {
+  max-width: min(max(var(--box-ideal-width) * 1px, var(--box-max-width-ratio)), var(--box-max-width-margin), var(--box-max-width-requested));
+  max-height: min(max(var(--box-ideal-height) * 1px, var(--box-max-height-ratio)), var(--box-max-height-margin), var(--box-max-height-requested), var(--box-max-height-remaining));
 }
 
 @media (min-width: 550px) {
@@ -1587,6 +1615,11 @@ toolbar[keyNav=true]:not([collapsed=true], [customizing=true]) toolbartabstop {
   }
 }
 
+.dialogStack .dialogBox.spotlightBox[sizeto="available"] {
+  /* Tab modal: subtract the navigator toolbox height from the dialog height. */
+  height: calc(100vh - var(--box-top-px));
+}
+
 .content-prompt-dialog > .dialogOverlay {
   display: grid;
   place-content: center;
@@ -1595,28 +1628,41 @@ toolbar[keyNav=true]:not([collapsed=true], [customizing=true]) toolbartabstop {
   grid-auto-rows: min(90%, var(--doc-height-px));
 }
 
-:not(.content-prompt-dialog) > .dialogOverlay > .dialogBox {
-  /* Make dialogs overlap with upper chrome UI. */
+:not(.content-prompt-dialog) > .dialogOverlay > .dialogBox:not(.spotlightBox) {
+  /* Make dialogs overlap with upper chrome UI. Not necessary for Spotlight
+  dialogs that are intended to be centered above the window or content area. */
   margin-top: -5px;
+}
+
+/* For window-modal dialogs, we allow overlapping the urlbar if the window is
+ * small enough. */
+#window-modal-dialog > .dialogOverlay > .dialogBox:not(.spotlightBox) {
+  /* Do not go below 3px (as otherwise the top of the dialog would be
+   * adjacent to or clipped by the top of the window), or above the window
+   * size. */
+  margin-top: clamp(
+    3px,
+    var(--chrome-offset, 20px) - 5px,
+    calc(100vh - var(--subdialog-inner-height) - 5px)
+  );
 }
 
 #window-modal-dialog {
   overflow: visible;
   padding: 0;
-  --chrome-offset: 20px; /* gets overridden from JS, but pick some default... */
-  margin-top: max(
-    /* Do not go below 8px, corresponding to the negative margin above plus
-     * a tiny bit of space, as otherwise the top of the dialog would be
-     * adjacent to or clipped by the top of the window. */
-    8px,
-    /* Otherwise, use the chrome height,
-     * or the height of the parent window minus the height of the dialog,
-     * whichever is smaller. */
-    min(
-      var(--chrome-offset),
-      calc(100vh - var(--inner-height))
-    )
-  );
+  /* Override default <html:dialog> styles */
+  border-width: 0;
+  background-color: transparent;
+  /* This makes the dialog top-aligned by default (the dialog box will move via
+   * margin-top above) */
+  bottom: auto;
+}
+
+#window-modal-dialog.spotlight {
+  /* Spotlight window modal dialogs should be equal in size to the window. */
+  bottom: revert;
+  max-height: 100%;
+  max-width: 100%;
 }
 
 .dialogFrame {
@@ -1624,15 +1670,6 @@ toolbar[keyNav=true]:not([collapsed=true], [customizing=true]) toolbartabstop {
   -moz-box-flex: 1;
   /* Default dialog dimensions */
   width: 34em;
-  /* will get overridden, but need to change the default so small
-   * dialogs don't end up being 150px tall */
-  height: 80px;
-}
-
-/* Override default <html:dialog> styles */
-#window-modal-dialog {
-  border-width: 0;
-  background-color: transparent;
 }
 
 .dialogOverlay[topmost="true"],
@@ -1640,8 +1677,8 @@ toolbar[keyNav=true]:not([collapsed=true], [customizing=true]) toolbartabstop {
   background-color: rgba(28, 27, 34, 0.45);
 }
 
-#window-modal-dialog.showToolbar::backdrop {
-  background: linear-gradient(transparent, rgba(28, 27, 34, 0.45) 50%);
+.dialogOverlay[hideContent="true"][topmost="true"] {
+  background-color: var(--tabpanel-background-color);
 }
 
 /* For the window-modal dialog, the background is supplied by the HTML dialog

@@ -4,12 +4,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-# This file exposes three lists:
-# ALL_PROCESSES, BROWSER_PROCESS, and CHILD_PROCESSES
+# This file exposes six lists:
+# ALL_PROCESSES, BROWSER_PROCESS, CHILD_PROCESSES, GPU_PROCESSES,
+# UTILITY_PROCESSES, and SOCKET_PROCESSES
 #
 # In addition, each of those lists supports a special variant for test-only
 # entries:
-# ALL_PROCESSES_TESTS, BROWSER_PROCESS_TESTS, and CHILD_PROCESSES_TESTS
+# ALL_PROCESSES_TESTS, BROWSER_PROCESS_TESTS, CHILD_PROCESSES_TESTS,
+# GPU_PROCESSES_TESTS, UTILITY_PROCESSES_TESTS, and SOCKET_PROCESSES_TESTS
 #
 # Choose the list that is applicable to the applicable process type(s) for your
 # DLL block.
@@ -248,6 +250,13 @@ ALL_PROCESSES += [
     # InfoWatch Device Monitor causes crashes, bug 1704276
     DllBlocklistEntry("iwprn.dll", (6, 9, 11, 360)),
     DllBlocklistEntry("iwprn_x86.dll", (6, 9, 11, 360)),
+
+    # Forcepoint DLLs causing crashes, bug 1767993
+    DllBlocklistEntry("qipcap.dll", (7, 7, 819, 1)),
+    DllBlocklistEntry("qipcap64.dll", (7, 7, 819, 1)),
+
+    # Cylance, bug 1756190 and bug 1799562
+    DllBlocklistEntry("CylanceMemDef64.dll", ALL_VERSIONS),
 ]
 
 ALL_PROCESSES_TESTS += [
@@ -290,10 +299,68 @@ BROWSER_PROCESS += [
 
     # AVerMedia's virtual camera module causes crashes (bug 1692908)
     DllBlocklistEntry("avmvirtualsource.ax", (1, 0, 0, 3)),
+
+    # Avast (bug 1794064)
+    DllBlocklistEntry("aswJsFlt.dll", (18, 0, 1473, 0)),
+
+    # ASUS Web Storage (bug 1714940)
+    DllBlocklistEntry("asuswsshellext64.dll", (1, 1, 0, 27)),
+
+    # ExplorerPatcher (bug 1798707)
+    DllBlocklistEntry("explorerpatcher.amd64.dll", ALL_VERSIONS),
 ]
 
 CHILD_PROCESSES += [
     # Causes crashes in the GPU process with WebRender enabled, bug 1544435
     DllBlocklistEntry("wbload.dll", ALL_VERSIONS),
+
+    # Causes crashes in the content process with win32k lockdown, bug 1766022
+    DllBlocklistEntry("videocapturer.dll", ALL_VERSIONS),
+    DllBlocklistEntry("videocapturerhk32.dll", ALL_VERSIONS),
+    DllBlocklistEntry("videocapturerhk64.dll", ALL_VERSIONS),
+
+    # Causes crashes in the content process with win32k lockdown, bug 1766029
+    # The crash seems to be in the *_m module which has been unloaded.
+    DllBlocklistEntry("safaweb.dll", (3, 0, 21, 3181)),
+    DllBlocklistEntry("safaweb_m.dll", (3, 0, 21, 3181)),
+    DllBlocklistEntry("safaweb64.dll", (3, 0, 21, 3181)),
+    DllBlocklistEntry("safaweb64_m.dll", (3, 0, 21, 3181)),
+
+    # Causes crashes in the content process with win32k lockdown, bug 1769309
+    DllBlocklistEntry("hmpalert.dll", (3, 8, 8, 889)),
+]
+
+GPU_PROCESSES += [
+    # MSI Nahimic audio driver causes crashes in the GPU process, bug 1804023
+    DllBlocklistEntry("nahimicosd.dll", (2, 2, 25, 0)),
+]
+
+GPU_PROCESSES_TESTS += [
+    # DLLs used by TestDllBlocklist* gTests
+    DllBlocklistEntry("testdllblocklist_gpuprocessonly.dll", ALL_VERSIONS),
+]
+
+SOCKET_PROCESSES += [
+    # Causes crashes in the socket process, bug 1760668
+    DllBlocklistEntry("ipseng64.dll", (17, 2, 6, 25)),
+    DllBlocklistEntry("ipseng32.dll", (17, 2, 6, 25)),
+
+    # Causes crashes in the socket process, bug 1807038
+    DllBlocklistEntry("kwsui64.dll", (2022, 2, 8, 125)),
+]
+
+SOCKET_PROCESSES_TESTS += [
+    # DLLs used by TestDllBlocklist* gTests
+    DllBlocklistEntry("testdllblocklist_socketprocessonly.dll", ALL_VERSIONS),
+]
+
+UTILITY_PROCESSES += [
+    # Generated dynamic code that we block
+    DllBlocklistEntry("cyinjct.dll", ALL_VERSIONS),
+]
+
+UTILITY_PROCESSES_TESTS += [
+    # DLLs used by TestDllBlocklist* gTests
+    DllBlocklistEntry("testdllblocklist_utilityprocessonly.dll", ALL_VERSIONS),
 ]
 

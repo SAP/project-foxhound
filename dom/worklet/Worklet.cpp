@@ -16,6 +16,7 @@
 #include "mozilla/dom/PromiseNativeHandler.h"
 #include "mozilla/dom/Request.h"
 #include "mozilla/dom/Response.h"
+#include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/WorkletImpl.h"
@@ -24,18 +25,17 @@
 #include "nsIInputStreamPump.h"
 #include "nsIStreamLoader.h"
 #include "nsIThreadRetargetableRequest.h"
-#include "nsIInputStreamPump.h"
 #include "nsNetUtil.h"
 #include "xpcprivate.h"
 #include "mozilla/ScopeExit.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ExecutionRunnable final : public Runnable {
  public:
   ExecutionRunnable(WorkletFetchHandler* aHandler, WorkletImpl* aWorkletImpl,
-                    JS::UniqueTwoByteChars aScriptBuffer, size_t aScriptLength)
+                    UniquePtr<Utf8Unit[], JS::FreePolicy> aScriptBuffer,
+                    size_t aScriptLength)
       : Runnable("Worklet::ExecutionRunnable"),
         mHandler(aHandler),
         mWorkletImpl(aWorkletImpl),
@@ -60,7 +60,7 @@ class ExecutionRunnable final : public Runnable {
 
   RefPtr<WorkletFetchHandler> mHandler;
   RefPtr<WorkletImpl> mWorkletImpl;
-  JS::UniqueTwoByteChars mScriptBuffer;
+  UniquePtr<Utf8Unit[], JS::FreePolicy> mScriptBuffer;
   size_t mScriptLength;
   JSRuntime* mParentRuntime;
   nsresult mResult;
@@ -109,6 +109,11 @@ class WorkletFetchHandler final : public PromiseNativeHandler,
     nsresult rv = NS_NewURI(getter_AddRefs(resolvedURI), aModuleURL, nullptr,
                             doc->GetBaseURI());
     if (NS_WARN_IF(NS_FAILED(rv))) {
+      // https://html.spec.whatwg.org/multipage/worklets.html#dom-worklet-addmodule
+      // Step 3. If this fails, then return a promise rejected with a
+      // "SyntaxError" DOMException.
+      rv = NS_ERROR_DOM_SYNTAX_ERR;
+
       promise->MaybeReject(rv);
       return promise.forget();
     }
@@ -116,6 +121,8 @@ class WorkletFetchHandler final : public PromiseNativeHandler,
     nsAutoCString spec;
     rv = resolvedURI->GetSpec(spec);
     if (NS_WARN_IF(NS_FAILED(rv))) {
+      rv = NS_ERROR_DOM_SYNTAX_ERR;
+
       promise->MaybeReject(rv);
       return promise.forget();
     }
@@ -180,8 +187,11 @@ class WorkletFetchHandler final : public PromiseNativeHandler,
       return;
     }
 
+    // https://html.spec.whatwg.org/multipage/worklets.html#dom-worklet-addmodule
+    // Step 6.4.1. If script is null, then:
+    //   Step 1.1.2. Reject promise with an "AbortError" DOMException.
     if (!response->Ok()) {
-      RejectPromises(NS_ERROR_DOM_NETWORK_ERR);
+      RejectPromises(NS_ERROR_DOM_ABORT_ERR);
       return;
     }
 
@@ -234,11 +244,11 @@ class WorkletFetchHandler final : public PromiseNativeHandler,
       return NS_OK;
     }
 
-    JS::UniqueTwoByteChars scriptTextBuf;
+    UniquePtr<Utf8Unit[], JS::FreePolicy> scriptTextBuf;
     size_t scriptTextLength;
     nsresult rv =
-        ScriptLoader::ConvertToUTF16(nullptr, aString, aStringLen, u"UTF-8"_ns,
-                                     nullptr, scriptTextBuf, scriptTextLength);
+        ScriptLoader::ConvertToUTF8(nullptr, aString, aStringLen, u"UTF-8"_ns,
+                                    nullptr, scriptTextBuf, scriptTextLength);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       RejectPromises(rv);
       return NS_OK;
@@ -259,7 +269,11 @@ class WorkletFetchHandler final : public PromiseNativeHandler,
   virtual void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
                                 ErrorResult& aRv) override {
     MOZ_ASSERT(NS_IsMainThread());
-    RejectPromises(NS_ERROR_DOM_NETWORK_ERR);
+
+    // https://html.spec.whatwg.org/multipage/worklets.html#dom-worklet-addmodule
+    // Step 6.4.1. If script is null, then:
+    //   Step 1.1.2. Reject promise with an "AbortError" DOMException.
+    RejectPromises(NS_ERROR_DOM_ABORT_ERR);
   }
 
   const nsCString& URL() const { return mURL; }
@@ -374,7 +388,7 @@ bool ExecutionRunnable::ParseAndLinkModule(
   compileOptions.setIsRunOnce(true);
   compileOptions.setNoScriptRval(true);
 
-  JS::SourceText<char16_t> buffer;
+  JS::SourceText<Utf8Unit> buffer;
   if (!buffer.init(aCx, std::move(mScriptBuffer), mScriptLength)) {
     return false;
   }
@@ -383,10 +397,8 @@ bool ExecutionRunnable::ParseAndLinkModule(
   if (!module) {
     return false;
   }
-  // Link() was previously named Instantiate().
-  // https://github.com/tc39/ecma262/pull/1312
   // Any imports will fail here - bug 1572644.
-  if (!JS::ModuleInstantiate(aCx, module)) {
+  if (!JS::ModuleLink(aCx, module)) {
     return false;
   }
   aModule.set(module);
@@ -394,9 +406,8 @@ bool ExecutionRunnable::ParseAndLinkModule(
 }
 
 void ExecutionRunnable::RunOnWorkletThread() {
-  WorkletThread* workletThread =
-      static_cast<WorkletThread*>(NS_GetCurrentThread());
-  workletThread->EnsureCycleCollectedJSContext(mParentRuntime);
+  // This can be called on a GraphRunner thread or a DOM Worklet thread.
+  WorkletThread::EnsureCycleCollectedJSContext(mParentRuntime);
 
   WorkletGlobalScope* globalScope = mWorkletImpl->GetGlobalScope();
   if (!globalScope) {
@@ -451,7 +462,7 @@ void ExecutionRunnable::RunOnMainThread() {
 // ---------------------------------------------------------------------------
 // Worklet
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(Worklet)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Worklet)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Worklet)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mWindow)
@@ -464,8 +475,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Worklet)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindow)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOwnedObject)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(Worklet)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(Worklet)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(Worklet)
@@ -513,5 +522,4 @@ void Worklet::AddImportFetchHandler(const nsACString& aURI,
   mImportHandlers.InsertOrUpdate(aURI, RefPtr{aHandler});
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

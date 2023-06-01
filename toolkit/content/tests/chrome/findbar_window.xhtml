@@ -21,7 +21,6 @@
   <script type="application/javascript"><![CDATA[
     const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
     const {BrowserTestUtils} = ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
-    const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
     const SAMPLE_URL = "http://www.mozilla.org/";
     const SAMPLE_TEXT = "Some text in a text field.";
@@ -32,7 +31,7 @@
     var gFindBar = null;
     var gBrowser;
 
-    var gHasFindClipboard = Services.clipboard.supportsFindClipboard();
+    var gHasFindClipboard = Services.clipboard.isClipboardTypeSupported(Services.clipboard.kFindClipboard);
 
     var gStatusText;
     var gXULBrowserWindow = {
@@ -72,17 +71,17 @@
     async function startTestWithBrowser(browserId) {
       info("Starting test with browser '" + browserId + "'");
       gBrowser = document.getElementById(browserId);
-      gFindBar.browser = gBrowser;
 
       // Tests delays the loading of a document for one second.
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       let promise = BrowserTestUtils.browserLoaded(gBrowser);
-      BrowserTestUtils.loadURI(gBrowser, "data:text/html;charset=utf-8,<h2 id='h2'>" + SEARCH_TEXT +
+      BrowserTestUtils.loadURIString(gBrowser, "data:text/html;charset=utf-8,<h2 id='h2'>" + SEARCH_TEXT +
         "</h2><h2><a href='" + SAMPLE_URL + "'>Link Test</a></h2><input id='text' type='text' value='" +
         SAMPLE_TEXT + "'></input><input id='button' type='button'></input><img id='img' width='50' height='50'/>",
         { triggeringPrincipal: window.document.nodePrincipal });
       await promise;
+      gFindBar.browser = gBrowser;
       await onDocumentLoaded();
     }
 
@@ -403,11 +402,11 @@
          "match case label is hidden in automatic mode");
 
       await enterStringIntoFindField("a");
-      var insensitiveLabel = matchCaseLabel.value;
+      ok(matchCaseLabel.hidden,
+         "match case label is hidden in automatic mode with lower-case input");
       await enterStringIntoFindField("A");
-      var sensitiveLabel = matchCaseLabel.value;
-      ok(insensitiveLabel != sensitiveLabel,
-         "Case Sensitive label was not correctly updated");
+      ok(!matchCaseLabel.hidden,
+         "match case label is visible in automatic mode with upper-case input");
 
       // bug 365551
       gFindBar.onFindAgainCommand();
@@ -622,12 +621,12 @@
         current: 0,
         total: 0
       }];
-      let regex = /([\d]*)\sof\s([\d]*)/;
 
-      function assertMatches(aTest, aMatches) {
-        is(aMatches[1], String(aTest.current),
+      function assertMatches(aTest) {
+        const matches = JSON.parse(foundMatches.dataset.l10nArgs);
+        is(matches.current, aTest.current,
           `${linksOnly ? "[Links-only] " : ""}Currently highlighted match should be at ${aTest.current} for '${aTest.text}'`);
-        is(aMatches[2], String(aTest.total),
+        is(matches.total, aTest.total,
           `${linksOnly ? "[Links-only] " : ""}Total amount of matches should be ${aTest.total} for '${aTest.text}'`);
       }
 
@@ -644,11 +643,10 @@
         await new Promise(resolve => setTimeout(resolve, timeout));
         await enterStringIntoFindField(test.text, false);
         await promiseMatchesCountResult(test.text);
-        let matches = foundMatches.value.match(regex);
         if (!test.total) {
-          ok(!matches, "No message should be shown when 0 matches are expected");
+          ok(!foundMatches.dataset.l10nId, "No message should be shown when 0 matches are expected");
         } else {
-          assertMatches(test, matches);
+          assertMatches(test);
           for (let i = 1; i < test.total; i++) {
             await new Promise(resolve => setTimeout(resolve, timeout));
             gFindBar.onFindAgainCommand();
@@ -659,7 +657,7 @@
               text: test.text,
               current,
               total: test.total
-            }, foundMatches.value.match(regex));
+            });
           }
         }
       }

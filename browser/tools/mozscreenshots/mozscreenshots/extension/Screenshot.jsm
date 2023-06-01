@@ -6,19 +6,22 @@
 
 var EXPORTED_SYMBOLS = ["Screenshot"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
 );
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
 
 // Create a new instance of the ConsoleAPI so we can control the maxLogLevel with a pref.
-// See LOG_LEVELS in Console.jsm. Common examples: "All", "Info", "Warn", & "Error".
+// See LOG_LEVELS in Console.sys.mjs. Common examples: "All", "Info", "Warn", &
+// "Error".
 const PREF_LOG_LEVEL = "extensions.mozscreenshots@mozilla.org.loglevel";
-XPCOMUtils.defineLazyGetter(this, "log", () => {
-  let ConsoleAPI = ChromeUtils.import("resource://gre/modules/Console.jsm", {})
-    .ConsoleAPI;
+const lazy = {};
+XPCOMUtils.defineLazyGetter(lazy, "log", () => {
+  let { ConsoleAPI } = ChromeUtils.importESModule(
+    "resource://gre/modules/Console.sys.mjs"
+  );
   let consoleOptions = {
     maxLogLevel: "info",
     maxLogLevelPref: PREF_LOG_LEVEL,
@@ -61,7 +64,7 @@ var Screenshot = {
   },
 
   _buildImagePath(baseName) {
-    return OS.Path.join(
+    return PathUtils.join(
       this._path,
       this._imagePrefix + baseName + this._imageExtension
     );
@@ -71,7 +74,7 @@ var Screenshot = {
   async captureExternal(filename) {
     let imagePath = this._buildImagePath(filename);
     await this._screenshotFunction(imagePath);
-    log.debug("saved screenshot: " + filename);
+    lazy.log.debug("saved screenshot: " + filename);
     return imagePath;
   },
 
@@ -124,11 +127,7 @@ var Screenshot = {
     };
 
     function readWindowID() {
-      let decoder = new TextDecoder();
-      let promise = OS.File.read("/tmp/mozscreenshots-windowid");
-      return promise.then(function onSuccess(array) {
-        return decoder.decode(array);
-      });
+      return IOUtils.readUTF8("/tmp/mozscreenshots-windowid");
     }
 
     let promiseWindowID = () => {

@@ -1,5 +1,3 @@
-/* import-globals-from antitracking_head.js */
-
 function waitStoragePermission() {
   return new Promise(resolve => {
     let id = setInterval(async _ => {
@@ -17,7 +15,7 @@ function waitStoragePermission() {
   });
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   info("Starting subResources test");
 
   await SpecialPowers.flushPrefEnv();

@@ -13,10 +13,12 @@ add_task(async function test_javascript_match() {
   Services.prefs.setBoolPref("browser.urlbar.autoFill.searchEngines", false);
   Services.prefs.setBoolPref("browser.urlbar.suggest.searches", false);
   Services.prefs.setBoolPref("browser.urlbar.suggest.engines", false);
+  Services.prefs.setBoolPref("browser.urlbar.suggest.quickactions", false);
   registerCleanupFunction(() => {
     Services.prefs.clearUserPref("browser.urlbar.autoFill.searchEngines");
     Services.prefs.clearUserPref("browser.urlbar.suggest.searches");
     Services.prefs.clearUserPref("browser.urlbar.suggest.engines");
+    Services.prefs.clearUserPref("browser.urlbar.suggest.quickactions");
   });
 
   let uri1 = Services.io.newURI("http://abc/def");
@@ -28,6 +30,8 @@ add_task(async function test_javascript_match() {
   await PlacesTestUtils.addVisits([
     { uri: uri1, title: "Title with javascript:" },
   ]);
+
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   info("Match non-javascript: with plain search");
   let context = createContext("a", { isPrivate: false });
@@ -112,7 +116,7 @@ add_task(async function test_javascript_match() {
     matches: [
       makeVisitResult(context, {
         uri: "javascript: a",
-        title: "javascript: a",
+        fallbackTitle: "javascript: a",
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         heuristic: true,
       }),
@@ -135,7 +139,7 @@ add_task(async function test_javascript_match() {
     matches: [
       makeVisitResult(context, {
         uri: "javascript: 5",
-        title: "javascript: 5",
+        fallbackTitle: "javascript: 5",
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         heuristic: true,
       }),

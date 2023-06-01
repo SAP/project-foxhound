@@ -8,17 +8,35 @@
 #ifndef mozilla_net_OpaqueResponseUtils_h
 #define mozilla_net_OpaqueResponseUtils_h
 
-#include "nsIContentPolicy.h"
+#include "ipc/EnumSerializer.h"
 #include "mozilla/TimeStamp.h"
+#include "nsIContentPolicy.h"
+#include "nsIStreamListener.h"
+#include "nsUnknownDecoder.h"
+#include "nsMimeTypes.h"
+#include "nsIHttpChannel.h"
 
-namespace mozilla {
+#include "mozilla/Variant.h"
+#include "mozilla/Logging.h"
 
-namespace Telemetry {
-enum class LABELS_OPAQUE_RESPONSE_BLOCKING : uint32_t;
+#include "nsCOMPtr.h"
+#include "nsString.h"
+#include "nsTArray.h"
+
+class nsIContentSniffer;
+static mozilla::LazyLogModule gORBLog("ORB");
+
+namespace mozilla::dom {
+class JSValidatorParent;
 }
 
-namespace net {
+namespace mozilla::ipc {
+class Shmem;
+}
 
+namespace mozilla::net {
+
+class HttpBaseChannel;
 class nsHttpResponseHead;
 
 enum class OpaqueResponseBlockedReason : uint32_t {
@@ -30,6 +48,9 @@ enum class OpaqueResponseBlockedReason : uint32_t {
 };
 
 OpaqueResponseBlockedReason GetOpaqueResponseBlockedReason(
+    const nsACString& aContentType, uint16_t aStatus, bool aNoSniff);
+
+OpaqueResponseBlockedReason GetOpaqueResponseBlockedReason(
     const nsHttpResponseHead& aResponseHead);
 
 // Returns a tuple of (rangeStart, rangeEnd, rangeTotal) from the input range
@@ -39,24 +60,114 @@ ParseContentRangeHeaderString(const nsAutoCString& aRangeStr);
 
 bool IsFirstPartialResponse(nsHttpResponseHead& aResponseHead);
 
-class OpaqueResponseBlockingInfo final {
-  const TimeStamp mStartTime;
-  Telemetry::LABELS_OPAQUE_RESPONSE_BLOCKING mDestination;
+void LogORBError(nsILoadInfo* aLoadInfo, nsIURI* aURI);
+
+class OpaqueResponseBlocker final : public nsIStreamListener {
+  enum class State { Sniffing, Allowed, Blocked };
 
  public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(OpaqueResponseBlockingInfo);
+  NS_DECL_THREADSAFE_ISUPPORTS
+  NS_DECL_NSIREQUESTOBSERVER
+  NS_DECL_NSISTREAMLISTENER;
 
-  explicit OpaqueResponseBlockingInfo(ExtContentPolicyType aContentPolicyType);
+  OpaqueResponseBlocker(nsIStreamListener* aNext, HttpBaseChannel* aChannel,
+                        const nsCString& aContentType, bool aNoSniff);
 
-  void Report(const nsCString& aKey);
+  bool IsSniffing() const;
+  void AllowResponse();
+  void BlockResponse(HttpBaseChannel* aChannel, nsresult aReason);
 
-  void ReportContentLength(int64_t aContentLength);
+  nsresult EnsureOpaqueResponseIsAllowedAfterSniff(nsIRequest* aRequest);
+
+  // The four possible results for validation. `JavaScript` and `JSON` are
+  // self-explanatory. `JavaScript` is the only successful result, in the sense
+  // that it will allow the opaque response, whereas `JSON` will block. `Other`
+  // is the case where validation fails, because the response is neither
+  // `JavaScript` nor `JSON`, but the framework itself works as intended.
+  // `Failure` implies that something has gone wrong, such as allocation, etc.
+  enum class ValidatorResult : uint32_t { JavaScript, JSON, Other, Failure };
 
  private:
-  ~OpaqueResponseBlockingInfo() = default;
+  virtual ~OpaqueResponseBlocker() = default;
+
+  nsresult ValidateJavaScript(HttpBaseChannel* aChannel, nsIURI* aURI,
+                              nsILoadInfo* aLoadInfo);
+
+  void ResolveAndProcessData(HttpBaseChannel* aChannel, bool aAllowed,
+                             Maybe<ipc::Shmem>& aSharedData);
+
+  void MaybeRunOnStopRequest(HttpBaseChannel* aChannel);
+
+  nsCOMPtr<nsIStreamListener> mNext;
+
+  const nsCString mContentType;
+  const bool mNoSniff;
+
+  State mState = State::Sniffing;
+  nsresult mStatus = NS_OK;
+
+  TimeStamp mStartOfJavaScriptValidation;
+
+  RefPtr<dom::JSValidatorParent> mJSValidator;
+
+  Maybe<nsresult> mPendingOnStopRequestStatus{Nothing()};
 };
 
-}  // namespace net
-}  // namespace mozilla
+class nsCompressedAudioVideoImageDetector : public nsUnknownDecoder {
+  const std::function<void(void*, const uint8_t*, uint32_t)> mCallback;
+
+ public:
+  nsCompressedAudioVideoImageDetector(
+      nsIStreamListener* aListener,
+      std::function<void(void*, const uint8_t*, uint32_t)>&& aCallback)
+      : nsUnknownDecoder(aListener), mCallback(aCallback) {}
+
+ protected:
+  virtual void DetermineContentType(nsIRequest* aRequest) override {
+    nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aRequest);
+    if (!httpChannel) {
+      return;
+    }
+
+    const char* testData = mBuffer;
+    uint32_t testDataLen = mBufferLen;
+    // Check if data are compressed.
+    nsAutoCString decodedData;
+
+    // ConvertEncodedData is always called only on a single thread for each
+    // instance of an object.
+    nsresult rv = ConvertEncodedData(aRequest, mBuffer, mBufferLen);
+    if (NS_SUCCEEDED(rv)) {
+      MutexAutoLock lock(mMutex);
+      decodedData = mDecodedData;
+    }
+    if (!decodedData.IsEmpty()) {
+      testData = decodedData.get();
+      testDataLen = std::min<uint32_t>(decodedData.Length(), 512u);
+    }
+
+    mCallback(httpChannel, (const uint8_t*)testData, testDataLen);
+
+    nsAutoCString contentType;
+    rv = httpChannel->GetContentType(contentType);
+
+    MutexAutoLock lock(mMutex);
+    if (!contentType.IsEmpty()) {
+      mContentType = contentType;
+    } else {
+      mContentType = UNKNOWN_CONTENT_TYPE;
+    }
+  }
+};
+}  // namespace mozilla::net
+
+namespace IPC {
+template <>
+struct ParamTraits<mozilla::net::OpaqueResponseBlocker::ValidatorResult>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::net::OpaqueResponseBlocker::ValidatorResult,
+          mozilla::net::OpaqueResponseBlocker::ValidatorResult::JavaScript,
+          mozilla::net::OpaqueResponseBlocker::ValidatorResult::Failure> {};
+}  // namespace IPC
 
 #endif  // mozilla_net_OpaqueResponseUtils_h

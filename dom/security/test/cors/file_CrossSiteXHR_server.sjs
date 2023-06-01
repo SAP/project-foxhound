@@ -4,9 +4,9 @@ const BinaryInputStream = CC(
   "nsIBinaryInputStream",
   "setInputStream"
 );
-Cu.import("resource://gre/modules/Services.jsm");
 Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
 
+// eslint-disable-next-line complexity
 function handleRequest(request, response) {
   var query = {};
   request.queryString.split("&").forEach(function(val) {

@@ -12,20 +12,22 @@ const EXPORTED_SYMBOLS = [
   "SelectOption",
 ];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-const { GeckoViewUtils } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewUtils.jsm"
+const { GeckoViewUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  EventDispatcher: "resource://gre/modules/Messaging.jsm",
-  GeckoViewPrompter: "resource://gre/modules/GeckoViewPrompter.jsm",
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  EventDispatcher: "resource://gre/modules/Messaging.sys.mjs",
+  GeckoViewPrompter: "resource://gre/modules/GeckoViewPrompter.sys.mjs",
 });
 
-XPCOMUtils.defineLazyGetter(this, "LoginInfo", () =>
+XPCOMUtils.defineLazyGetter(lazy, "LoginInfo", () =>
   Components.Constructor(
     "@mozilla.org/login-manager/loginInfo;1",
     "nsILoginInfo",
@@ -46,11 +48,11 @@ class LoginEntry {
     timePasswordChanged,
     timesUsed,
   }) {
-    this.origin = origin ?? null;
+    this.origin = origin ?? "";
     this.formActionOrigin = formActionOrigin ?? null;
     this.httpRealm = httpRealm ?? null;
-    this.username = username ?? null;
-    this.password = password ?? null;
+    this.username = username ?? "";
+    this.password = password ?? "";
 
     // Metadata.
     this.guid = guid ?? null;
@@ -62,7 +64,7 @@ class LoginEntry {
   }
 
   toLoginInfo() {
-    const info = new LoginInfo(
+    const info = new lazy.LoginInfo(
       this.origin,
       this.formActionOrigin,
       this.httpRealm,
@@ -130,19 +132,19 @@ class Address {
     timesUsed,
     version,
   }) {
-    this.name = name ?? null;
-    this.givenName = givenName ?? null;
-    this.additionalName = additionalName ?? null;
-    this.familyName = familyName ?? null;
-    this.organization = organization ?? null;
-    this.streetAddress = streetAddress ?? null;
-    this.addressLevel1 = addressLevel1 ?? null;
-    this.addressLevel2 = addressLevel2 ?? null;
-    this.addressLevel3 = addressLevel3 ?? null;
-    this.postalCode = postalCode ?? null;
-    this.country = country ?? null;
-    this.tel = tel ?? null;
-    this.email = email ?? null;
+    this.name = name ?? "";
+    this.givenName = givenName ?? "";
+    this.additionalName = additionalName ?? "";
+    this.familyName = familyName ?? "";
+    this.organization = organization ?? "";
+    this.streetAddress = streetAddress ?? "";
+    this.addressLevel1 = addressLevel1 ?? "";
+    this.addressLevel2 = addressLevel2 ?? "";
+    this.addressLevel3 = addressLevel3 ?? "";
+    this.postalCode = postalCode ?? "";
+    this.country = country ?? "";
+    this.tel = tel ?? "";
+    this.email = email ?? "";
 
     // Metadata.
     this.guid = guid ?? null;
@@ -156,9 +158,9 @@ class Address {
 
   isValid() {
     return (
-      (this.name ?? this.givenName ?? this.familyName) !== null &&
-      this.streetAddress !== null &&
-      this.postalCode !== null
+      (this.name ?? this.givenName ?? this.familyName) !== "" &&
+      this.streetAddress !== "" &&
+      this.postalCode !== ""
     );
   }
 
@@ -228,11 +230,11 @@ class CreditCard {
     timesUsed,
     version,
   }) {
-    this.name = name ?? null;
-    this.number = number ?? null;
-    this.expMonth = expMonth ?? null;
-    this.expYear = expYear ?? null;
-    this.type = type ?? null;
+    this.name = name ?? "";
+    this.number = number ?? "";
+    this.expMonth = expMonth ?? "";
+    this.expYear = expYear ?? "";
+    this.type = type ?? "";
 
     // Metadata.
     this.guid = guid ?? null;
@@ -246,10 +248,10 @@ class CreditCard {
 
   isValid() {
     return (
-      this.name !== null &&
-      this.number !== null &&
-      this.expMonth !== null &&
-      this.expYear !== null
+      this.name !== "" &&
+      this.number !== "" &&
+      this.expMonth !== "" &&
+      this.expYear !== ""
     );
   }
 
@@ -258,8 +260,8 @@ class CreditCard {
       version: aObj.version,
       name: aObj["cc-name"],
       number: aObj["cc-number"],
-      expMonth: aObj["cc-exp-month"],
-      expYear: aObj["cc-exp-year"],
+      expMonth: aObj["cc-exp-month"]?.toString(),
+      expYear: aObj["cc-exp-year"]?.toString(),
       type: aObj["cc-type"],
       guid: aObj.guid,
       timeCreated: aObj.timeCreated,
@@ -309,6 +311,9 @@ class SelectOption {
 const UsedField = { PASSWORD: 1 };
 
 const GeckoViewAutocomplete = {
+  /** current opened prompt */
+  _prompt: null,
+
   /**
    * Delegates login entry fetching for the given domain to the attached
    * LoginStorage GeckoView delegate.
@@ -325,7 +330,7 @@ const GeckoViewAutocomplete = {
   fetchLogins(aDomain = null) {
     debug`fetchLogins for ${aDomain ?? "All domains"}`;
 
-    return EventDispatcher.instance.sendRequestForResult({
+    return lazy.EventDispatcher.instance.sendRequestForResult({
       type: "GeckoView:Autocomplete:Fetch:Login",
       domain: aDomain,
     });
@@ -344,7 +349,7 @@ const GeckoViewAutocomplete = {
   fetchCreditCards() {
     debug`fetchCreditCards`;
 
-    return EventDispatcher.instance.sendRequestForResult({
+    return lazy.EventDispatcher.instance.sendRequestForResult({
       type: "GeckoView:Autocomplete:Fetch:CreditCard",
     });
   },
@@ -364,7 +369,7 @@ const GeckoViewAutocomplete = {
   fetchAddresses() {
     debug`fetchAddresses`;
 
-    return EventDispatcher.instance.sendRequestForResult({
+    return lazy.EventDispatcher.instance.sendRequestForResult({
       type: "GeckoView:Autocomplete:Fetch:Address",
     });
   },
@@ -378,7 +383,7 @@ const GeckoViewAutocomplete = {
   onCreditCardSave(aCreditCard) {
     debug`onCreditCardSave ${aCreditCard}`;
 
-    EventDispatcher.instance.sendRequest({
+    lazy.EventDispatcher.instance.sendRequest({
       type: "GeckoView:Autocomplete:Save:CreditCard",
       creditCard: aCreditCard,
     });
@@ -393,7 +398,7 @@ const GeckoViewAutocomplete = {
   onAddressSave(aAddress) {
     debug`onAddressSave ${aAddress}`;
 
-    EventDispatcher.instance.sendRequest({
+    lazy.EventDispatcher.instance.sendRequest({
       type: "GeckoView:Autocomplete:Save:Address",
       address: aAddress,
     });
@@ -409,7 +414,7 @@ const GeckoViewAutocomplete = {
   onLoginSave(aLogin) {
     debug`onLoginSave ${aLogin}`;
 
-    EventDispatcher.instance.sendRequest({
+    lazy.EventDispatcher.instance.sendRequest({
       type: "GeckoView:Autocomplete:Save:Login",
       login: aLogin,
     });
@@ -426,7 +431,7 @@ const GeckoViewAutocomplete = {
   onLoginPasswordUsed(aLogin) {
     debug`onLoginUsed ${aLogin}`;
 
-    EventDispatcher.instance.sendRequest({
+    lazy.EventDispatcher.instance.sendRequest({
       type: "GeckoView:Autocomplete:Used:Login",
       usedFields: UsedField.PASSWORD,
       login: aLogin,
@@ -453,7 +458,7 @@ const GeckoViewAutocomplete = {
         return;
       }
 
-      const prompt = new GeckoViewPrompter(aBrowser.ownerGlobal);
+      const prompt = new lazy.GeckoViewPrompter(aBrowser.ownerGlobal);
       prompt.asyncShowPrompt(
         {
           type: "Autocomplete:Select:Login",
@@ -472,6 +477,7 @@ const GeckoViewAutocomplete = {
           resolve(option);
         }
       );
+      this._prompt = prompt;
     });
   },
 
@@ -493,7 +499,7 @@ const GeckoViewAutocomplete = {
         return;
       }
 
-      const prompt = new GeckoViewPrompter(aBrowser.ownerGlobal);
+      const prompt = new lazy.GeckoViewPrompter(aBrowser.ownerGlobal);
       prompt.asyncShowPrompt(
         {
           type: "Autocomplete:Select:CreditCard",
@@ -512,6 +518,7 @@ const GeckoViewAutocomplete = {
           resolve(option);
         }
       );
+      this._prompt = prompt;
     });
   },
 
@@ -533,7 +540,7 @@ const GeckoViewAutocomplete = {
         return;
       }
 
-      const prompt = new GeckoViewPrompter(aBrowser.ownerGlobal);
+      const prompt = new lazy.GeckoViewPrompter(aBrowser.ownerGlobal);
       prompt.asyncShowPrompt(
         {
           type: "Autocomplete:Select:Address",
@@ -552,6 +559,7 @@ const GeckoViewAutocomplete = {
           resolve(option);
         }
       );
+      this._prompt = prompt;
     });
   },
 
@@ -681,6 +689,9 @@ const GeckoViewAutocomplete = {
       );
     }
 
+    // prompt is closed now.
+    this._prompt = null;
+
     --this._numActiveSelections;
 
     debug`delegateSelection selected option: ${selectedOption}`;
@@ -726,6 +737,12 @@ const GeckoViewAutocomplete = {
     }
 
     debug`delegateSelection - form filled`;
+  },
+
+  delegateDismiss() {
+    debug`delegateDismiss`;
+
+    this._prompt?.dismiss();
   },
 };
 

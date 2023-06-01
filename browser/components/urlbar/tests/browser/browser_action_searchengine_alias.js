@@ -7,10 +7,11 @@
  */
 
 add_task(async function() {
-  await SearchTestUtils.installSearchExtension({ keyword: "moz" });
+  await SearchTestUtils.installSearchExtension(
+    { keyword: "moz" },
+    { setAsDefault: true }
+  );
   let engine = Services.search.getEngineByName("Example");
-  let originalEngine = await Services.search.getDefault();
-  await Services.search.setDefault(engine);
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
@@ -23,7 +24,6 @@ add_task(async function() {
   });
 
   registerCleanupFunction(async function() {
-    await Services.search.setDefault(originalEngine);
     try {
       BrowserTestUtils.removeTab(tab);
     } catch (ex) {

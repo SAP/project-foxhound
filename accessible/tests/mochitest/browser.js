@@ -1,7 +1,7 @@
 /* import-globals-from common.js */
 
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+var { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 /**
@@ -94,8 +94,6 @@ function reloadButton() {
 
 // //////////////////////////////////////////////////////////////////////////////
 // private section
-
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var gBrowserContext = {
   browserWnd: null,

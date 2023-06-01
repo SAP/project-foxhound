@@ -111,11 +111,11 @@ void ProxyStateChangeEvent(RemoteAccessible* aProxy, uint64_t aState,
 }
 
 void ProxyCaretMoveEvent(RemoteAccessible* aTarget, int32_t aOffset,
-                         bool aIsSelectionCollapsed) {
+                         bool aIsSelectionCollapsed, int32_t aGranularity) {
   mozAccessible* wrapper = GetNativeFromGeckoAccessible(aTarget);
   MOXTextMarkerDelegate* delegate =
       [MOXTextMarkerDelegate getOrCreateForDoc:aTarget->Document()];
-  [delegate setCaretOffset:aTarget at:aOffset];
+  [delegate setCaretOffset:aTarget at:aOffset moveGranularity:aGranularity];
   if (aIsSelectionCollapsed) {
     // If selection is collapsed, invalidate selection.
     [delegate setSelectionFrom:aTarget at:aOffset to:aTarget at:aOffset];
@@ -133,7 +133,7 @@ void ProxyCaretMoveEvent(RemoteAccessible* aTarget, int32_t aOffset,
   }
 }
 
-void ProxyTextChangeEvent(RemoteAccessible* aTarget, const nsString& aStr,
+void ProxyTextChangeEvent(RemoteAccessible* aTarget, const nsAString& aStr,
                           int32_t aStart, uint32_t aLen, bool aIsInsert,
                           bool aFromUser) {
   RemoteAccessible* acc = aTarget;
@@ -181,7 +181,8 @@ void ProxyTextSelectionChangeEvent(RemoteAccessible* aTarget,
   }
 }
 
-void ProxyRoleChangedEvent(RemoteAccessible* aTarget, const a11y::role& aRole) {
+void ProxyRoleChangedEvent(RemoteAccessible* aTarget, const a11y::role& aRole,
+                           uint8_t aRoleMapEntryIndex) {
   if (mozAccessible* wrapper = GetNativeFromGeckoAccessible(aTarget)) {
     [wrapper handleRoleChanged:aRole];
   }
@@ -211,7 +212,20 @@ void ProxyRoleChangedEvent(RemoteAccessible* aTarget, const a11y::role& aRole) {
                  [[NSWorkspace sharedWorkspace] isSwitchControlEnabled]) {
         client.Assign(u"SwitchControl"_ns);
       } else {
-        client.Assign(u"Unknown"_ns);
+        // This is more complicated than the NSWorkspace queries above
+        // because (a) there is no "full keyboard access" query for NSWorkspace
+        // and (b) the [NSApplication fullKeyboardAccessEnabled] query checks
+        // the pre-Monterey version of full keyboard access, which is not what
+        // we're looking for here. For more info, see bug 1772375 comment 7.
+        Boolean exists;
+        int val = CFPreferencesGetAppIntegerValue(
+            CFSTR("FullKeyboardAccessEnabled"),
+            CFSTR("com.apple.Accessibility"), &exists);
+        if (exists && val == 1) {
+          client.Assign(u"FullKeyboardAccess"_ns);
+        } else {
+          client.Assign(u"Unknown"_ns);
+        }
       }
 
 #if defined(MOZ_TELEMETRY_REPORTING)

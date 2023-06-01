@@ -12,10 +12,9 @@
 #include "nsContentUtils.h"
 #include "nsJSUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(WorkletGlobalScope)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(WorkletGlobalScope)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(WorkletGlobalScope)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
@@ -28,8 +27,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(WorkletGlobalScope)
   tmp->TraverseObjectsInGlobal(cb);
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(WorkletGlobalScope)
-
 NS_IMPL_CYCLE_COLLECTING_ADDREF(WorkletGlobalScope)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(WorkletGlobalScope)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(WorkletGlobalScope)
@@ -38,11 +35,8 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(WorkletGlobalScope)
   NS_INTERFACE_MAP_ENTRY(WorkletGlobalScope)
 NS_INTERFACE_MAP_END
 
-WorkletGlobalScope::WorkletGlobalScope(const Maybe<nsID>& aAgentClusterId,
-                                       bool aSharedMemoryAllowed)
-    : mCreationTimeStamp(TimeStamp::Now()),
-      mAgentClusterId(aAgentClusterId),
-      mSharedMemoryAllowed(aSharedMemoryAllowed) {}
+WorkletGlobalScope::WorkletGlobalScope(WorkletImpl* aImpl)
+    : mImpl(aImpl), mCreationTimeStamp(TimeStamp::Now()) {}
 
 WorkletGlobalScope::~WorkletGlobalScope() = default;
 
@@ -68,6 +62,20 @@ already_AddRefed<Console> WorkletGlobalScope::GetConsole(JSContext* aCx,
   return console.forget();
 }
 
+OriginTrials WorkletGlobalScope::Trials() const { return mImpl->Trials(); }
+
+Maybe<nsID> WorkletGlobalScope::GetAgentClusterId() const {
+  return mImpl->GetAgentClusterId();
+}
+
+bool WorkletGlobalScope::IsSharedMemoryAllowed() const {
+  return mImpl->IsSharedMemoryAllowed();
+}
+
+bool WorkletGlobalScope::ShouldResistFingerprinting() const {
+  return mImpl->ShouldResistFingerprinting();
+}
+
 void WorkletGlobalScope::Dump(const Optional<nsAString>& aString) const {
   WorkletThread::AssertIsOnWorkletThread();
 
@@ -90,5 +98,4 @@ void WorkletGlobalScope::Dump(const Optional<nsAString>& aString) const {
   fflush(stdout);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

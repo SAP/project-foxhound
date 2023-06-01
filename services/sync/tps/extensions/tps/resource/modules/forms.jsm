@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* This is a JavaScript module (JSM) to be imported via
-   Components.utils.import() and acts as a singleton. Only the following
+   ChromeUtils.import() and acts as a singleton. Only the following
    listed symbols will exposed on import, and only when and where imported.
   */
 
@@ -11,10 +11,9 @@ var EXPORTED_SYMBOLS = ["FormData"];
 
 const { Logger } = ChromeUtils.import("resource://tps/logger.jsm");
 
-const { FormHistory } = ChromeUtils.import(
-  "resource://gre/modules/FormHistory.jsm"
+const { FormHistory } = ChromeUtils.importESModule(
+  "resource://gre/modules/FormHistory.sys.mjs"
 );
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
 
 /**
  * FormDB
@@ -22,21 +21,8 @@ const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
  * Helper object containing methods to interact with the FormHistory module.
  */
 var FormDB = {
-  _update(data) {
-    return new Promise((resolve, reject) => {
-      let handlers = {
-        handleError(error) {
-          Logger.logError(
-            "Error occurred updating form history: " + Log.exceptionStr(error)
-          );
-          reject(error);
-        },
-        handleCompletion(reason) {
-          resolve();
-        },
-      };
-      FormHistory.update(data, handlers);
-    });
+  async _update(data) {
+    await FormHistory.update(data);
   },
 
   /**
@@ -87,33 +73,15 @@ var FormDB = {
    *         or an object containing the row's guid, lastUsed, and firstUsed
    *         values>
    */
-  getDataForValue(fieldname, value) {
-    return new Promise((resolve, reject) => {
-      let result = null;
-      let handlers = {
-        handleResult(oneResult) {
-          if (result != null) {
-            reject("more than 1 result for this query");
-            return;
-          }
-          result = oneResult;
-        },
-        handleError(error) {
-          Logger.logError(
-            "Error occurred updating form history: " + Log.exceptionStr(error)
-          );
-          reject(error);
-        },
-        handleCompletion(reason) {
-          resolve(result);
-        },
-      };
-      FormHistory.search(
-        ["guid", "lastUsed", "firstUsed"],
-        { fieldname, value },
-        handlers
-      );
+  async getDataForValue(fieldname, value) {
+    let results = await FormHistory.search(["guid", "lastUsed", "firstUsed"], {
+      fieldname,
+      value,
     });
+    if (results.length > 1) {
+      throw new Error("more than 1 result for this query");
+    }
+    return results;
   },
 
   /**

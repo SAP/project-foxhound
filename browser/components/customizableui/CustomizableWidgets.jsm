@@ -9,25 +9,31 @@ var EXPORTED_SYMBOLS = ["CustomizableWidgets"];
 const { CustomizableUI } = ChromeUtils.import(
   "resource:///modules/CustomizableUI.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
+const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PrivateBrowsingUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
   RecentlyClosedTabsAndWindowsMenuUtils:
-    "resource:///modules/sessionstore/RecentlyClosedTabsAndWindowsMenuUtils.jsm",
-  ShortcutUtils: "resource://gre/modules/ShortcutUtils.jsm",
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
+    "resource:///modules/sessionstore/RecentlyClosedTabsAndWindowsMenuUtils.sys.mjs",
+  SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
+  ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   Sanitizer: "resource:///modules/Sanitizer.jsm",
-  SessionStore: "resource:///modules/sessionstore/SessionStore.jsm",
 });
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "PanelMultiView",
   "resource:///modules/PanelMultiView.jsm"
 );
@@ -35,26 +41,27 @@ ChromeUtils.defineModuleGetter(
 const kPrefCustomizationDebug = "browser.uiCustomization.debug";
 const kPrefScreenshots = "extensions.screenshots.disabled";
 
-XPCOMUtils.defineLazyGetter(this, "log", () => {
-  let scope = {};
-  ChromeUtils.import("resource://gre/modules/Console.jsm", scope);
+XPCOMUtils.defineLazyGetter(lazy, "log", () => {
+  let { ConsoleAPI } = ChromeUtils.importESModule(
+    "resource://gre/modules/Console.sys.mjs"
+  );
   let debug = Services.prefs.getBoolPref(kPrefCustomizationDebug, false);
   let consoleOptions = {
     maxLogLevel: debug ? "all" : "log",
     prefix: "CustomizableWidgets",
   };
-  return new scope.ConsoleAPI(consoleOptions);
+  return new ConsoleAPI(consoleOptions);
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "screenshotsDisabled",
   kPrefScreenshots,
   false
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "SCREENSHOT_BROWSER_COMPONENT",
   "screenshots.browser.component.enabled",
   false
@@ -77,7 +84,7 @@ function setAttributes(aNode, aAttrs) {
         if (aAttrs.shortcutId) {
           let shortcut = doc.getElementById(aAttrs.shortcutId);
           if (shortcut) {
-            additionalArgs.push(ShortcutUtils.prettifyShortcut(shortcut));
+            additionalArgs.push(lazy.ShortcutUtils.prettifyShortcut(shortcut));
           }
         }
         value = CustomizableUI.getLocalizedProperty(
@@ -124,19 +131,19 @@ const CustomizableWidgets = [
       let document = panelview.ownerDocument;
       let window = document.defaultView;
 
-      PanelMultiView.getViewNode(
+      lazy.PanelMultiView.getViewNode(
         document,
         "appMenuRecentlyClosedTabs"
-      ).disabled = SessionStore.getClosedTabCount(window) == 0;
-      PanelMultiView.getViewNode(
+      ).disabled = lazy.SessionStore.getClosedTabCount(window) == 0;
+      lazy.PanelMultiView.getViewNode(
         document,
         "appMenuRecentlyClosedWindows"
-      ).disabled = SessionStore.getClosedWindowCount(window) == 0;
+      ).disabled = lazy.SessionStore.getClosedWindowCount(window) == 0;
 
-      PanelMultiView.getViewNode(
+      lazy.PanelMultiView.getViewNode(
         document,
         "appMenu-restoreSession"
-      ).hidden = !SessionStore.canRestoreLastSession;
+      ).hidden = !lazy.SessionStore.canRestoreLastSession;
 
       // We restrict the amount of results to 42. Not 50, but 42. Why? Because 42.
       let query =
@@ -147,17 +154,17 @@ const CustomizableWidgets = [
         "&maxResults=42&excludeQueries=1";
 
       this._panelMenuView = new window.PlacesPanelview(
+        query,
         document.getElementById("appMenu_historyMenu"),
-        panelview,
-        query
+        panelview
       );
       // When either of these sub-subviews show, populate them with recently closed
       // objects data.
-      PanelMultiView.getViewNode(
+      lazy.PanelMultiView.getViewNode(
         document,
         this.recentlyClosedTabsPanel
       ).addEventListener("ViewShowing", this);
-      PanelMultiView.getViewNode(
+      lazy.PanelMultiView.getViewNode(
         document,
         this.recentlyClosedWindowsPanel
       ).addEventListener("ViewShowing", this);
@@ -167,7 +174,7 @@ const CustomizableWidgets = [
       window.addEventListener("unload", this);
     },
     onViewHiding(event) {
-      log.debug("History view is being hidden!");
+      lazy.log.debug("History view is being hidden!");
     },
     onPanelMultiViewHidden(event) {
       let panelMultiView = event.target;
@@ -175,11 +182,11 @@ const CustomizableWidgets = [
       if (this._panelMenuView) {
         this._panelMenuView.uninit();
         delete this._panelMenuView;
-        PanelMultiView.getViewNode(
+        lazy.PanelMultiView.getViewNode(
           document,
           this.recentlyClosedTabsPanel
         ).removeEventListener("ViewShowing", this);
-        PanelMultiView.getViewNode(
+        lazy.PanelMultiView.getViewNode(
           document,
           this.recentlyClosedWindowsPanel
         ).removeEventListener("ViewShowing", this);
@@ -200,8 +207,8 @@ const CustomizableWidgets = [
 
       let getFragment =
         panelview.id == this.recentlyClosedTabsPanel
-          ? RecentlyClosedTabsAndWindowsMenuUtils.getTabsFragment
-          : RecentlyClosedTabsAndWindowsMenuUtils.getWindowsFragment;
+          ? lazy.RecentlyClosedTabsAndWindowsMenuUtils.getTabsFragment
+          : lazy.RecentlyClosedTabsAndWindowsMenuUtils.getWindowsFragment;
 
       let fragment = getFragment(window, "toolbarbutton", true);
       let elementCount = fragment.childElementCount;
@@ -288,15 +295,6 @@ const CustomizableWidgets = [
 
       aNode.appendChild(obChecked);
       aNode.appendChild(obPosition);
-    },
-  },
-  {
-    id: "add-ons-button",
-    shortcutId: "key_openAddons",
-    l10nId: "toolbar-addons-themes-button",
-    onCommand(aEvent) {
-      let win = aEvent.target.ownerGlobal;
-      win.BrowserOpenAddonsMgr();
     },
   },
   {
@@ -476,8 +474,8 @@ if (Services.prefs.getBoolPref("identity.fxaccounts.enabled")) {
       let SyncedTabsPanelList = doc.defaultView.SyncedTabsPanelList;
       panelview.syncedTabsPanelList = new SyncedTabsPanelList(
         panelview,
-        PanelMultiView.getViewNode(doc, "PanelUI-remotetabs-deck"),
-        PanelMultiView.getViewNode(doc, "PanelUI-remotetabs-tabslist")
+        lazy.PanelMultiView.getViewNode(doc, "PanelUI-remotetabs-deck"),
+        lazy.PanelMultiView.getViewNode(doc, "PanelUI-remotetabs-tabslist")
       );
     },
     onViewHiding(aEvent) {
@@ -487,13 +485,13 @@ if (Services.prefs.getBoolPref("identity.fxaccounts.enabled")) {
   });
 }
 
-if (!screenshotsDisabled) {
+if (!lazy.screenshotsDisabled) {
   CustomizableWidgets.push({
     id: "screenshot-button",
     shortcutId: "key_screenshot",
     l10nId: "screenshot-toolbarbutton",
     onCommand(aEvent) {
-      if (SCREENSHOT_BROWSER_COMPONENT) {
+      if (lazy.SCREENSHOT_BROWSER_COMPONENT) {
         Services.obs.notifyObservers(
           aEvent.currentTarget.ownerGlobal,
           "menuitem-screenshot"
@@ -566,15 +564,15 @@ if (Services.prefs.getBoolPref("privacy.panicButton.enabled")) {
       )
         ? "private"
         : "non-private";
-      let promise = Sanitizer.sanitize(itemsToClear, {
+      let promise = lazy.Sanitizer.sanitize(itemsToClear, {
         ignoreTimespan: false,
-        range: Sanitizer.getClearRange(+group.value),
+        range: lazy.Sanitizer.getClearRange(+group.value),
         privateStateForNewWindow: newWindowPrivateState,
       });
       promise.then(function() {
         let otherWindow = Services.wm.getMostRecentWindow("navigator:browser");
         if (otherWindow.closed) {
-          Cu.reportError("Got a closed window!");
+          console.error("Got a closed window!");
         }
         if (otherWindow.PanicButtonNotifier) {
           otherWindow.PanicButtonNotifier.notify();

@@ -45,25 +45,17 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "nr_socket_proxy_config.h"
 #include "nsXULAppAPI.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 
 #include "logging.h"
-#include "nspr.h"
-#include "nss.h"
 #include "pk11pub.h"
 #include "plbase64.h"
 
 #include "nsCOMPtr.h"
-#include "nsComponentManagerUtils.h"
 #include "nsError.h"
 #include "nsNetCID.h"
-#include "nsComponentManagerUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "ScopedNSSTypes.h"
 #include "runnable_utils.h"
-#include "nsIPrefService.h"
-#include "nsIPrefBranch.h"
 #include "nsIUUIDGenerator.h"
 
 // nICEr includes
@@ -74,19 +66,15 @@ extern "C" {
 #include "r_crc32.h"
 #include "r_memory.h"
 #include "ice_reg.h"
-#include "ice_util.h"
 #include "transport_addr.h"
 #include "nr_crypto.h"
 #include "nr_socket.h"
 #include "nr_socket_local.h"
-#include "stun_client_ctx.h"
 #include "stun_reg.h"
-#include "stun_server_ctx.h"
 #include "stun_util.h"
 #include "ice_codeword.h"
 #include "ice_ctx.h"
 #include "ice_candidate.h"
-#include "ice_handler.h"
 }
 
 // Local includes
@@ -96,10 +84,6 @@ extern "C" {
 #include "nrinterfaceprioritizer.h"
 #include "rlogconnector.h"
 #include "test_nr_socket.h"
-
-extern "C" {
-#include "mdns_service/mdns_service.h"
-}
 
 namespace mozilla {
 
@@ -272,7 +256,7 @@ nsresult NrIceTurnServer::ToNicerTurnStruct(nr_ice_turn_server* server) const {
   return NS_OK;
 }
 
-NrIceCtx::NrIceCtx(const std::string& name, const Config& aConfig)
+NrIceCtx::NrIceCtx(const std::string& name)
     : connection_state_(ICE_CTX_INIT),
       gathering_state_(ICE_CTX_GATHER_INIT),
       name_(name),
@@ -283,21 +267,63 @@ NrIceCtx::NrIceCtx(const std::string& name, const Config& aConfig)
       ice_handler_vtbl_(nullptr),
       ice_handler_(nullptr),
       trickle_(true),
-      config_(aConfig),
+      config_(),
       nat_(nullptr),
-      proxy_config_(nullptr),
-      obfuscate_host_addresses_(false) {}
+      proxy_config_(nullptr) {}
 
 /* static */
-RefPtr<NrIceCtx> NrIceCtx::Create(const std::string& aName,
-                                  const Config& aConfig) {
-  RefPtr<NrIceCtx> ctx = new NrIceCtx(aName, aConfig);
+RefPtr<NrIceCtx> NrIceCtx::Create(const std::string& aName) {
+  RefPtr<NrIceCtx> ctx = new NrIceCtx(aName);
 
   if (!ctx->Initialize()) {
     return nullptr;
   }
 
   return ctx;
+}
+
+nsresult NrIceCtx::SetIceConfig(const Config& aConfig) {
+  config_ = aConfig;
+  switch (config_.mPolicy) {
+    case ICE_POLICY_RELAY:
+      MOZ_MTLOG(ML_DEBUG, "SetIceConfig: relay only");
+      nr_ice_ctx_remove_flags(ctx_, NR_ICE_CTX_FLAGS_DISABLE_HOST_CANDIDATES);
+      nr_ice_ctx_add_flags(ctx_, NR_ICE_CTX_FLAGS_RELAY_ONLY);
+      break;
+    case ICE_POLICY_NO_HOST:
+      MOZ_MTLOG(ML_DEBUG, "SetIceConfig: no host");
+      nr_ice_ctx_add_flags(ctx_, NR_ICE_CTX_FLAGS_DISABLE_HOST_CANDIDATES);
+      nr_ice_ctx_remove_flags(ctx_, NR_ICE_CTX_FLAGS_RELAY_ONLY);
+      break;
+    case ICE_POLICY_ALL:
+      MOZ_MTLOG(ML_DEBUG, "SetIceConfig: all");
+      nr_ice_ctx_remove_flags(ctx_, NR_ICE_CTX_FLAGS_DISABLE_HOST_CANDIDATES);
+      nr_ice_ctx_remove_flags(ctx_, NR_ICE_CTX_FLAGS_RELAY_ONLY);
+      break;
+  }
+
+  // TODO: Support re-configuring the test NAT someday?
+  if (!nat_ && config_.mNatSimulatorConfig.isSome()) {
+    TestNat* test_nat = new TestNat;
+    test_nat->filtering_type_ = TestNat::ToNatBehavior(
+        config_.mNatSimulatorConfig->mFilteringType.get());
+    test_nat->mapping_type_ =
+        TestNat::ToNatBehavior(config_.mNatSimulatorConfig->mMappingType.get());
+    test_nat->block_udp_ = config_.mNatSimulatorConfig->mBlockUdp;
+    test_nat->block_tcp_ = config_.mNatSimulatorConfig->mBlockTcp;
+    test_nat->block_tls_ = config_.mNatSimulatorConfig->mBlockTls;
+    test_nat->error_code_for_drop_ =
+        config_.mNatSimulatorConfig->mErrorCodeForDrop;
+    if (config_.mNatSimulatorConfig->mRedirectAddress.Length()) {
+      test_nat
+          ->stun_redirect_map_[config_.mNatSimulatorConfig->mRedirectAddress] =
+          config_.mNatSimulatorConfig->mRedirectTargets;
+    }
+    test_nat->enabled_ = true;
+    SetNat(test_nat);
+  }
+
+  return NS_OK;
 }
 
 RefPtr<NrIceMediaStream> NrIceCtx::CreateStream(const std::string& id,
@@ -451,9 +477,9 @@ void NrIceCtx::trickle_cb(void* arg, nr_ice_ctx* ice_ctx,
 
   // Format the candidate.
   char candidate_str[NR_ICE_MAX_ATTRIBUTE_SIZE];
-  int r = nr_ice_format_candidate_attribute(candidate, candidate_str,
-                                            sizeof(candidate_str),
-                                            ctx->obfuscate_host_addresses_);
+  int r = nr_ice_format_candidate_attribute(
+      candidate, candidate_str, sizeof(candidate_str),
+      (ctx->ctx()->flags & NR_ICE_CTX_FLAGS_OBFUSCATE_HOST_ADDRESSES) ? 1 : 0);
   MOZ_ASSERT(!r);
   if (r) return;
 
@@ -566,17 +592,6 @@ bool NrIceCtx::Initialize() {
   int r;
 
   UINT4 flags = NR_ICE_CTX_FLAGS_AGGRESSIVE_NOMINATION;
-  switch (config_.mPolicy) {
-    case ICE_POLICY_RELAY:
-      flags |= NR_ICE_CTX_FLAGS_RELAY_ONLY;
-      break;
-    case ICE_POLICY_NO_HOST:
-      flags |= NR_ICE_CTX_FLAGS_HIDE_HOST_CANDIDATES;
-      break;
-    case ICE_POLICY_ALL:
-      break;
-  }
-
   r = nr_ice_ctx_create(const_cast<char*>(name_.c_str()), flags, &ctx_);
 
   if (r) {
@@ -613,26 +628,6 @@ bool NrIceCtx::Initialize() {
       MOZ_MTLOG(ML_ERROR, "Couldn't set trickle cb for '" << name_ << "'");
       return false;
     }
-  }
-
-  if (config_.mNatSimulatorConfig.isSome()) {
-    TestNat* test_nat = new TestNat;
-    test_nat->filtering_type_ = TestNat::ToNatBehavior(
-        config_.mNatSimulatorConfig->mFilteringType.get());
-    test_nat->mapping_type_ =
-        TestNat::ToNatBehavior(config_.mNatSimulatorConfig->mMappingType.get());
-    test_nat->block_udp_ = config_.mNatSimulatorConfig->mBlockUdp;
-    test_nat->block_tcp_ = config_.mNatSimulatorConfig->mBlockTcp;
-    test_nat->block_tls_ = config_.mNatSimulatorConfig->mBlockTls;
-    test_nat->error_code_for_drop_ =
-        config_.mNatSimulatorConfig->mErrorCodeForDrop;
-    if (config_.mNatSimulatorConfig->mRedirectAddress.Length()) {
-      test_nat
-          ->stun_redirect_map_[config_.mNatSimulatorConfig->mRedirectAddress] =
-          config_.mNatSimulatorConfig->mRedirectTargets;
-    }
-    test_nat->enabled_ = true;
-    SetNat(test_nat);
   }
 
   // Create the handler objects
@@ -702,7 +697,8 @@ void NrIceCtx::AccumulateStats(const NrIceStats& stats) {
 NrIceStats NrIceCtx::Destroy() {
   // designed to be called more than once so if stats are desired, this can be
   // called just prior to the destructor
-  MOZ_MTLOG(ML_DEBUG, "Destroying ICE ctx '" << name_ << "'");
+  MOZ_MTLOG(ML_NOTICE, "NrIceCtx(" << name_ << "): " << __func__);
+
   for (auto& idAndStream : streams_) {
     idAndStream.second->Close();
   }
@@ -754,8 +750,7 @@ NrIceCtx::Controlling NrIceCtx::GetControlling() {
 
 nsresult NrIceCtx::SetStunServers(
     const std::vector<NrIceStunServer>& stun_servers) {
-  if (stun_servers.empty()) return NS_OK;
-
+  MOZ_MTLOG(ML_NOTICE, "NrIceCtx(" << name_ << "): " << __func__);
   // We assume nr_ice_stun_server is memmoveable. That's true right now.
   std::vector<nr_ice_stun_server> servers;
 
@@ -769,7 +764,7 @@ nsresult NrIceCtx::SetStunServers(
     }
   }
 
-  int r = nr_ice_ctx_set_stun_servers(ctx_, &servers[0],
+  int r = nr_ice_ctx_set_stun_servers(ctx_, servers.data(),
                                       static_cast<int>(servers.size()));
   if (r) {
     MOZ_MTLOG(ML_ERROR, "Couldn't set STUN servers for '" << name_ << "'");
@@ -783,8 +778,7 @@ nsresult NrIceCtx::SetStunServers(
 // Could we do a template or something?
 nsresult NrIceCtx::SetTurnServers(
     const std::vector<NrIceTurnServer>& turn_servers) {
-  if (turn_servers.empty()) return NS_OK;
-
+  MOZ_MTLOG(ML_NOTICE, "NrIceCtx(" << name_ << "): " << __func__);
   // We assume nr_ice_turn_server is memmoveable. That's true right now.
   std::vector<nr_ice_turn_server> servers;
 
@@ -798,7 +792,7 @@ nsresult NrIceCtx::SetTurnServers(
     }
   }
 
-  int r = nr_ice_ctx_set_turn_servers(ctx_, &servers[0],
+  int r = nr_ice_ctx_set_turn_servers(ctx_, servers.data(),
                                       static_cast<int>(servers.size()));
   if (r) {
     MOZ_MTLOG(ML_ERROR, "Couldn't set TURN servers for '" << name_ << "'");
@@ -825,6 +819,13 @@ nsresult NrIceCtx::SetProxyConfig(NrSocketProxyConfig&& config) {
   if (nat_) {
     nat_->set_proxy_config(proxy_config_);
   }
+
+  if (proxy_config_->GetForceProxy()) {
+    nr_ice_ctx_add_flags(ctx_, NR_ICE_CTX_FLAGS_ONLY_PROXY);
+  } else {
+    nr_ice_ctx_remove_flags(ctx_, NR_ICE_CTX_FLAGS_ONLY_PROXY);
+  }
+
   return NS_OK;
 }
 
@@ -841,8 +842,11 @@ void NrIceCtx::SetCtxFlags(bool default_route_only) {
 nsresult NrIceCtx::StartGathering(bool default_route_only,
                                   bool obfuscate_host_addresses) {
   ASSERT_ON_THREAD(sts_target_);
+  MOZ_MTLOG(ML_NOTICE, "NrIceCtx(" << name_ << "): " << __func__);
 
-  obfuscate_host_addresses_ = obfuscate_host_addresses;
+  if (obfuscate_host_addresses) {
+    nr_ice_ctx_add_flags(ctx_, NR_ICE_CTX_FLAGS_OBFUSCATE_HOST_ADDRESSES);
+  }
 
   SetCtxFlags(default_route_only);
 
@@ -927,8 +931,10 @@ bool NrIceCtx::HasStreamsToConnect() const {
 
 nsresult NrIceCtx::StartChecks() {
   int r;
+  MOZ_MTLOG(ML_NOTICE, "NrIceCtx(" << name_ << "): " << __func__);
+
   if (!HasStreamsToConnect()) {
-    // Nothing to do
+    MOZ_MTLOG(ML_NOTICE, "In StartChecks, nothing to do on " << name_);
     return NS_OK;
   }
 
@@ -961,20 +967,9 @@ void NrIceCtx::gather_cb(NR_SOCKET s, int h, void* arg) {
   ctx->SetGatheringState(ICE_CTX_GATHER_COMPLETE);
 }
 
-nsresult NrIceCtx::Finalize() {
-  int r = nr_ice_ctx_finalize(ctx_, peer_);
-
-  if (r) {
-    MOZ_MTLOG(ML_ERROR, "Couldn't finalize " << name_ << "'");
-    return NS_ERROR_FAILURE;
-  }
-
-  return NS_OK;
-}
-
 void NrIceCtx::UpdateNetworkState(bool online) {
-  MOZ_MTLOG(ML_INFO, "NrIceCtx(" << name_ << "): updating network state to "
-                                 << (online ? "online" : "offline"));
+  MOZ_MTLOG(ML_NOTICE, "NrIceCtx(" << name_ << "): updating network state to "
+                                   << (online ? "online" : "offline"));
   if (connection_state_ == ICE_CTX_CLOSED) {
     return;
   }
@@ -1019,7 +1014,8 @@ void NrIceCtx::SetGatheringState(GatheringState state) {
 void NrIceCtx::GenerateObfuscatedAddress(nr_ice_candidate* candidate,
                                          std::string* mdns_address,
                                          std::string* actual_address) {
-  if (candidate->type == HOST && obfuscate_host_addresses_) {
+  if (candidate->type == HOST &&
+      (ctx_->flags & NR_ICE_CTX_FLAGS_OBFUSCATE_HOST_ADDRESSES)) {
     char addr[64];
     if (nr_transport_addr_get_addrstring(&candidate->addr, addr,
                                          sizeof(addr))) {

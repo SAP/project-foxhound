@@ -20,10 +20,42 @@ origin:
 
   # Human-readable identifier for this version/release
   # Generally "version NNN", "tag SSS", "bookmark SSS"
-  release: version 2.13.93
+  release: 9cea76483a7714c3f8f9f237a19fdacc3169cc89 (2023-02-08T14:16:59Z).
+  revision: 9cea76483a7714c3f8f9f237a19fdacc3169cc89
 
   # The package's license, where possible using the mnemonic from
   # https://spdx.org/licenses/
   # Multiple licenses can be specified (as a YAML list)
   # A "LICENSE" file must exist containing the full license text
   license: Apache-2.0
+
+vendoring:
+  url: https://github.com/mozilla/pdf.js
+  source-hosting: github
+  skip-vendoring-steps: ['fetch', 'update-moz-build']
+
+  keep:
+    - chrome.manifest
+    - components.conf
+    - jar.mn
+    - update.sh
+    - test
+
+  update-actions:
+    - action: run-script
+      script: 'update.sh'
+      cwd: '{yaml_dir}'
+      args: ['{revision}']
+
+updatebot:
+    maintainer-phab: "#pdfjs-reviewers"
+    maintainer-bz: cdenizet@mozilla.com
+    fuzzy-query: "'debug | 'opt !san !android"
+    fuzzy-paths:
+      - toolkit/components/pdfjs/test
+      - browser/base/content/test/static
+    tasks:
+      - type: vendoring
+        enabled: true
+        frequency: "1 week, 3 commits"
+        blocking: 1626408

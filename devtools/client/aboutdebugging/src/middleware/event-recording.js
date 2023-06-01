@@ -4,11 +4,11 @@
 
 "use strict";
 
-const Telemetry = require("devtools/client/shared/telemetry");
-loader.lazyGetter(this, "telemetry", () => new Telemetry());
-// This is a unique id that should be submitted with all about:debugging events.
-loader.lazyGetter(this, "sessionId", () =>
-  parseInt(telemetry.msSinceProcessStart(), 10)
+const Telemetry = require("resource://devtools/client/shared/telemetry.js");
+loader.lazyGetter(
+  this,
+  "telemetry",
+  () => new Telemetry({ useSessionId: true })
 );
 
 const {
@@ -24,28 +24,26 @@ const {
   SHOW_PROFILER_DIALOG,
   TELEMETRY_RECORD,
   UPDATE_CONNECTION_PROMPT_SETTING_SUCCESS,
-} = require("devtools/client/aboutdebugging/src/constants");
+} = require("resource://devtools/client/aboutdebugging/src/constants.js");
 
 const {
   findRuntimeById,
   getAllRuntimes,
   getCurrentRuntime,
-} = require("devtools/client/aboutdebugging/src/modules/runtimes-state-helper");
+} = require("resource://devtools/client/aboutdebugging/src/modules/runtimes-state-helper.js");
 
 function recordEvent(method, details) {
-  // Add the session id to the event details.
-  const eventDetails = Object.assign({}, details, { session_id: sessionId });
-  telemetry.recordEvent(method, "aboutdebugging", null, eventDetails);
+  telemetry.recordEvent(method, "aboutdebugging", null, details);
 
   // For close and open events, also ping the regular telemetry helpers used
   // for all DevTools UIs.
   if (method === "open_adbg") {
-    telemetry.toolOpened("aboutdebugging", sessionId, window.AboutDebugging);
+    telemetry.toolOpened("aboutdebugging", window.AboutDebugging);
   } else if (method === "close_adbg") {
     // XXX: Note that aboutdebugging has no histogram created for
     // TIME_ACTIVE_SECOND, so calling toolClosed will not actually
     // record anything.
-    telemetry.toolClosed("aboutdebugging", sessionId, window.AboutDebugging);
+    telemetry.toolClosed("aboutdebugging", window.AboutDebugging);
   }
 }
 
@@ -185,7 +183,7 @@ function recordConnectionAttempt(connectionId, runtimeId, status, store) {
     connection_id: connectionId,
     connection_type: runtime.type,
     runtime_id: getTelemetryRuntimeId(runtimeId),
-    status: status,
+    status,
   });
 }
 

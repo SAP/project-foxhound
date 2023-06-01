@@ -31,14 +31,19 @@ def valid_windows_version(value):
 option(env="WINDOWSSDKDIR", nargs=1, help="Directory containing the Windows SDK")
 
 
-@depends("WINDOWSSDKDIR", c_compiler, host_c_compiler)
-def windows_sdk_dir(value, compiler, host_compiler):
+@depends("WINDOWSSDKDIR", "WINSYSROOT", c_compiler, host_c_compiler)
+def windows_sdk_dir(value, winsysroot, compiler, host_compiler):
     if value:
+        if winsysroot:
+            die("WINDOWSSDKDIR and WINSYSROOT cannot be set together.")
         return value
     # Ideally, we'd actually check for host/target ABI being MSVC, but
     # that's waiting for bug 1617793.
     if compiler.type != "clang-cl" and host_compiler.type != "clang-cl":
         return ()
+
+    if winsysroot:
+        return [os.path.join(winsysroot[0], "Windows Kits", "10")]
 
     return set(
         normalize_path(x[1])
@@ -50,56 +55,28 @@ def windows_sdk_dir(value, compiler, host_compiler):
     )
 
 
-# The Windows SDK 8.1 and 10 have different layouts. The former has
-# $SDK/include/$subdir, while the latter has $SDK/include/$version/$subdir.
-# The vcvars* scripts don't actually care about the version, they just take
-# the last alphanumerically.
-# The $SDK/lib directories always have version subdirectories, but while the
-# versions match the one in $SDK/include for SDK 10, it's "winv6.3" for SDK
-# 8.1.
-
-
-@imports("os")
-@imports("re")
-@imports(_from="__builtin__", _import="Exception")
+@imports("glob")
 def get_sdk_dirs(sdk, subdir):
     def get_dirs_containing(sdk, stem, subdir):
-        base = os.path.join(sdk, stem)
-        try:
-            subdirs = [
-                d for d in os.listdir(base) if os.path.isdir(os.path.join(base, d))
-            ]
-        except Exception:
-            subdirs = []
-        if not subdirs:
-            return ()
-        if subdir in subdirs:
-            return (base,)
-        # At this point, either we have an incomplete or invalid SDK directory,
-        # or we exclusively have version numbers in subdirs.
-        return tuple(
-            os.path.join(base, s)
-            for s in subdirs
-            if os.path.isdir(os.path.join(base, s, subdir))
-        )
+        return [
+            os.path.dirname(p) for p in glob.glob(os.path.join(sdk, stem, "*", subdir))
+        ]
 
     def categorize(dirs):
         return {os.path.basename(d): d for d in dirs}
 
-    include_dirs = categorize(get_dirs_containing(sdk, "include", subdir))
-    lib_dirs = categorize(get_dirs_containing(sdk, "lib", subdir))
-
-    if "include" in include_dirs:
-        include_dirs["winv6.3"] = include_dirs["include"]
-        del include_dirs["include"]
+    include_dirs = categorize(get_dirs_containing(sdk, "Include", subdir))
+    lib_dirs = categorize(get_dirs_containing(sdk, "Lib", subdir))
 
     valid_versions = sorted(set(include_dirs) & set(lib_dirs), reverse=True)
-    if valid_versions:
-        return namespace(
+    return [
+        namespace(
             path=sdk,
-            lib=lib_dirs[valid_versions[0]],
-            include=include_dirs[valid_versions[0]],
+            lib=lib_dirs[vv],
+            include=include_dirs[vv],
         )
+        for vv in valid_versions
+    ]
 
 
 @imports(_from="mozbuild.shellutil", _import="quote")
@@ -125,8 +102,8 @@ def valid_windows_sdk_dir(
         windows_sdk_dir_env = windows_sdk_dir_env[0]
     sdks = {}
     for d in windows_sdk_dir:
-        sdk = get_sdk_dirs(d, "um")
-        if sdk:
+        sdklist = get_sdk_dirs(d, "um")
+        for sdk in sdklist:
             check = dedent(
                 """\
             #include <winsdkver.h>
@@ -152,8 +129,9 @@ def valid_windows_sdk_dir(
                     pass
                 else:
                     sdks[d] = maxver, sdk
-                    continue
-        if d == windows_sdk_dir_env:
+                    break
+
+        if d == windows_sdk_dir_env and d not in sdks:
             raise FatalCheckError(
                 "Error while checking the version of the SDK in "
                 "WINDOWSSDKDIR (%s). Please verify it contains a valid and "
@@ -206,8 +184,8 @@ def valid_ucrt_sdk_dir(windows_sdk_dir, windows_sdk_dir_env, compiler, host_comp
         windows_sdk_dir_env = windows_sdk_dir_env[0]
     sdks = {}
     for d in windows_sdk_dir:
-        sdk = get_sdk_dirs(d, "ucrt")
-        if sdk:
+        sdklist = get_sdk_dirs(d, "ucrt")
+        for sdk in sdklist:
             version = os.path.basename(sdk.include)
             # We're supposed to always find a version in the directory, because
             # the 8.1 SDK, which doesn't have a version in the directory, doesn't
@@ -216,8 +194,9 @@ def valid_ucrt_sdk_dir(windows_sdk_dir, windows_sdk_dir_env, compiler, host_comp
             # with the UCRT.
             if version != "include":
                 sdks[d] = Version(version), sdk
-                continue
-        if d == windows_sdk_dir_env:
+                break
+
+        if d == windows_sdk_dir_env and d not in sdks:
             # When WINDOWSSDKDIR is set in the environment and we can't find the
             # Universal CRT SDK, chances are this is a start-shell-msvc*.bat
             # setup, where INCLUDE and LIB already contain the UCRT paths.

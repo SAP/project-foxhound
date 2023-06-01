@@ -3,11 +3,7 @@
 
 "use strict";
 
-const {
-  createAppInfo,
-  promiseShutdownManager,
-  promiseStartupManager,
-} = AddonTestUtils;
+const { promiseShutdownManager, promiseStartupManager } = AddonTestUtils;
 
 add_task(async function setup() {
   await SearchTestUtils.useTestEngines("data1");
@@ -25,7 +21,7 @@ add_task(async function test_basic_upgrade() {
       search_url_get_params: `q={searchTerms}&version=1.0`,
       keyword: "foo",
     },
-    true
+    { skipUnload: true }
   );
 
   let engine = await Services.search.getEngineByAlias("foo");
@@ -37,7 +33,10 @@ add_task(async function test_basic_upgrade() {
   let params = engine.getSubmission("test").uri.query.split("&");
   Assert.ok(params.includes("version=1.0"), "Correct version installed");
 
-  await Services.search.setDefault(engine);
+  await Services.search.setDefault(
+    engine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 
   let promiseChanged = TestUtils.topicObserved(
     "browser-search-engine-modified",
@@ -80,18 +79,21 @@ add_task(async function test_upgrade_changes_name() {
       search_url_get_params: `q={searchTerms}&version=1.0`,
       version: "1.0",
     },
-    true
+    { skipUnload: true }
   );
 
   let engine = Services.search.getEngineByName("engine");
   Assert.ok(!!engine, "Should have loaded the engine");
 
-  await Services.search.setDefault(engine);
+  await Services.search.setDefault(
+    engine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 
   // When we add engines currently, we normally force using the saved order.
   // Reset that here, so we can check the order is reset in the case this
   // is a application provided engine change.
-  Services.search.wrappedJSObject._settings.setAttribute(
+  Services.search.wrappedJSObject._settings.setMetaDataAttribute(
     "useSavedOrder",
     false
   );
@@ -144,13 +146,15 @@ add_task(async function test_upgrade_changes_name() {
 });
 
 add_task(async function test_upgrade_to_existing_name_not_allowed() {
+  consoleAllowList.push("An engine with that name already exists");
+
   let extension = await SearchTestUtils.installSearchExtension(
     {
       name: "engine",
       search_url_get_params: `q={searchTerms}&version=1.0`,
       version: "1.0",
     },
-    true
+    { skipUnload: true }
   );
 
   let engine = Services.search.getEngineByName("engine");

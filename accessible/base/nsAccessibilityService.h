@@ -27,7 +27,7 @@ class nsITreeView;
 namespace mozilla {
 
 class PresShell;
-
+class Monitor;
 namespace dom {
 class DOMStringList;
 class Element;
@@ -36,6 +36,7 @@ class Element;
 namespace a11y {
 
 class AccAttributes;
+class Accessible;
 class ApplicationAccessible;
 class xpcAccessibleApplication;
 
@@ -153,13 +154,6 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
 
   // nsAccesibilityService
   /**
-   * Notification used to update the accessible tree when deck panel is
-   * switched.
-   */
-  void DeckPanelSwitched(mozilla::PresShell* aPresShell, nsIContent* aDeckNode,
-                         nsIFrame* aPrevBoxFrame, nsIFrame* aCurrentBoxFrame);
-
-  /**
    * Notification used to update the accessible tree when new content is
    * inserted.
    */
@@ -236,8 +230,18 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
   void NotifyOfPossibleBoundsChange(mozilla::PresShell* aPresShell,
                                     nsIContent* aContent);
 
+  void NotifyOfComputedStyleChange(mozilla::PresShell* aPresShell,
+                                   nsIContent* aContent);
+
+  void NotifyOfTabPanelVisibilityChange(mozilla::PresShell* aPresShell,
+                                        mozilla::dom::Element* aPanel,
+                                        bool aVisible);
+
   void NotifyOfResolutionChange(mozilla::PresShell* aPresShell,
                                 float aResolution);
+
+  void NotifyOfDevPixelRatioChange(mozilla::PresShell* aPresShell,
+                                   int32_t aAppUnitsPerDevPixel);
 
   // nsAccessibiltiyService
 
@@ -245,6 +249,12 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
    * Return true if accessibility service has been shutdown.
    */
   static bool IsShutdown() { return gConsumers == 0; };
+
+  /**
+   * Return true if there should be an image accessible for the given element.
+   */
+  static bool ShouldCreateImgAccessible(mozilla::dom::Element* aElement,
+                                        DocAccessible* aDocument);
 
   /**
    * Creates an accessible for the given DOM node.
@@ -259,18 +269,19 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
 
   mozilla::a11y::role MarkupRole(const nsIContent* aContent) const {
     const mozilla::a11y::MarkupMapInfo* markupMap =
-        GetMarkupMapInfoForNode(aContent);
+        GetMarkupMapInfoFor(aContent);
     return markupMap ? markupMap->role : mozilla::a11y::roles::NOTHING;
   }
 
   /**
    * Return the associated value for a given attribute if
-   * it appears in the MarkupMap. Otherwise, it returns null.
+   * it appears in the MarkupMap. Otherwise, it returns null. This can be
+   * called with either an nsIContent or an Accessible.
    */
-  nsStaticAtom* MarkupAttribute(const nsIContent* aContent,
-                                nsStaticAtom* aAtom) const {
+  template <typename T>
+  nsStaticAtom* MarkupAttribute(T aSource, nsStaticAtom* aAtom) const {
     const mozilla::a11y::MarkupMapInfo* markupMap =
-        GetMarkupMapInfoForNode(aContent);
+        GetMarkupMapInfoFor(aSource);
     if (markupMap) {
       for (size_t i = 0; i < mozilla::ArrayLength(markupMap->attrs); i++) {
         const mozilla::a11y::MarkupAttrInfo* info = markupMap->attrs + i;
@@ -285,7 +296,7 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
   /**
    * Set the object attribute defined by markup for the given element.
    */
-  void MarkupAttributes(const nsIContent* aContent,
+  void MarkupAttributes(mozilla::a11y::Accessible* aAcc,
                         mozilla::a11y::AccAttributes* aAttributes) const;
 
   /**
@@ -305,6 +316,10 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
     eMainProcess = 1 << 1,
     ePlatformAPI = 1 << 2,
   };
+
+#if defined(ANDROID)
+  static mozilla::Monitor& GetAndroidMonitor();
+#endif
 
  private:
   // nsAccessibilityService creation is controlled by friend
@@ -371,7 +386,7 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
   MarkupMap mHTMLMarkupMap;
   MarkupMap mMathMLMarkupMap;
 
-  const mozilla::a11y::MarkupMapInfo* GetMarkupMapInfoForNode(
+  const mozilla::a11y::MarkupMapInfo* GetMarkupMapInfoFor(
       const nsIContent* aContent) const {
     if (aContent->IsHTMLElement()) {
       return mHTMLMarkupMap.Get(aContent->NodeInfo()->NameAtom());
@@ -384,6 +399,9 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
     // with nsAccUtils::SetLiveContainerAttributes.
     return nullptr;
   }
+
+  const mozilla::a11y::MarkupMapInfo* GetMarkupMapInfoFor(
+      mozilla::a11y::Accessible* aAcc) const;
 
   nsTHashMap<nsPtrHashKey<const nsAtom>, const mozilla::a11y::XULMarkupMapInfo*>
       mXULMarkupMap;

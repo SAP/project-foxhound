@@ -5,7 +5,7 @@
 
 loadTestSubscript("head_abuse_report.js");
 
-add_task(async function setup() {
+add_setup(async function() {
   await AbuseReportTestUtils.setup();
 });
 
@@ -272,7 +272,14 @@ async function test_abusereport_suggestions(addonId) {
       reason
     );
 
-    if (reasonInfo.isReasonHidden(addon.type)) {
+    // TODO(Bug 1789718): Remove after the deprecated XPIProvider-based
+    // implementation is also removed.
+    const addonType =
+      addon.type === "sitepermission-deprecated"
+        ? "sitepermission"
+        : addon.type;
+
+    if (reasonInfo.isReasonHidden(addonType)) {
       continue;
     }
 
@@ -383,11 +390,12 @@ add_task(async function test_abusereport_suggestions_theme() {
   await theme.unload();
 });
 
+// TODO(Bug 1789718): adapt to SitePermAddonProvider implementation.
 add_task(async function test_abusereport_suggestions_sitepermission() {
   const SITEPERM_ADDON_ID = "webmidi@mochi.test";
   const sitePermAddon = await installTestExtension(
     SITEPERM_ADDON_ID,
-    "sitepermission"
+    "sitepermission-deprecated"
   );
   await test_abusereport_suggestions(SITEPERM_ADDON_ID);
   await sitePermAddon.unload();
@@ -395,6 +403,8 @@ add_task(async function test_abusereport_suggestions_sitepermission() {
 
 // This test case verifies the message bars created on other
 // scenarios (e.g. report creation and submissions errors).
+//
+// TODO(Bug 1789718): adapt to SitePermAddonProvider implementation.
 add_task(async function test_abusereport_messagebars() {
   const EXT_ID = "test-extension-report@mochi.test";
   const EXT_ID2 = "test-extension-report-2@mochi.test";
@@ -405,7 +415,7 @@ add_task(async function test_abusereport_messagebars() {
   const theme = await installTestExtension(THEME_ID, "theme");
   const sitePermAddon = await installTestExtension(
     SITEPERM_ADDON_ID,
-    "sitepermission"
+    "sitepermission-deprecated"
   );
 
   async function assertMessageBars(
@@ -673,8 +683,10 @@ add_task(async function test_abusereport_from_browserAction_remove() {
   const xpiFile = AddonTestUtils.createTempWebExtensionFile({
     manifest: {
       ...BASE_TEST_MANIFEST,
-      browser_action: {},
-      applications: { gecko: { id: EXT_ID } },
+      browser_action: {
+        default_area: "navbar",
+      },
+      browser_specific_settings: { gecko: { id: EXT_ID } },
     },
   });
   const addon = await AddonManager.installTemporaryAddon(xpiFile);
@@ -988,11 +1000,13 @@ add_task(async function test_author_hidden_when_missing() {
 
 // Verify addon.siteOrigin is used as a fallback when homepage_url/developer.url
 // or support url are missing.
+//
+// TODO(Bug 1789718): adapt to SitePermAddonProvider implementation.
 add_task(async function test_siteperm_siteorigin_fallback() {
   const SITEPERM_ADDON_ID = "webmidi-site-origin@mochi.test";
   const sitePermAddon = await installTestExtension(
     SITEPERM_ADDON_ID,
-    "sitepermission",
+    "sitepermission-deprecated",
     {
       homepage_url: undefined,
     }

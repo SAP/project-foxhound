@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import pytest
 
 from unittest.mock import Mock, MagicMock
@@ -96,6 +94,6 @@ def mock_httpd(request):
 def mock_marionette(request):
     """Mock marionette instance"""
     marionette = MagicMock(spec=dir(Marionette()))
-    if "has_crashed" in request.funcargnames:
+    if "has_crashed" in request.fixturenames:
         marionette.check_for_crash.return_value = request.getfixturevalue("has_crashed")
     return marionette

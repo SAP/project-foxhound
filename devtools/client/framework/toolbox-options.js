@@ -4,10 +4,11 @@
 
 "use strict";
 
-const Services = require("Services");
-const { gDevTools } = require("devtools/client/framework/devtools");
+const {
+  gDevTools,
+} = require("resource://devtools/client/framework/devtools.js");
 
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const L10N = new LocalizationHelper(
   "devtools/client/locales/toolbox.properties"
 );
@@ -15,7 +16,7 @@ const L10N = new LocalizationHelper(
 loader.lazyRequireGetter(
   this,
   "openDocLink",
-  "devtools/client/shared/link",
+  "resource://devtools/client/shared/link.js",
   true
 );
 
@@ -80,7 +81,7 @@ function OptionsPanel(iframeWindow, toolbox, commands) {
 
   this._addListeners();
 
-  const EventEmitter = require("devtools/shared/event-emitter");
+  const EventEmitter = require("resource://devtools/shared/event-emitter.js");
   EventEmitter.decorate(this);
 }
 
@@ -98,7 +99,7 @@ OptionsPanel.prototype = {
     return this;
   },
 
-  _addListeners: function() {
+  _addListeners() {
     Services.prefs.addObserver("devtools.cache.disabled", this._prefChanged);
     Services.prefs.addObserver("devtools.theme", this._prefChanged);
     Services.prefs.addObserver(
@@ -118,7 +119,7 @@ OptionsPanel.prototype = {
     this.toolbox.on("webextension-unregistered", this.setupToolsList);
   },
 
-  _removeListeners: function() {
+  _removeListeners() {
     Services.prefs.removeObserver("devtools.cache.disabled", this._prefChanged);
     Services.prefs.removeObserver("devtools.theme", this._prefChanged);
     Services.prefs.removeObserver(
@@ -135,7 +136,7 @@ OptionsPanel.prototype = {
     gDevTools.off("theme-unregistered", this._themeUnregistered);
   },
 
-  _prefChanged: function(subject, topic, prefName) {
+  _prefChanged(subject, topic, prefName) {
     if (prefName === "devtools.cache.disabled") {
       const cacheDisabled = GetPref(prefName);
       const cbx = this.panelDoc.getElementById("devtools-disable-cache");
@@ -147,11 +148,11 @@ OptionsPanel.prototype = {
     }
   },
 
-  _themeRegistered: function(themeId) {
+  _themeRegistered(themeId) {
     this.setupThemeList();
   },
 
-  _themeUnregistered: function(theme) {
+  _themeUnregistered(theme) {
     const themeBox = this.panelDoc.getElementById("devtools-theme-box");
     const themeInput = themeBox.querySelector(`[value=${theme.id}]`);
 
@@ -210,7 +211,7 @@ OptionsPanel.prototype = {
     };
 
     for (const button of toolbarButtons) {
-      if (!button.isTargetSupported(this.toolbox.target)) {
+      if (!button.isToolSupported(this.toolbox)) {
         continue;
       }
 
@@ -218,7 +219,7 @@ OptionsPanel.prototype = {
     }
   },
 
-  setupToolsList: function() {
+  setupToolsList() {
     const defaultToolsBox = this.panelDoc.getElementById("default-tools-box");
     const additionalToolsBox = this.panelDoc.getElementById(
       "additional-tools-box"
@@ -257,7 +258,7 @@ OptionsPanel.prototype = {
       checkboxInput.setAttribute("title", tool.tooltip || "");
 
       const checkboxSpanLabel = this.panelDoc.createElement("span");
-      if (tool.isTargetSupported(this.target)) {
+      if (tool.isToolSupported(this.toolbox)) {
         checkboxSpanLabel.textContent = tool.label;
       } else {
         atleastOneToolNotSupported = true;
@@ -357,7 +358,8 @@ OptionsPanel.prototype = {
           visibilityswitch: pref,
 
           // Only local tabs are currently supported as targets.
-          isTargetSupported: target => target.isLocalTab,
+          isToolSupported: toolbox =>
+            toolbox.commands.descriptorFront.isLocalTab,
         })
       );
     }
@@ -377,7 +379,7 @@ OptionsPanel.prototype = {
     this.panelWin.focus();
   },
 
-  setupThemeList: function() {
+  setupThemeList() {
     const themeBox = this.panelDoc.getElementById("devtools-theme-box");
     const themeLabels = themeBox.querySelectorAll("label");
     for (const label of themeLabels) {
@@ -421,15 +423,8 @@ OptionsPanel.prototype = {
   /**
    * Add extra checkbox options bound to a boolean preference.
    */
-  setupAdditionalOptions: function() {
+  setupAdditionalOptions() {
     const prefDefinitions = [];
-
-    prefDefinitions.push({
-      pref: "devtools.performance.new-panel-enabled",
-      label: L10N.getStr("options.enableNewPerformancePanel"),
-      id: "devtools-new-performance",
-      parentId: "context-options",
-    });
 
     if (GetPref("devtools.custom-formatters")) {
       prefDefinitions.push({
@@ -438,44 +433,6 @@ OptionsPanel.prototype = {
         l10nTooltipId: "options-enable-custom-formatters-tooltip",
         id: "devtools-custom-formatters",
         parentId: "context-options",
-      });
-    }
-
-    if (this.toolbox.isBrowserToolbox) {
-      // The Multiprocess Browser Toolbox is only displayed in the settings
-      // panel for the Browser Toolbox, or when debugging the main process in
-      // remote debugging.
-      prefDefinitions.push({
-        pref: "devtools.browsertoolbox.fission",
-        label: L10N.getStr("options.enableMultiProcessToolbox"),
-        id: "devtools-browsertoolbox-fission",
-        parentId: "context-options",
-        // createPreferenceOption already updates the value of the preference
-        // for the current profile when the checkbox changes. Here we need a
-        // custom behavior for the Browser Toolbox, so we pass an additional
-        // onChange callback.
-        onChange: async checked => {
-          if (!this.toolbox.isBrowserToolbox) {
-            // If we are debugging a parent process, but the toolbox is not a
-            // Browser Toolbox, it means we are remote debugging another
-            // browser. In this case, the value of devtools.browsertoolbox.fission
-            // should not be updated in the target browser.
-            return;
-          }
-
-          // When setting this preference from the BrowserToolbox, we need to
-          // update the preference on the debugged Firefox profile as well.
-          // The devtools.browsertoolbox.fission preference is copied from the
-          // regular Firefox Profile to the Browser Toolbox profile.
-          // If the preference is not updated on the regular Firefox profile, the
-          // new value will be lost on the next Browser Toolbox restart.
-          const { mainRoot } = this.commands.client;
-          const preferenceFront = await mainRoot.getFront("preference");
-          preferenceFront.setBoolPref(
-            "devtools.browsertoolbox.fission",
-            checked
-          );
-        },
       });
     }
 
@@ -588,7 +545,7 @@ OptionsPanel.prototype = {
       });
     }
 
-    if (!this.target.chrome) {
+    if (this.commands.descriptorFront.isTabDescriptor) {
       const isJavascriptEnabled = await this.commands.targetConfigurationCommand.isJavascriptEnabled();
       this.disableJSNode.checked = !isJavascriptEnabled;
       this.disableJSNode.addEventListener("click", this._disableJSClicked);
@@ -603,7 +560,7 @@ OptionsPanel.prototype = {
     }
   },
 
-  updateCurrentTheme: function() {
+  updateCurrentTheme() {
     const currentTheme = GetPref("devtools.theme");
     const themeBox = this.panelDoc.getElementById("devtools-theme-box");
     const themeRadioInput = themeBox.querySelector(`[value=${currentTheme}]`);
@@ -617,7 +574,7 @@ OptionsPanel.prototype = {
     }
   },
 
-  updateSourceMapPref: function() {
+  updateSourceMapPref() {
     const prefName = "devtools.source-map.client-service.enabled";
     const enabled = GetPref(prefName);
     const box = this.panelDoc.querySelector(`[data-pref="${prefName}"]`);
@@ -634,7 +591,7 @@ OptionsPanel.prototype = {
    * @param {Event} event
    *        The event sent by checking / unchecking the disable JS checkbox.
    */
-  _disableJSClicked: function(event) {
+  _disableJSClicked(event) {
     const checked = event.target.checked;
 
     this.commands.targetConfigurationCommand.updateConfiguration({
@@ -642,7 +599,7 @@ OptionsPanel.prototype = {
     });
   },
 
-  destroy: function() {
+  destroy() {
     if (this.destroyed) {
       return;
     }

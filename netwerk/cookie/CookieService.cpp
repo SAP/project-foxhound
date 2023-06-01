@@ -6,8 +6,10 @@
 
 #include "CookieCommons.h"
 #include "CookieLogging.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ContentBlockingNotifier.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/nsMixedContentBlocker.h"
 #include "mozilla/dom/Promise.h"
@@ -47,6 +49,32 @@ uint32_t MakeCookieBehavior(uint32_t aCookieBehavior) {
     return nsICookieService::BEHAVIOR_REJECT_TRACKER;
   }
   return aCookieBehavior;
+}
+
+/*
+ Enables sanitizeOnShutdown cleaning prefs and disables the
+ network.cookie.lifetimePolicy
+*/
+void MigrateCookieLifetimePrefs() {
+  // Former network.cookie.lifetimePolicy values ACCEPT_SESSION/ACCEPT_NORMALLY
+  // are not available anymore 2 = ACCEPT_SESSION
+  if (mozilla::Preferences::GetInt("network.cookie.lifetimePolicy") != 2) {
+    return;
+  }
+  if (!mozilla::Preferences::GetBool("privacy.sanitize.sanitizeOnShutdown")) {
+    mozilla::Preferences::SetBool("privacy.sanitize.sanitizeOnShutdown", true);
+    // To avoid clearing categories that the user did not intend to clear
+    mozilla::Preferences::SetBool("privacy.clearOnShutdown.history", false);
+    mozilla::Preferences::SetBool("privacy.clearOnShutdown.formdata", false);
+    mozilla::Preferences::SetBool("privacy.clearOnShutdown.downloads", false);
+    mozilla::Preferences::SetBool("privacy.clearOnShutdown.sessions", false);
+    mozilla::Preferences::SetBool("privacy.clearOnShutdown.siteSettings",
+                                  false);
+  }
+  mozilla::Preferences::SetBool("privacy.clearOnShutdown.cookies", true);
+  mozilla::Preferences::SetBool("privacy.clearOnShutdown.cache", true);
+  mozilla::Preferences::SetBool("privacy.clearOnShutdown.offlineApps", true);
+  mozilla::Preferences::ClearUser("network.cookie.lifetimePolicy");
 }
 
 }  // anonymous namespace
@@ -127,22 +155,25 @@ bool ProcessSameSiteCookieForForeignRequest(nsIChannel* aChannel,
                                             Cookie* aCookie,
                                             bool aIsSafeTopLevelNav,
                                             bool aLaxByDefault) {
-  int32_t sameSiteAttr = 0;
-  aCookie->GetSameSite(&sameSiteAttr);
-
-  // it if's a cross origin request and the cookie is same site only (strict)
-  // don't send it
-  if (sameSiteAttr == nsICookie::SAMESITE_STRICT) {
+  // If it's a cross-site request and the cookie is same site only (strict)
+  // don't send it.
+  if (aCookie->SameSite() == nsICookie::SAMESITE_STRICT) {
     return false;
+  }
+
+  // Explicit SameSite=None cookies are always processed. When laxByDefault
+  // is OFF then so are default cookies.
+  if (aCookie->SameSite() == nsICookie::SAMESITE_NONE ||
+      (!aLaxByDefault && aCookie->IsDefaultSameSite())) {
+    return true;
   }
 
   int64_t currentTimeInUsec = PR_Now();
 
   // 2 minutes of tolerance for 'SameSite=Lax by default' for cookies set
   // without a SameSite value when used for unsafe http methods.
-  if (StaticPrefs::network_cookie_sameSite_laxPlusPOST_timeout() > 0 &&
-      aLaxByDefault && sameSiteAttr == nsICookie::SAMESITE_LAX &&
-      aCookie->RawSameSite() == nsICookie::SAMESITE_NONE &&
+  if (aLaxByDefault && aCookie->IsDefaultSameSite() &&
+      StaticPrefs::network_cookie_sameSite_laxPlusPOST_timeout() > 0 &&
       currentTimeInUsec - aCookie->CreationTime() <=
           (StaticPrefs::network_cookie_sameSite_laxPlusPOST_timeout() *
            PR_USEC_PER_SEC) &&
@@ -150,9 +181,11 @@ bool ProcessSameSiteCookieForForeignRequest(nsIChannel* aChannel,
     return true;
   }
 
-  // if it's a cross origin request, the cookie is same site lax, but it's not a
-  // top-level navigation, don't send it
-  return sameSiteAttr != nsICookie::SAMESITE_LAX || aIsSafeTopLevelNav;
+  MOZ_ASSERT((aLaxByDefault && aCookie->IsDefaultSameSite()) ||
+             aCookie->SameSite() == nsICookie::SAMESITE_LAX);
+  // We only have SameSite=Lax or lax-by-default cookies at this point.  These
+  // are processed only if it's a top-level navigation
+  return aIsSafeTopLevelNav;
 }
 
 }  // namespace
@@ -183,6 +216,8 @@ already_AddRefed<CookieService> CookieService::GetSingleton() {
   // Release our members (e.g. nsIObserverService and nsIPrefBranch), since GC
   // cycles have already been completed and would result in serious leaks.
   // See bug 209571.
+  // TODO: Verify what is the earliest point in time during shutdown where
+  // we can deny the creation of the CookieService as a whole.
   gCookieService = new CookieService();
   if (gCookieService) {
     if (NS_SUCCEEDED(gCookieService->Init())) {
@@ -219,6 +254,9 @@ nsresult CookieService::Init() {
   // Init our default, and possibly private CookieStorages.
   InitCookieStorages();
 
+  // Migrate network.cookie.lifetimePolicy pref to sanitizeOnShutdown prefs
+  MigrateCookieLifetimePrefs();
+
   RegisterWeakMemoryReporter(this);
 
   nsCOMPtr<nsIObserverService> os = services::GetObserverService();
@@ -234,11 +272,16 @@ void CookieService::InitCookieStorages() {
   NS_ASSERTION(!mPersistentStorage, "already have a default CookieStorage");
   NS_ASSERTION(!mPrivateStorage, "already have a private CookieStorage");
 
-  // Create two new CookieStorages.
-  mPersistentStorage = CookiePersistentStorage::Create();
-  mPrivateStorage = CookiePrivateStorage::Create();
+  // Create two new CookieStorages. If we are in or beyond our observed
+  // shutdown phase, just be non-persistent.
+  if (MOZ_UNLIKELY(StaticPrefs::network_cookie_noPersistentStorage() ||
+                   AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdown))) {
+    mPersistentStorage = CookiePrivateStorage::Create();
+  } else {
+    mPersistentStorage = CookiePersistentStorage::Create();
+  }
 
-  mPersistentStorage->Activate();
+  mPrivateStorage = CookiePrivateStorage::Create();
 }
 
 void CookieService::CloseCookieStorages() {
@@ -248,10 +291,10 @@ void CookieService::CloseCookieStorages() {
   }
 
   // Let's nullify both storages before calling Close().
-  RefPtr<CookiePrivateStorage> privateStorage;
+  RefPtr<CookieStorage> privateStorage;
   privateStorage.swap(mPrivateStorage);
 
-  RefPtr<CookiePersistentStorage> persistentStorage;
+  RefPtr<CookieStorage> persistentStorage;
   persistentStorage.swap(mPersistentStorage);
 
   privateStorage->Close();
@@ -319,14 +362,11 @@ CookieService::GetCookieStringFromDocument(Document* aDocument,
     return NS_OK;
   }
 
-  nsCOMPtr<nsIPrincipal> principal = aDocument->EffectiveStoragePrincipal();
+  nsCOMPtr<nsIPrincipal> principal = aDocument->EffectiveCookiePrincipal();
 
   if (!CookieCommons::IsSchemeSupported(principal)) {
     return NS_OK;
   }
-
-  nsICookie::schemeType schemeType =
-      CookieCommons::PrincipalToSchemeType(principal);
 
   CookieStorage* storage = PickStorage(principal->OriginAttributesRef());
 
@@ -400,10 +440,6 @@ CookieService::GetCookieStringFromDocument(Document* aDocument,
       continue;
     }
 
-    if (!CookieCommons::MaybeCompareScheme(cookie, schemeType)) {
-      continue;
-    }
-
     // if the nsIURI path doesn't match the cookie path, don't send it back
     if (!CookieCommons::PathMatches(cookie, pathFromURI)) {
       continue;
@@ -462,7 +498,9 @@ CookieService::GetCookieStringFromHttp(nsIURI* aHostURI, nsIChannel* aChannel,
       aChannel, attrs, StoragePrincipalHelper::eStorageAccessPrincipal);
 
   bool isSafeTopLevelNav = CookieCommons::IsSafeTopLevelNav(aChannel);
-  bool isSameSiteForeign = CookieCommons::IsSameSiteForeign(aChannel, aHostURI);
+  bool hadCrossSiteRedirects = false;
+  bool isSameSiteForeign = CookieCommons::IsSameSiteForeign(
+      aChannel, aHostURI, &hadCrossSiteRedirects);
 
   AutoTArray<Cookie*, 8> foundCookieList;
   GetCookiesForURI(
@@ -470,8 +508,8 @@ CookieService::GetCookieStringFromHttp(nsIURI* aHostURI, nsIChannel* aChannel,
       result.contains(ThirdPartyAnalysis::IsThirdPartyTrackingResource),
       result.contains(ThirdPartyAnalysis::IsThirdPartySocialTrackingResource),
       result.contains(ThirdPartyAnalysis::IsStorageAccessPermissionGranted),
-      rejectedReason, isSafeTopLevelNav, isSameSiteForeign, true, attrs,
-      foundCookieList);
+      rejectedReason, isSafeTopLevelNav, isSameSiteForeign,
+      hadCrossSiteRedirects, true, attrs, foundCookieList);
 
   ComposeCookieString(foundCookieList, aCookieString);
 
@@ -708,7 +746,7 @@ CookieService::RunInTransaction(nsICookieTransactionCallback* aCallback) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  mPersistentStorage->EnsureReadComplete();
+  mPersistentStorage->EnsureInitialized();
   return mPersistentStorage->RunInTransaction(aCallback);
 }
 
@@ -723,7 +761,7 @@ CookieService::RemoveAll() {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  mPersistentStorage->EnsureReadComplete();
+  mPersistentStorage->EnsureInitialized();
   mPersistentStorage->RemoveAll();
   return NS_OK;
 }
@@ -734,7 +772,7 @@ CookieService::GetCookies(nsTArray<RefPtr<nsICookie>>& aCookies) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  mPersistentStorage->EnsureReadComplete();
+  mPersistentStorage->EnsureInitialized();
 
   // We expose only non-private cookies.
   mPersistentStorage->GetCookies(aCookies);
@@ -748,10 +786,10 @@ CookieService::GetSessionCookies(nsTArray<RefPtr<nsICookie>>& aCookies) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  mPersistentStorage->EnsureReadComplete();
+  mPersistentStorage->EnsureInitialized();
 
   // We expose only non-private cookies.
-  mPersistentStorage->GetCookies(aCookies);
+  mPersistentStorage->GetSessionCookies(aCookies);
 
   return NS_OK;
 }
@@ -760,7 +798,7 @@ NS_IMETHODIMP
 CookieService::Add(const nsACString& aHost, const nsACString& aPath,
                    const nsACString& aName, const nsACString& aValue,
                    bool aIsSecure, bool aIsHttpOnly, bool aIsSession,
-                   int64_t aExpiry, JS::HandleValue aOriginAttributes,
+                   int64_t aExpiry, JS::Handle<JS::Value> aOriginAttributes,
                    int32_t aSameSite, nsICookie::schemeType aSchemeMap,
                    JSContext* aCx) {
   OriginAttributes attrs;
@@ -845,7 +883,7 @@ nsresult CookieService::Remove(const nsACString& aHost,
 NS_IMETHODIMP
 CookieService::Remove(const nsACString& aHost, const nsACString& aName,
                       const nsACString& aPath,
-                      JS::HandleValue aOriginAttributes, JSContext* aCx) {
+                      JS::Handle<JS::Value> aOriginAttributes, JSContext* aCx) {
   OriginAttributes attrs;
 
   if (!aOriginAttributes.isObject() || !attrs.Init(aCx, aOriginAttributes)) {
@@ -871,12 +909,26 @@ CookieService::RemoveNative(const nsACString& aHost, const nsACString& aName,
   return NS_OK;
 }
 
+enum class CookieProblem : uint32_t {
+  None = 0,
+  // Same-Site cookies (default or explicit) blocked due to redirect
+  RedirectDefault = 1 << 0,
+  RedirectExplicit = 1 << 1,
+  // Special case for googleads Same-Site cookies
+  RedirectGoogleAds = 1 << 2,
+  // Blocked due to other reasons
+  OtherDefault = 1 << 3,
+  OtherExplicit = 1 << 4
+};
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(CookieProblem)
+
 void CookieService::GetCookiesForURI(
     nsIURI* aHostURI, nsIChannel* aChannel, bool aIsForeign,
     bool aIsThirdPartyTrackingResource,
     bool aIsThirdPartySocialTrackingResource,
     bool aStorageAccessPermissionGranted, uint32_t aRejectedReason,
-    bool aIsSafeTopLevelNav, bool aIsSameSiteForeign, bool aHttpBound,
+    bool aIsSafeTopLevelNav, bool aIsSameSiteForeign,
+    bool aHadCrossSiteRedirects, bool aHttpBound,
     const OriginAttributes& aOriginAttrs, nsTArray<Cookie*>& aCookieList) {
   NS_ASSERTION(aHostURI, "null host!");
 
@@ -924,8 +976,6 @@ void CookieService::GetCookiesForURI(
   rv = CookieCommons::GetBaseDomainFromHost(mTLDService, normalizedHostFromURI,
                                             baseDomainFromURI);
   NS_ENSURE_SUCCESS_VOID(rv);
-
-  nsICookie::schemeType schemeType = CookieCommons::URIToSchemeType(aHostURI);
 
   // check default prefs
   uint32_t rejectedReason = aRejectedReason;
@@ -981,6 +1031,13 @@ void CookieService::GetCookiesForURI(
       !nsContentUtils::IsURIInPrefList(
           aHostURI, "network.cookie.sameSite.laxByDefault.disabledHosts");
 
+  // We are counting blocked SameSite cookies to get an idea of
+  // potential website breakage before we reintroduce "laxByDefault".
+  // Special attention is paid to redirects where our behavior
+  // differs from Chrome (bug 1763073, crbug/1221316).
+  //
+  CookieProblem sameSiteProblems = CookieProblem::None;
+
   // iterate the cookies!
   for (Cookie* cookie : *cookies) {
     // check the host, since the base domain lookup is conservative.
@@ -990,18 +1047,6 @@ void CookieService::GetCookiesForURI(
 
     // if the cookie is secure and the host scheme isn't, we can't send it
     if (cookie->IsSecure() && !potentiallyTurstworthy) {
-      continue;
-    }
-
-    // The scheme doesn't match.
-    if (!CookieCommons::MaybeCompareSchemeWithLogging(crc, aHostURI, cookie,
-                                                      schemeType)) {
-      continue;
-    }
-
-    if (aHttpBound && aIsSameSiteForeign &&
-        !ProcessSameSiteCookieForForeignRequest(
-            aChannel, cookie, aIsSafeTopLevelNav, laxByDefault)) {
       continue;
     }
 
@@ -1021,6 +1066,63 @@ void CookieService::GetCookiesForURI(
       continue;
     }
 
+    if (aHttpBound && aIsSameSiteForeign) {
+      bool blockCookie = !ProcessSameSiteCookieForForeignRequest(
+          aChannel, cookie, aIsSafeTopLevelNav, laxByDefault);
+
+      // Record telemetry for blocked sameSite cookies. If laxByDefault is off,
+      // re-run the check to see if we would get different results with it
+      // turned on.
+      if (blockCookie || (!laxByDefault && cookie->IsDefaultSameSite() &&
+                          !ProcessSameSiteCookieForForeignRequest(
+                              aChannel, cookie, aIsSafeTopLevelNav, true))) {
+        if (aHadCrossSiteRedirects) {
+          // Count the known problematic Google cookies from
+          // adservice.google.{com, de} etc. separately. This is not an exact
+          // domain match, but good enough for telemetry.
+          if (StringBeginsWith(hostFromURI, "adservice.google."_ns)) {
+            sameSiteProblems |= CookieProblem::RedirectGoogleAds;
+          } else {
+            if (cookie->IsDefaultSameSite()) {
+              sameSiteProblems |= CookieProblem::RedirectDefault;
+            } else {
+              sameSiteProblems |= CookieProblem::RedirectExplicit;
+            }
+          }
+        } else {
+          if (cookie->IsDefaultSameSite()) {
+            sameSiteProblems |= CookieProblem::OtherDefault;
+          } else {
+            sameSiteProblems |= CookieProblem::OtherExplicit;
+          }
+        }
+      }
+
+      // Lax-by-default cookies are processed even with an intermediate
+      // cross-site redirect (they are treated like aIsSameSiteForeign = false).
+      //
+      // This is outside of ProcessSameSiteCookieForForeignRequest to still
+      // collect the same telemetry.
+      if (blockCookie && aHadCrossSiteRedirects &&
+          cookie->IsDefaultSameSite() &&
+          StaticPrefs::
+              network_cookie_sameSite_laxByDefault_allowBoomerangRedirect()) {
+        blockCookie = false;
+      }
+
+      if (blockCookie) {
+        if (aHadCrossSiteRedirects) {
+          CookieLogging::LogMessageToConsole(
+              crc, aHostURI, nsIScriptError::warningFlag,
+              CONSOLE_REJECTION_CATEGORY, "CookieBlockedCrossSiteRedirect"_ns,
+              AutoTArray<nsString, 1>{
+                  NS_ConvertUTF8toUTF16(cookie->Name()),
+              });
+        }
+        continue;
+      }
+    }
+
     // all checks passed - add to list and check if lastAccessed stamp needs
     // updating
     aCookieList.AppendElement(cookie);
@@ -1028,6 +1130,9 @@ void CookieService::GetCookiesForURI(
       stale = true;
     }
   }
+
+  Telemetry::Accumulate(Telemetry::COOKIE_RETRIEVAL_SAMESITE_PROBLEM,
+                        static_cast<uint32_t>(sameSiteProblems));
 
   if (aCookieList.IsEmpty()) {
     return;
@@ -1047,6 +1152,24 @@ void CookieService::GetCookiesForURI(
   // this is required per RFC2109.  if cookies match in length,
   // then sort by creation time (see bug 236772).
   aCookieList.Sort(CompareCookiesForSending());
+}
+
+static bool ContainsUnicodeChars(const nsCString& str) {
+  const auto* start = str.BeginReading();
+  const auto* end = str.EndReading();
+
+  return std::find_if(start, end, [](unsigned char c) { return c >= 0x80; }) !=
+         end;
+}
+
+static void RecordUnicodeTelemetry(const CookieStruct& cookieData) {
+  auto label = Telemetry::LABELS_NETWORK_COOKIE_UNICODE_BYTE::none;
+  if (ContainsUnicodeChars(cookieData.name())) {
+    label = Telemetry::LABELS_NETWORK_COOKIE_UNICODE_BYTE::unicodeName;
+  } else if (ContainsUnicodeChars(cookieData.value())) {
+    label = Telemetry::LABELS_NETWORK_COOKIE_UNICODE_BYTE::unicodeValue;
+  }
+  Telemetry::AccumulateCategorical(label);
 }
 
 // processes a single cookie, and returns true if there are more cookies
@@ -1120,6 +1243,8 @@ bool CookieService::CanSetCookie(
     return newCookie;
   }
 
+  RecordUnicodeTelemetry(aCookieData);
+
   if (!CookieCommons::CheckName(aCookieData)) {
     COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, savedCookieHeader,
                       "invalid name character");
@@ -1151,6 +1276,18 @@ bool CookieService::CanSetCookie(
     return newCookie;
   }
 
+  if (!CheckHiddenPrefix(aCookieData)) {
+    COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, savedCookieHeader,
+                      "failed the CheckHiddenPrefix tests");
+    CookieLogging::LogMessageToConsole(
+        aCRC, aHostURI, nsIScriptError::warningFlag, CONSOLE_REJECTION_CATEGORY,
+        "CookieRejectedInvalidPrefix"_ns,
+        AutoTArray<nsString, 1>{
+            NS_ConvertUTF8toUTF16(aCookieData.name()),
+        });
+    return newCookie;
+  }
+
   // magic prefix checks. MUST be run after CheckDomain() and CheckPath()
   if (!CheckPrefixes(aCookieData, potentiallyTurstworthy)) {
     COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, savedCookieHeader,
@@ -1164,7 +1301,7 @@ bool CookieService::CanSetCookie(
     return newCookie;
   }
 
-  if (aFromHttp && !CookieCommons::CheckHttpValue(aCookieData)) {
+  if (!CookieCommons::CheckValue(aCookieData)) {
     COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, savedCookieHeader,
                       "invalid value character");
     CookieLogging::LogMessageToConsole(
@@ -1206,7 +1343,13 @@ bool CookieService::CanSetCookie(
 
   // If the new cookie is same-site but in a cross site context,
   // browser must ignore the cookie.
-  if ((aCookieData.sameSite() != nsICookie::SAMESITE_NONE) &&
+  bool laxByDefault =
+      StaticPrefs::network_cookie_sameSite_laxByDefault() &&
+      !nsContentUtils::IsURIInPrefList(
+          aHostURI, "network.cookie.sameSite.laxByDefault.disabledHosts");
+  auto effectiveSameSite =
+      laxByDefault ? aCookieData.sameSite() : aCookieData.rawSameSite();
+  if ((effectiveSameSite != nsICookie::SAMESITE_NONE) &&
       aIsForeignAndNotAddon) {
     COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, savedCookieHeader,
                       "failed the samesite tests");
@@ -1375,14 +1518,17 @@ bool CookieService::GetTokenValue(nsACString::const_char_iterator& aIter,
   return false;
 }
 
-static inline void SetSameSiteDefaultAttribute(CookieStruct& aCookieData,
-                                               bool laxByDefault) {
+static inline void SetSameSiteAttributeDefault(CookieStruct& aCookieData) {
+  // Set cookie with SameSite attribute that is treated as Default
+  // and doesn't requires changing the DB schema.
+  aCookieData.sameSite() = nsICookie::SAMESITE_LAX;
   aCookieData.rawSameSite() = nsICookie::SAMESITE_NONE;
-  if (laxByDefault) {
-    aCookieData.sameSite() = nsICookie::SAMESITE_LAX;
-  } else {
-    aCookieData.sameSite() = nsICookie::SAMESITE_NONE;
-  }
+}
+
+static inline void SetSameSiteAttribute(CookieStruct& aCookieData,
+                                        int32_t aValue) {
+  aCookieData.sameSite() = aValue;
+  aCookieData.rawSameSite() = aValue;
 }
 
 // Parses attributes from cookie header. expires/max-age attributes aren't
@@ -1415,11 +1561,7 @@ bool CookieService::ParseAttributes(nsIConsoleReportCollector* aCRC,
   aCookieData.isSecure() = false;
   aCookieData.isHttpOnly() = false;
 
-  bool laxByDefault =
-      StaticPrefs::network_cookie_sameSite_laxByDefault() &&
-      !nsContentUtils::IsURIInPrefList(
-          aHostURI, "network.cookie.sameSite.laxByDefault.disabledHosts");
-  SetSameSiteDefaultAttribute(aCookieData, laxByDefault);
+  SetSameSiteAttributeDefault(aCookieData);
 
   nsDependentCSubstring tokenString(cookieStart, cookieStart);
   nsDependentCSubstring tokenValue(cookieStart, cookieStart);
@@ -1469,17 +1611,14 @@ bool CookieService::ParseAttributes(nsIConsoleReportCollector* aCRC,
 
     } else if (tokenString.LowerCaseEqualsLiteral(kSameSite)) {
       if (tokenValue.LowerCaseEqualsLiteral(kSameSiteLax)) {
-        aCookieData.sameSite() = nsICookie::SAMESITE_LAX;
-        aCookieData.rawSameSite() = nsICookie::SAMESITE_LAX;
+        SetSameSiteAttribute(aCookieData, nsICookie::SAMESITE_LAX);
       } else if (tokenValue.LowerCaseEqualsLiteral(kSameSiteStrict)) {
-        aCookieData.sameSite() = nsICookie::SAMESITE_STRICT;
-        aCookieData.rawSameSite() = nsICookie::SAMESITE_STRICT;
+        SetSameSiteAttribute(aCookieData, nsICookie::SAMESITE_STRICT);
       } else if (tokenValue.LowerCaseEqualsLiteral(kSameSiteNone)) {
-        aCookieData.sameSite() = nsICookie::SAMESITE_NONE;
-        aCookieData.rawSameSite() = nsICookie::SAMESITE_NONE;
+        SetSameSiteAttribute(aCookieData, nsICookie::SAMESITE_NONE);
       } else {
-        // Reset to defaults if unknown token value (see Bug 1682450)
-        SetSameSiteDefaultAttribute(aCookieData, laxByDefault);
+        // Reset to Default if unknown token value (see Bug 1682450)
+        SetSameSiteAttributeDefault(aCookieData);
         CookieLogging::LogMessageToConsole(
             aCRC, aHostURI, nsIScriptError::infoFlag, CONSOLE_SAMESITE_CATEGORY,
             "CookieSameSiteValueInvalid2"_ns,
@@ -1491,29 +1630,32 @@ bool CookieService::ParseAttributes(nsIConsoleReportCollector* aCRC,
   // re-assign aCookieHeader, in case we need to process another cookie
   aCookieHeader.Assign(Substring(cookieStart, cookieEnd));
 
-  // If same-site is set to 'none' but this is not a secure context, let's abort
-  // the parsing.
+  // If same-site is explicitly set to 'none' but this is not a secure context,
+  // let's abort the parsing.
   if (!aCookieData.isSecure() &&
       aCookieData.sameSite() == nsICookie::SAMESITE_NONE) {
-    if (laxByDefault &&
-        StaticPrefs::network_cookie_sameSite_noneRequiresSecure()) {
+    if (StaticPrefs::network_cookie_sameSite_noneRequiresSecure()) {
       CookieLogging::LogMessageToConsole(
-          aCRC, aHostURI, nsIScriptError::infoFlag, CONSOLE_SAMESITE_CATEGORY,
+          aCRC, aHostURI, nsIScriptError::errorFlag, CONSOLE_SAMESITE_CATEGORY,
           "CookieRejectedNonRequiresSecure2"_ns,
           AutoTArray<nsString, 1>{NS_ConvertUTF8toUTF16(aCookieData.name())});
       return newCookie;
     }
 
-    // if SameSite=Lax by default is disabled, we want to warn the user.
+    // Still warn about the missing Secure attribute when not enforcing.
     CookieLogging::LogMessageToConsole(
         aCRC, aHostURI, nsIScriptError::warningFlag, CONSOLE_SAMESITE_CATEGORY,
-        "CookieRejectedNonRequiresSecureForBeta2"_ns,
+        "CookieRejectedNonRequiresSecureForBeta3"_ns,
         AutoTArray<nsString, 2>{NS_ConvertUTF8toUTF16(aCookieData.name()),
                                 SAMESITE_MDN_URL});
   }
 
   if (aCookieData.rawSameSite() == nsICookie::SAMESITE_NONE &&
       aCookieData.sameSite() == nsICookie::SAMESITE_LAX) {
+    bool laxByDefault =
+        StaticPrefs::network_cookie_sameSite_laxByDefault() &&
+        !nsContentUtils::IsURIInPrefList(
+            aHostURI, "network.cookie.sameSite.laxByDefault.disabledHosts");
     if (laxByDefault) {
       CookieLogging::LogMessageToConsole(
           aCRC, aHostURI, nsIScriptError::infoFlag, CONSOLE_SAMESITE_CATEGORY,
@@ -1531,7 +1673,7 @@ bool CookieService::ParseAttributes(nsIConsoleReportCollector* aCRC,
   // Cookie accepted.
   aAcceptedByParser = true;
 
-  MOZ_ASSERT(Cookie::ValidateRawSame(aCookieData));
+  MOZ_ASSERT(Cookie::ValidateSameSite(aCookieData));
   return newCookie;
 }
 
@@ -1776,6 +1918,25 @@ bool CookieService::CheckDomain(CookieStruct& aCookieData, nsIURI* aHostURI,
   return true;
 }
 
+// static
+bool CookieService::CheckHiddenPrefix(CookieStruct& aCookieData) {
+  // If a cookie is nameless, then its value must not start with
+  // `__Host-` or `__Secure-`
+  if (!aCookieData.name().IsEmpty()) {
+    return true;
+  }
+
+  if (StringBeginsWith(aCookieData.value(), "__Host-"_ns)) {
+    return false;
+  }
+
+  if (StringBeginsWith(aCookieData.value(), "__Secure-"_ns)) {
+    return false;
+  }
+
+  return true;
+}
+
 namespace {
 nsAutoCString GetPathFromURI(nsIURI* aHostURI) {
   // strip down everything after the last slash to get the path,
@@ -1852,7 +2013,7 @@ bool CookieService::CheckPath(CookieStruct& aCookieData,
 // CheckPrefixes
 //
 // Reject cookies whose name starts with the magic prefixes from
-// https://tools.ietf.org/html/draft-ietf-httpbis-cookie-prefixes-00
+// https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis
 // if they do not meet the criteria required by the prefix.
 //
 // Must not be called until after CheckDomain() and CheckPath() have
@@ -1972,8 +2133,8 @@ bool CookieService::GetExpiry(CookieStruct& aCookieData,
 NS_IMETHODIMP
 CookieService::CookieExists(const nsACString& aHost, const nsACString& aPath,
                             const nsACString& aName,
-                            JS::HandleValue aOriginAttributes, JSContext* aCx,
-                            bool* aFoundCookie) {
+                            JS::Handle<JS::Value> aOriginAttributes,
+                            JSContext* aCx, bool* aFoundCookie) {
   NS_ENSURE_ARG_POINTER(aCx);
   NS_ENSURE_ARG_POINTER(aFoundCookie);
 
@@ -1990,8 +2151,23 @@ CookieService::CookieExistsNative(const nsACString& aHost,
                                   const nsACString& aName,
                                   OriginAttributes* aOriginAttributes,
                                   bool* aFoundCookie) {
+  nsCOMPtr<nsICookie> cookie;
+  nsresult rv = GetCookieNative(aHost, aPath, aName, aOriginAttributes,
+                                getter_AddRefs(cookie));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  *aFoundCookie = cookie != nullptr;
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP_(nsresult)
+CookieService::GetCookieNative(const nsACString& aHost, const nsACString& aPath,
+                               const nsACString& aName,
+                               OriginAttributes* aOriginAttributes,
+                               nsICookie** aCookie) {
   NS_ENSURE_ARG_POINTER(aOriginAttributes);
-  NS_ENSURE_ARG_POINTER(aFoundCookie);
+  NS_ENSURE_ARG_POINTER(aCookie);
 
   if (!IsInitialized()) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -2004,8 +2180,16 @@ CookieService::CookieExistsNative(const nsACString& aHost,
 
   CookieListIter iter{};
   CookieStorage* storage = PickStorage(*aOriginAttributes);
-  *aFoundCookie = storage->FindCookie(baseDomain, *aOriginAttributes, aHost,
-                                      aName, aPath, iter);
+  bool foundCookie = storage->FindCookie(baseDomain, *aOriginAttributes, aHost,
+                                         aName, aPath, iter);
+
+  if (foundCookie) {
+    RefPtr<Cookie> cookie = iter.Cookie();
+    NS_ENSURE_TRUE(cookie, NS_ERROR_NULL_POINTER);
+
+    cookie.forget(aCookie);
+  }
+
   return NS_OK;
 }
 
@@ -2027,7 +2211,7 @@ CookieService::CountCookiesFromHost(const nsACString& aHost,
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  mPersistentStorage->EnsureReadComplete();
+  mPersistentStorage->EnsureInitialized();
 
   *aCountFromHost = mPersistentStorage->CountCookiesFromHost(baseDomain, 0);
 
@@ -2038,7 +2222,7 @@ CookieService::CountCookiesFromHost(const nsACString& aHost,
 // the nsICookieManager interface.
 NS_IMETHODIMP
 CookieService::GetCookiesFromHost(const nsACString& aHost,
-                                  JS::HandleValue aOriginAttributes,
+                                  JS::Handle<JS::Value> aOriginAttributes,
                                   JSContext* aCx,
                                   nsTArray<RefPtr<nsICookie>>& aResult) {
   // first, normalize the hostname, and fail if it contains illegal characters.
@@ -2232,7 +2416,7 @@ CookieService::RemoveAllSince(int64_t aSinceWhen, JSContext* aCx,
     return result.StealNSResult();
   }
 
-  mPersistentStorage->EnsureReadComplete();
+  mPersistentStorage->EnsureInitialized();
 
   nsTArray<RefPtr<nsICookie>> cookieList;
 
@@ -2271,7 +2455,7 @@ CookieService::GetCookiesSince(int64_t aSinceWhen,
     return NS_OK;
   }
 
-  mPersistentStorage->EnsureReadComplete();
+  mPersistentStorage->EnsureInitialized();
 
   // We expose only non-private cookies.
   nsTArray<RefPtr<nsICookie>> cookieList;
@@ -2329,7 +2513,7 @@ CookieStorage* CookieService::PickStorage(const OriginAttributes& aAttrs) {
     return mPrivateStorage;
   }
 
-  mPersistentStorage->EnsureReadComplete();
+  mPersistentStorage->EnsureInitialized();
   return mPersistentStorage;
 }
 
@@ -2342,7 +2526,7 @@ CookieStorage* CookieService::PickStorage(
     return mPrivateStorage;
   }
 
-  mPersistentStorage->EnsureReadComplete();
+  mPersistentStorage->EnsureInitialized();
   return mPersistentStorage;
 }
 
@@ -2368,11 +2552,13 @@ bool CookieService::SetCookiesFromIPC(const nsACString& aBaseDomain,
       return false;
     }
 
+    RecordUnicodeTelemetry(cookieData);
+
     if (!CookieCommons::CheckName(cookieData)) {
       return false;
     }
 
-    if (aFromHttp && !CookieCommons::CheckHttpValue(cookieData)) {
+    if (!CookieCommons::CheckValue(cookieData)) {
       return false;
     }
 

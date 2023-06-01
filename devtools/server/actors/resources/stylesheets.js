@@ -6,12 +6,12 @@
 
 const {
   TYPES: { STYLESHEET },
-} = require("devtools/server/actors/resources/index");
+} = require("resource://devtools/server/actors/resources/index.js");
 
 loader.lazyRequireGetter(
   this,
   "CssLogic",
-  "devtools/shared/inspector/css-logic"
+  "resource://devtools/shared/inspector/css-logic.js"
 );
 
 class StyleSheetWatcher {
@@ -37,7 +37,7 @@ class StyleSheetWatcher {
     this._onAvailable = onAvailable;
     this._onUpdated = onUpdated;
 
-    this._styleSheetsManager = targetActor.getStyleSheetManager();
+    this._styleSheetsManager = targetActor.getStyleSheetsManager();
 
     // Add event listener for new additions and updates
     this._styleSheetsManager.on(
@@ -69,10 +69,11 @@ class StyleSheetWatcher {
       resourceId,
       resourceType: STYLESHEET,
       disabled: styleSheet.disabled,
+      constructed: styleSheet.constructed,
       fileName,
       href: styleSheet.href,
       isNew: isCreatedByDevTools,
-      mediaRules: await this._styleSheetsManager._getMediaRules(styleSheet),
+      atRules: await this._styleSheetsManager.getAtRules(styleSheet),
       nodeHref: this._styleSheetsManager._getNodeHref(styleSheet),
       ruleCount: styleSheet.cssRules.length,
       sourceMapBaseURL: this._styleSheetsManager._getSourcemapBaseURL(
@@ -110,6 +111,8 @@ class StyleSheetWatcher {
   ) {
     this._onUpdated([
       {
+        browsingContextID: this._targetActor.browsingContextID,
+        innerWindowId: this._targetActor.innerWindowId,
         resourceType: STYLESHEET,
         resourceId,
         updateType,

@@ -25,6 +25,7 @@ UNIFIED_SOURCES += [
     "TestAudioCompactor.cpp",
     "TestAudioDecoderInputTrack.cpp",
     "TestAudioDriftCorrection.cpp",
+    "TestAudioInputSource.cpp",
     "TestAudioMixer.cpp",
     "TestAudioPacketizer.cpp",
     "TestAudioRingBuffer.cpp",
@@ -35,6 +36,7 @@ UNIFIED_SOURCES += [
     "TestBitWriter.cpp",
     "TestBlankVideoDataCreator.cpp",
     "TestBufferReader.cpp",
+    "TestCubebInputStream.cpp",
     "TestDataMutex.cpp",
     "TestDecoderBenchmark.cpp",
     "TestDeviceInputTrack.cpp",
@@ -44,6 +46,7 @@ UNIFIED_SOURCES += [
     "TestGroupId.cpp",
     "TestIntervalSet.cpp",
     "TestKeyValueStorage.cpp",
+    "TestMediaCodecsSupport.cpp",
     "TestMediaDataDecoder.cpp",
     "TestMediaDataEncoder.cpp",
     "TestMediaEventSource.cpp",
@@ -88,6 +91,7 @@ if CONFIG["MOZ_WEBRTC"] and CONFIG["OS_TARGET"] != "Android":
     ]
 
 TEST_HARNESS_FILES.gtest += [
+    "../test/av1.mp4",
     "../test/gizmo-frag.mp4",
     "../test/gizmo.mp4",
     "../test/vp9cake.webm",
@@ -105,6 +109,13 @@ TEST_HARNESS_FILES.gtest += [
     "test_case_1224361.vp8.ivf",
     "test_case_1224363.vp8.ivf",
     "test_case_1224369.vp8.ivf",
+    "test_InvalidElementId.webm",
+    "test_InvalidElementSize.webm",
+    "test_InvalidLargeEBMLMaxIdLength.webm",
+    "test_InvalidLargeElementId.webm",
+    "test_InvalidSmallEBMLMaxIdLength.webm",
+    "test_ValidLargeEBMLMaxIdLength.webm",
+    "test_ValidSmallEBMLMaxSizeLength.webm",
     "test_vbri.mp3",
 ]
 

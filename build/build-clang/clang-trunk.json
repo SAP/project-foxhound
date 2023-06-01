@@ -1,19 +1,20 @@
 {
-  "patches": [
-    "static-llvm-symbolizer_clang_12.patch",
-    "compiler-rt-cross-compile.patch",
-    "find_symbolizer_linux_clang_10.patch",
-    "android-mangling-error_clang_12.patch",
-    "unpoison-thread-stacks_clang_10.patch",
-    "downgrade-mangling-error_clang_12.patch",
-    "bug47258-extract-symbols-mbcs.patch",
-    "Remove-FlushViewOfFile-when-unmaping-gcda-files.patch",
-    "loosen-msvc-detection.patch",
-    "fuzzing_ccov_build_clang_12.patch",
-    "compiler-rt-13-no-codesign.patch",
-    "revert-llvmorg-14-init-3652-gf3c2094d8c11.patch",
-    "revert-llvmorg-14-init-3651-g85ba583eba19.patch",
-    "revert-llvmorg-14-init-3650-g50d7ecc560b2.patch",
-    "revert-llvmorg-13-init-8182-gc2297544c047.patch"
-  ]
+    "patches": [
+        "find_symbolizer_linux_clang_15.patch",
+        "android-mangling-error_clang_12.patch",
+        "unpoison-thread-stacks_clang_10.patch",
+        "downgrade-mangling-error_clang_12.patch",
+        "bug47258-extract-symbols-mbcs.patch",
+        "fuzzing_ccov_build_clang_12.patch",
+        "win64-no-symlink_clang_16.patch",
+        "partial-revert-llvmorg-16-init-15775-g1ae7d83803e4.patch",
+        "revert-llvmorg-16-init-9324-g01859da84bad.patch",
+        "revert-llvmorg-16-init-7598-g54bfd0484615.patch",
+        "revert-llvmorg-15-init-13446-g7524fe962e47.patch",
+        "revert-llvmorg-15-init-11205-gcead4eceb01b_clang_16.patch",
+        "revert-llvmorg-14-init-14141-gd6d3000a2f6d.patch",
+        "revert-llvmorg-14-init-11890-gf86deb18cab6_clang_16.patch",
+        "win64-ret-null-on-commitment-limit_clang_14.patch",
+        "compiler-rt-rss-limit-heap-profile.patch"
+    ]
 }

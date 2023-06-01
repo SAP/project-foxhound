@@ -79,7 +79,7 @@ export class _DiscoveryStreamBase extends React.PureComponent {
           [...rule.style].forEach(property => {
             const value = rule.style[property];
             if (!isAllowedCSS(property, value)) {
-              console.error(`Bad CSS declaration ${property}: ${value}`); // eslint-disable-line no-console
+              console.error(`Bad CSS declaration ${property}: ${value}`);
               rule.style.removeProperty(property);
             }
           });
@@ -102,7 +102,7 @@ export class _DiscoveryStreamBase extends React.PureComponent {
 
           // CSSOM silently ignores bad selectors, so we'll be noisy instead
           if (rule.selectorText === DUMMY_CSS_SELECTOR) {
-            console.error(`Bad CSS selector ${selectors}`); // eslint-disable-line no-console
+            console.error(`Bad CSS selector ${selectors}`);
           }
         });
       });
@@ -110,28 +110,19 @@ export class _DiscoveryStreamBase extends React.PureComponent {
   }
 
   renderComponent(component, embedWidth) {
-    const ENGAGEMENT_LABEL_ENABLED = this.props.Prefs.values[
-      `discoverystream.engagementLabelEnabled`
-    ];
-
     switch (component.type) {
       case "Highlights":
         return <Highlights />;
       case "TopSites":
-        let promoAlignment;
-        if (
-          component.spocs &&
-          component.spocs.positions &&
-          component.spocs.positions.length
-        ) {
-          promoAlignment =
-            component.spocs.positions[0].index === 0 ? "left" : "right";
+        let positions = [];
+        if (component?.spocs?.positions?.length) {
+          positions = component.spocs.positions;
         }
         return (
           <TopSites
             header={component.header}
             data={component.data}
-            promoAlignment={promoAlignment}
+            promoPositions={positions}
           />
         );
       case "TextPromo":
@@ -171,7 +162,6 @@ export class _DiscoveryStreamBase extends React.PureComponent {
             links={component.properties.links}
             extraLinks={component.properties.extraLinks}
             alignment={component.properties.alignment}
-            display_variant={component.properties.display_variant}
             explore_topics={component.properties.explore_topics}
             header={component.header}
             locale={this.props.App.locale}
@@ -187,11 +177,8 @@ export class _DiscoveryStreamBase extends React.PureComponent {
             feed={component.feed}
             spocs={DiscoveryStream.spocs}
             placement={component.placement}
-            border={component.properties.border}
             type={component.type}
             items={component.properties.items}
-            cta_variant={component.cta_variant}
-            display_engagement_labels={ENGAGEMENT_LABEL_ENABLED}
             dismissible={this.props.DiscoveryStream.isCollectionDismissible}
             dispatch={this.props.dispatch}
           />
@@ -199,35 +186,21 @@ export class _DiscoveryStreamBase extends React.PureComponent {
       case "CardGrid":
         return (
           <CardGrid
-            enable_video_playheads={
-              !!component.properties.enable_video_playheads
-            }
             title={component.header && component.header.title}
-            display_variant={component.properties.display_variant}
             data={component.data}
             feed={component.feed}
-            border={component.properties.border}
+            widgets={component.widgets}
             type={component.type}
             dispatch={this.props.dispatch}
             items={component.properties.items}
             hybridLayout={component.properties.hybridLayout}
             hideCardBackground={component.properties.hideCardBackground}
             fourCardLayout={component.properties.fourCardLayout}
-            hideDescriptions={component.properties.hideDescriptions}
             compactGrid={component.properties.compactGrid}
-            compactImages={component.properties.compactImages}
-            imageGradient={component.properties.imageGradient}
-            newSponsoredLabel={component.properties.newSponsoredLabel}
-            titleLines={component.properties.titleLines}
-            descLines={component.properties.descLines}
             essentialReadsHeader={component.properties.essentialReadsHeader}
             editorsPicksHeader={component.properties.editorsPicksHeader}
-            readTime={component.properties.readTime}
-            loadMore={component.loadMore}
-            lastCardMessageEnabled={component.lastCardMessageEnabled}
-            saveToPocketCard={component.saveToPocketCard}
-            cta_variant={component.cta_variant}
-            display_engagement_labels={ENGAGEMENT_LABEL_ENABLED}
+            recentSavesEnabled={this.props.DiscoveryStream.recentSavesEnabled}
+            hideDescriptions={this.props.DiscoveryStream.hideDescriptions}
           />
         );
       case "HorizontalRule":

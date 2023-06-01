@@ -43,7 +43,8 @@ class MyHolder final : public nsScriptObjectTracer {
 
  private:
   Flags FlagsForKind(HolderKind kind) {
-    return kind == MultiZone ? FlagMultiZoneJSHolder : 0;
+    return kind == MultiZone ? FlagMultiZoneJSHolder
+                             : FlagMaybeSingleZoneJSHolder;
   }
 };
 
@@ -266,9 +267,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(ObjectHolder)
   NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mObject)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(ObjectHolder, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(ObjectHolder, Release)
 
 // Test GC things stored in JS holders are marked as gray roots by the GC.
 static void TestHoldersAreMarkedGray(JSContext* cx) {

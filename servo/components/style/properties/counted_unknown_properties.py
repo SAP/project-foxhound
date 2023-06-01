@@ -19,7 +19,6 @@ COUNTED_UNKNOWN_PROPERTIES = [
     "text-size-adjust",
     "-webkit-font-feature-settings",
     "-webkit-user-drag",
-    "-webkit-clip-path",
     "orphans",
     "widows",
     "-webkit-user-modify",
@@ -73,7 +72,6 @@ COUNTED_UNKNOWN_PROPERTIES = [
     "-webkit-perspective-origin-y",
     "-webkit-margin-before-collapse",
     "-webkit-border-before-style",
-    "scroll-snap-stop",
     "-webkit-margin-bottom-collapse",
     "-webkit-ruby-position",
     "-webkit-column-break-after",
@@ -120,5 +118,4 @@ COUNTED_UNKNOWN_PROPERTIES = [
     "-webkit-columns",
     "-webkit-column-rule-color",
     "-webkit-shape-margin",
-    "content-visibility",
 ]

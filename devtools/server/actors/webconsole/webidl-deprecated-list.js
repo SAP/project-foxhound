@@ -7,7 +7,10 @@
 "use strict";
 
 module.exports = {
-  CanvasRenderingContext2D: [["prototype", "mozImageSmoothingEnabled"]],
+  CanvasRenderingContext2D: [
+    ["prototype", "mozTextStyle"],
+    ["prototype", "mozImageSmoothingEnabled"],
+  ],
   Document: [
     ["prototype", "releaseCapture"],
     ["prototype", "onmozfullscreenchange"],
@@ -22,9 +25,15 @@ module.exports = {
     ["prototype", "onmozfullscreenchange"],
     ["prototype", "onmozfullscreenerror"],
   ],
+  HTMLMediaElement: [["prototype", "mozPreservesPitch"]],
   IDBDatabase: [["prototype", "createMutableFile"]],
   IDBMutableFile: [["prototype", "open"]],
   ImageBitmapRenderingContext: [["prototype", "transferImageBitmap"]],
+  InstallTriggerImpl: [
+    ["prototype", "install"],
+    ["prototype", "installChrome"],
+    ["prototype", "startSoftwareUpdate"],
+  ],
   MathMLElement: [
     ["prototype", "onmozfullscreenchange"],
     ["prototype", "onmozfullscreenerror"],
@@ -40,7 +49,16 @@ module.exports = {
     ["prototype", "onmozfullscreenchange"],
     ["prototype", "onmozfullscreenerror"],
   ],
+  SVGGraphicsElement: [
+    ["prototype", "nearestViewportElement"],
+    ["prototype", "farthestViewportElement"],
+  ],
+  U2F: [
+    ["prototype", "register_impl"],
+    ["prototype", "sign_impl"],
+  ],
   Window: [
+    ["prototype", "InstallTrigger"],
     ["prototype", "onmozfullscreenchange"],
     ["prototype", "onmozfullscreenerror"],
   ],

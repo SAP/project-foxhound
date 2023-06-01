@@ -10,8 +10,7 @@
 #include "DOMMediaStream.h"
 #include "DecoderBenchmark.h"
 #include "ImageContainer.h"
-#include "Layers.h"
-#include "MediaDecoderStateMachine.h"
+#include "MediaDecoderStateMachineBase.h"
 #include "MediaFormatReader.h"
 #include "MediaResource.h"
 #include "MediaShutdownManager.h"
@@ -115,7 +114,7 @@ class MediaMemoryTracker : public nsIMemoryReporter {
     }
   }
 
-  static RefPtr<MediaMemoryPromise> GetSizes() {
+  static RefPtr<MediaMemoryPromise> GetSizes(dom::Document* aDoc) {
     MOZ_ASSERT(NS_IsMainThread());
     DecodersArray& decoders = Decoders();
 
@@ -133,9 +132,11 @@ class MediaMemoryTracker : public nsIMemoryReporter {
     size_t audioSize = 0;
 
     for (auto&& decoder : decoders) {
-      videoSize += decoder->SizeOfVideoQueue();
-      audioSize += decoder->SizeOfAudioQueue();
-      decoder->AddSizeOfResources(resourceSizes);
+      if (decoder->GetOwner() && decoder->GetOwner()->GetDocument() == aDoc) {
+        videoSize += decoder->SizeOfVideoQueue();
+        audioSize += decoder->SizeOfAudioQueue();
+        decoder->AddSizeOfResources(resourceSizes);
+      }
     }
 
     return resourceSizes->Promise()->Then(
@@ -153,8 +154,8 @@ class MediaMemoryTracker : public nsIMemoryReporter {
 
 StaticRefPtr<MediaMemoryTracker> MediaMemoryTracker::sUniqueInstance;
 
-RefPtr<MediaMemoryPromise> GetMediaMemorySizes() {
-  return MediaMemoryTracker::GetSizes();
+RefPtr<MediaMemoryPromise> GetMediaMemorySizes(dom::Document* aDoc) {
+  return MediaMemoryTracker::GetSizes(aDoc);
 }
 
 LazyLogModule gMediaTimerLog("MediaTimer");
@@ -339,23 +340,9 @@ void MediaDecoder::Shutdown() {
   // necessary to unblock the state machine thread if it's blocked, so
   // the asynchronous shutdown in nsDestroyStateMachine won't deadlock.
   if (mDecoderStateMachine) {
-    mTimedMetadataListener.Disconnect();
-    mMetadataLoadedListener.Disconnect();
-    mFirstFrameLoadedListener.Disconnect();
-    mOnPlaybackEvent.Disconnect();
-    mOnPlaybackErrorEvent.Disconnect();
-    mOnDecoderDoctorEvent.Disconnect();
-    mOnMediaNotSeekable.Disconnect();
-    mOnEncrypted.Disconnect();
-    mOnWaitingForKey.Disconnect();
-    mOnDecodeWarning.Disconnect();
-    mOnNextFrameStatus.Disconnect();
-    mOnSecondaryVideoContainerInstalled.Disconnect();
-    mOnStoreDecoderBenchmark.Disconnect();
-
-    mDecoderStateMachine->BeginShutdown()->Then(
-        mAbstractMainThread, __func__, this, &MediaDecoder::FinishShutdown,
-        &MediaDecoder::FinishShutdown);
+    ShutdownStateMachine()->Then(mAbstractMainThread, __func__, this,
+                                 &MediaDecoder::FinishShutdown,
+                                 &MediaDecoder::FinishShutdown);
   } else {
     // Ensure we always unregister asynchronously in order not to disrupt
     // the hashtable iterating in MediaShutdownManager::Shutdown().
@@ -433,7 +420,44 @@ bool MediaDecoder::IsVideoDecodingSuspended() const {
 }
 
 void MediaDecoder::OnPlaybackErrorEvent(const MediaResult& aError) {
+  MOZ_ASSERT(NS_IsMainThread());
+#ifndef MOZ_WMF_MEDIA_ENGINE
   DecodeError(aError);
+#else
+  if (aError != NS_ERROR_DOM_MEDIA_EXTERNAL_ENGINE_NOT_SUPPORTED_ERR) {
+    DecodeError(aError);
+    return;
+  }
+
+  // Already in shutting down decoder, no need to create another state machine.
+  if (mPlayState == PLAY_STATE_SHUTDOWN) {
+    return;
+  }
+
+  // External engine can't play the resource, try to use our own state machine
+  // again. Here we will create a new state machine immediately and asynchrously
+  // shutdown the old one because we don't want to dispatch any task to the old
+  // state machine. Therefore, we will disconnect anything related with the old
+  // state machine, create a new state machine and setup events/mirror/etc, then
+  // shutdown the old one and release its reference once it finishes shutdown.
+  MOZ_ASSERT(aError == NS_ERROR_DOM_MEDIA_EXTERNAL_ENGINE_NOT_SUPPORTED_ERR);
+  RefPtr<MediaDecoderStateMachineBase> discardStateMachine =
+      mDecoderStateMachine;
+
+  // Disconnect mirror and events first.
+  SetStateMachine(nullptr);
+  DisconnectEvents();
+
+  // Recreate a state machine and shutdown the old one.
+  LOG("Need to create a new state machine");
+  nsresult rv =
+      CreateAndInitStateMachine(false, true /* disable external engine*/);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    LOG("Failed to create a new state machine!");
+  }
+  discardStateMachine->BeginShutdown()->Then(
+      AbstractThread::MainThread(), __func__, [discardStateMachine] {});
+#endif
 }
 
 void MediaDecoder::OnDecoderDoctorEvent(DecoderDoctorEvent aEvent) {
@@ -474,6 +498,23 @@ void MediaDecoder::OnNextFrameStatus(
     mNextFrameStatus = aStatus;
     UpdateReadyState();
   }
+}
+
+void MediaDecoder::OnTrackInfoUpdated(const VideoInfo& aVideoInfo,
+                                      const AudioInfo& aAudioInfo) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_DIAGNOSTIC_ASSERT(!IsShutdown());
+
+  // Note that we don't check HasVideo() or HasAudio() here, because
+  // those are checks for existing validity. If we always set the values
+  // to what we receive, then we can go from not-video to video, for
+  // example.
+  mInfo->mVideo = aVideoInfo;
+  mInfo->mAudio = aAudioInfo;
+
+  Invalidate();
+
+  EnsureTelemetryReported();
 }
 
 void MediaDecoder::OnSecondaryVideoContainerInstalled(
@@ -518,9 +559,13 @@ void MediaDecoder::FinishShutdown() {
   ShutdownInternal();
 }
 
-nsresult MediaDecoder::InitializeStateMachine() {
+nsresult MediaDecoder::CreateAndInitStateMachine(bool aIsLiveStream,
+                                                 bool aDisableExternalEngine) {
   MOZ_ASSERT(NS_IsMainThread());
-  NS_ASSERTION(mDecoderStateMachine, "Cannot initialize null state machine!");
+  SetStateMachine(CreateStateMachine(aDisableExternalEngine));
+
+  NS_ENSURE_TRUE(GetStateMachine(), NS_ERROR_FAILURE);
+  GetStateMachine()->DispatchIsLiveStream(aIsLiveStream);
 
   nsresult rv = mDecoderStateMachine->Init(this);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -555,6 +600,8 @@ void MediaDecoder::SetStateMachineParameters() {
       mAbstractMainThread, this, &MediaDecoder::OnMediaNotSeekable);
   mOnNextFrameStatus = mDecoderStateMachine->OnNextFrameStatus().Connect(
       mAbstractMainThread, this, &MediaDecoder::OnNextFrameStatus);
+  mOnTrackInfoUpdated = mDecoderStateMachine->OnTrackInfoUpdatedEvent().Connect(
+      mAbstractMainThread, this, &MediaDecoder::OnTrackInfoUpdated);
   mOnSecondaryVideoContainerInstalled =
       mDecoderStateMachine->OnSecondaryVideoContainerInstalled().Connect(
           mAbstractMainThread, this,
@@ -568,6 +615,31 @@ void MediaDecoder::SetStateMachineParameters() {
       mAbstractMainThread, GetOwner(), &MediaDecoderOwner::NotifyWaitingForKey);
   mOnDecodeWarning = mReader->OnDecodeWarning().Connect(
       mAbstractMainThread, GetOwner(), &MediaDecoderOwner::DecodeWarning);
+}
+
+void MediaDecoder::DisconnectEvents() {
+  MOZ_ASSERT(NS_IsMainThread());
+  mTimedMetadataListener.Disconnect();
+  mMetadataLoadedListener.Disconnect();
+  mFirstFrameLoadedListener.Disconnect();
+  mOnPlaybackEvent.Disconnect();
+  mOnPlaybackErrorEvent.Disconnect();
+  mOnDecoderDoctorEvent.Disconnect();
+  mOnMediaNotSeekable.Disconnect();
+  mOnEncrypted.Disconnect();
+  mOnWaitingForKey.Disconnect();
+  mOnDecodeWarning.Disconnect();
+  mOnNextFrameStatus.Disconnect();
+  mOnTrackInfoUpdated.Disconnect();
+  mOnSecondaryVideoContainerInstalled.Disconnect();
+  mOnStoreDecoderBenchmark.Disconnect();
+}
+
+RefPtr<ShutdownPromise> MediaDecoder::ShutdownStateMachine() {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(GetStateMachine());
+  DisconnectEvents();
+  return mDecoderStateMachine->BeginShutdown();
 }
 
 void MediaDecoder::Play() {
@@ -892,8 +964,7 @@ MediaDecoder::PositionUpdate MediaDecoder::GetPositionUpdateReason(
     double aPrevPos, double aCurPos) const {
   MOZ_ASSERT(NS_IsMainThread());
   // If current position is earlier than previous position and we didn't do
-  // seek, that means we looped back to the start position, which currently
-  // happens on audio only.
+  // seek, that means we looped back to the start position.
   const bool notSeeking = !mSeekRequest.Exists();
   if (mLooping && notSeeking && aCurPos < aPrevPos) {
     return PositionUpdate::eSeamlessLoopingSeeking;
@@ -1188,7 +1259,7 @@ void MediaDecoder::SetStreamName(const nsAutoString& aStreamName) {
   mStreamName = aStreamName;
 }
 
-void MediaDecoder::ConnectMirrors(MediaDecoderStateMachine* aObject) {
+void MediaDecoder::ConnectMirrors(MediaDecoderStateMachineBase* aObject) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aObject);
   mStateMachineDuration.Connect(aObject->CanonicalDuration());
@@ -1205,16 +1276,17 @@ void MediaDecoder::DisconnectMirrors() {
   mIsAudioDataAudible.DisconnectIfConnected();
 }
 
-void MediaDecoder::SetStateMachine(MediaDecoderStateMachine* aStateMachine) {
+void MediaDecoder::SetStateMachine(
+    MediaDecoderStateMachineBase* aStateMachine) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT_IF(aStateMachine, !mDecoderStateMachine);
   if (aStateMachine) {
     mDecoderStateMachine = aStateMachine;
-    DDLINKCHILD("decoder state machine", mDecoderStateMachine.get());
+    LOG("set state machine %p", mDecoderStateMachine.get());
     ConnectMirrors(aStateMachine);
     UpdateVideoDecodeMode();
   } else if (mDecoderStateMachine) {
-    DDUNLINKCHILD(mDecoderStateMachine.get());
+    LOG("null out state machine %p", mDecoderStateMachine.get());
     mDecoderStateMachine = nullptr;
     DisconnectMirrors();
   }
@@ -1282,7 +1354,7 @@ void MediaDecoder::NotifyReaderDataArrived() {
 }
 
 // Provide access to the state machine object
-MediaDecoderStateMachine* MediaDecoder::GetStateMachine() const {
+MediaDecoderStateMachineBase* MediaDecoder::GetStateMachine() const {
   MOZ_ASSERT(NS_IsMainThread());
   return mDecoderStateMachine;
 }
@@ -1376,6 +1448,7 @@ MediaDecoderOwner::NextFrameStatus MediaDecoder::NextFrameBufferedStatus() {
 }
 
 void MediaDecoder::GetDebugInfo(dom::MediaDecoderDebugInfo& aInfo) {
+  MOZ_ASSERT(NS_IsMainThread());
   CopyUTF8toUTF16(nsPrintfCString("%p", this), aInfo.mInstance);
   aInfo.mChannels = mInfo ? mInfo->mAudio.mChannels : 0;
   aInfo.mRate = mInfo ? mInfo->mAudio.mRate : 0;
@@ -1384,27 +1457,28 @@ void MediaDecoder::GetDebugInfo(dom::MediaDecoderDebugInfo& aInfo) {
   CopyUTF8toUTF16(MakeStringSpan(PlayStateStr()), aInfo.mPlayState);
   aInfo.mContainerType =
       NS_ConvertUTF8toUTF16(ContainerType().Type().AsString());
-  mReader->GetDebugInfo(aInfo.mReader);
 }
 
 RefPtr<GenericPromise> MediaDecoder::RequestDebugInfo(
     MediaDecoderDebugInfo& aInfo) {
   MOZ_DIAGNOSTIC_ASSERT(!IsShutdown());
+  if (!NS_IsMainThread()) {
+    // Run the request on the main thread if it's not already.
+    return InvokeAsync(AbstractThread::MainThread(), __func__,
+                       [this, self = RefPtr{this}, &aInfo]() {
+                         return RequestDebugInfo(aInfo);
+                       });
+  }
   GetDebugInfo(aInfo);
 
-  if (!GetStateMachine()) {
-    return GenericPromise::CreateAndResolve(true, __func__);
-  }
-
-  return GetStateMachine()
-      ->RequestDebugInfo(aInfo.mStateMachine)
-      ->Then(
-          AbstractThread::MainThread(), __func__,
-          []() { return GenericPromise::CreateAndResolve(true, __func__); },
-          []() {
-            MOZ_ASSERT_UNREACHABLE("Unexpected RequestDebugInfo() rejection");
-            return GenericPromise::CreateAndResolve(false, __func__);
-          });
+  return mReader->RequestDebugInfo(aInfo.mReader)
+      ->Then(AbstractThread::MainThread(), __func__,
+             [this, self = RefPtr{this}, &aInfo] {
+               if (!GetStateMachine()) {
+                 return GenericPromise::CreateAndResolve(true, __func__);
+               }
+               return GetStateMachine()->RequestDebugInfo(aInfo.mStateMachine);
+             });
 }
 
 void MediaDecoder::NotifyAudibleStateChanged() {
@@ -1422,6 +1496,10 @@ void MediaDecoder::NotifyVolumeChanged() {
 
 double MediaDecoder::GetTotalVideoPlayTimeInSeconds() const {
   return mTelemetryProbesReporter->GetTotalVideoPlayTimeInSeconds();
+}
+
+double MediaDecoder::GetTotalVideoHDRPlayTimeInSeconds() const {
+  return mTelemetryProbesReporter->GetTotalVideoHDRPlayTimeInSeconds();
 }
 
 double MediaDecoder::GetVisibleVideoPlayTimeInSeconds() const {

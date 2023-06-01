@@ -6,13 +6,15 @@
 
 #include "gc/GCParallelTask.h"
 
-#include "mozilla/MathAlgorithms.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/TimeStamp.h"
 
+#include "gc/GCContext.h"
+#include "gc/GCInternals.h"
 #include "gc/ParallelWork.h"
 #include "vm/HelperThreadState.h"
 #include "vm/Runtime.h"
-#include "vm/TraceLogging.h"
+#include "vm/Time.h"
 
 using namespace js;
 using namespace js::gc;
@@ -22,6 +24,10 @@ using mozilla::TimeDuration;
 using mozilla::TimeStamp;
 
 js::GCParallelTask::~GCParallelTask() {
+  // The LinkedListElement destructor will remove us from any list we are part
+  // of without synchronization, so ensure that doesn't happen.
+  MOZ_DIAGNOSTIC_ASSERT(!isInList());
+
   // Only most-derived classes' destructors may do the join: base class
   // destructors run after those for derived classes' members, so a join in a
   // base class can't ensure that the task is done using the members. All we
@@ -111,7 +117,7 @@ void js::GCParallelTask::joinNonIdleTask(Maybe<TimeStamp> deadline,
   while (!isFinished(lock)) {
     TimeDuration timeout = TimeDuration::Forever();
     if (deadline) {
-      TimeStamp now = ReallyNow();
+      TimeStamp now = TimeStamp::Now();
       if (*deadline <= now) {
         break;
       }
@@ -134,7 +140,7 @@ void js::GCParallelTask::cancelDispatchedTask(AutoLockHelperThreadState& lock) {
 }
 
 static inline TimeDuration TimeSince(TimeStamp prev) {
-  TimeStamp now = ReallyNow();
+  TimeStamp now = TimeStamp::Now();
   // Sadly this happens sometimes.
   MOZ_ASSERT(now >= prev);
   if (now < prev) {
@@ -147,31 +153,52 @@ void js::GCParallelTask::runFromMainThread() {
   assertIdle();
   MOZ_ASSERT(js::CurrentThreadCanAccessRuntime(gc->rt));
   AutoLockHelperThreadState lock;
-  runTask(lock);
+  state_ = State::Running;
+  runTask(gc->rt->gcContext(), lock);
+  state_ = State::Idle;
 }
 
-void js::GCParallelTask::runHelperThreadTask(AutoLockHelperThreadState& lock) {
-  TraceLoggerThread* logger = TraceLoggerForCurrentThread();
-  AutoTraceLog logCompile(logger, TraceLogger_GC);
+class MOZ_RAII AutoGCContext {
+  JS::GCContext context;
 
+ public:
+  explicit AutoGCContext(JSRuntime* runtime) : context(runtime) {
+    MOZ_RELEASE_ASSERT(TlsGCContext.init(),
+                       "Failed to initialize TLS for GC context");
+
+    MOZ_ASSERT(!TlsGCContext.get());
+    TlsGCContext.set(&context);
+  }
+
+  ~AutoGCContext() {
+    MOZ_ASSERT(TlsGCContext.get() == &context);
+    TlsGCContext.set(nullptr);
+  }
+
+  JS::GCContext* get() { return &context; }
+};
+
+void js::GCParallelTask::runHelperThreadTask(AutoLockHelperThreadState& lock) {
   setRunning(lock);
 
-  AutoSetHelperThreadContext usesContext(lock);
-  AutoSetContextRuntime ascr(gc->rt);
-  gc::AutoSetThreadIsPerformingGC performingGC;
-  runTask(lock);
+  AutoGCContext gcContext(gc->rt);
+
+  runTask(gcContext.get(), lock);
 
   setFinished(lock);
 }
 
-void GCParallelTask::runTask(AutoLockHelperThreadState& lock) {
+void GCParallelTask::runTask(JS::GCContext* gcx,
+                             AutoLockHelperThreadState& lock) {
   // Run the task from either the main thread or a helper thread.
+
+  AutoSetThreadGCUse setUse(gcx, use);
 
   // The hazard analysis can't tell what the call to func_ will do but it's not
   // allowed to GC.
   JS::AutoSuppressGCAnalysis nogc;
 
-  TimeStamp timeStart = ReallyNow();
+  TimeStamp timeStart = TimeStamp::Now();
   run(lock);
   duration_ = TimeSince(timeStart);
 }

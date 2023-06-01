@@ -11,13 +11,12 @@
 #include "mozilla/css/Rule.h"
 #include "nsWrapperCache.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class CSSRuleList : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(CSSRuleList)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(CSSRuleList)
 
   virtual StyleSheet* GetParentObject() = 0;
   JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) final;
@@ -35,7 +34,6 @@ class CSSRuleList : public nsISupports, public nsWrapperCache {
   virtual ~CSSRuleList() = default;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_CSSRuleList_h */

@@ -6,6 +6,9 @@
 # different enough from the main Linux build jobs that their presence in
 # linux.yml would make using job-defaults there significantly less useful.
 ---
+job-defaults:
+    worker-type: b-linux-gcp
+
 linux64-base-toolchains/opt:
     description: "Linux64 base toolchains Opt"
     index:
@@ -15,7 +18,6 @@ linux64-base-toolchains/opt:
         platform: linux64/opt
         symbol: Bb
     run-on-projects: ['mozilla-central']
-    worker-type: b-linux
     worker:
         max-run-time: 7200
         env:
@@ -30,18 +32,19 @@ linux64-base-toolchains/opt:
         script: "mozharness/scripts/fx_desktop_build.py"
         secrets: true
         tooltool-downloads: public
-        need-xvfb: true
     use-sccache: true
     fetches:
         toolchain:
+            - linux64-binutils-2.31.1
             - linux64-clang-5.0
             - linux64-gcc-7
-            - linux64-rust-1.57
+            - linux64-rust-base
             - linux64-cbindgen
             - linux64-dump_syms
             - linux64-sccache
             - linux64-nasm-2.14.02
-            - linux64-node-10
+            - linux64-node-12
+            - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
 
 linux64-base-toolchains/debug:
@@ -54,7 +57,6 @@ linux64-base-toolchains/debug:
         symbol: Bb
     optimization:
         skip-unless-expanded: null
-    worker-type: b-linux
     worker:
         max-run-time: 7200
         env:
@@ -71,18 +73,19 @@ linux64-base-toolchains/debug:
         custom-build-variant-cfg: debug
         mozconfig-variant: debug
         tooltool-downloads: public
-        need-xvfb: true
     use-sccache: true
     fetches:
         toolchain:
+            - linux64-binutils-2.31.1
             - linux64-clang-5.0
             - linux64-gcc-7
-            - linux64-rust-1.57
+            - linux64-rust-base
             - linux64-cbindgen
             - linux64-dump_syms
             - linux64-sccache
             - linux64-nasm-2.14.02
-            - linux64-node-10
+            - linux64-node-12
+            - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
 
 linux64-base-toolchains-clang/opt:
@@ -94,7 +97,6 @@ linux64-base-toolchains-clang/opt:
         platform: linux64/opt
         symbol: Bbc
     run-on-projects: ['mozilla-central']
-    worker-type: b-linux
     worker:
         max-run-time: 7200
         env:
@@ -109,16 +111,15 @@ linux64-base-toolchains-clang/opt:
         script: "mozharness/scripts/fx_desktop_build.py"
         secrets: true
         tooltool-downloads: public
-        need-xvfb: true
     fetches:
         toolchain:
-            - linux64-binutils-2.31.1
             - linux64-clang-5.0
-            - linux64-rust-1.57
+            - linux64-rust-base
             - linux64-cbindgen
             - linux64-dump_syms
             - linux64-nasm-2.14.02
-            - linux64-node-10
+            - linux64-node-12
+            - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
 
 linux64-base-toolchains-clang/debug:
@@ -131,7 +132,6 @@ linux64-base-toolchains-clang/debug:
         symbol: Bbc
     optimization:
         skip-unless-expanded: null
-    worker-type: b-linux
     worker:
         max-run-time: 5400
         env:
@@ -148,14 +148,13 @@ linux64-base-toolchains-clang/debug:
         custom-build-variant-cfg: debug
         mozconfig-variant: debug
         tooltool-downloads: public
-        need-xvfb: true
     fetches:
         toolchain:
-            - linux64-binutils-2.31.1
             - linux64-clang-5.0
-            - linux64-rust-1.57
+            - linux64-rust-base
             - linux64-cbindgen
             - linux64-dump_syms
             - linux64-nasm-2.14.02
-            - linux64-node-10
+            - linux64-node-12
+            - linux64-pkgconf
             - sysroot-x86_64-linux-gnu

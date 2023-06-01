@@ -11,11 +11,15 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/net/CookieJarSettings.h"
+#include "nsContentUtils.h"
 #include "nsIGlobalObject.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIPrincipal.h"
+#include "nsGlobalWindowInner.h"
 #include "nsWeakReference.h"
 #include "nsWrapperCache.h"
+
+#include "js/loader/ModuleLoaderBase.h"
 
 #include "js/Object.h"  // JS::GetPrivate, JS::SetPrivate
 #include "js/RootingAPI.h"
@@ -27,8 +31,8 @@ class SandboxPrivate : public nsIGlobalObject,
                        public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(SandboxPrivate,
-                                                         nsIGlobalObject)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS_AMBIGUOUS(SandboxPrivate,
+                                                        nsIGlobalObject)
 
   static void Create(nsIPrincipal* principal, JS::Handle<JSObject*> global) {
     RefPtr<SandboxPrivate> sbp = new SandboxPrivate(principal);
@@ -49,7 +53,11 @@ class SandboxPrivate : public nsIGlobalObject,
     return static_cast<SandboxPrivate*>(sop);
   }
 
+  mozilla::OriginTrials Trials() const final { return {}; }
+
   nsIPrincipal* GetPrincipal() override { return mPrincipal; }
+
+  nsIPrincipal* GetEffectiveCookiePrincipal() override { return mPrincipal; }
 
   nsIPrincipal* GetEffectiveStoragePrincipal() override { return mPrincipal; }
 
@@ -79,9 +87,20 @@ class SandboxPrivate : public nsIGlobalObject,
     MOZ_CRASH("SandboxPrivate doesn't use DOM bindings!");
   }
 
+  JS::loader::ModuleLoaderBase* GetModuleLoader(JSContext* aCx) override;
+
+  mozilla::Result<mozilla::ipc::PrincipalInfo, nsresult> GetStorageKey()
+      override;
+
   size_t ObjectMoved(JSObject* obj, JSObject* old) {
     UpdateWrapper(obj, old);
     return 0;
+  }
+
+  bool ShouldResistFingerprinting() const override {
+    return nsContentUtils::ShouldResistFingerprinting(
+        "Presently we don't have enough context to make an informed decision"
+        "on JS Sandboxes. See 1782853");
   }
 
  private:
@@ -90,6 +109,8 @@ class SandboxPrivate : public nsIGlobalObject,
   virtual ~SandboxPrivate() = default;
 
   nsCOMPtr<nsIPrincipal> mPrincipal;
+
+  RefPtr<JS::loader::ModuleLoaderBase> mModuleLoader;
 };
 
 #endif  // __SANDBOXPRIVATE_H__

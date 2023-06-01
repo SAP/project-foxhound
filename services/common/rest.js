@@ -8,18 +8,21 @@ var EXPORTED_SYMBOLS = [
   "TokenAuthenticatedRESTRequest",
 ];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
+);
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
 const { CommonUtils } = ChromeUtils.import(
   "resource://services-common/utils.js"
 );
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "CryptoUtils",
   "resource://services-crypto/utils.js"
 );
@@ -317,7 +320,7 @@ RESTRequest.prototype = {
           // If someone handed us an object but also a custom content-type
           // it's probably confused. We could go to even further lengths to
           // respect it, but this shouldn't happen in practice.
-          Cu.reportError(
+          console.error(
             "rest.js found an object to JSON.stringify but also a " +
               "content-type header with a charset specification. " +
               "This probably isn't going to do what you expect"
@@ -707,10 +710,8 @@ function TokenAuthenticatedRESTRequest(uri, authToken, extra) {
   this.extra = extra || {};
 }
 TokenAuthenticatedRESTRequest.prototype = {
-  __proto__: RESTRequest.prototype,
-
   async dispatch(method, data) {
-    let sig = await CryptoUtils.computeHTTPMACSHA1(
+    let sig = await lazy.CryptoUtils.computeHTTPMACSHA1(
       this.authToken.id,
       this.authToken.key,
       method,
@@ -723,3 +724,8 @@ TokenAuthenticatedRESTRequest.prototype = {
     return super.dispatch(method, data);
   },
 };
+
+Object.setPrototypeOf(
+  TokenAuthenticatedRESTRequest.prototype,
+  RESTRequest.prototype
+);

@@ -7,7 +7,6 @@
 
 include protocol PNecko;
 include InputStreamParams;
-include URIParams;
 include PBackgroundSharedTypes;
 include NeckoChannelParams;
 include IPCServiceWorkerDescriptor;
@@ -16,14 +15,18 @@ include HttpChannelParams;
 
 include "mozilla/dom/ReferrerInfoUtils.h";
 include "mozilla/net/NeckoMessageUtils.h";
+include "mozilla/net/ClassOfService.h";
 
 using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
+using mozilla::net::ClassOfService from "mozilla/net/ClassOfService.h";
+[RefCounted] using class nsIURI from "mozilla/ipc/URIUtils.h";
 
 namespace mozilla {
 namespace net {
 
 //-------------------------------------------------------------------
-[RefCounted] protocol PHttpChannel
+[ChildImpl=virtual, ParentImpl=virtual]
+protocol PHttpChannel
 {
   manager PNecko;
 
@@ -31,19 +34,20 @@ parent:
   // Note: channels are opened during construction, so no open method here:
   // see PNecko.ipdl
 
-  async SetClassOfService(uint32_t cos);
+  async SetClassOfService(ClassOfService cos);
 
   async Suspend();
   async Resume();
 
-  async Cancel(nsresult status, uint32_t requestBlockingReason);
+  async Cancel(nsresult status, uint32_t requestBlockingReason,
+               nsCString aReason, nsCString? logString);
 
   // Reports approval/veto of redirect by child process redirect observers
   async Redirect2Verify(nsresult result, RequestHeaderTuples changedHeaders,
                         uint32_t sourceRequestBlockingReason,
                         ChildLoadInfoForwarderArgs? targetLoadInfoForwarder,
                         uint32_t loadFlags, nsIReferrerInfo referrerInfo,
-                        URIParams? apiRedirectTo,
+                        nsIURI apiRedirectTo,
                         CorsPreflightArgs? corsPreflightArgs);
 
   // For document loads we keep this protocol open after child's
@@ -53,7 +57,7 @@ parent:
 
   // Child has detected a CORS check failure, so needs to tell the parent
   // to remove any matching entry from the CORS preflight cache.
-  async RemoveCorsPreflightCacheEntry(URIParams uri,
+  async RemoveCorsPreflightCacheEntry(nsIURI uri,
                                       PrincipalInfo requestingPrincipal,
                                       OriginAttributes originAttributes);
 
@@ -85,18 +89,21 @@ child:
   // Called to initiate content channel redirect, starts talking to sinks
   // on the content process and reports result via Redirect2Verify above
   async Redirect1Begin(uint32_t           registrarId,
-                       URIParams          newOriginalUri,
+                       nsIURI             newOriginalUri,
                        uint32_t           newLoadFlags,
                        uint32_t           redirectFlags,
                        ParentLoadInfoForwarderArgs loadInfoForwarder,
                        nsHttpResponseHead responseHead,
-                       nsCString          securityInfoSerialization,
+                       nsITransportSecurityInfo securityInfo,
                        uint64_t           channelId,
                        NetAddr            oldPeerAddr,
                        ResourceTimingStructArgs timing);
 
   // Called if redirect successful so that child can complete setup.
   async Redirect3Complete();
+
+  // Called if the redirect failed/was vetoed
+  async RedirectFailed(nsresult status);
 
   // Report a security message to the console associated with this
   // channel.

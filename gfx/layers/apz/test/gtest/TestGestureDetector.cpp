@@ -33,6 +33,10 @@ class APZCGestureDetectorTester : public APZCBasicTester {
 
 #ifndef MOZ_WIDGET_ANDROID  // Currently fails on Android
 TEST_F(APZCGestureDetectorTester, Pan_After_Pinch) {
+  SCOPED_GFX_PREF_INT("apz.axis_lock.mode", 2);
+  SCOPED_GFX_PREF_FLOAT("apz.axis_lock.lock_angle", M_PI / 6.0f);
+  SCOPED_GFX_PREF_FLOAT("apz.axis_lock.breakout_angle", M_PI / 8.0f);
+
   FrameMetrics originalMetrics = GetPinchableFrameMetrics();
   apzc->SetFrameMetrics(originalMetrics);
 
@@ -94,7 +98,7 @@ TEST_F(APZCGestureDetectorTester, Pan_After_Pinch) {
 
   // ... and pan with the remaining finger. This pan just breaks through the
   // distance threshold.
-  focusY += 40;
+  focusY += StaticPrefs::apz_touch_start_tolerance() * tm->GetDPI();
   mti = MultiTouchInput(MultiTouchInput::MULTITOUCH_MOVE, 0, mcc->Time(), 0);
   mti.mTouches.AppendElement(
       CreateSingleTouchData(firstFingerId, focusX - pinchLengthScaled, focusY));
@@ -130,6 +134,8 @@ TEST_F(APZCGestureDetectorTester, Pan_After_Pinch) {
 #endif
 
 TEST_F(APZCGestureDetectorTester, Pan_With_Tap) {
+  SCOPED_GFX_PREF_FLOAT("apz.touch_start_tolerance", 0.1);
+
   FrameMetrics originalMetrics = GetPinchableFrameMetrics();
   apzc->SetFrameMetrics(originalMetrics);
 
@@ -146,6 +152,9 @@ TEST_F(APZCGestureDetectorTester, Pan_With_Tap) {
   int firstFingerId = 0;
   int secondFingerId = firstFingerId + 1;
 
+  const float panThreshold =
+      StaticPrefs::apz_touch_start_tolerance() * tm->GetDPI();
+
   // Put finger down
   MultiTouchInput mti =
       CreateMultiTouchInput(MultiTouchInput::MULTITOUCH_START, mcc->Time());
@@ -154,7 +163,7 @@ TEST_F(APZCGestureDetectorTester, Pan_With_Tap) {
   apzc->ReceiveInputEvent(mti, Some(nsTArray<uint32_t>{kDefaultTouchBehavior}));
 
   // Start a pan, break through the threshold
-  touchY += 40;
+  touchY += panThreshold;
   mti = CreateMultiTouchInput(MultiTouchInput::MULTITOUCH_MOVE, mcc->Time());
   mti.mTouches.AppendElement(
       CreateSingleTouchData(firstFingerId, touchX, touchY));
@@ -182,7 +191,7 @@ TEST_F(APZCGestureDetectorTester, Pan_With_Tap) {
   apzc->ReceiveInputEvent(mti);
 
   // Bust through the threshold again
-  touchY += 40;
+  touchY += panThreshold;
   mti = CreateMultiTouchInput(MultiTouchInput::MULTITOUCH_MOVE, mcc->Time());
   mti.mTouches.AppendElement(
       CreateSingleTouchData(firstFingerId, touchX, touchY));

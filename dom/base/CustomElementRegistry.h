@@ -133,13 +133,13 @@ struct CustomElementDefinition {
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(CustomElementDefinition)
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(CustomElementDefinition)
 
-  CustomElementDefinition(nsAtom* aType, nsAtom* aLocalName,
-                          int32_t aNamespaceID,
-                          CustomElementConstructor* aConstructor,
-                          nsTArray<RefPtr<nsAtom>>&& aObservedAttributes,
-                          UniquePtr<LifecycleCallbacks>&& aCallbacks,
-                          bool aFormAssociated, bool aDisableInternals,
-                          bool aDisableShadow);
+  CustomElementDefinition(
+      nsAtom* aType, nsAtom* aLocalName, int32_t aNamespaceID,
+      CustomElementConstructor* aConstructor,
+      nsTArray<RefPtr<nsAtom>>&& aObservedAttributes,
+      UniquePtr<LifecycleCallbacks>&& aCallbacks,
+      UniquePtr<FormAssociatedLifecycleCallbacks>&& aFormAssociatedCallbacks,
+      bool aFormAssociated, bool aDisableInternals, bool aDisableShadow);
 
   // The type (name) for this custom element, for <button is="x-foo"> or <x-foo>
   // this would be x-foo.
@@ -159,6 +159,7 @@ struct CustomElementDefinition {
 
   // The lifecycle callbacks to call for this custom element.
   UniquePtr<LifecycleCallbacks> mCallbacks;
+  UniquePtr<FormAssociatedLifecycleCallbacks> mFormAssociatedCallbacks;
 
   // If this is true, user agent treats elements associated to this custom
   // element definition as form-associated custom elements.
@@ -547,8 +548,8 @@ class CustomElementRegistry final : public nsISupports, public nsWrapperCache {
               CustomElementConstructor& aFunctionConstructor,
               const ElementDefinitionOptions& aOptions, ErrorResult& aRv);
 
-  void Get(JSContext* cx, const nsAString& name,
-           JS::MutableHandle<JS::Value> aRetVal);
+  void Get(const nsAString& name,
+           OwningCustomElementConstructorOrUndefined& aRetVal);
 
   already_AddRefed<Promise> WhenDefined(const nsAString& aName,
                                         ErrorResult& aRv);

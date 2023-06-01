@@ -6,17 +6,17 @@
 
 var EXPORTED_SYMBOLS = ["DoHTestUtils"];
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "RemoteSettings",
   "resource://services-settings/remote-settings.js"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "TestUtils",
-  "resource://testing-common/TestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  TestUtils: "resource://testing-common/TestUtils.sys.mjs",
+});
 
 const kConfigCollectionKey = "doh-config";
 const kProviderCollectionKey = "doh-providers";
@@ -54,7 +54,7 @@ const DoHTestUtils = {
   async loadRemoteSettingsProviders(providers, waitForConfigFlushes = true) {
     let configFlushedPromise = this.waitForConfigFlush(waitForConfigFlushes);
 
-    let providerRS = RemoteSettings(kProviderCollectionKey);
+    let providerRS = lazy.RemoteSettings(kProviderCollectionKey);
     let db = await providerRS.db;
     await db.importChanges({}, Date.now(), providers, { clear: true });
 
@@ -67,7 +67,7 @@ const DoHTestUtils = {
   async loadRemoteSettingsConfig(config, waitForConfigFlushes = true) {
     let configFlushedPromise = this.waitForConfigFlush(waitForConfigFlushes);
 
-    let configRS = RemoteSettings(kConfigCollectionKey);
+    let configRS = lazy.RemoteSettings(kConfigCollectionKey);
     let db = await configRS.db;
     await db.importChanges({}, Date.now(), [config]);
 
@@ -100,8 +100,8 @@ const DoHTestUtils = {
 
   // Clears existing config AND loads defaults.
   async resetRemoteSettingsConfig(waitForConfigFlushes = true) {
-    let providerRS = RemoteSettings(kProviderCollectionKey);
-    let configRS = RemoteSettings(kConfigCollectionKey);
+    let providerRS = lazy.RemoteSettings(kProviderCollectionKey);
+    let configRS = lazy.RemoteSettings(kConfigCollectionKey);
     for (let rs of [providerRS, configRS]) {
       let configFlushedPromise = this.waitForConfigFlush(waitForConfigFlushes);
       await rs.db.importChanges({}, Date.now(), [], { clear: true });
@@ -122,11 +122,11 @@ const DoHTestUtils = {
   },
 
   waitForConfigUpdate() {
-    return TestUtils.topicObserved(kConfigUpdateTopic);
+    return lazy.TestUtils.topicObserved(kConfigUpdateTopic);
   },
 
   waitForControllerReload() {
-    return TestUtils.topicObserved(kControllerReloadedTopic);
+    return lazy.TestUtils.topicObserved(kControllerReloadedTopic);
   },
 
   waitForConfigFlush(shouldWait = true) {

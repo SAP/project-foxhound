@@ -23,12 +23,13 @@ const {
   PSEUDO_ELEMENTS,
   CSS_PROPERTIES,
   PREFERENCES,
-} = require("devtools/shared/css/generated/properties-db");
+} = require("resource://devtools/shared/css/generated/properties-db.js");
 const {
   generateCssProperties,
-} = require("devtools/server/actors/css-properties");
-const { Preferences } = require("resource://gre/modules/Preferences.jsm");
-const InspectorUtils = require("InspectorUtils");
+} = require("resource://devtools/server/actors/css-properties.js");
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
+);
 
 function run_test() {
   const propertiesErrorMessage =

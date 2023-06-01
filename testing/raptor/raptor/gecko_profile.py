@@ -5,8 +5,6 @@
 """
 module to handle Gecko profiling.
 """
-from __future__ import absolute_import
-
 import gzip
 import json
 import os
@@ -14,7 +12,6 @@ import tempfile
 import zipfile
 
 import mozfile
-
 from logger.logger import RaptorLogger
 from mozgeckoprofiler import ProfileSymbolicator
 
@@ -93,7 +90,7 @@ class GeckoProfile(object):
             with gzip.open(profile_path, "r") as profile_file:
                 profile = json.load(profile_file)
         else:
-            with open(profile_path, "r") as profile_file:
+            with open(profile_path, "r", encoding="utf-8") as profile_file:
                 profile = json.load(profile_file)
         return profile
 
@@ -109,7 +106,12 @@ class GeckoProfile(object):
             raise
         except Exception:
             LOG.critical("Encountered an exception during profile symbolication")
-            raise
+            # Do not raise an exception and return the profile so we won't block
+            # the profile capturing pipeline if symbolication fails.
+            return profile
+
+    def _is_extra_profiler_run(self):
+        return self.raptor_config.get("extra_profiler_run", False)
 
     def collect_profiles(self):
         """Returns all profiles files."""
@@ -136,35 +138,60 @@ class GeckoProfile(object):
             # Get the browsertime.json file along with the cold/warm splits
             # if they exist from a chimera test
             results = {"main": None, "cold": None, "warm": None}
-            for filename in os.listdir(topdir):
+            profiling_dir = os.path.join(topdir, "profiling")
+            is_extra_profiler_run = self._is_extra_profiler_run()
+            result_dir = profiling_dir if is_extra_profiler_run else topdir
+
+            if not os.path.isdir(result_dir):
+                # Result directory not found. Return early. Caller will decide
+                # if this should throw an error or not.
+                LOG.info("Could not find the result directory.")
+                return []
+
+            for filename in os.listdir(result_dir):
                 if filename == "browsertime.json":
-                    results["main"] = os.path.join(topdir, filename)
+                    results["main"] = os.path.join(result_dir, filename)
                 elif filename == "cold-browsertime.json":
-                    results["cold"] = os.path.join(topdir, filename)
+                    results["cold"] = os.path.join(result_dir, filename)
                 elif filename == "warm-browsertime.json":
-                    results["warm"] = os.path.join(topdir, filename)
+                    results["warm"] = os.path.join(result_dir, filename)
                 if all(results.values()):
                     break
 
             if not any(results.values()):
-                raise Exception(
-                    "Could not find any browsertime result JSONs in the artifacts"
-                )
+                if is_extra_profiler_run:
+                    LOG.info(
+                        "Could not find any browsertime result JSONs in the artifacts "
+                        " for the extra profiler run"
+                    )
+                    return []
+                else:
+                    raise Exception(
+                        "Could not find any browsertime result JSONs in the artifacts"
+                    )
 
             profile_locations = []
             if self.raptor_config.get("chimera", False):
                 if results["warm"] is None or results["cold"] is None:
-                    raise Exception(
-                        "The test ran in chimera mode but we found no cold "
-                        "and warm browsertime JSONs. Cannot symbolicate profiles."
-                    )
+                    if is_extra_profiler_run:
+                        LOG.info(
+                            "The test ran in chimera mode but we found no cold "
+                            "and warm browsertime JSONs. Cannot symbolicate profiles. "
+                            "Failing silently because this is an extra profiler run."
+                        )
+                        return []
+                    else:
+                        raise Exception(
+                            "The test ran in chimera mode but we found no cold "
+                            "and warm browsertime JSONs. Cannot symbolicate profiles."
+                        )
                 profile_locations.extend(
                     [("cold", results["cold"]), ("warm", results["warm"])]
                 )
             else:
                 # When we don't run in chimera mode, it means that we
-                # either ran a benchmark, scenario test, or separate
-                # warm/cold pageload tests
+                # either ran a benchmark, scenario test or separate
+                # warm/cold pageload tests.
                 profile_locations.append(
                     (
                         __get_test_type(),
@@ -173,16 +200,23 @@ class GeckoProfile(object):
                 )
 
             for testtype, results_json in profile_locations:
-                with open(results_json) as f:
+                with open(results_json, encoding="utf-8") as f:
                     data = json.load(f)
+                results_dir = os.path.dirname(results_json)
                 for entry in data:
-                    for rel_profile_path in entry["files"]["geckoProfiles"]:
-                        res.append(
-                            {
-                                "path": os.path.join(topdir, rel_profile_path),
-                                "type": testtype,
-                            }
-                        )
+                    try:
+                        for rel_profile_path in entry["files"]["geckoProfiles"]:
+                            res.append(
+                                {
+                                    "path": os.path.join(results_dir, rel_profile_path),
+                                    "type": testtype,
+                                }
+                            )
+                    except KeyError:
+                        if is_extra_profiler_run:
+                            LOG.info("Failed to find profiles for extra profiler run.")
+                        else:
+                            LOG.error("Failed to find profiles.")
         else:
             # Raptor-webext stores its profiles in the self.gecko_profile_dir
             # directory
@@ -203,8 +237,12 @@ class GeckoProfile(object):
 
         """
         profiles = self.collect_profiles()
+        is_extra_profiler_run = self._is_extra_profiler_run()
         if len(profiles) == 0:
-            LOG.error("No profiles collected")
+            if is_extra_profiler_run:
+                LOG.info("No profiles collected in the extra profiler run")
+            else:
+                LOG.error("No profiles collected")
             return
 
         symbolicator = ProfileSymbolicator(
@@ -249,6 +287,7 @@ class GeckoProfile(object):
                 self.cleanup = False
 
         missing_symbols_zip = os.path.join(self.upload_dir, "missingsymbols.zip")
+        test_type = self.test_config.get("type", "pageload")
 
         try:
             mode = zipfile.ZIP_DEFLATED
@@ -260,7 +299,14 @@ class GeckoProfile(object):
                 profile_path = profile_info["path"]
 
                 LOG.info("Opening profile at %s" % profile_path)
-                profile = self._open_gecko_profile(profile_path)
+                try:
+                    profile = self._open_gecko_profile(profile_path)
+                except FileNotFoundError:
+                    if is_extra_profiler_run:
+                        LOG.info("Profile not found on extra profiler run.")
+                    else:
+                        LOG.error("Profile not found.")
+                    continue
 
                 LOG.info("Symbolicating profile from %s" % profile_path)
                 symbolicated_profile = self._symbolicate_profile(
@@ -269,21 +315,27 @@ class GeckoProfile(object):
 
                 try:
                     # Write the profiles into a set of folders formatted as:
-                    # <TEST-NAME>-<TEST_TYPE>. The file names have a count prefixed
-                    # to them to prevent any naming conflicts. The count is the
-                    # number of files already in the folder.
-                    folder_name = "%s-%s" % (
-                        self.test_config["name"],
-                        profile_info["type"],
+                    # <TEST-NAME>-<TEST-RUN-TYPE>.
+                    # <TEST-RUN-TYPE> can be pageload-{warm,cold} or {test-type}
+                    # only for the tests that are not a pageload test.
+                    # For example, "cnn-pageload-warm".
+                    # The file names are formatted as <ITERATION-TYPE>-<ITERATION>
+                    # to clearly indicate without redundant information.
+                    # For example, "browser-cycle-1".
+                    test_run_type = (
+                        "{0}-{1}".format(test_type, profile_info["type"])
+                        if test_type == "pageload"
+                        else test_type
                     )
-                    profile_name = "-".join(
-                        [
-                            str(
-                                len([f for f in arc.namelist() if folder_name in f]) + 1
-                            ),
-                            os.path.split(profile_path)[-1],
-                        ]
-                    )
+                    folder_name = "%s-%s" % (self.test_config["name"], test_run_type)
+                    iteration = str(os.path.split(profile_path)[-1].split("-")[-1])
+                    if test_type == "pageload" and profile_info["type"] == "cold":
+                        iteration_type = "browser-cycle"
+                    elif profile_info["type"] == "warm":
+                        iteration_type = "page-cycle"
+                    else:
+                        iteration_type = "iteration"
+                    profile_name = "-".join([iteration_type, iteration])
                     path_in_zip = os.path.join(folder_name, profile_name)
 
                     LOG.info(

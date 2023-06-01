@@ -10,24 +10,62 @@
 
 #if defined(OS_WIN) && defined(MOZ_SANDBOX)
 #  include "mozilla/sandboxTarget.h"
+#  include "WMF.h"
+#  include "WMFDecoderModule.h"
+#endif
+
+#if defined(XP_OPENBSD) && defined(MOZ_SANDBOX)
+#  include "mozilla/SandboxSettings.h"
 #endif
 
 namespace mozilla::ipc {
 
-UtilityProcessImpl::UtilityProcessImpl(ProcessId aParentPid)
-    : ProcessChild(aParentPid) {
-  mUtility = new UtilityProcessChild();
-}
+UtilityProcessImpl::~UtilityProcessImpl() = default;
 
-UtilityProcessImpl::~UtilityProcessImpl() { mUtility = nullptr; }
+#if defined(XP_WIN)
+/* static */
+void UtilityProcessImpl::LoadLibraryOrCrash(LPCWSTR aLib) {
+  HMODULE module = ::LoadLibraryW(aLib);
+  if (!module) {
+    MOZ_CRASH("Unable to preload module");
+  }
+}
+#endif  // defined(XP_WIN)
 
 bool UtilityProcessImpl::Init(int aArgc, char* aArgv[]) {
+  Maybe<uint64_t> sandboxingKind = geckoargs::sSandboxingKind.Get(aArgc, aArgv);
+  if (sandboxingKind.isNothing()) {
+    return false;
+  }
+
+  if (*sandboxingKind >= SandboxingKind::COUNT) {
+    return false;
+  }
+
 #if defined(MOZ_SANDBOX) && defined(OS_WIN)
   // We delay load winmm.dll so that its dependencies don't interfere with COM
   // initialization when win32k is locked down. We need to load it before we
   // lower the sandbox in processes where the policy will prevent loading.
-  ::LoadLibraryW(L"winmm.dll");
+  LoadLibraryOrCrash(L"winmm.dll");
+
+  if (*sandboxingKind == SandboxingKind::GENERIC_UTILITY) {
+    // Preload audio generic libraries required for ffmpeg only
+    UtilityAudioDecoderParent::GenericPreloadForSandbox();
+  }
+
+  if (*sandboxingKind == SandboxingKind::UTILITY_AUDIO_DECODING_WMF
+#  ifdef MOZ_WMF_MEDIA_ENGINE
+      || *sandboxingKind == SandboxingKind::MF_MEDIA_ENGINE_CDM
+#  endif
+  ) {
+    UtilityAudioDecoderParent::WMFPreloadForSandbox();
+  }
+
+  // Go for it
   mozilla::SandboxTarget::Instance()->StartSandbox();
+#elif defined(__OpenBSD__) && defined(MOZ_SANDBOX)
+  StartOpenBSDSandbox(GeckoProcessType_Utility,
+                      (SandboxingKind)*sandboxingKind);
 #endif
 
   Maybe<const char*> parentBuildID =
@@ -36,24 +74,12 @@ bool UtilityProcessImpl::Init(int aArgc, char* aArgv[]) {
     return false;
   }
 
-  Maybe<uint64_t> sandboxingKind = geckoargs::sSandboxingKind.Get(aArgc, aArgv);
-  if (sandboxingKind.isNothing()) {
-    return false;
-  }
-
-  // This checks needs to be kept in sync with SandboxingKind enum living in
-  // ipc/glue/UtilityProcessSandboxing.h
-  if (*sandboxingKind < SandboxingKind::GENERIC_UTILITY ||
-      *sandboxingKind > SandboxingKind::GENERIC_UTILITY) {
-    return false;
-  }
-
   if (!ProcessChild::InitPrefs(aArgc, aArgv)) {
     return false;
   }
 
-  return mUtility->Init(ParentPid(), nsCString(*parentBuildID), *sandboxingKind,
-                        IOThreadChild::TakeInitialPort());
+  return mUtility->Init(TakeInitialEndpoint(), nsCString(*parentBuildID),
+                        *sandboxingKind);
 }
 
 void UtilityProcessImpl::CleanUp() { NS_ShutdownXPCOM(nullptr); }

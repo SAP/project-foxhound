@@ -6,11 +6,9 @@ MockFilePicker.init(window);
 
 const SAVE_PER_SITE_PREF = "browser.download.lastDir.savePerSite";
 const ALWAYS_DOWNLOAD_DIR_PREF = "browser.download.useDownloadDir";
-const NEW_DOWNLOADS_CHANGES_PREF =
-  "browser.download.improvements_to_download_panel";
+const ALWAYS_ASK_PREF = "browser.download.always_ask_before_handling_new_types";
 const UCT_URI = "chrome://mozapps/content/downloads/unknownContentType.xhtml";
 
-/* import-globals-from ../../../../../toolkit/content/tests/browser/common/mockTransfer.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/toolkit/content/tests/browser/common/mockTransfer.js",
   this
@@ -40,13 +38,12 @@ function triggerSave(aWindow, aCallback) {
   let testURI =
     "http://mochi.test:8888/browser/browser/base/content/test/general/navigating_window_with_download.html";
 
-  // Since we don't open the UTC dialog when the new downloads changes are enabled,
-  // no need to observe it.
-  if (!Services.prefs.getBoolPref(NEW_DOWNLOADS_CHANGES_PREF)) {
+  // Only observe the UTC dialog if it's enabled by pref
+  if (Services.prefs.getBoolPref(ALWAYS_ASK_PREF)) {
     windowObserver.setCallback(onUCTDialog);
   }
 
-  BrowserTestUtils.loadURI(testBrowser, testURI);
+  BrowserTestUtils.loadURIString(testBrowser, testURI);
 
   // Create the folder the link will be saved into.
   var destDir = createTemporarySaveDirectory();
@@ -137,6 +134,7 @@ Services.ww.registerNotification(windowObserver);
 
 function test() {
   waitForExplicitFinish();
+  Services.prefs.setBoolPref(ALWAYS_ASK_PREF, false);
 
   function testOnWindow(options, callback) {
     info("testOnWindow(" + options + ")");
@@ -173,13 +171,17 @@ function test() {
     Services.ww.unregisterNotification(windowObserver);
     Services.prefs.clearUserPref(ALWAYS_DOWNLOAD_DIR_PREF);
     Services.prefs.clearUserPref(SAVE_PER_SITE_PREF);
+    Services.prefs.clearUserPref(ALWAYS_ASK_PREF);
     Services.prefs.clearUserPref("browser.download.folderList");
     Services.prefs.clearUserPref("browser.download.dir");
     info("Finished running the cleanup code");
   });
 
   info(
-    `Running test with new downloads pref set to ${NEW_DOWNLOADS_CHANGES_PREF}`
+    `Running test with ${ALWAYS_ASK_PREF} set to ${Services.prefs.getBoolPref(
+      ALWAYS_ASK_PREF,
+      false
+    )}`
   );
   testOnWindow(undefined, function(win) {
     let windowGonePromise = BrowserTestUtils.domWindowClosed(win);

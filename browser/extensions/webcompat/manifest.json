@@ -2,11 +2,11 @@
   "manifest_version": 2,
   "name": "Web Compatibility Interventions",
   "description": "Urgent post-release fixes for web compatibility.",
-  "version": "30.0.0",
-  "applications": {
+  "version": "111.0.0",
+  "browser_specific_settings": {
     "gecko": {
       "id": "webcompat@mozilla.org",
-      "strict_min_version": "59.0b5"
+      "strict_min_version": "102.0"
     }
   },
 
@@ -64,6 +64,7 @@
   "content_security_policy": "script-src 'self' 'sha256-MmZkN2QaIHhfRWPZ8TVRjijTn5Ci1iEabtTEWrt9CCo='; default-src 'self'; base-uri moz-extension://*; object-src 'none'",
 
   "permissions": [
+    "mozillaAddons",
     "tabs",
     "webNavigation",
     "webRequest",
@@ -93,19 +94,27 @@
   "web_accessible_resources": [
     "shims/addthis-angular.js",
     "shims/adform.js",
+    "shims/adnexus-ast.js",
     "shims/adnexus-prebid.js",
     "shims/adsafeprotected-ima.js",
     "shims/apstag.js",
+    "shims/blogger.js",
+    "shims/bloggerAccount.js",
     "shims/bmauth.js",
+    "shims/branch.js",
     "shims/chartbeat.js",
     "shims/crave-ca.js",
     "shims/criteo.js",
     "shims/cxense.js",
+    "shims/doubleverify.js",
     "shims/eluminate.js",
     "shims/empty-script.js",
     "shims/empty-shim.txt",
+    "shims/everest.js",
     "shims/facebook-sdk.js",
     "shims/facebook.svg",
+    "shims/fastclick.js",
+    "shims/firebase.js",
     "shims/google-ads.js",
     "shims/google-analytics-and-tag-manager.js",
     "shims/google-analytics-ecommerce-plugin.js",
@@ -114,26 +123,31 @@
     "shims/google-page-ad.js",
     "shims/google-publisher-tags.js",
     "shims/google-safeframe.html",
-    "shims/hamropatro.js",
     "shims/history.js",
-    "shims/humblebundle.js",
+    "shims/iam.js",
     "shims/iaspet.js",
+    "shims/instagram.js",
     "shims/kinja.js",
     "shims/live-test-shim.js",
+    "shims/maxmind-geoip.js",
     "shims/microsoftLogin.js",
+    "shims/microsoftVirtualAssistant.js",
     "shims/moat.js",
     "shims/mochitest-shim-1.js",
     "shims/mochitest-shim-2.js",
     "shims/mochitest-shim-3.js",
+    "shims/nielsen.js",
     "shims/optimizely.js",
     "shims/play.svg",
+    "shims/private-browsing-web-api-fixes.js",
     "shims/rambler-authenticator.js",
     "shims/rich-relevance.js",
-    "shims/stackblitz.js",
+    "shims/spotify-embed.js",
     "shims/tracking-pixel.png",
     "shims/vast2.xml",
     "shims/vast3.xml",
     "shims/vidible.js",
-    "shims/vmad.xml"
+    "shims/vmad.xml",
+    "shims/webtrends.js"
   ]
 }

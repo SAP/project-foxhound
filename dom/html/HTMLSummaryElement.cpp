@@ -62,7 +62,9 @@ nsresult HTMLSummaryElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
     }
   }  // event->HasMouseEventMessage()
 
-  HandleKeyboardActivation(aVisitor);
+  if (event->HasKeyEventMessage() && event->IsTrusted()) {
+    HandleKeyboardActivation(aVisitor);
+  }
   return rv;
 }
 
@@ -94,11 +96,18 @@ bool HTMLSummaryElement::IsMainSummary() const {
     return false;
   }
 
-  return details->GetFirstSummary() == this || IsRootOfNativeAnonymousSubtree();
+  return details->GetFirstSummary() == this ||
+         GetContainingShadow() == details->GetShadowRoot();
 }
 
 HTMLDetailsElement* HTMLSummaryElement::GetDetails() const {
-  return HTMLDetailsElement::FromNodeOrNull(GetParent());
+  if (auto* details = HTMLDetailsElement::FromNodeOrNull(GetParent())) {
+    return details;
+  }
+  if (!HasBeenInUAWidget()) {
+    return nullptr;
+  }
+  return HTMLDetailsElement::FromNodeOrNull(GetContainingShadowHost());
 }
 
 JSObject* HTMLSummaryElement::WrapNode(JSContext* aCx,

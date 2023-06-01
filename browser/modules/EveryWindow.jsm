@@ -28,8 +28,6 @@ var EXPORTED_SYMBOLS = ["EveryWindow"];
  * If the window is closing, a second argument is passed with value `true`.
  */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 var initialized = false;
 var callbacks = new Map();
 
@@ -42,7 +40,7 @@ function callForEveryWindow(callback) {
   }
 }
 
-this.EveryWindow = {
+const EveryWindow = {
   /**
    * Registers init and uninit functions to be called on every window.
    *

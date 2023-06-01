@@ -40,7 +40,7 @@ class SVGSwitchFrame final : public SVGGFrame {
 #endif
 
 #ifdef DEBUG_FRAME_DUMP
-  virtual nsresult GetFrameName(nsAString& aResult) const override {
+  nsresult GetFrameName(nsAString& aResult) const override {
     return MakeFrameName(u"SVGSwitch"_ns, aResult);
   }
 #endif
@@ -53,7 +53,7 @@ class SVGSwitchFrame final : public SVGGFrame {
                         imgDrawingParams& aImgParams,
                         const nsIntRect* aDirtyRect = nullptr) override;
   nsIFrame* GetFrameForPoint(const gfxPoint& aPoint) override;
-  virtual void ReflowSVG() override;
+  void ReflowSVG() override;
   virtual SVGBBox GetBBoxContribution(const Matrix& aToBBoxUserspace,
                                       uint32_t aFlags) override;
 
@@ -99,10 +99,8 @@ void SVGSwitchFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 void SVGSwitchFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
                               imgDrawingParams& aImgParams,
                               const nsIntRect* aDirtyRect) {
-  NS_ASSERTION(
-      !NS_SVGDisplayListPaintingEnabled() || (mState & NS_FRAME_IS_NONDISPLAY),
-      "If display lists are enabled, only painting of non-display "
-      "SVG should take this code path");
+  NS_ASSERTION(HasAnyStateBits(NS_FRAME_IS_NONDISPLAY),
+               "Only painting of non-display SVG should take this code path");
 
   if (StyleEffects()->mOpacity == 0.0) {
     return;
@@ -119,10 +117,9 @@ void SVGSwitchFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
 }
 
 nsIFrame* SVGSwitchFrame::GetFrameForPoint(const gfxPoint& aPoint) {
-  NS_ASSERTION(!NS_SVGDisplayListHitTestingEnabled() ||
-                   (mState & NS_FRAME_IS_NONDISPLAY),
-               "If display lists are enabled, only hit-testing of non-display "
-               "SVG should take this code path");
+  NS_ASSERTION(
+      HasAnyStateBits(NS_FRAME_IS_NONDISPLAY),
+      "Only hit-testing of non-display SVG should take this code path");
 
   nsIFrame* kid = GetActiveChildFrame();
   ISVGDisplayableFrame* svgFrame = do_QueryFrame(kid);

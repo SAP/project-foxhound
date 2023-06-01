@@ -15,6 +15,7 @@
 #include <cmath>
 
 #include "absl/flags/flag.h"
+#include "absl/strings/string_view.h"
 #include "modules/audio_coding/neteq/default_neteq_factory.h"
 #include "modules/audio_coding/neteq/tools/neteq_quality_test.h"
 #include "modules/audio_coding/neteq/tools/output_audio_file.h"
@@ -105,13 +106,13 @@ const int kInitSeed = 0x12345678;
 const int kPacketLossTimeUnitMs = 10;
 
 // Common validator for file names.
-static bool ValidateFilename(const std::string& value, bool is_output) {
+static bool ValidateFilename(absl::string_view value, bool is_output) {
   if (!is_output) {
-    RTC_CHECK_NE(value.substr(value.find_last_of(".") + 1), "wav")
+    RTC_CHECK_NE(value.substr(value.find_last_of('.') + 1), "wav")
         << "WAV file input is not supported";
   }
-  FILE* fid =
-      is_output ? fopen(value.c_str(), "wb") : fopen(value.c_str(), "rb");
+  FILE* fid = is_output ? fopen(std::string(value).c_str(), "wb")
+                        : fopen(std::string(value).c_str(), "rb");
   if (fid == nullptr)
     return false;
   fclose(fid);
@@ -120,8 +121,8 @@ static bool ValidateFilename(const std::string& value, bool is_output) {
 
 // ProbTrans00Solver() is to calculate the transition probability from no-loss
 // state to itself in a modified Gilbert Elliot packet loss model. The result is
-// to achieve the target packet loss rate |loss_rate|, when a packet is not
-// lost only if all |units| drawings within the duration of the packet result in
+// to achieve the target packet loss rate `loss_rate`, when a packet is not
+// lost only if all `units` drawings within the duration of the packet result in
 // no-loss.
 static double ProbTrans00Solver(int units,
                                 double loss_rate,
@@ -310,10 +311,10 @@ void NetEqQualityTest::SetUp() {
   int units = block_duration_ms_ / kPacketLossTimeUnitMs;
   switch (absl::GetFlag(FLAGS_random_loss_mode)) {
     case kUniformLoss: {
-      // |unit_loss_rate| is the packet loss rate for each unit time interval
+      // `unit_loss_rate` is the packet loss rate for each unit time interval
       // (kPacketLossTimeUnitMs). Since a packet loss event is generated if any
       // of |block_duration_ms_ / kPacketLossTimeUnitMs| unit time intervals of
-      // a full packet duration is drawn with a loss, |unit_loss_rate| fulfills
+      // a full packet duration is drawn with a loss, `unit_loss_rate` fulfills
       // (1 - unit_loss_rate) ^ (block_duration_ms_ / kPacketLossTimeUnitMs) ==
       // 1 - packet_loss_rate.
       double unit_loss_rate =
@@ -322,7 +323,7 @@ void NetEqQualityTest::SetUp() {
       break;
     }
     case kGilbertElliotLoss: {
-      // |FLAGS_burst_length| should be integer times of kPacketLossTimeUnitMs.
+      // `FLAGS_burst_length` should be integer times of kPacketLossTimeUnitMs.
       ASSERT_EQ(0, absl::GetFlag(FLAGS_burst_length) % kPacketLossTimeUnitMs);
 
       // We do not allow 100 percent packet loss in Gilbert Elliot model, which

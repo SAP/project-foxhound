@@ -24,9 +24,9 @@ namespace mozilla {
 namespace net {
 
 Http3Stream::Http3Stream(nsAHttpTransaction* httpTransaction,
-                         Http3Session* session, uint32_t aCos, uint64_t bcId)
-    : mSession(session),
-      mTransaction(httpTransaction),
+                         Http3Session* session, const ClassOfService& cos,
+                         uint64_t bcId)
+    : Http3StreamBase(httpTransaction, session),
       mCurrentTopBrowsingContextId(bcId) {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
   LOG3(("Http3Stream::Http3Stream [this=%p]", this));
@@ -36,7 +36,8 @@ Http3Stream::Http3Stream(nsAHttpTransaction* httpTransaction,
     mTransactionTabId = trans->TopBrowsingContextId();
   }
 
-  SetPriority(aCos);
+  SetPriority(cos.Flags());
+  SetIncremental(cos.Incremental());
 }
 
 void Http3Stream::Close(nsresult aResult) {
@@ -96,6 +97,10 @@ void Http3Stream::SetPriority(uint32_t aCos) {
   }
 }
 
+void Http3Stream::SetIncremental(bool incremental) {
+  mPriorityIncremental = incremental;
+}
+
 nsresult Http3Stream::TryActivating() {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
   LOG(("Http3Stream::TryActivating [this=%p]", this));
@@ -115,7 +120,7 @@ nsresult Http3Stream::TryActivating() {
   head->Method(method);
   head->Path(path);
 
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+#ifdef DEBUG
   nsAutoCString contentLength;
   if (NS_SUCCEEDED(head->GetHeader(nsHttp::Content_Length, contentLength))) {
     int64_t len;
@@ -204,7 +209,7 @@ nsresult Http3Stream::OnReadSegment(const char* buf, uint32_t count,
         break;
       }
 
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+#ifdef DEBUG
       mRequestBodyLenSent += *countRead;
 #endif
       mTotalSent += *countRead;
@@ -214,7 +219,7 @@ nsresult Http3Stream::OnReadSegment(const char* buf, uint32_t count,
     case EARLY_RESPONSE:
       // We do not need to send the rest of the request, so just ignore it.
       *countRead = count;
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+#ifdef DEBUG
       mRequestBodyLenSent += count;
 #endif
       break;
@@ -325,7 +330,7 @@ nsresult Http3Stream::OnWriteSegment(char* buf, uint32_t count,
   return rv;
 }
 
-nsresult Http3Stream::ReadSegments(nsAHttpSegmentReader* reader) {
+nsresult Http3Stream::ReadSegments() {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
 
   if (mRecvState == RECV_DONE) {
@@ -404,8 +409,8 @@ nsresult Http3Stream::ReadSegments(nsAHttpSegmentReader* reader) {
           Telemetry::HTTP3_SENDING_BLOCKED_BY_FLOW_CONTROL_PER_TRANS,
           mSendingBlockedByFlowControlCount);
 
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
-      MOZ_DIAGNOSTIC_ASSERT(mRequestBodyLenSent == mRequestBodyLenExpected);
+#ifdef DEBUG
+      MOZ_ASSERT(mRequestBodyLenSent == mRequestBodyLenExpected);
 #endif
       rv = NS_OK;
       again = false;
@@ -415,8 +420,7 @@ nsresult Http3Stream::ReadSegments(nsAHttpSegmentReader* reader) {
   return rv;
 }
 
-nsresult Http3Stream::WriteSegments(nsAHttpSegmentWriter* writer,
-                                    uint32_t count, uint32_t* countWritten) {
+nsresult Http3Stream::WriteSegments() {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
   LOG(("Http3Stream::WriteSegments [this=%p]", this));
   nsresult rv = NS_OK;
@@ -425,9 +429,9 @@ nsresult Http3Stream::WriteSegments(nsAHttpSegmentWriter* writer,
 
   do {
     mSocketInCondition = NS_OK;
-    rv = mTransaction->WriteSegmentsAgain(this, count, &countWrittenSingle,
-                                          &again);
-    *countWritten += countWrittenSingle;
+    countWrittenSingle = 0;
+    rv = mTransaction->WriteSegmentsAgain(
+        this, nsIOService::gDefaultSegmentSize, &countWrittenSingle, &again);
     LOG(("Http3Stream::WriteSegments rv=0x%" PRIx32
          " countWrittenSingle=%" PRIu32 " socketin=%" PRIx32 " [this=%p]",
          static_cast<uint32_t>(rv), countWrittenSingle,

@@ -1,11 +1,9 @@
 "use strict";
 
-const { IndexedDB } = ChromeUtils.import(
-  "resource://gre/modules/IndexedDB.jsm"
+const { IndexedDB } = ChromeUtils.importESModule(
+  "resource://gre/modules/IndexedDB.sys.mjs"
 );
-const { TelemetryEnvironment } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryEnvironment.jsm"
-);
+
 const { PreferenceRollouts } = ChromeUtils.import(
   "resource://normandy/lib/PreferenceRollouts.jsm"
 );

@@ -4,6 +4,18 @@
  *
  * You are granted a license to use, reproduce and create derivative works of
  * this document.
+ *
+ * This IDL file is related to the WebExtensions API object only used in
+ * unit tests.
+ *
+ * More info about generating webidl API bindings for WebExtensions API at:
+ *
+ * https://firefox-source-docs.mozilla.org/toolkit/components/extensions/webextensions/webidl_bindings.html
+ *
+ * A short summary of the special setup used by these WebIDL files (meant to aid
+ * webidl peers reviews and sign-offs) is available in the following section:
+ *
+ * https://firefox-source-docs.mozilla.org/toolkit/components/extensions/webextensions/webidl_bindings.html#review-process-on-changes-to-webidl-definitions
  */
 
 // WebIDL definition for the "mockExtensionAPI" WebExtensions API,
@@ -17,7 +29,7 @@ interface ExtensionMockAPI {
   any methodSyncWithReturn(any... args);
 
   [Throws, WebExtensionStub="NoReturn"]
-  void methodNoReturn(any... args);
+  undefined methodNoReturn(any... args);
 
   [Throws, WebExtensionStub="Async"]
   any methodAsync(any arg0, optional Function cb);

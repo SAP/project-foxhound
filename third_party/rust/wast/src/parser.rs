@@ -24,7 +24,8 @@
 //! [`Parse`](crate::parser::Parse) trait:
 //!
 //! ```
-//! use wast::{kw, Import, Func};
+//! use wast::kw;
+//! use wast::core::{Import, Func};
 //! use wast::parser::{Parser, Parse, Result};
 //!
 //! // Fields of a WebAssembly which only allow imports and functions, and all
@@ -64,11 +65,24 @@
 //! likely also draw inspiration from the excellent examples in the `syn` crate.
 
 use crate::lexer::{Float, Integer, Lexer, Token};
-use crate::{Error, Span};
+use crate::token::Span;
+use crate::Error;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::fmt;
 use std::usize;
+
+/// The maximum recursive depth of parens to parse.
+///
+/// This is sort of a fundamental limitation of the way this crate is
+/// designed. Everything is done through recursive descent parsing which
+/// means, well, that we're recursively going down the stack as we parse
+/// nested data structures. While we can handle this for wasm expressions
+/// since that's a pretty local decision, handling this for nested
+/// modules/components which be far trickier. For now we just say that when
+/// the parser goes too deep we return an error saying there's too many
+/// nested items. It would be great to not return an error here, though!
+pub(crate) const MAX_PARENS_DEPTH: usize = 100;
 
 /// A top-level convenience parseing function that parss a `T` from `buf` and
 /// requires that all tokens in `buf` are consume.
@@ -118,7 +132,7 @@ pub fn parse<'a, T: Parse<'a>>(buf: &'a ParseBuffer<'a>) -> Result<T> {
 /// The [`Parse`] trait is main abstraction you'll be working with when defining
 /// custom parser or custom syntax for your WebAssembly text format (or when
 /// using the official format items). Almost all items in the
-/// [`ast`](crate::ast) module implement the [`Parse`] trait, and you'll
+/// [`core`](crate::core) module implement the [`Parse`] trait, and you'll
 /// commonly use this with:
 ///
 /// * The top-level [`parse`] function to parse an entire input.
@@ -139,7 +153,7 @@ pub fn parse<'a, T: Parse<'a>>(buf: &'a ParseBuffer<'a>) -> Result<T> {
 /// (import "foo" "bar" (func (type 0)))
 /// ```
 ///
-/// but the [`Import`](crate::ast::Import) type parser looks like:
+/// but the [`Import`](crate::core::Import) type parser looks like:
 ///
 /// ```
 /// # use wast::kw;
@@ -170,7 +184,8 @@ pub fn parse<'a, T: Parse<'a>>(buf: &'a ParseBuffer<'a>) -> Result<T> {
 /// before all functions. An example [`Parse`] implementation might look like:
 ///
 /// ```
-/// use wast::{Import, Func, kw};
+/// use wast::core::{Import, Func};
+/// use wast::kw;
 /// use wast::parser::{Parser, Parse, Result};
 ///
 /// // Fields of a WebAssembly which only allow imports and functions, and all
@@ -268,7 +283,7 @@ pub trait Peek {
 
 /// A convenience type definition for `Result` where the error is hardwired to
 /// [`Error`].
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// A low-level buffer of tokens which represents a completely lexed file.
 ///
@@ -385,7 +400,7 @@ impl ParseBuffer<'_> {
 
                 // If the previous state was an `LParen`, we may have an
                 // annotation if the next keyword is reserved
-                (Reserved(s), State::LParen) if s.starts_with("@") && s.len() > 0 => {
+                (Reserved(s), State::LParen) if s.starts_with('@') && !s.is_empty() => {
                     let offset = self.input_pos(s);
                     State::Annotation {
                         span: Span { offset },
@@ -412,7 +427,7 @@ impl ParseBuffer<'_> {
             };
         }
         if let State::Annotation { span, .. } = state {
-            return Err(Error::new(span, format!("unclosed annotation")));
+            return Err(Error::new(span, "unclosed annotation".to_string()));
         }
         Ok(())
     }
@@ -440,12 +455,12 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn has_meaningful_tokens(self) -> bool {
-        self.buf.tokens[self.cursor().cur..]
-            .iter()
-            .any(|(t, _)| match t {
-                Token::Whitespace(_) | Token::LineComment(_) | Token::BlockComment(_) => false,
-                _ => true,
-            })
+        self.buf.tokens[self.cursor().cur..].iter().any(|(t, _)| {
+            !matches!(
+                t,
+                Token::Whitespace(_) | Token::LineComment(_) | Token::BlockComment(_)
+            )
+        })
     }
 
     /// Parses a `T` from this [`Parser`].
@@ -475,7 +490,7 @@ impl<'a> Parser<'a> {
     /// and a [`RefType`]
     ///
     /// ```
-    /// # use wast::*;
+    /// # use wast::core::*;
     /// # use wast::parser::*;
     /// struct TableType<'a> {
     ///     limits: Limits,
@@ -493,9 +508,9 @@ impl<'a> Parser<'a> {
     /// }
     /// ```
     ///
-    /// [`Limits`]: crate::ast::Limits
-    /// [`TableType`]: crate::ast::TableType
-    /// [`RefType`]: crate::ast::RefType
+    /// [`Limits`]: crate::core::Limits
+    /// [`TableType`]: crate::core::TableType
+    /// [`RefType`]: crate::core::RefType
     pub fn parse<T: Parse<'a>>(self) -> Result<T> {
         T::parse(self)
     }
@@ -552,7 +567,7 @@ impl<'a> Parser<'a> {
     /// ```
     ///
     /// [spec]: https://webassembly.github.io/spec/core/text/types.html#limits
-    /// [`Limits`]: crate::ast::Limits
+    /// [`Limits`]: crate::core::Limits
     pub fn peek<T: Peek>(self) -> bool {
         T::peek(self.cursor())
     }
@@ -562,6 +577,17 @@ impl<'a> Parser<'a> {
     pub fn peek2<T: Peek>(self) -> bool {
         let mut cursor = self.cursor();
         if cursor.advance_token().is_some() {
+            T::peek(cursor)
+        } else {
+            false
+        }
+    }
+
+    /// Same as the [`Parser::peek2`] method, except checks the next next token,
+    /// not the next token.
+    pub fn peek3<T: Peek>(self) -> bool {
+        let mut cursor = self.cursor();
+        if cursor.advance_token().is_some() && cursor.advance_token().is_some() {
             T::peek(cursor)
         } else {
             false
@@ -592,7 +618,7 @@ impl<'a> Parser<'a> {
     /// parsing an [`Index`] we can do:
     ///
     /// ```
-    /// # use wast::*;
+    /// # use wast::token::*;
     /// # use wast::parser::*;
     /// enum Index<'a> {
     ///     Num(u32),
@@ -615,8 +641,8 @@ impl<'a> Parser<'a> {
     /// ```
     ///
     /// [spec]: https://webassembly.github.io/spec/core/text/modules.html#indices
-    /// [`Index`]: crate::ast::Index
-    /// [`Id`]: crate::ast::Id
+    /// [`Index`]: crate::token::Index
+    /// [`Id`]: crate::token::Id
     pub fn lookahead1(self) -> Lookahead1<'a> {
         Lookahead1 {
             attempts: Vec::new(),
@@ -646,7 +672,8 @@ impl<'a> Parser<'a> {
     /// the exact definition, but it's close enough!
     ///
     /// ```
-    /// # use wast::*;
+    /// # use wast::kw;
+    /// # use wast::core::*;
     /// # use wast::parser::*;
     /// struct Module<'a> {
     ///     fields: Vec<ModuleField<'a>>,
@@ -687,7 +714,7 @@ impl<'a> Parser<'a> {
         if res.is_err() {
             self.buf.cur.set(before);
         }
-        return res;
+        res
     }
 
     /// Return the depth of nested parens we've parsed so far.
@@ -696,6 +723,15 @@ impl<'a> Parser<'a> {
     /// recursion limits in custom parsers.
     pub fn parens_depth(&self) -> usize {
         self.buf.depth.get()
+    }
+
+    /// Checks that the parser parens depth hasn't exceeded the maximum depth.
+    pub(crate) fn depth_check(&self) -> Result<()> {
+        if self.parens_depth() > MAX_PARENS_DEPTH {
+            Err(self.error("item nesting too deep"))
+        } else {
+            Ok(())
+        }
     }
 
     fn cursor(self) -> Cursor<'a> {
@@ -708,7 +744,7 @@ impl<'a> Parser<'a> {
     /// A low-level parsing method you probably won't use.
     ///
     /// This is used to implement parsing of the most primitive types in the
-    /// [`ast`](crate::ast) module. You probably don't want to use this, but
+    /// [`core`](crate::core) module. You probably don't want to use this, but
     /// probably want to use something like [`Parser::parse`] or
     /// [`Parser::parens`].
     pub fn step<F, T>(self, f: F) -> Result<T>
@@ -741,7 +777,9 @@ impl<'a> Parser<'a> {
 
     /// Returns the span of the previous token
     pub fn prev_span(&self) -> Span {
-        self.cursor().prev_span().unwrap_or(Span::from_offset(0))
+        self.cursor()
+            .prev_span()
+            .unwrap_or_else(|| Span::from_offset(0))
     }
 
     /// Registers a new known annotation with this parser to allow parsing
@@ -793,7 +831,8 @@ impl<'a> Parser<'a> {
     /// to get an idea of how this works:
     ///
     /// ```
-    /// # use wast::*;
+    /// # use wast::kw;
+    /// # use wast::token::NameAnnotation;
     /// # use wast::parser::*;
     /// struct Module<'a> {
     ///     name: Option<NameAnnotation<'a>>,
@@ -824,7 +863,8 @@ impl<'a> Parser<'a> {
     /// registered *before* we parse the parentheses of the annotation.
     ///
     /// ```
-    /// # use wast::*;
+    /// # use wast::{kw, annotation};
+    /// # use wast::core::Custom;
     /// # use wast::parser::*;
     /// struct Module<'a> {
     ///     fields: Vec<ModuleField<'a>>,
@@ -1070,7 +1110,7 @@ impl<'a> Cursor<'a> {
     /// [annotation]: https://github.com/WebAssembly/annotations
     pub fn annotation(self) -> Option<(&'a str, Self)> {
         let (token, cursor) = self.reserved()?;
-        if !token.starts_with("@") || token.len() <= 1 {
+        if !token.starts_with('@') || token.len() <= 1 {
             return None;
         }
         match &self.parser.buf.tokens.get(self.cur.wrapping_sub(1))?.0 {
@@ -1166,7 +1206,7 @@ impl<'a> Cursor<'a> {
             Some(Token::Reserved(n)) => n,
             _ => return None,
         };
-        if reserved.starts_with("@") && reserved.len() > 1 {
+        if reserved.starts_with('@') && reserved.len() > 1 {
             Some(&reserved[1..])
         } else {
             None

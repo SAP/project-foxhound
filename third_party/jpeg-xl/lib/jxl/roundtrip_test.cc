@@ -23,6 +23,7 @@
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/icc_codec.h"
+#include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
 
@@ -38,8 +39,7 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
   jxl::CodecInOut io;
   io.SetSize(xsize, ysize);
 
-  bool is_gray =
-      pixel_format.num_channels == 1 || pixel_format.num_channels == 2;
+  bool is_gray = pixel_format.num_channels < 3;
   bool has_alpha =
       pixel_format.num_channels == 2 || pixel_format.num_channels == 4;
 
@@ -52,7 +52,6 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
         io.metadata.m.SetAlphaBits(8);
         break;
       case JXL_TYPE_UINT16:
-      case JXL_TYPE_UINT32:
       case JXL_TYPE_FLOAT:
       case JXL_TYPE_FLOAT16:
         io.metadata.m.SetAlphaBits(16);
@@ -63,26 +62,21 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
     }
   }
   size_t bitdepth = 0;
-  bool float_in = false;
   switch (pixel_format.data_type) {
     case JXL_TYPE_FLOAT:
       bitdepth = 32;
-      float_in = true;
       io.metadata.m.SetFloat32Samples();
       break;
     case JXL_TYPE_FLOAT16:
       bitdepth = 16;
-      float_in = true;
       io.metadata.m.SetFloat16Samples();
       break;
     case JXL_TYPE_UINT8:
       bitdepth = 8;
-      float_in = false;
       io.metadata.m.SetUintSamples(8);
       break;
     case JXL_TYPE_UINT16:
       bitdepth = 16;
-      float_in = false;
       io.metadata.m.SetUintSamples(16);
       break;
     default:
@@ -98,12 +92,11 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
   } else {
     color_encoding = jxl::ColorEncoding::SRGB(is_gray);
   }
-  EXPECT_TRUE(ConvertFromExternal(
-      jxl::Span<const uint8_t>(buf.data(), buf.size()), xsize, ysize,
-      color_encoding, has_alpha,
-      /*alpha_is_premultiplied=*/false,
-      /*bits_per_sample=*/bitdepth, pixel_format.endianness,
-      /*flipped_y=*/false, /*pool=*/nullptr, &io.Main(), float_in));
+  EXPECT_TRUE(
+      ConvertFromExternal(jxl::Span<const uint8_t>(buf.data(), buf.size()),
+                          xsize, ysize, color_encoding,
+                          /*bits_per_sample=*/bitdepth, pixel_format,
+                          /*pool=*/nullptr, &io.Main()));
   return io;
 }
 
@@ -232,18 +225,14 @@ void VerifyRoundtripCompression(
   }
   if (alpha_in_extra_channels_vector && !has_interleaved_alpha) {
     jxl::ImageF alpha_channel(xsize, ysize);
-
-    EXPECT_EQ(
-        jxl::ConvertFromExternal(
-            jxl::Span<const uint8_t>(extra_channel_bytes.data(),
-                                     extra_channel_bytes.size()),
-            xsize, ysize, basic_info.bits_per_sample,
-            input_pixel_format.endianness, /*pool=*/nullptr, &alpha_channel,
-            /*float_in=*/input_pixel_format.data_type == JXL_TYPE_FLOAT),
-        true);
+    EXPECT_TRUE(jxl::ConvertFromExternal(
+        jxl::Span<const uint8_t>(extra_channel_bytes.data(),
+                                 extra_channel_bytes.size()),
+        xsize, ysize, basic_info.bits_per_sample, extra_channel_pixel_format, 0,
+        /*pool=*/nullptr, &alpha_channel));
 
     original_io.metadata.m.SetAlphaBits(basic_info.bits_per_sample);
-    original_io.Main().SetAlpha(std::move(alpha_channel), false);
+    original_io.Main().SetAlpha(std::move(alpha_channel));
     output_pixel_format_with_extra_channel_alpha.num_channels++;
   }
   // Those are the num_extra_channels including a potential alpha channel.
@@ -266,8 +255,9 @@ void VerifyRoundtripCompression(
     auto channel_type = extra_channel.first;
     JxlExtraChannelInfo channel_info;
     JxlEncoderInitExtraChannelInfo(channel_type, &channel_info);
-    channel_info.bits_per_sample = basic_info.bits_per_sample;
-    channel_info.exponent_bits_per_sample = basic_info.exponent_bits_per_sample;
+    channel_info.bits_per_sample = (lossless ? basic_info.bits_per_sample : 8);
+    channel_info.exponent_bits_per_sample =
+        (lossless ? basic_info.exponent_bits_per_sample : 0);
     channel_infos.push_back(channel_info);
   }
   for (size_t index = 0; index < channel_infos.size(); index++) {
@@ -305,7 +295,7 @@ void VerifyRoundtripCompression(
   for (size_t index = 0; index < channel_infos.size(); index++) {
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderSetExtraChannelBuffer(
-                  frame_settings, &input_pixel_format,
+                  frame_settings, &extra_channel_pixel_format,
                   (void*)extra_channel_bytes.data(), extra_channel_bytes.size(),
                   index + has_interleaved_alpha));
   }
@@ -425,13 +415,14 @@ void VerifyRoundtripCompression(
     decoded_io.SetSize(color->xsize(), color->ysize());
   }
 
-  jxl::ButteraugliParams ba;
-  float butteraugli_score =
-      ButteraugliDistance(original_io, decoded_io, ba, jxl::GetJxlCms(),
-                          /*distmap=*/nullptr, nullptr);
   if (lossless && !already_downsampled) {
-    EXPECT_LE(butteraugli_score, 0.0f);
+    EXPECT_TRUE(jxl::SamePixels(*original_io.Main().color(),
+                                *decoded_io.Main().color()));
   } else {
+    jxl::ButteraugliParams ba;
+    float butteraugli_score =
+        ButteraugliDistance(original_io, decoded_io, ba, jxl::GetJxlCms(),
+                            /*distmap=*/nullptr, nullptr);
     EXPECT_LE(butteraugli_score, 2.0f);
   }
   JxlPixelFormat extra_channel_output_pixel_format = output_pixel_format;
@@ -445,12 +436,6 @@ void VerifyRoundtripCompression(
                                          extra_channel_output_pixel_format),
                 0u);
       EXPECT_EQ(extra_channel, extra_channel_bytes);
-    } else {
-      EXPECT_EQ(jxl::test::ComparePixels(
-                    extra_channel.data(), extra_channel_bytes.data(), xsize,
-                    ysize, extra_channel_pixel_format,
-                    extra_channel_output_pixel_format, 16.0),
-                0u);
     }
   }
 }
@@ -587,6 +572,7 @@ TEST(RoundtripTest, ExtraBoxesTest) {
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
   basic_info.uses_original_profile = false;
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc, 10));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc, &basic_info));
   JxlColorEncoding color_encoding;
   if (pixel_format.data_type == JXL_TYPE_FLOAT) {
@@ -733,7 +719,7 @@ TEST(RoundtripTest, TestICCProfile) {
   jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &format);
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
-  basic_info.uses_original_profile = JXL_FALSE;
+  basic_info.uses_original_profile = JXL_TRUE;
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc, &basic_info));
 
   EXPECT_EQ(JXL_ENC_SUCCESS,
@@ -804,8 +790,7 @@ TEST(RoundtripTest, TestICCProfile) {
 
 #if JPEGXL_ENABLE_JPEG  // Loading .jpg files requires libjpeg support.
 TEST(RoundtripTest, JXL_TRANSCODE_JPEG_TEST(TestJPEGReconstruction)) {
-  const std::string jpeg_path =
-      "imagecompression.info/flower_foveon.png.im_q85_420.jpg";
+  const std::string jpeg_path = "jxl/flower/flower.png.im_q85_420.jpg";
   const jxl::PaddedBytes orig = jxl::ReadTestData(jpeg_path);
   jxl::CodecInOut orig_io;
   ASSERT_TRUE(

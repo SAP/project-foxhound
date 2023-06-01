@@ -29,7 +29,7 @@ class PerformancePanel {
     this.toolbox = toolbox;
     this.commands = commands;
 
-    const EventEmitter = require("devtools/shared/event-emitter");
+    const EventEmitter = require("resource://devtools/shared/event-emitter.js");
     EventEmitter.decorate(this);
   }
 
@@ -62,11 +62,10 @@ class PerformancePanel {
     this.panelWin.gIsPanelDestroyed = false;
 
     const perfFront = await this.commands.client.mainRoot.getFront("perf");
-    const traits = {
-      noDisablingOnPrivateBrowsing: this.commands.targetCommand.targetFront.getTrait(
-        "noDisablingOnPrivateBrowsing"
-      ),
-    };
+
+    // Note: we are not using traits in the panel at the moment but we keep the
+    // wiring in case we need it later on.
+    const traits = {};
 
     await this.panelWin.gInit(
       perfFront,
@@ -78,7 +77,9 @@ class PerformancePanel {
   }
 
   _openAboutProfiling() {
-    const { openTrustedLink } = require("devtools/client/shared/link");
+    const {
+      openTrustedLink,
+    } = require("resource://devtools/client/shared/link.js");
     openTrustedLink("about:profiling", {});
   }
 

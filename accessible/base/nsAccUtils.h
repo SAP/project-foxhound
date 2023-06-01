@@ -46,10 +46,10 @@ class nsAccUtils {
    * Set container-foo live region attributes for the given node.
    *
    * @param aAttributes    where to store the attributes
-   * @param aStartContent  node to start from
+   * @param aStartAcc  Accessible to start from
    */
   static void SetLiveContainerAttributes(AccAttributes* aAttributes,
-                                         nsIContent* aStartContent);
+                                         Accessible* aStartAcc);
 
   /**
    * Any ARIA property of type boolean or NMTOKEN is undefined if the ARIA
@@ -59,18 +59,15 @@ class nsAccUtils {
    * Return true if the ARIA property is defined, otherwise false
    */
   static bool HasDefinedARIAToken(nsIContent* aContent, nsAtom* aAtom);
-
-  /**
-   * Return atomic value of ARIA attribute of boolean or NMTOKEN type.
-   */
-  static nsStaticAtom* GetARIAToken(mozilla::dom::Element* aElement,
-                                    nsAtom* aAttr);
+  static bool HasDefinedARIAToken(const AttrArray* aAttrs, nsAtom* aAtom);
 
   /**
    * If the given ARIA attribute has a specific known token value, return it.
    * If the specification demands for a fallback value for unknown attribute
    * values, return that. For all others, return a nullptr.
    */
+  static nsStaticAtom* NormalizeARIAToken(const AttrArray* aAttrs,
+                                          nsAtom* aAttr);
   static nsStaticAtom* NormalizeARIAToken(mozilla::dom::Element* aElement,
                                           nsAtom* aAttr);
 
@@ -96,6 +93,8 @@ class nsAccUtils {
    * @param  aAccessible  [in] the item accessible
    * @param  aState       [in] the state of the item accessible
    */
+  static Accessible* GetSelectableContainer(const Accessible* aAccessible,
+                                            uint64_t aState);
   static LocalAccessible* GetSelectableContainer(LocalAccessible* aAccessible,
                                                  uint64_t aState);
 
@@ -104,6 +103,7 @@ class nsAccUtils {
    */
   static HyperTextAccessible* GetTextContainer(nsINode* aNode);
 
+  static Accessible* TableFor(Accessible* aRow);
   static LocalAccessible* TableFor(LocalAccessible* aRow);
 
   /**
@@ -139,9 +139,9 @@ class nsAccUtils {
    *                         relative it.
    * @return converted coordinates
    */
-  static LayoutDeviceIntPoint ConvertToScreenCoords(
-      int32_t aX, int32_t aY, uint32_t aCoordinateType,
-      LocalAccessible* aAccessible);
+  static LayoutDeviceIntPoint ConvertToScreenCoords(int32_t aX, int32_t aY,
+                                                    uint32_t aCoordinateType,
+                                                    Accessible* aAccessible);
 
   /**
    * Converts the given coordinates relative screen to another coordinate
@@ -156,7 +156,7 @@ class nsAccUtils {
    */
   static void ConvertScreenCoordsTo(int32_t* aX, int32_t* aY,
                                     uint32_t aCoordinateType,
-                                    LocalAccessible* aAccessible);
+                                    Accessible* aAccessible);
 
   /**
    * Returns screen-relative coordinates (in dev pixels) for the parent of the
@@ -164,8 +164,16 @@ class nsAccUtils {
    *
    * @param [in] aAccessible  the accessible
    */
-  static LayoutDeviceIntPoint GetScreenCoordsForParent(
-      LocalAccessible* aAccessible);
+  static LayoutDeviceIntPoint GetScreenCoordsForParent(Accessible* aAccessible);
+
+  /**
+   * Returns coordinates in device pixels relative screen for the top level
+   * window.
+   *
+   * @param aAccessible the acc hosted in the window.
+   */
+  static mozilla::LayoutDeviceIntPoint GetScreenCoordsForWindow(
+      mozilla::a11y::Accessible* aAccessible);
 
   /**
    * Get the 'live' or 'container-live' object attribute value from the given
@@ -225,6 +233,53 @@ class nsAccUtils {
    * the container-live attribute would be something other than "off" or empty.
    */
   static bool IsARIALive(const LocalAccessible* aAccessible);
+
+  /**
+   * Get the document Accessible which owns a given Accessible.
+   * This function is needed because there is no unified base class for local
+   * and remote documents.
+   * If aAcc is null, null will be returned.
+   */
+  static Accessible* DocumentFor(Accessible* aAcc);
+
+  /**
+   * Get an Accessible in a given document by its unique id.
+   * An Accessible's id can be obtained using Accessible::ID.
+   * This function is needed because there is no unified base class for local
+   * and remote documents.
+   * If aDoc is nul, null will be returned.
+   */
+  static Accessible* GetAccessibleByID(Accessible* aDoc, uint64_t aID);
+
+  /**
+   * Get the URL for a given document.
+   * This function is needed because there is no unified base class for local
+   * and remote documents.
+   */
+  static void DocumentURL(Accessible* aDoc, nsAString& aURL);
+
+  /**
+   * Accessors for element attributes that are aware of CustomElement ARIA
+   * accessibility defaults. If the element does not have the provided
+   * attribute defined directly on it, we will then attempt to fetch the
+   * default instead.
+   */
+  static const AttrArray* GetARIADefaults(dom::Element* aElement);
+  static bool HasARIAAttr(dom::Element* aElement, const nsAtom* aName);
+  static bool GetARIAAttr(dom::Element* aElement, const nsAtom* aName,
+                          nsAString& aResult);
+  static const nsAttrValue* GetARIAAttr(dom::Element* aElement,
+                                        const nsAtom* aName);
+  static bool ARIAAttrValueIs(dom::Element* aElement, const nsAtom* aName,
+                              const nsAString& aValue,
+                              nsCaseTreatment aCaseSensitive);
+  static bool ARIAAttrValueIs(dom::Element* aElement, const nsAtom* aName,
+                              const nsAtom* aValue,
+                              nsCaseTreatment aCaseSensitive);
+  static int32_t FindARIAAttrValueIn(dom::Element* aElement,
+                                     const nsAtom* aName,
+                                     AttrArray::AttrValuesArray* aValues,
+                                     nsCaseTreatment aCaseSensitive);
 };
 
 }  // namespace a11y

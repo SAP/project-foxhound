@@ -2,73 +2,41 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
+import errno
 import io
 import json
 import logging
-import mozpack.path as mozpath
 import multiprocessing
 import os
-import six
 import subprocess
 import sys
-import errno
+from pathlib import Path
 
+import mozpack.path as mozpath
+import six
 from mach.mixin.process import ProcessExecutionMixin
 from mozboot.mozconfig import MozconfigFindException
 from mozfile import which
 from mozversioncontrol import (
-    get_repository_from_build_config,
-    get_repository_object,
     GitRepository,
     HgRepository,
     InvalidRepoPath,
     MissingConfigureInfo,
     MissingVCSTool,
+    get_repository_from_build_config,
+    get_repository_object,
 )
 
-from .backend.configenvironment import (
-    ConfigEnvironment,
-    ConfigStatusFailure,
-)
+from .backend.configenvironment import ConfigEnvironment, ConfigStatusFailure
 from .configure import ConfigureSandbox
 from .controller.clobber import Clobberer
-from .mozconfig import (
-    MozconfigLoadException,
-    MozconfigLoader,
-)
-from .pythonutil import find_python3_executable
-from .util import (
-    memoize,
-    memoized_property,
-)
+from .mozconfig import MozconfigLoader, MozconfigLoadException
+from .util import memoize, memoized_property
 
 try:
     import psutil
 except Exception:
     psutil = None
-
-
-def ancestors(path):
-    """Emit the parent directories of a path."""
-    while path:
-        yield path
-        newpath = os.path.dirname(path)
-        if newpath == path:
-            break
-        path = newpath
-
-
-def samepath(path1, path2):
-    # Under Python 3 (but NOT Python 2), MozillaBuild exposes the
-    # os.path.samefile function despite it not working, so only use it if we're
-    # not running under Windows.
-    if hasattr(os.path, "samefile") and os.name != "nt":
-        return os.path.samefile(path1, path2)
-    return os.path.normcase(os.path.realpath(path1)) == os.path.normcase(
-        os.path.realpath(path2)
-    )
 
 
 class BadEnvironmentException(Exception):
@@ -127,14 +95,14 @@ class MozbuildObject(ProcessExecutionMixin):
         and a LogManager instance. The topobjdir may be passed in as well. If
         it isn't, it will be calculated from the active mozconfig.
         """
-        self.topsrcdir = mozpath.normsep(topsrcdir)
+        self.topsrcdir = mozpath.realpath(topsrcdir)
         self.settings = settings
 
         self.populate_logger()
         self.log_manager = log_manager
 
         self._make = None
-        self._topobjdir = mozpath.normsep(topobjdir) if topobjdir else topobjdir
+        self._topobjdir = mozpath.realpath(topobjdir) if topobjdir else topobjdir
         self._mozconfig = mozconfig
         self._config_environment = None
         self._virtualenv_name = virtualenv_name or "common"
@@ -180,35 +148,30 @@ class MozbuildObject(ProcessExecutionMixin):
             mozconfig = info.get("mozconfig")
             return topsrcdir, topobjdir, mozconfig
 
-        for dir_path in ancestors(cwd):
+        for dir_path in [str(path) for path in [cwd] + list(Path(cwd).parents)]:
             # If we find a mozinfo.json, we are in the objdir.
             mozinfo_path = os.path.join(dir_path, "mozinfo.json")
             if os.path.isfile(mozinfo_path):
                 topsrcdir, topobjdir, mozconfig = load_mozinfo(mozinfo_path)
                 break
 
-            # We choose an arbitrary file as an indicator that this is a
-            # srcdir. We go with ourself because why not!
-            our_path = os.path.join(
-                dir_path, "python", "mozbuild", "mozbuild", "base.py"
-            )
-            if os.path.isfile(our_path):
-                topsrcdir = dir_path
-                break
-
-        # See if we're running from a Python virtualenv that's inside an objdir.
-        mozinfo_path = os.path.join(os.path.dirname(sys.prefix), "../mozinfo.json")
-        if detect_virtualenv_mozinfo and os.path.isfile(mozinfo_path):
-            topsrcdir, topobjdir, mozconfig = load_mozinfo(mozinfo_path)
+        if not topsrcdir:
+            # See if we're running from a Python virtualenv that's inside an objdir.
+            # sys.prefix would look like "$objdir/_virtualenvs/$virtualenv/".
+            # Note that virtualenv-based objdir detection work for instrumented builds,
+            # because they aren't created in the scoped "instrumentated" objdir.
+            # However, working-directory-ancestor-based objdir resolution should fully
+            # cover that case.
+            mozinfo_path = os.path.join(sys.prefix, "..", "..", "mozinfo.json")
+            if detect_virtualenv_mozinfo and os.path.isfile(mozinfo_path):
+                topsrcdir, topobjdir, mozconfig = load_mozinfo(mozinfo_path)
 
         if not topsrcdir:
-            topsrcdir = os.path.abspath(
-                os.path.join(os.path.dirname(__file__), "..", "..", "..")
-            )
+            topsrcdir = str(Path(__file__).parent.parent.parent.parent.resolve())
 
-        topsrcdir = mozpath.normsep(topsrcdir)
+        topsrcdir = mozpath.realpath(topsrcdir)
         if topobjdir:
-            topobjdir = mozpath.normsep(os.path.normpath(topobjdir))
+            topobjdir = mozpath.realpath(topobjdir)
 
             if topsrcdir == topobjdir:
                 raise BadEnvironmentException(
@@ -224,7 +187,7 @@ class MozbuildObject(ProcessExecutionMixin):
         )
 
     def resolve_mozconfig_topobjdir(self, default=None):
-        topobjdir = self.mozconfig["topobjdir"] or default
+        topobjdir = self.mozconfig.get("topobjdir") or default
         if not topobjdir:
             return None
 
@@ -307,7 +270,7 @@ class MozbuildObject(ProcessExecutionMixin):
 
     @staticmethod
     @memoize
-    def get_mozconfig_and_target(topsrcdir, path, env_mozconfig):
+    def get_base_mozconfig_info(topsrcdir, path, env_mozconfig):
         # env_mozconfig is only useful for unittests, which change the value of
         # the environment variable, which has an impact on autodetection (when
         # path is MozconfigLoader.AUTODETECT), and memoization wouldn't account
@@ -347,7 +310,7 @@ class MozbuildObject(ProcessExecutionMixin):
         sandbox = ReducedConfigureSandbox(
             {},
             environ=env,
-            argv=["mach", "--help"],
+            argv=["mach"],
             logger=logger,
         )
         base_dir = os.path.join(topsrcdir, "build", "moz.configure")
@@ -355,17 +318,21 @@ class MozbuildObject(ProcessExecutionMixin):
             sandbox.include_file(os.path.join(base_dir, "init.configure"))
             # Force mozconfig options injection before getting the target.
             sandbox._value_for(sandbox["mozconfig_options"])
-            return (
-                sandbox._value_for(sandbox["mozconfig"]),
-                sandbox._value_for(sandbox["real_target"]),
-            )
+            return {
+                "mozconfig": sandbox._value_for(sandbox["mozconfig"]),
+                "target": sandbox._value_for(sandbox["real_target"]),
+                "project": sandbox._value_for(sandbox._options["project"]),
+                "artifact-builds": sandbox._value_for(
+                    sandbox._options["artifact-builds"]
+                ),
+            }
         except SystemExit:
             print(out.getvalue())
             raise
 
     @property
-    def mozconfig_and_target(self):
-        return self.get_mozconfig_and_target(
+    def base_mozconfig_info(self):
+        return self.get_base_mozconfig_info(
             self.topsrcdir, self._mozconfig, os.environ.get("MOZCONFIG")
         )
 
@@ -375,7 +342,7 @@ class MozbuildObject(ProcessExecutionMixin):
 
         This a dict as returned by MozconfigLoader.read_mozconfig()
         """
-        return self.mozconfig_and_target[0]
+        return self.base_mozconfig_info["mozconfig"]
 
     @property
     def config_environment(self):
@@ -499,12 +466,9 @@ class MozbuildObject(ProcessExecutionMixin):
         ``vcs_check_clean`` is False. This prevents confusion due to uncommitted
         file changes not being reflected in the reader.
         """
-        from mozbuild.frontend.reader import (
-            default_finder,
-            BuildReader,
-            EmptyConfig,
-        )
         from mozpack.files import MercurialRevisionFinder
+
+        from mozbuild.frontend.reader import BuildReader, EmptyConfig, default_finder
 
         if config_mode == "build":
             config = self.config_environment
@@ -546,25 +510,6 @@ class MozbuildObject(ProcessExecutionMixin):
             )
 
         return BuildReader(config, finder=finder)
-
-    @memoized_property
-    def python3(self):
-        """Obtain info about a Python 3 executable.
-
-        Returns a tuple of an executable path and its version (as a tuple).
-        Either both entries will have a value or both will be None.
-        """
-        # Search configured build info first. Then fall back to system.
-        try:
-            subst = self.substs
-
-            if "PYTHON3" in subst:
-                version = tuple(map(int, subst["PYTHON3_VERSION"].split(".")))
-                return subst["PYTHON3"], version
-        except BuildEnvironmentNotFoundException:
-            pass
-
-        return find_python3_executable()
 
     def is_clobber_needed(self):
         if not os.path.exists(self.topobjdir):
@@ -614,7 +559,7 @@ class MozbuildObject(ProcessExecutionMixin):
         return path
 
     def resolve_config_guess(self):
-        return self.mozconfig_and_target[1].alias
+        return self.base_mozconfig_info["target"].alias
 
     def notify(self, msg):
         """Show a desktop notification with the supplied message
@@ -646,8 +591,8 @@ class MozbuildObject(ProcessExecutionMixin):
                     ensure_exit_code=False,
                 )
             elif sys.platform.startswith("win"):
-                from ctypes import Structure, windll, POINTER, sizeof, WINFUNCTYPE
-                from ctypes.wintypes import DWORD, HANDLE, BOOL, UINT
+                from ctypes import POINTER, WINFUNCTYPE, Structure, sizeof, windll
+                from ctypes.wintypes import BOOL, DWORD, HANDLE, UINT
 
                 class FLASHWINDOW(Structure):
                     _fields_ = [
@@ -926,7 +871,9 @@ class MachCommandBase(MozbuildObject):
                 # of the wrong objdir when the current objdir is ambiguous.
                 config_topobjdir = dummy.resolve_mozconfig_topobjdir()
 
-                if config_topobjdir and not samepath(topobjdir, config_topobjdir):
+                if config_topobjdir and not Path(topobjdir).samefile(
+                    Path(config_topobjdir)
+                ):
                     raise ObjdirMismatchException(topobjdir, config_topobjdir)
         except BuildEnvironmentNotFoundException:
             pass

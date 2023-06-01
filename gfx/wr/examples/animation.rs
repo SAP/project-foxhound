@@ -46,6 +46,7 @@ impl App {
         pipeline_id: PipelineId,
         property_key: PropertyBindingKey<LayoutTransform>,
         opacity_key: Option<PropertyBindingKey<f32>>,
+        spatial_tree_item_key: SpatialTreeItemKey,
     ) {
         let filters = match opacity_key {
             Some(opacity_key) => {
@@ -68,7 +69,7 @@ impl App {
                 should_snap: false,
                 paired_with_perspective: false,
             },
-            SpatialTreeItemKey::new(0, 0),
+            spatial_tree_item_key,
         );
 
         builder.push_simple_stacking_context_with_filters(
@@ -82,7 +83,7 @@ impl App {
 
         let space_and_clip = SpaceAndClipInfo {
             spatial_id,
-            clip_id: ClipId::root(pipeline_id),
+            clip_chain_id: ClipChainId::INVALID,
         };
         let clip_bounds = LayoutRect::from_size(bounds.size());
         let complex_clip = ComplexClipRegion {
@@ -91,9 +92,10 @@ impl App {
             mode: ClipMode::Clip,
         };
         let clip_id = builder.define_clip_rounded_rect(
-            &space_and_clip,
+            space_and_clip.spatial_id,
             complex_clip,
         );
+        let clip_chain_id = builder.define_clip_chain(None, [clip_id]);
 
         // Fill it with a white rect
         builder.push_rect(
@@ -101,7 +103,7 @@ impl App {
                 LayoutRect::from_size(bounds.size()),
                 SpaceAndClipInfo {
                     spatial_id,
-                    clip_id,
+                    clip_chain_id,
                 }
             ),
             LayoutRect::from_size(bounds.size()),
@@ -130,35 +132,65 @@ impl Example for App {
 
         let bounds = (150, 150).to(250, 250);
         let key0 = self.property_key0;
-        self.add_rounded_rect(bounds, ColorF::new(1.0, 0.0, 0.0, 0.5), builder, pipeline_id, key0, Some(opacity_key));
+        self.add_rounded_rect(
+            bounds,
+            ColorF::new(1.0, 0.0, 0.0, 0.5),
+            builder,
+            pipeline_id,
+            key0,
+            Some(opacity_key),
+            SpatialTreeItemKey::new(0, 0)
+        );
 
         let bounds = (400, 400).to(600, 600);
         let key1 = self.property_key1;
-        self.add_rounded_rect(bounds, ColorF::new(0.0, 1.0, 0.0, 0.5), builder, pipeline_id, key1, None);
+        self.add_rounded_rect(
+            bounds,
+            ColorF::new(0.0, 1.0, 0.0, 0.5),
+            builder,
+            pipeline_id,
+            key1,
+            None,
+            SpatialTreeItemKey::new(0, 1)
+        );
 
         let bounds = (200, 500).to(350, 580);
         let key2 = self.property_key2;
-        self.add_rounded_rect(bounds, ColorF::new(0.0, 0.0, 1.0, 0.5), builder, pipeline_id, key2, None);
+        self.add_rounded_rect(
+            bounds,
+            ColorF::new(0.0, 0.0, 1.0, 0.5),
+            builder,
+            pipeline_id,
+            key2,
+            None,
+            SpatialTreeItemKey::new(0, 2)
+        );
     }
 
-    fn on_event(&mut self, win_event: winit::WindowEvent, api: &mut RenderApi, document_id: DocumentId) -> bool {
+    fn on_event(
+        &mut self,
+        win_event: winit::event::WindowEvent,
+        _window: &winit::window::Window,
+        api: &mut RenderApi,
+        document_id: DocumentId
+    ) -> bool {
         let mut rebuild_display_list = false;
 
         match win_event {
-            winit::WindowEvent::KeyboardInput {
-                input: winit::KeyboardInput {
-                    state: winit::ElementState::Pressed,
+            winit::event::WindowEvent::KeyboardInput {
+                input: winit::event::KeyboardInput {
+                    state: winit::event::ElementState::Pressed,
                     virtual_keycode: Some(key),
                     ..
                 },
                 ..
             } => {
                 let (delta_angle, delta_opacity) = match key {
-                    winit::VirtualKeyCode::Down => (0.0, -0.1),
-                    winit::VirtualKeyCode::Up => (0.0, 0.1),
-                    winit::VirtualKeyCode::Right => (1.0, 0.0),
-                    winit::VirtualKeyCode::Left => (-1.0, 0.0),
-                    winit::VirtualKeyCode::R => {
+                    winit::event::VirtualKeyCode::Down => (0.0, -0.1),
+                    winit::event::VirtualKeyCode::Up => (0.0, 0.1),
+                    winit::event::VirtualKeyCode::Right => (1.0, 0.0),
+                    winit::event::VirtualKeyCode::Left => (-1.0, 0.0),
+                    winit::event::VirtualKeyCode::R => {
                         rebuild_display_list = true;
                         (0.0, 0.0)
                     }

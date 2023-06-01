@@ -13,17 +13,11 @@
 
 const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
-Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
-registerCleanupFunction(() => {
-  Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
-});
-
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserver.identity.primaryPort;
 });
 
 var httpserver = new HttpServer();
-var index = 0;
 var test_flags = [];
 var testPathBase = "/chunked_hdrs";
 
@@ -36,11 +30,13 @@ function run_test() {
 
 function run_test_number(num) {
   var testPath = testPathBase + num;
+  // eslint-disable-next-line no-eval
   httpserver.registerPathHandler(testPath, eval("handler" + num));
 
   var channel = setupChannel(testPath);
   var flags = test_flags[num]; // OK if flags undefined for test
   channel.asyncOpen(
+    // eslint-disable-next-line no-eval
     new ChannelListener(eval("completeTest" + num), channel, flags)
   );
 }
@@ -63,6 +59,7 @@ function endTests() {
 //         the test case uses >64bit to fail on all platforms.
 test_flags[1] = CL_EXPECT_LATE_FAILURE | CL_ALLOW_UNKNOWN_CL;
 
+// eslint-disable-next-line no-unused-vars
 function handler1(metadata, response) {
   var body = "12345678123456789\r\ndata never reached";
 
@@ -75,6 +72,7 @@ function handler1(metadata, response) {
   response.finish();
 }
 
+// eslint-disable-next-line no-unused-vars
 function completeTest1(request, data, ctx) {
   Assert.equal(request.status, Cr.NS_ERROR_UNEXPECTED);
 
@@ -86,6 +84,7 @@ function completeTest1(request, data, ctx) {
 
 test_flags[2] = CL_EXPECT_LATE_FAILURE | CL_ALLOW_UNKNOWN_CL;
 
+// eslint-disable-next-line no-unused-vars
 function handler2(metadata, response) {
   var body = "junkintheway 123\r\ndata never reached";
 
@@ -98,6 +97,7 @@ function handler2(metadata, response) {
   response.finish();
 }
 
+// eslint-disable-next-line no-unused-vars
 function completeTest2(request, data, ctx) {
   Assert.equal(request.status, Cr.NS_ERROR_UNEXPECTED);
   run_test_number(3);
@@ -108,6 +108,7 @@ function completeTest2(request, data, ctx) {
 
 test_flags[3] = CL_ALLOW_UNKNOWN_CL;
 
+// eslint-disable-next-line no-unused-vars
 function handler3(metadata, response) {
   var body = "c junkafter\r\ndata reached\r\n0\r\n\r\n";
 
@@ -120,6 +121,7 @@ function handler3(metadata, response) {
   response.finish();
 }
 
+// eslint-disable-next-line no-unused-vars
 function completeTest3(request, data, ctx) {
   Assert.equal(request.status, 0);
   run_test_number(4);
@@ -130,6 +132,7 @@ function completeTest3(request, data, ctx) {
 
 test_flags[4] = CL_ALLOW_UNKNOWN_CL;
 
+// eslint-disable-next-line no-unused-vars
 function handler4(metadata, response) {
   var body = "c\r\ndata reached\r\n3\r\nhej\r\n0\r\n\r\n";
 
@@ -142,6 +145,7 @@ function handler4(metadata, response) {
   response.finish();
 }
 
+// eslint-disable-next-line no-unused-vars
 function completeTest4(request, data, ctx) {
   Assert.equal(request.status, 0);
   run_test_number(5);
@@ -153,6 +157,7 @@ function completeTest4(request, data, ctx) {
 
 test_flags[5] = CL_EXPECT_LATE_FAILURE | CL_ALLOW_UNKNOWN_CL;
 
+// eslint-disable-next-line no-unused-vars
 function handler5(metadata, response) {
   var body = "123456781\r\ndata never reached";
 
@@ -165,6 +170,7 @@ function handler5(metadata, response) {
   response.finish();
 }
 
+// eslint-disable-next-line no-unused-vars
 function completeTest5(request, data, ctx) {
   Assert.equal(request.status, Cr.NS_ERROR_UNEXPECTED);
   endTests();

@@ -221,18 +221,6 @@ pub const O_NOFOLLOW: ::c_int = 0x20000;
 pub const O_ASYNC: ::c_int = 0x2000;
 pub const O_LARGEFILE: ::c_int = 0o0100000;
 
-pub const FIOCLEX: ::c_int = 0x5451;
-pub const FIONCLEX: ::c_int = 0x5450;
-pub const FIONBIO: ::c_int = 0x5421;
-
-pub const RLIMIT_RSS: ::c_int = 5;
-pub const RLIMIT_NOFILE: ::c_int = 7;
-pub const RLIMIT_AS: ::c_int = 9;
-pub const RLIMIT_NPROC: ::c_int = 6;
-pub const RLIMIT_MEMLOCK: ::c_int = 8;
-pub const RLIMIT_NLIMITS: ::c_int = 15;
-pub const RLIM_NLIMITS: ::c_int = RLIMIT_NLIMITS;
-
 pub const MADV_SOFT_OFFLINE: ::c_int = 101;
 pub const MCL_CURRENT: ::c_int = 0x0001;
 pub const MCL_FUTURE: ::c_int = 0x0002;
@@ -464,36 +452,6 @@ pub const VMIN: usize = 6;
 pub const IEXTEN: ::tcflag_t = 0x00008000;
 pub const TOSTOP: ::tcflag_t = 0x00000100;
 pub const FLUSHO: ::tcflag_t = 0x00001000;
-
-pub const TCGETS: ::c_int = 0x5401;
-pub const TCSETS: ::c_int = 0x5402;
-pub const TCSETSW: ::c_int = 0x5403;
-pub const TCSETSF: ::c_int = 0x5404;
-pub const TCGETA: ::c_int = 0x5405;
-pub const TCSETA: ::c_int = 0x5406;
-pub const TCSETAW: ::c_int = 0x5407;
-pub const TCSETAF: ::c_int = 0x5408;
-pub const TCSBRK: ::c_int = 0x5409;
-pub const TCXONC: ::c_int = 0x540A;
-pub const TCFLSH: ::c_int = 0x540B;
-pub const TIOCGSOFTCAR: ::c_int = 0x5419;
-pub const TIOCSSOFTCAR: ::c_int = 0x541A;
-pub const TIOCLINUX: ::c_int = 0x541C;
-pub const TIOCGSERIAL: ::c_int = 0x541E;
-pub const TIOCEXCL: ::c_int = 0x540C;
-pub const TIOCNXCL: ::c_int = 0x540D;
-pub const TIOCSCTTY: ::c_int = 0x540E;
-pub const TIOCGPGRP: ::c_int = 0x540F;
-pub const TIOCSPGRP: ::c_int = 0x5410;
-pub const TIOCOUTQ: ::c_int = 0x5411;
-pub const TIOCSTI: ::c_int = 0x5412;
-pub const TIOCGWINSZ: ::c_int = 0x5413;
-pub const TIOCSWINSZ: ::c_int = 0x5414;
-pub const FIONREAD: ::c_int = 0x541B;
-pub const TIOCCONS: ::c_int = 0x541D;
-
-pub const TIOCGRS485: ::c_int = 0x542E;
-pub const TIOCSRS485: ::c_int = 0x542F;
 
 pub const POLLWRNORM: ::c_short = 0x100;
 pub const POLLWRBAND: ::c_short = 0x200;
@@ -898,6 +856,14 @@ pub const SYS_faccessat2: ::c_long = 439;
 pub const SYS_process_madvise: ::c_long = 440;
 pub const SYS_epoll_pwait2: ::c_long = 441;
 pub const SYS_mount_setattr: ::c_long = 442;
+pub const SYS_quotactl_fd: ::c_long = 443;
+pub const SYS_landlock_create_ruleset: ::c_long = 444;
+pub const SYS_landlock_add_rule: ::c_long = 445;
+pub const SYS_landlock_restrict_self: ::c_long = 446;
+pub const SYS_memfd_secret: ::c_long = 447;
+pub const SYS_process_mrelease: ::c_long = 448;
+pub const SYS_futex_waitv: ::c_long = 449;
+pub const SYS_set_mempolicy_home_node: ::c_long = 450;
 
 // offsets in user_regs_structs, from sys/reg.h
 pub const EBX: ::c_int = 0;

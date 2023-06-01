@@ -7,10 +7,9 @@
 const { LogManager } = ChromeUtils.import(
   "resource://services-common/logmanager.js"
 );
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // Returns an array of [consoleAppender, dumpAppender, [fileAppenders]] for
 // the specified log.  Note that fileAppenders will usually have length=1

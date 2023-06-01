@@ -137,7 +137,7 @@ add_task(async function() {
       type: "plain",
       fullMimeType: "text/plain",
       transferred: L10N.getFormatStrWithNumbers("networkMenu.sizeB", 324),
-      size: L10N.getFormatStrWithNumbers("networkMenu.sizeKB", 10.73),
+      size: L10N.getFormatStrWithNumbers("networkMenu.size.kB", 10.99),
       time: true,
     }
   );
@@ -271,10 +271,14 @@ add_task(async function() {
       case "html": {
         checkVisibility("html");
 
-        const text = document.querySelector(".html-preview iframe").srcdoc;
+        const text = document.querySelector(".html-preview iframe").src;
+        const expectedText =
+          "data:text/html;charset=UTF-8," +
+          encodeURIComponent("<blink>Not Found</blink>");
+
         is(
           text,
-          "<blink>Not Found</blink>",
+          expectedText,
           "The text shown in the iframe is incorrect for the html request."
         );
         break;

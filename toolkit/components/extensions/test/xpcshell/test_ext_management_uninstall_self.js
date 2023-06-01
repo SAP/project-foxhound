@@ -5,14 +5,14 @@
 const { AddonManager } = ChromeUtils.import(
   "resource://gre/modules/AddonManager.jsm"
 );
-const { MockRegistrar } = ChromeUtils.import(
-  "resource://testing-common/MockRegistrar.jsm"
+const { MockRegistrar } = ChromeUtils.importESModule(
+  "resource://testing-common/MockRegistrar.sys.mjs"
 );
 
 const id = "uninstall_self_test@tests.mozilla.com";
 
 const manifest = {
-  applications: {
+  browser_specific_settings: {
     gecko: {
       id,
     },
@@ -48,7 +48,7 @@ AddonTestUtils.init(this);
 
 add_task(async function setup() {
   let fakePromptService = MockRegistrar.register(
-    "@mozilla.org/embedcomp/prompt-service;1",
+    "@mozilla.org/prompter;1",
     promptService
   );
   registerCleanupFunction(() => {

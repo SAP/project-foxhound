@@ -206,10 +206,6 @@ GfxInfo::GetCleartypeParameters(nsAString& aCleartypeParams) { return NS_ERROR_F
 NS_IMETHODIMP
 GfxInfo::GetWindowProtocol(nsAString& aWindowProtocol) { return NS_ERROR_NOT_IMPLEMENTED; }
 
-/* readonly attribute DOMString desktopEnvironment; */
-NS_IMETHODIMP
-GfxInfo::GetDesktopEnvironment(nsAString& aDesktopEnvironment) { return NS_ERROR_NOT_IMPLEMENTED; }
-
 /* readonly attribute DOMString testType; */
 NS_IMETHODIMP
 GfxInfo::GetTestType(nsAString& aTestType) { return NS_ERROR_NOT_IMPLEMENTED; }
@@ -358,41 +354,6 @@ GfxInfo::GetAdapterSubsysID(nsAString& aAdapterSubsysID) { return NS_ERROR_FAILU
 NS_IMETHODIMP
 GfxInfo::GetAdapterSubsysID2(nsAString& aAdapterSubsysID) { return NS_ERROR_FAILURE; }
 
-/* readonly attribute Array<DOMString> displayInfo; */
-NS_IMETHODIMP
-GfxInfo::GetDisplayInfo(nsTArray<nsString>& aDisplayInfo) {
-  nsAutoreleasePool localPool;
-  for (NSScreen* screen in [NSScreen screens]) {
-    NSRect rect = [screen frame];
-    nsString desc;
-    desc.AppendPrintf("%dx%d scale:%f", (int32_t)rect.size.width, (int32_t)rect.size.height,
-                      nsCocoaUtils::GetBackingScaleFactor(screen));
-    aDisplayInfo.AppendElement(desc);
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-GfxInfo::GetDisplayWidth(nsTArray<uint32_t>& aDisplayWidth) {
-  nsAutoreleasePool localPool;
-  for (NSScreen* screen in [NSScreen screens]) {
-    NSRect rect = [screen frame];
-    aDisplayWidth.AppendElement((uint32_t)rect.size.width);
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-GfxInfo::GetDisplayHeight(nsTArray<uint32_t>& aDisplayHeight) {
-  nsAutoreleasePool localPool;
-  for (NSScreen* screen in [NSScreen screens]) {
-    NSRect rect = [screen frame];
-    aDisplayHeight.AppendElement((uint32_t)rect.size.height);
-  }
-  return NS_OK;
-}
-
 NS_IMETHODIMP
 GfxInfo::GetDrmRenderDevice(nsACString& aDrmRenderDevice) { return NS_ERROR_NOT_IMPLEMENTED; }
 
@@ -440,26 +401,20 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         OperatingSystem::OSX, DeviceFamily::All, nsIGfxInfo::FEATURE_GL_SWIZZLE,
         nsIGfxInfo::FEATURE_BLOCKED_DEVICE, "FEATURE_FAILURE_MAC_GPU_SWITCHING_NO_SWIZZLE");
 
-    // FEATURE_WEBRENDER - ALLOWLIST
-    IMPLEMENT_MAC_DRIVER_BLOCKLIST(OperatingSystem::OSX, DeviceFamily::IntelRolloutWebRender,
-                                   nsIGfxInfo::FEATURE_WEBRENDER, nsIGfxInfo::FEATURE_ALLOW_ALWAYS,
-                                   "FEATURE_ROLLOUT_INTEL_MAC");
+    // Older generation Intel devices do not perform well with WebRender.
+    IMPLEMENT_MAC_DRIVER_BLOCKLIST(
+        OperatingSystem::OSX, DeviceFamily::IntelWebRenderBlocked, nsIGfxInfo::FEATURE_WEBRENDER,
+        nsIGfxInfo::FEATURE_BLOCKED_DEVICE, "FEATURE_FAILURE_INTEL_GEN5_OR_OLDER");
+
     // Intel HD3000 disabled due to bug 1661505
     IMPLEMENT_MAC_DRIVER_BLOCKLIST(
         OperatingSystem::OSX, DeviceFamily::IntelSandyBridge, nsIGfxInfo::FEATURE_WEBRENDER,
         nsIGfxInfo::FEATURE_BLOCKED_DEVICE, "FEATURE_FAILURE_INTEL_MAC_HD3000_NO_WEBRENDER");
-    IMPLEMENT_MAC_DRIVER_BLOCKLIST(OperatingSystem::OSX, DeviceFamily::AtiRolloutWebRender,
-                                   nsIGfxInfo::FEATURE_WEBRENDER, nsIGfxInfo::FEATURE_ALLOW_ALWAYS,
-                                   "FEATURE_ROLLOUT_AMD_MAC");
-    IMPLEMENT_MAC_DRIVER_BLOCKLIST(OperatingSystem::OSX, DeviceFamily::NvidiaRolloutWebRender,
-                                   nsIGfxInfo::FEATURE_WEBRENDER, nsIGfxInfo::FEATURE_ALLOW_ALWAYS,
-                                   "FEATURE_ROLLOUT_NVIDIA_MAC");
-    IMPLEMENT_MAC_DRIVER_BLOCKLIST(OperatingSystem::OSX, DeviceFamily::AppleAll,
-                                   nsIGfxInfo::FEATURE_WEBRENDER, nsIGfxInfo::FEATURE_ALLOW_ALWAYS,
-                                   "FEATURE_ROLLOUT_APPLE_SILICON_MAC");
   }
   return *sDriverInfo;
 }
+
+OperatingSystem GfxInfo::GetOperatingSystem() { return OSXVersionToOperatingSystem(mOSXVersion); }
 
 nsresult GfxInfo::GetFeatureStatusImpl(int32_t aFeature, int32_t* aStatus,
                                        nsAString& aSuggestedDriverVersion,
@@ -502,32 +457,6 @@ nsresult GfxInfo::GetFeatureStatusImpl(int32_t aFeature, int32_t* aStatus,
 
   return GfxInfoBase::GetFeatureStatusImpl(aFeature, aStatus, aSuggestedDriverVersion, aDriverInfo,
                                            aFailureId, &os);
-}
-
-nsresult GfxInfo::FindMonitors(JSContext* aCx, JS::HandleObject aOutArray) {
-  nsAutoreleasePool localPool;
-  // Getting the refresh rate is a little hard on OS X. We could use
-  // CVDisplayLinkGetNominalOutputVideoRefreshPeriod, but that's a little
-  // involved. Ideally we could query it from vsync. For now, we leave it out.
-  int32_t deviceCount = 0;
-  for (NSScreen* screen in [NSScreen screens]) {
-    NSRect rect = [screen frame];
-
-    JS::Rooted<JSObject*> obj(aCx, JS_NewPlainObject(aCx));
-
-    JS::Rooted<JS::Value> screenWidth(aCx, JS::Int32Value((int)rect.size.width));
-    JS_SetProperty(aCx, obj, "screenWidth", screenWidth);
-
-    JS::Rooted<JS::Value> screenHeight(aCx, JS::Int32Value((int)rect.size.height));
-    JS_SetProperty(aCx, obj, "screenHeight", screenHeight);
-
-    JS::Rooted<JS::Value> scale(aCx, JS::NumberValue(nsCocoaUtils::GetBackingScaleFactor(screen)));
-    JS_SetProperty(aCx, obj, "scale", scale);
-
-    JS::Rooted<JS::Value> element(aCx, JS::ObjectValue(*obj));
-    JS_SetElement(aCx, aOutArray, deviceCount++, element);
-  }
-  return NS_OK;
 }
 
 #ifdef DEBUG

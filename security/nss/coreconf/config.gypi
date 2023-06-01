@@ -75,6 +75,11 @@
         }, {
           'cc_is_gcc%': '0',
         }],
+        ['"<(GENERATOR)"=="ninja"', {
+          'cc_is_cc%': '<!("<(python)" <(DEPTH)/coreconf/check_cc.py cc)',
+        }, {
+          'cc_is_cc%': '0',
+        }],
       ],
     },
     # Copy conditionally-set variables out one scope.
@@ -137,6 +142,7 @@
     'softfp_cflags%': '',
     'enable_draft_hpke%': 0,
     'force_integrated_as%': 0,
+    'disable_ckbi%': 0,
   },
   'target_defaults': {
     # Settings specific to targets should go here.
@@ -211,7 +217,7 @@
           },
         },
       }],
-      [ 'target_arch=="arm64" or target_arch=="aarch64" or target_arch=="sparc64" or target_arch=="ppc64" or target_arch=="ppc64le" or target_arch=="s390x" or target_arch=="mips64" or target_arch=="e2k" or target_arch=="riscv64"', {
+      [ 'target_arch=="arm64" or target_arch=="aarch64" or target_arch=="sparc64" or target_arch=="ppc64" or target_arch=="ppc64le" or target_arch=="s390x" or target_arch=="mips64" or target_arch=="e2k" or target_arch=="riscv64" or target_arch=="loongarch64"', {
         'defines': [
           'NSS_USE_64',
         ],

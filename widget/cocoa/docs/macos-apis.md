@@ -65,8 +65,8 @@ if CONFIG['OS_ARCH'] == 'Darwin':
 
 If you want to use an API that was introduced after 10.12, you now have one extra thing to worry about.
 In addition to the runtime check [described in the previous section](#using-macos-apis), you also
-have to jump through extra hoops in order to allow the build to succeed with older SDKs, because
-[we need to support building Firefox with SDK versions all the way down to the 10.12 SDK](./sdks.html#supported-sdks).
+have to jump through extra hoops in order to allow the build to succeed, because
+[our build target for Firefox has to remain at 10.12 in order for Firefox to run on macOS versions all the way down to macOS 10.12](./sdks.html#supported-sdks).
 
 In order to make the compiler accept your code, you will need to copy some amount of the API declaration
 into your own code. Copy it from the newest recent SDK you can get your hands on.
@@ -74,9 +74,10 @@ The exact procedure varies based on the type of API (enum, objc class, method, e
 but the general approach looks like this:
 
 ```objc++
-#if !defined(MAC_OS_X_VERSION_10_12) || MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_12
-@interface NSWindow (AutomaticWindowTabbing)
-@property (class) BOOL allowsAutomaticWindowTabbing API_AVAILABLE(macos(10.12));
+#if !defined(MAC_OS_VERSION_12_0) || MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_VERSION_12_0
+@interface NSScreen (NSScreen12_0)
+// https://developer.apple.com/documentation/appkit/nsscreen/3882821-safeareainsets?language=objc&changes=latest_major
+@property(readonly) NSEdgeInsets safeAreaInsets;
 @end
 #endif
 ```

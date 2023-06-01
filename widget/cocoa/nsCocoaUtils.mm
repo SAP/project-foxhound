@@ -13,6 +13,7 @@
 #include "gfxPlatform.h"
 #include "gfxUtils.h"
 #include "ImageRegion.h"
+#include "nsClipboard.h"
 #include "nsCocoaUtils.h"
 #include "nsChildView.h"
 #include "nsMenuBarX.h"
@@ -25,14 +26,17 @@
 #include "nsIRunnable.h"
 #include "nsIAppWindow.h"
 #include "nsIBaseWindow.h"
+#include "nsITransferable.h"
 #include "nsMenuUtilsX.h"
 #include "nsNetUtil.h"
+#include "nsPrimitiveHelpers.h"
 #include "nsToolkit.h"
 #include "nsCRT.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/Telemetry.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_media.h"
@@ -44,18 +48,15 @@ using namespace mozilla;
 using namespace mozilla::widget;
 
 using mozilla::dom::Promise;
-using mozilla::gfx::BackendType;
 using mozilla::gfx::DataSourceSurface;
 using mozilla::gfx::DrawTarget;
-using mozilla::gfx::Factory;
-using mozilla::gfx::SamplingFilter;
 using mozilla::gfx::IntPoint;
 using mozilla::gfx::IntRect;
 using mozilla::gfx::IntSize;
-using mozilla::gfx::SurfaceFormat;
+using mozilla::gfx::SamplingFilter;
 using mozilla::gfx::SourceSurface;
+using mozilla::gfx::SurfaceFormat;
 using mozilla::image::ImageRegion;
-using std::ceil;
 
 LazyLogModule gCocoaUtilsLog("nsCocoaUtils");
 #undef LOG
@@ -71,6 +72,41 @@ LazyLogModule gCocoaUtilsLog("nsCocoaUtils");
 nsCocoaUtils::PromiseArray nsCocoaUtils::sVideoCapturePromises;
 nsCocoaUtils::PromiseArray nsCocoaUtils::sAudioCapturePromises;
 StaticMutex nsCocoaUtils::sMediaCaptureMutex;
+
+/**
+ * Pasteboard types
+ */
+NSString* const kPublicUrlPboardType = @"public.url";
+NSString* const kPublicUrlNamePboardType = @"public.url-name";
+NSString* const kUrlsWithTitlesPboardType = @"WebURLsWithTitlesPboardType";
+NSString* const kMozWildcardPboardType = @"org.mozilla.MozillaWildcard";
+NSString* const kMozCustomTypesPboardType = @"org.mozilla.custom-clipdata";
+NSString* const kMozFileUrlsPboardType = @"org.mozilla.file-urls";
+
+@implementation UTIHelper
+
++ (NSString*)stringFromPboardType:(NSString*)aType {
+  if ([aType isEqualToString:kMozWildcardPboardType] ||
+      [aType isEqualToString:kMozCustomTypesPboardType] ||
+      [aType isEqualToString:kPublicUrlPboardType] ||
+      [aType isEqualToString:kPublicUrlNamePboardType] ||
+      [aType isEqualToString:kMozFileUrlsPboardType] ||
+      [aType isEqualToString:(NSString*)kPasteboardTypeFileURLPromise] ||
+      [aType isEqualToString:(NSString*)kPasteboardTypeFilePromiseContent] ||
+      [aType isEqualToString:(NSString*)kUTTypeFileURL] ||
+      [aType isEqualToString:NSPasteboardTypeString] ||
+      [aType isEqualToString:NSPasteboardTypeHTML] || [aType isEqualToString:NSPasteboardTypeRTF] ||
+      [aType isEqualToString:NSPasteboardTypeTIFF] || [aType isEqualToString:NSPasteboardTypePNG]) {
+    return [NSString stringWithString:aType];
+  }
+  NSString* dynamicType = (NSString*)UTTypeCreatePreferredIdentifierForTag(
+      kUTTagClassNSPboardType, (CFStringRef)aType, kUTTypeData);
+  NSString* result = [NSString stringWithString:dynamicType];
+  [dynamicType release];
+  return result;
+}
+
+@end  // UTIHelper
 
 static float MenuBarScreenHeight() {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
@@ -214,6 +250,55 @@ nsIWidget* nsCocoaUtils::GetHiddenWindowWidget() {
   }
 
   return hiddenWindowWidget;
+}
+
+BOOL nsCocoaUtils::WasLaunchedAtLogin() {
+  ProcessSerialNumber processSerialNumber = {0, kCurrentProcess};
+  ProcessInfoRec processInfoRec = {};
+  processInfoRec.processInfoLength = sizeof(processInfoRec);
+
+  // There is currently no replacement for ::GetProcessInformation, which has
+  // been deprecated since macOS 10.9.
+  if (::GetProcessInformation(&processSerialNumber, &processInfoRec) == noErr) {
+    ProcessInfoRec parentProcessInfo = {};
+    parentProcessInfo.processInfoLength = sizeof(parentProcessInfo);
+    if (::GetProcessInformation(&processInfoRec.processLauncher, &parentProcessInfo) == noErr) {
+      return parentProcessInfo.processSignature == 'lgnw';
+    }
+  }
+  return NO;
+}
+
+BOOL nsCocoaUtils::ShouldRestoreStateDueToLaunchAtLoginImpl() {
+  // Check if we were launched by macOS as a result of having
+  // "Reopen windows..." selected during a restart.
+  if (!WasLaunchedAtLogin()) {
+    return NO;
+  }
+
+  CFStringRef lgnwPlistName = CFSTR("com.apple.loginwindow");
+  CFStringRef saveStateKey = CFSTR("TALLogoutSavesState");
+  CFPropertyListRef lgnwPlist =
+      (CFPropertyListRef)(::CFPreferencesCopyAppValue(saveStateKey, lgnwPlistName));
+  // The .plist doesn't exist unless the user changed the "Reopen windows..."
+  // preference. If it doesn't exist, restore by default (as this is the macOS
+  // default).
+  // https://developer.apple.com/library/mac/documentation/macosx/conceptual/bpsystemstartup/chapters/CustomLogin.html
+  if (!lgnwPlist) {
+    return YES;
+  }
+
+  if (CFBooleanRef shouldRestoreState = static_cast<CFBooleanRef>(lgnwPlist)) {
+    return ::CFBooleanGetValue(shouldRestoreState);
+  }
+
+  return NO;
+}
+
+BOOL nsCocoaUtils::ShouldRestoreStateDueToLaunchAtLogin() {
+  BOOL shouldRestore = ShouldRestoreStateDueToLaunchAtLoginImpl();
+  Telemetry::ScalarSet(Telemetry::ScalarID::STARTUP_IS_RESTORED_BY_MACOS, !!shouldRestore);
+  return shouldRestore;
 }
 
 void nsCocoaUtils::PrepareForNativeAppModalDialog() {
@@ -375,7 +460,7 @@ nsresult nsCocoaUtils::CreateNSImageFromCGImage(CGImageRef aInputImage, NSImage*
   [NSGraphicsContext setCurrentContext:context];
 
   // Get the Quartz context and draw.
-  CGContextRef imageContext = (CGContextRef)[[NSGraphicsContext currentContext] graphicsPort];
+  CGContextRef imageContext = [[NSGraphicsContext currentContext] CGContext];
   ::CGContextDrawImage(imageContext, *(CGRect*)&imageRect, aInputImage);
 
   [NSGraphicsContext restoreGraphicsState];
@@ -389,6 +474,7 @@ nsresult nsCocoaUtils::CreateNSImageFromCGImage(CGImageRef aInputImage, NSImage*
 }
 
 nsresult nsCocoaUtils::CreateNSImageFromImageContainer(imgIContainer* aImage, uint32_t aWhichFrame,
+                                                       const nsPresContext* aPresContext,
                                                        const ComputedStyle* aComputedStyle,
                                                        NSImage** aResult, CGFloat scaleFactor,
                                                        bool* aIsEntirelyBlack) {
@@ -411,9 +497,9 @@ nsresult nsCocoaUtils::CreateNSImageFromImageContainer(imgIContainer* aImage, ui
     RefPtr<gfxContext> context = gfxContext::CreateOrNull(drawTarget);
     MOZ_ASSERT(context);
 
-    Maybe<SVGImageContext> svgContext;
-    if (aComputedStyle) {
-      SVGImageContext::MaybeStoreContextPaint(svgContext, aComputedStyle, aImage);
+    SVGImageContext svgContext;
+    if (aPresContext && aComputedStyle) {
+      SVGImageContext::MaybeStoreContextPaint(svgContext, *aPresContext, *aComputedStyle, aImage);
     }
     mozilla::image::ImgDrawResult res =
         aImage->Draw(context, scaledSize, ImageRegion::Create(scaledSize), aWhichFrame,
@@ -451,8 +537,8 @@ nsresult nsCocoaUtils::CreateNSImageFromImageContainer(imgIContainer* aImage, ui
 }
 
 nsresult nsCocoaUtils::CreateDualRepresentationNSImageFromImageContainer(
-    imgIContainer* aImage, uint32_t aWhichFrame, const ComputedStyle* aComputedStyle,
-    NSImage** aResult, bool* aIsEntirelyBlack) {
+    imgIContainer* aImage, uint32_t aWhichFrame, const nsPresContext* aPresContext,
+    const ComputedStyle* aComputedStyle, NSImage** aResult, bool* aIsEntirelyBlack) {
   int32_t width = 0, height = 0;
   aImage->GetWidth(&width);
   aImage->GetHeight(&height);
@@ -461,8 +547,8 @@ nsresult nsCocoaUtils::CreateDualRepresentationNSImageFromImageContainer(
   [*aResult setSize:size];
 
   NSImage* newRepresentation = nil;
-  nsresult rv = nsCocoaUtils::CreateNSImageFromImageContainer(
-      aImage, aWhichFrame, aComputedStyle, &newRepresentation, 1.0f, aIsEntirelyBlack);
+  nsresult rv = CreateNSImageFromImageContainer(aImage, aWhichFrame, aPresContext, aComputedStyle,
+                                                &newRepresentation, 1.0f, aIsEntirelyBlack);
   if (NS_FAILED(rv) || !newRepresentation) {
     return NS_ERROR_FAILURE;
   }
@@ -472,8 +558,8 @@ nsresult nsCocoaUtils::CreateDualRepresentationNSImageFromImageContainer(
   [newRepresentation release];
   newRepresentation = nil;
 
-  rv = nsCocoaUtils::CreateNSImageFromImageContainer(aImage, aWhichFrame, aComputedStyle,
-                                                     &newRepresentation, 2.0f, aIsEntirelyBlack);
+  rv = CreateNSImageFromImageContainer(aImage, aWhichFrame, aPresContext, aComputedStyle,
+                                       &newRepresentation, 2.0f, aIsEntirelyBlack);
   if (NS_FAILED(rv) || !newRepresentation) {
     return NS_ERROR_FAILURE;
   }
@@ -627,7 +713,6 @@ void nsCocoaUtils::InitInputEvent(WidgetInputEvent& aInputEvent, NSEvent* aNativ
   NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   aInputEvent.mModifiers = ModifiersForEvent(aNativeEvent);
-  aInputEvent.mTime = PR_IntervalNow();
   aInputEvent.mTimeStamp = GetEventTimeStamp([aNativeEvent timestamp]);
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
@@ -757,6 +842,9 @@ bool nsCocoaUtils::HiDPIEnabled() {
   return sHiDPIEnabled;
 }
 
+// static
+void nsCocoaUtils::InvalidateHiDPIState() { sHiDPIPrefInitialized = false; }
+
 void nsCocoaUtils::GetCommandsFromKeyEvent(NSEvent* aEvent,
                                            nsTArray<KeyBindingsCommand>& aCommands) {
   NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
@@ -806,12 +894,16 @@ struct KeyConversionData {
 
 static const KeyConversionData gKeyConversions[] = {
 
-#define KEYCODE_ENTRY(aStr, aCode) \
-  { #aStr, sizeof(#aStr) - 1, NS_##aStr, aCode }
+#define KEYCODE_ENTRY(aStr, aCode)             \
+  {                                            \
+#    aStr, sizeof(#aStr) - 1, NS_##aStr, aCode \
+  }
 
 // Some keycodes may have different name in KeyboardEvent from its key name.
-#define KEYCODE_ENTRY2(aStr, aNSName, aCode) \
-  { #aStr, sizeof(#aStr) - 1, NS_##aNSName, aCode }
+#define KEYCODE_ENTRY2(aStr, aNSName, aCode)      \
+  {                                               \
+#    aStr, sizeof(#aStr) - 1, NS_##aNSName, aCode \
+  }
 
     KEYCODE_ENTRY(VK_CANCEL, 0x001B),
     KEYCODE_ENTRY(VK_DELETE, NSDeleteFunctionKey),
@@ -1443,4 +1535,283 @@ void nsCocoaUtils::ResolveVideoCapturePromises(bool aGranted) {
     ResolveMediaCapturePromises(aGranted, sVideoCapturePromises);
   }));
   NS_DispatchToMainThread(runnable.forget());
+}
+
+static PanGestureInput::PanGestureType PanGestureTypeForEvent(NSEvent* aEvent) {
+  switch ([aEvent phase]) {
+    case NSEventPhaseMayBegin:
+      return PanGestureInput::PANGESTURE_MAYSTART;
+    case NSEventPhaseCancelled:
+      return PanGestureInput::PANGESTURE_CANCELLED;
+    case NSEventPhaseBegan:
+      return PanGestureInput::PANGESTURE_START;
+    case NSEventPhaseChanged:
+      return PanGestureInput::PANGESTURE_PAN;
+    case NSEventPhaseEnded:
+      return PanGestureInput::PANGESTURE_END;
+    case NSEventPhaseNone:
+      switch ([aEvent momentumPhase]) {
+        case NSEventPhaseBegan:
+          return PanGestureInput::PANGESTURE_MOMENTUMSTART;
+        case NSEventPhaseChanged:
+          return PanGestureInput::PANGESTURE_MOMENTUMPAN;
+        case NSEventPhaseEnded:
+          return PanGestureInput::PANGESTURE_MOMENTUMEND;
+        default:
+          NS_ERROR("unexpected event phase");
+          return PanGestureInput::PANGESTURE_PAN;
+      }
+    default:
+      NS_ERROR("unexpected event phase");
+      return PanGestureInput::PANGESTURE_PAN;
+  }
+}
+
+bool static ShouldConsiderStartingSwipeFromEvent(NSEvent* anEvent) {
+  // Only initiate horizontal tracking for gestures that have just begun --
+  // otherwise a scroll to one side of the page can have a swipe tacked on
+  // to it.
+  // [NSEvent isSwipeTrackingFromScrollEventsEnabled] checks whether the
+  // AppleEnableSwipeNavigateWithScrolls global preference is set.  If it isn't,
+  // fluid swipe tracking is disabled, and a horizontal two-finger gesture is
+  // always a scroll (even in Safari).  This preference can't (currently) be set
+  // from the Preferences UI -- only using 'defaults write'.
+  NSEventPhase eventPhase = [anEvent phase];
+  return [anEvent type] == NSEventTypeScrollWheel && eventPhase == NSEventPhaseBegan &&
+         [anEvent hasPreciseScrollingDeltas] && [NSEvent isSwipeTrackingFromScrollEventsEnabled];
+}
+
+PanGestureInput nsCocoaUtils::CreatePanGestureEvent(NSEvent* aNativeEvent, TimeStamp aTimeStamp,
+                                                    const ScreenPoint& aPanStartPoint,
+                                                    const ScreenPoint& aPreciseDelta,
+                                                    const gfx::IntPoint& aLineOrPageDelta,
+                                                    Modifiers aModifiers) {
+  PanGestureInput::PanGestureType type = PanGestureTypeForEvent(aNativeEvent);
+  // Always force zero deltas on event types that shouldn't cause any scrolling,
+  // so that we don't dispatch DOM wheel events for them.
+  bool shouldIgnoreDeltas =
+      type == PanGestureInput::PANGESTURE_MAYSTART || type == PanGestureInput::PANGESTURE_CANCELLED;
+
+  PanGestureInput panEvent(
+      type, aTimeStamp, aPanStartPoint, !shouldIgnoreDeltas ? aPreciseDelta : ScreenPoint(),
+      aModifiers,
+      PanGestureInput::IsEligibleForSwipe(ShouldConsiderStartingSwipeFromEvent(aNativeEvent)));
+
+  if (!shouldIgnoreDeltas) {
+    panEvent.SetLineOrPageDeltas(aLineOrPageDelta.x, aLineOrPageDelta.y);
+  }
+
+  return panEvent;
+}
+
+bool nsCocoaUtils::IsValidPasteboardType(NSString* aAvailableType, bool aAllowFileURL) {
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
+
+  // Prevent exposing fileURL for non-fileURL type.
+  // We need URL provided by dropped webloc file, but don't need file's URL.
+  // kUTTypeFileURL is returned by [NSPasteboard availableTypeFromArray:] for
+  // kPublicUrlPboardType, since it conforms to kPublicUrlPboardType.
+  bool isValid = true;
+  if (!aAllowFileURL &&
+      [aAvailableType isEqualToString:[UTIHelper stringFromPboardType:(NSString*)kUTTypeFileURL]]) {
+    isValid = false;
+  }
+
+  return isValid;
+
+  NS_OBJC_END_TRY_BLOCK_RETURN(false);
+}
+
+NSString* nsCocoaUtils::GetStringForTypeFromPasteboardItem(NSPasteboardItem* aItem,
+                                                           const NSString* aType,
+                                                           bool aAllowFileURL) {
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
+
+  NSString* availableType =
+      [aItem availableTypeFromArray:[NSArray arrayWithObjects:(id)aType, nil]];
+  if (availableType && IsValidPasteboardType(availableType, aAllowFileURL)) {
+    return [aItem stringForType:(id)availableType];
+  }
+
+  return nil;
+
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
+}
+
+NSString* nsCocoaUtils::GetFilePathFromPasteboardItem(NSPasteboardItem* aItem) {
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
+
+  NSString* urlString = GetStringForTypeFromPasteboardItem(
+      aItem, [UTIHelper stringFromPboardType:(NSString*)kUTTypeFileURL], true);
+  if (urlString) {
+    NSURL* url = [NSURL URLWithString:urlString];
+    if (url) {
+      return [url path];
+    }
+  }
+
+  return nil;
+
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
+}
+
+NSString* nsCocoaUtils::GetTitleForURLFromPasteboardItem(NSPasteboardItem* item) {
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
+
+  NSString* name = nsCocoaUtils::GetStringForTypeFromPasteboardItem(
+      item, [UTIHelper stringFromPboardType:kPublicUrlNamePboardType]);
+  if (name) {
+    return name;
+  }
+
+  NSString* filePath = nsCocoaUtils::GetFilePathFromPasteboardItem(item);
+  if (filePath) {
+    return [filePath lastPathComponent];
+  }
+
+  return nil;
+
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
+}
+
+void nsCocoaUtils::SetTransferDataForTypeFromPasteboardItem(nsITransferable* aTransferable,
+                                                            const nsCString& aFlavor,
+                                                            NSPasteboardItem* aItem) {
+  NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
+
+  if (!aTransferable || !aItem) {
+    return;
+  }
+
+  MOZ_LOG(gCocoaUtilsLog, LogLevel::Info,
+          ("nsCocoaUtils::SetTransferDataForTypeFromPasteboardItem: looking for pasteboard data of "
+           "type %s\n",
+           aFlavor.get()));
+
+  if (aFlavor.EqualsLiteral(kFileMime)) {
+    NSString* filePath = nsCocoaUtils::GetFilePathFromPasteboardItem(aItem);
+    if (!filePath) {
+      return;
+    }
+
+    unsigned int stringLength = [filePath length];
+    unsigned int dataLength = (stringLength + 1) * sizeof(char16_t);  // in bytes
+    char16_t* clipboardDataPtr = (char16_t*)malloc(dataLength);
+    if (!clipboardDataPtr) {
+      return;
+    }
+
+    [filePath getCharacters:reinterpret_cast<unichar*>(clipboardDataPtr)];
+    clipboardDataPtr[stringLength] = 0;  // null terminate
+
+    nsCOMPtr<nsIFile> file;
+    nsresult rv = NS_NewLocalFile(nsDependentString(clipboardDataPtr), true, getter_AddRefs(file));
+    free(clipboardDataPtr);
+    if (NS_FAILED(rv)) {
+      return;
+    }
+
+    aTransferable->SetTransferData(aFlavor.get(), file);
+    return;
+  }
+
+  if (aFlavor.EqualsLiteral(kCustomTypesMime)) {
+    NSString* availableType =
+        [aItem availableTypeFromArray:[NSArray arrayWithObject:kMozCustomTypesPboardType]];
+    if (!availableType || !nsCocoaUtils::IsValidPasteboardType(availableType, false)) {
+      return;
+    }
+    NSData* pasteboardData = [aItem dataForType:availableType];
+    if (!pasteboardData) {
+      return;
+    }
+
+    unsigned int dataLength = [pasteboardData length];
+    void* clipboardDataPtr = malloc(dataLength);
+    if (!clipboardDataPtr) {
+      return;
+    }
+    [pasteboardData getBytes:clipboardDataPtr length:dataLength];
+
+    nsCOMPtr<nsISupports> genericDataWrapper;
+    nsPrimitiveHelpers::CreatePrimitiveForData(aFlavor, clipboardDataPtr, dataLength,
+                                               getter_AddRefs(genericDataWrapper));
+
+    aTransferable->SetTransferData(aFlavor.get(), genericDataWrapper);
+    free(clipboardDataPtr);
+    return;
+  }
+
+  NSString* pString = nil;
+  if (aFlavor.EqualsLiteral(kTextMime)) {
+    pString = nsCocoaUtils::GetStringForTypeFromPasteboardItem(
+        aItem, [UTIHelper stringFromPboardType:NSPasteboardTypeString]);
+  } else if (aFlavor.EqualsLiteral(kHTMLMime)) {
+    pString = nsCocoaUtils::GetStringForTypeFromPasteboardItem(
+        aItem, [UTIHelper stringFromPboardType:NSPasteboardTypeHTML]);
+  } else if (aFlavor.EqualsLiteral(kURLMime)) {
+    pString = nsCocoaUtils::GetStringForTypeFromPasteboardItem(
+        aItem, [UTIHelper stringFromPboardType:kPublicUrlPboardType]);
+    if (pString) {
+      NSString* title = GetTitleForURLFromPasteboardItem(aItem);
+      if (!title) {
+        title = pString;
+      }
+      pString = [NSString stringWithFormat:@"%@\n%@", pString, title];
+    }
+  } else if (aFlavor.EqualsLiteral(kURLDataMime)) {
+    pString = nsCocoaUtils::GetStringForTypeFromPasteboardItem(
+        aItem, [UTIHelper stringFromPboardType:kPublicUrlPboardType]);
+  } else if (aFlavor.EqualsLiteral(kURLDescriptionMime)) {
+    pString = GetTitleForURLFromPasteboardItem(aItem);
+  } else if (aFlavor.EqualsLiteral(kRTFMime)) {
+    pString = nsCocoaUtils::GetStringForTypeFromPasteboardItem(
+        aItem, [UTIHelper stringFromPboardType:NSPasteboardTypeRTF]);
+  }
+  if (pString) {
+    NSData* stringData;
+    bool isRTF = aFlavor.EqualsLiteral(kRTFMime);
+    if (isRTF) {
+      stringData = [pString dataUsingEncoding:NSASCIIStringEncoding];
+    } else {
+      stringData = [pString dataUsingEncoding:NSUnicodeStringEncoding];
+    }
+    unsigned int dataLength = [stringData length];
+    void* clipboardDataPtr = malloc(dataLength);
+    if (!clipboardDataPtr) {
+      return;
+    }
+    [stringData getBytes:clipboardDataPtr length:dataLength];
+
+    // The DOM only wants LF, so convert from MacOS line endings to DOM line endings.
+    int32_t signedDataLength = dataLength;
+    nsLinebreakHelpers::ConvertPlatformToDOMLinebreaks(isRTF, &clipboardDataPtr, &signedDataLength);
+    dataLength = signedDataLength;
+
+    // skip BOM (Byte Order Mark to distinguish little or big endian)
+    char16_t* clipboardDataPtrNoBOM = (char16_t*)clipboardDataPtr;
+    if ((dataLength > 2) &&
+        ((clipboardDataPtrNoBOM[0] == 0xFEFF) || (clipboardDataPtrNoBOM[0] == 0xFFFE))) {
+      dataLength -= sizeof(char16_t);
+      clipboardDataPtrNoBOM += 1;
+    }
+
+    nsCOMPtr<nsISupports> genericDataWrapper;
+    nsPrimitiveHelpers::CreatePrimitiveForData(aFlavor, clipboardDataPtrNoBOM, dataLength,
+                                               getter_AddRefs(genericDataWrapper));
+    aTransferable->SetTransferData(aFlavor.get(), genericDataWrapper);
+    free(clipboardDataPtr);
+    return;
+  }
+
+  // We have never supported this on Mac OS X, we should someday. Normally dragging images
+  // in is accomplished with a file path drag instead of the image data itself.
+  /*
+  if (aFlavor.EqualsLiteral(kPNGImageMime) || aFlavor.EqualsLiteral(kJPEGImageMime) ||
+      aFlavor.EqualsLiteral(kJPGImageMime) || aFlavor.EqualsLiteral(kGIFImageMime)) {
+
+  }
+  */
+
+  NS_OBJC_END_TRY_IGNORE_BLOCK;
 }

@@ -11,6 +11,7 @@
 #include "mozilla/BasicEvents.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/dom/DataTransfer.h"
+#include "mozilla/ipc/IPCForwards.h"
 #include "nsCOMPtr.h"
 
 namespace mozilla {
@@ -41,9 +42,9 @@ class WidgetPointerEventHolder final {
 class WidgetPointerHelper {
  public:
   uint32_t pointerId;
-  uint32_t tiltX;
-  uint32_t tiltY;
-  uint32_t twist;
+  int32_t tiltX;
+  int32_t tiltY;
+  int32_t twist;
   float tangentialPressure;
   bool convertToPointer;
   RefPtr<WidgetPointerEventHolder> mCoalescedWidgetEvents;
@@ -90,6 +91,7 @@ class WidgetMouseEventBase : public WidgetInputEvent {
   friend class dom::PBrowserParent;
   friend class dom::PBrowserChild;
   friend class dom::PBrowserBridgeParent;
+  ALLOW_DEPRECATED_READPARAM
 
  protected:
   WidgetMouseEventBase()
@@ -116,9 +118,6 @@ class WidgetMouseEventBase : public WidgetInputEvent {
   virtual WidgetEvent* Duplicate() const override {
     MOZ_CRASH("WidgetMouseEventBase must not be most-subclass");
   }
-
-  // ID of the canvas HitRegion
-  nsString mRegion;
 
   // Finger or touch pressure of event. It ranges between 0.0 and 1.0.
   float mPressure;
@@ -178,6 +177,7 @@ class WidgetMouseEvent : public WidgetMouseEventBase,
   friend class dom::PBrowserParent;
   friend class dom::PBrowserChild;
   friend class dom::PBrowserBridgeParent;
+  ALLOW_DEPRECATED_READPARAM
 
  public:
   typedef bool ReasonType;
@@ -328,6 +328,7 @@ class WidgetDragEvent : public WidgetMouseEvent {
  private:
   friend class mozilla::dom::PBrowserParent;
   friend class mozilla::dom::PBrowserChild;
+  ALLOW_DEPRECATED_READPARAM
 
  protected:
   WidgetDragEvent()
@@ -440,6 +441,7 @@ class WidgetWheelEvent : public WidgetMouseEventBase {
  private:
   friend class mozilla::dom::PBrowserParent;
   friend class mozilla::dom::PBrowserChild;
+  ALLOW_DEPRECATED_READPARAM
 
   WidgetWheelEvent()
       : mDeltaX(0.0),
@@ -499,10 +501,10 @@ class WidgetWheelEvent : public WidgetMouseEventBase {
     return result;
   }
 
-  // On OS X, scroll gestures that start at the edge of the scrollable range
-  // can result in a swipe gesture. For the first wheel event of such a
-  // gesture, call TriggersSwipe() after the event has been processed
-  // in order to find out whether a swipe should be started.
+  // Scroll gestures that start at the edge of the scrollable range can result
+  // in a swipe gesture. For the first wheel event of such a gesture, call
+  // TriggersSwipe() after the event has been processed in order to find out
+  // whether a swipe should be started.
   bool TriggersSwipe() const {
     return mCanTriggerSwipe && mViewPortIsOverscrolled &&
            this->mOverflowDeltaX != 0.0;
@@ -686,6 +688,7 @@ class WidgetWheelEvent : public WidgetMouseEventBase {
 class WidgetPointerEvent : public WidgetMouseEvent {
   friend class mozilla::dom::PBrowserParent;
   friend class mozilla::dom::PBrowserChild;
+  ALLOW_DEPRECATED_READPARAM
 
  public:
   virtual WidgetPointerEvent* AsPointerEvent() override { return this; }
@@ -717,8 +720,8 @@ class WidgetPointerEvent : public WidgetMouseEvent {
     return result;
   }
 
-  uint32_t mWidth;
-  uint32_t mHeight;
+  int32_t mWidth;
+  int32_t mHeight;
   bool mIsPrimary;
   bool mFromTouchEvent;
 

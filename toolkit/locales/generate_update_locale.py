@@ -4,13 +4,8 @@
 
 # Generate update.locale, which simply contains the name of the current locale.
 
-from __future__ import unicode_literals, print_function
-
-import six
-
 
 def main(output, locale=None):
     assert locale is not None
     # update.locale is a trivial file but let's be unicode aware anyway.
-    locale = six.ensure_text(locale)
     print(locale, file=output)

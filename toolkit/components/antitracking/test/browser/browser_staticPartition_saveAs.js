@@ -6,7 +6,6 @@
 
 "use strict";
 
-/* import-globals-from ../../../../content/tests/browser/common/mockTransfer.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/toolkit/content/tests/browser/common/mockTransfer.js",
   this
@@ -83,7 +82,7 @@ function createPromiseForObservingChannel(aURL, aPartitionKey) {
   });
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   info("Setting MockFilePicker.");
   mockTransferRegisterer.register();
 
@@ -423,7 +422,7 @@ add_task(async function testPageInfoMediaSaveAs() {
         let preview = pageInfo.document.getElementById("thepreviewimage");
         let mediaType = pageInfo.gImageView.data[i][1]; // COL_IMAGE_TYPE
         if (mediaType == "Image") {
-          await BrowserTestUtils.waitForEvent(preview, "loadend");
+          await BrowserTestUtils.waitForEvent(preview, "load");
         } else if (mediaType == "Video") {
           await BrowserTestUtils.waitForEvent(preview, "canplaythrough");
         }

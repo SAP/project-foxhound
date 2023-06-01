@@ -5,8 +5,6 @@
 /* Turning off this rule to allow control flow operations in finally block
  * http://eslint.org/docs/rules/no-unsafe-finally  */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 function run_test() {
   let greD = Services.dirsvc.get("GreD", Ci.nsIFile);
   let defaultPrefD = Services.dirsvc.get("PrfDef", Ci.nsIFile);
@@ -44,6 +42,8 @@ function run_test() {
         filename: "autoconfig-chromecheck.cfg",
         prefs: {
           "_test.string.typeofComponents": "undefined",
+          "_test.string.typeofChromeUtils": "undefined",
+          "_test.string.typeofServices": "undefined",
         },
       },
     ];

@@ -6,7 +6,6 @@
 
 # This is a template config file for web-platform-tests test.
 
-from __future__ import absolute_import
 import os
 import platform
 import sys
@@ -92,6 +91,17 @@ config = {
             ],
             "architectures": ["32bit", "64bit"],
             "halt_on_failure": True,
+            "enabled": True,
+        },
+        {
+            "name": "create scrollbars always show key",
+            "cmd": [
+                "powershell",
+                "-command",
+                "New-ItemProperty -Path 'HKCU:\Control Panel\Accessibility' -Name 'DynamicScrollbars' -Value 0",
+            ],
+            "architectures": ["32bit", "64bit"],
+            "halt_on_failure": False,
             "enabled": True,
         },
         {

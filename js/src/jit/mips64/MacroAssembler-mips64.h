@@ -11,7 +11,6 @@
 #include "jit/MoveResolver.h"
 #include "vm/BytecodeUtil.h"
 #include "wasm/WasmBuiltins.h"
-#include "wasm/WasmTlsData.h"
 
 namespace js {
 namespace jit {
@@ -414,6 +413,20 @@ class MacroAssemblerMIPS64Compat : public MacroAssemblerMIPS64 {
     ma_dext(dest, src.valueReg(), Imm32(0), Imm32(JSVAL_TAG_SHIFT));
   }
 
+  // Like unboxGCThingForGCBarrier, but loads the GC thing's chunk base.
+  void getGCThingValueChunk(const Address& src, Register dest) {
+    ScratchRegisterScope scratch(asMasm());
+    MOZ_ASSERT(scratch != dest);
+    loadPtr(src, dest);
+    movePtr(ImmWord(JS::detail::ValueGCThingPayloadChunkMask), scratch);
+    as_and(dest, dest, scratch);
+  }
+  void getGCThingValueChunk(const ValueOperand& src, Register dest) {
+    MOZ_ASSERT(src.valueReg() != dest);
+    movePtr(ImmWord(JS::detail::ValueGCThingPayloadChunkMask), dest);
+    as_and(dest, dest, src.valueReg());
+  }
+
   void unboxInt32(const ValueOperand& operand, Register dest);
   void unboxInt32(Register src, Register dest);
   void unboxInt32(const Address& src, Register dest);
@@ -506,9 +519,6 @@ class MacroAssemblerMIPS64Compat : public MacroAssemblerMIPS64 {
 
   void testUndefinedSet(Condition cond, const ValueOperand& value,
                         Register dest);
-
-  // higher level tag testing code
-  Address ToPayload(Address value) { return value; }
 
   template <typename T>
   void loadUnboxedValue(const T& address, MIRType type, AnyRegister dest) {
@@ -625,7 +635,8 @@ class MacroAssemblerMIPS64Compat : public MacroAssemblerMIPS64 {
   }
   void pushValue(const Address& addr);
 
-  void handleFailureWithHandlerTail(Label* profilerExitTail);
+  void handleFailureWithHandlerTail(Label* profilerExitTail,
+                                    Label* bailoutTail);
 
   /////////////////////////////////////////////////////////////////
   // Common interface.
@@ -723,12 +734,6 @@ class MacroAssemblerMIPS64Compat : public MacroAssemblerMIPS64 {
   void store32(Imm32 src, const Address& address);
   void store32(Imm32 src, const BaseIndex& address);
 
-  // NOTE: This will use second scratch on MIPS64. Only ARM needs the
-  // implementation without second scratch.
-  void store32_NoSecondScratch(Imm32 src, const Address& address) {
-    store32(src, address);
-  }
-
   template <typename T>
   void store32Unaligned(Register src, const T& dest) {
     ma_store_unaligned(src, dest, SizeWord);
@@ -817,10 +822,6 @@ class MacroAssemblerMIPS64Compat : public MacroAssemblerMIPS64 {
 
   void moveFloat32(FloatRegister src, FloatRegister dest) {
     as_movs(dest, src);
-  }
-
-  void loadWasmPinnedRegsFromTls() {
-    loadPtr(Address(WasmTlsReg, offsetof(wasm::TlsData, memoryBase)), HeapReg);
   }
 
   // Instrumentation for entering and leaving the profiler.

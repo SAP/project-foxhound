@@ -8,10 +8,9 @@
 var gTimeoutSeconds = 45;
 var gConfig;
 
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+var { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(
   this,
@@ -137,7 +136,9 @@ function testInit() {
     );
   } else {
     // In non-e10s, only run the ShutdownLeaksCollector in the parent process.
-    ChromeUtils.import("chrome://mochikit/content/ShutdownLeaksCollector.jsm");
+    ChromeUtils.importESModule(
+      "chrome://mochikit/content/ShutdownLeaksCollector.sys.mjs"
+    );
   }
 }
 
@@ -204,20 +205,20 @@ function Tester(aTests, structuredLogger, aCallback) {
   this.SimpleTest.harnessParameters = gConfig;
 
   this.MemoryStats = simpleTestScope.MemoryStats;
-  this.ContentTask = ChromeUtils.import(
-    "resource://testing-common/ContentTask.jsm"
+  this.ContentTask = ChromeUtils.importESModule(
+    "resource://testing-common/ContentTask.sys.mjs"
   ).ContentTask;
-  this.BrowserTestUtils = ChromeUtils.import(
-    "resource://testing-common/BrowserTestUtils.jsm"
+  this.BrowserTestUtils = ChromeUtils.importESModule(
+    "resource://testing-common/BrowserTestUtils.sys.mjs"
   ).BrowserTestUtils;
-  this.TestUtils = ChromeUtils.import(
-    "resource://testing-common/TestUtils.jsm"
+  this.TestUtils = ChromeUtils.importESModule(
+    "resource://testing-common/TestUtils.sys.mjs"
   ).TestUtils;
-  this.PromiseTestUtils = ChromeUtils.import(
-    "resource://testing-common/PromiseTestUtils.jsm"
+  this.PromiseTestUtils = ChromeUtils.importESModule(
+    "resource://testing-common/PromiseTestUtils.sys.mjs"
   ).PromiseTestUtils;
-  this.Assert = ChromeUtils.import(
-    "resource://testing-common/Assert.jsm"
+  this.Assert = ChromeUtils.importESModule(
+    "resource://testing-common/Assert.sys.mjs"
   ).Assert;
   this.PerTestCoverageUtils = ChromeUtils.import(
     "resource://testing-common/PerTestCoverageUtils.jsm"
@@ -232,8 +233,8 @@ function Tester(aTests, structuredLogger, aCallback) {
 
   this._coverageCollector = null;
 
-  const { XPCOMUtils } = ChromeUtils.import(
-    "resource://gre/modules/XPCOMUtils.jsm"
+  const { XPCOMUtils } = ChromeUtils.importESModule(
+    "resource://gre/modules/XPCOMUtils.sys.mjs"
   );
 
   // Avoid failing tests when XPCOMUtils.defineLazyScriptGetter is used.
@@ -260,6 +261,15 @@ function Tester(aTests, structuredLogger, aCallback) {
       this._scriptLoader
     ),
   });
+
+  // ensure the mouse is reset before each test run
+  if (Services.env.exists("MOZ_AUTOMATION")) {
+    this.EventUtils.synthesizeNativeMouseEvent({
+      type: "mousemove",
+      screenX: 1000,
+      screenY: 10,
+    });
+  }
 }
 Tester.prototype = {
   EventUtils: {},
@@ -308,8 +318,8 @@ Tester.prototype = {
 
     if (gConfig.jscovDirPrefix) {
       let coveragePath = gConfig.jscovDirPrefix;
-      let { CoverageCollector } = ChromeUtils.import(
-        "resource://testing-common/CoverageUtils.jsm"
+      let { CoverageCollector } = ChromeUtils.importESModule(
+        "resource://testing-common/CoverageUtils.sys.mjs"
       );
       this._coverageCollector = new CoverageCollector(coveragePath);
     }
@@ -394,11 +404,28 @@ Tester.prototype = {
       AppConstants.MOZ_APP_NAME != "thunderbird" &&
       gBrowser.tabs.length > 1
     ) {
+      let lastURI = "";
+      let lastURIcount = 0;
       while (gBrowser.tabs.length > 1) {
         let lastTab = gBrowser.tabs[gBrowser.tabs.length - 1];
         if (!lastTab.closing) {
           // Report the stale tab as an error only when they're not closing.
           // Tests can finish without waiting for the closing tabs.
+          if (lastURI != lastTab.linkedBrowser.currentURI.spec) {
+            lastURI = lastTab.linkedBrowser.currentURI.spec;
+          } else {
+            lastURIcount++;
+            if (lastURIcount >= 3) {
+              this.currentTest.addResult(
+                new testResult({
+                  name:
+                    "terminating browser early - unable to close tabs; skipping remaining tests in folder",
+                  allowFailure: this.currentTest.allowFailure,
+                })
+              );
+              this.finish();
+            }
+          }
           this.currentTest.addResult(
             new testResult({
               name:
@@ -544,6 +571,29 @@ Tester.prototype = {
     }
   },
 
+  async ensureVsyncDisabled() {
+    // The WebExtension process keeps vsync enabled forever in headless mode.
+    // See bug 1782541.
+    if (Services.env.get("MOZ_HEADLESS")) {
+      return;
+    }
+
+    try {
+      await this.TestUtils.waitForCondition(
+        () => !ChromeUtils.vsyncEnabled(),
+        "waiting for vsync to be disabled"
+      );
+    } catch (e) {
+      this.Assert.ok(false, e);
+      this.Assert.ok(
+        false,
+        "vsync remained enabled at the end of the test. " +
+          "Is there an animation still running? " +
+          "Consider talking to the performance team for tips to solve this."
+      );
+    }
+  },
+
   async nextTest() {
     if (this.currentTest) {
       if (this._coverageCollector) {
@@ -555,7 +605,7 @@ Tester.prototype = {
       // Run cleanup functions for the current test before moving on to the
       // next one.
       let testScope = this.currentTest.scope;
-      while (testScope.__cleanupFunctions.length > 0) {
+      while (testScope.__cleanupFunctions.length) {
         let func = testScope.__cleanupFunctions.shift();
         try {
           let result = await func.apply(testScope);
@@ -624,6 +674,7 @@ Tester.prototype = {
       this.PromiseTestUtils.ensureDOMPromiseRejectionsProcessed();
       this.PromiseTestUtils.assertNoUncaughtRejections();
       this.PromiseTestUtils.assertNoMoreExpectedRejections();
+      await this.ensureVsyncDisabled();
 
       Object.keys(window).forEach(function(prop) {
         if (parseInt(prop) == prop) {
@@ -799,18 +850,15 @@ Tester.prototype = {
 
       // See if we should upload a profile of a failing test.
       if (this.currentTest.failCount) {
-        let env = Cc["@mozilla.org/process/environment;1"].getService(
-          Ci.nsIEnvironment
-        );
         // If MOZ_PROFILER_SHUTDOWN is set, the profiler got started from --profiler
         // and a profile will be shown even if there's no test failure.
         if (
-          env.exists("MOZ_UPLOAD_DIR") &&
-          !env.exists("MOZ_PROFILER_SHUTDOWN") &&
+          Services.env.exists("MOZ_UPLOAD_DIR") &&
+          !Services.env.exists("MOZ_PROFILER_SHUTDOWN") &&
           Services.profiler.IsActive()
         ) {
           let filename = `profile_${name}.json`;
-          let path = env.get("MOZ_UPLOAD_DIR");
+          let path = Services.env.get("MOZ_UPLOAD_DIR");
           let profilePath = PathUtils.join(path, filename);
           try {
             let profileData = await Services.profiler.getProfileDataAsGzippedArrayBuffer();
@@ -924,8 +972,8 @@ Tester.prototype = {
           });
         };
 
-        let { AsyncShutdown } = ChromeUtils.import(
-          "resource://gre/modules/AsyncShutdown.jsm"
+        let { AsyncShutdown } = ChromeUtils.importESModule(
+          "resource://gre/modules/AsyncShutdown.sys.mjs"
         );
 
         let barrier = new AsyncShutdown.Barrier(
@@ -994,7 +1042,7 @@ Tester.prototype = {
       if (currentTest.timedOut) {
         currentTest.addResult(
           new testResult({
-            name: `Uncaught exception received from previously timed out ${desc}`,
+            name: `Uncaught exception received from previously timed out ${desc} ${task.name}`,
             pass: false,
             ex,
             stack: typeof ex == "object" && "stack" in ex ? ex.stack : null,
@@ -1006,7 +1054,7 @@ Tester.prototype = {
       }
       currentTest.addResult(
         new testResult({
-          name: `Uncaught exception in ${desc}`,
+          name: `Uncaught exception in ${desc} ${task.name}`,
           pass: currentScope.SimpleTest.isExpectingUncaughtException(),
           ex,
           stack: typeof ex == "object" && "stack" in ex ? ex.stack : null,
@@ -1087,6 +1135,13 @@ Tester.prototype = {
       });
     }
 
+    if (currentTest.allow_xul_xbl) {
+      window.SpecialPowers.pushPermissions([
+        { type: "allowXULXBL", allow: true, context: "http://mochi.test:8888" },
+        { type: "allowXULXBL", allow: true, context: "http://example.org" },
+      ]);
+    }
+
     // Import utils in the test scope.
     let { scope } = this.currentTest;
     scope.EventUtils = this.EventUtils;
@@ -1120,7 +1175,7 @@ Tester.prototype = {
 
     this.ContentTask.setTestScope(currentScope);
 
-    // Allow Assert.jsm methods to be tacked to the current scope.
+    // Allow Assert.sys.mjs methods to be tacked to the current scope.
     scope.export_assertions = function() {
       for (let func in this.Assert) {
         this[func] = this.Assert[func].bind(this.Assert);
@@ -1141,6 +1196,13 @@ Tester.prototype = {
     } catch (ex) {
       /* no chrome-harness tools */
     }
+
+    // Ensure we are not idle at the beginning of the test. If we don't do this,
+    // the browser may behave differently if the previous tests ran long.
+    // eg. the session store behavior changes 3 minutes after the last user event.
+    Cc["@mozilla.org/widget/useridleservice;1"]
+      .getService(Ci.nsIUserIdleServiceInternal)
+      .resetIdleTimeOut(0);
 
     // Import head.js script if it exists.
     var currentTestDirPath = this.currentTest.path.substr(
@@ -1342,7 +1404,16 @@ function testResult({ name, pass, todo, ex, stack, allowFailure }) {
       // we have an exception - print filename and linenumber information
       this.msg += "at " + ex.fileName + ":" + ex.lineNumber + " - ";
     }
-    this.msg += String(ex);
+
+    if (ex instanceof Error) {
+      this.msg += String(ex);
+    } else {
+      try {
+        this.msg += JSON.stringify(ex);
+      } catch {
+        this.msg += String(ex);
+      }
+    }
   }
 
   if (stack) {
@@ -1560,10 +1631,6 @@ function testScope(aTester, aTest, expected) {
 
   this.requestLongerTimeout = function test_requestLongerTimeout(aFactor) {
     self.__timeoutFactor = aFactor;
-  };
-
-  this.copyToProfile = function test_copyToProfile(filename) {
-    self.SimpleTest.copyToProfile(filename);
   };
 
   this.expectUncaughtException = function test_expectUncaughtException(

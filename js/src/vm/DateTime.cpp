@@ -37,9 +37,17 @@
 #include "vm/MutexIDs.h"
 
 static bool ComputeLocalTime(time_t local, struct tm* ptm) {
+  // Neither localtime_s nor localtime_r are required to act as if tzset has
+  // been called, therefore we need to explicitly call it to ensure any time
+  // zone changes are correctly picked up.
+
 #if defined(_WIN32)
+  _tzset();
   return localtime_s(ptm, &local) == 0;
 #elif defined(HAVE_LOCALTIME_R)
+#  ifndef __wasi__
+  tzset();
+#  endif
   return localtime_r(&local, ptm);
 #else
   struct tm* otm = localtime(&local);
@@ -133,9 +141,10 @@ static int32_t UTCToLocalStandardOffsetSeconds() {
   // Finally, compare the seconds-based components of the local non-DST
   // representation and the UTC representation to determine the actual
   // difference.
-  int utc_secs = utc.tm_hour * SecondsPerHour + utc.tm_min * SecondsPerMinute;
+  int utc_secs =
+      utc.tm_hour * SecondsPerHour + utc.tm_min * int(SecondsPerMinute);
   int local_secs =
-      local.tm_hour * SecondsPerHour + local.tm_min * SecondsPerMinute;
+      local.tm_hour * SecondsPerHour + local.tm_min * int(SecondsPerMinute);
 
   // Same-day?  Just subtract the seconds counts.
   if (utc.tm_mday == local.tm_mday) {
@@ -227,7 +236,14 @@ js::DateTimeInfo::DateTimeInfo() {
 js::DateTimeInfo::~DateTimeInfo() = default;
 
 int64_t js::DateTimeInfo::toClampedSeconds(int64_t milliseconds) {
-  int64_t seconds = milliseconds / msPerSecond;
+  int64_t seconds = milliseconds / int64_t(msPerSecond);
+  int64_t millis = milliseconds % int64_t(msPerSecond);
+
+  // Round towards the start of time.
+  if (millis < 0) {
+    seconds -= 1;
+  }
+
   if (seconds > MaxTimeT) {
     seconds = MaxTimeT;
   } else if (seconds < MinTimeT) {
@@ -242,7 +258,7 @@ int32_t js::DateTimeInfo::computeDSTOffsetMilliseconds(int64_t utcSeconds) {
   MOZ_ASSERT(utcSeconds <= MaxTimeT);
 
 #if JS_HAS_INTL_API
-  int64_t utcMilliseconds = utcSeconds * msPerSecond;
+  int64_t utcMilliseconds = utcSeconds * int64_t(msPerSecond);
 
   return timeZone()->GetDSTOffsetMs(utcMilliseconds).unwrapOr(0);
 #else
@@ -266,7 +282,7 @@ int32_t js::DateTimeInfo::computeDSTOffsetMilliseconds(int64_t utcSeconds) {
     diff -= SecondsPerDay;
   }
 
-  return diff * msPerSecond;
+  return diff * int32_t(msPerSecond);
 #endif /* JS_HAS_INTL_API */
 }
 
@@ -380,7 +396,7 @@ int32_t js::DateTimeInfo::computeUTCOffsetMilliseconds(int64_t localSeconds) {
   MOZ_ASSERT(localSeconds >= MinTimeT);
   MOZ_ASSERT(localSeconds <= MaxTimeT);
 
-  int64_t localMilliseconds = localSeconds * msPerSecond;
+  int64_t localMilliseconds = localSeconds * int64_t(msPerSecond);
 
   return timeZone()->GetUTCOffsetMs(localMilliseconds).unwrapOr(0);
 }
@@ -389,7 +405,7 @@ int32_t js::DateTimeInfo::computeLocalOffsetMilliseconds(int64_t utcSeconds) {
   MOZ_ASSERT(utcSeconds >= MinTimeT);
   MOZ_ASSERT(utcSeconds <= MaxTimeT);
 
-  UDate utcMilliseconds = UDate(utcSeconds * msPerSecond);
+  UDate utcMilliseconds = UDate(utcSeconds * int64_t(msPerSecond));
 
   return timeZone()->GetOffsetMs(utcMilliseconds).unwrapOr(0);
 }

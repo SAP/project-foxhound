@@ -2,7 +2,7 @@ schema: 1
 
 bugzilla:
   product: "Core"
-  component: "ImageLib"
+  component: "Graphics: ImageLib"
 
 origin:
   name: "libpng"
@@ -11,9 +11,9 @@ origin:
   url: "http://www.libpng.org/pub/png/libpng.html"
   license: libpng
 
-  release: commit a40189cf881e9f0db80511c382292a5604c3c3d1 (2019-04-14T10:10:32:00Z).
+  release: commit v1.6.39 (2022-11-20T23:53:23+02:00).
 
-  revision: "v1.6.37"
+  revision: "v1.6.39"
 
   license-file: LICENSE
 
@@ -46,12 +46,32 @@ vendoring:
     - LICENSE
     - README
     - TRADEMARK
-    - "*.c"
-    - "*.h"
+    - png.c
+    - pngconf.h
+    - pngdebug.h
+    - pngerror.c
+    - pngget.c
+    - png.h
+    - pnginfo.h
+    - pngmem.c
+    - pngpread.c
+    - pngpriv.h
+    - pngread.c
+    - pngrio.c
+    - pngrtran.c
+    - pngrutil.c
+    - pngset.c
+    - pngstruct.h
+    - pngtrans.c
+    - pngwio.c
+    - pngwrite.c
+    - pngwtran.c
+    - pngwutil.c
 
   keep:
     - MOZCHANGES
     - crashtests
+    - pnglibconf.h
 
   update-actions:
     - action: copy-file

@@ -11,8 +11,7 @@
 #include "RenderPipeline.h"
 #include "mozilla/webgpu/ffi/wgpu.h"
 
-namespace mozilla {
-namespace webgpu {
+namespace mozilla::webgpu {
 
 GPU_IMPL_CYCLE_COLLECTION(RenderPassEncoder, mParent, mUsedBindGroups,
                           mUsedBuffers, mUsedPipelines, mUsedTextureViews,
@@ -47,14 +46,38 @@ ffi::WGPUStoreOp ConvertStoreOp(const dom::GPUStoreOp& aOp) {
   }
 }
 
+ffi::WGPUColor ConvertColor(const dom::Sequence<double>& aSeq) {
+  ffi::WGPUColor color;
+  color.r = aSeq.SafeElementAt(0, 0.0);
+  color.g = aSeq.SafeElementAt(1, 0.0);
+  color.b = aSeq.SafeElementAt(2, 0.0);
+  color.a = aSeq.SafeElementAt(3, 1.0);
+  return color;
+}
+
 ffi::WGPUColor ConvertColor(const dom::GPUColorDict& aColor) {
   ffi::WGPUColor color = {aColor.mR, aColor.mG, aColor.mB, aColor.mA};
   return color;
 }
 
+ffi::WGPUColor ConvertColor(const dom::DoubleSequenceOrGPUColorDict& aColor) {
+  if (aColor.IsDoubleSequence()) {
+    return ConvertColor(aColor.GetAsDoubleSequence());
+  } else if (aColor.IsGPUColorDict()) {
+    return ConvertColor(aColor.GetAsGPUColorDict());
+  } else {
+    MOZ_ASSERT_UNREACHABLE(
+        "Unexpected dom::DoubleSequenceOrGPUColorDict variant");
+    return ffi::WGPUColor();
+  }
+}
+
 ffi::WGPURenderPass* BeginRenderPass(
-    RawId aEncoderId, const dom::GPURenderPassDescriptor& aDesc) {
+    CommandEncoder* const aParent, const dom::GPURenderPassDescriptor& aDesc) {
   ffi::WGPURenderPassDescriptor desc = {};
+
+  webgpu::StringHelper label(aDesc.mLabel);
+  desc.label = label.Get();
 
   ffi::WGPURenderPassDepthStencilAttachment dsDesc = {};
   if (aDesc.mDepthStencilAttachment.WasPassed()) {
@@ -85,7 +108,13 @@ ffi::WGPURenderPass* BeginRenderPass(
     desc.depth_stencil_attachment = &dsDesc;
   }
 
-  std::array<ffi::WGPURenderPassColorAttachment, WGPUMAX_COLOR_TARGETS>
+  if (aDesc.mColorAttachments.Length() > WGPUMAX_COLOR_ATTACHMENTS) {
+    aParent->GetDevice()->GenerateError(nsLiteralCString(
+        "Too many color attachments in GPURenderPassDescriptor"));
+    return nullptr;
+  }
+
+  std::array<ffi::WGPURenderPassColorAttachment, WGPUMAX_COLOR_ATTACHMENTS>
       colorDescs = {};
   desc.color_attachments = colorDescs.data();
   desc.color_attachments_length = aDesc.mColorAttachments.Length();
@@ -104,19 +133,8 @@ ffi::WGPURenderPass* BeginRenderPass(
     } else {
       cd.channel.load_op = ffi::WGPULoadOp_Clear;
       if (ca.mLoadValue.IsDoubleSequence()) {
-        const auto& seq = ca.mLoadValue.GetAsDoubleSequence();
-        if (seq.Length() >= 1) {
-          cd.channel.clear_value.r = seq[0];
-        }
-        if (seq.Length() >= 2) {
-          cd.channel.clear_value.g = seq[1];
-        }
-        if (seq.Length() >= 3) {
-          cd.channel.clear_value.b = seq[2];
-        }
-        if (seq.Length() >= 4) {
-          cd.channel.clear_value.a = seq[3];
-        }
+        cd.channel.clear_value =
+            ConvertColor(ca.mLoadValue.GetAsDoubleSequence());
       }
       if (ca.mLoadValue.IsGPUColorDict()) {
         cd.channel.clear_value =
@@ -125,12 +143,17 @@ ffi::WGPURenderPass* BeginRenderPass(
     }
   }
 
-  return ffi::wgpu_command_encoder_begin_render_pass(aEncoderId, &desc);
+  return ffi::wgpu_command_encoder_begin_render_pass(aParent->mId, &desc);
 }
 
 RenderPassEncoder::RenderPassEncoder(CommandEncoder* const aParent,
                                      const dom::GPURenderPassDescriptor& aDesc)
-    : ChildOf(aParent), mPass(BeginRenderPass(aParent->mId, aDesc)) {
+    : ChildOf(aParent), mPass(BeginRenderPass(aParent, aDesc)) {
+  if (!mPass) {
+    mValid = false;
+    return;
+  }
+
   for (const auto& at : aDesc.mColorAttachments) {
     mUsedTextureViews.AppendElement(at.mView);
   }
@@ -239,7 +262,7 @@ void RenderPassEncoder::SetScissorRect(uint32_t x, uint32_t y, uint32_t width,
 void RenderPassEncoder::SetBlendConstant(
     const dom::DoubleSequenceOrGPUColorDict& color) {
   if (mValid) {
-    ffi::WGPUColor aColor = ConvertColor(color.GetAsGPUColorDict());
+    ffi::WGPUColor aColor = ConvertColor(color);
     ffi::wgpu_render_pass_set_blend_constant(mPass, &aColor);
   }
 }
@@ -290,5 +313,4 @@ void RenderPassEncoder::EndPass(ErrorResult& aRv) {
   }
 }
 
-}  // namespace webgpu
-}  // namespace mozilla
+}  // namespace mozilla::webgpu

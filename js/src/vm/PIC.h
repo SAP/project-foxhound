@@ -105,7 +105,7 @@ struct ForOfPIC {
   class Stub : public BaseStub {
    private:
     // Shape of matching array object.
-    Shape* shape_;
+    const HeapPtr<Shape*> shape_;
 
    public:
     explicit Stub(Shape* shape) : BaseStub(), shape_(shape) {
@@ -113,6 +113,8 @@ struct ForOfPIC {
     }
 
     Shape* shape() { return shape_; }
+
+    void trace(JSTracer* trc);
   };
 
   /*
@@ -144,23 +146,23 @@ struct ForOfPIC {
   class Chain : public BaseChain {
    private:
     // Pointer to owning JSObject for memory accounting purposes.
-    const GCPtrObject picObject_;
+    const GCPtr<JSObject*> picObject_;
 
     // Pointer to canonical Array.prototype and ArrayIterator.prototype
-    GCPtrNativeObject arrayProto_;
-    GCPtrNativeObject arrayIteratorProto_;
+    GCPtr<NativeObject*> arrayProto_;
+    GCPtr<NativeObject*> arrayIteratorProto_;
 
     // Shape of matching Array.prototype object, and slot containing
     // the @@iterator for it, and the canonical value.
-    GCPtrShape arrayProtoShape_;
+    GCPtr<Shape*> arrayProtoShape_;
     uint32_t arrayProtoIteratorSlot_;
-    GCPtrValue canonicalIteratorFunc_;
+    GCPtr<Value> canonicalIteratorFunc_;
 
     // Shape of matching ArrayIteratorProto, and slot containing
     // the 'next' property, and the canonical value.
-    GCPtrShape arrayIteratorProtoShape_;
+    GCPtr<Shape*> arrayIteratorProtoShape_;
     uint32_t arrayIteratorProtoNextSlot_;
-    GCPtrValue canonicalNextFunc_;
+    GCPtr<Value> canonicalNextFunc_;
 
     // Initialization flag marking lazy initialization of above fields.
     bool initialized_;
@@ -189,14 +191,16 @@ struct ForOfPIC {
     bool initialize(JSContext* cx);
 
     // Try to optimize this chain for an object.
-    bool tryOptimizeArray(JSContext* cx, HandleArrayObject array,
+    bool tryOptimizeArray(JSContext* cx, Handle<ArrayObject*> array,
                           bool* optimized);
 
     // Check if %ArrayIteratorPrototype% still uses the default "next" method.
     bool tryOptimizeArrayIteratorNext(JSContext* cx, bool* optimized);
 
     void trace(JSTracer* trc);
-    void finalize(JSFreeOp* fop, JSObject* obj);
+    void finalize(JS::GCContext* gcx, JSObject* obj);
+
+    void freeAllStubs(JS::GCContext* gcx);
 
    private:
     // Check if the global array-related objects have not been messed with
@@ -218,8 +222,6 @@ struct ForOfPIC {
 
     // Erase the stub chain.
     void eraseChain(JSContext* cx);
-
-    void freeAllStubs(JSFreeOp* fop);
   };
 
   static NativeObject* createForOfPICObject(JSContext* cx,

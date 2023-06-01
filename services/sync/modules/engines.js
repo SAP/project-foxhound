@@ -11,11 +11,15 @@ var EXPORTED_SYMBOLS = [
   "Changeset",
 ];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { JSONFile } = ChromeUtils.import("resource://gre/modules/JSONFile.jsm");
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { JSONFile } = ChromeUtils.importESModule(
+  "resource://gre/modules/JSONFile.sys.mjs"
+);
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
+);
 const { Async } = ChromeUtils.import("resource://services-common/async.js");
 const { Observers } = ChromeUtils.import(
   "resource://services-common/observers.js"
@@ -36,15 +40,16 @@ const { SerializableSet, Svc, Utils } = ChromeUtils.import(
   "resource://services-sync/util.js"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  fxAccounts: "resource://gre/modules/FxAccounts.jsm",
-  OS: "resource://gre/modules/osfile.jsm",
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
 });
 
 function ensureDirectory(path) {
-  let basename = OS.Path.dirname(path);
-  return OS.File.makeDir(basename, { from: OS.Constants.Path.profileDir });
+  return IOUtils.makeDirectory(PathUtils.parent(path), {
+    createAncestors: true,
+  });
 }
 
 /**
@@ -215,8 +220,6 @@ function LegacyTracker(name, engine) {
 }
 
 LegacyTracker.prototype = {
-  __proto__: Tracker.prototype,
-
   get ignoreAll() {
     return this._ignoreAll;
   },
@@ -328,6 +331,7 @@ LegacyTracker.prototype = {
     await this._storage.finalize();
   },
 };
+Object.setPrototypeOf(LegacyTracker.prototype, Tracker.prototype);
 
 /**
  * The Store serves as the interface between Sync and stored data.
@@ -1303,7 +1307,7 @@ SyncEngine.prototype = {
       // Filtering out already downloaded IDs here isn't necessary. We only do
       // that in case the Sync server doesn't support `older` (bug 1316110).
       let remainingIDs = guids.obj.filter(id => !downloadedIDs.has(id));
-      if (remainingIDs.length > 0) {
+      if (remainingIDs.length) {
         this.toFetch = Utils.setAddAll(this.toFetch, remainingIDs);
       }
     }
@@ -1341,7 +1345,7 @@ SyncEngine.prototype = {
     // `getBatched` includes the list of IDs as a query parameter, so we need to fetch
     // records in chunks to avoid exceeding URI length limits.
     if (this.guidFetchBatchSize) {
-      for (let ids of PlacesUtils.chunkArray(
+      for (let ids of lazy.PlacesUtils.chunkArray(
         idsToBackfill,
         this.guidFetchBatchSize
       )) {
@@ -1938,7 +1942,7 @@ SyncEngine.prototype = {
         await doDelete(key, val);
       } else {
         // For many ids, split into chunks of at most 100
-        while (val.length > 0) {
+        while (val.length) {
           await doDelete(key, val.slice(0, 100));
           val = val.slice(100);
         }

@@ -33,21 +33,9 @@ static const int32_t NUNBOX32_TYPE_OFFSET = 4;
 static const int32_t NUNBOX32_PAYLOAD_OFFSET = 0;
 
 static const uint32_t ShadowStackSpace = 0;
-static const uint32_t SizeOfReturnAddressAfterCall = 0u;
 
 // How far forward/back can a jump go? Provide a generous buffer for thunks.
 static const uint32_t JumpImmediateRange = 20 * 1024 * 1024;
-
-////
-// These offsets are related to bailouts.
-////
-
-// Size of each bailout table entry. On arm, this is presently a single call
-// (which is wrong!). The call clobbers lr.
-// For now, I've dealt with this by ensuring that we never allocate to lr. It
-// should probably be 8 bytes, a mov of an immediate into r12 (not allocated
-// presently, or ever) followed by a branch to the apropriate code.
-static const uint32_t BAILOUT_TABLE_ENTRY_SIZE = 4;
 
 class Registers {
  public:
@@ -56,16 +44,15 @@ class Registers {
     r1,
     r2,
     r3,
-    S0 = r3,
     r4,
     r5,
     r6,
     r7,
     r8,
-    S1 = r8,
     r9,
     r10,
     r11,
+    fp = r11,
     r12,
     ip = r12,
     r13,
@@ -130,11 +117,9 @@ class Registers {
                                      (1 << Registers::r4) |  // = outReg
                                      (1 << Registers::r5);   // = argBase
 
-  static const SetType SingleByteRegs = VolatileMask | NonVolatileMask;
-
   static const SetType NonAllocatableMask =
       (1 << Registers::sp) | (1 << Registers::r12) |  // r12 = ip = scratch
-      (1 << Registers::lr) | (1 << Registers::pc);
+      (1 << Registers::lr) | (1 << Registers::pc) | (1 << Registers::fp);
 
   // Registers returned from a JS -> JS call.
   static const SetType JSCallMask = (1 << Registers::r2) | (1 << Registers::r3);

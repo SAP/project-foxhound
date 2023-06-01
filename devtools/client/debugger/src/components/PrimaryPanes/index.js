@@ -3,15 +3,14 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import React, { Component } from "react";
+import PropTypes from "prop-types";
 import classnames from "classnames";
 import { Tab, Tabs, TabList, TabPanels } from "react-aria-components/src/tabs";
 
 import actions from "../../actions";
 import {
-  getActiveSearch,
   getProjectDirectoryRootName,
   getSelectedPrimaryPaneTab,
-  getAllThreads,
   getContext,
 } from "../../selectors";
 import { features, prefs } from "../../utils/prefs";
@@ -30,6 +29,16 @@ class PrimaryPanes extends Component {
 
     this.state = {
       alphabetizeOutline: prefs.alphabetizeOutline,
+    };
+  }
+
+  static get propTypes() {
+    return {
+      clearProjectDirectoryRoot: PropTypes.func.isRequired,
+      cx: PropTypes.object.isRequired,
+      projectRootName: PropTypes.string.isRequired,
+      selectedTab: PropTypes.oneOf(["sources", "outline"]).isRequired,
+      setPrimaryPaneTab: PropTypes.func.isRequired,
     };
   }
 
@@ -53,7 +62,7 @@ class PrimaryPanes extends Component {
 
   renderOutlineTabs() {
     if (!features.outline) {
-      return;
+      return null;
     }
 
     const sources = formatKeyShortcut(L10N.getStr("sources.header"));
@@ -100,7 +109,7 @@ class PrimaryPanes extends Component {
   }
 
   renderThreadSources() {
-    return <SourcesTree threads={this.props.threads} />;
+    return <SourcesTree />;
   }
 
   render() {
@@ -140,8 +149,6 @@ const mapStateToProps = state => {
   return {
     cx: getContext(state),
     selectedTab: getSelectedPrimaryPaneTab(state),
-    sourceSearchOn: getActiveSearch(state) === "source",
-    threads: getAllThreads(state),
     projectRootName: getProjectDirectoryRootName(state),
   };
 };

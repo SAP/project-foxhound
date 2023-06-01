@@ -9,7 +9,6 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/IDBTransactionBinding.h"
-#include "mozilla/dom/StorageTypeBinding.h"
 #include "mozilla/dom/indexedDB/PBackgroundIDBSharedTypes.h"
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/DOMEventTargetHelper.h"
@@ -49,7 +48,6 @@ class PBackgroundIDBDatabaseFileChild;
 
 class IDBDatabase final : public DOMEventTargetHelper {
   using DatabaseSpec = mozilla::dom::indexedDB::DatabaseSpec;
-  using StorageType = mozilla::dom::StorageType;
   using PersistenceType = mozilla::dom::quota::PersistenceType;
 
   class Observer;
@@ -80,7 +78,6 @@ class IDBDatabase final : public DOMEventTargetHelper {
   // Weak refs, IDBMutableFile strongly owns this IDBDatabase object.
   nsTArray<NotNull<IDBMutableFile*>> mLiveMutableFiles;
 
-  const bool mFileHandleDisabled;
   bool mClosed;
   bool mInvalidated;
   bool mQuotaExceeded;
@@ -162,12 +159,6 @@ class IDBDatabase final : public DOMEventTargetHelper {
 
   void NoteInactiveTransaction();
 
-  // XXX This doesn't really belong here... It's only needed for IDBMutableFile
-  //     serialization and should be removed or fixed someday.
-  nsresult GetQuotaInfo(nsACString& aOrigin, PersistenceType* aPersistenceType);
-
-  bool IsFileHandleDisabled() const { return mFileHandleDisabled; }
-
   void NoteLiveMutableFile(IDBMutableFile& aMutableFile);
 
   void NoteFinishedMutableFile(IDBMutableFile& aMutableFile);
@@ -185,16 +176,10 @@ class IDBDatabase final : public DOMEventTargetHelper {
       JSContext* aCx, const StringOrStringSequence& aStoreNames,
       IDBTransactionMode aMode, ErrorResult& aRv);
 
-  StorageType Storage() const;
-
   IMPL_EVENT_HANDLER(abort)
   IMPL_EVENT_HANDLER(close)
   IMPL_EVENT_HANDLER(error)
   IMPL_EVENT_HANDLER(versionchange)
-
-  [[nodiscard]] RefPtr<IDBRequest> CreateMutableFile(
-      JSContext* aCx, const nsAString& aName, const Optional<nsAString>& aType,
-      ErrorResult& aRv);
 
   void ClearBackgroundActor() {
     AssertIsOnOwningThread();
@@ -223,8 +208,6 @@ class IDBDatabase final : public DOMEventTargetHelper {
   void DisconnectFromOwner() override;
 
   virtual void LastRelease() override;
-
-  virtual nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
 
   // nsWrapperCache
   virtual JSObject* WrapObject(JSContext* aCx,

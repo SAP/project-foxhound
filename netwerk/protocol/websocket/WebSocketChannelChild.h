@@ -18,6 +18,7 @@ namespace net {
 
 class ChannelEvent;
 class ChannelEventQueue;
+class MessageEvent;
 
 class WebSocketChannelChild final : public BaseWebSocketChannel,
                                     public PWebSocketChild,
@@ -32,7 +33,7 @@ class WebSocketChannelChild final : public BaseWebSocketChannel,
   // nsIWebSocketChannel methods BaseWebSocketChannel didn't implement for us
   //
   NS_IMETHOD AsyncOpen(nsIURI* aURI, const nsACString& aOrigin,
-                       JS::HandleValue aOriginAttributes,
+                       JS::Handle<JS::Value> aOriginAttributes,
                        uint64_t aInnerWindowID, nsIWebSocketListener* aListener,
                        nsISupports* aContext, JSContext* aCx) override;
   NS_IMETHOD AsyncOpenNative(nsIURI* aURI, const nsACString& aOrigin,
@@ -45,7 +46,7 @@ class WebSocketChannelChild final : public BaseWebSocketChannel,
   NS_IMETHOD SendBinaryMsg(const nsACString& aMsg) override;
   NS_IMETHOD SendBinaryStream(nsIInputStream* aStream,
                               uint32_t aLength) override;
-  NS_IMETHOD GetSecurityInfo(nsISupports** aSecurityInfo) override;
+  NS_IMETHOD GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo) override;
 
   void AddIPDLReference();
   void ReleaseIPDLReference();
@@ -57,39 +58,37 @@ class WebSocketChannelChild final : public BaseWebSocketChannel,
  private:
   ~WebSocketChannelChild();
 
-  mozilla::ipc::IPCResult RecvOnStart(const nsCString& aProtocol,
-                                      const nsCString& aExtensions,
-                                      const nsString& aEffectiveURL,
+  mozilla::ipc::IPCResult RecvOnStart(const nsACString& aProtocol,
+                                      const nsACString& aExtensions,
+                                      const nsAString& aEffectiveURL,
                                       const bool& aEncrypted,
                                       const uint64_t& aHttpChannelId);
   mozilla::ipc::IPCResult RecvOnStop(const nsresult& aStatusCode);
-  mozilla::ipc::IPCResult RecvOnMessageAvailable(
-      const nsDependentCSubstring& aMsg, const bool& aMoreData);
-  mozilla::ipc::IPCResult RecvOnBinaryMessageAvailable(
-      const nsDependentCSubstring& aMsg, const bool& aMoreData);
+  mozilla::ipc::IPCResult RecvOnMessageAvailable(const nsACString& aMsg,
+                                                 const bool& aMoreData);
+  mozilla::ipc::IPCResult RecvOnBinaryMessageAvailable(const nsACString& aMsg,
+                                                       const bool& aMoreData);
   mozilla::ipc::IPCResult RecvOnAcknowledge(const uint32_t& aSize);
   mozilla::ipc::IPCResult RecvOnServerClose(const uint16_t& aCode,
-                                            const nsCString& aReason);
+                                            const nsACString& aReason);
 
-  void OnStart(const nsCString& aProtocol, const nsCString& aExtensions,
-               const nsString& aEffectiveURL, const bool& aEncrypted,
+  void OnStart(const nsACString& aProtocol, const nsACString& aExtensions,
+               const nsAString& aEffectiveURL, const bool& aEncrypted,
                const uint64_t& aHttpChannelId);
   void OnStop(const nsresult& aStatusCode);
-  void OnMessageAvailable(const nsCString& aMsg);
-  void OnBinaryMessageAvailable(const nsCString& aMsg);
+  void OnMessageAvailable(const nsACString& aMsg);
+  void OnBinaryMessageAvailable(const nsACString& aMsg);
   void OnAcknowledge(const uint32_t& aSize);
-  void OnServerClose(const uint16_t& aCode, const nsCString& aReason);
+  void OnServerClose(const uint16_t& aCode, const nsACString& aReason);
   void AsyncOpenFailed();
-
-  bool IsOnTargetThread();
 
   void MaybeReleaseIPCObject();
 
   // This function tries to get a labeled event target for |mNeckoTarget|.
   void SetupNeckoTarget();
 
-  bool RecvOnMessageAvailableInternal(const nsDependentCSubstring& aMsg,
-                                      bool aMoreData, bool aBinary);
+  bool RecvOnMessageAvailableInternal(const nsACString& aMsg, bool aMoreData,
+                                      bool aBinary);
 
   void OnError();
 
@@ -100,7 +99,7 @@ class WebSocketChannelChild final : public BaseWebSocketChannel,
   // This variable is protected by mutex.
   enum { Opened, Closing, Closed } mIPCState;
 
-  mozilla::Mutex mMutex;
+  mozilla::Mutex mMutex MOZ_UNANNOTATED;
 
   friend class StartEvent;
   friend class StopEvent;

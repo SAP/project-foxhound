@@ -1,3 +1,4 @@
+use std::iter::FusedIterator;
 use std::iter::Peekable;
 use std::mem;
 
@@ -14,6 +15,7 @@ where
 {
     iter: Peekable<I>,
     surrogate: bool,
+    still_utf8: bool,
 }
 
 impl<I> CodePoints<I>
@@ -22,36 +24,45 @@ where
 {
     pub(in super::super) fn new<S>(string: S) -> Self
     where
-        S: IntoIterator<IntoIter = I, Item = I::Item>,
+        S: IntoIterator<IntoIter = I>,
     {
         Self {
             iter: string.into_iter().peekable(),
             surrogate: false,
+            still_utf8: true,
         }
     }
 
-    fn consume_next(&mut self, code_point: &mut u32) -> Result<()> {
-        if let Some(&byte) = self.iter.peek() {
-            if !is_continuation(byte) {
-                self.surrogate = false;
-                // Not consuming this byte will be useful if this crate ever
-                // offers a way to encode lossily.
-                return Err(EncodingError::Byte(byte));
-            }
-            *code_point =
-                (*code_point << BYTE_SHIFT) | u32::from(byte & CONT_MASK);
+    pub(super) fn is_still_utf8(&self) -> bool {
+        self.still_utf8
+    }
 
-            let removed = self.iter.next();
-            debug_assert_eq!(Some(byte), removed);
-        } else {
-            return Err(EncodingError::End());
+    fn consume_next(&mut self, code_point: &mut u32) -> Result<()> {
+        let &byte = self.iter.peek().ok_or(EncodingError::End())?;
+
+        if !is_continuation(byte) {
+            self.surrogate = false;
+            // Not consuming this byte will be useful if this crate ever offers
+            // a way to encode lossily.
+            return Err(EncodingError::Byte(byte));
         }
+        *code_point =
+            (*code_point << BYTE_SHIFT) | u32::from(byte & CONT_MASK);
+
+        let removed = self.iter.next();
+        debug_assert_eq!(Some(byte), removed);
+
         Ok(())
     }
 
     pub(super) fn inner_size_hint(&self) -> (usize, Option<usize>) {
         self.iter.size_hint()
     }
+}
+
+impl<I> FusedIterator for CodePoints<I> where
+    I: FusedIterator + Iterator<Item = u8>
+{
 }
 
 impl<I> Iterator for CodePoints<I>
@@ -94,6 +105,7 @@ where
 
                 // This condition is optimized to detect surrogate code points.
                 } else if code_point & 0xFE0 == 0x360 {
+                    self.still_utf8 = false;
                     if code_point & 0x10 == 0 {
                         self.surrogate = true;
                     } else if prev_surrogate {

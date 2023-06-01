@@ -4,11 +4,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, division, print_function
-
 import copy
 import json
-import mozdebug
 import os
 import pipes
 import random
@@ -20,22 +17,18 @@ import sys
 import tempfile
 import time
 import traceback
-import six
-
 from argparse import Namespace
 from collections import defaultdict, deque, namedtuple
+from contextlib import contextmanager
 from datetime import datetime, timedelta
-from distutils import dir_util
 from functools import partial
 from multiprocessing import cpu_count
-from subprocess import Popen, PIPE, STDOUT
-from tempfile import mkdtemp, gettempdir
-from threading import (
-    Timer,
-    Thread,
-    Event,
-    current_thread,
-)
+from subprocess import PIPE, STDOUT, Popen
+from tempfile import gettempdir, mkdtemp
+from threading import Event, Thread, Timer, current_thread
+
+import mozdebug
+import six
 
 try:
     import psutil
@@ -58,7 +51,18 @@ except ImportError:
 HARNESS_TIMEOUT = 5 * 60
 
 # benchmarking on tbpl revealed that this works best for now
+# TODO: This has been evaluated/set many years ago and we might want to
+# benchmark this again.
+# These days with e10s/fission the number of real processes/threads running
+# can be significantly higher, with both consequences on runtime and memory
+# consumption. So be aware that NUM_THREADS is just saying how many tests will
+# be started maximum in parallel and that depending on the tests there is
+# only a weak correlation to the effective number of processes or threads.
+# Be also aware that we can override this value with the threadCount option
+# on the command line to tweak it for a concrete CPU/memory combination.
 NUM_THREADS = int(cpu_count() * 4)
+if sys.platform == "win32":
+    NUM_THREADS = NUM_THREADS / 2
 
 EXPECTED_LOG_ACTIONS = set(
     [
@@ -77,13 +81,13 @@ if os.path.isdir(mozbase):
     for package in os.listdir(mozbase):
         sys.path.append(os.path.join(mozbase, package))
 
-from manifestparser import TestManifest
-from manifestparser.filters import chunk_by_slice, tags, pathprefix, failures
-from manifestparser.util import normsep
-from mozlog import commandline
 import mozcrash
 import mozfile
 import mozinfo
+from manifestparser import TestManifest
+from manifestparser.filters import chunk_by_slice, failures, pathprefix, tags
+from manifestparser.util import normsep
+from mozlog import commandline
 from mozprofile import Profile
 from mozprofile.cli import parse_preferences
 from mozrunner.utils import get_stack_fixer_function
@@ -95,7 +99,7 @@ from mozrunner.utils import get_stack_fixer_function
 # (U+0000 through U+001F; U+007F; U+0080 through U+009F),
 # except TAB (U+0009), CR (U+000D), LF (U+000A) and backslash (U+005C).
 # A raw string is deliberately not used.
-_cleanup_encoding_re = re.compile(u"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\\\\]")
+_cleanup_encoding_re = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\\\\]")
 
 
 def _cleanup_encoding_repl(m):
@@ -118,6 +122,25 @@ def cleanup_encoding(s):
         s = s.decode("utf-8", "replace")
     # Replace all C0 and C1 control characters with \xNN escapes.
     return _cleanup_encoding_re.sub(_cleanup_encoding_repl, s)
+
+
+@contextmanager
+def popenCleanupHack():
+    """
+    Hack to work around https://bugs.python.org/issue37380
+    The basic idea is that on old versions of Python on Windows,
+    we need to clear subprocess._cleanup before we call Popen(),
+    then restore it afterwards.
+    """
+    savedCleanup = None
+    if mozinfo.isWin and sys.version_info[0] == 3 and sys.version_info < (3, 7, 5):
+        savedCleanup = subprocess._cleanup
+        subprocess._cleanup = lambda: None
+    try:
+        yield
+    finally:
+        if savedCleanup:
+            subprocess._cleanup = savedCleanup
 
 
 """ Control-C handling """
@@ -147,7 +170,6 @@ class XPCShellTestThread(Thread):
         self.testingModulesDir = kwargs.get("testingModulesDir")
         self.debuggerInfo = kwargs.get("debuggerInfo")
         self.jsDebuggerInfo = kwargs.get("jsDebuggerInfo")
-        self.pluginsPath = kwargs.get("pluginsPath")
         self.httpdJSPath = kwargs.get("httpdJSPath")
         self.headJSPath = kwargs.get("headJSPath")
         self.testharnessdir = kwargs.get("testharnessdir")
@@ -156,6 +178,7 @@ class XPCShellTestThread(Thread):
         self.env = copy.deepcopy(kwargs.get("env"))
         self.symbolsPath = kwargs.get("symbolsPath")
         self.logfiles = kwargs.get("logfiles")
+        self.app_binary = kwargs.get("app_binary")
         self.xpcshell = kwargs.get("xpcshell")
         self.xpcsRunArgs = kwargs.get("xpcsRunArgs")
         self.failureManifest = kwargs.get("failureManifest")
@@ -176,8 +199,9 @@ class XPCShellTestThread(Thread):
         self.runFailures = kwargs.get("runFailures")
         self.timeoutAsPass = kwargs.get("timeoutAsPass")
         self.crashAsPass = kwargs.get("crashAsPass")
+        self.conditionedProfileDir = kwargs.get("conditionedProfileDir")
         if self.runFailures:
-            retry = False
+            self.retry = False
 
         # Default the test prefsFile to the rootPrefsFile.
         self.prefsFile = self.rootPrefsFile
@@ -294,18 +318,9 @@ class XPCShellTestThread(Thread):
         else:
             popen_func = Popen
 
-        cleanup_hack = None
-        if mozinfo.isWin and sys.version_info[0] == 3 and sys.version_info < (3, 7, 5):
-            # Hack to work around https://bugs.python.org/issue37380
-            cleanup_hack = subprocess._cleanup
-
-        try:
-            if cleanup_hack:
-                subprocess._cleanup = lambda: None
+        with popenCleanupHack():
             proc = popen_func(cmd, stdout=stdout, stderr=stderr, env=env, cwd=cwd)
-        finally:
-            if cleanup_hack:
-                subprocess._cleanup = cleanup_hack
+
         return proc
 
     def checkForCrashes(self, dump_directory, symbols_path, test_name=None):
@@ -442,6 +457,19 @@ class XPCShellTestThread(Thread):
         # This is the path set by buildPrefsFile.
         return self.rootPrefsFile
 
+    @property
+    def conditioned_profile_copy(self):
+        """Returns a copy of the original conditioned profile that was created."""
+
+        condprof_copy = os.path.join(tempfile.mkdtemp(), "profile")
+        shutil.copytree(
+            self.conditionedProfileDir,
+            condprof_copy,
+            ignore=shutil.ignore_patterns("lock"),
+        )
+        self.log.info("Created a conditioned-profile copy: %s" % condprof_copy)
+        return condprof_copy
+
     def buildCmdTestFile(self, name):
         """
         Build the command line arguments for the test file.
@@ -456,24 +484,6 @@ class XPCShellTestThread(Thread):
             self.log.info("temp dir is %s" % tempDir)
         return tempDir
 
-    def setupPluginsDir(self):
-        if not os.path.isdir(self.pluginsPath):
-            return None
-
-        pluginsDir = mkdtemp(prefix="xpc-plugins-", dir=self._rootTempDir)
-        retries = 0
-        while not os.path.isdir(pluginsDir) and retries < 5:
-            self.log.info("plugins temp directory %s missing; waiting..." % pluginsDir)
-            time.sleep(1)
-            retries += 1
-        # shutil.copytree requires dst to not exist. Deleting the tempdir
-        # would make a race condition possible in a concurrent environment,
-        # so we are using dir_utils.copy_tree which accepts an existing dst
-        dir_util.copy_tree(self.pluginsPath, pluginsDir)
-        if self.interactive:
-            self.log.info("plugins dir is %s" % pluginsDir)
-        return pluginsDir
-
     def setupProfileDir(self):
         """
         Create a temporary folder for the profile and set appropriate environment variables.
@@ -482,7 +492,9 @@ class XPCShellTestThread(Thread):
 
         On a remote system, this may be overloaded to use a remote path structure.
         """
-        if self.interactive or self.singleFile:
+        if self.conditionedProfileDir:
+            profileDir = self.conditioned_profile_copy
+        elif self.interactive or self.singleFile:
             profileDir = os.path.join(gettempdir(), self.profileName, "xpcshellprofile")
             try:
                 # This could be left over from previous runs
@@ -555,8 +567,17 @@ class XPCShellTestThread(Thread):
         if not self.appPath:
             self.appPath = self.xrePath
 
-        xpcsCmd = [
-            self.xpcshell,
+        if self.app_binary:
+            xpcsCmd = [
+                self.app_binary,
+                "--xpcshell",
+            ]
+        else:
+            xpcsCmd = [
+                self.xpcshell,
+            ]
+
+        xpcsCmd += [
             "-g",
             self.xrePath,
             "-a",
@@ -579,16 +600,6 @@ class XPCShellTestThread(Thread):
 
         if self.debuggerInfo:
             xpcsCmd = [self.debuggerInfo.path] + self.debuggerInfo.args + xpcsCmd
-
-        # Automation doesn't specify a pluginsPath and xpcshell defaults to
-        # $APPDIR/plugins. We do the same here so we can carry on with
-        # setting up every test with its own plugins directory.
-        if not self.pluginsPath:
-            self.pluginsPath = os.path.join(self.appPath, "plugins")
-
-        self.pluginsDir = self.setupPluginsDir()
-        if self.pluginsDir:
-            xpcsCmd.extend(["-p", self.pluginsDir])
 
         return xpcsCmd
 
@@ -623,9 +634,6 @@ class XPCShellTestThread(Thread):
             self.cleanupDir(self.profileDir, name)
 
         self.cleanupDir(self.tempDir, name)
-
-        if self.pluginsDir:
-            self.cleanupDir(self.pluginsDir, name)
 
     def parse_output(self, output):
         """Parses process output for structured messages and saves output as it is
@@ -683,6 +691,10 @@ class XPCShellTestThread(Thread):
         """Parses a single line of output, determining its significance and
         reporting a message.
         """
+        if isinstance(line_string, bytes):
+            # Transform binary to string representation
+            line_string = line_string.decode(sys.stdout.encoding, errors="replace")
+
         if not line_string.strip():
             return
 
@@ -787,6 +799,10 @@ class XPCShellTestThread(Thread):
         if self.test_object.get("dmd") == "true":
             self.env["PYTHON"] = sys.executable
             self.env["BREAKPAD_SYMBOLS_PATH"] = self.symbolsPath
+
+        if self.test_object.get("snap") == "true":
+            self.env["SNAP_NAME"] = "firefox"
+            self.env["SNAP_INSTANCE_NAME"] = "firefox"
 
         if self.test_object.get("subprocess") == "true":
             self.env["PYTHON"] = sys.executable
@@ -955,6 +971,7 @@ class XPCShellTests(object):
         self.harness_timeout = HARNESS_TIMEOUT
         self.nodeProc = {}
         self.http3ServerProc = {}
+        self.conditioned_profile_dir = None
 
     def getTestManifest(self, manifest):
         if isinstance(manifest, TestManifest):
@@ -1047,7 +1064,7 @@ class XPCShellTests(object):
                     mp.active_tests(
                         filters=filters,
                         noDefaultFilters=noDefaultFilters,
-                        **mozinfo.info
+                        **mozinfo.info,
                     ),
                 )
             )
@@ -1102,10 +1119,15 @@ class XPCShellTests(object):
         """
         self.testharnessdir = os.path.dirname(os.path.abspath(__file__))
         self.headJSPath = self.testharnessdir.replace("\\", "/") + "/head.js"
-        self.xpcshell = os.path.abspath(self.xpcshell)
+        if self.xpcshell is not None:
+            self.xpcshell = os.path.abspath(self.xpcshell)
+
+        if self.app_binary is not None:
+            self.app_binary = os.path.abspath(self.app_binary)
 
         if self.xrePath is None:
-            self.xrePath = os.path.dirname(self.xpcshell)
+            binary_path = self.app_binary or self.xpcshell
+            self.xrePath = os.path.dirname(binary_path)
             if mozinfo.isMac:
                 # Check if we're run from an OSX app bundle and override
                 # self.xrePath if we are.
@@ -1232,9 +1254,14 @@ class XPCShellTests(object):
         usingTSan = "tsan" in self.mozInfo and self.mozInfo["tsan"]
         if usingASan or usingTSan:
             # symbolizer support
-            llvmsym = os.path.join(
-                self.xrePath, "llvm-symbolizer" + self.mozInfo["bin_suffix"]
-            )
+            if "ASAN_SYMBOLIZER_PATH" in self.env and os.path.isfile(
+                self.env["ASAN_SYMBOLIZER_PATH"]
+            ):
+                llvmsym = self.env["ASAN_SYMBOLIZER_PATH"]
+            else:
+                llvmsym = os.path.join(
+                    self.xrePath, "llvm-symbolizer" + self.mozInfo["bin_suffix"]
+                )
             if os.path.isfile(llvmsym):
                 if usingASan:
                     self.env["ASAN_SYMBOLIZER_PATH"] = llvmsym
@@ -1322,15 +1349,16 @@ class XPCShellTests(object):
             try:
                 # We pipe stdin to node because the server will exit when its
                 # stdin reaches EOF
-                process = Popen(
-                    [nodeBin, serverJs],
-                    stdin=PIPE,
-                    stdout=PIPE,
-                    stderr=PIPE,
-                    env=self.env,
-                    cwd=os.getcwd(),
-                    universal_newlines=True,
-                )
+                with popenCleanupHack():
+                    process = Popen(
+                        [nodeBin, serverJs],
+                        stdin=PIPE,
+                        stdout=PIPE,
+                        stderr=PIPE,
+                        env=self.env,
+                        cwd=os.getcwd(),
+                        universal_newlines=True,
+                    )
                 self.nodeProc[name] = process
 
                 # Check to make sure the server starts properly by waiting for it to
@@ -1411,15 +1439,16 @@ class XPCShellTests(object):
             self.log.info("Using %s" % (dbPath))
             # We pipe stdin to the server because it will exit when its stdin
             # reaches EOF
-            process = Popen(
-                [http3ServerPath, dbPath],
-                stdin=PIPE,
-                stdout=PIPE,
-                stderr=PIPE,
-                env=self.env,
-                cwd=os.getcwd(),
-                universal_newlines=True,
-            )
+            with popenCleanupHack():
+                process = Popen(
+                    [http3ServerPath, dbPath],
+                    stdin=PIPE,
+                    stdout=PIPE,
+                    stderr=PIPE,
+                    env=self.env,
+                    cwd=os.getcwd(),
+                    universal_newlines=True,
+                )
             self.http3ServerProc["http3Server"] = process
 
             # Check to make sure the server starts properly by waiting for it to
@@ -1523,13 +1552,107 @@ class XPCShellTests(object):
             "network.http.network_access_on_socket_process.enabled", False
         )
 
+        self.mozInfo["condprof"] = options.get("conditionedProfile", False)
+
+        self.mozInfo["msix"] = options.get(
+            "app_binary"
+        ) is not None and "WindowsApps" in options.get("app_binary", "")
+
         mozinfo.update(self.mozInfo)
 
         return True
 
+    @property
+    def conditioned_profile_copy(self):
+        """Returns a copy of the original conditioned profile that was created."""
+        condprof_copy = os.path.join(tempfile.mkdtemp(), "profile")
+        shutil.copytree(
+            self.conditioned_profile_dir,
+            condprof_copy,
+            ignore=shutil.ignore_patterns("lock"),
+        )
+        self.log.info("Created a conditioned-profile copy: %s" % condprof_copy)
+        return condprof_copy
+
+    def downloadConditionedProfile(self, profile_scenario, app):
+        from condprof.client import get_profile
+        from condprof.util import get_current_platform, get_version
+
+        if self.conditioned_profile_dir:
+            # We already have a directory, so provide a copy that
+            # will get deleted after it's done with
+            return self.conditioned_profile_dir
+
+        # create a temp file to help ensure uniqueness
+        temp_download_dir = tempfile.mkdtemp()
+        self.log.info(
+            "Making temp_download_dir from inside get_conditioned_profile {}".format(
+                temp_download_dir
+            )
+        )
+        # call condprof's client API to yield our platform-specific
+        # conditioned-profile binary
+        platform = get_current_platform()
+        version = None
+        if isinstance(app, str):
+            version = get_version(app)
+
+        if not profile_scenario:
+            profile_scenario = "settled"
+        try:
+            cond_prof_target_dir = get_profile(
+                temp_download_dir,
+                platform,
+                profile_scenario,
+                repo="mozilla-central",
+                version=version,
+                retries=2,
+            )
+        except Exception:
+            if version is None:
+                # any other error is a showstopper
+                self.log.critical("Could not get the conditioned profile")
+                traceback.print_exc()
+                raise
+            version = None
+            try:
+                self.log.info("Retrying a profile with no version specified")
+                cond_prof_target_dir = get_profile(
+                    temp_download_dir,
+                    platform,
+                    profile_scenario,
+                    repo="mozilla-central",
+                    version=version,
+                )
+            except Exception:
+                self.log.critical("Could not get the conditioned profile")
+                traceback.print_exc()
+                raise
+
+        # now get the full directory path to our fetched conditioned profile
+        self.conditioned_profile_dir = os.path.join(
+            temp_download_dir, cond_prof_target_dir
+        )
+        if not os.path.exists(cond_prof_target_dir):
+            self.log.critical(
+                "Can't find target_dir {}, from get_profile()"
+                "temp_download_dir {}, platform {}, scenario {}".format(
+                    cond_prof_target_dir, temp_download_dir, platform, profile_scenario
+                )
+            )
+            raise OSError
+
+        self.log.info(
+            "Original self.conditioned_profile_dir is now set: {}".format(
+                self.conditioned_profile_dir
+            )
+        )
+        return self.conditioned_profile_copy
+
     def runSelfTest(self):
-        import selftest
         import unittest
+
+        import selftest
 
         this = self
 
@@ -1538,6 +1661,7 @@ class XPCShellTests(object):
                 unittest.TestCase.__init__(self, name)
                 self.testing_modules = this.testingModulesDir
                 self.xpcshellBin = this.xpcshell
+                self.app_binary = this.app_binary
                 self.utility_path = this.utility_path
                 self.symbols_path = this.symbolsPath
 
@@ -1554,7 +1678,6 @@ class XPCShellTests(object):
         """
         Run xpcshell tests.
         """
-
         global gotSIGINT
 
         # Number of times to repeat test(s) in --verify mode
@@ -1612,6 +1735,7 @@ class XPCShellTests(object):
             JSDebuggerInfo = namedtuple("JSDebuggerInfo", ["port"])
             self.jsDebuggerInfo = JSDebuggerInfo(port=options["jsDebuggerPort"])
 
+        self.app_binary = options.get("app_binary")
         self.xpcshell = options.get("xpcshell")
         self.http3server = options.get("http3server")
         self.xrePath = options.get("xrePath")
@@ -1631,7 +1755,6 @@ class XPCShellTests(object):
         self.profileName = options.get("profileName") or "xpcshell"
         self.mozInfo = options.get("mozInfo")
         self.testingModulesDir = testingModulesDir
-        self.pluginsPath = options.get("pluginsPath")
         self.sequential = options.get("sequential")
         self.failure_manifest = options.get("failure_manifest")
         self.threadCount = options.get("threadCount") or NUM_THREADS
@@ -1640,14 +1763,33 @@ class XPCShellTests(object):
         self.runFailures = options.get("runFailures")
         self.timeoutAsPass = options.get("timeoutAsPass")
         self.crashAsPass = options.get("crashAsPass")
+        self.conditionedProfile = options.get("conditionedProfile")
 
         self.testCount = 0
         self.passCount = 0
         self.failCount = 0
         self.todoCount = 0
 
+        if self.conditionedProfile:
+            self.conditioned_profile_dir = self.downloadConditionedProfile(
+                "full", self.appPath
+            )
+            options["self_test"] = False
+            if not options["test_tags"]:
+                options["test_tags"] = []
+            options["test_tags"].append("condprof")
+
         self.setAbsPath()
-        prefs = self.buildPrefsFile(options.get("extraPrefs") or [])
+
+        eprefs = options.get("extraPrefs") or []
+        # enable fission by default
+        if options.get("disableFission"):
+            eprefs.append("fission.autostart=false")
+        else:
+            # should be by default, just in case
+            eprefs.append("fission.autostart=true")
+
+        prefs = self.buildPrefsFile(eprefs)
         self.buildXpcsRunArgs()
 
         self.event = Event()
@@ -1655,19 +1797,26 @@ class XPCShellTests(object):
         if not self.updateMozinfo(prefs, options):
             return False
 
+        self.log.info(
+            "These variables are available in the mozinfo environment and "
+            "can be used to skip tests conditionally:"
+        )
+        for info in sorted(self.mozInfo.items(), key=lambda item: item[0]):
+            self.log.info("    {key}: {value}".format(key=info[0], value=info[1]))
+
         if options.get("self_test"):
             if not self.runSelfTest():
                 return False
 
         if (
-            "tsan" in self.mozInfo
-            and self.mozInfo["tsan"]
-            and not options.get("threadCount")
-        ):
-            # TSan requires significantly more memory, so reduce the amount of parallel
-            # tests we run to avoid OOMs and timeouts.
+            ("tsan" in self.mozInfo and self.mozInfo["tsan"])
+            or ("asan" in self.mozInfo and self.mozInfo["asan"])
+        ) and not options.get("threadCount"):
+            # TSan/ASan require significantly more memory, so reduce the amount of parallel
+            # tests we run to avoid OOMs and timeouts. We always keep a minimum of 2 for
+            # non-sequential execution.
             # pylint --py3k W1619
-            self.threadCount = self.threadCount / 2
+            self.threadCount = max(self.threadCount / 2, 2)
 
         self.stack_fixer_function = None
         if self.utility_path and os.path.exists(self.utility_path):
@@ -1712,7 +1861,6 @@ class XPCShellTests(object):
             "testingModulesDir": self.testingModulesDir,
             "debuggerInfo": self.debuggerInfo,
             "jsDebuggerInfo": self.jsDebuggerInfo,
-            "pluginsPath": self.pluginsPath,
             "httpdJSPath": self.httpdJSPath,
             "headJSPath": self.headJSPath,
             "tempDir": self.tempDir,
@@ -1722,6 +1870,7 @@ class XPCShellTests(object):
             "env": self.env,  # making a copy of this in the testthreads
             "symbolsPath": self.symbolsPath,
             "logfiles": self.logfiles,
+            "app_binary": self.app_binary,
             "xpcshell": self.xpcshell,
             "xpcsRunArgs": self.xpcsRunArgs,
             "failureManifest": self.failure_manifest,
@@ -1743,6 +1892,7 @@ class XPCShellTests(object):
             "runFailures": self.runFailures,
             "timeoutAsPass": self.timeoutAsPass,
             "crashAsPass": self.crashAsPass,
+            "conditionedProfileDir": self.conditioned_profile_dir,
         }
 
         if self.sequential:
@@ -1802,7 +1952,7 @@ class XPCShellTests(object):
                     verbose=self.verbose or test_object.get("verbose") == "true",
                     usingTSan=usingTSan,
                     mobileArgs=mobileArgs,
-                    **kwargs
+                    **kwargs,
                 )
                 if "run-sequentially" in test_object or self.sequential:
                     sequential_tests.append(test)
@@ -1838,6 +1988,8 @@ class XPCShellTests(object):
                 # Run tests sequentially, with MOZ_CHAOSMODE enabled.
                 sequential_tests = []
                 self.env["MOZ_CHAOSMODE"] = "0xfb"
+                # chaosmode runs really slow, allow tests extra time to pass
+                self.harness_timeout = self.harness_timeout * 2
                 for i in range(VERIFY_REPEAT):
                     self.testCount += 1
                     test = testClass(
@@ -1847,6 +1999,7 @@ class XPCShellTests(object):
                 status = self.runTestList(
                     tests_queue, sequential_tests, testClass, mobileArgs, **kwargs
                 )
+                self.harness_timeout = self.harness_timeout / 2
                 return status
 
             steps = [
@@ -1908,7 +2061,6 @@ class XPCShellTests(object):
     def runTestList(
         self, tests_queue, sequential_tests, testClass, mobileArgs, **kwargs
     ):
-
         if self.sequential:
             self.log.info("Running tests sequentially.")
         else:
@@ -1993,11 +2145,14 @@ class XPCShellTests(object):
                         "after killing one with SIGINT)"
                     )
                     break
-                # we don't want to retry these tests
-                test.retry = False
                 self.start_test(test)
                 test.join()
                 self.test_ended(test)
+                if (test.failCount > 0 or test.passCount <= 0) and os.environ.get(
+                    "MOZ_AUTOMATION", 0
+                ) != 0:
+                    self.try_again_list.append(test.test_object)
+                    continue
                 self.addTestResults(test)
                 # did the test encounter any exception?
                 if test.exception:
@@ -2015,7 +2170,7 @@ class XPCShellTests(object):
                 retry=False,
                 verbose=self.verbose,
                 mobileArgs=mobileArgs,
-                **kwargs
+                **kwargs,
             )
             self.start_test(test)
             test.join()
@@ -2082,8 +2237,16 @@ def main():
 
     log = commandline.setup_logging("XPCShell", options, {"tbpl": sys.stdout})
 
-    if options.xpcshell is None:
-        log.error("Must provide path to xpcshell using --xpcshell")
+    if options.xpcshell is None and options.app_binary is None:
+        log.error(
+            "Must provide path to xpcshell using --xpcshell or Firefox using --app-binary"
+        )
+        sys.exit(1)
+
+    if options.xpcshell is not None and options.app_binary is not None:
+        log.error(
+            "Cannot provide --xpcshell and --app-binary - they are mutually exclusive options. Choose one."
+        )
         sys.exit(1)
 
     xpcsh = XPCShellTests(log)

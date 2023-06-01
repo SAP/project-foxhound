@@ -21,6 +21,7 @@
 #include "mozilla/dom/WebCryptoTask.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/dom/RootedDictionary.h"
 
 // Template taken from security/nss/lib/util/templates.c
 // This (or SGN_EncodeDigestInfo) would ideally be exported
@@ -137,7 +138,8 @@ static nsresult GetAlgorithmName(JSContext* aCx, const OOS& aAlgorithm,
     aName.Assign(aAlgorithm.GetAsString());
   } else {
     // Coerce to algorithm and extract name
-    JS::RootedValue value(aCx, JS::ObjectValue(*aAlgorithm.GetAsObject()));
+    JS::Rooted<JS::Value> value(aCx,
+                                JS::ObjectValue(*aAlgorithm.GetAsObject()));
     Algorithm alg;
 
     if (!alg.Init(aCx, value)) {
@@ -162,7 +164,7 @@ static nsresult Coerce(JSContext* aCx, T& aTarget, const OOS& aAlgorithm) {
     return NS_ERROR_DOM_SYNTAX_ERR;
   }
 
-  JS::RootedValue value(aCx, JS::ObjectValue(*aAlgorithm.GetAsObject()));
+  JS::Rooted<JS::Value> value(aCx, JS::ObjectValue(*aAlgorithm.GetAsObject()));
   if (!aTarget.Init(aCx, value)) {
     return NS_ERROR_DOM_SYNTAX_ERR;
   }
@@ -504,7 +506,7 @@ class AesTask : public ReturnArrayBufferViewTask, public DeferredData {
 
       ATTEMPT_BUFFER_INIT(mIv, params.mIv)
       if (mIv.Length() != 16) {
-        mEarlyRv = NS_ERROR_DOM_DATA_ERR;
+        mEarlyRv = NS_ERROR_DOM_OPERATION_ERR;
         return;
       }
     } else if (algName.EqualsLiteral(WEBCRYPTO_ALG_AES_CTR)) {
@@ -521,7 +523,7 @@ class AesTask : public ReturnArrayBufferViewTask, public DeferredData {
 
       ATTEMPT_BUFFER_INIT(mIv, params.mCounter)
       if (mIv.Length() != 16) {
-        mEarlyRv = NS_ERROR_DOM_DATA_ERR;
+        mEarlyRv = NS_ERROR_DOM_OPERATION_ERR;
         return;
       }
 
@@ -1357,7 +1359,7 @@ class ImportKeyTask : public WebCryptoTask {
 
     // Try JWK
     ClearException ce(aCx);
-    JS::RootedValue value(aCx, JS::ObjectValue(*aKeyData));
+    JS::Rooted<JS::Value> value(aCx, JS::ObjectValue(*aKeyData));
     if (!mJwk.Init(aCx, value)) {
       mEarlyRv = NS_ERROR_DOM_DATA_ERR;
       return;
@@ -1699,6 +1701,9 @@ class ImportRsaKeyTask : public ImportKeyTask {
       return NS_ERROR_DOM_SYNTAX_ERR;
     }
 
+    if (pubKey->keyType != rsaKey) {
+      return NS_ERROR_DOM_DATA_ERR;
+    }
     // Extract relevant information from the public key
     mModulusLength = 8 * pubKey->u.rsa.modulus.len;
     if (!mPublicExponent.Assign(&pubKey->u.rsa.publicExponent)) {
@@ -1850,6 +1855,9 @@ class ImportEcKeyTask : public ImportKeyTask {
       }
 
       if (mFormat.EqualsLiteral(WEBCRYPTO_KEY_FORMAT_SPKI)) {
+        if (pubKey->keyType != ecKey) {
+          return NS_ERROR_DOM_DATA_ERR;
+        }
         if (!CheckEncodedECParameters(&pubKey->u.ec.DEREncodedParams)) {
           return NS_ERROR_DOM_OPERATION_ERR;
         }
@@ -3214,6 +3222,7 @@ WebCryptoTask* WebCryptoTask::CreateUnwrapKeyTask(
   if (keyAlgName.EqualsASCII(WEBCRYPTO_ALG_AES_CBC) ||
       keyAlgName.EqualsASCII(WEBCRYPTO_ALG_AES_CTR) ||
       keyAlgName.EqualsASCII(WEBCRYPTO_ALG_AES_GCM) ||
+      keyAlgName.EqualsASCII(WEBCRYPTO_ALG_AES_KW) ||
       keyAlgName.EqualsASCII(WEBCRYPTO_ALG_HKDF) ||
       keyAlgName.EqualsASCII(WEBCRYPTO_ALG_HMAC)) {
     importTask = new ImportSymmetricKeyTask(aGlobal, aCx, aFormat,

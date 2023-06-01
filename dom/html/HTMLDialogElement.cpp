@@ -81,31 +81,23 @@ void HTMLDialogElement::Show() {
 }
 
 bool HTMLDialogElement::IsInTopLayer() const {
-  return State().HasState(NS_EVENT_STATE_MODAL_DIALOG);
+  return State().HasState(ElementState::MODAL);
 }
 
 void HTMLDialogElement::AddToTopLayerIfNeeded() {
+  MOZ_ASSERT(IsInComposedDoc());
   if (IsInTopLayer()) {
     return;
   }
 
-  Document* doc = OwnerDoc();
-  doc->TopLayerPush(this);
-  doc->SetBlockedByModalDialog(*this);
-  AddStates(NS_EVENT_STATE_MODAL_DIALOG);
+  OwnerDoc()->AddModalDialog(*this);
 }
 
 void HTMLDialogElement::RemoveFromTopLayerIfNeeded() {
   if (!IsInTopLayer()) {
     return;
   }
-  auto predictFunc = [&](Element* element) { return element == this; };
-
-  Document* doc = OwnerDoc();
-  DebugOnly<Element*> removedElement = doc->TopLayerPop(predictFunc);
-  MOZ_ASSERT(removedElement == this);
-  RemoveStates(NS_EVENT_STATE_MODAL_DIALOG);
-  doc->UnsetBlockedByModalDialog(*this);
+  OwnerDoc()->RemoveModalDialog(*this);
 }
 
 void HTMLDialogElement::StorePreviouslyFocusedElement() {
@@ -151,28 +143,7 @@ void HTMLDialogElement::FocusDialog() {
     doc->FlushPendingNotifications(FlushType::Frames);
   }
 
-  Element* controlCandidate = nullptr;
-  for (auto* child = GetFirstChild(); child; child = child->GetNextNode(this)) {
-    auto* element = Element::FromNode(child);
-    if (!element) {
-      continue;
-    }
-    nsIFrame* frame = element->GetPrimaryFrame();
-    if (!frame || !frame->IsFocusable()) {
-      continue;
-    }
-    if (element->HasAttr(nsGkAtoms::autofocus)) {
-      // Find the first descendant of element of subject that this not inert and
-      // has autofocus attribute.
-      controlCandidate = element;
-      break;
-    }
-    if (!controlCandidate) {
-      // If there isn't one, then let control be the first non-inert descendant
-      // element of subject, in tree order.
-      controlCandidate = element;
-    }
-  }
+  Element* controlCandidate = GetFocusDelegate(false /* aWithMouse */);
 
   // If there isn't one of those either, then let control be subject.
   if (!controlCandidate) {
@@ -190,9 +161,10 @@ void HTMLDialogElement::FocusDialog() {
       return;
     }
   } else if (IsInTopLayer()) {
-    if (nsFocusManager* fm = nsFocusManager::GetFocusManager()) {
+    if (RefPtr<nsFocusManager> fm = nsFocusManager::GetFocusManager()) {
       // Clear the focus which ends up making the body gets focused
-      fm->ClearFocus(OwnerDoc()->GetWindow());
+      nsCOMPtr<nsPIDOMWindowOuter> outerWindow = OwnerDoc()->GetWindow();
+      fm->ClearFocus(outerWindow);
     }
   }
 

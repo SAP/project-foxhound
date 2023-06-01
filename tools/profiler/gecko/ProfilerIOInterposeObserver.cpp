@@ -7,6 +7,12 @@
 
 using namespace mozilla;
 
+/* static */
+ProfilerIOInterposeObserver& ProfilerIOInterposeObserver::GetInstance() {
+  static ProfilerIOInterposeObserver sProfilerIOInterposeObserver;
+  return sProfilerIOInterposeObserver;
+}
+
 namespace geckoprofiler::markers {
 struct FileIOMarker {
   static constexpr Span<const char> MarkerTypeName() {
@@ -43,6 +49,9 @@ struct FileIOMarker {
                                        MS::Searchable::Searchable);
     schema.AddKeyLabelFormatSearchable("filename", "Filename",
                                        MS::Format::FilePath,
+                                       MS::Searchable::Searchable);
+    schema.AddKeyLabelFormatSearchable("threadId", "Thread ID",
+                                       MS::Format::String,
                                        MS::Searchable::Searchable);
     return schema;
   }

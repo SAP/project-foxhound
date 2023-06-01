@@ -10,7 +10,7 @@ const {
   RetVal,
   Option,
   Arg,
-} = require("devtools/shared/protocol");
+} = require("resource://devtools/shared/protocol.js");
 
 types.addDictType("console.startlisteners", {
   startedListeners: "array:string",
@@ -57,7 +57,7 @@ const webconsoleSpecPrototype = {
       notes: Option(0, "nullable:string"),
       result: Option(0, "nullable:json"),
       startTime: Option(0, "number"),
-      timestamp: Option(0, "string"),
+      timestamp: Option(0, "number"),
       topLevelAwaitRejected: Option(0, "nullable:boolean"),
     },
     fileActivity: {
@@ -186,71 +186,12 @@ const webconsoleSpecPrototype = {
       },
       response: RetVal("console.autocomplete"),
     },
-    /**
-     * Clear the cache of messages (page errors and console API calls) expects no response.
-     */
-    clearMessagesCache: {
-      oneway: true,
-    },
-    /**
-     * Get Web Console-related preferences on the server.
-     *
-     * @Arg array preferences
-     *        An array with the preferences you want to retrieve.
-     */
-    getPreferences: {
-      request: {
-        preferences: Arg(0, "array:string"),
-      },
-      response: RetVal("json"),
-    },
-    /**
-     * Set Web Console-related preferences on the server.
-     *
-     * @Arg object preferences
-     *        An object with the preferences you want to change.
-     */
-    setPreferences: {
-      request: {
-        preferences: Arg(0, "json"),
-      },
-      response: RetVal("json"),
-    },
-    /**
-     * Send a HTTP request with the given data.
-     *
-     * @Arg object data
-     *        The details of the HTTP request.
-     */
-    sendHTTPRequest: {
-      request: {
-        request: Arg(0, "json"),
-      },
-      response: RetVal("json"),
-    },
 
-    blockRequest: {
-      request: {
-        filter: Arg(0, "json"),
-      },
-    },
-
-    unblockRequest: {
-      request: {
-        filter: Arg(0, "json"),
-      },
-    },
-
-    setBlockedUrls: {
-      request: {
-        url: Arg(0, "json"),
-      },
-    },
-    getBlockedUrls: {
+    /**
+     * Same as clearMessagesCache, but wait for the server response.
+     */
+    clearMessagesCacheAsync: {
       request: {},
-      response: {
-        blockedUrls: RetVal("array:string"),
-      },
     },
   },
 };

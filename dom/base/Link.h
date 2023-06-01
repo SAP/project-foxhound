@@ -13,12 +13,12 @@
 
 #include "nsWrapperCache.h"  // For nsWrapperCache::FlagsType
 #include "nsCOMPtr.h"
+#include "mozilla/dom/RustTypes.h"
 
 class nsIURI;
 
 namespace mozilla {
 
-class EventStates;
 class SizeOfState;
 
 namespace dom {
@@ -56,11 +56,11 @@ class Link : public nsISupports {
   virtual void VisitedQueryFinished(bool aVisited);
 
   /**
-   * @return NS_EVENT_STATE_VISITED if this link is visited,
-   *         NS_EVENT_STATE_UNVISTED if this link is not visited, or 0 if this
+   * @return ElementState::VISITED if this link is visited,
+   *         ElementState::UNVISTED if this link is not visited, or 0 if this
    *         link is not actually a link.
    */
-  EventStates LinkState() const;
+  ElementState LinkState() const;
 
   /**
    * @return the URI this link is for, if available.
@@ -118,17 +118,6 @@ class Link : public nsISupports {
 
  protected:
   virtual ~Link();
-
-  /**
-   * Return true if the link has associated URI.
-   */
-  bool HasURI() const {
-    if (HasCachedURI()) {
-      return true;
-    }
-
-    return !!GetURI();
-  }
 
   nsIURI* GetCachedURI() const { return mCachedURI; }
   bool HasCachedURI() const { return !!mCachedURI; }

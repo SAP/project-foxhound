@@ -19,8 +19,6 @@ use crate::author_styles::AuthorStyles;
 use crate::context::{PostAnimationTasks, QuirksMode, SharedStyleContext, UpdateAnimationsTasks};
 use crate::data::ElementData;
 use crate::dom::{LayoutIterator, NodeInfo, OpaqueNode, TDocument, TElement, TNode, TShadowRoot};
-use crate::element_state::{DocumentState, ElementState};
-use crate::font_metrics::{FontMetrics, FontMetricsOrientation, FontMetricsProvider};
 use crate::gecko::data::GeckoStyleSheet;
 use crate::gecko::selector_parser::{NonTSPseudoClass, PseudoElement, SelectorImpl};
 use crate::gecko::snapshot_helpers;
@@ -41,7 +39,6 @@ use crate::gecko_bindings::bindings::Gecko_IsSignificantChild;
 use crate::gecko_bindings::bindings::Gecko_MatchLang;
 use crate::gecko_bindings::bindings::Gecko_UnsetDirtyStyleAttr;
 use crate::gecko_bindings::bindings::Gecko_UpdateAnimations;
-use crate::gecko_bindings::bindings::{Gecko_SetNodeFlags, Gecko_UnsetNodeFlags};
 use crate::gecko_bindings::structs;
 use crate::gecko_bindings::structs::nsChangeHint;
 use crate::gecko_bindings::structs::EffectCompositor_CascadeLevel as CascadeLevel;
@@ -65,13 +62,14 @@ use crate::selector_parser::{AttrValue, Lang};
 use crate::shared_lock::{Locked, SharedRwLock};
 use crate::string_cache::{Atom, Namespace, WeakAtom, WeakNamespace};
 use crate::stylist::CascadeData;
-use crate::values::computed::font::GenericFontFamily;
-use crate::values::computed::Length;
-use crate::values::specified::length::FontBaseSize;
 use crate::values::{AtomIdent, AtomString};
+use crate::values::computed::Display;
 use crate::CaseSensitivityExt;
 use crate::LocalName;
+use app_units::Au;
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
+use dom::{DocumentState, ElementState};
+use euclid::default::Size2D;
 use fxhash::FxHashMap;
 use selectors::attr::{AttrSelectorOperation, AttrSelectorOperator};
 use selectors::attr::{CaseSensitivity, NamespaceConstraint};
@@ -80,11 +78,11 @@ use selectors::matching::{ElementSelectorFlags, MatchingContext};
 use selectors::sink::Push;
 use selectors::{Element, OpaqueElement};
 use servo_arc::{Arc, ArcBorrow, RawOffsetArc};
-use std::cell::RefCell;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::mem;
 use std::ptr;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 #[inline]
 fn elements_with_id<'a, 'le>(
@@ -271,8 +269,27 @@ impl<'ln> GeckoNode<'ln> {
     }
 
     #[inline]
+    fn flags_atomic(&self) -> &AtomicU32 {
+        use std::cell::Cell;
+        let flags: &Cell<u32> = &(self.0)._base._base_1.mFlags;
+
+        #[allow(dead_code)]
+        fn static_assert() {
+            let _: [u8; std::mem::size_of::<Cell<u32>>()] = [0u8; std::mem::size_of::<AtomicU32>()];
+            let _: [u8; std::mem::align_of::<Cell<u32>>()] =
+                [0u8; std::mem::align_of::<AtomicU32>()];
+        }
+
+        // Rust doesn't provide standalone atomic functions like GCC/clang do
+        // (via the atomic intrinsics) or via std::atomic_ref, but it guarantees
+        // that the memory representation of u32 and AtomicU32 matches:
+        // https://doc.rust-lang.org/std/sync/atomic/struct.AtomicU32.html
+        unsafe { std::mem::transmute::<&Cell<u32>, &AtomicU32>(flags) }
+    }
+
+    #[inline]
     fn flags(&self) -> u32 {
-        (self.0)._base._base_1.mFlags
+        self.flags_atomic().load(Ordering::Relaxed)
     }
 
     #[inline]
@@ -653,18 +670,18 @@ impl<'le> GeckoElement<'le> {
         self.as_node().flags()
     }
 
-    // FIXME: We can implement this without OOL calls, but we can't easily given
-    // GeckoNode is a raw reference.
-    //
-    // We can use a Cell<T>, but that's a bit of a pain.
     #[inline]
     fn set_flags(&self, flags: u32) {
-        unsafe { Gecko_SetNodeFlags(self.as_node().0, flags) }
+        self.as_node()
+            .flags_atomic()
+            .fetch_or(flags, Ordering::Relaxed);
     }
 
     #[inline]
     unsafe fn unset_flags(&self, flags: u32) {
-        Gecko_UnsetNodeFlags(self.as_node().0, flags)
+        self.as_node()
+            .flags_atomic()
+            .fetch_and(!flags, Ordering::Relaxed);
     }
 
     /// Returns true if this element has descendants for lazy frame construction.
@@ -714,14 +731,14 @@ impl<'le> GeckoElement<'le> {
             .as_node()
             .get_bool_flag(nsINode_BooleanFlag::ElementHasLockedStyleStates)
         {
-            return self.0.mState.mStates;
+            return self.0.mState.bits;
         }
         unsafe { Gecko_ElementState(self.0) }
     }
 
     #[inline]
     fn document_state(&self) -> DocumentState {
-        DocumentState::from_bits_truncate(self.as_node().owner_doc().0.mDocumentState.mStates)
+        DocumentState::from_bits_truncate(self.as_node().owner_doc().0.mDocumentState.bits)
     }
 
     #[inline]
@@ -841,7 +858,7 @@ impl<'le> GeckoElement<'le> {
     fn needs_transitions_update_per_property(
         &self,
         longhand_id: LonghandId,
-        combined_duration: f32,
+        combined_duration_seconds: f32,
         before_change_style: &ComputedValues,
         after_change_style: &ComputedValues,
         existing_transitions: &FxHashMap<LonghandId, Arc<AnimationValue>>,
@@ -867,7 +884,7 @@ impl<'le> GeckoElement<'le> {
 
         debug_assert_eq!(to.is_some(), from.is_some());
 
-        combined_duration > 0.0f32 &&
+        combined_duration_seconds > 0.0f32 &&
             from != to &&
             from.unwrap()
                 .animate(
@@ -932,138 +949,8 @@ fn get_animation_rule(
     }
 }
 
-#[derive(Debug)]
-/// Gecko font metrics provider
-pub struct GeckoFontMetricsProvider {
-    /// Cache of base font sizes for each language. Usually will have 1 element.
-    ///
-    /// This may be slow on pages using more languages, might be worth
-    /// optimizing by caching lang->group mapping separately and/or using a
-    /// hashmap on larger loads.
-    pub font_size_cache: RefCell<Vec<(Atom, DefaultFontSizes)>>,
-}
-
-impl GeckoFontMetricsProvider {
-    /// Construct
-    pub fn new() -> Self {
-        GeckoFontMetricsProvider {
-            font_size_cache: RefCell::new(Vec::new()),
-        }
-    }
-}
-
-impl FontMetricsProvider for GeckoFontMetricsProvider {
-    fn create_from(_: &SharedStyleContext) -> GeckoFontMetricsProvider {
-        GeckoFontMetricsProvider::new()
-    }
-
-    fn get_size(&self, font_name: &Atom, font_family: GenericFontFamily) -> Length {
-        let mut cache = self.font_size_cache.borrow_mut();
-        if let Some(sizes) = cache.iter().find(|el| el.0 == *font_name) {
-            return sizes.1.size_for_generic(font_family);
-        }
-        let sizes = unsafe { bindings::Gecko_GetBaseSize(font_name.as_ptr()) };
-        let size = sizes.size_for_generic(font_family);
-        cache.push((font_name.clone(), sizes));
-        size
-    }
-
-    fn query(
-        &self,
-        context: &crate::values::computed::Context,
-        base_size: FontBaseSize,
-        orientation: FontMetricsOrientation,
-    ) -> FontMetrics {
-        let pc = match context.device().pres_context() {
-            Some(pc) => pc,
-            None => return Default::default(),
-        };
-
-        let size = base_size.resolve(context);
-        let style = context.style();
-
-        let (wm, font) = match base_size {
-            FontBaseSize::CurrentStyle => (style.writing_mode, style.get_font()),
-            // This is only used for font-size computation.
-            FontBaseSize::InheritedStyle => {
-                (*style.inherited_writing_mode(), style.get_parent_font())
-            },
-        };
-
-        let vertical_metrics = match orientation {
-            FontMetricsOrientation::MatchContextPreferHorizontal => {
-                wm.is_vertical() && wm.is_upright()
-            },
-            FontMetricsOrientation::MatchContextPreferVertical => {
-                wm.is_vertical() && !wm.is_sideways()
-            },
-            FontMetricsOrientation::Horizontal => false,
-        };
-        let gecko_metrics = unsafe {
-            bindings::Gecko_GetFontMetrics(
-                pc,
-                vertical_metrics,
-                font.gecko(),
-                size,
-                // we don't use the user font set in a media query
-                !context.in_media_query,
-            )
-        };
-        FontMetrics {
-            x_height: Some(gecko_metrics.mXSize),
-            zero_advance_measure: if gecko_metrics.mChSize.px() >= 0. {
-                Some(gecko_metrics.mChSize)
-            } else {
-                None
-            },
-            cap_height: if gecko_metrics.mCapHeight.px() >= 0. {
-                Some(gecko_metrics.mCapHeight)
-            } else {
-                None
-            },
-            ic_width: if gecko_metrics.mIcWidth.px() >= 0. {
-                Some(gecko_metrics.mIcWidth)
-            } else {
-                None
-            },
-            ascent: gecko_metrics.mAscent,
-        }
-    }
-}
-
-/// The default font sizes for generic families for a given language group.
-#[derive(Debug)]
-#[repr(C)]
-pub struct DefaultFontSizes {
-    variable: Length,
-    serif: Length,
-    sans_serif: Length,
-    monospace: Length,
-    cursive: Length,
-    fantasy: Length,
-    system_ui: Length,
-}
-
-impl DefaultFontSizes {
-    fn size_for_generic(&self, font_family: GenericFontFamily) -> Length {
-        match font_family {
-            GenericFontFamily::None => self.variable,
-            GenericFontFamily::Serif => self.serif,
-            GenericFontFamily::SansSerif => self.sans_serif,
-            GenericFontFamily::Monospace => self.monospace,
-            GenericFontFamily::Cursive => self.cursive,
-            GenericFontFamily::Fantasy => self.fantasy,
-            GenericFontFamily::SystemUi => self.system_ui,
-            GenericFontFamily::MozEmoji => unreachable!(
-                "Should never get here, since this doesn't (yet) appear on font family"
-            ),
-        }
-    }
-}
-
 impl<'le> TElement for GeckoElement<'le> {
     type ConcreteNode = GeckoNode<'le>;
-    type FontMetricsProvider = GeckoFontMetricsProvider;
     type TraversalChildrenIterator = GeckoChildrenIterator<'le>;
 
     fn inheritance_parent(&self) -> Option<Self> {
@@ -1147,6 +1034,26 @@ impl<'le> TElement for GeckoElement<'le> {
             let namespace_manager = structs::nsNameSpaceManager_sInstance.mRawPtr;
             WeakNamespace::new((*namespace_manager).mURIArray[self.namespace_id() as usize].mRawPtr)
         }
+    }
+
+    #[inline]
+    fn query_container_size(&self, display: &Display) -> Size2D<Option<Au>> {
+        // If an element gets 'display: contents' and its nsIFrame has not been removed yet,
+        // Gecko_GetQueryContainerSize will not notice that it can't have size containment.
+        // Other cases like 'display: inline' will be handled once the new nsIFrame is created.
+        if display.is_contents() {
+            return Size2D::new(None, None);
+        }
+
+        let mut width = -1;
+        let mut height = -1;
+        unsafe {
+            bindings::Gecko_GetQueryContainerSize(self.0, &mut width, &mut height);
+        }
+        Size2D::new(
+            if width >= 0 { Some(Au(width)) } else { None },
+            if height >= 0 { Some(Au(height)) } else { None },
+        )
     }
 
     /// Return the list of slotted nodes of this node.
@@ -1433,7 +1340,7 @@ impl<'le> TElement for GeckoElement<'le> {
     }
 
     fn is_visited_link(&self) -> bool {
-        self.state().intersects(ElementState::IN_VISITED_STATE)
+        self.state().intersects(ElementState::VISITED)
     }
 
     /// This logic is duplicated in Gecko's nsINode::IsInNativeAnonymousSubtree.
@@ -1510,16 +1417,6 @@ impl<'le> TElement for GeckoElement<'le> {
             "Just don't call me if I'm a pseudo, you should know the answer already"
         );
         self.is_root_of_native_anonymous_subtree()
-    }
-
-    unsafe fn set_selector_flags(&self, flags: ElementSelectorFlags) {
-        debug_assert!(!flags.is_empty());
-        self.set_flags(selector_flags_to_node_flags(flags));
-    }
-
-    fn has_selector_flags(&self, flags: ElementSelectorFlags) -> bool {
-        let node_flags = selector_flags_to_node_flags(flags);
-        (self.flags() & node_flags) == node_flags
     }
 
     #[inline]
@@ -1620,8 +1517,14 @@ impl<'le> TElement for GeckoElement<'le> {
     ) -> bool {
         use crate::properties::LonghandIdSet;
 
-        let after_change_box_style = after_change_style.get_box();
+        let after_change_ui_style = after_change_style.get_ui();
         let existing_transitions = self.css_transitions_info();
+
+        if after_change_style.get_box().clone_display().is_none() {
+            // We need to cancel existing transitions.
+            return !existing_transitions.is_empty();
+        }
+
         let mut transitions_to_keep = LonghandIdSet::new();
         for transition_property in after_change_style.transition_properties() {
             let physical_longhand = transition_property
@@ -1630,7 +1533,7 @@ impl<'le> TElement for GeckoElement<'le> {
             transitions_to_keep.insert(physical_longhand);
             if self.needs_transitions_update_per_property(
                 physical_longhand,
-                after_change_box_style.transition_combined_duration_at(transition_property.index),
+                after_change_ui_style.transition_combined_duration_at(transition_property.index).seconds(),
                 before_change_style,
                 after_change_style,
                 &existing_transitions,
@@ -1712,23 +1615,9 @@ impl<'le> TElement for GeckoElement<'le> {
         use crate::properties::longhands::_x_lang::SpecifiedValue as SpecifiedLang;
         use crate::properties::longhands::_x_text_zoom::SpecifiedValue as SpecifiedZoom;
         use crate::properties::longhands::color::SpecifiedValue as SpecifiedColor;
-        use crate::properties::longhands::text_align::SpecifiedValue as SpecifiedTextAlign;
         use crate::stylesheets::layer_rule::LayerOrder;
         use crate::values::specified::color::Color;
         lazy_static! {
-            static ref TH_RULE: ApplicableDeclarationBlock = {
-                let global_style_data = &*GLOBAL_STYLE_DATA;
-                let pdb = PropertyDeclarationBlock::with_one(
-                    PropertyDeclaration::TextAlign(SpecifiedTextAlign::MozCenterOrInherit),
-                    Importance::Normal,
-                );
-                let arc = Arc::new_leaked(global_style_data.shared_lock.wrap(pdb));
-                ApplicableDeclarationBlock::from_declarations(
-                    arc,
-                    ServoCascadeLevel::PresHints,
-                    LayerOrder::root(),
-                )
-            };
             static ref TABLE_COLOR_RULE: ApplicableDeclarationBlock = {
                 let global_style_data = &*GLOBAL_STYLE_DATA;
                 let pdb = PropertyDeclarationBlock::with_one(
@@ -1773,9 +1662,7 @@ impl<'le> TElement for GeckoElement<'le> {
         let ns = self.namespace_id();
         // <th> elements get a default MozCenterOrInherit which may get overridden
         if ns == structs::kNameSpaceID_XHTML as i32 {
-            if self.local_name().as_ptr() == atom!("th").as_ptr() {
-                hints.push(TH_RULE.clone());
-            } else if self.local_name().as_ptr() == atom!("table").as_ptr() &&
+            if self.local_name().as_ptr() == atom!("table").as_ptr() &&
                 self.as_node().owner_doc().quirks_mode() == QuirksMode::Quirks
             {
                 hints.push(TABLE_COLOR_RULE.clone());
@@ -1967,6 +1854,23 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
         None
     }
 
+    #[inline]
+    fn first_element_child(&self) -> Option<Self> {
+        let mut child = self.as_node().first_child();
+        while let Some(child_node) = child {
+            if let Some(el) = child_node.as_element() {
+                return Some(el);
+            }
+            child = child_node.next_sibling();
+        }
+        None
+    }
+
+    fn set_selector_flags(&self, flags: ElementSelectorFlags) {
+        debug_assert!(!flags.is_empty());
+        self.set_flags(selector_flags_to_node_flags(flags));
+    }
+
     fn attr_matches(
         &self,
         ns: &NamespaceConstraint<&Namespace>,
@@ -2079,15 +1983,11 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
         self.local_name() == other.local_name() && self.namespace() == other.namespace()
     }
 
-    fn match_non_ts_pseudo_class<F>(
+    fn match_non_ts_pseudo_class(
         &self,
         pseudo_class: &NonTSPseudoClass,
         context: &mut MatchingContext<Self::Impl>,
-        flags_setter: &mut F,
-    ) -> bool
-    where
-        F: FnMut(&Self, ElementSelectorFlags),
-    {
+    ) -> bool {
         use selectors::matching::*;
         match *pseudo_class {
             NonTSPseudoClass::Autofill |
@@ -2127,8 +2027,8 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
             NonTSPseudoClass::MozDirAttrLTR |
             NonTSPseudoClass::MozDirAttrRTL |
             NonTSPseudoClass::MozDirAttrLikeAuto |
-            NonTSPseudoClass::MozModalDialog |
-            NonTSPseudoClass::MozTopmostModalDialog |
+            NonTSPseudoClass::Modal |
+            NonTSPseudoClass::MozTopmostModal |
             NonTSPseudoClass::Active |
             NonTSPseudoClass::Hover |
             NonTSPseudoClass::MozAutofillPreview |
@@ -2143,7 +2043,9 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
                 self.is_link() && context.visited_handling().matches_visited()
             },
             NonTSPseudoClass::MozFirstNode => {
-                flags_setter(self, ElementSelectorFlags::HAS_EDGE_CHILD_SELECTOR);
+                if context.needs_selector_flags() {
+                    self.apply_selector_flags(ElementSelectorFlags::HAS_EDGE_CHILD_SELECTOR);
+                }
                 let mut elem = self.as_node();
                 while let Some(prev) = elem.prev_sibling() {
                     if prev.contains_non_whitespace_content() {
@@ -2154,7 +2056,9 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
                 true
             },
             NonTSPseudoClass::MozLastNode => {
-                flags_setter(self, ElementSelectorFlags::HAS_EDGE_CHILD_SELECTOR);
+                if context.needs_selector_flags() {
+                    self.apply_selector_flags(ElementSelectorFlags::HAS_EDGE_CHILD_SELECTOR);
+                }
                 let mut elem = self.as_node();
                 while let Some(next) = elem.next_sibling() {
                     if next.contains_non_whitespace_content() {
@@ -2165,7 +2069,9 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
                 true
             },
             NonTSPseudoClass::MozOnlyWhitespace => {
-                flags_setter(self, ElementSelectorFlags::HAS_EMPTY_SELECTOR);
+                if context.needs_selector_flags() {
+                    self.apply_selector_flags(ElementSelectorFlags::HAS_EMPTY_SELECTOR);
+                }
                 if self
                     .as_node()
                     .dom_children()
@@ -2187,8 +2093,6 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
             NonTSPseudoClass::MozIsHTML => self.is_html_element_in_html_document(),
 
             NonTSPseudoClass::MozLWTheme |
-            NonTSPseudoClass::MozLWThemeBrightText |
-            NonTSPseudoClass::MozLWThemeDarkText |
             NonTSPseudoClass::MozLocaleDir(..) |
             NonTSPseudoClass::MozWindowInactive => {
                 let state_bit = pseudo_class.document_state_flag();
@@ -2199,7 +2103,7 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
                     );
                     return false;
                 }
-                if context.extra_data.document_state.intersects(state_bit) {
+                if context.extra_data.invalidation_data.document_state.intersects(state_bit) {
                     return !context.in_negation();
                 }
                 self.document_state().contains(state_bit)
@@ -2225,8 +2129,7 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
 
     #[inline]
     fn is_link(&self) -> bool {
-        self.state()
-            .intersects(ElementState::IN_VISITED_OR_UNVISITED_STATE)
+        self.state().intersects(ElementState::VISITED_OR_UNVISITED)
     }
 
     #[inline]

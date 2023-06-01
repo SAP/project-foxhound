@@ -3,12 +3,13 @@ import {
   MultiStageAboutWelcome,
   SecondaryCTA,
   StepsIndicator,
+  ProgressBar,
   WelcomeScreen,
 } from "content-src/aboutwelcome/components/MultiStageAboutWelcome";
 import { Themes } from "content-src/aboutwelcome/components/Themes";
 import React from "react";
 import { shallow, mount } from "enzyme";
-import { DEFAULT_WELCOME_CONTENT } from "aboutwelcome/lib/AboutWelcomeDefaults.jsm";
+import { AboutWelcomeDefaults } from "aboutwelcome/lib/AboutWelcomeDefaults.jsm";
 import { AboutWelcomeUtils } from "content-src/lib/aboutwelcome-utils";
 
 describe("MultiStageAboutWelcome module", () => {
@@ -16,10 +17,11 @@ describe("MultiStageAboutWelcome module", () => {
   let sandbox;
 
   const DEFAULT_PROPS = {
-    screens: DEFAULT_WELCOME_CONTENT.screens,
+    screens: AboutWelcomeDefaults.getDefaults().screens,
     metricsFlowUri: "http://localhost/",
     message_id: "DEFAULT_ABOUTWELCOME",
     utm_term: "default",
+    startScreen: 0,
   };
 
   beforeEach(async () => {
@@ -33,6 +35,7 @@ describe("MultiStageAboutWelcome module", () => {
       AWGetRegion: () => Promise.resolve(),
       AWWaitForMigrationClose: () => Promise.resolve(),
       AWSelectTheme: () => Promise.resolve(),
+      AWFinish: () => Promise.resolve(),
     });
     sandbox = sinon.createSandbox();
   });
@@ -66,7 +69,11 @@ describe("MultiStageAboutWelcome module", () => {
       assert.calledTwice(impressionSpy);
       assert.equal(
         impressionSpy.firstCall.args[0],
-        `${DEFAULT_PROPS.message_id}_${DEFAULT_PROPS.screens[0].order}_${DEFAULT_PROPS.screens[0].id}`
+        `${DEFAULT_PROPS.message_id}_0_${
+          DEFAULT_PROPS.screens[0].id
+        }_${DEFAULT_PROPS.screens
+          .map(({ id }) => id?.split("_")[1]?.[0])
+          .join("")}`
       );
       assert.equal(
         impressionSpy.secondCall.args[0],
@@ -107,22 +114,114 @@ describe("MultiStageAboutWelcome module", () => {
         welcomeScreenWrapper.props().messageId
       );
       assert.equal(stub.firstCall.args[1], "primary_button");
+      stub.restore();
+    });
+
+    it("should autoAdvance on last screen and send appropriate telemetry", () => {
+      let clock = sinon.useFakeTimers();
+      const screens = [
+        {
+          auto_advance: "primary_button",
+          content: {
+            title: "test title",
+            subtitle: "test subtitle",
+            primary_button: {
+              label: "Test Button",
+              action: {
+                navigate: true,
+              },
+            },
+          },
+        },
+      ];
+      const AUTO_ADVANCE_PROPS = {
+        screens,
+        metricsFlowUri: "http://localhost/",
+        message_id: "DEFAULT_ABOUTWELCOME",
+        utm_term: "default",
+        startScreen: 0,
+      };
+      const wrapper = mount(<MultiStageAboutWelcome {...AUTO_ADVANCE_PROPS} />);
+      wrapper.update();
+      const finishStub = sandbox.stub(global, "AWFinish");
+      const telemetryStub = sinon.stub(
+        AboutWelcomeUtils,
+        "sendActionTelemetry"
+      );
+
+      assert.notCalled(finishStub);
+      clock.tick(20001);
+      assert.calledOnce(finishStub);
+      assert.calledOnce(telemetryStub);
+      assert.equal(telemetryStub.lastCall.args[2], "AUTO_ADVANCE");
+      clock.restore();
+      finishStub.restore();
+      telemetryStub.restore();
+    });
+
+    it("should send telemetry ping on collectSelect", () => {
+      const screens = [
+        {
+          id: "EASY_SETUP_TEST",
+          content: {
+            tiles: {
+              type: "multiselect",
+              data: [
+                {
+                  id: "checkbox-1",
+                  defaultValue: true,
+                },
+              ],
+            },
+            primary_button: {
+              label: "Test Button",
+              action: {
+                collectSelect: true,
+              },
+            },
+          },
+        },
+      ];
+      const EASY_SETUP_PROPS = {
+        screens,
+        message_id: "DEFAULT_ABOUTWELCOME",
+        startScreen: 0,
+      };
+      const stub = sinon.stub(AboutWelcomeUtils, "sendActionTelemetry");
+      let wrapper = mount(<MultiStageAboutWelcome {...EASY_SETUP_PROPS} />);
+      wrapper.update();
+
+      let welcomeScreenWrapper = wrapper.find(WelcomeScreen);
+      const btnPrimary = welcomeScreenWrapper.find(".primary");
+      btnPrimary.simulate("click");
+      assert.calledTwice(stub);
+      assert.equal(
+        stub.firstCall.args[0],
+        welcomeScreenWrapper.props().messageId
+      );
+      assert.equal(stub.firstCall.args[1], "primary_button");
+      assert.equal(
+        stub.lastCall.args[0],
+        welcomeScreenWrapper.props().messageId
+      );
+      assert.ok(stub.lastCall.args[1].includes("checkbox-1"));
+      assert.equal(stub.lastCall.args[2], "SELECT_CHECKBOX");
+      stub.restore();
     });
   });
 
   describe("WelcomeScreen component", () => {
     describe("get started screen", () => {
-      const startScreen = DEFAULT_WELCOME_CONTENT.screens.find(screen => {
-        return screen.id === "AW_SET_DEFAULT";
-      });
+      const screen = AboutWelcomeDefaults.getDefaults().screens.find(
+        s => s.id === "AW_PIN_FIREFOX"
+      );
 
       const GET_STARTED_SCREEN_PROPS = {
-        id: startScreen.id,
-        totalNumberofScreens: 1,
-        order: startScreen.order,
-        content: startScreen.content,
+        id: screen.id,
+        totalNumberOfScreens: 1,
+        content: screen.content,
         topSites: [],
-        messageId: `${DEFAULT_PROPS.message_id}_${startScreen.id}`,
+        messageId: `${DEFAULT_PROPS.message_id}_${screen.id}`,
         UTMTerm: DEFAULT_PROPS.utm_term,
         flowParams: null,
       };
@@ -146,25 +245,76 @@ describe("MultiStageAboutWelcome module", () => {
           position: "top",
         };
         const wrapper = mount(<SecondaryCTA {...SCREEN_PROPS} />);
-        assert.ok(wrapper.find("div.secondary_button_top"));
+        assert.ok(wrapper.find("div.secondary-cta.top").exists());
+      });
+
+      it("should render the arrow icon in the secondary button", () => {
+        let SCREEN_PROPS = {
+          content: {
+            title: "Step",
+            secondary_button: {
+              has_arrow_icon: true,
+              label: "test label",
+            },
+          },
+        };
+        const wrapper = mount(<SecondaryCTA {...SCREEN_PROPS} />);
+        assert.ok(wrapper.find("button.arrow-icon").exists());
       });
 
       it("should render steps indicator", () => {
+        let PROPS = { totalNumberOfScreens: 1 };
+        const wrapper = mount(<StepsIndicator {...PROPS} />);
+        assert.ok(wrapper.find("div.indicator").exists());
+      });
+
+      it("should assign the total number of screens and current screen to the aria-valuemax and aria-valuenow labels", () => {
+        const EXTRA_PROPS = { totalNumberOfScreens: 3, order: 1 };
+        const wrapper = mount(
+          <WelcomeScreen {...GET_STARTED_SCREEN_PROPS} {...EXTRA_PROPS} />
+        );
+        const steps = wrapper.find(`div.steps`);
+        assert.ok(steps.exists());
+        const { attributes } = steps.getDOMNode();
+        assert.equal(
+          parseInt(attributes.getNamedItem("aria-valuemax").value, 10),
+          EXTRA_PROPS.totalNumberOfScreens
+        );
+        assert.equal(
+          parseInt(attributes.getNamedItem("aria-valuenow").value, 10),
+          EXTRA_PROPS.order + 1
+        );
+      });
+
+      it("should render progress bar", () => {
         let SCREEN_PROPS = {
-          totalNumberOfScreens: 1,
-          order: 0,
+          step: 1,
+          previousStep: 0,
+          totalNumberOfScreens: 2,
         };
-        <StepsIndicator {...SCREEN_PROPS} />;
-        const wrapper = mount(<StepsIndicator {...SCREEN_PROPS} />);
-        assert.ok(wrapper.find("div.indicator"));
+        const wrapper = mount(<ProgressBar {...SCREEN_PROPS} />);
+        assert.ok(wrapper.find("div.indicator").exists());
+        assert.propertyVal(
+          wrapper.find("div.indicator").prop("style"),
+          "--progress-bar-progress",
+          "50%"
+        );
       });
 
       it("should have a primary, secondary and secondary.top button in the rendered input", () => {
         const wrapper = mount(<WelcomeScreen {...GET_STARTED_SCREEN_PROPS} />);
-        assert.ok(wrapper.find(".primary"));
-        assert.ok(wrapper.find(".secondary button[value='secondary_button']"));
+        assert.ok(wrapper.find(".primary").exists());
         assert.ok(
-          wrapper.find(".secondary button[value='secondary_button_top']")
+          wrapper
+            .find(".secondary-cta button.secondary[value='secondary_button']")
+            .exists()
+        );
+        assert.ok(
+          wrapper
+            .find(
+              ".secondary-cta.top button.secondary[value='secondary_button_top']"
+            )
+            .exists()
         );
       });
     });
@@ -172,8 +322,7 @@ describe("MultiStageAboutWelcome module", () => {
     describe("theme screen", () => {
       const THEME_SCREEN_PROPS = {
         id: "test-theme-screen",
-        totalNumberofScreens: 1,
-        order: 0,
+        totalNumberOfScreens: 1,
         content: {
           title: "test title",
           subtitle: "test subtitle",
@@ -284,6 +433,17 @@ describe("MultiStageAboutWelcome module", () => {
 
         assert.calledWith(SCREEN_PROPS.setActiveTheme, "test");
       });
+      it("should handle dismiss", () => {
+        SCREEN_PROPS.content.dismiss_button = {
+          action: { dismiss: true },
+        };
+        const finishStub = sandbox.stub(global, "AWFinish");
+        const wrapper = mount(<WelcomeScreen {...SCREEN_PROPS} />);
+
+        wrapper.find(".dismiss-button").simulate("click");
+
+        assert.calledOnce(finishStub);
+      });
       it("should handle SHOW_FIREFOX_ACCOUNTS", () => {
         TEST_ACTION.type = "SHOW_FIREFOX_ACCOUNTS";
         const wrapper = mount(<WelcomeScreen {...SCREEN_PROPS} />);
@@ -310,6 +470,57 @@ describe("MultiStageAboutWelcome module", () => {
 
         assert.calledWith(AboutWelcomeUtils.handleUserAction, {
           type: "SHOW_MIGRATION_WIZARD",
+        });
+      });
+      it("should handle SHOW_MIGRATION_WIZARD INSIDE MULTI_ACTION", () => {
+        const MULTI_ACTION_SCREEN_PROPS = {
+          content: {
+            title: "test title",
+            subtitle: "test subtitle",
+            primary_button: {
+              action: {
+                type: "MULTI_ACTION",
+                navigate: true,
+                data: {
+                  actions: [
+                    {
+                      type: "PIN_FIREFOX_TO_TASKBAR",
+                    },
+                    {
+                      type: "SET_DEFAULT_BROWSER",
+                    },
+                    {
+                      type: "SHOW_MIGRATION_WIZARD",
+                      data: {},
+                    },
+                  ],
+                },
+              },
+              label: "test button",
+            },
+          },
+          navigate: sandbox.stub(),
+        };
+        const wrapper = mount(<WelcomeScreen {...MULTI_ACTION_SCREEN_PROPS} />);
+
+        wrapper.find(".primary").simulate("click");
+        assert.calledWith(AboutWelcomeUtils.handleUserAction, {
+          type: "MULTI_ACTION",
+          navigate: true,
+          data: {
+            actions: [
+              {
+                type: "PIN_FIREFOX_TO_TASKBAR",
+              },
+              {
+                type: "SET_DEFAULT_BROWSER",
+              },
+              {
+                type: "SHOW_MIGRATION_WIZARD",
+                data: {},
+              },
+            ],
+          },
         });
       });
     });

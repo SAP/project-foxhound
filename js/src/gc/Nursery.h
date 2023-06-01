@@ -8,7 +8,6 @@
 #ifndef gc_Nursery_h
 #define gc_Nursery_h
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/TimeStamp.h"
@@ -19,7 +18,6 @@
 #include "js/Class.h"
 #include "js/GCAPI.h"
 #include "js/HeapAPI.h"
-#include "js/TracingAPI.h"
 #include "js/TypeDecls.h"
 #include "js/Vector.h"
 #include "util/Text.h"
@@ -49,7 +47,6 @@
 
 template <typename T>
 class SharedMem;
-class JSDependentString;
 
 namespace js {
 
@@ -58,12 +55,12 @@ class AutoLockGCBgAlloc;
 class ObjectElements;
 class PlainObject;
 class NativeObject;
-class Nursery;
 struct NurseryChunk;
 class HeapSlot;
 class JSONPrinter;
 class MapObject;
 class SetObject;
+class Sprinter;
 class TenuringTracer;
 
 namespace gc {
@@ -76,7 +73,6 @@ class MinorCollectionTracer;
 class RelocationOverlay;
 class StringRelocationOverlay;
 enum class AllocKind : uint8_t;
-class TenuredCell;
 }  // namespace gc
 
 namespace jit {
@@ -478,6 +474,7 @@ class Nursery {
     size_t nurseryCapacity = 0;
     size_t nurseryCommitted = 0;
     size_t nurseryUsedBytes = 0;
+    size_t nurseryUsedChunkCount = 0;
     size_t tenuredBytes = 0;
     size_t tenuredCells = 0;
     mozilla::TimeStamp endTime;
@@ -561,9 +558,9 @@ class Nursery {
 
       if (key->asLinear().hasLatin1Chars()) {
         MOZ_ASSERT(lookup->asLinear().hasLatin1Chars());
-        return mozilla::ArrayEqual(key->asLinear().latin1Chars(nogc),
-                                   lookup->asLinear().latin1Chars(nogc),
-                                   lookup->length());
+        return EqualChars(key->asLinear().latin1Chars(nogc),
+                          lookup->asLinear().latin1Chars(nogc),
+                          lookup->length());
       } else {
         MOZ_ASSERT(key->asLinear().hasTwoByteChars());
         MOZ_ASSERT(lookup->asLinear().hasTwoByteChars());
@@ -701,7 +698,8 @@ class Nursery {
   void maybeClearProfileDurations();
   void startProfile(ProfileKey key);
   void endProfile(ProfileKey key);
-  static void printProfileDurations(FILE* file, const ProfileDurations& times);
+  static bool printProfileDurations(const ProfileDurations& times,
+                                    Sprinter& sprinter);
 
   mozilla::TimeStamp collectionStartTime() const;
   mozilla::TimeStamp lastCollectionEndTime() const;

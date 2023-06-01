@@ -275,10 +275,6 @@ class MacroAssemblerNone : public Assembler {
     MOZ_CRASH();
   }
   template <typename T, typename S>
-  void store32_NoSecondScratch(T, S) {
-    MOZ_CRASH();
-  }
-  template <typename T, typename S>
   void store32Unaligned(T, S) {
     MOZ_CRASH();
   }
@@ -414,7 +410,7 @@ class MacroAssemblerNone : public Assembler {
     MOZ_CRASH();
   }
   template <typename T>
-  void storeUnboxedValue(const ConstantOrRegister&, MIRType, T, MIRType) {
+  void storeUnboxedValue(const ConstantOrRegister&, MIRType, T) {
     MOZ_CRASH();
   }
   template <typename T>
@@ -426,11 +422,10 @@ class MacroAssemblerNone : public Assembler {
   void convertUInt32ToFloat32(Register, FloatRegister) { MOZ_CRASH(); }
   void incrementInt32Value(Address) { MOZ_CRASH(); }
   void ensureDouble(ValueOperand, FloatRegister, Label*) { MOZ_CRASH(); }
-  void handleFailureWithHandlerTail(Label*) { MOZ_CRASH(); }
+  void handleFailureWithHandlerTail(Label*, Label*) { MOZ_CRASH(); }
 
   void buildFakeExitFrame(Register, uint32_t*) { MOZ_CRASH(); }
   bool buildOOLFakeExitFrame(void*) { MOZ_CRASH(); }
-  void loadWasmPinnedRegsFromTls() { MOZ_CRASH(); }
 
   void setPrinter(Sprinter*) { MOZ_CRASH(); }
   Operand ToPayload(Operand base) { MOZ_CRASH(); }

@@ -8,9 +8,7 @@
 #define mozilla_dom_UnderlyingSourceCallbackHelpers_h
 
 #include "mozilla/HoldDropJSObjects.h"
-#include "mozilla/dom/ModuleMapKey.h"
 #include "mozilla/dom/Promise.h"
-#include "mozilla/dom/ReadableStreamDefaultController.h"
 #include "mozilla/dom/UnderlyingSourceBinding.h"
 #include "nsISupports.h"
 #include "nsISupportsImpl.h"
@@ -27,206 +25,134 @@
 namespace mozilla::dom {
 
 class BodyStreamHolder;
+class ReadableStreamController;
 
-// Note: Until we need to be able to provide a native implementation of start,
-// I don't distinguish between UnderlyingSourceStartCallbackHelper and  a
-// hypothetical IDLUnderlingSourceStartCallbackHelper
-class UnderlyingSourceStartCallbackHelper : public nsISupports {
+class UnderlyingSourceAlgorithmsBase : public nsISupports {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(
-      UnderlyingSourceStartCallbackHelper)
+  NS_DECL_CYCLE_COLLECTION_CLASS(UnderlyingSourceAlgorithmsBase)
 
-  UnderlyingSourceStartCallbackHelper(UnderlyingSourceStartCallback* aCallback,
-                                      JS::HandleObject aThisObj)
-      : mThisObj(aThisObj), mCallback(aCallback) {
-    mozilla::HoldJSObjects(this);
-  }
+  MOZ_CAN_RUN_SCRIPT virtual void StartCallback(
+      JSContext* aCx, ReadableStreamController& aController,
+      JS::MutableHandle<JS::Value> aRetVal, ErrorResult& aRv) = 0;
 
-  // The fundamental Call Primitive
-  MOZ_CAN_RUN_SCRIPT
-  void StartCallback(JSContext* aCx, ReadableStreamController& aController,
-                     JS::MutableHandle<JS::Value> aRetVal, ErrorResult& aRv);
+  // A promise-returning algorithm that pulls data from the underlying byte
+  // source
+  MOZ_CAN_RUN_SCRIPT virtual already_AddRefed<Promise> PullCallback(
+      JSContext* aCx, ReadableStreamController& aController,
+      ErrorResult& aRv) = 0;
+
+  // A promise-returning algorithm, taking one argument (the cancel reason),
+  // which communicates a requested cancelation to the underlying byte source
+  MOZ_CAN_RUN_SCRIPT virtual already_AddRefed<Promise> CancelCallback(
+      JSContext* aCx, const Optional<JS::Handle<JS::Value>>& aReason,
+      ErrorResult& aRv) = 0;
+
+  // Implement this when you need to release underlying resources immediately
+  // from closed(canceled)/errored streams, without waiting for GC.
+  virtual void ReleaseObjects() {}
+
+  // Fetch wants to special-case BodyStream-based streams
+  virtual BodyStreamHolder* GetBodyStreamHolder() { return nullptr; }
+
+  // https://streams.spec.whatwg.org/#other-specs-rs-create
+  // By "native" we mean "instances initialized via the above set up or set up
+  // with byte reading support algorithms (not, e.g., on web-developer-created
+  // instances)"
+  virtual bool IsNative() { return true; }
 
  protected:
-  virtual ~UnderlyingSourceStartCallbackHelper() {
-    mozilla::DropJSObjects(this);
+  virtual ~UnderlyingSourceAlgorithmsBase() = default;
+};
+
+class UnderlyingSourceAlgorithms final : public UnderlyingSourceAlgorithmsBase {
+ public:
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(
+      UnderlyingSourceAlgorithms, UnderlyingSourceAlgorithmsBase)
+
+  UnderlyingSourceAlgorithms(nsIGlobalObject* aGlobal,
+                             JS::Handle<JSObject*> aUnderlyingSource,
+                             UnderlyingSource& aUnderlyingSourceDict)
+      : mGlobal(aGlobal), mUnderlyingSource(aUnderlyingSource) {
+    // Step 6. (implicit Step 2.)
+    if (aUnderlyingSourceDict.mStart.WasPassed()) {
+      mStartCallback = aUnderlyingSourceDict.mStart.Value();
+    }
+
+    // Step 7. (implicit Step 3.)
+    if (aUnderlyingSourceDict.mPull.WasPassed()) {
+      mPullCallback = aUnderlyingSourceDict.mPull.Value();
+    }
+
+    // Step 8. (implicit Step 4.)
+    if (aUnderlyingSourceDict.mCancel.WasPassed()) {
+      mCancelCallback = aUnderlyingSourceDict.mCancel.Value();
+    }
+
+    mozilla::HoldJSObjects(this);
   };
 
- private:
-  JS::Heap<JSObject*> mThisObj;
-  RefPtr<UnderlyingSourceStartCallback> mCallback;
-};
+  MOZ_CAN_RUN_SCRIPT void StartCallback(JSContext* aCx,
+                                        ReadableStreamController& aController,
+                                        JS::MutableHandle<JS::Value> aRetVal,
+                                        ErrorResult& aRv) override;
 
-// Abstract over the implementation details for the UnderlyingSourcePullCallback
-class UnderlyingSourcePullCallbackHelper : public nsISupports {
- public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(
-      UnderlyingSourcePullCallbackHelper)
-
-  // The fundamental Call Primitive
-  MOZ_CAN_RUN_SCRIPT
-  virtual already_AddRefed<Promise> PullCallback(
-      JSContext* aCx, ReadableStreamController& aController,
-      ErrorResult& aRv) = 0;
-
- protected:
-  virtual ~UnderlyingSourcePullCallbackHelper() = default;
-};
-
-// Invoke IDL passed, user provided callback.
-class IDLUnderlyingSourcePullCallbackHelper final
-    : public UnderlyingSourcePullCallbackHelper {
- public:
-  NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(
-      IDLUnderlyingSourcePullCallbackHelper, UnderlyingSourcePullCallbackHelper)
-
-  explicit IDLUnderlyingSourcePullCallbackHelper(
-      UnderlyingSourcePullCallback* aCallback, JS::HandleObject aThisObj)
-      : mThisObj(aThisObj), mCallback(aCallback) {
-    MOZ_ASSERT(mCallback);
-    mozilla::HoldJSObjects(this);
-  }
-
-  MOZ_CAN_RUN_SCRIPT
-  virtual already_AddRefed<Promise> PullCallback(
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> PullCallback(
       JSContext* aCx, ReadableStreamController& aController,
       ErrorResult& aRv) override;
 
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> CancelCallback(
+      JSContext* aCx, const Optional<JS::Handle<JS::Value>>& aReason,
+      ErrorResult& aRv) override;
+
+  bool IsNative() override { return false; }
+
  protected:
-  virtual ~IDLUnderlyingSourcePullCallbackHelper() {
-    mozilla::DropJSObjects(this);
-  }
+  ~UnderlyingSourceAlgorithms() override { mozilla::DropJSObjects(this); };
 
  private:
-  JS::Heap<JSObject*> mThisObj;
-  RefPtr<UnderlyingSourcePullCallback> mCallback;
+  // Virtually const, but are cycle collected
+  nsCOMPtr<nsIGlobalObject> mGlobal;
+  JS::Heap<JSObject*> mUnderlyingSource;
+  MOZ_KNOWN_LIVE RefPtr<UnderlyingSourceStartCallback> mStartCallback;
+  MOZ_KNOWN_LIVE RefPtr<UnderlyingSourcePullCallback> mPullCallback;
+  MOZ_KNOWN_LIVE RefPtr<UnderlyingSourceCancelCallback> mCancelCallback;
 };
 
-class BodyStreamUnderlyingSourcePullCallbackHelper final
-    : public UnderlyingSourcePullCallbackHelper {
- public:
-  NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(
-      BodyStreamUnderlyingSourcePullCallbackHelper,
-      UnderlyingSourcePullCallbackHelper)
+// https://streams.spec.whatwg.org/#readablestream-set-up
+// https://streams.spec.whatwg.org/#readablestream-set-up-with-byte-reading-support
+// Wrappers defined by the "Set up" methods in the spec. This helps you just
+// return nullptr when an error occurred as this wrapper converts it to a
+// rejected promise.
+// Note that StartCallback is only for JS consumers to access
+// the controller, and thus is no-op here since native consumers can call
+// `EnqueueNative()` etc. without direct controller access.
+class UnderlyingSourceAlgorithmsWrapper
+    : public UnderlyingSourceAlgorithmsBase {
+  void StartCallback(JSContext*, ReadableStreamController&,
+                     JS::MutableHandle<JS::Value> aRetVal, ErrorResult&) final;
 
-  explicit BodyStreamUnderlyingSourcePullCallbackHelper(
-      BodyStreamHolder* underlyingSource);
-
-  MOZ_CAN_RUN_SCRIPT
-  virtual already_AddRefed<Promise> PullCallback(
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> PullCallback(
       JSContext* aCx, ReadableStreamController& aController,
-      ErrorResult& aRv) override;
+      ErrorResult& aRv) final;
 
- protected:
-  virtual ~BodyStreamUnderlyingSourcePullCallbackHelper() = default;
-
- private:
-  RefPtr<BodyStreamHolder> mUnderlyingSource;
-};
-
-class UnderlyingSourceCancelCallbackHelper : public nsISupports {
- public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(
-      UnderlyingSourceCancelCallbackHelper)
-
-  MOZ_CAN_RUN_SCRIPT
-  virtual already_AddRefed<Promise> CancelCallback(
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> CancelCallback(
       JSContext* aCx, const Optional<JS::Handle<JS::Value>>& aReason,
-      ErrorResult& aRv) = 0;
+      ErrorResult& aRv) final;
 
- protected:
-  virtual ~UnderlyingSourceCancelCallbackHelper() = default;
-};
-
-// Invoke IDL passed, user provided callback.
-class IDLUnderlyingSourceCancelCallbackHelper final
-    : public UnderlyingSourceCancelCallbackHelper {
- public:
-  NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(
-      IDLUnderlyingSourceCancelCallbackHelper,
-      UnderlyingSourceCancelCallbackHelper)
-
-  explicit IDLUnderlyingSourceCancelCallbackHelper(
-      UnderlyingSourceCancelCallback* aCallback, JS::HandleObject aThisObj)
-      : mThisObj(aThisObj), mCallback(aCallback) {
-    MOZ_ASSERT(mCallback);
-    mozilla::HoldJSObjects(this);
+  virtual already_AddRefed<Promise> PullCallbackImpl(
+      JSContext* aCx, ReadableStreamController& aController, ErrorResult& aRv) {
+    // pullAlgorithm is optional, return null by default
+    return nullptr;
   }
 
-  MOZ_CAN_RUN_SCRIPT
-  virtual already_AddRefed<Promise> CancelCallback(
+  virtual already_AddRefed<Promise> CancelCallbackImpl(
       JSContext* aCx, const Optional<JS::Handle<JS::Value>>& aReason,
-      ErrorResult& aRv) override;
-
- protected:
-  virtual ~IDLUnderlyingSourceCancelCallbackHelper() {
-    mozilla::DropJSObjects(this);
+      ErrorResult& aRv) {
+    // cancelAlgorithm is optional, return null by default
+    return nullptr;
   }
-
- private:
-  JS::Heap<JSObject*> mThisObj;
-  RefPtr<UnderlyingSourceCancelCallback> mCallback;
-};
-
-class BodyStreamUnderlyingSourceCancelCallbackHelper final
-    : public UnderlyingSourceCancelCallbackHelper {
- public:
-  NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(
-      BodyStreamUnderlyingSourceCancelCallbackHelper,
-      UnderlyingSourceCancelCallbackHelper)
-
-  explicit BodyStreamUnderlyingSourceCancelCallbackHelper(
-      BodyStreamHolder* aUnderlyingSource);
-
-  MOZ_CAN_RUN_SCRIPT
-  virtual already_AddRefed<Promise> CancelCallback(
-      JSContext* aCx, const Optional<JS::Handle<JS::Value>>& aReason,
-      ErrorResult& aRv) override;
-
- protected:
-  virtual ~BodyStreamUnderlyingSourceCancelCallbackHelper() = default;
-
- private:
-  RefPtr<BodyStreamHolder> mUnderlyingSource;
-};
-
-// Callback called when erroring a stream.
-class UnderlyingSourceErrorCallbackHelper : public nsISupports {
- public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_CLASS(UnderlyingSourceErrorCallbackHelper)
-
-  virtual void Call() = 0;
-
- protected:
-  virtual ~UnderlyingSourceErrorCallbackHelper() = default;
-};
-
-class BodyStreamUnderlyingSourceErrorCallbackHelper final
-    : public UnderlyingSourceErrorCallbackHelper {
- public:
-  NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(
-      BodyStreamUnderlyingSourceErrorCallbackHelper,
-      UnderlyingSourceErrorCallbackHelper)
-
-  explicit BodyStreamUnderlyingSourceErrorCallbackHelper(
-      BodyStreamHolder* aUnderlyingSource);
-
-  virtual void Call() override;
-
- protected:
-  virtual ~BodyStreamUnderlyingSourceErrorCallbackHelper() = default;
-
- private:
-  RefPtr<BodyStreamHolder> mUnderlyingSource;
 };
 
 }  // namespace mozilla::dom

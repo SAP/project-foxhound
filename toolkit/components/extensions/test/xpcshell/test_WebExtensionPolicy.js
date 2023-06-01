@@ -132,6 +132,11 @@ add_task(async function test_WebExtensionPolicy() {
     "Non-web-accessible path should not be web-accessible"
   );
 
+  ok(
+    policy.sourceMayAccessPath(mozExtURI, "/bar.baz"),
+    "Web-accessible path should be web-accessible to self"
+  );
+
   // Localization
 
   equal(
@@ -250,6 +255,194 @@ add_task(async function test_WebExtensionPolicy() {
 
     policy.active = false;
   }
+});
+
+// mozExtensionHostname is normalized to lower case when using
+// policy.getURL whereas using policy.getByHostname does
+// not.  Tests below will fail without case insensitive
+// comparisons in ExtensionPolicyService
+add_task(async function test_WebExtensionPolicy_case_sensitivity() {
+  const id = "policy-case@mochitest";
+  const uuid = "BAD93A23-125C-4B24-ABFC-1CA2692B0610";
+
+  const baseURL = "file:///foo/";
+  const mozExtURL = `moz-extension://${uuid}/`;
+  const mozExtURI = newURI(mozExtURL);
+
+  let policy = new WebExtensionPolicy({
+    id: id,
+    mozExtensionHostname: uuid,
+    baseURL,
+    localizeCallback() {},
+    allowedOrigins: new MatchPatternSet([]),
+    permissions: ["<all_urls>"],
+  });
+  policy.active = true;
+
+  equal(
+    WebExtensionPolicy.getByHostname(uuid)?.mozExtensionHostname,
+    policy.mozExtensionHostname,
+    "Hostname lookup should match policy"
+  );
+
+  equal(
+    WebExtensionPolicy.getByHostname(uuid.toLowerCase())?.mozExtensionHostname,
+    policy.mozExtensionHostname,
+    "Hostname lookup should match policy"
+  );
+
+  equal(policy.getURL(), mozExtURI.spec, "Urls should match policy");
+  ok(
+    policy.sourceMayAccessPath(mozExtURI, "/bar.baz"),
+    "Extension path should be accessible to self"
+  );
+
+  policy.active = false;
+});
+
+add_task(async function test_WebExtensionPolicy_V3() {
+  const id = "foo@bar.baz";
+  const uuid = "ca9d3f23-125c-4b24-abfc-1ca2692b0610";
+  const id2 = "foo-2@bar.baz";
+  const uuid2 = "89383c45-7db4-4999-83f7-f4cc246372cd";
+  const id3 = "foo-3@bar.baz";
+  const uuid3 = "56652231-D7E2-45D1-BDBD-BD3BFF80927E";
+
+  const baseURL = "file:///foo/";
+  const mozExtURL = `moz-extension://${uuid}/`;
+  const mozExtURI = newURI(mozExtURL);
+  const fooSite = newURI("http://foo.bar/");
+  const exampleSite = newURI("https://example.com/");
+
+  let policy = new WebExtensionPolicy({
+    id,
+    mozExtensionHostname: uuid,
+    baseURL,
+    manifestVersion: 3,
+
+    localizeCallback(str) {
+      return `<${str}>`;
+    },
+
+    allowedOrigins: new MatchPatternSet(["http://foo.bar/", "*://*.baz/"], {
+      ignorePath: true,
+    }),
+    permissions: ["<all_urls>"],
+    webAccessibleResources: [
+      {
+        resources: ["/foo/*", "/bar.baz"].map(glob => new MatchGlob(glob)),
+        matches: ["http://foo.bar/"],
+        extension_ids: [id3],
+      },
+      {
+        resources: ["/foo.bar.baz"].map(glob => new MatchGlob(glob)),
+        extension_ids: ["*"],
+      },
+    ],
+  });
+  policy.active = true;
+  equal(
+    WebExtensionPolicy.getByHostname(uuid),
+    policy,
+    "Hostname lookup should match policy"
+  );
+
+  let policy2 = new WebExtensionPolicy({
+    id: id2,
+    mozExtensionHostname: uuid2,
+    baseURL,
+    localizeCallback() {},
+    allowedOrigins: new MatchPatternSet([]),
+    permissions: ["<all_urls>"],
+  });
+  policy2.active = true;
+  equal(
+    WebExtensionPolicy.getByHostname(uuid2),
+    policy2,
+    "Hostname lookup should match policy"
+  );
+
+  let policy3 = new WebExtensionPolicy({
+    id: id3,
+    mozExtensionHostname: uuid3,
+    baseURL,
+    localizeCallback() {},
+    allowedOrigins: new MatchPatternSet([]),
+    permissions: ["<all_urls>"],
+  });
+  policy3.active = true;
+  equal(
+    WebExtensionPolicy.getByHostname(uuid3),
+    policy3,
+    "Hostname lookup should match policy"
+  );
+
+  ok(
+    policy.isWebAccessiblePath("/bar.baz"),
+    "Web-accessible path should be web-accessible"
+  );
+  ok(
+    !policy.isWebAccessiblePath("/bar.baz/quux"),
+    "Non-web-accessible path should not be web-accessible"
+  );
+  // Extension can always access itself
+  ok(
+    policy.sourceMayAccessPath(mozExtURI, "/bar.baz"),
+    "Web-accessible path should be accessible to self"
+  );
+  ok(
+    policy.sourceMayAccessPath(mozExtURI, "/foo.bar.baz"),
+    "Web-accessible path should be accessible to self"
+  );
+
+  ok(
+    !policy.sourceMayAccessPath(newURI(`https://${uuid}/`), "/bar.baz"),
+    "Web-accessible path should not be accessible due to scheme mismatch"
+  );
+
+  // non-matching site cannot access url
+  ok(
+    policy.sourceMayAccessPath(fooSite, "/bar.baz"),
+    "Web-accessible path should be accessible to foo.bar site"
+  );
+  ok(
+    !policy.sourceMayAccessPath(fooSite, "/foo.bar.baz"),
+    "Web-accessible path should not be accessible to foo.bar site"
+  );
+
+  // non-matching site cannot access url
+  ok(
+    !policy.sourceMayAccessPath(exampleSite, "/bar.baz"),
+    "Web-accessible path should not be accessible to example.com"
+  );
+  ok(
+    !policy.sourceMayAccessPath(exampleSite, "/foo.bar.baz"),
+    "Web-accessible path should not be accessible to example.com"
+  );
+
+  let extURI = newURI(policy2.getURL(""));
+  ok(
+    !policy.sourceMayAccessPath(extURI, "/bar.baz"),
+    "Web-accessible path should not be accessible to other extension"
+  );
+  ok(
+    policy.sourceMayAccessPath(extURI, "/foo.bar.baz"),
+    "Web-accessible path should be accessible to other extension"
+  );
+
+  extURI = newURI(policy3.getURL(""));
+  ok(
+    policy.sourceMayAccessPath(extURI, "/bar.baz"),
+    "Web-accessible path should be accessible to other extension"
+  );
+  ok(
+    policy.sourceMayAccessPath(extURI, "/foo.bar.baz"),
+    "Web-accessible path should be accessible to other extension"
+  );
+
+  policy.active = false;
+  policy2.active = false;
+  policy3.active = false;
 });
 
 add_task(async function test_WebExtensionPolicy_registerContentScripts() {
@@ -375,4 +568,53 @@ add_task(async function test_WebExtensionPolicy_registerContentScripts() {
     [],
     "script2 has been removed from the policy contentScripts"
   );
+});
+
+add_task(async function test_WebExtensionPolicy_static_themes_resources() {
+  const uuid = "0e7ae607-b5b3-4204-9838-c2138c14bc3c";
+  const mozExtURL = `moz-extension://${uuid}/`;
+  const mozExtURI = newURI(mozExtURL);
+
+  let policy = new WebExtensionPolicy({
+    id: "test-extension@mochitest",
+    mozExtensionHostname: uuid,
+    baseURL: "file:///foo/foo/",
+    localizeCallback() {},
+    allowedOrigins: new MatchPatternSet([]),
+    permissions: [],
+  });
+  policy.active = true;
+
+  let staticThemePolicy = new WebExtensionPolicy({
+    id: "statictheme@bar.baz",
+    mozExtensionHostname: "164d05dc-b45b-4731-aefc-7c1691bae9a4",
+    baseURL: "file:///static_theme/",
+    type: "theme",
+    allowedOrigins: new MatchPatternSet([]),
+    localizeCallback() {},
+  });
+
+  staticThemePolicy.active = true;
+
+  ok(
+    staticThemePolicy.sourceMayAccessPath(mozExtURI, "/someresource.ext"),
+    "Active extensions should be allowed to access the static themes resources"
+  );
+
+  policy.active = false;
+
+  ok(
+    !staticThemePolicy.sourceMayAccessPath(mozExtURI, "/someresource.ext"),
+    "Disabled extensions should be disallowed the static themes resources"
+  );
+
+  ok(
+    !staticThemePolicy.sourceMayAccessPath(
+      Services.io.newURI("http://example.com"),
+      "/someresource.ext"
+    ),
+    "Web content should be disallowed the static themes resources"
+  );
+
+  staticThemePolicy.active = false;
 });

@@ -3,8 +3,8 @@
 const { PermissionTestUtils } = ChromeUtils.import(
   "resource://testing-common/PermissionTestUtils.jsm"
 );
-const { PromptTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromptTestUtils.jsm"
+const { PromptTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromptTestUtils.sys.mjs"
 );
 
 const RELATIVE_DIR = "toolkit/mozapps/extensions/test/xpinstall/";
@@ -35,6 +35,20 @@ function extractChromeRoot(path) {
     return "file://" + tmpdir.path + "/";
   }
   return chromeRootPath;
+}
+
+function setInstallTriggerPrefs() {
+  Services.prefs.setBoolPref("extensions.InstallTrigger.enabled", true);
+  Services.prefs.setBoolPref("extensions.InstallTriggerImpl.enabled", true);
+  // Relax the user input requirements while running tests that call this test helper.
+  Services.prefs.setBoolPref("xpinstall.userActivation.required", false);
+  registerCleanupFunction(clearInstallTriggerPrefs);
+}
+
+function clearInstallTriggerPrefs() {
+  Services.prefs.clearUserPref("extensions.InstallTrigger.enabled");
+  Services.prefs.clearUserPref("extensions.InstallTriggerImpl.enabled");
+  Services.prefs.clearUserPref("xpinstall.userActivation.required");
 }
 
 /**

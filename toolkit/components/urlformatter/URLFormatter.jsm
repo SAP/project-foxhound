@@ -13,28 +13,22 @@
  *   http[s]://%SERVICE%.mozilla.[com|org]/%LOCALE%/
  */
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 const PREF_APP_DISTRIBUTION = "distribution.id";
 const PREF_APP_DISTRIBUTION_VERSION = "distribution.version";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "UpdateUtils",
-  "resource://gre/modules/UpdateUtils.jsm"
-);
+const lazy = {};
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Region",
-  "resource://gre/modules/Region.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  Region: "resource://gre/modules/Region.sys.mjs",
+  UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
+});
 
 function nsURLFormatterService() {
   XPCOMUtils.defineLazyGetter(this, "ABI", function UFS_ABI() {
@@ -84,7 +78,7 @@ nsURLFormatterService.prototype = {
       try {
         // When the geoip lookup failed to identify the region, we fallback to
         // the 'ZZ' region code to mean 'unknown'.
-        return Region.home || "ZZ";
+        return lazy.Region.home || "ZZ";
       } catch (e) {
         return "ZZ";
       }
@@ -131,7 +125,7 @@ nsURLFormatterService.prototype = {
     OS_VERSION() {
       return this.OSVersion;
     },
-    CHANNEL: () => UpdateUtils.UpdateChannel,
+    CHANNEL: () => lazy.UpdateUtils.UpdateChannel,
     MOZILLA_API_KEY: () => AppConstants.MOZ_MOZILLA_API_KEY,
     GOOGLE_LOCATION_SERVICE_API_KEY: () =>
       AppConstants.MOZ_GOOGLE_LOCATION_SERVICE_API_KEY,
@@ -153,7 +147,7 @@ nsURLFormatterService.prototype = {
       if (aKey in _this._defaults) {
         return _this._defaults[aKey].call(_this);
       }
-      Cu.reportError("formatURL: Couldn't find value for key: " + aKey);
+      console.error("formatURL: Couldn't find value for key: ", aKey);
       return aMatch;
     };
     return aFormat.replace(/%([A-Z_]+)%/g, replacementCallback);
@@ -165,7 +159,7 @@ nsURLFormatterService.prototype = {
     try {
       format = Services.prefs.getStringPref(aPref);
     } catch (ex) {
-      Cu.reportError("formatURLPref: Couldn't get pref: " + aPref);
+      console.error("formatURLPref: Couldn't get pref: ", aPref);
       return "about:blank";
     }
 

@@ -11,24 +11,9 @@ const TEST_URI =
   Date.now();
 
 add_task(async function() {
-  await pushPref("devtools.browserconsole.contentMessages", true);
+  await pushPref("devtools.browsertoolbox.scope", "everything");
   await addTab(TEST_URI);
 
-  info("Check with devtools.browsertoolbox.fission set to false");
-  await pushPref("devtools.browsertoolbox.fission", false);
-  await testWebExtensionMessages(false);
-  await testWebExtensionMessages(true);
-
-  // ⚠️ When the pref is disabled, we only clear the cache for messages in the parent process,
-  // so all the messages that were forwarded from the content process won't be cleared.
-  // so here we open a multiprocess browser console and clear it, which will clear all the
-  // caches.
-  await pushPref("devtools.browsertoolbox.fission", true);
-  const hud = await BrowserConsoleManager.toggleBrowserConsole();
-  await clearOutput(hud);
-  await safeCloseBrowserConsole();
-
-  info("Check with devtools.browsertoolbox.fission set to true");
   await testWebExtensionMessages(false);
   await testWebExtensionMessages(true);
 });
@@ -61,23 +46,22 @@ async function testWebExtensionMessages(
   // Wait enough so any duplicated message would have the time to be rendered
   await wait(1000);
 
-  // When the pref is disabled, we're getting Console API messages via the parent process,
-  // which were forwarded from the content process. But this forwarding mechanism does not
-  // handle cached content messages (i.e. messages logged by the extension in the content
-  // process, before the console is opened)
-  if (
-    !createWebExtensionBeforeOpeningBrowserConsole ||
-    Services.prefs.getBoolPref("devtools.browsertoolbox.fission", false)
-  ) {
-    await checkUniqueMessageExists(hud, "content console API message");
-    await checkUniqueMessageExists(hud, "background console API message");
-  }
+  await checkUniqueMessageExists(
+    hud,
+    "content console API message",
+    ".console-api"
+  );
+  await checkUniqueMessageExists(
+    hud,
+    "background console API message",
+    ".console-api"
+  );
 
   await checkUniqueMessageExists(hud, "content error", ".error");
   await checkUniqueMessageExists(hud, "background error", ".error");
 
   // TODO: Re-enable those checks (See Bug 1699050).
-  // await checkUniqueMessageExists(hud, "popup console API message");
+  // await checkUniqueMessageExists(hud, "popup console API message", ".console-api");
   // await checkUniqueMessageExists(hud, "popup error", ".error");
 
   await clearOutput(hud);
@@ -144,23 +128,4 @@ async function loadExtension() {
   });
   await extension.startup();
   return extension;
-}
-
-async function checkUniqueMessageExists(hud, msg, selector) {
-  info(`Checking "${msg}" was logged`);
-  let messages;
-  try {
-    messages = await waitFor(() => {
-      const msgs = findMessages(hud, msg, selector);
-      return msgs.length > 0 ? msgs : null;
-    });
-  } catch (e) {
-    ok(false, `Message "${msg}" wasn't logged\n`);
-    return;
-  }
-
-  is(messages.length, 1, `"${msg}" was logged once`);
-  const [messageEl] = messages;
-  const repeatNode = messageEl.querySelector(".message-repeats");
-  is(repeatNode, null, `"${msg}" wasn't repeated`);
 }

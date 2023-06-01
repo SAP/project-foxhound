@@ -4,14 +4,12 @@
 
 "use strict";
 
-const Services = require("Services");
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const L10N = new LocalizationHelper(
   "devtools/client/locales/toolbox.properties"
 );
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
-const Telemetry = require("devtools/client/shared/telemetry");
-const { DOMHelpers } = require("devtools/shared/dom-helpers");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
+const { DOMHelpers } = require("resource://devtools/shared/dom-helpers.js");
 
 // The min-width of toolbox and browser toolbox.
 const WIDTH_CHEVRON_AND_MEATBALL = 50;
@@ -21,13 +19,13 @@ const ZOOM_VALUE_PREF = "devtools.toolbox.zoomValue";
 loader.lazyRequireGetter(
   this,
   "Toolbox",
-  "devtools/client/framework/toolbox",
+  "resource://devtools/client/framework/toolbox.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "Hosts",
-  "devtools/client/framework/toolbox-hosts",
+  "resource://devtools/client/framework/toolbox-hosts.js",
   true
 );
 
@@ -56,12 +54,12 @@ const LAST_HOST = "devtools.toolbox.host";
 const PREVIOUS_HOST = "devtools.toolbox.previousHost";
 let ID_COUNTER = 1;
 
-function ToolboxHostManager(descriptor, hostType, hostOptions) {
-  this.descriptor = descriptor;
+function ToolboxHostManager(commands, hostType, hostOptions) {
+  this.commands = commands;
 
   // When debugging a local tab, we keep a reference of the current tab into which the toolbox is displayed.
   // This will only change from the descriptor's localTab when we start debugging popups (i.e. window.open).
-  this.currentTab = this.descriptor.localTab;
+  this.currentTab = this.commands.descriptorFront.localTab;
 
   // Keep the previously instantiated Host for all tabs where we displayed the Toolbox.
   // This will only be useful when we start debugging popups (i.e. window.open).
@@ -82,9 +80,7 @@ function ToolboxHostManager(descriptor, hostType, hostOptions) {
   this.eventController = new AbortController();
   this.host = this.createHost(hostType, hostOptions);
   this.hostType = hostType;
-  this.telemetry = new Telemetry();
   this.setMinWidthWithZoom = this.setMinWidthWithZoom.bind(this);
-  this._onToolboxUnload = this._onToolboxUnload.bind(this);
   this._onMessage = this._onMessage.bind(this);
   Services.prefs.addObserver(ZOOM_VALUE_PREF, this.setMinWidthWithZoom);
 }
@@ -103,19 +99,14 @@ ToolboxHostManager.prototype = {
       { signal: this.eventController.signal }
     );
 
-    const msSinceProcessStart = parseInt(
-      this.telemetry.msSinceProcessStart(),
-      10
-    );
     const toolbox = new Toolbox(
-      this.descriptor,
+      this.commands,
       toolId,
       this.host.type,
       this.host.frame.contentWindow,
-      this.frameId,
-      msSinceProcessStart
+      this.frameId
     );
-    toolbox.once("toolbox-unload", this._onToolboxUnload);
+    toolbox.once("destroyed", this._onToolboxDestroyed.bind(this));
 
     // Prevent reloading the toolbox when loading the tools in a tab
     // (e.g. from about:debugging)
@@ -124,15 +115,11 @@ ToolboxHostManager.prototype = {
       this.host.frame.setAttribute("src", "about:devtools-toolbox");
     }
 
-    // We set an attribute on the toolbox iframe so that apps do not need
-    // access to the toolbox internals in order to get the session ID.
-    this.host.frame.setAttribute("session_id", msSinceProcessStart);
-
     this.setMinWidthWithZoom();
     return toolbox;
   },
 
-  setMinWidthWithZoom: function() {
+  setMinWidthWithZoom() {
     const zoomValue = parseFloat(Services.prefs.getCharPref(ZOOM_VALUE_PREF));
 
     if (isNaN(zoomValue)) {
@@ -143,21 +130,22 @@ ToolboxHostManager.prototype = {
       this.hostType === Toolbox.HostType.LEFT ||
       this.hostType === Toolbox.HostType.RIGHT
     ) {
-      this.host.frame.minWidth =
-        WIDTH_CHEVRON_AND_MEATBALL_AND_CLOSE * zoomValue;
+      this.host.frame.style.minWidth =
+        WIDTH_CHEVRON_AND_MEATBALL_AND_CLOSE * zoomValue + "px";
     } else if (
       this.hostType === Toolbox.HostType.WINDOW ||
       this.hostType === Toolbox.HostType.PAGE ||
       this.hostType === Toolbox.HostType.BROWSERTOOLBOX
     ) {
-      this.host.frame.minWidth = WIDTH_CHEVRON_AND_MEATBALL * zoomValue;
+      this.host.frame.style.minWidth =
+        WIDTH_CHEVRON_AND_MEATBALL * zoomValue + "px";
     }
   },
 
-  _onToolboxUnload() {
-    // The "toolbox-unload" event is currently emitted right before destroying
-    // the target. Run destroy() in the next tick to allow the target to be
-    // destroyed.
+  _onToolboxDestroyed() {
+    // Delay self-destruction to let the debugger complete async destruction.
+    // Otherwise it throws when running browser_dbg-breakpoints-in-evaled-sources.js
+    // because the promise middleware delay each promise action using setTimeout...
     DevToolsUtils.executeSoon(() => {
       this.destroy();
     });
@@ -182,6 +170,9 @@ ToolboxHostManager.prototype = {
         break;
       case "raise-host":
         this.host.raise();
+        this.postMessage({
+          name: "host-raised",
+        });
         break;
       case "set-host-title":
         this.host.setTitle(msg.title);
@@ -207,7 +198,7 @@ ToolboxHostManager.prototype = {
     this.hostPerTab.clear();
     this.host = null;
     this.hostType = null;
-    this.descriptor = null;
+    this.commands = null;
   },
 
   /**

@@ -29,12 +29,27 @@ class WebRenderImageHost : public CompositableHost, public ImageComposite {
   virtual ~WebRenderImageHost();
 
   void UseTextureHost(const nsTArray<TimedTexture>& aTextures) override;
+  void UseRemoteTexture(const RemoteTextureId aTextureId,
+                        const RemoteTextureOwnerId aOwnerId,
+                        const base::ProcessId aForPid, const gfx::IntSize aSize,
+                        const TextureFlags aFlags) override;
   void RemoveTextureHost(TextureHost* aTexture) override;
+
+  void EnableRemoteTexturePushCallback(const RemoteTextureOwnerId aOwnerId,
+                                       const base::ProcessId aForPid,
+                                       const gfx::IntSize aSize,
+                                       const TextureFlags aFlags) override;
+
+  void NotifyPushTexture(const RemoteTextureId aTextureId,
+                         const RemoteTextureOwnerId aOwnerId,
+                         const base::ProcessId aForPid) override;
 
   void Dump(std::stringstream& aStream, const char* aPrefix = "",
             bool aDumpHtml = false) override;
 
   void CleanupResources() override;
+
+  void OnReleased() override;
 
   uint32_t GetDroppedFrames() override { return GetDroppedFramesAndReset(); }
 
@@ -65,6 +80,13 @@ class WebRenderImageHost : public CompositableHost, public ImageComposite {
   AsyncImagePipelineManager* mCurrentAsyncImageManager;
 
   CompositableTextureHostRef mCurrentTextureHost;
+
+  CompositableTextureHostRef mRemoteTextureHost;
+
+  Maybe<RemoteTextureOwnerId> mRemoteTextureOwnerIdOfPushCallback;
+  base::ProcessId mForPidOfPushCallback;
+  gfx::IntSize mSizeOfPushCallback;
+  TextureFlags mFlagsOfPushCallback = TextureFlags::NO_FLAGS;
 };
 
 }  // namespace layers

@@ -4,8 +4,8 @@ const { FormAutofillUtils } = ChromeUtils.import(
   "resource://autofill/FormAutofillUtils.jsm"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  Region: "resource://gre/modules/Region.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  Region: "resource://gre/modules/Region.sys.mjs",
 });
 
 requestLongerTimeout(6);
@@ -168,7 +168,7 @@ add_task(
   async function test_editAddressFrenchCanadianChangedToEnglishRepresentation() {
     let addressClone = Object.assign({}, TEST_ADDRESS_CA_1);
     addressClone["address-level1"] = "Colombie-Britannique";
-    await saveAddress(addressClone);
+    await setStorage(addressClone);
 
     let addresses = await getAddresses();
     await testDialog(
@@ -513,7 +513,7 @@ add_task(async function test_countryAndStateFieldLabels() {
     // Change country to verify labels
     doc.querySelector("#country").focus();
 
-    let mutatableLabels = [
+    let mutableLabels = [
       "postal-code-container",
       "address-level1-container",
       "address-level2-container",
@@ -528,38 +528,34 @@ add_task(async function test_countryAndStateFieldLabels() {
         continue;
       }
 
-      // Clear L10N attributes and textContent to not leave leftovers between country tests
-      for (let labelEl of mutatableLabels) {
+      // Clear L10N textContent to not leave leftovers between country tests
+      for (let labelEl of mutableLabels) {
+        doc.l10n.setAttributes(labelEl, "");
         labelEl.textContent = "";
-        delete labelEl.dataset.localization;
       }
 
       info(`Selecting '${countryOption.label}' (${countryOption.value})`);
       EventUtils.synthesizeKey(countryOption.label, {}, win);
 
-      // Check that the labels were filled
-      for (let labelEl of mutatableLabels) {
-        if (!labelEl.textContent) {
-          // This test used to rely on the implied initial timer of
-          // TestUtils.waitForCondition. See bug 1700685.
-          // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
-          await new Promise(resolve => setTimeout(resolve, 10));
-
-          await TestUtils.waitForCondition(
-            () => labelEl.textContent,
-            "Wait for label to be populated by the mutation observer",
-            10
-          );
+      let l10nResolve;
+      let l10nReady = new Promise(resolve => {
+        l10nResolve = resolve;
+      });
+      let verifyL10n = () => {
+        if (mutableLabels.every(labelEl => labelEl.textContent)) {
+          win.removeEventListener("MozAfterPaint", verifyL10n);
+          l10nResolve();
         }
+      };
+      win.addEventListener("MozAfterPaint", verifyL10n);
+      await l10nReady;
+
+      // Check that the labels were filled
+      for (let labelEl of mutableLabels) {
         isnot(
           labelEl.textContent,
           "",
           "Ensure textContent is non-empty for: " + countryOption.value
-        );
-        is(
-          labelEl.dataset.localization,
-          undefined,
-          "Ensure data-localization was removed: " + countryOption.value
         );
       }
 
@@ -607,6 +603,8 @@ add_task(async function test_countryAndStateFieldLabels() {
           );
         }
       }
+      // Dispatch a dummy key event so that <select>'s incremental search is cleared.
+      EventUtils.synthesizeKey("VK_ACCEPT", {}, win);
     }
 
     doc.querySelector("#cancel").click();
@@ -909,6 +907,9 @@ add_task(async function test_countrySpecificFieldsGetRequiredness() {
       !provinceField.disabled,
       "address-level1 should not be marked as disabled"
     );
+
+    // Dispatch a dummy key event so that <select>'s incremental search is cleared.
+    EventUtils.synthesizeKey("VK_ACCEPT", {}, win);
 
     doc.querySelector("#country").focus();
     EventUtils.synthesizeKey("Romania", {}, win);

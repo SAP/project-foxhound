@@ -2,11 +2,9 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Preferences",
-  "resource://gre/modules/Preferences.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
+});
 
 const { ExtensionPermissions } = ChromeUtils.import(
   "resource://gre/modules/ExtensionPermissions.jsm"
@@ -22,10 +20,10 @@ AddonTestUtils.createAppInfo(
   "42"
 );
 
-Services.prefs.setBoolPref(
-  "extensions.webextensions.background-delayed-startup",
-  false
-);
+// Start a server for `pac.example.com` to intercept attempts to connect to it
+// to load a PAC URL. We won't serve anything, but this prevents attempts at
+// non-local connections if this domain is registered.
+AddonTestUtils.createHttpServer({ hosts: ["pac.example.com"] });
 
 add_task(async function setup() {
   // Bug 1646182: Force ExtensionPermissions to run in rkv mode, the legacy
@@ -195,11 +193,11 @@ add_task(async function test_browser_settings() {
   await testProxy(
     {
       proxyType: "autoConfig",
-      autoConfigUrl: "http://mozilla.org",
+      autoConfigUrl: "http://pac.example.com",
     },
     {
       "network.proxy.type": proxySvc.PROXYCONFIG_PAC,
-      "network.proxy.autoconfig_url": "http://mozilla.org",
+      "network.proxy.autoconfig_url": "http://pac.example.com",
       "network.http.proxy.respect-be-conservative": true,
     }
   );
@@ -604,7 +602,7 @@ add_task(async function test_proxy_settings_permissions() {
   await ExtensionPermissions._uninit();
   resetHandlingUserInput();
   await AddonTestUtils.promiseRestartManager();
-  await extension.awaitStartup();
+  await extension.awaitBackgroundStarted();
 
   await withHandlingUserInput(extension, async () => {
     extension.sendMessage("remove");

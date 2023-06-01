@@ -9,6 +9,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/FixedBufferOutputStream.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/BlobImpl.h"
@@ -18,7 +19,6 @@
 #include "mozilla/dom/indexedDB/ActorsParent.h"
 #include "mozilla/dom/indexedDB/PBackgroundIDBDatabaseParent.h"
 #include "mozilla/dom/IPCBlobUtils.h"
-#include "mozilla/dom/quota/MemoryOutputStream.h"
 #include "nsComponentManagerUtils.h"
 #include "nsDebug.h"
 #include "nsError.h"
@@ -1165,9 +1165,9 @@ already_AddRefed<nsISupports> BackgroundMutableFileParentBase::CreateStream(
     return stream.forget();
   }
 
-  nsCOMPtr<nsIFileStream> stream;
-  rv = NS_NewLocalFileStream(getter_AddRefs(stream), mFile, -1, -1,
-                             nsIFileStream::DEFER_OPEN);
+  nsCOMPtr<nsIRandomAccessStream> stream;
+  rv = NS_NewLocalFileRandomAccessStream(getter_AddRefs(stream), mFile, -1, -1,
+                                         nsIFileRandomAccessStream::DEFER_OPEN);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return nullptr;
   }
@@ -2021,7 +2021,12 @@ bool ReadOp::Init(FileHandle* aFileHandle) {
     return false;
   }
 
-  mBufferStream = MemoryOutputStream::Create(mParams.size());
+  if (NS_WARN_IF(mParams.size() > std::numeric_limits<std::size_t>::max())) {
+    return false;
+  }
+
+  mBufferStream =
+      FixedBufferOutputStream::Create(mParams.size(), fallible).forget();
   if (NS_WARN_IF(!mBufferStream)) {
     return false;
   }
@@ -2036,9 +2041,9 @@ bool ReadOp::Init(FileHandle* aFileHandle) {
 void ReadOp::GetResponse(FileRequestResponse& aResponse) {
   AssertIsOnOwningThread();
 
-  auto* stream = static_cast<MemoryOutputStream*>(mBufferStream.get());
+  auto* stream = static_cast<FixedBufferOutputStream*>(mBufferStream.get());
 
-  aResponse = FileRequestReadResponse(stream->Data());
+  aResponse = FileRequestReadResponse(nsCString(stream->WrittenData()));
 }
 
 WriteOp::WriteOp(FileHandle* aFileHandle, const FileRequestParams& aParams)

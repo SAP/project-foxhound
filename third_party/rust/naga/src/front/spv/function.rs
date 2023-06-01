@@ -14,7 +14,7 @@ pub struct MergeInstruction {
     pub continue_block_id: Option<BlockId>,
 }
 
-impl<I: Iterator<Item = u32>> super::Parser<I> {
+impl<I: Iterator<Item = u32>> super::Frontend<I> {
     // Registers a function call. It will generate a dummy handle to call, which
     // gets resolved after all the functions are processed.
     pub(super) fn add_call(
@@ -61,7 +61,7 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
                 local_variables: Arena::new(),
                 expressions: self
                     .make_expression_storage(&module.global_variables, &module.constants),
-                named_expressions: crate::FastHashMap::default(),
+                named_expressions: crate::NamedExpressions::default(),
                 body: crate::Block::new(),
             }
         };
@@ -170,7 +170,7 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
                 None => format!("block_ctx.Fun-{}.txt", module.functions.len()),
             };
             let dest = prefix.join(dump_suffix);
-            let dump = format!("{:#?}", block_ctx);
+            let dump = format!("{block_ctx:#?}");
             if let Err(e) = std::fs::write(&dest, dump) {
                 log::error!("Unable to dump the block context into {:?}: {}", dest, e);
             }
@@ -298,7 +298,7 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
                 result: None,
                 local_variables: Arena::new(),
                 expressions: Arena::new(),
-                named_expressions: crate::FastHashMap::default(),
+                named_expressions: crate::NamedExpressions::default(),
                 body: crate::Block::new(),
             };
 
@@ -377,9 +377,9 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
                         } => {
                             for (index, sm) in sub_members.iter().enumerate() {
                                 match sm.binding {
-                                    Some(crate::Binding::BuiltIn(builtin)) => {
+                                    Some(crate::Binding::BuiltIn(built_in)) => {
                                         // Cull unused builtins to preserve performances
-                                        if !self.builtin_usage.contains(&builtin) {
+                                        if !self.builtin_usage.contains(&built_in) {
                                             continue;
                                         }
                                     }
@@ -414,7 +414,7 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
 
             for (member_index, member) in members.iter().enumerate() {
                 match member.binding {
-                    Some(crate::Binding::BuiltIn(crate::BuiltIn::Position))
+                    Some(crate::Binding::BuiltIn(crate::BuiltIn::Position { .. }))
                         if self.options.adjust_coordinate_space =>
                     {
                         let mut emitter = Emitter::default();
@@ -464,9 +464,9 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
                 *component = function.expressions.append(load_expr, span);
             }
 
-            match &members[..] {
+            match members[..] {
                 [] => {}
-                [member] => {
+                [ref member] => {
                     function.body.extend(emitter.finish(&function.expressions));
                     let span = function.expressions.get_span(components[0]);
                     function.body.push(
@@ -556,7 +556,11 @@ impl<'function> BlockContext<'function> {
                         let continuing = lower_impl(blocks, bodies, continuing);
 
                         block.push(
-                            crate::Statement::Loop { body, continuing },
+                            crate::Statement::Loop {
+                                body,
+                                continuing,
+                                break_if: None,
+                            },
                             crate::Span::default(),
                         )
                     }

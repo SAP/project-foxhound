@@ -77,7 +77,8 @@ void ColumnSetWrapperFrame::AppendDirectlyOwnedAnonBoxes(
   // asserts all the conditions above which allow us to skip appending
   // -moz-column-span-wrappers.
   auto FindFirstChildInChildLists = [this]() -> nsIFrame* {
-    const ChildListID listIDs[] = {kPrincipalList, kOverflowList};
+    const ChildListID listIDs[] = {FrameChildListID::Principal,
+                                   FrameChildListID::Overflow};
     for (nsIFrame* frag = this; frag; frag = frag->GetNextInFlow()) {
       for (ChildListID id : listIDs) {
         const nsFrameList& list = frag->GetChildList(id);
@@ -105,13 +106,13 @@ nsresult ColumnSetWrapperFrame::GetFrameName(nsAString& aResult) const {
 // column hierarchy since any change to the column hierarchy in the column
 // sub-tree need to be re-created.
 void ColumnSetWrapperFrame::AppendFrames(ChildListID aListID,
-                                         nsFrameList& aFrameList) {
+                                         nsFrameList&& aFrameList) {
 #ifdef DEBUG
   MOZ_ASSERT(!mFinishedBuildingColumns, "Should only call once!");
   mFinishedBuildingColumns = true;
 #endif
 
-  nsBlockFrame::AppendFrames(aListID, aFrameList);
+  nsBlockFrame::AppendFrames(aListID, std::move(aFrameList));
 
 #ifdef DEBUG
   nsIFrame* firstColumnSet = PrincipalChildList().FirstChild();
@@ -129,9 +130,10 @@ void ColumnSetWrapperFrame::AppendFrames(ChildListID aListID,
 
 void ColumnSetWrapperFrame::InsertFrames(
     ChildListID aListID, nsIFrame* aPrevFrame,
-    const nsLineList::iterator* aPrevFrameLine, nsFrameList& aFrameList) {
+    const nsLineList::iterator* aPrevFrameLine, nsFrameList&& aFrameList) {
   MOZ_ASSERT_UNREACHABLE("Unsupported operation!");
-  nsBlockFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine, aFrameList);
+  nsBlockFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine,
+                             std::move(aFrameList));
 }
 
 void ColumnSetWrapperFrame::RemoveFrame(ChildListID aListID,
@@ -154,10 +156,17 @@ nscoord ColumnSetWrapperFrame::GetMinISize(gfxContext* aRenderingContext) {
   nscoord iSize = 0;
   DISPLAY_MIN_INLINE_SIZE(this, iSize);
 
-  if (StyleDisplay()->IsContainSize()) {
-    // If we're size-contained, we determine our minimum intrinsic size purely
-    // from our column styling, as if we had no descendants. This should match
-    // what happens in nsColumnSetFrame::GetMinISize in an actual no-descendants
+  if (Maybe<nscoord> containISize =
+          ContainIntrinsicISize(NS_UNCONSTRAINEDSIZE)) {
+    // If we're size-contained in inline axis and contain-intrinsic-inline-size
+    // is not 'none', then use that size.
+    if (*containISize != NS_UNCONSTRAINEDSIZE) {
+      return *containISize;
+    }
+
+    // In the 'none' case, we determine our minimum intrinsic size purely from
+    // our column styling, as if we had no descendants. This should match what
+    // happens in nsColumnSetFrame::GetMinISize in an actual no-descendants
     // scenario.
     const nsStyleColumn* colStyle = StyleColumn();
     if (colStyle->mColumnWidth.IsLength()) {
@@ -189,7 +198,12 @@ nscoord ColumnSetWrapperFrame::GetPrefISize(gfxContext* aRenderingContext) {
   nscoord iSize = 0;
   DISPLAY_PREF_INLINE_SIZE(this, iSize);
 
-  if (StyleDisplay()->IsContainSize()) {
+  if (Maybe<nscoord> containISize =
+          ContainIntrinsicISize(NS_UNCONSTRAINEDSIZE)) {
+    if (*containISize != NS_UNCONSTRAINEDSIZE) {
+      return *containISize;
+    }
+
     const nsStyleColumn* colStyle = StyleColumn();
     nscoord colISize;
     if (colStyle->mColumnWidth.IsLength()) {

@@ -16,7 +16,6 @@ const INTERVAL_END = 3;
 
 // This Services declaration may shadow another from head.js, so define it as
 // a var rather than a const.
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const defaultSettings = {
   entries: 8 * 1024 * 1024, // 8M entries = 64MB
@@ -25,6 +24,9 @@ const defaultSettings = {
   threads: ["GeckoMain"],
 };
 
+// Effectively `async`: Start the profiler and return the `startProfiler`
+// promise that will get resolved when all child process have started their own
+// profiler.
 function startProfiler(callersSettings) {
   if (Services.profiler.IsActive()) {
     throw new Error(
@@ -32,7 +34,7 @@ function startProfiler(callersSettings) {
     );
   }
   const settings = Object.assign({}, defaultSettings, callersSettings);
-  Services.profiler.StartProfiler(
+  return Services.profiler.StartProfiler(
     settings.entries,
     settings.interval,
     settings.features,
@@ -43,7 +45,7 @@ function startProfiler(callersSettings) {
 }
 
 function startProfilerForMarkerTests() {
-  startProfiler({
+  return startProfiler({
     features: ["nostacksampling", "js"],
     threads: ["GeckoMain", "DOM Worker"],
   });
@@ -216,16 +218,74 @@ function captureAtLeastOneJsSample() {
   }
 }
 
+function isJSONWhitespace(c) {
+  return ["\n", "\r", " ", "\t"].includes(c);
+}
+
+function verifyJSONStringIsCompact(s) {
+  const stateData = 0;
+  const stateString = 1;
+  const stateEscapedChar = 2;
+  let state = stateData;
+  for (let i = 0; i < s.length; ++i) {
+    let c = s[i];
+    switch (state) {
+      case stateData:
+        if (isJSONWhitespace(c)) {
+          Assert.ok(
+            false,
+            `"Unexpected JSON whitespace at index ${i} in profile: <<<${s}>>>"`
+          );
+          return;
+        }
+        if (c == '"') {
+          state = stateString;
+        }
+        break;
+      case stateString:
+        if (c == '"') {
+          state = stateData;
+        } else if (c == "\\") {
+          state = stateEscapedChar;
+        }
+        break;
+      case stateEscapedChar:
+        state = stateString;
+        break;
+    }
+  }
+}
+
 /**
- * This function pauses the profiler before getting the profile. Then after the
+ * This function pauses the profiler before getting the profile. Then after
  * getting the data, the profiler is stopped, and all profiler data is removed.
  * @returns {Promise<Profile>}
  */
-async function stopAndGetProfile() {
+async function stopNowAndGetProfile() {
+  // Don't await the pause, because each process will handle it before it
+  // receives the following `getProfileDataAsArrayBuffer()`.
   Services.profiler.Pause();
-  const profile = await Services.profiler.getProfileDataAsync();
-  Services.profiler.StopProfiler();
-  return profile;
+
+  const profileArrayBuffer = await Services.profiler.getProfileDataAsArrayBuffer();
+  await Services.profiler.StopProfiler();
+
+  const profileUint8Array = new Uint8Array(profileArrayBuffer);
+  const textDecoder = new TextDecoder("utf-8", { fatal: true });
+  const profileString = textDecoder.decode(profileUint8Array);
+  verifyJSONStringIsCompact(profileString);
+
+  return JSON.parse(profileString);
+}
+
+/**
+ * This function ensures there's at least one sample, then pauses the profiler
+ * before getting the profile. Then after getting the data, the profiler is
+ * stopped, and all profiler data is removed.
+ * @returns {Promise<Profile>}
+ */
+async function waitSamplingAndStopAndGetProfile() {
+  await Services.profiler.waitOnePeriodicSampling();
+  return stopNowAndGetProfile();
 }
 
 /**
@@ -313,7 +373,7 @@ function escapeStringRegexp(string) {
 /** ------ Assertions helper ------ */
 /**
  * This assert helper function makes it easy to check a lot of properties in an
- * object. We augment Assert.jsm to make it easier to use.
+ * object. We augment Assert.sys.mjs to make it easier to use.
  */
 Object.assign(Assert, {
   /*

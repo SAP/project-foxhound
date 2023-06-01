@@ -7,17 +7,16 @@
 #ifndef mozilla_Hal_h
 #define mozilla_Hal_h
 
-#include "base/basictypes.h"
-#include "base/platform_thread.h"
 #include "nsTArray.h"
 #include "mozilla/hal_sandbox/PHal.h"
+#include "mozilla/HalScreenConfiguration.h"
 #include "mozilla/HalBatteryInformation.h"
 #include "mozilla/HalNetworkInformation.h"
-#include "mozilla/HalScreenConfiguration.h"
 #include "mozilla/HalWakeLockInformation.h"
 #include "mozilla/HalTypes.h"
-#include "mozilla/Types.h"
 #include "mozilla/MozPromise.h"
+
+#include <cstdint>
 
 /*
  * Hal.h contains the public Hal API.
@@ -216,27 +215,12 @@ void GetWakeLockInfo(const nsAString& aTopic,
  */
 void NotifyWakeLockChange(const hal::WakeLockInformation& aWakeLockInfo);
 
-MOZ_DEFINE_HAL_OBSERVER(ScreenConfiguration);
-
-/**
- * Returns the current screen configuration.
- */
-void GetCurrentScreenConfiguration(
-    hal::ScreenConfiguration* aScreenConfiguration);
-
-/**
- * Notify of a change in the screen configuration.
- * @param aScreenConfiguration The new screen orientation.
- */
-void NotifyScreenConfigurationChange(
-    const hal::ScreenConfiguration& aScreenConfiguration);
-
 /**
  * Lock the screen orientation to the specific orientation.
  * @return A promise indicating that the screen orientation has been locked.
  */
-[[nodiscard]] RefPtr<mozilla::MozPromise<bool, bool, false>>
-LockScreenOrientation(const hal::ScreenOrientation& aOrientation);
+[[nodiscard]] RefPtr<GenericNonExclusivePromise> LockScreenOrientation(
+    const hal::ScreenOrientation& aOrientation);
 
 /**
  * Unlock the screen orientation.

@@ -9,11 +9,8 @@
 
 #include "mozilla/RefPtr.h"  // RefPtr
 
-#include "frontend/CompilationStencil.h"  // SharedDataContainer
-#include "frontend/ObjLiteral.h"          // ObjLiteralStencil
-#include "frontend/ParserAtom.h"          // ParserAtom, ParserAtomSpan
+#include "frontend/ParserAtom.h"  // ParserAtom, ParserAtomSpan
 #include "frontend/Stencil.h"  // BitIntStencil, ScopeStencil, BaseParserScopeData
-#include "vm/SharedStencil.h"  // SharedImmutableScriptData
 #include "vm/Xdr.h"            // XDRMode, XDRResult, XDRState
 
 namespace JS {
@@ -25,12 +22,18 @@ class DecodeOptions;
 namespace js {
 
 class LifoAlloc;
+class ObjLiteralStencil;
 class ScriptSource;
+class SharedImmutableScriptData;
 
 class XDRStencilDecoder;
 class XDRStencilEncoder;
 
 namespace frontend {
+
+struct CompilationStencil;
+struct ExtensibleCompilationStencil;
+struct SharedDataContainer;
 
 // Check that we can copy data to disk and restore it in another instance of
 // the program in a different address space.
@@ -118,6 +121,14 @@ class StencilXDR {
                                       ParserAtomSpan& parserAtomData);
 
   template <XDRMode mode>
+  static XDRResult codeModuleRequest(XDRState<mode>* xdr,
+                                     StencilModuleRequest& stencil);
+
+  template <XDRMode mode>
+  static XDRResult codeModuleRequestVector(
+      XDRState<mode>* xdr, StencilModuleMetadata::RequestVector& vector);
+
+  template <XDRMode mode>
   static XDRResult codeModuleEntry(XDRState<mode>* xdr,
                                    StencilModuleEntry& stencil);
 
@@ -166,8 +177,9 @@ class XDRStencilDecoder : public XDRState<XDR_DECODE> {
   using Base = XDRState<XDR_DECODE>;
 
  public:
-  XDRStencilDecoder(JSContext* cx, const JS::TranscodeRange& range)
-      : Base(cx, range) {
+  XDRStencilDecoder(JSContext* cx, FrontendContext* fc,
+                    const JS::TranscodeRange& range)
+      : Base(cx, fc, range) {
     MOZ_ASSERT(JS::IsTranscodingBytecodeAligned(range.begin().get()));
   }
 
@@ -187,8 +199,9 @@ class XDRStencilEncoder : public XDRState<XDR_ENCODE> {
   using Base = XDRState<XDR_ENCODE>;
 
  public:
-  XDRStencilEncoder(JSContext* cx, JS::TranscodeBuffer& buffer)
-      : Base(cx, buffer, buffer.length()) {
+  XDRStencilEncoder(JSContext* cx, FrontendContext* fc,
+                    JS::TranscodeBuffer& buffer)
+      : Base(cx, fc, buffer, buffer.length()) {
     // NOTE: If buffer is empty, buffer.begin() doesn't point valid buffer.
     MOZ_ASSERT_IF(!buffer.empty(),
                   JS::IsTranscodingBytecodeAligned(buffer.begin()));

@@ -16,8 +16,7 @@
 
 class nsIRunnable;
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
 class GMPProcessParent final : public mozilla::ipc::GeckoChildProcessHost {
  public:
@@ -52,10 +51,6 @@ class GMPProcessParent final : public mozilla::ipc::GeckoChildProcessHost {
 
   // Return the sandbox type to be used with this process type.
   static MacSandboxType GetMacSandboxType() { return MacSandboxType_GMP; };
-#endif
-
-#if defined(XP_MACOSX) && defined(__aarch64__)
-  void SetLaunchArchitecture(uint32_t aArch) { mChildLaunchArch = aArch; }
 #endif
 
   using mozilla::ipc::GeckoChildProcessHost::GetChannel;
@@ -99,14 +94,9 @@ class GMPProcessParent final : public mozilla::ipc::GeckoChildProcessHost {
 #  endif
 #endif
 
-#if defined(XP_MACOSX) && defined(__aarch64__)
-  uint32_t mChildLaunchArch;
-#endif
-
   DISALLOW_COPY_AND_ASSIGN(GMPProcessParent);
 };
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp
 
 #endif  // ifndef GMPProcessParent_h

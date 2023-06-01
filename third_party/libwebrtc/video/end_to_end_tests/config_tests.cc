@@ -73,7 +73,7 @@ TEST_F(ConfigEndToEndTest, VerifyDefaultSendConfigParameters) {
 }
 
 TEST_F(ConfigEndToEndTest, VerifyDefaultVideoReceiveConfigParameters) {
-  VideoReceiveStream::Config default_receive_config(nullptr);
+  VideoReceiveStreamInterface::Config default_receive_config(nullptr);
   EXPECT_EQ(RtcpMode::kCompound, default_receive_config.rtp.rtcp_mode)
       << "Reduced-size RTCP require rtcp-rsize to be negotiated.";
   EXPECT_FALSE(default_receive_config.rtp.lntf.enabled)
@@ -104,7 +104,7 @@ TEST_F(ConfigEndToEndTest, VerifyDefaultFlexfecReceiveConfigParameters) {
   FlexfecReceiveStream::Config default_receive_config(&rtcp_send_transport);
   EXPECT_EQ(-1, default_receive_config.payload_type)
       << "Enabling FlexFEC requires rtpmap: flexfec negotiation.";
-  EXPECT_EQ(0U, default_receive_config.remote_ssrc)
+  EXPECT_EQ(0U, default_receive_config.rtp.remote_ssrc)
       << "Enabling FlexFEC requires ssrc-group: FEC-FR negotiation.";
   EXPECT_TRUE(default_receive_config.protected_media_ssrcs.empty())
       << "Enabling FlexFEC requires ssrc-group: FEC-FR negotiation.";

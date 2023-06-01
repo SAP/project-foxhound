@@ -2,14 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import argparse
+import errno
 import itertools
 import json
 import logging
 import operator
 import os
+import os.path
 import platform
 import re
 import shutil
@@ -17,25 +17,25 @@ import subprocess
 import sys
 import tempfile
 import time
-import errno
+from os import path
+from pathlib import Path
 
-import mozbuild.settings  # noqa need @SettingsProvider hook to execute
 import mozpack.path as mozpath
-
+import yaml
 from mach.decorators import (
+    Command,
     CommandArgument,
     CommandArgumentGroup,
-    Command,
     SettingsProvider,
     SubCommand,
 )
+from voluptuous import All, Boolean, Required, Schema
 
-from mozbuild.base import (
-    BinaryNotFoundException,
-    BuildEnvironmentNotFoundException,
-    MachCommandConditions as conditions,
-    MozbuildObject,
-)
+import mozbuild.settings  # noqa need @SettingsProvider hook to execute
+from mozbuild.base import BinaryNotFoundException, BuildEnvironmentNotFoundException
+from mozbuild.base import MachCommandConditions as conditions
+from mozbuild.base import MozbuildObject
+from mozbuild.util import MOZBUILD_METRICS_PATH
 
 here = os.path.abspath(os.path.dirname(__file__))
 
@@ -71,6 +71,7 @@ class StoreDebugParamsAndWarnAction(argparse.Action):
     category="post-build",
     description="Watch and re-build (parts of) the tree.",
     conditions=[conditions.is_firefox],
+    virtualenv_name="watch",
 )
 @CommandArgument(
     "-v",
@@ -92,16 +93,6 @@ def watch(command_context, verbose=False):
         )
         return 1
 
-    command_context.activate_virtualenv()
-    try:
-        command_context.virtualenv_manager.install_pip_package("pywatchman==1.4.1")
-    except Exception:
-        print(
-            "Could not install pywatchman from pip. See "
-            "https://developer.mozilla.org/docs/Mozilla/Developer_guide/Build_Instructions/Incremental_builds_with_filesystem_watching"  # noqa
-        )
-        return 1
-
     from mozbuild.faster_daemon import Daemon
 
     daemon = Daemon(command_context.config_environment)
@@ -113,78 +104,297 @@ def watch(command_context, verbose=False):
         sys.exit(3)
 
 
-@Command("cargo", category="build", description="Invoke cargo in useful ways.")
-def cargo(command_context):
-    """Invoke cargo in useful ways."""
-    command_context._sub_mach(["help", "cargo"])
-    return 1
+CARGO_CONFIG_NOT_FOUND_ERROR_MSG = """\
+The sub-command {subcommand} is not currently configured to be used with ./mach cargo.
+To do so, add the corresponding file in <mozilla-root-dir>/cargo/config, following the template provided in <mozilla-root-dir>/cargo/config/template.yaml """
 
 
-@SubCommand(
+def _cargo_config_yaml_schema():
+    def starts_with_cargo(s):
+        if s.startswith("cargo-"):
+            return s
+        else:
+            raise ValueError
+
+    return Schema(
+        {
+            # The name of the command (not checked for now, but maybe
+            #  later)
+            Required("command"): All(str, starts_with_cargo),
+            # Whether `make` should stop immediately in case
+            # of error returned by the command. Default: False
+            "continue_on_error": Boolean,
+            # Build flags to use.  If this variable is not
+            # defined here, the build flags are generated automatically and are
+            # the same as for `cargo build`. See available substitutions at the
+            # end.
+            "cargo_build_flags": [str],
+            # Extra build flags to use. These flags are added
+            # after the cargo_build_flags both when they are provided or
+            # automatically generated. See available substitutions at the end.
+            "cargo_extra_flags": [str],
+            # Available substitutions for `cargo_*_flags`:
+            # * {arch}: architecture target
+            # * {crate}: current crate name
+            # * {directory}: Directory of the current crate within the source tree
+            # * {features}: Rust features (for `--features`)
+            # * {manifest}: full path of `Cargo.toml` file
+            # * {target}: `--lib` for library, `--bin CRATE` for executables
+            # * {topsrcdir}: Top directory of sources
+        }
+    )
+
+
+@Command(
     "cargo",
-    "check",
-    description="Run `cargo check` on a given crate.  Defaults to gkrust.",
+    category="build",
+    description="Run `cargo <cargo_command>` on a given crate.  Defaults to gkrust.",
+    metrics_path=MOZBUILD_METRICS_PATH,
+)
+@CommandArgument(
+    "cargo_command",
+    default=None,
+    help="Target to cargo, must be one of the commands in config/cargo/",
 )
 @CommandArgument(
     "--all-crates",
-    default=None,
     action="store_true",
     help="Check all of the crates in the tree.",
 )
-@CommandArgument("crates", default=None, nargs="*", help="The crate name(s) to check.")
+@CommandArgument(
+    "-p", "--package", default=None, help="The specific crate name to check."
+)
 @CommandArgument(
     "--jobs",
     "-j",
-    default="1",
+    default="0",
     nargs="?",
     metavar="jobs",
     type=int,
     help="Run the tests in parallel using multiple processes.",
 )
 @CommandArgument("-v", "--verbose", action="store_true", help="Verbose output.")
-def check(command_context, all_crates=None, crates=None, jobs=0, verbose=False):
+@CommandArgument(
+    "--message-format-json",
+    action="store_true",
+    help="Emit error messages as JSON.",
+)
+@CommandArgument(
+    "--continue-on-error",
+    action="store_true",
+    help="Do not return an error exit code if the subcommands errors out.",
+)
+@CommandArgument(
+    "subcommand_args",
+    nargs=argparse.REMAINDER,
+    help="These arguments are passed as-is to the cargo subcommand.",
+)
+def cargo(
+    command_context,
+    cargo_command,
+    all_crates=None,
+    package=None,
+    jobs=0,
+    verbose=False,
+    message_format_json=False,
+    continue_on_error=False,
+    subcommand_args=[],
+):
+
+    from mozbuild.controller.building import BuildDriver
+
+    command_context.log_manager.enable_all_structured_loggers()
+
+    topsrcdir = Path(mozpath.normpath(command_context.topsrcdir))
+    cargodir = Path(topsrcdir / "build" / "cargo")
+
+    cargo_command_basename = "cargo-" + cargo_command + ".yaml"
+    cargo_command_fullname = Path(cargodir / cargo_command_basename)
+    if path.exists(cargo_command_fullname):
+        with open(cargo_command_fullname) as fh:
+            yaml_config = yaml.load(fh, Loader=yaml.FullLoader)
+            schema = _cargo_config_yaml_schema()
+            schema(yaml_config)
+        if not yaml_config:
+            yaml_config = {}
+    else:
+        print(CARGO_CONFIG_NOT_FOUND_ERROR_MSG.format(subcommand=cargo_command))
+        return 1
+
+    # print("yaml_config = ", yaml_config)
+
+    yaml_config.setdefault("continue_on_error", False)
+    continue_on_error = continue_on_error or yaml_config["continue_on_error"] is True
+
+    cargo_build_flags = yaml_config.get("cargo_build_flags")
+    if cargo_build_flags is not None:
+        cargo_build_flags = " ".join(cargo_build_flags)
+    cargo_extra_flags = yaml_config.get("cargo_extra_flags")
+    if cargo_extra_flags is not None:
+        cargo_extra_flags = " ".join(cargo_extra_flags)
+
+    if cargo_build_flags:
+        try:
+            command_context.config_environment
+        except BuildEnvironmentNotFoundException:
+            build = command_context._spawn(BuildDriver)
+            ret = build.build(
+                command_context.metrics,
+                what=["pre-export", "export"],
+                jobs=jobs,
+                verbose=verbose,
+                mach_context=command_context._mach_context,
+            )
+            if ret != 0:
+                return ret
+
     # XXX duplication with `mach vendor rust`
     crates_and_roots = {
-        "gkrust": "toolkit/library/rust",
-        "gkrust-gtest": "toolkit/library/gtest/rust",
-        "baldrdash": "js/src/wasm/cranelift",
-        "geckodriver": "testing/geckodriver",
+        "gkrust": {"directory": "toolkit/library/rust", "library": True},
+        "gkrust-gtest": {"directory": "toolkit/library/gtest/rust", "library": True},
+        "geckodriver": {"directory": "testing/geckodriver", "library": False},
     }
 
     if all_crates:
         crates = crates_and_roots.keys()
-    elif crates is None or crates == []:
+    elif package:
+        crates = [package]
+    else:
         crates = ["gkrust"]
 
+    if subcommand_args:
+        subcommand_args = " ".join(subcommand_args)
+
     for crate in crates:
-        root = crates_and_roots.get(crate, None)
-        if not root:
+        crate_info = crates_and_roots.get(crate, None)
+        if not crate_info:
             print(
                 "Cannot locate crate %s.  Please check your spelling or "
                 "add the crate information to the list." % crate
             )
             return 1
 
-        check_targets = [
-            "force-cargo-library-check",
-            "force-cargo-host-library-check",
-            "force-cargo-program-check",
-            "force-cargo-host-program-check",
+        targets = [
+            "force-cargo-library-%s" % cargo_command,
+            "force-cargo-host-library-%s" % cargo_command,
+            "force-cargo-program-%s" % cargo_command,
+            "force-cargo-host-program-%s" % cargo_command,
         ]
+
+        directory = crate_info["directory"]
+        # you can use these variables in 'cargo_build_flags'
+        subst = {
+            "arch": '"$(RUST_TARGET)"',
+            "crate": crate,
+            "directory": directory,
+            "features": '"$(RUST_LIBRARY_FEATURES)"',
+            "manifest": str(Path(topsrcdir / directory / "Cargo.toml")),
+            "target": "--lib" if crate_info["library"] else "--bin " + crate,
+            "topsrcdir": str(topsrcdir),
+        }
+
+        if subcommand_args:
+            targets = targets + [
+                "cargo_extra_cli_flags=%s" % (subcommand_args.format(**subst))
+            ]
+        if cargo_build_flags:
+            targets = targets + [
+                "cargo_build_flags=%s" % (cargo_build_flags.format(**subst))
+            ]
+
+        append_env = {}
+        if cargo_extra_flags:
+            append_env["CARGO_EXTRA_FLAGS"] = cargo_extra_flags.format(**subst)
+        if message_format_json:
+            append_env["USE_CARGO_JSON_MESSAGE_FORMAT"] = "1"
+        if continue_on_error:
+            append_env["CARGO_CONTINUE_ON_ERROR"] = "1"
+        if cargo_build_flags:
+            append_env["CARGO_NO_AUTO_ARG"] = "1"
+        else:
+            append_env[
+                "ADD_RUST_LTOABLE"
+            ] = "force-cargo-library-{s:s} force-cargo-program-{s:s}".format(
+                s=cargo_command
+            )
 
         ret = command_context._run_make(
             srcdir=False,
-            directory=root,
+            directory=directory,
             ensure_exit_code=0,
             silent=not verbose,
             print_directory=False,
-            target=check_targets,
+            target=targets,
             num_jobs=jobs,
+            append_env=append_env,
         )
         if ret != 0:
             return ret
 
     return 0
+
+
+@SubCommand(
+    "cargo",
+    "vet",
+    description="Run `cargo vet`.",
+)
+@CommandArgument("arguments", nargs=argparse.REMAINDER)
+def cargo_vet(command_context, arguments, stdout=None, env=os.environ):
+    from mozbuild.bootstrap import bootstrap_toolchain
+
+    # Logging of commands enables logging from `bootstrap_toolchain` that we
+    # don't want to expose. Disable them temporarily.
+    logger = logging.getLogger("gecko_taskgraph.generator")
+    level = logger.getEffectiveLevel()
+    logger.setLevel(logging.ERROR)
+
+    env = env.copy()
+    cargo_vet = bootstrap_toolchain("cargo-vet")
+    if cargo_vet:
+        env["PATH"] = os.pathsep.join([cargo_vet, env["PATH"]])
+    logger.setLevel(level)
+    try:
+        cargo = command_context.substs["CARGO"]
+    except (BuildEnvironmentNotFoundException, KeyError):
+        # Default if this tree isn't configured.
+        from mozfile import which
+
+        cargo = which("cargo", path=env["PATH"])
+        if not cargo:
+            raise OSError(
+                errno.ENOENT,
+                (
+                    "Could not find 'cargo' on your $PATH. "
+                    "Hint: have you run `mach build` or `mach configure`?"
+                ),
+            )
+
+    locked = "--locked" in arguments
+    if locked:
+        # The use of --locked requires .cargo/config to exist, but other things,
+        # like cargo update, don't want it there, so remove it once we're done.
+        topsrcdir = Path(command_context.topsrcdir)
+        shutil.copyfile(
+            topsrcdir / ".cargo" / "config.in", topsrcdir / ".cargo" / "config"
+        )
+
+    try:
+        res = subprocess.run(
+            [cargo, "vet"] + arguments,
+            cwd=command_context.topsrcdir,
+            stdout=stdout,
+            env=env,
+        )
+    finally:
+        if locked:
+            (topsrcdir / ".cargo" / "config").unlink()
+
+    # When the function is invoked without stdout set (the default when running
+    # as a mach subcommand), exit with the returncode from cargo vet.
+    # When the function is invoked with stdout (direct function call), return
+    # the full result from subprocess.run.
+    return res if stdout else res.returncode
 
 
 @Command(
@@ -206,12 +416,12 @@ def check(command_context, all_crates=None, crates=None, jobs=0, verbose=False):
 )
 def doctor(command_context, fix=False, verbose=False):
     """Diagnose common build environment problems"""
-    command_context.activate_virtualenv()
     from mozbuild.doctor import run_doctor
 
     return run_doctor(
         topsrcdir=command_context.topsrcdir,
         topobjdir=command_context.topobjdir,
+        configure_args=command_context.mozconfig["configure_args"],
         fix=fix,
         verbose=verbose,
     )
@@ -800,8 +1010,9 @@ def gtest(
             pass_thru=True,
         )
 
-    from mozprocess import ProcessHandlerMixin
     import functools
+
+    from mozprocess import ProcessHandlerMixin
 
     def handle_line(job_id, line):
         # Prepend the jobId
@@ -855,7 +1066,7 @@ def android_gtest(
     setup_logging("mach-gtest", {}, {default_format: sys.stdout}, format_args)
 
     # ensure that a device is available and test app is installed
-    from mozrunner.devices.android_device import verify_android_device, get_adb_path
+    from mozrunner.devices.android_device import get_adb_path, verify_android_device
 
     verify_android_device(
         command_context, install=install, app=package, device_serial=device_serial
@@ -955,8 +1166,8 @@ def install(command_context, **kwargs):
     """Install a package."""
     if conditions.is_android(command_context):
         from mozrunner.devices.android_device import (
-            verify_android_device,
             InstallIntent,
+            verify_android_device,
         )
 
         ret = (
@@ -1295,9 +1506,9 @@ def _run_android(
     use_existing_process=False,
 ):
     from mozrunner.devices.android_device import (
-        verify_android_device,
-        _get_device,
         InstallIntent,
+        _get_device,
+        verify_android_device,
     )
     from six.moves import shlex_quote
 
@@ -1375,12 +1586,12 @@ def _run_android(
                     'Using profile from target "{target_profile}"',
                 )
 
+            args = ["--profile", shlex_quote(target_profile)]
+
         # FIXME: When android switches to using Fission by default,
         # MOZ_FORCE_DISABLE_FISSION will need to be configured correctly.
         if enable_fission:
             env.append("MOZ_FORCE_ENABLE_FISSION=1")
-
-            args = ["--profile", shlex_quote(target_profile)]
 
         extras = {}
         for i, e in enumerate(env):
@@ -1691,7 +1902,7 @@ def _run_desktop(
     stacks,
     show_dump_stats,
 ):
-    from mozprofile import Profile, Preferences
+    from mozprofile import Preferences, Profile
 
     try:
         if packaged:
@@ -1754,7 +1965,14 @@ def _run_desktop(
     no_profile_option_given = all(
         p not in params for p in ["-profile", "--profile", "-P"]
     )
-    if no_profile_option_given and not noprofile:
+    no_backgroundtask_mode_option_given = all(
+        p not in params for p in ["-backgroundtask", "--backgroundtask"]
+    )
+    if (
+        no_profile_option_given
+        and no_backgroundtask_mode_option_given
+        and not noprofile
+    ):
         prefs = {
             "browser.aboutConfig.showWarning": False,
             "browser.shell.checkDefaultBrowser": False,
@@ -2008,7 +2226,34 @@ def repackage(command_context):
     scriptworkers in order to bundle things up into shippable formats, such as a
     .dmg on OSX or an installer exe on Windows.
     """
-    print("Usage: ./mach repackage [dmg|installer|mar] [args...]")
+    print("Usage: ./mach repackage [dmg|pkg|installer|mar] [args...]")
+
+
+@SubCommand(
+    "repackage", "deb", description="Repackage a tar file into a .deb for Linux"
+)
+@CommandArgument("--input", "-i", type=str, required=True, help="Input filename")
+@CommandArgument("--output", "-o", type=str, required=True, help="Output filename")
+@CommandArgument("--arch", type=str, required=True, help="One of ['x86', 'x86_64']")
+@CommandArgument(
+    "--templates",
+    type=str,
+    required=True,
+    help="Location of the templates used to generate the debian/ directory files",
+)
+def repackage_deb(command_context, input, output, arch, templates):
+    if not os.path.exists(input):
+        print("Input file does not exist: %s" % input)
+        return 1
+
+    template_dir = os.path.join(
+        command_context.topsrcdir,
+        templates,
+    )
+
+    from mozbuild.repackaging.deb import repackage_deb
+
+    repackage_deb(input, output, template_dir, arch)
 
 
 @SubCommand("repackage", "dmg", description="Repackage a tar file into a .dmg for OSX")
@@ -2019,16 +2264,22 @@ def repackage_dmg(command_context, input, output):
         print("Input file does not exist: %s" % input)
         return 1
 
-    if not os.path.exists(os.path.join(command_context.topobjdir, "config.status")):
-        print(
-            "config.status not found.  Please run |mach configure| "
-            "prior to |mach repackage|."
-        )
-        return 1
-
     from mozbuild.repackaging.dmg import repackage_dmg
 
     repackage_dmg(input, output)
+
+
+@SubCommand("repackage", "pkg", description="Repackage a tar file into a .pkg for OSX")
+@CommandArgument("--input", "-i", type=str, required=True, help="Input filename")
+@CommandArgument("--output", "-o", type=str, required=True, help="Output filename")
+def repackage_pkg(command_context, input, output):
+    if not os.path.exists(input):
+        print("Input file does not exist: %s" % input)
+        return 1
+
+    from mozbuild.repackaging.pkg import repackage_pkg
+
+    repackage_pkg(input, output)
 
 
 @SubCommand(
@@ -2308,30 +2559,10 @@ def repackage_msix(
             )
             return 1
 
-    template = os.path.join(
-        command_context.topsrcdir, "browser", "installer", "windows", "msix"
-    )
-
-    # Discard everything after a '#' comment character.
-    locale_allowlist = set(
-        locale.partition("#")[0].strip().lower()
-        for locale in open(os.path.join(template, "msix-all-locales")).readlines()
-        if locale.partition("#")[0].strip()
-    )
-
-    # Release (official) and Beta share branding.
-    branding = os.path.join(
-        command_context.topsrcdir,
-        "browser",
-        "branding",
-        channel if channel != "beta" else "official",
-    )
-
     output = repackage_msix(
         input,
+        command_context.topsrcdir,
         channel=channel,
-        template=template,
-        branding=branding,
         arch=arch,
         displayname=identity_name,
         vendor=vendor,
@@ -2339,7 +2570,6 @@ def repackage_msix(
         publisher_display_name=publisher_display_name,
         version=version,
         distribution_dirs=distribution_dirs,
-        locale_allowlist=locale_allowlist,
         # Configure this run.
         force=True,
         verbose=verbose,
@@ -2543,6 +2773,18 @@ def package_l10n(command_context, verbose=False, locales=[]):
             pass_thru=True,
             ensure_exit_code=True,
             cwd=mozpath.join(command_context.topsrcdir),
+        )
+
+        # This is tricky: most Android build commands will regenerate the
+        # omnijar, producing a `res/multilocale.txt` that does not contain the
+        # set of locales packaged by this command.  To avoid regenerating, we
+        # set a special environment variable.
+        print(
+            "Execute `env MOZ_CHROME_MULTILOCALE='{}' ".format(
+                append_env["MOZ_CHROME_MULTILOCALE"]
+            )
+            + "mach android install-geckoview_example` "
+            + "to install the multi-locale geckoview_example and test APKs."
         )
 
     return 0

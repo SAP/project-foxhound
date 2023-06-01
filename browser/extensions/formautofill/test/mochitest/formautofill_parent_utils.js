@@ -1,18 +1,15 @@
-// assert is available to chrome scripts loaded via SpecialPowers.loadChromeScript.
-/* global assert */
-/* eslint-env mozilla/frame-script */
+/* eslint-env mozilla/chrome-script */
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { FormAutofill } = ChromeUtils.import(
   "resource://autofill/FormAutofill.jsm"
 );
 const { FormAutofillUtils } = ChromeUtils.import(
   "resource://autofill/FormAutofillUtils.jsm"
 );
-const { OSKeyStoreTestUtils } = ChromeUtils.import(
-  "resource://testing-common/OSKeyStoreTestUtils.jsm"
+const { OSKeyStoreTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/OSKeyStoreTestUtils.sys.mjs"
 );
 
 let { formAutofillStorage } = ChromeUtils.import(

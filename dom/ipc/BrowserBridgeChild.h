@@ -11,9 +11,7 @@
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/ipc/IdType.h"
 
-namespace mozilla {
-
-namespace dom {
+namespace mozilla::dom {
 class BrowsingContext;
 class ContentChild;
 class BrowserBridgeHost;
@@ -98,6 +96,8 @@ class BrowserBridgeChild : public PBrowserBridgeChild {
       const Maybe<IntrinsicSize>& aIntrinsicSize,
       const Maybe<AspectRatio>& aIntrinsicRatio);
 
+  mozilla::ipc::IPCResult RecvImageLoadComplete(const nsresult& aResult);
+
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvScrollRectIntoView(
       const nsRect& aRect, const ScrollAxis& aVertical,
@@ -128,7 +128,6 @@ class BrowserBridgeChild : public PBrowserBridgeChild {
 #endif    // defined(ACCESSIBILITY)
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // !defined(mozilla_dom_BrowserBridgeParent_h)

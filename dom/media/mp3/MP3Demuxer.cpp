@@ -122,16 +122,13 @@ bool MP3TrackDemuxer::Init() {
   mInfo->mBitDepth = 16;
   mInfo->mMimeType = "audio/mpeg";
   mInfo->mDuration = Duration().valueOr(TimeUnit::FromInfinity());
+  Mp3CodecSpecificData mp3CodecData{};
   if (mEncoderDelay) {
-    AutoTArray<uint8_t, 8> trimInfo;
-    ByteWriter<BigEndian> writer(trimInfo);
-    bool ok = false;
-    ok = writer.WriteU32(mEncoderDelay);
-    MOZ_ALWAYS_TRUE(ok);
-    ok = writer.WriteU32(mEncoderPadding);
-    MOZ_ALWAYS_TRUE(ok);
-    mInfo->mCodecSpecificConfig->AppendElements(trimInfo);
+    mp3CodecData.mEncoderDelayFrames = mEncoderDelay;
+    mp3CodecData.mEncoderPaddingFrames = mEncoderPadding;
   }
+  mInfo->mCodecSpecificConfig =
+      AudioCodecSpecificVariant{std::move(mp3CodecData)};
 
   MP3LOG("Init mInfo={mRate=%d mChannels=%d mBitDepth=%d mDuration=%" PRId64
          "}",
@@ -494,7 +491,7 @@ MediaByteRange MP3TrackDemuxer::FindNextFrame() {
           mSamplesPerFrame, mSamplesPerSecond, mChannels);
 
   uint8_t buffer[BUFFER_SIZE];
-  int32_t read = 0;
+  uint32_t read = 0;
 
   bool foundFrame = false;
   int64_t frameHeaderOffset = 0;
@@ -540,8 +537,8 @@ MediaByteRange MP3TrackDemuxer::FindNextFrame() {
     uint32_t bytesToSkip = 0;
     auto res = mParser.Parse(&reader, &bytesToSkip);
     foundFrame = res.unwrapOr(false);
-    frameHeaderOffset =
-        mOffset + reader.Offset() - FrameParser::FrameHeader::SIZE;
+    int64_t readerOffset = static_cast<int64_t>(reader.Offset());
+    frameHeaderOffset = mOffset + readerOffset - FrameParser::FrameHeader::SIZE;
 
     // If we've found neither an MPEG frame header nor an ID3v2 tag,
     // the reader shouldn't have any bytes remaining.
@@ -559,7 +556,7 @@ MediaByteRange MP3TrackDemuxer::FindNextFrame() {
       // skip an ID3v2 tag which stretches beyond the current buffer.
       NS_ENSURE_TRUE(mOffset + read + bytesToSkip > mOffset,
                      MediaByteRange(0, 0));
-      mOffset += read + bytesToSkip;
+      mOffset += static_cast<int64_t>(read + bytesToSkip);
     }
   }
 
@@ -616,7 +613,7 @@ already_AddRefed<MediaRawData> MP3TrackDemuxer::GetNextFrame(
   frame->mOffset = aRange.mStart;
 
   UniquePtr<MediaRawDataWriter> frameWriter(frame->CreateWriter());
-  if (!frameWriter->SetSize(aRange.Length())) {
+  if (!frameWriter->SetSize(static_cast<size_t>(aRange.Length()))) {
     MP3LOG("GetNext() Exit failed to allocated media buffer");
     return nullptr;
   }
@@ -737,8 +734,8 @@ void MP3TrackDemuxer::UpdateState(const MediaByteRange& aRange) {
   mParser.EndFrameSession();
 }
 
-int32_t MP3TrackDemuxer::Read(uint8_t* aBuffer, int64_t aOffset,
-                              int32_t aSize) {
+uint32_t MP3TrackDemuxer::Read(uint8_t* aBuffer, int64_t aOffset,
+                               int32_t aSize) {
   MP3LOGV("MP3TrackDemuxer::Read(%p %" PRId64 " %d)", aBuffer, aOffset, aSize);
 
   const int64_t streamLen = StreamLength();
@@ -749,11 +746,11 @@ int32_t MP3TrackDemuxer::Read(uint8_t* aBuffer, int64_t aOffset,
   }
 
   uint32_t read = 0;
-  MP3LOGV("MP3TrackDemuxer::Read        -> ReadAt(%d)", aSize);
+  MP3LOGV("MP3TrackDemuxer::Read        -> ReadAt(%u)", aSize);
   const nsresult rv = mSource.ReadAt(aOffset, reinterpret_cast<char*>(aBuffer),
                                      static_cast<uint32_t>(aSize), &read);
   NS_ENSURE_SUCCESS(rv, 0);
-  return static_cast<int32_t>(read);
+  return read;
 }
 
 double MP3TrackDemuxer::AverageFrameLength() const {

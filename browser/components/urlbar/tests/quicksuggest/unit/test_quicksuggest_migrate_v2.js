@@ -40,7 +40,7 @@ const DEFAULT_PREFS = {
 const TEST_OVERRIDES = undefined;
 
 add_task(async function init() {
-  await QuickSuggestTestUtils.initNimbusFeature();
+  await UrlbarTestUtils.initNimbusFeature();
 });
 
 // The following tasks test OFFLINE UNVERSIONED to OFFLINE
@@ -1341,9 +1341,10 @@ async function withOnlineExperiment(callback) {
           slug: "treatment",
           features: [
             {
-              enabled: true,
               featureId: NimbusFeatures.urlbar.featureId,
-              value: null,
+              value: {
+                enabled: true,
+              },
             },
           ],
         },

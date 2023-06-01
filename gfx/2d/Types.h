@@ -16,6 +16,7 @@
 #include <iosfwd>  // for ostream
 #include <stddef.h>
 #include <stdint.h>
+#include <optional>
 
 namespace mozilla {
 namespace gfx {
@@ -41,6 +42,7 @@ enum class SurfaceType : int8_t {
   DATA_SHARED_WRAPPER,    /* Shared memory mapped in from another process */
   BLOB_IMAGE,             /* Recorded blob image */
   DATA_MAPPED,            /* Data surface wrapping a ScopedMap */
+  WEBGL,                  /* Surface wrapping a DrawTargetWebgl texture */
 };
 
 enum class SurfaceFormat : int8_t {
@@ -85,7 +87,7 @@ enum class SurfaceFormat : int8_t {
   Depth,
 
   // This represents the unknown format.
-  UNKNOWN,
+  UNKNOWN,  // TODO: Replace uses with Maybe<SurfaceFormat>.
 
 // The following values are endian-independent synonyms. The _UINT32 suffix
 // indicates that the name reflects the layout when viewed as a uint32_t
@@ -107,6 +109,115 @@ enum class SurfaceFormat : int8_t {
   OS_RGBA = A8R8G8B8_UINT32,
   OS_RGBX = X8R8G8B8_UINT32
 };
+
+struct SurfaceFormatInfo {
+  bool hasColor;
+  bool hasAlpha;
+  bool isYuv;
+  std::optional<uint8_t> bytesPerPixel;
+};
+inline std::optional<SurfaceFormatInfo> Info(const SurfaceFormat aFormat) {
+  auto info = SurfaceFormatInfo{};
+
+  switch (aFormat) {
+    case SurfaceFormat::B8G8R8A8:
+    case SurfaceFormat::R8G8B8A8:
+    case SurfaceFormat::A8R8G8B8:
+      info.hasColor = true;
+      info.hasAlpha = true;
+      break;
+
+    case SurfaceFormat::B8G8R8X8:
+    case SurfaceFormat::R8G8B8X8:
+    case SurfaceFormat::X8R8G8B8:
+    case SurfaceFormat::R8G8B8:
+    case SurfaceFormat::B8G8R8:
+    case SurfaceFormat::R5G6B5_UINT16:
+    case SurfaceFormat::R8G8:
+    case SurfaceFormat::R16G16:
+    case SurfaceFormat::HSV:
+    case SurfaceFormat::Lab:
+      info.hasColor = true;
+      info.hasAlpha = false;
+      break;
+
+    case SurfaceFormat::A8:
+    case SurfaceFormat::A16:
+      info.hasColor = false;
+      info.hasAlpha = true;
+      break;
+
+    case SurfaceFormat::YUV:
+    case SurfaceFormat::NV12:
+    case SurfaceFormat::P016:
+    case SurfaceFormat::P010:
+    case SurfaceFormat::YUV422:
+      info.hasColor = true;
+      info.hasAlpha = false;
+      info.isYuv = true;
+      break;
+
+    case SurfaceFormat::Depth:
+      info.hasColor = false;
+      info.hasAlpha = false;
+      info.isYuv = false;
+      break;
+
+    case SurfaceFormat::UNKNOWN:
+      break;
+  }
+
+  // -
+  // bytesPerPixel
+
+  switch (aFormat) {
+    case SurfaceFormat::B8G8R8A8:
+    case SurfaceFormat::R8G8B8A8:
+    case SurfaceFormat::A8R8G8B8:
+    case SurfaceFormat::B8G8R8X8:
+    case SurfaceFormat::R8G8B8X8:
+    case SurfaceFormat::X8R8G8B8:
+    case SurfaceFormat::R16G16:
+      info.bytesPerPixel = 4;
+      break;
+
+    case SurfaceFormat::R8G8B8:
+    case SurfaceFormat::B8G8R8:
+      info.bytesPerPixel = 3;
+      break;
+
+    case SurfaceFormat::R5G6B5_UINT16:
+    case SurfaceFormat::R8G8:
+    case SurfaceFormat::A16:
+    case SurfaceFormat::Depth:  // uint16_t
+      info.bytesPerPixel = 2;
+      break;
+
+    case SurfaceFormat::A8:
+      info.bytesPerPixel = 1;
+      break;
+
+    case SurfaceFormat::HSV:
+    case SurfaceFormat::Lab:
+      info.bytesPerPixel = 3 * sizeof(float);
+      break;
+
+    case SurfaceFormat::YUV:
+    case SurfaceFormat::NV12:
+    case SurfaceFormat::P016:
+    case SurfaceFormat::P010:
+    case SurfaceFormat::YUV422:
+    case SurfaceFormat::UNKNOWN:
+      break;  // No bytesPerPixel per se.
+  }
+
+  // -
+
+  if (aFormat == SurfaceFormat::UNKNOWN) {
+    return {};
+  }
+  return info;
+}
 
 std::ostream& operator<<(std::ostream& aOut, const SurfaceFormat& aFormat);
 
@@ -152,6 +263,7 @@ inline uint32_t operator>>(uint32_t a, SurfaceFormatBit b) {
 }
 
 static inline int BytesPerPixel(SurfaceFormat aFormat) {
+  // TODO: return Info(aFormat).value().bytesPerPixel.value();
   switch (aFormat) {
     case SurfaceFormat::A8:
       return 1;
@@ -172,6 +284,7 @@ static inline int BytesPerPixel(SurfaceFormat aFormat) {
 }
 
 inline bool IsOpaque(SurfaceFormat aFormat) {
+  // TODO: return Info(aFormat).value().hasAlpha;
   switch (aFormat) {
     case SurfaceFormat::B8G8R8X8:
     case SurfaceFormat::R8G8B8X8:
@@ -348,6 +461,16 @@ enum class ColorDepth : uint8_t {
   _Last = COLOR_16,
 };
 
+enum class TransferFunction : uint8_t {
+  BT709,
+  SRGB,
+  PQ,
+  HLG,
+  _First = BT709,
+  _Last = HLG,
+  Default = BT709,
+};
+
 enum class ColorRange : uint8_t {
   LIMITED,
   FULL,
@@ -355,7 +478,7 @@ enum class ColorRange : uint8_t {
   _Last = FULL,
 };
 
-// Really "YcbcrColorSpace"
+// Really "YcbcrColorColorSpace"
 enum class YUVRangedColorSpace : uint8_t {
   BT601_Narrow = 0,
   BT601_Full,
@@ -369,6 +492,55 @@ enum class YUVRangedColorSpace : uint8_t {
   _Last = GbrIdentity,
   Default = BT709_Narrow,
 };
+
+// I can either come up with a longer "very clever" name that doesn't conflict
+// with FilterSupport.h, embrace and expand FilterSupport, or rename the old
+// one.
+// Some times Worse Is Better.
+enum class ColorSpace2 : uint8_t {
+  UNKNOWN,  // Really "DISPLAY". Eventually we will remove this.
+  SRGB,
+  DISPLAY_P3,
+  BT601_525,  // aka smpte170m NTSC
+  BT709,      // Same gamut as SRGB, but different gamma.
+  BT601_625 =
+      BT709,  // aka bt470bg PAL. Basically BT709, just Xg is 0.290 not 0.300.
+  BT2020,
+  _First = UNKNOWN,
+  _Last = BT2020,
+};
+
+inline ColorSpace2 ToColorSpace2(const YUVColorSpace in) {
+  switch (in) {
+    case YUVColorSpace::BT601:
+      return ColorSpace2::BT601_525;
+    case YUVColorSpace::BT709:
+      return ColorSpace2::BT709;
+    case YUVColorSpace::BT2020:
+      return ColorSpace2::BT2020;
+    case YUVColorSpace::Identity:
+      return ColorSpace2::SRGB;
+  }
+  MOZ_ASSERT_UNREACHABLE();
+}
+
+inline YUVColorSpace ToYUVColorSpace(const ColorSpace2 in) {
+  switch (in) {
+    case ColorSpace2::BT601_525:
+      return YUVColorSpace::BT601;
+    case ColorSpace2::BT709:
+      return YUVColorSpace::BT709;
+    case ColorSpace2::BT2020:
+      return YUVColorSpace::BT2020;
+    case ColorSpace2::SRGB:
+      return YUVColorSpace::Identity;
+
+    case ColorSpace2::UNKNOWN:
+    case ColorSpace2::DISPLAY_P3:
+      MOZ_CRASH("Bad ColorSpace2 for ToYUVColorSpace");
+  }
+  MOZ_ASSERT_UNREACHABLE();
+}
 
 struct FromYUVRangedColorSpaceT final {
   const YUVColorSpace space;
@@ -504,6 +676,27 @@ static inline uint32_t RescalingFactorForColorDepth(ColorDepth aColorDepth) {
       break;
   }
   return factor;
+}
+
+enum class ChromaSubsampling : uint8_t {
+  FULL,
+  HALF_WIDTH,
+  HALF_WIDTH_AND_HEIGHT,
+  _First = FULL,
+  _Last = HALF_WIDTH_AND_HEIGHT,
+};
+
+template <typename T>
+static inline T ChromaSize(const T& aYSize, ChromaSubsampling aSubsampling) {
+  switch (aSubsampling) {
+    case ChromaSubsampling::FULL:
+      return aYSize;
+    case ChromaSubsampling::HALF_WIDTH:
+      return T((aYSize.width + 1) / 2, aYSize.height);
+    case ChromaSubsampling::HALF_WIDTH_AND_HEIGHT:
+      return T((aYSize.width + 1) / 2, (aYSize.height + 1) / 2);
+  }
+  MOZ_CRASH("bad ChromaSubsampling");
 }
 
 enum class FilterType : int8_t {
@@ -717,25 +910,6 @@ struct sRGBColor {
     return a > 0.f ? sRGBColor(r / a, g / a, b / a, a) : *this;
   }
 
-  // Returns aFrac*aC2 + (1 - aFrac)*C1. The interpolation is done in
-  // unpremultiplied space, which is what SVG gradients and cairo gradients
-  // expect.
-  constexpr static sRGBColor InterpolatePremultiplied(const sRGBColor& aC1,
-                                                      const sRGBColor& aC2,
-                                                      float aFrac) {
-    double other = 1 - aFrac;
-    return sRGBColor(
-        aC2.r * aFrac + aC1.r * other, aC2.g * aFrac + aC1.g * other,
-        aC2.b * aFrac + aC1.b * other, aC2.a * aFrac + aC1.a * other);
-  }
-
-  constexpr static sRGBColor Interpolate(const sRGBColor& aC1,
-                                         const sRGBColor& aC2, float aFrac) {
-    return InterpolatePremultiplied(aC1.Premultiplied(), aC2.Premultiplied(),
-                                    aFrac)
-        .Unpremultiplied();
-  }
-
   // The "Unusual" prefix is to avoid unintentionally using this function when
   // ToABGR(), which is much more common, is needed.
   uint32_t UnusualToARGB() const {
@@ -876,6 +1050,10 @@ enum class SideBits {
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(SideBits)
+
+inline constexpr SideBits SideToSideBit(mozilla::Side aSide) {
+  return SideBits(1 << aSide);
+}
 
 enum Corner : uint8_t {
   // This order is important!

@@ -9,49 +9,58 @@
 const {
   createFactory,
   Component,
-} = require("devtools/client/shared/vendor/react");
+} = require("resource://devtools/client/shared/vendor/react.js");
 const {
   div,
   span,
-} = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const { findDOMNode } = require("devtools/client/shared/vendor/react-dom");
-const { connect } = require("devtools/client/shared/vendor/react-redux");
+} = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+const {
+  findDOMNode,
+} = require("resource://devtools/client/shared/vendor/react-dom.js");
+const {
+  connect,
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
 
 const {
   TREE_ROW_HEIGHT,
   ORDERED_PROPS,
   ACCESSIBLE_EVENTS,
   VALUE_FLASHING_DURATION,
-} = require("devtools/client/accessibility/constants");
-const { L10N } = require("devtools/client/accessibility/utils/l10n");
+} = require("resource://devtools/client/accessibility/constants.js");
+const {
+  L10N,
+} = require("resource://devtools/client/accessibility/utils/l10n.js");
 const {
   flashElementOn,
   flashElementOff,
-} = require("devtools/client/inspector/markup/utils");
+} = require("resource://devtools/client/inspector/markup/utils.js");
 const {
   updateDetails,
-} = require("devtools/client/accessibility/actions/details");
+} = require("resource://devtools/client/accessibility/actions/details.js");
 const {
   select,
   unhighlight,
-} = require("devtools/client/accessibility/actions/accessibles");
+} = require("resource://devtools/client/accessibility/actions/accessibles.js");
 
 const Tree = createFactory(
-  require("devtools/client/shared/components/VirtualizedTree")
+  require("resource://devtools/client/shared/components/VirtualizedTree.js")
 );
 // Reps
-const { REPS, MODE } = require("devtools/client/shared/components/reps/index");
+const {
+  REPS,
+  MODE,
+} = require("resource://devtools/client/shared/components/reps/index.js");
 const { Rep, ElementNode, Accessible: AccessibleRep, Obj } = REPS;
 
 const {
   translateNodeFrontToGrip,
-} = require("devtools/client/inspector/shared/utils");
+} = require("resource://devtools/client/inspector/shared/utils.js");
 
 loader.lazyRequireGetter(
   this,
   "openContentLink",
-  "devtools/client/shared/link",
+  "resource://devtools/client/shared/link.js",
   true
 );
 
@@ -138,14 +147,16 @@ class Accessible extends Component {
     this.update = this.update.bind(this);
   }
 
-  componentWillMount() {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillMount() {
     window.on(
       EVENTS.NEW_ACCESSIBLE_FRONT_INSPECTED,
       this.onAccessibleInspected
     );
   }
 
-  componentWillReceiveProps({ accessibleFront }) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps({ accessibleFront }) {
     const oldAccessibleFront = this.props.accessibleFront;
 
     if (oldAccessibleFront) {
@@ -292,6 +303,10 @@ class Accessible extends Component {
       valueProps.onDOMNodeMouseOut = () => this.hideHighlighter();
       valueProps.onDOMNodeMouseOver = () =>
         this.showHighlighter(this.props.nodeFront);
+
+      valueProps.inspectIconTitle = L10N.getStr(
+        "accessibility.accessible.selectNodeInInspector.title"
+      );
       valueProps.onInspectIconClick = () =>
         this.selectNode(this.props.nodeFront);
     } else if (isAccessibleFront(object)) {
@@ -301,6 +316,9 @@ class Accessible extends Component {
         this.hideAccessibleHighlighter(target);
       valueProps.onAccessibleMouseOver = () =>
         this.showAccessibleHighlighter(target);
+      valueProps.inspectIconTitle = L10N.getStr(
+        "accessibility.accessible.selectElement.title"
+      );
       valueProps.onInspectIconClick = (obj, e) => {
         e.stopPropagation();
         this.selectAccessible(target);
@@ -501,7 +519,7 @@ const makeParentMap = items => {
   const map = new WeakMap();
 
   function _traverse(item) {
-    if (item.children.length > 0) {
+    if (item.children.length) {
       for (const child of item.children) {
         map.set(child, item);
         _traverse(child);

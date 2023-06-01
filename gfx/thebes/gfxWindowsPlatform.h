@@ -181,7 +181,7 @@ class gfxWindowsPlatform final : public gfxPlatform {
   bool HandleDeviceReset();
   void UpdateBackendPrefs();
 
-  already_AddRefed<mozilla::gfx::VsyncSource> CreateHardwareVsyncSource()
+  already_AddRefed<mozilla::gfx::VsyncSource> CreateGlobalHardwareVsyncSource()
       override;
   static mozilla::Atomic<size_t> sD3D11SharedTextures;
   static mozilla::Atomic<size_t> sD3D9SharedTextures;
@@ -192,6 +192,11 @@ class gfxWindowsPlatform final : public gfxPlatform {
       mozilla::gfx::TelemetryDeviceCode aDevice);
 
   static void InitMemoryReportersForGPUProcess();
+
+  static bool CheckVariationFontSupport();
+
+  // Always false for content processes.
+  bool SupportsHDR() override { return mSupportsHDR; }
 
  protected:
   bool AccelerateLayersByDefault() override { return true; }
@@ -205,10 +210,10 @@ class gfxWindowsPlatform final : public gfxPlatform {
 
   BackendPrefsData GetBackendPrefs() const override;
 
-  bool CheckVariationFontSupport() override;
+  void UpdateSupportsHDR();
 
- protected:
   RenderMode mRenderMode;
+  bool mSupportsHDR;
 
  private:
   enum class DwmCompositionStatus : uint32_t {

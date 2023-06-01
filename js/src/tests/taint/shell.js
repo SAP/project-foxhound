@@ -242,7 +242,7 @@ if (typeof runTaintTest === 'undefined') {
         var runJITTest = function(doTest) {
             // Force JIT compilation
             for (var i = 0; i < 100; i++) {
-		//console.log(i);
+                //console.log(i);
                 doTest();
             }
         }

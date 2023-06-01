@@ -2755,8 +2755,8 @@ static void _PR_InitIOV(void)
     _md_iovector._mmap64 = mmap64;
 #if (defined(ANDROID) && __ANDROID_API__ < 21)
     /* Same as the open64 case for Android. */
-    _md_iovector._fstat64 = fstat;
-    _md_iovector._stat64 = stat;
+    _md_iovector._fstat64 = (_MD_Fstat64)fstat;
+    _md_iovector._stat64 = (_MD_Stat64)stat;
 #else
     _md_iovector._fstat64 = fstat64;
     _md_iovector._stat64 = stat64;
@@ -3641,7 +3641,8 @@ int poll(struct pollfd *filedes, unsigned long nfds, int timeout)
         int events = filedes[i].events;
         PRBool fdHasEvent = PR_FALSE;
 
-        if (osfd < 0) {
+        PR_ASSERT(osfd < FD_SETSIZE);
+        if (osfd < 0 || osfd >= FD_SETSIZE) {
             continue;  /* Skip this osfd. */
         }
 
@@ -3684,6 +3685,10 @@ int poll(struct pollfd *filedes, unsigned long nfds, int timeout)
 
             filedes[i].revents = 0;
             if (filedes[i].fd < 0) {
+                continue;
+            }
+            if (filedes[i].fd >= FD_SETSIZE) {
+                filedes[i].revents |= POLLNVAL;
                 continue;
             }
             if (FD_ISSET(filedes[i].fd, &rd)) {

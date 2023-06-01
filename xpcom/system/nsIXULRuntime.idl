@@ -73,7 +73,7 @@ interface nsIXULRuntime : nsISupports
   };
 
   // If you update this enum, don't forget to raise the limit in
-  // TelemetryEnvironmentTesting.jsm and record the new value in
+  // TelemetryEnvironmentTesting.sys.mjs and record the new value in
   // environment.rst
   cenum ContentWin32kLockdownState : 8 {
     LockdownEnabled = 1,  // no longer used
@@ -95,7 +95,8 @@ interface nsIXULRuntime : nsISupports
         13,  // The user is in the Treatment Group, so it is enabled
     DisabledByDefault = 14,  // The default value of the pref is false
     EnabledByDefault = 15,    // The default value of the pref is true
-    DecodersArentRemote = 16
+    DecodersArentRemote = 16,
+    IncompatibleMitigationPolicy = 17, // Some incompatible Windows Exploit Mitigation policies are enabled
   };
 
   // This is the current value of the experiment for the session
@@ -126,9 +127,6 @@ interface nsIXULRuntime : nsISupports
     // Fission is disabled because the `MOZ_FORCE_DISABLE_FISSION` environment
     // variable is set.
     eFissionDisabledByEnv = 5,
-    // Fission is disabled because the current session is running in safe
-    // mode.
-    eFissionDisabledBySafeMode = 6,
     // Fission is enabled because the "fission.autostart" preference is true
     // by default.
     eFissionEnabledByDefault = 7,
@@ -155,17 +153,6 @@ interface nsIXULRuntime : nsISupports
    * session.
    */
   readonly attribute boolean fissionAutostart;
-
-  /**
-   * The user's enrollment status in the Fission experiment at process startup.
-   * See `ExperimentStatus` for the potential values.
-   *
-   * Only available in the parent process.
-   *
-   * This value is guaranteed to remain constant for the length of a browser
-   * session.
-   */
-  readonly attribute nsIXULRuntime_ExperimentStatus fissionExperimentStatus;
 
   /**
    * The deciding factor which caused Fission to be enabled or disabled in
@@ -301,6 +288,11 @@ interface nsIXULRuntime : nsISupports
   readonly attribute boolean is64Bit;
 
   /**
+   * Indicates whether or not text recognition of images supported by the OS.
+   */
+  readonly attribute boolean isTextRecognitionSupported;
+
+  /**
    * Signal the apprunner to invalidate caches on the next restart.
    * This will cause components to be autoregistered and all
    * fastload data to be re-created.
@@ -348,8 +340,14 @@ interface nsIXULRuntime : nsISupports
   /** Whether the chrome color-scheme is dark */
   readonly attribute boolean chromeColorSchemeIsDark;
 
+  /** Whether the content color-scheme derived from the app theme is dark */
+  readonly attribute boolean contentThemeDerivedColorSchemeIsDark;
+
   /** Whether we should draw over the titlebar */
   readonly attribute boolean drawInTitlebar;
+
+  /** Returns the desktop environment identifier. Only meaningful on GTK */
+  readonly attribute ACString desktopEnvironment;
 
   /**
    * The path of the shortcut used to start the current process, or "" if none.

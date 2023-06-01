@@ -12,7 +12,7 @@ if (NOT Gdk-Pixbuf_FOUND)
   return ()
 endif ()
 
-add_library(pixbufloader-jxl SHARED pixbufloader-jxl.c)
+add_library(pixbufloader-jxl MODULE pixbufloader-jxl.c)
 
 # Mark all symbols as hidden by default. The PkgConfig::Gdk-Pixbuf dependency
 # will cause fill_info and fill_vtable entry points to be made public.
@@ -26,14 +26,14 @@ set_target_properties(pixbufloader-jxl PROPERTIES
 target_link_libraries(pixbufloader-jxl jxl jxl_threads skcms-interface PkgConfig::Gdk-Pixbuf)
 
 execute_process(COMMAND ${PKG_CONFIG_EXECUTABLE} gdk-pixbuf-2.0 --variable gdk_pixbuf_moduledir --define-variable=prefix=${CMAKE_INSTALL_PREFIX} OUTPUT_VARIABLE GDK_PIXBUF_MODULEDIR OUTPUT_STRIP_TRAILING_WHITESPACE)
-install(TARGETS pixbufloader-jxl LIBRARY DESTINATION "${GDK_PIXBUF_MODULEDIR}")
+install(TARGETS pixbufloader-jxl DESTINATION "${GDK_PIXBUF_MODULEDIR}")
 
 # Instead of the following, we might instead add the
 # mime type image/jxl to
 # /usr/share/thumbnailers/gdk-pixbuf-thumbnailer.thumbnailer
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/jxl.thumbnailer DESTINATION share/thumbnailers/)
 
-if(BUILD_TESTING AND NOT MINGW)
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
   pkg_check_modules(Gdk IMPORTED_TARGET gdk-2.0)
   if (Gdk_FOUND)
     # Test for loading a .jxl file using the pixbufloader library via GDK. This
@@ -63,14 +63,19 @@ if(BUILD_TESTING AND NOT MINGW)
       set(XVFB_PROGRAM_PREFIX "")
     endif()
 
-    add_test(
-      NAME pixbufloader_test_jxl
-      COMMAND
-        ${XVFB_PROGRAM_PREFIX} $<TARGET_FILE:pixbufloader_test>
-        "${CMAKE_CURRENT_SOURCE_DIR}/loaders_test.cache"
-        "${CMAKE_SOURCE_DIR}/third_party/testdata/jxl/blending/cropped_traffic_light.jxl"
-      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    )
-    set_tests_properties(pixbufloader_test_jxl PROPERTIES SKIP_RETURN_CODE 254)
+    # libX11.so and libgdk-x11-2.0.so are not compiled with MSAN -> report
+    # use-of-uninitialized-value for string some internal string value.
+    # TODO(eustas): investigate direct memory leak (32 bytes).
+    if (NOT (SANITIZER STREQUAL "msan") AND NOT (SANITIZER STREQUAL "asan"))
+      add_test(
+        NAME pixbufloader_test_jxl
+        COMMAND
+          ${XVFB_PROGRAM_PREFIX} $<TARGET_FILE:pixbufloader_test>
+          "${CMAKE_CURRENT_SOURCE_DIR}/loaders_test.cache"
+          "${CMAKE_SOURCE_DIR}/testdata/jxl/blending/cropped_traffic_light.jxl"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      )
+      set_tests_properties(pixbufloader_test_jxl PROPERTIES SKIP_RETURN_CODE 254)
+    endif()
   endif()  # Gdk_FOUND
 endif()  # BUILD_TESTING

@@ -4,8 +4,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import os
 import shutil
 import tempfile
@@ -13,7 +11,7 @@ import tempfile
 import mozprofile
 
 from marionette_driver import errors
-from marionette_harness import MarionetteTestCase
+from marionette_harness import MarionetteTestCase, parameterized
 
 
 class BaseProfileManagement(MarionetteTestCase):
@@ -26,7 +24,7 @@ class BaseProfileManagement(MarionetteTestCase):
         shutil.rmtree(self.orig_profile_path, ignore_errors=True)
         self.marionette.profile = None
 
-        self.marionette.quit(clean=True)
+        self.marionette.quit(in_app=False, clean=True)
 
         super(BaseProfileManagement, self).tearDown()
 
@@ -79,36 +77,42 @@ class ExternalProfileMixin(object):
 
 
 class TestQuitRestartWithoutWorkspace(BaseProfileManagement):
-    def test_quit_keeps_same_profile(self):
-        self.marionette.quit()
+    @parameterized("safe", True)
+    @parameterized("forced", False)
+    def test_quit_keeps_same_profile(self, in_app):
+        self.marionette.quit(in_app=in_app)
         self.marionette.start_session()
 
         self.assertEqual(self.profile_path, self.orig_profile_path)
         self.assertTrue(os.path.exists(self.orig_profile_path))
 
     def test_quit_clean_creates_new_profile(self):
-        self.marionette.quit(clean=True)
+        self.marionette.quit(in_app=False, clean=True)
         self.marionette.start_session()
 
         self.assertNotEqual(self.profile_path, self.orig_profile_path)
         self.assertFalse(os.path.exists(self.orig_profile_path))
 
-    def test_restart_keeps_same_profile(self):
-        self.marionette.restart()
+    @parameterized("safe", True)
+    @parameterized("forced", False)
+    def test_restart_keeps_same_profile(self, in_app):
+        self.marionette.restart(in_app=in_app)
 
         self.assertEqual(self.profile_path, self.orig_profile_path)
         self.assertTrue(os.path.exists(self.orig_profile_path))
 
     def test_restart_clean_creates_new_profile(self):
-        self.marionette.restart(clean=True)
+        self.marionette.restart(in_app=False, clean=True)
 
         self.assertNotEqual(self.profile_path, self.orig_profile_path)
         self.assertFalse(os.path.exists(self.orig_profile_path))
 
 
 class TestQuitRestartWithWorkspace(WorkspaceProfileManagement):
-    def test_quit_keeps_same_profile(self):
-        self.marionette.quit()
+    @parameterized("safe", True)
+    @parameterized("forced", False)
+    def test_quit_keeps_same_profile(self, in_app):
+        self.marionette.quit(in_app=in_app)
         self.marionette.start_session()
 
         self.assertEqual(self.profile_path, self.orig_profile_path)
@@ -116,22 +120,24 @@ class TestQuitRestartWithWorkspace(WorkspaceProfileManagement):
         self.assertTrue(os.path.exists(self.orig_profile_path))
 
     def test_quit_clean_creates_new_profile(self):
-        self.marionette.quit(clean=True)
+        self.marionette.quit(in_app=False, clean=True)
         self.marionette.start_session()
 
         self.assertNotEqual(self.profile_path, self.orig_profile_path)
         self.assertIn(self.workspace, self.profile_path)
         self.assertFalse(os.path.exists(self.orig_profile_path))
 
-    def test_restart_keeps_same_profile(self):
-        self.marionette.restart()
+    @parameterized("safe", True)
+    @parameterized("forced", False)
+    def test_restart_keeps_same_profile(self, in_app):
+        self.marionette.restart(in_app=in_app)
 
         self.assertEqual(self.profile_path, self.orig_profile_path)
         self.assertNotIn(self.workspace, self.profile_path)
         self.assertTrue(os.path.exists(self.orig_profile_path))
 
     def test_restart_clean_creates_new_profile(self):
-        self.marionette.restart(clean=True)
+        self.marionette.restart(in_app=False, clean=True)
 
         self.assertNotEqual(self.profile_path, self.orig_profile_path)
         self.assertIn(self.workspace, self.profile_path)

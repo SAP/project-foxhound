@@ -3,15 +3,8 @@
 
 "use strict";
 
-/* import-globals-from ../../../debugger/test/mochitest/helpers.js */
 Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/helpers.js",
-  this
-);
-
-/* import-globals-from ../../../debugger/test/mochitest/helpers/context.js */
-Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/helpers/context.js",
+  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/shared-head.js",
   this
 );
 
@@ -94,11 +87,8 @@ async function clickOnJumpToDebuggerIconForNode(
   );
   evHolder.scrollIntoView();
   info(`Display event tooltip for node "${nodeSelector}"`);
-  EventUtils.synthesizeMouseAtCenter(
-    evHolder,
-    {},
-    inspector.markup.doc.defaultView
-  );
+  evHolder.click();
+
   const tooltip = inspector.markup.eventDetailsTooltip;
   await tooltip.once("shown");
 

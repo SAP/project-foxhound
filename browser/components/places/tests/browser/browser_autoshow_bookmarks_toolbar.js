@@ -8,7 +8,7 @@ const TOOLBAR_VISIBILITY_PREF = "browser.toolbars.bookmarks.visibility";
 let bookmarkPanel;
 let win;
 
-add_task(async function setup() {
+add_setup(async function() {
   Services.prefs.clearUserPref(LOCATION_PREF);
   await PlacesUtils.bookmarks.eraseEverything();
 
@@ -34,6 +34,15 @@ add_task(async function setup() {
 
 /**
  * Helper to check we've shown the toolbar
+ *
+ * @param {object} options
+ *   Options for the test
+ * @param {boolean} options.showToolbar
+ *   If the toolbar should be shown or not
+ * @param {string} options.expectedFolder
+ *   The expected folder to be shown
+ * @param {string} options.reason
+ *   The reason the toolbar should be shown
  */
 async function checkResponse({ showToolbar, expectedFolder, reason }) {
   // Check folder.

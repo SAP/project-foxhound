@@ -1,5 +1,5 @@
-Supported platforms
-===================
+<!-- markdownlint-disable MD033 -->
+# Supported platforms
 
 The following table shows a mapping between [geckodriver releases],
 and required versions of Selenium and Firefox:
@@ -23,40 +23,61 @@ and required versions of Selenium and Firefox:
   </tr>
  </thead>
  <tr>
+  <td>0.32.2
+  <td>≥ 3.11 (3.14 Python)
+  <td>102 ESR
+  <td>n/a
+ <tr>
+  <td>0.32.1
+  <td>≥ 3.11 (3.14 Python)
+  <td>102 ESR
+  <td>n/a
+ <tr>
+  <td>0.32.0
+  <td>≥ 3.11 (3.14 Python)
+  <td>102 ESR
+  <td>n/a
+ <tr>
+  <td>0.31.0
+  <td>≥ 3.11 (3.14 Python)
+  <td>91 ESR
+  <td>n/a
+ <tr>
+ <tr>
   <td>0.30.0
   <td>≥ 3.11 (3.14 Python)
   <td>78 ESR
-  <td>n/a
+  <td>90
  <tr>
   <td>0.29.1
   <td>≥ 3.11 (3.14 Python)
   <td>60
-  <td>n/a
+  <td>90
  <tr>
   <td>0.29.0
   <td>≥ 3.11 (3.14 Python)
   <td>60
-  <td>n/a
+  <td>90
  <tr>
   <td>0.28.0
   <td>≥ 3.11 (3.14 Python)
   <td>60
-  <td>n/a
+  <td>90
  <tr>
   <td>0.27.0
   <td>≥ 3.11 (3.14 Python)
   <td>60
-  <td>n/a
+  <td>90
  <tr>
   <td>0.26.0
   <td>≥ 3.11 (3.14 Python)
   <td>60
-  <td>n/a
+  <td>90
  <tr>
   <td>0.25.0
   <td>≥ 3.11 (3.14 Python)
   <td>57
-  <td>n/a
+  <td>90
  <tr>
   <td>0.24.0
   <td>≥ 3.11 (3.14 Python)
@@ -109,15 +130,13 @@ and required versions of Selenium and Firefox:
   <td>62
 </table>
 
-Clients
--------
+## Clients
 
 [Selenium] users must update to version 3.11 or later to use geckodriver.
 Other clients that follow the [W3C WebDriver specification][WebDriver]
 are also supported.
 
-Firefoxen
----------
+## Firefoxen
 
 geckodriver is not yet feature complete.  This means that it does
 not yet offer full conformance with the [WebDriver] standard
@@ -133,8 +152,7 @@ in the most recent Firefox versions, and we strongly advise using the
 latest [Firefox Nightly] with geckodriver.  Since Windows XP support
 in Firefox was dropped with Firefox 53, we do not support this platform.
 
-Android
--------
+## Android
 
 Starting with the 0.26.0 release geckodriver is able to connect
 to Android devices, and to control packages which are based on [GeckoView]
@@ -150,7 +168,6 @@ have to be set when requesting a new session. See the Android section under
 [Selenium]: https://github.com/seleniumhq/selenium
 [WebDriver]: https://w3c.github.io/webdriver/
 [implementation status]: https://bugzilla.mozilla.org/showdependencytree.cgi?id=721859&hide_resolved=1
-[Firefox Nightly]: https://whattrainisitnow.com/
 [remote protocol]: https://github.com/mozilla/geckodriver/issues?q=is%3Aissue+is%3Aopen+label%3Amarionette
 [specification]: https://github.com/mozilla/geckodriver/issues?q=is%3Aissue+is%3Aopen+label%3Aspec
 [issue tracker]: https://github.com/mozilla/geckodriver/issues

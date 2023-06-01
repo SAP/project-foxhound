@@ -98,7 +98,7 @@ const AVAILABLE_UA_OVERRIDES = [
       uaTransformer: originalUA => {
         return (
           UAHelpers.getPrefix(originalUA) +
-          " AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.132 Safari/537.36"
+          " AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
         );
       },
     },
@@ -260,10 +260,7 @@ const AVAILABLE_UA_OVERRIDES = [
     config: {
       matches: ["*://*.ceskatelevize.cz/*"],
       uaTransformer: originalUA => {
-        return (
-          UAHelpers.getPrefix(originalUA) +
-          " AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.111 Mobile Safari/537.36"
-        );
+        return UAHelpers.getDeviceAppropriateChromeUA();
       },
     },
   },
@@ -346,27 +343,6 @@ const AVAILABLE_UA_OVERRIDES = [
   },
   {
     /*
-     * Bug 1621065 - UA overrides for bracketchallenge.ncaa.com
-     * Webcompat issue #49886 - https://webcompat.com/issues/49886
-     *
-     * The NCAA bracket challenge website mistakenly classifies
-     * any non-Chrome browser on Android as "is_old_android". As a result,
-     * a modal is shown telling them they have security flaws. We have
-     * attempted to reach out for a fix (and clarification).
-     */
-    id: "bug1621065",
-    platform: "android",
-    domain: "bracketchallenge.ncaa.com",
-    bug: "1621065",
-    config: {
-      matches: ["*://bracketchallenge.ncaa.com/*"],
-      uaTransformer: originalUA => {
-        return originalUA + " Chrome";
-      },
-    },
-  },
-  {
-    /*
      * Bug 1622063 - UA override for wp1-ext.usps.gov
      * Webcompat issue #29867 - https://webcompat.com/issues/29867
      *
@@ -426,7 +402,6 @@ const AVAILABLE_UA_OVERRIDES = [
   },
   {
     /*
-     * Bug 1563839 - rolb.santanderbank.com - Build UA override
      * Bug 1646791 - bancosantander.es - Re-add UA override.
      * Bug 1665129 - *.gruposantander.es - Add wildcard domains.
      * WebCompat issue #33462 - https://webcompat.com/issues/33462
@@ -445,16 +420,14 @@ const AVAILABLE_UA_OVERRIDES = [
         "*://*.bancosantander.es/*",
         "*://*.gruposantander.es/*",
         "*://*.santander.co.uk/*",
-        "*://bob.santanderbank.com/*",
-        "*://rolb.santanderbank.com/*",
       ],
       uaTransformer: originalUA => {
-        // The two lines related to Firefox 100 are for Bug 1743445.
+        // The first line related to Firefox 100 is for Bug 1743445.
         // [TODO]: Remove when bug 1743429 gets backed out.
-        return originalUA
-          .replace("Gecko", "like Gecko")
-          .replace("Firefox/100.0", "Firefox/96.0")
-          .replace("rv:100.0", "rv:96.0");
+        return UAHelpers.capVersionTo99(originalUA).replace(
+          "Gecko",
+          "like Gecko"
+        );
       },
     },
   },
@@ -475,25 +448,6 @@ const AVAILABLE_UA_OVERRIDES = [
       matches: ["*://www.jp.square-enix.com/music/sem/page/FF7R/ost/*"],
       uaTransformer: originalUA => {
         return originalUA + " Chrome/83";
-      },
-    },
-  },
-  {
-    /*
-     * Bug 1654888 - UA override for ebuyer.com
-     * Webcompat issue #52463 - https://webcompat.com/issues/52463
-     *
-     * This site returns desktop site based on server side UA detection.
-     * Spoofing as Chrome allows to get mobile experience
-     */
-    id: "bug1654888",
-    platform: "android",
-    domain: "ebuyer.com",
-    bug: "1654888",
-    config: {
-      matches: ["*://*.ebuyer.com/*"],
-      uaTransformer: () => {
-        return UAHelpers.getDeviceAppropriateChromeUA();
       },
     },
   },
@@ -690,24 +644,6 @@ const AVAILABLE_UA_OVERRIDES = [
   },
   {
     /*
-     * Bug 1741892 - Add UA override for goal.com
-     *
-     * This site needs to have Chrome into its UA string to be able
-     * to serve the right experience on both desktop and mobile.
-     */
-    id: "bug1741892",
-    platform: "all",
-    domain: "goal.com",
-    bug: "1741892",
-    config: {
-      matches: ["*://goal.com/*"],
-      uaTransformer: originalUA => {
-        return originalUA + " Chrome/98.0.1086.0";
-      },
-    },
-  },
-  {
-    /*
      * Bug 1743745 - Add UA override for www.automesseweb.jp
      * Webcompat issue #70386 - https://github.com/webcompat/web-bugs/issues/70386
      *
@@ -766,58 +702,229 @@ const AVAILABLE_UA_OVERRIDES = [
     /*
      * Bug 1743429 - Add UA override for sites broken with the Version 100 User Agent
      *
-     * We're running an experiment on Desktop with Beta and Nightly, to investigate
-     * how much the web breaks with a Version 100 User Agent. Some sites do not
-     * like this, so let's override for now
+     * Some sites have issues with a UA string with Firefox version 100 or higher,
+     * so present as version 99 for now.
      */
     id: "bug1743429",
-    platform: "desktop",
+    platform: "all",
     domain: "Sites with known Version 100 User Agent breakage",
     bug: "1743429",
     config: {
       matches: [
-        "*://*.wordpress.org/*", // Bug 1743431,
+        "*://*.commerzbank.de/*", // Bug 1767630
+        "*://ubank.com.au/*", // #104099
+        "*://wifi.sncf/*", // #100194
+        "*://www.metrobyt-mobile.com/*", // #105106
+        "*://*.mms.telekom.de/*", // #1800241
       ],
       uaTransformer: originalUA => {
-        if (!originalUA.includes("Firefox/100.0")) {
-          return originalUA;
-        }
-
-        // We do not have a good way to determine the original version number.
-        // since the experiment is short-lived, however, we can just set 96 here
-        // and be done with it.
-        return originalUA
-          .replace("Firefox/100.0", "Firefox/96.0")
-          .replace("rv:100.0", "rv:96.0");
+        return UAHelpers.capVersionTo99(originalUA);
       },
     },
   },
   {
     /*
-     * Bug 1751232 - Add override for sites returning desktop layout for Android 12
-     * Webcompat issue #92978 - https://github.com/webcompat/web-bugs/issues/92978
+     * Bug 1753461 - UA override for serieson.naver.com
+     * Webcompat issue #99993 - https://webcompat.com/issues/97298
      *
-     * A number of news sites returns desktop layout for Android 12 only. Changing it
-     * to Android 12.0 fixes the issue
+     * The site locks out Firefox users unless a Chrome UA is given,
+     * and locks out Linux users as well (so we use Windows+Chrome).
      */
-    id: "bug1751232",
-    platform: "android",
-    domain: "Sites with desktop layout for Android 12",
-    bug: "1751232",
+    id: "bug1753461",
+    platform: "desktop",
+    domain: "serieson.naver.com",
+    bug: "1753461",
     config: {
-      matches: [
-        "*://*.dw.com/*",
-        "*://*.abc10.com/*",
-        "*://*.wnep.com/*",
-        "*://*.dn.se/*",
-        "*://*.dailymail.co.uk/*",
-      ],
+      matches: ["*://serieson.naver.com/*"],
       uaTransformer: originalUA => {
-        if (!originalUA.includes("Android 12;")) {
-          return originalUA;
-        }
-
-        return originalUA.replace("Android 12;", "Android 12.0;");
+        return "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36";
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1756872 - UA override for www.dolcegabbana.com
+     * Webcompat issue #99993 - https://webcompat.com/issues/99993
+     *
+     * The site's layout is broken on Firefox for Android
+     * without a full Chrome user-agent string.
+     */
+    id: "bug1756872",
+    platform: "android",
+    domain: "www.dolcegabbana.com",
+    bug: "1756872",
+    config: {
+      matches: ["*://www.dolcegabbana.com/*"],
+      uaTransformer: originalUA => {
+        return UAHelpers.getDeviceAppropriateChromeUA();
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1771200 - UA override for animalplanet.com
+     * Webcompat issue #99993 - https://webcompat.com/issues/103727
+     *
+     * The videos are not playing and an error message is displayed
+     * in Firefox for Android, but work with Chrome UA
+     */
+    id: "bug1771200",
+    platform: "android",
+    domain: "animalplanet.com",
+    bug: "1771200",
+    config: {
+      matches: ["*://*.animalplanet.com/video/*"],
+      uaTransformer: originalUA => {
+        return UAHelpers.getDeviceAppropriateChromeUA();
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1771200 - UA override for lazada.co.id
+     * Webcompat issue #106229 - https://webcompat.com/issues/106229
+     *
+     * The map is not playing and an error message is displayed
+     * in Firefox for Android, but work with Chrome UA
+     */
+    id: "bug1779059",
+    platform: "android",
+    domain: "lazada.co.id",
+    bug: "1779059",
+    config: {
+      matches: ["*://member-m.lazada.co.id/address/*"],
+      uaTransformer: originalUA => {
+        return UAHelpers.getDeviceAppropriateChromeUA();
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1778168 - UA override for watch.antennaplus.gr
+     * Webcompat issue #106529 - https://webcompat.com/issues/106529
+     *
+     * The site's content is not loaded unless a Chrome UA is used,
+     * and breaks on Linux (so we claim Windows instead in that case).
+     */
+    id: "bug1778168",
+    platform: "desktop",
+    domain: "watch.antennaplus.gr",
+    bug: "1778168",
+    config: {
+      matches: ["*://watch.antennaplus.gr/*"],
+      uaTransformer: originalUA => {
+        return UAHelpers.getDeviceAppropriateChromeUA({
+          desktopOS: "nonLinux",
+        });
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1776897 - UA override for www.edencast.fr
+     * Webcompat issue #106545 - https://webcompat.com/issues/106545
+     *
+     * The site's podcast audio player does not load unless a Chrome UA is used.
+     */
+    id: "bug1776897",
+    platform: "all",
+    domain: "www.edencast.fr",
+    bug: "1776897",
+    config: {
+      matches: ["*://www.edencast.fr/zoomcast*"],
+      uaTransformer: originalUA => {
+        return UAHelpers.getDeviceAppropriateChromeUA();
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1784361 - UA override for coldwellbankerhomes.com
+     * Webcompat issue #108535 - https://webcompat.com/issues/108535
+     *
+     * An error is thrown due to missing element, unless Chrome UA is used
+     */
+    id: "bug1784361",
+    platform: "android",
+    domain: "coldwellbankerhomes.com",
+    bug: "1784361",
+    config: {
+      matches: ["*://*.coldwellbankerhomes.com/*"],
+      uaTransformer: originalUA => {
+        return UAHelpers.getDeviceAppropriateChromeUA();
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1786404 - UA override for business.help.royalmail.com
+     * Webcompat issue #109070 - https://webcompat.com/issues/109070
+     *
+     * Replacing `Firefox` with `FireFox` to evade one of their UA tests...
+     */
+    id: "bug1786404",
+    platform: "all",
+    domain: "business.help.royalmail.com",
+    bug: "1786404",
+    config: {
+      matches: ["*://business.help.royalmail.com/app/webforms/*"],
+      uaTransformer: originalUA => {
+        return originalUA.replace("Firefox", "FireFox");
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1790698 - UA override for wolf777.com
+     * Webcompat issue #103981 - https://webcompat.com/issues/103981
+     *
+     * Add 'Linux; ' next to the Android version or the site breaks
+     */
+    id: "bug1790698",
+    platform: "android",
+    domain: "wolf777.com",
+    bug: "1790698",
+    config: {
+      matches: ["*://wolf777.com/*"],
+      uaTransformer: originalUA => {
+        return originalUA.replace("Android", "Linux; Android");
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1800936 - UA override for cov19ent.kdca.go.kr
+     * Webcompat issue #110655 - https://webcompat.com/issues/110655
+     *
+     * Add 'Chrome;' to the UA for the site to load styles
+     */
+    id: "bug1800936",
+    platform: "all",
+    domain: "cov19ent.kdca.go.kr",
+    bug: "1800936",
+    config: {
+      matches: ["*://cov19ent.kdca.go.kr/*"],
+      uaTransformer: originalUA => {
+        return originalUA + " Chrome";
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1803131 - UA override for argaam.com
+     * Webcompat issue #113638 - https://webcompat.com/issues/113638
+     *
+     * To receive the proper mobile version instead of the desktop version
+     * the UA is spoofed.
+     */
+    id: "bug1803131",
+    platform: "android",
+    domain: "argaam.com",
+    bug: "1803131",
+    config: {
+      matches: ["*://*.argaam.com/*"],
+      uaTransformer: originalUA => {
+        return UAHelpers.getDeviceAppropriateChromeUA();
       },
     },
   },

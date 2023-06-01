@@ -112,7 +112,7 @@ void RoundtripRandomUnbalancedStream(int alphabet_size) {
   constexpr int kPrecision = 1 << 10;
   Rng rng(0);
   for (size_t i = 0; i < kReps; i++) {
-    std::vector<int> distributions[kNumHistograms];
+    std::vector<int> distributions[kNumHistograms] = {};
     for (int j = 0; j < kNumHistograms; j++) {
       distributions[j].resize(kPrecision);
       int symbol = 0;
@@ -229,7 +229,7 @@ void TestCheckpointing(bool ans, bool lz77) {
     ANSSymbolReader reader(&decoded_codes, &br);
 
     ANSSymbolReader::Checkpoint checkpoint;
-    size_t br_pos;
+    size_t br_pos = 0;
     constexpr size_t kInterval = ANSSymbolReader::kMaxCheckpointInterval - 2;
     for (size_t i = 0; i < input_values[0].size(); i++) {
       if (i % kInterval == 0 && i > 0) {

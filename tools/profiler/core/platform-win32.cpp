@@ -43,18 +43,20 @@ static void PopulateRegsFromContext(Registers& aRegs, CONTEXT* aContext) {
   aRegs.mPC = reinterpret_cast<Address>(aContext->Rip);
   aRegs.mSP = reinterpret_cast<Address>(aContext->Rsp);
   aRegs.mFP = reinterpret_cast<Address>(aContext->Rbp);
+  aRegs.mLR = 0;
 #elif defined(GP_ARCH_x86)
   aRegs.mPC = reinterpret_cast<Address>(aContext->Eip);
   aRegs.mSP = reinterpret_cast<Address>(aContext->Esp);
   aRegs.mFP = reinterpret_cast<Address>(aContext->Ebp);
+  aRegs.mLR = 0;
 #elif defined(GP_ARCH_arm64)
   aRegs.mPC = reinterpret_cast<Address>(aContext->Pc);
   aRegs.mSP = reinterpret_cast<Address>(aContext->Sp);
   aRegs.mFP = reinterpret_cast<Address>(aContext->Fp);
+  aRegs.mLR = reinterpret_cast<Address>(aContext->Lr);
 #else
 #  error "bad arch"
 #endif
-  aRegs.mLR = 0;
 }
 
 // Gets a real (i.e. not pseudo) handle for the current thread, with the
@@ -120,6 +122,39 @@ uint64_t RunningTimes::ConvertRawToJson(uint64_t aRawValue) {
   // the result of the division is truncated.
   return (aRawValue * GHZ_PER_MHZ + (GHZ_PER_MHZ / 2u)) / cycleTimeFrequencyMHz;
 }
+
+static inline uint64_t ToNanoSeconds(const FILETIME& aFileTime) {
+  // FILETIME values are 100-nanoseconds units, converting
+  ULARGE_INTEGER usec = {{aFileTime.dwLowDateTime, aFileTime.dwHighDateTime}};
+  return usec.QuadPart * 100;
+}
+
+namespace mozilla::profiler {
+bool GetCpuTimeSinceThreadStartInNs(
+    uint64_t* aResult, const mozilla::profiler::PlatformData& aPlatformData) {
+  const HANDLE profiledThread = aPlatformData.ProfiledThread();
+  int frequencyInMHz = GetCycleTimeFrequencyMHz();
+  if (frequencyInMHz) {
+    uint64_t cpuCycleCount;
+    if (!QueryThreadCycleTime(profiledThread, &cpuCycleCount)) {
+      return false;
+    }
+
+    constexpr uint64_t USEC_PER_NSEC = 1000L;
+    *aResult = cpuCycleCount * USEC_PER_NSEC / frequencyInMHz;
+    return true;
+  }
+
+  FILETIME createTime, exitTime, kernelTime, userTime;
+  if (!GetThreadTimes(profiledThread, &createTime, &exitTime, &kernelTime,
+                      &userTime)) {
+    return false;
+  }
+
+  *aResult = ToNanoSeconds(kernelTime) + ToNanoSeconds(userTime);
+  return true;
+}
+}  // namespace mozilla::profiler
 
 static RunningTimes GetProcessRunningTimesDiff(
     PSLockRef aLock, RunningTimes& aPreviousRunningTimesToBeUpdated) {

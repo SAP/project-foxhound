@@ -267,11 +267,7 @@ xpcAccessible::GetLanguage(nsAString& aLanguage) {
   if (!IntlGeneric()) return NS_ERROR_FAILURE;
 
   nsAutoString lang;
-  if (RemoteAccessible* proxy = IntlGeneric()->AsRemote()) {
-    proxy->Language(lang);
-  } else {
-    Intl()->Language(lang);
-  }
+  IntlGeneric()->Language(lang);
 
   aLanguage.Assign(lang);
   return NS_OK;
@@ -282,11 +278,7 @@ xpcAccessible::GetValue(nsAString& aValue) {
   if (!IntlGeneric()) return NS_ERROR_FAILURE;
 
   nsAutoString value;
-  if (RemoteAccessible* proxy = IntlGeneric()->AsRemote()) {
-    proxy->Value(value);
-  } else {
-    Intl()->Value(value);
-  }
+  IntlGeneric()->Value(value);
 
   aValue.Assign(value);
 
@@ -319,16 +311,14 @@ xpcAccessible::GetAccessKey(nsAString& aAccessKey) {
 
   if (!IntlGeneric()) return NS_ERROR_FAILURE;
 
-  if (RemoteAccessible* proxy = IntlGeneric()->AsRemote()) {
 #if defined(XP_WIN)
+  if (IntlGeneric()->IsRemote() &&
+      !StaticPrefs::accessibility_cache_enabled_AtStartup()) {
     return NS_ERROR_NOT_IMPLEMENTED;
-#else
-    proxy->AccessKey().ToString(aAccessKey);
-#endif
-  } else {
-    Intl()->AccessKey().ToString(aAccessKey);
   }
+#endif
 
+  IntlGeneric()->AccessKey().ToString(aAccessKey);
   return NS_OK;
 }
 
@@ -337,15 +327,10 @@ xpcAccessible::GetKeyboardShortcut(nsAString& aKeyBinding) {
   aKeyBinding.Truncate();
   if (!IntlGeneric()) return NS_ERROR_FAILURE;
 
-  if (RemoteAccessible* proxy = IntlGeneric()->AsRemote()) {
-#if defined(XP_WIN)
+  if (IntlGeneric()->IsRemote()) {
     return NS_ERROR_NOT_IMPLEMENTED;
-#else
-    proxy->KeyboardShortcut().ToString(aKeyBinding);
-#endif
-  } else {
-    Intl()->KeyboardShortcut().ToString(aKeyBinding);
   }
+  Intl()->KeyboardShortcut().ToString(aKeyBinding);
   return NS_OK;
 }
 
@@ -374,6 +359,35 @@ xpcAccessible::GetAttributes(nsIPersistentProperties** aAttributes) {
   }
 
   props.forget(aAttributes);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+xpcAccessible::GetCache(nsIPersistentProperties** aCachedFields) {
+  NS_ENSURE_ARG_POINTER(aCachedFields);
+  *aCachedFields = nullptr;
+
+  if (!IntlGeneric()) {
+    return NS_ERROR_FAILURE;
+  }
+
+  RefPtr<nsPersistentProperties> props = new nsPersistentProperties();
+  if (RemoteAccessible* remoteAcc = IntlGeneric()->AsRemote()) {
+    if (RefPtr<AccAttributes> cachedFields = remoteAcc->mCachedFields) {
+      nsAutoString unused;
+      for (auto iter : *cachedFields) {
+        nsAutoString name;
+        iter.NameAsString(name);
+
+        nsAutoString value;
+        iter.ValueAsString(value);
+
+        props->SetStringProperty(NS_ConvertUTF16toUTF8(name), value, unused);
+      }
+    }
+  }
+
+  props.forget(aCachedFields);
   return NS_OK;
 }
 
@@ -409,13 +423,7 @@ xpcAccessible::GetBounds(int32_t* aX, int32_t* aY, int32_t* aWidth,
 
   if (!IntlGeneric()) return NS_ERROR_FAILURE;
 
-  LayoutDeviceIntRect rect;
-  if (LocalAccessible* acc = IntlGeneric()->AsLocal()) {
-    rect = acc->Bounds();
-  } else {
-    rect = IntlGeneric()->AsRemote()->Bounds();
-  }
-
+  LayoutDeviceIntRect rect = IntlGeneric()->Bounds();
   rect.GetRect(aX, aY, aWidth, aHeight);
   return NS_OK;
 }
@@ -436,13 +444,7 @@ xpcAccessible::GetBoundsInCSSPixels(int32_t* aX, int32_t* aY, int32_t* aWidth,
     return NS_ERROR_FAILURE;
   }
 
-  nsIntRect rect;
-  if (LocalAccessible* acc = IntlGeneric()->AsLocal()) {
-    rect = acc->BoundsInCSSPixels();
-  } else {
-    rect = IntlGeneric()->AsRemote()->BoundsInCSSPixels();
-  }
-
+  nsIntRect rect = IntlGeneric()->BoundsInCSSPixels();
   rect.GetRect(aX, aY, aWidth, aHeight);
   return NS_OK;
 }
@@ -484,17 +486,9 @@ xpcAccessible::GetRelationByType(uint32_t aType,
 
   if (!IntlGeneric()) return NS_ERROR_FAILURE;
 
-  if (IntlGeneric()->IsLocal()) {
-    Relation rel = Intl()->RelationByType(static_cast<RelationType>(aType));
-    NS_ADDREF(*aRelation = new nsAccessibleRelation(aType, &rel));
-    return NS_OK;
-  }
-
-  RemoteAccessible* proxy = IntlGeneric()->AsRemote();
-  nsTArray<RemoteAccessible*> targets =
-      proxy->RelationByType(static_cast<RelationType>(aType));
-  NS_ADDREF(*aRelation = new nsAccessibleRelation(aType, &targets));
-
+  Relation rel =
+      IntlGeneric()->RelationByType(static_cast<RelationType>(aType));
+  NS_ADDREF(*aRelation = new nsAccessibleRelation(aType, &rel));
   return NS_OK;
 }
 
@@ -553,15 +547,7 @@ xpcAccessible::GetFocusedChild(nsIAccessible** aChild) {
 
   if (!IntlGeneric()) return NS_ERROR_FAILURE;
 
-  if (RemoteAccessible* proxy = IntlGeneric()->AsRemote()) {
-#if defined(XP_WIN)
-    return NS_ERROR_NOT_IMPLEMENTED;
-#else
-    NS_IF_ADDREF(*aChild = ToXPC(proxy->FocusedChild()));
-#endif
-  } else {
-    NS_IF_ADDREF(*aChild = ToXPC(Intl()->FocusedChild()));
-  }
+  NS_IF_ADDREF(*aChild = ToXPC(IntlGeneric()->FocusedChild()));
 
   return NS_OK;
 }
@@ -614,15 +600,14 @@ NS_IMETHODIMP
 xpcAccessible::SetSelected(bool aSelect) {
   if (!IntlGeneric()) return NS_ERROR_FAILURE;
 
-  if (RemoteAccessible* proxy = IntlGeneric()->AsRemote()) {
 #if defined(XP_WIN)
+  if (IntlGeneric()->IsRemote() &&
+      !StaticPrefs::accessibility_cache_enabled_AtStartup()) {
     return NS_ERROR_NOT_IMPLEMENTED;
-#else
-    proxy->SetSelected(aSelect);
-#endif
-  } else {
-    Intl()->SetSelected(aSelect);
   }
+#endif
+
+  IntlGeneric()->SetSelected(aSelect);
 
   return NS_OK;
 }
@@ -631,15 +616,14 @@ NS_IMETHODIMP
 xpcAccessible::TakeSelection() {
   if (!IntlGeneric()) return NS_ERROR_FAILURE;
 
-  if (RemoteAccessible* proxy = IntlGeneric()->AsRemote()) {
 #if defined(XP_WIN)
+  if (IntlGeneric()->IsRemote() &&
+      !StaticPrefs::accessibility_cache_enabled_AtStartup()) {
     return NS_ERROR_NOT_IMPLEMENTED;
-#else
-    proxy->TakeSelection();
-#endif
-  } else {
-    Intl()->TakeSelection();
   }
+#endif
+
+  IntlGeneric()->TakeSelection();
 
   return NS_OK;
 }
@@ -742,17 +726,7 @@ NS_IMETHODIMP
 xpcAccessible::ScrollTo(uint32_t aHow) {
   if (!IntlGeneric()) return NS_ERROR_FAILURE;
 
-  if (RemoteAccessible* proxy = IntlGeneric()->AsRemote()) {
-#if defined(XP_WIN)
-    return NS_ERROR_NOT_IMPLEMENTED;
-#else
-    proxy->ScrollTo(aHow);
-#endif
-  } else {
-    RefPtr<LocalAccessible> intl = Intl();
-    intl->ScrollTo(aHow);
-  }
-
+  IntlGeneric()->ScrollTo(aHow);
   return NS_OK;
 }
 

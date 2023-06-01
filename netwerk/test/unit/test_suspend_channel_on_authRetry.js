@@ -2,16 +2,10 @@
 // notifying http-on-modify-request and http-on-before-connect observers.
 "use strict";
 
-var CC = Components.Constructor;
-
 const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserv.identity.primaryPort;
-});
-
-XPCOMUtils.defineLazyGetter(this, "PORT", function() {
-  return httpserv.identity.primaryPort;
 });
 
 var obs = Services.obs;
@@ -74,7 +68,7 @@ requestListenerObserver.prototype = {
       subject instanceof Ci.nsIHttpChannel
     ) {
       if (this.suspendOnBeforeConnect) {
-        var chan = subject.QueryInterface(Ci.nsIHttpChannel);
+        let chan = subject.QueryInterface(Ci.nsIHttpChannel);
         executeSoon(() => {
           this.resumeOnBeforeConnect = true;
           chan.resume();
@@ -87,7 +81,7 @@ requestListenerObserver.prototype = {
       subject instanceof Ci.nsIHttpChannel
     ) {
       if (this.suspendOnModifyRequest) {
-        var chan = subject.QueryInterface(Ci.nsIHttpChannel);
+        let chan = subject.QueryInterface(Ci.nsIHttpChannel);
         executeSoon(() => {
           this.resumeOnModifyRequest = true;
           chan.resume();

@@ -13,9 +13,10 @@
 #include "mozilla/TextUtils.h"
 #include "mozilla/Utf8.h"
 
-#include <algorithm>
+#include <limits>
 #include <type_traits>
 
+#include "frontend/FrontendContext.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "util/StringBuffer.h"
 #include "util/Unicode.h"  // unicode::REPLACEMENT_CHARACTER
@@ -63,7 +64,7 @@ static size_t GetDeflatedUTF8StringLength(const CharT* chars, size_t nchars) {
     if (c < 0x80) {
       continue;
     }
-    uint32_t v;
+    char32_t v;
     if (IsSurrogate(c)) {
       /* nbytes sets 1 length since this is surrogate pair. */
       if (IsTrailSurrogate(c) || (chars + 1) == end) {
@@ -133,15 +134,15 @@ void ConvertToUTF8<const Latin1Char>(mozilla::Span<const Latin1Char> src,
   (void)ConvertLatin1toUtf8Partial(AsChars(src), dst);
 }
 
-template <typename CharT>
-UTF8CharsZ JS::CharsToNewUTF8CharsZ(JSContext* cx,
+template <typename CharT, typename Allocator>
+UTF8CharsZ JS::CharsToNewUTF8CharsZ(Allocator* alloc,
                                     const mozilla::Range<CharT> chars) {
   /* Get required buffer size. */
   const CharT* str = chars.begin().get();
   size_t len = ::GetDeflatedUTF8StringLength(str, chars.length());
 
   /* Allocate buffer. */
-  char* utf8 = cx->pod_malloc<char>(len + 1);
+  char* utf8 = alloc->template pod_malloc<char>(len + 1);
   if (!utf8) {
     return UTF8CharsZ();
   }
@@ -165,14 +166,26 @@ template UTF8CharsZ JS::CharsToNewUTF8CharsZ(
 template UTF8CharsZ JS::CharsToNewUTF8CharsZ(
     JSContext* cx, const mozilla::Range<const char16_t> chars);
 
-static const uint32_t INVALID_UTF8 = UINT32_MAX;
+template UTF8CharsZ JS::CharsToNewUTF8CharsZ(
+    FrontendAllocator* cx, const mozilla::Range<Latin1Char> chars);
+
+template UTF8CharsZ JS::CharsToNewUTF8CharsZ(
+    FrontendAllocator* cx, const mozilla::Range<char16_t> chars);
+
+template UTF8CharsZ JS::CharsToNewUTF8CharsZ(
+    FrontendAllocator* cx, const mozilla::Range<const Latin1Char> chars);
+
+template UTF8CharsZ JS::CharsToNewUTF8CharsZ(
+    FrontendAllocator* cx, const mozilla::Range<const char16_t> chars);
+
+static constexpr uint32_t INVALID_UTF8 = std::numeric_limits<char32_t>::max();
 
 /*
  * Convert a UTF-8 character sequence into a UCS-4 character and return that
  * character. It is assumed that the caller already checked that the sequence
  * is valid.
  */
-static uint32_t Utf8ToOneUcs4CharImpl(const uint8_t* utf8Buffer,
+static char32_t Utf8ToOneUcs4CharImpl(const uint8_t* utf8Buffer,
                                       int utf8Length) {
   MOZ_ASSERT(1 <= utf8Length && utf8Length <= 4);
 
@@ -182,12 +195,12 @@ static uint32_t Utf8ToOneUcs4CharImpl(const uint8_t* utf8Buffer,
   }
 
   /* from Unicode 3.1, non-shortest form is illegal */
-  static const uint32_t minucs4Table[] = {0x80, 0x800, NonBMPMin};
+  static const char32_t minucs4Table[] = {0x80, 0x800, NonBMPMin};
 
   MOZ_ASSERT((*utf8Buffer & (0x100 - (1 << (7 - utf8Length)))) ==
              (0x100 - (1 << (8 - utf8Length))));
-  uint32_t ucs4Char = *utf8Buffer++ & ((1 << (7 - utf8Length)) - 1);
-  uint32_t minucs4Char = minucs4Table[utf8Length - 2];
+  char32_t ucs4Char = *utf8Buffer++ & ((1 << (7 - utf8Length)) - 1);
+  char32_t minucs4Char = minucs4Table[utf8Length - 2];
   while (--utf8Length) {
     MOZ_ASSERT((*utf8Buffer & 0xC0) == 0x80);
     ucs4Char = (ucs4Char << 6) | (*utf8Buffer++ & 0x3F);
@@ -204,7 +217,7 @@ static uint32_t Utf8ToOneUcs4CharImpl(const uint8_t* utf8Buffer,
   return ucs4Char;
 }
 
-uint32_t JS::Utf8ToOneUcs4Char(const uint8_t* utf8Buffer, int utf8Length) {
+char32_t JS::Utf8ToOneUcs4Char(const uint8_t* utf8Buffer, int utf8Length) {
   return Utf8ToOneUcs4CharImpl(utf8Buffer, utf8Length);
 }
 
@@ -361,7 +374,6 @@ static void CopyAndInflateUTF8IntoBuffer(JSContext* cx, const UTF8Chars src,
     MOZ_ALWAYS_TRUE((InflateUTF8ToUTF16<ErrorAction>(cx, src, push)));
     MOZ_ASSERT(j == outlen);
   }
-  dst[outlen] = CharT('\0');  // NUL char
 }
 
 template <OnUTF8Error ErrorAction, typename CharsT>
@@ -399,6 +411,7 @@ static CharsT InflateUTF8StringHelper(JSContext* cx, const UTF8Chars src,
           ? OnUTF8Error::InsertQuestionMark
           : OnUTF8Error::InsertReplacementCharacter;
   CopyAndInflateUTF8IntoBuffer<errorMode>(cx, src, dst, *outlen, allASCII);
+  dst[*outlen] = CharT('\0');
 
   return CharsT(dst, *outlen);
 }
@@ -543,20 +556,19 @@ template bool UTF8EqualsChars(const JS::UTF8Chars, const char16_t*);
 template bool UTF8EqualsChars(const JS::UTF8Chars, const JS::Latin1Char*);
 
 template <typename CharT>
-void InflateUTF8CharsToBufferAndTerminate(const JS::UTF8Chars src, CharT* dst,
-                                          size_t dstLen,
-                                          JS::SmallestEncoding encoding) {
+void InflateUTF8CharsToBuffer(const JS::UTF8Chars src, CharT* dst,
+                              size_t dstLen, JS::SmallestEncoding encoding) {
   CopyAndInflateUTF8IntoBuffer<OnUTF8Error::Crash>(
       /* cx = */ nullptr, src, dst, dstLen,
       encoding == JS::SmallestEncoding::ASCII);
 }
 
-template void InflateUTF8CharsToBufferAndTerminate(
-    const UTF8Chars src, char16_t* dst, size_t dstLen,
-    JS::SmallestEncoding encoding);
-template void InflateUTF8CharsToBufferAndTerminate(
-    const UTF8Chars src, JS::Latin1Char* dst, size_t dstLen,
-    JS::SmallestEncoding encoding);
+template void InflateUTF8CharsToBuffer(const UTF8Chars src, char16_t* dst,
+                                       size_t dstLen,
+                                       JS::SmallestEncoding encoding);
+template void InflateUTF8CharsToBuffer(const UTF8Chars src, JS::Latin1Char* dst,
+                                       size_t dstLen,
+                                       JS::SmallestEncoding encoding);
 
 #ifdef DEBUG
 void JS::ConstUTF8CharsZ::validate(size_t aLength) {
@@ -582,6 +594,8 @@ bool JS::StringIsASCII(const char* s) {
 bool JS::StringIsASCII(Span<const char> s) { return IsAscii(s); }
 
 bool StringBuffer::append(const Utf8Unit* units, size_t len) {
+  MOZ_ASSERT(maybeCx_);
+
   if (isLatin1()) {
     Latin1CharBuffer& latin1 = latin1Chars();
 
@@ -620,7 +634,7 @@ bool StringBuffer::append(const Utf8Unit* units, size_t len) {
     utf16Len++;
     return LoopDisposition::Continue;
   };
-  if (!InflateUTF8ToUTF16<OnUTF8Error::Throw>(cx_, remainingUtf8,
+  if (!InflateUTF8ToUTF16<OnUTF8Error::Throw>(maybeCx_, remainingUtf8,
                                               countInflated)) {
     return false;
   }
@@ -640,8 +654,8 @@ bool StringBuffer::append(const Utf8Unit* units, size_t len) {
     return LoopDisposition::Continue;
   };
 
-  MOZ_ALWAYS_TRUE(
-      InflateUTF8ToUTF16<OnUTF8Error::Throw>(cx_, remainingUtf8, appendUtf16));
+  MOZ_ALWAYS_TRUE(InflateUTF8ToUTF16<OnUTF8Error::Throw>(
+      maybeCx_, remainingUtf8, appendUtf16));
   MOZ_ASSERT(toFill == buf.end());
   return true;
 }

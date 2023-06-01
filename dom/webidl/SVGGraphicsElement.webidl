@@ -19,22 +19,19 @@ dictionary SVGBoundingBoxOptions {
 
 [Exposed=Window]
 interface SVGGraphicsElement : SVGElement {
-  [Pure]
-  attribute boolean autofocus;
-
   readonly attribute SVGAnimatedTransformList transform;
 
+  [Deprecated="SVGNearestViewportElement",
+   Pref="svg.nearestAndFarthestViewportElement.enabled"]
   readonly attribute SVGElement? nearestViewportElement;
+  [Deprecated="SVGFarthestViewportElement",
+   Pref="svg.nearestAndFarthestViewportElement.enabled"]
   readonly attribute SVGElement? farthestViewportElement;
 
   [NewObject]
   SVGRect getBBox(optional SVGBoundingBoxOptions aOptions = {});
-  // Not implemented
-  // SVGRect getStrokeBBox();
   SVGMatrix? getCTM();
   SVGMatrix? getScreenCTM();
-  [Throws]
-  SVGMatrix getTransformToElement(SVGGraphicsElement element);
 };
 
 SVGGraphicsElement includes SVGTests;

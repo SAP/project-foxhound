@@ -7,30 +7,30 @@
 /**
  * Interface to a dedicated thread handling for Remote Settings heavy operations.
  */
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { setTimeout, clearTimeout } = ChromeUtils.import(
-  "resource://gre/modules/Timer.jsm"
+const { setTimeout, clearTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
 );
 
 var EXPORTED_SYMBOLS = ["RemoteSettingsWorker"];
 
+const lazy = {};
+
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "gMaxIdleMilliseconds",
   "services.settings.worker_idle_max_milliseconds",
   30 * 1000 // Default of 30 seconds.
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "AsyncShutdown",
-  "resource://gre/modules/AsyncShutdown.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
+});
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "SharedUtils",
   "resource://services-settings/SharedUtils.jsm"
 );
@@ -51,7 +51,7 @@ class RemoteSettingsWorkerError extends Error {
 class Worker {
   constructor(source) {
     if (gShutdown) {
-      Cu.reportError("Can't create worker once shutdown has started");
+      console.error("Can't create worker once shutdown has started");
     }
     this.source = source;
     this.worker = null;
@@ -128,7 +128,7 @@ class Worker {
       } else {
         this.idleTimeoutId = setTimeout(() => {
           this.stop();
-        }, gMaxIdleMilliseconds);
+        }, lazy.gMaxIdleMilliseconds);
       }
     }
   }
@@ -187,7 +187,7 @@ class Worker {
   async checkContentHash(buffer, size, hash) {
     // The implementation does little work on the current thread, so run the
     // task on the current thread instead of the worker thread.
-    return SharedUtils.checkContentHash(buffer, size, hash);
+    return lazy.SharedUtils.checkContentHash(buffer, size, hash);
   }
 }
 
@@ -198,7 +198,7 @@ class Worker {
 // fine. If we ever start creating more than one Worker instance, this
 // code will need adjusting to deal with that.
 try {
-  AsyncShutdown.profileBeforeChange.addBlocker(
+  lazy.AsyncShutdown.profileBeforeChange.addBlocker(
     "Remote Settings profile-before-change",
     async () => {
       // First, indicate we've shut down.
@@ -230,10 +230,10 @@ try {
     }
   );
 } catch (ex) {
-  Cu.reportError(
+  console.error(
     "Couldn't add shutdown blocker, assuming shutdown has started."
   );
-  Cu.reportError(ex);
+  console.error(ex);
   // If AsyncShutdown throws, `profileBeforeChange` has already fired. Ignore it
   // and mark shutdown. Constructing the worker will report an error and do
   // nothing.

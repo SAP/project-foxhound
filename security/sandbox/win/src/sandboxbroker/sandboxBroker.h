@@ -29,8 +29,6 @@ class AbstractSandboxBroker {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(AbstractSandboxBroker)
 
-  static AbstractSandboxBroker* Create(GeckoProcessType aProcessType);
-
   virtual void Shutdown() = 0;
   virtual bool LaunchApp(const wchar_t* aPath, const wchar_t* aArguments,
                          base::EnvironmentMap& aEnvironment,
@@ -43,8 +41,7 @@ class AbstractSandboxBroker {
   virtual void SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
                                                  bool aIsFileProcess) = 0;
 
-  virtual void SetSecurityLevelForGPUProcess(
-      int32_t aSandboxLevel, const nsCOMPtr<nsIFile>& aProfileDir) = 0;
+  virtual void SetSecurityLevelForGPUProcess(int32_t aSandboxLevel) = 0;
   virtual bool SetSecurityLevelForRDDProcess() = 0;
   virtual bool SetSecurityLevelForSocketProcess() = 0;
   virtual bool SetSecurityLevelForUtilityProcess(
@@ -64,6 +61,11 @@ class AbstractSandboxBroker {
    * to communicate this address to the child.
    */
   virtual void AddHandleToShare(HANDLE aHandle) = 0;
+
+  /**
+   * @return true if policy has win32k locked down, otherwise false
+   */
+  virtual bool IsWin32kLockedDown() = 0;
 
  protected:
   virtual ~AbstractSandboxBroker() {}
@@ -94,8 +96,7 @@ class SandboxBroker : public AbstractSandboxBroker {
   void SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
                                          bool aIsFileProcess) override;
 
-  void SetSecurityLevelForGPUProcess(
-      int32_t aSandboxLevel, const nsCOMPtr<nsIFile>& aProfileDir) override;
+  void SetSecurityLevelForGPUProcess(int32_t aSandboxLevel) override;
   bool SetSecurityLevelForRDDProcess() override;
   bool SetSecurityLevelForSocketProcess() override;
   bool SetSecurityLevelForGMPlugin(SandboxLevel aLevel,
@@ -119,6 +120,8 @@ class SandboxBroker : public AbstractSandboxBroker {
    * to communicate this address to the child.
    */
   void AddHandleToShare(HANDLE aHandle) override;
+
+  bool IsWin32kLockedDown() final;
 
   // Set up dummy interceptions via the broker, so we can log calls.
   void ApplyLoggingPolicy();

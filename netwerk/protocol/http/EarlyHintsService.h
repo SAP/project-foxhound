@@ -8,26 +8,41 @@
 #ifndef mozilla_net_EarlyHintsService_h
 #define mozilla_net_EarlyHintsService_h
 
-#include "nsStringFwd.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
+#include "nsStringFwd.h"
+#include "nsTArray.h"
+
+class nsIChannel;
+class nsIURI;
 
 namespace mozilla::net {
 
+class EarlyHintConnectArgs;
+class OngoingEarlyHints;
+
 class EarlyHintsService {
  public:
-  EarlyHintsService() = default;
-  ~EarlyHintsService() = default;
-  void EarlyHint(const nsACString& linkHeader);
+  EarlyHintsService();
+  ~EarlyHintsService();
+  void EarlyHint(const nsACString& aLinkHeader, nsIURI* aBaseURI,
+                 nsIChannel* aChannel, const nsACString& aReferrerPolicy,
+                 const nsACString& aCSPHeader);
   void FinalResponse(uint32_t aResponseStatus);
-  void Cancel();
+  void Cancel(const nsACString& aReason);
+
+  void RegisterLinksAndGetConnectArgs(
+      nsTArray<EarlyHintConnectArgs>& aOutLinks);
 
  private:
   void CollectTelemetry(Maybe<uint32_t> aResponseStatus);
+  void CollectLinkTypeTelemetry(const nsAString& aRel);
 
   Maybe<TimeStamp> mFirstEarlyHint;
   uint32_t mEarlyHintsCount{0};
-  bool mCanceled{false};
+
+  RefPtr<OngoingEarlyHints> mOngoingEarlyHints;
 };
 
 }  // namespace mozilla::net

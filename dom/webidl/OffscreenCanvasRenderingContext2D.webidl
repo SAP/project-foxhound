@@ -7,11 +7,10 @@
  * https://html.spec.whatwg.org/#the-offscreen-2d-rendering-context
  */
 
-[Exposed=(Window,Worker),
- Func="CanvasUtils::IsOffscreenCanvasEnabled"]
+[Exposed=(Window,Worker), Pref="gfx.offscreencanvas.enabled"]
 interface OffscreenCanvasRenderingContext2D {
   [Throws]
-  void commit();
+  undefined commit();
 
   readonly attribute OffscreenCanvas canvas;
 };
@@ -24,7 +23,9 @@ OffscreenCanvasRenderingContext2D includes CanvasFillStrokeStyles;
 OffscreenCanvasRenderingContext2D includes CanvasShadowStyles;
 OffscreenCanvasRenderingContext2D includes CanvasRect;
 OffscreenCanvasRenderingContext2D includes CanvasDrawPath;
+OffscreenCanvasRenderingContext2D includes CanvasText;
 OffscreenCanvasRenderingContext2D includes CanvasDrawImage;
 OffscreenCanvasRenderingContext2D includes CanvasImageData;
 OffscreenCanvasRenderingContext2D includes CanvasPathDrawingStyles;
+OffscreenCanvasRenderingContext2D includes CanvasTextDrawingStyles;
 OffscreenCanvasRenderingContext2D includes CanvasPathMethods;

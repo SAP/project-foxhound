@@ -3,14 +3,18 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Ci } = require("chrome");
-const { rootSpec } = require("devtools/shared/specs/root");
+const { rootSpec } = require("resource://devtools/shared/specs/root.js");
 const {
   FrontClassWithSpec,
   registerFront,
-} = require("devtools/shared/protocol");
+} = require("resource://devtools/shared/protocol.js");
 
-loader.lazyRequireGetter(this, "getFront", "devtools/shared/protocol", true);
+loader.lazyRequireGetter(
+  this,
+  "getFront",
+  "resource://devtools/shared/protocol.js",
+  true
+);
 
 class RootFront extends FrontClassWithSpec(rootSpec) {
   constructor(client, targetFront, parentFront) {
@@ -212,9 +216,8 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
    *
    * @param [optional] object filter
    *        A dictionary object with following optional attributes:
-   *         - outerWindowID: used to match tabs in parent process
-   *         - tabId: used to match tabs in child processes
-   *         - tab: a reference to xul:tab element
+   *         - browserId: use to match any tab
+   *         - tab: a reference to xul:tab element (used for local tab debugging)
    *         - isWebExtension: an optional boolean to flag TabDescriptors
    *        If nothing is specified, returns the actor for the currently
    *        selected tab.
@@ -222,20 +225,11 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
   async getTab(filter) {
     const packet = {};
     if (filter) {
-      if (typeof filter.outerWindowID == "number") {
-        packet.outerWindowID = filter.outerWindowID;
-      } else if (typeof filter.tabId == "number") {
-        packet.tabId = filter.tabId;
+      if (typeof filter.browserId == "number") {
+        packet.browserId = filter.browserId;
       } else if ("tab" in filter) {
         const browser = filter.tab.linkedBrowser;
-        if (browser.frameLoader.remoteTab) {
-          // Tabs in child process
-          packet.tabId = browser.frameLoader.remoteTab.tabId;
-        } else {
-          // <xul:browser> or <iframe mozbrowser> tabs in parent process
-          packet.outerWindowID =
-            browser.browsingContext.currentWindowGlobal.outerWindowId;
-        }
+        packet.browserId = browser.browserId;
       } else {
         // Throw if a filter object have been passed but without
         // any clearly idenfified filter.

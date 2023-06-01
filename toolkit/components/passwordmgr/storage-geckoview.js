@@ -8,18 +8,16 @@
 
 "use strict";
 
-const { ComponentUtils } = ChromeUtils.import(
-  "resource://gre/modules/ComponentUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { LoginManagerStorage_json } = ChromeUtils.import(
   "resource://gre/modules/storage-json.js"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   GeckoViewAutocomplete: "resource://gre/modules/GeckoViewAutocomplete.jsm",
   LoginHelper: "resource://gre/modules/LoginHelper.jsm",
   LoginEntry: "resource://gre/modules/GeckoViewAutocomplete.jsm",
@@ -31,12 +29,6 @@ class LoginManagerStorage_geckoview extends LoginManagerStorage_json {
   }
   get QueryInterface() {
     return ChromeUtils.generateQI(["nsILoginManagerStorage"]);
-  }
-
-  get _xpcom_factory() {
-    return ComponentUtils.generateSingletonFactory(
-      this.LoginManagerStorage_geckoview
-    );
   }
 
   get _crypto() {
@@ -76,7 +68,9 @@ class LoginManagerStorage_geckoview extends LoginManagerStorage_json {
   }
 
   recordPasswordUse(login) {
-    GeckoViewAutocomplete.onLoginPasswordUsed(LoginEntry.fromLoginInfo(login));
+    lazy.GeckoViewAutocomplete.onLoginPasswordUsed(
+      lazy.LoginEntry.fromLoginInfo(login)
+    );
   }
 
   getAllLogins() {
@@ -93,7 +87,9 @@ class LoginManagerStorage_geckoview extends LoginManagerStorage_json {
   }
 
   async searchLoginsAsync(matchData) {
-    this.log("searchLoginsAsync:", matchData);
+    this.log(
+      `Searching for matching saved logins for origin: ${matchData.origin}`
+    );
     return this._getLoginsAsync(matchData);
   }
 
@@ -124,7 +120,7 @@ class LoginManagerStorage_geckoview extends LoginManagerStorage_json {
     // so that we can handle the logic for scheme upgrades, subdomains, etc.
     // Convert from the new shape to one which supports the legacy getters used
     // by _searchLogins.
-    let candidateLogins = await GeckoViewAutocomplete.fetchLogins(
+    let candidateLogins = await lazy.GeckoViewAutocomplete.fetchLogins(
       baseHostname
     ).catch(_ => {
       // No GV delegate is attached.
@@ -162,7 +158,7 @@ class LoginManagerStorage_geckoview extends LoginManagerStorage_json {
       }
     }
 
-    const [logins, ids] = this._searchLogins(
+    const [logins] = this._searchLogins(
       realMatchData,
       options,
       candidateLogins.map(this._vanillaLoginToStorageLogin)
@@ -256,7 +252,7 @@ XPCOMUtils.defineLazyGetter(
   LoginManagerStorage_geckoview.prototype,
   "log",
   () => {
-    let logger = LoginHelper.createLogger("Login storage");
+    let logger = lazy.LoginHelper.createLogger("Login storage");
     return logger.log.bind(logger);
   }
 );

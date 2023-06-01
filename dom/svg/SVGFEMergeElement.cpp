@@ -14,8 +14,7 @@ NS_IMPL_NS_NEW_SVG_ELEMENT(FEMerge)
 
 using namespace mozilla::gfx;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* SVGFEMergeElement::WrapNode(JSContext* aCx,
                                       JS::Handle<JSObject*> aGivenProto) {
@@ -37,8 +36,7 @@ FilterPrimitiveDescription SVGFEMergeElement::GetPrimitiveDescription(
 void SVGFEMergeElement::GetSourceImageNames(nsTArray<SVGStringInfo>& aSources) {
   for (nsIContent* child = nsINode::GetFirstChild(); child;
        child = child->GetNextSibling()) {
-    if (child->IsSVGElement(nsGkAtoms::feMergeNode)) {
-      SVGFEMergeNodeElement* node = static_cast<SVGFEMergeNodeElement*>(child);
+    if (auto* node = SVGFEMergeNodeElement::FromNode(child)) {
       aSources.AppendElement(SVGStringInfo(node->GetIn1(), node));
     }
   }
@@ -60,5 +58,4 @@ SVGElement::StringAttributesInfo SVGFEMergeElement::GetStringInfo() {
                               ArrayLength(sStringInfo));
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

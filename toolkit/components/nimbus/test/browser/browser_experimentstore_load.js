@@ -12,11 +12,9 @@ const { ExperimentFakes } = ChromeUtils.import(
 const { ExperimentFeatures } = ChromeUtils.import(
   "resource://nimbus/ExperimentAPI.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "JSONFile",
-  "resource://gre/modules/JSONFile.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  JSONFile: "resource://gre/modules/JSONFile.sys.mjs",
+});
 
 function getPath() {
   const profileDir = Services.dirsvc.get("ProfD", Ci.nsIFile).path;
@@ -61,7 +59,7 @@ add_task(async function test_load_from_disk_event() {
   const experiment = ExperimentFakes.experiment("foo", {
     branch: {
       slug: "variant",
-      features: [{ featureId: "green", enabled: true }],
+      features: [{ featureId: "green" }],
     },
     lastSeen: Date.now(),
   });

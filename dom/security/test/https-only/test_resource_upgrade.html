@@ -32,9 +32,8 @@
      * received by the server (*.sjs) were actually *https* requests.
      */
 
-    const { AppConstants } = SpecialPowers.Cu.import(
-      "resource://gre/modules/AppConstants.jsm",
-      {}
+    const { AppConstants } = SpecialPowers.ChromeUtils.import(
+      "resource://gre/modules/AppConstants.jsm"
     );
     const splitRegex = /^(.*)-(.*)$/
     const testConfig = {
@@ -107,7 +106,7 @@
       is(result, 'ok', `Upgrade all requests on toplevel http for '${key}' came back with: '${result}'`)
 
       // If we're not expecting any more resulsts, finish the test
-      if (testConfig.results.length == 0) {
+      if (!testConfig.results.length) {
         finishTest();
       }
     }

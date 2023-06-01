@@ -5,12 +5,15 @@
 
 "use strict";
 
+ChromeUtils.defineESModuleGetters(this, {
+  TestUtils: "resource://testing-common/TestUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(this, {
-  TestUtils: "resource://testing-common/TestUtils.jsm",
   ExtensionTestCommon: "resource://testing-common/ExtensionTestCommon.jsm",
 });
 
-add_task(function checkExtensionsWebIDLEnabled() {
+add_setup(function checkExtensionsWebIDLEnabled() {
   equal(
     AppConstants.MOZ_WEBEXT_WEBIDL_ENABLED,
     true,
@@ -87,7 +90,7 @@ function mockHandleAPIRequest(extPage, mockHandleAPIRequest) {
         "resource://gre/modules/ExtensionProcessScript.jsm"
       );
 
-      mockFnText = `(() => { 
+      mockFnText = `(() => {
         return (${mockFnText});
       })();`;
       // eslint-disable-next-line no-eval
@@ -116,8 +119,8 @@ function mockHandleAPIRequest(extPage, mockHandleAPIRequest) {
  *
  * @param {string} testDescription
  *        Brief description of the test.
- * @param {Object} [options]
- * @param {Function} backgroundScript
+ * @param {object} [options]
+ * @param {Function} options.backgroundScript
  *        Test function running in the extension global. This function
  *        does receive a parameter of type object with the following
  *        properties:
@@ -128,7 +131,7 @@ function mockHandleAPIRequest(extPage, mockHandleAPIRequest) {
  *            is not an instance of global[globalConstructorName]
  *          - equal(val, exp, msg): throw an error including msg if
  *            val is not strictly equal to exp.
- * @param {Function} assertResults
+ * @param {Function} options.assertResults
  *        Function to be provided to assert the result returned by
  *        `backgroundScript`, or assert the error if it did throw.
  *        This function does receive a parameter of type object with
@@ -137,7 +140,8 @@ function mockHandleAPIRequest(extPage, mockHandleAPIRequest) {
  *          value was a promise) from the call to `backgroundScript`
  *        - testError: the error raised (or rejected if the return value
  *          value was a promise) from the call to `backgroundScript`
- * @param {Function} mockAPIRequestHandler
+ *        - extension: the extension wrapper created by this helper.
+ * @param {Function} options.mockAPIRequestHandler
  *        Function to be used to mock mozIExtensionAPIRequestHandler.handleAPIRequest
  *        for the purpose of the test.
  *        This function received the same parameter that are listed in the idl
@@ -226,7 +230,7 @@ async function runExtensionAPITest(
     }
   }
 
-  async function runTestCaseInWorker(page) {
+  async function runTestCaseInWorker({ page, extension }) {
     info(`*** Run test case in an extension service worker`);
     const result = await page.spawn([], async () => {
       const { active } = await content.navigator.serviceWorker.ready;
@@ -238,7 +242,7 @@ async function runExtensionAPITest(
       });
     });
     info(`*** Assert test case results got from extension service worker`);
-    await assertTestResult(result);
+    await assertTestResult({ ...result, extension });
   }
 
   // NOTE: prefixing this with `function ` is needed because backgroundScript
@@ -255,7 +259,7 @@ async function runExtensionAPITest(
       background: {
         service_worker: "test-sw.js",
       },
-      applications: {
+      browser_specific_settings: {
         gecko: { id: extensionId },
       },
     },
@@ -303,7 +307,7 @@ async function runExtensionAPITest(
   registerCleanupFunction(testCleanup);
 
   await mockHandleAPIRequest(page, mockAPIRequestHandler);
-  await runTestCaseInWorker(page);
+  await runTestCaseInWorker({ page, extension });
   await testCleanup();
   info(`End test case "${testDescription}"`);
 }

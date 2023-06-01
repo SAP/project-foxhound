@@ -1,9 +1,9 @@
-const { DownloadIntegration } = ChromeUtils.import(
-  "resource://gre/modules/DownloadIntegration.jsm"
+const { DownloadIntegration } = ChromeUtils.importESModule(
+  "resource://gre/modules/DownloadIntegration.sys.mjs"
 );
 
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
 const TEST_PATH = getRootDirectory(gTestPath).replace(
@@ -11,10 +11,11 @@ const TEST_PATH = getRootDirectory(gTestPath).replace(
   "https://example.com"
 );
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.download.improvements_to_download_panel", true],
+      ["browser.download.always_ask_before_handling_new_types", false],
       ["image.webp.enabled", true],
     ],
   });
@@ -60,7 +61,7 @@ async function aDownloadLaunchedWithAppIsSavedInFolder(downloadDir) {
   );
 
   Assert.ok(
-    await OS.File.exists(download.target.path),
+    await IOUtils.exists(download.target.path),
     "The file should not have been deleted."
   );
 

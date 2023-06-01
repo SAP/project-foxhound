@@ -10,6 +10,8 @@
 #include <type_traits>
 
 #include "mozilla/Atomics.h"
+#include "mozilla/DataMutex.h"
+#include "nsString.h"
 
 namespace mozilla {
 
@@ -18,6 +20,17 @@ class SharedPrefMapBuilder;
 // These typedefs are for use within init/StaticPrefList*.h.
 
 typedef const char* String;
+
+using DataMutexString = StaticDataMutex<nsCString>;
+
+template <typename T>
+struct IsString : std::false_type {};
+
+template <>
+struct IsString<String> : std::true_type {};
+
+template <>
+struct IsString<DataMutexString> : std::true_type {};
 
 typedef Atomic<bool, Relaxed> RelaxedAtomicBool;
 typedef Atomic<bool, ReleaseAcquire> ReleaseAcquireAtomicBool;
@@ -50,6 +63,11 @@ struct StripAtomicImpl<Atomic<T, Order>> {
 template <typename T>
 struct StripAtomicImpl<std::atomic<T>> {
   typedef T Type;
+};
+
+template <>
+struct StripAtomicImpl<DataMutexString> {
+  typedef nsCString Type;
 };
 
 template <typename T>

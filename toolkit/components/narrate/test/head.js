@@ -13,11 +13,6 @@ const TEST_ARTICLE =
 const TEST_ITALIAN_ARTICLE =
   "http://example.com/browser/toolkit/components/narrate/test/inferno.html";
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 ChromeUtils.defineModuleGetter(
   this,
   "AddonManager",

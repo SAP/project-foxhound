@@ -304,8 +304,6 @@ Plane<T> Product(const Plane<T>& a, const Plane<T>& b) {
   return c;
 }
 
-float DotProduct(const ImageF& a, const ImageF& b);
-
 template <typename T>
 void FillImage(const T value, Plane<T>* image) {
   for (size_t y = 0; y < image->ysize(); ++y) {
@@ -776,7 +774,7 @@ void ZeroFillImage(Image3<T>* image) {
   for (size_t c = 0; c < 3; ++c) {
     for (size_t y = 0; y < image->ysize(); ++y) {
       T* JXL_RESTRICT row = image->PlaneRow(c, y);
-      memset(row, 0, image->xsize() * sizeof(T));
+      if (image->xsize() != 0) memset(row, 0, image->xsize() * sizeof(T));
     }
   }
 }
@@ -789,22 +787,14 @@ void ZeroFillPlane(Plane<T>* image, Rect rect) {
   }
 }
 
-// First, image is padded horizontally, with the rightmost value.
-// Next, image is padded vertically, by repeating the last line.
-ImageF PadImage(const ImageF& in, size_t xsize, size_t ysize);
-
 // Pad an image with xborder columns on each vertical side and yboder rows
 // above and below, mirroring the image.
 Image3F PadImageMirror(const Image3F& in, size_t xborder, size_t yborder);
 
-// First, image is padded horizontally, with the rightmost value.
-// Next, image is padded vertically, by repeating the last line.
-// Prefer PadImageToBlockMultipleInPlace if padding to kBlockDim.
-Image3F PadImageToMultiple(const Image3F& in, size_t N);
-
 // Same as above, but operates in-place. Assumes that the `in` image was
 // allocated large enough.
-void PadImageToBlockMultipleInPlace(Image3F* JXL_RESTRICT in);
+void PadImageToBlockMultipleInPlace(Image3F* JXL_RESTRICT in,
+                                    size_t block_dim = kBlockDim);
 
 // Downsamples an image by a given factor.
 void DownsampleImage(Image3F* opsin, size_t factor);

@@ -8,6 +8,7 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include "InputData.h"
 #include "nsRect.h"
 #include "imgIContainer.h"
 #include "nsTArray.h"
@@ -27,6 +28,19 @@
 - (CGFloat)backingScaleFactor;
 @end
 
+// Pasteborad types
+extern NSString* const kPublicUrlPboardType;
+extern NSString* const kPublicUrlNamePboardType;
+extern NSString* const kUrlsWithTitlesPboardType;
+extern NSString* const kMozWildcardPboardType;
+extern NSString* const kMozCustomTypesPboardType;
+extern NSString* const kMozFileUrlsPboardType;
+
+@interface UTIHelper : NSObject
++ (NSString*)stringFromPboardType:(NSString*)aType;
+@end
+
+class nsITransferable;
 class nsIWidget;
 
 namespace mozilla {
@@ -224,6 +238,12 @@ class nsCocoaUtils {
 
   static nsIWidget* GetHiddenWindowWidget();
 
+  /**
+   * Should the application restore its state because it was launched by the OS
+   * at login?
+   */
+  static BOOL ShouldRestoreStateDueToLaunchAtLogin();
+
   static void PrepareForNativeAppModalDialog();
   static void CleanUpAfterNativeAppModalDialog();
 
@@ -266,6 +286,7 @@ class nsCocoaUtils {
       @return NS_OK if the conversion worked, NS_ERROR_FAILURE otherwise
    */
   static nsresult CreateNSImageFromImageContainer(imgIContainer* aImage, uint32_t aWhichFrame,
+                                                  const nsPresContext* aPresContext,
                                                   const mozilla::ComputedStyle* aComputedStyle,
                                                   NSImage** aResult, CGFloat scaleFactor,
                                                   bool* aIsEntirelyBlack = nullptr);
@@ -284,8 +305,9 @@ class nsCocoaUtils {
       @return NS_OK if the conversion worked, NS_ERROR_FAILURE otherwise
    */
   static nsresult CreateDualRepresentationNSImageFromImageContainer(
-      imgIContainer* aImage, uint32_t aWhichFrame, const mozilla::ComputedStyle* aComputedStyle,
-      NSImage** aResult, bool* aIsEntirelyBlack = nullptr);
+      imgIContainer* aImage, uint32_t aWhichFrame, const nsPresContext* aPresContext,
+      const mozilla::ComputedStyle* aComputedStyle, NSImage** aResult,
+      bool* aIsEntirelyBlack = nullptr);
 
   /**
    * Returns nsAString for aSrc.
@@ -451,6 +473,25 @@ class nsCocoaUtils {
    */
   static nsresult MaybeRequestScreenCapturePermission();
 
+  static void InvalidateHiDPIState();
+
+  static mozilla::PanGestureInput CreatePanGestureEvent(
+      NSEvent* aNativeEvent, mozilla::TimeStamp aTimeStamp,
+      const mozilla::ScreenPoint& aPanStartPoint, const mozilla::ScreenPoint& aPreciseDelta,
+      const mozilla::gfx::IntPoint& aLineOrPageDelta, mozilla::Modifiers aModifiers);
+
+  /**
+   * Return true if aAvailableType is a vaild NSPasteboard type.
+   */
+  static bool IsValidPasteboardType(NSString* aAvailableType, bool aAllowFileURL);
+
+  /**
+   * Set data for specific type from NSPasteboardItem to Transferable.
+   */
+  static void SetTransferDataForTypeFromPasteboardItem(nsITransferable* aTransferable,
+                                                       const nsCString& aFlavor,
+                                                       NSPasteboardItem* aItem);
+
  private:
   /**
    * Completion handlers used as an argument to the macOS API to
@@ -487,6 +528,34 @@ class nsCocoaUtils {
   static void ResolveMediaCapturePromises(bool aGranted, PromiseArray& aPromiseList);
 
   /**
+   * Get string data for a specific type from NSPasteboardItem.
+   */
+  static NSString* GetStringForTypeFromPasteboardItem(NSPasteboardItem* aItem,
+                                                      const NSString* aType,
+                                                      bool aAllowFileURL = false);
+
+  /**
+   * Get the file path from NSPasteboardItem.
+   */
+  static NSString* GetFilePathFromPasteboardItem(NSPasteboardItem* aItem);
+
+  /**
+   * Get the title for URL from NSPasteboardItem.
+   */
+  static NSString* GetTitleForURLFromPasteboardItem(NSPasteboardItem* item);
+
+  /**
+   * Did the OS launch the application at login?
+   */
+  static BOOL WasLaunchedAtLogin();
+
+  /**
+   * Should the application restore its state because it was launched by the OS
+   * at login?
+   */
+  static BOOL ShouldRestoreStateDueToLaunchAtLoginImpl();
+
+  /**
    * Array of promises waiting to be resolved due to a video capture request.
    */
   static PromiseArray sVideoCapturePromises;
@@ -499,7 +568,7 @@ class nsCocoaUtils {
   /**
    * Lock protecting |sVideoCapturePromises| and |sAudioCapturePromises|.
    */
-  static StaticMutex sMediaCaptureMutex;
+  static StaticMutex sMediaCaptureMutex MOZ_UNANNOTATED;
 };
 
 #endif  // nsCocoaUtils_h_

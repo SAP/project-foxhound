@@ -16,7 +16,8 @@ var certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(
 );
 /**
  * Test certificate (i.e. build/pgo/certs/mochitest.client).
- * @type nsIX509Cert
+ *
+ * @type {nsIX509Cert}
  */
 var cert;
 
@@ -59,10 +60,10 @@ function openClientAuthDialog(cert) {
  * of build/pgo/certs/mochitest.client.
  *
  * @param {window} win The cert chooser window.
- * @param {String} notBefore
- *        The notBeforeLocalTime attribute of mochitest.client.
- * @param {String} notAfter
- *        The notAfterLocalTime attribute of mochitest.client.
+ * @param {string} notBefore
+ *        The formatted notBefore date of mochitest.client.
+ * @param {string} notAfter
+ *        The formatted notAfter date of mochitest.client.
  */
 function checkDialogContents(win, notBefore, notAfter) {
   is(
@@ -135,7 +136,7 @@ function findCertByCommonName(commonName) {
   return null;
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   cert = findCertByCommonName("Mochitest client");
   isnot(cert, null, "Should be able to find the test client cert");
 });
@@ -143,11 +144,15 @@ add_task(async function setup() {
 // Test that the contents of the dialog correspond to the details of the
 // provided cert.
 add_task(async function testContents() {
+  const formatter = new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "long",
+  });
   let [win] = await openClientAuthDialog(cert);
   checkDialogContents(
     win,
-    cert.validity.notBeforeLocalTime,
-    cert.validity.notAfterLocalTime
+    formatter.format(new Date(cert.validity.notBefore / 1000)),
+    formatter.format(new Date(cert.validity.notAfter / 1000))
   );
   await BrowserTestUtils.closeWindow(win);
 });

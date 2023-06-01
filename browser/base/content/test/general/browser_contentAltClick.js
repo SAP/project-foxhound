@@ -12,11 +12,9 @@
  */
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Downloads",
-  "resource://gre/modules/Downloads.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  Downloads: "resource://gre/modules/Downloads.sys.mjs",
+});
 
 function setup() {
   Services.prefs.setBoolPref("browser.altClickSave", true);
@@ -198,6 +196,7 @@ add_task(async function test_alt_click_in_frame() {
   is(downloads.length, 1, "1 downloads");
   is(
     downloads[0].source.url,
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.org/",
     "Downloaded link in iframe."
   );

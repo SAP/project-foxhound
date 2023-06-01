@@ -3,19 +3,18 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import os
-import signal
-import six
 import re
+import signal
 import subprocess
 from collections import namedtuple
-from distutils.version import StrictVersion
 
+import six
 from mozboot.util import get_tools_dir
 from mozfile import which
 from mozlint import result
 from mozlint.pathutils import expand_exclusions
 from mozprocess import ProcessHandler
-
+from packaging.version import Version
 
 RUSTFMT_NOT_FOUND = """
 Could not find rustfmt! Install rustfmt and try again.
@@ -128,7 +127,7 @@ def get_rustfmt_version(binary):
         output = e.output
 
     version = re.findall(r"\d.\d+.\d+", output)[0]
-    return StrictVersion(version)
+    return Version(version)
 
 
 def lint(paths, config, fix=None, **lintargs):
@@ -149,7 +148,7 @@ def lint(paths, config, fix=None, **lintargs):
         return []
 
     min_version_str = config.get("min_rustfmt_version")
-    min_version = StrictVersion(min_version_str)
+    min_version = Version(min_version_str)
     actual_version = get_rustfmt_version(binary)
     log.debug(
         "Found version: {}. Minimal expected version: {}".format(

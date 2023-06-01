@@ -27,7 +27,7 @@ class nsIncrementalStreamLoader final
 
   nsIncrementalStreamLoader();
 
-  static nsresult Create(nsISupports* aOuter, REFNSIID aIID, void** aResult);
+  static nsresult Create(REFNSIID aIID, void** aResult);
 
  protected:
   ~nsIncrementalStreamLoader() = default;

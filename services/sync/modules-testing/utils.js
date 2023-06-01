@@ -23,10 +23,9 @@ var EXPORTED_SYMBOLS = [
 const { CommonUtils } = ChromeUtils.import(
   "resource://services-common/utils.js"
 );
-const { CryptoUtils } = ChromeUtils.import(
-  "resource://services-crypto/utils.js"
+const { Assert } = ChromeUtils.importESModule(
+  "resource://testing-common/Assert.sys.mjs"
 );
-const { Assert } = ChromeUtils.import("resource://testing-common/Assert.jsm");
 const { initTestLogging } = ChromeUtils.import(
   "resource://testing-common/services/common/logging.js"
 );
@@ -47,7 +46,6 @@ const { FxAccountsClient } = ChromeUtils.import(
 const { SCOPE_OLD_SYNC, LEGACY_SCOPE_WEBEXT_SYNC } = ChromeUtils.import(
   "resource://gre/modules/FxAccountsCommon.js"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // and grab non-exported stuff via a backstage pass.
 const { AccountState } = ChromeUtils.import(
@@ -250,11 +248,14 @@ var configureFxAccountIdentity = function(
     FxAccountsClient.apply(this);
   };
   MockFxAccountsClient.prototype = {
-    __proto__: FxAccountsClient.prototype,
     accountStatus() {
       return Promise.resolve(true);
     },
   };
+  Object.setPrototypeOf(
+    MockFxAccountsClient.prototype,
+    FxAccountsClient.prototype
+  );
   let mockFxAClient = new MockFxAccountsClient();
   fxa._internal._fxAccountsClient = mockFxAClient;
 
@@ -280,8 +281,8 @@ var configureFxAccountIdentity = function(
 
 var configureIdentity = async function(identityOverrides, server) {
   let config = makeIdentityConfig(identityOverrides, server);
-  let ns = {};
-  ChromeUtils.import("resource://services-sync/service.js", ns);
+  // Must be imported after the identity configuration is set up.
+  let { Service } = ChromeUtils.import("resource://services-sync/service.js");
 
   // If a server was specified, ensure FxA has a correct cluster URL available.
   if (server && !config.fxaccount.token.endpoint) {
@@ -293,16 +294,16 @@ var configureIdentity = async function(identityOverrides, server) {
     config.fxaccount.token.endpoint = ep;
   }
 
-  configureFxAccountIdentity(ns.Service.identity, config);
+  configureFxAccountIdentity(Service.identity, config);
   Services.prefs.setStringPref("services.sync.username", config.username);
   // many of these tests assume all the auth stuff is setup and don't hit
   // a path which causes that auth to magically happen - so do it now.
-  await ns.Service.identity._ensureValidToken();
+  await Service.identity._ensureValidToken();
 
   // and cheat to avoid requiring each test do an explicit login - give it
   // a cluster URL.
   if (config.fxaccount.token.endpoint) {
-    ns.Service.clusterURL = config.fxaccount.token.endpoint;
+    Service.clusterURL = config.fxaccount.token.endpoint;
   }
 };
 
@@ -314,9 +315,6 @@ function syncTestLogging(level = "Trace") {
 }
 
 var SyncTestingInfrastructure = async function(server, username) {
-  let ns = {};
-  ChromeUtils.import("resource://services-sync/service.js", ns);
-
   let config = makeIdentityConfig({ username });
   await configureIdentity(config, server);
   return {
@@ -338,7 +336,7 @@ function encryptPayload(cleartext) {
   return {
     ciphertext: cleartext, // ciphertext == cleartext with fake crypto
     IV: "irrelevant",
-    hmac: fakeSHA256HMAC(cleartext, CryptoUtils.makeHMACKey("")),
+    hmac: fakeSHA256HMAC(cleartext),
   };
 }
 

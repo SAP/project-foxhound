@@ -18,9 +18,7 @@ class nsICSSLoaderObserver;
 class nsIPrincipal;
 class nsIURI;
 
-namespace mozilla {
-
-namespace dom {
+namespace mozilla::dom {
 
 class Document;
 class ShadowRoot;
@@ -110,7 +108,8 @@ class LinkStyle {
     eALTERNATE = 0x00000010,
     ePRECONNECT = 0x00000020,
     // NOTE: 0x40 is unused
-    ePRELOAD = 0x00000080
+    ePRELOAD = 0x00000080,
+    eMODULE_PRELOAD = 0x00000100
   };
 
   // The return value is a bitwise or of 0 or more RelValues.
@@ -283,8 +282,6 @@ class LinkStyle {
   uint32_t mColumnNumber;
 };
 
-}  // namespace dom
-
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_LinkStyle_h

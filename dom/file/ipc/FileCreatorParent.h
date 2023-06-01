@@ -11,8 +11,7 @@
 
 class nsIFile;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class BlobImpl;
 
@@ -23,12 +22,12 @@ class FileCreatorParent final : public mozilla::dom::PFileCreatorParent {
   FileCreatorParent();
 
   mozilla::ipc::IPCResult CreateAndShareFile(
-      const nsString& aFullPath, const nsString& aType, const nsString& aName,
-      const Maybe<int64_t>& aLastModified, const bool& aExistenceCheck,
-      const bool& aIsFromNsIFile);
+      const nsAString& aFullPath, const nsAString& aType,
+      const nsAString& aName, const Maybe<int64_t>& aLastModified,
+      const bool& aExistenceCheck, const bool& aIsFromNsIFile);
 
  private:
-  ~FileCreatorParent();
+  ~FileCreatorParent() override;
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
@@ -41,7 +40,6 @@ class FileCreatorParent final : public mozilla::dom::PFileCreatorParent {
   bool mIPCActive;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_FileCreatorParent_h

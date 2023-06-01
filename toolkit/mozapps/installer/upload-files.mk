@@ -264,6 +264,7 @@ NO_PKG_FILES += \
 	BadCertAndPinningServer* \
 	DelegatedCredentialsServer* \
 	EncryptedClientHelloServer* \
+	FaultyServer* \
 	OCSPStaplingServer* \
 	SanctionsTestServer* \
 	GenerateOCSPResponse* \
@@ -311,16 +312,6 @@ endif
 
 ifneq (android,$(MOZ_WIDGET_TOOLKIT))
   JAR_COMPRESSION ?= none
-endif
-
-# A js binary is needed to perform verification of JavaScript minification.
-# We can only use the built binary when not cross-compiling. Environments
-# (such as release automation) can provide their own js binary to enable
-# verification when cross-compiling.
-ifndef JS_BINARY
-  ifndef CROSS_COMPILE
-    JS_BINARY = $(wildcard $(DIST)/bin/js)
-  endif
 endif
 
 ifeq ($(OS_TARGET), WINNT)
@@ -382,12 +373,6 @@ ifneq ($(filter-out en-US,$(AB_CD)),)
     $(call QUOTED_WILDCARD,$(topobjdir)/$(MOZ_BUILD_APP)/installer/windows/l10ngen/setup-stub.exe)
 endif
 
-ifdef MOZ_NORMANDY
-ifndef CROSS_COMPILE
-  UPLOAD_FILES += $(call QUOTED_WILDCARD,$(MOZ_NORMANDY_JSON))
-endif
-endif
-
 ifdef MOZ_CODE_COVERAGE
   UPLOAD_FILES += \
     $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(CODE_COVERAGE_ARCHIVE_BASENAME).zip) \
@@ -400,6 +385,7 @@ ifdef ENABLE_MOZSEARCH_PLUGIN
   UPLOAD_FILES += $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(MOZSEARCH_ARCHIVE_BASENAME).zip)
   UPLOAD_FILES += $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(MOZSEARCH_RUST_ANALYSIS_BASENAME).zip)
   UPLOAD_FILES += $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(MOZSEARCH_RUST_STDLIB_BASENAME).zip)
+  UPLOAD_FILES += $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(MOZSEARCH_SCIP_INDEX_BASENAME).zip)
   UPLOAD_FILES += $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(MOZSEARCH_INCLUDEMAP_BASENAME).map)
 endif
 
@@ -410,6 +396,9 @@ endif
 ifdef MOZ_STUB_INSTALLER
   UPLOAD_FILES += $(call QUOTED_WILDCARD,$(DIST)/$(PKG_INST_PATH)$(PKG_STUB_BASENAME).exe)
 endif
+
+# Upload `.xpt` artifacts for use in artifact builds.
+UPLOAD_FILES += $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(XPT_ARTIFACTS_ARCHIVE_BASENAME).zip)
 
 ifndef MOZ_PKG_SRCDIR
   MOZ_PKG_SRCDIR = $(topsrcdir)

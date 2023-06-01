@@ -15,26 +15,10 @@
  * @typedef {import("./@types/perf").PerformancePref} PerformancePref
  * @typedef {import("./@types/perf").RecordingSettings} RecordingSettings
  * @typedef {import("./@types/perf").RestartBrowserWithEnvironmentVariable} RestartBrowserWithEnvironmentVariable
- * @typedef {import("./@types/perf").GetEnvironmentVariable} GetEnvironmentVariable
  * @typedef {import("./@types/perf").GetActiveBrowserID} GetActiveBrowserID
  * @typedef {import("./@types/perf").MinimallyTypedGeckoProfile} MinimallyTypedGeckoProfile
  * * @typedef {import("./@types/perf").ProfilerViewMode} ProfilerViewMode
  */
-
-const ChromeUtils = require("ChromeUtils");
-const { createLazyLoaders } = ChromeUtils.import(
-  "resource://devtools/client/performance-new/typescript-lazy-load.jsm.js"
-);
-
-const lazy = createLazyLoaders({
-  Chrome: () => require("chrome"),
-  Services: () => require("Services"),
-  OS: () => ChromeUtils.import("resource://gre/modules/osfile.jsm"),
-  PerfSymbolication: () =>
-    ChromeUtils.import(
-      "resource://devtools/client/performance-new/symbolication.jsm.js"
-    ),
-});
 
 /** @type {PerformancePref["UIBaseUrl"]} */
 const UI_BASE_URL_PREF = "devtools.performance.recording.ui-base-url";
@@ -65,8 +49,6 @@ const UI_BASE_URL_PATH_DEFAULT = "/from-browser";
  * @returns {Promise<MockedExports.Browser>} The browser for the opened tab.
  */
 async function openProfilerTab(profilerViewMode) {
-  const Services = lazy.Services();
-
   // Allow the user to point to something other than profiler.firefox.com.
   const baseUrl = Services.prefs.getStringPref(
     UI_BASE_URL_PREF,
@@ -104,7 +86,11 @@ async function openProfilerTab(profilerViewMode) {
 
   // Find the most recently used window, as the DevTools client could be in a variety
   // of hosts.
-  const win = Services.wm.getMostRecentWindow("navigator:browser");
+  // Note that when running from the browser toolbox, there won't be the browser window,
+  // but only the browser toolbox document.
+  const win =
+    Services.wm.getMostRecentWindow("navigator:browser") ||
+    Services.wm.getMostRecentWindow("devtools:toolbox");
   if (!win) {
     throw new Error("No browser window");
   }
@@ -118,7 +104,7 @@ async function openProfilerTab(profilerViewMode) {
     win.openWebLinkIn(urlToLoad, "tab", {
       forceNonPrivate: true,
       resolveOnContentBrowserCreated,
-      userContextId: win.gBrowser.contentPrincipal.userContextId,
+      userContextId: win.gBrowser?.contentPrincipal.userContextId,
     })
   );
   return contentBrowser;
@@ -150,29 +136,11 @@ function sharedLibrariesFromProfile(profile) {
  * @type {RestartBrowserWithEnvironmentVariable}
  */
 function restartBrowserWithEnvironmentVariable(envName, value) {
-  const Services = lazy.Services();
-  const { Cc, Ci } = lazy.Chrome();
-  const env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  env.set(envName, value);
+  Services.env.set(envName, value);
 
   Services.startup.quit(
     Services.startup.eForceQuit | Services.startup.eRestart
   );
-}
-
-/**
- * Gets an environment variable from the browser.
- *
- * @type {GetEnvironmentVariable}
- */
-function getEnvironmentVariable(envName) {
-  const { Cc, Ci } = lazy.Chrome();
-  const env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  return env.get(envName);
 }
 
 /**
@@ -181,7 +149,6 @@ function getEnvironmentVariable(envName) {
  * @param {(objdirs: string[]) => unknown} changeObjdirs
  */
 function openFilePickerForObjdir(window, objdirs, changeObjdirs) {
-  const { Cc, Ci } = lazy.Chrome();
   const FilePicker = Cc["@mozilla.org/filepicker;1"].createInstance(
     Ci.nsIFilePicker
   );
@@ -201,6 +168,5 @@ module.exports = {
   openProfilerTab,
   sharedLibrariesFromProfile,
   restartBrowserWithEnvironmentVariable,
-  getEnvironmentVariable,
   openFilePickerForObjdir,
 };

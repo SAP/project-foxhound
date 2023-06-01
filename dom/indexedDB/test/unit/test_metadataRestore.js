@@ -3,25 +3,11 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+/* exported testGenerator */
 var testGenerator = testSteps();
 
 function* testSteps() {
-  Services.prefs.setBoolPref("dom.indexedDB.storageOption.enabled", true);
-  registerCleanupFunction(() => {
-    Services.prefs.clearUserPref("dom.indexedDB.storageOption.enabled");
-  });
-
   const openParams = [
-    // This one lives in storage/permanent/chrome
-    { dbName: "dbA", dbOptions: { version: 1, storage: "persistent" } },
-
-    // This one lives in storage/temporary/http+++localhost
-    {
-      url: "http://localhost",
-      dbName: "dbB",
-      dbOptions: { version: 1, storage: "temporary" },
-    },
-
     // This one lives in storage/default/http+++localhost+81
     {
       url: "http://localhost:81",

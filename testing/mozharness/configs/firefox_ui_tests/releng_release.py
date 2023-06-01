@@ -4,12 +4,10 @@
 
 # Default configuration as used by Release Engineering for testing release/beta builds
 
-from __future__ import absolute_import
 import os
 import sys
 
 import mozharness
-
 
 external_tools_path = os.path.join(
     os.path.abspath(os.path.dirname(os.path.dirname(mozharness.__file__))),
@@ -26,6 +24,4 @@ config = {
             os.path.join(external_tools_path, "gittool.py"),
         ],
     },
-    # mozcrash support
-    "download_symbols": "ondemand",
 }

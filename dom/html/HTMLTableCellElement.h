@@ -9,8 +9,7 @@
 #include "mozilla/Attributes.h"
 #include "nsGenericHTMLElement.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class HTMLTableElement;
 
@@ -25,6 +24,9 @@ class HTMLTableCellElement final : public nsGenericHTMLElement {
   // nsISupports
   NS_INLINE_DECL_REFCOUNTING_INHERITED(HTMLTableCellElement,
                                        nsGenericHTMLElement)
+
+  NS_IMPL_FROMNODE_HELPER(HTMLTableCellElement,
+                          IsAnyOfHTMLElements(nsGkAtoms::td, nsGkAtoms::th))
 
   uint32_t ColSpan() const { return GetUnsignedIntAttr(nsGkAtoms::colspan, 1); }
   void SetColSpan(uint32_t aColSpan, ErrorResult& aError) {
@@ -121,7 +123,6 @@ class HTMLTableCellElement final : public nsGenericHTMLElement {
                                     MappedDeclarations&);
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_HTMLTableCellElement_h */

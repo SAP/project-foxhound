@@ -7,11 +7,7 @@
 // AddonManager.SCOPE_PROFILE | AddonManager.SCOPE_APPLICATION == 5;
 Services.prefs.setIntPref("extensions.enabledScopes", 5);
 
-const {
-  createAppInfo,
-  promiseShutdownManager,
-  promiseStartupManager,
-} = AddonTestUtils;
+const { promiseShutdownManager, promiseStartupManager } = AddonTestUtils;
 
 const TEST_CONFIG = [
   {
@@ -48,7 +44,7 @@ function makePlainExtension(version, name = "Plain") {
     manifest: {
       name,
       version,
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "plainengine@search.mozilla.org",
         },
@@ -106,7 +102,7 @@ function makeMultiLocaleExtension(version) {
     manifest: {
       name: "__MSG_searchName__",
       version,
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "multilocale@search.mozilla.org",
         },

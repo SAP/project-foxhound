@@ -2,22 +2,22 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, division, print_function
-
 import datetime
 import errno
 import json
 import os
 import posixpath
 import re
+import subprocess
+from collections import defaultdict
+
+import mozpack.path as mozpath
 import requests
 import six.moves.urllib_parse as urlparse
-import subprocess
-import mozpack.path as mozpath
-from moztest.resolve import TestResolver, TestManifestLoader
+from mozbuild.base import MachCommandConditions as conditions
+from mozbuild.base import MozbuildObject
 from mozfile import which
-
-from mozbuild.base import MozbuildObject, MachCommandConditions as conditions
+from moztest.resolve import TestManifestLoader, TestResolver
 
 REFERER = "https://wiki.developer.mozilla.org/en-US/docs/Mozilla/Test-Info"
 
@@ -308,6 +308,8 @@ class TestInfoReport(TestInfo):
         show_annotations,
         filter_values,
         filter_keys,
+        start_date,
+        end_date,
     ):
         # provide a natural language description of the report options
         what = []
@@ -339,8 +341,190 @@ class TestInfoReport(TestInfo):
                 d += " in manifest keys '%s'" % filter_keys
             else:
                 d += " in any part of manifest entry"
-        d += " as of %s." % datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        d += ", including historical run-time data for the last "
+
+        start = datetime.datetime.strptime(start_date, "%Y-%m-%d")
+        end = datetime.datetime.strptime(end_date, "%Y-%m-%d")
+        d += "%s days on trunk (autoland/m-c)" % ((end - start).days)
+        d += " as of %s." % end_date
         return d
+
+    # TODO: this is hacked for now and very limited
+    def parse_test(self, summary):
+        if summary.endswith("single tracking bug"):
+            name_part = summary.split("|")[0]  # remove 'single tracking bug'
+            name_part.strip()
+            return name_part.split()[-1]  # get just the test name, not extra words
+        return None
+
+    def get_runcount_data(self, start, end):
+        # TODO: use start/end properly
+        runcounts = self.get_runcounts()
+        runcounts = self.squash_runcounts(runcounts, days=30)
+        return runcounts
+
+    def get_testinfoall_index_url(self):
+        import taskcluster
+
+        queue = taskcluster.Queue()
+        index = taskcluster.Index(
+            {
+                "rootUrl": "https://firefox-ci-tc.services.mozilla.com",
+            }
+        )
+        route = "gecko.v2.mozilla-central.latest.source.test-info-all"
+
+        task_id = index.findTask(route)["taskId"]
+        artifacts = queue.listLatestArtifacts(task_id)["artifacts"]
+
+        url = ""
+        for artifact in artifacts:
+            if artifact["name"].endswith("test-run-info.json"):
+                url = queue.buildUrl("getLatestArtifact", task_id, artifact["name"])
+                break
+        return url
+
+    def get_runcounts(self):
+        testrundata = {}
+        # get historical data from test-info job artifact; if missing get fresh
+        try:
+            url = self.get_testinfoall_index_url()
+            r = requests.get(url, headers={"User-agent": "mach-test-info/1.0"})
+            r.raise_for_status()
+            testrundata = r.json()
+        except Exception:
+            pass
+
+        # fill in any holes we have
+        endday = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
+            days=1
+        )
+        startday = endday - datetime.timedelta(days=30)
+        while startday < endday:
+            nextday = startday + datetime.timedelta(days=1)
+            retries = 2
+            done = False
+            if (
+                str(nextday) not in testrundata.keys()
+                or testrundata[str(nextday)] == {}
+            ):
+                while not done:
+                    url = "https://treeherder.mozilla.org/api/groupsummary/"
+                    url += "?startdate=%s&enddate=%s" % (
+                        startday.date(),
+                        nextday.date(),
+                    )
+                    try:
+                        r = requests.get(
+                            url, headers={"User-agent": "mach-test-info/1.0"}
+                        )
+                        done = True
+                    except requests.exceptions.HTTPError:
+                        retries -= 1
+                        if retries <= 0:
+                            r.raise_for_status()
+                    try:
+                        testrundata[str(nextday.date())] = r.json()
+                    except json.decoder.JSONDecodeError:
+                        print(
+                            "Warning unable to retrieve (from treeherder's groupsummary api) testrun data for date: %s, skipping for now"
+                            % nextday.date()
+                        )
+                        testrundata[str(nextday.date())] = {}
+                        continue
+            startday = nextday
+
+        return testrundata
+
+    def squash_runcounts(self, runcounts, days=30):
+        # squash all testrundata together into 1 big happy family for the last X days
+        endday = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
+            days=1
+        )
+        oldest = endday - datetime.timedelta(days=days)
+
+        testgroup_runinfo = defaultdict(lambda: defaultdict(int))
+
+        retVal = {}
+        for datekey in runcounts.keys():
+            # strip out older days
+            if datetime.date.fromisoformat(datekey) < oldest.date():
+                continue
+
+            jtn = runcounts[datekey]["job_type_names"]
+            for m in runcounts[datekey]["manifests"]:
+                man_name = list(m.keys())[0]
+
+                for job_type_id, result, classification, count in m[man_name]:
+                    # format: job_type_name, result, classification, count
+                    # find matching jtn, result, classification and increment 'count'
+                    job_name = jtn[job_type_id]
+                    key = (job_name, result, classification)
+                    testgroup_runinfo[man_name][key] += count
+
+        for m in testgroup_runinfo:
+            retVal[m] = [
+                list(x) + [testgroup_runinfo[m][x]] for x in testgroup_runinfo[m]
+            ]
+        return retVal
+
+    def get_intermittent_failure_data(self, start, end):
+        retVal = {}
+
+        # get IFV bug list
+        # i.e. https://th.m.o/api/failures/?startday=2022-06-22&endday=2022-06-29&tree=all
+        url = (
+            "https://treeherder.mozilla.org/api/failures/?startday=%s&endday=%s&tree=trunk"
+            % (start, end)
+        )
+        r = requests.get(url, headers={"User-agent": "mach-test-info/1.0"})
+        if_data = r.json()
+        buglist = [x["bug_id"] for x in if_data]
+
+        # get bug data for summary, 800 bugs at a time
+        # i.e. https://b.m.o/rest/bug?include_fields=id,product,component,summary&id=1,2,3...
+        max_bugs = 800
+        bug_data = []
+        fields = ["id", "product", "component", "summary"]
+        for bug_index in range(0, len(buglist), max_bugs):
+            bugs = [str(x) for x in buglist[bug_index:max_bugs]]
+            url = "https://bugzilla.mozilla.org/rest/bug?include_fields=%s&id=%s" % (
+                ",".join(fields),
+                ",".join(bugs),
+            )
+            r = requests.get(url, headers={"User-agent": "mach-test-info/1.0"})
+            data = r.json()
+            if data and "bugs" in data.keys():
+                bug_data.extend(data["bugs"])
+
+        # for each summary, parse filename, store component
+        # IF we find >1 bug with same testname, for now summarize as one
+        for bug in bug_data:
+            test_name = self.parse_test(bug["summary"])
+            if not test_name:
+                continue
+
+            c = int([x["bug_count"] for x in if_data if x["bug_id"] == bug["id"]][0])
+            if test_name not in retVal.keys():
+                retVal[test_name] = {
+                    "id": bug["id"],
+                    "count": 0,
+                    "product": bug["product"],
+                    "component": bug["component"],
+                }
+            retVal[test_name]["count"] += c
+
+            if bug["product"] != retVal[test_name]["product"]:
+                print(
+                    "ERROR | %s | mismatched bugzilla product, bugzilla (%s) != repo (%s)"
+                    % (bug["id"], bug["product"], retVal[test_name]["product"])
+                )
+            if bug["component"] != retVal[test_name]["component"]:
+                print(
+                    "ERROR | %s | mismatched bugzilla component, bugzilla (%s) != repo (%s)"
+                    % (bug["id"], bug["component"], retVal[test_name]["component"])
+                )
+        return retVal
 
     def report(
         self,
@@ -356,6 +540,9 @@ class TestInfoReport(TestInfo):
         filter_keys,
         show_components,
         output_file,
+        start,
+        end,
+        show_testruns,
     ):
         def matches_filters(test):
             """
@@ -396,6 +583,10 @@ class TestInfoReport(TestInfo):
             filter_values = []
         display_keys = (filter_keys or []) + ["skip-if", "fail-if", "fails-if"]
         display_keys = set(display_keys)
+        ifd = self.get_intermittent_failure_data(start, end)
+
+        if show_testruns:
+            runcount = self.get_runcount_data(start, end)
 
         print("Finding tests...")
         here = os.path.abspath(os.path.dirname(__file__))
@@ -408,8 +599,11 @@ class TestInfoReport(TestInfo):
 
         manifest_paths = set()
         for t in tests:
-            if "manifest" in t and t["manifest"] is not None:
-                manifest_paths.add(t["manifest"])
+            if t.get("manifest", None):
+                manifest_path = t["manifest"]
+                if t.get("ancestor_manifest", None):
+                    manifest_path = "%s:%s" % (t["ancestor_manifest"], t["manifest"])
+                manifest_paths.add(manifest_path)
         manifest_count = len(manifest_paths)
         print(
             "Resolver found {} tests, {} manifests".format(len(tests), manifest_count)
@@ -506,6 +700,18 @@ class TestInfoReport(TestInfo):
                             # "skip-if(Android&&webrender) skip-if(OSX)", would be
                             # encoded as t['skip-if'] = "Android&&webrender;OSX".
                             annotation_conditions = t[key].split(";")
+
+                            # if key has \n in it, we need to strip it. for manifestparser format
+                            #  1) from the beginning of the line
+                            #  2) different conditions if in the middle of the line
+                            annotation_conditions = [
+                                x.strip("\n") for x in annotation_conditions
+                            ]
+                            temp = []
+                            for condition in annotation_conditions:
+                                temp.extend(condition.split("\n"))
+                            annotation_conditions = temp
+
                             for condition in annotation_conditions:
                                 condition_count += 1
                                 # Trim reftest fuzzy-if ranges: everything after the first comma
@@ -537,6 +743,31 @@ class TestInfoReport(TestInfo):
                             failed_count += 1
                         if t.get("skip-if"):
                             skipped_count += 1
+
+                        if "manifest_relpath" in t and "manifest" in t:
+                            if "web-platform" in t["manifest_relpath"]:
+                                test_info["manifest"] = [t["manifest"]]
+                            else:
+                                test_info["manifest"] = [t["manifest_relpath"]]
+
+                            # handle included manifests as ancestor:child
+                            if t.get("ancestor_manifest", None):
+                                test_info["manifest"] = [
+                                    "%s:%s"
+                                    % (t["ancestor_manifest"], test_info["manifest"][0])
+                                ]
+
+                        # add in intermittent failure data
+                        if ifd.get(relpath):
+                            if_data = ifd.get(relpath)
+                            test_info["failure_count"] = if_data["count"]
+                            if show_testruns:
+                                total_runs = 0
+                                for m in test_info["manifest"]:
+                                    total_runs += sum([x[3] for x in runcount[m]])
+                                if total_runs > 0:
+                                    test_info["total_runs"] = total_runs
+
                         if show_tests:
                             rkey = key if show_components else "all"
                             if rkey in by_component["tests"]:
@@ -549,6 +780,22 @@ class TestInfoReport(TestInfo):
                                         break
                                 if not found:
                                     by_component["tests"][rkey].append(test_info)
+                                else:
+                                    for ti in by_component["tests"][rkey]:
+                                        if ti["test"] == test_info["test"]:
+                                            if (
+                                                test_info["manifest"][0]
+                                                not in ti["manifest"]
+                                            ):
+                                                ti_manifest = test_info["manifest"]
+                                                if test_info.get(
+                                                    "ancestor_manifest", None
+                                                ):
+                                                    ti_manifest = "%s:%s" % (
+                                                        test_info["ancestor_manifest"],
+                                                        ti_manifest,
+                                                    )
+                                                ti["manifest"].extend(ti_manifest)
                             else:
                                 by_component["tests"][rkey] = [test_info]
             if show_tests:
@@ -566,6 +813,8 @@ class TestInfoReport(TestInfo):
             show_annotations,
             filter_values,
             filter_keys,
+            start,
+            end,
         )
 
         if show_summary:

@@ -12,11 +12,8 @@ include protocol PDocAccessible;
 #endif
 include protocol PFilePicker;
 include protocol PRemotePrintJob;
-include protocol PChildToParentStream;
-include protocol PParentToChildStream;
-include protocol PFileDescriptorSet;
-include protocol PRemoteLazyInputStream;
 include protocol PPaymentRequest;
+include protocol PSessionStore;
 include protocol PWindowGlobal;
 include protocol PBrowserBridge;
 include protocol PVsync;
@@ -44,6 +41,7 @@ include "mozilla/layers/LayersMessageUtils.h";
 include "mozilla/ipc/TransportSecurityInfoUtils.h";
 include "mozilla/ipc/URIUtils.h";
 
+using struct nsID from "nsID.h";
 using mozilla::gfx::Matrix4x4 from "mozilla/gfx/Matrix.h";
 using mozilla::gfx::SurfaceFormat from "mozilla/gfx/Types.h";
 using mozilla::LayoutDeviceIntPoint from "Units.h";
@@ -51,13 +49,13 @@ using mozilla::LayoutDevicePoint from "Units.h";
 using mozilla::ScreenIntCoord from "Units.h";
 using mozilla::ScreenIntMargin from "Units.h";
 using mozilla::ScreenIntPoint from "Units.h";
-using ScreenRect from "Units.h";
+using mozilla::ScreenRect from "Units.h";
 using struct mozilla::layers::ScrollableLayerGuid from "mozilla/layers/ScrollableLayerGuid.h";
 using struct mozilla::layers::ZoomConstraints from "mozilla/layers/ZoomConstraints.h";
 using mozilla::layers::LayersId from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::LayersObserverEpoch from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::GeckoContentController_TapType from "mozilla/layers/GeckoContentControllerTypes.h";
-using ScrollableLayerGuid::ViewID from "mozilla/layers/ScrollableLayerGuid.h";
+using mozilla::layers::ScrollableLayerGuid::ViewID from "mozilla/layers/ScrollableLayerGuid.h";
 using struct mozilla::void_t from "mozilla/ipc/IPCCore.h";
 using mozilla::WindowsHandle from "mozilla/ipc/IPCTypes.h";
 using class mozilla::WidgetCompositionEvent from "ipc/nsGUIEventIPC.h";
@@ -85,6 +83,7 @@ using nsIWidget::TouchPointerState from "nsIWidget.h";
 using nsIWidget::TouchpadGesturePhase from "nsIWidget.h";
 using nsCursor from "nsIWidget.h";
 using struct LookAndFeelInt from "mozilla/widget/WidgetMessageUtils.h";
+using struct mozilla::DimensionRequest from "mozilla/widget/WidgetMessageUtils.h";
 using class mozilla::dom::MessagePort from "mozilla/dom/MessagePort.h";
 using class mozilla::dom::ipc::StructuredCloneData from "mozilla/dom/ipc/StructuredCloneData.h";
 using mozilla::dom::MaybeDiscardedWindowContext from "mozilla/dom/WindowContext.h";
@@ -92,7 +91,6 @@ using mozilla::EventMessage from "mozilla/EventForwards.h";
 using nsEventStatus from "mozilla/EventForwards.h";
 using mozilla::Modifiers from "mozilla/EventForwards.h";
 using struct mozilla::widget::CandidateWindowPosition from "ipc/nsGUIEventIPC.h";
-using class mozilla::NativeEventData from "ipc/nsGUIEventIPC.h";
 using struct mozilla::FontRange from "ipc/nsGUIEventIPC.h";
 using mozilla::a11y::IAccessibleHolder from "mozilla/a11y/IPCTypes.h";
 using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
@@ -103,11 +101,13 @@ using mozilla::ScrollFlags from "mozilla/PresShellForwards.h";
 using struct InputFormData from "mozilla/dom/SessionStoreMessageUtils.h";
 using struct CollectedInputDataValue from "mozilla/dom/SessionStoreMessageUtils.h";
 using mozilla::ContentBlockingNotifier::StorageAccessPermissionGrantedReason from "mozilla/ContentBlockingNotifier.h";
-using CallerType from "mozilla/dom/BindingDeclarations.h";
+using mozilla::dom::CallerType from "mozilla/dom/BindingDeclarations.h";
 using mozilla::dom::EmbedderElementEventType from "mozilla/dom/TabMessageTypes.h";
-[RefCounted] using class nsDocShellLoadState from "nsDocShellLoadState.h";
 using mozilla::IntrinsicSize from "nsIFrame.h";
 using mozilla::AspectRatio from "mozilla/AspectRatio.h";
+using mozilla::NativeKeyBindingsType from "mozilla/NativeKeyBindingsType.h";
+using mozilla::StyleImageRendering from "mozilla/ServoStyleConsts.h";
+[MoveOnly] using class mozilla::ipc::BigBuffer from "mozilla/ipc/BigBuffer.h";
 
 namespace mozilla {
 namespace dom {
@@ -178,7 +178,7 @@ struct PrintPreviewResultInfo
  * See `dom/docs/Fission-IPC-Diagram.svg` for an overview of the DOM IPC
  * actors.
  */
-[NestedUpTo=inside_cpow, RefCounted] sync protocol PBrowser
+[NestedUpTo=inside_cpow] sync protocol PBrowser
 {
     manager PContent;
 
@@ -190,6 +190,7 @@ struct PrintPreviewResultInfo
 
     manages PFilePicker;
     manages PPaymentRequest;
+    manages PSessionStore;
     manages PWindowGlobal;
     manages PBrowserBridge;
     manages PVsync;
@@ -208,6 +209,7 @@ parent:
      * is also Windows-specific and should be set to 0 on other platforms.
      */
     async PDocAccessible(nullable PDocAccessible aParentDoc, uint64_t aParentAcc,
+                         MaybeDiscardedBrowsingContext aBrowsingContext,
                          uint32_t aMsaaID, IAccessibleHolder aDocCOMProxy);
 #endif
 
@@ -241,29 +243,12 @@ parent:
     async MoveFocus(bool forward, bool forDocumentNavigation);
 
     /**
-     * SizeShellTo request propagation to parent.
-     *
-     * aFlag            Can indicate if one of the dimensions should be ignored.
-     *                  If only one dimension has changed it has to be indicated
-     *                  by the nsIEmbeddingSiteWindow::DIM_FLAGS_IGNORE_* flags.
-     * aShellItemWidth,
-     * aShellItemHeight On parent side we won't be able to decide the dimensions
-     *                  of the shell item parameter in the original SizeShellTo
-     *                  call so we send over its dimensions that will be used
-     *                  for the actual resize.
-     **/
-    async SizeShellTo(uint32_t aFlag, int32_t aWidth, int32_t aHeight,
-                      int32_t aShellItemWidth, int32_t aShellItemHeight);
-
-    /**
      * Called by the child to inform the parent that links are dropped into
      * content area.
      *
      * aLinks A flat array of url, name, and type for each link
      */
     async DropLinks(nsString[] aLinks);
-
-    async Event(RemoteDOMEvent aEvent);
 
     sync SyncMessage(nsString aMessage, ClonedMessageData aData)
       returns (StructuredCloneData[] retval);
@@ -414,7 +399,7 @@ parent:
      */
     async SetCursor(nsCursor value,
                     bool hasCustomCursor,
-                    nsCString customCursorData,
+                    BigBuffer? customCursorData,
                     uint32_t width, uint32_t height,
                     float resolutionX, float resolutionY,
                     uint32_t stride, SurfaceFormat format,
@@ -437,22 +422,9 @@ parent:
      * Create an asynchronous color picker on the parent side,
      * but don't open it yet.
      */
-    async PColorPicker(nsString title, nsString initialColor);
+    async PColorPicker(nsString title, nsString initialColor, nsString[] defaultColors);
 
     async PFilePicker(nsString aTitle, int16_t aMode);
-
-    /**
-     * Initiates an asynchronous request for one of the special indexedDB
-     * permissions for the provided principal.
-     *
-     * @param principal
-     *   The principal of the request.
-     *
-     * NOTE: The principal is untrusted in the parent process. Only
-     *       principals that can live in the content process should
-     *       provided.
-     */
-    async IndexedDBPermissionRequest(nsIPrincipal aPrincipal) returns (uint32_t permission);
 
     /**
      * Tells the containing widget whether the given input block results in a
@@ -473,12 +445,21 @@ parent:
 
     async __delete__();
 
-    async ReplyKeyEvent(WidgetKeyboardEvent event);
+    /**
+     * Send a reply of keyboard event to the parent.  Then, parent can consider
+     * whether the event should kick a shortcut key or ignore.
+     *
+     * @param aEvent    The event which was sent from the parent and handled
+     *                  in a remote process.
+     * @param aUUI      The UUID which was generated when aEvent was sent to
+     *                  a remote process.
+     */
+    async ReplyKeyEvent(WidgetKeyboardEvent aEvent, nsID aUUID);
 
     /**
      * Retrieves edit commands for the key combination represented by aEvent.
      *
-     * @param aType       One of nsIWidget::NativeKeyBindingsType.
+     * @param aType       One of NativeKeyBindingsType.
      * @param aEvent      KeyboardEvent which represents a key combination.
      *                    Note that this must be a trusted event.
      * @return            Array of edit commands which should be executed in
@@ -536,7 +517,8 @@ parent:
     async SynthesizeNativeTouchpadPan(TouchpadGesturePhase aEventPhase,
                                       LayoutDeviceIntPoint aPoint,
                                       double aDeltaX, double aDeltaY,
-                                      int32_t aModifierFlags);
+                                      int32_t aModifierFlags,
+                                      uint64_t aObserverId);
 
     async LockNativePointer();
     async UnlockNativePointer();
@@ -574,11 +556,10 @@ parent:
 
     async NavigationFinished();
 
-    async SessionStoreUpdate(nsCString? aDocShellCaps, bool? aPrivatedMode,
-                             bool aNeedCollectSHistory, uint32_t aEpoch);
-
     async IntrinsicSizeOrRatioChanged(IntrinsicSize? aIntrinsicSize,
                                       AspectRatio? aIntrinsicRatio);
+
+    async ImageLoadComplete(nsresult aResult);
 
     /**
      * Child informs the parent that a pointer lock has requested/released.
@@ -594,7 +575,6 @@ parent:
 
 child:
     async NativeSynthesisResponse(uint64_t aObserverId, nsCString aResponse);
-    async UpdateEpoch(uint32_t aEpoch);
     async UpdateSHistory();
     async CloneDocumentTreeIntoSelf(MaybeDiscardedBrowsingContext aBc, PrintData aPrintData) returns(bool aSuccess);
     async UpdateRemotePrintSettings(PrintData aPrintData);
@@ -628,10 +608,14 @@ parent:
 
     /**
      * Sent by the child to the parent to inform it that an update to the
-     * dimensions has been requested, likely through win.moveTo or resizeTo
+     * dimensions has been requested.
+     *
+     * @param aRequest  The requested change of inner or outer dimensions.
+     * @param aScale    The scale at the time of the request. This is to allow
+     *                  the parent to recompute the dimensions in case of an
+     *                  ongoing scale change.
      */
-    async SetDimensions(uint32_t aFlags, int32_t aX, int32_t aY,
-                        int32_t aCx, int32_t aCy, double aScale);
+    async SetDimensions(DimensionRequest aRequest, double aScale);
 
     [Nested=inside_sync] sync DispatchWheelEvent(WidgetWheelEvent event);
     [Nested=inside_sync] sync DispatchMouseEvent(WidgetMouseEvent event);
@@ -639,12 +623,13 @@ parent:
     [Nested=inside_sync] sync DispatchTouchEvent(WidgetTouchEvent event);
 
     async InvokeDragSession(IPCDataTransfer[] transfers, uint32_t action,
-                            Shmem? visualData,
+                            BigBuffer? visualData,
                             uint32_t stride, SurfaceFormat format,
                             LayoutDeviceIntRect dragRect,
                             nsIPrincipal principal, nsIContentSecurityPolicy csp,
                             CookieJarSettingsArgs cookieJarSettings,
-                            MaybeDiscardedWindowContext sourceWindowContext);
+                            MaybeDiscardedWindowContext sourceWindowContext,
+                            MaybeDiscardedWindowContext sourceTopWindowContext);
 
     // After a compositor reset, it is necessary to reconnect each layers ID to
     // the compositor of the widget that will render those layers. Note that
@@ -718,11 +703,11 @@ child:
 
     async SetIsUnderHiddenEmbedderElement(bool aIsUnderHiddenEmbedderElement);
 
+    async UpdateRemoteStyle(StyleImageRendering aImageRendering);
+
     async DynamicToolbarMaxHeightChanged(ScreenIntCoord height);
 
     async DynamicToolbarOffsetChanged(ScreenIntCoord height);
-
-    async SetKeyboardIndicators(UIStateChangeType showFocusRings);
 
     /**
      * StopIMEStateManagement() is called when the process loses focus and
@@ -789,9 +774,17 @@ child:
                                                       ScrollableLayerGuid aGuid,
                                                       uint64_t aInputBlockId);
 
+    /**
+     * Send a keyboard event which reporesents a user input to a remote process.
+     *
+     * @param aEvent    The event which user typed a key.
+     * @param aUUID     A UUID which is generated in the parent at sending it.
+     *                  This must be specified when the child sends a reply
+     *                  event to the parent.
+     */
     [Priority=input]
-    async RealKeyEvent(WidgetKeyboardEvent event);
-    async NormalPriorityRealKeyEvent(WidgetKeyboardEvent event);
+    async RealKeyEvent(WidgetKeyboardEvent aEvent, nsID aUUID);
+    async NormalPriorityRealKeyEvent(WidgetKeyboardEvent aEvent, nsID aUUID);
 
     [Priority=input]
     async MouseWheelEvent(WidgetWheelEvent event,
@@ -868,11 +861,6 @@ child:
                             bool aIsPrivateData,
                             nsIPrincipal aRequestingPrincipal,
                             nsContentPolicyType aContentPolicyType);
-
-    /**
-     * Activate event forwarding from client to parent.
-     */
-    async ActivateFrameEvent(nsString aType, bool capture);
 
     async LoadRemoteScript(nsString aURL, bool aRunInGlobalScope);
 
@@ -1009,11 +997,13 @@ parent:
     async IsWindowSupportingWebVR(uint64_t aOuterWindowID) returns(bool isSupported);
 
     /** Records a history visit. */
-    async VisitURI(nsIURI aURI, nsIURI aLastVisitedURI,
-                   uint32_t aFlags);
+    async VisitURI(nsIURI aURI, nsIURI aLastVisitedURI, uint32_t aFlags, uint64_t aBrowserId);
 
     /** Fetches the visited status for an array of URIs (Android-only). */
     async QueryVisitedState(nsIURI[] aURIs);
+
+    /** Create a session store for a browser child. */
+    async PSessionStore();
 
     /**
      * Construct a new WindowGlobal for an existing global in the content process

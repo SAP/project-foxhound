@@ -4,8 +4,8 @@
  * Test searching for the selected text using the context menu
  */
 
-const { SearchTestUtils } = ChromeUtils.import(
-  "resource://testing-common/SearchTestUtils.jsm"
+const { SearchTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/SearchTestUtils.sys.mjs"
 );
 
 SearchTestUtils.init(this);
@@ -14,23 +14,17 @@ const ENGINE_NAME = "mozSearch";
 const ENGINE_URL =
   "https://example.com/browser/browser/components/search/test/browser/mozsearch.sjs";
 
-add_task(async function setup() {
+add_setup(async function() {
   await Services.search.init();
 
-  await SearchTestUtils.installSearchExtension({
-    name: ENGINE_NAME,
-    search_url: ENGINE_URL,
-    search_url_get_params: "test={searchTerms}",
-  });
-
-  let engine = await Services.search.getEngineByName(ENGINE_NAME);
-  ok(engine, "Got a search engine");
-  let oldDefaultEngine = await Services.search.getDefault();
-  await Services.search.setDefault(engine);
-
-  registerCleanupFunction(async () => {
-    await Services.search.setDefault(oldDefaultEngine);
-  });
+  await SearchTestUtils.installSearchExtension(
+    {
+      name: ENGINE_NAME,
+      search_url: ENGINE_URL,
+      search_url_get_params: "test={searchTerms}",
+    },
+    { setAsDefault: true }
+  );
 });
 
 async function openNewSearchTab(event_args, expect_new_window = false) {

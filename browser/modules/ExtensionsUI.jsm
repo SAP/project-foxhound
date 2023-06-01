@@ -5,21 +5,26 @@
 
 var EXPORTED_SYMBOLS = ["ExtensionsUI"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { EventEmitter } = ChromeUtils.import(
-  "resource://gre/modules/EventEmitter.jsm"
+const { EventEmitter } = ChromeUtils.importESModule(
+  "resource://gre/modules/EventEmitter.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  AppMenuNotifications: "resource://gre/modules/AppMenuNotifications.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AddonManagerPrivate: "resource://gre/modules/AddonManager.jsm",
   AMTelemetry: "resource://gre/modules/AddonManager.jsm",
-  AppMenuNotifications: "resource://gre/modules/AppMenuNotifications.jsm",
   ExtensionData: "resource://gre/modules/Extension.jsm",
   ExtensionPermissions: "resource://gre/modules/ExtensionPermissions.jsm",
-  Services: "resource://gre/modules/Services.jsm",
+  OriginControls: "resource://gre/modules/ExtensionPermissions.jsm",
 });
 
 const DEFAULT_EXTENSION_ICON =
@@ -34,10 +39,15 @@ function getTabBrowser(browser) {
   while (browser.ownerGlobal.docShell.itemType !== Ci.nsIDocShell.typeChrome) {
     browser = browser.ownerGlobal.docShell.chromeEventHandler;
   }
-  if (browser.getAttribute("webextension-view-type") == "popup") {
-    browser = browser.ownerGlobal.gBrowser.selectedBrowser;
+  let window = browser.ownerGlobal;
+  let viewType = browser.getAttribute("webextension-view-type");
+  if (viewType == "sidebar") {
+    window = window.browsingContext.topChromeWindow;
   }
-  return { browser, window: browser.ownerGlobal };
+  if (viewType == "popup" || viewType == "sidebar") {
+    browser = window.gBrowser.selectedBrowser;
+  }
+  return { browser, window };
 }
 
 var ExtensionsUI = {
@@ -66,7 +76,7 @@ var ExtensionsUI = {
   },
 
   async _checkForSideloaded() {
-    let sideloaded = await AddonManagerPrivate.getNewSideloads();
+    let sideloaded = await lazy.AddonManagerPrivate.getNewSideloads();
 
     if (!sideloaded.length) {
       // No new side-loads. We're done.
@@ -88,12 +98,12 @@ var ExtensionsUI = {
           this._updateNotifications();
 
           if (this.sideloaded.size == 0) {
-            AddonManager.removeAddonListener(this.sideloadListener);
+            lazy.AddonManager.removeAddonListener(this.sideloadListener);
             this.sideloadListener = null;
           }
         },
       };
-      AddonManager.addAddonListener(this.sideloadListener);
+      lazy.AddonManager.addAddonListener(this.sideloadListener);
     }
 
     for (let addon of sideloaded) {
@@ -104,9 +114,9 @@ var ExtensionsUI = {
 
   _updateNotifications() {
     if (this.sideloaded.size + this.updates.size == 0) {
-      AppMenuNotifications.removeNotification("addon-alert");
+      lazy.AppMenuNotifications.removeNotification("addon-alert");
     } else {
-      AppMenuNotifications.showBadgeOnlyNotification("addon-alert");
+      lazy.AppMenuNotifications.showBadgeOnlyNotification("addon-alert");
     }
     this.emit("change");
   },
@@ -132,7 +142,7 @@ var ExtensionsUI = {
       type: "sideload",
     });
 
-    AMTelemetry.recordManageEvent(addon, "sideload_prompt", {
+    lazy.AMTelemetry.recordManageEvent(addon, "sideload_prompt", {
       num_strings: strings.msgs.length,
     });
 
@@ -148,7 +158,7 @@ var ExtensionsUI = {
           // give the user that opportunity.
           if (
             addon.permissions &
-            AddonManager.PERM_CAN_CHANGE_PRIVATEBROWSING_ACCESS
+            lazy.AddonManager.PERM_CAN_CHANGE_PRIVATEBROWSING_ACCESS
           ) {
             this.showInstallNotification(tabbrowser.selectedBrowser, addon);
           }
@@ -159,7 +169,7 @@ var ExtensionsUI = {
   },
 
   showUpdate(browser, info) {
-    AMTelemetry.recordInstallEvent(info.install, {
+    lazy.AMTelemetry.recordInstallEvent(info.install, {
       step: "permissions_prompt",
       num_strings: info.strings.msgs.length,
     });
@@ -200,7 +210,7 @@ var ExtensionsUI = {
       }
 
       info.unsigned =
-        info.addon.signedState <= AddonManager.SIGNEDSTATE_MISSING;
+        info.addon.signedState <= lazy.AddonManager.SIGNEDSTATE_MISSING;
       if (
         info.unsigned &&
         Cu.isInAutomation &&
@@ -235,11 +245,11 @@ var ExtensionsUI = {
       }
 
       if (info.type == "sideload") {
-        AMTelemetry.recordManageEvent(info.addon, "sideload_prompt", {
+        lazy.AMTelemetry.recordManageEvent(info.addon, "sideload_prompt", {
           num_strings: strings.msgs.length,
         });
       } else {
-        AMTelemetry.recordInstallEvent(info.install, {
+        lazy.AMTelemetry.recordInstallEvent(info.install, {
           step: "permissions_prompt",
           num_strings: strings.msgs.length,
         });
@@ -345,7 +355,7 @@ var ExtensionsUI = {
     let appName = brandBundle.GetStringFromName("brandShortName");
     let info2 = Object.assign({ appName }, info);
 
-    let strings = ExtensionData.formatPermissionStrings(info2, bundle, {
+    let strings = lazy.ExtensionData.formatPermissionStrings(info2, bundle, {
       collapseOrigins: true,
     });
     strings.addonName = info.addon.name;
@@ -414,15 +424,31 @@ var ExtensionsUI = {
         return false;
       }
 
-      let popupOptions = {
+      let options = {
         hideClose: true,
         popupIconURL: icon || DEFAULT_EXTENSION_ICON,
         popupIconClass: icon ? "" : "addon-warning-icon",
         persistent: true,
         eventCallback,
-        name: strings.addonName,
         removeOnDismissal: true,
+        popupOptions: {
+          position: "bottomright topright",
+        },
       };
+      // The prompt/notification machinery has a special affordance wherein
+      // certain subsets of the header string can be designated "names", and
+      // referenced symbolically as "<>" and "{}" to receive special formatting.
+      // That code assumes that the existence of |name| and |secondName| in the
+      // options object imply the presence of "<>" and "{}" (respectively) in
+      // in the string.
+      //
+      // At present, WebExtensions use this affordance while SitePermission
+      // add-ons don't, so we need to conditionally set the |name| field.
+      //
+      // NB: This could potentially be cleaned up, see bug 1799710.
+      if (strings.header.includes("<>")) {
+        options.name = strings.addonName;
+      }
 
       let action = {
         label: strings.acceptText,
@@ -451,10 +477,13 @@ var ExtensionsUI = {
         browser,
         "addon-webext-permissions",
         strings.header,
-        "addons-notification-icon",
+        browser.ownerGlobal.gUnifiedExtensions.getPopupAnchorID(
+          browser,
+          window
+        ),
         action,
         secondaryActions,
-        popupOptions
+        options
       );
     });
 
@@ -465,7 +494,7 @@ var ExtensionsUI = {
 
   showDefaultSearchPrompt(target, strings, icon) {
     return new Promise(resolve => {
-      let popupOptions = {
+      let options = {
         hideClose: true,
         popupIconURL: icon || DEFAULT_EXTENSION_ICON,
         persistent: true,
@@ -496,6 +525,7 @@ var ExtensionsUI = {
       ];
 
       let { browser, window } = getTabBrowser(target);
+
       window.PopupNotifications.show(
         browser,
         "addon-webext-defaultsearch",
@@ -503,7 +533,7 @@ var ExtensionsUI = {
         "addons-notification-icon",
         action,
         secondaryActions,
-        popupOptions
+        options
       );
     });
   },
@@ -516,7 +546,7 @@ var ExtensionsUI = {
       "<>",
     ]);
     const permissionName = "internal:privateBrowsingAllowed";
-    const { permissions } = await ExtensionPermissions.get(addon.id);
+    const { permissions } = await lazy.ExtensionPermissions.get(addon.id);
     const hasIncognito = permissions.includes(permissionName);
 
     return new Promise(resolve => {
@@ -526,7 +556,7 @@ var ExtensionsUI = {
         checkbox.checked = hasIncognito;
         checkbox.hidden = !(
           addon.permissions &
-          AddonManager.PERM_CAN_CHANGE_PRIVATEBROWSING_ACCESS
+          lazy.AddonManager.PERM_CAN_CHANGE_PRIVATEBROWSING_ACCESS
         );
       }
 
@@ -547,14 +577,14 @@ var ExtensionsUI = {
         // The checkbox has been changed at this point, otherwise we would
         // have exited early above.
         if (checkbox.checked) {
-          await ExtensionPermissions.add(addon.id, incognitoPermission);
+          await lazy.ExtensionPermissions.add(addon.id, incognitoPermission);
           value = "on";
         } else if (hasIncognito) {
-          await ExtensionPermissions.remove(addon.id, incognitoPermission);
+          await lazy.ExtensionPermissions.remove(addon.id, incognitoPermission);
           value = "off";
         }
         if (value !== undefined) {
-          AMTelemetry.recordActionEvent({
+          lazy.AMTelemetry.recordActionEvent({
             addon,
             object: "doorhanger",
             action: "privateBrowsingAllowed",
@@ -576,7 +606,7 @@ var ExtensionsUI = {
       };
 
       let icon = addon.isWebExtension
-        ? AddonManager.getPreferredIconURL(addon, 32, window) ||
+        ? lazy.AddonManager.getPreferredIconURL(addon, 32, window) ||
           DEFAULT_EXTENSION_ICON
         : "chrome://browser/skin/addons/addon-install-installed.svg";
       let options = {
@@ -585,17 +615,88 @@ var ExtensionsUI = {
         popupIconURL: icon,
         onRefresh: setCheckbox,
         onDismissed: win => {
-          AppMenuNotifications.removeNotification("addon-installed");
+          lazy.AppMenuNotifications.removeNotification("addon-installed");
           actionResolve(win);
         },
       };
-      AppMenuNotifications.showNotification(
+      lazy.AppMenuNotifications.showNotification(
         "addon-installed",
         action,
         null,
         options
       );
     });
+  },
+
+  // Populate extension toolbar popup menu with origin controls.
+  originControlsMenu(popup, extensionId) {
+    let policy = WebExtensionPolicy.getByID(extensionId);
+    if (!policy?.extension.originControls) {
+      return;
+    }
+
+    let win = popup.ownerGlobal;
+    let tab = win.gBrowser.selectedTab;
+    let uri = tab.linkedBrowser?.currentURI;
+    let state = lazy.OriginControls.getState(policy, tab);
+
+    let doc = popup.ownerDocument;
+    let whenClicked, alwaysOn, allDomains;
+    let separator = doc.createXULElement("menuseparator");
+
+    let headerItem = doc.createXULElement("menuitem");
+    headerItem.setAttribute("disabled", true);
+
+    if (state.noAccess) {
+      doc.l10n.setAttributes(headerItem, "origin-controls-no-access");
+    } else {
+      doc.l10n.setAttributes(headerItem, "origin-controls-options");
+    }
+
+    if (state.allDomains) {
+      allDomains = doc.createXULElement("menuitem");
+      allDomains.setAttribute("type", "radio");
+      allDomains.setAttribute("checked", state.hasAccess);
+      doc.l10n.setAttributes(allDomains, "origin-controls-option-all-domains");
+    }
+
+    if (state.whenClicked) {
+      whenClicked = doc.createXULElement("menuitem");
+      whenClicked.setAttribute("type", "radio");
+      whenClicked.setAttribute("checked", !state.hasAccess);
+      doc.l10n.setAttributes(
+        whenClicked,
+        "origin-controls-option-when-clicked"
+      );
+      whenClicked.addEventListener("command", async () => {
+        await lazy.OriginControls.setWhenClicked(policy, uri);
+        win.gUnifiedExtensions.updateAttention();
+      });
+    }
+
+    if (state.alwaysOn) {
+      alwaysOn = doc.createXULElement("menuitem");
+      alwaysOn.setAttribute("type", "radio");
+      alwaysOn.setAttribute("checked", state.hasAccess);
+      doc.l10n.setAttributes(alwaysOn, "origin-controls-option-always-on", {
+        domain: uri.host,
+      });
+      alwaysOn.addEventListener("command", async () => {
+        await lazy.OriginControls.setAlwaysOn(policy, uri);
+        win.gUnifiedExtensions.updateAttention();
+      });
+    }
+
+    // Insert all before Pin to toolbar OR Manage Extension, after any
+    // extension's menu items.
+    let items = [headerItem, whenClicked, alwaysOn, allDomains, separator];
+    let manageItem =
+      popup.querySelector(".customize-context-manageExtension") ||
+      popup.querySelector(".unified-extensions-context-menu-pin-to-toolbar");
+    items.forEach(item => item && popup.insertBefore(item, manageItem));
+
+    let cleanup = () => items.forEach(item => item?.remove());
+    popup.addEventListener("popuphidden", cleanup, { once: true });
   },
 };
 

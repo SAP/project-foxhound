@@ -16,28 +16,27 @@
 
 
 # This script will read a CSV of modules from Socorro, and try to retrieve
-# missing symbols from Microsoft's symbol server. It honors a blacklist
-# (blacklist.txt) of symbols that are known to be from our applications,
+# missing symbols from Microsoft's symbol server. It honors a list
+# (ignorelist.txt) of symbols that are known to be from our applications,
 # and it maintains its own list of symbols that the MS symbol server
 # doesn't have (skiplist.txt).
 #
 # The script also depends on having write access to the directory it is
 # installed in, to write the skiplist text file.
 
+import argparse
+import asyncio
+import logging
+import os
+import shutil
+import zipfile
+from collections import defaultdict
+from tempfile import mkdtemp
+from urllib.parse import quote, urljoin
+
 from aiofile import AIOFile, LineReader
 from aiohttp import ClientSession, ClientTimeout
 from aiohttp.connector import TCPConnector
-import argparse
-import asyncio
-import os
-import shutil
-import logging
-from collections import defaultdict
-from tempfile import mkdtemp
-from urllib.parse import urljoin
-from urllib.parse import quote
-import zipfile
-
 
 # Just hardcoded here
 MICROSOFT_SYMBOL_SERVER = "https://msdl.microsoft.com/download/symbols/"
@@ -47,7 +46,7 @@ MOZILLA_SYMBOL_SERVER = (
 )
 MISSING_SYMBOLS_URL = "https://symbols.mozilla.org/missingsymbols.csv?microsoft=only"
 HEADERS = {"User-Agent": USER_AGENT}
-SYM_SRV = "SRV*{0}*https://msdl.microsoft.com/download/symbols;SRV*{0}*https://software.intel.com/sites/downloads/symbols;SRV*{0}*https://download.amd.com/dir/bin;SRV*{0}*https://driver-symbols.nvidia.com"
+SYM_SRV = "SRV*{0}*https://msdl.microsoft.com/download/symbols;SRV*{0}*https://software.intel.com/sites/downloads/symbols;SRV*{0}*https://download.amd.com/dir/bin;SRV*{0}*https://driver-symbols.nvidia.com"  # noqa
 TIMEOUT = 7200
 RETRIES = 5
 
@@ -148,8 +147,9 @@ async def fetch_missing_symbols(u):
     log.info("Trying missing symbols from %s" % u)
     async with ClientSession() as client:
         async with client.get(u, headers=HEADERS) as resp:
+            # The server currently does not set an encoding so force it to UTF-8
+            data = await resp.text("UTF-8")
             # just skip the first line since it contains column headers
-            data = await resp.text()
             return data.splitlines()[1:]
 
 
@@ -190,9 +190,9 @@ async def get_skiplist():
     return skiplist
 
 
-def get_missing_symbols(missing_symbols, skiplist, blacklist):
+def get_missing_symbols(missing_symbols, skiplist, ignorelist):
     modules = defaultdict(set)
-    stats = {"blacklist": 0, "skiplist": 0}
+    stats = {"ignorelist": 0, "skiplist": 0}
     for line in missing_symbols:
         line = line.rstrip()
         bits = line.split(",")
@@ -203,8 +203,8 @@ def get_missing_symbols(missing_symbols, skiplist, blacklist):
         if len(bits) >= 4:
             code_file, code_id = bits[2:4]
         if pdb and debug_id and pdb.endswith(".pdb"):
-            if pdb.lower() in blacklist:
-                stats["blacklist"] += 1
+            if pdb.lower() in ignorelist:
+                stats["ignorelist"] += 1
                 continue
 
             if skiplist.get(debug_id) != pdb.lower():
@@ -272,12 +272,12 @@ async def dump_module(
 
     if has_code:
         cmd = (
-            f"{dump_syms} {code_file} --code-id {code_id} --check-cfi "
+            f"{dump_syms} {code_file} --code-id {code_id} --check-cfi --inlines "
             f"--store {output} --symbol-server '{sym_srv}' --verbose error"
         )
     else:
         cmd = (
-            f"{dump_syms} {filename} --debug-id {debug_id} --check-cfi "
+            f"{dump_syms} {filename} --debug-id {debug_id} --check-cfi --inlines "
             f"--store {output} --symbol-server '{sym_srv}' --verbose error"
         )
 
@@ -438,7 +438,7 @@ def get_base_data(url):
         return await asyncio.gather(
             fetch_missing_symbols(url),
             # Symbols that we know belong to us, so don't ask Microsoft for them.
-            get_list("blacklist.txt"),
+            get_list("ignorelist.txt"),
             # Symbols that we know belong to Microsoft, so don't skiplist them.
             get_list("known-microsoft-symbols.txt"),
             # Symbols that we've asked for in the past unsuccessfully
@@ -485,11 +485,11 @@ def main():
     aiohttp_logger.setLevel(logging.INFO)
     log.info("Started")
 
-    missing_symbols, blacklist, known_ms_symbols, skiplist = get_base_data(
+    missing_symbols, ignorelist, known_ms_symbols, skiplist = get_base_data(
         args.missing_symbols
     )
 
-    modules, stats_skipped = get_missing_symbols(missing_symbols, skiplist, blacklist)
+    modules, stats_skipped = get_missing_symbols(missing_symbols, skiplist, ignorelist)
 
     symbol_path = mkdtemp("symsrvfetch")
     temp_path = mkdtemp(prefix="symcache")
@@ -516,7 +516,7 @@ def main():
         )
 
     log.info(
-        f"{stats_collect['is_there']} already present, {stats_skipped['blacklist']} in blacklist, "
+        f"{stats_collect['is_there']} already present, {stats_skipped['ignorelist']} in ignored list, "  # noqa
         f"{stats_skipped['skiplist']} skipped, {stats_collect['no_pdb']} not found, "
         f"{stats_dump['dump_error']} processed with errors, "
         f"{stats_dump['no_bin']} processed but with no binaries (x86_64)"

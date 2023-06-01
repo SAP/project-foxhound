@@ -22,15 +22,17 @@
 #include "nsContentUtils.h"
 #include "nsLayoutUtils.h"
 #include "nsTextFrame.h"
+#include "nsContainerFrame.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/ContentIterator.h"
 #include "mozilla/dom/CharacterData.h"
+#include "mozilla/dom/ChildIterator.h"
+#include "mozilla/dom/DOMRect.h"
+#include "mozilla/dom/DOMStringList.h"
 #include "mozilla/dom/DocumentFragment.h"
 #include "mozilla/dom/DocumentType.h"
 #include "mozilla/dom/RangeBinding.h"
-#include "mozilla/dom/DOMRect.h"
-#include "mozilla/dom/DOMStringList.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/Text.h"
 #include "mozilla/Maybe.h"
@@ -94,7 +96,7 @@ DocGroup* nsRange::GetDocGroup() const {
 }
 
 /******************************************************
- * stack based utilty class for managing monitor
+ * stack based utility class for managing monitor
  ******************************************************/
 
 static void InvalidateAllFrames(nsINode* aNode) {
@@ -134,12 +136,12 @@ nsRange::~nsRange() {
 }
 
 nsRange::nsRange(nsINode* aNode)
-    : AbstractRange(aNode),
+    : AbstractRange(aNode, /* aIsDynamicRange = */ true),
       mRegisteredClosestCommonInclusiveAncestor(nullptr),
       mNextStartRef(nullptr),
       mNextEndRef(nullptr) {
   // printf("Size of nsRange: %zu\n", sizeof(nsRange));
-  static_assert(sizeof(nsRange) <= 192,
+  static_assert(sizeof(nsRange) <= 208,
                 "nsRange size shouldn't be increased as far as possible");
 }
 
@@ -728,25 +730,37 @@ void nsRange::ParentChainChanged(nsIContent* aContent) {
 
 bool nsRange::IsPointComparableToRange(const nsINode& aContainer,
                                        uint32_t aOffset,
-                                       ErrorResult& aErrorResult) const {
+                                       ErrorResult& aRv) const {
   // our range is in a good state?
   if (!mIsPositioned) {
-    aErrorResult.Throw(NS_ERROR_NOT_INITIALIZED);
+    aRv.Throw(NS_ERROR_NOT_INITIALIZED);
     return false;
   }
 
   if (!aContainer.IsInclusiveDescendantOf(mRoot)) {
-    aErrorResult.Throw(NS_ERROR_DOM_WRONG_DOCUMENT_ERR);
+    // TODO(emilio): Switch to ThrowWrongDocumentError, but IsPointInRange
+    // relies on the error code right now in order to suppress the exception.
+    aRv.Throw(NS_ERROR_DOM_WRONG_DOCUMENT_ERR);
+    return false;
+  }
+
+  auto chromeOnlyAccess = mStart.Container()->ChromeOnlyAccess();
+  NS_ASSERTION(chromeOnlyAccess == mEnd.Container()->ChromeOnlyAccess(),
+               "Start and end of a range must be either both native anonymous "
+               "content or not.");
+  if (aContainer.ChromeOnlyAccess() != chromeOnlyAccess) {
+    aRv.ThrowInvalidNodeTypeError(
+        "Trying to compare restricted with unrestricted nodes");
     return false;
   }
 
   if (aContainer.NodeType() == nsINode::DOCUMENT_TYPE_NODE) {
-    aErrorResult.Throw(NS_ERROR_DOM_INVALID_NODE_TYPE_ERR);
+    aRv.ThrowInvalidNodeTypeError("Trying to compare with a document");
     return false;
   }
 
   if (aOffset > aContainer.Length()) {
-    aErrorResult.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
+    aRv.ThrowIndexSizeError("Offset is out of bounds");
     return false;
   }
 
@@ -775,21 +789,14 @@ int16_t nsRange::ComparePoint(const nsINode& aContainer, uint32_t aOffset,
 
   MOZ_ASSERT(point.IsSetAndValid());
 
-  Maybe<int32_t> order = nsContentUtils::ComparePoints(point, mStart);
-
-  // `order` must contain a value, because `IsPointComparableToRange()` was
-  // checked above.
-  if (*order <= 0) {
-    return *order;
+  if (Maybe<int32_t> order = nsContentUtils::ComparePoints(point, mStart);
+      order && *order <= 0) {
+    return int16_t(*order);
   }
-
-  order = nsContentUtils::ComparePoints(mEnd, point);
-  // `order` must contain a value, because `IsPointComparableToRange()` was
-  // checked above.
-  if (*order == -1) {
+  if (Maybe<int32_t> order = nsContentUtils::ComparePoints(mEnd, point);
+      order && *order == -1) {
     return 1;
   }
-
   return 0;
 }
 
@@ -807,6 +814,10 @@ bool nsRange::IntersectsNode(nsINode& aNode, ErrorResult& aRv) {
 
   const Maybe<uint32_t> nodeIndex = parent->ComputeIndexOf(&aNode);
   if (nodeIndex.isNothing()) {
+    return false;
+  }
+
+  if (!IsPointComparableToRange(*parent, *nodeIndex, IgnoreErrors())) {
     return false;
   }
 
@@ -931,7 +942,7 @@ void nsRange::DoSetRange(const RangeBoundaryBase<SPT, SRT>& aStartBoundary,
       if (newCommonAncestor) {
         RegisterClosestCommonInclusiveAncestor(newCommonAncestor);
       } else {
-        NS_ASSERTION(!mIsPositioned, "unexpected disconnected nodes");
+        MOZ_DIAGNOSTIC_ASSERT(!mIsPositioned, "unexpected disconnected nodes");
         mSelection = nullptr;
         MOZ_DIAGNOSTIC_ASSERT(
             !mRegisteredClosestCommonInclusiveAncestor,
@@ -2694,6 +2705,50 @@ static nsresult GetPartialTextRect(RectCallback* aCallback,
   return NS_OK;
 }
 
+static void CollectClientRectsForSubtree(
+    nsINode* aNode, RectCallback* aCollector, Sequence<nsString>* aTextList,
+    nsINode* aStartContainer, uint32_t aStartOffset, nsINode* aEndContainer,
+    uint32_t aEndOffset, bool aClampToEdge, bool aFlushLayout) {
+  auto* content = nsIContent::FromNode(aNode);
+  if (!content) {
+    return;
+  }
+
+  if (content->IsText()) {
+    if (aNode == aStartContainer) {
+      int32_t offset = aStartContainer == aEndContainer
+                           ? static_cast<int32_t>(aEndOffset)
+                           : content->AsText()->TextDataLength();
+      GetPartialTextRect(aCollector, aTextList, content,
+                         static_cast<int32_t>(aStartOffset), offset,
+                         aClampToEdge, aFlushLayout);
+      return;
+    }
+
+    if (aNode == aEndContainer) {
+      GetPartialTextRect(aCollector, aTextList, content, 0,
+                         static_cast<int32_t>(aEndOffset), aClampToEdge,
+                         aFlushLayout);
+      return;
+    }
+  }
+
+  if (aNode->IsElement() && aNode->AsElement()->IsDisplayContents()) {
+    FlattenedChildIterator childIter(content);
+
+    for (nsIContent* child = childIter.GetNextChild(); child;
+         child = childIter.GetNextChild()) {
+      CollectClientRectsForSubtree(child, aCollector, aTextList,
+                                   aStartContainer, aStartOffset, aEndContainer,
+                                   aEndOffset, aClampToEdge, aFlushLayout);
+    }
+  } else if (nsIFrame* frame = content->GetPrimaryFrame()) {
+    nsLayoutUtils::GetAllInFlowRectsAndTexts(
+        frame, nsLayoutUtils::GetContainingBlockForClientRect(frame),
+        aCollector, aTextList, nsLayoutUtils::RECTS_ACCOUNT_FOR_TRANSFORMS);
+  }
+}
+
 /* static */
 void nsRange::CollectClientRectsAndText(
     RectCallback* aCollector, Sequence<nsString>* aTextList, nsRange* aRange,
@@ -2755,37 +2810,16 @@ void nsRange::CollectClientRectsAndText(
   do {
     nsCOMPtr<nsINode> node = iter.GetCurrentNode();
     iter.Next();
-    nsCOMPtr<nsIContent> content = do_QueryInterface(node);
-    if (!content) continue;
-    if (content->IsText()) {
-      if (node == startContainer) {
-        int32_t offset = startContainer == endContainer
-                             ? static_cast<int32_t>(aEndOffset)
-                             : content->AsText()->TextDataLength();
-        GetPartialTextRect(aCollector, aTextList, content,
-                           static_cast<int32_t>(aStartOffset), offset,
-                           aClampToEdge, aFlushLayout);
-        continue;
-      } else if (node == endContainer) {
-        GetPartialTextRect(aCollector, aTextList, content, 0,
-                           static_cast<int32_t>(aEndOffset), aClampToEdge,
-                           aFlushLayout);
-        continue;
-      }
-    }
 
-    nsIFrame* frame = content->GetPrimaryFrame();
-    if (frame) {
-      nsLayoutUtils::GetAllInFlowRectsAndTexts(
-          frame, nsLayoutUtils::GetContainingBlockForClientRect(frame),
-          aCollector, aTextList, nsLayoutUtils::RECTS_ACCOUNT_FOR_TRANSFORMS);
-    }
+    CollectClientRectsForSubtree(node, aCollector, aTextList, aStartContainer,
+                                 aStartOffset, aEndContainer, aEndOffset,
+                                 aClampToEdge, aFlushLayout);
   } while (!iter.IsDone());
 }
 
 already_AddRefed<DOMRect> nsRange::GetBoundingClientRect(bool aClampToEdge,
                                                          bool aFlushLayout) {
-  RefPtr<DOMRect> rect = new DOMRect(ToSupports(this));
+  RefPtr<DOMRect> rect = new DOMRect(ToSupports(mOwner));
   if (!mIsPositioned) {
     return rect.forget();
   }
@@ -2810,8 +2844,7 @@ already_AddRefed<DOMRectList> nsRange::GetClientRects(bool aClampToEdge,
     return nullptr;
   }
 
-  RefPtr<DOMRectList> rectList =
-      new DOMRectList(static_cast<AbstractRange*>(this));
+  RefPtr<DOMRectList> rectList = new DOMRectList(ToSupports(mOwner));
 
   nsLayoutUtils::RectListBuilder builder(rectList);
 
@@ -2830,7 +2863,7 @@ void nsRange::GetClientRectsAndTexts(mozilla::dom::ClientRectsAndTexts& aResult,
     return;
   }
 
-  aResult.mRectList = new DOMRectList(static_cast<AbstractRange*>(this));
+  aResult.mRectList = new DOMRectList(ToSupports(mOwner));
 
   nsLayoutUtils::RectListBuilder builder(aResult.mRectList);
 
@@ -2986,7 +3019,6 @@ void nsRange::ExcludeNonSelectableNodes(nsTArray<RefPtr<nsRange>>* aOutRanges) {
     // the outer loop.
     nsIContent* firstNonSelectableContent = nullptr;
     while (true) {
-      ErrorResult err;
       nsINode* node = preOrderIter.GetCurrentNode();
       preOrderIter.Next();
       bool selectable = true;
@@ -3014,63 +3046,71 @@ void nsRange::ExcludeNonSelectableNodes(nsTArray<RefPtr<nsRange>>* aOutRanges) {
         if (!firstNonSelectableContent) {
           firstNonSelectableContent = content;
         }
-        if (preOrderIter.IsDone() && seenSelectable) {
-          // The tail end of the initial range is non-selectable - truncate the
-          // current range before the first non-selectable node.
-          range->SetEndBefore(*firstNonSelectableContent, err);
+        if (preOrderIter.IsDone()) {
+          if (seenSelectable) {
+            // The tail end of the initial range is non-selectable - truncate
+            // the current range before the first non-selectable node.
+            range->SetEndBefore(*firstNonSelectableContent, IgnoreErrors());
+          }
+          return;
         }
-      } else if (firstNonSelectableContent) {
+        continue;
+      }
+
+      if (firstNonSelectableContent) {
         if (range == this && !seenSelectable) {
           // This is the initial range and all its nodes until now are
           // non-selectable so just trim them from the start.
+          IgnoredErrorResult err;
           range->SetStartBefore(*node, err);
           if (err.Failed()) {
             return;
           }
           break;  // restart the same range with a new iterator
-        } else {
-          // Save the end point before truncating the range.
-          nsINode* endContainer = range->mEnd.Container();
-          const uint32_t endOffset =
-              *range->mEnd.Offset(RangeBoundary::OffsetFilter::kValidOffsets);
-
-          // Truncate the current range before the first non-selectable node.
-          range->SetEndBefore(*firstNonSelectableContent, err);
-
-          // Store it in the result (strong ref) - do this before creating
-          // a new range in |newRange| below so we don't drop the last ref
-          // to the range created in the previous iteration.
-          if (!added && !err.Failed()) {
-            aOutRanges->AppendElement(range);
-          }
-
-          // Create a new range for the remainder.
-          nsINode* startContainer = node;
-          Maybe<uint32_t> startOffset = Some(0);
-          // Don't start *inside* a node with independent selection though
-          // (e.g. <input>).
-          if (content && content->HasIndependentSelection()) {
-            nsINode* parent = startContainer->GetParent();
-            if (parent) {
-              startOffset = parent->ComputeIndexOf(startContainer);
-              startContainer = parent;
-            }
-          }
-          newRange =
-              nsRange::Create(startContainer, startOffset.valueOr(UINT32_MAX),
-                              endContainer, endOffset, IgnoreErrors());
-          if (!newRange || newRange->Collapsed()) {
-            newRange = nullptr;
-          }
-          range = newRange;
-          break;  // create a new iterator for the new range, if any
         }
-      } else {
-        seenSelectable = true;
-        if (!added) {
-          added = true;
+
+        // Save the end point before truncating the range.
+        nsINode* endContainer = range->mEnd.Container();
+        const uint32_t endOffset =
+            *range->mEnd.Offset(RangeBoundary::OffsetFilter::kValidOffsets);
+
+        // Truncate the current range before the first non-selectable node.
+        IgnoredErrorResult err;
+        range->SetEndBefore(*firstNonSelectableContent, err);
+
+        // Store it in the result (strong ref) - do this before creating
+        // a new range in |newRange| below so we don't drop the last ref
+        // to the range created in the previous iteration.
+        if (!added && !err.Failed()) {
           aOutRanges->AppendElement(range);
         }
+
+        // Create a new range for the remainder.
+        nsINode* startContainer = node;
+        Maybe<uint32_t> startOffset = Some(0);
+        // Don't start *inside* a node with independent selection though
+        // (e.g. <input>).
+        if (content && content->HasIndependentSelection()) {
+          nsINode* parent = startContainer->GetParent();
+          if (parent) {
+            startOffset = parent->ComputeIndexOf(startContainer);
+            startContainer = parent;
+          }
+        }
+        newRange =
+            nsRange::Create(startContainer, startOffset.valueOr(UINT32_MAX),
+                            endContainer, endOffset, IgnoreErrors());
+        if (!newRange || newRange->Collapsed()) {
+          newRange = nullptr;
+        }
+        range = newRange;
+        break;  // create a new iterator for the new range, if any
+      }
+
+      seenSelectable = true;
+      if (!added) {
+        added = true;
+        aOutRanges->AppendElement(range);
       }
       if (preOrderIter.IsDone()) {
         return;
@@ -3112,7 +3152,13 @@ static bool IsVisibleAndNotInReplacedElement(nsIFrame* aFrame) {
       aFrame->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
     return false;
   }
+  if (aFrame->HidesContent()) {
+    return false;
+  }
   for (nsIFrame* f = aFrame->GetParent(); f; f = f->GetParent()) {
+    if (f->HidesContent()) {
+      return false;
+    }
     if (f->IsFrameOfType(nsIFrame::eReplaced) &&
         !f->GetContent()->IsAnyOfHTMLElements(nsGkAtoms::button,
                                               nsGkAtoms::select) &&

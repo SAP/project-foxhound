@@ -114,28 +114,12 @@ cfr-doorhanger-doh-primary-button-2 = Okay
 cfr-doorhanger-doh-secondary-button = Disable
   .accesskey = D
 
-## Fission Experiment Message
-
-cfr-doorhanger-fission-body-approved = Your privacy matters. { -brand-short-name } now isolates, or sandboxes, websites from each other, which makes it harder for hackers to steal passwords, credit card numbers, and other sensitive information.
-cfr-doorhanger-fission-header = Site Isolation
-cfr-doorhanger-fission-primary-button = OK, Got it
-  .accesskey = O
-cfr-doorhanger-fission-secondary-button = Learn more
-  .accesskey = L
-
 ## Full Video Support CFR message
 
 cfr-doorhanger-video-support-body = Videos on this site may not play correctly on this version of { -brand-short-name }. For full video support, update { -brand-short-name } now.
 cfr-doorhanger-video-support-header = Update { -brand-short-name } to play video
 cfr-doorhanger-video-support-primary-button = Update Now
   .accesskey = U
-
-## Spotlight modal shared strings
-
-spotlight-learn-more-collapsed = Learn more
-  .title = Expand to learn more about the feature
-spotlight-learn-more-expanded = Learn more
-  .title = Close
 
 ## VPN promotion dialog for public Wi-Fi users
 ##
@@ -151,16 +135,102 @@ spotlight-public-wifi-vpn-primary-button = Stay private with { -mozilla-vpn-bran
 spotlight-public-wifi-vpn-link = Not Now
   .accesskey = N
 
-## Total Cookie Protection Rollout
+## Emotive Continuous Onboarding
 
-# "Test pilot" is used as a verb. Possible alternatives: "Be the first to try",
-# "Join an early experiment". This header text can be explicitly wrapped.
-spotlight-total-cookie-protection-header =
-  Test pilot our most powerful
-  privacy experience ever
-spotlight-total-cookie-protection-body = Total Cookie Protection stops trackers from using cookies to stalk you around the web.
-# "Early access" for this feature rollout means it's a "feature preview" or
-# "soft launch" as not everybody will get it yet.
-spotlight-total-cookie-protection-expanded = { -brand-short-name } builds a fence around cookies, limiting them to the site you’re on so trackers can’t use them to follow you. With early access, you’ll help optimize this feature so we can keep building a better web for everyone.
-spotlight-total-cookie-protection-primary-button = Turn on Total Cookie Protection
-spotlight-total-cookie-protection-secondary-button = Not now
+spotlight-better-internet-header = A better internet starts with you
+spotlight-better-internet-body = When you use { -brand-short-name}, you’re voting for an open and accessible internet that’s better for everyone.
+spotlight-peace-mind-header = We’ve got you covered
+spotlight-peace-mind-body = Every month, { -brand-short-name } blocks an average of over 3,000 trackers per user. Because nothing, especially privacy nuisances like trackers, should stand between you and the good internet.
+spotlight-pin-primary-button = { PLATFORM() ->
+    [macos] Keep in Dock
+   *[other] Pin to taskbar
+}
+spotlight-pin-secondary-button = Not now
+
+## MR2022 Background Update Windows native toast notification strings.
+##
+## These strings will be displayed by the Windows operating system in
+## a native toast, like:
+##
+## <b>multi-line title</b>
+## multi-line text
+## <img>
+## [ primary button ] [ secondary button ]
+##
+## The button labels are fitted into narrow fixed-width buttons by
+## Windows and therefore must be as narrow as possible.
+
+mr2022-background-update-toast-title = New { -brand-short-name }. More private. Fewer trackers. No compromises.
+mr2022-background-update-toast-text = Try the newest { -brand-short-name } now, upgraded with our strongest anti-tracking protection yet.
+
+# This button label will be fitted into a narrow fixed-width button by
+# Windows. Try to not exceed the width of the English text (compare it
+# using a variable font like Arial): the button can only fit 1-2
+# additional characters, exceeding characters will be truncated.
+mr2022-background-update-toast-primary-button-label = Open { -brand-shorter-name } Now
+
+# This button label will be fitted into a narrow fixed-width button by
+# Windows. Try to not exceed the width of the English text (compare it using a
+# variable font like Arial): the button can only fit 1-2 additional characters,
+# exceeding characters will be truncated.
+mr2022-background-update-toast-secondary-button-label = Remind Me Later
+
+## Firefox View CFR
+
+firefoxview-cfr-primarybutton = Try it
+  .accesskey = T
+firefoxview-cfr-secondarybutton = Not now
+  .accesskey = N
+firefoxview-cfr-header-v2 = Quickly pick up where you left off
+firefoxview-cfr-body-v2 = Get recently closed tabs back, plus seamlessly hop between devices with { -firefoxview-brand-name }.
+
+## Firefox View Spotlight
+
+firefoxview-spotlight-promo-title = Say hello to { -firefoxview-brand-name }
+
+# “Poof” refers to the expression to convey when something or someone suddenly disappears, or in this case, reappears. For example, “Poof, it’s gone.”
+firefoxview-spotlight-promo-subtitle = Want that open tab on your phone? Grab it. Need that site you just visited? Poof, it’s back with { -firefoxview-brand-name }.
+firefoxview-spotlight-promo-primarybutton = See how it works
+firefoxview-spotlight-promo-secondarybutton = Skip
+
+## Colorways expiry reminder CFR
+
+colorways-cfr-primarybutton = Choose colorway
+  .accesskey = C
+
+# "shades" refers to the different color options available to users in colorways.
+colorways-cfr-body = Color your browser with { -brand-short-name } exclusive shades inspired by voices that changed culture.
+colorways-cfr-header-28days = Independent Voices colorways expire January 16
+colorways-cfr-header-14days = Independent Voices colorways expire in two weeks
+colorways-cfr-header-7days =  Independent Voices colorways expire this week
+colorways-cfr-header-today = Independent Voices colorways expire today
+
+## Cookie Banner Handling CFR
+
+# Alternate headline for localization: "See fewer cookie requests"
+cfr-cookiebanner-header = Cookie banners begone!
+cfr-cookiebanner-body = Allow { -brand-short-name } to automatically reject all cookie banner requests when possible.
+cfr-cookiebanner-accept-button-v2 = Reject Requests
+  .accesskey = R
+cfr-cookiebanner-reject-button = Not Now
+  .accesskey = N
+
+cfr-cookiebanner-header-variant-1 = See fewer cookie pop-ups
+cfr-cookiebanner-body-variant-1 = Let { -brand-short-name } automatically answer cookie pop-ups for you so you can get back to distraction-free browsing. { -brand-short-name } will reject all requests if possible.
+cfr-cookiebanner-accept-button-variant-1 = Dismiss Pop-ups
+  .accesskey = D
+cfr-cookiebanner-reject-button-variant-1 = No Thanks
+  .accesskey = N
+
+cfr-cookiebanner-header-variant-2 = Cookie Banner Reduction
+cfr-cookiebanner-body-variant-2 = Reduce the amount of cookie banners you see by allowing { -brand-short-name } to decline a website’s cookie consent request if possible.
+cfr-cookiebanner-accept-button-variant-2 = Allow
+  .accesskey = A
+cfr-cookiebanner-reject-button-variant-2 = Not Now
+  .accesskey = N
+
+## These strings are used in the Fox doodle Pin/set default spotlights
+
+july-jam-headline = We’ve got you covered
+july-jam-body = Every month, { -brand-short-name } blocks an average of 3,000+ trackers per user, giving you safe, speedy access to the good internet.
+july-jam-set-default-primary = Open my links with { -brand-short-name }

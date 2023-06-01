@@ -7,6 +7,7 @@
 #include "mozilla/DebugOnly.h"
 
 #include "ExternalHelperAppParent.h"
+#include "nsExternalHelperAppService.h"
 #include "nsIContent.h"
 #include "nsCExternalHandlerService.h"
 #include "nsIExternalHelperAppService.h"
@@ -35,9 +36,9 @@ NS_IMPL_ISUPPORTS_INHERITED(ExternalHelperAppParent, nsHashPropertyBag,
 
 ExternalHelperAppParent::ExternalHelperAppParent(
     nsIURI* uri, const int64_t& aContentLength, const bool& aWasFileChannel,
-    const nsCString& aContentDispositionHeader,
+    const nsACString& aContentDispositionHeader,
     const uint32_t& aContentDispositionHint,
-    const nsString& aContentDispositionFilename)
+    const nsAString& aContentDispositionFilename)
     : mURI(uri),
       mPending(false),
       mIPCClosed(false),
@@ -58,13 +59,17 @@ ExternalHelperAppParent::ExternalHelperAppParent(
   }
 }
 
-void ExternalHelperAppParent::Init(
+bool ExternalHelperAppParent::Init(
     const Maybe<mozilla::net::LoadInfoArgs>& aLoadInfoArgs,
-    const nsCString& aMimeContentType, const bool& aForceSave,
+    const nsACString& aMimeContentType, const bool& aForceSave,
     nsIURI* aReferrer, BrowsingContext* aContext,
     const bool& aShouldCloseWindow) {
-  mozilla::ipc::LoadInfoArgsToLoadInfo(aLoadInfoArgs,
-                                       getter_AddRefs(mLoadInfo));
+  nsresult rv = mozilla::ipc::LoadInfoArgsToLoadInfo(
+      aLoadInfoArgs, ContentParent::Cast(Manager())->GetRemoteType(),
+      getter_AddRefs(mLoadInfo));
+  if (NS_FAILED(rv)) {
+    return false;
+  }
 
   nsCOMPtr<nsIExternalHelperAppService> helperAppService =
       do_GetService(NS_EXTERNALHELPERAPPSERVICE_CONTRACTID);
@@ -90,12 +95,18 @@ void ExternalHelperAppParent::Init(
 
   helperAppService->CreateListener(aMimeContentType, this, aContext, aForceSave,
                                    nullptr, getter_AddRefs(mListener));
+  if (!mListener) {
+    return false;
+  }
+
   if (aShouldCloseWindow) {
     RefPtr<nsExternalAppHandler> handler = do_QueryObject(mListener);
     if (handler) {
       handler->SetShouldCloseWindow();
     }
   }
+
+  return true;
 }
 
 void ExternalHelperAppParent::ActorDestroy(ActorDestroyReason why) {
@@ -109,7 +120,7 @@ void ExternalHelperAppParent::Delete() {
 }
 
 mozilla::ipc::IPCResult ExternalHelperAppParent::RecvOnStartRequest(
-    const nsCString& entityID) {
+    const nsACString& entityID) {
   mEntityID = entityID;
   mPending = true;
   mStatus = mListener->OnStartRequest(this);
@@ -117,7 +128,7 @@ mozilla::ipc::IPCResult ExternalHelperAppParent::RecvOnStartRequest(
 }
 
 mozilla::ipc::IPCResult ExternalHelperAppParent::RecvOnDataAvailable(
-    const nsCString& data, const uint64_t& offset, const uint32_t& count) {
+    const nsACString& data, const uint64_t& offset, const uint32_t& count) {
   if (NS_FAILED(mStatus)) {
     return IPC_OK();
   }
@@ -191,6 +202,20 @@ NS_IMETHODIMP
 ExternalHelperAppParent::GetStatus(nsresult* aResult) {
   *aResult = mStatus;
   return NS_OK;
+}
+
+NS_IMETHODIMP ExternalHelperAppParent::SetCanceledReason(
+    const nsACString& aReason) {
+  return SetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP ExternalHelperAppParent::GetCanceledReason(nsACString& aReason) {
+  return GetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP ExternalHelperAppParent::CancelWithReason(
+    nsresult aStatus, const nsACString& aReason) {
+  return CancelWithReasonImpl(aStatus, aReason);
 }
 
 NS_IMETHODIMP
@@ -318,7 +343,8 @@ ExternalHelperAppParent::SetNotificationCallbacks(
 }
 
 NS_IMETHODIMP
-ExternalHelperAppParent::GetSecurityInfo(nsISupports** aSecurityInfo) {
+ExternalHelperAppParent::GetSecurityInfo(
+    nsITransportSecurityInfo** aSecurityInfo) {
   *aSecurityInfo = nullptr;
   return NS_OK;
 }
@@ -434,6 +460,11 @@ ExternalHelperAppParent::GetBaseChannel(nsIChannel** aChannel) {
 
 NS_IMETHODIMP
 ExternalHelperAppParent::GetPartID(uint32_t* aPartID) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+ExternalHelperAppParent::GetIsFirstPart(bool* aIsLastPart) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

@@ -16,10 +16,14 @@
 #include "ds/BitArray.h"
 #include "ds/LifoAlloc.h"
 #include "gc/Nursery.h"
+#include "gc/TraceKind.h"
 #include "js/AllocPolicy.h"
-#include "js/MemoryMetrics.h"
 #include "js/UniquePtr.h"
 #include "threading/Mutex.h"
+
+namespace JS {
+struct GCSizes;
+}
 
 namespace js {
 
@@ -28,26 +32,6 @@ extern bool CurrentThreadIsGCMarking();
 #endif
 
 namespace gc {
-
-// Map from all trace kinds to the base GC type.
-template <JS::TraceKind kind>
-struct MapTraceKindToType {};
-
-#define DEFINE_TRACE_KIND_MAP(name, type, _, _1)   \
-  template <>                                      \
-  struct MapTraceKindToType<JS::TraceKind::name> { \
-    using Type = type;                             \
-  };
-JS_FOR_EACH_TRACEKIND(DEFINE_TRACE_KIND_MAP);
-#undef DEFINE_TRACE_KIND_MAP
-
-// Map from a possibly-derived type to the base GC type.
-template <typename T>
-struct BaseGCType {
-  using type =
-      typename MapTraceKindToType<JS::MapTypeToTraceKind<T>::kind>::Type;
-  static_assert(std::is_base_of_v<type, T>, "Failed to find base type");
-};
 
 class Arena;
 class ArenaCellSet;
@@ -170,15 +154,12 @@ class StoreBuffer {
 
   struct WholeCellBuffer {
     UniquePtr<LifoAlloc> storage_;
-    ArenaCellSet* stringHead_;
-    ArenaCellSet* nonStringHead_;
+    ArenaCellSet* stringHead_ = nullptr;
+    ArenaCellSet* nonStringHead_ = nullptr;
+    const Cell* last_ = nullptr;
     StoreBuffer* owner_;
 
-    explicit WholeCellBuffer(StoreBuffer* owner)
-        : storage_(nullptr),
-          stringHead_(nullptr),
-          nonStringHead_(nullptr),
-          owner_(owner) {}
+    explicit WholeCellBuffer(StoreBuffer* owner) : owner_(owner) {}
 
     [[nodiscard]] bool init();
 
@@ -192,6 +173,7 @@ class StoreBuffer {
     void trace(TenuringTracer& mover);
 
     inline void put(const Cell* cell);
+    inline void putDontCheckLast(const Cell* cell);
 
     size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) {
       return storage_ ? storage_->sizeOfIncludingThis(mallocSizeOf) : 0;
@@ -202,6 +184,8 @@ class StoreBuffer {
                     !storage_ || storage_->isEmpty());
       return !stringHead_ && !nonStringHead_;
     }
+
+    const Cell** lastBufferedPtr() { return &last_; }
 
    private:
     ArenaCellSet* allocateCellSet(Arena* arena);
@@ -413,23 +397,15 @@ class StoreBuffer {
     } Hasher;
   };
 
-  // The GC runs tasks that may access the storebuffer in parallel and so must
-  // take a lock. The mutator may only access the storebuffer from the main
-  // thread.
-  inline void CheckAccess() const {
 #ifdef DEBUG
-    if (JS::RuntimeHeapIsBusy()) {
-      MOZ_ASSERT(!CurrentThreadIsGCMarking());
-      lock_.assertOwnedByCurrentThread();
-    } else {
-      MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime_));
-    }
+  void checkAccess() const;
+#else
+  void checkAccess() const {}
 #endif
-  }
 
   template <typename Buffer, typename Edge>
   void unput(Buffer& buffer, const Edge& edge) {
-    CheckAccess();
+    checkAccess();
     if (!isEnabled()) {
       return;
     }
@@ -439,7 +415,7 @@ class StoreBuffer {
 
   template <typename Buffer, typename Edge>
   void put(Buffer& buffer, const Edge& edge) {
-    CheckAccess();
+    checkAccess();
     if (!isEnabled()) {
       return;
     }
@@ -449,7 +425,7 @@ class StoreBuffer {
     }
   }
 
-  Mutex lock_;
+  Mutex lock_ MOZ_UNANNOTATED;
 
   MonoTypeBuffer<ValueEdge> bufferVal;
   MonoTypeBuffer<StringPtrEdge> bufStrCell;
@@ -519,6 +495,10 @@ class StoreBuffer {
   }
 
   inline void putWholeCell(Cell* cell);
+  inline void putWholeCellDontCheckLast(Cell* cell);
+  const void* addressOfLastBufferedWholeCell() {
+    return bufferWholeCell.lastBufferedPtr();
+  }
 
   /* Insert an entry into the generic buffer. */
   template <typename T>
@@ -667,7 +647,7 @@ MOZ_ALWAYS_INLINE void PostWriteBarrier(T** vp, T* prev, T* next) {
     return;
   }
 
-  MOZ_ASSERT(!IsInsideNursery(next));
+  MOZ_ASSERT_IF(next, !IsInsideNursery(next));
 }
 
 // Used when we don't have a specific edge to put in the store buffer.

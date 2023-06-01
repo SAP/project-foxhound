@@ -2,9 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
 import os
+import sys
+import unittest
 
 from marionette_driver.errors import SessionNotCreatedException
 from marionette_harness import MarionetteTestCase
@@ -47,7 +47,6 @@ class TestCapabilities(MarionetteTestCase):
         self.assertIn("browserName", self.caps)
         self.assertIn("browserVersion", self.caps)
         self.assertIn("platformName", self.caps)
-        self.assertIn("platformVersion", self.caps)
         self.assertIn("proxy", self.caps)
         self.assertIn("setWindowRect", self.caps)
         self.assertIn("strictFileInteractability", self.caps)
@@ -57,7 +56,6 @@ class TestCapabilities(MarionetteTestCase):
         self.assertEqual(self.caps["browserName"], self.appinfo["name"].lower())
         self.assertEqual(self.caps["browserVersion"], self.appinfo["version"])
         self.assertEqual(self.caps["platformName"], self.os_name)
-        self.assertEqual(self.caps["platformVersion"], self.os_version)
         self.assertEqual(self.caps["proxy"], {})
 
         if self.appinfo["name"] == "Firefox":
@@ -97,11 +95,17 @@ class TestCapabilities(MarionetteTestCase):
 
         self.assertNotIn("moz:debuggerAddress", self.caps)
 
+        self.assertIn("moz:platformVersion", self.caps)
+        self.assertEqual(self.caps["moz:platformVersion"], self.os_version)
+
         self.assertIn("moz:useNonSpecCompliantPointerOrigin", self.caps)
         self.assertFalse(self.caps["moz:useNonSpecCompliantPointerOrigin"])
 
         self.assertIn("moz:webdriverClick", self.caps)
         self.assertTrue(self.caps["moz:webdriverClick"])
+
+        self.assertIn("moz:windowless", self.caps)
+        self.assertFalse(self.caps["moz:windowless"])
 
     def test_disable_webdriver_click(self):
         self.marionette.delete_session()
@@ -115,12 +119,25 @@ class TestCapabilities(MarionetteTestCase):
         caps = self.marionette.session_capabilities
         self.assertTrue(caps["moz:useNonSpecCompliantPointerOrigin"])
 
-    def test_we_get_valid_uuid4_when_creating_a_session(self):
+    def test_valid_uuid4_when_creating_a_session(self):
         self.assertNotIn(
             "{",
             self.marionette.session_id,
             "Session ID has {{}} in it: {}".format(self.marionette.session_id),
         )
+
+    def test_windowless_false(self):
+        self.marionette.delete_session()
+        self.marionette.start_session({"moz:windowless": False})
+        caps = self.marionette.session_capabilities
+        self.assertFalse(caps["moz:windowless"])
+
+    @unittest.skipUnless(sys.platform.startswith("darwin"), "Only supported on MacOS")
+    def test_windowless_true(self):
+        self.marionette.delete_session()
+        self.marionette.start_session({"moz:windowless": True})
+        caps = self.marionette.session_capabilities
+        self.assertTrue(caps["moz:windowless"])
 
 
 class TestCapabilityMatching(MarionetteTestCase):

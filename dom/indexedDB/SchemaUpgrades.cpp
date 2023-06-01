@@ -47,6 +47,7 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/indexedDB/IDBResult.h"
 #include "mozilla/dom/indexedDB/Key.h"
+#include "mozilla/dom/quota/Assertions.h"
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
@@ -1045,7 +1046,7 @@ class EncodeKeysFunction final : public mozIStorageFunction {
               aArguments->GetInt64(0, &intKey);
 
               Key key;
-              key.SetFromInteger(intKey);
+              QM_TRY(key.SetFromInteger(intKey));
 
               return key;
             }
@@ -2842,7 +2843,7 @@ class DeserializeUpgradeValueHelper final : public Runnable {
     lock.Notify();
   }
 
-  Monitor mMonitor;
+  Monitor mMonitor MOZ_UNANNOTATED;
   StructuredCloneReadInfoParent& mCloneReadInfo;
   nsresult mStatus;
 };
@@ -2862,7 +2863,8 @@ nsresult UpgradeFileIdsFunction::Init(nsIFile* aFMDirectory,
   // purpose is to store file ids without adding more complexity or code
   // duplication.
   auto fileManager = MakeSafeRefPtr<DatabaseFileManager>(
-      PERSISTENCE_TYPE_INVALID, quota::OriginMetadata{}, u""_ns, false);
+      PERSISTENCE_TYPE_INVALID, quota::OriginMetadata{}, u""_ns, ""_ns, false,
+      false);
 
   nsresult rv = fileManager->Init(aFMDirectory, aConnection);
   if (NS_WARN_IF(NS_FAILED(rv))) {

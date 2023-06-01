@@ -38,7 +38,6 @@ class gfxVarReceiver;
   _(DXNV12Blocked, bool, false)                                    \
   _(DXP010Blocked, bool, false)                                    \
   _(DXP016Blocked, bool, false)                                    \
-  _(UseWebRender, bool, false)                                     \
   _(UseWebRenderANGLE, bool, false)                                \
   _(UseWebRenderFlipSequentialWin, bool, false)                    \
   _(UseWebRenderDCompWin, bool, false)                             \
@@ -79,14 +78,24 @@ class gfxVarReceiver;
   _(ForceSubpixelAAWherePossible, bool, false)                     \
   _(DwmCompositionEnabled, bool, true)                             \
   _(FxREmbedded, bool, false)                                      \
-  _(UseAHardwareBufferContent, bool, false)                        \
-  _(UseAHardwareBufferSharedSurface, bool, false)                  \
+  _(UseAHardwareBufferSharedSurfaceWebglOop, bool, false)          \
   _(UseEGL, bool, false)                                           \
   _(DrmRenderDevice, nsCString, nsCString())                       \
   _(UseDMABuf, bool, false)                                        \
+  _(CodecSupportInfo, nsCString, nsCString())                      \
   _(WebRenderRequiresHardwareDriver, bool, false)                  \
   _(SupportsThreadsafeGL, bool, false)                             \
-  _(OffscreenCanvasDomainAllowlist, nsCString, nsCString())
+  _(AllowWebGPU, bool, false)                                      \
+  _(UseVP8HwDecode, bool, false)                                   \
+  _(UseVP9HwDecode, bool, false)                                   \
+  _(HwDecodedVideoZeroCopy, bool, false)                           \
+  _(UseDMABufSurfaceExport, bool, true)                            \
+  _(ReuseDecoderDevice, bool, false)                               \
+  _(UseCanvasRenderThread, bool, false)                            \
+  _(AllowBackdropFilter, bool, true)                               \
+  _(WebglOopAsyncPresentForceSync, bool, true)                     \
+  _(UseAcceleratedCanvas2D, bool, false)                           \
+  _(UseWebRenderDCompSwVideoOverlayWin, bool, false)
 
 /* Add new entries above this line. */
 

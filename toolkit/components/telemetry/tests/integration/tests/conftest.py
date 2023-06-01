@@ -2,14 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 import contextlib
-import mozinstall
 import os
-import pytest
 import re
 import sys
 import textwrap
 import time
 
+import mozinstall
+import pytest
 from marionette_driver import By, keys
 from marionette_driver.addons import Addons
 from marionette_driver.errors import MarionetteException
@@ -110,7 +110,6 @@ class Browser(object):
         """
 
         script = """\
-        let {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
         Services.telemetry.setEventRecordingEnabled("navigation", true);
         """
 
@@ -127,8 +126,12 @@ class Browser(object):
         """Return the ID of the current client."""
         with self.marionette.using_context(self.marionette.CONTEXT_CHROME):
             return self.marionette.execute_script(
-                'Cu.import("resource://gre/modules/ClientID.jsm");'
-                "return ClientID.getCachedClientID();"
+                """\
+                const { ClientID } = ChromeUtils.import(
+                  "resource://gre/modules/ClientID.jsm"
+                );
+                return ClientID.getCachedClientID();
+            """
             )
 
     def get_default_search_engine(self):
@@ -162,7 +165,9 @@ class Browser(object):
             # triggers an "environment-change" ping.
             script = """\
                     let [resolve] = arguments;
-            Cu.import("resource://gre/modules/TelemetryEnvironment.jsm");
+            const { TelemetryEnvironment } = ChromeUtils.import(
+              "resource://gre/modules/TelemetryEnvironment.jsm"
+            );
             TelemetryEnvironment.onInitialized().then(resolve);
             """
 
@@ -217,7 +222,7 @@ class Browser(object):
 
             return new_tab
 
-    def quit(self, in_app=False):
+    def quit(self, in_app=True):
         self.marionette.quit(in_app=in_app)
 
     def restart(self):

@@ -6,25 +6,25 @@
 
 var EXPORTED_SYMBOLS = ["TabCrashHandler", "UnsubmittedCrashHandler"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
-  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  clearTimeout: "resource://gre/modules/Timer.jsm",
-  CrashSubmit: "resource://gre/modules/CrashSubmit.jsm",
-  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
-  PluralForm: "resource://gre/modules/PluralForm.jsm",
-  SessionStore: "resource:///modules/sessionstore/SessionStore.jsm",
-  setTimeout: "resource://gre/modules/Timer.jsm",
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
+  SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
+  clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
-XPCOMUtils.defineLazyGetter(this, "gNavigatorBundle", function() {
-  const url = "chrome://browser/locale/browser.properties";
-  return Services.strings.createBundle(url);
+XPCOMUtils.defineLazyModuleGetters(lazy, {
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
+  CrashSubmit: "resource://gre/modules/CrashSubmit.jsm",
 });
 
 // We don't process crash reports older than 28 days, so don't bother
@@ -37,6 +37,9 @@ const MAX_UNSEEN_CRASHED_SUBFRAME_IDS = 10;
 
 // Time after which we will begin scanning for unsubmitted crash reports
 const CHECK_FOR_UNSUBMITTED_CRASH_REPORTS_DELAY_MS = 60 * 10000; // 10 minutes
+
+// This is SIGUSR1 and indicates a user-invoked crash
+const EXIT_CODE_CONTENT_CRASHED = 245;
 
 const TABCRASHED_ICON_URI = "chrome://browser/skin/tab-crashed.svg";
 
@@ -164,17 +167,17 @@ var TabCrashHandler = {
         }
 
         // check for environment affecting crash reporting
-        let env = Cc["@mozilla.org/process/environment;1"].getService(
-          Ci.nsIEnvironment
-        );
-        let shutdown = env.exists("MOZ_CRASHREPORTER_SHUTDOWN");
+        let shutdown = Services.env.exists("MOZ_CRASHREPORTER_SHUTDOWN");
 
         if (shutdown) {
           dump(
             "A content process crashed and MOZ_CRASHREPORTER_SHUTDOWN is " +
               "set, shutting down\n"
           );
-          Services.startup.quit(Ci.nsIAppStartup.eForceQuit);
+          Services.startup.quit(
+            Ci.nsIAppStartup.eForceQuit,
+            EXIT_CODE_CONTENT_CRASHED
+          );
         }
 
         break;
@@ -242,11 +245,11 @@ var TabCrashHandler = {
    */
   onSelectedBrowserCrash(browser, restartRequired) {
     if (!browser.isRemoteBrowser) {
-      Cu.reportError("Selected crashed browser is not remote.");
+      console.error("Selected crashed browser is not remote.");
       return;
     }
     if (!browser.frameLoader) {
-      Cu.reportError("Selected crashed browser has no frameloader.");
+      console.error("Selected crashed browser has no frameloader.");
       return;
     }
 
@@ -298,10 +301,10 @@ var TabCrashHandler = {
     let tab = gBrowser.getTabForBrowser(browser);
 
     gBrowser.updateBrowserRemoteness(browser, {
-      remoteType: E10SUtils.NOT_REMOTE,
+      remoteType: lazy.E10SUtils.NOT_REMOTE,
     });
 
-    SessionStore.reviveCrashedTab(tab);
+    lazy.SessionStore.reviveCrashedTab(tab);
   },
 
   /**
@@ -401,6 +404,10 @@ var TabCrashHandler = {
       }
     };
 
+    gBrowser.ownerGlobal.MozXULElement.insertFTLIfNeeded(
+      "browser/contentCrash.ftl"
+    );
+
     let buttons = [
       {
         "l10n-id": "crashed-subframe-learnmore-link",
@@ -412,7 +419,10 @@ var TabCrashHandler = {
         popup: null,
         callback: async () => {
           if (dumpID) {
-            UnsubmittedCrashHandler.submitReports([dumpID]);
+            UnsubmittedCrashHandler.submitReports(
+              [dumpID],
+              lazy.CrashSubmit.SUBMITTED_FROM_CRASH_TAB
+            );
           }
           closeAllNotifications();
         },
@@ -440,7 +450,7 @@ var TabCrashHandler = {
             }
           } else if (eventName == "dismissed") {
             if (dumpID) {
-              CrashSubmit.ignore(dumpID);
+              lazy.CrashSubmit.ignore(dumpID);
               this.childMap.delete(childID);
             }
 
@@ -487,7 +497,10 @@ var TabCrashHandler = {
       if (UnsubmittedCrashHandler.autoSubmit) {
         let dumpID = this.childMap.get(childID);
         if (dumpID) {
-          UnsubmittedCrashHandler.submitReports([dumpID]);
+          UnsubmittedCrashHandler.submitReports(
+            [dumpID],
+            lazy.CrashSubmit.SUBMITTED_FROM_AUTO
+          );
         }
       } else {
         this.sendToTabCrashedPage(browser);
@@ -511,11 +524,12 @@ var TabCrashHandler = {
     let tab = gBrowser.getTabForBrowser(browser);
     // The restart required page is non-remote by default.
     gBrowser.updateBrowserRemoteness(browser, {
-      remoteType: E10SUtils.NOT_REMOTE,
+      remoteType: lazy.E10SUtils.NOT_REMOTE,
     });
 
     browser.docShell.displayLoadError(Cr.NS_ERROR_BUILDID_MISMATCH, uri, null);
     tab.setAttribute("crashed", true);
+    gBrowser.tabContainer.updateTabIndicatorAttr(tab);
 
     // Make sure to only count once even if there are multiple windows
     // that will all show about:restartrequired.
@@ -539,13 +553,14 @@ var TabCrashHandler = {
     let tab = gBrowser.getTabForBrowser(browser);
     // The tab crashed page is non-remote by default.
     gBrowser.updateBrowserRemoteness(browser, {
-      remoteType: E10SUtils.NOT_REMOTE,
+      remoteType: lazy.E10SUtils.NOT_REMOTE,
     });
 
     browser.setAttribute("crashedPageTitle", title);
     browser.docShell.displayLoadError(Cr.NS_ERROR_CONTENT_CRASHED, uri, null);
     browser.removeAttribute("crashedPageTitle");
     tab.setAttribute("crashed", true);
+    gBrowser.tabContainer.updateTabIndicatorAttr(tab);
   },
 
   /**
@@ -622,10 +637,10 @@ var TabCrashHandler = {
       extraExtraKeyVals.URL = "";
     }
 
-    CrashSubmit.submit(dumpID, {
+    lazy.CrashSubmit.submit(dumpID, lazy.CrashSubmit.SUBMITTED_FROM_CRASH_TAB, {
       recordSubmission: true,
       extraExtraKeyVals,
-    }).catch(Cu.reportError);
+    }).catch(console.error);
 
     this.prefs.setBoolPref("sendReport", true);
     this.prefs.setBoolPref("includeURL", includeURL);
@@ -703,7 +718,7 @@ var TabCrashHandler = {
 
   onAboutTabCrashedUnload(browser) {
     if (!this._crashedTabCount) {
-      Cu.reportError("Can not decrement crashed tab count to below 0");
+      console.error("Can not decrement crashed tab count to below 0");
       return;
     }
     this._crashedTabCount--;
@@ -820,7 +835,7 @@ var UnsubmittedCrashHandler = {
     this.initialized = false;
 
     if (this._checkTimeout) {
-      clearTimeout(this._checkTimeout);
+      lazy.clearTimeout(this._checkTimeout);
       this._checkTimeout = null;
     }
 
@@ -852,7 +867,7 @@ var UnsubmittedCrashHandler = {
   },
 
   scheduleCheckForUnsubmittedCrashReports() {
-    this._checkTimeout = setTimeout(() => {
+    this._checkTimeout = lazy.setTimeout(() => {
       Services.tm.idleDispatchToMainThread(() => {
         this.checkForUnsubmittedCrashReports();
       });
@@ -880,15 +895,15 @@ var UnsubmittedCrashHandler = {
 
     let reportIDs = [];
     try {
-      reportIDs = await CrashSubmit.pendingIDs(dateLimit);
+      reportIDs = await lazy.CrashSubmit.pendingIDs(dateLimit);
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
       return null;
     }
 
     if (reportIDs.length) {
       if (this.autoSubmit) {
-        this.submitReports(reportIDs);
+        this.submitReports(reportIDs, lazy.CrashSubmit.SUBMITTED_FROM_AUTO);
       } else if (this.shouldShowPendingSubmissionsNotification()) {
         return this.showPendingSubmissionsNotification(reportIDs);
       }
@@ -954,20 +969,12 @@ var UnsubmittedCrashHandler = {
    * @returns The <xul:notification> if one is shown. null otherwise.
    */
   showPendingSubmissionsNotification(reportIDs) {
-    let count = reportIDs.length;
-    if (!count) {
+    if (!reportIDs.length) {
       return null;
     }
 
-    let messageTemplate = gNavigatorBundle.GetStringFromName(
-      "pendingCrashReports2.label"
-    );
-
-    let message = PluralForm.get(count, messageTemplate).replace("#1", count);
-
     let notification = this.show({
       notificationID: "pending-crash-reports",
-      message,
       reportIDs,
       onAction: () => {
         this.showingNotification = false;
@@ -1015,9 +1022,6 @@ var UnsubmittedCrashHandler = {
    *        notificationID (string)
    *          The ID for the notification to be opened.
    *
-   *        message (string)
-   *          The message to be displayed in the notification.
-   *
    *        reportIDs (Array<string>)
    *          The array of report IDs to offer to the user.
    *
@@ -1028,8 +1032,8 @@ var UnsubmittedCrashHandler = {
    *
    * @returns The <xul:notification> if one is shown. null otherwise.
    */
-  show({ notificationID, message, reportIDs, onAction }) {
-    let chromeWin = BrowserWindowTracker.getTopWindow();
+  show({ notificationID, reportIDs, onAction }) {
+    let chromeWin = lazy.BrowserWindowTracker.getTopWindow();
     if (!chromeWin) {
       // Can't show a notification in this case. We'll hopefully
       // get another opportunity to have the user submit their
@@ -1044,32 +1048,36 @@ var UnsubmittedCrashHandler = {
       return null;
     }
 
+    chromeWin.MozXULElement.insertFTLIfNeeded("browser/contentCrash.ftl");
+
     let buttons = [
       {
-        label: gNavigatorBundle.GetStringFromName("pendingCrashReports.send"),
+        "l10n-id": "pending-crash-reports-send",
         callback: () => {
-          this.submitReports(reportIDs);
+          this.submitReports(
+            reportIDs,
+            lazy.CrashSubmit.SUBMITTED_FROM_INFOBAR
+          );
           if (onAction) {
             onAction();
           }
         },
       },
       {
-        label: gNavigatorBundle.GetStringFromName(
-          "pendingCrashReports.alwaysSend"
-        ),
+        "l10n-id": "pending-crash-reports-always-send",
         callback: () => {
           this.autoSubmit = true;
-          this.submitReports(reportIDs);
+          this.submitReports(
+            reportIDs,
+            lazy.CrashSubmit.SUBMITTED_FROM_INFOBAR
+          );
           if (onAction) {
             onAction();
           }
         },
       },
       {
-        label: gNavigatorBundle.GetStringFromName(
-          "pendingCrashReports.viewAll"
-        ),
+        "l10n-id": "pending-crash-reports-view-all",
         callback() {
           chromeWin.openTrustedLinkIn("about:crashes", "tab");
           return true;
@@ -1084,7 +1092,7 @@ var UnsubmittedCrashHandler = {
         // to submit the reports. We'll ignore these particular
         // reports going forward.
         reportIDs.forEach(function(reportID) {
-          CrashSubmit.ignore(reportID);
+          lazy.CrashSubmit.ignore(reportID);
         });
         if (onAction) {
           onAction();
@@ -1095,7 +1103,10 @@ var UnsubmittedCrashHandler = {
     return chromeWin.gNotificationBox.appendNotification(
       notificationID,
       {
-        label: message,
+        label: {
+          "l10n-id": "pending-crash-reports-message",
+          "l10n-args": { reportCount: reportIDs.length },
+        },
         image: TABCRASHED_ICON_URI,
         priority: chromeWin.gNotificationBox.PRIORITY_INFO_HIGH,
         eventCallback,
@@ -1118,20 +1129,17 @@ var UnsubmittedCrashHandler = {
   },
 
   /**
-   * Attempt to submit reports to the crash report server. Each
-   * report will have the "SubmittedFromInfobar" annotation set
-   * to "1".
+   * Attempt to submit reports to the crash report server.
    *
    * @param reportIDs (Array<string>)
    *        The array of reportIDs to submit.
+   * @param submittedFrom (string)
+   *        One of the CrashSubmit.SUBMITTED_FROM_* constants representing
+   *        how this crash was submitted.
    */
-  submitReports(reportIDs) {
+  submitReports(reportIDs, submittedFrom) {
     for (let reportID of reportIDs) {
-      CrashSubmit.submit(reportID, {
-        extraExtraKeyVals: {
-          SubmittedFromInfobar: "1",
-        },
-      }).catch(Cu.reportError);
+      lazy.CrashSubmit.submit(reportID, submittedFrom).catch(console.error);
     }
   },
 };

@@ -16,7 +16,6 @@
 #include "absl/memory/memory.h"
 #include "modules/rtp_rtcp/source/rtp_descriptor_authentication.h"
 #include "modules/rtp_rtcp/source/rtp_sender_video.h"
-#include "rtc_base/task_utils/to_queued_task.h"
 
 namespace webrtc {
 namespace {
@@ -40,7 +39,10 @@ class TransformableVideoSenderFrame : public TransformableVideoFrameInterface {
         timestamp_(rtp_timestamp),
         capture_time_ms_(encoded_image.capture_time_ms_),
         expected_retransmission_time_ms_(expected_retransmission_time_ms),
-        ssrc_(ssrc) {}
+        ssrc_(ssrc) {
+    RTC_DCHECK_GE(payload_type_, 0);
+    RTC_DCHECK_LE(payload_type_, 127);
+  }
 
   ~TransformableVideoSenderFrame() override = default;
 
@@ -67,7 +69,7 @@ class TransformableVideoSenderFrame : public TransformableVideoFrameInterface {
   const VideoFrameMetadata& GetMetadata() const override { return metadata_; }
 
   const RTPVideoHeader& GetHeader() const { return header_; }
-  int GetPayloadType() const { return payload_type_; }
+  uint8_t GetPayloadType() const override { return payload_type_; }
   absl::optional<VideoCodecType> GetCodecType() const { return codec_type_; }
   int64_t GetCaptureTimeMs() const { return capture_time_ms_; }
 
@@ -75,12 +77,14 @@ class TransformableVideoSenderFrame : public TransformableVideoFrameInterface {
     return expected_retransmission_time_ms_;
   }
 
+  Direction GetDirection() const override { return Direction::kSender; }
+
  private:
   rtc::scoped_refptr<EncodedImageBufferInterface> encoded_data_;
   const RTPVideoHeader header_;
   const VideoFrameMetadata metadata_;
   const VideoFrameType frame_type_;
-  const int payload_type_;
+  const uint8_t payload_type_;
   const absl::optional<VideoCodecType> codec_type_ = absl::nullopt;
   const uint32_t timestamp_;
   const int64_t capture_time_ms_;
@@ -129,20 +133,23 @@ void RTPSenderVideoFrameTransformerDelegate::OnTransformedFrame(
     std::unique_ptr<TransformableFrameInterface> frame) {
   MutexLock lock(&sender_lock_);
 
-  // The encoder queue gets destroyed after the sender; as long as the sender is
-  // alive, it's safe to post.
-  if (!sender_)
+  // The encoder queue normally gets destroyed after the sender;
+  // however, it might still be null by the time a previously queued frame
+  // arrives.
+  if (!sender_ || !encoder_queue_)
     return;
-  rtc::scoped_refptr<RTPSenderVideoFrameTransformerDelegate> delegate = this;
-  encoder_queue_->PostTask(ToQueuedTask(
+  rtc::scoped_refptr<RTPSenderVideoFrameTransformerDelegate> delegate(this);
+  encoder_queue_->PostTask(
       [delegate = std::move(delegate), frame = std::move(frame)]() mutable {
         delegate->SendVideo(std::move(frame));
-      }));
+      });
 }
 
 void RTPSenderVideoFrameTransformerDelegate::SendVideo(
     std::unique_ptr<TransformableFrameInterface> transformed_frame) const {
   RTC_CHECK(encoder_queue_->IsCurrent());
+  RTC_CHECK_EQ(transformed_frame->GetDirection(),
+               TransformableFrameInterface::Direction::kSender);
   MutexLock lock(&sender_lock_);
   if (!sender_)
     return;
@@ -162,7 +169,14 @@ void RTPSenderVideoFrameTransformerDelegate::SetVideoStructureUnderLock(
     const FrameDependencyStructure* video_structure) {
   MutexLock lock(&sender_lock_);
   RTC_CHECK(sender_);
-  sender_->SetVideoStructureUnderLock(video_structure);
+  sender_->SetVideoStructureAfterTransformation(video_structure);
+}
+
+void RTPSenderVideoFrameTransformerDelegate::SetVideoLayersAllocationUnderLock(
+    VideoLayersAllocation allocation) {
+  MutexLock lock(&sender_lock_);
+  RTC_CHECK(sender_);
+  sender_->SetVideoLayersAllocationAfterTransformation(std::move(allocation));
 }
 
 void RTPSenderVideoFrameTransformerDelegate::Reset() {

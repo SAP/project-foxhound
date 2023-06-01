@@ -5,14 +5,16 @@
 
 var EXPORTED_SYMBOLS = ["RFPHelperParent"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const kPrefLetterboxing = "privacy.resistFingerprinting.letterboxing";
 
+const lazy = {};
+
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "isLetterboxingEnabled",
   kPrefLetterboxing,
   false
@@ -21,7 +23,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
 class RFPHelperParent extends JSWindowActorParent {
   receiveMessage(aMessage) {
     if (
-      isLetterboxingEnabled &&
+      lazy.isLetterboxingEnabled &&
       aMessage.name == "Letterboxing:ContentSizeUpdated"
     ) {
       let browser = this.browsingContext.top.embedderElement;

@@ -1,9 +1,9 @@
 use crate::{
-    device::{DeviceError, HostMap, MissingFeatures},
+    device::{DeviceError, HostMap, MissingDownlevelFlags, MissingFeatures},
     hub::{Global, GlobalIdentityHandlerFactory, HalApi, Resource, Token},
-    id::{DeviceId, SurfaceId, TextureId, Valid},
+    id::{AdapterId, DeviceId, SurfaceId, TextureId, Valid},
     init_tracker::{BufferInitTracker, TextureInitTracker},
-    track::{TextureSelector, DUMMY_SELECTOR},
+    track::TextureSelector,
     validation::MissingBufferUsageError,
     Label, LifeGuard, RefCount, Stored,
 };
@@ -13,17 +13,39 @@ use thiserror::Error;
 
 use std::{borrow::Borrow, num::NonZeroU8, ops::Range, ptr::NonNull};
 
+/// The status code provided to the buffer mapping callback.
+///
+/// This is very similar to `BufferAccessResult`, except that this is FFI-friendly.
 #[repr(C)]
 #[derive(Debug)]
 pub enum BufferMapAsyncStatus {
+    /// The Buffer is sucessfully mapped, `get_mapped_range` can be called.
+    ///
+    /// All other variants of this enum represent failures to map the buffer.
     Success,
+    /// The buffer is already mapped.
+    ///
+    /// While this is treated as an error, it does not prevent mapped range from being accessed.
+    AlreadyMapped,
+    /// Mapping was already requested.
+    MapAlreadyPending,
+    /// An unknown error.
     Error,
+    /// Mapping was aborted (by unmapping or destroying the buffer before mapping
+    /// happened).
     Aborted,
-    Unknown,
+    /// The context is Lost.
     ContextLost,
+    /// The buffer is in an invalid state.
+    Invalid,
+    /// The range isn't fully contained in the buffer.
+    InvalidRange,
+    /// The range isn't properly aligned.
+    InvalidAlignment,
+    /// Incompatible usage flags.
+    InvalidUsageFlags,
 }
 
-#[derive(Debug)]
 pub(crate) enum BufferMapState<A: hal::Api> {
     /// Mapped at creation.
     Init {
@@ -46,39 +68,118 @@ pub(crate) enum BufferMapState<A: hal::Api> {
 unsafe impl<A: hal::Api> Send for BufferMapState<A> {}
 unsafe impl<A: hal::Api> Sync for BufferMapState<A> {}
 
-pub type BufferMapCallback = unsafe extern "C" fn(status: BufferMapAsyncStatus, userdata: *mut u8);
-
 #[repr(C)]
-#[derive(Debug)]
-pub struct BufferMapOperation {
-    pub host: HostMap,
-    pub callback: BufferMapCallback,
+pub struct BufferMapCallbackC {
+    pub callback: unsafe extern "C" fn(status: BufferMapAsyncStatus, user_data: *mut u8),
     pub user_data: *mut u8,
 }
 
-//TODO: clarify if/why this is needed here
-unsafe impl Send for BufferMapOperation {}
-unsafe impl Sync for BufferMapOperation {}
+unsafe impl Send for BufferMapCallbackC {}
 
-impl BufferMapOperation {
-    pub(crate) fn call_error(self) {
-        log::error!("wgpu_buffer_map_async failed: buffer mapping is pending");
-        unsafe {
-            (self.callback)(BufferMapAsyncStatus::Error, self.user_data);
+pub struct BufferMapCallback {
+    // We wrap this so creating the enum in the C variant can be unsafe,
+    // allowing our call function to be safe.
+    inner: Option<BufferMapCallbackInner>,
+}
+
+enum BufferMapCallbackInner {
+    Rust {
+        callback: Box<dyn FnOnce(BufferAccessResult) + Send + 'static>,
+    },
+    C {
+        inner: BufferMapCallbackC,
+    },
+}
+
+impl BufferMapCallback {
+    pub fn from_rust(callback: Box<dyn FnOnce(BufferAccessResult) + Send + 'static>) -> Self {
+        Self {
+            inner: Some(BufferMapCallbackInner::Rust { callback }),
         }
     }
+
+    /// # Safety
+    ///
+    /// - The callback pointer must be valid to call with the provided user_data
+    ///   pointer.
+    ///
+    /// - Both pointers must point to valid memory until the callback is
+    ///   invoked, which may happen at an unspecified time.
+    pub unsafe fn from_c(inner: BufferMapCallbackC) -> Self {
+        Self {
+            inner: Some(BufferMapCallbackInner::C { inner }),
+        }
+    }
+
+    pub(crate) fn call(mut self, result: BufferAccessResult) {
+        match self.inner.take() {
+            Some(BufferMapCallbackInner::Rust { callback }) => {
+                callback(result);
+            }
+            // SAFETY: the contract of the call to from_c says that this unsafe is sound.
+            Some(BufferMapCallbackInner::C { inner }) => unsafe {
+                let status = match result {
+                    Ok(()) => BufferMapAsyncStatus::Success,
+                    Err(BufferAccessError::Device(_)) => BufferMapAsyncStatus::ContextLost,
+                    Err(BufferAccessError::Invalid) | Err(BufferAccessError::Destroyed) => {
+                        BufferMapAsyncStatus::Invalid
+                    }
+                    Err(BufferAccessError::AlreadyMapped) => BufferMapAsyncStatus::AlreadyMapped,
+                    Err(BufferAccessError::MapAlreadyPending) => {
+                        BufferMapAsyncStatus::MapAlreadyPending
+                    }
+                    Err(BufferAccessError::MissingBufferUsage(_)) => {
+                        BufferMapAsyncStatus::InvalidUsageFlags
+                    }
+                    Err(BufferAccessError::UnalignedRange)
+                    | Err(BufferAccessError::UnalignedRangeSize { .. })
+                    | Err(BufferAccessError::UnalignedOffset { .. }) => {
+                        BufferMapAsyncStatus::InvalidAlignment
+                    }
+                    Err(BufferAccessError::OutOfBoundsUnderrun { .. })
+                    | Err(BufferAccessError::OutOfBoundsOverrun { .. })
+                    | Err(BufferAccessError::NegativeRange { .. }) => {
+                        BufferMapAsyncStatus::InvalidRange
+                    }
+                    Err(_) => BufferMapAsyncStatus::Error,
+                };
+
+                (inner.callback)(status, inner.user_data);
+            },
+            None => {
+                panic!("Map callback invoked twice");
+            }
+        }
+    }
+}
+
+impl Drop for BufferMapCallback {
+    fn drop(&mut self) {
+        if self.inner.is_some() {
+            panic!("Map callback was leaked");
+        }
+    }
+}
+
+pub struct BufferMapOperation {
+    pub host: HostMap,
+    pub callback: BufferMapCallback,
 }
 
 #[derive(Clone, Debug, Error)]
 pub enum BufferAccessError {
     #[error(transparent)]
     Device(#[from] DeviceError),
+    #[error("buffer map failed")]
+    Failed,
     #[error("buffer is invalid")]
     Invalid,
     #[error("buffer is destroyed")]
     Destroyed,
     #[error("buffer is already mapped")]
     AlreadyMapped,
+    #[error("buffer map is pending")]
+    MapAlreadyPending,
     #[error(transparent)]
     MissingBufferUsage(#[from] MissingBufferUsageError),
     #[error("buffer is not mapped")]
@@ -103,9 +204,16 @@ pub enum BufferAccessError {
         index: wgt::BufferAddress,
         max: wgt::BufferAddress,
     },
+    #[error("buffer map range start {start} is greater than end {end}")]
+    NegativeRange {
+        start: wgt::BufferAddress,
+        end: wgt::BufferAddress,
+    },
+    #[error("buffer map aborted")]
+    MapAborted,
 }
 
-#[derive(Debug)]
+pub type BufferAccessResult = Result<(), BufferAccessError>;
 pub(crate) struct BufferPendingMapping {
     pub range: Range<wgt::BufferAddress>,
     pub op: BufferMapOperation,
@@ -115,7 +223,6 @@ pub(crate) struct BufferPendingMapping {
 
 pub type BufferDescriptor<'a> = wgt::BufferDescriptor<Label<'a>>;
 
-#[derive(Debug)]
 pub struct Buffer<A: hal::Api> {
     pub(crate) raw: Option<A::Buffer>,
     pub(crate) device_id: Stored<DeviceId>,
@@ -135,10 +242,14 @@ pub enum CreateBufferError {
     AccessError(#[from] BufferAccessError),
     #[error("buffers that are mapped at creation have to be aligned to `COPY_BUFFER_ALIGNMENT`")]
     UnalignedSize,
-    #[error("Buffers cannot have empty usage flags")]
-    EmptyUsage,
+    #[error("Invalid usage flags {0:?}")]
+    InvalidUsage(wgt::BufferUsages),
     #[error("`MAP` usage can only be combined with the opposite `COPY`, requested {0:?}")]
     UsageMismatch(wgt::BufferUsages),
+    #[error("Buffer size {requested} is greater than the maximum buffer size ({maximum})")]
+    MaxBufferSize { requested: u64, maximum: u64 },
+    #[error(transparent)]
+    MissingDownlevelFlags(#[from] MissingDownlevelFlags),
 }
 
 impl<A: hal::Api> Resource for Buffer<A> {
@@ -149,13 +260,44 @@ impl<A: hal::Api> Resource for Buffer<A> {
     }
 }
 
-impl<A: hal::Api> Borrow<()> for Buffer<A> {
-    fn borrow(&self) -> &() {
-        &DUMMY_SELECTOR
+/// A temporary buffer, consumed by the command that uses it.
+///
+/// A [`StagingBuffer`] is designed for one-shot uploads of data to the GPU. It
+/// is always created mapped, and the command that uses it destroys the buffer
+/// when it is done.
+///
+/// [`StagingBuffer`]s can be created with [`queue_create_staging_buffer`] and
+/// used with [`queue_write_staging_buffer`]. They are also used internally by
+/// operations like [`queue_write_texture`] that need to upload data to the GPU,
+/// but that don't belong to any particular wgpu command buffer.
+///
+/// Used `StagingBuffer`s are accumulated in [`Device::pending_writes`], to be
+/// freed once their associated operation's queue submission has finished
+/// execution.
+///
+/// [`queue_create_staging_buffer`]: Global::queue_create_staging_buffer
+/// [`queue_write_staging_buffer`]: Global::queue_write_staging_buffer
+/// [`queue_write_texture`]: Global::queue_write_texture
+/// [`Device::pending_writes`]: crate::device::Device
+pub struct StagingBuffer<A: hal::Api> {
+    pub(crate) raw: A::Buffer,
+    pub(crate) size: wgt::BufferAddress,
+    pub(crate) is_coherent: bool,
+}
+
+impl<A: hal::Api> Resource for StagingBuffer<A> {
+    const TYPE: &'static str = "StagingBuffer";
+
+    fn life_guard(&self) -> &LifeGuard {
+        unreachable!()
+    }
+
+    fn label(&self) -> &str {
+        "<StagingBuffer>"
     }
 }
 
-pub type TextureDescriptor<'a> = wgt::TextureDescriptor<Label<'a>>;
+pub type TextureDescriptor<'a> = wgt::TextureDescriptor<Label<'a>, Vec<wgt::TextureFormat>>;
 
 #[derive(Debug)]
 pub(crate) enum TextureInner<A: hal::Api> {
@@ -196,7 +338,7 @@ pub enum TextureClearMode<A: hal::Api> {
 pub struct Texture<A: hal::Api> {
     pub(crate) inner: TextureInner<A>,
     pub(crate) device_id: Stored<DeviceId>,
-    pub(crate) desc: wgt::TextureDescriptor<()>,
+    pub(crate) desc: wgt::TextureDescriptor<(), Vec<wgt::TextureFormat>>,
     pub(crate) hal_usage: hal::TextureUses,
     pub(crate) format_features: wgt::TextureFormatFeatures,
     pub(crate) initialization_status: TextureInitTracker,
@@ -239,15 +381,35 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         id: TextureId,
         hal_texture_callback: F,
     ) {
-        profiling::scope!("as_hal", "Texture");
+        profiling::scope!("Texture::as_hal");
 
         let hub = A::hub(self);
         let mut token = Token::root();
         let (guard, _) = hub.textures.read(&mut token);
-        let texture = guard.get(id).ok();
-        let hal_texture = texture.map(|tex| tex.inner.as_raw().unwrap());
+        let texture = guard.try_get(id).ok().flatten();
+        let hal_texture = texture.and_then(|tex| tex.inner.as_raw());
 
         hal_texture_callback(hal_texture);
+    }
+
+    /// # Safety
+    ///
+    /// - The raw adapter handle must not be manually destroyed
+    pub unsafe fn adapter_as_hal<A: HalApi, F: FnOnce(Option<&A::Adapter>) -> R, R>(
+        &self,
+        id: AdapterId,
+        hal_adapter_callback: F,
+    ) -> R {
+        profiling::scope!("Adapter::as_hal");
+
+        let hub = A::hub(self);
+        let mut token = Token::root();
+
+        let (guard, _) = hub.adapters.read(&mut token);
+        let adapter = guard.try_get(id).ok().flatten();
+        let hal_adapter = adapter.map(|adapter| &adapter.raw.adapter);
+
+        hal_adapter_callback(hal_adapter)
     }
 
     /// # Safety
@@ -258,15 +420,34 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         id: DeviceId,
         hal_device_callback: F,
     ) -> R {
-        profiling::scope!("as_hal", "Device");
+        profiling::scope!("Device::as_hal");
 
         let hub = A::hub(self);
         let mut token = Token::root();
         let (guard, _) = hub.devices.read(&mut token);
-        let device = guard.get(id).ok();
+        let device = guard.try_get(id).ok().flatten();
         let hal_device = device.map(|device| &device.raw);
 
         hal_device_callback(hal_device)
+    }
+
+    /// # Safety
+    /// - The raw surface handle must not be manually destroyed
+    pub unsafe fn surface_as_hal_mut<A: HalApi, F: FnOnce(Option<&mut A::Surface>) -> R, R>(
+        &self,
+        id: SurfaceId,
+        hal_surface_callback: F,
+    ) -> R {
+        profiling::scope!("Surface::as_hal_mut");
+
+        let mut token = Token::root();
+        let (mut guard, _) = self.surfaces.write(&mut token);
+        let surface = guard.get_mut(id).ok();
+        let hal_surface = surface
+            .and_then(|surface| A::get_surface_mut(surface))
+            .map(|surface| &mut surface.raw);
+
+        hal_surface_callback(hal_surface)
     }
 }
 
@@ -281,34 +462,67 @@ pub enum TextureErrorDimension {
 pub enum TextureDimensionError {
     #[error("Dimension {0:?} is zero")]
     Zero(TextureErrorDimension),
-    #[error("Dimension {0:?} value {given} exceeds the limit of {limit}")]
+    #[error("Dimension {dim:?} value {given} exceeds the limit of {limit}")]
     LimitExceeded {
         dim: TextureErrorDimension,
         given: u32,
         limit: u32,
     },
-    #[error("sample count {0} is invalid")]
+    #[error("Sample count {0} is invalid")]
     InvalidSampleCount(u32),
+    #[error("Width {width} is not a multiple of {format:?}'s block width ({block_width})")]
+    NotMultipleOfBlockWidth {
+        width: u32,
+        block_width: u32,
+        format: wgt::TextureFormat,
+    },
+    #[error("Height {height} is not a multiple of {format:?}'s block height ({block_height})")]
+    NotMultipleOfBlockHeight {
+        height: u32,
+        block_height: u32,
+        format: wgt::TextureFormat,
+    },
+    #[error("Multisampled texture depth or array layers must be 1, got {0}")]
+    MultisampledDepthOrArrayLayer(u32),
 }
 
 #[derive(Clone, Debug, Error)]
 pub enum CreateTextureError {
     #[error(transparent)]
     Device(#[from] DeviceError),
-    #[error("Textures cannot have empty usage flags")]
-    EmptyUsage,
+    #[error("Invalid usage flags {0:?}")]
+    InvalidUsage(wgt::TextureUsages),
     #[error(transparent)]
     InvalidDimension(#[from] TextureDimensionError),
-    #[error("Depth texture kind {0:?} of format {0:?} can't be created")]
-    InvalidDepthKind(wgt::TextureDimension, wgt::TextureFormat),
+    #[error("Depth texture ({1:?}) can't be created as {0:?}")]
+    InvalidDepthDimension(wgt::TextureDimension, wgt::TextureFormat),
+    #[error("Compressed texture ({1:?}) can't be created as {0:?}")]
+    InvalidCompressedDimension(wgt::TextureDimension, wgt::TextureFormat),
     #[error(
         "Texture descriptor mip level count {requested} is invalid, maximum allowed is {maximum}"
     )]
     InvalidMipLevelCount { requested: u32, maximum: u32 },
-    #[error("Texture usages {0:?} are not allowed on a texture of type {1:?}")]
-    InvalidUsages(wgt::TextureUsages, wgt::TextureFormat),
-    #[error("Texture format {0:?} can't be used")]
+    #[error(
+        "Texture usages {0:?} are not allowed on a texture of type {1:?}{}",
+        if *.2 { " due to downlevel restrictions" } else { "" }
+    )]
+    InvalidFormatUsages(wgt::TextureUsages, wgt::TextureFormat, bool),
+    #[error("The view format {0:?} is not compatible with texture format {1:?}, only changing srgb-ness is allowed.")]
+    InvalidViewFormat(wgt::TextureFormat, wgt::TextureFormat),
+    #[error("Texture usages {0:?} are not allowed on a texture of dimensions {1:?}")]
+    InvalidDimensionUsages(wgt::TextureUsages, wgt::TextureDimension),
+    #[error("Texture usage STORAGE_BINDING is not allowed for multisampled textures")]
+    InvalidMultisampledStorageBinding,
+    #[error("Format {0:?} does not support multisampling")]
+    InvalidMultisampledFormat(wgt::TextureFormat),
+    #[error("Sample count {0} is not supported by format {1:?} on this device. It may be supported by your adapter through the TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES feature.")]
+    InvalidSampleCount(u32, wgt::TextureFormat),
+    #[error("Multisampled textures must have RENDER_ATTACHMENT usage")]
+    MultisampledNotRenderAttachment,
+    #[error("Texture format {0:?} can't be used due to missing features.")]
     MissingFeatures(wgt::TextureFormat, #[source] MissingFeatures),
+    #[error(transparent)]
+    MissingDownlevelFlags(#[from] MissingDownlevelFlags),
 }
 
 impl<A: hal::Api> Resource for Texture<A> {
@@ -326,17 +540,24 @@ impl<A: hal::Api> Borrow<TextureSelector> for Texture<A> {
 }
 
 /// Describes a [`TextureView`].
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 #[cfg_attr(feature = "trace", derive(serde::Serialize))]
 #[cfg_attr(feature = "replay", derive(serde::Deserialize), serde(default))]
 pub struct TextureViewDescriptor<'a> {
-    /// Debug label of the texture view. This will show up in graphics debuggers for easy identification.
+    /// Debug label of the texture view.
+    ///
+    /// This will show up in graphics debuggers for easy identification.
     pub label: Label<'a>,
-    /// Format of the texture view, or `None` for the same format as the texture itself.
+    /// Format of the texture view, or `None` for the same format as the texture
+    /// itself.
+    ///
     /// At this time, it must be the same the underlying format of the texture.
     pub format: Option<wgt::TextureFormat>,
-    /// The dimension of the texture view. For 1D textures, this must be `1D`. For 2D textures it must be one of
-    /// `D2`, `D2Array`, `Cube`, and `CubeArray`. For 3D textures it must be `3D`
+    /// The dimension of the texture view.
+    ///
+    /// - For 1D textures, this must be `D1`.
+    /// - For 2D textures it must be one of `D2`, `D2Array`, `Cube`, or `CubeArray`.
+    /// - For 3D textures it must be `D3`.
     pub dimension: Option<wgt::TextureViewDimension>,
     /// Range within the texture that is accessible via this view.
     pub range: wgt::ImageSubresourceRange,
@@ -365,10 +586,9 @@ pub struct TextureView<A: hal::Api> {
     //TODO: store device_id for quick access?
     pub(crate) desc: HalTextureViewDescriptor,
     pub(crate) format_features: wgt::TextureFormatFeatures,
-    pub(crate) extent: wgt::Extent3d,
+    /// This is `None` only if the texture view is not renderable
+    pub(crate) render_extent: Option<wgt::Extent3d>,
     pub(crate) samples: u32,
-    /// Internal use of this texture view when used as `BindingType::Texture`.
-    pub(crate) sampled_internal_use: hal::TextureUses,
     pub(crate) selector: TextureSelector,
     pub(crate) life_guard: LifeGuard,
 }
@@ -390,6 +610,12 @@ pub enum CreateTextureViewError {
     InvalidCubemapTextureDepth { depth: u32 },
     #[error("Invalid texture depth `{depth}` for texture view of dimension `CubemapArray`. Cubemap views must use images with sizes which are a multiple of 6.")]
     InvalidCubemapArrayTextureDepth { depth: u32 },
+    #[error("Source texture width and height must be equal for a texture view of dimension `Cube`/`CubeArray`")]
+    InvalidCubeTextureViewSize,
+    #[error("mip level count is 0")]
+    ZeroMipLevelCount,
+    #[error("array layer count is 0")]
+    ZeroArrayLayerCount,
     #[error(
         "TextureView mip level count + base mip level {requested} must be <= Texture mip level count {total}"
     )]
@@ -424,18 +650,14 @@ impl<A: hal::Api> Resource for TextureView<A> {
     }
 }
 
-impl<A: hal::Api> Borrow<()> for TextureView<A> {
-    fn borrow(&self) -> &() {
-        &DUMMY_SELECTOR
-    }
-}
-
 /// Describes a [`Sampler`]
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "trace", derive(serde::Serialize))]
 #[cfg_attr(feature = "replay", derive(serde::Deserialize))]
 pub struct SamplerDescriptor<'a> {
-    /// Debug label of the sampler. This will show up in graphics debuggers for easy identification.
+    /// Debug label of the sampler.
+    ///
+    /// This will show up in graphics debuggers for easy identification.
     pub label: Label<'a>,
     /// How to deal with out of bounds accesses in the u (i.e. x) direction
     pub address_modes: [wgt::AddressMode; 3],
@@ -453,7 +675,8 @@ pub struct SamplerDescriptor<'a> {
     pub compare: Option<wgt::CompareFunction>,
     /// Valid values: 1, 2, 4, 8, and 16.
     pub anisotropy_clamp: Option<NonZeroU8>,
-    /// Border color to use when address_mode is [`AddressMode::ClampToBorder`](wgt::AddressMode::ClampToBorder)
+    /// Border color to use when address_mode is
+    /// [`AddressMode::ClampToBorder`](wgt::AddressMode::ClampToBorder)
     pub border_color: Option<wgt::SamplerBorderColor>,
 }
 
@@ -489,6 +712,8 @@ pub struct Sampler<A: hal::Api> {
 pub enum CreateSamplerError {
     #[error(transparent)]
     Device(#[from] DeviceError),
+    #[error("invalid lod clamp lod_min_clamp:{} lod_max_clamp:{}, must satisfy lod_min_clamp >= 0 and lod_max_clamp >= lod_min_clamp ", .0.start, .0.end)]
+    InvalidLodClamp(Range<f32>),
     #[error("invalid anisotropic clamp {0}, must be one of 1, 2, 4, 8 or 16")]
     InvalidClamp(u8),
     #[error("cannot create any more samplers")]
@@ -506,11 +731,6 @@ impl<A: hal::Api> Resource for Sampler<A> {
     }
 }
 
-impl<A: hal::Api> Borrow<()> for Sampler<A> {
-    fn borrow(&self) -> &() {
-        &DUMMY_SELECTOR
-    }
-}
 #[derive(Clone, Debug, Error)]
 pub enum CreateQuerySetError {
     #[error(transparent)]
@@ -538,12 +758,6 @@ impl<A: hal::Api> Resource for QuerySet<A> {
 
     fn life_guard(&self) -> &LifeGuard {
         &self.life_guard
-    }
-}
-
-impl<A: hal::Api> Borrow<()> for QuerySet<A> {
-    fn borrow(&self) -> &() {
-        &DUMMY_SELECTOR
     }
 }
 

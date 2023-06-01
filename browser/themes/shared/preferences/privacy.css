@@ -8,19 +8,13 @@
   --section-highlight-background-color: color-mix(in srgb, var(--in-content-accent-color) 20%, transparent);
 }
 
-.content-blocking-icon,
-.permission-icon,
-.content-blocking-checkbox {
+.permission-icon {
   width: 20px;
   height: 20px;
   vertical-align: middle;
-}
-
-.permission-icon {
   margin-inline-end: 0.2em;
 }
 
-.content-blocking-icon,
 .permission-icon,
 .content-blocking-category .checkbox-label-box,
 .extra-information-label > image,
@@ -29,10 +23,6 @@
 .content-blocking-warning-image {
   -moz-context-properties: fill;
   fill: currentColor;
-}
-
-.content-blocking-icon[disabled] {
-  fill: GrayText;
 }
 
 .geo-icon {
@@ -116,8 +106,6 @@
 }
 
 .arrowhead {
-  appearance: none;
-  border: none;
   border-radius: 2px;
   min-height: 20px;
   min-width: 20px;
@@ -130,11 +118,6 @@
 
 .arrowhead:not([disabled]):hover {
   cursor: pointer;
-  background-color: var(--in-content-button-background-hover);
-}
-
-.arrowhead:not([disabled]):hover:active {
-  background-color: var(--in-content-button-background-active);
 }
 
 .arrowhead.up {
@@ -215,7 +198,7 @@
   font-weight: bold;
 }
 
-.content-blocking-extra-information {
+.content-blocking-category:not(.expanded, .selected) .content-blocking-extra-information {
   visibility: collapse;
 }
 
@@ -232,7 +215,6 @@
 
 .content-blocking-category.expanded .content-blocking-extra-information,
 .content-blocking-category.selected .content-blocking-extra-information {
-  visibility: visible;
   display: flex;
   flex-direction: column;
   align-content: stretch;
@@ -329,37 +311,13 @@
   /* With this value we're trying to keep the apparent vertical space between
      option boxes the same as the apparent vertical space between the labels of
      the checkboxes above the Firefox Suggest subsection. */
-  margin-block-start: 11px;
+  margin-block-start: 18px;
 }
 
 .firefoxSuggestOptionBox:first-of-type {
   /* Similar here: Make the apparent vertical space between the last checkbox
      and first option box the same as elsewhere. */
-  margin-block-start: 5px;
-}
-
-.firefoxSuggestToggle {
-  /* These variables and comments are copied from and override
-     toggle-button.css. We include values for all variables, even those that are
-     the same at the time this comment was written, for sanity and locality of
-     reference. */
-  --button-height: 16px !important;
-  --button-half-height: 8px !important;
-  --button-width: 32px !important;
-  --button-border-width: 1px !important;
-  /* dot-size = button-height - 2*dot-margin - 2*button-border-width */
-  --dot-size: 14px !important;
-  --dot-margin: 0px !important;
-  /* --dot-transform-x = button-width - 2*dot-margin - dot-size - 2*button-border-width */
-  --dot-transform-x: 16px !important;
-}
-
-.firefoxSuggestOptionDescription {
-  /* Prevent the description from flowing under the toggle button.
-     32px = toggle button width
-     1em = a little extra */
-  padding-inline-end: calc(32px + 1em);
-  color: var(--in-content-deemphasized-text);
+  margin-block-start: 11px;
 }
 
 #firefoxSuggestInfoBox {

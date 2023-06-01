@@ -5,6 +5,7 @@
 "use strict";
 
 const {
+  VIEW_NODE_CSS_QUERY_CONTAINER,
   VIEW_NODE_FONT_TYPE,
   VIEW_NODE_IMAGE_URL_TYPE,
   VIEW_NODE_INACTIVE_CSS,
@@ -15,7 +16,7 @@ const {
   VIEW_NODE_SHAPE_SWATCH,
   VIEW_NODE_VALUE_TYPE,
   VIEW_NODE_VARIABLE_TYPE,
-} = require("devtools/client/inspector/shared/node-types");
+} = require("resource://devtools/client/inspector/shared/node-types.js");
 const INSET_POINT_TYPES = ["top", "right", "bottom", "left"];
 
 /**
@@ -134,6 +135,13 @@ function getNodeInfo(node, elementStyle) {
   } else if (declaration && classList.contains("ruleview-unused-warning")) {
     type = VIEW_NODE_INACTIVE_CSS;
     value = declaration.isUsed();
+  } else if (node.closest(".container-query-declaration")) {
+    type = VIEW_NODE_CSS_QUERY_CONTAINER;
+    const li = node.closest("li.container-query");
+    value = {
+      ancestorIndex: li.getAttribute("data-ancestor-index"),
+      rule,
+    };
   } else if (declaration && classList.contains("ruleview-shapeswatch")) {
     type = VIEW_NODE_SHAPE_SWATCH;
     value = {
@@ -273,7 +281,7 @@ function getShapePoint(node) {
       insetClasses.push(className);
     }
   });
-  if (insetClasses.length > 0) {
+  if (insetClasses.length) {
     point = insetClasses.join(",");
   }
   return point;

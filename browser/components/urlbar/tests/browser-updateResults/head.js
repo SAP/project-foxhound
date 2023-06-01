@@ -2,31 +2,27 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// The files in this directory test UrlbarView._updateResults().
+// The files in this directory test UrlbarView.#updateResults().
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-XPCOMUtils.defineLazyModuleGetters(this, {
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
-  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.jsm",
-  UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.jsm",
-  UrlbarResult: "resource:///modules/UrlbarResult.jsm",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
-  UrlbarView: "resource:///modules/UrlbarView.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+  UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.sys.mjs",
+  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
+  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  UrlbarView: "resource:///modules/UrlbarView.sys.mjs",
 });
 
 XPCOMUtils.defineLazyGetter(this, "UrlbarTestUtils", () => {
-  const { UrlbarTestUtils: module } = ChromeUtils.import(
-    "resource://testing-common/UrlbarTestUtils.jsm"
+  const { UrlbarTestUtils: module } = ChromeUtils.importESModule(
+    "resource://testing-common/UrlbarTestUtils.sys.mjs"
   );
   module.init(this);
   return module;
 });
 
-add_task(async function headInit() {
+add_setup(async function headInit() {
   await PlacesUtils.history.clear();
   await PlacesUtils.bookmarks.eraseEverything();
 
@@ -70,6 +66,7 @@ class DelayingTestProvider extends UrlbarTestUtils.TestProvider {
  * Makes a result with a suggested index.
  *
  * @param {number} suggestedIndex
+ *   The preferred index of the result.
  * @param {number} resultSpan
  *   The result will have this span.
  * @returns {UrlbarResult}
@@ -93,21 +90,23 @@ function makeSuggestedIndexResult(suggestedIndex, resultSpan = 1) {
  * Makes an array of results for the suggestedIndex tests. The array will
  * include a heuristic followed by the specified results.
  *
- * @param {number} [count]
+ * @param {object} options
+ *   The options object
+ * @param {number} [options.count]
  *   The number of results to return other than the heuristic. This and
  *   `type` must be given together.
- * @param {UrlbarUtils.RESULT_TYPE} [type]
+ * @param {UrlbarUtils.RESULT_TYPE} [options.type]
  *   The type of results to return other than the heuristic. This and `count`
  *   must be given together.
- * @param {array} [specs]
+ * @param {Array} [options.specs]
  *   If you want a mix of result types instead of only one type, then use this
  *   param instead of `count` and `type`. Each item in this array must be an
  *   object with the following properties:
- *   * {number} count
+ *   {number} count
  *     The number of results to return for the given `type`.
- *   * {UrlbarUtils.RESULT_TYPE} type
+ *   {UrlbarUtils.RESULT_TYPE} type
  *     The type of results.
- * @returns {array}
+ * @returns {Array}
  *   An array of results.
  */
 function makeProviderResults({ count = 0, type = undefined, specs = [] }) {
@@ -209,6 +208,41 @@ function initSuggestedIndexTest() {
 }
 
 /**
+ * @typedef {object} SuggestedIndexTestOptions
+ * @property {number} [otherCount]
+ *   The number of results other than the heuristic and suggestedIndex results
+ *   that the provider should return for search 1. This and `otherType` must be
+ *   given together.
+ * @property {UrlbarUtils.RESULT_TYPE} [otherType]
+ *   The type of results other than the heuristic and suggestedIndex results
+ *   that the provider should return for search 1. This and `otherCount` must be
+ *   given together.
+ * @property {Array} [other]
+ *   If you want the provider to return a mix of result types instead of only
+ *   one type, then use this param instead of `otherCount` and `otherType`. Each
+ *   item in this array must be an object with the following properties:
+ *   {number} count
+ *     The number of results to return for the given `type`.
+ *   {UrlbarUtils.RESULT_TYPE} type
+ *     The type of results.
+ * @property {number} viewCount
+ *   The total number of results expected in the view after search 1 finishes,
+ *   including the heuristic and suggestedIndex results.
+ * @param {number} [suggestedIndex]
+ *   If given, the provider will return a result with this suggested index for
+ *   search 1.
+ * @property {number} [resultSpan]
+ *   If this and `search1.suggestedIndex` are given, then the suggestedIndex
+ *   result for search 1 will have this resultSpan.
+ * @property {Array} [suggestedIndexes]
+ *   If you want the provider to return more than one suggestedIndex result for
+ *   search 1, then use this instead of `search1.suggestedIndex`. Each item in
+ *   this array must be one of the following:
+ *     suggestedIndex value
+ *     [suggestedIndex, resultSpan] tuple
+ */
+
+/**
  * Runs a suggestedIndex test. Performs two searches and checks the results just
  * after the view update and after the second search finishes. The caller is
  * responsible for passing in a description of what the rows should look like
@@ -217,52 +251,25 @@ function initSuggestedIndexTest() {
  * `duringUpdate` param. The important thing this checks is that the rows with
  * suggested indexes don't move around or appear in the wrong places.
  *
- * @param {number} [search1.otherCount]
- *   The number of results other than the heuristic and suggestedIndex results
- *   that the provider should return for search 1. This and `otherType` must be
- *   given together.
- * @param {UrlbarUtils.RESULT_TYPE} [search1.otherType]
- *   The type of results other than the heuristic and suggestedIndex results
- *   that the provider should return for search 1. This and `otherCount` must be
- *   given together.
- * @param {array} [search1.other]
- *   If you want the provider to return a mix of result types instead of only
- *   one type, then use this param instead of `otherCount` and `otherType`. Each
- *   item in this array must be an object with the following properties:
- *   * {number} count
- *     The number of results to return for the given `type`.
- *   * {UrlbarUtils.RESULT_TYPE} type
- *     The type of results.
- * @param {number} search1.viewCount
- *   The total number of results expected in the view after search 1 finishes,
- *   including the heuristic and suggestedIndex results.
- * @param {number} [search1.suggestedIndex]
- *   If given, the provider will return a result with this suggested index for
- *   search 1.
- * @param {number} [search1.resultSpan]
- *   If this and `search1.suggestedIndex` are given, then the suggestedIndex
- *   result for search 1 will have this resultSpan.
- * @param {array} [search1.suggestedIndexes]
- *   If you want the provider to return more than one suggestedIndex result for
- *   search 1, then use this instead of `search1.suggestedIndex`. Each item in
- *   this array must be one of the following:
- *     * suggestedIndex value
- *     * [suggestedIndex, resultSpan] tuple
- * @param {object} search2
+ * @param {object} options
+ *   The options object
+ * @param {SuggestedIndexTestOptions} options.search1
+ *   The first search options object
+ * @param {SuggestedIndexTestOptions} options.search2
  *   This object has the same properties as the `search1` object but it applies
  *   to the second search.
- * @param {array} duringUpdate
+ * @param {Array<{ count: number, type: UrlbarUtils.RESULT_TYPE, suggestedIndex: ?number, stale: ?boolean, hidden: ?boolean }>} options.duringUpdate
  *   An array of expected row states during the view update. Each item in the
  *   array must be an object with the following properties:
- *   * {number} count
+ *   {number} count
  *     The number of rows in the view to which this row state object applies.
- *   * {UrlbarUtils.RESULT_TYPE} type
+ *   {UrlbarUtils.RESULT_TYPE} type
  *     The expected type of the rows.
- *   * {number} [suggestedIndex]
+ *   {number} [suggestedIndex]
  *     The expected suggestedIndex of the row.
- *   * {boolean} [stale]
+ *   {boolean} [stale]
  *     Whether the rows are expected to be stale. Defaults to false.
- *   * {boolean} [hidden]
+ *   {boolean} [hidden]
  *     Whether the rows are expected to be hidden. Defaults to false.
  */
 async function doSuggestedIndexTest({ search1, search2, duringUpdate }) {
@@ -385,20 +392,22 @@ async function doSuggestedIndexTest({ search1, search2, duringUpdate }) {
       // The last row during the update is expected to become stale. Wait for
       // the stale attribute to be set on it. We'll actually just wait for any
       // attribute.
-      let { children } = gURLBar.view._rows;
+      let { children } = UrlbarTestUtils.getResultsContainer(window);
       observer.observe(children[children.length - 1], { attributes: true });
     } else if (search1.viewCount == rowCountDuringUpdate) {
       // No rows are expected to be added during the view update, so it must be
       // the case that some rows will be updated for results in the the second
       // search. Wait for any change to an existing row.
-      observer.observe(gURLBar.view._rows, {
+      observer.observe(UrlbarTestUtils.getResultsContainer(window), {
         subtree: true,
         attributes: true,
         characterData: true,
       });
     } else {
       // Rows are expected to be added during the update. Wait for them.
-      observer.observe(gURLBar.view._rows, { childList: true });
+      observer.observe(UrlbarTestUtils.getResultsContainer(window), {
+        childList: true,
+      });
     }
   });
 
@@ -418,14 +427,15 @@ async function doSuggestedIndexTest({ search1, search2, duringUpdate }) {
   // Check the rows. We can't use UrlbarTestUtils.getDetailsOfResultAt() here
   // because it waits for the search to finish.
   Assert.equal(
-    gURLBar.view._rows.children.length,
+    UrlbarTestUtils.getResultCount(window),
     rowCountDuringUpdate,
     "Row count during update"
   );
+  let rows = UrlbarTestUtils.getResultsContainer(window).children;
   let rowIndex = 0;
   for (let rowState of duringUpdate) {
     for (let i = 0; i < rowState.count; i++) {
-      let row = gURLBar.view._rows.children[rowIndex];
+      let row = rows[rowIndex];
 
       // type
       if ("type" in rowState) {
@@ -508,7 +518,7 @@ async function doSuggestedIndexTest({ search1, search2, duringUpdate }) {
     "Row count after update"
   );
   for (let i = 0; i < search2.viewCount; i++) {
-    let result = gURLBar.view._rows.children[i].result;
+    let result = rows[i].result;
     let tuple = suggestedIndexesByRealIndex.get(i);
     if (tuple) {
       let [suggestedIndex, resultSpan] = tuple;

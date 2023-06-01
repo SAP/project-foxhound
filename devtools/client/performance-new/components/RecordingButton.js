@@ -40,19 +40,23 @@
 
 "use strict";
 
-const { PureComponent } = require("devtools/client/shared/vendor/react");
+const {
+  PureComponent,
+} = require("resource://devtools/client/shared/vendor/react.js");
 const {
   div,
   button,
   span,
   img,
-} = require("devtools/client/shared/vendor/react-dom-factories");
-const { connect } = require("devtools/client/shared/vendor/react-redux");
-const actions = require("devtools/client/performance-new/store/actions");
-const selectors = require("devtools/client/performance-new/store/selectors");
-const React = require("devtools/client/shared/vendor/react");
+} = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const {
+  connect,
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
+const actions = require("resource://devtools/client/performance-new/store/actions.js");
+const selectors = require("resource://devtools/client/performance-new/store/selectors.js");
+const React = require("resource://devtools/client/shared/vendor/react.js");
 const Localized = React.createFactory(
-  require("devtools/client/shared/vendor/fluent-react").Localized
+  require("resource://devtools/client/shared/vendor/fluent-react.js").Localized
 );
 
 /**
@@ -163,18 +167,6 @@ class RecordingButton extends PureComponent {
             ),
             onClick: this._onStopButtonClick,
           },
-        });
-
-      case "locked-by-private-browsing":
-        return renderButton({
-          label: startRecordingLabel(),
-          isPrimary: true,
-          disabled: true,
-          additionalMessage: Localized(
-            { id: "perftools-status-private-browsing-notice" },
-            `The profiler is disabled when Private Browsing is enabled.
-             Close all Private Windows to re-enable the profiler`
-          ),
         });
 
       default:

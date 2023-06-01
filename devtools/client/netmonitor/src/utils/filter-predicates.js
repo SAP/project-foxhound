@@ -6,7 +6,7 @@
 
 const {
   isFreetextMatch,
-} = require("devtools/client/netmonitor/src/utils/filter-text-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/filter-text-utils.js");
 
 /**
  * Predicates used when filtering items.
@@ -73,7 +73,8 @@ function isMedia({ mimeType }) {
       mimeType.includes("video/") ||
       mimeType.includes("model/") ||
       mimeType === "application/vnd.apple.mpegurl" ||
-      mimeType === "application/x-mpegurl")
+      mimeType === "application/x-mpegurl" ||
+      mimeType === "application/ogg")
   );
 }
 
@@ -121,7 +122,7 @@ function isOther(item) {
 
 module.exports = {
   Filters: {
-    all: all,
+    all,
     html: isHtml,
     css: isCss,
     js: isJs,

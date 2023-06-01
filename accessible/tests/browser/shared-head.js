@@ -5,16 +5,17 @@
 "use strict";
 
 /* import-globals-from ../mochitest/common.js */
+/* import-globals-from ../mochitest/layout.js */
 /* import-globals-from ../mochitest/promisified-events.js */
 
-/* exported Logger, MOCHITESTS_DIR, invokeSetAttribute, invokeFocus,
+/* exported Logger, MOCHITESTS_DIR, isCacheEnabled, isWinNoCache, invokeSetAttribute, invokeFocus,
             invokeSetStyle, getAccessibleDOMNodeID, getAccessibleTagName,
             addAccessibleTask, findAccessibleChildByID, isDefunct,
             CURRENT_CONTENT_DIR, loadScripts, loadContentScripts, snippetToURL,
             Cc, Cu, arrayFromChildren, forceGC, contentSpawnMutation,
             DEFAULT_IFRAME_ID, DEFAULT_IFRAME_DOC_BODY_ID, invokeContentTask,
             matchContentDoc, currentContentDoc, getContentDPR,
-            waitForImageMap, getContentBoundsForDOMElm, untilCacheIs, untilCacheOk */
+            waitForImageMap, getContentBoundsForDOMElm, untilCacheIs, untilCacheOk, testBoundsWithContent, waitForContentPaint */
 
 const CURRENT_FILE_DIR = "/browser/accessible/tests/browser/";
 
@@ -31,6 +32,7 @@ const MOCHITESTS_DIR =
 /**
  * A base URL for test files used in content.
  */
+// eslint-disable-next-line @microsoft/sdl/no-insecure-url
 const CURRENT_CONTENT_DIR = `http://example.com${CURRENT_FILE_DIR}`;
 
 const LOADED_CONTENT_SCRIPTS = new Map();
@@ -41,6 +43,15 @@ const DEFAULT_IFRAME_DOC_BODY_ID = "default-iframe-body-id";
 
 const HTML_MIME_TYPE = "text/html";
 const XHTML_MIME_TYPE = "application/xhtml+xml";
+
+const isCacheEnabled = Services.prefs.getBoolPref(
+  "accessibility.cache.enabled",
+  false
+);
+
+// Some RemoteAccessible methods aren't supported on Windows when the cache is
+// disabled.
+const isWinNoCache = !isCacheEnabled && AppConstants.platform == "win";
 
 function loadHTMLFromFile(path) {
   // Load the HTML to return in the response from file.
@@ -273,10 +284,6 @@ function invokeContentTask(browser, args, task) {
  */
 async function comparePIDs(browser, isRemote) {
   function getProcessID() {
-    const { Services } = ChromeUtils.import(
-      "resource://gre/modules/Services.jsm"
-    );
-
     return Services.appinfo.processID;
   }
 
@@ -313,16 +320,8 @@ function loadScripts(...scripts) {
  *        a list of scripts to load into content
  */
 async function loadContentScripts(target, ...scripts) {
-  for (let script of scripts) {
-    let contentScript;
-    if (typeof script === "string") {
-      // If script string includes a .jsm extention, assume it is a module path.
-      contentScript = `${CURRENT_DIR}${script}`;
-    } else {
-      // Script is a object that has { dir, name } format.
-      contentScript = `${script.dir}${script.name}`;
-    }
-
+  for (let { script, symbol } of scripts) {
+    let contentScript = `${CURRENT_DIR}${script}`;
     let loadedScriptSet = LOADED_CONTENT_SCRIPTS.get(contentScript);
     if (!loadedScriptSet) {
       loadedScriptSet = new WeakSet();
@@ -331,9 +330,14 @@ async function loadContentScripts(target, ...scripts) {
       continue;
     }
 
-    await SpecialPowers.spawn(target, [contentScript], async _contentScript => {
-      ChromeUtils.import(_contentScript, content.window);
-    });
+    await SpecialPowers.spawn(
+      target,
+      [contentScript, symbol],
+      async (_contentScript, importSymbol) => {
+        let module = ChromeUtils.importESModule(_contentScript);
+        content.window[importSymbol] = module[importSymbol];
+      }
+    );
     loadedScriptSet.add(target);
   }
 }
@@ -352,13 +356,15 @@ function wrapWithIFrame(doc, options = {}) {
     ...iframeDocBodyAttrs,
   };
   if (options.remoteIframe) {
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     const srcURL = new URL(`http://example.net/document-builder.sjs`);
     if (doc.endsWith("html")) {
       srcURL.searchParams.append("file", `${CURRENT_FILE_DIR}${doc}`);
     } else {
       srcURL.searchParams.append(
         "html",
-        `<html>
+        `<!doctype html>
+        <html>
           <head>
             <meta charset="utf-8"/>
             <title>Accessibility Fission Test</title>
@@ -377,7 +383,8 @@ function wrapWithIFrame(doc, options = {}) {
         `<body ${attrsToString(iframeDocBodyAttrs)}>`
       );
     } else {
-      doc = `<body ${attrsToString(iframeDocBodyAttrs)}>${doc}</body>`;
+      doc = `<!doctype html>
+      <body ${attrsToString(iframeDocBodyAttrs)}>${doc}</body>`;
     }
 
     src = `data:${mimeType};charset=utf-8,${encodeURIComponent(doc)}`;
@@ -414,7 +421,8 @@ function snippetToURL(doc, options = {}) {
   }
 
   const encodedDoc = encodeURIComponent(
-    `<html>
+    `<!doctype html>
+    <html>
       <head>
         <meta charset="utf-8"/>
         <title>Accessibility Test</title>
@@ -506,7 +514,6 @@ function accessibleTask(doc, task, options = {}) {
         }
 
         await SimpleTest.promiseFocus(browser);
-        await loadContentScripts(browser, "Common.jsm");
 
         if (options.chrome) {
           ok(!browser.isRemoteBrowser, "Not remote browser");
@@ -541,6 +548,11 @@ function accessibleTask(doc, task, options = {}) {
                   .firstChild;
           }
         }
+
+        await loadContentScripts(browser, {
+          script: "Common.sys.mjs",
+          symbol: "CommonUtils",
+        });
 
         await task(
           browser,
@@ -771,7 +783,13 @@ async function contentSpawnMutation(browser, waitFor, func, args = []) {
 }
 
 async function waitForImageMap(browser, accDoc, id = "imgmap") {
-  const acc = findAccessibleChildByID(accDoc, id);
+  let acc = findAccessibleChildByID(accDoc, id);
+
+  if (!acc) {
+    const onShow = waitForEvent(EVENT_SHOW, id);
+    acc = (await onShow).accessible;
+  }
+
   if (acc.firstChild) {
     return;
   }
@@ -779,8 +797,8 @@ async function waitForImageMap(browser, accDoc, id = "imgmap") {
   const onReorder = waitForEvent(EVENT_REORDER, id);
   // Wave over image map
   await invokeContentTask(browser, [id], contentId => {
-    const { ContentTaskUtils } = ChromeUtils.import(
-      "resource://testing-common/ContentTaskUtils.jsm"
+    const { ContentTaskUtils } = ChromeUtils.importESModule(
+      "resource://testing-common/ContentTaskUtils.sys.mjs"
     );
     const EventUtils = ContentTaskUtils.getEventUtils(content);
     EventUtils.synthesizeMouse(
@@ -796,8 +814,8 @@ async function waitForImageMap(browser, accDoc, id = "imgmap") {
 
 async function getContentBoundsForDOMElm(browser, id) {
   return invokeContentTask(browser, [id], contentId => {
-    const { Layout: LayoutUtils } = ChromeUtils.import(
-      "chrome://mochitests/content/browser/accessible/tests/browser/Layout.jsm"
+    const { Layout: LayoutUtils } = ChromeUtils.importESModule(
+      "chrome://mochitests/content/browser/accessible/tests/browser/Layout.sys.mjs"
     );
 
     return LayoutUtils.getBoundsForDOMElm(contentId, content.document);
@@ -859,4 +877,50 @@ function untilCacheIs(retrievalFunc, expected, message) {
     (a, b, _unusedMessage) => Object.is(a, b),
     () => [retrievalFunc(), expected, message]
   ).then(([got, exp, msg]) => is(got, exp, msg));
+}
+
+async function waitForContentPaint(browser) {
+  await SpecialPowers.spawn(browser, [], () => {
+    return new Promise(function(r) {
+      content.requestAnimationFrame(() => content.setTimeout(r));
+    });
+  });
+}
+
+// Returns true if both number arrays match within `FUZZ`.
+function areBoundsFuzzyEqual(actual, expected) {
+  const FUZZ = 1;
+  return actual
+    .map((val, i) => Math.abs(val - expected[i]) <= FUZZ)
+    .reduce((a, b) => a && b, true);
+}
+
+function assertBoundsFuzzyEqual(actual, expected) {
+  ok(
+    areBoundsFuzzyEqual(actual, expected),
+    `${actual} fuzzily matches expected ${expected}`
+  );
+}
+
+async function testBoundsWithContent(iframeDocAcc, id, browser) {
+  // Retrieve layout bounds from content
+  let expectedBounds = await invokeContentTask(browser, [id], _id => {
+    const { Layout: LayoutUtils } = ChromeUtils.importESModule(
+      "chrome://mochitests/content/browser/accessible/tests/browser/Layout.sys.mjs"
+    );
+    return LayoutUtils.getBoundsForDOMElm(_id, content.document);
+  });
+
+  function isWithinExpected(bounds) {
+    return areBoundsFuzzyEqual(bounds, expectedBounds);
+  }
+
+  const acc = findAccessibleChildByID(iframeDocAcc, id);
+  let [accBounds] = await untilCacheCondition(isWithinExpected, () => [
+    getBounds(acc),
+  ]);
+
+  assertBoundsFuzzyEqual(accBounds, expectedBounds);
+
+  return accBounds;
 }

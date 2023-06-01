@@ -79,8 +79,8 @@ NS_IMETHODIMP PreloaderBase::RedirectSink::AsyncOnChannelRedirect(
   return NS_OK;
 }
 
-NS_IMETHODIMP PreloaderBase::RedirectSink::OnRedirectResult(bool proceeding) {
-  if (proceeding && mRedirectChannel) {
+NS_IMETHODIMP PreloaderBase::RedirectSink::OnRedirectResult(nsresult status) {
+  if (NS_SUCCEEDED(status) && mRedirectChannel) {
     mPreloader->mChannel = std::move(mRedirectChannel);
   } else {
     mRedirectChannel = nullptr;
@@ -89,7 +89,7 @@ NS_IMETHODIMP PreloaderBase::RedirectSink::OnRedirectResult(bool proceeding) {
   if (mCallbacks) {
     nsCOMPtr<nsIRedirectResultListener> sink(do_GetInterface(mCallbacks));
     if (sink) {
-      return sink->OnRedirectResult(proceeding);
+      return sink->OnRedirectResult(status);
     }
   }
 
@@ -253,12 +253,6 @@ void PreloaderBase::NotifyStop(nsresult aStatus) {
   mChannel = nullptr;
 }
 
-void PreloaderBase::NotifyValidating() { mOnStopStatus.reset(); }
-
-void PreloaderBase::NotifyValidated(nsresult aStatus) {
-  NotifyStop(nullptr, aStatus);
-}
-
 void PreloaderBase::AddLinkPreloadNode(nsINode* aNode) {
   if (mOnStopStatus) {
     return NotifyNodeEvent(aNode);
@@ -282,7 +276,8 @@ void PreloaderBase::RemoveLinkPreloadNode(nsINode* aNode) {
     RemoveSelf(aNode->OwnerDoc());
 
     if (mChannel) {
-      mChannel->Cancel(NS_BINDING_ABORTED);
+      mChannel->CancelWithReason(NS_BINDING_ABORTED,
+                                 "PreloaderBase::RemoveLinkPreloadNode"_ns);
     }
   }
 }

@@ -17,6 +17,10 @@
 
 namespace {
 
+// Important: JXL_ASSERT does not guarantee running the `condition` code,
+// use only for debug mode checks.
+
+#if JXL_ENABLE_ASSERT
 // Exits the program after printing a stack trace when possible.
 bool Abort() {
 #if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
@@ -34,9 +38,6 @@ bool Abort() {
   __builtin_trap();
 #endif
 }
-
-// Does not guarantee running the code, use only for debug mode checks.
-#if JXL_ENABLE_ASSERT
 #define JXL_ASSERT(condition) \
   do {                        \
     if (!(condition)) {       \
@@ -173,14 +174,8 @@ void ThreadParallelRunner::ThreadFunc(ThreadParallelRunner* self,
 }
 
 ThreadParallelRunner::ThreadParallelRunner(const int num_worker_threads)
-#if defined(__EMSCRIPTEN__)
-    : num_worker_threads_(0), num_threads_(1) {
-  // TODO(eustas): find out if pthreads would work for us.
-  (void)num_worker_threads;
-#else
     : num_worker_threads_(num_worker_threads),
       num_threads_(std::max(num_worker_threads, 1)) {
-#endif
   PROFILER_ZONE("ThreadParallelRunner ctor");
 
   threads_.reserve(num_worker_threads_);

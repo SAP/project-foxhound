@@ -19,6 +19,18 @@ let validAttrCodes = [
     },
   },
   {
+    code:
+      "source%3Dgoogle.com%26medium%3Dorganic%26campaign%3D(not%20set)%26content%3D(not%20set)%26msstoresignedin%3Dtrue",
+    parsed: {
+      source: "google.com",
+      medium: "organic",
+      campaign: "(not%20set)",
+      content: "(not%20set)",
+      msstoresignedin: true,
+    },
+    platforms: ["win"],
+  },
+  {
     code: "source%3Dgoogle.com%26medium%3Dorganic%26campaign%3D%26content%3D",
     parsed: { source: "google.com", medium: "organic" },
     doesNotRoundtrip: true, // `campaign=` and `=content` are dropped.
@@ -81,8 +93,8 @@ let invalidAttrCodes = [
  */
 async function setupStubs() {
   // Local imports to avoid polluting the global namespace.
-  const { AppConstants } = ChromeUtils.import(
-    "resource://gre/modules/AppConstants.jsm"
+  const { AppConstants } = ChromeUtils.importESModule(
+    "resource://gre/modules/AppConstants.sys.mjs"
   );
   const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
 

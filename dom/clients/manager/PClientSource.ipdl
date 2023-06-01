@@ -4,15 +4,12 @@
 
 include protocol PClientManager;
 include protocol PClientSourceOp;
-include protocol PChildToParentStream;
-include protocol PParentToChildStream;
-include protocol PFileDescriptorSet;
-include protocol PRemoteLazyInputStream;
 include ClientIPCTypes;
 
 namespace mozilla {
 namespace dom {
 
+[ManualDealloc, ChildImpl=virtual, ParentImpl=virtual]
 sync protocol PClientSource
 {
   manager PClientManager;
@@ -30,6 +27,8 @@ parent:
 
 child:
   async PClientSourceOp(ClientOpConstructorArgs aArgs);
+
+  async EvictFromBFCache();
 
   async __delete__();
 };

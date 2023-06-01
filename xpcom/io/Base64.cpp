@@ -211,16 +211,20 @@ nsresult EncodeInputStream(nsIInputStream* aInputStream, T& aDest,
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  if (!aDest.SetLength(base64LenOrErr.inspect(), mozilla::fallible)) {
-    return NS_ERROR_OUT_OF_MEMORY;
+  auto handleOrErr = aDest.BulkWrite(base64LenOrErr.inspect(), aOffset, false);
+  if (handleOrErr.isErr()) {
+    return handleOrErr.unwrapErr();
   }
 
-  EncodeInputStream_State<T> state;
-  state.charsOnStack = 0;
-  state.c[2] = '\0';
-  state.buffer = aOffset + aDest.BeginWriting();
+  auto handle = handleOrErr.unwrap();
 
-  while (true) {
+  EncodeInputStream_State<T> state{
+      .c = {'\0', '\0', '\0'},
+      .charsOnStack = 0,
+      .buffer = handle.Elements() + aOffset,
+  };
+
+  while (aCount > 0) {
     uint32_t read = 0;
 
     rv = aInputStream->ReadSegments(&EncodeInputStream_Encoder<T>,
@@ -238,18 +242,20 @@ nsresult EncodeInputStream(nsIInputStream* aInputStream, T& aDest,
     if (!read) {
       break;
     }
+
+    aCount -= read;
   }
 
   // Finish encoding if anything is left
   if (state.charsOnStack) {
     Encode(state.c, state.charsOnStack, state.buffer);
+    state.buffer += 4;
   }
 
-  if (aDest.Length()) {
-    // May belong to an nsCString with an unallocated buffer, so only null
-    // terminate if there is a need to.
-    *aDest.EndWriting() = '\0';
-  }
+  // If we encountered EOF before reading aCount bytes, the resulting string
+  // could be shorter than predicted, so determine the length from the state.
+  size_t trueLength = state.buffer - handle.Elements();
+  handle.Finish(trueLength, false);
 
   return NS_OK;
 }
@@ -281,26 +287,23 @@ static const uint8_t kBase64DecodeTable[] = {
   /* 112 */ 41, 42, 43, 44, 45, 46, 47, 48,
   /* 120 */ 49, 50, 51, 255, 255, 255, 255, 255,
 };
+static_assert(mozilla::ArrayLength(kBase64DecodeTable) == 0x80);
 // clang-format on
 
 template <typename T>
 [[nodiscard]] bool Base64CharToValue(T aChar, uint8_t* aValue) {
-  static const size_t mask = 0x7f;
-  static_assert(
-      (mask + 1) == sizeof(kBase64DecodeTable) / sizeof(kBase64DecodeTable[0]),
-      "wrong mask");
   size_t index = static_cast<uint8_t>(aChar);
-
-  if (index & ~mask) {
+  if (index >= mozilla::ArrayLength(kBase64DecodeTable)) {
+    *aValue = 255;
     return false;
   }
-  *aValue = kBase64DecodeTable[index & mask];
-
+  *aValue = kBase64DecodeTable[index];
   return *aValue != 255;
 }
 
 static const char kBase64URLAlphabet[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+static_assert(mozilla::ArrayLength(kBase64URLAlphabet) == 0x41);
 
 // Maps an encoded character to a value in the Base64 URL alphabet, per
 // RFC 4648, Table 2. Invalid input characters map to UINT8_MAX.
@@ -323,14 +326,19 @@ static const uint8_t kBase64URLDecodeTable[] = {
   255,
   26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41,
   42, 43, 44, 45, 46, 47, 48, 49, 50, 51, /* a - z */
-  255, 255, 255, 255,
+  255, 255, 255, 255, 255,
 };
+static_assert(mozilla::ArrayLength(kBase64URLDecodeTable) == 0x80);
 // clang-format on
 
 bool Base64URLCharToValue(char aChar, uint8_t* aValue) {
   uint8_t index = static_cast<uint8_t>(aChar);
-  *aValue = kBase64URLDecodeTable[index & 0x7f];
-  return (*aValue != 255) && !(index & ~0x7f);
+  if (index >= mozilla::ArrayLength(kBase64URLDecodeTable)) {
+    *aValue = 255;
+    return false;
+  }
+  *aValue = kBase64URLDecodeTable[index];
+  return *aValue != 255;
 }
 
 }  // namespace
@@ -581,8 +589,8 @@ nsresult Base64Decode(const char* aBase64, uint32_t aBase64Len, char** aBinary,
   return NS_OK;
 }
 
-template <typename T>
-static nsresult Base64DecodeString(const T& aBase64, T& aBinary) {
+template <typename T, typename U>
+static nsresult Base64DecodeString(const T& aBase64, U& aBinary) {
   aBinary.Truncate();
 
   // Check for overflow.
@@ -627,6 +635,10 @@ nsresult Base64Decode(const nsACString& aBase64, nsACString& aBinary) {
 }
 
 nsresult Base64Decode(const nsAString& aBase64, nsAString& aBinary) {
+  return Base64DecodeString(aBase64, aBinary);
+}
+
+nsresult Base64Decode(const nsAString& aBase64, nsACString& aBinary) {
   return Base64DecodeString(aBase64, aBinary);
 }
 

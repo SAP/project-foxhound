@@ -49,7 +49,7 @@
 
 extern "C" {
 
-int64_t __aeabi_idivmod(int x, int y) {
+MOZ_EXPORT int64_t __aeabi_idivmod(int x, int y) {
   // Run-time ABI for the ARM architecture specifies that for |INT_MIN / -1|
   // "an implementation is (sic) may return any convenient value, possibly the
   // original numerator."
@@ -67,7 +67,7 @@ int64_t __aeabi_idivmod(int x, int y) {
   return (int64_t(hi) << 32) | lo;
 }
 
-int64_t __aeabi_uidivmod(int x, int y) {
+MOZ_EXPORT int64_t __aeabi_uidivmod(int x, int y) {
   uint32_t lo = uint32_t(x) / uint32_t(y);
   uint32_t hi = uint32_t(x) % uint32_t(y);
   return (int64_t(hi) << 32) | lo;
@@ -2423,6 +2423,12 @@ typedef int32_t (*Prototype_General_GeneralInt32Int32)(int32_t, int32_t,
                                                        int32_t);
 typedef int32_t (*Prototype_General_GeneralInt32General)(int32_t, int32_t,
                                                          int32_t);
+typedef int32_t (*Prototype_General_GeneralInt32Int32GeneralInt32)(
+    int32_t, int32_t, int32_t, int32_t, int32_t);
+typedef int32_t (*Prototype_Int32_GeneralGeneralInt32General)(int32_t, int32_t,
+                                                              int32_t, int32_t);
+typedef int32_t (*Prototype_Int32_GeneralGeneralInt32GeneralInt32Int32Int32)(
+    int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t);
 typedef int64_t (*Prototype_Int64_General)(int32_t);
 typedef int64_t (*Prototype_Int64_GeneralInt64)(int32_t, int64_t);
 
@@ -3123,6 +3129,34 @@ void Simulator::softwareInterrupt(SimInstruction* instr) {
           Prototype_General_GeneralInt32General target =
               reinterpret_cast<Prototype_General_GeneralInt32General>(external);
           int64_t result = target(arg0, arg1, arg2);
+          scratchVolatileRegisters(/* scratchFloat = true */);
+          setCallResult(result);
+          break;
+        }
+        case js::jit::Args_General_GeneralInt32Int32GeneralInt32: {
+          Prototype_General_GeneralInt32Int32GeneralInt32 target =
+              reinterpret_cast<Prototype_General_GeneralInt32Int32GeneralInt32>(
+                  external);
+          int64_t result = target(arg0, arg1, arg2, arg3, arg4);
+          scratchVolatileRegisters(/* scratchFloat = true */);
+          setCallResult(result);
+          break;
+        }
+        case js::jit::Args_Int32_GeneralGeneralInt32General: {
+          Prototype_Int32_GeneralGeneralInt32General target =
+              reinterpret_cast<Prototype_Int32_GeneralGeneralInt32General>(
+                  external);
+          int64_t result = target(arg0, arg1, arg2, arg3);
+          scratchVolatileRegisters(/* scratchFloat = true */);
+          setCallResult(result);
+          break;
+        }
+        case js::jit::Args_Int32_GeneralGeneralInt32GeneralInt32Int32Int32: {
+          Prototype_Int32_GeneralGeneralInt32GeneralInt32Int32Int32 target =
+              reinterpret_cast<
+                  Prototype_Int32_GeneralGeneralInt32GeneralInt32Int32Int32>(
+                  external);
+          int64_t result = target(arg0, arg1, arg2, arg3, arg4, arg5, arg6);
           scratchVolatileRegisters(/* scratchFloat = true */);
           setCallResult(result);
           break;

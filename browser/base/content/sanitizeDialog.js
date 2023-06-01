@@ -5,8 +5,9 @@
 
 /* import-globals-from /toolkit/content/preferencesBindings.js */
 
-var { Sanitizer } = ChromeUtils.import("resource:///modules/Sanitizer.jsm");
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+var { Sanitizer } = ChromeUtils.importESModule(
+  "resource:///modules/Sanitizer.sys.mjs"
+);
 
 Preferences.addAll([
   { id: "privacy.cpd.history", type: "bool" },
@@ -130,12 +131,12 @@ var gSanitizePromptDialog = {
         range,
       };
       Sanitizer.sanitize(null, options)
-        .catch(Cu.reportError)
+        .catch(console.error)
         .then(() => window.close())
-        .catch(Cu.reportError);
+        .catch(console.error);
       event.preventDefault();
     } catch (er) {
-      Cu.reportError("Exception during sanitize: " + er);
+      console.error("Exception during sanitize: ", er);
     }
   },
 

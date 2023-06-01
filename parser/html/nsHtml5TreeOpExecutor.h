@@ -111,10 +111,10 @@ class nsHtml5TreeOpExecutor final
    */
   NS_IMETHOD WillParse() override;
 
-  /**
-   *
-   */
-  NS_IMETHOD WillBuildModel(nsDTDMode aDTDMode) override;
+  NS_IMETHOD WillBuildModel(nsDTDMode /* unused */) override {
+    return WillBuildModel();
+  }
+  nsresult WillBuildModel();
 
   /**
    * Emits EOF.
@@ -129,7 +129,7 @@ class nsHtml5TreeOpExecutor final
   /**
    * Unimplemented. For interface compat only.
    */
-  NS_IMETHOD WillResume() override;
+  void WillResume() override;
 
   virtual void InitialTranslationCompleted() override;
 
@@ -184,7 +184,7 @@ class nsHtml5TreeOpExecutor final
 
   void CommitToInternalEncoding();
 
-  void TakeOpsFromStage();
+  [[nodiscard]] bool TakeOpsFromStage();
 
   void MaybeSuspend();
 
@@ -220,7 +220,8 @@ class nsHtml5TreeOpExecutor final
    * Flush the operations from the tree operations from the argument
    * queue unconditionally. (This is for the main thread case.)
    */
-  virtual void MoveOpsFrom(nsTArray<nsHtml5TreeOperation>& aOpQueue) override;
+  [[nodiscard]] virtual bool MoveOpsFrom(
+      nsTArray<nsHtml5TreeOperation>& aOpQueue) override;
 
   void ClearOpQueue();
 

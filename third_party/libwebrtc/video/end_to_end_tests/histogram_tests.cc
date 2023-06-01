@@ -44,7 +44,7 @@ void HistogramTest::VerifyHistogramStats(bool use_rtx,
                         public rtc::VideoSinkInterface<VideoFrame> {
    public:
     FrameObserver(bool use_rtx, bool use_fec, bool screenshare)
-        : EndToEndTest(kLongTimeoutMs),
+        : EndToEndTest(kLongTimeout),
           use_rtx_(use_rtx),
           use_fec_(use_fec),
           screenshare_(screenshare),
@@ -54,9 +54,9 @@ void HistogramTest::VerifyHistogramStats(bool use_rtx,
 
    private:
     void OnFrame(const VideoFrame& video_frame) override {
-      // The RTT is needed to estimate |ntp_time_ms| which is used by
+      // The RTT is needed to estimate `ntp_time_ms` which is used by
       // end-to-end delay stats. Therefore, start counting received frames once
-      // |ntp_time_ms| is valid.
+      // `ntp_time_ms` is valid.
       if (video_frame.ntp_time_ms() > 0 &&
           Clock::GetRealTimeClock()->CurrentNtpInMilliseconds() >=
               video_frame.ntp_time_ms()) {
@@ -89,7 +89,7 @@ void HistogramTest::VerifyHistogramStats(bool use_rtx,
 
     void ModifyVideoConfigs(
         VideoSendStream::Config* send_config,
-        std::vector<VideoReceiveStream::Config>* receive_configs,
+        std::vector<VideoReceiveStreamInterface::Config>* receive_configs,
         VideoEncoderConfig* encoder_config) override {
       // NACK
       send_config->rtp.nack.rtp_history_ms = kNackRtpHistoryMs;

@@ -25,8 +25,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=765993
 
 /** Test for Bug 765993 **/
 
-const {addDebuggerToGlobal} = ChromeUtils.import("resource://gre/modules/jsdebugger.jsm");
-addDebuggerToGlobal(this);
+const {addDebuggerToGlobal} = ChromeUtils.importESModule("resource://gre/modules/jsdebugger.sys.mjs");
+addDebuggerToGlobal(globalThis);
 
 window.onload = function() {
     SimpleTest.waitForExplicitFinish();
@@ -43,7 +43,7 @@ window.onload = function() {
             var scripts = dbg.findScripts({
                 url: "http://mochi.test:8888/tests/dom/base/test/chrome/nochrome_bug765993.js",
             });
-            ok(scripts.length > 0, "Should be able to find script");
+            ok(scripts.length, "Should be able to find script");
 
             is(scripts[0].source.sourceMapURL, "foo.js.map");
             SimpleTest.finish();

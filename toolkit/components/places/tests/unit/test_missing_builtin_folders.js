@@ -27,7 +27,7 @@ add_task(async function setup() {
   await setupPlacesDatabase("missingBuiltIn.sqlite");
 
   // Check database contents to be migrated.
-  let path = OS.Path.join(OS.Constants.Path.profileDir, DB_FILENAME);
+  let path = PathUtils.join(PathUtils.profileDir, DB_FILENAME);
   let db = await Sqlite.openConnection({ path });
 
   let rows = await db.execute(
@@ -59,11 +59,8 @@ add_task(async function test_database_recreates_roots() {
     "Should successfully access the database for the first time"
   );
 
-  let rootId = PlacesUtils.placesRootId;
-  Assert.greaterOrEqual(rootId, 0, "Should have a valid root Id");
-
   let db = await PlacesUtils.promiseDBConnection();
-
+  let rootId = await PlacesUtils.promiseItemId(PlacesUtils.bookmarks.rootGuid);
   for (let guid of ALL_ROOT_GUIDS) {
     let rows = await db.execute(
       `

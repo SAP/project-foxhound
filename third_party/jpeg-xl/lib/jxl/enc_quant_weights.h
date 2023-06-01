@@ -20,9 +20,14 @@ Status DequantMatricesEncodeDC(const DequantMatrices* matrices,
 // precision.
 void DequantMatricesSetCustomDC(DequantMatrices* matrices, const float* dc);
 
+void DequantMatricesScaleDC(DequantMatrices* matrices, const float scale);
+
 void DequantMatricesSetCustom(DequantMatrices* matrices,
                               const std::vector<QuantEncoding>& encodings,
                               ModularFrameEncoder* encoder);
+
+// Roundtrip encode/decode the matrices to ensure same values as decoder.
+void DequantMatricesRoundtrip(DequantMatrices* matrices);
 
 }  // namespace jxl
 

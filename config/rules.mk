@@ -149,6 +149,15 @@ MOZ_PROGRAM_LDFLAGS += -Wl,-rpath -Wl,@executable_path/Frameworks
 endif
 endif
 
+# For Mac executables, set the @rpath to be @executable_path by default so that
+# shared libraries built with an @rpath install name in the same directory
+# as the executable can be resolved. Executables not in the same directory
+# should override the @rpath with a relative path such as @executable_path/../
+# depending on their install location.
+ifeq ($(OS_ARCH),Darwin)
+MOZ_PROGRAM_LDFLAGS += -Wl,-rpath,@executable_path
+endif
+
 ifeq ($(OS_ARCH),WINNT)
 ifeq ($(CC_TYPE),clang)
 MOZ_PROGRAM_LDFLAGS += -Wl,-pdb,$(dir $@)/$(LINK_PDBFILE)
@@ -269,7 +278,7 @@ endif
 
 ifeq ($(OS_ARCH),Darwin)
 ifneq (,$(SHARED_LIBRARY))
-_LOADER_PATH := @executable_path
+_LOADER_PATH := @rpath
 EXTRA_DSO_LDOPTS	+= -dynamiclib -install_name $(_LOADER_PATH)/$@ -compatibility_version 1 -current_version 1
 endif
 endif
@@ -367,12 +376,7 @@ ifeq ($(MOZ_WIDGET_TOOLKIT),windows)
 resfile = $(notdir $1).res
 # We also build .res files for simple programs if a corresponding manifest
 # exists. We'll generate a .rc file that includes the manifest.
-ifdef GNU_CC
-# Skip on mingw builds because of bug 1657863
-resfile_for_manifest =
-else
 resfile_for_manifest = $(if $(wildcard $(srcdir)/$(notdir $1).manifest),$(call resfile,$1))
-endif
 else
 resfile =
 resfile_for_manifest =
@@ -478,9 +482,9 @@ ifeq (WINNT_,$(HOST_OS_ARCH)_$(GNU_CC))
 	$(HOST_LINKER) -OUT:$@ -PDB:$(HOST_PDBFILE) $($(notdir $@)_OBJS) $(WIN32_EXE_LDFLAGS) $(HOST_LDFLAGS) $(HOST_LINKER_LIBPATHS) $(HOST_LIBS) $(HOST_EXTRA_LIBS)
 else
 ifneq (,$(HOST_CPPSRCS)$(USE_HOST_CXX))
-	$(HOST_CXX) $(HOST_OUTOPTION)$@ $(HOST_CXX_LDFLAGS) $($(notdir $@)_OBJS) $(HOST_LIBS) $(HOST_EXTRA_LIBS)
+	$(HOST_CXX) $(HOST_OUTOPTION)$@ $(HOST_CXX_LDFLAGS) $(HOST_LDFLAGS) $($(notdir $@)_OBJS) $(HOST_LIBS) $(HOST_EXTRA_LIBS)
 else
-	$(HOST_CC) $(HOST_OUTOPTION)$@ $(HOST_C_LDFLAGS) $($(notdir $@)_OBJS) $(HOST_LIBS) $(HOST_EXTRA_LIBS)
+	$(HOST_CC) $(HOST_OUTOPTION)$@ $(HOST_C_LDFLAGS) $(HOST_LDFLAGS) $($(notdir $@)_OBJS) $(HOST_LIBS) $(HOST_EXTRA_LIBS)
 endif
 endif
 ifndef CROSS_COMPILE
@@ -596,6 +600,12 @@ ifdef WINE
 relativize = $(if $(filter /%,$1),$(DEPTH)$(subst $(space),,$(foreach d,$(subst /, ,$(topobjdir)),/..))$1,$1)
 else
 relativize = $1
+endif
+
+ifdef WINE
+# asmarm64 needs a library that can be found in $PATH but for some reason,
+# wine wants its path in $WINEPATH, so fill that to make it happy.
+$(ASOBJS) $(SOBJS): export WINEPATH=$(subst :,;,$(PATH))
 endif
 
 ifdef ASFILES

@@ -22,6 +22,7 @@ DIRS += [
     "modules",
     "themes",
     "extensions",
+    "branding",
 ]
 
 DIRS += [
@@ -46,9 +47,6 @@ for cdm in CONFIG["MOZ_EME_MODULES"]:
 
 if CONFIG["MOZ_GPSD"]:
     DEFINES["MOZ_GPSD"] = True
-
-if CONFIG["MOZ_BACKGROUNDTASKS"]:
-    DEFINES["MOZ_BACKGROUNDTASKS"] = True
 
 if CONFIG["MOZ_UPDATE_AGENT"]:
     DEFINES["MOZ_UPDATE_AGENT"] = True

@@ -5,21 +5,19 @@
 Transform the beetmover task into an actual task description.
 """
 
-
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.treeherder import replace_group
 from voluptuous import Optional, Required
 
 from gecko_taskgraph.loader.single_dep import schema
-from gecko_taskgraph.transforms.base import TransformSequence
 from gecko_taskgraph.transforms.task import task_description_schema
 from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 from gecko_taskgraph.util.scriptworker import (
     generate_beetmover_artifact_map,
     generate_beetmover_upstream_artifacts,
-    get_beetmover_bucket_scope,
     get_beetmover_action_scope,
+    get_beetmover_bucket_scope,
 )
-from gecko_taskgraph.util.treeherder import replace_group
-
 
 transforms = TransformSequence()
 

@@ -18,7 +18,6 @@
 #include "jit/Ion.h"
 #include "js/HeapAPI.h"
 #include "util/Text.h"
-#include "vm/ArrayObject.h"
 #include "vm/BigIntType.h"
 #include "vm/HelperThreadState.h"
 #include "vm/JSObject.h"
@@ -28,11 +27,11 @@
 #include "vm/Runtime.h"
 #include "vm/Shape.h"
 #include "vm/StringType.h"
-#include "vm/SymbolType.h"
-#include "vm/WrapperObject.h"
 #include "wasm/WasmInstance.h"
 #include "wasm/WasmJS.h"
 #include "wasm/WasmModule.h"
+
+#include "wasm/WasmInstance-inl.h"
 
 using mozilla::MallocSizeOf;
 using mozilla::PodCopy;
@@ -644,7 +643,7 @@ static bool CollectRuntimeStatsHelper(JSContext* cx, RuntimeStats* rtStats,
     return false;
   }
 
-  size_t totalZones = rt->gc.zones().length() + 1;  // + 1 for the atoms zone.
+  size_t totalZones = rt->gc.zones().length();
   if (!rtStats->zoneStatsVector.reserve(totalZones)) {
     return false;
   }
@@ -743,13 +742,9 @@ JS_PUBLIC_API bool JS::CollectGlobalStats(GlobalStats* gStats) {
 
   // HelperThreadState holds data that is not part of a Runtime. This does
   // not include data is is currently being processed by a HelperThread.
-  HelperThreadState().addSizeOfIncludingThis(gStats, lock);
-
-#ifdef JS_TRACE_LOGGING
-  // Global data used by TraceLogger
-  gStats->tracelogger += SizeOfTraceLogState(gStats->mallocSizeOf_);
-  gStats->tracelogger += SizeOfTraceLogGraphState(gStats->mallocSizeOf_);
-#endif
+  if (IsHelperThreadStateInitialized()) {
+    HelperThreadState().addSizeOfIncludingThis(gStats, lock);
+  }
 
   return true;
 }

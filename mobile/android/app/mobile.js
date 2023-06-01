@@ -81,8 +81,8 @@ pref("network.http.max-persistent-connections-per-server", 6);
 pref("network.http.max-persistent-connections-per-proxy", 20);
 
 // spdy
-pref("network.http.spdy.push-allowance", 32768);
-pref("network.http.spdy.default-hpack-buffer", 4096); // 4k
+pref("network.http.http2.push-allowance", 32768);
+pref("network.http.http2.default-hpack-buffer", 4096); // 4k
 
 // http3
 pref("network.http.http3.default-qpack-table-size", 0);
@@ -134,15 +134,13 @@ pref("browser.download.manager.addToRecentDocs", true);
 pref("browser.helperApps.deleteTempFileOnExit", false);
 
 /* password manager */
+pref("signon.firefoxRelay.feature", "not available");
 pref("signon.rememberSignons", true);
 pref("signon.expireMasterPassword", false);
 pref("signon.debug", false);
 
 /* form helper (scroll to and optionally zoom into editable fields)  */
 pref("formhelper.autozoom", true);
-
-/* find helper */
-pref("findhelper.autozoom", true);
 
 /* autocomplete */
 pref("browser.formfill.enable", true);
@@ -159,6 +157,10 @@ pref("xpinstall.signatures.required", true);
 
 // Use blocklist v2 until blocklist v3 is enabled on Android - bug 1639050
 pref("extensions.blocklist.useMLBF", false);
+
+// Whether MV3 restrictions for actions popup urls should be extended to MV2 extensions
+// (only allowing same extension urls to be used as action popup urls).
+pref("extensions.manifestV2.actionsPopupURLRestricted", true);
 
 // Disable add-ons that are not installed by the user in all scopes by default (See the SCOPE
 // constants in AddonManager.jsm for values to use here, and Bug 1405528 for a rationale).
@@ -195,8 +197,6 @@ pref("extensions.compatability.locales.buildid", "0");
 pref("extensions.installDistroAddons", false);
 
 pref("extensions.webextOptionalPermissionPrompts", true);
-
-pref("extensions.webextensions.background-delayed-startup", true);
 
 pref("extensions.experiments.enabled", false);
 
@@ -345,13 +345,8 @@ pref("app.channelURL", "https://www.mozilla.org/%LOCALE%/firefox/channel/");
 // Name of alternate about: page for certificate errors (when undefined, defaults to about:neterror)
 pref("security.alternate_certificate_error_page", "certerror");
 
-pref("security.warn_viewing_mixed", false); // Warning is disabled.  See Bug 616712.
-
 // Enable pinning
 pref("security.cert_pinning.enforcement_level", 1);
-
-// Only fetch OCSP for EV certificates
-pref("security.OCSP.enabled", 2);
 
 /* prefs used by the update timer system (including blocklist pings) */
 pref("app.update.timerFirstInterval", 30000); // milliseconds
@@ -416,9 +411,6 @@ pref("media.video-queue.send-to-compositor-size", 1);
 
 pref("media.mediadrm-widevinecdm.visible", true);
 
-// Set Fennec to block autoplay by default.
-pref("media.autoplay.default", 1); // 0=Allowed, 1=Blocked
-
 // Enable WebSpeech speech synthesis
 pref("media.webspeech.synth.enabled", true);
 
@@ -455,9 +447,6 @@ pref("device.camera.enabled", true);
 pref("media.realtime_decoder.enabled", true);
 
 pref("full-screen-api.enabled", true);
-
-pref("direct-texture.force.enabled", false);
-pref("direct-texture.force.disabled", false);
 
 // This fraction in 1000ths of velocity remains after every animation frame when the velocity is low.
 pref("ui.scrolling.friction_slow", -1);
@@ -518,9 +507,6 @@ pref("media.plugins.enabled", true);
 //  8 = Force software decoding
 // 16 = Force hardware decoding
 pref("media.stagefright.omxcodec.flags", 0);
-
-// Enable the dynamic toolbar
-pref("browser.chrome.dynamictoolbar", true);
 
 // Location Bar AutoComplete.
 pref("browser.urlbar.autocomplete.enabled", true);

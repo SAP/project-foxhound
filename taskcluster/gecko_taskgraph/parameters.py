@@ -6,10 +6,7 @@ import logging
 import os
 
 from taskgraph.parameters import extend_parameters_schema
-from voluptuous import (
-    Any,
-    Required,
-)
+from voluptuous import Any, Required
 
 from gecko_taskgraph import GECKO
 
@@ -20,6 +17,7 @@ gecko_parameters_schema = {
     Required("app_version"): str,
     Required("backstop"): bool,
     Required("build_number"): int,
+    Required("enable_always_target"): bool,
     Required("hg_branch"): str,
     Required("message"): str,
     Required("next_version"): Any(None, str),
@@ -67,6 +65,7 @@ def get_defaults(repo_root=None):
         "backstop": False,
         "base_repository": "https://hg.mozilla.org/mozilla-unified",
         "build_number": 1,
+        "enable_always_target": False,
         "head_repository": "https://hg.mozilla.org/mozilla-central",
         "hg_branch": "default",
         "message": "",

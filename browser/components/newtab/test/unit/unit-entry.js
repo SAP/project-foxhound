@@ -1,15 +1,21 @@
-import { EventEmitter, FakePrefs, GlobalOverrider } from "test/unit/utils";
+import {
+  EventEmitter,
+  FakePrefs,
+  GlobalOverrider,
+  FakeConsoleAPI,
+  FakeLogger,
+} from "test/unit/utils";
 import Adapter from "enzyme-adapter-react-16";
 import { chaiAssertions } from "test/schemas/pings";
 import chaiJsonSchema from "chai-json-schema";
 import enzyme from "enzyme";
+import FxMSCommonSchema from "../../content-src/asrouter/schemas/FxMSCommon.schema.json";
+
 enzyme.configure({ adapter: new Adapter() });
 
 // Cause React warnings to make tests that trigger them fail
-const origConsoleError = console.error; // eslint-disable-line no-console
-// eslint-disable-next-line no-console
+const origConsoleError = console.error;
 console.error = function(msg, ...args) {
-  // eslint-disable-next-line no-console
   origConsoleError.apply(console, [msg, ...args]);
 
   if (
@@ -29,6 +35,7 @@ sinon.assert.expose(assert, { prefix: "" });
 
 chai.use(chaiAssertions);
 chai.use(chaiJsonSchema);
+chai.tv4.addSchema("file:///FxMSCommon.schema.json", FxMSCommonSchema);
 
 const overrider = new GlobalOverrider();
 
@@ -66,12 +73,27 @@ class JSWindowActorChild {
   }
 }
 
-class Logger {
-  constructor(name) {
-    this.name = name;
+// Detect plain object passed to lazy getter APIs, and set its prototype to
+// global object, and return the global object for further modification.
+// Returns the object if it's not plain object.
+//
+// This is a workaround to make the existing testharness and testcase keep
+// working even after lazy getters are moved to plain `lazy` object.
+const cachedPlainObject = new Set();
+function updateGlobalOrObject(object) {
+  // Given this function modifies the prototype, and the following
+  // condition doesn't meet on the second call, cache the result.
+  if (cachedPlainObject.has(object)) {
+    return global;
   }
 
-  warn() {}
+  if (Object.getPrototypeOf(object).constructor.name !== "Object") {
+    return object;
+  }
+
+  cachedPlainObject.add(object);
+  Object.setPrototypeOf(object, global);
+  return global;
 }
 
 const TEST_GLOBAL = {
@@ -89,10 +111,29 @@ const TEST_GLOBAL = {
   AppConstants: {
     MOZILLA_OFFICIAL: true,
     MOZ_APP_VERSION: "69.0a1",
+    isChinaRepack() {
+      return false;
+    },
     isPlatformAndVersionAtMost() {
       return false;
     },
     platform: "win",
+  },
+  ASRouterPreferences: {
+    console: new FakeConsoleAPI({
+      maxLogLevel: "off", // set this to "debug" or "all" to get more ASRouter logging in tests
+      prefix: "ASRouter",
+    }),
+  },
+  BrowserUtils: {
+    sendToDeviceEmailsSupported() {
+      return true;
+    },
+  },
+  BuiltInThemes: {
+    findActiveColorwayCollection() {
+      return true;
+    },
   },
   UpdateUtils: { getUpdateChannel() {} },
   BasePromiseWorker: class {
@@ -104,11 +145,15 @@ const TEST_GLOBAL = {
   browserSearchRegion: "US",
   BrowserWindowTracker: { getTopWindow() {} },
   ChromeUtils: {
-    defineModuleGetter() {},
+    defineModuleGetter: updateGlobalOrObject,
+    defineESModuleGetters: updateGlobalOrObject,
     generateQI() {
       return {};
     },
     import() {
+      return global;
+    },
+    importESModule() {
       return global;
     },
   },
@@ -131,6 +176,7 @@ const TEST_GLOBAL = {
     },
     isSuccessCode: () => true,
   },
+  ConsoleAPI: FakeConsoleAPI,
   // NB: These are functions/constructors
   // eslint-disable-next-line object-shorthand
   ContentSearchUIController: function() {},
@@ -175,6 +221,15 @@ const TEST_GLOBAL = {
       },
     },
     "@mozilla.org/updates/update-checker;1": { createInstance() {} },
+    "@mozilla.org/widget/useridleservice;1": {
+      getService() {
+        return {
+          idleTime: 0,
+          addIdleObserver() {},
+          removeIdleObserver() {},
+        };
+      },
+    },
     "@mozilla.org/streamConverters;1": {
       getService() {
         return this;
@@ -203,14 +258,19 @@ const TEST_GLOBAL = {
   Cu: {
     importGlobalProperties() {},
     now: () => window.performance.now(),
-    reportError() {},
     cloneInto: o => JSON.parse(JSON.stringify(o)),
+  },
+  console: {
+    ...console,
+    error() {},
   },
   dump() {},
   EveryWindow: {
     registerCallback: (id, init, uninit) => {},
     unregisterCallback: id => {},
   },
+  setTimeout: window.setTimeout.bind(window),
+  clearTimeout: window.clearTimeout.bind(window),
   fetch() {},
   // eslint-disable-next-line object-shorthand
   Image: function() {}, // NB: This is a function/constructor
@@ -299,6 +359,7 @@ const TEST_GLOBAL = {
   PrivateBrowsingUtils: {
     isBrowserPrivate: () => false,
     isWindowPrivate: () => false,
+    permanentPrivateBrowsing: false,
   },
   DownloadsViewUI: {
     getDisplayName: () => "filename.ext",
@@ -315,6 +376,9 @@ const TEST_GLOBAL = {
   Services: {
     dirsvc: {
       get: () => ({ parent: { parent: { path: "appPath" } } }),
+    },
+    env: {
+      set: () => undefined,
     },
     locale: {
       get appLocaleAsBCP47() {
@@ -446,22 +510,15 @@ const TEST_GLOBAL = {
   },
   XPCOMUtils: {
     defineLazyGetter(object, name, f) {
-      if (object && name) {
-        object[name] = f();
-      } else {
-        f();
-      }
+      updateGlobalOrObject(object)[name] = f();
     },
-    defineLazyGlobalGetters() {},
-    defineLazyModuleGetter() {},
-    defineLazyModuleGetters() {},
-    defineLazyServiceGetter() {},
-    defineLazyServiceGetters() {},
-    defineLazyPreferenceGetter(obj, name) {
-      Object.defineProperty(obj, name, {
-        configurable: true,
-        get: () => "",
-      });
+    defineLazyGlobalGetters: updateGlobalOrObject,
+    defineLazyModuleGetter: updateGlobalOrObject,
+    defineLazyModuleGetters: updateGlobalOrObject,
+    defineLazyServiceGetter: updateGlobalOrObject,
+    defineLazyServiceGetters: updateGlobalOrObject,
+    defineLazyPreferenceGetter(object, name) {
+      updateGlobalOrObject(object)[name] = "";
     },
     generateQI() {
       return {};
@@ -496,23 +553,29 @@ const TEST_GLOBAL = {
   FX_MONITOR_OAUTH_CLIENT_ID: "fake_client_id",
   ExperimentAPI: {
     getExperiment() {},
+    getExperimentMetaData() {},
+    getRolloutMetaData() {},
     on: () => {},
     off: () => {},
   },
   NimbusFeatures: {
+    glean: {
+      getVariable() {},
+    },
     newtab: {
-      isEnabled() {},
       getVariable() {},
       getAllVariables() {},
       onUpdate() {},
       off() {},
     },
     pocketNewtab: {
-      isEnabled() {},
       getVariable() {},
       getAllVariables() {},
       onUpdate() {},
       off() {},
+    },
+    cookieBannerHandling: {
+      getVariable() {},
     },
   },
   TelemetryEnvironment: {
@@ -550,7 +613,83 @@ const TEST_GLOBAL = {
     addExpirationFilter() {},
     removeExpirationFilter() {},
   },
-  Logger,
+  Logger: FakeLogger,
+  getFxAccountsSingleton() {},
+  AboutNewTab: {},
+  Glean: {
+    newtab: {
+      opened: {
+        record() {},
+      },
+      closed: {
+        record() {},
+      },
+      locale: {
+        set() {},
+      },
+      newtabCategory: {
+        set() {},
+      },
+      homepageCategory: {
+        set() {},
+      },
+    },
+    newtabSearch: {
+      enabled: {
+        set() {},
+      },
+    },
+    pocket: {
+      enabled: {
+        set() {},
+      },
+      impression: {
+        record() {},
+      },
+      isSignedIn: {
+        set() {},
+      },
+      sponsoredStoriesEnabled: {
+        set() {},
+      },
+      click: {
+        record() {},
+      },
+      save: {
+        record() {},
+      },
+      topicClick: {
+        record() {},
+      },
+    },
+    topsites: {
+      enabled: {
+        set() {},
+      },
+      sponsoredEnabled: {
+        set() {},
+      },
+      impression: {
+        record() {},
+      },
+      click: {
+        record() {},
+      },
+    },
+    serverKnobs: {
+      validation: {
+        record() {},
+      },
+    },
+  },
+  GleanPings: {
+    newtab: {
+      submit() {},
+    },
+  },
+  Utils: {
+    SERVER_URL: "bogus://foo",
+  },
 };
 overrider.set(TEST_GLOBAL);
 

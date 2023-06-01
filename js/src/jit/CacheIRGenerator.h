@@ -15,7 +15,6 @@
 #include "jstypes.h"
 #include "NamespaceImports.h"
 
-#include "gc/Rooting.h"
 #include "jit/CacheIR.h"
 #include "jit/CacheIRWriter.h"
 #include "jit/ICState.h"
@@ -65,6 +64,11 @@ class MOZ_RAII IRGenerator {
   ICState::Mode mode_;
   bool isFirstStub_;
 
+  // Important: This pointer may be passed to the profiler. If this is non-null,
+  // it must point to a C string literal with static lifetime, not a heap- or
+  // stack- allocated string.
+  const char* stubName_ = nullptr;
+
   IRGenerator(const IRGenerator&) = delete;
   IRGenerator& operator=(const IRGenerator&) = delete;
 
@@ -85,6 +89,11 @@ class MOZ_RAII IRGenerator {
 
   StringOperandId emitToStringGuard(ValOperandId id, const Value& v);
 
+  void emitCalleeGuard(ObjOperandId calleeId, JSFunction* callee);
+
+  void emitOptimisticClassGuard(ObjOperandId objId, JSObject* obj,
+                                GuardClassKind kind);
+
   friend class CacheIRSpewer;
 
  public:
@@ -93,6 +102,9 @@ class MOZ_RAII IRGenerator {
 
   const CacheIRWriter& writerRef() const { return writer; }
   CacheKind cacheKind() const { return cacheKind_; }
+
+  // See comment on `stubName_` above.
+  const char* stubName() const { return stubName_; }
 
   static constexpr char* NotAttached = nullptr;
 };
@@ -115,6 +127,10 @@ class MOZ_RAII GetPropIRGenerator : public IRGenerator {
                                                  HandleId id);
   AttachDecision tryAttachRegExp(HandleObject obj, ObjOperandId objId,
                                  HandleId id);
+  AttachDecision tryAttachMap(HandleObject obj, ObjOperandId objId,
+                              HandleId id);
+  AttachDecision tryAttachSet(HandleObject obj, ObjOperandId objId,
+                              HandleId id);
   AttachDecision tryAttachModuleNamespace(HandleObject obj, ObjOperandId objId,
                                           HandleId id);
   AttachDecision tryAttachWindowProxy(HandleObject obj, ObjOperandId objId,
@@ -172,8 +188,8 @@ class MOZ_RAII GetPropIRGenerator : public IRGenerator {
                                             ObjOperandId objId);
 
   AttachDecision tryAttachGenericElement(HandleObject obj, ObjOperandId objId,
-                                         uint32_t index,
-                                         Int32OperandId indexId);
+                                         uint32_t index, Int32OperandId indexId,
+                                         ValOperandId receiverId);
 
   AttachDecision tryAttachProxyElement(HandleObject obj, ObjOperandId objId);
 
@@ -203,7 +219,7 @@ class MOZ_RAII GetPropIRGenerator : public IRGenerator {
   // matches |id|.
   void maybeEmitIdGuard(jsid id);
 
-  void trackAttached(const char* name);
+  void trackAttached(const char* name /* must be a C string literal */);
 
  public:
   GetPropIRGenerator(JSContext* cx, HandleScript script, jsbytecode* pc,
@@ -216,17 +232,18 @@ class MOZ_RAII GetPropIRGenerator : public IRGenerator {
 // GetNameIRGenerator generates CacheIR for a GetName IC.
 class MOZ_RAII GetNameIRGenerator : public IRGenerator {
   HandleObject env_;
-  HandlePropertyName name_;
+  Handle<PropertyName*> name_;
 
   AttachDecision tryAttachGlobalNameValue(ObjOperandId objId, HandleId id);
   AttachDecision tryAttachGlobalNameGetter(ObjOperandId objId, HandleId id);
   AttachDecision tryAttachEnvironmentName(ObjOperandId objId, HandleId id);
 
-  void trackAttached(const char* name);
+  void trackAttached(const char* name /* must be a C string literal */);
 
  public:
   GetNameIRGenerator(JSContext* cx, HandleScript script, jsbytecode* pc,
-                     ICState state, HandleObject env, HandlePropertyName name);
+                     ICState state, HandleObject env,
+                     Handle<PropertyName*> name);
 
   AttachDecision tryAttachStub();
 };
@@ -234,16 +251,17 @@ class MOZ_RAII GetNameIRGenerator : public IRGenerator {
 // BindNameIRGenerator generates CacheIR for a BindName IC.
 class MOZ_RAII BindNameIRGenerator : public IRGenerator {
   HandleObject env_;
-  HandlePropertyName name_;
+  Handle<PropertyName*> name_;
 
   AttachDecision tryAttachGlobalName(ObjOperandId objId, HandleId id);
   AttachDecision tryAttachEnvironmentName(ObjOperandId objId, HandleId id);
 
-  void trackAttached(const char* name);
+  void trackAttached(const char* name /* must be a C string literal */);
 
  public:
   BindNameIRGenerator(JSContext* cx, HandleScript script, jsbytecode* pc,
-                      ICState state, HandleObject env, HandlePropertyName name);
+                      ICState state, HandleObject env,
+                      Handle<PropertyName*> name);
 
   AttachDecision tryAttachStub();
 };
@@ -335,8 +353,8 @@ class MOZ_RAII SetPropIRGenerator : public IRGenerator {
                      HandleValue idVal, HandleValue rhsVal);
 
   AttachDecision tryAttachStub();
-  AttachDecision tryAttachAddSlotStub(HandleShape oldShape);
-  void trackAttached(const char* name);
+  AttachDecision tryAttachAddSlotStub(Handle<Shape*> oldShape);
+  void trackAttached(const char* name /* must be a C string literal */);
 
   DeferType deferType() const { return deferType_; }
 };
@@ -372,7 +390,7 @@ class MOZ_RAII HasPropIRGenerator : public IRGenerator {
   AttachDecision tryAttachProxyElement(HandleObject obj, ObjOperandId objId,
                                        ValOperandId keyId);
 
-  void trackAttached(const char* name);
+  void trackAttached(const char* name /* must be a C string literal */);
 
  public:
   // NOTE: Argument order is PROPERTY, OBJECT
@@ -387,10 +405,11 @@ class MOZ_RAII CheckPrivateFieldIRGenerator : public IRGenerator {
   HandleValue val_;
   HandleValue idVal_;
 
-  AttachDecision tryAttachNative(JSObject* obj, ObjOperandId objId, jsid key,
-                                 ValOperandId keyId, bool hasOwn);
+  AttachDecision tryAttachNative(NativeObject* obj, ObjOperandId objId,
+                                 jsid key, ValOperandId keyId,
+                                 PropertyResult prop);
 
-  void trackAttached(const char* name);
+  void trackAttached(const char* name /* must be a C string literal */);
 
  public:
   CheckPrivateFieldIRGenerator(JSContext* cx, HandleScript script,
@@ -404,7 +423,7 @@ class MOZ_RAII InstanceOfIRGenerator : public IRGenerator {
   HandleValue lhsVal_;
   HandleObject rhsObj_;
 
-  void trackAttached(const char* name);
+  void trackAttached(const char* name /* must be a C string literal */);
 
  public:
   InstanceOfIRGenerator(JSContext*, HandleScript, jsbytecode*, ICState,
@@ -418,7 +437,7 @@ class MOZ_RAII TypeOfIRGenerator : public IRGenerator {
 
   AttachDecision tryAttachPrimitive(ValOperandId valId);
   AttachDecision tryAttachObject(ValOperandId valId);
-  void trackAttached(const char* name);
+  void trackAttached(const char* name /* must be a C string literal */);
 
  public:
   TypeOfIRGenerator(JSContext* cx, HandleScript, jsbytecode* pc, ICState state,
@@ -430,9 +449,9 @@ class MOZ_RAII TypeOfIRGenerator : public IRGenerator {
 class MOZ_RAII GetIteratorIRGenerator : public IRGenerator {
   HandleValue val_;
 
-  AttachDecision tryAttachNativeIterator(ValOperandId valId);
+  AttachDecision tryAttachObject(ValOperandId valId);
   AttachDecision tryAttachNullOrUndefined(ValOperandId valId);
-  AttachDecision tryAttachMegamorphic(ValOperandId valId);
+  AttachDecision tryAttachGeneric(ValOperandId valId);
 
  public:
   GetIteratorIRGenerator(JSContext* cx, HandleScript, jsbytecode* pc,
@@ -440,7 +459,7 @@ class MOZ_RAII GetIteratorIRGenerator : public IRGenerator {
 
   AttachDecision tryAttachStub();
 
-  void trackAttached(const char* name);
+  void trackAttached(const char* name /* must be a C string literal */);
 };
 
 class MOZ_RAII OptimizeSpreadCallIRGenerator : public IRGenerator {
@@ -457,7 +476,7 @@ class MOZ_RAII OptimizeSpreadCallIRGenerator : public IRGenerator {
 
   AttachDecision tryAttachStub();
 
-  void trackAttached(const char* name);
+  void trackAttached(const char* name /* must be a C string literal */);
 };
 
 enum class StringChar { CodeAt, At };
@@ -472,11 +491,81 @@ class MOZ_RAII CallIRGenerator : public IRGenerator {
   HandleValue newTarget_;
   HandleValueArray args_;
 
-  ScriptedThisResult getThisShapeForScripted(HandleFunction calleeFunc,
-                                             MutableHandleShape result);
+  friend class InlinableNativeIRGenerator;
 
-  void emitNativeCalleeGuard(JSFunction* callee);
-  void emitCalleeGuard(ObjOperandId calleeId, JSFunction* callee);
+  ScriptedThisResult getThisShapeForScripted(HandleFunction calleeFunc,
+                                             MutableHandle<Shape*> result);
+
+  ObjOperandId emitFunCallOrApplyGuard(Int32OperandId argcId);
+  ObjOperandId emitFunCallGuard(Int32OperandId argcId);
+  ObjOperandId emitFunApplyGuard(Int32OperandId argcId);
+  ObjOperandId emitFunApplyArgsGuard(CallFlags::ArgFormat format);
+
+  AttachDecision tryAttachFunCall(HandleFunction calleeFunc);
+  AttachDecision tryAttachFunApply(HandleFunction calleeFunc);
+  AttachDecision tryAttachCallScripted(HandleFunction calleeFunc);
+  AttachDecision tryAttachInlinableNative(HandleFunction calleeFunc,
+                                          CallFlags flags);
+  AttachDecision tryAttachWasmCall(HandleFunction calleeFunc);
+  AttachDecision tryAttachCallNative(HandleFunction calleeFunc);
+  AttachDecision tryAttachCallHook(HandleObject calleeObj);
+
+  void trackAttached(const char* name /* must be a C string literal */);
+
+ public:
+  CallIRGenerator(JSContext* cx, HandleScript script, jsbytecode* pc, JSOp op,
+                  ICState state, uint32_t argc, HandleValue callee,
+                  HandleValue thisval, HandleValue newTarget,
+                  HandleValueArray args);
+
+  AttachDecision tryAttachStub();
+};
+
+class MOZ_RAII InlinableNativeIRGenerator {
+  CallIRGenerator& generator_;
+  CacheIRWriter& writer;
+  JSContext* cx_;
+
+  HandleFunction callee_;
+  HandleValue newTarget_;
+  HandleValue thisval_;
+  HandleValueArray args_;
+  uint32_t argc_;
+  CallFlags flags_;
+
+  HandleScript script() const { return generator_.script_; }
+  bool isFirstStub() const { return generator_.isFirstStub_; }
+  bool ignoresResult() const { return generator_.op_ == JSOp::CallIgnoresRv; }
+
+  void emitNativeCalleeGuard();
+  void emitOptimisticClassGuard(ObjOperandId objId, JSObject* obj,
+                                GuardClassKind kind) {
+    generator_.emitOptimisticClassGuard(objId, obj, kind);
+  }
+
+  ObjOperandId emitLoadArgsArray();
+
+  void initializeInputOperand() {
+    // The input operand is already initialized for FunCall and FunApplyArray.
+    if (flags_.getArgFormat() == CallFlags::FunCall ||
+        flags_.getArgFormat() == CallFlags::FunApplyArray) {
+      return;
+    }
+    (void)writer.setInputOperandId(0);
+  }
+
+  auto emitToStringGuard(ValOperandId id, const Value& v) {
+    return generator_.emitToStringGuard(id, v);
+  }
+
+  auto emitNumericGuard(ValOperandId valId, Scalar::Type type) {
+    return generator_.emitNumericGuard(valId, type);
+  }
+
+  auto guardToIntPtrIndex(const Value& index, ValOperandId indexId,
+                          bool supportOOB) {
+    return generator_.guardToIntPtrIndex(index, indexId, supportOOB);
+  }
 
   bool canAttachAtomicsReadWriteModify();
 
@@ -486,132 +575,131 @@ class MOZ_RAII CallIRGenerator : public IRGenerator {
     OperandId numericValueId;
   };
 
-  AtomicsReadWriteModifyOperands emitAtomicsReadWriteModifyOperands(
-      HandleFunction callee);
+  AtomicsReadWriteModifyOperands emitAtomicsReadWriteModifyOperands();
 
-  AttachDecision tryAttachArrayPush(HandleFunction callee);
-  AttachDecision tryAttachArrayPopShift(HandleFunction callee,
-                                        InlinableNative native);
-  AttachDecision tryAttachArrayJoin(HandleFunction callee);
-  AttachDecision tryAttachArraySlice(HandleFunction callee);
-  AttachDecision tryAttachArrayIsArray(HandleFunction callee);
-  AttachDecision tryAttachDataViewGet(HandleFunction callee, Scalar::Type type);
-  AttachDecision tryAttachDataViewSet(HandleFunction callee, Scalar::Type type);
-  AttachDecision tryAttachUnsafeGetReservedSlot(HandleFunction callee,
-                                                InlinableNative native);
-  AttachDecision tryAttachUnsafeSetReservedSlot(HandleFunction callee);
-  AttachDecision tryAttachIsSuspendedGenerator(HandleFunction callee);
-  AttachDecision tryAttachToObject(HandleFunction callee,
-                                   InlinableNative native);
-  AttachDecision tryAttachToInteger(HandleFunction callee);
-  AttachDecision tryAttachToLength(HandleFunction callee);
-  AttachDecision tryAttachIsObject(HandleFunction callee);
-  AttachDecision tryAttachIsPackedArray(HandleFunction callee);
-  AttachDecision tryAttachIsCallable(HandleFunction callee);
-  AttachDecision tryAttachIsConstructor(HandleFunction callee);
-  AttachDecision tryAttachIsCrossRealmArrayConstructor(HandleFunction callee);
-  AttachDecision tryAttachGuardToClass(HandleFunction callee,
-                                       InlinableNative native);
-  AttachDecision tryAttachHasClass(HandleFunction callee, const JSClass* clasp,
+  AttachDecision tryAttachArrayPush();
+  AttachDecision tryAttachArrayPopShift(InlinableNative native);
+  AttachDecision tryAttachArrayJoin();
+  AttachDecision tryAttachArraySlice();
+  AttachDecision tryAttachArrayIsArray();
+  AttachDecision tryAttachDataViewGet(Scalar::Type type);
+  AttachDecision tryAttachDataViewSet(Scalar::Type type);
+  AttachDecision tryAttachUnsafeGetReservedSlot(InlinableNative native);
+  AttachDecision tryAttachUnsafeSetReservedSlot();
+  AttachDecision tryAttachIsSuspendedGenerator();
+  AttachDecision tryAttachToObject();
+  AttachDecision tryAttachToInteger();
+  AttachDecision tryAttachToLength();
+  AttachDecision tryAttachIsObject();
+  AttachDecision tryAttachIsPackedArray();
+  AttachDecision tryAttachIsCallable();
+  AttachDecision tryAttachIsConstructor();
+  AttachDecision tryAttachIsCrossRealmArrayConstructor();
+  AttachDecision tryAttachGuardToClass(InlinableNative native);
+  AttachDecision tryAttachHasClass(const JSClass* clasp,
                                    bool isPossiblyWrapped);
-  AttachDecision tryAttachRegExpMatcherSearcherTester(HandleFunction callee,
-                                                      InlinableNative native);
-  AttachDecision tryAttachRegExpPrototypeOptimizable(HandleFunction callee);
-  AttachDecision tryAttachRegExpInstanceOptimizable(HandleFunction callee);
-  AttachDecision tryAttachGetFirstDollarIndex(HandleFunction callee);
-  AttachDecision tryAttachSubstringKernel(HandleFunction callee);
-  AttachDecision tryAttachObjectHasPrototype(HandleFunction callee);
-  AttachDecision tryAttachString(HandleFunction callee);
-  AttachDecision tryAttachStringConstructor(HandleFunction callee);
-  AttachDecision tryAttachStringToStringValueOf(HandleFunction callee);
-  AttachDecision tryAttachStringChar(HandleFunction callee, StringChar kind);
-  AttachDecision tryAttachStringCharCodeAt(HandleFunction callee);
-  AttachDecision tryAttachStringCharAt(HandleFunction callee);
-  AttachDecision tryAttachStringFromCharCode(HandleFunction callee);
-  AttachDecision tryAttachStringFromCodePoint(HandleFunction callee);
-  AttachDecision tryAttachStringToLowerCase(HandleFunction callee);
-  AttachDecision tryAttachStringToUpperCase(HandleFunction callee);
-  AttachDecision tryAttachStringReplaceString(HandleFunction callee);
-  AttachDecision tryAttachStringSplitString(HandleFunction callee);
-  AttachDecision tryAttachMathRandom(HandleFunction callee);
-  AttachDecision tryAttachMathAbs(HandleFunction callee);
-  AttachDecision tryAttachMathClz32(HandleFunction callee);
-  AttachDecision tryAttachMathSign(HandleFunction callee);
-  AttachDecision tryAttachMathImul(HandleFunction callee);
-  AttachDecision tryAttachMathFloor(HandleFunction callee);
-  AttachDecision tryAttachMathCeil(HandleFunction callee);
-  AttachDecision tryAttachMathTrunc(HandleFunction callee);
-  AttachDecision tryAttachMathRound(HandleFunction callee);
-  AttachDecision tryAttachMathSqrt(HandleFunction callee);
-  AttachDecision tryAttachMathFRound(HandleFunction callee);
-  AttachDecision tryAttachMathHypot(HandleFunction callee);
-  AttachDecision tryAttachMathATan2(HandleFunction callee);
-  AttachDecision tryAttachMathFunction(HandleFunction callee,
-                                       UnaryMathFunction fun);
-  AttachDecision tryAttachMathPow(HandleFunction callee);
-  AttachDecision tryAttachMathMinMax(HandleFunction callee, bool isMax);
-  AttachDecision tryAttachSpreadMathMinMax(HandleFunction callee, bool isMax);
-  AttachDecision tryAttachIsTypedArray(HandleFunction callee,
-                                       bool isPossiblyWrapped);
-  AttachDecision tryAttachIsTypedArrayConstructor(HandleFunction callee);
-  AttachDecision tryAttachTypedArrayByteOffset(HandleFunction callee);
-  AttachDecision tryAttachTypedArrayElementSize(HandleFunction callee);
-  AttachDecision tryAttachTypedArrayLength(HandleFunction callee,
-                                           bool isPossiblyWrapped);
-  AttachDecision tryAttachArrayBufferByteLength(HandleFunction callee,
-                                                bool isPossiblyWrapped);
-  AttachDecision tryAttachIsConstructing(HandleFunction callee);
-  AttachDecision tryAttachGetNextMapSetEntryForIterator(HandleFunction callee,
-                                                        bool isMap);
-  AttachDecision tryAttachFinishBoundFunctionInit(HandleFunction callee);
-  AttachDecision tryAttachNewArrayIterator(HandleFunction callee);
-  AttachDecision tryAttachNewStringIterator(HandleFunction callee);
-  AttachDecision tryAttachNewRegExpStringIterator(HandleFunction callee);
-  AttachDecision tryAttachArrayIteratorPrototypeOptimizable(
-      HandleFunction callee);
-  AttachDecision tryAttachObjectCreate(HandleFunction callee);
-  AttachDecision tryAttachArrayConstructor(HandleFunction callee);
-  AttachDecision tryAttachTypedArrayConstructor(HandleFunction callee);
-  AttachDecision tryAttachNumberToString(HandleFunction callee);
-  AttachDecision tryAttachReflectGetPrototypeOf(HandleFunction callee);
-  AttachDecision tryAttachAtomicsCompareExchange(HandleFunction callee);
-  AttachDecision tryAttachAtomicsExchange(HandleFunction callee);
-  AttachDecision tryAttachAtomicsAdd(HandleFunction callee);
-  AttachDecision tryAttachAtomicsSub(HandleFunction callee);
-  AttachDecision tryAttachAtomicsAnd(HandleFunction callee);
-  AttachDecision tryAttachAtomicsOr(HandleFunction callee);
-  AttachDecision tryAttachAtomicsXor(HandleFunction callee);
-  AttachDecision tryAttachAtomicsLoad(HandleFunction callee);
-  AttachDecision tryAttachAtomicsStore(HandleFunction callee);
-  AttachDecision tryAttachAtomicsIsLockFree(HandleFunction callee);
-  AttachDecision tryAttachBoolean(HandleFunction callee);
-  AttachDecision tryAttachBailout(HandleFunction callee);
-  AttachDecision tryAttachAssertFloat32(HandleFunction callee);
-  AttachDecision tryAttachAssertRecoveredOnBailout(HandleFunction callee);
-  AttachDecision tryAttachObjectIs(HandleFunction callee);
-  AttachDecision tryAttachObjectIsPrototypeOf(HandleFunction callee);
-  AttachDecision tryAttachObjectToString(HandleFunction callee);
-  AttachDecision tryAttachBigIntAsIntN(HandleFunction callee);
-  AttachDecision tryAttachBigIntAsUintN(HandleFunction callee);
-  AttachDecision tryAttachSetHas(HandleFunction callee);
-  AttachDecision tryAttachMapHas(HandleFunction callee);
-  AttachDecision tryAttachMapGet(HandleFunction callee);
+  AttachDecision tryAttachRegExpMatcherSearcherTester(InlinableNative native);
+  AttachDecision tryAttachRegExpPrototypeOptimizable();
+  AttachDecision tryAttachRegExpInstanceOptimizable();
+  AttachDecision tryAttachGetFirstDollarIndex();
+  AttachDecision tryAttachSubstringKernel();
+  AttachDecision tryAttachObjectHasPrototype();
+  AttachDecision tryAttachString();
+  AttachDecision tryAttachStringConstructor();
+  AttachDecision tryAttachStringToStringValueOf();
+  AttachDecision tryAttachStringChar(StringChar kind);
+  AttachDecision tryAttachStringCharCodeAt();
+  AttachDecision tryAttachStringCharAt();
+  AttachDecision tryAttachStringFromCharCode();
+  AttachDecision tryAttachStringFromCodePoint();
+  AttachDecision tryAttachStringIndexOf();
+  AttachDecision tryAttachStringStartsWith();
+  AttachDecision tryAttachStringEndsWith();
+  AttachDecision tryAttachStringToLowerCase();
+  AttachDecision tryAttachStringToUpperCase();
+  AttachDecision tryAttachStringReplaceString();
+  AttachDecision tryAttachStringSplitString();
+  AttachDecision tryAttachMathRandom();
+  AttachDecision tryAttachMathAbs();
+  AttachDecision tryAttachMathClz32();
+  AttachDecision tryAttachMathSign();
+  AttachDecision tryAttachMathImul();
+  AttachDecision tryAttachMathFloor();
+  AttachDecision tryAttachMathCeil();
+  AttachDecision tryAttachMathTrunc();
+  AttachDecision tryAttachMathRound();
+  AttachDecision tryAttachMathSqrt();
+  AttachDecision tryAttachMathFRound();
+  AttachDecision tryAttachMathHypot();
+  AttachDecision tryAttachMathATan2();
+  AttachDecision tryAttachMathFunction(UnaryMathFunction fun);
+  AttachDecision tryAttachMathPow();
+  AttachDecision tryAttachMathMinMax(bool isMax);
+  AttachDecision tryAttachSpreadMathMinMax(bool isMax);
+  AttachDecision tryAttachIsTypedArray(bool isPossiblyWrapped);
+  AttachDecision tryAttachIsTypedArrayConstructor();
+  AttachDecision tryAttachTypedArrayByteOffset();
+  AttachDecision tryAttachTypedArrayElementSize();
+  AttachDecision tryAttachTypedArrayLength(bool isPossiblyWrapped);
+  AttachDecision tryAttachArrayBufferByteLength(bool isPossiblyWrapped);
+  AttachDecision tryAttachIsConstructing();
+  AttachDecision tryAttachGetNextMapSetEntryForIterator(bool isMap);
+  AttachDecision tryAttachFinishBoundFunctionInit();
+  AttachDecision tryAttachNewArrayIterator();
+  AttachDecision tryAttachNewStringIterator();
+  AttachDecision tryAttachNewRegExpStringIterator();
+  AttachDecision tryAttachArrayIteratorPrototypeOptimizable();
+  AttachDecision tryAttachObjectCreate();
+  AttachDecision tryAttachObjectConstructor();
+  AttachDecision tryAttachArrayConstructor();
+  AttachDecision tryAttachTypedArrayConstructor();
+  AttachDecision tryAttachNumber();
+  AttachDecision tryAttachNumberParseInt();
+  AttachDecision tryAttachNumberToString();
+  AttachDecision tryAttachReflectGetPrototypeOf();
+  AttachDecision tryAttachAtomicsCompareExchange();
+  AttachDecision tryAttachAtomicsExchange();
+  AttachDecision tryAttachAtomicsAdd();
+  AttachDecision tryAttachAtomicsSub();
+  AttachDecision tryAttachAtomicsAnd();
+  AttachDecision tryAttachAtomicsOr();
+  AttachDecision tryAttachAtomicsXor();
+  AttachDecision tryAttachAtomicsLoad();
+  AttachDecision tryAttachAtomicsStore();
+  AttachDecision tryAttachAtomicsIsLockFree();
+  AttachDecision tryAttachBoolean();
+  AttachDecision tryAttachBailout();
+  AttachDecision tryAttachAssertFloat32();
+  AttachDecision tryAttachAssertRecoveredOnBailout();
+  AttachDecision tryAttachObjectIs();
+  AttachDecision tryAttachObjectIsPrototypeOf();
+  AttachDecision tryAttachObjectToString();
+  AttachDecision tryAttachBigIntAsIntN();
+  AttachDecision tryAttachBigIntAsUintN();
+  AttachDecision tryAttachSetHas();
+  AttachDecision tryAttachMapHas();
+  AttachDecision tryAttachMapGet();
+#ifdef FUZZING_JS_FUZZILLI
+  AttachDecision tryAttachFuzzilliHash();
+#endif
 
-  AttachDecision tryAttachFunCall(HandleFunction calleeFunc);
-  AttachDecision tryAttachFunApply(HandleFunction calleeFunc);
-  AttachDecision tryAttachCallScripted(HandleFunction calleeFunc);
-  AttachDecision tryAttachInlinableNative(HandleFunction calleeFunc);
-  AttachDecision tryAttachWasmCall(HandleFunction calleeFunc);
-  AttachDecision tryAttachCallNative(HandleFunction calleeFunc);
-  AttachDecision tryAttachCallHook(HandleObject calleeObj);
-
-  void trackAttached(const char* name);
+  void trackAttached(const char* name /* must be a C string literal */) {
+    return generator_.trackAttached(name);
+  }
 
  public:
-  CallIRGenerator(JSContext* cx, HandleScript script, jsbytecode* pc, JSOp op,
-                  ICState state, uint32_t argc, HandleValue callee,
-                  HandleValue thisval, HandleValue newTarget,
-                  HandleValueArray args);
+  InlinableNativeIRGenerator(CallIRGenerator& generator, HandleFunction callee,
+                             HandleValue newTarget, HandleValue thisValue,
+                             HandleValueArray args, CallFlags flags)
+      : generator_(generator),
+        writer(generator.writer),
+        cx_(generator.cx_),
+        callee_(callee),
+        newTarget_(newTarget),
+        thisval_(thisValue),
+        args_(args),
+        argc_(args.length()),
+        flags_(flags) {}
 
   AttachDecision tryAttachStub();
 };
@@ -629,21 +717,17 @@ class MOZ_RAII CompareIRGenerator : public IRGenerator {
   AttachDecision tryAttachInt32(ValOperandId lhsId, ValOperandId rhsId);
   AttachDecision tryAttachNumber(ValOperandId lhsId, ValOperandId rhsId);
   AttachDecision tryAttachBigInt(ValOperandId lhsId, ValOperandId rhsId);
-  AttachDecision tryAttachNumberUndefined(ValOperandId lhsId,
-                                          ValOperandId rhsId);
   AttachDecision tryAttachAnyNullUndefined(ValOperandId lhsId,
                                            ValOperandId rhsId);
   AttachDecision tryAttachNullUndefined(ValOperandId lhsId, ValOperandId rhsId);
   AttachDecision tryAttachStringNumber(ValOperandId lhsId, ValOperandId rhsId);
   AttachDecision tryAttachPrimitiveSymbol(ValOperandId lhsId,
                                           ValOperandId rhsId);
-  AttachDecision tryAttachBoolStringOrNumber(ValOperandId lhsId,
-                                             ValOperandId rhsId);
   AttachDecision tryAttachBigIntInt32(ValOperandId lhsId, ValOperandId rhsId);
   AttachDecision tryAttachBigIntNumber(ValOperandId lhsId, ValOperandId rhsId);
   AttachDecision tryAttachBigIntString(ValOperandId lhsId, ValOperandId rhsId);
 
-  void trackAttached(const char* name);
+  void trackAttached(const char* name /* must be a C string literal */);
 
  public:
   CompareIRGenerator(JSContext* cx, HandleScript, jsbytecode* pc, ICState state,
@@ -664,7 +748,7 @@ class MOZ_RAII ToBoolIRGenerator : public IRGenerator {
   AttachDecision tryAttachObject();
   AttachDecision tryAttachBigInt();
 
-  void trackAttached(const char* name);
+  void trackAttached(const char* name /* must be a C string literal */);
 
  public:
   ToBoolIRGenerator(JSContext* cx, HandleScript, jsbytecode* pc, ICState state,
@@ -676,7 +760,7 @@ class MOZ_RAII ToBoolIRGenerator : public IRGenerator {
 class MOZ_RAII GetIntrinsicIRGenerator : public IRGenerator {
   HandleValue val_;
 
-  void trackAttached(const char* name);
+  void trackAttached(const char* name /* must be a C string literal */);
 
  public:
   GetIntrinsicIRGenerator(JSContext* cx, HandleScript, jsbytecode* pc,
@@ -697,7 +781,7 @@ class MOZ_RAII UnaryArithIRGenerator : public IRGenerator {
   AttachDecision tryAttachStringInt32();
   AttachDecision tryAttachStringNumber();
 
-  void trackAttached(const char* name);
+  void trackAttached(const char* name /* must be a C string literal */);
 
  public:
   UnaryArithIRGenerator(JSContext* cx, HandleScript, jsbytecode* pc,
@@ -715,7 +799,7 @@ class MOZ_RAII ToPropertyKeyIRGenerator : public IRGenerator {
   AttachDecision tryAttachString();
   AttachDecision tryAttachSymbol();
 
-  void trackAttached(const char* name);
+  void trackAttached(const char* name /* must be a C string literal */);
 
  public:
   ToPropertyKeyIRGenerator(JSContext* cx, HandleScript, jsbytecode* pc,
@@ -730,15 +814,13 @@ class MOZ_RAII BinaryArithIRGenerator : public IRGenerator {
   HandleValue rhs_;
   HandleValue res_;
 
-  void trackAttached(const char* name);
+  void trackAttached(const char* name /* must be a C string literal */);
 
   AttachDecision tryAttachInt32();
   AttachDecision tryAttachDouble();
   AttachDecision tryAttachBitwise();
   AttachDecision tryAttachStringConcat();
   AttachDecision tryAttachStringObjectConcat();
-  AttachDecision tryAttachStringNumberConcat();
-  AttachDecision tryAttachStringBooleanConcat();
   AttachDecision tryAttachBigInt();
   AttachDecision tryAttachStringInt32Arith();
 
@@ -757,7 +839,7 @@ class MOZ_RAII NewArrayIRGenerator : public IRGenerator {
   HandleObject templateObject_;
   BaselineFrame* frame_;
 
-  void trackAttached(const char* name);
+  void trackAttached(const char* name /* must be a C string literal */);
 
  public:
   NewArrayIRGenerator(JSContext* cx, HandleScript, jsbytecode* pc,
@@ -775,7 +857,7 @@ class MOZ_RAII NewObjectIRGenerator : public IRGenerator {
   HandleObject templateObject_;
   BaselineFrame* frame_;
 
-  void trackAttached(const char* name);
+  void trackAttached(const char* name /* must be a C string literal */);
 
  public:
   NewObjectIRGenerator(JSContext* cx, HandleScript, jsbytecode* pc,
@@ -789,6 +871,21 @@ class MOZ_RAII NewObjectIRGenerator : public IRGenerator {
 inline bool BytecodeOpCanHaveAllocSite(JSOp op) {
   return op == JSOp::NewArray || op == JSOp::NewObject || op == JSOp::NewInit;
 }
+
+class MOZ_RAII CloseIterIRGenerator : public IRGenerator {
+  HandleObject iter_;
+  CompletionKind kind_;
+
+  void trackAttached(const char* name /* must be a C string literal */);
+
+ public:
+  CloseIterIRGenerator(JSContext* cx, HandleScript, jsbytecode* pc,
+                       ICState state, HandleObject iter, CompletionKind kind);
+
+  AttachDecision tryAttachStub();
+  AttachDecision tryAttachNoReturnMethod();
+  AttachDecision tryAttachScriptedReturn();
+};
 
 // Retrieve Xray JIT info set by the embedder.
 extern JS::XrayJitInfo* GetXrayJitInfo();

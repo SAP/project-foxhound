@@ -11,13 +11,15 @@ function serverOwnershipTree(walkerArg) {
     gBrowser.selectedBrowser,
     [[walkerArg.actorID]],
     function(actorID) {
-      const { require } = ChromeUtils.import(
-        "resource://devtools/shared/loader/Loader.jsm"
+      const { require } = ChromeUtils.importESModule(
+        "resource://devtools/shared/loader/Loader.sys.mjs"
       );
-      const { DevToolsServer } = require("devtools/server/devtools-server");
+      const {
+        DevToolsServer,
+      } = require("resource://devtools/server/devtools-server.js");
       const {
         DocumentWalker,
-      } = require("devtools/server/actors/inspector/document-walker");
+      } = require("resource://devtools/server/actors/inspector/document-walker.js");
 
       // Convert actorID to current compartment string otherwise
       // searchAllConnectionsForActor is confused and won't find the actor.

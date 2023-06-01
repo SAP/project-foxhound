@@ -4,13 +4,12 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   HomePage: "resource:///modules/HomePage.jsm",
-  Services: "resource://gre/modules/Services.jsm",
   RemoteSettings: "resource://services-settings/remote-settings.js",
   // RemoteSettingsClient: "resource://services-settings/RemoteSettingsClient.jsm",
   sinon: "resource://testing-common/Sinon.jsm",

@@ -15,8 +15,7 @@
 // XXX Avoid including this here by moving function bodies to the cpp file
 #include "mozilla/dom/BlobImpl.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class Proxy;
 class DOMString;
@@ -77,6 +76,7 @@ class XMLHttpRequestWorker final : public XMLHttpRequest {
   bool mBackgroundRequest;
   bool mWithCredentials;
   bool mCanceled;
+  bool mFlagSendActive;
 
   bool mMozAnon;
   bool mMozSystem;
@@ -249,7 +249,6 @@ class XMLHttpRequestWorker final : public XMLHttpRequest {
   void ResetResponseData();
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_workers_xmlhttprequest_h__

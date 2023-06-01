@@ -25,11 +25,18 @@
 #include "mozilla/dom/ContentPlaybackController.h"
 #include "mozilla/dom/SessionStorageManager.h"
 #include "mozilla/ipc/ProtocolUtils.h"
+#ifdef NS_PRINTING
+#  include "mozilla/layout/RemotePrintJobParent.h"
+#endif
 #include "mozilla/net/DocumentLoadListener.h"
 #include "mozilla/NullPrincipal.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_docshell.h"
 #include "mozilla/StaticPrefs_fission.h"
 #include "mozilla/Telemetry.h"
+#include "nsILayoutHistoryState.h"
+#include "nsIPrintSettings.h"
+#include "nsIPrintSettingsService.h"
 #include "nsISupports.h"
 #include "nsIWebNavigation.h"
 #include "mozilla/MozPromiseInlines.h"
@@ -50,10 +57,6 @@
 #include "nsIXPConnect.h"
 #include "nsImportModule.h"
 #include "UnitTransforms.h"
-
-#ifdef NS_PRINTING
-#  include "mozilla/embedding/printingui/PrintingParent.h"
-#endif
 
 using namespace mozilla::ipc;
 
@@ -98,7 +101,7 @@ static void DecreasePrivateCount() {
           ("%s: Private browsing context count %d -> %d", __func__,
            gNumberOfPrivateContexts + 1, gNumberOfPrivateContexts));
   if (!gNumberOfPrivateContexts &&
-      !mozilla::Preferences::GetBool("browser.privatebrowsing.autostart")) {
+      !mozilla::StaticPrefs::browser_privatebrowsing_autostart()) {
     nsCOMPtr<nsIObserverService> observerService =
         mozilla::services::GetObserverService();
     if (observerService) {
@@ -184,6 +187,9 @@ ContentParent* CanonicalBrowsingContext::GetContentParent() const {
   }
 
   ContentProcessManager* cpm = ContentProcessManager::GetSingleton();
+  if (!cpm) {
+    return nullptr;
+  }
   return cpm->GetContentProcessById(ContentParentId(mProcessId));
 }
 
@@ -306,13 +312,27 @@ void CanonicalBrowsingContext::ReplacedBy(
   txn.SetBrowserId(GetBrowserId());
   txn.SetHistoryID(GetHistoryID());
   txn.SetExplicitActive(GetExplicitActive());
+  txn.SetEmbedderColorSchemes(GetEmbedderColorSchemes());
   txn.SetHasRestoreData(GetHasRestoreData());
   txn.SetShouldDelayMediaFromStart(GetShouldDelayMediaFromStart());
+
+  // Propagate some settings on BrowsingContext replacement so they're not lost
+  // on bfcached navigations. These are important for GeckoView (see bug
+  // 1781936).
+  txn.SetAllowJavascript(GetAllowJavascript());
+  txn.SetForceEnableTrackingProtection(GetForceEnableTrackingProtection());
+  txn.SetUserAgentOverride(GetUserAgentOverride());
+  txn.SetSuspendMediaWhenInactive(GetSuspendMediaWhenInactive());
+  txn.SetDisplayMode(GetDisplayMode());
+  txn.SetForceDesktopViewport(GetForceDesktopViewport());
+
   // As this is a different BrowsingContext, set InitialSandboxFlags to the
   // current flags in the new context so that they also apply to any initial
   // about:blank documents created in it.
   txn.SetSandboxFlags(GetSandboxFlags());
   txn.SetInitialSandboxFlags(GetSandboxFlags());
+  txn.SetTargetTopLevelLinkClicksToBlankInternal(
+      TargetTopLevelLinkClicksToBlank());
   if (aNewContext->EverAttached()) {
     MOZ_ALWAYS_SUCCEEDS(txn.Commit(aNewContext));
   } else {
@@ -410,6 +430,19 @@ CanonicalBrowsingContext::GetParentProcessWidgetContaining() {
   }
 
   return widget.forget();
+}
+
+already_AddRefed<nsIBrowserDOMWindow>
+CanonicalBrowsingContext::GetBrowserDOMWindow() {
+  RefPtr<CanonicalBrowsingContext> chromeTop = TopCrossChromeBoundary();
+  if (nsCOMPtr<nsIDOMChromeWindow> chromeWin =
+          do_QueryInterface(chromeTop->GetDOMWindow())) {
+    nsCOMPtr<nsIBrowserDOMWindow> bdw;
+    if (NS_SUCCEEDED(chromeWin->GetBrowserDOMWindow(getter_AddRefs(bdw)))) {
+      return bdw.forget();
+    }
+  }
+  return nullptr;
 }
 
 already_AddRefed<WindowGlobalParent>
@@ -539,6 +572,12 @@ CanonicalBrowsingContext::CreateLoadingSessionHistoryEntryForLoad(
     if (!entry) {
       return nullptr;
     }
+
+    // If the entry was updated, update also the LoadingSessionHistoryInfo.
+    UniquePtr<LoadingSessionHistoryInfo> lshi =
+        MakeUnique<LoadingSessionHistoryInfo>(entry, existingLoadingInfo);
+    aLoadState->SetLoadingSessionHistoryInfo(std::move(lshi));
+    existingLoadingInfo = aLoadState->GetLoadingSessionHistoryInfo();
     Unused << SetHistoryEntryCount(entry->BCHistoryLength());
   } else if (aLoadState->LoadType() == LOAD_REFRESH &&
              !ShouldAddEntryForRefresh(aLoadState->URI(),
@@ -576,13 +615,12 @@ CanonicalBrowsingContext::CreateLoadingSessionHistoryEntryForLoad(
 
 UniquePtr<LoadingSessionHistoryInfo>
 CanonicalBrowsingContext::ReplaceLoadingSessionHistoryEntryForLoad(
-    LoadingSessionHistoryInfo* aInfo, nsIChannel* aOldChannel,
-    nsIChannel* aNewChannel) {
+    LoadingSessionHistoryInfo* aInfo, nsIChannel* aNewChannel) {
   MOZ_ASSERT(aInfo);
   MOZ_ASSERT(aNewChannel);
 
   SessionHistoryInfo newInfo = SessionHistoryInfo(
-      aOldChannel, aNewChannel, aInfo->mInfo.LoadType(),
+      aNewChannel, aInfo->mInfo.LoadType(),
       aInfo->mInfo.GetPartitionedPrincipalToInherit(), aInfo->mInfo.GetCsp());
 
   for (size_t i = 0; i < mLoadingEntries.Length(); ++i) {
@@ -607,10 +645,12 @@ CanonicalBrowsingContext::ReplaceLoadingSessionHistoryEntryForLoad(
   return nullptr;
 }
 
+using PrintPromise = CanonicalBrowsingContext::PrintPromise;
 #ifdef NS_PRINTING
 class PrintListenerAdapter final : public nsIWebProgressListener {
  public:
-  explicit PrintListenerAdapter(Promise* aPromise) : mPromise(aPromise) {}
+  explicit PrintListenerAdapter(PrintPromise::Private* aPromise)
+      : mPromise(aPromise) {}
 
   NS_DECL_ISUPPORTS
 
@@ -619,7 +659,7 @@ class PrintListenerAdapter final : public nsIWebProgressListener {
                            uint32_t aStateFlags, nsresult aStatus) override {
     if (aStateFlags & nsIWebProgressListener::STATE_STOP &&
         aStateFlags & nsIWebProgressListener::STATE_IS_DOCUMENT && mPromise) {
-      mPromise->MaybeResolveWithUndefined();
+      mPromise->Resolve(true, __func__);
       mPromise = nullptr;
     }
     return NS_OK;
@@ -628,7 +668,7 @@ class PrintListenerAdapter final : public nsIWebProgressListener {
                             nsresult aStatus,
                             const char16_t* aMessage) override {
     if (aStatus != NS_OK && mPromise) {
-      mPromise->MaybeReject(ErrorResult(aStatus));
+      mPromise->Reject(aStatus, __func__);
       mPromise = nullptr;
     }
     return NS_OK;
@@ -658,64 +698,98 @@ class PrintListenerAdapter final : public nsIWebProgressListener {
  private:
   ~PrintListenerAdapter() = default;
 
-  RefPtr<Promise> mPromise;
+  RefPtr<PrintPromise::Private> mPromise;
 };
 
 NS_IMPL_ISUPPORTS(PrintListenerAdapter, nsIWebProgressListener)
 #endif
 
-already_AddRefed<Promise> CanonicalBrowsingContext::Print(
+already_AddRefed<Promise> CanonicalBrowsingContext::PrintJS(
     nsIPrintSettings* aPrintSettings, ErrorResult& aRv) {
   RefPtr<Promise> promise = Promise::Create(GetIncumbentGlobal(), aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return promise.forget();
   }
 
-#ifndef NS_PRINTING
-  promise->MaybeReject(ErrorResult(NS_ERROR_NOT_AVAILABLE));
+  Print(aPrintSettings)
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [promise](bool) { promise->MaybeResolveWithUndefined(); },
+          [promise](nsresult aResult) { promise->MaybeReject(aResult); });
   return promise.forget();
+}
+
+RefPtr<PrintPromise> CanonicalBrowsingContext::Print(
+    nsIPrintSettings* aPrintSettings) {
+#ifndef NS_PRINTING
+  return PrintPromise::CreateAndReject(NS_ERROR_NOT_AVAILABLE, __func__);
 #else
 
+  auto promise = MakeRefPtr<PrintPromise::Private>(__func__);
   auto listener = MakeRefPtr<PrintListenerAdapter>(promise);
   if (IsInProcess()) {
     RefPtr<nsGlobalWindowOuter> outerWindow =
         nsGlobalWindowOuter::Cast(GetDOMWindow());
     if (NS_WARN_IF(!outerWindow)) {
-      promise->MaybeReject(ErrorResult(NS_ERROR_FAILURE));
-      return promise.forget();
+      promise->Reject(NS_ERROR_FAILURE, __func__);
+      return promise;
     }
 
     ErrorResult rv;
-    outerWindow->Print(aPrintSettings, listener,
+    outerWindow->Print(aPrintSettings,
+                       /* aRemotePrintJob = */ nullptr, listener,
                        /* aDocShellToCloneInto = */ nullptr,
                        nsGlobalWindowOuter::IsPreview::No,
                        nsGlobalWindowOuter::IsForWindowDotPrint::No,
                        /* aPrintPreviewCallback = */ nullptr, rv);
     if (rv.Failed()) {
-      promise->MaybeReject(std::move(rv));
+      promise->Reject(rv.StealNSResult(), __func__);
     }
-    return promise.forget();
+    return promise;
   }
 
   auto* browserParent = GetBrowserParent();
   if (NS_WARN_IF(!browserParent)) {
-    promise->MaybeReject(ErrorResult(NS_ERROR_FAILURE));
-    return promise.forget();
+    promise->Reject(NS_ERROR_FAILURE, __func__);
+    return promise;
   }
 
-  RefPtr<embedding::PrintingParent> printingParent =
-      browserParent->Manager()->GetPrintingParent();
+  nsCOMPtr<nsIPrintSettingsService> printSettingsSvc =
+      do_GetService("@mozilla.org/gfx/printsettings-service;1");
+  if (NS_WARN_IF(!printSettingsSvc)) {
+    promise->Reject(NS_ERROR_FAILURE, __func__);
+    return promise;
+  }
+
+  nsresult rv;
+  nsCOMPtr<nsIPrintSettings> printSettings = aPrintSettings;
+  if (!printSettings) {
+    rv =
+        printSettingsSvc->CreateNewPrintSettings(getter_AddRefs(printSettings));
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      promise->Reject(rv, __func__);
+      return promise;
+    }
+  }
 
   embedding::PrintData printData;
-  nsresult rv = printingParent->SerializeAndEnsureRemotePrintJob(
-      aPrintSettings, listener, nullptr, &printData);
+  rv = printSettingsSvc->SerializeToPrintData(printSettings, &printData);
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    promise->MaybeReject(ErrorResult(rv));
-    return promise.forget();
+    promise->Reject(rv, __func__);
+    return promise;
+  }
+
+  layout::RemotePrintJobParent* remotePrintJob =
+      new layout::RemotePrintJobParent(printSettings);
+  printData.remotePrintJobParent() =
+      browserParent->Manager()->SendPRemotePrintJobConstructor(remotePrintJob);
+
+  if (listener) {
+    remotePrintJob->RegisterListener(listener);
   }
 
   if (NS_WARN_IF(!browserParent->SendPrint(this, printData))) {
-    promise->MaybeReject(ErrorResult(NS_ERROR_FAILURE));
+    promise->Reject(NS_ERROR_FAILURE, __func__);
   }
   return promise.forget();
 #endif
@@ -755,6 +829,8 @@ void CanonicalBrowsingContext::SessionHistoryCommit(
   MOZ_LOG(gSHLog, LogLevel::Verbose,
           ("CanonicalBrowsingContext::SessionHistoryCommit %p %" PRIu64, this,
            aLoadId));
+  MOZ_ASSERT(aLoadId != UINT64_MAX,
+             "Must not send special about:blank loadinfo to parent.");
   for (size_t i = 0; i < mLoadingEntries.Length(); ++i) {
     if (mLoadingEntries[i].mLoadId == aLoadId) {
       nsSHistory* shistory = static_cast<nsSHistory*>(GetSessionHistory());
@@ -1058,7 +1134,7 @@ void CanonicalBrowsingContext::RemoveFromSessionHistory(const nsID& aChangeID) {
     AutoTArray<nsID, 16> ids({GetHistoryID()});
     shistory->RemoveEntries(ids, shistory->GetIndexOfEntry(root), &didRemove);
     if (didRemove) {
-      BrowsingContext* rootBC = shistory->GetBrowsingContext();
+      RefPtr<BrowsingContext> rootBC = shistory->GetBrowsingContext();
       if (rootBC) {
         if (!rootBC->IsInProcess()) {
           if (ContentParent* cp = rootBC->Canonical()->GetContentParent()) {
@@ -1073,19 +1149,18 @@ void CanonicalBrowsingContext::RemoveFromSessionHistory(const nsID& aChangeID) {
   }
 }
 
-void CanonicalBrowsingContext::HistoryGo(
+Maybe<int32_t> CanonicalBrowsingContext::HistoryGo(
     int32_t aOffset, uint64_t aHistoryEpoch, bool aRequireUserInteraction,
-    bool aUserActivation, Maybe<ContentParentId> aContentId,
-    std::function<void(int32_t&&)>&& aResolver) {
+    bool aUserActivation, Maybe<ContentParentId> aContentId) {
   if (aRequireUserInteraction && aOffset != -1 && aOffset != 1) {
     NS_ERROR(
         "aRequireUserInteraction may only be used with an offset of -1 or 1");
-    return;
+    return Nothing();
   }
 
   nsSHistory* shistory = static_cast<nsSHistory*>(GetSessionHistory());
   if (!shistory) {
-    return;
+    return Nothing();
   }
 
   CheckedInt<int32_t> index = shistory->GetRequestedIndex() >= 0
@@ -1100,7 +1175,7 @@ void CanonicalBrowsingContext::HistoryGo(
     index += aOffset;
     if (!index.isValid()) {
       MOZ_LOG(gSHLog, LogLevel::Debug, ("Invalid index"));
-      return;
+      return Nothing();
     }
 
     // Check for user interaction if desired, except for the first and last
@@ -1136,14 +1211,15 @@ void CanonicalBrowsingContext::HistoryGo(
   if (NS_FAILED(rv)) {
     MOZ_LOG(gSHLog, LogLevel::Debug,
             ("Dropping HistoryGo - bad index or same epoch (not in same doc)"));
-    return;
+    return Nothing();
   }
   if (epoch < aHistoryEpoch || aContentId != id) {
     MOZ_LOG(gSHLog, LogLevel::Debug, ("Set epoch"));
     shistory->SetEpoch(aHistoryEpoch, aContentId);
   }
-  aResolver(shistory->GetRequestedIndex());
+  int32_t requestedIndex = shistory->GetRequestedIndex();
   nsSHistory::LoadURIs(loadResults);
+  return Some(requestedIndex);
 }
 
 JSObject* CanonicalBrowsingContext::WrapObject(
@@ -1170,7 +1246,8 @@ void CanonicalBrowsingContext::CanonicalDiscard() {
   }
 
   if (mCurrentLoad) {
-    mCurrentLoad->Cancel(NS_BINDING_ABORTED);
+    mCurrentLoad->Cancel(NS_BINDING_ABORTED,
+                         "CanonicalBrowsingContext::CanonicalDiscard"_ns);
   }
 
   if (mWebProgress) {
@@ -1218,6 +1295,48 @@ void CanonicalBrowsingContext::AddFinalDiscardListener(
     return;
   }
   mFullyDiscardedListeners.AppendElement(std::move(aListener));
+}
+
+void CanonicalBrowsingContext::SetForceAppWindowActive(bool aForceActive,
+                                                       ErrorResult& aRv) {
+  MOZ_DIAGNOSTIC_ASSERT(IsChrome());
+  MOZ_DIAGNOSTIC_ASSERT(IsTop());
+  if (!IsChrome() || !IsTop()) {
+    return aRv.ThrowNotAllowedError(
+        "You shouldn't need to force this BrowsingContext to be active, use "
+        ".isActive instead");
+  }
+  if (mForceAppWindowActive == aForceActive) {
+    return;
+  }
+  mForceAppWindowActive = aForceActive;
+  RecomputeAppWindowVisibility();
+}
+
+void CanonicalBrowsingContext::RecomputeAppWindowVisibility() {
+  MOZ_RELEASE_ASSERT(IsChrome());
+  MOZ_RELEASE_ASSERT(IsTop());
+
+  const bool isActive = [&] {
+    if (ForceAppWindowActive()) {
+      return true;
+    }
+    auto* docShell = GetDocShell();
+    if (NS_WARN_IF(!docShell)) {
+      return false;
+    }
+    nsCOMPtr<nsIWidget> widget;
+    nsDocShell::Cast(docShell)->GetMainWidget(getter_AddRefs(widget));
+    if (NS_WARN_IF(!widget)) {
+      return false;
+    }
+    if (widget->IsFullyOccluded() ||
+        widget->SizeMode() == nsSizeMode_Minimized) {
+      return false;
+    }
+    return true;
+  }();
+  SetIsActive(isActive, IgnoreErrors());
 }
 
 void CanonicalBrowsingContext::AdjustPrivateBrowsingCount(
@@ -1328,7 +1447,7 @@ void CanonicalBrowsingContext::GoBack(
 
   // Stop any known network loads if necessary.
   if (mCurrentLoad) {
-    mCurrentLoad->Cancel(NS_BINDING_CANCELLED_OLD_LOAD);
+    mCurrentLoad->Cancel(NS_BINDING_CANCELLED_OLD_LOAD, ""_ns);
   }
 
   if (nsDocShell* docShell = nsDocShell::Cast(GetDocShell())) {
@@ -1354,7 +1473,7 @@ void CanonicalBrowsingContext::GoForward(
 
   // Stop any known network loads if necessary.
   if (mCurrentLoad) {
-    mCurrentLoad->Cancel(NS_BINDING_CANCELLED_OLD_LOAD);
+    mCurrentLoad->Cancel(NS_BINDING_CANCELLED_OLD_LOAD, ""_ns);
   }
 
   if (auto* docShell = nsDocShell::Cast(GetDocShell())) {
@@ -1380,7 +1499,7 @@ void CanonicalBrowsingContext::GoToIndex(
 
   // Stop any known network loads if necessary.
   if (mCurrentLoad) {
-    mCurrentLoad->Cancel(NS_BINDING_CANCELLED_OLD_LOAD);
+    mCurrentLoad->Cancel(NS_BINDING_CANCELLED_OLD_LOAD, ""_ns);
   }
 
   if (auto* docShell = nsDocShell::Cast(GetDocShell())) {
@@ -1404,7 +1523,7 @@ void CanonicalBrowsingContext::Reload(uint32_t aReloadFlags) {
 
   // Stop any known network loads if necessary.
   if (mCurrentLoad) {
-    mCurrentLoad->Cancel(NS_BINDING_CANCELLED_OLD_LOAD);
+    mCurrentLoad->Cancel(NS_BINDING_CANCELLED_OLD_LOAD, ""_ns);
   }
 
   if (auto* docShell = nsDocShell::Cast(GetDocShell())) {
@@ -1421,7 +1540,8 @@ void CanonicalBrowsingContext::Stop(uint32_t aStopFlags) {
 
   // Stop any known network loads if necessary.
   if (mCurrentLoad && (aStopFlags & nsIWebNavigation::STOP_NETWORK)) {
-    mCurrentLoad->Cancel(NS_BINDING_ABORTED);
+    mCurrentLoad->Cancel(NS_BINDING_ABORTED,
+                         "CanonicalBrowsingContext::Stop"_ns);
   }
 
   // Ask the docshell to stop to handle loads that haven't
@@ -1491,7 +1611,7 @@ nsresult CanonicalBrowsingContext::PendingRemotenessChange::FinishTopContent() {
                         "non-remote iframes");
 
   // Abort if our ContentParent died while process switching.
-  if (mContentParent && NS_WARN_IF(mContentParent->IsDead())) {
+  if (mContentParent && NS_WARN_IF(mContentParent->IsShuttingDown())) {
     return NS_ERROR_FAILURE;
   }
 
@@ -1621,7 +1741,7 @@ nsresult CanonicalBrowsingContext::PendingRemotenessChange::FinishSubframe() {
   // If we're creating a new remote browser, and the host process is already
   // dead, abort the process switch.
   if (mContentParent != embedderBrowser->Manager() &&
-      NS_WARN_IF(mContentParent->IsDead())) {
+      NS_WARN_IF(mContentParent->IsShuttingDown())) {
     return NS_ERROR_FAILURE;
   }
 
@@ -1680,9 +1800,7 @@ nsresult CanonicalBrowsingContext::PendingRemotenessChange::FinishSubframe() {
   }
 
   nsCOMPtr<nsIPrincipal> initialPrincipal =
-      NullPrincipal::CreateWithInheritedAttributes(
-          target->OriginAttributesRef(),
-          /* isFirstParty */ false);
+      NullPrincipal::Create(target->OriginAttributesRef());
   WindowGlobalInit windowInit =
       WindowGlobalActor::AboutBlankInitializer(target, initialPrincipal);
 
@@ -1886,7 +2004,7 @@ CanonicalBrowsingContext::ChangeRemoteness(
     if (blocker && blocker->State() != Promise::PromiseState::Resolved) {
       change->mWaitingForPrepareToChange = true;
       RefPtr<DomPromiseListener> listener = new DomPromiseListener(
-          [change](JSContext* aCx, JS::HandleValue aValue) {
+          [change](JSContext* aCx, JS::Handle<JS::Value> aValue) {
             change->mWaitingForPrepareToChange = false;
             change->MaybeFinish();
           },
@@ -1926,12 +2044,11 @@ CanonicalBrowsingContext::ChangeRemoteness(
 
   // If we're aiming to end up in a new process of the same type as our old
   // process, and then putting our previous document in the BFCache, try to stay
-  // in the same process to avoid creating new processes unnecessarially.
+  // in the same process to avoid creating new processes unnecessarily.
   RefPtr<ContentParent> existingProcess = GetContentParent();
-  if (existingProcess && existingProcess->IsAlive() &&
+  if (existingProcess && !existingProcess->IsShuttingDown() &&
       aOptions.mReplaceBrowsingContext &&
-      aOptions.mRemoteType == existingProcess->GetRemoteType() &&
-      aOptions.mRemoteType != LARGE_ALLOCATION_REMOTE_TYPE) {
+      aOptions.mRemoteType == existingProcess->GetRemoteType()) {
     change->mContentParent = existingProcess;
     change->mContentParent->AddKeepAlive();
     change->ProcessLaunched();
@@ -1982,7 +2099,7 @@ void CanonicalBrowsingContext::MaybeSetPermanentKey(Element* aEmbedder) {
 
   if (aEmbedder) {
     if (nsCOMPtr<nsIBrowser> browser = aEmbedder->AsBrowser()) {
-      JS::RootedValue key(RootingCx());
+      JS::Rooted<JS::Value> key(RootingCx());
       if (NS_SUCCEEDED(browser->GetPermanentKey(&key)) && key.isObject()) {
         mPermanentKey = key;
       }
@@ -2122,7 +2239,7 @@ bool CanonicalBrowsingContext::StartDocumentLoad(
 
     // If we want to do a download, don't cancel the current navigation.
     if (!aLoad->IsDownload()) {
-      mCurrentLoad->Cancel(NS_BINDING_CANCELLED_OLD_LOAD);
+      mCurrentLoad->Cancel(NS_BINDING_CANCELLED_OLD_LOAD, ""_ns);
     }
   }
   mCurrentLoad = aLoad;
@@ -2135,10 +2252,10 @@ bool CanonicalBrowsingContext::StartDocumentLoad(
   return true;
 }
 
-void CanonicalBrowsingContext::EndDocumentLoad(bool aForProcessSwitch) {
+void CanonicalBrowsingContext::EndDocumentLoad(bool aContinueNavigating) {
   mCurrentLoad = nullptr;
 
-  if (!aForProcessSwitch) {
+  if (!aContinueNavigating) {
     // Resetting the current load identifier on a discarded context
     // has no effect when a document load has finished.
     Unused << SetCurrentLoadIdentifier(Nothing());
@@ -2197,6 +2314,37 @@ void CanonicalBrowsingContext::HistoryCommitIndexAndLength(
     Unused << aParent->SendHistoryCommitIndexAndLength(this, index, length,
                                                        aChangeID);
   });
+}
+
+void CanonicalBrowsingContext::SynchronizeLayoutHistoryState() {
+  if (mActiveEntry) {
+    if (IsInProcess()) {
+      nsIDocShell* docShell = GetDocShell();
+      if (docShell) {
+        docShell->PersistLayoutHistoryState();
+
+        nsCOMPtr<nsILayoutHistoryState> state;
+        docShell->GetLayoutHistoryState(getter_AddRefs(state));
+        if (state) {
+          mActiveEntry->SetLayoutHistoryState(state);
+        }
+      }
+    } else if (ContentParent* cp = GetContentParent()) {
+      cp->SendGetLayoutHistoryState(this)->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [activeEntry = mActiveEntry](
+              const Tuple<RefPtr<nsILayoutHistoryState>, Maybe<Wireframe>>&
+                  aResult) {
+            if (mozilla::Get<0>(aResult)) {
+              activeEntry->SetLayoutHistoryState(mozilla::Get<0>(aResult));
+            }
+            if (mozilla::Get<1>(aResult)) {
+              activeEntry->SetWireframe(mozilla::Get<1>(aResult));
+            }
+          },
+          []() {});
+    }
+  }
 }
 
 void CanonicalBrowsingContext::ResetScalingZoom() {
@@ -2320,8 +2468,8 @@ void CanonicalBrowsingContext::RestoreState::Resolve() {
 
 nsresult CanonicalBrowsingContext::WriteSessionStorageToSessionStore(
     const nsTArray<SSCacheCopy>& aSesssionStorage, uint32_t aEpoch) {
-  nsCOMPtr<nsISessionStoreFunctions> funcs = do_ImportModule(
-      "resource://gre/modules/SessionStoreFunctions.jsm", fallible);
+  nsCOMPtr<nsISessionStoreFunctions> funcs = do_ImportESModule(
+      "resource://gre/modules/SessionStoreFunctions.sys.mjs", fallible);
   if (!funcs) {
     return NS_ERROR_FAILURE;
   }
@@ -2332,10 +2480,10 @@ nsresult CanonicalBrowsingContext::WriteSessionStorageToSessionStore(
     return NS_ERROR_FAILURE;
   }
 
-  JS::RootedValue key(jsapi.cx(), Top()->PermanentKey());
+  JS::Rooted<JS::Value> key(jsapi.cx(), Top()->PermanentKey());
 
   Record<nsCString, Record<nsString, nsString>> storage;
-  JS::RootedValue update(jsapi.cx());
+  JS::Rooted<JS::Value> update(jsapi.cx());
 
   if (!aSesssionStorage.IsEmpty()) {
     SessionStoreUtils::ConstructSessionStorageValues(this, aSesssionStorage,
@@ -2353,7 +2501,7 @@ nsresult CanonicalBrowsingContext::WriteSessionStorageToSessionStore(
 
 void CanonicalBrowsingContext::UpdateSessionStoreSessionStorage(
     const std::function<void()>& aDone) {
-  if constexpr (!SessionStoreUtils::NATIVE_LISTENER) {
+  if (!StaticPrefs::browser_sessionstore_collect_session_storage_AtStartup()) {
     aDone();
     return;
   }
@@ -2361,7 +2509,7 @@ void CanonicalBrowsingContext::UpdateSessionStoreSessionStorage(
   using DataPromise = BackgroundSessionStorageManager::DataPromise;
   BackgroundSessionStorageManager::GetData(
       this, StaticPrefs::browser_sessionstore_dom_storage_limit(),
-      /* aCancelSessionStoreTiemr = */ true)
+      /* aClearSessionStoreTimer = */ true)
       ->Then(GetCurrentSerialEventTarget(), __func__,
              [self = RefPtr{this}, aDone, epoch = GetSessionStoreEpoch()](
                  const DataPromise::ResolveOrRejectValue& valueList) {
@@ -2386,7 +2534,7 @@ void CanonicalBrowsingContext::UpdateSessionStoreForStorage(
 }
 
 void CanonicalBrowsingContext::MaybeScheduleSessionStoreUpdate() {
-  if constexpr (!SessionStoreUtils::NATIVE_LISTENER) {
+  if (!StaticPrefs::browser_sessionstore_platform_collection_AtStartup()) {
     return;
   }
 
@@ -2589,12 +2737,6 @@ bool CanonicalBrowsingContext::AllowedInBFCache(
     return false;
   }
 
-  nsAutoCString remoteType;
-  GetCurrentRemoteType(remoteType, IgnoredErrorResult());
-  if (remoteType == LARGE_ALLOCATION_REMOTE_TYPE) {
-    return false;
-  }
-
   uint32_t bfcacheCombo = 0;
   if (mRestoreState) {
     bfcacheCombo |= BFCacheStatus::RESTORING;
@@ -2678,6 +2820,12 @@ bool CanonicalBrowsingContext::AllowedInBFCache(
 void CanonicalBrowsingContext::SetTouchEventsOverride(
     dom::TouchEventsOverride aOverride, ErrorResult& aRv) {
   SetTouchEventsOverrideInternal(aOverride, aRv);
+}
+
+void CanonicalBrowsingContext::SetTargetTopLevelLinkClicksToBlank(
+    bool aTargetTopLevelLinkClicksToBlank, ErrorResult& aRv) {
+  SetTargetTopLevelLinkClicksToBlankInternal(aTargetTopLevelLinkClicksToBlank,
+                                             aRv);
 }
 
 void CanonicalBrowsingContext::AddPageAwakeRequest() {
@@ -2778,13 +2926,12 @@ bool CanonicalBrowsingContext::StartApzAutoscroll(float aAnchorX,
     return false;
   }
 
-  // The anchor coordinates that are passed in are relative to the origin
-  // of the screen, but we are sending them to APZ which only knows about
-  // coordinates relative to the widget, so convert them accordingly.
-  CSSPoint anchorCss{aAnchorX, aAnchorY};
-  LayoutDeviceIntPoint anchor =
-      RoundedToInt(anchorCss * widget->GetDefaultScale());
-  anchor -= widget->WidgetToScreenOffset();
+  // The anchor coordinates that are passed in are relative to the origin of the
+  // screen, but we are sending them to APZ which only knows about coordinates
+  // relative to the widget, so convert them accordingly.
+  const LayoutDeviceIntPoint anchor =
+      RoundedToInt(LayoutDevicePoint(aAnchorX, aAnchorY)) -
+      widget->WidgetToScreenOffset();
 
   mozilla::layers::ScrollableLayerGuid guid(layersId, aPresShellId, aScrollId);
 

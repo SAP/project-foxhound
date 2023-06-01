@@ -4,10 +4,12 @@
 
 var EXPORTED_SYMBOLS = ["Resource"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
+);
 const { Observers } = ChromeUtils.import(
   "resource://services-common/observers.js"
 );
@@ -15,10 +17,9 @@ const { CommonUtils } = ChromeUtils.import(
   "resource://services-common/utils.js"
 );
 const { Utils } = ChromeUtils.import("resource://services-sync/util.js");
-const { setTimeout, clearTimeout } = ChromeUtils.import(
-  "resource://gre/modules/Timer.jsm"
+const { setTimeout, clearTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
 );
-XPCOMUtils.defineLazyGlobalGetters(this, ["fetch", "Headers", "Request"]);
 /* global AbortController */
 
 /*

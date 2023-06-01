@@ -18,35 +18,29 @@ namespace mozilla {
 
 class RemoteLazyInputStreamChild;
 
+// XXX Rename this class since it's used by LSNG too.
 class RemoteLazyInputStreamThread final : public nsIObserver,
-                                          public nsIEventTarget {
+                                          public nsISerialEventTarget,
+                                          public nsIDirectTaskDispatcher {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIOBSERVER
   NS_DECL_NSIEVENTTARGET
-
-  static bool IsOnFileEventTarget(nsIEventTarget* aEventTarget);
+  NS_DECL_NSISERIALEVENTTARGET
+  NS_DECL_NSIDIRECTTASKDISPATCHER
 
   static RemoteLazyInputStreamThread* Get();
 
   static RemoteLazyInputStreamThread* GetOrCreate();
 
-  void MigrateActor(RemoteLazyInputStreamChild* aActor);
-
   bool Initialize();
 
-  void InitializeOnMainThread();
+  bool InitializeOnMainThread();
 
  private:
   ~RemoteLazyInputStreamThread() = default;
 
-  void MigrateActorInternal(RemoteLazyInputStreamChild* aActor);
-
   nsCOMPtr<nsIThread> mThread;
-
-  // This is populated if MigrateActor() is called before the initialization of
-  // the thread.
-  nsTArray<RefPtr<RemoteLazyInputStreamChild>> mPendingActors;
 };
 
 bool IsOnDOMFileThread();

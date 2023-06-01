@@ -4,8 +4,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import fnmatch
 import glob
 import gzip
@@ -17,7 +15,6 @@ import tempfile
 import time
 
 import mozlog.structured
-
 from marionette_driver import Wait
 from marionette_driver.errors import JavascriptException, ScriptTimeoutException
 from marionette_driver.keys import Keys
@@ -27,8 +24,13 @@ AWSY_PATH = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 if AWSY_PATH not in sys.path:
     sys.path.append(AWSY_PATH)
 
-from awsy import ITERATIONS, PER_TAB_PAUSE, SETTLE_WAIT_TIME, MAX_TABS
-from awsy import process_perf_data
+from awsy import (
+    ITERATIONS,
+    MAX_TABS,
+    PER_TAB_PAUSE,
+    SETTLE_WAIT_TIME,
+    process_perf_data,
+)
 
 
 class AwsyTestCase(MarionetteTestCase):
@@ -73,7 +75,7 @@ class AwsyTestCase(MarionetteTestCase):
         # Cleanup our files from previous runs.
         for patt in (
             "memory-report-*.json.gz",
-            "perfherder_data.json",
+            "perfherder-data.json",
             "dmd-*.json.gz",
         ):
             for f in glob.glob(os.path.join(self._resultsDir, patt)):
@@ -112,7 +114,7 @@ class AwsyTestCase(MarionetteTestCase):
             )
             self.logger.info("PERFHERDER_DATA: %s" % json.dumps(perf_blob))
 
-            perf_file = os.path.join(self._resultsDir, "perfherder_data.json")
+            perf_file = os.path.join(self._resultsDir, "perfherder-data.json")
             with open(perf_file, "w") as fp:
                 json.dump(perf_blob, fp, indent=2)
             self.logger.info("Perfherder data written to %s" % perf_file)
@@ -305,7 +307,7 @@ class AwsyTestCase(MarionetteTestCase):
         page_to_load = self.urls()[self._pages_loaded % len(self.urls())]
         tabs_loaded = len(self._tabs)
         open_tab_script = r"""
-            gBrowser.loadOneTab("about:blank", {
+            gBrowser.addTab("about:blank", {
                 inBackground: false,
                 triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
             });

@@ -34,7 +34,6 @@ const TEST_UA_ATTRIBUTION_DATA = {
 const TEST_PROTON_CONTENT = [
   {
     id: "AW_STEP1",
-    order: 0,
     content: {
       title: "Step 1",
       primary_button: {
@@ -43,11 +42,11 @@ const TEST_PROTON_CONTENT = [
           navigate: true,
         },
       },
+      has_noodles: true,
     },
   },
   {
     id: "AW_STEP2",
-    order: 1,
     content: {
       title: "Step 2",
       primary_button: {
@@ -59,6 +58,7 @@ const TEST_PROTON_CONTENT = [
           data: {},
         },
       },
+      has_noodles: true,
     },
   },
 ];
@@ -134,7 +134,7 @@ add_task(async function test_rtamo_attribution() {
     // Expected selectors:
     [
       "div.onboardingContainer",
-      "h2[data-l10n-id='return-to-amo-addon-title']",
+      "h2[data-l10n-id='mr1-return-to-amo-addon-title']",
       "div.rtamo-icon",
       "button.primary",
       "button.secondary",

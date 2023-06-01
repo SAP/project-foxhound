@@ -3,27 +3,21 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 // This source map does not have source contents, so it's fetched separately
+
+"use strict";
+
 add_task(async function() {
   // NOTE: the CORS call makes the test run times inconsistent
-  const dbg = await initDebugger("doc-sourcemaps3.html");
+  const dbg = await initDebugger(
+    "doc-sourcemaps3.html",
+    "bundle.js",
+    "sorted.js",
+    "test.js"
+  );
   dbg.actions.toggleMapScopes();
 
-  const {
-    selectors: { getBreakpoint, getBreakpointCount },
-    getState,
-  } = dbg;
-
-  await waitForSources(dbg, "bundle.js", "sorted.js", "test.js");
-
   const sortedSrc = findSource(dbg, "sorted.js");
-
   await selectSource(dbg, sortedSrc);
-
-  // Show the source in source tree in primiany panel for blackBox icon check
-  rightClickElement(dbg, "CodeMirrorLines");
-  await waitForContextMenu(dbg);
-  selectContextMenuItem(dbg, "#node-menu-show-source");
-  await waitForDispatch(dbg.store, "SHOW_SOURCE");
 
   await clickElement(dbg, "blackbox");
   await waitForDispatch(dbg.store, "BLACKBOX");
@@ -45,7 +39,7 @@ add_task(async function() {
   // invoke test
   invokeInTab("test");
   // should not pause
-  is(isPaused(dbg), false);
+  assertNotPaused(dbg);
 
   // unblackbox
   await clickElement(dbg, "blackbox");

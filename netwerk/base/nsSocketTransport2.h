@@ -134,9 +134,10 @@ class nsSocketTransport final : public nsASocketHandler,
   nsresult InitWithConnectedSocket(PRFileDesc* socketFD, const NetAddr* addr);
 
   // this method instructs the socket transport to use an already connected
-  // socket with the given address, and additionally supplies security info.
+  // socket with the given address, and additionally supplies the security
+  // callbacks interface requestor.
   nsresult InitWithConnectedSocket(PRFileDesc* aFD, const NetAddr* aAddr,
-                                   nsISupports* aSecInfo);
+                                   nsIInterfaceRequestor* aCallbacks);
 
 #ifdef XP_UNIX
   // This method instructs the socket transport to open a socket
@@ -367,7 +368,7 @@ class nsSocketTransport final : public nsASocketHandler,
   // the exception of some specific methods (XXX).
 
   // protects members in this section.
-  Mutex mLock{"nsSocketTransport.mLock"};
+  Mutex mLock MOZ_UNANNOTATED{"nsSocketTransport.mLock"};
   LockedPRFileDesc mFD;
   nsrefcnt mFDref{0};        // mFD is closed when mFDref goes to zero.
   bool mFDconnected{false};  // mFD is available to consumer when TRUE.
@@ -379,7 +380,7 @@ class nsSocketTransport final : public nsASocketHandler,
 
   nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
   nsCOMPtr<nsITransportEventSink> mEventSink;
-  nsCOMPtr<nsISupports> mSecInfo;
+  nsCOMPtr<nsITLSSocketControl> mTLSSocketControl;
 
   nsSocketInputStream mInput;
   nsSocketOutputStream mOutput;

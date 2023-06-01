@@ -9,7 +9,7 @@ use api::{
 };
 use api::units::*;
 use crate::scene_building::{CreateShadow, IsVisible};
-use crate::frame_builder::{FrameBuildingContext, FrameBuildingState, add_child_render_task};
+use crate::frame_builder::{FrameBuildingContext, FrameBuildingState};
 use crate::gpu_cache::{GpuCache, GpuDataRequest};
 use crate::intern::{Internable, InternDebug, Handle as InternHandle};
 use crate::internal_types::{LayoutPrimitiveInfo};
@@ -207,10 +207,8 @@ impl ImageData {
                         size
                     );
 
-                    add_child_render_task(
-                        parent_surface,
+                    frame_state.surface_builder.add_child_render_task(
                         task_id,
-                        frame_state.surfaces,
                         frame_state.rg_builder,
                     );
 
@@ -258,12 +256,13 @@ impl ImageData {
                             kind: RenderTaskCacheKeyKind::Image(image_cache_key),
                         },
                         frame_state.gpu_cache,
+                        frame_state.frame_gpu_data,
                         frame_state.rg_builder,
                         None,
                         descriptor.is_opaque(),
                         RenderTaskParent::Surface(parent_surface),
-                        frame_state.surfaces,
-                        |rg_builder| {
+                        &mut frame_state.surface_builder,
+                        |rg_builder, _| {
                             // Create a task to blit from the texture cache to
                             // a normal transient render task surface.
                             // TODO: figure out if/when we can do a blit instead.
@@ -304,7 +303,8 @@ impl ImageData {
                 // produce primitives that are partially covering the original image
                 // rect and we want to clip these extra parts out.
                 let tight_clip_rect = visibility
-                    .combined_local_clip_rect
+                    .clip_chain
+                    .local_clip_rect
                     .intersection(&common.prim_rect).unwrap();
                 image_instance.tight_local_clip_rect = tight_clip_rect;
 

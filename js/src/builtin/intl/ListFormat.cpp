@@ -8,21 +8,17 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/intl/ListFormat.h"
-#include "mozilla/PodOperations.h"
 
 #include <stddef.h>
 
 #include "builtin/Array.h"
 #include "builtin/intl/CommonFunctions.h"
 #include "builtin/intl/FormatBuffer.h"
-#include "gc/FreeOp.h"
+#include "gc/GCContext.h"
 #include "js/Utility.h"
 #include "js/Vector.h"
 #include "vm/JSContext.h"
 #include "vm/PlainObject.h"  // js::PlainObject
-#include "vm/Runtime.h"      // js::ReportAllocationOverflow
-#include "vm/SelfHosting.h"
-#include "vm/Stack.h"
 #include "vm/StringType.h"
 #include "vm/WellKnownAtom.h"  // js_*_str
 
@@ -41,7 +37,6 @@ const JSClassOps ListFormatObject::classOps_ = {
     nullptr,                     // mayResolve
     ListFormatObject::finalize,  // finalize
     nullptr,                     // call
-    nullptr,                     // hasInstance
     nullptr,                     // construct
     nullptr,                     // trace
 };
@@ -125,13 +120,13 @@ static bool ListFormat(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-void js::ListFormatObject::finalize(JSFreeOp* fop, JSObject* obj) {
-  MOZ_ASSERT(fop->onMainThread());
+void js::ListFormatObject::finalize(JS::GCContext* gcx, JSObject* obj) {
+  MOZ_ASSERT(gcx->onMainThread());
 
   mozilla::intl::ListFormat* lf =
       obj->as<ListFormatObject>().getListFormatSlot();
   if (lf) {
-    intl::RemoveICUCellMemory(fop, obj, ListFormatObject::EstimatedMemoryUse);
+    intl::RemoveICUCellMemory(gcx, obj, ListFormatObject::EstimatedMemoryUse);
     delete lf;
   }
 }
@@ -268,8 +263,8 @@ static bool FormatListToParts(JSContext* cx, mozilla::intl::ListFormat* lf,
     return false;
   }
 
-  RootedArrayObject partsArray(cx,
-                               NewDenseFullyAllocatedArray(cx, parts.length()));
+  Rooted<ArrayObject*> partsArray(
+      cx, NewDenseFullyAllocatedArray(cx, parts.length()));
   if (!partsArray) {
     return false;
   }
@@ -341,7 +336,7 @@ bool js::intl_FormatList(JSContext* cx, unsigned argc, Value* vp) {
   Vector<UniqueTwoByteChars, mozilla::intl::DEFAULT_LIST_LENGTH> strings(cx);
   mozilla::intl::ListFormat::StringList list;
 
-  RootedArrayObject listObj(cx, &args[1].toObject().as<ArrayObject>());
+  Rooted<ArrayObject*> listObj(cx, &args[1].toObject().as<ArrayObject>());
   RootedValue value(cx);
   uint32_t listLen = listObj->length();
   for (uint32_t i = 0; i < listLen; i++) {

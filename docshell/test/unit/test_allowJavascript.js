@@ -1,7 +1,7 @@
 "use strict";
 
-const { XPCShellContentUtils } = ChromeUtils.import(
-  "resource://testing-common/XPCShellContentUtils.jsm"
+const { XPCShellContentUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/XPCShellContentUtils.sys.mjs"
 );
 
 XPCShellContentUtils.init(this);
@@ -31,12 +31,8 @@ server.registerPathHandler("/", (request, response) => {
   response.write(HTML);
 });
 
-function getResourceURI(file) {
-  return Services.io.newFileURI(do_get_file(file)).spec;
-}
-
-const { AllowJavascriptParent } = ChromeUtils.import(
-  getResourceURI("AllowJavascriptParent.jsm")
+const { AllowJavascriptParent } = ChromeUtils.importESModule(
+  "resource://test/AllowJavascriptParent.sys.mjs"
 );
 
 async function assertScriptsAllowed(bc, expectAllowed, desc) {
@@ -69,11 +65,11 @@ add_task(async function() {
   ChromeUtils.registerWindowActor(ACTOR, {
     allFrames: true,
     child: {
-      moduleURI: getResourceURI("AllowJavascriptChild.jsm"),
+      esModuleURI: "resource://test/AllowJavascriptChild.sys.mjs",
       events: { load: { capture: true } },
     },
     parent: {
-      moduleURI: getResourceURI("AllowJavascriptParent.jsm"),
+      esModuleURI: "resource://test/AllowJavascriptParent.sys.mjs",
     },
   });
 

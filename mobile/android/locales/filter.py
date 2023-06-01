@@ -7,8 +7,6 @@ reported and l10n-merged.
 This needs to stay in sync with the copy in mobile/locales.
 """
 
-from __future__ import absolute_import
-
 
 def test(mod, path, entity=None):
     import re
@@ -20,7 +18,6 @@ def test(mod, path, entity=None):
     if mod == "toolkit":
         # keep this file list in sync with jar.mn
         if path in (
-            "chrome/global/aboutReader.properties",
             "chrome/global/commonDialogs.properties",
             "chrome/global/intl.properties",
             "chrome/global/intl.css",
@@ -55,7 +52,6 @@ def test(mod, path, entity=None):
     if mod == "dom":
         # keep this file list in sync with jar.mn
         if path in (
-            "chrome/global.dtd",
             "chrome/accessibility/AccessFu.properties",
             "chrome/dom/dom.properties",
         ):
@@ -67,10 +63,7 @@ def test(mod, path, entity=None):
         return "error"
     if mod == "mobile/android":
         if entity is None:
-            if re.match(r"mobile-l10n.js", path) or re.match(r"defines.inc", path):
-                return "ignore"
-        if path == "defines.inc":
-            if entity == "MOZ_LANGPACK_CONTRIBUTORS":
+            if re.match(r"mobile-l10n.js", path):
                 return "ignore"
         return "error"
 

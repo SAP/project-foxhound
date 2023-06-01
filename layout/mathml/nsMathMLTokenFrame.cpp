@@ -7,9 +7,11 @@
 #include "nsMathMLTokenFrame.h"
 
 #include "mozilla/PresShell.h"
+#include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsContentUtils.h"
 #include "nsTextFrame.h"
+#include "gfxContext.h"
 #include <algorithm>
 
 using namespace mozilla;
@@ -39,7 +41,7 @@ eMathMLFrameType nsMathMLTokenFrame::GetMathMLFrameType() {
 
   StyleMathVariant mathVariant = StyleFont()->mMathVariant;
   if ((mathVariant == StyleMathVariant::None &&
-       (StyleFont()->mFont.style == FontSlantStyle::Italic() ||
+       (StyleFont()->mFont.style.IsItalic() ||
         HasAnyStateBits(NS_FRAME_IS_IN_SINGLE_CHAR_MI))) ||
       mathVariant == StyleMathVariant::Italic ||
       mathVariant == StyleMathVariant::BoldItalic ||
@@ -87,23 +89,23 @@ void nsMathMLTokenFrame::MarkTextFramesAsTokenMathML() {
 }
 
 void nsMathMLTokenFrame::SetInitialChildList(ChildListID aListID,
-                                             nsFrameList& aChildList) {
+                                             nsFrameList&& aChildList) {
   // First, let the base class do its work
-  nsMathMLContainerFrame::SetInitialChildList(aListID, aChildList);
+  nsMathMLContainerFrame::SetInitialChildList(aListID, std::move(aChildList));
   MarkTextFramesAsTokenMathML();
 }
 
 void nsMathMLTokenFrame::AppendFrames(ChildListID aListID,
-                                      nsFrameList& aChildList) {
-  nsMathMLContainerFrame::AppendFrames(aListID, aChildList);
+                                      nsFrameList&& aChildList) {
+  nsMathMLContainerFrame::AppendFrames(aListID, std::move(aChildList));
   MarkTextFramesAsTokenMathML();
 }
 
 void nsMathMLTokenFrame::InsertFrames(
     ChildListID aListID, nsIFrame* aPrevFrame,
-    const nsLineList::iterator* aPrevFrameLine, nsFrameList& aChildList) {
+    const nsLineList::iterator* aPrevFrameLine, nsFrameList&& aChildList) {
   nsMathMLContainerFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine,
-                                       aChildList);
+                                       std::move(aChildList));
   MarkTextFramesAsTokenMathML();
 }
 
@@ -143,7 +145,6 @@ void nsMathMLTokenFrame::Reflow(nsPresContext* aPresContext,
   FinalizeReflow(aReflowInput.mRenderingContext->GetDrawTarget(), aDesiredSize);
 
   aStatus.Reset();  // This type of frame can't be split.
-  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aDesiredSize);
 }
 
 // For token elements, mBoundingMetrics is computed at the ReflowToken

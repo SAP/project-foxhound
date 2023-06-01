@@ -2,11 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var { FormHistory } = ChromeUtils.import(
-  "resource://gre/modules/FormHistory.jsm"
+var { FormHistory } = ChromeUtils.importESModule(
+  "resource://gre/modules/FormHistory.sys.mjs"
 );
 
-/** Test for Bug 472396 **/
+/** Test for Bug 472396 */
 add_task(async function test() {
   // initialization
   let windowsToClose = [];
@@ -15,38 +15,19 @@ add_task(async function test() {
 
   async function doTest(aShouldValueExist, aWindow) {
     let browser = aWindow.gBrowser.selectedBrowser;
-    BrowserTestUtils.loadURI(browser, testURI);
+    BrowserTestUtils.loadURIString(browser, testURI);
     await BrowserTestUtils.browserLoaded(browser);
 
     // Wait for the page to reload itself.
     await BrowserTestUtils.browserLoaded(browser);
 
-    let count = 0;
-    let doneCounting = {};
-    doneCounting.promise = new Promise(
-      resolve => (doneCounting.resolve = resolve)
-    );
-    FormHistory.count(
-      { fieldname: "field", value: "value" },
-      {
-        handleResult(result) {
-          count = result;
-        },
-        handleError(error) {
-          Assert.ok(false, "Error occurred searching form history: " + error);
-        },
-        handleCompletion(num) {
-          if (aShouldValueExist) {
-            is(count, 1, "In non-PB mode, we add a single entry");
-          } else {
-            is(count, 0, "In PB mode, we don't add any entries");
-          }
+    let count = await FormHistory.count({ fieldname: "field", value: "value" });
 
-          doneCounting.resolve();
-        },
-      }
-    );
-    await doneCounting.promise;
+    if (aShouldValueExist) {
+      Assert.equal(count, 1, "In non-PB mode, we add a single entry");
+    } else {
+      Assert.equal(count, 0, "In PB mode, we don't add any entries");
+    }
   }
 
   function testOnWindow(aOptions, aCallback) {

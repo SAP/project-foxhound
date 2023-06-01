@@ -30,7 +30,7 @@ function assertElementsDisplayed(details, expected) {
   );
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.urlbar.suggest.searches", false],
@@ -44,14 +44,9 @@ add_task(async function setup() {
     ],
   });
 
-  let engine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME
-  );
-  let oldDefaultEngine = await Services.search.getDefault();
-  await Services.search.setDefault(engine);
-
-  registerCleanupFunction(async () => {
-    await Services.search.setDefault(oldDefaultEngine);
+  await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME,
+    setAsDefault: true,
   });
 
   // Move the mouse away from the results panel, because hovering a result may

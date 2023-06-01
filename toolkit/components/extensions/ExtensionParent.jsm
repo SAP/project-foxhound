@@ -15,29 +15,36 @@
 
 var EXPORTED_SYMBOLS = ["ExtensionParent"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
+  DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
+  DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
-  AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
   BroadcastConduit: "resource://gre/modules/ConduitsParent.jsm",
-  DeferredTask: "resource://gre/modules/DeferredTask.jsm",
-  DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.jsm",
   ExtensionData: "resource://gre/modules/Extension.jsm",
   ExtensionActivityLog: "resource://gre/modules/ExtensionActivityLog.jsm",
   GeckoViewConnection: "resource://gre/modules/GeckoViewWebExtension.jsm",
   MessageManagerProxy: "resource://gre/modules/MessageManagerProxy.jsm",
   NativeApp: "resource://gre/modules/NativeMessaging.jsm",
   PerformanceCounters: "resource://gre/modules/PerformanceCounters.jsm",
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
   Schemas: "resource://gre/modules/Schemas.jsm",
+  getErrorNameForTelemetry: "resource://gre/modules/ExtensionTelemetry.jsm",
 });
 
-XPCOMUtils.defineLazyServiceGetters(this, {
+XPCOMUtils.defineLazyServiceGetters(lazy, {
   aomStartup: [
     "@mozilla.org/addons/addon-manager-startup;1",
     "amIAddonManagerStartup",
@@ -46,7 +53,7 @@ XPCOMUtils.defineLazyServiceGetters(this, {
 
 // We're using the pref to avoid loading PerformanceCounters.jsm for nothing.
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "gTimingEnabled",
   "extensions.webextensions.enablePerformanceCounters",
   false
@@ -91,15 +98,13 @@ let GlobalManager;
 let ParentAPIManager;
 let StartupCache;
 
-const global = this;
-
 function verifyActorForContext(actor, context) {
-  if (actor instanceof JSWindowActorParent) {
+  if (JSWindowActorParent.isInstance(actor)) {
     let target = actor.browsingContext.top.embedderElement;
     if (context.parentMessageManager !== target.messageManager) {
       throw new Error("Got message on unexpected message manager");
     }
-  } else if (actor instanceof JSProcessActorParent) {
+  } else if (JSProcessActorParent.isInstance(actor)) {
     if (actor.manager.remoteType !== context.extension.remoteType) {
       throw new Error("Got message from unexpected process");
     }
@@ -109,7 +114,7 @@ function verifyActorForContext(actor, context) {
 // This object loads the ext-*.js scripts that define the extension API.
 let apiManager = new (class extends SchemaAPIManager {
   constructor() {
-    super("main", Schemas);
+    super("main", lazy.Schemas);
     this.initialized = null;
 
     /* eslint-disable mozilla/balanced-listeners */
@@ -117,13 +122,13 @@ let apiManager = new (class extends SchemaAPIManager {
       return extension.apiManager.onStartup(extension);
     });
 
-    this.on("update", async (e, { id, resourceURI }) => {
+    this.on("update", async (e, { id, resourceURI, isPrivileged }) => {
       let modules = this.eventModules.get("update");
       if (modules.size == 0) {
         return;
       }
 
-      let extension = new ExtensionData(resourceURI);
+      let extension = new lazy.ExtensionData(resourceURI, isPrivileged);
       await extension.loadManifest();
 
       return Promise.all(
@@ -146,15 +151,15 @@ let apiManager = new (class extends SchemaAPIManager {
     /* eslint-enable mozilla/balanced-listeners */
 
     // Handle any changes that happened during startup
-    let disabledIds = AddonManager.getStartupChanges(
-      AddonManager.STARTUP_CHANGE_DISABLED
+    let disabledIds = lazy.AddonManager.getStartupChanges(
+      lazy.AddonManager.STARTUP_CHANGE_DISABLED
     );
     if (disabledIds.length) {
       this._callHandlers(disabledIds, "disable", "onDisable");
     }
 
-    let uninstalledIds = AddonManager.getStartupChanges(
-      AddonManager.STARTUP_CHANGE_UNINSTALLED
+    let uninstalledIds = lazy.AddonManager.getStartupChanges(
+      lazy.AddonManager.STARTUP_CHANGE_UNINSTALLED
     );
     if (uninstalledIds.length) {
       this._callHandlers(uninstalledIds, "uninstall", "onUninstall");
@@ -199,21 +204,21 @@ let apiManager = new (class extends SchemaAPIManager {
 
       // Load order matters here. The base manifest defines types which are
       // extended by other schemas, so needs to be loaded first.
-      return Schemas.load(BASE_SCHEMA).then(() => {
+      return lazy.Schemas.load(BASE_SCHEMA).then(() => {
         let promises = [];
         for (let { value } of Services.catMan.enumerateCategory(
           CATEGORY_EXTENSION_SCHEMAS
         )) {
-          promises.push(Schemas.load(value));
+          promises.push(lazy.Schemas.load(value));
         }
         for (let [url, { content }] of this.schemaURLs) {
-          promises.push(Schemas.load(url, content));
+          promises.push(lazy.Schemas.load(url, content));
         }
         for (let url of schemaURLs) {
-          promises.push(Schemas.load(url));
+          promises.push(lazy.Schemas.load(url));
         }
         return Promise.all(promises).then(() => {
-          Schemas.updateSharedSchemas();
+          lazy.Schemas.updateSharedSchemas();
         });
       });
     })();
@@ -246,7 +251,7 @@ let apiManager = new (class extends SchemaAPIManager {
       promises.push(...ids.map(id => this.emit("enabling", id)));
     }
 
-    AsyncShutdown.profileBeforeChange.addBlocker(
+    lazy.AsyncShutdown.profileBeforeChange.addBlocker(
       `Extension API ${event} handlers for ${ids.join(",")}`,
       Promise.all(promises)
     );
@@ -258,14 +263,15 @@ let apiManager = new (class extends SchemaAPIManager {
 const ProxyMessenger = {
   /**
    * @typedef {object} ParentPort
-   * @prop {function(StructuredCloneHolder)} onPortMessage
-   * @prop {function()} onPortDisconnect
+   * @property {function(StructuredCloneHolder)} onPortMessage
+   * @property {function()} onPortDisconnect
    */
-  /** @type Map<number, ParentPort> */
+
+  /** @type {Map<number, ParentPort>} */
   ports: new Map(),
 
   init() {
-    this.conduit = new BroadcastConduit(ProxyMessenger, {
+    this.conduit = new lazy.BroadcastConduit(ProxyMessenger, {
       id: "ProxyMessenger",
       reportOnClosed: "portId",
       recv: ["PortConnect", "PortMessage", "NativeMessage", "RuntimeMessage"],
@@ -276,21 +282,35 @@ const ProxyMessenger = {
   openNative(nativeApp, sender) {
     let context = ParentAPIManager.getContextById(sender.childId);
     if (context.extension.hasPermission("geckoViewAddons")) {
-      return new GeckoViewConnection(
+      return new lazy.GeckoViewConnection(
         this.getSender(context.extension, sender),
         sender.actor.browsingContext.top.embedderElement,
         nativeApp,
         context.extension.hasPermission("nativeMessagingFromContent")
       );
     } else if (sender.verified) {
-      return new NativeApp(context, nativeApp);
+      return new lazy.NativeApp(context, nativeApp);
     }
     sender = this.getSender(context.extension, sender);
     throw new Error(`Native messaging not allowed: ${JSON.stringify(sender)}`);
   },
 
   recvNativeMessage({ nativeApp, holder }, { sender }) {
-    return this.openNative(nativeApp, sender).sendMessage(holder);
+    const app = this.openNative(nativeApp, sender);
+
+    // Track in-flight NativeApp sendMessage requests as
+    // a NativeApp port destroyed when the request
+    // has been handled.
+    const promiseSendMessage = app.sendMessage(holder);
+    const sendMessagePort = {
+      native: true,
+      senderChildId: sender.childId,
+    };
+    this.trackNativeAppPort(sendMessagePort);
+    const untrackSendMessage = () => this.untrackNativeAppPort(sendMessagePort);
+    promiseSendMessage.then(untrackSendMessage, untrackSendMessage);
+
+    return promiseSendMessage;
   },
 
   getSender(extension, source) {
@@ -301,7 +321,7 @@ const ProxyMessenger = {
       url: source.url,
     };
 
-    if (source.actor instanceof JSWindowActorParent) {
+    if (JSWindowActorParent.isInstance(source.actor)) {
       let browser = source.actor.browsingContext.top.embedderElement;
       let data =
         browser && apiManager.global.tabTracker.getBrowserData(browser);
@@ -356,7 +376,10 @@ const ProxyMessenger = {
   async recvPortConnect(arg, { sender }) {
     if (arg.native) {
       let port = this.openNative(arg.name, sender).onConnect(arg.portId, this);
+      port.senderChildId = sender.childId;
+      port.native = true;
       this.ports.set(arg.portId, port);
+      this.trackNativeAppPort(port);
       return;
     }
 
@@ -376,8 +399,14 @@ const ProxyMessenger = {
 
   async recvPortMessage({ holder }, { sender }) {
     if (sender.native) {
-      return this.ports.get(sender.portId).onPortMessage(holder);
+      // If the nativeApp port connect fails (e.g. if triggered by a content
+      // script), the portId may not be in the map (because it did throw in
+      // the openNative method).
+      return this.ports.get(sender.portId)?.onPortMessage(holder);
     }
+    // NOTE: the following await make sure we await for promised ports
+    // (ports that were not yet open when added to the Map,
+    // see recvPortConnect).
     await this.ports.get(sender.portId);
     this.sendPortMessage(sender.portId, holder, !sender.source);
   },
@@ -385,6 +414,7 @@ const ProxyMessenger = {
   recvConduitClosed(sender) {
     let app = this.ports.get(sender.portId);
     if (this.ports.delete(sender.portId) && sender.native) {
+      this.untrackNativeAppPort(app);
       return app.onPortDisconnect();
     }
     this.sendPortDisconnect(sender.portId, null, !sender.source);
@@ -395,8 +425,38 @@ const ProxyMessenger = {
   },
 
   sendPortDisconnect(portId, error, source = true) {
+    let port = this.ports.get(portId);
+    this.untrackNativeAppPort(port);
     this.conduit.castPortDisconnect("port", { portId, source, error });
     this.ports.delete(portId);
+  },
+
+  trackNativeAppPort(port) {
+    if (!port?.native) {
+      return;
+    }
+
+    try {
+      let context = ParentAPIManager.getContextById(port.senderChildId);
+      context?.trackNativeAppPort(port);
+    } catch {
+      // getContextById will throw if the context has been destroyed
+      // in the meantime.
+    }
+  },
+
+  untrackNativeAppPort(port) {
+    if (!port?.native) {
+      return;
+    }
+
+    try {
+      let context = ParentAPIManager.getContextById(port.senderChildId);
+      context?.untrackNativeAppPort(port);
+    } catch {
+      // getContextById will throw if the context has been destroyed
+      // in the meantime.
+    }
   },
 };
 ProxyMessenger.init();
@@ -439,7 +499,7 @@ GlobalManager = {
   async receiveMessage({ name, data }) {
     switch (name) {
       case "Extension:SendPerformanceCounter":
-        PerformanceCounters.merge(data.counters);
+        lazy.PerformanceCounters.merge(data.counters);
         break;
     }
   },
@@ -464,6 +524,7 @@ class ProxyContextParent extends BaseContext {
   constructor(envType, extension, params, xulBrowser, principal) {
     super(envType, extension);
 
+    this.childId = params.childId;
     this.uri = Services.io.newURI(params.url);
 
     this.incognito = params.incognito;
@@ -475,7 +536,7 @@ class ProxyContextParent extends BaseContext {
     // message manager object may change when `xulBrowser` swaps docshells, e.g.
     // when a tab is moved to a different window.
     this.messageManagerProxy =
-      xulBrowser && new MessageManagerProxy(xulBrowser);
+      xulBrowser && new lazy.MessageManagerProxy(xulBrowser);
 
     Object.defineProperty(this, "principal", {
       value: principal,
@@ -486,8 +547,103 @@ class ProxyContextParent extends BaseContext {
     this.listenerProxies = new Map();
 
     this.pendingEventBrowser = null;
+    this.callContextData = null;
+
+    // Set of active NativeApp ports.
+    this.activeNativePorts = new WeakSet();
+
+    // Set of pending queryRunListener promises.
+    this.runListenerPromises = new Set();
 
     apiManager.emit("proxy-context-load", this);
+  }
+
+  get isProxyContextParent() {
+    return true;
+  }
+
+  trackRunListenerPromise(runListenerPromise) {
+    if (
+      // The extension was already shutdown.
+      !this.extension ||
+      // Not a non persistent background script context.
+      !this.isBackgroundContext ||
+      this.extension.persistentBackground
+    ) {
+      return;
+    }
+    const clearFromSet = () =>
+      this.runListenerPromises.delete(runListenerPromise);
+    runListenerPromise.then(clearFromSet, clearFromSet);
+    this.runListenerPromises.add(runListenerPromise);
+  }
+
+  clearPendingRunListenerPromises() {
+    this.runListenerPromises.clear();
+  }
+
+  get pendingRunListenerPromisesCount() {
+    return this.runListenerPromises.size;
+  }
+
+  trackNativeAppPort(port) {
+    if (
+      // Not a native port.
+      !port?.native ||
+      // Not a non persistent background script context.
+      !this.isBackgroundContext ||
+      this.extension?.persistentBackground ||
+      // The extension was already shutdown.
+      !this.extension
+    ) {
+      return;
+    }
+    this.activeNativePorts.add(port);
+  }
+
+  untrackNativeAppPort(port) {
+    this.activeNativePorts.delete(port);
+  }
+
+  get hasActiveNativeAppPorts() {
+    return !!ChromeUtils.nondeterministicGetWeakSetKeys(this.activeNativePorts)
+      .length;
+  }
+
+  /**
+   * Call the `callable` parameter with `context.callContextData` set to the value passed
+   * as the first parameter of this method.
+   *
+   * `context.callContextData` is expected to:
+   * - don't be set when context.withCallContextData is being called
+   * - be set back to null right after calling the `callable` function, without
+   *   awaiting on any async code that the function may be running internally
+   *
+   * The callable method itself is responsabile of eventually retrieve the value initially set
+   * on the `context.callContextData` before any code executed asynchronously (e.g. from a
+   * callback or after awaiting internally on a promise if the `callable` function was async).
+   *
+   * @param {object} callContextData
+   * @param {boolean} callContextData.isHandlingUserInput
+   * @param {Function} callable
+   *
+   * @returns {any} Returns the value returned by calling the `callable` method.
+   */
+  withCallContextData({ isHandlingUserInput }, callable) {
+    if (this.callContextData) {
+      Cu.reportError(
+        `Unexpected pre-existing callContextData on "${this.extension?.policy.debugName}" contextId ${this.contextId}`
+      );
+    }
+
+    try {
+      this.callContextData = {
+        isHandlingUserInput,
+      };
+      return callable();
+    } finally {
+      this.callContextData = null;
+    }
   }
 
   async withPendingBrowser(browser, callable) {
@@ -673,7 +829,7 @@ class DevToolsExtensionPageContextParent extends ExtensionPageContextParent {
    * The returned "commands" object, exposing modules implemented from devtools/shared/commands.
    * Each attribute being a static interface to communicate with the server backend.
    *
-   * @returns {Promise<Object>}
+   * @returns {Promise<object>}
    */
   async getDevToolsCommands() {
     // Ensure that we try to instantiate a commands only once,
@@ -686,8 +842,8 @@ class DevToolsExtensionPageContextParent extends ExtensionPageContextParent {
     }
 
     this._devToolsCommandsPromise = (async () => {
-      const commands = await DevToolsShim.createCommandsForTabForWebExtension(
-        this.devToolsToolbox.descriptorFront.localTab
+      const commands = await lazy.DevToolsShim.createCommandsForTabForWebExtension(
+        this.devToolsToolbox.commands.descriptorFront.localTab
       );
       await commands.targetCommand.startListening();
       this._devToolsCommands = commands;
@@ -729,9 +885,8 @@ class DevToolsExtensionPageContextParent extends ExtensionPageContextParent {
     for (const resource of resources) {
       const { targetFront } = resource;
       if (targetFront.isTopLevel && resource.name === "dom-complete") {
-        const url = targetFront.localTab.linkedBrowser.currentURI.spec;
         for (const listener of this._onNavigatedListeners) {
-          listener(url);
+          listener(targetFront.url);
         }
       }
     }
@@ -765,7 +920,7 @@ ParentAPIManager = {
     // TODO: Bug 1595186 - remove/replace all usage of MessageManager below.
     Services.obs.addObserver(this, "message-manager-close");
 
-    this.conduit = new BroadcastConduit(this, {
+    this.conduit = new lazy.BroadcastConduit(this, {
       id: "ParentAPIManager",
       reportOnClosed: "childId",
       recv: [
@@ -776,7 +931,7 @@ ParentAPIManager = {
         "RemoveListener",
       ],
       send: ["CallResult"],
-      query: ["RunListener"],
+      query: ["RunListener", "StreamFilterSuspendCancel"],
     });
   },
 
@@ -815,6 +970,10 @@ ParentAPIManager = {
     }
   },
 
+  queryStreamFilterSuspendCancel(childId) {
+    return this.conduit.queryStreamFilterSuspendCancel(childId);
+  },
+
   recvCreateProxyContext(data, { actor, sender }) {
     let { envType, extensionId, childId, principal } = data;
     let target = actor.browsingContext?.top.embedderElement;
@@ -836,7 +995,7 @@ ParentAPIManager = {
         throw new Error(`Bad sender context envType: ${sender.envType}`);
       }
 
-      if (actor instanceof JSWindowActorParent) {
+      if (JSWindowActorParent.isInstance(actor)) {
         let processMessageManager =
           target.messageManager.processMessageManager ||
           Services.ppmm.getChildAt(0);
@@ -852,7 +1011,7 @@ ParentAPIManager = {
             "Attempt to create privileged extension parent from incorrect child process"
           );
         }
-      } else if (actor instanceof JSProcessActorParent) {
+      } else if (JSProcessActorParent.isInstance(actor)) {
         if (actor.manager.remoteType !== extension.remoteType) {
           throw new Error(
             "Attempt to create privileged extension parent from incorrect child process"
@@ -918,7 +1077,7 @@ ParentAPIManager = {
 
   async retrievePerformanceCounters() {
     // getting the parent counters
-    return PerformanceCounters.getData();
+    return lazy.PerformanceCounters.getData();
   },
 
   /**
@@ -927,7 +1086,7 @@ ParentAPIManager = {
    *
    * @param {BaseContext} context The context making this call.
    * @param {object} data Additional data about the call.
-   * @param {function} callable The actual implementation to invoke.
+   * @param {Function} callable The actual implementation to invoke.
    */
   async callAndLog(context, data, callable) {
     let { id } = context.extension;
@@ -935,9 +1094,15 @@ ParentAPIManager = {
     // to log again, check for the flag.
     const { alreadyLogged } = data.options || {};
     if (!alreadyLogged) {
-      ExtensionActivityLog.log(id, context.viewType, "api_call", data.path, {
-        args: data.args,
-      });
+      lazy.ExtensionActivityLog.log(
+        id,
+        context.viewType,
+        "api_call",
+        data.path,
+        {
+          args: data.args,
+        }
+      );
     }
 
     let start = Cu.now();
@@ -949,9 +1114,9 @@ ParentAPIManager = {
         { startTime: start },
         `${id}, api_call: ${data.path}`
       );
-      if (gTimingEnabled) {
+      if (lazy.gTimingEnabled) {
         let end = Cu.now() * 1000;
-        PerformanceCounters.storeExecutionTime(
+        lazy.PerformanceCounters.storeExecutionTime(
           id,
           data.path,
           end - start * 1000
@@ -985,10 +1150,15 @@ ParentAPIManager = {
 
     try {
       let args = data.args;
+      let { isHandlingUserInput = false } = data.options || {};
       let pendingBrowser = context.pendingEventBrowser;
       let fun = await context.apiCan.asyncFindAPIPath(data.path);
       let result = this.callAndLog(context, data, () => {
-        return context.withPendingBrowser(pendingBrowser, () => fun(...args));
+        return context.withPendingBrowser(pendingBrowser, () =>
+          context.withCallContextData({ isHandlingUserInput }, () =>
+            fun(...args)
+          )
+        );
       });
 
       if (data.callId) {
@@ -1036,7 +1206,7 @@ ParentAPIManager = {
         urgentSend = listenerArgs[0].urgentSend;
         delete listenerArgs[0].urgentSend;
       }
-      let result = await this.conduit.queryRunListener(childId, {
+      let runListenerPromise = this.conduit.queryRunListener(childId, {
         childId,
         handlingUserInput,
         listenerId: data.listenerId,
@@ -1046,13 +1216,16 @@ ParentAPIManager = {
           return new StructuredCloneHolder(listenerArgs);
         },
       });
-      let rv = result && result.deserialize(global);
+      context.trackRunListenerPromise(runListenerPromise);
+
+      const result = await runListenerPromise;
+      let rv = result && result.deserialize(globalThis);
       ChromeUtils.addProfilerMarker(
         "ExtensionParent",
         { startTime },
         `${context.extension.id}, api_event: ${data.path}`
       );
-      ExtensionActivityLog.log(
+      lazy.ExtensionActivityLog.log(
         context.extension.id,
         context.viewType,
         "api_event",
@@ -1069,7 +1242,7 @@ ParentAPIManager = {
 
     // Store pending listener additions so we can be sure they're all
     // fully initialize before we consider extension startup complete.
-    if (context.viewType === "background" && context.listenerPromises) {
+    if (context.isBackgroundContext && context.listenerPromises) {
       const { listenerPromises } = context;
       listenerPromises.add(promise);
       let remove = () => {
@@ -1084,7 +1257,7 @@ ParentAPIManager = {
     }
     handler.addListener(listener, ...args);
     if (!alreadyLogged) {
-      ExtensionActivityLog.log(
+      lazy.ExtensionActivityLog.log(
         context.extension.id,
         context.viewType,
         "api_call",
@@ -1103,7 +1276,7 @@ ParentAPIManager = {
 
     let { alreadyLogged = false } = data;
     if (!alreadyLogged) {
-      ExtensionActivityLog.log(
+      lazy.ExtensionActivityLog.log(
         context.extension.id,
         context.viewType,
         "api_call",
@@ -1187,7 +1360,7 @@ class HiddenXULWindow {
     let chromeShell = windowlessBrowser.docShell;
     chromeShell.QueryInterface(Ci.nsIWebNavigation);
 
-    if (PrivateBrowsingUtils.permanentPrivateBrowsing) {
+    if (lazy.PrivateBrowsingUtils.permanentPrivateBrowsing) {
       let attrs = chromeShell.getOriginAttributes();
       attrs.privateBrowsingId = 1;
       chromeShell.setOriginAttributes(attrs);
@@ -1213,7 +1386,7 @@ class HiddenXULWindow {
   /**
    * Creates the browser XUL element that will contain the WebExtension Page.
    *
-   * @param {Object} xulAttributes
+   * @param {object} xulAttributes
    *        An object that contains the xul attributes to set of the newly
    *        created browser XUL element.
    *
@@ -1426,6 +1599,109 @@ const DebugUtils = {
   },
 
   /**
+   * Determine if the extension does have a non-persistent background script
+   * (either an event page or a background service worker):
+   *
+   * Based on this the DevTools client will determine if this extension should provide
+   * to the extension developers a button to forcefully terminate the background
+   * script.
+   *
+   * @param {string} addonId
+   *   The id of the addon
+   *
+   * @returns {void|boolean}
+   *   - undefined => does not apply (no background script in the manifest)
+   *   - true => the background script is persistent.
+   *   - false => the background script is an event page or a service worker.
+   */
+  hasPersistentBackgroundScript(addonId) {
+    const policy = WebExtensionPolicy.getByID(addonId);
+
+    // The addon doesn't have any background script or we
+    // can't be sure yet.
+    if (
+      policy?.extension?.type !== "extension" ||
+      !policy?.extension?.manifest?.background
+    ) {
+      return undefined;
+    }
+
+    return policy.extension.persistentBackground;
+  },
+
+  /**
+   * Determine if the extension background page is running.
+   *
+   * Based on this the DevTools client will show the status of the background
+   * script in about:debugging.
+   *
+   * @param {string} addonId
+   *   The id of the addon
+   *
+   * @returns {void|boolean}
+   *   - undefined => does not apply (no background script in the manifest)
+   *   - true => the background script is running.
+   *   - false => the background script is stopped.
+   */
+  isBackgroundScriptRunning(addonId) {
+    const policy = WebExtensionPolicy.getByID(addonId);
+
+    // The addon doesn't have any background script or we
+    // can't be sure yet.
+    if (!(this.hasPersistentBackgroundScript(addonId) === false)) {
+      return undefined;
+    }
+
+    const views = policy?.extension?.views || [];
+    for (const view of views) {
+      if (
+        view.viewType === "background" ||
+        (view.viewType === "background_worker" && !view.unloaded)
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  },
+
+  async terminateBackgroundScript(addonId) {
+    // Terminate the background if the extension does have
+    // a non-persistent background script (event page or background
+    // service worker).
+    if (this.hasPersistentBackgroundScript(addonId) === false) {
+      const policy = WebExtensionPolicy.getByID(addonId);
+      // When the event page is being terminated through the Devtools
+      // action, we should terminate it even if there are DevTools
+      // toolboxes attached to the extension.
+      return policy.extension.terminateBackground({
+        ignoreDevToolsAttached: true,
+      });
+    }
+    throw Error(`Unable to terminate background script for ${addonId}`);
+  },
+
+  /**
+   * Determine whether a devtools toolbox attached to the extension.
+   *
+   * This method is called by the background page idle timeout handler,
+   * to inhibit terminating the event page when idle while the extension
+   * developer is debugging the extension through the Addon Debugging window
+   * (similarly to how service workers are kept alive while the devtools are
+   * attached).
+   *
+   * @param {string} id
+   *        The id of the extension.
+   *
+   * @returns {boolean}
+   *          true when a devtools toolbox is attached to an extension with
+   *          the given id, false otherwise.
+   */
+  hasDevToolsAttached(id) {
+    return this.debugBrowserPromises.has(id);
+  },
+
+  /**
    * Retrieve a XUL browser element which has been configured to be able to connect
    * the devtools actor with the process where the extension is running.
    *
@@ -1565,6 +1841,7 @@ async function promiseExtensionViewLoaded(browser) {
  * its related extension, viewType and browser element (both the top level context and any context
  * created for the extension urls running into its iframe descendants).
  *
+ * @param {object} params
  * @param {object} params.extension
  *        The Extension on which we are going to listen for the newly created ExtensionProxyContext.
  * @param {string} params.viewType
@@ -1572,10 +1849,10 @@ async function promiseExtensionViewLoaded(browser) {
  *        "devtools_page").
  * @param {XULElement} params.browser
  *        The browser element of the WebExtension page that we are watching.
- * @param {function} onExtensionProxyContextLoaded
+ * @param {Function} onExtensionProxyContextLoaded
  *        The callback that is called when a new context has been loaded (as `callback(context)`);
  *
- * @returns {function}
+ * @returns {Function}
  *          Unsubscribe the listener.
  */
 function watchExtensionProxyContextLoad(
@@ -1604,12 +1881,13 @@ function watchExtensionProxyContextLoad(
  * to be called for every ExtensionProxyContext created for an extension
  * background service worker given its related extension.
  *
+ * @param {object} params
  * @param {object} params.extension
  *        The Extension on which we are going to listen for the newly created ExtensionProxyContext.
- * @param {function} onExtensionWorkerContextLoaded
+ * @param {Function} onExtensionWorkerContextLoaded
  *        The callback that is called when the worker script has been fully loaded (as `callback(context)`);
  *
- * @returns {function}
+ * @returns {Function}
  *          Unsubscribe the listener.
  */
 function watchExtensionWorkerContextLoaded(
@@ -1797,6 +2075,7 @@ StartupCache = {
     "other",
     "permissions",
     "schemas",
+    "menus",
   ]),
 
   _ensureDirectoryPromise: null,
@@ -1825,16 +2104,20 @@ StartupCache = {
   ),
 
   async _saveNow() {
-    let data = new Uint8Array(aomStartup.encodeBlob(this._data));
+    let data = new Uint8Array(lazy.aomStartup.encodeBlob(this._data));
     await this._ensureDirectoryPromise;
     await IOUtils.write(this.file, data, { tmpPath: `${this.file}.tmp` });
+    Services.telemetry.scalarSet(
+      "extensions.startupCache.write_byteLength",
+      data.byteLength
+    );
   },
 
   save() {
     this._ensureDirectory();
 
     if (!this._saveTask) {
-      this._saveTask = new DeferredTask(() => this._saveNow(), 5000);
+      this._saveTask = new lazy.DeferredTask(() => this._saveNow(), 5000);
 
       IOUtils.profileBeforeChange.addBlocker(
         "Flush WebExtension StartupCache",
@@ -1852,13 +2135,22 @@ StartupCache = {
   async _readData() {
     let result = new Map();
     try {
+      Glean.extensions.startupCacheLoadTime.start();
       let { buffer } = await IOUtils.read(this.file);
 
-      result = aomStartup.decodeBlob(buffer);
+      result = lazy.aomStartup.decodeBlob(buffer);
+      Glean.extensions.startupCacheLoadTime.stop();
     } catch (e) {
-      if (!(e instanceof DOMException) || e.name !== "NotFoundError") {
+      Glean.extensions.startupCacheLoadTime.cancel();
+      if (!DOMException.isInstance(e) || e.name !== "NotFoundError") {
         Cu.reportError(e);
       }
+
+      Services.telemetry.keyedScalarAdd(
+        "extensions.startupCache.read_errors",
+        lazy.getErrorNameForTelemetry(e),
+        1
+      );
     }
 
     this._data = result;
@@ -1878,6 +2170,7 @@ StartupCache = {
       this.locales.delete(id),
       this.manifests.delete(id),
       this.permissions.delete(id),
+      this.menus.delete(id),
     ]).catch(e => {
       // Ignore the error. It happens when we try to flush the add-on
       // data after the AddonManager has flushed the entire startup cache.
@@ -2031,6 +2324,7 @@ XPCOMUtils.defineLazyGetter(ExtensionParent, "PlatformInfo", () => {
 
 /**
  * Retreives the browser_style stylesheets needed for extension popups and sidebars.
+ *
  * @returns {Array<string>} an array of stylesheets needed for the current platform.
  */
 XPCOMUtils.defineLazyGetter(ExtensionParent, "extensionStylesheets", () => {

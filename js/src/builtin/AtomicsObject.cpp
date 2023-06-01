@@ -29,9 +29,7 @@
 #include "js/Result.h"
 #include "js/WaitCallbacks.h"
 #include "vm/GlobalObject.h"
-#include "vm/Time.h"
 #include "vm/TypedArrayObject.h"
-#include "wasm/WasmInstance.h"
 
 #include "vm/Compartment-inl.h"
 #include "vm/JSObject-inl.h"
@@ -1068,11 +1066,7 @@ static const JSPropertySpec AtomicsProperties[] = {
     JS_STRING_SYM_PS(toStringTag, "Atomics", JSPROP_READONLY), JS_PS_END};
 
 static JSObject* CreateAtomicsObject(JSContext* cx, JSProtoKey key) {
-  Handle<GlobalObject*> global = cx->global();
-  RootedObject proto(cx, GlobalObject::getOrCreateObjectPrototype(cx, global));
-  if (!proto) {
-    return nullptr;
-  }
+  RootedObject proto(cx, &cx->global()->getObjectPrototype());
   return NewTenuredObjectWithGivenProto(cx, &AtomicsObject::class_, proto);
 }
 

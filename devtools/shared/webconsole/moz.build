@@ -28,7 +28,6 @@ GeneratedFile(
 DevToolsModules(
     "analyze-input-string.js",
     "js-property-provider.js",
-    "network-helper.js",
+    "messages.js",
     "parser-helper.js",
-    "throttle.js",
 )

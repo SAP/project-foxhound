@@ -1,7 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-// Test that Console.jsm outputs messages to the Browser Console.
+// Test that Console.sys.mjs outputs messages to the Browser Console.
 
 "use strict";
 
@@ -10,7 +10,9 @@ add_task(async function testCategoryLogs() {
   const storage = consoleStorage.getService(Ci.nsIConsoleAPIStorage);
   storage.clearEvents();
 
-  const { console } = ChromeUtils.import("resource://gre/modules/Console.jsm");
+  const { console } = ChromeUtils.importESModule(
+    "resource://gre/modules/Console.sys.mjs"
+  );
   console.log("bug861338-log-cached");
 
   const hud = await BrowserConsoleManager.toggleBrowserConsole();
@@ -35,7 +37,7 @@ add_task(async function testCategoryLogs() {
   testTrace();
   console.timeEnd("foobarTimer");
 
-  info("wait for the Console.jsm messages");
+  info("wait for the Console.sys.mjs messages");
 
   await checkMessageExists(hud, "bug851231-log");
   await checkMessageExists(hud, "bug851231-info");
@@ -55,8 +57,8 @@ add_task(async function testFilter() {
   const storage = consoleStorage.getService(Ci.nsIConsoleAPIStorage);
   storage.clearEvents();
 
-  const { ConsoleAPI } = ChromeUtils.import(
-    "resource://gre/modules/Console.jsm"
+  const { ConsoleAPI } = ChromeUtils.importESModule(
+    "resource://gre/modules/Console.sys.mjs"
   );
   const console2 = new ConsoleAPI();
   const hud = await BrowserConsoleManager.toggleBrowserConsole();
@@ -86,7 +88,9 @@ add_task(async function testFilter() {
 add_task(async function testProfile() {
   const consoleStorage = Cc["@mozilla.org/consoleAPI-storage;1"];
   const storage = consoleStorage.getService(Ci.nsIConsoleAPIStorage);
-  const { console } = ChromeUtils.import("resource://gre/modules/Console.jsm");
+  const { console } = ChromeUtils.importESModule(
+    "resource://gre/modules/Console.sys.mjs"
+  );
 
   storage.clearEvents();
 
@@ -125,12 +129,12 @@ add_task(async function testProfile() {
 
 async function checkMessageExists(hud, msg) {
   info(`Checking "${msg}" was logged`);
-  const message = await waitFor(() => findMessage(hud, msg));
+  const message = await waitFor(() => findConsoleAPIMessage(hud, msg));
   ok(message, `"${msg}" was logged`);
 }
 
 async function checkMessageHidden(hud, msg) {
   info(`Checking "${msg}" was not logged`);
-  await waitFor(() => findMessage(hud, msg) == null);
+  await waitFor(() => findConsoleAPIMessage(hud, msg) == null);
   ok(true, `"${msg}" was not logged`);
 }

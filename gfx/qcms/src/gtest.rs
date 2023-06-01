@@ -6,6 +6,10 @@ mod gtest {
         transform_util::lut_inverse_interp16, Intent::Perceptual,
     };
     use libc::c_void;
+    #[cfg(target_arch = "arm")]
+    use std::arch::is_arm_feature_detected;
+    #[cfg(target_arch = "aarch64")]
+    use std::arch::is_aarch64_feature_detected;
     use std::ptr::null_mut;
 
     #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
@@ -913,7 +917,7 @@ mod test {
         let mut file = std::fs::File::open(path).unwrap();
         let mut data = Vec::new();
         file.read_to_end(&mut data).unwrap();
-        Profile::new_from_slice(&data).unwrap()
+        Profile::new_from_slice(&data, false).unwrap()
     }
 
     #[test]

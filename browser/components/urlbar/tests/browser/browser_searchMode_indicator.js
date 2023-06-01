@@ -22,20 +22,14 @@ const TOP_SITES_URLS = [
 let suggestionsEngine;
 let defaultEngine;
 
-add_task(async function setup() {
-  suggestionsEngine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + SUGGESTIONS_ENGINE_NAME
-  );
-
-  let oldDefaultEngine = await Services.search.getDefault();
-  await SearchTestUtils.installSearchExtension();
-  defaultEngine = Services.search.getEngineByName("Example");
-  await Services.search.setDefault(defaultEngine);
-  await Services.search.moveEngine(suggestionsEngine, 0);
-
-  registerCleanupFunction(async () => {
-    await Services.search.setDefault(oldDefaultEngine);
+add_setup(async function() {
+  suggestionsEngine = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + SUGGESTIONS_ENGINE_NAME,
   });
+
+  await SearchTestUtils.installSearchExtension({}, { setAsDefault: true });
+  defaultEngine = Services.search.getEngineByName("Example");
+  await Services.search.moveEngine(suggestionsEngine, 0);
 
   // Set our top sites.
   await PlacesUtils.history.clear();
@@ -56,7 +50,10 @@ add_task(async function setup() {
   );
 
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.search.separatePrivateDefault.ui.enabled", false]],
+    set: [
+      ["browser.search.separatePrivateDefault.ui.enabled", false],
+      ["browser.urlbar.suggest.quickactions", false],
+    ],
   });
 });
 

@@ -12,7 +12,6 @@
           'target_name': 'nss_libs',
           'type': 'none',
           'dependencies': [
-            'lib/ckfw/builtins/builtins.gyp:nssckbi',
             'lib/softoken/softoken.gyp:softokn3',
           ],
           'conditions': [
@@ -48,6 +47,11 @@
             [ 'disable_dbm==0', {
               'dependencies': [
                 'lib/softoken/legacydb/legacydb.gyp:nssdbm3',
+              ],
+            }],
+            [ 'disable_ckbi==0', {
+              'dependencies': [
+                'lib/ckfw/builtins/builtins.gyp:nssckbi',
               ],
             }],
           ],
@@ -110,9 +114,7 @@
           'type': 'none',
           'dependencies': [
             'cmd/certutil/certutil.gyp:certutil',
-            'cmd/modutil/modutil.gyp:modutil',
             'cmd/pk12util/pk12util.gyp:pk12util',
-            'cmd/shlibsign/shlibsign.gyp:shlibsign',
           ],
           'conditions': [
             [ 'comm_client==1', {
@@ -125,7 +127,9 @@
             [ 'mozilla_client==0', {
               'dependencies': [
                 'cmd/crlutil/crlutil.gyp:crlutil',
+                'cmd/modutil/modutil.gyp:modutil',
                 'cmd/pwdecrypt/pwdecrypt.gyp:pwdecrypt',
+                'cmd/shlibsign/shlibsign.gyp:shlibsign',
                 'cmd/signtool/signtool.gyp:signtool',
                 'cmd/signver/signver.gyp:signver',
                 'cmd/smimetools/smimetools.gyp:cmsutil',
@@ -206,6 +210,7 @@
             'cmd/vfychain/vfychain.gyp:vfychain',
             'cmd/vfyserv/vfyserv.gyp:vfyserv',
             'cmd/mpitests/mpitests.gyp:mpi_tests',
+            'gtests/base_gtest/base_gtest.gyp:base_gtest',
             'gtests/certhigh_gtest/certhigh_gtest.gyp:certhigh_gtest',
             'gtests/cryptohi_gtest/cryptohi_gtest.gyp:cryptohi_gtest',
             'gtests/der_gtest/der_gtest.gyp:der_gtest',

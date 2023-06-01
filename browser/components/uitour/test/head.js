@@ -60,6 +60,7 @@ function taskify(fun) {
     // Output the inner function name otherwise no name will be output.
     info("\t" + fun.name);
     return fun().then(doneFn, reason => {
+      console.error(reason);
       ok(false, reason);
       doneFn();
     });
@@ -67,14 +68,15 @@ function taskify(fun) {
 }
 
 function is_hidden(element) {
-  var style = element.ownerGlobal.getComputedStyle(element);
+  let win = element.ownerGlobal;
+  let style = win.getComputedStyle(element);
   if (style.display == "none") {
     return true;
   }
   if (style.visibility != "visible") {
     return true;
   }
-  if (style.display == "-moz-popup") {
+  if (win.XULPopupElement.isInstance(element)) {
     return ["hiding", "closed"].includes(element.state);
   }
 
@@ -87,14 +89,15 @@ function is_hidden(element) {
 }
 
 function is_visible(element) {
-  var style = element.ownerGlobal.getComputedStyle(element);
+  let win = element.ownerGlobal;
+  let style = win.getComputedStyle(element);
   if (style.display == "none") {
     return false;
   }
   if (style.visibility != "visible") {
     return false;
   }
-  if (style.display == "-moz-popup" && element.state != "open") {
+  if (win.XULPopupElement.isInstance(element) && element.state != "open") {
     return false;
   }
 

@@ -14,13 +14,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "jxl/codestream_header.h"
+#include "jxl/encode.h"
 #include "jxl/types.h"
-#include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"
 
 namespace jxl {
@@ -31,25 +32,12 @@ class PackedImage {
  public:
   PackedImage(size_t xsize, size_t ysize, const JxlPixelFormat& format)
       : PackedImage(xsize, ysize, format, CalcStride(format, xsize)) {}
-  PackedImage(size_t xsize, size_t ysize, const JxlPixelFormat& format,
-              size_t stride)
-      : xsize(xsize),
-        ysize(ysize),
-        stride(stride),
-        format(format),
-        pixels_size(ysize * stride),
-        pixels_(malloc(pixels_size), free) {}
-  // Construct the image using the passed pixel buffer. The buffer is owned by
-  // this object and released with free().
-  PackedImage(size_t xsize, size_t ysize, const JxlPixelFormat& format,
-              void* pixels, size_t pixels_size)
-      : xsize(xsize),
-        ysize(ysize),
-        stride(CalcStride(format, xsize)),
-        format(format),
-        pixels_size(pixels_size),
-        pixels_(pixels, free) {
-    JXL_ASSERT(pixels_size >= stride * ysize);
+
+  PackedImage Copy() const {
+    PackedImage copy(xsize, ysize, format);
+    memcpy(reinterpret_cast<uint8_t*>(copy.pixels()),
+           reinterpret_cast<const uint8_t*>(pixels()), pixels_size);
+    return copy;
   }
 
   // The interleaved pixels as defined in the storage format.
@@ -59,9 +47,6 @@ class PackedImage {
   size_t xsize;
   size_t ysize;
 
-  // Whether the y coordinate is flipped (y=0 is the last row).
-  bool flipped_y = false;
-
   // The number of bytes per row.
   size_t stride;
 
@@ -69,25 +54,35 @@ class PackedImage {
   JxlPixelFormat format;
   size_t pixels_size;
 
- private:
+  size_t pixel_stride() const {
+    return (BitsPerChannel(format.data_type) * format.num_channels /
+            jxl::kBitsPerByte);
+  }
+
   static size_t BitsPerChannel(JxlDataType data_type) {
     switch (data_type) {
-      case JXL_TYPE_BOOLEAN:
-        return 1;
       case JXL_TYPE_UINT8:
         return 8;
       case JXL_TYPE_UINT16:
         return 16;
-      case JXL_TYPE_UINT32:
-        return 32;
       case JXL_TYPE_FLOAT:
         return 32;
       case JXL_TYPE_FLOAT16:
         return 16;
-        // No default, give compiler error if new type not handled.
+      default:
+        JXL_ABORT("Unhandled JxlDataType");
     }
-    return 0;  // Indicate invalid data type.
   }
+
+ private:
+  PackedImage(size_t xsize, size_t ysize, const JxlPixelFormat& format,
+              size_t stride)
+      : xsize(xsize),
+        ysize(ysize),
+        stride(stride),
+        format(format),
+        pixels_size(ysize * stride),
+        pixels_(malloc(std::max<size_t>(1, pixels_size)), free) {}
 
   static size_t CalcStride(const JxlPixelFormat& format, size_t xsize) {
     size_t stride = xsize * (BitsPerChannel(format.data_type) *
@@ -108,21 +103,23 @@ class PackedImage {
 class PackedFrame {
  public:
   template <typename... Args>
-  PackedFrame(Args... args) : color(args...) {}
+  explicit PackedFrame(Args&&... args) : color(std::forward<Args>(args)...) {}
+
+  PackedFrame Copy() const {
+    PackedFrame copy(color.xsize, color.ysize, color.format);
+    copy.frame_info = frame_info;
+    copy.name = name;
+    copy.color = color.Copy();
+    for (size_t i = 0; i < extra_channels.size(); ++i) {
+      PackedImage ec = extra_channels[i].Copy();
+      copy.extra_channels.emplace_back(std::move(ec));
+    }
+    return copy;
+  }
 
   // The Frame metadata.
   JxlFrameHeader frame_info = {};
   std::string name;
-
-  // Offset of the frame in the image.
-  // TODO(deymo): Add support in the API for this.
-  size_t x0 = 0;
-  size_t y0 = 0;
-
-  // Whether this frame should be blended with the previous one.
-  // TODO(deymo): Maybe add support for this in the API.
-  bool blend = false;
-  bool use_for_next_frame = false;
 
   // The pixel data for the color (or grayscale) channels.
   PackedImage color;
@@ -139,30 +136,32 @@ class PackedMetadata {
   std::vector<uint8_t> xmp;
 };
 
+// The extra channel metadata information.
+struct PackedExtraChannel {
+  JxlExtraChannelInfo ec_info;
+  size_t index;
+  std::string name;
+};
+
 // Helper class representing a JXL image file as decoded to pixels from the API.
 class PackedPixelFile {
  public:
   JxlBasicInfo info = {};
 
-  // The extra channel metadata information.
-  struct PackedExtraChannel {
-    PackedExtraChannel(const JxlExtraChannelInfo& ec_info,
-                       const std::string& name)
-        : ec_info(ec_info), name(name) {}
-
-    JxlExtraChannelInfo ec_info;
-    std::string name;
-  };
   std::vector<PackedExtraChannel> extra_channels_info;
 
-  // Color information. If the icc is empty, the JxlColorEncoding should be used
-  // instead.
+  // Color information of the decoded pixels.
+  // If the icc is empty, the JxlColorEncoding should be used instead.
   std::vector<uint8_t> icc;
   JxlColorEncoding color_encoding = {};
+  // The icc profile of the original image.
+  std::vector<uint8_t> orig_icc;
 
+  std::unique_ptr<PackedFrame> preview_frame;
   std::vector<PackedFrame> frames;
 
   PackedMetadata metadata;
+  PackedPixelFile() { JxlEncoderInitBasicInfo(&info); };
 };
 
 }  // namespace extras

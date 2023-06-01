@@ -20,8 +20,10 @@ add_task(async function test_escape() {
   Services.prefs.setBoolPref("browser.urlbar.autoFill.searchEngines", false);
   Services.prefs.setBoolPref("browser.urlbar.autoFill", false);
   Services.prefs.setBoolPref("browser.urlbar.suggest.searches", false);
+  Services.prefs.setBoolPref("browser.urlbar.suggest.quickactions", false);
   registerCleanupFunction(() => {
     Services.prefs.clearUserPref("browser.urlbar.suggest.searches");
+    Services.prefs.clearUserPref("browser.urlbar.suggest.quickactions");
     Services.prefs.clearUserPref("browser.urlbar.autoFill");
     Services.prefs.clearUserPref("browser.urlbar.autoFill.searchEngines");
   });
@@ -48,6 +50,7 @@ add_task(async function test_escape() {
     title: "title1",
     tags: ["dontmatchme3"],
   });
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   info("Match 'match' at the beginning or after / or on a CamelCase");
   let context = createContext("match", { isPrivate: false });
@@ -198,7 +201,7 @@ add_task(async function test_escape() {
         })
       : makeVisitResult(context, {
           uri: "file:///",
-          title: "file:///",
+          fallbackTitle: "file:///",
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           heuristic: true,
         });

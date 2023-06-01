@@ -25,6 +25,10 @@
       "type": "boolean"
     },
 
+    "AppUpdatePin": {
+      "type": "string"
+    },
+
     "AppUpdateURL": {
       "type": "URL"
     },
@@ -386,8 +390,13 @@
       "type": "boolean"
     },
 
-    "DisplayBookmarksToolbar": {
+    "DisableThirdPartyModuleBlocking": {
       "type": "boolean"
+    },
+
+    "DisplayBookmarksToolbar": {
+      "type": ["boolean", "string"],
+      "enum": ["always", "never", "newtab"]
     },
 
     "DisplayMenuBar": {
@@ -457,6 +466,24 @@
         },
         "Locked": {
           "type": "boolean"
+        }
+      }
+    },
+
+    "ExemptDomainFileTypePairsFromFileTypeDownloadWarnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "file_extension": {
+            "type": "string"
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
         }
       }
     },
@@ -603,6 +630,10 @@
           "type": "boolean"
         }
       }
+    },
+
+    "GoToIntranetSiteForSingleWordEntryInAddressBar": {
+      "type": "boolean"
     },
 
     "Handlers": {
@@ -785,6 +816,14 @@
 
     "PasswordManagerEnabled": {
       "type": "boolean"
+    },
+
+    "PasswordManagerExceptions": {
+      "type": "array",
+      "strict": false,
+      "items": {
+        "type": "origin"
+      }
     },
 
     "PDFjs": {
@@ -1224,6 +1263,10 @@
       "enum": ["tls1", "tls1.1", "tls1.2", "tls1.3"]
     },
 
+    "StartDownloadsInTempDirectory": {
+      "type": "boolean"
+    },
+
     "SupportMenu": {
       "type": "object",
       "properties": {
@@ -1265,6 +1308,10 @@
           "type": "boolean"
         }
       }
+    },
+
+    "UseSystemPrintDialog": {
+      "type": "boolean"
     },
 
     "WebsiteFilter": {

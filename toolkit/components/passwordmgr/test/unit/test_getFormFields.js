@@ -1,10 +1,8 @@
 /**
- * Test for LoginManagerChild._getFormFields.
+ * Test for LoginFormState._getFormFields.
  */
 
 "use strict";
-
-XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
 const { LoginFormFactory } = ChromeUtils.import(
   "resource://gre/modules/LoginFormFactory.jsm"
@@ -470,7 +468,7 @@ function _setPrefs() {
   });
 }
 
-this._setPrefs();
+_setPrefs();
 
 for (let tc of TEST_ENVIRONMENT_CASES) {
   info("Sanity checking the testcase: " + tc.description);
@@ -510,7 +508,7 @@ for (let tc of TEST_ENVIRONMENT_CASES) {
         document
       );
 
-      let actual = lmc._getFormFields(
+      let actual = loginFormState._getFormFields(
         formLike,
         testcase.skipEmptyFields,
         new Set()

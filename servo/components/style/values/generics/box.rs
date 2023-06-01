@@ -5,6 +5,8 @@
 //! Generic types for box properties.
 
 use crate::values::animated::ToAnimatedZero;
+use std::fmt::{self, Write};
+use style_traits::{CssWriter, ToCss};
 
 #[derive(
     Animate,
@@ -76,23 +78,97 @@ impl<L> ToAnimatedZero for VerticalAlign<L> {
     }
 }
 
-/// https://drafts.csswg.org/css-animations/#animation-iteration-count
+/// https://drafts.csswg.org/css-sizing-4/#intrinsic-size-override
 #[derive(
+    Animate,
     Clone,
+    ComputeSquaredDistance,
     Debug,
     MallocSizeOf,
     PartialEq,
     SpecifiedValueInfo,
     ToComputedValue,
-    ToCss,
+    ToAnimatedValue,
+    ToAnimatedZero,
     ToResolvedValue,
     ToShmem,
 )]
-pub enum AnimationIterationCount<Number> {
-    /// A `<number>` value.
-    Number(Number),
-    /// The `infinite` keyword.
-    Infinite,
+#[value_info(other_values = "auto")]
+#[repr(C, u8)]
+pub enum GenericContainIntrinsicSize<L> {
+    /// The keyword `none`.
+    None,
+    /// A non-negative length.
+    Length(L),
+    /// "auto <Length>"
+    AutoLength(L),
+}
+
+pub use self::GenericContainIntrinsicSize as ContainIntrinsicSize;
+
+impl<L: ToCss> ToCss for ContainIntrinsicSize<L> {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        match *self {
+            Self::None => dest.write_str("none"),
+            Self::Length(ref l) => l.to_css(dest),
+            Self::AutoLength(ref l) => {
+                dest.write_str("auto ")?;
+                l.to_css(dest)
+            },
+        }
+    }
+}
+
+/// Note that we only implement -webkit-line-clamp as a single, longhand
+/// property for now, but the spec defines line-clamp as a shorthand for
+/// separate max-lines, block-ellipsis, and continue properties.
+///
+/// https://drafts.csswg.org/css-overflow-3/#line-clamp
+#[derive(
+    Clone,
+    ComputeSquaredDistance,
+    Copy,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToAnimatedValue,
+    ToAnimatedZero,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(transparent)]
+#[value_info(other_values = "none")]
+pub struct GenericLineClamp<I>(pub I);
+
+pub use self::GenericLineClamp as LineClamp;
+
+impl<I: crate::Zero> LineClamp<I> {
+    /// Returns the `none` value.
+    pub fn none() -> Self {
+        Self(crate::Zero::zero())
+    }
+
+    /// Returns whether we're the `none` value.
+    pub fn is_none(&self) -> bool {
+        self.0.is_zero()
+    }
+}
+
+impl<I: crate::Zero + ToCss> ToCss for LineClamp<I> {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        if self.is_none() {
+            return dest.write_str("none");
+        }
+        self.0.to_css(dest)
+    }
 }
 
 /// A generic value for the `perspective` property.

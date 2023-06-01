@@ -10,8 +10,9 @@
 #include "mozilla/dom/JSActorService.h"
 #include "mozilla/dom/PWindowGlobal.h"
 #include "mozilla/ipc/ProtocolUtils.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/ScopeExit.h"
-#include "mozJSComponentLoader.h"
+#include "mozJSModuleLoader.h"
 #include "jsapi.h"
 #include "js/CallAndConstruct.h"    // JS::Construct
 #include "js/PropertyAndElement.h"  // JS_GetProperty
@@ -59,23 +60,30 @@ already_AddRefed<JSActor> JSActorManager::GetActor(JSContext* aCx,
   // while importing etc.
   JSAutoRealm ar(aCx, xpc::PrivilegedJunkScope());
 
-  // Load the module using mozJSComponentLoader.
-  RefPtr<mozJSComponentLoader> loader = mozJSComponentLoader::Get();
+  // Load the module using mozJSModuleLoader.
+  RefPtr loader = mozJSModuleLoader::Get();
   MOZ_ASSERT(loader);
 
   // If a module URI was provided, use it to construct an instance of the actor.
-  JS::RootedObject actorObj(aCx);
-  if (side.mModuleURI) {
-    JS::RootedObject global(aCx);
-    JS::RootedObject exports(aCx);
-    aRv = loader->Import(aCx, side.mModuleURI.ref(), &global, &exports);
-    if (aRv.Failed()) {
-      return nullptr;
+  JS::Rooted<JSObject*> actorObj(aCx);
+  if (side.mModuleURI || side.mESModuleURI) {
+    JS::Rooted<JSObject*> exports(aCx);
+    if (side.mModuleURI) {
+      JS::Rooted<JSObject*> global(aCx);
+      aRv = loader->Import(aCx, side.mModuleURI.ref(), &global, &exports);
+      if (aRv.Failed()) {
+        return nullptr;
+      }
+    } else {
+      aRv = loader->ImportESModule(aCx, side.mESModuleURI.ref(), &exports);
+      if (aRv.Failed()) {
+        return nullptr;
+      }
     }
     MOZ_ASSERT(exports, "null exports!");
 
     // Load the specific property from our module.
-    JS::RootedValue ctor(aCx);
+    JS::Rooted<JS::Value> ctor(aCx);
     nsAutoCString ctorName(aName);
     ctorName.Append(isParent ? "Parent"_ns : "Child"_ns);
     if (!JS_GetProperty(aCx, exports, ctorName.get(), &ctor)) {
@@ -221,7 +229,10 @@ void JSActorManager::JSActorDidDestroy() {
   for (const auto& entry : actors.Values()) {
     CrashReporter::AutoAnnotateCrashReport autoActorName(
         CrashReporter::Annotation::JSActorName, entry->Name());
-    entry->AfterDestroy();
+    // Do not risk to run script very late in shutdown
+    if (!AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMShutdownFinal)) {
+      entry->AfterDestroy();
+    }
   }
 }
 

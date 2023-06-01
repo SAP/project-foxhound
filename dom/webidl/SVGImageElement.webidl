@@ -25,9 +25,8 @@ interface SVGImageElement : SVGGraphicsElement {
   [CEReactions, SetterThrows]
   attribute DOMString decoding;
   [NewObject]
-  Promise<void> decode();
+  Promise<undefined> decode();
 };
 
 SVGImageElement includes MozImageLoadingContent;
 SVGImageElement includes SVGURIReference;
-

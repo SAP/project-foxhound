@@ -6,23 +6,12 @@
 
 const EXPORTED_SYMBOLS = ["FaviconLoader"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const lazy = {};
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["Blob", "FileReader"]);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "DeferredTask",
-  "resource://gre/modules/DeferredTask.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PromiseUtils",
-  "resource://gre/modules/PromiseUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
+});
 
 const STREAM_SEGMENT_SIZE = 4096;
 const PR_UINT32_MAX = 0xffffffff;
@@ -169,7 +158,7 @@ class FaviconLoad {
   }
 
   load() {
-    this._deferred = PromiseUtils.defer();
+    this._deferred = lazy.PromiseUtils.defer();
 
     // Clear the references when we succeed or fail.
     let cleanup = () => {
@@ -565,7 +554,7 @@ class IconLoader {
         canUseForTab: !iconInfo.isRichIcon,
         expiration: undefined,
         iconURL: iconInfo.iconUri.spec,
-        canStoreIcon: true,
+        canStoreIcon: iconInfo.beforePageShow,
       });
       return;
     }
@@ -591,7 +580,7 @@ class IconLoader {
     } catch (e) {
       if (e.result != Cr.NS_BINDING_ABORTED) {
         if (typeof e.data?.wrappedJSObject?.httpStatus !== "number") {
-          Cu.reportError(e);
+          console.error(e);
         }
 
         // Used mainly for tests currently.
@@ -631,7 +620,7 @@ class FaviconLoader {
     this.richIconLoader = new IconLoader(actor);
     this.tabIconLoader = new IconLoader(actor);
 
-    this.iconTask = new DeferredTask(
+    this.iconTask = new lazy.DeferredTask(
       () => this.loadIcons(),
       FAVICON_PARSING_TIMEOUT
     );

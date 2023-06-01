@@ -51,7 +51,7 @@ enum class StyleHyphens : uint8_t;
  * Callback for Draw() to use when drawing text with mode
  * DrawMode::GLYPH_PATH.
  */
-struct gfxTextRunDrawCallbacks {
+struct MOZ_STACK_CLASS gfxTextRunDrawCallbacks {
   /**
    * Constructs a new DrawCallbacks object.
    *
@@ -252,6 +252,8 @@ class gfxTextRun : public gfxShapedText {
     gfxContext* context;
     DrawMode drawMode = DrawMode::GLYPH_FILL;
     nscolor textStrokeColor = 0;
+    nsAtom* fontPalette = nullptr;
+    mozilla::gfx::FontPaletteValueSet* paletteValueSet = nullptr;
     gfxPattern* textStrokePattern = nullptr;
     const mozilla::gfx::StrokeOptions* strokeOpts = nullptr;
     const mozilla::gfx::DrawOptions* drawOpts = nullptr;
@@ -310,6 +312,12 @@ class gfxTextRun : public gfxShapedText {
                       PropertyProvider* aProvider = nullptr) const {
     return MeasureText(Range(this), aBoundingBoxType,
                        aDrawTargetForTightBoundingBox, aProvider);
+  }
+
+  void GetLineHeightMetrics(Range aRange, gfxFloat& aAscent,
+                            gfxFloat& aDescent) const;
+  void GetLineHeightMetrics(gfxFloat& aAscent, gfxFloat& aDescent) const {
+    GetLineHeightMetrics(Range(this), aAscent, aDescent);
   }
 
   /**
@@ -507,6 +515,16 @@ class gfxTextRun : public gfxShapedText {
       }
       return false;
     }
+
+    bool IsSidewaysLeft() const {
+      return (mOrientation & mozilla::gfx::ShapedTextFlags::TEXT_ORIENT_MASK) ==
+             mozilla::gfx::ShapedTextFlags::TEXT_ORIENT_VERTICAL_SIDEWAYS_LEFT;
+    }
+
+    bool IsSidewaysRight() const {
+      return (mOrientation & mozilla::gfx::ShapedTextFlags::TEXT_ORIENT_MASK) ==
+             mozilla::gfx::ShapedTextFlags::TEXT_ORIENT_VERTICAL_SIDEWAYS_RIGHT;
+    }
   };
 
   // Script run codes that we will mark as CJK to suppress skip-ink behavior.
@@ -659,7 +677,7 @@ class gfxTextRun : public gfxShapedText {
    * that some glyph extents might not be fetched due to OOM or other
    * errors.
    */
-  void FetchGlyphExtents(DrawTarget* aRefDrawTarget);
+  void FetchGlyphExtents(DrawTarget* aRefDrawTarget) const;
 
   const GlyphRun* GetGlyphRuns(uint32_t* aNumGlyphRuns) const {
     if (mHasGlyphRunArray) {
@@ -781,6 +799,9 @@ class gfxTextRun : public gfxShapedText {
              gfxFontGroup* aFontGroup, mozilla::gfx::ShapedTextFlags aFlags,
              nsTextFrameUtils::Flags aFlags2);
 
+  // Whether we need to fetch actual glyph extents from the fonts.
+  bool NeedsGlyphExtents() const;
+
   /**
    * Helper for the Create() factory method to allocate the required
    * glyph storage for a textrun object with the basic size aSize,
@@ -828,7 +849,8 @@ class gfxTextRun : public gfxShapedText {
   // Advance aRange.start to the start of the nearest ligature, back
   // up aRange.end to the nearest ligature end; may result in
   // aRange->start == aRange->end.
-  void ShrinkToLigatureBoundaries(Range* aRange) const;
+  // Returns whether any adjustment was made.
+  bool ShrinkToLigatureBoundaries(Range* aRange) const;
   // result in appunits
   gfxFloat GetPartialLigatureWidth(Range aRange,
                                    PropertyProvider* aProvider) const;
@@ -914,7 +936,8 @@ class gfxFontGroup final : public gfxTextRunFactory {
                const mozilla::StyleFontFamilyList& aFontFamilyList,
                const gfxFontStyle* aStyle, nsAtom* aLanguage,
                bool aExplicitLanguage, gfxTextPerfMetrics* aTextPerf,
-               gfxUserFontSet* aUserFontSet, gfxFloat aDevToCssSize);
+               gfxUserFontSet* aUserFontSet, gfxFloat aDevToCssSize,
+               StyleFontVariantEmoji aVariantEmoji);
 
   virtual ~gfxFontGroup();
 
@@ -924,15 +947,21 @@ class gfxFontGroup final : public gfxTextRunFactory {
   // Initiates userfont loads if userfont not loaded.
   // aGeneric: if non-null, returns the CSS generic type that was mapped to
   //           this font
-  gfxFont* GetFirstValidFont(
-      uint32_t aCh = 0x20, mozilla::StyleGenericFontFamily* aGeneric = nullptr);
+  // aIsFirst: if non-null, returns whether the font was first in the list
+  already_AddRefed<gfxFont> GetFirstValidFont(
+      uint32_t aCh = 0x20, mozilla::StyleGenericFontFamily* aGeneric = nullptr,
+      bool* aIsFirst = nullptr);
 
   // Returns the first font in the font-group that has an OpenType MATH table,
   // or null if no such font is available. The GetMathConstant methods may be
   // called on the returned font.
-  gfxFont* GetFirstMathFont();
+  already_AddRefed<gfxFont> GetFirstMathFont();
 
   const gfxFontStyle* GetStyle() const { return &mStyle; }
+
+  // Get the presContext for which this fontGroup was constructed. This may be
+  // null! (In the case of canvas not connected to a document.)
+  nsPresContext* GetPresContext() const { return mPresContext; }
 
   /**
    * The listed characters should be treated as invisible and zero-width
@@ -1008,12 +1037,13 @@ class gfxFontGroup final : public gfxTextRunFactory {
   // initialized mUnderlineOffset. The value should be lower value of
   // first font's metrics and the bad font's metrics. Otherwise, this
   // returns from first font's metrics.
-  enum { UNDERLINE_OFFSET_NOT_SET = INT16_MAX };
+  static constexpr gfxFloat UNDERLINE_OFFSET_NOT_SET = INT16_MAX;
   gfxFloat GetUnderlineOffset();
 
-  gfxFont* FindFontForChar(uint32_t ch, uint32_t prevCh, uint32_t aNextCh,
-                           Script aRunScript, gfxFont* aPrevMatchedFont,
-                           FontMatchType* aMatchType);
+  already_AddRefed<gfxFont> FindFontForChar(uint32_t ch, uint32_t prevCh,
+                                            uint32_t aNextCh, Script aRunScript,
+                                            gfxFont* aPrevMatchedFont,
+                                            FontMatchType* aMatchType);
 
   gfxUserFontSet* GetUserFontSet();
 
@@ -1076,6 +1106,14 @@ class gfxFontGroup final : public gfxTextRunFactory {
 
   nsAtom* Language() const { return mLanguage.get(); }
 
+  // Get font metrics to be used as the basis for CSS font-relative units.
+  // Note that these may be a "composite" of metrics from multiple fonts,
+  // because the 'ch' and 'ic' units depend on the font that would be used
+  // to render specific characters, not simply the "first available" font.
+  // https://drafts.csswg.org/css-values-4/#ch
+  // https://drafts.csswg.org/css-values-4/#ic
+  gfxFont::Metrics GetMetricsForCSSUnits(gfxFont::Orientation aOrientation);
+
  protected:
   friend class mozilla::PostTraversalTask;
 
@@ -1097,12 +1135,12 @@ class gfxFontGroup final : public gfxTextRunFactory {
 
   // search through pref fonts for a character, return nullptr if no matching
   // pref font
-  gfxFont* WhichPrefFontSupportsChar(uint32_t aCh, uint32_t aNextCh,
-                                     eFontPresentation aPresentation);
+  already_AddRefed<gfxFont> WhichPrefFontSupportsChar(
+      uint32_t aCh, uint32_t aNextCh, eFontPresentation aPresentation);
 
-  gfxFont* WhichSystemFontSupportsChar(uint32_t aCh, uint32_t aNextCh,
-                                       Script aRunScript,
-                                       eFontPresentation aPresentation);
+  already_AddRefed<gfxFont> WhichSystemFontSupportsChar(
+      uint32_t aCh, uint32_t aNextCh, Script aRunScript,
+      eFontPresentation aPresentation);
 
   template <typename T>
   void ComputeRanges(nsTArray<TextRange>& aRanges, const T* aString,
@@ -1393,6 +1431,8 @@ class gfxFontGroup final : public gfxTextRunFactory {
 
   bool mExplicitLanguage;  // Does mLanguage come from an explicit attribute?
 
+  eFontPresentation mEmojiPresentation = eFontPresentation::Any;
+
   // Generic font family used to select among font prefs during fallback.
   mozilla::StyleGenericFontFamily mFallbackGeneric =
       mozilla::StyleGenericFontFamily::None;
@@ -1427,17 +1467,17 @@ class gfxFontGroup final : public gfxTextRunFactory {
   // If *aLoading is true, a relevant resource is already being loaded so no
   // new download will be initiated; if a download is started, *aLoading will
   // be set to true on return.
-  gfxFont* GetFontAt(int32_t i, uint32_t aCh, bool* aLoading);
+  already_AddRefed<gfxFont> GetFontAt(int32_t i, uint32_t aCh, bool* aLoading);
 
   // Simplified version of GetFontAt() for use where we just need a font for
   // metrics, math layout tables, etc.
-  gfxFont* GetFontAt(int32_t i, uint32_t aCh = 0x20) {
+  already_AddRefed<gfxFont> GetFontAt(int32_t i, uint32_t aCh = 0x20) {
     bool loading = false;
     return GetFontAt(i, aCh, &loading);
   }
 
   // will always return a font or force a shutdown
-  gfxFont* GetDefaultFont();
+  already_AddRefed<gfxFont> GetDefaultFont();
 
   // Init this font group's font metrics. If there no bad fonts, you don't need
   // to call this. But if there are one or more bad fonts which have bad
@@ -1462,17 +1502,17 @@ class gfxFontGroup final : public gfxTextRunFactory {
   // Helper for font-matching:
   // search all faces in a family for a fallback in cases where it's unclear
   // whether the family might have a font for a given character
-  gfxFont* FindFallbackFaceForChar(const FamilyFace& aFamily, uint32_t aCh,
-                                   uint32_t aNextCh,
-                                   eFontPresentation aPresentation);
+  already_AddRefed<gfxFont> FindFallbackFaceForChar(
+      const FamilyFace& aFamily, uint32_t aCh, uint32_t aNextCh,
+      eFontPresentation aPresentation);
 
-  gfxFont* FindFallbackFaceForChar(mozilla::fontlist::Family* aFamily,
-                                   uint32_t aCh, uint32_t aNextCh,
-                                   eFontPresentation aPresentation);
+  already_AddRefed<gfxFont> FindFallbackFaceForChar(
+      mozilla::fontlist::Family* aFamily, uint32_t aCh, uint32_t aNextCh,
+      eFontPresentation aPresentation);
 
-  gfxFont* FindFallbackFaceForChar(gfxFontFamily* aFamily, uint32_t aCh,
-                                   uint32_t aNextCh,
-                                   eFontPresentation aPresentation);
+  already_AddRefed<gfxFont> FindFallbackFaceForChar(
+      gfxFontFamily* aFamily, uint32_t aCh, uint32_t aNextCh,
+      eFontPresentation aPresentation);
 
   // helper methods for looking up fonts
 

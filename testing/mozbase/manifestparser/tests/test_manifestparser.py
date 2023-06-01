@@ -4,17 +4,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import os
 import shutil
 import tempfile
 import unittest
-from six import StringIO
 
 import mozunit
-
 from manifestparser import ManifestParser
+from six import StringIO
 
 here = os.path.dirname(os.path.abspath(__file__))
 
@@ -424,7 +421,7 @@ yellow = submarine
         parser.read(manifest)
         self.assertEqual(len(parser.tests), 0)
         self.assertTrue(manifest in parser.manifest_defaults)
-        self.assertEquals(parser.manifest_defaults[manifest]["foo"], "bar")
+        self.assertEqual(parser.manifest_defaults[manifest]["foo"], "bar")
 
     def test_manifest_list(self):
         """

@@ -2,6 +2,9 @@
 // Test whether passing an undefined url InstallTrigger.install throws an
 // exception
 function test() {
+  // This test depends on InstallTrigger.install availability.
+  setInstallTriggerPrefs();
+
   waitForExplicitFinish();
 
   var triggers = encodeURIComponent(
@@ -32,7 +35,7 @@ function test() {
     expectUncaughtException();
   }
 
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.loadURIString(
     gBrowser,
     TESTROOT + "installtrigger.html?" + triggers
   );

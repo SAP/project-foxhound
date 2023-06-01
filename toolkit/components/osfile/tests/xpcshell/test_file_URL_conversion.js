@@ -3,12 +3,9 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 function run_test() {
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
-  );
   const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-  const { FileUtils } = ChromeUtils.import(
-    "resource://gre/modules/FileUtils.jsm"
+  const { FileUtils } = ChromeUtils.importESModule(
+    "resource://gre/modules/FileUtils.sys.mjs"
   );
 
   let isWindows = "@mozilla.org/windows-registry-key;1" in Cc;

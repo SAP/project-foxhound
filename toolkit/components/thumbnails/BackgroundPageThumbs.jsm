@@ -24,7 +24,6 @@ const ABOUT_NEWTAB_SEGREGATION_PREF =
 const { PageThumbs, PageThumbsStorage } = ChromeUtils.import(
   "resource://gre/modules/PageThumbs.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // possible FX_THUMBNAILS_BG_CAPTURE_DONE_REASON_2 telemetry values
 const TEL_CAPTURE_DONE_OK = 0;
@@ -35,11 +34,12 @@ const TEL_CAPTURE_DONE_BAD_URI = 5;
 const TEL_CAPTURE_DONE_LOAD_FAILED = 6;
 const TEL_CAPTURE_DONE_IMAGE_ZERO_DIMENSION = 7;
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "ContextualIdentityService",
-  "resource://gre/modules/ContextualIdentityService.jsm"
-);
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  ContextualIdentityService:
+    "resource://gre/modules/ContextualIdentityService.sys.mjs",
+});
 
 const BackgroundPageThumbs = {
   /**
@@ -362,7 +362,7 @@ const BackgroundPageThumbs = {
 
     if (Services.prefs.getBoolPref(ABOUT_NEWTAB_SEGREGATION_PREF)) {
       // Use the private container for thumbnails.
-      let privateIdentity = ContextualIdentityService.getPrivateIdentity(
+      let privateIdentity = lazy.ContextualIdentityService.getPrivateIdentity(
         "userContextIdInternal.thumbnail"
       );
       browser.setAttribute("usercontextid", privateIdentity.userContextId);
@@ -380,6 +380,7 @@ const BackgroundPageThumbs = {
     // thumbnails are blank and transparent -- but setting the style does.
     browser.style.width = bwidth + "px";
     browser.style.height = (bwidth * sheight.value) / swidth.value + "px";
+    browser.style.colorScheme = "env(-moz-content-preferred-color-scheme)";
 
     this._parentWin.document.documentElement.appendChild(browser);
 
@@ -394,9 +395,7 @@ const BackgroundPageThumbs = {
         return;
       }
 
-      Cu.reportError(
-        "BackgroundThumbnails remote process crashed - recovering"
-      );
+      console.error("BackgroundThumbnails remote process crashed - recovering");
       this._destroyBrowser();
       let curCapture = this._captureQueue.length ? this._captureQueue[0] : null;
       // we could retry the pending capture, but it's possible the crash
@@ -510,11 +509,6 @@ const BackgroundPageThumbs = {
 };
 
 BackgroundPageThumbs._init();
-Object.defineProperty(this, "BackgroundPageThumbs", {
-  value: BackgroundPageThumbs,
-  enumerable: true,
-  writable: false,
-});
 
 /**
  * Represents a single capture request in the capture queue.
@@ -734,13 +728,13 @@ Capture.prototype = {
         try {
           callback.call(options, this.url, reason, info);
         } catch (err) {
-          Cu.reportError(err);
+          console.error(err);
         }
       }
 
       if (Services.prefs.getBoolPref(ABOUT_NEWTAB_SEGREGATION_PREF)) {
         // Clear the data in the private container for thumbnails.
-        let privateIdentity = ContextualIdentityService.getPrivateIdentity(
+        let privateIdentity = lazy.ContextualIdentityService.getPrivateIdentity(
           "userContextIdInternal.thumbnail"
         );
         if (privateIdentity) {

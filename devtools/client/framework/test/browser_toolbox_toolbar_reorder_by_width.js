@@ -12,7 +12,7 @@
 // Note that this test is based on the tab ordinal is fixed.
 // i.e. After changed by Bug 1226272, this test might fail.
 
-const { Toolbox } = require("devtools/client/framework/toolbox");
+const { Toolbox } = require("resource://devtools/client/framework/toolbox.js");
 
 add_task(async function() {
   const tab = await addTab("about:blank");
@@ -69,8 +69,8 @@ add_task(async function() {
     id: "test-tools",
     label: "Test Tools",
     isMenu: true,
-    isTargetSupported: () => true,
-    build: function() {},
+    isToolSupported: () => true,
+    build() {},
   });
   await onRegistered;
 

@@ -9,29 +9,32 @@
 
 "use strict";
 
-var { Integration } = ChromeUtils.import(
-  "resource://gre/modules/Integration.jsm"
+var { Integration } = ChromeUtils.importESModule(
+  "resource://gre/modules/Integration.sys.mjs"
 );
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
+ChromeUtils.defineESModuleGetters(this, {
+  DownloadPaths: "resource://gre/modules/DownloadPaths.sys.mjs",
+  Downloads: "resource://gre/modules/Downloads.sys.mjs",
+  E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
+  FileTestUtils: "resource://testing-common/FileTestUtils.sys.mjs",
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  MockRegistrar: "resource://testing-common/MockRegistrar.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
+  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
+  TestUtils: "resource://testing-common/TestUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(this, {
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
-  DownloadPaths: "resource://gre/modules/DownloadPaths.jsm",
-  Downloads: "resource://gre/modules/Downloads.jsm",
-  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
-  FileTestUtils: "resource://testing-common/FileTestUtils.jsm",
-  FileUtils: "resource://gre/modules/FileUtils.jsm",
   HttpServer: "resource://testing-common/httpd.js",
-  MockRegistrar: "resource://testing-common/MockRegistrar.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
-  OS: "resource://gre/modules/osfile.jsm",
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
-  PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
-  Services: "resource://gre/modules/Services.jsm",
-  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.jsm",
-  TestUtils: "resource://testing-common/TestUtils.jsm",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -42,10 +45,10 @@ XPCOMUtils.defineLazyServiceGetter(
 );
 
 /* global DownloadIntegration */
-Integration.downloads.defineModuleGetter(
+Integration.downloads.defineESModuleGetter(
   this,
   "DownloadIntegration",
-  "resource://gre/modules/DownloadIntegration.jsm"
+  "resource://gre/modules/DownloadIntegration.sys.mjs"
 );
 
 const ServerSocket = Components.Constructor(
@@ -80,7 +83,7 @@ const TEST_STORE_FILE_NAME = "test-downloads.json";
 const TEST_REFERRER_URL = "https://www.example.com/referrer.html";
 
 const TEST_DATA_SHORT = "This test string is downloaded.";
-// Generate using gzipCompressString in TelemetryController.jsm.
+// Generate using gzipCompressString in TelemetryController.sys.mjs.
 const TEST_DATA_SHORT_GZIP_ENCODED_FIRST = [
   31,
   139,
@@ -368,6 +371,7 @@ function promiseStartLegacyDownload(aSourceUrl, aOptions) {
         // the Download object to be created and added to the public downloads.
         transfer.init(
           sourceURI,
+          null,
           NetUtil.newURI(targetFile),
           null,
           mimeInfo,
@@ -899,7 +903,7 @@ function registerInterruptibleHandler(aPath, aFirstPartFn, aSecondPartFn) {
         aResponse.finish();
         info("Interruptible request finished.");
       })
-      .catch(Cu.reportError);
+      .catch(console.error);
   });
 }
 
@@ -939,12 +943,15 @@ function checkEqualReferrerInfos(aActualInfo, aExpectedInfo) {
  * Waits for the download annotations to be set for the given page, required
  * because the addDownload method will add these to the database asynchronously.
  */
-function waitForAnnotation(sourceUriSpec, annotationName) {
+function waitForAnnotation(sourceUriSpec, annotationName, optionalValue) {
   return TestUtils.waitForCondition(async () => {
     let pageInfo = await PlacesUtils.history.fetch(sourceUriSpec, {
       includeAnnotations: true,
     });
-    return pageInfo && pageInfo.annotations.has(annotationName);
+    if (optionalValue) {
+      return pageInfo?.annotations.get(annotationName) == optionalValue;
+    }
+    return pageInfo?.annotations.has(annotationName);
   }, `Should have found annotation ${annotationName} for ${sourceUriSpec}`);
 }
 
@@ -956,7 +963,7 @@ var gMostRecentFirstBytePos;
 
 // Initialization functions common to all tests
 
-add_task(function test_common_initialize() {
+add_setup(function test_common_initialize() {
   // Start the HTTP server.
   gHttpServer = new HttpServer();
   gHttpServer.registerDirectory("/", do_get_file("../data"));
@@ -1156,44 +1163,46 @@ add_task(function test_common_initialize() {
         aResponse.finish();
         info("Aborting response with network reset.");
       })
-      .then(null, Cu.reportError);
+      .then(null, console.error);
   });
 
   // During unit tests, most of the functions that require profile access or
   // operating system features will be disabled. Individual tests may override
   // them again to check for specific behaviors.
-  Integration.downloads.register(base => ({
-    __proto__: base,
-    loadPublicDownloadListFromStore: () => Promise.resolve(),
-    shouldKeepBlockedData: () => Promise.resolve(false),
-    shouldBlockForParentalControls: () => Promise.resolve(false),
-    shouldBlockForRuntimePermissions: () => Promise.resolve(false),
-    shouldBlockForReputationCheck: () =>
-      Promise.resolve({
-        shouldBlock: false,
-        verdict: "",
-      }),
-    confirmLaunchExecutable: () => Promise.resolve(),
-    launchFile: () => Promise.resolve(),
-    showContainingDirectory: () => Promise.resolve(),
-    // This flag allows re-enabling the default observers during their tests.
-    allowObservers: false,
-    addListObservers() {
-      return this.allowObservers
-        ? super.addListObservers(...arguments)
-        : Promise.resolve();
-    },
-    // This flag allows re-enabling the download directory logic for its tests.
-    _allowDirectories: false,
-    set allowDirectories(value) {
-      this._allowDirectories = value;
-      // We have to invalidate the previously computed directory path.
-      this._downloadsDirectory = null;
-    },
-    _getDirectory(name) {
-      return super._getDirectory(this._allowDirectories ? name : "TmpD");
-    },
-  }));
+  Integration.downloads.register(base => {
+    let override = {
+      loadPublicDownloadListFromStore: () => Promise.resolve(),
+      shouldKeepBlockedData: () => Promise.resolve(false),
+      shouldBlockForParentalControls: () => Promise.resolve(false),
+      shouldBlockForReputationCheck: () =>
+        Promise.resolve({
+          shouldBlock: false,
+          verdict: "",
+        }),
+      confirmLaunchExecutable: () => Promise.resolve(),
+      launchFile: () => Promise.resolve(),
+      showContainingDirectory: () => Promise.resolve(),
+      // This flag allows re-enabling the default observers during their tests.
+      allowObservers: false,
+      addListObservers() {
+        return this.allowObservers
+          ? super.addListObservers(...arguments)
+          : Promise.resolve();
+      },
+      // This flag allows re-enabling the download directory logic for its tests.
+      _allowDirectories: false,
+      set allowDirectories(value) {
+        this._allowDirectories = value;
+        // We have to invalidate the previously computed directory path.
+        this._downloadsDirectory = null;
+      },
+      _getDirectory(name) {
+        return super._getDirectory(this._allowDirectories ? name : "TmpD");
+      },
+    };
+    Object.setPrototypeOf(override, base);
+    return override;
+  });
 
   // Make sure that downloads started using nsIExternalHelperAppService are
   // saved to disk without asking for a destination interactively.

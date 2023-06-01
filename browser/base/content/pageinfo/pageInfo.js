@@ -9,8 +9,8 @@
 /* import-globals-from permissions.js */
 /* import-globals-from security.js */
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
 });
 
 // Inherit color scheme overrides from parent window. This is to inherit the
@@ -203,8 +203,8 @@ gImageView.getCellProperties = function(row, col) {
   var props = "";
   if (
     !checkProtocol(data) ||
-    item instanceof HTMLEmbedElement ||
-    (item instanceof HTMLObjectElement && !item.type.startsWith("image/"))
+    HTMLEmbedElement.isInstance(item) ||
+    (HTMLObjectElement.isInstance(item) && !item.type.startsWith("image/"))
   ) {
     props += "broken";
   }
@@ -473,7 +473,7 @@ async function loadTab(args) {
     document.getElementById("generalTab");
   radioGroup.selectedItem = initialTab;
   radioGroup.selectedItem.doCommand();
-  radioGroup.focus();
+  radioGroup.focus({ focusVisible: false });
 }
 
 function openCacheEntry(key, cb) {
@@ -720,9 +720,9 @@ function saveMedia() {
     if (url) {
       var titleKey = "SaveImageTitle";
 
-      if (item instanceof HTMLVideoElement) {
+      if (HTMLVideoElement.isInstance(item)) {
         titleKey = "SaveVideoTitle";
-      } else if (item instanceof HTMLAudioElement) {
+      } else if (HTMLAudioElement.isInstance(item)) {
         titleKey = "SaveAudioTitle";
       }
 
@@ -737,6 +737,7 @@ function saveMedia() {
       );
       saveURL(
         url,
+        null,
         null,
         titleKey,
         false,
@@ -764,6 +765,7 @@ function saveMedia() {
           );
           internalSave(
             aURIString,
+            null,
             null,
             null,
             null,
@@ -831,17 +833,17 @@ function onImageSelect() {
     previewBox.collapsed = true;
     mediaSaveBox.collapsed = true;
     splitter.collapsed = true;
-    tree.flex = 1;
+    tree.setAttribute("flex", "1");
   } else if (count > 1) {
     splitter.collapsed = true;
     previewBox.collapsed = true;
     mediaSaveBox.collapsed = false;
-    tree.flex = 1;
+    tree.setAttribute("flex", "1");
   } else {
     mediaSaveBox.collapsed = true;
     splitter.collapsed = false;
     previewBox.collapsed = false;
-    tree.flex = 0;
+    tree.setAttribute("flex", "0");
     makePreview(getSelectedRows(tree)[0]);
   }
 }
@@ -929,70 +931,71 @@ function makePreview(row) {
         isBG) &&
       isProtocolAllowed
     ) {
-      // We need to wait for the image to finish loading before using width & height
-      newImage.addEventListener(
-        "loadend",
-        function() {
-          physWidth = newImage.width || 0;
-          physHeight = newImage.height || 0;
+      function loadOrErrorListener() {
+        newImage.removeEventListener("load", loadOrErrorListener);
+        newImage.removeEventListener("error", loadOrErrorListener);
+        physWidth = newImage.width || 0;
+        physHeight = newImage.height || 0;
 
-          // "width" and "height" attributes must be set to newImage,
-          // even if there is no "width" or "height attribute in item;
-          // otherwise, the preview image cannot be displayed correctly.
-          // Since the image might have been loaded out-of-process, we expect
-          // the item to tell us its width / height dimensions. Failing that
-          // the item should tell us the natural dimensions of the image. Finally
-          // failing that, we'll assume that the image was never loaded in the
-          // other process (this can be true for favicons, for example), and so
-          // we'll assume that we can use the natural dimensions of the newImage
-          // we just created. If the natural dimensions of newImage are not known
-          // then the image is probably broken.
-          if (!isBG) {
-            newImage.width =
-              ("width" in item && item.width) || newImage.naturalWidth;
-            newImage.height =
-              ("height" in item && item.height) || newImage.naturalHeight;
+        // "width" and "height" attributes must be set to newImage,
+        // even if there is no "width" or "height attribute in item;
+        // otherwise, the preview image cannot be displayed correctly.
+        // Since the image might have been loaded out-of-process, we expect
+        // the item to tell us its width / height dimensions. Failing that
+        // the item should tell us the natural dimensions of the image. Finally
+        // failing that, we'll assume that the image was never loaded in the
+        // other process (this can be true for favicons, for example), and so
+        // we'll assume that we can use the natural dimensions of the newImage
+        // we just created. If the natural dimensions of newImage are not known
+        // then the image is probably broken.
+        if (!isBG) {
+          newImage.width =
+            ("width" in item && item.width) || newImage.naturalWidth;
+          newImage.height =
+            ("height" in item && item.height) || newImage.naturalHeight;
+        } else {
+          // the Width and Height of an HTML tag should not be used for its background image
+          // (for example, "table" can have "width" or "height" attributes)
+          newImage.width = item.naturalWidth || newImage.naturalWidth;
+          newImage.height = item.naturalHeight || newImage.naturalHeight;
+        }
+
+        if (item.SVGImageElement) {
+          newImage.width = item.SVGImageElementWidth;
+          newImage.height = item.SVGImageElementHeight;
+        }
+
+        width = newImage.width;
+        height = newImage.height;
+
+        document.getElementById("theimagecontainer").collapsed = false;
+        document.getElementById("brokenimagecontainer").collapsed = true;
+
+        if (url) {
+          if (width != physWidth || height != physHeight) {
+            document.l10n.setAttributes(
+              document.getElementById("imagedimensiontext"),
+              "media-dimensions-scaled",
+              {
+                dimx: formatNumber(physWidth),
+                dimy: formatNumber(physHeight),
+                scaledx: formatNumber(width),
+                scaledy: formatNumber(height),
+              }
+            );
           } else {
-            // the Width and Height of an HTML tag should not be used for its background image
-            // (for example, "table" can have "width" or "height" attributes)
-            newImage.width = item.naturalWidth || newImage.naturalWidth;
-            newImage.height = item.naturalHeight || newImage.naturalHeight;
+            document.l10n.setAttributes(
+              document.getElementById("imagedimensiontext"),
+              "media-dimensions",
+              { dimx: formatNumber(width), dimy: formatNumber(height) }
+            );
           }
+        }
+      }
 
-          if (item.SVGImageElement) {
-            newImage.width = item.SVGImageElementWidth;
-            newImage.height = item.SVGImageElementHeight;
-          }
-
-          width = newImage.width;
-          height = newImage.height;
-
-          document.getElementById("theimagecontainer").collapsed = false;
-          document.getElementById("brokenimagecontainer").collapsed = true;
-
-          if (url) {
-            if (width != physWidth || height != physHeight) {
-              document.l10n.setAttributes(
-                document.getElementById("imagedimensiontext"),
-                "media-dimensions-scaled",
-                {
-                  dimx: formatNumber(physWidth),
-                  dimy: formatNumber(physHeight),
-                  scaledx: formatNumber(width),
-                  scaledy: formatNumber(height),
-                }
-              );
-            } else {
-              document.l10n.setAttributes(
-                document.getElementById("imagedimensiontext"),
-                "media-dimensions",
-                { dimx: formatNumber(width), dimy: formatNumber(height) }
-              );
-            }
-          }
-        },
-        { once: true }
-      );
+      // We need to wait for the image to finish loading before using width & height
+      newImage.addEventListener("load", loadOrErrorListener);
+      newImage.addEventListener("error", loadOrErrorListener);
 
       newImage.setAttribute("triggeringprincipal", triggeringPrinStr);
       newImage.setAttribute("src", url);

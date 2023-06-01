@@ -9,9 +9,11 @@ const TEST_URL = "https://example.org/document-builder.sjs?html=org";
 const SECOND_TEST_URL = "https://example.com/document-builder.sjs?html=org";
 const CHROME_WORKER_URL = CHROME_URL_ROOT + "test_worker.js";
 
+const DESCRIPTOR_TYPES = require("resource://devtools/client/fronts/descriptors/descriptor-types.js");
+
 add_task(async function() {
   // Enabled fission prefs
-  await pushPref("devtools.browsertoolbox.fission", true);
+  await pushPref("devtools.browsertoolbox.scope", "everything");
   // Disable the preloaded process as it gets created lazily and may interfere
   // with process count assertions
   await pushPref("dom.ipc.processPrelaunch.enabled", false);
@@ -21,7 +23,6 @@ add_task(async function() {
   await testLocalTab();
   await testRemoteTab();
   await testParentProcess();
-  await testContentProcess();
   await testWorker();
   await testWebExtension();
 });
@@ -31,6 +32,12 @@ async function testParentProcess() {
 
   const commands = await CommandsFactory.forMainProcess();
   const { descriptorFront } = commands;
+
+  is(
+    descriptorFront.descriptorType,
+    DESCRIPTOR_TYPES.PROCESS,
+    "The descriptor type is correct"
+  );
   is(
     descriptorFront.isParentProcessDescriptor,
     true,
@@ -72,15 +79,15 @@ async function testLocalTab() {
   const commands = await CommandsFactory.forTab(tab);
   const { descriptorFront } = commands;
   is(
+    descriptorFront.descriptorType,
+    DESCRIPTOR_TYPES.TAB,
+    "The descriptor type is correct"
+  );
+  is(
     descriptorFront.isTabDescriptor,
     true,
     "Descriptor front isTabDescriptor is correct"
   );
-
-  // By default, tab descriptor will close the client when destroying the client
-  // Disable this behavior via this boolean
-  // Bug 1698890: The test should probably stop assuming this.
-  descriptorFront.shouldCloseClient = false;
 
   const targetCommand = commands.targetCommand;
   await targetCommand.startListening();
@@ -105,14 +112,19 @@ async function testLocalTab() {
 
 async function testRemoteTab() {
   info(
-    "Test TargetCommand against remote tab descriptor (via getTab({ outerWindowID }))"
+    "Test TargetCommand against remote tab descriptor (via getTab({ browserId }))"
   );
 
   const tab = await addTab(TEST_URL);
-  const commands = await CommandsFactory.forRemoteTabInTest({
-    outerWindowID: tab.linkedBrowser.outerWindowID,
-  });
+  const commands = await CommandsFactory.forRemoteTab(
+    tab.linkedBrowser.browserId
+  );
   const { descriptorFront } = commands;
+  is(
+    descriptorFront.descriptorType,
+    DESCRIPTOR_TYPES.TAB,
+    "The descriptor type is correct"
+  );
   is(
     descriptorFront.isTabDescriptor,
     true,
@@ -139,7 +151,7 @@ async function testRemoteTab() {
 
   const browser = tab.linkedBrowser;
   const onLoaded = BrowserTestUtils.browserLoaded(browser);
-  await BrowserTestUtils.loadURI(browser, SECOND_TEST_URL);
+  await BrowserTestUtils.loadURIString(browser, SECOND_TEST_URL);
   await onLoaded;
 
   info("Wait for the new target");
@@ -177,6 +189,11 @@ async function testWebExtension() {
   const commands = await CommandsFactory.forAddon(extension.id);
   const { descriptorFront } = commands;
   is(
+    descriptorFront.descriptorType,
+    DESCRIPTOR_TYPES.EXTENSION,
+    "The descriptor type is correct"
+  );
+  is(
     descriptorFront.isWebExtensionDescriptor,
     true,
     "Descriptor front isWebExtensionDescriptor is correct"
@@ -199,51 +216,6 @@ async function testWebExtension() {
   targetCommand.destroy();
 
   await extension.unload();
-
-  await commands.destroy();
-}
-
-async function testContentProcess() {
-  info("Test TargetCommand against content process descriptor");
-
-  const tab = await BrowserTestUtils.openNewForegroundTab({
-    gBrowser,
-    url: "data:text/html,foo",
-    forceNewProcess: true,
-  });
-
-  const { osPid } = tab.linkedBrowser.browsingContext.currentWindowGlobal;
-
-  const commands = await CommandsFactory.forProcess(osPid);
-  const { descriptorFront } = commands;
-  is(
-    descriptorFront.isProcessDescriptor,
-    true,
-    "Descriptor front isProcessDescriptor is correct"
-  );
-  is(
-    descriptorFront.isParentProcessDescriptor,
-    false,
-    "Descriptor front isParentProcessDescriptor is false for content processes"
-  );
-
-  const targetCommand = commands.targetCommand;
-  await targetCommand.startListening();
-
-  const targets = await targetCommand.getAllTargets(targetCommand.ALL_TYPES);
-  is(targets.length, 1, "Got a unique target");
-  const targetFront = targets[0];
-  is(targetFront, targetCommand.targetFront, "The first is the top level one");
-  is(
-    targetFront.targetType,
-    targetCommand.TYPES.PROCESS,
-    "the content process target is of process type"
-  );
-  is(targetFront.isTopLevel, true, "This is flagged as top level");
-
-  targetCommand.destroy();
-
-  BrowserTestUtils.removeTab(tab);
 
   await commands.destroy();
 }
@@ -274,6 +246,11 @@ async function testWorker() {
 
   const commands = await CommandsFactory.forWorker(workerId);
   const { descriptorFront } = commands;
+  is(
+    descriptorFront.descriptorType,
+    DESCRIPTOR_TYPES.WORKER,
+    "The descriptor type is correct"
+  );
   is(
     descriptorFront.isWorkerDescriptor,
     true,

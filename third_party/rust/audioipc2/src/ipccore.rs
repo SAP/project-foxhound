@@ -7,6 +7,7 @@ use std::io::{self, Result};
 use std::sync::{mpsc, Arc};
 use std::thread;
 
+use crossbeam_channel::{self, Receiver, Sender};
 use mio::{event::Event, Events, Interest, Poll, Registry, Token, Waker};
 use slab::Slab;
 
@@ -20,11 +21,6 @@ use crate::{
 
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt::Debug;
-
-#[cfg(windows)]
-use crate::duplicate_platform_handle;
-#[cfg(unix)]
-use crate::sys::cmsg;
 
 const WAKE_TOKEN: Token = Token(!0);
 
@@ -58,7 +54,7 @@ enum Request {
 #[derive(Clone, Debug)]
 pub struct EventLoopHandle {
     waker: Arc<Waker>,
-    requests_tx: mpsc::Sender<Request>,
+    requests_tx: Sender<Request>,
 }
 
 impl EventLoopHandle {
@@ -70,7 +66,7 @@ impl EventLoopHandle {
         <C as Client>::ServerMessage: Serialize + Debug + AssociateHandleForMessage + Send,
         <C as Client>::ClientMessage: DeserializeOwned + Debug + AssociateHandleForMessage + Send,
     {
-        let (handler, mut proxy) = make_client::<C>();
+        let (handler, mut proxy) = make_client::<C>()?;
         let driver = Box::new(FramedDriver::new(handler));
         let r = self.add_connection(connection, driver);
         trace!("EventLoop::bind_client {:?}", r);
@@ -145,8 +141,8 @@ struct EventLoop {
     waker: Arc<Waker>,
     name: String,
     connections: Slab<Connection>,
-    requests_rx: mpsc::Receiver<Request>,
-    requests_tx: mpsc::Sender<Request>,
+    requests_rx: Receiver<Request>,
+    requests_tx: Sender<Request>,
 }
 
 const EVENT_LOOP_INITIAL_CLIENTS: usize = 64; // Initial client allocation, exceeding this will cause the connection slab to grow.
@@ -156,7 +152,7 @@ impl EventLoop {
     fn new(name: String) -> Result<EventLoop> {
         let poll = Poll::new()?;
         let waker = Arc::new(Waker::new(poll.registry(), WAKE_TOKEN)?);
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = crossbeam_channel::bounded(EVENT_LOOP_INITIAL_CLIENTS);
         let eventloop = EventLoop {
             poll,
             events: Events::with_capacity(EVENT_LOOP_EVENTS_PER_ITERATION),
@@ -201,7 +197,14 @@ impl EventLoop {
     // Each step may call `handle_event` on any registered connection that
     // has received readiness events from the poll wakeup.
     fn poll(&mut self) -> Result<bool> {
-        self.poll.poll(&mut self.events, None)?;
+        loop {
+            let r = self.poll.poll(&mut self.events, None);
+            match r {
+                Ok(()) => break,
+                Err(ref e) if interrupted(e) => continue,
+                Err(e) => return Err(e),
+            }
+        }
 
         for event in self.events.iter() {
             match event.token() {
@@ -233,7 +236,7 @@ impl EventLoop {
                         debug!("{}: {:?}: done, removing", self.name, token);
                         let mut connection = self.connections.remove(token.0);
                         if let Err(e) = connection.shutdown(self.poll.registry()) {
-                            warn!(
+                            debug!(
                                 "{}: EventLoop drop - closing connection for {:?} failed: {:?}",
                                 self.name, token, e
                             );
@@ -283,7 +286,7 @@ impl EventLoop {
                         debug!("{}: {:?}: done (wake), removing", self.name, token);
                         let mut connection = self.connections.remove(token.0);
                         if let Err(e) = connection.shutdown(self.poll.registry()) {
-                            warn!(
+                            debug!(
                                 "{}: EventLoop drop - closing connection for {:?} failed: {:?}",
                                 self.name, token, e
                             );
@@ -306,7 +309,7 @@ impl Drop for EventLoop {
                 self.name, token
             );
             if let Err(e) = connection.shutdown(self.poll.registry()) {
-                warn!(
+                debug!(
                     "{}: EventLoop drop - closing connection for {:?} failed: {:?}",
                     self.name, token, e
                 );
@@ -599,8 +602,24 @@ where
         // Repeatedly call `decode` as long as it produces items, passing each produced item to the handler to action.
         #[allow(unused_mut)]
         while let Some(mut item) = self.codec.decode(&mut inbound.buf)? {
-            #[cfg(unix)]
-            item.receive_owned_message_handle(|| cmsg::decode_handle(&mut inbound.cmsg));
+            if item.has_associated_handle() {
+                // On Unix, dequeue a handle from the connection and update the item's handle.
+                #[cfg(unix)]
+                {
+                    let new = inbound
+                        .pop_handle()
+                        .expect("inbound handle expected for item");
+                    unsafe { item.set_local_handle(new.take()) };
+                }
+                // On Windows, the deserialized item contains the correct handle value, so
+                // convert it to an owned handle on the item.
+                #[cfg(windows)]
+                {
+                    assert!(inbound.pop_handle().is_none());
+                    unsafe { item.set_local_handle() };
+                }
+            }
+
             self.handler.consume(item)?;
         }
 
@@ -613,21 +632,25 @@ where
 
         // Repeatedly grab outgoing items from the handler, passing each to `encode` for serialization into `outbound`.
         while let Some(mut item) = self.handler.produce()? {
-            item.prepare_send_message_handle(|handle, _target| {
-                // On Unix, the handle is encoded into a cmsg buffer for out-of-band transport via sendmsg.
-                #[cfg(unix)]
-                {
-                    cmsg::encode_handle(&mut outbound.cmsg, handle);
-                    Ok(handle)
-                }
-                // On Windows, the handle is transferred by duplicating it into the target remote process during message send.
+            let handle = if item.has_associated_handle() {
+                #[allow(unused_mut)]
+                let mut handle = item.take_handle();
+                // On Windows, the handle is transferred by duplicating it into the target remote process.
                 #[cfg(windows)]
                 unsafe {
-                    duplicate_platform_handle(handle, Some(_target))
+                    item.set_remote_handle(handle.send_to_target()?);
                 }
-            })?;
+                Some(handle)
+            } else {
+                None
+            };
 
             self.codec.encode(item, &mut outbound.buf)?;
+            if let Some(handle) = handle {
+                // `outbound` retains ownership of the handle until the associated
+                // encoded item in `outbound.buf` is sent to the remote process.
+                outbound.push_handle(handle);
+            }
         }
         Ok(())
     }
@@ -673,15 +696,27 @@ impl EventLoopThread {
             .stack_size(stack_size.unwrap_or(64 * 4096));
 
         let thread = builder.spawn(move || {
+            trace!("{}: event loop thread enter", event_loop.name);
             after_start();
             let _thread_exit_guard = scopeguard::guard((), |_| before_stop());
 
-            while event_loop.poll()? {
-                trace!("{}: event loop poll", event_loop.name);
-            }
+            let r = loop {
+                let start = std::time::Instant::now();
+                let r = event_loop.poll();
+                trace!(
+                    "{}: event loop poll r={:?}, took={}μs",
+                    event_loop.name,
+                    r,
+                    start.elapsed().as_micros()
+                );
+                match r {
+                    Ok(true) => continue,
+                    _ => break r,
+                }
+            };
 
-            trace!("{}: event loop shutdown", event_loop.name);
-            Ok(())
+            trace!("{}: event loop thread exit", event_loop.name);
+            r.map(|_| ())
         })?;
 
         Ok(EventLoopThread {
@@ -790,7 +825,7 @@ mod test {
 
         // RPC message from client to server.
         let response = client_proxy.call(TestServerMessage::TestRequest);
-        let response = response.wait().expect("client response");
+        let response = response.expect("client response");
         assert_eq!(response, TestClientMessage::TestResponse);
 
         // Explicit shutdown.
@@ -806,7 +841,7 @@ mod test {
 
         // RPC message from client to server.
         let response = client_proxy.call(TestServerMessage::TestRequest);
-        let response = response.wait().expect("client response");
+        let response = response.expect("client response");
         assert_eq!(response, TestClientMessage::TestResponse);
 
         // Explicit shutdown.
@@ -821,7 +856,7 @@ mod test {
         drop(server);
 
         let response = client_proxy.call(TestServerMessage::TestRequest);
-        response.wait().expect_err("sending on closed channel");
+        response.expect_err("sending on closed channel");
     }
 
     #[test]
@@ -831,7 +866,7 @@ mod test {
         drop(client);
 
         let response = client_proxy.call(TestServerMessage::TestRequest);
-        response.wait().expect_err("sending on a closed channel");
+        response.expect_err("sending on a closed channel");
     }
 
     #[test]
@@ -845,6 +880,18 @@ mod test {
         server_handle
             .shutdown()
             .expect_err("sending on closed channel");
+    }
+
+    #[test]
+    fn clone_after_drop() {
+        init();
+        let (server, client, client_proxy) = setup();
+        drop(server);
+        drop(client);
+
+        client_proxy
+            .try_clone()
+            .expect_err("cloning a closed proxy");
     }
 
     #[test]

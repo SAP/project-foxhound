@@ -90,12 +90,10 @@ NS_INTERFACE_MAP_END_INHERITING(Performance)
 
 PerformanceMainThread::PerformanceMainThread(nsPIDOMWindowInner* aWindow,
                                              nsDOMNavigationTiming* aDOMTiming,
-                                             nsITimedChannel* aChannel,
-                                             bool aPrincipal)
-    : Performance(aWindow, aPrincipal),
+                                             nsITimedChannel* aChannel)
+    : Performance(aWindow->AsGlobal()),
       mDOMTiming(aDOMTiming),
-      mChannel(aChannel),
-      mCrossOriginIsolated(aWindow->AsGlobal()->CrossOriginIsolated()) {
+      mChannel(aChannel) {
   MOZ_ASSERT(aWindow, "Parent window object should be provided");
   if (StaticPrefs::dom_enable_event_timing()) {
     mEventCounts = new class EventCounts(GetParentObject());
@@ -289,42 +287,6 @@ void PerformanceMainThread::DispatchPendingEventTimingEntries() {
   }
 }
 
-// To be removed once bug 1124165 lands
-bool PerformanceMainThread::IsPerformanceTimingAttribute(
-    const nsAString& aName) {
-  // Note that toJSON is added to this list due to bug 1047848
-  static const char* attributes[] = {"navigationStart",
-                                     "unloadEventStart",
-                                     "unloadEventEnd",
-                                     "redirectStart",
-                                     "redirectEnd",
-                                     "fetchStart",
-                                     "domainLookupStart",
-                                     "domainLookupEnd",
-                                     "connectStart",
-                                     "secureConnectionStart",
-                                     "connectEnd",
-                                     "requestStart",
-                                     "responseStart",
-                                     "responseEnd",
-                                     "domLoading",
-                                     "domInteractive",
-                                     "domContentLoadedEventStart",
-                                     "domContentLoadedEventEnd",
-                                     "domComplete",
-                                     "loadEventStart",
-                                     "loadEventEnd",
-                                     nullptr};
-
-  for (uint32_t i = 0; attributes[i]; ++i) {
-    if (aName.EqualsASCII(attributes[i])) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 DOMHighResTimeStamp PerformanceMainThread::GetPerformanceTimingFromString(
     const nsAString& aProperty) {
   // ::Measure expects the values returned from this function to be passed
@@ -397,15 +359,14 @@ DOMHighResTimeStamp PerformanceMainThread::GetPerformanceTimingFromString(
         "of sync");
   }
   return nsRFPService::ReduceTimePrecisionAsMSecs(
-      retValue, GetRandomTimelineSeed(), /* aIsSystemPrinciapl */ false,
-      CrossOriginIsolated());
+      retValue, GetRandomTimelineSeed(), mRTPCallerType);
 }
 
 void PerformanceMainThread::InsertUserEntry(PerformanceEntry* aEntry) {
   MOZ_ASSERT(NS_IsMainThread());
 
   nsAutoCString uri;
-  uint64_t markCreationEpoch = 0;
+  double markCreationEpoch = 0;
 
   if (StaticPrefs::dom_performance_enable_user_timing_logging() ||
       StaticPrefs::dom_performance_enable_notify_performance_timing()) {
@@ -419,7 +380,11 @@ void PerformanceMainThread::InsertUserEntry(PerformanceEntry* aEntry) {
       // If we have no URI, just put in "none".
       uri.AssignLiteral("none");
     }
-    markCreationEpoch = static_cast<uint64_t>(PR_Now() / PR_USEC_PER_MSEC);
+
+    // PR_Now() returns a signed 64-bit integer. Since it represents a
+    // timestamp, only ~32-bits will represent the value which should safely fit
+    // into a double.
+    markCreationEpoch = static_cast<double>(PR_Now() / PR_USEC_PER_MSEC);
 
     if (StaticPrefs::dom_performance_enable_user_timing_logging()) {
       Performance::LogEntry(aEntry, uri);
@@ -444,8 +409,7 @@ DOMHighResTimeStamp PerformanceMainThread::CreationTime() const {
 void PerformanceMainThread::CreateNavigationTimingEntry() {
   MOZ_ASSERT(!mDocEntry, "mDocEntry should be null.");
 
-  if (!StaticPrefs::dom_enable_performance_navigation_timing() ||
-      StaticPrefs::privacy_resistFingerprinting()) {
+  if (!StaticPrefs::dom_enable_performance_navigation_timing()) {
     return;
   }
 
@@ -485,10 +449,6 @@ void PerformanceMainThread::QueueNavigationTimingEntry() {
   QueueEntry(mDocEntry);
 }
 
-bool PerformanceMainThread::CrossOriginIsolated() const {
-  return mCrossOriginIsolated;
-}
-
 EventCounts* PerformanceMainThread::EventCounts() {
   MOZ_ASSERT(StaticPrefs::dom_enable_event_timing());
   return mEventCounts;
@@ -496,12 +456,6 @@ EventCounts* PerformanceMainThread::EventCounts() {
 
 void PerformanceMainThread::GetEntries(
     nsTArray<RefPtr<PerformanceEntry>>& aRetval) {
-  // We return an empty list when 'privacy.resistFingerprinting' is on.
-  if (nsContentUtils::ShouldResistFingerprinting()) {
-    aRetval.Clear();
-    return;
-  }
-
   aRetval = mResourceEntries.Clone();
   aRetval.AppendElements(mUserEntries);
 
@@ -517,12 +471,6 @@ void PerformanceMainThread::GetEntries(
 
 void PerformanceMainThread::GetEntriesByType(
     const nsAString& aEntryType, nsTArray<RefPtr<PerformanceEntry>>& aRetval) {
-  // We return an empty list when 'privacy.resistFingerprinting' is on.
-  if (nsContentUtils::ShouldResistFingerprinting()) {
-    aRetval.Clear();
-    return;
-  }
-
   RefPtr<nsAtom> type = NS_Atomize(aEntryType);
   if (type == nsGkAtoms::navigation) {
     aRetval.Clear();
@@ -559,12 +507,6 @@ void PerformanceMainThread::GetEntriesByTypeForObserver(
 void PerformanceMainThread::GetEntriesByName(
     const nsAString& aName, const Optional<nsAString>& aEntryType,
     nsTArray<RefPtr<PerformanceEntry>>& aRetval) {
-  // We return an empty list when 'privacy.resistFingerprinting' is on.
-  if (nsContentUtils::ShouldResistFingerprinting()) {
-    aRetval.Clear();
-    return;
-  }
-
   Performance::GetEntriesByName(aName, aEntryType, aRetval);
 
   if (mFCPTiming && mFCPTiming->GetName()->Equals(aName) &&

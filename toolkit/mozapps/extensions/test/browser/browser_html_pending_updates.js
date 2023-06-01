@@ -12,7 +12,7 @@ const LOCALE_ADDON_ID = "postponed-langpack@mochi.test";
 
 let gProvider;
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [["extensions.checkUpdateSecurity", false]],
   });
@@ -64,7 +64,7 @@ function createTestExtension({
 
   const manifest = {
     name: "Test Pending Update",
-    applications: {
+    browser_specific_settings: {
       gecko: { id, update_url },
     },
     version: "1",

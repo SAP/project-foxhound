@@ -7,15 +7,16 @@
 #ifndef nsINode_h___
 #define nsINode_h___
 
+#include "mozilla/DoublyLinkedList.h"
 #include "mozilla/Likely.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"              // for member, local
 #include "nsGkAtoms.h"             // for nsGkAtoms::baseURIProperty
 #include "mozilla/dom/NodeInfo.h"  // member (in nsCOMPtr)
 #include "nsIWeakReference.h"
+#include "nsIMutationObserver.h"
 #include "nsNodeInfoManager.h"  // for use in NodePrincipal()
 #include "nsPropertyTable.h"    // for typedefs
-#include "nsTObserverArray.h"   // for member
 #include "mozilla/ErrorResult.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/MemoryReporting.h"
@@ -44,7 +45,7 @@ class nsIContent;
 class nsIContentSecurityPolicy;
 class nsIFrame;
 class nsIHTMLCollection;
-class nsIMutationObserver;
+class nsMultiMutationObserver;
 class nsINode;
 class nsINodeList;
 class nsIPrincipal;
@@ -252,7 +253,6 @@ class nsNodeWeakReference final : public nsIWeakReference {
 
   // nsIWeakReference
   NS_DECL_NSIWEAKREFERENCE
-  size_t SizeOfOnlyThis(mozilla::MallocSizeOf aMallocSizeOf) const override;
 
   void NoticeNodeDestruction() { mObject = nullptr; }
 
@@ -383,8 +383,6 @@ class nsINode : public mozilla::dom::EventTarget {
   enum {
     /** form control elements */
     eHTML_FORM_CONTROL = 1 << 6,
-    /** SVG use targets */
-    eUSE_TARGET = 1 << 9,
     /** SVG shapes such as lines and polygons, but not images */
     eSHAPE = 1 << 12
   };
@@ -446,6 +444,14 @@ class nsINode : public mozilla::dom::EventTarget {
    * @param aNode must not be nullptr.
    */
   bool IsShadowIncludingInclusiveDescendantOf(const nsINode* aNode) const;
+
+  /**
+   * Returns true if the given node is this node or one of its descendants
+   * in the "flat tree."
+   *
+   * @param aNode must not be nullptr.
+   */
+  bool IsInclusiveFlatTreeDescendantOf(const nsINode* aNode) const;
 
   /**
    * Return this node as a document fragment. Asserts IsDocumentFragment().
@@ -814,6 +820,8 @@ class nsINode : public mozilla::dom::EventTarget {
     return IsSVGElement() && IsNodeInternal(aFirst, aArgs...);
   }
 
+  virtual bool IsSVGGraphicsElement() const { return false; }
+
   inline bool IsXULElement() const {
     return IsElement() && IsInNamespace(kNameSpaceID_XUL);
   }
@@ -1099,11 +1107,15 @@ class nsINode : public mozilla::dom::EventTarget {
    */
   void AddMutationObserver(nsIMutationObserver* aMutationObserver) {
     nsSlots* s = Slots();
-    NS_ASSERTION(s->mMutationObservers.IndexOf(aMutationObserver) ==
-                     nsTArray<int>::NoIndex,
-                 "Observer already in the list");
-    s->mMutationObservers.AppendElement(aMutationObserver);
+    if (aMutationObserver) {
+      NS_ASSERTION(!s->mMutationObservers.contains(aMutationObserver),
+                   "Observer already in the list");
+
+      s->mMutationObservers.pushBack(aMutationObserver);
+    }
   }
+
+  void AddMutationObserver(nsMultiMutationObserver* aMultiMutationObserver);
 
   /**
    * Same as above, but only adds the observer if its not observing
@@ -1114,9 +1126,14 @@ class nsINode : public mozilla::dom::EventTarget {
    */
   void AddMutationObserverUnlessExists(nsIMutationObserver* aMutationObserver) {
     nsSlots* s = Slots();
-    s->mMutationObservers.AppendElementUnlessExists(aMutationObserver);
+    if (aMutationObserver &&
+        !s->mMutationObservers.contains(aMutationObserver)) {
+      s->mMutationObservers.pushBack(aMutationObserver);
+    }
   }
 
+  void AddMutationObserverUnlessExists(
+      nsMultiMutationObserver* aMultiMutationObserver);
   /**
    * Same as AddMutationObserver, but for nsIAnimationObservers.  This
    * additionally records on the document that animation observers have
@@ -1138,13 +1155,13 @@ class nsINode : public mozilla::dom::EventTarget {
   void RemoveMutationObserver(nsIMutationObserver* aMutationObserver) {
     nsSlots* s = GetExistingSlots();
     if (s) {
-      s->mMutationObservers.RemoveElement(aMutationObserver);
+      s->mMutationObservers.remove(aMutationObserver);
     }
   }
 
-  nsAutoTObserverArray<nsIMutationObserver*, 1>* GetMutationObservers() {
-    return HasSlots() ? &GetExistingSlots()->mMutationObservers : nullptr;
-  }
+  void RemoveMutationObserver(nsMultiMutationObserver* aMultiMutationObserver);
+
+  mozilla::SafeDoublyLinkedList<nsIMutationObserver>* GetMutationObservers();
 
   /**
    * Helper methods to access ancestor node(s) of type T.
@@ -1266,7 +1283,7 @@ class nsINode : public mozilla::dom::EventTarget {
     /**
      * A list of mutation observers
      */
-    nsAutoTObserverArray<nsIMutationObserver*, 1> mMutationObservers;
+    mozilla::SafeDoublyLinkedList<nsIMutationObserver> mMutationObservers;
 
     /**
      * An object implementing NodeList for this content (childNodes)
@@ -1627,6 +1644,12 @@ class nsINode : public mozilla::dom::EventTarget {
   bool Contains(const nsINode* aOther) const;
 
   bool UnoptimizableCCNode() const;
+
+  /**
+   * Fire a DOMNodeRemoved mutation event for all children of this node
+   * TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
+   */
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void FireNodeRemovedForChildren();
 
  private:
   mozilla::dom::SVGUseElement* DoGetContainingSVGUseShadowHost() const;

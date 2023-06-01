@@ -8,6 +8,7 @@
 #define jit_WarpBuilderShared_h
 
 #include "mozilla/Attributes.h"
+#include "mozilla/Maybe.h"
 
 #include "jit/MIRGraph.h"
 #include "js/Value.h"
@@ -54,6 +55,7 @@ class MOZ_STACK_CLASS CallInfo {
 
  private:
   ArgFormat argFormat_ = ArgFormat::Standard;
+  mozilla::Maybe<ResumeMode> inliningMode_;
 
  public:
   CallInfo(TempAllocator& alloc, bool constructing, bool ignoresReturnValue,
@@ -162,6 +164,12 @@ class MOZ_STACK_CLASS CallInfo {
     return args_.reserve(numActuals);
   }
 
+  void initForCloseIter(MDefinition* iter, MDefinition* callee) {
+    MOZ_ASSERT(args_.empty());
+    setCallee(callee);
+    setThis(iter);
+  }
+
   void popCallStack(MBasicBlock* current) { current->popn(numFormals()); }
 
   [[nodiscard]] bool pushCallStack(MBasicBlock* current) {
@@ -234,6 +242,17 @@ class MOZ_STACK_CLASS CallInfo {
   bool isInlined() const { return inlined_; }
   void markAsInlined() { inlined_ = true; }
 
+  ResumeMode inliningResumeMode() const {
+    MOZ_ASSERT(isInlined());
+    return *inliningMode_;
+  }
+
+  void setInliningResumeMode(ResumeMode mode) {
+    MOZ_ASSERT(isInlined());
+    MOZ_ASSERT(inliningMode_.isNothing());
+    inliningMode_.emplace(mode);
+  }
+
   MDefinition* callee() const {
     MOZ_ASSERT(callee_);
     return callee_;
@@ -276,15 +295,15 @@ MCall* MakeCall(TempAllocator& alloc, Undef addUndefined, CallInfo& callInfo,
   MOZ_ASSERT_IF(needsThisCheck, !target);
   MOZ_ASSERT_IF(isDOMCall, target->jitInfo()->type() == JSJitInfo::Method);
 
-  DOMObjectKind objKind = DOMObjectKind::Unknown;
+  mozilla::Maybe<DOMObjectKind> objKind;
   if (isDOMCall) {
     const JSClass* clasp = callInfo.thisArg()->toGuardToClass()->getClass();
     MOZ_ASSERT(clasp->isDOMClass());
     if (clasp->isNativeObject()) {
-      objKind = DOMObjectKind::Native;
+      objKind.emplace(DOMObjectKind::Native);
     } else {
       MOZ_ASSERT(clasp->isProxyObject());
-      objKind = DOMObjectKind::Proxy;
+      objKind.emplace(DOMObjectKind::Proxy);
     }
   }
 

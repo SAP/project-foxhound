@@ -5,6 +5,7 @@
 
 const TEST_PATH = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.org"
 );
 
@@ -39,6 +40,13 @@ add_task(async function test_identityBlock_inherited_blank() {
     await TestUtils.waitForCondition(
       () => popupBC.children[0]?.currentWindowGlobal
     );
+
+    info("Waiting for button to appear");
+    await SpecialPowers.spawn(popupBC.children[0], [], async () => {
+      await ContentTaskUtils.waitForCondition(() =>
+        content.document.querySelector("button")
+      );
+    });
 
     info("Got frame contents.");
 

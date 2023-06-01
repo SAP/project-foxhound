@@ -9,8 +9,7 @@
 
 #include "mozilla/dom/InputType.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class NumericInputTypeBase : public InputType {
  public:
@@ -18,7 +17,7 @@ class NumericInputTypeBase : public InputType {
 
   bool IsRangeOverflow() const override;
   bool IsRangeUnderflow() const override;
-  bool HasStepMismatch(bool aUseZeroIfValueNaN) const override;
+  bool HasStepMismatch() const override;
 
   nsresult GetRangeOverflowMessage(nsAString& aMessage) override;
   nsresult GetRangeUnderflowMessage(nsAString& aMessage) override;
@@ -74,7 +73,6 @@ class RangeInputType : public NumericInputTypeBase {
       : NumericInputTypeBase(aInputElement) {}
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_NumericInputTypes_h__ */

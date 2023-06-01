@@ -3,6 +3,8 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 const path = require("path");
+const webpack = require("webpack");
+const { ResourceUriPlugin } = require("./tools/resourceUriPlugin");
 
 const PATHS = {
   // Where is the entry point for the unit tests?
@@ -59,6 +61,12 @@ module.exports = function(config) {
     },
     coverageIstanbulReporter: {
       reports: ["lcov", "text-summary"], // for some reason "lcov" reallys means "lcov" and "html"
+      "report-config": {
+        // so the full m-c path gets printed; needed for https://coverage.moz.tools/ integration
+        lcov: {
+          projectRoot: "../../..",
+        },
+      },
       dir: PATHS.coverageReportingPath,
       // This will make karma fail if coverage reporting is less than the minimums here
       thresholds: !isTDD && {
@@ -188,10 +196,17 @@ module.exports = function(config) {
               functions: 96,
               branches: 70,
             },
+            "content-src/aboutwelcome/components/LanguageSwitcher.jsx": {
+              // This file is covered by the mochitest: browser_aboutwelcome_multistage_languageSwitcher.js
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
             "content-src/aboutwelcome/**/*.jsx": {
               statements: 62,
               lines: 60,
-              functions: 65,
+              functions: 50,
               branches: 50,
             },
             "content-src/components/**/*.jsx": {
@@ -217,7 +232,22 @@ module.exports = function(config) {
       resolve: {
         extensions: [".js", ".jsx"],
         modules: [PATHS.moduleResolveDirectory, "node_modules"],
+        fallback: {
+          stream: require.resolve("stream-browserify"),
+          buffer: require.resolve("buffer"),
+        },
       },
+      plugins: [
+        // The ResourceUriPlugin handles translating resource URIs in import
+        // statements in .mjs files, in a similar way to what
+        // babel-jsm-to-commonjs does for jsm files.
+        new ResourceUriPlugin({
+          resourcePathRegEx: PATHS.resourcePathRegEx,
+        }),
+        new webpack.DefinePlugin({
+          "process.env.NODE_ENV": JSON.stringify("development"),
+        }),
+      ],
       externals: {
         // enzyme needs these for backwards compatibility with 0.13.
         // see https://github.com/airbnb/enzyme/blob/master/docs/guides/webpack.md#using-enzyme-with-webpack
@@ -238,13 +268,13 @@ module.exports = function(config) {
                   plugins: [
                     // Converts .jsm files into common-js modules
                     [
-                      "jsm-to-commonjs",
+                      "./tools/babel-jsm-to-commonjs.js",
                       {
                         basePath: PATHS.resourcePathRegEx,
                         removeOtherImports: true,
                         replace: true,
                       },
-                    ], // require("babel-plugin-jsm-to-commonjs")
+                    ],
                     "@babel/plugin-proposal-nullish-coalescing-operator",
                     "@babel/plugin-proposal-optional-chaining",
                     "@babel/plugin-proposal-class-properties",
@@ -257,6 +287,11 @@ module.exports = function(config) {
             test: /\.js$/,
             exclude: [/node_modules\/(?!(fluent|fluent-react)\/).*/, /test/],
             loader: "babel-loader",
+            options: {
+              // This is a workaround for bug 1787278. It can be removed once
+              // that bug is fixed.
+              plugins: ["@babel/plugin-proposal-optional-chaining"],
+            },
           },
           {
             test: /\.jsx$/,
@@ -264,7 +299,10 @@ module.exports = function(config) {
             loader: "babel-loader",
             options: {
               presets: ["@babel/preset-react"],
-              plugins: ["@babel/plugin-proposal-optional-chaining"],
+              plugins: [
+                "@babel/plugin-proposal-nullish-coalescing-operator",
+                "@babel/plugin-proposal-optional-chaining",
+              ],
             },
           },
           {

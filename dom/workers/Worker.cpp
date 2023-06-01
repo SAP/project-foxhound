@@ -21,8 +21,7 @@
 #  undef PostMessage
 #endif
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /* static */
 already_AddRefed<Worker> Worker::Constructor(const GlobalObject& aGlobal,
@@ -43,7 +42,8 @@ already_AddRefed<Worker> Worker::Constructor(const GlobalObject& aGlobal,
 
   RefPtr<WorkerPrivate> workerPrivate = WorkerPrivate::Constructor(
       cx, aScriptURL, false /* aIsChromeWorker */, WorkerKindDedicated,
-      aOptions.mName, VoidCString(), nullptr /*aLoadInfo */, aRv);
+      aOptions.mCredentials, aOptions.mType, aOptions.mName, VoidCString(),
+      nullptr /*aLoadInfo */, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -95,9 +95,14 @@ void Worker::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
     return;
   }
 
-  NS_ConvertUTF16toUTF8 nameOrScriptURL(mWorkerPrivate->WorkerName().IsEmpty()
-                                            ? mWorkerPrivate->ScriptURL()
-                                            : mWorkerPrivate->WorkerName());
+  NS_ConvertUTF16toUTF8 nameOrScriptURL(
+      mWorkerPrivate->WorkerName().IsEmpty()
+          ? Substring(
+                mWorkerPrivate->ScriptURL(), 0,
+                std::min(size_t(1024), mWorkerPrivate->ScriptURL().Length()))
+          : Substring(
+                mWorkerPrivate->WorkerName(), 0,
+                std::min(size_t(1024), mWorkerPrivate->WorkerName().Length())));
   AUTO_PROFILER_MARKER_TEXT("Worker.postMessage", DOM, {}, nameOrScriptURL);
   uint32_t flags = uint32_t(js::ProfilingStackFrame::Flags::RELEVANT_FOR_JS);
   if (mWorkerPrivate->IsChromeWorker()) {
@@ -112,8 +117,7 @@ void Worker::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
 
   UniquePtr<AbstractTimelineMarker> start;
   UniquePtr<AbstractTimelineMarker> end;
-  RefPtr<TimelineConsumers> timelines = TimelineConsumers::Get();
-  bool isTimelineRecording = timelines && !timelines->IsEmpty();
+  bool isTimelineRecording = !TimelineConsumers::IsEmpty();
 
   if (isTimelineRecording) {
     start = MakeUnique<WorkerTimelineMarker>(
@@ -128,7 +132,7 @@ void Worker::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
   clonePolicy.allowIntraClusterClonableSharedObjects();
 
   if (NS_IsMainThread()) {
-    nsGlobalWindowInner* win = nsContentUtils::CallerInnerWindow();
+    nsGlobalWindowInner* win = nsContentUtils::IncumbentInnerWindow();
     if (win && win->IsSharedMemoryAllowed()) {
       clonePolicy.allowSharedMemoryObjects();
     }
@@ -147,8 +151,8 @@ void Worker::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
             ? ProfileTimelineWorkerOperationType::SerializeDataOnMainThread
             : ProfileTimelineWorkerOperationType::SerializeDataOffMainThread,
         MarkerTracingType::END);
-    timelines->AddMarkerForAllObservedDocShells(start);
-    timelines->AddMarkerForAllObservedDocShells(end);
+    TimelineConsumers::AddMarkerForAllObservedDocShells(start);
+    TimelineConsumers::AddMarkerForAllObservedDocShells(end);
   }
 
   if (NS_WARN_IF(aRv.Failed())) {
@@ -198,5 +202,4 @@ NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 NS_IMPL_ADDREF_INHERITED(Worker, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(Worker, DOMEventTargetHelper)
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

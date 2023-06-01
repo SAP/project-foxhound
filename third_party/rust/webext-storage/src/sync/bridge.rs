@@ -3,7 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use rusqlite::Transaction;
-use sync15_traits::{self, ApplyResults, IncomingEnvelope, OutgoingEnvelope};
+use sync15::bso::IncomingBso;
+use sync15::engine::ApplyResults;
 use sync_guid::Guid as SyncGuid;
 
 use crate::db::{delete_meta, get_meta, put_meta, StorageDb};
@@ -17,7 +18,7 @@ const SYNC_ID_META_KEY: &str = "sync_id";
 
 /// A bridged engine implements all the methods needed to make the
 /// `storage.sync` store work with Desktop's Sync implementation.
-/// Conceptually, it's similar to `sync15_traits::Store`, which we
+/// Conceptually, it's similar to `sync15::Store`, which we
 /// should eventually rename and unify with this trait (#2841).
 pub struct BridgedEngine<'a> {
     db: &'a StorageDb,
@@ -39,7 +40,7 @@ impl<'a> BridgedEngine<'a> {
     }
 }
 
-impl<'a> sync15_traits::BridgedEngine for BridgedEngine<'a> {
+impl<'a> sync15::engine::BridgedEngine for BridgedEngine<'a> {
     type Error = Error;
 
     fn last_sync(&self) -> Result<i64> {
@@ -80,27 +81,24 @@ impl<'a> sync15_traits::BridgedEngine for BridgedEngine<'a> {
     }
 
     fn sync_started(&self) -> Result<()> {
-        schema::create_empty_sync_temp_tables(&self.db)?;
+        schema::create_empty_sync_temp_tables(self.db)?;
         Ok(())
     }
 
-    fn store_incoming(&self, incoming_envelopes: &[IncomingEnvelope]) -> Result<()> {
-        let signal = self.db.begin_interrupt_scope();
-
-        let mut incoming_payloads = Vec::with_capacity(incoming_envelopes.len());
-        for envelope in incoming_envelopes {
-            signal.err_if_interrupted()?;
-            incoming_payloads.push(envelope.payload()?);
-        }
-
+    fn store_incoming(&self, incoming_bsos: Vec<IncomingBso>) -> Result<()> {
+        let signal = self.db.begin_interrupt_scope()?;
         let tx = self.db.unchecked_transaction()?;
-        stage_incoming(&tx, incoming_payloads, &signal)?;
+        let incoming_content: Vec<_> = incoming_bsos
+            .into_iter()
+            .map(IncomingBso::into_content::<super::WebextRecord>)
+            .collect();
+        stage_incoming(&tx, &incoming_content, &signal)?;
         tx.commit()?;
         Ok(())
     }
 
     fn apply(&self) -> Result<ApplyResults> {
-        let signal = self.db.begin_interrupt_scope();
+        let signal = self.db.begin_interrupt_scope()?;
 
         let tx = self.db.unchecked_transaction()?;
         let incoming = get_incoming(&tx)?;
@@ -112,15 +110,11 @@ impl<'a> sync15_traits::BridgedEngine for BridgedEngine<'a> {
         stage_outgoing(&tx)?;
         tx.commit()?;
 
-        let outgoing = get_outgoing(&self.db, &signal)?
-            .into_iter()
-            .map(OutgoingEnvelope::from)
-            .collect::<Vec<_>>();
-        Ok(outgoing.into())
+        Ok(get_outgoing(self.db, &signal)?.into())
     }
 
     fn set_uploaded(&self, _server_modified_millis: i64, ids: &[SyncGuid]) -> Result<()> {
-        let signal = self.db.begin_interrupt_scope();
+        let signal = self.db.begin_interrupt_scope()?;
         let tx = self.db.unchecked_transaction()?;
         record_uploaded(&tx, ids, &signal)?;
         tx.commit()?;
@@ -129,7 +123,7 @@ impl<'a> sync15_traits::BridgedEngine for BridgedEngine<'a> {
     }
 
     fn sync_finished(&self) -> Result<()> {
-        schema::create_empty_sync_temp_tables(&self.db)?;
+        schema::create_empty_sync_temp_tables(self.db)?;
         Ok(())
     }
 
@@ -156,14 +150,12 @@ impl<'a> sync15_traits::BridgedEngine for BridgedEngine<'a> {
 mod tests {
     use super::*;
     use crate::db::test::new_mem_db;
-    use sync15_traits::bridged_engine::BridgedEngine;
+    use sync15::engine::BridgedEngine;
 
     fn query_count(conn: &StorageDb, table: &str) -> u32 {
-        conn.query_row_and_then(
-            &format!("SELECT COUNT(*) FROM {};", table),
-            rusqlite::NO_PARAMS,
-            |row| row.get::<_, u32>(0),
-        )
+        conn.query_row_and_then(&format!("SELECT COUNT(*) FROM {};", table), [], |row| {
+            row.get::<_, u32>(0)
+        })
         .expect("should work")
     }
 
@@ -172,12 +164,12 @@ mod tests {
         engine.db.execute(
             "INSERT INTO storage_sync_data (ext_id, data, sync_change_counter)
                  VALUES ('ext-a', 'invalid-json', 2)",
-            rusqlite::NO_PARAMS,
+            [],
         )?;
         engine.db.execute(
             "INSERT INTO storage_sync_mirror (guid, ext_id, data)
                  VALUES ('guid', 'ext-a', '3')",
-            rusqlite::NO_PARAMS,
+            [],
         )?;
         engine.set_last_sync(1)?;
 
@@ -196,7 +188,7 @@ mod tests {
         // But did reset the change counter.
         let cc = engine.db.query_row_and_then(
             "SELECT sync_change_counter FROM storage_sync_data WHERE ext_id = 'ext-a';",
-            rusqlite::NO_PARAMS,
+            [],
             |row| row.get::<_, u32>(0),
         )?;
         assert_eq!(cc, 1);
@@ -212,7 +204,7 @@ mod tests {
         assert_eq!(query_count(engine.db, "storage_sync_data"), 1);
         let cc = engine.db.query_row_and_then(
             "SELECT sync_change_counter FROM storage_sync_data WHERE ext_id = 'ext-a';",
-            rusqlite::NO_PARAMS,
+            [],
             |row| row.get::<_, u32>(0),
         )?;
         assert_eq!(cc, 2);

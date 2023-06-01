@@ -15,4 +15,9 @@ dur
 ue
 tring
 delink
+warmup
+aNumber
+falsy
+rduce
+complies
 

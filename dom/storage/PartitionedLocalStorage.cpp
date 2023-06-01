@@ -13,8 +13,7 @@
 
 #include "mozilla/dom/StorageBinding.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(PartitionedLocalStorage, Storage);
 
@@ -142,5 +141,4 @@ bool PartitionedLocalStorage::IsForkOf(const Storage* aOther) const {
   return mCache == static_cast<const PartitionedLocalStorage*>(aOther)->mCache;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

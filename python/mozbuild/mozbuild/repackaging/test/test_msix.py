@@ -2,12 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import unittest
 
-from mozbuild.repackaging.msix import get_embedded_version
 from mozunit import main
+
+from mozbuild.repackaging.msix import get_embedded_version
 
 
 class TestMSIX(unittest.TestCase):
@@ -25,7 +24,7 @@ class TestMSIX(unittest.TestCase):
             ("X.Y.Z", "X.Y.Z.0"),
         ]:
             version = get_embedded_version(input, buildid)
-            self.assertEquals(version, output)
+            self.assertEqual(version, output)
             # Some parts of the MSIX packaging ecosystem require the final digit
             # in the dotted quad to be 0.
             self.assertTrue(version.endswith(".0"))
@@ -35,7 +34,7 @@ class TestMSIX(unittest.TestCase):
             ("X.0a1", "X.YYMm.DdHh.0"),
         ]:
             version = get_embedded_version(input, buildid)
-            self.assertEquals(version, output)
+            self.assertEqual(version, output)
             # Some parts of the MSIX packaging ecosystem require the final digit
             # in the dotted quad to be 0.
             self.assertTrue(version.endswith(".0"))

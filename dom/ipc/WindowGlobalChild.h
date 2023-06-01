@@ -18,8 +18,7 @@
 class nsGlobalWindowInner;
 class nsDocShell;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class BrowsingContext;
 class FeaturePolicy;
@@ -28,7 +27,6 @@ class WindowGlobalParent;
 class JSWindowActorChild;
 class JSActorMessageMeta;
 class BrowserChild;
-class SessionStoreDataCollector;
 
 /**
  * Actor for a single nsGlobalWindowInner. This actor is used to communicate
@@ -42,7 +40,7 @@ class WindowGlobalChild final : public WindowGlobalActor,
 
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(WindowGlobalChild)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(WindowGlobalChild)
 
   static already_AddRefed<WindowGlobalChild> GetByInnerWindowId(
       uint64_t aInnerWindowId);
@@ -133,16 +131,13 @@ class WindowGlobalChild final : public WindowGlobalActor,
     return mContainerFeaturePolicy;
   }
 
-  void SetSessionStoreDataCollector(SessionStoreDataCollector* aCollector);
-  SessionStoreDataCollector* GetSessionStoreDataCollector() const;
-
   void UnblockBFCacheFor(BFCacheStatus aStatus);
   void BlockBFCacheFor(BFCacheStatus aStatus);
 
  protected:
   const nsACString& GetRemoteType() override;
 
-  already_AddRefed<JSActor> InitJSActor(JS::HandleObject aMaybeActor,
+  already_AddRefed<JSActor> InitJSActor(JS::Handle<JSObject*> aMaybeActor,
                                         const nsACString& aName,
                                         ErrorResult& aRv) override;
   mozilla::ipc::IProtocol* AsNativeActor() override { return this; }
@@ -169,9 +164,6 @@ class WindowGlobalChild final : public WindowGlobalActor,
 
   mozilla::ipc::IPCResult RecvDispatchSecurityPolicyViolation(
       const nsString& aViolationEventJSON);
-
-  mozilla::ipc::IPCResult RecvGetSecurityInfo(
-      GetSecurityInfoResolver&& aResolve);
 
   mozilla::ipc::IPCResult RecvSaveStorageAccessPermissionGranted();
 
@@ -205,11 +197,9 @@ class WindowGlobalChild final : public WindowGlobalActor,
   nsCOMPtr<nsIPrincipal> mDocumentPrincipal;
   RefPtr<dom::FeaturePolicy> mContainerFeaturePolicy;
   nsCOMPtr<nsIURI> mDocumentURI;
-  RefPtr<SessionStoreDataCollector> mSessionStoreDataCollector;
   int64_t mBeforeUnloadListeners = 0;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // !defined(mozilla_dom_WindowGlobalChild_h)

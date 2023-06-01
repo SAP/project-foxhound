@@ -7,16 +7,15 @@
 #ifndef DOM_BASE_MUTATIONOBSERVERS_H_
 #define DOM_BASE_MUTATIONOBSERVERS_H_
 
+#include "mozilla/DoublyLinkedList.h"
 #include "nsIContent.h"  // for use in inline function (NotifyParentChainChanged)
 #include "nsIMutationObserver.h"  // for use in inline function (NotifyParentChainChanged)
 #include "nsINode.h"
-#include "nsTObserverArray.h"
 
 class nsAtom;
 class nsAttrValue;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 class Animation;
 class Element;
 
@@ -121,13 +120,20 @@ class MutationObservers {
    * @see nsIMutationObserver::ParentChainChanged
    */
   static inline void NotifyParentChainChanged(nsIContent* aContent) {
-    nsAutoTObserverArray<nsIMutationObserver*, 1>* observers =
+    mozilla::SafeDoublyLinkedList<nsIMutationObserver>* observers =
         aContent->GetMutationObservers();
-    if (observers && !observers->IsEmpty()) {
-      NS_OBSERVER_ARRAY_NOTIFY_OBSERVERS(*observers, ParentChainChanged,
-                                         (aContent));
+    if (observers && !observers->isEmpty()) {
+      for (auto iter = observers->begin(); iter != observers->end(); ++iter) {
+        iter->ParentChainChanged(aContent);
+      }
     }
   }
+
+  static void NotifyARIAAttributeDefaultWillChange(
+      mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType);
+  static void NotifyARIAAttributeDefaultChanged(mozilla::dom::Element* aElement,
+                                                nsAtom* aAttribute,
+                                                int32_t aModType);
 
   /**
    * Notify that an animation is added/changed/removed.
@@ -148,7 +154,6 @@ class MutationObservers {
   static void NotifyAnimationMutated(mozilla::dom::Animation* aAnimation,
                                      AnimationMutationType aMutatedType);
 };
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // DOM_BASE_MUTATIONOBSERVERS_H_

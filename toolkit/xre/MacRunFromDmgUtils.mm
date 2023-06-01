@@ -38,8 +38,7 @@
 // https://developer.apple.com/documentation/iokit
 // https://developer.apple.com/library/archive/documentation/DeviceDrivers/Conceptual/IOKitFundamentals/
 
-namespace mozilla {
-namespace MacRunFromDmgUtils {
+namespace mozilla::MacRunFromDmgUtils {
 
 /**
  * Opens a dialog to ask the user whether the existing app in the Applications
@@ -256,7 +255,6 @@ static void ShowInstallFailedDialog() {
  */
 static void LaunchTask(NSString* aPath, NSArray* aArguments) {
   if (@available(macOS 10.13, *)) {
-    setenv("MOZ_INSTALLED_AND_RELAUNCHED_FROM_DMG", "1", 1);
     NSTask* task = [[NSTask alloc] init];
     [task setExecutableURL:[NSURL fileURLWithPath:aPath]];
     if (aArguments) {
@@ -322,7 +320,7 @@ bool LaunchElevatedDmgInstall(NSString* aBundlePath, NSArray* aArguments) {
 
 // Note: both arguments are expected to contain the app name (to end with
 // '.app').
-static bool InstallFromDmg(NSString* aBundlePath, NSString* aDestPath) {
+static bool InstallFromPath(NSString* aBundlePath, NSString* aDestPath) {
   bool installSuccessful = false;
   NSFileManager* fileManager = [NSFileManager defaultManager];
   if ([fileManager copyItemAtPath:aBundlePath toPath:aDestPath error:nil]) {
@@ -330,8 +328,6 @@ static bool InstallFromDmg(NSString* aBundlePath, NSString* aDestPath) {
     StripQuarantineBit(aDestPath);
     installSuccessful = true;
   }
-
-  bool triedElevatedInstall = false;
 
 #ifdef MOZ_UPDATER
   // The installation may have been unsuccessful if the user did not have the
@@ -352,17 +348,10 @@ static bool InstallFromDmg(NSString* aBundlePath, NSString* aDestPath) {
     NSArray* arguments = @[ @"-dmgInstall", aBundlePath, aDestPath ];
     LaunchElevatedDmgInstall(updaterBinPath, arguments);
     installSuccessful = [fileManager fileExistsAtPath:aDestPath];
-    triedElevatedInstall = true;
   }
 #endif
 
   if (!installSuccessful) {
-    if (!triedElevatedInstall) {
-      glean::startup::run_from_dmg_install_outcome.Get("non_privileged_install_failed"_ns)
-          .Set(true);
-    } else {
-      glean::startup::run_from_dmg_install_outcome.Get("privileged_install_failed"_ns).Set(true);
-    }
     return false;
   }
 
@@ -456,19 +445,20 @@ bool IsAppRunningFromDmg() {
   NS_OBJC_END_TRY_BLOCK_RETURN(false);
 }
 
-bool MaybeInstallFromDmgAndRelaunch() {
+bool MaybeInstallAndRelaunch() {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   @autoreleasepool {
     bool isFromDmg = IsAppRunningFromDmg();
-
-    Telemetry::ScalarSet(Telemetry::ScalarID::STARTUP_IS_RUN_FROM_DMG, isFromDmg);
-
+    bool isTranslocated = false;
     if (!isFromDmg) {
-      if (getenv("MOZ_INSTALLED_AND_RELAUNCHED_FROM_DMG")) {
-        unsetenv("MOZ_INSTALLED_AND_RELAUNCHED_FROM_DMG");
-        glean::startup::run_from_dmg_install_outcome.Get("installed_and_relaunched"_ns).Set(true);
+      NSString* bundlePath = [[NSBundle mainBundle] bundlePath];
+      if ([bundlePath containsString:@"/AppTranslocation/"]) {
+        isTranslocated = true;
       }
+    }
+
+    if (!isFromDmg && !isTranslocated) {
       return false;
     }
 
@@ -483,8 +473,6 @@ bool MaybeInstallFromDmgAndRelaunch() {
     NSFileManager* fileManager = [NSFileManager defaultManager];
     BOOL isDir;
     if (![fileManager fileExistsAtPath:applicationsDir isDirectory:&isDir] || !isDir) {
-      glean::startup::run_from_dmg_install_outcome.Get("root_applications_dir_missing"_ns)
-          .Set(true);
       return false;
     }
 
@@ -498,22 +486,18 @@ bool MaybeInstallFromDmgAndRelaunch() {
     // a more sophisticated user intentionally running from .dmg.
     if ([fileManager fileExistsAtPath:destPath]) {
       if (AskUserIfWeShouldLaunchExistingInstall()) {
+        StripQuarantineBit(destPath);
         LaunchInstalledApp(destPath);
-        glean::startup::run_from_dmg_install_outcome.Get("user_accepted_launch_existing"_ns)
-            .Set(true);
         return true;
       }
-      glean::startup::run_from_dmg_install_outcome.Get("user_declined_launch_existing"_ns)
-          .Set(true);
       return false;
     }
 
     if (!AskUserIfWeShouldInstall()) {
-      glean::startup::run_from_dmg_install_outcome.Get("user_declined_install_prompt"_ns).Set(true);
       return false;
     }
 
-    if (!InstallFromDmg(bundlePath, destPath)) {
+    if (!InstallFromPath(bundlePath, destPath)) {
       ShowInstallFailedDialog();
       return false;
     }
@@ -526,5 +510,4 @@ bool MaybeInstallFromDmgAndRelaunch() {
   NS_OBJC_END_TRY_BLOCK_RETURN(false);
 }
 
-}  // namespace MacRunFromDmgUtils
-}  // namespace mozilla
+}  // namespace mozilla::MacRunFromDmgUtils

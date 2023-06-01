@@ -15,10 +15,6 @@ const TRANSITIONS_PREF = "devtools.styleeditor.transitions";
 
 const CSS_TEXT = "* { color: blue }";
 
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
-);
-
 add_task(async function() {
   await new Promise(resolve => {
     SpecialPowers.pushPrefEnv({ set: [[TRANSITIONS_PREF, false]] }, resolve);
@@ -145,13 +141,7 @@ function read(srcChromeURL) {
 
 function write(data, file) {
   return new Promise(resolve => {
-    const converter = Cc[
-      "@mozilla.org/intl/scriptableunicodeconverter"
-    ].createInstance(Ci.nsIScriptableUnicodeConverter);
-
-    converter.charset = "UTF-8";
-
-    const istream = converter.convertToInputStream(data);
+    const istream = getInputStream(data);
     const ostream = FileUtils.openSafeFileOutputStream(file);
 
     NetUtil.asyncCopy(istream, ostream, function(status) {

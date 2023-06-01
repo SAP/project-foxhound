@@ -3,9 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const ChromeUtils = require("ChromeUtils");
-const { Cu } = require("chrome");
-
 /**
  * This function returns a middleware, which is responsible for adding markers that will
  * be visible in performance profiles, and may help investigate performance issues.
@@ -18,7 +15,7 @@ const { Cu } = require("chrome");
  *     sessionId: 12345,
  *     getMarkerDescription: function({ action, state }) {
  *       const { messages } = action;
- *       const totalMessageCount = state.messages.messagesById.size;
+ *       const totalMessageCount = state.messages.mutableMessagesById.size;
  *       return `${messages.length} messages handled, store now has ${totalMessageCount} messages`;
  *     },
  *   },

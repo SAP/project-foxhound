@@ -15,7 +15,6 @@
 
 #include "absl/memory/memory.h"
 #include "modules/rtp_rtcp/source/rtp_descriptor_authentication.h"
-#include "rtc_base/task_utils/to_queued_task.h"
 #include "rtc_base/thread.h"
 
 namespace webrtc {
@@ -24,9 +23,8 @@ namespace {
 class TransformableVideoReceiverFrame
     : public TransformableVideoFrameInterface {
  public:
-  TransformableVideoReceiverFrame(
-      std::unique_ptr<video_coding::RtpFrameObject> frame,
-      uint32_t ssrc)
+  TransformableVideoReceiverFrame(std::unique_ptr<RtpFrameObject> frame,
+                                  uint32_t ssrc)
       : frame_(std::move(frame)),
         metadata_(frame_->GetRtpVideoHeader()),
         ssrc_(ssrc) {}
@@ -42,8 +40,9 @@ class TransformableVideoReceiverFrame
         EncodedImageBuffer::Create(data.data(), data.size()));
   }
 
-  uint32_t GetTimestamp() const override { return frame_->Timestamp(); }
+  uint8_t GetPayloadType() const override { return frame_->PayloadType(); }
   uint32_t GetSsrc() const override { return ssrc_; }
+  uint32_t GetTimestamp() const override { return frame_->Timestamp(); }
 
   bool IsKeyFrame() const override {
     return frame_->FrameType() == VideoFrameType::kVideoFrameKey;
@@ -55,12 +54,14 @@ class TransformableVideoReceiverFrame
 
   const VideoFrameMetadata& GetMetadata() const override { return metadata_; }
 
-  std::unique_ptr<video_coding::RtpFrameObject> ExtractFrame() && {
+  std::unique_ptr<RtpFrameObject> ExtractFrame() && {
     return std::move(frame_);
   }
 
+  Direction GetDirection() const override { return Direction::kReceiver; }
+
  private:
-  std::unique_ptr<video_coding::RtpFrameObject> frame_;
+  std::unique_ptr<RtpFrameObject> frame_;
   const VideoFrameMetadata metadata_;
   const uint32_t ssrc_;
 };
@@ -91,7 +92,7 @@ void RtpVideoStreamReceiverFrameTransformerDelegate::Reset() {
 }
 
 void RtpVideoStreamReceiverFrameTransformerDelegate::TransformFrame(
-    std::unique_ptr<video_coding::RtpFrameObject> frame) {
+    std::unique_ptr<RtpFrameObject> frame) {
   RTC_DCHECK_RUN_ON(&network_sequence_checker_);
   frame_transformer_->Transform(
       std::make_unique<TransformableVideoReceiverFrame>(std::move(frame),
@@ -100,17 +101,19 @@ void RtpVideoStreamReceiverFrameTransformerDelegate::TransformFrame(
 
 void RtpVideoStreamReceiverFrameTransformerDelegate::OnTransformedFrame(
     std::unique_ptr<TransformableFrameInterface> frame) {
-  rtc::scoped_refptr<RtpVideoStreamReceiverFrameTransformerDelegate> delegate =
-      this;
-  network_thread_->PostTask(ToQueuedTask(
+  rtc::scoped_refptr<RtpVideoStreamReceiverFrameTransformerDelegate> delegate(
+      this);
+  network_thread_->PostTask(
       [delegate = std::move(delegate), frame = std::move(frame)]() mutable {
         delegate->ManageFrame(std::move(frame));
-      }));
+      });
 }
 
 void RtpVideoStreamReceiverFrameTransformerDelegate::ManageFrame(
     std::unique_ptr<TransformableFrameInterface> frame) {
   RTC_DCHECK_RUN_ON(&network_sequence_checker_);
+  RTC_CHECK_EQ(frame->GetDirection(),
+               TransformableFrameInterface::Direction::kReceiver);
   if (!receiver_)
     return;
   auto transformed_frame = absl::WrapUnique(

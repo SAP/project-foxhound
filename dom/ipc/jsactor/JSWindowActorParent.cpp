@@ -51,30 +51,10 @@ void JSWindowActorParent::SendRawMessage(
     return;
   }
 
-  size_t length = 0;
-  if (aData) {
-    length += aData->DataLength();
-  }
-  if (aStack) {
-    length += aStack->DataLength();
-  }
-
-  if (NS_WARN_IF(!AllowMessage(aMeta, length))) {
-    aRv.ThrowDataCloneError(
-        nsPrintfCString("JSWindowActorParent serialization error: data too "
-                        "large, in actor '%s'",
-                        PromiseFlatCString(aMeta.actorName()).get()));
-    return;
-  }
-
-  // Cross-process case - send data over WindowGlobalParent to other side.
-  RefPtr<BrowserParent> browserParent = mManager->GetBrowserParent();
-  ContentParent* cp = browserParent->Manager();
-
   Maybe<ClonedMessageData> msgData;
   if (aData) {
     msgData.emplace();
-    if (NS_WARN_IF(!aData->BuildClonedMessageDataForParent(cp, *msgData))) {
+    if (NS_WARN_IF(!aData->BuildClonedMessageData(*msgData))) {
       aRv.ThrowDataCloneError(
           nsPrintfCString("JSWindowActorParent serialization error: cannot "
                           "clone, in actor '%s'",
@@ -86,7 +66,7 @@ void JSWindowActorParent::SendRawMessage(
   Maybe<ClonedMessageData> stackData;
   if (aStack) {
     stackData.emplace();
-    if (!aStack->BuildClonedMessageDataForParent(cp, *stackData)) {
+    if (!aStack->BuildClonedMessageData(*stackData)) {
       stackData.reset();
     }
   }
@@ -112,9 +92,6 @@ CanonicalBrowsingContext* JSWindowActorParent::GetBrowsingContext(
 void JSWindowActorParent::ClearManager() { mManager = nullptr; }
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(JSWindowActorParent, JSActor, mManager)
-
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(JSWindowActorParent, JSActor)
-NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(JSWindowActorParent)
 NS_INTERFACE_MAP_END_INHERITING(JSActor)

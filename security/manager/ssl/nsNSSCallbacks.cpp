@@ -6,6 +6,7 @@
 
 #include "nsNSSCallbacks.h"
 
+#include "NSSSocketControl.h"
 #include "PSMRunnable.h"
 #include "ScopedNSSTypes.h"
 #include "SharedCertVerifier.h"
@@ -15,9 +16,12 @@
 #include "mozilla/Casting.h"
 #include "mozilla/Logging.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/Span.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
+#include "mozilla/intl/Localization.h"
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
 #include "nsIHttpChannel.h"
@@ -26,7 +30,6 @@
 #include "nsIProtocolProxyService.h"
 #include "nsISupportsPriority.h"
 #include "nsIStreamLoader.h"
-#include "nsITokenDialogs.h"
 #include "nsIUploadChannel.h"
 #include "nsIWebProgressListener.h"
 #include "nsNSSCertHelper.h"
@@ -35,7 +38,6 @@
 #include "nsNSSHelper.h"
 #include "nsNSSIOLayer.h"
 #include "nsNetUtil.h"
-#include "nsProtectedAuthThread.h"
 #include "nsProxyRelease.h"
 #include "nsStringStream.h"
 #include "mozpkix/pkixtypes.h"
@@ -104,7 +106,7 @@ class OCSPRequest final : public nsIStreamLoaderObserver, public nsIRunnable {
   // cancelled. This is how we know the closure in OnTimeout is valid. If the
   // timer fires before OnStreamComplete runs, it should be safe to not cancel
   // the request because necko has a strong reference to it.
-  Monitor mMonitor;
+  Monitor mMonitor MOZ_UNANNOTATED;
   bool mNotifiedDone;
   nsCOMPtr<nsIStreamLoader> mLoader;
   const nsCString mAIALocation;
@@ -497,49 +499,60 @@ mozilla::pkix::Result DoOCSPRequest(
   return Success;
 }
 
-static char* ShowProtectedAuthPrompt(PK11SlotInfo* slot,
-                                     nsIInterfaceRequestor* ir) {
-  if (!NS_IsMainThread()) {
-    NS_ERROR("ShowProtectedAuthPrompt called off the main thread");
+static char* ShowProtectedAuthPrompt(PK11SlotInfo* slot, nsIPrompt* prompt) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(slot);
+  MOZ_ASSERT(prompt);
+  if (!NS_IsMainThread() || !slot || !prompt) {
     return nullptr;
   }
 
-  char* protAuthRetVal = nullptr;
-
-  // Get protected auth dialogs
-  nsCOMPtr<nsITokenDialogs> dialogs;
-  nsresult nsrv =
-      getNSSDialogs(getter_AddRefs(dialogs), NS_GET_IID(nsITokenDialogs),
-                    NS_TOKENDIALOGS_CONTRACTID);
-  if (NS_SUCCEEDED(nsrv)) {
-    RefPtr<nsProtectedAuthThread> protectedAuthRunnable =
-        new nsProtectedAuthThread();
-    protectedAuthRunnable->SetParams(slot);
-
-    nsrv = dialogs->DisplayProtectedAuth(ir, protectedAuthRunnable);
-
-    // We call join on the thread,
-    // so we can be sure that no simultaneous access will happen.
-    protectedAuthRunnable->Join();
-
-    if (NS_SUCCEEDED(nsrv)) {
-      SECStatus rv = protectedAuthRunnable->GetResult();
-      switch (rv) {
-        case SECSuccess:
-          protAuthRetVal =
-              ToNewCString(nsDependentCString(PK11_PW_AUTHENTICATED));
-          break;
-        case SECWouldBlock:
-          protAuthRetVal = ToNewCString(nsDependentCString(PK11_PW_RETRY));
-          break;
-        default:
-          protAuthRetVal = nullptr;
-          break;
-      }
-    }
+  // Dispatch a background task to (eventually) call C_Login. The call will
+  // block until the protected authentication succeeds or fails.
+  Atomic<bool> done;
+  Atomic<SECStatus> result;
+  nsresult rv =
+      NS_DispatchBackgroundTask(NS_NewRunnableFunction(__func__, [&]() mutable {
+        result = PK11_CheckUserPassword(slot, nullptr);
+        done = true;
+      }));
+  if (NS_FAILED(rv)) {
+    return nullptr;
   }
 
-  return protAuthRetVal;
+  nsTArray<nsCString> resIds = {
+      "security/pippki/pippki.ftl"_ns,
+  };
+  RefPtr<mozilla::intl::Localization> l10n =
+      mozilla::intl::Localization::Create(resIds, true);
+  auto l10nId = "protected-auth-alert"_ns;
+  auto l10nArgs = mozilla::dom::Optional<intl::L10nArgs>();
+  l10nArgs.Construct();
+  auto dirArg = l10nArgs.Value().Entries().AppendElement();
+  dirArg->mKey = "tokenName"_ns;
+  dirArg->mValue.SetValue().SetAsUTF8String().Assign(PK11_GetTokenName(slot));
+  nsAutoCString promptString;
+  ErrorResult errorResult;
+  l10n->FormatValueSync(l10nId, l10nArgs, promptString, errorResult);
+  if (NS_FAILED(errorResult.StealNSResult())) {
+    return nullptr;
+  }
+  rv = prompt->Alert(nullptr, NS_ConvertUTF8toUTF16(promptString).get());
+  if (NS_FAILED(rv)) {
+    return nullptr;
+  }
+
+  MOZ_ALWAYS_TRUE(SpinEventLoopUntil(
+      "ShowProtectedAuthPrompt"_ns, [&]() { return static_cast<bool>(done); }));
+
+  switch (result) {
+    case SECSuccess:
+      return ToNewCString(nsDependentCString(PK11_PW_AUTHENTICATED));
+    case SECWouldBlock:
+      return ToNewCString(nsDependentCString(PK11_PW_RETRY));
+    default:
+      return nullptr;
+  }
 }
 
 class PK11PasswordPromptRunnable : public SyncRunnableBase {
@@ -552,11 +565,32 @@ class PK11PasswordPromptRunnable : public SyncRunnableBase {
   virtual void RunOnTargetThread() override;
 
  private:
-  PK11SlotInfo* const mSlot;         // in
-  nsIInterfaceRequestor* const mIR;  // in
+  static bool mRunning;
+
+  PK11SlotInfo* mSlot;
+  nsIInterfaceRequestor* mIR;
 };
 
+bool PK11PasswordPromptRunnable::mRunning = false;
+
 void PK11PasswordPromptRunnable::RunOnTargetThread() {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!NS_IsMainThread()) {
+    return;
+  }
+
+  // If we've reentered due to the nested event loop implicit in using
+  // nsIPrompt synchronously (or indeed the explicit nested event loop in the
+  // protected authentication case), bail early, cancelling the password
+  // prompt. This will probably cause the operation that resulted in the prompt
+  // to fail, but this is better than littering the screen with a bunch of
+  // password prompts that the user will probably just cancel anyway.
+  if (mRunning) {
+    return;
+  }
+  mRunning = true;
+  auto setRunningToFalseOnExit = MakeScopeExit([&]() { mRunning = false; });
+
   nsresult rv;
   nsCOMPtr<nsIPrompt> prompt;
   if (!mIR) {
@@ -574,7 +608,7 @@ void PK11PasswordPromptRunnable::RunOnTargetThread() {
   }
 
   if (PK11_ProtectedAuthenticationPath(mSlot)) {
-    mResult = ShowProtectedAuthPrompt(mSlot, mIR);
+    mResult = ShowProtectedAuthPrompt(mSlot, prompt);
     return;
   }
 
@@ -603,6 +637,9 @@ void PK11PasswordPromptRunnable::RunOnTargetThread() {
 }
 
 char* PK11PasswordPrompt(PK11SlotInfo* slot, PRBool /*retry*/, void* arg) {
+  if (!slot) {
+    return nullptr;
+  }
   RefPtr<PK11PasswordPromptRunnable> runnable(new PK11PasswordPromptRunnable(
       slot, static_cast<nsIInterfaceRequestor*>(arg)));
   runnable->DispatchToMainThreadAndWait();
@@ -698,12 +735,15 @@ nsCString getSignatureName(uint32_t aSignatureScheme) {
   return signatureName;
 }
 
-// call with shutdown prevention lock held
 static void PreliminaryHandshakeDone(PRFileDesc* fd) {
-  nsNSSSocketInfo* infoObject = (nsNSSSocketInfo*)fd->higher->secret;
-  if (!infoObject) {
+  NSSSocketControl* socketControl = (NSSSocketControl*)fd->higher->secret;
+  if (!socketControl) {
     return;
   }
+  if (socketControl->IsPreliminaryHandshakeDone()) {
+    return;
+  }
+
   SSLChannelInfo channelInfo;
   if (SSL_GetChannelInfo(fd, &channelInfo, sizeof(channelInfo)) != SECSuccess) {
     return;
@@ -713,17 +753,12 @@ static void PreliminaryHandshakeDone(PRFileDesc* fd) {
                              sizeof(cipherInfo)) != SECSuccess) {
     return;
   }
-  infoObject->SetPreliminaryHandshakeInfo(channelInfo, cipherInfo);
-  infoObject->SetSSLVersionUsed(channelInfo.protocolVersion);
-  infoObject->SetEarlyDataAccepted(channelInfo.earlyDataAccepted);
-  infoObject->SetKEAUsed(channelInfo.keaType);
-  infoObject->SetKEAKeyBits(channelInfo.keaKeyBits);
-  infoObject->SetMACAlgorithmUsed(cipherInfo.macAlgorithm);
-
-  // Don't update NPN details on renegotiation.
-  if (infoObject->IsPreliminaryHandshakeDone()) {
-    return;
-  }
+  socketControl->SetPreliminaryHandshakeInfo(channelInfo, cipherInfo);
+  socketControl->SetSSLVersionUsed(channelInfo.protocolVersion);
+  socketControl->SetEarlyDataAccepted(channelInfo.earlyDataAccepted);
+  socketControl->SetKEAUsed(channelInfo.keaType);
+  socketControl->SetKEAKeyBits(channelInfo.keaKeyBits);
+  socketControl->SetMACAlgorithmUsed(cipherInfo.macAlgorithm);
 
   // Get the NPN value.
   SSLNextProtoState state;
@@ -735,24 +770,24 @@ static void PreliminaryHandshakeDone(PRFileDesc* fd) {
       SECSuccess) {
     if (state == SSL_NEXT_PROTO_NEGOTIATED ||
         state == SSL_NEXT_PROTO_SELECTED) {
-      infoObject->SetNegotiatedNPN(BitwiseCast<char*, unsigned char*>(npnbuf),
-                                   npnlen);
+      socketControl->SetNegotiatedNPN(
+          BitwiseCast<char*, unsigned char*>(npnbuf), npnlen);
     } else {
-      infoObject->SetNegotiatedNPN(nullptr, 0);
+      socketControl->SetNegotiatedNPN(nullptr, 0);
     }
     mozilla::Telemetry::Accumulate(Telemetry::SSL_NPN_TYPE, state);
   } else {
-    infoObject->SetNegotiatedNPN(nullptr, 0);
+    socketControl->SetNegotiatedNPN(nullptr, 0);
   }
 
-  infoObject->SetPreliminaryHandshakeDone();
+  socketControl->SetPreliminaryHandshakeDone();
 }
 
 SECStatus CanFalseStartCallback(PRFileDesc* fd, void* client_data,
                                 PRBool* canFalseStart) {
   *canFalseStart = false;
 
-  nsNSSSocketInfo* infoObject = (nsNSSSocketInfo*)fd->higher->secret;
+  NSSSocketControl* infoObject = (NSSSocketControl*)fd->higher->secret;
   if (!infoObject) {
     PR_SetError(PR_INVALID_STATE_ERROR, 0);
     return SECFailure;
@@ -1008,131 +1043,10 @@ static void AccumulateCipherSuite(Telemetry::HistogramID probe,
   Telemetry::Accumulate(probe, value);
 }
 
-// In the case of session resumption, the AuthCertificate hook has been bypassed
-// (because we've previously successfully connected to our peer). That being the
-// case, we unfortunately don't know what the verified certificate chain was, if
-// the peer's server certificate verified as extended validation, or what its CT
-// status is (if enabled). To address this, we attempt to build a certificate
-// chain here using as much of the original context as possible (e.g. stapled
-// OCSP responses, SCTs, the hostname, the first party domain, etc.). Note that
-// because we are on the socket thread, this must not cause any network
-// requests, hence the use of FLAG_LOCAL_ONLY.
-static void RebuildVerifiedCertificateInformation(PRFileDesc* fd,
-                                                  nsNSSSocketInfo* infoObject) {
-  MOZ_ASSERT(fd);
-  MOZ_ASSERT(infoObject);
-
-  if (!fd || !infoObject) {
-    return;
-  }
-
-  UniqueCERTCertificate cert(SSL_PeerCertificate(fd));
-  MOZ_ASSERT(cert, "SSL_PeerCertificate failed in TLS handshake callback?");
-  if (!cert) {
-    return;
-  }
-
-  Maybe<nsTArray<nsTArray<uint8_t>>> maybePeerCertsBytes;
-  UniqueCERTCertList peerCertChain(SSL_PeerCertificateChain(fd));
-  if (!peerCertChain) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-            ("RebuildVerifiedCertificateInformation: failed to get peer "
-             "certificate chain"));
-  } else {
-    nsTArray<nsTArray<uint8_t>> peerCertsBytes;
-    for (CERTCertListNode* n = CERT_LIST_HEAD(peerCertChain);
-         !CERT_LIST_END(n, peerCertChain); n = CERT_LIST_NEXT(n)) {
-      // Don't include the end-entity certificate.
-      if (n == CERT_LIST_HEAD(peerCertChain)) {
-        continue;
-      }
-      nsTArray<uint8_t> certBytes;
-      certBytes.AppendElements(n->cert->derCert.data, n->cert->derCert.len);
-      peerCertsBytes.AppendElement(std::move(certBytes));
-    }
-    maybePeerCertsBytes.emplace(std::move(peerCertsBytes));
-  }
-
-  RefPtr<SharedCertVerifier> certVerifier(GetDefaultCertVerifier());
-  MOZ_ASSERT(certVerifier,
-             "Certificate verifier uninitialized in TLS handshake callback?");
-  if (!certVerifier) {
-    return;
-  }
-
-  // We don't own these pointers.
-  const SECItemArray* stapledOCSPResponses = SSL_PeerStapledOCSPResponses(fd);
-  Maybe<nsTArray<uint8_t>> stapledOCSPResponse;
-  // we currently only support single stapled responses
-  if (stapledOCSPResponses && stapledOCSPResponses->len == 1) {
-    stapledOCSPResponse.emplace();
-    stapledOCSPResponse->SetCapacity(stapledOCSPResponses->items[0].len);
-    stapledOCSPResponse->AppendElements(stapledOCSPResponses->items[0].data,
-                                        stapledOCSPResponses->items[0].len);
-  }
-
-  Maybe<nsTArray<uint8_t>> sctsFromTLSExtension;
-  const SECItem* sctsFromTLSExtensionSECItem = SSL_PeerSignedCertTimestamps(fd);
-  if (sctsFromTLSExtensionSECItem) {
-    sctsFromTLSExtension.emplace();
-    sctsFromTLSExtension->SetCapacity(sctsFromTLSExtensionSECItem->len);
-    sctsFromTLSExtension->AppendElements(sctsFromTLSExtensionSECItem->data,
-                                         sctsFromTLSExtensionSECItem->len);
-  }
-
-  int flags = mozilla::psm::CertVerifier::FLAG_LOCAL_ONLY;
-  if (!infoObject->SharedState().IsOCSPStaplingEnabled() ||
-      !infoObject->SharedState().IsOCSPMustStapleEnabled()) {
-    flags |= CertVerifier::FLAG_TLS_IGNORE_STATUS_REQUEST;
-  }
-
-  EVStatus evStatus;
-  CertificateTransparencyInfo certificateTransparencyInfo;
-  nsTArray<nsTArray<uint8_t>> builtChainCertBytes;
-  nsTArray<uint8_t> certBytes(cert->derCert.data, cert->derCert.len);
-  bool isBuiltCertChainRootBuiltInRoot = false;
-  mozilla::pkix::Result rv = certVerifier->VerifySSLServerCert(
-      certBytes, mozilla::pkix::Now(), infoObject, infoObject->GetHostName(),
-      builtChainCertBytes, flags, maybePeerCertsBytes, stapledOCSPResponse,
-      sctsFromTLSExtension, Nothing(), infoObject->GetOriginAttributes(),
-      &evStatus,
-      nullptr,  // OCSP stapling telemetry
-      nullptr,  // key size telemetry
-      nullptr,  // SHA-1 telemetry
-      nullptr,  // pinning telemetry
-      &certificateTransparencyInfo, &isBuiltCertChainRootBuiltInRoot);
-
-  if (rv != Success) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-            ("HandshakeCallback: couldn't rebuild verified certificate info"));
-  }
-
-  nsCOMPtr<nsIX509Cert> x509Cert(new nsNSSCertificate(cert.get()));
-  if (rv == Success && evStatus == EVStatus::EV) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-            ("HandshakeCallback using NEW cert (is EV)"));
-    infoObject->SetServerCert(x509Cert, EVStatus::EV);
-  } else {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-            ("HandshakeCallback using NEW cert (is not EV)"));
-    infoObject->SetServerCert(x509Cert, EVStatus::NotEV);
-  }
-
-  if (rv == Success) {
-    uint16_t status =
-        TransportSecurityInfo::ConvertCertificateTransparencyInfoToStatus(
-            certificateTransparencyInfo);
-    infoObject->SetCertificateTransparencyStatus(status);
-    infoObject->SetSucceededCertChain(std::move(builtChainCertBytes));
-    infoObject->SetIsBuiltCertChainRootBuiltInRoot(
-        isBuiltCertChainRootBuiltInRoot);
-  }
-}
-
 void HandshakeCallback(PRFileDesc* fd, void* client_data) {
   SECStatus rv;
 
-  nsNSSSocketInfo* infoObject = (nsNSSSocketInfo*)fd->higher->secret;
+  NSSSocketControl* infoObject = (NSSSocketControl*)fd->higher->secret;
 
   // Do the bookkeeping that needs to be done after the
   // server's ServerHello...ServerHelloDone have been processed, but that
@@ -1178,8 +1092,6 @@ void HandshakeCallback(PRFileDesc* fd, void* client_data) {
                                 ? Telemetry::SSL_KEY_EXCHANGE_ALGORITHM_FULL
                                 : Telemetry::SSL_KEY_EXCHANGE_ALGORITHM_RESUMED,
                             channelInfo.keaType);
-
-      MOZ_ASSERT(infoObject->GetKEAUsed() == channelInfo.keaType);
 
       if (infoObject->IsFullHandshake()) {
         switch (channelInfo.keaType) {
@@ -1246,7 +1158,6 @@ void HandshakeCallback(PRFileDesc* fd, void* client_data) {
 
   bool deprecatedTlsVer =
       (channelInfo.protocolVersion < SSL_LIBRARY_VERSION_TLS_1_2);
-  RememberCertErrorsTable::GetInstance().LookupCertErrorBits(infoObject);
 
   uint32_t state;
   if (renegotiationUnsafe || deprecatedTlsVer) {
@@ -1266,23 +1177,11 @@ void HandshakeCallback(PRFileDesc* fd, void* client_data) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
             ("HandshakeCallback KEEPING existing cert\n"));
   } else {
-    if (StaticPrefs::network_ssl_tokens_cache_enabled()) {
-      infoObject->RebuildCertificateInfoFromSSLTokenCache();
-    } else {
-      RebuildVerifiedCertificateInformation(fd, infoObject);
-    }
+    infoObject->RebuildCertificateInfoFromSSLTokenCache();
   }
 
-  bool domainMismatch;
-  bool untrusted;
-  bool notValidAtThisTime;
-  // These all return NS_OK, so don't even bother checking the return values.
-  Unused << infoObject->GetIsDomainMismatch(&domainMismatch);
-  Unused << infoObject->GetIsUntrusted(&untrusted);
-  Unused << infoObject->GetIsNotValidAtThisTime(&notValidAtThisTime);
-  // If we're here, the TLS handshake has succeeded. Thus if any of these
-  // booleans are true, the user has added an override for a certificate error.
-  if (domainMismatch || untrusted || notValidAtThisTime) {
+  // Check if the user has added an override for a certificate error.
+  if (infoObject->HasUserOverriddenCertificateError()) {
     state |= nsIWebProgressListener::STATE_CERT_USER_OVERRIDDEN;
   }
 
@@ -1298,7 +1197,7 @@ void HandshakeCallback(PRFileDesc* fd, void* client_data) {
     msg.AppendLiteral(" : server does not support RFC 5746, see CVE-2009-3555");
 
     nsContentUtils::LogSimpleConsoleError(
-        msg, "SSL", !!infoObject->GetOriginAttributes().mPrivateBrowsingId,
+        msg, "SSL"_ns, !!infoObject->GetOriginAttributes().mPrivateBrowsingId,
         true /* from chrome context */);
   }
 

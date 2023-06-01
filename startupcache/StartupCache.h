@@ -27,6 +27,7 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/Result.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/UniquePtrExtensions.h"
 
 /**
  * The StartupCache is a persistent cache of simple key-value pairs,
@@ -83,7 +84,7 @@ namespace mozilla {
 namespace scache {
 
 struct StartupCacheEntry {
-  UniquePtr<char[]> mData;
+  UniqueFreePtr<char[]> mData;
   uint32_t mOffset;
   uint32_t mCompressedSize;
   uint32_t mUncompressedSize;
@@ -101,7 +102,7 @@ struct StartupCacheEntry {
         mRequestedOrder(0),
         mRequested(false) {}
 
-  StartupCacheEntry(UniquePtr<char[]> aData, size_t aLength,
+  StartupCacheEntry(UniqueFreePtr<char[]> aData, size_t aLength,
                     int32_t aRequestedOrder)
       : mData(std::move(aData)),
         mOffset(0),
@@ -148,11 +149,15 @@ class StartupCache : public nsIMemoryReporter {
   nsresult GetBuffer(const char* id, const char** outbuf, uint32_t* length);
 
   // Stores a buffer. Caller yields ownership.
-  nsresult PutBuffer(const char* id, UniquePtr<char[]>&& inbuf,
+  nsresult PutBuffer(const char* id, UniqueFreePtr<char[]>&& inbuf,
                      uint32_t length);
 
   // Removes the cache file.
   void InvalidateCache(bool memoryOnly = false);
+
+  // If some event knowingly re-generates the startup cache (like live language
+  // switching) count these events in order to allow them.
+  void CountAllowedInvalidation();
 
   // For use during shutdown - this will write the startupcache's data
   // to disk if the timer hasn't already gone off.
@@ -211,13 +216,16 @@ class StartupCache : public nsIMemoryReporter {
   static void ThreadedPrefetch(void* aClosure);
 
   HashMap<nsCString, StartupCacheEntry> mTable;
-  // owns references to the contents of tables which have been invalidated.
-  // In theory grows forever if the cache is continually filled and then
-  // invalidated, but this should not happen in practice.
+  // This owns references to the contents of tables which have been invalidated.
+  // In theory it grows forever if the cache is continually filled and then
+  // invalidated, but this should not happen in practice. Deleting old tables
+  // could create dangling pointers. RefPtrs could be introduced, but it would
+  // be a large amount of error-prone work to change.
   nsTArray<decltype(mTable)> mOldTables;
+  size_t mAllowedInvalidationsCount;
   nsCOMPtr<nsIFile> mFile;
   loader::AutoMemMap mCacheData;
-  Mutex mTableLock;
+  Mutex mTableLock MOZ_UNANNOTATED;
 
   nsCOMPtr<nsIObserverService> mObserverService;
   RefPtr<StartupCacheListener> mListener;

@@ -5,10 +5,11 @@
 "use strict";
 
 var EXPORTED_SYMBOLS = ["ThumbnailsChild"];
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "PageThumbUtils",
   "resource://gre/modules/PageThumbUtils.jsm"
 );
@@ -17,7 +18,9 @@ class ThumbnailsChild extends JSWindowActorChild {
   receiveMessage(message) {
     switch (message.name) {
       case "Browser:Thumbnail:ContentInfo": {
-        let [width, height] = PageThumbUtils.getContentSize(this.contentWindow);
+        let [width, height] = lazy.PageThumbUtils.getContentSize(
+          this.contentWindow
+        );
         return { width, height };
       }
       case "Browser:Thumbnail:CheckState": {
@@ -36,7 +39,7 @@ class ThumbnailsChild extends JSWindowActorChild {
               return;
             }
 
-            let result = PageThumbUtils.shouldStoreContentThumbnail(
+            let result = lazy.PageThumbUtils.shouldStoreContentThumbnail(
               this.contentWindow,
               this.browsingContext.docShell
             );
@@ -49,7 +52,7 @@ class ThumbnailsChild extends JSWindowActorChild {
          * Remote GetOriginalURL request handler for PageThumbs.
          */
         let channel = this.browsingContext.docShell.currentDocumentChannel;
-        let channelError = PageThumbUtils.isChannelErrorResponse(channel);
+        let channelError = lazy.PageThumbUtils.isChannelErrorResponse(channel);
         let originalURL;
         try {
           originalURL = channel.originalURI.spec;

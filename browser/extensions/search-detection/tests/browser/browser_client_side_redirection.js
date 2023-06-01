@@ -7,8 +7,8 @@ const { AddonTestUtils } = ChromeUtils.import(
   "resource://testing-common/AddonTestUtils.jsm"
 );
 
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 AddonTestUtils.initMochitest(this);
@@ -78,7 +78,7 @@ async function testClientSideRedirect({
   );
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   const searchEngineName = "test search engine";
 
   let searchEngine;

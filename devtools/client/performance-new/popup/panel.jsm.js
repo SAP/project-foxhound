@@ -24,7 +24,6 @@ const { createLazyLoaders } = ChromeUtils.import(
 );
 
 const lazy = createLazyLoaders({
-  Services: () => ChromeUtils.import("resource://gre/modules/Services.jsm"),
   PanelMultiView: () =>
     ChromeUtils.import("resource:///modules/PanelMultiView.jsm"),
   Background: () =>
@@ -117,7 +116,6 @@ function createViewControllers(state, elements) {
     },
 
     updatePresets() {
-      const { Services } = lazy.Services();
       const { presets, getRecordingSettings } = lazy.Background();
       const { presetName } = getRecordingSettings(
         "aboutprofiling",
@@ -131,23 +129,15 @@ function createViewControllers(state, elements) {
           preset.l10nIds.popup.description
         );
         elements.presetsMenuList.value = presetName;
-        // This works around XULElement height issues.
-        const { height } = elements.presetDescription.getBoundingClientRect();
-        elements.presetDescription.style.height = `${height}px`;
       } else {
         elements.presetDescription.style.display = "none";
         // We don't remove the l10n-id attribute as the element is hidden anyway.
         // It will be updated again when it's displayed next time.
         elements.presetsMenuList.value = "custom";
       }
-      const { PanelMultiView } = lazy.PanelMultiView();
-      // Update the description height sizing.
-      PanelMultiView.forNode(elements.panelview).descriptionHeightWorkaround();
     },
 
     updateProfilerState() {
-      const { Services } = lazy.Services();
-
       if (Services.profiler.IsActive()) {
         elements.inactive.hidden = true;
         elements.active.hidden = false;
@@ -170,7 +160,6 @@ function createViewControllers(state, elements) {
         return;
       }
 
-      const { Services } = lazy.Services();
       const { presets } = lazy.Background();
       const currentPreset = Services.prefs.getCharPref(
         "devtools.performance.recording.preset"
@@ -228,11 +217,6 @@ function initializeView(state, elements, view) {
     view.updateInfoCollapse();
     view.updateProfilerState();
     view.updatePresets();
-
-    // XUL <description> elements don't vertically size correctly, this is
-    // the workaround for it.
-    const { PanelMultiView } = lazy.PanelMultiView();
-    PanelMultiView.forNode(elements.panelview).descriptionHeightWorkaround();
 
     // Now wait for another rAF, and turn the animations back on.
     elements.window.requestAnimationFrame(() => {
@@ -327,8 +311,6 @@ function addPopupEventHandlers(state, elements, view) {
   });
 
   // Update the view when the profiler starts/stops.
-  const { Services } = lazy.Services();
-
   // These are all events that can affect the current state of the profiler.
   const events = ["profiler-started", "profiler-stopped"];
   for (const event of events) {
@@ -352,7 +334,8 @@ function initializePopup(panelState, panelview) {
 }
 
 // Provide an exports object for the JSM to be properly read by TypeScript.
-/** @type {any} */ (this).module = {};
+/** @type {any} */
+var module = {};
 
 module.exports = {
   initializePopup,

@@ -11,6 +11,8 @@
  * liability, trademark and document use rules apply.
  */
 
+interface URI;
+
 [Exposed=(Window,Worker,WorkerDebugger),
  LegacyWindowAlias=webkitURL]
 interface URL {
@@ -34,6 +36,11 @@ interface URL {
   readonly attribute URLSearchParams searchParams;
            attribute USVString hash;
 
+  [ChromeOnly]
+  readonly attribute URI URI;
+  [ChromeOnly]
+  static URL fromURI(URI uri);
+
   USVString toJSON();
 };
 
@@ -42,7 +49,7 @@ partial interface URL {
   [Throws]
   static DOMString createObjectURL(Blob blob);
   [Throws]
-  static void revokeObjectURL(DOMString url);
+  static undefined revokeObjectURL(DOMString url);
   [ChromeOnly, Throws]
   static boolean isValidURL(DOMString url);
 

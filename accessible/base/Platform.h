@@ -104,12 +104,13 @@ void ProxyStateChangeEvent(RemoteAccessible* aTarget, uint64_t aState,
 void ProxyFocusEvent(RemoteAccessible* aTarget,
                      const LayoutDeviceIntRect& aCaretRect);
 void ProxyCaretMoveEvent(RemoteAccessible* aTarget,
-                         const LayoutDeviceIntRect& aCaretRect);
+                         const LayoutDeviceIntRect& aCaretRect,
+                         int32_t aGranularity);
 #else
 void ProxyCaretMoveEvent(RemoteAccessible* aTarget, int32_t aOffset,
-                         bool aIsSelectionCollapsed);
+                         bool aIsSelectionCollapsed, int32_t aGranularity);
 #endif
-void ProxyTextChangeEvent(RemoteAccessible* aTarget, const nsString& aStr,
+void ProxyTextChangeEvent(RemoteAccessible* aTarget, const nsAString& aStr,
                           int32_t aStart, uint32_t aLen, bool aIsInsert,
                           bool aFromUser);
 void ProxyShowHideEvent(RemoteAccessible* aTarget, RemoteAccessible* aParent,
@@ -118,7 +119,6 @@ void ProxySelectionEvent(RemoteAccessible* aTarget, RemoteAccessible* aWidget,
                          uint32_t aType);
 
 #if defined(ANDROID)
-MOZ_CAN_RUN_SCRIPT
 void ProxyVirtualCursorChangeEvent(RemoteAccessible* aTarget,
                                    RemoteAccessible* aOldPosition,
                                    int32_t aOldStartOffset,
@@ -133,7 +133,7 @@ void ProxyScrollingEvent(RemoteAccessible* aTarget, uint32_t aEventType,
                          uint32_t aMaxScrollX, uint32_t aMaxScrollY);
 
 void ProxyAnnouncementEvent(RemoteAccessible* aTarget,
-                            const nsString& aAnnouncement, uint16_t aPriority);
+                            const nsAString& aAnnouncement, uint16_t aPriority);
 
 class BatchData;
 
@@ -141,9 +141,7 @@ void ProxyBatch(RemoteAccessible* aDocument, const uint64_t aBatchType,
                 const nsTArray<RemoteAccessible*>& aAccessibles,
                 const nsTArray<BatchData>& aData);
 
-bool LocalizeString(
-    const char* aToken, nsAString& aLocalized,
-    const nsTArray<nsString>& aFormatString = nsTArray<nsString>());
+bool LocalizeString(const nsAString& aToken, nsAString& aLocalized);
 #endif
 
 #ifdef MOZ_WIDGET_COCOA
@@ -151,7 +149,8 @@ class TextRangeData;
 void ProxyTextSelectionChangeEvent(RemoteAccessible* aTarget,
                                    const nsTArray<TextRangeData>& aSelection);
 
-void ProxyRoleChangedEvent(RemoteAccessible* aTarget, const a11y::role& aRole);
+void ProxyRoleChangedEvent(RemoteAccessible* aTarget, const a11y::role& aRole,
+                           uint8_t aRoleMapEntryIndex);
 #endif
 
 }  // namespace a11y

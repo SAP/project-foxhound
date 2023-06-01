@@ -5,13 +5,60 @@
 "use strict";
 
 class PictureInPictureVideoWrapper {
-  setMuted(video, isMuted) {
+  isLive(video) {
+    return !!document.querySelector(".ytp-live");
+  }
+  setMuted(video, shouldMute) {
     let muteButton = document.querySelector("#player .ytp-mute-button");
-    if (muteButton) {
+
+    if (video.muted !== shouldMute && muteButton) {
       muteButton.click();
     } else {
-      video.muted = isMuted;
+      video.muted = shouldMute;
     }
+  }
+  getDuration(video) {
+    if (this.isLive(video)) {
+      return Infinity;
+    }
+    return video.duration;
+  }
+  setCaptionContainerObserver(video, updateCaptionsFunction) {
+    let container = document.getElementById("ytp-caption-window-container");
+
+    if (container) {
+      updateCaptionsFunction("");
+      const callback = function(mutationsList, observer) {
+        // eslint-disable-next-line no-unused-vars
+        for (const mutation of mutationsList) {
+          let textNodeList = container
+            .querySelector(".captions-text")
+            ?.querySelectorAll(".caption-visual-line");
+          if (!textNodeList) {
+            updateCaptionsFunction("");
+            return;
+          }
+
+          updateCaptionsFunction(
+            Array.from(textNodeList, x => x.textContent).join("\n")
+          );
+        }
+      };
+
+      // immediately invoke the callback function to add subtitles to the PiP window
+      callback([1], null);
+
+      let captionsObserver = new MutationObserver(callback);
+
+      captionsObserver.observe(container, {
+        attributes: false,
+        childList: true,
+        subtree: true,
+      });
+    }
+  }
+  shouldHideToggle(video) {
+    return !!video.closest(".ytd-video-preview");
   }
 }
 

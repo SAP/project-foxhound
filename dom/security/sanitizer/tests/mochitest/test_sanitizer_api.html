@@ -64,12 +64,13 @@ SimpleTest.waitForExplicitFinish();
       testExpected: "<p>hello folks</p>",
       sanitizerOptions: { blockElements: ["i"] },
     },
-    {
-      // test for the allowAttributes option
-      testString: `<p haha="lol">hello</p>`,
-      testExpected: `<p haha="lol">hello</p>`,
-      sanitizerOptions: { allowAttributes: { 'haha': ['p'] } },
-    },
+    // TODO: Unknown attributes aren't supported yet.
+    // {
+    //   // test for the allowAttributes option
+    //   testString: `<p haha="lol">hello</p>`,
+    //   testExpected: `<p haha="lol">hello</p>`,
+    //   sanitizerOptions: { allowUnknownMarkup: true, allowAttributes: { 'haha': ['p'] } },
+    // },
     {
       // confirming the inverse
       testString: `<p haha="lol">hello</p>`,
@@ -80,7 +81,7 @@ SimpleTest.waitForExplicitFinish();
       // test for the dropAttributes option
       testString: `<p title="dropme">hello</p>`,
       testExpected: `<p>hello</p>`,
-      sanitizerOptions: { dropAttributes: { 'title': ['p'] } },
+      sanitizerOptions: { dropAttributes: [{name: 'title', elements: ['p']}] },
     },
     {
       // confirming the inverse
@@ -93,8 +94,8 @@ SimpleTest.waitForExplicitFinish();
       testString: `<p title="lol">hello</p>`,
       testExpected: `<p>hello</p>`,
       sanitizerOptions: {
-        allowAttributes: { 'title': ['p'] },
-        dropAttributes: { 'title': ['p'] },
+        allowAttributes: [{ name: 'title', elements: ['p'] }],
+        dropAttributes: [{ name: 'title', elements: ['p'] }]
       },
     },
   ];
@@ -128,15 +129,6 @@ SimpleTest.waitForExplicitFinish();
         }
         catch (e) {
           ok(false, 'Error in setHTML() test: ' + e)
-        }
-
-        // test sanitizeFor:
-        try {
-          const newDiv = testSanitizer.sanitizeFor('div', testString);
-          is(newDiv.innerHTML, testExpected, `Sanitizer.sanitizeFor('div', input) should turn(${testType}) '${testInput}' into '${testExpected}'`);
-        }
-        catch (e) {
-          ok(false, 'Error in sanitizeFor() test: ' + e)
         }
       }
     }

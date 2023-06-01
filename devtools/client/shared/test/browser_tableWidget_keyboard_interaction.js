@@ -8,7 +8,9 @@
 const TEST_URI = CHROME_URL_ROOT + "doc_tableWidget_keyboard_interaction.xhtml";
 const TEST_OPT = "chrome,titlebar,toolbar,centerscreen,resizable,dialog=no";
 
-const { TableWidget } = require("devtools/client/shared/widgets/TableWidget");
+const {
+  TableWidget,
+} = require("resource://devtools/client/shared/widgets/TableWidget.js");
 
 var doc, table;
 
@@ -33,7 +35,7 @@ function test() {
           highlightUpdated: true,
           removableColumns: true,
           l10n: {
-            setAttributes: function() {},
+            setAttributes() {},
           },
         });
         startTests();
@@ -127,7 +129,7 @@ function click(node, button = 0) {
       EventUtils.synthesizeMouseAtCenter(
         node,
         {
-          button: button,
+          button,
           type: "contextmenu",
         },
         doc.defaultView

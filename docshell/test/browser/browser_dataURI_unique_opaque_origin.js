@@ -1,4 +1,5 @@
 add_task(async function test_dataURI_unique_opaque_origin() {
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   let tab = BrowserTestUtils.addTab(gBrowser, "http://example.com");
   let browser = tab.linkedBrowser;
   await BrowserTestUtils.browserLoaded(browser);
@@ -6,7 +7,7 @@ add_task(async function test_dataURI_unique_opaque_origin() {
   let pagePrincipal = browser.contentPrincipal;
   info("pagePrincial " + pagePrincipal.origin);
 
-  BrowserTestUtils.loadURI(browser, "data:text/html,hi");
+  BrowserTestUtils.loadURIString(browser, "data:text/html,hi");
   await BrowserTestUtils.browserLoaded(browser);
 
   await SpecialPowers.spawn(

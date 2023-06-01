@@ -3,19 +3,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/BasicEvents.h"
-#include "mozilla/ContentEvents.h"
+#include "BasicEvents.h"
+#include "ContentEvents.h"
+#include "MiscEvents.h"
+#include "MouseEvents.h"
+#include "NativeKeyBindingsType.h"
+#include "TextEventDispatcher.h"
+#include "TextEvents.h"
+#include "TouchEvents.h"
+
 #include "mozilla/EventStateManager.h"
 #include "mozilla/InternalMutationEvent.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/MiscEvents.h"
-#include "mozilla/MouseEvents.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_mousewheel.h"
 #include "mozilla/StaticPrefs_ui.h"
-#include "mozilla/TextEventDispatcher.h"
-#include "mozilla/TextEvents.h"
-#include "mozilla/TouchEvents.h"
 #include "mozilla/WritingModes.h"
 #include "mozilla/dom/KeyboardEventBinding.h"
 #include "mozilla/dom/WheelEventBinding.h"
@@ -347,8 +349,6 @@ bool WidgetEvent::IsKeyEventMessage(EventMessage aMessage) {
     case eKeyDown:
     case eKeyPress:
     case eKeyUp:
-    case eKeyDownOnPlugin:
-    case eKeyUpOnPlugin:
     case eAccessKeyNotFound:
       return true;
     default:
@@ -368,10 +368,6 @@ bool WidgetEvent::HasIMEEventMessage() const {
     default:
       return false;
   }
-}
-
-bool WidgetEvent::HasPluginActivationEventMessage() const {
-  return mMessage == ePluginActivate || mMessage == ePluginFocus;
 }
 
 /******************************************************************************
@@ -439,7 +435,7 @@ bool WidgetEvent::IsUsingCoordinates() const {
     return !mouseEvent->IsContextMenuKeyEvent();
   }
   return !HasKeyEventMessage() && !IsIMERelatedEvent() &&
-         !HasPluginActivationEventMessage() && !IsContentCommandEvent();
+         !IsContentCommandEvent();
 }
 
 bool WidgetEvent::IsTargetedAtFocusedWindow() const {
@@ -502,10 +498,6 @@ bool WidgetEvent::IsAllowedToDispatchInSystemGroup() const {
 }
 
 bool WidgetEvent::IsBlockedForFingerprintingResistance() const {
-  if (!nsContentUtils::ShouldResistFingerprinting()) {
-    return false;
-  }
-
   switch (mClass) {
     case eKeyboardEventClass: {
       const WidgetKeyboardEvent* keyboardEvent = AsKeyboardEvent();
@@ -619,7 +611,7 @@ Modifier WidgetInputEvent::GetModifier(const nsAString& aDOMKeyName) {
 Modifier WidgetInputEvent::AccelModifier() {
   static Modifier sAccelModifier = MODIFIER_NONE;
   if (sAccelModifier == MODIFIER_NONE) {
-    switch (Preferences::GetInt("ui.key.accelKey", 0)) {
+    switch (StaticPrefs::ui_key_accelKey()) {
       case dom::KeyboardEvent_Binding::DOM_VK_META:
         sAccelModifier = MODIFIER_META;
         break;
@@ -813,28 +805,24 @@ void WidgetKeyboardEvent::InitAllEditCommands(
   }
 
   DebugOnly<bool> okIgnored = InitEditCommandsFor(
-      nsIWidget::NativeKeyBindingsForSingleLineEditor, aWritingMode);
-  NS_WARNING_ASSERTION(
-      okIgnored,
-      "InitEditCommandsFor(nsIWidget::NativeKeyBindingsForSingleLineEditor) "
-      "failed, but ignored");
-  okIgnored = InitEditCommandsFor(
-      nsIWidget::NativeKeyBindingsForMultiLineEditor, aWritingMode);
-  NS_WARNING_ASSERTION(
-      okIgnored,
-      "InitEditCommandsFor(nsIWidget::NativeKeyBindingsForMultiLineEditor) "
-      "failed, but ignored");
-  okIgnored = InitEditCommandsFor(nsIWidget::NativeKeyBindingsForRichTextEditor,
-                                  aWritingMode);
-  NS_WARNING_ASSERTION(
-      okIgnored,
-      "InitEditCommandsFor(nsIWidget::NativeKeyBindingsForRichTextEditor) "
-      "failed, but ignored");
+      NativeKeyBindingsType::SingleLineEditor, aWritingMode);
+  NS_WARNING_ASSERTION(okIgnored,
+                       "InitEditCommandsFor(NativeKeyBindingsType::"
+                       "SingleLineEditor) failed, but ignored");
+  okIgnored =
+      InitEditCommandsFor(NativeKeyBindingsType::MultiLineEditor, aWritingMode);
+  NS_WARNING_ASSERTION(okIgnored,
+                       "InitEditCommandsFor(NativeKeyBindingsType::"
+                       "MultiLineEditor) failed, but ignored");
+  okIgnored =
+      InitEditCommandsFor(NativeKeyBindingsType::RichTextEditor, aWritingMode);
+  NS_WARNING_ASSERTION(okIgnored,
+                       "InitEditCommandsFor(NativeKeyBindingsType::"
+                       "RichTextEditor) failed, but ignored");
 }
 
 bool WidgetKeyboardEvent::InitEditCommandsFor(
-    nsIWidget::NativeKeyBindingsType aType,
-    const Maybe<WritingMode>& aWritingMode) {
+    NativeKeyBindingsType aType, const Maybe<WritingMode>& aWritingMode) {
   bool& initialized = IsEditCommandsInitializedRef(aType);
   if (initialized) {
     return true;
@@ -868,9 +856,9 @@ bool WidgetKeyboardEvent::InitEditCommandsFor(
   return initialized;
 }
 
-bool WidgetKeyboardEvent::ExecuteEditCommands(
-    nsIWidget::NativeKeyBindingsType aType, DoCommandCallback aCallback,
-    void* aCallbackData) {
+bool WidgetKeyboardEvent::ExecuteEditCommands(NativeKeyBindingsType aType,
+                                              DoCommandCallback aCallback,
+                                              void* aCallbackData) {
   // If the event was created without widget, e.g., created event in chrome
   // script, this shouldn't execute native key bindings.
   if (NS_WARN_IF(!mWidget)) {
@@ -887,7 +875,7 @@ bool WidgetKeyboardEvent::ExecuteEditCommands(
     Maybe<WritingMode> writingMode;
     if (RefPtr<widget::TextEventDispatcher> textEventDispatcher =
             mWidget->GetTextEventDispatcher()) {
-      writingMode = textEventDispatcher->MaybeWritingModeAtSelection();
+      writingMode = textEventDispatcher->MaybeQueryWritingModeAtSelection();
     }
     if (NS_WARN_IF(!InitEditCommandsFor(aType, writingMode))) {
       return false;
@@ -1194,6 +1182,37 @@ void WidgetKeyboardEvent::GetDOMCodeName(CodeNameIndex aCodeNameIndex,
   MOZ_RELEASE_ASSERT(
       static_cast<size_t>(aCodeNameIndex) < ArrayLength(kCodeNames),
       "Illegal physical code enumeration value");
+
+  // Generate some continuous runs of codes, rather than looking them up.
+  if (aCodeNameIndex >= CODE_NAME_INDEX_KeyA &&
+      aCodeNameIndex <= CODE_NAME_INDEX_KeyZ) {
+    uint32_t index = aCodeNameIndex - CODE_NAME_INDEX_KeyA;
+    aCodeName.AssignLiteral(u"Key");
+    aCodeName.Append(u'A' + index);
+    return;
+  }
+  if (aCodeNameIndex >= CODE_NAME_INDEX_Digit0 &&
+      aCodeNameIndex <= CODE_NAME_INDEX_Digit9) {
+    uint32_t index = aCodeNameIndex - CODE_NAME_INDEX_Digit0;
+    aCodeName.AssignLiteral(u"Digit");
+    aCodeName.AppendInt(index);
+    return;
+  }
+  if (aCodeNameIndex >= CODE_NAME_INDEX_Numpad0 &&
+      aCodeNameIndex <= CODE_NAME_INDEX_Numpad9) {
+    uint32_t index = aCodeNameIndex - CODE_NAME_INDEX_Numpad0;
+    aCodeName.AssignLiteral(u"Numpad");
+    aCodeName.AppendInt(index);
+    return;
+  }
+  if (aCodeNameIndex >= CODE_NAME_INDEX_F1 &&
+      aCodeNameIndex <= CODE_NAME_INDEX_F24) {
+    uint32_t index = aCodeNameIndex - CODE_NAME_INDEX_F1;
+    aCodeName.Assign(u'F');
+    aCodeName.AppendInt(index + 1);
+    return;
+  }
+
   aCodeName = kCodeNames[aCodeNameIndex];
 }
 

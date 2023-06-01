@@ -101,17 +101,17 @@
 
 var EXPORTED_SYMBOLS = ["PanelMultiView", "PanelView"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const lazy = {};
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "CustomizableUI",
   "resource:///modules/CustomizableUI.jsm"
 );
 
-XPCOMUtils.defineLazyGetter(this, "gBundle", function() {
+XPCOMUtils.defineLazyGetter(lazy, "gBundle", function() {
   return Services.strings.createBundle(
     "chrome://browser/locale/browser.properties"
   );
@@ -131,7 +131,6 @@ const TRANSITION_PHASES = Object.freeze({
 
 let gNodeToObjectMap = new WeakMap();
 let gWindowsWithUnloadHandler = new WeakSet();
-let gMultiLineElementsMap = new WeakMap();
 
 /**
  * Allows associating an object to a node lazily using a weak map.
@@ -235,7 +234,7 @@ var AssociatedToNode = class {
             // Any exception in the blocker will cancel the operation.
             blockers.add(
               promise.catch(ex => {
-                Cu.reportError(ex);
+                console.error(ex);
                 return true;
               })
             );
@@ -254,7 +253,7 @@ var AssociatedToNode = class {
           ]);
           cancel = cancel || results.some(result => result === false);
         } catch (ex) {
-          Cu.reportError(
+          console.error(
             new Error(`One of the blockers for ${eventName} timed out.`)
           );
           return true;
@@ -293,14 +292,17 @@ var PanelMultiView = class extends AssociatedToNode {
    * If the panel does not contain a <panelmultiview>, it is closed directly.
    * This allows consumers like page actions to accept different panel types.
    *
+   * @param {DOMNode} panelNode The <panel> node.
+   * @param {Boolean} [animate] Whether to show a fade animation. Optional.
+   *
    * @see The non-static hidePopup method for details.
    */
-  static hidePopup(panelNode) {
+  static hidePopup(panelNode, animate = false) {
     let panelMultiViewNode = panelNode.querySelector("panelmultiview");
     if (panelMultiViewNode) {
-      this.forNode(panelMultiViewNode).hidePopup();
+      this.forNode(panelMultiViewNode).hidePopup(animate);
     } else {
-      panelNode.hidePopup();
+      panelNode.hidePopup(animate);
     }
   }
 
@@ -569,7 +571,9 @@ var PanelMultiView = class extends AssociatedToNode {
           options &&
           typeof options == "object" &&
           options.triggerEvent &&
-          options.triggerEvent.type == "keypress" &&
+          (options.triggerEvent.type == "keypress" ||
+            options.triggerEvent?.inputSource ==
+              MouseEvent.MOZ_SOURCE_KEYBOARD) &&
           this.openViews.length
         ) {
           // This was opened via the keyboard, so focus the first item.
@@ -594,8 +598,14 @@ var PanelMultiView = class extends AssociatedToNode {
    * This means that by the time this method returns all the operations handled
    * by the "popuphidden" event are completed, for example resetting the "open"
    * state of the anchor, and the panel is already invisible.
+   *
+   * @note The value of animate could be changed to true by default, in both
+   *       this and the static method above. (see bug 1769813)
+   *
+   * @param {Boolean} [animate] Whether to show a fade animation. Optional.
+   *
    */
-  hidePopup() {
+  hidePopup(animate = false) {
     if (!this.node || !this.connected) {
       return;
     }
@@ -605,7 +615,7 @@ var PanelMultiView = class extends AssociatedToNode {
     // request to open the panel, which will have no effect if the request has
     // been canceled already.
     if (["open", "showing"].includes(this._panel.state)) {
-      this._panel.hidePopup();
+      this._panel.hidePopup(animate);
     } else {
       this._openPopupCancelCallback();
     }
@@ -621,7 +631,8 @@ var PanelMultiView = class extends AssociatedToNode {
    * sure they will not be removed together with the <panelmultiview> element.
    */
   _moveOutKids() {
-    let viewCacheId = this.node.getAttribute("viewCacheId");
+    // this.node may have been set to null by a call to disconnect().
+    let viewCacheId = this.node?.getAttribute("viewCacheId");
     if (!viewCacheId) {
       return;
     }
@@ -646,18 +657,7 @@ var PanelMultiView = class extends AssociatedToNode {
    *        subview when a "title" attribute is not specified.
    */
   showSubView(viewIdOrNode, anchor) {
-    // When autoPosition is true, the popup window manager would attempt to re-position
-    // the panel as subviews are opened and it changes size. The resulting popoppositioned
-    // events triggers the binding's arrow position adjustment - and its reflow.
-    // This is not needed here, as we calculated and set maxHeight so it is known
-    // to fit the screen while open.
-    // We do need autoposition for cases where the panel's anchor moves, which can happen
-    // especially with the "page actions" button in the URL bar (see bug 1520607), so
-    // we only set this to false when showing a subview, and set it back to true after we
-    // activate the subview.
-    this._panel.autoPosition = false;
-
-    this._showSubView(viewIdOrNode, anchor).catch(Cu.reportError);
+    this._showSubView(viewIdOrNode, anchor).catch(console.error);
   }
   async _showSubView(viewIdOrNode, anchor) {
     let viewNode =
@@ -665,19 +665,19 @@ var PanelMultiView = class extends AssociatedToNode {
         ? PanelMultiView.getViewNode(this.document, viewIdOrNode)
         : viewIdOrNode;
     if (!viewNode) {
-      Cu.reportError(new Error(`Subview ${viewIdOrNode} doesn't exist.`));
+      console.error(new Error(`Subview ${viewIdOrNode} doesn't exist.`));
       return;
     }
 
     if (!this.openViews.length) {
-      Cu.reportError(new Error(`Cannot show a subview in a closed panel.`));
+      console.error(new Error(`Cannot show a subview in a closed panel.`));
       return;
     }
 
     let prevPanelView = this.openViews[this.openViews.length - 1];
     let nextPanelView = PanelView.forNode(viewNode);
     if (this.openViews.includes(nextPanelView)) {
-      Cu.reportError(new Error(`Subview ${viewNode.id} is already open.`));
+      console.error(new Error(`Subview ${viewNode.id} is already open.`));
       return;
     }
 
@@ -739,7 +739,7 @@ var PanelMultiView = class extends AssociatedToNode {
         viewNode.classList.add("PanelUI-subView");
       }
 
-      await this._transitionViews(prevPanelView.node, viewNode, false, anchor);
+      await this._transitionViews(prevPanelView.node, viewNode, false);
     } finally {
       if (anchor) {
         anchor.removeAttribute("open");
@@ -754,7 +754,7 @@ var PanelMultiView = class extends AssociatedToNode {
    * Navigates backwards by sliding out the most recent subview.
    */
   goBack() {
-    this._goBack().catch(Cu.reportError);
+    this._goBack().catch(console.error);
   }
   async _goBack() {
     if (this.openViews.length < 2) {
@@ -816,7 +816,6 @@ var PanelMultiView = class extends AssociatedToNode {
 
     // Ensure the view will be visible once the panel is opened.
     nextPanelView.visible = true;
-    nextPanelView.descriptionHeightWorkaround();
 
     return true;
   }
@@ -885,9 +884,6 @@ var PanelMultiView = class extends AssociatedToNode {
         panelView.focusWhenActive = false;
       }
       panelView.dispatchCustomEvent("ViewShown");
-
-      // Re-enable panel autopositioning.
-      this._panel.autoPosition = true;
     }
   }
 
@@ -950,9 +946,9 @@ var PanelMultiView = class extends AssociatedToNode {
     this._viewContainer.style.height = prevPanelView.knownHeight + "px";
     this._viewContainer.style.width = prevPanelView.knownWidth + "px";
     // Lock the dimensions of the window that hosts the popup panel.
-    let rect = this._panel.getOuterScreenRect();
-    this._panel.setAttribute("width", rect.width);
-    this._panel.setAttribute("height", rect.height);
+    let rect = this._getBoundsWithoutFlushing(this._panel);
+    this._panel.style.width = rect.width + "px";
+    this._panel.style.height = rect.height + "px";
 
     let viewRect;
     if (reverse) {
@@ -980,7 +976,6 @@ var PanelMultiView = class extends AssociatedToNode {
           return this._getBoundsWithoutFlushing(header).height;
         });
       }
-      await nextPanelView.descriptionHeightWorkaround();
       // Bail out if the panel was closed in the meantime.
       if (!nextPanelView.isOpenIn(this)) {
         return;
@@ -989,10 +984,6 @@ var PanelMultiView = class extends AssociatedToNode {
       this._offscreenViewStack.style.minHeight = olderView.knownHeight + "px";
       this._offscreenViewStack.appendChild(viewNode);
       nextPanelView.visible = true;
-
-      // Now that the subview is visible, we can check the height of the
-      // description elements it contains.
-      await nextPanelView.descriptionHeightWorkaround();
 
       viewRect = await window.promiseDocumentFlushed(() => {
         return this._getBoundsWithoutFlushing(viewNode);
@@ -1048,8 +1039,8 @@ var PanelMultiView = class extends AssociatedToNode {
     // kicks of the height animation.
     this._viewContainer.style.height = viewRect.height + "px";
     this._viewContainer.style.width = viewRect.width + "px";
-    this._panel.removeAttribute("width");
-    this._panel.removeAttribute("height");
+    this._panel.style.removeProperty("width");
+    this._panel.style.removeProperty("height");
     // We're setting the width property to prevent flickering during the
     // sliding animation with smaller views.
     viewNode.style.width = viewRect.width + "px";
@@ -1167,16 +1158,10 @@ var PanelMultiView = class extends AssociatedToNode {
     // incorrect value when the window spans multiple screens.
     let anchor = this._panel.anchorNode;
     let anchorRect = anchor.getBoundingClientRect();
+    let screen = anchor.screen;
 
-    // Screen manager uses screen coordinates, while screenX/Y and anchorRect
-    // are in CSS pixels, so need to convert to the right coordinate space.
-    let devicePixelRatio = this.window.devicePixelRatio;
-    let screen = this._screenManager.screenForRect(
-      anchor.screenX * devicePixelRatio,
-      anchor.screenY * devicePixelRatio,
-      anchorRect.width * devicePixelRatio,
-      anchorRect.height * devicePixelRatio
-    );
+    // GetAvailRect returns screen-device pixels, which we can convert to CSS
+    // pixels here.
     let availTop = {},
       availHeight = {};
     screen.GetAvailRect({}, availTop, {}, availHeight);
@@ -1262,7 +1247,6 @@ var PanelMultiView = class extends AssociatedToNode {
         // minimize flicker we need to allow synchronous reflows, and we still
         // make sure the ViewShown event is dispatched synchronously.
         let mainPanelView = this.openViews[0];
-        mainPanelView.descriptionHeightWorkaround(true).catch(Cu.reportError);
         this._activateView(mainPanelView);
         break;
       case "popuphidden": {
@@ -1391,20 +1375,27 @@ var PanelView = class extends AssociatedToNode {
     };
 
     // If the header already exists, update or remove it as requested.
-    let header = this.node.firstElementChild;
-    if (header && header.classList.contains("panel-header")) {
-      if (value) {
-        // The back button has a label in it - we want to select
-        // the label that's a direct child of the header.
-        header.querySelector(".panel-header > h1 > span").textContent = value;
-        ensureHeaderSeparator(header);
-      } else {
+    let header = this.node.querySelector(".panel-header");
+    if (header) {
+      if (!this.node.getAttribute("mainview")) {
+        if (value) {
+          // The back button has a label in it - we want to select
+          // the span that's a child of the header.
+          header.querySelector(".panel-header > h1 > span").textContent = value;
+          ensureHeaderSeparator(header);
+        } else {
+          if (header.nextSibling.tagName == "toolbarseparator") {
+            header.nextSibling.remove();
+          }
+          header.remove();
+        }
+        return;
+      } else if (!this.node.getAttribute("showheader")) {
         if (header.nextSibling.tagName == "toolbarseparator") {
           header.nextSibling.remove();
         }
         header.remove();
       }
-      return;
     }
 
     // The header doesn't exist, only create it if needed.
@@ -1422,7 +1413,7 @@ var PanelView = class extends AssociatedToNode {
     backButton.setAttribute("tabindex", "0");
     backButton.setAttribute(
       "aria-label",
-      gBundle.GetStringFromName("panel.back")
+      lazy.gBundle.GetStringFromName("panel.back")
     );
     backButton.addEventListener("command", () => {
       // The panelmultiview element may change if the view is reused.
@@ -1445,7 +1436,7 @@ var PanelView = class extends AssociatedToNode {
    * Also make sure that the correct method is called on CustomizableWidget.
    */
   dispatchCustomEvent(...args) {
-    CustomizableUI.ensureSubviewListeners(this.node);
+    lazy.CustomizableUI.ensureSubviewListeners(this.node);
     return super.dispatchCustomEvent(...args);
   }
 
@@ -1463,124 +1454,6 @@ var PanelView = class extends AssociatedToNode {
   }
 
   /**
-   * If the main view or a subview contains wrapping elements, the attribute
-   * "descriptionheightworkaround" should be set on the view to force all the
-   * wrapping "description", "label" or "toolbarbutton" elements to a fixed
-   * height. If the attribute is set and the visibility, contents, or width
-   * of any of these elements changes, this function should be called to
-   * refresh the calculated heights.
-   *
-   * @param allowSyncReflows
-   *        If set to true, the function takes a path that allows synchronous
-   *        reflows, but minimizes flickering. This is used for the main view
-   *        because we cannot use the workaround off-screen.
-   */
-  async descriptionHeightWorkaround(allowSyncReflows = false) {
-    if (!this.node.hasAttribute("descriptionheightworkaround")) {
-      // This view does not require the workaround.
-      return;
-    }
-
-    const profilerMarkerStartTime = Cu.now();
-
-    // We batch DOM changes together in order to reduce synchronous layouts.
-    // First we reset any change we may have made previously. The first time
-    // this is called, and in the best case scenario, this has no effect.
-    let items = [];
-    let collectItems = () => {
-      // Non-hidden <label> or <description> elements that also aren't empty
-      // and also don't have a value attribute can be multiline (if their
-      // text content is long enough).
-      let isMultiline = ":not([hidden],[value],:empty)";
-      let selector = [
-        "description" + isMultiline,
-        "label" + isMultiline,
-        "toolbarbutton[wrap]:not([hidden])",
-      ].join(",");
-      for (let element of this.node.querySelectorAll(selector)) {
-        // Ignore items in hidden containers.
-        if (element.closest("[hidden]")) {
-          continue;
-        }
-
-        // Ignore content inside a <toolbarbutton>
-        if (
-          element.tagName != "toolbarbutton" &&
-          element.closest("toolbarbutton")
-        ) {
-          continue;
-        }
-
-        // Take the label for toolbarbuttons; it only exists on those elements.
-        element = element.multilineLabel || element;
-
-        let bounds = element.getBoundingClientRect();
-        let previous = gMultiLineElementsMap.get(element);
-        // We don't need to (re-)apply the workaround for invisible elements or
-        // on elements we've seen before and haven't changed in the meantime.
-        if (
-          !bounds.width ||
-          !bounds.height ||
-          (previous &&
-            element.textContent == previous.textContent &&
-            bounds.width == previous.bounds.width)
-        ) {
-          continue;
-        }
-
-        items.push({ element });
-      }
-    };
-    if (allowSyncReflows) {
-      collectItems();
-    } else {
-      await this.window.promiseDocumentFlushed(collectItems);
-      // Bail out if the panel was closed in the meantime.
-      if (!this.node.panelMultiView) {
-        return;
-      }
-    }
-
-    // Removing the 'height' property will only cause a layout flush in the next
-    // loop below if it was set.
-    for (let item of items) {
-      item.element.style.removeProperty("height");
-    }
-
-    // We now read the computed style to store the height of any element that
-    // may contain wrapping text.
-    let measureItems = () => {
-      for (let item of items) {
-        item.bounds = item.element.getBoundingClientRect();
-      }
-    };
-    if (allowSyncReflows) {
-      measureItems();
-    } else {
-      await this.window.promiseDocumentFlushed(measureItems);
-      // Bail out if the panel was closed in the meantime.
-      if (!this.node.panelMultiView) {
-        return;
-      }
-    }
-
-    // Now we can make all the necessary DOM changes at once.
-    for (let { element, bounds } of items) {
-      gMultiLineElementsMap.set(element, {
-        bounds,
-        textContent: element.textContent,
-      });
-      element.style.height = bounds.height + "px";
-    }
-
-    ChromeUtils.addProfilerMarker(
-      "PMV.descriptionHeightWorkaround()",
-      profilerMarkerStartTime,
-      `<${this.node.tagName} id="${this.node.id}">`
-    );
-  }
-
-  /**
    * Determine whether an element can only be navigated to with tab/shift+tab,
    * not the arrow keys.
    */
@@ -1593,7 +1466,11 @@ var PanelView = class extends AssociatedToNode {
       tag == "textarea" ||
       // Allow tab to reach embedded documents.
       tag == "browser" ||
-      tag == "iframe"
+      tag == "iframe" ||
+      // This is currently needed for the unified extensions panel to allow
+      // users to use up/down arrow to more quickly move between the extension
+      // items. See Bug 1784118
+      element.dataset?.navigableWithTabOnly === "true"
     );
   }
 
@@ -1612,12 +1489,20 @@ var PanelView = class extends AssociatedToNode {
       if (bounds.width == 0 || bounds.height == 0) {
         return NodeFilter.FILTER_REJECT;
       }
+      let isNavigableWithTabOnly = this._isNavigableWithTabOnly(node);
+      // Early return when the node is navigable with tab only and we are using
+      // arrow keys so that nodes like button, toolbarbutton, checkbox, etc.
+      // can also be marked as "navigable with tab only", otherwise the next
+      // condition will unconditionally make them focusable.
+      if (arrowKey && isNavigableWithTabOnly) {
+        return NodeFilter.FILTER_REJECT;
+      }
       if (
         node.tagName == "button" ||
         node.tagName == "toolbarbutton" ||
         node.tagName == "checkbox" ||
         node.classList.contains("text-link") ||
-        (!arrowKey && this._isNavigableWithTabOnly(node))
+        (!arrowKey && isNavigableWithTabOnly)
       ) {
         // Set the tabindex attribute to make sure the node is focusable.
         // Don't do this for browser and iframe elements because this breaks
@@ -1816,6 +1701,9 @@ var PanelView = class extends AssociatedToNode {
         return false;
       }
       let context = contextNode.getAttribute("context");
+      if (!context) {
+        return false;
+      }
       let popup = this.document.getElementById(context);
       return popup && popup.state == "open";
     };
@@ -1893,40 +1781,20 @@ var PanelView = class extends AssociatedToNode {
         stop();
 
         this._doingKeyboardActivation = true;
-        // Unfortunately, 'tabindex' doesn't execute the default action, so
-        // we explicitly do this here.
-        // We are sending a command event, a mousedown event and then a click
-        // event. This is done in order to mimic a "real" mouse click event.
-        // Normally, the command event executes the action, then the click event
-        // closes the menu. However, in some cases (e.g. the Library button),
-        // there is no command event handler and the mousedown event executes the
-        // action instead.
-        let commandEvent = event.target.ownerDocument.createEvent(
-          "xulcommandevent"
-        );
-        commandEvent.initCommandEvent(
-          "command",
-          true,
-          true,
-          event.target.ownerGlobal,
-          0,
-          event.ctrlKey,
-          event.altKey,
-          event.shiftKey,
-          event.metaKey,
-          0,
-          null,
-          0
-        );
-        button.dispatchEvent(commandEvent);
-
-        let dispEvent = new event.target.ownerGlobal.MouseEvent("mousedown", {
+        const details = {
           bubbles: true,
-        });
+          ctrlKey: event.ctrlKey,
+          altKey: event.altKey,
+          shiftKey: event.shiftKey,
+          metaKey: event.metaKey,
+        };
+        let dispEvent = new event.target.ownerGlobal.MouseEvent(
+          "mousedown",
+          details
+        );
         button.dispatchEvent(dispEvent);
-        dispEvent = new event.target.ownerGlobal.MouseEvent("click", {
-          bubbles: true,
-        });
+        // This event will trigger a command event too.
+        dispEvent = new event.target.ownerGlobal.MouseEvent("click", details);
         button.dispatchEvent(dispEvent);
         this._doingKeyboardActivation = false;
         break;

@@ -21,7 +21,7 @@
 
 namespace JS {
 
-class ReadOnlyCompileOptions;
+class JS_PUBLIC_API ReadOnlyCompileOptions;
 
 using TranscodeBuffer = mozilla::Vector<uint8_t>;
 using TranscodeRange = mozilla::Range<const uint8_t>;
@@ -81,12 +81,20 @@ inline bool IsTranscodingBytecodeAligned(const void* offset) {
   return IsTranscodingBytecodeOffsetAligned(size_t(offset));
 }
 
-// Finish incremental encoding started by one of:
-//   * JS::CompileAndStartIncrementalEncoding
-//   * JS::FinishOffThreadScriptAndStartIncrementalEncoding
+// Finish incremental encoding started by JS::StartIncrementalEncoding.
 //
-// The |script| argument of |FinishIncrementalEncoding| should be the top-level
-// script returned from one of the above.
+//   * Regular script case
+//     the |script| argument must be the top-level script returned from
+//     |JS::InstantiateGlobalStencil| with the same stencil
+//
+//   * Module script case
+//     the |script| argument must be the script returned by
+//     |JS::GetModuleScript| called on the module returned by
+//     |JS::InstantiateModuleStencil| with the same stencil
+//
+//     NOTE: |JS::GetModuleScript| doesn't work after evaluating the
+//           module script.  For the case, use Handle<JSObject*> variant of
+//           this function below.
 //
 // The |buffer| argument of |FinishIncrementalEncoding| is used for appending
 // the encoded bytecode into the buffer. If any of these functions failed, the
@@ -105,6 +113,19 @@ inline bool IsTranscodingBytecodeAligned(const void* offset) {
 extern JS_PUBLIC_API bool FinishIncrementalEncoding(JSContext* cx,
                                                     Handle<JSScript*> script,
                                                     TranscodeBuffer& buffer);
+
+// Similar to |JS::FinishIncrementalEncoding|, but receives module obect.
+//
+// The |module| argument must be the module returned by
+// |JS::InstantiateModuleStencil| with the same stencil that's passed to
+// |JS::StartIncrementalEncoding|.
+extern JS_PUBLIC_API bool FinishIncrementalEncoding(JSContext* cx,
+                                                    Handle<JSObject*> module,
+                                                    TranscodeBuffer& buffer);
+
+// Abort incremental encoding started by JS::StartIncrementalEncoding.
+extern JS_PUBLIC_API void AbortIncrementalEncoding(Handle<JSScript*> script);
+extern JS_PUBLIC_API void AbortIncrementalEncoding(Handle<JSObject*> module);
 
 // Check if the compile options and script's flag matches.
 //

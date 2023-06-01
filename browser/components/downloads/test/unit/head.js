@@ -1,34 +1,14 @@
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "Downloads",
-  "resource://gre/modules/Downloads.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "DownloadsCommon",
-  "resource:///modules/DownloadsCommon.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FileTestUtils",
-  "resource://testing-common/FileTestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  Downloads: "resource://gre/modules/Downloads.sys.mjs",
+  DownloadsCommon: "resource:///modules/DownloadsCommon.sys.mjs",
+  FileTestUtils: "resource://testing-common/FileTestUtils.sys.mjs",
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  TestUtils: "resource://testing-common/TestUtils.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
   this,
   "NetUtil",
   "resource://gre/modules/NetUtil.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "TestUtils",
-  "resource://testing-common/TestUtils.jsm"
 );
 
 async function createDownloadedFile(pathname, contents) {
@@ -65,7 +45,7 @@ async function setDownloadDir() {
     try {
       await IOUtils.remove(tmpDir, { recursive: true });
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
     }
   });
   Services.prefs.setIntPref("browser.download.folderList", 2);
@@ -81,7 +61,7 @@ function run_test() {
   run_next_test();
 }
 
-add_task(async function test_common_initialize() {
+add_setup(async function test_common_initialize() {
   gDownloadDir = await setDownloadDir();
   Services.prefs.setCharPref("browser.download.loglevel", "Debug");
 });

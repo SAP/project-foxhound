@@ -53,6 +53,11 @@ class ProcessHangMonitor final : public nsIObserver {
   static void PaintWhileInterruptingJS(
       PProcessHangMonitorParent* aParent, dom::BrowserParent* aTab,
       const layers::LayersObserverEpoch& aEpoch);
+
+  static void UnloadLayersWhileInterruptingJS(
+      PProcessHangMonitorParent* aParent, dom::BrowserParent* aTab,
+      const layers::LayersObserverEpoch& aEpoch);
+
   static void ClearPaintWhileInterruptingJS(
       const layers::LayersObserverEpoch& aEpoch);
   static void MaybeStartPaintWhileInterruptingJS();
@@ -79,7 +84,7 @@ class ProcessHangMonitor final : public nsIObserver {
   void InitiateCPOWTimeout();
   bool ShouldTimeOutCPOWs();
 
-  void Dispatch(already_AddRefed<nsIRunnable> aRunnable);
+  nsresult Dispatch(already_AddRefed<nsIRunnable> aRunnable);
   bool IsOnThread();
 
  private:

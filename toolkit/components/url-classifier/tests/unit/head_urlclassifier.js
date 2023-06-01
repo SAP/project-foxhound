@@ -33,7 +33,6 @@ var {
   HttpError,
   HttpServer,
 } = ChromeUtils.import("resource://testing-common/httpd.js");
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 do_get_profile();
 
@@ -373,6 +372,25 @@ function checkAssertions(assertions, doneCallback) {
 
 function updateError(arg) {
   do_throw(arg);
+}
+
+/**
+ * Utility functions
+ */
+ChromeUtils.defineModuleGetter(
+  this,
+  "NetUtil",
+  "resource://gre/modules/NetUtil.jsm"
+);
+
+function readFileToString(aFilename) {
+  let f = do_get_file(aFilename);
+  let stream = Cc["@mozilla.org/network/file-input-stream;1"].createInstance(
+    Ci.nsIFileInputStream
+  );
+  stream.init(f, -1, 0, 0);
+  let buf = NetUtil.readInputStreamToString(stream, stream.available());
+  return buf;
 }
 
 // Runs a set of updates, and then checks a set of assertions.

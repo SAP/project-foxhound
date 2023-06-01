@@ -17,23 +17,16 @@
 
 var EXPORTED_SYMBOLS = ["PdfjsParent"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const lazy = {};
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "SetClipboardSearchString",
-  "resource://gre/modules/Finder.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  SetClipboardSearchString: "resource://gre/modules/Finder.sys.mjs",
+});
 
 var Svc = {};
 XPCOMUtils.defineLazyServiceGetter(
@@ -44,7 +37,7 @@ XPCOMUtils.defineLazyServiceGetter(
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "matchesCountLimit",
   "accessibility.typeaheadfind.matchesCountLimit"
 );
@@ -55,6 +48,7 @@ let gFindTypes = [
   "findhighlightallchange",
   "findcasesensitivitychange",
   "findbarclose",
+  "finddiacriticmatchingchange",
 ];
 
 class PdfjsParent extends JSWindowActorParent {
@@ -98,6 +92,7 @@ class PdfjsParent extends JSWindowActorParent {
     const data = aMsg.data;
     this.browser.ownerGlobal.saveURL(
       data.blobUrl /* aURL */,
+      data.originalUrl /* aOriginalURL */,
       data.filename /* aFileName */,
       null /* aFilePickerTitleKey */,
       true /* aShouldBypassCache */,
@@ -105,7 +100,7 @@ class PdfjsParent extends JSWindowActorParent {
       null /* aReferrerInfo */,
       null /* aCookieJarSettings*/,
       null /* aSourceDocument */,
-      PrivateBrowsingUtils.isBrowserPrivate(
+      lazy.PrivateBrowsingUtils.isBrowserPrivate(
         this.browser
       ) /* aIsContentWindowPrivate */,
       Services.scriptSecurityManager.getSystemPrincipal() /* aPrincipal */
@@ -131,10 +126,10 @@ class PdfjsParent extends JSWindowActorParent {
           !this._findFailedString)
       ) {
         this._findFailedString = null;
-        SetClipboardSearchString(data.rawQuery);
+        lazy.SetClipboardSearchString(data.rawQuery);
       } else if (!this._findFailedString) {
         this._findFailedString = data.rawQuery;
-        SetClipboardSearchString(data.rawQuery);
+        lazy.SetClipboardSearchString(data.rawQuery);
       }
 
       const matchesCount = this._requestMatchesCount(data.matchesCount);
@@ -164,7 +159,8 @@ class PdfjsParent extends JSWindowActorParent {
     let result = {
       current: data.current,
       total: data.total,
-      limit: typeof matchesCountLimit === "number" ? matchesCountLimit : 0,
+      limit:
+        typeof lazy.matchesCountLimit === "number" ? lazy.matchesCountLimit : 0,
     };
     if (result.total > result.limit) {
       result.total = -1;
@@ -211,6 +207,7 @@ class PdfjsParent extends JSWindowActorParent {
         entireWord: aEvent.detail.entireWord,
         highlightAll: aEvent.detail.highlightAll,
         findPrevious: aEvent.detail.findPrevious,
+        matchDiacritics: aEvent.detail.matchDiacritics,
       };
     }
 

@@ -22,12 +22,6 @@ async function checkInputHistory(len = 0) {
   );
 }
 
-async function clearInputHistory() {
-  await PlacesUtils.withConnectionWrapper("test::clearInputHistory", db => {
-    return db.executeCached(`DELETE FROM moz_inputhistory`);
-  });
-}
-
 const TEST_URL = "http://example.com/";
 
 async function do_test(openFn, pickMethod) {
@@ -37,7 +31,7 @@ async function do_test(openFn, pickMethod) {
       url: "about:blank",
     },
     async function(browser) {
-      await clearInputHistory();
+      await PlacesTestUtils.clearInputHistory();
       await openFn();
       await UrlbarTestUtils.promiseSearchComplete(window);
       let promise = BrowserTestUtils.waitForDocLoadAndStopIt(TEST_URL, browser);
@@ -56,7 +50,7 @@ async function do_test(openFn, pickMethod) {
   );
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   await PlacesUtils.history.clear();
   for (let i = 0; i < 5; i++) {
     await PlacesTestUtils.addVisits(TEST_URL);
@@ -88,7 +82,7 @@ add_task(async function test_history_no_search_terms() {
         // A page other than TEST_URL must be loaded, or the first Top Site
         // result will be a switch-to-tab result and page won't be reloaded when
         // the result is selected.
-        BrowserTestUtils.loadURI(selectedBrowser, "http://example.org/");
+        BrowserTestUtils.loadURIString(selectedBrowser, "http://example.org/");
         await BrowserTestUtils.browserLoaded(selectedBrowser);
         gURLBar.blur();
         EventUtils.synthesizeMouseAtCenter(gURLBar.textbox, {});

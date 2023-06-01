@@ -35,12 +35,10 @@ class EventChainPostVisitor;
 class EventChainPreVisitor;
 class EventChainVisitor;
 class EventListenerManager;
-class EventStates;
 class PresState;
 namespace dom {
 class ElementInternals;
 class HTMLFormElement;
-class HTMLMenuElement;
 }  // namespace dom
 }  // namespace mozilla
 
@@ -58,7 +56,7 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
       : nsGenericHTMLElementBase(std::move(aNodeInfo)) {
     NS_ASSERTION(mNodeInfo->NamespaceID() == kNameSpaceID_XHTML,
                  "Unexpected namespace");
-    AddStatesSilently(NS_EVENT_STATE_LTR);
+    AddStatesSilently(mozilla::dom::ElementState::LTR);
     SetFlags(NODE_HAS_DIRECTION_LTR);
   }
 
@@ -80,6 +78,11 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
     GetHTMLAttr(nsGkAtoms::lang, aLang);
   }
   void SetLang(const nsAString& aLang) { SetHTMLAttr(nsGkAtoms::lang, aLang); }
+  bool Translate() const override;
+  void SetTranslate(bool aTranslate, mozilla::ErrorResult& aError) {
+    SetHTMLAttr(nsGkAtoms::translate, aTranslate ? u"yes"_ns : u"no"_ns,
+                aError);
+  }
   void GetDir(nsAString& aDir) { GetHTMLEnumAttr(nsGkAtoms::dir, aDir); }
   void SetDir(const nsAString& aDir, mozilla::ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::dir, aDir, aError);
@@ -164,7 +167,6 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
    */
   uint32_t EditableInclusiveDescendantCount();
 
-  mozilla::dom::HTMLMenuElement* GetContextMenu() const;
   bool Spellcheck();
   void SetSpellcheck(bool aSpellcheck, mozilla::ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::spellcheck, aSpellcheck ? u"true"_ns : u"false"_ns,
@@ -279,6 +281,11 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
     return false;
   }
 
+  bool Autofocus() const { return GetBoolAttr(nsGkAtoms::autofocus); }
+  void SetAutofocus(bool aVal, ErrorResult& aRv) {
+    SetHTMLBoolAttr(nsGkAtoms::autofocus, aVal, aRv);
+  }
+
  protected:
   virtual ~nsGenericHTMLElement() = default;
 
@@ -319,7 +326,7 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
 
   virtual void UpdateEditableState(bool aNotify) override;
 
-  virtual mozilla::EventStates IntrinsicState() const override;
+  virtual mozilla::dom::ElementState IntrinsicState() const override;
 
   // Helper for setting our editable flag and notifying
   void DoSetEditableFlag(bool aEditable, bool aNotify) {
@@ -538,6 +545,16 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
                                          mozilla::MappedDeclarations&,
                                          MapAspectRatio = MapAspectRatio::No);
   /**
+   * Helper to map the iamge source attributes into a style stuct.
+   * Note:
+   * This will override the declaration created by the presentation attributes
+   * of HTMLImageElement (i.e. mapped by MapImageSizeAttributeInto).
+   * https://html.spec.whatwg.org/multipage/embedded-content.html#the-source-element
+   */
+  static void MapPictureSourceSizeAttributesInto(const nsMappedAttributes*,
+                                                 mozilla::MappedDeclarations&);
+
+  /**
    * Helper to map the width and height attributes into the aspect-ratio
    * property.
    *
@@ -709,11 +726,12 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   virtual nsresult BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                  const nsAttrValueOrString* aValue,
                                  bool aNotify) override;
-  virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                const nsAttrValue* aValue,
-                                const nsAttrValue* aOldValue,
-                                nsIPrincipal* aMaybeScriptedPrincipal,
-                                bool aNotify) override;
+  // TODO: Convert AfterSetAttr to MOZ_CAN_RUN_SCRIPT and get rid of
+  // kungFuDeathGrip in it.
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual nsresult AfterSetAttr(
+      int32_t aNamespaceID, nsAtom* aName, const nsAttrValue* aValue,
+      const nsAttrValue* aOldValue, nsIPrincipal* aMaybeScriptedPrincipal,
+      bool aNotify) override;
 
   virtual mozilla::EventListenerManager* GetEventListenerManagerForAttr(
       nsAtom* aAttrName, bool* aDefer) override;
@@ -922,11 +940,9 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   void ChangeEditableState(int32_t aChange);
 };
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 class HTMLFieldSetElement;
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #define HTML_ELEMENT_FLAG_BIT(n_) \
   NODE_FLAG_BIT(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + (n_))
@@ -1154,7 +1170,7 @@ class nsGenericHTMLFormControlElement : public nsGenericHTMLFormElement,
   virtual ~nsGenericHTMLFormControlElement();
 
   // Element
-  virtual mozilla::EventStates IntrinsicState() const override;
+  virtual mozilla::dom::ElementState IntrinsicState() const override;
   virtual bool IsLabelable() const override;
 
   // nsGenericHTMLFormElement
@@ -1174,12 +1190,6 @@ class nsGenericHTMLFormControlElement : public nsGenericHTMLFormElement,
   void UpdateRequiredState(bool aIsRequired, bool aNotify);
 
   bool IsAutocapitalizeInheriting() const;
-
-  /**
-   * Returns whether this is a auto-focusable form control.
-   * @return whether this is a auto-focusable form control.
-   */
-  inline bool IsAutofocusable() const;
 
   /**
    * Save to presentation state.  The form control will determine whether it
@@ -1270,15 +1280,13 @@ class nsGenericHTMLFormControlElementWithState
   NS_INTERFACE_MAP_ENTRY_CONDITIONAL(_interface,        \
                                      mNodeInfo->Equals(nsGkAtoms::_tag))
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using HTMLContentCreatorFunction =
     nsGenericHTMLElement* (*)(already_AddRefed<mozilla::dom::NodeInfo>&&,
                               mozilla::dom::FromParser);
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 /**
  * A macro to declare the NS_NewHTMLXXXElement() functions.
@@ -1374,7 +1382,6 @@ NS_DECLARE_NS_NEW_HTML_ELEMENT(Link)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Marquee)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Map)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Menu)
-NS_DECLARE_NS_NEW_HTML_ELEMENT(MenuItem)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Meta)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Meter)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Object)

@@ -7,7 +7,7 @@
  * @module reducers/tabs
  */
 
-import { isOriginalId } from "devtools-source-map";
+import { isOriginalId } from "devtools/client/shared/source-map-loader/index";
 
 import { isSimilarTab, persistTabs } from "../utils/tabs";
 
@@ -23,11 +23,11 @@ function resetTabState(state) {
 function update(state = initialTabState(), action) {
   switch (action.type) {
     case "ADD_TAB":
-    case "UPDATE_TAB":
-      return updateTabList(state, action);
+      return updateTabList(state, action.source, action.sourceActor);
 
     case "MOVE_TAB":
       return moveTabInList(state, action);
+
     case "MOVE_TAB_BY_SOURCE_ID":
       return moveTabInListBySourceId(state, action);
 
@@ -37,18 +37,15 @@ function update(state = initialTabState(), action) {
     case "CLOSE_TABS":
       return removeSourcesFromTabList(state, action);
 
-    case "ADD_SOURCE":
-      return addVisibleTabs(state, [action.source]);
-
-    case "ADD_SOURCES":
-      return addVisibleTabs(state, action.sources);
-
-    case "SET_SELECTED_LOCATION": {
-      return addSelectedSource(state, action.source);
-    }
+    case "INSERT_SOURCE_ACTORS":
+      return addVisibleTabs(state, action.sourceActors);
 
     case "NAVIGATE": {
       return resetTabState(state);
+    }
+
+    case "REMOVE_THREAD": {
+      return resetTabsForThread(state, action.threadActorID);
     }
 
     default:
@@ -64,34 +61,22 @@ function matchesUrl(tab, source) {
   return tab.url === source.url && tab.isOriginal == isOriginalId(source.id);
 }
 
-function addSelectedSource(state, source) {
-  if (
-    state.tabs
-      .filter(({ sourceId }) => sourceId)
-      .map(({ sourceId }) => sourceId)
-      .includes(source.id)
-  ) {
-    return state;
-  }
-
-  const isOriginal = isOriginalId(source.id);
-  return updateTabList(state, {
-    url: source.url,
-    isOriginal,
-    framework: null,
-    sourceId: source.id,
-  });
-}
-
-function addVisibleTabs(state, sources) {
+function addVisibleTabs(state, sourceActors) {
   const tabCount = state.tabs.filter(({ sourceId }) => sourceId).length;
   const tabs = state.tabs
     .map(tab => {
-      const source = sources.find(src => matchesUrl(tab, src));
-      if (!source) {
+      const sourceActor = sourceActors.find(actor =>
+        matchesUrl(tab, actor.sourceObject)
+      );
+      if (!sourceActor) {
         return tab;
       }
-      return { ...tab, sourceId: source.id };
+      return {
+        ...tab,
+        sourceId: sourceActor.source,
+        threadActorId: sourceActor.thread,
+        sourceActorId: sourceActor.actor,
+      };
     })
     .filter(tab => tab.sourceId);
 
@@ -103,31 +88,40 @@ function addVisibleTabs(state, sources) {
 }
 
 function removeSourceFromTabList(state, { source }) {
-  const { tabs } = state;
-  const newTabs = tabs.filter(tab => !matchesSource(tab, source));
+  const newTabs = state.tabs.filter(tab => !matchesSource(tab, source));
+  if (newTabs.length == state.tabs.length) {
+    return state;
+  }
   return { tabs: newTabs };
 }
 
 function removeSourcesFromTabList(state, { sources }) {
-  const { tabs } = state;
-
   const newTabs = sources.reduce(
     (tabList, source) => tabList.filter(tab => !matchesSource(tab, source)),
-    tabs
+    state.tabs
   );
+  if (newTabs.length == state.tabs.length) {
+    return state;
+  }
 
   return { tabs: newTabs };
 }
 
+function resetTabsForThread(state, threadActorID) {
+  const newTabs = state.tabs.filter(tab => tab.threadActorId !== threadActorID);
+  if (newTabs.length == state.tabs.length) {
+    return state;
+  }
+  return { tabs: newTabs };
+}
+
 /**
- * Adds the new source to the tab list if it is not already there
- * @memberof reducers/tabs
- * @static
+ * Adds the new source to the tab list if it is not already there.
  */
-function updateTabList(
-  state,
-  { url, framework = null, sourceId, isOriginal = false }
-) {
+function updateTabList(state, source, sourceActor) {
+  const { url } = source;
+  const isOriginal = isOriginalId(source.id);
+
   let { tabs } = state;
   // Set currentIndex to -1 for URL-less tabs so that they aren't
   // filtered by isSimilarTab
@@ -138,13 +132,15 @@ function updateTabList(
   if (currentIndex === -1) {
     const newTab = {
       url,
-      framework,
-      sourceId,
+      sourceId: source.id,
       isOriginal,
+      threadActorId: sourceActor?.thread,
+      sourceActorId: sourceActor?.actor,
     };
+    // New tabs are added first in the list
     tabs = [newTab, ...tabs];
-  } else if (framework) {
-    tabs[currentIndex].framework = framework;
+  } else {
+    return state;
   }
 
   return { ...state, tabs };

@@ -12,8 +12,7 @@
 #include "nsWrapperCache.h"
 #include "js/TypeDecls.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class nsSynthVoiceRegistry;
 class SpeechSynthesis;
@@ -26,7 +25,7 @@ class SpeechSynthesisVoice final : public nsISupports, public nsWrapperCache {
   SpeechSynthesisVoice(nsISupports* aParent, const nsAString& aUri);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(SpeechSynthesisVoice)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(SpeechSynthesisVoice)
 
   nsISupports* GetParentObject() const;
 
@@ -51,7 +50,6 @@ class SpeechSynthesisVoice final : public nsISupports, public nsWrapperCache {
   nsString mUri;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif

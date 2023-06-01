@@ -68,6 +68,16 @@ static const char SandboxPolicyUtility[] = R"SANDBOX_LITERAL(
     (global-name "com.apple.coreservices.launchservicesd"))
 )SANDBOX_LITERAL";
 
+static const char SandboxPolicyUtilityAudioDecoderAppleMediaAddend[] =
+    R"SANDBOX_LITERAL(
+  ; For Utility AudioDecoder AppleMedia codecs
+  (define macosVersion (string->number (param "MAC_OS_VERSION")))
+  (if (>= macosVersion 1013)
+   (allow mach-lookup
+    ; bug 1565575
+    (global-name "com.apple.audio.AudioComponentRegistrar")))
+)SANDBOX_LITERAL";
+
 }  // namespace mozilla
 
 #endif  // mozilla_SandboxPolicyUtility_h

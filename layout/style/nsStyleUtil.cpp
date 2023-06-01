@@ -7,8 +7,8 @@
 #include "nsStyleUtil.h"
 #include "nsStyleConsts.h"
 
+#include "mozilla/dom/Document.h"
 #include "mozilla/ExpandedPrincipal.h"
-#include "mozilla/FontPropertyTypes.h"
 #include "nsIContent.h"
 #include "nsCSSProps.h"
 #include "nsContentUtils.h"
@@ -306,9 +306,11 @@ bool nsStyleUtil::CSPAllowsInlineStyle(
     return true;
   }
 
+  bool isStyleElement = false;
   // query the nonce
   nsAutoString nonce;
   if (aElement && aElement->NodeInfo()->NameAtom() == nsGkAtoms::style) {
+    isStyleElement = true;
     nsString* cspNonce =
         static_cast<nsString*>(aElement->GetProperty(nsGkAtoms::nonce));
     if (cspNonce) {
@@ -318,28 +320,13 @@ bool nsStyleUtil::CSPAllowsInlineStyle(
 
   bool allowInlineStyle = true;
   rv = csp->GetAllowsInline(
-      nsIContentSecurityPolicy::STYLE_SRC_DIRECTIVE, nonce,
+      isStyleElement ? nsIContentSecurityPolicy::STYLE_SRC_ELEM_DIRECTIVE
+                     : nsIContentSecurityPolicy::STYLE_SRC_ATTR_DIRECTIVE,
+      !isStyleElement /* aHasUnsafeHash */, nonce,
       false,              // aParserCreated only applies to scripts
       aElement, nullptr,  // nsICSPEventListener
       aStyleText, aLineNumber, aColumnNumber, &allowInlineStyle);
   NS_ENSURE_SUCCESS(rv, false);
 
   return allowInlineStyle;
-}
-
-void nsStyleUtil::AppendFontSlantStyle(const FontSlantStyle& aStyle,
-                                       nsAString& aOut) {
-  if (aStyle.IsNormal()) {
-    aOut.AppendLiteral("normal");
-  } else if (aStyle.IsItalic()) {
-    aOut.AppendLiteral("italic");
-  } else {
-    aOut.AppendLiteral("oblique");
-    auto angle = aStyle.ObliqueAngle();
-    if (angle != FontSlantStyle::kDefaultAngle) {
-      aOut.AppendLiteral(" ");
-      AppendCSSNumber(angle, aOut);
-      aOut.AppendLiteral("deg");
-    }
-  }
 }

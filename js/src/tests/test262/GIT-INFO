@@ -1,9 +1,5 @@
-commit 45a913c057892bdd26f7bc06a59a0c7420f2d3ec
-Author: Philip Chimento <pchimento@igalia.com>
-Date:   Wed Aug 11 12:31:23 2021 -0700
+commit e1048d0afff177ebe1d8aa0e9ced13702470f47f
+Author: Aditi <aditisingh1400@gmail.com>
+Date:   Wed Jan 4 16:23:49 2023 +0530
 
-    Add branding tests from Temporal (#3138)
-    
-    Closes: #3137
-    
-    Co-authored-by: Ms2ger <Ms2ger@igalia.com>
+    Update Temporal test262 as per the normative changes

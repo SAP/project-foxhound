@@ -16,7 +16,7 @@ RON = [extensions], ws, value, ws;
 ## Whitespace and comments
 
 ```ebnf
-ws = { ws_single, comment };
+ws = { ws_single | comment };
 ws_single = "\n" | "\t" | "\r" | " ";
 comment = ["//", { no_newline }, "\n"] | ["/*", { ? any character ? }, "*/"];
 ```
@@ -50,10 +50,12 @@ hex_digit = "A" | "a" | "B" | "b" | "C" | "c" | "D" | "d" | "E" | "e" | "F" | "f
 unsigned = (["0", ("b" | "o")], digit, { digit | '_' } |
              "0x", (digit | hex_digit), { digit | hex_digit | '_' });
 signed = ["+" | "-"], unsigned;
-float = float_std | float_frac;
-float_std = ["+" | "-"], digit, { digit }, ".", {digit}, [float_exp];
-float_frac = ".", digit, {digit}, [float_exp];
-float_exp = ("e" | "E"), digit, {digit};
+float = ["+" | "-"], ("inf" | "NaN" | float_num);
+float_num = (float_int | float_std | float_frac), [float_exp];
+float_int = digit, { digit };
+float_std = digit, { digit }, ".", {digit};
+float_frac = ".", digit, {digit};
+float_exp = ("e" | "E"), ["+" | "-"], digit, {digit};
 ```
 
 ## String
@@ -95,7 +97,8 @@ bool = "true" | "false";
 ## Optional
 
 ```ebnf
-option = "Some", ws, "(", ws, value, ws, ")";
+option = "None" | option_some;
+option_some = "Some", ws, "(", ws, value, ws, ")";
 ```
 
 ## List
@@ -123,8 +126,8 @@ tuple = "(", [value, { comma, value }, [comma]], ")";
 struct = unit_struct | tuple_struct | named_struct;
 unit_struct = ident | "()";
 tuple_struct = [ident], ws, tuple;
-named_struct = [ident], ws, "(", [named_field, { comma, named_field }, [comma]], ")";
-named_field = ident, ws, ":", value;
+named_struct = [ident], ws, "(", ws, [named_field, { comma, named_field }, [comma]], ")";
+named_field = ident, ws, ":", ws, value;
 ```
 
 ## Enum

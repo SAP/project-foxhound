@@ -1,9 +1,8 @@
 /* import-globals-from ../../../common/tests/unit/head_helpers.js */
 
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { Utils } = ChromeUtils.import("resource://services-settings/Utils.jsm");
 
 const BinaryOutputStream = Components.Constructor(

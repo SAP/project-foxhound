@@ -7,21 +7,25 @@
 const {
   createFactory,
   PureComponent,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const { connect } = require("devtools/client/shared/vendor/react-redux");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+const {
+  connect,
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
 
 const CSSDeclaration = createFactory(
-  require("devtools/client/inspector/changes/components/CSSDeclaration")
+  require("resource://devtools/client/inspector/changes/components/CSSDeclaration.js")
 );
 const {
   getChangesTree,
-} = require("devtools/client/inspector/changes/selectors/changes");
+} = require("resource://devtools/client/inspector/changes/selectors/changes.js");
 const {
   getSourceForDisplay,
-} = require("devtools/client/inspector/changes/utils/changes-utils");
-const { getStr } = require("devtools/client/inspector/changes/utils/l10n");
+} = require("resource://devtools/client/inspector/changes/utils/changes-utils.js");
+const {
+  getStr,
+} = require("resource://devtools/client/inspector/changes/utils/l10n.js");
 
 class ChangesApp extends PureComponent {
   static get propTypes() {
@@ -212,7 +216,7 @@ class ChangesApp extends PureComponent {
   }
 
   render() {
-    const hasChanges = Object.keys(this.props.changesTree).length > 0;
+    const hasChanges = !!Object.keys(this.props.changesTree).length;
     return dom.div(
       {
         className: "theme-sidebar inspector-tabpanel",

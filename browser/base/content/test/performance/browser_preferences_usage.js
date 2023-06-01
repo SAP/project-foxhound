@@ -105,19 +105,12 @@ add_task(async function startup() {
 
   let knownProblematicPrefs = {
     "browser.startup.record": {
+      // This pref is accessed in Nighly and debug builds only.
       min: 200,
-      max: 350,
-    },
-    "layout.css.dpi": {
-      min: 45,
-      max: 81,
+      max: 400,
     },
     "network.loadinfo.skip_type_assertion": {
       // This is accessed in debug only.
-    },
-    "extensions.getAddons.cache.enabled": {
-      min: 4,
-      max: 55,
     },
     "chrome.override_package.global": {
       min: 0,
@@ -142,13 +135,6 @@ add_task(async function open_10_tabs() {
   const max = 4 * DEFAULT_PROCESS_COUNT;
 
   let knownProblematicPrefs = {
-    "layout.css.dpi": {
-      max: 60,
-    },
-    "browser.zoom.full": {
-      min: 10,
-      max: 25,
-    },
     "browser.startup.record": {
       max: 20,
     },
@@ -167,6 +153,7 @@ add_task(async function open_10_tabs() {
     tabs.push(
       await BrowserTestUtils.openNewForegroundTab(
         gBrowser,
+        // eslint-disable-next-line @microsoft/sdl/no-insecure-url
         "http://example.com",
         true,
         true
@@ -198,25 +185,10 @@ add_task(async function navigate_around() {
   let max = 40;
 
   let knownProblematicPrefs = {
-    "browser.zoom.full": {
-      min: 100,
-      max: 110,
-    },
     "network.loadinfo.skip_type_assertion": {
       // This is accessed in debug only.
     },
-    "extensions.screenshots.disabled": {
-      min: 50,
-      max: 51,
-    },
   };
-
-  if (AppConstants.NIGHTLY_BUILD) {
-    knownProblematicPrefs["toolkit.telemetry.cachedClientID"] = {
-      // Bug 1712391: Only an issue in tests where pref is not populated early on
-      // in startup. Code path is only accessed in Nightly builds.
-    };
-  }
 
   if (SpecialPowers.useRemoteSubframes) {
     // We access this when considering starting a new content process.
@@ -234,14 +206,14 @@ add_task(async function navigate_around() {
     knownProblematicPrefs[
       "dom.ipc.keepProcessesAlive.webIsolated.perOrigin"
     ] = {
-      min: 50,
-      max: 51,
+      min: 100,
+      max: 102,
     };
     if (AppConstants.platform == "linux") {
       // The following sandbox pref is covered by
       // https://bugzilla.mozilla.org/show_bug.cgi?id=1600189
       knownProblematicPrefs["security.sandbox.content.force-namespace"] = {
-        min: 49,
+        min: 45,
         max: 55,
       };
       // This was previously being read in the content process, but
@@ -250,28 +222,28 @@ add_task(async function navigate_around() {
       // more problematic than the pref read.  These issues are covered
       // by https://bugzilla.mozilla.org/show_bug.cgi?id=1729080
       knownProblematicPrefs["gfx.color_management.display_profile"] = {
-        min: 49,
+        min: 45,
         max: 50,
       };
     } else if (AppConstants.platform == "win") {
       // The following 2 graphics prefs are covered by
       // https://bugzilla.mozilla.org/show_bug.cgi?id=1639497
       knownProblematicPrefs["gfx.canvas.azure.backends"] = {
-        min: 100,
+        min: 90,
         max: 110,
       };
       knownProblematicPrefs["gfx.content.azure.backends"] = {
-        min: 100,
+        min: 90,
         max: 110,
       };
       // The following 2 sandbox prefs are covered by
       // https://bugzilla.mozilla.org/show_bug.cgi?id=1639494
       knownProblematicPrefs["security.sandbox.content.read_path_whitelist"] = {
-        min: 49,
+        min: 47,
         max: 55,
       };
       knownProblematicPrefs["security.sandbox.logging.enabled"] = {
-        min: 49,
+        min: 47,
         max: 55,
       };
     }
@@ -281,14 +253,17 @@ add_task(async function navigate_around() {
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com",
     true,
     true
   );
 
   let urls = [
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com/",
     "https://example.com/",
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.org/",
     "https://example.org/",
   ];
@@ -296,7 +271,7 @@ add_task(async function navigate_around() {
   for (let i = 0; i < 50; i++) {
     let url = urls[i % urls.length];
     info(`Navigating to ${url}...`);
-    BrowserTestUtils.loadURI(tab.linkedBrowser, url);
+    BrowserTestUtils.loadURIString(tab.linkedBrowser, url);
     await BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, url);
     info(`Loaded ${url}.`);
   }

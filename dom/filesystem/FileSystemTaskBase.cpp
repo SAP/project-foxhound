@@ -44,7 +44,7 @@ nsresult FileSystemErrorFromNsError(const nsresult& aErrorValue) {
     case NS_ERROR_FILE_DIR_NOT_EMPTY:
       return NS_ERROR_DOM_FILESYSTEM_NO_MODIFICATION_ALLOWED_ERR;
 
-    case NS_ERROR_FILE_TARGET_DOES_NOT_EXIST:
+    case NS_ERROR_FILE_NOT_FOUND:
     case NS_ERROR_NOT_AVAILABLE:
       return NS_ERROR_DOM_FILE_NOT_FOUND_ERR;
 
@@ -156,7 +156,7 @@ FileSystemTaskParentBase::FileSystemTaskParentBase(
       mErrorValue(NS_OK),
       mFileSystem(aFileSystem),
       mRequestParent(aParent),
-      mBackgroundEventTarget(GetCurrentEventTarget()) {
+      mBackgroundEventTarget(GetCurrentSerialEventTarget()) {
   MOZ_ASSERT(XRE_IsParentProcess(), "Only call from parent process!");
   MOZ_ASSERT(aFileSystem, "aFileSystem should not be null.");
   MOZ_ASSERT(aParent);

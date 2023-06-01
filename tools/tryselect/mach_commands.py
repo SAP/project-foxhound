@@ -8,15 +8,10 @@ import importlib
 import os
 import sys
 
-from mach.decorators import (
-    Command,
-    SettingsProvider,
-    SubCommand,
-)
+from mach.decorators import Command, SettingsProvider, SubCommand
 from mach.util import get_state_dir
 from mozbuild.base import BuildEnvironmentNotFoundException
 from mozbuild.util import memoize
-
 
 CONFIG_ENVIRONMENT_NOT_FOUND = """
 No config environment detected. This means we are unable to properly
@@ -331,7 +326,7 @@ def try_fuzzy(command_context, **kwargs):
         # If saving preset without -q/--query, allow user to use the
         # interface to build the query.
         kwargs_copy = kwargs.copy()
-        kwargs_copy["push"] = False
+        kwargs_copy["dry_run"] = True
         kwargs_copy["save"] = None
         kwargs["query"] = run(command_context, save_query=True, **kwargs_copy)
         if not kwargs["query"]:
@@ -507,5 +502,27 @@ def try_scriptworker(command_context, **kwargs):
 
     Requires VPN and shipit access.
     """
+    init(command_context)
+    return run(command_context, **kwargs)
+
+
+@SubCommand(
+    "try",
+    "compare",
+    description="Push two try jobs, one on your current commit and another on the one you specify",
+    parser=get_parser("compare"),
+)
+def try_compare(command_context, **kwargs):
+    init(command_context)
+    return run(command_context, **kwargs)
+
+
+@SubCommand(
+    "try",
+    "perf",
+    description="Try selector for running performance tests.",
+    parser=get_parser("perf"),
+)
+def try_perf(command_context, **kwargs):
     init(command_context)
     return run(command_context, **kwargs)

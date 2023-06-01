@@ -5,59 +5,55 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const global = this;
-
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-
-XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
 const { ExtensionUtils } = ChromeUtils.import(
   "resource://gre/modules/ExtensionUtils.jsm"
 );
 var { DefaultMap, DefaultWeakMap } = ExtensionUtils;
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "ExtensionParent",
   "resource://gre/modules/ExtensionParent.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "NetUtil",
   "resource://gre/modules/NetUtil.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "ShortcutUtils",
-  "resource://gre/modules/ShortcutUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
+});
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "contentPolicyService",
   "@mozilla.org/addons/content-policy;1",
   "nsIAddonContentPolicy"
 );
 
 XPCOMUtils.defineLazyGetter(
-  this,
+  lazy,
   "StartupCache",
-  () => ExtensionParent.StartupCache
+  () => lazy.ExtensionParent.StartupCache
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "treatWarningsAsErrors",
   "extensions.webextensions.warnings-as-errors",
   false
 );
 
-var EXPORTED_SYMBOLS = ["SchemaRoot", "Schemas"];
+const EXPORTED_SYMBOLS = ["SchemaRoot", "Schemas"];
+let Schemas;
 
 const KEY_CONTENT_SCHEMAS = "extensions-framework/schemas/content";
 const KEY_PRIVILEGED_SCHEMAS = "extensions-framework/schemas/privileged";
@@ -72,7 +68,7 @@ const isParentProcess =
 
 function readJSON(url) {
   return new Promise((resolve, reject) => {
-    NetUtil.asyncFetch(
+    lazy.NetUtil.asyncFetch(
       { uri: url, loadUsingSystemPrincipal: true },
       (inputStream, status) => {
         if (!Components.isSuccessCode(status)) {
@@ -82,7 +78,7 @@ function readJSON(url) {
           return;
         }
         try {
-          let text = NetUtil.readInputStreamToString(
+          let text = lazy.NetUtil.readInputStreamToString(
             inputStream,
             inputStream.available()
           );
@@ -161,9 +157,9 @@ async function readJSONAndBlobbify(url) {
  *
  * @param {object} object
  *        The object on which to define the getter.
- * @param {string|Symbol} prop
+ * @param {string | symbol} prop
  *        The property name for which to define the getter.
- * @param {function} getter
+ * @param {Function} getter
  *        The function to call in order to generate the final property
  *        value.
  */
@@ -212,9 +208,9 @@ function exportLazyGetter(object, prop, getter) {
  *
  * @param {object} object
  *        The object on which to define the getter.
- * @param {string|Symbol} prop
+ * @param {string | symbol} prop
  *        The property name for which to define the getter.
- * @param {function} getter
+ * @param {Function} getter
  *        The function to call in order to generate the final property
  *        descriptor object. This will be called, and the property
  *        descriptor installed on the object, the first time the
@@ -305,6 +301,18 @@ const POSTPROCESSORS = {
     const msg = `Unsupported manifest version: ${value}`;
     context.logError(context.makeError(msg));
     throw new Error(msg);
+  },
+
+  webAccessibleMatching(value, context) {
+    // Ensure each object has at least one of matches or extension_ids array.
+    for (let obj of value) {
+      if (!obj.matches && !obj.extension_ids) {
+        const msg = `web_accessible_resources requires one of "matches" or "extension_ids"`;
+        context.logError(context.makeError(msg));
+        throw new Error(msg);
+      }
+    }
+    return value;
   },
 };
 
@@ -397,7 +405,7 @@ class Context {
       }
     }
 
-    let props = ["preprocessors", "isChromeCompat", "manifestVersion"];
+    let props = ["isChromeCompat", "manifestVersion", "preprocessors"];
     for (let prop of props) {
       if (prop in params) {
         if (prop in this && typeof this[prop] == "object") {
@@ -481,12 +489,12 @@ class Context {
    * If the context has a `currentTarget` value, this is prepended to
    * the message to indicate the location of the error.
    *
-   * @param {string|function} errorMessage
+   * @param {string | Function} errorMessage
    *        The error message which will be displayed when this is the
    *        only possible matching schema. If a function is passed, it
    *        will be evaluated when the error string is first needed, and
    *        must return a string.
-   * @param {string|function} choicesMessage
+   * @param {string | Function} choicesMessage
    *        The message describing the valid what constitutes a valid
    *        value for this schema, which will be displayed when multiple
    *        schema choices are available and none match.
@@ -567,6 +575,31 @@ class Context {
   }
 
   /**
+   * Logs a warning. An error might be thrown when we treat warnings as errors.
+   *
+   * @param {string} warningMessage
+   */
+  logWarning(warningMessage) {
+    let error = this.makeError(warningMessage, { warning: true });
+    this.logError(error);
+
+    if (lazy.treatWarningsAsErrors) {
+      // This pref is false by default, and true by default in tests to
+      // discourage the use of deprecated APIs in our unit tests.
+      // If a warning is an expected part of a test, temporarily set the pref
+      // to false, e.g. with the ExtensionTestUtils.failOnSchemaWarnings helper.
+      Services.console.logStringMessage(
+        "Treating warning as error because the preference " +
+          "extensions.webextensions.warnings-as-errors is set to true"
+      );
+      if (typeof error === "string") {
+        error = new Error(error);
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Returns the name of the value currently being normalized. For a
    * nested object, this is usually approximately equivalent to the
    * JavaScript property accessor for that property. Given:
@@ -584,7 +617,7 @@ class Context {
    * Executes the given callback, and returns an array of choice strings
    * passed to {@see #error} during its execution.
    *
-   * @param {function} callback
+   * @param {Function} callback
    * @returns {object}
    *          An object with a `result` property containing the return
    *          value of the callback, and a `choice` property containing
@@ -630,7 +663,7 @@ class Context {
    * when reporting type errors.
    *
    * @param {string} component
-   * @param {function} callback
+   * @param {Function} callback
    * @returns {*}
    */
   withPath(component, callback) {
@@ -1027,6 +1060,8 @@ class InjectionContext extends Context {
  */
 const FORMATS = {
   hostname(string, context) {
+    // TODO bug 1797376: Despite the name, this format is NOT a "hostname",
+    // but hostname + port and may fail with IPv6. Use canonicalDomain instead.
     let valid = true;
 
     try {
@@ -1037,6 +1072,25 @@ const FORMATS = {
 
     if (!valid) {
       throw new Error(`Invalid hostname ${string}`);
+    }
+
+    return string;
+  },
+
+  canonicalDomain(string, context) {
+    let valid;
+
+    try {
+      valid = new URL(`http://${string}`).hostname === string;
+    } catch (e) {
+      valid = false;
+    }
+
+    if (!valid) {
+      // Require the input to be a canonical domain.
+      // Rejects obvious non-domains such as URLs,
+      // but also catches non-IDN (punycode) domains.
+      throw new Error(`Invalid domain ${string}`);
     }
 
     return string;
@@ -1143,14 +1197,14 @@ const FORMATS = {
   },
 
   contentSecurityPolicy(string, context) {
-    // Manifest V3 extension_pages allows localhost.  When sandbox is
+    // Manifest V3 extension_pages allows WASM.  When sandbox is
     // implemented, or any other V3 or later directive, the flags
     // logic will need to be updated.
     let flags =
       context.manifestVersion < 3
         ? Ci.nsIAddonContentPolicy.CSP_ALLOW_ANY
-        : Ci.nsIAddonContentPolicy.CSP_ALLOW_LOCALHOST;
-    let error = contentPolicyService.validateAddonCSP(string, flags);
+        : Ci.nsIAddonContentPolicy.CSP_ALLOW_WASM;
+    let error = lazy.contentPolicyService.validateAddonCSP(string, flags);
     if (error != null) {
       // The CSP validation error is not reported as part of the "choices" error message,
       // we log the CSP validation error explicitly here to make it easier for the addon developers
@@ -1177,7 +1231,7 @@ const FORMATS = {
   },
 
   manifestShortcutKey(string, context) {
-    if (ShortcutUtils.validate(string) == ShortcutUtils.IS_VALID) {
+    if (lazy.ShortcutUtils.validate(string) == lazy.ShortcutUtils.IS_VALID) {
       return string;
     }
     let errorMessage =
@@ -1191,6 +1245,27 @@ const FORMATS = {
 
   manifestShortcutKeyOrEmpty(string, context) {
     return string === "" ? "" : FORMATS.manifestShortcutKey(string, context);
+  },
+
+  versionString(string, context) {
+    const parts = string.split(".");
+
+    if (
+      // We accept up to 4 numbers.
+      parts.length > 4 ||
+      // Non-zero values cannot start with 0 and we allow numbers up to 9 digits.
+      parts.some(part => !/^(0|[1-9][0-9]{0,8})$/.test(part))
+    ) {
+      context.logWarning(
+        `version must be a version string consisting of at most 4 integers ` +
+          `of at most 9 digits without leading zeros, and separated with dots`
+      );
+    }
+
+    // The idea is to only emit a warning when the version string does not
+    // match the simple format we want to encourage developers to use. Given
+    // the version is required, we always accept the value as is.
+    return string;
   },
 };
 
@@ -1302,31 +1377,7 @@ class Entry {
       }
     }
 
-    this.logWarning(context, message);
-  }
-
-  /**
-   * @param {Context} context
-   * @param {string} warningMessage
-   */
-  logWarning(context, warningMessage) {
-    let error = context.makeError(warningMessage, { warning: true });
-    context.logError(error);
-
-    if (treatWarningsAsErrors) {
-      // This pref is false by default, and true by default in tests to
-      // discourage the use of deprecated APIs in our unit tests.
-      // If a warning is an expected part of a test, temporarily set the pref
-      // to false, e.g. with the ExtensionTestUtils.failOnSchemaWarnings helper.
-      Services.console.logStringMessage(
-        "Treating warning as error because the preference " +
-          "extensions.webextensions.warnings-as-errors is set to true"
-      );
-      if (typeof error === "string") {
-        error = new Error(error);
-      }
-      throw error;
-    }
+    context.logWarning(message);
   }
 
   /**
@@ -1373,6 +1424,7 @@ class Type extends Entry {
       "deprecated",
       "preprocess",
       "postprocess",
+      "privileged",
       "allowedContexts",
       "min_manifest_version",
       "max_manifest_version",
@@ -2013,12 +2065,21 @@ class ObjectType extends Type {
           `Property "${prop}" is unsupported in Manifest Version ${context.manifestVersion}`,
           `not contain an unsupported "${prop}" property`
         );
-        if (context.manifestVersion === 2) {
-          // Existing MV2 extensions might have some of the new MV3 properties.
-          // Since we've ignored them till now, we should just warn and bail.
-          this.logWarning(context, forceString(error.error));
-          return;
+
+        context.logWarning(forceString(error.error));
+        if (this.additionalProperties) {
+          // When `additionalProperties` is set to UnrecognizedProperty, the
+          // caller (i.e. ObjectType's normalize method) assigns the original
+          // value to `result[prop]`. Erase the property now to prevent
+          // `result[prop]` from becoming anything other than `undefined.
+          //
+          // A warning was already logged above, so we do not need to also log
+          // "An unexpected property was found in the WebExtension manifest."
+          remainingProps.delete(prop);
         }
+        // When `additionalProperties` is not set, ObjectType's normalize method
+        // will return an error because prop is still in remainingProps.
+        return;
       }
     } else if (unsupported) {
       if (prop in properties) {
@@ -2056,7 +2117,7 @@ class ObjectType extends Type {
 
     if (error) {
       if (onError == "warn") {
-        this.logWarning(context, forceString(error.error));
+        context.logWarning(forceString(error.error));
       } else if (onError != "ignore") {
         throw error;
       }
@@ -2357,7 +2418,7 @@ class ArrayType extends Type {
       );
       if (element.error) {
         if (this.onError == "warn") {
-          this.logWarning(context, forceString(element.error));
+          context.logWarning(forceString(element.error));
         } else if (this.onError != "ignore") {
           return element;
         }
@@ -2580,9 +2641,7 @@ class SubModuleProperty extends Entry {
     this.permissions = permissions;
   }
 
-  getDescriptor(path, context) {
-    let obj = Cu.createObjectIn(context.cloneScope);
-
+  get targetType() {
     let ns = this.root.getNamespace(this.namespaceName);
     let type = ns.get(this.reference);
     if (!type && this.reference.includes(".")) {
@@ -2590,6 +2649,15 @@ class SubModuleProperty extends Entry {
       ns = this.root.getNamespace(namespaceName);
       type = ns.get(ref);
     }
+    return type;
+  }
+
+  getDescriptor(path, context) {
+    let obj = Cu.createObjectIn(context.cloneScope);
+
+    let ns = this.root.getNamespace(this.namespaceName);
+    let type = this.targetType;
+
     // Prevent injection if not a supported version.
     if (!context.matchManifestVersion(type)) {
       return;
@@ -2680,7 +2748,7 @@ class CallEntry extends Entry {
         // For Chrome compatibility, use the default value if null or undefined
         // is explicitly passed but is not a valid argument in this position.
         if (parameter.optional && (arg === null || arg === undefined)) {
-          fixedArgs[parameterIndex] = Cu.cloneInto(parameter.default, global);
+          fixedArgs[parameterIndex] = Cu.cloneInto(parameter.default, {});
         } else {
           return false;
         }
@@ -3501,7 +3569,7 @@ class SchemaRoot extends Namespace {
     for (let [key, schema] of this.schemaJSON.entries()) {
       try {
         if (typeof schema.deserialize === "function") {
-          schema = schema.deserialize(global, isParentProcess);
+          schema = schema.deserialize(globalThis, isParentProcess);
 
           // If we're in the parent process, we need to keep the
           // StructuredCloneHolder blob around in order to send to future child
@@ -3533,7 +3601,7 @@ class SchemaRoot extends Namespace {
    *        The top-level namespace to check permissions for.
    * @param {object} wrapperFuncs
    *        Wrapper functions for the given context.
-   * @param {function} wrapperFuncs.hasPermission
+   * @param {Function} wrapperFuncs.hasPermission
    *        A function which, when given a string argument, returns true
    *        if the context has the given permission.
    * @returns {boolean}
@@ -3596,7 +3664,7 @@ class SchemaRoot extends Namespace {
   }
 }
 
-this.Schemas = {
+Schemas = {
   initialized: false,
 
   REVOKE: Symbol("@@revoke"),
@@ -3663,7 +3731,7 @@ this.Schemas = {
   _loadCachedSchemasPromise: null,
   loadCachedSchemas() {
     if (!this._loadCachedSchemasPromise) {
-      this._loadCachedSchemasPromise = StartupCache.schemas
+      this._loadCachedSchemasPromise = lazy.StartupCache.schemas
         .getAll()
         .then(results => {
           return results;
@@ -3713,7 +3781,7 @@ this.Schemas = {
 
     let blob =
       schemaCache.get(url) ||
-      (await StartupCache.schemas.get(url, readJSONAndBlobbify));
+      (await lazy.StartupCache.schemas.get(url, readJSONAndBlobbify));
 
     if (!this.schemaJSON.has(url)) {
       this.addSchema(url, blob, content);
@@ -3734,7 +3802,7 @@ this.Schemas = {
    *        The top-level namespace to check permissions for.
    * @param {object} wrapperFuncs
    *        Wrapper functions for the given context.
-   * @param {function} wrapperFuncs.hasPermission
+   * @param {Function} wrapperFuncs.hasPermission
    *        A function which, when given a string argument, returns true
    *        if the context has the given permission.
    * @returns {boolean}
@@ -3756,6 +3824,7 @@ this.Schemas = {
       "OptionalPermission",
       "PermissionNoPrompt",
       "OptionalPermissionNoPrompt",
+      "PermissionPrivileged",
     ]
   ) {
     const ns = this.getNamespace("manifest");
@@ -3805,21 +3874,80 @@ this.Schemas = {
    * validation and normalization guarantees that the ext-APINAMESPACE.js
    * scripts expects (what InjectionContext does for the regular bindings).
    *
-   * @param {object}     extContext
-   * @param {string}     apiNamespace
-   * @param {string}     apiName
-   * @param {Array<any>} args
+   * @param {object}                   extContext
+   * @param {mozIExtensionAPIRequest } apiRequest
    *
    * @returns {Array<any>} Normalized arguments array.
    */
-  checkParameters(extContext, apiNamespace, apiName, args) {
-    const apiSchema = this.getNamespace(apiNamespace)?.get(apiName);
+  checkWebIDLRequestParameters(extContext, apiRequest) {
+    const getSchemaForProperty = (schemaObj, propName, schemaPath) => {
+      if (schemaObj instanceof Namespace) {
+        return schemaObj?.get(propName);
+      } else if (schemaObj instanceof SubModuleProperty) {
+        for (const fun of schemaObj.targetType.functions) {
+          if (fun.name === propName) {
+            return fun;
+          }
+        }
+
+        for (const fun of schemaObj.targetType.events) {
+          if (fun.name === propName) {
+            return fun;
+          }
+        }
+      } else if (schemaObj instanceof Event) {
+        return schemaObj;
+      }
+
+      const schemaPathType = schemaObj?.constructor.name;
+      throw new Error(
+        `API Schema for "${propName}" not found in ${schemaPath} (${schemaPath} type is ${schemaPathType})`
+      );
+    };
+    const { requestType, apiNamespace, apiName } = apiRequest;
+
+    let [ns, ...rest] = (["addListener", "removeListener"].includes(requestType)
+      ? `${apiNamespace}.${apiName}.${requestType}`
+      : `${apiNamespace}.${apiName}`
+    ).split(".");
+    let apiSchema = this.getNamespace(ns);
+
+    // Keep track of the current schema path, populated while navigating the nested API schema
+    // data and then used to include the full path to the API schema that is hitting unexpected
+    // errors due to schema data not found or an unexpected schema type.
+    let schemaPath = [ns];
+
+    while (rest.length) {
+      // Nested property as namespace (e.g. used for proxy.settings requests).
+      if (!apiSchema) {
+        throw new Error(`API Schema not found for ${schemaPath.join(".")}`);
+      }
+
+      let [propName, ...newRest] = rest;
+      rest = newRest;
+
+      apiSchema = getSchemaForProperty(
+        apiSchema,
+        propName,
+        schemaPath.join(".")
+      );
+      schemaPath.push(propName);
+    }
+
     if (!apiSchema) {
-      throw new Error(`API Schema not found for ${apiNamespace}.${apiName}`);
+      throw new Error(`API Schema not found for ${schemaPath.join(".")}`);
+    }
+
+    if (!apiSchema.checkParameters) {
+      throw new Error(
+        `Unexpected API Schema type for ${schemaPath.join(
+          "."
+        )} (${schemaPath.join(".")} type is ${apiSchema.constructor.name})`
+      );
     }
 
     return apiSchema.checkParameters(
-      args,
+      apiRequest.args,
       this.paramsValidationContexts.get(extContext)
     );
   },

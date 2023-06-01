@@ -6,8 +6,6 @@
 
 #include "vm/AsyncIteration.h"
 
-#include "builtin/Array.h"
-
 #include "builtin/Promise.h"  // js::PromiseHandler, js::CreatePromiseObjectForAsyncGenerator, js::AsyncFromSyncIteratorMethod, js::ResolvePromiseInternal, js::RejectPromiseInternal, js::InternalAsyncGeneratorAwait
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/PropertySpec.h"
@@ -22,7 +20,6 @@
 #include "vm/SelfHosting.h"
 #include "vm/WellKnownAtom.h"  // js_*_str
 
-#include "vm/JSContext-inl.h"
 #include "vm/JSObject-inl.h"
 #include "vm/List-inl.h"
 
@@ -47,7 +44,6 @@ const JSClassOps AsyncGeneratorObject::classOps_ = {
     nullptr,                                   // mayResolve
     nullptr,                                   // finalize
     nullptr,                                   // call
-    nullptr,                                   // hasInstance
     nullptr,                                   // construct
     CallTraceMethod<AbstractGeneratorObject>,  // trace
 };
@@ -1065,11 +1061,11 @@ bool js::AsyncGeneratorThrow(JSContext* cx, unsigned argc, Value* vp) {
   // Step 7. Resume the suspended evaluation of genContext using completion as
   //         the result of the operation that suspended it. Let result be the
   //         completion record returned by the resumed computation.
-  HandlePropertyName funName = completionKind == CompletionKind::Normal
-                                   ? cx->names().AsyncGeneratorNext
-                               : completionKind == CompletionKind::Throw
-                                   ? cx->names().AsyncGeneratorThrow
-                                   : cx->names().AsyncGeneratorReturn;
+  Handle<PropertyName*> funName = completionKind == CompletionKind::Normal
+                                      ? cx->names().AsyncGeneratorNext
+                                  : completionKind == CompletionKind::Throw
+                                      ? cx->names().AsyncGeneratorThrow
+                                      : cx->names().AsyncGeneratorReturn;
   FixedInvokeArgs<1> args(cx);
   args[0].set(argument);
   RootedValue thisOrRval(cx, ObjectValue(*generator));
@@ -1101,12 +1097,8 @@ static const JSFunctionSpec async_generator_methods[] = {
     JS_FN("return", js::AsyncGeneratorReturn, 1, 0), JS_FS_END};
 
 static JSObject* CreateAsyncGeneratorFunction(JSContext* cx, JSProtoKey key) {
-  RootedObject proto(
-      cx, GlobalObject::getOrCreateFunctionConstructor(cx, cx->global()));
-  if (!proto) {
-    return nullptr;
-  }
-  HandlePropertyName name = cx->names().AsyncGeneratorFunction;
+  RootedObject proto(cx, &cx->global()->getFunctionConstructor());
+  Handle<PropertyName*> name = cx->names().AsyncGeneratorFunction;
 
   // ES2022 draft rev 193211a3d889a61e74ef7da1475dfa356e029f29
   //

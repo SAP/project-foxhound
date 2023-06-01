@@ -39,12 +39,7 @@ using namespace mozilla::ipc;
 namespace mozilla {
 namespace net {
 
-// Pref string constants
-static const char kCookieMoveIntervalSecs[] =
-    "network.cookie.move.interval_sec";
-
 static StaticRefPtr<CookieServiceChild> gCookieChildService;
-static uint32_t gMoveCookiesIntervalSeconds = 10;
 
 already_AddRefed<CookieServiceChild> CookieServiceChild::GetSingleton() {
   if (!gCookieChildService) {
@@ -55,8 +50,8 @@ already_AddRefed<CookieServiceChild> CookieServiceChild::GetSingleton() {
   return do_AddRef(gCookieChildService);
 }
 
-NS_IMPL_ISUPPORTS(CookieServiceChild, nsICookieService, nsIObserver,
-                  nsITimerCallback, nsINamed, nsISupportsWeakReference)
+NS_IMPL_ISUPPORTS(CookieServiceChild, nsICookieService,
+                  nsISupportsWeakReference)
 
 CookieServiceChild::CookieServiceChild() {
   NS_ASSERTION(IsNeckoChild(), "not a child process");
@@ -79,50 +74,6 @@ CookieServiceChild::CookieServiceChild() {
 
   mTLDService = do_GetService(NS_EFFECTIVETLDSERVICE_CONTRACTID);
   NS_ASSERTION(mTLDService, "couldn't get TLDService");
-
-  // Init our prefs and observer.
-  nsCOMPtr<nsIPrefBranch> prefBranch = do_GetService(NS_PREFSERVICE_CONTRACTID);
-  NS_WARNING_ASSERTION(prefBranch, "no prefservice");
-  if (prefBranch) {
-    prefBranch->AddObserver(kCookieMoveIntervalSecs, this, true);
-    PrefChanged(prefBranch);
-  }
-
-  nsCOMPtr<nsIObserverService> observerService = services::GetObserverService();
-  if (observerService) {
-    observerService->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false);
-  }
-}
-
-void CookieServiceChild::MoveCookies() {
-  TimeStamp start = TimeStamp::Now();
-  for (const auto& cookiesList : mCookiesMap.Values()) {
-    CookiesList newCookiesList;
-    for (uint32_t i = 0; i < cookiesList->Length(); ++i) {
-      Cookie* cookie = cookiesList->ElementAt(i);
-      RefPtr<Cookie> newCookie = cookie->Clone();
-      newCookiesList.AppendElement(newCookie);
-    }
-    *cookiesList = std::move(newCookiesList);
-  }
-
-  Telemetry::AccumulateTimeDelta(Telemetry::COOKIE_TIME_MOVING_MS, start);
-}
-
-NS_IMETHODIMP
-CookieServiceChild::Notify(nsITimer* aTimer) {
-  if (aTimer == mCookieTimer) {
-    MoveCookies();
-  } else {
-    MOZ_CRASH("Unknown timer");
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-CookieServiceChild::GetName(nsACString& aName) {
-  aName.AssignLiteral("CookieServiceChild");
-  return NS_OK;
 }
 
 CookieServiceChild::~CookieServiceChild() { gCookieChildService = nullptr; }
@@ -145,13 +96,16 @@ void CookieServiceChild::TrackCookieLoad(nsIChannel* aChannel) {
       aChannel, attrs);
 
   bool isSafeTopLevelNav = CookieCommons::IsSafeTopLevelNav(aChannel);
-  bool isSameSiteForeign = CookieCommons::IsSameSiteForeign(aChannel, uri);
+  bool hadCrossSiteRedirects = false;
+  bool isSameSiteForeign =
+      CookieCommons::IsSameSiteForeign(aChannel, uri, &hadCrossSiteRedirects);
   SendPrepareCookieList(
       uri, result.contains(ThirdPartyAnalysis::IsForeign),
       result.contains(ThirdPartyAnalysis::IsThirdPartyTrackingResource),
       result.contains(ThirdPartyAnalysis::IsThirdPartySocialTrackingResource),
       result.contains(ThirdPartyAnalysis::IsStorageAccessPermissionGranted),
-      rejectedReason, isSafeTopLevelNav, isSameSiteForeign, attrs);
+      rejectedReason, isSafeTopLevelNav, isSameSiteForeign,
+      hadCrossSiteRedirects, attrs);
 }
 
 IPCResult CookieServiceChild::RecvRemoveAll() {
@@ -188,6 +142,13 @@ IPCResult CookieServiceChild::RecvAddCookie(const CookieStruct& aCookie,
                                             const OriginAttributes& aAttrs) {
   RefPtr<Cookie> cookie = Cookie::Create(aCookie, aAttrs);
   RecordDocumentCookie(cookie, aAttrs);
+
+  // signal test code to check their cookie list
+  nsCOMPtr<nsIObserverService> obsService = services::GetObserverService();
+  if (obsService) {
+    obsService->NotifyObservers(nullptr, "cookie-content-filter-test", nullptr);
+  }
+
   return IPC_OK();
 }
 
@@ -211,25 +172,6 @@ IPCResult CookieServiceChild::RecvTrackCookiesLoad(
   }
 
   return IPC_OK();
-}
-
-void CookieServiceChild::PrefChanged(nsIPrefBranch* aPrefBranch) {
-  int32_t val;
-  if (NS_SUCCEEDED(aPrefBranch->GetIntPref(kCookieMoveIntervalSecs, &val))) {
-    gMoveCookiesIntervalSeconds = clamped<uint32_t>(val, 0, 3600);
-    if (gMoveCookiesIntervalSeconds && !mCookieTimer) {
-      NS_NewTimerWithCallback(getter_AddRefs(mCookieTimer), this,
-                              gMoveCookiesIntervalSeconds * 1000,
-                              nsITimer::TYPE_REPEATING_SLACK_LOW_PRIORITY);
-    }
-    if (!gMoveCookiesIntervalSeconds && mCookieTimer) {
-      mCookieTimer->Cancel();
-      mCookieTimer = nullptr;
-    }
-    if (mCookieTimer) {
-      mCookieTimer->SetDelay(gMoveCookiesIntervalSeconds * 1000);
-    }
-  }
 }
 
 uint32_t CookieServiceChild::CountCookiesFromHashTable(
@@ -288,6 +230,7 @@ void CookieServiceChild::RecordDocumentCookie(Cookie* aCookie,
           cookie->Expiry() == aCookie->Expiry() &&
           cookie->IsSecure() == aCookie->IsSecure() &&
           cookie->SameSite() == aCookie->SameSite() &&
+          cookie->RawSameSite() == aCookie->RawSameSite() &&
           cookie->IsSession() == aCookie->IsSession() &&
           cookie->IsHttpOnly() == aCookie->IsHttpOnly()) {
         cookie->SetLastAccessed(aCookie->LastAccessed());
@@ -307,45 +250,17 @@ void CookieServiceChild::RecordDocumentCookie(Cookie* aCookie,
 }
 
 NS_IMETHODIMP
-CookieServiceChild::Observe(nsISupports* aSubject, const char* aTopic,
-                            const char16_t* /*aData*/) {
-  if (!strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID)) {
-    if (mCookieTimer) {
-      mCookieTimer->Cancel();
-      mCookieTimer = nullptr;
-    }
-    nsCOMPtr<nsIObserverService> observerService =
-        services::GetObserverService();
-    if (observerService) {
-      observerService->RemoveObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID);
-    }
-  } else if (!strcmp(aTopic, NS_PREFBRANCH_PREFCHANGE_TOPIC_ID)) {
-    nsCOMPtr<nsIPrefBranch> prefBranch = do_QueryInterface(aSubject);
-    if (prefBranch) {
-      PrefChanged(prefBranch);
-    }
-  } else {
-    MOZ_ASSERT(false, "unexpected topic!");
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 CookieServiceChild::GetCookieStringFromDocument(dom::Document* aDocument,
                                                 nsACString& aCookieString) {
   NS_ENSURE_ARG(aDocument);
 
   aCookieString.Truncate();
 
-  nsCOMPtr<nsIPrincipal> principal = aDocument->EffectiveStoragePrincipal();
+  nsCOMPtr<nsIPrincipal> principal = aDocument->EffectiveCookiePrincipal();
 
   if (!CookieCommons::IsSchemeSupported(principal)) {
     return NS_OK;
   }
-
-  nsICookie::schemeType schemeType =
-      CookieCommons::PrincipalToSchemeType(principal);
 
   nsAutoCString baseDomain;
   nsresult rv = CookieCommons::GetBaseDomain(principal, baseDomain);
@@ -408,10 +323,6 @@ CookieServiceChild::GetCookieStringFromDocument(dom::Document* aDocument,
 
     // if the cookie is secure and the host scheme isn't, we can't send it
     if (cookie->IsSecure() && !isPotentiallyTrustworthy) {
-      continue;
-    }
-
-    if (!CookieCommons::MaybeCompareScheme(cookie, schemeType)) {
       continue;
     }
 

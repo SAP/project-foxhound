@@ -19,18 +19,20 @@ namespace mozilla::glean {
 
 namespace impl {
 
-void MemoryDistributionMetric::Accumulate(uint64_t aSample) const {
+void MemoryDistributionMetric::Accumulate(size_t aSample) const {
   auto hgramId = HistogramIdForMetric(mId);
   if (hgramId) {
     Telemetry::Accumulate(hgramId.extract(), aSample);
   }
+  static_assert(sizeof(size_t) <= sizeof(uint64_t),
+                "Memory distribution samples might overflow.");
   fog_memory_distribution_accumulate(mId, aSample);
 }
 
 Result<Maybe<DistributionData>, nsCString>
 MemoryDistributionMetric::TestGetValue(const nsACString& aPingName) const {
   nsCString err;
-  if (fog_memory_distribution_test_get_error(mId, &aPingName, &err)) {
+  if (fog_memory_distribution_test_get_error(mId, &err)) {
     return Err(err);
   }
   if (!fog_memory_distribution_test_has_value(mId, &aPingName)) {
@@ -58,7 +60,7 @@ GleanMemoryDistribution::Accumulate(uint64_t aSample) {
 NS_IMETHODIMP
 GleanMemoryDistribution::TestGetValue(const nsACString& aPingName,
                                       JSContext* aCx,
-                                      JS::MutableHandleValue aResult) {
+                                      JS::MutableHandle<JS::Value> aResult) {
   auto result = mMemoryDist.TestGetValue(aPingName);
   if (result.isErr()) {
     aResult.set(JS::UndefinedValue());
@@ -70,7 +72,7 @@ GleanMemoryDistribution::TestGetValue(const nsACString& aPingName,
   } else {
     // Build return value of the form:
     // { sum: #, values: {bucket1: count1, ...} }
-    JS::RootedObject root(aCx, JS_NewPlainObject(aCx));
+    JS::Rooted<JSObject*> root(aCx, JS_NewPlainObject(aCx));
     if (!root) {
       return NS_ERROR_FAILURE;
     }
@@ -79,7 +81,7 @@ GleanMemoryDistribution::TestGetValue(const nsACString& aPingName,
                            JSPROP_ENUMERATE)) {
       return NS_ERROR_FAILURE;
     }
-    JS::RootedObject valuesObj(aCx, JS_NewPlainObject(aCx));
+    JS::Rooted<JSObject*> valuesObj(aCx, JS_NewPlainObject(aCx));
     if (!valuesObj ||
         !JS_DefineProperty(aCx, root, "values", valuesObj, JSPROP_ENUMERATE)) {
       return NS_ERROR_FAILURE;

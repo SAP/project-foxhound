@@ -51,3 +51,37 @@ async function doGC() {
   ].getService(Ci.nsIMemoryReporterManager);
   await new Promise(resolve => MemoryReporter.minimizeMemoryUsage(resolve));
 }
+
+/**
+ * Load the provided url in an existing browser.
+ * Returns a promise which will resolve when the page is loaded.
+ *
+ * @param {Browser} browser
+ *     The browser element where the URL should be loaded.
+ * @param {String} url
+ *     The URL to load.
+ */
+async function loadURL(browser, url) {
+  const loaded = BrowserTestUtils.browserLoaded(browser);
+  BrowserTestUtils.loadURIString(browser, url);
+  return loaded;
+}
+
+/**
+ * Create a fetch request to `url` from the content page loaded in the provided
+ * `browser`.
+ *
+ *
+ * @param {Browser} browser
+ *     The browser element where the fetch should be performed.
+ * @param {String} url
+ *     The URL to fetch.
+ */
+function fetch(browser, url) {
+  return SpecialPowers.spawn(browser, [url], async _url => {
+    const response = await content.fetch(_url);
+    // Wait for response.text() to resolve as well to make sure the response
+    // has completed before returning.
+    await response.text();
+  });
+}

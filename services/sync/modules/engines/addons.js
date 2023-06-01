@@ -36,9 +36,8 @@
  */
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 const { AddonUtils } = ChromeUtils.import(
   "resource://services-sync/addonutils.js"
@@ -60,13 +59,15 @@ const { CollectionValidator } = ChromeUtils.import(
   "resource://services-sync/collection_validator.js"
 );
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "AddonManager",
   "resource://gre/modules/AddonManager.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "AddonRepository",
   "resource://gre/modules/addons/AddonRepository.jsm"
 );
@@ -109,9 +110,9 @@ function AddonRecord(collection, id) {
   CryptoWrapper.call(this, collection, id);
 }
 AddonRecord.prototype = {
-  __proto__: CryptoWrapper.prototype,
   _logName: "Record.Addon",
 };
+Object.setPrototypeOf(AddonRecord.prototype, CryptoWrapper.prototype);
 
 Utils.deferGetSet(AddonRecord, "cleartext", [
   "addonID",
@@ -136,7 +137,6 @@ function AddonsEngine(service) {
   this._reconciler = new AddonsReconciler(this._tracker.asyncObserver);
 }
 AddonsEngine.prototype = {
-  __proto__: SyncEngine.prototype,
   _storeObj: AddonsStore,
   _trackerObj: AddonsTracker,
   _recordObj: AddonRecord,
@@ -265,6 +265,7 @@ AddonsEngine.prototype = {
     return this._store.isAddonSyncable(addon, ignoreRepoCheck);
   },
 };
+Object.setPrototypeOf(AddonsEngine.prototype, SyncEngine.prototype);
 
 /**
  * This is the primary interface between Sync and the Addons Manager.
@@ -276,8 +277,6 @@ function AddonsStore(name, engine) {
   Store.call(this, name, engine);
 }
 AddonsStore.prototype = {
-  __proto__: Store.prototype,
-
   // Define the add-on types (.type) that we support.
   _syncableTypes: ["extension", "theme"],
 
@@ -419,7 +418,7 @@ AddonsStore.prototype = {
     //
     // We wouldn't get here if the incoming record was for a deletion. So,
     // check for pending uninstall and cancel if necessary.
-    if (addon.pendingOperations & AddonManager.PENDING_UNINSTALL) {
+    if (addon.pendingOperations & lazy.AddonManager.PENDING_UNINSTALL) {
       addon.cancelUninstall();
 
       // We continue with processing because there could be state or ID change.
@@ -559,7 +558,7 @@ AddonsStore.prototype = {
    * @return Addon or undefined if not found
    */
   async getAddonByID(id) {
-    return AddonManager.getAddonByID(id);
+    return lazy.AddonManager.getAddonByID(id);
   },
 
   /**
@@ -570,7 +569,7 @@ AddonsStore.prototype = {
    * @return DBAddonInternal or null
    */
   async getAddonByGUID(guid) {
-    return AddonManager.getAddonBySyncGUID(guid);
+    return lazy.AddonManager.getAddonBySyncGUID(guid);
   },
 
   /**
@@ -604,12 +603,12 @@ AddonsStore.prototype = {
 
     if (!this._syncableTypes.includes(addon.type)) {
       this._log.debug(
-        addon.id + " not syncable: type not in whitelist: " + addon.type
+        addon.id + " not syncable: type not in allowed list: " + addon.type
       );
       return false;
     }
 
-    if (!(addon.scope & AddonManager.SCOPE_PROFILE)) {
+    if (!(addon.scope & lazy.AddonManager.SCOPE_PROFILE)) {
       this._log.debug(addon.id + " not syncable: not installed in profile.");
       return false;
     }
@@ -633,12 +632,12 @@ AddonsStore.prototype = {
     // in tests), getCachedAddonByID always returns null - so skip the check
     // in that case. We also provide a way to specifically opt-out of the check
     // even if the cache is enabled, which is used by the validators.
-    if (ignoreRepoCheck || !AddonRepository.cacheEnabled) {
+    if (ignoreRepoCheck || !lazy.AddonRepository.cacheEnabled) {
       return true;
     }
 
     let result = await new Promise(res => {
-      AddonRepository.getCachedAddonByID(addon.id, res);
+      lazy.AddonRepository.getCachedAddonByID(addon.id, res);
     });
 
     if (!result) {
@@ -727,6 +726,8 @@ AddonsStore.prototype = {
   },
 };
 
+Object.setPrototypeOf(AddonsStore.prototype, Store.prototype);
+
 /**
  * The add-ons tracker keeps track of real-time changes to add-ons.
  *
@@ -736,8 +737,6 @@ function AddonsTracker(name, engine) {
   LegacyTracker.call(this, name, engine);
 }
 AddonsTracker.prototype = {
-  __proto__: LegacyTracker.prototype,
-
   get reconciler() {
     return this.engine._reconciler;
   },
@@ -781,6 +780,8 @@ AddonsTracker.prototype = {
   },
 };
 
+Object.setPrototypeOf(AddonsTracker.prototype, LegacyTracker.prototype);
+
 class AddonValidator extends CollectionValidator {
   constructor(engine = null) {
     super("addons", "id", ["addonID", "enabled", "applicationID", "source"]);
@@ -788,14 +789,14 @@ class AddonValidator extends CollectionValidator {
   }
 
   async getClientItems() {
-    return AddonManager.getAllAddons();
+    return lazy.AddonManager.getAllAddons();
   }
 
   normalizeClientItem(item) {
     let enabled = !item.userDisabled;
-    if (item.pendingOperations & AddonManager.PENDING_ENABLE) {
+    if (item.pendingOperations & lazy.AddonManager.PENDING_ENABLE) {
       enabled = true;
-    } else if (item.pendingOperations & AddonManager.PENDING_DISABLE) {
+    } else if (item.pendingOperations & lazy.AddonManager.PENDING_DISABLE) {
       enabled = false;
     }
     return {
@@ -824,7 +825,9 @@ class AddonValidator extends CollectionValidator {
     return (
       !item.original.hidden &&
       !item.original.isSystem &&
-      !(item.original.pendingOperations & AddonManager.PENDING_UNINSTALL) &&
+      !(
+        item.original.pendingOperations & lazy.AddonManager.PENDING_UNINSTALL
+      ) &&
       // No need to await the returned promise explicitely:
       // |expr1 && expr2| evaluates to expr2 if expr1 is true.
       this.engine.isAddonSyncable(item.original, true)

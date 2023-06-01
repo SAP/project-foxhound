@@ -6,28 +6,27 @@
 
 var EXPORTED_SYMBOLS = ["TestRunner"];
 
-const env = Cc["@mozilla.org/process/environment;1"].getService(
-  Ci.nsIEnvironment
-);
 const APPLY_CONFIG_TIMEOUT_MS = 60 * 1000;
 const HOME_PAGE = "resource://mozscreenshots/lib/mozscreenshots.html";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-const { Rect } = ChromeUtils.import("resource://gre/modules/Geometry.jsm");
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
+const { Rect } = ChromeUtils.importESModule(
+  "resource://gre/modules/Geometry.sys.mjs"
+);
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "BrowserTestUtils",
-  "resource://testing-common/BrowserTestUtils.jsm"
-);
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserTestUtils: "resource://testing-common/BrowserTestUtils.sys.mjs",
+});
 // Screenshot.jsm must be imported this way for xpcshell tests to work
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "Screenshot",
   "resource://mozscreenshots/Screenshot.jsm"
 );
@@ -91,13 +90,10 @@ var TestRunner = {
       "mozscreenshots",
       new Date().toISOString().replace(/:/g, "-") + "_" + Services.appinfo.OS,
     ];
-    let screenshotPath = PathUtils.join(
-      await PathUtils.getTempDir(),
-      ...subDirs
-    );
+    let screenshotPath = PathUtils.join(PathUtils.tempDir, ...subDirs);
 
-    const MOZ_UPLOAD_DIR = env.get("MOZ_UPLOAD_DIR");
-    const GECKO_HEAD_REPOSITORY = env.get("GECKO_HEAD_REPOSITORY");
+    const MOZ_UPLOAD_DIR = Services.env.get("MOZ_UPLOAD_DIR");
+    const GECKO_HEAD_REPOSITORY = Services.env.get("GECKO_HEAD_REPOSITORY");
     // We don't want to upload images (from MOZ_UPLOAD_DIR) on integration
     // branches in order to reduce bandwidth/storage.
     if (MOZ_UPLOAD_DIR && !GECKO_HEAD_REPOSITORY.includes("/integration/")) {
@@ -111,7 +107,7 @@ var TestRunner = {
       screenshotPrefix += "-" + jobName;
     }
     screenshotPrefix += "_";
-    Screenshot.init(screenshotPath, this._extensionPath, screenshotPrefix);
+    lazy.Screenshot.init(screenshotPath, this._extensionPath, screenshotPrefix);
     this._libDir = this._extensionPath
       .QueryInterface(Ci.nsIFileURL)
       .file.clone();
@@ -152,8 +148,8 @@ var TestRunner = {
       .removeAttribute("remotecontrol");
 
     let selectedBrowser = browserWindow.gBrowser.selectedBrowser;
-    BrowserTestUtils.loadURI(selectedBrowser, HOME_PAGE);
-    await BrowserTestUtils.browserLoaded(selectedBrowser);
+    lazy.BrowserTestUtils.loadURIString(selectedBrowser, HOME_PAGE);
+    await lazy.BrowserTestUtils.browserLoaded(selectedBrowser);
 
     for (let i = 0; i < this.combos.length; i++) {
       this.currentComboIndex = i;
@@ -205,10 +201,8 @@ var TestRunner = {
         setName = filteredData.trimmedSetName;
         restrictions = filteredData.restrictions;
       }
-      let imported = {};
-      ChromeUtils.import(
-        `resource://mozscreenshots/configurations/${setName}.jsm`,
-        imported
+      let imported = ChromeUtils.import(
+        `resource://mozscreenshots/configurations/${setName}.jsm`
       );
       imported[setName].init(this._libDir);
       let configurationNames = Object.keys(imported[setName].configurations);
@@ -248,7 +242,7 @@ var TestRunner = {
       gBrowser.removeTab(gBrowser.selectedTab, { animate: false });
     }
     gBrowser.unpinTab(gBrowser.selectedTab);
-    BrowserTestUtils.loadURI(
+    lazy.BrowserTestUtils.loadURIString(
       gBrowser.selectedBrowser,
       "data:text/html;charset=utf-8,<h1>Done!"
     );
@@ -264,7 +258,7 @@ var TestRunner = {
    * Calculate the bounding box based on CSS selector from config for cropping
    *
    * @param {String[]} selectors - array of CSS selectors for relevant DOM element
-   * @return {Geometry.jsm Rect} Rect holding relevant x, y, width, height with padding
+   * @return {Geometry.sys.mjs Rect} Rect holding relevant x, y, width, height with padding
    **/
   _findBoundingBox(selectors, windowType) {
     if (!selectors.length) {
@@ -478,12 +472,12 @@ var TestRunner = {
     let filename =
       padLeft(this.currentComboIndex + 1, String(this.combos.length).length) +
       this._comboName(combo);
-    const imagePath = await Screenshot.captureExternal(filename);
+    const imagePath = await lazy.Screenshot.captureExternal(filename);
 
     let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
     await this._cropImage(
       browserWindow,
-      OS.Path.toFileURI(imagePath),
+      PathUtils.toFileURI(imagePath),
       bounds,
       rects,
       imagePath
@@ -562,7 +556,7 @@ var TestRunner = {
           fr.onload = e => {
             const buffer = new Uint8Array(e.target.result);
             // Save the file and complete the promise
-            OS.File.writeAtomic(targetPath, buffer, {}).then(resolve);
+            IOUtils.write(targetPath, buffer).then(resolve);
           };
           // Do the conversion
           fr.readAsArrayBuffer(blob);

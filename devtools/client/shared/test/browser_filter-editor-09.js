@@ -8,7 +8,7 @@
 
 const {
   CSSFilterEditorWidget,
-} = require("devtools/client/shared/widgets/FilterWidget");
+} = require("resource://devtools/client/shared/widgets/FilterWidget.js");
 
 const FAST_VALUE_MULTIPLIER = 10;
 const SLOW_VALUE_MULTIPLIER = 0.1;
@@ -141,7 +141,7 @@ function triggerKey(key, modifier) {
     target: input,
     keyCode: key,
     [modifier]: true,
-    preventDefault: function() {},
+    preventDefault() {},
   });
 }
 

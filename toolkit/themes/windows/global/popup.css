@@ -16,61 +16,51 @@ panel {
   --panel-border-radius: 0;
   --panel-border-color: ThreeDShadow;
   --panel-width: initial;
-  --windows-panel-box-shadow: 0 0 4px hsla(0,0%,0%,.2);
+
+  --panel-shadow: 0 0 var(--panel-shadow-margin) hsla(0,0%,0%,.2);
+  --panel-shadow-margin: 4px;
+  -moz-window-input-region-margin: var(--panel-shadow-margin);
+  margin: calc(-1 * var(--panel-shadow-margin));
 }
 
-@media (-moz-windows-default-theme) {
-  panel, menupopup {
-    --windows-panel-box-shadow: 0 0 4px hsla(210,4%,10%,.2);
+@media not (-moz-windows-non-native-menus) {
+  menupopup {
+    appearance: auto;
+    -moz-default-appearance: menupopup;
+
+    /* Native menus are always light */
+    color-scheme: light !important;
+
+    /* We set the background-color / border here so that it doesn't interfere with native styling. */
+    background-color: Menu;
+    border: 1px solid ThreeDShadow;
+    --panel-background: transparent;
+    --panel-border-color: transparent;
+    --nested-margin: -3px;
+    --panel-shadow-margin: 0px;
   }
-}
-
-menupopup {
-  appearance: auto;
-  -moz-default-appearance: menupopup;
-
-  /* Native menus are always light */
-  color-scheme: light;
-
-  /* We set the background-color / border here so that it doesn't interfere with native styling. */
-  background-color: Menu;
-  border: 1px solid ThreeDShadow;
-  --panel-background: transparent;
-  --panel-border-color: transparent;
-  --nested-margin: -3px;
 }
 
 @media (-moz-windows-non-native-menus) {
   menupopup {
     /* Disable the default appearance so we can override the native styling. */
     appearance: none;
-    color-scheme: unset;
-
-    /* Force a rounded-rect dropshadow to appear. */
-    -moz-window-shadow: cliprounded;
 
     /* Prevent any background or border around the outside of the shadow. */
     background-color: transparent;
     border: none;
-    border-radius: 4px;
 
-    --panel-color: var(--menu-color);
     --panel-border-radius: 4px;
     --panel-padding: 4px 0;
-    --panel-border-color: var(--menu-border-color);
-    --panel-background: var(--menu-background-color);
-    --nested-margin: -6px;
+    --panel-border-color: ThreeDShadow;
+    --panel-background: Menu;
+    --nested-margin: -10px;
   }
 
   menupopup > menuitem,
   menupopup > menu {
     padding-block: 0.5em;
     padding-inline-start: 1em;
-  }
-
-  menupopup::part(content) {
-    /* Prevent contained items from drawing over the border-radius. */
-    overflow: clip;
   }
 }
 
@@ -80,40 +70,29 @@ menupopup > menu > menupopup {
   margin-top: var(--nested-margin);
 }
 
-panel[type="arrow"] {
+:is(panel, menupopup)[type="arrow"] {
   appearance: none;
   background: transparent;
   border: none;
-}
-
-panel[type="arrow"][side="top"],
-panel[type="arrow"][side="bottom"] {
-  margin-inline: -20px;
-}
-
-panel[type="arrow"][side="left"],
-panel[type="arrow"][side="right"] {
-  margin-block: -20px;
 }
 
 :is(panel, menupopup)::part(content) {
   display: -moz-box;
   -moz-box-flex: 1;
   padding: var(--panel-padding);
+  margin: var(--panel-shadow-margin);
+  box-shadow: var(--panel-shadow);
   color: var(--panel-color);
   background: var(--panel-background);
   border-radius: var(--panel-border-radius);
   border: 1px solid var(--panel-border-color);
   width: var(--panel-width);
+  min-width: 0;
+  min-height: 0;
 }
 
 :is(panel, menupopup)[orient=vertical]::part(content) {
   -moz-box-orient: vertical;
-}
-
-:is(panel, menupopup)[type="arrow"]::part(content) {
-  margin: 4px;
-  box-shadow: var(--windows-panel-box-shadow);
 }
 
 panel[type="arrow"].panel-no-padding::part(content) {
@@ -124,6 +103,7 @@ panel[type="arrow"].panel-no-padding::part(content) {
 /* rules for popups associated with menulists */
 
 menulist > menupopup {
+  font: inherit;
   appearance: none;
   background-color: transparent;
   border: none;
@@ -134,6 +114,7 @@ menulist > menupopup {
   /* For Win10, the popup itself needs to have a transparent background because
      otherwise the background color would appear behind the drop shadow. */
   menulist > menupopup {
+    color: FieldText;
     --panel-background: Field;
     --panel-border-color: ThreeDShadow;
   }

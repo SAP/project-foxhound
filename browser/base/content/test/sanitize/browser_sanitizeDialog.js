@@ -17,16 +17,10 @@
  * browser/base/content/test/sanitize/browser_sanitize-timespans.js.
  */
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Timer",
-  "resource://gre/modules/Timer.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesTestUtils",
-  "resource://testing-common/PlacesTestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+  Timer: "resource://gre/modules/Timer.sys.mjs",
+});
 
 const kMsecPerMin = 60 * 1000;
 const kUsecPerMin = 60 * 1000000;
@@ -52,7 +46,7 @@ async function promiseHistoryClearedState(aURIs, aShouldBeCleared) {
   }
 }
 
-add_task(async function init() {
+add_setup(async function() {
   requestLongerTimeout(3);
   await blankSlate();
   registerCleanupFunction(async function() {
@@ -84,7 +78,7 @@ add_task(async function test_cancel() {
   let places = [];
   let pURI;
   for (let i = 0; i < 30; i++) {
-    pURI = makeURI("http://" + i + "-minutes-ago.com/");
+    pURI = makeURI("https://" + i + "-minutes-ago.com/");
     places.push({ uri: pURI, visitDate: visitTimeForMinutesAgo(i) });
     uris.push(pURI);
   }
@@ -126,14 +120,14 @@ add_task(async function test_history_downloads_checked() {
   let places = [];
   let pURI;
   for (let i = 0; i < 30; i++) {
-    pURI = makeURI("http://" + i + "-minutes-ago.com/");
+    pURI = makeURI("https://" + i + "-minutes-ago.com/");
     places.push({ uri: pURI, visitDate: visitTimeForMinutesAgo(i) });
     uris.push(pURI);
   }
   // Add history (over an hour ago).
   let olderURIs = [];
   for (let i = 0; i < 5; i++) {
-    pURI = makeURI("http://" + (61 + i) + "-minutes-ago.com/");
+    pURI = makeURI("https://" + (61 + i) + "-minutes-ago.com/");
     places.push({ uri: pURI, visitDate: visitTimeForMinutesAgo(61 + i) });
     olderURIs.push(pURI);
   }
@@ -209,7 +203,7 @@ add_task(async function test_history_downloads_unchecked() {
   let places = [];
   let pURI;
   for (let i = 0; i < 5; i++) {
-    pURI = makeURI("http://" + i + "-minutes-ago.com/");
+    pURI = makeURI("https://" + i + "-minutes-ago.com/");
     places.push({ uri: pURI, visitDate: visitTimeForMinutesAgo(i) });
     uris.push(pURI);
   }
@@ -256,7 +250,7 @@ add_task(async function test_history_downloads_unchecked() {
 
     for (let entry of formEntries) {
       let exists = await formNameExists(entry);
-      is(exists, 0, "form entry " + entry + " should no longer exist");
+      ok(!exists, "form entry " + entry + " should no longer exist");
     }
 
     // OK, done, cleanup after ourselves.
@@ -279,7 +273,7 @@ add_task(async function test_everything() {
   // within past hour, within past two hours, within past four hours and
   // outside past four hours
   [10, 70, 130, 250].forEach(function(aValue) {
-    pURI = makeURI("http://" + aValue + "-minutes-ago.com/");
+    pURI = makeURI("https://" + aValue + "-minutes-ago.com/");
     places.push({ uri: pURI, visitDate: visitTimeForMinutesAgo(aValue) });
     uris.push(pURI);
   });
@@ -326,7 +320,7 @@ add_task(async function test_everything_warning() {
   // within past hour, within past two hours, within past four hours and
   // outside past four hours
   [10, 70, 130, 250].forEach(function(aValue) {
-    pURI = makeURI("http://" + aValue + "-minutes-ago.com/");
+    pURI = makeURI("https://" + aValue + "-minutes-ago.com/");
     places.push({ uri: pURI, visitDate: visitTimeForMinutesAgo(aValue) });
     uris.push(pURI);
   });
@@ -374,7 +368,7 @@ add_task(async function test_cannot_clear_history() {
   let promiseSanitized = promiseSanitizationComplete();
 
   // Add history.
-  let pURI = makeURI("http://" + 10 + "-minutes-ago.com/");
+  let pURI = makeURI("https://" + 10 + "-minutes-ago.com/");
   await PlacesTestUtils.addVisits({
     uri: pURI,
     visitDate: visitTimeForMinutesAgo(10),
@@ -409,11 +403,7 @@ add_task(async function test_cannot_clear_history() {
     await promiseHistoryClearedState(uris, true);
 
     let exists = await formNameExists(formEntries[0]);
-    is(
-      Boolean(exists),
-      false,
-      "form entry " + formEntries[0] + " should no longer exist"
-    );
+    ok(!exists, "form entry " + formEntries[0] + " should no longer exist");
   };
   dh.open();
   await dh.promiseClosed;
@@ -482,11 +472,7 @@ add_task(async function test_form_entries() {
   dh.onunload = async function() {
     await promiseSanitized;
     let exists = await formNameExists(formEntry);
-    is(
-      Boolean(exists),
-      false,
-      "form entry " + formEntry + " should no longer exist"
-    );
+    ok(!exists, "form entry " + formEntry + " should no longer exist");
   };
   dh.open();
   await dh.promiseClosed;
@@ -495,7 +481,7 @@ add_task(async function test_form_entries() {
 // Test for offline apps permission deletion
 add_task(async function test_offline_apps_permissions() {
   // Prepare stuff, we will work with www.example.com
-  var URL = "http://www.example.com";
+  var URL = "https://www.example.com";
   var URI = makeURI(URL);
   var principal = Services.scriptSecurityManager.createContentPrincipal(
     URI,
@@ -746,44 +732,19 @@ function promiseAddFormEntryWithMinutesAgo(aMinutesAgo) {
   // Artifically age the entry to the proper vintage.
   let timestamp = now_uSec - aMinutesAgo * kUsecPerMin;
 
-  return new Promise((resolve, reject) =>
-    FormHistory.update(
-      { op: "add", fieldname: name, value: "dummy", firstUsed: timestamp },
-      {
-        handleError(error) {
-          reject();
-          throw new Error("Error occurred updating form history: " + error);
-        },
-        handleCompletion(reason) {
-          resolve(name);
-        },
-      }
-    )
-  );
+  return FormHistory.update({
+    op: "add",
+    fieldname: name,
+    value: "dummy",
+    firstUsed: timestamp,
+  });
 }
 
 /**
  * Checks if a form entry exists.
  */
-function formNameExists(name) {
-  return new Promise((resolve, reject) => {
-    let count = 0;
-    FormHistory.count(
-      { fieldname: name },
-      {
-        handleResult: result => (count = result),
-        handleError(error) {
-          reject(error);
-          throw new Error("Error occurred searching form history: " + error);
-        },
-        handleCompletion(reason) {
-          if (!reason) {
-            resolve(count);
-          }
-        },
-      }
-    );
-  });
+async function formNameExists(name) {
+  return !!(await FormHistory.count({ fieldname: name }));
 }
 
 /**
@@ -797,23 +758,7 @@ async function blankSlate() {
     await download.finalize(true);
   }
 
-  await new Promise((resolve, reject) => {
-    FormHistory.update(
-      { op: "remove" },
-      {
-        handleCompletion(reason) {
-          if (!reason) {
-            resolve();
-          }
-        },
-        handleError(error) {
-          reject(error);
-          throw new Error("Error occurred updating form history: " + error);
-        },
-      }
-    );
-  });
-
+  await FormHistory.update({ op: "remove" });
   await PlacesUtils.history.clear();
 }
 

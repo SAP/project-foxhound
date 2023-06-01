@@ -187,8 +187,9 @@ class RestoreSelectionState;
 
 class TextControlState final : public SupportsWeakPtr {
  public:
-  typedef dom::Element Element;
-  typedef dom::HTMLInputElement HTMLInputElement;
+  using Element = dom::Element;
+  using HTMLInputElement = dom::HTMLInputElement;
+  using SelectionDirection = nsITextControlFrame::SelectionDirection;
 
   static TextControlState* Construct(TextControlElement* aOwningElement);
 
@@ -299,11 +300,18 @@ class TextControlState final : public SupportsWeakPtr {
   // XXX We might have to add assertion when it is into editable,
   // or reconsider fixing bug 597525 to remove these.
   void EmptyValue() {
-    if (mValue) {
-      mValue->Truncate();
+    if (!mValue.IsVoid()) {
+      mValue.Truncate();
     }
   }
-  bool IsEmpty() const { return mValue ? mValue->IsEmpty() : true; }
+  bool IsEmpty() const { return mValue.IsEmpty(); }
+
+  const nsAString& LastInteractiveValueIfLastChangeWasNonInteractive() const {
+    return mLastInteractiveValue;
+  }
+  // When an interactive value change happens, we clear mLastInteractiveValue
+  // because it's not needed (mValue is the new interactive value).
+  void ClearLastInteractiveValue() { mLastInteractiveValue.SetIsVoid(true); }
 
   Element* GetRootNode();
   Element* GetPreviewNode();
@@ -331,7 +339,7 @@ class TextControlState final : public SupportsWeakPtr {
    public:
     bool IsDefault() const {
       return mStart == 0 && mEnd == 0 &&
-             mDirection == nsITextControlFrame::eForward;
+             mDirection == SelectionDirection::Forward;
     }
     uint32_t GetStart() const { return mStart; }
     bool SetStart(uint32_t value) {
@@ -349,10 +357,8 @@ class TextControlState final : public SupportsWeakPtr {
       mIsDirty |= changed;
       return changed;
     }
-    nsITextControlFrame::SelectionDirection GetDirection() const {
-      return mDirection;
-    }
-    bool SetDirection(nsITextControlFrame::SelectionDirection value) {
+    SelectionDirection GetDirection() const { return mDirection; }
+    bool SetDirection(SelectionDirection value) {
       bool changed = mDirection != value;
       mDirection = value;
       mIsDirty |= changed;
@@ -376,8 +382,7 @@ class TextControlState final : public SupportsWeakPtr {
     uint32_t mEnd = 0;
     Maybe<uint32_t> mMaxLength;
     bool mIsDirty = false;
-    nsITextControlFrame::SelectionDirection mDirection =
-        nsITextControlFrame::eForward;
+    SelectionDirection mDirection = SelectionDirection::Forward;
   };
 
   bool IsSelectionCached() const { return mSelectionCached; }
@@ -513,29 +518,24 @@ class TextControlState final : public SupportsWeakPtr {
   RefPtr<TextInputSelectionController> mSelCon;
   RefPtr<RestoreSelectionState> mRestoringSelection;
   RefPtr<TextEditor> mTextEditor;
-  nsTextControlFrame* mBoundFrame;
+  nsTextControlFrame* mBoundFrame = nullptr;
   RefPtr<TextInputListener> mTextListener;
   UniquePtr<PasswordMaskData> mPasswordMaskData;
-  Maybe<nsString> mValue;
-  SelectionProperties mSelectionProperties;
-  bool mEverInited;  // Have we ever been initialized?
-  bool mEditorInitialized;
-  bool mValueTransferInProgress;  // Whether a value is being transferred to the
-                                  // frame
-  bool mSelectionCached;          // Whether mSelectionProperties is valid
 
-  /**
-   * For avoiding allocation cost of the instance, we should reuse instances
-   * as far as possible.
-   *
-   * FYI: `25` is just a magic number considered without enough investigation,
-   *      but at least, this value must not make damage for footprint.
-   *      Feel free to change it if you find better number.
-   */
-  static const size_t kMaxCountOfCacheToReuse = 25;
-  static AutoTArray<TextControlState*, kMaxCountOfCacheToReuse>*
-      sReleasedInstances;
-  static bool sHasShutDown;
+  nsString mValue{VoidString()};  // Void if there's no value.
+
+  // If our input's last value change was not interactive (as in, the value
+  // change was caused by a ValueChangeKind::UserInteraction), this is the value
+  // that the last interaction had.
+  nsString mLastInteractiveValue{VoidString()};
+
+  SelectionProperties mSelectionProperties;
+
+  bool mEverInited : 1;  // Have we ever been initialized?
+  bool mEditorInitialized : 1;
+  bool mValueTransferInProgress : 1;  // Whether a value is being transferred to
+                                      // the frame
+  bool mSelectionCached : 1;          // Whether mSelectionProperties is valid
 
   friend class AutoTextControlHandlingState;
   friend class PrepareEditorEvent;

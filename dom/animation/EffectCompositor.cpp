@@ -61,9 +61,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(EffectCompositor)
   }
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(EffectCompositor, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(EffectCompositor, Release)
-
 /* static */
 bool EffectCompositor::AllowCompositorAnimationsOnFrame(
     const nsIFrame* aFrame,
@@ -345,9 +342,7 @@ void EffectCompositor::ClearRestyleRequestsFor(Element* aElement) {
     elementsToRestyle.Remove(beforePseudoKey);
     elementsToRestyle.Remove(afterPseudoKey);
     elementsToRestyle.Remove(markerPseudoKey);
-  } else if (pseudoType == PseudoStyleType::before ||
-             pseudoType == PseudoStyleType::after ||
-             pseudoType == PseudoStyleType::marker) {
+  } else if (AnimationUtils::IsSupportedPseudoForAnimations(pseudoType)) {
     Element* parentElement = aElement->GetParentElement();
     MOZ_ASSERT(parentElement);
     PseudoElementHashEntry::KeyType key = {parentElement, pseudoType};
@@ -614,9 +609,7 @@ EffectCompositor::GetAnimationElementAndPseudoForFrame(const nsIFrame* aFrame) {
   PseudoStyleType pseudoType = aFrame->Style()->GetPseudoType();
 
   if (pseudoType != PseudoStyleType::NotPseudo &&
-      pseudoType != PseudoStyleType::before &&
-      pseudoType != PseudoStyleType::after &&
-      pseudoType != PseudoStyleType::marker) {
+      !AnimationUtils::IsSupportedPseudoForAnimations(pseudoType)) {
     return result;
   }
 
@@ -625,9 +618,7 @@ EffectCompositor::GetAnimationElementAndPseudoForFrame(const nsIFrame* aFrame) {
     return result;
   }
 
-  if (pseudoType == PseudoStyleType::before ||
-      pseudoType == PseudoStyleType::after ||
-      pseudoType == PseudoStyleType::marker) {
+  if (AnimationUtils::IsSupportedPseudoForAnimations(pseudoType)) {
     content = content->GetParent();
     if (!content) {
       return result;

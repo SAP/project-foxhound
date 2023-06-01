@@ -18,7 +18,6 @@
 #include "nsDNSService2.h"
 #include "nsIDNSService.h"
 #include "nsIDNSRecord.h"
-#include "nsMemory.h"
 #include "nsNetCID.h"
 #include "nsServiceManagerUtils.h"
 #include "nsCOMPtr.h"
@@ -221,7 +220,7 @@ nsAuthSSPI::Init(const nsACString& aServiceName, uint32_t aServiceFlags,
   PSecPkgInfoW pinfo;
   rc = (sspi->QuerySecurityPackageInfoW)(package, &pinfo);
   if (rc != SEC_E_OK) {
-    LOG(("%s package not found\n", package));
+    LOG(("%S package not found\n", package));
     return NS_ERROR_UNEXPECTED;
   }
   mMaxTokenLen = pinfo->cbMaxToken;
@@ -448,7 +447,7 @@ nsAuthSSPI::GetNextToken(const void* inToken, uint32_t inTokenLen,
     return NS_OK;
   }
 
-  LOG(("InitializeSecurityContext failed [rc=%d:%s]\n", rc, MapErrorCode(rc)));
+  LOG(("InitializeSecurityContext failed [rc=%ld:%s]\n", rc, MapErrorCode(rc)));
   Reset();
   free(ob.pvBuffer);
   return NS_ERROR_FAILURE;

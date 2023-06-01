@@ -54,12 +54,16 @@ add_task(async function() {
       let engine;
       await promiseContentSearchChange(browser, async () => {
         Services.search.addOpenSearchEngine(
+          // eslint-disable-next-line @microsoft/sdl/no-insecure-url
           "http://test:80/browser/browser/base/content/test/about/POSTSearchEngine.xml",
           null
         );
 
         engine = await observerPromise;
-        Services.search.setDefault(engine);
+        Services.search.setDefault(
+          engine,
+          Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+        );
         return engine.name;
       });
 
@@ -87,7 +91,10 @@ add_task(async function() {
         );
       });
 
-      await Services.search.setDefault(currEngine);
+      await Services.search.setDefault(
+        currEngine,
+        Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+      );
       try {
         await Services.search.removeEngine(engine);
       } catch (ex) {}

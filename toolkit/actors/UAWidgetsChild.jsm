@@ -6,8 +6,6 @@
 
 var EXPORTED_SYMBOLS = ["UAWidgetsChild"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 class UAWidgetsChild extends JSWindowActorChild {
   constructor() {
     super();
@@ -58,7 +56,7 @@ class UAWidgetsChild extends JSWindowActorChild {
         this.unwrap(aElement.openOrClosedShadowRoot) !=
         this.unwrap(widget.shadowRoot)
       ) {
-        Cu.reportError(
+        console.error(
           "Getting a UAWidgetSetupOrChange event without the ShadowRoot. " +
             "Torn down already?"
         );
@@ -67,7 +65,7 @@ class UAWidgetsChild extends JSWindowActorChild {
       try {
         widget.onchange();
       } catch (ex) {
-        Cu.reportError(ex);
+        console.error(ex);
       }
     }
   }
@@ -88,6 +86,7 @@ class UAWidgetsChild extends JSWindowActorChild {
         uri = "chrome://global/content/elements/videocontrols.js";
         widgetName = "VideoControlsWidget";
         prefKeys = [
+          "media.videocontrols.picture-in-picture.enabled",
           "media.videocontrols.picture-in-picture.video-toggle.enabled",
           "media.videocontrols.picture-in-picture.video-toggle.always-show",
           "media.videocontrols.picture-in-picture.video-toggle.min-video-secs",
@@ -104,10 +103,13 @@ class UAWidgetsChild extends JSWindowActorChild {
         uri = "chrome://global/content/elements/marquee.js";
         widgetName = "MarqueeWidget";
         break;
+      case "img":
+        uri = "chrome://global/content/elements/textrecognition.js";
+        widgetName = "TextRecognitionWidget";
     }
 
     if (!uri || !widgetName) {
-      Cu.reportError(
+      console.error(
         "Getting a UAWidgetSetupOrChange event on undefined element."
       );
       return;
@@ -115,7 +117,7 @@ class UAWidgetsChild extends JSWindowActorChild {
 
     let shadowRoot = aElement.openOrClosedShadowRoot;
     if (!shadowRoot) {
-      Cu.reportError(
+      console.error(
         "Getting a UAWidgetSetupOrChange event without the Shadow Root. " +
           "Torn down already?"
       );
@@ -141,13 +143,13 @@ class UAWidgetsChild extends JSWindowActorChild {
       widget = widget.wrappedJSObject;
     }
     if (this.unwrap(widget.shadowRoot) != this.unwrap(shadowRoot)) {
-      Cu.reportError("Widgets should expose their shadow root.");
+      console.error("Widgets should expose their shadow root.");
     }
     this.widgets.set(aElement, { widget, widgetName });
     try {
       widget.onsetup();
     } catch (ex) {
-      Cu.reportError(ex);
+      console.error(ex);
     }
   }
 
@@ -156,11 +158,11 @@ class UAWidgetsChild extends JSWindowActorChild {
       return;
     }
     let { widget } = this.widgets.get(aElement);
-    if (typeof widget.destructor == "function") {
+    if (typeof widget.teardown == "function") {
       try {
-        widget.destructor();
+        widget.teardown();
       } catch (ex) {
-        Cu.reportError(ex);
+        console.error(ex);
       }
     }
     this.widgets.delete(aElement);
@@ -226,7 +228,7 @@ class UAWidgetsChild extends JSWindowActorChild {
             try {
               widget.onPrefChange(prefKey, newValue);
             } catch (ex) {
-              Cu.reportError(ex);
+              console.error(ex);
             }
           }
         }

@@ -3,19 +3,20 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* This is a JavaScript module (JSM) to be imported via
-    Components.utils.import() and acts as a singleton.
+    ChromeUtils.import() and acts as a singleton.
     Only the following listed symbols will exposed on import, and only when
     and where imported. */
 
 var EXPORTED_SYMBOLS = ["Logger"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   ObjectUtils: "resource://gre/modules/ObjectUtils.jsm",
-  Services: "resource://gre/modules/Services.jsm",
 });
 
 var Logger = {
@@ -55,7 +56,7 @@ var Logger = {
 
   write(data) {
     if (this._converter == null) {
-      Cu.reportError("TPS Logger.write called with _converter == null!");
+      console.error("TPS Logger.write called with _converter == null!");
       return;
     }
     this._converter.writeString(data);
@@ -86,7 +87,7 @@ var Logger = {
   },
 
   AssertEqual(got, expected, msg) {
-    if (!ObjectUtils.deepEqual(got, expected)) {
+    if (!lazy.ObjectUtils.deepEqual(got, expected)) {
       throw new Error(
         "ASSERTION FAILED! " +
           msg +

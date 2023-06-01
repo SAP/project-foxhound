@@ -4,8 +4,6 @@
 
 "use strict";
 
-const InspectorUtils = require("InspectorUtils");
-
 const MAX_DATA_URL_LENGTH = 40;
 /**
  * Provide access to the style information in a page.
@@ -17,21 +15,19 @@ const MAX_DATA_URL_LENGTH = 40;
  * @constructor
  */
 
-const Services = require("Services");
-
 loader.lazyRequireGetter(
   this,
   "getCSSLexer",
-  "devtools/shared/css/lexer",
+  "resource://devtools/shared/css/lexer.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "getTabPrefs",
-  "devtools/shared/indentation",
+  "resource://devtools/shared/indentation.js",
   true
 );
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const styleInspectorL10N = new LocalizationHelper(
   "devtools/shared/locales/styleinspector.properties"
 );
@@ -63,23 +59,38 @@ exports.STATUS = {
 };
 
 /**
- * Mapping of CSSRule type value to CSSRule type name.
- * @see https://developer.mozilla.org/en-US/docs/Web/API/CSSRule
+ * Mapping of CSS at-Rule className to CSSRule type name.
  */
-exports.CSSRuleTypeName = {
-  1: "", // Regular CSS style rule has no name
-  3: "@import",
-  4: "@media",
-  5: "@font-face",
-  6: "@page",
-  7: "@keyframes",
-  8: "@keyframe",
-  10: "@namespace",
-  11: "@counter-style",
-  12: "@supports",
-  13: "@document",
-  14: "@font-feature-values",
-  15: "@viewport",
+exports.CSSAtRuleClassNameType = {
+  CSSContainerRule: "container",
+  CSSCounterStyleRule: "counter-style",
+  CSSDocumentRule: "document",
+  CSSFontFaceRule: "font-face",
+  CSSFontFeatureValuesRule: "font-feature-values",
+  CSSImportRule: "import",
+  CSSKeyframeRule: "keyframe",
+  CSSKeyframesRule: "keyframes",
+  CSSLayerBlockRule: "layer",
+  CSSMediaRule: "media",
+  CSSNamespaceRule: "namespace",
+  CSSPageRule: "page",
+  CSSSupportsRule: "supports",
+};
+
+/**
+ * Get Rule type as human-readable string (ex: "@media", "@container", …)
+ *
+ * @param {CSSRule} cssRule
+ * @returns {String}
+ */
+exports.getCSSAtRuleTypeName = function(cssRule) {
+  const ruleClassName = ChromeUtils.getClassName(cssRule);
+  const atRuleTypeName = exports.CSSAtRuleClassNameType[ruleClassName];
+  if (atRuleTypeName) {
+    return "@" + atRuleTypeName;
+  }
+
+  return "";
 };
 
 /**
@@ -130,9 +141,14 @@ exports.isAgentStylesheet = function(sheet) {
  * @param {CSSStyleSheet} sheet the DOM object for the style sheet.
  */
 exports.shortSource = function(sheet) {
-  // Use a string like "inline" if there is no source href
-  if (!sheet || !sheet.href) {
+  if (!sheet) {
     return exports.l10n("rule.sourceInline");
+  }
+
+  if (!sheet.href) {
+    return exports.l10n(
+      sheet.constructed ? "rule.sourceConstructed" : "rule.sourceInline"
+    );
   }
 
   // If the sheet is a data URL, return a trimmed version of it.
@@ -501,8 +517,8 @@ function getBindingElementAndPseudo(node) {
     pseudo = "::after";
   }
   return {
-    bindingElement: bindingElement,
-    pseudo: pseudo,
+    bindingElement,
+    pseudo,
   };
 }
 exports.getBindingElementAndPseudo = getBindingElementAndPseudo;
@@ -527,10 +543,10 @@ function hasVisitedState(node) {
     return false;
   }
 
-  const NS_EVENT_STATE_VISITED = 1 << 19;
+  const ELEMENT_STATE_VISITED = 1 << 19;
 
   return (
-    !!(InspectorUtils.getContentState(node) & NS_EVENT_STATE_VISITED) ||
+    !!(InspectorUtils.getContentState(node) & ELEMENT_STATE_VISITED) ||
     InspectorUtils.hasPseudoClassLock(node, ":visited")
   );
 }

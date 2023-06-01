@@ -16,7 +16,6 @@
 <pre id="test">
 
 <script class="testbody" type="text/javascript">
-ChromeUtils.import("resource://gre/modules/Services.jsm");
 const {TestUtils} = ChromeUtils.import("resource://testing-common/TestUtils.jsm");
 const {BrowserTestUtils} = ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
 
@@ -75,7 +74,7 @@ function testOnWindow(aTestData) {
                                     subject => subject == win);
 
       let browser = win.gBrowser.selectedBrowser;
-      BrowserTestUtils.loadURI(browser, aTestData.url);
+      BrowserTestUtils.loadURIString(browser, aTestData.url);
       await BrowserTestUtils.waitForContentEvent(browser, "DOMContentLoaded");
 
       let doc = win.gBrowser.contentDocument;

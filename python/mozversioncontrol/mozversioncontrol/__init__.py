@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this,
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import abc
 import errno
 import os
@@ -169,10 +167,6 @@ class Repository(object):
         """
 
     @abc.abstractmethod
-    def get_upstream(self):
-        """Reference to the upstream remote."""
-
-    @abc.abstractmethod
     def get_changed_files(self, diff_filter, mode="unstaged", rev=None):
         """Return a list of files that are changed in this repository's
         working copy.
@@ -222,6 +216,16 @@ class Repository(object):
         """
 
     @abc.abstractmethod
+    def get_ignored_files_finder(self):
+        """Obtain a mozpack.files.BaseFinder of ignored files in the working
+        directory.
+
+        The Finder will have its list of all files in the repo cached for its
+        entire lifetime, so operations on the Finder will not track with, for
+        example, changes to the repo during the Finder's lifetime.
+        """
+
+    @abc.abstractmethod
     def working_directory_clean(self, untracked=False, ignored=False):
         """Determine if the working directory is free of modifications.
 
@@ -240,13 +244,16 @@ class Repository(object):
         """
 
     @abc.abstractmethod
-    def push_to_try(self, message):
+    def push_to_try(self, message, allow_log_capture=False):
         """Create a temporary commit, push it to try and clean it up
         afterwards.
 
         With mercurial, MissingVCSExtension will be raised if the `push-to-try`
         extension is not installed. On git, MissingVCSExtension will be raised
         if git cinnabar is not present.
+
+        If `allow_log_capture` is set to `True`, then the push-to-try will be run using
+        Popen instead of check_call so that the logs can be captured elsewhere.
         """
 
     @abc.abstractmethod
@@ -274,6 +281,29 @@ class Repository(object):
         if paths is not None:
             args = args + paths
         self._run(*args)
+
+    def _push_to_try_with_log_capture(self, cmd, subprocess_opts):
+        """Push to try but with the ability for the user to capture logs.
+
+        We need to use Popen for this because neither the run method nor
+        check_call will allow us to reasonably catch the logs. With check_call,
+        hg hangs, and with the run method, the logs are output too slowly
+        so you're left wondering if it's working (prime candidate for
+        corrupting local repos).
+        """
+        process = subprocess.Popen(cmd, **subprocess_opts)
+
+        # Print out the lines as they appear so they can be
+        # parsed for information
+        for line in process.stdout or []:
+            print(line)
+        process.stdout.close()
+        process.wait()
+
+        if process.returncode != 0:
+            for line in process.stderr or []:
+                print(line)
+            raise subprocess.CalledProcessError("Failed to push-to-try")
 
 
 class HgRepository(Repository):
@@ -396,9 +426,6 @@ class HgRepository(Repository):
             return None
         return match.group(1)
 
-    def get_upstream(self):
-        return "default"
-
     def _format_diff_filter(self, diff_filter, for_status=False):
         df = diff_filter.lower()
         assert all(f in self._valid_diff_filter for f in df)
@@ -475,6 +502,15 @@ class HgRepository(Repository):
         )
         return FileListFinder(files)
 
+    def get_ignored_files_finder(self):
+        # Can return backslashes on Windows. Normalize to forward slashes.
+        files = list(
+            p.replace("\\", "/").split(" ")[-1]
+            for p in self._run("status", "-i").split("\n")
+            if p
+        )
+        return FileListFinder(files)
+
     def working_directory_clean(self, untracked=False, ignored=False):
         args = ["status", "--modified", "--added", "--removed", "--deleted"]
         if untracked:
@@ -500,13 +536,27 @@ class HgRepository(Repository):
     def update(self, ref):
         return self._run("update", "--check", ref)
 
-    def push_to_try(self, message):
+    def push_to_try(self, message, allow_log_capture=False):
         try:
-            subprocess.check_call(
-                (str(self._tool), "push-to-try", "-m", message),
-                cwd=self.path,
-                env=self._env,
-            )
+            cmd = (str(self._tool), "push-to-try", "-m", message)
+            if allow_log_capture:
+                self._push_to_try_with_log_capture(
+                    cmd,
+                    {
+                        "stdout": subprocess.PIPE,
+                        "stderr": subprocess.PIPE,
+                        "cwd": self.path,
+                        "env": self._env,
+                        "universal_newlines": True,
+                        "bufsize": 1,
+                    },
+                )
+            else:
+                subprocess.check_call(
+                    cmd,
+                    cwd=self.path,
+                    env=self._env,
+                )
         except subprocess.CalledProcessError:
             try:
                 self._run("showconfig", "extensions.push-to-try")
@@ -572,15 +622,6 @@ class GitRepository(Repository):
             return None
         return email.strip()
 
-    def get_upstream(self):
-        ref = self._run("symbolic-ref", "-q", "HEAD").strip()
-        upstream = self._run("for-each-ref", "--format=%(upstream:short)", ref).strip()
-
-        if not upstream:
-            raise MissingUpstreamRepo("Could not detect an upstream repository.")
-
-        return upstream
-
     def get_changed_files(self, diff_filter="ADM", mode="unstaged", rev=None):
         assert all(f.lower() in self._valid_diff_filter for f in diff_filter)
 
@@ -635,6 +676,16 @@ class GitRepository(Repository):
         files = [p for p in self._run("ls-files", "-z").split("\0") if p]
         return FileListFinder(files)
 
+    def get_ignored_files_finder(self):
+        files = [
+            p
+            for p in self._run(
+                "ls-files", "-i", "-o", "-z", "--exclude-standard"
+            ).split("\0")
+            if p
+        ]
+        return FileListFinder(files)
+
     def working_directory_clean(self, untracked=False, ignored=False):
         args = ["status", "--porcelain"]
 
@@ -660,7 +711,7 @@ class GitRepository(Repository):
     def update(self, ref):
         self._run("checkout", ref)
 
-    def push_to_try(self, message):
+    def push_to_try(self, message, allow_log_capture=False):
         if not self.has_git_cinnabar:
             raise MissingVCSExtension("cinnabar")
 
@@ -668,15 +719,24 @@ class GitRepository(Repository):
             "-c", "commit.gpgSign=false", "commit", "--allow-empty", "-m", message
         )
         try:
-            subprocess.check_call(
-                (
-                    str(self._tool),
-                    "push",
-                    "hg::ssh://hg.mozilla.org/try",
-                    "+HEAD:refs/heads/branches/default/tip",
-                ),
-                cwd=self.path,
+            cmd = (
+                str(self._tool),
+                "push",
+                "hg::ssh://hg.mozilla.org/try",
+                "+HEAD:refs/heads/branches/default/tip",
             )
+            if allow_log_capture:
+                self._push_to_try_with_log_capture(
+                    cmd,
+                    {
+                        "stdout": subprocess.PIPE,
+                        "cwd": self.path,
+                        "universal_newlines": True,
+                        "bufsize": 1,
+                    },
+                )
+            else:
+                subprocess.check_call(cmd, cwd=self.path)
         finally:
             self._run("reset", "HEAD~")
 

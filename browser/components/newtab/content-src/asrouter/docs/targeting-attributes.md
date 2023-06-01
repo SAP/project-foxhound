@@ -30,6 +30,7 @@ Please note that some targeting attributes require stricter controls on the tele
 * [totalBookmarksCount](#totalbookmarkscount)
 * [usesFirefoxSync](#usesfirefoxsync)
 * [isFxAEnabled](#isFxAEnabled)
+* [isFxASignedIn](#isFxASignedIn)
 * [xpinstallEnabled](#xpinstallEnabled)
 * [hasPinnedTabs](#haspinnedtabs)
 * [hasAccessedFxAPanel](#hasaccessedfxapanel)
@@ -46,12 +47,20 @@ Please note that some targeting attributes require stricter controls on the tele
 * [profileRestartCount](#profilerestartcount)
 * [homePageSettings](#homepagesettings)
 * [newtabSettings](#newtabsettings)
-* [isFissionExperimentEnabled](#isfissionexperimentenabled)
 * [activeNotifications](#activenotifications)
 * [isMajorUpgrade](#ismajorupgrade)
 * [hasActiveEnterprisePolicies](#hasactiveenterprisepolicies)
 * [userMonthlyActivity](#usermonthlyactivity)
 * [doesAppNeedPin](#doesappneedpin)
+* [doesAppNeedPrivatePin](#doesappneedprivatepin)
+* [isBackgroundTaskMode](#isbackgroundtaskmode)
+* [backgroundTaskName](#backgroundtaskname)
+* [userPrefersReducedMotion](#userPrefersReducedMotion)
+* [colorwaysActive](#colorwaysActive)
+* [userEnabledActiveColorway](#userEnabledActiveColorway)
+* [inMr2022Holdback](#inMr2022Holdback)
+* [distributionId](#distributionId)
+* [fxViewButtonAreaType](#fxViewButtonAreaType)
 
 ## Detailed usage
 
@@ -467,6 +476,16 @@ Does the user have Firefox sync enabled? The service could potentially be turned
 declare const isFxAEnabled: boolean;
 ```
 
+### `isFxASignedIn`
+
+Is the user signed in to a Firefox Account?
+
+#### Definition
+
+```ts
+declare const isFxASignedIn: Promise<boolean>
+```
+
 ### `xpinstallEnabled`
 
 Pref used by system administrators to disallow add-ons from installed altogether.
@@ -519,7 +538,7 @@ declare const totalBlockedCount: number;
 
 ### `recentBookmarks`
 
-An array of GUIDs of recent bookmarks as provided by [`NewTabUtils.getRecentBookmarks`](https://searchfox.org/mozilla-central/rev/e0b0c38ee83f99d3cf868bad525ace4a395039f1/toolkit/modules/NewTabUtils.jsm#1087)
+An array of GUIDs of recent bookmarks as provided by [`NewTabUtils.getRecentBookmarks`](https://searchfox.org/mozilla-central/rev/c5c002f81f08a73e04868e0c2bf0eb113f200b03/toolkit/modules/NewTabUtils.sys.mjs#1059)
 
 #### Definition
 
@@ -581,7 +600,7 @@ declare const attachedFxAOAuthClients: Promise<OAuthClient[]>
 
 ### `platformName`
 
-[Platform information](https://searchfox.org/mozilla-central/rev/05a22d864814cb1e4352faa4004e1f975c7d2eb9/toolkit/modules/AppConstants.jsm#156).
+[Platform information](https://searchfox.org/mozilla-central/rev/c5c002f81f08a73e04868e0c2bf0eb113f200b03/toolkit/modules/AppConstants.sys.mjs#153).
 
 #### Definition
 
@@ -802,10 +821,6 @@ Object {
 }
 ```
 
-### `isFissionExperimentEnabled`
-
-A boolean. `true` if we're running Fission experiment, `false` otherwise.
-
 ### `activeNotifications`
 
 True when an infobar style message is displayed or when the awesomebar is
@@ -826,4 +841,42 @@ user activity where the first entry is the total urls visited for that day.
 
 ### `doesAppNeedPin`
 
-Checks if Firefox app can and isn't pinned to OS taskbar/dock.
+Checks if Firefox app can be and isn't pinned to OS taskbar/dock.
+
+### `doesAppNeedPrivatePin`
+
+Checks if Firefox Private Browsing Mode can be and isn't pinned to OS taskbar/dock. Currently this only works on certain Windows versions.
+
+### `isBackgroundTaskMode`
+
+Checks if this invocation is running in background task mode.
+
+### `backgroundTaskName`
+
+A non-empty string task name if this invocation is running in background task
+mode, or `null` if this invocation is not running in background task mode.
+
+### `userPrefersReducedMotion`
+
+Checks if user prefers reduced motion as indicated by the value of a media query for `prefers-reduced-motion`.
+
+### `colorwaysActive`
+
+A boolean. `true` when there are Colorways available.
+
+### `userEnabledActiveColorway`
+
+A boolean. `true` when user has an active Colorway theme enabled.
+
+### `inMr2022Holdback`
+
+A boolean. `true` when the user is in the Major Release 2022 holdback study.
+
+### `distributionId`
+
+A string containing the id of the distribution, or the empty string if there
+is no distribution associated with the build.
+
+### `fxViewButtonAreaType`
+
+A string of the name of the container where the Firefox View button is shown, null if the button has been removed.

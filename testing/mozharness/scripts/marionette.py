@@ -5,7 +5,6 @@
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 # ***** END LICENSE BLOCK *****
 
-from __future__ import absolute_import
 import copy
 import json
 import os
@@ -19,16 +18,14 @@ from mozharness.base.log import INFO
 from mozharness.base.script import PreScriptAction
 from mozharness.base.transfer import TransferMixin
 from mozharness.base.vcs.vcsbase import MercurialScript
-from mozharness.mozilla.testing.errors import LogcatErrorList
-from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
-from mozharness.mozilla.testing.unittest import TestSummaryOutputParserHelper
+from mozharness.mozilla.structuredlog import StructuredOutputParser
 from mozharness.mozilla.testing.codecoverage import (
     CodeCoverageMixin,
     code_coverage_config_options,
 )
-from mozharness.mozilla.testing.errors import HarnessErrorList
-
-from mozharness.mozilla.structuredlog import StructuredOutputParser
+from mozharness.mozilla.testing.errors import HarnessErrorList, LogcatErrorList
+from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
+from mozharness.mozilla.testing.unittest import TestSummaryOutputParserHelper
 
 
 class MarionetteTest(TestingMixin, MercurialScript, TransferMixin, CodeCoverageMixin):
@@ -143,6 +140,15 @@ class MarionetteTest(TestingMixin, MercurialScript, TransferMixin, CodeCoverageM
                     "dest": "allow_software_gl_layers",
                     "default": False,
                     "help": "Permits a software GL implementation (such as LLVMPipe) to use the GL compositor.",  # NOQA: E501
+                },
+            ],
+            [
+                ["--disable-fission"],
+                {
+                    "action": "store_true",
+                    "dest": "disable_fission",
+                    "default": False,
+                    "help": "Run the browser without fission enabled",
                 },
             ],
         ]
@@ -337,6 +343,10 @@ class MarionetteTest(TestingMixin, MercurialScript, TransferMixin, CodeCoverageM
         if self.config.get("structured_output"):
             cmd.append("--log-raw=-")
 
+        if self.config["disable_fission"]:
+            cmd.append("--disable-fission")
+            cmd.extend(["--setpref=fission.autostart=false"])
+
         for arg in self.config["suite_definitions"][self.test_suite]["options"]:
             cmd.append(arg % config_fmt_args)
 
@@ -375,6 +385,10 @@ class MarionetteTest(TestingMixin, MercurialScript, TransferMixin, CodeCoverageM
 
         if not os.path.isdir(env["MOZ_UPLOAD_DIR"]):
             self.mkdir_p(env["MOZ_UPLOAD_DIR"])
+
+        # Causes Firefox to crash when using non-local connections.
+        env["MOZ_DISABLE_NONLOCAL_CONNECTIONS"] = "1"
+
         env = self.query_env(partial_env=env)
 
         try:

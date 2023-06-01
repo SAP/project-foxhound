@@ -14,10 +14,10 @@
 #include "mozilla/LinkedList.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/widget/IconLoader.h"
+#include "mozilla/dom/XULButtonElement.h"
 #include "nsComputedDOMStyle.h"
 #include "nsIContentPolicy.h"
 #include "nsISupports.h"
-#include "nsMenuFrame.h"
 #include "nsMenuPopupFrame.h"
 #include "nsXULPopupManager.h"
 #include "nsIDocShell.h"
@@ -109,11 +109,9 @@ nsresult StatusBarEntry::Init() {
 
   // First, look at the content node's "image" attribute.
   nsAutoString imageURIString;
-  bool hasImageAttr =
-      mMenu->GetAttr(kNameSpaceID_None, nsGkAtoms::image, imageURIString);
+  bool hasImageAttr = mMenu->GetAttr(nsGkAtoms::image, imageURIString);
 
   nsresult rv;
-  RefPtr<ComputedStyle> sc;
   nsCOMPtr<nsIURI> iconURI;
   if (!hasImageAttr) {
     // If the content node has no "image" attribute, get the
@@ -123,7 +121,8 @@ nsresult StatusBarEntry::Init() {
       return NS_ERROR_FAILURE;
     }
 
-    sc = nsComputedDOMStyle::GetComputedStyle(mMenu);
+    RefPtr<const ComputedStyle> sc =
+        nsComputedDOMStyle::GetComputedStyle(mMenu);
     if (!sc) {
       return NS_ERROR_FAILURE;
     }
@@ -209,15 +208,15 @@ nsresult StatusBarEntry::OnComplete(imgIContainer* aImage) {
 
 LRESULT StatusBarEntry::OnMessage(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
   if (msg == WM_USER &&
-      (LOWORD(lp) == WM_LBUTTONUP || LOWORD(lp) == WM_RBUTTONUP)) {
-    nsMenuFrame* menu = do_QueryFrame(mMenu->GetPrimaryFrame());
+      (LOWORD(lp) == NIN_SELECT || LOWORD(lp) == NIN_KEYSELECT ||
+       LOWORD(lp) == WM_CONTEXTMENU)) {
+    auto* menu = dom::XULButtonElement::FromNode(mMenu);
     if (!menu) {
       return TRUE;
     }
 
-    nsMenuPopupFrame* popupFrame = menu->GetPopup();
-    MOZ_DIAGNOSTIC_ASSERT(popupFrame);
-    if (!popupFrame) {
+    nsMenuPopupFrame* popupFrame = menu->GetMenuPopup(FlushType::None);
+    if (NS_WARN_IF(!popupFrame)) {
       return TRUE;
     }
 
@@ -233,28 +232,29 @@ LRESULT StatusBarEntry::OnMessage(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
       return TRUE;
     }
 
-    if (LOWORD(lp) == WM_LBUTTONUP &&
+    if (LOWORD(lp) == NIN_KEYSELECT && ::GetForegroundWindow() == win) {
+      // When enter is pressed on the icon, the shell sends two NIN_KEYSELECT
+      // notifications. This might cause us to open two windows. To work around
+      // this, if we're already the foreground window (which happens below),
+      // ignore this notification.
+      return TRUE;
+    }
+
+    if (LOWORD(lp) != WM_CONTEXTMENU &&
         mMenu->HasAttr(kNameSpaceID_None, nsGkAtoms::contextmenu)) {
       ::SetForegroundWindow(win);
       nsEventStatus status = nsEventStatus_eIgnore;
       WidgetMouseEvent event(true, eXULSystemStatusBarClick, nullptr,
                              WidgetMouseEvent::eReal);
-      RefPtr<nsPresContext> presContext = menu->PresContext();
+      RefPtr<nsPresContext> presContext = popupFrame->PresContext();
       EventDispatcher::Dispatch(mMenu, presContext, &event, nullptr, &status);
       return DefWindowProc(hWnd, msg, wp, lp);
     }
 
-    nsCOMPtr<nsIDocShell> docShell = popupFrame->PresContext()->GetDocShell();
-    nsCOMPtr<nsIBaseWindow> baseWin = do_QueryInterface(docShell);
-    MOZ_DIAGNOSTIC_ASSERT(baseWin);
-    if (!baseWin) {
-      return TRUE;
-    }
-
-    double scale = 1.0;
-    baseWin->GetUnscaledDevicePixelsPerCSSPixel(&scale);
-    int32_t x = NSToIntRound(GET_X_LPARAM(wp) / scale);
-    int32_t y = NSToIntRound(GET_Y_LPARAM(wp) / scale);
+    nsPresContext* pc = popupFrame->PresContext();
+    const CSSIntPoint point = gfx::RoundedToInt(
+        LayoutDeviceIntPoint(GET_X_LPARAM(wp), GET_Y_LPARAM(wp)) /
+        pc->CSSToDevPixelScale());
 
     // The menu that is being opened is a Gecko <xul:menu>, and the popup code
     // that manages it expects that the window that the <xul:menu> belongs to
@@ -265,7 +265,8 @@ LRESULT StatusBarEntry::OnMessage(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
     // focuses any window in the parent process).
     ::SetForegroundWindow(win);
     nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
-    pm->ShowPopupAtScreen(popupFrame->GetContent(), x, y, false, nullptr);
+    pm->ShowPopupAtScreen(popupFrame->GetContent(), point.x, point.y, false,
+                          nullptr);
   }
 
   return DefWindowProc(hWnd, msg, wp, lp);

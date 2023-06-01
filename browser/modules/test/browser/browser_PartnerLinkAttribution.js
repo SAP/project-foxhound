@@ -16,12 +16,15 @@ const SUGGEST_URLBAR_PREF = "browser.urlbar.suggest.searches";
 const SUGGESTION_ENGINE_NAME =
   "browser_UsageTelemetry usageTelemetrySearchSuggestions.xml";
 
+ChromeUtils.defineESModuleGetters(this, {
+  Region: "resource://gre/modules/Region.sys.mjs",
+  SearchTestUtils: "resource://testing-common/SearchTestUtils.sys.mjs",
+  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(this, {
   CustomizableUITestUtils:
     "resource://testing-common/CustomizableUITestUtils.jsm",
-  Region: "resource://gre/modules/Region.jsm",
-  SearchTestUtils: "resource://testing-common/SearchTestUtils.jsm",
-  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
   HttpServer: "resource://testing-common/httpd.js",
 });
 
@@ -36,7 +39,7 @@ function submitHandler(request, response) {
   response.setStatusLine(request.httpVersion, 200, "Ok");
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   // Ensure the initial init is complete.
   await Services.search.init();
 
@@ -125,7 +128,8 @@ async function searchInSearchbar(inputText) {
 
 add_task(async function test_simpleQuery_no_attribution() {
   await Services.search.setDefault(
-    Services.search.getEngineByName("Simple Engine")
+    Services.search.getEngineByName("Simple Engine"),
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
   );
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
@@ -148,7 +152,10 @@ add_task(async function test_simpleQuery_no_attribution() {
 
   BrowserTestUtils.removeTab(tab);
 
-  await Services.search.setDefault(Services.search.getEngineByName("basic"));
+  await Services.search.setDefault(
+    Services.search.getEngineByName("basic"),
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 });
 
 async function checkAttributionRecorded(actionFn, cleanupFn) {
@@ -239,7 +246,7 @@ add_task(async function test_context_menu() {
 
       info("Open the context menu.");
       contextMenu = document.getElementById("contentAreaContextMenu");
-      let popupPromise = BrowserTestUtils.waitForEvent(
+      let shownPromise = BrowserTestUtils.waitForEvent(
         contextMenu,
         "popupshown"
       );
@@ -248,17 +255,19 @@ add_task(async function test_context_menu() {
         { type: "contextmenu", button: 2 },
         gBrowser.selectedBrowser
       );
-      await popupPromise;
+      await shownPromise;
+
+      let hiddenPromise = BrowserTestUtils.waitForEvent(
+        contextMenu,
+        "popuphidden"
+      );
 
       info("Click on search.");
-      let searchItem = contextMenu.getElementsByAttribute(
-        "id",
-        "context-searchselect"
-      )[0];
-      searchItem.click();
+      let searchItem = contextMenu.querySelector("#context-searchselect");
+      contextMenu.activateItem(searchItem);
+      await hiddenPromise;
     },
     () => {
-      contextMenu.hidePopup();
       BrowserTestUtils.removeTab(gBrowser.selectedTab);
     }
   );
@@ -367,7 +376,8 @@ add_task(async function test_searchbar_oneOff_click() {
   // For this test, set the other engine as default, so that we can select
   // the attribution engine as the first one in the one-offs.
   await Services.search.setDefault(
-    Services.search.getEngineByName("Simple Engine")
+    Services.search.getEngineByName("Simple Engine"),
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
   );
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
@@ -409,6 +419,9 @@ add_task(async function test_searchbar_oneOff_click() {
 
   BrowserTestUtils.removeTab(tab);
   // Set back the engine in case of other tests in this file.
-  await Services.search.setDefault(Services.search.getEngineByName("basic"));
+  await Services.search.setDefault(
+    Services.search.getEngineByName("basic"),
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
   gRequests = [];
 });

@@ -1,7 +1,7 @@
 "use strict";
 
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 Services.prefs.setCharPref("dom.securecontext.allowlist", "example.com");
@@ -100,4 +100,8 @@ add_task(async function() {
   Assert.ok(!found);
 
   gBrowser.removeCurrentTab();
+});
+
+add_task(async function cleanup() {
+  Services.prefs.clearUserPref("dom.securecontext.allowlist");
 });

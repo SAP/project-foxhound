@@ -1,14 +1,14 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import absolute_import
-
 import json
-import tempfile
-import shutil
 import os
-from .symbolication import ProfileSymbolicator
+import shutil
+import tempfile
+
 from mozlog import get_proxy_logger
+
+from .symbolication import ProfileSymbolicator
 
 LOG = get_proxy_logger("profiler")
 
@@ -67,7 +67,7 @@ def symbolicate_profile_json(profile_path, objdir_path):
     )
 
     try:
-        with open(profile_path, "r") as profile_file:
+        with open(profile_path, "r", encoding="utf-8") as profile_file:
             profile = json.load(profile_file)
         symbolicator.dump_and_integrate_missing_symbols(profile, missing_symbols_zip)
         symbolicator.symbolicate_profile(profile)

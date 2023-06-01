@@ -3,6 +3,9 @@
 // canceled
 // This verifies bug 312473
 function test() {
+  // This test depends on InstallTrigger.install availability.
+  setInstallTriggerPrefs();
+
   // Turn off the authentication dialog blocking for this test.
   Services.prefs.setBoolPref(
     "network.auth.non-web-content-triggered-resources-http-auth-allow",
@@ -28,7 +31,7 @@ function test() {
     })
   );
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.loadURIString(
     gBrowser,
     TESTROOT + "installtrigger.html?" + triggers
   );

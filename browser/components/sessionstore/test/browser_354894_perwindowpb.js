@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+"use strict";
+
 /**
  * Checks that restoring the last browser window in session is actually
  * working.
@@ -24,17 +26,14 @@
  * notifications. The latter won't.
  */
 
-const { SessionStartup } = ChromeUtils.import(
-  "resource:///modules/sessionstore/SessionStartup.jsm"
-);
 // The rejection "BrowserWindowTracker.getTopWindow(...) is null" is left
 // unhandled in some cases. This bug should be fixed, but for the moment this
 // file allows a class of rejections.
 //
 // NOTE: Allowing a whole class of rejections should be avoided. Normally you
 //       should use "expectUncaughtRejection" to flag individual failures.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 PromiseTestUtils.allowMatchingRejectionsGlobally(/getTopWindow/);
 
@@ -75,7 +74,7 @@ function getBrowserWindowsCount() {
   return { open, winstates };
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   // Make sure we've only got one browser window to start with
   let { open, winstates } = getBrowserWindowsCount();
   is(open, 1, "Should only be one open window");
@@ -148,8 +147,9 @@ let setupTest = async function(options, testFunction) {
     Services.obs.addObserver(observer, o);
   }
 
-  let private = options.private || false;
-  let newWin = await promiseNewWindowLoaded({ private });
+  let newWin = await promiseNewWindowLoaded({
+    private: options.private || false,
+  });
 
   await injectTestTabs(newWin);
 

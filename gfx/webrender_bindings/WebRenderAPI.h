@@ -94,6 +94,7 @@ struct WrHitResult {
   layers::ScrollableLayerGuid::ViewID mScrollId;
   gfx::CompositorHitTestInfo mHitInfo;
   SideBits mSideBits;
+  Maybe<uint64_t> mAnimationId;
 };
 
 class TransactionBuilder final {
@@ -265,7 +266,7 @@ class WebRenderAPI final {
   void SetInt(wr::IntParameter, int32_t value);
 
   void SetClearColor(const gfx::DeviceColor& aColor);
-  void SetProfilerUI(const nsCString& aUIString);
+  void SetProfilerUI(const nsACString& aUIString);
 
   void Pause();
   bool Resume();
@@ -290,7 +291,7 @@ class WebRenderAPI final {
 
   void Capture();
 
-  void StartCaptureSequence(const nsCString& aPath, uint32_t aFlags);
+  void StartCaptureSequence(const nsACString& aPath, uint32_t aFlags);
   void StopCaptureSequence();
 
   void BeginRecording(const TimeStamp& aRecordingStart,
@@ -480,7 +481,8 @@ class DisplayListBuilder final {
       wr::SpatialTreeItemKey aKey);
 
   void PushRect(const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
-                bool aIsBackfaceVisible, const wr::ColorF& aColor);
+                bool aIsBackfaceVisible, bool aForceAntiAliasing,
+                bool aIsCheckerboard, const wr::ColorF& aColor);
   void PushRectWithAnimation(const wr::LayoutRect& aBounds,
                              const wr::LayoutRect& aClip,
                              bool aIsBackfaceVisible, const wr::ColorF& aColor,
@@ -491,7 +493,8 @@ class DisplayListBuilder final {
   void PushHitTest(const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
                    bool aIsBackfaceVisible,
                    const layers::ScrollableLayerGuid::ViewID& aScrollId,
-                   gfx::CompositorHitTestInfo aHitInfo, SideBits aSideBits);
+                   const gfx::CompositorHitTestInfo& aHitInfo,
+                   SideBits aSideBits);
   void PushClearRect(const wr::LayoutRect& aBounds);
 
   void PushBackdropFilter(const wr::LayoutRect& aBounds,
@@ -527,8 +530,9 @@ class DisplayListBuilder final {
                          const wr::LayoutSize aTileSpacing);
 
   void PushImage(const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
-                 bool aIsBackfaceVisible, wr::ImageRendering aFilter,
-                 wr::ImageKey aImage, bool aPremultipliedAlpha = true,
+                 bool aIsBackfaceVisible, bool aForceAntiAliasing,
+                 wr::ImageRendering aFilter, wr::ImageKey aImage,
+                 bool aPremultipliedAlpha = true,
                  const wr::ColorF& aColor = wr::ColorF{1.0f, 1.0f, 1.0f, 1.0f},
                  bool aPreferCompositorSurface = false,
                  bool aSupportsExternalCompositing = false);
@@ -557,6 +561,14 @@ class DisplayListBuilder final {
                      bool aPreferCompositorSurface = false,
                      bool aSupportsExternalCompositing = false);
 
+  void PushP010Image(const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
+                     bool aIsBackfaceVisible, wr::ImageKey aImageChannel0,
+                     wr::ImageKey aImageChannel1, wr::WrColorDepth aColorDepth,
+                     wr::WrYuvColorSpace aColorSpace,
+                     wr::WrColorRange aColorRange, wr::ImageRendering aFilter,
+                     bool aPreferCompositorSurface = false,
+                     bool aSupportsExternalCompositing = false);
+
   void PushYCbCrInterleavedImage(
       const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
       bool aIsBackfaceVisible, wr::ImageKey aImageChannel0,
@@ -565,7 +577,7 @@ class DisplayListBuilder final {
       bool aPreferCompositorSurface = false,
       bool aSupportsExternalCompositing = false);
 
-  void PushIFrame(const wr::LayoutRect& aBounds, bool aIsBackfaceVisible,
+  void PushIFrame(const LayoutDeviceRect& aDevPxBounds, bool aIsBackfaceVisible,
                   wr::PipelineId aPipeline, bool aIgnoreMissingPipeline);
 
   // XXX WrBorderSides are passed with Range.

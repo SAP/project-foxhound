@@ -27,16 +27,15 @@ interface nsIGfxInfo : nsISupports
    * These are non-Android linux-specific
    */
   readonly attribute AString windowProtocol;
-  readonly attribute AString desktopEnvironment;
   readonly attribute AString testType;
 
   /*
    * These are valid across all platforms.
    */
   readonly attribute AString ContentBackend;
-  readonly attribute boolean WebRenderEnabled;
   readonly attribute boolean isHeadless;
   readonly attribute unsigned long TargetFrameRate;
+  readonly attribute ACString CodecSupportInfo;
 
   // XXX: Switch to a list of devices, rather than explicitly numbering them.
 
@@ -79,13 +78,6 @@ interface nsIGfxInfo : nsISupports
   readonly attribute ACString drmRenderDevice;
 
   /**
-   * Information about display devices
-   */
-  readonly attribute Array<AString> displayInfo;
-  readonly attribute Array<unsigned long> displayWidth;
-  readonly attribute Array<unsigned long> displayHeight;
-
-  /**
    * Returns an array of objects describing each monitor. Guaranteed properties
    * are "screenWidth" and "screenHeight". This is only implemented on Desktop.
    *
@@ -95,8 +87,6 @@ interface nsIGfxInfo : nsISupports
    */
   [implicit_jscontext]
   jsval getMonitors();
-
-  void refreshMonitors();
 
   Array<ACString> getFailures(out Array<long> indices);
 
@@ -177,8 +167,22 @@ interface nsIGfxInfo : nsISupports
   const long FEATURE_WEBRENDER_SHADER_CACHE = 35;
   /* Whether partial present is allowed with WebRender, starting in 98. */
   const long FEATURE_WEBRENDER_PARTIAL_PRESENT = 36;
+  /* Whether WebGPU is supported, starting in 100. */
+  const long FEATURE_WEBGPU = 37;
+  /* Whether video overlay is supported, starting in 100. */
+  const long FEATURE_VIDEO_OVERLAY = 38;
+  /* Whether hardware decoded video zero copy is supported, starting in 101. */
+  const long FEATURE_HW_DECODED_VIDEO_ZERO_COPY = 39;
+  /* Whether DMABUF export is supported, starting in 103. */
+  const long FEATURE_DMABUF_SURFACE_EXPORT = 40;
+  /* Whether reuse decoder device is supported, starting in 104. */
+  const long FEATURE_REUSE_DECODER_DEVICE = 41;
+  /* Whether to allow backdrop filter, starting in 105. */
+  const long FEATURE_BACKDROP_FILTER = 42;
+  /* Whether to use Accelerated Canvas2D, starting in 110. */
+  const long FEATURE_ACCELERATED_CANVAS2D = 43;
   /* the maximum feature value. */
-  const long FEATURE_MAX_VALUE = FEATURE_WEBRENDER_PARTIAL_PRESENT;
+  const long FEATURE_MAX_VALUE = FEATURE_ACCELERATED_CANVAS2D;
 
   /*
    * A set of return values from GetFeatureStatus
@@ -206,6 +210,8 @@ interface nsIGfxInfo : nsISupports
   const long FEATURE_ALLOW_ALWAYS = 9;
   /* This feature is safe to be on this device due to the allowlist, depending on qualified/experiment status. */
   const long FEATURE_ALLOW_QUALIFIED = 10;
+  /* This feature failed in a startup test, e.g. due to a crashing driver. */
+  const long FEATURE_BLOCKED_PLATFORM_TEST = 11;
 
   /**
    * Ask about a feature, and return the status of that feature.
@@ -226,7 +232,7 @@ interface nsIGfxInfo : nsISupports
   /**
    * Maximum refresh rate among detected monitors. -1 if unknown. aMixed is set
    * to true if we know there are multiple displays and they have different
-   * refresh rates, else false.
+   * refresh rates, else false. The returned value is in Hz.
    */
   [noscript, notxpcom] long GetMaxRefreshRate(out boolean aMixed);
 
@@ -317,12 +323,6 @@ interface nsIGfxInfo : nsISupports
   // xpcshell-tests.
   boolean controlGPUProcessForXPCShell(in boolean aEnable);
 
-  // Returns a promise resolving to true if the GPU process is enabled and ready,
-  // and false if it is disabled. If the process is currently being (re)started
-  // then this will not resolve until it has finished launching.
-  [implicit_jscontext]
-  Promise ensureGPUProcessReadyForTests();
-
   // Kills the GPU process cleanly, without generating a crash dump.
   // This is intended only for use by tests.
   void killGPUProcessForTests();
@@ -330,5 +330,3 @@ interface nsIGfxInfo : nsISupports
   // Causes the GPU process to crash. This is intended only for use by tests.
   void crashGPUProcessForTests();
 };
-
-

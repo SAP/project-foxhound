@@ -4,24 +4,28 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
+  DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
+  ServiceRequest: "resource://gre/modules/ServiceRequest.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AddonManagerPrivate: "resource://gre/modules/AddonManager.jsm",
-  AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
-  DeferredTask: "resource://gre/modules/DeferredTask.jsm",
-  Services: "resource://gre/modules/Services.jsm",
-  ServiceRequest: "resource://gre/modules/ServiceRequest.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
-  Preferences: "resource://gre/modules/Preferences.jsm",
 });
 
 // The current platform as specified in the AMO API:
 // http://addons-server.readthedocs.io/en/latest/topics/api/addons.html#addon-detail-platform
-XPCOMUtils.defineLazyGetter(this, "PLATFORM", () => {
+XPCOMUtils.defineLazyGetter(lazy, "PLATFORM", () => {
   let platform = Services.appinfo.OS;
   switch (platform) {
     case "Darwin":
@@ -41,9 +45,14 @@ XPCOMUtils.defineLazyGetter(this, "PLATFORM", () => {
 
 var EXPORTED_SYMBOLS = ["AddonRepository"];
 
-Cu.importGlobalProperties(["fetch"]);
-
 const PREF_GETADDONS_CACHE_ENABLED = "extensions.getAddons.cache.enabled";
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "getAddonsCacheEnabled",
+  PREF_GETADDONS_CACHE_ENABLED
+);
+
 const PREF_GETADDONS_CACHE_TYPES = "extensions.getAddons.cache.types";
 const PREF_GETADDONS_CACHE_ID_ENABLED =
   "extensions.%ID%.getAddons.cache.enabled";
@@ -73,7 +82,9 @@ const BLANK_DB = function() {
   };
 };
 
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
+);
 const LOGGER_ID = "addons.repository";
 
 // Create a new logger for use by the Addons Repository
@@ -94,7 +105,7 @@ function convertHTMLToPlainText(html) {
   input.data = html.replace(/\n/g, "<br>");
 
   var output = {};
-  converter.convert("text/html", input, "text/unicode", output);
+  converter.convert("text/html", input, "text/plain", output);
 
   if (output.value instanceof Ci.nsISupportsString) {
     return output.value.data.replace(/\r\n/g, "\n");
@@ -104,17 +115,17 @@ function convertHTMLToPlainText(html) {
 
 async function getAddonsToCache(aIds) {
   let types =
-    Preferences.get(PREF_GETADDONS_CACHE_TYPES) || DEFAULT_CACHE_TYPES;
+    lazy.Preferences.get(PREF_GETADDONS_CACHE_TYPES) || DEFAULT_CACHE_TYPES;
 
   types = types.split(",");
 
-  let addons = await AddonManager.getAddonsByIDs(aIds);
+  let addons = await lazy.AddonManager.getAddonsByIDs(aIds);
   let enabledIds = [];
 
   for (let [i, addon] of addons.entries()) {
     var preference = PREF_GETADDONS_CACHE_ID_ENABLED.replace("%ID%", aIds[i]);
     // If the preference doesn't exist caching is enabled by default
-    if (!Preferences.get(preference, true)) {
+    if (!lazy.Preferences.get(preference, true)) {
       continue;
     }
 
@@ -334,7 +345,7 @@ var AddonRepository = {
    * Whether caching is currently enabled
    */
   get cacheEnabled() {
-    return Services.prefs.getBoolPref(PREF_GETADDONS_CACHE_ENABLED, false);
+    return lazy.getAddonsCacheEnabled;
   },
 
   /**
@@ -400,7 +411,7 @@ var AddonRepository = {
    */
   _clearCache() {
     return AddonDatabase.delete().then(() =>
-      AddonManagerPrivate.updateAddonRepositoryData()
+      lazy.AddonManagerPrivate.updateAddonRepositoryData()
     );
   },
 
@@ -433,7 +444,7 @@ var AddonRepository = {
 
     const fetchNextPage = url => {
       return new Promise((resolve, reject) => {
-        let request = new ServiceRequest({ mozAnon: true });
+        let request = new lazy.ServiceRequest({ mozAnon: true });
         request.mozBackgroundRequest = true;
         request.open("GET", url, true);
         request.responseType = "json";
@@ -541,7 +552,7 @@ var AddonRepository = {
    */
   async backgroundUpdateCheck() {
     let shutter = (async () => {
-      let allAddons = await AddonManager.getAllAddons();
+      let allAddons = await lazy.AddonManager.getAllAddons();
 
       // Completely remove cache if caching is not enabled
       if (!this.cacheEnabled) {
@@ -567,14 +578,14 @@ var AddonRepository = {
       AddonDatabase.repopulate(addons);
 
       // Always call AddonManager updateAddonRepositoryData after we refill the cache
-      await AddonManagerPrivate.updateAddonRepositoryData();
+      await lazy.AddonManagerPrivate.updateAddonRepositoryData();
     })();
-    AddonManager.beforeShutdown.addBlocker(
+    lazy.AddonManager.beforeShutdown.addBlocker(
       "AddonRepository Background Updater",
       shutter
     );
     await shutter;
-    AddonManager.beforeShutdown.removeBlocker(shutter);
+    lazy.AddonManager.beforeShutdown.removeBlocker(shutter);
   },
 
   /*
@@ -592,9 +603,9 @@ var AddonRepository = {
       addon.version = String(aEntry.current_version.version);
       if (Array.isArray(aEntry.current_version.files)) {
         for (let file of aEntry.current_version.files) {
-          if (file.platform == "all" || file.platform == PLATFORM) {
+          if (file.platform == "all" || file.platform == lazy.PLATFORM) {
             if (file.url) {
-              addon.sourceURI = NetUtil.newURI(file.url);
+              addon.sourceURI = lazy.NetUtil.newURI(file.url);
             }
             break;
           }
@@ -626,7 +637,8 @@ var AddonRepository = {
 
     if (Array.isArray(aEntry.authors)) {
       let authors = aEntry.authors.map(
-        author => new AddonManagerPrivate.AddonAuthor(author.name, author.url)
+        author =>
+          new lazy.AddonManagerPrivate.AddonAuthor(author.name, author.url)
       );
       if (authors.length) {
         addon.creator = authors[0];
@@ -640,7 +652,7 @@ var AddonRepository = {
           Array.isArray(orig) && orig.length >= 2 ? orig : [null, null];
         let imageSize = safeSize(shot.image_size);
         let thumbSize = safeSize(shot.thumbnail_size);
-        return new AddonManagerPrivate.AddonScreenshot(
+        return new lazy.AddonManagerPrivate.AddonScreenshot(
           shot.image_url,
           imageSize[0],
           imageSize[1],
@@ -883,13 +895,13 @@ var AddonDatabase = {
 
   save() {
     if (!this._saveTask) {
-      this._saveTask = new DeferredTask(
+      this._saveTask = new lazy.DeferredTask(
         () => this._saveNow(),
         DB_BATCH_TIMEOUT_MS
       );
 
       if (!this._blockerAdded) {
-        AsyncShutdown.profileBeforeChange.addBlocker(
+        lazy.AsyncShutdown.profileBeforeChange.addBlocker(
           "Flush AddonRepository",
           () => this.flush()
         );
@@ -1009,7 +1021,7 @@ var AddonDatabase = {
       try {
         switch (expectedProperty) {
           case "sourceURI":
-            addon.sourceURI = value ? NetUtil.newURI(value) : null;
+            addon.sourceURI = value ? lazy.NetUtil.newURI(value) : null;
             break;
 
           case "creator":
@@ -1102,7 +1114,7 @@ var AddonDatabase = {
   _makeDeveloper(aObj) {
     let name = aObj.name;
     let url = aObj.url;
-    return new AddonManagerPrivate.AddonAuthor(name, url);
+    return new lazy.AddonManagerPrivate.AddonAuthor(name, url);
   },
 
   /**
@@ -1121,7 +1133,7 @@ var AddonDatabase = {
     let thumbnailWidth = aObj.thumbnailWidth;
     let thumbnailHeight = aObj.thumbnailHeight;
     let caption = aObj.caption;
-    return new AddonManagerPrivate.AddonScreenshot(
+    return new lazy.AddonManagerPrivate.AddonScreenshot(
       url,
       width,
       height,

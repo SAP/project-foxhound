@@ -12,13 +12,13 @@
 interface Clients {
   // The objects returned will be new instances every time
   [NewObject]
-  Promise<any> get(DOMString id);
+  Promise<(Client or undefined)> get(DOMString id);
   [NewObject]
   Promise<sequence<Client>> matchAll(optional ClientQueryOptions options = {});
   [NewObject]
   Promise<WindowClient?> openWindow(USVString url);
   [NewObject]
-  Promise<void> claim();
+  Promise<undefined> claim();
 };
 
 dictionary ClientQueryOptions {
@@ -34,4 +34,3 @@ enum ClientType {
   "serviceworker",
   "all"
 };
-

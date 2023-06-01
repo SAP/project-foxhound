@@ -20,8 +20,6 @@
 #include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/BackgroundParent.h"
-#include "mozilla/ipc/FileDescriptorSetChild.h"
-#include "mozilla/ipc/IPCStreamAlloc.h"
 #include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/net/AltSvcTransactionChild.h"
 #include "mozilla/net/BackgroundDataBridgeParent.h"
@@ -30,8 +28,6 @@
 #include "mozilla/net/NativeDNSResolverOverrideChild.h"
 #include "mozilla/net/ProxyAutoConfigChild.h"
 #include "mozilla/net/TRRServiceChild.h"
-#include "mozilla/ipc/PChildToParentStreamChild.h"
-#include "mozilla/ipc/PParentToChildStreamChild.h"
 #include "mozilla/ipc/ProcessUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/RemoteLazyInputStreamChild.h"
@@ -109,13 +105,12 @@ void CGSShutdownServerConnections();
 };
 #endif
 
-bool SocketProcessChild::Init(base::ProcessId aParentPid,
-                              const char* aParentBuildID,
-                              mozilla::ipc::ScopedPort aPort) {
+bool SocketProcessChild::Init(mozilla::ipc::UntypedEndpoint&& aEndpoint,
+                              const char* aParentBuildID) {
   if (NS_WARN_IF(NS_FAILED(nsThreadManager::get().Init()))) {
     return false;
   }
-  if (NS_WARN_IF(!Open(std::move(aPort), aParentPid))) {
+  if (NS_WARN_IF(!aEndpoint.Bind(this))) {
     return false;
   }
   // This must be sent before any IPDL message, which may hit sentinel
@@ -133,17 +128,6 @@ bool SocketProcessChild::Init(base::ProcessId aParentPid,
 
   if (NS_FAILED(NS_InitMinimalXPCOM())) {
     return false;
-  }
-
-  if (StaticPrefs::network_proxy_parse_pac_on_socket_process()) {
-    // For parsing PAC.
-    const char* jsInitFailureReason = JS_InitWithFailureDiagnostic();
-    if (jsInitFailureReason) {
-      MOZ_CRASH_UNSAFE(jsInitFailureReason);
-    }
-    sInitializedJS = true;
-
-    xpc::SelfHostedShmem::GetSingleton();
   }
 
   BackgroundChild::Startup();
@@ -179,11 +163,6 @@ bool SocketProcessChild::Init(base::ProcessId aParentPid,
   if (!EnsureNSSInitializedChromeOrContent()) {
     return false;
   }
-
-#if defined(XP_WIN)
-  RefPtr<DllServices> dllSvc(DllServices::Get());
-  dllSvc->StartUntrustedModulesProcessor();
-#endif  // defined(XP_WIN)
 
   return true;
 }
@@ -224,6 +203,12 @@ void SocketProcessChild::CleanUp() {
     MutexAutoLock lock(mMutex);
     mBackgroundDataBridgeMap.Clear();
   }
+
+  // Normally, the IPC channel should be already closed at this point, but
+  // sometimes it's not (bug 1788860). When the channel is closed, calling
+  // Close() again is harmless.
+  Close();
+
   NS_ShutdownXPCOM(nullptr);
 
   if (sInitializedJS) {
@@ -238,6 +223,12 @@ mozilla::ipc::IPCResult SocketProcessChild::RecvInit(
   if (aAttributes.mInitSandbox()) {
     Unused << RecvInitLinuxSandbox(aAttributes.mSandboxBroker());
   }
+
+#if defined(XP_WIN)
+  RefPtr<DllServices> dllSvc(DllServices::Get());
+  dllSvc->StartUntrustedModulesProcessor(
+      aAttributes.mIsReadyForBackgroundProcessing());
+#endif  // defined(XP_WIN)
 
   return IPC_OK();
 }
@@ -366,52 +357,6 @@ SocketProcessChild::AllocPHttpTransactionChild() {
   return actor.forget();
 }
 
-PFileDescriptorSetChild* SocketProcessChild::AllocPFileDescriptorSetChild(
-    const FileDescriptor& aFD) {
-  return new FileDescriptorSetChild(aFD);
-}
-
-bool SocketProcessChild::DeallocPFileDescriptorSetChild(
-    PFileDescriptorSetChild* aActor) {
-  delete aActor;
-  return true;
-}
-
-PChildToParentStreamChild*
-SocketProcessChild::AllocPChildToParentStreamChild() {
-  MOZ_CRASH("PChildToParentStreamChild actors should be manually constructed!");
-}
-
-bool SocketProcessChild::DeallocPChildToParentStreamChild(
-    PChildToParentStreamChild* aActor) {
-  delete aActor;
-  return true;
-}
-
-PParentToChildStreamChild*
-SocketProcessChild::AllocPParentToChildStreamChild() {
-  return mozilla::ipc::AllocPParentToChildStreamChild();
-}
-
-bool SocketProcessChild::DeallocPParentToChildStreamChild(
-    PParentToChildStreamChild* aActor) {
-  delete aActor;
-  return true;
-}
-
-PChildToParentStreamChild*
-SocketProcessChild::SendPChildToParentStreamConstructor(
-    PChildToParentStreamChild* aActor) {
-  MOZ_ASSERT(NS_IsMainThread());
-  return PSocketProcessChild::SendPChildToParentStreamConstructor(aActor);
-}
-
-PFileDescriptorSetChild* SocketProcessChild::SendPFileDescriptorSetConstructor(
-    const FileDescriptor& aFD) {
-  MOZ_ASSERT(NS_IsMainThread());
-  return PSocketProcessChild::SendPFileDescriptorSetConstructor(aFD);
-}
-
 already_AddRefed<PHttpConnectionMgrChild>
 SocketProcessChild::AllocPHttpConnectionMgrChild(
     const HttpHandlerInitArgs& aArgs) {
@@ -424,7 +369,7 @@ SocketProcessChild::AllocPHttpConnectionMgrChild(
 }
 
 mozilla::ipc::IPCResult SocketProcessChild::RecvUpdateDeviceModelId(
-    const nsCString& aModelId) {
+    const nsACString& aModelId) {
   MOZ_ASSERT(gHttpHandler);
   gHttpHandler->SetDeviceModelId(aModelId);
   return IPC_OK();
@@ -482,21 +427,24 @@ SocketProcessChild::AllocPAltSvcTransactionChild(
 }
 
 already_AddRefed<PDNSRequestChild> SocketProcessChild::AllocPDNSRequestChild(
-    const nsCString& aHost, const nsCString& aTrrServer, const uint16_t& aType,
-    const OriginAttributes& aOriginAttributes, const uint32_t& aFlags) {
+    const nsACString& aHost, const nsACString& aTrrServer, const int32_t& aPort,
+    const uint16_t& aType, const OriginAttributes& aOriginAttributes,
+    const nsIDNSService::DNSFlags& aFlags) {
   RefPtr<DNSRequestHandler> handler = new DNSRequestHandler();
   RefPtr<DNSRequestChild> actor = new DNSRequestChild(handler);
   return actor.forget();
 }
 
 mozilla::ipc::IPCResult SocketProcessChild::RecvPDNSRequestConstructor(
-    PDNSRequestChild* aActor, const nsCString& aHost,
-    const nsCString& aTrrServer, const uint16_t& aType,
-    const OriginAttributes& aOriginAttributes, const uint32_t& aFlags) {
+    PDNSRequestChild* aActor, const nsACString& aHost,
+    const nsACString& aTrrServer, const int32_t& aPort, const uint16_t& aType,
+    const OriginAttributes& aOriginAttributes,
+    const nsIDNSService::DNSFlags& aFlags) {
   RefPtr<DNSRequestChild> actor = static_cast<DNSRequestChild*>(aActor);
   RefPtr<DNSRequestHandler> handler =
       actor->GetDNSRequest()->AsDNSRequestHandler();
-  handler->DoAsyncResolve(aHost, aTrrServer, aType, aOriginAttributes, aFlags);
+  handler->DoAsyncResolve(aHost, aTrrServer, aPort, aType, aOriginAttributes,
+                          aFlags);
   return IPC_OK();
 }
 
@@ -519,8 +467,10 @@ SocketProcessChild::GetAndRemoveDataBridge(uint64_t aChannelId) {
   return mBackgroundDataBridgeMap.Extract(aChannelId);
 }
 
-mozilla::ipc::IPCResult SocketProcessChild::RecvClearSessionCache() {
+mozilla::ipc::IPCResult SocketProcessChild::RecvClearSessionCache(
+    ClearSessionCacheResolver&& aResolve) {
   nsNSSComponent::DoClearSSLExternalAndInternalSessionCache();
+  aResolve(void_t{});
   return IPC_OK();
 }
 
@@ -553,20 +503,13 @@ SocketProcessChild::RecvPNativeDNSResolverOverrideConstructor(
 }
 
 mozilla::ipc::IPCResult SocketProcessChild::RecvNotifyObserver(
-    const nsCString& aTopic, const nsString& aData) {
-  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-  if (obs) {
-    obs->NotifyObservers(nullptr, aTopic.get(), aData.get());
+    const nsACString& aTopic, const nsAString& aData) {
+  if (nsCOMPtr<nsIObserverService> obs =
+          mozilla::services::GetObserverService()) {
+    obs->NotifyObservers(nullptr, PromiseFlatCString(aTopic).get(),
+                         PromiseFlatString(aData).get());
   }
   return IPC_OK();
-}
-
-already_AddRefed<PRemoteLazyInputStreamChild>
-SocketProcessChild::AllocPRemoteLazyInputStreamChild(const nsID& aID,
-                                                     const uint64_t& aSize) {
-  RefPtr<RemoteLazyInputStreamChild> actor =
-      new RemoteLazyInputStreamChild(aID, aSize);
-  return actor.forget();
 }
 
 namespace {
@@ -690,6 +633,19 @@ mozilla::ipc::IPCResult SocketProcessChild::RecvGetHttpConnectionData(
 
 mozilla::ipc::IPCResult SocketProcessChild::RecvInitProxyAutoConfigChild(
     Endpoint<PProxyAutoConfigChild>&& aEndpoint) {
+  // For parsing PAC.
+  if (!sInitializedJS) {
+    JS::DisableJitBackend();
+
+    const char* jsInitFailureReason = JS_InitWithFailureDiagnostic();
+    if (jsInitFailureReason) {
+      MOZ_CRASH_UNSAFE(jsInitFailureReason);
+    }
+    sInitializedJS = true;
+
+    xpc::SelfHostedShmem::GetSingleton();
+  }
+
   Unused << ProxyAutoConfigChild::Create(std::move(aEndpoint));
   return IPC_OK();
 }
@@ -736,6 +692,15 @@ mozilla::ipc::IPCResult SocketProcessChild::RecvGetUntrustedModulesData(
         aResolver(std::move(aData));
       },
       [aResolver](nsresult aReason) { aResolver(Nothing()); });
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult
+SocketProcessChild::RecvUnblockUntrustedModulesThread() {
+  if (nsCOMPtr<nsIObserverService> obs =
+          mozilla::services::GetObserverService()) {
+    obs->NotifyObservers(nullptr, "unblock-untrusted-modules-thread", nullptr);
+  }
   return IPC_OK();
 }
 #endif  // defined(XP_WIN)

@@ -6,7 +6,7 @@
  * Site Data - Settings dialog
  */
 #sitesList {
-  min-height: 20em;
+  height: 20em;
 }
 
 /* Show selected items in high contrast mode. */
@@ -29,8 +29,9 @@
  * Confirmation dialog of removing sites selected
  */
 #SiteDataRemoveSelectedDialog {
+  -moz-box-layout: flex;
   padding: 16px;
-  width: 50px;
+  min-width: 50px;
 }
 
 #SiteDataRemoveSelectedDialog.single-entry {
@@ -41,8 +42,8 @@
   display: none;
 }
 
-#SiteDataRemoveSelectedDialog.multi-entry {
-  min-height: 36em;
+#SiteDataRemoveSelectedDialog.multi-entry #removalList {
+  max-height: 20em;
 }
 
 #SiteDataRemoveSelectedDialog > dialog {

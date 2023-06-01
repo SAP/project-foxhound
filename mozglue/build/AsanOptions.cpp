@@ -57,6 +57,8 @@
 //   fast_unwind_on_fatal - Use the fast (frame-pointer-based) stack unwinder
 //   to print fatal error reports. The slow unwinder doesn't work on Android.
 //
+//   detect_stack_use_after_return=0 - Work around bug 1768099.
+//
 //   intercept_tls_get_addr=0 - Work around
 //   https://github.com/google/sanitizers/issues/1322 (bug 1635327).
 //
@@ -76,6 +78,7 @@ extern "C" MOZ_ASAN_BLACKLIST const char* __asan_default_options() {
          ":malloc_fill_byte=228:free_fill_byte=229"
          ":handle_sigill=1"
          ":allocator_may_return_null=1"
+         ":detect_stack_use_after_return=0"
          ":intercept_tls_get_addr=0";
 }
 
@@ -93,10 +96,6 @@ extern "C" const char* __lsan_default_suppressions() {
          // nsComponentManagerImpl intentionally leaks factory entries, and
          // probably some other stuff.
          "leak:nsComponentManagerImpl\n"
-         // These two variants are needed when fast unwind is disabled and stack
-         // depth is limited.
-         "leak:mozJSComponentLoader::LoadModule\n"
-         "leak:nsNativeModuleLoader::LoadModule\n"
 
          // Bug 981220 - Pixman fails to free TLS memory.
          "leak:pixman_implementation_lookup_composite\n"
@@ -184,7 +183,7 @@ extern "C" const char* __lsan_default_suppressions() {
          "leak:js::frontend::GeneralParser\n"
          "leak:js::frontend::Parse\n"
          "leak:xpc::CIGSHelper\n"
-         "leak:mozJSComponentLoader\n"
+         "leak:mozJSModuleLoader\n"
          "leak:mozilla::xpcom::ConstructJSMComponent\n"
          "leak:XPCWrappedNativeJSOps\n"
 

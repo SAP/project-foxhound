@@ -9,18 +9,18 @@ const { shallow } = require("enzyme");
 const {
   REPS,
   getRep,
-} = require("devtools/client/shared/components/reps/reps/rep");
+} = require("resource://devtools/client/shared/components/reps/reps/rep.js");
 
 const {
   expectActorAttribute,
-} = require("devtools/client/shared/components/test/node/components/reps/test-helpers");
+} = require("resource://devtools/client/shared/components/test/node/components/reps/test-helpers.js");
 
 const { DateTime, Rep } = REPS;
 
-const stubs = require("devtools/client/shared/components/test/node/stubs/reps/date-time");
+const stubs = require("resource://devtools/client/shared/components/test/node/stubs/reps/date-time.js");
 
 describe("test DateTime", () => {
-  const stub = stubs.get("DateTime");
+  const stub = stubs.get("DateTime")._grip;
 
   it("selects DateTime as expected", () => {
     expect(getRep(stub)).toBe(DateTime.rep);
@@ -45,7 +45,7 @@ describe("test DateTime", () => {
 });
 
 describe("test invalid DateTime", () => {
-  const stub = stubs.get("InvalidDateTime");
+  const stub = stubs.get("InvalidDateTime")._grip;
 
   it("renders expected text for invalid date", () => {
     const renderedComponent = shallow(

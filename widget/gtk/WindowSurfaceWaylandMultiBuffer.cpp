@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <prenv.h>
 
 #include "gfx2DGlue.h"
 #include "gfxPlatform.h"
@@ -24,10 +25,10 @@
 #  include "mozilla/Logging.h"
 #  include "Units.h"
 extern mozilla::LazyLogModule gWidgetWaylandLog;
-#  define LOGWAYLAND(args) \
-    MOZ_LOG(gWidgetWaylandLog, mozilla::LogLevel::Debug, args)
+#  define LOGWAYLAND(...) \
+    MOZ_LOG(gWidgetWaylandLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
 #else
-#  define LOGWAYLAND(args)
+#  define LOGWAYLAND(...)
 #endif /* MOZ_LOGGING */
 
 namespace mozilla::widget {
@@ -163,12 +164,12 @@ already_AddRefed<DrawTarget> WindowSurfaceWaylandMB::Lock(
 
 #ifdef MOZ_LOGGING
   gfx::IntRect lockRect = aInvalidRegion.GetBounds().ToUnknownRect();
-  LOGWAYLAND(("WindowSurfaceWaylandMB::Lock [%p] [%d,%d] -> [%d x %d] rects %d",
-              (void*)mWindow.get(), lockRect.x, lockRect.y, lockRect.width,
-              lockRect.height, aInvalidRegion.GetNumRects()));
+  LOGWAYLAND("WindowSurfaceWaylandMB::Lock [%p] [%d,%d] -> [%d x %d] rects %d",
+             (void*)mWindow.get(), lockRect.x, lockRect.y, lockRect.width,
+             lockRect.height, aInvalidRegion.GetNumRects());
 #endif
 
-  if (mWindow->WindowType() == eWindowType_invisible) {
+  if (mWindow->GetWindowType() == WindowType::Invisible) {
     return nullptr;
   }
   mFrameInProcess = true;
@@ -178,8 +179,8 @@ already_AddRefed<DrawTarget> WindowSurfaceWaylandMB::Lock(
   LayoutDeviceIntSize newMozContainerSize = mWindow->GetMozContainerSize();
   if (mMozContainerSize != newMozContainerSize) {
     mMozContainerSize = newMozContainerSize;
-    LOGWAYLAND(("  new MozContainer size [%d x %d]", mMozContainerSize.width,
-                mMozContainerSize.height));
+    LOGWAYLAND("  new MozContainer size [%d x %d]", mMozContainerSize.width,
+               mMozContainerSize.height);
     if (mInProgressBuffer) {
       ReturnBufferToPool(lock, mInProgressBuffer);
       mInProgressBuffer = nullptr;
@@ -196,6 +197,9 @@ already_AddRefed<DrawTarget> WindowSurfaceWaylandMB::Lock(
       mInProgressBuffer = mFrontBuffer;
     } else {
       mInProgressBuffer = ObtainBufferFromPool(lock, mMozContainerSize);
+      if (!mInProgressBuffer) {
+        return nullptr;
+      }
       if (mFrontBuffer) {
         HandlePartialUpdate(lock, aInvalidRegion);
         ReturnBufferToPool(lock, mFrontBuffer);
@@ -252,10 +256,10 @@ void WindowSurfaceWaylandMB::Commit(
 #ifdef MOZ_LOGGING
   gfx::IntRect invalidRect = aInvalidRegion.GetBounds().ToUnknownRect();
   LOGWAYLAND(
-      ("WindowSurfaceWaylandMB::Commit [%p] damage rect [%d, %d] -> [%d x %d] "
-       "MozContainer [%d x %d]\n",
-       (void*)mWindow.get(), invalidRect.x, invalidRect.y, invalidRect.width,
-       invalidRect.height, mMozContainerSize.width, mMozContainerSize.height));
+      "WindowSurfaceWaylandMB::Commit [%p] damage rect [%d, %d] -> [%d x %d] "
+      "MozContainer [%d x %d]\n",
+      (void*)mWindow.get(), invalidRect.x, invalidRect.y, invalidRect.width,
+      invalidRect.height, mMozContainerSize.width, mMozContainerSize.height);
 #endif
 
   if (!mInProgressBuffer) {
@@ -265,15 +269,16 @@ void WindowSurfaceWaylandMB::Commit(
   mFrameInProcess = false;
 
   MozContainer* container = mWindow->GetMozContainer();
-  wl_surface* waylandSurface = moz_container_wayland_surface_lock(container);
+  MozContainerSurfaceLock lock(container);
+  struct wl_surface* waylandSurface = lock.GetSurface();
   if (!waylandSurface) {
     LOGWAYLAND(
-        ("WindowSurfaceWaylandMB::Commit [%p] frame queued: can't lock "
-         "wl_surface\n",
-         (void*)mWindow.get()));
+        "WindowSurfaceWaylandMB::Commit [%p] frame queued: can't lock "
+        "wl_surface\n",
+        (void*)mWindow.get());
     if (!mCallbackRequested) {
       RefPtr<WindowSurfaceWaylandMB> self(this);
-      moz_container_wayland_add_initial_draw_callback(
+      moz_container_wayland_add_initial_draw_callback_locked(
           container, [self, aInvalidRegion]() -> void {
             MutexAutoLock lock(self->mSurfaceLock);
             if (!self->mFrameInProcess) {
@@ -287,7 +292,7 @@ void WindowSurfaceWaylandMB::Commit(
   }
 
   if (moz_container_wayland_is_commiting_to_parent(container)) {
-    // When commiting to parent surface we must use wl_surface_damage().
+    // When committing to parent surface we must use wl_surface_damage().
     // A parent surface is created as v.3 object which does not support
     // wl_surface_damage_buffer().
     wl_surface_damage(waylandSurface, 0, 0, INT32_MAX, INT32_MAX);
@@ -298,9 +303,8 @@ void WindowSurfaceWaylandMB::Commit(
     }
   }
 
-  moz_container_wayland_set_scale_factor_locked(container);
+  moz_container_wayland_set_scale_factor_locked(aProofOfLock, container);
   mInProgressBuffer->AttachAndCommit(waylandSurface);
-  moz_container_wayland_surface_unlock(container, &waylandSurface);
 
   mInProgressBuffer->ResetBufferAge();
   mFrontBuffer = mInProgressBuffer;
@@ -311,8 +315,8 @@ void WindowSurfaceWaylandMB::Commit(
   IncrementBufferAge(aProofOfLock);
 
   if (wl_display_flush(WaylandDisplayGet()->GetDisplay()) == -1) {
-    LOGWAYLAND(("WindowSurfaceWaylandMB::Commit [%p] flush failed\n",
-                (void*)mWindow.get()));
+    LOGWAYLAND("WindowSurfaceWaylandMB::Commit [%p] flush failed\n",
+               (void*)mWindow.get());
   }
 }
 
@@ -325,7 +329,9 @@ RefPtr<WaylandBufferSHM> WindowSurfaceWaylandMB::ObtainBufferFromPool(
   }
 
   RefPtr<WaylandBufferSHM> buffer = WaylandBufferSHM::Create(aSize);
-  mInUseBuffers.AppendElement(buffer);
+  if (buffer) {
+    mInUseBuffers.AppendElement(buffer);
+  }
 
   return buffer;
 }

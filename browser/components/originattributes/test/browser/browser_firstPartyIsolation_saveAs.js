@@ -5,7 +5,6 @@
 
 "use strict";
 
-/* import-globals-from ../../../../../toolkit/content/tests/browser/common/mockTransfer.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/toolkit/content/tests/browser/common/mockTransfer.js",
   this
@@ -32,15 +31,13 @@ MockFilePicker.init(window);
 const tempDir = createTemporarySaveDirectory();
 MockFilePicker.displayDirectory = tempDir;
 
-add_task(async function setup() {
+add_setup(async function() {
   info("Setting the prefs.");
 
   await SpecialPowers.pushPrefEnv({
     set: [
       ["privacy.firstparty.isolate", true],
       ["dom.security.https_first", false],
-      // Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
-      ["network.cookie.sameSite.laxByDefault", false],
     ],
   });
 

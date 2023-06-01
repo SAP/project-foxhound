@@ -97,7 +97,7 @@ bool basic_test(const CharT* chars) {
   // Link and evaluate the module graph. The link step used to be call
   // "instantiate" but is unrelated to the concept in Stencil with same name.
   JS::RootedValue rval(cx);
-  CHECK(JS::ModuleInstantiate(cx, moduleObject));
+  CHECK(JS::ModuleLink(cx, moduleObject));
   CHECK(JS::ModuleEvaluate(cx, moduleObject, &rval));
   CHECK(!rval.isUndefined());
 
@@ -336,7 +336,7 @@ BEGIN_TEST(testStencil_OffThread) {
   JS::SourceText<mozilla::Utf8Unit> srcBuf;
   CHECK(srcBuf.init(cx, chars, strlen(chars), JS::SourceOwnership::Borrowed));
 
-  js::Monitor monitor(js::mutexid::ShellOffThreadState);
+  js::Monitor monitor MOZ_UNANNOTATED(js::mutexid::ShellOffThreadState);
   JS::CompileOptions options(cx);
   JS::OffThreadToken* token;
 
@@ -351,7 +351,7 @@ BEGIN_TEST(testStencil_OffThread) {
     lock.wait();
   }
 
-  RefPtr<JS::Stencil> stencil = JS::FinishCompileToStencilOffThread(cx, token);
+  RefPtr<JS::Stencil> stencil = JS::FinishOffThreadStencil(cx, token);
   CHECK(stencil);
 
   JS::InstantiateOptions instantiateOptions(options);
@@ -383,7 +383,7 @@ BEGIN_TEST(testStencil_OffThreadWithInstantiationStorage) {
   JS::SourceText<mozilla::Utf8Unit> srcBuf;
   CHECK(srcBuf.init(cx, chars, strlen(chars), JS::SourceOwnership::Borrowed));
 
-  js::Monitor monitor(js::mutexid::ShellOffThreadState);
+  js::Monitor monitor MOZ_UNANNOTATED(js::mutexid::ShellOffThreadState);
   JS::CompileOptions options(cx);
   JS::OffThreadToken* token;
 
@@ -402,7 +402,7 @@ BEGIN_TEST(testStencil_OffThreadWithInstantiationStorage) {
 
   JS::Rooted<JS::InstantiationStorage> storage(cx);
   RefPtr<JS::Stencil> stencil =
-      JS::FinishCompileToStencilOffThread(cx, token, storage.address());
+      JS::FinishOffThreadStencil(cx, token, storage.address());
   CHECK(stencil);
 
   JS::InstantiateOptions instantiateOptions(options);
@@ -435,7 +435,7 @@ BEGIN_TEST(testStencil_OffThreadModule) {
   JS::SourceText<mozilla::Utf8Unit> srcBuf;
   CHECK(srcBuf.init(cx, chars, strlen(chars), JS::SourceOwnership::Borrowed));
 
-  js::Monitor monitor(js::mutexid::ShellOffThreadState);
+  js::Monitor monitor MOZ_UNANNOTATED(js::mutexid::ShellOffThreadState);
   JS::CompileOptions options(cx);
   JS::OffThreadToken* token;
 
@@ -450,8 +450,7 @@ BEGIN_TEST(testStencil_OffThreadModule) {
     lock.wait();
   }
 
-  RefPtr<JS::Stencil> stencil =
-      JS::FinishCompileModuleToStencilOffThread(cx, token);
+  RefPtr<JS::Stencil> stencil = JS::FinishOffThreadStencil(cx, token);
   CHECK(stencil);
 
   JS::InstantiateOptions instantiateOptions(options);
@@ -460,7 +459,7 @@ BEGIN_TEST(testStencil_OffThreadModule) {
   CHECK(moduleObject);
 
   JS::RootedValue rval(cx);
-  CHECK(JS::ModuleInstantiate(cx, moduleObject));
+  CHECK(JS::ModuleLink(cx, moduleObject));
   CHECK(JS::ModuleEvaluate(cx, moduleObject, &rval));
   CHECK(!rval.isUndefined());
 
@@ -487,7 +486,7 @@ BEGIN_TEST(testStencil_OffThreadModuleWithInstantiationStorage) {
   JS::SourceText<mozilla::Utf8Unit> srcBuf;
   CHECK(srcBuf.init(cx, chars, strlen(chars), JS::SourceOwnership::Borrowed));
 
-  js::Monitor monitor(js::mutexid::ShellOffThreadState);
+  js::Monitor monitor MOZ_UNANNOTATED(js::mutexid::ShellOffThreadState);
   JS::CompileOptions options(cx);
   JS::OffThreadToken* token;
 
@@ -506,7 +505,7 @@ BEGIN_TEST(testStencil_OffThreadModuleWithInstantiationStorage) {
 
   JS::Rooted<JS::InstantiationStorage> storage(cx);
   RefPtr<JS::Stencil> stencil =
-      JS::FinishCompileModuleToStencilOffThread(cx, token, storage.address());
+      JS::FinishOffThreadStencil(cx, token, storage.address());
   CHECK(stencil);
 
   JS::InstantiateOptions instantiateOptions(options);
@@ -516,7 +515,7 @@ BEGIN_TEST(testStencil_OffThreadModuleWithInstantiationStorage) {
   CHECK(moduleObject);
 
   JS::RootedValue rval(cx);
-  CHECK(JS::ModuleInstantiate(cx, moduleObject));
+  CHECK(JS::ModuleLink(cx, moduleObject));
   CHECK(JS::ModuleEvaluate(cx, moduleObject, &rval));
   CHECK(!rval.isUndefined());
 
@@ -571,7 +570,7 @@ BEGIN_TEST(testStencil_OffThreadDecode) {
   JS::OffThreadToken* token;
   {
     JS::DecodeOptions decodeOptions;
-    js::Monitor monitor(js::mutexid::ShellOffThreadState);
+    js::Monitor monitor MOZ_UNANNOTATED(js::mutexid::ShellOffThreadState);
     JS::TranscodeRange range(buffer.begin(), buffer.length());
 
     // Force off-thread even though if this is a small file.
@@ -586,7 +585,7 @@ BEGIN_TEST(testStencil_OffThreadDecode) {
     }
   }
 
-  RefPtr<JS::Stencil> stencil = JS::FinishDecodeStencilOffThread(cx, token);
+  RefPtr<JS::Stencil> stencil = JS::FinishOffThreadStencil(cx, token);
   CHECK(stencil);
 
   CHECK(!JS::StencilIsBorrowed(stencil));
@@ -650,7 +649,7 @@ BEGIN_TEST(testStencil_OffThreadDecodeWithInstantiationStorage) {
   JS::OffThreadToken* token;
   {
     JS::DecodeOptions decodeOptions;
-    js::Monitor monitor(js::mutexid::ShellOffThreadState);
+    js::Monitor monitor MOZ_UNANNOTATED(js::mutexid::ShellOffThreadState);
     JS::TranscodeRange range(buffer.begin(), buffer.length());
 
     // Force off-thread even though if this is a small file.
@@ -669,7 +668,7 @@ BEGIN_TEST(testStencil_OffThreadDecodeWithInstantiationStorage) {
 
   JS::Rooted<JS::InstantiationStorage> storage(cx);
   RefPtr<JS::Stencil> stencil =
-      JS::FinishDecodeStencilOffThread(cx, token, storage.address());
+      JS::FinishOffThreadStencil(cx, token, storage.address());
   CHECK(stencil);
 
   CHECK(!JS::StencilIsBorrowed(stencil));
@@ -734,7 +733,7 @@ BEGIN_TEST(testStencil_OffThreadDecodeBorrow) {
   JS::OffThreadToken* token;
   {
     JS::DecodeOptions decodeOptions;
-    js::Monitor monitor(js::mutexid::ShellOffThreadState);
+    js::Monitor monitor MOZ_UNANNOTATED(js::mutexid::ShellOffThreadState);
     JS::TranscodeRange range(buffer.begin(), buffer.length());
 
     // Force off-thread even though if this is a small file.
@@ -751,7 +750,7 @@ BEGIN_TEST(testStencil_OffThreadDecodeBorrow) {
     }
   }
 
-  RefPtr<JS::Stencil> stencil = JS::FinishDecodeStencilOffThread(cx, token);
+  RefPtr<JS::Stencil> stencil = JS::FinishOffThreadStencil(cx, token);
   CHECK(stencil);
 
   CHECK(JS::StencilIsBorrowed(stencil));
@@ -824,7 +823,7 @@ BEGIN_TEST(testStencil_OffThreadDecodePinned) {
   JS::OffThreadToken* token;
   {
     JS::DecodeOptions decodeOptions;
-    js::Monitor monitor(js::mutexid::ShellOffThreadState);
+    js::Monitor monitor MOZ_UNANNOTATED(js::mutexid::ShellOffThreadState);
     JS::TranscodeRange range(pinnedBuffer, pinnedBufferSize);
 
     // Force off-thread even though if this is a small file.
@@ -842,7 +841,7 @@ BEGIN_TEST(testStencil_OffThreadDecodePinned) {
     }
   }
 
-  RefPtr<JS::Stencil> stencil = JS::FinishDecodeStencilOffThread(cx, token);
+  RefPtr<JS::Stencil> stencil = JS::FinishOffThreadStencil(cx, token);
   CHECK(stencil);
 
   CHECK(JS::StencilIsBorrowed(stencil));

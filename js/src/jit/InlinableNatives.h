@@ -9,6 +9,12 @@
 
 #include <stdint.h>  // For uint16_t
 
+#ifdef FUZZING_JS_FUZZILLI
+#  define INLINABLE_NATIVE_FUZZILLI_LIST(_) _(FuzzilliHash)
+#else
+#  define INLINABLE_NATIVE_FUZZILLI_LIST(_)
+#endif
+
 #define INLINABLE_NATIVE_LIST(_)                   \
   _(Array)                                         \
   _(ArrayIsArray)                                  \
@@ -102,6 +108,8 @@
   _(MathTrunc)                                     \
   _(MathCbrt)                                      \
                                                    \
+  _(Number)                                        \
+  _(NumberParseInt)                                \
   _(NumberToString)                                \
                                                    \
   _(ReflectGetPrototypeOf)                         \
@@ -124,6 +132,9 @@
   _(StringFromCharCode)                            \
   _(StringFromCodePoint)                           \
   _(StringCharAt)                                  \
+  _(StringIndexOf)                                 \
+  _(StringStartsWith)                              \
+  _(StringEndsWith)                                \
   _(StringToLowerCase)                             \
   _(StringToUpperCase)                             \
                                                    \
@@ -145,7 +156,6 @@
   _(IntrinsicUnsafeGetObjectFromReservedSlot)      \
   _(IntrinsicUnsafeGetInt32FromReservedSlot)       \
   _(IntrinsicUnsafeGetStringFromReservedSlot)      \
-  _(IntrinsicUnsafeGetBooleanFromReservedSlot)     \
                                                    \
   _(IntrinsicIsCallable)                           \
   _(IntrinsicIsConstructor)                        \
@@ -195,7 +205,9 @@
   _(IntrinsicTypedArrayLength)                     \
   _(IntrinsicPossiblyWrappedTypedArrayLength)      \
   _(IntrinsicTypedArrayByteOffset)                 \
-  _(IntrinsicTypedArrayElementSize)
+  _(IntrinsicTypedArrayElementSize)                \
+                                                   \
+  INLINABLE_NATIVE_FUZZILLI_LIST(_)
 
 struct JSClass;
 class JSJitInfo;

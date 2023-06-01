@@ -2,6 +2,9 @@
 // Test whether an install succeeds when a valid hash is included
 // This verifies bug 302284
 function test() {
+  // This test currently depends on InstallTrigger.install availability.
+  setInstallTriggerPrefs();
+
   Harness.installEndedCallback = install_ended;
   Harness.installsCompletedCallback = finish_test;
   Harness.setup();
@@ -24,7 +27,7 @@ function test() {
     })
   );
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.loadURIString(
     gBrowser,
     TESTROOT + "installtrigger.html?" + triggers
   );

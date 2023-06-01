@@ -4,8 +4,8 @@
 
 use crate::attr::CaseSensitivity;
 use crate::bloom::BloomFilter;
-use crate::nth_index_cache::NthIndexCache;
-use crate::parser::SelectorImpl;
+use crate::nth_index_cache::{NthIndexCache, NthIndexCacheInner};
+use crate::parser::{Selector, SelectorImpl};
 use crate::tree::{Element, OpaqueElement};
 
 /// What kind of selector matching mode we should use.
@@ -68,6 +68,14 @@ impl VisitedHandlingMode {
     }
 }
 
+/// Whether we need to set selector invalidation flags on elements for this
+/// match request.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum NeedsSelectorFlags {
+    No,
+    Yes,
+}
+
 /// Which quirks mode is this document in.
 ///
 /// See: https://quirks.spec.whatwg.org/
@@ -102,8 +110,8 @@ where
     matching_mode: MatchingMode,
     /// Input with the bloom filter used to fast-reject selectors.
     pub bloom_filter: Option<&'a BloomFilter>,
-    /// An optional cache to speed up nth-index-like selectors.
-    pub nth_index_cache: Option<&'a mut NthIndexCache>,
+    /// A cache to speed up nth-index-like selectors.
+    pub nth_index_cache: &'a mut NthIndexCache,
     /// The element which is going to match :scope pseudo-class. It can be
     /// either one :scope element, or the scoping element.
     ///
@@ -137,9 +145,10 @@ where
     pub pseudo_element_matching_fn: Option<&'a dyn Fn(&Impl::PseudoElement) -> bool>,
 
     /// Extra implementation-dependent matching data.
-    pub extra_data: Impl::ExtraMatchingData,
+    pub extra_data: Impl::ExtraMatchingData<'a>,
 
     quirks_mode: QuirksMode,
+    needs_selector_flags: NeedsSelectorFlags,
     classes_and_ids_case_sensitivity: CaseSensitivity,
     _impl: ::std::marker::PhantomData<Impl>,
 }
@@ -152,8 +161,9 @@ where
     pub fn new(
         matching_mode: MatchingMode,
         bloom_filter: Option<&'a BloomFilter>,
-        nth_index_cache: Option<&'a mut NthIndexCache>,
+        nth_index_cache: &'a mut NthIndexCache,
         quirks_mode: QuirksMode,
+        needs_selector_flags: NeedsSelectorFlags,
     ) -> Self {
         Self::new_for_visited(
             matching_mode,
@@ -161,6 +171,7 @@ where
             nth_index_cache,
             VisitedHandlingMode::AllLinksUnvisited,
             quirks_mode,
+            needs_selector_flags,
         )
     }
 
@@ -168,9 +179,10 @@ where
     pub fn new_for_visited(
         matching_mode: MatchingMode,
         bloom_filter: Option<&'a BloomFilter>,
-        nth_index_cache: Option<&'a mut NthIndexCache>,
+        nth_index_cache: &'a mut NthIndexCache,
         visited_handling: VisitedHandlingMode,
         quirks_mode: QuirksMode,
+        needs_selector_flags: NeedsSelectorFlags,
     ) -> Self {
         Self {
             matching_mode,
@@ -179,6 +191,7 @@ where
             nth_index_cache,
             quirks_mode,
             classes_and_ids_case_sensitivity: quirks_mode.classes_and_ids_case_sensitivity(),
+            needs_selector_flags,
             scope_element: None,
             current_host: None,
             nesting_level: 0,
@@ -187,6 +200,17 @@ where
             extra_data: Default::default(),
             _impl: ::std::marker::PhantomData,
         }
+    }
+
+    // Grab a reference to the appropriate cache.
+    #[inline]
+    pub fn nth_index_cache(
+        &mut self,
+        is_of_type: bool,
+        is_from_end: bool,
+        selectors: &[Selector<Impl>],
+    ) -> &mut NthIndexCacheInner {
+        self.nth_index_cache.get(is_of_type, is_from_end, selectors)
     }
 
     /// Whether we're matching a nested selector.
@@ -211,6 +235,12 @@ where
     #[inline]
     pub fn matching_mode(&self) -> MatchingMode {
         self.matching_mode
+    }
+
+    /// Whether we need to set selector flags.
+    #[inline]
+    pub fn needs_selector_flags(&self) -> bool {
+        self.needs_selector_flags == NeedsSelectorFlags::Yes
     }
 
     /// The case-sensitivity for class and ID selectors

@@ -42,12 +42,16 @@
       }
       this.setSelectedFromDeck();
       this.addEventListener("click", this);
-      document.addEventListener("view-changed", this, { capture: true });
+      this.getRootNode().addEventListener("view-changed", this, {
+        capture: true,
+      });
     }
 
     disconnectedCallback() {
       this.removeEventListener("click", this);
-      document.removeEventListener("view-changed", this, { capture: true });
+      this.getRootNode().removeEventListener("view-changed", this, {
+        capture: true,
+      });
     }
 
     attributeChangedCallback(name, oldVal, newVal) {
@@ -65,7 +69,7 @@
     }
 
     get deck() {
-      return document.getElementById(this.deckId);
+      return this.getRootNode().querySelector(`#${this.deckId}`);
     }
 
     handleEvent(e) {
@@ -141,7 +145,7 @@
       this.addEventListener("button-group:selected", this);
       this.addEventListener("keydown", this);
       this.addEventListener("mousedown", this);
-      document.addEventListener("keypress", this);
+      this.getRootNode().addEventListener("keypress", this);
     }
 
     disconnectedCallback() {
@@ -149,7 +153,7 @@
       this.removeEventListener("button-group:selected", this);
       this.removeEventListener("keydown", this);
       this.removeEventListener("mousedown", this);
-      document.removeEventListener("keypress", this);
+      this.getRootNode().removeEventListener("keypress", this);
     }
 
     attributeChangedCallback(name, oldVal, newVal) {
@@ -270,7 +274,7 @@
                 return NodeFilter.FILTER_REJECT;
               }
               node.focus();
-              return document.activeElement == node
+              return this.getRootNode().activeElement == node
                 ? NodeFilter.FILTER_ACCEPT
                 : NodeFilter.FILTER_REJECT;
             },
@@ -307,6 +311,10 @@
    * deck.selectedViewName == "dogs"; // Dog stuff is shown.
    * deck.setAttribute("selected-view", "cats");
    * deck.selectedViewName == "cats"; // Cat info is shown.
+   *
+   * Add the is-tabbed attribute to <named-deck> if you want
+   * each of its children to have a tabpanel role and aria-labelledby
+   * referencing the NamedDeckButton component.
    */
   class NamedDeck extends HTMLElement {
     static get observedAttributes() {
@@ -372,8 +380,11 @@
       let { selectedViewName } = this;
       for (let view of this.children) {
         let name = view.getAttribute("name");
-        view.setAttribute("aria-labelledby", `${this.id}-button-${name}`);
-        view.setAttribute("role", "tabpanel");
+
+        if (this.hasAttribute("is-tabbed")) {
+          view.setAttribute("aria-labelledby", `${this.id}-button-${name}`);
+          view.setAttribute("role", "tabpanel");
+        }
 
         if (name === selectedViewName) {
           view.slot = "selected";

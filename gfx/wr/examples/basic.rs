@@ -33,9 +33,9 @@ impl Example for App {
 
     fn render(
         &mut self,
-        api: &mut RenderApi,
+        _api: &mut RenderApi,
         builder: &mut DisplayListBuilder,
-        txn: &mut Transaction,
+        _txn: &mut Transaction,
         _: DeviceIntSize,
         pipeline_id: PipelineId,
         _document_id: DocumentId,
@@ -50,41 +50,21 @@ impl Example for App {
             PrimitiveFlags::IS_BACKFACE_VISIBLE,
         );
 
-        let image_mask_key = api.generate_image_key();
-        txn.add_image(
-            image_mask_key,
-            ImageDescriptor::new(2, 2, ImageFormat::R8, ImageDescriptorFlags::IS_OPAQUE),
-            ImageData::new(vec![0, 80, 180, 255]),
-            None,
-        );
-        let mask = ImageMask {
-            image: image_mask_key,
-            rect: (75, 75).by(100, 100),
-            repeat: false,
-        };
         let complex = ComplexClipRegion::new(
             (50, 50).to(150, 150),
             BorderRadius::uniform(20.0),
             ClipMode::Clip
         );
-        let mask_clip_id = builder.define_clip_image_mask(
-            &root_space_and_clip,
-            mask,
-            &vec![],
-            FillRule::Nonzero,
-        );
         let clip_id = builder.define_clip_rounded_rect(
-            &SpaceAndClipInfo {
-                spatial_id: root_space_and_clip.spatial_id,
-                clip_id: mask_clip_id,
-            },
+            root_space_and_clip.spatial_id,
             complex,
         );
+        let clip_chain_id = builder.define_clip_chain(None, [clip_id]);
 
         builder.push_rect(
             &CommonItemProperties::new(
                 (100, 100).to(200, 200),
-                SpaceAndClipInfo { spatial_id, clip_id },
+                SpaceAndClipInfo { spatial_id, clip_chain_id },
             ),
             (100, 100).to(200, 200),
             ColorF::new(0.0, 1.0, 0.0, 1.0),
@@ -93,7 +73,7 @@ impl Example for App {
         builder.push_rect(
             &CommonItemProperties::new(
                 (250, 100).to(350, 200),
-                SpaceAndClipInfo { spatial_id, clip_id },
+                SpaceAndClipInfo { spatial_id, clip_chain_id },
             ),
             (250, 100).to(350, 200),
             ColorF::new(0.0, 1.0, 0.0, 1.0),
@@ -116,7 +96,7 @@ impl Example for App {
         builder.push_border(
             &CommonItemProperties::new(
                 bounds,
-                SpaceAndClipInfo { spatial_id, clip_id },
+                SpaceAndClipInfo { spatial_id, clip_chain_id },
             ),
             bounds,
             border_widths,

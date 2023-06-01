@@ -102,6 +102,8 @@ fn clone_vec() {
     check(v.par_iter());
     check(v.par_chunks(42));
     check(v.par_chunks_exact(42));
+    check(v.par_rchunks(42));
+    check(v.par_rchunks_exact(42));
     check(v.par_windows(42));
     check(v.par_split(|x| x % 3 == 0));
     check(v.into_par_iter());
@@ -128,6 +130,12 @@ fn clone_adaptors() {
     check(v.par_iter().flatten_iter());
     check(v.par_iter().with_max_len(1).fold(|| 0, |x, _| x));
     check(v.par_iter().with_max_len(1).fold_with(0, |x, _| x));
+    check(v.par_iter().with_max_len(1).fold_chunks(1, || 0, |x, _| x));
+    check(
+        v.par_iter()
+            .with_max_len(1)
+            .fold_chunks_with(1, 0, |x, _| x),
+    );
     check(v.par_iter().with_max_len(1).try_fold(|| 0, |_, &x| x));
     check(v.par_iter().with_max_len(1).try_fold_with(0, |_, &x| x));
     check(v.par_iter().inspect(|_| ()));

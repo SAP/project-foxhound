@@ -218,12 +218,6 @@ s! {
         pub rt_irtt: ::c_ushort,
     }
 
-    pub struct ip_mreqn {
-        pub imr_multiaddr: ::in_addr,
-        pub imr_address: ::in_addr,
-        pub imr_ifindex: ::c_int,
-    }
-
     pub struct __exit_status {
         pub e_termination: ::c_short,
         pub e_exit: ::c_short,
@@ -530,13 +524,12 @@ pub const PTHREAD_STACK_MIN: ::size_t = 2048;
 
 pub const POSIX_MADV_DONTNEED: ::c_int = 4;
 
-pub const RLIM_INFINITY: ::rlim_t = !0;
-pub const RLIMIT_RTTIME: ::c_int = 15;
-
 pub const MAP_ANONYMOUS: ::c_int = MAP_ANON;
 
 pub const SOCK_DCCP: ::c_int = 6;
 pub const SOCK_PACKET: ::c_int = 10;
+
+pub const SOMAXCONN: ::c_int = 128;
 
 #[deprecated(since = "0.2.55", note = "Use SIGSYS instead")]
 pub const SIGUNUSED: ::c_int = ::SIGSYS;
@@ -597,6 +590,8 @@ pub const EFD_NONBLOCK: ::c_int = ::O_NONBLOCK;
 
 pub const SFD_NONBLOCK: ::c_int = ::O_NONBLOCK;
 
+pub const PIDFD_NONBLOCK: ::c_uint = O_NONBLOCK as ::c_uint;
+
 pub const TCSANOW: ::c_int = 0;
 pub const TCSADRAIN: ::c_int = 1;
 pub const TCSAFLUSH: ::c_int = 2;
@@ -625,21 +620,7 @@ pub const B38400: ::speed_t = 0o000017;
 pub const EXTA: ::speed_t = B19200;
 pub const EXTB: ::speed_t = B38400;
 
-pub const RLIMIT_CPU: ::c_int = 0;
-pub const RLIMIT_FSIZE: ::c_int = 1;
-pub const RLIMIT_DATA: ::c_int = 2;
-pub const RLIMIT_STACK: ::c_int = 3;
-pub const RLIMIT_CORE: ::c_int = 4;
-pub const RLIMIT_LOCKS: ::c_int = 10;
-pub const RLIMIT_SIGPENDING: ::c_int = 11;
-pub const RLIMIT_MSGQUEUE: ::c_int = 12;
-pub const RLIMIT_NICE: ::c_int = 13;
-pub const RLIMIT_RTPRIO: ::c_int = 14;
-
 pub const REG_OK: ::c_int = 0;
-
-pub const TIOCSBRK: ::c_int = 0x5427;
-pub const TIOCCBRK: ::c_int = 0x5428;
 
 pub const PRIO_PROCESS: ::c_int = 0;
 pub const PRIO_PGRP: ::c_int = 1;
@@ -745,6 +726,7 @@ extern "C" {
         old_limit: *mut ::rlimit64,
     ) -> ::c_int;
 
+    pub fn ioctl(fd: ::c_int, request: ::c_int, ...) -> ::c_int;
     pub fn gettimeofday(tp: *mut ::timeval, tz: *mut ::c_void) -> ::c_int;
     pub fn ptrace(request: ::c_int, ...) -> ::c_long;
     pub fn getpriority(which: ::c_int, who: ::id_t) -> ::c_int;
@@ -772,6 +754,24 @@ extern "C" {
     pub fn ctermid(s: *mut ::c_char) -> *mut ::c_char;
 
     pub fn memfd_create(name: *const ::c_char, flags: ::c_uint) -> ::c_int;
+    pub fn mlock2(addr: *const ::c_void, len: ::size_t, flags: ::c_uint) -> ::c_int;
+    pub fn malloc_usable_size(ptr: *mut ::c_void) -> ::size_t;
+
+    pub fn euidaccess(pathname: *const ::c_char, mode: ::c_int) -> ::c_int;
+    pub fn eaccess(pathname: *const ::c_char, mode: ::c_int) -> ::c_int;
+
+    pub fn asctime_r(tm: *const ::tm, buf: *mut ::c_char) -> *mut ::c_char;
+
+    pub fn strftime(
+        s: *mut ::c_char,
+        max: ::size_t,
+        format: *const ::c_char,
+        tm: *const ::tm,
+    ) -> ::size_t;
+    pub fn strptime(s: *const ::c_char, format: *const ::c_char, tm: *mut ::tm) -> *mut ::c_char;
+
+    pub fn dirname(path: *mut ::c_char) -> *mut ::c_char;
+    pub fn basename(path: *mut ::c_char) -> *mut ::c_char;
 }
 
 cfg_if! {
@@ -787,6 +787,7 @@ cfg_if! {
                         target_arch = "mips",
                         target_arch = "powerpc",
                         target_arch = "hexagon",
+                        target_arch = "riscv32",
                         target_arch = "arm"))] {
         mod b32;
         pub use self::b32::*;

@@ -10,12 +10,47 @@ const Bps = 1 / 8;
 const KBps = K * Bps;
 const MBps = M * Bps;
 
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
+const L10N = new LocalizationHelper(
+  "devtools/client/locales/network-throttling.properties"
+);
+
 /**
  * Predefined network throttling profiles.
  * Speeds are in bytes per second.  Latency is in ms.
  */
-/* eslint-disable key-spacing */
-module.exports = [
+
+class ThrottlingProfile {
+  constructor({ id, download, upload, latency }) {
+    this.id = id;
+    this.download = download;
+    this.upload = upload;
+    this.latency = latency;
+  }
+
+  get description() {
+    const download = this.#toDescriptionData(this.download);
+    const upload = this.#toDescriptionData(this.upload);
+    return L10N.getFormatStr(
+      "throttling.profile.description",
+      download.value,
+      download.unit,
+      upload.value,
+      upload.unit,
+      this.latency
+    );
+  }
+
+  #toDescriptionData(val) {
+    if (val % MBps === 0) {
+      return { value: val / MBps, unit: "Mbps" };
+    }
+    return { value: val / KBps, unit: "Kbps" };
+  }
+}
+
+// Should be synced with devtools/docs/user/network_monitor/throttling/index.rst
+const profiles = [
   {
     id: "GPRS",
     download: 50 * KBps,
@@ -64,5 +99,6 @@ module.exports = [
     upload: 15 * MBps,
     latency: 2,
   },
-];
-/* eslint-enable key-spacing */
+].map(profile => new ThrottlingProfile(profile));
+
+module.exports = profiles;

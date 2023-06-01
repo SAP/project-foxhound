@@ -1,8 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 // Import common head.
 {
   /* import-globals-from ../head_common.js */
@@ -13,16 +11,16 @@ var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // Put any other stuff relative to this test folder below.
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  PlacesDBUtils: "resource://gre/modules/PlacesDBUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesDBUtils: "resource://gre/modules/PlacesDBUtils.sys.mjs",
 });
 
 async function createCorruptDb(filename) {
-  let path = OS.Path.join(OS.Constants.Path.profileDir, filename);
+  let path = PathUtils.join(PathUtils.profileDir, filename);
   await IOUtils.remove(path, { ignoreAbsent: true });
   // Create a corrupt database.
   let dir = do_get_cwd().path;
-  let src = OS.Path.join(dir, "corruptDB.sqlite");
+  let src = PathUtils.join(dir, "corruptDB.sqlite");
   await IOUtils.copy(src, path);
 }
 
@@ -30,8 +28,9 @@ async function createCorruptDb(filename) {
  * Used in _replaceOnStartup_ tests as common test code. It checks whether we
  * are properly cloning or replacing a corrupt database.
  *
- * @param {string} src
- *        Path to a test database, relative to this test folder
+ * @param {string[]} src
+ *        Array of strings which form a path to a test database, relative to
+ *        the parent of this test folder.
  * @param {string} filename
  *        Database file name
  * @param {boolean} shouldClone
@@ -50,22 +49,19 @@ async function test_database_replacement(src, filename, shouldClone, dbStatus) {
   let willClone = shouldClone && filename == DB_FILENAME;
 
   // Ensure that our databases don't exist yet.
-  let dest = OS.Path.join(OS.Constants.Path.profileDir, filename);
+  let dest = PathUtils.join(PathUtils.profileDir, filename);
   Assert.ok(
     !(await IOUtils.exists(dest)),
     `"${filename} should not exist initially`
   );
-  let corrupt = OS.Path.join(
-    OS.Constants.Path.profileDir,
-    `${filename}.corrupt`
-  );
+  let corrupt = PathUtils.join(PathUtils.profileDir, `${filename}.corrupt`);
   Assert.ok(
     !(await IOUtils.exists(corrupt)),
     `${filename}.corrupt should not exist initially`
   );
 
-  let dir = do_get_cwd().path;
-  src = OS.Path.join(dir, src);
+  let dir = PathUtils.parent(do_get_cwd().path);
+  src = PathUtils.join(dir, ...src);
   await IOUtils.copy(src, dest);
 
   // Create some unique stuff to check later.

@@ -6,23 +6,28 @@
 loader.lazyRequireGetter(
   this,
   ["getParentWarningGroupMessageId", "getWarningGroupType"],
-  "devtools/client/webconsole/utils/messages",
+  "resource://devtools/client/webconsole/utils/messages.js",
   true
 );
 
-function getAllMessagesById(state) {
-  return state.messages.messagesById;
+function getMutableMessagesById(state) {
+  return state.messages.mutableMessagesById;
 }
 
 function getMessage(state, id) {
-  return getAllMessagesById(state).get(id);
+  return getMutableMessagesById(state).get(id);
 }
 
 function getAllMessagesUiById(state) {
   return state.messages.messagesUiById;
 }
-function getAllMessagesPayloadById(state) {
-  return state.messages.messagesPayloadById;
+
+function getAllDisabledMessagesById(state) {
+  return state.messages.disabledMessagesById;
+}
+
+function getAllCssMessagesMatchingElements(state) {
+  return state.messages.cssMessagesMatchingElements;
 }
 
 function getAllGroupsById(state) {
@@ -57,6 +62,10 @@ function getAllWarningGroupsById(state) {
   return state.messages.warningGroupsById;
 }
 
+function getLastMessageId(state) {
+  return state.messages.lastMessageId;
+}
+
 function isMessageInWarningGroup(message, visibleMessages = []) {
   if (!getWarningGroupType(message)) {
     return false;
@@ -68,14 +77,16 @@ function isMessageInWarningGroup(message, visibleMessages = []) {
 module.exports = {
   getAllGroupsById,
   getAllWarningGroupsById,
-  getAllMessagesById,
-  getAllMessagesPayloadById,
+  getMutableMessagesById,
+  getAllCssMessagesMatchingElements,
   getAllMessagesUiById,
+  getAllDisabledMessagesById,
   getAllNetworkMessagesUpdateById,
   getAllRepeatById,
   getCurrentGroup,
   getFilteredMessagesCount,
   getGroupsById,
+  getLastMessageId,
   getMessage,
   getVisibleMessages,
   isMessageInWarningGroup,

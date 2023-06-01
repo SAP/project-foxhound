@@ -28,7 +28,7 @@ void NumeratorMetric::AddToNumerator(int32_t aAmount) const {
 Result<Maybe<std::pair<int32_t, int32_t>>, nsCString>
 NumeratorMetric::TestGetValue(const nsACString& aPingName) const {
   nsCString err;
-  if (fog_numerator_test_get_error(mId, &aPingName, &err)) {
+  if (fog_numerator_test_get_error(mId, &err)) {
     return Err(err);
   }
   if (!fog_numerator_test_has_value(mId, &aPingName)) {
@@ -53,7 +53,7 @@ GleanNumerator::AddToNumerator(int32_t aAmount) {
 
 NS_IMETHODIMP
 GleanNumerator::TestGetValue(const nsACString& aPingName, JSContext* aCx,
-                             JS::MutableHandleValue aResult) {
+                             JS::MutableHandle<JS::Value> aResult) {
   auto result = mNumerator.TestGetValue(aPingName);
   if (result.isErr()) {
     aResult.set(JS::UndefinedValue());
@@ -66,7 +66,7 @@ GleanNumerator::TestGetValue(const nsACString& aPingName, JSContext* aCx,
     aResult.set(JS::UndefinedValue());
   } else {
     // Build return value of the form: { numerator: n, denominator: d }
-    JS::RootedObject root(aCx, JS_NewPlainObject(aCx));
+    JS::Rooted<JSObject*> root(aCx, JS_NewPlainObject(aCx));
     if (!root) {
       return NS_ERROR_FAILURE;
     }

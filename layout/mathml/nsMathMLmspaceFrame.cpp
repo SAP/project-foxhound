@@ -5,9 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsMathMLmspaceFrame.h"
+
 #include "mozilla/dom/MathMLElement.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/gfx/2D.h"
+#include "nsLayoutUtils.h"
 #include <algorithm>
 
 using namespace mozilla;
@@ -107,8 +109,6 @@ void nsMathMLmspaceFrame::Reflow(nsPresContext* aPresContext,
   aDesiredSize.Height() = mBoundingMetrics.ascent + mBoundingMetrics.descent;
   // Also return our bounding metrics
   aDesiredSize.mBoundingMetrics = mBoundingMetrics;
-
-  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aDesiredSize);
 }
 
 /* virtual */

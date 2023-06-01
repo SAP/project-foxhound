@@ -38,7 +38,6 @@ class HTMLTableCellAccessible : public HyperTextAccessibleWrap,
   virtual uint64_t NativeState() const override;
   virtual uint64_t NativeInteractiveState() const override;
   virtual already_AddRefed<AccAttributes> NativeAttributes() override;
-  virtual mozilla::a11y::GroupPos GroupPosition() override;
 
  protected:
   virtual void DOMAttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
@@ -52,8 +51,8 @@ class HTMLTableCellAccessible : public HyperTextAccessibleWrap,
   virtual uint32_t RowIdx() const override;
   virtual uint32_t ColExtent() const override;
   virtual uint32_t RowExtent() const override;
-  virtual void ColHeaderCells(nsTArray<LocalAccessible*>* aCells) override;
-  virtual void RowHeaderCells(nsTArray<LocalAccessible*>* aCells) override;
+  virtual void ColHeaderCells(nsTArray<Accessible*>* aCells) override;
+  virtual void RowHeaderCells(nsTArray<Accessible*>* aCells) override;
   virtual bool Selected() override;
 
  protected:
@@ -102,7 +101,6 @@ class HTMLTableRowAccessible : public HyperTextAccessibleWrap {
 
   // LocalAccessible
   virtual a11y::role NativeRole() const override;
-  virtual mozilla::a11y::GroupPos GroupPosition() override;
 
  protected:
   virtual ~HTMLTableRowAccessible() {}
@@ -152,7 +150,7 @@ class HTMLTableAccessible : public HyperTextAccessibleWrap,
   virtual uint32_t SelectedCellCount() override;
   virtual uint32_t SelectedColCount() override;
   virtual uint32_t SelectedRowCount() override;
-  virtual void SelectedCells(nsTArray<LocalAccessible*>* aCells) override;
+  virtual void SelectedCells(nsTArray<Accessible*>* aCells) override;
   virtual void SelectedCellIndices(nsTArray<uint32_t>* aCells) override;
   virtual void SelectedColIndices(nsTArray<uint32_t>* aCols) override;
   virtual void SelectedRowIndices(nsTArray<uint32_t>* aRows) override;

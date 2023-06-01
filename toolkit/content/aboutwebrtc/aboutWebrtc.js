@@ -3,16 +3,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+});
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "FilePicker",
@@ -412,11 +409,11 @@ function renderPeerConnection(report) {
         renderText("span", pcid, { className: "info-body" }),
       ]),
       renderConfiguration(configuration),
+      renderRTPStats(report),
       renderICEStats(report),
       renderSDPStats(report),
       renderBandwidthStats(report),
-      renderFrameRateStats(report),
-      renderRTPStats(report)
+      renderFrameRateStats(report)
     );
     pcDiv.append(section);
   }
@@ -618,16 +615,18 @@ function renderRTPStats(report, history) {
   for (const stat of rtpStats.filter(s => "remoteId" in s)) {
     stat.remoteRtpStats = remoteRtpStatsMap[stat.remoteId];
   }
-  const stats = [...rtpStats, ...remoteRtpStats];
+  for (const stat of rtpStats.filter(s => "codecId" in s)) {
+    stat.codecStat = report.codecStats.find(({ id }) => id == stat.codecId);
+  }
 
   // Render stats set
   return renderElements("div", { id: "rtp-stats: " + report.pcid }, [
     renderElement("h4", {}, "about-webrtc-rtp-stats-heading"),
-    ...stats.map(stat => {
-      const { id, remoteId, remoteRtpStats } = stat;
+    ...rtpStats.map(stat => {
+      const { ssrc, remoteId, remoteRtpStats } = stat;
       const div = renderElements("div", {}, [
-        renderText("h5", id),
-        renderCoderStats(stat),
+        renderText("h5", `SSRC ${ssrc}`),
+        renderCodecStats(stat),
         renderTransportStats(stat, true, history),
       ]);
       if (remoteId && remoteRtpStats) {
@@ -638,25 +637,53 @@ function renderRTPStats(report, history) {
   ]);
 }
 
-function renderCoderStats({
-  framesPerSecond,
+function renderCodecStats({
+  codecStat,
+  framesEncoded,
+  framesDecoded,
   framesDropped,
   discardedPackets,
   packetsReceived,
 }) {
   let elements = [];
 
-  if (framesPerSecond) {
+  if (codecStat) {
     elements.push(
-      renderElement(
+      renderText("span", `${codecStat.payloadType} ${codecStat.mimeType}`, {})
+    );
+    if (framesEncoded !== undefined || framesDecoded !== undefined) {
+      elements.push(
+        renderElement(
+          "span",
+          { className: "stat-label" },
+          "about-webrtc-frames",
+          {
+            frames: framesEncoded || framesDecoded || 0,
+          }
+        )
+      );
+    }
+    if (codecStat.channels !== undefined) {
+      elements.push(
+        renderElement(
+          "span",
+          { className: "stat-label" },
+          "about-webrtc-channels",
+          {
+            channels: codecStat.channels,
+          }
+        )
+      );
+    }
+    elements.push(
+      renderText(
         "span",
-        { className: "stat-label" },
-        "about-webrtc-current-framerate-label"
+        ` ${codecStat.clockRate} ${codecStat.sdpFmtpLine || ""}`,
+        {}
       )
     );
-    elements.push(renderText("span", ` ${framesPerSecond.toFixed(2)} fps`, {}));
   }
-  if (framesDropped) {
+  if (framesDropped !== undefined) {
     elements.push(
       renderElement(
         "span",
@@ -666,7 +693,7 @@ function renderCoderStats({
     );
     elements.push(renderText("span", ` ${framesDropped}`, {}));
   }
-  if (discardedPackets) {
+  if (discardedPackets !== undefined) {
     elements.push(
       renderElement(
         "span",
@@ -677,7 +704,7 @@ function renderCoderStats({
     elements.push(renderText("span", ` ${discardedPackets}`, {}));
   }
   if (elements.length) {
-    if (packetsReceived) {
+    if (packetsReceived !== undefined) {
       elements.unshift(
         renderElement("span", {}, "about-webrtc-decoder-label"),
         renderText("span", ": ")
@@ -697,7 +724,6 @@ function renderTransportStats(
     id,
     timestamp,
     type,
-    ssrc,
     packetsReceived,
     bytesReceived,
     packetsLost,
@@ -715,7 +741,7 @@ function renderTransportStats(
     }
   }
 
-  const estimateKbps = (timestamp, lastTimestamp, bytes, lastBytes) => {
+  const estimateKBps = (timestamp, lastTimestamp, bytes, lastBytes) => {
     if (!timestamp || !lastTimestamp || !bytes || !lastBytes) {
       return "0.0";
     }
@@ -741,7 +767,7 @@ function renderTransportStats(
   }
 
   const time = new Date(timestamp).toTimeString();
-  elements.push(renderText("span", `${time} ${type} SSRC: ${ssrc}`));
+  elements.push(renderText("span", `${time} ${type}`));
 
   if (packetsReceived) {
     elements.push(
@@ -758,12 +784,12 @@ function renderTransportStats(
     if (bytesReceived) {
       let s = ` (${(bytesReceived / 1024).toFixed(2)} Kb`;
       if (local && history) {
-        s += ` , ${estimateKbps(
+        s += ` , ${estimateKBps(
           timestamp,
           history[id].lastTimestamp,
           bytesReceived,
           history[id].lastBytesReceived
-        )} Kbps`;
+        )} KBps`;
       }
       s += ")";
       elements.push(renderText("span", s));
@@ -807,12 +833,12 @@ function renderTransportStats(
     if (bytesSent) {
       let s = ` (${(bytesSent / 1024).toFixed(2)} Kb`;
       if (local && history) {
-        s += `, ${estimateKbps(
+        s += `, ${estimateKBps(
           timestamp,
           history[id].lastTimestamp,
           bytesSent,
           history[id].lastBytesSent
-        )} Kbps`;
+        )} KBps`;
       }
       s += ")";
       elements.push(renderText("span", s));
@@ -1115,6 +1141,7 @@ function renderUserPrefs() {
     "media.peerconnection",
     "media.navigator",
     "media.getusermedia",
+    "media.gmp-gmpopenh264.enabled",
   ];
   const renderPref = p => renderText("p", `${p}: ${getPref(p)}`);
   const display = prefs

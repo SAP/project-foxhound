@@ -13,6 +13,7 @@ if (CONFIG["OS_ARCH"] == "WINNT" and CONFIG["CPU_ARCH"] != "aarch64") or CONFIG[
     DIRS += ["osclientcerts"]
 
 DIRS += ["ipcclientcerts"]
+DIRS += ["builtins"]
 
 TEST_DIRS += ["tests"]
 
@@ -25,9 +26,6 @@ XPIDL_SOURCES += [
     "nsIClientAuthRememberService.idl",
     "nsIContentSignatureVerifier.idl",
     "nsICryptoHash.idl",
-    "nsICryptoHMAC.idl",
-    "nsIKeyModule.idl",
-    "nsILocalCertService.idl",
     "nsINSSComponent.idl",
     "nsINSSErrorsService.idl",
     "nsINSSVersion.idl",
@@ -38,13 +36,13 @@ XPIDL_SOURCES += [
     "nsIPKCS11Module.idl",
     "nsIPKCS11ModuleDB.idl",
     "nsIPKCS11Slot.idl",
-    "nsIProtectedAuthThread.idl",
     "nsIPublicKeyPinningService.idl",
     "nsISecretDecoderRing.idl",
     "nsISecurityUITelemetry.idl",
     "nsISiteSecurityService.idl",
-    "nsITokenDialogs.idl",
+    "nsITLSSocketControl.idl",
     "nsITokenPasswordDialogs.idl",
+    "nsITransportSecurityInfo.idl",
     "nsIX509Cert.idl",
     "nsIX509CertDB.idl",
     "nsIX509CertValidity.idl",
@@ -93,6 +91,8 @@ EXPORTS.mozilla += [
 EXPORTS.mozilla.psm += [
     "IPCClientCertsChild.h",
     "IPCClientCertsParent.h",
+    "SelectTLSClientAuthCertChild.h",
+    "SelectTLSClientAuthCertParent.h",
     "TransportSecurityInfo.h",
     "VerifySSLServerCertChild.h",
     "VerifySSLServerCertParent.h",
@@ -103,20 +103,21 @@ EXPORTS.ipc += [
 ]
 
 UNIFIED_SOURCES += [
+    "AppSignatureVerification.cpp",
+    "AppTrustDomain.cpp",
     "CertStorageMemoryReporting.cpp",
     "CommonSocketControl.cpp",
     "ContentSignatureVerifier.cpp",
     "CryptoTask.cpp",
-    "CSTrustDomain.cpp",
     "DataStorage.cpp",
     "EnterpriseRoots.cpp",
     "IPCClientCertsChild.cpp",
     "IPCClientCertsParent.cpp",
-    "LocalCertService.cpp",
+    "md4.c",
     "nsCertOverrideService.cpp",
+    "nsCertTree.cpp",
     "nsClientAuthRemember.cpp",
     "nsCryptoHash.cpp",
-    "nsKeyModule.cpp",
     "nsNSSCallbacks.cpp",
     "nsNSSCertHelper.cpp",
     "nsNSSCertificate.cpp",
@@ -130,7 +131,6 @@ UNIFIED_SOURCES += [
     "nsPK11TokenDB.cpp",
     "nsPKCS11Slot.cpp",
     "nsPKCS12Blob.cpp",
-    "nsProtectedAuthThread.cpp",
     "nsRandomGenerator.cpp",
     "nsSecureBrowserUI.cpp",
     "nsSecurityHeaderParser.cpp",
@@ -138,6 +138,7 @@ UNIFIED_SOURCES += [
     "nsSiteSecurityService.cpp",
     "NSSKeyStore.cpp",
     "nsSSLSocketProvider.cpp",
+    "NSSSocketControl.cpp",
     "nsTLSSocketProvider.cpp",
     "OSKeyStore.cpp",
     "PKCS11ModuleDB.cpp",
@@ -147,6 +148,7 @@ UNIFIED_SOURCES += [
     "SecretDecoderRing.cpp",
     "SharedSSLState.cpp",
     "SSLServerCertVerification.cpp",
+    "TLSClientAuthCertSelection.cpp",
     "TransportSecurityInfo.cpp",
     "VerifySSLServerCertChild.cpp",
     "VerifySSLServerCertParent.cpp",
@@ -190,27 +192,21 @@ if CONFIG["OS_ARCH"] == "WINNT":
 
 IPDL_SOURCES += [
     "PIPCClientCerts.ipdl",
+    "PSelectTLSClientAuthCert.ipdl",
     "PSMIPCTypes.ipdlh",
     "PVerifySSLServerCert.ipdl",
-]
-
-UNIFIED_SOURCES += [
-    "md4.c",
-    "nsCertTree.cpp",
 ]
 
 FINAL_LIBRARY = "xul"
 
 LOCAL_INCLUDES += [
+    "!/dist/public/nss",
     "/dom/base",
     "/dom/crypto",
     "/netwerk/base",
     "/security/certverifier",
+    "/third_party/rust/cose-c/include",
     "/xpcom/build",
-]
-
-LOCAL_INCLUDES += [
-    "!/dist/public/nss",
 ]
 
 GeneratedFile(
@@ -244,5 +240,46 @@ if CONFIG["CC_TYPE"] in ("clang", "gcc"):
     CXXFLAGS += [
         "-Wno-unused-parameter",
     ]
+
+headers_arrays_certs = [
+    (
+        "xpcshell.inc",
+        "xpcshellRoot",
+        "tests/unit/test_signed_apps/xpcshellTestRoot.der",
+    ),
+    ("addons-public.inc", "addonsPublicRoot", "addons-public.crt"),
+    (
+        "addons-public-intermediate.inc",
+        "addonsPublicIntermediate",
+        "addons-public-intermediate.crt",
+    ),
+    ("addons-stage.inc", "addonsStageRoot", "addons-stage.crt"),
+    (
+        "content-signature-prod.inc",
+        "contentSignatureProdRoot",
+        "content-signature-prod.crt",
+    ),
+    (
+        "content-signature-stage.inc",
+        "contentSignatureStageRoot",
+        "content-signature-stage.crt",
+    ),
+    # The dev root is the same as the stage root.
+    (
+        "content-signature-dev.inc",
+        "contentSignatureDevRoot",
+        "content-signature-stage.crt",
+    ),
+    (
+        "content-signature-local.inc",
+        "contentSignatureLocalRoot",
+        "content-signature-local.crt",
+    ),
+]
+
+for header, array_name, cert in headers_arrays_certs:
+    GeneratedFile(
+        header, script="gen_cert_header.py", entry_point=array_name, inputs=[cert]
+    )
 
 REQUIRES_UNIFIED_BUILD = True

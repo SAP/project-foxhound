@@ -17,6 +17,8 @@
 #include "prio.h"
 #include "mozilla/net/DNS.h"
 #include "ipc/IPCMessageUtilsSpecializations.h"
+#include "nsITRRSkipReason.h"
+#include "nsIDNSService.h"
 
 namespace IPC {
 
@@ -47,58 +49,46 @@ struct Permission {
 
 template <>
 struct ParamTraits<Permission> {
-  static void Write(Message* aMsg, const Permission& aParam) {
-    WriteParam(aMsg, aParam.origin);
-    WriteParam(aMsg, aParam.type);
-    WriteParam(aMsg, aParam.capability);
-    WriteParam(aMsg, aParam.expireType);
-    WriteParam(aMsg, aParam.expireTime);
+  static void Write(MessageWriter* aWriter, const Permission& aParam) {
+    WriteParam(aWriter, aParam.origin);
+    WriteParam(aWriter, aParam.type);
+    WriteParam(aWriter, aParam.capability);
+    WriteParam(aWriter, aParam.expireType);
+    WriteParam(aWriter, aParam.expireTime);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   Permission* aResult) {
-    return ReadParam(aMsg, aIter, &aResult->origin) &&
-           ReadParam(aMsg, aIter, &aResult->type) &&
-           ReadParam(aMsg, aIter, &aResult->capability) &&
-           ReadParam(aMsg, aIter, &aResult->expireType) &&
-           ReadParam(aMsg, aIter, &aResult->expireTime);
-  }
-
-  static void Log(const Permission& p, std::wstring* l) {
-    l->append(L"(");
-    LogParam(p.origin, l);
-    l->append(L", ");
-    LogParam(p.capability, l);
-    l->append(L", ");
-    LogParam(p.expireTime, l);
-    l->append(L", ");
-    LogParam(p.expireType, l);
-    l->append(L")");
+  static bool Read(MessageReader* aReader, Permission* aResult) {
+    return ReadParam(aReader, &aResult->origin) &&
+           ReadParam(aReader, &aResult->type) &&
+           ReadParam(aReader, &aResult->capability) &&
+           ReadParam(aReader, &aResult->expireType) &&
+           ReadParam(aReader, &aResult->expireTime);
   }
 };
 
 template <>
 struct ParamTraits<mozilla::net::NetAddr> {
-  static void Write(Message* aMsg, const mozilla::net::NetAddr& aParam) {
-    WriteParam(aMsg, aParam.raw.family);
+  static void Write(MessageWriter* aWriter,
+                    const mozilla::net::NetAddr& aParam) {
+    WriteParam(aWriter, aParam.raw.family);
     if (aParam.raw.family == AF_UNSPEC) {
-      aMsg->WriteBytes(aParam.raw.data, sizeof(aParam.raw.data));
+      aWriter->WriteBytes(aParam.raw.data, sizeof(aParam.raw.data));
     } else if (aParam.raw.family == AF_INET) {
-      WriteParam(aMsg, aParam.inet.port);
-      WriteParam(aMsg, aParam.inet.ip);
+      WriteParam(aWriter, aParam.inet.port);
+      WriteParam(aWriter, aParam.inet.ip);
     } else if (aParam.raw.family == AF_INET6) {
-      WriteParam(aMsg, aParam.inet6.port);
-      WriteParam(aMsg, aParam.inet6.flowinfo);
-      WriteParam(aMsg, aParam.inet6.ip.u64[0]);
-      WriteParam(aMsg, aParam.inet6.ip.u64[1]);
-      WriteParam(aMsg, aParam.inet6.scope_id);
+      WriteParam(aWriter, aParam.inet6.port);
+      WriteParam(aWriter, aParam.inet6.flowinfo);
+      WriteParam(aWriter, aParam.inet6.ip.u64[0]);
+      WriteParam(aWriter, aParam.inet6.ip.u64[1]);
+      WriteParam(aWriter, aParam.inet6.scope_id);
 #if defined(XP_UNIX)
     } else if (aParam.raw.family == AF_LOCAL) {
       // Train's already off the rails:  let's get a stack trace at least...
       MOZ_CRASH(
           "Error: please post stack trace to "
           "https://bugzilla.mozilla.org/show_bug.cgi?id=661158");
-      aMsg->WriteBytes(aParam.local.path, sizeof(aParam.local.path));
+      aWriter->WriteBytes(aParam.local.path, sizeof(aParam.local.path));
 #endif
     } else {
       if (XRE_IsParentProcess()) {
@@ -111,26 +101,25 @@ struct ParamTraits<mozilla::net::NetAddr> {
     }
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   mozilla::net::NetAddr* aResult) {
-    if (!ReadParam(aMsg, aIter, &aResult->raw.family)) return false;
+  static bool Read(MessageReader* aReader, mozilla::net::NetAddr* aResult) {
+    if (!ReadParam(aReader, &aResult->raw.family)) return false;
 
     if (aResult->raw.family == AF_UNSPEC) {
-      return aMsg->ReadBytesInto(aIter, &aResult->raw.data,
-                                 sizeof(aResult->raw.data));
+      return aReader->ReadBytesInto(&aResult->raw.data,
+                                    sizeof(aResult->raw.data));
     } else if (aResult->raw.family == AF_INET) {
-      return ReadParam(aMsg, aIter, &aResult->inet.port) &&
-             ReadParam(aMsg, aIter, &aResult->inet.ip);
+      return ReadParam(aReader, &aResult->inet.port) &&
+             ReadParam(aReader, &aResult->inet.ip);
     } else if (aResult->raw.family == AF_INET6) {
-      return ReadParam(aMsg, aIter, &aResult->inet6.port) &&
-             ReadParam(aMsg, aIter, &aResult->inet6.flowinfo) &&
-             ReadParam(aMsg, aIter, &aResult->inet6.ip.u64[0]) &&
-             ReadParam(aMsg, aIter, &aResult->inet6.ip.u64[1]) &&
-             ReadParam(aMsg, aIter, &aResult->inet6.scope_id);
+      return ReadParam(aReader, &aResult->inet6.port) &&
+             ReadParam(aReader, &aResult->inet6.flowinfo) &&
+             ReadParam(aReader, &aResult->inet6.ip.u64[0]) &&
+             ReadParam(aReader, &aResult->inet6.ip.u64[1]) &&
+             ReadParam(aReader, &aResult->inet6.scope_id);
 #if defined(XP_UNIX)
     } else if (aResult->raw.family == AF_LOCAL) {
-      return aMsg->ReadBytesInto(aIter, &aResult->local.path,
-                                 sizeof(aResult->local.path));
+      return aReader->ReadBytesInto(&aResult->local.path,
+                                    sizeof(aResult->local.path));
 #endif
     }
 
@@ -140,10 +129,61 @@ struct ParamTraits<mozilla::net::NetAddr> {
 };
 
 template <>
-struct ParamTraits<nsIHttpChannel::FlashPluginState>
-    : public ContiguousEnumSerializerInclusive<
-          nsIHttpChannel::FlashPluginState, nsIHttpChannel::FlashPluginUnknown,
-          nsIHttpChannel::FlashPluginLastValue> {};
+struct ParamTraits<nsIRequest::TRRMode> {
+  static void Write(MessageWriter* aWriter, const nsIRequest::TRRMode& aParam) {
+    WriteParam(aWriter, (uint8_t)aParam);
+  }
+  static bool Read(MessageReader* aReader, nsIRequest::TRRMode* aResult) {
+    uint8_t mode;
+    if (!ReadParam(aReader, &mode)) {
+      return false;
+    }
+    // TODO: sanity check
+    *aResult = static_cast<nsIRequest::TRRMode>(mode);
+    return true;
+  }
+};
+
+template <>
+struct ParamTraits<nsITRRSkipReason::value> {
+  static void Write(MessageWriter* aWriter,
+                    const nsITRRSkipReason::value& aParam) {
+    WriteParam(aWriter, (uint8_t)aParam);
+  }
+  static bool Read(MessageReader* aReader, nsITRRSkipReason::value* aResult) {
+    uint8_t reason;
+    if (!ReadParam(aReader, &reason)) {
+      return false;
+    }
+    // TODO: sanity check
+    *aResult = static_cast<nsITRRSkipReason::value>(reason);
+    return true;
+  }
+};
+
+template <>
+struct ParamTraits<nsIDNSService::DNSFlags>
+    : public BitFlagsEnumSerializer<
+          nsIDNSService::DNSFlags, nsIDNSService::DNSFlags::ALL_DNSFLAGS_BITS> {
+};
+
+template <>
+struct ParamTraits<nsIDNSService::ResolverMode> {
+  static void Write(MessageWriter* aWriter,
+                    const nsIDNSService::ResolverMode& aParam) {
+    WriteParam(aWriter, (uint8_t)aParam);
+  }
+  static bool Read(MessageReader* aReader,
+                   nsIDNSService::ResolverMode* aResult) {
+    uint8_t mode;
+    if (!ReadParam(aReader, &mode)) {
+      return false;
+    }
+    // TODO: sanity check
+    *aResult = static_cast<nsIDNSService::ResolverMode>(mode);
+    return true;
+  }
+};
 
 }  // namespace IPC
 

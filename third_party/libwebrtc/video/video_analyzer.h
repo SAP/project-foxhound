@@ -61,8 +61,8 @@ class VideoAnalyzer : public PacketReceiver,
                  bool respect_sink_wants);
   void SetCall(Call* call);
   void SetSendStream(VideoSendStream* stream);
-  void SetReceiveStream(VideoReceiveStream* stream);
-  void SetAudioReceiveStream(AudioReceiveStream* recv_stream);
+  void SetReceiveStream(VideoReceiveStreamInterface* stream);
+  void SetAudioReceiveStream(AudioReceiveStreamInterface* recv_stream);
 
   rtc::VideoSinkInterface<VideoFrame>* InputInterface();
   rtc::VideoSourceInterface<VideoFrame>* OutputInterface();
@@ -157,12 +157,12 @@ class VideoAnalyzer : public PacketReceiver,
     void OnFrame(const VideoFrame& video_frame)
         RTC_LOCKS_EXCLUDED(lock_) override;
 
-    // Called when |send_stream_.SetSource()| is called.
+    // Called when `send_stream_.SetSource()` is called.
     void AddOrUpdateSink(rtc::VideoSinkInterface<VideoFrame>* sink,
                          const rtc::VideoSinkWants& wants)
         RTC_LOCKS_EXCLUDED(lock_) override;
 
-    // Called by |send_stream_| when |send_stream_.SetSource()| is called.
+    // Called by `send_stream_` when `send_stream_.SetSource()` is called.
     void RemoveSink(rtc::VideoSinkInterface<VideoFrame>* sink)
         RTC_LOCKS_EXCLUDED(lock_) override;
 
@@ -221,8 +221,8 @@ class VideoAnalyzer : public PacketReceiver,
 
   Call* call_;
   VideoSendStream* send_stream_;
-  VideoReceiveStream* receive_stream_;
-  AudioReceiveStream* audio_receive_stream_;
+  VideoReceiveStreamInterface* receive_stream_;
+  AudioReceiveStreamInterface* audio_receive_stream_;
   CapturedFrameForwarder captured_frame_forwarder_;
   const std::string test_label_;
   FILE* const graph_data_output_file_;
@@ -302,7 +302,7 @@ class VideoAnalyzer : public PacketReceiver,
   const double avg_ssim_threshold_;
   bool is_quick_test_enabled_;
 
-  std::vector<rtc::PlatformThread*> comparison_thread_pool_;
+  std::vector<rtc::PlatformThread> comparison_thread_pool_;
   rtc::Event comparison_available_event_;
   std::deque<FrameComparison> comparisons_ RTC_GUARDED_BY(comparison_lock_);
   bool quit_ RTC_GUARDED_BY(comparison_lock_);

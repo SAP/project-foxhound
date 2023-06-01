@@ -6,24 +6,24 @@
 
 const {
   AutoRefreshHighlighter,
-} = require("devtools/server/actors/highlighters/auto-refresh");
+} = require("resource://devtools/server/actors/highlighters/auto-refresh.js");
 const {
   CanvasFrameAnonymousContentHelper,
   isNodeValid,
-} = require("devtools/server/actors/highlighters/utils/markup");
+} = require("resource://devtools/server/actors/highlighters/utils/markup.js");
 const {
   TEXT_NODE,
   DOCUMENT_NODE,
-} = require("devtools/shared/dom-node-constants");
+} = require("resource://devtools/shared/dom-node-constants.js");
 const {
   getCurrentZoom,
   setIgnoreLayoutChanges,
-} = require("devtools/shared/layout/utils");
+} = require("resource://devtools/shared/layout/utils.js");
 
 loader.lazyRequireGetter(
   this,
   ["getBounds", "getBoundsXUL", "Infobar"],
-  "devtools/server/actors/highlighters/utils/accessibility",
+  "resource://devtools/server/actors/highlighters/utils/accessibility.js",
   true
 );
 
@@ -353,7 +353,7 @@ class AccessibleHighlighter extends AutoRefreshHighlighter {
 
     const boundsEl = this.getElement("bounds");
     const { left, right, top, bottom } = bounds;
-    const path = `M${left},${top} L${right},${top} L${right},${bottom} L${left},${bottom}`;
+    const path = `M${left},${top} L${right},${top} L${right},${bottom} L${left},${bottom} L${left},${top}`;
     boundsEl.setAttribute("d", path);
 
     // Un-zoom the root wrapper if the page was zoomed.

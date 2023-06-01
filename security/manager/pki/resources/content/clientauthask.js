@@ -6,78 +6,60 @@
 /* import-globals-from pippki.js */
 "use strict";
 
-const { asn1js } = ChromeUtils.import(
-  "chrome://global/content/certviewer/asn1js_bundle.js"
-);
-const { pkijs } = ChromeUtils.import(
-  "chrome://global/content/certviewer/pkijs_bundle.js"
-);
-const { pvutils } = ChromeUtils.import(
-  "chrome://global/content/certviewer/pvutils_bundle.js"
-);
-
-const { Integer, fromBER } = asn1js.asn1js;
-const { Certificate } = pkijs.pkijs;
-const { fromBase64, stringToArrayBuffer } = pvutils.pvutils;
-
-const { certDecoderInitializer } = ChromeUtils.import(
-  "chrome://global/content/certviewer/certDecoder.js"
-);
-const { parse, pemToDER } = certDecoderInitializer(
-  Integer,
-  fromBER,
-  Certificate,
-  fromBase64,
-  stringToArrayBuffer,
-  crypto
+const { parse, pemToDER } = ChromeUtils.importESModule(
+  "chrome://global/content/certviewer/certDecoder.mjs"
 );
 
 /**
  * @file Implements the functionality of clientauthask.xhtml: a dialog that allows
  *       a user pick a client certificate for TLS client authentication.
- * @argument {String} window.arguments[0]
+ * @param {string} window.arguments.0
  *           The hostname of the server requesting client authentication.
- * @argument {String} window.arguments[1]
+ * @param {string} window.arguments.1
  *           The Organization of the server cert.
- * @argument {String} window.arguments[2]
+ * @param {string} window.arguments.2
  *           The Organization of the issuer of the server cert.
- * @argument {Number} window.arguments[3]
+ * @param {number} window.arguments.3
  *           The port of the server.
- * @argument {nsISupports} window.arguments[4]
+ * @param {nsISupports} window.arguments.4
  *           List of certificates the user can choose from, queryable to
  *           nsIArray<nsIX509Cert>.
- * @argument {nsISupports} window.arguments[5]
+ * @param {nsISupports} window.arguments.5
  *           Object to set the return values of calling the dialog on, queryable
  *           to the underlying type of ClientAuthAskReturnValues.
  */
 
 /**
  * @typedef ClientAuthAskReturnValues
- * @type nsIWritablePropertyBag2
- * @property {Boolean} certChosen
+ * @type {nsIWritablePropertyBag2}
+ * @property {boolean} certChosen
  *           Set to true if the user chose a cert and accepted the dialog, false
  *           otherwise.
- * @property {Boolean} rememberSelection
+ * @property {boolean} rememberSelection
  *           Set to true if the user wanted their cert selection to be
  *           remembered, false otherwise.
- * @property {Number} selectedIndex
+ * @property {number} selectedIndex
  *           The index the chosen cert is at for the given cert list. Undefined
  *           value if |certChosen| is not true.
  */
 
 /**
  * The pippki <stringbundle> element.
- * @type <stringbundle>
+ *
+ * @type {stringbundle}
+ * @see {@link toolkit/content/widgets/stringbundle.js}
  */
 var bundle;
 /**
  * The array of certs the user can choose from.
- * @type nsIArray<nsIX509Cert>
+ *
+ * @type {nsIArray<nsIX509Cert>}
  */
 var certArray;
 /**
  * The checkbox storing whether the user wants to remember the selected cert.
- * @type Element checkbox, has to have |checked| property.
+ *
+ * @type {HTMLInputElement} Element checkbox, has to have |checked| property.
  */
 var rememberBox;
 
@@ -141,23 +123,27 @@ async function setDetails() {
   let index = parseInt(document.getElementById("nicknames").value);
   let cert = certArray.queryElementAt(index, Ci.nsIX509Cert);
 
+  const formatter = new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "long",
+  });
   let detailLines = [
     bundle.getFormattedString("clientAuthIssuedTo", [cert.subjectName]),
     bundle.getFormattedString("clientAuthSerial", [cert.serialNumber]),
     bundle.getFormattedString("clientAuthValidityPeriod", [
-      cert.validity.notBeforeLocalTime,
-      cert.validity.notAfterLocalTime,
+      formatter.format(new Date(cert.validity.notBefore / 1000)),
+      formatter.format(new Date(cert.validity.notAfter / 1000)),
     ]),
   ];
   let parsedCert = await parse(pemToDER(cert.getBase64DERString()));
   let keyUsages = parsedCert.ext.keyUsages;
-  if (keyUsages && keyUsages.purposes.length > 0) {
+  if (keyUsages && keyUsages.purposes.length) {
     detailLines.push(
       bundle.getFormattedString("clientAuthKeyUsages", [keyUsages.purposes])
     );
   }
   let emailAddresses = cert.getEmailAddresses();
-  if (emailAddresses.length > 0) {
+  if (emailAddresses.length) {
     let joinedAddresses = emailAddresses.join(", ");
     detailLines.push(
       bundle.getFormattedString("clientAuthEmailAddresses", [joinedAddresses])

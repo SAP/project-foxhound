@@ -23,6 +23,7 @@ add_task(async function testBrowserActionClickCanceled() {
     manifest: {
       browser_action: {
         default_popup: "popup.html",
+        default_area: "navbar",
         browser_style: true,
       },
       permissions: ["activeTab"],
@@ -158,6 +159,7 @@ add_task(async function testBrowserActionDisabled() {
     manifest: {
       browser_action: {
         default_popup: "popup.html",
+        default_area: "navbar",
         browser_style: true,
       },
     },
@@ -190,8 +192,9 @@ add_task(async function testBrowserActionDisabled() {
   let browserAction = browserActionFor(ext);
 
   let widget = getBrowserActionWidget(extension).forWindow(window);
+  let button = widget.node.firstElementChild;
 
-  is(widget.node.getAttribute("disabled"), "true", "Button is disabled");
+  is(button.getAttribute("disabled"), "true", "Button is disabled");
   is(browserAction.pendingPopup, null, "Have no pending popup prior to click");
 
   // Test canceled click.
@@ -265,6 +268,7 @@ add_task(async function testBrowserActionTabPopulation() {
     manifest: {
       browser_action: {
         default_popup: "popup.html",
+        default_area: "navbar",
         browser_style: true,
       },
       permissions: ["activeTab"],
@@ -286,7 +290,10 @@ add_task(async function testBrowserActionTabPopulation() {
   });
 
   let win = await BrowserTestUtils.openNewBrowserWindow();
-  BrowserTestUtils.loadURI(win.gBrowser.selectedBrowser, "http://example.com/");
+  BrowserTestUtils.loadURIString(
+    win.gBrowser.selectedBrowser,
+    "http://example.com/"
+  );
   await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
 
   // Make sure the mouse isn't hovering over the browserAction widget.
@@ -324,6 +331,7 @@ add_task(async function testClosePopupDuringPreload() {
     manifest: {
       browser_action: {
         default_popup: "popup.html",
+        default_area: "navbar",
         browser_style: true,
       },
     },

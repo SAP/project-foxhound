@@ -53,10 +53,12 @@ static bool IsOptionInteractivelySelectable(HTMLSelectElement& aSelect,
 namespace mozilla {
 
 static StaticAutoPtr<nsString> sIncrementalString;
-static DOMTimeStamp gLastKeyTime = 0;
+static TimeStamp gLastKeyTime;
+static uintptr_t sLastKeyListener = 0;
 static constexpr int32_t kNothingSelected = -1;
 
 static nsString& GetIncrementalString() {
+  MOZ_ASSERT(sLastKeyListener != 0);
   if (!sIncrementalString) {
     sIncrementalString = new nsString();
     ClearOnShutdown(&sIncrementalString);
@@ -64,24 +66,38 @@ static nsString& GetIncrementalString() {
   return *sIncrementalString;
 }
 
-class MOZ_RAII AutoIncrementalSearchResetter {
+class MOZ_RAII AutoIncrementalSearchHandler {
  public:
-  AutoIncrementalSearchResetter() = default;
-  ~AutoIncrementalSearchResetter() {
-    if (!mCancelled) {
+  explicit AutoIncrementalSearchHandler(HTMLSelectEventListener& aListener) {
+    if (sLastKeyListener != uintptr_t(&aListener)) {
+      sLastKeyListener = uintptr_t(&aListener);
+      GetIncrementalString().Truncate();
+      // To make it easier to handle time comparisons in the other methods,
+      // initialize gLastKeyTime to a value in the past.
+      gLastKeyTime = TimeStamp::Now() -
+                     TimeDuration::FromMilliseconds(
+                         StaticPrefs::ui_menu_incremental_search_timeout() * 2);
+    }
+  }
+  ~AutoIncrementalSearchHandler() {
+    if (!mResettingCancelled) {
       GetIncrementalString().Truncate();
     }
   }
-  void Cancel() { mCancelled = true; }
+  void CancelResetting() { mResettingCancelled = true; }
 
  private:
-  bool mCancelled = false;
+  bool mResettingCancelled = false;
 };
 
 NS_IMPL_ISUPPORTS(HTMLSelectEventListener, nsIMutationObserver,
                   nsIDOMEventListener)
 
-HTMLSelectEventListener::~HTMLSelectEventListener() = default;
+HTMLSelectEventListener::~HTMLSelectEventListener() {
+  if (sLastKeyListener == uintptr_t(this)) {
+    sLastKeyListener = 0;
+  }
+}
 
 nsListControlFrame* HTMLSelectEventListener::GetListControlFrame() const {
   if (mIsCombobox) {
@@ -251,9 +267,22 @@ void HTMLSelectEventListener::Detach() {
 
   if (mIsCombobox) {
     mElement->RemoveMutationObserver(this);
-    nsContentUtils::AddScriptRunner(
-        new AsyncEventDispatcher(mElement, u"mozhidedropdown"_ns,
-                                 CanBubble::eYes, ChromeOnlyDispatch::eYes));
+    if (mElement->OpenInParentProcess()) {
+      nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
+          "HTMLSelectEventListener::Detach", [element = mElement] {
+            // Don't hide the dropdown if the element has another frame already,
+            // this prevents closing dropdowns on reframe, see bug 1440506.
+            //
+            // FIXME(emilio): The flush is needed to deal with reframes started
+            // from DOM node removal. But perhaps we can be a bit smarter here.
+            if (!element->IsCombobox() ||
+                !element->GetPrimaryFrame(FlushType::Frames)) {
+              nsContentUtils::DispatchChromeEvent(
+                  element->OwnerDoc(), ToSupports(element.get()),
+                  u"mozhidedropdown"_ns, CanBubble::eYes, Cancelable::eNo);
+            }
+          }));
+    }
   }
 }
 
@@ -281,7 +310,7 @@ int32_t HTMLSelectEventListener::ItemsPerPage() const {
 void HTMLSelectEventListener::OptionValueMightHaveChanged(
     nsIContent* aMutatingNode) {
 #ifdef ACCESSIBILITY
-  if (nsAccessibilityService* acc = PresShell::GetAccessibilityService()) {
+  if (nsAccessibilityService* acc = GetAccService()) {
     acc->ComboboxOptionMaybeChanged(mElement->OwnerDoc()->GetPresShell(),
                                     aMutatingNode);
   }
@@ -336,9 +365,10 @@ void HTMLSelectEventListener::ComboboxMightHaveChanged() {
     PresShell* ps = f->PresShell();
     // nsComoboxControlFrame::Reflow updates the selected text. AddOption /
     // RemoveOption / etc takes care of keeping the displayed index up to date.
-    ps->FrameNeedsReflow(f, IntrinsicDirty::StyleChange, NS_FRAME_IS_DIRTY);
+    ps->FrameNeedsReflow(f, IntrinsicDirty::FrameAncestorsAndDescendants,
+                         NS_FRAME_IS_DIRTY);
 #ifdef ACCESSIBILITY
-    if (nsAccessibilityService* acc = PresShell::GetAccessibilityService()) {
+    if (nsAccessibilityService* acc = GetAccService()) {
       acc->ScheduleAccessibilitySubtreeUpdate(ps, mElement);
     }
 #endif
@@ -378,8 +408,7 @@ nsresult HTMLSelectEventListener::MouseDown(dom::Event* aMouseEvent) {
   MouseEvent* mouseEvent = aMouseEvent->AsMouseEvent();
   NS_ENSURE_TRUE(mouseEvent, NS_ERROR_FAILURE);
 
-  EventStates eventStates = mElement->State();
-  if (eventStates.HasState(NS_EVENT_STATE_DISABLED)) {
+  if (mElement->State().HasState(ElementState::DISABLED)) {
     return NS_OK;
   }
 
@@ -422,8 +451,7 @@ nsresult HTMLSelectEventListener::MouseUp(dom::Event* aMouseEvent) {
 
   mButtonDown = false;
 
-  EventStates eventStates = mElement->State();
-  if (eventStates.HasState(NS_EVENT_STATE_DISABLED)) {
+  if (mElement->State().HasState(ElementState::DISABLED)) {
     return NS_OK;
   }
 
@@ -466,12 +494,11 @@ nsresult HTMLSelectEventListener::MouseMove(dom::Event* aMouseEvent) {
 nsresult HTMLSelectEventListener::KeyPress(dom::Event* aKeyEvent) {
   MOZ_ASSERT(aKeyEvent, "aKeyEvent is null.");
 
-  EventStates eventStates = mElement->State();
-  if (eventStates.HasState(NS_EVENT_STATE_DISABLED)) {
+  if (mElement->State().HasState(ElementState::DISABLED)) {
     return NS_OK;
   }
 
-  AutoIncrementalSearchResetter incrementalSearchResetter;
+  AutoIncrementalSearchHandler incrementalHandler(*this);
 
   const WidgetKeyboardEvent* keyEvent =
       aKeyEvent->WidgetEventPtr()->AsKeyboardEvent();
@@ -508,7 +535,7 @@ nsresult HTMLSelectEventListener::KeyPress(dom::Event* aKeyEvent) {
     // Backspace key will delete the last char in the string.  Otherwise,
     // non-printable keypress should reset incremental search.
     if (keyEvent->mKeyCode == NS_VK_BACK) {
-      incrementalSearchResetter.Cancel();
+      incrementalHandler.CancelResetting();
       if (!GetIncrementalString().IsEmpty()) {
         GetIncrementalString().Truncate(GetIncrementalString().Length() - 1);
       }
@@ -522,7 +549,7 @@ nsresult HTMLSelectEventListener::KeyPress(dom::Event* aKeyEvent) {
     return NS_OK;
   }
 
-  incrementalSearchResetter.Cancel();
+  incrementalHandler.CancelResetting();
 
   // We ate the key if we got this far.
   aKeyEvent->PreventDefault();
@@ -534,7 +561,7 @@ nsresult HTMLSelectEventListener::KeyPress(dom::Event* aKeyEvent) {
   // string we will use to find options and start searching at the current
   // keystroke.  Otherwise, Truncate the string if it's been a long time
   // since our last keypress.
-  if (keyEvent->mTime - gLastKeyTime >
+  if ((keyEvent->mTimeStamp - gLastKeyTime).ToMilliseconds() >
       StaticPrefs::ui_menu_incremental_search_timeout()) {
     // If this is ' ' and we are at the beginning of the string, treat it as
     // "select this option" (bug 191543)
@@ -550,7 +577,7 @@ nsresult HTMLSelectEventListener::KeyPress(dom::Event* aKeyEvent) {
     GetIncrementalString().Truncate();
   }
 
-  gLastKeyTime = keyEvent->mTime;
+  gLastKeyTime = keyEvent->mTimeStamp;
 
   // Append this keystroke to the search string.
   char16_t uniChar = ToLowerCase(static_cast<char16_t>(keyEvent->mCharCode));
@@ -629,12 +656,11 @@ nsresult HTMLSelectEventListener::KeyPress(dom::Event* aKeyEvent) {
 nsresult HTMLSelectEventListener::KeyDown(dom::Event* aKeyEvent) {
   MOZ_ASSERT(aKeyEvent, "aKeyEvent is null.");
 
-  EventStates eventStates = mElement->State();
-  if (eventStates.HasState(NS_EVENT_STATE_DISABLED)) {
+  if (mElement->State().HasState(ElementState::DISABLED)) {
     return NS_OK;
   }
 
-  AutoIncrementalSearchResetter incrementalSearchResetter;
+  AutoIncrementalSearchHandler incrementalHandler(*this);
 
   if (aKeyEvent->DefaultPrevented()) {
     return NS_OK;
@@ -656,7 +682,7 @@ nsresult HTMLSelectEventListener::KeyDown(dom::Event* aKeyEvent) {
   dropDownMenuOnSpace = mIsCombobox && !mElement->OpenInParentProcess();
 #endif
   bool withinIncrementalSearchTime =
-      keyEvent->mTime - gLastKeyTime <=
+      (keyEvent->mTimeStamp - gLastKeyTime).ToMilliseconds() <=
       StaticPrefs::ui_menu_incremental_search_timeout();
   if ((dropDownMenuOnUpDown &&
        (keyEvent->mKeyCode == NS_VK_UP || keyEvent->mKeyCode == NS_VK_DOWN)) ||
@@ -747,7 +773,7 @@ nsresult HTMLSelectEventListener::KeyDown(dom::Event* aKeyEvent) {
       }
       break;
     default:  // printable key will be handled by keypress event.
-      incrementalSearchResetter.Cancel();
+      incrementalHandler.CancelResetting();
       return NS_OK;
   }
 

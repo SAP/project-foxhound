@@ -72,6 +72,8 @@ addAccessibleTask(
   <div id="switch" role="switch"></div>
   <div id="timer" role="timer"></div>
   <div id="tooltip" role="tooltip"></div>
+  <input type="radio" role="menuitemradio" id="menuitemradio">
+  <input type="checkbox" role="menuitemcheckbox" id="menuitemcheckbox">
 
   <!-- text entries -->
   <div id="textbox_multiline" role="textbox" aria-multiline="true"></div>
@@ -94,6 +96,8 @@ addAccessibleTask(
   <hr id="hr" />
   <ins id="insertion">Inserted text</ins>
   <meter id="meter" min="0" max="100" value="24">meter text here</meter>
+  <sub id="sub">sub text here</sub>
+  <sup id="sup">sup text here</sup>
 
   <!-- Some SVG stuff -->
   <svg xmlns="http://www.w3.org/2000/svg" version="1.1" id="svg"
@@ -181,6 +185,8 @@ addAccessibleTask(
     testRoleAndSubRole(accDoc, "switch", "AXCheckBox", "AXSwitch");
     testRoleAndSubRole(accDoc, "timer", null, "AXApplicationTimer");
     testRoleAndSubRole(accDoc, "tooltip", "AXGroup", "AXUserInterfaceTooltip");
+    testRoleAndSubRole(accDoc, "menuitemradio", "AXMenuItem", null);
+    testRoleAndSubRole(accDoc, "menuitemcheckbox", "AXMenuItem", null);
 
     // Text boxes
     testRoleAndSubRole(accDoc, "textbox_multiline", "AXTextArea");
@@ -211,6 +217,8 @@ addAccessibleTask(
       null,
       "level indicator"
     );
+    testRoleAndSubRole(accDoc, "sub", "AXGroup", "AXSubscriptStyleGroup");
+    testRoleAndSubRole(accDoc, "sup", "AXGroup", "AXSuperscriptStyleGroup");
 
     // Some SVG stuff
     testRoleAndSubRole(accDoc, "svg", "AXImage");

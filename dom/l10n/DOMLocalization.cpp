@@ -139,11 +139,6 @@ void DOMLocalization::ResumeObserving(ErrorResult& aRv) {
 void DOMLocalization::SetAttributes(
     JSContext* aCx, Element& aElement, const nsAString& aId,
     const Optional<JS::Handle<JSObject*>>& aArgs, ErrorResult& aRv) {
-  if (!aElement.AttrValueIs(kNameSpaceID_None, nsGkAtoms::datal10nid, aId,
-                            eCaseMatters)) {
-    aElement.SetAttr(kNameSpaceID_None, nsGkAtoms::datal10nid, aId, true);
-  }
-
   if (aArgs.WasPassed() && aArgs.Value()) {
     nsAutoString data;
     JS::Rooted<JS::Value> val(aCx, JS::ObjectValue(*aArgs.Value()));
@@ -157,6 +152,11 @@ void DOMLocalization::SetAttributes(
     }
   } else {
     aElement.UnsetAttr(kNameSpaceID_None, nsGkAtoms::datal10nargs, true);
+  }
+
+  if (!aElement.AttrValueIs(kNameSpaceID_None, nsGkAtoms::datal10nid, aId,
+                            eCaseMatters)) {
+    aElement.SetAttr(kNameSpaceID_None, nsGkAtoms::datal10nid, aId, true);
   }
 }
 
@@ -177,9 +177,10 @@ void DOMLocalization::GetAttributes(Element& aElement, L10nIdArgs& aResult,
 already_AddRefed<Promise> DOMLocalization::TranslateFragment(nsINode& aNode,
                                                              ErrorResult& aRv) {
   Sequence<OwningNonNull<Element>> elements;
-
   GetTranslatables(aNode, elements, aRv);
-
+  if (NS_WARN_IF(aRv.Failed())) {
+    return nullptr;
+  }
   return TranslateElements(elements, aRv);
 }
 
@@ -295,27 +296,26 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(ElementTranslationHandler)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 already_AddRefed<Promise> DOMLocalization::TranslateElements(
-    const Sequence<OwningNonNull<Element>>& aElements, ErrorResult& aRv) {
+    const nsTArray<OwningNonNull<Element>>& aElements, ErrorResult& aRv) {
   return TranslateElements(aElements, nullptr, aRv);
 }
 
 already_AddRefed<Promise> DOMLocalization::TranslateElements(
-    const Sequence<OwningNonNull<Element>>& aElements,
+    const nsTArray<OwningNonNull<Element>>& aElements,
     nsXULPrototypeDocument* aProto, ErrorResult& aRv) {
-  JS::RootingContext* rcx = RootingCx();
   Sequence<OwningUTF8StringOrL10nIdArgs> l10nKeys;
-  SequenceRooter<OwningUTF8StringOrL10nIdArgs> rooter(rcx, &l10nKeys);
   RefPtr<ElementTranslationHandler> nativeHandler =
       new ElementTranslationHandler(this, aProto);
   nsTArray<nsCOMPtr<Element>>& domElements = nativeHandler->Elements();
   domElements.SetCapacity(aElements.Length());
 
   if (!mGlobal) {
+    aRv.Throw(NS_ERROR_UNEXPECTED);
     return nullptr;
   }
 
   for (auto& domElement : aElements) {
-    if (!domElement->HasAttr(kNameSpaceID_None, nsGkAtoms::datal10nid)) {
+    if (!domElement->HasAttr(nsGkAtoms::datal10nid)) {
       continue;
     }
 
@@ -331,6 +331,7 @@ already_AddRefed<Promise> DOMLocalization::TranslateElements(
     }
 
     if (!domElements.AppendElement(domElement, fallible)) {
+      // This can't really happen, we SetCapacity'd above...
       aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
       return nullptr;
     }
@@ -345,6 +346,11 @@ already_AddRefed<Promise> DOMLocalization::TranslateElements(
     nsTArray<Nullable<L10nMessage>> l10nMessages;
 
     FormatMessagesSync(l10nKeys, l10nMessages, aRv);
+
+    if (NS_WARN_IF(aRv.Failed())) {
+      promise->MaybeRejectWithUndefined();
+      return MaybeWrapPromise(promise);
+    }
 
     bool allTranslated =
         ApplyTranslations(domElements, l10nMessages, aProto, aRv);
@@ -405,6 +411,9 @@ already_AddRefed<Promise> DOMLocalization::TranslateRoots(ErrorResult& aRv) {
 
   for (nsINode* root : mRoots) {
     RefPtr<Promise> promise = TranslateFragment(*root, aRv);
+    if (MOZ_UNLIKELY(aRv.Failed())) {
+      return nullptr;
+    }
 
     // If the root is an element, we'll add a native handler
     // to set root info (language, direction etc.) on it
@@ -621,6 +630,10 @@ void DOMLocalization::ReportL10nOverlaysErrors(
 void DOMLocalization::ConvertStringToL10nArgs(const nsString& aInput,
                                               intl::L10nArgs& aRetVal,
                                               ErrorResult& aRv) {
+  if (aInput.IsEmpty()) {
+    // There are no properties.
+    return;
+  }
   // This method uses a temporary dictionary to automate
   // converting a JSON string into an IDL Record via a dictionary.
   //

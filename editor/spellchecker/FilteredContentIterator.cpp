@@ -19,7 +19,7 @@
 #include "nsError.h"
 #include "nsIContent.h"
 #include "nsINode.h"
-#include "nsISupportsBase.h"
+#include "nsISupports.h"
 #include "nsISupportsUtils.h"
 #include "nsRange.h"
 
@@ -39,9 +39,6 @@ FilteredContentIterator::~FilteredContentIterator() {}
 
 NS_IMPL_CYCLE_COLLECTION(FilteredContentIterator, mPostIterator, mPreIterator,
                          mRange)
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(FilteredContentIterator, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(FilteredContentIterator, Release)
 
 nsresult FilteredContentIterator::Init(nsINode* aRoot) {
   NS_ENSURE_ARG_POINTER(aRoot);

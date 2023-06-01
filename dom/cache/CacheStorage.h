@@ -20,6 +20,8 @@ class nsIGlobalObject;
 namespace mozilla {
 
 class ErrorResult;
+enum UseCounter : int16_t;
+enum class UseCounterWorker : int16_t;
 
 namespace ipc {
 class PrincipalInfo;
@@ -95,7 +97,7 @@ class CacheStorage final : public nsISupports,
 
   OpenMode GetOpenMode() const;
 
-  bool HasStorageAccess() const;
+  bool HasStorageAccess(UseCounter aLabel, UseCounterWorker aLabelWorker) const;
 
   const Namespace mNamespace;
   nsCOMPtr<nsIGlobalObject> mGlobal;
@@ -108,7 +110,7 @@ class CacheStorage final : public nsISupports,
 
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(CacheStorage)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(CacheStorage)
 };
 
 }  // namespace cache

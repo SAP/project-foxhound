@@ -6,10 +6,6 @@
 
 "use strict";
 
-const { AMTelemetry } = ChromeUtils.import(
-  "resource://gre/modules/AddonManager.jsm"
-);
-
 loadTestSubscript("head_disco.js");
 
 const AMO_TEST_HOST = "rewritten-for-testing.addons.allizom.org";
@@ -22,7 +18,7 @@ const DISCO_URL = `http://${AMO_TEST_HOST}/discoapi`;
 // used in this test, this is set in the `setup` test task below.
 let getAddonIdFromDiscoResult;
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       // Enabling the Data Upload pref may upload data.
@@ -130,7 +126,7 @@ async function run_install_recommended_telemetry_test(taarRecommended) {
       manifest: {
         name: "A fake recommended extension",
         description: "Test disco taar telemetry",
-        applications: { gecko: { id: extensionId } },
+        browser_specific_settings: { gecko: { id: extensionId } },
         permissions: ["<all_urls>"],
       },
     },
@@ -147,7 +143,7 @@ async function run_install_recommended_telemetry_test(taarRecommended) {
       manifest: {
         name: "A fake recommended theme",
         description: "Test disco taar telemetry",
-        applications: { gecko: { id: themeId } },
+        browser_specific_settings: { gecko: { id: themeId } },
         theme: {
           colors: {
             tab_selected: "red",

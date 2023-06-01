@@ -4,7 +4,7 @@
 
 import {
   getSymbols,
-  getSource,
+  getLocationSource,
   getSelectedFrame,
   getCurrentThread,
 } from "../../selectors";
@@ -25,9 +25,9 @@ function inHouseContainsPosition(a, b) {
 }
 
 export function highlightCalls(cx) {
-  return async function({ dispatch, getState, parser, client }) {
+  return async function({ dispatch, getState, parserWorker }) {
     if (!cx) {
-      return;
+      return null;
     }
 
     const frame = await getSelectedFrame(
@@ -36,29 +36,29 @@ export function highlightCalls(cx) {
     );
 
     if (!frame) {
-      return;
+      return null;
     }
 
     const { thread } = cx;
 
-    const originalAstScopes = await parser.getScopes(frame.location);
+    const originalAstScopes = await parserWorker.getScopes(frame.location);
     if (!originalAstScopes) {
-      return;
+      return null;
     }
 
-    const source = getSource(getState(), frame.location.sourceId);
+    const source = getLocationSource(getState(), frame.location);
     if (!source) {
-      return;
+      return null;
     }
 
     const symbols = getSymbols(getState(), source);
 
-    if (!symbols || symbols.loading) {
-      return;
+    if (!symbols) {
+      return null;
     }
 
     if (!symbols.callExpressions) {
-      return;
+      return null;
     }
 
     const localAstScope = originalAstScopes[0];
@@ -85,7 +85,7 @@ export function highlightCalls(cx) {
 }
 
 export function unhighlightCalls(cx) {
-  return async function({ dispatch, getState, parser, client }) {
+  return async function({ dispatch, getState }) {
     const { thread } = cx;
     return dispatch({
       type: "UNHIGHLIGHT_CALLS",

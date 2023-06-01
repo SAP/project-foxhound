@@ -17,9 +17,9 @@ const { Utils } = ChromeUtils.import("resource://services-sync/util.js");
 /**
  * Like Assert.throws, but for generators.
  *
- * @param {string | Object | function} constraint
+ * @param {string | object | Function} constraint
  *        What to use to check the exception.
- * @param {function} f
+ * @param {Function} f
  *        The function to call.
  */
 async function throwsGen(constraint, f) {
@@ -72,10 +72,7 @@ add_task(async function setup() {
     2 * 32
   );
   const KEY_BUNDLE = {
-    sha256HMACHasher: Utils.makeHMACHasher(
-      Ci.nsICryptoHMAC.SHA256,
-      Utils.makeHMACKey(STRETCHED_KEY.slice(0, 32))
-    ),
+    hmacKey: STRETCHED_KEY.slice(0, 32),
     encryptionKeyB64: btoa(STRETCHED_KEY.slice(32, 64)),
   };
   transformer = new StaticKeyEncryptionRemoteTransformer(KEY_BUNDLE);

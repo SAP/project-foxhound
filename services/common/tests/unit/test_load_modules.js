@@ -1,8 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 const MODULE_BASE = "resource://services-common/";
@@ -18,7 +18,7 @@ function expectImportsToSucceed(mm, base = MODULE_BASE) {
     let resource = base + m;
     let succeeded = false;
     try {
-      ChromeUtils.import(resource, {});
+      ChromeUtils.import(resource);
       succeeded = true;
     } catch (e) {}
 
@@ -33,7 +33,7 @@ function expectImportsToFail(mm, base = MODULE_BASE) {
     let resource = base + m;
     let succeeded = false;
     try {
-      ChromeUtils.import(resource, {});
+      ChromeUtils.import(resource);
       succeeded = true;
     } catch (e) {}
 

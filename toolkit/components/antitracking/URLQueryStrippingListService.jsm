@@ -4,12 +4,13 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   RemoteSettings: "resource://services-settings/remote-settings.js",
 });
 
@@ -27,10 +28,10 @@ class URLQueryStrippingListService {
       "nsIURLQueryStrippingListService",
     ]);
     this.observers = new Set();
-    this.prefStripList = [];
-    this.prefAllowList = [];
-    this.remoteStripList = [];
-    this.remoteAllowList = [];
+    this.prefStripList = new Set();
+    this.prefAllowList = new Set();
+    this.remoteStripList = new Set();
+    this.remoteAllowList = new Set();
     this.isParentProcess =
       Services.appinfo.processType === Services.appinfo.PROCESS_TYPE_DEFAULT;
   }
@@ -39,7 +40,7 @@ class URLQueryStrippingListService {
     // We can only access the remote settings in the parent process. For content
     // processes, we will use sharedData to sync the list to content processes.
     if (this.isParentProcess) {
-      let rs = RemoteSettings(COLLECTION_NAME);
+      let rs = lazy.RemoteSettings(COLLECTION_NAME);
 
       rs.on("sync", event => {
         let {
@@ -85,23 +86,19 @@ class URLQueryStrippingListService {
     Services.obs.removeObserver(this, "xpcom-shutdown");
     Services.prefs.removeObserver(PREF_STRIP_LIST_NAME, this);
     Services.prefs.removeObserver(PREF_ALLOW_LIST_NAME, this);
-
-    if (!this.isParentProcess) {
-      Services.cpmm.sharedData.removeEventListener("change", this);
-    }
   }
 
   _onRemoteSettingsUpdate(entries) {
-    this.remoteStripList = [];
-    this.remoteAllowList = [];
+    this.remoteStripList.clear();
+    this.remoteAllowList.clear();
 
     for (let entry of entries) {
       for (let item of entry.stripList) {
-        this.remoteStripList.push(item);
+        this.remoteStripList.add(item);
       }
 
       for (let item of entry.allowList) {
-        this.remoteAllowList.push(item);
+        this.remoteAllowList.add(item);
       }
     }
 
@@ -125,15 +122,15 @@ class URLQueryStrippingListService {
   _onPrefUpdate(pref, value) {
     switch (pref) {
       case PREF_STRIP_LIST_NAME:
-        this.prefStripList = value ? value.split(" ") : [];
+        this.prefStripList = new Set(value ? value.split(" ") : []);
         break;
 
       case PREF_ALLOW_LIST_NAME:
-        this.prefAllowList = value ? value.split(",") : [];
+        this.prefAllowList = new Set(value ? value.split(",") : []);
         break;
 
       default:
-        Cu.reportError(`Unexpected pref name ${pref}`);
+        console.error(`Unexpected pref name ${pref}`);
         return;
     }
 
@@ -151,10 +148,20 @@ class URLQueryStrippingListService {
   }
 
   _notifyObservers(observer) {
-    let stripEntries = this.prefStripList.concat(this.remoteStripList);
-    let allowEntries = this.prefAllowList.concat(this.remoteAllowList);
-    let stripEntriesAsString = stripEntries.join(" ").toLowerCase();
-    let allowEntriesAsString = allowEntries.join(",").toLowerCase();
+    let stripEntries = new Set([
+      ...this.prefStripList,
+      ...this.remoteStripList,
+    ]);
+    let allowEntries = new Set([
+      ...this.prefAllowList,
+      ...this.remoteAllowList,
+    ]);
+    let stripEntriesAsString = Array.from(stripEntries)
+      .join(" ")
+      .toLowerCase();
+    let allowEntriesAsString = Array.from(allowEntries)
+      .join(",")
+      .toLowerCase();
 
     let observers = observer ? [observer] : this.observers;
 
@@ -217,7 +224,7 @@ class URLQueryStrippingListService {
         this._onPrefUpdate(data, prefValue);
         break;
       default:
-        Cu.reportError(`Unexpected event ${topic}`);
+        console.error(`Unexpected event ${topic}`);
     }
   }
 

@@ -7,11 +7,11 @@
 
 "use strict";
 
-const { SessionSaver } = ChromeUtils.import(
-  "resource:///modules/sessionstore/SessionSaver.jsm"
+const { SessionSaver } = ChromeUtils.importESModule(
+  "resource:///modules/sessionstore/SessionSaver.sys.mjs"
 );
-const { TabStateFlusher } = ChromeUtils.import(
-  "resource:///modules/sessionstore/TabStateFlusher.jsm"
+const { TabStateFlusher } = ChromeUtils.importESModule(
+  "resource:///modules/sessionstore/TabStateFlusher.sys.mjs"
 );
 
 add_task(function addHomeButton() {
@@ -70,7 +70,7 @@ add_task(async function clearURLBarAfterParentProcessURLInExistingTab() {
       },
       { capture: true, once: true }
     );
-    BrowserTestUtils.loadURI(newTabBrowser, "about:preferences");
+    BrowserTestUtils.loadURIString(newTabBrowser, "about:preferences");
   });
   document.getElementById("home-button").click();
   await BrowserTestUtils.browserLoaded(

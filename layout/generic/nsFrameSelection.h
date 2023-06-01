@@ -42,6 +42,7 @@ struct SelectionDetails {
   int32_t mStart;
   int32_t mEnd;
   mozilla::SelectionType mSelectionType;
+  RefPtr<const nsAtom> mHighlightName;
   mozilla::TextRangeStyle mTextRangeStyle;
   mozilla::UniquePtr<SelectionDetails> mNext;
 };
@@ -189,6 +190,7 @@ struct nsPrevNextBidiLevels {
 namespace mozilla {
 class SelectionChangeEventDispatcher;
 namespace dom {
+class Highlight;
 class Selection;
 }  // namespace dom
 
@@ -246,6 +248,26 @@ class nsFrameSelection final {
                                           uint32_t aContentEndOffset,
                                           FocusMode aFocusMode,
                                           CaretAssociateHint aHint);
+
+ public:
+  /**
+   * Sets flag to true if a selection is created by doubleclick or
+   * long tapping a word.
+   *
+   * @param aIsDoubleClickSelection   True if the selection is created by
+   *                                  doubleclick or long tap over a word.
+   */
+  void SetIsDoubleClickSelection(bool aIsDoubleClickSelection) {
+    mIsDoubleClickSelection = aIsDoubleClickSelection;
+  }
+
+  /**
+   * Returns true if the selection was created by doubleclick or
+   * long tap over a word.
+   */
+  [[nodiscard]] bool IsDoubleClickSelection() const {
+    return mIsDoubleClickSelection;
+  }
 
   /**
    * HandleDrag extends the selection to contain the frame closest to aPoint.
@@ -399,6 +421,17 @@ class nsFrameSelection final {
    */
   mozilla::dom::Selection* GetSelection(
       mozilla::SelectionType aSelectionType) const;
+
+  /**
+   * @brief Adds a highlight selection for `aHighlight`.
+   */
+  MOZ_CAN_RUN_SCRIPT void AddHighlightSelection(
+      const nsAtom* aHighlightName, const mozilla::dom::Highlight& aHighlight,
+      mozilla::ErrorResult& aRv);
+  /**
+   * @brief Removes the Highlight selection identified by `aHighlightName`.
+   */
+  void RemoveHighlightSelection(const nsAtom* aHighlightName);
 
   /**
    * ScrollSelectionIntoView scrolls a region of the selection,
@@ -728,14 +761,23 @@ class nsFrameSelection final {
   nsFrameSelection(mozilla::PresShell* aPresShell, nsIContent* aLimiter,
                    bool aAccessibleCaretEnabled);
 
-  void StartBatchChanges();
-
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   /**
+   * @param aRequesterFuncName function name which wants to start the batch.
+   * This won't be stored nor exposed to selection listeners etc, used only for
+   * logging.
+   */
+  void StartBatchChanges(const char* aRequesterFuncName);
+
+  /**
+   * @param aRequesterFuncName function name which wants to end the batch.
+   * This won't be stored nor exposed to selection listeners etc, used only for
+   * logging.
    * @param aReasons potentially multiple of the reasons defined in
    * nsISelectionListener.idl
    */
-  void EndBatchChanges(int16_t aReasons = nsISelectionListener::NO_REASON);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void EndBatchChanges(
+      const char* aRequesterFuncName,
+      int16_t aReasons = nsISelectionListener::NO_REASON);
 
   mozilla::PresShell* GetPresShell() const { return mPresShell; }
 
@@ -819,6 +861,8 @@ class nsFrameSelection final {
     mSelectionChangeReasons = nsISelectionListener::NO_REASON;
     return retval;
   }
+
+  nsSelectionAmount GetCaretMoveAmount() { return mCaretMoveAmount; }
 
   bool IsUserSelectionReason() const {
     return (mSelectionChangeReasons &
@@ -916,6 +960,9 @@ class nsFrameSelection final {
   RefPtr<mozilla::dom::Selection>
       mDomSelections[sizeof(mozilla::kPresentSelectionTypes) /
                      sizeof(mozilla::SelectionType)];
+
+  nsTHashMap<RefPtr<const nsAtom>, RefPtr<mozilla::dom::Selection>>
+      mHighlightSelections;
 
   struct TableSelection {
     // Get our first range, if its first selected node is a cell.  If this does
@@ -1038,6 +1085,7 @@ class nsFrameSelection final {
   int16_t mSelectionChangeReasons = nsISelectionListener::NO_REASON;
   // For visual display purposes.
   int16_t mDisplaySelection = nsISelectionController::SELECTION_OFF;
+  nsSelectionAmount mCaretMoveAmount = eSelectNoAmount;
 
   struct Caret {
     // Hint to tell if the selection is at the end of this line or beginning of
@@ -1085,6 +1133,12 @@ class nsFrameSelection final {
 
   bool mDragState = false;  // for drag purposes
   bool mAccessibleCaretEnabled = false;
+
+  // Records if a selection was created by doubleclicking a word.
+  // This information is needed later on to determine if a leading
+  // or trailing whitespace needs to be removed as well to achieve
+  // native behaviour on macOS.
+  bool mIsDoubleClickSelection{false};
 };
 
 #endif /* nsFrameSelection_h___ */

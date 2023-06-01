@@ -23,6 +23,8 @@
           src="../name.js"></script>
 
   <script type="application/javascript">
+    const syntheticBrowsingContexts = SpecialPowers.getBoolPref("browser.opaqueResponseBlocking.syntheticBrowsingContext", false);
+
     async function doTest() {
       // ////////////////////////////////////////////////////////////////////////
       // HTML:a@href
@@ -32,11 +34,11 @@
         states: STATE_LINKED,
         actions: "jump",
         interfaces: [ nsIAccessibleText, nsIAccessibleHyperText, nsIAccessibleHyperLink ],
-        children: [ // all kids inherits linked state and jump action
+        children: [ // all kids inherits linked state and action
           {
             role: ROLE_TEXT_LEAF,
             states: STATE_LINKED,
-            actions: "jump",
+            actions: "click ancestor",
           },
         ],
       };
@@ -79,7 +81,7 @@
       // HTML:address
 
       obj = {
-        role: ROLE_TEXT_CONTAINER,
+        role: ROLE_GROUPING,
         interfaces: [ nsIAccessibleText, nsIAccessibleHyperText ],
       };
       testElm("address", obj);
@@ -461,10 +463,21 @@
       // ////////////////////////////////////////////////////////////////////////
       // HTML:embed
 
-      obj = {
-        role: ROLE_GRAPHIC,
-        interfaces: [ nsIAccessibleImage ],
-      };
+      if (syntheticBrowsingContexts) {
+        obj = {
+          INTERNAL_FRAME: [ {
+            DOCUMENT: [ {
+              role: ROLE_GRAPHIC,
+              interfaces: [ nsIAccessibleImage ],
+            } ],
+          } ],
+        };
+      } else {
+        obj = {
+          role: ROLE_GRAPHIC,
+          interfaces: [ nsIAccessibleImage ],
+        };
+      }
       testElm("embed_png", obj);
 
       obj = {
@@ -874,7 +887,6 @@
           { role: ROLE_SPINBUTTON },
           { role: ROLE_TEXT_LEAF },
           { role: ROLE_ENTRY },
-          { role: ROLE_PUSHBUTTON },
         ],
       };
       testElm("input_time", obj);
@@ -896,6 +908,30 @@
         ],
       };
       testElm("input_date", obj);
+
+      // ////////////////////////////////////////////////////////////////////////
+      // HTML:input@type="datetime-local"
+
+      obj = {
+        role: ROLE_DATE_EDITOR,
+        name: "datetime-local label",
+        attributes: { "text-input-type": "datetime-local" },
+        children: [
+          { role: ROLE_SPINBUTTON }, // Month
+          { role: ROLE_TEXT_LEAF },  // "/""
+          { role: ROLE_SPINBUTTON }, // Day
+          { role: ROLE_TEXT_LEAF },  // "/"
+          { role: ROLE_SPINBUTTON }, // Year
+          { role: ROLE_TEXT_LEAF },  // " "
+          { role: ROLE_SPINBUTTON }, // Hours
+          { role: ROLE_TEXT_LEAF },  // ":"
+          { role: ROLE_SPINBUTTON }, // Minutes
+          { role: ROLE_TEXT_LEAF },  // " "
+          { role: ROLE_ENTRY },      // "AM" or "PM"
+          { role: ROLE_PUSHBUTTON }, // Calendar
+        ],
+      };
+      testElm("input_datetime_local", obj);
 
       // ////////////////////////////////////////////////////////////////////////
       // HTML:ins contained by paragraph
@@ -1120,10 +1156,21 @@
       // ////////////////////////////////////////////////////////////////////////
       // HTML:object and HTML:param
 
-      obj = {
-        role: ROLE_GRAPHIC,
-        interfaces: [ nsIAccessibleImage ],
-      };
+      if (syntheticBrowsingContexts) {
+        obj = {
+          INTERNAL_FRAME: [ {
+            DOCUMENT: [ {
+              role: ROLE_GRAPHIC,
+              interfaces: [ nsIAccessibleImage ],
+            } ],
+          } ],
+        };
+      } else {
+        obj = {
+          role: ROLE_GRAPHIC,
+          interfaces: [ nsIAccessibleImage ],
+        };
+      }
       testElm("object_png", obj);
 
       obj = {
@@ -1352,17 +1399,32 @@
       testElm("strong_container", obj);
 
       // ////////////////////////////////////////////////////////////////////////
+      // HTML:sub
+      obj = {
+        role: ROLE_SUBSCRIPT
+      };
+      testElm("sub", obj);
+
+      // ////////////////////////////////////////////////////////////////////////
+      // HTML:sup
+      obj = {
+        role: ROLE_SUPERSCRIPT
+      };
+      testElm("sup", obj);
+
+      // ////////////////////////////////////////////////////////////////////////
       // HTML:sub contained by paragraph
 
       obj = {
         role: ROLE_PARAGRAPH,
-        textAttrs: {
-          0: { },
-          6: { "text-position": "sub" },
-        },
         children: [
           { role: ROLE_TEXT_LEAF }, // plain text
-          { role: ROLE_TEXT_LEAF }, // HTML:sub text
+          {
+            role: ROLE_SUBSCRIPT, // HTML:sub
+            children: [
+              { role: ROLE_TEXT_LEAF } // HTML:sub text
+            ]
+          }
         ],
       };
       testElm("sub_container", obj);
@@ -1372,13 +1434,14 @@
 
       obj = {
         role: ROLE_PARAGRAPH,
-        textAttrs: {
-          0: { },
-          6: { "text-position": "super" },
-        },
         children: [
           { role: ROLE_TEXT_LEAF }, // plain text
-          { role: ROLE_TEXT_LEAF }, // HTML:sup text
+          {
+            role: ROLE_SUPERSCRIPT, // HTML:sup
+            children: [
+              { role: ROLE_TEXT_LEAF } // HTML:sup text
+            ]
+          }
         ],
       };
       testElm("sup_container", obj);
@@ -1795,6 +1858,9 @@
   <label>date label
     <input id="input_date" type="date" value="2017-11-10">
   </label>
+  <label>datetime-local label
+    <input id="input_datetime_local" type="datetime-local" value="2017-11-10T23:23">
+  </label>
 
   <p id="ins_container">normal<ins>Inserted</ins></p>
   <p id="kbd_container">normal<kbd>cmd</kbd></p>
@@ -1937,6 +2003,8 @@
   <span id="span"></span>
   <span id="span_explicit" title="explicit"></span>
   <p id="strong_container">normal<strong>strong</strong></p>
+  <sub id="sub"></sub>
+  <sup id="sup"></sup>
   <p id="sub_container">normal<sub>sub</sub></p>
   <p id="sup_container">normal<sup>sup</sup></p>
 

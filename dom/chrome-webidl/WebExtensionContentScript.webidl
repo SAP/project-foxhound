@@ -7,7 +7,7 @@ interface URI;
 interface WindowProxy;
 
 typedef (MatchPatternSet or sequence<DOMString>) MatchPatternSetOrStringSequence;
-typedef (MatchGlob or DOMString) MatchGlobOrString;
+typedef (MatchGlob or UTF8String) MatchGlobOrString;
 
 [ChromeOnly, Exposed=Window]
 interface MozDocumentMatcher {
@@ -21,23 +21,26 @@ interface MozDocumentMatcher {
   boolean matchesURI(URI uri);
 
   /**
-   * Returns true if the the given URI and LoadInfo objects match.
-   * This should be used to determine whether to begin pre-loading a content
-   * script based on network events.
+   * Returns true if the given window matches. This should be used to
+   * determine whether to run a script in a window at load time. Use
+   * ignorePermissions to match without origin permissions in MV3.
    */
-  boolean matchesLoadInfo(URI uri, LoadInfo loadInfo);
-
-  /**
-   * Returns true if the given window matches. This should be used
-   * to determine whether to run a script in a window at load time.
-   */
-  boolean matchesWindowGlobal(WindowGlobalChild windowGlobal);
+  boolean matchesWindowGlobal(WindowGlobalChild windowGlobal,
+                              optional boolean ignorePermissions = false);
 
   /**
    * If true, match all frames. If false, match only top-level frames.
    */
   [Constant]
   readonly attribute boolean allFrames;
+
+  /**
+   * If we can't check extension has permissions to access the URI upfront,
+   * set the flag to perform the origin check at runtime, upon matching.
+   * This is always true in MV3, where host permissions are optional.
+   */
+  [Constant]
+  readonly attribute boolean checkPermissions;
 
   /**
    * If true, this (misleadingly-named, but inherited from Chrome) attribute
@@ -72,21 +75,6 @@ interface MozDocumentMatcher {
   readonly attribute MatchPatternSet? excludeMatches;
 
   /**
-   * A set of glob matchers for URLs in which this script should run. If this
-   * list is present, the script will only run in URLs which match the
-   * `matches` pattern as well as one of these globs.
-   */
-  [Cached, Constant, Frozen]
-  readonly attribute sequence<MatchGlob>? includeGlobs;
-
-  /**
-   * A set of glob matchers for URLs in which this script should not run, even
-   * if they match other include patterns or globs.
-   */
-  [Cached, Constant, Frozen]
-  readonly attribute sequence<MatchGlob>? excludeGlobs;
-
-  /**
    * The originAttributesPattern for which this script should be enabled for.
    */
   [Constant, Throws]
@@ -101,6 +89,8 @@ interface MozDocumentMatcher {
 
 dictionary MozDocumentMatcherInit {
   boolean allFrames = false;
+
+  boolean checkPermissions = false;
 
   sequence<OriginAttributesPatternDictionary>? originAttributesPatterns = null;
 
@@ -147,7 +137,7 @@ enum ContentScriptRunAt {
 interface WebExtensionContentScript : MozDocumentMatcher {
   [Throws]
   constructor(WebExtensionPolicy extension,
-	      WebExtensionContentScriptInit options);
+              WebExtensionContentScriptInit options);
 
   /**
    * The earliest point in the load cycle at which this script should run. For

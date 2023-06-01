@@ -7,11 +7,13 @@
 // - Tests adding a watchpoint, resuming to after the youngest frame has popped,
 // then removing and adding a watchpoint during the same pause
 
+"use strict";
+
 add_task(async function() {
   const dbg = await initDebugger("doc-sources.html");
 
   // Do not await for navigation as an early breakpoint pauses the document load
-  const onNavigated = navigateTo(EXAMPLE_URL + "doc-watchpoints.html");
+  const onNavigated = navigateTo(`${EXAMPLE_URL}doc-watchpoints.html`);
   await waitForSources(dbg, "doc-watchpoints.html");
   await selectSource(dbg, "doc-watchpoints.html");
   await waitForPaused(dbg);
@@ -45,9 +47,9 @@ add_task(async function() {
 
   info("Remove the get watchpoint on b");
   const removedWatchpoint1 = waitForDispatch(dbg.store, "REMOVE_WATCHPOINT");
-  const el1 = await waitForElementWithSelector(dbg, ".remove-get-watchpoint");
+  const el1 = await waitForElementWithSelector(dbg, ".remove-watchpoint-get");
   el1.scrollIntoView();
-  clickElementWithSelector(dbg, ".remove-get-watchpoint");
+  clickElementWithSelector(dbg, ".remove-watchpoint-get");
   await removedWatchpoint1;
 
   info(
@@ -87,9 +89,10 @@ add_task(async function() {
   info("Remove the get watchpoint on b");
   const removedWatchpoint2 = waitForDispatch(dbg.store, "REMOVE_WATCHPOINT");
   await toggleScopeNode(dbg, 3);
-  const el2 = await waitForElementWithSelector(dbg, ".remove-get-watchpoint");
+
+  const el2 = await waitForElementWithSelector(dbg, ".remove-watchpoint-get");
   el2.scrollIntoView();
-  clickElementWithSelector(dbg, ".remove-get-watchpoint");
+  clickElementWithSelector(dbg, ".remove-watchpoint-get");
   await removedWatchpoint2;
 
   info("Add back the get watchpoint on b");

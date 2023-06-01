@@ -5,8 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CanvasManagerParent.h"
-#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/WebGLParent.h"
+#include "mozilla/gfx/CanvasRenderThread.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/layers/CompositorThread.h"
@@ -24,9 +24,7 @@ CanvasManagerParent::ManagerSet CanvasManagerParent::sManagers;
 
   auto manager = MakeRefPtr<CanvasManagerParent>();
 
-  if (gfxVars::SupportsThreadsafeGL()) {
-    manager->Bind(std::move(aEndpoint));
-  } else {
+  if (!gfxVars::SupportsThreadsafeGL()) {
     nsCOMPtr<nsIThread> owningThread;
     owningThread = wr::RenderThread::GetRenderThread();
     MOZ_ASSERT(owningThread);
@@ -34,6 +32,16 @@ CanvasManagerParent::ManagerSet CanvasManagerParent::sManagers;
     owningThread->Dispatch(NewRunnableMethod<Endpoint<PCanvasManagerParent>&&>(
         "CanvasManagerParent::Bind", manager, &CanvasManagerParent::Bind,
         std::move(aEndpoint)));
+  } else if (gfxVars::UseCanvasRenderThread()) {
+    nsCOMPtr<nsIThread> owningThread;
+    owningThread = gfx::CanvasRenderThread::GetCanvasRenderThread();
+    MOZ_ASSERT(owningThread);
+
+    owningThread->Dispatch(NewRunnableMethod<Endpoint<PCanvasManagerParent>&&>(
+        "CanvasManagerParent::Bind", manager, &CanvasManagerParent::Bind,
+        std::move(aEndpoint)));
+  } else {
+    manager->Bind(std::move(aEndpoint));
   }
 }
 
@@ -41,10 +49,12 @@ CanvasManagerParent::ManagerSet CanvasManagerParent::sManagers;
   MOZ_ASSERT(NS_IsMainThread());
 
   nsCOMPtr<nsISerialEventTarget> owningThread;
-  if (gfxVars::SupportsThreadsafeGL()) {
-    owningThread = layers::CompositorThread();
-  } else {
+  if (!gfxVars::SupportsThreadsafeGL()) {
     owningThread = wr::RenderThread::GetRenderThread();
+  } else if (gfxVars::UseCanvasRenderThread()) {
+    owningThread = gfx::CanvasRenderThread::GetCanvasRenderThread();
+  } else {
+    owningThread = layers::CompositorThread();
   }
   if (!owningThread) {
     return;
@@ -91,7 +101,7 @@ already_AddRefed<dom::PWebGLParent> CanvasManagerParent::AllocPWebGLParent() {
 
 already_AddRefed<webgpu::PWebGPUParent>
 CanvasManagerParent::AllocPWebGPUParent() {
-  if (!StaticPrefs::dom_webgpu_enabled()) {
+  if (!gfxVars::AllowWebGPU()) {
     return nullptr;
   }
 
@@ -112,6 +122,7 @@ mozilla::ipc::IPCResult CanvasManagerParent::RecvInitialize(
 
 mozilla::ipc::IPCResult CanvasManagerParent::RecvGetSnapshot(
     const uint32_t& aManagerId, const int32_t& aProtocolId,
+    const Maybe<RemoteTextureOwnerId>& aOwnerId,
     webgl::FrontBufferSnapshotIpc* aResult) {
   if (!aManagerId) {
     return IPC_FAIL(this, "invalid id");
@@ -130,16 +141,36 @@ mozilla::ipc::IPCResult CanvasManagerParent::RecvGetSnapshot(
     return IPC_FAIL(this, "invalid actor");
   }
 
-  if (actor->GetProtocolId() != ProtocolId::PWebGLMsgStart ||
-      actor->GetSide() != mozilla::ipc::Side::ParentSide) {
+  if (actor->GetSide() != mozilla::ipc::Side::ParentSide) {
     return IPC_FAIL(this, "unsupported actor");
   }
 
-  RefPtr<dom::WebGLParent> webgl = static_cast<dom::WebGLParent*>(actor);
   webgl::FrontBufferSnapshotIpc buffer;
-  mozilla::ipc::IPCResult rv = webgl->GetFrontBufferSnapshot(&buffer, this);
-  if (!rv) {
-    return rv;
+  switch (actor->GetProtocolId()) {
+    case ProtocolId::PWebGLMsgStart: {
+      RefPtr<dom::WebGLParent> webgl = static_cast<dom::WebGLParent*>(actor);
+      mozilla::ipc::IPCResult rv = webgl->GetFrontBufferSnapshot(&buffer, this);
+      if (!rv) {
+        return rv;
+      }
+    } break;
+    case ProtocolId::PWebGPUMsgStart: {
+      RefPtr<webgpu::WebGPUParent> webgpu =
+          static_cast<webgpu::WebGPUParent*>(actor);
+      IntSize size;
+      if (aOwnerId.isNothing()) {
+        return IPC_FAIL(this, "invalid OwnerId");
+      }
+      mozilla::ipc::IPCResult rv =
+          webgpu->GetFrontBufferSnapshot(this, *aOwnerId, buffer.shmem, size);
+      if (!rv) {
+        return rv;
+      }
+      buffer.surfSize.x = static_cast<uint32_t>(size.width);
+      buffer.surfSize.y = static_cast<uint32_t>(size.height);
+    } break;
+    default:
+      return IPC_FAIL(this, "unsupported protocol");
   }
 
   *aResult = std::move(buffer);

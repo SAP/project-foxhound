@@ -13,11 +13,6 @@ For snippets, you should add the action type in `button_action` and any addition
 }
 ```
 
-## How to update
-
-Make a pull request against [mozilla/nimbus-shared](https://github.com/mozilla/nimbus-shared/) repo with your changes.
-Build and copy over resulting schema from `nimbus-shared/schemas/messaging/` to `toolkit/components/messaging-system/schemas/SpecialMessageActionSchemas.json`.
-
 ## Available Actions
 
 ### `OPEN_APPLICATIONS_MENU`
@@ -25,6 +20,12 @@ Build and copy over resulting schema from `nimbus-shared/schemas/messaging/` to 
 * args: (none)
 
 Opens the applications menu.
+
+### `OPEN_FIREFOX_VIEW`
+
+* args: (none)
+
+Opens the Firefox View pseudo-tab.
 
 ### `OPEN_PRIVATE_BROWSER_WINDOW`
 
@@ -246,13 +247,85 @@ Action for pinning Firefox to the user's taskbar.
 
 Action for configuring the default browser to Firefox on the user's system.
 
+- args: (none)
+
+### `SHOW_SPOTLIGHT`
+
+Action for opening a spotlight tab or window modal using the content passed to the dialog.
+
+### `BLOCK_MESSAGE`
+
+Disable a message by adding to an indexedDb list of blocked messages
+
+* args: `string` id of the message
+
+### `SET_PREF`
+
+Action for setting various browser prefs
+
+Prefs that can be changed with this action are:
+
+- `browser.dataFeatureRecommendations.enabled`
+- `browser.privateWindowSeparation.enabled`
+- `browser.startup.homepage`
+- `cookiebanners.service.mode`
+- `cookiebanners.service.mode.privateBrowsing`
+
+* args:
+```ts
+{
+  pref: {
+    name: string;
+    value: string | boolean | number;
+  }
+}
+```
+
+### `MULTI_ACTION`
+
+Action for running multiple actions. Actions should be included in an array of actions.
+
+* args:
+```ts
+{
+  actions: Array<UserAction>
+}
+```
+
+* example:
+```json
+{
+  "button_action": "MULTI_ACTION",
+  "button_action_args": {
+    "actions": [
+      {
+        "type": "OPEN_URL",
+        "args": "https://www.example.com"
+      },
+      {
+        "type": "OPEN_AWESOME_BAR"
+      }
+    ]
+  }
+}
+```
+
+### `CLICK_ELEMENT`
+
+* args: `string` A CSS selector for the HTML element to be clicked
+
+Selects an element in the current Window's document and triggers a click action
+
+
+### `OPEN_FIREFOX_VIEW_AND_COLORWAYS_MODAL`
+
 * args: (none)
 
-### `ENABLE_TOTAL_COOKIE_PROTECTION`
+Action for opening about:firefoxview and the colorways modal
 
-Action for enabling the Total Cookie Protection feature.
 
-### `ENABLE_TOTAL_COOKIE_PROTECTION_SECTION_AND_OPT_OUT`
+### `ENABLE_CBH`
 
-Action for disabling the Total Cookie Protection feature and enabling an
-additional privacy section in about:preferences.
+* args: (none)
+
+Action that enables the cookie banner handling feature

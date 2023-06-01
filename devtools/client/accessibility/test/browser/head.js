@@ -1,10 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 
-/* import-globals-from ../../../shared/test/shared-head.js */
-/* import-globals-from ../../../inspector/test/shared-head.js */
-/* import-globals-from ../../../shared/test/telemetry-test-helpers.js */
-
 /* global waitUntilState, gBrowser */
 /* exported addTestTab, checkTreeState, checkSidebarState, checkAuditState, selectRow,
             toggleRow, toggleMenuItem, addA11yPanelTestsTask, navigate,
@@ -25,16 +21,10 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-// Load the shared Redux helpers into this compartment.
-Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/shared/test/shared-redux-head.js",
-  this
-);
-
 const {
   ORDERED_PROPS,
   PREF_KEYS,
-} = require("devtools/client/accessibility/constants");
+} = require("resource://devtools/client/accessibility/constants.js");
 
 // Enable the Accessibility panel
 Services.prefs.setBoolPref("devtools.accessibility.enabled", true);
@@ -805,7 +795,7 @@ function addA11yPanelTestsTask(tests, uri, msg, options) {
  *         Resolves when the toolbox and tab have been destroyed and closed.
  */
 async function closeTabToolboxAccessibility(tab = gBrowser.selectedTab) {
-  if (TabDescriptorFactory.isKnownTab(tab)) {
+  if (gDevTools.hasToolboxForTab(tab)) {
     await gDevTools.closeToolboxForTab(tab);
   }
 

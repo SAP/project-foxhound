@@ -15,9 +15,10 @@ const ABOUT_BLANK = "about:blank";
 const ABOUT_HOME = "about:home";
 const ABOUT_NEWTAB = "about:newtab";
 const ABOUT_WELCOME = "about:welcome";
+// eslint-disable-next-line @microsoft/sdl/no-insecure-url
 const TEST_HTTP = "http://example.org/";
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.newtab.preload", false],
@@ -100,7 +101,7 @@ add_task(async function process_switching_through_loading_in_the_same_tab() {
       [`${ABOUT_HOME}?q=baz`, E10SUtils.PRIVILEGEDABOUT_REMOTE_TYPE],
       [TEST_HTTP, E10SUtils.WEB_REMOTE_TYPE],
     ]) {
-      BrowserTestUtils.loadURI(browser, url);
+      BrowserTestUtils.loadURIString(browser, url);
       await BrowserTestUtils.browserLoaded(browser, false, url);
       checkBrowserRemoteType(browser, remoteType);
     }
@@ -163,7 +164,7 @@ add_task(async function process_switching_through_navigation_features() {
     assertIsPrivilegedProcess(browser, "about:newtab after reload");
 
     // Load http webpage
-    BrowserTestUtils.loadURI(browser, TEST_HTTP);
+    BrowserTestUtils.loadURIString(browser, TEST_HTTP);
     await BrowserTestUtils.browserLoaded(browser, false, TEST_HTTP);
     checkBrowserRemoteType(browser, E10SUtils.WEB_REMOTE_TYPE);
 
@@ -209,7 +210,7 @@ add_task(async function process_switching_through_navigation_features() {
     );
     assertIsPrivilegedProcess(browser, "about:newtab after history goToIndex");
 
-    BrowserTestUtils.loadURI(browser, TEST_HTTP);
+    BrowserTestUtils.loadURIString(browser, TEST_HTTP);
     await BrowserTestUtils.browserLoaded(browser, false, TEST_HTTP);
     checkBrowserRemoteType(browser, E10SUtils.WEB_REMOTE_TYPE);
 

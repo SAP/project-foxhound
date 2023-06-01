@@ -1,17 +1,17 @@
 "use strict";
 
-const { AsyncShutdown } = ChromeUtils.import(
-  "resource://gre/modules/AsyncShutdown.jsm"
+const { AsyncShutdown } = ChromeUtils.importESModule(
+  "resource://gre/modules/AsyncShutdown.sys.mjs"
 );
 const { NativeManifests } = ChromeUtils.import(
   "resource://gre/modules/NativeManifests.jsm"
 );
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
 const { Schemas } = ChromeUtils.import("resource://gre/modules/Schemas.jsm");
-const { Subprocess } = ChromeUtils.import(
-  "resource://gre/modules/Subprocess.jsm"
+const { Subprocess } = ChromeUtils.importESModule(
+  "resource://gre/modules/Subprocess.sys.mjs"
 );
 const { NativeApp } = ChromeUtils.import(
   "resource://gre/modules/NativeMessaging.jsm"
@@ -20,24 +20,20 @@ const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 let registry = null;
 if (AppConstants.platform == "win") {
-  var { MockRegistry } = ChromeUtils.import(
-    "resource://testing-common/MockRegistry.jsm"
+  var { MockRegistry } = ChromeUtils.importESModule(
+    "resource://testing-common/MockRegistry.sys.mjs"
   );
   registry = new MockRegistry();
   registerCleanupFunction(() => {
     registry.shutdown();
   });
-  ChromeUtils.defineModuleGetter(
-    this,
-    "SubprocessImpl",
-    "resource://gre/modules/subprocess/subprocess_win.jsm"
-  );
+  ChromeUtils.defineESModuleGetters(this, {
+    SubprocessImpl: "resource://gre/modules/subprocess/subprocess_win.sys.mjs",
+  });
 } else {
-  ChromeUtils.defineModuleGetter(
-    this,
-    "SubprocessImpl",
-    "resource://gre/modules/subprocess/subprocess_unix.jsm"
-  );
+  ChromeUtils.defineESModuleGetters(this, {
+    SubprocessImpl: "resource://gre/modules/subprocess/subprocess_unix.sys.mjs",
+  });
 }
 
 const REGPATH = "Software\\Mozilla\\NativeMessagingHosts";
@@ -92,11 +88,8 @@ let PYTHON;
 add_task(async function setup() {
   await Schemas.load(BASE_SCHEMA);
 
-  const env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
   try {
-    PYTHON = await Subprocess.pathSearch(env.get("PYTHON"));
+    PYTHON = await Subprocess.pathSearch(Services.env.get("PYTHON"));
   } catch (e) {
     notEqual(
       PYTHON,

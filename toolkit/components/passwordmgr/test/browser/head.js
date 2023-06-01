@@ -1,25 +1,17 @@
 const DIRECTORY_PATH = "/browser/toolkit/components/passwordmgr/test/browser/";
 
-const { LoginHelper } = ChromeUtils.import(
-  "resource://gre/modules/LoginHelper.jsm"
-);
-const { LoginManagerParent } = ChromeUtils.import(
-  "resource://gre/modules/LoginManagerParent.jsm"
-);
-const { LoginTestUtils } = ChromeUtils.import(
+var { LoginTestUtils } = ChromeUtils.import(
   "resource://testing-common/LoginTestUtils.jsm"
 );
-const { ContentTaskUtils } = ChromeUtils.import(
-  "resource://testing-common/ContentTaskUtils.jsm"
+
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
-);
-const { PromptTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromptTestUtils.jsm"
+const { PromptTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromptTestUtils.sys.mjs"
 );
 
-add_task(async function common_initialize() {
+add_setup(async function common_initialize() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["signon.rememberSignons", true],
@@ -69,7 +61,7 @@ registerCleanupFunction(
 function verifyLogins(expectedLogins = []) {
   let allLogins = Services.logins.getAllLogins();
   allLogins.sort((a, b) => a.timeCreated > b.timeCreated);
-  is(
+  Assert.equal(
     allLogins.length,
     expectedLogins.length,
     "Check actual number of logins matches the number of provided expected property-sets"
@@ -80,32 +72,39 @@ function verifyLogins(expectedLogins = []) {
     if (expected) {
       let login = allLogins[i];
       if (typeof expected.timesUsed !== "undefined") {
-        is(login.timesUsed, expected.timesUsed, "Check timesUsed");
+        Assert.equal(login.timesUsed, expected.timesUsed, "Check timesUsed");
       }
       if (typeof expected.passwordLength !== "undefined") {
-        is(
+        Assert.equal(
           login.password.length,
           expected.passwordLength,
           "Check passwordLength"
         );
       }
       if (typeof expected.username !== "undefined") {
-        is(login.username, expected.username, "Check username");
+        Assert.equal(login.username, expected.username, "Check username");
       }
       if (typeof expected.password !== "undefined") {
-        is(login.password, expected.password, "Check password");
+        Assert.equal(login.password, expected.password, "Check password");
       }
       if (typeof expected.usedSince !== "undefined") {
-        ok(login.timeLastUsed > expected.usedSince, "Check timeLastUsed");
+        Assert.ok(
+          login.timeLastUsed > expected.usedSince,
+          "Check timeLastUsed"
+        );
       }
       if (typeof expected.passwordChangedSince !== "undefined") {
-        ok(
+        Assert.ok(
           login.timePasswordChanged > expected.passwordChangedSince,
           "Check timePasswordChanged"
         );
       }
       if (typeof expected.timeCreated !== "undefined") {
-        is(login.timeCreated, expected.timeCreated, "Check timeCreated");
+        Assert.equal(
+          login.timeCreated,
+          expected.timeCreated,
+          "Check timeCreated"
+        );
       }
     }
   }
@@ -128,8 +127,8 @@ async function submitFormAndGetResults(
   responseSelectors
 ) {
   async function contentSubmitForm([contentFormAction, contentSelectorValues]) {
-    const { WrapPrivileged } = ChromeUtils.import(
-      "resource://specialpowers/WrapPrivileged.jsm"
+    const { WrapPrivileged } = ChromeUtils.importESModule(
+      "resource://specialpowers/WrapPrivileged.sys.mjs"
     );
     let doc = content.document;
     let form = doc.querySelector("form");
@@ -225,13 +224,13 @@ async function getFormSubmitResponseResult(
  *
  * @param {String} aPageFile - test page file name which auto-submits to formsubmit.sjs
  * @param {Function} aTaskFn - task which can be run before the tab closes.
- * @param {String} [aOrigin="http://example.com"] - origin of the server to use
+ * @param {String} [aOrigin="https://example.com"] - origin of the server to use
  *                                                  to load `aPageFile`.
  */
 function testSubmittingLoginForm(
   aPageFile,
   aTaskFn,
-  aOrigin = "http://example.com"
+  aOrigin = "https://example.com"
 ) {
   return BrowserTestUtils.withNewTab(
     {
@@ -239,12 +238,12 @@ function testSubmittingLoginForm(
       url: aOrigin + DIRECTORY_PATH + aPageFile,
     },
     async function(browser) {
-      ok(true, "loaded " + aPageFile);
+      Assert.ok(true, "loaded " + aPageFile);
       let fieldValues = await getFormSubmitResponseResult(
         browser,
         "/formsubmit.sjs"
       );
-      ok(true, "form submission loaded");
+      Assert.ok(true, "form submission loaded");
       if (aTaskFn) {
         await aTaskFn(fieldValues, browser);
       }
@@ -252,23 +251,46 @@ function testSubmittingLoginForm(
     }
   );
 }
+/**
+ * Loads a test page in `DIRECTORY_URL` which automatically submits to formsubmit.sjs and returns a
+ * promise resolving with the field values when the optional `aTaskFn` is done.
+ *
+ * @param {String} aPageFile - test page file name which auto-submits to formsubmit.sjs
+ * @param {Function} aTaskFn - task which can be run before the tab closes.
+ * @param {String} [aOrigin="http://example.com"] - origin of the server to use
+ *                                                  to load `aPageFile`.
+ */
+function testSubmittingLoginFormHTTP(
+  aPageFile,
+  aTaskFn,
+  aOrigin = "http://example.com"
+) {
+  return testSubmittingLoginForm(aPageFile, aTaskFn, aOrigin);
+}
 
 function checkOnlyLoginWasUsedTwice({ justChanged }) {
   // Check to make sure we updated the timestamps and use count on the
   // existing login that was submitted for the test.
   let logins = Services.logins.getAllLogins();
-  is(logins.length, 1, "Should only have 1 login");
-  ok(logins[0] instanceof Ci.nsILoginMetaInfo, "metainfo QI");
-  is(logins[0].timesUsed, 2, "check .timesUsed for existing login submission");
-  ok(logins[0].timeCreated < logins[0].timeLastUsed, "timeLastUsed bumped");
+  Assert.equal(logins.length, 1, "Should only have 1 login");
+  Assert.ok(logins[0] instanceof Ci.nsILoginMetaInfo, "metainfo QI");
+  Assert.equal(
+    logins[0].timesUsed,
+    2,
+    "check .timesUsed for existing login submission"
+  );
+  Assert.ok(
+    logins[0].timeCreated < logins[0].timeLastUsed,
+    "timeLastUsed bumped"
+  );
   if (justChanged) {
-    is(
+    Assert.equal(
       logins[0].timeLastUsed,
       logins[0].timePasswordChanged,
       "timeLastUsed == timePasswordChanged"
     );
   } else {
-    is(
+    Assert.equal(
       logins[0].timeCreated,
       logins[0].timePasswordChanged,
       "timeChanged not updated"
@@ -306,7 +328,7 @@ function getCaptureDoorhanger(
   popupNotifications = PopupNotifications,
   browser = null
 ) {
-  ok(true, "Looking for " + aKind + " popup notification");
+  Assert.ok(true, "Looking for " + aKind + " popup notification");
   let notification = popupNotifications.getNotification("password", browser);
   if (!aKind) {
     throw new Error(
@@ -314,19 +336,19 @@ function getCaptureDoorhanger(
     );
   }
   if (aKind !== "any" && notification) {
-    is(
+    Assert.equal(
       notification.options.passwordNotificationType,
       aKind,
       "Notification type matches."
     );
     if (aKind == "password-change") {
-      is(
+      Assert.equal(
         notification.mainAction.label,
         "Update",
         "Main action label matches update doorhanger."
       );
     } else if (aKind == "password-save") {
-      is(
+      Assert.equal(
         notification.mainAction.label,
         "Save",
         "Main action label matches save doorhanger."
@@ -383,8 +405,8 @@ async function hideDoorhangerPopup() {
 
 function getDoorhangerButton(aPopup, aButtonIndex) {
   let notifications = aPopup.owner.panel.children;
-  ok(!!notifications.length, "at least one notification displayed");
-  ok(true, notifications.length + " notification(s)");
+  Assert.ok(!!notifications.length, "at least one notification displayed");
+  Assert.ok(true, notifications.length + " notification(s)");
   let notification = notifications[0];
 
   if (aButtonIndex == "button") {
@@ -403,15 +425,15 @@ function getDoorhangerButton(aPopup, aButtonIndex) {
  *                              See the constants in this file.
  */
 function clickDoorhangerButton(aPopup, aButtonIndex) {
-  ok(true, "Looking for action at index " + aButtonIndex);
+  Assert.ok(true, "Looking for action at index " + aButtonIndex);
 
   let button = getDoorhangerButton(aPopup, aButtonIndex);
   if (aButtonIndex == "button") {
-    ok(true, "Triggering main action");
+    Assert.ok(true, "Triggering main action");
   } else if (aButtonIndex == "secondaryButton") {
-    ok(true, "Triggering secondary action");
+    Assert.ok(true, "Triggering secondary action");
   } else {
-    ok(true, "Triggering menuitem # " + aButtonIndex);
+    Assert.ok(true, "Triggering menuitem # " + aButtonIndex);
   }
   button.doCommand();
 }
@@ -485,7 +507,7 @@ async function updateDoorhangerInputValues(
   if (popupNotifications.panel.state !== "open") {
     await BrowserTestUtils.waitForEvent(popupNotifications.panel, "popupshown");
   }
-  is(panel.state, "open", "Check the doorhanger is already open");
+  Assert.equal(panel.state, "open", "Check the doorhanger is already open");
 
   let notifElem = panel.childNodes[0];
 
@@ -583,7 +605,7 @@ async function _selectDoorhanger(text, inputSelector, dropmarkerSelector) {
   );
 
   let targetIndex = suggestionText.indexOf(text);
-  ok(targetIndex != -1, "Suggestions include expected text");
+  Assert.ok(targetIndex != -1, "Suggestions include expected text");
 
   let promiseHidden = BrowserTestUtils.waitForEvent(
     autocompletePopup,
@@ -608,12 +630,14 @@ async function openPasswordManager(openingFunc, waitForFilter) {
   );
   await openingFunc();
   let tab = await tabPromise;
-  ok(tab, "got password management tab");
+  Assert.ok(tab, "got password management tab");
   let filterValue;
   if (waitForFilter) {
     filterValue = await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
       let loginFilter = Cu.waiveXrays(
-        content.document.querySelector("login-filter")
+        content.document
+          .querySelector("login-list")
+          .shadowRoot.querySelector("login-filter")
       );
       await ContentTaskUtils.waitForCondition(
         () => !!loginFilter.value,
@@ -654,7 +678,7 @@ async function openACPopup(
   );
 
   let shown = await promiseShown;
-  ok(shown, "autocomplete popup shown");
+  Assert.ok(shown, "autocomplete popup shown");
   return shown;
 }
 
@@ -811,17 +835,17 @@ async function doFillGeneratedPasswordContextMenuItem(browser, passwordInput) {
     "passwordmgr-items-separator"
   );
 
-  ok(
+  Assert.ok(
     BrowserTestUtils.is_visible(generatedPasswordItem),
     "generated password item is visible"
   );
-  ok(
+  Assert.ok(
     BrowserTestUtils.is_visible(generatedPasswordSeparator),
     "separator is visible"
   );
 
   let popup = document.getElementById("PopupAutoComplete");
-  ok(popup, "Got popup");
+  Assert.ok(popup, "Got popup");
   let promiseShown = BrowserTestUtils.waitForEvent(popup, "popupshown");
 
   await new Promise(resolve => {
@@ -900,7 +924,7 @@ async function changeContentInputValue(
         await changedPromise;
       }
 
-      is(str, input.value, `Expected value '${str}' is set on input`);
+      Assert.equal(str, input.value, `Expected value '${str}' is set on input`);
     }
   );
   info("Input value changed");
@@ -915,12 +939,12 @@ async function verifyConfirmationHint(
   let hintElem = browser.ownerGlobal.ConfirmationHint._panel;
   await BrowserTestUtils.waitForPopupEvent(hintElem, "shown");
   try {
-    is(hintElem.state, "open", "hint popup is open");
-    ok(
+    Assert.equal(hintElem.state, "open", "hint popup is open");
+    Assert.ok(
       BrowserTestUtils.is_visible(hintElem.anchorNode),
       "hint anchorNode is visible"
     );
-    is(
+    Assert.equal(
       hintElem.anchorNode.id,
       anchorID,
       "Hint should be anchored on the expected notification icon"
@@ -934,7 +958,7 @@ async function verifyConfirmationHint(
       info("verifyConfirmationHint, hintElem popup is hidden");
     }
   } catch (ex) {
-    ok(false, "Confirmation hint not shown: " + ex.message);
+    Assert.ok(false, "Confirmation hint not shown: " + ex.message);
   } finally {
     info("verifyConfirmationHint promise finalized");
   }

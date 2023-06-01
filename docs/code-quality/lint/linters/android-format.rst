@@ -5,8 +5,11 @@ Spotless
 for Gradle and Android.
 
 In our current configuration, Spotless includes the
-`Google Java Format plug-in https://github.com/google/google-java-format`__
-which formats all our Java code using the Google Java coding style guidelines.
+`Google Java Format plug-in <https://github.com/google/google-java-format>`__
+which formats all our Java code using the Google Java coding style guidelines,
+and `ktlint <https://ktlint.github.io/>`__ which formats all
+our Kotlin code using the official Kotlin coding convention and Android Kotlin
+Style Guide.
 
 
 Run Locally

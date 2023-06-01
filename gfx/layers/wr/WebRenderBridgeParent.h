@@ -118,7 +118,7 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
       const uint64_t& aFwdTransactionId, const TransactionId& aTransactionId,
       const bool& aContainsSVGGroup, const VsyncId& aVsyncId,
       const TimeStamp& aVsyncStartTime, const TimeStamp& aRefreshStartTime,
-      const TimeStamp& aTxnStartTime, const nsCString& aTxnURL,
+      const TimeStamp& aTxnStartTime, const nsACString& aTxnURL,
       const TimeStamp& aFwdTime,
       nsTArray<CompositionPayload>&& aPayloads) override;
   mozilla::ipc::IPCResult RecvEmptyTransaction(
@@ -127,7 +127,7 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
       nsTArray<OpDestroy>&& aToDestroy, const uint64_t& aFwdTransactionId,
       const TransactionId& aTransactionId, const VsyncId& aVsyncId,
       const TimeStamp& aVsyncStartTime, const TimeStamp& aRefreshStartTime,
-      const TimeStamp& aTxnStartTime, const nsCString& aTxnURL,
+      const TimeStamp& aTxnStartTime, const nsACString& aTxnURL,
       const TimeStamp& aFwdTime,
       nsTArray<CompositionPayload>&& aPayloads) override;
   mozilla::ipc::IPCResult RecvSetFocusTarget(
@@ -141,12 +141,13 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
       const LayersObserverEpoch& aChildEpoch) override;
 
   mozilla::ipc::IPCResult RecvClearCachedResources() override;
+  mozilla::ipc::IPCResult RecvClearAnimationResources() override;
   mozilla::ipc::IPCResult RecvInvalidateRenderedFrame() override;
   mozilla::ipc::IPCResult RecvScheduleComposite(
       const wr::RenderReasons& aReasons) override;
   mozilla::ipc::IPCResult RecvCapture() override;
   mozilla::ipc::IPCResult RecvStartCaptureSequence(
-      const nsCString& path, const uint32_t& aFlags) override;
+      const nsACString& path, const uint32_t& aFlags) override;
   mozilla::ipc::IPCResult RecvStopCaptureSequence() override;
   mozilla::ipc::IPCResult RecvSyncWithCompositor() override;
 
@@ -203,7 +204,7 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
       const wr::Epoch& aWrEpoch, TransactionId aTransactionId,
       bool aContainsSVGGroup, const VsyncId& aVsyncId,
       const TimeStamp& aVsyncStartTime, const TimeStamp& aRefreshStartTime,
-      const TimeStamp& aTxnStartTime, const nsCString& aTxnURL,
+      const TimeStamp& aTxnStartTime, const nsACString& aTxnURL,
       const TimeStamp& aFwdTime, const bool aIsFirstPaint,
       nsTArray<CompositionPayload>&& aPayloads,
       const bool aUseForTelemetry = true);
@@ -217,7 +218,7 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
   void NotifySceneBuiltForEpoch(const wr::Epoch& aEpoch,
                                 const TimeStamp& aEndTime);
 
-  void CompositeIfNeeded();
+  void RetrySkippedComposite();
 
   TextureFactoryIdentifier GetTextureFactoryIdentifier();
 
@@ -354,13 +355,6 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
                        const nsTArray<RefCountedShmem>& aSmallShmems,
                        const nsTArray<ipc::Shmem>& aLargeShmems,
                        wr::TransactionBuilder& aUpdates);
-  void AddPrivateExternalImage(wr::ExternalImageId aExtId, wr::ImageKey aKey,
-                               wr::ImageDescriptor aDesc,
-                               wr::TransactionBuilder& aResources);
-  void UpdatePrivateExternalImage(wr::ExternalImageId aExtId, wr::ImageKey aKey,
-                                  const wr::ImageDescriptor& aDesc,
-                                  const ImageIntRect& aDirtyRect,
-                                  wr::TransactionBuilder& aResources);
   bool AddSharedExternalImage(wr::ExternalImageId aExtId, wr::ImageKey aKey,
                               wr::TransactionBuilder& aResources);
   bool UpdateSharedExternalImage(
@@ -378,7 +372,7 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
 
   void AddPipelineIdForCompositable(const wr::PipelineId& aPipelineIds,
                                     const CompositableHandle& aHandle,
-                                    const bool& aAsync,
+                                    const CompositableHandleOwner& aOwner,
                                     wr::TransactionBuilder& aTxn,
                                     wr::TransactionBuilder& aTxnForImageBridge);
   void RemovePipelineIdForCompositable(const wr::PipelineId& aPipelineId,
@@ -438,7 +432,7 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
                          const TimeStamp& aVsyncStartTime,
                          const TimeStamp& aRefreshStartTime,
                          const TimeStamp& aTxnStartTime,
-                         const nsCString& aTxnURL, const TimeStamp& aFwdTime,
+                         const nsACString& aTxnURL, const TimeStamp& aFwdTime,
                          const bool aIsFirstPaint, const bool aUseForTelemetry,
                          nsTArray<CompositionPayload>&& aPayloads)
         : mEpoch(aEpoch),

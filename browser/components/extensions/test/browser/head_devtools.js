@@ -11,21 +11,14 @@
      TOOLBOX_BLANK_PANEL_ID,
 */
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "loader",
-  "resource://devtools/shared/loader/Loader.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  loader: "resource://devtools/shared/loader/Loader.sys.mjs",
+  DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.sys.mjs",
+});
 XPCOMUtils.defineLazyGetter(this, "gDevTools", () => {
   const { gDevTools } = loader.require("devtools/client/framework/devtools");
   return gDevTools;
 });
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "DevToolsShim",
-  "chrome://devtools-startup/content/DevToolsShim.jsm"
-);
 
 const TOOLBOX_BLANK_PANEL_ID = "testBlankPanel";
 
@@ -37,7 +30,7 @@ async function registerBlankToolboxPanel() {
     id: TOOLBOX_BLANK_PANEL_ID,
     url: "about:blank",
     label: "Blank Tool",
-    isTargetSupported() {
+    isToolSupported() {
       return true;
     },
     build(iframeWindow, toolbox) {
@@ -98,7 +91,7 @@ function assertDevToolsExtensionEnabled(uuid, enabled) {
  * Also wait for the toolbox to attach to the new target, if we navigated
  * to a new process.
  *
- * @param {Object} tab The tab to redirect.
+ * @param {object} tab The tab to redirect.
  * @param {string} uri The url to be loaded in the current tab.
  * @param {boolean} isErrorPage You may pass `true` is the URL is an error
  *                    page. Otherwise BrowserTestUtils.browserLoaded will wait
@@ -136,7 +129,7 @@ async function navigateToWithDevToolsOpen(tab, uri, isErrorPage = false) {
     null,
     isErrorPage
   );
-  BrowserTestUtils.loadURI(browser, uri);
+  BrowserTestUtils.loadURIString(browser, uri);
 
   info(`Waiting for page to be loaded…`);
   await onBrowserLoaded;

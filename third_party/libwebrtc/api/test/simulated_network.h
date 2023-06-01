@@ -46,8 +46,7 @@ struct PacketDeliveryInfo {
 // for built-in network behavior that will be used by WebRTC if no custom
 // NetworkBehaviorInterface is provided.
 struct BuiltInNetworkBehaviorConfig {
-  BuiltInNetworkBehaviorConfig() {}
-  // Queue length in number of packets.
+  //  Queue length in number of packets.
   size_t queue_length_packets = 0;
   // Delay in addition to capacity induced delay.
   int queue_delay_ms = 0;
@@ -63,8 +62,6 @@ struct BuiltInNetworkBehaviorConfig {
   int avg_burst_loss_length = -1;
   // Additional bytes to add to packet size.
   int packet_overhead = 0;
-  // Enable CoDel active queue management.
-  bool codel_active_queue_management = false;
 };
 
 class NetworkBehaviorInterface {

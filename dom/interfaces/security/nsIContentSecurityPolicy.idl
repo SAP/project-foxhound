@@ -62,6 +62,10 @@ interface nsIContentSecurityPolicy : nsISerializable
     SANDBOX_DIRECTIVE              = 19,
     WORKER_SRC_DIRECTIVE           = 20,
     NAVIGATE_TO_DIRECTIVE          = 21,
+    SCRIPT_SRC_ELEM_DIRECTIVE      = 22,
+    SCRIPT_SRC_ATTR_DIRECTIVE      = 23,
+    STYLE_SRC_ELEM_DIRECTIVE       = 24,
+    STYLE_SRC_ATTR_DIRECTIVE       = 25,
   };
 
   /**
@@ -121,7 +125,10 @@ interface nsIContentSecurityPolicy : nsISerializable
 
   /*
    * Whether this policy allows inline script or style.
-   * @param aContentPolicyType Either TYPE_SCRIPT or TYPE_STYLESHEET
+   * @param aContentPolicyType Either SCRIPT_SRC_(ELEM|ATTR)_DIRECTIVE or
+   *                           STYLE_SRC_(ELEM|ATTR)_DIRECTIVE.
+   * @param aHasUnsafeHash Only hash this when the 'unsafe-hashes' directive is
+   *                       also specified.
    * @param aNonce The nonce string to check against the policy
    * @param aParserCreated If the script element was created by the HTML Parser
    * @param aTriggeringElement The script element of the inline resource to
@@ -138,6 +145,7 @@ interface nsIContentSecurityPolicy : nsISerializable
    *     (block the rules if false).
    */
   boolean getAllowsInline(in nsIContentSecurityPolicy_CSPDirective aDirective,
+                          in bool aHasUnsafeHash,
                           in AString aNonce,
                           in boolean aParserCreated,
                           in Element aTriggeringElement,
@@ -151,21 +159,21 @@ interface nsIContentSecurityPolicy : nsISerializable
    * policy.
    * @param aURI The target URI
    * @param aIsFormSubmission True if the navigation was initiated by a form submission. This
-   *        is important since the form-action directive overrides navigate-to in that case.  
+   *        is important since the form-action directive overrides navigate-to in that case.
    * @param aWasRedirect True if a redirect has happened. Important for path-sensitivity.
-   * @param aEnforceWhitelist True if the whitelist of allowed targets must be enforced. If 
-   *        this is true, the whitelist must be enforced even if 'unsafe-allow-redirects' is 
-   *        used. If 'unsafe-allow-redirects' is not used then the whitelist is always enforced
+   * @param aEnforceAllowlist True if the allowlist of allowed targets must be enforced. If
+   *        this is true, the allowlist must be enforced even if 'unsafe-allow-redirects' is
+   *        used. If 'unsafe-allow-redirects' is not used then the allowlist is always enforced
    * @return
    *     Whether or not the effects of the navigation is allowed
    */
-  boolean getAllowsNavigateTo(in nsIURI aURI, 
+  boolean getAllowsNavigateTo(in nsIURI aURI,
                               in boolean aIsFormSubmission,
                               in boolean aWasRedirected,
-                              in boolean aEnforceWhitelist);
+                              in boolean aEnforceAllowlist);
 
   /**
-   * whether this policy allows eval and eval-like functions
+   * Whether this policy allows eval and eval-like functions
    * such as setTimeout("code string", time).
    * @param shouldReportViolations
    *     Whether or not the use of eval should be reported.
@@ -177,6 +185,20 @@ interface nsIContentSecurityPolicy : nsISerializable
    *     (block the call if false).
    */
   boolean getAllowsEval(out boolean shouldReportViolations);
+
+  /**
+   * Whether this policy allows the evaluation (and compilation) of
+   * WASM code from functions like `WebAssembly.compile`.
+  * @param shouldReportViolations
+   *     Whether or not the use of WASM evaluation should be reported.
+   *     This function returns "true" when violating report-only policies, but
+   *     when any policy (report-only or otherwise) is violated,
+   *     shouldReportViolations is true as well.
+   * @return
+   *     Whether or not the effects of the WASM evaluation should be allowed
+   *     (block the call if false).
+   */
+  boolean getAllowsWasmEval(out boolean shouldReportViolations);
 
   /**
    * Delegate method called by the service when the protected document is loaded.
@@ -195,7 +217,7 @@ interface nsIContentSecurityPolicy : nsISerializable
    * policies.
    *
    * @param violationType
-   *     one of the VIOLATION_TYPE_* constants, e.g. inline-script or eval
+   *     one of the VIOLATION_TYPE_* constants, e.g. eval or wasm-eval
    * @param triggeringElement
    *     the element that triggers this CSP violation. It can be null.
    * @param sourceFile
@@ -226,15 +248,8 @@ interface nsIContentSecurityPolicy : nsISerializable
                            [optional] in AString nonce,
                            [optional] in AString content);
 
-  const unsigned short VIOLATION_TYPE_INLINE_SCRIPT          = 1;
-  const unsigned short VIOLATION_TYPE_EVAL                   = 2;
-  const unsigned short VIOLATION_TYPE_INLINE_STYLE           = 3;
-  const unsigned short VIOLATION_TYPE_NONCE_SCRIPT           = 4;
-  const unsigned short VIOLATION_TYPE_NONCE_STYLE            = 5;
-  const unsigned short VIOLATION_TYPE_HASH_SCRIPT            = 6;
-  const unsigned short VIOLATION_TYPE_HASH_STYLE             = 7;
-  const unsigned short VIOLATION_TYPE_REQUIRE_SRI_FOR_STYLE  = 8;
-  const unsigned short VIOLATION_TYPE_REQUIRE_SRI_FOR_SCRIPT = 9;
+  const unsigned short VIOLATION_TYPE_EVAL                   = 1;
+  const unsigned short VIOLATION_TYPE_WASM_EVAL              = 2;
 
   /**
    * Called after the CSP object is created to fill in appropriate request
@@ -288,11 +303,8 @@ interface nsIContentSecurityPolicy : nsISerializable
   /**
    * Checks if a specific directive permits loading of a URI.
    *
-   * NOTE: Calls to this may trigger violation reports when queried, so the
-   * return value should not be cached.
-   *
    * @param aTriggeringElement
-   *        The element that triggers this CSP check. It can be null.
+   *    The element that triggers this CSP check. It can be null.
    * @param aURI
    *    The URI about to be loaded or used.
    * @param aDir
@@ -304,6 +316,9 @@ interface nsIContentSecurityPolicy : nsISerializable
    *    "false" allows CSP to fall back to default-src.  This function
    *    behaves the same for both values of canUseDefault when querying
    *    directives that don't fall-back.
+   * @param aSendViolationReports
+   *    If `true` and the uri is not allowed then trigger violation reports.
+   *    This should be `false` for caching or preloads.
    * @return
    *    Whether or not the provided URI is allowed by CSP under the given
    *    directive. (block the pending operation if false).
@@ -312,7 +327,8 @@ interface nsIContentSecurityPolicy : nsISerializable
                   in nsICSPEventListener aCSPEventListener,
                   in nsIURI aURI,
                   in nsIContentSecurityPolicy_CSPDirective aDir,
-                  in boolean aSpecific);
+                  in boolean aSpecific,
+                  in boolean aSendViolationReports);
 
   /**
    * Delegate method called by the service when sub-elements of the protected

@@ -30,8 +30,7 @@
 
 using namespace mozilla::gfx;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 VRFieldOfView::VRFieldOfView(nsISupports* aParent, double aUpDegrees,
                              double aRightDegrees, double aDownDegrees,
@@ -117,33 +116,15 @@ void VRDisplay::UpdateVRDisplays(nsTArray<RefPtr<VRDisplay>>& aDisplays,
 }
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(VRFieldOfView, mParent)
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(VRFieldOfView, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(VRFieldOfView, Release)
 
 JSObject* VRFieldOfView::WrapObject(JSContext* aCx,
                                     JS::Handle<JSObject*> aGivenProto) {
   return VRFieldOfView_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(VREyeParameters)
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(VREyeParameters)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mParent, mFOV)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
-  tmp->mOffset = nullptr;
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(VREyeParameters)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mParent, mFOV)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(VREyeParameters)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mOffset)
-NS_IMPL_CYCLE_COLLECTION_TRACE_END
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(VREyeParameters, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(VREyeParameters, Release)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_WITH_JS_MEMBERS(VREyeParameters,
+                                                      (mParent, mFOV),
+                                                      (mOffset))
 
 VREyeParameters::VREyeParameters(nsISupports* aParent,
                                  const gfx::Point3D& aEyeTranslation,
@@ -215,9 +196,6 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(VRStageParameters)
       mSittingToStandingTransformArray)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(VRStageParameters, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(VRStageParameters, Release)
-
 void VRStageParameters::GetSittingToStandingTransform(
     JSContext* aCx, JS::MutableHandle<JSObject*> aRetval, ErrorResult& aRv) {
   if (!mSittingToStandingTransformArray) {
@@ -233,8 +211,6 @@ void VRStageParameters::GetSittingToStandingTransform(
 }
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(VRDisplayCapabilities, mParent)
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(VRDisplayCapabilities, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(VRDisplayCapabilities, Release)
 
 JSObject* VRDisplayCapabilities::WrapObject(JSContext* aCx,
                                             JS::Handle<JSObject*> aGivenProto) {
@@ -684,9 +660,6 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(VRFrameData)
   NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mRightViewMatrix)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(VRFrameData, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(VRFrameData, Release)
-
 VRFrameData::VRFrameData(nsISupports* aParent)
     : mParent(aParent),
       mLeftProjectionMatrix(nullptr),
@@ -804,5 +777,4 @@ bool VRFrameInfo::IsDirty() { return mVRState.timestamp == 0; }
 
 void VRFrameInfo::Clear() { mVRState.Clear(); }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

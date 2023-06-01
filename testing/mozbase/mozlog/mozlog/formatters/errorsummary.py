@@ -3,8 +3,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-from __future__ import absolute_import
-
 import json
 from collections import defaultdict
 
@@ -127,6 +125,18 @@ class ErrorSummaryFormatter(BaseFormatter):
             "stackwalk_stdout": item.get("stackwalk_stdout"),
             "stackwalk_stderr": item.get("stackwalk_stderr"),
         }
+
+        if item.get("test"):
+            data["group"] = self.test_to_group.get(item["test"], "")
+            if (
+                "expected" not in item
+                or item["status"] == item["expected"]
+                or item["status"] in item.get("known_intermittent", [])
+            ):
+                self.groups[data["group"]]["status"] = "OK"
+            else:
+                self.groups[data["group"]]["status"] = "ERROR"
+
         return self._output("crash", data)
 
     def lint(self, item):

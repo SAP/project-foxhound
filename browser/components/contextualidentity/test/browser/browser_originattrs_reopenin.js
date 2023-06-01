@@ -34,7 +34,7 @@ function handleEventLocal(aEvent) {
   }
 }
 const NUM_PAGES_OPEN_FOR_EACH_TEST_CASE = 5;
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["privacy.userContext.enabled", true],
@@ -106,7 +106,7 @@ add_task(async function testReopen() {
       false,
       uri
     );
-    await BrowserTestUtils.loadURI(regularPage.tab.linkedBrowser, uri);
+    await BrowserTestUtils.loadURIString(regularPage.tab.linkedBrowser, uri);
     await loaded;
     info(`Start Opened ${uri} in a regular tab`);
     currRemoteType = regularPage.tab.linkedBrowser.remoteType;

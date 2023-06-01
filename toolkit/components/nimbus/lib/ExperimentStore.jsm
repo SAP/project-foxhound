@@ -9,11 +9,11 @@ const EXPORTED_SYMBOLS = ["ExperimentStore"];
 const { SharedDataMap } = ChromeUtils.import(
   "resource://nimbus/lib/SharedDataMap.jsm"
 );
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   FeatureManifest: "resource://nimbus/FeatureManifest.js",
   PrefUtils: "resource://normandy/lib/PrefUtils.jsm",
 });
@@ -32,7 +32,7 @@ let tryJSONParse = data => {
 
   return null;
 };
-XPCOMUtils.defineLazyGetter(this, "syncDataStore", () => {
+XPCOMUtils.defineLazyGetter(lazy, "syncDataStore", () => {
   let experimentsPrefBranch = Services.prefs.getBranch(SYNC_DATA_PREF_BRANCH);
   let defaultsPrefBranch = Services.prefs.getBranch(SYNC_DEFAULTS_PREF_BRANCH);
   return {
@@ -49,7 +49,7 @@ XPCOMUtils.defineLazyGetter(this, "syncDataStore", () => {
       try {
         branch.setStringPref(pref, JSON.stringify(value));
       } catch (e) {
-        Cu.reportError(e);
+        console.error(e);
       }
     },
     _trySetTypedPrefValue(pref, value) {
@@ -92,9 +92,11 @@ XPCOMUtils.defineLazyGetter(this, "syncDataStore", () => {
       }
       for (const childPref of prefChildList) {
         let prefName = `${prefBranch}${childPref}`;
-        let value = PrefUtils.getPref(prefName);
+        let value = lazy.PrefUtils.getPref(prefName);
         // Try to parse string values that could be stringified objects
-        if (FeatureManifest[featureId]?.variables[childPref]?.type === "json") {
+        if (
+          lazy.FeatureManifest[featureId]?.variables[childPref]?.type === "json"
+        ) {
           let parsedValue = tryJSONParse(value);
           if (parsedValue) {
             value = parsedValue;
@@ -273,7 +275,7 @@ class ExperimentStore extends SharedDataMap {
           // Supports <v1.3.0, which was when .featureIds was added
           getAllBranchFeatureIds(experiment.branch).includes(featureId)
         // Default to the pref store if data is not yet ready
-      ) || syncDataStore.get(featureId)
+      ) || lazy.syncDataStore.get(featureId)
     );
   }
 
@@ -300,7 +302,7 @@ class ExperimentStore extends SharedDataMap {
     try {
       data = Object.values(this._data || {});
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
     }
 
     return data;
@@ -333,7 +335,7 @@ class ExperimentStore extends SharedDataMap {
   getRolloutForFeature(featureId) {
     return (
       this.getAllRollouts().find(r => r.featureIds.includes(featureId)) ||
-      syncDataStore.getDefault(featureId)
+      lazy.syncDataStore.getDefault(featureId)
     );
   }
 
@@ -388,20 +390,20 @@ class ExperimentStore extends SharedDataMap {
     let features = featuresCompat(enrollment.branch);
     for (let feature of features) {
       if (
-        FeatureManifest[feature.featureId]?.isEarlyStartup ||
+        lazy.FeatureManifest[feature.featureId]?.isEarlyStartup ||
         feature.isEarlyStartup
       ) {
         if (!enrollment.active) {
           // Remove experiments on un-enroll, no need to check if it exists
           if (enrollment.isRollout) {
-            syncDataStore.deleteDefault(feature.featureId);
+            lazy.syncDataStore.deleteDefault(feature.featureId);
           } else {
-            syncDataStore.delete(feature.featureId);
+            lazy.syncDataStore.delete(feature.featureId);
           }
         } else {
           let updateEnrollmentSyncStore = enrollment.isRollout
-            ? syncDataStore.setDefault.bind(syncDataStore)
-            : syncDataStore.set.bind(syncDataStore);
+            ? lazy.syncDataStore.setDefault.bind(lazy.syncDataStore)
+            : lazy.syncDataStore.set.bind(lazy.syncDataStore);
           updateEnrollmentSyncStore(feature.featureId, {
             ...enrollment,
             branch: {
@@ -426,6 +428,7 @@ class ExperimentStore extends SharedDataMap {
         `Tried to add an experiment but it didn't have a .slug property.`
       );
     }
+
     this.set(enrollment.slug, enrollment);
     this._updateSyncStore(enrollment);
     this._emitUpdates(enrollment);
@@ -457,7 +460,7 @@ class ExperimentStore extends SharedDataMap {
    */
   _deleteForTests(slugOrFeatureId) {
     super._deleteForTests(slugOrFeatureId);
-    syncDataStore.deleteDefault(slugOrFeatureId);
-    syncDataStore.delete(slugOrFeatureId);
+    lazy.syncDataStore.deleteDefault(slugOrFeatureId);
+    lazy.syncDataStore.delete(slugOrFeatureId);
   }
 }

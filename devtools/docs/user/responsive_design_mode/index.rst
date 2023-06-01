@@ -13,8 +13,8 @@ Toggling Responsive Design Mode
 There are three ways to toggle Responsive Design Mode:
 
 
-- From the Firefox menu: Select **Responsive Design Mode** from the **Web Developer** submenu in the Firefox Menu (or **Tools** menu if you display the menu bar or are on macOS).
-- From the Developer Tools toolbox: Press the **Responsive Design Mode** button in the <a href="/en-US/docs/Tools/Tools_Toolbox#toolbar">Toolbox's toolbar</a>:<img alt="" src="rdm_button.png" style="display: block; margin-left: auto; margin-right: auto;">
+- From the Firefox menu: Select **Responsive Design Mode** from the **Browser Tools** submenu in the Firefox Menu (or **Tools** menu if you display the menu bar or are on macOS).
+- From the Developer Tools toolbox: Press the **Responsive Design Mode** button in the :ref:`Toolbox's toolbar <tools-toolbox-toolbar>`
 - From the keyboard: Press :kbd:`Ctrl` + :kbd:`Shift` + :kbd:`M` (or :kbd:`Cmd` + :kbd:`Opt` + :kbd:`M` on macOS).
 
 
@@ -115,7 +115,7 @@ Additionally, Firefox sets the `User-Agent <https://developer.mozilla.org/en-US/
   <br/>
 
 
-The devices listed in the drop-down are just a subset of the devices that can be selected. At the end of the drop-down, there is an item labeled **Edit list**. Select this to see a panel containing all the choices, which enables you to check the devices you want to see in the drop-down. The set of devices, and the values associated with each device, are taken from https://github.com/mozilla/simulated-devices. You can also define a custom device, as described below.</span>
+The devices listed in the drop-down are just a subset of the devices that can be selected. At the end of the drop-down, there is an item labeled **Edit list**. Select this to see a panel containing all the choices, which enables you to check the devices you want to see in the drop-down.
 
 
 Creating custom devices
@@ -163,43 +163,43 @@ The table below lists the numbers associated with each network type, but please 
     - Minimum latency (ms)
 
   * - GPRS
-    - 50 KB/s
-    - 20 KB/s
+    - 50 Kb/s
+    - 20 Kb/s
     - 500
 
   * - Regular 2G
-    - 250 KB/s
-    - 50 KB/s
+    - 250 Kb/s
+    - 50 Kb/s
     - 300
 
   * - Good 2G
-    - 450 KB/s
-    - 150 KB/s
+    - 450 Kb/s
+    - 150 Kb/s
     - 150
 
   * - Regular 3G
-    - 750 KB/s
-    - 250 KB/s
+    - 750 Kb/s
+    - 250 Kb/s
     - 100
 
   * - Good 3G
-    - 1.5 MB/s
-    - 750 KB/s
+    - 1.5 Mb/s
+    - 750 Kb/s
     - 40
 
   * - Regular 4G/LTE
-    - 4 MB/s
-    - 3 MB/s
+    - 4 Mb/s
+    - 3 Mb/s
     - 20
 
   * - DSL
-    - 2 MB/s
-    - 1 MB/s
+    - 2 Mb/s
+    - 1 Mb/s
     - 5
 
   * - Wi-Fi
-    - 30 MB/s
-    - 15 MB/s
+    - 30 Mb/s
+    - 15 Mb/s
     - 2
 
 To select a network, click the list box that's initially labeled "No throttling":

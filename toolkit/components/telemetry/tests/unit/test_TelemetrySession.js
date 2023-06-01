@@ -8,22 +8,20 @@
  * checked in the second request.
  */
 
-const { CommonUtils } = ChromeUtils.import(
-  "resource://services-common/utils.js"
+const { ClientID } = ChromeUtils.importESModule(
+  "resource://gre/modules/ClientID.sys.mjs"
 );
-const { ClientID } = ChromeUtils.import("resource://gre/modules/ClientID.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { TelemetrySession } = ChromeUtils.import(
-  "resource://gre/modules/TelemetrySession.jsm"
+const { TelemetrySession } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetrySession.sys.mjs"
 );
-const { TelemetryEnvironment } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryEnvironment.jsm"
+const { TelemetryEnvironment } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryEnvironment.sys.mjs"
 );
-const { TelemetryReportingPolicy } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryReportingPolicy.jsm"
+const { TelemetryReportingPolicy } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryReportingPolicy.sys.mjs"
 );
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 
 const PING_FORMAT_VERSION = 4;
@@ -37,7 +35,6 @@ const REASON_TEST_PING = "test-ping";
 const REASON_DAILY = "daily";
 const REASON_ENVIRONMENT_CHANGE = "environment-change";
 
-const IGNORE_HISTOGRAM_TO_CLONE = "MEMORY_HEAP_ALLOCATED";
 const IGNORE_CLONED_HISTOGRAM = "test::ignore_me_also";
 // Add some unicode characters here to ensure that sending them works correctly.
 const SHUTDOWN_TIME = 10000;
@@ -74,8 +71,8 @@ function sendPing() {
 }
 
 function fakeGenerateUUID(sessionFunc, subsessionFunc) {
-  const { Policy } = ChromeUtils.import(
-    "resource://gre/modules/TelemetrySession.jsm"
+  const { Policy } = ChromeUtils.importESModule(
+    "resource://gre/modules/TelemetrySession.sys.mjs"
   );
   Policy.generateSessionUUID = sessionFunc;
   Policy.generateSubsessionUUID = subsessionFunc;
@@ -94,21 +91,6 @@ function setupTestData() {
   k1.add("a");
   k1.add("a");
   k1.add("b");
-}
-
-function getSavedPingFile(basename) {
-  let tmpDir = Services.dirsvc.get("ProfD", Ci.nsIFile);
-  let pingFile = tmpDir.clone();
-  pingFile.append(basename);
-  if (pingFile.exists()) {
-    pingFile.remove(true);
-  }
-  registerCleanupFunction(function() {
-    try {
-      pingFile.remove(true);
-    } catch (e) {}
-  });
-  return pingFile;
 }
 
 function checkPingFormat(aPing, aType, aHasClientId, aHasEnvironment) {
@@ -291,7 +273,7 @@ function checkScalars(processes) {
     "The keyedScalars entry must be an object."
   );
 
-  let checkScalar = function(scalar) {
+  let checkScalar = function(scalar, name) {
     // Check if the value is of a supported type.
     const valueType = typeof scalar;
     switch (valueType) {
@@ -322,7 +304,7 @@ function checkScalars(processes) {
   const scalars = parentProcess.scalars;
   for (let name in scalars) {
     Assert.equal(typeof name, "string", "Scalar names must be strings.");
-    checkScalar(scalars[name]);
+    checkScalar(scalars[name], name);
   }
 
   // Check that we have valid keyed scalar entries.
@@ -339,7 +321,7 @@ function checkScalars(processes) {
         key.length <= 70,
         "Keyed scalar keys can't have more than 70 characters."
       );
-      checkScalar(scalars[name][key]);
+      checkScalar(scalars[name][key], name);
     }
   }
 }
@@ -1527,7 +1509,7 @@ add_task(async function test_savedSessionData() {
     subsessionId: null,
     profileSubsessionCounter: 3785,
   };
-  await CommonUtils.writeJSON(sessionState, dataFilePath);
+  await IOUtils.writeJSON(dataFilePath, sessionState);
 
   const PREF_TEST = "toolkit.telemetry.test.pref1";
   Preferences.reset(PREF_TEST);
@@ -1578,7 +1560,7 @@ add_task(async function test_savedSessionData() {
   fakeGenerateUUID(TelemetryUtils.generateUUID, TelemetryUtils.generateUUID);
 
   // Load back the serialised session data.
-  let data = await CommonUtils.readJSON(dataFilePath);
+  let data = await IOUtils.readJSON(dataFilePath);
   Assert.equal(data.profileSubsessionCounter, expectedSubsessions);
   Assert.equal(data.sessionId, expectedSessionUUID);
   Assert.equal(data.subsessionId, expectedSubsessionUUID);
@@ -1665,7 +1647,7 @@ add_task(async function test_invalidSessionData() {
     profileSubsessionCounter: "not-a-number?",
     someOtherField: 12,
   };
-  await CommonUtils.writeJSON(sessionState, dataFilePath);
+  await IOUtils.writeJSON(dataFilePath, sessionState);
 
   // The session data file should not load. Only expect the current subsession.
   const expectedSubsessions = 1;
@@ -1692,7 +1674,7 @@ add_task(async function test_invalidSessionData() {
   fakeGenerateUUID(TelemetryUtils.generateUUID, TelemetryUtils.generateUUID);
 
   // Load back the serialised session data.
-  let data = await CommonUtils.readJSON(dataFilePath);
+  let data = await IOUtils.readJSON(dataFilePath);
   Assert.equal(data.profileSubsessionCounter, expectedSubsessions);
   Assert.equal(data.sessionId, expectedSessionUUID);
   Assert.equal(data.subsessionId, expectedSubsessionUUID);

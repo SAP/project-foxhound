@@ -17,6 +17,7 @@
 #include "frontend/AbstractScopePtr.h"  // AbstractScopePtr, ScopeIndex
 #include "frontend/BytecodeOffset.h"    // BytecodeOffset
 #include "frontend/CompilationStencil.h"  // CompilationStencil, CompilationGCOutput, CompilationAtomCache
+#include "frontend/FrontendContext.h"  // FrontendContext
 #include "frontend/JumpList.h"         // JumpTarget
 #include "frontend/NameCollections.h"  // AtomIndexMap, PooledMapPtr
 #include "frontend/ParseNode.h"        // BigIntLiteral
@@ -25,7 +26,6 @@
 #include "frontend/Stencil.h"      // Stencils
 #include "js/TypeDecls.h"          // jsbytecode, JSContext
 #include "js/Vector.h"             // Vector
-#include "vm/Opcodes.h"            // JSOpLength_JumpTarget
 #include "vm/SharedStencil.h"      // TryNote, ScopeNote, GCThingIndex
 #include "vm/StencilEnums.h"       // TryNoteKind
 
@@ -45,8 +45,8 @@ struct MOZ_STACK_CLASS GCThingList {
   // Index of the first scope in the vector.
   mozilla::Maybe<GCThingIndex> firstScopeIndex;
 
-  explicit GCThingList(JSContext* cx, CompilationState& compilationState)
-      : compilationState(compilationState), vector(cx) {}
+  explicit GCThingList(FrontendContext* fc, CompilationState& compilationState)
+      : compilationState(compilationState), vector(fc) {}
 
   [[nodiscard]] bool append(TaggedParserAtomIndex atom,
                             ParserAtom::Atomize atomize, GCThingIndex* index) {
@@ -128,7 +128,7 @@ struct MOZ_STACK_CLASS GCThingList {
 
 struct CGTryNoteList {
   Vector<TryNote, 0> list;
-  explicit CGTryNoteList(JSContext* cx) : list(cx) {}
+  explicit CGTryNoteList(FrontendContext* fc) : list(fc) {}
 
   [[nodiscard]] bool append(TryNoteKind kind, uint32_t stackDepth,
                             BytecodeOffset start, BytecodeOffset end);
@@ -140,7 +140,7 @@ struct CGTryNoteList {
 
 struct CGScopeNoteList {
   Vector<ScopeNote, 0> list;
-  explicit CGScopeNoteList(JSContext* cx) : list(cx) {}
+  explicit CGScopeNoteList(FrontendContext* fc) : list(fc) {}
 
   [[nodiscard]] bool append(GCThingIndex scopeIndex, BytecodeOffset offset,
                             uint32_t parent);
@@ -157,7 +157,7 @@ struct CGScopeNoteList {
 
 struct CGResumeOffsetList {
   Vector<uint32_t, 0> list;
-  explicit CGResumeOffsetList(JSContext* cx) : list(cx) {}
+  explicit CGResumeOffsetList(FrontendContext* fc) : list(fc) {}
 
   [[nodiscard]] bool append(uint32_t offset) { return list.append(offset); }
   mozilla::Span<const uint32_t> span() const {
@@ -178,7 +178,7 @@ typedef Vector<js::SrcNote, 64> SrcNotesVector;
 // bytecode is stored in this class.
 class BytecodeSection {
  public:
-  BytecodeSection(JSContext* cx, uint32_t lineNum, uint32_t column);
+  BytecodeSection(FrontendContext* fc, uint32_t lineNum, uint32_t column);
 
   // ---- Bytecode ----
 
@@ -323,11 +323,10 @@ class BytecodeSection {
 
   // ---- Generator ----
 
-  // Certain ops (yield, await, gosub) have an entry in the script's
-  // resumeOffsets list. This can be used to map from the op's resumeIndex to
-  // the bytecode offset of the next pc. This indirection makes it easy to
-  // resume in the JIT (because BaselineScript stores a resumeIndex => native
-  // code array).
+  // Certain ops (yield, await) have an entry in the script's resumeOffsets
+  // list. This can be used to map from the op's resumeIndex to the bytecode
+  // offset of the next pc. This indirection makes it easy to resume in the JIT
+  // (because BaselineScript stores a resumeIndex => native code array).
   CGResumeOffsetList resumeOffsetList_;
 
   // Number of yield instructions emitted. Does not include JSOp::Await.
@@ -369,10 +368,10 @@ class BytecodeSection {
 // bytecode, but referred from bytecode is stored in this class.
 class PerScriptData {
  public:
-  explicit PerScriptData(JSContext* cx,
-                         frontend::CompilationState& compilationState);
+  PerScriptData(FrontendContext* fc,
+                frontend::CompilationState& compilationState);
 
-  [[nodiscard]] bool init(JSContext* cx);
+  [[nodiscard]] bool init(FrontendContext* fc);
 
   GCThingList& gcThingList() { return gcThingList_; }
   const GCThingList& gcThingList() const { return gcThingList_; }

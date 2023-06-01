@@ -3,8 +3,7 @@
 
 "use strict";
 
-const protocol = require("devtools/shared/protocol");
-const { components, Cr } = require("chrome");
+const protocol = require("resource://devtools/shared/protocol.js");
 
 const testErrorsSpec = protocol.generateActorSpec({
   typeName: "testErrors",
@@ -34,13 +33,13 @@ const testErrorsSpec = protocol.generateActorSpec({
 });
 
 const TestErrorsActor = protocol.ActorClassWithSpec(testErrorsSpec, {
-  initialize: function(conn) {
+  initialize(conn) {
     protocol.Actor.prototype.initialize.call(this, conn);
     this.conn = conn;
   },
 
   throwsComponentsException() {
-    throw components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
+    throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
   },
 
   throwsException() {

@@ -40,7 +40,7 @@ class ARIAGridAccessible : public HyperTextAccessibleWrap,
   virtual uint32_t SelectedCellCount() override;
   virtual uint32_t SelectedColCount() override;
   virtual uint32_t SelectedRowCount() override;
-  virtual void SelectedCells(nsTArray<LocalAccessible*>* aCells) override;
+  virtual void SelectedCells(nsTArray<Accessible*>* aCells) override;
   virtual void SelectedCellIndices(nsTArray<uint32_t>* aCells) override;
   virtual void SelectedColIndices(nsTArray<uint32_t>* aCols) override;
   virtual void SelectedRowIndices(nsTArray<uint32_t>* aRows) override;
@@ -102,7 +102,6 @@ class ARIAGridCellAccessible : public HyperTextAccessibleWrap,
   virtual TableCellAccessible* AsTableCell() override { return this; }
   virtual void ApplyARIAState(uint64_t* aState) const override;
   virtual already_AddRefed<AccAttributes> NativeAttributes() override;
-  virtual mozilla::a11y::GroupPos GroupPosition() override;
 
  protected:
   virtual ~ARIAGridCellAccessible() {}

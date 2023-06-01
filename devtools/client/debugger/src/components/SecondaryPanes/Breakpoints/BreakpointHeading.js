@@ -3,40 +3,41 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import React, { PureComponent } from "react";
+import PropTypes from "prop-types";
+
 import { connect } from "../../../utils/connect";
 import actions from "../../../actions";
+
 import {
   getTruncatedFileName,
   getDisplayPath,
   getSourceQueryString,
   getFileURL,
 } from "../../../utils/source";
-import {
-  getHasSiblingOfSameName,
-  getBreakpointsForSource,
-  getContext,
-} from "../../../selectors";
+import { getBreakpointsForSource, getContext } from "../../../selectors";
 
 import SourceIcon from "../../shared/SourceIcon";
 
 import showContextMenu from "./BreakpointHeadingsContextMenu";
 
 class BreakpointHeading extends PureComponent {
+  static get propTypes() {
+    return {
+      cx: PropTypes.object.isRequired,
+      sources: PropTypes.array.isRequired,
+      source: PropTypes.object.isRequired,
+      selectSource: PropTypes.func.isRequired,
+    };
+  }
   onContextMenu = e => {
     showContextMenu({ ...this.props, contextMenuEvent: e });
   };
 
   render() {
-    const {
-      cx,
-      sources,
-      source,
-      hasSiblingOfSameName,
-      selectSource,
-    } = this.props;
+    const { cx, sources, source, selectSource } = this.props;
 
     const path = getDisplayPath(source, sources);
-    const query = hasSiblingOfSameName ? getSourceQueryString(source) : "";
+    const query = getSourceQueryString(source);
 
     return (
       <div
@@ -62,7 +63,6 @@ class BreakpointHeading extends PureComponent {
 
 const mapStateToProps = (state, { source }) => ({
   cx: getContext(state),
-  hasSiblingOfSameName: getHasSiblingOfSameName(state, source),
   breakpointsForSource: getBreakpointsForSource(state, source.id),
 });
 

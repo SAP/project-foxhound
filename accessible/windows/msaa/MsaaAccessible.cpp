@@ -11,6 +11,7 @@
 #include "ia2AccessibleTable.h"
 #include "ia2AccessibleTableCell.h"
 #include "mozilla/a11y/AccessibleWrap.h"
+#include "mozilla/a11y/Compatibility.h"
 #include "mozilla/a11y/DocAccessibleParent.h"
 #include "mozilla/dom/BrowserBridgeChild.h"
 #include "mozilla/dom/BrowserBridgeParent.h"
@@ -59,14 +60,14 @@ MsaaAccessible* MsaaAccessible::Create(Accessible* aAcc) {
   if (aAcc->IsDoc()) {
     return new MsaaDocAccessible(aAcc);
   }
+  if (aAcc->IsTable()) {
+    return new ia2AccessibleTable(aAcc);
+  }
+  if (aAcc->IsTableCell()) {
+    return new ia2AccessibleTableCell(aAcc);
+  }
   if (localAcc) {
     // XXX These classes don't support RemoteAccessible yet.
-    if (aAcc->IsTable()) {
-      return new ia2AccessibleTable(aAcc);
-    }
-    if (aAcc->IsTableCell()) {
-      return new ia2AccessibleTableCell(aAcc);
-    }
     if (aAcc->IsApplication()) {
       return new ia2AccessibleApplication(aAcc);
     }
@@ -489,6 +490,16 @@ static already_AddRefed<IDispatch> GetProxiedAccessibleInSubtree(
   return disp.forget();
 }
 
+static bool IsInclusiveDescendantOf(DocAccessible* aAncestor,
+                                    DocAccessible* aDescendant) {
+  for (DocAccessible* doc = aDescendant; doc; doc = doc->ParentDocument()) {
+    if (doc == aAncestor) {
+      return true;
+    }
+  }
+  return false;
+}
+
 already_AddRefed<IAccessible> MsaaAccessible::GetIAccessibleFor(
     const VARIANT& aVarChild, bool* aIsDefunct) {
   if (aVarChild.vt != VT_I4) return nullptr;
@@ -602,9 +613,8 @@ already_AddRefed<IAccessible> MsaaAccessible::GetIAccessibleFor(
       }
       for (DocAccessibleParent* remoteDoc : *remoteDocs) {
         LocalAccessible* outerDoc = remoteDoc->OuterDocOfRemoteBrowser();
-        if (!outerDoc || outerDoc->Document() != localDoc) {
-          // The OuterDoc isn't inside our document, so this isn't a
-          // descendant.
+        if (!outerDoc ||
+            !IsInclusiveDescendantOf(localDoc, outerDoc->Document())) {
           continue;
         }
         child = GetAccessibleInSubtree(remoteDoc, id);
@@ -786,6 +796,10 @@ ITypeInfo* MsaaAccessible::GetTI(LCID lcid) {
 
 /* static */
 MsaaAccessible* MsaaAccessible::GetFrom(Accessible* aAcc) {
+  if (!aAcc) {
+    return nullptr;
+  }
+
   if (RemoteAccessible* remoteAcc = aAcc->AsRemote()) {
     return reinterpret_cast<MsaaAccessible*>(remoteAcc->GetWrapper());
   }
@@ -849,8 +863,8 @@ MsaaAccessible::QueryInterface(REFIID iid, void** ppv) {
       return E_NOINTERFACE;
     }
     *ppv = static_cast<IEnumVARIANT*>(new ChildrenEnumVariant(this));
-  } else if (IID_ISimpleDOMNode == iid && localAcc) {
-    if (!localAcc->HasOwnContent() && !localAcc->IsDoc()) {
+  } else if (IID_ISimpleDOMNode == iid) {
+    if (mAcc->IsDoc() || (localAcc && !localAcc->HasOwnContent())) {
       return E_NOINTERFACE;
     }
 
@@ -920,6 +934,15 @@ MsaaAccessible::get_accChildCount(long __RPC_FAR* pcountChildren) {
 
   if (!mAcc) return CO_E_OBJNOTCONNECTED;
 
+  if (Compatibility::IsA11ySuppressedForClipboardCopy() && mAcc->IsRoot()) {
+    // Bug 1798098: Windows Suggested Actions (introduced in Windows 11 22H2)
+    // might walk the entire a11y tree using UIA whenever anything is copied to
+    // the clipboard. This causes an unacceptable hang, particularly when the
+    // cache is disabled. We prevent this tree walk by returning a 0 child count
+    // for the root window, from which Windows might walk.
+    return S_OK;
+  }
+
   if (nsAccUtils::MustPrune(mAcc)) return S_OK;
 
   *pcountChildren = mAcc->ChildCount();
@@ -978,9 +1001,6 @@ MsaaAccessible::get_accName(
   nsAutoString name;
   Acc()->Name(name);
 
-  // The name was not provided, e.g. no alt attribute for an image. A screen
-  // reader may choose to invent its own accessible name, e.g. from an image src
-  // attribute. Refer to eNoNameOnPurpose return value.
   if (name.IsVoid()) return S_FALSE;
 
   *pszName = ::SysAllocStringLen(name.get(), name.Length());
@@ -1005,12 +1025,9 @@ MsaaAccessible::get_accValue(
   if (accessible) {
     return accessible->get_accValue(kVarChildIdSelf, pszValue);
   }
-  if (mAcc->IsRemote()) {
-    return E_NOTIMPL;  // XXX Not supported for RemoteAccessible yet.
-  }
 
   nsAutoString value;
-  LocalAcc()->Value(value);
+  Acc()->Value(value);
 
   // See bug 438784: need to expose URL on doc's value attribute. For this,
   // reverting part of fix for bug 425693 to make this MSAA method behave
@@ -1109,18 +1126,36 @@ MsaaAccessible::get_accRole(
   // -- Try BSTR role
   // Could not map to known enumerated MSAA role like ROLE_BUTTON
   // Use BSTR role to expose role attribute or tag name + namespace
-  LocalAccessible* localAcc = mAcc->AsLocal();
-  if (!localAcc) {
-    return E_FAIL;
+  // XXX We should remove this hack and map to standard MSAA roles, even though
+  // they're lossy. See bug 798492.
+  if (mAcc->IsRemote()) {
+    // We don't support unknown or multiple ARIA roles for RemoteAccessible
+    // here, nor can we support namespaces. No one should be relying on this
+    // anyway, so this is fine. We just want to avoid returning a failure here.
+    nsAtom* val = nullptr;
+    const nsRoleMapEntry* roleMap = mAcc->ARIARoleMap();
+    if (roleMap && roleMap->roleAtom != nsGkAtoms::_empty) {
+      val = roleMap->roleAtom;
+    } else {
+      val = mAcc->TagName();
+    }
+    if (!val) {
+      return E_FAIL;
+    }
+    pvarRole->vt = VT_BSTR;
+    pvarRole->bstrVal = ::SysAllocString(val->GetUTF16String());
+    return S_OK;
   }
+
+  LocalAccessible* localAcc = mAcc->AsLocal();
+  MOZ_ASSERT(localAcc);
   nsIContent* content = localAcc->GetContent();
   if (!content) return E_FAIL;
 
   if (content->IsElement()) {
     nsAutoString roleString;
     // Try the role attribute.
-    content->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::role,
-                                  roleString);
+    nsAccUtils::GetARIAAttr(content->AsElement(), nsGkAtoms::role, roleString);
 
     if (roleString.IsEmpty()) {
       // No role attribute (or it is an empty string).
@@ -1225,12 +1260,12 @@ MsaaAccessible::get_accKeyboardShortcut(
                                                pszKeyboardShortcut);
   }
 
-  LocalAccessible* localAcc = LocalAcc();
-  if (!localAcc) {
-    return E_NOTIMPL;  // XXX Not supported for RemoteAccessible yet.
+  KeyBinding keyBinding = mAcc->AccessKey();
+  if (keyBinding.IsEmpty()) {
+    if (LocalAccessible* localAcc = mAcc->AsLocal()) {
+      keyBinding = localAcc->KeyboardShortcut();
+    }
   }
-  KeyBinding keyBinding = localAcc->AccessKey();
-  if (keyBinding.IsEmpty()) keyBinding = localAcc->KeyboardShortcut();
 
   nsAutoString shortcut;
   keyBinding.ToString(shortcut);
@@ -1257,15 +1292,9 @@ MsaaAccessible::get_accFocus(
   if (!mAcc) {
     return CO_E_OBJNOTCONNECTED;
   }
-  LocalAccessible* localAcc = LocalAcc();
-  if (!localAcc) {
-    return E_NOTIMPL;  // XXX Not supported for RemoteAccessible yet.
-  }
-
   // Return the current IAccessible child that has focus
-  LocalAccessible* focusedAccessible = localAcc->FocusedChild();
-
-  if (focusedAccessible == localAcc) {
+  Accessible* focusedAccessible = mAcc->FocusedChild();
+  if (focusedAccessible == mAcc) {
     pvarChild->vt = VT_I4;
     pvarChild->lVal = CHILDID_SELF;
   } else if (focusedAccessible) {
@@ -1284,7 +1313,7 @@ MsaaAccessible::get_accFocus(
  */
 class AccessibleEnumerator final : public IEnumVARIANT {
  public:
-  explicit AccessibleEnumerator(const nsTArray<LocalAccessible*>& aArray)
+  explicit AccessibleEnumerator(const nsTArray<Accessible*>& aArray)
       : mArray(aArray.Clone()), mCurIndex(0) {}
   AccessibleEnumerator(const AccessibleEnumerator& toCopy)
       : mArray(toCopy.mArray.Clone()), mCurIndex(toCopy.mCurIndex) {}
@@ -1304,7 +1333,7 @@ class AccessibleEnumerator final : public IEnumVARIANT {
   STDMETHODIMP Clone(IEnumVARIANT FAR* FAR* ppenum);
 
  private:
-  nsTArray<LocalAccessible*> mArray;
+  nsTArray<Accessible*> mArray;
   uint32_t mCurIndex;
 };
 
@@ -1394,17 +1423,14 @@ MsaaAccessible::get_accSelection(VARIANT __RPC_FAR* pvarChildren) {
   if (!mAcc) {
     return CO_E_OBJNOTCONNECTED;
   }
-  LocalAccessible* localAcc = LocalAcc();
-  if (!localAcc) {
-    return E_NOTIMPL;  // XXX Not supported for RemoteAccessible yet.
-  }
+  Accessible* acc = Acc();
 
-  if (!localAcc->IsSelect()) {
+  if (!acc->IsSelect()) {
     return S_OK;
   }
 
-  AutoTArray<LocalAccessible*, 10> selectedItems;
-  localAcc->SelectedItems(&selectedItems);
+  AutoTArray<Accessible*, 10> selectedItems;
+  acc->SelectedItems(&selectedItems);
   uint32_t count = selectedItems.Length();
   if (count == 1) {
     pvarChildren->vt = VT_DISPATCH;
@@ -1462,15 +1488,17 @@ MsaaAccessible::accSelect(
     return accessible->accSelect(flagsSelect, kVarChildIdSelf);
   }
 
-  LocalAccessible* localAcc = mAcc->AsLocal();
   if (flagsSelect & SELFLAG_TAKEFOCUS) {
     if (XRE_IsContentProcess()) {
       // In this case we might have been invoked while the IPC MessageChannel is
       // waiting on a sync reply. We cannot dispatch additional IPC while that
       // is happening, so we dispatch TakeFocus from the main thread to
       // guarantee that we are outside any IPC.
+      MOZ_ASSERT(mAcc->IsLocal(),
+                 "Content process should only have local accessibles");
       nsCOMPtr<nsIRunnable> runnable = mozilla::NewRunnableMethod(
-          "LocalAccessible::TakeFocus", localAcc, &LocalAccessible::TakeFocus);
+          "LocalAccessible::TakeFocus", mAcc->AsLocal(),
+          &LocalAccessible::TakeFocus);
       NS_DispatchToMainThread(runnable, NS_DISPATCH_NORMAL);
       return S_OK;
     }
@@ -1478,22 +1506,18 @@ MsaaAccessible::accSelect(
     return S_OK;
   }
 
-  if (!localAcc) {
-    return E_NOTIMPL;  // XXX Not supported for RemoteAccessible yet.
-  }
-
   if (flagsSelect & SELFLAG_TAKESELECTION) {
-    localAcc->TakeSelection();
+    mAcc->TakeSelection();
     return S_OK;
   }
 
   if (flagsSelect & SELFLAG_ADDSELECTION) {
-    localAcc->SetSelected(true);
+    mAcc->SetSelected(true);
     return S_OK;
   }
 
   if (flagsSelect & SELFLAG_REMOVESELECTION) {
-    localAcc->SetSelected(false);
+    mAcc->SetSelected(false);
     return S_OK;
   }
 
@@ -1606,10 +1630,7 @@ MsaaAccessible::accNavigate(
   pvarEndUpAt->vt = VT_EMPTY;
 
   if (xpRelation) {
-    if (mAcc->IsRemote()) {
-      return E_NOTIMPL;  // XXX Not supported for RemoteAccessible yet.
-    }
-    Relation rel = mAcc->AsLocal()->RelationByType(*xpRelation);
+    Relation rel = mAcc->RelationByType(*xpRelation);
     navAccessible = rel.Next();
   }
 
@@ -1632,21 +1653,24 @@ MsaaAccessible::accHitTest(
   if (!mAcc) {
     return CO_E_OBJNOTCONNECTED;
   }
-  LocalAccessible* localAcc = LocalAcc();
-  if (!localAcc) {
-    return E_NOTIMPL;  // XXX Not supported for RemoteAccessible yet.
-  }
 
   Accessible* accessible = mAcc->ChildAtPoint(
-      xLeft, yTop, Accessible::EWhichChildAtPoint::DirectChild);
+      xLeft, yTop,
+      // The MSAA documentation says accHitTest should return a child. However,
+      // clients call AccessibleObjectFromPoint, which ends up walking the
+      // descendants calling accHitTest on each one. Since clients want the
+      // deepest descendant anyway, it's faster and probably more accurate to
+      // just do this ourselves. For now, we keep this behind the cache pref.
+      StaticPrefs::accessibility_cache_enabled_AtStartup()
+          ? Accessible::EWhichChildAtPoint::DeepestChild
+          : Accessible::EWhichChildAtPoint::DirectChild);
 
   // if we got a child
   if (accessible) {
-    // if the child is us
     if (accessible == mAcc) {
       pvarChild->vt = VT_I4;
       pvarChild->lVal = CHILDID_SELF;
-    } else {  // its not create a LocalAccessible for it.
+    } else {
       pvarChild->vt = VT_DISPATCH;
       pvarChild->pdispVal = NativeAccessible(accessible);
     }

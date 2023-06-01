@@ -18,12 +18,10 @@
 
 class nsIChannel;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 struct CSP;
 class Document;
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 /* =============== Logging =================== */
 
@@ -53,6 +51,9 @@ void CSP_LogMessage(const nsAString& aMessage, const nsAString& aSourceName,
   "violated base restriction: Inline Scripts will not execute"
 #define EVAL_VIOLATION_OBSERVER_TOPIC \
   "violated base restriction: Code will not be created from strings"
+#define WASM_EVAL_VIOLATION_OBSERVER_TOPIC                                \
+  "violated base restriction: WebAssembly code will not be created from " \
+  "dynamically"
 #define SCRIPT_NONCE_VIOLATION_OBSERVER_TOPIC "Inline Script had invalid nonce"
 #define STYLE_NONCE_VIOLATION_OBSERVER_TOPIC "Inline Style had invalid nonce"
 #define SCRIPT_HASH_VIOLATION_OBSERVER_TOPIC "Inline Script had invalid hash"
@@ -87,7 +88,11 @@ static const char* CSPStrDirectives[] = {
     "block-all-mixed-content",    // BLOCK_ALL_MIXED_CONTENT
     "sandbox",                    // SANDBOX_DIRECTIVE
     "worker-src",                 // WORKER_SRC_DIRECTIVE
-    "navigate-to"                 // NAVIGATE_TO_DIRECTIVE
+    "navigate-to",                // NAVIGATE_TO_DIRECTIVE
+    "script-src-elem",            // SCRIPT_SRC_ELEM_DIRECTIVE
+    "script-src-attr",            // SCRIPT_SRC_ATTR_DIRECTIVE
+    "style-src-elem",             // STYLE_SRC_ELEM_DIRECTIVE
+    "style-src-attr",             // STYLE_SRC_ATTR_DIRECTIVE
 };
 
 inline const char* CSP_CSPDirectiveToString(CSPDirective aDir) {
@@ -107,15 +112,17 @@ inline CSPDirective CSP_StringToCSPDirective(const nsAString& aDir) {
   return nsIContentSecurityPolicy::NO_DIRECTIVE;
 }
 
-#define FOR_EACH_CSP_KEYWORD(MACRO)             \
-  MACRO(CSP_SELF, "'self'")                     \
-  MACRO(CSP_UNSAFE_INLINE, "'unsafe-inline'")   \
-  MACRO(CSP_UNSAFE_EVAL, "'unsafe-eval'")       \
-  MACRO(CSP_NONE, "'none'")                     \
-  MACRO(CSP_NONCE, "'nonce-")                   \
-  MACRO(CSP_REPORT_SAMPLE, "'report-sample'")   \
-  MACRO(CSP_STRICT_DYNAMIC, "'strict-dynamic'") \
-  MACRO(CSP_UNSAFE_ALLOW_REDIRECTS, "'unsafe-allow-redirects'")
+#define FOR_EACH_CSP_KEYWORD(MACRO)                             \
+  MACRO(CSP_SELF, "'self'")                                     \
+  MACRO(CSP_UNSAFE_INLINE, "'unsafe-inline'")                   \
+  MACRO(CSP_UNSAFE_EVAL, "'unsafe-eval'")                       \
+  MACRO(CSP_UNSAFE_HASHES, "'unsafe-hashes'")                   \
+  MACRO(CSP_NONE, "'none'")                                     \
+  MACRO(CSP_NONCE, "'nonce-")                                   \
+  MACRO(CSP_REPORT_SAMPLE, "'report-sample'")                   \
+  MACRO(CSP_STRICT_DYNAMIC, "'strict-dynamic'")                 \
+  MACRO(CSP_UNSAFE_ALLOW_REDIRECTS, "'unsafe-allow-redirects'") \
+  MACRO(CSP_WASM_UNSAFE_EVAL, "'wasm-unsafe-eval'")
 
 enum CSPKeyword {
 #define KEYWORD_ENUM(id_, string_) id_,
@@ -508,11 +515,36 @@ class nsCSPScriptSrcDirective : public nsCSPDirective {
   virtual ~nsCSPScriptSrcDirective();
 
   void setRestrictWorkers() { mRestrictWorkers = true; }
+  void setRestrictScriptElem() { mRestrictScriptElem = true; }
+  void setRestrictScriptAttr() { mRestrictScriptAttr = true; }
 
-  virtual bool equals(CSPDirective aDirective) const override;
+  bool equals(CSPDirective aDirective) const override;
 
  private:
-  bool mRestrictWorkers;
+  bool mRestrictWorkers = false;
+  bool mRestrictScriptElem = false;
+  bool mRestrictScriptAttr = false;
+};
+
+/* =============== nsCSPStyleSrcDirective ============= */
+
+/*
+ * In CSP 3 style-src is use as a fallback for style-src-elem and
+ * style-src-attr.
+ */
+class nsCSPStyleSrcDirective : public nsCSPDirective {
+ public:
+  explicit nsCSPStyleSrcDirective(CSPDirective aDirective);
+  virtual ~nsCSPStyleSrcDirective();
+
+  void setRestrictStyleElem() { mRestrictStyleElem = true; }
+  void setRestrictStyleAttr() { mRestrictStyleAttr = true; }
+
+  bool equals(CSPDirective aDirective) const override;
+
+ private:
+  bool mRestrictStyleElem = false;
+  bool mRestrictStyleAttr = false;
 };
 
 /* =============== nsBlockAllMixedContentDirective === */

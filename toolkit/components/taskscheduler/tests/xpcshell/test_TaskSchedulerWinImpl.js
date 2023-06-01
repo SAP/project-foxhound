@@ -5,10 +5,8 @@
 
 // Unit tests for Windows scheduled task generation.
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-const { updateAppInfo } = ChromeUtils.import(
-  "resource://testing-common/AppInfo.jsm"
+const { updateAppInfo } = ChromeUtils.importESModule(
+  "resource://testing-common/AppInfo.sys.mjs"
 );
 updateAppInfo();
 
@@ -16,7 +14,7 @@ const { TaskScheduler } = ChromeUtils.import(
   "resource://gre/modules/TaskScheduler.jsm"
 );
 
-const { _TaskSchedulerWinImpl: WinImpl } = ChromeUtils.import(
+const { WinImpl } = ChromeUtils.import(
   "resource://gre/modules/TaskSchedulerWinImpl.jsm"
 );
 

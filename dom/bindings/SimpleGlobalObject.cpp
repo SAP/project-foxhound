@@ -21,7 +21,7 @@
 
 namespace mozilla::dom {
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(SimpleGlobalObject)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(SimpleGlobalObject)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(SimpleGlobalObject)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
@@ -32,8 +32,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(SimpleGlobalObject)
   tmp->TraverseObjectsInGlobal(cb);
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(SimpleGlobalObject)
-
 NS_IMPL_CYCLE_COLLECTING_ADDREF(SimpleGlobalObject)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(SimpleGlobalObject)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(SimpleGlobalObject)
@@ -43,7 +41,7 @@ NS_INTERFACE_MAP_END
 
 static SimpleGlobalObject* GetSimpleGlobal(JSObject* global);
 
-static void SimpleGlobal_finalize(JSFreeOp* fop, JSObject* obj) {
+static void SimpleGlobal_finalize(JS::GCContext* gcx, JSObject* obj) {
   SimpleGlobalObject* globalObject = GetSimpleGlobal(obj);
   if (globalObject) {
     globalObject->ClearWrapper(obj);
@@ -67,7 +65,6 @@ static const JSClassOps SimpleGlobalClassOps = {
     JS_ResolveStandardClass,
     JS_MayResolveStandardClass,
     SimpleGlobal_finalize,
-    nullptr,
     nullptr,
     nullptr,
     JS_GlobalObjectTraceHook,

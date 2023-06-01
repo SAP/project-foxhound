@@ -4,29 +4,28 @@
 
 "use strict";
 
-const Services = require("Services");
-const Rule = require("devtools/client/inspector/rules/models/rule");
-const UserProperties = require("devtools/client/inspector/rules/models/user-properties");
+const Rule = require("resource://devtools/client/inspector/rules/models/rule.js");
+const UserProperties = require("resource://devtools/client/inspector/rules/models/user-properties.js");
 const {
   style: { ELEMENT_STYLE },
-} = require("devtools/shared/constants");
+} = require("resource://devtools/shared/constants.js");
 
 loader.lazyRequireGetter(
   this,
   "promiseWarn",
-  "devtools/client/inspector/shared/utils",
+  "resource://devtools/client/inspector/shared/utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   ["parseDeclarations", "parseNamedDeclarations", "parseSingleValue"],
-  "devtools/shared/css/parsing-utils",
+  "resource://devtools/shared/css/parsing-utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "isCssVariable",
-  "devtools/client/fronts/css-properties",
+  "resource://devtools/client/fronts/css-properties.js",
   true
 );
 
@@ -344,8 +343,7 @@ class ElementStyle {
         earlier &&
         computedProp.priority === "important" &&
         earlier.priority !== "important" &&
-        (earlier.textProp.rule.inherited ||
-          !computedProp.textProp.rule.inherited)
+        !computedProp.textProp.rule.inherited
       ) {
         // New property is higher priority. Mark the earlier property
         // overridden (which will reverse its dirty state).
@@ -456,7 +454,7 @@ class ElementStyle {
       // longer matches the node. This strict check avoids accidentally causing
       // declarations to be overridden in the remaining matching rules.
       const isStyleRule =
-        rule.pseudoElement === "" && rule.matchedSelectors.length > 0;
+        rule.pseudoElement === "" && !!rule.matchedSelectors.length;
 
       // Style rules for pseudo-elements must always be considered, regardless if their
       // selector matches the node. As a convenience, declarations in rules for

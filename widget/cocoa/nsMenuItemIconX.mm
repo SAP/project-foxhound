@@ -23,6 +23,7 @@
 
 #include "MOZIconHelper.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "nsCocoaUtils.h"
 #include "nsComputedDOMStyle.h"
 #include "nsContentUtils.h"
@@ -122,7 +123,7 @@ already_AddRefed<nsIURI> nsMenuItemIconX::GetIconURI(nsIContent* aContent) {
     return nullptr;
   }
 
-  RefPtr<ComputedStyle> sc = nsComputedDOMStyle::GetComputedStyle(aContent->AsElement());
+  RefPtr<const ComputedStyle> sc = nsComputedDOMStyle::GetComputedStyle(aContent->AsElement());
   if (!sc) {
     return nullptr;
   }
@@ -150,6 +151,7 @@ already_AddRefed<nsIURI> nsMenuItemIconX::GetIconURI(nsIContent* aContent) {
     mImageRegionRect = r.ToNearestPixels(mozilla::AppUnitsPerCSSPixel());
   }
   mComputedStyle = std::move(sc);
+  mPresContext = document->GetPresContext();
 
   return iconURI.forget();
 }
@@ -165,13 +167,15 @@ nsresult nsMenuItemIconX::OnComplete(imgIContainer* aImage) {
     [mIconImage release];
     mIconImage = nil;
   }
-
+  RefPtr<nsPresContext> pc = mPresContext.get();
   mIconImage = [[MOZIconHelper iconImageFromImageContainer:aImage
                                                   withSize:NSMakeSize(kIconSize, kIconSize)
+                                               presContext:pc
                                              computedStyle:mComputedStyle
                                                    subrect:mImageRegionRect
                                                scaleFactor:0.0f] retain];
   mComputedStyle = nullptr;
+  mPresContext = nullptr;
 
   if (mListener) {
     mListener->IconUpdated();

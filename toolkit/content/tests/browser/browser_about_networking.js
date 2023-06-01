@@ -3,10 +3,6 @@
 
 "use strict";
 
-const { ContentTaskUtils } = ChromeUtils.import(
-  "resource://testing-common/ContentTaskUtils.jsm"
-);
-
 add_task(async function test_first() {
   registerCleanupFunction(() => {
     // Must clear mode first, otherwise we'll have non-local connections to

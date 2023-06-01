@@ -4,7 +4,6 @@
  */
 "use strict";
 
-/* import-globals-from ../../../../content/tests/browser/common/mockTransfer.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/toolkit/content/tests/browser/common/mockTransfer.js",
   this
@@ -48,7 +47,7 @@ function createPromiseForTransferComplete() {
   });
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   info("Setting up the prefs.");
 
   await SpecialPowers.pushPrefEnv({

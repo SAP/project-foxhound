@@ -3,11 +3,10 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 # Frame class definitions, used to generate FrameIdList.h and FrameTypeList.h
 
-from FrameClass import Frame, AbstractFrame, LEAF, NOT_LEAF
+from FrameClass import DYNAMIC_LEAF, LEAF, NOT_LEAF, AbstractFrame, Frame
 
 FRAME_CLASSES = [
     Frame("BRFrame", "Br", LEAF),
-    Frame("DetailsFrame", "Details", NOT_LEAF),
     Frame("nsBCTableCellFrame", "TableCell", NOT_LEAF),
     Frame("nsBackdropFrame", "Backdrop", LEAF),
     Frame("nsBlockFrame", "Block", NOT_LEAF),
@@ -23,8 +22,6 @@ FRAME_CLASSES = [
     Frame("nsComboboxDisplayFrame", "ComboboxDisplay", NOT_LEAF),
     Frame("nsContinuingTextFrame", "Text", LEAF),
     Frame("nsDateTimeControlFrame", "DateTimeControl", NOT_LEAF),
-    Frame("nsDeckFrame", "Deck", NOT_LEAF),
-    Frame("nsDocElementBoxFrame", "DocElementBox", NOT_LEAF),
     Frame("nsFieldSetFrame", "FieldSet", NOT_LEAF),
     Frame("nsFileControlFrame", "Block", LEAF),
     Frame("nsFirstLetterFrame", "Letter", NOT_LEAF),
@@ -41,7 +38,7 @@ FRAME_CLASSES = [
     Frame("nsHTMLScrollFrame", "Scroll", NOT_LEAF),
     Frame("nsImageBoxFrame", "ImageBox", LEAF),
     Frame("nsImageControlFrame", "ImageControl", LEAF),
-    Frame("nsImageFrame", "Image", LEAF),
+    Frame("nsImageFrame", "Image", DYNAMIC_LEAF),
     Frame("nsInlineFrame", "Inline", NOT_LEAF),
     Frame("nsLeafBoxFrame", "LeafBox", LEAF),
     Frame("nsListControlFrame", "ListControl", NOT_LEAF),
@@ -66,8 +63,6 @@ FRAME_CLASSES = [
     Frame("nsMathMLmunderoverFrame", "None", NOT_LEAF),
     Frame("nsMathMLsemanticsFrame", "None", NOT_LEAF),
     Frame("nsMathMLTokenFrame", "None", NOT_LEAF),
-    Frame("nsMenuBarFrame", "Box", NOT_LEAF),
-    Frame("nsMenuFrame", "Menu", NOT_LEAF),
     Frame("nsMenuPopupFrame", "MenuPopup", NOT_LEAF),
     Frame("nsMeterFrame", "Meter", LEAF),
     Frame("nsNumberControlFrame", "TextInput", LEAF),
@@ -75,11 +70,8 @@ FRAME_CLASSES = [
     Frame("nsPageContentFrame", "PageContent", NOT_LEAF),
     Frame("nsPageFrame", "Page", NOT_LEAF),
     Frame("nsPlaceholderFrame", "Placeholder", LEAF),
-    Frame("nsPopupSetFrame", "PopupSet", NOT_LEAF),
     Frame("nsProgressFrame", "Progress", LEAF),
     Frame("nsRangeFrame", "Range", LEAF),
-    Frame("nsResizerFrame", "Box", NOT_LEAF),
-    Frame("nsRootBoxFrame", "XULRoot", NOT_LEAF),
     Frame("nsRubyBaseContainerFrame", "RubyBaseContainer", NOT_LEAF),
     Frame("nsRubyBaseFrame", "RubyBase", NOT_LEAF),
     Frame("nsRubyFrame", "Ruby", NOT_LEAF),
@@ -134,7 +126,6 @@ FRAME_CLASSES = [
     Frame("nsTextBoxFrame", "LeafBox", LEAF),
     Frame("nsTextControlFrame", "TextInput", LEAF),
     Frame("nsTextFrame", "Text", LEAF),
-    Frame("nsTitleBarFrame", "Box", NOT_LEAF),
     Frame("nsTreeBodyFrame", "LeafBox", LEAF),
     Frame("nsTreeColFrame", "Box", NOT_LEAF),
     Frame("nsVideoFrame", "HTMLVideo", NOT_LEAF),

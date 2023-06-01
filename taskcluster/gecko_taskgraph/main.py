@@ -2,7 +2,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import argparse
 import atexit
+import json
+import logging
 import os
 import re
 import shutil
@@ -10,9 +13,6 @@ import subprocess
 import sys
 import tempfile
 import traceback
-import argparse
-import logging
-import json
 from collections import namedtuple
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
@@ -47,7 +47,9 @@ def argument(*args, **kwargs):
 
 def format_taskgraph_labels(taskgraph):
     return "\n".join(
-        taskgraph.tasks[index].label for index in taskgraph.graph.visit_postorder()
+        sorted(
+            taskgraph.tasks[index].label for index in taskgraph.graph.visit_postorder()
+        )
     )
 
 
@@ -66,8 +68,8 @@ def get_filtered_taskgraph(taskgraph, tasksregex):
     Filter all the tasks on basis of a regular expression
     and returns a new TaskGraph object
     """
-    from gecko_taskgraph.graph import Graph
-    from gecko_taskgraph.taskgraph import TaskGraph
+    from taskgraph.graph import Graph
+    from taskgraph.taskgraph import TaskGraph
 
     # return original taskgraph if no regular expression is passed
     if not tasksregex:
@@ -99,25 +101,25 @@ FORMAT_METHODS = {
 
 def get_taskgraph_generator(root, parameters):
     """Helper function to make testing a little easier."""
-    from gecko_taskgraph.generator import TaskGraphGenerator
+    from taskgraph.generator import TaskGraphGenerator
 
     return TaskGraphGenerator(root_dir=root, parameters=parameters)
 
 
 def format_taskgraph(options, parameters, logfile=None):
-    import gecko_taskgraph
+    import taskgraph
     from taskgraph.parameters import parameters_loader
 
     if logfile:
-        oldhandler = logging.root.handlers[-1]
-        logging.root.removeHandler(oldhandler)
-
         handler = logging.FileHandler(logfile, mode="w")
-        handler.setFormatter(oldhandler.formatter)
+        if logging.root.handlers:
+            oldhandler = logging.root.handlers[-1]
+            logging.root.removeHandler(oldhandler)
+            handler.setFormatter(oldhandler.formatter)
         logging.root.addHandler(handler)
 
     if options["fast"]:
-        gecko_taskgraph.fast = True
+        taskgraph.fast = True
 
     if isinstance(parameters, str):
         parameters = parameters_loader(
@@ -395,6 +397,11 @@ def show_taskgraph(options):
             if mod != __name__ and mod.split(".", 1)[0].endswith("taskgraph"):
                 del sys.modules[mod]
 
+        # Ensure gecko_taskgraph is ahead of taskcluster_taskgraph in sys.path.
+        # Without this, we may end up validating some things against the wrong
+        # schema.
+        import gecko_taskgraph  # noqa
+
         if options["diff"] == "default":
             base_ref = repo.base_ref
         else:
@@ -503,7 +510,7 @@ def show_taskgraph(options):
     metavar="context.tar",
 )
 def build_image(args):
-    from gecko_taskgraph.docker import build_image, build_context
+    from gecko_taskgraph.docker import build_context, build_image
 
     if args["context_only"] is None:
         build_image(args["image_name"], args["tag"], os.environ)
@@ -596,6 +603,15 @@ def image_digest(args):
 )
 @argument("--base-repository", required=True, help='URL for "base" repository to clone')
 @argument(
+    "--base-ref", default="", help='Reference of the revision in the "base" repository'
+)
+@argument(
+    "--base-rev",
+    default="",
+    help="Taskgraph decides what to do based on the revision range between "
+    "`--base-rev` and `--head-rev`. Value is determined automatically if not provided",
+)
+@argument(
     "--head-repository",
     required=True,
     help='URL for "head" repository to fetch revision from',
@@ -674,18 +690,18 @@ def action_callback(options):
 @argument("callback", default=None, help="Action callback name (Python function name)")
 def test_action_callback(options):
     import taskgraph.parameters
-    import gecko_taskgraph.actions
+    from taskgraph.config import load_graph_config
     from taskgraph.util import yaml
-    from gecko_taskgraph.config import load_graph_config
+
+    import gecko_taskgraph.actions
 
     def load_data(filename):
         with open(filename) as f:
             if filename.endswith(".yml"):
                 return yaml.load_stream(f)
-            elif filename.endswith(".json"):
+            if filename.endswith(".json"):
                 return json.load(f)
-            else:
-                raise Exception(f"unknown filename {filename}")
+            raise Exception(f"unknown filename {filename}")
 
     try:
         task_id = options["task_id"]

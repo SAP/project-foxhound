@@ -6,18 +6,22 @@
 
 var EXPORTED_SYMBOLS = ["HomePage"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  IgnoreLists: "resource://gre/modules/IgnoreLists.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   CustomizableUI: "resource:///modules/CustomizableUI.jsm",
   ExtensionParent: "resource://gre/modules/ExtensionParent.jsm",
   ExtensionPreferencesManager:
     "resource://gre/modules/ExtensionPreferencesManager.jsm",
-  IgnoreLists: "resource://gre/modules/IgnoreLists.jsm",
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
-  Services: "resource://gre/modules/Services.jsm",
 });
 
 const kPrefName = "browser.startup.homepage";
@@ -57,7 +61,7 @@ function getHomepagePref(useDefault) {
 }
 
 /**
- * HomePage provides tools to keep try of the current homepage, and the
+ * HomePage provides tools to keep track of the current homepage, and the
  * applications's default homepage. It includes tools to insure that certain
  * urls are ignored. As a result, all set/get requests for the homepage
  * preferences should be routed through here.
@@ -88,7 +92,7 @@ let HomePage = {
     // Now we have the values, listen for future updates.
     this._ignoreListListener = this._handleIgnoreListUpdated.bind(this);
 
-    this._initializationPromise = IgnoreLists.getAndSubscribe(
+    this._initializationPromise = lazy.IgnoreLists.getAndSubscribe(
       this._ignoreListListener
     );
 
@@ -112,8 +116,8 @@ let HomePage = {
   get(aWindow) {
     let homePages = getHomepagePref();
     if (
-      PrivateBrowsingUtils.permanentPrivateBrowsing ||
-      (aWindow && PrivateBrowsingUtils.isWindowPrivate(aWindow))
+      lazy.PrivateBrowsingUtils.permanentPrivateBrowsing ||
+      (aWindow && lazy.PrivateBrowsingUtils.isWindowPrivate(aWindow))
     ) {
       // If an extension controls the setting and does not have private
       // browsing permission, use the default setting.
@@ -133,6 +137,10 @@ let HomePage = {
       ) {
         return this.getDefault();
       }
+    }
+
+    if (homePages == "about:blank") {
+      homePages = "chrome://browser/content/blanktab.html";
     }
 
     return homePages;
@@ -189,7 +197,7 @@ let HomePage = {
     await this.delayedStartup();
 
     if (await this.shouldIgnore(value)) {
-      Cu.reportError(
+      console.error(
         `Ignoring homepage setting for ${value} as it is on the ignore list.`
       );
       Services.telemetry.recordEvent(
@@ -277,19 +285,19 @@ let HomePage = {
             return;
           }
           // getSetting does not need the module to be loaded.
-          const item = await ExtensionPreferencesManager.getSetting(
+          const item = await lazy.ExtensionPreferencesManager.getSetting(
             "homepage_override"
           );
           if (item && item.id) {
             // During startup some modules may not be loaded yet, so we load
             // the setting we need prior to removal.
-            await ExtensionParent.apiManager.asyncLoadModule(
+            await lazy.ExtensionParent.apiManager.asyncLoadModule(
               "chrome_settings_overrides"
             );
-            ExtensionPreferencesManager.removeSetting(
+            lazy.ExtensionPreferencesManager.removeSetting(
               item.id,
               "homepage_override"
-            ).catch(Cu.reportError);
+            ).catch(console.error);
           } else {
             // If we don't have a setting for it, we assume the pref has
             // been incorrectly set somehow.
@@ -314,7 +322,7 @@ let HomePage = {
   onWidgetRemoved(widgetId, area) {
     if (widgetId == kWidgetId) {
       Services.prefs.setBoolPref(kWidgetRemovedPref, true);
-      CustomizableUI.removeListener(this);
+      lazy.CustomizableUI.removeListener(this);
     }
   },
 
@@ -332,13 +340,13 @@ let HomePage = {
       homePage !== "about:blank" &&
       !Services.prefs.getBoolPref(kExtensionControllerPref, false) &&
       !Services.prefs.getBoolPref(kWidgetRemovedPref, false) &&
-      !CustomizableUI.getWidget(kWidgetId).areaType
+      !lazy.CustomizableUI.getWidget(kWidgetId).areaType
     ) {
       // Find a spot for the home button, ideally it will be in its default
       // position beside the stop/refresh button.
       // Work backwards from the URL bar since it can't be removed and put
       // the button after the first non-spring we find.
-      let navbarPlacements = CustomizableUI.getWidgetIdsInArea("nav-bar");
+      let navbarPlacements = lazy.CustomizableUI.getWidgetIdsInArea("nav-bar");
       let position = navbarPlacements.indexOf("urlbar-container");
       for (let i = position - 1; i >= 0; i--) {
         if (!navbarPlacements[i].startsWith("customizableui-special-spring")) {
@@ -346,13 +354,13 @@ let HomePage = {
           break;
         }
       }
-      CustomizableUI.addWidgetToArea(kWidgetId, "nav-bar", position);
+      lazy.CustomizableUI.addWidgetToArea(kWidgetId, "nav-bar", position);
     }
   },
 
   _addCustomizableUiListener() {
     if (!Services.prefs.getBoolPref(kWidgetRemovedPref, false)) {
-      CustomizableUI.addListener(this);
+      lazy.CustomizableUI.addListener(this);
     }
   },
 };

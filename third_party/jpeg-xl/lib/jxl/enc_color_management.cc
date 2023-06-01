@@ -18,7 +18,6 @@
 #include <array>
 #include <atomic>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <utility>
 
@@ -32,7 +31,7 @@
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/field_encodings.h"
-#include "lib/jxl/linalg.h"
+#include "lib/jxl/matrix_ops.h"
 #include "lib/jxl/transfer_functions-inl.h"
 #if JPEGXL_ENABLE_SKCMS
 #include "lib/jxl/enc_jxl_skcms.h"
@@ -106,7 +105,8 @@ Status BeforeTransform(JxlCms* t, const float* buf_src, float* xform_src,
                                           : 10000.f / t->intensity_target);
       for (size_t i = 0; i < buf_size; i += Lanes(df)) {
         const auto val = Load(df, buf_src + i);
-        const auto result = multiplier * TF_PQ().DisplayFromEncoded(df, val);
+        const auto result =
+            Mul(multiplier, TF_PQ().DisplayFromEncoded(df, val));
         Store(result, df, xform_src + i);
       }
 #if JXL_CMS_VERBOSE >= 2
@@ -163,7 +163,8 @@ Status AfterTransform(JxlCms* t, float* JXL_RESTRICT buf_dst, size_t buf_size) {
                                                  : t->intensity_target * 1e-4f);
       for (size_t i = 0; i < buf_size; i += Lanes(df)) {
         const auto val = Load(df, buf_dst + i);
-        const auto result = TF_PQ().EncodedFromDisplay(df, multiplier * val);
+        const auto result =
+            TF_PQ().EncodedFromDisplay(df, Mul(multiplier, val));
         Store(result, df, buf_dst + i);
       }
 #if JXL_CMS_VERBOSE >= 2
@@ -229,6 +230,15 @@ Status DoColorSpaceTransform(void* cms_data, const size_t thread,
     }
     xform_src = mutable_xform_src;
   }
+#else
+  if (t->channels_src == 4 && !t->skip_lcms) {
+    // LCMS does CMYK in a weird way: 0 = white, 100 = max ink
+    float* mutable_xform_src = t->buf_src.Row(thread);
+    for (size_t x = 0; x < xsize * 4; ++x) {
+      mutable_xform_src[x] = 100.f - 100.f * mutable_xform_src[x];
+    }
+    xform_src = mutable_xform_src;
+  }
 #endif
 
 #if JXL_CMS_VERBOSE >= 2
@@ -244,10 +254,13 @@ Status DoColorSpaceTransform(void* cms_data, const size_t thread,
     }  // else: in-place, no need to copy
   } else {
 #if JPEGXL_ENABLE_SKCMS
-    JXL_CHECK(skcms_Transform(
-        xform_src, skcms_PixelFormat_RGB_fff, skcms_AlphaFormat_Opaque,
-        &t->profile_src, buf_dst, skcms_PixelFormat_RGB_fff,
-        skcms_AlphaFormat_Opaque, &t->profile_dst, xsize));
+    JXL_CHECK(
+        skcms_Transform(xform_src,
+                        (t->channels_src == 4 ? skcms_PixelFormat_RGBA_ffff
+                                              : skcms_PixelFormat_RGB_fff),
+                        skcms_AlphaFormat_Opaque, &t->profile_src, buf_dst,
+                        skcms_PixelFormat_RGB_fff, skcms_AlphaFormat_Opaque,
+                        &t->profile_dst, xsize));
 #else   // JPEGXL_ENABLE_SKCMS
     cmsDoTransform(t->lcms_transform, xform_src, buf_dst,
                    static_cast<cmsUInt32Number>(xsize));
@@ -295,14 +308,6 @@ int DoColorSpaceTransform(void* t, size_t thread, const float* buf_src,
 // Define to 1 on OS X as a workaround for older LCMS lacking MD5.
 #define JXL_CMS_OLD_VERSION 0
 
-// cms functions (even *THR) are not thread-safe, except cmsDoTransform.
-// To ensure all functions are covered without frequent lock-taking nor risk of
-// recursive lock, we lock in the top-level APIs.
-static std::mutex& LcmsMutex() {
-  static std::mutex m;
-  return m;
-}
-
 #if JPEGXL_ENABLE_SKCMS
 
 JXL_MUST_USE_RESULT CIExy CIExyFromXYZ(const float XYZ[3]) {
@@ -332,11 +337,6 @@ JXL_MUST_USE_RESULT CIExy CIExyFromXYZ(const cmsCIEXYZ& XYZ) {
 JXL_MUST_USE_RESULT cmsCIEXYZ D50_XYZ() {
   // Quantized D50 as stored in ICC profiles.
   return {0.96420288, 1.0, 0.82490540};
-}
-
-JXL_MUST_USE_RESULT cmsCIExyY xyYFromCIExy(const CIExy& xy) {
-  const cmsCIExyY xyY = {xy.x, xy.y, 1.0};
-  return xyY;
 }
 
 // RAII
@@ -396,20 +396,15 @@ Status DecodeProfile(const cmsContext context, const PaddedBytes& icc,
 ColorSpace ColorSpaceFromProfile(const skcms_ICCProfile& profile) {
   switch (profile.data_color_space) {
     case skcms_Signature_RGB:
+    case skcms_Signature_CMYK:
+      // spec says CMYK is encoded as RGB (the kBlack extra channel signals that
+      // it is actually CMYK)
       return ColorSpace::kRGB;
     case skcms_Signature_Gray:
       return ColorSpace::kGray;
     default:
       return ColorSpace::kUnknown;
   }
-}
-
-// "profile1" is pre-decoded to save time in DetectTransferFunction.
-Status ProfileEquivalentToICC(const skcms_ICCProfile& profile1,
-                              const PaddedBytes& icc) {
-  skcms_ICCProfile profile2;
-  JXL_RETURN_IF_ERROR(skcms_Parse(icc.data(), icc.size(), &profile2));
-  return skcms_ApproximatelyEqualProfiles(&profile1, &profile2);
 }
 
 // vector_out := matmul(matrix, vector_in)
@@ -518,7 +513,8 @@ void DetectTransferFunction(const skcms_ICCProfile& profile,
 
 #else  // JPEGXL_ENABLE_SKCMS
 
-uint32_t Type32(const ColorEncoding& c) {
+uint32_t Type32(const ColorEncoding& c, bool cmyk) {
+  if (cmyk) return TYPE_CMYK_FLT;
   if (c.IsGray()) return TYPE_GRAY_FLT;
   return TYPE_RGB_FLT;
 }
@@ -531,6 +527,7 @@ uint32_t Type64(const ColorEncoding& c) {
 ColorSpace ColorSpaceFromProfile(const Profile& profile) {
   switch (cmsGetColorSpace(profile.get())) {
     case cmsSigRgbData:
+    case cmsSigCmykData:
       return ColorSpace::kRGB;
     case cmsSigGrayData:
       return ColorSpace::kGray;
@@ -605,8 +602,15 @@ Status ProfileEquivalentToICC(const cmsContext context, const Profile& profile1,
 JXL_MUST_USE_RESULT cmsCIEXYZ UnadaptedWhitePoint(const cmsContext context,
                                                   const Profile& profile,
                                                   const ColorEncoding& c) {
-  cmsCIEXYZ XYZ = {1.0, 1.0, 1.0};
+  const cmsCIEXYZ* white_point = static_cast<const cmsCIEXYZ*>(
+      cmsReadTag(profile.get(), cmsSigMediaWhitePointTag));
+  if (white_point != nullptr &&
+      cmsReadTag(profile.get(), cmsSigChromaticAdaptationTag) == nullptr) {
+    // No chromatic adaptation matrix: the white point is already unadapted.
+    return *white_point;
+  }
 
+  cmsCIEXYZ XYZ = {1.0, 1.0, 1.0};
   Profile profile_xyz;
   if (!CreateProfileXYZ(context, &profile_xyz)) return XYZ;
   // Array arguments are one per profile.
@@ -629,8 +633,8 @@ JXL_MUST_USE_RESULT cmsCIEXYZ UnadaptedWhitePoint(const cmsContext context,
   return XYZ;
 }
 
-Status IdentifyPrimaries(const Profile& profile, const cmsCIEXYZ& wp_unadapted,
-                         ColorEncoding* c) {
+Status IdentifyPrimaries(const cmsContext context, const Profile& profile,
+                         const cmsCIEXYZ& wp_unadapted, ColorEncoding* c) {
   if (!c->HasPrimaries()) return true;
   if (ColorSpaceFromProfile(profile) == ColorSpace::kUnknown) return true;
 
@@ -641,8 +645,34 @@ Status IdentifyPrimaries(const Profile& profile, const cmsCIEXYZ& wp_unadapted,
       cmsReadTag(profile.get(), cmsSigGreenColorantTag));
   const cmsCIEXYZ* adapted_b = static_cast<const cmsCIEXYZ*>(
       cmsReadTag(profile.get(), cmsSigBlueColorantTag));
+
+  cmsCIEXYZ converted_rgb[3];
   if (adapted_r == nullptr || adapted_g == nullptr || adapted_b == nullptr) {
-    return JXL_FAILURE("Failed to retrieve colorants");
+    // No colorant tag, determine the XYZ coordinates of the primaries by
+    // converting from the colorspace.
+    Profile profile_xyz;
+    if (!CreateProfileXYZ(context, &profile_xyz)) {
+      return JXL_FAILURE("Failed to retrieve colorants");
+    }
+    // Array arguments are one per profile.
+    cmsHPROFILE profiles[2] = {profile.get(), profile_xyz.get()};
+    cmsUInt32Number intents[2] = {INTENT_RELATIVE_COLORIMETRIC,
+                                  INTENT_RELATIVE_COLORIMETRIC};
+    cmsBool black_compensation[2] = {0, 0};
+    cmsFloat64Number adaption[2] = {0.0, 0.0};
+    // Only transforming three pixels, so skip expensive optimizations.
+    cmsUInt32Number flags = cmsFLAGS_NOOPTIMIZE | cmsFLAGS_HIGHRESPRECALC;
+    Transform xform(cmsCreateExtendedTransform(
+        context, 2, profiles, black_compensation, intents, adaption, nullptr, 0,
+        Type64(*c), TYPE_XYZ_DBL, flags));
+    if (!xform) return JXL_FAILURE("Failed to retrieve colorants");
+
+    const cmsFloat64Number in[9] = {1.0, 0.0, 0.0, 0.0, 1.0,
+                                    0.0, 0.0, 0.0, 1.0};
+    cmsDoTransform(xform.get(), in, &converted_rgb->X, 3);
+    adapted_r = &converted_rgb[0];
+    adapted_g = &converted_rgb[1];
+    adapted_b = &converted_rgb[2];
   }
 
   // TODO(janwas): no longer assume Bradford and D50.
@@ -797,10 +827,36 @@ Status ApplyHlgOotf(JxlCms* t, float* JXL_RESTRICT buf, size_t xsize,
   return true;
 }
 
-}  // namespace
+bool ApplyCICP(const uint8_t color_primaries,
+               const uint8_t transfer_characteristics,
+               const uint8_t matrix_coefficients, const uint8_t full_range,
+               ColorEncoding* JXL_RESTRICT c) {
+  if (matrix_coefficients != 0) return false;
+  if (full_range != 1) return false;
 
-// All functions that call lcms directly (except ColorSpaceTransform::Run) must
-// lock LcmsMutex().
+  const auto primaries = static_cast<Primaries>(color_primaries);
+  const auto tf = static_cast<TransferFunction>(transfer_characteristics);
+  if (tf == TransferFunction::kUnknown || !EnumValid(tf)) return false;
+  if (primaries == Primaries::kCustom ||
+      !(color_primaries == 12 || EnumValid(primaries))) {
+    return false;
+  }
+  c->SetColorSpace(ColorSpace::kRGB);
+  c->tf.SetTransferFunction(tf);
+  if (primaries == Primaries::kP3) {
+    c->white_point = WhitePoint::kDCI;
+    c->primaries = Primaries::kP3;
+  } else if (color_primaries == 12) {
+    c->white_point = WhitePoint::kD65;
+    c->primaries = Primaries::kP3;
+  } else {
+    c->white_point = WhitePoint::kD65;
+    c->primaries = primaries;
+  }
+  return true;
+}
+
+}  // namespace
 
 Status ColorEncoding::SetFieldsFromICC() {
   // In case parsing fails, mark the ColorEncoding as invalid.
@@ -824,8 +880,18 @@ Status ColorEncoding::SetFieldsFromICC() {
       icc_[66] != 0) {
     return JXL_FAILURE("Invalid rendering intent %u\n", rendering_intent32);
   }
+  // ICC and RenderingIntent have the same values (0..3).
+  rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
+
+  if (profile.has_CICP && ApplyCICP(profile.CICP.color_primaries,
+                                    profile.CICP.transfer_characteristics,
+                                    profile.CICP.matrix_coefficients,
+                                    profile.CICP.video_full_range_flag, this)) {
+    return true;
+  }
 
   SetColorSpace(ColorSpaceFromProfile(profile));
+  cmyk_ = (profile.data_color_space == skcms_Signature_CMYK);
 
   CIExy wp_unadapted;
   JXL_RETURN_IF_ERROR(UnadaptedWhitePoint(profile, &wp_unadapted));
@@ -836,35 +902,47 @@ Status ColorEncoding::SetFieldsFromICC() {
 
   // Relies on color_space/white point/primaries being set already.
   DetectTransferFunction(profile, this);
-  // ICC and RenderingIntent have the same values (0..3).
-  rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
-#else   // JPEGXL_ENABLE_SKCMS
+#else  // JPEGXL_ENABLE_SKCMS
 
-  std::lock_guard<std::mutex> guard(LcmsMutex());
   const cmsContext context = GetContext();
 
   Profile profile;
   JXL_RETURN_IF_ERROR(DecodeProfile(context, icc_, &profile));
+
+  static constexpr size_t kCICPSize = 12;
+  static constexpr auto kCICPSignature =
+      static_cast<cmsTagSignature>(0x63696370);
+  uint8_t cicp_buffer[kCICPSize];
+  if (cmsReadRawTag(profile.get(), kCICPSignature, cicp_buffer, kCICPSize) ==
+          kCICPSize &&
+      ApplyCICP(cicp_buffer[8], cicp_buffer[9], cicp_buffer[10],
+                cicp_buffer[11], this)) {
+    return true;
+  }
 
   const cmsUInt32Number rendering_intent32 =
       cmsGetHeaderRenderingIntent(profile.get());
   if (rendering_intent32 > 3) {
     return JXL_FAILURE("Invalid rendering intent %u\n", rendering_intent32);
   }
+  // ICC and RenderingIntent have the same values (0..3).
+  rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
 
   SetColorSpace(ColorSpaceFromProfile(profile));
+  if (cmsGetColorSpace(profile.get()) == cmsSigCmykData) {
+    cmyk_ = true;
+    return true;
+  }
 
   const cmsCIEXYZ wp_unadapted = UnadaptedWhitePoint(context, profile, *this);
   JXL_RETURN_IF_ERROR(SetWhitePoint(CIExyFromXYZ(wp_unadapted)));
 
   // Relies on color_space.
-  JXL_RETURN_IF_ERROR(IdentifyPrimaries(profile, wp_unadapted, this));
+  JXL_RETURN_IF_ERROR(IdentifyPrimaries(context, profile, wp_unadapted, this));
 
   // Relies on color_space/white point/primaries being set already.
   DetectTransferFunction(context, profile, this);
 
-  // ICC and RenderingIntent have the same values (0..3).
-  rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
 #endif  // JPEGXL_ENABLE_SKCMS
 
   return true;
@@ -872,22 +950,18 @@ Status ColorEncoding::SetFieldsFromICC() {
 
 void ColorEncoding::DecideIfWantICC() {
   PaddedBytes icc_new;
-  bool equivalent;
 #if JPEGXL_ENABLE_SKCMS
   skcms_ICCProfile profile;
   if (!DecodeProfile(ICC().data(), ICC().size(), &profile)) return;
   if (!MaybeCreateProfile(*this, &icc_new)) return;
-  equivalent = ProfileEquivalentToICC(profile, icc_new);
 #else   // JPEGXL_ENABLE_SKCMS
   const cmsContext context = GetContext();
   Profile profile;
   if (!DecodeProfile(context, ICC(), &profile)) return;
+  if (cmsGetColorSpace(profile.get()) == cmsSigCmykData) return;
   if (!MaybeCreateProfile(*this, &icc_new)) return;
-  equivalent = ProfileEquivalentToICC(context, profile, icc_new, *this);
 #endif  // JPEGXL_ENABLE_SKCMS
 
-  // Successfully created a profile => reconstruction should be equivalent.
-  JXL_ASSERT(equivalent);
   want_icc_ = false;
 }
 
@@ -897,7 +971,6 @@ void JxlCmsDestroy(void* cms_data) {
   if (cms_data == nullptr) return;
   JxlCms* t = reinterpret_cast<JxlCms*>(cms_data);
 #if !JPEGXL_ENABLE_SKCMS
-  std::lock_guard<std::mutex> guard(LcmsMutex());
   TransformDeleter()(t->lcms_transform);
 #endif
   delete t;
@@ -934,7 +1007,6 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
     return nullptr;
   }
 #else   // JPEGXL_ENABLE_SKCMS
-  std::lock_guard<std::mutex> guard(LcmsMutex());
   const cmsContext context = GetContext();
   Profile profile_src, profile_dst;
   if (!DecodeProfile(context, c_src.ICC(), &profile_src)) {
@@ -1071,9 +1143,10 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
 #endif  // JPEGXL_ENABLE_SKCMS
 
   // Not including alpha channel (copied separately).
-  const size_t channels_src = c_src.Channels();
+  const size_t channels_src = (c_src.IsCMYK() ? 4 : c_src.Channels());
   const size_t channels_dst = c_dst.Channels();
-  JXL_CHECK(channels_src == channels_dst);
+  JXL_CHECK(channels_src == channels_dst ||
+            (channels_src == 4 && channels_dst == 3));
 #if JXL_CMS_VERBOSE
   printf("Channels: %" PRIuS "; Threads: %" PRIuS "\n", channels_src,
          num_threads);
@@ -1081,8 +1154,8 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
 
 #if !JPEGXL_ENABLE_SKCMS
   // Type includes color space (XYZ vs RGB), so can be different.
-  const uint32_t type_src = Type32(c_src);
-  const uint32_t type_dst = Type32(c_dst);
+  const uint32_t type_src = Type32(c_src, channels_src == 4);
+  const uint32_t type_dst = Type32(c_dst, false);
   const uint32_t intent = static_cast<uint32_t>(c_dst.rendering_intent);
   // Use cmsFLAGS_NOCACHE to disable the 1-pixel cache and make calling
   // cmsDoTransform() thread-safe.
@@ -1110,7 +1183,7 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
 #if JPEGXL_ENABLE_SKCMS
   // SkiaCMS doesn't support grayscale float buffers, so we create space for RGB
   // float buffers anyway.
-  t->buf_src = ImageF(xsize * 3, num_threads);
+  t->buf_src = ImageF(xsize * (channels_src == 4 ? 4 : 3), num_threads);
   t->buf_dst = ImageF(xsize * 3, num_threads);
 #else
   t->buf_src = ImageF(xsize * channels_src, num_threads);

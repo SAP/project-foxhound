@@ -11,11 +11,7 @@
 #include "nsDependentString.h"
 #include "nsIConsoleService.h"
 #include "nsIScriptError.h"
-#include "nsIXPConnect.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/ScriptSettings.h"
 
-#include "XPCWrapper.h"
 #include "xpcprivate.h"
 
 #include "jsapi.h"
@@ -32,11 +28,9 @@
 
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/dom/BindingUtils.h"
-#include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/dom/WindowBinding.h"
+#include "mozilla/dom/ProxyHandlerUtils.h"
 #include "mozilla/dom/WindowProxyHolder.h"
 #include "mozilla/dom/XrayExpandoClass.h"
-#include "nsGlobalWindow.h"
 
 using namespace mozilla::dom;
 using namespace JS;
@@ -268,11 +262,8 @@ bool ReportWrapperDenial(JSContext* cx, HandleId id, WrapperDenialType type,
     MOZ_ASSERT(type == WrapperDenialForCOW);
     errorMessage.emplace(
         "Security wrapper denied access to property %s on privileged "
-        "Javascript object. Support for exposing privileged objects "
-        "to untrusted content via __exposedProps__ has been "
-        "removed - use WebIDL bindings or Components.utils.cloneInto "
-        "instead. Note that only the first denied property access from a "
-        "given global object will be reported.",
+        "Javascript object. Note that only the first denied property "
+        "access from a given global object will be reported.",
         NS_LossyConvertUTF16toASCII(propertyName).get());
   }
   nsString filenameStr(NS_ConvertASCIItoUTF16(filename.get()));
@@ -935,8 +926,8 @@ bool JSXrayTraits::enumerateNames(JSContext* cx, HandleObject wrapper,
 
       // Fail early if the typed array is enormous, because this will be very
       // slow and will likely report OOM. This also means we don't need to
-      // handle indices greater than JSID_INT_MAX in the loop below.
-      static_assert(JSID_INT_MAX >= INT32_MAX);
+      // handle indices greater than PropertyKey::IntMax in the loop below.
+      static_assert(PropertyKey::IntMax >= INT32_MAX);
       if (length > INT32_MAX) {
         JS_ReportOutOfMemory(cx);
         return false;
@@ -946,7 +937,7 @@ bool JSXrayTraits::enumerateNames(JSContext* cx, HandleObject wrapper,
         return false;
       }
       for (int32_t i = 0; i < int32_t(length); ++i) {
-        props.infallibleAppend(INT_TO_JSID(i));
+        props.infallibleAppend(PropertyKey::Int(i));
       }
     } else if (key == JSProto_Function) {
       if (!props.append(GetJSIDByIndex(cx, XPCJSContext::IDX_LENGTH))) {
@@ -1176,7 +1167,7 @@ static nsIPrincipal* GetExpandoObjectPrincipal(JSObject* expandoObject) {
   return static_cast<nsIPrincipal*>(v.toPrivate());
 }
 
-static void ExpandoObjectFinalize(JSFreeOp* fop, JSObject* obj) {
+static void ExpandoObjectFinalize(JS::GCContext* gcx, JSObject* obj) {
   // Release the principal.
   nsIPrincipal* principal = GetExpandoObjectPrincipal(obj);
   NS_RELEASE(principal);
@@ -1191,7 +1182,6 @@ const JSClassOps XrayExpandoObjectClassOps = {
     nullptr,                // mayResolve
     ExpandoObjectFinalize,  // finalize
     nullptr,                // call
-    nullptr,                // hasInstance
     nullptr,                // construct
     nullptr,                // trace
 };
@@ -2004,7 +1994,8 @@ bool XrayWrapper<Base, Traits>::defineProperty(JSContext* cx,
 template <typename Base, typename Traits>
 bool XrayWrapper<Base, Traits>::ownPropertyKeys(
     JSContext* cx, HandleObject wrapper, MutableHandleIdVector props) const {
-  assertEnteredPolicy(cx, wrapper, JSID_VOID, BaseProxyHandler::ENUMERATE);
+  assertEnteredPolicy(cx, wrapper, JS::PropertyKey::Void(),
+                      BaseProxyHandler::ENUMERATE);
   return getPropertyKeys(
       cx, wrapper, JSITER_OWNONLY | JSITER_HIDDEN | JSITER_SYMBOLS, props);
 }
@@ -2112,7 +2103,8 @@ bool XrayWrapper<Base, Traits>::enumerate(
 template <typename Base, typename Traits>
 bool XrayWrapper<Base, Traits>::call(JSContext* cx, HandleObject wrapper,
                                      const JS::CallArgs& args) const {
-  assertEnteredPolicy(cx, wrapper, JSID_VOID, BaseProxyHandler::CALL);
+  assertEnteredPolicy(cx, wrapper, JS::PropertyKey::Void(),
+                      BaseProxyHandler::CALL);
   // Hard cast the singleton since SecurityWrapper doesn't have one.
   return Traits::call(cx, wrapper, args, Base::singleton);
 }
@@ -2120,7 +2112,8 @@ bool XrayWrapper<Base, Traits>::call(JSContext* cx, HandleObject wrapper,
 template <typename Base, typename Traits>
 bool XrayWrapper<Base, Traits>::construct(JSContext* cx, HandleObject wrapper,
                                           const JS::CallArgs& args) const {
-  assertEnteredPolicy(cx, wrapper, JSID_VOID, BaseProxyHandler::CALL);
+  assertEnteredPolicy(cx, wrapper, JS::PropertyKey::Void(),
+                      BaseProxyHandler::CALL);
   // Hard cast the singleton since SecurityWrapper doesn't have one.
   return Traits::construct(cx, wrapper, args, Base::singleton);
 }
@@ -2130,19 +2123,6 @@ bool XrayWrapper<Base, Traits>::getBuiltinClass(JSContext* cx,
                                                 JS::HandleObject wrapper,
                                                 js::ESClass* cls) const {
   return Traits::getBuiltinClass(cx, wrapper, Base::singleton, cls);
-}
-
-template <typename Base, typename Traits>
-bool XrayWrapper<Base, Traits>::hasInstance(JSContext* cx,
-                                            JS::HandleObject wrapper,
-                                            JS::MutableHandleValue v,
-                                            bool* bp) const {
-  assertEnteredPolicy(cx, wrapper, JSID_VOID, BaseProxyHandler::GET);
-
-  // CrossCompartmentWrapper::hasInstance unwraps |wrapper|'s Xrays and enters
-  // its compartment. Any present XrayWrappers should be preserved, so the
-  // standard "instanceof" implementation is called without unwrapping first.
-  return JS::InstanceofOperator(cx, wrapper, v, bp);
 }
 
 template <typename Base, typename Traits>
@@ -2265,7 +2245,8 @@ template <typename Base, typename Traits>
 bool XrayWrapper<Base, Traits>::getPropertyKeys(
     JSContext* cx, HandleObject wrapper, unsigned flags,
     MutableHandleIdVector props) const {
-  assertEnteredPolicy(cx, wrapper, JSID_VOID, BaseProxyHandler::ENUMERATE);
+  assertEnteredPolicy(cx, wrapper, JS::PropertyKey::Void(),
+                      BaseProxyHandler::ENUMERATE);
 
   // Enumerate expando properties first. Note that the expando object lives
   // in the target compartment.

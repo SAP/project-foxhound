@@ -6,8 +6,8 @@
 // Load the tracker in a dedicated loader using invisibleToDebugger and freshCompartment
 // so that it can inspect any other module/compartment, even DevTools, chrome,
 // and this script!
-const { DevToolsLoader } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
+const { DevToolsLoader } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
 );
 const loader = new DevToolsLoader({
   invisibleToDebugger: true,
@@ -17,7 +17,7 @@ const { allocationTracker } = loader.require(
   "chrome://mochitests/content/browser/devtools/shared/test-helpers/allocation-tracker"
 );
 const TrackedObjects = loader.require(
-  "devtools/shared/test-helpers/tracked-objects.jsm"
+  "resource://devtools/shared/test-helpers/tracked-objects.sys.mjs"
 );
 
 // This test record multiple times complete heap snapshot,

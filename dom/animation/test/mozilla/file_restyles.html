@@ -410,7 +410,7 @@ waitForAllPaints(() => {
         now = document.timeline.currentTime;
         elapsed = (now - timeAtStart);
         markers = await observeStyling(1);
-        if (markers.length > 0) {
+        if (markers.length) {
           break;
         }
       }
@@ -437,7 +437,7 @@ waitForAllPaints(() => {
       else if (elapsed.toPrecision(10) > 200)
         expectedMarkersLengthValid = markers.length == 1;
       else
-        expectedMarkersLengthValid = markers.length == 0;
+        expectedMarkersLengthValid = !markers.length;
       ok(expectedMarkersLengthValid,
          'Transform animation running on the element which is scrolled out ' +
          'should be unthrottled after around 200ms have elapsed. now: ' +
@@ -472,7 +472,7 @@ waitForAllPaints(() => {
         now = document.timeline.currentTime;
         elapsed = (now - timeAtStart);
         markers = await observeStyling(1);
-        if (markers.length > 0) {
+        if (markers.length) {
           break;
         }
       }
@@ -495,7 +495,7 @@ waitForAllPaints(() => {
       else if (elapsed.toPrecision(10) > 200)
         expectedMarkersLengthValid = markers.length == 1;
       else
-        expectedMarkersLengthValid = markers.length == 0;
+        expectedMarkersLengthValid = !markers.length;
       ok(expectedMarkersLengthValid,
          'Transform animation running on out of view element ' +
          'should be unthrottled after around 200ms have elapsed. now: ' +
@@ -2119,7 +2119,7 @@ waitForAllPaints(() => {
 
   add_task_if_omta_enabled(async function no_restyling_compositor_animations_in_opacity_zero_descendant_abspos() {
     const container = addDiv(null, { style: 'opacity: 0' });
-    const child = addDiv(null, { style: 'position: abspos; animation: background-color 100s infinite;' });
+    const child = addDiv(null, { style: 'position: absolute; animation: background-color 100s infinite;' });
     container.appendChild(child);
 
     const animation = child.getAnimations()[0];
@@ -2132,6 +2132,21 @@ waitForAllPaints(() => {
        'Animations running on the compositor in opacity zero abspos descendant element ' +
        'should never cause restyles');
     await ensureElementRemoval(container);
+  });
+
+  add_task_if_omta_enabled(async function no_restyling_compositor_animations_in_opacity_zero_element() {
+    const child = addDiv(null, { style: 'animation: background-color 100s infinite; opacity: 0' });
+
+    const animation = child.getAnimations()[0];
+    await waitForAnimationReadyToRestyle(animation);
+    ok(!SpecialPowers.wrap(animation).isRunningOnCompositor);
+
+    const markers = await observeStyling(5);
+
+    is(markers.length, 0,
+       'Animations running on the compositor in opacity zero element ' +
+       'should never cause restyles');
+    await ensureElementRemoval(child);
   });
 
   add_task_if_omta_enabled(async function restyling_main_thread_animations_in_opacity_zero_descendant_after_root_opacity_animation() {

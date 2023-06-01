@@ -1,7 +1,7 @@
 const TEST_URL_PATH =
   "://example.org/browser/toolkit/components/passwordmgr/test/browser/";
 
-add_task(async function setup() {
+add_setup(async function() {
   let login = LoginTestUtils.testData.formLogin({
     origin: "http://example.org",
     formActionOrigin: "http://example.org",
@@ -43,12 +43,12 @@ add_task(async function test_http_autofill() {
       }
     );
 
-    is(
+    Assert.equal(
       username,
       scheme == "http" ? "" : "username",
       "Username filled correctly"
     );
-    is(
+    Assert.equal(
       password,
       scheme == "http" ? "" : "password",
       "Password filled correctly"
@@ -82,12 +82,12 @@ add_task(async function test_iframe_in_http_autofill() {
       }
     );
 
-    is(
+    Assert.equal(
       username,
       scheme == "http" ? "" : "username",
       "Username filled correctly"
     );
-    is(
+    Assert.equal(
       password,
       scheme == "http" ? "" : "password",
       "Password filled correctly"
@@ -120,12 +120,12 @@ add_task(async function test_http_action_autofill() {
       }
     );
 
-    is(
+    Assert.equal(
       username,
       type == "insecure" ? "" : "username",
       "Username filled correctly"
     );
-    is(
+    Assert.equal(
       password,
       type == "insecure" ? "" : "password",
       "Password filled correctly"

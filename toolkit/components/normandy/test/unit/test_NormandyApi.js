@@ -1,11 +1,8 @@
 /* globals sinon */
 "use strict";
 
-const { CanonicalJSON } = ChromeUtils.import(
-  "resource://gre/modules/CanonicalJSON.jsm"
-);
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
 
 /* import-globals-from utils.js */

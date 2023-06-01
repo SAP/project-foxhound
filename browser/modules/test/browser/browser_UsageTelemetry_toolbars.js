@@ -409,12 +409,13 @@ add_task(async function extensions() {
       useAddonManager: "temporary",
       manifest: {
         version: "1",
-        applications: {
+        browser_specific_settings: {
           gecko: { id: "random_addon@example.com" },
         },
         browser_action: {
           default_icon: "default.png",
           default_title: "Hello",
+          default_area: "navbar",
         },
         page_action: {
           default_icon: "default.png",

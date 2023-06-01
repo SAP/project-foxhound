@@ -9,8 +9,8 @@ const GOOD_PAGE = "http://example.com/";
 const BAD_CERT = "http://expired.example.com/";
 const UNKNOWN_ISSUER = "http://self-signed.example.com/";
 
-const { TabStateFlusher } = ChromeUtils.import(
-  "resource:///modules/sessionstore/TabStateFlusher.jsm"
+const { TabStateFlusher } = ChromeUtils.importESModule(
+  "resource:///modules/sessionstore/TabStateFlusher.sys.mjs"
 );
 
 add_task(async function() {
@@ -111,7 +111,7 @@ add_task(async function() {
   let browser = gBrowser.selectedBrowser;
 
   let errorPageLoaded = BrowserTestUtils.waitForErrorPage(browser);
-  BrowserTestUtils.loadURI(browser, BAD_CERT);
+  BrowserTestUtils.loadURIString(browser, BAD_CERT);
   await errorPageLoaded;
 
   is(

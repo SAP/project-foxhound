@@ -9,6 +9,10 @@
 
 // Enters search mode using the one-off buttons.
 add_task(async function switchTabs() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.suggest.quickactions", false]],
+  });
+
   // Open three tabs.  We'll enter search mode in tabs 0 and 2.
   let tabs = [];
   for (let i = 0; i < 3; i++) {
@@ -196,7 +200,7 @@ add_task(async function slow_load() {
     {
       name: engineName,
     },
-    true
+    { skipUnload: true }
   );
 
   const originalTab = gBrowser.selectedTab;
@@ -234,7 +238,7 @@ add_task(async function slow_load_guaranteed() {
     {
       name: engineName,
     },
-    true
+    { skipUnload: true }
   );
 
   const backgroundTab = BrowserTestUtils.addTab(gBrowser);
@@ -243,7 +247,7 @@ add_task(async function slow_load_guaranteed() {
   // away from before setURI was called.
   backgroundTab.ownerGlobal.gURLBar.searchMode = { engineName };
   let loadPromise = BrowserTestUtils.browserLoaded(backgroundTab.linkedBrowser);
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.loadURIString(
     backgroundTab.linkedBrowser,
     "http://example.com/?search=test"
   );

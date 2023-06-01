@@ -487,8 +487,132 @@ s! {
         af_arg: [[::c_char; 10]; 24],
     }
 
-    pub struct sched_param {
-        pub sched_priority: ::c_int,
+    pub struct ki_sigset_t {
+        pub __bits: [u32; 4],
+    }
+
+    pub struct kinfo_proc2 {
+        pub p_forw: u64,
+        pub p_back: u64,
+        pub p_paddr: u64,
+        pub p_addr: u64,
+        pub p_fd: u64,
+        pub p_cwdi: u64,
+        pub p_stats: u64,
+        pub p_limit: u64,
+        pub p_vmspace: u64,
+        pub p_sigacts: u64,
+        pub p_sess: u64,
+        pub p_tsess: u64,
+        pub p_ru: u64,
+        pub p_eflag: i32,
+        pub p_exitsig: i32,
+        pub p_flag: i32,
+        pub p_pid: i32,
+        pub p_ppid: i32,
+        pub p_sid: i32,
+        pub p__pgid: i32,
+        pub p_tpgid: i32,
+        pub p_uid: u32,
+        pub p_ruid: u32,
+        pub p_gid: u32,
+        pub p_rgid: u32,
+        pub p_groups: [u32; KI_NGROUPS as usize],
+        pub p_ngroups: i16,
+        pub p_jobc: i16,
+        pub p_tdev: u32,
+        pub p_estcpu: u32,
+        pub p_rtime_sec: u32,
+        pub p_rtime_usec: u32,
+        pub p_cpticks: i32,
+        pub p_pctcpu: u32,
+        pub p_swtime: u32,
+        pub p_slptime: u32,
+        pub p_schedflags: i32,
+        pub p_uticks: u64,
+        pub p_sticks: u64,
+        pub p_iticks: u64,
+        pub p_tracep: u64,
+        pub p_traceflag: i32,
+        pub p_holdcnt: i32,
+        pub p_siglist: ki_sigset_t,
+        pub p_sigmask: ki_sigset_t,
+        pub p_sigignore: ki_sigset_t,
+        pub p_sigcatch: ki_sigset_t,
+        pub p_stat: i8,
+        pub p_priority: u8,
+        pub p_usrpri: u8,
+        pub p_nice: u8,
+        pub p_xstat: u16,
+        pub p_acflag: u16,
+        pub p_comm: [::c_char; KI_MAXCOMLEN as usize],
+        pub p_wmesg: [::c_char; KI_WMESGLEN as usize],
+        pub p_wchan: u64,
+        pub p_login: [::c_char; KI_MAXLOGNAME as usize],
+        pub p_vm_rssize: i32,
+        pub p_vm_tsize: i32,
+        pub p_vm_dsize: i32,
+        pub p_vm_ssize: i32,
+        pub p_uvalid: i64,
+        pub p_ustart_sec: u32,
+        pub p_ustart_usec: u32,
+        pub p_uutime_sec: u32,
+        pub p_uutime_usec: u32,
+        pub p_ustime_sec: u32,
+        pub p_ustime_usec: u32,
+        pub p_uru_maxrss: u64,
+        pub p_uru_ixrss: u64,
+        pub p_uru_idrss: u64,
+        pub p_uru_isrss: u64,
+        pub p_uru_minflt: u64,
+        pub p_uru_majflt: u64,
+        pub p_uru_nswap: u64,
+        pub p_uru_inblock: u64,
+        pub p_uru_oublock: u64,
+        pub p_uru_msgsnd: u64,
+        pub p_uru_msgrcv: u64,
+        pub p_uru_nsignals: u64,
+        pub p_uru_nvcsw: u64,
+        pub p_uru_nivcsw: u64,
+        pub p_uctime_sec: u32,
+        pub p_uctime_usec: u32,
+        pub p_cpuid: u64,
+        pub p_realflag: u64,
+        pub p_nlwps: u64,
+        pub p_nrlwps: u64,
+        pub p_realstat: u64,
+        pub p_svuid: u32,
+        pub p_svgid: u32,
+        pub p_ename: [::c_char; KI_MAXEMULLEN as usize],
+        pub p_vm_vsize: i64,
+        pub p_vm_msize: i64,
+    }
+
+    pub struct kinfo_lwp {
+        pub l_forw: u64,
+        pub l_back: u64,
+        pub l_laddr: u64,
+        pub l_addr: u64,
+        pub l_lid: i32,
+        pub l_flag: i32,
+        pub l_swtime: u32,
+        pub l_slptime: u32,
+        pub l_schedflags: i32,
+        pub l_holdcnt: i32,
+        pub l_priority: u8,
+        pub l_usrpri: u8,
+        pub l_stat: i8,
+        l_pad1: i8,
+        l_pad2: i32,
+        pub l_wmesg: [::c_char; KI_WMESGLEN as usize],
+        pub l_wchan: u64,
+        pub l_cpuid: u64,
+        pub l_rtime_sec: u32,
+        pub l_rtime_usec: u32,
+        pub l_cpticks: u32,
+        pub l_pctcpu: u32,
+        pub l_pid: u32,
+        pub l_name: [::c_char; KI_LNAMELEN as usize],
     }
 
     pub struct kinfo_vmentry {
@@ -527,7 +651,7 @@ s! {
     pub struct posix_spawnattr_t {
         pub sa_flags: ::c_short,
         pub sa_pgroup: ::pid_t,
-        pub sa_schedparam: sched_param,
+        pub sa_schedparam: ::sched_param,
         pub sa_schedpolicy: ::c_int,
         pub sa_sigdefault: sigset_t,
         pub sa_sigmask: sigset_t,
@@ -574,6 +698,16 @@ s! {
         pub descr_ver: u32,
         pub descr_len: u32,
         pub descr_str: [::c_char; 1],
+    }
+
+    pub struct ifreq {
+        pub _priv: [[::c_char; 6]; 24],
+    }
+
+    pub struct ifconf {
+        pub ifc_len: ::c_int,
+        #[cfg(libc_union)]
+        pub ifc_ifcu: __c_anonymous_ifc_ifcu,
     }
 }
 
@@ -692,6 +826,12 @@ s_no_extra_traits! {
     pub union __c_anonymous_posix_spawn_fae {
         pub open: __c_anonymous_posix_spawn_fae_open,
         pub dup2: __c_anonymous_posix_spawn_fae_dup2,
+    }
+
+    #[cfg(libc_union)]
+    pub union __c_anonymous_ifc_ifcu {
+        pub ifcu_buf: *mut ::c_void,
+        pub ifcu_req: *mut ifreq,
     }
 }
 
@@ -1155,6 +1295,41 @@ cfg_if! {
                 }
             }
         }
+
+        #[cfg(libc_union)]
+        impl Eq for __c_anonymous_ifc_ifcu {}
+
+        #[cfg(libc_union)]
+        impl PartialEq for __c_anonymous_ifc_ifcu {
+            fn eq(&self, other: &__c_anonymous_ifc_ifcu) -> bool {
+                unsafe {
+                    self.ifcu_buf == other.ifcu_buf
+                        || self.ifcu_req == other.ifcu_req
+                }
+            }
+        }
+
+        #[cfg(libc_union)]
+        impl ::fmt::Debug for __c_anonymous_ifc_ifcu {
+            fn fmt(&self, f: &mut ::fmt::Formatter) -> ::fmt::Result {
+                unsafe {
+                    f.debug_struct("__c_anonymous_ifc_ifcu")
+                        .field("ifcu_buf", &self.ifcu_buf)
+                        .field("ifcu_req", &self.ifcu_req)
+                        .finish()
+                }
+            }
+        }
+
+        #[cfg(libc_union)]
+        impl ::hash::Hash for __c_anonymous_ifc_ifcu {
+            fn hash<H: ::hash::Hasher>(&self, state: &mut H) {
+                unsafe {
+                    self.ifcu_buf.hash(state);
+                    self.ifcu_req.hash(state);
+                }
+            }
+        }
     }
 }
 
@@ -1253,6 +1428,30 @@ pub const F_CLOSEM: ::c_int = 10;
 pub const F_GETNOSIGPIPE: ::c_int = 13;
 pub const F_SETNOSIGPIPE: ::c_int = 14;
 pub const F_MAXFD: ::c_int = 11;
+pub const F_GETPATH: ::c_int = 15;
+
+pub const FUTEX_WAIT: ::c_int = 0;
+pub const FUTEX_WAKE: ::c_int = 1;
+pub const FUTEX_FD: ::c_int = 2;
+pub const FUTEX_REQUEUE: ::c_int = 3;
+pub const FUTEX_CMP_REQUEUE: ::c_int = 4;
+pub const FUTEX_WAKE_OP: ::c_int = 5;
+pub const FUTEX_LOCK_PI: ::c_int = 6;
+pub const FUTEX_UNLOCK_PI: ::c_int = 7;
+pub const FUTEX_TRYLOCK_PI: ::c_int = 8;
+pub const FUTEX_WAIT_BITSET: ::c_int = 9;
+pub const FUTEX_WAKE_BITSET: ::c_int = 10;
+pub const FUTEX_WAIT_REQUEUE_PI: ::c_int = 11;
+pub const FUTEX_CMP_REQUEUE_PI: ::c_int = 12;
+pub const FUTEX_PRIVATE_FLAG: ::c_int = 1 << 7;
+pub const FUTEX_CLOCK_REALTIME: ::c_int = 1 << 8;
+pub const FUTEX_CMD_MASK: ::c_int = !(FUTEX_PRIVATE_FLAG | FUTEX_CLOCK_REALTIME);
+pub const FUTEX_WAITERS: u32 = 1 << 31;
+pub const FUTEX_OWNER_DIED: u32 = 1 << 30;
+pub const FUTEX_SYNCOBJ_1: u32 = 1 << 29;
+pub const FUTEX_SYNCOBJ_0: u32 = 1 << 28;
+pub const FUTEX_TID_MASK: u32 = (1 << 28) - 1;
+pub const FUTEX_BITSET_MATCH_ANY: u32 = !0;
 
 pub const IP_RECVDSTADDR: ::c_int = 7;
 pub const IP_SENDSRCADDR: ::c_int = IP_RECVDSTADDR;
@@ -1369,10 +1568,7 @@ pub const IPPROTO_VRRP: ::c_int = 112;
 /// Common Address Resolution Protocol
 pub const IPPROTO_CARP: ::c_int = 112;
 /// L2TPv3
-// TEMP: Disabled for now; this constant was added to NetBSD on 2017-02-16,
-// but isn't yet supported by the NetBSD rumprun kernel image used for
-// libc testing.
-//pub const IPPROTO_L2TP: ::c_int = 115;
+pub const IPPROTO_L2TP: ::c_int = 115;
 /// SCTP
 pub const IPPROTO_SCTP: ::c_int = 132;
 /// PFSYNC
@@ -1588,6 +1784,23 @@ pub const BIOCSRSIG: ::c_ulong = 0x80044273;
 pub const BIOCSDLT: ::c_ulong = 0x80044278;
 pub const BIOCGSEESENT: ::c_ulong = 0x40044276;
 pub const BIOCSSEESENT: ::c_ulong = 0x80044277;
+
+// <sys/fstypes.h>
+pub const MNT_UNION: ::c_int = 0x00000020;
+pub const MNT_NOCOREDUMP: ::c_int = 0x00008000;
+pub const MNT_RELATIME: ::c_int = 0x00020000;
+pub const MNT_IGNORE: ::c_int = 0x00100000;
+pub const MNT_NFS4ACLS: ::c_int = 0x00200000;
+pub const MNT_DISCARD: ::c_int = 0x00800000;
+pub const MNT_EXTATTR: ::c_int = 0x01000000;
+pub const MNT_LOG: ::c_int = 0x02000000;
+pub const MNT_NOATIME: ::c_int = 0x04000000;
+pub const MNT_AUTOMOUNTED: ::c_int = 0x10000000;
+pub const MNT_SYMPERM: ::c_int = 0x20000000;
+pub const MNT_NODEVMTIME: ::c_int = 0x40000000;
+pub const MNT_SOFTDEP: ::c_int = 0x80000000;
+pub const MNT_POSIX1EACLS: ::c_int = 0x00000800;
+pub const MNT_ACLS: ::c_int = MNT_POSIX1EACLS;
 
 //<sys/timex.h>
 pub const NTP_API: ::c_int = 4;
@@ -2032,9 +2245,18 @@ pub const POSIX_SPAWN_SETSIGMASK: ::c_int = 0x20;
 pub const POSIX_SPAWN_RETURNERROR: ::c_int = 0x40;
 
 // Flags for chflags(2)
-pub const SF_SNAPSHOT: ::c_ulong = 0x00200000;
+pub const SF_APPEND: ::c_ulong = 0x00040000;
+pub const SF_ARCHIVED: ::c_ulong = 0x00010000;
+pub const SF_IMMUTABLE: ::c_ulong = 0x00020000;
 pub const SF_LOG: ::c_ulong = 0x00400000;
+pub const SF_SETTABLE: ::c_ulong = 0xffff0000;
 pub const SF_SNAPINVAL: ::c_ulong = 0x00800000;
+pub const SF_SNAPSHOT: ::c_ulong = 0x00200000;
+pub const UF_APPEND: ::c_ulong = 0x00000004;
+pub const UF_IMMUTABLE: ::c_ulong = 0x00000002;
+pub const UF_NODUMP: ::c_ulong = 0x00000001;
+pub const UF_OPAQUE: ::c_ulong = 0x00000008;
+pub const UF_SETTABLE: ::c_ulong = 0x0000ffff;
 
 // sys/sysctl.h
 pub const KVME_PROT_READ: ::c_int = 0x00000001;
@@ -2049,6 +2271,55 @@ pub const KVME_FLAG_GROWS_UP: ::c_int = 0x000000010;
 pub const KVME_FLAG_GROWS_DOWN: ::c_int = 0x000000020;
 
 pub const NGROUPS_MAX: ::c_int = 16;
+
+pub const KI_NGROUPS: ::c_int = 16;
+pub const KI_MAXCOMLEN: ::c_int = 24;
+pub const KI_WMESGLEN: ::c_int = 8;
+pub const KI_MAXLOGNAME: ::c_int = 24;
+pub const KI_MAXEMULLEN: ::c_int = 16;
+pub const KI_LNAMELEN: ::c_int = 20;
+
+// sys/lwp.h
+pub const LSIDL: ::c_int = 1;
+pub const LSRUN: ::c_int = 2;
+pub const LSSLEEP: ::c_int = 3;
+pub const LSSTOP: ::c_int = 4;
+pub const LSZOMB: ::c_int = 5;
+pub const LSONPROC: ::c_int = 7;
+pub const LSSUSPENDED: ::c_int = 8;
+
+pub const _REG_RDI: ::c_int = 0;
+pub const _REG_RSI: ::c_int = 1;
+pub const _REG_RDX: ::c_int = 2;
+pub const _REG_RCX: ::c_int = 3;
+pub const _REG_R8: ::c_int = 4;
+pub const _REG_R9: ::c_int = 5;
+pub const _REG_R10: ::c_int = 6;
+pub const _REG_R11: ::c_int = 7;
+pub const _REG_R12: ::c_int = 8;
+pub const _REG_R13: ::c_int = 9;
+pub const _REG_R14: ::c_int = 10;
+pub const _REG_R15: ::c_int = 11;
+pub const _REG_RBP: ::c_int = 12;
+pub const _REG_RBX: ::c_int = 13;
+pub const _REG_RAX: ::c_int = 14;
+pub const _REG_GS: ::c_int = 15;
+pub const _REG_FS: ::c_int = 16;
+pub const _REG_ES: ::c_int = 17;
+pub const _REG_DS: ::c_int = 18;
+pub const _REG_TRAPNO: ::c_int = 19;
+pub const _REG_ERR: ::c_int = 20;
+pub const _REG_RIP: ::c_int = 21;
+pub const _REG_CS: ::c_int = 22;
+pub const _REG_RFLAGS: ::c_int = 23;
+pub const _REG_RSP: ::c_int = 24;
+pub const _REG_SS: ::c_int = 25;
+
+// sys/xattr.h
+pub const XATTR_CREATE: ::c_int = 0x01;
+pub const XATTR_REPLACE: ::c_int = 0x02;
+// sys/extattr.h
+pub const EXTATTR_NAMESPACE_EMPTY: ::c_int = 0;
 
 const_fn! {
     {const} fn _ALIGN(p: usize) -> usize {
@@ -2104,6 +2375,14 @@ f! {
         };
         ::mem::size_of::<sockcred>() + ::mem::size_of::<::gid_t>() * ngrps
     }
+
+    pub fn PROT_MPROTECT(x: ::c_int) -> ::c_int {
+        x << 3
+    }
+
+    pub fn PROT_MPROTECT_EXTRACT(x: ::c_int) -> ::c_int {
+        (x >> 3) & 0x7
+    }
 }
 
 safe_f! {
@@ -2121,6 +2400,16 @@ safe_f! {
 
     pub {const} fn WIFCONTINUED(status: ::c_int) -> bool {
         status == 0xffff
+    }
+
+    pub {const} fn makedev(major: ::c_uint, minor: ::c_uint) -> ::dev_t {
+        let major = major as ::dev_t;
+        let minor = minor as ::dev_t;
+        let mut dev = 0;
+        dev |= (major << 8) & 0x000ff00;
+        dev |= (minor << 12) & 0xfff00000;
+        dev |= minor & 0xff;
+        dev
     }
 }
 
@@ -2164,6 +2453,30 @@ extern "C" {
     pub fn fchflags(fd: ::c_int, flags: ::c_ulong) -> ::c_int;
     pub fn lchflags(path: *const ::c_char, flags: ::c_ulong) -> ::c_int;
 
+    pub fn execvpe(
+        file: *const ::c_char,
+        argv: *const *const ::c_char,
+        envp: *const *const ::c_char,
+    ) -> ::c_int;
+
+    pub fn extattr_list_fd(
+        fd: ::c_int,
+        attrnamespace: ::c_int,
+        data: *mut ::c_void,
+        nbytes: ::size_t,
+    ) -> ::ssize_t;
+    pub fn extattr_list_file(
+        path: *const ::c_char,
+        attrnamespace: ::c_int,
+        data: *mut ::c_void,
+        nbytes: ::size_t,
+    ) -> ::ssize_t;
+    pub fn extattr_list_link(
+        path: *const ::c_char,
+        attrnamespace: ::c_int,
+        data: *mut ::c_void,
+        nbytes: ::size_t,
+    ) -> ::ssize_t;
     pub fn extattr_delete_fd(
         fd: ::c_int,
         attrnamespace: ::c_int,
@@ -2229,6 +2542,20 @@ extern "C" {
         string: *const ::c_char,
         attrnamespace: *mut ::c_int,
     ) -> ::c_int;
+
+    pub fn openpty(
+        amaster: *mut ::c_int,
+        aslave: *mut ::c_int,
+        name: *mut ::c_char,
+        termp: *mut ::termios,
+        winp: *mut ::winsize,
+    ) -> ::c_int;
+    pub fn forkpty(
+        amaster: *mut ::c_int,
+        name: *mut ::c_char,
+        termp: *mut ::termios,
+        winp: *mut ::winsize,
+    ) -> ::pid_t;
 
     #[link_name = "__lutimes50"]
     pub fn lutimes(file: *const ::c_char, times: *const ::timeval) -> ::c_int;
@@ -2449,8 +2776,9 @@ extern "C" {
         flags: ::c_int,
     ) -> *mut ::c_void;
 
-    pub fn sched_setparam(pid: ::pid_t, param: *const sched_param) -> ::c_int;
-    pub fn sched_getparam(pid: ::pid_t, param: *mut sched_param) -> ::c_int;
+    pub fn sched_rr_get_interval(pid: ::pid_t, t: *mut ::timespec) -> ::c_int;
+    pub fn sched_setparam(pid: ::pid_t, param: *const ::sched_param) -> ::c_int;
+    pub fn sched_getparam(pid: ::pid_t, param: *mut ::sched_param) -> ::c_int;
     pub fn sched_getscheduler(pid: ::pid_t) -> ::c_int;
     pub fn sched_setscheduler(
         pid: ::pid_t,

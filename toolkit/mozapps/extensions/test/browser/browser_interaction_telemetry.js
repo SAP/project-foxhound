@@ -1,6 +1,5 @@
 const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm",
-  {}
+  "resource://testing-common/AddonTestUtils.jsm"
 );
 
 AddonTestUtils.initMochitest(this);
@@ -25,7 +24,7 @@ async function installTheme() {
   let id = "theme@mochi.test";
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
       manifest_version: 2,
       name: "atheme",
       description: "wow. such theme.",
@@ -42,7 +41,7 @@ async function installTheme() {
 async function installExtension(manifest = {}) {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id: addonId } },
+      browser_specific_settings: { gecko: { id: addonId } },
       manifest_version: 2,
       name: "extension",
       description: "wow. such extension.",
@@ -133,7 +132,7 @@ async function init(startPage) {
 
 /* Test functions start here. */
 
-add_task(async function setup() {
+add_setup(async function() {
   // Clear out any telemetry data that existed before this file is run.
   Services.telemetry.clearEvents();
 });

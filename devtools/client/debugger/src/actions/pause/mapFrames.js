@@ -5,7 +5,7 @@
 import {
   getFrames,
   getBlackBoxRanges,
-  getSource,
+  getLocationSource,
   getSelectedFrame,
 } from "../../selectors";
 
@@ -13,7 +13,7 @@ import { isFrameBlackBoxed } from "../../utils/source";
 
 import assert from "../../utils/assert";
 
-import { isGeneratedId } from "devtools-source-map";
+import { isGeneratedId } from "devtools/client/shared/source-map-loader/index";
 
 function getSelectedFrameId(state, thread, frames) {
   let selectedFrame = getSelectedFrame(state, thread);
@@ -23,7 +23,7 @@ function getSelectedFrameId(state, thread, frames) {
     selectedFrame &&
     !isFrameBlackBoxed(
       selectedFrame,
-      getSource(state, selectedFrame.location.sourceId),
+      getLocationSource(state, selectedFrame.location),
       blackboxedRanges
     )
   ) {
@@ -31,30 +31,30 @@ function getSelectedFrameId(state, thread, frames) {
   }
 
   selectedFrame = frames.find(frame => {
-    const frameSource = getSource(state, frame.location.sourceId);
+    const frameSource = getLocationSource(state, frame.location);
     return !isFrameBlackBoxed(frame, frameSource, blackboxedRanges);
   });
   return selectedFrame?.id;
 }
 
-export function updateFrameLocation(frame, sourceMaps) {
+export function updateFrameLocation(frame, sourceMapLoader) {
   if (frame.isOriginal) {
     return Promise.resolve(frame);
   }
-  return sourceMaps.getOriginalLocation(frame.location).then(loc => ({
+  return sourceMapLoader.getOriginalLocation(frame.location).then(loc => ({
     ...frame,
     location: loc,
     generatedLocation: frame.generatedLocation || frame.location,
   }));
 }
 
-function updateFrameLocations(frames, sourceMaps) {
-  if (!frames || frames.length == 0) {
+function updateFrameLocations(frames, sourceMapLoader) {
+  if (!frames || !frames.length) {
     return Promise.resolve(frames);
   }
 
   return Promise.all(
-    frames.map(frame => updateFrameLocation(frame, sourceMaps))
+    frames.map(frame => updateFrameLocation(frame, sourceMapLoader))
   );
 }
 
@@ -62,15 +62,15 @@ function isWasmOriginalSourceFrame(frame, getState) {
   if (isGeneratedId(frame.location.sourceId)) {
     return false;
   }
-  const generatedSource = getSource(
+  const generatedSource = getLocationSource(
     getState(),
-    frame.generatedLocation.sourceId
+    frame.generatedLocation
   );
 
   return Boolean(generatedSource?.isWasm);
 }
 
-async function expandFrames(frames, sourceMaps, getState) {
+async function expandFrames(frames, sourceMapLoader, getState) {
   const result = [];
   for (let i = 0; i < frames.length; ++i) {
     const frame = frames[i];
@@ -78,7 +78,7 @@ async function expandFrames(frames, sourceMaps, getState) {
       result.push(frame);
       continue;
     }
-    const originalFrames = await sourceMaps.getOriginalStackFrames(
+    const originalFrames = await sourceMapLoader.getOriginalStackFrames(
       frame.generatedLocation
     );
     if (!originalFrames) {
@@ -86,7 +86,7 @@ async function expandFrames(frames, sourceMaps, getState) {
       continue;
     }
 
-    assert(originalFrames.length > 0, "Expected at least one original frame");
+    assert(!!originalFrames.length, "Expected at least one original frame");
     // First entry has not specific location -- use one from original frame.
     originalFrames[0] = {
       ...originalFrames[0],
@@ -135,15 +135,15 @@ async function expandFrames(frames, sourceMaps, getState) {
  */
 export function mapFrames(cx) {
   return async function(thunkArgs) {
-    const { dispatch, getState, sourceMaps } = thunkArgs;
+    const { dispatch, getState, sourceMapLoader } = thunkArgs;
     const frames = getFrames(getState(), cx.thread);
     if (!frames) {
       return;
     }
 
-    let mappedFrames = await updateFrameLocations(frames, sourceMaps);
+    let mappedFrames = await updateFrameLocations(frames, sourceMapLoader);
 
-    mappedFrames = await expandFrames(mappedFrames, sourceMaps, getState);
+    mappedFrames = await expandFrames(mappedFrames, sourceMapLoader, getState);
 
     const selectedFrameId = getSelectedFrameId(
       getState(),

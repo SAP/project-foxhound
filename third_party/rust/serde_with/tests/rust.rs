@@ -1,573 +1,676 @@
-extern crate fnv;
-extern crate pretty_assertions;
-extern crate serde;
-extern crate serde_derive;
-extern crate serde_json;
-extern crate serde_with;
+#![allow(
+    // clippy is broken and shows wrong warnings
+    // clippy on stable does not know yet about the lint name
+    unknown_lints,
+    // https://github.com/rust-lang/rust-clippy/issues/8867
+    clippy::derive_partial_eq_without_eq,
+)]
 
-use fnv::FnvHashMap;
+extern crate alloc;
+
+mod utils;
+
+use crate::utils::{check_deserialization, check_error_deserialization, is_equal};
+use alloc::collections::{BTreeMap, BTreeSet, LinkedList, VecDeque};
+use core::{cmp, iter::FromIterator as _};
+use expect_test::expect;
+use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use pretty_assertions::assert_eq;
-use serde_derive::{Deserialize, Serialize};
-use serde_json::error::Category;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_with::CommaSeparator;
-use std::collections::{BTreeMap, HashMap, LinkedList, VecDeque};
 
 #[test]
 fn string_collection() {
-    #[derive(Debug, Deserialize)]
-    struct S {
-        #[serde(with = "serde_with::rust::StringWithSeparator::<CommaSeparator>")]
-        s: Vec<String>,
-    }
-    let from = r#"[
-        { "s": "A,B,C,D" },
-        { "s": ",," },
-        { "s": "AVeryLongString" }
-    ]"#;
+    #[derive(Debug, PartialEq, Deserialize, Serialize)]
+    struct S(
+        #[serde(with = "serde_with::rust::StringWithSeparator::<CommaSeparator>")] Vec<String>,
+    );
 
-    let res: Vec<S> = serde_json::from_str(from).unwrap();
-    assert_eq!(
-        vec![
+    is_equal(S(vec![]), expect![[r#""""#]]);
+    is_equal(
+        S(vec![
             "A".to_string(),
             "B".to_string(),
-            "C".to_string(),
+            "c".to_string(),
             "D".to_string(),
-        ],
-        res[0].s
+        ]),
+        expect![[r#""A,B,c,D""#]],
     );
-    assert_eq!(
-        vec!["".to_string(), "".to_string(), "".to_string()],
-        res[1].s
+    is_equal(
+        S(vec!["".to_string(), "".to_string(), "".to_string()]),
+        expect![[r#"",,""#]],
     );
-    assert_eq!(vec!["AVeryLongString".to_string()], res[2].s);
-}
-
-#[test]
-fn string_collection_non_existing() {
-    #[derive(Debug, Deserialize, Serialize)]
-    struct S {
-        #[serde(with = "serde_with::rust::StringWithSeparator::<CommaSeparator>")]
-        s: Vec<String>,
-    }
-    let from = r#"[
-        { "s": "" }
-    ]"#;
-
-    let res: Vec<S> = serde_json::from_str(from).unwrap();
-    assert_eq!(Vec::<String>::new(), res[0].s);
-
-    assert_eq!(r#"{"s":""}"#, serde_json::to_string(&res[0]).unwrap());
+    is_equal(
+        S(vec!["AVeryLongString".to_string()]),
+        expect![[r#""AVeryLongString""#]],
+    );
 }
 
 #[test]
 fn prohibit_duplicate_value_hashset() {
-    use std::{collections::HashSet, iter::FromIterator};
-    #[derive(Debug, Eq, PartialEq, Deserialize)]
-    struct Doc {
-        #[serde(with = "::serde_with::rust::sets_duplicate_value_is_error")]
-        set: HashSet<usize>,
-    }
+    #[derive(Debug, PartialEq, Deserialize, Serialize)]
+    struct S(#[serde(with = "::serde_with::rust::sets_duplicate_value_is_error")] HashSet<usize>);
 
-    let s = r#"{"set": [1, 2, 3, 4]}"#;
-    let v = Doc {
-        set: HashSet::from_iter(vec![1, 2, 3, 4]),
-    };
-    assert_eq!(v, serde_json::from_str(s).unwrap());
-
-    let s = r#"{"set": [1, 2, 3, 4, 1]}"#;
-    let res: Result<Doc, _> = serde_json::from_str(s);
-    assert!(res.is_err());
+    is_equal(
+        S(HashSet::from_iter(vec![1, 2, 3, 4])),
+        expect![[r#"
+            [
+              4,
+              1,
+              3,
+              2
+            ]"#]],
+    );
+    check_error_deserialization::<S>(
+        r#"[1, 2, 3, 4, 1]"#,
+        expect![[r#"invalid entry: found duplicate value at line 1 column 15"#]],
+    );
 }
 
 #[test]
 fn prohibit_duplicate_value_btreeset() {
-    use std::{collections::BTreeSet, iter::FromIterator};
-    #[derive(Debug, Eq, PartialEq, Deserialize)]
-    struct Doc {
-        #[serde(with = "::serde_with::rust::sets_duplicate_value_is_error")]
-        set: BTreeSet<usize>,
-    }
+    #[derive(Debug, PartialEq, Deserialize, Serialize)]
+    struct S(#[serde(with = "::serde_with::rust::sets_duplicate_value_is_error")] BTreeSet<usize>);
 
-    let s = r#"{"set": [1, 2, 3, 4]}"#;
-    let v = Doc {
-        set: BTreeSet::from_iter(vec![1, 2, 3, 4]),
-    };
-    assert_eq!(v, serde_json::from_str(s).unwrap());
-
-    let s = r#"{"set": [1, 2, 3, 4, 1]}"#;
-    let res: Result<Doc, _> = serde_json::from_str(s);
-    assert!(res.is_err());
+    is_equal(
+        S(BTreeSet::from_iter(vec![1, 2, 3, 4])),
+        expect![[r#"
+            [
+              1,
+              2,
+              3,
+              4
+            ]"#]],
+    );
+    check_error_deserialization::<S>(
+        r#"[1, 2, 3, 4, 1]"#,
+        expect![[r#"invalid entry: found duplicate value at line 1 column 15"#]],
+    );
 }
 
 #[test]
-fn prohibit_duplicate_value_hashmap() {
-    use std::collections::HashMap;
-    #[derive(Debug, Eq, PartialEq, Deserialize)]
-    struct Doc {
-        #[serde(with = "::serde_with::rust::maps_duplicate_key_is_error")]
-        map: HashMap<usize, usize>,
-    }
+fn prohibit_duplicate_key_hashmap() {
+    #[derive(Debug, Eq, PartialEq, Deserialize, Serialize)]
+    struct S(
+        #[serde(with = "::serde_with::rust::maps_duplicate_key_is_error")] HashMap<usize, usize>,
+    );
 
     // Different value and key always works
-    let s = r#"{"map": {"1": 1, "2": 2, "3": 3}}"#;
-    let mut v = Doc {
-        map: HashMap::new(),
-    };
-    v.map.insert(1, 1);
-    v.map.insert(2, 2);
-    v.map.insert(3, 3);
-    assert_eq!(v, serde_json::from_str(s).unwrap());
+    is_equal(
+        S(HashMap::from_iter(vec![(1, 1), (2, 2), (3, 3)])),
+        expect![[r#"
+            {
+              "1": 1,
+              "3": 3,
+              "2": 2
+            }"#]],
+    );
 
     // Same value for different keys is ok
-    let s = r#"{"map": {"1": 1, "2": 1, "3": 1}}"#;
-    let mut v = Doc {
-        map: HashMap::new(),
-    };
-    v.map.insert(1, 1);
-    v.map.insert(2, 1);
-    v.map.insert(3, 1);
-    assert_eq!(v, serde_json::from_str(s).unwrap());
+    is_equal(
+        S(HashMap::from_iter(vec![(1, 1), (2, 1), (3, 1)])),
+        expect![[r#"
+            {
+              "1": 1,
+              "3": 1,
+              "2": 1
+            }"#]],
+    );
 
     // Duplicate keys are an error
-    let s = r#"{"map": {"1": 1, "2": 2, "1": 3}}"#;
-    let res: Result<Doc, _> = serde_json::from_str(s);
-    assert!(res.is_err());
+    check_error_deserialization::<S>(
+        r#"{"1": 1, "2": 2, "1": 3}"#,
+        expect![[r#"invalid entry: found duplicate key at line 1 column 24"#]],
+    );
 }
 
 #[test]
-fn prohibit_duplicate_value_btreemap() {
-    use std::collections::BTreeMap;
-    #[derive(Debug, Eq, PartialEq, Deserialize)]
-    struct Doc {
-        #[serde(with = "::serde_with::rust::maps_duplicate_key_is_error")]
-        map: BTreeMap<usize, usize>,
-    }
+fn prohibit_duplicate_key_btreemap() {
+    #[derive(Debug, Eq, PartialEq, Deserialize, Serialize)]
+    struct S(
+        #[serde(with = "::serde_with::rust::maps_duplicate_key_is_error")] BTreeMap<usize, usize>,
+    );
 
     // Different value and key always works
-    let s = r#"{"map": {"1": 1, "2": 2, "3": 3}}"#;
-    let mut v = Doc {
-        map: BTreeMap::new(),
-    };
-    v.map.insert(1, 1);
-    v.map.insert(2, 2);
-    v.map.insert(3, 3);
-    assert_eq!(v, serde_json::from_str(s).unwrap());
+    is_equal(
+        S(BTreeMap::from_iter(vec![(1, 1), (2, 2), (3, 3)])),
+        expect![[r#"
+            {
+              "1": 1,
+              "2": 2,
+              "3": 3
+            }"#]],
+    );
 
     // Same value for different keys is ok
-    let s = r#"{"map": {"1": 1, "2": 1, "3": 1}}"#;
-    let mut v = Doc {
-        map: BTreeMap::new(),
-    };
-    v.map.insert(1, 1);
-    v.map.insert(2, 1);
-    v.map.insert(3, 1);
-    assert_eq!(v, serde_json::from_str(s).unwrap());
+    is_equal(
+        S(BTreeMap::from_iter(vec![(1, 1), (2, 1), (3, 1)])),
+        expect![[r#"
+            {
+              "1": 1,
+              "2": 1,
+              "3": 1
+            }"#]],
+    );
 
     // Duplicate keys are an error
-    let s = r#"{"map": {"1": 1, "2": 2, "1": 3}}"#;
-    let res: Result<Doc, _> = serde_json::from_str(s);
-    assert!(res.is_err());
+    check_error_deserialization::<S>(
+        r#"{"1": 1, "2": 2, "1": 3}"#,
+        expect![[r#"invalid entry: found duplicate key at line 1 column 24"#]],
+    );
 }
 
 #[test]
 fn duplicate_key_first_wins_hashmap() {
-    use std::collections::HashMap;
-    #[derive(Debug, Eq, PartialEq, Deserialize)]
-    struct Doc {
-        #[serde(with = "::serde_with::rust::maps_first_key_wins")]
-        map: HashMap<usize, usize>,
-    }
+    #[derive(Debug, PartialEq, Deserialize, Serialize)]
+    struct S(#[serde(with = "::serde_with::rust::maps_first_key_wins")] HashMap<usize, usize>);
 
     // Different value and key always works
-    let s = r#"{"map": {"1": 1, "2": 2, "3": 3}}"#;
-    let mut v = Doc {
-        map: HashMap::new(),
-    };
-    v.map.insert(1, 1);
-    v.map.insert(2, 2);
-    v.map.insert(3, 3);
-    assert_eq!(v, serde_json::from_str(s).unwrap());
+    is_equal(
+        S(HashMap::from_iter(vec![(1, 1), (2, 2), (3, 3)])),
+        expect![[r#"
+            {
+              "1": 1,
+              "3": 3,
+              "2": 2
+            }"#]],
+    );
 
     // Same value for different keys is ok
-    let s = r#"{"map": {"1": 1, "2": 1, "3": 1}}"#;
-    let mut v = Doc {
-        map: HashMap::new(),
-    };
-    v.map.insert(1, 1);
-    v.map.insert(2, 1);
-    v.map.insert(3, 1);
-    assert_eq!(v, serde_json::from_str(s).unwrap());
+    is_equal(
+        S(HashMap::from_iter(vec![(1, 1), (2, 1), (3, 1)])),
+        expect![[r#"
+            {
+              "1": 1,
+              "3": 1,
+              "2": 1
+            }"#]],
+    );
 
     // Duplicate keys, the first one is used
-    let s = r#"{"map": {"1": 1, "2": 2, "1": 3}}"#;
-    let mut v = Doc {
-        map: HashMap::new(),
-    };
-    v.map.insert(1, 1);
-    v.map.insert(2, 2);
-    assert_eq!(v, serde_json::from_str(s).unwrap());
+    check_deserialization(
+        S(HashMap::from_iter(vec![(1, 1), (2, 2)])),
+        r#"{"1": 1, "2": 2, "1": 3}"#,
+    );
 }
 
 #[test]
 fn duplicate_key_first_wins_btreemap() {
-    use std::collections::BTreeMap;
-    #[derive(Debug, Eq, PartialEq, Deserialize)]
-    struct Doc {
-        #[serde(with = "::serde_with::rust::maps_first_key_wins")]
-        map: BTreeMap<usize, usize>,
-    }
+    #[derive(Debug, PartialEq, Deserialize, Serialize)]
+    struct S(#[serde(with = "::serde_with::rust::maps_first_key_wins")] BTreeMap<usize, usize>);
 
     // Different value and key always works
-    let s = r#"{"map": {"1": 1, "2": 2, "3": 3}}"#;
-    let mut v = Doc {
-        map: BTreeMap::new(),
-    };
-    v.map.insert(1, 1);
-    v.map.insert(2, 2);
-    v.map.insert(3, 3);
-    assert_eq!(v, serde_json::from_str(s).unwrap());
+    is_equal(
+        S(BTreeMap::from_iter(vec![(1, 1), (2, 2), (3, 3)])),
+        expect![[r#"
+            {
+              "1": 1,
+              "2": 2,
+              "3": 3
+            }"#]],
+    );
 
     // Same value for different keys is ok
-    let s = r#"{"map": {"1": 1, "2": 1, "3": 1}}"#;
-    let mut v = Doc {
-        map: BTreeMap::new(),
-    };
-    v.map.insert(1, 1);
-    v.map.insert(2, 1);
-    v.map.insert(3, 1);
-    assert_eq!(v, serde_json::from_str(s).unwrap());
+    is_equal(
+        S(BTreeMap::from_iter(vec![(1, 1), (2, 1), (3, 1)])),
+        expect![[r#"
+            {
+              "1": 1,
+              "2": 1,
+              "3": 1
+            }"#]],
+    );
 
     // Duplicate keys, the first one is used
-    let s = r#"{"map": {"1": 1, "2": 2, "1": 3}}"#;
-    let mut v = Doc {
-        map: BTreeMap::new(),
-    };
-    v.map.insert(1, 1);
-    v.map.insert(2, 2);
-    assert_eq!(v, serde_json::from_str(s).unwrap());
+    check_deserialization(
+        S(BTreeMap::from_iter(vec![(1, 1), (2, 2)])),
+        r#"{"1": 1, "2": 2, "1": 3}"#,
+    );
 }
 
 #[test]
-fn test_hashmap_as_tuple_list() {
-    #[derive(Debug, Deserialize, Serialize, PartialEq, Default)]
-    struct S {
-        #[serde(with = "serde_with::rust::hashmap_as_tuple_list")]
-        s: HashMap<String, u8>,
+fn duplicate_value_first_wins_hashset() {
+    #[derive(Debug, PartialEq, Deserialize, Serialize)]
+    struct S(HashSet<W>);
+    // struct S(#[serde(with = "::serde_with::rust::sets_first_value_wins")] HashSet<W>);
+
+    #[derive(Debug, Eq, Deserialize, Serialize)]
+    struct W(i32, bool);
+    impl PartialEq for W {
+        fn eq(&self, other: &Self) -> bool {
+            self.0 == other.0
+        }
     }
-    let from = r#"{
-        "s": [
-            ["ABC", 1],
-            ["Hello", 0],
-            ["World", 20]
-        ]
-    }"#;
-    let mut expected = S::default();
-    expected.s.insert("ABC".to_string(), 1);
-    expected.s.insert("Hello".to_string(), 0);
-    expected.s.insert("World".to_string(), 20);
+    impl std::hash::Hash for W {
+        fn hash<H>(&self, state: &mut H)
+        where
+            H: std::hash::Hasher,
+        {
+            self.0.hash(state)
+        }
+    }
 
-    let res: S = serde_json::from_str(from).unwrap();
-    assert_eq!(expected, res);
+    // Different values always work
+    is_equal(
+        S(HashSet::from_iter(vec![
+            W(1, true),
+            W(2, false),
+            W(3, true),
+        ])),
+        expect![[r#"
+            [
+              [
+                1,
+                true
+              ],
+              [
+                3,
+                true
+              ],
+              [
+                2,
+                false
+              ]
+            ]"#]],
+    );
 
-    let from = r#"{
-  "s": [
-    [
-      "Hello",
-      0
-    ]
-  ]
-}"#;
-    let mut expected = S::default();
-    expected.s.insert("Hello".to_string(), 0);
-
-    let res: S = serde_json::from_str(from).unwrap();
-    assert_eq!(expected, res);
-    // We can only do this with a HashMap of size 1 as otherwise the iteration order is unspecified
-    assert_eq!(from, serde_json::to_string_pretty(&expected).unwrap());
-
-    let from = r#"{
-  "s": []
-}"#;
-    let expected = S::default();
-    let res: S = serde_json::from_str(from).unwrap();
-    assert!(res.s.is_empty());
-    assert_eq!(from, serde_json::to_string_pretty(&expected).unwrap());
-
-    // Test parse error
-    let from = r#"{
-  "s": [ [1] ]
-}"#;
-    let res: Result<S, _> = serde_json::from_str(from);
-    assert!(res.is_err());
-    let err = res.unwrap_err();
-    println!("{:?}", err);
-    assert!(err.is_data());
+    let value: S = serde_json::from_str(
+        r#"[
+        [1, false],
+        [1, true],
+        [2, true],
+        [2, false]
+    ]"#,
+    )
+    .unwrap();
+    let entries: Vec<_> = value.0.into_iter().collect();
+    assert_eq!(1, entries[0].0);
+    assert!(!entries[0].1);
+    assert_eq!(2, entries[1].0);
+    assert!(entries[1].1);
 }
 
 #[test]
-fn test_hashmap_as_tuple_list_fnv() {
-    #[derive(Debug, Deserialize, Serialize, PartialEq, Default)]
-    struct S {
-        #[serde(with = "serde_with::rust::hashmap_as_tuple_list")]
-        s: FnvHashMap<String, u8>,
+fn duplicate_value_last_wins_hashset() {
+    #[derive(Debug, PartialEq, Deserialize, Serialize)]
+    struct S(#[serde(with = "::serde_with::rust::sets_last_value_wins")] HashSet<W>);
+
+    #[derive(Debug, Eq, Deserialize, Serialize)]
+    struct W(i32, bool);
+    impl PartialEq for W {
+        fn eq(&self, other: &Self) -> bool {
+            self.0 == other.0
+        }
     }
-    let from = r#"{
-        "s": [
-            ["ABC", 1],
-            ["Hello", 0],
-            ["World", 20]
-        ]
-    }"#;
-    let mut expected = S::default();
-    expected.s.insert("ABC".to_string(), 1);
-    expected.s.insert("Hello".to_string(), 0);
-    expected.s.insert("World".to_string(), 20);
+    impl std::hash::Hash for W {
+        fn hash<H>(&self, state: &mut H)
+        where
+            H: std::hash::Hasher,
+        {
+            self.0.hash(state)
+        }
+    }
 
-    let res: S = serde_json::from_str(from).unwrap();
-    assert_eq!(expected, res);
+    // Different values always work
+    is_equal(
+        S(HashSet::from_iter(vec![
+            W(1, true),
+            W(2, false),
+            W(3, true),
+        ])),
+        expect![[r#"
+            [
+              [
+                1,
+                true
+              ],
+              [
+                3,
+                true
+              ],
+              [
+                2,
+                false
+              ]
+            ]"#]],
+    );
 
-    let from = r#"{
-  "s": [
-    [
-      "Hello",
-      0
-    ]
-  ]
-}"#;
-    let mut expected = S::default();
-    expected.s.insert("Hello".to_string(), 0);
-
-    let res: S = serde_json::from_str(from).unwrap();
-    assert_eq!(expected, res);
-    // We can only do this with a HashMap of size 1 as otherwise the iteration order is unspecified
-    assert_eq!(from, serde_json::to_string_pretty(&expected).unwrap());
-
-    let from = r#"{
-  "s": []
-}"#;
-    let expected = S::default();
-    let res: S = serde_json::from_str(from).unwrap();
-    assert!(res.s.is_empty());
-    assert_eq!(from, serde_json::to_string_pretty(&expected).unwrap());
-
-    // Test parse error
-    let from = r#"{
-  "s": [ [1] ]
-}"#;
-    let res: Result<S, _> = serde_json::from_str(from);
-    assert!(res.is_err());
-    let err = res.unwrap_err();
-    println!("{:?}", err);
-    assert!(err.is_data());
+    let value: S = serde_json::from_str(
+        r#"[
+        [1, false],
+        [1, true],
+        [2, true],
+        [2, false]
+    ]"#,
+    )
+    .unwrap();
+    let entries: Vec<_> = value.0.into_iter().collect();
+    assert_eq!(1, entries[0].0);
+    assert!(entries[0].1);
+    assert_eq!(2, entries[1].0);
+    assert!(!entries[1].1);
 }
 
 #[test]
-fn test_btreemap_as_tuple_list() {
-    #[derive(Debug, Deserialize, Serialize, PartialEq, Default)]
-    struct S {
-        #[serde(with = "serde_with::rust::btreemap_as_tuple_list")]
-        s: BTreeMap<String, u8>,
+fn duplicate_value_last_wins_btreeset() {
+    #[derive(Debug, PartialEq, Deserialize, Serialize)]
+    struct S(#[serde(with = "::serde_with::rust::sets_last_value_wins")] BTreeSet<W>);
+    #[derive(Debug, Eq, Deserialize, Serialize)]
+    struct W(i32, bool);
+    impl PartialEq for W {
+        fn eq(&self, other: &Self) -> bool {
+            self.0 == other.0
+        }
     }
-    let from = r#"{
-  "s": [
-    [
-      "ABC",
-      1
-    ],
-    [
-      "Hello",
-      0
-    ],
-    [
-      "World",
-      20
-    ]
-  ]
-}"#;
-    let mut expected = S::default();
-    expected.s.insert("ABC".to_string(), 1);
-    expected.s.insert("Hello".to_string(), 0);
-    expected.s.insert("World".to_string(), 20);
+    impl Ord for W {
+        fn cmp(&self, other: &Self) -> cmp::Ordering {
+            self.0.cmp(&other.0)
+        }
+    }
+    impl PartialOrd for W {
+        fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+            Some(self.cmp(other))
+        }
+    }
 
-    let res: S = serde_json::from_str(from).unwrap();
-    assert_eq!(expected, res);
-    assert_eq!(from, serde_json::to_string_pretty(&expected).unwrap());
+    // Different values always work
+    is_equal(
+        S(BTreeSet::from_iter(vec![
+            W(1, true),
+            W(2, false),
+            W(3, true),
+        ])),
+        expect![[r#"
+            [
+              [
+                1,
+                true
+              ],
+              [
+                2,
+                false
+              ],
+              [
+                3,
+                true
+              ]
+            ]"#]],
+    );
 
-    let from = r#"{
-  "s": [
-    [
-      "Hello",
-      0
-    ]
-  ]
-}"#;
-    let mut expected = S::default();
-    expected.s.insert("Hello".to_string(), 0);
+    let value: S = serde_json::from_str(
+        r#"[
+        [1, false],
+        [1, true],
+        [2, true],
+        [2, false]
+    ]"#,
+    )
+    .unwrap();
+    let entries: Vec<_> = value.0.into_iter().collect();
+    assert_eq!(1, entries[0].0);
+    assert!(entries[0].1);
+    assert_eq!(2, entries[1].0);
+    assert!(!entries[1].1);
+}
 
-    let res: S = serde_json::from_str(from).unwrap();
-    assert_eq!(expected, res);
-    assert_eq!(from, serde_json::to_string_pretty(&expected).unwrap());
+#[test]
+fn test_map_as_tuple_list() {
+    #[derive(Debug, Deserialize, Serialize, PartialEq)]
+    struct Hash(#[serde(with = "serde_with::rust::map_as_tuple_list")] HashMap<String, u8>);
 
-    let from = r#"{
-  "s": []
-}"#;
-    let expected = S::default();
-    let res: S = serde_json::from_str(from).unwrap();
-    assert!(res.s.is_empty());
-    assert_eq!(from, serde_json::to_string_pretty(&expected).unwrap());
+    is_equal(
+        Hash(HashMap::from_iter(vec![
+            ("ABC".to_string(), 1),
+            ("Hello".to_string(), 0),
+            ("World".to_string(), 20),
+        ])),
+        expect![[r#"
+            [
+              [
+                "ABC",
+                1
+              ],
+              [
+                "Hello",
+                0
+              ],
+              [
+                "World",
+                20
+              ]
+            ]"#]],
+    );
+    is_equal(
+        Hash(HashMap::from_iter(vec![("Hello".to_string(), 0)])),
+        expect![[r#"
+            [
+              [
+                "Hello",
+                0
+              ]
+            ]"#]],
+    );
+    is_equal(Hash(HashMap::default()), expect![[r#"[]"#]]);
 
-    // Test parse error
-    let from = r#"{
-  "s": [ [1] ]
-}"#;
-    let res: Result<S, _> = serde_json::from_str(from);
-    assert!(res.is_err());
-    let err = res.unwrap_err();
-    println!("{:?}", err);
-    assert!(err.is_data());
+    // Test parse error, only single element instead of tuple
+    check_error_deserialization::<Hash>(
+        r#"[ [1] ]"#,
+        expect![[r#"invalid type: integer `1`, expected a string at line 1 column 4"#]],
+    );
+
+    #[derive(Debug, Deserialize, Serialize, PartialEq)]
+    struct BTree(#[serde(with = "serde_with::rust::map_as_tuple_list")] BTreeMap<String, u8>);
+
+    is_equal(
+        BTree(BTreeMap::from_iter(vec![
+            ("ABC".to_string(), 1),
+            ("Hello".to_string(), 0),
+            ("World".to_string(), 20),
+        ])),
+        expect![[r#"
+            [
+              [
+                "ABC",
+                1
+              ],
+              [
+                "Hello",
+                0
+              ],
+              [
+                "World",
+                20
+              ]
+            ]"#]],
+    );
+    is_equal(
+        BTree(BTreeMap::from_iter(vec![("Hello".to_string(), 0)])),
+        expect![[r#"
+            [
+              [
+                "Hello",
+                0
+              ]
+            ]"#]],
+    );
+    is_equal(BTree(BTreeMap::default()), expect![[r#"[]"#]]);
+
+    // Test parse error, only single element instead of tuple
+    check_error_deserialization::<BTree>(
+        r#"[ [1] ]"#,
+        expect![[r#"invalid type: integer `1`, expected a string at line 1 column 4"#]],
+    );
 }
 
 #[test]
 fn tuple_list_as_map_vec() {
-    #[derive(Debug, Deserialize, Serialize, Default)]
-    struct S {
-        #[serde(with = "serde_with::rust::tuple_list_as_map")]
-        s: Vec<(Wrapper<i32>, Wrapper<String>)>,
-    }
-
-    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[derive(Debug, PartialEq, Deserialize, Serialize)]
+    struct S(
+        #[serde(with = "serde_with::rust::tuple_list_as_map")] Vec<(Wrapper<i32>, Wrapper<String>)>,
+    );
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
     #[serde(transparent)]
     struct Wrapper<T>(T);
 
-    let from = r#"{
-  "s": {
-    "1": "Hi",
-    "2": "Cake",
-    "99": "Lie"
-  }
-}"#;
-    let mut expected = S::default();
-    expected.s.push((Wrapper(1), Wrapper("Hi".into())));
-    expected.s.push((Wrapper(2), Wrapper("Cake".into())));
-    expected.s.push((Wrapper(99), Wrapper("Lie".into())));
-
-    let res: S = serde_json::from_str(from).unwrap();
-    for ((exp_k, exp_v), (res_k, res_v)) in expected.s.iter().zip(&res.s) {
-        assert_eq!(exp_k.0, res_k.0);
-        assert_eq!(exp_v.0, res_v.0);
-    }
-    assert_eq!(from, serde_json::to_string_pretty(&expected).unwrap());
-
-    let from = r#"{
-  "s": {}
-}"#;
-    let expected = S::default();
-
-    let res: S = serde_json::from_str(from).unwrap();
-    assert!(res.s.is_empty());
-    assert_eq!(from, serde_json::to_string_pretty(&expected).unwrap());
-
-    let from = r#"{
-  "s": []
-}"#;
-    let res: Result<S, _> = serde_json::from_str(from);
-    let res = res.unwrap_err();
-    assert_eq!(Category::Data, res.classify());
-    assert_eq!(
-        "invalid type: sequence, expected a map at line 2 column 7",
-        res.to_string()
+    is_equal(
+        S(vec![
+            (Wrapper(1), Wrapper("Hi".into())),
+            (Wrapper(2), Wrapper("Cake".into())),
+            (Wrapper(99), Wrapper("Lie".into())),
+        ]),
+        expect![[r#"
+            {
+              "1": "Hi",
+              "2": "Cake",
+              "99": "Lie"
+            }"#]],
     );
-
-    let from = r#"{
-  "s": null
-}"#;
-    let res: Result<S, _> = serde_json::from_str(from);
-    let res = res.unwrap_err();
-    assert_eq!(Category::Data, res.classify());
-    assert_eq!(
-        "invalid type: null, expected a map at line 2 column 11",
-        res.to_string()
+    is_equal(S(Vec::new()), expect![[r#"{}"#]]);
+    check_error_deserialization::<S>(
+        r#"[]"#,
+        expect![[r#"invalid type: sequence, expected a map at line 1 column 0"#]],
+    );
+    check_error_deserialization::<S>(
+        r#"null"#,
+        expect![[r#"invalid type: null, expected a map at line 1 column 4"#]],
     );
 }
 
 #[test]
 fn tuple_list_as_map_linkedlist() {
-    #[derive(Debug, Deserialize, Serialize, Default)]
-    struct S {
+    #[derive(Debug, PartialEq, Deserialize, Serialize)]
+    struct S(
         #[serde(with = "serde_with::rust::tuple_list_as_map")]
-        s: LinkedList<(Wrapper<i32>, Wrapper<String>)>,
-    }
-
-    #[derive(Clone, Debug, Serialize, Deserialize)]
+        LinkedList<(Wrapper<i32>, Wrapper<String>)>,
+    );
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
     #[serde(transparent)]
     struct Wrapper<T>(T);
 
-    let from = r#"{
-  "s": {
-    "1": "Hi",
-    "2": "Cake",
-    "99": "Lie"
-  }
-}"#;
-    let mut expected = S::default();
-    expected.s.push_back((Wrapper(1), Wrapper("Hi".into())));
-    expected.s.push_back((Wrapper(2), Wrapper("Cake".into())));
-    expected.s.push_back((Wrapper(99), Wrapper("Lie".into())));
-
-    let res: S = serde_json::from_str(from).unwrap();
-    for ((exp_k, exp_v), (res_k, res_v)) in expected.s.iter().zip(&res.s) {
-        assert_eq!(exp_k.0, res_k.0);
-        assert_eq!(exp_v.0, res_v.0);
-    }
-    assert_eq!(from, serde_json::to_string_pretty(&expected).unwrap());
-
-    let from = r#"{
-  "s": {}
-}"#;
-    let expected = S::default();
-
-    let res: S = serde_json::from_str(from).unwrap();
-    assert!(res.s.is_empty());
-    assert_eq!(from, serde_json::to_string_pretty(&expected).unwrap());
+    is_equal(
+        S(LinkedList::from_iter(vec![
+            (Wrapper(1), Wrapper("Hi".into())),
+            (Wrapper(2), Wrapper("Cake".into())),
+            (Wrapper(99), Wrapper("Lie".into())),
+        ])),
+        expect![[r#"
+            {
+              "1": "Hi",
+              "2": "Cake",
+              "99": "Lie"
+            }"#]],
+    );
+    is_equal(S(LinkedList::new()), expect![[r#"{}"#]]);
+    check_error_deserialization::<S>(
+        r#"[]"#,
+        expect![[r#"invalid type: sequence, expected a map at line 1 column 0"#]],
+    );
+    check_error_deserialization::<S>(
+        r#"null"#,
+        expect![[r#"invalid type: null, expected a map at line 1 column 4"#]],
+    );
 }
 
 #[test]
 fn tuple_list_as_map_vecdeque() {
-    #[derive(Debug, Deserialize, Serialize, Default)]
-    struct S {
+    #[derive(Debug, PartialEq, Deserialize, Serialize)]
+    struct S(
         #[serde(with = "serde_with::rust::tuple_list_as_map")]
-        s: VecDeque<(Wrapper<i32>, Wrapper<String>)>,
-    }
-
-    #[derive(Clone, Debug, Serialize, Deserialize)]
+        VecDeque<(Wrapper<i32>, Wrapper<String>)>,
+    );
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
     #[serde(transparent)]
     struct Wrapper<T>(T);
 
-    let from = r#"{
-  "s": {
-    "1": "Hi",
-    "2": "Cake",
-    "99": "Lie"
-  }
-}"#;
-    let mut expected = S::default();
-    expected.s.push_back((Wrapper(1), Wrapper("Hi".into())));
-    expected.s.push_back((Wrapper(2), Wrapper("Cake".into())));
-    expected.s.push_back((Wrapper(99), Wrapper("Lie".into())));
+    is_equal(
+        S(VecDeque::from_iter(vec![
+            (Wrapper(1), Wrapper("Hi".into())),
+            (Wrapper(2), Wrapper("Cake".into())),
+            (Wrapper(99), Wrapper("Lie".into())),
+        ])),
+        expect![[r#"
+            {
+              "1": "Hi",
+              "2": "Cake",
+              "99": "Lie"
+            }"#]],
+    );
+    is_equal(S(VecDeque::new()), expect![[r#"{}"#]]);
+    check_error_deserialization::<S>(
+        r#"[]"#,
+        expect![[r#"invalid type: sequence, expected a map at line 1 column 0"#]],
+    );
+    check_error_deserialization::<S>(
+        r#"null"#,
+        expect![[r#"invalid type: null, expected a map at line 1 column 4"#]],
+    );
+}
 
-    let res: S = serde_json::from_str(from).unwrap();
-    for ((exp_k, exp_v), (res_k, res_v)) in expected.s.iter().zip(&res.s) {
-        assert_eq!(exp_k.0, res_k.0);
-        assert_eq!(exp_v.0, res_v.0);
-    }
-    assert_eq!(from, serde_json::to_string_pretty(&expected).unwrap());
+#[test]
+fn test_string_empty_as_none() {
+    #[derive(Debug, PartialEq, Deserialize, Serialize)]
+    struct S(#[serde(with = "serde_with::rust::string_empty_as_none")] Option<String>);
 
-    let from = r#"{
-  "s": {}
-}"#;
-    let expected = S::default();
+    is_equal(S(Some("str".to_string())), expect![[r#""str""#]]);
+    check_deserialization(S(None), r#""""#);
+    check_deserialization(S(None), r#"null"#);
+}
 
-    let res: S = serde_json::from_str(from).unwrap();
-    assert!(res.s.is_empty());
-    assert_eq!(from, serde_json::to_string_pretty(&expected).unwrap());
+#[test]
+fn test_default_on_error() {
+    #[derive(Debug, PartialEq, Deserialize, Serialize)]
+    struct S<T>(#[serde(with = "serde_with::rust::default_on_error")] T)
+    where
+        T: Default + Serialize + DeserializeOwned;
+
+    is_equal(S(123), expect![[r#"123"#]]);
+    is_equal(S("Hello World".to_string()), expect![[r#""Hello World""#]]);
+    is_equal(
+        S(vec![1, 2, 3]),
+        expect![[r#"
+        [
+          1,
+          2,
+          3
+        ]"#]],
+    );
+
+    check_deserialization(S(0), r#"{}"#);
+    check_deserialization(S(0), r#"[]"#);
+    check_deserialization(S(0), r#"null"#);
+    check_deserialization(S(0), r#""A""#);
+
+    check_deserialization(S("".to_string()), r#"{}"#);
+    check_deserialization(S("".to_string()), r#"[]"#);
+    check_deserialization(S("".to_string()), r#"null"#);
+    check_deserialization(S("".to_string()), r#"0"#);
+
+    check_deserialization(S::<Vec<i32>>(vec![]), r#"{}"#);
+    check_deserialization(S::<Vec<i32>>(vec![]), r#"null"#);
+    check_deserialization(S::<Vec<i32>>(vec![]), r#"0"#);
+    check_deserialization(S::<Vec<i32>>(vec![]), r#""A""#);
+}
+
+#[test]
+fn test_default_on_null() {
+    #[derive(Debug, PartialEq, Deserialize, Serialize)]
+    struct S<T>(#[serde(with = "serde_with::rust::default_on_null")] T)
+    where
+        T: Default + Serialize + DeserializeOwned;
+
+    is_equal(S(123), expect![[r#"123"#]]);
+    is_equal(S("Hello World".to_string()), expect![[r#""Hello World""#]]);
+    is_equal(
+        S(vec![1, 2, 3]),
+        expect![[r#"
+        [
+          1,
+          2,
+          3
+        ]"#]],
+    );
+
+    check_deserialization(S(0), r#"null"#);
+    check_deserialization(S("".to_string()), r#"null"#);
+    check_deserialization(S::<Vec<i32>>(vec![]), r#"null"#);
 }

@@ -2,14 +2,15 @@
 /* exported createHttpServer, cleanupDir, clearCache, optionalPermissionsPromptHandler, promiseConsoleOutput,
             promiseQuotaManagerServiceReset, promiseQuotaManagerServiceClear,
             runWithPrefs, testEnv, withHandlingUserInput, resetHandlingUserInput,
-            assertPersistentListeners */
+            assertPersistentListeners, promiseExtensionEvent, assertHasPersistedScriptsCachedFlag,
+            assertIsPersistedScriptsCachedFlag
+*/
 
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+var { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 var {
   clearInterval,
@@ -18,28 +19,33 @@ var {
   setIntervalWithTarget,
   setTimeout,
   setTimeoutWithTarget,
-} = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+} = ChromeUtils.importESModule("resource://gre/modules/Timer.sys.mjs");
 var { AddonTestUtils, MockAsyncShutdown } = ChromeUtils.import(
   "resource://testing-common/AddonTestUtils.jsm"
 );
 
-// eslint-disable-next-line no-unused-vars
+ChromeUtils.defineESModuleGetters(this, {
+  ContentTask: "resource://testing-common/ContentTask.sys.mjs",
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  PromiseTestUtils: "resource://testing-common/PromiseTestUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(this, {
-  ContentTask: "resource://testing-common/ContentTask.jsm",
   Extension: "resource://gre/modules/Extension.jsm",
   ExtensionData: "resource://gre/modules/Extension.jsm",
   ExtensionParent: "resource://gre/modules/ExtensionParent.jsm",
   ExtensionTestUtils: "resource://testing-common/ExtensionXPCShellUtils.jsm",
-  FileUtils: "resource://gre/modules/FileUtils.jsm",
   MessageChannel: "resource://testing-common/MessageChannel.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
-  PromiseTestUtils: "resource://testing-common/PromiseTestUtils.jsm",
   Schemas: "resource://gre/modules/Schemas.jsm",
 });
 
 PromiseTestUtils.allowMatchingRejectionsGlobally(
   /Message manager disconnected/
 );
+
+// Persistent Listener test functionality
+const { assertPersistentListeners } = ExtensionTestUtils.testAssertions;
 
 // https_first automatically upgrades http to https, but the tests are not
 // designed to expect that. And it is not easy to change that because
@@ -54,7 +60,7 @@ const testEnv = {
   expectRemote: false,
 };
 
-add_task(function check_remote() {
+add_setup(function check_remote() {
   Assert.equal(
     WebExtensionPolicy.useRemoteWebExtensions,
     testEnv.expectRemote,
@@ -312,52 +318,36 @@ const optionalPermissionsPromptHandler = {
   },
 };
 
-// Persistent Listener test functionality
+function promiseExtensionEvent(wrapper, event) {
+  return new Promise(resolve => {
+    wrapper.extension.once(event, (...args) => resolve(args));
+  });
+}
 
-function getPersistentListeners(extWrapper, apiNs, apiEvent) {
-  const { persistentListeners } = extWrapper.extension;
-  if (
-    !persistentListeners?.size > 0 ||
-    !persistentListeners.get(apiNs)?.has(apiEvent)
-  ) {
-    return [];
-  }
-
-  return Array.from(
-    persistentListeners
-      .get(apiNs)
-      .get(apiEvent)
-      .values()
+async function assertHasPersistedScriptsCachedFlag(ext) {
+  const { StartupCache } = ExtensionParent;
+  const allCachedGeneral = StartupCache._data.get("general");
+  equal(
+    allCachedGeneral
+      .get(ext.id)
+      ?.get(ext.version)
+      ?.get("scripting")
+      ?.has("hasPersistedScripts"),
+    true,
+    "Expect the StartupCache to include hasPersistedScripts flag"
   );
 }
 
-function assertPersistentListeners(
-  extWrapper,
-  apiNs,
-  apiEvent,
-  { primed, persisted = true }
-) {
-  if (primed && !persisted) {
-    throw new Error(
-      "Inconsistent assertion, can't assert a primed listener if it is not persisted"
-    );
-  }
-
-  let listenersInfo = getPersistentListeners(extWrapper, apiNs, apiEvent);
+async function assertIsPersistentScriptsCachedFlag(ext, expectedValue) {
+  const { StartupCache } = ExtensionParent;
+  const allCachedGeneral = StartupCache._data.get("general");
   equal(
-    persisted,
-    !!listenersInfo?.length,
-    `Got a persistent listener for ${apiNs}.${apiEvent}`
+    allCachedGeneral
+      .get(ext.id)
+      ?.get(ext.version)
+      ?.get("scripting")
+      ?.get("hasPersistedScripts"),
+    expectedValue,
+    "Expected cached value set on hasPersistedScripts flag"
   );
-  for (const info of listenersInfo) {
-    if (primed) {
-      ok(info.primed, `${apiNs}.${apiEvent} listener expected to be primed`);
-    } else {
-      equal(
-        info.primed,
-        undefined,
-        `${apiNs}.${apiEvent} listener expected to not be primed`
-      );
-    }
-  }
 }

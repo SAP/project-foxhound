@@ -2,18 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm"
-);
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+});
 
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "syncUsername",
   "services.sync.username"
 );
@@ -140,7 +138,7 @@ WeaveService.prototype = {
    */
   get enabled() {
     return (
-      !!syncUsername &&
+      !!lazy.syncUsername &&
       Services.prefs.getBoolPref("identity.fxaccounts.enabled")
     );
   },
@@ -160,7 +158,7 @@ AboutWeaveLog.prototype = {
   },
 
   newChannel(aURI, aLoadInfo) {
-    let dir = FileUtils.getDir("ProfD", ["weave", "logs"], true);
+    let dir = lazy.FileUtils.getDir("ProfD", ["weave", "logs"], true);
     let uri = Services.io.newFileURI(dir);
     let channel = Services.io.newChannelFromURIWithLoadInfo(uri, aLoadInfo);
 

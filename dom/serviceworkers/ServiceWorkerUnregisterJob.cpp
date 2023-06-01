@@ -12,8 +12,7 @@
 #include "nsThreadUtils.h"
 #include "ServiceWorkerManager.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ServiceWorkerUnregisterJob::PushUnsubscribeCallback final
     : public nsIUnsubscribeResultCallback {
@@ -115,6 +114,8 @@ void ServiceWorkerUnregisterJob::Unregister() {
     swm->MaybeSendUnregister(mPrincipal, mScope);
   }
 
+  swm->EvictFromBFCache(registration);
+
   // "Remove scope to registration map[job's scope url]."
   swm->RemoveRegistration(registration);
   MOZ_ASSERT(registration->IsUnregistered());
@@ -135,5 +136,4 @@ void ServiceWorkerUnregisterJob::Unregister() {
   Finish(NS_OK);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

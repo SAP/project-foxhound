@@ -11,6 +11,7 @@
 
 #  include "DecoderDoctorLogger.h"
 #  include "GMPCrashHelper.h"
+#  include "MediaCodecsSupport.h"
 #  include "MediaEventSource.h"
 #  include "MediaInfo.h"
 #  include "MediaResult.h"
@@ -22,6 +23,7 @@
 #  include "mozilla/layers/KnowsCompositor.h"
 #  include "mozilla/layers/LayersTypes.h"
 #  include "nsTArray.h"
+#  include "PerformanceRecorder.h"
 
 namespace mozilla {
 class TrackInfo;
@@ -107,6 +109,8 @@ struct CreateDecoderParamsForAsync {
       mOnWaitingForKeyEvent;
   const OptionSet mOptions = OptionSet(Option::Default);
   const media::VideoFrameRate mRate;
+  const Maybe<uint64_t> mMediaEngineId;
+  const Maybe<TrackingId> mTrackingId;
 };
 
 struct MOZ_STACK_CLASS CreateDecoderParams final {
@@ -129,7 +133,9 @@ struct MOZ_STACK_CLASS CreateDecoderParams final {
         mType(aParams.mType),
         mOnWaitingForKeyEvent(aParams.mOnWaitingForKeyEvent),
         mOptions(aParams.mOptions),
-        mRate(aParams.mRate) {}
+        mRate(aParams.mRate),
+        mMediaEngineId(aParams.mMediaEngineId),
+        mTrackingId(aParams.mTrackingId) {}
 
   template <typename T1, typename... Ts>
   CreateDecoderParams(const TrackInfo& aConfig, T1&& a1, Ts&&... args)
@@ -175,6 +181,9 @@ struct MOZ_STACK_CLASS CreateDecoderParams final {
       mOnWaitingForKeyEvent;
   OptionSet mOptions = OptionSet(Option::Default);
   media::VideoFrameRate mRate;
+  // Used on Windows when the MF media engine playback is enabled.
+  Maybe<uint64_t> mMediaEngineId;
+  Maybe<TrackingId> mTrackingId;
 
  private:
   void Set(layers::ImageContainer* aImageContainer) {
@@ -203,6 +212,10 @@ struct MOZ_STACK_CLASS CreateDecoderParams final {
                aOnWaitingForKey) {
     mOnWaitingForKeyEvent = aOnWaitingForKey;
   }
+  void Set(const Maybe<uint64_t>& aMediaEngineId) {
+    mMediaEngineId = aMediaEngineId;
+  }
+  void Set(const Maybe<TrackingId>& aTrackingId) { mTrackingId = aTrackingId; }
   void Set(const CreateDecoderParams& aParams) {
     // Set all but mTrackInfo;
     mImageContainer = aParams.mImageContainer;
@@ -215,6 +228,8 @@ struct MOZ_STACK_CLASS CreateDecoderParams final {
     mOnWaitingForKeyEvent = aParams.mOnWaitingForKeyEvent;
     mOptions = aParams.mOptions;
     mRate = aParams.mRate;
+    mMediaEngineId = aParams.mMediaEngineId;
+    mTrackingId = aParams.mTrackingId;
   }
   template <typename T1, typename T2, typename... Ts>
   void Set(T1&& a1, T2&& a2, Ts&&... args) {
@@ -239,7 +254,8 @@ struct MOZ_STACK_CLASS SupportDecoderParams final {
         mUseNullDecoder(aParams.mUseNullDecoder),
         mNoWrapper(aParams.mNoWrapper),
         mOptions(aParams.mOptions),
-        mRate(aParams.mRate) {}
+        mRate(aParams.mRate),
+        mMediaEngineId(aParams.mMediaEngineId) {}
 
   template <typename T1, typename... Ts>
   SupportDecoderParams(const TrackInfo& aConfig, T1&& a1, Ts&&... args)
@@ -257,6 +273,7 @@ struct MOZ_STACK_CLASS SupportDecoderParams final {
   NoWrapper mNoWrapper;
   OptionSet mOptions = OptionSet(Option::Default);
   VideoFrameRate mRate;
+  Maybe<uint64_t> mMediaEngineId;
 
  private:
   void Set(DecoderDoctorDiagnostics* aDiagnostics) {
@@ -274,6 +291,9 @@ struct MOZ_STACK_CLASS SupportDecoderParams final {
       mKnowsCompositor = aKnowsCompositor;
       MOZ_ASSERT(aKnowsCompositor->IsThreadSafe());
     }
+  }
+  void Set(const Maybe<uint64_t>& aMediaEngineId) {
+    mMediaEngineId = aMediaEngineId;
   }
 
   template <typename T1, typename T2, typename... Ts>
@@ -313,22 +333,38 @@ class PlatformDecoderModule {
   // This is called on the decode task queue.
   virtual nsresult Startup() { return NS_OK; }
 
-  // Indicates if the PlatformDecoderModule supports decoding of aMimeType.
+  // Indicates if the PlatformDecoderModule supports decoding of aMimeType,
+  // and whether or not hardware-accelerated decoding is supported.
   // The answer to both SupportsMimeType and Supports doesn't guarantee that
   // creation of a decoder will actually succeed.
-  virtual bool SupportsMimeType(
+  virtual media::DecodeSupportSet SupportsMimeType(
       const nsACString& aMimeType,
       DecoderDoctorDiagnostics* aDiagnostics) const = 0;
 
-  virtual bool Supports(const SupportDecoderParams& aParams,
-                        DecoderDoctorDiagnostics* aDiagnostics) const {
+  virtual media::DecodeSupportSet Supports(
+      const SupportDecoderParams& aParams,
+      DecoderDoctorDiagnostics* aDiagnostics) const {
     const TrackInfo& trackInfo = aParams.mConfig;
-    if (!SupportsMimeType(trackInfo.mMimeType, aDiagnostics)) {
-      return false;
+    const media::DecodeSupportSet support =
+        SupportsMimeType(trackInfo.mMimeType, aDiagnostics);
+
+    // Bail early if we don't support this format at all
+    if (support == media::DecodeSupport::Unsupported) {
+      return support;
     }
+
     const auto* videoInfo = trackInfo.GetAsVideoInfo();
-    return !videoInfo ||
-           SupportsColorDepth(videoInfo->mColorDepth, aDiagnostics);
+
+    if (!videoInfo) {
+      // No video stream = software decode only
+      return media::DecodeSupport::SoftwareDecode;
+    }
+
+    // Check whether we support the desired color depth
+    if (!SupportsColorDepth(videoInfo->mColorDepth, aDiagnostics)) {
+      return media::DecodeSupport::Unsupported;
+    }
+    return support;
   }
 
   using CreateDecoderPromise = MozPromise<RefPtr<MediaDataDecoder>, MediaResult,

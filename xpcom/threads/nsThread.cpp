@@ -47,7 +47,6 @@
 #include "nsThreadSyncDispatch.h"
 #include "nsServiceManagerUtils.h"
 #include "GeckoProfiler.h"
-#include "InputEventStatistics.h"
 #include "ThreadEventQueue.h"
 #include "ThreadEventTarget.h"
 #include "ThreadDelay.h"
@@ -86,6 +85,7 @@ using GetCurrentThreadStackLimitsFn = void(WINAPI*)(PULONG_PTR LowLimit,
 #ifdef XP_MACOSX
 #  include <mach/mach.h>
 #  include <mach/thread_policy.h>
+#  include <sys/qos.h>
 #endif
 
 #ifdef MOZ_CANARY
@@ -182,7 +182,6 @@ NS_INTERFACE_MAP_BEGIN(nsThread)
   NS_INTERFACE_MAP_ENTRY(nsIEventTarget)
   NS_INTERFACE_MAP_ENTRY(nsISerialEventTarget)
   NS_INTERFACE_MAP_ENTRY(nsISupportsPriority)
-  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIDelayedRunnableObserver, mEventTarget)
   NS_INTERFACE_MAP_ENTRY(nsIDirectTaskDispatcher)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIThread)
   if (aIID.Equals(NS_GET_IID(nsIClassInfo))) {
@@ -229,10 +228,13 @@ class nsThreadShutdownEvent : public Runnable {
     // Creates a cycle between `mThread` and the shutdown context which will be
     // broken when the thread exits.
     mThread->mShutdownContext = mShutdownContext;
-    if (mThread->mEventTarget) {
-      mThread->mEventTarget->NotifyShutdown();
-    }
     MessageLoop::current()->Quit();
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+    // Let's leave a trace that we passed here in the thread's name.
+    nsAutoCString threadName(PR_GetThreadName(PR_GetCurrentThread()));
+    threadName.Append(",SHDRCV"_ns);
+    NS_SetCurrentThreadName(threadName.get());
+#endif
     return NS_OK;
   }
 
@@ -259,8 +261,10 @@ static void SetThreadAffinity(unsigned int cpu) {
   // "no affinity" so let's pretend each CPU has its own tag `cpu+1`.
   thread_affinity_policy_data_t policy;
   policy.affinity_tag = cpu + 1;
-  MOZ_ALWAYS_TRUE(thread_policy_set(mach_thread_self(), THREAD_AFFINITY_POLICY,
-                                    &policy.affinity_tag, 1) == KERN_SUCCESS);
+  kern_return_t kr = thread_policy_set(
+      mach_thread_self(), THREAD_AFFINITY_POLICY, &policy.affinity_tag, 1);
+  // Setting the thread affinity is not supported on ARM.
+  MOZ_ALWAYS_TRUE(kr == KERN_SUCCESS || kr == KERN_NOT_SUPPORTED);
 #elif defined(XP_WIN)
   MOZ_ALWAYS_TRUE(SetThreadIdealProcessor(GetCurrentThread(), cpu) !=
                   (DWORD)-1);
@@ -318,13 +322,6 @@ struct ThreadInitData {
   static StaticLocalAutoPtr<LinkedList<nsThread>> sList(
       new LinkedList<nsThread>());
   return *sList;
-}
-
-/* static */
-void nsThread::ClearThreadList() {
-  OffTheBooksMutexAutoLock mal(ThreadListMutex());
-  while (ThreadList().popFirst()) {
-  }
 }
 
 /* static */
@@ -386,6 +383,8 @@ void nsThread::ThreadFunc(void* aArg) {
     // Now, process incoming events...
     loop.Run();
 
+    self->mEvents->RunShutdownTasks();
+
     BackgroundChild::CloseForCurrentThread();
 
     // NB: The main thread does not shut down here!  It shuts down via
@@ -428,8 +427,9 @@ void nsThread::ThreadFunc(void* aArg) {
   // which case we won't notify our caller, and leak.
   RefPtr<nsThread> joiningThread;
   {
-    auto lock = context->mJoiningThread.Lock();
-    joiningThread = lock->forget();
+    MutexAutoLock lock(context->mJoiningThreadMutex);
+    joiningThread = context->mJoiningThread.forget();
+    MOZ_RELEASE_ASSERT(joiningThread || context->mThreadLeaked);
   }
   if (joiningThread) {
     // Dispatch shutdown ACK
@@ -442,6 +442,13 @@ void nsThread::ThreadFunc(void* aArg) {
     // crash with a hang later anyways. The best we can do is to tell
     // the world what happened right here.
     MOZ_RELEASE_ASSERT(NS_SUCCEEDED(dispatch_ack_rv));
+
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+    // Let's leave a trace that we passed here in the thread's name.
+    nsAutoCString threadName(PR_GetThreadName(PR_GetCurrentThread()));
+    threadName.Append(",SHDACK"_ns);
+    NS_SetCurrentThreadName(threadName.get());
+#endif
   } else {
     NS_WARNING(
         "nsThread exiting after StopWaitingAndLeakThread was called, thread "
@@ -538,15 +545,16 @@ int sCanaryOutputFD = -1;
 #endif
 
 nsThread::nsThread(NotNull<SynchronizedEventQueue*> aQueue,
-                   MainThreadFlag aMainThread, uint32_t aStackSize)
+                   MainThreadFlag aMainThread,
+                   nsIThreadManager::ThreadCreationOptions aOptions)
     : mEvents(aQueue.get()),
-      mEventTarget(
-          new ThreadEventTarget(mEvents.get(), aMainThread == MAIN_THREAD)),
+      mEventTarget(new ThreadEventTarget(
+          mEvents.get(), aMainThread == MAIN_THREAD, aOptions.blockDispatch)),
       mOutstandingShutdownContexts(0),
       mShutdownContext(nullptr),
       mScriptObserver(nullptr),
       mThreadName("<uninitialized>"),
-      mStackSize(aStackSize),
+      mStackSize(aOptions.stackSize),
       mNestedEventLoopDepth(0),
       mShutdownRequired(false),
       mPriority(PRIORITY_NORMAL),
@@ -676,6 +684,22 @@ nsThread::DelayedDispatch(already_AddRefed<nsIRunnable> aEvent,
   NS_ENSURE_TRUE(mEventTarget, NS_ERROR_NOT_IMPLEMENTED);
 
   return mEventTarget->DelayedDispatch(std::move(aEvent), aDelayMs);
+}
+
+NS_IMETHODIMP
+nsThread::RegisterShutdownTask(nsITargetShutdownTask* aTask) {
+  MOZ_ASSERT(mEventTarget);
+  NS_ENSURE_TRUE(mEventTarget, NS_ERROR_NOT_IMPLEMENTED);
+
+  return mEventTarget->RegisterShutdownTask(aTask);
+}
+
+NS_IMETHODIMP
+nsThread::UnregisterShutdownTask(nsITargetShutdownTask* aTask) {
+  MOZ_ASSERT(mEventTarget);
+  NS_ENSURE_TRUE(mEventTarget, NS_ERROR_NOT_IMPLEMENTED);
+
+  return mEventTarget->UnregisterShutdownTask(aTask);
 }
 
 NS_IMETHODIMP
@@ -825,6 +849,17 @@ void nsThread::ShutdownComplete(NotNull<nsThreadShutdownContext*> aContext) {
   MOZ_ASSERT(mEventTarget);
   MOZ_ASSERT(aContext->mTerminatingThread == this);
 
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  {
+    MutexAutoLock lock(aContext->mJoiningThreadMutex);
+
+    // StopWaitingAndLeakThread is explicitely meant to not cause a
+    // nsThreadShutdownAckEvent on the joining thread, which is the only
+    // caller of ShutdownComplete.
+    MOZ_DIAGNOSTIC_ASSERT(!aContext->mThreadLeaked);
+  }
+#endif
+
   MaybeRemoveFromThreadList();
 
   // Now, it should be safe to join without fear of dead-locking.
@@ -875,7 +910,7 @@ nsThread::HasPendingEvents(bool* aResult) {
     return NS_ERROR_NOT_SAME_THREAD;
   }
 
-  if (mIsMainThread && !mIsInLocalExecutionMode) {
+  if (mIsMainThread) {
     *aResult = TaskController::Get()->HasMainThreadPendingTasks();
   } else {
     *aResult = mEvents->HasPendingEvent();
@@ -910,6 +945,33 @@ nsThread::DispatchToQueue(already_AddRefed<nsIRunnable> aEvent,
     return NS_ERROR_UNEXPECTED;
   }
 
+  return NS_OK;
+}
+
+NS_IMETHODIMP nsThread::SetThreadQoS(nsIThread::QoSPriority aPriority) {
+  if (!StaticPrefs::threads_use_low_power_enabled()) {
+    return NS_OK;
+  }
+  // The approach here is to have a thread set itself for its QoS level,
+  // so we assert if we aren't on the current thread.
+  MOZ_ASSERT(IsOnCurrentThread(), "Can only change the current thread's QoS");
+
+#if defined(XP_MACOSX)
+  // Only arm64 macs may possess heterogeneous cores. On these, we can tell
+  // a thread to set its own QoS status. On intel macs things should behave
+  // normally, and the OS will ignore the QoS state of the thread.
+  if (aPriority == nsIThread::QOS_PRIORITY_LOW) {
+    pthread_set_qos_class_self_np(QOS_CLASS_BACKGROUND, 0);
+  } else if (NS_IsMainThread()) {
+    // MacOS documentation specifies that a main thread should be initialized at
+    // the USER_INTERACTIVE priority, so when we restore thread priorities the
+    // main thread should be setting itself to this.
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+  } else {
+    pthread_set_qos_class_self_np(QOS_CLASS_DEFAULT, 0);
+  }
+#endif
+  // Do nothing if an OS-specific implementation is unavailable.
   return NS_OK;
 }
 
@@ -1042,18 +1104,6 @@ nsThread::ProcessNextEvent(bool aMayWait, bool* aResult) {
   // event loop since its state change hasn't happened yet.
   bool reallyWait = aMayWait && (mNestedEventLoopDepth > 0 || !ShuttingDown());
 
-  if (mIsInLocalExecutionMode) {
-    if (nsCOMPtr<nsIRunnable> event = mEvents->GetEvent(reallyWait)) {
-      *aResult = true;
-      LogRunnable::Run log(event);
-      event->Run();
-      event = nullptr;
-    } else {
-      *aResult = false;
-    }
-    return NS_OK;
-  }
-
   Maybe<dom::AutoNoJSAPI> noJSAPI;
 
   if (mUseHangMonitor && reallyWait) {
@@ -1075,6 +1125,8 @@ nsThread::ProcessNextEvent(bool aMayWait, bool* aResult) {
     mScriptObserver->BeforeProcessTask(reallyWait);
   }
 
+  DrainDirectTasks();
+
 #ifdef EARLY_BETA_OR_EARLIER
   // Need to capture mayWaitForWakeup state before OnProcessNextEvent,
   // since on the main thread OnProcessNextEvent ends up waiting for the new
@@ -1089,6 +1141,8 @@ nsThread::ProcessNextEvent(bool aMayWait, bool* aResult) {
 
   NOTIFY_EVENT_OBSERVERS(EventQueue()->EventObservers(), OnProcessNextEvent,
                          (this, reallyWait));
+
+  DrainDirectTasks();
 
 #ifdef MOZ_CANARY
   Canary canary;
@@ -1349,13 +1403,6 @@ void nsThread::DoMainThreadSpecificProcessing() const {
   }
 }
 
-NS_IMETHODIMP
-nsThread::GetEventTarget(nsIEventTarget** aEventTarget) {
-  nsCOMPtr<nsIEventTarget> target = this;
-  target.forget(aEventTarget);
-  return NS_OK;
-}
-
 //-----------------------------------------------------------------------------
 // nsIDirectTaskDispatcher
 
@@ -1385,45 +1432,6 @@ NS_IMETHODIMP nsThread::HaveDirectTasks(bool* aValue) {
   return NS_OK;
 }
 
-nsIEventTarget* nsThread::EventTarget() { return this; }
-
-nsISerialEventTarget* nsThread::SerialEventTarget() { return this; }
-
-void nsThread::OnDelayedRunnableCreated(mozilla::DelayedRunnable* aRunnable) {
-  mEventTarget->OnDelayedRunnableCreated(aRunnable);
-}
-
-void nsThread::OnDelayedRunnableScheduled(mozilla::DelayedRunnable* aRunnable) {
-  mEventTarget->OnDelayedRunnableScheduled(aRunnable);
-}
-
-void nsThread::OnDelayedRunnableRan(mozilla::DelayedRunnable* aRunnable) {
-  mEventTarget->OnDelayedRunnableRan(aRunnable);
-}
-
-nsLocalExecutionRecord nsThread::EnterLocalExecution() {
-  MOZ_RELEASE_ASSERT(!mIsInLocalExecutionMode);
-  MOZ_ASSERT(IsOnCurrentThread());
-  MOZ_ASSERT(EventQueue());
-  return nsLocalExecutionRecord(*EventQueue(), mIsInLocalExecutionMode);
-}
-
-nsLocalExecutionGuard::nsLocalExecutionGuard(
-    nsLocalExecutionRecord&& aLocalExecutionRecord)
-    : mEventQueueStack(aLocalExecutionRecord.mEventQueueStack),
-      mLocalEventTarget(mEventQueueStack.PushEventQueue()),
-      mLocalExecutionFlag(aLocalExecutionRecord.mLocalExecutionFlag) {
-  MOZ_ASSERT(mLocalEventTarget);
-  MOZ_ASSERT(!mLocalExecutionFlag);
-  mLocalExecutionFlag = true;
-}
-
-nsLocalExecutionGuard::~nsLocalExecutionGuard() {
-  MOZ_ASSERT(mLocalExecutionFlag);
-  mLocalExecutionFlag = false;
-  mEventQueueStack.PopEventQueue(mLocalEventTarget);
-}
-
 NS_IMPL_ISUPPORTS(nsThreadShutdownContext, nsIThreadShutdown)
 
 NS_IMETHODIMP
@@ -1448,16 +1456,19 @@ nsThreadShutdownContext::StopWaitingAndLeakThread() {
   // thread won't try to dispatch nsThreadShutdownAckEvent to us anymore.
   RefPtr<nsThread> joiningThread;
   {
-    auto lock = mJoiningThread.Lock();
-    joiningThread = lock->forget();
-  }
-  if (!joiningThread) {
-    // Shutdown is already being resolved, so there's nothing for us to do.
-    return NS_ERROR_NOT_AVAILABLE;
+    MutexAutoLock lock(mJoiningThreadMutex);
+    if (!mJoiningThread) {
+      // Shutdown is already being resolved, so there's nothing for us to do.
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+    joiningThread = mJoiningThread.forget();
+    mThreadLeaked = true;
   }
 
   MOZ_DIAGNOSTIC_ASSERT(joiningThread->IsOnCurrentThread());
+
   MarkCompleted();
+
   return NS_OK;
 }
 
@@ -1553,7 +1564,9 @@ void PerformanceCounterState::MaybeReportAccumulatedTime(TimeStamp aNow) {
         static MarkerSchema MarkerTypeDisplay() {
           using MS = MarkerSchema;
           MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-          schema.AddKeyLabelFormat("category", "Type", MS::Format::String);
+          schema.AddKeyLabelFormatSearchable("category", "Type",
+                                             MS::Format::String,
+                                             MS::Searchable::Searchable);
           return schema;
         }
       };

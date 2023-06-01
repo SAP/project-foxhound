@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 from six.moves.urllib.parse import quote
 
 from marionette_driver.by import By
@@ -111,7 +109,9 @@ class TestCloseWindow(WindowManagerMixin, MarionetteTestCase):
         with self.marionette.using_context("chrome"):
             self.marionette.execute_async_script(
                 """
-              Components.utils.import("resource:///modules/BrowserWindowTracker.jsm");
+              const { BrowserWindowTracker } = ChromeUtils.import(
+                "resource:///modules/BrowserWindowTracker.jsm"
+              );
 
               let win = BrowserWindowTracker.getTopWindow();
               win.addEventListener("TabBrowserDiscarded", ev => {

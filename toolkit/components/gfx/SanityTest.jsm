@@ -4,8 +4,6 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 const FRAME_SCRIPT_URL = "chrome://gfxsanity/content/gfxFrameScript.js";
 
 const TEST_DISABLED_PREF = "media.sanity-test.disabled";
@@ -25,6 +23,8 @@ const VERSION_PREF = "sanity-test.version";
 const DISABLE_VIDEO_PREF = "media.hardware-video-decoding.failed";
 const RUNNING_PREF = "sanity-test.running";
 const TIMEOUT_SEC = 20;
+
+const MEDIA_ENGINE_PREF = "media.wmf.media-engine.enabled";
 
 // GRAPHICS_SANITY_TEST histogram enumeration values
 const TEST_PASSED = 0;
@@ -72,19 +72,13 @@ function reportTestReason(val) {
 
 function annotateCrashReport() {
   try {
-    var crashReporter = Cc["@mozilla.org/toolkit/crash-reporter;1"].getService(
-      Ci.nsICrashReporter
-    );
-    crashReporter.annotateCrashReport("TestKey", "1");
+    Services.appinfo.annotateCrashReport("TestKey", "1");
   } catch (e) {}
 }
 
-function removeCrashReportAnnotation(value) {
+function removeCrashReportAnnotation() {
   try {
-    var crashReporter = Cc["@mozilla.org/toolkit/crash-reporter;1"].getService(
-      Ci.nsICrashReporter
-    );
-    crashReporter.removeCrashReportAnnotation("TestKey");
+    Services.appinfo.removeCrashReportAnnotation("TestKey");
   } catch (e) {}
 }
 
@@ -200,13 +194,6 @@ function verifyLayersRendering(ctx) {
 }
 
 function testCompositor(test, win, ctx) {
-  if (win.windowUtils.layerManagerType.startsWith("WebRender")) {
-    // When layer manger type is WebRender, drawWindow() is skipped, since
-    // drawWindow() could take long time.
-    reportResult(TEST_PASSED);
-    return true;
-  }
-
   takeWindowSnapshot(win, ctx);
   var testPassed = true;
 
@@ -232,6 +219,7 @@ var listener = {
   canvas: null,
   ctx: null,
   mm: null,
+  disabledPrefs: [],
 
   messages: ["gfxSanity:ContentLoaded"],
 
@@ -272,6 +260,13 @@ var listener = {
   },
 
   onWindowLoaded() {
+    // Disable media engine pref if it's enabled because it doesn't support
+    // capturing image to canvas.
+    if (Services.prefs.getBoolPref(MEDIA_ENGINE_PREF, false)) {
+      Services.prefs.setBoolPref(MEDIA_ENGINE_PREF, false);
+      this.disabledPrefs.push(MEDIA_ENGINE_PREF);
+    }
+
     let browser = this.win.document.createXULElement("browser");
     browser.setAttribute("type", "content");
     browser.setAttribute("disableglobalhistory", "true");
@@ -312,6 +307,11 @@ var listener = {
 
       this.mm = null;
     }
+
+    for (let pref of this.disabledPrefs) {
+      Services.prefs.setBoolPref(pref, true);
+    }
+    this.disabledPrefs = null;
 
     // Remove the annotation after we've cleaned everything up, to catch any
     // incidental crashes from having performed the sanity test.
@@ -429,6 +429,14 @@ SanityTest.prototype = {
         ",chrome,titlebar=0,scrollbars=0,popup=1",
       null
     );
+
+    let appWin = sanityTest.docShell.treeOwner
+      .QueryInterface(Ci.nsIInterfaceRequestor)
+      .getInterface(Ci.nsIAppWindow);
+
+    // Request fast snapshot at RenderCompositor of WebRender.
+    // Since readback of Windows DirectComposition is very slow.
+    appWin.needFastSnaphot();
 
     // There's no clean way to have an invisible window and ensure it's always painted.
     // Instead, move the window far offscreen so it doesn't show up during launch.

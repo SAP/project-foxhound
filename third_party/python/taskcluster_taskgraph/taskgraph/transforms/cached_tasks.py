@@ -4,6 +4,7 @@
 
 
 from collections import deque
+
 import taskgraph
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.cached_tasks import add_optimization
@@ -56,7 +57,7 @@ def cache_task(config, tasks):
         return
 
     digests = {}
-    for task in config.kind_dependencies_tasks:
+    for task in config.kind_dependencies_tasks.values():
         if "cached_task" in task.attributes:
             digests[task.label] = format_task_digest(task.attributes["cached_task"])
 

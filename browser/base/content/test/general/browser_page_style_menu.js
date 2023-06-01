@@ -20,6 +20,7 @@ const BLUE = "rgb(0, 0, 255)";
 
 const WEB_ROOT = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com"
 );
 
@@ -36,7 +37,7 @@ add_task(async function test_menu() {
     false
   );
   let browser = tab.linkedBrowser;
-  BrowserTestUtils.loadURI(browser, WEB_ROOT + "page_style_sample.html");
+  BrowserTestUtils.loadURIString(browser, WEB_ROOT + "page_style_sample.html");
   await promiseStylesheetsLoaded(tab, kStyleSheetsInPageStyleSample);
 
   let menuitems = fillPopupAndGetItems();

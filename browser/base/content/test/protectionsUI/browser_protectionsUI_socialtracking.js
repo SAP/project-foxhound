@@ -4,12 +4,13 @@
 "use strict";
 
 const TRACKING_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com/browser/browser/base/content/test/protectionsUI/trackingPage.html";
 
 const ST_PROTECTION_PREF = "privacy.trackingprotection.socialtracking.enabled";
 const ST_BLOCK_COOKIES_PREF = "privacy.socialtracking.block_cookies.enabled";
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       [ST_BLOCK_COOKIES_PREF, true],

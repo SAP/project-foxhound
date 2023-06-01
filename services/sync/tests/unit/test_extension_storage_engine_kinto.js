@@ -9,7 +9,7 @@ const {
   ExtensionStorageEngineKinto: ExtensionStorageEngine,
 } = ChromeUtils.import("resource://services-sync/engines/extension-storage.js");
 const { Service } = ChromeUtils.import("resource://services-sync/service.js");
-const { extensionStorageSync } = ChromeUtils.import(
+const { extensionStorageSyncKinto: extensionStorageSync } = ChromeUtils.import(
   "resource://gre/modules/ExtensionStorageSyncKinto.jsm"
 );
 
@@ -21,12 +21,13 @@ function mock(options) {
     calls.push(arguments);
     return options.returns;
   };
-  Object.setPrototypeOf(ret, {
-    __proto__: Function.prototype,
+  let proto = {
     get calls() {
       return calls;
     },
-  });
+  };
+  Object.setPrototypeOf(proto, Function.prototype);
+  Object.setPrototypeOf(ret, proto);
   return ret;
 }
 

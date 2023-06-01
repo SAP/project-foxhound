@@ -8,7 +8,7 @@
 #define mozilla_ContentBlockingLog_h
 
 #include "mozilla/ContentBlockingNotifier.h"
-#include "mozilla/JSONWriter.h"
+#include "mozilla/JSONStringWriteFuncs.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/Tuple.h"
@@ -57,22 +57,14 @@ class ContentBlockingLog final {
 
   typedef nsTArray<OriginEntry> OriginDataTable;
 
-  struct StringWriteFunc : public JSONWriteFunc {
-    nsACString&
-        mBuffer;  // The lifetime of the struct must be bound to the buffer
-    explicit StringWriteFunc(nsACString& aBuffer) : mBuffer(aBuffer) {}
-
-    void Write(const Span<const char>& aStr) override { mBuffer.Append(aStr); }
-  };
-
   struct Comparator {
    public:
-    bool Equals(const OriginDataTable::elem_type& aLeft,
-                const OriginDataTable::elem_type& aRight) const {
+    bool Equals(const OriginDataTable::value_type& aLeft,
+                const OriginDataTable::value_type& aRight) const {
       return aLeft.mOrigin.Equals(aRight.mOrigin);
     }
 
-    bool Equals(const OriginDataTable::elem_type& aLeft,
+    bool Equals(const OriginDataTable::value_type& aLeft,
                 const nsACString& aRight) const {
       return aLeft.mOrigin.Equals(aRight);
     }
@@ -103,13 +95,14 @@ class ContentBlockingLog final {
     RecordLogInternal(aOrigin, aType, aBlocked, aReason, aTrackingFullHashes);
   }
 
-  void ReportOrigins();
   void ReportLog(nsIPrincipal* aFirstPartyPrincipal);
+  void ReportEmailTrackingLog(nsIPrincipal* aFirstPartyPrincipal);
 
   nsAutoCString Stringify() {
     nsAutoCString buffer;
 
-    JSONWriter w(MakeUnique<StringWriteFunc>(buffer));
+    JSONStringRefWriteFunc js(buffer);
+    JSONWriter w(js);
     w.Start();
 
     for (const OriginEntry& entry : mLog) {

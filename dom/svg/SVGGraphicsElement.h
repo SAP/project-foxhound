@@ -10,8 +10,7 @@
 #include "mozilla/dom/SVGTests.h"
 #include "mozilla/dom/SVGTransformableElement.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using SVGGraphicsElementBase = SVGTransformableElement;
 
@@ -25,14 +24,21 @@ class SVGGraphicsElement : public SVGGraphicsElementBase, public SVGTests {
   // interfaces:
   NS_DECL_ISUPPORTS_INHERITED
 
+  NS_IMPL_FROMNODE_HELPER(SVGGraphicsElement, IsSVGGraphicsElement())
+
   // WebIDL
-  bool Autofocus() const { return GetBoolAttr(nsGkAtoms::autofocus); }
-  void SetAutofocus(bool aAutofocus) {
-    SetBoolAttr(nsGkAtoms::autofocus, aAutofocus);
-  }
+  SVGElement* GetNearestViewportElement();
+  SVGElement* GetFarthestViewportElement();
+  MOZ_CAN_RUN_SCRIPT
+  already_AddRefed<SVGRect> GetBBox(const SVGBoundingBoxOptions&);
+  already_AddRefed<SVGMatrix> GetCTM();
+  already_AddRefed<SVGMatrix> GetScreenCTM();
 
   bool IsFocusableInternal(int32_t* aTabIndex, bool aWithMouse) override;
-  nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  bool IsSVGGraphicsElement() const final { return true; }
+
+  using nsINode::Clone;
+  // Overrides SVGTests.
   SVGElement* AsSVGElement() final { return this; }
 
  protected:
@@ -51,7 +57,6 @@ class SVGGraphicsElement : public SVGGraphicsElementBase, public SVGTests {
   }
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // DOM_SVG_SVGGRAPHICSELEMENT_H_

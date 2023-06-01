@@ -40,7 +40,7 @@ static inline Status VisitNameString(Visitor* JXL_RESTRICT visitor,
     name->resize(name_length);
   }
   for (size_t i = 0; i < name_length; i++) {
-    uint32_t c = (*name)[i];
+    uint32_t c = static_cast<uint8_t>((*name)[i]);
     JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(8, 0, &c));
     (*name)[i] = static_cast<char>(c);
   }
@@ -92,8 +92,8 @@ struct YCbCrChromaSubsampling : public Fields {
   uint8_t MaxHShift() const { return maxhs_; }
   uint8_t MaxVShift() const { return maxvs_; }
 
-  uint8_t RawHShift(size_t c) { return kHShift[channel_mode_[c]]; }
-  uint8_t RawVShift(size_t c) { return kVShift[channel_mode_[c]]; }
+  uint8_t RawHShift(size_t c) const { return kHShift[channel_mode_[c]]; }
+  uint8_t RawVShift(size_t c) const { return kVShift[channel_mode_[c]]; }
 
   // Uses JPEG channel order (Y, Cb, Cr).
   Status Set(const uint8_t* hsample, const uint8_t* vsample) {
@@ -220,6 +220,8 @@ struct BlendingInfo : public Fields {
   // Frame ID to copy from (0-3). Only encoded if blend_mode is not kReplace.
   uint32_t source;
 
+  std::string DebugString() const;
+
   size_t nonserialized_num_extra_channels = 0;
   bool nonserialized_is_partial_frame = false;
 };
@@ -262,10 +264,10 @@ struct Passes : public Fields {
 
   void GetDownsamplingBracket(size_t pass, int& minShift, int& maxShift) const {
     maxShift = 2;
-    minShift = 0;
+    minShift = 3;
     for (size_t i = 0;; i++) {
       for (uint32_t j = 0; j < num_downsample; ++j) {
-        if (i <= last_pass[j]) {
+        if (i == last_pass[j]) {
           if (downsample[j] == 8) minShift = 3;
           if (downsample[j] == 4) minShift = 2;
           if (downsample[j] == 2) minShift = 1;
@@ -275,9 +277,21 @@ struct Passes : public Fields {
       if (i == num_passes - 1) minShift = 0;
       if (i == pass) return;
       maxShift = minShift - 1;
-      minShift = 0;
     }
   }
+
+  uint32_t GetDownsamplingTargetForCompletedPasses(uint32_t num_p) const {
+    if (num_p >= num_passes) return 1;
+    uint32_t retval = 8;
+    for (uint32_t i = 0; i < num_downsample; ++i) {
+      if (num_p > last_pass[i]) {
+        retval = std::min(retval, downsample[i]);
+      }
+    }
+    return retval;
+  }
+
+  std::string DebugString() const;
 
   uint32_t num_passes;      // <= kMaxNumPasses
   uint32_t num_downsample;  // <= num_passes
@@ -472,6 +486,8 @@ struct FrameHeader : public Fields {
            frame_type == FrameType::kRegularFrame ||
            frame_type == FrameType::kSkipProgressive;
   }
+
+  std::string DebugString() const;
 
   uint64_t extensions;
 };

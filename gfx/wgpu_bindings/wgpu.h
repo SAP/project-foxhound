@@ -7,6 +7,12 @@
 #ifndef WGPU_h
 #define WGPU_h
 
+// We have to include nsString.h before wgpu_ffi_generated.h because the
+// latter is wrapped in an extern "C" declaration but ends up including
+// nsString.h (See bug 1784086)
+#include "nsString.h"
+#include "mozilla/UniquePtr.h"
+
 // Prelude of types necessary before including wgpu_ffi_generated.h
 namespace mozilla {
 namespace ipc {
@@ -19,7 +25,7 @@ namespace ffi {
 #define WGPU_FUNC
 
 extern "C" {
-#include "wgpu_ffi_generated.h"
+#include "mozilla/webgpu/ffi/wgpu_ffi_generated.h"
 }
 
 #undef WGPU_INLINE
@@ -35,6 +41,23 @@ inline const ffi::WGPUByteBuf* ToFFI(const ipc::ByteBuf* x) {
 }
 
 }  // namespace webgpu
+
+template <>
+class DefaultDelete<webgpu::ffi::WGPUClient> {
+ public:
+  void operator()(webgpu::ffi::WGPUClient* aPtr) const {
+    webgpu::ffi::wgpu_client_delete(aPtr);
+  }
+};
+
+template <>
+class DefaultDelete<webgpu::ffi::WGPUGlobal> {
+ public:
+  void operator()(webgpu::ffi::WGPUGlobal* aPtr) const {
+    webgpu::ffi::wgpu_server_delete(aPtr);
+  }
+};
+
 }  // namespace mozilla
 
 #endif  // WGPU_h

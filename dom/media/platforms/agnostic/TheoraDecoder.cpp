@@ -15,6 +15,7 @@
 #include "mozilla/PodOperations.h"
 #include "mozilla/TaskQueue.h"
 #include "nsError.h"
+#include "PerformanceRecorder.h"
 #include "VideoUtils.h"
 
 #undef LOG
@@ -45,15 +46,16 @@ ogg_packet InitTheoraPacket(const unsigned char* aData, size_t aLength,
 TheoraDecoder::TheoraDecoder(const CreateDecoderParams& aParams)
     : mImageAllocator(aParams.mKnowsCompositor),
       mImageContainer(aParams.mImageContainer),
-      mTaskQueue(
-          new TaskQueue(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
-                        "TheoraDecoder")),
+      mTaskQueue(TaskQueue::Create(
+          GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
+          "TheoraDecoder")),
       mTheoraInfo{},
       mTheoraComment{},
       mTheoraSetupInfo(nullptr),
       mTheoraDecoderContext(nullptr),
       mPacketCount(0),
-      mInfo(aParams.VideoConfig()) {
+      mInfo(aParams.VideoConfig()),
+      mTrackingId(aParams.mTrackingId) {
   MOZ_COUNT_CTOR(TheoraDecoder);
 }
 
@@ -136,6 +138,16 @@ RefPtr<MediaDataDecoder::DecodePromise> TheoraDecoder::ProcessDecode(
     MediaRawData* aSample) {
   MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
 
+  MediaInfoFlag flag = MediaInfoFlag::None;
+  flag |= (aSample->mKeyframe ? MediaInfoFlag::KeyFrame
+                              : MediaInfoFlag::NonKeyFrame);
+  flag |= MediaInfoFlag::SoftwareDecoding;
+  flag |= MediaInfoFlag::VIDEO_THEORA;
+  Maybe<PerformanceRecorder<DecodeStage>> rec =
+      mTrackingId.map([&](const auto& aId) {
+        return PerformanceRecorder<DecodeStage>("TheoraDecoder"_ns, aId, flag);
+      });
+
   const unsigned char* aData = aSample->Data();
   size_t aLength = aSample->Size();
 
@@ -171,6 +183,12 @@ RefPtr<MediaDataDecoder::DecodePromise> TheoraDecoder::ProcessDecode(
     b.mPlanes[2].mWidth = mTheoraInfo.frame_width >> hdec;
     b.mPlanes[2].mSkip = 0;
 
+    if (vdec) {
+      b.mChromaSubsampling = gfx::ChromaSubsampling::HALF_WIDTH_AND_HEIGHT;
+    } else if (hdec) {
+      b.mChromaSubsampling = gfx::ChromaSubsampling::HALF_WIDTH;
+    }
+
     b.mYUVColorSpace =
         DefaultColorSpace({mTheoraInfo.frame_width, mTheoraInfo.frame_height});
 
@@ -195,6 +213,30 @@ RefPtr<MediaDataDecoder::DecodePromise> TheoraDecoder::ProcessDecode(
                       RESULT_DETAIL("Insufficient memory")),
           __func__);
     }
+
+    rec.apply([&](auto& aRec) {
+      aRec.Record([&](DecodeStage& aStage) {
+        aStage.SetResolution(static_cast<int>(mTheoraInfo.frame_width),
+                             static_cast<int>(mTheoraInfo.frame_height));
+        auto format = [&]() -> Maybe<DecodeStage::ImageFormat> {
+          switch (mTheoraInfo.pixel_fmt) {
+            case TH_PF_420:
+              return Some(DecodeStage::YUV420P);
+            case TH_PF_422:
+              return Some(DecodeStage::YUV422P);
+            case TH_PF_444:
+              return Some(DecodeStage::YUV444P);
+            default:
+              return Nothing();
+          }
+        }();
+        format.apply([&](auto& aFmt) { aStage.SetImageFormat(aFmt); });
+        aStage.SetYUVColorSpace(b.mYUVColorSpace);
+        aStage.SetColorRange(b.mColorRange);
+        aStage.SetColorDepth(b.mColorDepth);
+      });
+    });
+
     return DecodePromise::CreateAndResolve(DecodedData{v}, __func__);
   }
   LOG("Theora Decode error: %d", ret);

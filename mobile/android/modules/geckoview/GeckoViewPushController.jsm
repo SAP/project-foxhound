@@ -6,16 +6,17 @@
 
 var EXPORTED_SYMBOLS = ["GeckoViewPushController"];
 
-const { GeckoViewUtils } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewUtils.jsm"
+const { GeckoViewUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
+const lazy = {};
+
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "PushNotifier",
   "@mozilla.org/push/Notifier;1",
   "nsIPushNotifier"
@@ -52,7 +53,7 @@ const GeckoViewPushController = {
         }
 
         if (!data) {
-          PushNotifier.notifyPush(url, principal, "");
+          lazy.PushNotifier.notifyPush(url, principal, "");
           return;
         }
 
@@ -60,7 +61,7 @@ const GeckoViewPushController = {
           ChromeUtils.base64URLDecode(data, { padding: "ignore" })
         );
 
-        PushNotifier.notifyPushWithData(url, principal, "", payload);
+        lazy.PushNotifier.notifyPushWithData(url, principal, "", payload);
         break;
       }
       case "GeckoView:PushSubscriptionChanged": {
@@ -68,7 +69,7 @@ const GeckoViewPushController = {
 
         const [url, principal] = createScopeAndPrincipal(scope);
 
-        PushNotifier.notifySubscriptionChange(url, principal);
+        lazy.PushNotifier.notifySubscriptionChange(url, principal);
         break;
       }
     }

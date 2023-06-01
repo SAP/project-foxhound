@@ -82,6 +82,7 @@
   MACRO(Number, "numeric literal")                                     \
   MACRO(String, "string literal")                                      \
   MACRO(BigInt, "bigint literal")                                      \
+  IF_DECORATORS(MACRO(At, "'@'"))                                      \
                                                                        \
   /* start of template literal with substitutions */                   \
   MACRO(TemplateHead, "'${'")                                          \
@@ -128,6 +129,8 @@
   /* contextual keywords */                                            \
   MACRO(As, "'as'")                                                    \
   RANGE(ContextualKeywordFirst, As)                                    \
+  /* TODO: Move to alphabetical order when IF_DECORATORS is removed */ \
+  IF_DECORATORS(MACRO(Accessor, "'accessor'"))                         \
   MACRO(Assert, "'assert'")                                            \
   MACRO(Async, "'async'")                                              \
   MACRO(Await, "'await'")                                              \

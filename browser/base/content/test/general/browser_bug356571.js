@@ -7,7 +7,7 @@ var didFail = false;
 
 // Override Alert to avoid blocking the test due to unknown protocol error
 const kPromptServiceUUID = "{6cc9c9fe-bc0b-432b-a410-253ef8bcc699}";
-const kPromptServiceContractID = "@mozilla.org/embedcomp/prompt-service;1";
+const kPromptServiceContractID = "@mozilla.org/prompter;1";
 
 // Save original prompt service factory
 const kPromptServiceFactory = Cm.getClassObject(
@@ -16,10 +16,7 @@ const kPromptServiceFactory = Cm.getClassObject(
 );
 
 var fakePromptServiceFactory = {
-  createInstance(aOuter, aIid) {
-    if (aOuter != null) {
-      throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
-    }
+  createInstance(aIid) {
     return promptService.QueryInterface(aIid);
   },
 };
@@ -42,6 +39,7 @@ const kCompleteState =
   Ci.nsIWebProgressListener.STATE_IS_NETWORK;
 
 const kDummyPage =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.org/browser/browser/base/content/test/general/dummy_page.html";
 const kURIs = ["bad://www.mozilla.org/", kDummyPage, kDummyPage];
 

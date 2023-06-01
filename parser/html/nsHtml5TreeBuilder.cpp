@@ -1348,9 +1348,6 @@ starttagloop:
               reconstructTheActiveFormattingElements();
               [[fallthrough]];
             }
-#ifdef ENABLE_VOID_MENUITEM
-            case MENUITEM:
-#endif
             case PARAM_OR_SOURCE_OR_TRACK: {
               appendVoidElementToCurrentMayFoster(elementName, attributes);
               selfClosing = false;
@@ -2839,9 +2836,6 @@ void nsHtml5TreeBuilder::endTag(nsHtml5ElementName* elementName) {
           }
           case AREA_OR_WBR:
           case KEYGEN:
-#ifdef ENABLE_VOID_MENUITEM
-          case MENUITEM:
-#endif
           case PARAM_OR_SOURCE_OR_TRACK:
           case EMBED:
           case IMG:

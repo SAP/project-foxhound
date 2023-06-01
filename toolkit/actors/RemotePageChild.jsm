@@ -14,22 +14,13 @@ var EXPORTED_SYMBOLS = ["RemotePageChild"];
  * directly to the page.
  */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
-  "AsyncPrefs",
-  "resource://gre/modules/AsyncPrefs.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "RemotePageAccessManager",
-  "resource://gre/modules/RemotePageAccessManager.jsm"
-);
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  AsyncPrefs: "resource://gre/modules/AsyncPrefs.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  RemotePageAccessManager:
+    "resource://gre/modules/RemotePageAccessManager.sys.mjs",
+});
 
 class RemotePageChild extends JSWindowActorChild {
   actorCreated() {
@@ -77,7 +68,7 @@ class RemotePageChild extends JSWindowActorChild {
     let window = this.contentWindow;
 
     for (let fnname of functions) {
-      let allowAccess = RemotePageAccessManager.checkAllowAccessToFeature(
+      let allowAccess = lazy.RemotePageAccessManager.checkAllowAccessToFeature(
         principal,
         fnname,
         document
@@ -118,7 +109,7 @@ class RemotePageChild extends JSWindowActorChild {
       try {
         listener(clonedMessage);
       } catch (e) {
-        Cu.reportError(e);
+        console.error(e);
       }
     }
   }
@@ -140,13 +131,17 @@ class RemotePageChild extends JSWindowActorChild {
    */
   checkAllowAccess(aFeature, aValue) {
     let doc = this.document;
-    if (!RemotePageAccessManager.checkAllowAccess(doc, aFeature, aValue)) {
+    if (!lazy.RemotePageAccessManager.checkAllowAccess(doc, aFeature, aValue)) {
       throw new Error(
         "RemotePageAccessManager does not allow access to " + aFeature
       );
     }
 
     return true;
+  }
+
+  addPage(aUrl, aFunctionMap) {
+    lazy.RemotePageAccessManager.addPage(aUrl, aFunctionMap);
   }
 
   // Implementation of functions that are exported into the page.
@@ -215,7 +210,7 @@ class RemotePageChild extends JSWindowActorChild {
   }
 
   RPMSetBoolPref(aPref, aVal) {
-    return this.wrapPromise(AsyncPrefs.set(aPref, aVal));
+    return this.wrapPromise(lazy.AsyncPrefs.set(aPref, aVal));
   }
 
   RPMGetFormatURLPref(aFormatURL) {
@@ -223,6 +218,6 @@ class RemotePageChild extends JSWindowActorChild {
   }
 
   RPMIsWindowPrivate() {
-    return PrivateBrowsingUtils.isContentWindowPrivate(this.contentWindow);
+    return lazy.PrivateBrowsingUtils.isContentWindowPrivate(this.contentWindow);
   }
 }

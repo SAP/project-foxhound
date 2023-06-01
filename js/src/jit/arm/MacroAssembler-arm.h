@@ -14,7 +14,6 @@
 #include "vm/BytecodeUtil.h"
 #include "wasm/WasmBuiltins.h"
 #include "wasm/WasmCodegenTypes.h"
-#include "wasm/WasmTlsData.h"
 
 namespace js {
 namespace jit {
@@ -1102,7 +1101,8 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
   void storeTypeTag(ImmTag tag, const Address& dest);
   void storeTypeTag(ImmTag tag, const BaseIndex& dest);
 
-  void handleFailureWithHandlerTail(Label* profilerExitTail);
+  void handleFailureWithHandlerTail(Label* profilerExitTail,
+                                    Label* bailoutTail);
 
   /////////////////////////////////////////////////////////////////
   // Common interface.
@@ -1365,17 +1365,6 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
   void trunc(FloatRegister input, Register output, Label* handleNotAnInt);
   void truncf(FloatRegister input, Register output, Label* handleNotAnInt);
 
-  void clampCheck(Register r, Label* handleNotAnInt) {
-    // Check explicitly for r == INT_MIN || r == INT_MAX
-    // This is the instruction sequence that gcc generated for this
-    // operation.
-    ScratchRegisterScope scratch(asMasm());
-    SecondScratchRegisterScope scratch2(asMasm());
-    ma_sub(r, Imm32(0x80000001), scratch, scratch2);
-    as_cmn(scratch, Imm8(3));
-    ma_b(handleNotAnInt, Above);
-  }
-
   void lea(Operand addr, Register dest) {
     ScratchRegisterScope scratch(asMasm());
     ma_add(addr.baseReg(), Imm32(addr.disp()), dest, scratch);
@@ -1387,12 +1376,6 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
                    Condition cc = Always) {
     as_vmov(VFPRegister(dest).singleOverlay(), VFPRegister(src).singleOverlay(),
             cc);
-  }
-
-  void loadWasmPinnedRegsFromTls() {
-    ScratchRegisterScope scratch(asMasm());
-    ma_ldr(Address(WasmTlsReg, offsetof(wasm::TlsData, memoryBase)), HeapReg,
-           scratch);
   }
 
   // Instrumentation for entering and leaving the profiler.

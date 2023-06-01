@@ -14,7 +14,7 @@ add_task(async function test_upgrade_incompatible() {
 
   let file = createTempWebExtensionFile({
     manifest: {
-      applications: { gecko: { id: ID } },
+      browser_specific_settings: { gecko: { id: ID } },
     },
   });
 
@@ -28,13 +28,13 @@ add_task(async function test_upgrade_incompatible() {
   // Create a new, incompatible extension
   let newfile = createTempWebExtensionFile({
     manifest: {
-      applications: { gecko: { id: ID } },
+      browser_specific_settings: { gecko: { id: ID } },
       manifest_version: 1,
     },
   });
 
   // swap the incompatible extension in for the original
-  let path = OS.Path.join(gProfD.path, "extensions", `${ID}.xpi`);
+  let path = PathUtils.join(gProfD.path, "extensions", `${ID}.xpi`);
   let fileInfo = await IOUtils.stat(path);
   let timestamp = fileInfo.lastModified;
 
@@ -55,7 +55,7 @@ add_task(async function test_upgrade_incompatible() {
 
   file = createTempWebExtensionFile({
     manifest: {
-      applications: { gecko: { id: ID } },
+      browser_specific_settings: { gecko: { id: ID } },
     },
   });
 

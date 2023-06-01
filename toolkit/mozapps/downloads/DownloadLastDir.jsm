@@ -30,9 +30,8 @@ const nsIFile = Ci.nsIFile;
 
 var EXPORTED_SYMBOLS = ["DownloadLastDir"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { PrivateBrowsingUtils } = ChromeUtils.import(
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
+const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PrivateBrowsingUtils.sys.mjs"
 );
 
 let nonPrivateLoadContext = Cu.createLoadContext();

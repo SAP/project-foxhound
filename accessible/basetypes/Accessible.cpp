@@ -6,10 +6,18 @@
 #include "Accessible.h"
 #include "AccGroupInfo.h"
 #include "ARIAMap.h"
+#include "nsAccUtils.h"
+#include "Relation.h"
 #include "States.h"
+#include "mozilla/a11y/FocusManager.h"
 #include "mozilla/a11y/HyperTextAccessibleBase.h"
+#include "mozilla/BasicEvents.h"
 #include "mozilla/Components.h"
 #include "nsIStringBundle.h"
+
+#ifdef A11Y_LOG
+#  include "nsAccessibilityService.h"
+#endif
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -31,6 +39,51 @@ void Accessible::StaticAsserts() const {
   static_assert(
       eLastAccGenericType <= (1 << kGenericTypesBits) - 1,
       "Accessible::mGenericType was oversized by eLastAccGenericType!");
+}
+
+bool Accessible::IsBefore(const Accessible* aAcc) const {
+  // Build the chain of parents.
+  const Accessible* thisP = this;
+  const Accessible* otherP = aAcc;
+  AutoTArray<const Accessible*, 30> thisParents, otherParents;
+  do {
+    thisParents.AppendElement(thisP);
+    thisP = thisP->Parent();
+  } while (thisP);
+  do {
+    otherParents.AppendElement(otherP);
+    otherP = otherP->Parent();
+  } while (otherP);
+
+  // Find where the parent chain differs.
+  uint32_t thisPos = thisParents.Length(), otherPos = otherParents.Length();
+  for (uint32_t len = std::min(thisPos, otherPos); len > 0; --len) {
+    const Accessible* thisChild = thisParents.ElementAt(--thisPos);
+    const Accessible* otherChild = otherParents.ElementAt(--otherPos);
+    if (thisChild != otherChild) {
+      return thisChild->IndexInParent() < otherChild->IndexInParent();
+    }
+  }
+
+  // If the ancestries are the same length (both thisPos and otherPos are 0),
+  // we should have returned by now.
+  MOZ_ASSERT(thisPos != 0 || otherPos != 0);
+  // At this point, one of the ancestries is a superset of the other, so one of
+  // thisPos or otherPos should be 0.
+  MOZ_ASSERT(thisPos != otherPos);
+  // If the other Accessible is deeper than this one (otherPos > 0), this
+  // Accessible comes before the other.
+  return otherPos > 0;
+}
+
+Accessible* Accessible::FocusedChild() {
+  Accessible* doc = nsAccUtils::DocumentFor(this);
+  Accessible* child = doc->FocusedChild();
+  if (child && (child == this || child->Parent() == this)) {
+    return child;
+  }
+
+  return nullptr;
 }
 
 const nsRoleMapEntry* Accessible::ARIARoleMap() const {
@@ -55,6 +108,19 @@ bool Accessible::HasGenericType(AccGenericType aType) const {
   const nsRoleMapEntry* roleMapEntry = ARIARoleMap();
   return (mGenericTypes & aType) ||
          (roleMapEntry && roleMapEntry->IsOfType(aType));
+}
+
+nsIntRect Accessible::BoundsInCSSPixels() const {
+  return BoundsInAppUnits().ToNearestPixels(AppUnitsPerCSSPixel());
+}
+
+LayoutDeviceIntSize Accessible::Size() const { return Bounds().Size(); }
+
+LayoutDeviceIntPoint Accessible::Position(uint32_t aCoordType) {
+  LayoutDeviceIntPoint point = Bounds().TopLeft();
+  nsAccUtils::ConvertScreenCoordsTo(&point.x.value, &point.y.value, aCoordType,
+                                    this);
+  return point;
 }
 
 bool Accessible::IsTextRole() {
@@ -82,8 +148,55 @@ uint32_t Accessible::StartOffset() {
   return hyperText ? hyperText->GetChildOffset(this) : 0;
 }
 
+uint32_t Accessible::EndOffset() {
+  MOZ_ASSERT(IsLink(), "EndOffset is called on not hyper link!");
+  Accessible* parent = Parent();
+  HyperTextAccessibleBase* hyperText =
+      parent ? parent->AsHyperTextBase() : nullptr;
+  return hyperText ? (hyperText->GetChildOffset(this) + 1) : 0;
+}
+
 GroupPos Accessible::GroupPosition() {
   GroupPos groupPos;
+
+  // Try aria-row/colcount/index.
+  if (IsTableRow()) {
+    Accessible* table = nsAccUtils::TableFor(this);
+    if (table) {
+      if (auto count = table->GetIntARIAAttr(nsGkAtoms::aria_rowcount)) {
+        if (*count >= 0) {
+          groupPos.setSize = *count;
+        }
+      }
+    }
+    if (auto index = GetIntARIAAttr(nsGkAtoms::aria_rowindex)) {
+      groupPos.posInSet = *index;
+    }
+    if (groupPos.setSize && groupPos.posInSet) {
+      return groupPos;
+    }
+  }
+  if (IsTableCell()) {
+    Accessible* table;
+    for (table = Parent(); table; table = table->Parent()) {
+      if (table->IsTable()) {
+        break;
+      }
+    }
+    if (table) {
+      if (auto count = table->GetIntARIAAttr(nsGkAtoms::aria_colcount)) {
+        if (*count >= 0) {
+          groupPos.setSize = *count;
+        }
+      }
+    }
+    if (auto index = GetIntARIAAttr(nsGkAtoms::aria_colindex)) {
+      groupPos.posInSet = *index;
+    }
+    if (groupPos.setSize && groupPos.posInSet) {
+      return groupPos;
+    }
+  }
 
   // Get group position from ARIA attributes.
   ARIAGroupPosition(&groupPos.level, &groupPos.setSize, &groupPos.posInSet);
@@ -124,7 +237,7 @@ int32_t Accessible::GetLevel(bool aFast) const {
 
     if (!aFast) {
       const Accessible* parent = this;
-      while ((parent = parent->Parent())) {
+      while ((parent = parent->Parent()) && !parent->IsDoc()) {
         roles::Role parentRole = parent->Role();
 
         if (parentRole == roles::OUTLINE) break;
@@ -141,7 +254,7 @@ int32_t Accessible::GetLevel(bool aFast) const {
     // Calculate 'level' attribute based on number of parent listitems.
     level = 0;
     const Accessible* parent = this;
-    while ((parent = parent->Parent())) {
+    while ((parent = parent->Parent()) && !parent->IsDoc()) {
       roles::Role parentRole = parent->Role();
 
       if (parentRole == roles::LISTITEM) {
@@ -183,9 +296,8 @@ int32_t Accessible::GetLevel(bool aFast) const {
           return 1;
         }
 
-        for (Accessible* child = parent->FirstChild(); child;
-             child = child->NextSibling()) {
-          if (child->IsHTMLOptGroup()) {
+        for (uint32_t i = 0, count = parent->ChildCount(); i < count; ++i) {
+          if (parent->ChildAt(i)->IsHTMLOptGroup()) {
             return 1;
           }
         }
@@ -224,7 +336,7 @@ int32_t Accessible::GetLevel(bool aFast) const {
 
     if (!aFast) {
       const Accessible* parent = this;
-      while ((parent = parent->Parent())) {
+      while ((parent = parent->Parent()) && !parent->IsDoc()) {
         roles::Role parentRole = parent->Role();
         if (parentRole == roles::COMMENT) {
           ++level;
@@ -251,6 +363,51 @@ void Accessible::GetPositionAndSetSize(int32_t* aPosInSet, int32_t* aSetSize) {
   }
 }
 
+#ifdef A11Y_LOG
+void Accessible::DebugDescription(nsCString& aDesc) const {
+  aDesc.Truncate();
+  aDesc.AppendPrintf("%s", IsRemote() ? "Remote" : "Local");
+  aDesc.AppendPrintf("[%p] ", this);
+  nsAutoString role;
+  GetAccService()->GetStringRole(Role(), role);
+  aDesc.Append(NS_ConvertUTF16toUTF8(role));
+
+  if (nsAtom* tagAtom = TagName()) {
+    nsAutoCString tag;
+    tagAtom->ToUTF8String(tag);
+    aDesc.AppendPrintf(" %s", tag.get());
+
+    nsAutoString id;
+    DOMNodeID(id);
+    if (!id.IsEmpty()) {
+      aDesc.Append("#");
+      aDesc.Append(NS_ConvertUTF16toUTF8(id));
+    }
+  }
+  nsAutoString id;
+
+  nsAutoString name;
+  Name(name);
+  if (!name.IsEmpty()) {
+    aDesc.Append(" '");
+    aDesc.Append(NS_ConvertUTF16toUTF8(name));
+    aDesc.Append("'");
+  }
+}
+
+void Accessible::DebugPrint(const char* aPrefix,
+                            const Accessible* aAccessible) {
+  nsAutoCString desc;
+  aAccessible->DebugDescription(desc);
+#  if defined(ANDROID)
+  printf_stderr("%s %s\n", aPrefix, desc.get());
+#  else
+  printf("%s %s\n", aPrefix, desc.get());
+#  endif
+}
+
+#endif
+
 void Accessible::TranslateString(const nsString& aKey, nsAString& aStringOut) {
   nsCOMPtr<nsIStringBundleService> stringBundleService =
       components::StringBundle::Service();
@@ -266,4 +423,194 @@ void Accessible::TranslateString(const nsString& aKey, nsAString& aStringOut) {
   nsresult rv = stringBundle->GetStringFromName(
       NS_ConvertUTF16toUTF8(aKey).get(), xsValue);
   if (NS_SUCCEEDED(rv)) aStringOut.Assign(xsValue);
+}
+
+const Accessible* Accessible::ActionAncestor() const {
+  // We do want to consider a click handler on the document. However, we don't
+  // want to walk outside of this document, so we stop if we see an OuterDoc.
+  for (Accessible* parent = Parent(); parent && !parent->IsOuterDoc();
+       parent = parent->Parent()) {
+    if (parent->HasPrimaryAction()) {
+      return parent;
+    }
+  }
+
+  return nullptr;
+}
+
+nsAtom* Accessible::LandmarkRole() const {
+  nsAtom* tagName = TagName();
+  if (!tagName) {
+    // Either no associated content, or no cache.
+    return nullptr;
+  }
+
+  if (tagName == nsGkAtoms::nav) {
+    return nsGkAtoms::navigation;
+  }
+
+  if (tagName == nsGkAtoms::aside) {
+    return nsGkAtoms::complementary;
+  }
+
+  if (tagName == nsGkAtoms::main) {
+    return nsGkAtoms::main;
+  }
+
+  if (tagName == nsGkAtoms::header) {
+    if (Role() == roles::LANDMARK) {
+      return nsGkAtoms::banner;
+    }
+  }
+
+  if (tagName == nsGkAtoms::footer) {
+    if (Role() == roles::LANDMARK) {
+      return nsGkAtoms::contentinfo;
+    }
+  }
+
+  if (tagName == nsGkAtoms::section) {
+    nsAutoString name;
+    Name(name);
+    if (!name.IsEmpty()) {
+      return nsGkAtoms::region;
+    }
+  }
+
+  if (tagName == nsGkAtoms::form) {
+    nsAutoString name;
+    Name(name);
+    if (!name.IsEmpty()) {
+      return nsGkAtoms::form;
+    }
+  }
+
+  const nsRoleMapEntry* roleMapEntry = ARIARoleMap();
+  return roleMapEntry && roleMapEntry->IsOfType(eLandmark)
+             ? roleMapEntry->roleAtom
+             : nullptr;
+}
+
+void Accessible::ApplyImplicitState(uint64_t& aState) const {
+  // nsAccessibilityService (and thus FocusManager) can be shut down before
+  // RemoteAccessibles.
+  if (const auto* focusMgr = FocusMgr()) {
+    if (focusMgr->IsFocused(this)) {
+      aState |= states::FOCUSED;
+    }
+  }
+
+  // If this is an ARIA item of the selectable widget and if it's focused and
+  // not marked unselected explicitly (i.e. aria-selected="false") then expose
+  // it as selected to make ARIA widget authors life easier.
+  const nsRoleMapEntry* roleMapEntry = ARIARoleMap();
+  if (roleMapEntry && !(aState & states::SELECTED) &&
+      ARIASelected().valueOr(true)) {
+    // Special case for tabs: focused tab or focus inside related tab panel
+    // implies selected state.
+    if (roleMapEntry->role == roles::PAGETAB) {
+      if (aState & states::FOCUSED) {
+        aState |= states::SELECTED;
+      } else {
+        // If focus is in a child of the tab panel surely the tab is selected!
+        Relation rel = RelationByType(RelationType::LABEL_FOR);
+        Accessible* relTarget = nullptr;
+        while ((relTarget = rel.Next())) {
+          if (relTarget->Role() == roles::PROPERTYPAGE &&
+              FocusMgr()->IsFocusWithin(relTarget)) {
+            aState |= states::SELECTED;
+          }
+        }
+      }
+    } else if (aState & states::FOCUSED) {
+      Accessible* container = nsAccUtils::GetSelectableContainer(this, aState);
+      if (container && !(container->State() & states::MULTISELECTABLE)) {
+        aState |= states::SELECTED;
+      }
+    }
+  }
+
+  if (Opacity() == 1.0f && !(aState & states::INVISIBLE)) {
+    aState |= states::OPAQUE1;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// KeyBinding class
+
+// static
+uint32_t KeyBinding::AccelModifier() {
+  switch (WidgetInputEvent::AccelModifier()) {
+    case MODIFIER_ALT:
+      return kAlt;
+    case MODIFIER_CONTROL:
+      return kControl;
+    case MODIFIER_META:
+      return kMeta;
+    case MODIFIER_OS:
+      return kOS;
+    default:
+      MOZ_CRASH("Handle the new result of WidgetInputEvent::AccelModifier()");
+      return 0;
+  }
+}
+
+void KeyBinding::ToPlatformFormat(nsAString& aValue) const {
+  nsCOMPtr<nsIStringBundle> keyStringBundle;
+  nsCOMPtr<nsIStringBundleService> stringBundleService =
+      mozilla::components::StringBundle::Service();
+  if (stringBundleService) {
+    stringBundleService->CreateBundle(
+        "chrome://global-platform/locale/platformKeys.properties",
+        getter_AddRefs(keyStringBundle));
+  }
+
+  if (!keyStringBundle) return;
+
+  nsAutoString separator;
+  keyStringBundle->GetStringFromName("MODIFIER_SEPARATOR", separator);
+
+  nsAutoString modifierName;
+  if (mModifierMask & kControl) {
+    keyStringBundle->GetStringFromName("VK_CONTROL", modifierName);
+
+    aValue.Append(modifierName);
+    aValue.Append(separator);
+  }
+
+  if (mModifierMask & kAlt) {
+    keyStringBundle->GetStringFromName("VK_ALT", modifierName);
+
+    aValue.Append(modifierName);
+    aValue.Append(separator);
+  }
+
+  if (mModifierMask & kShift) {
+    keyStringBundle->GetStringFromName("VK_SHIFT", modifierName);
+
+    aValue.Append(modifierName);
+    aValue.Append(separator);
+  }
+
+  if (mModifierMask & kMeta) {
+    keyStringBundle->GetStringFromName("VK_META", modifierName);
+
+    aValue.Append(modifierName);
+    aValue.Append(separator);
+  }
+
+  aValue.Append(mKey);
+}
+
+void KeyBinding::ToAtkFormat(nsAString& aValue) const {
+  nsAutoString modifierName;
+  if (mModifierMask & kControl) aValue.AppendLiteral("<Control>");
+
+  if (mModifierMask & kAlt) aValue.AppendLiteral("<Alt>");
+
+  if (mModifierMask & kShift) aValue.AppendLiteral("<Shift>");
+
+  if (mModifierMask & kMeta) aValue.AppendLiteral("<Meta>");
+
+  aValue.Append(mKey);
 }

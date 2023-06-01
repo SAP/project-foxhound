@@ -7,10 +7,13 @@
  * Tests QuickSuggest configurations.
  */
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+ChromeUtils.defineESModuleGetters(this, {
   EnterprisePolicyTesting:
-    "resource://testing-common/EnterprisePolicyTesting.jsm",
-  UrlbarQuickSuggest: "resource:///modules/UrlbarQuickSuggest.jsm",
+    "resource://testing-common/EnterprisePolicyTesting.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(this, {
+  sinon: "resource://testing-common/Sinon.jsm",
 });
 
 // We use this pref in enterprise preference policy tests. We specifically use a
@@ -20,8 +23,63 @@ const POLICY_PREF = "suggest.quicksuggest.nonsponsored";
 let gDefaultBranch = Services.prefs.getDefaultBranch("browser.urlbar.");
 let gUserBranch = Services.prefs.getBranch("browser.urlbar.");
 
-add_task(async function init() {
+add_setup(async function() {
   await QuickSuggestTestUtils.ensureQuickSuggestInit();
+});
+
+// Makes sure `QuickSuggest._updateFeatureState()` is called when the
+// `browser.urlbar.quicksuggest.enabled` pref is changed.
+add_task(async function test_updateFeatureState_pref() {
+  Assert.ok(
+    UrlbarPrefs.get("quicksuggest.enabled"),
+    "Sanity check: quicksuggest.enabled is true by default"
+  );
+
+  let sandbox = sinon.createSandbox();
+  let spy = sandbox.spy(QuickSuggest, "_updateFeatureState");
+
+  UrlbarPrefs.set("quicksuggest.enabled", false);
+  await QuickSuggest.remoteSettings.readyPromise;
+  Assert.equal(
+    spy.callCount,
+    1,
+    "_updateFeatureState called once after changing pref"
+  );
+
+  UrlbarPrefs.clear("quicksuggest.enabled");
+  await QuickSuggest.remoteSettings.readyPromise;
+  Assert.equal(
+    spy.callCount,
+    2,
+    "_updateFeatureState called again after clearing pref"
+  );
+
+  sandbox.restore();
+});
+
+// Makes sure `QuickSuggest._updateFeatureState()` is called when a Nimbus
+// experiment is installed and uninstalled.
+add_task(async function test_updateFeatureState_experiment() {
+  let sandbox = sinon.createSandbox();
+  let spy = sandbox.spy(QuickSuggest, "_updateFeatureState");
+
+  await QuickSuggestTestUtils.withExperiment({
+    callback: () => {
+      Assert.equal(
+        spy.callCount,
+        1,
+        "_updateFeatureState called once after installing experiment"
+      );
+    },
+  });
+
+  Assert.equal(
+    spy.callCount,
+    2,
+    "_updateFeatureState called again after uninstalling experiment"
+  );
+
+  sandbox.restore();
 });
 
 add_task(async function test_indexes() {
@@ -50,7 +108,8 @@ add_task(async function test_merino() {
     valueOverrides: {
       merinoEnabled: true,
       merinoEndpointURL: "http://example.com/test_merino_config",
-      merinoEndpointParamQuery: "test_merino_config_param",
+      merinoClientVariants: "test-client-variants",
+      merinoProviders: "test-providers",
     },
     callback: () => {
       Assert.equal(UrlbarPrefs.get("merinoEnabled"), true, "merinoEnabled");
@@ -60,9 +119,14 @@ add_task(async function test_merino() {
         "merinoEndpointURL"
       );
       Assert.equal(
-        UrlbarPrefs.get("merinoEndpointParamQuery"),
-        "test_merino_config_param",
-        "merinoEndpointParamQuery"
+        UrlbarPrefs.get("merinoClientVariants"),
+        "test-client-variants",
+        "merinoClientVariants"
+      );
+      Assert.equal(
+        UrlbarPrefs.get("merinoProviders"),
+        "test-providers",
+        "merinoProviders"
       );
     },
   });
@@ -1691,6 +1755,7 @@ add_task(async function() {
  * such objects, one per enrollment.
  *
  * @param {object} options
+ *   Function options.
  * @param {object} options.initialPrefsToSet
  *   An object: { userBranch, defaultBranch }
  *   `userBranch` and `defaultBranch` are objects that map pref names (relative
@@ -1934,14 +1999,16 @@ add_task(async function() {
  * sticky prefs (defined by `POLICY_PREF`). Pref policies should apply to the
  * quick suggest sticky prefs just as they do to non-sticky prefs.
  *
- * @param {object} prefPolicy
+ * @param {object} options
+ *   Options object.
+ * @param {object} options.prefPolicy
  *   An object `{ Status, Value }` that will be included in the policy.
- * @param {boolean} expectedDefault
+ * @param {boolean} options.expectedDefault
  *   The expected default-branch pref value after setting the policy.
- * @param {boolean} expectedUser
+ * @param {boolean} options.expectedUser
  *   The expected user-branch pref value after setting the policy or undefined
  *   if the pref should not exist on the user branch.
- * @param {boolean} expectedLocked
+ * @param {boolean} options.expectedLocked
  *   Whether the pref is expected to be locked after setting the policy.
  */
 async function doPolicyTest({

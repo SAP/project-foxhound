@@ -6,8 +6,11 @@
 // The purpose of this test is to ensure that Firefox sanitizes site security
 // service data on shutdown if configured to do so.
 
+ChromeUtils.defineESModuleGetters(this, {
+  TestUtils: "resource://testing-common/TestUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(this, {
-  TestUtils: "resource://testing-common/TestUtils.jsm",
   Sanitizer: "resource:///modules/Sanitizer.jsm",
 });
 
@@ -18,7 +21,7 @@ Sanitizer.onStartup();
 // the shutdown blocker added by swm. Normally, swm should be initialized before
 // that and the similar crash signatures are fixed. So, assume this cannot
 // happen in the real world and initilaize swm here as a workaround.
-const swm = Cc["@mozilla.org/serviceworkers/manager;1"].getService(
+Cc["@mozilla.org/serviceworkers/manager;1"].getService(
   Ci.nsIServiceWorkerManager
 );
 
@@ -35,17 +38,8 @@ add_task(async function run_test() {
   let SSService = Cc["@mozilla.org/ssservice;1"].getService(
     Ci.nsISiteSecurityService
   );
-  let secInfo = Cc[
-    "@mozilla.org/security/transportsecurityinfo;1"
-  ].createInstance(Ci.nsITransportSecurityInfo);
   let header = "max-age=50000";
-  SSService.processHeader(
-    Services.io.newURI("http://example.com"),
-    header,
-    secInfo,
-    0,
-    Ci.nsISiteSecurityService.SOURCE_ORGANIC_REQUEST
-  );
+  SSService.processHeader(Services.io.newURI("http://example.com"), header);
   await TestUtils.topicObserved(
     "data-storage-written",
     (_, data) => data == SSS_STATE_FILE_NAME

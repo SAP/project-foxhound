@@ -32,7 +32,11 @@
 #  include "mozilla/StackWalk_windows.h"
 #  include "mozilla/WindowsVersion.h"
 #elif defined(__wasi__)
+#  if defined(JS_CODEGEN_WASM32)
+#    include <cstdlib>
+#  else
 // Nothing.
+#  endif
 #else
 #  include <sys/mman.h>
 #  include <unistd.h>
@@ -324,6 +328,23 @@ static void DecommitPages(void* addr, size_t bytes) {
   }
 }
 #elif defined(__wasi__)
+#  if defined(JS_CODEGEN_WASM32)
+static void* ReserveProcessExecutableMemory(size_t bytes) {
+  return malloc(bytes);
+}
+
+static void DeallocateProcessExecutableMemory(void* addr, size_t bytes) {
+  free(addr);
+}
+
+[[nodiscard]] static bool CommitPages(void* addr, size_t bytes,
+                                      ProtectionSetting protection) {
+  return true;
+}
+
+static void DecommitPages(void* addr, size_t bytes) {}
+
+#  else
 static void* ReserveProcessExecutableMemory(size_t bytes) {
   MOZ_CRASH("NYI for WASI.");
   return nullptr;
@@ -339,6 +360,7 @@ static void DeallocateProcessExecutableMemory(void* addr, size_t bytes) {
 static void DecommitPages(void* addr, size_t bytes) {
   MOZ_CRASH("NYI for WASI.");
 }
+#  endif
 #else  // !XP_WIN && !__wasi__
 #  ifndef MAP_NORESERVE
 #    define MAP_NORESERVE 0
@@ -521,7 +543,7 @@ class ProcessExecutableMemory {
   uint8_t* base_;
 
   // The fields below should only be accessed while we hold the lock.
-  Mutex lock_;
+  Mutex lock_ MOZ_UNANNOTATED;
 
   // pagesAllocated_ is an Atomic so that bytesAllocated does not have to
   // take the lock.
@@ -748,12 +770,14 @@ bool js::jit::AddressIsInExecutableMemory(const void* p) {
 bool js::jit::ReprotectRegion(void* start, size_t size,
                               ProtectionSetting protection,
                               MustFlushICache flushICache) {
+#if defined(JS_CODEGEN_WASM32)
+  return true;
+#endif
+
   // Flush ICache when making code executable, before we modify |size|.
-  if (flushICache == MustFlushICache::LocalThreadOnly ||
-      flushICache == MustFlushICache::AllThreads) {
+  if (flushICache == MustFlushICache::Yes) {
     MOZ_ASSERT(protection == ProtectionSetting::Executable);
-    bool codeIsThreadLocal = flushICache == MustFlushICache::LocalThreadOnly;
-    jit::FlushICache(start, size, codeIsThreadLocal);
+    jit::FlushICache(start, size);
   }
 
   // Calculate the start of the page containing this region,

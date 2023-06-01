@@ -5,6 +5,25 @@
 name: raptor
 manifest: testing/raptor/raptor/raptor.ini
 static-only: False
+metrics:
+    "First Paint":
+        aliases:
+            - fcp
+            - First Contentful Paint
+            - First Contentful Composite
+        description: >
+            Denotes the first time the browser performs a paint that has content in it.
+    "Youtube Playback Metrics":
+        aliases:
+            - VP9
+            - H264
+        matcher: VP9.*|H264.*
+        description: >
+            Metrics starting with VP9/H264 give the number of frames dropped, and painted.
+    "In Progress":
+        aliases: []
+        matcher: .*
+        description: Many metrics have not been documented yet, this is a placeholder.
 suites:
     desktop:
         description: "Tests for page-load performance. The links direct to the actual websites that are being tested."
@@ -19,7 +38,6 @@ suites:
             facebook: "BT, FF, CH, CU"
             fandom: "BT, FF, CH, CU"
             google-docs: "BT, FF, CH, CU"
-            google-docs-canvas: "BT, FF, CH, CU"
             google-mail: "BT, FF, CH, CU"
             google-search: "BT, FF, CH, CU"
             google-slides: "BT, FF, CH, CU"
@@ -110,8 +128,10 @@ suites:
             raptor-youtube-playback-v9-full-1080p30-firefox: "FF"
             raptor-youtube-playback-v9-full-1080p60-firefox: "FF"
             speedometer: "FF, CH, CU, FE, GV, RB, CH-M"
+            speedometer3: "FF, CH, CU, FE, GV, RB, CH-M"
             stylebench: "FF, CH, CU"
             sunspider: "FF, CH, CU"
+            twitch-animation: "FF"
             unity-webgl: "FF, CH, CU, FE, RB, FE, CH-M"
             wasm-godot-baseline: "FF"
             wasm-godot-optimizing: "FF"
@@ -150,8 +170,11 @@ suites:
     custom:
         description: "Browsertime tests that use a custom pageload test script. These use the pageload type, but may have other intentions."
         tests:
+            browsertime: "Used to run vanilla browsertime tests through raptor. For example: `./mach raptor --browsertime -t browsertime --browsertime-arg url=https://www.sitespeed.io --browsertime-arg iterations=3`"
             process-switch: "Measures process switch time"
             welcome: "Measures pageload metrics for the first-install about:welcome page"
+            grandprix: "Runs the Grandprix benchmark"
+            constant-regression: "Generates a constant value that can be changed to induce a regression."
     interactive:
         description: "Browsertime tests that interact with the webpage. Includes responsiveness tests as they make use of this support for navigation. These form of tests allow the specification of browsertime commands through the test manifest."
         tests:

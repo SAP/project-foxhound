@@ -2,8 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
-/* import-globals-from ../../../shared/test/telemetry-test-helpers.js */
-/* import-globals-from ../../test/head.js */
+
 "use strict";
 
 // Import the inspector's head.js first (which itself imports shared-head.js).
@@ -12,17 +11,10 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-// Load the shared Redux helpers into this compartment.
-/* import-globals-from ../../../shared/test/shared-redux-head.js */
-Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/shared/test/shared-redux-head.js",
-  this
-);
-
 var {
   getInplaceEditorForSpan: inplaceEditor,
-} = require("devtools/client/shared/inplace-editor");
-var clipboard = require("devtools/shared/platform/clipboard");
+} = require("resource://devtools/client/shared/inplace-editor.js");
+var clipboard = require("resource://devtools/shared/platform/clipboard.js");
 
 // If a test times out we want to see the complete log and not just the last few
 // lines.

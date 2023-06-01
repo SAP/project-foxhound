@@ -16,7 +16,7 @@
         </vbox>
         <hbox class="tab-content" align="center">
           <stack class="tab-icon-stack">
-            <hbox class="tab-throbber" layer="true"/>
+            <hbox class="tab-throbber"/>
             <hbox class="tab-icon-pending"/>
             <html:img class="tab-icon-image" role="presentation" decoding="sync" />
             <image class="tab-sharing-icon-overlay" role="presentation"/>
@@ -57,6 +57,7 @@
       this.addEventListener("focus", this);
       this.addEventListener("AriaFocus", this);
 
+      this._hover = false;
       this._selectedOnFirstMouseDown = false;
 
       /**
@@ -79,13 +80,12 @@
     static get inheritedAttributes() {
       return {
         ".tab-background": "selected=visuallyselected,fadein,multiselected",
-        ".tab-line":
-          "selected=visuallyselected,multiselected,before-multiselected",
+        ".tab-line": "selected=visuallyselected,multiselected",
         ".tab-loading-burst": "pinned,bursting,notselectedsinceload",
         ".tab-content":
           "pinned,selected=visuallyselected,titlechanged,attention",
         ".tab-icon-stack":
-          "sharing,pictureinpicture,crashed,busy,soundplaying,soundplaying-scheduledremoval,pinned,muted,blocked,selected=visuallyselected,activemedia-blocked",
+          "sharing,pictureinpicture,crashed,busy,soundplaying,soundplaying-scheduledremoval,pinned,muted,blocked,selected=visuallyselected,activemedia-blocked,indicator-replaces-favicon",
         ".tab-throbber":
           "fadein,pinned,busy,progress,selected=visuallyselected",
         ".tab-icon-pending":
@@ -94,7 +94,7 @@
           "src=image,triggeringprincipal=iconloadingprincipal,requestcontextid,fadein,pinned,selected=visuallyselected,busy,crashed,sharing,pictureinpicture",
         ".tab-sharing-icon-overlay": "sharing,selected=visuallyselected,pinned",
         ".tab-icon-overlay":
-          "sharing,pictureinpicture,crashed,busy,soundplaying,soundplaying-scheduledremoval,pinned,muted,blocked,selected=visuallyselected,activemedia-blocked",
+          "sharing,pictureinpicture,crashed,busy,soundplaying,soundplaying-scheduledremoval,pinned,muted,blocked,selected=visuallyselected,activemedia-blocked,indicator-replaces-favicon",
         ".tab-label-container":
           "pinned,selected=visuallyselected,labeldirection",
         ".tab-label":
@@ -127,6 +127,15 @@
 
     get container() {
       return gBrowser.tabContainer;
+    }
+
+    set attention(val) {
+      if (val == this.hasAttribute("attention")) {
+        return;
+      }
+
+      this.toggleAttribute("attention", val);
+      gBrowser._tabAttrModified(this, ["attention"]);
     }
 
     set _visuallySelected(val) {
@@ -179,10 +188,6 @@
 
     get multiselected() {
       return this.getAttribute("multiselected") == "true";
-    }
-
-    get beforeMultiselected() {
-      return this.getAttribute("before-multiselected") == "true";
     }
 
     get userContextId() {
@@ -320,6 +325,11 @@
     }
 
     on_dragstart(event) {
+      // We use "failed" drag end events that weren't cancelled by the user
+      // to detach tabs. Ensure that we do not show the drag image returning
+      // to its point of origin when this happens, as it makes the drag
+      // finishing feel very slow.
+      event.dataTransfer.mozShowFailAnimation = false;
       if (event.eventPhase == Event.CAPTURING_PHASE) {
         this.style.MozUserFocus = "";
       } else if (
@@ -484,41 +494,11 @@
       if (this.hidden || this.closing) {
         return;
       }
-
-      let tabContainer = this.container;
-      let visibleTabs = tabContainer._getVisibleTabs();
-      let tabIndex = visibleTabs.indexOf(this);
+      this._hover = true;
 
       if (this.selected) {
-        tabContainer._handleTabSelect();
-      }
-
-      if (tabIndex == 0) {
-        tabContainer._beforeHoveredTab = null;
-      } else {
-        let candidate = visibleTabs[tabIndex - 1];
-        let separatedByScrollButton =
-          tabContainer.getAttribute("overflow") == "true" &&
-          candidate.pinned &&
-          !this.pinned;
-        if (!candidate.selected && !separatedByScrollButton) {
-          tabContainer._beforeHoveredTab = candidate;
-          candidate.setAttribute("beforehovered", "true");
-        }
-      }
-
-      if (tabIndex == visibleTabs.length - 1) {
-        tabContainer._afterHoveredTab = null;
-      } else {
-        let candidate = visibleTabs[tabIndex + 1];
-        if (!candidate.selected) {
-          tabContainer._afterHoveredTab = candidate;
-          candidate.setAttribute("afterhovered", "true");
-        }
-      }
-
-      tabContainer._hoveredTab = this;
-      if (this.linkedPanel && !this.selected) {
+        this.container._handleTabSelect();
+      } else if (this.linkedPanel) {
         this.linkedBrowser.unselectedTabHover(true);
         this.startUnselectedTabHoverTimer();
       }
@@ -534,17 +514,10 @@
     }
 
     _mouseleave() {
-      let tabContainer = this.container;
-      if (tabContainer._beforeHoveredTab) {
-        tabContainer._beforeHoveredTab.removeAttribute("beforehovered");
-        tabContainer._beforeHoveredTab = null;
+      if (!this._hover) {
+        return;
       }
-      if (tabContainer._afterHoveredTab) {
-        tabContainer._afterHoveredTab.removeAttribute("afterhovered");
-        tabContainer._afterHoveredTab = null;
-      }
-
-      tabContainer._hoveredTab = null;
+      this._hover = false;
       if (this.linkedPanel && !this.selected) {
         this.linkedBrowser.unselectedTabHover(false);
         this.cancelUnselectedTabHoverTimer();

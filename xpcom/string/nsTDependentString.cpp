@@ -7,6 +7,8 @@
  * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
  */
 
+#include "nsTDependentString.h"
+
 template <typename T>
 nsTDependentString<T>::nsTDependentString(const char_type* aStart,
                                           const char_type* aEnd)
@@ -48,3 +50,6 @@ void nsTDependentString<T>::Rebind(const char_type* aStart,
   MOZ_RELEASE_ASSERT(aStart <= aEnd, "Overflow!");
   this->Rebind(aStart, aEnd - aStart);
 }
+
+template class nsTDependentString<char>;
+template class nsTDependentString<char16_t>;

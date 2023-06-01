@@ -18,7 +18,7 @@ add_task(async function test_load_start() {
 
   // Load a new URI.
   let historyReplacePromise = promiseOnHistoryReplaceEntry(browser);
-  BrowserTestUtils.loadURI(browser, PAGE);
+  BrowserTestUtils.loadURIString(browser, PAGE);
 
   // Remove the tab before it has finished loading.
   await historyReplacePromise;
@@ -90,7 +90,7 @@ add_task(async function test_pageshow() {
   await promiseBrowserLoaded(browser);
 
   // Create a second shistory entry.
-  BrowserTestUtils.loadURI(browser, URL2);
+  BrowserTestUtils.loadURIString(browser, URL2);
   await promiseBrowserLoaded(browser);
 
   // Wait until shistory changes.
@@ -200,7 +200,7 @@ add_task(async function test_about_page_navigate() {
   // Verify that the title is also recorded.
   is(entries[0].title, "about:blank", "title is correct");
 
-  BrowserTestUtils.loadURI(browser, "about:robots");
+  BrowserTestUtils.loadURIString(browser, "about:robots");
   await promiseBrowserLoaded(browser);
 
   // Check that we have changed the history entry.
@@ -287,6 +287,44 @@ add_task(async function test_slow_subframe_load() {
   // Check URLs.
   ok(entries[0].url.startsWith("data:text/html"), "correct root url");
   is(entries[0].children[0].url, SLOW_URL, "correct url for subframe");
+
+  // Cleanup.
+  gBrowser.removeTab(tab);
+});
+
+/**
+ * Ensure that document wireframes can be persisted when they're enabled.
+ */
+add_task(async function test_wireframes() {
+  // Wireframes only works when Fission and SHIP are enabled.
+  if (
+    !Services.appinfo.fissionAutostart ||
+    !Services.appinfo.sessionHistoryInParent
+  ) {
+    ok(true, "Skipping test_wireframes when Fission or SHIP is not enabled.");
+    return;
+  }
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.history.collectWireframes", true]],
+  });
+
+  let tab = BrowserTestUtils.addTab(gBrowser, "http://example.com");
+  let browser = tab.linkedBrowser;
+  await promiseBrowserLoaded(browser);
+
+  await TabStateFlusher.flush(browser);
+  let { entries } = JSON.parse(ss.getTabState(tab));
+
+  // Check the number of children.
+  is(entries.length, 1, "there is one shistory entry");
+
+  // Check for the wireframe
+  ok(entries[0].wireframe, "A wireframe was captured and serialized.");
+  ok(
+    entries[0].wireframe.rects.length,
+    "Several wireframe rects were captured."
+  );
 
   // Cleanup.
   gBrowser.removeTab(tab);

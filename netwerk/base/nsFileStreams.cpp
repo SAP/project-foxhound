@@ -25,6 +25,7 @@
 #include "nsLiteralString.h"
 #include "nsSocketTransport2.h"  // for ErrorAccordingToNSPR()
 #include "mozilla/ipc/InputStreamUtils.h"
+#include "mozilla/ipc/RandomAccessStreamParams.h"
 #include "mozilla/Unused.h"
 #include "mozilla/FileUtils.h"
 #include "nsNetCID.h"
@@ -404,10 +405,7 @@ NS_IMPL_CI_INTERFACE_GETTER(nsFileInputStream, nsIInputStream,
                             nsIFileInputStream, nsISeekableStream,
                             nsITellableStream, nsILineInputStream)
 
-nsresult nsFileInputStream::Create(nsISupports* aOuter, REFNSIID aIID,
-                                   void** aResult) {
-  NS_ENSURE_NO_AGGREGATION(aOuter);
-
+nsresult nsFileInputStream::Create(REFNSIID aIID, void** aResult) {
   RefPtr<nsFileInputStream> stream = new nsFileInputStream();
   return stream->QueryInterface(aIID, aResult);
 }
@@ -540,30 +538,18 @@ nsFileInputStream::Available(uint64_t* aResult) {
   return nsFileStreamBase::Available(aResult);
 }
 
-void nsFileInputStream::Serialize(InputStreamParams& aParams,
-                                  FileDescriptorArray& aFileDescriptors,
-                                  bool aDelayedStart, uint32_t aMaxSize,
-                                  uint32_t* aSizeUsed,
-                                  ParentToChildStreamActorManager* aManager) {
+void nsFileInputStream::SerializedComplexity(uint32_t aMaxSize,
+                                             uint32_t* aSizeUsed,
+                                             uint32_t* aPipes,
+                                             uint32_t* aTransferables) {
+  *aTransferables = 1;
+}
+
+void nsFileInputStream::Serialize(InputStreamParams& aParams, uint32_t aMaxSize,
+                                  uint32_t* aSizeUsed) {
   MOZ_ASSERT(aSizeUsed);
   *aSizeUsed = 0;
 
-  SerializeInternal(aParams, aFileDescriptors);
-}
-
-void nsFileInputStream::Serialize(InputStreamParams& aParams,
-                                  FileDescriptorArray& aFileDescriptors,
-                                  bool aDelayedStart, uint32_t aMaxSize,
-                                  uint32_t* aSizeUsed,
-                                  ChildToParentStreamActorManager* aManager) {
-  MOZ_ASSERT(aSizeUsed);
-  *aSizeUsed = 0;
-
-  SerializeInternal(aParams, aFileDescriptors);
-}
-
-void nsFileInputStream::SerializeInternal(
-    InputStreamParams& aParams, FileDescriptorArray& aFileDescriptors) {
   FileInputStreamParams params;
 
   if (NS_SUCCEEDED(DoPendingOpen())) {
@@ -571,10 +557,7 @@ void nsFileInputStream::SerializeInternal(
     FileHandleType fd = FileHandleType(PR_FileDesc2NativeHandle(mFD));
     NS_ASSERTION(fd, "This should never be null!");
 
-    DebugOnly dbgFD = aFileDescriptors.AppendElement(fd);
-    NS_ASSERTION(dbgFD->IsValid(), "Sending an invalid file descriptor!");
-
-    params.fileDescriptorIndex() = aFileDescriptors.Length() - 1;
+    params.fileDescriptor() = FileDescriptor(fd);
 
     Close();
   } else {
@@ -582,7 +565,7 @@ void nsFileInputStream::SerializeInternal(
         "This file has not been opened (or could not be opened). "
         "Sending an invalid file descriptor to the other process!");
 
-    params.fileDescriptorIndex() = UINT32_MAX;
+    params.fileDescriptor() = FileDescriptor();
   }
 
   int32_t behaviorFlags = mBehaviorFlags;
@@ -597,9 +580,7 @@ void nsFileInputStream::SerializeInternal(
   aParams = params;
 }
 
-bool nsFileInputStream::Deserialize(
-    const InputStreamParams& aParams,
-    const FileDescriptorArray& aFileDescriptors) {
+bool nsFileInputStream::Deserialize(const InputStreamParams& aParams) {
   NS_ASSERTION(!mFD, "Already have a file descriptor?!");
   NS_ASSERTION(mState == nsFileStreamBase::eUnitialized, "Deferring open?!");
   NS_ASSERTION(!mFile, "Should never have a file here!");
@@ -612,15 +593,7 @@ bool nsFileInputStream::Deserialize(
 
   const FileInputStreamParams& params = aParams.get_FileInputStreamParams();
 
-  uint32_t fileDescriptorIndex = params.fileDescriptorIndex();
-
-  FileDescriptor fd;
-  if (fileDescriptorIndex < aFileDescriptors.Length()) {
-    fd = aFileDescriptors[fileDescriptorIndex];
-    NS_WARNING_ASSERTION(fd.IsValid(), "Received an invalid file descriptor!");
-  } else {
-    NS_WARNING("Received a bad file descriptor index!");
-  }
+  const FileDescriptor& fd = params.fileDescriptor();
 
   if (fd.IsValid()) {
     auto rawFD = fd.ClonePlatformHandle();
@@ -632,6 +605,7 @@ bool nsFileInputStream::Deserialize(
     mFD = fileDesc;
     mState = eOpened;
   } else {
+    NS_WARNING("Received an invalid file descriptor!");
     mState = eError;
     mErrorValue = NS_ERROR_FILE_NOT_FOUND;
   }
@@ -678,10 +652,7 @@ nsFileInputStream::Clone(nsIInputStream** aResult) {
 NS_IMPL_ISUPPORTS_INHERITED(nsFileOutputStream, nsFileStreamBase,
                             nsIOutputStream, nsIFileOutputStream)
 
-nsresult nsFileOutputStream::Create(nsISupports* aOuter, REFNSIID aIID,
-                                    void** aResult) {
-  NS_ENSURE_NO_AGGREGATION(aOuter);
-
+nsresult nsFileOutputStream::Create(REFNSIID aIID, void** aResult) {
   RefPtr<nsFileOutputStream> stream = new nsFileOutputStream();
   return stream->QueryInterface(aIID, aResult);
 }
@@ -899,22 +870,107 @@ nsSafeFileOutputStream::Finish() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// nsFileStream
+// nsFileRandomAccessStream
 
-nsresult nsFileStream::Create(nsISupports* aOuter, REFNSIID aIID,
-                              void** aResult) {
-  NS_ENSURE_NO_AGGREGATION(aOuter);
-
-  RefPtr<nsFileStream> stream = new nsFileStream();
+nsresult nsFileRandomAccessStream::Create(REFNSIID aIID, void** aResult) {
+  RefPtr<nsFileRandomAccessStream> stream = new nsFileRandomAccessStream();
   return stream->QueryInterface(aIID, aResult);
 }
 
-NS_IMPL_ISUPPORTS_INHERITED(nsFileStream, nsFileStreamBase, nsIInputStream,
-                            nsIOutputStream, nsIFileStream)
+NS_IMPL_ISUPPORTS_INHERITED(nsFileRandomAccessStream, nsFileStreamBase,
+                            nsIRandomAccessStream, nsIFileRandomAccessStream,
+                            nsIInputStream, nsIOutputStream)
 
 NS_IMETHODIMP
-nsFileStream::Init(nsIFile* file, int32_t ioFlags, int32_t perm,
-                   int32_t behaviorFlags) {
+nsFileRandomAccessStream::GetInputStream(nsIInputStream** aInputStream) {
+  nsCOMPtr<nsIInputStream> inputStream(this);
+
+  inputStream.forget(aInputStream);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsFileRandomAccessStream::GetOutputStream(nsIOutputStream** aOutputStream) {
+  nsCOMPtr<nsIOutputStream> outputStream(this);
+
+  outputStream.forget(aOutputStream);
+  return NS_OK;
+}
+
+nsIInputStream* nsFileRandomAccessStream::InputStream() { return this; }
+
+nsIOutputStream* nsFileRandomAccessStream::OutputStream() { return this; }
+
+RandomAccessStreamParams nsFileRandomAccessStream::Serialize(
+    nsIInterfaceRequestor* aCallbacks) {
+  FileRandomAccessStreamParams params;
+
+  if (NS_SUCCEEDED(DoPendingOpen())) {
+    MOZ_ASSERT(mFD);
+    FileHandleType fd = FileHandleType(PR_FileDesc2NativeHandle(mFD));
+    MOZ_ASSERT(fd, "This should never be null!");
+
+    params.fileDescriptor() = FileDescriptor(fd);
+
+    Close();
+  } else {
+    NS_WARNING(
+        "This file has not been opened (or could not be opened). "
+        "Sending an invalid file descriptor to the other process!");
+
+    params.fileDescriptor() = FileDescriptor();
+  }
+
+  int32_t behaviorFlags = mBehaviorFlags;
+
+  // The receiving process (or thread) is going to have an open file
+  // descriptor automatically so transferring this flag is meaningless.
+  behaviorFlags &= ~nsIFileInputStream::DEFER_OPEN;
+
+  params.behaviorFlags() = behaviorFlags;
+
+  return params;
+}
+
+bool nsFileRandomAccessStream::Deserialize(
+    RandomAccessStreamParams& aStreamParams) {
+  MOZ_ASSERT(!mFD, "Already have a file descriptor?!");
+  MOZ_ASSERT(mState == nsFileStreamBase::eUnitialized, "Deferring open?!");
+
+  if (aStreamParams.type() !=
+      RandomAccessStreamParams::TFileRandomAccessStreamParams) {
+    NS_WARNING("Received unknown parameters from the other process!");
+    return false;
+  }
+
+  const FileRandomAccessStreamParams& params =
+      aStreamParams.get_FileRandomAccessStreamParams();
+
+  const FileDescriptor& fd = params.fileDescriptor();
+
+  if (fd.IsValid()) {
+    auto rawFD = fd.ClonePlatformHandle();
+    PRFileDesc* fileDesc = PR_ImportFile(PROsfd(rawFD.release()));
+    if (!fileDesc) {
+      NS_WARNING("Failed to import file handle!");
+      return false;
+    }
+    mFD = fileDesc;
+    mState = eOpened;
+  } else {
+    NS_WARNING("Received an invalid file descriptor!");
+    mState = eError;
+    mErrorValue = NS_ERROR_FILE_NOT_FOUND;
+  }
+
+  mBehaviorFlags = params.behaviorFlags();
+
+  return true;
+}
+
+NS_IMETHODIMP
+nsFileRandomAccessStream::Init(nsIFile* file, int32_t ioFlags, int32_t perm,
+                               int32_t behaviorFlags) {
   NS_ENSURE_TRUE(mFD == nullptr, NS_ERROR_ALREADY_INITIALIZED);
   NS_ENSURE_TRUE(mState == eUnitialized || mState == eClosed,
                  NS_ERROR_ALREADY_INITIALIZED);
@@ -926,7 +982,7 @@ nsFileStream::Init(nsIFile* file, int32_t ioFlags, int32_t perm,
   if (perm <= 0) perm = 0;
 
   return MaybeOpen(file, ioFlags, perm,
-                   mBehaviorFlags & nsIFileStream::DEFER_OPEN);
+                   mBehaviorFlags & nsIFileRandomAccessStream::DEFER_OPEN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

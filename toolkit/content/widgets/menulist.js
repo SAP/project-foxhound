@@ -7,6 +7,9 @@
 // This is loaded into all XUL windows. Wrap in a block to prevent
 // leaking to window scope.
 {
+  const { AppConstants } = ChromeUtils.importESModule(
+    "resource://gre/modules/AppConstants.sys.mjs"
+  );
   const MozXULMenuElement = MozElements.MozElementMixin(XULMenuElement);
   const MenuBaseControl = MozElements.BaseControlMixin(MozXULMenuElement);
 
@@ -38,20 +41,35 @@
       this.addEventListener(
         "keypress",
         event => {
-          if (event.altKey || event.ctrlKey || event.metaKey) {
+          if (
+            event.defaultPrevented ||
+            event.altKey ||
+            event.ctrlKey ||
+            event.metaKey
+          ) {
             return;
           }
 
           if (
-            !event.defaultPrevented &&
+            AppConstants.platform === "macosx" &&
+            !this.open &&
             (event.keyCode == KeyEvent.DOM_VK_UP ||
-              event.keyCode == KeyEvent.DOM_VK_DOWN ||
-              event.keyCode == KeyEvent.DOM_VK_PAGE_UP ||
-              event.keyCode == KeyEvent.DOM_VK_PAGE_DOWN ||
-              event.keyCode == KeyEvent.DOM_VK_HOME ||
-              event.keyCode == KeyEvent.DOM_VK_END ||
-              event.keyCode == KeyEvent.DOM_VK_BACK_SPACE ||
-              event.charCode > 0)
+              event.keyCode == KeyEvent.DOM_VK_DOWN)
+          ) {
+            // This should open the menulist on macOS, see
+            // XULButtonElement::PostHandleEvent.
+            return;
+          }
+
+          if (
+            event.keyCode == KeyEvent.DOM_VK_UP ||
+            event.keyCode == KeyEvent.DOM_VK_DOWN ||
+            event.keyCode == KeyEvent.DOM_VK_PAGE_UP ||
+            event.keyCode == KeyEvent.DOM_VK_PAGE_DOWN ||
+            event.keyCode == KeyEvent.DOM_VK_HOME ||
+            event.keyCode == KeyEvent.DOM_VK_END ||
+            event.keyCode == KeyEvent.DOM_VK_BACK_SPACE ||
+            event.charCode > 0
           ) {
             // Moving relative to an item: start from the currently selected item
             this.activeChild = this.mSelectedInternal;
@@ -86,8 +104,8 @@
         <html:link href="chrome://global/skin/menulist.css" rel="stylesheet"/>
         <hbox id="label-box" part="label-box" flex="1" role="none">
           <image part="icon" role="none"/>
-          <label id="label" part="label" crop="right" flex="1" role="none"/>
-          <label id="highlightable-label" part="label" crop="right" flex="1" role="none"/>
+          <label id="label" part="label" crop="end" flex="1" role="none"/>
+          <label id="highlightable-label" part="label" crop="end" flex="1" role="none"/>
         </hbox>
         <dropmarker part="dropmarker" exportparts="icon: dropmarker-icon" type="menu" role="none"/>
         <html:slot/>
@@ -138,16 +156,6 @@
     // nsIDOMXULSelectControlElement
     get value() {
       return this.getAttribute("value");
-    }
-
-    // nsIDOMXULMenuListElement
-    set crop(val) {
-      this.setAttribute("crop", val);
-    }
-
-    // nsIDOMXULMenuListElement
-    get crop() {
-      return this.getAttribute("crop");
     }
 
     // nsIDOMXULMenuListElement

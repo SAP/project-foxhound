@@ -85,8 +85,6 @@ load 551631-1.html
 load 552651.html
 load 554230-1.xhtml
 load 558973.html
-load 561981-1.html
-load 561981-2.html
 load 564079-1.html
 load 564114.html
 load 565125-1.html
@@ -110,7 +108,7 @@ load 628599-1.html
 load 637116.html
 load 637214-1.svg
 load 637214-2.svg
-load 642022-1.html
+pref(extensions.InstallTrigger.enabled,true) pref(extensions.InstallTriggerImpl.enabled,true) load 642022-1.html
 load 646184.html
 load 658845-1.svg
 load 666869.html
@@ -193,10 +191,8 @@ load 1228882.html
 load 1230422.html
 load 1251361.html
 load 1281715.html
-load 1281745.html
 load 1304437.html
 load 1324209.html
-load 1324463.html
 load 1324500.html
 load 1326194-1.html
 load 1326194-2.html
@@ -265,3 +261,7 @@ skip-if(winWidget||Android) pref(print.always_print_silent,true) pref(print.prin
 skip-if(ThreadSanitizer||Android) load 1697525.html
 skip-if(ThreadSanitizer||Android) load 1712198.html # Mysterious failure that should be investigated (bug 1712866).
 skip-if(Android) HTTP load 1728670-1.html
+load 1757923.html
+load 1766472.html
+pref(dom.enable_web_task_scheduling,true) load 1780790.html
+load 1700237.html

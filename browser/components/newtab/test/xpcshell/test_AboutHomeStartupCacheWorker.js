@@ -12,11 +12,11 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 const { AddonTestUtils } = ChromeUtils.import(
   "resource://testing-common/AddonTestUtils.jsm"
 );
-const { SearchTestUtils } = ChromeUtils.import(
-  "resource://testing-common/SearchTestUtils.jsm"
+const { SearchTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/SearchTestUtils.sys.mjs"
 );
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
 SearchTestUtils.init(this);
@@ -41,8 +41,6 @@ ChromeUtils.defineModuleGetter(
   "resource://gre/modules/PromiseWorker.jsm"
 );
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["DOMParser"]);
-
 const CACHE_WORKER_URL = "resource://activity-stream/lib/cache-worker.js";
 const NEWTAB_RENDER_URL =
   "resource://activity-stream/data/content/newtab-render.js";
@@ -55,7 +53,7 @@ const NEWTAB_RENDER_URL =
  * a dynamic layout, and then have that layout point to a local feed rather
  * than one from the Pocket CDN.
  */
-add_task(async function setup() {
+add_setup(async function() {
   do_get_profile();
   // The SearchService is also needed in order to construct the initial state,
   // which means that the AddonManager needs to be available.
@@ -110,13 +108,13 @@ add_task(async function setup() {
   Services.prefs.setBoolPref("browser.ping-centre.telemetry", false);
 
   // We need a default search engine set up for rendering the search input.
-  await SearchTestUtils.installSearchExtension({
-    name: "Test engine",
-    keyword: "@testengine",
-    search_url_get_params: "s={searchTerms}",
-  });
-  Services.search.defaultEngine = Services.search.getEngineByName(
-    "Test engine"
+  await SearchTestUtils.installSearchExtension(
+    {
+      name: "Test engine",
+      keyword: "@testengine",
+      search_url_get_params: "s={searchTerms}",
+    },
+    { setAsDefault: true }
   );
 
   // Initialize Activity Stream, and pretend that a new window has been loaded

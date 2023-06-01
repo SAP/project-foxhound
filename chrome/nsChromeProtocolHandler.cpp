@@ -41,22 +41,10 @@ nsChromeProtocolHandler::GetScheme(nsACString& result) {
 }
 
 NS_IMETHODIMP
-nsChromeProtocolHandler::GetDefaultPort(int32_t* result) {
-  *result = -1;  // no port for chrome: URLs
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 nsChromeProtocolHandler::AllowPort(int32_t port, const char* scheme,
                                    bool* _retval) {
   // don't override anything.
   *_retval = false;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsChromeProtocolHandler::GetProtocolFlags(uint32_t* result) {
-  *result = URI_STD | URI_IS_UI_RESOURCE | URI_IS_LOCAL_RESOURCE;
   return NS_OK;
 }
 
@@ -82,7 +70,7 @@ nsChromeProtocolHandler::GetProtocolFlags(uint32_t* result) {
   // and "chrome://navigator/content/navigator.xul".
 
   rv = nsChromeRegistry::Canonify(surl);
-  if (NS_FAILED(rv)) return rv;
+  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
 
   surl.forget(result);
   return NS_OK;
@@ -98,21 +86,9 @@ nsChromeProtocolHandler::NewChannel(nsIURI* aURI, nsILoadInfo* aLoadInfo,
 
   MOZ_ASSERT(aResult, "Null out param");
 
-#ifdef DEBUG
-  // Check that the uri we got is already canonified
-  nsresult debug_rv;
   nsCOMPtr<nsIURI> debugURL = aURI;
-  debug_rv = nsChromeRegistry::Canonify(debugURL);
-  if (NS_SUCCEEDED(debug_rv)) {
-    bool same;
-    debug_rv = aURI->Equals(debugURL, &same);
-    if (NS_SUCCEEDED(debug_rv)) {
-      NS_ASSERTION(same,
-                   "Non-canonified chrome uri passed to "
-                   "nsChromeProtocolHandler::NewChannel!");
-    }
-  }
-#endif
+  rv = nsChromeRegistry::Canonify(debugURL);
+  NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIChannel> result;
 

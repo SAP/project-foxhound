@@ -53,7 +53,7 @@ add_task(async function test_sessions_get_recently_closed_tabs() {
   let win = await BrowserTestUtils.openNewBrowserWindow();
   let tabBrowser = win.gBrowser.selectedBrowser;
   for (let url of ["about:robots", "about:mozilla", "about:config"]) {
-    BrowserTestUtils.loadURI(tabBrowser, url);
+    BrowserTestUtils.loadURIString(tabBrowser, url);
     await BrowserTestUtils.browserLoaded(tabBrowser, false, url);
   }
 
@@ -107,8 +107,10 @@ add_task(async function test_sessions_get_recently_closed_tabs() {
 
   await extension.startup();
 
+  let sessionUpdatePromise = BrowserTestUtils.waitForSessionStoreUpdate(tab);
   // Test with a closed tab.
   BrowserTestUtils.removeTab(tab);
+  await sessionUpdatePromise;
 
   extension.sendMessage("check-sessions");
   let recentlyClosed = await extension.awaitMessage("recentlyClosed");
@@ -166,7 +168,7 @@ add_task(async function test_sessions_get_recently_closed_tabs() {
   // Test with host permission.
   win = await BrowserTestUtils.openNewBrowserWindow();
   tabBrowser = win.gBrowser.selectedBrowser;
-  BrowserTestUtils.loadURI(tabBrowser, "http://example.com/testpage");
+  BrowserTestUtils.loadURIString(tabBrowser, "http://example.com/testpage");
   await BrowserTestUtils.browserLoaded(
     tabBrowser,
     false,

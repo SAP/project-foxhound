@@ -11,6 +11,8 @@ const URL = "/secrets/v1/secret/project/perftest/gecko/level-";
 const SECRET = "/perftest-login";
 const DEFAULT_SERVER = "https://firefox-ci-tc.services.mozilla.com";
 
+const SCM_1_LOGIN_SITES = ["facebook", "netflix"];
+
 /**
  * This function obtains the perftest secret from Taskcluster.
  *
@@ -106,7 +108,7 @@ async function get_logins(context) {
 }
 
 /**
- * This method returns the type of login to do.
+ * This function returns the type of login to do.
  *
  * This function returns "single-form" when we find a single form. If we only
  * find a single input field, we assume that there is one page per input
@@ -147,7 +149,7 @@ async function get_login_type(context, commands) {
 }
 
 /**
- * This method sets up the login for a single form.
+ * This function sets up the login for a single form.
  *
  * The username field is defined as the field which immediately precedes
  * the password field. We have to do this in two steps because we need
@@ -293,37 +295,99 @@ async function login(context, commands, final_button) {
   }
 }
 
+/**
+ * Grab the base URL from the browsertime url.
+ *
+ * This is a necessary step for getting the login values from the Taskcluster
+ * secrets, which are hashed by the base URL.
+ *
+ * The first entry is the protocal, third is the top-level domain (or host)
+ */
+function get_base_URL(fullUrl) {
+  let pathAsArray = fullUrl.split("/");
+  return pathAsArray[0] + "//" + pathAsArray[2];
+}
+
+/**
+ * This function attempts the login-login sequence for a live pageload recording
+ */
+async function perform_live_login(context, commands) {
+  let testUrl = context.options.browsertime.url;
+
+  let logins = await get_logins(context);
+  const baseUrl = get_base_URL(testUrl);
+
+  await commands.navigate("about:blank");
+
+  let login_info = logins.secret[baseUrl];
+  try {
+    await commands.navigate(login_info.login_url);
+  } catch (err) {
+    context.log.info("Unable to acquire login information");
+    throw err;
+  }
+  await commands.wait.byTime(5000);
+
+  let final_button = await setup_login(login_info, context, commands);
+  await login(context, commands, final_button);
+}
+
+async function dismissCookiePrompt(input_cmds, context, commands) {
+  context.log.info("Searching for cookie prompt elements...");
+  let cmds = input_cmds.split(";;;");
+  for (let cmdstr of cmds) {
+    let [cmd, ...args] = cmdstr.split(":::");
+    context.log.info(cmd, args);
+    let result = await commands.js.run(
+      `return document.evaluate("` +
+        args +
+        `", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;`
+    );
+    if (result) {
+      context.log.info("Element found, clicking on it.");
+      await run_command(cmdstr, context, commands);
+    } else {
+      context.log.info(
+        "Element not found! The cookie prompt may have not appeared, please check the screenshots."
+      );
+    }
+  }
+}
+
 async function pageload_test(context, commands) {
   let testUrl = context.options.browsertime.url;
   let secondaryUrl = context.options.browsertime.secondary_url;
   let testName = context.options.browsertime.testName;
-  let input_cmds = context.options.browsertime.commands || "";
+  let dismissPrompt = context.options.browsertime.dismiss_cookie_prompt || "";
+  context.log.info(context.options.browsertime);
+
+  // If the user has RAPTOR_LOGINS configured correctly, a local login pageload
+  // test can be attempted. Otherwise if attempting it in CI, only sites with the
+  // associated MOZ_SCM_LEVEL will be attempted (e.g. Try = 1, autoland = 3)
+  if (context.options.browsertime.login) {
+    if (
+      process.env.RAPTOR_LOGINS ||
+      process.env.MOZ_SCM_LEVEL == 3 ||
+      SCM_1_LOGIN_SITES.includes(testName)
+    ) {
+      try {
+        await perform_live_login(context, commands);
+      } catch (err) {
+        context.log.info(
+          "Unable to login. Acquiring a recording without logging in"
+        );
+        context.log.info("Error:" + err);
+      }
+    }
+  }
 
   // Wait for browser to settle
   await commands.wait.byTime(1000);
 
   await commands.measure.start(testUrl);
-  if (input_cmds) {
-    context.log.info("Searching for cookie prompt elements...");
-    let cmds = input_cmds.split(";;;");
-    for (let cmdstr of cmds) {
-      let [cmd, ...args] = cmdstr.split(":::");
-      context.log.info(cmd, args);
-      let result = await commands.js.run(
-        `return document.evaluate("` +
-          args +
-          `", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;`
-      );
-      if (result) {
-        context.log.info("Element found, clicking on it.");
-        await run_command(cmdstr, context, commands);
-      } else {
-        context.log.info(
-          "Element not found! The cookie prompt may have not appeared, please check the screenshots."
-        );
-        break;
-      }
-    }
+  await commands.wait.byTime(40000);
+  if (dismissPrompt) {
+    await dismissCookiePrompt(dismissPrompt, context, commands);
   }
   commands.screenshot.take("test_url_" + testName);
 

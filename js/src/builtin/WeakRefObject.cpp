@@ -6,8 +6,6 @@
 
 #include "builtin/WeakRefObject.h"
 
-#include "mozilla/Maybe.h"
-
 #include "jsapi.h"
 
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
@@ -64,9 +62,12 @@ bool WeakRefObject::construct(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  // Wrap the weakRef into the target's compartment.
+  // Wrap the weakRef into the target's Zone. This is a cross-compartment
+  // wrapper if the Zone is different, or same-compartment (the original
+  // object) if the Zone is the same *even if* the compartments are different.
   RootedObject wrappedWeakRef(cx, weakRef);
-  AutoRealm ar(cx, target);
+  bool sameZone = target->zone() == weakRef->zone();
+  AutoRealm ar(cx, sameZone ? weakRef : target);
   if (!JS_WrapObject(cx, &wrappedWeakRef)) {
     return false;
   }
@@ -123,7 +124,7 @@ void WeakRefObject::trace(JSTracer* trc, JSObject* obj) {
 }
 
 /* static */
-void WeakRefObject::finalize(JSFreeOp* fop, JSObject* obj) {
+void WeakRefObject::finalize(JS::GCContext* gcx, JSObject* obj) {
   // The target is cleared when the target's zone is swept and that always
   // happens before this object is finalized because of the CCW from the target
   // zone to this object. If the CCW is nuked, the target is cleared in
@@ -140,7 +141,6 @@ const JSClassOps WeakRefObject::classOps_ = {
     nullptr,   // mayResolve
     finalize,  // finalize
     nullptr,   // call
-    nullptr,   // hasInstance
     nullptr,   // construct
     trace,     // trace
 };
@@ -253,43 +253,6 @@ void WeakRefObject::readBarrier(JSContext* cx, Handle<WeakRefObject*> self) {
 
 namespace gc {
 
-bool GCRuntime::registerWeakRef(HandleObject target, HandleObject weakRef) {
-  MOZ_ASSERT(!IsCrossCompartmentWrapper(target));
-  MOZ_ASSERT(UncheckedUnwrap(weakRef)->is<WeakRefObject>());
-  MOZ_ASSERT(target->compartment() == weakRef->compartment());
-
-  auto& map = target->zone()->weakRefMap();
-  auto ptr = map.lookupForAdd(target);
-  if (!ptr && !map.add(ptr, target, WeakRefHeapPtrVector(target->zone()))) {
-    return false;
-  }
-
-  auto& refs = ptr->value();
-  return refs.emplaceBack(weakRef);
-}
-
-bool GCRuntime::unregisterWeakRefWrapper(JSObject* wrapper) {
-  WeakRefObject* weakRef =
-      &UncheckedUnwrapWithoutExpose(wrapper)->as<WeakRefObject>();
-
-  JSObject* target = weakRef->target();
-  MOZ_ASSERT(target);
-
-  bool removed = false;
-  auto& map = target->zone()->weakRefMap();
-  if (auto ptr = map.lookup(target)) {
-    ptr->value().eraseIf([wrapper, &removed](JSObject* obj) {
-      bool remove = obj == wrapper;
-      if (remove) {
-        removed = true;
-      }
-      return remove;
-    });
-  }
-
-  return removed;
-}
-
 void GCRuntime::traceKeptObjects(JSTracer* trc) {
   for (GCZonesIter zone(this); !zone.done(); zone.next()) {
     zone->traceKeptObjects(trc);
@@ -297,59 +260,5 @@ void GCRuntime::traceKeptObjects(JSTracer* trc) {
 }
 
 }  // namespace gc
-
-static WeakRefObject* UnwrapWeakRef(JSObject* obj) {
-  MOZ_ASSERT(!JS_IsDeadWrapper(obj));
-  obj = UncheckedUnwrapWithoutExpose(obj);
-  return &obj->as<WeakRefObject>();
-}
-
-void WeakRefMap::traceWeak(JSTracer* trc, gc::StoreBuffer* sbToLock) {
-  mozilla::Maybe<typename Base::Enum> e;
-  for (e.emplace(*this); !e->empty(); e->popFront()) {
-    // If target is dying, clear the target field of all weakRefs, and remove
-    // the entry from the map.
-    auto result =
-        TraceWeakEdge(trc, &e->front().mutableKey(), "WeakRef target");
-    if (result.isDead()) {
-      for (JSObject* obj : e->front().value()) {
-        UnwrapWeakRef(obj)->clearTarget();
-      }
-      e->removeFront();
-    } else {
-      // Update the target field after compacting.
-      e->front().value().traceWeak(trc, result.finalTarget());
-    }
-  }
-
-  // Take store buffer lock while the Enum's destructor is called as this can
-  // rehash/resize the table and access the store buffer.
-  gc::AutoLockStoreBuffer lock(sbToLock);
-  e.reset();
-}
-
-// Like GCVector::sweep, but this method will also update the target in every
-// weakRef in this GCVector.
-void WeakRefHeapPtrVector::traceWeak(JSTracer* trc, JSObject* target) {
-  HeapPtrObject* src = begin();
-  HeapPtrObject* dst = begin();
-  while (src != end()) {
-    auto result = TraceWeakEdge(trc, src, "WeakRef");
-    if (result.isDead()) {
-      UnwrapWeakRef(result.initialTarget())->clearTarget();
-    } else {
-      UnwrapWeakRef(result.finalTarget())->setTargetUnbarriered(target);
-
-      if (src != dst) {
-        *dst = std::move(*src);
-      }
-      dst++;
-    }
-    src++;
-  }
-
-  MOZ_ASSERT(dst <= end());
-  shrinkBy(end() - dst);
-}
 
 }  // namespace js

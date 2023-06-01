@@ -27,8 +27,6 @@
  * @property {typeof actions.reportProfilerReady} reportProfilerReady
  * @property {typeof actions.reportProfilerStarted} reportProfilerStarted
  * @property {typeof actions.reportProfilerStopped} reportProfilerStopped
- * @property {typeof actions.reportPrivateBrowsingStarted} reportPrivateBrowsingStarted
- * @property {typeof actions.reportPrivateBrowsingStopped} reportPrivateBrowsingStopped
  */
 
 /**
@@ -44,10 +42,14 @@
 
 "use strict";
 
-const { PureComponent } = require("devtools/client/shared/vendor/react");
-const { connect } = require("devtools/client/shared/vendor/react-redux");
-const actions = require("devtools/client/performance-new/store/actions");
-const selectors = require("devtools/client/performance-new/store/selectors");
+const {
+  PureComponent,
+} = require("resource://devtools/client/shared/vendor/react.js");
+const {
+  connect,
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
+const actions = require("resource://devtools/client/performance-new/store/actions.js");
+const selectors = require("resource://devtools/client/performance-new/store/selectors.js");
 
 /**
  * This component state changes for the performance recording. e.g. If the profiler
@@ -64,9 +66,6 @@ class ProfilerEventHandling extends PureComponent {
       reportProfilerReady,
       reportProfilerStarted,
       reportProfilerStopped,
-      reportPrivateBrowsingStarted,
-      reportPrivateBrowsingStopped,
-      traits: { noDisablingOnPrivateBrowsing },
     } = this.props;
 
     if (!isSupportedPlatform) {
@@ -74,32 +73,11 @@ class ProfilerEventHandling extends PureComponent {
     }
 
     // Ask for the initial state of the profiler.
-    Promise.all([
-      perfFront.isActive(),
-      noDisablingOnPrivateBrowsing
-        ? false
-        : perfFront.isLockedForPrivateBrowsing(),
-    ]).then(([isActive, isLockedForPrivateBrowsing]) => {
-      reportProfilerReady(isActive, isLockedForPrivateBrowsing);
-    });
+    perfFront.isActive().then(isActive => reportProfilerReady(isActive));
 
     // Handle when the profiler changes state. It might be us, it might be someone else.
     this.props.perfFront.on("profiler-started", reportProfilerStarted);
     this.props.perfFront.on("profiler-stopped", reportProfilerStopped);
-
-    if (!noDisablingOnPrivateBrowsing) {
-      // @backward-compat { version 98 }
-      // These events are not used anymore in Firefox 98 and above. They can be
-      // removed along with the rest of the functionality once 98 hits release.
-      this.props.perfFront.on(
-        "profile-locked-by-private-browsing",
-        reportPrivateBrowsingStarted
-      );
-      this.props.perfFront.on(
-        "profile-unlocked-from-private-browsing",
-        reportPrivateBrowsingStopped
-      );
-    }
   }
 
   componentWillUnmount() {
@@ -108,7 +86,6 @@ class ProfilerEventHandling extends PureComponent {
       case "available-to-record":
       case "request-to-stop-profiler":
       case "request-to-get-profile-and-stop-profiler":
-      case "locked-by-private-browsing":
         // Do nothing for these states.
         break;
 
@@ -143,8 +120,6 @@ const mapDispatchToProps = {
   reportProfilerReady: actions.reportProfilerReady,
   reportProfilerStarted: actions.reportProfilerStarted,
   reportProfilerStopped: actions.reportProfilerStopped,
-  reportPrivateBrowsingStarted: actions.reportPrivateBrowsingStarted,
-  reportPrivateBrowsingStopped: actions.reportPrivateBrowsingStopped,
 };
 
 module.exports = connect(

@@ -8,6 +8,7 @@
 #define mozilla_contentblockingallowlist_h
 
 #include "mozilla/dom/BrowsingContext.h"
+#include "nsIContentBlockingAllowList.h"
 
 class nsICookieJarSettings;
 class nsIHttpChannel;
@@ -20,8 +21,10 @@ namespace mozilla {
 class OriginAttributes;
 struct ContentBlockingAllowListCache;
 
-class ContentBlockingAllowList final {
+class ContentBlockingAllowList final : public nsIContentBlockingAllowList {
  public:
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSICONTENTBLOCKINGALLOWLIST
   // Check whether a principal is on the content blocking allow list.
   // aPrincipal should be a "content blocking allow list principal".
   // This principal can be obtained from the load info object for top-level
@@ -30,6 +33,10 @@ class ContentBlockingAllowList final {
                         bool aIsPrivateBrowsing, bool& aIsAllowListed);
 
   static bool Check(nsIHttpChannel* aChannel);
+  // Utility APIs for ContentBlocking.
+  static bool Check(nsPIDOMWindowInner* aWindow);
+  static bool Check(nsIPrincipal* aTopWinPrincipal, bool aIsPrivateBrowsing);
+  static bool Check(nsICookieJarSettings* aCookieJarSettings);
 
   // Computes the principal used to check the content blocking allow list for a
   // top-level document based on the document principal.  This function is used
@@ -42,12 +49,7 @@ class ContentBlockingAllowList final {
                                  nsIPrincipal** aPrincipal);
 
  private:
-  // Utility APIs for ContentBlocking.
-  static bool Check(nsIPrincipal* aTopWinPrincipal, bool aIsPrivateBrowsing);
-  static bool Check(nsPIDOMWindowInner* aWindow);
-  static bool Check(nsICookieJarSettings* aCookieJarSettings);
-
-  friend class ContentBlocking;
+  ~ContentBlockingAllowList() = default;
 };
 
 }  // namespace mozilla

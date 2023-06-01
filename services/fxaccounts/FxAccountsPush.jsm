@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { Async } = ChromeUtils.import("resource://services-common/async.js");
 const {
   FXA_PUSH_SCOPE_ACCOUNT_UPDATE,
@@ -84,10 +83,10 @@ FxAccountsPushService.prototype = {
     if (options.fxai) {
       this.fxai = options.fxai;
     } else {
-      let { fxAccounts } = ChromeUtils.import(
-        "resource://gre/modules/FxAccounts.jsm",
-        {}
+      const { getFxAccountsSingleton } = ChromeUtils.import(
+        "resource://gre/modules/FxAccounts.jsm"
       );
+      const fxAccounts = getFxAccountsSingleton();
       this.fxai = fxAccounts._internal;
     }
 
@@ -161,11 +160,7 @@ FxAccountsPushService.prototype = {
           break;
         case ONLOGOUT_NOTIFICATION:
           // user signed out, we need to stop polling the Push Server
-          try {
-            await this.unsubscribe();
-          } catch (err) {
-            this.log.error("Error during unsubscribe", err);
-          }
+          await this.unsubscribe();
           break;
       }
     } catch (err) {
@@ -263,7 +258,8 @@ FxAccountsPushService.prototype = {
    *
    * Ref: https://developer.mozilla.org/en-US/docs/Mozilla/Tech/XPCOM/Reference/Interface/nsIPushService#unsubscribe()
    *
-   * @returns {Promise}
+   * @returns {Promise} - The promise resolves with a bool to indicate if we successfully unsubscribed.
+   *                      The promise never rejects.
    * @private
    */
   unsubscribe() {
@@ -298,7 +294,7 @@ FxAccountsPushService.prototype = {
    *
    * Ref: https://developer.mozilla.org/en-US/docs/Mozilla/Tech/XPCOM/Reference/Interface/nsIPushService#getSubscription()
    *
-   * @returns {Promise}
+   * @returns {Promise} - resolves with the subscription or null. Never rejects.
    */
   getSubscription() {
     return new Promise(resolve => {

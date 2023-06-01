@@ -46,12 +46,6 @@ async function clearHistoryAndWait() {
 
 let MockFilePicker = SpecialPowers.MockFilePicker;
 MockFilePicker.init(window);
-const { DownloadLastDir } = ChromeUtils.import(
-  "resource://gre/modules/DownloadLastDir.jsm"
-);
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
-);
 
 add_task(async function() {
   const IMAGE_URL =

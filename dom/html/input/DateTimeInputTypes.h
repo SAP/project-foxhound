@@ -9,8 +9,7 @@
 
 #include "mozilla/dom/InputType.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class DateTimeInputTypeBase : public InputType {
  public:
@@ -19,7 +18,7 @@ class DateTimeInputTypeBase : public InputType {
   bool IsValueMissing() const override;
   bool IsRangeOverflow() const override;
   bool IsRangeUnderflow() const override;
-  bool HasStepMismatch(bool aUseZeroIfValueNaN) const override;
+  bool HasStepMismatch() const override;
   bool HasBadInput() const override;
 
   nsresult GetRangeOverflowMessage(nsAString& aMessage) override;
@@ -32,6 +31,8 @@ class DateTimeInputTypeBase : public InputType {
       : InputType(aInputElement) {}
 
   bool IsMutable() const override;
+
+  nsresult GetBadInputMessage(nsAString& aMessage) override = 0;
 
   /**
    * This method converts aValue (milliseconds within a day) to hours, minutes,
@@ -106,6 +107,7 @@ class WeekInputType : public DateTimeInputTypeBase {
     return new (aMemory) WeekInputType(aInputElement);
   }
 
+  nsresult GetBadInputMessage(nsAString& aMessage) override;
   bool ConvertStringToNumber(nsAString& aValue,
                              Decimal& aResultValue) const override;
   bool ConvertNumberToString(Decimal aValue,
@@ -123,6 +125,7 @@ class MonthInputType : public DateTimeInputTypeBase {
     return new (aMemory) MonthInputType(aInputElement);
   }
 
+  nsresult GetBadInputMessage(nsAString& aMessage) override;
   bool ConvertStringToNumber(nsAString& aValue,
                              Decimal& aResultValue) const override;
   bool ConvertNumberToString(Decimal aValue,
@@ -140,6 +143,7 @@ class DateTimeLocalInputType : public DateTimeInputTypeBase {
     return new (aMemory) DateTimeLocalInputType(aInputElement);
   }
 
+  nsresult GetBadInputMessage(nsAString& aMessage) override;
   bool ConvertStringToNumber(nsAString& aValue,
                              Decimal& aResultValue) const override;
   bool ConvertNumberToString(Decimal aValue,
@@ -150,7 +154,6 @@ class DateTimeLocalInputType : public DateTimeInputTypeBase {
       : DateTimeInputTypeBase(aInputElement) {}
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_DateTimeInputTypes_h__ */

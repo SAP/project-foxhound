@@ -17,10 +17,9 @@
 #ifndef js_TypeDecls_h
 #define js_TypeDecls_h
 
-#include <stddef.h>
-#include <stdint.h>
+#include <stdint.h>  // uint8_t
 
-#include "jstypes.h"
+#include "jstypes.h"  // JS_PUBLIC_API
 
 typedef uint8_t jsbytecode;
 
@@ -28,7 +27,6 @@ class JS_PUBLIC_API JSAtom;
 struct JS_PUBLIC_API JSContext;
 struct JSClass;
 class JS_PUBLIC_API JSFunction;
-class JS_PUBLIC_API JSFreeOp;
 class JS_PUBLIC_API JSObject;
 struct JS_PUBLIC_API JSRuntime;
 class JS_PUBLIC_API JSScript;
@@ -42,7 +40,8 @@ class JS_PUBLIC_API TempAllocPolicy;
 
 namespace JS {
 
-struct JS_PUBLIC_API PropertyKey;
+class JS_PUBLIC_API GCContext;
+class JS_PUBLIC_API PropertyKey;
 
 typedef unsigned char Latin1Char;
 
@@ -140,6 +139,13 @@ using jsid = JS::PropertyKey;
 #  define IF_RECORD_TUPLE(x, ...) x
 #else
 #  define IF_RECORD_TUPLE(x, ...) __VA_ARGS__
+#endif
+
+// Follows the same pattern as IF_RECORD_TUPLE
+#ifdef ENABLE_DECORATORS
+#  define IF_DECORATORS(x, ...) x
+#else
+#  define IF_DECORATORS(x, ...) __VA_ARGS__
 #endif
 
 #endif /* js_TypeDecls_h */

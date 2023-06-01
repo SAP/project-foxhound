@@ -2,20 +2,18 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import os
 import textwrap
 import unittest
+
 import mozpack.path as mozpath
-
-from six import StringIO
-
 from buildconfig import topsrcdir
 from common import ConfigureTestSandbox
-from mozbuild.util import exec_
 from mozunit import main
+from six import StringIO
 from test_toolchain_helpers import FakeCompiler
+
+from mozbuild.util import exec_
 
 
 class BaseCompileChecks(unittest.TestCase):
@@ -375,7 +373,7 @@ class TestWarningChecks(BaseCompileChecks):
         """
         )
 
-    def test_check_and_add_gcc_warning(self):
+    def test_check_and_add_warning(self):
         for flag, expected_flags in (
             ("-Wfoo", ["-Werror", "-Wfoo"]),
             ("-Wno-foo", ["-Werror", "-Wfoo"]),
@@ -385,7 +383,7 @@ class TestWarningChecks(BaseCompileChecks):
             cmd = (
                 textwrap.dedent(
                     """\
-                check_and_add_gcc_warning('%s')
+                check_and_add_warning('%s')
             """
                     % flag
                 )
@@ -415,11 +413,11 @@ class TestWarningChecks(BaseCompileChecks):
                 ),
             )
 
-    def test_check_and_add_gcc_warning_one(self):
+    def test_check_and_add_warning_one(self):
         cmd = (
             textwrap.dedent(
                 """\
-            check_and_add_gcc_warning('-Wfoo', cxx_compiler)
+            check_and_add_warning('-Wfoo', cxx_compiler)
         """
             )
             + self.get_warnings()
@@ -443,14 +441,14 @@ class TestWarningChecks(BaseCompileChecks):
             ),
         )
 
-    def test_check_and_add_gcc_warning_when(self):
+    def test_check_and_add_warning_when(self):
         cmd = (
             textwrap.dedent(
                 """\
             @depends(when=True)
             def never():
                 return False
-            check_and_add_gcc_warning('-Wfoo', cxx_compiler, when=never)
+            check_and_add_warning('-Wfoo', cxx_compiler, when=never)
         """
             )
             + self.get_warnings()
@@ -473,7 +471,7 @@ class TestWarningChecks(BaseCompileChecks):
             @depends(when=True)
             def always():
                 return True
-            check_and_add_gcc_warning('-Wfoo', cxx_compiler, when=always)
+            check_and_add_warning('-Wfoo', cxx_compiler, when=always)
         """
             )
             + self.get_warnings()
@@ -497,11 +495,11 @@ class TestWarningChecks(BaseCompileChecks):
             ),
         )
 
-    def test_add_gcc_warning(self):
+    def test_add_warning(self):
         cmd = (
             textwrap.dedent(
                 """\
-            add_gcc_warning('-Wfoo')
+            add_warning('-Wfoo')
         """
             )
             + self.get_warnings()
@@ -518,11 +516,11 @@ class TestWarningChecks(BaseCompileChecks):
         )
         self.assertEqual(out, "")
 
-    def test_add_gcc_warning_one(self):
+    def test_add_warning_one(self):
         cmd = (
             textwrap.dedent(
                 """\
-            add_gcc_warning('-Wfoo', c_compiler)
+            add_warning('-Wfoo', c_compiler)
         """
             )
             + self.get_warnings()
@@ -539,14 +537,14 @@ class TestWarningChecks(BaseCompileChecks):
         )
         self.assertEqual(out, "")
 
-    def test_add_gcc_warning_when(self):
+    def test_add_warning_when(self):
         cmd = (
             textwrap.dedent(
                 """\
             @depends(when=True)
             def never():
                 return False
-            add_gcc_warning('-Wfoo', c_compiler, when=never)
+            add_warning('-Wfoo', c_compiler, when=never)
         """
             )
             + self.get_warnings()
@@ -569,7 +567,7 @@ class TestWarningChecks(BaseCompileChecks):
             @depends(when=True)
             def always():
                 return True
-            add_gcc_warning('-Wfoo', c_compiler, when=always)
+            add_warning('-Wfoo', c_compiler, when=always)
         """
             )
             + self.get_warnings()

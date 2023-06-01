@@ -10,7 +10,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/SMILAttr.h"
 #include "mozilla/UniquePtr.h"
-#include "SVGTransformList.h"
+#include "mozilla/dom/SVGTransformList.h"
 
 class nsAtom;
 
@@ -128,12 +128,13 @@ class SVGAnimatedTransformList {
         : mVal(aVal), mElement(aSVGElement) {}
 
     // SMILAttr methods
-    virtual nsresult ValueFromString(
-        const nsAString& aStr, const dom::SVGAnimationElement* aSrcElement,
-        SMILValue& aValue, bool& aPreventCachingOfSandwich) const override;
-    virtual SMILValue GetBaseValue() const override;
-    virtual void ClearAnimValue() override;
-    virtual nsresult SetAnimValue(const SMILValue& aNewAnimValue) override;
+    nsresult ValueFromString(const nsAString& aStr,
+                             const dom::SVGAnimationElement* aSrcElement,
+                             SMILValue& aValue,
+                             bool& aPreventCachingOfSandwich) const override;
+    SMILValue GetBaseValue() const override;
+    void ClearAnimValue() override;
+    nsresult SetAnimValue(const SMILValue& aNewAnimValue) override;
 
    protected:
     static void ParseValue(const nsAString& aSpec, const nsAtom* aTransformType,

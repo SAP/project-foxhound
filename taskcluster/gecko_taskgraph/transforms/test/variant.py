@@ -1,24 +1,16 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-import copy
-
 import jsone
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.schema import Schema, validate_schema
+from taskgraph.util.treeherder import join_symbol, split_symbol
 from taskgraph.util.yaml import load_yaml
-from voluptuous import (
-    Any,
-    Optional,
-    Required,
-)
+from voluptuous import Any, Optional, Required
 
 import gecko_taskgraph
-from gecko_taskgraph.transforms.base import TransformSequence
+from gecko_taskgraph.util.copy_task import copy_task
 from gecko_taskgraph.util.templates import merge
-from gecko_taskgraph.util.treeherder import split_symbol, join_symbol
-from gecko_taskgraph.util.schema import (
-    validate_schema,
-    Schema,
-)
 
 transforms = TransformSequence()
 
@@ -33,7 +25,8 @@ variant_description_schema = Schema(
         str: {
             Required("description"): str,
             Required("suffix"): str,
-            Optional("contact"): str,
+            Required("component"): str,
+            Required("expiration"): str,
             Optional("when"): {Any("$eval", "$if"): str},
             Optional("replace"): {str: object},
             Optional("merge"): {str: object},
@@ -76,12 +69,12 @@ def split_variants(config, tasks):
         variants = task.pop("variants", [])
 
         if task.pop("run-without-variant"):
-            yield copy.deepcopy(task)
+            yield copy_task(task)
 
         for name in variants:
             # Apply composite variants (joined by '+') in order.
             parts = name.split("+")
-            taskv = copy.deepcopy(task)
+            taskv = copy_task(task)
             for part in parts:
                 variant = TEST_VARIANTS[part]
 

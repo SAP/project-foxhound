@@ -34,8 +34,17 @@ function parsePoint(str) {
   };
 }
 
-// TODO: Clean up these rect-handling functions so that e.g. a rect returned
-//       by Element.getBoundingClientRect() Just Works with them.
+// Given a VisualViewport object, return the visual viewport
+// rect relative to the page.
+function getVisualViewportRect(vv) {
+  return {
+    x: vv.pageLeft,
+    y: vv.pageTop,
+    width: vv.width,
+    height: vv.height,
+  };
+}
+
 function parseRect(str) {
   var pieces = str.replace(/[()\s]+/g, "").split(",");
   SimpleTest.is(pieces.length, 4, "expected string of form (x,y,w,h)");
@@ -48,23 +57,25 @@ function parseRect(str) {
   return {
     x: parseInt(pieces[0]),
     y: parseInt(pieces[1]),
-    w: parseInt(pieces[2]),
-    h: parseInt(pieces[3]),
+    width: parseInt(pieces[2]),
+    height: parseInt(pieces[3]),
   };
 }
 
-// These functions expect rects with fields named x/y/w/h, such as
+// These functions expect rects with fields named x/y/width/height, such as
 // that returned by parseRect().
 function rectContains(haystack, needle) {
   return (
     haystack.x <= needle.x &&
     haystack.y <= needle.y &&
-    haystack.x + haystack.w >= needle.x + needle.w &&
-    haystack.y + haystack.h >= needle.y + needle.h
+    haystack.x + haystack.width >= needle.x + needle.width &&
+    haystack.y + haystack.height >= needle.y + needle.height
   );
 }
 function rectToString(rect) {
-  return "(" + rect.x + "," + rect.y + "," + rect.w + "," + rect.h + ")";
+  return (
+    "(" + rect.x + "," + rect.y + "," + rect.width + "," + rect.height + ")"
+  );
 }
 function assertRectContainment(
   haystackRect,
@@ -128,7 +139,7 @@ function convertTestData(testData) {
 // because those don't contain any useful data.
 function getLastNonemptyBucket(buckets) {
   for (var i = buckets.length - 1; i >= 0; --i) {
-    if (buckets[i].scrollFrames.length > 0) {
+    if (buckets[i].scrollFrames.length) {
       return buckets[i];
     }
   }
@@ -258,7 +269,7 @@ function getLastApzcTree() {
     ok(false, "expected to have compositor apz test data");
     return null;
   }
-  if (data.paints.length == 0) {
+  if (!data.paints.length) {
     ok(false, "expected to have at least one compositor paint bucket");
     return null;
   }
@@ -287,7 +298,7 @@ function promiseAfterPaint() {
 // APZ handler on the main thread, the repaints themselves may not have
 // occurred by the the returned promise resolves. If you want to wait
 // for those repaints, consider using promiseApzFlushedRepaints instead.
-function promiseOnlyApzControllerFlushed(aWindow = window) {
+function promiseOnlyApzControllerFlushedWithoutSetTimeout(aWindow = window) {
   return new Promise(function(resolve, reject) {
     var repaintDone = function() {
       dump("PromiseApzRepaintsFlushed: APZ flush done\n");
@@ -295,7 +306,7 @@ function promiseOnlyApzControllerFlushed(aWindow = window) {
         repaintDone,
         "apz-repaints-flushed"
       );
-      setTimeout(resolve, 0);
+      resolve();
     };
     SpecialPowers.Services.obs.addObserver(repaintDone, "apz-repaints-flushed");
     if (SpecialPowers.getDOMWindowUtils(aWindow).flushApzRepaints()) {
@@ -308,6 +319,16 @@ function promiseOnlyApzControllerFlushed(aWindow = window) {
       );
       repaintDone();
     }
+  });
+}
+
+// Another variant of the above promiseOnlyApzControllerFlushedWithoutSetTimeout
+// but with a setTimeout(0) callback.
+function promiseOnlyApzControllerFlushed(aWindow = window) {
+  return new Promise(resolve => {
+    promiseOnlyApzControllerFlushedWithoutSetTimeout(aWindow).then(() => {
+      setTimeout(resolve, 0);
+    });
   });
 }
 
@@ -545,12 +566,9 @@ async function waitUntilApzStable() {
 
     // Sadly this helper function cannot reuse any code from other places because
     // it must be totally self-contained to be shipped over to the parent process.
-    /* eslint-env mozilla/frame-script */
     function parentProcessFlush() {
+      /* eslint-env mozilla/chrome-script */
       function apzFlush() {
-        const { Services } = ChromeUtils.import(
-          "resource://gre/modules/Services.jsm"
-        );
         var topWin = Services.wm.getMostRecentWindow("navigator:browser");
         if (!topWin) {
           topWin = Services.wm.getMostRecentWindow("navigator:geckoview");
@@ -679,10 +697,8 @@ function isKeyApzEnabled() {
 // The snapshot is returned in the form of a data URL.
 function getSnapshot(rect) {
   function parentProcessSnapshot() {
+    /* eslint-env mozilla/chrome-script */
     addMessageListener("snapshot", function(parentRect) {
-      const { Services } = ChromeUtils.import(
-        "resource://gre/modules/Services.jsm"
-      );
       var topWin = Services.wm.getMostRecentWindow("navigator:browser");
       if (!topWin) {
         topWin = Services.wm.getMostRecentWindow("navigator:geckoview");
@@ -698,15 +714,15 @@ function getSnapshot(rect) {
         "http://www.w3.org/1999/xhtml",
         "canvas"
       );
-      canvas.width = parentRect.w;
-      canvas.height = parentRect.h;
+      canvas.width = parentRect.width;
+      canvas.height = parentRect.height;
       var ctx = canvas.getContext("2d");
       ctx.drawWindow(
         topWin,
         parentRect.x,
         parentRect.y,
-        parentRect.w,
-        parentRect.h,
+        parentRect.width,
+        parentRect.height,
         "rgb(255,255,255)",
         ctx.DRAWWINDOW_DRAW_VIEW |
           ctx.DRAWWINDOW_USE_WIDGET_LAYERS |
@@ -740,7 +756,7 @@ function getSnapshot(rect) {
 //     produces { "key": { "x": 0, "y": 0 }, "key2": [1, 2, true] }
 function getQueryArgs() {
   var args = {};
-  if (location.search.length > 0) {
+  if (location.search.length) {
     var params = location.search.substr(1).split("&");
     for (var p of params) {
       var [k, v] = p.split("=");
@@ -850,7 +866,7 @@ function hitInfoToString(hitInfo) {
       strs.push(flag);
     }
   }
-  if (strs.length == 0) {
+  if (!strs.length) {
     return "INVISIBLE";
   }
   strs.sort(function(a, b) {
@@ -1054,7 +1070,7 @@ var ApzCleanup = {
   _cleanups: [],
 
   register(func) {
-    if (this._cleanups.length == 0) {
+    if (!this._cleanups.length) {
       if (!window.isApzSubtest) {
         SimpleTest.registerCleanupFunction(this.execute.bind(this));
       } // else ApzCleanup.execute is called from runSubtestsSeriallyInFreshWindows
@@ -1063,7 +1079,7 @@ var ApzCleanup = {
   },
 
   execute() {
-    while (this._cleanups.length > 0) {
+    while (this._cleanups.length) {
       var func = this._cleanups.pop();
       try {
         func();
@@ -1241,4 +1257,18 @@ async function cancelScrollAnimation(aElement, aWindow = window) {
   await aWindow.promiseApzFlushedRepaints();
   aElement.style.display = originalStyle;
   await aWindow.promiseApzFlushedRepaints();
+}
+
+function collectSampledScrollOffsets(aElement) {
+  let data = SpecialPowers.DOMWindowUtils.getCompositorAPZTestData();
+  let sampledResults = data.sampledResults;
+
+  const layersId = SpecialPowers.DOMWindowUtils.getLayersId();
+  const scrollId = SpecialPowers.DOMWindowUtils.getViewId(aElement);
+
+  return sampledResults.filter(
+    result =>
+      SpecialPowers.wrap(result).layersId == layersId &&
+      SpecialPowers.wrap(result).scrollId == scrollId
+  );
 }

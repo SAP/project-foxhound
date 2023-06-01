@@ -110,15 +110,17 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
         mStreamFilterEndpoints;
     uint32_t mRedirectFlags;
     uint32_t mLoadFlags;
+    nsTArray<EarlyHintConnectArgs> mEarlyHints;
     RefPtr<PDocumentChannelParent::RedirectToRealChannelPromise::Private>
         mPromise;
   };
   struct OpenPromiseFailedType {
     nsresult mStatus;
     nsresult mLoadGroupStatus;
-    // This is set to true if we're rejecting the promise because we
-    // switched to load away to a new process.
-    bool mSwitchedProcess = false;
+    // This is set to true if the navigation in the content process should not
+    // be cancelled, as the load is logically continuing within the current
+    // browsing session, just within a different process or browsing context.
+    bool mContinueNavigating = false;
   };
 
   using OpenPromise =
@@ -226,7 +228,7 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
   NS_DECLARE_STATIC_IID_ACCESSOR(DOCUMENT_LOAD_LISTENER_IID)
 
   // Called by the DocumentChannel if cancelled.
-  void Cancel(const nsresult& aStatusCode);
+  void Cancel(const nsresult& aStatusCode, const nsACString& aReason);
 
   nsIChannel* GetChannel() const { return mChannel; }
 
@@ -277,10 +279,10 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
 
   // Serializes all data needed to setup the new replacement channel
   // in the content process into the RedirectToRealChannelArgs struct.
-  void SerializeRedirectData(RedirectToRealChannelArgs& aArgs,
-                             bool aIsCrossProcess, uint32_t aRedirectFlags,
-                             uint32_t aLoadFlags,
-                             dom::ContentParent* aParent) const;
+  void SerializeRedirectData(
+      RedirectToRealChannelArgs& aArgs, bool aIsCrossProcess,
+      uint32_t aRedirectFlags, uint32_t aLoadFlags, dom::ContentParent* aParent,
+      nsTArray<EarlyHintConnectArgs>&& aEarlyHints) const;
 
   uint64_t GetLoadIdentifier() const { return mLoadIdentifier; }
   uint32_t GetLoadType() const { return mLoadStateLoadType; }
@@ -320,9 +322,14 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
                                    bool aSupportsRedirectToRealChannel);
 
   friend class ParentProcessDocumentOpenInfo;
+
   // Will reject the promise to notify the DLL consumer that we are done.
+  //
+  // If `aContinueNavigating` is true, the navigation in the content process
+  // will not be aborted, as navigation is logically continuing in the existing
+  // browsing session (e.g. due to a process switch or entering the bfcache).
   void DisconnectListeners(nsresult aStatus, nsresult aLoadGroupStatus,
-                           bool aSwitchedProcess = false);
+                           bool aContinueNavigating = false);
 
   // Called when we were created without a document channel, and creation has
   // failed, and won't ever be attached.
@@ -332,7 +339,8 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
   // channel, and ensures that RedirectToRealChannelFinished is called when
   // this is complete.
   void TriggerRedirectToRealChannel(
-      const Maybe<dom::ContentParent*>& aDestinationProcess);
+      const Maybe<dom::ContentParent*>& aDestinationProcess,
+      nsTArray<StreamFilterRequest> aStreamFilterRequests);
 
   // Called once the content-process side on setting up a replacement
   // channel is complete. May wait for the new parent channel to
@@ -351,8 +359,20 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
   // aWillSwitchToRemote is set to true if we initiate a process switch,
   // and that the new remote type will be something other than NOT_REMOTE
   bool MaybeTriggerProcessSwitch(bool* aWillSwitchToRemote);
+
+  // Called when the process switch is going to happen, potentially
+  // asynchronously, from `MaybeTriggerProcessSwitch`.
+  //
+  // aContext should be the target context for the navigation. This will either
+  // be the loading BrowsingContext, the newly created BrowsingContext for an
+  // object or embed element load, or a newly created tab for new tab load.
+  //
+  // If `aIsNewTab` is specified, the navigation in the original process will be
+  // aborted immediately, rather than waiting for a process switch to happen and
+  // the previous page to be unloaded or hidden.
   void TriggerProcessSwitch(dom::CanonicalBrowsingContext* aContext,
-                            const dom::NavigationIsolationOptions& aOptions);
+                            const dom::NavigationIsolationOptions& aOptions,
+                            bool aIsNewTab = false);
 
   // A helper for TriggerRedirectToRealChannel that abstracts over
   // the same-process and cross-process switch cases and returns
@@ -387,7 +407,7 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
   bool HasCrossOriginOpenerPolicyMismatch() const;
   void ApplyPendingFunctions(nsIParentChannel* aChannel) const;
 
-  void Disconnect();
+  void Disconnect(bool aContinueNavigating);
 
   void MaybeReportBlockedByURLClassifier(nsresult aStatus);
 
@@ -408,7 +428,6 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
   // This defines a variant that describes all the attribute setters (and their
   // parameters) from nsIParentChannel
   //
-  // NotifyFlashPluginStateChanged(nsIHttpChannel::FlashPluginState aState) = 0;
   // SetClassifierMatchedInfo(const nsACString& aList, const nsACString&
   // aProvider, const nsACString& aFullHash) = 0;
   // SetClassifierMatchedTrackingInfo(const nsACString& aLists, const
@@ -430,9 +449,10 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
     bool mIsThirdParty;
   };
 
-  using IParentChannelFunction = mozilla::Variant<
-      nsIHttpChannel::FlashPluginState, ClassifierMatchedInfoParams,
-      ClassifierMatchedTrackingInfoParams, ClassificationFlagsParams>;
+  using IParentChannelFunction =
+      mozilla::Variant<ClassifierMatchedInfoParams,
+                       ClassifierMatchedTrackingInfoParams,
+                       ClassificationFlagsParams>;
 
   // Store a list of all the attribute setters that have been called on this
   // channel, so that we can repeat them on the real channel that we redirect
@@ -465,25 +485,6 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
                        LogMimeTypeMismatchParams>;
   nsTArray<SecurityWarningFunction> mSecurityWarningFunctions;
 
-  struct OnStartRequestParams {
-    nsCOMPtr<nsIRequest> request;
-  };
-  struct OnDataAvailableParams {
-    nsCOMPtr<nsIRequest> request;
-    nsCString data;
-    uint64_t offset;
-    uint32_t count;
-  };
-  struct OnStopRequestParams {
-    nsCOMPtr<nsIRequest> request;
-    nsresult status;
-  };
-  struct OnAfterLastPartParams {
-    nsresult status;
-  };
-  using StreamListenerFunction =
-      mozilla::Variant<OnStartRequestParams, OnDataAvailableParams,
-                       OnStopRequestParams, OnAfterLastPartParams>;
   // TODO Backtrack this.
   // The set of nsIStreamListener functions that got called on this
   // listener, so that we can replay them onto the replacement channel's
@@ -513,6 +514,8 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
   // switch occurs.
   RefPtr<nsDOMNavigationTiming> mTiming;
 
+  net::EarlyHintsService mEarlyHintsService;
+
   // An optional ObjectUpgradeHandler which can be used to upgrade an <object>
   // or <embed> element to contain a nsFrameLoader, allowing us to switch them
   // into a different process.
@@ -524,6 +527,9 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
   // True when we have seen at least one non-interal redirect.
   bool mHaveVisibleRedirect = false;
 
+  // Pending stream filter requests which should be attached when redirecting to
+  // the real channel. Moved into `TriggerRedirectToRealChannel` when the
+  // connection is ready.
   nsTArray<StreamFilterRequest> mStreamFilterRequests;
 
   nsString mSrcdocData;
@@ -554,9 +560,6 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
   // via a process switch or a same-process redirect, and Suspend the
   // underlying channel.
   bool mInitiatedRedirectToRealChannel = false;
-  // Set to true if we're currently in the middle of replacing this with
-  // a new channel connected a different process.
-  bool mDoingProcessSwitch = false;
   // The value of GetApplyConversion on mChannel when OnStartRequest
   // was called. We override it to false to prevent a conversion
   // helper from being installed, but we need to restore the value
@@ -586,13 +589,13 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
   RefPtr<dom::ContentParent> mContentParent;
 
   void RejectOpenPromise(nsresult aStatus, nsresult aLoadGroupStatus,
-                         bool aSwitchedProcess, const char* aLocation) {
+                         bool aContinueNavigating, const char* aLocation) {
     // It is possible for mOpenPromise to not be set if AsyncOpen failed and
     // the DocumentChannel got canceled.
     if (!mOpenPromiseResolved && mOpenPromise) {
-      mOpenPromise->Reject(
-          OpenPromiseFailedType({aStatus, aLoadGroupStatus, aSwitchedProcess}),
-          aLocation);
+      mOpenPromise->Reject(OpenPromiseFailedType({aStatus, aLoadGroupStatus,
+                                                  aContinueNavigating}),
+                           aLocation);
       mOpenPromiseResolved = true;
     }
   }
@@ -600,8 +603,6 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
   bool mOpenPromiseResolved = false;
 
   const bool mIsDocumentLoad;
-
-  EarlyHintsService mEarlyHintsService;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(DocumentLoadListener, DOCUMENT_LOAD_LISTENER_IID)

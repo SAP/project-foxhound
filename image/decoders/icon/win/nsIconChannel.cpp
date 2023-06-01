@@ -22,7 +22,6 @@
 #include "nsString.h"
 #include "nsReadableUtils.h"
 #include "nsMimeTypes.h"
-#include "nsMemory.h"
 #include "nsIURL.h"
 #include "nsIPipe.h"
 #include "nsNetCID.h"
@@ -258,8 +257,9 @@ static nsresult GetIconHandleFromPathInfo(const IconPathInfo& aPathInfo,
 }
 
 // Match stock icons with names
-static SHSTOCKICONID GetStockIconIDForName(const nsACString& aStockName) {
-  return aStockName.EqualsLiteral("uac-shield") ? SIID_SHIELD : SIID_INVALID;
+static mozilla::Maybe<SHSTOCKICONID> GetStockIconIDForName(
+    const nsACString& aStockName) {
+  return aStockName.EqualsLiteral("uac-shield") ? Some(SIID_SHIELD) : Nothing();
 }
 
 // Specific to Vista and above
@@ -269,8 +269,8 @@ static nsresult GetStockHIcon(nsIMozIconURI* aIconURI, HICON* aIcon) {
   nsAutoCString stockIcon;
   aIconURI->GetStockIcon(stockIcon);
 
-  SHSTOCKICONID stockIconID = GetStockIconIDForName(stockIcon);
-  if (stockIconID == SIID_INVALID) {
+  Maybe<SHSTOCKICONID> stockIconID = GetStockIconIDForName(stockIcon);
+  if (stockIconID.isNothing()) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
@@ -279,7 +279,7 @@ static nsresult GetStockHIcon(nsIMozIconURI* aIconURI, HICON* aIcon) {
 
   SHSTOCKICONINFO sii = {0};
   sii.cbSize = sizeof(sii);
-  HRESULT hr = SHGetStockIconInfo(stockIconID, infoFlags, &sii);
+  HRESULT hr = SHGetStockIconInfo(*stockIconID, infoFlags, &sii);
   if (FAILED(hr)) {
     return NS_ERROR_FAILURE;
   }
@@ -560,6 +560,9 @@ NS_IMPL_ISUPPORTS(nsIconChannel, nsIChannel, nsIRequest, nsIRequestObserver,
 nsIconChannel::nsIconChannel() {}
 
 nsIconChannel::~nsIconChannel() {
+  if (mLoadInfo) {
+    NS_ReleaseOnMainThread("nsIconChannel::mLoadInfo", mLoadInfo.forget());
+  }
   if (mLoadGroup) {
     NS_ReleaseOnMainThread("nsIconChannel::mLoadGroup", mLoadGroup.forget());
   }
@@ -585,6 +588,19 @@ nsIconChannel::IsPending(bool* result) { return mPump->IsPending(result); }
 
 NS_IMETHODIMP
 nsIconChannel::GetStatus(nsresult* status) { return mPump->GetStatus(status); }
+
+NS_IMETHODIMP nsIconChannel::SetCanceledReason(const nsACString& aReason) {
+  return SetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP nsIconChannel::GetCanceledReason(nsACString& aReason) {
+  return GetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP nsIconChannel::CancelWithReason(nsresult aStatus,
+                                              const nsACString& aReason) {
+  return CancelWithReasonImpl(aStatus, aReason);
+}
 
 NS_IMETHODIMP
 nsIconChannel::Cancel(nsresult status) {
@@ -719,10 +735,9 @@ nsIconChannel::Open(nsIInputStream** aStream) {
   // Create the asynchronous pipe with a blocking read end
   nsCOMPtr<nsIAsyncInputStream> inputStream;
   nsCOMPtr<nsIAsyncOutputStream> outputStream;
-  rv = NS_NewPipe2(getter_AddRefs(inputStream), getter_AddRefs(outputStream),
-                   false /*nonBlockingInput*/, false /*nonBlockingOutput*/,
-                   iconBuffer.mLen /*segmentSize*/, 1 /*segmentCount*/);
-  NS_ENSURE_SUCCESS(rv, rv);
+  NS_NewPipe2(getter_AddRefs(inputStream), getter_AddRefs(outputStream),
+              false /*nonBlockingInput*/, false /*nonBlockingOutput*/,
+              iconBuffer.mLen /*segmentSize*/, 1 /*segmentCount*/);
 
   rv = WriteByteBufToOutputStream(iconBuffer, outputStream);
 
@@ -778,10 +793,9 @@ nsresult nsIconChannel::StartAsyncOpen() {
   // Create the asynchronous pipe with a non-blocking read end
   nsCOMPtr<nsIAsyncInputStream> inputStream;
   nsCOMPtr<nsIAsyncOutputStream> outputStream;
-  rv = NS_NewPipe2(getter_AddRefs(inputStream), getter_AddRefs(outputStream),
-                   true /*nonBlockingInput*/, false /*nonBlockingOutput*/,
-                   0 /*segmentSize*/, UINT32_MAX /*segmentCount*/);
-  NS_ENSURE_SUCCESS(rv, rv);
+  NS_NewPipe2(getter_AddRefs(inputStream), getter_AddRefs(outputStream),
+              true /*nonBlockingInput*/, false /*nonBlockingOutput*/,
+              0 /*segmentSize*/, UINT32_MAX /*segmentCount*/);
 
   // If we are in content, we asynchronously request the ICO buffer from
   // the parent process because the APIs to load icons don't work with
@@ -951,7 +965,7 @@ nsIconChannel::SetNotificationCallbacks(
 }
 
 NS_IMETHODIMP
-nsIconChannel::GetSecurityInfo(nsISupports** aSecurityInfo) {
+nsIconChannel::GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo) {
   *aSecurityInfo = nullptr;
   return NS_OK;
 }

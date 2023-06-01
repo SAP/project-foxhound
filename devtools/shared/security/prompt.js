@@ -4,16 +4,15 @@
 
 "use strict";
 
-var Services = require("Services");
-var DevToolsUtils = require("devtools/shared/DevToolsUtils");
+var DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 loader.lazyRequireGetter(
   this,
   "AuthenticationResult",
-  "devtools/shared/security/auth",
+  "resource://devtools/shared/security/auth.js",
   true
 );
 
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const L10N = new LocalizationHelper(
   "devtools/shared/locales/debugger.properties"
 );
@@ -34,8 +33,6 @@ var Server = (exports.Server = {});
  *        The host name or IP address of the devtools server.
  * @param port number
  *        The port number of the devtools server.
- * @param cert object (optional)
- *        The server's cert details.
  * @param authResult AuthenticationResult
  *        Authentication result sent from the server.
  * @param oob object (optional)

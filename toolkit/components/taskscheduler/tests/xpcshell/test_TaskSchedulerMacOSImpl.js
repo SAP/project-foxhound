@@ -5,23 +5,19 @@
 
 // Unit tests for macOS scheduled task generation.
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
-const { updateAppInfo } = ChromeUtils.import(
-  "resource://testing-common/AppInfo.jsm"
+const { updateAppInfo } = ChromeUtils.importESModule(
+  "resource://testing-common/AppInfo.sys.mjs"
 );
 updateAppInfo();
 
 const { TaskScheduler } = ChromeUtils.import(
   "resource://gre/modules/TaskScheduler.jsm"
 );
-const { _TaskSchedulerMacOSImpl: MacOSImpl } = ChromeUtils.import(
+const { MacOSImpl } = ChromeUtils.import(
   "resource://gre/modules/TaskSchedulerMacOSImpl.jsm"
 );
 

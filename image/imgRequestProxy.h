@@ -111,6 +111,10 @@ class imgRequestProxy : public mozilla::PreloaderBase,
   void MarkValidating();
   void ClearValidating();
 
+  // Flags this image load as not cancelable temporarily. This is needed so that
+  // stylesheets can be shared across documents properly, see bug 1800979.
+  void SetCancelable(bool);
+
   already_AddRefed<nsIEventTarget> GetEventTarget() const override;
 
   // Removes all animation consumers that were created with
@@ -215,6 +219,7 @@ class imgRequestProxy : public mozilla::PreloaderBase,
   nsLoadFlags mLoadFlags;
   uint32_t mLockCount;
   uint32_t mAnimationConsumers;
+  bool mCancelable : 1;
   bool mCanceled : 1;
   bool mIsInLoadGroup : 1;
   bool mForceDispatchLoadGroup : 1;
@@ -235,10 +240,12 @@ NS_DEFINE_STATIC_IID_ACCESSOR(imgRequestProxy, NS_IMGREQUESTPROXY_CID)
 // certain behaviours must be overridden to compensate.
 class imgRequestProxyStatic : public imgRequestProxy {
  public:
-  imgRequestProxyStatic(Image* aImage, nsIPrincipal* aPrincipal,
+  imgRequestProxyStatic(Image* aImage, nsIPrincipal* aImagePrincipal,
+                        nsIPrincipal* aTriggeringPrincipal,
                         bool hadCrossOriginRedirects);
 
   NS_IMETHOD GetImagePrincipal(nsIPrincipal** aPrincipal) override;
+  NS_IMETHOD GetTriggeringPrincipal(nsIPrincipal** aPrincipal) override;
 
   NS_IMETHOD GetHadCrossOriginRedirects(
       bool* aHadCrossOriginRedirects) override;
@@ -248,7 +255,8 @@ class imgRequestProxyStatic : public imgRequestProxy {
 
   // Our principal. We have to cache it, rather than accessing the underlying
   // request on-demand, because static proxies don't have an underlying request.
-  nsCOMPtr<nsIPrincipal> mPrincipal;
+  const nsCOMPtr<nsIPrincipal> mImagePrincipal;
+  const nsCOMPtr<nsIPrincipal> mTriggeringPrincipal;
   const bool mHadCrossOriginRedirects;
 };
 

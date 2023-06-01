@@ -12,13 +12,13 @@
  Exposed=(Window,Worker),
  Pref="dom.storageManager.enabled"]
 interface StorageManager {
-  [Throws]
+  [NewObject]
   Promise<boolean> persisted();
 
-  [Exposed=Window, Throws]
+  [Exposed=Window, NewObject]
   Promise<boolean> persist();
 
-  [Throws]
+  [NewObject]
   Promise<StorageEstimate> estimate();
 };
 
@@ -29,6 +29,17 @@ dictionary StorageEstimate {
 
 [SecureContext]
 partial interface StorageManager {
-  [Pref="dom.fs.enabled"]
+  [Pref="dom.fs.enabled", NewObject]
   Promise<FileSystemDirectoryHandle> getDirectory();
+};
+
+/**
+ * Testing methods that exist only for the benefit of automated glass-box
+ * testing.  Will never be exposed to content at large and unlikely to be useful
+ * in a WebDriver context.
+ */
+[SecureContext]
+partial interface StorageManager {
+  [ChromeOnly]
+  undefined shutdown();
 };

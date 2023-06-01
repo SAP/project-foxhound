@@ -4,9 +4,7 @@
 
 "use strict";
 
-const Services = require("Services");
-
-const FluentReact = require("devtools/client/shared/vendor/fluent-react");
+const FluentReact = require("resource://devtools/client/shared/vendor/fluent-react.js");
 
 /**
  * Wrapper over FluentReact. It encapsulates instantiation of the localization

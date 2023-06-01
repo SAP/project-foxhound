@@ -9,16 +9,10 @@ DIRS += [
 ]
 
 DevToolsModules(
-    "AbstractTreeItem.jsm",
     "Chart.js",
     "CubicBezierPresets.js",
     "CubicBezierWidget.js",
     "FilterWidget.js",
-    "FlameGraph.js",
-    "Graphs.js",
-    "GraphsWorker.js",
-    "LineGraphWidget.js",
-    "MountainGraphWidget.js",
     "ShapesInContextEditor.js",
     "Spectrum.js",
     "TableWidget.js",

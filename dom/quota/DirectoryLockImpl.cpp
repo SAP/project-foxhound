@@ -116,13 +116,29 @@ void DirectoryLockImpl::NotifyOpenListener() {
   AssertIsOnOwningThread();
 
   if (mInvalidated) {
-    (*mOpenListener)->DirectoryLockFailed();
+    if (mOpenListener) {
+      (*mOpenListener)->DirectoryLockFailed();
+    } else {
+      mAcquirePromiseHolder.Reject(NS_ERROR_FAILURE, __func__);
+    }
   } else {
-    (*mOpenListener)
-        ->DirectoryLockAcquired(static_cast<UniversalDirectoryLock*>(this));
+#ifdef DEBUG
+    mAcquired.Flip();
+#endif
+
+    if (mOpenListener) {
+      (*mOpenListener)
+          ->DirectoryLockAcquired(static_cast<UniversalDirectoryLock*>(this));
+    } else {
+      mAcquirePromiseHolder.Resolve(true, __func__);
+    }
   }
 
-  mOpenListener.destroy();
+  if (mOpenListener) {
+    mOpenListener.destroy();
+  } else {
+    MOZ_ASSERT(mAcquirePromiseHolder.IsEmpty());
+  }
 
   mQuotaManager->RemovePendingDirectoryLock(*this);
 
@@ -134,6 +150,22 @@ void DirectoryLockImpl::Acquire(RefPtr<OpenDirectoryListener> aOpenListener) {
   MOZ_ASSERT(aOpenListener);
 
   mOpenListener.init(WrapNotNullUnchecked(std::move(aOpenListener)));
+
+  AcquireInternal();
+}
+
+RefPtr<BoolPromise> DirectoryLockImpl::Acquire() {
+  AssertIsOnOwningThread();
+
+  RefPtr<BoolPromise> result = mAcquirePromiseHolder.Ensure(__func__);
+
+  AcquireInternal();
+
+  return result;
+}
+
+void DirectoryLockImpl::AcquireInternal() {
+  AssertIsOnOwningThread();
 
   mQuotaManager->AddPendingDirectoryLock(*this);
 
@@ -201,6 +233,32 @@ void DirectoryLockImpl::AcquireImmediately() {
   mQuotaManager->RegisterDirectoryLock(*this);
 }
 
+#ifdef DEBUG
+void DirectoryLockImpl::AssertIsAcquiredExclusively() {
+  AssertIsOnOwningThread();
+  MOZ_ASSERT(mBlockedOn.IsEmpty());
+  MOZ_ASSERT(mExclusive);
+  MOZ_ASSERT(mInternal);
+  MOZ_ASSERT(mRegistered);
+  MOZ_ASSERT(!mInvalidated);
+  MOZ_ASSERT(mAcquired);
+
+  bool found = false;
+
+  for (const DirectoryLockImpl* const existingLock :
+       mQuotaManager->mDirectoryLocks) {
+    if (existingLock == this) {
+      MOZ_ASSERT(!found);
+      found = true;
+    } else if (existingLock->mAcquired) {
+      MOZ_ASSERT(false);
+    }
+  }
+
+  MOZ_ASSERT(found);
+}
+#endif
+
 RefPtr<ClientDirectoryLock> DirectoryLockImpl::SpecializeForClient(
     PersistenceType aPersistenceType,
     const quota::OriginMetadata& aOriginMetadata,
@@ -211,6 +269,7 @@ RefPtr<ClientDirectoryLock> DirectoryLockImpl::SpecializeForClient(
   MOZ_ASSERT(!aOriginMetadata.mOrigin.IsEmpty());
   MOZ_ASSERT(aClientType < Client::TypeMax());
   MOZ_ASSERT(!mOpenListener);
+  MOZ_ASSERT(mAcquirePromiseHolder.IsEmpty());
   MOZ_ASSERT(mBlockedOn.IsEmpty());
 
   if (NS_WARN_IF(mExclusive)) {

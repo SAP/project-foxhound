@@ -16,7 +16,8 @@ var certdialogs = Cc["@mozilla.org/nsCertificateDialogs;1"].getService(
 
 /**
  * List of certs currently selected in the active tab.
- * @type nsIX509Cert[]
+ *
+ * @type {nsIX509Cert[]}
  */
 var selected_certs = [];
 var selected_tree_items = [];
@@ -25,12 +26,14 @@ var certdb;
 
 /**
  * Cert tree for the "Authorities" tab.
- * @type nsICertTree
+ *
+ * @type {nsICertTree}
  */
 var caTreeView;
 /**
  * Cert tree for the "Servers" tab.
- * @type nsICertTree
+ *
+ * @type {nsICertTree}
  */
 var serverTreeView;
 
@@ -43,7 +46,7 @@ function createRichlistItem(item) {
 
   let row = document.createXULElement("label");
   row.setAttribute("flex", "1");
-  row.setAttribute("crop", "right");
+  row.setAttribute("crop", "end");
   row.setAttribute("style", "margin-inline-start: 15px;");
   if ("raw" in item) {
     row.setAttribute("value", item.raw);
@@ -223,12 +226,14 @@ var serverRichList = {
 };
 /**
  * Cert tree for the "People" tab.
- * @type nsICertTree
+ *
+ * @type {nsICertTree}
  */
 var emailTreeView;
 /**
  * Cert tree for the "Your Certificates" tab.
- * @type nsICertTree
+ *
+ * @type {nsICertTree}
  */
 var userTreeView;
 
@@ -480,7 +485,7 @@ function getSelectedTreeItems() {
  * selection includes a container. Returns false otherwise.
  *
  * @param {nsICertTree} certTree
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function nothingOrContainerSelected(certTree) {
   var certTreeSelection = certTree.selection;
@@ -694,7 +699,7 @@ async function restoreCerts() {
         errorCode = certdb.importPKCS12File(fp.file, password.value);
         if (
           errorCode == Ci.nsIX509CertDB.ERROR_BAD_PASSWORD &&
-          password.value.length == 0
+          !password.value.length
         ) {
           // It didn't like empty string password, try no password.
           errorCode = certdb.importPKCS12File(fp.file, null);
@@ -790,7 +795,8 @@ async function addCACerts() {
   fp.open(rv => {
     if (rv == Ci.nsIFilePicker.returnOK) {
       certdb.importCertsFromFile(fp.file, Ci.nsIX509Cert.CA_CERT);
-      caTreeView.loadCerts(Ci.nsIX509Cert.CA_CERT);
+      let certcache = certdb.getCerts();
+      caTreeView.loadCertsFromCache(certcache, Ci.nsIX509Cert.CA_CERT);
       caTreeView.selection.clearSelection();
     }
   });

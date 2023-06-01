@@ -13,6 +13,7 @@
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/WindowsVersion.h"
 #include "nsTArray.h"
 
 #define LOG(...) MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
@@ -20,9 +21,9 @@
 namespace mozilla {
 
 WMFMediaDataDecoder::WMFMediaDataDecoder(MFTManager* aMFTManager)
-    : mTaskQueue(
-          new TaskQueue(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
-                        "WMFMediaDataDecoder")),
+    : mTaskQueue(TaskQueue::Create(
+          GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
+          "WMFMediaDataDecoder")),
       mMFTManager(aMFTManager) {}
 
 WMFMediaDataDecoder::~WMFMediaDataDecoder() {}
@@ -62,7 +63,7 @@ RefPtr<MediaDataDecoder::DecodePromise> WMFMediaDataDecoder::ProcessError(
       "WMFMediaDataDecoder::ProcessError for decoder with description %s with "
       "reason: %s",
       GetDescriptionName().get(), aReason);
-  LOG(markerString.get());
+  LOG("%s", markerString.get());
   PROFILER_MARKER_TEXT("WMFDecoder Error", MEDIA_PLAYBACK, {}, markerString);
 
   // TODO: For the error DXGI_ERROR_DEVICE_RESET, we could return
@@ -70,7 +71,7 @@ RefPtr<MediaDataDecoder::DecodePromise> WMFMediaDataDecoder::ProcessError(
   // up to 3 times.
   return DecodePromise::CreateAndReject(
       MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
-                  RESULT_DETAIL("%s:%x", aReason, aError)),
+                  RESULT_DETAIL("%s:%lx", aReason, aError)),
       __func__);
 }
 

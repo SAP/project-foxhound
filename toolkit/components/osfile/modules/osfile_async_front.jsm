@@ -22,13 +22,11 @@
 // Scheduler is exported for test-only usage.
 var EXPORTED_SYMBOLS = ["OS", "Scheduler"];
 
-var SharedAll = {};
-ChromeUtils.import(
-  "resource://gre/modules/osfile/osfile_shared_allthreads.jsm",
-  SharedAll
+var SharedAll = ChromeUtils.import(
+  "resource://gre/modules/osfile/osfile_shared_allthreads.jsm"
 );
-const { clearInterval, setInterval } = ChromeUtils.import(
-  "resource://gre/modules/Timer.jsm"
+const { clearInterval, setInterval } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
 );
 
 // Boilerplate, to simplify the transition to require()
@@ -36,16 +34,14 @@ var LOG = SharedAll.LOG.bind(SharedAll, "Controller");
 var isTypedArray = SharedAll.isTypedArray;
 
 // The constructor for file errors.
-var SysAll = {};
+var SysAll;
 if (SharedAll.Constants.Win) {
-  ChromeUtils.import(
-    "resource://gre/modules/osfile/osfile_win_allthreads.jsm",
-    SysAll
+  SysAll = ChromeUtils.import(
+    "resource://gre/modules/osfile/osfile_win_allthreads.jsm"
   );
 } else if (SharedAll.Constants.libc) {
-  ChromeUtils.import(
-    "resource://gre/modules/osfile/osfile_unix_allthreads.jsm",
-    SysAll
+  SysAll = ChromeUtils.import(
+    "resource://gre/modules/osfile/osfile_unix_allthreads.jsm"
   );
 } else {
   throw new Error("I am neither under Windows nor under a Posix system");
@@ -53,23 +49,21 @@ if (SharedAll.Constants.Win) {
 var OSError = SysAll.Error;
 var Type = SysAll.Type;
 
-var Path = {};
-ChromeUtils.import("resource://gre/modules/osfile/ospath.jsm", Path);
+var Path = ChromeUtils.import("resource://gre/modules/osfile/ospath.jsm");
+
+const lazy = {};
 
 // The library of promises.
-ChromeUtils.defineModuleGetter(
-  this,
-  "PromiseUtils",
-  "resource://gre/modules/PromiseUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
+});
 
 // The implementation of communications
 const { BasePromiseWorker } = ChromeUtils.import(
   "resource://gre/modules/PromiseWorker.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { AsyncShutdown } = ChromeUtils.import(
-  "resource://gre/modules/AsyncShutdown.jsm"
+const { AsyncShutdown } = ChromeUtils.importESModule(
+  "resource://gre/modules/AsyncShutdown.sys.mjs"
 );
 var Native = ChromeUtils.import(
   "resource://gre/modules/osfile/osfile_native.jsm"
@@ -298,7 +292,7 @@ var Scheduler = {
     // to an obsolete worker (we reactivate it in the `finally`).
     // This needs to be done right now so that we maintain relative
     // ordering with calls to post(), etc.
-    let deferred = PromiseUtils.defer();
+    let deferred = lazy.PromiseUtils.defer();
     let savedQueue = this.queue;
     this.queue = deferred.promise;
 
@@ -986,21 +980,6 @@ File.setPermissions = function setPermissions(path, options = {}) {
  */
 File.getCurrentDirectory = function getCurrentDirectory() {
   return Scheduler.post("getCurrentDirectory").then(Type.path.fromMsg);
-};
-
-/**
- * Change the current directory
- *
- * @param {string} path The OS-specific path to the current directory.
- * You should use the methods of OS.Path and the constants of OS.Constants.Path
- * to build OS-specific paths in a portable manner.
- *
- * @return {promise}
- * @resolves {null}
- * @rejects {OS.Error}
- */
-File.setCurrentDirectory = function setCurrentDirectory(path) {
-  return Scheduler.post("setCurrentDirectory", [Type.path.toMsg(path)], path);
 };
 
 /**

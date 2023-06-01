@@ -25,13 +25,35 @@ with Files("reftests/*fallback*"):
 with Files("*CompositorWidget*"):
     BUG_COMPONENT = ("Core", "Graphics")
 
-with Files("*Gfx*"):
-    BUG_COMPONENT = ("Core", "Graphics")
+with Files("*ContentCache*"):
+    BUG_COMPONENT = ("Core", "DOM: UI Events & Focus Handling")
+
+with Files("*ContentData*"):
+    BUG_COMPONENT = ("Core", "DOM: UI Events & Focus Handling")
+
+with Files("*Events.h"):
+    BUG_COMPONENT = ("Core", "DOM: UI Events & Focus Handling")
 
 with Files("*FontRange*"):
     BUG_COMPONENT = ("Core", "Widget: Cocoa")
 
+with Files("*Gfx*"):
+    BUG_COMPONENT = ("Core", "Graphics")
+
+with Files("*IMEData*"):
+    BUG_COMPONENT = ("Core", "DOM: UI Events & Focus Handling")
+
+with Files("*TextEventDispatcher*"):
+    BUG_COMPONENT = ("Core", "DOM: UI Events & Focus Handling")
+
+with Files("*NativeKeyBindings*"):
+    BUG_COMPONENT = ("Core", "DOM: UI Events & Focus Handling")
+
 toolkit = CONFIG["MOZ_WIDGET_TOOLKIT"]
+
+XPCOM_MANIFESTS += [
+    "components.conf",
+]
 
 if toolkit in ("android", "cocoa", "gtk", "uikit", "windows"):
     DIRS += [toolkit]
@@ -71,6 +93,12 @@ elif toolkit == "windows":
         "nsIWinTaskbar.idl",
     ]
 
+if CONFIG["NS_PRINTING"]:
+    # Needs to go before the XPIDL_MODULE line.
+    XPIDL_SOURCES += [
+        "nsIPrintDialogService.idl",
+    ]
+
 TEST_DIRS += ["tests", "tests/gtest"]
 
 DIRS += ["headless"]
@@ -101,7 +129,6 @@ XPIDL_SOURCES += [
     "nsIPaperMargin.idl",
     "nsIPrinter.idl",
     "nsIPrinterList.idl",
-    "nsIPrintSession.idl",
     "nsIPrintSettings.idl",
     "nsIPrintSettingsService.idl",
     "nsIScreen.idl",
@@ -124,17 +151,14 @@ EXPORTS += [
     "nsBaseAppShell.h",
     "nsBaseDragService.h",
     "nsBaseFilePicker.h",
-    "nsBaseScreen.h",
     "nsBaseWidget.h",
     "nsIDeviceContextSpec.h",
-    "nsIPrintDialogService.h",
     "nsIRollupListener.h",
     "nsIWidget.h",
     "nsIWidgetListener.h",
     "nsPaper.h",
     "nsPrinterListBase.h",
     "nsUserIdleService.h",
-    "nsWidgetInitData.h",
     "nsWidgetsCID.h",
     "PuppetWidget.h",
 ]
@@ -144,7 +168,9 @@ EXPORTS.mozilla += [
     "ColorScheme.h",
     "CommandList.h",
     "ContentCache.h",
+    "ContentData.h",
     "ContentEvents.h",
+    "DimensionRequest.h",
     "EventClassList.h",
     "EventForwards.h",
     "EventMessageList.h",
@@ -152,6 +178,7 @@ EXPORTS.mozilla += [
     "LookAndFeel.h",
     "MiscEvents.h",
     "MouseEvents.h",
+    "NativeKeyBindingsType.h",
     "SwipeTracker.h",
     "TextEventDispatcher.h",
     "TextEventDispatcherListener.h",
@@ -160,21 +187,25 @@ EXPORTS.mozilla += [
     "TouchEvents.h",
     "VsyncDispatcher.h",
     "WidgetUtils.h",
+    "WindowButtonType.h",
 ]
 
 EXPORTS.mozilla.widget += [
     "CompositorWidget.h",
     "IconLoader.h",
     "IMEData.h",
+    "InitData.h",
     "InProcessCompositorWidget.h",
     "MediaKeysEventSourceFactory.h",
     "NativeMenu.h",
+    "NativeMenuSupport.h",
     "nsAutoRollup.h",
     "nsXPLookAndFeel.h",
     "PuppetBidiKeyboard.h",
     "RemoteLookAndFeel.h",
     "Screen.h",
     "ScreenManager.h",
+    "TextRecognition.h",
     "ThemeChangeKind.h",
     "WidgetMessageUtils.h",
     "WindowOcclusionState.h",
@@ -183,6 +214,8 @@ EXPORTS.mozilla.widget += [
 UNIFIED_SOURCES += [
     "CompositorWidget.cpp",
     "ContentCache.cpp",
+    "ContentData.cpp",
+    "DimensionRequest.cpp",
     "GfxDriverInfo.cpp",
     "GfxInfoBase.cpp",
     "GfxInfoCollector.cpp",
@@ -192,14 +225,14 @@ UNIFIED_SOURCES += [
     "InputData.cpp",
     "nsAutoRollup.cpp",
     "nsBaseAppShell.cpp",
-    "nsBaseScreen.cpp",
     "nsClipboardHelper.cpp",
     "nsClipboardProxy.cpp",
     "nsColorPickerProxy.cpp",
-    "nsContentProcessWidgetFactory.cpp",
     "nsDragServiceProxy.cpp",
     "nsFilePickerProxy.cpp",
     "nsHTMLFormatConverter.cpp",
+    "nsIBaseWindow.cpp",
+    "nsIDeviceContextSpec.cpp",
     "nsIWidgetListener.cpp",
     "nsPrimitiveHelpers.cpp",
     "nsPrintSettingsImpl.cpp",
@@ -220,6 +253,7 @@ UNIFIED_SOURCES += [
     "SharedWidgetUtils.cpp",
     "SwipeTracker.cpp",
     "TextEventDispatcher.cpp",
+    "TextRecognition.cpp",
     "Theme.cpp",
     "ThemeCocoa.cpp",
     "ThemeColors.cpp",
@@ -245,7 +279,6 @@ if CONFIG["NS_PRINTING"]:
         "nsPaperMargin.cpp",
         "nsPrinterBase.cpp",
         "nsPrinterListBase.cpp",
-        "nsPrintSession.cpp",
         "nsPrintSettingsService.cpp",
     ]
 
@@ -269,9 +302,11 @@ if CONFIG["MOZ_INSTRUMENT_EVENT_LOOP"]:
         "WidgetTraceEvent.h",
     ]
 
-EXPORTS.ipc = ["nsGUIEventIPC.h"]
+EXPORTS.ipc = [
+    "nsGUIEventIPC.h",
+]
 
-if CONFIG["MOZ_X11"]:
+if CONFIG["MOZ_X11"] or CONFIG["MOZ_WAYLAND"]:
     DIRS += ["x11"]
 
 if toolkit in ("cocoa", "windows"):
@@ -318,7 +353,7 @@ if toolkit == "windows":
         "windows/PCompositorWidget.ipdl",
         "windows/PlatformWidgetTypes.ipdlh",
     ]
-elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk" and CONFIG["MOZ_X11"]:
+elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
     IPDL_SOURCES = [
         "gtk/PCompositorWidget.ipdl",
         "gtk/PlatformWidgetTypes.ipdlh",

@@ -11,12 +11,16 @@ include NeckoChannelParams;
 include IPCStream;
 
 include "mozilla/dom/ReferrerInfoUtils.h";
+include "mozilla/ipc/TransportSecurityInfoUtils.h";
 include "mozilla/net/NeckoMessageUtils.h";
 
 using class mozilla::net::nsHttpHeaderArray from "nsHttpHeaderArray.h";
 using mozilla::net::NetAddr from "mozilla/net/DNS.h";
 using nsILoadInfo::CrossOriginOpenerPolicy from "nsILoadInfo.h";
 [RefCounted] using class nsIReferrerInfo from "nsIReferrerInfo.h";
+[RefCounted] using class nsITransportSecurityInfo from "nsITransportSecurityInfo.h";
+using nsIRequest::TRRMode from "nsIRequest.h";
+using mozilla::net::TRRSkippedReason from "nsITRRSkipReason.h";
 
 namespace mozilla {
 namespace net {
@@ -29,9 +33,9 @@ struct HttpChannelOnStartRequestArgs
   bool isRacing;
   bool cacheEntryAvailable;
   uint64_t cacheEntryId;
-  int32_t cacheFetchCount;
+  uint32_t cacheFetchCount;
   uint32_t cacheExpirationTime;
-  nsCString securityInfoSerialization;
+  nsITransportSecurityInfo securityInfo;
   NetAddr selfAddr;
   NetAddr peerAddr;
   uint8_t redirectCount;
@@ -44,6 +48,7 @@ struct HttpChannelOnStartRequestArgs
   ResourceTimingStructArgs timing;
   bool allRedirectsSameOrigin;
   uint32_t? multiPartID;
+  bool isFirstPartOfMultiPart;
   bool isLastPartOfMultiPart;
   CrossOriginOpenerPolicy openerPolicy;
   nsIReferrerInfo overrideReferrerInfo;
@@ -51,6 +56,9 @@ struct HttpChannelOnStartRequestArgs
   nsCString cookie;
   bool dataFromSocketProcess;
   bool hasHTTPSRR;
+  bool isProxyUsed;
+  TRRMode effectiveTRRMode;
+  TRRSkippedReason trrSkipReason;
 };
 
 struct HttpChannelAltDataStream

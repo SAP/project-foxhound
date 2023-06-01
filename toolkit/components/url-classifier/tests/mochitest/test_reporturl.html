@@ -16,7 +16,6 @@
 <pre id="test">
 
 <script class="testbody" type="text/javascript">
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const {BrowserTestUtils} = ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
 ;
 const {TestUtils} = ChromeUtils.import("resource://testing-common/TestUtils.jsm");
@@ -95,7 +94,7 @@ function testOnWindow(aTestData, aCallback, aTestCreater) {
 
 var createBlockedIframe = function(aWindow, aBrowser, aTopUrl, aUrl) {
   (async function() {
-    BrowserTestUtils.loadURI(aBrowser, aTopUrl);
+    BrowserTestUtils.loadURIString(aBrowser, aTopUrl);
     await BrowserTestUtils.browserLoaded(aBrowser);
 
     await SpecialPowers.spawn(aBrowser, [aUrl], async function(url) {
@@ -119,7 +118,7 @@ var createBlockedIframe = function(aWindow, aBrowser, aTopUrl, aUrl) {
 
 var createBlockedPage = function(aWindow, aBrowser, aTopUrl, aUrl) {
   (async function() {
-    BrowserTestUtils.loadURI(aBrowser, aTopUrl);
+    BrowserTestUtils.loadURIString(aBrowser, aTopUrl);
     await BrowserTestUtils.waitForContentEvent(aBrowser, "DOMContentLoaded");
 
     let doc = aWindow.gBrowser.contentDocument;

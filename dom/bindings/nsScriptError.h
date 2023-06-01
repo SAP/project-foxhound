@@ -82,7 +82,7 @@ class nsScriptErrorBase : public nsIScriptError {
   // mOuterWindowID is set on the main thread from InitializeOnMainThread().
   uint64_t mOuterWindowID;
   uint64_t mInnerWindowID;
-  int64_t mTimeStamp;
+  int64_t mMicroSecondTimeStamp;
   // mInitializedOnMainThread, mIsFromPrivateWindow and mIsFromChromeContext are
   // set on the main thread from InitializeOnMainThread().
   mozilla::Atomic<bool> mInitializedOnMainThread;
@@ -104,17 +104,17 @@ class nsScriptError final : public nsScriptErrorBase {
 class nsScriptErrorWithStack : public nsScriptErrorBase {
  public:
   nsScriptErrorWithStack(JS::Handle<mozilla::Maybe<JS::Value>> aException,
-                         JS::HandleObject aStack,
-                         JS::HandleObject aStackGlobal);
+                         JS::Handle<JSObject*> aStack,
+                         JS::Handle<JSObject*> aStackGlobal);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(nsScriptErrorWithStack)
 
   NS_IMETHOD GetHasException(bool*) override;
-  NS_IMETHOD GetException(JS::MutableHandleValue) override;
+  NS_IMETHOD GetException(JS::MutableHandle<JS::Value>) override;
 
-  NS_IMETHOD GetStack(JS::MutableHandleValue) override;
-  NS_IMETHOD GetStackGlobal(JS::MutableHandleValue) override;
+  NS_IMETHOD GetStack(JS::MutableHandle<JS::Value>) override;
+  NS_IMETHOD GetStackGlobal(JS::MutableHandle<JS::Value>) override;
   NS_IMETHOD ToString(nsACString& aResult) override;
 
  private:
@@ -138,6 +138,6 @@ class nsScriptErrorWithStack : public nsScriptErrorBase {
 // isn't already dying to prevent leaks.
 already_AddRefed<nsScriptErrorBase> CreateScriptError(
     nsGlobalWindowInner* win, JS::Handle<mozilla::Maybe<JS::Value>> aException,
-    JS::HandleObject aStack, JS::HandleObject aStackGlobal);
+    JS::Handle<JSObject*> aStack, JS::Handle<JSObject*> aStackGlobal);
 
 #endif /* mozilla_dom_nsScriptError_h */

@@ -63,7 +63,6 @@ EXPORTS += [
     "nsStyleStructList.h",
     "nsStyleTransformMatrix.h",
     "nsStyleUtil.h",
-    "nsTimingFunction.h",
 ]
 
 EXPORTS.mozilla += [
@@ -121,9 +120,11 @@ EXPORTS.mozilla += [
 
 EXPORTS.mozilla.dom += [
     "CSS.h",
+    "CSSContainerRule.h",
     "CSSCounterStyleRule.h",
     "CSSFontFaceRule.h",
     "CSSFontFeatureValuesRule.h",
+    "CSSFontPaletteValuesRule.h",
     "CSSImportRule.h",
     "CSSKeyframeRule.h",
     "CSSKeyframesRule.h",
@@ -134,13 +135,16 @@ EXPORTS.mozilla.dom += [
     "CSSNamespaceRule.h",
     "CSSPageRule.h",
     "CSSRuleList.h",
-    "CSSScrollTimelineRule.h",
     "CSSStyleRule.h",
     "CSSSupportsRule.h",
     "CSSValue.h",
     "FontFace.h",
+    "FontFaceImpl.h",
     "FontFaceSet.h",
+    "FontFaceSetDocumentImpl.h",
+    "FontFaceSetImpl.h",
     "FontFaceSetIterator.h",
+    "FontFaceSetWorkerImpl.h",
     "MediaList.h",
     "MediaQueryList.h",
     "PaintWorkletGlobalScope.h",
@@ -166,9 +170,11 @@ UNIFIED_SOURCES += [
     "ComputedStyle.cpp",
     "CounterStyleManager.cpp",
     "CSS.cpp",
+    "CSSContainerRule.cpp",
     "CSSCounterStyleRule.cpp",
     "CSSFontFaceRule.cpp",
     "CSSFontFeatureValuesRule.cpp",
+    "CSSFontPaletteValuesRule.cpp",
     "CSSImportRule.cpp",
     "CSSKeyframeRule.cpp",
     "CSSKeyframesRule.cpp",
@@ -179,15 +185,18 @@ UNIFIED_SOURCES += [
     "CSSNamespaceRule.cpp",
     "CSSPageRule.cpp",
     "CSSRuleList.cpp",
-    "CSSScrollTimelineRule.cpp",
     "CSSStyleRule.cpp",
     "CSSSupportsRule.cpp",
     "DeclarationBlock.cpp",
     "DocumentStyleRootIterator.cpp",
     "ErrorReporter.cpp",
     "FontFace.cpp",
+    "FontFaceImpl.cpp",
     "FontFaceSet.cpp",
+    "FontFaceSetDocumentImpl.cpp",
+    "FontFaceSetImpl.cpp",
     "FontFaceSetIterator.cpp",
+    "FontFaceSetWorkerImpl.cpp",
     "FontPreloader.cpp",
     "GeckoBindings.cpp",
     "GlobalStyleSheetCache.cpp",
@@ -262,7 +271,9 @@ RESOURCE_FILES += [
 
 CONTENT_ACCESSIBLE_FILES += [
     "ImageDocument.css",
+    "res/details.css",
     "res/plaintext.css",
+    "res/searchfield-cancel.svg",
     "res/viewsource.css",
     "TopLevelImageDocument.css",
     "TopLevelVideoDocument.css",
@@ -329,5 +340,3 @@ if CONFIG["COMPILE_ENVIRONMENT"]:
     CONFIGURE_SUBST_FILES += [
         "extra-bindgen-flags",
     ]
-
-REQUIRES_UNIFIED_BUILD = True

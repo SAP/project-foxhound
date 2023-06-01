@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import PropTypes from "prop-types";
 import React, { Component } from "react";
+import PropTypes from "prop-types";
 
 import { connect } from "../../utils/connect";
 import classnames from "classnames";
@@ -22,13 +22,11 @@ import { debugBtn } from "../shared/Button/CommandBarButton";
 import AccessibleImage from "../shared/AccessibleImage";
 import "./CommandBar.css";
 
-import { appinfo } from "devtools-services";
-
 const MenuButton = require("devtools/client/shared/components/menu/MenuButton");
 const MenuItem = require("devtools/client/shared/components/menu/MenuItem");
 const MenuList = require("devtools/client/shared/components/menu/MenuList");
 
-const isMacOS = appinfo.OS === "Darwin";
+const isMacOS = Services.appinfo.OS === "Darwin";
 
 // NOTE: the "resume" command will call either the resume or breakOnNext action
 // depending on whether or not the debugger is paused or running
@@ -57,7 +55,7 @@ const KEYS = {
 };
 
 function getKey(action) {
-  return getKeyForOS(appinfo.OS, action);
+  return getKeyForOS(Services.appinfo.OS, action);
 }
 
 function getKeyForOS(os, action) {
@@ -77,6 +75,28 @@ function formatKey(action) {
 }
 
 class CommandBar extends Component {
+  static get propTypes() {
+    return {
+      breakOnNext: PropTypes.func.isRequired,
+      cx: PropTypes.object.isRequired,
+      horizontal: PropTypes.bool.isRequired,
+      isPaused: PropTypes.bool.isRequired,
+      isWaitingOnBreak: PropTypes.bool.isRequired,
+      javascriptEnabled: PropTypes.bool.isRequired,
+      resume: PropTypes.func.isRequired,
+      skipPausing: PropTypes.bool.isRequired,
+      stepIn: PropTypes.func.isRequired,
+      stepOut: PropTypes.func.isRequired,
+      stepOver: PropTypes.func.isRequired,
+      toggleEditorWrapping: PropTypes.func.isRequired,
+      toggleInlinePreview: PropTypes.func.isRequired,
+      toggleJavaScriptEnabled: PropTypes.func.isRequired,
+      toggleSkipPausing: PropTypes.any.isRequired,
+      toggleSourceMapsEnabled: PropTypes.func.isRequired,
+      topFrameSelected: PropTypes.bool.isRequired,
+    };
+  }
+
   componentWillUnmount() {
     const { shortcuts } = this.context;
 
@@ -183,10 +203,6 @@ class CommandBar extends Component {
 
   renderSkipPausingButton() {
     const { skipPausing, toggleSkipPausing } = this.props;
-
-    if (!features.skipPausing) {
-      return null;
-    }
 
     return (
       <button

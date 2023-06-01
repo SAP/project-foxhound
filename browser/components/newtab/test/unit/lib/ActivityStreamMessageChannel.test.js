@@ -1,4 +1,7 @@
-import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
+import {
+  actionCreators as ac,
+  actionTypes as at,
+} from "common/Actions.sys.mjs";
 import {
   ActivityStreamMessageChannel,
   DEFAULT_OPTIONS,
@@ -48,7 +51,7 @@ describe("ActivityStreamMessageChannel", () => {
     let sandbox;
     beforeEach(() => {
       sandbox = sinon.createSandbox();
-      sandbox.spy(global.Cu, "reportError");
+      sandbox.spy(global.console, "error");
     });
     afterEach(() => {
       sandbox.restore();
@@ -58,7 +61,7 @@ describe("ActivityStreamMessageChannel", () => {
       mm.validatePortID({});
       mm.validatePortID({});
 
-      assert.equal(global.Cu.reportError.callCount, 3);
+      assert.equal(global.console.error.callCount, 3);
     });
   });
 
@@ -320,16 +323,16 @@ describe("ActivityStreamMessageChannel", () => {
       let sandbox;
       beforeEach(() => {
         sandbox = sinon.createSandbox();
-        sandbox.spy(global.Cu, "reportError");
+        sandbox.spy(global.console, "error");
       });
       afterEach(() => sandbox.restore());
       it("should report an error if the msg.data is missing", () => {
         mm.onMessage({ target: { portID: "foo" } });
-        assert.calledOnce(global.Cu.reportError);
+        assert.calledOnce(global.console.error);
       });
       it("should report an error if the msg.data.type is missing", () => {
         mm.onMessage({ target: { portID: "foo" }, data: "foo" });
-        assert.calledOnce(global.Cu.reportError);
+        assert.calledOnce(global.console.error);
       });
       it("should call onActionFromContent", () => {
         sinon.stub(mm, "onActionFromContent");

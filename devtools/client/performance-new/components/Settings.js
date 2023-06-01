@@ -56,7 +56,7 @@
 const {
   PureComponent,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
+} = require("resource://devtools/client/shared/vendor/react.js");
 const {
   div,
   label,
@@ -67,27 +67,29 @@ const {
   section,
   p,
   span,
-} = require("devtools/client/shared/vendor/react-dom-factories");
+} = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 const Range = createFactory(
-  require("devtools/client/performance-new/components/Range")
+  require("resource://devtools/client/performance-new/components/Range.js")
 );
 const DirectoryPicker = createFactory(
-  require("devtools/client/performance-new/components/DirectoryPicker")
+  require("resource://devtools/client/performance-new/components/DirectoryPicker.js")
 );
 const {
   makeLinear10Scale,
   makePowerOf2Scale,
   formatFileSize,
   featureDescriptions,
-} = require("devtools/client/performance-new/utils");
-const { connect } = require("devtools/client/shared/vendor/react-redux");
-const actions = require("devtools/client/performance-new/store/actions");
-const selectors = require("devtools/client/performance-new/store/selectors");
+} = require("resource://devtools/client/performance-new/utils.js");
+const {
+  connect,
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
+const actions = require("resource://devtools/client/performance-new/store/actions.js");
+const selectors = require("resource://devtools/client/performance-new/store/selectors.js");
 const {
   openFilePickerForObjdir,
-} = require("devtools/client/performance-new/browser");
+} = require("resource://devtools/client/performance-new/browser.js");
 const Localized = createFactory(
-  require("devtools/client/shared/vendor/fluent-react").Localized
+  require("resource://devtools/client/shared/vendor/fluent-react.js").Localized
 );
 
 // The Gecko Profiler interprets the "entries" setting as 8 bytes per entry.
@@ -130,9 +132,9 @@ const threadColumns = [
       l10nId: "perftools-thread-render-backend",
     },
     {
-      name: "PaintWorker",
-      id: "paint-worker",
-      l10nId: "perftools-thread-paint-worker",
+      name: "Timer",
+      id: "timer",
+      l10nId: "perftools-thread-timer",
     },
     {
       name: "StyleThread",
@@ -166,6 +168,46 @@ const threadColumns = [
       name: "TaskController",
       id: "task-controller",
       l10nId: "perftools-thread-task-controller",
+    },
+  ],
+];
+
+/** @type {Array<ThreadColumn[]>} */
+const jvmThreadColumns = [
+  [
+    {
+      name: "Gecko",
+      id: "gecko",
+      l10nId: "perftools-thread-jvm-gecko",
+    },
+    {
+      name: "Nimbus",
+      id: "nimbus",
+      l10nId: "perftools-thread-jvm-nimbus",
+    },
+  ],
+  [
+    {
+      name: "DefaultDispatcher",
+      id: "default-dispatcher",
+      l10nId: "perftools-thread-jvm-default-dispatcher",
+    },
+    {
+      name: "Glean",
+      id: "glean",
+      l10nId: "perftools-thread-jvm-glean",
+    },
+  ],
+  [
+    {
+      name: "arch_disk_io",
+      id: "arch-disk-io",
+      l10nId: "perftools-thread-jvm-arch-disk-io",
+    },
+    {
+      name: "pool-",
+      id: "pool",
+      l10nId: "perftools-thread-jvm-pool",
     },
   ],
 ];
@@ -311,6 +353,7 @@ class Settings extends PureComponent {
             this._renderThreadsColumns(threadDisplay, index)
           )
         ),
+        this._renderJvmThreads(),
         div(
           {
             className: "perf-settings-checkbox-label perf-settings-all-threads",
@@ -359,6 +402,25 @@ class Settings extends PureComponent {
         )
       )
     );
+  }
+
+  _renderJvmThreads() {
+    if (!this.props.supportedFeatures.includes("java")) {
+      return null;
+    }
+
+    return [
+      h2(
+        null,
+        Localized({ id: "perftools-heading-threads-jvm" }, "JVM Threads")
+      ),
+      div(
+        { className: "perf-settings-thread-columns" },
+        jvmThreadColumns.map((threadDisplay, index) =>
+          this._renderThreadsColumns(threadDisplay, index)
+        )
+      ),
+    ];
   }
 
   /**

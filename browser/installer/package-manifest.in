@@ -130,6 +130,10 @@
 @BINPATH@/@MOZ_APP_NAME@.VisualElementsManifest.xml
 @BINPATH@/browser/VisualElements/VisualElements_150.png
 @BINPATH@/browser/VisualElements/VisualElements_70.png
+@BINPATH@/private_browsing.exe
+@BINPATH@/private_browsing.VisualElementsManifest.xml
+@BINPATH@/browser/VisualElements/PrivateBrowsing_150.png
+@BINPATH@/browser/VisualElements/PrivateBrowsing_70.png
 #else
 @BINPATH@/@MOZ_APP_NAME@-bin
 @BINPATH@/@MOZ_APP_NAME@
@@ -173,12 +177,6 @@
 @RESPATH@/components/nsUpdateService.manifest
 #endif
 @RESPATH@/components/ProcessSingleton.manifest
-@RESPATH@/components/HandlerService.manifest
-@RESPATH@/components/HandlerService.js
-#ifdef XP_MACOSX
-@RESPATH@/browser/components/MacTouchBar.manifest
-@RESPATH@/browser/components/MacTouchBar.js
-#endif
 @RESPATH@/components/SyncComponents.manifest
 @RESPATH@/components/servicesComponents.manifest
 @RESPATH@/components/servicesSettings.manifest
@@ -196,16 +194,6 @@
 #ifdef ENABLE_WEBDRIVER
 @RESPATH@/chrome/remote@JAREXT@
 @RESPATH@/chrome/remote.manifest
-#endif
-
-#if defined(ENABLE_TESTS) && defined(MOZ_DEBUG)
-@RESPATH@/components/TestInterfaceJS.js
-@RESPATH@/components/TestInterfaceJS.manifest
-#endif
-
-#if defined(MOZ_DEBUG) || defined(MOZ_DEV_EDITION) || defined(NIGHTLY_BUILD)
-@RESPATH@/browser/components/testComponents.manifest
-@RESPATH@/browser/components/startupRecorder.js
 #endif
 
 ; [Extensions]
@@ -282,10 +270,13 @@
 ; gre location for now.
 @RESPATH@/defaults/pref/channel-prefs.js
 
-; Background tasks-specific preferences.  These are in the GRE
-; location since they apply to all tasks at this time.
+; Background tasks-specific preferences.
+; These are in the GRE location since they apply to all tasks at this time.
 #ifdef MOZ_BACKGROUNDTASKS
+; These are in the GRE location since they apply to all tasks at this time.
 @RESPATH@/defaults/backgroundtasks/backgroundtasks.js
+; While these override browser-specific prefs in `firefox.js`.
+@RESPATH@/browser/defaults/backgroundtasks/backgroundtasks_browser.js
 #endif
 
 ; [Layout Engine Resources]
@@ -427,6 +418,12 @@ bin/libfreebl_64int_3.so
 ; [ Ping Sender ]
 ;
 @BINPATH@/pingsender@BIN_SUFFIX@
+
+; [ Notification COM Server ]
+;
+#if defined(MOZ_NOTIFICATION_SERVER)
+@BINPATH@/@DLL_PREFIX@notificationserver@DLL_SUFFIX@
+#endif
 
 ; Shutdown Terminator
 @RESPATH@/components/terminator.manifest

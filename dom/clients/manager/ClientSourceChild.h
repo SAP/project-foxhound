@@ -8,8 +8,7 @@
 
 #include "mozilla/dom/PClientSourceChild.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ClientSource;
 class ClientSourceConstructorArgs;
@@ -32,6 +31,8 @@ class ClientSourceChild final : public PClientSourceChild {
       PClientSourceOpChild* aActor,
       const ClientOpConstructorArgs& aArgs) override;
 
+  mozilla::ipc::IPCResult RecvEvictFromBFCache() override;
+
  public:
   explicit ClientSourceChild(const ClientSourceConstructorArgs& aArgs);
 
@@ -44,7 +45,6 @@ class ClientSourceChild final : public PClientSourceChild {
   void MaybeStartTeardown();
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // _mozilla_dom_ClientSourceChild_h

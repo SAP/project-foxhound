@@ -45,7 +45,7 @@ uint32_t HashDjb2(const uint8_t* src, uint64_t count, uint32_t seed) {
   }
 #endif
 
-  while (count >= (uint64_t)(kBlockSize)) {
+  while (count >= (uint64_t)kBlockSize) {
     seed = HashDjb2_SSE(src, kBlockSize, seed);
     src += kBlockSize;
     count -= kBlockSize;
@@ -69,13 +69,13 @@ static uint32_t ARGBDetectRow_C(const uint8_t* argb, int width) {
     if (argb[0] != 255) {  // First byte is not Alpha of 255, so not ARGB.
       return FOURCC_BGRA;
     }
-    if (argb[3] != 255) {  // 4th byte is not Alpha of 255, so not BGRA.
+    if (argb[3] != 255) {  // Fourth byte is not Alpha of 255, so not BGRA.
       return FOURCC_ARGB;
     }
     if (argb[4] != 255) {  // Second pixel first byte is not Alpha of 255.
       return FOURCC_BGRA;
     }
-    if (argb[7] != 255) {  // Second pixel 4th byte is not Alpha of 255.
+    if (argb[7] != 255) {  // Second pixel fourth byte is not Alpha of 255.
       return FOURCC_ARGB;
     }
     argb += 8;
@@ -154,6 +154,7 @@ uint64_t ComputeHammingDistance(const uint8_t* src_a,
     HammingDistance = HammingDistance_MSA;
   }
 #endif
+
 #ifdef _OPENMP
 #pragma omp parallel for reduction(+ : diff)
 #endif
@@ -358,10 +359,10 @@ static double Ssim8x8_C(const uint8_t* src_a,
         (sum_a_sq + sum_b_sq + c1) *
         (count * sum_sq_a - sum_a_sq + count * sum_sq_b - sum_b_sq + c2);
 
-    if (ssim_d == 0.0) {
+    if (ssim_d == 0) {
       return DBL_MAX;
     }
-    return ssim_n * 1.0 / ssim_d;
+    return (double)ssim_n / (double)ssim_d;
   }
 }
 

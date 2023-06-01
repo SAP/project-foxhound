@@ -63,11 +63,10 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
   /** @see nsIFrame::DidSetComputedStyle */
   virtual void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
 
-  virtual void AppendFrames(ChildListID aListID,
-                            nsFrameList& aFrameList) override;
-  virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
-                            const nsLineList::iterator* aPrevFrameLine,
-                            nsFrameList& aFrameList) override;
+  void AppendFrames(ChildListID aListID, nsFrameList&& aFrameList) override;
+  void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                    const nsLineList::iterator* aPrevFrameLine,
+                    nsFrameList&& aFrameList) override;
   virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
 
   virtual nsMargin GetUsedMargin() const override;
@@ -183,8 +182,6 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
 
   // nsILineIterator methods
  public:
-  virtual void DisposeLineIterator() override {}
-
   // The table row is the equivalent to a line in block layout.
   // The nsILineIterator assumes that a line resides in a block, this role is
   // fullfilled by the row group. Rows in table are counted relative to the
@@ -195,15 +192,13 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
   /** Get the number of rows in a row group
    * @return the number of lines in a row group
    */
-  virtual int32_t GetNumLines() const override;
+  int32_t GetNumLines() const final;
 
-  /** @see nsILineIterator.h GetDirection
-   * @return true if the table is rtl
-   */
-  virtual bool GetDirection() override;
+  /** @see nsILineIterator.h IsLineIteratorFlowRTL */
+  bool IsLineIteratorFlowRTL() final;
 
   /** Return structural information about a line. */
-  Result<LineInfo, nsresult> GetLine(int32_t aLineNumber) override;
+  Result<LineInfo, nsresult> GetLine(int32_t aLineNumber) final;
 
   /** Given a frame that's a child of the rowgroup, find which line its on.
    * @param aFrame       - frame, should be a row
@@ -212,8 +207,7 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
    *                       frame and the index is at least aStartLine.
    *                       -1 if the frame cannot be found.
    */
-  virtual int32_t FindLineContaining(nsIFrame* aFrame,
-                                     int32_t aStartLine = 0) override;
+  int32_t FindLineContaining(nsIFrame* aFrame, int32_t aStartLine = 0) final;
 
   /** Find the orginating cell frame on a row that is the nearest to the
    * inline-dir coordinate of aPos.
@@ -228,7 +222,7 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
    */
   NS_IMETHOD FindFrameAt(int32_t aLineNumber, nsPoint aPos,
                          nsIFrame** aFrameFound, bool* aPosIsBeforeFirstFrame,
-                         bool* aPosIsAfterLastFrame) override;
+                         bool* aPosIsAfterLastFrame) final;
 
   /** Check whether visual and logical order of cell frames within a line are
    * identical. As the layout will reorder them this is always the case
@@ -240,7 +234,7 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
 
   NS_IMETHOD CheckLineOrder(int32_t aLine, bool* aIsReordered,
                             nsIFrame** aFirstVisual,
-                            nsIFrame** aLastVisual) override;
+                            nsIFrame** aLastVisual) final;
 
   // row cursor methods to speed up searching for the row(s)
   // containing a point. The basic idea is that we set the cursor
@@ -336,8 +330,6 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
                           const ReflowInput& aReflowInput);
 
   void DidResizeRows(ReflowOutput& aDesiredSize);
-
-  void SlideChild(TableRowGroupReflowInput& aReflowInput, nsIFrame* aKidFrame);
 
   /**
    * Reflow the frames we've already created

@@ -8,9 +8,25 @@ Releases
    :glob:
    :hidden:
 
+   nss_3_88.rst
+   nss_3_87.rst
+   nss_3_86.rst
+   nss_3_85.rst
+   nss_3_84.rst
+   nss_3_83.rst
+   nss_3_82.rst
+   nss_3_81.rst
+   nss_3_80.rst
+   nss_3_79_2.rst
+   nss_3_79_1.rst
+   nss_3_79.rst
+   nss_3_78_1.rst
+   nss_3_78.rst
+   nss_3_77.rst
+   nss_3_76_1.rst
+   nss_3_76.rst
    nss_3_75.rst
    nss_3_74.rst
-   nss_3_68_2.rst
    nss_3_73_1.rst
    nss_3_73.rst
    nss_3_72_1.rst
@@ -19,6 +35,8 @@ Releases
    nss_3_70.rst
    nss_3_69_1.rst
    nss_3_69.rst
+   nss_3_68_4.rst
+   nss_3_68_3.rst
    nss_3_68_2.rst
    nss_3_68_1.rst
    nss_3_68.rst
@@ -29,45 +47,38 @@ Releases
 
 .. note::
 
-   **NSS 3.75** is the latest version of NSS.
-   Complete release notes are available here: :ref:`mozilla_projects_nss_nss_3_75_release_notes`
+   **NSS 3.88** is the latest version of NSS.
+   Complete release notes are available here: :ref:`mozilla_projects_nss_nss_3_88_release_notes`
 
-   **NSS 3.68.2** is the latest LTS version of NSS.
-   Complete release notes are available here: :ref:`mozilla_projects_nss_nss_3_68_2_release_notes`
+   **NSS 3.79.2** is the latest ESR version of NSS.
+   Complete release notes are available here: :ref:`mozilla_projects_nss_nss_3_79_2_release_notes`
 
 
 .. container::
 
-   Changes in 3.75 included in this release:
+   Changes in 3.88 included in this release:
 
-   - Bug 1749030 - This patch adds gcc-9 and gcc-10 to the CI.
-   - Bug 1749794 - Make DottedOIDToCode.py compatible with python3.
-   - Bug 1749475 - Avoid undefined shift in SSL_CERT_IS while fuzzing.
-   - Bug 1748386 - Remove redundant key type check.
-   - Bug 1749869 - Update ABI expectations to match ECH changes.
-   - Bug 1748386 - Enable CKM_CHACHA20.
-   - Bug 1747327 - check return on NSS_NoDB_Init and NSS_Shutdown.
-   - Bug 1747310 - real move assignment operator.
-   - Bug 1748245 - Run ECDSA test vectors from bltest as part of the CI tests.
-   - Bug 1743302 - Add ECDSA test vectors to the bltest command line tool.
-   - Bug 1747772 - Allow to build using clang's integrated assembler.
-   - Bug 1321398 - Allow to override python for the build.
-   - Bug 1747317 - test HKDF output rather than input.
-   - Bug 1747316 - Use ASSERT macros to end failed tests early.
-   - Bug 1747310 - move assignment operator for DataBuffer.
-   - Bug 1712879 - Add test cases for ECH compression and unexpected extensions in SH.
-   - Bug 1725938 - Update tests for ECH-13.
-   - Bug 1725938 - Tidy up error handling.
-   - Bug 1728281 - Add tests for ECH HRR Changes.
-   - Bug 1728281 - Server only sends GREASE HRR extension if enabled by preference.
-   - Bug 1725938 - Update generation of the Associated Data for ECH-13.
-   - Bug 1712879 - When ECH is accepted, reject extensions which were only advertised in the Outer Client Hello.
-   - Bug 1712879 - Allow for compressed, non-contiguous, extensions.
-   - Bug 1712879 - Scramble the PSK extension in CHOuter.
-   - Bug 1712647 - Split custom extension handling for ECH.
-   - Bug 1728281 - Add ECH-13 HRR Handling.
-   - Bug 1677181 - Client side ECH padding.
-   - Bug 1725938 - Stricter ClientHelloInner Decompression.
-   - Bug 1725938 - Remove ECH_inner extension, use new enum format.
-   - Bug 1725938 - Update the version number for ECH-13 and adjust the ECHConfig size.
-
+   - Bug 1815870 - use a different treeherder symbol for each docker image build task.
+   - Bug 1815868 - pin an older version of the ubuntu:18.04 and 20.04 docker images 
+   - Bug 1810702 - remove nested table in rst doc
+   - Bug 1815246 - Export NSS_CMSSignerInfo_GetDigestAlgTag. 
+   - Bug 1812671 - build failure while implicitly casting SECStatus to PRUInt32. r=nss-reviewers,mt
+   - Bug 1212915 - Add check for ClientHello SID max length. This is tested by Bogo tests 
+   - Bug 1771100 - Added EarlyData ALPN test support to BoGo shim. 
+   - Bug 1790357 - ECH client - Discard resumption TLS < 1.3 Session(IDs|Tickets) if ECH configs are setup.
+   - Bug 1714245 - On HRR skip PSK incompatible with negotiated ciphersuites hash algorithm. 
+   - Bug 1789410 - ECH client: Send ech_required alert on server negotiating TLS 1.2. Fixed misleading Gtest, enabled corresponding BoGo test.
+   - Bug 1771100 - Added Bogo ECH rejection test support.
+   - Bug 1771100 - Added ECH 0Rtt support to BoGo shim. 
+   - Bug 1747957 - RSA OAEP Wycheproof JSON
+   - Bug 1747957 - RSA decrypt Wycheproof JSON
+   - Bug 1747957 - ECDSA Wycheproof JSON
+   - Bug 1747957 - ECDH Wycheproof JSON
+   - Bug 1747957 - PKCS#1v1.5 wycheproof json
+   - Bug 1747957 - Use X25519 wycheproof json
+   - Bug 1766767 - Move scripts to python3
+   - Bug 1809627 - Properly link FuzzingEngine for oss-fuzz.
+   - Bug 1805907 - Extending RSA-PSS bltest test coverage (Adding SHA-256 and SHA-384) 
+   - Bug 1804091 NSS needs to move off of DSA for integrity checks
+   - Bug 1805815 - Add initial testing with ACVP vector sets using acvp-rust
+   - Bug 1806369 - Don't clone libFuzzer, rely on clang instead

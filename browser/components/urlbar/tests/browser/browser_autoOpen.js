@@ -27,7 +27,7 @@ async function checkOpensOnFocus(win = window) {
   });
 }
 
-add_task(async function setUp() {
+add_setup(async function() {
   // Add some history for the empty panel.
   await PlacesTestUtils.addVisits([
     {
@@ -81,7 +81,7 @@ add_task(async function newtabAndHome() {
         // After example.com closes, about:newtab/home is selected again.
         await checkOpensOnFocus();
         // Load example.com in the same tab.
-        BrowserTestUtils.loadURI(
+        BrowserTestUtils.loadURIString(
           gBrowser.selectedBrowser,
           "http://example.com/"
         );

@@ -6,7 +6,9 @@
 
 var EXPORTED_SYMBOLS = ["getTestLogger", "initTestLogging"];
 
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
+);
 
 function initTestLogging(level) {
   function LogStats() {
@@ -30,7 +32,7 @@ function initTestLogging(level) {
       );
     },
   };
-  LogStats.prototype.__proto__ = new Log.BasicFormatter();
+  Object.setPrototypeOf(LogStats.prototype, new Log.BasicFormatter());
 
   let log = Log.repository.rootLogger;
   let logStats = new LogStats();

@@ -33,7 +33,6 @@ addLoginsInParent(
   [newHost, newHost, null, "dsdu1", "dsdp1prime", "uname", "pword"]);
 
 var setupScript = runInParent(function setup() {
-  const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
   addMessageListener("getDateString", () => {
     let dateAndTimeFormatter = new Services.intl.DateTimeFormat(undefined, { dateStyle: "medium" });
     return dateAndTimeFormatter.format(new Date());
@@ -55,8 +54,8 @@ var setupScript = runInParent(function setup() {
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
-var uname = $_(1, "uname");
-var pword = $_(1, "pword");
+const uname = getFormElementByName(1, "uname");
+const pword = getFormElementByName(1, "pword");
 
 // Restore the form to the default state.
 function restoreForm() {
@@ -69,11 +68,10 @@ function spinEventLoop() {
   return Promise.resolve();
 }
 
-add_task(async function setup() {
+add_setup(async () => {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["signon.includeOtherSubdomainsInLookup", true],
-      ["signon.showAutoCompleteOrigins", true],
     ],
   });
   listenForUnexpectedPopupShown();
@@ -96,9 +94,7 @@ add_task(async function test_form1_menu_shows_two_logins_same_usernames_for_diff
   await SimpleTest.promiseFocus(window);
   // Trigger autocomplete popup
   restoreForm();
-  let shownPromise = promiseACShown();
-  synthesizeKey("KEY_ArrowDown"); // open
-  let results = await shownPromise;
+  const autocompleteItems = await openAutocompletePopup();
 
   let popupState = await getPopupState();
   is(popupState.selectedIndex, -1, "Check no entries are selected upon opening");
@@ -108,7 +104,7 @@ add_task(async function test_form1_menu_shows_two_logins_same_usernames_for_diff
   let dateString = await setupScript.sendQuery("getDateString");
   let username = `dsdu1 (${dateString})`;
 
-  checkAutoCompleteResults(results, [username, username], window.location.host, "Check all menuitems are displayed correctly.");
+  checkAutoCompleteResults(autocompleteItems, [username, username], window.location.host, "Check all menuitems are displayed correctly.");
 
   synthesizeKey("KEY_ArrowDown"); // first item
   checkLoginForm(uname, "", pword, ""); // value shouldn't update just by selecting
@@ -120,9 +116,7 @@ add_task(async function test_form1_menu_shows_two_logins_same_usernames_for_diff
 
   restoreForm();
 
-  shownPromise = promiseACShown();
-  synthesizeKey("KEY_ArrowDown"); // open
-  await shownPromise;
+  await openAutocompletePopup();
 
   synthesizeKey("KEY_ArrowDown"); // first item
   synthesizeKey("KEY_ArrowDown"); // second item

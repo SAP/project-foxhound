@@ -2,19 +2,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { PrivateBrowsingUtils } = ChromeUtils.import(
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
+const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PrivateBrowsingUtils.sys.mjs"
 );
-const { PromptUtils } = ChromeUtils.import(
-  "resource://gre/modules/SharedPromptUtils.jsm"
+const { PromptUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromptUtils.sys.mjs"
 );
 
+const lazy = {};
+
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "gPrompterService",
   "@mozilla.org/login-manager/prompter;1",
   Ci.nsILoginManagerPrompter
@@ -23,14 +24,9 @@ XPCOMUtils.defineLazyServiceGetter(
 /* eslint-disable block-scoped-var, no-var */
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "LoginHelper",
   "resource://gre/modules/LoginHelper.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "LoginManagerPrompter",
-  "resource://gre/modules/LoginManagerPrompter.jsm"
 );
 
 const LoginInfo = Components.Constructor(
@@ -124,12 +120,13 @@ LoginManagerAuthPromptFactory.prototype = {
   // Promise used to defer prompts if the password manager isn't ready when
   // they're called.
   _uiBusyPromise: null,
+  _uiBusyResolve: null,
 
   observe(subject, topic, data) {
-    this.log("Observed: " + topic);
+    this.log(`Observed topic: ${topic}.`);
     if (topic == "passwordmgr-crypto-login") {
       // Show the deferred prompters.
-      this._uiBusyPromise?.resolve();
+      this._uiBusyResolve?.();
     }
   },
 
@@ -199,7 +196,7 @@ LoginManagerAuthPromptFactory.prototype = {
     let hasLogins = Services.logins.countLogins(origin, null, httpRealm) > 0;
     if (
       !hasLogins &&
-      LoginHelper.schemeUpgrades &&
+      lazy.LoginHelper.schemeUpgrades &&
       origin.startsWith("https://")
     ) {
       let httpOrigin = origin.replace(/^https:\/\//, "http://");
@@ -210,22 +207,24 @@ LoginManagerAuthPromptFactory.prototype = {
       return;
     }
 
-    this.log("Waiting for master password UI");
+    this.log("Waiting for primary password UI.");
 
-    this._uiBusyPromise = new Promise();
+    this._uiBusyPromise = new Promise(resolve => {
+      this._uiBusyResolve = resolve;
+    });
     await this._uiBusyPromise;
   },
 
   async _doAsyncPrompt(prompt, hashKey) {
     this._setPendingPrompt(prompt, hashKey);
 
-    // UI might be busy due to the master password dialog. Wait for it to close.
+    // UI might be busy due to the primary password dialog. Wait for it to close.
     await this._waitForLoginsUI(prompt);
 
     let ok = false;
     let promptAborted = false;
     try {
-      this.log("_doAsyncPrompt - performing the prompt for '" + hashKey + "'");
+      this.log(`Performing the prompt for ${hashKey}.`);
       ok = await prompt.prompter.promptAuthInternal(
         prompt.channel,
         prompt.level,
@@ -236,13 +235,11 @@ LoginManagerAuthPromptFactory.prototype = {
         e instanceof Components.Exception &&
         e.result == Cr.NS_ERROR_NOT_AVAILABLE
       ) {
-        this.log(
-          "_doAsyncPrompt bypassed, UI is not available in this context"
-        );
+        this.log("Bypassed, UI is not available in this context.");
         // Prompts throw NS_ERROR_NOT_AVAILABLE if they're aborted.
         promptAborted = true;
       } else {
-        Cu.reportError("LoginManagerAuthPrompter: _doAsyncPrompt " + e + "\n");
+        console.error("LoginManagerAuthPrompter: _doAsyncPrompt " + e + "\n");
       }
     }
 
@@ -256,7 +253,7 @@ LoginManagerAuthPromptFactory.prototype = {
         continue;
       }
 
-      this.log("Calling back to " + consumer.callback + " ok=" + ok);
+      this.log(`Calling back to callback: ${consumer.callback} ok: ${ok}.`);
       try {
         if (ok) {
           consumer.callback.onAuthAvailable(consumer.context, prompt.authInfo);
@@ -274,7 +271,7 @@ XPCOMUtils.defineLazyGetter(
   LoginManagerAuthPromptFactory.prototype,
   "log",
   () => {
-    let logger = LoginHelper.createLogger("LoginManagerAuthPromptFactory");
+    let logger = lazy.LoginHelper.createLogger("LoginManagerAuthPromptFactory");
     return logger.log.bind(logger);
   }
 );
@@ -344,7 +341,7 @@ LoginManagerAuthPrompter.prototype = {
     // will indeed pass down a window to us, and for those who don't,
     // we can just assume that we don't want to save the entered login
     // information.
-    this.log("We have no chromeWindow so assume we're in a private context");
+    this.log("We have no chromeWindow so assume we're in a private context.");
     return true;
   },
 
@@ -352,7 +349,7 @@ LoginManagerAuthPrompter.prototype = {
     if (!this._inPrivateBrowsing) {
       return true;
     }
-    return LoginHelper.privateBrowsingCaptureEnabled;
+    return lazy.LoginHelper.privateBrowsingCaptureEnabled;
   },
 
   /* ---------- nsIAuthPrompt prompts ---------- */
@@ -375,8 +372,6 @@ LoginManagerAuthPrompter.prototype = {
         Cr.NS_ERROR_NOT_IMPLEMENTED
       );
     }
-
-    this.log("===== prompt() called =====");
 
     if (aDefaultText) {
       aResult.value = aDefaultText;
@@ -404,8 +399,6 @@ LoginManagerAuthPrompter.prototype = {
     aUsername,
     aPassword
   ) {
-    this.log("===== promptUsernameAndPassword() called =====");
-
     if (aSavePassword == Ci.nsIAuthPrompt.SAVE_PASSWORD_FOR_SESSION) {
       throw new Components.Exception(
         "promptUsernameAndPassword doesn't support SAVE_PASSWORD_FOR_SESSION",
@@ -416,7 +409,7 @@ LoginManagerAuthPrompter.prototype = {
     let foundLogins = null;
     let canRememberLogin = false;
     var selectedLogin = null;
-    var [origin, realm, unused] = this._getRealmInfo(aPasswordRealm);
+    var [origin, realm] = this._getRealmInfo(aPasswordRealm);
 
     // If origin is null, we can't save this login.
     if (origin) {
@@ -488,11 +481,11 @@ LoginManagerAuthPrompter.prototype = {
     );
     if (!selectedLogin) {
       // add as new
-      this.log("New login seen for " + realm);
+      this.log(`New login seen for: ${realm}.`);
       Services.logins.addLogin(newLogin);
     } else if (aPassword.value != selectedLogin.password) {
       // update password
-      this.log("Updating password for  " + realm);
+      this.log(`Updating password for ${realm}.`);
       this._updateLogin(selectedLogin, newLogin);
     } else {
       this.log("Login unchanged, no further action needed.");
@@ -522,8 +515,6 @@ LoginManagerAuthPrompter.prototype = {
     aSavePassword,
     aPassword
   ) {
-    this.log("===== promptPassword called() =====");
-
     if (aSavePassword == Ci.nsIAuthPrompt.SAVE_PASSWORD_FOR_SESSION) {
       throw new Components.Exception(
         "promptPassword doesn't support SAVE_PASSWORD_FOR_SESSION",
@@ -575,7 +566,7 @@ LoginManagerAuthPrompter.prototype = {
         aPassword.value
       );
 
-      this.log("New login seen for " + realm);
+      this.log(`New login seen for ${realm}.`);
 
       Services.logins.addLogin(newLogin);
     }
@@ -623,8 +614,6 @@ LoginManagerAuthPrompter.prototype = {
     let autofilled = false;
 
     try {
-      this.log("===== promptAuth called =====");
-
       // If the user submits a login but it fails, we need to remove the
       // notification prompt that was displayed. Conveniently, the user will
       // be prompted for authentication again, which brings us here.
@@ -636,17 +625,17 @@ LoginManagerAuthPrompter.prototype = {
       foundLogins = await Services.logins.searchLoginsAsync({
         origin,
         httpRealm,
-        schemeUpgrades: LoginHelper.schemeUpgrades,
+        schemeUpgrades: lazy.LoginHelper.schemeUpgrades,
       });
-      this.log("found", foundLogins.length, "matching logins.");
+      this.log(`Found ${foundLogins.length} matching logins.`);
       let resolveBy = ["scheme", "timePasswordChanged"];
-      foundLogins = LoginHelper.dedupeLogins(
+      foundLogins = lazy.LoginHelper.dedupeLogins(
         foundLogins,
         ["username"],
         resolveBy,
         origin
       );
-      this.log(foundLogins.length, "matching logins remain after deduping");
+      this.log(`${foundLogins.length} matching logins remain after deduping.`);
 
       // XXX Can't select from multiple accounts yet. (bug 227632)
       if (foundLogins.length) {
@@ -677,7 +666,7 @@ LoginManagerAuthPrompter.prototype = {
     } catch (e) {
       // Ignore any errors and display the prompt anyway.
       epicfail = true;
-      Cu.reportError(
+      console.error(
         "LoginManagerAuthPrompter: Epic fail in promptAuth: " + e + "\n"
       );
     }
@@ -697,7 +686,7 @@ LoginManagerAuthPrompter.prototype = {
 
     if (!ok) {
       if (PromptAbuseHelper.hasReachedAbuseLimit(baseDomain, browser)) {
-        this.log("Blocking auth dialog, due to exceeding dialog bloat limit");
+        this.log("Blocking auth dialog, due to exceeding dialog bloat limit.");
         return false;
       }
 
@@ -751,34 +740,19 @@ LoginManagerAuthPrompter.prototype = {
       // changed, save as a new login.
       let newLogin = new LoginInfo(origin, null, httpRealm, username, password);
       if (!selectedLogin) {
-        this.log(
-          "New login seen for " +
-            username +
-            " @ " +
-            origin +
-            " (" +
-            httpRealm +
-            ")"
-        );
+        this.log(`New login seen for origin: ${origin}.`);
 
-        let promptBrowser = LoginHelper.getBrowserForPrompt(browser);
-        let savePrompt = gPrompterService.promptToSavePassword(
+        let promptBrowser = lazy.LoginHelper.getBrowserForPrompt(browser);
+        let savePrompt = lazy.gPrompterService.promptToSavePassword(
           promptBrowser,
           newLogin
         );
         this._factory._setPendingSavePrompt(promptBrowser, savePrompt);
       } else if (password != selectedLogin.password) {
-        this.log(
-          "Updating password for " +
-            username +
-            " @ " +
-            origin +
-            " (" +
-            httpRealm +
-            ")"
-        );
-        let promptBrowser = LoginHelper.getBrowserForPrompt(browser);
-        let savePrompt = gPrompterService.promptToChangePassword(
+        this.log(`Updating password for origin: ${origin}.`);
+
+        let promptBrowser = lazy.LoginHelper.getBrowserForPrompt(browser);
+        let savePrompt = lazy.gPrompterService.promptToChangePassword(
           promptBrowser,
           selectedLogin,
           newLogin
@@ -794,7 +768,7 @@ LoginManagerAuthPrompter.prototype = {
         );
       }
     } catch (e) {
-      Cu.reportError("LoginManagerAuthPrompter: Fail2 in promptAuth: " + e);
+      console.error("LoginManagerAuthPrompter: Fail2 in promptAuth: " + e);
     }
 
     return ok;
@@ -826,8 +800,6 @@ LoginManagerAuthPrompter.prototype = {
     var cancelable = null;
 
     try {
-      this.log("===== asyncPromptAuth called =====");
-
       // If the user submits a login but it fails, we need to remove the
       // notification prompt that was displayed. Conveniently, the user will
       // be prompted for authentication again, which brings us here.
@@ -838,21 +810,19 @@ LoginManagerAuthPrompter.prototype = {
       let [origin, httpRealm] = this._getAuthTarget(aChannel, aAuthInfo);
 
       let hashKey = aLevel + "|" + origin + "|" + httpRealm;
-      this.log("Async prompt key = " + hashKey);
       let pendingPrompt = this._factory.getPendingPrompt(
         this._browser,
         hashKey
       );
       if (pendingPrompt) {
         this.log(
-          "Prompt bound to an existing one in the queue, callback = " +
-            aCallback
+          `Prompt bound to an existing one in the queue, callback: ${aCallback}.`
         );
         pendingPrompt.consumers.push(cancelable);
         return cancelable;
       }
 
-      this.log("Adding new async prompt, callback = " + aCallback);
+      this.log(`Adding new async prompt, callback: ${aCallback}.`);
       let asyncPrompt = {
         consumers: [cancelable],
         channel: aChannel,
@@ -863,7 +833,7 @@ LoginManagerAuthPrompter.prototype = {
 
       this._factory._doAsyncPrompt(asyncPrompt, hashKey);
     } catch (e) {
-      Cu.reportError(
+      console.error(
         "LoginManagerAuthPrompter: " +
           "asyncPromptAuth: " +
           e +
@@ -894,8 +864,6 @@ LoginManagerAuthPrompter.prototype = {
       this._browser = browser;
     }
     this._factory = aFactory || null;
-
-    this.log("===== initialized =====");
   },
 
   set browser(aBrowser) {
@@ -1023,7 +991,7 @@ LoginManagerAuthPrompter.prototype = {
       var baseDomain = Services.eTLD.getBaseDomain(uri);
       displayHost = idnService.convertToDisplayIDN(baseDomain, {});
     } catch (e) {
-      this.log("_getShortDisplayHost couldn't process " + aURIString);
+      this.log(`Couldn't process supplied URIString ${aURIString}.`);
     }
 
     if (!displayHost) {
@@ -1043,7 +1011,7 @@ LoginManagerAuthPrompter.prototype = {
     // If our proxy is demanding authentication, don't use the
     // channel's actual destination.
     if (aAuthInfo.flags & Ci.nsIAuthInformation.AUTH_PROXY) {
-      this.log("getAuthTarget is for proxy auth");
+      this.log("getAuthTarget is for proxy auth.");
       if (!(aChannel instanceof Ci.nsIProxiedChannel)) {
         throw new Error("proxy auth needs nsIProxiedChannel");
       }
@@ -1143,7 +1111,7 @@ LoginManagerAuthPrompter.prototype = {
 }; // end of LoginManagerAuthPrompter implementation
 
 XPCOMUtils.defineLazyGetter(LoginManagerAuthPrompter.prototype, "log", () => {
-  let logger = LoginHelper.createLogger("LoginManagerAuthPrompter");
+  let logger = lazy.LoginHelper.createLogger("LoginManagerAuthPrompter");
   return logger.log.bind(logger);
 });
 

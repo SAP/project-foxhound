@@ -104,6 +104,16 @@ const POLICIES_TESTS = [
     },
   },
 
+  // POLICY: GoToIntranetSiteForSingleWordEntryInAddressBar
+  {
+    policies: {
+      GoToIntranetSiteForSingleWordEntryInAddressBar: true,
+    },
+    lockedPrefs: {
+      "browser.fixup.dns_first_for_single_words": true,
+    },
+  },
+
   // POLICY: OverrideFirstRunPage
   {
     policies: { OverrideFirstRunPage: "https://www.example.com/" },
@@ -935,7 +945,6 @@ const POLICIES_TESTS = [
       "network.cookie.cookieBehavior.pbmode": 5,
     },
   },
-
   {
     policies: {
       Cookies: {
@@ -947,6 +956,15 @@ const POLICIES_TESTS = [
     lockedPrefs: {
       "network.cookie.cookieBehavior": 5,
       "network.cookie.cookieBehavior.pbmode": 0,
+    },
+  },
+
+  {
+    policies: {
+      UseSystemPrintDialog: true,
+    },
+    lockedPrefs: {
+      "print.prefer_system_dialog": true,
     },
   },
 ];

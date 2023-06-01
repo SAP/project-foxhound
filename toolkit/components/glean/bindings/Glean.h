@@ -19,7 +19,7 @@ class Category;
 class Glean final : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Glean)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Glean)
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
@@ -30,6 +30,17 @@ class Glean final : public nsISupports, public nsWrapperCache {
   already_AddRefed<Category> NamedGetter(const nsAString& aName, bool& aFound);
   bool NameIsEnumerable(const nsAString& aName);
   void GetSupportedNames(nsTArray<nsString>& aNames);
+
+  /*
+   * Test-only method.
+   *
+   * Set whether we should treat runtime-registered metrics as the
+   * comprehensive list of all metrics, or whether compile-time-registered
+   * metrics are allowed to count too.
+   *
+   * Allows us to test Artifact Build support flexibly.
+   */
+  static void TestSetRuntimeMetricsComprehensive(bool aIsComprehensive);
 
  protected:
   virtual ~Glean() = default;

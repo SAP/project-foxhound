@@ -47,7 +47,7 @@ async function openTabWithAuthPrompt(origin, authOptions) {
     url.toString()
   );
   info("Loading " + url.toString());
-  BrowserTestUtils.loadURI(tab.linkedBrowser, url.toString());
+  BrowserTestUtils.loadURIString(tab.linkedBrowser, url.toString());
   return { origin, tab, authOptions, loadPromise, promptPromise };
 }
 
@@ -60,7 +60,7 @@ async function openTabWithAuthPrompt(origin, authOptions) {
 async function testTabAuthed(expectAuthed, { tab, loadPromise, authOptions }) {
   // Wait for tab to load after auth.
   await loadPromise;
-  ok(true, "Tab loads after auth");
+  Assert.ok(true, "Tab loads after auth");
 
   // Fetch auth results from body (set by authenticate.sjs).
   let { loginResult, user, pass } = await SpecialPowers.spawn(
@@ -75,12 +75,20 @@ async function testTabAuthed(expectAuthed, { tab, loadPromise, authOptions }) {
     }
   );
 
-  is(loginResult == "PASS", expectAuthed, "Site has expected auth state");
-  is(user, expectAuthed ? authOptions.user : "", "Sent correct user");
-  is(pass, expectAuthed ? authOptions.pass : "", "Sent correct password");
+  Assert.equal(
+    loginResult == "PASS",
+    expectAuthed,
+    "Site has expected auth state"
+  );
+  Assert.equal(user, expectAuthed ? authOptions.user : "", "Sent correct user");
+  Assert.equal(
+    pass,
+    expectAuthed ? authOptions.pass : "",
+    "Sent correct password"
+  );
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     // This test relies on tab auth prompts.
     set: [["prompts.modalType.httpAuth", Services.prompt.MODAL_TYPE_TAB]],
@@ -110,11 +118,11 @@ add_task(async function test() {
   info(`Opening ${tabs.length} tabs with auth prompts`);
   let prompts = await Promise.all(tabs.map(tab => tab.promptPromise));
 
-  is(prompts.length, tabs.length, "Should have one prompt per tab");
+  Assert.equal(prompts.length, tabs.length, "Should have one prompt per tab");
 
   for (let i = 0; i < prompts.length; i++) {
     let titleEl = prompts[i].ui.prompt.document.querySelector("#titleText");
-    is(
+    Assert.equal(
       titleEl.textContent,
       new URL(tabs[i].origin).host,
       "Prompt matches the tab's host"

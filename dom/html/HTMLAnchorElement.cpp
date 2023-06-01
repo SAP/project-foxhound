@@ -13,7 +13,6 @@
 #include "mozilla/dom/HTMLAnchorElementBinding.h"
 #include "mozilla/dom/HTMLDNSPrefetch.h"
 #include "mozilla/EventDispatcher.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/MemoryReporting.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
@@ -27,10 +26,6 @@
 NS_IMPL_NS_NEW_HTML_ELEMENT(Anchor)
 
 namespace mozilla::dom {
-
-// static
-const DOMTokenListSupportedToken HTMLAnchorElement::sSupportedRelValues[] = {
-    "noreferrer", "noopener", nullptr};
 
 HTMLAnchorElement::~HTMLAnchorElement() {
   SupportsDNSPrefetch::Destroyed(*this);
@@ -125,7 +120,7 @@ bool HTMLAnchorElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
 
   if (GetTabIndexAttrValue().isNothing()) {
     // check whether we're actually a link
-    if (!Link::HasURI()) {
+    if (!IsLink()) {
       // Not tabbable or focusable without href (bug 17605), unless
       // forced to be via presence of nonnegative tabindex attribute
       if (aTabIndex) {
@@ -155,8 +150,6 @@ nsresult HTMLAnchorElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
   return PostHandleEventForAnchors(aVisitor);
 }
 
-bool HTMLAnchorElement::IsLink(nsIURI** aURI) const { return IsHTMLLink(aURI); }
-
 void HTMLAnchorElement::GetLinkTarget(nsAString& aTarget) {
   GetAttr(kNameSpaceID_None, nsGkAtoms::target, aTarget);
   if (aTarget.IsEmpty()) {
@@ -164,7 +157,7 @@ void HTMLAnchorElement::GetLinkTarget(nsAString& aTarget) {
   }
 }
 
-void HTMLAnchorElement::GetTarget(nsAString& aValue) {
+void HTMLAnchorElement::GetTarget(nsAString& aValue) const {
   if (!GetAttr(kNameSpaceID_None, nsGkAtoms::target, aValue)) {
     GetBaseTarget(aValue);
   }
@@ -177,7 +170,8 @@ nsDOMTokenList* HTMLAnchorElement::RelList() {
   return mRelList;
 }
 
-void HTMLAnchorElement::GetText(nsAString& aText, mozilla::ErrorResult& aRv) {
+void HTMLAnchorElement::GetText(nsAString& aText,
+                                mozilla::ErrorResult& aRv) const {
   if (NS_WARN_IF(
           !nsContentUtils::GetNodeTextContent(this, true, aText, fallible))) {
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
@@ -188,16 +182,10 @@ void HTMLAnchorElement::SetText(const nsAString& aText, ErrorResult& aRv) {
   aRv = nsContentUtils::SetNodeTextContent(this, aText, false);
 }
 
-void HTMLAnchorElement::ToString(nsAString& aSource) {
-  return GetHref(aSource);
-}
-
 already_AddRefed<nsIURI> HTMLAnchorElement::GetHrefURI() const {
-  nsCOMPtr<nsIURI> uri = Link::GetCachedURI();
-  if (uri) {
+  if (nsCOMPtr<nsIURI> uri = GetCachedURI()) {
     return uri.forget();
   }
-
   return GetHrefURIForAnchors();
 }
 
@@ -243,7 +231,7 @@ nsresult HTMLAnchorElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
       aNamespaceID, aName, aValue, aOldValue, aSubjectPrincipal, aNotify);
 }
 
-EventStates HTMLAnchorElement::IntrinsicState() const {
+ElementState HTMLAnchorElement::IntrinsicState() const {
   return Link::LinkState() | nsGenericHTMLElement::IntrinsicState();
 }
 

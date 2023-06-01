@@ -10,11 +10,9 @@
 
 #include "modules/audio_coding/test/Channel.h"
 
-#include <assert.h>
-
 #include <iostream>
 
-#include "rtc_base/format_macros.h"
+#include "rtc_base/strings/string_builder.h"
 #include "rtc_base/time_utils.h"
 
 namespace webrtc {
@@ -125,7 +123,7 @@ void Channel::CalcStatistics(const RTPHeader& rtp_header, size_t payloadSize) {
             (uint32_t)((uint32_t)rtp_header.timestamp -
                        (uint32_t)currentPayloadStr->lastTimestamp);
       }
-      assert(_lastFrameSizeSample > 0);
+      RTC_DCHECK_GT(_lastFrameSizeSample, 0);
       int k = 0;
       for (; k < MAX_NUM_FRAMESIZES; ++k) {
         if ((currentPayloadStr->frameSizeStats[k].frameSizeSample ==
@@ -220,9 +218,9 @@ Channel::Channel(int16_t chID)
   }
   if (chID >= 0) {
     _saveBitStream = true;
-    char bitStreamFileName[500];
-    sprintf(bitStreamFileName, "bitStream_%d.dat", chID);
-    _bitStreamFile = fopen(bitStreamFileName, "wb");
+    rtc::StringBuilder ss;
+    ss.AppendFormat("bitStream_%d.dat", chID);
+    _bitStreamFile = fopen(ss.str().c_str(), "wb");
   } else {
     _saveBitStream = false;
   }

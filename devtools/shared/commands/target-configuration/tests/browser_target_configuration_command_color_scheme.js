@@ -55,12 +55,7 @@ add_task(async function() {
   );
 
   info("Reload the page");
-  let onPageLoaded = BrowserTestUtils.browserLoaded(
-    gBrowser.selectedBrowser,
-    true
-  );
-  gBrowser.reloadTab(tab);
-  await onPageLoaded;
+  await BrowserTestUtils.reloadTab(tab, /* includeSubFrames */ true);
 
   is(
     await topLevelDocumentMatchPrefersDarkColorSchemeMediaAtStartup(),
@@ -88,8 +83,11 @@ add_task(async function() {
     "Check that navigating to a page that forces the creation of a new browsing context keep the simulation enabled"
   );
 
-  onPageLoaded = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, true);
-  BrowserTestUtils.loadURI(
+  const onPageLoaded = BrowserTestUtils.browserLoaded(
+    gBrowser.selectedBrowser,
+    /* includeSubFrames */ true
+  );
+  BrowserTestUtils.loadURIString(
     gBrowser.selectedBrowser,
     URL_ROOT_ORG_SSL + TEST_DOCUMENT + "?crossOriginIsolated=true"
   );
@@ -162,11 +160,16 @@ function topLevelDocumentMatchPrefersDarkColorSchemeMediaAtStartup() {
 }
 
 function getIframeBrowsingContext() {
-  return SpecialPowers.spawn(
-    gBrowser.selectedBrowser,
-    [],
-    () => content.document.querySelector("iframe").browsingContext
-  );
+  return SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
+    // Ensure we've rendered the iframe so that the prefers-color-scheme
+    // value propagated from the embedder is up-to-date.
+    await new Promise(resolve => {
+      content.requestAnimationFrame(() =>
+        content.requestAnimationFrame(resolve)
+      );
+    });
+    return content.document.querySelector("iframe").browsingContext;
+  });
 }
 
 async function iframeDocumentMatchPrefersDarkColorSchemeMedia() {

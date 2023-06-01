@@ -87,10 +87,8 @@ enum CancelAction {
     RequestEndPending,
 }
 
-#[derive(xpcom)]
-#[xpimplements(nsIBitsRequest)]
-#[refcnt = "nonatomic"]
-pub struct InitBitsRequest {
+#[xpcom(implement(nsIBitsRequest), nonatomic)]
+pub struct BitsRequest {
     bits_id: Guid,
     bits_service: RefPtr<BitsService>,
     // Stores the value to be returned by nsIRequest::IsPending.
@@ -141,7 +139,7 @@ impl BitsRequest {
     ) -> Result<RefPtr<BitsRequest>, BitsTaskError> {
         let _ = context;
         let action: Action = action.into();
-        let monitor_thread = create_thread(&format!("BitsMonitor {}", id)).map_err(|rv| {
+        let monitor_thread = create_thread("BitsMonitor").map_err(|rv| {
             BitsTaskError::from_nsresult(FailedToStartThread, action, MainThread, rv)
         })?;
 
@@ -715,17 +713,43 @@ impl BitsRequest {
     }
 
     xpcom_method!(
-        get_trr_mode => GetTRRMode() -> u8
+        get_trr_mode => GetTRRMode() -> u32
     );
-    fn get_trr_mode(&self) -> Result<u8, nsresult> {
+    fn get_trr_mode(&self) -> Result<u32, nsresult> {
         Err(NS_ERROR_NOT_IMPLEMENTED)
     }
 
     xpcom_method!(
-        set_trr_mode => SetTRRMode(_trr_mode: u8)
+        set_trr_mode => SetTRRMode(_trr_mode: u32)
     );
-    fn set_trr_mode(&self, _trr_mode: u8) -> Result<(), nsresult> {
+    fn set_trr_mode(&self, _trr_mode: u32) -> Result<(), nsresult> {
         Err(NS_ERROR_NOT_IMPLEMENTED)
+    }
+
+    xpcom_method!(
+        get_canceled_reason => GetCanceledReason() -> nsACString
+    );
+    fn get_canceled_reason(&self) -> Result<nsCString, nsresult> {
+        Err(NS_ERROR_NOT_IMPLEMENTED)
+    }
+
+    xpcom_method!(
+        set_canceled_reason => SetCanceledReason(_reason: *const nsACString)
+    );
+    fn set_canceled_reason(&self, _reason: *const nsACString) -> Result<(), nsresult> {
+        Err(NS_ERROR_NOT_IMPLEMENTED)
+    }
+
+    xpcom_method!(
+        cancel_with_reason_nsIRequest => CancelWithReason(status: nsresult, _reason: *const nsACString)
+    );
+    #[allow(non_snake_case)]
+    fn cancel_with_reason_nsIRequest(
+        &self,
+        status: nsresult,
+        _reason: *const nsACString,
+    ) -> Result<(), BitsTaskError> {
+        self.cancel(status, None)
     }
 }
 

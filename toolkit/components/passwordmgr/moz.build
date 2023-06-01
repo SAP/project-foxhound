@@ -31,12 +31,14 @@ XPIDL_MODULE = "loginmgr"
 
 EXTRA_JS_MODULES += [
     "crypto-SDR.js",
+    "FirefoxRelay.jsm",
     "InsecurePasswordUtils.jsm",
     "LoginAutoComplete.jsm",
     "LoginFormFactory.jsm",
     "LoginHelper.jsm",
     "LoginInfo.jsm",
     "LoginManager.jsm",
+    "LoginManager.shared.mjs",
     "LoginManagerAuthPrompter.jsm",
     "LoginManagerChild.jsm",
     "LoginManagerParent.jsm",
@@ -44,7 +46,6 @@ EXTRA_JS_MODULES += [
     "LoginRecipes.jsm",
     "LoginRelatedRealms.jsm",
     "NewPasswordModel.jsm",
-    "OSCrypto.jsm",
     "PasswordGenerator.jsm",
     "PasswordRulesManager.jsm",
     "PasswordRulesParser.jsm",
@@ -57,6 +58,7 @@ if CONFIG["OS_TARGET"] == "Android":
     ]
 else:
     EXTRA_JS_MODULES += [
+        "CSV.js",
         "LoginCSVImport.jsm",
         "LoginExport.jsm",
         "LoginStore.jsm",
@@ -64,7 +66,7 @@ else:
 
 if CONFIG["OS_TARGET"] == "WINNT":
     EXTRA_JS_MODULES += [
-        "OSCrypto_win.js",
+        "OSCrypto_win.jsm",
     ]
 
 if CONFIG["MOZ_BUILD_APP"] == "browser" or CONFIG["MOZ_SUITE"]:

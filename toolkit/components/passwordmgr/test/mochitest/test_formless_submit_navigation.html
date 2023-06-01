@@ -9,8 +9,9 @@
 </head>
 <body>
 <script type="application/javascript">
-const LMCBackstagePass = SpecialPowers.Cu.import("resource://gre/modules/LoginManagerChild.jsm");
-const { LoginManagerChild } = LMCBackstagePass;
+const { LoginManagerChild } = SpecialPowers.ChromeUtils.import(
+  "resource://gre/modules/LoginManagerChild.jsm"
+);
 
 let loadPromise = new Promise(resolve => {
   document.addEventListener("DOMContentLoaded", () => {
@@ -20,7 +21,7 @@ let loadPromise = new Promise(resolve => {
   });
 });
 
-add_task(async function setup() {
+add_setup(async () => {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["signon.formlessCapture.enabled", true],

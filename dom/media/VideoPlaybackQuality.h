@@ -12,13 +12,12 @@
 #include "nsDOMNavigationTiming.h"
 #include "nsWrapperCache.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class VideoPlaybackQuality final : public nsWrapperCache {
  public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(VideoPlaybackQuality)
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(VideoPlaybackQuality)
+  NS_DECL_CYCLE_COLLECTION_NATIVE_WRAPPERCACHE_CLASS(VideoPlaybackQuality)
 
   VideoPlaybackQuality(HTMLMediaElement* aElement,
                        DOMHighResTimeStamp aCreationTime, uint32_t aTotalFrames,
@@ -44,7 +43,6 @@ class VideoPlaybackQuality final : public nsWrapperCache {
   uint32_t mDroppedFrames;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_VideoPlaybackQuality_h_

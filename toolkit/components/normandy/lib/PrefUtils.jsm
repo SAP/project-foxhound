@@ -3,20 +3,20 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
+const lazy = {};
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "LogManager",
   "resource://normandy/lib/LogManager.jsm"
 );
 
 var EXPORTED_SYMBOLS = ["PrefUtils"];
 
-XPCOMUtils.defineLazyGetter(this, "log", () => {
-  return LogManager.getLogger("preference-experiments");
+XPCOMUtils.defineLazyGetter(lazy, "log", () => {
+  return lazy.LogManager.getLogger("preference-experiments");
 });
 
 const kPrefBranches = {
@@ -123,7 +123,7 @@ var PrefUtils = {
     if (branch === "user") {
       kPrefBranches.user.clearUserPref(pref);
     } else if (branch === "default") {
-      log.warn(
+      lazy.log.warn(
         `Cannot reset pref ${pref} on the default branch. Pref will be cleared at next restart.`
       );
     } else {

@@ -12,8 +12,7 @@
 #include "nsISupports.h"
 #include "nsWrapperCache.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class Element;
 class GridDimension;
@@ -27,7 +26,7 @@ class Grid : public nsISupports, public nsWrapperCache {
 
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Grid)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Grid)
 
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
@@ -44,7 +43,6 @@ class Grid : public nsISupports, public nsWrapperCache {
   nsTArray<RefPtr<GridArea>> mAreas;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_Grid_h */

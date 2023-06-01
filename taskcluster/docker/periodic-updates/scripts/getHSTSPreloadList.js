@@ -12,13 +12,12 @@ var gSSService = Cc["@mozilla.org/ssservice;1"].getService(
   Ci.nsISiteSecurityService
 );
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
 
 const SOURCE =
-  "https://chromium.googlesource.com/chromium/src/net/+/master/http/transport_security_state_static.json?format=TEXT";
+  "https://chromium.googlesource.com/chromium/src/+/refs/heads/main/net/http/transport_security_state_static.json?format=TEXT";
 const TOOL_SOURCE =
   "https://hg.mozilla.org/mozilla-central/file/default/taskcluster/docker/periodic-updates/scripts/getHSTSPreloadList.js";
 const OUTPUT = "nsSTSPreloadList.inc";
@@ -115,20 +114,15 @@ function processStsHeader(host, header, status, securityInfo) {
     value: false,
   };
   let error = ERROR_NONE;
-  if (header != null && securityInfo != null) {
+  if (
+    header != null &&
+    securityInfo != null &&
+    securityInfo.overridableErrorCategory ==
+      Ci.nsITransportSecurityInfo.ERROR_UNSET
+  ) {
     try {
       let uri = Services.io.newURI("https://" + host.name);
-      let secInfo = securityInfo.QueryInterface(Ci.nsITransportSecurityInfo);
-      gSSService.processHeader(
-        uri,
-        header,
-        secInfo,
-        0,
-        Ci.nsISiteSecurityService.SOURCE_PRELOAD_LIST,
-        {},
-        maxAge,
-        includeSubdomains
-      );
+      gSSService.processHeader(uri, header, {}, maxAge, includeSubdomains);
     } catch (e) {
       dump(
         "ERROR: could not process header '" +
@@ -272,7 +266,7 @@ function shouldRetry(response) {
   );
 }
 
-// Copied from browser/components/migration/MigrationUtils.jsm
+// Copied from browser/components/migration/MigrationUtils.sys.mjs
 function spinResolve(promise) {
   if (!(promise instanceof Promise)) {
     return promise;
@@ -308,9 +302,9 @@ async function probeHSTSStatuses(inHosts) {
   // too many in-flight requests and the time it takes to process them causes
   // them all to time out.
   let allResults = [];
-  while (inHosts.length > 0) {
+  while (inHosts.length) {
     let promises = [];
-    for (let i = 0; i < MAX_CONCURRENT_REQUESTS && inHosts.length > 0; i++) {
+    for (let i = 0; i < MAX_CONCURRENT_REQUESTS && inHosts.length; i++) {
       let host = inHosts.shift();
       promises.push(getHSTSStatus(host));
     }
@@ -439,10 +433,6 @@ function filterForcedInclusions(inHosts, outNotForced, outForced) {
 function output(statuses) {
   dump("INFO: Writing output to " + OUTPUT + "\n");
   try {
-    var { FileUtils } = ChromeUtils.import(
-      "resource://gre/modules/FileUtils.jsm"
-    );
-
     let file = new FileUtils.File(
       PathUtils.join(Services.dirsvc.get("CurWorkD", Ci.nsIFile).path, OUTPUT)
     );

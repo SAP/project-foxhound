@@ -33,7 +33,7 @@ const {
       },
     },
   },
-} = require("devtools/shared/constants");
+} = require("resource://devtools/shared/constants.js");
 
 add_task(async function() {
   const {
@@ -323,27 +323,26 @@ add_task(async function() {
     ["Image with aria-label", "#img-2", null],
     ["Image with aria-labelledby", "#img-3", null],
     ["Image with alt text", "#img-4", null],
-    ["Image with empty alt text", "#img-5", null],
     [
       "Image with aria-labelledby an element with empty content",
-      "#img-6",
+      "#img-5",
       { score: FAIL, issue: IMAGE_NO_NAME },
     ],
     [
       "Aria image with no name",
-      "#img-7",
+      "#img-6",
       { score: FAIL, issue: IMAGE_NO_NAME },
     ],
-    ["Aria image with aria-label", "#img-8", null],
-    ["Aria image with aria-labelledby", "#img-9", null],
+    ["Aria image with aria-label", "#img-7", null],
+    ["Aria image with aria-labelledby", "#img-8", null],
     [
       "Aria image with empty aria-label",
-      "#img-10",
+      "#img-9",
       { score: FAIL, issue: IMAGE_NO_NAME },
     ],
     [
       "Aria image with aria-labelledby an element with empty content",
-      "#img-11",
+      "#img-10",
       { score: FAIL, issue: IMAGE_NO_NAME },
     ],
     ["<optgroup> with label", "#optgroup-1", null],
@@ -442,10 +441,9 @@ add_task(async function() {
     ["Image map with aria-label", "#imagemap-2", null],
     ["Image map with aria-labelledby", "#imagemap-3", null],
     ["Image map with alt attribute", "#imagemap-4", null],
-    ["Image map with empty alt attribute", "#imagemap-5", null],
     [
       "Image map with aria-labelledby an element with empty content",
-      "#imagemap-6",
+      "#imagemap-5",
       { score: FAIL, issue: IMAGE_NO_NAME },
     ],
     ["<iframe> with title", "#iframe-1", null],
@@ -910,8 +908,7 @@ add_task(async function() {
       { score: WARNING, issue: FORM_NO_VISIBLE_NAME },
     ],
     ["Aria slider with aria-labelledby a visible element", "#slider-9", null],
-    // See bug: https://bugzilla.mozilla.org/show_bug.cgi?id=1555551
-    // ["Number input inside a label", "#spinbutton-1", null],
+    ["Number input inside a label", "#spinbutton-1", null],
     [
       "Number input with no label",
       "#spinbutton-2",

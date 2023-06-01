@@ -77,7 +77,7 @@ function handleRequest(request, response) {
 
   if (expectedRequestType === "fullRequest") {
     // Should not have Range or If-Range in first request.
-    if (range && range.length > 0) {
+    if (range && range.length) {
       ERR(
         response,
         400,
@@ -86,7 +86,7 @@ function handleRequest(request, response) {
       );
       return;
     }
-    if (ifRange && ifRange.length > 0) {
+    if (ifRange && ifRange.length) {
       ERR(
         response,
         400,
@@ -128,15 +128,15 @@ function handleRequest(request, response) {
 
   // Prepare content in two parts for responses.
   var partialContent =
-    '<html><head></head><body><p id="firstResponse">' + "First response</p>";
+    '<html><head></head><body><p id="firstResponse">First response</p>';
   var remainderContent =
-    '<p id="secondResponse">Second response</p>' + "</body></html>";
+    '<p id="secondResponse">Second response</p></body></html>';
   var totalLength = partialContent.length + remainderContent.length;
 
   DBG("totalLength: " + totalLength);
 
   // Prepare common headers for the two responses.
-  date = new Date();
+  let date = new Date();
   DBG("Date: " + date.toUTCString() + ", Last-Modified: " + lastModified);
   var commonHeaders =
     "Date: " +

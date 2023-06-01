@@ -6,17 +6,18 @@
 
 var EXPORTED_SYMBOLS = ["ControlCenter"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
-const { BrowserTestUtils } = ChromeUtils.import(
-  "resource://testing-common/BrowserTestUtils.jsm"
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
+const { BrowserTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/BrowserTestUtils.sys.mjs"
 );
 const { SitePermissions } = ChromeUtils.import(
   "resource:///modules/SitePermissions.jsm"
 );
 const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 let { UrlClassifierTestUtils } = ChromeUtils.import(
@@ -62,7 +63,10 @@ var ControlCenter = {
           "navigator:browser"
         );
         let gBrowser = browserWindow.gBrowser;
-        BrowserTestUtils.loadURI(gBrowser.selectedBrowser, channel.file.path);
+        BrowserTestUtils.loadURIString(
+          gBrowser.selectedBrowser,
+          channel.file.path
+        );
         await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
         await openIdentityPopup();
       },
@@ -289,7 +293,7 @@ var ControlCenter = {
 async function loadPage(url) {
   let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
   let gBrowser = browserWindow.gBrowser;
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, url);
+  BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, url);
   await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, false, url);
 }
 

@@ -14,7 +14,7 @@ const { CFRPageActions } = ChromeUtils.import(
 /**
  * Load and modify a message for the test.
  */
-add_task(async function setup() {
+add_setup(async function() {
   const initialMsgCount = ASRouter.state.messages.length;
   const heartbeatMsg = (await CFRMessageProvider.getMessages()).find(
     m => m.id === "HEARTBEAT_TACTIC_2"
@@ -27,7 +27,7 @@ add_task(async function setup() {
     id: `HEARTBEAT_MESSAGE_${Date.now()}`,
   };
   const client = RemoteSettings("cfr");
-  await client.db.importChanges({}, 42, [testMessage], {
+  await client.db.importChanges({}, Date.now(), [testMessage], {
     clear: true,
   });
 
@@ -36,7 +36,7 @@ add_task(async function setup() {
     set: [
       [
         "browser.newtabpage.activity-stream.asrouter.providers.cfr",
-        `{"id":"cfr","enabled":true,"type":"remote-settings","bucket":"cfr","updateCycleInMs":0}`,
+        `{"id":"cfr","enabled":true,"type":"remote-settings","collection":"cfr","updateCycleInMs":0}`,
       ],
     ],
   });
@@ -88,7 +88,7 @@ add_task(async function test_heartbeat_tactic_2() {
     frequency: { lifetime: 2 },
   };
   const client = RemoteSettings("message-groups");
-  await client.db.importChanges({}, 42, [groupConfiguration], {
+  await client.db.importChanges({}, Date.now(), [groupConfiguration], {
     clear: true,
   });
 
@@ -97,7 +97,7 @@ add_task(async function test_heartbeat_tactic_2() {
     set: [
       [
         "browser.newtabpage.activity-stream.asrouter.providers.message-groups",
-        `{"id":"message-groups","enabled":true,"type":"remote-settings","bucket":"message-groups","updateCycleInMs":0}`,
+        `{"id":"message-groups","enabled":true,"type":"remote-settings","collection":"message-groups","updateCycleInMs":0}`,
       ],
     ],
   });
@@ -119,7 +119,7 @@ add_task(async function test_heartbeat_tactic_2() {
   Assert.ok(groupState.enabled, "Group is enabled");
 
   let tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URL);
-  BrowserTestUtils.loadURI(tab1.linkedBrowser, TEST_URL);
+  BrowserTestUtils.loadURIString(tab1.linkedBrowser, TEST_URL);
 
   let chiclet = document.getElementById("contextual-feature-recommendation");
   Assert.ok(chiclet, "CFR chiclet element found (tab1)");
@@ -138,7 +138,7 @@ add_task(async function test_heartbeat_tactic_2() {
   BrowserTestUtils.removeTab(tab1);
 
   let tab2 = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URL);
-  BrowserTestUtils.loadURI(tab2.linkedBrowser, TEST_URL);
+  BrowserTestUtils.loadURIString(tab2.linkedBrowser, TEST_URL);
 
   Assert.ok(chiclet, "CFR chiclet element found (tab2)");
   await BrowserTestUtils.waitForCondition(
@@ -161,7 +161,7 @@ add_task(async function test_heartbeat_tactic_2() {
   BrowserTestUtils.removeTab(tab2);
 
   let tab3 = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URL);
-  BrowserTestUtils.loadURI(tab3.linkedBrowser, TEST_URL);
+  BrowserTestUtils.loadURIString(tab3.linkedBrowser, TEST_URL);
 
   await BrowserTestUtils.waitForCondition(
     () => chiclet.hidden,

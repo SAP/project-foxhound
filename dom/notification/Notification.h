@@ -23,8 +23,7 @@
 class nsIPrincipal;
 class nsIVariant;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class NotificationRef;
 class WorkerNotificationObserver;
@@ -107,8 +106,6 @@ class Notification : public DOMEventTargetHelper,
   NS_DECL_NSIOBSERVER
 
   static bool PrefEnabled(JSContext* aCx, JSObject* aObj);
-  // Returns if Notification.get() is allowed for the current global.
-  static bool IsGetEnabled(JSContext* aCx, JSObject* aObj);
 
   static already_AddRefed<Notification> Constructor(
       const GlobalObject& aGlobal, const nsAString& aTitle,
@@ -162,10 +159,6 @@ class Notification : public DOMEventTargetHelper,
   static already_AddRefed<Promise> Get(nsPIDOMWindowInner* aWindow,
                                        const GetNotificationOptions& aFilter,
                                        const nsAString& aScope,
-                                       ErrorResult& aRv);
-
-  static already_AddRefed<Promise> Get(const GlobalObject& aGlobal,
-                                       const GetNotificationOptions& aFilter,
                                        ErrorResult& aRv);
 
   static already_AddRefed<Promise> WorkerGet(
@@ -256,10 +249,10 @@ class Notification : public DOMEventTargetHelper,
   nsresult Init();
   bool IsInPrivateBrowsing();
   void ShowInternal();
-  void CloseInternal();
+  void CloseInternal(bool aContextClosed = false);
 
-  static NotificationPermission GetPermissionInternal(nsISupports* aGlobal,
-                                                      ErrorResult& rv);
+  static NotificationPermission GetPermissionInternal(
+      nsPIDOMWindowInner* aWindow, ErrorResult& rv);
 
   static const nsString DirectionToString(NotificationDirection aDirection) {
     switch (aDirection) {
@@ -363,7 +356,6 @@ class Notification : public DOMEventTargetHelper,
   uint32_t mTaskCount;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_notification_h__

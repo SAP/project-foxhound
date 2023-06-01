@@ -7,17 +7,15 @@
 
 "use strict";
 
-add_task(async function setup() {
+add_setup(async function() {
   await PlacesUtils.history.clear();
   await PlacesUtils.bookmarks.eraseEverything();
 
   // Add a new mock default engine so we don't hit the network.
-  let oldDefaultEngine = await Services.search.getDefault();
-  await SearchTestUtils.installSearchExtension({ name: "Test" });
-  await Services.search.setDefault(Services.search.getEngineByName("Test"));
-  registerCleanupFunction(async () => {
-    await Services.search.setDefault(oldDefaultEngine);
-  });
+  await SearchTestUtils.installSearchExtension(
+    { name: "Test" },
+    { setAsDefault: true }
+  );
 
   // Add one bookmark we'll use below.
   await PlacesUtils.bookmarks.insert({

@@ -25,6 +25,10 @@ namespace gfx {
 struct RecordingSourceSurfaceUserData {
   void* refPtr;
   RefPtr<DrawEventRecorderPrivate> recorder;
+
+  // The optimized surface holds a reference to our surface, for GetDataSurface
+  // calls, so we must hold a weak reference to avoid circular dependency.
+  ThreadSafeWeakPtr<SourceSurface> optimizedSurface;
 };
 
 static void RecordingSourceSurfaceUserDataFunc(void* aUserData) {
@@ -235,6 +239,10 @@ void DrawTargetRecording::StrokeLine(const Point& aBegin, const Point& aEnd,
 
 void DrawTargetRecording::Fill(const Path* aPath, const Pattern& aPattern,
                                const DrawOptions& aOptions) {
+  if (!aPath) {
+    return;
+  }
+
   RefPtr<PathRecording> pathRecording = EnsurePathStored(aPath);
   EnsurePatternDependenciesStored(aPattern);
 
@@ -262,6 +270,10 @@ void DrawTargetRecording::FillGlyphs(ScaledFont* aFont,
                                      const GlyphBuffer& aBuffer,
                                      const Pattern& aPattern,
                                      const DrawOptions& aOptions) {
+  if (!aFont) {
+    return;
+  }
+
   EnsurePatternDependenciesStored(aPattern);
 
   UserDataKey* userDataKey = reinterpret_cast<UserDataKey*>(mRecorder.get());
@@ -320,6 +332,10 @@ void DrawTargetRecording::Mask(const Pattern& aSource, const Pattern& aMask,
 void DrawTargetRecording::MaskSurface(const Pattern& aSource,
                                       SourceSurface* aMask, Point aOffset,
                                       const DrawOptions& aOptions) {
+  if (!aMask) {
+    return;
+  }
+
   EnsurePatternDependenciesStored(aSource);
   EnsureSurfaceStoredRecording(mRecorder, aMask, "MaskSurface");
 
@@ -369,6 +385,10 @@ void DrawTargetRecording::DrawSurface(SourceSurface* aSurface,
                                       const Rect& aDest, const Rect& aSource,
                                       const DrawSurfaceOptions& aSurfOptions,
                                       const DrawOptions& aOptions) {
+  if (!aSurface) {
+    return;
+  }
+
   EnsureSurfaceStoredRecording(mRecorder, aSurface, "DrawSurface");
 
   mRecorder->RecordEvent(RecordedDrawSurface(this, aSurface, aDest, aSource,
@@ -381,18 +401,27 @@ void DrawTargetRecording::DrawDependentSurface(uint64_t aId,
   mRecorder->RecordEvent(RecordedDrawDependentSurface(this, aId, aDest));
 }
 
-void DrawTargetRecording::DrawSurfaceWithShadow(
-    SourceSurface* aSurface, const Point& aDest, const DeviceColor& aColor,
-    const Point& aOffset, Float aSigma, CompositionOp aOp) {
+void DrawTargetRecording::DrawSurfaceWithShadow(SourceSurface* aSurface,
+                                                const Point& aDest,
+                                                const ShadowOptions& aShadow,
+                                                CompositionOp aOp) {
+  if (!aSurface) {
+    return;
+  }
+
   EnsureSurfaceStoredRecording(mRecorder, aSurface, "DrawSurfaceWithShadow");
 
-  mRecorder->RecordEvent(RecordedDrawSurfaceWithShadow(
-      this, aSurface, aDest, aColor, aOffset, aSigma, aOp));
+  mRecorder->RecordEvent(
+      RecordedDrawSurfaceWithShadow(this, aSurface, aDest, aShadow, aOp));
 }
 
 void DrawTargetRecording::DrawFilter(FilterNode* aNode, const Rect& aSourceRect,
                                      const Point& aDestPoint,
                                      const DrawOptions& aOptions) {
+  if (!aNode) {
+    return;
+  }
+
   MOZ_ASSERT(mRecorder->HasStoredObject(aNode));
 
   mRecorder->RecordEvent(
@@ -415,6 +444,10 @@ void DrawTargetRecording::ClearRect(const Rect& aRect) {
 void DrawTargetRecording::CopySurface(SourceSurface* aSurface,
                                       const IntRect& aSourceRect,
                                       const IntPoint& aDestination) {
+  if (!aSurface) {
+    return;
+  }
+
   EnsureSurfaceStoredRecording(mRecorder, aSurface, "CopySurface");
 
   mRecorder->RecordEvent(
@@ -422,6 +455,20 @@ void DrawTargetRecording::CopySurface(SourceSurface* aSurface,
 }
 
 void DrawTargetRecording::PushClip(const Path* aPath) {
+  if (!aPath) {
+    return;
+  }
+
+  // The canvas doesn't have a clipRect API so we always end up in the generic
+  // path. The D2D backend doesn't have a good way of specializing rectangular
+  // clips so we take advantage of the fact that aPath is usually backed by a
+  // SkiaPath which implements AsRect() and specialize it here.
+  auto rect = aPath->AsRect();
+  if (rect.isSome()) {
+    PushClipRect(rect.value());
+    return;
+  }
+
   RefPtr<PathRecording> pathRecording = EnsurePathStored(aPath);
 
   mRecorder->RecordEvent(RecordedPushClip(this, pathRecording));
@@ -484,8 +531,20 @@ DrawTargetRecording::CreateSourceSurfaceFromData(unsigned char* aData,
 
 already_AddRefed<SourceSurface> DrawTargetRecording::OptimizeSourceSurface(
     SourceSurface* aSurface) const {
+  // See if we have a previously optimized surface available. We have to do this
+  // check before the SurfaceType::RECORDING below, because aSurface might be a
+  // SurfaceType::RECORDING from another recorder we have previously optimized.
+  auto* userData = static_cast<RecordingSourceSurfaceUserData*>(
+      aSurface->GetUserData(reinterpret_cast<UserDataKey*>(mRecorder.get())));
+  if (userData) {
+    RefPtr<SourceSurface> strongRef(userData->optimizedSurface);
+    if (strongRef) {
+      return do_AddRef(strongRef);
+    }
+  }
+
   if (aSurface->GetType() == SurfaceType::RECORDING &&
-      static_cast<SourceSurfaceRecording*>(aSurface)->mRecorder == mRecorder) {
+      mRecorder->HasStoredObject(aSurface)) {
     // aSurface is already optimized for our recorder.
     return do_AddRef(aSurface);
   }
@@ -497,6 +556,13 @@ already_AddRefed<SourceSurface> DrawTargetRecording::OptimizeSourceSurface(
 
   mRecorder->RecordEvent(
       RecordedOptimizeSourceSurface(aSurface, this, retSurf));
+
+  userData = static_cast<RecordingSourceSurfaceUserData*>(
+      aSurface->GetUserData(reinterpret_cast<UserDataKey*>(mRecorder.get())));
+  MOZ_ASSERT(
+      userData,
+      "User data should always have been set by EnsureSurfaceStoredRecording.");
+  userData->optimizedSurface = retSurf;
 
   return retSurf.forget();
 }

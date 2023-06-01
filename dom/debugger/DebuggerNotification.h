@@ -13,13 +13,12 @@
 #include "nsISupports.h"
 #include "nsWrapperCache.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class DebuggerNotification : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(DebuggerNotification)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(DebuggerNotification)
 
   DebuggerNotification(nsIGlobalObject* aDebuggeeGlobal,
                        DebuggerNotificationType aType,
@@ -66,7 +65,6 @@ MOZ_CAN_RUN_SCRIPT inline void DebuggerNotificationDispatch(
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_DebuggerNotification_h

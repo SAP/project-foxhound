@@ -7,8 +7,6 @@
 #include "WebrtcTCPSocketWrapper.h"
 
 #include "mozilla/net/WebrtcTCPSocketChild.h"
-#include "ipc/WebrtcTCPSocket.h"
-#include "mozilla/LoadInfo.h"
 
 #include "nsNetCID.h"
 #include "nsProxyRelease.h"
@@ -26,7 +24,7 @@ WebrtcTCPSocketWrapper::WebrtcTCPSocketWrapper(
       mWebrtcTCPSocket(nullptr),
       mMainThread(nullptr),
       mSocketThread(nullptr) {
-  mMainThread = GetMainThreadEventTarget();
+  mMainThread = GetMainThreadSerialEventTarget();
   mSocketThread = do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID);
   MOZ_RELEASE_ASSERT(mMainThread, "no main thread");
   MOZ_RELEASE_ASSERT(mSocketThread, "no socket thread");
@@ -113,7 +111,7 @@ void WebrtcTCPSocketWrapper::OnRead(nsTArray<uint8_t>&& aReadData) {
           &WebrtcTCPSocketCallback::OnRead, std::move(aReadData))));
 }
 
-void WebrtcTCPSocketWrapper::OnConnected(const nsCString& aProxyType) {
+void WebrtcTCPSocketWrapper::OnConnected(const nsACString& aProxyType) {
   MOZ_ASSERT(NS_IsMainThread(), "not on main thread");
   MOZ_ASSERT(mProxyCallbacks, "webrtc TCP callbacks should be non-null");
 

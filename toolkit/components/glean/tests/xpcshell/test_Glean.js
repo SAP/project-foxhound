@@ -3,17 +3,19 @@
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 
 function sleep(ms) {
   /* eslint-disable mozilla/no-arbitrary-setTimeout */
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-add_task(
+add_setup(
   /* on Android FOG is set up through head.js */
   { skip_if: () => AppConstants.platform == "android" },
   function test_setup() {
@@ -66,6 +68,15 @@ add_task(async function test_fog_timespan_works() {
   Glean.testOnly.canWeTimeIt.stop();
 
   Assert.ok(Glean.testOnly.canWeTimeIt.testGetValue("test-ping") > 0);
+});
+
+add_task(async function test_fog_timespan_throws_on_stop_wout_start() {
+  Glean.testOnly.canWeTimeIt.stop();
+  Assert.throws(
+    () => Glean.testOnly.canWeTimeIt.testGetValue(),
+    /NS_ERROR_LOSS_OF_SIGNIFICANT_DATA/,
+    "Should throw because stop was called without start."
+  );
 });
 
 add_task(async function test_fog_uuid_works() {
@@ -127,21 +138,27 @@ add_task(async function test_fog_event_works() {
   };
   Assert.deepEqual(expectedExtra, events[0].extra);
 
-  // Invalid extra keys don't crash, the event is not recorded.
-  let extra3 = {
-    extra1_nonexistent_extra: "this does not crash",
-  };
-  Glean.testOnlyIpc.eventWithExtra.record(extra3);
-  events = Glean.testOnlyIpc.eventWithExtra.testGetValue();
-  Assert.equal(1, events.length, "Recorded one event too many.");
-
   // Quantities need to be non-negative.
+  // This does not record a Glean error.
   let extra4 = {
     extra2: -1,
   };
   Glean.testOnlyIpc.eventWithExtra.record(extra4);
   events = Glean.testOnlyIpc.eventWithExtra.testGetValue();
+  // Unchanged number of events
   Assert.equal(1, events.length, "Recorded one event too many.");
+
+  // Invalid extra keys don't crash, the event is not recorded,
+  // but an error is recorded.
+  let extra3 = {
+    extra1_nonexistent_extra: "this does not crash",
+  };
+  Glean.testOnlyIpc.eventWithExtra.record(extra3);
+  Assert.throws(
+    () => Glean.testOnlyIpc.eventWithExtra.testGetValue(),
+    /NS_ERROR_LOSS_OF_SIGNIFICANT_DATA/,
+    "Should throw because of a recording error."
+  );
 });
 
 add_task(async function test_fog_memory_distribution_works() {
@@ -229,6 +246,47 @@ add_task(async function test_fog_timing_distribution_works() {
   );
 });
 
+add_task(async function test_fog_labels_conform() {
+  Glean.testOnly.mabelsLabelMaker.singleword.set("portmanteau");
+  Assert.equal(
+    "portmanteau",
+    Glean.testOnly.mabelsLabelMaker.singleword.testGetValue()
+  );
+  Glean.testOnly.mabelsLabelMaker.snake_case.set("snek");
+  Assert.equal(
+    "snek",
+    Glean.testOnly.mabelsLabelMaker.snake_case.testGetValue()
+  );
+  Glean.testOnly.mabelsLabelMaker["dash-character"].set("Dash Rendar");
+  Assert.equal(
+    "Dash Rendar",
+    Glean.testOnly.mabelsLabelMaker["dash-character"].testGetValue()
+  );
+  Glean.testOnly.mabelsLabelMaker["dot.separated"].set("dot product");
+  Assert.equal(
+    "dot product",
+    Glean.testOnly.mabelsLabelMaker["dot.separated"].testGetValue()
+  );
+  Glean.testOnly.mabelsLabelMaker.camelCase.set("wednesday");
+  Assert.throws(
+    () => Glean.testOnly.mabelsLabelMaker.camelCase.testGetValue(),
+    /NS_ERROR_LOSS_OF_SIGNIFICANT_DATA/,
+    "Should throw because of an invalid label."
+  );
+  Assert.throws(
+    () => Glean.testOnly.mabelsLabelMaker.__other__.testGetValue(),
+    /NS_ERROR_LOSS_OF_SIGNIFICANT_DATA/,
+    "Should throw because of an invalid label."
+  );
+  // This test _should_ throw because we are calling data after an invalid label
+  // has been set.
+  Assert.throws(
+    () => Glean.testOnly.mabelsLabelMaker["dot.separated"].testGetValue(),
+    /NS_ERROR_LOSS_OF_SIGNIFICANT_DATA/,
+    "Should throw because of an invalid label."
+  );
+});
+
 add_task(async function test_fog_labeled_boolean_works() {
   Assert.equal(
     undefined,
@@ -251,11 +309,11 @@ add_task(async function test_fog_labeled_boolean_works() {
     Glean.testOnly.mabelsLikeBalloons.__other__.testGetValue()
   );
   Glean.testOnly.mabelsLikeBalloons.InvalidLabel.set(true);
-  Assert.equal(
-    true,
-    Glean.testOnly.mabelsLikeBalloons.__other__.testGetValue()
+  Assert.throws(
+    () => Glean.testOnly.mabelsLikeBalloons.__other__.testGetValue(),
+    /NS_ERROR_LOSS_OF_SIGNIFICANT_DATA/,
+    "Should throw because of a recording error."
   );
-  // TODO: Test that we have the right number and type of errors (bug 1683171)
 });
 
 add_task(async function test_fog_labeled_counter_works() {
@@ -337,4 +395,11 @@ add_task(function test_fog_rate_works() {
     { numerator: 121, denominator: 11 },
     Glean.testOnlyIpc.rateWithExternalDenominator.testGetValue()
   );
+});
+
+add_task(async function test_fog_url_works() {
+  const value = "https://www.example.com/fog";
+  Glean.testOnlyIpc.aUrl.set(value);
+
+  Assert.equal(value, Glean.testOnlyIpc.aUrl.testGetValue("store1"));
 });

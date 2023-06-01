@@ -256,7 +256,7 @@ class MediaData {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MediaData)
 
-  enum class Type { AUDIO_DATA = 0, VIDEO_DATA, RAW_DATA, NULL_DATA };
+  enum class Type : uint8_t { AUDIO_DATA = 0, VIDEO_DATA, RAW_DATA, NULL_DATA };
   static const char* TypeToStr(Type aType) {
     switch (aType) {
       case Type::AUDIO_DATA:
@@ -421,6 +421,8 @@ class VideoData : public MediaData {
   typedef gfx::ColorDepth ColorDepth;
   typedef gfx::ColorRange ColorRange;
   typedef gfx::YUVColorSpace YUVColorSpace;
+  typedef gfx::ColorSpace2 ColorSpace2;
+  typedef gfx::ChromaSubsampling ChromaSubsampling;
   typedef layers::ImageContainer ImageContainer;
   typedef layers::Image Image;
   typedef layers::PlanarYCbCrImage PlanarYCbCrImage;
@@ -443,8 +445,10 @@ class VideoData : public MediaData {
 
     Plane mPlanes[3];
     YUVColorSpace mYUVColorSpace = YUVColorSpace::Identity;
+    ColorSpace2 mColorPrimaries = ColorSpace2::UNKNOWN;
     ColorDepth mColorDepth = ColorDepth::COLOR_8;
     ColorRange mColorRange = ColorRange::LIMITED;
+    ChromaSubsampling mChromaSubsampling = ChromaSubsampling::FULL;
   };
 
   // Constructs a VideoData object. If aImage is nullptr, creates a new Image
@@ -455,6 +459,9 @@ class VideoData : public MediaData {
   // Returns nsnull if an error occurs. This may indicate that memory couldn't
   // be allocated to create the VideoData object, or it may indicate some
   // problem with the input data (e.g. negative stride).
+
+  static bool UseUseNV12ForSoftwareDecodedVideoIfPossible(
+      layers::KnowsCompositor* aAllocator);
 
   // Creates a new VideoData containing a deep copy of aBuffer. May use
   // aContainer to allocate an Image to hold the copied data.
@@ -494,7 +501,9 @@ class VideoData : public MediaData {
   // This frame's image.
   RefPtr<Image> mImage;
 
-  int32_t mFrameID;
+  ColorDepth GetColorDepth() const;
+
+  uint32_t mFrameID;
 
   VideoData(int64_t aOffset, const media::TimeUnit& aTime,
             const media::TimeUnit& aDuration, bool aKeyframe,

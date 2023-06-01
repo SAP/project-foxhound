@@ -14,9 +14,6 @@ namespace intl {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(FluentResource, mParent)
 
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(FluentResource, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(FluentResource, Release)
-
 FluentResource::FluentResource(nsISupports* aParent,
                                const ffi::FluentResource* aRaw)
     : mParent(aParent), mRaw(std::move(aRaw)), mHasErrors(false) {}
@@ -33,7 +30,7 @@ already_AddRefed<FluentResource> FluentResource::Constructor(
 
   if (res->mHasErrors) {
     nsContentUtils::LogSimpleConsoleError(
-        u"Errors encountered while parsing Fluent Resource."_ns, "chrome",
+        u"Errors encountered while parsing Fluent Resource."_ns, "chrome"_ns,
         false, true /* from chrome context*/);
   }
   return res.forget();

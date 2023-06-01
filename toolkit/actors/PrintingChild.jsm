@@ -6,24 +6,17 @@
 
 var EXPORTED_SYMBOLS = ["PrintingChild"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
+});
 
 ChromeUtils.defineModuleGetter(
-  this,
-  "setTimeout",
-  "resource://gre/modules/Timer.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "ReaderMode",
   "resource://gre/modules/ReaderMode.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "DeferredTask",
-  "resource://gre/modules/DeferredTask.jsm"
 );
 
 let gPendingPreviewsMap = new Map();
@@ -59,7 +52,7 @@ class PrintingChild extends JSWindowActorChild {
 
       case "scroll":
         if (!this._scrollTask) {
-          this._scrollTask = new DeferredTask(
+          this._scrollTask = new lazy.DeferredTask(
             () => this.updateCurrentPage(),
             16,
             16
@@ -98,9 +91,9 @@ class PrintingChild extends JSWindowActorChild {
     // resulting JS object into the DOM of current browser.
     let article;
     try {
-      article = await ReaderMode.parseDocument(contentWindow.document);
+      article = await lazy.ReaderMode.parseDocument(contentWindow.document);
     } catch (ex) {
-      Cu.reportError(ex);
+      console.error(ex);
     }
 
     await new Promise(resolve => {
@@ -123,7 +116,7 @@ class PrintingChild extends JSWindowActorChild {
               };
               contentWindow.addEventListener("MozAfterPaint", onPaint);
               // This timer is needed for when display list invalidation doesn't invalidate.
-              setTimeout(() => {
+              lazy.setTimeout(() => {
                 contentWindow.removeEventListener("MozAfterPaint", onPaint);
                 actor.sendAsyncMessage("Printing:Preview:ReaderModeReady");
                 resolve();
@@ -185,7 +178,7 @@ class PrintingChild extends JSWindowActorChild {
 
       // Create container div (main element) and append it to body
       let containerElement = document.createElement("div");
-      containerElement.setAttribute("id", "container");
+      containerElement.setAttribute("class", "container");
       document.body.appendChild(containerElement);
 
       // Reader Mode might return null if there's a failure when parsing the document.
@@ -196,19 +189,18 @@ class PrintingChild extends JSWindowActorChild {
 
         // Create header div and append it to container
         let headerElement = document.createElement("div");
-        headerElement.setAttribute("id", "reader-header");
+        headerElement.setAttribute("class", "reader-header");
         headerElement.setAttribute("class", "header");
         containerElement.appendChild(headerElement);
 
         // Jam the article's title and byline into header div
         let titleElement = document.createElement("h1");
-        titleElement.setAttribute("id", "reader-title");
+        titleElement.setAttribute("class", "reader-title");
         titleElement.textContent = article.title;
         headerElement.appendChild(titleElement);
 
         let bylineElement = document.createElement("div");
-        bylineElement.setAttribute("id", "reader-credits");
-        bylineElement.setAttribute("class", "credits");
+        bylineElement.setAttribute("class", "reader-credits credits");
         bylineElement.textContent = article.byline;
         headerElement.appendChild(bylineElement);
 
@@ -222,7 +214,7 @@ class PrintingChild extends JSWindowActorChild {
 
         // Jam the article's content into content div
         let readerContent = document.createElement("div");
-        readerContent.setAttribute("id", "moz-reader-content");
+        readerContent.setAttribute("class", "moz-reader-content");
         contentElement.appendChild(readerContent);
 
         let articleUri = Services.io.newURI(article.url);
@@ -243,12 +235,8 @@ class PrintingChild extends JSWindowActorChild {
         // Display reader content element
         readerContent.style.display = "block";
       } else {
-        let aboutReaderStrings = Services.strings.createBundle(
-          "chrome://global/locale/aboutReader.properties"
-        );
-        let errorMessage = aboutReaderStrings.GetStringFromName(
-          "aboutReader.loadError"
-        );
+        const l10n = new Localization(["toolkit/about/aboutReader.ftl"], true);
+        const errorMessage = l10n.formatValueSync("about-reader-load-error");
 
         document.title = errorMessage;
 

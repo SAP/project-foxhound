@@ -2,9 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 // This is the only implementation of nsIUrlListManager.
@@ -27,8 +26,11 @@ const PREF_TEST_NOTIFICATIONS =
 
 let loggingEnabled = false;
 
+// Variables imported from library.
+let BindToObject, RequestBackoffV4;
+
 // Log only if browser.safebrowsing.debug is true
-this.log = function log(...stuff) {
+function log(...stuff) {
   if (!loggingEnabled) {
     return;
   }
@@ -38,7 +40,7 @@ this.log = function log(...stuff) {
   msg = Services.urlFormatter.trimSensitiveURLs(msg);
   Services.console.logStringMessage(msg);
   dump(msg + "\n");
-};
+}
 
 /**
  * A ListManager keeps track of exception and block lists and knows
@@ -46,7 +48,7 @@ this.log = function log(...stuff) {
  *
  * @constructor
  */
-this.PROT_ListManager = function PROT_ListManager() {
+function PROT_ListManager() {
   loggingEnabled = Services.prefs.getBoolPref(PREF_DEBUG_ENABLED);
 
   log("Initializing list manager");
@@ -76,7 +78,7 @@ this.PROT_ListManager = function PROT_ListManager() {
 
   Services.obs.addObserver(this, "quit-application");
   Services.prefs.addObserver(PREF_DEBUG_ENABLED, this);
-};
+}
 
 /**
  * Register a new table table
@@ -427,7 +429,7 @@ PROT_ListManager.prototype.checkForUpdates = function(
     return false;
   }
 
-  if (enableTestNotifications) {
+  if (lazy.enableTestNotifications) {
     Services.obs.notifyObservers(
       null,
       "safebrowsing-update-attempt",
@@ -801,17 +803,19 @@ PROT_ListManager.prototype.QueryInterface = ChromeUtils.generateQI([
   "nsITimerCallback",
 ]);
 
-var modScope = this;
+let initialized = false;
 function Init() {
+  if (initialized) {
+    return;
+  }
+
   // Pull the library in.
   var jslib = Cc["@mozilla.org/url-classifier/jslib;1"].getService()
     .wrappedJSObject;
-  /* global BindToObject, RequestBackoffV4 */
-  modScope.BindToObject = jslib.BindToObject;
-  modScope.RequestBackoffV4 = jslib.RequestBackoffV4;
+  BindToObject = jslib.BindToObject;
+  RequestBackoffV4 = jslib.RequestBackoffV4;
 
-  // We only need to call Init once.
-  modScope.Init = function() {};
+  initialized = true;
 }
 
 function RegistrationData() {
@@ -819,8 +823,10 @@ function RegistrationData() {
   return new PROT_ListManager();
 }
 
+const lazy = {};
+
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "enableTestNotifications",
   PREF_TEST_NOTIFICATIONS,
   false

@@ -7,6 +7,7 @@
 #include "SpecialSystemDirectory.h"
 #include "nsString.h"
 #include "nsDependentString.h"
+#include "nsIXULAppInfo.h"
 
 #if defined(XP_WIN)
 
@@ -182,6 +183,31 @@ static nsresult GetUnixHomeDir(nsIFile** aFile) {
 #  else
   return NS_NewNativeLocalFile(nsDependentCString(PR_GetEnv("HOME")), true,
                                aFile);
+#  endif
+}
+
+static nsresult GetUnixSystemConfigDir(nsIFile** aFile) {
+#  if defined(ANDROID)
+  return NS_ERROR_FAILURE;
+#  else
+  nsAutoCString appName;
+  if (nsCOMPtr<nsIXULAppInfo> appInfo =
+          do_GetService("@mozilla.org/xre/app-info;1")) {
+    MOZ_TRY(appInfo->GetName(appName));
+  } else {
+    appName.AssignLiteral(MOZ_APP_BASENAME);
+  }
+
+  ToLowerCase(appName);
+
+  const char* mozSystemConfigDir = PR_GetEnv("MOZ_SYSTEM_CONFIG_DIR");
+  const char* defaultSystemConfigDir = "/etc";
+  nsDependentCString sysConfigDir = nsDependentCString(
+      mozSystemConfigDir ? mozSystemConfigDir : defaultSystemConfigDir);
+
+  MOZ_TRY(NS_NewNativeLocalFile(sysConfigDir, true, aFile));
+  MOZ_TRY((*aFile)->AppendNative(appName));
+  return NS_OK;
 #  endif
 }
 
@@ -365,38 +391,58 @@ static nsresult GetUnixXDGUserDirectory(SystemDirectories aSystemDirectory,
 
   nsresult rv;
   nsCOMPtr<nsIFile> file;
+  bool exists;
   if (dir) {
     rv = NS_NewNativeLocalFile(nsDependentCString(dir), true,
                                getter_AddRefs(file));
     free(dir);
+
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+
+    rv = file->Exists(&exists);
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+
+    if (!exists) {
+      rv = file->Create(nsIFile::DIRECTORY_TYPE, 0755);
+      if (NS_FAILED(rv)) {
+        return rv;
+      }
+    }
   } else if (Unix_XDG_Desktop == aSystemDirectory) {
     // for the XDG desktop dir, fall back to HOME/Desktop
     // (for historical compatibility)
-    rv = GetUnixHomeDir(getter_AddRefs(file));
+    nsCOMPtr<nsIFile> home;
+    rv = GetUnixHomeDir(getter_AddRefs(home));
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+
+    rv = home->Clone(getter_AddRefs(file));
     if (NS_FAILED(rv)) {
       return rv;
     }
 
     rv = file->AppendNative("Desktop"_ns);
-  } else {
-    // no fallback for the other XDG dirs
-    rv = NS_ERROR_FAILURE;
-  }
-
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  bool exists;
-  rv = file->Exists(&exists);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-  if (!exists) {
-    rv = file->Create(nsIFile::DIRECTORY_TYPE, 0755);
     if (NS_FAILED(rv)) {
       return rv;
     }
+
+    rv = file->Exists(&exists);
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+
+    // fallback to HOME only if HOME/Desktop doesn't exist
+    if (!exists) {
+      file = home;
+    }
+  } else {
+    // no fallback for the other XDG dirs
+    return NS_ERROR_FAILURE;
   }
 
   *aFile = nullptr;
@@ -465,7 +511,36 @@ nsresult GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,
 #else
       break;
 #endif
-#if defined(XP_WIN)
+#if defined(MOZ_WIDGET_COCOA)
+    case Mac_SystemDirectory: {
+      return GetOSXFolderType(kClassicDomain, kSystemFolderType, aFile);
+    }
+    case Mac_UserLibDirectory: {
+      return GetOSXFolderType(kUserDomain, kDomainLibraryFolderType, aFile);
+    }
+    case Mac_HomeDirectory: {
+      return GetOSXFolderType(kUserDomain, kDomainTopLevelFolderType, aFile);
+    }
+    case Mac_DefaultDownloadDirectory: {
+      nsresult rv = GetOSXFolderType(kUserDomain, kDownloadsFolderType, aFile);
+      if (NS_FAILED(rv)) {
+        return GetOSXFolderType(kUserDomain, kDesktopFolderType, aFile);
+      }
+      return NS_OK;
+    }
+    case Mac_UserDesktopDirectory: {
+      return GetOSXFolderType(kUserDomain, kDesktopFolderType, aFile);
+    }
+    case Mac_LocalApplicationsDirectory: {
+      return GetOSXFolderType(kLocalDomain, kApplicationsFolderType, aFile);
+    }
+    case Mac_UserPreferencesDirectory: {
+      return GetOSXFolderType(kUserDomain, kPreferencesFolderType, aFile);
+    }
+    case Mac_PictureDocumentsDirectory: {
+      return GetOSXFolderType(kUserDomain, kPictureDocumentsFolderType, aFile);
+    }
+#elif defined(XP_WIN)
     case Win_SystemDirectory: {
       int32_t len = ::GetSystemDirectoryW(path, MAX_PATH);
 
@@ -539,6 +614,7 @@ nsresult GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,
 
         return NS_NewLocalFile(nsDependentString(path, len), true, aFile);
       }
+      break;
     }
     case Win_Programs: {
       return GetWindowsFolder(CSIDL_PROGRAMS, aFile);
@@ -604,6 +680,9 @@ nsresult GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,
     case Unix_XDG_Desktop:
     case Unix_XDG_Download:
       return GetUnixXDGUserDirectory(aSystemSystemDirectory, aFile);
+
+    case Unix_SystemConfigDirectory:
+      return GetUnixSystemConfigDir(aFile);
 #endif
 
     default:

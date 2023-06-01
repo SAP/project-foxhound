@@ -7,21 +7,18 @@
 
 var EXPORTED_SYMBOLS = ["ExtensionUtils"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "setTimeout",
-  "resource://gre/modules/Timer.jsm"
-);
+const lazy = {};
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["fetch", "btoa"]);
+ChromeUtils.defineESModuleGetters(lazy, {
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
+});
 
 // xpcshell doesn't handle idle callbacks well.
-XPCOMUtils.defineLazyGetter(this, "idleTimeout", () =>
+XPCOMUtils.defineLazyGetter(lazy, "idleTimeout", () =>
   Services.appinfo.name === "XPCShell" ? 500 : undefined
 );
 
@@ -46,7 +43,7 @@ function getUniqueId() {
 }
 
 function promiseTimeout(delay) {
-  return new Promise(resolve => setTimeout(resolve, delay));
+  return new Promise(resolve => lazy.setTimeout(resolve, delay));
 }
 
 /**
@@ -59,7 +56,7 @@ class ExtensionError extends DOMException {
   }
   // Custom JS classes can't survive IPC, so need to check error name.
   static [Symbol.hasInstance](e) {
-    return e instanceof DOMException && e.name === "ExtensionError";
+    return DOMException.isInstance(e) && e.name === "ExtensionError";
   }
 }
 
@@ -205,7 +202,7 @@ function promiseDocumentReady(doc) {
 function promiseDocumentIdle(window) {
   return window.document.documentReadyForIdle.then(() => {
     return new Promise(resolve =>
-      window.requestIdleCallback(resolve, { timeout: idleTimeout })
+      window.requestIdleCallback(resolve, { timeout: lazy.idleTimeout })
     );
   });
 }
@@ -316,6 +313,7 @@ function parseMatchPatterns(patterns, options) {
 
 /**
  * Fetch icon content and convert it to a data: URI.
+ *
  * @param {string} iconUrl Icon url to fetch.
  * @returns {Promise<string>}
  */

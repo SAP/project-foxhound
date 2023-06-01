@@ -1,4 +1,6 @@
-//! Module processing functionality.
+/*!
+[`Module`](super::Module) processing functionality.
+*/
 
 pub mod index;
 mod layouter;
@@ -8,19 +10,11 @@ mod typifier;
 
 use std::cmp::PartialEq;
 
-pub use index::{BoundsCheckPolicies, BoundsCheckPolicy, IndexableLength};
-pub use layouter::{Alignment, InvalidBaseType, Layouter, TypeLayout};
+pub use index::{BoundsCheckPolicies, BoundsCheckPolicy, IndexableLength, IndexableLengthError};
+pub use layouter::{Alignment, LayoutError, LayoutErrorInner, Layouter, TypeLayout};
 pub use namer::{EntryPointIndex, NameKey, Namer};
 pub use terminator::ensure_block_returns;
 pub use typifier::{ResolveContext, ResolveError, TypeResolution};
-
-#[derive(Clone, Debug, thiserror::Error, PartialEq)]
-pub enum ProcError {
-    #[error("type is not indexable, and has no length (validation error)")]
-    TypeNotIndexable,
-    #[error("array length is wrong kind of constant (validation error)")]
-    InvalidArraySizeConstant(crate::Handle<crate::Constant>),
-}
 
 impl From<super::StorageFormat> for super::ScalarKind {
     fn from(format: super::StorageFormat) -> Self {
@@ -58,12 +52,18 @@ impl From<super::StorageFormat> for super::ScalarKind {
             Sf::Rgba32Uint => Sk::Uint,
             Sf::Rgba32Sint => Sk::Sint,
             Sf::Rgba32Float => Sk::Float,
+            Sf::R16Unorm => Sk::Float,
+            Sf::R16Snorm => Sk::Float,
+            Sf::Rg16Unorm => Sk::Float,
+            Sf::Rg16Snorm => Sk::Float,
+            Sf::Rgba16Unorm => Sk::Float,
+            Sf::Rgba16Snorm => Sk::Float,
         }
     }
 }
 
 impl super::ScalarValue {
-    pub fn scalar_kind(&self) -> super::ScalarKind {
+    pub const fn scalar_kind(&self) -> super::ScalarKind {
         match *self {
             Self::Uint(_) => super::ScalarKind::Uint,
             Self::Sint(_) => super::ScalarKind::Sint,
@@ -73,10 +73,19 @@ impl super::ScalarValue {
     }
 }
 
+impl super::ScalarKind {
+    pub const fn is_numeric(self) -> bool {
+        match self {
+            crate::ScalarKind::Sint | crate::ScalarKind::Uint | crate::ScalarKind::Float => true,
+            crate::ScalarKind::Bool => false,
+        }
+    }
+}
+
 pub const POINTER_SPAN: u32 = 4;
 
 impl super::TypeInner {
-    pub fn scalar_kind(&self) -> Option<super::ScalarKind> {
+    pub const fn scalar_kind(&self) -> Option<super::ScalarKind> {
         match *self {
             super::TypeInner::Scalar { kind, .. } | super::TypeInner::Vector { kind, .. } => {
                 Some(kind)
@@ -86,31 +95,29 @@ impl super::TypeInner {
         }
     }
 
-    pub fn pointer_class(&self) -> Option<crate::StorageClass> {
+    pub const fn pointer_space(&self) -> Option<crate::AddressSpace> {
         match *self {
-            Self::Pointer { class, .. } => Some(class),
-            Self::ValuePointer { class, .. } => Some(class),
+            Self::Pointer { space, .. } => Some(space),
+            Self::ValuePointer { space, .. } => Some(space),
             _ => None,
         }
     }
 
-    pub fn span(&self, constants: &super::Arena<super::Constant>) -> u32 {
+    /// Get the size of this type.
+    pub fn size(&self, constants: &super::Arena<super::Constant>) -> u32 {
         match *self {
             Self::Scalar { kind: _, width } | Self::Atomic { kind: _, width } => width as u32,
             Self::Vector {
                 size,
                 kind: _,
                 width,
-            } => (size as u8 * width) as u32,
+            } => size as u32 * width as u32,
             // matrices are treated as arrays of aligned columns
             Self::Matrix {
                 columns,
                 rows,
                 width,
-            } => {
-                let aligned_rows = if rows > crate::VectorSize::Bi { 4 } else { 2 };
-                columns as u32 * aligned_rows * width as u32
-            }
+            } => Alignment::from(rows) * width as u32 * columns as u32,
             Self::Pointer { .. } | Self::ValuePointer { .. } => POINTER_SPAN,
             Self::Array {
                 base: _,
@@ -119,7 +126,6 @@ impl super::TypeInner {
             } => {
                 let count = match size {
                     super::ArraySize::Constant(handle) => {
-                        // Bad array lengths will be caught during validation.
                         constants[handle].to_array_length().unwrap_or(1)
                     }
                     // A dynamically-sized array has to have at least one element
@@ -128,11 +134,11 @@ impl super::TypeInner {
                 count * stride
             }
             Self::Struct { span, .. } => span,
-            Self::Image { .. } | Self::Sampler { .. } => 0,
+            Self::Image { .. } | Self::Sampler { .. } | Self::BindingArray { .. } => 0,
         }
     }
 
-    /// Return the canoncal form of `self`, or `None` if it's already in
+    /// Return the canonical form of `self`, or `None` if it's already in
     /// canonical form.
     ///
     /// Certain types have multiple representations in `TypeInner`. This
@@ -146,18 +152,18 @@ impl super::TypeInner {
     ) -> Option<crate::TypeInner> {
         use crate::TypeInner as Ti;
         match *self {
-            Ti::Pointer { base, class } => match types[base].inner {
+            Ti::Pointer { base, space } => match types[base].inner {
                 Ti::Scalar { kind, width } => Some(Ti::ValuePointer {
                     size: None,
                     kind,
                     width,
-                    class,
+                    space,
                 }),
                 Ti::Vector { size, kind, width } => Some(Ti::ValuePointer {
                     size: Some(size),
                     kind,
                     width,
-                    class,
+                    space,
                 }),
                 _ => None,
             },
@@ -182,31 +188,44 @@ impl super::TypeInner {
         let right = rhs.canonical_form(types);
         left.as_ref().unwrap_or(self) == right.as_ref().unwrap_or(rhs)
     }
+
+    pub fn is_dynamically_sized(&self, types: &crate::UniqueArena<crate::Type>) -> bool {
+        use crate::TypeInner as Ti;
+        match *self {
+            Ti::Array { size, .. } => size == crate::ArraySize::Dynamic,
+            Ti::Struct { ref members, .. } => members
+                .last()
+                .map(|last| types[last.ty].inner.is_dynamically_sized(types))
+                .unwrap_or(false),
+            _ => false,
+        }
+    }
 }
 
-impl super::StorageClass {
+impl super::AddressSpace {
     pub fn access(self) -> crate::StorageAccess {
         use crate::StorageAccess as Sa;
         match self {
-            crate::StorageClass::Function
-            | crate::StorageClass::Private
-            | crate::StorageClass::WorkGroup => Sa::LOAD | Sa::STORE,
-            crate::StorageClass::Uniform => Sa::LOAD,
-            crate::StorageClass::Storage { access } => access,
-            crate::StorageClass::Handle => Sa::LOAD,
-            crate::StorageClass::PushConstant => Sa::LOAD,
+            crate::AddressSpace::Function
+            | crate::AddressSpace::Private
+            | crate::AddressSpace::WorkGroup => Sa::LOAD | Sa::STORE,
+            crate::AddressSpace::Uniform => Sa::LOAD,
+            crate::AddressSpace::Storage { access } => access,
+            crate::AddressSpace::Handle => Sa::LOAD,
+            crate::AddressSpace::PushConstant => Sa::LOAD,
         }
     }
 }
 
 impl super::MathFunction {
-    pub fn argument_count(&self) -> usize {
+    pub const fn argument_count(&self) -> usize {
         match *self {
             // comparison
             Self::Abs => 1,
             Self::Min => 2,
             Self::Max => 2,
             Self::Clamp => 3,
+            Self::Saturate => 1,
             // trigonometry
             Self::Cos => 1,
             Self::Cosh => 1,
@@ -260,6 +279,7 @@ impl super::MathFunction {
             Self::Transpose => 1,
             Self::Determinant => 1,
             // bits
+            Self::CountLeadingZeros => 1,
             Self::CountOneBits => 1,
             Self::ReverseBits => 1,
             Self::ExtractBits => 3,
@@ -284,7 +304,7 @@ impl super::MathFunction {
 
 impl crate::Expression {
     /// Returns true if the expression is considered emitted at the start of a function.
-    pub fn needs_pre_emit(&self) -> bool {
+    pub const fn needs_pre_emit(&self) -> bool {
         match *self {
             Self::Constant(_)
             | Self::FunctionArgument(_)
@@ -345,7 +365,7 @@ impl crate::Function {
 }
 
 impl crate::SampleLevel {
-    pub fn implicit_derivatives(&self) -> bool {
+    pub const fn implicit_derivatives(&self) -> bool {
         match *self {
             Self::Auto | Self::Bias(_) => true,
             Self::Zero | Self::Exact(_) | Self::Gradient { .. } => false,
@@ -367,7 +387,6 @@ impl crate::Constant {
     /// `OpArrayType` referring to an inappropriate `OpConstant`). So we return
     /// `Option` and let the caller sort things out.
     pub(crate) fn to_array_length(&self) -> Option<u32> {
-        use std::convert::TryInto;
         match self.inner {
             crate::ConstantInner::Scalar { value, width: _ } => match value {
                 crate::ScalarValue::Uint(value) => value.try_into().ok(),
@@ -385,9 +404,9 @@ impl crate::Constant {
 }
 
 impl crate::Binding {
-    pub fn to_built_in(&self) -> Option<crate::BuiltIn> {
+    pub const fn to_built_in(&self) -> Option<crate::BuiltIn> {
         match *self {
-            Self::BuiltIn(bi) => Some(bi),
+            crate::Binding::BuiltIn(built_in) => Some(built_in),
             Self::Location { .. } => None,
         }
     }
@@ -420,7 +439,7 @@ impl std::hash::Hash for crate::ScalarValue {
 impl super::SwizzleComponent {
     pub const XYZW: [Self; 4] = [Self::X, Self::Y, Self::Z, Self::W];
 
-    pub fn index(&self) -> u32 {
+    pub const fn index(&self) -> u32 {
         match *self {
             Self::X => 0,
             Self::Y => 1,
@@ -428,12 +447,28 @@ impl super::SwizzleComponent {
             Self::W => 3,
         }
     }
-    pub fn from_index(idx: u32) -> Self {
+    pub const fn from_index(idx: u32) -> Self {
         match idx {
             0 => Self::X,
             1 => Self::Y,
             2 => Self::Z,
             _ => Self::W,
+        }
+    }
+}
+
+impl super::ImageClass {
+    pub const fn is_multisampled(self) -> bool {
+        match self {
+            crate::ImageClass::Sampled { multi, .. } | crate::ImageClass::Depth { multi } => multi,
+            crate::ImageClass::Storage { .. } => false,
+        }
+    }
+
+    pub const fn is_mipmapped(self) -> bool {
+        match self {
+            crate::ImageClass::Sampled { multi, .. } | crate::ImageClass::Depth { multi } => !multi,
+            crate::ImageClass::Storage { .. } => false,
         }
     }
 }
@@ -447,7 +482,7 @@ fn test_matrix_size() {
             rows: crate::VectorSize::Tri,
             width: 4
         }
-        .span(&constants),
-        48
+        .size(&constants),
+        48,
     );
 }

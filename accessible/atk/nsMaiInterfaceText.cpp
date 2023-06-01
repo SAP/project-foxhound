@@ -6,6 +6,7 @@
 
 #include "InterfaceInitFuncs.h"
 #include "mozilla/a11y/PDocAccessible.h"
+#include "mozilla/StaticPrefs_accessibility.h"
 #include "LocalAccessible-inl.h"
 #include "HyperTextAccessible-inl.h"
 #include "nsMai.h"
@@ -270,21 +271,17 @@ static gchar* getTextBeforeOffsetCB(AtkText* aText, gint aOffset,
 }
 
 static gint getCaretOffsetCB(AtkText* aText) {
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole()) {
-      return -1;
-    }
-
-    return static_cast<gint>(text->CaretOffset());
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
+    return -1;
   }
 
-  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    return static_cast<gint>(proxy->CaretOffset());
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text || !acc->IsTextRole()) {
+    return -1;
   }
 
-  return -1;
+  return static_cast<gint>(text->CaretOffset());
 }
 
 static AtkAttributeSet* getRunAttributesCB(AtkText* aText, gint aOffset,
@@ -336,7 +333,6 @@ static void getCharacterExtentsCB(AtkText* aText, gint aOffset, gint* aX,
   }
   *aX = *aY = *aWidth = *aHeight = -1;
 
-  LayoutDeviceIntRect rect;
   uint32_t geckoCoordType;
   if (aCoords == ATK_XY_SCREEN) {
     geckoCoordType = nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE;
@@ -344,19 +340,17 @@ static void getCharacterExtentsCB(AtkText* aText, gint aOffset, gint* aX,
     geckoCoordType = nsIAccessibleCoordinateType::COORDTYPE_WINDOW_RELATIVE;
   }
 
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole()) {
-      return;
-    }
-
-    rect = text->CharBounds(aOffset, geckoCoordType);
-  } else if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    rect = proxy->CharBounds(aOffset, geckoCoordType);
-  } else {
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
     return;
   }
+
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text || !acc->IsTextRole()) {
+    return;
+  }
+
+  LayoutDeviceIntRect rect = text->CharBounds(aOffset, geckoCoordType);
 
   *aX = rect.x;
   *aY = rect.y;
@@ -372,7 +366,6 @@ static void getRangeExtentsCB(AtkText* aText, gint aStartOffset,
   }
   aRect->x = aRect->y = aRect->width = aRect->height = -1;
 
-  LayoutDeviceIntRect rect;
   uint32_t geckoCoordType;
   if (aCoords == ATK_XY_SCREEN) {
     geckoCoordType = nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE;
@@ -380,19 +373,18 @@ static void getRangeExtentsCB(AtkText* aText, gint aStartOffset,
     geckoCoordType = nsIAccessibleCoordinateType::COORDTYPE_WINDOW_RELATIVE;
   }
 
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole()) {
-      return;
-    }
-
-    rect = text->TextBounds(aStartOffset, aEndOffset, geckoCoordType);
-  } else if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    rect = proxy->TextBounds(aStartOffset, aEndOffset, geckoCoordType);
-  } else {
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
     return;
   }
+
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text || !acc->IsTextRole()) {
+    return;
+  }
+
+  LayoutDeviceIntRect rect =
+      text->TextBounds(aStartOffset, aEndOffset, geckoCoordType);
 
   aRect->x = rect.x;
   aRect->y = rect.y;
@@ -401,92 +393,75 @@ static void getRangeExtentsCB(AtkText* aText, gint aStartOffset,
 }
 
 static gint getCharacterCountCB(AtkText* aText) {
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  if (accWrap) {
-    HyperTextAccessible* textAcc = accWrap->AsHyperText();
-    return !textAcc || textAcc->IsDefunct()
-               ? 0
-               : static_cast<gint>(textAcc->CharacterCount());
+  if (Accessible* acc = GetInternalObj(ATK_OBJECT(aText))) {
+    if (HyperTextAccessibleBase* text = acc->AsHyperTextBase()) {
+      return static_cast<gint>(text->CharacterCount());
+    }
   }
-
-  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    return proxy->CharacterCount();
-  }
-
   return 0;
 }
 
 static gint getOffsetAtPointCB(AtkText* aText, gint aX, gint aY,
                                AtkCoordType aCoords) {
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole()) {
-      return -1;
-    }
-
-    return static_cast<gint>(text->OffsetAtPoint(
-        aX, aY,
-        (aCoords == ATK_XY_SCREEN
-             ? nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE
-             : nsIAccessibleCoordinateType::COORDTYPE_WINDOW_RELATIVE)));
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
+    return -1;
   }
-
-  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    return static_cast<gint>(proxy->OffsetAtPoint(
-        aX, aY,
-        (aCoords == ATK_XY_SCREEN
-             ? nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE
-             : nsIAccessibleCoordinateType::COORDTYPE_WINDOW_RELATIVE)));
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text || !acc->IsTextRole()) {
+    return -1;
   }
-
-  return -1;
+  return static_cast<gint>(text->OffsetAtPoint(
+      aX, aY,
+      (aCoords == ATK_XY_SCREEN
+           ? nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE
+           : nsIAccessibleCoordinateType::COORDTYPE_WINDOW_RELATIVE)));
 }
 
 static gint getTextSelectionCountCB(AtkText* aText) {
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole()) {
-      return 0;
-    }
-
-    return text->SelectionCount();
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
+    return 0;
   }
 
-  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    return proxy->SelectionCount();
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text || !acc->IsTextRole()) {
+    return 0;
   }
 
-  return 0;
+  return text->SelectionCount();
 }
 
 static gchar* getTextSelectionCB(AtkText* aText, gint aSelectionNum,
                                  gint* aStartOffset, gint* aEndOffset) {
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  int32_t startOffset = 0, endOffset = 0;
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole()) {
-      return nullptr;
-    }
-
-    text->SelectionBoundsAt(aSelectionNum, &startOffset, &endOffset);
-    *aStartOffset = startOffset;
-    *aEndOffset = endOffset;
-
-    return getTextCB(aText, *aStartOffset, *aEndOffset);
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
+    return nullptr;
   }
-  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
+
+  int32_t startOffset = 0, endOffset = 0;
+  if (acc->IsRemote() &&
+      !StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    RemoteAccessible* remote = acc->AsRemote();
     nsString data;
-    proxy->SelectionBoundsAt(aSelectionNum, data, &startOffset, &endOffset);
+    remote->SelectionBoundsAt(aSelectionNum, data, &startOffset, &endOffset);
     *aStartOffset = startOffset;
     *aEndOffset = endOffset;
 
     NS_ConvertUTF16toUTF8 dataAsUTF8(data);
     return (dataAsUTF8.get()) ? g_strdup(dataAsUTF8.get()) : nullptr;
   }
-  return nullptr;
+
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text || !acc->IsTextRole()) {
+    return nullptr;
+  }
+
+  text->SelectionBoundsAt(aSelectionNum, &startOffset, &endOffset);
+  *aStartOffset = startOffset;
+  *aEndOffset = endOffset;
+
+  return getTextCB(aText, *aStartOffset, *aEndOffset);
 }
 
 // set methods
@@ -544,23 +519,18 @@ static gboolean setTextSelectionCB(AtkText* aText, gint aSelectionNum,
 }
 
 static gboolean setCaretOffsetCB(AtkText* aText, gint aOffset) {
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole() || !text->IsValidOffset(aOffset)) {
-      return FALSE;
-    }
-
-    text->SetCaretOffset(aOffset);
-    return TRUE;
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
+    return FALSE;
   }
 
-  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    proxy->SetCaretOffset(aOffset);
-    return TRUE;
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text || !acc->IsTextRole()) {
+    return FALSE;
   }
 
-  return FALSE;
+  text->SetCaretOffset(aOffset);
+  return TRUE;
 }
 
 static gboolean scrollSubstringToCB(AtkText* aText, gint aStartOffset,

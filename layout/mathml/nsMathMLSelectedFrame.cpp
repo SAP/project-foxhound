@@ -42,8 +42,8 @@ nsresult nsMathMLSelectedFrame::ChildListChanged(int32_t aModType) {
 }
 
 void nsMathMLSelectedFrame::SetInitialChildList(ChildListID aListID,
-                                                nsFrameList& aChildList) {
-  nsMathMLContainerFrame::SetInitialChildList(aListID, aChildList);
+                                                nsFrameList&& aChildList) {
+  nsMathMLContainerFrame::SetInitialChildList(aListID, std::move(aChildList));
   // This very first call to GetSelectedFrame() will cause us to be marked as an
   // embellished operator if the selected child is an embellished operator
   GetSelectedFrame();
@@ -128,7 +128,6 @@ void nsMathMLSelectedFrame::Reflow(nsPresContext* aPresContext,
     mBoundingMetrics = aDesiredSize.mBoundingMetrics;
   }
   FinalizeReflow(aReflowInput.mRenderingContext->GetDrawTarget(), aDesiredSize);
-  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aDesiredSize);
 }
 
 // Only place the selected child ...
@@ -139,6 +138,13 @@ nsresult nsMathMLSelectedFrame::Place(DrawTarget* aDrawTarget,
   nsIFrame* childFrame = GetSelectedFrame();
 
   if (mInvalidMarkup) {
+    // Calling PlaceForError when mathml.error_message_layout_for_invalid_markup
+    // is disabled causes assertion failures because nsMathMLSelectedFrame only
+    // performs layout of the selected child. However, this code is only reached
+    // when mathml.legacy_maction_and_semantics_implementations is enabled, so
+    // it is out the scope of the mrow fallback described in MathML Core and
+    // nsMathMLSelectedFrame will go away in the future. So for now let's
+    // continue to always layout this case as an 'invalid-markup' message.
     return ReflowError(aDrawTarget, aDesiredSize);
   }
 

@@ -66,7 +66,7 @@ class HTMLButtonElement final : public nsGenericHTMLFormControlElementWithState,
 
   void UpdateBarredFromConstraintValidation();
   // Element
-  EventStates IntrinsicState() const override;
+  ElementState IntrinsicState() const override;
   /**
    * Called when an attribute is about to be changed
    */
@@ -92,10 +92,6 @@ class HTMLButtonElement final : public nsGenericHTMLFormControlElementWithState,
   virtual bool IsDisabledForEvents(WidgetEvent* aEvent) override;
 
   // WebIDL
-  bool Autofocus() const { return GetBoolAttr(nsGkAtoms::autofocus); }
-  void SetAutofocus(bool aAutofocus, ErrorResult& aError) {
-    SetHTMLBoolAttr(nsGkAtoms::autofocus, aAutofocus, aError);
-  }
   bool Disabled() const { return GetBoolAttr(nsGkAtoms::disabled); }
   void SetDisabled(bool aDisabled, ErrorResult& aError) {
     SetHTMLBoolAttr(nsGkAtoms::disabled, aDisabled, aError);

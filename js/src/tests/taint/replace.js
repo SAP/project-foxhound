@@ -95,6 +95,13 @@ function strReplaceTest() {
     assertNotHasTaintOperation(str, 'replace');
 }
 
+function whiteSpaceRegExReplaceTest() {
+  var url = taint("https://www.sap.com");
+  var input = url.replace(/^[ \t\r\n\f]+|[ \t\r\n\f]+$/g,"");
+  console.log(input);
+  assertFullTainted(input);
+}
+
 runTaintTest(strReplaceTest);
 
 if (typeof reportCompare === 'function')

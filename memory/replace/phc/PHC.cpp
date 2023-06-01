@@ -676,7 +676,7 @@ class GMut {
 
  public:
   // The mutex that protects the other members.
-  static Mutex sMutex;
+  static Mutex sMutex MOZ_UNANNOTATED;
 
   GMut()
       : mRNG(RandomSeed<0>(), RandomSeed<1>()),
@@ -786,20 +786,21 @@ class GMut {
     MOZ_CRASH("unreachable");
   }
 
-  void EnsureValidAndInUse(GMutLock, void* aPtr, uintptr_t aIndex) {
+  void EnsureValidAndInUse(GMutLock, void* aPtr, uintptr_t aIndex)
+      MOZ_REQUIRES(sMutex) {
     const AllocPageInfo& page = mAllocPages[aIndex];
 
     // The pointer must point to the start of the allocation.
     MOZ_RELEASE_ASSERT(page.mBaseAddr == aPtr);
 
     if (page.mState == AllocPageState::Freed) {
+      LOG("EnsureValidAndInUse(%p), use-after-free\n", aPtr);
       // An operation on a freed page? This is a particular kind of
       // use-after-free. Deliberately touch the page in question, in order to
       // cause a crash that triggers the usual PHC machinery. But unlock sMutex
       // first, because that self-same PHC machinery needs to re-lock it, and
       // the crash causes non-local control flow so sMutex won't be unlocked
       // the normal way in the caller.
-      LOG("EnsureValidAndInUse(%p), use-after-free\n", aPtr);
       sMutex.Unlock();
       *static_cast<uint8_t*>(aPtr) = 0;
       MOZ_CRASH("unreachable");
@@ -877,8 +878,13 @@ class GMut {
     *aInfo = {TagUnknown, nullptr, 0, 0};
   }
 
-  static void prefork() { sMutex.Lock(); }
-  static void postfork() { sMutex.Unlock(); }
+#ifndef XP_WIN
+  static void prefork() MOZ_NO_THREAD_SAFETY_ANALYSIS { sMutex.Lock(); }
+  static void postfork_parent() MOZ_NO_THREAD_SAFETY_ANALYSIS {
+    sMutex.Unlock();
+  }
+  static void postfork_child() { sMutex.Init(); }
+#endif
 
   void IncPageAllocHits(GMutLock) { mPageAllocHits++; }
   void IncPageAllocMisses(GMutLock) { mPageAllocMisses++; }
@@ -1587,7 +1593,7 @@ void replace_init(malloc_table_t* aMallocTable, ReplaceMallocBridge** aBridge) {
   // Note: This must run after attempting an allocation so as to give the
   // system malloc a chance to insert its own atfork handler.
   sMallocTable.malloc(-1);
-  pthread_atfork(GMut::prefork, GMut::postfork, GMut::postfork);
+  pthread_atfork(GMut::prefork, GMut::postfork_parent, GMut::postfork_child);
 #endif
 
   // gConst and gMut are never freed. They live for the life of the process.

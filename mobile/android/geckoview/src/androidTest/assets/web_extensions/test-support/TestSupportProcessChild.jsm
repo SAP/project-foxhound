@@ -4,11 +4,9 @@
 
 var EXPORTED_SYMBOLS = ["TestSupportProcessChild"];
 
-const { GeckoViewUtils } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewUtils.jsm"
+const { GeckoViewUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewUtils.sys.mjs"
 );
-
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const ProcessTools = Cc["@mozilla.org/processtools-service;1"].getService(
   Ci.nsIProcessToolsService

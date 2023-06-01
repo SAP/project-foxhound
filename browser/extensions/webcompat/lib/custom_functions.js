@@ -36,6 +36,31 @@ const replaceStringInRequest = (
 };
 
 const CUSTOM_FUNCTIONS = {
+  acceptLanguageFix: injection => {
+    const { urls } = injection.data;
+    const re = /^([a-zA-Z]{2,3})-/; // match 2 or 3 letters at the start followed by a hyphen
+    const listener = (injection.data.listener = e => {
+      for (const header of e.requestHeaders) {
+        if (header.name.toLowerCase() === "accept-language") {
+          const match = header.value.match(re);
+          if (match) {
+            // add country code to start with comma -> 'en-US,en;q=0.5' to 'en,en-US,en;q=0.5'
+            header.value = `${match[1]},${header.value}`;
+          }
+        }
+      }
+      return { requestHeaders: e.requestHeaders };
+    });
+    browser.webRequest.onBeforeSendHeaders.addListener(listener, { urls }, [
+      "blocking",
+      "requestHeaders",
+    ]);
+  },
+  acceptLanguageFixDisable: injection => {
+    const { listener } = injection.data;
+    browser.webRequest.onBeforeSendHeaders.removeListener(listener);
+    delete injection.data.listener;
+  },
   detectSwipeFix: injection => {
     const { urls, types } = injection.data;
     const listener = (injection.data.listener = ({ requestId }) => {
@@ -72,22 +97,35 @@ const CUSTOM_FUNCTIONS = {
     browser.webRequest.onHeadersReceived.removeListener(listener);
     delete injection.data.listener;
   },
-  pdk5fix: injection => {
-    const { urls, types } = injection.data;
-    const listener = (injection.data.listener = ({ requestId }) => {
-      replaceStringInRequest(
-        requestId,
-        "VideoContextChromeAndroid",
-        "VideoContextAndroid"
-      );
-      return {};
+  runScriptBeforeRequest: injection => {
+    const { bug, message, request, script, types } = injection;
+    const warning = `${message} See https://bugzilla.mozilla.org/show_bug.cgi?id=${bug} for details.`;
+
+    const listener = (injection.listener = e => {
+      const { tabId, frameId } = e;
+      return browser.tabs
+        .executeScript(tabId, {
+          file: script,
+          frameId,
+          runAt: "document_start",
+        })
+        .then(() => {
+          browser.tabs.executeScript(tabId, {
+            code: `console.warn(${JSON.stringify(warning)})`,
+            runAt: "document_start",
+          });
+        })
+        .catch(_ => {});
     });
-    browser.webRequest.onBeforeRequest.addListener(listener, { urls, types }, [
-      "blocking",
-    ]);
+
+    browser.webRequest.onBeforeRequest.addListener(
+      listener,
+      { urls: request, types: types || ["script"] },
+      ["blocking"]
+    );
   },
-  pdk5fixDisable: injection => {
-    const { listener } = injection.data;
+  runScriptBeforeRequestDisable: injection => {
+    const { listener } = injection;
     browser.webRequest.onBeforeRequest.removeListener(listener);
     delete injection.data.listener;
   },

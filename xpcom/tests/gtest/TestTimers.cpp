@@ -15,6 +15,7 @@
 #include "prmon.h"
 #include "prthread.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/gtest/MozAssertions.h"
 #include "mozilla/Services.h"
 
 #include "mozilla/Monitor.h"
@@ -173,7 +174,7 @@ class TimerHelper {
  private:
   TimeStamp mStart;
   RefPtr<nsITimer> mTimer;
-  mutable Monitor mMonitor;
+  mutable Monitor mMonitor MOZ_UNANNOTATED;
   uint32_t mBlockTime = 0;
   Maybe<uint32_t> mLastDelay;
   RefPtr<nsIEventTarget> mTarget;
@@ -883,7 +884,7 @@ TEST(Timers, ClosureCallback)
         mon.Notify();
       },
       50, nsITimer::TYPE_ONE_SHOT, "(test) Timers.ClosureCallback", testThread);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   ReentrantMonitorAutoEnter mon(*newMon);
   while (!notifiedThread) {

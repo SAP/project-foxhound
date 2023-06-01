@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* import-globals-from head.js */
-
 "use strict";
 
 const { RemoteSettings } = ChromeUtils.import(
@@ -171,8 +169,8 @@ add_task(async function testRemoteSettings() {
   });
 
   // Add initial empty record.
-  let db = await RemoteSettings(COLLECTION_NAME).db;
-  await db.importChanges({}, 42, []);
+  let db = RemoteSettings(COLLECTION_NAME).db;
+  await db.importChanges({}, Date.now(), []);
 
   // Test if the observer been called when adding to the service.
   let updateEvent = new UpdateEvent();

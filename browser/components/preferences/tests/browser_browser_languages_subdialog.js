@@ -4,7 +4,6 @@
 const { AddonTestUtils } = ChromeUtils.import(
   "resource://testing-common/AddonTestUtils.jsm"
 );
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 AddonTestUtils.initMochitest(this);
 
@@ -30,10 +29,10 @@ function getManifestData(locale, version = "2.0") {
         version: "1",
       },
     },
-    applications: {
+    browser_specific_settings: {
       gecko: {
-        strict_min_version: AppConstants.MOZ_APP_VERSION,
         id: langpackId(locale),
+        strict_min_version: AppConstants.MOZ_APP_VERSION,
         strict_max_version: AppConstants.MOZ_APP_VERSION,
       },
     },

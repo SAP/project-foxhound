@@ -5,12 +5,23 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-/* exported libc */
+if (typeof Components !== "undefined") {
+  /* global OS */
+  Cc["@mozilla.org/net/osfileconstantsservice;1"]
+    .getService(Ci.nsIOSFileConstantsService)
+    .init();
+}
 
-// This file is loaded into the same scope as subprocess_unix.jsm
-/* import-globals-from subprocess_unix.jsm */
+/* exported LIBC, libc */
 
-const LIBC = OS.Constants.libc;
+// ctypes is either already available in the chrome worker scope, or defined
+// in scope via loadSubScript.
+/* global ctypes */
+
+// This file is loaded into the same scope as subprocess_shared.js.
+/* import-globals-from subprocess_shared.js */
+
+var LIBC = OS.Constants.libc;
 
 const LIBC_CHOICES = ["libc.so", "libSystem.B.dylib", "a.out"];
 
@@ -22,12 +33,6 @@ const unix = {
     { events: ctypes.short },
     { revents: ctypes.short },
   ]),
-
-  posix_spawn_file_actions_t: ctypes.uint8_t.array(
-    LIBC.OSFILE_SIZEOF_POSIX_SPAWN_FILE_ACTIONS_T
-  ),
-
-  posix_spawnattr_t: ctypes.uint8_t.array(LIBC.OSFILE_SIZEOF_POSIX_SPAWNATTR_T),
 
   WEXITSTATUS(status) {
     return (status >> 8) & 0xff;
@@ -86,63 +91,6 @@ var libc = new Library("libc", LIBC_CHOICES, {
     unix.pollfd.array() /* fds */,
     ctypes.unsigned_int /* nfds */,
     ctypes.int /* timeout */,
-  ],
-
-  posix_spawn: [
-    ctypes.default_abi,
-    ctypes.int,
-    unix.pid_t.ptr /* pid */,
-    ctypes.char.ptr /* path */,
-    unix.posix_spawn_file_actions_t.ptr /* file_actions */,
-    ctypes.voidptr_t /* attrp */,
-    ctypes.char.ptr.ptr /* argv */,
-    ctypes.char.ptr.ptr /* envp */,
-  ],
-
-  posix_spawnattr_init: [
-    ctypes.default_abi,
-    ctypes.int,
-    unix.posix_spawnattr_t.ptr,
-  ],
-
-  posix_spawnattr_destroy: [
-    ctypes.default_abi,
-    ctypes.int,
-    unix.posix_spawnattr_t.ptr,
-  ],
-
-  responsibility_spawnattrs_setdisclaim: [
-    ctypes.default_abi,
-    ctypes.int,
-    unix.posix_spawnattr_t.ptr,
-    ctypes.int,
-  ],
-
-  posix_spawn_file_actions_addclose: [
-    ctypes.default_abi,
-    ctypes.int,
-    unix.posix_spawn_file_actions_t.ptr /* file_actions */,
-    ctypes.int /* fildes */,
-  ],
-
-  posix_spawn_file_actions_adddup2: [
-    ctypes.default_abi,
-    ctypes.int,
-    unix.posix_spawn_file_actions_t.ptr /* file_actions */,
-    ctypes.int /* fildes */,
-    ctypes.int /* newfildes */,
-  ],
-
-  posix_spawn_file_actions_destroy: [
-    ctypes.default_abi,
-    ctypes.int,
-    unix.posix_spawn_file_actions_t.ptr /* file_actions */,
-  ],
-
-  posix_spawn_file_actions_init: [
-    ctypes.default_abi,
-    ctypes.int,
-    unix.posix_spawn_file_actions_t.ptr /* file_actions */,
   ],
 
   read: [

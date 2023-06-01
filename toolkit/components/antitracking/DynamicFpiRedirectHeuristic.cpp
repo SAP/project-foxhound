@@ -6,9 +6,9 @@
 
 #include "AntiTrackingLog.h"
 #include "DynamicFpiRedirectHeuristic.h"
-#include "ContentBlocking.h"
 #include "ContentBlockingAllowList.h"
 #include "ContentBlockingUserInteraction.h"
+#include "StorageAccessAPIHelper.h"
 
 #include "mozilla/net/HttpBaseChannel.h"
 #include "mozilla/Telemetry.h"
@@ -21,6 +21,7 @@
 #include "nsIScriptError.h"
 #include "nsIURI.h"
 #include "nsNetCID.h"
+#include "nsNetUtil.h"
 #include "nsScriptSecurityManager.h"
 #include "nsToolkitCompsCID.h"
 
@@ -175,7 +176,7 @@ bool ShouldRedirectHeuristicApplyTrackingResource(nsIChannel* aOldChannel,
       classifiedOldChannel->GetFirstPartyClassificationFlags();
 
   if (net::UrlClassifierCommon::IsTrackingClassificationFlag(
-          oldClassificationFlags)) {
+          oldClassificationFlags, NS_UsePrivateBrowsing(aOldChannel))) {
     // This is a redirect from tracking.
     LOG_SPEC2(("Ignoring redirect for %s to %s because it's from tracking ",
                _spec1, _spec2),
@@ -329,10 +330,10 @@ void DynamicFpiRedirectHeuristic(nsIChannel* aOldChannel, nsIURI* aOldURI,
       Telemetry::LABELS_STORAGE_ACCESS_GRANTED_COUNT::Redirect);
 
   // We don't care about this promise because the operation is actually sync.
-  RefPtr<ContentBlocking::ParentAccessGrantPromise> promise =
-      ContentBlocking::SaveAccessForOriginOnParentProcess(
-          newPrincipal, oldPrincipal, oldOrigin,
-          ContentBlocking::StorageAccessPromptChoices::eAllow,
+  RefPtr<StorageAccessAPIHelper::ParentAccessGrantPromise> promise =
+      StorageAccessAPIHelper::SaveAccessForOriginOnParentProcess(
+          newPrincipal, oldPrincipal,
+          StorageAccessAPIHelper::StorageAccessPromptChoices::eAllow,
           StaticPrefs::privacy_restrict3rdpartystorage_expiration_visited());
   Unused << promise;
 }

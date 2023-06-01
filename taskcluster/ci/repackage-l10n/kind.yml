@@ -30,9 +30,7 @@ only-for-build-platforms:
     - win64-aarch64-devedition/opt
 
 job-template:
-    worker-type: 'b-linux'
-    worker:
-        docker-image: {"in-tree": "debian11-amd64-build"}
+    worker-type: b-linux-gcp
     mozharness:
         config:
             by-build-platform:
@@ -60,7 +58,7 @@ job-template:
     package-formats:
         by-build-platform:
             linux.*: [mar]
-            macosx64\b.*: [mar, dmg]
+            macosx64\b.*: [mar, dmg, pkg]
             win32\b.*: [mar, installer]
             win64\b.*: [mar, installer]
     fetches:

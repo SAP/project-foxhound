@@ -22,7 +22,7 @@ add_task(async function test_untrimmed_secure_www() {
     matches: [
       makeVisitResult(context, {
         uri: "https://www.mozilla.org/",
-        title: "https://www.mozilla.org",
+        fallbackTitle: "https://www.mozilla.org",
         heuristic: true,
       }),
       makeVisitResult(context, {
@@ -47,7 +47,7 @@ add_task(async function test_untrimmed_secure_www_path() {
     matches: [
       makeVisitResult(context, {
         uri: "https://www.mozilla.org/test/",
-        title: "https://www.mozilla.org/test/",
+        title: "test visit for https://www.mozilla.org/test/",
         heuristic: true,
       }),
     ],
@@ -68,7 +68,7 @@ add_task(async function test_untrimmed_secure() {
     matches: [
       makeVisitResult(context, {
         uri: "https://mozilla.org/",
-        title: "https://mozilla.org",
+        fallbackTitle: "https://mozilla.org",
         heuristic: true,
       }),
       makeVisitResult(context, {
@@ -93,7 +93,7 @@ add_task(async function test_untrimmed_secure_path() {
     matches: [
       makeVisitResult(context, {
         uri: "https://mozilla.org/test/",
-        title: "https://mozilla.org/test/",
+        title: "test visit for https://mozilla.org/test/",
         heuristic: true,
       }),
     ],
@@ -114,7 +114,7 @@ add_task(async function test_untrimmed_www() {
     matches: [
       makeVisitResult(context, {
         uri: "http://www.mozilla.org/",
-        title: "www.mozilla.org",
+        fallbackTitle: "www.mozilla.org",
         heuristic: true,
       }),
       makeVisitResult(context, {
@@ -139,7 +139,7 @@ add_task(async function test_untrimmed_www_path() {
     matches: [
       makeVisitResult(context, {
         uri: "http://www.mozilla.org/test/",
-        title: "www.mozilla.org/test/",
+        title: "test visit for http://www.mozilla.org/test/",
         heuristic: true,
       }),
     ],
@@ -159,10 +159,10 @@ add_task(async function test_escaped_chars() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
         uri: "https://www.mozilla.org/%E5%95%8A-test",
-        title: "https://www.mozilla.org/啊-test",
-        iconUri: "page-icon:https://www.mozilla.org/",
+        title: "test visit for https://www.mozilla.org/%E5%95%8A-test",
+        iconUri: "page-icon:https://www.mozilla.org/%E5%95%8A-test",
         heuristic: true,
       }),
     ],

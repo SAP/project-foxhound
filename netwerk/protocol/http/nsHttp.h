@@ -12,6 +12,7 @@
 #include "nsString.h"
 #include "nsError.h"
 #include "nsTArray.h"
+#include "mozilla/OriginAttributes.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Tuple.h"
 #include "mozilla/UniquePtr.h"
@@ -143,6 +144,18 @@ extern const nsCString kHttp3Versions[];
 #define NS_HTTP_LOAD_ANONYMOUS_CONNECT_ALLOW_CLIENT_CERT (1 << 23)
 
 #define NS_HTTP_DISALLOW_HTTPS_RR (1 << 24)
+
+#define NS_HTTP_DISALLOW_ECH (1 << 25)
+
+// Used to indicate that an HTTP Connection should obey Resist Fingerprinting
+// and set the User-Agent accordingly.
+#define NS_HTTP_USE_RFP (1 << 26)
+
+// If set, then the initial TLS handshake failed.
+#define NS_HTTP_IS_RETRY (1 << 27)
+
+// When set, disallow to connect to a HTTP/2 proxy.
+#define NS_HTTP_DISALLOW_HTTP2_PROXY (1 << 28)
 
 #define NS_HTTP_TRR_FLAGS_FROM_MODE(x) ((static_cast<uint32_t>(x) & 3) << 19)
 
@@ -407,7 +420,19 @@ static inline bool AllowedErrorForHTTPSRRFallback(nsresult aError) {
          aError == NS_ERROR_UNKNOWN_HOST || aError == NS_ERROR_NET_TIMEOUT;
 }
 
-bool SecurityErrorToBeHandledByTransaction(nsresult aReason);
+bool SecurityErrorThatMayNeedRestart(nsresult aReason);
+
+[[nodiscard]] nsresult MakeOriginURL(const nsACString& origin,
+                                     nsCOMPtr<nsIURI>& url);
+
+[[nodiscard]] nsresult MakeOriginURL(const nsACString& scheme,
+                                     const nsACString& origin,
+                                     nsCOMPtr<nsIURI>& url);
+
+void CreatePushHashKey(const nsCString& scheme, const nsCString& hostHeader,
+                       const mozilla::OriginAttributes& originAttributes,
+                       uint64_t serial, const nsACString& pathInfo,
+                       nsCString& outOrigin, nsCString& outKey);
 
 }  // namespace net
 }  // namespace mozilla

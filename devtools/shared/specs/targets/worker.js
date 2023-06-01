@@ -3,7 +3,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Arg, generateActorSpec } = require("devtools/shared/protocol");
+const {
+  Arg,
+  generateActorSpec,
+} = require("resource://devtools/shared/protocol.js");
 
 const workerTargetSpec = generateActorSpec({
   typeName: "workerTarget",
@@ -11,6 +14,14 @@ const workerTargetSpec = generateActorSpec({
   events: {
     "resource-available-form": {
       type: "resource-available-form",
+      resources: Arg(0, "array:json"),
+    },
+    "resource-destroyed-form": {
+      type: "resource-destroyed-form",
+      resources: Arg(0, "array:json"),
+    },
+    "resource-updated-form": {
+      type: "resource-updated-form",
       resources: Arg(0, "array:json"),
     },
   },

@@ -8,15 +8,14 @@
 #define dom_tabs_ContentThread_h 1
 
 #include "mozilla/ipc/ProcessChild.h"
-#include "mozilla/ipc/ScopedXREEmbed.h"
 #include "ContentChild.h"
+#include "nsXREDirProvider.h"
 
 #if defined(XP_WIN)
 #  include "mozilla/mscom/ProcessRuntime.h"
 #endif
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /**
  * ContentProcess is a singleton on the content process which represents
@@ -26,9 +25,8 @@ class ContentProcess : public mozilla::ipc::ProcessChild {
   using ProcessChild = mozilla::ipc::ProcessChild;
 
  public:
-  explicit ContentProcess(ProcessId aParentPid) : ProcessChild(aParentPid) {}
-
-  ~ContentProcess() = default;
+  ContentProcess(ProcessId aParentPid, const nsID& aMessageChannelId);
+  ~ContentProcess();
 
   virtual bool Init(int aArgc, char* aArgv[]) override;
   virtual void CleanUp() override;
@@ -40,14 +38,9 @@ class ContentProcess : public mozilla::ipc::ProcessChild {
   // constructing mXREEmbed.
   mozilla::mscom::ProcessRuntime mCOMRuntime;
 #endif
-  mozilla::ipc::ScopedXREEmbed mXREEmbed;
-
-  ContentProcess(const ContentProcess&) = delete;
-
-  const ContentProcess& operator=(const ContentProcess&) = delete;
+  nsXREDirProvider mDirProvider;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // ifndef dom_tabs_ContentThread_h

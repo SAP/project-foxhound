@@ -3,23 +3,27 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { EventEmitter } = ChromeUtils.import(
-  "resource://gre/modules/EventEmitter.jsm"
+const { EventEmitter } = ChromeUtils.importESModule(
+  "resource://gre/modules/EventEmitter.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { actionCreators: ac, actionTypes: at } = ChromeUtils.import(
-  "resource://activity-stream/common/Actions.jsm"
+const { actionCreators: ac, actionTypes: at } = ChromeUtils.importESModule(
+  "resource://activity-stream/common/Actions.sys.mjs"
 );
 const { getDefaultOptions } = ChromeUtils.import(
   "resource://activity-stream/lib/ActivityStreamStorage.jsm"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
 });
 
 /*
@@ -27,7 +31,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
  * Built in sections may depend on options stored as serialised JSON in the pref
  * `${feed_pref_name}.options`.
  */
-const BUILT_IN_SECTIONS = () => ({
+const BUILT_IN_SECTIONS = ({ newtab, pocketNewtab }) => ({
   "feeds.section.topstories": options => ({
     id: "topstories",
     pref: {
@@ -39,16 +43,29 @@ const BUILT_IN_SECTIONS = () => ({
         id: "home-prefs-recommended-by-description-new",
         values: { provider: options.provider_name },
       },
-      nestedPrefs: options.show_spocs
-        ? [
-            {
-              name: "showSponsored",
-              titleString: "home-prefs-recommended-by-option-sponsored-stories",
-              icon: "icon-info",
-              eventSource: "POCKET_SPOCS",
-            },
-          ]
-        : [],
+      nestedPrefs: [
+        ...(options.show_spocs
+          ? [
+              {
+                name: "showSponsored",
+                titleString:
+                  "home-prefs-recommended-by-option-sponsored-stories",
+                icon: "icon-info",
+                eventSource: "POCKET_SPOCS",
+              },
+            ]
+          : []),
+        ...(pocketNewtab.recentSavesEnabled
+          ? [
+              {
+                name: "showRecentSaves",
+                titleString: "home-prefs-recommended-by-option-recent-saves",
+                icon: "icon-info",
+                eventSource: "POCKET_RECENT_SAVES",
+              },
+            ]
+          : []),
+      ],
       learnMore: {
         link: {
           href: "https://getpocket.com/firefox/new_tab_learn_more",
@@ -188,7 +205,10 @@ const SectionsManager = {
   sections: new Map(),
   async init(prefs = {}, storage) {
     this._storage = storage;
-    const featureConfig = NimbusFeatures.newtab.getAllVariables() || {};
+    const featureConfig = {
+      newtab: lazy.NimbusFeatures.newtab.getAllVariables() || {},
+      pocketNewtab: lazy.NimbusFeatures.pocketNewtab.getAllVariables() || {},
+    };
 
     for (const feedPrefName of Object.keys(BUILT_IN_SECTIONS(featureConfig))) {
       const optionsPrefName = `${feedPrefName}.options`;
@@ -237,18 +257,21 @@ const SectionsManager = {
   async addBuiltInSection(feedPrefName, optionsPrefValue = "{}") {
     let options;
     let storedPrefs;
-    const featureConfig = NimbusFeatures.newtab.getAllVariables() || {};
+    const featureConfig = {
+      newtab: lazy.NimbusFeatures.newtab.getAllVariables() || {},
+      pocketNewtab: lazy.NimbusFeatures.pocketNewtab.getAllVariables() || {},
+    };
     try {
       options = JSON.parse(optionsPrefValue);
     } catch (e) {
       options = {};
-      Cu.reportError(`Problem parsing options pref for ${feedPrefName}`);
+      console.error(`Problem parsing options pref for ${feedPrefName}`);
     }
     try {
       storedPrefs = (await this._storage.get(feedPrefName)) || {};
     } catch (e) {
       storedPrefs = {};
-      Cu.reportError(`Problem getting stored prefs for ${feedPrefName}`);
+      console.error(`Problem getting stored prefs for ${feedPrefName}`);
     }
     const defaultSection = BUILT_IN_SECTIONS(featureConfig)[feedPrefName](
       options
@@ -323,14 +346,14 @@ const SectionsManager = {
             card.title &&
             card.image
           ) {
-            PlacesUtils.history.update({
+            lazy.PlacesUtils.history.update({
               url: card.url,
               title: card.title,
               description: card.description,
               previewImageURL: card.image,
             });
             // Highlights query skips bookmarks with no visits.
-            PlacesUtils.history.insert({
+            lazy.PlacesUtils.history.insert({
               url,
               title: card.title,
               visits: [{}],
@@ -375,7 +398,7 @@ const SectionsManager = {
   _addCardTypeLinkMenuOptions(rows) {
     for (let card of rows) {
       if (!this.CONTEXT_MENU_OPTIONS_FOR_HIGHLIGHT_TYPES[card.type]) {
-        Cu.reportError(
+        console.error(
           `No context menu for highlight type ${card.type} is configured`
         );
       } else {
@@ -694,6 +717,4 @@ class SectionsFeed {
   }
 }
 
-this.SectionsFeed = SectionsFeed;
-this.SectionsManager = SectionsManager;
 const EXPORTED_SYMBOLS = ["SectionsFeed", "SectionsManager"];

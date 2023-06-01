@@ -3,17 +3,19 @@
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 
 function sleep(ms) {
   /* eslint-disable mozilla/no-arbitrary-setTimeout */
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-add_task(
+add_setup(
   /* on Android FOG is set up through head.js */
   { skip_if: () => !runningInParent || AppConstants.platform == "android" },
   function test_setup() {

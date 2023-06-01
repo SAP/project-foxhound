@@ -38,8 +38,6 @@ class SharedMemory {
   }
 
  public:
-  enum SharedMemoryType { TYPE_BASIC, TYPE_UNKNOWN };
-
   enum OpenRights {
     RightsReadOnly = RightsRead,
     RightsReadWrite = RightsRead | RightsWrite,
@@ -55,11 +53,8 @@ class SharedMemory {
 
   virtual void CloseHandle() = 0;
 
-  virtual SharedMemoryType Type() const = 0;
-
-  virtual bool WriteHandle(IPC::Message* aMessage) = 0;
-  virtual bool ReadHandle(const IPC::Message* aMessage,
-                          PickleIterator* aIter) = 0;
+  virtual bool WriteHandle(IPC::MessageWriter* aWriter) = 0;
+  virtual bool ReadHandle(IPC::MessageReader* aReader) = 0;
 
   void Protect(char* aAddr, size_t aSize, int aRights) {
     char* memStart = reinterpret_cast<char*>(memory());
@@ -122,19 +117,18 @@ class SharedMemoryCommon : public SharedMemory {
   virtual bool IsHandleValid(const Handle& aHandle) const = 0;
   virtual bool SetHandle(Handle aHandle, OpenRights aRights) = 0;
 
-  virtual bool WriteHandle(IPC::Message* aMessage) override {
+  virtual bool WriteHandle(IPC::MessageWriter* aWriter) override {
     Handle handle = CloneHandle();
     if (!handle) {
       return false;
     }
-    IPC::WriteParam(aMessage, std::move(handle));
+    IPC::WriteParam(aWriter, std::move(handle));
     return true;
   }
 
-  virtual bool ReadHandle(const IPC::Message* aMessage,
-                          PickleIterator* aIter) override {
+  virtual bool ReadHandle(IPC::MessageReader* aReader) override {
     Handle handle;
-    return IPC::ReadParam(aMessage, aIter, &handle) && IsHandleValid(handle) &&
+    return IPC::ReadParam(aReader, &handle) && IsHandleValid(handle) &&
            SetHandle(std::move(handle), RightsReadWrite);
   }
 };

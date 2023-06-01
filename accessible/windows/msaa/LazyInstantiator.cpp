@@ -214,6 +214,14 @@ bool LazyInstantiator::IsBlockedInjection() {
  * @return true if we should instantiate a11y
  */
 bool LazyInstantiator::ShouldInstantiate(const DWORD aClientTid) {
+  if (Compatibility::IsA11ySuppressedForClipboardCopy()) {
+    // Bug 1774285: Windows Suggested Actions (introduced in Windows 11 22H2)
+    // walks the entire a11y tree using UIA whenever anything is copied to the
+    // clipboard. This causes an unacceptable hang, particularly when the cache
+    // is disabled. Don't allow a11y to be instantiated by this.
+    return false;
+  }
+
   if (!aClientTid) {
     // aClientTid == 0 implies that this is either an in-process call, or else
     // we failed to retrieve information about the remote caller.
@@ -292,7 +300,17 @@ void LazyInstantiator::TransplantRefCnt() {
 
 HRESULT
 LazyInstantiator::MaybeResolveRoot() {
-  MOZ_ASSERT(NS_IsMainThread());
+  if (!NS_IsMainThread()) {
+    MOZ_ASSERT_UNREACHABLE("Called on a background thread!");
+    // Bug 1814780: This should never happen, since a caller should only be able
+    // to get this via AccessibleObjectFromWindow/AccessibleObjectFromEvent or
+    // WM_GETOBJECT/ObjectFromLresult, which should marshal any calls on
+    // a background thread to the main thread. Nevertheless, Windows sometimes
+    // calls QueryInterface from a background thread! To avoid crashes, fail
+    // gracefully here.
+    return RPC_E_WRONG_THREAD;
+  }
+
   if (mWeakAccessible) {
     return S_OK;
   }

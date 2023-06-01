@@ -286,18 +286,6 @@ static const struct EVInfo kEVInfos[] = {
     "BQk=",
   },
   {
-    // CN=Network Solutions Certificate Authority,O=Network Solutions L.L.C.,C=US
-    "1.3.6.1.4.1.782.1.2.1.8.1",
-    "Network Solutions EV OID",
-    { 0x15, 0xF0, 0xBA, 0x00, 0xA3, 0xAC, 0x7A, 0xF3, 0xAC, 0x88, 0x4C,
-      0x07, 0x2B, 0x10, 0x11, 0xA0, 0x77, 0xBD, 0x77, 0xC0, 0x97, 0xF4,
-      0x01, 0x64, 0xB2, 0xF8, 0x59, 0x8A, 0xBD, 0x83, 0x86, 0x0C },
-    "MGIxCzAJBgNVBAYTAlVTMSEwHwYDVQQKExhOZXR3b3JrIFNvbHV0aW9ucyBMLkwu"
-    "Qy4xMDAuBgNVBAMTJ05ldHdvcmsgU29sdXRpb25zIENlcnRpZmljYXRlIEF1dGhv"
-    "cml0eQ==",
-    "V8szb8JcFuZHFhfjkDFo4A==",
-  },
-  {
     // CN=Entrust Root Certification Authority,OU="(c) 2006 Entrust, Inc.",OU=www.entrust.net/CPS is incorporated by reference,O="Entrust, Inc.",C=US
     "2.16.840.1.114028.10.1.2",
     "Entrust EV OID",
@@ -518,6 +506,30 @@ static const struct EVInfo kEVInfos[] = {
     "amg+nFGby1M=",
   },
   {
+    // CN=E-Tugra Global Root CA RSA v3,OU=E-Tugra Trust Center,O=E-Tugra EBG A.S.,L=Ankara,C=TR
+    "2.23.140.1.1",
+    "CA/Browser Forum EV OID",
+    { 0xEF, 0x66, 0xB0, 0xB1, 0x0A, 0x3C, 0xDB, 0x9F, 0x2E, 0x36, 0x48,
+      0xC7, 0x6B, 0xD2, 0xAF, 0x18, 0xEA, 0xD2, 0xBF, 0xE6, 0xF1, 0x17,
+      0x65, 0x5E, 0x28, 0xC4, 0x06, 0x0D, 0xA1, 0xA3, 0xF4, 0xC2 },
+    "MIGAMQswCQYDVQQGEwJUUjEPMA0GA1UEBxMGQW5rYXJhMRkwFwYDVQQKExBFLVR1"
+    "Z3JhIEVCRyBBLlMuMR0wGwYDVQQLExRFLVR1Z3JhIFRydXN0IENlbnRlcjEmMCQG"
+    "A1UEAxMdRS1UdWdyYSBHbG9iYWwgUm9vdCBDQSBSU0EgdjM=",
+    "DU3FzRYilZYIfrgLfxUGNPt5EDQ=",
+  },
+  {
+    // CN=E-Tugra Global Root CA ECC v3,OU=E-Tugra Trust Center,O=E-Tugra EBG A.S.,L=Ankara,C=TR
+    "2.23.140.1.1",
+    "CA/Browser Forum EV OID",
+    { 0x87, 0x3F, 0x46, 0x85, 0xFA, 0x7F, 0x56, 0x36, 0x25, 0x25, 0x2E,
+      0x6D, 0x36, 0xBC, 0xD7, 0xF1, 0x6F, 0xC2, 0x49, 0x51, 0xF2, 0x64,
+      0xE4, 0x7E, 0x1B, 0x95, 0x4F, 0x49, 0x08, 0xCD, 0xCA, 0x13 },
+    "MIGAMQswCQYDVQQGEwJUUjEPMA0GA1UEBxMGQW5rYXJhMRkwFwYDVQQKExBFLVR1"
+    "Z3JhIEVCRyBBLlMuMR0wGwYDVQQLExRFLVR1Z3JhIFRydXN0IENlbnRlcjEmMCQG"
+    "A1UEAxMdRS1UdWdyYSBHbG9iYWwgUm9vdCBDQSBFQ0MgdjM=",
+    "JkYZdzHhT28oNt45UYbm1JeIIsE=",
+  },
+  {
     // CN=Actalis Authentication Root CA,O=Actalis S.p.A./03358520967,L=Milan,C=IT
     "1.3.159.1.17.1",
     "Actalis EV OID",
@@ -588,6 +600,28 @@ static const struct EVInfo kEVInfos[] = {
     "EHd3dy5kaWdpY2VydC5jb20xITAfBgNVBAMTGERpZ2lDZXJ0IFRydXN0ZWQgUm9v"
     "dCBHNA==",
     "BZsbV56OITLiOQe9p3d1XA==",
+  },
+  {
+    // CN=DigiCert TLS RSA4096 Root G5,O="DigiCert, Inc.",C=US
+    "2.23.140.1.1",
+    "CA/Browser Forum EV OID",
+    { 0x37, 0x1A, 0x00, 0xDC, 0x05, 0x33, 0xB3, 0x72, 0x1A, 0x7E, 0xEB,
+      0x40, 0xE8, 0x41, 0x9E, 0x70, 0x79, 0x9D, 0x2B, 0x0A, 0x0F, 0x2C,
+      0x1D, 0x80, 0x69, 0x31, 0x65, 0xF7, 0xCE, 0xC4, 0xAD, 0x75 },
+    "ME0xCzAJBgNVBAYTAlVTMRcwFQYDVQQKEw5EaWdpQ2VydCwgSW5jLjElMCMGA1UE"
+    "AxMcRGlnaUNlcnQgVExTIFJTQTQwOTYgUm9vdCBHNQ==",
+    "CPm0eKj6ftpqMzeJ3nzPig==",
+  },
+  {
+    // CN=DigiCert TLS ECC P384 Root G5,O="DigiCert, Inc.",C=US
+    "2.23.140.1.1",
+    "CA/Browser Forum EV OID",
+    { 0x01, 0x8E, 0x13, 0xF0, 0x77, 0x25, 0x32, 0xCF, 0x80, 0x9B, 0xD1,
+      0xB1, 0x72, 0x81, 0x86, 0x72, 0x83, 0xFC, 0x48, 0xC6, 0xE1, 0x3B,
+      0xE9, 0xC6, 0x98, 0x12, 0x85, 0x4A, 0x49, 0x0C, 0x1B, 0x05 },
+    "ME4xCzAJBgNVBAYTAlVTMRcwFQYDVQQKEw5EaWdpQ2VydCwgSW5jLjEmMCQGA1UE"
+    "AxMdRGlnaUNlcnQgVExTIEVDQyBQMzg0IFJvb3QgRzU=",
+    "CeCTZaz32ci5PhwLBCou8w==",
   },
   {
     // CN=QuoVadis Root CA 2 G3,O=QuoVadis Limited,C=BM
@@ -670,17 +704,6 @@ static const struct EVInfo kEVInfos[] = {
     "A1UECxMcKGMpIDE5OTkgRW50cnVzdC5uZXQgTGltaXRlZDEzMDEGA1UEAxMqRW50"
     "cnVzdC5uZXQgQ2VydGlmaWNhdGlvbiBBdXRob3JpdHkgKDIwNDgp",
     "OGPe+A==",
-  },
-  {
-    // CN=Staat der Nederlanden EV Root CA,O=Staat der Nederlanden,C=NL
-    "2.16.528.1.1003.1.2.7",
-    "Staat der Nederlanden EV OID",
-    { 0x4D, 0x24, 0x91, 0x41, 0x4C, 0xFE, 0x95, 0x67, 0x46, 0xEC, 0x4C,
-      0xEF, 0xA6, 0xCF, 0x6F, 0x72, 0xE2, 0x8A, 0x13, 0x29, 0x43, 0x2F,
-      0x9D, 0x8A, 0x90, 0x7A, 0xC4, 0xCB, 0x5D, 0xAD, 0xC1, 0x5A },
-    "MFgxCzAJBgNVBAYTAk5MMR4wHAYDVQQKDBVTdGFhdCBkZXIgTmVkZXJsYW5kZW4x"
-    "KTAnBgNVBAMMIFN0YWF0IGRlciBOZWRlcmxhbmRlbiBFViBSb290IENB",
-    "AJiWjQ==",
   },
   {
     // CN=Entrust Root Certification Authority - G2,OU="(c) 2009 Entrust, Inc. - for authorized use only",OU=See www.entrust.net/legal-terms,O="Entrust, Inc.",C=US
@@ -1134,6 +1157,17 @@ static const struct EVInfo kEVInfos[] = {
     "c3MgR29sZCkgRsWRdGFuw7pzw610dsOhbnk=",
     "SUEs5AAQ",
   },
+  {
+    // CN=D-TRUST EV Root CA 1 2020,O=D-Trust GmbH,C=DE
+    "2.23.140.1.1",
+    "CA/Browser Forum EV OID",
+    { 0x08, 0x17, 0x0D, 0x1A, 0xA3, 0x64, 0x53, 0x90, 0x1A, 0x2F, 0x95,
+      0x92, 0x45, 0xE3, 0x47, 0xDB, 0x0C, 0x8D, 0x37, 0xAB, 0xAA, 0xBC,
+      0x56, 0xB8, 0x1A, 0xA1, 0x00, 0xDC, 0x95, 0x89, 0x70, 0xDB },
+    "MEgxCzAJBgNVBAYTAkRFMRUwEwYDVQQKEwxELVRydXN0IEdtYkgxIjAgBgNVBAMT"
+    "GUQtVFJVU1QgRVYgUm9vdCBDQSAxIDIwMjA=",
+    "XwJB13qHfEwDo6yWjfv/0A==",
+  },
     // clang-format on
 };
 
@@ -1265,34 +1299,35 @@ nsresult LoadExtendedValidationInfo() {
   return NS_OK;
 }
 
-// Helper function for GetFirstEVPolicy(): reads an EV Policy if there is one
-bool FindMatchingEVPolicy(Reader& idReader,
-                          mozilla::pkix::CertPolicyId& policy) {
+// Helper function for GetKnownEVPolicies(): reads an EV Policy if there is one,
+// and appends it to the given list of CertPolicyIds.
+void FindMatchingEVPolicy(Reader& idReader,
+                          nsTArray<mozilla::pkix::CertPolicyId>& policies) {
   Input cabForumEVIdBytes;
   Result rv =
       cabForumEVIdBytes.Init(sCABForumEVId.bytes, sCABForumEVId.numBytes);
   if (rv == Success && idReader.MatchRest(cabForumEVIdBytes)) {
-    policy = sCABForumEVId;
-    return true;
+    policies.AppendElement(sCABForumEVId);
+    return;
   }
 
   for (const CertPolicyId& id : sEVInfoIds) {
     Input idBytes;
     rv = idBytes.Init(id.bytes, id.numBytes);
     if (rv == Success && idReader.MatchRest(idBytes)) {
-      policy = id;
-      return true;
+      policies.AppendElement(id);
+      return;
     }
   }
-  return false;
 }
 
-bool GetFirstEVPolicy(const nsTArray<uint8_t>& certBytes,
-                      /*out*/ mozilla::pkix::CertPolicyId& policy) {
+void GetKnownEVPolicies(
+    const nsTArray<uint8_t>& certBytes,
+    /*out*/ nsTArray<mozilla::pkix::CertPolicyId>& policies) {
   Input certInput;
   Result rv = certInput.Init(certBytes.Elements(), certBytes.Length());
   if (rv != Success) {
-    return false;
+    return;
   }
   // we don't use the certificate for path building, so this parameter
   // doesn't matter
@@ -1300,15 +1335,15 @@ bool GetFirstEVPolicy(const nsTArray<uint8_t>& certBytes,
   BackCert cert(certInput, notUsedForPaths, nullptr);
   rv = cert.Init();
   if (rv != Success) {
-    return false;
+    return;
   }
 
-  const Input* policies = cert.GetCertificatePolicies();
-  if (!policies) {
-    return false;
+  const Input* extensionInput = cert.GetCertificatePolicies();
+  if (!extensionInput) {
+    return;
   }
 
-  Reader extension(*policies);
+  Reader extension(*extensionInput);
   Reader certificatePolicies;
   // certificatePolicies ::= SEQUENCE SIZE (1..MAX) OF PolicyInformation
   // PolicyInformation ::= SEQUENCE {
@@ -1318,7 +1353,7 @@ bool GetFirstEVPolicy(const nsTArray<uint8_t>& certBytes,
   // CertPolicyId ::= OBJECT IDENTIFIER
   rv = der::ExpectTagAndGetValue(extension, der::SEQUENCE, certificatePolicies);
   if (rv != Success || !extension.AtEnd()) {
-    return false;
+    return;
   }
 
   do {
@@ -1326,22 +1361,18 @@ bool GetFirstEVPolicy(const nsTArray<uint8_t>& certBytes,
     rv = der::ExpectTagAndGetValue(certificatePolicies, der::SEQUENCE,
                                    policyInformation);
     if (rv != Success) {
-      return false;
+      return;
     }
 
     Reader policyOid;
     rv = der::ExpectTagAndGetValue(policyInformation, der::OIDTag, policyOid);
     if (rv != Success) {
-      return false;
+      return;
     }
 
     // we don't validate policy qualifiers here
-    if (FindMatchingEVPolicy(policyOid, policy)) {
-      return true;
-    }
+    FindMatchingEVPolicy(policyOid, policies);
   } while (!certificatePolicies.AtEnd());
-
-  return false;
 }
 
 }  // namespace psm

@@ -13,6 +13,7 @@
 #include <windows.h>
 #include "mozilla/Attributes.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/gfx/PrintPromise.h"
 
 class nsIFile;
 class nsIWidget;
@@ -29,17 +30,11 @@ class nsDeviceContextSpecWin : public nsIDeviceContextSpec {
                            int32_t aStartPage, int32_t aEndPage) override {
     return NS_OK;
   }
-  NS_IMETHOD EndDocument() override { return NS_OK; }
+  RefPtr<mozilla::gfx::PrintEndDocumentPromise> EndDocument() override;
   NS_IMETHOD BeginPage() override { return NS_OK; }
   NS_IMETHOD EndPage() override { return NS_OK; }
 
-  NS_IMETHOD Init(nsIWidget* aWidget, nsIPrintSettings* aPS,
-                  bool aIsPrintPreview) override;
-
-  float GetDPI() final;
-
-  float GetPrintingScale() final;
-  gfxPoint GetPrintingTranslate() final;
+  NS_IMETHOD Init(nsIPrintSettings* aPS, bool aIsPrintPreview) override;
 
   void GetDriverName(nsAString& aDriverName) const {
     aDriverName = mDriverName;
@@ -69,17 +64,11 @@ class nsDeviceContextSpecWin : public nsIDeviceContextSpec {
   nsString mDeviceName;
   LPDEVMODEW mDevMode = nullptr;
 
-  nsCOMPtr<nsIPrintSettings> mPrintSettings;
   int16_t mOutputFormat = nsIPrintSettings::kOutputFormatNative;
 
   // A temporary file to create an "anonymous" print target. See bug 1664253,
   // this should ideally not be needed.
   nsCOMPtr<nsIFile> mTempFile;
-
-  // This variable is independant of nsIPrintSettings::kOutputFormatPDF.
-  // It controls both whether normal printing is done via PDF using Skia and
-  // whether print-to-PDF uses Skia.
-  bool mPrintViaSkPDF = false;
 };
 
 //-------------------------------------------------------------------------

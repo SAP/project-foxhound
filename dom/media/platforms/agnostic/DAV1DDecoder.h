@@ -6,6 +6,7 @@
 #if !defined(DAV1DDecoder_h_)
 #  define DAV1DDecoder_h_
 
+#  include "PerformanceRecorder.h"
 #  include "PlatformDecoderModule.h"
 #  include "dav1d/dav1d.h"
 #  include "nsRefPtrHashtable.h"
@@ -36,6 +37,9 @@ class DAV1DDecoder : public MediaDataDecoder,
   static Maybe<gfx::YUVColorSpace> GetColorSpace(const Dav1dPicture& aPicture,
                                                  LazyLogModule& aLogger);
 
+  static Maybe<gfx::ColorSpace2> GetColorPrimaries(const Dav1dPicture& aPicture,
+                                                   LazyLogModule& aLogger);
+
  private:
   ~DAV1DDecoder() = default;
   RefPtr<DecodePromise> InvokeDecode(MediaRawData* aSample);
@@ -48,6 +52,8 @@ class DAV1DDecoder : public MediaDataDecoder,
   const RefPtr<TaskQueue> mTaskQueue;
   const RefPtr<layers::ImageContainer> mImageContainer;
   const RefPtr<layers::KnowsCompositor> mImageAllocator;
+  const Maybe<TrackingId> mTrackingId;
+  PerformanceRecorderMulti<DecodeStage> mPerformanceRecorder;
 
   // Keep the buffers alive until dav1d
   // does not need them any more.

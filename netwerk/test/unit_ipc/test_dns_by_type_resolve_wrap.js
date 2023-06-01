@@ -3,18 +3,14 @@
 let h2Port;
 
 function setup() {
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  h2Port = env.get("MOZHTTP2_PORT");
+  h2Port = Services.env.get("MOZHTTP2_PORT");
   Assert.notEqual(h2Port, null);
   Assert.notEqual(h2Port, "");
 
   // Set to allow the cert presented by our H2 server
   do_get_profile();
 
-  Services.prefs.setBoolPref("network.http.spdy.enabled", true);
-  Services.prefs.setBoolPref("network.http.spdy.enabled.http2", true);
+  Services.prefs.setBoolPref("network.http.http2.enabled", true);
   // the TRR server is on 127.0.0.1
   Services.prefs.setCharPref("network.trr.bootstrapAddr", "127.0.0.1");
 

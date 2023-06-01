@@ -4,29 +4,28 @@
 
 "use strict";
 
-const {
-  clearInterval,
-  setInterval,
-} = require("resource://gre/modules/Timer.jsm");
+const { clearInterval, setInterval } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 
-const EventEmitter = require("devtools/shared/event-emitter");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 const {
   adbProcess,
-} = require("devtools/client/shared/remote-debugging/adb/adb-process");
+} = require("resource://devtools/client/shared/remote-debugging/adb/adb-process.js");
 const {
   adbAddon,
-} = require("devtools/client/shared/remote-debugging/adb/adb-addon");
-const AdbDevice = require("devtools/client/shared/remote-debugging/adb/adb-device");
+} = require("resource://devtools/client/shared/remote-debugging/adb/adb-addon.js");
+const AdbDevice = require("resource://devtools/client/shared/remote-debugging/adb/adb-device.js");
 const {
   AdbRuntime,
-} = require("devtools/client/shared/remote-debugging/adb/adb-runtime");
+} = require("resource://devtools/client/shared/remote-debugging/adb/adb-runtime.js");
 const {
   TrackDevicesCommand,
-} = require("devtools/client/shared/remote-debugging/adb/commands/track-devices");
+} = require("resource://devtools/client/shared/remote-debugging/adb/commands/track-devices.js");
 loader.lazyRequireGetter(
   this,
   "check",
-  "devtools/client/shared/remote-debugging/adb/adb-running-checker",
+  "resource://devtools/client/shared/remote-debugging/adb/adb-running-checker.js",
   true
 );
 

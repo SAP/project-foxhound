@@ -12,19 +12,17 @@
 #include "nsRefreshObservers.h"
 #include "nsStubMutationObserver.h"
 #include "nsTHashSet.h"
-#include "mozilla/dom/DOMLocalization.h"
 
 class nsRefreshDriver;
 
-namespace mozilla {
-namespace dom {
-
+namespace mozilla::dom {
+class DOMLocalization;
 /**
  * L10nMutations manage observing roots for localization
  * changes and coalescing pending translations into
  * batches - one per animation frame.
  */
-class L10nMutations final : public nsStubMutationObserver,
+class L10nMutations final : public nsStubMultiMutationObserver,
                             public nsARefreshObserver {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -84,7 +82,6 @@ class L10nMutations final : public nsStubMutationObserver,
   bool IsInRoots(nsINode* aNode);
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_l10n_L10nMutations_h__

@@ -18,8 +18,10 @@
 #include "jit/JitRealm.h"
 #include "js/HeapAPI.h"
 #include "js/Value.h"
+#include "util/DifferentialTesting.h"
 #include "vm/HelperThreads.h"
 #include "vm/Realm.h"
+#include "vm/Scope.h"
 
 #include "gc/Marking-inl.h"
 #include "vm/GeckoProfiler-inl.h"
@@ -89,15 +91,15 @@ void PreventGCDuringInteractiveDebug() { TlsContext.get()->suppressGC++; }
 
 #endif
 
-void js::ReleaseAllJITCode(JSFreeOp* fop) {
-  js::CancelOffThreadIonCompile(fop->runtime());
+void js::ReleaseAllJITCode(JS::GCContext* gcx) {
+  js::CancelOffThreadIonCompile(gcx->runtime());
 
-  for (ZonesIter zone(fop->runtime(), SkipAtoms); !zone.done(); zone.next()) {
+  for (ZonesIter zone(gcx->runtime(), SkipAtoms); !zone.done(); zone.next()) {
     zone->setPreservingCode(false);
-    zone->discardJitCode(fop);
+    zone->discardJitCode(gcx);
   }
 
-  for (RealmsIter realm(fop->runtime()); !realm.done(); realm.next()) {
+  for (RealmsIter realm(gcx->runtime()); !realm.done(); realm.next()) {
     if (jit::JitRealm* jitRealm = realm->jitRealm()) {
       jitRealm->discardStubs();
     }
@@ -144,8 +146,14 @@ JS_PUBLIC_API void js::gc::AssertGCThingHasType(js::gc::Cell* cell,
 
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
 
-JS::AutoAssertNoGC::AutoAssertNoGC(JSContext* maybecx)
-    : cx_(maybecx ? maybecx : TlsContext.get()) {
+JS::AutoAssertNoGC::AutoAssertNoGC(JSContext* maybecx) {
+  if (maybecx) {
+    cx_ = maybecx;
+  } else if (TlsContext.initialized()) {
+    cx_ = TlsContext.get();
+  } else {
+    cx_ = nullptr;
+  }
   if (cx_) {
     cx_->inUnsafeRegion++;
   }
@@ -216,8 +224,14 @@ JS::TraceKind JS::GCCellPtr::outOfLineKind() const {
 JS_PUBLIC_API void JS::PrepareZoneForGC(JSContext* cx, Zone* zone) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
-  MOZ_ASSERT(cx->runtime()->gc.hasZone(zone));
 
+  // If we got the zone from a shared atom, we may have the wrong atoms zone
+  // here.
+  if (zone->isAtomsZone()) {
+    zone = cx->runtime()->atomsZone();
+  }
+
+  MOZ_ASSERT(cx->runtime()->gc.hasZone(zone));
   zone->scheduleGC();
 }
 
@@ -225,6 +239,7 @@ JS_PUBLIC_API void JS::PrepareForFullGC(JSContext* cx) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
 
+  cx->runtime()->gc.fullGCRequested = true;
   for (ZonesIter zone(cx->runtime(), WithAtoms); !zone.done(); zone.next()) {
     zone->scheduleGC();
   }
@@ -263,15 +278,21 @@ JS_PUBLIC_API void JS::SkipZoneForGC(JSContext* cx, Zone* zone) {
   CHECK_THREAD(cx);
   MOZ_ASSERT(cx->runtime()->gc.hasZone(zone));
 
+  cx->runtime()->gc.fullGCRequested = false;
   zone->unscheduleGC();
+}
+
+static inline void CheckGCOptions(JS::GCOptions options) {
+  MOZ_ASSERT(options == JS::GCOptions::Normal ||
+             options == JS::GCOptions::Shrink ||
+             options == JS::GCOptions::Shutdown);
 }
 
 JS_PUBLIC_API void JS::NonIncrementalGC(JSContext* cx, JS::GCOptions options,
                                         GCReason reason) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
-  MOZ_ASSERT(options == JS::GCOptions::Normal ||
-             options == JS::GCOptions::Shrink);
+  CheckGCOptions(options);
 
   cx->runtime()->gc.gc(options, reason);
 
@@ -283,8 +304,7 @@ JS_PUBLIC_API void JS::StartIncrementalGC(JSContext* cx, JS::GCOptions options,
                                           const js::SliceBudget& budget) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
-  MOZ_ASSERT(options == JS::GCOptions::Normal ||
-             options == JS::GCOptions::Shrink);
+  CheckGCOptions(options);
 
   cx->runtime()->gc.startGC(options, reason, budget);
 }
@@ -464,6 +484,33 @@ uint64_t js::gc::NextCellUniqueId(JSRuntime* rt) {
 }
 
 namespace js {
+
+static const struct GCParamInfo {
+  const char* name;
+  JSGCParamKey key;
+  bool writable;
+} GCParameters[] = {
+#define DEFINE_PARAM_INFO(name, key, writable) {name, key, writable},
+    FOR_EACH_GC_PARAM(DEFINE_PARAM_INFO)
+#undef DEFINE_PARAM_INFO
+};
+
+bool GetGCParameterInfo(const char* name, JSGCParamKey* keyOut,
+                        bool* writableOut) {
+  MOZ_ASSERT(keyOut);
+  MOZ_ASSERT(writableOut);
+
+  for (const GCParamInfo& info : GCParameters) {
+    if (strcmp(name, info.name) == 0) {
+      *keyOut = info.key;
+      *writableOut = info.writable;
+      return true;
+    }
+  }
+
+  return false;
+}
+
 namespace gc {
 namespace MemInfo {
 
@@ -693,6 +740,10 @@ const char* StateName(JS::Zone::GCState state) {
       return "Finished";
     case JS::Zone::Compact:
       return "Compact";
+    case JS::Zone::VerifyPreBarriers:
+      return "VerifyPreBarriers";
+    case JS::Zone::Limit:
+      break;
   }
   MOZ_CRASH("Invalid Zone::GCState enum value");
 }
@@ -710,7 +761,7 @@ JS_PUBLIC_API void js::gc::FinalizeDeadNurseryObject(JSContext* cx,
   MOZ_ASSERT(!IsForwarded(obj));
 
   const JSClass* jsClass = JS::GetClass(obj);
-  jsClass->doFinalize(cx->defaultFreeOp(), obj);
+  jsClass->doFinalize(cx->gcContext(), obj);
 }
 
 JS_PUBLIC_API void js::gc::SetPerformanceHint(JSContext* cx,

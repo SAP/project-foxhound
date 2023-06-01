@@ -5,11 +5,9 @@ ChromeUtils.defineModuleGetter(
   "ObjectUtils",
   "resource://gre/modules/ObjectUtils.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesTestUtils",
-  "resource://testing-common/PlacesTestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
   this,
   "QueryCache",
@@ -93,16 +91,48 @@ async function test_screen_content(
 }
 
 // eslint-disable-next-line no-unused-vars
+async function test_element_styles(
+  browser,
+  elementSelector,
+  expectedStyles = {},
+  unexpectedStyles = {}
+) {
+  await ContentTask.spawn(
+    browser,
+    [elementSelector, expectedStyles, unexpectedStyles],
+    async ([selector, expected, unexpected]) => {
+      const element = await ContentTaskUtils.waitForCondition(() =>
+        content.document.querySelector(selector)
+      );
+      const computedStyles = content.window.getComputedStyle(element);
+      Object.entries(expected).forEach(([attr, val]) =>
+        is(
+          computedStyles[attr],
+          val,
+          `${selector} should have computed ${attr} of ${val}`
+        )
+      );
+      Object.entries(unexpected).forEach(([attr, val]) =>
+        isnot(
+          computedStyles[attr],
+          val,
+          `${selector} should not have computed ${attr} of ${val}`
+        )
+      );
+    }
+  );
+}
+
+// eslint-disable-next-line no-unused-vars
 async function onButtonClick(browser, elementId) {
   await ContentTask.spawn(
     browser,
     { elementId },
     async ({ elementId: buttonId }) => {
-      await ContentTaskUtils.waitForCondition(
+      let button = await ContentTaskUtils.waitForCondition(
         () => content.document.querySelector(buttonId),
         buttonId
       );
-      let button = content.document.querySelector(buttonId);
       button.click();
     }
   );
@@ -155,6 +185,24 @@ async function setAboutWelcomePref(value) {
 }
 
 // eslint-disable-next-line no-unused-vars
+async function openMRAboutWelcome() {
+  await setAboutWelcomePref(true); // NB: Calls pushPrefs
+  let tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:welcome",
+    true
+  );
+
+  return {
+    browser: tab.linkedBrowser,
+    cleanup: async () => {
+      BrowserTestUtils.removeTab(tab);
+      await popPrefs(); // for setAboutWelcomePref()
+    },
+  };
+}
+
+// eslint-disable-next-line no-unused-vars
 async function clearHistoryAndBookmarks() {
   await PlacesUtils.bookmarks.eraseEverything();
   await PlacesUtils.history.clear();
@@ -184,7 +232,7 @@ async function waitForPreloaded(browser) {
 // eslint-disable-next-line no-unused-vars
 async function waitForUrlLoad(url) {
   let browser = gBrowser.selectedBrowser;
-  BrowserTestUtils.loadURI(browser, url);
+  BrowserTestUtils.loadURIString(browser, url);
   await BrowserTestUtils.browserLoaded(browser, false, url);
 }
 

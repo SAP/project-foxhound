@@ -1,13 +1,11 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import absolute_import, print_function
-
 import argparse
 import os
 
-from mozlog.commandline import add_logging_group
 import six
+from mozlog.commandline import add_logging_group
 
 
 class _StopAction(argparse.Action):
@@ -317,6 +315,13 @@ def create_parser(mach_interface=False):
         dest="fission",
         default=True,
         help="Disable Fission (site isolation) in Gecko.",
+    )
+    add_arg(
+        "--project",
+        type=str,
+        default="mozilla-central",
+        help="The project branch we're running tests on. Used for "
+        "disabling/skipping tests.",
     )
 
     add_logging_group(parser)

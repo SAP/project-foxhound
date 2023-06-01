@@ -16,9 +16,9 @@
 #include "base/logging.h"
 #include "base/scoped_nsautorelease_pool.h"
 #include "base/time.h"
-#include "nsDependentSubstring.h"
 #include "event.h"
 #include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerThreadSleep.h"
 #include "mozilla/UniquePtr.h"
 
 // This macro checks that the _EVENT_SIZEOF_* constants defined in
@@ -41,6 +41,7 @@ CHECK_EVENT_SIZEOF(OFF_T, ev_off_t);
 CHECK_EVENT_SIZEOF(PTHREAD_T, pthread_t);
 CHECK_EVENT_SIZEOF(SHORT, short);
 CHECK_EVENT_SIZEOF(SIZE_T, size_t);
+CHECK_EVENT_SIZEOF(TIME_T, time_t);
 CHECK_EVENT_SIZEOF(VOID_P, void*);
 
 // Lifecycle of struct event
@@ -105,8 +106,15 @@ bool MessagePumpLibevent::FileDescriptorWatcher::StopWatchingFileDescriptor() {
   return (rv == 0);
 }
 
+bool MessagePumpLibevent::awake_ = false;
+
 // Called if a byte is received on the wakeup pipe.
 void MessagePumpLibevent::OnWakeup(int socket, short flags, void* context) {
+  if (!awake_) {
+    profiler_thread_wake();
+    awake_ = true;
+  }
+
   AUTO_PROFILER_LABEL("MessagePumpLibevent::OnWakeup", OTHER);
 
   base::MessagePumpLibevent* that =
@@ -238,6 +246,10 @@ bool MessagePumpLibevent::WatchFileDescriptor(int fd, bool persistent,
 
 void MessagePumpLibevent::OnLibeventNotification(int fd, short flags,
                                                  void* context) {
+  if (!awake_) {
+    profiler_thread_wake();
+    awake_ = true;
+  }
   AUTO_PROFILER_LABEL("MessagePumpLibevent::OnLibeventNotification", OTHER);
 
   Watcher* watcher = static_cast<Watcher*>(context);
@@ -307,6 +319,10 @@ bool MessagePumpLibevent::CatchSignal(int sig, SignalEvent* sigevent,
 
 void MessagePumpLibevent::OnLibeventSignalNotification(int sig, short flags,
                                                        void* context) {
+  if (!awake_) {
+    profiler_thread_wake();
+    awake_ = true;
+  }
   AUTO_PROFILER_LABEL("MessagePumpLibevent::OnLibeventSignalNotification",
                       OTHER);
 
@@ -343,6 +359,8 @@ void MessagePumpLibevent::Run(Delegate* delegate) {
     // but to service all pending events when it wakes up.
     AUTO_PROFILER_LABEL("MessagePumpLibevent::Run::Wait", IDLE);
     if (delayed_work_time_.is_null()) {
+      profiler_thread_sleep();
+      awake_ = false;
       event_base_loop(event_base_, EVLOOP_ONCE);
     } else {
       TimeDelta delay = delayed_work_time_ - TimeTicks::Now();
@@ -351,6 +369,8 @@ void MessagePumpLibevent::Run(Delegate* delegate) {
         poll_tv.tv_sec = delay.InSeconds();
         poll_tv.tv_usec = delay.InMicroseconds() % Time::kMicrosecondsPerSecond;
         event_base_loopexit(event_base_, &poll_tv);
+        profiler_thread_sleep();
+        awake_ = false;
         event_base_loop(event_base_, EVLOOP_ONCE);
       } else {
         // It looks like delayed_work_time_ indicates a time in the past, so we
@@ -387,46 +407,4 @@ void MessagePumpLibevent::ScheduleDelayedWork(
   delayed_work_time_ = delayed_work_time;
 }
 
-void LineWatcher::OnFileCanReadWithoutBlocking(int aFd) {
-  ssize_t length = 0;
-
-  while (true) {
-    length = read(aFd, mReceiveBuffer.get(), mBufferSize - mReceivedIndex);
-    DCHECK(length <= ssize_t(mBufferSize - mReceivedIndex));
-    if (length <= 0) {
-      if (length < 0) {
-        if (errno == EINTR) {
-          continue;  // retry system call when interrupted
-        }
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-          return;  // no data available: return and re-poll
-        }
-        DLOG(ERROR) << "Can't read from fd, error " << errno;
-      } else {
-        DLOG(ERROR) << "End of file";
-      }
-      // At this point, assume that we can't actually access
-      // the socket anymore, and indicate an error.
-      OnError();
-      mReceivedIndex = 0;
-      return;
-    }
-
-    while (length-- > 0) {
-      DCHECK(mReceivedIndex < mBufferSize);
-      if (mReceiveBuffer[mReceivedIndex] == mTerminator) {
-        nsDependentCSubstring message(mReceiveBuffer.get(), mReceivedIndex);
-        OnLineRead(aFd, message);
-        if (length > 0) {
-          DCHECK(mReceivedIndex < (mBufferSize - 1));
-          memmove(&mReceiveBuffer[0], &mReceiveBuffer[mReceivedIndex + 1],
-                  length);
-        }
-        mReceivedIndex = 0;
-      } else {
-        mReceivedIndex++;
-      }
-    }
-  }
-}
 }  // namespace base

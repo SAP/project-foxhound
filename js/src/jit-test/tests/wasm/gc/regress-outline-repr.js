@@ -7,7 +7,8 @@
 
 const wat = `
 (module
-  (type $S
+  (type $S2 (struct))
+  (sub $S2 (type $S
     (struct
       (field (mut i64))
       (field (mut i64))
@@ -27,12 +28,11 @@ const wat = `
       (field (mut i64))
       (field (mut i64))
       (field (mut i64))
-      (field (mut eqref))))
-  (type $S2 (struct))
+      (field (mut eqref)))))
 
   (func $main
     (struct.set $S 18
-      (struct.new_with_rtt $S
+      (struct.new $S
         (i64.const 0)
         (i64.const 0)
         (i64.const 0)
@@ -51,9 +51,8 @@ const wat = `
         (i64.const 0)
         (i64.const 0)
         (i64.const 0)
-        (ref.null eq)
-        (rtt.canon $S))
-      (struct.new_with_rtt $S2 (rtt.canon $S2))))
+        (ref.null eq))
+      (struct.new $S2)))
   (start $main))
 `
 wasmEvalText(wat);
@@ -62,27 +61,6 @@ wasmEvalText(wat);
 
 wasmEvalText(`
 (module
-  (type $outline
-    (struct
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))))
   (type $inline
     (struct
       (field (mut i64))
@@ -91,13 +69,34 @@ wasmEvalText(`
       (field (mut i64))
       (field (mut i64))
     ))
-
+  (sub $inline (type $outline
+    (struct
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64)))))
+  
   (func $main
     (local $outline (ref null $outline))
     (local $inline (ref null $inline))
 
     (; create an outline object and acquire multiple views to it ;)
-    (struct.new_with_rtt $outline
+    (struct.new $outline
           (i64.const 0xFF)
           (i64.const 0)
           (i64.const 0)
@@ -116,8 +115,7 @@ wasmEvalText(`
           (i64.const 0)
           (i64.const 0)
           (i64.const 0)
-          (i64.const 0)
-          (rtt.canon $outline))
+          (i64.const 0))
     local.tee $outline
     local.set $inline
 

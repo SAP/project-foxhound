@@ -4,18 +4,18 @@
 
 "use strict";
 
-const AutocompletePopup = require("devtools/client/shared/autocomplete-popup");
+const AutocompletePopup = require("resource://devtools/client/shared/autocomplete-popup.js");
 
 loader.lazyRequireGetter(
   this,
   "KeyCodes",
-  "devtools/client/shared/keycodes",
+  "resource://devtools/client/shared/keycodes.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "CSSCompleter",
-  "devtools/client/shared/sourceeditor/css-autocompleter"
+  "resource://devtools/client/shared/sourceeditor/css-autocompleter.js"
 );
 
 const autocompleteMap = new WeakMap();
@@ -110,10 +110,10 @@ function initializeAutoCompletion(ctx, options = {}) {
   }
 
   autocompleteMap.set(ed, {
-    popup: popup,
-    completer: completer,
-    keyMap: keyMap,
-    destroy: destroy,
+    popup,
+    completer,
+    keyMap,
+    destroy,
     insertingSuggestion: false,
     suggestionInsertedOnce: false,
   });

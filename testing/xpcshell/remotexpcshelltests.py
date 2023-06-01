@@ -4,28 +4,25 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
-from argparse import Namespace
 import datetime
 import os
 import posixpath
-import mozdevice
 import shutil
-import six
 import sys
-import runxpcshelltests as xpcshell
 import tempfile
 import time
 import uuid
+from argparse import Namespace
 from zipfile import ZipFile
 
 import mozcrash
-from mozdevice import ADBDevice, ADBDeviceFactory, ADBTimeoutError
+import mozdevice
 import mozfile
 import mozinfo
+import runxpcshelltests as xpcshell
+import six
+from mozdevice import ADBDevice, ADBDeviceFactory, ADBTimeoutError
 from mozlog import commandline
-
 from xpcshellcommandline import parser_remote
 
 here = os.path.dirname(os.path.abspath(__file__))
@@ -214,20 +211,6 @@ class RemoteXPCShellTestThread(xpcshell.XPCShellTestThread):
         # env var is set in buildEnvironment
         self.env["XPCSHELL_TEST_TEMP_DIR"] = self.remoteTmpDir
         return self.remoteTmpDir
-
-    def setupPluginsDir(self):
-        if not os.path.isdir(self.pluginsPath):
-            return None
-
-        # making sure tmp dir is set up
-        self.setupTempDir()
-
-        pluginsDir = posixpath.join(self.remoteTmpDir, "plugins")
-        self.device.push(self.pluginsPath, pluginsDir)
-        self.device.chmod(pluginsDir)
-        if self.interactive:
-            self.log.info("plugins dir is %s" % pluginsDir)
-        return pluginsDir
 
     def setupProfileDir(self):
         profileId = str(uuid.uuid4())
@@ -479,6 +462,14 @@ class XPCShellRemote(xpcshell.XPCShellTests, object):
         self.initDir(self.remoteMinidumpRootDir)
         self.initDir(self.remoteLogFolder)
 
+        eprefs = options.get("extraPrefs") or []
+        if options.get("disableFission"):
+            eprefs.append("fission.autostart=false")
+        else:
+            # should be by default, just in case
+            eprefs.append("fission.autostart=true")
+        options["extraPrefs"] = eprefs
+
         # data that needs to be passed to the RemoteXPCShellTestThread
         self.mobileArgs = {
             "device": self.device,
@@ -630,6 +621,7 @@ class XPCShellRemote(xpcshell.XPCShellTests, object):
             "BadCertAndPinningServer",
             "DelegatedCredentialsServer",
             "EncryptedClientHelloServer",
+            "FaultyServer",
             "OCSPStaplingServer",
             "GenerateOCSPResponse",
             "SanctionsTestServer",

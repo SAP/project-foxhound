@@ -19,7 +19,7 @@ function read_stream(stream, count) {
     var bytes = wrapper.readByteArray(Math.min(65535, count));
     data.push(String.fromCharCode.apply(null, bytes));
     count -= bytes.length;
-    if (bytes.length == 0) {
+    if (!bytes.length) {
       do_throw("Nothing read from input stream!");
     }
   }
@@ -352,24 +352,10 @@ function deserialize_from_escaped_string(str) {
   return objectInStream.readObject(true);
 }
 
-// Copied from head_psm.js.
-function add_tls_server_setup(serverBinName, certsPath, addDefaultRoot = true) {
-  add_test(function() {
-    _setupTLSServerTest(serverBinName, certsPath, addDefaultRoot);
-  });
-}
-
-// Do not call this directly; use add_tls_server_setup
-function _setupTLSServerTest(serverBinName, certsPath, addDefaultRoot) {
-  asyncStartTLSTestServer(serverBinName, certsPath, addDefaultRoot).then(
-    run_next_test
-  );
-}
-
 async function asyncStartTLSTestServer(
   serverBinName,
   certsPath,
-  addDefaultRoot
+  addDefaultRoot = true
 ) {
   const { HttpServer } = ChromeUtils.import(
     "resource://testing-common/httpd.js"
@@ -384,16 +370,13 @@ async function asyncStartTLSTestServer(
 
   const CALLBACK_PORT = 8444;
 
-  let envSvc = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
   let greBinDir = Services.dirsvc.get("GreBinD", Ci.nsIFile);
-  envSvc.set("DYLD_LIBRARY_PATH", greBinDir.path);
+  Services.env.set("DYLD_LIBRARY_PATH", greBinDir.path);
   // TODO(bug 1107794): Android libraries are in /data/local/xpcb, but "GreBinD"
   // does not return this path on Android, so hard code it here.
-  envSvc.set("LD_LIBRARY_PATH", greBinDir.path + ":/data/local/xpcb");
-  envSvc.set("MOZ_TLS_SERVER_DEBUG_LEVEL", "3");
-  envSvc.set("MOZ_TLS_SERVER_CALLBACK_PORT", CALLBACK_PORT);
+  Services.env.set("LD_LIBRARY_PATH", greBinDir.path + ":/data/local/xpcb");
+  Services.env.set("MOZ_TLS_SERVER_DEBUG_LEVEL", "3");
+  Services.env.set("MOZ_TLS_SERVER_CALLBACK_PORT", CALLBACK_PORT);
 
   let httpServer = new HttpServer();
   let serverReady = new Promise(resolve => {
@@ -463,4 +446,76 @@ function promiseAsyncOpen(chan) {
       })
     );
   });
+}
+
+function hexStringToBytes(hex) {
+  let bytes = [];
+  for (let hexByteStr of hex.split(/(..)/)) {
+    if (hexByteStr.length) {
+      bytes.push(parseInt(hexByteStr, 16));
+    }
+  }
+  return bytes;
+}
+
+function stringToBytes(str) {
+  return Array.from(str, chr => chr.charCodeAt(0));
+}
+
+function BinaryHttpResponse(status, headerNames, headerValues, content) {
+  this.status = status;
+  this.headerNames = headerNames;
+  this.headerValues = headerValues;
+  this.content = content;
+}
+
+BinaryHttpResponse.prototype = {
+  QueryInterface: ChromeUtils.generateQI(["nsIBinaryHttpResponse"]),
+};
+
+function check_http_info(request, expected_httpVersion, expected_proxy) {
+  let httpVersion = "";
+  try {
+    httpVersion = request.protocolVersion;
+  } catch (e) {}
+
+  request.QueryInterface(Ci.nsIProxiedChannel);
+  var httpProxyConnectResponseCode = request.httpProxyConnectResponseCode;
+
+  Assert.equal(expected_httpVersion, httpVersion);
+  if (expected_proxy) {
+    Assert.equal(httpProxyConnectResponseCode, 200);
+  } else {
+    Assert.equal(httpProxyConnectResponseCode, -1);
+  }
+}
+
+function makeHTTPChannel(url, with_proxy) {
+  function createPrincipal(url) {
+    var ssm = Services.scriptSecurityManager;
+    try {
+      return ssm.createContentPrincipal(Services.io.newURI(url), {});
+    } catch (e) {
+      return null;
+    }
+  }
+
+  if (with_proxy) {
+    return Services.io
+      .newChannelFromURIWithProxyFlags(
+        Services.io.newURI(url),
+        null,
+        Ci.nsIProtocolProxyService.RESOLVE_ALWAYS_TUNNEL,
+        null,
+        createPrincipal(url),
+        createPrincipal(url),
+        Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT,
+        Ci.nsIContentPolicy.TYPE_OTHER
+      )
+      .QueryInterface(Ci.nsIHttpChannel);
+  }
+  return NetUtil.newChannel({
+    uri: url,
+    loadUsingSystemPrincipal: true,
+  }).QueryInterface(Ci.nsIHttpChannel);
 }

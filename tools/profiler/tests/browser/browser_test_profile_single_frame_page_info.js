@@ -19,7 +19,7 @@ add_task(async function test_profile_single_frame_page_info() {
   info(
     "Start the profiler to test the page information with single frame page."
   );
-  startProfiler();
+  await startProfiler();
 
   info("Open a tab with single_frame.html in it.");
   const url = BASE_URL + "single_frame.html";
@@ -33,25 +33,13 @@ add_task(async function test_profile_single_frame_page_info() {
     const activeTabID = win.gBrowser.selectedBrowser.browsingContext.browserId;
 
     info("Capture the profile data.");
-    const profile = await Services.profiler.getProfileDataAsync();
-    Services.profiler.StopProfiler();
-
-    let pageFound = false;
-    // We need to find the correct content process for that tab.
-    let contentProcess = profile.processes.find(
-      p => p.threads[0].pid == contentPid
-    );
-
-    if (!contentProcess) {
-      throw new Error(
-        `Could not find the content process with given pid: ${contentPid}`
-      );
-    }
+    const { contentProcess } = await stopProfilerNowAndGetThreads(contentPid);
 
     info(
       "Check if the captured page is the one with correct values we created."
     );
 
+    let pageFound = false;
     for (const page of contentProcess.pages) {
       if (page.url == url) {
         Assert.equal(page.url, url);
@@ -80,7 +68,7 @@ add_task(async function test_profile_private_browsing() {
   info(
     "Start the profiler to test the page information with single frame page."
   );
-  startProfiler();
+  await startProfiler();
 
   info("Open a private window with single_frame.html in it.");
   const win = await BrowserTestUtils.openNewBrowserWindow({
@@ -91,7 +79,7 @@ add_task(async function test_profile_private_browsing() {
   try {
     const url = BASE_URL_HTTPS + "single_frame.html";
     const contentBrowser = win.gBrowser.selectedBrowser;
-    BrowserTestUtils.loadURI(contentBrowser, url);
+    BrowserTestUtils.loadURIString(contentBrowser, url);
     await BrowserTestUtils.browserLoaded(contentBrowser, false, url);
 
     const contentPid = await SpecialPowers.spawn(contentBrowser, [], () => {
@@ -102,30 +90,20 @@ add_task(async function test_profile_private_browsing() {
     const activeTabID = contentBrowser.browsingContext.browserId;
 
     info("Capture the profile data.");
-    const profile = await Services.profiler.getProfileDataAsync();
-    Services.profiler.StopProfiler();
-
-    let pageFound = false;
-    // We need to find the correct content process for that tab.
-    let contentProcess = profile.processes.find(
-      p => p.threads[0].pid == contentPid
-    );
-
-    if (!contentProcess) {
-      throw new Error(
-        `Could not find the content process with given pid: ${contentPid}`
-      );
-    }
+    const {
+      contentProcess,
+      contentThread,
+    } = await stopProfilerNowAndGetThreads(contentPid);
 
     // This information is available with fission only.
     Assert.equal(
-      contentProcess.threads[0].isPrivateBrowsing,
+      contentThread.isPrivateBrowsing,
       undefined,
       "The content process has no private browsing flag."
     );
 
     Assert.equal(
-      contentProcess.threads[0].userContextId,
+      contentThread.userContextId,
       undefined,
       "The content process has no information about the container used for this process."
     );
@@ -134,6 +112,7 @@ add_task(async function test_profile_private_browsing() {
       "Check if the captured page is the one with correct values we created."
     );
 
+    let pageFound = false;
     for (const page of contentProcess.pages) {
       if (page.url == url) {
         Assert.equal(page.url, url);

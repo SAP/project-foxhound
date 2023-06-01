@@ -19,7 +19,7 @@ add_task(async function test_with_rs_messages() {
     set: [
       [
         "browser.newtabpage.activity-stream.asrouter.providers.whats-new-panel",
-        `{"id":"cfr","enabled":true,"type":"remote-settings","bucket":"cfr","updateCycleInMs":0}`,
+        `{"id":"cfr","enabled":true,"type":"remote-settings","collection":"cfr","updateCycleInMs":0}`,
       ],
     ],
   });
@@ -30,7 +30,7 @@ add_task(async function test_with_rs_messages() {
   const client = RemoteSettings("cfr");
   await client.db.importChanges(
     {},
-    42,
+    Date.now(),
     [
       {
         // Modify targeting and randomize message name to work around the message

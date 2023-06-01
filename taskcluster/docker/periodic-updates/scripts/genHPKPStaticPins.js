@@ -20,8 +20,9 @@ if (arguments.length != 2) {
 }
 
 var { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-var { FileUtils } = ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+var { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
+);
 
 var gCertDB = Cc["@mozilla.org/security/x509certdb;1"].getService(
   Ci.nsIX509CertDB
@@ -151,8 +152,8 @@ function getSKDFromPem(pem) {
  * Hashes |input| using the SHA-256 algorithm in the following manner:
  *   btoa(sha256(atob(input)))
  *
- * @argument {String} input Base64 string to decode and return the hash of.
- * @returns {String} Base64 encoded SHA-256 hash.
+ * @param {string} input Base64 string to decode and return the hash of.
+ * @returns {string} Base64 encoded SHA-256 hash.
  */
 function sha256Base64(input) {
   let decodedValue;
@@ -223,7 +224,7 @@ function downloadAndParseChromeCerts(filename, certNameToSKD, certSKDToName) {
   let chromeName;
   for (let line of lines) {
     // Skip comments and newlines.
-    if (line.length == 0 || line[0] == "#") {
+    if (!line.length || line[0] == "#") {
       continue;
     }
     switch (state) {
@@ -242,6 +243,14 @@ function downloadAndParseChromeCerts(filename, certNameToSKD, certSKDToName) {
           state = IN_CERT;
         } else if (line.startsWith(BEGIN_PUB_KEY)) {
           state = IN_PUB_KEY;
+        } else if (
+          chromeName == "PinsListTimestamp" &&
+          line.match(/^[0-9]+$/)
+        ) {
+          // If the name of this entry is "PinsListTimestamp", this line should
+          // be the pins list timestamp. It should consist solely of digits.
+          // Ignore it and expect other entries to come.
+          state = PRE_NAME;
         } else {
           throw new Error(
             "ERROR: couldn't parse Chrome certificate file line: " + line
@@ -456,7 +465,7 @@ function genExpirationTime() {
 }
 
 function writeFullPinset(certNameToSKD, certSKDToName, pinset) {
-  if (!pinset.sha256_hashes || pinset.sha256_hashes.length == 0) {
+  if (!pinset.sha256_hashes || !pinset.sha256_hashes.length) {
     throw new Error(`ERROR: Pinset ${pinset.name} does not contain any hashes`);
   }
   writeFingerprints(
@@ -480,7 +489,7 @@ function writeFingerprints(certNameToSKD, certSKDToName, name, hashes) {
   for (let skd of SKDList.sort()) {
     writeString("  " + nameToAlias(certSKDToName[skd]) + ",\n");
   }
-  if (hashes.length == 0) {
+  if (!hashes.length) {
     // ANSI C requires that an initialiser list be non-empty.
     writeString("  0\n");
   }

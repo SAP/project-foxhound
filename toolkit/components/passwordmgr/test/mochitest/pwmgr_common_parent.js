@@ -3,14 +3,12 @@
  * See pwmgr_common.js for the content process companion.
  */
 
+/* eslint-env mozilla/chrome-script */
+
 "use strict";
 
-// assert is available to chrome scripts loaded via SpecialPowers.loadChromeScript.
-/* global assert */
-/* eslint-env mozilla/frame-script */
-
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+var { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 var { LoginHelper } = ChromeUtils.import(
   "resource://gre/modules/LoginHelper.jsm"
@@ -35,7 +33,6 @@ if (LoginHelper.improvedPasswordRulesEnabled) {
     await rsPromise;
   };
 }
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 /**
  * Init with a common login
@@ -225,11 +222,11 @@ addMessageListener("isLoggedIn", () => {
   return Services.logins.isLoggedIn;
 });
 
-addMessageListener("setMasterPassword", ({ enable }) => {
+addMessageListener("setPrimaryPassword", ({ enable }) => {
   if (enable) {
-    LoginTestUtils.masterPassword.enable();
+    LoginTestUtils.primaryPassword.enable();
   } else {
-    LoginTestUtils.masterPassword.disable();
+    LoginTestUtils.primaryPassword.disable();
   }
 });
 

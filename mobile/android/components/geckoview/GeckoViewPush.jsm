@@ -5,17 +5,17 @@
 
 var EXPORTED_SYMBOLS = ["PushService"];
 
-const { GeckoViewUtils } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewUtils.jsm"
+const { GeckoViewUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewUtils.sys.mjs"
 );
 
 const { debug, warn } = GeckoViewUtils.initLogging("GeckoViewPush");
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "EventDispatcher",
-  "resource://gre/modules/Messaging.jsm"
-);
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  EventDispatcher: "resource://gre/modules/Messaging.sys.mjs",
+});
 
 // Observer notification topics for push messages and subscription status
 // changes. These are duplicated and used in `nsIPushNotifier`. They're exposed
@@ -73,15 +73,17 @@ class PushService {
 
   async subscribeWithKey(scope, principal, appServerKey, callback) {
     try {
-      const response = await EventDispatcher.instance.sendRequestForResult({
-        type: "GeckoView:PushSubscribe",
-        scope: scopeWithAttrs(scope, principal.originAttributes),
-        appServerKey: appServerKey
-          ? ChromeUtils.base64URLEncode(new Uint8Array(appServerKey), {
-              pad: true,
-            })
-          : null,
-      });
+      const response = await lazy.EventDispatcher.instance.sendRequestForResult(
+        {
+          type: "GeckoView:PushSubscribe",
+          scope: scopeWithAttrs(scope, principal.originAttributes),
+          appServerKey: appServerKey
+            ? ChromeUtils.base64URLEncode(new Uint8Array(appServerKey), {
+                pad: true,
+              })
+            : null,
+        }
+      );
 
       let subscription = null;
       if (response) {
@@ -101,7 +103,7 @@ class PushService {
 
   async unsubscribe(scope, principal, callback) {
     try {
-      await EventDispatcher.instance.sendRequestForResult({
+      await lazy.EventDispatcher.instance.sendRequestForResult({
         type: "GeckoView:PushUnsubscribe",
         scope: scopeWithAttrs(scope, principal.originAttributes),
       });
@@ -114,10 +116,12 @@ class PushService {
 
   async getSubscription(scope, principal, callback) {
     try {
-      const response = await EventDispatcher.instance.sendRequestForResult({
-        type: "GeckoView:PushGetSubscription",
-        scope: scopeWithAttrs(scope, principal.originAttributes),
-      });
+      const response = await lazy.EventDispatcher.instance.sendRequestForResult(
+        {
+          type: "GeckoView:PushGetSubscription",
+          scope: scopeWithAttrs(scope, principal.originAttributes),
+        }
+      );
 
       let subscription = null;
       if (response) {

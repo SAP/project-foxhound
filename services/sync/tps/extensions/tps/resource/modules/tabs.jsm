@@ -3,24 +3,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* This is a JavaScript module (JSM) to be imported via
-   Components.utils.import() and acts as a singleton.
+   ChromeUtils.import() and acts as a singleton.
    Only the following listed symbols will exposed on import, and only when
    and where imported. */
 
 const EXPORTED_SYMBOLS = ["BrowserTabs"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { Weave } = ChromeUtils.import("resource://services-sync/main.js");
 const { Logger } = ChromeUtils.import("resource://tps/logger.jsm");
 
 // Unfortunately, due to where TPS is run, we can't directly reuse the logic from
-// BrowserTestUtils.jsm. Moreover, we can't resolve the URI it loads the content
+// BrowserTestUtils.sys.mjs. Moreover, we can't resolve the URI it loads the content
 // frame script from ("chrome://mochikit/content/tests/BrowserTestUtils/content-utils.js"),
 // hence the hackiness here and in BrowserTabs.Add.
 Services.mm.loadFrameScript(
   "data:application/javascript;charset=utf-8," +
     encodeURIComponent(`
-  Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
   addEventListener("load", function(event) {
     let subframe = event.target != content.document;
     sendAsyncMessage("tps:loadEvent", {subframe: subframe, url: event.target.documentURI});
@@ -67,11 +65,12 @@ var BrowserTabs = {
    * @param profile The profile to search for tabs
    * @return true if the specified tab could be found, otherwise false
    */
-  Find(uri, title, profile) {
+  async Find(uri, title, profile) {
     // Find the uri in Weave's list of tabs for the given profile.
     let tabEngine = Weave.Service.engineManager.get("tabs");
     for (let client of Weave.Service.clientsEngine.remoteClients) {
-      let tabClient = tabEngine.getClientById(client.id);
+      let tabClients = await tabEngine.getAllClients();
+      let tabClient = tabClients.find(x => x.id === client.id);
       if (!tabClient || !tabClient.tabs) {
         continue;
       }

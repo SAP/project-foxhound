@@ -12,7 +12,10 @@ const Commands = {
   inspectedWindowCommand:
     "devtools/shared/commands/inspected-window/inspected-window-command",
   inspectorCommand: "devtools/shared/commands/inspector/inspector-command",
+  networkCommand: "devtools/shared/commands/network/network-command",
   resourceCommand: "devtools/shared/commands/resource/resource-command",
+  rootResourceCommand:
+    "devtools/shared/commands/root-resource/root-resource-command",
   scriptCommand: "devtools/shared/commands/script/script-command",
   targetCommand: "devtools/shared/commands/target/target-command",
   targetConfigurationCommand:
@@ -36,6 +39,8 @@ async function createCommandsDictionary(descriptorFront) {
   }
   const { client } = descriptorFront;
 
+  const allInstantiatedCommands = new Set();
+
   const dictionary = {
     // Expose both client and descriptor for legacy codebases, or tests.
     // But ideally only commands should interact with these two objects
@@ -48,17 +53,62 @@ async function createCommandsDictionary(descriptorFront) {
       return descriptorFront.client.waitForRequestsToSettle();
     },
 
-    // We want to keep destroy being defined last
+    // Boolean flag to know if the DevtoolsClient should be closed
+    // when this commands happens to be destroyed.
+    // This is set by:
+    // * commands-from-url in case we are opening a toolbox
+    //   with a dedicated DevToolsClient (mostly from about:debugging, when the client isn't "cached").
+    // * CommandsFactory, when we are connecting to a local tab and expect
+    //   the client, toolbox and descriptor to all follow the same lifecycle.
+    shouldCloseClient: true,
+
+    /**
+     * Destroy the commands which will destroy:
+     * - all inner commands,
+     * - the related descriptor,
+     * - the related DevToolsClient (not always)
+     */
     async destroy() {
-      await descriptorFront.destroy();
-      await client.close();
+      descriptorFront.off("descriptor-destroyed", this.destroy);
+
+      // Destroy all inner command modules
+      for (const command of allInstantiatedCommands) {
+        if (typeof command.destroy == "function") {
+          command.destroy();
+        }
+      }
+      allInstantiatedCommands.clear();
+
+      // Destroy the descriptor front, and all its children fronts.
+      // Watcher, targets,...
+      //
+      // Note that DescriptorFront.destroy will be null because of Pool.destroy
+      // when this function is called while the descriptor front itself is being
+      // destroyed.
+      if (!descriptorFront.isDestroyed()) {
+        await descriptorFront.destroy();
+      }
+
+      // Close the DevToolsClient. Shutting down the connection
+      // to the debuggable context and its DevToolsServer.
+      //
+      // See shouldCloseClient jsdoc about this condition.
+      if (this.shouldCloseClient) {
+        await client.close();
+      }
     },
   };
+  dictionary.destroy = dictionary.destroy.bind(dictionary);
+
+  // Automatically destroy the commands object if the descriptor
+  // happens to be destroyed. Which means that the debuggable context
+  // is no longer debuggable.
+  descriptorFront.on("descriptor-destroyed", dictionary.destroy);
 
   for (const name in Commands) {
     loader.lazyGetter(dictionary, name, () => {
       const Constructor = require(Commands[name]);
-      return new Constructor({
+      const command = new Constructor({
         // Commands can use other commands
         commands: dictionary,
 
@@ -73,6 +123,8 @@ async function createCommandsDictionary(descriptorFront) {
         // so that we abstract where and how to fetch all necessary interfaces
         // and avoid having to know that you might pull the client via descriptorFront.client
       });
+      allInstantiatedCommands.add(command);
+      return command;
     });
   }
 

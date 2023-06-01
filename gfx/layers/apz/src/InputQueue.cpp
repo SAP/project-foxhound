@@ -10,6 +10,7 @@
 
 #include "GestureEventListener.h"
 #include "InputBlockState.h"
+#include "mozilla/EventForwards.h"
 #include "mozilla/layers/APZInputBridge.h"
 #include "mozilla/layers/APZThreadUtils.h"
 #include "mozilla/ToString.h"
@@ -180,18 +181,19 @@ APZEventResult InputQueue::ReceiveTouchInput(
     INPQ_LOG("dropping event due to block %p being in fast motion\n",
              block.get());
     result.SetStatusAsConsumeNoDefault();
-  } else if (target && target->ArePointerEventsConsumable(block, aEvent)) {
-    if (block->UpdateSlopState(aEvent, true)) {
-      INPQ_LOG("dropping event due to block %p being in slop\n", block.get());
+  } else {  // handling depends on ArePointerEventsConsumable()
+    PointerEventsConsumableFlags consumableFlags;
+    if (target) {
+      consumableFlags = target->ArePointerEventsConsumable(block, aEvent);
+    }
+    bool consumable = consumableFlags.IsConsumable();
+    if (block->UpdateSlopState(aEvent, consumable)) {
+      INPQ_LOG("dropping event due to block %p being in %sslop\n", block.get(),
+               consumable ? "" : "mini-");
       result.SetStatusAsConsumeNoDefault();
     } else {
-      result.SetStatusAsConsumeDoDefaultWithTargetConfirmationFlags(
-          *block, aFlags, *target);
+      result.SetStatusForTouchEvent(*block, aFlags, consumableFlags, target);
     }
-  } else if (block->UpdateSlopState(aEvent, false)) {
-    INPQ_LOG("dropping event due to block %p being in mini-slop\n",
-             block.get());
-    result.SetStatusAsConsumeNoDefault();
   }
   mQueuedInputs.AppendElement(MakeUnique<QueuedInput>(aEvent, *block));
   ProcessQueue();
@@ -390,7 +392,8 @@ static bool CanScrollTargetHorizontally(const PanGestureInput& aInitialEvent,
   ScrollDirections allowedScrollDirections;
   RefPtr<AsyncPanZoomController> horizontallyScrollableAPZC =
       aBlock->GetOverscrollHandoffChain()->FindFirstScrollable(
-          horizontalComponent, &allowedScrollDirections);
+          horizontalComponent, &allowedScrollDirections,
+          OverscrollHandoffChain::IncludeOverscroll::No);
   return horizontallyScrollableAPZC &&
          horizontallyScrollableAPZC == aBlock->GetTargetApzc() &&
          allowedScrollDirections.contains(ScrollDirection::eHorizontal);
@@ -448,25 +451,27 @@ APZEventResult InputQueue::ReceivePanGestureInput(
     INPQ_LOG("started new pan gesture block %p id %" PRIu64 " for target %p\n",
              block.get(), block->GetBlockId(), aTarget.get());
 
-    if (aFlags.mTargetConfirmed &&
-        event
-            .mRequiresContentResponseIfCannotScrollHorizontallyInStartDirection &&
-        !CanScrollTargetHorizontally(event, block)) {
-      // This event may trigger a swipe gesture, depending on what our caller
-      // wants to do it. We need to suspend handling of this block until we get
-      // a content response which will tell us whether to proceed or abort the
-      // block.
-      block->SetNeedsToWaitForContentResponse(true);
-
-      // Inform our caller that we haven't scrolled in response to the event
-      // and that a swipe can be started from this event if desired.
-      result.SetStatusAsIgnore();
-    }
-
     mActivePanGestureBlock = block;
 
     CancelAnimationsForNewBlock(block);
     MaybeRequestContentResponse(aTarget, block);
+
+    if (event.AllowsSwipe() && !CanScrollTargetHorizontally(event, block)) {
+      // We will ask the browser whether this pan event is going to be used for
+      // swipe or not, so we need to wait the response.
+      block->SetNeedsToWaitForBrowserGestureResponse(true);
+      if (aFlags.mTargetConfirmed) {
+        // This event may trigger a swipe gesture, depending on what our caller
+        // wants to do it. We need to suspend handling of this block until we
+        // get a content response which will tell us whether to proceed or abort
+        // the block.
+        block->SetNeedsToWaitForContentResponse(true);
+
+        // Inform our caller that we haven't scrolled in response to the event
+        // and that a swipe can be started from this event if desired.
+        result.SetStatusAsIgnore();
+      }
+    }
   } else {
     INPQ_LOG("received new pan event (type=%d) in block %p\n", aEvent.mType,
              block.get());
@@ -706,9 +711,9 @@ InputBlockState* InputQueue::GetBlockForId(uint64_t aInputBlockId) {
 }
 
 void InputQueue::AddInputBlockCallback(uint64_t aInputBlockId,
-                                       InputBlockCallback&& aCallback) {
-  mInputBlockCallbacks.insert(
-      InputBlockCallbackMap::value_type(aInputBlockId, std::move(aCallback)));
+                                       InputBlockCallbackInfo&& aCallbackInfo) {
+  mInputBlockCallbacks.insert(InputBlockCallbackMap::value_type(
+      aInputBlockId, std::move(aCallbackInfo)));
 }
 
 InputBlockState* InputQueue::FindBlockForId(uint64_t aInputBlockId,
@@ -894,9 +899,22 @@ void InputQueue::SetAllowedTouchBehavior(
   }
 }
 
+void InputQueue::SetBrowserGestureResponse(uint64_t aInputBlockId,
+                                           BrowserGestureResponse aResponse) {
+  InputBlockState* inputBlock = FindBlockForId(aInputBlockId, nullptr);
+
+  if (inputBlock && inputBlock->AsPanGestureBlock()) {
+    PanGestureBlockState* block = inputBlock->AsPanGestureBlock();
+    block->SetBrowserGestureResponse(aResponse);
+  } else if (inputBlock) {
+    NS_WARNING("input block is not a pan gesture block");
+  }
+  ProcessQueue();
+}
+
 static APZHandledResult GetHandledResultFor(
     const AsyncPanZoomController* aApzc,
-    const InputBlockState& aCurrentInputBlock) {
+    const InputBlockState& aCurrentInputBlock, nsEventStatus aEagerStatus) {
   if (aCurrentInputBlock.ShouldDropEvents()) {
     return APZHandledResult{APZHandledPlace::HandledByContent, aApzc};
   }
@@ -906,7 +924,15 @@ static APZHandledResult GetHandledResultFor(
   }
 
   if (aApzc->IsRootContent()) {
-    return aApzc->CanVerticalScrollWithDynamicToolbar()
+    // If the eager status was eIgnore, we would have returned an eager result
+    // of Unhandled if there had been no event handler. Now that we know the
+    // event handler did not preventDefault() the input block, return Unhandled
+    // as the delayed result.
+    // FIXME: A more accurate implementation would be to re-do the entire
+    // computation that determines the status (i.e. calling
+    // ArePointerEventsConsumable()) with the confirmed target APZC.
+    return (aEagerStatus == nsEventStatus_eConsumeDoDefault &&
+            aApzc->CanVerticalScrollWithDynamicToolbar())
                ? APZHandledResult{APZHandledPlace::HandledByRoot, aApzc}
                : APZHandledResult{APZHandledPlace::Unhandled, aApzc};
   }
@@ -944,8 +970,9 @@ void InputQueue::ProcessQueue() {
     // input block, invoke it.
     auto it = mInputBlockCallbacks.find(curBlock->GetBlockId());
     if (it != mInputBlockCallbacks.end()) {
-      APZHandledResult handledResult = GetHandledResultFor(target, *curBlock);
-      it->second(curBlock->GetBlockId(), handledResult);
+      APZHandledResult handledResult =
+          GetHandledResultFor(target, *curBlock, it->second.mEagerStatus);
+      it->second.mCallback(curBlock->GetBlockId(), handledResult);
       // The callback is one-shot; discard it after calling it.
       mInputBlockCallbacks.erase(it);
     }

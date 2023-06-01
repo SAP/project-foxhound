@@ -6,26 +6,20 @@
 
 const EXPORTED_SYMBOLS = ["SharedDataMap"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { EventEmitter } = ChromeUtils.import(
-  "resource://gre/modules/EventEmitter.jsm"
+const { EventEmitter } = ChromeUtils.importESModule(
+  "resource://gre/modules/EventEmitter.sys.mjs"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "PromiseUtils",
-  "resource://gre/modules/PromiseUtils.jsm"
-);
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  JSONFile: "resource://gre/modules/JSONFile.sys.mjs",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
+});
 
 const IS_MAIN_PROCESS =
   Services.appinfo.processType === Services.appinfo.PROCESS_TYPE_DEFAULT;
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "JSONFile",
-  "resource://gre/modules/JSONFile.jsm"
-);
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 class SharedDataMap extends EventEmitter {
@@ -35,7 +29,7 @@ class SharedDataMap extends EventEmitter {
     this._sharedDataKey = sharedDataKey;
     this._isParent = options.isParent;
     this._isReady = false;
-    this._readyDeferred = PromiseUtils.defer();
+    this._readyDeferred = lazy.PromiseUtils.defer();
     this._data = null;
 
     if (this.isParent) {
@@ -48,13 +42,13 @@ class SharedDataMap extends EventEmitter {
             const profileDir = Services.dirsvc.get("ProfD", Ci.nsIFile).path;
             path = PathUtils.join(profileDir, `${sharedDataKey}.json`);
           } catch (e) {
-            Cu.reportError(e);
+            console.error(e);
           }
         }
         try {
-          store = new JSONFile({ path });
+          store = new lazy.JSONFile({ path });
         } catch (e) {
-          Cu.reportError(e);
+          console.error(e);
         }
         return store;
       });
@@ -72,7 +66,7 @@ class SharedDataMap extends EventEmitter {
         this._syncToChildren({ flush: true });
         this._checkIfReady();
       } catch (e) {
-        Cu.reportError(e);
+        console.error(e);
       }
     }
   }

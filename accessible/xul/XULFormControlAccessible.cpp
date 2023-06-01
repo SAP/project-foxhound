@@ -49,23 +49,28 @@ XULButtonAccessible::~XULButtonAccessible() {}
 ////////////////////////////////////////////////////////////////////////////////
 // XULButtonAccessible: nsIAccessible
 
-uint8_t XULButtonAccessible::ActionCount() const { return 1; }
+bool XULButtonAccessible::HasPrimaryAction() const { return true; }
 
 void XULButtonAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
   if (aIndex == eAction_Click) aName.AssignLiteral("press");
 }
 
-bool XULButtonAccessible::DoAction(uint8_t aIndex) const {
-  if (aIndex != 0) return false;
-
-  DoCommand();
-  return true;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // XULButtonAccessible: LocalAccessible
 
-role XULButtonAccessible::NativeRole() const { return roles::PUSHBUTTON; }
+role XULButtonAccessible::NativeRole() const {
+  // Buttons can be checked; they simply appear pressed in rather than checked.
+  // In this case, we must expose them as toggle buttons.
+  nsCOMPtr<nsIDOMXULButtonElement> xulButtonElement = Elm()->AsXULButton();
+  if (xulButtonElement) {
+    nsAutoString type;
+    xulButtonElement->GetType(type);
+    if (type.EqualsLiteral("checkbox") || type.EqualsLiteral("radio")) {
+      return roles::TOGGLE_BUTTON;
+    }
+  }
+  return roles::PUSHBUTTON;
+}
 
 uint64_t XULButtonAccessible::NativeState() const {
   // Possible states: focused, focusable, unavailable(disabled).
@@ -73,14 +78,8 @@ uint64_t XULButtonAccessible::NativeState() const {
   // get focus and disable status from base class
   uint64_t state = LocalAccessible::NativeState();
 
-  // Buttons can be checked -- they simply appear pressed in rather than checked
   nsCOMPtr<nsIDOMXULButtonElement> xulButtonElement = Elm()->AsXULButton();
   if (xulButtonElement) {
-    nsAutoString type;
-    xulButtonElement->GetType(type);
-    if (type.EqualsLiteral("checkbox") || type.EqualsLiteral("radio")) {
-      state |= states::CHECKABLE;
-    }
     // Some buttons can have their checked state set without being of type
     // checkbox or radio. Expose the pressed state unconditionally.
     bool checked = false;
@@ -97,6 +96,13 @@ uint64_t XULButtonAccessible::NativeState() const {
   }
 
   return state;
+}
+
+bool XULButtonAccessible::AttributeChangesState(nsAtom* aAttribute) {
+  if (aAttribute == nsGkAtoms::checked) {
+    return true;
+  }
+  return AccessibleWrap::AttributeChangesState(aAttribute);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -126,10 +132,10 @@ bool XULButtonAccessible::IsAcceptableChild(nsIContent* aEl) const {
       //   columnpicker).
       aEl->IsXULElement(nsGkAtoms::menupopup) ||
       aEl->IsXULElement(nsGkAtoms::popup) ||
-      // A XUL button can be labelled by a child text node, so we need to allow
-      // that as a child so it will be picked up when computing name from
+      // A XUL button can be labelled by a direct child text node, so we need to
+      // allow that as a child so it will be picked up when computing name from
       // subtree.
-      aEl->IsText();
+      (aEl->IsText() && aEl->GetParent() == mContent);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -148,7 +154,7 @@ XULDropmarkerAccessible::XULDropmarkerAccessible(nsIContent* aContent,
                                                  DocAccessible* aDoc)
     : LeafAccessible(aContent, aDoc) {}
 
-uint8_t XULDropmarkerAccessible::ActionCount() const { return 1; }
+bool XULDropmarkerAccessible::HasPrimaryAction() const { return true; }
 
 bool XULDropmarkerAccessible::DropmarkerOpen(bool aToggleOpen) const {
   bool isOpen = false;
@@ -214,7 +220,8 @@ role XULGroupboxAccessible::NativeRole() const { return roles::GROUPING; }
 
 ENameValueFlag XULGroupboxAccessible::NativeName(nsString& aName) const {
   // XXX: we use the first related accessible only.
-  LocalAccessible* label = RelationByType(RelationType::LABELLED_BY).Next();
+  LocalAccessible* label =
+      RelationByType(RelationType::LABELLED_BY).LocalNext();
   if (label) return label->Name(aName);
 
   return eNameOK;

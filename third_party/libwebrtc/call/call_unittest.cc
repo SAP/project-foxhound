@@ -16,6 +16,7 @@
 #include <utility>
 
 #include "absl/memory/memory.h"
+#include "absl/strings/string_view.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/rtc_event_log/rtc_event_log.h"
 #include "api/task_queue/default_task_queue_factory.h"
@@ -41,6 +42,7 @@ namespace {
 
 using ::testing::_;
 using ::testing::Contains;
+using ::testing::NiceMock;
 using ::testing::StrictMock;
 
 struct CallHelper {
@@ -48,13 +50,14 @@ struct CallHelper {
     task_queue_factory_ = webrtc::CreateDefaultTaskQueueFactory();
     webrtc::AudioState::Config audio_state_config;
     audio_state_config.audio_mixer =
-        new rtc::RefCountedObject<webrtc::test::MockAudioMixer>();
+        rtc::make_ref_counted<webrtc::test::MockAudioMixer>();
     audio_state_config.audio_processing =
         use_null_audio_processing
             ? nullptr
-            : new rtc::RefCountedObject<webrtc::test::MockAudioProcessing>();
+            : rtc::make_ref_counted<
+                  NiceMock<webrtc::test::MockAudioProcessing>>();
     audio_state_config.audio_device_module =
-        new rtc::RefCountedObject<webrtc::test::MockAudioDeviceModule>();
+        rtc::make_ref_counted<webrtc::test::MockAudioDeviceModule>();
     webrtc::Call::Config config(&event_log_);
     config.audio_state = webrtc::AudioState::Create(audio_state_config);
     config.task_queue_factory = task_queue_factory_.get();
@@ -79,9 +82,9 @@ namespace {
 
 rtc::scoped_refptr<Resource> FindResourceWhoseNameContains(
     const std::vector<rtc::scoped_refptr<Resource>>& resources,
-    const std::string& name_contains) {
+    absl::string_view name_contains) {
   for (const auto& resource : resources) {
-    if (resource->Name().find(name_contains) != std::string::npos)
+    if (resource->Name().find(std::string(name_contains)) != std::string::npos)
       return resource;
   }
   return nullptr;
@@ -110,13 +113,14 @@ TEST(CallTest, CreateDestroy_AudioSendStream) {
 TEST(CallTest, CreateDestroy_AudioReceiveStream) {
   for (bool use_null_audio_processing : {false, true}) {
     CallHelper call(use_null_audio_processing);
-    AudioReceiveStream::Config config;
+    AudioReceiveStreamInterface::Config config;
     MockTransport rtcp_send_transport;
     config.rtp.remote_ssrc = 42;
     config.rtcp_send_transport = &rtcp_send_transport;
     config.decoder_factory =
-        new rtc::RefCountedObject<webrtc::MockAudioDecoderFactory>();
-    AudioReceiveStream* stream = call->CreateAudioReceiveStream(config);
+        rtc::make_ref_counted<webrtc::MockAudioDecoderFactory>();
+    AudioReceiveStreamInterface* stream =
+        call->CreateAudioReceiveStream(config);
     EXPECT_NE(stream, nullptr);
     call->DestroyAudioReceiveStream(stream);
   }
@@ -150,16 +154,17 @@ TEST(CallTest, CreateDestroy_AudioSendStreams) {
 TEST(CallTest, CreateDestroy_AudioReceiveStreams) {
   for (bool use_null_audio_processing : {false, true}) {
     CallHelper call(use_null_audio_processing);
-    AudioReceiveStream::Config config;
+    AudioReceiveStreamInterface::Config config;
     MockTransport rtcp_send_transport;
     config.rtcp_send_transport = &rtcp_send_transport;
     config.decoder_factory =
-        new rtc::RefCountedObject<webrtc::MockAudioDecoderFactory>();
-    std::list<AudioReceiveStream*> streams;
+        rtc::make_ref_counted<webrtc::MockAudioDecoderFactory>();
+    std::list<AudioReceiveStreamInterface*> streams;
     for (int i = 0; i < 2; ++i) {
       for (uint32_t ssrc = 0; ssrc < 1234567; ssrc += 34567) {
         config.rtp.remote_ssrc = ssrc;
-        AudioReceiveStream* stream = call->CreateAudioReceiveStream(config);
+        AudioReceiveStreamInterface* stream =
+            call->CreateAudioReceiveStream(config);
         EXPECT_NE(stream, nullptr);
         if (ssrc & 1) {
           streams.push_back(stream);
@@ -178,14 +183,14 @@ TEST(CallTest, CreateDestroy_AudioReceiveStreams) {
 TEST(CallTest, CreateDestroy_AssociateAudioSendReceiveStreams_RecvFirst) {
   for (bool use_null_audio_processing : {false, true}) {
     CallHelper call(use_null_audio_processing);
-    AudioReceiveStream::Config recv_config;
+    AudioReceiveStreamInterface::Config recv_config;
     MockTransport rtcp_send_transport;
     recv_config.rtp.remote_ssrc = 42;
     recv_config.rtp.local_ssrc = 777;
     recv_config.rtcp_send_transport = &rtcp_send_transport;
     recv_config.decoder_factory =
-        new rtc::RefCountedObject<webrtc::MockAudioDecoderFactory>();
-    AudioReceiveStream* recv_stream =
+        rtc::make_ref_counted<webrtc::MockAudioDecoderFactory>();
+    AudioReceiveStreamInterface* recv_stream =
         call->CreateAudioReceiveStream(recv_config);
     EXPECT_NE(recv_stream, nullptr);
 
@@ -195,8 +200,8 @@ TEST(CallTest, CreateDestroy_AssociateAudioSendReceiveStreams_RecvFirst) {
     AudioSendStream* send_stream = call->CreateAudioSendStream(send_config);
     EXPECT_NE(send_stream, nullptr);
 
-    internal::AudioReceiveStream* internal_recv_stream =
-        static_cast<internal::AudioReceiveStream*>(recv_stream);
+    AudioReceiveStreamImpl* internal_recv_stream =
+        static_cast<AudioReceiveStreamImpl*>(recv_stream);
     EXPECT_EQ(send_stream,
               internal_recv_stream->GetAssociatedSendStreamForTesting());
 
@@ -217,19 +222,19 @@ TEST(CallTest, CreateDestroy_AssociateAudioSendReceiveStreams_SendFirst) {
     AudioSendStream* send_stream = call->CreateAudioSendStream(send_config);
     EXPECT_NE(send_stream, nullptr);
 
-    AudioReceiveStream::Config recv_config;
+    AudioReceiveStreamInterface::Config recv_config;
     MockTransport rtcp_send_transport;
     recv_config.rtp.remote_ssrc = 42;
     recv_config.rtp.local_ssrc = 777;
     recv_config.rtcp_send_transport = &rtcp_send_transport;
     recv_config.decoder_factory =
-        new rtc::RefCountedObject<webrtc::MockAudioDecoderFactory>();
-    AudioReceiveStream* recv_stream =
+        rtc::make_ref_counted<webrtc::MockAudioDecoderFactory>();
+    AudioReceiveStreamInterface* recv_stream =
         call->CreateAudioReceiveStream(recv_config);
     EXPECT_NE(recv_stream, nullptr);
 
-    internal::AudioReceiveStream* internal_recv_stream =
-        static_cast<internal::AudioReceiveStream*>(recv_stream);
+    AudioReceiveStreamImpl* internal_recv_stream =
+        static_cast<AudioReceiveStreamImpl*>(recv_stream);
     EXPECT_EQ(send_stream,
               internal_recv_stream->GetAssociatedSendStreamForTesting());
 
@@ -245,7 +250,7 @@ TEST(CallTest, CreateDestroy_FlexfecReceiveStream) {
     MockTransport rtcp_send_transport;
     FlexfecReceiveStream::Config config(&rtcp_send_transport);
     config.payload_type = 118;
-    config.remote_ssrc = 38837212;
+    config.rtp.remote_ssrc = 38837212;
     config.protected_media_ssrcs = {27273};
 
     FlexfecReceiveStream* stream = call->CreateFlexfecReceiveStream(config);
@@ -264,7 +269,7 @@ TEST(CallTest, CreateDestroy_FlexfecReceiveStreams) {
 
     for (int i = 0; i < 2; ++i) {
       for (uint32_t ssrc = 0; ssrc < 1234567; ssrc += 34567) {
-        config.remote_ssrc = ssrc;
+        config.rtp.remote_ssrc = ssrc;
         config.protected_media_ssrcs = {ssrc + 1};
         FlexfecReceiveStream* stream = call->CreateFlexfecReceiveStream(config);
         EXPECT_NE(stream, nullptr);
@@ -292,22 +297,22 @@ TEST(CallTest, MultipleFlexfecReceiveStreamsProtectingSingleVideoStream) {
     FlexfecReceiveStream* stream;
     std::list<FlexfecReceiveStream*> streams;
 
-    config.remote_ssrc = 838383;
+    config.rtp.remote_ssrc = 838383;
     stream = call->CreateFlexfecReceiveStream(config);
     EXPECT_NE(stream, nullptr);
     streams.push_back(stream);
 
-    config.remote_ssrc = 424993;
+    config.rtp.remote_ssrc = 424993;
     stream = call->CreateFlexfecReceiveStream(config);
     EXPECT_NE(stream, nullptr);
     streams.push_back(stream);
 
-    config.remote_ssrc = 99383;
+    config.rtp.remote_ssrc = 99383;
     stream = call->CreateFlexfecReceiveStream(config);
     EXPECT_NE(stream, nullptr);
     streams.push_back(stream);
 
-    config.remote_ssrc = 5548;
+    config.rtp.remote_ssrc = 5548;
     stream = call->CreateFlexfecReceiveStream(config);
     EXPECT_NE(stream, nullptr);
     streams.push_back(stream);
@@ -372,7 +377,7 @@ TEST(CallTest, AddAdaptationResourceAfterCreatingVideoSendStream) {
   // Add a fake resource.
   auto fake_resource = FakeResource::Create("FakeResource");
   call->AddAdaptationResource(fake_resource);
-  // An adapter resource mirroring the |fake_resource| should now be present on
+  // An adapter resource mirroring the `fake_resource` should now be present on
   // both streams.
   auto injected_resource1 = FindResourceWhoseNameContains(
       stream1->GetAdaptationResources(), fake_resource->Name());
@@ -434,7 +439,7 @@ TEST(CallTest, AddAdaptationResourceBeforeCreatingVideoSendStream) {
   VideoSendStream* stream2 =
       call->CreateVideoSendStream(config.Copy(), encoder_config.Copy());
   EXPECT_NE(stream2, nullptr);
-  // An adapter resource mirroring the |fake_resource| should be present on both
+  // An adapter resource mirroring the `fake_resource` should be present on both
   // streams.
   auto injected_resource1 = FindResourceWhoseNameContains(
       stream1->GetAdaptationResources(), fake_resource->Name());
@@ -468,61 +473,6 @@ TEST(CallTest, AddAdaptationResourceBeforeCreatingVideoSendStream) {
   fake_resource->SetUsageState(ResourceUsageState::kUnderuse);
   call->DestroyVideoSendStream(stream1);
   call->DestroyVideoSendStream(stream2);
-}
-
-TEST(CallTest, SharedModuleThread) {
-  class SharedModuleThreadUser : public Module {
-   public:
-    SharedModuleThreadUser(ProcessThread* expected_thread,
-                           rtc::scoped_refptr<SharedModuleThread> thread)
-        : expected_thread_(expected_thread), thread_(std::move(thread)) {
-      thread_->EnsureStarted();
-      thread_->process_thread()->RegisterModule(this, RTC_FROM_HERE);
-    }
-
-    ~SharedModuleThreadUser() override {
-      thread_->process_thread()->DeRegisterModule(this);
-      EXPECT_TRUE(thread_was_checked_);
-    }
-
-   private:
-    int64_t TimeUntilNextProcess() override { return 1000; }
-    void Process() override {}
-    void ProcessThreadAttached(ProcessThread* process_thread) override {
-      if (!process_thread) {
-        // Being detached.
-        return;
-      }
-      EXPECT_EQ(process_thread, expected_thread_);
-      thread_was_checked_ = true;
-    }
-
-    bool thread_was_checked_ = false;
-    ProcessThread* const expected_thread_;
-    rtc::scoped_refptr<SharedModuleThread> thread_;
-  };
-
-  // Create our test instance and pass a lambda to it that gets executed when
-  // the reference count goes back to 1 - meaning |shared| again is the only
-  // reference, which means we can free the variable and deallocate the thread.
-  rtc::scoped_refptr<SharedModuleThread> shared;
-  shared =
-      SharedModuleThread::Create(ProcessThread::Create("MySharedProcessThread"),
-                                 [&shared]() { shared = nullptr; });
-  ProcessThread* process_thread = shared->process_thread();
-
-  ASSERT_TRUE(shared.get());
-
-  {
-    // Create a couple of users of the thread.
-    // These instances are in a separate scope to trigger the callback to our
-    // lambda, which will run when these go out of scope.
-    SharedModuleThreadUser user1(process_thread, shared);
-    SharedModuleThreadUser user2(process_thread, shared);
-  }
-
-  // The thread should now have been stopped and freed.
-  EXPECT_FALSE(shared);
 }
 
 }  // namespace webrtc

@@ -2,16 +2,10 @@
 <!-- This Source Code Form is subject to the terms of the Mozilla Public
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
-<!DOCTYPE window [
-<!ENTITY % editMenuStrings SYSTEM "chrome://global/locale/editMenuOverlay.dtd">
- %editMenuStrings;
-<!ENTITY % sourceEditorStrings SYSTEM "chrome://devtools/locale/sourceeditor.dtd">
- %sourceEditorStrings;
-]>
+<!DOCTYPE window>
 
 <?xml-stylesheet href="chrome://global/skin/global.css" type="text/css"?>
 <?xml-stylesheet href="chrome://devtools/content/shared/widgets/widgets.css" type="text/css"?>
-<?xml-stylesheet href="chrome://devtools/content/shared/splitview.css" type="text/css"?>
 <?xml-stylesheet href="chrome://devtools/content/shared/toolbarbutton.css" type="text/css"?>
 <?xml-stylesheet href="chrome://devtools/skin/chart.css" type="text/css"?>
 <?xml-stylesheet href="chrome://devtools/skin/widgets.css" type="text/css"?>
@@ -64,14 +58,12 @@
                 data-l10n-id="text-action-select-all" command="cmd_selectAll"/>
       <menuseparator/>
       <menuitem id="se-menu-find"
-        label="&findCmd.label;" accesskey="&findCmd.accesskey;" command="cmd_find"/>
-      <menuitem id="cMenu_findAgain" label="&findAgainCmd.label;"
-                accesskey="&findAgainCmd.accesskey;" command="cmd_findAgain"/>
+                data-l10n-id="styleeditor-find" command="cmd_find"/>
+      <menuitem id="cMenu_findAgain"
+                data-l10n-id="styleeditor-find-again" command="cmd_findAgain"/>
       <menuseparator/>
       <menuitem id="se-menu-gotoLine"
-          label="&gotoLineCmd.label;"
-          accesskey="&gotoLineCmd.accesskey;"
-          key="key_gotoLine"
+          data-l10n-id="styleeditor-go-to-line"
           command="cmd_gotoLine"/>
     </menupopup>
     <menupopup id="sidebar-context" incontentshell="false">
@@ -94,13 +86,14 @@
     <box class="splitview-controller">
       <box class="splitview-main">
         <toolbar class="devtools-toolbar">
-          <hbox class="devtools-toolbarbutton-group">
-            <toolbarbutton class="style-editor-newButton devtools-toolbarbutton"
-                        data-l10n-id="styleeditor-new-button"/>
-            <toolbarbutton class="style-editor-importButton devtools-toolbarbutton"
-                        data-l10n-id="styleeditor-import-button"/>
-          </hbox>
-          <spacer/>
+          <toolbarbutton class="style-editor-newButton devtools-toolbarbutton"
+                      data-l10n-id="styleeditor-new-button"/>
+          <toolbarbutton class="style-editor-importButton devtools-toolbarbutton"
+                      data-l10n-id="styleeditor-import-button"/>
+          <toolbaritem class="devtools-searchbox" flex="1">
+            <html:input class="devtools-filterinput" data-l10n-id="styleeditor-filter-input"/>
+            <html:button class="devtools-searchinput-clear" tabindex="-1" hidden=""></html:button>
+          </toolbaritem>
           <toolbarbutton id="style-editor-options"
                       class="devtools-toolbarbutton devtools-option-toolbarbutton"
                       data-l10n-id="styleeditor-options-button"/>
@@ -110,22 +103,24 @@
               persist="height">
         <html:ol class="splitview-nav" tabindex="0"></html:ol>
         <html:div class="splitview-nav placeholder empty">
-          <html:p><html:strong
-            data-l10n-id="styleeditor-no-stylesheet"
-          ></html:strong></html:p>
-          <html:p
-            data-l10n-id="styleeditor-no-stylesheet-tip"><html:a class="style-editor-newButton"
-                                                                data-l10n-name="append-new-stylesheet" href="#"/></html:p>
-            </html:div>
-
+          <html:p>
+            <html:strong data-l10n-id="styleeditor-no-stylesheet"></html:strong>
+          </html:p>
+          <html:p data-l10n-id="styleeditor-no-stylesheet-tip">
+            <html:a class="style-editor-newButton" data-l10n-name="append-new-stylesheet" href="#"/>
+          </html:p>
+        </html:div>
+        <html:div class="splitview-nav placeholder all-filtered">
+          <html:p data-l10n-id="styleeditor-stylesheet-all-filtered"></html:p>
+        </html:div>
       </box> <!-- .splitview-nav-container -->
     </box>   <!-- .splitview-controller -->
-    <splitter class="devtools-side-splitter devtools-invisible-splitter"/>
+    <splitter class="devtools-side-splitter devtools-invisible-splitter" resizebefore="sibling" resizeafter="none" />
     <box class="splitview-side-details devtools-main-content"/>
 
     <html:div id="splitview-templates" hidden="">
       <html:li id="splitview-tpl-summary-stylesheet" tabindex="0">
-        <label class="stylesheet-enabled" tabindex="0"
+        <label class="stylesheet-toggle" tabindex="0"
           data-l10n-id="styleeditor-visibility-toggle"></label>
         <html:hgroup class="stylesheet-info">
           <html:h1><html:a class="stylesheet-name" tabindex="0"><label crop="center"/></html:a></html:h1>
@@ -144,13 +139,13 @@
         <hbox class="stylesheet-details-container">
           <box class="stylesheet-editor-input textbox"
                data-l10n-id="styleeditor-editor-textbox"/>
-          <splitter class="devtools-side-splitter"/>
+          <splitter class="devtools-side-splitter" resizebefore="none" resizeafter="sibling" />
           <vbox class="stylesheet-sidebar theme-sidebar" hidden="true">
             <toolbar class="devtools-toolbar"
-              data-l10n-id="styleeditor-media-rules">
+              data-l10n-id="styleeditor-at-rules">
             </toolbar>
-            <vbox class="stylesheet-media-container" flex="1">
-              <html:div class="stylesheet-media-list" />
+            <vbox class="stylesheet-at-rules-container" flex="1">
+              <html:div class="stylesheet-at-rules-list" />
             </vbox>
           </vbox>
         </hbox>

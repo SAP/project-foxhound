@@ -87,7 +87,7 @@ input {
      must be the same here, for buttons, and for <select> (including its
      internal padding magic) */
   padding: 1px;
-  border: 2px inset ThreeDLightShadow;
+  border: 2px inset ButtonBorder;
   background-color: Field;
   color: FieldText;
   font: -moz-field;
@@ -102,19 +102,12 @@ input {
   }
 }
 
-input::-moz-text-control-editing-root,
-input::placeholder {
-  word-wrap: normal;
-  /* Make the line-height equal to the available height */
-  line-height: -moz-block-height !important;
-}
-
 textarea {
   display: inline-block;
   appearance: auto;
   -moz-default-appearance: textarea;
   margin-block: 1px;
-  border: 2px inset ThreeDLightShadow;
+  border: 2px inset ButtonBorder;
   padding: 2px;
   background-color: Field;
   color: FieldText;
@@ -125,7 +118,6 @@ textarea {
   resize: both;
   white-space: pre-wrap;
   word-wrap: break-word;
-  overflow-clip-box: padding-box content-box;
 }
 
 /* A few properties that we don't want to inherit by default: */
@@ -137,10 +129,6 @@ input, textarea, select, button, ::file-selector-button {
   word-spacing: initial;
   letter-spacing: initial;
   /* Note that line-height is also reset for all these, via the font shorthand */
-}
-
-textarea > scrollbar {
-  cursor: default;
 }
 
 ::placeholder,
@@ -159,41 +147,6 @@ textarea > scrollbar {
   -moz-control-character-visibility: visible;
   overflow-clip-box: inherit;
   visibility: hidden;
-}
-
-::-moz-text-control-preview {
-  overflow: hidden;
-  font-family: system-ui;
-}
-
-:not(:-moz-autofill-preview)::-moz-text-control-editing-root,
-:placeholder-shown:not(:autofill)::placeholder,
-:autofill::-moz-text-control-preview {
-  visibility: inherit;
-}
-
-input::-moz-text-control-editing-root,
-input::placeholder,
-input::-moz-text-control-preview {
-  white-space: pre;
-}
-
-input[type=password]::-moz-text-control-editing-root,
-input[type=password]::-moz-text-control-preview {
-  /*
-   * In password fields, any character should be put same direction.  Otherwise,
-   * caret position at typing tells everybody whether the character is an RTL
-   * or an LTR character.  Unfortunately, this makes odd rendering when bidi
-   * text is unmasked.
-   */
-  unicode-bidi: bidi-override;
-}
-
-textarea::-moz-text-control-editing-root {
-  scroll-behavior: inherit;
-  overscroll-behavior: inherit;
-  /* StyleAdjuster makes sure that the overflow value ends up being scrollable */
-  overflow: inherit;
 }
 
 ::placeholder,
@@ -219,8 +172,45 @@ textarea::-moz-text-control-editing-root {
   user-select: none;
 }
 
+::-moz-text-control-preview {
+  font-family: system-ui;
+}
+
 ::placeholder {
   opacity: 0.54;
+}
+
+:not(:-moz-autofill-preview)::-moz-text-control-editing-root,
+:placeholder-shown:not(:autofill)::placeholder,
+:autofill::-moz-text-control-preview {
+  visibility: inherit;
+}
+
+input::placeholder,
+input::-moz-text-control-editing-root,
+input::-moz-text-control-preview {
+  word-wrap: normal;
+  white-space: pre;
+  /* Make the line-height equal to the available height */
+  line-height: -moz-block-height !important;
+}
+
+input[type=password]::-moz-text-control-editing-root,
+input[type=password]::-moz-text-control-preview {
+  /*
+   * In password fields, any character should be put same direction.  Otherwise,
+   * caret position at typing tells everybody whether the character is an RTL
+   * or an LTR character.  Unfortunately, this makes odd rendering when bidi
+   * text is unmasked.
+   */
+  unicode-bidi: bidi-override;
+}
+
+textarea::-moz-text-control-editing-root {
+  scroll-behavior: inherit;
+  overscroll-behavior: inherit;
+  /* StyleAdjuster makes sure that the overflow value ends up being scrollable */
+  overflow: inherit;
 }
 
 input:read-write,
@@ -230,7 +220,7 @@ textarea:read-write {
 
 select {
   margin: 0;
-  border-color: ThreeDLightShadow;
+  border-color: ButtonBorder;
   font: -moz-list;
   white-space: nowrap !important;
   word-wrap: normal !important;
@@ -248,6 +238,7 @@ select {
 
   /* Set some styles for drop down selects. These are overridden below for
    * list box selects. */
+  padding-inline: 4px;
   background-color: -moz-Combobox;
   color: -moz-ComboboxText;
   vertical-align: baseline;
@@ -256,64 +247,44 @@ select {
 }
 
 select:-moz-select-list-box {
-  overflow: auto;
+  overflow-inline: hidden;
+  overflow-block: scroll;
+  padding-inline: 0;
   background-color: Field;
   color: FieldText;
   vertical-align: text-bottom;
   appearance: auto;
   -moz-default-appearance: listbox;
-%ifdef XP_MACOSX
-  /* TODO(emilio): See if this is still necessary with the non-native theme */
-  scrollbar-width: thin;
-%endif
+}
+
+@media (-moz-platform: macos) {
+  select:-moz-select-list-box {
+    scrollbar-width: thin;
+  }
 }
 
 select > button {
   inline-size: 12px;
   white-space: nowrap;
-  position: static !important;
-  background-image: url("arrow.gif") !important;
-  background-repeat: no-repeat !important;
-  background-position: center !important;
+  position: static;
   appearance: auto;
   -moz-default-appearance: -moz-menulist-arrow-button;
 
   /* Make sure to size correctly if the combobox has a non-auto height. */
-  block-size: 100% !important;
-  box-sizing: border-box !important;
+  block-size: 100%;
+  box-sizing: border-box;
 
   /*
     Make sure to align properly with the display frame.  Note that we
     want the baseline of the combobox to match the baseline of the
     display frame, so the dropmarker is what gets the vertical-align.
   */
-  vertical-align: top !important;
-}
-
-select > button:active {
-  background-image: url("arrowd.gif") !important;
-}
-
-select > button[orientation="left"] {
-  background-image: url("arrow-left.gif") !important;
-}
-
-select > button[orientation="right"] {
-  background-image: url("arrow-right.gif") !important;
-}
-
-select > button[orientation="left"]:active {
-  background-image: url("arrowd-left.gif") !important;
-}
-
-select > button[orientation="right"]:active {
-  background-image: url("arrowd-right.gif") !important;
+  vertical-align: top;
 }
 
 *|*::-moz-display-comboboxcontrol-frame {
   content: inherit;
   overflow: clip;
-  padding-inline: 4px;
   color: unset;
   white-space: nowrap;
   text-align: unset;
@@ -335,7 +306,7 @@ option {
   float: none !important;
   position: static !important;
   /* This makes sure that it is a containing block for positioned descendants. */
-  will-change: filter !important;
+  will-change: -moz-fixed-pos-containing-block !important;
 
   min-block-size: 1em;
   padding-block: 2px;
@@ -358,12 +329,11 @@ select > option {
 }
 
 option:checked {
-  background-color: -moz-cellhighlight !important;
-  color: -moz-cellhighlighttext !important;
+  background-color: -moz-cellhighlight;
+  color: -moz-cellhighlighttext;
 }
 
-select:focus > option:checked,
-select:focus > optgroup > option:checked {
+select:focus option:checked {
   background-color: SelectedItem !important;
   color: SelectedItemText !important;
 }
@@ -394,13 +364,13 @@ optgroup:before {
   content: attr(label);
 }
 
-%ifdef ANDROID
-/* These elements are handled by the prompt module. */
-select option,
-select optgroup {
-  pointer-events: none;
+@media (-moz-platform: android) {
+  /* These elements are handled by the prompt module. */
+  select option,
+  select optgroup {
+    pointer-events: none;
+  }
 }
-%endif
 
 *|*::-moz-dropdown-list {
   content: inherit;
@@ -513,16 +483,6 @@ input:is([type=radio], [type=checkbox]):is(:disabled, :disabled:active, :disable
   cursor: unset;
 }
 
-input:not([type=file], [type=image]):focus-visible,
-select:focus-visible,
-button:focus-visible,
-textarea:focus-visible {
-  /* These elements can handle outline themselves when themed, so we use
-   * outline-style: auto and skip rendering the outline only when themed and
-   * the theme allows so */
-  outline-style: auto;
-}
-
 input[type=search] {
   box-sizing: border-box;
 }
@@ -544,7 +504,7 @@ input:is([type=color], [type=reset], [type=button], [type=submit]) {
      Note -moz-focus-inner padding does not affect button size. */
   padding-block: 1px;
   padding-inline: 8px;
-  border: 2px outset ThreeDLightShadow;
+  border: 2px outset ButtonBorder;
   background-color: ButtonFace;
   cursor: default;
   box-sizing: border-box;
@@ -565,7 +525,7 @@ input:is([type=reset], [type=button], [type=submit]) {
 
 input[type=color] {
   inline-size: 64px;
-  block-size: 23px;
+  block-size: 32px;
 }
 
 @media (-moz-non-native-content-theme) {
@@ -735,10 +695,6 @@ optgroup:before {
   input, textarea, select, button {
     -moz-user-input: none !important;
   }
-
-  input[type=file] {
-    height: 2em;
-  }
 }
 
 progress {
@@ -753,6 +709,7 @@ progress {
   border-bottom-color: ThreeDHighlight;
   /* #e6e6e6 is a light gray. */
   background-color: #e6e6e6;
+  overflow: clip;
 }
 
 ::-moz-progress-bar {
@@ -778,6 +735,7 @@ meter {
   display: inline-block;
   vertical-align: -0.2em;
   background: linear-gradient(#e6e6e6, #e6e6e6, #eeeeee 20%, #cccccc 45%, #cccccc 55%);
+  overflow: clip;
 }
 
 ::-moz-meter-bar {
@@ -914,16 +872,6 @@ input[type=number]::-moz-number-spin-box {
   overflow: clip;
 }
 
-%ifdef XP_WIN
-@media not (-moz-non-native-content-theme) {
-  input[type=number]::-moz-number-spin-box {
-    /* The Window's Theme's spin buttons have a very narrow minimum width, so
-     * make it something reasonable. */
-    width: 16px;
-  }
-}
-%endif
-
 input[type=number]::-moz-number-spin-up {
   writing-mode: horizontal-tb;
   appearance: auto;
@@ -974,7 +922,7 @@ input::-moz-reveal {
   max-height: 100%;
   max-width: 100%;
   margin-inline-start: 1px;
-  background-image: url("resource://gre-resources/searchfield-cancel.svg");
+  background-image: url("resource://content-accessible/searchfield-cancel.svg");
   background-repeat: no-repeat;
   background-position: center;
   background-size: contain;

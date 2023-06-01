@@ -4,47 +4,53 @@
 
 "use strict";
 
-const EventEmitter = require("devtools/shared/event-emitter");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
-loader.lazyRequireGetter(this, "ResponsiveUI", "devtools/client/responsive/ui");
+loader.lazyRequireGetter(
+  this,
+  "ResponsiveUI",
+  "resource://devtools/client/responsive/ui.js"
+);
 loader.lazyRequireGetter(
   this,
   "startup",
-  "devtools/client/responsive/utils/window",
+  "resource://devtools/client/responsive/utils/window.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "showNotification",
-  "devtools/client/responsive/utils/notification",
+  "resource://devtools/client/responsive/utils/notification.js",
   true
 );
-loader.lazyRequireGetter(this, "l10n", "devtools/client/responsive/utils/l10n");
+loader.lazyRequireGetter(
+  this,
+  "l10n",
+  "resource://devtools/client/responsive/utils/l10n.js"
+);
 loader.lazyRequireGetter(
   this,
   "PriorityLevels",
-  "devtools/client/shared/components/NotificationBox",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "TabDescriptorFactory",
-  "devtools/client/framework/tab-descriptor-factory",
+  "resource://devtools/client/shared/components/NotificationBox.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "gDevTools",
-  "devtools/client/framework/devtools",
+  "resource://devtools/client/framework/devtools.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "gDevToolsBrowser",
-  "devtools/client/framework/devtools-browser",
+  "resource://devtools/client/framework/devtools-browser.js",
   true
 );
-loader.lazyRequireGetter(this, "Telemetry", "devtools/client/shared/telemetry");
+loader.lazyRequireGetter(
+  this,
+  "Telemetry",
+  "resource://devtools/client/shared/telemetry.js"
+);
 
 /**
  * ResponsiveUIManager is the external API for the browser UI, etc. to use when
@@ -78,7 +84,7 @@ class ResponsiveUIManager {
    *        Other options associated with toggling.  Currently includes:
    *        - `trigger`: String denoting the UI entry point, such as:
    *          - `toolbox`:  Toolbox Button
-   *          - `menu`:     Web Developer menu item
+   *          - `menu`:     Browser Tools menu item
    *          - `shortcut`: Keyboard shortcut
    * @return Promise
    *         Resolved when the toggling has completed.  If the UI has opened,
@@ -110,7 +116,7 @@ class ResponsiveUIManager {
    *        Other options associated with opening.  Currently includes:
    *        - `trigger`: String denoting the UI entry point, such as:
    *          - `toolbox`:  Toolbox Button
-   *          - `menu`:     Web Developer menu item
+   *          - `menu`:     Browser Tools menu item
    *          - `shortcut`: Keyboard shortcut
    * @return Promise
    *         Resolved to the ResponsiveUI instance for this tab when opening is
@@ -141,9 +147,8 @@ class ResponsiveUIManager {
    */
   async recordTelemetryOpen(window, tab, options) {
     // Track whether a toolbox was opened before RDM was opened.
-    const isKnownTab = TabDescriptorFactory.isKnownTab(tab);
     let toolbox;
-    if (isKnownTab) {
+    if (gDevTools.hasToolboxForTab(tab)) {
       toolbox = await gDevTools.getToolboxForTab(tab);
     }
     const hostType = toolbox ? toolbox.hostType : "none";
@@ -156,7 +161,6 @@ class ResponsiveUIManager {
     this.telemetry.recordEvent("activate", "responsive_design", null, {
       host: hostType,
       width: Math.ceil(window.outerWidth / 50) * 50,
-      session_id: toolbox ? toolbox.sessionId : -1,
     });
 
     // Track opens keyed by the UI entry point used.
@@ -182,7 +186,7 @@ class ResponsiveUIManager {
    *        Other options associated with closing.  Currently includes:
    *        - `trigger`: String denoting the UI entry point, such as:
    *          - `toolbox`:  Toolbox Button
-   *          - `menu`:     Web Developer menu item
+   *          - `menu`:     Browser Tools menu item
    *          - `shortcut`: Keyboard shortcut
    *        - `reason`: String detailing the specific cause for closing
    * @return Promise
@@ -211,9 +215,8 @@ class ResponsiveUIManager {
   }
 
   async recordTelemetryClose(window, tab) {
-    const isKnownTab = TabDescriptorFactory.isKnownTab(tab);
     let toolbox;
-    if (isKnownTab) {
+    if (gDevTools.hasToolboxForTab(tab)) {
       toolbox = await gDevTools.getToolboxForTab(tab);
     }
 
@@ -222,7 +225,6 @@ class ResponsiveUIManager {
     this.telemetry.recordEvent("deactivate", "responsive_design", null, {
       host: hostType,
       width: Math.ceil(window.outerWidth / 50) * 50,
-      session_id: toolbox ? toolbox.sessionId : -1,
     });
   }
 

@@ -4,15 +4,20 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { Troubleshoot } = ChromeUtils.import(
-  "resource://gre/modules/Troubleshoot.jsm"
+const { Troubleshoot } = ChromeUtils.importESModule(
+  "resource://gre/modules/Troubleshoot.sys.mjs"
 );
-const { ResetProfile } = ChromeUtils.import(
-  "resource://gre/modules/ResetProfile.jsm"
+const { ResetProfile } = ChromeUtils.importESModule(
+  "resource://gre/modules/ResetProfile.sys.mjs"
 );
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
+
+ChromeUtils.defineModuleGetter(
+  this,
+  "DownloadUtils",
+  "resource://gre/modules/DownloadUtils.jsm"
 );
 
 ChromeUtils.defineModuleGetter(
@@ -20,42 +25,40 @@ ChromeUtils.defineModuleGetter(
   "PluralForm",
   "resource://gre/modules/PluralForm.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesDBUtils",
-  "resource://gre/modules/PlacesDBUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "ProcessType",
-  "resource://gre/modules/ProcessType.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesDBUtils: "resource://gre/modules/PlacesDBUtils.sys.mjs",
+  ProcessType: "resource://gre/modules/ProcessType.sys.mjs",
+});
 
 window.addEventListener("load", function onload(event) {
   try {
     window.removeEventListener("load", onload);
-    Troubleshoot.snapshot(async function(snapshot) {
+    Troubleshoot.snapshot().then(async snapshot => {
       for (let prop in snapshotFormatters) {
-        await snapshotFormatters[prop](snapshot[prop]);
+        try {
+          await snapshotFormatters[prop](snapshot[prop]);
+        } catch (e) {
+          console.error(
+            "stack of snapshot error for about:support: ",
+            e,
+            ": ",
+            e.stack
+          );
+        }
       }
-    });
+      if (location.hash) {
+        scrollToSection();
+      }
+    }, console.error);
     populateActionBox();
     setupEventListeners();
 
-    let hasWinPackageId = false;
-    try {
-      hasWinPackageId = Services.sysinfo.getProperty("hasWinPackageId");
-    } catch (_ex) {
-      // The hasWinPackageId property doesn't exist; assume it would be false.
-    }
-    if (hasWinPackageId) {
+    if (Services.sysinfo.getProperty("isPackagedApp")) {
       $("update-dir-row").hidden = true;
       $("update-history-row").hidden = true;
     }
   } catch (e) {
-    Cu.reportError(
-      "stack of load error for about:support: " + e + ": " + e.stack
-    );
+    console.error("stack of load error for about:support: ", e, ": ", e.stack);
   }
 });
 
@@ -84,7 +87,7 @@ function toFluentID(str) {
     .toLowerCase();
 }
 
-// Each property in this object corresponds to a property in Troubleshoot.jsm's
+// Each property in this object corresponds to a property in Troubleshoot.sys.mjs's
 // snapshot data.  Each function is passed its property's corresponding data,
 // and it's the function's job to update the page with it.
 var snapshotFormatters = {
@@ -149,7 +152,6 @@ var snapshotFormatters = {
       disabledByE10sEnv: "fission-status-disabled-by-e10s-env",
       enabledByEnv: "fission-status-enabled-by-env",
       disabledByEnv: "fission-status-disabled-by-env",
-      disabledBySafeMode: "fission-status-disabled-by-safe-mode",
       enabledByDefault: "fission-status-enabled-by-default",
       disabledByDefault: "fission-status-disabled-by-default",
       enabledByUserPref: "fission-status-enabled-by-user-pref",
@@ -230,6 +232,17 @@ var snapshotFormatters = {
     document.l10n.setAttributes($("key-mozilla-box"), keyMozillaFound);
 
     $("safemode-box").textContent = data.safeMode;
+
+    const formatHumanReadableBytes = (elem, bytes) => {
+      let size = DownloadUtils.convertByteUnits(bytes);
+      document.l10n.setAttributes(elem, "app-basics-data-size", {
+        value: size[0],
+        unit: size[1],
+      });
+    };
+
+    formatHumanReadableBytes($("memory-size-box"), data.memorySizeBytes);
+    formatHumanReadableBytes($("disk-available-box"), data.diskAvailableBytes);
   },
 
   crashes(data) {
@@ -420,6 +433,36 @@ var snapshotFormatters = {
     $.append($("locked-prefs-tbody"), prefsTable(data));
   },
 
+  places(data) {
+    if (!AppConstants.MOZ_PLACES) {
+      return;
+    }
+    const statsBody = $("place-database-stats-tbody");
+    $.append(
+      statsBody,
+      data.map(function(entry) {
+        return $.new("tr", [
+          $.new("td", entry.entity),
+          $.new("td", entry.count),
+          $.new("td", entry.sizeBytes / 1024),
+          $.new("td", entry.sizePerc),
+          $.new("td", entry.efficiencyPerc),
+          $.new("td", entry.sequentialityPerc),
+        ]);
+      })
+    );
+    statsBody.style.display = "none";
+    $("place-database-stats-toggle").addEventListener("click", function(event) {
+      if (statsBody.style.display === "none") {
+        document.l10n.setAttributes(event.target, "place-database-stats-hide");
+        statsBody.style.display = "";
+      } else {
+        document.l10n.setAttributes(event.target, "place-database-stats-show");
+        statsBody.style.display = "none";
+      }
+    });
+  },
+
   printingPreferences(data) {
     if (AppConstants.platform == "android") {
       return;
@@ -565,7 +608,7 @@ var snapshotFormatters = {
     // graphics-failures-tbody tbody
     if ("failures" in data) {
       // If indices is there, it should be the same length as failures,
-      // (see Troubleshoot.jsm) but we check anyway:
+      // (see Troubleshoot.sys.mjs) but we check anyway:
       if ("indices" in data && data.failures.length == data.indices.length) {
         let combined = [];
         for (let i = 0; i < data.failures.length; i++) {
@@ -636,6 +679,11 @@ var snapshotFormatters = {
     }
 
     // graphics-features-tbody
+    let devicePixelRatios = data.graphicsDevicePixelRatios;
+    addRow("features", "graphicsDevicePixelRatios", [
+      new Text(devicePixelRatios),
+    ]);
+
     let compositor = "";
     if (data.windowLayerManagerRemote) {
       compositor = data.windowLayerManagerType;
@@ -649,6 +697,7 @@ var snapshotFormatters = {
     delete data.numTotalWindows;
     delete data.numAcceleratedWindows;
     delete data.numAcceleratedWindowsMessage;
+    delete data.graphicsDevicePixelRatios;
 
     addRow(
       "features",
@@ -759,39 +808,55 @@ var snapshotFormatters = {
       for (let feature of featureLog.features) {
         let trs = [];
         for (let entry of feature.log) {
-          let contents;
-          if (!entry.hasOwnProperty("message")) {
-            // This is a default entry.
-            contents = entry.status + " by " + entry.type;
-          } else if (entry.message.length && entry.message[0] == "#") {
+          let bugNumber;
+          if (entry.hasOwnProperty("failureId")) {
             // This is a failure ID. See nsIGfxInfo.idl.
-            let m = /#BLOCKLIST_FEATURE_FAILURE_BUG_(\d+)/.exec(entry.message);
+            let m = /BUG_(\d+)/.exec(entry.failureId);
             if (m) {
-              let bugSpan = $.new("span");
-
-              let bugHref = $.new("a");
-              bugHref.href =
-                "https://bugzilla.mozilla.org/show_bug.cgi?id=" + m[1];
-              bugHref.setAttribute("data-l10n-name", "bug-link");
-              bugSpan.append(bugHref);
-              document.l10n.setAttributes(bugSpan, "support-blocklisted-bug", {
-                bugNumber: m[1],
-              });
-
-              contents = [bugSpan];
-            } else {
-              let unknownFailure = $.new("span");
-              document.l10n.setAttributes(unknownFailure, "unknown-failure", {
-                failureCode: entry.message.substr(1),
-              });
-              contents = [unknownFailure];
+              bugNumber = m[1];
             }
-          } else {
-            contents =
-              entry.status + " by " + entry.type + ": " + entry.message;
           }
 
-          trs.push($.new("tr", [$.new("td", contents)]));
+          let failureIdSpan = $.new("span", "");
+          if (bugNumber) {
+            let bugHref = $.new("a");
+            bugHref.href =
+              "https://bugzilla.mozilla.org/show_bug.cgi?id=" + bugNumber;
+            bugHref.setAttribute("data-l10n-name", "bug-link");
+            failureIdSpan.append(bugHref);
+            document.l10n.setAttributes(
+              failureIdSpan,
+              "support-blocklisted-bug",
+              {
+                bugNumber,
+              }
+            );
+          } else if (
+            entry.hasOwnProperty("failureId") &&
+            entry.failureId.length
+          ) {
+            document.l10n.setAttributes(failureIdSpan, "unknown-failure", {
+              failureCode: entry.failureId,
+            });
+          }
+
+          let messageSpan = $.new("span", "");
+          if (entry.hasOwnProperty("message") && entry.message.length) {
+            messageSpan.innerText = entry.message;
+          }
+
+          let typeCol = $.new("td", entry.type);
+          let statusCol = $.new("td", entry.status);
+          let messageCol = $.new("td", "");
+          let failureIdCol = $.new("td", "");
+          typeCol.style.width = "10%";
+          statusCol.style.width = "10%";
+          messageCol.style.width = "30%";
+          messageCol.appendChild(messageSpan);
+          failureIdCol.style.width = "50%";
+          failureIdCol.appendChild(failureIdSpan);
+
+          trs.push($.new("tr", [typeCol, statusCol, messageCol, failureIdCol]));
         }
         addRow("decisions", "#" + feature.name, [$.new("table", trs)]);
       }
@@ -1034,13 +1099,18 @@ var snapshotFormatters = {
 
     // Media Capabilitites
     insertEnumerateDatabase();
+
+    // Codec decode/encode support information (inc. HW accel)
+    if (["win", "macosx", "linux"].includes(AppConstants.platform)) {
+      insertBasicInfo("media-codec-support-info", data.codecSupportInfo);
+    }
   },
 
   remoteAgent(data) {
     if (!AppConstants.ENABLE_WEBDRIVER) {
       return;
     }
-    $("remote-debugging-accepting-connections").textContent = data.listening;
+    $("remote-debugging-accepting-connections").textContent = data.running;
     $("remote-debugging-url").textContent = data.url;
   },
 
@@ -1294,8 +1364,8 @@ function copyRawDataToClipboard(button) {
   if (button) {
     button.disabled = true;
   }
-  try {
-    Troubleshoot.snapshot(async function(snapshot) {
+  Troubleshoot.snapshot().then(
+    async snapshot => {
       if (button) {
         button.disabled = false;
       }
@@ -1307,30 +1377,21 @@ function copyRawDataToClipboard(button) {
         "@mozilla.org/widget/transferable;1"
       ].createInstance(Ci.nsITransferable);
       transferable.init(getLoadContext());
-      transferable.addDataFlavor("text/unicode");
-      transferable.setTransferData("text/unicode", str);
+      transferable.addDataFlavor("text/plain");
+      transferable.setTransferData("text/plain", str);
       Services.clipboard.setData(
         transferable,
         null,
         Ci.nsIClipboard.kGlobalClipboard
       );
-      if (AppConstants.platform == "android") {
-        // Present a snackbar notification.
-        var { Snackbars } = ChromeUtils.import(
-          "resource://gre/modules/Snackbars.jsm"
-        );
-        let rawDataCopiedString = await document.l10n.formatValue(
-          "raw-data-copied"
-        );
-        Snackbars.show(rawDataCopiedString, Snackbars.LENGTH_SHORT);
+    },
+    err => {
+      if (button) {
+        button.disabled = false;
       }
-    });
-  } catch (err) {
-    if (button) {
-      button.disabled = false;
+      console.error(err);
     }
-    throw err;
-  }
+  );
 }
 
 function getLoadContext() {
@@ -1361,9 +1422,9 @@ async function copyContentsToClipboard() {
   transferable.setTransferData("text/html", ssHtml);
 
   // Add the plain text flavor.
-  transferable.addDataFlavor("text/unicode");
+  transferable.addDataFlavor("text/plain");
   ssText.data = dataText;
-  transferable.setTransferData("text/unicode", ssText);
+  transferable.setTransferData("text/plain", ssText);
 
   // Store the data into the clipboard.
   Services.clipboard.setData(
@@ -1371,15 +1432,6 @@ async function copyContentsToClipboard() {
     null,
     Services.clipboard.kGlobalClipboard
   );
-
-  if (AppConstants.platform == "android") {
-    // Present a snackbar notification.
-    var { Snackbars } = ChromeUtils.import(
-      "resource://gre/modules/Snackbars.jsm"
-    );
-    let textCopiedString = await document.l10n.formatValue("text-copied");
-    Snackbars.show(textCopiedString, Snackbars.LENGTH_SHORT);
-  }
 }
 
 // Return the plain text representation of an element.  Do a little bit
@@ -1729,4 +1781,16 @@ function setupEventListeners() {
   $("profile-dir-button").addEventListener("click", function(event) {
     openProfileDirectory();
   });
+}
+
+/**
+ * Scroll to section specified by location.hash
+ */
+function scrollToSection() {
+  const id = location.hash.substr(1);
+  const elem = $(id);
+
+  if (elem) {
+    elem.scrollIntoView();
+  }
 }

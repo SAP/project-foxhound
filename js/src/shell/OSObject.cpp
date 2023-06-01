@@ -33,7 +33,7 @@
 // For JSFunctionSpecWithHelp
 #include "jsfriendapi.h"
 
-#include "gc/FreeOp.h"
+#include "gc/GCContext.h"
 #include "js/CharacterEncoding.h"
 #include "js/Conversions.h"
 #include "js/experimental/TypedData.h"  // JS_NewUint8Array
@@ -114,7 +114,7 @@ JSString* ResolvePath(JSContext* cx, HandleString filenameStr,
 #endif
   }
 
-  RootedLinearString str(cx, JS_EnsureLinearString(cx, filenameStr));
+  Rooted<JSLinearString*> str(cx, JS_EnsureLinearString(cx, filenameStr));
   if (!str) {
     return nullptr;
   }
@@ -224,7 +224,7 @@ JSObject* FileAsTypedArray(JSContext* cx, JS::HandleString pathnameStr) {
       }
       JS_ReportErrorUTF8(cx, "can't seek start of %s", pathname.get());
     } else {
-      if (len > ArrayBufferObject::maxBufferByteLength()) {
+      if (len > ArrayBufferObject::MaxByteLength) {
         JS_ReportErrorUTF8(cx, "file %s is too large for a Uint8Array",
                            pathname.get());
         return nullptr;
@@ -564,12 +564,12 @@ class FileObject : public NativeObject {
     return obj;
   }
 
-  static void finalize(JSFreeOp* fop, JSObject* obj) {
+  static void finalize(JS::GCContext* gcx, JSObject* obj) {
     FileObject* fileObj = &obj->as<FileObject>();
     RCFile* file = fileObj->rcFile();
-    fop->removeCellMemory(obj, sizeof(*file), MemoryUse::FileObjectFile);
+    gcx->removeCellMemory(obj, sizeof(*file), MemoryUse::FileObjectFile);
     if (file->release()) {
-      fop->deleteUntracked(file);
+      gcx->deleteUntracked(file);
     }
   }
 
@@ -600,7 +600,6 @@ static const JSClassOps FileObjectClassOps = {
     nullptr,               // mayResolve
     FileObject::finalize,  // finalize
     nullptr,               // call
-    nullptr,               // hasInstance
     nullptr,               // construct
     nullptr,               // trace
 };
@@ -795,7 +794,8 @@ static bool ospath_isAbsolute(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  RootedLinearString str(cx, JS_EnsureLinearString(cx, args[0].toString()));
+  Rooted<JSLinearString*> str(cx,
+                              JS_EnsureLinearString(cx, args[0].toString()));
   if (!str) {
     return false;
   }
@@ -824,7 +824,8 @@ static bool ospath_join(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
 
-    RootedLinearString str(cx, JS_EnsureLinearString(cx, args[i].toString()));
+    Rooted<JSLinearString*> str(cx,
+                                JS_EnsureLinearString(cx, args[i].toString()));
     if (!str) {
       return false;
     }

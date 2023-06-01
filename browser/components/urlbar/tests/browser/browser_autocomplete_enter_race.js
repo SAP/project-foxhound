@@ -9,7 +9,7 @@
 
 // The order of these tests matters!
 
-add_task(async function setup() {
+add_setup(async function() {
   let bm = await PlacesUtils.bookmarks.insert({
     parentGuid: PlacesUtils.bookmarks.unfiledGuid,
     url: "http://example.com/?q=%s",
@@ -105,14 +105,20 @@ add_task(
 
     let engine = Services.search.getEngineByName("Example");
     let originalEngine = await Services.search.getDefault();
-    await Services.search.setDefault(engine);
+    await Services.search.setDefault(
+      engine,
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    );
 
     async function cleanup() {
       Preferences.set("browser.urlbar.suggest.history", suggestHistory);
       Preferences.set("browser.urlbar.suggest.bookmark", suggestBookmarks);
       Preferences.set("browser.urlbar.suggest.openpage", suggestOpenPages);
 
-      await Services.search.setDefault(originalEngine);
+      await Services.search.setDefault(
+        originalEngine,
+        Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+      );
     }
     registerCleanupFunction(cleanup);
 

@@ -347,10 +347,6 @@ uint32_t SecMap::AddPfxInstr(PfxInstr pfxi) {
   return mPfxInstrs.size() - 1;
 }
 
-static bool CmpExtentsByOffsetLE(const Extent& ext1, const Extent& ext2) {
-  return ext1.offset() < ext2.offset();
-}
-
 // Prepare the map for searching, by sorting it, de-overlapping entries and
 // removing any resulting zero-length entries.  At the start of this routine,
 // all Extents should fall within [mMapMinAVMA, mMapMaxAVMA] and not have zero
@@ -400,7 +396,10 @@ void SecMap::PrepareRuleSets() {
 #endif
 
   // Sort by start addresses.
-  std::sort(mExtents.begin(), mExtents.end(), CmpExtentsByOffsetLE);
+  std::sort(mExtents.begin(), mExtents.end(),
+            [](const Extent& ext1, const Extent& ext2) {
+              return ext1.offset() < ext2.offset();
+            });
 
   // Iteratively truncate any overlaps and remove any zero length
   // entries that might result, or that may have been present
@@ -1682,7 +1681,7 @@ static __attribute__((noinline)) unsigned long __getpc(void) {
 // This function must not be inlined into its callers.  Doing so will
 // cause the expected-vs-actual backtrace consistency checking to
 // fail.  Prints summary results to |aLUL|'s logging sink and also
-// returns a boolean indicating whether or not the test passed.
+// returns a boolean indicating whether or not the test failed.
 static __attribute__((noinline)) bool GetAndCheckStackTrace(
     LUL* aLUL, const char* dstring) {
   // Get hold of the current unwind-start registers.
@@ -1912,7 +1911,7 @@ static __attribute__((noinline)) bool GetAndCheckStackTrace(
   buf[sizeof(buf) - 1] = 0;
   aLUL->mLog(buf);
 
-  return passed;
+  return !passed;
 }
 
 // Macro magic to create a set of 8 mutually recursive functions with
@@ -1941,7 +1940,8 @@ static __attribute__((noinline)) bool GetAndCheckStackTrace(
     if (*strP == '\0') {                                                      \
       /* We've come to the end of the director string. */                     \
       /* Take a stack snapshot. */                                            \
-      return GetAndCheckStackTrace(aLUL, strPorig);                           \
+      /* We purposefully use a negation to avoid tail-call optimization */    \
+      return !GetAndCheckStackTrace(aLUL, strPorig);                          \
     } else {                                                                  \
       /* Recurse onwards.  This is a bit subtle.  The obvious */              \
       /* thing to do here is call onwards directly, from within the */        \

@@ -8,7 +8,6 @@
 #include "mozStorageAsyncStatement.h"
 #include "mozStorageService.h"
 
-#include "nsMemory.h"
 #include "nsString.h"
 #include "nsServiceManagerUtils.h"
 
@@ -39,7 +38,7 @@ nsresult AsyncStatementJSHelper::getParams(AsyncStatement* aStatement,
                "Invalid state to get the params object - all calls will fail!");
 #endif
 
-  JS::RootedObject scope(aCtx, aScopeObj);
+  JS::Rooted<JSObject*> scope(aCtx, aScopeObj);
 
   if (!aStatement->mStatementParamsHolder) {
     dom::GlobalObject global(aCtx, scope);
@@ -98,11 +97,11 @@ NS_IMETHODIMP
 AsyncStatementJSHelper::Resolve(nsIXPConnectWrappedNative* aWrapper,
                                 JSContext* aCtx, JSObject* aScopeObj, jsid aId,
                                 bool* resolvedp, bool* _retval) {
-  if (!JSID_IS_STRING(aId)) return NS_OK;
+  if (!aId.isString()) return NS_OK;
 
   // Cast to async via mozI* since direct from nsISupports is ambiguous.
-  JS::RootedObject scope(aCtx, aScopeObj);
-  JS::RootedId id(aCtx, aId);
+  JS::Rooted<JSObject*> scope(aCtx, aScopeObj);
+  JS::Rooted<JS::PropertyKey> id(aCtx, aId);
   mozIStorageAsyncStatement* iAsyncStmt =
       static_cast<mozIStorageAsyncStatement*>(aWrapper->Native());
   AsyncStatement* stmt = static_cast<AsyncStatement*>(iAsyncStmt);
@@ -115,8 +114,8 @@ AsyncStatementJSHelper::Resolve(nsIXPConnectWrappedNative* aWrapper,
   }
 #endif
 
-  if (::JS_LinearStringEqualsLiteral(JSID_TO_LINEAR_STRING(id), "params")) {
-    JS::RootedValue val(aCtx);
+  if (::JS_LinearStringEqualsLiteral(id.toLinearString(), "params")) {
+    JS::Rooted<JS::Value> val(aCtx);
     nsresult rv = getParams(stmt, aCtx, scope, val.address());
     NS_ENSURE_SUCCESS(rv, rv);
     *_retval = ::JS_DefinePropertyById(aCtx, scope, id, val, JSPROP_RESOLVING);

@@ -10,16 +10,15 @@
 author: Jordan Lund
 """
 
-from __future__ import absolute_import
-import json
-import os
-import re
-import sys
 import copy
-import shutil
 import glob
 import imp
-
+import json
+import multiprocessing
+import os
+import re
+import shutil
+import sys
 from datetime import datetime, timedelta
 
 # load modules from parent dir
@@ -33,15 +32,14 @@ from mozharness.base.vcs.vcsbase import MercurialScript
 from mozharness.mozilla.automation import TBPL_EXCEPTION, TBPL_RETRY
 from mozharness.mozilla.mozbase import MozbaseMixin
 from mozharness.mozilla.structuredlog import StructuredOutputParser
-from mozharness.mozilla.testing.errors import HarnessErrorList
-from mozharness.mozilla.testing.unittest import DesktopUnittestOutputParser
 from mozharness.mozilla.testing.codecoverage import (
     CodeCoverageMixin,
     code_coverage_config_options,
 )
+from mozharness.mozilla.testing.errors import HarnessErrorList
 from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
+from mozharness.mozilla.testing.unittest import DesktopUnittestOutputParser
 
-PY2 = sys.version_info.major == 2
 SUITE_CATEGORIES = [
     "gtest",
     "cppunittest",
@@ -296,6 +294,34 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                     "help": "treat harness level timeout as a pass",
                 },
             ],
+            [
+                ["--disable-fission"],
+                {
+                    "action": "store_true",
+                    "default": False,
+                    "dest": "disable_fission",
+                    "help": "do not run tests with fission enabled.",
+                },
+            ],
+            [
+                ["--conditioned-profile"],
+                {
+                    "action": "store_true",
+                    "default": False,
+                    "dest": "conditioned_profile",
+                    "help": "run tests with a conditioned profile",
+                },
+            ],
+            [
+                ["--tag"],
+                {
+                    "action": "append",
+                    "default": [],
+                    "dest": "test_tags",
+                    "help": "Filter out tests that don't have the given tag. Can be used multiple "
+                    "times in which case the test must contain at least one of the given tags.",
+                },
+            ],
         ]
         + copy.deepcopy(testing_config_options)
         + copy.deepcopy(code_coverage_config_options)
@@ -314,6 +340,7 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                 "install",
                 "stage-files",
                 "run-tests",
+                "uninstall",
             ],
             require_config_file=require_config_file,
             config={"require_test_zip": True},
@@ -472,17 +499,13 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
             )
         ]
 
-        if self._query_specified_suites("mochitest") is not None:
-            # mochitest is the only thing that needs this
-            if PY2:
-                wspb_requirements = "websocketprocessbridge_requirements.txt"
-            else:
-                wspb_requirements = "websocketprocessbridge_requirements_3.txt"
+        if self._query_specified_suites("mochitest", "mochitest-media") is not None:
+            # mochitest-media is the only thing that needs this
             requirements_files.append(
                 os.path.join(
                     dirs["abs_mochitest_dir"],
                     "websocketprocessbridge",
-                    wspb_requirements,
+                    "websocketprocessbridge_requirements_3.txt",
                 )
             )
 
@@ -491,12 +514,22 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                 requirements=[requirements_file], two_pass=True
             )
 
+        _python_interp = self.query_exe("python")
+        if "win" in self.platform_name() and os.path.exists(_python_interp):
+            multiprocessing.set_executable(_python_interp)
+
     def _query_symbols_url(self):
         """query the full symbols URL based upon binary URL"""
         # may break with name convention changes but is one less 'input' for script
         if self.symbols_url:
             return self.symbols_url
 
+        # Use simple text substitution to determine the symbols_url from the
+        # installer_url. This will not always work: For signed builds, the
+        # installer_url is likely an artifact in a signing task, which may not
+        # have a symbols artifact. It might be better to use the test target
+        # preferentially, like query_prefixed_build_dir_url() does (for future
+        # consideration, if this code proves troublesome).
         symbols_url = None
         self.info("finding symbols_url based upon self.installer_url")
         if self.installer_url:
@@ -580,6 +613,14 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                         level=WARNING,
                     )
 
+            # do not add --disable fission if we don't have --disable-e10s
+            if c["disable_fission"] and suite_category not in [
+                "gtest",
+                "cppunittest",
+                "jittest",
+            ]:
+                base_cmd.append("--disable-fission")
+
             # Ignore chunking if we have user specified test paths
             if not (self.verify_enabled or self.per_test_coverage):
                 test_paths = self._get_mozharness_test_paths(suite_category, suite)
@@ -628,9 +669,12 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
             if c["crash_as_pass"]:
                 base_cmd.append("--crash-as-pass")
 
-            # set pluginsPath
-            abs_res_plugins_dir = os.path.join(abs_res_dir, "plugins")
-            str_format_values["test_plugin_path"] = abs_res_plugins_dir
+            if c["conditioned_profile"]:
+                base_cmd.append("--conditioned-profile")
+
+            # Ensure the --tag flag and its params get passed along
+            if c["test_tags"]:
+                base_cmd.extend(["--tag={}".format(t) for t in c["test_tags"]])
 
             if suite_category not in c["suite_definitions"]:
                 self.fatal("'%s' not defined in the config!")
@@ -674,7 +718,7 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                 " '--binary-path' flag"
             )
 
-    def _query_specified_suites(self, category):
+    def _query_specified_suites(self, category, sub_category=None):
         """Checks if the provided suite does indeed exist.
 
         If at least one suite was given and if it does exist, return the suite
@@ -701,13 +745,22 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
         suite = specified_suites[0]
         if suite not in all_suites:
             self.fatal("""Selected suite does not exist!""")
-        return {suite: all_suites[suite]}
+
+        # allow for fine grain suite selection
+        ret_val = all_suites[suite]
+        if sub_category in all_suites:
+            if all_suites[sub_category] != ret_val:
+                return None
+
+        return {suite: ret_val}
 
     def _query_try_flavor(self, category, suite):
         flavors = {
             "mochitest": [
                 ("plain.*", "mochitest"),
                 ("browser-chrome.*", "browser-chrome"),
+                ("mochitest-browser-a11y.*", "browser-a11y"),
+                ("mochitest-browser-media.*", "browser-media"),
                 ("mochitest-devtools-chrome.*", "devtools-chrome"),
                 ("chrome", "chrome"),
             ],
@@ -871,6 +924,12 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
             )
 
     def _stage_xpcshell(self, suites):
+        if "WindowsApps" in self.binary_path:
+            self.log(
+                "Skipping stage xpcshell for MSIX tests because we cannot copy files into the installation directory."
+            )
+            return
+
         self._stage_files(self.config["xpcshell_name"])
         # http3server isn't built for Windows tests or Linux asan/tsan
         # builds. Only stage if the `http3server_name` config is set and if
@@ -909,6 +968,7 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
         # Kill a process tree (including grandchildren) with signal.SIGTERM
         try:
             import signal
+
             import psutil
 
             if pid == os.getpid():
@@ -1054,6 +1114,8 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                     # Mac specific, but points to abs_app_dir on other
                     # platforms.
                     "abs_res_dir": abs_res_dir,
+                    "binary_path": self.binary_path,
+                    "install_dir": self.install_dir,
                 }
                 options_list = []
                 env = {"TEST_SUITE": suite}
@@ -1225,10 +1287,10 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                             self.info("Per-test run abandoned due to RETRY status")
                             return False
                     else:
-                        self.log(
+                        # report as INFO instead of log_level to avoid extra Treeherder lines
+                        self.info(
                             "The %s suite: %s ran with return status: %s"
                             % (suite_category, suite, tbpl_status),
-                            level=log_level,
                         )
 
             if executed_too_many_tests:
@@ -1236,6 +1298,16 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
         else:
             self.debug("There were no suites to run for %s" % suite_category)
         return True
+
+    def uninstall(self):
+        # Technically, we might miss this step if earlier steps fail badly.
+        # If that becomes a big issue we should consider moving this to
+        # something that is more likely to execute, such as
+        # postflight_run_cmd_suites
+        if "WindowsApps" in self.binary_path:
+            self.uninstall_app(self.binary_path)
+        else:
+            self.log("Skipping uninstall for non-MSIX test")
 
 
 # main {{{1

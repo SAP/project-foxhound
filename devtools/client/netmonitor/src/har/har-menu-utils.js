@@ -4,17 +4,20 @@
 
 "use strict";
 
-const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+const {
+  L10N,
+} = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 
 loader.lazyRequireGetter(
   this,
   "HarExporter",
-  "devtools/client/netmonitor/src/har/har-exporter",
+  "resource://devtools/client/netmonitor/src/har/har-exporter.js",
   true
 );
 
 loader.lazyGetter(this, "HarImporter", function() {
-  return require("devtools/client/netmonitor/src/har/har-importer").HarImporter;
+  return require("resource://devtools/client/netmonitor/src/har/har-importer.js")
+    .HarImporter;
 });
 
 /**
@@ -83,7 +86,7 @@ var HarMenuUtils = {
 
   getDefaultHarOptions(requests, connector) {
     return {
-      connector: connector,
+      connector,
       items: requests,
     };
   },
@@ -93,8 +96,7 @@ var HarMenuUtils = {
 
 function readFile(file) {
   return new Promise(resolve => {
-    const { OS } = Cu.import("resource://gre/modules/osfile.jsm");
-    OS.File.read(file.path).then(data => {
+    IOUtils.read(file.path).then(data => {
       const decoder = new TextDecoder();
       resolve(decoder.decode(data));
     });

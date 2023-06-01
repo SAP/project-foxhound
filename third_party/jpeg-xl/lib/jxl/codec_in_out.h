@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "lib/jxl/alpha.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/frame_header.h"
@@ -20,6 +21,7 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/luminance.h"
+#include "lib/jxl/size_constraints.h"
 
 namespace jxl {
 
@@ -32,14 +34,6 @@ struct CodecInterval {
   // Defaults for temp.
   float min = 0.0f;
   float width = 1.0f;
-};
-
-struct SizeConstraints {
-  // Upper limit on pixel dimensions/area, enforced by VerifyDimensions
-  // (called from decoders). Fuzzers set smaller values to limit memory use.
-  uint32_t dec_max_xsize = 0xFFFFFFFFu;
-  uint32_t dec_max_ysize = 0xFFFFFFFFu;
-  uint64_t dec_max_pixels = 0xFFFFFFFFu;  // Might be up to ~0ull
 };
 
 template <typename T,
@@ -63,10 +57,10 @@ using CodecIntervals = std::array<CodecInterval, 4>;  // RGB[A] or Y[A]
 
 // Optional text/EXIF metadata.
 struct Blobs {
-  PaddedBytes exif;
-  PaddedBytes iptc;
-  PaddedBytes jumbf;
-  PaddedBytes xmp;
+  std::vector<uint8_t> exif;
+  std::vector<uint8_t> iptc;
+  std::vector<uint8_t> jumbf;
+  std::vector<uint8_t> xmp;
 };
 
 // Holds a preview, a main image or one or more frames, plus the inputs/outputs
@@ -83,7 +77,7 @@ class CodecInOut {
   CodecInOut& operator=(CodecInOut&&) = default;
 
   size_t LastStillFrame() const {
-    JXL_DASSERT(frames.size() > 0);
+    JXL_DASSERT(!frames.empty());
     size_t last = 0;
     for (size_t i = 0; i < frames.size(); i++) {
       last = i;
@@ -140,18 +134,57 @@ class CodecInOut {
     }
     return true;
   }
-  // Calls PremultiplyAlpha for each ImageBundle (preview/frames).
-  void PremultiplyAlpha() {
+  // Performs "PremultiplyAlpha" for each ImageBundle (preview/frames).
+  bool PremultiplyAlpha() {
+    const auto doPremultiplyAlpha = [](ImageBundle& bundle) {
+      if (!bundle.HasAlpha()) return;
+      if (!bundle.HasColor()) return;
+      auto* color = bundle.color();
+      const auto* alpha = bundle.alpha();
+      JXL_CHECK(color->ysize() == alpha->ysize());
+      JXL_CHECK(color->xsize() == alpha->xsize());
+      for (size_t y = 0; y < color->ysize(); y++) {
+        ::jxl::PremultiplyAlpha(color->PlaneRow(0, y), color->PlaneRow(1, y),
+                                color->PlaneRow(2, y), alpha->Row(y),
+                                color->xsize());
+      }
+    };
     ExtraChannelInfo* eci = metadata.m.Find(ExtraChannel::kAlpha);
-    if (eci == nullptr || eci->alpha_associated) return;  // nothing to do
+    if (eci == nullptr || eci->alpha_associated) return false;
     if (metadata.m.have_preview) {
-      preview_frame.PremultiplyAlpha();
+      doPremultiplyAlpha(preview_frame);
     }
     for (ImageBundle& ib : frames) {
-      ib.PremultiplyAlpha();
+      doPremultiplyAlpha(ib);
     }
     eci->alpha_associated = true;
-    return;
+    return true;
+  }
+
+  bool UnpremultiplyAlpha() {
+    const auto doUnpremultiplyAlpha = [](ImageBundle& bundle) {
+      if (!bundle.HasAlpha()) return;
+      if (!bundle.HasColor()) return;
+      auto* color = bundle.color();
+      const auto* alpha = bundle.alpha();
+      JXL_CHECK(color->ysize() == alpha->ysize());
+      JXL_CHECK(color->xsize() == alpha->xsize());
+      for (size_t y = 0; y < color->ysize(); y++) {
+        ::jxl::UnpremultiplyAlpha(color->PlaneRow(0, y), color->PlaneRow(1, y),
+                                  color->PlaneRow(2, y), alpha->Row(y),
+                                  color->xsize());
+      }
+    };
+    ExtraChannelInfo* eci = metadata.m.Find(ExtraChannel::kAlpha);
+    if (eci == nullptr || !eci->alpha_associated) return false;
+    if (metadata.m.have_preview) {
+      doUnpremultiplyAlpha(preview_frame);
+    }
+    for (ImageBundle& ib : frames) {
+      doUnpremultiplyAlpha(ib);
+    }
+    eci->alpha_associated = false;
+    return true;
   }
 
   // -- DECODER INPUT:
@@ -177,7 +210,6 @@ class CodecInOut {
 
   std::vector<ImageBundle> frames;  // size=1 if !metadata.have_animation
 
-  bool use_sjpeg = false;
   // If the image should be written to a JPEG, use this quality for encoding.
   size_t jpeg_quality;
 };

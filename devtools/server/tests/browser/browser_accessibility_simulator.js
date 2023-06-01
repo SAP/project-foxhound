@@ -4,18 +4,11 @@
 
 "use strict";
 
-loader.lazyRequireGetter(
-  this,
-  "isWebRenderEnabled",
-  "devtools/server/actors/utils/accessibility",
-  true
-);
-
 const {
   accessibility: {
     SIMULATION_TYPE: { PROTANOPIA },
   },
-} = require("devtools/shared/constants");
+} = require("resource://devtools/shared/constants.js");
 const {
   simulation: {
     COLOR_TRANSFORMATION_MATRICES: {
@@ -23,7 +16,7 @@ const {
       NONE: DEFAULT_MATRIX,
     },
   },
-} = require("devtools/server/actors/accessibility/constants");
+} = require("resource://devtools/server/actors/accessibility/constants.js");
 
 // Checks for the SimulatorActor
 
@@ -77,11 +70,8 @@ add_task(async function() {
   );
 
   const simulator = accessibility.simulatorFront;
-
   if (!simulator) {
-    ok(!isWebRenderEnabled(window), "Web render is disabled.");
-
-    // If web render is disabled, we can't test the simulator actor, so return early
+    ok(false, "Missing simulator actor.");
     return;
   }
 

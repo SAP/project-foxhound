@@ -4,21 +4,27 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-XPCOMUtils.defineLazyModuleGetters(this, {
-  Services: "resource://gre/modules/Services.jsm",
-  clearTimeout: "resource://gre/modules/Timer.jsm",
-  setTimeout: "resource://gre/modules/Timer.jsm",
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
+  clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   ASRouterTargeting: "resource://activity-stream/lib/ASRouterTargeting.jsm",
   FilterExpressions:
     "resource://gre/modules/components-utils/FilterExpressions.jsm",
   ClientEnvironment: "resource://normandy/lib/ClientEnvironment.jsm",
   ClientEnvironmentBase:
     "resource://gre/modules/components-utils/ClientEnvironment.jsm",
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
-  TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.jsm",
 });
 
 var EXPORTED_SYMBOLS = ["TargetingContext"];
@@ -33,19 +39,19 @@ const ERROR_TYPES = {
 
 const TargetingEnvironment = {
   get locale() {
-    return ASRouterTargeting.Environment.locale;
+    return lazy.ASRouterTargeting.Environment.locale;
   },
 
   get localeLanguageCode() {
-    return ASRouterTargeting.Environment.localeLanguageCode;
+    return lazy.ASRouterTargeting.Environment.localeLanguageCode;
   },
 
   get region() {
-    return ASRouterTargeting.Environment.region;
+    return lazy.ASRouterTargeting.Environment.region;
   },
 
   get userId() {
-    return ClientEnvironment.userId;
+    return lazy.ClientEnvironment.userId;
   },
 
   get version() {
@@ -53,7 +59,7 @@ const TargetingEnvironment = {
   },
 
   get channel() {
-    const { settings } = TelemetryEnvironment.currentEnvironment;
+    const { settings } = lazy.TelemetryEnvironment.currentEnvironment;
     return settings.update.channel;
   },
 
@@ -62,7 +68,7 @@ const TargetingEnvironment = {
   },
 
   get os() {
-    return ClientEnvironmentBase.os;
+    return lazy.ClientEnvironmentBase.os;
   },
 };
 
@@ -128,7 +134,7 @@ class TargetingContext {
     const logUndesiredEvent = (event, key, prop) => {
       const value = key ? `${key}.${prop}` : prop;
       this._sendUndesiredEvent({ event, value });
-      Cu.reportError(`${event}: ${value}`);
+      console.error(`${event}: ${value}`);
     };
 
     return new Proxy(context, {
@@ -136,7 +142,7 @@ class TargetingContext {
         // eslint-disable-next-line no-async-promise-executor
         return new Promise(async (resolve, reject) => {
           // Create timeout cb to record attribute resolution taking too long.
-          let timeout = setTimeout(() => {
+          let timeout = lazy.setTimeout(() => {
             logUndesiredEvent(ERROR_TYPES.TIMEOUT, key, prop);
             reject(
               new Error(
@@ -151,9 +157,9 @@ class TargetingContext {
           } catch (error) {
             logUndesiredEvent(ERROR_TYPES.ATTRIBUTE_ERROR, key, prop);
             reject(error);
-            Cu.reportError(error);
+            console.error(error);
           } finally {
-            clearTimeout(timeout);
+            lazy.clearTimeout(timeout);
           }
         });
       },
@@ -218,7 +224,7 @@ class TargetingContext {
    * @returns {promise} Evaluation result
    */
   eval(expression, ...contexts) {
-    return FilterExpressions.eval(
+    return lazy.FilterExpressions.eval(
       expression,
       this.mergeEvaluationContexts([{ ctx: this.ctx }, ...contexts])
     );
@@ -237,7 +243,7 @@ class TargetingContext {
    * @returns {promise} Evaluation result
    */
   evalWithDefault(expression) {
-    return FilterExpressions.eval(
+    return lazy.FilterExpressions.eval(
       expression,
       this.createContextWithTimeout(this.ctx)
     );

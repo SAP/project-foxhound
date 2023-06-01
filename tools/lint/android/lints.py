@@ -4,20 +4,19 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import glob
 import itertools
 import json
-import glob
 import os
 import re
-import six
 import subprocess
 import sys
-
 import xml.etree.ElementTree as ET
 
-from mozpack.files import FileFinder
 import mozpack.path as mozpath
+import six
 from mozlint import result
+from mozpack.files import FileFinder
 
 # The Gradle target invocations are serialized with a simple locking file scheme.  It's fine for
 # them to take a while, since the first will compile all the Java, etc, and then perform
@@ -83,6 +82,8 @@ def gradle(log, topsrcdir=None, topobjdir=None, tasks=[], extra_args=[], verbose
             proc.kill()
             raise
 
+        return proc.returncode
+
 
 def format(config, fix=None, **lintargs):
     topsrcdir = lintargs["root"]
@@ -93,7 +94,7 @@ def format(config, fix=None, **lintargs):
     else:
         tasks = lintargs["substs"]["GRADLE_ANDROID_FORMAT_LINT_CHECK_TASKS"]
 
-    gradle(
+    ret = gradle(
         lintargs["log"],
         topsrcdir=topsrcdir,
         topobjdir=topobjdir,
@@ -116,6 +117,31 @@ def format(config, fix=None, **lintargs):
                 "level": "error",
             }
             results.append(result.from_config(config, **err))
+        folder = os.path.join(
+            topobjdir, "gradle", "build", path, "spotless", "spotlessKotlin"
+        )
+        for filename in glob.iglob(folder + "/**/*.kt", recursive=True):
+            err = {
+                "rule": "spotless-kt",
+                "path": os.path.join(path, mozpath.relpath(filename, folder)),
+                "lineno": 0,
+                "column": 0,
+                "message": "Formatting error, please run ./mach lint -l android-format --fix",
+                "level": "error",
+            }
+            results.append(result.from_config(config, **err))
+
+    if len(results) == 0 and ret != 0:
+        # spotless seems to hit unfixed error.
+        err = {
+            "rule": "spotless",
+            "path": "",
+            "lineno": 0,
+            "column": 0,
+            "message": "Unexpected error",
+            "level": "error",
+        }
+        results.append(result.from_config(config, **err))
 
     # If --fix was passed, we just report the number of files that were changed
     if fix:

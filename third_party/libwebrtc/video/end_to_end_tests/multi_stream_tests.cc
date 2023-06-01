@@ -45,7 +45,7 @@ TEST(MultiStreamEndToEndTest, SendsAndReceivesMultipleStreams) {
 
     uint32_t Ssrc() { return ssrc_; }
 
-    bool Wait() { return done_.Wait(30 * 1000); }
+    bool Wait() { return done_.Wait(TimeDelta::Seconds(30)); }
 
    private:
     const MultiStreamTester::CodecSettings& settings_;
@@ -79,7 +79,7 @@ TEST(MultiStreamEndToEndTest, SendsAndReceivesMultipleStreams) {
 
     void UpdateReceiveConfig(
         size_t stream_index,
-        VideoReceiveStream::Config* receive_config) override {
+        VideoReceiveStreamInterface::Config* receive_config) override {
       receive_config->renderer = observers_[stream_index].get();
     }
 

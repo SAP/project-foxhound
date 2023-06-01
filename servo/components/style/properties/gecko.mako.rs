@@ -38,9 +38,8 @@ use crate::selector_parser::PseudoElement;
 use servo_arc::{Arc, RawOffsetArc, UniqueArc};
 use std::mem::{forget, MaybeUninit};
 use std::{cmp, ops, ptr};
-use crate::values::{self, CustomIdent, Either, KeyframesName, None_};
-use crate::values::computed::{Percentage, TransitionProperty};
-use crate::values::computed::BorderStyle;
+use crate::values::{self, CustomIdent, KeyframesName};
+use crate::values::computed::{BorderStyle, Percentage, Time, TransitionProperty};
 use crate::values::computed::font::FontSize;
 use crate::values::generics::column::ColumnCount;
 
@@ -101,6 +100,15 @@ impl ComputedValues {
             style_structs::${style_struct.name}::default(doc),
             % endfor
         ).to_outer(None)
+    }
+
+    /// Converts the computed values to an Arc<> from a reference.
+    pub fn to_arc(&self) -> Arc<Self> {
+        // SAFETY: We're guaranteed to be allocated as an Arc<> since the
+        // functions above are the only ones that create ComputedValues
+        // instances in Gecko (and that must be the case since ComputedValues'
+        // member is private).
+        unsafe { Arc::from_raw_addrefed(self) }
     }
 
     #[inline]
@@ -208,8 +216,8 @@ impl ComputedValuesInner {
                 &self,
                 pseudo_ty,
             );
-            // We're simulating move semantics by having C++ do a memcpy and then forgetting
-            // it on this end.
+            // We're simulating move semantics by having C++ do a memcpy and
+            // then forgetting it on this end.
             forget(self);
             UniqueArc::assume_init(arc).shareable()
         }
@@ -678,8 +686,7 @@ fn static_assert() {
     }
 
     pub fn copy_border_${side.ident}_style_from(&mut self, other: &Self) {
-        self.gecko.mBorderStyle[${side.index}] = other.gecko.mBorderStyle[${side.index}];
-        self.gecko.mComputedBorder.${side.ident} = self.gecko.mBorder.${side.ident};
+        self.set_border_${side.ident}_style(other.gecko.mBorderStyle[${side.index}]);
     }
 
     pub fn reset_border_${side.ident}_style(&mut self, other: &Self) {
@@ -755,7 +762,6 @@ fn static_assert() {
 <%self:impl_trait style_struct_name="Margin"
                   skip_longhands="${skip_margin_longhands}
                                   ${skip_scroll_margin_longhands}">
-
     % for side in SIDES:
     <% impl_split_style_coord("margin_%s" % side.ident,
                               "mMargin",
@@ -810,9 +816,7 @@ fn static_assert() {
     }
 
     pub fn copy_outline_style_from(&mut self, other: &Self) {
-        // FIXME(emilio): Why doesn't this need to reset mActualOutlineWidth?
-        // Looks fishy.
-        self.gecko.mOutlineStyle = other.gecko.mOutlineStyle;
+        self.set_outline_style(other.gecko.mOutlineStyle);
     }
 
     pub fn reset_outline_style(&mut self, other: &Self) {
@@ -833,7 +837,7 @@ fn static_assert() {
 </%self:impl_trait>
 
 <% skip_font_longhands = """font-family font-size font-size-adjust font-weight
-                            font-style font-stretch font-synthesis -x-lang
+                            font-style font-stretch -x-lang
                             font-variant-alternates font-variant-east-asian
                             font-variant-ligatures font-variant-numeric
                             font-language-override font-feature-settings
@@ -858,6 +862,8 @@ fn static_assert() {
         self.gecko.mScriptUnconstrainedSize = other.gecko.mScriptUnconstrainedSize;
 
         self.gecko.mSize = other.gecko.mScriptUnconstrainedSize;
+        // NOTE: Intentionally not copying from mFont.size. The cascade process
+        // recomputes the used size as needed.
         self.gecko.mFont.size = other.gecko.mSize;
         self.gecko.mFontSizeKeyword = other.gecko.mFontSizeKeyword;
 
@@ -871,12 +877,14 @@ fn static_assert() {
     }
 
     pub fn set_font_size(&mut self, v: FontSize) {
-        let size = v.size;
-        self.gecko.mScriptUnconstrainedSize = size;
+        let computed_size = v.computed_size;
+        self.gecko.mScriptUnconstrainedSize = computed_size;
 
         // These two may be changed from Cascade::fixup_font_stuff.
-        self.gecko.mSize = size;
-        self.gecko.mFont.size = size;
+        self.gecko.mSize = computed_size;
+        // NOTE: Intentionally not copying from used_size. The cascade process
+        // recomputes the used size as needed.
+        self.gecko.mFont.size = computed_size;
 
         self.gecko.mFontSizeKeyword = v.keyword_info.kw;
         self.gecko.mFontSizeFactor = v.keyword_info.factor;
@@ -887,7 +895,8 @@ fn static_assert() {
         use crate::values::specified::font::KeywordInfo;
 
         FontSize {
-            size: self.gecko.mSize,
+            computed_size: self.gecko.mSize,
+            used_size: self.gecko.mFont.size,
             keyword_info: KeywordInfo {
                 kw: self.gecko.mFontSizeKeyword,
                 factor: self.gecko.mFontSizeFactor,
@@ -896,59 +905,9 @@ fn static_assert() {
         }
     }
 
-    pub fn set_font_weight(&mut self, v: longhands::font_weight::computed_value::T) {
-        unsafe { bindings::Gecko_FontWeight_SetFloat(&mut self.gecko.mFont.weight, v.0) };
-    }
-    ${impl_simple_copy('font_weight', 'mFont.weight')}
-
-    pub fn clone_font_weight(&self) -> longhands::font_weight::computed_value::T {
-        let weight: f32 = unsafe {
-            bindings::Gecko_FontWeight_ToFloat(self.gecko.mFont.weight)
-        };
-        longhands::font_weight::computed_value::T(weight)
-    }
-
-    pub fn set_font_stretch(&mut self, v: longhands::font_stretch::computed_value::T) {
-        unsafe {
-            bindings::Gecko_FontStretch_SetFloat(
-                &mut self.gecko.mFont.stretch,
-                v.value(),
-            )
-        };
-    }
-    ${impl_simple_copy('font_stretch', 'mFont.stretch')}
-    pub fn clone_font_stretch(&self) -> longhands::font_stretch::computed_value::T {
-        use crate::values::computed::font::FontStretch;
-        use crate::values::computed::Percentage;
-        use crate::values::generics::NonNegative;
-
-        let stretch =
-            unsafe { bindings::Gecko_FontStretch_ToFloat(self.gecko.mFont.stretch) };
-        debug_assert!(stretch >= 0.);
-
-        FontStretch(NonNegative(Percentage(stretch)))
-    }
-
-    pub fn set_font_style(&mut self, v: longhands::font_style::computed_value::T) {
-        use crate::values::generics::font::FontStyle;
-        let s = &mut self.gecko.mFont.style;
-        unsafe {
-            match v {
-                FontStyle::Normal => bindings::Gecko_FontSlantStyle_SetNormal(s),
-                FontStyle::Italic => bindings::Gecko_FontSlantStyle_SetItalic(s),
-                FontStyle::Oblique(ref angle) => {
-                    bindings::Gecko_FontSlantStyle_SetOblique(s, angle.0.degrees())
-                }
-            }
-        }
-    }
-    ${impl_simple_copy('font_style', 'mFont.style')}
-    pub fn clone_font_style(&self) -> longhands::font_style::computed_value::T {
-        use crate::values::computed::font::FontStyle;
-        FontStyle::from_gecko(self.gecko.mFont.style)
-    }
-
-    ${impl_simple_type_with_conversion("font_synthesis", "mFont.synthesis")}
+    ${impl_simple('font_weight', 'mFont.weight')}
+    ${impl_simple('font_stretch', 'mFont.stretch')}
+    ${impl_simple('font_style', 'mFont.style')}
 
     ${impl_simple("font_variant_alternates", "mFont.variantAlternates")}
 
@@ -1033,115 +992,67 @@ fn static_assert() {
     ${impl_simple_copy('_moz_min_font_size_ratio', 'mMinFontSizeRatio')}
 </%self:impl_trait>
 
-<%def name="impl_copy_animation_or_transition_value(type, ident, gecko_ffi_name, member=None)">
+<%def name="impl_coordinated_property_copy(type, ident, gecko_ffi_name)">
     #[allow(non_snake_case)]
     pub fn copy_${type}_${ident}_from(&mut self, other: &Self) {
-        self.gecko.m${type.capitalize()}s.ensure_len(other.gecko.m${type.capitalize()}s.len());
+        self.gecko.m${to_camel_case(type)}s.ensure_len(other.gecko.m${to_camel_case(type)}s.len());
 
-        let count = other.gecko.m${type.capitalize()}${gecko_ffi_name}Count;
-        self.gecko.m${type.capitalize()}${gecko_ffi_name}Count = count;
+        let count = other.gecko.m${to_camel_case(type)}${gecko_ffi_name}Count;
+        self.gecko.m${to_camel_case(type)}${gecko_ffi_name}Count = count;
 
-        let iter = self.gecko.m${type.capitalize()}s.iter_mut().take(count as usize).zip(
-            other.gecko.m${type.capitalize()}s.iter()
+        let iter = self.gecko.m${to_camel_case(type)}s.iter_mut().take(count as usize).zip(
+            other.gecko.m${to_camel_case(type)}s.iter()
         );
 
         for (ours, others) in iter {
-            % if member:
-            ours.m${gecko_ffi_name}.${member} = others.m${gecko_ffi_name}.${member};
-            % else:
             ours.m${gecko_ffi_name} = others.m${gecko_ffi_name}.clone();
-            % endif
         }
     }
-
     #[allow(non_snake_case)]
     pub fn reset_${type}_${ident}(&mut self, other: &Self) {
         self.copy_${type}_${ident}_from(other)
     }
 </%def>
 
-<%def name="impl_animation_or_transition_count(type, ident, gecko_ffi_name)">
+<%def name="impl_coordinated_property_count(type, ident, gecko_ffi_name)">
     #[allow(non_snake_case)]
     pub fn ${type}_${ident}_count(&self) -> usize {
-        self.gecko.m${type.capitalize()}${gecko_ffi_name}Count as usize
+        self.gecko.m${to_camel_case(type)}${gecko_ffi_name}Count as usize
     }
 </%def>
 
-<%def name="impl_animation_or_transition_time_value(type, ident, gecko_ffi_name)">
+<%def name="impl_coordinated_property(type, ident, gecko_ffi_name)">
     #[allow(non_snake_case)]
     pub fn set_${type}_${ident}<I>(&mut self, v: I)
-        where I: IntoIterator<Item = longhands::${type}_${ident}::computed_value::single_value::T>,
-              I::IntoIter: ExactSizeIterator + Clone
+    where
+        I: IntoIterator<Item = longhands::${type}_${ident}::computed_value::single_value::T>,
+        I::IntoIter: ExactSizeIterator + Clone
     {
         let v = v.into_iter();
         debug_assert_ne!(v.len(), 0);
         let input_len = v.len();
-        self.gecko.m${type.capitalize()}s.ensure_len(input_len);
+        self.gecko.m${to_camel_case(type)}s.ensure_len(input_len);
 
-        self.gecko.m${type.capitalize()}${gecko_ffi_name}Count = input_len as u32;
-        for (gecko, servo) in self.gecko.m${type.capitalize()}s.iter_mut().take(input_len as usize).zip(v) {
-            gecko.m${gecko_ffi_name} = servo.seconds() * 1000.;
+        self.gecko.m${to_camel_case(type)}${gecko_ffi_name}Count = input_len as u32;
+        for (gecko, servo) in self.gecko.m${to_camel_case(type)}s.iter_mut().take(input_len as usize).zip(v) {
+            gecko.m${gecko_ffi_name} = servo;
         }
     }
     #[allow(non_snake_case)]
     pub fn ${type}_${ident}_at(&self, index: usize)
         -> longhands::${type}_${ident}::computed_value::SingleComputedValue {
-        use crate::values::computed::Time;
-        Time::from_seconds(self.gecko.m${type.capitalize()}s[index].m${gecko_ffi_name} / 1000.)
+        self.gecko.m${to_camel_case(type)}s[index % self.${type}_${ident}_count()].m${gecko_ffi_name}.clone()
     }
-    ${impl_animation_or_transition_count(type, ident, gecko_ffi_name)}
-    ${impl_copy_animation_or_transition_value(type, ident, gecko_ffi_name)}
-</%def>
-
-<%def name="impl_animation_or_transition_timing_function(type)">
-    pub fn set_${type}_timing_function<I>(&mut self, v: I)
-        where I: IntoIterator<Item = longhands::${type}_timing_function::computed_value::single_value::T>,
-              I::IntoIter: ExactSizeIterator + Clone
-    {
-        let v = v.into_iter();
-        debug_assert_ne!(v.len(), 0);
-        let input_len = v.len();
-        self.gecko.m${type.capitalize()}s.ensure_len(input_len);
-
-        self.gecko.m${type.capitalize()}TimingFunctionCount = input_len as u32;
-        for (gecko, servo) in self.gecko.m${type.capitalize()}s.iter_mut().take(input_len as usize).zip(v) {
-            gecko.mTimingFunction.mTiming = servo;
-        }
-    }
-    ${impl_animation_or_transition_count(type, 'timing_function', 'TimingFunction')}
-    ${impl_copy_animation_or_transition_value(type, 'timing_function', "TimingFunction", "mTiming")}
-    pub fn ${type}_timing_function_at(&self, index: usize)
-        -> longhands::${type}_timing_function::computed_value::SingleComputedValue {
-        self.gecko.m${type.capitalize()}s[index].mTimingFunction.mTiming
-    }
-</%def>
-
-<%def name="impl_transition_time_value(ident, gecko_ffi_name)">
-    ${impl_animation_or_transition_time_value('transition', ident, gecko_ffi_name)}
-</%def>
-
-<%def name="impl_transition_count(ident, gecko_ffi_name)">
-    ${impl_animation_or_transition_count('transition', ident, gecko_ffi_name)}
-</%def>
-
-<%def name="impl_copy_animation_value(ident, gecko_ffi_name)">
-    ${impl_copy_animation_or_transition_value('animation', ident, gecko_ffi_name)}
-</%def>
-
-
-<%def name="impl_animation_count(ident, gecko_ffi_name)">
-    ${impl_animation_or_transition_count('animation', ident, gecko_ffi_name)}
-</%def>
-
-<%def name="impl_animation_time_value(ident, gecko_ffi_name)">
-    ${impl_animation_or_transition_time_value('animation', ident, gecko_ffi_name)}
+    ${impl_coordinated_property_copy(type, ident, gecko_ffi_name)}
+    ${impl_coordinated_property_count(type, ident, gecko_ffi_name)}
 </%def>
 
 <%def name="impl_animation_keyword(ident, gecko_ffi_name, keyword, cast_type='u8')">
     #[allow(non_snake_case)]
     pub fn set_animation_${ident}<I>(&mut self, v: I)
-        where I: IntoIterator<Item = longhands::animation_${ident}::computed_value::single_value::T>,
-              I::IntoIter: ExactSizeIterator + Clone
+    where
+        I: IntoIterator<Item = longhands::animation_${ident}::computed_value::single_value::T>,
+        I::IntoIter: ExactSizeIterator + Clone
     {
         use crate::properties::longhands::animation_${ident}::single_value::computed_value::T as Keyword;
 
@@ -1176,17 +1087,11 @@ fn static_assert() {
             % endif
         }
     }
-    ${impl_animation_count(ident, gecko_ffi_name)}
-    ${impl_copy_animation_value(ident, gecko_ffi_name)}
+    ${impl_coordinated_property_copy('animation', ident, gecko_ffi_name)}
+    ${impl_coordinated_property_count('animation', ident, gecko_ffi_name)}
 </%def>
 
-<% skip_box_longhands= """display
-                          animation-name animation-delay animation-duration
-                          animation-direction animation-fill-mode animation-play-state
-                          animation-iteration-count animation-timeline animation-timing-function
-                          clear transition-duration transition-delay
-                          transition-timing-function transition-property
-                          -webkit-line-clamp""" %>
+<% skip_box_longhands= """display contain""" %>
 <%self:impl_trait style_struct_name="Box" skip_longhands="${skip_box_longhands}">
     #[inline]
     pub fn set_display(&mut self, v: longhands::display::computed_value::T) {
@@ -1196,8 +1101,7 @@ fn static_assert() {
 
     #[inline]
     pub fn copy_display_from(&mut self, other: &Self) {
-        self.gecko.mDisplay = other.gecko.mDisplay;
-        self.gecko.mOriginalDisplay = other.gecko.mDisplay;
+        self.set_display(other.gecko.mDisplay);
     }
 
     #[inline]
@@ -1219,274 +1123,39 @@ fn static_assert() {
         self.gecko.mDisplay
     }
 
-    <% clear_keyword = Keyword(
-        "clear",
-        "Left Right None Both",
-        gecko_enum_prefix="StyleClear",
-        gecko_inexhaustive=True,
-    ) %>
-    ${impl_keyword('clear', 'mBreakType', clear_keyword)}
-
-    ${impl_transition_time_value('delay', 'Delay')}
-    ${impl_transition_time_value('duration', 'Duration')}
-    ${impl_animation_or_transition_timing_function('transition')}
-
-    pub fn transition_combined_duration_at(&self, index: usize) -> f32 {
-        // https://drafts.csswg.org/css-transitions/#transition-combined-duration
-        self.gecko.mTransitions[index % self.gecko.mTransitionDurationCount as usize].mDuration.max(0.0)
-            + self.gecko.mTransitions[index % self.gecko.mTransitionDelayCount as usize].mDelay
+    #[inline]
+    pub fn set_contain(&mut self, v: longhands::contain::computed_value::T) {
+        self.gecko.mContain = v;
+        self.gecko.mEffectiveContainment = v;
     }
 
-    pub fn set_transition_property<I>(&mut self, v: I)
-        where I: IntoIterator<Item = longhands::transition_property::computed_value::single_value::T>,
-              I::IntoIter: ExactSizeIterator
-    {
-        use crate::gecko_bindings::structs::nsCSSPropertyID::eCSSPropertyExtra_no_properties;
-        use crate::gecko_bindings::structs::nsCSSPropertyID::eCSSPropertyExtra_variable;
-        use crate::gecko_bindings::structs::nsCSSPropertyID::eCSSProperty_UNKNOWN;
-
-        let v = v.into_iter();
-
-        if v.len() != 0 {
-            self.gecko.mTransitions.ensure_len(v.len());
-            self.gecko.mTransitionPropertyCount = v.len() as u32;
-            for (servo, gecko) in v.zip(self.gecko.mTransitions.iter_mut()) {
-                unsafe { gecko.mUnknownProperty.clear() };
-
-                match servo {
-                    TransitionProperty::Unsupported(ident) => {
-                        gecko.mProperty = eCSSProperty_UNKNOWN;
-                        gecko.mUnknownProperty.mRawPtr = ident.0.into_addrefed();
-                    },
-                    TransitionProperty::Custom(name) => {
-                        gecko.mProperty = eCSSPropertyExtra_variable;
-                        gecko.mUnknownProperty.mRawPtr = name.into_addrefed();
-                    }
-                    _ => gecko.mProperty = servo.to_nscsspropertyid().unwrap(),
-                }
-            }
-        } else {
-            // In gecko |none| is represented by eCSSPropertyExtra_no_properties.
-            self.gecko.mTransitionPropertyCount = 1;
-            self.gecko.mTransitions[0].mProperty = eCSSPropertyExtra_no_properties;
-        }
+    #[inline]
+    pub fn copy_contain_from(&mut self, other: &Self) {
+        self.set_contain(other.gecko.mContain);
     }
 
-    /// Returns whether there are any transitions specified.
-    pub fn specifies_transitions(&self) -> bool {
-        use crate::gecko_bindings::structs::nsCSSPropertyID::eCSSPropertyExtra_all_properties;
-        if self.gecko.mTransitionPropertyCount == 1 &&
-            self.gecko.mTransitions[0].mProperty == eCSSPropertyExtra_all_properties &&
-            self.transition_combined_duration_at(0) <= 0.0f32 {
-            return false;
-        }
-
-        self.gecko.mTransitionPropertyCount > 0
+    #[inline]
+    pub fn reset_contain(&mut self, other: &Self) {
+        self.copy_contain_from(other)
     }
 
-    pub fn transition_property_at(&self, index: usize)
-        -> longhands::transition_property::computed_value::SingleComputedValue {
-        use crate::gecko_bindings::structs::nsCSSPropertyID::eCSSPropertyExtra_no_properties;
-        use crate::gecko_bindings::structs::nsCSSPropertyID::eCSSPropertyExtra_variable;
-        use crate::gecko_bindings::structs::nsCSSPropertyID::eCSSProperty_UNKNOWN;
-
-        let property = self.gecko.mTransitions[index].mProperty;
-        if property == eCSSProperty_UNKNOWN {
-            let atom = self.gecko.mTransitions[index].mUnknownProperty.mRawPtr;
-            debug_assert!(!atom.is_null());
-            TransitionProperty::Unsupported(CustomIdent(unsafe{
-                Atom::from_raw(atom)
-            }))
-        } else if property == eCSSPropertyExtra_variable {
-            let atom = self.gecko.mTransitions[index].mUnknownProperty.mRawPtr;
-            debug_assert!(!atom.is_null());
-            TransitionProperty::Custom(unsafe{
-                Atom::from_raw(atom)
-            })
-        } else if property == eCSSPropertyExtra_no_properties {
-            // Actually, we don't expect TransitionProperty::Unsupported also
-            // represents "none", but if the caller wants to convert it, it is
-            // fine. Please use it carefully.
-            //
-            // FIXME(emilio): This is a hack, is this reachable?
-            TransitionProperty::Unsupported(CustomIdent(atom!("none")))
-        } else {
-            property.into()
-        }
+    #[inline]
+    pub fn clone_contain(&self) -> longhands::contain::computed_value::T {
+        self.gecko.mContain
     }
 
-    pub fn transition_nscsspropertyid_at(&self, index: usize) -> nsCSSPropertyID {
-        self.gecko.mTransitions[index].mProperty
+    #[inline]
+    pub fn set_effective_containment(
+        &mut self,
+        v: longhands::contain::computed_value::T
+    ) {
+        self.gecko.mEffectiveContainment = v;
     }
 
-    pub fn copy_transition_property_from(&mut self, other: &Self) {
-        use crate::gecko_bindings::structs::nsCSSPropertyID::eCSSPropertyExtra_variable;
-        use crate::gecko_bindings::structs::nsCSSPropertyID::eCSSProperty_UNKNOWN;
-        self.gecko.mTransitions.ensure_len(other.gecko.mTransitions.len());
-
-        let count = other.gecko.mTransitionPropertyCount;
-        self.gecko.mTransitionPropertyCount = count;
-
-        for (index, transition) in self.gecko.mTransitions.iter_mut().enumerate().take(count as usize) {
-            transition.mProperty = other.gecko.mTransitions[index].mProperty;
-            unsafe { transition.mUnknownProperty.clear() };
-            if transition.mProperty == eCSSProperty_UNKNOWN ||
-               transition.mProperty == eCSSPropertyExtra_variable {
-                let atom = other.gecko.mTransitions[index].mUnknownProperty.mRawPtr;
-                debug_assert!(!atom.is_null());
-                transition.mUnknownProperty.mRawPtr = unsafe { Atom::from_raw(atom) }.into_addrefed();
-            }
-        }
+    #[inline]
+    pub fn clone_effective_containment(&self) -> longhands::contain::computed_value::T {
+        self.gecko.mEffectiveContainment
     }
-
-    pub fn reset_transition_property(&mut self, other: &Self) {
-        self.copy_transition_property_from(other)
-    }
-
-    ${impl_transition_count('property', 'Property')}
-
-    pub fn animations_equals(&self, other: &Self) -> bool {
-        return self.gecko.mAnimationNameCount == other.gecko.mAnimationNameCount
-            && self.gecko.mAnimationDelayCount == other.gecko.mAnimationDelayCount
-            && self.gecko.mAnimationDirectionCount == other.gecko.mAnimationDirectionCount
-            && self.gecko.mAnimationDurationCount == other.gecko.mAnimationDurationCount
-            && self.gecko.mAnimationFillModeCount == other.gecko.mAnimationFillModeCount
-            && self.gecko.mAnimationIterationCountCount == other.gecko.mAnimationIterationCountCount
-            && self.gecko.mAnimationPlayStateCount == other.gecko.mAnimationPlayStateCount
-            && self.gecko.mAnimationTimingFunctionCount == other.gecko.mAnimationTimingFunctionCount
-            && unsafe { bindings::Gecko_StyleAnimationsEquals(&self.gecko.mAnimations, &other.gecko.mAnimations) }
-    }
-
-    pub fn set_animation_name<I>(&mut self, v: I)
-        where I: IntoIterator<Item = longhands::animation_name::computed_value::single_value::T>,
-              I::IntoIter: ExactSizeIterator
-    {
-        let v = v.into_iter();
-        debug_assert_ne!(v.len(), 0);
-        self.gecko.mAnimations.ensure_len(v.len());
-
-        self.gecko.mAnimationNameCount = v.len() as u32;
-        for (servo, gecko) in v.zip(self.gecko.mAnimations.iter_mut()) {
-            let atom = match servo.0 {
-                None => atom!(""),
-                Some(ref name) => name.as_atom().clone(),
-            };
-            unsafe { bindings::Gecko_SetAnimationName(gecko, atom.into_addrefed()); }
-        }
-    }
-    pub fn animation_name_at(&self, index: usize)
-        -> longhands::animation_name::computed_value::SingleComputedValue {
-        use crate::properties::longhands::animation_name::single_value::SpecifiedValue as AnimationName;
-
-        let atom = self.gecko.mAnimations[index].mName.mRawPtr;
-        if atom == atom!("").as_ptr() {
-            return AnimationName(None)
-        }
-        AnimationName(Some(KeyframesName::from_atom(unsafe { Atom::from_raw(atom) })))
-    }
-    pub fn copy_animation_name_from(&mut self, other: &Self) {
-        self.gecko.mAnimationNameCount = other.gecko.mAnimationNameCount;
-        unsafe { bindings::Gecko_CopyAnimationNames(&mut self.gecko.mAnimations, &other.gecko.mAnimations); }
-    }
-
-    pub fn reset_animation_name(&mut self, other: &Self) {
-        self.copy_animation_name_from(other)
-    }
-
-    ${impl_animation_count('name', 'Name')}
-
-    ${impl_animation_time_value('delay', 'Delay')}
-    ${impl_animation_time_value('duration', 'Duration')}
-
-    ${impl_animation_keyword('direction', 'Direction',
-                             data.longhands_by_name["animation-direction"].keyword)}
-    ${impl_animation_keyword('fill_mode', 'FillMode',
-                             data.longhands_by_name["animation-fill-mode"].keyword)}
-    ${impl_animation_keyword('play_state', 'PlayState',
-                             data.longhands_by_name["animation-play-state"].keyword)}
-
-    pub fn set_animation_iteration_count<I>(&mut self, v: I)
-    where
-        I: IntoIterator<Item = values::computed::AnimationIterationCount>,
-        I::IntoIter: ExactSizeIterator + Clone
-    {
-        use std::f32;
-        use crate::values::generics::box_::AnimationIterationCount;
-
-        let v = v.into_iter();
-
-        debug_assert_ne!(v.len(), 0);
-        let input_len = v.len();
-        self.gecko.mAnimations.ensure_len(input_len);
-
-        self.gecko.mAnimationIterationCountCount = input_len as u32;
-        for (gecko, servo) in self.gecko.mAnimations.iter_mut().take(input_len as usize).zip(v) {
-            match servo {
-                AnimationIterationCount::Number(n) => gecko.mIterationCount = n,
-                AnimationIterationCount::Infinite => gecko.mIterationCount = f32::INFINITY,
-            }
-        }
-    }
-
-    pub fn animation_iteration_count_at(
-        &self,
-        index: usize,
-    ) -> values::computed::AnimationIterationCount {
-        use crate::values::generics::box_::AnimationIterationCount;
-
-        if self.gecko.mAnimations[index].mIterationCount.is_infinite() {
-            AnimationIterationCount::Infinite
-        } else {
-            AnimationIterationCount::Number(self.gecko.mAnimations[index].mIterationCount)
-        }
-    }
-
-    ${impl_animation_count('iteration_count', 'IterationCount')}
-    ${impl_copy_animation_value('iteration_count', 'IterationCount')}
-    ${impl_animation_or_transition_timing_function('animation')}
-
-    pub fn set_animation_timeline<I>(&mut self, v: I)
-    where
-        I: IntoIterator<Item = longhands::animation_timeline::computed_value::single_value::T>,
-        I::IntoIter: ExactSizeIterator
-    {
-        let v = v.into_iter();
-        debug_assert_ne!(v.len(), 0);
-        let input_len = v.len();
-        self.gecko.mAnimations.ensure_len(input_len);
-
-        self.gecko.mAnimationTimelineCount = input_len as u32;
-        for (gecko, servo) in self.gecko.mAnimations.iter_mut().take(input_len as usize).zip(v) {
-            gecko.mTimeline = servo;
-        }
-    }
-    pub fn animation_timeline_at(&self, index: usize) -> values::specified::box_::AnimationTimeline {
-        self.gecko.mAnimations[index].mTimeline.clone()
-    }
-    ${impl_animation_count('timeline', 'Timeline')}
-    ${impl_copy_animation_value('timeline', 'Timeline')}
-
-    #[allow(non_snake_case)]
-    pub fn set__webkit_line_clamp(&mut self, v: longhands::_webkit_line_clamp::computed_value::T) {
-        self.gecko.mLineClamp = match v {
-            Either::First(n) => n.0 as u32,
-            Either::Second(None_) => 0,
-        };
-    }
-
-    ${impl_simple_copy('_webkit_line_clamp', 'mLineClamp')}
-
-    #[allow(non_snake_case)]
-    pub fn clone__webkit_line_clamp(&self) -> longhands::_webkit_line_clamp::computed_value::T {
-        match self.gecko.mLineClamp {
-            0 => Either::Second(None_),
-            n => {
-                debug_assert!(n <= std::i32::MAX as u32);
-                Either::First((n as i32).into())
-            }
-        }
-    }
-
 </%self:impl_trait>
 
 <%def name="simple_image_array_property(name, shorthand, field_name)">
@@ -2009,9 +1678,33 @@ mask-mode mask-repeat mask-clip mask-origin mask-composite mask-position-x mask-
         }
     }
 
-    <% impl_non_negative_length("column_rule_width", "mColumnRuleWidth",
+    pub fn set_column_rule_style(&mut self, v: longhands::column_rule_style::computed_value::T) {
+        self.gecko.mColumnRuleStyle = v;
+        // NB: This is needed to correctly handling the initial value of
+        // column-rule-width when colun-rule-style changes, see the
+        // update_border_${side.ident} comment for more details.
+        self.gecko.mActualColumnRuleWidth = self.gecko.mColumnRuleWidth;
+    }
+
+    pub fn copy_column_rule_style_from(&mut self, other: &Self) {
+        self.set_column_rule_style(other.gecko.mColumnRuleStyle);
+    }
+
+    pub fn reset_column_rule_style(&mut self, other: &Self) {
+        self.copy_column_rule_style_from(other)
+    }
+
+    pub fn clone_column_rule_style(&self) -> longhands::column_rule_style::computed_value::T {
+        self.gecko.mColumnRuleStyle.clone()
+    }
+
+    <% impl_non_negative_length("column_rule_width", "mActualColumnRuleWidth",
+                                inherit_from="mColumnRuleWidth",
                                 round_to_pixels=True) %>
-    ${impl_simple('column_rule_style', 'mColumnRuleStyle')}
+
+    pub fn column_rule_has_nonzero_width(&self) -> bool {
+        self.gecko.mActualColumnRuleWidth != 0
+    }
 </%self:impl_trait>
 
 <%self:impl_trait style_struct_name="Counters">
@@ -2020,7 +1713,203 @@ mask-mode mask-repeat mask-clip mask-origin mask-composite mask-position-x mask-
     }
 </%self:impl_trait>
 
-<%self:impl_trait style_struct_name="UI">
+<% skip_ui_longhands = """animation-name animation-delay animation-duration
+                          animation-direction animation-fill-mode
+                          animation-play-state animation-iteration-count
+                          animation-timing-function animation-composition animation-timeline
+                          transition-duration transition-delay
+                          transition-timing-function transition-property
+                          scroll-timeline-name scroll-timeline-axis
+                          view-timeline-name view-timeline-axis view-timeline-inset""" %>
+
+<%self:impl_trait style_struct_name="UI" skip_longhands="${skip_ui_longhands}">
+    ${impl_coordinated_property('transition', 'delay', 'Delay')}
+    ${impl_coordinated_property('transition', 'duration', 'Duration')}
+    ${impl_coordinated_property('transition', 'timing_function', 'TimingFunction')}
+
+    pub fn transition_combined_duration_at(&self, index: usize) -> Time {
+        // https://drafts.csswg.org/css-transitions/#transition-combined-duration
+        Time::from_seconds(
+            self.transition_duration_at(index).seconds().max(0.0) +
+            self.transition_delay_at(index).seconds()
+        )
+    }
+
+    pub fn set_transition_property<I>(&mut self, v: I)
+    where
+        I: IntoIterator<Item = longhands::transition_property::computed_value::single_value::T>,
+        I::IntoIter: ExactSizeIterator
+    {
+        use crate::gecko_bindings::structs::nsCSSPropertyID::eCSSPropertyExtra_no_properties;
+        use crate::gecko_bindings::structs::nsCSSPropertyID::eCSSPropertyExtra_variable;
+        use crate::gecko_bindings::structs::nsCSSPropertyID::eCSSProperty_UNKNOWN;
+
+        let v = v.into_iter();
+
+        if v.len() != 0 {
+            self.gecko.mTransitions.ensure_len(v.len());
+            self.gecko.mTransitionPropertyCount = v.len() as u32;
+            for (servo, gecko) in v.zip(self.gecko.mTransitions.iter_mut()) {
+                unsafe { gecko.mUnknownProperty.clear() };
+
+                match servo {
+                    TransitionProperty::Unsupported(ident) => {
+                        gecko.mProperty = eCSSProperty_UNKNOWN;
+                        gecko.mUnknownProperty.mRawPtr = ident.0.into_addrefed();
+                    },
+                    TransitionProperty::Custom(name) => {
+                        gecko.mProperty = eCSSPropertyExtra_variable;
+                        gecko.mUnknownProperty.mRawPtr = name.into_addrefed();
+                    }
+                    _ => gecko.mProperty = servo.to_nscsspropertyid().unwrap(),
+                }
+            }
+        } else {
+            // In gecko |none| is represented by eCSSPropertyExtra_no_properties.
+            self.gecko.mTransitionPropertyCount = 1;
+            self.gecko.mTransitions[0].mProperty = eCSSPropertyExtra_no_properties;
+        }
+    }
+
+    /// Returns whether there are any transitions specified.
+    pub fn specifies_transitions(&self) -> bool {
+        use crate::gecko_bindings::structs::nsCSSPropertyID::eCSSPropertyExtra_all_properties;
+        if self.gecko.mTransitionPropertyCount == 1 &&
+            self.gecko.mTransitions[0].mProperty == eCSSPropertyExtra_all_properties &&
+            self.transition_combined_duration_at(0).seconds() <= 0.0f32 {
+            return false;
+        }
+
+        self.gecko.mTransitionPropertyCount > 0
+    }
+
+    pub fn transition_property_at(&self, index: usize)
+        -> longhands::transition_property::computed_value::SingleComputedValue {
+        use crate::gecko_bindings::structs::nsCSSPropertyID::eCSSPropertyExtra_no_properties;
+        use crate::gecko_bindings::structs::nsCSSPropertyID::eCSSPropertyExtra_variable;
+        use crate::gecko_bindings::structs::nsCSSPropertyID::eCSSProperty_UNKNOWN;
+
+        let property = self.gecko.mTransitions[index].mProperty;
+        if property == eCSSProperty_UNKNOWN {
+            let atom = self.gecko.mTransitions[index].mUnknownProperty.mRawPtr;
+            debug_assert!(!atom.is_null());
+            TransitionProperty::Unsupported(CustomIdent(unsafe{
+                Atom::from_raw(atom)
+            }))
+        } else if property == eCSSPropertyExtra_variable {
+            let atom = self.gecko.mTransitions[index].mUnknownProperty.mRawPtr;
+            debug_assert!(!atom.is_null());
+            TransitionProperty::Custom(unsafe{
+                Atom::from_raw(atom)
+            })
+        } else if property == eCSSPropertyExtra_no_properties {
+            // Actually, we don't expect TransitionProperty::Unsupported also
+            // represents "none", but if the caller wants to convert it, it is
+            // fine. Please use it carefully.
+            //
+            // FIXME(emilio): This is a hack, is this reachable?
+            TransitionProperty::Unsupported(CustomIdent(atom!("none")))
+        } else {
+            property.into()
+        }
+    }
+
+    pub fn transition_nscsspropertyid_at(&self, index: usize) -> nsCSSPropertyID {
+        self.gecko.mTransitions[index].mProperty
+    }
+
+    pub fn copy_transition_property_from(&mut self, other: &Self) {
+        use crate::gecko_bindings::structs::nsCSSPropertyID::eCSSPropertyExtra_variable;
+        use crate::gecko_bindings::structs::nsCSSPropertyID::eCSSProperty_UNKNOWN;
+        self.gecko.mTransitions.ensure_len(other.gecko.mTransitions.len());
+
+        let count = other.gecko.mTransitionPropertyCount;
+        self.gecko.mTransitionPropertyCount = count;
+
+        for (index, transition) in self.gecko.mTransitions.iter_mut().enumerate().take(count as usize) {
+            transition.mProperty = other.gecko.mTransitions[index].mProperty;
+            unsafe { transition.mUnknownProperty.clear() };
+            if transition.mProperty == eCSSProperty_UNKNOWN ||
+               transition.mProperty == eCSSPropertyExtra_variable {
+                let atom = other.gecko.mTransitions[index].mUnknownProperty.mRawPtr;
+                debug_assert!(!atom.is_null());
+                transition.mUnknownProperty.mRawPtr = unsafe { Atom::from_raw(atom) }.into_addrefed();
+            }
+        }
+    }
+
+    pub fn reset_transition_property(&mut self, other: &Self) {
+        self.copy_transition_property_from(other)
+    }
+
+    ${impl_coordinated_property_count('transition', 'property', 'Property')}
+
+    pub fn animations_equals(&self, other: &Self) -> bool {
+        return self.gecko.mAnimationNameCount == other.gecko.mAnimationNameCount
+            && self.gecko.mAnimationDelayCount == other.gecko.mAnimationDelayCount
+            && self.gecko.mAnimationDirectionCount == other.gecko.mAnimationDirectionCount
+            && self.gecko.mAnimationDurationCount == other.gecko.mAnimationDurationCount
+            && self.gecko.mAnimationFillModeCount == other.gecko.mAnimationFillModeCount
+            && self.gecko.mAnimationIterationCountCount == other.gecko.mAnimationIterationCountCount
+            && self.gecko.mAnimationPlayStateCount == other.gecko.mAnimationPlayStateCount
+            && self.gecko.mAnimationTimingFunctionCount == other.gecko.mAnimationTimingFunctionCount
+            && self.gecko.mAnimationCompositionCount == other.gecko.mAnimationCompositionCount
+            && self.gecko.mAnimationTimelineCount == other.gecko.mAnimationTimelineCount
+            && unsafe { bindings::Gecko_StyleAnimationsEquals(&self.gecko.mAnimations, &other.gecko.mAnimations) }
+    }
+
+    pub fn set_animation_name<I>(&mut self, v: I)
+    where
+        I: IntoIterator<Item = longhands::animation_name::computed_value::single_value::T>,
+        I::IntoIter: ExactSizeIterator
+    {
+        let v = v.into_iter();
+        debug_assert_ne!(v.len(), 0);
+        self.gecko.mAnimations.ensure_len(v.len());
+
+        self.gecko.mAnimationNameCount = v.len() as u32;
+        for (servo, gecko) in v.zip(self.gecko.mAnimations.iter_mut()) {
+            let atom = servo.0.as_atom().clone();
+            unsafe { bindings::Gecko_SetAnimationName(gecko, atom.into_addrefed()); }
+        }
+    }
+    pub fn animation_name_at(&self, index: usize)
+        -> longhands::animation_name::computed_value::SingleComputedValue {
+        use crate::properties::longhands::animation_name::single_value::SpecifiedValue as AnimationName;
+
+        let atom = self.gecko.mAnimations[index].mName.mRawPtr;
+        AnimationName(KeyframesName::from_atom(unsafe { Atom::from_raw(atom) }))
+    }
+    pub fn copy_animation_name_from(&mut self, other: &Self) {
+        self.gecko.mAnimationNameCount = other.gecko.mAnimationNameCount;
+        unsafe { bindings::Gecko_CopyAnimationNames(&mut self.gecko.mAnimations, &other.gecko.mAnimations); }
+    }
+
+    pub fn reset_animation_name(&mut self, other: &Self) {
+        self.copy_animation_name_from(other)
+    }
+
+    ${impl_coordinated_property_count('animation', 'name', 'Name')}
+    ${impl_coordinated_property('animation', 'delay', 'Delay')}
+    ${impl_coordinated_property('animation', 'duration', 'Duration')}
+    ${impl_animation_keyword('direction', 'Direction',
+                             data.longhands_by_name["animation-direction"].keyword)}
+    ${impl_animation_keyword('fill_mode', 'FillMode',
+                             data.longhands_by_name["animation-fill-mode"].keyword)}
+    ${impl_animation_keyword('play_state', 'PlayState',
+                             data.longhands_by_name["animation-play-state"].keyword)}
+    ${impl_animation_keyword('composition', 'Composition',
+                             data.longhands_by_name["animation-composition"].keyword)}
+    ${impl_coordinated_property('animation', 'iteration_count', 'IterationCount')}
+    ${impl_coordinated_property('animation', 'timeline', 'Timeline')}
+    ${impl_coordinated_property('animation', 'timing_function', 'TimingFunction')}
+
+    ${impl_coordinated_property('scroll_timeline', 'name', 'Name')}
+    ${impl_coordinated_property('scroll_timeline', 'axis', 'Axis')}
+
+    ${impl_coordinated_property('view_timeline', 'name', 'Name')}
+    ${impl_coordinated_property('view_timeline', 'axis', 'Axis')}
+    ${impl_coordinated_property('view_timeline', 'inset', 'Inset')}
 </%self:impl_trait>
 
 <%self:impl_trait style_struct_name="XUL">
@@ -2048,6 +1937,7 @@ pub fn assert_initial_values_match(data: &PerDocumentStyleData) {
                 "border-bottom-width",
                 "border-left-width",
                 "border-right-width",
+                "column-rule-width",
                 "font-family",
                 "font-size",
                 "outline-width",

@@ -72,14 +72,12 @@ void FuzzProtocol(T* aProtocol, const uint8_t* aData, size_t aSize,
         if (shmem_size > aSize) {
           break;
         }
-        RefPtr<Shmem::SharedMemory> segment(
-            Shmem::Alloc(Shmem::PrivateIPDLCaller(), shmem_size,
-                         SharedMemory::TYPE_BASIC, false));
+        RefPtr<Shmem::SharedMemory> segment(Shmem::Alloc(shmem_size, false));
         if (!segment) {
           break;
         }
 
-        Shmem shmem(Shmem::PrivateIPDLCaller(), segment.get(), i + 1);
+        Shmem shmem(segment.get(), i + 1);
         memcpy(shmem.get<uint8_t>(), aData, shmem_size);
         ProtocolFuzzerHelper::AddShmemToProtocol(
             aProtocol, segment.forget().take(), i + 1);
@@ -94,13 +92,13 @@ void FuzzProtocol(T* aProtocol, const uint8_t* aData, size_t aSize,
 
     if (m.is_sync()) {
       UniquePtr<IPC::Message> reply;
-      aProtocol->OnMessageReceived(m, *getter_Transfers(reply));
+      aProtocol->OnMessageReceived(m, reply);
     } else {
       aProtocol->OnMessageReceived(m);
     }
     for (uint32_t i = 0; i < num_shmems; i++) {
       Shmem::SharedMemory* segment = aProtocol->LookupSharedMemory(i + 1);
-      Shmem::Dealloc(Shmem::PrivateIPDLCaller(), segment);
+      Shmem::Dealloc(segment);
       ProtocolFuzzerHelper::RemoveShmemFromProtocol(aProtocol, i + 1);
     }
   }

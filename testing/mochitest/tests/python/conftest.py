@@ -2,20 +2,30 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-import six
 import json
 import os
 from argparse import Namespace
 
-import pytest
-
 import mozinfo
+import pytest
+import six
 from manifestparser import TestManifest, expression
 from moztest.selftest.fixtures import binary_fixture, setup_test_harness  # noqa
 
 here = os.path.abspath(os.path.dirname(__file__))
 setup_args = [os.path.join(here, "files"), "mochitest", "testing/mochitest"]
+
+
+@pytest.fixture
+def create_manifest(tmpdir, build_obj):
+    def inner(string, name="manifest.ini"):
+        manifest = tmpdir.join(name)
+        manifest.write(string, ensure=True)
+        # pylint --py3k: W1612
+        path = six.text_type(manifest)
+        return TestManifest(manifests=(path,), strict=False, rootdir=tmpdir.strpath)
+
+    return inner
 
 
 @pytest.fixture(scope="function")

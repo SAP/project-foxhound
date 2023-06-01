@@ -56,6 +56,7 @@ gifski -o four-colors-flip.gif four-colors*.png
 ```
 ffmpeg -i four-colors-flip.gif -vcodec libaom-av1 -crf 16 four-colors-flip.mp4
 mp4box -add-image ref:primary:tk=1:samp=1 -ab avis -ab avif -ab miaf -brand avis four-colors-flip.mp4 -out four-colors-flip.avif
+mp4box -edits 1=r four-colors-flip.avif
 ```
 
 ### four-colors-limited-range-(420|422|444)-8bpc.avif
@@ -79,7 +80,10 @@ exiftool -Orientation=1 -n four-colors.jpg
 
 ### four-colors-limited-range-420-8bpc.jpg
 Used [Sqoosh.app](https://squoosh.app/) with MozJPEG compression and YUV
-channels.
+channels. exiftool was then used to add an orientation marker.
+```
+exiftool -Orientation=1 -n four-colors-limited-range-420-8bpc.jpg
+```
 
 ### four-colors.mp4
 Used a [custom tool](https://storage.googleapis.com/dalecurtis/avif2mp4.html) to convert four-colors.avif into a .mp4 file.

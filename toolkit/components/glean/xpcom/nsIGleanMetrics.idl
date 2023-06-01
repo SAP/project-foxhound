@@ -40,8 +40,13 @@ interface nsIGleanDatetime : nsISupports
 {
   /**
    * Set the datetime to the provided value, or the local now.
+   * The internal value will store the local timezone.
    *
-   * @param aValue The time value in milliseconds since epoch. Defaults to local now.
+   * Note: The metric's time_unit affects the resolution of the value, not the
+   *       unit of this function's parameter (which is always PRTime/nanos).
+   *
+   * @param aValue The (optional) time value as PRTime (nanoseconds since epoch).
+   *        Defaults to local now.
    */
   [optional_argc]
   void set([optional] in PRTime aValue);
@@ -61,7 +66,8 @@ interface nsIGleanDatetime : nsISupports
    * @param aPingName The (optional) name of the ping to retrieve the metric
    *        for. Defaults to the first value in `send_in_pings`.
    *
-   * @return value of the stored metric, or undefined if there is no value.
+   * @return value of the stored metric as a JS Date with timezone,
+   *         or undefined if there is no value.
    */
   [implicit_jscontext]
   jsval testGetValue([optional] in AUTF8String aPingName);
@@ -146,7 +152,18 @@ interface nsIGleanTimingDistribution : nsISupports
    * @return value of the stored metric, or undefined if there is no value.
    */
   [implicit_jscontext]
-	jsval testGetValue([optional] in ACString aPingName);
+  jsval testGetValue([optional] in ACString aPingName);
+
+  /**
+   * **Test-only API**
+   *
+   * Accumulates a raw numeric sample of milliseconds.
+   *
+   * Test-only until we find a use-case and decent JS Time Duration type.
+   *
+   * @param aSample The sample, in milliseconds, to add.
+   */
+  void testAccumulateRawMillis(in uint64_t aSample);
 };
 
 [scriptable, uuid(eea5ed46-16ba-46cd-bb1f-504581987fe1)]
@@ -161,7 +178,7 @@ interface nsIGleanMemoryDistribution : nsISupports
    * Notes: Values bigger than 1 Terabyte (2^40 bytes) are truncated and an
    * InvalidValue error is recorded.
    */
-	void accumulate(in uint64_t aSample);
+  void accumulate(in uint64_t aSample);
 
   /**
    * **Test-only API**
@@ -181,7 +198,7 @@ interface nsIGleanMemoryDistribution : nsISupports
    * @return value of the stored metric, or undefined if there is no value.
    */
   [implicit_jscontext]
-	jsval testGetValue([optional] in ACString aPingName);
+  jsval testGetValue([optional] in ACString aPingName);
 };
 
 [scriptable, uuid(45cc016f-c1d5-4d54-aaa5-a802cf65f23b)]
@@ -246,7 +263,7 @@ interface nsIGleanPing : nsISupports
    * @param aReason - Optional. The reason the ping is being submitted.
    *                  Must match one of the configured `reason_codes`.
    */
-	void submit([optional] in ACString aReason);
+  void submit([optional] in ACString aReason);
 
   /**
    * **Test-only API**
@@ -599,6 +616,37 @@ interface nsIGleanRate : nsISupports
    * **Test-only API**
    *
    * Gets the currently stored value in the form {numerator: n, denominator: d}
+   *
+   * This function will attempt to await the last parent-process task (if any)
+   * writing to the the metric's storage engine before returning a value.
+   * This function will not wait for data from child processes.
+   *
+   * This doesn't clear the stored value.
+   * Parent process only. Panics in child processes.
+   *
+   * @param aPingName The (optional) name of the ping to retrieve the metric
+   *        for. Defaults to the first value in `send_in_pings`.
+   *
+   * @return value of the stored metric, or undefined if there is no value.
+   */
+  [implicit_jscontext]
+  jsval testGetValue([optional] in AUTF8String aPingName);
+};
+
+[scriptable, uuid(a59672c4-bc48-4bfe-8f9c-6f408a59d819)]
+interface nsIGleanUrl : nsISupports
+{
+  /*
+  * Sets to the specified stringified URL.
+  *
+  * @param value The stringified URL to set the metric to.
+  */
+  void set(in AUTF8String value);
+
+  /**
+   * **Test-only API**
+   *
+   * Gets the currently stored value as a string.
    *
    * This function will attempt to await the last parent-process task (if any)
    * writing to the the metric's storage engine before returning a value.

@@ -17,6 +17,8 @@ typedef struct _XDisplay Display;
 #endif  // MOZ_X11
 
 class gfxPlatformGtk final : public gfxPlatform {
+  friend class gfxPlatform;
+
  public:
   gfxPlatformGtk();
   virtual ~gfxPlatformGtk();
@@ -48,32 +50,27 @@ class gfxPlatformGtk final : public gfxPlatform {
 
   void FontsPrefsChanged(const char* aPref) override;
 
-  // maximum number of fonts to substitute for a generic
-  uint32_t MaxGenericSubstitions();
-
   bool SupportsPluginDirectBitmapDrawing() override { return true; }
 
   bool AccelerateLayersByDefault() override;
 
-#ifdef MOZ_X11
-  already_AddRefed<mozilla::gfx::VsyncSource> CreateHardwareVsyncSource()
+  already_AddRefed<mozilla::gfx::VsyncSource> CreateGlobalHardwareVsyncSource()
       override;
-#endif
 
   bool IsX11Display() { return mIsX11Display; }
   bool IsWaylandDisplay() override {
     return !mIsX11Display && !gfxPlatform::IsHeadless();
   }
 
+  static bool CheckVariationFontSupport();
+
  protected:
   void InitX11EGLConfig();
   void InitDmabufConfig();
+  bool InitVAAPIConfig(bool aForceEnabledByUser);
   void InitPlatformGPUProcessPrefs() override;
   void InitWebRenderConfig() override;
-  bool CheckVariationFontSupport() override;
   void BuildContentDeviceData(mozilla::gfx::ContentDeviceData* aOut) override;
-
-  int8_t mMaxGenericSubstitutions;
 
  private:
   nsTArray<uint8_t> GetPlatformCMSOutputProfileData() override;

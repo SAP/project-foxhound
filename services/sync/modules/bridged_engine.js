@@ -14,23 +14,21 @@
  * for your subclass to wrap, and optionally implement and override the tracker.
  */
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-const { Changeset, SyncEngine, Tracker } = ChromeUtils.import(
+const { SyncEngine, Tracker } = ChromeUtils.import(
   "resource://services-sync/engines.js"
 );
 const { RawCryptoWrapper } = ChromeUtils.import(
   "resource://services-sync/record.js"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  Async: "resource://services-common/async.js",
-  Log: "resource://gre/modules/Log.jsm",
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  Log: "resource://gre/modules/Log.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
 });
 
-var EXPORTED_SYMBOLS = ["BridgedEngine", "LogAdapter"];
+var EXPORTED_SYMBOLS = ["BridgeWrapperXPCOM", "BridgedEngine", "LogAdapter"];
 
 /**
  * A stub store that converts between raw decrypted incoming records and
@@ -47,27 +45,27 @@ class BridgedStore {
       throw new Error("Store must be associated with an Engine instance.");
     }
     this.engine = engine;
-    this._log = Log.repository.getLogger(`Sync.Engine.${name}.Store`);
+    this._log = lazy.Log.repository.getLogger(`Sync.Engine.${name}.Store`);
     this._batchChunkSize = 500;
   }
 
   async applyIncomingBatch(records) {
-    for (let chunk of PlacesUtils.chunkArray(records, this._batchChunkSize)) {
+    for (let chunk of lazy.PlacesUtils.chunkArray(
+      records,
+      this._batchChunkSize
+    )) {
       let incomingEnvelopesAsJSON = chunk.map(record =>
-        JSON.stringify(record.toIncomingEnvelope())
+        JSON.stringify(record.toIncomingBso())
       );
       this._log.trace("incoming envelopes", incomingEnvelopesAsJSON);
-      await promisify(
-        this.engine._bridge.storeIncoming,
-        incomingEnvelopesAsJSON
-      );
+      await this.engine._bridge.storeIncoming(incomingEnvelopesAsJSON);
     }
     // Array of failed records.
     return [];
   }
 
   async wipe() {
-    await promisify(this.engine._bridge.wipe);
+    await this.engine._bridge.wipe();
   }
 }
 
@@ -81,23 +79,24 @@ class BridgedStore {
  */
 class BridgedRecord extends RawCryptoWrapper {
   /**
-   * Creates an outgoing record from an envelope returned by a bridged engine.
-   * This must be kept in sync with `sync15_traits::OutgoingEnvelope`.
+   * Creates an outgoing record from a BSO returned by a bridged engine.
    *
    * @param  {String} collection The collection name.
-   * @param  {Object} envelope   The outgoing envelope, returned from
-   *                             `mozIBridgedSyncEngine::apply`.
+   * @param  {Object} bso   The outgoing bso (ie, a sync15::bso::OutgoingBso) returned from
+   *                        `mozIBridgedSyncEngine::apply`.
    * @return {BridgedRecord}     A Sync record ready to encrypt and upload.
    */
-  static fromOutgoingEnvelope(collection, envelope) {
-    if (typeof envelope.id != "string") {
-      throw new TypeError("Outgoing envelope missing ID");
+  static fromOutgoingBso(collection, bso) {
+    // The BSO has already been JSON serialized coming out of Rust, so the
+    // envelope has been flattened.
+    if (typeof bso.id != "string") {
+      throw new TypeError("Outgoing BSO missing ID");
     }
-    if (typeof envelope.cleartext != "string") {
-      throw new TypeError("Outgoing envelope missing cleartext");
+    if (typeof bso.payload != "string") {
+      throw new TypeError("Outgoing BSO missing payload");
     }
-    let record = new BridgedRecord(collection, envelope.id);
-    record.cleartext = envelope.cleartext;
+    let record = new BridgedRecord(collection, bso.id);
+    record.cleartext = bso.payload;
     return record;
   }
 
@@ -117,16 +116,16 @@ class BridgedRecord extends RawCryptoWrapper {
 
   /*
    * Converts this incoming record into an envelope to pass to a bridged engine.
-   * This object must be kept in sync with `sync15_traits::IncomingEnvelope`.
+   * This object must be kept in sync with `sync15::IncomingBso`.
    *
    * @return {Object} The incoming envelope, to pass to
    *                  `mozIBridgedSyncEngine::storeIncoming`.
    */
-  toIncomingEnvelope() {
+  toIncomingBso() {
     return {
       id: this.data.id,
       modified: this.data.modified,
-      cleartext: this.cleartext,
+      payload: this.cleartext,
     };
   }
 }
@@ -151,7 +150,7 @@ class InterruptedError extends Error {
 }
 
 /**
- * Adapts a `Log.jsm` logger to a `mozIServicesLogSink`. This class is copied
+ * Adapts a `Log.sys.mjs` logger to a `mozIServicesLogSink`. This class is copied
  * from `SyncedBookmarksMirror.jsm`.
  */
 class LogAdapter {
@@ -161,16 +160,16 @@ class LogAdapter {
 
   get maxLevel() {
     let level = this.log.level;
-    if (level <= Log.Level.All) {
+    if (level <= lazy.Log.Level.All) {
       return Ci.mozIServicesLogSink.LEVEL_TRACE;
     }
-    if (level <= Log.Level.Info) {
+    if (level <= lazy.Log.Level.Info) {
       return Ci.mozIServicesLogSink.LEVEL_DEBUG;
     }
-    if (level <= Log.Level.Warn) {
+    if (level <= lazy.Log.Level.Warn) {
       return Ci.mozIServicesLogSink.LEVEL_WARN;
     }
-    if (level <= Log.Level.Error) {
+    if (level <= lazy.Log.Level.Error) {
       return Ci.mozIServicesLogSink.LEVEL_ERROR;
     }
     return Ci.mozIServicesLogSink.LEVEL_OFF;
@@ -193,11 +192,114 @@ class LogAdapter {
   }
 }
 
+// This converts the XPCOM-defined, callback-based mozIBridgedSyncEngine to
+// a promise-based implementation.
+class BridgeWrapperXPCOM {
+  constructor(component) {
+    this.comp = component;
+  }
+
+  // A few sync, non-callback based attributes.
+  get storageVersion() {
+    return this.comp.storageVersion;
+  }
+
+  get allowSkippedRecord() {
+    return this.comp.allowSkippedRecord;
+  }
+
+  get logger() {
+    return this.comp.logger;
+  }
+
+  // And the async functions we promisify.
+  // Note this is `lastSync` via uniffi but `getLastSync` via xpcom
+  lastSync() {
+    return BridgeWrapperXPCOM.#promisify(this.comp.getLastSync);
+  }
+
+  setLastSync(lastSyncMillis) {
+    return BridgeWrapperXPCOM.#promisify(this.comp.setLastSync, lastSyncMillis);
+  }
+
+  getSyncId() {
+    return BridgeWrapperXPCOM.#promisify(this.comp.getSyncId);
+  }
+
+  resetSyncId() {
+    return BridgeWrapperXPCOM.#promisify(this.comp.resetSyncId);
+  }
+
+  ensureCurrentSyncId(newSyncId) {
+    return BridgeWrapperXPCOM.#promisify(
+      this.comp.ensureCurrentSyncId,
+      newSyncId
+    );
+  }
+
+  syncStarted() {
+    return BridgeWrapperXPCOM.#promisify(this.comp.syncStarted);
+  }
+
+  storeIncoming(incomingEnvelopesAsJSON) {
+    return BridgeWrapperXPCOM.#promisify(
+      this.comp.storeIncoming,
+      incomingEnvelopesAsJSON
+    );
+  }
+
+  apply() {
+    return BridgeWrapperXPCOM.#promisify(this.comp.apply);
+  }
+
+  setUploaded(newTimestampMillis, uploadedIds) {
+    return BridgeWrapperXPCOM.#promisify(
+      this.comp.setUploaded,
+      newTimestampMillis,
+      uploadedIds
+    );
+  }
+
+  syncFinished() {
+    return BridgeWrapperXPCOM.#promisify(this.comp.syncFinished);
+  }
+
+  reset() {
+    return BridgeWrapperXPCOM.#promisify(this.comp.reset);
+  }
+
+  wipe() {
+    return BridgeWrapperXPCOM.#promisify(this.comp.wipe);
+  }
+
+  // Converts a XPCOM bridged function that takes a callback into one that returns a
+  // promise.
+  static #promisify(func, ...params) {
+    return new Promise((resolve, reject) => {
+      func(...params, {
+        // This object implicitly implements all three callback interfaces
+        // (`mozIBridgedSyncEngine{Apply, Result}Callback`), because they have
+        // the same methods. The only difference is the type of the argument
+        // passed to `handleSuccess`, which doesn't matter in JS.
+        handleSuccess: resolve,
+        handleError(code, message) {
+          reject(transformError(code, message));
+        },
+      });
+    });
+  }
+}
+
 /**
  * A base class used to plug a Rust engine into Sync, and have it work like any
  * other engine. The constructor takes a bridge as its first argument, which is
- * an instance of an XPCOM component class that implements
- * `mozIBridgedSyncEngine`.
+ * a "bridged sync engine", as defined by UniFFI in the application-services
+ * crate.
+ * For backwards compatibility, this can also be an instance of an XPCOM
+ * component class that implements `mozIBridgedSyncEngine`, wrapped in
+ * a `BridgeWrapperXPCOM` wrapper.
+ * (Note that at time of writing, the above is slightly aspirational; the
+ * actual definition of the UniFFI shared bridged engine is still in flux.)
  *
  * This class inherits from `SyncEngine`, which has a lot of machinery that we
  * don't need, but that's fairly easy to override. It would be harder to
@@ -210,15 +312,15 @@ class LogAdapter {
  * tracker is fine, because the shape of the `Tracker` interface may not make
  * sense for all engines.
  */
-function BridgedEngine(bridge, name, service) {
+function BridgedEngine(name, service) {
   SyncEngine.call(this, name, service);
-
-  this._bridge = bridge;
 }
 
 BridgedEngine.prototype = {
-  __proto__: SyncEngine.prototype,
-
+  /**
+   * The Rust implemented bridge. Must be set by the engine which subclasses us.
+   */
+  _bridge: null,
   /**
    * The tracker class for this engine. Subclasses may want to override this
    * with their own tracker, though using the default `Tracker` is fine.
@@ -275,7 +377,7 @@ BridgedEngine.prototype = {
   async getSyncID() {
     // Note that all methods on an XPCOM class instance are automatically bound,
     // so we don't need to write `this._bridge.getSyncId.bind(this._bridge)`.
-    let syncID = await promisify(this._bridge.getSyncId);
+    let syncID = await this._bridge.getSyncId();
     return syncID;
   },
 
@@ -286,30 +388,24 @@ BridgedEngine.prototype = {
   },
 
   async resetLocalSyncID() {
-    let newSyncID = await promisify(this._bridge.resetSyncId);
+    let newSyncID = await this._bridge.resetSyncId();
     return newSyncID;
   },
 
   async ensureCurrentSyncID(newSyncID) {
-    let assignedSyncID = await promisify(
-      this._bridge.ensureCurrentSyncId,
-      newSyncID
-    );
+    let assignedSyncID = await this._bridge.ensureCurrentSyncId(newSyncID);
     return assignedSyncID;
   },
 
   async getLastSync() {
     // The bridge defines lastSync as integer ms, but sync itself wants to work
     // in a float seconds with 2 decimal places.
-    let lastSyncMS = await promisify(this._bridge.getLastSync);
+    let lastSyncMS = await this._bridge.lastSync();
     return Math.round(lastSyncMS / 10) / 100;
   },
 
   async setLastSync(lastSyncSeconds) {
-    await promisify(
-      this._bridge.setLastSync,
-      Math.round(lastSyncSeconds * 1000)
-    );
+    await this._bridge.setLastSync(Math.round(lastSyncSeconds * 1000));
   },
 
   /**
@@ -323,7 +419,7 @@ BridgedEngine.prototype = {
   },
 
   async trackRemainingChanges() {
-    await promisify(this._bridge.syncFinished);
+    await this._bridge.syncFinished();
   },
 
   /**
@@ -345,19 +441,19 @@ BridgedEngine.prototype = {
 
   async _syncStartup() {
     await super._syncStartup();
-    await promisify(this._bridge.syncStarted);
+    await this._bridge.syncStarted();
   },
 
   async _processIncoming(newitems) {
     await super._processIncoming(newitems);
 
-    let outgoingEnvelopesAsJSON = await promisify(this._bridge.apply);
+    let outgoingBsosAsJSON = await this._bridge.apply();
     let changeset = {};
-    for (let envelopeAsJSON of outgoingEnvelopesAsJSON) {
-      this._log.trace("outgoing envelope", envelopeAsJSON);
-      let record = BridgedRecord.fromOutgoingEnvelope(
+    for (let bsoAsJSON of outgoingBsosAsJSON) {
+      this._log.trace("outgoing bso", bsoAsJSON);
+      let record = BridgedRecord.fromOutgoingBso(
         this.name,
-        JSON.parse(envelopeAsJSON)
+        JSON.parse(bsoAsJSON)
       );
       changeset[record.id] = {
         synced: false,
@@ -374,7 +470,9 @@ BridgedEngine.prototype = {
    * records from the outgoing table back to the mirror.
    */
   async _onRecordsWritten(succeeded, failed, serverModifiedTime) {
-    await promisify(this._bridge.setUploaded, serverModifiedTime, succeeded);
+    // JS uses seconds but Rust uses milliseconds so we'll need to convert
+    let serverModifiedMS = Math.round(serverModifiedTime * 1000);
+    await this._bridge.setUploaded(Math.floor(serverModifiedMS), succeeded);
   },
 
   async _createTombstone() {
@@ -391,9 +489,10 @@ BridgedEngine.prototype = {
 
   async _resetClient() {
     await super._resetClient();
-    await promisify(this._bridge.reset);
+    await this._bridge.reset();
   },
 };
+Object.setPrototypeOf(BridgedEngine.prototype, SyncEngine.prototype);
 
 function transformError(code, message) {
   switch (code) {
@@ -402,56 +501,5 @@ function transformError(code, message) {
 
     default:
       return new BridgeError(code, message);
-  }
-}
-
-// Converts a bridged function that takes a callback into one that returns a
-// promise.
-function promisify(func, ...params) {
-  return new Promise((resolve, reject) => {
-    func(...params, {
-      // This object implicitly implements all three callback interfaces
-      // (`mozIBridgedSyncEngine{Apply, Result}Callback`), because they have
-      // the same methods. The only difference is the type of the argument
-      // passed to `handleSuccess`, which doesn't matter in JS.
-      handleSuccess: resolve,
-      handleError(code, message) {
-        reject(transformError(code, message));
-      },
-    });
-  });
-}
-
-class BridgedChangeset extends Changeset {
-  // Only `_reconcile` calls `getModifiedTimestamp` and `has`, and the buffered
-  // engine does its own reconciliation.
-  getModifiedTimestamp(id) {
-    throw new Error("Don't use timestamps to resolve bridged engine conflicts");
-  }
-
-  has(id) {
-    throw new Error(
-      "Don't use the changeset to resolve bridged engine conflicts"
-    );
-  }
-
-  delete(id) {
-    let change = this.changes[id];
-    if (change) {
-      // Mark the change as synced without removing it from the set. Depending
-      // on how we implement `trackRemainingChanges`, this may not be necessary.
-      // It's copied from the bookmarks changeset now.
-      change.synced = true;
-    }
-  }
-
-  ids() {
-    let results = [];
-    for (let id in this.changes) {
-      if (!this.changes[id].synced) {
-        results.push(id);
-      }
-    }
-    return results;
   }
 }

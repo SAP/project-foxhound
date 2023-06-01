@@ -7,6 +7,7 @@
 #include "js/Conversions.h"
 #include "MediaData.h"
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/gtest/MozAssertions.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Tuple.h"
 #include "BufferStream.h"
@@ -315,7 +316,7 @@ TEST(MP4Metadata, test_case_mp4)
           << tests[test].mFilename;
       if (tests[test].mHasVideoIndice) {
         for (size_t i = 0; i < indices.Ref()->Length(); i++) {
-          Index::Indice data;
+          MP4SampleIndex::Indice data;
           EXPECT_TRUE(indices.Ref()->GetIndice(i, data))
               << tests[test].mFilename;
           EXPECT_TRUE(data.start_offset <= data.end_offset)
@@ -348,7 +349,7 @@ TEST(MP4Metadata, test_case_mp4)
           metadata.GetTrackIndice(audioInfo->mTrackId);
       EXPECT_TRUE(!!indices.Ref()) << tests[test].mFilename;
       for (size_t i = 0; i < indices.Ref()->Length(); i++) {
-        Index::Indice data;
+        MP4SampleIndex::Indice data;
         EXPECT_TRUE(indices.Ref()->GetIndice(i, data)) << tests[test].mFilename;
         EXPECT_TRUE(data.start_offset <= data.end_offset)
             << tests[test].mFilename;
@@ -807,7 +808,7 @@ TEST_F(MP4MetadataTelemetryFixture, Telemetry) {
 
     MP4Metadata metadata(stream);
     nsresult res = metadata.Parse();
-    EXPECT_TRUE(NS_SUCCEEDED(res));
+    EXPECT_NS_SUCCEEDED(res);
     auto audioTrackCount = metadata.GetNumberTracks(TrackInfo::kAudioTrack);
     ASSERT_NE(audioTrackCount.Ref(), MP4Metadata::NumberTracksError());
     auto videoTrackCount = metadata.GetNumberTracks(TrackInfo::kVideoTrack);
@@ -845,17 +846,17 @@ TEST_F(MP4MetadataTelemetryFixture, Telemetry) {
                       uint32_t>& aExpectedSampleDescriptionEntryCounts,
           const char* aFileName) {
         // Get a snapshot of the current histograms
-        JS::RootedValue snapshot(cx.GetJSContext());
+        JS::Rooted<JS::Value> snapshot(cx.GetJSContext());
         TelemetryTestHelpers::GetSnapshots(cx.GetJSContext(), mTelemetry,
                                            "" /* this string is unused */,
                                            &snapshot, false /* is_keyed */);
 
         // We'll use these to pull values out of the histograms.
-        JS::RootedValue values(cx.GetJSContext());
-        JS::RootedValue value(cx.GetJSContext());
+        JS::Rooted<JS::Value> values(cx.GetJSContext());
+        JS::Rooted<JS::Value> value(cx.GetJSContext());
 
         // Verify our multiple codecs count histogram.
-        JS::RootedValue multipleCodecsHistogram(cx.GetJSContext());
+        JS::Rooted<JS::Value> multipleCodecsHistogram(cx.GetJSContext());
         TelemetryTestHelpers::GetProperty(
             cx.GetJSContext(),
             "MEDIA_MP4_PARSE_SAMPLE_DESCRIPTION_ENTRIES_HAVE_MULTIPLE_CODECS",
@@ -880,7 +881,7 @@ TEST_F(MP4MetadataTelemetryFixture, Telemetry) {
             << aFileName;
 
         // Verify our multiple crypto count histogram.
-        JS::RootedValue multipleCryptoHistogram(cx.GetJSContext());
+        JS::Rooted<JS::Value> multipleCryptoHistogram(cx.GetJSContext());
         TelemetryTestHelpers::GetProperty(
             cx.GetJSContext(),
             "MEDIA_MP4_PARSE_SAMPLE_DESCRIPTION_ENTRIES_HAVE_MULTIPLE_CRYPTO",
@@ -904,7 +905,7 @@ TEST_F(MP4MetadataTelemetryFixture, Telemetry) {
             << aFileName;
 
         // Verify our sample description entry count histogram.
-        JS::RootedValue numSamplesHistogram(cx.GetJSContext());
+        JS::Rooted<JS::Value> numSamplesHistogram(cx.GetJSContext());
         TelemetryTestHelpers::GetProperty(
             cx.GetJSContext(), "MEDIA_MP4_PARSE_NUM_SAMPLE_DESCRIPTION_ENTRIES",
             snapshot, &numSamplesHistogram);

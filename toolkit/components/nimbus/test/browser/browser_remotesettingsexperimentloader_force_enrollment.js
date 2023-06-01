@@ -9,9 +9,6 @@ const { RemoteSettings } = ChromeUtils.import(
 const { RemoteSettingsExperimentLoader } = ChromeUtils.import(
   "resource://nimbus/lib/RemoteSettingsExperimentLoader.jsm"
 );
-const { BrowserTestUtils } = ChromeUtils.import(
-  "resource://testing-common/BrowserTestUtils.jsm"
-);
 const { ExperimentFakes } = ChromeUtils.import(
   "resource://testing-common/NimbusTestUtils.jsm"
 );
@@ -21,7 +18,7 @@ const { ExperimentManager } = ChromeUtils.import(
 
 async function setup(recipes) {
   const client = RemoteSettings("nimbus-desktop-experiments");
-  await client.db.importChanges({}, 42, recipes, {
+  await client.db.importChanges({}, Date.now(), recipes, {
     clear: true,
   });
 
@@ -37,10 +34,12 @@ async function setup(recipes) {
   return client;
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["messaging-system.log", "all"],
+      ["datareporting.healthreport.uploadEnabled", true],
+      ["app.shield.optoutstudies.enabled", true],
       ["nimbus.debug", true],
     ],
   });

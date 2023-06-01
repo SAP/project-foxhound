@@ -12,10 +12,11 @@ import enum
 import json
 
 import jinja2
-
-from util import generate_metric_ids, generate_ping_ids, get_metrics
 from glean_parser import util
-from glean_parser.metrics import Rate
+from glean_parser.metrics import CowString, Event, Rate
+from util import generate_metric_ids, generate_ping_ids, get_metrics
+
+from js import ID_BITS, ID_SIGNAL_BITS
 
 # The list of all args to CommonMetricData.
 # No particular order is required, but I have these in common_metric_data.rs
@@ -52,25 +53,42 @@ def rust_datatypes_filter(value):
             elif isinstance(value, enum.Enum):
                 yield (value.__class__.__name__ + "::" + util.Camelize(value.name))
             elif isinstance(value, set):
-                yield "vec!["
-                first = True
-                for subvalue in sorted(list(value)):
-                    if not first:
-                        yield ", "
-                    yield from self.iterencode(subvalue)
-                    first = False
-                yield "]"
+                yield from self.iterencode(sorted(list(value)))
             elif isinstance(value, list):
-                yield "vec!["
-                first = True
-                for subvalue in list(value):
-                    if not first:
-                        yield ", "
-                    yield from self.iterencode(subvalue)
-                    first = False
-                yield "]"
+                if len(value) > 8 and all(isinstance(v, str) for v in value):
+                    # For large enough sets and lists of strings, we use a single string
+                    # with an array of lengths and convert to a Vec at runtime. This yields
+                    # smaller code, data, and relocations than using vec![].
+                    yield "{"
+                    yield f"""const S: &'static str = "{"".join(value)}";"""
+                    lengths = [len(v) for v in value]
+                    largest = max(lengths)
+                    # Use a type adequate for the largest string.
+                    # In most cases, this will be u8.
+                    len_type = f"u{((largest.bit_length() + 7) // 8) * 8}"
+                    yield f"const LENGTHS: [{len_type}; {len(lengths)}] = {lengths};"
+                    yield "let mut offset = 0;"
+                    yield "LENGTHS.iter().map(|len| {"
+                    yield "  let start = offset;"
+                    yield "  offset += *len as usize;"
+                    yield "  S[start..offset].into()"
+                    yield "}).collect()"
+                    yield "}"
+                else:
+                    yield "vec!["
+                    first = True
+                    for subvalue in list(value):
+                        if not first:
+                            yield ", "
+                        yield from self.iterencode(subvalue)
+                        first = False
+                    yield "]"
             elif value is None:
                 yield "None"
+            # CowString is also a 'str' but is a special case.
+            # Ensure its case is handled before str's (below).
+            elif isinstance(value, CowString):
+                yield f'::std::borrow::Cow::from("{value.inner}")'
             elif isinstance(value, str):
                 yield '"' + value + '".into()'
             elif isinstance(value, Rate):
@@ -108,7 +126,7 @@ def type_name(obj):
     generate_enums = getattr(obj, "_generate_enums", [])  # Extra Keys? Reasons?
     if len(generate_enums):
         for name, suffix in generate_enums:
-            if not len(getattr(obj, name)) and suffix == "Keys":
+            if not len(getattr(obj, name)) and isinstance(obj, Event):
                 return class_name(obj.type) + "<NoExtraKeys>"
             else:
                 # we always use the `extra` suffix,
@@ -153,13 +171,15 @@ def extra_keys(allowed_extra_keys):
     return "&[" + ", ".join(map(lambda key: '"' + key + '"', allowed_extra_keys)) + "]"
 
 
-def output_rust(objs, output_fd, options={}):
+def output_rust(objs, output_fd, ping_names_by_app_id, options={}):
     """
     Given a tree of objects, output Rust code to the file-like object `output_fd`.
 
     :param objs: A tree of objects (metrics and pings) as returned from
     `parser.parse_objects`.
     :param output_fd: Writeable file to write the output to.
+    :param ping_names_by_app_id: A map of app_ids to lists of ping names.
+                                 Used to determine which custom pings to register.
     :param options: options dictionary, presently unused.
     """
 
@@ -252,7 +272,8 @@ def output_rust(objs, output_fd, options={}):
             metric_by_type=objs_by_type,
             extra_args=util.extra_args,
             events_by_id=events_by_id,
-            min_submetric_id=2 ** 27 + 1,  # One more than 2**ID_BITS from js.py
+            submetric_bit=ID_BITS - ID_SIGNAL_BITS,
+            ping_names_by_app_id=ping_names_by_app_id,
         )
     )
     output_fd.write("\n")

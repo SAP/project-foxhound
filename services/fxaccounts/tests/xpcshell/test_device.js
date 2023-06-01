@@ -3,15 +3,18 @@
 
 "use strict";
 
-const { fxAccounts } = ChromeUtils.import(
+const { getFxAccountsSingleton } = ChromeUtils.import(
   "resource://gre/modules/FxAccounts.jsm"
 );
+const fxAccounts = getFxAccountsSingleton();
 
 const { PREF_ACCOUNT_ROOT } = ChromeUtils.import(
   "resource://gre/modules/FxAccountsCommon.js"
 );
 
 _("Misc tests for FxAccounts.device");
+
+fxAccounts.device._checkRemoteCommandsUpdateNeeded = async () => false;
 
 add_test(function test_default_device_name() {
   // Note that head_helpers overrides getDefaultLocalName - this test is
@@ -20,17 +23,14 @@ add_test(function test_default_device_name() {
   // We are just hoping to avoid a repeat of bug 1369285.
   let def = fxAccounts.device.getDefaultLocalName(); // make sure it doesn't throw.
   _("default value is " + def);
-  ok(def.length > 0);
+  ok(!!def.length);
 
   // This is obviously tied to the implementation, but we want early warning
   // if any of these things fail.
   // We really want one of these 2 to provide a value.
-  let hostname =
-    Services.sysinfo.get("device") ||
-    Cc["@mozilla.org/network/dns-service;1"].getService(Ci.nsIDNSService)
-      .myHostName;
+  let hostname = Services.sysinfo.get("device") || Services.dns.myHostName;
   _("hostname is " + hostname);
-  ok(hostname.length > 0);
+  ok(!!hostname.length);
   // the hostname should be in the default.
   ok(def.includes(hostname));
   // We expect the following to work as a fallback to the above.
@@ -38,7 +38,7 @@ add_test(function test_default_device_name() {
     Ci.nsIHttpProtocolHandler
   ).oscpu;
   _("UA fallback is " + fallback);
-  ok(fallback.length > 0);
+  ok(!!fallback.length);
   // the fallback should not be in the default
   ok(!def.includes(fallback));
 

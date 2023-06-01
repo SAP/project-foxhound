@@ -1669,6 +1669,8 @@ pub const PRIO_PROCESS: ::c_int = 0;
 pub const PRIO_PGRP: ::c_int = 1;
 pub const PRIO_USER: ::c_int = 2;
 
+pub const SOMAXCONN: ::c_int = 128;
+
 f! {
     pub fn CMSG_NXTHDR(mhdr: *const msghdr,
                        cmsg: *const cmsghdr) -> *mut cmsghdr {
@@ -1738,8 +1740,10 @@ f! {
         minor |= (dev & 0xffffff00) >> 12;
         minor as ::c_uint
     }
+}
 
-    pub fn makedev(major: ::c_uint, minor: ::c_uint) -> ::dev_t {
+safe_f! {
+    pub {const} fn makedev(major: ::c_uint, minor: ::c_uint) -> ::dev_t {
         let major = major as ::dev_t;
         let minor = minor as ::dev_t;
         let mut dev = 0;
@@ -1759,7 +1763,6 @@ extern "C" {
     pub fn strerror_r(errnum: ::c_int, buf: *mut c_char, buflen: ::size_t) -> ::c_int;
 
     pub fn abs(i: ::c_int) -> ::c_int;
-    pub fn atof(s: *const ::c_char) -> ::c_double;
     pub fn labs(i: ::c_long) -> ::c_long;
     pub fn rand() -> ::c_int;
     pub fn srand(seed: ::c_uint);

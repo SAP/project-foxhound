@@ -1,6 +1,9 @@
-let { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-let { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+// In an SJS file we need to get NetUtil ourselves, despite
+// what eslint might think applies for browser tests.
+// eslint-disable-next-line mozilla/no-redeclare-with-import-autofix
 let { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+
+Cu.importGlobalProperties(["IOUtils", "PathUtils"]);
 
 const RELATIVE_PATH = "browser/toolkit/mozapps/extensions/test/xpinstall";
 const NOTIFICATION_TOPIC = "slowinstall-complete";
@@ -21,7 +24,7 @@ function parseQueryString(aQueryString) {
   for (var i = 0, sz = paramArray.length; i < sz; i++) {
     var match = regex.exec(paramArray[i]);
     if (!match) {
-      throw "Bad parameter in queryString!  '" + paramArray[i] + "'";
+      throw new Error("Bad parameter in queryString!  '" + paramArray[i] + "'");
     }
     params[decodeURIComponent(match[1])] = decodeURIComponent(match[2]);
   }
@@ -49,10 +52,9 @@ function handleRequest(aRequest, aResponse) {
 
     function complete_download() {
       LOG("Completing download");
-      downloadPaused = false;
 
       try {
-        // Doesn't seem to be a sane way to read using OS.File and write to an
+        // Doesn't seem to be a sane way to read using IOUtils and write to an
         // nsIOutputStream so here we are.
         let file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
         file.initWithPath(xpiFile);
@@ -81,17 +83,16 @@ function handleRequest(aRequest, aResponse) {
 
     aResponse.processAsync();
 
-    OS.File.getCurrentDirectory().then(dir => {
-      xpiFile = OS.Path.join(dir, ...RELATIVE_PATH.split("/"), params.file);
-      LOG("Starting slow download of " + xpiFile);
+    const dir = Services.dirsvc.get("CurWorkD", Ci.nsIFile).path;
+    xpiFile = PathUtils.join(dir, ...RELATIVE_PATH.split("/"), params.file);
+    LOG("Starting slow download of " + xpiFile);
 
-      OS.File.stat(xpiFile).then(info => {
-        aResponse.setHeader("Content-Type", "binary/octet-stream");
-        aResponse.setHeader("Content-Length", info.size.toString());
+    IOUtils.stat(xpiFile).then(info => {
+      aResponse.setHeader("Content-Type", "binary/octet-stream");
+      aResponse.setHeader("Content-Length", info.size.toString());
 
-        LOG("Download paused");
-        waitForComplete.then(complete_download);
-      });
+      LOG("Download paused");
+      waitForComplete.then(complete_download);
     });
   } else if (params.continue) {
     dump(

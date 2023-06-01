@@ -7,7 +7,7 @@
 #ifndef mozilla_widget_ScrollbarDrawing_h
 #define mozilla_widget_ScrollbarDrawing_h
 
-#include "mozilla/EventStates.h"
+#include "mozilla/dom/RustTypes.h"
 #include "mozilla/gfx/2D.h"
 #include "nsColor.h"
 #include "nsITheme.h"
@@ -17,40 +17,37 @@
 
 namespace mozilla::widget {
 
-static constexpr gfx::sRGBColor sScrollbarColor(
-    gfx::sRGBColor::UnusualFromARGB(0xfff0f0f0));
-static constexpr gfx::sRGBColor sScrollbarThumbColor(
-    gfx::sRGBColor::UnusualFromARGB(0xffcdcdcd));
-
 class ScrollbarDrawing {
  protected:
   using DPIRatio = mozilla::CSSToLayoutDeviceScale;
-  using EventStates = mozilla::EventStates;
+  using ElementState = dom::ElementState;
+  using DocumentState = dom::DocumentState;
   using DrawTarget = mozilla::gfx::DrawTarget;
   using sRGBColor = mozilla::gfx::sRGBColor;
   using Colors = ThemeColors;
-  using ScrollbarSizes = nsITheme::ScrollbarSizes;
   using Overlay = nsITheme::Overlay;
   using WebRenderBackendData = mozilla::widget::WebRenderBackendData;
 
- public:
-  ScrollbarDrawing() = default;
-  virtual ~ScrollbarDrawing() = default;
-
-  struct ScrollbarParams {
-    bool isOverlay = false;
-    bool isRolledOver = false;
-    bool isSmall = false;
-    bool isHorizontal = false;
-    bool isRtl = false;
-    bool isOnDarkBackground = false;
-    bool isCustom = false;
-    // Two colors only used when custom is true.
-    nscolor trackColor = NS_RGBA(0, 0, 0, 0);
-    nscolor faceColor = NS_RGBA(0, 0, 0, 0);
+  enum class Kind : uint8_t {
+    Android,
+    Cocoa,
+    Gtk,
+    Win10,
+    Win11,
   };
 
-  static DPIRatio GetDPIRatioForScrollbarPart(nsPresContext*);
+  explicit ScrollbarDrawing(Kind aKind) : mKind(aKind) {}
+
+ public:
+  virtual ~ScrollbarDrawing() = default;
+
+  enum class ScrollbarKind : uint8_t {
+    Horizontal,
+    VerticalLeft,
+    VerticalRight,
+  };
+
+  DPIRatio GetDPIRatioForScrollbarPart(const nsPresContext*);
 
   static nsIFrame* GetParentScrollbarFrame(nsIFrame* aFrame);
   static bool IsParentScrollbarRolledOver(nsIFrame* aFrame);
@@ -59,9 +56,11 @@ class ScrollbarDrawing {
   static bool IsScrollbarWidthThin(const ComputedStyle& aStyle);
   static bool IsScrollbarWidthThin(nsIFrame* aFrame);
 
-  virtual ScrollbarSizes GetScrollbarSizes(nsPresContext*, StyleScrollbarWidth,
-                                           Overlay);
-  ScrollbarSizes GetScrollbarSizes(nsPresContext*, nsIFrame*);
+  CSSIntCoord GetCSSScrollbarSize(StyleScrollbarWidth, Overlay) const;
+  LayoutDeviceIntCoord GetScrollbarSize(const nsPresContext*,
+                                        StyleScrollbarWidth, Overlay);
+  LayoutDeviceIntCoord GetScrollbarSize(const nsPresContext*, nsIFrame*);
+
   virtual LayoutDeviceIntSize GetMinimumWidgetSize(nsPresContext*,
                                                    StyleAppearance aAppearance,
                                                    nsIFrame* aFrame) = 0;
@@ -71,108 +70,101 @@ class ScrollbarDrawing {
   }
 
   bool IsScrollbarTrackOpaque(nsIFrame*);
-  virtual sRGBColor ComputeScrollbarTrackColor(
-      nsIFrame*, const ComputedStyle&, const EventStates& aDocumentState,
-      const Colors&);
-  virtual sRGBColor ComputeScrollbarThumbColor(
-      nsIFrame*, const ComputedStyle&, const EventStates& aElementState,
-      const EventStates& aDocumentState, const Colors&);
+  virtual sRGBColor ComputeScrollbarTrackColor(nsIFrame*, const ComputedStyle&,
+                                               const DocumentState&,
+                                               const Colors&);
+  virtual sRGBColor ComputeScrollbarThumbColor(nsIFrame*, const ComputedStyle&,
+                                               const ElementState&,
+                                               const DocumentState&,
+                                               const Colors&);
 
-  static ScrollbarParams ComputeScrollbarParams(nsIFrame* aFrame,
-                                                const ComputedStyle& aStyle,
-                                                bool aIsHorizontal);
-  static bool ShouldUseDarkScrollbar(nsIFrame*, const ComputedStyle&);
-
-  nscolor GetScrollbarButtonColor(nscolor aTrackColor, EventStates);
+  nscolor GetScrollbarButtonColor(nscolor aTrackColor, ElementState);
   Maybe<nscolor> GetScrollbarArrowColor(nscolor aButtonColor);
 
   // Returned colors are button, arrow.
   virtual std::pair<sRGBColor, sRGBColor> ComputeScrollbarButtonColors(
-      nsIFrame*, StyleAppearance, const ComputedStyle&,
-      const EventStates& aElementState, const EventStates& aDocumentState,
-      const Colors&);
+      nsIFrame*, StyleAppearance, const ComputedStyle&, const ElementState&,
+      const DocumentState&, const Colors&);
 
   virtual bool PaintScrollbarButton(DrawTarget&, StyleAppearance,
-                                    const LayoutDeviceRect&, nsIFrame*,
-                                    const ComputedStyle&,
-                                    const EventStates& aElementState,
-                                    const EventStates& aDocumentState,
+                                    const LayoutDeviceRect&, ScrollbarKind,
+                                    nsIFrame*, const ComputedStyle&,
+                                    const ElementState&, const DocumentState&,
                                     const Colors&, const DPIRatio&);
 
   virtual bool PaintScrollbarThumb(DrawTarget&, const LayoutDeviceRect&,
-                                   bool aHorizontal, nsIFrame*,
-                                   const ComputedStyle&,
-                                   const EventStates& aElementState,
-                                   const EventStates& aDocumentState,
-                                   const Colors&, const DPIRatio&) = 0;
+                                   ScrollbarKind, nsIFrame*,
+                                   const ComputedStyle&, const ElementState&,
+                                   const DocumentState&, const Colors&,
+                                   const DPIRatio&) = 0;
   virtual bool PaintScrollbarThumb(WebRenderBackendData&,
-                                   const LayoutDeviceRect&, bool aHorizontal,
+                                   const LayoutDeviceRect&, ScrollbarKind,
                                    nsIFrame*, const ComputedStyle&,
-                                   const EventStates& aElementState,
-                                   const EventStates& aDocumentState,
+                                   const ElementState&, const DocumentState&,
                                    const Colors&, const DPIRatio&) = 0;
 
   template <typename PaintBackendData>
   bool DoPaintDefaultScrollbar(PaintBackendData&, const LayoutDeviceRect&,
-                               bool aHorizontal, nsIFrame*,
-                               const ComputedStyle&,
-                               const EventStates& aElementState,
-                               const EventStates& aDocumentState, const Colors&,
-                               const DPIRatio&);
-  virtual bool PaintScrollbar(DrawTarget&, const LayoutDeviceRect&,
-                              bool aHorizontal, nsIFrame*, const ComputedStyle&,
-                              const EventStates& aElementState,
-                              const EventStates& aDocumentState, const Colors&,
-                              const DPIRatio&);
-  virtual bool PaintScrollbar(WebRenderBackendData&, const LayoutDeviceRect&,
-                              bool aHorizontal, nsIFrame*, const ComputedStyle&,
-                              const EventStates& aElementState,
-                              const EventStates& aDocumentState, const Colors&,
-                              const DPIRatio&);
+                               ScrollbarKind, nsIFrame*, const ComputedStyle&,
+                               const ElementState&, const DocumentState&,
+                               const Colors&, const DPIRatio&);
+  bool PaintScrollbar(DrawTarget&, const LayoutDeviceRect&, ScrollbarKind,
+                      nsIFrame*, const ComputedStyle&, const ElementState&,
+                      const DocumentState&, const Colors&, const DPIRatio&);
+  bool PaintScrollbar(WebRenderBackendData&, const LayoutDeviceRect&,
+                      ScrollbarKind, nsIFrame*, const ComputedStyle&,
+                      const ElementState&, const DocumentState&, const Colors&,
+                      const DPIRatio&);
 
   virtual bool PaintScrollbarTrack(DrawTarget&, const LayoutDeviceRect&,
-                                   bool aHorizontal, nsIFrame*,
-                                   const ComputedStyle&,
-                                   const EventStates& aDocumentState,
+                                   ScrollbarKind, nsIFrame*,
+                                   const ComputedStyle&, const DocumentState&,
                                    const Colors&, const DPIRatio&) {
     // Draw nothing by default. Subclasses can override this.
     return true;
   }
   virtual bool PaintScrollbarTrack(WebRenderBackendData&,
-                                   const LayoutDeviceRect&, bool aHorizontal,
+                                   const LayoutDeviceRect&, ScrollbarKind,
                                    nsIFrame*, const ComputedStyle&,
-                                   const EventStates& aDocumentState,
-                                   const Colors&, const DPIRatio&) {
+                                   const DocumentState&, const Colors&,
+                                   const DPIRatio&) {
     // Draw nothing by default. Subclasses can override this.
     return true;
   }
 
   template <typename PaintBackendData>
   bool DoPaintDefaultScrollCorner(PaintBackendData&, const LayoutDeviceRect&,
-                                  nsIFrame*, const ComputedStyle&,
-                                  const EventStates& aDocumentState,
+                                  ScrollbarKind, nsIFrame*,
+                                  const ComputedStyle&, const DocumentState&,
                                   const Colors&, const DPIRatio&);
   virtual bool PaintScrollCorner(DrawTarget&, const LayoutDeviceRect&,
-                                 nsIFrame*, const ComputedStyle&,
-                                 const EventStates& aDocumentState,
-                                 const Colors&, const DPIRatio&);
+                                 ScrollbarKind, nsIFrame*, const ComputedStyle&,
+                                 const DocumentState&, const Colors&,
+                                 const DPIRatio&);
   virtual bool PaintScrollCorner(WebRenderBackendData&, const LayoutDeviceRect&,
-                                 nsIFrame*, const ComputedStyle&,
-                                 const EventStates& aDocumentState,
-                                 const Colors&, const DPIRatio&);
+                                 ScrollbarKind, nsIFrame*, const ComputedStyle&,
+                                 const DocumentState&, const Colors&,
+                                 const DPIRatio&);
 
   virtual void RecomputeScrollbarParams() = 0;
 
   virtual bool ShouldDrawScrollbarButtons() { return true; }
 
-  uint32_t GetHorizontalScrollbarHeight() const {
-    return mHorizontalScrollbarHeight;
-  }
-  uint32_t GetVerticalScrollbarWidth() const { return mVerticalScrollbarWidth; }
+ private:
+  // The scrollbar sizes for all our scrollbars. Indices are overlay or not,
+  // then thin or not. Should be configured via ConfigureScrollbarSize.
+  CSSIntCoord mScrollbarSize[2][2]{};
 
  protected:
-  uint32_t mHorizontalScrollbarHeight = 0;
-  uint32_t mVerticalScrollbarWidth = 0;
+  // For some kind of style differences a full virtual method is overkill, so we
+  // store the kind here so we can branch on it if necessary.
+  Kind mKind;
+
+  // Configures the scrollbar sizes based on a single size.
+  void ConfigureScrollbarSize(CSSIntCoord);
+
+  // Configures a particular scrollbar size.
+  void ConfigureScrollbarSize(StyleScrollbarWidth, Overlay, CSSIntCoord);
 };
 
 }  // namespace mozilla::widget

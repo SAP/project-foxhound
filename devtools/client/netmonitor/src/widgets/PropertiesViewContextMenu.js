@@ -4,27 +4,31 @@
 
 "use strict";
 
-const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+const {
+  L10N,
+} = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 const {
   contextMenuFormatters,
-} = require("devtools/client/netmonitor/src/utils/context-menu-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/context-menu-utils.js");
 
 loader.lazyRequireGetter(
   this,
   "copyString",
-  "devtools/shared/platform/clipboard",
+  "resource://devtools/shared/platform/clipboard.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "showMenu",
-  "devtools/client/shared/components/menu/utils",
+  "resource://devtools/client/shared/components/menu/utils.js",
   true
 );
 
 class PropertiesViewContextMenu {
   constructor(props = {}) {
     this.props = props;
+    this.copyAll = this.copyAll.bind(this);
+    this.copyValue = this.copyValue.bind(this);
   }
 
   /**
@@ -38,10 +42,10 @@ class PropertiesViewContextMenu {
   open(event = {}, selection, { member, object }) {
     const menuItems = [
       {
-        id: "properties-view-context-menu-copy",
-        label: L10N.getStr("netmonitor.context.copy"),
-        accesskey: L10N.getStr("netmonitor.context.copy.accesskey"),
-        click: () => this.copy(member, selection),
+        id: "properties-view-context-menu-copyvalue",
+        label: L10N.getStr("netmonitor.context.copyValue"),
+        accesskey: L10N.getStr("netmonitor.context.copyValue.accesskey"),
+        click: () => this.copyValue(member, selection),
       },
       {
         id: "properties-view-context-menu-copyall",
@@ -82,11 +86,11 @@ class PropertiesViewContextMenu {
   }
 
   /**
-   * Copies single item.
+   * Copies the value of a single item.
    * @param {Object} member member of the right-clicked row
    * @param {Object} selection object representing the current selection
    */
-  copy(member, selection) {
+  copyValue(member, selection) {
     let buffer = "";
     if (selection.toString() !== "") {
       buffer = selection.toString();

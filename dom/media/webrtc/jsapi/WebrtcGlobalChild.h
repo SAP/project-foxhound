@@ -7,8 +7,7 @@
 
 #include "mozilla/dom/PWebrtcGlobalChild.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class WebrtcGlobalChild : public PWebrtcGlobalChild {
   friend class ContentChild;
@@ -19,7 +18,7 @@ class WebrtcGlobalChild : public PWebrtcGlobalChild {
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 
   virtual mozilla::ipc::IPCResult RecvGetStats(
-      const nsString& aPcIdFilter, GetStatsResolver&& aResolve) override;
+      const nsAString& aPcIdFilter, GetStatsResolver&& aResolve) override;
   virtual mozilla::ipc::IPCResult RecvClearStats() override;
   // MOZ_CAN_RUN_SCRIPT_BOUNDARY because we can't do MOZ_CAN_RUN_SCRIPT in
   // ipdl-generated things yet.
@@ -36,7 +35,6 @@ class WebrtcGlobalChild : public PWebrtcGlobalChild {
   static WebrtcGlobalChild* Create();
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // _WEBRTC_GLOBAL_CHILD_H_

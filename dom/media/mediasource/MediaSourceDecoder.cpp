@@ -5,7 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "MediaSourceDecoder.h"
 
+#include "base/process_util.h"
 #include "mozilla/Logging.h"
+#include "ExternalEngineStateMachine.h"
 #include "MediaDecoderStateMachine.h"
 #include "MediaShutdownManager.h"
 #include "MediaSource.h"
@@ -34,16 +36,33 @@ MediaSourceDecoder::MediaSourceDecoder(MediaDecoderInit& aInit)
   mExplicitDuration.emplace(UnspecifiedNaN<double>());
 }
 
-MediaDecoderStateMachine* MediaSourceDecoder::CreateStateMachine() {
+MediaDecoderStateMachineBase* MediaSourceDecoder::CreateStateMachine(
+    bool aDisableExternalEngine) {
   MOZ_ASSERT(NS_IsMainThread());
-  mDemuxer = new MediaSourceDemuxer(AbstractMainThread());
+  // if `mDemuxer` already exists, that means we're in the process of recreating
+  // the state machine. The track buffers are tied to the demuxer so we would
+  // need to reuse it.
+  if (!mDemuxer) {
+    mDemuxer = new MediaSourceDemuxer(AbstractMainThread());
+  }
   MediaFormatReaderInit init;
   init.mVideoFrameContainer = GetVideoFrameContainer();
   init.mKnowsCompositor = GetCompositor();
   init.mCrashHelper = GetOwner()->CreateGMPCrashHelper();
   init.mFrameStats = mFrameStats;
   init.mMediaDecoderOwnerID = mOwner;
+  static Atomic<uint32_t> sTrackingIdCounter(0);
+  init.mTrackingId.emplace(TrackingId::Source::MSEDecoder, sTrackingIdCounter++,
+                           TrackingId::TrackAcrossProcesses::Yes);
   mReader = new MediaFormatReader(init, mDemuxer);
+#ifdef MOZ_WMF_MEDIA_ENGINE
+  // TODO : Only for testing development for now. In the future this should be
+  // used for encrypted content only.
+  if (StaticPrefs::media_wmf_media_engine_enabled() &&
+      !aDisableExternalEngine) {
+    return new ExternalEngineStateMachine(this, mReader);
+  }
+#endif
   return new MediaDecoderStateMachine(this, mReader);
 }
 
@@ -57,19 +76,7 @@ nsresult MediaSourceDecoder::Load(nsIPrincipal* aPrincipal) {
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
-
-  SetStateMachine(CreateStateMachine());
-  if (!GetStateMachine()) {
-    NS_WARNING("Failed to create state machine!");
-    return NS_ERROR_FAILURE;
-  }
-
-  rv = GetStateMachine()->Init(this);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  GetStateMachine()->DispatchIsLiveStream(!mEnded);
-  SetStateMachineParameters();
-  return NS_OK;
+  return CreateAndInitStateMachine(!mEnded);
 }
 
 media::TimeIntervals MediaSourceDecoder::GetSeekable() {
@@ -227,11 +234,25 @@ void MediaSourceDecoder::SetMediaSourceDuration(double aDuration) {
   }
 }
 
-void MediaSourceDecoder::GetDebugInfo(dom::MediaSourceDecoderDebugInfo& aInfo) {
-  if (mReader && mDemuxer) {
-    mReader->GetDebugInfo(aInfo.mReader);
-    mDemuxer->GetDebugInfo(aInfo.mDemuxer);
+RefPtr<GenericPromise> MediaSourceDecoder::RequestDebugInfo(
+    dom::MediaSourceDecoderDebugInfo& aInfo) {
+  // This should be safe to call off main thead, but there's no such usage at
+  // time of writing. Can be carefully relaxed if needed.
+  MOZ_ASSERT(NS_IsMainThread(), "Expects to be called on main thread.");
+  nsTArray<RefPtr<GenericPromise>> promises;
+  if (mReader) {
+    promises.AppendElement(mReader->RequestDebugInfo(aInfo.mReader));
   }
+  if (mDemuxer) {
+    promises.AppendElement(mDemuxer->GetDebugInfo(aInfo.mDemuxer));
+  }
+  return GenericPromise::All(GetCurrentSerialEventTarget(), promises)
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          []() { return GenericPromise::CreateAndResolve(true, __func__); },
+          [] {
+            return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
+          });
 }
 
 double MediaSourceDecoder::GetDuration() {

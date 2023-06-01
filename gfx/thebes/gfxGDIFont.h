@@ -15,14 +15,12 @@
 
 #include "usp10.h"
 
-class gfxGDIFont : public gfxFont {
+class gfxGDIFont final : public gfxFont {
  public:
   gfxGDIFont(GDIFontEntry* aFontEntry, const gfxFontStyle* aFontStyle,
              AntialiasOption anAAOption = kAntialiasDefault);
 
-  virtual ~gfxGDIFont();
-
-  HFONT GetHFONT() { return mFont; }
+  HFONT GetHFONT() const { return mFont; }
 
   already_AddRefed<mozilla::gfx::ScaledFont> GetScaledFont(
       const TextRunDrawParams& aRunParams) override;
@@ -35,8 +33,7 @@ class gfxGDIFont : public gfxFont {
                      mozilla::gfx::ShapedTextFlags aOrientation) override;
 
   /* required for MathML to suppress effects of ClearType "padding" */
-  mozilla::UniquePtr<gfxFont> CopyWithAntialiasOption(
-      AntialiasOption anAAOption) override;
+  gfxFont* CopyWithAntialiasOption(AntialiasOption anAAOption) const override;
 
   // If the font has a cmap table, we handle it purely with harfbuzz;
   // but if not (e.g. .fon fonts), we'll use a GDI callback to get glyphs.
@@ -59,7 +56,9 @@ class gfxGDIFont : public gfxFont {
   FontType GetType() const override { return FONT_TYPE_GDI; }
 
  protected:
-  const Metrics& GetHorizontalMetrics() override;
+  ~gfxGDIFont() override;
+
+  const Metrics& GetHorizontalMetrics() const override { return *mMetrics; }
 
   bool ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
                  uint32_t aOffset, uint32_t aLength, Script aScript,

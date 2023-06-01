@@ -18,23 +18,20 @@ const MANAGE_ADDRESSES_URL =
 const MANAGE_CREDITCARDS_URL =
   "chrome://formautofill/content/manageCreditCards.xhtml";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { FormAutofill } = ChromeUtils.import(
   "resource://autofill/FormAutofill.jsm"
 );
 const { FormAutofillUtils } = ChromeUtils.import(
   "resource://autofill/FormAutofillUtils.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppConstants",
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "OSKeyStore",
-  "resource://gre/modules/OSKeyStore.jsm"
-);
+
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
+});
 
 const {
   ENABLED_AUTOFILL_ADDRESSES_PREF,
@@ -42,16 +39,13 @@ const {
   ENABLED_AUTOFILL_CREDITCARDS_REAUTH_PREF,
 } = FormAutofill;
 const {
-  MANAGE_ADDRESSES_KEYWORDS,
-  EDIT_ADDRESS_KEYWORDS,
-  MANAGE_CREDITCARDS_KEYWORDS,
-  EDIT_CREDITCARD_KEYWORDS,
+  MANAGE_ADDRESSES_L10N_IDS,
+  EDIT_ADDRESS_L10N_IDS,
+  MANAGE_CREDITCARDS_L10N_IDS,
+  EDIT_CREDITCARD_L10N_IDS,
 } = FormAutofillUtils;
 // Add credit card enabled flag in telemetry environment for recording the number of
 // users who disable/enable the credit card autofill feature.
-
-this.log = null;
-FormAutofill.defineLazyLogGetter(this, EXPORTED_SYMBOLS[0]);
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 
@@ -87,12 +81,6 @@ FormAutofillPreferences.prototype = {
    * @param  {HTMLDocument} document
    */
   createPreferenceGroup(document) {
-    let addressLearnMoreURL =
-      Services.urlFormatter.formatURLPref("app.support.baseURL") +
-      "autofill-card-address";
-    let creditCardLearnMoreURL =
-      Services.urlFormatter.formatURLPref("app.support.baseURL") +
-      "credit-card-autofill";
     let formAutofillFragment = document.createDocumentFragment();
     let formAutofillGroupBoxLabel = document.createXULElement("label");
     let formAutofillGroupBoxLabelHeading = document.createElementNS(
@@ -100,98 +88,106 @@ FormAutofillPreferences.prototype = {
       "h2"
     );
     let formAutofillGroup = document.createXULElement("vbox");
-    let addressAutofill = document.createXULElement("hbox");
-    let addressAutofillCheckboxGroup = document.createXULElement("hbox");
-    let addressAutofillCheckbox = document.createXULElement("checkbox");
-    let addressAutofillLearnMore = document.createXULElement("label", {
-      is: "text-link",
-    });
-    let savedAddressesBtn = document.createXULElement("button", {
-      is: "highlightable-button",
-    });
     // Wrappers are used to properly compute the search tooltip positions
-    let savedAddressesBtnWrapper = document.createXULElement("hbox");
-    let savedCreditCardsBtnWrapper = document.createXULElement("hbox");
+    // let savedAddressesBtnWrapper = document.createXULElement("hbox");
+    // let savedCreditCardsBtnWrapper = document.createXULElement("hbox");
+    this.refs = {};
+    this.refs.formAutofillGroup = formAutofillGroup;
+    this.refs.formAutofillFragment = formAutofillFragment;
 
-    savedAddressesBtn.className = "accessory-button";
-    addressAutofillCheckbox.className = "tail-with-learn-more";
-    addressAutofillLearnMore.className = "learnMore";
+    formAutofillGroupBoxLabel.appendChild(formAutofillGroupBoxLabelHeading);
+    formAutofillFragment.appendChild(formAutofillGroupBoxLabel);
+    formAutofillFragment.appendChild(formAutofillGroup);
 
-    formAutofillGroup.id = "formAutofillGroup";
-    addressAutofill.id = "addressAutofill";
-    addressAutofillLearnMore.id = "addressAutofillLearnMore";
+    let showAddressUI = FormAutofill.isAutofillAddressesAvailable;
+    let showCreditCardUI = FormAutofill.isAutofillCreditCardsAvailable;
+
+    if (!showAddressUI && !showCreditCardUI) {
+      return;
+    }
 
     formAutofillGroupBoxLabelHeading.textContent = this.bundle.GetStringFromName(
       "autofillHeader"
     );
 
-    addressAutofill.setAttribute("data-subcategory", "address-autofill");
-    addressAutofillCheckbox.setAttribute(
-      "label",
-      this.bundle.GetStringFromName("autofillAddressesCheckbox")
-    );
-    addressAutofillLearnMore.textContent = this.bundle.GetStringFromName(
-      "learnMoreLabel"
-    );
-    savedAddressesBtn.setAttribute(
-      "label",
-      this.bundle.GetStringFromName("savedAddressesBtnLabel")
-    );
-    // Align the start to keep the savedAddressesBtn as original size
-    // when addressAutofillCheckboxGroup's height is changed by a longer l10n string
-    savedAddressesBtnWrapper.setAttribute("align", "start");
+    if (showAddressUI) {
+      let savedAddressesBtnWrapper = document.createXULElement("hbox");
+      let addressAutofill = document.createXULElement("hbox");
+      let addressAutofillCheckboxGroup = document.createXULElement("hbox");
+      let addressAutofillCheckbox = document.createXULElement("checkbox");
+      let addressAutofillLearnMore = document.createElement("a", {
+        is: "moz-support-link",
+      });
+      let savedAddressesBtn = document.createXULElement("button", {
+        is: "highlightable-button",
+      });
+      savedAddressesBtn.className = "accessory-button";
+      addressAutofillCheckbox.className = "tail-with-learn-more";
 
-    addressAutofillLearnMore.setAttribute("href", addressLearnMoreURL);
+      formAutofillGroup.id = "formAutofillGroup";
+      addressAutofill.id = "addressAutofill";
+      addressAutofillLearnMore.id = "addressAutofillLearnMore";
 
-    // Add preferences search support
-    savedAddressesBtn.setAttribute(
-      "searchkeywords",
-      MANAGE_ADDRESSES_KEYWORDS.concat(EDIT_ADDRESS_KEYWORDS)
-        .map(key => this.bundle.GetStringFromName(key))
-        .join("\n")
-    );
+      addressAutofill.setAttribute("data-subcategory", "address-autofill");
+      addressAutofillCheckbox.setAttribute(
+        "label",
+        this.bundle.GetStringFromName("autofillAddressesCheckbox")
+      );
+      savedAddressesBtn.setAttribute(
+        "label",
+        this.bundle.GetStringFromName("savedAddressesBtnLabel")
+      );
+      // Align the start to keep the savedAddressesBtn as original size
+      // when addressAutofillCheckboxGroup's height is changed by a longer l10n string
+      savedAddressesBtnWrapper.setAttribute("align", "start");
 
-    // Manually set the checked state
-    if (FormAutofill.isAutofillAddressesEnabled) {
-      addressAutofillCheckbox.setAttribute("checked", true);
+      addressAutofillLearnMore.setAttribute(
+        "support-page",
+        "autofill-card-address"
+      );
+
+      // Add preferences search support
+      savedAddressesBtn.setAttribute(
+        "search-l10n-ids",
+        MANAGE_ADDRESSES_L10N_IDS.concat(EDIT_ADDRESS_L10N_IDS).join(",")
+      );
+
+      // Manually set the checked state
+      if (FormAutofill.isAutofillAddressesEnabled) {
+        addressAutofillCheckbox.setAttribute("checked", true);
+      }
+      if (FormAutofill.isAutofillAddressesLocked) {
+        addressAutofillCheckbox.disabled = true;
+      }
+
+      addressAutofillCheckboxGroup.setAttribute("align", "center");
+      addressAutofillCheckboxGroup.setAttribute("flex", "1");
+
+      formAutofillGroup.appendChild(addressAutofill);
+      addressAutofill.appendChild(addressAutofillCheckboxGroup);
+      addressAutofillCheckboxGroup.appendChild(addressAutofillCheckbox);
+      addressAutofillCheckboxGroup.appendChild(addressAutofillLearnMore);
+      addressAutofill.appendChild(savedAddressesBtnWrapper);
+      savedAddressesBtnWrapper.appendChild(savedAddressesBtn);
+
+      this.refs.formAutofillFragment = formAutofillFragment;
+      this.refs.addressAutofillCheckbox = addressAutofillCheckbox;
+      this.refs.savedAddressesBtn = savedAddressesBtn;
     }
 
-    addressAutofillCheckboxGroup.setAttribute("align", "center");
-    addressAutofillCheckboxGroup.flex = 1;
-
-    formAutofillGroupBoxLabel.appendChild(formAutofillGroupBoxLabelHeading);
-    formAutofillFragment.appendChild(formAutofillGroupBoxLabel);
-    formAutofillFragment.appendChild(formAutofillGroup);
-    formAutofillGroup.appendChild(addressAutofill);
-    addressAutofill.appendChild(addressAutofillCheckboxGroup);
-    addressAutofillCheckboxGroup.appendChild(addressAutofillCheckbox);
-    addressAutofillCheckboxGroup.appendChild(addressAutofillLearnMore);
-    addressAutofill.appendChild(savedAddressesBtnWrapper);
-    savedAddressesBtnWrapper.appendChild(savedAddressesBtn);
-
-    this.refs = {
-      formAutofillFragment,
-      formAutofillGroup,
-      addressAutofillCheckbox,
-      savedAddressesBtn,
-    };
-
-    if (
-      FormAutofill.isAutofillCreditCardsAvailable &&
-      !FormAutofill.isAutofillCreditCardsHideUI
-    ) {
+    if (showCreditCardUI) {
+      let savedCreditCardsBtnWrapper = document.createXULElement("hbox");
       let creditCardAutofill = document.createXULElement("hbox");
       let creditCardAutofillCheckboxGroup = document.createXULElement("hbox");
       let creditCardAutofillCheckbox = document.createXULElement("checkbox");
-      let creditCardAutofillLearnMore = document.createXULElement("label", {
-        is: "text-link",
+      let creditCardAutofillLearnMore = document.createElement("a", {
+        is: "moz-support-link",
       });
       let savedCreditCardsBtn = document.createXULElement("button", {
         is: "highlightable-button",
       });
       savedCreditCardsBtn.className = "accessory-button";
       creditCardAutofillCheckbox.className = "tail-with-learn-more";
-      creditCardAutofillLearnMore.className = "learnMore";
 
       creditCardAutofill.id = "creditCardAutofill";
       creditCardAutofillLearnMore.id = "creditCardAutofillLearnMore";
@@ -204,9 +200,7 @@ FormAutofillPreferences.prototype = {
         "label",
         this.bundle.GetStringFromName("autofillCreditCardsCheckbox")
       );
-      creditCardAutofillLearnMore.textContent = this.bundle.GetStringFromName(
-        "learnMoreLabel"
-      );
+
       savedCreditCardsBtn.setAttribute(
         "label",
         this.bundle.GetStringFromName("savedCreditCardsBtnLabel")
@@ -215,23 +209,27 @@ FormAutofillPreferences.prototype = {
       // when creditCardAutofillCheckboxGroup's height is changed by a longer l10n string
       savedCreditCardsBtnWrapper.setAttribute("align", "start");
 
-      creditCardAutofillLearnMore.setAttribute("href", creditCardLearnMoreURL);
+      creditCardAutofillLearnMore.setAttribute(
+        "support-page",
+        "credit-card-autofill"
+      );
 
       // Add preferences search support
       savedCreditCardsBtn.setAttribute(
-        "searchkeywords",
-        MANAGE_CREDITCARDS_KEYWORDS.concat(EDIT_CREDITCARD_KEYWORDS)
-          .map(key => this.bundle.GetStringFromName(key))
-          .join("\n")
+        "search-l10n-ids",
+        MANAGE_CREDITCARDS_L10N_IDS.concat(EDIT_CREDITCARD_L10N_IDS).join(",")
       );
 
       // Manually set the checked state
       if (FormAutofill.isAutofillCreditCardsEnabled) {
         creditCardAutofillCheckbox.setAttribute("checked", true);
       }
+      if (FormAutofill.isAutofillCreditCardsLocked) {
+        creditCardAutofillCheckbox.disabled = true;
+      }
 
       creditCardAutofillCheckboxGroup.setAttribute("align", "center");
-      creditCardAutofillCheckboxGroup.flex = 1;
+      creditCardAutofillCheckboxGroup.setAttribute("flex", "1");
 
       formAutofillGroup.appendChild(creditCardAutofill);
       creditCardAutofill.appendChild(creditCardAutofillCheckboxGroup);
@@ -243,18 +241,17 @@ FormAutofillPreferences.prototype = {
       this.refs.creditCardAutofillCheckbox = creditCardAutofillCheckbox;
       this.refs.savedCreditCardsBtn = savedCreditCardsBtn;
 
-      if (OSKeyStore.canReauth()) {
-        let reauthLearnMoreURL = `${creditCardLearnMoreURL}#w_require-authentication-for-autofill`;
+      if (lazy.OSKeyStore.canReauth()) {
         let reauth = document.createXULElement("hbox");
         let reauthCheckboxGroup = document.createXULElement("hbox");
         let reauthCheckbox = document.createXULElement("checkbox");
-        let reauthLearnMore = document.createXULElement("label", {
-          is: "text-link",
+        let reauthLearnMore = document.createElement("a", {
+          is: "moz-support-link",
         });
 
         reauthCheckboxGroup.classList.add("indent");
-        reauthLearnMore.classList.add("learnMore");
         reauthCheckbox.classList.add("tail-with-learn-more");
+        reauthCheckbox.setAttribute("flex", "1");
         reauthCheckbox.disabled = !FormAutofill.isAutofillCreditCardsEnabled;
 
         reauth.id = "creditCardReauthenticate";
@@ -276,11 +273,11 @@ FormAutofillPreferences.prototype = {
           "label",
           this.bundle.GetStringFromName(autofillReauthCheckboxLabel)
         );
-        reauthLearnMore.textContent = this.bundle.GetStringFromName(
-          "learnMoreLabel"
-        );
 
-        reauthLearnMore.setAttribute("href", reauthLearnMoreURL);
+        reauthLearnMore.setAttribute(
+          "support-page",
+          "credit-card-autofill#w_require-authentication-for-autofill"
+        );
 
         // Manually set the checked state
         if (FormAutofillUtils._reauthEnabledByUser) {
@@ -288,7 +285,7 @@ FormAutofillPreferences.prototype = {
         }
 
         reauthCheckboxGroup.setAttribute("align", "center");
-        reauthCheckboxGroup.flex = 1;
+        reauthCheckboxGroup.setAttribute("flex", "1");
 
         formAutofillGroup.appendChild(reauth);
         reauth.appendChild(reauthCheckboxGroup);
@@ -324,7 +321,7 @@ FormAutofillPreferences.prototype = {
             this.refs.reauthCheckbox.disabled = !target.checked;
           }
         } else if (target == this.refs.reauthCheckbox) {
-          if (!OSKeyStore.canReauth()) {
+          if (!lazy.OSKeyStore.canReauth()) {
             break;
           }
 
@@ -345,7 +342,7 @@ FormAutofillPreferences.prototype = {
             "chrome://branding/locale/brand.properties"
           );
           let win = target.ownerGlobal.docShell.chromeEventHandler.ownerGlobal;
-          let loggedIn = await OSKeyStore.ensureLoggedIn(
+          let loggedIn = await lazy.OSKeyStore.ensureLoggedIn(
             messageText,
             brandBundle.GetStringFromName("brandFullName"),
             win,

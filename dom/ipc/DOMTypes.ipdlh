@@ -13,10 +13,10 @@ include "mozilla/dom/ReferrerInfoUtils.h";
 include "mozilla/dom/TabMessageUtils.h";
 include "mozilla/ipc/URIUtils.h";
 include "mozilla/layers/LayersMessageUtils.h";
+include "mozilla/net/ClassOfService.h";
 
 include IPCBlob;
 include IPCStream;
-include protocol PRemoteLazyInputStream;
 include ProtocolTypes;
 
 using struct mozilla::void_t from "mozilla/ipc/IPCCore.h";
@@ -24,19 +24,23 @@ using struct mozilla::void_t from "mozilla/ipc/IPCCore.h";
 [MoveOnly=data] using struct mozilla::SerializedStructuredCloneBuffer
   from "mozilla/ipc/SerializedStructuredCloneBuffer.h";
 
-using class mozilla::dom::LoadingSessionHistoryInfo
+using struct mozilla::dom::LoadingSessionHistoryInfo
   from "mozilla/dom/SessionHistoryEntry.h";
 
-using LayoutDeviceIntRect from "Units.h";
-using DesktopIntRect from "Units.h";
-using DesktopToLayoutDeviceScale from "Units.h";
-using CSSToLayoutDeviceScale from "Units.h";
-using CSSRect from "Units.h";
-using CSSSize from "Units.h";
-using ScreenIntSize from "Units.h";
+using mozilla::net::ClassOfService from "mozilla/net/ClassOfService.h";
+
+
+using mozilla::hal::ScreenOrientation from "mozilla/HalIPCUtils.h";
+using mozilla::LayoutDeviceIntRect from "Units.h";
+using mozilla::DesktopIntRect from "Units.h";
+using mozilla::DesktopToLayoutDeviceScale from "Units.h";
+using mozilla::CSSToLayoutDeviceScale from "Units.h";
+using mozilla::CSSRect from "Units.h";
+using mozilla::CSSSize from "Units.h";
+using mozilla::ScreenIntSize from "Units.h";
 using mozilla::LayoutDeviceIntPoint from "Units.h";
 using nsSizeMode from "nsIWidgetListener.h";
-using ScrollbarPreference from "mozilla/ScrollbarPreferences.h";
+using mozilla::ScrollbarPreference from "mozilla/ScrollbarPreferences.h";
 using mozilla::gfx::SurfaceFormat from "mozilla/gfx/Types.h";
 [RefCounted] using class nsIPrincipal from "nsIPrincipal.h";
 using mozilla::dom::MaybeDiscardedBrowsingContext from "mozilla/dom/BrowsingContext.h";
@@ -45,8 +49,10 @@ using mozilla::dom::MaybeDiscardedBrowsingContext from "mozilla/dom/BrowsingCont
 [RefCounted] using class nsIInputStream from "mozilla/ipc/IPCStreamUtils.h";
 [RefCounted] using class nsIReferrerInfo from "nsIReferrerInfo.h";
 [RefCounted] using class nsIVariant from "nsIVariant.h";
-using class mozilla::TimeStamp from "mozilla/TimeStamp.h";
+using mozilla::TimeStamp from "mozilla/TimeStamp.h";
 [RefCounted] using class mozilla::dom::BrowsingContext from "mozilla/dom/BrowsingContext.h";
+[RefCounted] using class mozilla::RemoteLazyInputStream from "mozilla/RemoteLazyInputStream.h";
+[MoveOnly] using class mozilla::ipc::BigBuffer from "mozilla/ipc/BigBuffer.h";
 
 namespace mozilla {
 namespace dom {
@@ -95,26 +101,54 @@ struct MessageData {
   MessageDataType data;
 };
 
-union IPCDataTransferData
+struct IPCDataTransferString
 {
-  nsString;  // text
-  Shmem;     // images using Shmem
-  IPCBlob;   // files
+  BigBuffer data;
 };
 
-struct IPCDataTransferImage
+struct IPCDataTransferCString
 {
+  BigBuffer data;
+};
+
+struct IPCDataTransferInputStream
+{
+  // NOTE: Editor currently relies on these input streams being synchronous, so
+  // we can't safely serialize them using IPCStream (see bug 1778565). Instead,
+  // they're serialized as a `BigBuffer`, and converted to a nsStringInputStream
+  // on the receiving side. If we are able to use async streams reliably in the
+  // future, we could consider switching the code which adds `nsIInputStream`s
+  // to the transferable to use `BlobImpl` instead, for more consistency between
+  // image formats.
+  BigBuffer data;
+};
+
+struct IPCDataTransferImageContainer
+{
+  BigBuffer data;
   uint32_t width;
   uint32_t height;
   uint32_t stride;
   SurfaceFormat format;
 };
 
+struct IPCDataTransferBlob
+{
+  IPCBlob blob;
+};
+
+union IPCDataTransferData
+{
+  IPCDataTransferString;
+  IPCDataTransferCString;
+  IPCDataTransferInputStream;
+  IPCDataTransferImageContainer;
+  IPCDataTransferBlob;
+};
+
 struct IPCDataTransferItem
 {
   nsCString flavor;
-  // The image details are only used when transferring images.
-  IPCDataTransferImage imageDetails;
   IPCDataTransferData data;
 };
 
@@ -130,9 +164,13 @@ struct ScreenDetails {
   DesktopIntRect availRectDisplayPix;
   int32_t pixelDepth;
   int32_t colorDepth;
+  uint32_t refreshRate; // In Hz, or 0 if not known.
   DesktopToLayoutDeviceScale contentsScaleFactor;
   CSSToLayoutDeviceScale defaultCSSScaleFactor;
   float dpi;
+  ScreenOrientation orientation;
+  uint16_t orientationAngle;
+  bool isPseudoDisplay;
 };
 
 struct DimensionInfo
@@ -200,7 +238,7 @@ struct PerformanceMemoryInfo {
   uint64_t domDom;
   uint64_t domStyle;
   uint64_t domOther;
-  uint64_t GCHeapUsage;
+  uint64_t jsMemUsage;
 };
 
 struct CategoryDispatch
@@ -277,6 +315,10 @@ struct DocShellLoadStateInit
   // responsible for causing the load to occur.
   uint32_t TriggeringSandboxFlags;
 
+  // The provided remote type of the process responsible for causing the load to
+  // occur. Validated in the parent process.
+  nsCString TriggeringRemoteType;
+
   nsCString? OriginalURIString;
   int32_t? CancelContentJSEpoch;
 
@@ -331,12 +373,13 @@ struct TimedChannelInfo
 struct ReplacementChannelConfigInit
 {
   uint32_t redirectFlags;
-  uint32_t classOfService;
+  ClassOfService classOfService;
   bool? privateBrowsing;
   nsCString? method;
   nsIReferrerInfo referrerInfo;
   TimedChannelInfo? timedChannelInfo;
-  nullable PRemoteLazyInputStream uploadStream;
+  RemoteLazyInputStream uploadStream;
+  uint64_t uploadStreamLength;
   bool uploadStreamHasHeaders;
   nsCString? contentType;
   nsCString? contentLength;

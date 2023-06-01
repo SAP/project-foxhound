@@ -10,9 +10,39 @@
 
 #include "AndroidWebAuthnTokenManager.h"
 #include "JavaBuiltins.h"
+#include "JavaExceptions.h"
 #include "mozilla/java/WebAuthnTokenManagerWrappers.h"
+#include "mozilla/jni/Conversions.h"
+#include "WebAuthnEnumStrings.h"
 
 namespace mozilla {
+namespace jni {
+
+template <>
+dom::AndroidWebAuthnResult Java2Native(mozilla::jni::Object::Param aData,
+                                       JNIEnv* aEnv) {
+  // TODO:
+  // AndroidWebAuthnResult stores successful both result and failure result.
+  // We should split it into success and failure (Bug 1754157)
+  if (aData.IsInstanceOf<jni::Throwable>()) {
+    java::sdk::Throwable::LocalRef throwable(aData);
+    return dom::AndroidWebAuthnResult(throwable->GetMessage()->ToString());
+  }
+
+  if (aData
+          .IsInstanceOf<java::WebAuthnTokenManager::MakeCredentialResponse>()) {
+    java::WebAuthnTokenManager::MakeCredentialResponse::LocalRef response(
+        aData);
+    return dom::AndroidWebAuthnResult(response);
+  }
+
+  MOZ_ASSERT(
+      aData.IsInstanceOf<java::WebAuthnTokenManager::GetAssertionResponse>());
+  java::WebAuthnTokenManager::GetAssertionResponse::LocalRef response(aData);
+  return dom::AndroidWebAuthnResult(response);
+}
+}  // namespace jni
+
 namespace dom {
 
 static nsIThread* gAndroidPBackgroundThread;
@@ -58,14 +88,15 @@ void AndroidWebAuthnTokenManager::Drop() {
 }
 
 RefPtr<U2FRegisterPromise> AndroidWebAuthnTokenManager::Register(
-    const WebAuthnMakeCredentialInfo& aInfo, bool aForceNoneAttestation) {
+    const WebAuthnMakeCredentialInfo& aInfo, bool aForceNoneAttestation,
+    void _status_callback(rust_ctap2_status_update_res*)) {
   AssertIsOnOwningThread();
 
   ClearPromises();
 
-  GetMainThreadEventTarget()->Dispatch(NS_NewRunnableFunction(
+  GetMainThreadSerialEventTarget()->Dispatch(NS_NewRunnableFunction(
       "java::WebAuthnTokenManager::WebAuthnMakeCredential",
-      [aInfo, aForceNoneAttestation]() {
+      [self = RefPtr{this}, aInfo, aForceNoneAttestation]() {
         AssertIsOnMainThread();
 
         // Produce the credential exclusion list
@@ -113,19 +144,16 @@ RefPtr<U2FRegisterPromise> AndroidWebAuthnTokenManager::Register(
                           java::sdk::Integer::ValueOf(1));
 
           // Get the attestation preference and override if the user asked
-          AttestationConveyancePreference attestation =
-              extra.attestationConveyancePreference();
-
           if (aForceNoneAttestation) {
             // Add UI support to trigger this, bug 1550164
-            attestation = AttestationConveyancePreference::None;
+            GECKOBUNDLE_PUT(authSelBundle, "attestationPreference",
+                            jni::StringParam(u"none"_ns));
+          } else {
+            const nsString& attestation =
+                extra.attestationConveyancePreference();
+            GECKOBUNDLE_PUT(authSelBundle, "attestationPreference",
+                            jni::StringParam(attestation));
           }
-
-          nsString attestPref;
-          attestPref.AssignASCII(
-              AttestationConveyancePreferenceValues::GetString(attestation));
-          GECKOBUNDLE_PUT(authSelBundle, "attestationPreference",
-                          jni::StringParam(attestPref));
 
           const WebAuthnAuthenticatorSelection& sel =
               extra.AuthenticatorSelection();
@@ -134,20 +162,22 @@ RefPtr<U2FRegisterPromise> AndroidWebAuthnTokenManager::Register(
                             java::sdk::Integer::ValueOf(1));
           }
 
-          if (sel.userVerificationRequirement() ==
-              UserVerificationRequirement::Required) {
+          if (sel.userVerificationRequirement().EqualsLiteral(
+                  MOZ_WEBAUTHN_USER_VERIFICATION_REQUIREMENT_REQUIRED)) {
             GECKOBUNDLE_PUT(authSelBundle, "requireUserVerification",
                             java::sdk::Integer::ValueOf(1));
           }
 
           if (sel.authenticatorAttachment().isSome()) {
-            const AuthenticatorAttachment authenticatorAttachment =
+            const nsString& authenticatorAttachment =
                 sel.authenticatorAttachment().value();
-            if (authenticatorAttachment == AuthenticatorAttachment::Platform) {
+            if (authenticatorAttachment.EqualsLiteral(
+                    MOZ_WEBAUTHN_AUTHENTICATOR_ATTACHMENT_PLATFORM)) {
               GECKOBUNDLE_PUT(authSelBundle, "requirePlatformAttachment",
                               java::sdk::Integer::ValueOf(1));
-            } else if (authenticatorAttachment ==
-                       AuthenticatorAttachment::Cross_platform) {
+            } else if (
+                authenticatorAttachment.EqualsLiteral(
+                    MOZ_WEBAUTHN_AUTHENTICATOR_ATTACHMENT_CROSS_PLATFORM)) {
               GECKOBUNDLE_PUT(authSelBundle, "requireCrossPlatformAttachment",
                               java::sdk::Integer::ValueOf(1));
             }
@@ -193,16 +223,33 @@ RefPtr<U2FRegisterPromise> AndroidWebAuthnTokenManager::Register(
             const_cast<void*>(static_cast<const void*>(uidBuf.Elements())),
             uidBuf.Length());
 
-        java::WebAuthnTokenManager::WebAuthnMakeCredential(
+        auto result = java::WebAuthnTokenManager::WebAuthnMakeCredential(
             credentialBundle, uid, challenge, idList, transportList,
             authSelBundle, extensionsBundle);
+        auto geckoResult = java::GeckoResult::LocalRef(std::move(result));
+        // This is likely running on the main thread, so we'll always dispatch
+        // to the background for state updates.
+        MozPromise<AndroidWebAuthnResult, AndroidWebAuthnResult,
+                   true>::FromGeckoResult(geckoResult)
+            ->Then(
+                GetMainThreadSerialEventTarget(), __func__,
+                [self = std::move(self)](AndroidWebAuthnResult&& aValue) {
+                  self->HandleRegisterResult(std::move(aValue));
+                },
+                [self = std::move(self)](AndroidWebAuthnResult&& aValue) {
+                  self->HandleRegisterResult(std::move(aValue));
+                });
       }));
 
   return mRegisterPromise.Ensure(__func__);
 }
 
 void AndroidWebAuthnTokenManager::HandleRegisterResult(
-    const AndroidWebAuthnResult& aResult) {
+    AndroidWebAuthnResult&& aResult) {
+  if (!gAndroidPBackgroundThread) {
+    // Promise is already rejected when shutting down background thread
+    return;
+  }
   // This is likely running on the main thread, so we'll always dispatch to the
   // background for state updates.
   if (aResult.IsError()) {
@@ -216,7 +263,8 @@ void AndroidWebAuthnTokenManager::HandleRegisterResult(
   } else {
     gAndroidPBackgroundThread->Dispatch(NS_NewRunnableFunction(
         "AndroidWebAuthnTokenManager::RegisterComplete",
-        [self = RefPtr<AndroidWebAuthnTokenManager>(this), aResult]() {
+        [self = RefPtr<AndroidWebAuthnTokenManager>(this),
+         aResult = std::move(aResult)]() {
           CryptoBuffer emptyBuffer;
           nsTArray<WebAuthnExtensionResult> extensions;
           WebAuthnMakeCredentialResult result(
@@ -228,13 +276,15 @@ void AndroidWebAuthnTokenManager::HandleRegisterResult(
 }
 
 RefPtr<U2FSignPromise> AndroidWebAuthnTokenManager::Sign(
-    const WebAuthnGetAssertionInfo& aInfo) {
+    const WebAuthnGetAssertionInfo& aInfo,
+    void _status_callback(rust_ctap2_status_update_res*)) {
   AssertIsOnOwningThread();
 
   ClearPromises();
 
-  GetMainThreadEventTarget()->Dispatch(NS_NewRunnableFunction(
-      "java::WebAuthnTokenManager::WebAuthnGetAssertion", [aInfo]() {
+  GetMainThreadSerialEventTarget()->Dispatch(NS_NewRunnableFunction(
+      "java::WebAuthnTokenManager::WebAuthnGetAssertion",
+      [self = RefPtr{this}, aInfo]() {
         AssertIsOnMainThread();
 
         jni::ObjectArray::LocalRef idList =
@@ -298,16 +348,31 @@ RefPtr<U2FSignPromise> AndroidWebAuthnTokenManager::Sign(
         GECKOBUNDLE_FINISH(assertionBundle);
         GECKOBUNDLE_FINISH(extensionsBundle);
 
-        java::WebAuthnTokenManager::WebAuthnGetAssertion(
+        auto result = java::WebAuthnTokenManager::WebAuthnGetAssertion(
             challenge, idList, transportList, assertionBundle,
             extensionsBundle);
+        auto geckoResult = java::GeckoResult::LocalRef(std::move(result));
+        MozPromise<AndroidWebAuthnResult, AndroidWebAuthnResult,
+                   true>::FromGeckoResult(geckoResult)
+            ->Then(
+                GetMainThreadSerialEventTarget(), __func__,
+                [self = std::move(self)](AndroidWebAuthnResult&& aValue) {
+                  self->HandleSignResult(std::move(aValue));
+                },
+                [self = std::move(self)](AndroidWebAuthnResult&& aValue) {
+                  self->HandleSignResult(std::move(aValue));
+                });
       }));
 
   return mSignPromise.Ensure(__func__);
 }
 
 void AndroidWebAuthnTokenManager::HandleSignResult(
-    const AndroidWebAuthnResult& aResult) {
+    AndroidWebAuthnResult&& aResult) {
+  if (!gAndroidPBackgroundThread) {
+    // Promise is already rejected when shutting down background thread
+    return;
+  }
   // This is likely running on the main thread, so we'll always dispatch to the
   // background for state updates.
   if (aResult.IsError()) {
@@ -321,7 +386,8 @@ void AndroidWebAuthnTokenManager::HandleSignResult(
   } else {
     gAndroidPBackgroundThread->Dispatch(NS_NewRunnableFunction(
         "AndroidWebAuthnTokenManager::SignComplete",
-        [self = RefPtr<AndroidWebAuthnTokenManager>(this), aResult]() {
+        [self = RefPtr<AndroidWebAuthnTokenManager>(this),
+         aResult = std::move(aResult)]() {
           CryptoBuffer emptyBuffer;
 
           nsTArray<WebAuthnExtensionResult> emptyExtensions;
@@ -329,7 +395,9 @@ void AndroidWebAuthnTokenManager::HandleSignResult(
               aResult.mClientDataJSON, aResult.mKeyHandle, aResult.mSignature,
               aResult.mAuthData, emptyExtensions, emptyBuffer,
               aResult.mUserHandle);
-          self->mSignPromise.Resolve(std::move(result), __func__);
+          nsTArray<WebAuthnGetAssertionResultWrapper> results = {
+              {result, mozilla::Nothing()}};
+          self->mSignPromise.Resolve(std::move(results), __func__);
         }));
   }
 }
@@ -338,6 +406,42 @@ void AndroidWebAuthnTokenManager::Cancel() {
   AssertIsOnOwningThread();
 
   ClearPromises();
+}
+
+AndroidWebAuthnResult::AndroidWebAuthnResult(
+    const java::WebAuthnTokenManager::MakeCredentialResponse::LocalRef&
+        aResponse) {
+  mClientDataJSON.Assign(
+      reinterpret_cast<const char*>(
+          aResponse->ClientDataJson()->GetElements().Elements()),
+      aResponse->ClientDataJson()->Length());
+  mKeyHandle.Assign(reinterpret_cast<uint8_t*>(
+                        aResponse->KeyHandle()->GetElements().Elements()),
+                    aResponse->KeyHandle()->Length());
+  mAttObj.Assign(reinterpret_cast<uint8_t*>(
+                     aResponse->AttestationObject()->GetElements().Elements()),
+                 aResponse->AttestationObject()->Length());
+}
+
+AndroidWebAuthnResult::AndroidWebAuthnResult(
+    const java::WebAuthnTokenManager::GetAssertionResponse::LocalRef&
+        aResponse) {
+  mClientDataJSON.Assign(
+      reinterpret_cast<const char*>(
+          aResponse->ClientDataJson()->GetElements().Elements()),
+      aResponse->ClientDataJson()->Length());
+  mKeyHandle.Assign(reinterpret_cast<uint8_t*>(
+                        aResponse->KeyHandle()->GetElements().Elements()),
+                    aResponse->KeyHandle()->Length());
+  mAuthData.Assign(reinterpret_cast<uint8_t*>(
+                       aResponse->AuthData()->GetElements().Elements()),
+                   aResponse->AuthData()->Length());
+  mSignature.Assign(reinterpret_cast<uint8_t*>(
+                        aResponse->Signature()->GetElements().Elements()),
+                    aResponse->Signature()->Length());
+  mUserHandle.Assign(reinterpret_cast<uint8_t*>(
+                         aResponse->UserHandle()->GetElements().Elements()),
+                     aResponse->UserHandle()->Length());
 }
 
 }  // namespace dom

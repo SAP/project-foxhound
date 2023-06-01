@@ -3,16 +3,21 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import React, { PureComponent } from "react";
+import PropTypes from "prop-types";
 import { connect } from "../../utils/connect";
 import classnames from "classnames";
 import actions from "../../actions";
 import {
-  getSelectedSourceWithContent,
+  getSelectedSource,
+  getSelectedLocation,
+  getSelectedSourceTextContent,
   getPrettySource,
   getPaneCollapse,
   getContext,
   getGeneratedSource,
+  isSourceBlackBoxed,
   canPrettyPrintSource,
+  getPrettyPrintMessage,
 } from "../../selectors";
 
 import { isPretty, getFilename, shouldBlackbox } from "../../utils/source";
@@ -27,6 +32,24 @@ class SourceFooter extends PureComponent {
     super();
 
     this.state = { cursorPosition: { line: 0, column: 0 } };
+  }
+
+  static get propTypes() {
+    return {
+      canPrettyPrint: PropTypes.bool.isRequired,
+      prettyPrintMessage: PropTypes.string.isRequired,
+      cx: PropTypes.object.isRequired,
+      endPanelCollapsed: PropTypes.bool.isRequired,
+      horizontal: PropTypes.bool.isRequired,
+      jumpToMappedLocation: PropTypes.func.isRequired,
+      mappedSource: PropTypes.object,
+      selectedSource: PropTypes.object,
+      isSelectedSourceBlackBoxed: PropTypes.bool.isRequired,
+      sourceLoaded: PropTypes.bool.isRequired,
+      toggleBlackBox: PropTypes.func.isRequired,
+      togglePaneCollapse: PropTypes.func.isRequired,
+      togglePrettyPrint: PropTypes.func.isRequired,
+    };
   }
 
   componentDidUpdate() {
@@ -58,14 +81,16 @@ class SourceFooter extends PureComponent {
       cx,
       selectedSource,
       canPrettyPrint,
+      prettyPrintMessage,
       togglePrettyPrint,
+      sourceLoaded,
     } = this.props;
 
     if (!selectedSource) {
-      return;
+      return null;
     }
 
-    if (!selectedSource.content && selectedSource.isPrettyPrinted) {
+    if (!sourceLoaded && selectedSource.isPrettyPrinted) {
       return (
         <div className="action" key="pretty-loader">
           <AccessibleImage className="loader spin" />
@@ -73,24 +98,23 @@ class SourceFooter extends PureComponent {
       );
     }
 
-    if (!canPrettyPrint) {
-      return;
-    }
-
-    const tooltip = L10N.getStr("sourceTabs.prettyPrint");
-    const sourceLoaded = !!selectedSource.content;
-
     const type = "prettyPrint";
     return (
       <button
-        onClick={() => togglePrettyPrint(cx, selectedSource.id)}
+        onClick={() => {
+          if (!canPrettyPrint) {
+            return;
+          }
+          togglePrettyPrint(cx, selectedSource.id);
+        }}
         className={classnames("action", type, {
-          active: sourceLoaded,
+          active: sourceLoaded && canPrettyPrint,
           pretty: isPretty(selectedSource),
         })}
         key={type}
-        title={tooltip}
-        aria-label={tooltip}
+        title={prettyPrintMessage}
+        aria-label={prettyPrintMessage}
+        disabled={!canPrettyPrint}
       >
         <AccessibleImage className={type} />
       </button>
@@ -98,18 +122,19 @@ class SourceFooter extends PureComponent {
   }
 
   blackBoxButton() {
-    const { cx, selectedSource, toggleBlackBox } = this.props;
-    const sourceLoaded = selectedSource?.content;
+    const {
+      cx,
+      selectedSource,
+      isSelectedSourceBlackBoxed,
+      toggleBlackBox,
+      sourceLoaded,
+    } = this.props;
 
-    if (!selectedSource) {
-      return;
+    if (!selectedSource || !shouldBlackbox(selectedSource)) {
+      return null;
     }
 
-    if (!shouldBlackbox(selectedSource)) {
-      return;
-    }
-
-    const blackboxed = selectedSource.isBlackBoxed;
+    const blackboxed = isSelectedSourceBlackBoxed;
 
     const tooltip = blackboxed
       ? L10N.getStr("sourceFooter.unignore")
@@ -135,7 +160,7 @@ class SourceFooter extends PureComponent {
 
   renderToggleButton() {
     if (this.props.horizontal) {
-      return;
+      return null;
     }
 
     return (
@@ -235,20 +260,29 @@ class SourceFooter extends PureComponent {
 }
 
 const mapStateToProps = state => {
-  const selectedSource = getSelectedSourceWithContent(state);
+  const selectedSource = getSelectedSource(state);
+  const selectedLocation = getSelectedLocation(state);
+  const sourceTextContent = getSelectedSourceTextContent(state);
 
   return {
     cx: getContext(state),
     selectedSource,
+    isSelectedSourceBlackBoxed: selectedSource
+      ? isSourceBlackBoxed(state, selectedSource)
+      : null,
+    sourceLoaded: !!sourceTextContent,
     mappedSource: getGeneratedSource(state, selectedSource),
     prettySource: getPrettySource(
       state,
       selectedSource ? selectedSource.id : null
     ),
     endPanelCollapsed: getPaneCollapse(state, "end"),
-    canPrettyPrint: selectedSource
-      ? canPrettyPrintSource(state, selectedSource.id)
+    canPrettyPrint: selectedLocation
+      ? canPrettyPrintSource(state, selectedLocation)
       : false,
+    prettyPrintMessage: selectedLocation
+      ? getPrettyPrintMessage(state, selectedLocation)
+      : null,
   };
 };
 

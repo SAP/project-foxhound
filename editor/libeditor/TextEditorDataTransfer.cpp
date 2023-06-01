@@ -3,16 +3,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/TextEditor.h"
+#include "TextEditor.h"
+
+#include "EditorUtils.h"
+#include "HTMLEditor.h"
+#include "SelectionState.h"
 
 #include "mozilla/ArrayUtils.h"
-#include "mozilla/HTMLEditor.h"
 #include "mozilla/MouseEvents.h"
-#include "mozilla/SelectionState.h"
 #include "mozilla/dom/DataTransfer.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Selection.h"
+
 #include "nsAString.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
@@ -50,7 +53,7 @@ nsresult TextEditor::InsertTextFromTransferable(
   NS_WARNING_ASSERTION(
       NS_SUCCEEDED(rv),
       "nsITransferable::GetAnyDataTransferData() failed, but ignored");
-  if (NS_SUCCEEDED(rv) && (bestFlavor.EqualsLiteral(kUnicodeMime) ||
+  if (NS_SUCCEEDED(rv) && (bestFlavor.EqualsLiteral(kTextMime) ||
                            bestFlavor.EqualsLiteral(kMozTextInternal))) {
     AutoTransactionsConserveSelection dontChangeMySelection(*this);
 
@@ -76,8 +79,8 @@ nsresult TextEditor::InsertTextFromTransferable(
       // Sanitize possible carriage returns in the string to be inserted
       nsContentUtils::PlatformToDOMLineBreaks(stuffToPaste);
 
-      AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                                 ScrollSelectionIntoView::Yes);
+      AutoPlaceholderBatch treatAsOneTransaction(
+          *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
       nsresult rv =
           InsertTextAsSubAction(stuffToPaste, SelectionHandling::Delete);
       if (NS_FAILED(rv)) {
@@ -147,12 +150,13 @@ nsresult TextEditor::InsertDroppedDataTransferAsAction(
   // anymore because nobody should listen to mutation events of anonymous
   // text node in <input>/<textarea>.
   nsContentUtils::PlatformToDOMLineBreaks(data);
-  rv = InsertTextAt(data, aDroppedAt, false);
+  rv = InsertTextAt(data, aDroppedAt, DeleteSelectedContent::No);
   if (NS_WARN_IF(Destroyed())) {
     return NS_ERROR_EDITOR_DESTROYED;
   }
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                       "EditorBase::InsertTextAt() failed, but ignored");
+                       "EditorBase::InsertTextAt(DeleteSelectedContent::No) "
+                       "failed, but ignored");
   return rv;
 }
 
@@ -267,8 +271,7 @@ bool TextEditor::CanPaste(int32_t aClipboardType) const {
   }
 
   // the flavors that we can deal with
-  AutoTArray<nsCString, 1> textEditorFlavors = {
-      nsDependentCString(kUnicodeMime)};
+  AutoTArray<nsCString, 1> textEditorFlavors = {nsDependentCString(kTextMime)};
 
   bool haveFlavors;
   rv = clipboard->HasDataMatchingFlavors(textEditorFlavors, aClipboardType,
@@ -290,10 +293,9 @@ bool TextEditor::CanPasteTransferable(nsITransferable* aTransferable) {
   }
 
   nsCOMPtr<nsISupports> data;
-  nsresult rv =
-      aTransferable->GetTransferData(kUnicodeMime, getter_AddRefs(data));
+  nsresult rv = aTransferable->GetTransferData(kTextMime, getter_AddRefs(data));
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                       "nsITransferable::GetTransferData(kUnicodeMime) failed");
+                       "nsITransferable::GetTransferData(kTextMime) failed");
   return NS_SUCCEEDED(rv) && data;
 }
 

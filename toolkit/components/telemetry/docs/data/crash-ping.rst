@@ -60,7 +60,6 @@ Structure:
           BlockedDllList: <list>, // Windows-only, see WindowsDllBlocklist.cpp for details
           BlocklistInitFailed: "1", // Windows-only, present only if the DLL blocklist initialization failed
           CrashTime: <time>, // Seconds since the Epoch
-          ContainsMemoryReport: "1", // Optional, if set indicates that the crash had a memory report attached
           DOMFissionEnabled: "1", // Optional, if set indicates that a Fission window had been opened
           EventLoopNestingLevel: <levels>, // Optional, present only if >0, indicates the nesting level of the event-loop
           ExperimentalFeatures: <features>, // Optional, a comma-separated string that specifies the enabled experimental features from about:preferences#experimental
@@ -106,17 +105,29 @@ The ``processType`` field contains the type of process that crashed. There are
 currently multiple process types defined in ``nsICrashService`` but crash pings
 are sent only for the ones below:
 
-+---------------+---------------------------------------------------+
-| Type          | Description                                       |
-+===============+===================================================+
-| main          | Main process, also known as the browser process   |
-+---------------+---------------------------------------------------+
-| content       | Content process                                   |
-+---------------+---------------------------------------------------+
-| gpu           | GPU process                                       |
-+---------------+---------------------------------------------------+
-| vr            | VR process                                        |
-+---------------+---------------------------------------------------+
++---------------+-------------------------------------------------------------------------------+
+| Type          | Description                                                                   |
++===============+===============================================================================+
+| main          | :ref:`Main process <parent-process>`, also known as parent or browser process |
++---------------+-------------------------------------------------------------------------------+
+| content       | :ref:`Content process <content-process>`                                      |
++---------------+-------------------------------------------------------------------------------+
+| gmplugin      | :ref:`Gecko media plugin <gecko-media-plugins-process>`                       |
++---------------+-------------------------------------------------------------------------------+
+| gpu           | :ref:`GPU process <gpu-process>`                                              |
++---------------+-------------------------------------------------------------------------------+
+| vr            | :ref:`VR process <vr-process>`                                                |
++---------------+-------------------------------------------------------------------------------+
+| rdd           | :ref:`Data decoder process <data-decoder-process>`                            |
++---------------+-------------------------------------------------------------------------------+
+| socket        | :ref:`Network socket process <network-socket-process>`                        |
++---------------+-------------------------------------------------------------------------------+
+| sandboxbroker | :ref:`Remote sandbox broker <remote-sandbox-process>`                         |
++---------------+-------------------------------------------------------------------------------+
+| forkserver    | :ref:`Fork server <fork-server>`                                              |
++---------------+-------------------------------------------------------------------------------+
+| utility       | :ref:`Utility process <utility-process>`                                      |
++---------------+-------------------------------------------------------------------------------+
 
 .. _remote-process-types:
 
@@ -240,10 +251,12 @@ Version History
 - Firefox 76: Added DOMFissionEnabled (`bug 1602918 <https://bugzilla.mozilla.org/show_bug.cgi?id=1602918>`_).
 - Firefox 79: Added ExperimentalFeatures (`bug 1644544 <https://bugzilla.mozilla.org/show_bug.cgi?id=1644544>`_).
 - Firefox 85: Added QuotaManagerShutdownTimeout, removed IndexedDBShutdownTimeout and LocalStorageShutdownTimeout
-  (`bug 1672369 <https://bugzilla.mozilla.org/show_bug.cgi?id=1672369>`_)
+  (`bug 1672369 <https://bugzilla.mozilla.org/show_bug.cgi?id=1672369>`_).
 - Firefox 89: Added GPUProcessLaunchCount (`bug 1710448 <https://bugzilla.mozilla.org/show_bug.cgi?id=1710448>`_)
   and ProfilerChildShutdownPhase (`bug 1704680 <https://bugzilla.mozilla.org/show_bug.cgi?id=1704680>`_).
 - Firefox 90: Removed MemoryErrorCorrection (`bug 1710152 <https://bugzilla.mozilla.org/show_bug.cgi?id=1710152>`_)
   and added WindowsErrorReporting (`bug 1703761 <https://bugzilla.mozilla.org/show_bug.cgi?id=1703761>`_).
-- Firefox 95: Added HeadlessMode and BackgroundTaskName (`bug 1697875 <https://bugzilla.mozilla.org/show_bug.cgi?id=1697875>`_)
+- Firefox 95: Added HeadlessMode and BackgroundTaskName (`bug 1697875 <https://bugzilla.mozilla.org/show_bug.cgi?id=1697875>`_).
 - Firefox 96: Added WindowsPackageFamilyName (`bug 1738375 <https://bugzilla.mozilla.org/show_bug.cgi?id=1738375>`_).
+- Firefox 103: Removed ContainsMemoryReport (`bug 1776279 <https://bugzilla.mozilla.org/show_bug.cgi?id=1776279>`_).
+- Firefox 107: Added UtilityActorsName (`bug 1788596 <https://bugzilla.mozilla.org/show_bug.cgi?id=1788596>`_).

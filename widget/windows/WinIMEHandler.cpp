@@ -7,6 +7,7 @@
 
 #include "IMMHandler.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_intl.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/WindowsVersion.h"
 #include "nsWindowDefs.h"
@@ -21,7 +22,7 @@
 #include "nsWindow.h"
 #include "WinUtils.h"
 #include "nsIWindowsRegKey.h"
-#include "nsIWindowsUIUtils.h"
+#include "WindowsUIUtils.h"
 
 #ifdef ACCESSIBILITY
 #  include "nsAccessibilityService.h"
@@ -58,7 +59,6 @@ bool IMEHandler::sHasNativeCaretBeenRequested = false;
 
 bool IMEHandler::sIsInTSFMode = false;
 bool IMEHandler::sIsIMMEnabled = true;
-bool IMEHandler::sAssociateIMCOnlyWhenIMM_IMEActive = false;
 decltype(SetInputScopes)* IMEHandler::sSetInputScopes = nullptr;
 
 static POWER_PLATFORM_ROLE sPowerPlatformRole = PlatformRoleUnspecified;
@@ -69,11 +69,7 @@ void IMEHandler::Initialize() {
   TSFTextStore::Initialize();
   sIsInTSFMode = TSFTextStore::IsInTSFMode();
   sIsIMMEnabled =
-      !sIsInTSFMode || Preferences::GetBool("intl.tsf.support_imm", true);
-  sAssociateIMCOnlyWhenIMM_IMEActive =
-      sIsIMMEnabled &&
-      Preferences::GetBool("intl.tsf.associate_imc_only_when_imm_ime_is_active",
-                           false);
+      !sIsInTSFMode || StaticPrefs::intl_tsf_support_imm_AtStartup();
   if (!sIsInTSFMode) {
     // When full TSFTextStore is not available, try to use SetInputScopes API
     // to enable at least InputScope. Use GET_MODULE_HANDLE_EX_FLAG_PIN to
@@ -163,7 +159,7 @@ bool IMEHandler::ProcessMessage(nsWindow* aWindow, UINT aMessage,
   // behavior without native caret.  Therefore, we shouldn't put native caret
   // as far as possible.
   if (!sHasNativeCaretBeenRequested && aMessage == WM_GETOBJECT &&
-      static_cast<DWORD>(aLParam) == OBJID_CARET) {
+      static_cast<LONG>(aLParam) == OBJID_CARET) {
     // So, when we receive first WM_GETOBJECT for OBJID_CARET, let's start to
     // create native caret for such applications.
     sHasNativeCaretBeenRequested = true;
@@ -413,10 +409,7 @@ void IMEHandler::OnDestroyWindow(nsWindow* aWindow) {
 }
 
 // static
-bool IMEHandler::NeedsToAssociateIMC() {
-  return !sForceDisableCurrentIMM_IME &&
-         (!sAssociateIMCOnlyWhenIMM_IMEActive || !IsIMMActive());
-}
+bool IMEHandler::NeedsToAssociateIMC() { return !sForceDisableCurrentIMM_IME; }
 
 // static
 void IMEHandler::SetInputContext(nsWindow* aWindow, InputContext& aInputContext,
@@ -425,7 +418,7 @@ void IMEHandler::SetInputContext(nsWindow* aWindow, InputContext& aInputContext,
   // FYI: If there is no composition, this call will do nothing.
   NotifyIME(aWindow, IMENotification(REQUEST_TO_COMMIT_COMPOSITION));
 
-  if (aInputContext.mHTMLInputInputmode.EqualsLiteral("none")) {
+  if (aInputContext.mHTMLInputMode.EqualsLiteral("none")) {
     IMEHandler::MaybeDismissOnScreenKeyboard(aWindow, Sync::Yes);
   } else if (aAction.UserMightRequestOpenVKB()) {
     IMEHandler::MaybeShowOnScreenKeyboard(aWindow, aInputContext);
@@ -453,7 +446,7 @@ void IMEHandler::SetInputContext(nsWindow* aWindow, InputContext& aInputContext,
   } else {
     // Set at least InputScope even when TextStore is not available.
     SetInputScopeForIMM32(aWindow, aInputContext.mHTMLInputType,
-                          aInputContext.mHTMLInputInputmode,
+                          aInputContext.mHTMLInputMode,
                           aInputContext.mInPrivateBrowsing);
   }
 
@@ -466,7 +459,7 @@ void IMEHandler::SetInputContext(nsWindow* aWindow, InputContext& aInputContext,
 }
 
 // static
-void IMEHandler::AssociateIMEContext(nsWindowBase* aWindowBase, bool aEnable) {
+void IMEHandler::AssociateIMEContext(nsWindow* aWindowBase, bool aEnable) {
   IMEContext context(aWindowBase);
   if (aEnable) {
     context.AssociateDefaultContext();
@@ -541,37 +534,12 @@ void IMEHandler::OnKeyboardLayoutChanged() {
   if (!sIsIMMEnabled || !IsTSFAvailable()) {
     return;
   }
-
-  // We don't need to do anything when sAssociateIMCOnlyWhenIMM_IMEActive is
-  // false because IMContext won't be associated/disassociated when changing
-  // active keyboard layout/IME.
-  if (!sAssociateIMCOnlyWhenIMM_IMEActive) {
-    return;
-  }
-
-  // If there is no TSFTextStore which has focus, i.e., no editor has focus,
-  // nothing to do here.
-  nsWindowBase* windowBase = TSFTextStore::GetEnabledWindowBase();
-  if (!windowBase) {
-    return;
-  }
-
-  // If IME isn't available, nothing to do here.
-  InputContext inputContext = windowBase->GetInputContext();
-  if (!WinUtils::IsIMEEnabled(inputContext)) {
-    return;
-  }
-
-  // Associate or Disassociate IMC if it's necessary.
-  // Note that this does nothing if the window has already associated with or
-  // disassociated from the window.
-  AssociateIMEContext(windowBase, NeedsToAssociateIMC());
 }
 
 // static
 void IMEHandler::SetInputScopeForIMM32(nsWindow* aWindow,
                                        const nsAString& aHTMLInputType,
-                                       const nsAString& aHTMLInputInputmode,
+                                       const nsAString& aHTMLInputMode,
                                        bool aInPrivateBrowsing) {
   if (sIsInTSFMode || !sSetInputScopes || aWindow->Destroyed()) {
     return;
@@ -581,7 +549,7 @@ void IMEHandler::SetInputScopeForIMM32(nsWindow* aWindow,
   // IME may refer only first input scope, but we will append inputmode's
   // input scopes since IME may refer it like Chrome.
   AppendInputScopeFromType(aHTMLInputType, scopes);
-  AppendInputScopeFromInputmode(aHTMLInputInputmode, scopes);
+  AppendInputScopeFromInputMode(aHTMLInputMode, scopes);
 
   if (aInPrivateBrowsing) {
     scopes.AppendElement(IS_PRIVATE);
@@ -597,9 +565,9 @@ void IMEHandler::SetInputScopeForIMM32(nsWindow* aWindow,
 }
 
 // static
-void IMEHandler::AppendInputScopeFromInputmode(const nsAString& aInputmode,
+void IMEHandler::AppendInputScopeFromInputMode(const nsAString& aHTMLInputMode,
                                                nsTArray<InputScope>& aScopes) {
-  if (aInputmode.EqualsLiteral("mozAwesomebar")) {
+  if (aHTMLInputMode.EqualsLiteral("mozAwesomebar")) {
     // Even if Awesomebar has focus, user may not input URL directly.
     // However, on-screen keyboard for URL should be shown because it has
     // some useful additional keys like ".com" and they are not hindrances
@@ -627,19 +595,19 @@ void IMEHandler::AppendInputScopeFromInputmode(const nsAString& aInputmode,
   }
 
   // https://html.spec.whatwg.org/dev/interaction.html#attr-inputmode
-  if (aInputmode.EqualsLiteral("url")) {
+  if (aHTMLInputMode.EqualsLiteral("url")) {
     if (!aScopes.Contains(IS_SEARCH)) {
       aScopes.AppendElement(IS_URL);
     }
     return;
   }
-  if (aInputmode.EqualsLiteral("email")) {
+  if (aHTMLInputMode.EqualsLiteral("email")) {
     if (!aScopes.Contains(IS_EMAIL_SMTPEMAILADDRESS)) {
       aScopes.AppendElement(IS_EMAIL_SMTPEMAILADDRESS);
     }
     return;
   }
-  if (aInputmode.EqualsLiteral("tel")) {
+  if (aHTMLInputMode.EqualsLiteral("tel")) {
     if (!aScopes.Contains(IS_TELEPHONE_FULLTELEPHONENUMBER)) {
       aScopes.AppendElement(IS_TELEPHONE_FULLTELEPHONENUMBER);
     }
@@ -648,19 +616,19 @@ void IMEHandler::AppendInputScopeFromInputmode(const nsAString& aInputmode,
     }
     return;
   }
-  if (aInputmode.EqualsLiteral("numeric")) {
+  if (aHTMLInputMode.EqualsLiteral("numeric")) {
     if (!aScopes.Contains(IS_DIGITS)) {
       aScopes.AppendElement(IS_DIGITS);
     }
     return;
   }
-  if (aInputmode.EqualsLiteral("decimal")) {
+  if (aHTMLInputMode.EqualsLiteral("decimal")) {
     if (!aScopes.Contains(IS_NUMBER)) {
       aScopes.AppendElement(IS_NUMBER);
     }
     return;
   }
-  if (aInputmode.EqualsLiteral("search")) {
+  if (aHTMLInputMode.EqualsLiteral("search")) {
     if (NeedsSearchInputScope() && !aScopes.Contains(IS_SEARCH)) {
       aScopes.AppendElement(IS_SEARCH);
     }
@@ -719,9 +687,8 @@ void IMEHandler::AppendInputScopeFromType(const nsAString& aHTMLInputType,
 
 // static
 bool IMEHandler::NeedsSearchInputScope() {
-  return !(Preferences::GetBool(
-               "intl.tsf.hack.atok.search_input_scope_disabled", false) &&
-           TSFTextStore::IsATOKActive());
+  return !StaticPrefs::intl_tsf_hack_atok_search_input_scope_disabled() ||
+         !TSFTextStore::IsATOKActive();
 }
 
 // static
@@ -753,7 +720,7 @@ bool IMEHandler::IsOnScreenKeyboardSupported() {
 // static
 void IMEHandler::MaybeShowOnScreenKeyboard(nsWindow* aWindow,
                                            const InputContext& aInputContext) {
-  if (aInputContext.mHTMLInputInputmode.EqualsLiteral("none")) {
+  if (aInputContext.mHTMLInputMode.EqualsLiteral("none")) {
     return;
   }
 
@@ -944,15 +911,7 @@ bool IMEHandler::IsKeyboardPresentOnSlate() {
 
 // static
 bool IMEHandler::IsInTabletMode() {
-  nsCOMPtr<nsIWindowsUIUtils> uiUtils(
-      do_GetService("@mozilla.org/windows-ui-utils;1"));
-  if (NS_WARN_IF(!uiUtils)) {
-    Preferences::SetString(kOskDebugReason,
-                           L"IITM: nsIWindowsUIUtils not available.");
-    return false;
-  }
-  bool isInTabletMode = false;
-  uiUtils->GetInTabletMode(&isInTabletMode);
+  bool isInTabletMode = WindowsUIUtils::GetInTabletMode();
   if (isInTabletMode) {
     Preferences::SetString(kOskDebugReason, L"IITM: GetInTabletMode=true.");
   } else {

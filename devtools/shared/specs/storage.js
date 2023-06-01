@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const protocol = require("devtools/shared/protocol");
+const protocol = require("resource://devtools/shared/protocol.js");
 const { Arg, RetVal, types } = protocol;
 
 const childSpecs = {};
@@ -316,6 +316,8 @@ types.addDictType(
 
 exports.childSpecs = childSpecs;
 
+// @backward-compat { version 111 } This spec can be removed once 111 is released.
+// This codepath was only used when connecting to older servers.
 exports.storageSpec = protocol.generateActorSpec({
   typeName: "storage",
 

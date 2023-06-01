@@ -104,19 +104,12 @@ void nsHtml5Parser::SetDocumentCharset(NotNull<const Encoding*> aEncoding,
                                          (nsCharsetSource)aCharsetSource);
 }
 
-NS_IMETHODIMP
-nsHtml5Parser::GetChannel(nsIChannel** aChannel) {
+nsresult nsHtml5Parser::GetChannel(nsIChannel** aChannel) {
   if (GetStreamParser()) {
     return GetStreamParser()->GetChannel(aChannel);
   } else {
     return NS_ERROR_NOT_AVAILABLE;
   }
-}
-
-NS_IMETHODIMP
-nsHtml5Parser::GetDTD(nsIDTD** aDTD) {
-  *aDTD = nullptr;
-  return NS_OK;
 }
 
 nsIStreamListener* nsHtml5Parser::GetStreamListener() {
@@ -157,7 +150,7 @@ NS_IMETHODIMP_(bool)
 nsHtml5Parser::IsComplete() { return mExecutor->IsComplete(); }
 
 NS_IMETHODIMP
-nsHtml5Parser::Parse(nsIURI* aURL, void* /* legacy; ignored */) {
+nsHtml5Parser::Parse(nsIURI* aURL) {
   /*
    * Do NOT cause WillBuildModel to be called synchronously from here!
    * The document won't be ready for it until OnStartRequest!
@@ -339,7 +332,10 @@ nsresult nsHtml5Parser::Parse(const nsAString& aSourceBuffer, void* aKey,
       }
 
       if (mTreeBuilder->HasScript()) {
-        mTreeBuilder->Flush();                // Move ops to the executor
+        auto r = mTreeBuilder->Flush();  // Move ops to the executor
+        if (r.isErr()) {
+          return executor->MarkAsBroken(r.unwrapErr());
+        }
         rv = executor->FlushDocumentWrite();  // run the ops
         NS_ENSURE_SUCCESS(rv, rv);
         // Flushing tree ops can cause all sorts of things.
@@ -399,7 +395,10 @@ nsresult nsHtml5Parser::Parse(const nsAString& aSourceBuffer, void* aKey,
     NS_ASSERTION(!stackBuffer.hasMore(),
                  "Buffer wasn't tokenized to completion?");
     // Scripting semantics require a forced tree builder flush here
-    mTreeBuilder->Flush();                // Move ops to the executor
+    auto r = mTreeBuilder->Flush();  // Move ops to the executor
+    if (r.isErr()) {
+      return executor->MarkAsBroken(r.unwrapErr());
+    }
     rv = executor->FlushDocumentWrite();  // run the ops
     NS_ENSURE_SUCCESS(rv, rv);
   } else if (stackBuffer.hasMore()) {
@@ -449,7 +448,10 @@ nsresult nsHtml5Parser::Parse(const nsAString& aSourceBuffer, void* aKey,
       }
     }
 
-    mDocWriteSpeculativeTreeBuilder->Flush();
+    auto r = mDocWriteSpeculativeTreeBuilder->Flush();
+    if (r.isErr()) {
+      return executor->MarkAsBroken(r.unwrapErr());
+    }
     mDocWriteSpeculativeTreeBuilder->DropHandles();
     executor->FlushSpeculativeLoads();
   }
@@ -476,26 +478,6 @@ nsHtml5Parser::Terminate() {
   }
   return executor->DidBuildModel(true);
 }
-
-NS_IMETHODIMP
-nsHtml5Parser::ParseFragment(const nsAString& aSourceBuffer,
-                             nsTArray<nsString>& aTagStack) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-nsHtml5Parser::BuildModel() {
-  MOZ_ASSERT_UNREACHABLE("Don't call this!");
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-nsHtml5Parser::CancelParsingEvents() {
-  MOZ_ASSERT_UNREACHABLE("Don't call this!");
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-void nsHtml5Parser::Reset() { MOZ_ASSERT_UNREACHABLE("Don't call this!"); }
 
 bool nsHtml5Parser::IsInsertionPointDefined() {
   return !mExecutor->IsFlushing() && !mInsertionPointPermanentlyUndefined &&
@@ -575,7 +557,10 @@ nsresult nsHtml5Parser::ParseUntilBlocked() {
               mTreeBuilder->StreamEnded();
             }
           }
-          mTreeBuilder->Flush();
+          auto r = mTreeBuilder->Flush();
+          if (r.isErr()) {
+            return mExecutor->MarkAsBroken(r.unwrapErr());
+          }
           mExecutor->FlushDocumentWrite();
           // The below call does memory cleanup, so call it even if the
           // parser has been marked as broken.
@@ -588,14 +573,20 @@ nsresult nsHtml5Parser::ParseUntilBlocked() {
         if (GetStreamParser()) {
           if (mReturnToStreamParserPermitted &&
               !mExecutor->IsScriptExecuting()) {
-            mTreeBuilder->Flush();
+            auto r = mTreeBuilder->Flush();
+            if (r.isErr()) {
+              return mExecutor->MarkAsBroken(r.unwrapErr());
+            }
             mReturnToStreamParserPermitted = false;
             GetStreamParser()->ContinueAfterScriptsOrEncodingCommitment(
                 mTokenizer.get(), mTreeBuilder.get(), mLastWasCR);
           }
         } else {
           // Script-created parser
-          mTreeBuilder->Flush();
+          auto r = mTreeBuilder->Flush();
+          if (r.isErr()) {
+            return mExecutor->MarkAsBroken(r.unwrapErr());
+          }
           // No need to flush the executor, because the executor is already
           // in a flush
           NS_ASSERTION(mExecutor->IsInFlushLoop(),
@@ -631,7 +622,10 @@ nsresult nsHtml5Parser::ParseUntilBlocked() {
         mRootContextLineNumber = mTokenizer->getLineNumber();
       }
       if (mTreeBuilder->HasScript()) {
-        mTreeBuilder->Flush();
+        auto r = mTreeBuilder->Flush();
+        if (r.isErr()) {
+          return mExecutor->MarkAsBroken(r.unwrapErr());
+        }
         rv = mExecutor->FlushDocumentWrite();
         NS_ENSURE_SUCCESS(rv, rv);
       }
@@ -659,7 +653,7 @@ nsresult nsHtml5Parser::StartExecutor() {
    * We know we're in document.open(), so our document must already
    * have a script global andthe WillBuildModel call is safe.
    */
-  return executor->WillBuildModel(eDTDMode_unknown);
+  return executor->WillBuildModel();
 }
 
 nsresult nsHtml5Parser::Initialize(mozilla::dom::Document* aDoc, nsIURI* aURI,

@@ -1,7 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-add_task(async function setup() {
+add_setup(async function() {
   TEST_LOGIN1 = await addLogin(TEST_LOGIN1);
   await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
@@ -155,8 +155,11 @@ async function testContextMenuOnInputField(testData) {
   info("test setup completed");
   let contextMenu = await openContextMenuForPasswordInput(browser);
   let fillItem = contextMenu.querySelector("#fill-login");
-  ok(fillItem, "fill menu item exists");
-  ok(fillItem && EventUtils.isHidden(fillItem), "fill menu item is hidden");
+  Assert.ok(fillItem, "fill menu item exists");
+  Assert.ok(
+    fillItem && EventUtils.isHidden(fillItem),
+    "fill menu item is hidden"
+  );
 
   let promiseHidden = BrowserTestUtils.waitForEvent(contextMenu, "popuphidden");
   info("Calling hidePopup on contextMenu");

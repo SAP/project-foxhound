@@ -4,8 +4,10 @@
 
 "use strict";
 
-const ResourceCommand = require("devtools/shared/commands/resource/resource-command");
+const ResourceCommand = require("resource://devtools/shared/commands/resource/resource-command.js");
 
+// @backward-compat { version 111 } The serverSentEvent legacy listener can be
+// deleted when 111 is on the release channel.
 module.exports = async function({ targetFront, onAvailable }) {
   if (!targetFront.getTrait("isBrowsingContext")) {
     // This resource is only available on browsing-context targets.

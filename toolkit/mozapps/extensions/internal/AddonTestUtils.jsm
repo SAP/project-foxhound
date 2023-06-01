@@ -11,47 +11,45 @@ var EXPORTED_SYMBOLS = ["AddonTestUtils", "MockAsyncShutdown"];
 
 const CERTDB_CONTRACTID = "@mozilla.org/security/x509certdb;1";
 
-Cu.importGlobalProperties(["fetch"]);
-
-const { AsyncShutdown } = ChromeUtils.import(
-  "resource://gre/modules/AsyncShutdown.jsm"
+const { AddonManager, AddonManagerPrivate } = ChromeUtils.import(
+  "resource://gre/modules/AddonManager.jsm"
 );
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { AsyncShutdown } = ChromeUtils.importESModule(
+  "resource://gre/modules/AsyncShutdown.sys.mjs"
+);
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
 const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+const { EventEmitter } = ChromeUtils.importESModule(
+  "resource://gre/modules/EventEmitter.sys.mjs"
 );
 
-const { EventEmitter } = ChromeUtils.import(
-  "resource://gre/modules/EventEmitter.jsm"
-);
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+const lazy = {};
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  AMTelemetry: "resource://gre/modules/AddonManager.jsm",
+ChromeUtils.defineESModuleGetters(lazy, {
+  FileTestUtils: "resource://testing-common/FileTestUtils.sys.mjs",
+  MockRegistrar: "resource://testing-common/MockRegistrar.sys.mjs",
+  XPCShellContentUtils:
+    "resource://testing-common/XPCShellContentUtils.sys.mjs",
+  getAppInfo: "resource://testing-common/AppInfo.sys.mjs",
+  updateAppInfo: "resource://testing-common/AppInfo.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   ExtensionTestCommon: "resource://testing-common/ExtensionTestCommon.jsm",
   Management: "resource://gre/modules/Extension.jsm",
   ExtensionAddonObserver: "resource://gre/modules/Extension.jsm",
-  FileTestUtils: "resource://testing-common/FileTestUtils.jsm",
-  MockRegistrar: "resource://testing-common/MockRegistrar.jsm",
-  XPCShellContentUtils: "resource://testing-common/XPCShellContentUtils.jsm",
 });
 
-XPCOMUtils.defineLazyServiceGetters(this, {
+XPCOMUtils.defineLazyServiceGetters(lazy, {
   aomStartup: [
     "@mozilla.org/addons/addon-manager-startup;1",
     "amIAddonManagerStartup",
   ],
-});
-
-XPCOMUtils.defineLazyGetter(this, "AppInfo", () => {
-  let AppInfo = {};
-  ChromeUtils.import("resource://testing-common/AppInfo.jsm", AppInfo);
-  return AppInfo;
 });
 
 const PREF_DISABLE_SECURITY =
@@ -85,13 +83,6 @@ const ZipWriter = Components.Constructor(
 function isRegExp(val) {
   return val && typeof val === "object" && typeof val.test === "function";
 }
-
-// We need some internal bits of AddonManager
-var AMscope = ChromeUtils.import(
-  "resource://gre/modules/AddonManager.jsm",
-  null
-);
-var { AddonManager, AddonManagerPrivate } = AMscope;
 
 class MockBarrier {
   constructor(name) {
@@ -135,81 +126,7 @@ var MockAsyncShutdown = {
   Barrier: AsyncShutdown.Barrier,
 };
 
-AMscope.AsyncShutdown = MockAsyncShutdown;
-
-class MockBlocklist {
-  constructor(addons) {
-    if (ChromeUtils.getClassName(addons) === "Object") {
-      addons = new Map(Object.entries(addons));
-    }
-    this.addons = addons;
-    this.wrappedJSObject = this;
-
-    // Copy blocklist constants.
-    for (let [k, v] of Object.entries(Ci.nsIBlocklistService)) {
-      if (typeof v === "number") {
-        this[k] = v;
-      }
-    }
-
-    this._xpidb = ChromeUtils.import(
-      "resource://gre/modules/addons/XPIDatabase.jsm",
-      null
-    );
-  }
-
-  get contractID() {
-    return "@mozilla.org/extensions/blocklist;1";
-  }
-
-  _reLazifyService() {
-    XPCOMUtils.defineLazyServiceGetter(Services, "blocklist", this.contractID);
-    ChromeUtils.defineModuleGetter(
-      this._xpidb,
-      "Blocklist",
-      "resource://gre/modules/Blocklist.jsm"
-    );
-  }
-
-  register() {
-    this.originalCID = MockRegistrar.register(this.contractID, this);
-    this._reLazifyService();
-    this._xpidb.Blocklist = this;
-  }
-
-  unregister() {
-    MockRegistrar.unregister(this.originalCID);
-    this._reLazifyService();
-  }
-
-  async getAddonBlocklistState(addon, appVersion, toolkitVersion) {
-    await new Promise(r => setTimeout(r, 150));
-    return (
-      this.addons.get(addon.id) || Ci.nsIBlocklistService.STATE_NOT_BLOCKED
-    );
-  }
-
-  async getAddonBlocklistEntry(addon, appVersion, toolkitVersion) {
-    let state = await this.getAddonBlocklistState(
-      addon,
-      appVersion,
-      toolkitVersion
-    );
-    if (state != Ci.nsIBlocklistService.STATE_NOT_BLOCKED) {
-      return {
-        state,
-        url: "http://example.com/",
-      };
-    }
-    return null;
-  }
-
-  recordAddonBlockChangeTelemetry(addon, reason) {}
-}
-
-MockBlocklist.prototype.QueryInterface = ChromeUtils.generateQI([
-  "nsIBlocklistService",
-]);
+AddonManagerPrivate.overrideAsyncShutdown(MockAsyncShutdown);
 
 class AddonsList {
   constructor(file) {
@@ -221,7 +138,7 @@ class AddonsList {
       return;
     }
 
-    let data = aomStartup.readStartupData();
+    let data = lazy.aomStartup.readStartupData();
 
     for (let loc of Object.values(data)) {
       let dir = loc.path && new nsFile(loc.path);
@@ -371,7 +288,7 @@ var AddonTestUtils = {
     );
     Services.prefs.setCharPref(
       "services.settings.server",
-      "http://localhost/dummy-kinto/v1"
+      "data:,#remote-settings-dummy/v1"
     );
 
     // By default ignore bundled add-ons
@@ -390,6 +307,12 @@ var AddonTestUtils = {
     }
 
     testScope.registerCleanupFunction(() => {
+      // Force a GC to ensure that anything holding a ref to temp file releases it.
+      // XXX This shouldn't be needed here, since cleanupTempXPIs() does a GC if
+      // something fails; see bug 1761255
+      this.info(`Force a GC`);
+      Cu.forceGC();
+
       this.cleanupTempXPIs();
 
       let ignoreEntries = new Set();
@@ -397,7 +320,7 @@ var AddonTestUtils = {
         // FileTestUtils lazily creates a directory to hold the temporary files
         // it creates. If that directory exists, ignore it.
         let { value } = Object.getOwnPropertyDescriptor(
-          FileTestUtils,
+          lazy.FileTestUtils,
           "_globalTemporaryDirectory"
         );
         if (value) {
@@ -522,12 +445,12 @@ var AddonTestUtils = {
    *        The HTTP server instance.
    */
   createHttpServer(...args) {
-    XPCShellContentUtils.ensureInitialized(this.testScope);
-    return XPCShellContentUtils.createHttpServer(...args);
+    lazy.XPCShellContentUtils.ensureInitialized(this.testScope);
+    return lazy.XPCShellContentUtils.createHttpServer(...args);
   },
 
   registerJSON(...args) {
-    return XPCShellContentUtils.registerJSON(...args);
+    return lazy.XPCShellContentUtils.registerJSON(...args);
   },
 
   info(msg) {
@@ -566,14 +489,14 @@ var AddonTestUtils = {
   },
 
   createAppInfo(ID, name, version, platformVersion = "1.0") {
-    AppInfo.updateAppInfo({
+    lazy.updateAppInfo({
       ID,
       name,
       version,
       platformVersion,
       crashReporter: true,
     });
-    this.appInfo = AppInfo.getAppInfo();
+    this.appInfo = lazy.getAppInfo();
   },
 
   getManifestURI(file) {
@@ -712,27 +635,11 @@ var AddonTestUtils = {
 
     // Unregister the real database. This only works because the add-ons manager
     // hasn't started up and grabbed the certificate database yet.
-    MockRegistrar.register(CERTDB_CONTRACTID, FakeCertDB);
+    lazy.MockRegistrar.register(CERTDB_CONTRACTID, FakeCertDB);
 
     // Initialize the mock service.
     Cc[CERTDB_CONTRACTID].getService();
     FakeCertDB.init();
-  },
-
-  /**
-   * Overrides the blocklist service, and returns the given blocklist
-   * states for the given add-ons.
-   *
-   * @param {object|Map} addons
-   *        A mapping of add-on IDs to their blocklist states.
-   * @returns {MockBlocklist}
-   *        A mock blocklist service, which should be unregistered when
-   *        the test is complete.
-   */
-  overrideBlocklist(addons) {
-    let mock = new MockBlocklist(addons);
-    mock.register();
-    return mock;
   },
 
   /**
@@ -753,21 +660,20 @@ var AddonTestUtils = {
     let loadedData = {};
     let fileSuffix = "extensions";
     const fileName = `${prefix}-${fileSuffix}.json`;
-    let jsonStr = await OS.File.read(OS.Path.join(dir.path, fileName), {
-      encoding: "UTF-8",
-    }).catch(() => {});
-    if (jsonStr) {
+
+    try {
+      loadedData[fileSuffix] = await IOUtils.readJSON(
+        PathUtils.join(dir.path, fileName)
+      );
       this.info(`Loaded ${fileName}`);
-      loadedData[fileSuffix] = JSON.parse(jsonStr);
-    }
+    } catch (e) {}
+
     return this.loadBlocklistRawData(loadedData);
   },
 
   /**
    * Load the following data into the *real* blocklist providers.
-   * While `overrideBlocklist` replaces the blocklist entirely with a mock
-   * that returns dummy data, this method instead loads data into the actual
-   * blocklist, fires update methods as would happen if this data came from
+   * Fires update methods as would happen if this data came from
    * an actual blocklist update, etc.
    *
    * @param {object} data
@@ -781,21 +687,6 @@ var AddonTestUtils = {
       extensions: BlocklistPrivate.ExtensionBlocklistRS,
       extensionsMLBF: BlocklistPrivate.ExtensionBlocklistMLBF,
     };
-
-    // Since we load the specified test data, we shouldn't let the
-    // packaged JSON dumps to interfere.
-    const pref = "services.settings.load_dump";
-    const backup = Services.prefs.getBoolPref(pref, null);
-    Services.prefs.setBoolPref(pref, false);
-    if (this.testScope) {
-      this.testScope.registerCleanupFunction(() => {
-        if (backup === null) {
-          Services.prefs.clearUserPref(pref);
-        } else {
-          Services.prefs.setBoolPref(pref, backup);
-        }
-      });
-    }
 
     for (const [dataProp, blocklistObj] of Object.entries(blocklistMapping)) {
       let newData = data[dataProp];
@@ -834,41 +725,49 @@ var AddonTestUtils = {
   /**
    * Starts up the add-on manager as if it was started by the application.
    *
-   * @param {string} [newVersion]
+   * @param {Object} params
+   *        The new params are in an object and new code should use that.
+   * @param {boolean} params.earlyStartup
+   *        Notifies early startup phase. default is true
+   * @param {boolean} params.lateStartup
+   *        Notifies late startup phase which ensures addons are started or
+   *        listeners are primed. default is true
+   * @param {boolean} params.newVersion
    *        If provided, the application version is changed to this string
    *        before the AddonManager is started.
-   * @param {string} [newPlatformVersion]
-   *        If provided, the platform version is changed to this string
-   *        before the AddonManager is started.  It will default to the appVersion
-   *        as that is how Firefox currently builds (app === platform).
    */
-  async promiseStartupManager(newVersion, newPlatformVersion = newVersion) {
+  async promiseStartupManager(params) {
     if (this.addonIntegrationService) {
       throw new Error(
         "Attempting to startup manager that was already started."
       );
     }
+    // Support old arguments
+    if (typeof params != "object") {
+      params = {
+        newVersion: arguments[0],
+      };
+    }
+    let { earlyStartup = true, lateStartup = true, newVersion } = params;
+
+    lateStartup = earlyStartup && lateStartup;
 
     if (newVersion) {
       this.appInfo.version = newVersion;
-    }
-
-    if (newPlatformVersion) {
-      this.appInfo.platformVersion = newPlatformVersion;
+      this.appInfo.platformVersion = newVersion;
     }
 
     // AddonListeners are removed when the addonManager is shutdown,
     // ensure the Extension observer is added.  We call uninit in
     // promiseShutdown to allow re-initialization.
-    ExtensionAddonObserver.init();
+    lazy.ExtensionAddonObserver.init();
 
-    let XPIScope = ChromeUtils.import(
-      "resource://gre/modules/addons/XPIProvider.jsm",
-      null
+    const { XPIInternal, XPIProvider } = ChromeUtils.import(
+      "resource://gre/modules/addons/XPIProvider.jsm"
     );
-    XPIScope.AsyncShutdown = MockAsyncShutdown;
+    XPIInternal.overrideAsyncShutdown(MockAsyncShutdown);
 
-    XPIScope.XPIInternal.BootstrapScope.prototype._beforeCallBootstrapMethod = (
+    XPIInternal.BootstrapScope.prototype._beforeCallBootstrapMethod = (
       method,
       params,
       reason
@@ -892,21 +791,24 @@ var AddonTestUtils = {
 
     this.emit("addon-manager-started");
 
-    await Promise.all(XPIScope.XPIProvider.startupPromises);
+    await Promise.all(XPIProvider.startupPromises);
 
     // Load the add-ons list as it was after extension registration
     await this.loadAddonsList(true);
 
     // Wait for all add-ons to finish starting up before resolving.
-    const { XPIProvider } = ChromeUtils.import(
-      "resource://gre/modules/addons/XPIProvider.jsm"
-    );
     await Promise.all(
       Array.from(
         XPIProvider.activeAddons.values(),
         addon => addon.startupPromise
       )
     );
+    if (earlyStartup) {
+      lazy.ExtensionTestCommon.notifyEarlyStartup();
+    }
+    if (lateStartup) {
+      lazy.ExtensionTestCommon.notifyLateStartup();
+    }
   },
 
   async promiseShutdownManager({
@@ -922,9 +824,11 @@ var AddonTestUtils = {
       this.overrideEntry = null;
     }
 
-    const XPIscope = ChromeUtils.import(
-      "resource://gre/modules/addons/XPIProvider.jsm",
-      null
+    const { XPIProvider } = ChromeUtils.import(
+      "resource://gre/modules/addons/XPIProvider.jsm"
+    );
+    const { XPIDatabase } = ChromeUtils.import(
+      "resource://gre/modules/addons/XPIDatabase.jsm"
     );
 
     // Ensure some startup observers in XPIProvider are released.
@@ -937,7 +841,7 @@ var AddonTestUtils = {
     // a promise, potentially still pending. Wait for it to settle before
     // triggering profileBeforeChange, because the latter can trigger errors in
     // the pending asyncLoadDB() by an indirect call to XPIDatabase.shutdown().
-    await XPIscope.XPIDatabase._dbPromise;
+    await XPIDatabase._dbPromise;
 
     await MockAsyncShutdown.profileBeforeChange.trigger();
     await MockAsyncShutdown.profileChangeTeardown.trigger();
@@ -968,23 +872,16 @@ var AddonTestUtils = {
 
     // This would be cleaner if I could get it as the rejection reason from
     // the AddonManagerInternal.shutdown() promise
-    let shutdownError = XPIscope.XPIDatabase._saveError;
+    let shutdownError = XPIDatabase._saveError;
 
-    AddonManagerPrivate.unregisterProvider(XPIscope.XPIProvider);
+    AddonManagerPrivate.unregisterProvider(XPIProvider);
     Cu.unload("resource://gre/modules/addons/XPIProvider.jsm");
     Cu.unload("resource://gre/modules/addons/XPIDatabase.jsm");
     Cu.unload("resource://gre/modules/addons/XPIInstall.jsm");
 
-    let ExtensionScope = ChromeUtils.import(
-      "resource://gre/modules/Extension.jsm",
-      null
-    );
-    ExtensionAddonObserver.uninit();
-    ChromeUtils.defineModuleGetter(
-      ExtensionScope,
-      "XPIProvider",
-      "resource://gre/modules/addons/XPIProvider.jsm"
-    );
+    lazy.ExtensionAddonObserver.uninit();
+
+    lazy.ExtensionTestCommon.resetStartupPromises();
 
     if (shutdownError) {
       throw shutdownError;
@@ -998,52 +895,46 @@ var AddonTestUtils = {
    * simulate an application upgrade (or downgrade) where the version
    * is changed to newVersion when re-started.
    *
-   * @param {string} [newVersion]
-   *        If provided, the application version is changed to this string
-   *        after the AddonManager is shut down, before it is re-started.
+   * @param {Object} params
+   *        The new params are in an object and new code should use that.
+   *        See promiseStartupManager for param details.
    */
-  async promiseRestartManager(newVersion) {
+  async promiseRestartManager(params) {
     await this.promiseShutdownManager({ clearOverrides: false });
-    await this.promiseStartupManager(newVersion);
+    await this.promiseStartupManager(params);
+  },
+
+  /**
+   * If promiseStartupManager is called with earlyStartup: false, then
+   * use this to notify early startup.
+   *
+   * @returns {Promise} resolves when notification is complete
+   */
+  notifyEarlyStartup() {
+    return lazy.ExtensionTestCommon.notifyEarlyStartup();
+  },
+
+  /**
+   * If promiseStartupManager is called with lateStartup: false, then
+   * use this to notify late startup.  You should also call early startup
+   * if necessary.
+   *
+   * @returns {Promise} resolves when notification is complete
+   */
+  notifyLateStartup() {
+    return lazy.ExtensionTestCommon.notifyLateStartup();
   },
 
   async loadAddonsList(flush = false) {
     if (flush) {
-      let XPIScope = ChromeUtils.import(
-        "resource://gre/modules/addons/XPIProvider.jsm",
-        null
+      const { XPIInternal } = ChromeUtils.import(
+        "resource://gre/modules/addons/XPIProvider.jsm"
       );
-      XPIScope.XPIStates.save();
-      await XPIScope.XPIStates._jsonFile._save();
+      XPIInternal.XPIStates.save();
+      await XPIInternal.XPIStates._jsonFile._save();
     }
 
     this.addonsList = new AddonsList(this.addonStartup);
-  },
-
-  /**
-   * Recursively create all directories up to and including the given
-   * path, if they do not exist.
-   *
-   * @param {string} path The path of the directory to create.
-   * @returns {Promise} Resolves when all directories have been created.
-   */
-  recursiveMakeDir(path) {
-    let paths = [];
-    for (
-      let lastPath;
-      path != lastPath;
-      lastPath = path, path = OS.Path.dirname(path)
-    ) {
-      paths.push(path);
-    }
-
-    return Promise.all(
-      paths
-        .reverse()
-        .map(path =>
-          OS.File.makeDir(path, { ignoreExisting: true }).catch(() => {})
-        )
-    );
   },
 
   /**
@@ -1075,7 +966,7 @@ var AddonTestUtils = {
         data = JSON.stringify(data);
       }
       if (!(data instanceof ArrayBuffer)) {
-        data = new TextEncoder("utf-8").encode(data).buffer;
+        data = new TextEncoder().encode(data).buffer;
       }
 
       let stream = ArrayBufferInputStream(data, 0, data.byteLength);
@@ -1095,7 +986,7 @@ var AddonTestUtils = {
   },
 
   async promiseWriteFilesToZip(zip, files, flags) {
-    await this.recursiveMakeDir(OS.Path.dirname(zip));
+    await IOUtils.makeDirectory(PathUtils.parent(zip));
 
     this.writeFilesToZip(zip, files, flags);
 
@@ -1103,7 +994,7 @@ var AddonTestUtils = {
   },
 
   async promiseWriteFilesToDir(dir, files) {
-    await this.recursiveMakeDir(dir);
+    await IOUtils.makeDirectory(dir);
 
     for (let [path, data] of Object.entries(files)) {
       path = path.split("/");
@@ -1112,21 +1003,19 @@ var AddonTestUtils = {
       // Create parent directories, if necessary.
       let dirPath = dir;
       for (let subDir of path) {
-        dirPath = OS.Path.join(dirPath, subDir);
-        await OS.File.makeDir(dirPath, { ignoreExisting: true });
+        dirPath = PathUtils.join(dirPath, subDir);
+        await PathUtils.makeDirectory(dirPath);
       }
 
+      const leafPath = PathUtils.join(dirPath, leafName);
       if (
         typeof data == "object" &&
         ChromeUtils.getClassName(data) == "Object"
       ) {
-        data = JSON.stringify(data);
+        await IOUtils.writeJSON(leafPath, data);
+      } else if (typeof data == "string") {
+        await IOUtils.writeUTF8(leafPath, data);
       }
-      if (typeof data == "string") {
-        data = new TextEncoder("utf-8").encode(data);
-      }
-
-      await OS.File.writeAtomic(OS.Path.join(dirPath, leafName), data);
     }
 
     return nsFile(dir);
@@ -1134,12 +1023,12 @@ var AddonTestUtils = {
 
   promiseWriteFilesToExtension(dir, id, files, unpacked = this.testUnpacked) {
     if (unpacked) {
-      let path = OS.Path.join(dir, id);
+      let path = PathUtils.join(dir, id);
 
       return this.promiseWriteFilesToDir(path, files);
     }
 
-    let xpi = OS.Path.join(dir, `${id}.xpi`);
+    let xpi = PathUtils.join(dir, `${id}.xpi`);
 
     return this.promiseWriteFilesToZip(xpi, files);
   },
@@ -1180,7 +1069,7 @@ var AddonTestUtils = {
    * @return {nsIFile} A file pointing to the created XPI file
    */
   createTempWebExtensionFile(data) {
-    let file = ExtensionTestCommon.generateXPI(data);
+    let file = lazy.ExtensionTestCommon.generateXPI(data);
     this.tempXPIs.push(file);
     return file;
   },
@@ -1355,18 +1244,22 @@ var AddonTestUtils = {
   async promiseSetExtensionModifiedTime(path, time) {
     await IOUtils.setModificationTime(path, time);
 
-    let iterator = new OS.File.DirectoryIterator(path);
+    const stat = await IOUtils.stat(path);
+    if (stat.type !== "directory") {
+      return;
+    }
+
+    const children = await IOUtils.getChildren(path);
+
     try {
-      await iterator.forEach(entry => {
-        return this.promiseSetExtensionModifiedTime(entry.path, time);
-      });
+      await Promise.all(
+        children.map(entry => this.promiseSetExtensionModifiedTime(entry, time))
+      );
     } catch (ex) {
-      if (ex instanceof OS.File.Error) {
+      if (DOMException.isInstance(ex)) {
         return;
       }
       throw ex;
-    } finally {
-      iterator.close().catch(() => {});
     }
   },
 
@@ -1714,6 +1607,19 @@ var AddonTestUtils = {
       return true;
     }
 
+    function validateOptionFormat(optionName, optionValue) {
+      for (let item of optionValue) {
+        if (!item || typeof item !== "object" || isRegExp(item)) {
+          throw new Error(
+            `Unexpected format in AddonTestUtils.checkMessages "${optionName}" parameter`
+          );
+        }
+      }
+    }
+
+    validateOptionFormat("expected", expected);
+    validateOptionFormat("forbidden", forbidden);
+
     let i = 0;
     for (let msg of messages) {
       if (forbidden.some(pat => msgMatches(msg, pat))) {
@@ -1745,10 +1651,14 @@ var AddonTestUtils = {
    * @param {Object} expectedInstallInfo
    *        The expected installTelemetryInfo properties
    *        (every property can be a primitive value or a regular expression).
+   * @param {string} [msg]
+   *        Optional assertion message suffix.
    */
-  checkInstallInfo(addonOrInstall, expectedInstallInfo) {
+  checkInstallInfo(addonOrInstall, expectedInstallInfo, msg = undefined) {
     const installInfo = addonOrInstall.installTelemetryInfo;
     const { Assert } = this.testScope;
+
+    msg = msg ? ` ${msg}` : "";
 
     for (const key of Object.keys(expectedInstallInfo)) {
       const actual = installInfo[key];
@@ -1758,10 +1668,14 @@ var AddonTestUtils = {
       if (expected && typeof expected.test == "function") {
         Assert.ok(
           expected.test(actual),
-          `${key} value "${actual}" has the value expected: "${expected}"`
+          `${key} value "${actual}" has the value expected "${expected}"${msg}`
         );
       } else {
-        Assert.deepEqual(actual, expected, `Got the expected value for ${key}`);
+        Assert.deepEqual(
+          actual,
+          expected,
+          `Got the expected value for ${key}${msg}`
+        );
       }
     }
   },
@@ -1777,9 +1691,9 @@ var AddonTestUtils = {
    */
   promiseWebExtensionStartup(id) {
     return new Promise(resolve => {
-      Management.on("ready", function listener(event, extension) {
+      lazy.Management.on("ready", function listener(event, extension) {
         if (!id || extension.id == id) {
-          Management.off("ready", listener);
+          lazy.Management.off("ready", listener);
           resolve(extension);
         }
       });
@@ -1806,7 +1720,7 @@ var AddonTestUtils = {
     // In xpcshell tests, equal/ok are defined in the global scope.
     let { equal, ok } = this.testScope;
     if (!equal || !ok) {
-      // In mochitests, these are available via Assert.jsm.
+      // In mochitests, these are available via Assert.sys.mjs.
       let { Assert } = this.testScope;
       equal = Assert.equal.bind(Assert);
       ok = Assert.ok.bind(Assert);
@@ -1820,7 +1734,7 @@ var AddonTestUtils = {
     ok(extension.id, "Extension ID of search provider should be set");
 
     // The map of promises from browser/components/extensions/parent/ext-chrome-settings-overrides.js
-    let { pendingSearchSetupTasks } = Management.global;
+    let { pendingSearchSetupTasks } = lazy.Management.global;
     let searchStartupPromise = pendingSearchSetupTasks.get(extension.id);
     if (expectPending) {
       ok(
@@ -1838,7 +1752,7 @@ var AddonTestUtils = {
    */
   initializeURLPreloader() {
     Services.prefs.setBoolPref(PREF_DISABLE_SECURITY, true);
-    aomStartup.initializeURLPreloader();
+    lazy.aomStartup.initializeURLPreloader();
   },
 
   /**
@@ -1858,11 +1772,8 @@ var AddonTestUtils = {
     this.tempXPIs.push(file);
 
     let manifest = Services.io.newFileURI(file);
-    await OS.File.writeAtomic(
-      file.path,
-      new TextEncoder().encode(JSON.stringify(data))
-    );
-    this.overrideEntry = aomStartup.registerChrome(manifest, [
+    await IOUtils.writeJSON(file.path, data);
+    this.overrideEntry = lazy.aomStartup.registerChrome(manifest, [
       [
         "override",
         "chrome://browser/content/built_in_addons.json",
@@ -1875,33 +1786,41 @@ var AddonTestUtils = {
   // AMTelemetry events helpers.
 
   /**
-   * Redefine AMTelemetry.recordEvent to collect the recorded telemetry events and
-   * ensure that there are no unexamined events after the test file is exiting.
+   * Formerly this function re-routed telemetry events. Now it just ensures
+   * that there are no unexamined events after the test file is exiting.
    */
   hookAMTelemetryEvents() {
-    let originalRecordEvent = AMTelemetry.recordEvent;
-    AMTelemetry.recordEvent = event => {
-      this.collectedTelemetryEvents.push(event);
-    };
     this.testScope.registerCleanupFunction(() => {
       this.testScope.Assert.deepEqual(
         [],
-        this.collectedTelemetryEvents,
+        this.getAMTelemetryEvents(),
         "No unexamined telemetry events after test is finished"
       );
-      AMTelemetry.recordEvent = originalRecordEvent;
     });
   },
 
   /**
-   * Retrive any AMTelemetry event collected and empty the array of the collected events.
+   * Retrive any AMTelemetry event collected and clears _all_ telemetry events.
    *
    * @returns {Array<Object>}
    *          The array of the collected telemetry data.
    */
   getAMTelemetryEvents() {
-    let events = this.collectedTelemetryEvents;
-    this.collectedTelemetryEvents = [];
+    // This duplicates some logic from TelemetryTestUtils.
+    let snapshots = Services.telemetry.snapshotEvents(
+      Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
+      /* clear = */ true
+    );
+    let events = (snapshots.parent ?? [])
+      .filter(entry => entry[1] == "addonsManager")
+      .map(entry => ({
+        // The callers don't expect the timestamp or the category.
+        method: entry[2],
+        object: entry[3],
+        value: entry[4],
+        extra: entry[5],
+      }));
+
     return events;
   },
 };

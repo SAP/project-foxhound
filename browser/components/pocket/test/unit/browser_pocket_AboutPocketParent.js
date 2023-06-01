@@ -2,8 +2,8 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
-const { AboutPocketParent } = ChromeUtils.import(
-  "resource:///actors/AboutPocketParent.jsm"
+const { AboutPocketParent } = ChromeUtils.importESModule(
+  "resource:///actors/AboutPocketParent.sys.mjs"
 );
 const { pktApi } = ChromeUtils.import("chrome://pocket/content/pktApi.jsm");
 let aboutPocketParent;
@@ -237,7 +237,7 @@ test_runner(async function test_AboutPocketParent_receiveMessage_PKT_getTags({
   );
   Assert.deepEqual(
     sendResponseMessageToPanel.firstCall.args,
-    ["PKT_getTags", { tags: [], usedTags: [] }],
+    ["PKT_getTags", { tags: [] }],
     "Should fire sendResponseMessageToPanel with proper args from PKT_getTags"
   );
 });

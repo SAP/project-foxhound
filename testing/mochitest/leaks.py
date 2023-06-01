@@ -5,8 +5,6 @@
 # The content of this file comes orginally from automationutils.py
 # and *should* be revised.
 
-from __future__ import absolute_import, division
-
 import re
 from operator import itemgetter
 
@@ -178,9 +176,9 @@ class ShutdownLeaks(object):
         # log line has invalid format
         if not pid or not serial:
             self.logger.error(
-                "TEST-UNEXPECTED-FAIL | ShutdownLeaks | failed to parse line <%s>"
-                % line
+                "TEST-UNEXPECTED-FAIL | ShutdownLeaks | failed to parse line"
             )
+            self.logger.error("TEST-INFO | ShutdownLeaks | Unparsable line <%s>" % line)
             return
 
         key = (pid, serial)
@@ -207,9 +205,9 @@ class ShutdownLeaks(object):
         # log line has invalid format
         if not pid or not id:
             self.logger.error(
-                "TEST-UNEXPECTED-FAIL | ShutdownLeaks | failed to parse line <%s>"
-                % line
+                "TEST-UNEXPECTED-FAIL | ShutdownLeaks | failed to parse line"
             )
+            self.logger.error("TEST-INFO | ShutdownLeaks | Unparsable line <%s>" % line)
             return
 
         key = (pid, id)

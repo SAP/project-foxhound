@@ -8,6 +8,9 @@ fn test_escape_basic() {
 
     assert_eq!(from_str::<String>("\"\\x07\"").unwrap(), "\x07");
     assert_eq!(from_str::<String>("\"\\u{7}\"").unwrap(), "\x07");
+
+    assert_eq!(from_str::<char>("\'\\x07\'").unwrap(), '\x07');
+    assert_eq!(from_str::<char>("\'\\u{7}\'").unwrap(), '\x07');
 }
 
 fn check_same<T>(t: T)
@@ -63,5 +66,12 @@ fn test_chars() {
 
 #[test]
 fn test_nul_in_string() {
+    assert_eq!(
+        from_str("\"Hello\0World!\""),
+        Ok(String::from("Hello\0World!"))
+    );
+
     check_same("Hello\0World!".to_owned());
+    check_same("Hello\x00World!".to_owned());
+    check_same("Hello\u{0}World!".to_owned());
 }

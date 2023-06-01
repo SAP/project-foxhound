@@ -7,17 +7,14 @@
 
 "use strict";
 
-const { BrowserSearchTelemetry } = ChromeUtils.import(
-  "resource:///modules/BrowserSearchTelemetry.jsm"
+const { SearchSERPTelemetry } = ChromeUtils.importESModule(
+  "resource:///modules/SearchSERPTelemetry.sys.mjs"
 );
-const { SearchSERPTelemetry } = ChromeUtils.import(
-  "resource:///modules/SearchSERPTelemetry.jsm"
+const { UrlbarTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/UrlbarTestUtils.sys.mjs"
 );
-const { UrlbarTestUtils } = ChromeUtils.import(
-  "resource://testing-common/UrlbarTestUtils.jsm"
-);
-const { SearchTestUtils } = ChromeUtils.import(
-  "resource://testing-common/SearchTestUtils.jsm"
+const { SearchTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/SearchTestUtils.sys.mjs"
 );
 
 const TEST_PROVIDER_INFO = [
@@ -31,6 +28,8 @@ const TEST_PROVIDER_INFO = [
     extraAdServersRegexps: [/^https:\/\/example\.com\/ad2?/],
   },
 ];
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function getPageUrl(useAdPage = false) {
   let page = useAdPage ? "searchTelemetryAd.html" : "searchTelemetry.html";
@@ -65,37 +64,44 @@ async function waitForIdle() {
   }
 }
 
+function resetTelemetry() {
+  searchCounts.clear();
+  Services.telemetry.clearScalars();
+  Services.fog.testResetFOG();
+}
+
 SearchTestUtils.init(this);
 UrlbarTestUtils.init(this);
 
 let tab;
 
-add_task(async function setup() {
+add_setup(async function() {
   searchCounts.clear();
   Services.telemetry.clearScalars();
 
   SearchSERPTelemetry.overrideSearchTelemetryForTests(TEST_PROVIDER_INFO);
   await waitForIdle();
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.urlbar.suggest.searches", true]],
+    set: [
+      ["browser.urlbar.suggest.searches", true],
+      ["browser.search.serpEventTelemetry.enabled", true],
+    ],
   });
   // Enable local telemetry recording for the duration of the tests.
   let oldCanRecord = Services.telemetry.canRecordExtended;
   Services.telemetry.canRecordExtended = true;
   Services.prefs.setBoolPref("browser.search.log", true);
 
-  let currentEngineName = (await Services.search.getDefault()).name;
-
-  await SearchTestUtils.installSearchExtension({
-    search_url: getPageUrl(true),
-    search_url_get_params: "s={searchTerms}&abc=ff",
-    suggest_url:
-      "https://example.com/browser/browser/components/search/test/browser/searchSuggestionEngine.sjs",
-    suggest_url_get_params: "query={searchTerms}",
-  });
-  let engine1 = Services.search.getEngineByName("Example");
-
-  await Services.search.setDefault(engine1);
+  await SearchTestUtils.installSearchExtension(
+    {
+      search_url: getPageUrl(true),
+      search_url_get_params: "s={searchTerms}&abc=ff",
+      suggest_url:
+        "https://example.com/browser/browser/components/search/test/browser/searchSuggestionEngine.sjs",
+      suggest_url_get_params: "query={searchTerms}",
+    },
+    { setAsDefault: true }
+  );
 
   tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
 
@@ -105,9 +111,6 @@ add_task(async function setup() {
     SearchSERPTelemetry.overrideSearchTelemetryForTests();
     Services.telemetry.canRecordExtended = oldCanRecord;
     Services.telemetry.clearScalars();
-    await Services.search.setDefault(
-      Services.search.getEngineByName(currentEngineName)
-    );
   });
 });
 
@@ -130,20 +133,28 @@ async function loadSearchPage() {
 }
 
 add_task(async function test_search() {
+  Services.fog.testResetFOG();
   // Load a page via the address bar.
   await loadSearchPage();
 
   await assertSearchSourcesTelemetry(
     {
-      "example.in-content:sap:ff": 1,
       "other-Example.urlbar": 1,
     },
     {
       "browser.search.content.urlbar": { "example:tagged:ff": 1 },
-      "browser.search.with_ads": { "example:sap": 1 },
       "browser.search.withads.urlbar": { "example:tagged": 1 },
     }
   );
+
+  assertImpressionEvents([
+    {
+      provider: "example",
+      tagged: "true",
+      partner_code: "ff",
+      source: "urlbar",
+    },
+  ]);
 });
 
 add_task(async function test_reload() {
@@ -154,17 +165,30 @@ add_task(async function test_reload() {
 
   await assertSearchSourcesTelemetry(
     {
-      "example.in-content:sap:ff": 2,
       "other-Example.urlbar": 1,
     },
     {
       "browser.search.content.urlbar": { "example:tagged:ff": 1 },
       "browser.search.content.reload": { "example:tagged:ff": 1 },
-      "browser.search.with_ads": { "example:sap": 2 },
       "browser.search.withads.urlbar": { "example:tagged": 1 },
       "browser.search.withads.reload": { "example:tagged": 1 },
     }
   );
+
+  assertImpressionEvents([
+    {
+      provider: "example",
+      tagged: "true",
+      partner_code: "ff",
+      source: "urlbar",
+    },
+    {
+      provider: "example",
+      tagged: "true",
+      partner_code: "ff",
+      source: "reload",
+    },
+  ]);
 
   let pageLoadPromise = BrowserTestUtils.waitForLocationChange(gBrowser);
   await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
@@ -174,26 +198,37 @@ add_task(async function test_reload() {
 
   await assertSearchSourcesTelemetry(
     {
-      "example.in-content:sap:ff": 2,
       "other-Example.urlbar": 1,
     },
     {
       "browser.search.content.urlbar": { "example:tagged:ff": 1 },
       "browser.search.content.reload": { "example:tagged:ff": 1 },
-      "browser.search.with_ads": { "example:sap": 2 },
       "browser.search.withads.urlbar": { "example:tagged": 1 },
       "browser.search.withads.reload": { "example:tagged": 1 },
-      "browser.search.ad_clicks": { "example:sap": 1 },
       "browser.search.adclicks.reload": { "example:tagged": 1 },
     }
   );
+
+  assertImpressionEvents([
+    {
+      provider: "example",
+      tagged: "true",
+      partner_code: "ff",
+      source: "urlbar",
+    },
+    {
+      provider: "example",
+      tagged: "true",
+      partner_code: "ff",
+      source: "reload",
+    },
+  ]);
 });
 
 let searchUrl;
 
 add_task(async function test_fresh_search() {
-  searchCounts.clear();
-  Services.telemetry.clearScalars();
+  resetTelemetry();
 
   // Load a page via the address bar.
   await loadSearchPage();
@@ -202,15 +237,22 @@ add_task(async function test_fresh_search() {
 
   await assertSearchSourcesTelemetry(
     {
-      "example.in-content:sap:ff": 1,
       "other-Example.urlbar": 1,
     },
     {
       "browser.search.content.urlbar": { "example:tagged:ff": 1 },
-      "browser.search.with_ads": { "example:sap": 1 },
       "browser.search.withads.urlbar": { "example:tagged": 1 },
     }
   );
+
+  assertImpressionEvents([
+    {
+      provider: "example",
+      tagged: "true",
+      partner_code: "ff",
+      source: "urlbar",
+    },
+  ]);
 });
 
 add_task(async function test_click_ad() {
@@ -222,17 +264,23 @@ add_task(async function test_click_ad() {
 
   await assertSearchSourcesTelemetry(
     {
-      "example.in-content:sap:ff": 1,
       "other-Example.urlbar": 1,
     },
     {
       "browser.search.content.urlbar": { "example:tagged:ff": 1 },
-      "browser.search.with_ads": { "example:sap": 1 },
       "browser.search.withads.urlbar": { "example:tagged": 1 },
-      "browser.search.ad_clicks": { "example:sap": 1 },
       "browser.search.adclicks.urlbar": { "example:tagged": 1 },
     }
   );
+
+  assertImpressionEvents([
+    {
+      provider: "example",
+      tagged: "true",
+      partner_code: "ff",
+      source: "urlbar",
+    },
+  ]);
 });
 
 add_task(async function test_go_back() {
@@ -243,19 +291,31 @@ add_task(async function test_go_back() {
 
   await assertSearchSourcesTelemetry(
     {
-      "example.in-content:sap:ff": 2,
       "other-Example.urlbar": 1,
     },
     {
       "browser.search.content.urlbar": { "example:tagged:ff": 1 },
       "browser.search.content.tabhistory": { "example:tagged:ff": 1 },
-      "browser.search.with_ads": { "example:sap": 2 },
       "browser.search.withads.urlbar": { "example:tagged": 1 },
       "browser.search.withads.tabhistory": { "example:tagged": 1 },
-      "browser.search.ad_clicks": { "example:sap": 1 },
       "browser.search.adclicks.urlbar": { "example:tagged": 1 },
     }
   );
+
+  assertImpressionEvents([
+    {
+      provider: "example",
+      tagged: "true",
+      partner_code: "ff",
+      source: "urlbar",
+    },
+    {
+      provider: "example",
+      tagged: "true",
+      partner_code: "ff",
+      source: "tabhistory",
+    },
+  ]);
 
   let pageLoadPromise = BrowserTestUtils.waitForLocationChange(gBrowser);
   await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
@@ -265,18 +325,127 @@ add_task(async function test_go_back() {
 
   await assertSearchSourcesTelemetry(
     {
-      "example.in-content:sap:ff": 2,
       "other-Example.urlbar": 1,
     },
     {
       "browser.search.content.urlbar": { "example:tagged:ff": 1 },
       "browser.search.content.tabhistory": { "example:tagged:ff": 1 },
-      "browser.search.with_ads": { "example:sap": 2 },
       "browser.search.withads.urlbar": { "example:tagged": 1 },
       "browser.search.withads.tabhistory": { "example:tagged": 1 },
-      "browser.search.ad_clicks": { "example:sap": 2 },
       "browser.search.adclicks.urlbar": { "example:tagged": 1 },
       "browser.search.adclicks.tabhistory": { "example:tagged": 1 },
     }
   );
+
+  assertImpressionEvents([
+    {
+      provider: "example",
+      tagged: "true",
+      partner_code: "ff",
+      source: "urlbar",
+    },
+    {
+      provider: "example",
+      tagged: "true",
+      partner_code: "ff",
+      source: "tabhistory",
+    },
+  ]);
+});
+
+// Conduct a search from the Urlbar with showSearchTerms enabled.
+add_task(async function test_fresh_search_with_urlbar_persisted() {
+  resetTelemetry();
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.showSearchTerms.featureGate", true]],
+  });
+
+  // Load a SERP once in order to show the search term in the Urlbar.
+  await loadSearchPage();
+  await assertSearchSourcesTelemetry(
+    {
+      "other-Example.urlbar": 1,
+    },
+    {
+      "browser.search.content.urlbar": { "example:tagged:ff": 1 },
+      "browser.search.withads.urlbar": { "example:tagged": 1 },
+    }
+  );
+
+  assertImpressionEvents([
+    {
+      provider: "example",
+      tagged: "true",
+      partner_code: "ff",
+      source: "urlbar",
+    },
+  ]);
+
+  // Do another search from the context of the default SERP.
+  await loadSearchPage();
+  await assertSearchSourcesTelemetry(
+    {
+      "other-Example.urlbar": 1,
+      "other-Example.urlbar-persisted": 1,
+    },
+    {
+      "browser.search.content.urlbar": { "example:tagged:ff": 1 },
+      "browser.search.withads.urlbar": { "example:tagged": 1 },
+      "browser.search.content.urlbar_persisted": { "example:tagged:ff": 1 },
+      "browser.search.withads.urlbar_persisted": { "example:tagged": 1 },
+    }
+  );
+
+  assertImpressionEvents([
+    {
+      provider: "example",
+      tagged: "true",
+      partner_code: "ff",
+      source: "urlbar",
+    },
+    {
+      provider: "example",
+      tagged: "true",
+      partner_code: "ff",
+      source: "urlbar_persisted",
+    },
+  ]);
+
+  // Click on an ad.
+  let pageLoadPromise = BrowserTestUtils.waitForLocationChange(gBrowser);
+  await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
+    content.document.getElementById("ad1").click();
+  });
+  await pageLoadPromise;
+  await assertSearchSourcesTelemetry(
+    {
+      "other-Example.urlbar": 1,
+      "other-Example.urlbar-persisted": 1,
+    },
+    {
+      "browser.search.content.urlbar": { "example:tagged:ff": 1 },
+      "browser.search.withads.urlbar": { "example:tagged": 1 },
+      "browser.search.content.urlbar_persisted": { "example:tagged:ff": 1 },
+      "browser.search.withads.urlbar_persisted": { "example:tagged": 1 },
+      "browser.search.adclicks.urlbar_persisted": { "example:tagged": 1 },
+    }
+  );
+
+  assertImpressionEvents([
+    {
+      provider: "example",
+      tagged: "true",
+      partner_code: "ff",
+      source: "urlbar",
+    },
+    {
+      provider: "example",
+      tagged: "true",
+      partner_code: "ff",
+      source: "urlbar_persisted",
+    },
+  ]);
+
+  await SpecialPowers.popPrefEnv();
 });

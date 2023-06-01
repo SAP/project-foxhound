@@ -92,9 +92,13 @@ function withNewBlankTab(taskFn) {
   });
 }
 
+function removeFirefoxViewButton() {
+  CustomizableUI.removeWidgetFromArea("firefox-view-button");
+}
+
 const BOOKMARKS_COUNT = 100;
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.toolbars.keyboard_navigation", true],
@@ -107,6 +111,7 @@ add_task(async function setup() {
   // Add bookmarks.
   let bookmarks = new Array(BOOKMARKS_COUNT);
   for (let i = 0; i < BOOKMARKS_COUNT; ++i) {
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     bookmarks[i] = { url: `http://test.places.${i}/` };
   }
   await PlacesUtils.bookmarks.insertTree({
@@ -128,7 +133,9 @@ add_task(async function testTabStopsNoPageWithHomeButton() {
   await withNewBlankTab(async function() {
     startFromUrlBar();
     await expectFocusAfterKey("Shift+Tab", "home-button");
-    await expectFocusAfterKey("Shift+Tab", "tabbrowser-tabs", true);
+    await expectFocusAfterKey("Shift+Tab", "tabs-newtab-button");
+    await expectFocusAfterKey("Shift+Tab", gBrowser.selectedTab);
+    await expectFocusAfterKey("Tab", "tabs-newtab-button");
     await expectFocusAfterKey("Tab", "home-button");
     await expectFocusAfterKey("Tab", gURLBar.inputField);
     await expectFocusAfterKey("Tab", afterUrlBarButton);
@@ -137,8 +144,12 @@ add_task(async function testTabStopsNoPageWithHomeButton() {
   RemoveHomeButton();
 });
 
-// Test tab stops with a page loaded.
-add_task(async function testTabStopsPageLoaded() {
+async function doTestTabStopsPageLoaded(aPageActionsVisible) {
+  info(`doTestTabStopsPageLoaded(${aPageActionsVisible})`);
+
+  BrowserPageActions.mainButtonNode.style.visibility = aPageActionsVisible
+    ? "visible"
+    : "";
   await BrowserTestUtils.withNewTab("https://example.com", async function() {
     await waitUntilReloadEnabled();
     startFromUrlBar();
@@ -147,14 +158,30 @@ add_task(async function testTabStopsPageLoaded() {
       "tracking-protection-icon-container"
     );
     await expectFocusAfterKey("Shift+Tab", "reload-button");
-    await expectFocusAfterKey("Shift+Tab", "tabbrowser-tabs", true);
+    await expectFocusAfterKey("Shift+Tab", "tabs-newtab-button");
+    await expectFocusAfterKey("Shift+Tab", gBrowser.selectedTab);
+    await expectFocusAfterKey("Tab", "tabs-newtab-button");
     await expectFocusAfterKey("Tab", "reload-button");
     await expectFocusAfterKey("Tab", "tracking-protection-icon-container");
     await expectFocusAfterKey("Tab", gURLBar.inputField);
-    await expectFocusAfterKey("Tab", "pageActionButton");
+    await expectFocusAfterKey(
+      "Tab",
+      aPageActionsVisible ? "pageActionButton" : "star-button-box"
+    );
     await expectFocusAfterKey("Tab", afterUrlBarButton);
     await expectFocusAfterKey("Tab", gBrowser.selectedBrowser);
   });
+}
+
+// Test tab stops with a page loaded.
+add_task(async function testTabStopsPageLoaded() {
+  is(
+    BrowserPageActions.mainButtonNode.style.visibility,
+    "visible",
+    "explicitly shown at the beginning of test"
+  );
+  await doTestTabStopsPageLoaded(false);
+  await doTestTabStopsPageLoaded(true);
 });
 
 // Test tab stops with a notification anchor visible.
@@ -202,7 +229,7 @@ add_task(async function testTabStopNoButtons() {
     // The Home button is the only other button at that tab stop.
     CustomizableUI.removeWidgetFromArea("home-button");
     startFromUrlBar();
-    await expectFocusAfterKey("Shift+Tab", "tabbrowser-tabs", true);
+    await expectFocusAfterKey("Shift+Tab", "tabs-newtab-button");
     await expectFocusAfterKey("Tab", gURLBar.inputField);
     resetToolbarWithoutDevEditionButtons();
     AddHomeBesideReload();
@@ -231,8 +258,9 @@ add_task(async function testArrowsToolbarbuttons() {
     await expectFocusAfterKey("ArrowRight", "library-button");
     await expectFocusAfterKey("ArrowRight", "sidebar-button");
     await expectFocusAfterKey("ArrowRight", "fxa-toolbar-menu-button");
-    // This next check also confirms that the overflow menu button is skipped,
+    // These next checks also confirm that the overflow menu button is skipped,
     // since it is currently invisible.
+    await expectFocusAfterKey("ArrowRight", "unified-extensions-button");
     await expectFocusAfterKey("ArrowRight", "PanelUI-menu-button");
     EventUtils.synthesizeKey("KEY_ArrowRight");
     is(
@@ -240,6 +268,7 @@ add_task(async function testArrowsToolbarbuttons() {
       "PanelUI-menu-button",
       "ArrowRight at end of button group does nothing"
     );
+    await expectFocusAfterKey("ArrowLeft", "unified-extensions-button");
     await expectFocusAfterKey("ArrowLeft", "fxa-toolbar-menu-button");
     await expectFocusAfterKey("ArrowLeft", "sidebar-button");
     await expectFocusAfterKey("ArrowLeft", "library-button");
@@ -247,7 +276,7 @@ add_task(async function testArrowsToolbarbuttons() {
   RemoveOldMenuSideButtons();
 });
 
-// Test that right/left arrows move through buttons wihch aren't toolbarbuttons
+// Test that right/left arrows move through buttons which aren't toolbarbuttons
 // but have role="button".
 add_task(async function testArrowsRoleButton() {
   await BrowserTestUtils.withNewTab("https://example.com", async function() {
@@ -278,7 +307,7 @@ add_task(async function testArrowsDisabledButtons() {
       "ArrowLeft on Reload button when prior buttons disabled does nothing"
     );
 
-    BrowserTestUtils.loadURI(aBrowser, "https://example.com/2");
+    BrowserTestUtils.loadURIString(aBrowser, "https://example.com/2");
     await BrowserTestUtils.browserLoaded(aBrowser);
     await waitUntilReloadEnabled();
     startFromUrlBar();
@@ -307,9 +336,11 @@ add_task(async function testArrowsOverflowButton() {
     await expectFocusAfterKey("ArrowRight", "sidebar-button");
     await expectFocusAfterKey("ArrowRight", "fxa-toolbar-menu-button");
     await expectFocusAfterKey("ArrowRight", "nav-bar-overflow-button");
+    await expectFocusAfterKey("ArrowRight", "unified-extensions-button");
     // Make sure the button is not reachable once it is invisible again.
     await expectFocusAfterKey("ArrowRight", "PanelUI-menu-button");
     resetToolbarWithoutDevEditionButtons();
+    await expectFocusAfterKey("ArrowLeft", "unified-extensions-button");
     // Flush layout so its invisibility can be detected.
     document.getElementById("nav-bar-overflow-button").clientWidth;
     await expectFocusAfterKey("ArrowLeft", "fxa-toolbar-menu-button");
@@ -515,4 +546,78 @@ add_task(async function testTabStopsAfterSearchBarAdded() {
   });
   await SpecialPowers.popPrefEnv();
   RemoveOldMenuSideButtons();
+});
+
+// Test tab navigation when the Firefox View button is present
+// and when the button is not present.
+add_task(async function testFirefoxViewButtonNavigation() {
+  // Add enough tabs so that the new-tab-button appears in the toolbar
+  // and the tabs-newtab-button is hidden.
+  await BrowserTestUtils.overflowTabs(registerCleanupFunction, window);
+
+  // Assert that Firefox View button receives focus when tab navigating
+  // forward from the end of web content.
+  // Additionally, ensure that focus is not trapped between the
+  // selected tab and the new-tab button.
+  // Finally, assert that focus is restored to web content when
+  // navigating backwards from the Firefox View button.
+  await BrowserTestUtils.withNewTab(PERMISSIONS_PAGE, async function(aBrowser) {
+    await SpecialPowers.spawn(aBrowser, [], async () => {
+      content.document.querySelector("#camera").focus();
+    });
+
+    await expectFocusAfterKey("Tab", "firefox-view-button");
+    let selectedTab = document.querySelector("tab[selected]");
+    await expectFocusAfterKey("Tab", selectedTab);
+    await expectFocusAfterKey("Tab", "new-tab-button");
+    await expectFocusAfterKey("Shift+Tab", selectedTab);
+    await expectFocusAfterKey("Shift+Tab", "firefox-view-button");
+
+    // Moving from toolbar back into content
+    EventUtils.synthesizeKey("KEY_Tab", { shiftKey: true });
+    await SpecialPowers.spawn(aBrowser, [], async () => {
+      let activeElement = content.document.activeElement;
+      let expectedElement = content.document.querySelector("#camera");
+      is(
+        activeElement,
+        expectedElement,
+        "Focus should be returned to the 'camera' button"
+      );
+    });
+  });
+
+  // Assert that the selected tab receives focus before the new-tab button
+  // if there is no Firefox View button.
+  // Additionally, assert that navigating backwards from the selected tab
+  // restores focus to the last element in the web content.
+  await BrowserTestUtils.withNewTab(PERMISSIONS_PAGE, async function(aBrowser) {
+    removeFirefoxViewButton();
+
+    await SpecialPowers.spawn(aBrowser, [], async () => {
+      content.document.querySelector("#camera").focus();
+    });
+
+    let selectedTab = document.querySelector("tab[selected]");
+    await expectFocusAfterKey("Tab", selectedTab);
+    await expectFocusAfterKey("Tab", "new-tab-button");
+    await expectFocusAfterKey("Shift+Tab", selectedTab);
+
+    // Moving from toolbar back into content
+    EventUtils.synthesizeKey("KEY_Tab", { shiftKey: true });
+    await SpecialPowers.spawn(aBrowser, [], async () => {
+      let activeElement = content.document.activeElement;
+      let expectedElement = content.document.querySelector("#camera");
+      is(
+        activeElement,
+        expectedElement,
+        "Focus should be returned to the 'camera' button"
+      );
+    });
+  });
+
+  // Clean up extra tabs
+  while (gBrowser.tabs.length > 1) {
+    BrowserTestUtils.removeTab(gBrowser.tabs[0]);
+  }
+  CustomizableUI.reset();
 });

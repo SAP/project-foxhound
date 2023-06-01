@@ -5,10 +5,10 @@
 
 const kForceOverflowWidthPx = 450;
 
-const chrome_base =
-  "chrome://mochitests/content/browser/browser/base/content/test/general/";
-Services.scriptloader.loadSubScript(chrome_base + "head.js", this);
-/* import-globals-from ../general/head.js */
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/browser/base/content/test/general/head.js",
+  this
+);
 
 const fxaDevices = [
   {
@@ -50,7 +50,7 @@ function updateTabContextMenu(tab = gBrowser.selectedTab) {
   menu.hidePopup();
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   await promiseSyncReady();
   await Services.search.init();
   // gSync.init() is called in a requestIdleCallback. Force its initialization.

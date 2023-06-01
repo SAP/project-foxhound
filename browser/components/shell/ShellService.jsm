@@ -6,26 +6,44 @@
 
 var EXPORTED_SYMBOLS = ["ShellService"];
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  Subprocess: "resource://gre/modules/Subprocess.sys.mjs",
+  WindowsRegistry: "resource://gre/modules/WindowsRegistry.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
-  setTimeout: "resource://gre/modules/Timer.jsm",
-  Subprocess: "resource://gre/modules/Subprocess.jsm",
-  WindowsRegistry: "resource://gre/modules/WindowsRegistry.jsm",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "XreDirProvider",
   "@mozilla.org/xre/directory-provider;1",
   "nsIXREDirProvider"
 );
+
+XPCOMUtils.defineLazyGetter(lazy, "log", () => {
+  let { ConsoleAPI } = ChromeUtils.importESModule(
+    "resource://gre/modules/Console.sys.mjs"
+  );
+  let consoleOptions = {
+    // tip: set maxLogLevel to "debug" and use log.debug() to create detailed
+    // messages during development. See LOG_LEVELS in Console.sys.mjs for details.
+    maxLogLevel: "debug",
+    maxLogLevelPref: "browser.shell.loglevel",
+    prefix: "ShellService",
+  };
+  return new ConsoleAPI(consoleOptions);
+});
 
 /**
  * Internal functionality to save and restore the docShell.allow* properties.
@@ -57,12 +75,12 @@ let ShellServiceInternal = {
 
   isDefaultBrowserOptOut() {
     if (AppConstants.platform == "win") {
-      let optOutValue = WindowsRegistry.readRegKey(
+      let optOutValue = lazy.WindowsRegistry.readRegKey(
         Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
         "Software\\Mozilla\\Firefox",
         "DefaultBrowserOptOut"
       );
-      WindowsRegistry.removeRegKey(
+      lazy.WindowsRegistry.removeRegKey(
         Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
         "Software\\Mozilla\\Firefox",
         "DefaultBrowserOptOut"
@@ -128,7 +146,7 @@ let ShellServiceInternal = {
   _callExternalDefaultBrowserAgent(options = {}) {
     const wdba = Services.dirsvc.get("XREExeF", Ci.nsIFile);
     wdba.leafName = "default-browser-agent.exe";
-    return Subprocess.call({
+    return lazy.Subprocess.call({
       ...options,
       command: options.command || wdba.path,
     });
@@ -153,6 +171,72 @@ let ShellServiceInternal = {
   },
 
   /*
+   * Accommodate `setDefaultPDFHandlerOnlyReplaceBrowsers` feature.
+   * @return true if Firefox should set itself as default PDF handler, false
+   * otherwise.
+   */
+  _shouldSetDefaultPDFHandler() {
+    if (
+      !lazy.NimbusFeatures.shellService.getVariable(
+        "setDefaultPDFHandlerOnlyReplaceBrowsers"
+      )
+    ) {
+      return true;
+    }
+
+    const knownBrowserPrefixes = [
+      "AppXq0fevzme2pys62n3e0fbqa7peapykr8v", // Edge before Blink, per https://stackoverflow.com/a/32724723.
+      "Brave", // For "BraveFile".
+      "Chrome", // For "ChromeHTML".
+      "Firefox", // For "FirefoxHTML-*" or "FirefoxPDF-*".  Need to take from other installations of Firefox!
+      "IE", // Best guess.
+      "MSEdge", // For "MSEdgePDF".  Edgium.
+      "Opera", // For "OperaStable", presumably varying with channel.
+      "Yandex", // For "YandexPDF.IHKFKZEIOKEMR6BGF62QXCRIKM", presumably varying with installation.
+    ];
+    let currentProgID = "";
+    try {
+      // Returns the empty string when no association is registered, in
+      // which case the prefix matching will fail and we'll set Firefox as
+      // the default PDF handler.
+      currentProgID = this.queryCurrentDefaultHandlerFor(".pdf");
+    } catch (e) {
+      // We only get an exception when something went really wrong.  Fail
+      // safely: don't set Firefox as default PDF handler.
+      lazy.log.warn(
+        "Failed to queryCurrentDefaultHandlerFor: " +
+          "not setting Firefox as default PDF handler!"
+      );
+      return false;
+    }
+
+    if (currentProgID == "") {
+      lazy.log.debug(
+        `Current default PDF handler has no registered association; ` +
+          `should set as default PDF handler.`
+      );
+      return true;
+    }
+
+    let knownBrowserPrefix = knownBrowserPrefixes.find(it =>
+      currentProgID.startsWith(it)
+    );
+    if (knownBrowserPrefix) {
+      lazy.log.debug(
+        `Current default PDF handler progID matches known browser prefix: ` +
+          `'${knownBrowserPrefix}'; should set as default PDF handler.`
+      );
+      return true;
+    }
+
+    lazy.log.debug(
+      `Current default PDF handler progID does not match known browser prefix; ` +
+        `should not set as default PDF handler.`
+    );
+    return false;
+  },
+
+  /*
    * Set the default browser through the UserChoice registry keys on Windows.
    *
    * NOTE: This does NOT open the System Settings app for manual selection
@@ -165,6 +249,8 @@ let ShellServiceInternal = {
     if (AppConstants.platform != "win") {
       throw new Error("Windows-only");
     }
+
+    lazy.log.info("Setting Firefox as default using UserChoice");
 
     // We launch the WDBA to handle the registry writes, see
     // SetDefaultBrowserUserChoice() in
@@ -185,12 +271,19 @@ let ShellServiceInternal = {
         throw new Error("checkBrowserUserChoiceHashes() failed");
       }
 
-      const aumi = XreDirProvider.getInstallHash();
+      const aumi = lazy.XreDirProvider.getInstallHash();
 
       telemetryResult = "ErrLaunchExe";
       const exeArgs = ["set-default-browser-user-choice", aumi];
-      if (NimbusFeatures.shellService.getVariable("setDefaultPDFHandler")) {
-        exeArgs.push(".pdf");
+      if (
+        lazy.NimbusFeatures.shellService.getVariable("setDefaultPDFHandler")
+      ) {
+        if (this._shouldSetDefaultPDFHandler()) {
+          lazy.log.info("Setting Firefox as default PDF handler");
+          exeArgs.push(".pdf", "FirefoxPDF");
+        } else {
+          lazy.log.info("Not setting Firefox as default PDF handler");
+        }
       }
       const exeProcess = await this._callExternalDefaultBrowserAgent({
         arguments: exeArgs,
@@ -208,7 +301,10 @@ let ShellServiceInternal = {
       const exeWaitTimeoutMs = 2000; // 2 seconds
       const exeWaitPromise = exeProcess.wait();
       const timeoutPromise = new Promise(function(resolve, reject) {
-        setTimeout(() => resolve({ exitCode: STILL_ACTIVE }), exeWaitTimeoutMs);
+        lazy.setTimeout(
+          () => resolve({ exitCode: STILL_ACTIVE }),
+          exeWaitTimeoutMs
+        );
       });
       const { exitCode } = await Promise.race([exeWaitPromise, timeoutPromise]);
 
@@ -242,14 +338,16 @@ let ShellServiceInternal = {
     // On Windows 10, our best chance is to set UserChoice, so try that first.
     if (
       AppConstants.isPlatformAndVersionAtLeast("win", "10") &&
-      NimbusFeatures.shellService.getVariable("setDefaultBrowserUserChoice")
+      lazy.NimbusFeatures.shellService.getVariable(
+        "setDefaultBrowserUserChoice"
+      )
     ) {
       // nsWindowsShellService::SetDefaultBrowser() kicks off several
       // operations, but doesn't wait for their result. So we don't need to
       // await the result of setAsDefaultUserChoice() here, either, we just need
       // to fall back in case it fails.
       this.setAsDefaultUserChoice().catch(err => {
-        Cu.reportError(err);
+        console.error(err);
         this.shellService.setDefaultBrowser(claimAllTypes, forAllUsers);
       });
       return;
@@ -275,7 +373,7 @@ let ShellServiceInternal = {
       ShellService.setDefaultBrowser(claimAllTypes, false);
     } catch (ex) {
       setAsDefaultError = true;
-      Cu.reportError(ex);
+      console.error(ex);
     }
     // Here BROWSER_IS_USER_DEFAULT and BROWSER_SET_USER_DEFAULT_ERROR appear
     // to be inverse of each other, but that is only because this function is
@@ -309,7 +407,7 @@ let ShellServiceInternal = {
    *
    * @throws if not called from main process.
    */
-  async doesAppNeedPin() {
+  async doesAppNeedPin(privateBrowsing = false) {
     if (
       Services.appinfo.processType !== Services.appinfo.PROCESS_TYPE_DEFAULT
     ) {
@@ -320,24 +418,35 @@ let ShellServiceInternal = {
     }
 
     // Pretend pinning is not needed/supported if remotely disabled.
-    if (NimbusFeatures.shellService.getVariable("disablePin")) {
+    if (lazy.NimbusFeatures.shellService.getVariable("disablePin")) {
       return false;
     }
 
     // Currently this only works on certain Windows versions.
     try {
       // First check if we can even pin the app where an exception means no.
-      this.shellService
+      await this.shellService
         .QueryInterface(Ci.nsIWindowsShellService)
-        .checkPinCurrentAppToTaskbar();
+        .checkPinCurrentAppToTaskbarAsync(privateBrowsing);
+      let winTaskbar = Cc["@mozilla.org/windows-taskbar;1"].getService(
+        Ci.nsIWinTaskbar
+      );
 
       // Then check if we're already pinned.
-      return !(await this.shellService.isCurrentAppPinnedToTaskbarAsync());
+      return !(await this.shellService.isCurrentAppPinnedToTaskbarAsync(
+        privateBrowsing
+          ? winTaskbar.defaultPrivateGroupId
+          : winTaskbar.defaultGroupId
+      ));
     } catch (ex) {}
 
     // Next check mac pinning to dock.
     try {
-      return !this.macDockSupport.isAppInDock;
+      // Accessing this.macDockSupport will ensure we're actually running
+      // on Mac (it's possible to be on Linux in this block).
+      const isInDock = this.macDockSupport.isAppInDock;
+      // We can't pin Private Browsing mode on Mac, only a shortcut to the vanilla app
+      return privateBrowsing ? false : !isInDock;
     } catch (ex) {}
     return false;
   },
@@ -345,16 +454,16 @@ let ShellServiceInternal = {
   /**
    * Pin Firefox app to the OS "taskbar."
    */
-  async pinToTaskbar() {
-    if (await this.doesAppNeedPin()) {
+  async pinToTaskbar(privateBrowsing = false) {
+    if (await this.doesAppNeedPin(privateBrowsing)) {
       try {
         if (AppConstants.platform == "win") {
-          this.shellService.pinCurrentAppToTaskbar();
-        } else {
+          await this.shellService.pinCurrentAppToTaskbarAsync(privateBrowsing);
+        } else if (AppConstants.platform == "macosx") {
           this.macDockSupport.ensureAppIsPinnedToDock();
         }
       } catch (ex) {
-        Cu.reportError(ex);
+        console.error(ex);
       }
     }
   },

@@ -1,6 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+/* eslint-env mozilla/frame-script */
+
 // This file expects frame-head.js to be loaded in the environment.
 /* import-globals-from frame-head.js */
 
@@ -31,7 +33,7 @@ var TESTS = [
     },
     check(markers) {
       markers = sanitizeMarkers(markers);
-      ok(markers.length > 0, "markers were returned");
+      ok(!!markers.length, "markers were returned");
       console.log(markers);
       info(JSON.stringify(markers.filter(m => m.name == "Paint")));
       ok(
@@ -63,7 +65,7 @@ var TESTS = [
     },
     check(markers) {
       markers = sanitizeMarkers(markers);
-      ok(markers.length > 0, "markers were returned");
+      ok(!!markers.length, "markers were returned");
       ok(
         !markers.some(m => m.name == "Reflow"),
         "markers doesn't include Reflow"
@@ -93,7 +95,7 @@ var TESTS = [
     },
     check(markers) {
       markers = sanitizeMarkers(markers);
-      ok(markers.length > 0, "markers were returned");
+      ok(!!markers.length, "markers were returned");
       ok(
         !markers.some(m => m.name == "Reflow"),
         "markers doesn't include Reflow"

@@ -1,5 +1,3 @@
-/* import-globals-from antitracking_head.js */
-
 requestLongerTimeout(4);
 
 AntiTracking.runTestInNormalAndPrivateMode(
@@ -26,7 +24,8 @@ AntiTracking.runTestInNormalAndPrivateMode(
         resolve()
       );
     });
-  }
+  },
+  [["dom.indexedDB.hide_in_pbmode.enabled", false]]
 );
 
 AntiTracking.runTestInNormalAndPrivateMode(
@@ -97,7 +96,7 @@ AntiTracking.runTestInNormalAndPrivateMode(
       );
     });
   },
-  null,
+  [["dom.indexedDB.hide_in_pbmode.enabled", false]],
   false,
   false
 );

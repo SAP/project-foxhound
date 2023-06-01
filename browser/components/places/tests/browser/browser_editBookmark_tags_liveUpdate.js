@@ -41,7 +41,7 @@ add_task(async function() {
 
   // Open the tags selector.
   StarUI._createPanelIfNeeded();
-  document.getElementById("editBMPanel_tagsSelectorRow").collapsed = false;
+  document.getElementById("editBMPanel_tagsSelectorRow").hidden = false;
 
   // Add a bookmark.
   let bm = await PlacesUtils.bookmarks.insert({
@@ -54,7 +54,7 @@ add_task(async function() {
 
   // Init panel.
   let node = await PlacesUIUtils.promiseNodeLikeFromFetchInfo(bm);
-  gEditItemOverlay.initPanel({ node });
+  await gEditItemOverlay.initPanel({ node });
 
   // Add a tag.
   await promiseTagSelectorUpdated(() =>
@@ -99,7 +99,7 @@ add_task(async function() {
   });
 
   // Init panel with multiple uris.
-  gEditItemOverlay.initPanel({ uris: [TEST_URI, TEST_URI2] });
+  await gEditItemOverlay.initPanel({ uris: [TEST_URI, TEST_URI2] });
 
   // Add a tag to the first uri.
   await promiseTagSelectorUpdated(() =>
@@ -166,7 +166,7 @@ add_task(async function() {
   await checkTagsSelector([], []);
 
   // Init panel with a nsIURI entry.
-  gEditItemOverlay.initPanel({ uris: [TEST_URI] });
+  await gEditItemOverlay.initPanel({ uris: [TEST_URI] });
 
   // Add a tag.
   await promiseTagSelectorUpdated(() =>
@@ -201,7 +201,7 @@ add_task(async function() {
   await checkTagsSelector([], []);
 
   // Init panel with multiple nsIURI entries.
-  gEditItemOverlay.initPanel({ uris: [TEST_URI, TEST_URI2] });
+  await gEditItemOverlay.initPanel({ uris: [TEST_URI, TEST_URI2] });
 
   // Add a tag to the first entry.
   await promiseTagSelectorUpdated(() =>

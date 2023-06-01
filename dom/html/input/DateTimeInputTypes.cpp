@@ -66,25 +66,9 @@ bool DateTimeInputTypeBase::IsRangeUnderflow() const {
   return value < minimum;
 }
 
-bool DateTimeInputTypeBase::HasStepMismatch(bool aUseZeroIfValueNaN) const {
+bool DateTimeInputTypeBase::HasStepMismatch() const {
   Decimal value = mInputElement->GetValueAsDecimal();
-  if (value.isNaN()) {
-    if (aUseZeroIfValueNaN) {
-      value = Decimal(0);
-    } else {
-      // The element can't suffer from step mismatch if it's value isn't a
-      // number.
-      return false;
-    }
-  }
-
-  Decimal step = mInputElement->GetStep();
-  if (step == kStepAny) {
-    return false;
-  }
-
-  // Value has to be an integral multiple of step.
-  return NS_floorModulo(value - GetStepBase(), step) != Decimal(0);
+  return mInputElement->ValueIsStepMismatch(value);
 }
 
 bool DateTimeInputTypeBase::HasBadInput() const {
@@ -334,6 +318,12 @@ nsresult TimeInputType::GetRangeUnderflowMessage(nsAString& aMessage) {
 
 // input type=week
 
+nsresult WeekInputType::GetBadInputMessage(nsAString& aMessage) {
+  return nsContentUtils::GetMaybeLocalizedString(
+      nsContentUtils::eDOM_PROPERTIES, "FormValidationInvalidWeek",
+      mInputElement->OwnerDoc(), aMessage);
+}
+
 bool WeekInputType::ConvertStringToNumber(nsAString& aValue,
                                           Decimal& aResultValue) const {
   uint32_t year, week;
@@ -397,6 +387,12 @@ bool WeekInputType::ConvertNumberToString(Decimal aValue,
 
 // input type=month
 
+nsresult MonthInputType::GetBadInputMessage(nsAString& aMessage) {
+  return nsContentUtils::GetMaybeLocalizedString(
+      nsContentUtils::eDOM_PROPERTIES, "FormValidationInvalidMonth",
+      mInputElement->OwnerDoc(), aMessage);
+}
+
 bool MonthInputType::ConvertStringToNumber(nsAString& aValue,
                                            Decimal& aResultValue) const {
   uint32_t year, month;
@@ -445,6 +441,12 @@ bool MonthInputType::ConvertNumberToString(Decimal aValue,
 }
 
 // input type=datetime-local
+
+nsresult DateTimeLocalInputType::GetBadInputMessage(nsAString& aMessage) {
+  return nsContentUtils::GetMaybeLocalizedString(
+      nsContentUtils::eDOM_PROPERTIES, "FormValidationInvalidDateTime",
+      mInputElement->OwnerDoc(), aMessage);
+}
 
 bool DateTimeLocalInputType::ConvertStringToNumber(
     nsAString& aValue, Decimal& aResultValue) const {

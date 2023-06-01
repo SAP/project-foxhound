@@ -18,7 +18,9 @@
 
 <pre id="test"></pre>
 <script>
-const { TestUtils } = SpecialPowers.Cu.import("resource://testing-common/TestUtils.jsm");
+const { TestUtils } = SpecialPowers.ChromeUtils.import(
+  "resource://testing-common/TestUtils.jsm"
+);
 SimpleTest.requestFlakyTimeout("Giving a chance for the unexpected popup to show");
 
 const EXAMPLE_COM = window.location.origin + "/tests/toolkit/components/passwordmgr/test/mochitest/";
@@ -52,7 +54,6 @@ async function setupWithOneLogin(pageUrl) {
 
 function resetSavedLogins() {
   let chromeScript = runInParent(function testTeardown() {
-    const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
     Services.logins.removeAllUserFacingLogins();
   });
   chromeScript.destroy();
@@ -117,7 +118,8 @@ function checkDocumentUserHasInteracted() {
 
 add_task(async function test_init() {
   // For this test, we'll be testing with & without user document interaction.
-  // So we'll reset the pref which dictates the behavior of LMC._formHasModifiedFields in automation
+  // So we'll reset the pref which dictates the behavior of
+  // LoginFormState._formHasModifiedFields in automation
   // and ensure all interactions are properly emulated
   ok(SpecialPowers.getBoolPref("signon.testOnlyUserHasInteractedByPrefValue"), "signon.testOnlyUserHasInteractedByPrefValue should default to true");
   info("test_init, flipping the signon.testOnlyUserHasInteractedByPrefValue pref");

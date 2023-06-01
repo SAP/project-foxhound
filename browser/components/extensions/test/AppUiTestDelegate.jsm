@@ -3,16 +3,19 @@
 
 "use strict";
 
-const { Assert } = ChromeUtils.import("resource://testing-common/Assert.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { BrowserTestUtils } = ChromeUtils.import(
-  "resource://testing-common/BrowserTestUtils.jsm"
+const { Assert } = ChromeUtils.importESModule(
+  "resource://testing-common/Assert.sys.mjs"
 );
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { BrowserTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/BrowserTestUtils.sys.mjs"
+);
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   CustomizableUI: "resource:///modules/CustomizableUI.jsm",
 });
 
@@ -73,7 +76,7 @@ function getBrowserActionWidgetId(extensionId) {
 }
 
 function getBrowserActionWidget(extensionId) {
-  return CustomizableUI.getWidget(getBrowserActionWidgetId(extensionId));
+  return lazy.CustomizableUI.getWidget(getBrowserActionWidgetId(extensionId));
 }
 
 async function showBrowserAction(window, extensionId) {
@@ -83,10 +86,18 @@ async function showBrowserAction(window, extensionId) {
     return;
   }
 
-  if (group.areaType == CustomizableUI.TYPE_TOOLBAR) {
-    Assert.ok(!widget.overflowed, "Expect widget not to be overflowed");
-  } else if (group.areaType == CustomizableUI.TYPE_MENU_PANEL) {
-    await window.document.getElementById("nav-bar").overflowable.show();
+  let navbar = window.document.getElementById("nav-bar");
+  if (group.areaType == lazy.CustomizableUI.TYPE_TOOLBAR) {
+    Assert.equal(
+      widget.overflowed,
+      navbar.hasAttribute("overflowing"),
+      "Expect widget overflow state to match toolbar"
+    );
+  } else if (group.areaType == lazy.CustomizableUI.TYPE_PANEL) {
+    let panel = window.gUnifiedExtensions.panel;
+    let shown = BrowserTestUtils.waitForPopupEvent(panel, "shown");
+    window.gUnifiedExtensions.togglePanel();
+    await shown;
   }
 }
 
@@ -103,7 +114,7 @@ async function clickBrowserAction(window, extensionId, modifiers) {
     );
   } else {
     let widget = getBrowserActionWidget(extensionId).forWindow(window);
-    widget.node.click();
+    widget.node.firstElementChild.click();
   }
 }
 
@@ -165,7 +176,7 @@ function closeBrowserAction(window, extensionId) {
   let group = getBrowserActionWidget(extensionId);
 
   let node = window.document.getElementById(group.viewId);
-  CustomizableUI.hidePanelForNode(node);
+  lazy.CustomizableUI.hidePanelForNode(node);
 
   return Promise.resolve();
 }
@@ -203,6 +214,7 @@ async function removeTab(tab) {
 var AppUiTestInternals = {
   awaitBrowserLoaded,
   getBrowserActionWidget,
+  getBrowserActionWidgetId,
   getPageActionButton,
   getPageActionPopup,
   getPanelForNode,

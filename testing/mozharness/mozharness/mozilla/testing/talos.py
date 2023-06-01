@@ -8,35 +8,38 @@
 run talos tests in a virtualenv
 """
 
-from __future__ import absolute_import
-import six
-import io
-import os
-import sys
-import pprint
 import copy
+import io
+import json
+import multiprocessing
+import os
+import pprint
 import re
 import shutil
 import subprocess
-import json
+import sys
 
 import mozharness
+import six
 from mozharness.base.config import parse_config_file
 from mozharness.base.errors import PythonErrorList
-from mozharness.base.log import OutputParser, DEBUG, ERROR, CRITICAL
-from mozharness.base.log import INFO, WARNING
+from mozharness.base.log import CRITICAL, DEBUG, ERROR, INFO, WARNING, OutputParser
 from mozharness.base.python import Python3Virtualenv
-from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
 from mozharness.base.vcs.vcsbase import MercurialScript
-from mozharness.mozilla.testing.errors import TinderBoxPrintRe
-from mozharness.mozilla.automation import TBPL_SUCCESS, TBPL_WORST_LEVEL_TUPLE
-from mozharness.mozilla.automation import TBPL_RETRY, TBPL_FAILURE, TBPL_WARNING
-from mozharness.mozilla.tooltool import TooltoolMixin
+from mozharness.mozilla.automation import (
+    TBPL_FAILURE,
+    TBPL_RETRY,
+    TBPL_SUCCESS,
+    TBPL_WARNING,
+    TBPL_WORST_LEVEL_TUPLE,
+)
 from mozharness.mozilla.testing.codecoverage import (
     CodeCoverageMixin,
     code_coverage_config_options,
 )
-
+from mozharness.mozilla.testing.errors import TinderBoxPrintRe
+from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
+from mozharness.mozilla.tooltool import TooltoolMixin
 
 scripts_path = os.path.abspath(os.path.dirname(os.path.dirname(mozharness.__file__)))
 external_tools_path = os.path.join(scripts_path, "external_tools")
@@ -214,6 +217,15 @@ class Talos(
                     "dest": "fission",
                     "default": True,
                     "help": "Disable Fission (site isolation) in Gecko.",
+                },
+            ],
+            [
+                ["--project"],
+                {
+                    "dest": "project",
+                    "type": "str",
+                    "help": "The project branch we're running tests on. Used for "
+                    "disabling/skipping tests.",
                 },
             ],
             [
@@ -474,6 +486,12 @@ class Talos(
             self.fatal("Talos json config not found, cannot verify suite")
         return suite_name
 
+    def query_suite_extra_prefs(self):
+        if self.query_talos_json_config() and self.suite is not None:
+            return self.talos_json_config["suites"][self.suite].get("extra_prefs", [])
+
+        return []
+
     def validate_suite(self):
         """Ensure suite name is a valid talos suite."""
         if self.query_talos_json_config() and self.suite is not None:
@@ -505,6 +523,8 @@ class Talos(
             kw_options["title"] = self.config["title"]
         if self.symbols_path:
             kw_options["symbolsPath"] = self.symbols_path
+        if self.config.get("project", None):
+            kw_options["project"] = self.config["project"]
 
         kw_options.update(kw)
         # talos expects tests to be in the format (e.g.) 'ts:tp5:tsvg'
@@ -523,10 +543,15 @@ class Talos(
             options += self.config["talos_extra_options"]
         if self.config.get("code_coverage", False):
             options.extend(["--code-coverage"])
+
+        # Add extra_prefs defined by individual test suites in talos.json
+        extra_prefs = self.query_suite_extra_prefs()
+        # Add extra_prefs from the configuration
         if self.config["extra_prefs"]:
-            options.extend(
-                ["--setpref={}".format(p) for p in self.config["extra_prefs"]]
-            )
+            extra_prefs.extend(self.config["extra_prefs"])
+
+        options.extend(["--setpref={}".format(p) for p in extra_prefs])
+
         # disabling fission can come from the --disable-fission cmd line argument; or in CI
         # it comes from a taskcluster transform which adds a --setpref for fission.autostart
         if (not self.config["fission"]) or "fission.autostart=false" in self.config[
@@ -672,8 +697,13 @@ class Talos(
     # clobber defined in BaseScript
 
     def download_and_extract(self, extract_dirs=None, suite_categories=None):
+        # Use in-tree wptserve for Python 3.10 compatibility
+        extract_dirs = [
+            "tools/wptserve/*",
+            "tools/wpt_third_party/pywebsocket3/*",
+        ]
         return super(Talos, self).download_and_extract(
-            suite_categories=["common", "talos"]
+            extract_dirs=extract_dirs, suite_categories=["common", "talos"]
         )
 
     def create_virtualenv(self, **kwargs):
@@ -684,9 +714,12 @@ class Talos(
         # in path so can import jsonschema later when validating output for perfherder
         _virtualenv_path = self.config.get("virtualenv_path")
 
+        _python_interp = self.query_exe("python")
+        if "win" in self.platform_name() and os.path.exists(_python_interp):
+            multiprocessing.set_executable(_python_interp)
+
         if self.run_local and os.path.exists(_virtualenv_path):
             self.info("Virtualenv already exists, skipping creation")
-            _python_interp = self.config.get("exes")["python"]
 
             if "win" in self.platform_name():
                 _path = os.path.join(_virtualenv_path, "Lib", "site-packages")
@@ -703,17 +736,22 @@ class Talos(
 
         # virtualenv doesn't already exist so create it
         # install mozbase first, so we use in-tree versions
+        # Additionally, decide where to pull talos requirements from.
         if not self.run_local:
             mozbase_requirements = os.path.join(
                 self.query_abs_dirs()["abs_test_install_dir"],
                 "config",
                 "mozbase_requirements.txt",
             )
+            talos_requirements = os.path.join(self.talos_path, "requirements.txt")
         else:
             mozbase_requirements = os.path.join(
                 os.path.dirname(self.talos_path),
                 "config",
                 "mozbase_source_requirements.txt",
+            )
+            talos_requirements = os.path.join(
+                self.talos_path, "source_requirements.txt"
             )
         self.register_virtualenv_module(
             requirements=[mozbase_requirements],
@@ -723,9 +761,7 @@ class Talos(
         super(Talos, self).create_virtualenv()
         # talos in harness requires what else is
         # listed in talos requirements.txt file.
-        self.install_module(
-            requirements=[os.path.join(self.talos_path, "requirements.txt")]
-        )
+        self.install_module(requirements=[talos_requirements])
 
     def _validate_treeherder_data(self, parser):
         # late import is required, because install is done in create_virtualenv
@@ -800,7 +836,10 @@ class Talos(
         # run talos tests
         run_tests = os.path.join(self.talos_path, "talos", "run_tests.py")
 
-        mozlog_opts = ["--log-tbpl-level=debug"]
+        # Dynamically set the log level based on the talos config for consistency
+        # throughout the test
+        mozlog_opts = [f"--log-tbpl-level={self.config['log_level']}"]
+
         if not self.run_local and "suite" in self.config:
             fname_pattern = "%s_%%s.log" % self.config["suite"]
             mozlog_opts.append(

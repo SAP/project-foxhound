@@ -39,7 +39,7 @@ describe("mapExpression", () => {
     {
       name: "await",
       expression: "await a()",
-      newExpression: formatAwait("return await a()"),
+      newExpression: formatAwait("return a()"),
       bindings: [],
       mappings: {},
       shouldMapBindings: true,
@@ -78,7 +78,7 @@ describe("mapExpression", () => {
     {
       name: "await (multiple awaits)",
       expression: "const x = await a(); await b(x)",
-      newExpression: formatAwait("self.x = await a(); return await b(x);"),
+      newExpression: formatAwait("self.x = await a(); return b(x);"),
       bindings: [],
       mappings: {},
       shouldMapBindings: true,
@@ -568,6 +568,60 @@ describe("mapExpression", () => {
       shouldMapBindings: false,
       expectedMapped: {
         await: false,
+        bindings: false,
+        originalExpression: false,
+      },
+    },
+    {
+      // check that variable declaration in for loop is not put outside of the async iife
+      name: "await (for loop)",
+      expression: "for (let i=0;i<2;i++) {}; var b = await 1;",
+      newExpression: `var b;
+
+        (async () => {
+          for (let i=0;i<2;i++) {}
+
+          return (b = await 1);
+        })()`,
+      shouldMapBindings: false,
+      expectedMapped: {
+        await: true,
+        bindings: false,
+        originalExpression: false,
+      },
+    },
+    {
+      // check that variable declaration in for-in loop is not put outside of the async iife
+      name: "await (for..in loop)",
+      expression: "for (let i in {}) {}; var b = await 1;",
+      newExpression: `var b;
+
+        (async () => {
+          for (let i in {}) {}
+
+          return (b = await 1);
+        })()`,
+      shouldMapBindings: false,
+      expectedMapped: {
+        await: true,
+        bindings: false,
+        originalExpression: false,
+      },
+    },
+    {
+      // check that variable declaration in for-of loop is not put outside of the async iife
+      name: "await (for..of loop)",
+      expression: "for (let i of []) {}; var b = await 1;",
+      newExpression: `var b;
+
+        (async () => {
+          for (let i of []) {}
+
+          return (b = await 1);
+        })()`,
+      shouldMapBindings: false,
+      expectedMapped: {
+        await: true,
         bindings: false,
         originalExpression: false,
       },

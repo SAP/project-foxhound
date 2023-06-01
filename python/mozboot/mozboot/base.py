@@ -2,35 +2,23 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
-import hashlib
 import os
 import re
 import subprocess
 import sys
-
 from pathlib import Path
 
+from mach.util import to_optional_path, win_to_msys_path
+from mozbuild.bootstrap import bootstrap_all_toolchains_for, bootstrap_toolchain
+from mozfile import which
 from packaging.version import Version
+
 from mozboot import rust
 from mozboot.util import (
-    get_mach_virtualenv_binary,
     MINIMUM_RUST_VERSION,
+    get_mach_virtualenv_binary,
+    http_download_and_save,
 )
-from mozfile import which
-from mach.util import to_optional_path, win_to_msys_path
-
-# NOTE: This script is intended to be run with a vanilla Python install.  We
-# have to rely on the standard library instead of Python 2+3 helpers like
-# the six module.
-if sys.version_info < (3,):
-    from urllib2 import urlopen
-
-    input = raw_input  # noqa
-else:
-    from urllib.request import urlopen
-
 
 NO_MERCURIAL = """
 Could not find Mercurial (hg) in the current shell's path. Try starting a new
@@ -59,6 +47,22 @@ path for this shell. Try creating a new shell and run this bootstrapper again.
 If it continues to fail, consider installing Mercurial by following the
 instructions at http://mercurial.selenic.com/.
 """
+
+MERCURIAL_INSTALL_PROMPT = """
+Mercurial releases a new version every 3 months and your distro's package
+may become out of date. This may cause incompatibility with some
+Mercurial extensions that rely on new Mercurial features. As a result,
+you may not have an optimal version control experience.
+
+To have the best Mercurial experience possible, we recommend installing
+Mercurial via the "pip" Python packaging utility. This will likely result
+in files being placed in /usr/local/bin and /usr/local/lib.
+
+How would you like to continue?
+  1. Install a modern Mercurial via pip [default]
+  2. Install a legacy Mercurial via the distro package manager
+  3. Do not install Mercurial
+Your choice: """
 
 PYTHON_UNABLE_UPGRADE = """
 You are currently running Python %s. Running %s or newer (but
@@ -137,7 +141,7 @@ ac_add_options --enable-artifact-builds
 
 JS_MOZCONFIG_TEMPLATE = """\
 # Build only the SpiderMonkey JS test shell
-ac_add_options --enable-application=js
+ac_add_options --enable-project=js
 """
 
 # Upgrade Mercurial older than this.
@@ -158,7 +162,6 @@ class BaseBootstrapper(object):
         self.no_system_changes = no_system_changes
         self.state_dir = None
         self.srcdir = None
-        self.configure_sandbox = None
 
     def validate_environment(self):
         """
@@ -339,44 +342,9 @@ class BaseBootstrapper(object):
             % __name__
         )
 
-    def ensure_stylo_packages(self):
-        """
-        Install any necessary packages needed for Stylo development.
-        """
-        raise NotImplementedError(
-            "%s does not yet implement ensure_stylo_packages()" % __name__
-        )
-
-    def ensure_nasm_packages(self):
-        """
-        Install nasm.
-        """
-        raise NotImplementedError(
-            "%s does not yet implement ensure_nasm_packages()" % __name__
-        )
-
     def ensure_sccache_packages(self):
         """
         Install sccache.
-        """
-        pass
-
-    def ensure_node_packages(self):
-        """
-        Install any necessary packages needed to supply NodeJS"""
-        raise NotImplementedError(
-            "%s does not yet implement ensure_node_packages()" % __name__
-        )
-
-    def ensure_fix_stacks_packages(self):
-        """
-        Install fix-stacks.
-        """
-        pass
-
-    def ensure_minidump_stackwalk_packages(self):
-        """
-        Install minidump_stackwalk.
         """
         pass
 
@@ -391,28 +359,7 @@ class BaseBootstrapper(object):
             return self.install_toolchain_artifact_impl(
                 self.state_dir, toolchain_job, no_unpack
             )
-
-        if not self.configure_sandbox:
-            from mozbuild.configure import ConfigureSandbox
-
-            # Here, we don't want an existing mozconfig to interfere with what we
-            # do, neither do we want the default for --enable-bootstrap (which is not
-            # always on) to prevent this from doing something.
-            self.configure_sandbox = sandbox = ConfigureSandbox(
-                {}, argv=["configure", "--enable-bootstrap", f"MOZCONFIG={os.devnull}"]
-            )
-            moz_configure = self.srcdir / "build" / "moz.configure"
-            sandbox.include_file(str(moz_configure / "init.configure"))
-            # bootstrap_search_path_order has a dependency on developer_options, which
-            # is not defined in init.configure. Its value doesn't matter for us, though.
-            sandbox["developer_options"] = sandbox["always"]
-            sandbox.include_file(str(moz_configure / "bootstrap.configure"))
-
-        # Expand the `bootstrap_path` template for the given toolchain_job, and execute the
-        # expanded function via `_value_for`, which will trigger autobootstrap.
-        self.configure_sandbox._value_for(
-            self.configure_sandbox["bootstrap_path"](toolchain_job)
-        )
+        bootstrap_toolchain(toolchain_job)
 
     def install_toolchain_artifact_impl(
         self, install_dir: Path, toolchain_job, no_unpack=False
@@ -444,9 +391,17 @@ class BaseBootstrapper(object):
 
         subprocess.check_call(cmd, cwd=str(install_dir))
 
-    def run_as_root(self, command):
+    def auto_bootstrap(self, application):
+        args = ["--with-ccache=sccache"]
+        if application.endswith("_artifact_mode"):
+            args.append("--enable-artifact-builds")
+            application = application[: -len("_artifact_mode")]
+        args.append("--enable-project={}".format(application.replace("_", "/")))
+        bootstrap_all_toolchains_for(args)
+
+    def run_as_root(self, command, may_use_sudo=True):
         if os.geteuid() != 0:
-            if which("sudo"):
+            if may_use_sudo and which("sudo"):
                 command.insert(0, "sudo")
             else:
                 command = ["su", "root", "-c", " ".join(command)]
@@ -454,107 +409,6 @@ class BaseBootstrapper(object):
         print("Executing as root:", subprocess.list2cmdline(command))
 
         subprocess.check_call(command, stdin=sys.stdin)
-
-    def dnf_install(self, *packages):
-        if which("dnf"):
-
-            def not_installed(package):
-                # We could check for "Error: No matching Packages to list", but
-                # checking `dnf`s exit code is sufficent.
-                # Ideally we'd invoke dnf with '--cacheonly', but there's:
-                # https://bugzilla.redhat.com/show_bug.cgi?id=2030255
-                is_installed = subprocess.run(
-                    ["dnf", "list", "--installed", package],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                )
-                if is_installed.returncode not in [0, 1]:
-                    stdout = is_installed.stdout
-                    raise Exception(
-                        f'Failed to determine whether package "{package}" is installed: "{stdout}"'
-                    )
-                return is_installed.returncode != 0
-
-            packages = list(filter(not_installed, packages))
-            if len(packages) == 0:
-                # avoid sudo prompt (support unattended re-bootstrapping)
-                return
-
-            command = ["dnf", "install"]
-        else:
-            command = ["yum", "install"]
-
-        if self.no_interactive:
-            command.append("-y")
-        command.extend(packages)
-
-        self.run_as_root(command)
-
-    def dnf_groupinstall(self, *packages):
-        if which("dnf"):
-            installed = subprocess.run(
-                # Ideally we'd invoke dnf with '--cacheonly', but there's:
-                # https://bugzilla.redhat.com/show_bug.cgi?id=2030255
-                # Ideally we'd use `--installed` instead of the undocumented
-                # `installed` subcommand, but that doesn't currently work:
-                # https://bugzilla.redhat.com/show_bug.cgi?id=1884616#c0
-                ["dnf", "group", "list", "installed", "--hidden"],
-                universal_newlines=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-            )
-            if installed.returncode != 0:
-                raise Exception(
-                    f'Failed to determine currently-installed package groups: "{installed.stdout}"'
-                )
-            installed_packages = (pkg.strip() for pkg in installed.stdout.split("\n"))
-            packages = list(filter(lambda p: p not in installed_packages, packages))
-            if len(packages) == 0:
-                # avoid sudo prompt (support unattended re-bootstrapping)
-                return
-
-            command = ["dnf", "groupinstall"]
-        else:
-            command = ["yum", "groupinstall"]
-
-        if self.no_interactive:
-            command.append("-y")
-        command.extend(packages)
-
-        self.run_as_root(command)
-
-    def dnf_update(self, *packages):
-        if which("dnf"):
-            command = ["dnf", "update"]
-        else:
-            command = ["yum", "update"]
-
-        if self.no_interactive:
-            command.append("-y")
-        command.extend(packages)
-
-        self.run_as_root(command)
-
-    def apt_install(self, *packages):
-        command = ["apt-get", "install"]
-        if self.no_interactive:
-            command.append("-y")
-        command.extend(packages)
-
-        self.run_as_root(command)
-
-    def apt_update(self):
-        command = ["apt-get", "update"]
-        if self.no_interactive:
-            command.append("-y")
-
-        self.run_as_root(command)
-
-    def apt_add_architecture(self, arch):
-        command = ["dpkg", "--add-architecture"]
-        command.extend(arch)
-
-        self.run_as_root(command)
 
     def prompt_int(self, prompt, low, high, default=None):
         """Prompts the user with prompt and requires an integer between low and high.
@@ -773,14 +627,10 @@ class BaseBootstrapper(object):
         if modern:
             print("Your version of Rust (%s) is new enough." % version)
 
-            if rustup:
-                self.ensure_rust_targets(rustup, version)
-            return
-
-        if version:
+        elif version:
             print("Your version of Rust (%s) is too old." % version)
 
-        if rustup:
+        if rustup and not modern:
             rustup_version = self._parse_version(rustup)
             if not rustup_version:
                 print(RUSTUP_OLD)
@@ -792,10 +642,16 @@ class BaseBootstrapper(object):
             if not modern:
                 print(RUST_UPGRADE_FAILED % (MODERN_RUST_VERSION, after))
                 sys.exit(1)
-        else:
+        elif not rustup:
             # No rustup. Download and run the installer.
             print("Will try to install Rust.")
             self.install_rust()
+            modern, version = self.is_rust_modern(cargo_bin)
+            rustup = to_optional_path(
+                which("rustup", extra_search_dirs=[str(cargo_bin)])
+            )
+
+        self.ensure_rust_targets(rustup, version)
 
     def ensure_rust_targets(self, rustup: Path, rust_version):
         """Make sure appropriate cross target libraries are installed."""
@@ -858,7 +714,7 @@ class BaseBootstrapper(object):
         rustup_init = Path(rustup_init)
         os.close(fd)
         try:
-            self.http_download_and_save(url, rustup_init, checksum)
+            http_download_and_save(url, rustup_init, checksum)
             mode = rustup_init.stat().st_mode
             rustup_init.chmod(mode | stat.S_IRWXU)
             print("Ok")
@@ -883,22 +739,3 @@ class BaseBootstrapper(object):
             except OSError as e:
                 if e.errno != errno.ENOENT:
                     raise
-
-    def http_download_and_save(self, url, dest: Path, hexhash, digest="sha256"):
-        """Download the given url and save it to dest.  hexhash is a checksum
-        that will be used to validate the downloaded file using the given
-        digest algorithm.  The value of digest can be any value accepted by
-        hashlib.new.  The default digest used is 'sha256'."""
-        f = urlopen(url)
-        h = hashlib.new(digest)
-        with open(dest, "wb") as out:
-            while True:
-                data = f.read(4096)
-                if data:
-                    out.write(data)
-                    h.update(data)
-                else:
-                    break
-        if h.hexdigest() != hexhash:
-            dest.unlink()
-            raise ValueError("Hash of downloaded file does not match expected hash")

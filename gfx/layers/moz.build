@@ -5,7 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files("**"):
-    BUG_COMPONENT = ("Core", "Graphics: Layers")
+    BUG_COMPONENT = ("Core", "Graphics")
 
 with Files("apz/**"):
     BUG_COMPONENT = ("Core", "Panning and Zooming")
@@ -20,7 +20,6 @@ EXPORTS += [
     "ImageContainer.h",
     "ImageTypes.h",
     "IMFYCbCrImage.h",
-    "Layers.h",
     "LayersTypes.h",
     "LayerUserData.h",
     "opengl/OGLShaderConfig.h",
@@ -30,6 +29,7 @@ EXPORTS += [
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
     SOURCES += [
         "D3D11ShareHandleImage.cpp",
+        "D3D11TextureIMFSampleImage.cpp",
         "D3D11YCbCrImage.cpp",
     ]
     UNIFIED_SOURCES += [
@@ -50,6 +50,13 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
         SOURCES += [
             "d3d11/CompositorD3D11.cpp",
             "d3d11/DeviceAttachmentsD3D11.cpp",
+        ]
+    if CONFIG["MOZ_WMF_MEDIA_ENGINE"]:
+        EXPORTS.mozilla.layers += [
+            "DcompSurfaceImage.h",
+        ]
+        UNIFIED_SOURCES += [
+            "DcompSurfaceImage.cpp",
         ]
 
 EXPORTS.gfxipc += [
@@ -120,12 +127,14 @@ EXPORTS.mozilla.layers += [
     "composite/FrameUniformityData.h",
     "composite/GPUVideoTextureHost.h",
     "composite/ImageComposite.h",
+    "composite/RemoteTextureHostWrapper.h",
     "composite/TextureHost.h",
     "CompositionRecorder.h",
     "Compositor.h",
     "CompositorAnimationStorage.h",
     "CompositorTypes.h",
     "D3D11ShareHandleImage.h",
+    "D3D11TextureIMFSampleImage.h",
     "D3D11YCbCrImage.h",
     "D3D9SurfaceImage.h",
     "DirectionUtils.h",
@@ -153,7 +162,6 @@ EXPORTS.mozilla.layers += [
     "ipc/ImageBridgeParent.h",
     "ipc/ISurfaceAllocator.h",
     "ipc/KnowsCompositor.h",
-    "ipc/LayerAnimationUtils.h",
     "ipc/LayersMessageUtils.h",
     "ipc/LayerTreeOwnerTracker.h",
     "ipc/RefCountedShmem.h",
@@ -171,7 +179,6 @@ EXPORTS.mozilla.layers += [
     "ipc/VideoBridgeChild.h",
     "ipc/VideoBridgeParent.h",
     "ipc/VideoBridgeUtils.h",
-    "LayerAttributes.h",
     "LayersTypes.h",
     "MemoryPressureObserver.h",
     "NativeLayer.h",
@@ -184,10 +191,12 @@ EXPORTS.mozilla.layers += [
     "opengl/TextureHostOGL.h",
     "PersistentBufferProvider.h",
     "ProfilerScreenshots.h",
+    "RemoteTextureMap.h",
     "RepaintRequest.h",
     "SampleTime.h",
     "ScreenshotGrabber.h",
     "ScrollableLayerGuid.h",
+    "ScrollbarData.h",
     "ShareableCanvasRenderer.h",
     "SourceSurfaceSharedData.h",
     "SurfacePool.h",
@@ -342,6 +351,7 @@ UNIFIED_SOURCES += [
     "composite/FrameUniformityData.cpp",
     "composite/GPUVideoTextureHost.cpp",
     "composite/ImageComposite.cpp",
+    "composite/RemoteTextureHostWrapper.cpp",
     "CompositionRecorder.cpp",
     "Compositor.cpp",
     "CompositorAnimationStorage.cpp",
@@ -372,7 +382,6 @@ UNIFIED_SOURCES += [
     "ipc/ImageBridgeParent.cpp",
     "ipc/ISurfaceAllocator.cpp",
     "ipc/KnowsCompositor.cpp",
-    "ipc/LayerAnimationUtils.cpp",
     "ipc/LayerTreeOwnerTracker.cpp",
     "ipc/RefCountedShmem.cpp",
     "ipc/RemoteContentController.cpp",
@@ -384,7 +393,6 @@ UNIFIED_SOURCES += [
     "ipc/UiCompositorControllerParent.cpp",
     "ipc/VideoBridgeChild.cpp",
     "ipc/VideoBridgeParent.cpp",
-    "Layers.cpp",
     "LayersTypes.cpp",
     "MemoryPressureObserver.cpp",
     "opengl/CompositingRenderTargetOGL.cpp",
@@ -393,6 +401,7 @@ UNIFIED_SOURCES += [
     "opengl/TextureClientOGL.cpp",
     "opengl/TextureHostOGL.cpp",
     "ProfilerScreenshots.cpp",
+    "RemoteTextureMap.cpp",
     "RepaintRequest.cpp",
     "SampleTime.cpp",
     "ScreenshotGrabber.cpp",

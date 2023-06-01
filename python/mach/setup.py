@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 try:
     from setuptools import setup
 except ImportError:
@@ -33,7 +31,7 @@ setup(
         "Programming Language :: Python :: 3.5",
     ],
     install_requires=[
-        "blessings",
+        "blessed",
         "mozfile",
         "mozprocess",
         "six",

@@ -38,7 +38,6 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/BinarySearch.h"
 #include "mozilla/EditorBase.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/HTMLEditor.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/MathAlgorithms.h"
@@ -96,7 +95,8 @@ class ParagraphBoundaryRule : public PivotRule {
     // Now, deal with the case that we encounter a new block level accessible.
     // This also means a new paragraph boundary start.
     nsIFrame* frame = acc->GetFrame();
-    if (frame && frame->IsBlockFrame()) {
+    if (frame && frame->IsBlockFrame() &&
+        acc->Role() != roles::LISTITEM_MARKER) {
       result |= nsIAccessibleTraversalRule::FILTER_MATCH;
       return result;
     }
@@ -188,7 +188,7 @@ role HyperTextAccessible::NativeRole() const {
 uint64_t HyperTextAccessible::NativeState() const {
   uint64_t states = AccessibleWrap::NativeState();
 
-  if (mContent->AsElement()->State().HasState(NS_EVENT_STATE_READWRITE)) {
+  if (IsEditable()) {
     states |= states::EDITABLE;
 
   } else if (mContent->IsHTMLElement(nsGkAtoms::article)) {
@@ -204,6 +204,13 @@ uint64_t HyperTextAccessible::NativeState() const {
   }
 
   return states;
+}
+
+bool HyperTextAccessible::IsEditable() const {
+  if (!mContent) {
+    return false;
+  }
+  return mContent->AsElement()->State().HasState(dom::ElementState::READWRITE);
 }
 
 LayoutDeviceIntRect HyperTextAccessible::GetBoundsInFrame(
@@ -920,9 +927,7 @@ void HyperTextAccessible::TextBeforeOffset(int32_t aOffset,
                                            int32_t* aStartOffset,
                                            int32_t* aEndOffset,
                                            nsAString& aText) {
-  if (StaticPrefs::accessibility_cache_enabled_AtStartup() &&
-      (aBoundaryType == nsIAccessibleText::BOUNDARY_WORD_START ||
-       aBoundaryType == nsIAccessibleText::BOUNDARY_LINE_START)) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
     // This isn't strictly related to caching, but this new text implementation
     // is being developed to make caching feasible. We put it behind this pref
     // to make it easy to test while it's still under development.
@@ -1009,9 +1014,7 @@ void HyperTextAccessible::TextAtOffset(int32_t aOffset,
                                        AccessibleTextBoundary aBoundaryType,
                                        int32_t* aStartOffset,
                                        int32_t* aEndOffset, nsAString& aText) {
-  if (StaticPrefs::accessibility_cache_enabled_AtStartup() &&
-      (aBoundaryType == nsIAccessibleText::BOUNDARY_WORD_START ||
-       aBoundaryType == nsIAccessibleText::BOUNDARY_LINE_START)) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
     // This isn't strictly related to caching, but this new text implementation
     // is being developed to make caching feasible. We put it behind this pref
     // to make it easy to test while it's still under development.
@@ -1106,9 +1109,7 @@ void HyperTextAccessible::TextAfterOffset(int32_t aOffset,
                                           int32_t* aStartOffset,
                                           int32_t* aEndOffset,
                                           nsAString& aText) {
-  if (StaticPrefs::accessibility_cache_enabled_AtStartup() &&
-      (aBoundaryType == nsIAccessibleText::BOUNDARY_WORD_START ||
-       aBoundaryType == nsIAccessibleText::BOUNDARY_LINE_START)) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
     // This isn't strictly related to caching, but this new text implementation
     // is being developed to make caching feasible. We put it behind this pref
     // to make it easy to test while it's still under development.
@@ -1413,31 +1414,11 @@ already_AddRefed<AccAttributes> HyperTextAccessible::NativeAttributes() {
   }
 
   if (HasOwnContent()) {
-    GetAccService()->MarkupAttributes(mContent, attributes);
+    GetAccService()->MarkupAttributes(this, attributes);
     if (mContent->IsMathMLElement()) SetMathMLXMLRoles(attributes);
   }
 
   return attributes.forget();
-}
-
-nsAtom* HyperTextAccessible::LandmarkRole() const {
-  if (!HasOwnContent()) return nullptr;
-
-  // For the html landmark elements we expose them like we do ARIA landmarks to
-  // make AT navigation schemes "just work".
-  if (mContent->IsHTMLElement(nsGkAtoms::nav)) {
-    return nsGkAtoms::navigation;
-  }
-
-  if (mContent->IsHTMLElement(nsGkAtoms::aside)) {
-    return nsGkAtoms::complementary;
-  }
-
-  if (mContent->IsHTMLElement(nsGkAtoms::main)) {
-    return nsGkAtoms::main;
-  }
-
-  return AccessibleWrap::LandmarkRole();
 }
 
 int32_t HyperTextAccessible::OffsetAtPoint(int32_t aX, int32_t aY,
@@ -1744,8 +1725,10 @@ int32_t HyperTextAccessible::CaretLineNumber() {
       caretContent, caretOffset, hint, &returnOffsetUnused);
   NS_ENSURE_TRUE(caretFrame, -1);
 
+  AutoAssertNoDomMutations guard;  // The nsILineIterators below will break if
+                                   // the DOM is modified while they're in use!
   int32_t lineNumber = 1;
-  nsAutoLineIterator lineIterForCaret;
+  nsILineIterator* lineIterForCaret = nullptr;
   nsIContent* hyperTextContent = IsContent() ? mContent.get() : nullptr;
   while (caretFrame) {
     if (hyperTextContent == caretFrame->GetContent()) {
@@ -1758,7 +1741,7 @@ int32_t HyperTextAccessible::CaretLineNumber() {
     // Add lines for the sibling frames before the caret
     nsIFrame* sibling = parentFrame->PrincipalChildList().FirstChild();
     while (sibling && sibling != caretFrame) {
-      nsAutoLineIterator lineIterForSibling = sibling->GetLineIterator();
+      nsILineIterator* lineIterForSibling = sibling->GetLineIterator();
       if (lineIterForSibling) {
         // For the frames before that grab all the lines
         int32_t addLines = lineIterForSibling->GetNumLines();
@@ -1922,21 +1905,6 @@ bool HyperTextAccessible::SelectionBoundsAt(int32_t aSelectionNum,
   return true;
 }
 
-bool HyperTextAccessible::SetSelectionBoundsAt(int32_t aSelectionNum,
-                                               int32_t aStartOffset,
-                                               int32_t aEndOffset) {
-  index_t startOffset = ConvertMagicOffset(aStartOffset);
-  index_t endOffset = ConvertMagicOffset(aEndOffset);
-  if (!startOffset.IsValid() || !endOffset.IsValid() ||
-      std::max(startOffset, endOffset) > CharacterCount()) {
-    NS_ERROR("Wrong in offset");
-    return false;
-  }
-
-  TextRange range(this, this, startOffset, this, endOffset);
-  return range.SetSelectionAt(aSelectionNum);
-}
-
 bool HyperTextAccessible::RemoveFromSelection(int32_t aSelectionNum) {
   RefPtr<dom::Selection> domSel = DOMSelection();
   if (!domSel) return false;
@@ -2002,8 +1970,9 @@ void HyperTextAccessible::ScrollSubstringToPoint(int32_t aStartOffset,
         int16_t vPercent = offsetPointY * 100 / size.height;
 
         nsresult rv = nsCoreUtils::ScrollSubstringTo(
-            frame, domRange, ScrollAxis(vPercent, WhenToScroll::Always),
-            ScrollAxis(hPercent, WhenToScroll::Always));
+            frame, domRange,
+            ScrollAxis(WhereToScroll(vPercent), WhenToScroll::Always),
+            ScrollAxis(WhereToScroll(hPercent), WhenToScroll::Always));
         if (NS_FAILED(rv)) return;
 
         initialScrolled = true;
@@ -2091,10 +2060,8 @@ void HyperTextAccessible::RangeAtPoint(int32_t aX, int32_t aY,
 // LocalAccessible protected
 ENameValueFlag HyperTextAccessible::NativeName(nsString& aName) const {
   // Check @alt attribute for invalid img elements.
-  bool hasImgAlt = false;
   if (mContent->IsHTMLElement(nsGkAtoms::img)) {
-    hasImgAlt = mContent->AsElement()->GetAttr(kNameSpaceID_None,
-                                               nsGkAtoms::alt, aName);
+    mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::alt, aName);
     if (!aName.IsEmpty()) return eNameOK;
   }
 
@@ -2109,7 +2076,7 @@ ENameValueFlag HyperTextAccessible::NativeName(nsString& aName) const {
     aName.CompressWhitespace();
   }
 
-  return hasImgAlt ? eNoNameOnPurpose : eNameOK;
+  return eNameOK;
 }
 
 void HyperTextAccessible::Shutdown() {
@@ -2119,9 +2086,8 @@ void HyperTextAccessible::Shutdown() {
 
 bool HyperTextAccessible::RemoveChild(LocalAccessible* aAccessible) {
   const int32_t childIndex = aAccessible->IndexInParent();
-  if (childIndex < static_cast<int64_t>(mOffsets.Length())) {
-    mOffsets.RemoveLastElements(mOffsets.Length() -
-                                aAccessible->IndexInParent());
+  if (childIndex < static_cast<int32_t>(mOffsets.Length())) {
+    mOffsets.RemoveLastElements(mOffsets.Length() - childIndex);
   }
 
   return AccessibleWrap::RemoveChild(aAccessible);
@@ -2222,65 +2188,6 @@ nsresult HyperTextAccessible::RenderedToContentOffset(
   *aContentOffset = text.mOffsetWithinNodeText;
 
   return NS_OK;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// HyperTextAccessible public
-
-int32_t HyperTextAccessible::GetChildOffset(uint32_t aChildIndex,
-                                            bool aInvalidateAfter) const {
-  if (aChildIndex == 0) {
-    if (aInvalidateAfter) mOffsets.Clear();
-
-    return aChildIndex;
-  }
-
-  int32_t count = mOffsets.Length() - aChildIndex;
-  if (count > 0) {
-    if (aInvalidateAfter) mOffsets.RemoveElementsAt(aChildIndex, count);
-
-    return mOffsets[aChildIndex - 1];
-  }
-
-  uint32_t lastOffset =
-      mOffsets.IsEmpty() ? 0 : mOffsets[mOffsets.Length() - 1];
-
-  while (mOffsets.Length() < aChildIndex) {
-    LocalAccessible* child = mChildren[mOffsets.Length()];
-    lastOffset += nsAccUtils::TextLength(child);
-    mOffsets.AppendElement(lastOffset);
-  }
-
-  return mOffsets[aChildIndex - 1];
-}
-
-int32_t HyperTextAccessible::GetChildIndexAtOffset(uint32_t aOffset) const {
-  uint32_t lastOffset = 0;
-  const uint32_t offsetCount = mOffsets.Length();
-
-  if (offsetCount > 0) {
-    lastOffset = mOffsets[offsetCount - 1];
-    if (aOffset < lastOffset) {
-      size_t index;
-      if (BinarySearch(mOffsets, 0, offsetCount, aOffset, &index)) {
-        return (index < (offsetCount - 1)) ? index + 1 : index;
-      }
-
-      return (index == offsetCount) ? -1 : index;
-    }
-  }
-
-  uint32_t childCount = ChildCount();
-  while (mOffsets.Length() < childCount) {
-    LocalAccessible* child = LocalChildAt(mOffsets.Length());
-    lastOffset += nsAccUtils::TextLength(child);
-    mOffsets.AppendElement(lastOffset);
-    if (aOffset < lastOffset) return mOffsets.Length() - 1;
-  }
-
-  if (aOffset == lastOffset) return mOffsets.Length() - 1;
-
-  return -1;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -23,6 +23,8 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/TelemetryComms.h"
 #include "mozilla/Tokenizer.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/net/NeckoParent.h"
 #include "mozilla/net/TRRServiceChild.h"
 // Put DNSLogging.h at the end to avoid LOG being overwritten by other headers.
 #include "DNSLogging.h"
@@ -52,6 +54,16 @@ constexpr nsLiteralCString kTRRDomains[] = {
     "dns.shaw.ca"_ns, // Steered clients
     // clang-format on
 };
+// static
+void TRRService::SetProviderDomain(const nsACString& aTRRDomain) {
+  sDomainIndex = 0;
+  for (size_t i = 1; i < std::size(kTRRDomains); i++) {
+    if (aTRRDomain.Equals(kTRRDomains[i])) {
+      sDomainIndex = i;
+      break;
+    }
+  }
+}
 
 // static
 const nsCString& TRRService::ProviderKey() { return kTRRDomains[sDomainIndex]; }
@@ -65,7 +77,9 @@ NS_IMPL_RELEASE_USING_AGGREGATOR(TRRService::ConfirmationContext,
 NS_IMPL_QUERY_INTERFACE(TRRService::ConfirmationContext, nsITimerCallback,
                         nsINamed)
 
-TRRService::TRRService() { MOZ_ASSERT(NS_IsMainThread(), "wrong thread"); }
+TRRService::TRRService() : mLock("TRRService", this) {
+  MOZ_ASSERT(NS_IsMainThread(), "wrong thread");
+}
 
 // static
 TRRService* TRRService::Get() { return sTRRServicePtr; }
@@ -262,7 +276,7 @@ bool TRRService::MaybeSetPrivateURI(const nsACString& aURI) {
 
   ProcessURITemplate(newURI);
   {
-    MutexAutoLock lock(mLock);
+    MutexSingleWriterAutoLock lock(mLock);
     if (mPrivateURI.Equals(newURI)) {
       return false;
     }
@@ -288,22 +302,28 @@ bool TRRService::MaybeSetPrivateURI(const nsACString& aURI) {
     nsAutoCString host;
     url->GetHost(host);
 
-    sDomainIndex = 0;
-    for (size_t i = 1; i < std::size(kTRRDomains); i++) {
-      if (host.Equals(kTRRDomains[i])) {
-        sDomainIndex = i;
-        break;
-      }
-    }
+    SetProviderDomain(host);
 
     mPrivateURI = newURI;
+
+    // Notify the content processes of the new TRR
+    for (auto* cp :
+         dom::ContentParent::AllProcesses(dom::ContentParent::eLive)) {
+      PNeckoParent* neckoParent =
+          SingleManagedOrNull(cp->ManagedPNeckoParent());
+      if (!neckoParent) {
+        continue;
+      }
+      Unused << neckoParent->SendSetTRRDomain(host);
+    }
 
     AsyncCreateTRRConnectionInfo(mPrivateURI);
 
     // The URI has changed. We should trigger a new confirmation immediately.
     // We must do this here because the URI could also change because of
     // steering.
-    mConfirmation.HandleEvent(ConfirmationEvent::URIChange, lock);
+    mConfirmationTriggered =
+        mConfirmation.HandleEvent(ConfirmationEvent::URIChange, lock);
   }
 
   // Clear the cache because we changed the URI
@@ -343,16 +363,16 @@ nsresult TRRService::ReadPrefs(const char* name) {
     OnTRRURIChange();
   }
   if (!name || !strcmp(name, TRR_PREF("credentials"))) {
-    MutexAutoLock lock(mLock);
+    MutexSingleWriterAutoLock lock(mLock);
     Preferences::GetCString(TRR_PREF("credentials"), mPrivateCred);
   }
   if (!name || !strcmp(name, TRR_PREF("confirmationNS"))) {
-    MutexAutoLock lock(mLock);
+    MutexSingleWriterAutoLock lock(mLock);
     Preferences::GetCString(TRR_PREF("confirmationNS"), mConfirmationNS);
     LOG(("confirmationNS = %s", mConfirmationNS.get()));
   }
   if (!name || !strcmp(name, TRR_PREF("bootstrapAddr"))) {
-    MutexAutoLock lock(mLock);
+    MutexSingleWriterAutoLock lock(mLock);
     Preferences::GetCString(TRR_PREF("bootstrapAddr"), mBootstrapAddr);
     clearEntireCache = true;
   }
@@ -364,11 +384,12 @@ nsresult TRRService::ReadPrefs(const char* name) {
   }
   if (!name || !strcmp(name, TRR_PREF("excluded-domains")) ||
       !strcmp(name, TRR_PREF("builtin-excluded-domains"))) {
-    MutexAutoLock lock(mLock);
+    MutexSingleWriterAutoLock lock(mLock);
     mExcludedDomains.Clear();
 
     auto parseExcludedDomains = [this](const char* aPrefName) {
       nsAutoCString excludedDomains;
+      mLock.AssertCurrentThreadOwns();
       Preferences::GetCString(aPrefName, excludedDomains);
       if (excludedDomains.IsEmpty()) {
         return;
@@ -411,7 +432,7 @@ void TRRService::ClearEntireCache() {
 }
 
 void TRRService::AddEtcHosts(const nsTArray<nsCString>& aArray) {
-  MutexAutoLock lock(mLock);
+  MutexSingleWriterAutoLock lock(mLock);
   for (const auto& item : aArray) {
     LOG(("Adding %s from /etc/hosts to excluded domains", item.get()));
     mEtcHostsDomains.Insert(item);
@@ -433,12 +454,12 @@ void TRRService::ReadEtcHostsFile() {
 }
 
 void TRRService::GetURI(nsACString& result) {
-  MutexAutoLock lock(mLock);
+  MutexSingleWriterAutoLock lock(mLock);
   result = mPrivateURI;
 }
 
 nsresult TRRService::GetCredentials(nsCString& result) {
-  MutexAutoLock lock(mLock);
+  MutexSingleWriterAutoLock lock(mLock);
   result = mPrivateCred;
   return NS_OK;
 }
@@ -446,6 +467,10 @@ nsresult TRRService::GetCredentials(nsCString& result) {
 uint32_t TRRService::GetRequestTimeout() {
   if (mMode == nsIDNSService::MODE_TRRONLY) {
     return StaticPrefs::network_trr_request_timeout_mode_trronly_ms();
+  }
+
+  if (StaticPrefs::network_trr_strict_native_fallback()) {
+    return StaticPrefs::network_trr_strict_fallback_request_timeout_ms();
   }
 
   return StaticPrefs::network_trr_request_timeout_ms();
@@ -492,7 +517,7 @@ already_AddRefed<nsIThread> TRRService::MainThreadOrTRRThread(bool aWithLock) {
 }
 
 already_AddRefed<nsIThread> TRRService::TRRThread() {
-  MutexAutoLock lock(mLock);
+  MutexSingleWriterAutoLock lock(mLock);
   return TRRThread_locked();
 }
 
@@ -504,7 +529,7 @@ already_AddRefed<nsIThread> TRRService::TRRThread_locked() {
 bool TRRService::IsOnTRRThread() {
   nsCOMPtr<nsIThread> thread;
   {
-    MutexAutoLock lock(mLock);
+    MutexSingleWriterAutoLock lock(mLock);
     thread = sTRRBackgroundThread;
   }
   if (!thread) {
@@ -520,14 +545,18 @@ TRRService::Observe(nsISupports* aSubject, const char* aTopic,
   MOZ_ASSERT(NS_IsMainThread(), "wrong thread");
   LOG(("TRR::Observe() topic=%s\n", aTopic));
   if (!strcmp(aTopic, NS_PREFBRANCH_PREFCHANGE_TOPIC_ID)) {
-    auto prevConf = mConfirmation.TaskAddr();
-
+    // Reset the state of whether a confirmation is triggered, so we can check
+    // if we create a new one after ReadPrefs().
+    mConfirmationTriggered = false;
     ReadPrefs(NS_ConvertUTF16toUTF8(aData).get());
-    mConfirmation.RecordEvent("pref-change");
+    {
+      MutexSingleWriterAutoLock lock(mLock);
+      mConfirmation.RecordEvent("pref-change", lock);
+    }
 
     // We should only trigger a new confirmation if reading the prefs didn't
     // already trigger one.
-    if (prevConf == mConfirmation.TaskAddr()) {
+    if (!mConfirmationTriggered) {
       mConfirmation.HandleEvent(ConfirmationEvent::PrefChange);
     }
   } else if (!strcmp(aTopic, kOpenCaptivePortalLoginEvent)) {
@@ -573,7 +602,8 @@ TRRService::Observe(nsISupports* aSubject, const char* aTopic,
     if (!strcmp(aTopic, NS_NETWORK_LINK_TOPIC)) {
       if (NS_ConvertUTF16toUTF8(aData).EqualsLiteral(
               NS_NETWORK_LINK_DATA_DOWN)) {
-        mConfirmation.RecordEvent("network-change");
+        MutexSingleWriterAutoLock lock(mLock);
+        mConfirmation.RecordEvent("network-change", lock);
       }
 
       if (mURISetByDetection) {
@@ -587,18 +617,19 @@ TRRService::Observe(nsISupports* aSubject, const char* aTopic,
       }
     }
   } else if (!strcmp(aTopic, "xpcom-shutdown-threads")) {
+    mShutdown = true;
     // If a confirmation is still in progress we record the event.
     // Since there should be no more confirmations after this, the shutdown
     // reason would not really be recorded in telemetry.
-    mConfirmation.RecordEvent("shutdown");
+    {
+      MutexSingleWriterAutoLock lock(mLock);
+      mConfirmation.RecordEvent("shutdown", lock);
+    }
 
     if (sTRRBackgroundThread) {
       nsCOMPtr<nsIThread> thread;
-      {
-        MutexAutoLock lock(mLock);
-        thread = sTRRBackgroundThread.get();
-        sTRRBackgroundThread = nullptr;
-      }
+      thread = sTRRBackgroundThread.get();
+      sTRRBackgroundThread = nullptr;
       MOZ_ALWAYS_SUCCEEDS(thread->Shutdown());
       sTRRServicePtr = nullptr;
     }
@@ -607,11 +638,11 @@ TRRService::Observe(nsISupports* aSubject, const char* aTopic,
 }
 
 void TRRService::RebuildSuffixList(nsTArray<nsCString>&& aSuffixList) {
-  if (!StaticPrefs::network_trr_split_horizon_mitigations()) {
+  if (!StaticPrefs::network_trr_split_horizon_mitigations() || mShutdown) {
     return;
   }
 
-  MutexAutoLock lock(mLock);
+  MutexSingleWriterAutoLock lock(mLock);
   mDNSSuffixDomains.Clear();
   for (const auto& item : aSuffixList) {
     LOG(("TRRService adding %s to suffix list", item.get()));
@@ -637,18 +668,21 @@ void TRRService::ConfirmationContext::SetState(
   }
 }
 
-void TRRService::ConfirmationContext::HandleEvent(ConfirmationEvent aEvent) {
-  MutexAutoLock lock(OwningObject()->mLock);
-  HandleEvent(aEvent, lock);
+bool TRRService::ConfirmationContext::HandleEvent(ConfirmationEvent aEvent) {
+  MutexSingleWriterAutoLock lock(OwningObject()->mLock);
+  return HandleEvent(aEvent, lock);
 }
 
-void TRRService::ConfirmationContext::HandleEvent(ConfirmationEvent aEvent,
-                                                  const MutexAutoLock&) {
+// We're protected by service->mLock
+bool TRRService::ConfirmationContext::HandleEvent(
+    ConfirmationEvent aEvent, const MutexSingleWriterAutoLock&) {
+  auto prevAddr = TaskAddr();
   TRRService* service = OwningObject();
   service->mLock.AssertCurrentThreadOwns();
   nsIDNSService::ResolverMode mode = service->Mode();
 
   auto resetConfirmation = [&]() {
+    service->mLock.AssertCurrentThreadOwns();
     mTask = nullptr;
     nsCOMPtr<nsITimer> timer = std::move(mTimer);
     if (timer) {
@@ -683,6 +717,7 @@ void TRRService::ConfirmationContext::HandleEvent(ConfirmationEvent aEvent,
   };
 
   auto maybeConfirm = [&](const char* aReason) {
+    service->mLock.AssertCurrentThreadOwns();
     if (TRR_DISABLED(mode) || mState == CONFIRM_DISABLED || mTask) {
       LOG(
           ("TRRService:MaybeConfirm(%s) mode=%d, mTask=%p "
@@ -716,9 +751,9 @@ void TRRService::ConfirmationContext::HandleEvent(ConfirmationEvent aEvent,
 
     MOZ_ASSERT(mode == nsIDNSService::MODE_TRRFIRST,
                "Should only confirm in TRR first mode");
-    // Set aUseFreshConnection if we are in strict fallback mode.
+    // Set aUseFreshConnection if TRR lookups are retried.
     mTask = new TRR(service, service->mConfirmationNS, TRRTYPE_NS, ""_ns, false,
-                    StaticPrefs::network_trr_strict_native_fallback());
+                    StaticPrefs::network_trr_retry_on_recoverable_errors());
     mTask->SetTimeout(StaticPrefs::network_trr_confirmation_timeout_ms());
     mTask->SetPurpose(TRR::Confirmation);
 
@@ -746,19 +781,22 @@ void TRRService::ConfirmationContext::HandleEvent(ConfirmationEvent aEvent,
       resetConfirmation();
       maybeConfirm("pref-change");
       break;
-    case ConfirmationEvent::Retry:
+    case ConfirmationEvent::ConfirmationRetry:
       MOZ_ASSERT(mState == CONFIRM_FAILED);
       if (mState == CONFIRM_FAILED) {
-        maybeConfirm("retry");
+        maybeConfirm("confirmation-retry");
       }
       break;
     case ConfirmationEvent::FailedLookups:
       MOZ_ASSERT(mState == CONFIRM_OK);
+      mTrigger.Assign("failed-lookups");
+      mFailedLookups = nsDependentCSubstring(
+          mFailureReasons, mTRRFailures % ConfirmationContext::RESULTS_SIZE);
       maybeConfirm("failed-lookups");
       break;
-    case ConfirmationEvent::StrictMode:
+    case ConfirmationEvent::RetryTRR:
       MOZ_ASSERT(mState == CONFIRM_OK);
-      maybeConfirm("strict-mode");
+      maybeConfirm("retry-trr");
       break;
     case ConfirmationEvent::URIChange:
       resetConfirmation();
@@ -801,11 +839,13 @@ void TRRService::ConfirmationContext::HandleEvent(ConfirmationEvent aEvent,
     default:
       MOZ_ASSERT_UNREACHABLE("Unexpected ConfirmationEvent");
   }
+
+  return prevAddr != TaskAddr();
 }
 
 bool TRRService::MaybeBootstrap(const nsACString& aPossible,
                                 nsACString& aResult) {
-  MutexAutoLock lock(mLock);
+  MutexSingleWriterAutoLock lock(mLock);
   if (mMode == nsIDNSService::MODE_TRROFF || mBootstrapAddr.IsEmpty()) {
     return false;
   }
@@ -905,15 +945,13 @@ bool TRRService::IsExcludedFromTRR(const nsACString& aHost) {
   // This method may be called off the main thread. We need to lock so
   // mExcludedDomains and mDNSSuffixDomains don't change while this code
   // is running.
-  MutexAutoLock lock(mLock);
+  MutexSingleWriterAutoLock lock(mLock);
 
   return IsExcludedFromTRR_unlocked(aHost);
 }
 
 bool TRRService::IsExcludedFromTRR_unlocked(const nsACString& aHost) {
-  if (!NS_IsMainThread()) {
-    mLock.AssertCurrentThreadOwns();
-  }
+  mLock.AssertOnWritingThreadOrHeld();
 
   int32_t dot = 0;
   // iteratively check the sub-domain of |aHost|
@@ -994,13 +1032,11 @@ void TRRService::AddToBlocklist(const nsACString& aHost,
 
 NS_IMETHODIMP
 TRRService::ConfirmationContext::Notify(nsITimer* aTimer) {
-  MutexAutoLock lock(OwningObject()->mLock);
+  MutexSingleWriterAutoLock lock(OwningObject()->mLock);
   if (aTimer == mTimer) {
-    HandleEvent(ConfirmationEvent::Retry, lock);
-    return NS_OK;
+    HandleEvent(ConfirmationEvent::ConfirmationRetry, lock);
   }
 
-  MOZ_CRASH("Unknown timer");
   return NS_OK;
 }
 
@@ -1049,10 +1085,10 @@ static char StatusToChar(nsresult aLookupStatus, nsresult aChannelStatus) {
   return '?';
 }
 
-void TRRService::StrictModeConfirm() {
+void TRRService::RetryTRRConfirm() {
   if (mConfirmation.State() == CONFIRM_OK) {
-    LOG(("TRRService::StrictModeConfirm triggering confirmation"));
-    mConfirmation.HandleEvent(ConfirmationEvent::StrictMode);
+    LOG(("TRRService::RetryTRRConfirm triggering confirmation"));
+    mConfirmation.HandleEvent(ConfirmationEvent::RetryTRR);
   }
 }
 
@@ -1086,12 +1122,12 @@ void TRRService::ConfirmationContext::RecordTRRStatus(nsresult aChannelStatus) {
     return;
   }
 
-  // In strict mode, nsHostResolver will trigger Confirmation immediately
-  // upon a lookup failure, so nothing to be done here. nsHostResolver
-  // can assess the success of the lookup considering all the involved
-  // results (A, AAAA) so we let it tell us when to re-Confirm.
-  if (StaticPrefs::network_trr_strict_native_fallback()) {
-    LOG(("TRRService not counting failures in strict mode"));
+  // When TRR retry is enabled, nsHostResolver will trigger Confirmation
+  // immediately upon a lookup failure, so nothing to be done here.
+  // nsHostResolver can assess the success of the lookup considering all the
+  // involved results (A, AAAA) so we let it tell us when to re-Confirm.
+  if (StaticPrefs::network_trr_retry_on_recoverable_errors()) {
+    LOG(("TRRService not counting failures when retry is enabled"));
     return;
   }
 
@@ -1107,17 +1143,14 @@ void TRRService::ConfirmationContext::RecordTRRStatus(nsresult aChannelStatus) {
     // Only after the confirmation fails do we finally go into CONFIRM_FAILED
     // and start skipping TRR.
 
-    mTrigger.Assign("failed-lookups");
-    mFailedLookups = nsDependentCSubstring(
-        mFailureReasons, fails % ConfirmationContext::RESULTS_SIZE);
-
     // Trigger a confirmation immediately.
     // If it fails, it will fire off a timer to start retrying again.
     HandleEvent(ConfirmationEvent::FailedLookups);
   }
 }
 
-void TRRService::ConfirmationContext::RecordEvent(const char* aReason) {
+void TRRService::ConfirmationContext::RecordEvent(
+    const char* aReason, const MutexSingleWriterAutoLock&) {
   // Reset the confirmation context attributes
   // Only resets the attributes that we keep for telemetry purposes.
   auto reset = [&]() {
@@ -1202,7 +1235,7 @@ void TRRService::ConfirmationContext::RequestCompleted(
 void TRRService::ConfirmationContext::CompleteConfirmation(nsresult aStatus,
                                                            TRR* aTRRRequest) {
   {
-    MutexAutoLock lock(OwningObject()->mLock);
+    MutexSingleWriterAutoLock lock(OwningObject()->mLock);
     // Ignore confirmations that dont match the pending task.
     if (mTask != aTRRRequest) {
       return;
@@ -1222,14 +1255,15 @@ void TRRService::ConfirmationContext::CompleteConfirmation(nsresult aStatus,
       HandleEvent(ConfirmationEvent::ConfirmFail, lock);
     }
 
+    if (State() == CONFIRM_OK) {
+      // Record event and start new confirmation context
+      RecordEvent("success", lock);
+    }
     LOG(("TRRService finishing confirmation test %s %d %X\n",
          OwningObject()->mPrivateURI.get(), State(), (unsigned int)aStatus));
   }
 
   if (State() == CONFIRM_OK) {
-    // Record event and start new confirmation context
-    RecordEvent("success");
-
     // A fresh confirmation means previous blocked entries might not
     // be valid anymore.
     auto bl = OwningObject()->mTRRBLStorage.Lock();

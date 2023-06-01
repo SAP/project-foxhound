@@ -2,22 +2,19 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import logging
 import os
+
 import six
-from six import StringIO
-
-from mozunit import main
-
 from common import BaseConfigureTest
-from mozbuild.configure.util import Version
-from mozbuild.util import memoize, ReadOnlyNamespace
 from mozboot.util import MINIMUM_RUST_VERSION
 from mozpack import path as mozpath
-from test_toolchain_helpers import FakeCompiler, CompilerResult, PrependFlags
+from mozunit import main
+from six import StringIO
+from test_toolchain_helpers import CompilerResult, FakeCompiler, PrependFlags
 
+from mozbuild.configure.util import Version
+from mozbuild.util import ReadOnlyNamespace, memoize
 
 DEFAULT_C99 = {"__STDC_VERSION__": "199901L"}
 
@@ -370,9 +367,9 @@ class BaseToolchainTest(BaseConfigureTest):
                 compiler = sandbox._value_for(sandbox[var])
                 # Add var on both ends to make it clear which of the
                 # variables is failing the test when that happens.
-                self.assertEquals((var, compiler), (var, result))
+                self.assertEqual((var, compiler), (var, result))
             except SystemExit:
-                self.assertEquals((var, result), (var, self.out.getvalue().strip()))
+                self.assertEqual((var, result), (var, self.out.getvalue().strip()))
                 return
 
         # Normalize the target os to match what we have as keys in
@@ -408,7 +405,7 @@ class BaseToolchainTest(BaseConfigureTest):
             "IMPORT_LIB_SUFFIX",
             "OBJ_SUFFIX",
         ):
-            self.assertEquals(
+            self.assertEqual(
                 "%s=%s" % (k, sandbox.get_config(k)),
                 "%s=%s" % (k, library_name_info[k]),
             )
@@ -494,14 +491,14 @@ class LinuxToolchainTest(BaseToolchainTest):
         "Only clang/llvm 5.0 or newer is supported (found version 4.0.2)."
     )
     CLANG_5_0_RESULT = CompilerResult(
-        flags=["-std=gnu99"],
+        flags=["-Qunused-arguments", "-std=gnu99"],
         version="5.0.1",
         type="clang",
         compiler="/usr/bin/clang-5.0",
         language="C",
     )
     CLANGXX_5_0_RESULT = CompilerResult(
-        flags=["-std=gnu++17"],
+        flags=["-Qunused-arguments", "-std=gnu++17"],
         version="5.0.1",
         type="clang",
         compiler="/usr/bin/clang++-5.0",
@@ -833,7 +830,7 @@ def xcrun(stdin, args):
     if args == ("--show-sdk-path",):
         return (
             0,
-            os.path.join(os.path.abspath(os.path.dirname(__file__)), "fake_macos_sdk"),
+            mozpath.join(os.path.abspath(os.path.dirname(__file__)), "macos_fake_sdk"),
             "",
         )
     raise NotImplementedError()
@@ -867,14 +864,14 @@ class OSXToolchainTest(BaseToolchainTest):
         "Only clang/llvm 5.0 or newer is supported (found version 4.0.0.or.less)."
     )
     DEFAULT_CLANG_RESULT = CompilerResult(
-        flags=["-std=gnu99"],
+        flags=["-Qunused-arguments", "-std=gnu99"],
         version="5.0.2",
         type="clang",
         compiler="/usr/bin/clang",
         language="C",
     )
     DEFAULT_CLANGXX_RESULT = CompilerResult(
-        flags=["-stdlib=libc++", "-std=gnu++17"],
+        flags=["-stdlib=libc++", "-Qunused-arguments", "-std=gnu++17"],
         version="5.0.2",
         type="clang",
         compiler="/usr/bin/clang++",
@@ -887,7 +884,7 @@ class OSXToolchainTest(BaseToolchainTest):
     SYSROOT_FLAGS = {
         "flags": PrependFlags(
             [
-                "--sysroot",
+                "-isysroot",
                 xcrun("", ("--show-sdk-path",))[1],
                 "-mmacosx-version-min=10.12",
             ]
@@ -987,7 +984,7 @@ class WindowsToolchainTest(BaseToolchainTest):
     )
     CLANG_CL_8_0_RESULT = CompilerResult(
         version="8.0.0",
-        flags=["-Xclang", "-std=gnu99"],
+        flags=["-Qunused-arguments", "-Xclang", "-std=gnu99"],
         type="clang-cl",
         compiler="/usr/bin/clang-cl",
         language="C",
@@ -997,7 +994,7 @@ class WindowsToolchainTest(BaseToolchainTest):
     )
     CLANGXX_CL_8_0_RESULT = CompilerResult(
         version="8.0.0",
-        flags=["-Xclang", "-std=c++17"],
+        flags=["-Qunused-arguments", "-Xclang", "-std=c++17"],
         type="clang-cl",
         compiler="/usr/bin/clang-cl",
         language="C++",
@@ -1433,14 +1430,14 @@ class OSXCrossToolchainTest(BaseToolchainTest):
         }
     )
     DEFAULT_CLANG_RESULT = CompilerResult(
-        flags=["-std=gnu99"],
+        flags=["-Qunused-arguments", "-std=gnu99"],
         version="5.0.1",
         type="clang",
         compiler="/usr/bin/clang",
         language="C",
     )
     DEFAULT_CLANGXX_RESULT = CompilerResult(
-        flags=["-std=gnu++17"],
+        flags=["-Qunused-arguments", "-std=gnu++17"],
         version="5.0.1",
         type="clang",
         compiler="/usr/bin/clang++",

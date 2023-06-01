@@ -7,25 +7,31 @@
 
 var EXPORTED_SYMBOLS = ["NativeApp"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
-const { EventEmitter } = ChromeUtils.import(
-  "resource://gre/modules/EventEmitter.jsm"
+const { EventEmitter } = ChromeUtils.importESModule(
+  "resource://gre/modules/EventEmitter.sys.mjs"
 );
 
 const {
   ExtensionUtils: { ExtensionError, promiseTimeout },
 } = ChromeUtils.import("resource://gre/modules/ExtensionUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
-  AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
+  Subprocess: "resource://gre/modules/Subprocess.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   NativeManifests: "resource://gre/modules/NativeManifests.jsm",
   OS: "resource://gre/modules/osfile.jsm",
-  Services: "resource://gre/modules/Services.jsm",
-  Subprocess: "resource://gre/modules/Subprocess.jsm",
 });
 
 // For a graceful shutdown (i.e., when the extension is unloaded or when it
@@ -49,8 +55,6 @@ const PREF_MAX_READ = "webextensions.native-messaging.max-input-message-bytes";
 const PREF_MAX_WRITE =
   "webextensions.native-messaging.max-output-message-bytes";
 
-const global = this;
-
 var NativeApp = class extends EventEmitter {
   /**
    * @param {BaseContext} context The context that initiated the native app.
@@ -71,7 +75,7 @@ var NativeApp = class extends EventEmitter {
     this.writePromise = null;
     this.cleanupStarted = false;
 
-    this.startupPromise = NativeManifests.lookupManifest(
+    this.startupPromise = lazy.NativeManifests.lookupManifest(
       "stdio",
       application,
       context
@@ -88,18 +92,23 @@ var NativeApp = class extends EventEmitter {
           // OS.Path.join() ignores anything before the last absolute path
           // it sees, so if command is already absolute, it remains unchanged
           // here.  If it is relative, we get the proper absolute path here.
-          command = OS.Path.join(OS.Path.dirname(hostInfo.path), command);
+          command = lazy.OS.Path.join(
+            lazy.OS.Path.dirname(hostInfo.path),
+            command
+          );
+          // Normalize in case the extension used / instead of \.
+          command = command.replaceAll("/", "\\");
         }
 
         let subprocessOpts = {
           command: command,
           arguments: [hostInfo.path, context.extension.id],
-          workdir: OS.Path.dirname(command),
+          workdir: lazy.OS.Path.dirname(command),
           stderr: "pipe",
           disclaim: true,
         };
 
-        return Subprocess.call(subprocessOpts);
+        return lazy.Subprocess.call(subprocessOpts);
       })
       .then(proc => {
         this.startupPromise = null;
@@ -117,6 +126,7 @@ var NativeApp = class extends EventEmitter {
 
   /**
    * Open a connection to a native messaging host.
+   *
    * @param {number} portId A unique internal ID that identifies the port.
    * @param {NativeMessenger} port Parent NativeMessenger used to send messages.
    * @returns {ParentPort}
@@ -177,7 +187,7 @@ var NativeApp = class extends EventEmitter {
         this._startRead();
       })
       .catch(err => {
-        if (err.errorCode != Subprocess.ERROR_END_OF_FILE) {
+        if (err.errorCode != lazy.Subprocess.ERROR_END_OF_FILE) {
           Cu.reportError(err instanceof Error ? err : err.message);
         }
         this._cleanup(err);
@@ -244,7 +254,7 @@ var NativeApp = class extends EventEmitter {
     if (this._isDisconnected) {
       throw new ExtensionError("Attempt to postMessage on disconnected port");
     }
-    let msg = holder.deserialize(global);
+    let msg = holder.deserialize(globalThis);
     if (Cu.getClassName(msg, true) != "ArrayBuffer") {
       // This error cannot be triggered by extensions; it indicates an error in
       // our implementation.
@@ -275,7 +285,7 @@ var NativeApp = class extends EventEmitter {
     this.context.forgetOnClose(this);
 
     if (!fromExtension) {
-      if (err && err.errorCode == Subprocess.ERROR_END_OF_FILE) {
+      if (err && err.errorCode == lazy.Subprocess.ERROR_END_OF_FILE) {
         err = null;
       }
       this.emit("disconnect", err);
@@ -299,7 +309,7 @@ var NativeApp = class extends EventEmitter {
     // Close the stdin stream and allow the process to exit on its own.
     // proc.wait() below will resolve once the process has exited gracefully.
     this.proc.stdin.close().catch(err => {
-      if (err.errorCode != Subprocess.ERROR_END_OF_FILE) {
+      if (err.errorCode != lazy.Subprocess.ERROR_END_OF_FILE) {
         Cu.reportError(err);
       }
     });
@@ -324,7 +334,7 @@ var NativeApp = class extends EventEmitter {
       }),
     ]);
 
-    AsyncShutdown.profileBeforeChange.addBlocker(
+    lazy.AsyncShutdown.profileBeforeChange.addBlocker(
       `Native Messaging: Wait for application ${this.name} to exit`,
       exitPromise
     );
@@ -346,7 +356,12 @@ var NativeApp = class extends EventEmitter {
     });
 
     let result = this.startupPromise.then(() => {
-      this.send(holder);
+      // Skip .send() if _cleanup() has been called already;
+      // otherwise the error passed to _cleanup/"disconnect" would be hidden by the
+      // "Attempt to postMessage on disconnected port" error from this.send().
+      if (!this.cleanupStarted) {
+        this.send(holder);
+      }
       return responsePromise;
     });
 

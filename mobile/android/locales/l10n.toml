@@ -121,18 +121,10 @@ exclude-multi-locale = [
 
 
 [[paths]]
-    reference = "mobile/locales/en-US/**"
-    l10n = "{l}mobile/**"
-
-[[paths]]
     reference = "mobile/android/locales/en-US/**"
     l10n = "{l}mobile/android/**"
 
 # hand-picked paths from toolkit, keep in sync with jar.mn
-[[paths]]
-    reference = "dom/locales/en-US/chrome/global.dtd"
-    l10n = "{l}dom/chrome/global.dtd"
-
 [[paths]]
     reference = "dom/locales/en-US/chrome/accessibility/AccessFu.properties"
     l10n = "{l}dom/chrome/accessibility/AccessFu.properties"
@@ -152,18 +144,6 @@ exclude-multi-locale = [
 [[paths]]
     reference = "toolkit/locales/en-US/toolkit/about/*Mozilla.ftl"
     l10n = "{l}toolkit/toolkit/about/*Mozilla.ftl"
-
-[[paths]]
-    reference = "toolkit/locales/en-US/chrome/global/aboutAbout.dtd"
-    l10n = "{l}toolkit/chrome/global/aboutAbout.dtd"
-
-[[paths]]
-    reference = "toolkit/locales/en-US/chrome/global/aboutReader.properties"
-    l10n = "{l}toolkit/chrome/global/aboutReader.properties"
-
-[[paths]]
-    reference = "toolkit/locales/en-US/chrome/global/aboutRights.dtd"
-    l10n = "{l}toolkit/chrome/global/aboutRights.dtd"
 
 [[paths]]
     reference = "toolkit/locales/en-US/toolkit/about/*Rights.ftl"
@@ -186,14 +166,6 @@ exclude-multi-locale = [
     l10n = "{l}toolkit/chrome/global/intl.css"
 
 [[paths]]
-    reference = "toolkit/locales/en-US/chrome/global/aboutSupport.dtd"
-    l10n = "{l}toolkit/chrome/global/aboutSupport.dtd"
-
-[[paths]]
-    reference = "toolkit/locales/en-US/chrome/global/aboutSupport.properties"
-    l10n = "{l}toolkit/chrome/global/aboutSupport.properties"
-
-[[paths]]
     reference = "toolkit/locales/en-US/toolkit/about/*Support.ftl"
     l10n = "{l}toolkit/toolkit/about/*Support.ftl"
 
@@ -202,33 +174,11 @@ exclude-multi-locale = [
     l10n = "{l}toolkit/crashreporter/*.ftl"
 
 [[paths]]
-    reference = "toolkit/locales/en-US/crashreporter/crashes.dtd"
-    l10n = "{l}toolkit/crashreporter/crashes.dtd"
-
-[[paths]]
-    reference = "toolkit/locales/en-US/crashreporter/crashes.properties"
-    l10n = "{l}toolkit/crashreporter/crashes.properties"
-
-[[paths]]
-    reference = "toolkit/locales/en-US/chrome/global/mozilla.dtd"
-    l10n = "{l}toolkit/chrome/global/mozilla.dtd"
-
-[[paths]]
-    reference = "toolkit/locales/en-US/chrome/global/aboutWebrtc.properties"
-    l10n = "{l}toolkit/chrome/global/aboutWebrtc.properties"
-
-[[paths]]
     reference = "toolkit/locales/en-US/toolkit/about/*Webrtc.ftl"
     l10n = "{l}toolkit/toolkit/about/*Webrtc.ftl"
 
 [[filters]]
     path = [
         "{l}mobile/android/mobile-l10n.js",
-        "{l}mobile/android/defines.inc",
     ]
-    action = "ignore"
-
-[[filters]]
-    path = "{l}mobile/android/defines.inc"
-    key = "MOZ_LANGPACK_CONTRIBUTORS"
     action = "ignore"

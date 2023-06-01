@@ -102,8 +102,6 @@ void nsMeterFrame::Reflow(nsPresContext* aPresContext,
   FinishAndStoreOverflow(&aDesiredSize);
 
   aStatus.Reset();  // This type of frame can't be split.
-
-  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aDesiredSize);
 }
 
 void nsMeterFrame::ReflowBarFrame(nsIFrame* aBarFrame,
@@ -162,7 +160,7 @@ nsresult nsMeterFrame::AttributeChanged(int32_t aNameSpaceID,
        aAttribute == nsGkAtoms::min)) {
     nsIFrame* barFrame = mBarDiv->GetPrimaryFrame();
     NS_ASSERTION(barFrame, "The meter frame should have a child with a frame!");
-    PresShell()->FrameNeedsReflow(barFrame, IntrinsicDirty::Resize,
+    PresShell()->FrameNeedsReflow(barFrame, IntrinsicDirty::None,
                                   NS_FRAME_IS_DIRTY);
     InvalidateFrame();
   }

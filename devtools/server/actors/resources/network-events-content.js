@@ -3,21 +3,20 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
-const { Ci } = require("chrome");
-const Services = require("Services");
 
 loader.lazyRequireGetter(
   this,
   "NetworkEventActor",
-  "devtools/server/actors/network-monitor/network-event-actor",
+  "resource://devtools/server/actors/network-monitor/network-event-actor.js",
   true
 );
 
-loader.lazyRequireGetter(
-  this,
-  "NetworkUtils",
-  "devtools/server/actors/network-monitor/utils/network-utils"
-);
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  NetworkUtils:
+    "resource://devtools/shared/network-observer/NetworkUtils.sys.mjs",
+});
 
 /**
  * Handles network events from the content process
@@ -57,9 +56,11 @@ class NetworkEventContentWatcher {
       "http-on-image-cache-response"
     );
   }
-
-  get conn() {
-    return this.targetActor.conn;
+  /**
+   * Allows clearing of network events
+   */
+  clear() {
+    this._networkEvents.clear();
   }
 
   httpFailedOpeningRequest(subject, topic) {
@@ -68,12 +69,12 @@ class NetworkEventContentWatcher {
     // Ignore preload requests to avoid duplicity request entries in
     // the Network panel. If a preload fails (for whatever reason)
     // then the platform kicks off another 'real' request.
-    if (NetworkUtils.isPreloadRequest(channel)) {
+    if (lazy.NetworkUtils.isPreloadRequest(channel)) {
       return;
     }
 
     if (
-      !NetworkUtils.matchRequest(channel, {
+      !lazy.NetworkUtils.matchRequest(channel, {
         targetActor: this.targetActor,
       })
     ) {
@@ -100,7 +101,7 @@ class NetworkEventContentWatcher {
     const channel = subject.QueryInterface(Ci.nsIHttpChannel);
 
     if (
-      !NetworkUtils.matchRequest(channel, {
+      !lazy.NetworkUtils.matchRequest(channel, {
         targetActor: this.targetActor,
       })
     ) {
@@ -133,10 +134,13 @@ class NetworkEventContentWatcher {
     channel,
     { networkEventOptions, resourceOverrides, onNetworkEventUpdate }
   ) {
-    const event = NetworkUtils.createNetworkEvent(channel, networkEventOptions);
+    const event = lazy.NetworkUtils.createNetworkEvent(
+      channel,
+      networkEventOptions
+    );
 
     const actor = new NetworkEventActor(
-      this.conn,
+      this.targetActor.conn,
       this.targetActor.sessionContext,
       {
         onNetworkEventUpdate,
@@ -149,6 +153,8 @@ class NetworkEventContentWatcher {
     const resource = actor.asResource();
 
     this._networkEvents.set(resource.resourceId, {
+      browsingContextID: resource.browsingContextID,
+      innerWindowId: resource.innerWindowId,
       resourceId: resource.resourceId,
       resourceType: resource.resourceType,
       url: resource.url,
@@ -164,7 +170,12 @@ class NetworkEventContentWatcher {
     }
 
     this.onAvailable([resource]);
-    NetworkUtils.fetchRequestHeadersAndCookies(channel, actor, {});
+    const {
+      cookies,
+      headers,
+    } = lazy.NetworkUtils.fetchRequestHeadersAndCookies(channel);
+    actor.addRequestHeaders(headers);
+    actor.addRequestCookies(cookies);
   }
 
   /*
@@ -184,13 +195,28 @@ class NetworkEventContentWatcher {
       return;
     }
 
-    const { resourceId, resourceType, resourceUpdates, types } = networkEvent;
+    const {
+      browsingContextID,
+      innerWindowId,
+      resourceId,
+      resourceType,
+      resourceUpdates,
+      types,
+    } = networkEvent;
 
     resourceUpdates[`${updateResource.updateType}Available`] = true;
     types.push(updateResource.updateType);
 
     if (allRequiredUpdates.every(header => types.includes(header))) {
-      this.onUpdated([{ resourceType, resourceId, resourceUpdates }]);
+      this.onUpdated([
+        {
+          browsingContextID,
+          innerWindowId,
+          resourceType,
+          resourceId,
+          resourceUpdates,
+        },
+      ]);
     }
   }
 
@@ -212,6 +238,7 @@ class NetworkEventContentWatcher {
   }
 
   destroy() {
+    this.clear();
     Services.obs.removeObserver(
       this.httpFailedOpeningRequest,
       "http-on-failed-opening-request"

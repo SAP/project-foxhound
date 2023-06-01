@@ -361,7 +361,7 @@ class WorkerSameThreadRunnable : public WorkerRunnable {
 class WorkerMainThreadRunnable : public Runnable {
  protected:
   WorkerPrivate* mWorkerPrivate;
-  nsCOMPtr<nsIEventTarget> mSyncLoopTarget;
+  nsCOMPtr<nsISerialEventTarget> mSyncLoopTarget;
   const nsCString mTelemetryKey;
 
   explicit WorkerMainThreadRunnable(WorkerPrivate* aWorkerPrivate,
@@ -425,13 +425,13 @@ class WorkerProxyToMainThreadRunnable : public Runnable {
 // they run this runnable does not modify the busy count
 // in any way.
 class MainThreadStopSyncLoopRunnable : public WorkerSyncRunnable {
-  bool mResult;
+  nsresult mResult;
 
  public:
   // Passing null for aSyncLoopTarget is not allowed.
   MainThreadStopSyncLoopRunnable(WorkerPrivate* aWorkerPrivate,
                                  nsCOMPtr<nsIEventTarget>&& aSyncLoopTarget,
-                                 bool aResult);
+                                 nsresult aResult);
 
   // By default StopSyncLoopRunnables cannot be canceled since they could leave
   // a sync loop spinning forever.

@@ -6,8 +6,6 @@
 
 #include "WebRenderLayerManager.h"
 
-#include "Layers.h"
-
 #include "GeckoProfiler.h"
 #include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/StaticPrefs_layers.h"
@@ -20,6 +18,7 @@
 #include "mozilla/layers/TransactionIdAllocator.h"
 #include "mozilla/layers/WebRenderBridgeChild.h"
 #include "mozilla/layers/UpdateImageHelper.h"
+#include "mozilla/PerfStats.h"
 #include "nsDisplayList.h"
 #include "nsLayoutUtils.h"
 #include "WebRenderCanvasRenderer.h"
@@ -70,7 +69,7 @@ bool WebRenderLayerManager::Initialize(
   static bool hasInitialized = false;
 
   WindowKind windowKind;
-  if (mWidget->WindowType() != eWindowType_popup) {
+  if (mWidget->GetWindowType() != widget::WindowType::Popup) {
     windowKind = WindowKind::MAIN;
   } else {
     windowKind = WindowKind::SECONDARY;
@@ -78,8 +77,7 @@ bool WebRenderLayerManager::Initialize(
 
   LayoutDeviceIntSize size = mWidget->GetClientSize();
   // Check widget size
-  if (size.width < 0 || size.width > wr::MAX_RENDER_TASK_SIZE ||
-      size.height < 0 || size.height > wr::MAX_RENDER_TASK_SIZE) {
+  if (!wr::WindowSizeSanityCheck(size.width, size.height)) {
     gfxCriticalNoteOnce << "Widget size is not valid " << size
                         << " isParent: " << XRE_IsParentProcess();
   }
@@ -98,11 +96,13 @@ bool WebRenderLayerManager::Initialize(
     return false;
   }
 
+  mWrChild = static_cast<WebRenderBridgeChild*>(bridge);
+
   TextureFactoryIdentifier textureFactoryIdentifier;
   wr::MaybeIdNamespace idNamespace;
   // Sync ipc
-  if (!bridge->SendEnsureConnected(&textureFactoryIdentifier, &idNamespace,
-                                   &aError)) {
+  if (!WrBridge()->SendEnsureConnected(&textureFactoryIdentifier, &idNamespace,
+                                       &aError)) {
     gfxCriticalNote << "Failed as lost WebRenderBridgeChild.";
     aError.Assign(hasInitialized
                       ? "FEATURE_FAILURE_WEBRENDER_INITIALIZE_SYNC_POST"_ns
@@ -112,12 +112,12 @@ bool WebRenderLayerManager::Initialize(
 
   if (textureFactoryIdentifier.mParentBackend == LayersBackend::LAYERS_NONE ||
       idNamespace.isNothing()) {
-    gfxCriticalNote << "Failed to connect WebRenderBridgeChild.";
+    gfxCriticalNote << "Failed to connect WebRenderBridgeChild. isParent="
+                    << XRE_IsParentProcess();
     aError.Append(hasInitialized ? "_POST"_ns : "_FIRST"_ns);
     return false;
   }
 
-  mWrChild = static_cast<WebRenderBridgeChild*>(bridge);
   WrBridge()->SetWebRenderLayerManager(this);
   WrBridge()->IdentifyTextureHost(textureFactoryIdentifier);
   WrBridge()->SetNamespace(idNamespace.ref());
@@ -328,7 +328,7 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
     nsDisplayList* aDisplayList, nsDisplayListBuilder* aDisplayListBuilder,
     WrFiltersHolder&& aFilters, WebRenderBackgroundData* aBackground,
     const double aGeckoDLBuildTime) {
-  AUTO_PROFILER_TRACING_MARKER("Paint", "RenderLayers", GRAPHICS);
+  AUTO_PROFILER_TRACING_MARKER("Paint", "WrDisplayList", GRAPHICS);
 
   // Since we don't do repeat transactions right now, just set the time
   mAnimationReadyTime = TimeStamp::Now();
@@ -454,6 +454,13 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
             ? wr::GeckoDisplayListType::Full(aGeckoDLBuildTime)
             : wr::GeckoDisplayListType::Partial(aGeckoDLBuildTime);
 
+    // convert from nanoseconds to microseconds
+    auto duration = TimeDuration::FromMicroseconds(
+        double(dlData.mDLDesc.builder_finish_time -
+               dlData.mDLDesc.builder_start_time) /
+        1000.);
+    PerfStats::RecordMeasurement(PerfStats::Metric::WrDisplayListBuilding,
+                                 duration);
     bool ret = WrBridge()->EndTransaction(
         std::move(dlData), mLatestTransactionId, containsSVGGroup,
         mTransactionIdAllocator->GetVsyncId(),
@@ -485,6 +492,10 @@ void WebRenderLayerManager::SetFocusTarget(const FocusTarget& aFocusTarget) {
 
 bool WebRenderLayerManager::AsyncPanZoomEnabled() const {
   return mWidget->AsyncPanZoomEnabled();
+}
+
+IntRect ToOutsideIntRect(const gfxRect& aRect) {
+  return IntRect::RoundOut(aRect.X(), aRect.Y(), aRect.Width(), aRect.Height());
 }
 
 void WebRenderLayerManager::MakeSnapshotIfRequired(LayoutDeviceIntSize aSize) {
@@ -619,6 +630,14 @@ void WebRenderLayerManager::ClearCachedResources() {
   DiscardImages();
   mStateManager.ClearCachedResources();
   WrBridge()->EndClearCachedResources();
+}
+
+void WebRenderLayerManager::ClearAnimationResources() {
+  if (!WrBridge()->IPCOpen()) {
+    gfxCriticalNote << "IPC Channel is already torn down unexpectedly\n";
+    return;
+  }
+  WrBridge()->SendClearAnimationResources();
 }
 
 void WebRenderLayerManager::WrUpdated() {

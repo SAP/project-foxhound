@@ -25,7 +25,6 @@
 #include "mozilla/dom/MouseEvent.h"
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/EventStateManager.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/Preferences.h"
@@ -59,8 +58,7 @@ nsListControlFrame::nsListControlFrame(ComputedStyle* aStyle,
     : nsHTMLScrollFrame(aStyle, aPresContext, kClassID, false),
       mMightNeedSecondPass(false),
       mHasPendingInterruptAtStartOfReflow(false),
-      mForceSelection(false),
-      mLastDropdownComputedBSize(NS_UNCONSTRAINEDSIZE) {
+      mForceSelection(false) {
   mChangesSinceDragStart = false;
 
   mIsAllContentHere = false;
@@ -113,8 +111,6 @@ HTMLOptionElement* nsListControlFrame::GetCurrentOption() const {
 void nsListControlFrame::PaintFocus(DrawTarget* aDrawTarget, nsPoint aPt) {
   if (mFocused != this) return;
 
-  nsPresContext* presContext = PresContext();
-
   nsIFrame* containerFrame = GetOptionsContainer();
   if (!containerFrame) return;
 
@@ -144,19 +140,16 @@ void nsListControlFrame::PaintFocus(DrawTarget* aDrawTarget, nsPoint aPt) {
   }
   fRect += aPt;
 
-  bool lastItemIsSelected = false;
-  HTMLOptionElement* domOpt = HTMLOptionElement::FromNodeOrNull(focusedContent);
-  if (domOpt) {
-    lastItemIsSelected = domOpt->Selected();
-  }
+  const auto* domOpt = HTMLOptionElement::FromNodeOrNull(focusedContent);
+  const bool isSelected = domOpt && domOpt->Selected();
 
-  // set up back stop colors and then ask L&F service for the real colors
-  nscolor color = LookAndFeel::Color(
-      lastItemIsSelected ? LookAndFeel::ColorID::Selecteditem
-                         : LookAndFeel::ColorID::Selecteditemtext,
-      this);
+  // Set up back stop colors and then ask L&F service for the real colors
+  nscolor color =
+      LookAndFeel::Color(isSelected ? LookAndFeel::ColorID::Selecteditemtext
+                                    : LookAndFeel::ColorID::Selecteditem,
+                         this);
 
-  nsCSSRendering::PaintFocus(presContext, aDrawTarget, fRect, color);
+  nsCSSRendering::PaintFocus(PresContext(), aDrawTarget, fRect, color);
 }
 
 void nsListControlFrame::InvalidateFocus() {
@@ -220,10 +213,11 @@ nscoord nsListControlFrame::CalcBSizeOfARow() {
   // either of which may be visible or invisible, may use different
   // fonts, etc.
   nscoord rowBSize(0);
-  if (StyleDisplay()->IsContainSize() ||
+  if (GetContainSizeAxes().mBContained ||
       !GetMaxRowBSize(GetOptionsContainer(), GetWritingMode(), &rowBSize)) {
     // We don't have any <option>s or <optgroup> labels with a frame.
-    // (Or we're size-contained, which has the same outcome for our sizing.)
+    // (Or we're size-contained in block axis, which has the same outcome for
+    // our sizing.)
     float inflation = nsLayoutUtils::FontSizeInflationFor(this);
     rowBSize = CalcFallbackRowBSize(inflation);
   }
@@ -239,9 +233,9 @@ nscoord nsListControlFrame::GetPrefISize(gfxContext* aRenderingContext) {
   // dropdown, and standalone listboxes are overflow:scroll so they need
   // it too.
   WritingMode wm = GetWritingMode();
-  result = StyleDisplay()->IsContainSize()
-               ? 0
-               : GetScrolledFrame()->GetPrefISize(aRenderingContext);
+  Maybe<nscoord> containISize = ContainIntrinsicISize();
+  result = containISize ? *containISize
+                        : GetScrolledFrame()->GetPrefISize(aRenderingContext);
   LogicalMargin scrollbarSize(
       wm, GetDesiredScrollbarSizes(PresContext(), aRenderingContext));
   result = NSCoordSaturatingAdd(result, scrollbarSize.IStartEnd(wm));
@@ -257,9 +251,9 @@ nscoord nsListControlFrame::GetMinISize(gfxContext* aRenderingContext) {
   // dropdown, and standalone listboxes are overflow:scroll so they need
   // it too.
   WritingMode wm = GetWritingMode();
-  result = StyleDisplay()->IsContainSize()
-               ? 0
-               : GetScrolledFrame()->GetMinISize(aRenderingContext);
+  Maybe<nscoord> containISize = ContainIntrinsicISize();
+  result = containISize ? *containISize
+                        : GetScrolledFrame()->GetMinISize(aRenderingContext);
   LogicalMargin scrollbarSize(
       wm, GetDesiredScrollbarSizes(PresContext(), aRenderingContext));
   result += scrollbarSize.IStartEnd(wm);
@@ -291,32 +285,43 @@ void nsListControlFrame::Reflow(nsPresContext* aPresContext,
   }
 
   MarkInReflow();
-  /*
-   * Due to the fact that our intrinsic block size depends on the block
-   * sizes of our kids, we end up having to do two-pass reflow, in
-   * general -- the first pass to find the intrinsic block size and a
-   * second pass to reflow the scrollframe at that block size (which
-   * will size the scrollbars correctly, etc).
-   *
-   * Naturally, we want to avoid doing the second reflow as much as
-   * possible.
-   * We can skip it in the following cases (in all of which the first
-   * reflow is already happening at the right block size):
-   *
-   * - We're reflowing with a constrained computed block size -- just
-   *   use that block size.
-   * - We're not dirty and have no dirty kids and shouldn't be reflowing
-   *   all kids.  In this case, our cached max block size of a child is
-   *   not going to change.
-   * - We do our first reflow using our cached max block size of a
-   *   child, then compute the new max block size and it's the same as
-   *   the old one.
-   */
-
+  // Due to the fact that our intrinsic block size depends on the block
+  // sizes of our kids, we end up having to do two-pass reflow, in
+  // general -- the first pass to find the intrinsic block size and a
+  // second pass to reflow the scrollframe at that block size (which
+  // will size the scrollbars correctly, etc).
+  //
+  // Naturally, we want to avoid doing the second reflow as much as
+  // possible. We can skip it in the following cases (in all of which the first
+  // reflow is already happening at the right block size):
   bool autoBSize = (aReflowInput.ComputedBSize() == NS_UNCONSTRAINEDSIZE);
+  Maybe<nscoord> containBSize = ContainIntrinsicBSize(NS_UNCONSTRAINEDSIZE);
+  bool usingContainBSize =
+      autoBSize && containBSize && *containBSize != NS_UNCONSTRAINEDSIZE;
 
-  mMightNeedSecondPass =
-      autoBSize && (IsSubtreeDirty() || aReflowInput.ShouldReflowAllKids());
+  mMightNeedSecondPass = [&] {
+    if (!autoBSize) {
+      // We're reflowing with a constrained computed block size -- just use that
+      // block size.
+      return false;
+    }
+    if (!IsSubtreeDirty() && !aReflowInput.ShouldReflowAllKids()) {
+      // We're not dirty and have no dirty kids and shouldn't be reflowing all
+      // kids. In this case, our cached max block size of a child is not going
+      // to change.
+      return false;
+    }
+    if (usingContainBSize) {
+      // We're size-contained in the block axis. In this case the size of a row
+      // doesn't depend on our children (it's the "fallback" size).
+      return false;
+    }
+    // We might need to do a second pass. If we do our first reflow using our
+    // cached max block size of a child, then compute the new max block size,
+    // and it's the same as the old one, we might still skip it (see the
+    // IsScrollbarUpdateSuppressed() check).
+    return true;
+  }();
 
   ReflowInput state(aReflowInput);
   int32_t length = GetNumberOfRows();
@@ -332,17 +337,22 @@ void nsListControlFrame::Reflow(nsPresContext* aPresContext,
     state.SetComputedBSize(computedBSize);
   }
 
+  if (usingContainBSize) {
+    state.SetComputedBSize(*containBSize);
+  }
+
   nsHTMLScrollFrame::Reflow(aPresContext, aDesiredSize, state, aStatus);
 
   if (!mMightNeedSecondPass) {
     NS_ASSERTION(!autoBSize || BSizeOfARow() == oldBSizeOfARow,
                  "How did our BSize of a row change if nothing was dirty?");
-    NS_ASSERTION(!autoBSize || !HasAnyStateBits(NS_FRAME_FIRST_REFLOW),
+    NS_ASSERTION(!autoBSize || !HasAnyStateBits(NS_FRAME_FIRST_REFLOW) ||
+                     usingContainBSize,
                  "How do we not need a second pass during initial reflow at "
                  "auto BSize?");
     NS_ASSERTION(!IsScrollbarUpdateSuppressed(),
                  "Shouldn't be suppressing if we don't need a second pass!");
-    if (!autoBSize) {
+    if (!autoBSize || usingContainBSize) {
       // Update our mNumDisplayRows based on our new row block size now
       // that we know it.  Note that if autoBSize and we landed in this
       // code then we already set mNumDisplayRows in CalcIntrinsicBSize.
@@ -389,17 +399,6 @@ void nsListControlFrame::Reflow(nsPresContext* aPresContext,
   // because nsGfxScrollFrame just adds in the border....
   aStatus.Reset();
   nsHTMLScrollFrame::Reflow(aPresContext, aDesiredSize, state, aStatus);
-}
-
-ScrollStyles nsListControlFrame::GetScrollStyles() const {
-  // TODO(emilio, bug 1750431): Set this in html.css and devirtualize
-  // GetScrollStyles().
-  auto style = StyleOverflow::Scroll;
-  if (GetWritingMode().IsVertical()) {
-    return ScrollStyles(style, StyleOverflow::Hidden);
-  } else {
-    return ScrollStyles(StyleOverflow::Hidden, style);
-  }
 }
 
 bool nsListControlFrame::ShouldPropagateComputedBSizeToScrolledContent() const {
@@ -494,9 +493,7 @@ void nsListControlFrame::InitSelectionRange(int32_t aClickedIndex) {
 
 static uint32_t CountOptionsAndOptgroups(nsIFrame* aFrame) {
   uint32_t count = 0;
-  nsFrameList::Enumerator e(aFrame->PrincipalChildList());
-  for (; !e.AtEnd(); e.Next()) {
-    nsIFrame* child = e.get();
+  for (nsIFrame* child : aFrame->PrincipalChildList()) {
     nsIContent* content = child->GetContent();
     if (content) {
       if (content->IsHTMLElement(nsGkAtoms::option)) {
@@ -660,8 +657,8 @@ nsresult nsListControlFrame::HandleEvent(nsPresContext* aPresContext,
 
 //---------------------------------------------------------
 void nsListControlFrame::SetInitialChildList(ChildListID aListID,
-                                             nsFrameList& aChildList) {
-  if (aListID == kPrincipalList) {
+                                             nsFrameList&& aChildList) {
+  if (aListID == FrameChildListID::Principal) {
     // First check to see if all the content has been added
     mIsAllContentHere = mContent->IsDoneAddingChildren();
     if (!mIsAllContentHere) {
@@ -669,7 +666,7 @@ void nsListControlFrame::SetInitialChildList(ChildListID aListID,
       mHasBeenInitialized = false;
     }
   }
-  nsHTMLScrollFrame::SetInitialChildList(aListID, aChildList);
+  nsHTMLScrollFrame::SetInitialChildList(aListID, std::move(aChildList));
 
   // If all the content is here now check
   // to see if all the frames have been created
@@ -701,8 +698,6 @@ void nsListControlFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
   mStartSelectionIndex = kNothingSelected;
   mEndSelectionIndex = kNothingSelected;
-
-  mLastDropdownBackstopColor = PresContext()->DefaultBackgroundColor();
 }
 
 dom::HTMLOptionsCollection* nsListControlFrame::GetOptions() const {
@@ -892,34 +887,34 @@ bool nsListControlFrame::SetOptionsSelectedFromFrame(int32_t aStartIndex,
                                                      int32_t aEndIndex,
                                                      bool aValue,
                                                      bool aClearAll) {
-  RefPtr<dom::HTMLSelectElement> selectElement =
-      dom::HTMLSelectElement::FromNode(mContent);
+  using OptionFlag = HTMLSelectElement::OptionFlag;
+  RefPtr<HTMLSelectElement> selectElement =
+      HTMLSelectElement::FromNode(mContent);
 
-  uint32_t mask = dom::HTMLSelectElement::NOTIFY;
+  HTMLSelectElement::OptionFlags mask = OptionFlag::Notify;
   if (mForceSelection) {
-    mask |= dom::HTMLSelectElement::SET_DISABLED;
+    mask += OptionFlag::SetDisabled;
   }
   if (aValue) {
-    mask |= dom::HTMLSelectElement::IS_SELECTED;
+    mask += OptionFlag::IsSelected;
   }
   if (aClearAll) {
-    mask |= dom::HTMLSelectElement::CLEAR_ALL;
+    mask += OptionFlag::ClearAll;
   }
 
   return selectElement->SetOptionsSelectedByIndex(aStartIndex, aEndIndex, mask);
 }
 
 bool nsListControlFrame::ToggleOptionSelectedFromFrame(int32_t aIndex) {
-  RefPtr<dom::HTMLOptionElement> option =
-      GetOption(static_cast<uint32_t>(aIndex));
+  RefPtr<HTMLOptionElement> option = GetOption(static_cast<uint32_t>(aIndex));
   NS_ENSURE_TRUE(option, false);
 
-  RefPtr<dom::HTMLSelectElement> selectElement =
-      dom::HTMLSelectElement::FromNode(mContent);
+  RefPtr<HTMLSelectElement> selectElement =
+      HTMLSelectElement::FromNode(mContent);
 
-  uint32_t mask = dom::HTMLSelectElement::NOTIFY;
+  HTMLSelectElement::OptionFlags mask = HTMLSelectElement::OptionFlag::Notify;
   if (!option->Selected()) {
-    mask |= dom::HTMLSelectElement::IS_SELECTED;
+    mask += HTMLSelectElement::OptionFlag::IsSelected;
   }
 
   return selectElement->SetOptionsSelectedByIndex(aIndex, aIndex, mask);
@@ -1174,11 +1169,10 @@ void nsListControlFrame::ScrollToFrame(dom::HTMLOptionElement& aOptElement) {
   // otherwise we find the content's frame and scroll to it
   if (nsIFrame* childFrame = aOptElement.GetPrimaryFrame()) {
     RefPtr<mozilla::PresShell> presShell = PresShell();
-    presShell->ScrollFrameRectIntoView(
-        childFrame, nsRect(nsPoint(0, 0), childFrame->GetSize()), nsMargin(),
-        ScrollAxis(), ScrollAxis(),
-        ScrollFlags::ScrollOverflowHidden |
-            ScrollFlags::ScrollFirstAncestorOnly);
+    presShell->ScrollFrameIntoView(childFrame, Nothing(), ScrollAxis(),
+                                   ScrollAxis(),
+                                   ScrollFlags::ScrollOverflowHidden |
+                                       ScrollFlags::ScrollFirstAncestorOnly);
   }
 }
 

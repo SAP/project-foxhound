@@ -1,9 +1,6 @@
 const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const URI = Services.io.newURI("http://example.org/");
-
-const cs = Cc["@mozilla.org/cookieService;1"].getService(Ci.nsICookieService);
 
 function run_test() {
   // Allow all cookies.
@@ -81,7 +78,7 @@ function setCookie(value, expected) {
       contentPolicyType: Ci.nsIContentPolicy.TYPE_DOCUMENT,
     });
 
-    cs.setCookieStringFromHttp(URI, valueInternal, channel);
+    Services.cookies.setCookieStringFromHttp(URI, valueInternal, channel);
     Services.obs.removeObserver(observer, "cookie-changed");
   }
 

@@ -9,7 +9,6 @@
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT, MOZ_CRASH
 #include "mozilla/MaybeOneOf.h"  // mozilla::MaybeOneOf
-#include "mozilla/RefPtr.h"      // RefPtr
 #include "mozilla/Result.h"      // mozilla::{Result, Ok, Err}, MOZ_TRY
 #include "mozilla/Utf8.h"        // mozilla::Utf8Unit
 
@@ -18,8 +17,7 @@
 #include <string.h>     // memcpy
 #include <type_traits>  // std::enable_if_t
 
-#include "js/AllocPolicy.h"     // ReportOutOfMemory
-#include "js/CompileOptions.h"  // JS::DecodeOptions
+#include "js/AllocPolicy.h"  // ReportOutOfMemory
 #include "js/Transcoding.h"  // JS::TranscodeResult, JS::TranscodeBuffer, JS::TranscodeRange, IsTranscodingBytecodeAligned, IsTranscodingBytecodeOffsetAligned
 #include "js/TypeDecls.h"    // JS::Latin1Char
 #include "js/UniquePtr.h"    // UniquePtr
@@ -37,15 +35,18 @@ using XDRResult = XDRResultT<mozilla::Ok>;
 
 class XDRBufferBase {
  public:
-  explicit XDRBufferBase(JSContext* cx, size_t cursor = 0)
-      : context_(cx), cursor_(cursor) {}
+  explicit XDRBufferBase(JSContext* cx, FrontendContext* fc, size_t cursor = 0)
+      : context_(cx), fc_(fc), cursor_(cursor) {}
 
   JSContext* cx() const { return context_; }
+
+  FrontendContext* fc() const { return fc_; }
 
   size_t cursor() const { return cursor_; }
 
  protected:
   JSContext* const context_;
+  FrontendContext* const fc_;
   size_t cursor_;
 };
 
@@ -55,13 +56,14 @@ class XDRBuffer;
 template <>
 class XDRBuffer<XDR_ENCODE> : public XDRBufferBase {
  public:
-  XDRBuffer(JSContext* cx, JS::TranscodeBuffer& buffer, size_t cursor = 0)
-      : XDRBufferBase(cx, cursor), buffer_(buffer) {}
+  XDRBuffer(JSContext* cx, FrontendContext* fc, JS::TranscodeBuffer& buffer,
+            size_t cursor = 0)
+      : XDRBufferBase(cx, fc, cursor), buffer_(buffer) {}
 
   uint8_t* write(size_t n) {
     MOZ_ASSERT(n != 0);
     if (!buffer_.growByUninitialized(n)) {
-      ReportOutOfMemory(cx());
+      ReportOutOfMemory(fc());
       return nullptr;
     }
     uint8_t* ptr = &buffer_[cursor_];
@@ -74,7 +76,7 @@ class XDRBuffer<XDR_ENCODE> : public XDRBufferBase {
     if (extra) {
       size_t padding = 4 - extra;
       if (!buffer_.appendN(0, padding)) {
-        ReportOutOfMemory(cx());
+        ReportOutOfMemory(fc());
         return false;
       }
       cursor_ += padding;
@@ -101,13 +103,15 @@ class XDRBuffer<XDR_ENCODE> : public XDRBufferBase {
 template <>
 class XDRBuffer<XDR_DECODE> : public XDRBufferBase {
  public:
-  XDRBuffer(JSContext* cx, const JS::TranscodeRange& range)
-      : XDRBufferBase(cx), buffer_(range) {}
+  XDRBuffer(JSContext* cx, FrontendContext* fc, const JS::TranscodeRange& range)
+      : XDRBufferBase(cx, fc), buffer_(range) {}
 
   // This isn't used by XDRStencilDecoder.
   // Defined just for XDRState, shared with XDRStencilEncoder.
-  XDRBuffer(JSContext* cx, JS::TranscodeBuffer& buffer, size_t cursor = 0)
-      : XDRBufferBase(cx, cursor), buffer_(buffer.begin(), buffer.length()) {}
+  XDRBuffer(JSContext* cx, FrontendContext* fc, JS::TranscodeBuffer& buffer,
+            size_t cursor = 0)
+      : XDRBufferBase(cx, fc, cursor),
+        buffer_(buffer.begin(), buffer.length()) {}
 
   bool align32() {
     size_t extra = cursor_ % 4;
@@ -185,7 +189,8 @@ class XDRCoderBase {
     MOZ_ASSERT(resultCode() == JS::TranscodeResult::Ok);
     resultCode_ = code;
   }
-  bool validateResultCode(JSContext* cx, JS::TranscodeResult code) const;
+  bool validateResultCode(JSContext* cx, FrontendContext* fc,
+                          JS::TranscodeResult code) const;
 #endif
 };
 
@@ -200,12 +205,13 @@ class XDRState : public XDRCoderBase {
   XDRBuffer<mode>* buf;
 
  public:
-  XDRState(JSContext* cx, JS::TranscodeBuffer& buffer, size_t cursor = 0)
-      : mainBuf(cx, buffer, cursor), buf(&mainBuf) {}
+  XDRState(JSContext* cx, FrontendContext* fc, JS::TranscodeBuffer& buffer,
+           size_t cursor = 0)
+      : mainBuf(cx, fc, buffer, cursor), buf(&mainBuf) {}
 
   template <typename RangeType>
-  XDRState(JSContext* cx, const RangeType& range)
-      : mainBuf(cx, range), buf(&mainBuf) {}
+  XDRState(JSContext* cx, FrontendContext* fc, const RangeType& range)
+      : mainBuf(cx, fc, range), buf(&mainBuf) {}
 
   // No default copy constructor or copying assignment, because |buf|
   // is an internal pointer.
@@ -216,11 +222,13 @@ class XDRState : public XDRCoderBase {
 
   JSContext* cx() const { return mainBuf.cx(); }
 
+  FrontendContext* fc() const { return mainBuf.fc(); }
+
   template <typename T = mozilla::Ok>
   XDRResultT<T> fail(JS::TranscodeResult code) {
 #ifdef DEBUG
     MOZ_ASSERT(code != JS::TranscodeResult::Ok);
-    MOZ_ASSERT(validateResultCode(cx(), code));
+    MOZ_ASSERT(validateResultCode(cx(), fc(), code));
     setResultCode(code);
 #endif
     return mozilla::Err(code);

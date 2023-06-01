@@ -4,9 +4,11 @@
 
 // Constants
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+const { E10SUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/E10SUtils.sys.mjs"
 );
 
 const DIALOG_URL_APP_CHOOSER =
@@ -14,10 +16,7 @@ const DIALOG_URL_APP_CHOOSER =
 const DIALOG_URL_PERMISSION =
   "chrome://mozapps/content/handling/permissionDialog.xhtml";
 
-var EXPORTED_SYMBOLS = [
-  "nsContentDispatchChooser",
-  "ContentDispatchChooserTelemetry",
-];
+var EXPORTED_SYMBOLS = ["nsContentDispatchChooser"];
 
 const gPrefs = {};
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -29,212 +28,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
 
 const PROTOCOL_HANDLER_OPEN_PERM_KEY = "open-protocol-handler";
 const PERMISSION_KEY_DELIMITER = "^";
-
-let ContentDispatchChooserTelemetry = {
-  /**
-   * Maps protocol scheme to telemetry label.
-   */
-  SCHEME_TO_LABEL: {
-    bingmaps: "BING",
-    bingweather: "BING",
-    fb: "FACEBOOK",
-    fbmessenger: "FACEBOOK",
-    findmy: "APPLE_FINDMY",
-    findmyfriends: "APPLE_FINDMY",
-    fmf1: "APPLE_FINDMY",
-    fmip1: "APPLE_FINDMY",
-    git: "GIT",
-    "git-client": "GIT",
-    grenada: "APPLE_FINDMY",
-    ichat: "IMESSAGE",
-    im: "INSTANT_MESSAGE",
-    imessage: "IMESSAGE",
-    ipp: "IPP",
-    ipps: "IPP",
-    irc: "IRC",
-    irc6: "IRC",
-    ircs: "IRC",
-    itals: "APPLE_LIVESTREAM",
-    italss: "APPLE_LIVESTREAM",
-    itls: "APPLE_LIVESTREAM",
-    itlss: "APPLE_LIVESTREAM",
-    itms: "APPLE_MUSIC",
-    itmss: "APPLE_MUSIC",
-    itsradio: "APPLE_MUSIC",
-    itunes: "APPLE_MUSIC",
-    itunesradio: "APPLE_MUSIC",
-    itvls: "APPLE_LIVESTREAM",
-    itvlss: "APPLE_LIVESTREAM",
-    macappstore: "MACAPPSTORE",
-    macappstores: "MACAPPSTORE",
-    map: "MAP",
-    mapitem: "MAP",
-    maps: "MAP",
-    message: "MESSAGE",
-    messages: "MESSAGE",
-    microsoftmusic: "MICROSOFT_APP",
-    microsoftvideo: "MICROSOFT_APP",
-    mswindowsmusic: "MICROSOFT_APP",
-    music: "MUSIC",
-    musics: "MUSIC",
-    onenote: "ONENOTE",
-    "onenote-cmd": "ONENOTE",
-    pcast: "PODCAST",
-    podcast: "PODCAST",
-    podcasts: "PODCAST",
-    "roblox-player": "ROBLOX",
-    search: "SEARCH",
-    "search-ms": "SEARCH",
-    sip: "SIP",
-    sips: "SIP",
-    skype: "SKYPE",
-    "skype-meetnow": "SKYPE",
-    skypewin: "SKYPE",
-    tg: "TELEGRAM",
-    tv: "TELEVISION",
-    zoommtg: "ZOOM",
-    zoompbx: "ZOOM",
-    zoomus: "ZOOM",
-    zune: "MICROSOFT_APP",
-  },
-
-  /**
-   * Maps protocol scheme prefix to telemetry label.
-   */
-  SCHEME_PREFIX_TO_LABEL: {
-    apple: "APPLE",
-    "com.microsoft": "MICROSOFT_APP",
-    facetime: "FACETIME",
-    "fb-messenger": "FACEBOOK",
-    icloud: "ICLOUD",
-    "itms-": "APPLE_MUSIC",
-    microsoft: "MICROSOFT_APP",
-    "ms-": "MICROSOFT_APP",
-    outlook: "OUTLOOK",
-    photos: "PHOTOS",
-    "web+": "WEBHANDLER",
-    windows: "WINDOWS_PREFIX",
-    "x-apple": "APPLE",
-    xbox: "XBOX",
-  },
-
-  /**
-   * Sandbox flags for telemetry
-   * Copied from nsSandboxFlags.h
-   */
-  SANDBOXED_AUXILIARY_NAVIGATION: 0x2,
-  SANDBOXED_TOPLEVEL_NAVIGATION: 0x4,
-  SANDBOXED_TOPLEVEL_NAVIGATION_USER_ACTIVATION: 0x20000,
-
-  /**
-   * Lazy getter for labels of the external protocol navigation telemetry probe.
-   * @returns {string[]} - An array of histogram labels.
-   */
-  get _telemetryLabels() {
-    if (!this._telemetryLabelArray) {
-      this._telemetryLabelArray = Services.telemetry.getCategoricalLabels().EXTERNAL_PROTOCOL_HANDLER_DIALOG_CONTEXT_SCHEME;
-    }
-    return this._telemetryLabelArray;
-  },
-
-  /**
-   * Get histogram label by protocol scheme.
-   * @param {string} aScheme - Protocol scheme to map to histogram label.
-   * @returns {string} - Label.
-   */
-  _getTelemetryLabel(aScheme) {
-    if (!aScheme) {
-      throw new Error("Invalid scheme");
-    }
-    let labels = this._telemetryLabels;
-
-    // Custom scheme-to-label mappings
-    let mappedLabel = this.SCHEME_TO_LABEL[aScheme];
-    if (mappedLabel) {
-      return mappedLabel;
-    }
-
-    // Prefix mappings
-    for (let prefix of Object.keys(this.SCHEME_PREFIX_TO_LABEL)) {
-      if (aScheme.startsWith(prefix)) {
-        return this.SCHEME_PREFIX_TO_LABEL[prefix];
-      }
-    }
-
-    // Test if we have a label for the protocol scheme.
-    // If not, we use the "OTHER" label.
-    if (labels.includes(aScheme)) {
-      return aScheme;
-    }
-
-    return "OTHER";
-  },
-
-  /**
-   * Determine if a load was triggered from toplevel or an iframe
-   * (cross origin, same origin, sandboxed).
-   *
-   * @param {BrowsingContext} [aBrowsingContext] - Context of the load.
-   * @param {nsIPrincipal} [aTriggeringPrincipal] - Principal which triggered
-   * the load.
-   * @returns {string} - Histogram key. May return "UNKNOWN".
-   */
-  _getTelemetryKey(aBrowsingContext, aTriggeringPrincipal) {
-    if (!aBrowsingContext) {
-      return "UNKNOWN";
-    }
-    if (aBrowsingContext.top == aBrowsingContext) {
-      return "TOPLEVEL";
-    }
-
-    let { sandboxFlags } = aBrowsingContext;
-    if (sandboxFlags) {
-      // Iframe is sandboxed. Determine whether it sets allow flags relevant
-      // for the external protocol navigation.
-      if (
-        !(sandboxFlags & this.SANDBOXED_TOPLEVEL_NAVIGATION) ||
-        !(sandboxFlags & this.SANDBOXED_TOPLEVEL_NAVIGATION_USER_ACTIVATION) ||
-        !(sandboxFlags & this.SANDBOXED_AUXILIARY_NAVIGATION)
-      ) {
-        return "SUB_SANDBOX_ALLOW";
-      }
-      return "SUB_SANDBOX_NOALLOW";
-    }
-
-    // We're in a frame, check if the frame is cross origin with the top context.
-    if (!aTriggeringPrincipal) {
-      return "UNKNOWN";
-    }
-
-    let topLevelPrincipal =
-      aBrowsingContext.top.embedderElement?.contentPrincipal;
-    if (!topLevelPrincipal) {
-      return "UNKNOWN";
-    }
-
-    if (topLevelPrincipal.isThirdPartyPrincipal(aTriggeringPrincipal)) {
-      return "SUB_CROSSORIGIN";
-    }
-
-    return "SUB_SAMEORIGIN";
-  },
-
-  /**
-   * Record telemetry for the external protocol handler dialog.
-   * @param {string} aScheme - Scheme of the protocol being loaded.
-   * @param {BrowsingContext} [aBrowsingContext] - Context of the load.
-   * @param {nsIPrincipal} [aTriggeringPrincipal] - Principal which triggered
-   * the load.
-   */
-  recordTelemetry(aScheme, aBrowsingContext, aTriggeringPrincipal) {
-    let type = this._getTelemetryKey(aBrowsingContext, aTriggeringPrincipal);
-    let label = this._getTelemetryLabel(aScheme);
-
-    Services.telemetry
-      .getKeyedHistogramById("EXTERNAL_PROTOCOL_HANDLER_DIALOG_CONTEXT_SCHEME")
-      .add(type, label);
-  },
-};
 
 class nsContentDispatchChooser {
   /**
@@ -298,27 +91,18 @@ class nsContentDispatchChooser {
       }
     }
 
-    // We will show a prompt, record telemetry.
-    try {
-      ContentDispatchChooserTelemetry.recordTelemetry(
-        aHandler.type,
-        aBrowsingContext,
-        aPrincipal
-      );
-    } catch (error) {
-      Cu.reportError(error);
-    }
-
     let shouldOpenHandler = false;
+
     try {
       shouldOpenHandler = await this._prompt(
         aHandler,
         aPrincipal,
         callerHasPermission,
-        aBrowsingContext
+        aBrowsingContext,
+        aURI
       );
     } catch (error) {
-      Cu.reportError(error.message);
+      console.error(error.message);
     }
 
     if (!shouldOpenHandler) {
@@ -358,9 +142,31 @@ class nsContentDispatchChooser {
    * @param {BrowsingContext} [aBrowsingContext] - Context associated with the
    * protocol navigation.
    */
-  async _prompt(aHandler, aPrincipal, aHasPermission, aBrowsingContext) {
+  async _prompt(aHandler, aPrincipal, aHasPermission, aBrowsingContext, aURI) {
     let shouldOpenHandler = false;
     let resetHandlerChoice = false;
+    let updateHandlerData = false;
+
+    const isStandardProtocol = E10SUtils.STANDARD_SAFE_PROTOCOLS.includes(
+      aURI.scheme
+    );
+    const {
+      hasDefaultHandler,
+      preferredApplicationHandler,
+      alwaysAskBeforeHandling,
+    } = aHandler;
+
+    // This will skip the app chooser dialog flow unless the user explicitly opts to choose
+    // another app in the permission dialog.
+    if (
+      !isStandardProtocol &&
+      hasDefaultHandler &&
+      preferredApplicationHandler == null &&
+      alwaysAskBeforeHandling
+    ) {
+      aHandler.alwaysAskBeforeHandling = false;
+      updateHandlerData = true;
+    }
 
     // If caller does not have permission, prompt the user.
     if (!aHasPermission) {
@@ -446,12 +252,15 @@ class nsContentDispatchChooser {
         ]) {
           aHandler[prop] = outArgs.getProperty(prop);
         }
-
-        // Store handler data
-        Cc["@mozilla.org/uriloader/handler-service;1"]
-          .getService(Ci.nsIHandlerService)
-          .store(aHandler);
+        updateHandlerData = true;
       }
+    }
+
+    if (updateHandlerData) {
+      // Store handler data
+      Cc["@mozilla.org/uriloader/handler-service;1"]
+        .getService(Ci.nsIHandlerService)
+        .store(aHandler);
     }
 
     return shouldOpenHandler;
@@ -482,10 +291,6 @@ class nsContentDispatchChooser {
 
     if (!aPrincipal) {
       return false;
-    }
-
-    if (aPrincipal.isAddonOrExpandedAddonPrincipal) {
-      return true;
     }
 
     let key = this._getSkipProtoDialogPermissionKey(scheme);
@@ -587,16 +392,28 @@ class nsContentDispatchChooser {
       return;
     }
 
+    let principal = aPrincipal;
+
+    // If this action was triggered by an extension content script then set the
+    // permission on the extension's principal.
+    let addonPolicy = aPrincipal.contentScriptAddonPolicy;
+    if (addonPolicy) {
+      principal = Services.scriptSecurityManager.principalWithOA(
+        addonPolicy.extension.principal,
+        principal.originAttributes
+      );
+    }
+
     let permKey = this._getSkipProtoDialogPermissionKey(aScheme);
     if (aAllow) {
       Services.perms.addFromPrincipal(
-        aPrincipal,
+        principal,
         permKey,
         Services.perms.ALLOW_ACTION,
         Services.perms.EXPIRE_NEVER
       );
     } else {
-      Services.perms.removeFromPrincipal(aPrincipal, permKey);
+      Services.perms.removeFromPrincipal(principal, permKey);
     }
   }
 
@@ -606,11 +423,18 @@ class nsContentDispatchChooser {
    * @returns {boolean} - true if we can store permissions, false otherwise.
    */
   _isSupportedPrincipal(aPrincipal) {
-    return (
-      aPrincipal &&
-      ["http", "https", "moz-extension", "file"].some(scheme =>
-        aPrincipal.schemeIs(scheme)
-      )
+    if (!aPrincipal) {
+      return false;
+    }
+
+    // If this is an add-on content script then we will be able to store
+    // permissions against the add-on's principal.
+    if (aPrincipal.contentScriptAddonPolicy) {
+      return true;
+    }
+
+    return ["http", "https", "moz-extension", "file"].some(scheme =>
+      aPrincipal.schemeIs(scheme)
     );
   }
 }

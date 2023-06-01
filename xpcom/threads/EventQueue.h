@@ -16,19 +16,24 @@ class nsIRunnable;
 
 namespace mozilla {
 
-enum class EventQueuePriority {
-  Idle,
-  DeferredTimers,
-  InputLow,
-  Normal,
-  MediumHigh,
-  InputHigh,
-  Vsync,
-  InputHighest,
-  RenderBlocking,
-  Control,
+#define EVENT_QUEUE_PRIORITY_LIST(EVENT_PRIORITY) \
+  EVENT_PRIORITY(Idle, 0)                         \
+  EVENT_PRIORITY(DeferredTimers, 1)               \
+  EVENT_PRIORITY(Low, 2)                          \
+  EVENT_PRIORITY(InputLow, 3)                     \
+  EVENT_PRIORITY(Normal, 4)                       \
+  EVENT_PRIORITY(MediumHigh, 5)                   \
+  EVENT_PRIORITY(InputHigh, 6)                    \
+  EVENT_PRIORITY(Vsync, 7)                        \
+  EVENT_PRIORITY(InputHighest, 8)                 \
+  EVENT_PRIORITY(RenderBlocking, 9)               \
+  EVENT_PRIORITY(Control, 10)
 
-  Count
+enum class EventQueuePriority {
+#define EVENT_PRIORITY(NAME, VALUE) NAME = VALUE,
+  EVENT_QUEUE_PRIORITY_LIST(EVENT_PRIORITY)
+#undef EVENT_PRIORITY
+      Invalid
 };
 
 class IdlePeriodState;

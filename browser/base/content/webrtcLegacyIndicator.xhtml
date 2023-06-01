@@ -13,15 +13,20 @@
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         id="webrtcIndicator"
         role="alert"
+#ifndef XP_MACOSX
+        data-l10n-id="webrtc-indicator-window"
+#endif
         windowtype="Browser:WebRTCGlobalIndicator"
         onload="init(event);"
-#ifdef XP_MACOSX
-        inwindowmenu="false"
-#endif
         sizemode="normal"
         hidechrome="true"
         orient="horizontal"
         >
+  <linkset>
+    <html:link rel="localization" href="branding/brand.ftl"/>
+    <html:link rel="localization" href="browser/webrtcIndicator.ftl"/>
+  </linkset>
+
   <script src="chrome://browser/content/webrtcLegacyIndicator.js"/>
 
   <button id="firefoxButton"/>

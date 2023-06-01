@@ -1,8 +1,6 @@
 const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 let geolocation = null;
-let numRequests = 0;
 let locations = [
   [1, 2],
   [3, 4],
@@ -10,7 +8,6 @@ let locations = [
 ];
 
 function geoHandler(metadata, response) {
-  numRequests++;
   let [lat, lng] = locations.shift();
   response.setStatusLine("1.0", 200, "OK");
   response.setHeader("Cache-Control", "no-cache", false);

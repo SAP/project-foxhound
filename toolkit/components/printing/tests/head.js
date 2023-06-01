@@ -36,9 +36,7 @@ class PrintHelper {
             null,
             true
           );
-          await SpecialPowers.spawn(browser, [pageUrl], contentUrl => {
-            content.location = contentUrl;
-          });
+          BrowserTestUtils.loadURIString(browser, pageUrl);
           await loaded;
         }
         await testFn(new PrintHelper(browser));
@@ -239,11 +237,14 @@ class PrintHelper {
       throw new Error("Print already mocked");
     }
 
-    // Create some Promises that we can resolve/reject from the test.
-    let showSystemDialogPromise = new Promise((resolve, reject) => {
-      this.resolveShowSystemDialog = resolve;
-      this.rejectShowSystemDialog = () => {
-        reject(Components.Exception("", Cr.NS_ERROR_ABORT));
+    // Create some Promises that we can resolve from the test.
+    let showSystemDialogPromise = new Promise(resolve => {
+      this.resolveShowSystemDialog = result => {
+        if (result !== undefined) {
+          resolve(result);
+        } else {
+          resolve(true);
+        }
       };
     });
     let printPromise = new Promise((resolve, reject) => {
@@ -252,7 +253,14 @@ class PrintHelper {
     });
 
     // Mock PrintEventHandler with our Promises.
-    this.win.PrintEventHandler._showPrintDialog = () => showSystemDialogPromise;
+    this.win.PrintEventHandler._showPrintDialog = (
+      window,
+      haveSelection,
+      settings
+    ) => {
+      this.systemDialogOpenedWithSelection = haveSelection;
+      return showSystemDialogPromise;
+    };
     this.win.PrintEventHandler._doPrint = (bc, settings) => {
       this._printedSettings = settings;
       return printPromise;
@@ -281,11 +289,12 @@ class PrintHelper {
       ).fallbackPaperList;
     }
 
-    let defaultSettings = PSSVC.newPrintSettings;
+    let defaultSettings = PSSVC.createNewPrintSettings();
     defaultSettings.printerName = name;
     defaultSettings.toFileName = "";
     defaultSettings.outputFormat = Ci.nsIPrintSettings.kOutputFormatNative;
-    defaultSettings.printToFile = false;
+    defaultSettings.outputDestination =
+      Ci.nsIPrintSettings.kOutputDestinationPrinter;
     defaultSettings.paperSizeUnit = paperSizeUnit;
     if (paperId) {
       defaultSettings.paperId = paperId;

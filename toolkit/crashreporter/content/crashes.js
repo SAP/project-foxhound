@@ -7,7 +7,6 @@ let reportURL;
 const { CrashReports } = ChromeUtils.import(
   "resource://gre/modules/CrashReports.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 ChromeUtils.defineModuleGetter(
@@ -21,17 +20,17 @@ document.addEventListener("DOMContentLoaded", () => {
   document
     .getElementById("clearUnsubmittedReports")
     .addEventListener("click", () => {
-      clearUnsubmittedReports().catch(Cu.reportError);
+      clearUnsubmittedReports().catch(console.error);
     });
   document
     .getElementById("submitAllUnsubmittedReports")
     .addEventListener("click", () => {
-      submitAllUnsubmittedReports().catch(Cu.reportError);
+      submitAllUnsubmittedReports().catch(console.error);
     });
   document
     .getElementById("clearSubmittedReports")
     .addEventListener("click", () => {
-      clearSubmittedReports().catch(Cu.reportError);
+      clearSubmittedReports().catch(console.error);
     });
 });
 
@@ -150,7 +149,9 @@ function showAppropriateSections() {
 function submitPendingReport(reportId, row, button, buttonText, dateFormatter) {
   button.classList.add("submitting");
   document.getElementById("submitAllUnsubmittedReports").disabled = true;
-  CrashSubmit.submit(reportId, { noThrottle: true })
+  CrashSubmit.submit(reportId, CrashSubmit.SUBMITTED_FROM_ABOUT_CRASHES, {
+    noThrottle: true,
+  })
     .then(
       remoteCrashID => {
         document.getElementById("unsubmitted").removeChild(row);

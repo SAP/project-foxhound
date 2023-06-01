@@ -12,17 +12,19 @@ const TEST_URL_2 =
   "data:text/html;charset=utf-8,CanvasFrameAnonymousContentHelper test 2";
 
 add_task(async function() {
-  const browser = await addTab(TEST_URL_1);
-  await SpecialPowers.spawn(browser, [TEST_URL_2], async function(url2) {
-    const { require } = ChromeUtils.import(
-      "resource://devtools/shared/loader/Loader.jsm"
+  const tab = await addTab(TEST_URL_1);
+  await SpecialPowers.spawn(tab.linkedBrowser, [TEST_URL_2], async function(
+    url2
+  ) {
+    const { require } = ChromeUtils.importESModule(
+      "resource://devtools/shared/loader/Loader.sys.mjs"
     );
     const {
       HighlighterEnvironment,
-    } = require("devtools/server/actors/highlighters");
+    } = require("resource://devtools/server/actors/highlighters.js");
     const {
       CanvasFrameAnonymousContentHelper,
-    } = require("devtools/server/actors/highlighters/utils/markup");
+    } = require("resource://devtools/server/actors/highlighters/utils/markup.js");
     let doc = content.document;
 
     const nodeBuilder = () => {

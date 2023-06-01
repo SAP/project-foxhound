@@ -71,16 +71,16 @@ class nsInputStreamPump final : public nsIInputStreamPump,
   nsresult CallOnStateStop();
 
  protected:
-  enum { STATE_IDLE, STATE_START, STATE_TRANSFER, STATE_STOP };
+  enum { STATE_IDLE, STATE_START, STATE_TRANSFER, STATE_STOP, STATE_DEAD };
 
   nsresult EnsureWaiting();
   uint32_t OnStateStart();
   uint32_t OnStateTransfer();
   uint32_t OnStateStop();
-  nsresult CreateBufferedStreamIfNeeded();
+  nsresult CreateBufferedStreamIfNeeded() MOZ_REQUIRES(mMutex);
 
   // This should optimize away in non-DEBUG builds
-  MOZ_ALWAYS_INLINE void AssertOnThread() const {
+  MOZ_ALWAYS_INLINE void AssertOnThread() const MOZ_REQUIRES(mMutex) {
     if (mOffMainThread) {
       MOZ_ASSERT(mTargetThread->IsOnCurrentThread());
     } else {
@@ -88,37 +88,37 @@ class nsInputStreamPump final : public nsIInputStreamPump,
     }
   }
 
-  uint32_t mState{STATE_IDLE};
-  nsCOMPtr<nsILoadGroup> mLoadGroup;
-  nsCOMPtr<nsIStreamListener> mListener;
-  nsCOMPtr<nsIEventTarget> mTargetThread;
-  nsCOMPtr<nsIEventTarget> mLabeledMainThreadTarget;
-  nsCOMPtr<nsIInputStream> mStream;
-  nsCOMPtr<nsIAsyncInputStream> mAsyncStream;
-  uint64_t mStreamOffset{0};
-  uint64_t mStreamLength{0};
-  uint32_t mSegSize{0};
-  uint32_t mSegCount{0};
-  nsresult mStatus{NS_OK};
-  uint32_t mSuspendCount{0};
-  uint32_t mLoadFlags{LOAD_NORMAL};
-  bool mIsPending{false};
+  uint32_t mState MOZ_GUARDED_BY(mMutex){STATE_IDLE};
+  nsCOMPtr<nsILoadGroup> mLoadGroup MOZ_GUARDED_BY(mMutex);
   // mListener is written on a single thread (either MainThread or an
   // off-MainThread thread), read from that thread and perhaps others (in
   // RetargetDeliveryTo)
+  nsCOMPtr<nsIStreamListener> mListener MOZ_GUARDED_BY(mMutex);
+  nsCOMPtr<nsIEventTarget> mTargetThread MOZ_GUARDED_BY(mMutex);
+  nsCOMPtr<nsIEventTarget> mLabeledMainThreadTarget MOZ_GUARDED_BY(mMutex);
+  nsCOMPtr<nsIInputStream> mStream MOZ_GUARDED_BY(mMutex);
   // mAsyncStream is written on a single thread (either MainThread or an
   // off-MainThread thread), and lives from AsyncRead() to OnStateStop().
+  nsCOMPtr<nsIAsyncInputStream> mAsyncStream MOZ_GUARDED_BY(mMutex);
+  uint64_t mStreamOffset MOZ_GUARDED_BY(mMutex){0};
+  uint64_t mStreamLength MOZ_GUARDED_BY(mMutex){0};
+  uint32_t mSegSize MOZ_GUARDED_BY(mMutex){0};
+  uint32_t mSegCount MOZ_GUARDED_BY(mMutex){0};
+  nsresult mStatus MOZ_GUARDED_BY(mMutex){NS_OK};
+  uint32_t mSuspendCount MOZ_GUARDED_BY(mMutex){0};
+  uint32_t mLoadFlags MOZ_GUARDED_BY(mMutex){LOAD_NORMAL};
+  bool mIsPending MOZ_GUARDED_BY(mMutex){false};
   // True while in OnInputStreamReady, calling OnStateStart, OnStateTransfer
   // and OnStateStop. Used to prevent calls to AsyncWait during callbacks.
-  bool mProcessingCallbacks{false};
+  bool mProcessingCallbacks MOZ_GUARDED_BY(mMutex){false};
   // True if waiting on the "input stream ready" callback.
-  bool mWaitingForInputStreamReady{false};
-  bool mCloseWhenDone{false};
-  bool mRetargeting{false};
-  bool mAsyncStreamIsBuffered{false};
+  bool mWaitingForInputStreamReady MOZ_GUARDED_BY(mMutex){false};
+  bool mCloseWhenDone MOZ_GUARDED_BY(mMutex){false};
+  bool mRetargeting MOZ_GUARDED_BY(mMutex){false};
+  bool mAsyncStreamIsBuffered MOZ_GUARDED_BY(mMutex){false};
   // Indicate whether nsInputStreamPump is used completely off main thread.
-  bool mOffMainThread;
   // If true, OnStateStop() is executed off main thread. Set at creation.
+  const bool mOffMainThread;
   // Protects state/member var accesses across multiple threads.
   mozilla::RecursiveMutex mMutex{"nsInputStreamPump"};
 };

@@ -16,7 +16,6 @@
 #include "mozilla/InputTaskManager.h"
 #include "mozilla/VsyncTaskManager.h"
 #include "mozilla/IOInterposer.h"
-#include "mozilla/ProfilerRunnable.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/ScopeExit.h"
@@ -49,11 +48,76 @@ int32_t TaskController::GetPoolThreadCount() {
 }
 
 #if defined(MOZ_COLLECTING_RUNNABLE_TELEMETRY)
+
+struct TaskMarker {
+  static constexpr Span<const char> MarkerTypeName() {
+    return MakeStringSpan("Task");
+  }
+  static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
+                                   const nsCString& aName, uint32_t aPriority) {
+    aWriter.StringProperty("name", aName);
+    aWriter.IntProperty("priority", aPriority);
+
+#  define EVENT_PRIORITY(NAME, VALUE)                \
+    if (aPriority == (VALUE)) {                      \
+      aWriter.StringProperty("priorityName", #NAME); \
+    } else
+    EVENT_QUEUE_PRIORITY_LIST(EVENT_PRIORITY)
+#  undef EVENT_PRIORITY
+    {
+      aWriter.StringProperty("priorityName", "Invalid Value");
+    }
+  }
+  static MarkerSchema MarkerTypeDisplay() {
+    using MS = MarkerSchema;
+    MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
+    schema.SetChartLabel("{marker.data.name}");
+    schema.SetTableLabel(
+        "{marker.name} - {marker.data.name} - priority: "
+        "{marker.data.priorityName} ({marker.data.priority})");
+    schema.AddKeyLabelFormatSearchable("name", "Task Name", MS::Format::String,
+                                       MS::Searchable::Searchable);
+    schema.AddKeyLabelFormat("priorityName", "Priority Name",
+                             MS::Format::String);
+    schema.AddKeyLabelFormat("priority", "Priority level", MS::Format::Integer);
+    return schema;
+  }
+};
+
+class MOZ_RAII AutoProfileTask {
+ public:
+  explicit AutoProfileTask(nsACString& aName, uint64_t aPriority)
+      : mName(aName), mPriority(aPriority) {
+    if (profiler_is_active()) {
+      mStartTime = TimeStamp::Now();
+    }
+  }
+
+  ~AutoProfileTask() {
+    if (!profiler_thread_is_being_profiled_for_markers()) {
+      return;
+    }
+
+    AUTO_PROFILER_LABEL("AutoProfileTask", PROFILER);
+    AUTO_PROFILER_STATS(AUTO_PROFILE_TASK);
+    profiler_add_marker("Runnable", ::mozilla::baseprofiler::category::OTHER,
+                        mStartTime.IsNull()
+                            ? MarkerTiming::IntervalEnd()
+                            : MarkerTiming::IntervalUntilNowFrom(mStartTime),
+                        TaskMarker{}, mName, mPriority);
+  }
+
+ private:
+  TimeStamp mStartTime;
+  nsAutoCString mName;
+  uint32_t mPriority;
+};
+
 #  define AUTO_PROFILE_FOLLOWING_TASK(task)                                  \
     nsAutoCString name;                                                      \
     (task)->GetName(name);                                                   \
     AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING_NONSENSITIVE("Task", OTHER, name); \
-    AUTO_PROFILE_FOLLOWING_RUNNABLE(name);
+    mozilla::AutoProfileTask PROFILER_RAII(name, (task)->GetPriority());
 #else
 #  define AUTO_PROFILE_FOLLOWING_TASK(task)
 #endif
@@ -247,6 +311,14 @@ void TaskController::RunPoolThread() {
         mThreadableTasks.erase(task->mIterator);
         task->mIterator = mThreadableTasks.end();
         task->mInProgress = true;
+
+        if (!mThreadableTasks.empty()) {
+          // Ensure at least one additional thread is woken up if there are
+          // more threadable tasks to process. Notifying all threads at once
+          // isn't actually better for performance since they all need the
+          // GraphMutex to proceed anyway.
+          mThreadPoolCV.Notify();
+        }
 
         bool taskCompleted = false;
         {
@@ -598,8 +670,14 @@ bool TaskController::HasMainThreadPendingTasks() {
   return false;
 }
 
+uint64_t TaskController::PendingMainthreadTaskCountIncludingSuspended() {
+  MutexAutoLock lock(mGraphMutex);
+  return mMainThreadTasks.size();
+}
+
 bool TaskController::ExecuteNextTaskOnlyMainThreadInternal(
     const MutexAutoLock& aProofOfLock) {
+  mGraphMutex.AssertCurrentThreadOwns();
   // Block to make it easier to jump to our cleanup.
   bool taskRan = false;
   do {
@@ -654,6 +732,8 @@ bool TaskController::ExecuteNextTaskOnlyMainThreadInternal(
     mIdleTaskManager->State().ForgetPendingTaskGuarantee();
 
     if (mMainThreadTasks.empty()) {
+      ++mRunOutOfMTTasksCounter;
+
       // XXX the IdlePeriodState API demands we have a MutexAutoUnlock for it.
       // Otherwise we could perhaps just do this after we exit the locked block,
       // by pushing the lock down into this method.  Though it's not clear that
@@ -669,6 +749,8 @@ bool TaskController::ExecuteNextTaskOnlyMainThreadInternal(
 
 bool TaskController::DoExecuteNextTaskOnlyMainThreadInternal(
     const MutexAutoLock& aProofOfLock) {
+  mGraphMutex.AssertCurrentThreadOwns();
+
   nsCOMPtr<nsIThread> mainIThread;
   NS_GetMainThread(getter_AddRefs(mainIThread));
 
@@ -802,12 +884,10 @@ bool TaskController::DoExecuteNextTaskOnlyMainThreadInternal(
         task->mDependencies.clear();
 
         if (!mThreadableTasks.empty()) {
-          // Since this could have multiple dependencies thare are not
-          // restricted to the main thread. Let's wake up our thread pool.
-          // There is a cost to this, it's possible we will want to wake up
-          // only as many threads as we have unblocked tasks, but we currently
-          // have no way to determine that easily.
-          mThreadPoolCV.NotifyAll();
+          // We're going to wake up a single thread in our pool. This thread
+          // is responsible for waking up additional threads in the situation
+          // where more than one task became available.
+          mThreadPoolCV.Notify();
         }
       }
 

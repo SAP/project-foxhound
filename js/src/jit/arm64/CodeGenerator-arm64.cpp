@@ -16,10 +16,10 @@
 #include "jit/JitRuntime.h"
 #include "jit/MIR.h"
 #include "jit/MIRGraph.h"
+#include "jit/ReciprocalMulConstants.h"
 #include "vm/JSContext.h"
 #include "vm/Realm.h"
 #include "vm/Shape.h"
-#include "vm/TraceLogging.h"
 
 #include "jit/shared/CodeGenerator-shared-inl.h"
 #include "vm/JSScript-inl.h"
@@ -103,7 +103,8 @@ void CodeGenerator::visitCompare(LCompare* comp) {
   const Register defreg = ToRegister(comp->getDef(0));
 
   if (type == MCompare::Compare_Object || type == MCompare::Compare_Symbol ||
-      type == MCompare::Compare_UIntPtr) {
+      type == MCompare::Compare_UIntPtr ||
+      type == MCompare::Compare_RefOrNull) {
     if (right->isConstant()) {
       MOZ_ASSERT(type == MCompare::Compare_UIntPtr);
       masm.cmpPtrSet(cond, leftreg, Imm32(ToInt32(right)), defreg);
@@ -127,7 +128,8 @@ void CodeGenerator::visitCompareAndBranch(LCompareAndBranch* comp) {
   const LAllocation* right = comp->right();
 
   if (type == MCompare::Compare_Object || type == MCompare::Compare_Symbol ||
-      type == MCompare::Compare_UIntPtr) {
+      type == MCompare::Compare_UIntPtr ||
+      type == MCompare::Compare_RefOrNull) {
     if (right->isConstant()) {
       MOZ_ASSERT(type == MCompare::Compare_UIntPtr);
       masm.cmpPtr(ToRegister(left), Imm32(ToInt32(right)));
@@ -148,12 +150,6 @@ void CodeGeneratorARM64::bailoutIf(Assembler::Condition condition,
                                    LSnapshot* snapshot) {
   encode(snapshot);
 
-  // Though the assembler doesn't track all frame pushes, at least make sure
-  // the known value makes sense.
-  MOZ_ASSERT_IF(frameClass_ != FrameSizeClass::None() && deoptTable_,
-                frameClass_.frameSize() == masm.framePushed());
-
-  // ARM64 doesn't use a bailout table.
   InlineScriptTree* tree = snapshot->mir()->block()->trackedTree();
   OutOfLineBailout* ool = new (alloc()) OutOfLineBailout(snapshot);
   addOutOfLineCode(ool,
@@ -168,12 +164,6 @@ void CodeGeneratorARM64::bailoutFrom(Label* label, LSnapshot* snapshot) {
 
   encode(snapshot);
 
-  // Though the assembler doesn't track all frame pushes, at least make sure
-  // the known value makes sense.
-  MOZ_ASSERT_IF(frameClass_ != FrameSizeClass::None() && deoptTable_,
-                frameClass_.frameSize() == masm.framePushed());
-
-  // ARM64 doesn't use a bailout table.
   InlineScriptTree* tree = snapshot->mir()->block()->trackedTree();
   OutOfLineBailout* ool = new (alloc()) OutOfLineBailout(snapshot);
   addOutOfLineCode(ool,
@@ -215,15 +205,13 @@ void CodeGenerator::visitMinMaxF(LMinMaxF* ins) {
   }
 }
 
-// FIXME: Uh, is this a static function? It looks like it is...
 template <typename T>
-ARMRegister toWRegister(const T* a) {
+static ARMRegister toWRegister(const T* a) {
   return ARMRegister(ToRegister(a), 32);
 }
 
-// FIXME: Uh, is this a static function? It looks like it is...
 template <typename T>
-ARMRegister toXRegister(const T* a) {
+static ARMRegister toXRegister(const T* a) {
   return ARMRegister(ToRegister(a), 64);
 }
 
@@ -355,6 +343,10 @@ void CodeGenerator::visitMulI(LMulI* ins) {
         }
         return;  // Avoid overflow check.
       case 2:
+        if (!mul->canOverflow()) {
+          masm.Add(destreg32, lhsreg32, Operand(lhsreg32));
+          return;  // Avoid overflow check.
+        }
         masm.Adds(destreg32, lhsreg32, Operand(lhsreg32));
         break;  // Go to overflow check.
       default:
@@ -617,8 +609,7 @@ void CodeGenerator::visitDivConstantI(LDivConstantI* ins) {
 
   // We will first divide by Abs(d), and negate the answer if d is negative.
   // If desired, this can be avoided by generalizing computeDivisionConstants.
-  ReciprocalMulConstants rmc =
-      computeDivisionConstants(Abs(d), /* maxLog = */ 31);
+  auto rmc = ReciprocalMulConstants::computeSignedDivisionConstants(Abs(d));
 
   // We first compute (M * n) >> 32, where M = rmc.multiplier.
   masm.Mov(const32, int32_t(rmc.multiplier));
@@ -706,9 +697,9 @@ void CodeGenerator::visitUDivConstantI(LUDivConstantI* ins) {
   // The denominator isn't a power of 2 (see LDivPowTwoI).
   MOZ_ASSERT((d & (d - 1)) != 0);
 
-  ReciprocalMulConstants rmc = computeDivisionConstants(d, /* maxLog = */ 32);
+  auto rmc = ReciprocalMulConstants::computeUnsignedDivisionConstants(d);
 
-  // We first compute (M * n) >> 32, where M = rmc.multiplier.
+  // We first compute (M * n), where M = rmc.multiplier.
   masm.Mov(const32, int32_t(rmc.multiplier));
   masm.Umull(output64, const32, lhs32);
   if (rmc.multiplier > UINT32_MAX) {
@@ -1118,8 +1109,8 @@ MoveOperand CodeGeneratorARM64::toMoveOperand(const LAllocation a) const {
   if (a.isFloatReg()) {
     return MoveOperand(ToFloatRegister(a));
   }
-  MoveOperand::Kind kind =
-      a.isStackArea() ? MoveOperand::EFFECTIVE_ADDRESS : MoveOperand::MEMORY;
+  MoveOperand::Kind kind = a.isStackArea() ? MoveOperand::Kind::EffectiveAddress
+                                           : MoveOperand::Kind::Memory;
   return MoveOperand(ToAddress(a), kind);
 }
 
@@ -1292,16 +1283,6 @@ void CodeGenerator::visitWasmBuiltinTruncateFToInt32(
                       ToRegister(lir->getDef(0)), lir->mir());
 }
 
-FrameSizeClass FrameSizeClass::FromDepth(uint32_t frameDepth) {
-  return FrameSizeClass::None();
-}
-
-FrameSizeClass FrameSizeClass::ClassLimit() { return FrameSizeClass(0); }
-
-uint32_t FrameSizeClass::frameSize() const {
-  MOZ_CRASH("arm64 does not use frame size classes");
-}
-
 ValueOperand CodeGeneratorARM64::ToValue(LInstruction* ins, size_t pos) {
   return ValueOperand(ToRegister(ins->getOperand(pos)));
 }
@@ -1399,13 +1380,13 @@ void CodeGenerator::visitUnbox(LUnbox* unbox) {
 }
 
 void CodeGenerator::visitDouble(LDouble* ins) {
-  ARMFPRegister output(ToFloatRegister(ins->getDef(0)), 64);
-  masm.Fmov(output, ins->value());
+  const LDefinition* out = ins->getDef(0);
+  masm.loadConstantDouble(ins->value(), ToFloatRegister(out));
 }
 
 void CodeGenerator::visitFloat32(LFloat32* ins) {
-  ARMFPRegister output(ToFloatRegister(ins->getDef(0)), 32);
-  masm.Fmov(output, ins->value());
+  const LDefinition* out = ins->getDef(0);
+  masm.loadConstantFloat32(ins->value(), ToFloatRegister(out));
 }
 
 void CodeGenerator::visitTestDAndBranch(LTestDAndBranch* test) {
@@ -2300,7 +2281,7 @@ void CodeGenerator::visitShiftI64(LShiftI64* lir) {
 }
 
 void CodeGenerator::visitWasmHeapBase(LWasmHeapBase* ins) {
-  MOZ_ASSERT(ins->tlsPtr()->isBogus());
+  MOZ_ASSERT(ins->instance()->isBogus());
   masm.movePtr(HeapReg, ToRegister(ins->output()));
 }
 
@@ -2525,7 +2506,14 @@ void CodeGenerator::visitWasmCompareAndSelect(LWasmCompareAndSelect* ins) {
   }
 
   // Act on flag.
-  Assembler::Condition cond = JSOpToCondition(ins->compareType(), ins->jsop());
+  Assembler::Condition cond;
+  if (compTy == MCompare::Compare_Float32 ||
+      compTy == MCompare::Compare_Double) {
+    cond = Assembler::ConditionFromDoubleCondition(
+        JSOpToDoubleCondition(ins->jsop()));
+  } else {
+    cond = JSOpToCondition(compTy, ins->jsop());
+  }
   MIRType insTy = ins->mir()->type();
   if (insTy == MIRType::Int32 || insTy == MIRType::Int64) {
     Register destReg = ToRegister(ins->output());
@@ -2585,11 +2573,10 @@ void CodeGenerator::visitWasmAddOffset(LWasmAddOffset* lir) {
 
   masm.Adds(ARMRegister(out, 32), ARMRegister(base, 32),
             Operand(mir->offset()));
-
-  Label ok;
-  masm.j(Assembler::CarryClear, &ok);
-  masm.wasmTrap(wasm::Trap::OutOfBounds, mir->bytecodeOffset());
-  masm.bind(&ok);
+  OutOfLineAbortingWasmTrap* ool = new (alloc())
+      OutOfLineAbortingWasmTrap(mir->bytecodeOffset(), wasm::Trap::OutOfBounds);
+  addOutOfLineCode(ool, mir);
+  masm.j(Assembler::CarrySet, ool->entry());
 }
 
 void CodeGenerator::visitWasmAddOffset64(LWasmAddOffset64* lir) {
@@ -2599,11 +2586,10 @@ void CodeGenerator::visitWasmAddOffset64(LWasmAddOffset64* lir) {
 
   masm.Adds(ARMRegister(out.reg, 64), ARMRegister(base.reg, 64),
             Operand(mir->offset()));
-
-  Label ok;
-  masm.j(Assembler::CarryClear, &ok);
-  masm.wasmTrap(wasm::Trap::OutOfBounds, mir->bytecodeOffset());
-  masm.bind(&ok);
+  OutOfLineAbortingWasmTrap* ool = new (alloc())
+      OutOfLineAbortingWasmTrap(mir->bytecodeOffset(), wasm::Trap::OutOfBounds);
+  addOutOfLineCode(ool, mir);
+  masm.j(Assembler::CarrySet, ool->entry());
 }
 
 void CodeGenerator::visitWasmSelectI64(LWasmSelectI64* lir) {
@@ -3027,31 +3013,41 @@ void CodeGenerator::visitWasmTernarySimd128(LWasmTernarySimd128* ins) {
       break;
     }
     case wasm::SimdOp::F32x4RelaxedFma:
-      masm.fmaFloat32x4(ToFloatRegister(ins->v1()), ToFloatRegister(ins->v2()),
-                        ToFloatRegister(ins->v0()));
+      masm.fmaFloat32x4(ToFloatRegister(ins->v0()), ToFloatRegister(ins->v1()),
+                        ToFloatRegister(ins->v2()));
       break;
-    case wasm::SimdOp::F32x4RelaxedFms:
-      masm.fmsFloat32x4(ToFloatRegister(ins->v1()), ToFloatRegister(ins->v2()),
-                        ToFloatRegister(ins->v0()));
+    case wasm::SimdOp::F32x4RelaxedFnma:
+      masm.fnmaFloat32x4(ToFloatRegister(ins->v0()), ToFloatRegister(ins->v1()),
+                         ToFloatRegister(ins->v2()));
       break;
     case wasm::SimdOp::F64x2RelaxedFma:
-      masm.fmaFloat64x2(ToFloatRegister(ins->v1()), ToFloatRegister(ins->v2()),
-                        ToFloatRegister(ins->v0()));
+      masm.fmaFloat64x2(ToFloatRegister(ins->v0()), ToFloatRegister(ins->v1()),
+                        ToFloatRegister(ins->v2()));
       break;
-    case wasm::SimdOp::F64x2RelaxedFms:
-      masm.fmsFloat64x2(ToFloatRegister(ins->v1()), ToFloatRegister(ins->v2()),
-                        ToFloatRegister(ins->v0()));
+    case wasm::SimdOp::F64x2RelaxedFnma:
+      masm.fnmaFloat64x2(ToFloatRegister(ins->v0()), ToFloatRegister(ins->v1()),
+                         ToFloatRegister(ins->v2()));
       break;
-    case wasm::SimdOp::I8x16LaneSelect:
-    case wasm::SimdOp::I16x8LaneSelect:
-    case wasm::SimdOp::I32x4LaneSelect:
-    case wasm::SimdOp::I64x2LaneSelect: {
+    case wasm::SimdOp::I8x16RelaxedLaneSelect:
+    case wasm::SimdOp::I16x8RelaxedLaneSelect:
+    case wasm::SimdOp::I32x4RelaxedLaneSelect:
+    case wasm::SimdOp::I64x2RelaxedLaneSelect: {
       FloatRegister lhs = ToFloatRegister(ins->v0());
       FloatRegister rhs = ToFloatRegister(ins->v1());
       FloatRegister maskDest = ToFloatRegister(ins->v2());
       masm.laneSelectSimd128(maskDest, lhs, rhs, maskDest);
       break;
     }
+    case wasm::SimdOp::I32x4DotI8x16I7x16AddS:
+      masm.dotInt8x16Int7x16ThenAdd(
+          ToFloatRegister(ins->v0()), ToFloatRegister(ins->v1()),
+          ToFloatRegister(ins->v2()), ToFloatRegister(ins->temp()));
+      break;
+    case wasm::SimdOp::F32x4RelaxedDotBF16x8AddF32x4:
+      masm.dotBFloat16x8ThenAdd(
+          ToFloatRegister(ins->v0()), ToFloatRegister(ins->v1()),
+          ToFloatRegister(ins->v2()), ToFloatRegister(ins->temp()));
+      break;
     default:
       MOZ_CRASH("NYI");
   }
@@ -3220,7 +3216,7 @@ void CodeGenerator::visitWasmBinarySimd128(LWasmBinarySimd128* ins) {
     case wasm::SimdOp::I8x16Swizzle:
       masm.swizzleInt8x16(lhs, rhs, dest);
       break;
-    case wasm::SimdOp::V8x16RelaxedSwizzle:
+    case wasm::SimdOp::I8x16RelaxedSwizzle:
       masm.swizzleInt8x16Relaxed(lhs, rhs, dest);
       break;
     case wasm::SimdOp::I8x16NarrowI16x8S:
@@ -3444,6 +3440,12 @@ void CodeGenerator::visitWasmBinarySimd128(LWasmBinarySimd128* ins) {
       break;
     case wasm::SimdOp::F64x2RelaxedMax:
       masm.maxFloat64x2Relaxed(lhs, rhs, dest);
+      break;
+    case wasm::SimdOp::I16x8RelaxedQ15MulrS:
+      masm.q15MulrInt16x8Relaxed(lhs, rhs, dest);
+      break;
+    case wasm::SimdOp::I16x8DotI8x16I7x16S:
+      masm.dotInt8x16Int7x16(lhs, rhs, dest);
       break;
     default:
       MOZ_CRASH("Binary SimdOp not implemented");

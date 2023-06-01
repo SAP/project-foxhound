@@ -11,43 +11,35 @@
  */
 var EXPORTED_SYMBOLS = ["Heuristics", "parentalControls"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyServiceGetter(
-  this,
-  "gDNSService",
-  "@mozilla.org/network/dns-service;1",
-  "nsIDNSService"
-);
+const lazy = {};
 
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "gNetworkLinkService",
   "@mozilla.org/network/network-link-service;1",
   "nsINetworkLinkService"
 );
 
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "gParentalControlsService",
   "@mozilla.org/parental-controls-service;1",
   "nsIParentalControlsService"
 );
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "DoHConfigController",
   "resource:///modules/DoHConfig.jsm"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Preferences",
-  "resource://gre/modules/Preferences.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
+});
 
 const GLOBAL_CANARY = "use-application-dns.net.";
 
@@ -100,6 +92,30 @@ const Heuristics = {
   async _setMockLinkService(mockLinkService) {
     this.mockLinkService = mockLinkService;
   },
+
+  heuristicNameToSkipReason(heuristicName) {
+    const namesToSkipReason = {
+      google: Ci.nsITRRSkipReason.TRR_HEURISTIC_TRIPPED_GOOGLE_SAFESEARCH,
+      youtube: Ci.nsITRRSkipReason.TRR_HEURISTIC_TRIPPED_YOUTUBE_SAFESEARCH,
+      zscalerCanary: Ci.nsITRRSkipReason.TRR_HEURISTIC_TRIPPED_ZSCALER_CANARY,
+      canary: Ci.nsITRRSkipReason.TRR_HEURISTIC_TRIPPED_CANARY,
+      modifiedRoots: Ci.nsITRRSkipReason.TRR_HEURISTIC_TRIPPED_MODIFIED_ROOTS,
+      browserParent:
+        Ci.nsITRRSkipReason.TRR_HEURISTIC_TRIPPED_PARENTAL_CONTROLS,
+      thirdPartyRoots:
+        Ci.nsITRRSkipReason.TRR_HEURISTIC_TRIPPED_THIRD_PARTY_ROOTS,
+      policy: Ci.nsITRRSkipReason.TRR_HEURISTIC_TRIPPED_ENTERPRISE_POLICY,
+      vpn: Ci.nsITRRSkipReason.TRR_HEURISTIC_TRIPPED_VPN,
+      proxy: Ci.nsITRRSkipReason.TRR_HEURISTIC_TRIPPED_PROXY,
+      nrpt: Ci.nsITRRSkipReason.TRR_HEURISTIC_TRIPPED_NRPT,
+    };
+
+    let value = namesToSkipReason[heuristicName];
+    if (value != undefined) {
+      return value;
+    }
+    return Ci.nsITRRSkipReason.TRR_FAILED;
+  },
 };
 
 async function dnsLookup(hostname, resolveCanonicalName = false) {
@@ -140,7 +156,7 @@ async function dnsLookup(hostname, resolveCanonicalName = false) {
       Ci.nsIDNSService.RESOLVE_BYPASS_CACHE |
       Ci.nsIDNSService.RESOLVE_CANONICAL_NAME;
     try {
-      request = gDNSService.asyncResolve(
+      request = Services.dns.asyncResolve(
         hostname,
         Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
         dnsFlags,
@@ -201,7 +217,7 @@ async function globalCanary() {
 
 async function modifiedRoots() {
   // Check for presence of enterprise_roots cert pref. If enabled, disable DoH
-  let rootsEnabled = Preferences.get(
+  let rootsEnabled = lazy.Preferences.get(
     "security.enterprise_roots.enabled",
     false
   );
@@ -214,7 +230,7 @@ async function modifiedRoots() {
 }
 
 async function parentalControls() {
-  if (gParentalControlsService.parentalControlsEnabled) {
+  if (lazy.gParentalControlsService.parentalControlsEnabled) {
     return "disable_doh";
   }
 
@@ -338,14 +354,14 @@ async function platform() {
 
   let indications = Ci.nsINetworkLinkService.NONE_DETECTED;
   try {
-    let linkService = gNetworkLinkService;
+    let linkService = lazy.gNetworkLinkService;
     if (Heuristics.mockLinkService) {
       linkService = Heuristics.mockLinkService;
     }
     indications = linkService.platformDNSIndications;
   } catch (e) {
     if (e.result != Cr.NS_ERROR_NOT_IMPLEMENTED) {
-      Cu.reportError(e);
+      console.error(e);
     }
   }
 
@@ -369,7 +385,7 @@ async function platform() {
 // provider if the check is successful, else null. Currently we only support
 // this for Comcast networks.
 async function providerSteering() {
-  if (!DoHConfigController.currentConfig.providerSteering.enabled) {
+  if (!lazy.DoHConfigController.currentConfig.providerSteering.enabled) {
     return null;
   }
   const TEST_DOMAIN = "doh.test.";
@@ -378,7 +394,7 @@ async function providerSteering() {
   // telemetry, canonicalName is the expected CNAME when looking up doh.test,
   // and uri is the provider's DoH endpoint.
   let steeredProviders =
-    DoHConfigController.currentConfig.providerSteering.providerList;
+    lazy.DoHConfigController.currentConfig.providerSteering.providerList;
 
   if (!steeredProviders || !steeredProviders.length) {
     return null;

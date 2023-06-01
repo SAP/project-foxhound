@@ -18,7 +18,7 @@ namespace layers {
 
 GPUVideoTextureHost::GPUVideoTextureHost(
     TextureFlags aFlags, const SurfaceDescriptorGPUVideo& aDescriptor)
-    : TextureHost(aFlags), mDescriptor(aDescriptor) {
+    : TextureHost(TextureHostType::Unknown, aFlags), mDescriptor(aDescriptor) {
   MOZ_COUNT_CTOR(GPUVideoTextureHost);
 }
 
@@ -53,14 +53,6 @@ TextureHost* GPUVideoTextureHost::EnsureWrappedTextureHost() {
     // https://bugzilla.mozilla.org/show_bug.cgi?id=1630733#c14 for more
     // details.
     return nullptr;
-  }
-
-  if (mWrappedTextureHost->AsBufferTextureHost()) {
-    // TODO(miko): This code path is taken when WebRenderTextureHost wraps
-    // GPUVideoTextureHost, which wraps BufferTextureHost.
-    // Because this creates additional copies of the texture data, we should not
-    // do this.
-    mWrappedTextureHost->AsBufferTextureHost()->DisableExternalTextures();
   }
 
   if (mExternalImageId.isSome()) {
@@ -205,6 +197,27 @@ void GPUVideoTextureHost::NotifyNotUsed() {
     EnsureWrappedTextureHost()->NotifyNotUsed();
   }
   TextureHost::NotifyNotUsed();
+}
+
+bool GPUVideoTextureHost::IsWrappingBufferTextureHost() {
+  if (EnsureWrappedTextureHost()) {
+    return EnsureWrappedTextureHost()->IsWrappingBufferTextureHost();
+  }
+  return false;
+}
+
+bool GPUVideoTextureHost::IsWrappingSurfaceTextureHost() {
+  if (EnsureWrappedTextureHost()) {
+    return EnsureWrappedTextureHost()->IsWrappingSurfaceTextureHost();
+  }
+  return false;
+}
+
+TextureHostType GPUVideoTextureHost::GetTextureHostType() {
+  if (!mWrappedTextureHost) {
+    return TextureHostType::Unknown;
+  }
+  return mWrappedTextureHost->GetTextureHostType();
 }
 
 }  // namespace layers

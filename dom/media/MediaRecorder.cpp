@@ -655,14 +655,10 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
       mMediaStream->RegisterTrackListener(this);
 
       uint8_t trackTypes = 0;
-      int32_t audioTracks = 0;
-      int32_t videoTracks = 0;
       for (const auto& track : mMediaStreamTracks) {
         if (track->AsAudioStreamTrack()) {
-          ++audioTracks;
           trackTypes |= ContainerWriter::CREATE_AUDIO_TRACK;
         } else if (track->AsVideoStreamTrack()) {
-          ++videoTracks;
           trackTypes |= ContainerWriter::CREATE_VIDEO_TRACK;
         } else {
           MOZ_CRASH("Unexpected track type");
@@ -826,7 +822,7 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
     }
 
     mEncoderThread =
-        MakeAndAddRef<TaskQueue>(pool.forget(), "MediaRecorderReadThread");
+        TaskQueue::Create(pool.forget(), "MediaRecorderReadThread");
 
     MOZ_DIAGNOSTIC_ASSERT(!mShutdownBlocker);
     // Add a shutdown blocker so mEncoderThread can be shutdown async.
@@ -1246,6 +1242,12 @@ void MediaRecorder::Start(const Optional<uint32_t>& aTimeslice,
   //    throw a SecurityError DOMException and abort these steps.
   if (mStream) {
     RefPtr<nsIPrincipal> streamPrincipal = mStream->GetPrincipal();
+    if (!streamPrincipal) {
+      // This is more or less part of the step 7, see below.
+      aResult.ThrowNotSupportedError("The MediaStream is inactive");
+      return;
+    }
+
     if (!PrincipalSubsumes(this, streamPrincipal)) {
       aResult.ThrowSecurityError(
           "The MediaStream's isolation properties disallow access from "

@@ -17,11 +17,11 @@
 #include "mozilla/dom/RTCStatsReportBinding.h"  // RTCStatsCollection
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/MozPromise.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
 #include "nsIGlobalObject.h"
 #include "nsPIDOMWindow.h"  // nsPIDOMWindowInner
+#include "nsContentUtils.h"
 #include "nsWrapperCache.h"
 #include "prtime.h"  // PR_Now
 
@@ -64,7 +64,7 @@ class RTCStatsTimestampMaker {
 
   const uint64_t mRandomTimelineSeed;
   const TimeStamp mStartRealtime;
-  const bool mCrossOriginIsolated;
+  const RTPCallerType mRTPCallerType;
   const DOMHighResTimeStamp mStartWallClockRaw;
 };
 
@@ -80,7 +80,7 @@ typedef MozPromise<UniquePtr<RTCStatsReportInternal>, nsresult, true>
 class RTCStatsReport final : public nsWrapperCache {
  public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(RTCStatsReport)
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(RTCStatsReport)
+  NS_DECL_CYCLE_COLLECTION_NATIVE_WRAPPERCACHE_CLASS(RTCStatsReport)
 
   explicit RTCStatsReport(nsPIDOMWindowInner* aParent);
 

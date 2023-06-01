@@ -49,7 +49,10 @@ async function getAndExpireCookiesForRedirectTest(location) {
 
 // httpCookieTest sets a `cookie` (via HTTP), then asserts it was or was not set
 // via `expectedValue` (via the DOM). Then cleans it up (via test driver). Most
-// tests do not set a Path attribute, so `defaultPath` defaults to true.
+// tests do not set a Path attribute, so `defaultPath` defaults to true. If the
+// cookie values are expected to cause the HTTP request or response to fail, the
+// test can be made to pass when this happens via `allowFetchFailure`, which
+// defaults to false.
 //
 // `cookie` may be a single cookie string, or an array of cookie strings, where
 // the order of the array items represents the order of the Set-Cookie headers
@@ -57,27 +60,45 @@ async function getAndExpireCookiesForRedirectTest(location) {
 //
 // Note: this function has a dependency on testdriver.js. Any test files calling
 // it should include testdriver.js and testdriver-vendor.js
-function httpCookieTest(cookie, expectedValue, name, defaultPath = true) {
-  return promise_test(async (t) => {
-    // The result is ignored as we're expiring cookies for cleaning here.
-    await getAndExpireCookiesForDefaultPathTest();
-    await test_driver.delete_all_cookies();
-    t.add_cleanup(test_driver.delete_all_cookies);
+function httpCookieTest(cookie, expectedValue, name, defaultPath = true,
+                        allowFetchFailure = false) {
+  return promise_test((t) => {
+    var skipAssertions = false;
+    return new Promise(async (resolve, reject) => {
+      // The result is ignored as we're expiring cookies for cleaning here.
+      await getAndExpireCookiesForDefaultPathTest();
+      await test_driver.delete_all_cookies();
+      t.add_cleanup(test_driver.delete_all_cookies);
 
-    let encodedCookie = encodeURIComponent(JSON.stringify(cookie));
-    await fetch(`/cookies/resources/cookie.py?set=${encodedCookie}`);
-    let cookies = document.cookie;
-    if (defaultPath) {
-      // for the tests where a Path is set from the request-uri
-      // path, we need to go look for cookies in an iframe at that
-      // default path.
-      cookies = await getAndExpireCookiesForDefaultPathTest();
-    }
-    if (Boolean(expectedValue)) {
-      assert_equals(cookies, expectedValue, 'The cookie was set as expected.');
-    } else {
-      assert_equals(cookies, expectedValue, 'The cookie was rejected.');
-    }
+      let encodedCookie = encodeURIComponent(JSON.stringify(cookie));
+      try {
+        await fetch(`/cookies/resources/cookie.py?set=${encodedCookie}`);
+      } catch {
+        if (allowFetchFailure) {
+          skipAssertions = true;
+          resolve();
+        } else {
+          reject('Failed to fetch /cookies/resources/cookie.py');
+        }
+      }
+      let cookies = document.cookie;
+      if (defaultPath) {
+        // for the tests where a Path is set from the request-uri
+        // path, we need to go look for cookies in an iframe at that
+        // default path.
+        cookies = await getAndExpireCookiesForDefaultPathTest();
+      }
+      resolve(cookies);
+    }).then((cookies) => {
+      if (skipAssertions) {
+        return;
+      }
+      if (Boolean(expectedValue)) {
+        assert_equals(cookies, expectedValue, 'The cookie was set as expected.');
+      } else {
+        assert_equals(cookies, expectedValue, 'The cookie was rejected.');
+      }
+    });
   }, name);
 }
 
@@ -119,7 +140,15 @@ function domCookieTest(cookie, expectedValue, name) {
     await test_driver.delete_all_cookies();
     t.add_cleanup(test_driver.delete_all_cookies);
 
-    document.cookie = cookie;
+    if (typeof cookie === "string") {
+      document.cookie = cookie;
+    } else if (Array.isArray(cookie)) {
+      for (const singlecookie of cookie) {
+        document.cookie = singlecookie;
+      }
+    } else {
+      throw new Error('Unexpected type passed into domCookieTest as cookie: ' + typeof cookie);
+    }
     let cookies = document.cookie;
     assert_equals(cookies, expectedValue, Boolean(expectedValue) ?
                                           'The cookie was set as expected.' :
@@ -142,4 +171,16 @@ function getCtlCharacters() {
 // Note: Cookie length checking should ignore the "=".
 function cookieStringWithNameAndValueLengths(nameLength, valueLength) {
   return `${"t".repeat(nameLength)}=${"1".repeat(valueLength)}`;
+}
+
+// Finds the root window.top.opener and directs test_driver commands to it.
+//
+// If you see a message like: "Error: Tried to run in a non-testharness window
+// without a call to set_test_context." then you probably need to call this.
+function setTestContextUsingRootWindow() {
+  let test_window = window.top;
+  while (test_window.opener && !test_window.opener.closed) {
+    test_window = test_window.opener.top;
+  }
+  test_driver.set_test_context(test_window);
 }

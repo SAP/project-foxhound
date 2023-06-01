@@ -1,21 +1,27 @@
-/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=4:tabstop=4:
+/* -*- Mode: C; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim:expandtab:shiftwidth=2:tabstop=2:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "base/message_loop.h"  // for MessageLoop
 #include "nsWaylandDisplay.h"
 #include "DMABufLibWrapper.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "WidgetUtilsGtk.h"
+#include "gfxConfig.h"
+#include "nsIGfxInfo.h"
+#include "mozilla/Components.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <dlfcn.h>
+
+using namespace mozilla::gfx;
 
 namespace mozilla {
 namespace widget {
@@ -26,11 +32,11 @@ namespace widget {
 // Use static lock to protect dri operation as
 // gbm_dri.c is not thread safe.
 // https://gitlab.freedesktop.org/mesa/mesa/-/issues/4422
-mozilla::StaticMutex nsGbmLib::sDRILock;
+mozilla::StaticMutex nsGbmLib::sDRILock MOZ_UNANNOTATED;
 
+bool nsGbmLib::sLoaded = false;
 void* nsGbmLib::sGbmLibHandle = nullptr;
 void* nsGbmLib::sXf86DrmLibHandle = nullptr;
-bool nsGbmLib::sLibLoaded = false;
 CreateDeviceFunc nsGbmLib::sCreateDevice;
 DestroyDeviceFunc nsGbmLib::sDestroyDevice;
 CreateFunc nsGbmLib::sCreate;
@@ -47,6 +53,8 @@ GetStrideForPlaneFunc nsGbmLib::sGetStrideForPlane;
 GetOffsetFunc nsGbmLib::sGetOffset;
 DeviceIsFormatSupportedFunc nsGbmLib::sDeviceIsFormatSupported;
 DrmPrimeHandleToFDFunc nsGbmLib::sDrmPrimeHandleToFD;
+CreateSurfaceFunc nsGbmLib::sCreateSurface;
+DestroySurfaceFunc nsGbmLib::sDestroySurface;
 
 bool nsGbmLib::IsLoaded() {
   return sCreateDevice != nullptr && sDestroyDevice != nullptr &&
@@ -56,67 +64,70 @@ bool nsGbmLib::IsLoaded() {
          sUnmap != nullptr && sGetPlaneCount != nullptr &&
          sGetHandleForPlane != nullptr && sGetStrideForPlane != nullptr &&
          sGetOffset != nullptr && sDeviceIsFormatSupported != nullptr &&
-         sDrmPrimeHandleToFD != nullptr;
-}
-
-bool nsGbmLib::IsAvailable() {
-  if (!Load()) {
-    return false;
-  }
-  return IsLoaded();
+         sDrmPrimeHandleToFD != nullptr && sCreateSurface != nullptr &&
+         sDestroySurface != nullptr;
 }
 
 bool nsGbmLib::Load() {
-  if (!sGbmLibHandle && !sLibLoaded) {
-    LOGDMABUF(("Loading DMABuf system library %s ...\n", GBMLIB_NAME));
-    sLibLoaded = true;
-
-    sGbmLibHandle = dlopen(GBMLIB_NAME, RTLD_LAZY | RTLD_LOCAL);
-    if (!sGbmLibHandle) {
-      LOGDMABUF(("Failed to load %s, dmabuf isn't available.\n", GBMLIB_NAME));
-      return false;
-    }
-
-    sCreateDevice = (CreateDeviceFunc)dlsym(sGbmLibHandle, "gbm_create_device");
-    sDestroyDevice =
-        (DestroyDeviceFunc)dlsym(sGbmLibHandle, "gbm_device_destroy");
-    sCreate = (CreateFunc)dlsym(sGbmLibHandle, "gbm_bo_create");
-    sCreateWithModifiers = (CreateWithModifiersFunc)dlsym(
-        sGbmLibHandle, "gbm_bo_create_with_modifiers");
-    sGetModifier = (GetModifierFunc)dlsym(sGbmLibHandle, "gbm_bo_get_modifier");
-    sGetStride = (GetStrideFunc)dlsym(sGbmLibHandle, "gbm_bo_get_stride");
-    sGetFd = (GetFdFunc)dlsym(sGbmLibHandle, "gbm_bo_get_fd");
-    sDestroy = (DestroyFunc)dlsym(sGbmLibHandle, "gbm_bo_destroy");
-    sMap = (MapFunc)dlsym(sGbmLibHandle, "gbm_bo_map");
-    sUnmap = (UnmapFunc)dlsym(sGbmLibHandle, "gbm_bo_unmap");
-    sGetPlaneCount =
-        (GetPlaneCountFunc)dlsym(sGbmLibHandle, "gbm_bo_get_plane_count");
-    sGetHandleForPlane = (GetHandleForPlaneFunc)dlsym(
-        sGbmLibHandle, "gbm_bo_get_handle_for_plane");
-    sGetStrideForPlane = (GetStrideForPlaneFunc)dlsym(
-        sGbmLibHandle, "gbm_bo_get_stride_for_plane");
-    sGetOffset = (GetOffsetFunc)dlsym(sGbmLibHandle, "gbm_bo_get_offset");
-    sDeviceIsFormatSupported = (DeviceIsFormatSupportedFunc)dlsym(
-        sGbmLibHandle, "gbm_device_is_format_supported");
-
-    sXf86DrmLibHandle = dlopen(DRMLIB_NAME, RTLD_LAZY | RTLD_LOCAL);
-    if (!sXf86DrmLibHandle) {
-      LOGDMABUF(("Failed to load %s, dmabuf isn't available.\n", DRMLIB_NAME));
-      return false;
-    }
-    sDrmPrimeHandleToFD =
-        (DrmPrimeHandleToFDFunc)dlsym(sXf86DrmLibHandle, "drmPrimeHandleToFD");
-    if (!IsLoaded()) {
-      LOGDMABUF(("Failed to load all symbols from %s\n", GBMLIB_NAME));
-    }
+  static bool sTriedToLoad = false;
+  if (sTriedToLoad) {
+    return sLoaded;
   }
 
-  return sGbmLibHandle;
+  sTriedToLoad = true;
+
+  MOZ_ASSERT(!sGbmLibHandle);
+  MOZ_ASSERT(!sLoaded);
+
+  LOGDMABUF(("Loading DMABuf system library %s ...\n", GBMLIB_NAME));
+
+  sGbmLibHandle = dlopen(GBMLIB_NAME, RTLD_LAZY | RTLD_LOCAL);
+  if (!sGbmLibHandle) {
+    LOGDMABUF(("Failed to load %s, dmabuf isn't available.\n", GBMLIB_NAME));
+    return false;
+  }
+
+  sCreateDevice = (CreateDeviceFunc)dlsym(sGbmLibHandle, "gbm_create_device");
+  sDestroyDevice =
+      (DestroyDeviceFunc)dlsym(sGbmLibHandle, "gbm_device_destroy");
+  sCreate = (CreateFunc)dlsym(sGbmLibHandle, "gbm_bo_create");
+  sCreateWithModifiers = (CreateWithModifiersFunc)dlsym(
+      sGbmLibHandle, "gbm_bo_create_with_modifiers");
+  sGetModifier = (GetModifierFunc)dlsym(sGbmLibHandle, "gbm_bo_get_modifier");
+  sGetStride = (GetStrideFunc)dlsym(sGbmLibHandle, "gbm_bo_get_stride");
+  sGetFd = (GetFdFunc)dlsym(sGbmLibHandle, "gbm_bo_get_fd");
+  sDestroy = (DestroyFunc)dlsym(sGbmLibHandle, "gbm_bo_destroy");
+  sMap = (MapFunc)dlsym(sGbmLibHandle, "gbm_bo_map");
+  sUnmap = (UnmapFunc)dlsym(sGbmLibHandle, "gbm_bo_unmap");
+  sGetPlaneCount =
+      (GetPlaneCountFunc)dlsym(sGbmLibHandle, "gbm_bo_get_plane_count");
+  sGetHandleForPlane = (GetHandleForPlaneFunc)dlsym(
+      sGbmLibHandle, "gbm_bo_get_handle_for_plane");
+  sGetStrideForPlane = (GetStrideForPlaneFunc)dlsym(
+      sGbmLibHandle, "gbm_bo_get_stride_for_plane");
+  sGetOffset = (GetOffsetFunc)dlsym(sGbmLibHandle, "gbm_bo_get_offset");
+  sDeviceIsFormatSupported = (DeviceIsFormatSupportedFunc)dlsym(
+      sGbmLibHandle, "gbm_device_is_format_supported");
+  sCreateSurface =
+      (CreateSurfaceFunc)dlsym(sGbmLibHandle, "gbm_surface_create");
+  sDestroySurface =
+      (DestroySurfaceFunc)dlsym(sGbmLibHandle, "gbm_surface_destroy");
+
+  sXf86DrmLibHandle = dlopen(DRMLIB_NAME, RTLD_LAZY | RTLD_LOCAL);
+  if (!sXf86DrmLibHandle) {
+    LOGDMABUF(("Failed to load %s, dmabuf isn't available.\n", DRMLIB_NAME));
+    return false;
+  }
+  sDrmPrimeHandleToFD =
+      (DrmPrimeHandleToFDFunc)dlsym(sXf86DrmLibHandle, "drmPrimeHandleToFD");
+  sLoaded = IsLoaded();
+  if (!sLoaded) {
+    LOGDMABUF(("Failed to load all symbols from %s\n", GBMLIB_NAME));
+  }
+  return sLoaded;
 }
 
-gbm_device* nsDMABufDevice::GetGbmDevice() {
-  return IsDMABufEnabled() ? mGbmDevice : nullptr;
-}
+gbm_device* nsDMABufDevice::GetGbmDevice() { return mGbmDevice; }
 
 static void dmabuf_modifiers(void* data,
                              struct zwp_linux_dmabuf_v1* zwp_linux_dmabuf,
@@ -218,23 +229,12 @@ nsDMABufDevice::~nsDMABufDevice() {
 int nsDMABufDevice::GetDRMFd() { return mDRMFd; }
 
 bool nsDMABufDevice::Configure(nsACString& aFailureId) {
-  LOGDMABUF(("nsDMABufDevice::Configure()"));
-
-  MOZ_ASSERT(!mInitialized);
-  mInitialized = true;
-
-  bool isDMABufUsed = (
-#ifdef NIGHTLY_BUILD
-      StaticPrefs::widget_dmabuf_textures_enabled() ||
-#endif
-      StaticPrefs::widget_dmabuf_webgl_enabled());
-
-  if (!isDMABufUsed) {
-    // Disabled by user, just quit.
-    LOGDMABUF(("IsDMABufEnabled(): Disabled by preferences."));
-    aFailureId = "FEATURE_FAILURE_NO_PREFS_ENABLED";
-    return false;
+  if (mInitialized) {
+    return true;
   }
+
+  LOGDMABUF(("nsDMABufDevice::Configure()"));
+  mInitialized = true;
 
   if (!nsGbmLib::IsAvailable()) {
     LOGDMABUF(("nsGbmLib is not available!"));
@@ -255,42 +255,23 @@ bool nsDMABufDevice::Configure(nsACString& aFailureId) {
   return true;
 }
 
-bool nsDMABufDevice::IsDMABufEnabled() {
-  if (!mInitialized) {
-    MOZ_ASSERT(!XRE_IsParentProcess());
-    nsCString failureId;
-    return Configure(failureId);
-  }
-  return !!mGbmDevice;
-}
-
 #ifdef NIGHTLY_BUILD
 bool nsDMABufDevice::IsDMABufTexturesEnabled() {
-  return gfx::gfxVars::UseDMABuf() && IsDMABufEnabled() &&
+  return gfx::gfxVars::UseDMABuf() &&
          StaticPrefs::widget_dmabuf_textures_enabled();
 }
 #else
 bool nsDMABufDevice::IsDMABufTexturesEnabled() { return false; }
 #endif
-bool nsDMABufDevice::IsDMABufVAAPIEnabled() {
-  LOGDMABUF(
-      ("nsDMABufDevice::IsDMABufVAAPIEnabled: EGL %d "
-       "media_ffmpeg_vaapi_enabled %d CanUseHardwareVideoDecoding %d "
-       "XRE_IsRDDProcess %d\n",
-       gfx::gfxVars::UseEGL(), StaticPrefs::media_ffmpeg_vaapi_enabled(),
-       gfx::gfxVars::CanUseHardwareVideoDecoding(), XRE_IsRDDProcess()));
-  return gfx::gfxVars::UseEGL() && StaticPrefs::media_ffmpeg_vaapi_enabled() &&
-         XRE_IsRDDProcess() && gfx::gfxVars::CanUseHardwareVideoDecoding();
-}
 bool nsDMABufDevice::IsDMABufWebGLEnabled() {
   LOGDMABUF(
-      ("nsDMABufDevice::IsDMABufWebGLEnabled: EGL %d mUseWebGLDmabufBackend %d "
-       "DMABufEnabled %d  "
+      ("nsDMABufDevice::IsDMABufWebGLEnabled: UseDMABuf %d "
+       "mUseWebGLDmabufBackend %d "
        "widget_dmabuf_webgl_enabled %d\n",
-       gfx::gfxVars::UseEGL(), mUseWebGLDmabufBackend, IsDMABufEnabled(),
+       gfx::gfxVars::UseDMABuf(), mUseWebGLDmabufBackend,
        StaticPrefs::widget_dmabuf_webgl_enabled()));
   return gfx::gfxVars::UseDMABuf() && mUseWebGLDmabufBackend &&
-         IsDMABufEnabled() && StaticPrefs::widget_dmabuf_webgl_enabled();
+         StaticPrefs::widget_dmabuf_webgl_enabled();
 }
 
 void nsDMABufDevice::DisableDMABufWebGL() { mUseWebGLDmabufBackend = false; }
@@ -338,6 +319,14 @@ void nsDMABufDevice::ResetFormatsModifiers() {
 nsDMABufDevice* GetDMABufDevice() {
   static nsDMABufDevice dmaBufDevice;
   return &dmaBufDevice;
+}
+
+nsDMABufDevice* GetAndConfigureDMABufDevice() {
+  nsCString failureId;
+  if (GetDMABufDevice()->Configure(failureId)) {
+    return GetDMABufDevice();
+  }
+  return nullptr;
 }
 
 }  // namespace widget

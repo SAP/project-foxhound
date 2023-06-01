@@ -136,11 +136,12 @@ shell = help_shell | shell
 @checking("for Python 3", callback=lambda x: "%s (%s)" % (x.path, x.str_version))
 @imports("sys")
 @imports(_from="mach.site", _import="PythonVirtualenv")
+@imports(_from="os.path", _import="realpath")
 def virtualenv_python3():
     return namespace(
         # sys.executable is currently not updated for in-process activations. However,
         # sys.prefix is, so we can calculate the python executable's path from there.
-        path=normsep(PythonVirtualenv(sys.prefix).python_path),
+        path=normsep(PythonVirtualenv(realpath(sys.prefix)).python_path),
         str_version=".".join(str(i) for i in sys.version_info[0:3]),
     )
 
@@ -401,6 +402,24 @@ def default_project(build_env, js_package):
 option("--enable-project", nargs=1, default=default_project, help="Project to build")
 
 
+# Artifact builds
+# ==============================================================
+
+option(
+    "--enable-artifact-builds",
+    env="MOZ_ARTIFACT_BUILDS",
+    help="Download and use prebuilt binary artifacts.",
+)
+
+
+@depends("--enable-artifact-builds")
+def artifact_builds(value):
+    if value:
+        return True
+
+
+set_config("MOZ_ARTIFACT_BUILDS", artifact_builds)
+
 # Host and target systems
 # ==============================================================
 option("--host", nargs=1, help="Define the system type performing the build")
@@ -525,6 +544,9 @@ def split_triplet(triplet, allow_msvc=False, allow_wasi=False):
         endianness = "little"
     elif cpu in ("riscv64", "riscv64gc"):
         canonical_cpu = "riscv64"
+        endianness = "little"
+    elif cpu.startswith("loongarch64"):
+        canonical_cpu = "loongarch64"
         endianness = "little"
     elif cpu == "sh4":
         canonical_cpu = "sh4"
@@ -702,15 +724,6 @@ set_define("HAVE_64BIT_BUILD", have_64_bit)
 add_old_configure_assignment("HAVE_64BIT_BUILD", have_64_bit)
 
 
-@depends(host)
-def host_os_kernel_major_version(host):
-    versions = host.raw_os.split(".")
-    version = "".join(x for x in versions[0] if x.isdigit())
-    return version
-
-
-set_config("HOST_MAJOR_VERSION", host_os_kernel_major_version)
-
 # Autoconf needs these set
 
 
@@ -781,6 +794,12 @@ def target_is_windows(target):
         return True
 
 
+@depends(host)
+def host_is_windows(host):
+    if host.kernel == "WINNT":
+        return True
+
+
 set_define("_WINDOWS", target_is_windows)
 set_define("WIN32", target_is_windows)
 set_define("XP_WIN", target_is_windows)
@@ -810,21 +829,27 @@ def target_is_osx(target):
         return True
 
 
+@depends(host)
+def host_is_osx(host):
+    if host.os == "OSX":
+        return True
+
+
 set_define("XP_MACOSX", target_is_osx)
 
 
 @depends(target)
-def target_is_linux(target):
+def target_has_linux_kernel(target):
     if target.kernel == "Linux":
         return True
 
 
-set_define("XP_LINUX", target_is_linux)
+set_define("XP_LINUX", target_has_linux_kernel)
 
 
 @depends(target)
 def target_is_linux_or_wasi(target):
-    if target.kernel in ("Linux", "WASI"):
+    if (target.kernel == "Linux" and target.os == "GNU") or target.kernel == "WASI":
         return True
 
 
@@ -950,16 +975,35 @@ def version_path(path):
     return path
 
 
+# Allow to easily build nightly with a release / beta configuration so that we
+# can have the same options we'd have on a release version.
+# This is useful for performance profiling, as there are things that we don't
+# enable in release (like the background hang monitor) that can affect
+# performance.
+option(
+    "--as-milestone",
+    help="Build with another milestone configuration (e.g., as release)",
+    choices=("early-beta", "late-beta", "release"),
+    default=None,
+)
+
+
 # set RELEASE_OR_BETA and NIGHTLY_BUILD variables depending on the cycle we're in
 # The logic works like this:
 # - if we have "a1" in GRE_MILESTONE, we're building Nightly (define NIGHTLY_BUILD)
 # - otherwise, if we have "a" in GRE_MILESTONE, we're building Nightly or Aurora
 # - otherwise, we're building Release/Beta (define RELEASE_OR_BETA)
-@depends(build_environment, build_project, version_path, "--help")
+@depends(
+    build_environment,
+    build_project,
+    version_path,
+    "--as-milestone",
+    "--help",
+)
 @imports(_from="__builtin__", _import="open")
 @imports("os")
 @imports("re")
-def milestone(build_env, build_project, version_path, _):
+def milestone(build_env, build_project, version_path, as_milestone, _):
     versions = []
     paths = ["config/milestone.txt"]
     if build_project == "js":
@@ -986,6 +1030,17 @@ def milestone(build_env, build_project, version_path, _):
                 die("Could not find a version number in {}".format(p))
             versions.append(content[-1])
 
+    is_early_beta_or_earlier = None
+    if as_milestone:
+        if "a1" not in versions[0]:
+            # We could make this work with some effort
+            die("--as-milestone only works on nightly builds")
+        as_milestone = as_milestone[0]
+        as_milestone_flag = "" if as_milestone == "release" else "b1"
+        versions = [v.replace("a1", as_milestone_flag) for v in versions]
+        if as_milestone == "early-beta":
+            is_early_beta_or_earlier = True
+
     milestone, firefox_version, firefox_version_display = versions[:3]
 
     # version.txt content from the project directory if there is one, otherwise
@@ -996,7 +1051,7 @@ def milestone(build_env, build_project, version_path, _):
     # firefox version for display.
     app_version_display = versions[-1] if len(versions) > 3 else firefox_version_display
 
-    is_nightly = is_release_or_beta = is_early_beta_or_earlier = None
+    is_nightly = is_release_or_beta = None
 
     if "a1" in milestone:
         is_nightly = True
@@ -1007,21 +1062,22 @@ def milestone(build_env, build_project, version_path, _):
     m = re.search(r"([ab]\d+)", milestone)
     ab_patch = m.group(1) if m else ""
 
-    defines = os.path.join(build_env.topsrcdir, "build", "defines.sh")
-    with open(defines, "r") as fh:
-        for line in fh.read().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            name, _, value = line.partition("=")
-            name = name.strip()
-            value = value.strip()
-            if name != "EARLY_BETA_OR_EARLIER":
-                die(
-                    "Only the EARLY_BETA_OR_EARLIER variable can be set in build/defines.sh"
-                )
-            if value and any(x in app_version_display for x in "ab"):
-                is_early_beta_or_earlier = True
+    if not as_milestone:
+        defines = os.path.join(build_env.topsrcdir, "build", "defines.sh")
+        with open(defines, "r") as fh:
+            for line in fh.read().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                name, _, value = line.partition("=")
+                name = name.strip()
+                value = value.strip()
+                if name != "EARLY_BETA_OR_EARLIER":
+                    die(
+                        "Only the EARLY_BETA_OR_EARLIER variable can be set in build/defines.sh"
+                    )
+                if value and any(x in app_version_display for x in "ab"):
+                    is_early_beta_or_earlier = True
 
     # Only expose the major version milestone in the UA string and hide the
     # patch leve (bugs 572659 and 870868).
@@ -1105,6 +1161,23 @@ def mozbuild_state_path(path, _):
     if path:
         return normalize_path(path[0])
     return normalize_path(os.path.expanduser(os.path.join("~", ".mozbuild")))
+
+
+@depends("MOZILLABUILD", shell, host_is_windows)
+@imports(_from="pathlib", _import="Path")
+def mozillabuild_bin_paths(mozillabuild, shell, host_is_windows):
+    paths = []
+    if not mozillabuild or not host_is_windows:
+        return paths
+    paths.append(os.path.dirname(shell))
+    paths.append(str(Path(mozillabuild[0]) / "bin"))
+    return paths
+
+
+@depends(mozillabuild_bin_paths)
+@imports("os")
+def prefer_mozillabuild_path(mozillabuild_bin_paths):
+    return mozillabuild_bin_paths + os.environ["PATH"].split(os.pathsep)
 
 
 # A template providing a shorthand for setting a variable. The created

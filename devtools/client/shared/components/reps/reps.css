@@ -149,6 +149,26 @@
   cursor: pointer;
 }
 
+/* JsonML reps can be nested, though only the top-level rep needs layout
+ * adjustments to align it with the toggle arrow and fit its width to its
+ * contents. */
+.objectBox-jsonml-wrapper {
+  display: inline-block;
+  width: fit-content;
+  word-break: break-word;
+  line-height: normal;
+}
+
+.objectBox-jsonml-wrapper[data-expandable="true"] {
+  cursor: default;
+}
+
+.objectBox-jsonml-wrapper .jsonml-header-collapse-button {
+  margin: 0 4px 2px 0;
+  padding: 0;
+  vertical-align: middle;
+}
+
 /******************************************************************************/
 
 .objectBox-event,
@@ -249,10 +269,17 @@
 /******************************************************************************/
 /* Open DOMNode in inspector or Accessible in accessibility inspector button */
 
-button.open-accessibility-inspector,
+button.open-accessibility-inspector {
+  mask: url("chrome://devtools/content/shared/components/reps/images/open-a11y.svg")
+    no-repeat;
+}
+
 button.open-inspector {
   mask: url("chrome://devtools/content/shared/components/reps/images/open-inspector.svg")
     no-repeat;
+}
+
+button:is(.open-accessibility-inspector,.open-inspector) {
   display: inline-block;
   vertical-align: top;
   height: 15px;

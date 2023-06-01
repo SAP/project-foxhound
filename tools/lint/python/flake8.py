@@ -10,7 +10,6 @@ import sys
 
 import mozfile
 import mozpack.path as mozpath
-
 from mozlint import result
 from mozlint.pathutils import expand_exclusions
 
@@ -109,6 +108,7 @@ def lint(paths, config, **lintargs):
             fix_cmd.extend(["--exclude", ",".join(config["exclude"])])
 
         subprocess.call(fix_cmd + paths)
+
         results = run(paths, config, **lintargs)
 
         fixed = fixed - len(results)
@@ -117,6 +117,7 @@ def lint(paths, config, **lintargs):
 
 
 def run(paths, config, **lintargs):
+    from flake8 import __version__ as flake8_version
     from flake8.main.application import Application
 
     log = lintargs["log"]
@@ -125,7 +126,7 @@ def run(paths, config, **lintargs):
 
     # Run flake8.
     app = Application()
-    log.debug("flake8 version={}".format(app.version))
+    log.debug("flake8 version={}".format(flake8_version))
 
     output_file = mozfile.NamedTemporaryFile(mode="r")
     flake8_cmd = [
@@ -166,9 +167,11 @@ def run(paths, config, **lintargs):
             p for p in paths if not any(p.startswith(e) for e in config["exclude"])
         ]
 
-        self.args = self.args + list(expand_exclusions(filtered, config, root))
+        self.options.filenames = self.options.filenames + list(
+            expand_exclusions(filtered, config, root)
+        )
 
-        if not self.args:
+        if not self.options.filenames:
             raise NothingToLint
         return orig_make_file_checker_manager()
 
@@ -189,6 +192,8 @@ def run(paths, config, **lintargs):
 
     results = []
 
+    WARNING_RULES = set(config.get("warning-rules", []))
+
     def process_line(line):
         # Escape slashes otherwise JSON conversion will not work
         line = line.replace("\\", "\\\\")
@@ -200,6 +205,9 @@ def run(paths, config, **lintargs):
 
         if res.get("code") in LINE_OFFSETS:
             res["lineoffset"] = LINE_OFFSETS[res["code"]]
+
+        if res["rule"] in WARNING_RULES:
+            res["level"] = "warning"
 
         results.append(result.from_config(config, **res))
 

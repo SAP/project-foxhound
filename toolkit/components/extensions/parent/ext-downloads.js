@@ -4,22 +4,12 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Downloads",
-  "resource://gre/modules/Downloads.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "DownloadPaths",
-  "resource://gre/modules/DownloadPaths.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  DownloadPaths: "resource://gre/modules/DownloadPaths.sys.mjs",
+  Downloads: "resource://gre/modules/Downloads.sys.mjs",
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm"
-);
 ChromeUtils.defineModuleGetter(
   this,
   "DownloadLastDir",
@@ -210,7 +200,7 @@ class DownloadItem {
     return null;
   } // TODO
   get estimatedEndTime() {
-    // Based on the code in summarizeDownloads() in DownloadsCommon.jsm
+    // Based on the code in summarizeDownloads() in DownloadsCommon.sys.mjs
     if (this.download.hasProgress && this.download.speed > 0) {
       let sizeLeft = this.download.totalBytes - this.download.currentBytes;
       let timeLeftInSeconds = sizeLeft / this.download.speed;
@@ -319,7 +309,7 @@ class DownloadItem {
 }
 
 // DownloadMap maps back and forth between the numeric identifiers used in
-// the downloads WebExtension API and a Download object from the Downloads jsm.
+// the downloads WebExtension API and a Download object from the Downloads sys.mjs.
 // TODO Bug 1247794: make id and extension info persistent
 const DownloadMap = new (class extends EventEmitter {
   constructor() {
@@ -609,32 +599,65 @@ const queryHelper = query => {
   });
 };
 
-function downloadEventManagerAPI(context, name, event, listener) {
-  let register = fire => {
-    const handler = (what, item) => {
-      if (context.privateBrowsingAllowed || !item.incognito) {
-        listener(fire, what, item);
-      }
-    };
-    let registerPromise = DownloadMap.getDownloadList().then(() => {
-      DownloadMap.on(event, handler);
-    });
-    return () => {
-      registerPromise.then(() => {
-        DownloadMap.off(event, handler);
+this.downloads = class extends ExtensionAPIPersistent {
+  downloadEventRegistrar(event, listener) {
+    let { extension } = this;
+    return ({ fire }) => {
+      const handler = (what, item) => {
+        if (extension.privateBrowsingAllowed || !item.incognito) {
+          listener(fire, what, item);
+        }
+      };
+      let registerPromise = DownloadMap.getDownloadList().then(() => {
+        DownloadMap.on(event, handler);
       });
+      return {
+        unregister() {
+          registerPromise.then(() => {
+            DownloadMap.off(event, handler);
+          });
+        },
+        convert(_fire) {
+          fire = _fire;
+        },
+      };
     };
+  }
+
+  PERSISTENT_EVENTS = {
+    onChanged: this.downloadEventRegistrar("change", (fire, what, item) => {
+      let changes = {};
+      const noundef = val => (val === undefined ? null : val);
+      DOWNLOAD_ITEM_CHANGE_FIELDS.forEach(fld => {
+        if (item[fld] != item.prechange[fld]) {
+          changes[fld] = {
+            previous: noundef(item.prechange[fld]),
+            current: noundef(item[fld]),
+          };
+        }
+      });
+      if (Object.keys(changes).length) {
+        changes.id = item.id;
+        fire.async(changes);
+      }
+    }),
+
+    onCreated: this.downloadEventRegistrar("create", (fire, what, item) => {
+      fire.async(item.serialize());
+    }),
+
+    onErased: this.downloadEventRegistrar("erase", (fire, what, item) => {
+      fire.async(item.id);
+    }),
   };
 
-  return new EventManager({ context, name, register }).api();
-}
-
-this.downloads = class extends ExtensionAPI {
   getAPI(context) {
     let { extension } = context;
     return {
       downloads: {
         download(options) {
+          const isHandlingUserInput =
+            context.callContextData?.isHandlingUserInput;
           let { filename } = options;
           if (filename && AppConstants.platform === "win") {
             // cross platform javascript code uses "/"
@@ -983,6 +1006,9 @@ this.downloads = class extends ExtensionAPI {
               }
 
               return Downloads.createDownload({
+                // Only open the download panel if the method has been called
+                // while handling user input (See Bug 1759231).
+                openDownloadsListOnStart: isHandlingUserInput,
                 source,
                 target: {
                   path: target,
@@ -1243,45 +1269,26 @@ this.downloads = class extends ExtensionAPI {
         //   ...
         // }
 
-        onChanged: downloadEventManagerAPI(
+        onChanged: new EventManager({
           context,
-          "downloads.onChanged",
-          "change",
-          (fire, what, item) => {
-            let changes = {};
-            const noundef = val => (val === undefined ? null : val);
-            DOWNLOAD_ITEM_CHANGE_FIELDS.forEach(fld => {
-              if (item[fld] != item.prechange[fld]) {
-                changes[fld] = {
-                  previous: noundef(item.prechange[fld]),
-                  current: noundef(item[fld]),
-                };
-              }
-            });
-            if (Object.keys(changes).length) {
-              changes.id = item.id;
-              fire.async(changes);
-            }
-          }
-        ),
+          module: "downloads",
+          event: "onChanged",
+          extensionApi: this,
+        }).api(),
 
-        onCreated: downloadEventManagerAPI(
+        onCreated: new EventManager({
           context,
-          "downloads.onCreated",
-          "create",
-          (fire, what, item) => {
-            fire.async(item.serialize());
-          }
-        ),
+          module: "downloads",
+          event: "onCreated",
+          extensionApi: this,
+        }).api(),
 
-        onErased: downloadEventManagerAPI(
+        onErased: new EventManager({
           context,
-          "downloads.onErased",
-          "erase",
-          (fire, what, item) => {
-            fire.async(item.id);
-          }
-        ),
+          module: "downloads",
+          event: "onErased",
+          extensionApi: this,
+        }).api(),
 
         onDeterminingFilename: ignoreEvent(
           context,

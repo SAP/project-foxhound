@@ -60,12 +60,15 @@ class MediaSink {
   // aTimeStamp returns the timeStamp corresponding to the returned position
   // which is used by the compositor to derive the render time of video frames.
   // Must be called after playback starts.
-  virtual media::TimeUnit GetPosition(
-      TimeStamp* aTimeStamp = nullptr) const = 0;
+  virtual media::TimeUnit GetPosition(TimeStamp* aTimeStamp = nullptr) = 0;
 
   // Return true if there are data consumed but not played yet.
   // Can be called in any state.
   virtual bool HasUnplayedFrames(TrackType aType) const = 0;
+
+  // Return the duration of data consumed but not played yet.
+  // Can be called in any state.
+  virtual media::TimeUnit UnplayedDuration(TrackType aType) const = 0;
 
   // Set volume of the audio track.
   // Do nothing if this sink has no audio track.
@@ -117,7 +120,7 @@ class MediaSink {
 
   // The audio output device this MediaSink is playing audio data to. The
   // default device is used if this returns null.
-  virtual const AudioDeviceInfo* AudioDevice() { return nullptr; }
+  virtual const AudioDeviceInfo* AudioDevice() const = 0;
 
   // Called on the state machine thread to shut down the sink. All resources
   // allocated by this sink should be released.

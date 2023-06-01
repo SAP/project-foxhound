@@ -65,13 +65,6 @@ class ImageBridgeParent final : public PImageBridgeParent,
   void NotifyNotUsed(PTextureParent* aTexture,
                      uint64_t aTransactionId) override;
 
-  static void NotifyBufferNotUsedOfCompositorBridge(
-      base::ProcessId aChildProcessId, TextureHost* aTexture,
-      uint64_t aTransactionId);
-
-  void NotifyBufferNotUsedOfCompositorBridge(TextureHost* aTexture,
-                                             uint64_t aTransactionId);
-
   base::ProcessId GetChildProcessId() override { return OtherPid(); }
 
   // PImageBridge
@@ -102,11 +95,9 @@ class ImageBridgeParent final : public PImageBridgeParent,
 
   // IShmemAllocator
 
-  bool AllocShmem(size_t aSize, ipc::SharedMemory::SharedMemoryType aType,
-                  ipc::Shmem* aShmem) override;
+  bool AllocShmem(size_t aSize, ipc::Shmem* aShmem) override;
 
-  bool AllocUnsafeShmem(size_t aSize, ipc::SharedMemory::SharedMemoryType aType,
-                        ipc::Shmem* aShmem) override;
+  bool AllocUnsafeShmem(size_t aSize, ipc::Shmem* aShmem) override;
 
   bool DeallocShmem(ipc::Shmem& aShmem) override;
 

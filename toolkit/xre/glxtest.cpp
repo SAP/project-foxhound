@@ -25,6 +25,10 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#if defined(MOZ_ASAN) || defined(FUZZING)
+#  include <signal.h>
+#endif
+
 #include "mozilla/Unused.h"
 #include "nsAppRunner.h"  // for IsWaylandEnabled on IsX11EGLEnabled
 #include "stdint.h"
@@ -42,6 +46,8 @@
 #ifdef MOZ_WAYLAND
 #  include "mozilla/widget/mozwayland.h"
 #  include "mozilla/widget/xdg-output-unstable-v1-client-protocol.h"
+#  include "prlink.h"
+#  include "va/va.h"
 #endif
 
 #ifdef MOZ_X11
@@ -92,6 +98,7 @@ typedef void* EGLConfig;
 typedef void* EGLContext;
 typedef void* EGLDeviceEXT;
 typedef void* EGLDisplay;
+typedef unsigned int EGLenum;
 typedef int EGLint;
 typedef void* EGLNativeDisplayType;
 typedef void* EGLSurface;
@@ -101,13 +108,16 @@ typedef void* (*PFNEGLGETPROCADDRESS)(const char*);
 #define EGL_NO_SURFACE nullptr
 #define EGL_FALSE 0
 #define EGL_TRUE 1
+#define EGL_OPENGL_ES2_BIT 0x0004
 #define EGL_BLUE_SIZE 0x3022
 #define EGL_GREEN_SIZE 0x3023
 #define EGL_RED_SIZE 0x3024
 #define EGL_NONE 0x3038
+#define EGL_RENDERABLE_TYPE 0x3040
 #define EGL_VENDOR 0x3053
 #define EGL_EXTENSIONS 0x3055
-#define EGL_CONTEXT_CLIENT_VERSION 0x3098
+#define EGL_CONTEXT_MAJOR_VERSION 0x3098
+#define EGL_OPENGL_ES_API 0x30A0
 #define EGL_OPENGL_API 0x30A2
 #define EGL_DEVICE_EXT 0x322C
 #define EGL_DRM_DEVICE_FILE_EXT 0x3233
@@ -167,6 +177,17 @@ extern pid_t glxtest_pid;
 }  // namespace widget
 }  // namespace mozilla
 
+#ifdef MOZ_WAYLAND
+// bits to use decoding childvaapitest() return values.
+constexpr int CODEC_HW_H264 = 1 << 4;
+constexpr int CODEC_HW_VP8 = 1 << 5;
+constexpr int CODEC_HW_VP9 = 1 << 6;
+constexpr int CODEC_HW_AV1 = 1 << 7;
+
+#  define NVIDIA_VENDOR_STRING "NVIDIA Corporation"
+static bool run_vaapi_test = false;
+#endif
+
 // the write end of the pipe, which we're going to write to
 static int write_end_of_the_pipe = -1;
 
@@ -174,6 +195,8 @@ static int write_end_of_the_pipe = -1;
 static char* glxtest_buf = nullptr;
 static int glxtest_bufsize = 0;
 static int glxtest_length = 0;
+
+static char* glxtest_render_device_path = nullptr;
 
 // C++ standard collides with C standard in that it doesn't allow casting void*
 // to function pointer types. So the work-around is to convert first to size_t.
@@ -257,14 +280,20 @@ static void close_logging() {
 #define PCI_FILL_CLASS 0x0020
 #define PCI_BASE_CLASS_DISPLAY 0x03
 
-static int get_pci_status() {
+static void get_pci_status() {
+  if (access("/sys/bus/pci/", F_OK) != 0 &&
+      access("/sys/bus/pci_express/", F_OK) != 0) {
+    record_warning("cannot access /sys/bus/pci");
+    return;
+  }
+
   void* libpci = dlopen("libpci.so.3", RTLD_LAZY);
   if (!libpci) {
     libpci = dlopen("libpci.so", RTLD_LAZY);
   }
   if (!libpci) {
     record_warning("libpci missing");
-    return 0;
+    return;
   }
 
   typedef struct pci_dev {
@@ -309,25 +338,23 @@ static int get_pci_status() {
   if (!pci_alloc || !pci_cleanup || !pci_scan_bus || !pci_fill_info) {
     dlclose(libpci);
     record_warning("libpci missing methods");
-    return 0;
+    return;
   }
 
   pci_access* pacc = pci_alloc();
   if (!pacc) {
     dlclose(libpci);
     record_warning("libpci alloc failed");
-    return 0;
+    return;
   }
 
   pci_init(pacc);
   pci_scan_bus(pacc);
 
-  int count = 0;
   for (pci_dev* dev = pacc->devices; dev; dev = dev->next) {
     pci_fill_info(dev, PCI_FILL_IDENT | PCI_FILL_CLASS);
     if (dev->device_class >> 8 == PCI_BASE_CLASS_DISPLAY && dev->vendor_id &&
         dev->device_id) {
-      ++count;
       record_value("PCI_VENDOR_ID\n0x%04x\nPCI_DEVICE_ID\n0x%04x\n",
                    dev->vendor_id, dev->device_id);
     }
@@ -335,10 +362,14 @@ static int get_pci_status() {
 
   pci_cleanup(pacc);
   dlclose(libpci);
-  return count;
 }
 
 #ifdef MOZ_WAYLAND
+static void set_render_device_path(const char* render_device_path) {
+  record_value("DRM_RENDERDEVICE\n%s\n", render_device_path);
+  glxtest_render_device_path = strdup(render_device_path);
+}
+
 static bool device_has_name(const drmDevice* device, const char* name) {
   for (size_t i = 0; i < DRM_NODE_MAX; i++) {
     if (!(device->available_nodes & (1 << i))) {
@@ -402,13 +433,35 @@ static bool get_render_name(const char* name) {
     }
   }
 
+  // Fallback path for split kms/render devices - if only one drm render node
+  // exists it's most likely the one we're looking for.
+  if (match && !(match->available_nodes & (1 << DRM_NODE_RENDER))) {
+    match = nullptr;
+    for (int i = 0; i < devices_len; i++) {
+      if (devices[i]->available_nodes & (1 << DRM_NODE_RENDER)) {
+        if (!match) {
+          match = devices[i];
+        } else {
+          // more than one candidate found, stop trying.
+          match = nullptr;
+          break;
+        }
+      }
+    }
+    if (match) {
+      record_warning(
+          "DRM render node not clearly detectable. Falling back to using the "
+          "only one that was found.");
+    } else {
+      record_warning("DRM device has no render node");
+    }
+  }
+
   bool result = false;
   if (!match) {
     record_warning("Cannot find DRM device");
-  } else if (!(match->available_nodes & (1 << DRM_NODE_RENDER))) {
-    record_warning("DRM device has no render node");
   } else {
-    record_value("DRM_RENDERDEVICE\n%s\n", match->nodes[DRM_NODE_RENDER]);
+    set_render_device_path(match->nodes[DRM_NODE_RENDER]);
     record_value(
         "MESA_VENDOR_ID\n0x%04x\n"
         "MESA_DEVICE_ID\n0x%04x\n",
@@ -426,8 +479,8 @@ static bool get_render_name(const char* name) {
 }
 #endif
 
-static bool get_gles_status(EGLDisplay dpy,
-                            PFNEGLGETPROCADDRESS eglGetProcAddress) {
+static bool get_egl_gl_status(EGLDisplay dpy,
+                              PFNEGLGETPROCADDRESS eglGetProcAddress) {
   typedef EGLBoolean (*PFNEGLCHOOSECONFIGPROC)(
       EGLDisplay dpy, EGLint const* attrib_list, EGLConfig* configs,
       EGLint config_size, EGLint* num_config);
@@ -471,27 +524,48 @@ static bool get_gles_status(EGLDisplay dpy,
   PFNGLGETSTRING glGetString =
       cast<PFNGLGETSTRING>(eglGetProcAddress("glGetString"));
 
-  EGLint config_attrs[] = {EGL_RED_SIZE,  8, EGL_GREEN_SIZE, 8,
-                           EGL_BLUE_SIZE, 8, EGL_NONE};
+#if defined(__arm__) || defined(__aarch64__)
+  bool useGles = true;
+#else
+  bool useGles = false;
+#endif
+
+  std::vector<EGLint> attribs;
+  attribs.push_back(EGL_RED_SIZE);
+  attribs.push_back(8);
+  attribs.push_back(EGL_GREEN_SIZE);
+  attribs.push_back(8);
+  attribs.push_back(EGL_BLUE_SIZE);
+  attribs.push_back(8);
+  if (useGles) {
+    attribs.push_back(EGL_RENDERABLE_TYPE);
+    attribs.push_back(EGL_OPENGL_ES2_BIT);
+  }
+  attribs.push_back(EGL_NONE);
 
   EGLConfig config;
   EGLint num_config;
-  if (eglChooseConfig(dpy, config_attrs, &config, 1, &num_config) ==
+  if (eglChooseConfig(dpy, attribs.data(), &config, 1, &num_config) ==
       EGL_FALSE) {
     record_warning("eglChooseConfig returned an error");
     return false;
   }
 
-  if (eglBindAPI(EGL_OPENGL_API) == EGL_FALSE) {
+  EGLenum api = useGles ? EGL_OPENGL_ES_API : EGL_OPENGL_API;
+  if (eglBindAPI(api) == EGL_FALSE) {
     record_warning("eglBindAPI returned an error");
     return false;
   }
 
-  EGLint ctx_attrs[] = {EGL_NONE};
+  EGLint ctx_attrs[] = {EGL_CONTEXT_MAJOR_VERSION, 3, EGL_NONE};
   EGLContext ectx = eglCreateContext(dpy, config, EGL_NO_CONTEXT, ctx_attrs);
   if (!ectx) {
-    record_warning("eglCreateContext returned an error");
-    return false;
+    EGLint ctx_attrs_fallback[] = {EGL_CONTEXT_MAJOR_VERSION, 2, EGL_NONE};
+    ectx = eglCreateContext(dpy, config, EGL_NO_CONTEXT, ctx_attrs_fallback);
+    if (!ectx) {
+      record_warning("eglCreateContext returned an error");
+      return false;
+    }
   }
 
   if (eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, ectx) == EGL_FALSE) {
@@ -536,6 +610,13 @@ static bool get_gles_status(EGLDisplay dpy,
     return false;
   }
 
+#ifdef MOZ_WAYLAND
+  // Enable VA-API testing on EGL/non-NVIDIA setup (Bug 1799747).
+  if (!strstr((const char*)vendorString, NVIDIA_VENDOR_STRING)) {
+    run_vaapi_test = true;
+  }
+#endif
+
   EGLDeviceEXT device;
   if (eglQueryDisplayAttribEXT(dpy, EGL_DEVICE_EXT, (EGLAttrib*)&device) ==
       EGL_TRUE) {
@@ -552,7 +633,7 @@ static bool get_gles_status(EGLDisplay dpy,
         const char* renderNodeString =
             eglQueryDeviceStringEXT(device, EGL_DRM_RENDER_NODE_FILE_EXT);
         if (renderNodeString) {
-          record_value("DRM_RENDERDEVICE\n%s\n", renderNodeString);
+          set_render_device_path(renderNodeString);
         }
       }
 #endif
@@ -565,8 +646,7 @@ static bool get_gles_status(EGLDisplay dpy,
   return true;
 }
 
-static bool get_egl_status(EGLNativeDisplayType native_dpy, bool gles_test,
-                           bool require_driver) {
+static bool get_egl_status(EGLNativeDisplayType native_dpy) {
   void* libegl = dlopen(LIBEGL_FILENAME, RTLD_LAZY);
   if (!libegl) {
     record_warning("libEGL missing");
@@ -620,22 +700,13 @@ static bool get_egl_status(EGLNativeDisplayType native_dpy, bool gles_test,
       cast<PFNEGLGETDISPLAYDRIVERNAMEPROC>(
           eglGetProcAddress("eglGetDisplayDriverName"));
   if (eglGetDisplayDriverName) {
-    // TODO(aosmond): If the driver name is empty, we probably aren't using Mesa
-    // and instead a proprietary GL, most likely NVIDIA's. The PCI device list
-    // in combination with the vendor name is very likely sufficient to identify
-    // the device.
     const char* driDriver = eglGetDisplayDriverName(dpy);
     if (driDriver) {
       record_value("DRI_DRIVER\n%s\n", driDriver);
     }
-  } else if (require_driver) {
-    record_warning("libEGL missing eglGetDisplayDriverName");
-    eglTerminate(dpy);
-    dlclose(libegl);
-    return false;
   }
 
-  if (gles_test && !get_gles_status(dpy, eglGetProcAddress)) {
+  if (!get_egl_gl_status(dpy, eglGetProcAddress)) {
     eglTerminate(dpy);
     dlclose(libegl);
     return false;
@@ -661,32 +732,6 @@ static void get_xrandr_info(Display* dpy) {
   Window root = RootWindow(dpy, DefaultScreen(dpy));
   XRRProviderResources* pr = XRRGetProviderResources(dpy, root);
   XRRScreenResources* res = XRRGetScreenResourcesCurrent(dpy, root);
-  RROutput primary = XRRGetOutputPrimary(dpy, root);
-
-  if (res->noutput != 0) {
-    bool foundCRTC = false;
-
-    for (int i = 0; i < res->noutput; i++) {
-      XRROutputInfo* outputInfo = XRRGetOutputInfo(dpy, res, res->outputs[i]);
-      if (!outputInfo->crtc) {
-        continue;
-      }
-
-      if (!foundCRTC) {
-        record_value("SCREEN_INFO\n");
-        foundCRTC = true;
-      }
-
-      XRRCrtcInfo* crtcInfo = XRRGetCrtcInfo(dpy, res, outputInfo->crtc);
-      record_value("%dx%d:%d;", crtcInfo->width, crtcInfo->height,
-                   res->outputs[i] == primary ? 1 : 0);
-    }
-
-    if (foundCRTC) {
-      record_value("\n");
-    }
-  }
-
   if (pr->nproviders != 0) {
     record_value("DDX_DRIVER\n");
     for (int i = 0; i < pr->nproviders; i++) {
@@ -696,7 +741,7 @@ static void get_xrandr_info(Display* dpy) {
   }
 }
 
-static void get_glx_status(int* gotGlxInfo, int* gotDriDriver) {
+static void glxtest() {
   void* libgl = dlopen(LIBGL_FILENAME, RTLD_LAZY);
   if (!libgl) {
     record_error(LIBGL_FILENAME " missing");
@@ -806,7 +851,6 @@ static void get_glx_status(int* gotGlxInfo, int* gotDriDriver) {
     record_value("VENDOR\n%s\nRENDERER\n%s\nVERSION\n%s\nTFP\n%s\n",
                  vendorString, rendererString, versionString,
                  glXBindTexImageEXT ? "TRUE" : "FALSE");
-    *gotGlxInfo = 1;
   } else {
     record_error("glGetString returned null");
   }
@@ -848,7 +892,6 @@ static void get_glx_status(int* gotGlxInfo, int* gotDriDriver) {
   if (glXGetScreenDriverProc) {
     const char* driDriver = glXGetScreenDriverProc(dpy, DefaultScreen(dpy));
     if (driDriver) {
-      *gotDriDriver = 1;
       record_value("DRI_DRIVER\n%s\n", driDriver);
     }
   }
@@ -879,14 +922,20 @@ static void get_glx_status(int* gotGlxInfo, int* gotDriDriver) {
 #  endif
 
   dlclose(libgl);
+
+  record_value("TEST_TYPE\nGLX\n");
 }
 
-static bool x11_egltest(int pci_count) {
+static bool x11_egltest() {
   Display* dpy = XOpenDisplay(nullptr);
   if (!dpy) {
     return false;
   }
   XSetErrorHandler(x_error_handler);
+
+  if (!get_egl_status(dpy)) {
+    return false;
+  }
 
   // Bug 1667621: 30bit "Deep Color" is broken on EGL on Mesa (as of 2021/10).
   // Disable all non-standard depths for the initial EGL roleout.
@@ -895,12 +944,6 @@ static bool x11_egltest(int pci_count) {
     if (DefaultDepth(dpy, idx) != 24) {
       return false;
     }
-  }
-
-  // On at least amdgpu open source driver, eglInitialize fails unless
-  // a valid XDisplay pointer is passed as the native display.
-  if (!get_egl_status(dpy, true, pci_count != 1)) {
-    return false;
   }
 
   // Get monitor and DDX driver information
@@ -913,333 +956,9 @@ static bool x11_egltest(int pci_count) {
   record_value("TEST_TYPE\nEGL\n");
   return true;
 }
-
-static void glxtest() {
-  int gotGlxInfo = 0;
-  int gotDriDriver = 0;
-
-  get_glx_status(&gotGlxInfo, &gotDriDriver);
-  if (!gotGlxInfo) {
-    get_egl_status(nullptr, true, false);
-  } else if (!gotDriDriver) {
-    // If we failed to get the driver name from X, try via
-    // EGL_MESA_query_driver. We are probably using Wayland.
-    get_egl_status(nullptr, false, true);
-  }
-
-  record_value("TEST_TYPE\nGLX\n");
-}
 #endif
 
 #ifdef MOZ_WAYLAND
-typedef void (*print_info_t)(void* info);
-typedef void (*destroy_info_t)(void* info);
-
-struct global_info {
-  struct wl_list link;
-
-  uint32_t id;
-  uint32_t version;
-  char* interface;
-
-  print_info_t print;
-  destroy_info_t destroy;
-};
-
-struct output_info {
-  struct global_info global;
-  struct wl_list global_link;
-
-  struct wl_output* output;
-
-  int32_t version;
-
-  int32_t scale;
-};
-
-struct xdg_output_v1_info {
-  struct wl_list link;
-
-  struct zxdg_output_v1* xdg_output;
-  struct output_info* output;
-
-  struct {
-    int32_t width, height;
-  } logical;
-};
-
-struct xdg_output_manager_v1_info {
-  struct global_info global;
-  struct zxdg_output_manager_v1* manager;
-  struct weston_info* info;
-
-  struct wl_list outputs;
-};
-
-struct weston_info {
-  struct wl_display* display;
-  struct wl_registry* registry;
-
-  struct wl_list infos;
-  bool roundtrip_needed;
-
-  struct wl_list outputs;
-  struct xdg_output_manager_v1_info* xdg_output_manager_v1_info;
-};
-
-static void init_global_info(struct weston_info* info,
-                             struct global_info* global, uint32_t id,
-                             const char* interface, uint32_t version) {
-  global->id = id;
-  global->version = version;
-  global->interface = strdup(interface);
-
-  wl_list_insert(info->infos.prev, &global->link);
-}
-
-static void print_output_info(void* data) {}
-
-static void destroy_xdg_output_v1_info(struct xdg_output_v1_info* info) {
-  wl_list_remove(&info->link);
-  zxdg_output_v1_destroy(info->xdg_output);
-  free(info);
-}
-
-static int cmpOutputIds(const void* a, const void* b) {
-  return (((struct xdg_output_v1_info*)a)->output->global.id -
-          ((struct xdg_output_v1_info*)b)->output->global.id);
-}
-
-static void print_xdg_output_manager_v1_info(void* data) {
-  struct xdg_output_manager_v1_info* info =
-      (struct xdg_output_manager_v1_info*)data;
-  struct xdg_output_v1_info* output;
-
-  int screen_count = wl_list_length(&info->outputs);
-  if (screen_count > 0) {
-    struct xdg_output_v1_info* infos = (struct xdg_output_v1_info*)calloc(
-        1, screen_count * sizeof(xdg_output_v1_info));
-
-    int pos = 0;
-    wl_list_for_each(output, &info->outputs, link) {
-      infos[pos] = *output;
-      pos++;
-    }
-
-    if (screen_count > 1) {
-      qsort(infos, screen_count, sizeof(struct xdg_output_v1_info),
-            cmpOutputIds);
-    }
-
-    record_value("SCREEN_INFO\n");
-    for (int i = 0; i < screen_count; i++) {
-      record_value("%dx%d:0;", infos[i].logical.width, infos[i].logical.height);
-    }
-    record_value("\n");
-
-    free(infos);
-  }
-}
-
-static void destroy_xdg_output_manager_v1_info(void* data) {
-  struct xdg_output_manager_v1_info* info =
-      (struct xdg_output_manager_v1_info*)data;
-  struct xdg_output_v1_info *output, *tmp;
-
-  zxdg_output_manager_v1_destroy(info->manager);
-
-  wl_list_for_each_safe(output, tmp, &info->outputs, link) {
-    destroy_xdg_output_v1_info(output);
-  }
-}
-
-static void handle_xdg_output_v1_logical_position(void* data,
-                                                  struct zxdg_output_v1* output,
-                                                  int32_t x, int32_t y) {}
-
-static void handle_xdg_output_v1_logical_size(void* data,
-                                              struct zxdg_output_v1* output,
-                                              int32_t width, int32_t height) {
-  struct xdg_output_v1_info* xdg_output = (struct xdg_output_v1_info*)data;
-  xdg_output->logical.width = width;
-  xdg_output->logical.height = height;
-}
-
-static void handle_xdg_output_v1_done(void* data,
-                                      struct zxdg_output_v1* output) {}
-
-static void handle_xdg_output_v1_name(void* data, struct zxdg_output_v1* output,
-                                      const char* name) {}
-
-static void handle_xdg_output_v1_description(void* data,
-                                             struct zxdg_output_v1* output,
-                                             const char* description) {}
-
-static const struct zxdg_output_v1_listener xdg_output_v1_listener = {
-    .logical_position = handle_xdg_output_v1_logical_position,
-    .logical_size = handle_xdg_output_v1_logical_size,
-    .done = handle_xdg_output_v1_done,
-    .name = handle_xdg_output_v1_name,
-    .description = handle_xdg_output_v1_description,
-};
-
-static void add_xdg_output_v1_info(
-    struct xdg_output_manager_v1_info* manager_info,
-    struct output_info* output) {
-  struct xdg_output_v1_info* xdg_output =
-      (struct xdg_output_v1_info*)calloc(1, sizeof *xdg_output);
-
-  wl_list_insert(&manager_info->outputs, &xdg_output->link);
-  xdg_output->xdg_output = zxdg_output_manager_v1_get_xdg_output(
-      manager_info->manager, output->output);
-  zxdg_output_v1_add_listener(xdg_output->xdg_output, &xdg_output_v1_listener,
-                              xdg_output);
-
-  xdg_output->output = output;
-
-  manager_info->info->roundtrip_needed = true;
-}
-
-static void add_xdg_output_manager_v1_info(struct weston_info* info,
-                                           uint32_t id, uint32_t version) {
-  struct output_info* output;
-  struct xdg_output_manager_v1_info* manager =
-      (struct xdg_output_manager_v1_info*)calloc(1, sizeof *manager);
-
-  wl_list_init(&manager->outputs);
-  manager->info = info;
-
-  init_global_info(info, &manager->global, id,
-                   zxdg_output_manager_v1_interface.name, version);
-  manager->global.print = print_xdg_output_manager_v1_info;
-  manager->global.destroy = destroy_xdg_output_manager_v1_info;
-
-  manager->manager = (struct zxdg_output_manager_v1*)wl_registry_bind(
-      info->registry, id, &zxdg_output_manager_v1_interface,
-      version > 2 ? 2 : version);
-
-  wl_list_for_each(output, &info->outputs, global_link) {
-    add_xdg_output_v1_info(manager, output);
-  }
-
-  info->xdg_output_manager_v1_info = manager;
-}
-
-static void output_handle_geometry(void* data, struct wl_output* wl_output,
-                                   int32_t x, int32_t y, int32_t physical_width,
-                                   int32_t physical_height, int32_t subpixel,
-                                   const char* make, const char* model,
-                                   int32_t output_transform) {}
-
-static void output_handle_mode(void* data, struct wl_output* wl_output,
-                               uint32_t flags, int32_t width, int32_t height,
-                               int32_t refresh) {}
-
-static void output_handle_done(void* data, struct wl_output* wl_output) {}
-
-static void output_handle_scale(void* data, struct wl_output* wl_output,
-                                int32_t scale) {
-  struct output_info* output = (struct output_info*)data;
-
-  output->scale = scale;
-}
-
-static const struct wl_output_listener output_listener = {
-    output_handle_geometry,
-    output_handle_mode,
-    output_handle_done,
-    output_handle_scale,
-};
-
-static void destroy_output_info(void* data) {
-  struct output_info* output = (struct output_info*)data;
-
-  wl_output_destroy(output->output);
-}
-
-static void add_output_info(struct weston_info* info, uint32_t id,
-                            uint32_t version) {
-  struct output_info* output = (struct output_info*)calloc(1, sizeof *output);
-
-  init_global_info(info, &output->global, id, "wl_output", version);
-  output->global.print = print_output_info;
-  output->global.destroy = destroy_output_info;
-
-  output->version = MIN(version, 2);
-  output->scale = 1;
-
-  output->output = (struct wl_output*)wl_registry_bind(
-      info->registry, id, &wl_output_interface, output->version);
-  wl_output_add_listener(output->output, &output_listener, output);
-
-  info->roundtrip_needed = true;
-  wl_list_insert(&info->outputs, &output->global_link);
-
-  if (info->xdg_output_manager_v1_info) {
-    add_xdg_output_v1_info(info->xdg_output_manager_v1_info, output);
-  }
-}
-
-static void global_handler(void* data, struct wl_registry* registry,
-                           uint32_t id, const char* interface,
-                           uint32_t version) {
-  struct weston_info* info = (struct weston_info*)data;
-
-  if (!strcmp(interface, "wl_output")) {
-    add_output_info(info, id, version);
-  } else if (!strcmp(interface, zxdg_output_manager_v1_interface.name)) {
-    add_xdg_output_manager_v1_info(info, id, version);
-  }
-}
-
-static void global_remove_handler(void* data, struct wl_registry* registry,
-                                  uint32_t name) {}
-
-static const struct wl_registry_listener registry_listener = {
-    global_handler, global_remove_handler};
-
-static void print_infos(struct wl_list* infos) {
-  struct global_info* info;
-
-  wl_list_for_each(info, infos, link) { info->print(info); }
-}
-
-static void destroy_info(void* data) {
-  struct global_info* global = (struct global_info*)data;
-
-  global->destroy(data);
-  wl_list_remove(&global->link);
-  free(global->interface);
-  free(data);
-}
-
-static void destroy_infos(struct wl_list* infos) {
-  struct global_info *info, *tmp;
-  wl_list_for_each_safe(info, tmp, infos, link) { destroy_info(info); }
-}
-
-static void get_wayland_screen_info(struct wl_display* dpy) {
-  struct weston_info info = {0};
-  info.display = dpy;
-
-  info.xdg_output_manager_v1_info = NULL;
-  wl_list_init(&info.infos);
-  wl_list_init(&info.outputs);
-
-  info.registry = wl_display_get_registry(info.display);
-  wl_registry_add_listener(info.registry, &registry_listener, &info);
-
-  do {
-    info.roundtrip_needed = false;
-    wl_display_roundtrip(info.display);
-  } while (info.roundtrip_needed);
-
-  print_infos(&info.infos);
-  destroy_infos(&info.infos);
-
-  wl_registry_destroy(info.registry);
-}
-
 static void wayland_egltest() {
   // NOTE: returns false to fall back to X11 when the Wayland socket doesn't
   // exist but fails with record_error if something actually went wrong
@@ -1249,13 +968,248 @@ static void wayland_egltest() {
     return;
   }
 
-  if (!get_egl_status((EGLNativeDisplayType)dpy, true, false)) {
+  if (!get_egl_status((EGLNativeDisplayType)dpy)) {
     record_error("EGL test failed");
   }
-  get_wayland_screen_info(dpy);
+
+  // This is enough to crash some broken NVIDIA prime + Wayland setups, see
+  // https://github.com/NVIDIA/egl-wayland/issues/41 and bug 1768260.
+  wl_display_roundtrip(dpy);
 
   wl_display_disconnect(dpy);
   record_value("TEST_TYPE\nEGL\n");
+}
+
+static constexpr struct {
+  VAProfile mVAProfile;
+  nsLiteralCString mName;
+} kVAAPiProfileName[] = {
+#  define MAP(v) \
+    { VAProfile##v, nsLiteralCString(#v) }
+    MAP(H264ConstrainedBaseline),
+    MAP(H264Main),
+    MAP(H264High),
+    MAP(VP8Version0_3),
+    MAP(VP9Profile0),
+    MAP(VP9Profile2),
+    MAP(AV1Profile0),
+    MAP(AV1Profile1),
+#  undef MAP
+};
+
+static const char* VAProfileName(VAProfile aVAProfile) {
+  for (const auto& profile : kVAAPiProfileName) {
+    if (profile.mVAProfile == aVAProfile) {
+      return profile.mName.get();
+    }
+  }
+  return nullptr;
+}
+
+int childvaapitest() {
+  int renderDeviceFD = -1;
+  VAProfile* profiles = nullptr;
+  VAEntrypoint* entryPoints = nullptr;
+  PRLibrary* libDrm = nullptr;
+  VADisplay display = nullptr;
+
+  auto autoRelease = mozilla::MakeScopeExit([&] {
+    if (renderDeviceFD > -1) {
+      close(renderDeviceFD);
+    }
+    delete[] profiles;
+    delete[] entryPoints;
+    if (display) {
+      vaTerminate(display);
+    }
+    if (libDrm) {
+      PR_UnloadLibrary(libDrm);
+    }
+  });
+
+  renderDeviceFD = open(glxtest_render_device_path, O_RDWR);
+  if (renderDeviceFD == -1) {
+    return 3;
+  }
+
+  PRLibSpec lspec;
+  lspec.type = PR_LibSpec_Pathname;
+  const char* libName = "libva-drm.so.2";
+  lspec.value.pathname = libName;
+  libDrm = PR_LoadLibraryWithFlags(lspec, PR_LD_NOW | PR_LD_LOCAL);
+  if (!libDrm) {
+    return 4;
+  }
+
+  static auto sVaGetDisplayDRM =
+      (void* (*)(int fd))PR_FindSymbol(libDrm, "vaGetDisplayDRM");
+  if (!sVaGetDisplayDRM) {
+    return 5;
+  }
+
+  display = sVaGetDisplayDRM(renderDeviceFD);
+  if (!display) {
+    return 6;
+  }
+
+  int major, minor;
+  VAStatus status = vaInitialize(display, &major, &minor);
+  if (status != VA_STATUS_SUCCESS) {
+    return 7;
+  }
+
+  int maxProfiles = vaMaxNumProfiles(display);
+  int maxEntryPoints = vaMaxNumEntrypoints(display);
+  if (MOZ_UNLIKELY(maxProfiles <= 0 || maxEntryPoints <= 0)) {
+    return 8;
+  }
+
+  profiles = new VAProfile[maxProfiles];
+  int numProfiles = 0;
+  status = vaQueryConfigProfiles(display, profiles, &numProfiles);
+  if (status != VA_STATUS_SUCCESS) {
+    return 9;
+  }
+  numProfiles = std::min(numProfiles, maxProfiles);
+
+  entryPoints = new VAEntrypoint[maxEntryPoints];
+  int codecs = 0;
+  bool foundProfile = false;
+  for (int p = 0; p < numProfiles; p++) {
+    VAProfile profile = profiles[p];
+
+    // Check only supported profiles
+    if (!VAProfileName(profile)) {
+      continue;
+    }
+
+    int numEntryPoints = 0;
+    status = vaQueryConfigEntrypoints(display, profile, entryPoints,
+                                      &numEntryPoints);
+    if (status != VA_STATUS_SUCCESS) {
+      continue;
+    }
+    numEntryPoints = std::min(numEntryPoints, maxEntryPoints);
+
+    for (int entry = 0; entry < numEntryPoints; entry++) {
+      if (entryPoints[entry] != VAEntrypointVLD) {
+        continue;
+      }
+      VAConfigID config = VA_INVALID_ID;
+      status = vaCreateConfig(display, profile, entryPoints[entry], nullptr, 0,
+                              &config);
+      if (status == VA_STATUS_SUCCESS) {
+        const char* profstr = VAProfileName(profile);
+        // VAProfileName returns null on failure, making the below calls safe
+        if (!strncmp(profstr, "H264", 4)) {
+          codecs |= CODEC_HW_H264;
+        } else if (!strncmp(profstr, "VP8", 3)) {
+          codecs |= CODEC_HW_VP8;
+        } else if (!strncmp(profstr, "VP9", 3)) {
+          codecs |= CODEC_HW_VP9;
+        } else if (!strncmp(profstr, "AV1", 3)) {
+          codecs |= CODEC_HW_AV1;
+        } else {
+          char warnbuf[128];
+          SprintfBuf(warnbuf, 128, "VA-API test unknown profile: %s", profstr);
+          record_warning(warnbuf);
+        }
+        vaDestroyConfig(display, config);
+        foundProfile = true;
+      }
+    }
+  }
+  if (foundProfile) {
+    return codecs;
+  }
+  return 10;
+}
+
+static void vaapitest() {
+  if (!glxtest_render_device_path) {
+    return;
+  }
+
+  pid_t vaapitest_pid = fork();
+  if (vaapitest_pid == 0) {
+#  if defined(MOZ_ASAN) || defined(FUZZING)
+    // If handle_segv=1 (default), then glxtest crash will print a sanitizer
+    // report which can confuse the harness in fuzzing automation.
+    signal(SIGSEGV, SIG_DFL);
+#  endif
+    int vaapirv = childvaapitest();
+    _exit(vaapirv);
+  } else if (vaapitest_pid > 0) {
+    int vaapitest_status = 0;
+    bool wait_for_vaapitest_process = true;
+
+    while (wait_for_vaapitest_process) {
+      if (waitpid(vaapitest_pid, &vaapitest_status, 0) == -1) {
+        wait_for_vaapitest_process = false;
+        record_warning(
+            "VA-API test failed: waiting for VA-API process failed.");
+      } else if (WIFEXITED(vaapitest_status) || WIFSIGNALED(vaapitest_status)) {
+        wait_for_vaapitest_process = false;
+      }
+    }
+
+    if (WIFEXITED(vaapitest_status)) {
+      // Note that WEXITSTATUS only returns least significant 8 bits
+      // of the exit code, despite returning type int.
+      int exitcode = WEXITSTATUS(vaapitest_status);
+      int codecs = exitcode & 0b1111'0000;
+      exitcode &= 0b0000'1111;
+      switch (exitcode) {
+        case 0:
+          char codecstr[80];
+          record_value("VAAPI_SUPPORTED\nTRUE\n");
+          SprintfBuf(codecstr, 80, "%d", codecs);
+          record_value("VAAPI_HWCODECS\n");
+          record_value(codecstr);
+          record_value("\n");
+          break;
+        case 3:
+          record_warning(
+              "VA-API test failed: opening render device path failed.");
+          break;
+        case 4:
+          record_warning(
+              "VA-API test failed: missing or old libva-drm library.");
+          break;
+        case 5:
+          record_warning("VA-API test failed: missing vaGetDisplayDRM.");
+          break;
+        case 6:
+          record_warning("VA-API test failed: failed to get vaGetDisplayDRM.");
+          break;
+        case 7:
+          record_warning(
+              "VA-API test failed: failed to initialise VAAPI connection.");
+          break;
+        case 8:
+          record_warning(
+              "VA-API test failed: wrong VAAPI profiles/entry point nums.");
+          break;
+        case 9:
+          record_warning("VA-API test failed: vaQueryConfigProfiles() failed.");
+          break;
+        case 10:
+          record_warning(
+              "VA-API test failed: no supported VAAPI profile found.");
+          break;
+        default:
+          record_warning(
+              "VA-API test failed: Something unexpected went wrong.");
+          break;
+      }
+    } else {
+      record_warning(
+          "VA-API test failed: process crashed. Please check your VA-API "
+          "drivers.");
+    }
+  } else {
+    record_warning("VA-API test failed: Could not fork process.");
+  }
 }
 #endif
 
@@ -1269,7 +1223,7 @@ int childgltest() {
   glxtest_bufsize = bufsize;
 
   // Get a list of all GPUs from the PCI bus.
-  int pci_count = get_pci_status();
+  get_pci_status();
 
 #ifdef MOZ_WAYLAND
   if (IsWaylandEnabled()) {
@@ -1279,11 +1233,17 @@ int childgltest() {
   {
 #ifdef MOZ_X11
     // TODO: --display command line argument is not properly handled
-    if (!x11_egltest(pci_count)) {
+    if (!x11_egltest()) {
       glxtest();
     }
 #endif
   }
+
+#ifdef MOZ_WAYLAND
+  if (run_vaapi_test) {
+    vaapitest();
+  }
+#endif
 
   // Finally write buffered data to the pipe.
   record_flush();
@@ -1318,6 +1278,11 @@ bool fire_glxtest_process() {
     close(pfd[0]);
     write_end_of_the_pipe = pfd[1];
     close_logging();
+#if defined(MOZ_ASAN) || defined(FUZZING)
+    // If handle_segv=1 (default), then glxtest crash will print a sanitizer
+    // report which can confuse the harness in fuzzing automation.
+    signal(SIGSEGV, SIG_DFL);
+#endif
     int rv = childgltest();
     close(pfd[1]);
     _exit(rv);

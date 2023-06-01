@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* eslint-env mozilla/process-script */
+
 "use strict";
 
 /**
@@ -17,8 +19,6 @@
  * in `Services.cpmm.sharedData` object or send a message manager message via `Services.cpmm`.
  * Also, this module is only loaded, on-demand from process-helper if devtools are watching for process targets.
  */
-
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const SHARED_DATA_KEY_NAME = "DevTools:watchedPerWatcher";
 
@@ -46,11 +46,11 @@ class ContentProcessStartup {
     }
   }
 
-  destroy() {
+  destroy(options) {
     this.removeListeners();
 
     for (const [, connectionInfo] of this._connections) {
-      connectionInfo.connection.close();
+      connectionInfo.connection.close(options);
     }
     this._connections.clear();
   }
@@ -126,14 +126,14 @@ class ContentProcessStartup {
         );
         break;
       case "debug:remove-session-data-entry":
-        this.addSessionDataEntry(
+        this.removeSessionDataEntry(
           msg.data.watcherActorID,
           msg.data.type,
           msg.data.entries
         );
         break;
       case "debug:destroy-process-script":
-        this.destroy();
+        this.destroy(msg.data.options);
         break;
       default:
         throw new Error(`Unsupported message name ${msg.name}`);
@@ -170,7 +170,7 @@ class ContentProcessStartup {
       const { connectionPrefix, targets } = sessionData;
       // This is where we only do something significant only if DevTools are opened
       // and requesting to create target actor for content processes
-      if (targets.includes("process")) {
+      if (targets?.includes("process")) {
         this.createTargetActor(watcherActorID, connectionPrefix, sessionData);
       }
     }
@@ -185,7 +185,7 @@ class ContentProcessStartup {
    * @param String parentConnectionPrefix
    *        The prefix of the DevToolsServerConnection of the Watcher Actor.
    *        This is used to compute a unique ID for the target actor.
-   * @param Object initialData
+   * @param Object sessionData
    *        All data managed by the Watcher Actor and WatcherRegistry.jsm, containing
    *        target types, resources types to be listened as well as breakpoints and any
    *        other data meant to be shared across processes and threads.
@@ -196,7 +196,7 @@ class ContentProcessStartup {
   createTargetActor(
     watcherActorID,
     parentConnectionPrefix,
-    initialData,
+    sessionData,
     ignoreAlreadyCreated = false
   ) {
     if (this._connections.get(watcherActorID)) {
@@ -215,8 +215,8 @@ class ContentProcessStartup {
     const prefix =
       parentConnectionPrefix + "contentProcess" + Services.appinfo.processID;
     //TODO: probably merge content-process.jsm with this module
-    const { initContentProcessTarget } = ChromeUtils.import(
-      "resource://devtools/server/startup/content-process.jsm"
+    const { initContentProcessTarget } = ChromeUtils.importESModule(
+      "resource://devtools/server/startup/content-process.sys.mjs"
     );
     const { actor, connection } = initContentProcessTarget({
       target: Services.cpmm,
@@ -224,6 +224,7 @@ class ContentProcessStartup {
         watcherActorID,
         parentConnectionPrefix,
         prefix,
+        sessionContext: sessionData.sessionContext,
       },
     });
     this._connections.set(watcherActorID, {
@@ -232,8 +233,8 @@ class ContentProcessStartup {
     });
 
     // Pass initialization data to the target actor
-    for (const type in initialData) {
-      actor.addSessionDataEntry(type, initialData[type]);
+    for (const type in sessionData) {
+      actor.addSessionDataEntry(type, sessionData[type]);
     }
   }
 

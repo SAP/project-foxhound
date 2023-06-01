@@ -18,7 +18,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "jxl/color_encoding.h"
 #include "jxl/types.h"
 
 #if defined(__cplusplus) || defined(c_plusplus)
@@ -71,15 +70,6 @@ typedef struct {
   /** Preview height in pixels */
   uint32_t ysize;
 } JxlPreviewHeader;
-
-/** The intrinsic size header */
-typedef struct {
-  /** Intrinsic width in pixels */
-  uint32_t xsize;
-
-  /** Intrinsic height in pixels */
-  uint32_t ysize;
-} JxlIntrinsicSizeHeader;
 
 /** The codestream animation header, optionally present in the beginning of
  * the codestream, and if it is it applies to all animation frames, unlike
@@ -143,6 +133,8 @@ typedef struct {
    * representable value. The image does not necessarily contain a pixel
    * actually this bright. An encoder is allowed to set 255 for SDR images
    * without computing a histogram.
+   * Leaving this set to its default of 0 lets libjxl choose a sensible default
+   * value based on the color encoding.
    */
   float intensity_target;
 
@@ -173,10 +165,14 @@ typedef struct {
    * (linear if outputting to floating point, nonlinear with standard sRGB
    * transfer function if outputting to unsigned integers) but will not convert
    * it to to the original color profile. The decoder also does not convert to
-   * the target display color profile, but instead will always indicate which
-   * color profile the returned pixel data is encoded in when using @see
-   * JXL_COLOR_PROFILE_TARGET_DATA so that a CMS can be used to convert the
-   * data.
+   * the target display color profile. To convert the pixel data produced by
+   * the decoder to the original color profile, one of the JxlDecoderGetColor*
+   * functions needs to be called with @ref JXL_COLOR_PROFILE_TARGET_DATA to get
+   * the color profile of the decoder output, and then an external CMS can be
+   * used for conversion.
+   * Note that for lossy compression, this should be set to false for most use
+   * cases, and if needed, the image should be converted to the original color
+   * profile after decoding, as described above.
    */
   JXL_BOOL uses_original_profile;
 

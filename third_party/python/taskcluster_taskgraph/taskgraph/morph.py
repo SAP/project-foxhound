@@ -24,14 +24,20 @@ import re
 
 from slugid import nice as slugid
 
-from .task import Task
 from .graph import Graph
+from .task import Task
 from .taskgraph import TaskGraph
 from .util.workertypes import get_worker_type
 
 here = os.path.abspath(os.path.dirname(__file__))
 logger = logging.getLogger(__name__)
 MAX_ROUTES = 10
+
+registered_morphs = []
+
+
+def register_morph(func):
+    registered_morphs.append(func)
 
 
 def amend_taskgraph(taskgraph, label_to_taskid, to_add):
@@ -156,6 +162,7 @@ def make_index_task(parent_task, taskgraph, label_to_taskid, parameters, graph_c
     return task, taskgraph, label_to_taskid
 
 
+@register_morph
 def add_index_tasks(taskgraph, label_to_taskid, parameters, graph_config):
     """
     The TaskCluster queue only allows 10 routes on a task, but we have tasks
@@ -190,14 +197,15 @@ def _get_morph_url():
     existing use case.
     """
     taskgraph_repo = os.environ.get(
-        "TASKGRAPH_HEAD_REPOSITORY", "https://hg.mozilla.org/ci/taskgraph"
+        "TASKGRAPH_HEAD_REPOSITORY", "https://github.com/taskcluster/taskgraph"
     )
     taskgraph_rev = os.environ.get("TASKGRAPH_HEAD_REV", "default")
     return f"{taskgraph_repo}/raw-file/{taskgraph_rev}/src/taskgraph/morph.py"
 
 
+@register_morph
 def add_code_review_task(taskgraph, label_to_taskid, parameters, graph_config):
-    logger.debug("Morphing: adding index tasks")
+    logger.debug("Morphing: adding code review task")
 
     review_config = parameters.get("code-review")
     if not review_config:
@@ -256,12 +264,7 @@ def add_code_review_task(taskgraph, label_to_taskid, parameters, graph_config):
 
 def morph(taskgraph, label_to_taskid, parameters, graph_config):
     """Apply all morphs"""
-    morphs = [
-        add_index_tasks,
-        add_code_review_task,
-    ]
-
-    for m in morphs:
+    for m in registered_morphs:
         taskgraph, label_to_taskid = m(
             taskgraph, label_to_taskid, parameters, graph_config
         )

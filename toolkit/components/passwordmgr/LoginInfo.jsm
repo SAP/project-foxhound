@@ -2,13 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "LoginHelper",
   "resource://gre/modules/LoginHelper.jsm"
 );
@@ -39,7 +36,7 @@ nsLoginInfo.prototype = {
       displayOrigin = uri.displayHostPort || this.origin;
     } catch (ex) {
       // Fallback to this.origin set above in case a URI can't be contructed e.g.
-      // chrome://FirefoxAccounts
+      // file://
     }
 
     if (this.httpRealm === null) {
@@ -82,7 +79,7 @@ nsLoginInfo.prototype = {
   },
 
   matches(aLogin, ignorePassword) {
-    return LoginHelper.doLoginsMatch(this, aLogin, {
+    return lazy.LoginHelper.doLoginsMatch(this, aLogin, {
       ignorePassword,
     });
   },

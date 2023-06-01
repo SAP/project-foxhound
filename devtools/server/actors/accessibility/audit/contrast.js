@@ -4,60 +4,59 @@
 
 "use strict";
 
-loader.lazyRequireGetter(this, "colorUtils", "devtools/shared/css/color", true);
 loader.lazyRequireGetter(
   this,
   "CssLogic",
-  "devtools/server/actors/inspector/css-logic",
+  "resource://devtools/server/actors/inspector/css-logic.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "getCurrentZoom",
-  "devtools/shared/layout/utils",
+  "resource://devtools/shared/layout/utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "addPseudoClassLock",
-  "devtools/server/actors/highlighters/utils/markup",
+  "resource://devtools/server/actors/highlighters/utils/markup.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "removePseudoClassLock",
-  "devtools/server/actors/highlighters/utils/markup",
+  "resource://devtools/server/actors/highlighters/utils/markup.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "getContrastRatioAgainstBackground",
-  "devtools/shared/accessibility",
+  "resource://devtools/shared/accessibility.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "getTextProperties",
-  "devtools/shared/accessibility",
+  "resource://devtools/shared/accessibility.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "DevToolsWorker",
-  "devtools/shared/worker/worker",
+  "resource://devtools/shared/worker/worker.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "InspectorActorUtils",
-  "devtools/server/actors/inspector/utils"
+  "resource://devtools/server/actors/inspector/utils.js"
 );
 
 const WORKER_URL = "resource://devtools/server/actors/accessibility/worker.js";
 const HIGHLIGHTED_PSEUDO_CLASS = ":-moz-devtools-highlighted";
 const {
   LARGE_TEXT: { BOLD_LARGE_TEXT_MIN_PIXELS, LARGE_TEXT_MIN_PIXELS },
-} = require("devtools/shared/accessibility");
+} = require("resource://devtools/shared/accessibility.js");
 
 loader.lazyGetter(this, "worker", () => new DevToolsWorker(WORKER_URL));
 
@@ -265,7 +264,7 @@ async function getContrastRatioFor(node, options = {}) {
       };
     }
 
-    let { r, g, b, a } = colorUtils.colorToRGBA(backgroundColor, true);
+    let { r, g, b, a } = InspectorUtils.colorToRGBA(backgroundColor);
     // If the element has opacity in addition to background alpha value, take it
     // into account. TODO: this does not handle opacity set on ancestor
     // elements (see bug https://bugzilla.mozilla.org/show_bug.cgi?id=1544721).

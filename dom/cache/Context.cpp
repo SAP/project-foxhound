@@ -14,6 +14,7 @@
 #include "mozilla/dom/cache/FileUtils.h"
 #include "mozilla/dom/cache/Manager.h"
 #include "mozilla/dom/cache/ManagerId.h"
+#include "mozilla/dom/quota/Assertions.h"
 #include "mozilla/dom/quota/DirectoryLock.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
@@ -474,7 +475,7 @@ class Context::ActionRunnable final : public nsIRunnable,
         mTarget(aTarget),
         mAction(std::move(aAction)),
         mDirectoryMetadata(aDirectoryMetadata),
-        mInitiatingThread(GetCurrentEventTarget()),
+        mInitiatingThread(GetCurrentSerialEventTarget()),
         mState(STATE_INIT),
         mResult(NS_OK),
         mExecutingRunOnTarget(false) {

@@ -4,8 +4,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 from gdbpp import GeckoPrettyPrinter
 
 
@@ -36,13 +34,16 @@ class smartptr_printer(object):
     def __init__(self, value):
         self.value = value["mRawPtr"]
 
+    def children(self):
+        yield ("mRawPtr", self.value)
+
     def to_string(self):
         if not self.value:
             type_name = str(self.value.type)
         else:
             type_name = str(self.value.dereference().dynamic_type.pointer())
 
-        return "[(%s) %s]" % (type_name, str(self.value))
+        return "[(%s)]" % (type_name)
 
 
 @GeckoPrettyPrinter("UniquePtr", "^mozilla::UniquePtr<.*>$")

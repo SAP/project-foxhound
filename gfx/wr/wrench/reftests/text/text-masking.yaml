@@ -5,9 +5,8 @@ root:
       "clip-rect": [0, 0, 750, 100]
       type: rect
       color: [180, 180, 180]
-    - bounds: [0, 0, 750, 100]
+    - type: clip
       "clip-rect": [0, 0, 750, 100]
-      type: clip
       id: 2
       "content-size": [750, 100]
       "image-mask":
@@ -17,11 +16,11 @@ root:
     - text: "Cats making all the muffins knock over christmas tree"
       origin: 40 40
       size: 20
-      "clip-and-scroll": 2
+      clip-chain: [2]
       font: "FreeSans.ttf"
     - text: "Cats making all the muffins knock over christmas tree"
       origin: 40 80
       size: 20
       color: white
-      "clip-and-scroll": 2
+      clip-chain: [2]
       font: "FreeSans.ttf"

@@ -26,26 +26,21 @@ function test() {
     Ci.nsISiteSecurityService
   );
 
-  function privacyFlags(aIsPrivateMode) {
-    return aIsPrivateMode ? Ci.nsISocketProvider.NO_PERMANENT_STORAGE : 0;
+  function originAttributes(aIsPrivateMode) {
+    return aIsPrivateMode ? { privateBrowsingId: 1 } : {};
   }
 
   function doTest(aIsPrivateMode, aWindow, aCallback) {
     BrowserTestUtils.browserLoaded(aWindow.gBrowser.selectedBrowser).then(
       () => {
-        let secInfo = Cc[
-          "@mozilla.org/security/transportsecurityinfo;1"
-        ].createInstance(Ci.nsITransportSecurityInfo);
         uri = aWindow.Services.io.newURI("https://localhost/img.png");
         gSSService.processHeader(
           uri,
           "max-age=1000",
-          secInfo,
-          privacyFlags(aIsPrivateMode),
-          Ci.nsISiteSecurityService.SOURCE_ORGANIC_REQUEST
+          originAttributes(aIsPrivateMode)
         );
         ok(
-          gSSService.isSecureURI(uri, privacyFlags(aIsPrivateMode)),
+          gSSService.isSecureURI(uri, originAttributes(aIsPrivateMode)),
           "checking sts host"
         );
 
@@ -53,7 +48,7 @@ function test() {
       }
     );
 
-    BrowserTestUtils.loadURI(aWindow.gBrowser.selectedBrowser, testURI);
+    BrowserTestUtils.loadURIString(aWindow.gBrowser.selectedBrowser, testURI);
   }
 
   function testOnWindow(aOptions, aCallback) {
@@ -74,7 +69,7 @@ function test() {
       aWin.close();
     });
     uri = Services.io.newURI("http://localhost");
-    gSSService.resetState(uri, 0);
+    gSSService.resetState(uri);
   });
 
   // test first when on private mode

@@ -9,14 +9,10 @@
 #ifndef vm_RegExpObject_h
 #define vm_RegExpObject_h
 
-#include "mozilla/MemoryReporting.h"
-
 #include "builtin/SelfHostingDefines.h"
-#include "gc/Marking.h"
-#include "js/GCHashTable.h"
 #include "js/RegExpFlags.h"
 #include "proxy/Proxy.h"
-#include "vm/ArrayObject.h"
+#include "vm/JSAtomState.h"
 #include "vm/JSContext.h"
 #include "vm/RegExpShared.h"
 #include "vm/Shape.h"
@@ -36,10 +32,6 @@
  */
 namespace js {
 
-struct MatchPair;
-class MatchPairs;
-class RegExpStatics;
-
 extern RegExpObject* RegExpAlloc(JSContext* cx, NewObjectKind newKind,
                                  HandleObject proto = nullptr);
 
@@ -53,7 +45,7 @@ class RegExpObject : public NativeObject {
   static_assert(RegExpObject::FLAGS_SLOT == REGEXP_FLAGS_SLOT,
                 "FLAGS_SLOT values should be in sync with self-hosted JS");
 
-  static RegExpObject* create(JSContext* cx, HandleAtom source,
+  static RegExpObject* create(JSContext* cx, Handle<JSAtom*> source,
                               NewObjectKind newKind);
 
  public:
@@ -73,11 +65,12 @@ class RegExpObject : public NativeObject {
 
   // This variant assumes that the characters have already previously been
   // syntax checked.
-  static RegExpObject* createSyntaxChecked(JSContext* cx, HandleAtom source,
+  static RegExpObject* createSyntaxChecked(JSContext* cx,
+                                           Handle<JSAtom*> source,
                                            JS::RegExpFlags flags,
                                            NewObjectKind newKind);
 
-  static RegExpObject* create(JSContext* cx, HandleAtom source,
+  static RegExpObject* create(JSContext* cx, Handle<JSAtom*> source,
                               JS::RegExpFlags flags, NewObjectKind newKind);
 
   /*
@@ -85,21 +78,19 @@ class RegExpObject : public NativeObject {
    * encoding their initial properties. Return the shape after
    * changing |obj|'s last property to it.
    */
-  static Shape* assignInitialShape(JSContext* cx, Handle<RegExpObject*> obj);
+  static SharedShape* assignInitialShape(JSContext* cx,
+                                         Handle<RegExpObject*> obj);
 
   /* Accessors. */
 
   static unsigned lastIndexSlot() { return LAST_INDEX_SLOT; }
 
   static bool isInitialShape(RegExpObject* rx) {
-    ShapePropertyIter<NoGC> iter(rx->shape());
-    if (iter.done() || !iter->isDataProperty()) {
-      return false;
-    }
-    if (iter->slot() != LAST_INDEX_SLOT) {
-      return false;
-    }
-    return true;
+    // RegExpObject has a non-configurable lastIndex property, so there must be
+    // at least one property.
+    MOZ_ASSERT(!rx->empty());
+    PropertyInfoWithKey prop = rx->getLastProperty();
+    return prop.isDataProperty() && prop.slot() == LAST_INDEX_SLOT;
   }
 
   const Value& getLastIndex() const { return getReservedSlot(LAST_INDEX_SLOT); }
@@ -172,7 +163,7 @@ class RegExpObject : public NativeObject {
 #ifdef DEBUG
   [[nodiscard]] static bool dumpBytecode(JSContext* cx,
                                          Handle<RegExpObject*> regexp,
-                                         HandleLinearString input);
+                                         Handle<JSLinearString*> input);
 #endif
 
  private:
@@ -207,7 +198,7 @@ inline RegExpShared* RegExpToShared(JSContext* cx, HandleObject obj) {
 }
 
 /* Escape all slashes and newlines in the given string. */
-extern JSLinearString* EscapeRegExpPattern(JSContext* cx, HandleAtom src);
+extern JSLinearString* EscapeRegExpPattern(JSContext* cx, Handle<JSAtom*> src);
 
 template <typename CharT>
 extern bool HasRegExpMetaChars(const CharT* chars, size_t length);

@@ -1,18 +1,17 @@
 /**
- * Tests of OSKeyStore.jsm
+ * Tests of OSKeyStore.sys.mjs
  */
 
 "use strict";
 
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-var { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+var { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
 let OSKeyStoreTestUtils;
 add_task(async function os_key_store_setup() {
-  ({ OSKeyStoreTestUtils } = ChromeUtils.import(
-    "resource://testing-common/OSKeyStoreTestUtils.jsm"
+  ({ OSKeyStoreTestUtils } = ChromeUtils.importESModule(
+    "resource://testing-common/OSKeyStoreTestUtils.sys.mjs"
   ));
   OSKeyStoreTestUtils.setup();
   registerCleanupFunction(async function cleanup() {
@@ -22,8 +21,8 @@ add_task(async function os_key_store_setup() {
 
 let OSKeyStore;
 add_task(async function setup() {
-  ({ OSKeyStore } = ChromeUtils.import(
-    "resource://gre/modules/OSKeyStore.jsm"
+  ({ OSKeyStore } = ChromeUtils.importESModule(
+    "resource://gre/modules/OSKeyStore.sys.mjs"
   ));
 });
 

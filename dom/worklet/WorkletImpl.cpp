@@ -41,7 +41,8 @@ WorkletImpl::WorkletImpl(nsPIDOMWindowInner* aWindow, nsIPrincipal* aPrincipal)
     : mPrincipal(NullPrincipal::CreateWithInheritedAttributes(aPrincipal)),
       mWorkletLoadInfo(aWindow),
       mTerminated(false),
-      mFinishedOnExecutionThread(false) {
+      mFinishedOnExecutionThread(false),
+      mTrials(OriginTrials::FromWindow(nsGlobalWindowInner::Cast(aWindow))) {
   Unused << NS_WARN_IF(
       NS_FAILED(ipc::PrincipalToPrincipalInfo(mPrincipal, &mPrincipalInfo)));
 
@@ -51,12 +52,12 @@ WorkletImpl::WorkletImpl(nsPIDOMWindowInner* aWindow, nsIPrincipal* aPrincipal)
 
   mSharedMemoryAllowed =
       nsGlobalWindowInner::Cast(aWindow)->IsSharedMemoryAllowed();
+
+  mShouldResistFingerprinting =
+      aWindow->AsGlobal()->ShouldResistFingerprinting();
 }
 
-WorkletImpl::~WorkletImpl() {
-  MOZ_ASSERT(!mGlobalScope);
-  MOZ_ASSERT(!mPrincipal || NS_IsMainThread());
-}
+WorkletImpl::~WorkletImpl() { MOZ_ASSERT(!mGlobalScope); }
 
 JSObject* WorkletImpl::WrapWorklet(JSContext* aCx, dom::Worklet* aWorklet,
                                    JS::Handle<JSObject*> aGivenProto) {
@@ -115,7 +116,6 @@ void WorkletImpl::NotifyWorkletFinished() {
     mWorkletThread->Terminate();
     mWorkletThread = nullptr;
   }
-  mPrincipal = nullptr;
 }
 
 nsresult WorkletImpl::SendControlMessage(

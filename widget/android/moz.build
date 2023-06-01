@@ -5,7 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files("**"):
-    BUG_COMPONENT = ("Core", "Widget: Android")
+    BUG_COMPONENT = ("GeckoView", "General")
     SCHEDULES.exclusive = ["android"]
 
 with Files("*CompositorWidget*"):
@@ -51,7 +51,6 @@ classes_with_WrapForJNI = [
     "GeckoProcessType",
     "GeckoResult",
     "GeckoRuntime",
-    "GeckoScreenOrientation",
     "GeckoServiceChildProcess",
     "GeckoServiceGpuProcess",
     "GeckoSession",
@@ -77,7 +76,9 @@ classes_with_WrapForJNI = [
     "SessionTextInput",
     "SpeechSynthesisService",
     "SurfaceAllocator",
+    "SurfaceControlManager",
     "SurfaceTextureListener",
+    "SurfaceViewWrapper",
     "TelemetryUtils",
     "WebAuthnTokenManager",
     "WebMessage",

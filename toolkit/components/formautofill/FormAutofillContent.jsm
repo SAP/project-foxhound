@@ -14,61 +14,33 @@ var EXPORTED_SYMBOLS = ["FormAutofillContent"];
 
 const Cm = Components.manager;
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "AddressResult",
-  "resource://autofill/ProfileAutoCompleteResult.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "ComponentUtils",
-  "resource://gre/modules/ComponentUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "CreditCardResult",
-  "resource://autofill/ProfileAutoCompleteResult.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FormAutofill",
-  "resource://autofill/FormAutofill.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FormAutofillHandler",
-  "resource://autofill/FormAutofillHandler.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FormAutofillUtils",
-  "resource://autofill/FormAutofillUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FormLikeFactory",
-  "resource://gre/modules/FormLikeFactory.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "InsecurePasswordUtils",
-  "resource://gre/modules/InsecurePasswordUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  FormLikeFactory: "resource://gre/modules/FormLikeFactory.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
+  AddressResult: "resource://autofill/ProfileAutoCompleteResult.jsm",
+  ComponentUtils: "resource://gre/modules/ComponentUtils.jsm",
+  CreditCardResult: "resource://autofill/ProfileAutoCompleteResult.jsm",
+  AutofillTelemetry: "resource://autofill/AutofillTelemetry.jsm",
+  FormAutofill: "resource://autofill/FormAutofill.jsm",
+  FormAutofillHandler: "resource://autofill/FormAutofillHandler.jsm",
+  FormAutofillUtils: "resource://autofill/FormAutofillUtils.jsm",
+  InsecurePasswordUtils: "resource://gre/modules/InsecurePasswordUtils.jsm",
+});
+
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "DELEGATE_AUTOCOMPLETE",
   "toolkit.autocomplete.delegate",
   false
@@ -82,19 +54,19 @@ const autocompleteController = Cc[
 ].getService(Ci.nsIAutoCompleteController);
 
 XPCOMUtils.defineLazyGetter(
-  this,
+  lazy,
   "ADDRESSES_COLLECTION_NAME",
-  () => FormAutofillUtils.ADDRESSES_COLLECTION_NAME
+  () => lazy.FormAutofillUtils.ADDRESSES_COLLECTION_NAME
 );
 XPCOMUtils.defineLazyGetter(
-  this,
+  lazy,
   "CREDITCARDS_COLLECTION_NAME",
-  () => FormAutofillUtils.CREDITCARDS_COLLECTION_NAME
+  () => lazy.FormAutofillUtils.CREDITCARDS_COLLECTION_NAME
 );
 XPCOMUtils.defineLazyGetter(
-  this,
+  lazy,
   "FIELD_STATES",
-  () => FormAutofillUtils.FIELD_STATES
+  () => lazy.FormAutofillUtils.FIELD_STATES
 );
 
 function getActorFromWindow(contentWindow, name = "FormAutofill") {
@@ -115,7 +87,9 @@ AutocompleteFactory.prototype = {
     let proto = targetConstructor.prototype;
     this._classID = proto.classID;
 
-    let factory = ComponentUtils._getFactory(targetConstructor);
+    let factory = lazy.ComponentUtils.generateSingletonFactory(
+      targetConstructor
+    );
     this._factory = factory;
 
     let registrar = Cm.QueryInterface(Ci.nsIComponentRegistrar);
@@ -148,12 +122,15 @@ AutocompleteFactory.prototype = {
 };
 
 /**
- * @constructor
+ * @class
  *
  * @implements {nsIAutoCompleteSearch}
  */
 function AutofillProfileAutoCompleteSearch() {
-  FormAutofill.defineLazyLogGetter(this, "AutofillProfileAutoCompleteSearch");
+  this.log = lazy.FormAutofill.defineLogGetter(
+    this,
+    "AutofillProfileAutoCompleteSearch"
+  );
 }
 AutofillProfileAutoCompleteSearch.prototype = {
   classID: Components.ID("4f9f1e4c-7f2c-439e-9c9e-566b68bc187d"),
@@ -169,8 +146,8 @@ AutofillProfileAutoCompleteSearch.prototype = {
    *
    * @param {string} searchString the string to search for
    * @param {string} searchParam
-   * @param {Object} previousResult a previous result to use for faster searchinig
-   * @param {Object} listener the listener to notify when the search is complete
+   * @param {object} previousResult a previous result to use for faster searchinig
+   * @param {object} listener the listener to notify when the search is complete
    */
   startSearch(searchString, searchParam, previousResult, listener) {
     let {
@@ -181,25 +158,23 @@ AutofillProfileAutoCompleteSearch.prototype = {
     } = FormAutofillContent;
     this.forceStop = false;
 
-    this.debug("startSearch: for", searchString, "with input", activeInput);
-
-    let isAddressField = FormAutofillUtils.isAddressField(
+    let isAddressField = lazy.FormAutofillUtils.isAddressField(
       activeFieldDetail.fieldName
     );
-    const isCreditCardField = FormAutofillUtils.isCreditCardField(
+    const isCreditCardField = lazy.FormAutofillUtils.isCreditCardField(
       activeFieldDetail.fieldName
     );
-    let isInputAutofilled = activeFieldDetail.state == FIELD_STATES.AUTO_FILLED;
+    let isInputAutofilled =
+      activeFieldDetail.state == lazy.FIELD_STATES.AUTO_FILLED;
     let allFieldNames = activeSection.allFieldNames;
     let filledRecordGUID = activeSection.filledRecordGUID;
 
-    let creditCardsEnabledAndVisible =
-      FormAutofill.isAutofillCreditCardsEnabled &&
-      !FormAutofill.isAutofillCreditCardsHideUI;
     let searchPermitted = isAddressField
-      ? FormAutofill.isAutofillAddressesEnabled
-      : creditCardsEnabledAndVisible;
-    let AutocompleteResult = isAddressField ? AddressResult : CreditCardResult;
+      ? lazy.FormAutofill.isAutofillAddressesEnabled
+      : lazy.FormAutofill.isAutofillCreditCardsEnabled;
+    let AutocompleteResult = isAddressField
+      ? lazy.AddressResult
+      : lazy.CreditCardResult;
     let isFormAutofillSearch = true;
     let pendingSearchResult = null;
 
@@ -218,7 +193,7 @@ AutofillProfileAutoCompleteSearch.prototype = {
         !(isCreditCardField && activeInput.value === "")) ||
       (isAddressField &&
         allFieldNames.filter(field => savedFieldNames.has(field)).length <
-          FormAutofillUtils.AUTOFILL_FIELDS_THRESHOLD)
+          lazy.FormAutofillUtils.AUTOFILL_FIELDS_THRESHOLD)
     ) {
       isFormAutofillSearch = false;
       if (activeInput.autocomplete == "off") {
@@ -244,8 +219,8 @@ AutofillProfileAutoCompleteSearch.prototype = {
 
       let data = {
         collectionName: isAddressField
-          ? ADDRESSES_COLLECTION_NAME
-          : CREDITCARDS_COLLECTION_NAME,
+          ? lazy.ADDRESSES_COLLECTION_NAME
+          : lazy.CREDITCARDS_COLLECTION_NAME,
         info: infoWithoutElement,
         searchString,
       };
@@ -260,7 +235,7 @@ AutofillProfileAutoCompleteSearch.prototype = {
 
           let adaptedRecords = activeSection.getAdaptedProfiles(records);
           let handler = FormAutofillContent.activeHandler;
-          let isSecure = InsecurePasswordUtils.isFormSecure(handler.form);
+          let isSecure = lazy.InsecurePasswordUtils.isFormSecure(handler.form);
 
           return new AutocompleteResult(
             searchString,
@@ -313,9 +288,9 @@ AutofillProfileAutoCompleteSearch.prototype = {
    * Get the records from parent process for AutoComplete result.
    *
    * @private
-   * @param  {Object} input
+   * @param  {object} input
    *         Input element for autocomplete.
-   * @param  {Object} data
+   * @param  {object} data
    *         Parameters for querying the corresponding result.
    * @param  {string} data.collectionName
    *         The name used to specify which collection to retrieve records.
@@ -327,7 +302,6 @@ AutofillProfileAutoCompleteSearch.prototype = {
    *          Promise that resolves when addresses returned from parent process.
    */
   _getRecords(input, data) {
-    this.debug("_getRecords with data:", data);
     if (!input) {
       return [];
     }
@@ -350,7 +324,7 @@ let ProfileAutocomplete = {
       return;
     }
 
-    FormAutofill.defineLazyLogGetter(this, "ProfileAutocomplete");
+    this.log = lazy.FormAutofill.defineLogGetter(this, "ProfileAutocomplete");
     this.debug("ensureRegistered");
     this._factory = new AutocompleteFactory();
     this._factory.register(AutofillProfileAutoCompleteSearch);
@@ -483,7 +457,7 @@ var FormAutofillContent = {
   },
 
   /**
-   * @type {Object} The object where to store the active items, e.g. element,
+   * @type {object} The object where to store the active items, e.g. element,
    * handler, section, and field detail.
    */
   _activeItems: {},
@@ -501,7 +475,7 @@ var FormAutofillContent = {
   _autofillPending: false,
 
   init() {
-    FormAutofill.defineLazyLogGetter(this, "FormAutofillContent");
+    this.log = lazy.FormAutofill.defineLogGetter(this, "FormAutofillContent");
     this.debug("init");
 
     // eslint-disable-next-line mozilla/balanced-listeners
@@ -513,8 +487,8 @@ var FormAutofillContent = {
     // pref is true.
     let shouldEnableAutofill =
       autofillEnabled === undefined &&
-      (FormAutofill.isAutofillAddressesEnabled ||
-        FormAutofill.isAutofillCreditCardsEnabled);
+      (lazy.FormAutofill.isAutofillAddressesEnabled ||
+        lazy.FormAutofill.isAutofillCreditCardsEnabled);
     if (autofillEnabled || shouldEnableAutofill) {
       ProfileAutocomplete.ensureRegistered();
     }
@@ -523,16 +497,12 @@ var FormAutofillContent = {
   /**
    * Send the profile to parent for doorhanger and storage saving/updating.
    *
-   * @param {Object} profile Submitted form's address/creditcard guid and record.
-   * @param {Object} domWin Current content window.
-   * @param {int} timeStartedFillingMS Time of form filling started.
+   * @param {object} profile Submitted form's address/creditcard guid and record.
+   * @param {object} domWin Current content window.
    */
-  _onFormSubmit(profile, domWin, timeStartedFillingMS) {
+  _onFormSubmit(profile, domWin) {
     let actor = getActorFromWindow(domWin);
-    actor.sendAsyncMessage("FormAutofill:OnFormSubmit", {
-      profile,
-      timeStartedFillingMS,
-    });
+    actor.sendAsyncMessage("FormAutofill:OnFormSubmit", profile);
   },
 
   /**
@@ -544,7 +514,7 @@ var FormAutofillContent = {
    * @param {HTMLElement} formElement Root element which receives submit event.
    * @param {Window} domWin Content window; passed for unit tests and when
    *                 invoked by the FormAutofillSection
-   * @param {Object} handler FormAutofillHander, if known by caller
+   * @param {object} handler FormAutofillHander, if known by caller
    */
   formSubmitted(
     formElement,
@@ -553,13 +523,13 @@ var FormAutofillContent = {
   ) {
     this.debug("Handling form submission");
 
-    if (!FormAutofill.isAutofillEnabled) {
+    if (!lazy.FormAutofill.isAutofillEnabled) {
       this.debug("Form Autofill is disabled");
       return;
     }
 
     // The `domWin` truthiness test is used by unit tests to bypass this check.
-    if (domWin && PrivateBrowsingUtils.isContentWindowPrivate(domWin)) {
+    if (domWin && lazy.PrivateBrowsingUtils.isContentWindowPrivate(domWin)) {
       this.debug("Ignoring submission in a private window");
       return;
     }
@@ -575,51 +545,28 @@ var FormAutofillContent = {
       return;
     }
 
-    records.creditCard.forEach(record => {
-      let extra = {
-        // Fields which have been filled manually.
-        fields_not_auto: "0",
-        // Fields which have been autofilled.
-        fields_auto: "0",
-        // Fields which have been autofilled and then modified.
-        fields_modified: "0",
-      };
-
-      if (record.guid !== null) {
-        // If the `guid` is not null, it means we're editing an existing record.
-        // In that case, all fields in the record are autofilled, and fields in
-        // `untouchedFields` are unmodified.
-        let totalCount = handler.form.elements.length;
-        let autofilledCount = Object.keys(record.record).length;
-        let unmodifiedCount = record.untouchedFields.length;
-
-        extra.fields_not_auto = (totalCount - autofilledCount).toString();
-        extra.fields_auto = autofilledCount.toString();
-        extra.fields_modified = (autofilledCount - unmodifiedCount).toString();
-      } else {
-        // If the `guid` is null, we're filling a new form.
-        // In that case, all not-null fields are manually filled.
-        extra.fields_not_auto = Array.from(handler.form.elements)
-          .filter(element => !!element.value?.trim().length)
-          .length.toString();
-      }
-
-      Services.telemetry.recordEvent(
-        "creditcard",
-        "submitted",
-        "cc_form",
-        record.flowId,
-        extra
+    [records.address, records.creditCard].forEach((rs, idx) => {
+      lazy.AutofillTelemetry.recordSubmittedSectionCount(
+        idx == 0
+          ? lazy.AutofillTelemetry.ADDRESS
+          : lazy.AutofillTelemetry.CREDIT_CARD,
+        rs?.length
       );
+
+      rs?.forEach(r => {
+        lazy.AutofillTelemetry.recordFormInteractionEvent(
+          "submitted",
+          r.section,
+          {
+            record: r,
+            form: handler.form,
+          }
+        );
+        delete r.section;
+      });
     });
-    if (records.creditCard.length) {
-      Services.telemetry.scalarAdd(
-        "formautofill.creditCards.submitted_sections_count",
-        records.creditCard.length
-      );
-    }
 
-    this._onFormSubmit(records, domWin, handler.timeStartedFillingMS);
+    this._onFormSubmit(records, domWin);
   },
 
   handleEvent(evt) {
@@ -647,7 +594,7 @@ var FormAutofillContent = {
    * Get the form's handler from cache which is created after page identified.
    *
    * @param {HTMLInputElement} element Focused input which triggered profile searching
-   * @returns {Array<Object>|null}
+   * @returns {Array<object> | null}
    *          Return target form's handler from content cache
    *          (or return null if the information is not found in the cache).
    *
@@ -656,7 +603,7 @@ var FormAutofillContent = {
     if (!element) {
       return null;
     }
-    let rootElement = FormLikeFactory.findRootForField(element);
+    let rootElement = lazy.FormLikeFactory.findRootForField(element);
     return this._formsDetails.get(rootElement);
   },
 
@@ -664,7 +611,7 @@ var FormAutofillContent = {
    * Get the active form's information from cache which is created after page
    * identified.
    *
-   * @returns {Array<Object>|null}
+   * @returns {Array<object> | null}
    *          Return target form's information from content cache
    *          (or return null if the information is not found in the cache).
    *
@@ -701,8 +648,7 @@ var FormAutofillContent = {
       this.debug("updateActiveElement: skipping check; autofill is imminent");
     } else if (element.value?.length !== 0) {
       this.debug(
-        "updateActiveElement: Not opening popup because field is " +
-          `not empty: element.value = "${element.value}"`
+        `updateActiveElement: Not opening popup because field is not empty.`
       );
     } else {
       this.debug(
@@ -758,7 +704,7 @@ var FormAutofillContent = {
    * Get the active input's information from cache which is created after page
    * identified.
    *
-   * @returns {Object|null}
+   * @returns {object | null}
    *          Return the active input's information that cloned from content cache
    *          (or return null if the information is not found in the cache).
    */
@@ -786,11 +732,10 @@ var FormAutofillContent = {
 
   identifyAutofillFields(element) {
     this.debug(
-      "identifyAutofillFields:",
-      String(element.ownerDocument.location)
+      `identifyAutofillFields: ${element.ownerDocument.location?.hostname}`
     );
 
-    if (DELEGATE_AUTOCOMPLETE || !this.savedFieldNames) {
+    if (lazy.DELEGATE_AUTOCOMPLETE || !this.savedFieldNames) {
       this.debug("identifyAutofillFields: savedFieldNames are not known yet");
       let actor = getActorFromWindow(element.ownerGlobal);
       if (actor) {
@@ -800,8 +745,8 @@ var FormAutofillContent = {
 
     let formHandler = this._getFormHandler(element);
     if (!formHandler) {
-      let formLike = FormLikeFactory.createFromField(element);
-      formHandler = new FormAutofillHandler(
+      let formLike = lazy.FormLikeFactory.createFromField(element);
+      formHandler = new lazy.FormAutofillHandler(
         formLike,
         this.formSubmitted.bind(this)
       );
@@ -812,7 +757,6 @@ var FormAutofillContent = {
     let validDetails = formHandler.collectFormFields();
 
     this._formsDetails.set(formHandler.form.rootElement, formHandler);
-    this.debug("Adding form handler to _formsDetails:", formHandler);
 
     validDetails.forEach(detail =>
       this._markAsAutofillField(detail.elementWeakRef.get())
@@ -827,6 +771,15 @@ var FormAutofillContent = {
     }
 
     this.activeSection.clearPopulatedForm();
+
+    let fieldName = FormAutofillContent.activeFieldDetail?.fieldName;
+    if (lazy.FormAutofillUtils.isCreditCardField(fieldName)) {
+      lazy.AutofillTelemetry.recordFormInteractionEvent(
+        "cleared",
+        this.activeSection,
+        { fieldName }
+      );
+    }
   },
 
   previewProfile(doc) {
@@ -856,10 +809,10 @@ var FormAutofillContent = {
         fieldName => !!profile[fieldName]
       );
 
-      let focusedCategory = FormAutofillUtils.getCategoryFromFieldName(
+      let focusedCategory = lazy.FormAutofillUtils.getCategoryFromFieldName(
         focusedInputDetails.fieldName
       );
-      let categories = FormAutofillUtils.getCategoriesFromFieldNames(
+      let categories = lazy.FormAutofillUtils.getCategoriesFromFieldNames(
         profileFields
       );
       actor.sendAsyncMessage("FormAutofill:UpdateWarningMessage", {
@@ -899,18 +852,20 @@ var FormAutofillContent = {
       formFillController.passwordPopupAutomaticallyOpened
     );
 
-    Services.telemetry.recordEvent(
-      "creditcard",
-      "popup_shown",
-      "cc_form",
-      this.activeSection.flowId
-    );
+    let fieldName = FormAutofillContent.activeFieldDetail?.fieldName;
+    if (fieldName && this.activeSection) {
+      lazy.AutofillTelemetry.recordFormInteractionEvent(
+        "popup_shown",
+        this.activeSection,
+        { fieldName }
+      );
+    }
   },
 
   _markAsAutofillField(field) {
     // Since Form Autofill popup is only for input element, any non-Input
     // element should be excluded here.
-    if (!field || ChromeUtils.getClassName(field) !== "HTMLInputElement") {
+    if (!HTMLInputElement.isInstance(field)) {
       return;
     }
 

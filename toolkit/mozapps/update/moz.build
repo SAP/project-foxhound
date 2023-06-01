@@ -17,12 +17,14 @@ XPIDL_SOURCES += [
 ]
 
 TEST_DIRS += ["tests"]
+MARIONETTE_UNIT_MANIFESTS += ["tests/marionette/marionette.ini"]
 
 EXTRA_COMPONENTS += [
     "nsUpdateService.manifest",
 ]
 
 EXTRA_JS_MODULES += [
+    "AppUpdater.jsm",
     "UpdateListener.jsm",
     "UpdateService.jsm",
     "UpdateServiceStub.jsm",
@@ -43,7 +45,7 @@ if (
     ]
 
     EXTRA_JS_MODULES.backgroundtasks += [
-        "BackgroundTask_backgroundupdate.jsm",
+        "BackgroundTask_backgroundupdate.sys.mjs",
     ]
 
 XPCOM_MANIFESTS += [

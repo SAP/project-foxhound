@@ -3,6 +3,8 @@ import itertools
 import string
 
 # We'd like to use itertools.chain but it's 2.6 or higher.
+
+
 def chain(*iterables):
     # chain('ABC', 'DEF') --> A B C D E F
     for it in iterables:
@@ -158,10 +160,10 @@ def WebIDLTest(parser, harness):
     for (i, type) in enumerate(validUnionTypes):
         interface += string.Template(
             """
-          void method${i}(${type} arg);
+          undefined method${i}(${type} arg);
           ${type} returnMethod${i}();
           attribute ${type} attr${i};
-          void optionalMethod${i}(${type}? arg);
+          undefined optionalMethod${i}(${type}? arg);
         """
         ).substitute(i=i, type=type)
     interface += """
@@ -178,7 +180,7 @@ def WebIDLTest(parser, harness):
             + string.Template(
                 """
             interface TestUnion {
-              void method(${type} arg);
+              undefined method(${type} arg);
             };
         """
             ).substitute(type=invalid)

@@ -1,8 +1,6 @@
 // This test ensures HasStorageAccess API returns the right value under different
 // scenarios.
 
-/* import-globals-from antitracking_head.js */
-
 var settings = [
   // same-origin no-tracker
   {
@@ -173,7 +171,12 @@ var testCases = [
         cookieBehavior: test.behavior,
         allowList: false,
         callback,
-        extraPrefs: null,
+        extraPrefs: [
+          [
+            "privacy.partition.always_partition_third_party_non_cookie_storage",
+            false,
+          ],
+        ],
         expectedBlockingNotifications: 0,
         runInPrivateWindow: false,
         iframeSandbox: null,

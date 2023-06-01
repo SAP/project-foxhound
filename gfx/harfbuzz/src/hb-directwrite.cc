@@ -44,7 +44,7 @@
  **/
 
 /* Declare object creator for dynamic support of DWRITE */
-typedef HRESULT (* WINAPI t_DWriteCreateFactory)(
+typedef HRESULT (WINAPI *t_DWriteCreateFactory)(
   DWRITE_FACTORY_TYPE factoryType,
   REFIID              iid,
   IUnknown            **factory
@@ -273,17 +273,12 @@ struct hb_directwrite_font_data_t {};
 hb_directwrite_font_data_t *
 _hb_directwrite_shaper_font_data_create (hb_font_t *font)
 {
-  hb_directwrite_font_data_t *data = new hb_directwrite_font_data_t;
-  if (unlikely (!data))
-    return nullptr;
-
-  return data;
+  return (hb_directwrite_font_data_t *) HB_SHAPER_DATA_SUCCEEDED;
 }
 
 void
 _hb_directwrite_shaper_font_data_destroy (hb_directwrite_font_data_t *data)
 {
-  delete data;
 }
 
 
@@ -793,6 +788,9 @@ retry_getglyphs:
   }
 
   if (isRightToLeft) hb_buffer_reverse (buffer);
+
+  buffer->clear_glyph_flags ();
+  buffer->unsafe_to_break ();
 
   delete [] clusterMap;
   delete [] glyphIndices;

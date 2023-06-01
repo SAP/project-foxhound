@@ -26,8 +26,6 @@
 namespace mozilla {
 namespace ipc {
 
-static const int sClientFd = 3;
-
 LazyLogModule gForkServiceLog("ForkService");
 
 ForkServer::ForkServer() {}
@@ -38,28 +36,16 @@ ForkServer::ForkServer() {}
 void ForkServer::InitProcess(int* aArgc, char*** aArgv) {
   base::InitForkServerProcess();
 
-  int fd = sClientFd;
-  int fd_flags = fcntl(sClientFd, F_GETFL, 0);
-  fcntl(fd, F_SETFL, fd_flags & ~O_NONBLOCK);
-  mTcver = MakeUnique<MiniTransceiver>(fd, DataBufferClear::AfterReceiving);
+  mTcver = MakeUnique<MiniTransceiver>(kClientPipeFd,
+                                       DataBufferClear::AfterReceiving);
 }
 
 /**
  * Start providing the service at the IPC channel.
  */
 bool ForkServer::HandleMessages() {
-  // |sClientFd| is created by an instance of |IPC::Channel|.
-  // It sends a HELLO automatically.
-  IPC::Message hello;
-  mTcver->RecvInfallible(
-      hello, "Expect to receive a HELLO message from the parent process!");
-  MOZ_ASSERT(hello.type() == kHELLO_MESSAGE_TYPE);
-
-  // Send it back
-  mTcver->SendInfallible(hello, "Fail to ack the received HELLO!");
-
   while (true) {
-    IPC::Message msg;
+    UniquePtr<IPC::Message> msg;
     if (!mTcver->Recv(msg)) {
       break;
     }
@@ -130,6 +116,14 @@ inline void PrepareFdsRemap(base::LaunchOptions* aOptions,
   }
 }
 
+template <class P>
+static void ReadParamInfallible(IPC::MessageReader* aReader, P* aResult,
+                                const char* aCrashMessage) {
+  if (!IPC::ReadParam(aReader, aResult)) {
+    MOZ_CRASH_UNSAFE(aCrashMessage);
+  }
+}
+
 /**
  * Parse a Message to get a list of arguments and fill a LaunchOptions.
  */
@@ -142,18 +136,16 @@ inline bool ParseForkNewSubprocess(IPC::Message& aMsg,
     return false;
   }
 
-  PickleIterator iter(aMsg);
+  IPC::MessageReader reader(aMsg);
   nsTArray<nsCString> argv_array;
   nsTArray<EnvVar> env_map;
   nsTArray<FdMapping> fds_remap;
 
-  ReadIPDLParamInfallible(&aMsg, &iter, nullptr, &argv_array,
-                          "Error deserializing 'nsCString[]'");
-  ReadIPDLParamInfallible(&aMsg, &iter, nullptr, &env_map,
-                          "Error deserializing 'EnvVar[]'");
-  ReadIPDLParamInfallible(&aMsg, &iter, nullptr, &fds_remap,
-                          "Error deserializing 'FdMapping[]'");
-  aMsg.EndRead(iter, aMsg.type());
+  ReadParamInfallible(&reader, &argv_array,
+                      "Error deserializing 'nsCString[]'");
+  ReadParamInfallible(&reader, &env_map, "Error deserializing 'EnvVar[]'");
+  ReadParamInfallible(&reader, &fds_remap, "Error deserializing 'FdMapping[]'");
+  reader.EndRead();
 
   PrepareArguments(aArgv, argv_array);
   PrepareEnv(aOptions, env_map);
@@ -190,12 +182,10 @@ inline void SanitizeBuffers(IPC::Message& aMsg, std::vector<std::string>& aArgv,
  * It will return in both the fork server process and the new content
  * process.  |mAppProcBuilder| is null for the fork server.
  */
-void ForkServer::OnMessageReceived(IPC::Message&& message) {
-  IPC::Message msg(std::move(message));
-
+void ForkServer::OnMessageReceived(UniquePtr<IPC::Message> message) {
   std::vector<std::string> argv;
   base::LaunchOptions options;
-  if (!ParseForkNewSubprocess(msg, argv, &options)) {
+  if (!ParseForkNewSubprocess(*message, argv, &options)) {
     return;
   }
 
@@ -220,13 +210,14 @@ void ForkServer::OnMessageReceived(IPC::Message&& message) {
   mAppProcBuilder = nullptr;
 
   IPC::Message reply(MSG_ROUTING_CONTROL, Reply_ForkNewSubprocess__ID);
-  WriteIPDLParam(&reply, nullptr, child_pid);
+  IPC::MessageWriter writer(reply);
+  WriteIPDLParam(&writer, nullptr, child_pid);
   mTcver->SendInfallible(reply, "failed to send a reply message");
 
   // Without this, the content processes that is forked later are
   // able to read the content of buffers even the buffers have been
   // released.
-  SanitizeBuffers(msg, argv, options);
+  SanitizeBuffers(*message, argv, options);
 }
 
 /**

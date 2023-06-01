@@ -3,13 +3,12 @@
 
 const { Service } = ChromeUtils.import("resource://services-sync/service.js");
 const { Status } = ChromeUtils.import("resource://services-sync/status.js");
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
 
 const fakeServer = new SyncServer();
 fakeServer.start();
-const fakeServerUrl = "http://localhost:" + fakeServer.port;
 
 registerCleanupFunction(function() {
   return promiseStopServer(fakeServer).finally(() => {

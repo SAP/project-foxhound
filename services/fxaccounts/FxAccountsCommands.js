@@ -10,25 +10,34 @@ const {
   SCOPE_OLD_SYNC,
   log,
 } = ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js");
+const lazy = {};
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "PushCrypto",
   "resource://gre/modules/PushCrypto.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 const { Observers } = ChromeUtils.import(
   "resource://services-common/observers.js"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   BulkKeyBundle: "resource://services-sync/keys.js",
-  CommonUtils: "resource://services-common/utils.js",
-  CryptoUtils: "resource://services-crypto/utils.js",
   CryptoWrapper: "resource://services-sync/record.js",
 });
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "INVALID_SHAREABLE_SCHEMES",
+  "services.sync.engine.tabs.filteredSchemes",
+  "",
+  null,
+  val => {
+    return new Set(val.split("|"));
+  }
+);
 
 class FxAccountsCommands {
   constructor(fxAccountsInternal) {
@@ -199,6 +208,13 @@ class FxAccountsCommands {
                 sender ? sender.name : "Unknown device"
               }.`
             );
+            // This should eventually be rare to hit as all platforms will be using the same
+            // scheme filter list, but we have this here in the case other platforms
+            // haven't caught up and/or trying to send invalid uris using older versions
+            const scheme = Services.io.newURI(uri).scheme;
+            if (lazy.INVALID_SHAREABLE_SCHEMES.has(scheme)) {
+              throw new Error("Invalid scheme found for received URI.");
+            }
             tabsReceived.push({ title, uri, sender });
           } catch (e) {
             log.error(`Error while handling incoming Send Tab payload.`, e);
@@ -209,8 +225,12 @@ class FxAccountsCommands {
       }
     }
     if (tabsReceived.length) {
-      Observers.notify("fxaccounts:commands:open-uri", tabsReceived);
+      this._notifyFxATabsReceived(tabsReceived);
     }
+  }
+
+  _notifyFxATabsReceived(tabsReceived) {
+    Observers.notify("fxaccounts:commands:open-uri", tabsReceived);
   }
 }
 
@@ -244,7 +264,7 @@ class SendTab {
   async send(to, tab) {
     log.info(`Sending a tab to ${to.length} devices.`);
     const flowID = this._fxai.telemetry.generateFlowID();
-    const encoder = new TextEncoder("utf8");
+    const encoder = new TextEncoder();
     const data = { entries: [{ title: tab.title, url: tab.url }] };
     const report = {
       succeeded: [],
@@ -329,14 +349,14 @@ class SendTab {
       throw new Error("Target Send Tab key ID is different from ours");
     }
     const json = JSON.parse(bundle);
-    const wrapper = new CryptoWrapper();
+    const wrapper = new lazy.CryptoWrapper();
     wrapper.deserialize({ payload: json });
-    const syncKeyBundle = BulkKeyBundle.fromJWK(oldsyncKey);
+    const syncKeyBundle = lazy.BulkKeyBundle.fromJWK(oldsyncKey);
     let { publicKey, authSecret } = await wrapper.decrypt(syncKeyBundle);
     authSecret = urlsafeBase64Decode(authSecret);
     publicKey = urlsafeBase64Decode(publicKey);
 
-    const { ciphertext: encrypted } = await PushCrypto.encrypt(
+    const { ciphertext: encrypted } = await lazy.PushCrypto.encrypt(
       bytes,
       publicKey,
       authSecret
@@ -350,21 +370,15 @@ class SendTab {
   }
 
   async _decrypt(ciphertext) {
-    let sendTabKeys = await this._getPersistedSendTabKeys();
-    if (!sendTabKeys) {
-      // If we lost the user's send tab keys for any reason,
-      // `generateAndPersistEncryptedSendTabKeys` will regenerate the send tab keys,
-      // persist them, then persist an encrypted bundle of the keys.
-      // It should be impossible for us to hit this for new devices
-      // this was added to recover users who hit Bug 1752609
-      await this._generateAndPersistEncryptedSendTabKey();
-      sendTabKeys = await this._getPersistedSendTabKeys();
-    }
-    let { privateKey, publicKey, authSecret } = sendTabKeys;
+    let {
+      privateKey,
+      publicKey,
+      authSecret,
+    } = await this._getPersistedSendTabKeys();
     publicKey = urlsafeBase64Decode(publicKey);
     authSecret = urlsafeBase64Decode(authSecret);
     ciphertext = new Uint8Array(urlsafeBase64Decode(ciphertext));
-    return PushCrypto.decrypt(
+    return lazy.PushCrypto.decrypt(
       privateKey,
       publicKey,
       authSecret,
@@ -375,9 +389,9 @@ class SendTab {
   }
 
   async _generateAndPersistSendTabKeys() {
-    let [publicKey, privateKey] = await PushCrypto.generateKeys();
+    let [publicKey, privateKey] = await lazy.PushCrypto.generateKeys();
     publicKey = urlsafeBase64Encode(publicKey);
-    let authSecret = PushCrypto.generateAuthenticationSecret();
+    let authSecret = lazy.PushCrypto.generateAuthenticationSecret();
     authSecret = urlsafeBase64Encode(authSecret);
     const sendTabKeys = {
       publicKey,
@@ -425,9 +439,9 @@ class SendTab {
       log.warn("Failed to fetch keys, so unable to determine sendtab keys", ex);
       return null;
     }
-    const wrapper = new CryptoWrapper();
+    const wrapper = new lazy.CryptoWrapper();
     wrapper.cleartext = keyToEncrypt;
-    const keyBundle = BulkKeyBundle.fromJWK(oldsyncKey);
+    const keyBundle = lazy.BulkKeyBundle.fromJWK(oldsyncKey);
     await wrapper.encrypt(keyBundle);
     const encryptedSendTabKeys = JSON.stringify({
       // Older clients expect this to be hex, due to pre-JWK sync key ids :-(
@@ -446,7 +460,8 @@ class SendTab {
 
   async getEncryptedSendTabKeys() {
     let encryptedSendTabKeys = await this._getPersistedEncryptedSendTabKey();
-    if (!encryptedSendTabKeys) {
+    const sendTabKeys = await this._getPersistedSendTabKeys();
+    if (!encryptedSendTabKeys || !sendTabKeys) {
       log.info("Generating and persisting encrypted sendtab keys");
       // `_generateAndPersistEncryptedKeys` requires the sync key
       // which cannot be accessed if the login manager is locked

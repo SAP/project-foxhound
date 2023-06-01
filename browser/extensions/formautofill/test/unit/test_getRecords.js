@@ -4,18 +4,18 @@
 
 "use strict";
 
-const { CreditCard } = ChromeUtils.import(
-  "resource://gre/modules/CreditCard.jsm"
+const { CreditCard } = ChromeUtils.importESModule(
+  "resource://gre/modules/CreditCard.sys.mjs"
 );
 
 let FormAutofillParent, FormAutofillStatus;
 let OSKeyStore;
-add_task(async function setup() {
+add_setup(async () => {
   ({ FormAutofillParent, FormAutofillStatus } = ChromeUtils.import(
     "resource://autofill/FormAutofillParent.jsm"
   ));
-  ({ OSKeyStore } = ChromeUtils.import(
-    "resource://gre/modules/OSKeyStore.jsm"
+  ({ OSKeyStore } = ChromeUtils.importESModule(
+    "resource://gre/modules/OSKeyStore.sys.mjs"
   ));
 });
 

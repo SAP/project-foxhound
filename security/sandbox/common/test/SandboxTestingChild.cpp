@@ -81,12 +81,25 @@ void SandboxTestingChild::Bind(Endpoint<PSandboxTestingChild>&& aEndpoint) {
     RunTestsSocket(this);
   }
 
+  if (XRE_IsGPUProcess()) {
+    RunTestsGPU(this);
+  }
+
   if (XRE_IsUtilityProcess()) {
     RefPtr<ipc::UtilityProcessChild> s = ipc::UtilityProcessChild::Get();
     MOZ_ASSERT(s, "Unable to grab a UtilityProcessChild");
     switch (s->mSandbox) {
       case ipc::SandboxingKind::GENERIC_UTILITY:
-        RunTestsUtility(this);
+        RunTestsGenericUtility(this);
+#ifdef MOZ_APPLEMEDIA
+        [[fallthrough]];
+      case ipc::SandboxingKind::UTILITY_AUDIO_DECODING_APPLE_MEDIA:
+#endif
+#ifdef XP_WIN
+        [[fallthrough]];
+      case ipc::SandboxingKind::UTILITY_AUDIO_DECODING_WMF:
+#endif
+        RunTestsUtilityAudioDecoder(this, s->mSandbox);
         break;
 
       default:
@@ -116,9 +129,9 @@ void SandboxTestingChild::Destroy() {
   sInstance = nullptr;
 }
 
-bool SandboxTestingChild::RecvShutDown() {
+ipc::IPCResult SandboxTestingChild::RecvShutDown() {
   Close();
-  return true;
+  return IPC_OK();
 }
 
 void SandboxTestingChild::ReportNoTests() {

@@ -3,11 +3,12 @@
 
 const TEST_PATH = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com"
 );
 
-const { PromptTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromptTestUtils.jsm"
+const { PromptTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromptTestUtils.sys.mjs"
 );
 
 SimpleTest.requestFlakyTimeout("Needs to test a timeout");
@@ -131,7 +132,7 @@ add_task(async function test() {
    * permitUnload should be true, and all handlers fired.
    */
   url += "?1";
-  BrowserTestUtils.loadURI(browser, url);
+  BrowserTestUtils.loadURIString(browser, url);
   await BrowserTestUtils.browserLoaded(browser, false, url);
   await promptShownPromise;
 

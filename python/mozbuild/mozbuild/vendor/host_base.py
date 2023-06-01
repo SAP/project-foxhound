@@ -2,16 +2,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import os
-import tempfile
 import subprocess
+import tempfile
+import urllib
 
 
 class BaseHost:
     def __init__(self, manifest):
         self.manifest = manifest
+        self.repo_url = urllib.parse.urlparse(self.manifest["vendoring"]["url"])
 
     def upstream_tag(self, revision):
         """Temporarily clone the repo to get the latest tag and timestamp"""
@@ -22,6 +22,8 @@ class BaseHost:
                 [
                     "git",
                     "clone",
+                    "-c",
+                    "core.autocrlf=input",
                     self.manifest["vendoring"]["url"],
                     self.manifest["origin"]["name"],
                 ],
@@ -56,4 +58,7 @@ class BaseHost:
             return (latest_tag, latest_tag_timestamp)
 
     def upstream_snapshot(self, revision):
-        raise Exception("Should not be called")
+        raise Exception("Unimplemented for this subclass...")
+
+    def upstream_path_to_file(self, revision, filepath):
+        raise Exception("Unimplemented for this subclass...")

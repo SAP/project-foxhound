@@ -1,13 +1,7 @@
-ChromeUtils.defineModuleGetter(
-  this,
-  "Downloads",
-  "resource://gre/modules/Downloads.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "DownloadsCommon",
-  "resource:///modules/DownloadsCommon.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  Downloads: "resource://gre/modules/Downloads.sys.mjs",
+  DownloadsCommon: "resource:///modules/DownloadsCommon.sys.mjs",
+});
 
 const HandlerService = Cc[
   "@mozilla.org/uriloader/handler-service;1"
@@ -113,6 +107,7 @@ async function runTest(url, link, checkFunction, description) {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["dom.security.https_first", true],
+      ["browser.download.always_ask_before_handling_new_types", true],
       ["browser.download.improvements_to_download_panel", false],
     ],
   });

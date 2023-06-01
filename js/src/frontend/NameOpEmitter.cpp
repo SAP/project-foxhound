@@ -11,6 +11,7 @@
 #include "frontend/ParserAtom.h"  // ParserAtom
 #include "frontend/SharedContext.h"
 #include "frontend/TDZCheckCache.h"
+#include "frontend/ValueUsage.h"
 #include "vm/Opcodes.h"
 
 using namespace js;
@@ -51,9 +52,16 @@ bool NameOpEmitter::emitGet() {
       break;
     }
     case NameLocation::Kind::Intrinsic:
-      if (!bce_->emitAtomOp(JSOp::GetIntrinsic, name_)) {
-        //          [stack] VAL
-        return false;
+      if (name_ == TaggedParserAtomIndex::WellKnown::undefined()) {
+        if (!bce_->emit1(JSOp::Undefined)) {
+          //        [stack] Undefined
+          return false;
+        }
+      } else {
+        if (!bce_->emitAtomOp(JSOp::GetIntrinsic, name_)) {
+          //        [stack] VAL
+          return false;
+        }
       }
       break;
     case NameLocation::Kind::NamedLambdaCallee:
@@ -115,6 +123,7 @@ bool NameOpEmitter::emitGet() {
     switch (loc_.kind()) {
       case NameLocation::Kind::Dynamic:
       case NameLocation::Kind::Global:
+        MOZ_ASSERT(bce_->emitterMode != BytecodeEmitter::SelfHosting);
         if (bce_->needsImplicitThis() || bce_->sc->hasNonSyntacticScope()) {
           MOZ_ASSERT_IF(bce_->needsImplicitThis(),
                         loc_.kind() == NameLocation::Kind::Dynamic);
@@ -135,6 +144,12 @@ bool NameOpEmitter::emitGet() {
       case NameLocation::Kind::ArgumentSlot:
       case NameLocation::Kind::FrameSlot:
       case NameLocation::Kind::EnvironmentCoordinate:
+        if (bce_->emitterMode == BytecodeEmitter::SelfHosting) {
+          if (!bce_->emitDebugCheckSelfHosted()) {
+            //      [stack] CALLEE
+            return false;
+          }
+        }
         if (!bce_->emit1(JSOp::Undefined)) {
           //        [stack] CALLEE UNDEF
           return false;
@@ -398,7 +413,7 @@ bool NameOpEmitter::emitAssignment() {
   return true;
 }
 
-bool NameOpEmitter::emitIncDec() {
+bool NameOpEmitter::emitIncDec(ValueUsage valueUsage) {
   MOZ_ASSERT(state_ == State::Start);
 
   JSOp incOp = isInc() ? JSOp::Inc : JSOp::Dec;
@@ -410,9 +425,9 @@ bool NameOpEmitter::emitIncDec() {
     //              [stack] ENV? N
     return false;
   }
-  if (isPostIncDec()) {
+  if (isPostIncDec() && valueUsage == ValueUsage::WantValue) {
     if (!bce_->emit1(JSOp::Dup)) {
-      //            [stack] ENV? N? N
+      //            [stack] ENV? N N
       return false;
     }
   }
@@ -420,13 +435,14 @@ bool NameOpEmitter::emitIncDec() {
     //              [stack] ENV? N? N+1
     return false;
   }
-  if (isPostIncDec() && emittedBindOp()) {
+  if (isPostIncDec() && emittedBindOp() &&
+      valueUsage == ValueUsage::WantValue) {
     if (!bce_->emit2(JSOp::Pick, 2)) {
-      //            [stack] N? N+1 ENV?
+      //            [stack] N N+1 ENV
       return false;
     }
     if (!bce_->emit1(JSOp::Swap)) {
-      //            [stack] N? ENV? N+1
+      //            [stack] N ENV N+1
       return false;
     }
   }
@@ -434,7 +450,7 @@ bool NameOpEmitter::emitIncDec() {
     //              [stack] N? N+1
     return false;
   }
-  if (isPostIncDec()) {
+  if (isPostIncDec() && valueUsage == ValueUsage::WantValue) {
     if (!bce_->emit1(JSOp::Pop)) {
       //            [stack] N
       return false;

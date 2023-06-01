@@ -4,15 +4,15 @@
 
 /* import-globals-from report.js */
 
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+var { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-var { E10SUtils } = ChromeUtils.import("resource://gre/modules/E10SUtils.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
-  "TalosParentProfiler",
-  "resource://talos-powers/TalosParentProfiler.jsm"
+var { E10SUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/E10SUtils.sys.mjs"
 );
+ChromeUtils.defineESModuleGetters(this, {
+  TalosParentProfiler: "resource://talos-powers/TalosParentProfiler.sys.mjs",
+});
 
 var NUM_CYCLES = 5;
 var numPageCycles = 1;
@@ -150,12 +150,8 @@ async function plInit() {
 
     // for pageloader tests the profiling info is found in an env variable
     // because it is not available early enough to set it as a browser pref
-    var env = Cc["@mozilla.org/process/environment;1"].getService(
-      Ci.nsIEnvironment
-    );
-
-    if (env.exists("TPPROFILINGINFO")) {
-      profilingInfo = env.get("TPPROFILINGINFO");
+    if (Services.env.exists("TPPROFILINGINFO")) {
+      profilingInfo = Services.env.get("TPPROFILINGINFO");
       if (profilingInfo !== null) {
         TalosParentProfiler.initFromObject(JSON.parse(profilingInfo));
       }
@@ -173,7 +169,7 @@ async function plInit() {
       plStop(true);
     }
 
-    if (pages.length == 0) {
+    if (!pages.length) {
       dumpLine("tp: no pages to test, quitting");
       plStop(true);
     }

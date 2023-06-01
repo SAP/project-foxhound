@@ -1,8 +1,6 @@
-ChromeUtils.defineModuleGetter(
-  this,
-  "SiteDataTestUtils",
-  "resource://testing-common/SiteDataTestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  SiteDataTestUtils: "resource://testing-common/SiteDataTestUtils.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
   this,
   "DownloadUtils",
@@ -10,6 +8,7 @@ ChromeUtils.defineModuleGetter(
 );
 
 const TEST_ORIGIN = "https://example.com";
+// eslint-disable-next-line @microsoft/sdl/no-insecure-url
 const TEST_HTTP_ORIGIN = "http://example.com";
 const TEST_SUB_ORIGIN = "https://test1.example.com";
 const REMOVE_DIALOG_URL =
@@ -24,25 +23,12 @@ const TEST_PATH = getRootDirectory(gTestPath).replace(
 // Test opening the correct certificate information when clicking "Show certificate".
 add_task(async function test_ShowCertificate() {
   let tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_ORIGIN);
-  let tab2;
-  let pageLoaded;
-  await BrowserTestUtils.openNewForegroundTab(
+  let tab2 = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
-    () => {
-      gBrowser.selectedTab = BrowserTestUtils.addTab(
-        gBrowser,
-        TEST_ORIGIN_CERT_ERROR
-      );
-      let browser = gBrowser.selectedBrowser;
-      tab2 = gBrowser.selectedTab;
-      pageLoaded = BrowserTestUtils.waitForErrorPage(browser);
-    },
-    false
+    TEST_SUB_ORIGIN
   );
 
-  await pageLoaded;
-
-  let pageInfo = BrowserPageInfo(TEST_ORIGIN_CERT_ERROR, "securityTab");
+  let pageInfo = BrowserPageInfo(TEST_SUB_ORIGIN, "securityTab");
   await BrowserTestUtils.waitForEvent(pageInfo, "load");
   let pageInfoDoc = pageInfo.document;
   let securityTab = pageInfoDoc.getElementById("securityTab");
@@ -70,11 +56,7 @@ add_task(async function test_ShowCertificate() {
         .querySelector(".subject-name")
         .shadowRoot.querySelector(".common-name")
         .shadowRoot.querySelector(".info").textContent;
-      is(
-        commonName,
-        "expired.example.com",
-        "Should have the same common name."
-      );
+      is(commonName, "example.com", "Should have the same common name.");
     });
 
     gBrowser.removeCurrentTab(); // closes about:certificate
@@ -170,8 +152,8 @@ add_task(async function test_CertificateError() {
   );
 
   await TestUtils.waitForCondition(
-    () => verifier.value === "Mozilla Testing",
-    `Value of verifier should be "Mozilla Testing", instead got "${verifier.value}".`
+    () => verifier.value === "Not specified",
+    `Value of verifier should be "Not specified", instead got "${verifier.value}".`
   );
 
   await TestUtils.waitForCondition(

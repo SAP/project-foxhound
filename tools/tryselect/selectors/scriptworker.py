@@ -6,10 +6,9 @@
 import sys
 
 import requests
-from taskgraph.parameters import Parameters
-
-from gecko_taskgraph.util.taskcluster import find_task_id, get_artifact, get_session
 from gecko_taskgraph.util.taskgraph import find_existing_tasks
+from taskgraph.parameters import Parameters
+from taskgraph.util.taskcluster import find_task_id, get_artifact, get_session
 
 from ..cli import BaseTryParser
 from ..push import push_to_try
@@ -110,7 +109,8 @@ def run(
     task_type,
     release_type,
     try_config=None,
-    push=True,
+    stage_changes=False,
+    dry_run=False,
     message="{msg}",
     closed_tree=False,
 ):
@@ -169,7 +169,8 @@ def run(
     return push_to_try(
         "scriptworker",
         message.format(msg=msg),
-        push=push,
+        stage_changes=stage_changes,
+        dry_run=dry_run,
         closed_tree=closed_tree,
         try_task_config=task_config,
         files_to_change=files_to_change,

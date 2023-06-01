@@ -8,12 +8,14 @@
 use std::collections::HashSet;
 use std::iter::FromIterator;
 
+use serde_json::json;
+
 use super::*;
-use crate::metrics::RecordedExperimentData;
 use crate::metrics::{StringMetric, TimeUnit, TimespanMetric, TimingDistributionMetric};
 
 const GLOBAL_APPLICATION_ID: &str = "org.mozilla.glean.test.app";
 pub fn new_glean(tempdir: Option<tempfile::TempDir>) -> (Glean, tempfile::TempDir) {
+    let _ = env_logger::builder().try_init();
     let dir = match tempdir {
         Some(tempdir) => tempdir,
         None => tempfile::tempdir().unwrap(),
@@ -46,7 +48,11 @@ fn experiment_id_and_branch_get_truncated_if_too_long() {
     let very_long_branch_id = "test-branch-id".repeat(10);
 
     // Mark the experiment as active.
-    glean.set_experiment_active(very_long_id.clone(), very_long_branch_id.clone(), None);
+    glean.set_experiment_active(
+        very_long_id.clone(),
+        very_long_branch_id.clone(),
+        HashMap::new(),
+    );
 
     // Generate the expected id and branch strings.
     let mut expected_id = very_long_id;
@@ -55,20 +61,21 @@ fn experiment_id_and_branch_get_truncated_if_too_long() {
     expected_branch_id.truncate(100);
 
     assert!(
-        glean.test_is_experiment_active(expected_id.clone()),
+        glean
+            .test_get_experiment_data(expected_id.clone())
+            .is_some(),
         "An experiment with the truncated id should be available"
     );
 
     // Make sure the branch id was truncated as well.
-    let experiment_data = glean.test_get_experiment_data_as_json(expected_id);
+    let experiment_data = glean.test_get_experiment_data(expected_id);
     assert!(
         experiment_data.is_some(),
         "Experiment data must be available"
     );
 
-    let parsed_json: RecordedExperimentData =
-        ::serde_json::from_str(&experiment_data.unwrap()).unwrap();
-    assert_eq!(expected_branch_id, parsed_json.branch);
+    let experiment_data = experiment_data.unwrap();
+    assert_eq!(expected_branch_id, experiment_data.branch);
 }
 
 #[test]
@@ -90,31 +97,32 @@ fn limits_on_experiments_extras_are_applied_correctly() {
     }
 
     // Mark the experiment as active.
-    glean.set_experiment_active(experiment_id.clone(), branch_id, Some(extras));
+    glean.set_experiment_active(experiment_id.clone(), branch_id, extras);
 
     // Make sure it is active
     assert!(
-        glean.test_is_experiment_active(experiment_id.clone()),
+        glean
+            .test_get_experiment_data(experiment_id.clone())
+            .is_some(),
         "An experiment with the truncated id should be available"
     );
 
     // Get the data
-    let experiment_data = glean.test_get_experiment_data_as_json(experiment_id);
+    let experiment_data = glean.test_get_experiment_data(experiment_id);
     assert!(
         experiment_data.is_some(),
         "Experiment data must be available"
     );
 
     // Parse the JSON and validate the lengths
-    let parsed_json: RecordedExperimentData =
-        ::serde_json::from_str(&experiment_data.unwrap()).unwrap();
+    let experiment_data = experiment_data.unwrap();
     assert_eq!(
         20,
-        parsed_json.clone().extra.unwrap().len(),
+        experiment_data.extra.as_ref().unwrap().len(),
         "Experiments extra must be less than max length"
     );
 
-    for (key, value) in parsed_json.extra.as_ref().unwrap().iter() {
+    for (key, value) in experiment_data.extra.as_ref().unwrap().iter() {
         assert!(
             key.len() <= 100,
             "Experiments extra key must be less than max length"
@@ -141,35 +149,36 @@ fn experiments_status_is_correctly_toggled() {
         .collect();
 
     // Activate an experiment.
-    glean.set_experiment_active(experiment_id.clone(), branch_id, Some(extra.clone()));
+    glean.set_experiment_active(experiment_id.clone(), branch_id, extra.clone());
 
     // Check that the experiment is marekd as active.
     assert!(
-        glean.test_is_experiment_active(experiment_id.clone()),
+        glean
+            .test_get_experiment_data(experiment_id.clone())
+            .is_some(),
         "The experiment must be marked as active."
     );
 
     // Check that the extra data was stored.
-    let experiment_data = glean.test_get_experiment_data_as_json(experiment_id.clone());
+    let experiment_data = glean.test_get_experiment_data(experiment_id.clone());
     assert!(
         experiment_data.is_some(),
         "Experiment data must be available"
     );
 
-    let parsed_data: RecordedExperimentData =
-        ::serde_json::from_str(&experiment_data.unwrap()).unwrap();
-    assert_eq!(parsed_data.extra.unwrap(), extra);
+    let experiment_data = experiment_data.unwrap();
+    assert_eq!(experiment_data.extra.unwrap(), extra);
 
     // Disable the experiment and check that is no longer available.
     glean.set_experiment_inactive(experiment_id.clone());
     assert!(
-        !glean.test_is_experiment_active(experiment_id),
+        glean.test_get_experiment_data(experiment_id).is_none(),
         "The experiment must not be available any more."
     );
 }
 
 #[test]
-fn client_id_and_first_run_date_and_first_run_hour_must_be_regenerated() {
+fn client_id_and_first_run_date_must_be_regenerated() {
     let dir = tempfile::tempdir().unwrap();
     let tmpname = dir.path().display().to_string();
     {
@@ -180,17 +189,12 @@ fn client_id_and_first_run_date_and_first_run_hour_must_be_regenerated() {
         assert!(glean
             .core_metrics
             .client_id
-            .test_get_value(&glean, "glean_client_info")
+            .get_value(&glean, "glean_client_info")
             .is_none());
         assert!(glean
             .core_metrics
             .first_run_date
-            .test_get_value_as_string(&glean, "glean_client_info")
-            .is_none());
-        assert!(glean
-            .core_metrics
-            .first_run_hour
-            .test_get_value_as_string(&glean, "metrics")
+            .get_value(&glean, "glean_client_info")
             .is_none());
     }
 
@@ -199,17 +203,12 @@ fn client_id_and_first_run_date_and_first_run_hour_must_be_regenerated() {
         assert!(glean
             .core_metrics
             .client_id
-            .test_get_value(&glean, "glean_client_info")
+            .get_value(&glean, "glean_client_info")
             .is_some());
         assert!(glean
             .core_metrics
             .first_run_date
-            .test_get_value_as_string(&glean, "glean_client_info")
-            .is_some());
-        assert!(glean
-            .core_metrics
-            .first_run_hour
-            .test_get_value_as_string(&glean, "metrics")
+            .get_value(&glean, "glean_client_info")
             .is_some());
     }
 }
@@ -217,26 +216,27 @@ fn client_id_and_first_run_date_and_first_run_hour_must_be_regenerated() {
 #[test]
 fn basic_metrics_should_be_cleared_when_uploading_is_disabled() {
     let (mut glean, _t) = new_glean(None);
-    let metric = StringMetric::new(CommonMetricData::new(
-        "category",
-        "string_metric",
-        "baseline",
-    ));
+    let metric = StringMetric::new(CommonMetricData {
+        category: "category".to_string(),
+        name: "string_metric".to_string(),
+        send_in_pings: vec!["baseline".to_string()],
+        ..Default::default()
+    });
 
-    metric.set(&glean, "TEST VALUE");
-    assert!(metric.test_get_value(&glean, "baseline").is_some());
+    metric.set_sync(&glean, "TEST VALUE");
+    assert!(metric.get_value(&glean, "baseline").is_some());
 
     glean.set_upload_enabled(false);
-    assert!(metric.test_get_value(&glean, "baseline").is_none());
+    assert!(metric.get_value(&glean, "baseline").is_none());
 
-    metric.set(&glean, "TEST VALUE");
-    assert!(metric.test_get_value(&glean, "baseline").is_none());
+    metric.set_sync(&glean, "TEST VALUE");
+    assert!(metric.get_value(&glean, "baseline").is_none());
 
     glean.set_upload_enabled(true);
-    assert!(metric.test_get_value(&glean, "baseline").is_none());
+    assert!(metric.get_value(&glean, "baseline").is_none());
 
-    metric.set(&glean, "TEST VALUE");
-    assert!(metric.test_get_value(&glean, "baseline").is_some());
+    metric.set_sync(&glean, "TEST VALUE");
+    assert!(metric.get_value(&glean, "baseline").is_some());
 }
 
 #[test]
@@ -264,34 +264,6 @@ fn first_run_date_is_managed_correctly_when_toggling_uploading() {
             .core_metrics
             .first_run_date
             .get_value(&glean, "glean_client_info")
-    );
-}
-
-#[test]
-fn first_run_hour_is_managed_correctly_when_toggling_uploading() {
-    let (mut glean, _) = new_glean(None);
-
-    let original_first_run_hour = glean
-        .core_metrics
-        .first_run_hour
-        .get_value(&glean, "metrics");
-
-    glean.set_upload_enabled(false);
-    assert_eq!(
-        original_first_run_hour,
-        glean
-            .core_metrics
-            .first_run_hour
-            .get_value(&glean, "metrics")
-    );
-
-    glean.set_upload_enabled(true);
-    assert_eq!(
-        original_first_run_hour,
-        glean
-            .core_metrics
-            .first_run_hour
-            .get_value(&glean, "metrics")
     );
 }
 
@@ -396,13 +368,14 @@ fn correct_order() {
     }
 
     // One of every metric type. The values are arbitrary and don't matter.
+    let long_string = "0123456789".repeat(200);
     let all_metrics = vec![
         Boolean(false),
         Counter(0),
         CustomDistributionExponential(Histogram::exponential(1, 500, 10)),
         CustomDistributionLinear(Histogram::linear(1, 500, 10)),
         Datetime(local_now_with_offset(), TimeUnit::Second),
-        Experiment(RecordedExperimentData { branch: "branch".into(), extra: None, }),
+        Experiment(RecordedExperiment { branch: "branch".into(), extra: None, }),
         Quantity(0),
         String("glean".into()),
         StringList(vec!["glean".into()]),
@@ -412,6 +385,7 @@ fn correct_order() {
         MemoryDistribution(Histogram::functional(2.0, 8.0)),
         Jwe("eyJhbGciOiJSU0EtT0FFUCIsImVuYyI6IkEyNTZHQ00ifQ.OKOawDo13gRp2ojaHV7LFpZcgV7T6DVZKTyKOMTYUmKoTCVJRgckCL9kiMT03JGeipsEdY3mx_etLbbWSrFr05kLzcSr4qKAq7YN7e9jwQRb23nfa6c9d-StnImGyFDbSv04uVuxIp5Zms1gNxKKK2Da14B8S4rzVRltdYwam_lDp5XnZAYpQdb76FdIKLaVmqgfwX7XWRxv2322i-vDxRfqNzo_tETKzpVLzfiwQyeyPGLBIO56YJ7eObdv0je81860ppamavo35UgoRdbYaBcoh9QcfylQr66oc6vFWXRcZ_ZT2LawVCWTIy3brGPi6UklfCpIMfIjf7iGdXKHzg.48V1_ALb6US04U3b.5eym8TW_c8SuK0ltJ3rpYIzOeDQz7TALvtu6UG9oMo4vpzs9tX_EFShS8iB7j6jiSdiwkIr3ajwQzaBtQD_A.XFBoMYUZodetZdvTiFvSkQ".into()),
         Rate(0, 0),
+        Text(long_string),
     ];
 
     for metric in all_metrics {
@@ -439,6 +413,7 @@ fn correct_order() {
             Jwe(..)                           => assert_eq!(13, disc),
             Rate(..)                          => assert_eq!(14, disc),
             Url(..)                           => assert_eq!(15, disc),
+            Text(..)                          => assert_eq!(16, disc),
         }
     }
 }
@@ -504,7 +479,7 @@ fn backwards_compatible_deserialization() {
         (
             "experiment",
             vec![5, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 98, 114, 97, 110, 99, 104, 0],
-            Experiment(RecordedExperimentData { branch: "branch".into(), extra: None, }),
+            Experiment(RecordedExperiment { branch: "branch".into(), extra: None, }),
         ),
         (
             "quantity",
@@ -656,15 +631,15 @@ fn test_change_metric_type_runtime() {
     });
 
     let string_value = "definitely-a-string!";
-    string_metric.set(&glean, string_value);
+    string_metric.set_sync(&glean, string_value);
 
     assert_eq!(
-        string_metric.test_get_value(&glean, ping_name).unwrap(),
+        string_metric.get_value(&glean, ping_name).unwrap(),
         string_value,
         "Expected properly deserialized string"
     );
 
-    let mut timespan_metric = TimespanMetric::new(
+    let timespan_metric = TimespanMetric::new(
         CommonMetricData {
             name: metric_name.into(),
             category: metric_category.into(),
@@ -681,14 +656,14 @@ fn test_change_metric_type_runtime() {
     timespan_metric.set_stop(&glean, duration);
 
     assert_eq!(
-        timespan_metric.test_get_value(&glean, ping_name).unwrap(),
+        timespan_metric.get_value(&glean, ping_name).unwrap(),
         60,
         "Expected properly deserialized time"
     );
 
     // We expect old data to be lost forever. See the following bug comment
     // https://bugzilla.mozilla.org/show_bug.cgi?id=1621757#c1 for more context.
-    assert_eq!(None, string_metric.test_get_value(&glean, ping_name));
+    assert_eq!(None, string_metric.get_value(&glean, ping_name));
 }
 
 #[test]
@@ -701,15 +676,15 @@ fn timing_distribution_truncation() {
     for (unit, expected_keys) in &[
         (
             TimeUnit::Nanosecond,
-            HashSet::<u64>::from_iter(vec![961_548, 939, 599_512_966_122, 1]),
+            HashSet::<i64>::from_iter(vec![961_548, 939, 599_512_966_122, 1]),
         ),
         (
             TimeUnit::Microsecond,
-            HashSet::<u64>::from_iter(vec![939, 562_949_953_421_318, 599_512_966_122, 961_548]),
+            HashSet::<i64>::from_iter(vec![939, 562_949_953_421_318, 599_512_966_122, 961_548]),
         ),
         (
             TimeUnit::Millisecond,
-            HashSet::<u64>::from_iter(vec![
+            HashSet::<i64>::from_iter(vec![
                 961_548,
                 576_460_752_303_431_040,
                 599_512_966_122,
@@ -717,7 +692,7 @@ fn timing_distribution_truncation() {
             ]),
         ),
     ] {
-        let mut dist = TimingDistributionMetric::new(
+        let dist = TimingDistributionMetric::new(
             CommonMetricData {
                 name: format!("local_metric_{:?}", unit),
                 category: "local".into(),
@@ -735,11 +710,12 @@ fn timing_distribution_truncation() {
             max_sample_time * 1_000,
             max_sample_time * 1_000_000,
         ] {
-            let timer_id = dist.set_start(0);
+            let timer_id = 4u64.into();
+            dist.set_start(timer_id, 0);
             dist.set_stop_and_accumulate(&glean, timer_id, value);
         }
 
-        let snapshot = dist.test_get_value(&glean, "baseline").unwrap();
+        let snapshot = dist.get_value(&glean, "baseline").unwrap();
 
         let mut keys = HashSet::new();
         let mut recorded_values = 0;
@@ -748,7 +724,7 @@ fn timing_distribution_truncation() {
             // A snapshot potentially includes buckets with a 0 count.
             // We can ignore them here.
             if value > 0 {
-                assert!(key < max_sample_time * unit.as_nanos(1));
+                assert!((key as u64) < max_sample_time * unit.as_nanos(1));
                 keys.insert(key);
                 recorded_values += 1;
             }
@@ -776,7 +752,7 @@ fn timing_distribution_truncation_accumulate() {
         TimeUnit::Microsecond,
         TimeUnit::Millisecond,
     ] {
-        let mut dist = TimingDistributionMetric::new(
+        let dist = TimingDistributionMetric::new(
             CommonMetricData {
                 name: format!("local_metric_{:?}", unit),
                 category: "local".into(),
@@ -786,19 +762,22 @@ fn timing_distribution_truncation_accumulate() {
             unit,
         );
 
-        dist.accumulate_samples_signed(
-            &glean,
-            vec![
-                1,
-                1_000,
-                1_000_000,
-                max_sample_time,
-                max_sample_time * 1_000,
-                max_sample_time * 1_000_000,
-            ],
-        );
+        let samples = [
+            1,
+            1000,
+            100000,
+            max_sample_time,
+            max_sample_time * 1_000,
+            max_sample_time * 1_000_000,
+        ];
+        let timer_id = 4u64.into(); // xkcd#221
 
-        let snapshot = dist.test_get_value(&glean, "baseline").unwrap();
+        for sample in samples {
+            dist.set_start(timer_id, 0);
+            dist.set_stop_and_accumulate(&glean, timer_id, sample);
+        }
+
+        let snapshot = dist.get_value(&glean, "baseline").unwrap();
 
         // The number of samples was originally designed around 1ns to
         // 10minutes, with 8 steps per power of 2, which works out to 316 items.
@@ -837,6 +816,174 @@ fn test_setting_log_pings() {
 }
 
 #[test]
+fn test_set_metrics_disabled() {
+    let (glean, _t) = new_glean(None);
+    let metric = StringMetric::new(CommonMetricData {
+        category: "category".to_string(),
+        name: "string_metric".to_string(),
+        send_in_pings: vec!["baseline".to_string()],
+        ..Default::default()
+    });
+    let another_metric = LabeledString::new(
+        CommonMetricData {
+            category: "category".to_string(),
+            name: "labeled_string_metric".to_string(),
+            send_in_pings: vec!["baseline".to_string()],
+            ..Default::default()
+        },
+        Some(vec!["label1".into()]),
+    );
+
+    // 1. Set the metrics with a "TEST_VALUE" and ensure it was set
+    metric.set_sync(&glean, "TEST_VALUE");
+    assert_eq!(
+        "TEST_VALUE",
+        metric.get_value(&glean, "baseline").unwrap(),
+        "Initial value must match"
+    );
+    another_metric.get("label1").set_sync(&glean, "TEST_VALUE");
+    assert_eq!(
+        "TEST_VALUE",
+        another_metric
+            .get("label1")
+            .get_value(&glean, "baseline")
+            .unwrap(),
+        "Initial value must match"
+    );
+
+    // 2. Set a configuration to disable the metrics
+    let mut metrics_disabled_config = json!(
+        {
+            "category.string_metric": true,
+            "category.labeled_string_metric": true,
+        }
+    )
+    .to_string();
+    glean.set_metrics_disabled_config(
+        MetricsDisabledConfig::try_from(metrics_disabled_config).unwrap(),
+    );
+
+    // 3. Since the metrics were disabled, setting a new value will be ignored
+    metric.set_sync(&glean, "VALUE_AFTER_DISABLED");
+    assert_eq!(
+        "TEST_VALUE",
+        metric.get_value(&glean, "baseline").unwrap(),
+        "Shouldn't set when disabled"
+    );
+    another_metric
+        .get("label1")
+        .set_sync(&glean, "VALUE_AFTER_DISABLED");
+    assert_eq!(
+        "TEST_VALUE",
+        another_metric
+            .get("label1")
+            .get_value(&glean, "baseline")
+            .unwrap(),
+        "Shouldn't set when disabled"
+    );
+
+    // 4. Set a new configuration where the metrics are enabled
+    metrics_disabled_config = json!({}).to_string();
+    glean.set_metrics_disabled_config(
+        MetricsDisabledConfig::try_from(metrics_disabled_config).unwrap(),
+    );
+
+    // 5. Since the metrics are now enabled, setting a new value should work
+    metric.set_sync(&glean, "VALUE_AFTER_REENABLED");
+    assert_eq!(
+        "VALUE_AFTER_REENABLED",
+        metric.get_value(&glean, "baseline").unwrap(),
+        "Should set when re-enabled"
+    );
+    another_metric
+        .get("label1")
+        .set_sync(&glean, "VALUE_AFTER_REENABLED");
+    assert_eq!(
+        "VALUE_AFTER_REENABLED",
+        another_metric
+            .get("label1")
+            .get_value(&glean, "baseline")
+            .unwrap(),
+        "Should set when re-enabled"
+    );
+}
+
+#[test]
+fn test_remote_settings_epoch() {
+    let (glean, _t) = new_glean(None);
+
+    // 1. Ensure the starting epoch
+    let mut current_epoch = glean.remote_settings_epoch.load(Ordering::Acquire);
+    assert_eq!(0u8, current_epoch, "Current epoch must start at 0");
+
+    // 2. Set a configuration which will trigger incrementing the epoch
+    let metrics_disabled_config = json!(
+        {
+            "category.string_metric": true
+        }
+    )
+    .to_string();
+    glean.set_metrics_disabled_config(
+        MetricsDisabledConfig::try_from(metrics_disabled_config).unwrap(),
+    );
+
+    // 3. Ensure the epoch updated
+    current_epoch = glean.remote_settings_epoch.load(Ordering::Acquire);
+    assert_eq!(1u8, current_epoch, "Current epoch must match");
+}
+
+#[test]
+fn test_remote_settings_epoch_updates_in_metric() {
+    let (glean, _t) = new_glean(None);
+    let metric = StringMetric::new(CommonMetricData {
+        category: "category".to_string(),
+        name: "string_metric".to_string(),
+        send_in_pings: vec!["baseline".to_string()],
+        ..Default::default()
+    });
+
+    // 1. Set the metric with a "TEST_VALUE" and ensure it was set
+    metric.set_sync(&glean, "TEST_VALUE");
+    assert_eq!(
+        "TEST_VALUE",
+        metric.get_value(&glean, "baseline").unwrap(),
+        "Initial value must match"
+    );
+
+    // 2. Set a configuration to disable the `category.string_metric`
+    let metrics_disabled_config = json!(
+        {
+            "category.string_metric": true
+        }
+    )
+    .to_string();
+    glean.set_metrics_disabled_config(
+        MetricsDisabledConfig::try_from(metrics_disabled_config).unwrap(),
+    );
+
+    // 3. Ensure the epoch was updated
+    let current_epoch = glean.remote_settings_epoch.load(Ordering::Acquire);
+    assert_eq!(1u8, current_epoch, "Current epoch must update");
+
+    // 4. Since the metric was disabled, setting a new value will be ignored
+    // AND the metric should update its epoch to match the `current_epoch`
+    metric.set_sync(&glean, "VALUE_AFTER_DISABLED");
+    assert_eq!(
+        "TEST_VALUE",
+        metric.get_value(&glean, "baseline").unwrap(),
+        "Shouldn't set when disabled"
+    );
+
+    use crate::metrics::MetricType;
+    // The "epoch" resides in the upper nibble of the `inner.disabled` field
+    let epoch = metric.meta().disabled.load(Ordering::Acquire) >> 4;
+    assert_eq!(
+        current_epoch, epoch,
+        "Epoch must match between metric and Glean core"
+    );
+}
+
+#[test]
 #[should_panic]
 fn test_empty_application_id() {
     let dir = tempfile::tempdir().unwrap();
@@ -859,7 +1006,7 @@ fn records_database_file_size() {
     // Initialize Glean once to ensure we create the database.
     let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true);
     let database_size = &glean.database_metrics.size;
-    let data = database_size.test_get_value(&glean, "metrics");
+    let data = database_size.get_value(&glean, "metrics");
     assert!(data.is_none());
     drop(glean);
 
@@ -867,7 +1014,7 @@ fn records_database_file_size() {
     let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true);
 
     let database_size = &glean.database_metrics.size;
-    let data = database_size.test_get_value(&glean, "metrics");
+    let data = database_size.get_value(&glean, "metrics");
     assert!(data.is_some());
     let data = data.unwrap();
 
@@ -893,14 +1040,14 @@ fn records_io_errors() {
     fs::set_permissions(&pending_pings_dir, permissions).unwrap();
 
     // Writing the ping file should fail.
-    let submitted = glean.internal_pings.metrics.submit(&glean, None);
+    let submitted = glean.internal_pings.baseline.submit_sync(&glean, None);
     // But the return value is still `true` because we enqueue the ping anyway.
     assert!(submitted);
 
     let metric = &glean.additional_metrics.io_errors;
     assert_eq!(
         1,
-        metric.test_get_value(&glean, "metrics").unwrap(),
+        metric.get_value(&glean, Some("metrics")).unwrap(),
         "Should have recorded an IO error"
     );
 
@@ -908,7 +1055,7 @@ fn records_io_errors() {
     fs::set_permissions(&pending_pings_dir, original_permissions).unwrap();
 
     // Now we can submit a ping
-    let submitted = glean.internal_pings.metrics.submit(&glean, None);
+    let submitted = glean.internal_pings.metrics.submit_sync(&glean, None);
     assert!(submitted);
 }
 
@@ -928,6 +1075,6 @@ fn test_activity_api() {
     // Signal back that client is ianctive.
     glean.handle_client_inactive();
 
-    // Check that we set everything we needed for the 'inactuve' status.
+    // Check that we set everything we needed for the 'inactive' status.
     assert!(!glean.is_dirty_flag_set());
 }

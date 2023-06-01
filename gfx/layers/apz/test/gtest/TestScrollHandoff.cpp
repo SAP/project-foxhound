@@ -15,8 +15,8 @@ class APZScrollHandoffTester : public APZCTreeManagerTester {
 
   void CreateScrollHandoffLayerTree1() {
     const char* treeShape = "x(x)";
-    nsIntRegion layerVisibleRegion[] = {nsIntRegion(IntRect(0, 0, 100, 100)),
-                                        nsIntRegion(IntRect(0, 50, 100, 50))};
+    LayerIntRegion layerVisibleRegion[] = {LayerIntRect(0, 0, 100, 100),
+                                           LayerIntRect(0, 50, 100, 50)};
     CreateScrollData(treeShape, layerVisibleRegion);
     SetScrollableFrameMetrics(root, ScrollableLayerGuid::START_SCROLL_ID,
                               CSSRect(0, 0, 200, 200));
@@ -33,9 +33,9 @@ class APZScrollHandoffTester : public APZCTreeManagerTester {
 
   void CreateScrollHandoffLayerTree2() {
     const char* treeShape = "x(x(x))";
-    nsIntRegion layerVisibleRegion[] = {nsIntRegion(IntRect(0, 0, 100, 100)),
-                                        nsIntRegion(IntRect(0, 0, 100, 100)),
-                                        nsIntRegion(IntRect(0, 50, 100, 50))};
+    LayerIntRegion layerVisibleRegion[] = {LayerIntRect(0, 0, 100, 100),
+                                           LayerIntRect(0, 0, 100, 100),
+                                           LayerIntRect(0, 50, 100, 50)};
     CreateScrollData(treeShape, layerVisibleRegion);
     SetScrollableFrameMetrics(root, ScrollableLayerGuid::START_SCROLL_ID,
                               CSSRect(0, 0, 200, 200));
@@ -56,12 +56,12 @@ class APZScrollHandoffTester : public APZCTreeManagerTester {
 
   void CreateScrollHandoffLayerTree3() {
     const char* treeShape = "x(x(x)x(x))";
-    nsIntRegion layerVisibleRegion[] = {
-        nsIntRegion(IntRect(0, 0, 100, 100)),  // root
-        nsIntRegion(IntRect(0, 0, 100, 50)),   // scrolling parent 1
-        nsIntRegion(IntRect(0, 0, 100, 50)),   // scrolling child 1
-        nsIntRegion(IntRect(0, 50, 100, 50)),  // scrolling parent 2
-        nsIntRegion(IntRect(0, 50, 100, 50))   // scrolling child 2
+    LayerIntRegion layerVisibleRegion[] = {
+        LayerIntRect(0, 0, 100, 100),  // root
+        LayerIntRect(0, 0, 100, 50),   // scrolling parent 1
+        LayerIntRect(0, 0, 100, 50),   // scrolling child 1
+        LayerIntRect(0, 50, 100, 50),  // scrolling parent 2
+        LayerIntRect(0, 50, 100, 50)   // scrolling child 2
     };
     CreateScrollData(treeShape, layerVisibleRegion);
     SetScrollableFrameMetrics(layers[0], ScrollableLayerGuid::START_SCROLL_ID,
@@ -90,8 +90,8 @@ class APZScrollHandoffTester : public APZCTreeManagerTester {
   // horizontally, and a child layer that is only scrollable vertically.
   void CreateScrollHandoffLayerTree4() {
     const char* treeShape = "x(x)";
-    nsIntRegion layerVisibleRegion[] = {nsIntRegion(IntRect(0, 0, 100, 100)),
-                                        nsIntRegion(IntRect(0, 0, 100, 100))};
+    LayerIntRegion layerVisibleRegion[] = {LayerIntRect(0, 0, 100, 100),
+                                           LayerIntRect(0, 0, 100, 100)};
     CreateScrollData(treeShape, layerVisibleRegion);
     SetScrollableFrameMetrics(root, ScrollableLayerGuid::START_SCROLL_ID,
                               CSSRect(0, 0, 200, 100));
@@ -108,9 +108,9 @@ class APZScrollHandoffTester : public APZCTreeManagerTester {
   // child layer that is only scrollable vertically.
   void CreateScrollHandoffLayerTree5() {
     const char* treeShape = "x(x)";
-    nsIntRegion layerVisibleRegion[] = {
-        nsIntRegion(IntRect(0, 0, 100, 100)),  // scrolling parent
-        nsIntRegion(IntRect(0, 50, 100, 50))   // scrolling child
+    LayerIntRegion layerVisibleRegion[] = {
+        LayerIntRect(0, 0, 100, 100),  // scrolling parent
+        LayerIntRect(0, 50, 100, 50)   // scrolling child
     };
     CreateScrollData(treeShape, layerVisibleRegion);
     SetScrollableFrameMetrics(root, ScrollableLayerGuid::START_SCROLL_ID,
@@ -126,9 +126,9 @@ class APZScrollHandoffTester : public APZCTreeManagerTester {
 
   void CreateScrollgrabLayerTree(bool makeParentScrollable = true) {
     const char* treeShape = "x(x)";
-    nsIntRegion layerVisibleRegion[] = {
-        nsIntRegion(IntRect(0, 0, 100, 100)),  // scroll-grabbing parent
-        nsIntRegion(IntRect(0, 20, 100, 80))   // child
+    LayerIntRegion layerVisibleRegion[] = {
+        LayerIntRect(0, 0, 100, 100),  // scroll-grabbing parent
+        LayerIntRect(0, 20, 100, 80)   // child
     };
     CreateScrollData(treeShape, layerVisibleRegion);
     float parentHeight = makeParentScrollable ? 120 : 100;
@@ -195,6 +195,7 @@ class APZScrollHandoffTester : public APZCTreeManagerTester {
         PanOptions::KeepFingerDown | PanOptions::ExactCoordinates);
 
     childApzc->AssertAxisLocked(ScrollDirection::eVertical);
+    childApzc->AssertStateIsPanningLockedY();
   }
 };
 
@@ -640,7 +641,7 @@ TEST_F(APZScrollHandoffTester, ImmediateHandoffDisallowed_Fling) {
 
   // Pan on the child, enough to get very close to the end, so that the
   // subsequent fling reaches the end and has leftover velocity to hand off.
-  Pan(childApzc, 60, 12);
+  Pan(childApzc, 60, 2);
 
   // Allow the fling to run its course.
   childApzc->AdvanceAnimationsUntilEnd();
@@ -656,7 +657,7 @@ TEST_F(APZScrollHandoffTester, ImmediateHandoffDisallowed_Fling) {
 
   // Pan again on the child. This time, since the child was scrolled to
   // its end when the gesture began, we expect the scroll to be handed off.
-  Pan(childApzc, 60, 50);
+  Pan(childApzc, 60, 40);
 
   // Allow the fling to run its course. The fling should also be handed off.
   childApzc->AdvanceAnimationsUntilEnd();
@@ -744,8 +745,7 @@ TEST_F(APZScrollHandoffTesterMock, WheelHandoffNonscrollable) {
   mcc->AdvanceByMillis(100);
   MouseInput mouseInput(MouseInput::MOUSE_MOVE,
                         MouseInput::ButtonType::PRIMARY_BUTTON, 0, 0,
-                        scrollableLocation,
-                        MillisecondsSinceStartup(mcc->Time()), mcc->Time(), 0);
+                        scrollableLocation, mcc->Time(), 0);
   WidgetMouseEvent mouseEvent = mouseInput.ToWidgetEvent(nullptr);
   QueueMockHitResult(ScrollableLayerGuid::START_SCROLL_ID + 1);
   ((APZInputBridge*)manager.get())->ReceiveInputEvent(mouseEvent);
@@ -755,4 +755,55 @@ TEST_F(APZScrollHandoffTesterMock, WheelHandoffNonscrollable) {
   QueueMockHitResult(ScrollableLayerGuid::START_SCROLL_ID + 1);
   Wheel(manager, scrollableLocation, downwardDelta, mcc->Time());
   EXPECT_GT(childMetrics.GetVisualScrollOffset().y, 0);
+}
+
+TEST_F(APZScrollHandoffTesterMock, ChildCloseToEndOfScrollRange) {
+  SCOPED_GFX_PREF_BOOL("apz.overscroll.enabled", true);
+
+  CreateScrollHandoffLayerTree1();
+
+  RefPtr<TestAsyncPanZoomController> childApzc = ApzcOf(layers[1]);
+
+  FrameMetrics& rootMetrics = rootApzc->GetFrameMetrics();
+  FrameMetrics& childMetrics = childApzc->GetFrameMetrics();
+
+  // Zoom the page in by 3x. This needs to be reflected in the zoom level
+  // and composition bounds of both APZCs.
+  rootMetrics.SetZoom(CSSToParentLayerScale(3.0));
+  rootMetrics.SetCompositionBounds(ParentLayerRect(0, 0, 300, 300));
+  childMetrics.SetZoom(CSSToParentLayerScale(3.0));
+  childMetrics.SetCompositionBounds(ParentLayerRect(0, 150, 300, 150));
+
+  // Scroll the child APZC very close to the end of the scroll range.
+  // The scroll offset is chosen such that in CSS pixels it has 0.01 pixels
+  // room to scroll (less than COORDINATE_EPSILON = 0.02), but in ParentLayer
+  // pixels it has 0.03 pixels room (greater than COORDINATE_EPSILON).
+  childMetrics.SetVisualScrollOffset(CSSPoint(0, 49.99));
+
+  EXPECT_FALSE(childApzc->IsOverscrolled());
+
+  CSSPoint childBefore = childApzc->GetFrameMetrics().GetVisualScrollOffset();
+  CSSPoint parentBefore = rootApzc->GetFrameMetrics().GetVisualScrollOffset();
+
+  // Synthesize a pan gesture that tries to scroll the child further down.
+  PanGesture(PanGestureInput::PANGESTURE_START, childApzc,
+             ScreenIntPoint(10, 20), ScreenPoint(0, 40), mcc->Time());
+  mcc->AdvanceByMillis(5);
+  childApzc->AdvanceAnimations(mcc->GetSampleTime());
+
+  PanGesture(PanGestureInput::PANGESTURE_END, childApzc, ScreenIntPoint(10, 21),
+             ScreenPoint(0, 0), mcc->Time());
+
+  CSSPoint childAfter = childApzc->GetFrameMetrics().GetVisualScrollOffset();
+  CSSPoint parentAfter = rootApzc->GetFrameMetrics().GetVisualScrollOffset();
+
+  bool childScrolled = (childBefore != childAfter);
+  bool parentScrolled = (parentBefore != parentAfter);
+
+  // Check that either the child or the parent scrolled.
+  // (With the current implementation of comparing quantities to
+  // COORDINATE_EPSILON in CSS units, it will be the parent, but the important
+  // thing is that at least one of the child or parent scroll, i.e. we're not
+  // stuck in a situation where no scroll offset is changing).
+  EXPECT_TRUE(childScrolled || parentScrolled);
 }

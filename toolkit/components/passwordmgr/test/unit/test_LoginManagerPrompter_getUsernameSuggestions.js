@@ -135,9 +135,9 @@ function _saveLogins(logins) {
 }
 
 function _compare(expectedArr, actualArr) {
-  ok(!!expectedArr, "Expect expectedArr to be truthy");
-  ok(!!actualArr, "Expect actualArr to be truthy");
-  ok(
+  Assert.ok(!!expectedArr, "Expect expectedArr to be truthy");
+  Assert.ok(!!actualArr, "Expect actualArr to be truthy");
+  Assert.ok(
     expectedArr.length == actualArr.length,
     "Expect expectedArr and actualArr to be the same length"
   );
@@ -145,11 +145,11 @@ function _compare(expectedArr, actualArr) {
     let expected = expectedArr[i];
     let actual = actualArr[i];
 
-    ok(
+    Assert.ok(
       expected.text == actual.text,
       `Expect element #${i} text to match.  Expected: '${expected.text}', Actual '${actual.text}'`
     );
-    ok(
+    Assert.ok(
       expected.style == actual.style,
       `Expect element #${i} text to match.  Expected: '${expected.style}', Actual '${actual.style}'`
     );
@@ -163,7 +163,7 @@ async function _test(testCase) {
 
   if (!testCase.isLoggedIn) {
     // Primary Password should be enabled and locked
-    LoginTestUtils.masterPassword.enable();
+    LoginTestUtils.primaryPassword.enable();
   }
 
   info("Computing results");
@@ -176,7 +176,7 @@ async function _test(testCase) {
 
   info("Cleaning up state");
   if (!testCase.isLoggedIn) {
-    LoginTestUtils.masterPassword.disable();
+    LoginTestUtils.primaryPassword.disable();
   }
   LoginTestUtils.clearData();
 }

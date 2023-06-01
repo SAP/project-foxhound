@@ -60,6 +60,7 @@ EXPORTS += [
     "nsDocShellLoadState.h",
     "nsDocShellLoadTypes.h",
     "nsDocShellTreeOwner.h",
+    "nsDSURIContentListener.h",
     "nsIScrollObserver.h",
     "nsWebNavigationInfo.h",
     "SerializedLoadContext.h",
@@ -124,4 +125,6 @@ LOCAL_INCLUDES += [
     "/tools/profiler",
 ]
 
-EXTRA_JS_MODULES += ["URIFixup.jsm"]
+EXTRA_JS_MODULES += ["URIFixup.sys.mjs"]
+
+include("/tools/fuzzing/libfuzzer-config.mozbuild")

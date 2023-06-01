@@ -64,6 +64,9 @@ class ReaderProxy {
   MediaEventSource<void>& OnMediaNotSeekable() {
     return mReader->OnMediaNotSeekable();
   }
+  MediaEventProducer<VideoInfo, AudioInfo>& OnTrackInfoUpdatedEvent() {
+    return mReader->OnTrackInfoUpdatedEvent();
+  }
   size_t SizeOfAudioQueueInFrames() const {
     return mReader->SizeOfAudioQueueInFrames();
   }
@@ -83,6 +86,8 @@ class ReaderProxy {
 
   void SetCanonicalDuration(
       AbstractCanonical<media::NullableTimeUnit>* aCanonical);
+
+  void UpdateMediaEngineId(uint64_t aMediaEngineId);
 
  private:
   ~ReaderProxy();

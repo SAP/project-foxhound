@@ -3,6 +3,7 @@ use std::{error::Error, fmt, ops::Range};
 
 /// A source code span, used for error reporting.
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Span {
     start: u32,
     end: u32,
@@ -13,8 +14,16 @@ impl Span {
     /// Creates a new `Span` from a range of byte indices
     ///
     /// Note: end is exclusive, it doesn't belong to the `Span`
-    pub fn new(start: u32, end: u32) -> Self {
+    pub const fn new(start: u32, end: u32) -> Self {
         Span { start, end }
+    }
+
+    /// Returns a new `Span` starting at `self` and ending at `other`
+    pub const fn until(&self, other: &Self) -> Self {
+        Span {
+            start: self.start,
+            end: other.end,
+        }
     }
 
     /// Modifies `self` to contain the smallest `Span` possible that
@@ -54,9 +63,24 @@ impl Span {
         }
     }
 
-    /// Check wether `self` was defined or is a default/unknown span
+    /// Check whether `self` was defined or is a default/unknown span
     pub fn is_defined(&self) -> bool {
         *self != Self::default()
+    }
+
+    /// Return a [`SourceLocation`] for this span in the provided source.
+    pub fn location(&self, source: &str) -> SourceLocation {
+        let prefix = &source[..self.start as usize];
+        let line_number = prefix.matches('\n').count() as u32 + 1;
+        let line_start = prefix.rfind('\n').map(|pos| pos + 1).unwrap_or(0);
+        let line_position = source[line_start..self.start as usize].chars().count() as u32 + 1;
+
+        SourceLocation {
+            line_number,
+            line_position,
+            offset: self.start,
+            length: self.end - self.start,
+        }
     }
 }
 
@@ -67,6 +91,34 @@ impl From<Range<usize>> for Span {
             end: range.end as u32,
         }
     }
+}
+
+impl std::ops::Index<Span> for str {
+    type Output = str;
+
+    #[inline]
+    fn index(&self, span: Span) -> &str {
+        &self[span.start as usize..span.end as usize]
+    }
+}
+
+/// A human-readable representation for a span, tailored for text source.
+///
+/// Corresponds to the positional members of [`GPUCompilationMessage`][gcm] from
+/// the WebGPU specification, except that `offset` and `length` are in bytes
+/// (UTF-8 code units), instead of UTF-16 code units.
+///
+/// [gcm]: https://www.w3.org/TR/webgpu/#gpucompilationmessage
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct SourceLocation {
+    /// 1-based line number.
+    pub line_number: u32,
+    /// 1-based column of the start of this span
+    pub line_position: u32,
+    /// 0-based Offset in code units (in bytes) of the start of the span.
+    pub offset: u32,
+    /// Length in code units (in bytes) of the span.
+    pub length: u32,
 }
 
 /// A source code span together with "context", a user-readable description of what part of the error it refers to.
@@ -110,7 +162,7 @@ where
 
 impl<E> WithSpan<E> {
     /// Create a new [`WithSpan`] from an [`Error`], containing no spans.
-    pub fn new(inner: E) -> Self {
+    pub const fn new(inner: E) -> Self {
         Self {
             inner,
             #[cfg(feature = "span")]
@@ -119,12 +171,17 @@ impl<E> WithSpan<E> {
     }
 
     /// Reverse of [`Self::new`], discards span information and returns an inner error.
+    #[allow(clippy::missing_const_for_fn)] // ignore due to requirement of #![feature(const_precise_live_drops)]
     pub fn into_inner(self) -> E {
         self.inner
     }
 
+    pub const fn as_inner(&self) -> &E {
+        &self.inner
+    }
+
     /// Iterator over stored [`SpanContext`]s.
-    pub fn spans(&self) -> impl Iterator<Item = &SpanContext> {
+    pub fn spans(&self) -> impl Iterator<Item = &SpanContext> + ExactSizeIterator {
         #[cfg(feature = "span")]
         return self.spans.iter();
         #[cfg(not(feature = "span"))]
@@ -179,6 +236,99 @@ impl<E> WithSpan<E> {
         #[cfg(feature = "span")]
         res.spans.extend(self.spans);
         res
+    }
+
+    #[cfg(feature = "span")]
+    /// Return a [`SourceLocation`] for our first span, if we have one.
+    pub fn location(&self, source: &str) -> Option<SourceLocation> {
+        if self.spans.is_empty() {
+            return None;
+        }
+
+        Some(self.spans[0].0.location(source))
+    }
+
+    #[cfg(not(feature = "span"))]
+    /// Return a [`SourceLocation`] for our first span, if we have one.
+    pub fn location(&self, _source: &str) -> Option<SourceLocation> {
+        None
+    }
+
+    #[cfg(feature = "span")]
+    fn diagnostic(&self) -> codespan_reporting::diagnostic::Diagnostic<()>
+    where
+        E: Error,
+    {
+        use codespan_reporting::diagnostic::{Diagnostic, Label};
+        let diagnostic = Diagnostic::error()
+            .with_message(self.inner.to_string())
+            .with_labels(
+                self.spans()
+                    .map(|&(span, ref desc)| {
+                        Label::primary((), span.to_range().unwrap()).with_message(desc.to_owned())
+                    })
+                    .collect(),
+            )
+            .with_notes({
+                let mut notes = Vec::new();
+                let mut source: &dyn Error = &self.inner;
+                while let Some(next) = Error::source(source) {
+                    notes.push(next.to_string());
+                    source = next;
+                }
+                notes
+            });
+        diagnostic
+    }
+
+    /// Emits a summary of the error to standard error stream.
+    #[cfg(feature = "span")]
+    pub fn emit_to_stderr(&self, source: &str)
+    where
+        E: Error,
+    {
+        self.emit_to_stderr_with_path(source, "wgsl")
+    }
+
+    /// Emits a summary of the error to standard error stream.
+    #[cfg(feature = "span")]
+    pub fn emit_to_stderr_with_path(&self, source: &str, path: &str)
+    where
+        E: Error,
+    {
+        use codespan_reporting::{files, term};
+        use term::termcolor::{ColorChoice, StandardStream};
+
+        let files = files::SimpleFile::new(path, source);
+        let config = term::Config::default();
+        let writer = StandardStream::stderr(ColorChoice::Auto);
+        term::emit(&mut writer.lock(), &config, &files, &self.diagnostic())
+            .expect("cannot write error");
+    }
+
+    /// Emits a summary of the error to a string.
+    #[cfg(feature = "span")]
+    pub fn emit_to_string(&self, source: &str) -> String
+    where
+        E: Error,
+    {
+        self.emit_to_string_with_path(source, "wgsl")
+    }
+
+    /// Emits a summary of the error to a string.
+    #[cfg(feature = "span")]
+    pub fn emit_to_string_with_path(&self, source: &str, path: &str) -> String
+    where
+        E: Error,
+    {
+        use codespan_reporting::{files, term};
+        use term::termcolor::NoColor;
+
+        let files = files::SimpleFile::new(path, source);
+        let config = codespan_reporting::term::Config::default();
+        let mut writer = NoColor::new(Vec::new());
+        term::emit(&mut writer, &config, &files, &self.diagnostic()).expect("cannot write error");
+        String::from_utf8(writer.into_inner()).unwrap()
     }
 }
 
@@ -266,4 +416,108 @@ impl<T, E, E2> MapErrWithSpan<E, E2> for Result<T, WithSpan<E>> {
     {
         self.map_err(|e| e.and_then(func).into_other::<E2>())
     }
+}
+
+#[test]
+fn span_location() {
+    let source = "12\n45\n\n89\n";
+    assert_eq!(
+        Span { start: 0, end: 1 }.location(source),
+        SourceLocation {
+            line_number: 1,
+            line_position: 1,
+            offset: 0,
+            length: 1
+        }
+    );
+    assert_eq!(
+        Span { start: 1, end: 2 }.location(source),
+        SourceLocation {
+            line_number: 1,
+            line_position: 2,
+            offset: 1,
+            length: 1
+        }
+    );
+    assert_eq!(
+        Span { start: 2, end: 3 }.location(source),
+        SourceLocation {
+            line_number: 1,
+            line_position: 3,
+            offset: 2,
+            length: 1
+        }
+    );
+    assert_eq!(
+        Span { start: 3, end: 5 }.location(source),
+        SourceLocation {
+            line_number: 2,
+            line_position: 1,
+            offset: 3,
+            length: 2
+        }
+    );
+    assert_eq!(
+        Span { start: 4, end: 6 }.location(source),
+        SourceLocation {
+            line_number: 2,
+            line_position: 2,
+            offset: 4,
+            length: 2
+        }
+    );
+    assert_eq!(
+        Span { start: 5, end: 6 }.location(source),
+        SourceLocation {
+            line_number: 2,
+            line_position: 3,
+            offset: 5,
+            length: 1
+        }
+    );
+    assert_eq!(
+        Span { start: 6, end: 7 }.location(source),
+        SourceLocation {
+            line_number: 3,
+            line_position: 1,
+            offset: 6,
+            length: 1
+        }
+    );
+    assert_eq!(
+        Span { start: 7, end: 8 }.location(source),
+        SourceLocation {
+            line_number: 4,
+            line_position: 1,
+            offset: 7,
+            length: 1
+        }
+    );
+    assert_eq!(
+        Span { start: 8, end: 9 }.location(source),
+        SourceLocation {
+            line_number: 4,
+            line_position: 2,
+            offset: 8,
+            length: 1
+        }
+    );
+    assert_eq!(
+        Span { start: 9, end: 10 }.location(source),
+        SourceLocation {
+            line_number: 4,
+            line_position: 3,
+            offset: 9,
+            length: 1
+        }
+    );
+    assert_eq!(
+        Span { start: 10, end: 11 }.location(source),
+        SourceLocation {
+            line_number: 5,
+            line_position: 1,
+            offset: 10,
+            length: 1
+        }
+    );
 }

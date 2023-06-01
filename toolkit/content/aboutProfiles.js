@@ -4,9 +4,8 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -73,7 +72,6 @@ function rebuildProfileList() {
         lock.unlock();
       } catch (e) {
         if (
-          e.result != Cr.NS_ERROR_FILE_TARGET_DOES_NOT_EXIST &&
           e.result != Cr.NS_ERROR_FILE_NOT_DIRECTORY &&
           e.result != Cr.NS_ERROR_FILE_NOT_FOUND
         ) {
@@ -344,19 +342,6 @@ async function defaultProfile(profile) {
 }
 
 function openProfile(profile) {
-  let cancelQuit = Cc["@mozilla.org/supports-PRBool;1"].createInstance(
-    Ci.nsISupportsPRBool
-  );
-  Services.obs.notifyObservers(
-    cancelQuit,
-    "quit-application-requested",
-    "restart"
-  );
-
-  if (cancelQuit.data) {
-    return;
-  }
-
   Services.startup.createInstanceWithProfile(profile);
 }
 

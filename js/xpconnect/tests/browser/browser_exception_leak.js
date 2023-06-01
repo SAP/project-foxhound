@@ -16,11 +16,11 @@ add_task(async function test() {
     browser,
     { innerWindowId },
     async function(args) {
-      let { TestUtils } = ChromeUtils.import(
-        "resource://testing-common/TestUtils.jsm"
+      let { TestUtils } = ChromeUtils.importESModule(
+        "resource://testing-common/TestUtils.sys.mjs"
       );
-      let { Assert } = ChromeUtils.import(
-        "resource://testing-common/Assert.jsm"
+      let { Assert } = ChromeUtils.importESModule(
+        "resource://testing-common/Assert.sys.mjs"
       );
 
       const ConsoleAPIStorage = Cc[
@@ -36,7 +36,10 @@ add_task(async function test() {
       // Intentionally hold a reference to the console event.
       let leakedConsoleEvent = consoleEvents[0];
 
+      // XXX I think this is intentionally leaking |doc|.
+      // eslint-disable-next-line no-unused-vars
       let doc = content.document;
+
       let promise = TestUtils.topicObserved(
         "inner-window-nuked",
         (subject, data) => {

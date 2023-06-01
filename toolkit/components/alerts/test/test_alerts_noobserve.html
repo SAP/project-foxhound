@@ -18,13 +18,11 @@
 
 <pre id="test">
 <script class="testbody" type="text/javascript">
-/* eslint-env mozilla/frame-script */
-
 const Cc = SpecialPowers.Cc;
 const Ci = SpecialPowers.Ci;
 
 const chromeScript = SpecialPowers.loadChromeScript(_ => {
-  const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+  /* eslint-env mozilla/chrome-script */
   const {setTimeout} = ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
   function anyXULAlertsVisible() {

@@ -74,14 +74,13 @@ void AsyncImagePipelineManager::Destroy() {
 
 /* static */
 wr::ExternalImageId AsyncImagePipelineManager::GetNextExternalImageId() {
-  MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());
-  static uint64_t sResourceId = 0;
+  static std::atomic<uint64_t> sCounter = 0;
 
-  ++sResourceId;
+  uint64_t id = ++sCounter;
   // Upper 32bit(namespace) needs to be 0.
   // Namespace other than 0 might be used by others.
-  MOZ_RELEASE_ASSERT(sResourceId != UINT32_MAX);
-  return wr::ToExternalImageId(sResourceId);
+  MOZ_RELEASE_ASSERT(id != UINT32_MAX);
+  return wr::ToExternalImageId(id);
 }
 
 void AsyncImagePipelineManager::SetWillGenerateFrame() {
@@ -251,13 +250,16 @@ Maybe<TextureHost::ResourceUpdateOp> AsyncImagePipelineManager::UpdateImageKeys(
   // If we already had a texture and the format hasn't changed, better to reuse
   // the image keys than create new ones.
   auto backend = aSceneBuilderTxn.GetBackendType();
-  bool canUpdate = !!previousTexture &&
-                   previousTexture->GetSize() == texture->GetSize() &&
-                   previousTexture->GetFormat() == texture->GetFormat() &&
-                   previousTexture->NeedsYFlip() == texture->NeedsYFlip() &&
-                   previousTexture->SupportsExternalCompositing(backend) ==
-                       texture->SupportsExternalCompositing(backend) &&
-                   aPipeline->mKeys.Length() == numKeys;
+  bool canUpdate =
+      !!previousTexture &&
+      previousTexture->GetTextureHostType() == texture->GetTextureHostType() &&
+      previousTexture->GetSize() == texture->GetSize() &&
+      previousTexture->GetFormat() == texture->GetFormat() &&
+      previousTexture->GetColorDepth() == texture->GetColorDepth() &&
+      previousTexture->NeedsYFlip() == texture->NeedsYFlip() &&
+      previousTexture->SupportsExternalCompositing(backend) ==
+          texture->SupportsExternalCompositing(backend) &&
+      aPipeline->mKeys.Length() == numKeys;
 
   if (!canUpdate) {
     for (auto key : aPipeline->mKeys) {
@@ -461,7 +463,7 @@ void AsyncImagePipelineManager::ApplyAsyncImageForPipeline(
     } else {
       MOZ_ASSERT(keys.Length() == 1);
       aPipeline->mDLBuilder.PushImage(wr::ToLayoutRect(rect),
-                                      wr::ToLayoutRect(rect), true,
+                                      wr::ToLayoutRect(rect), true, false,
                                       aPipeline->mFilter, keys[0]);
     }
   }
@@ -657,7 +659,8 @@ void AsyncImagePipelineManager::ProcessPipelineRendered(
     for (auto it = holder->mTextureHostsUntilRenderSubmitted.begin();
          it != firstSubmittedHostToKeep; ++it) {
       const auto& entry = it;
-      if (entry->mTexture->GetAndroidHardwareBuffer()) {
+      if (entry->mTexture->GetAndroidHardwareBuffer() &&
+          mReleaseFenceFd.IsValid()) {
         ipc::FileDescriptor fenceFd = mReleaseFenceFd;
         entry->mTexture->SetReleaseFence(std::move(fenceFd));
       }

@@ -78,6 +78,7 @@ if CONFIG["CC_TYPE"] == "clang-cl":
 if CONFIG["OS_ARCH"] == "WINNT":
     RCINCLUDE = "splash.rc"
     DIRS += [
+        "pbproxy",
         "winlauncher",
     ]
     USE_LIBS += [
@@ -88,6 +89,7 @@ if CONFIG["OS_ARCH"] == "WINNT":
     ]
     OS_LIBS += [
         "advapi32",
+        "shell32",
         "uuid",
     ]
     DELAYLOAD_DLLS += [
@@ -95,6 +97,7 @@ if CONFIG["OS_ARCH"] == "WINNT":
         "oleaut32.dll",
         "ole32.dll",
         "rpcrt4.dll",
+        "shell32.dll",
         "version.dll",
     ]
 
@@ -164,7 +167,7 @@ if CONFIG["MOZ_LINUX_32_SSE2_STARTUP_ERROR"]:
         "-mfpmath=387",
     ]
 
-for icon in ("firefox", "document", "newwindow", "newtab", "pbmode"):
+for icon in ("firefox", "document", "newwindow", "newtab", "pbmode", "document_pdf"):
     DEFINES[icon.upper() + "_ICO"] = '"%s/%s/%s.ico"' % (
         TOPSRCDIR,
         CONFIG["MOZ_BRANDING_DIRECTORY"],

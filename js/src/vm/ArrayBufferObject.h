@@ -16,14 +16,15 @@
 #include "gc/ZoneAllocator.h"
 #include "js/ArrayBuffer.h"
 #include "js/GCHashTable.h"
+#include "vm/JSFunction.h"
 #include "vm/JSObject.h"
-#include "vm/Runtime.h"
 #include "vm/SharedMem.h"
 #include "wasm/WasmMemory.h"
 
 namespace js {
 
 class ArrayBufferViewObject;
+class AutoSetNewObjectMetadata;
 class WasmArrayRawBuffer;
 
 namespace wasm {
@@ -55,8 +56,8 @@ bool ExtendBufferMapping(void* dataStart, size_t mappedSize,
 // the mapping, and `mappedSize` the size of that mapping.
 void UnmapBufferMemory(wasm::IndexType t, void* dataStart, size_t mappedSize);
 
-// Return the number of currently live mapped buffers.
-int32_t LiveMappedBufferCount();
+// Return the number of bytes currently reserved for WebAssembly memory
+uint64_t WasmReservedBytes();
 
 // The inheritance hierarchy for the various classes relating to typed arrays
 // is as follows.
@@ -181,21 +182,15 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
                 "self-hosted code with burned-in constants must get the "
                 "right flags slot");
 
-  static bool supportLargeBuffers;
-
+  // The length of an ArrayBuffer or SharedArrayBuffer can be at most INT32_MAX
+  // on 32-bit platforms. Allow a larger limit on 64-bit platforms.
   static constexpr size_t MaxByteLengthForSmallBuffer = INT32_MAX;
-
-  // The length of an ArrayBuffer or SharedArrayBuffer can be at most
-  // INT32_MAX. Allow a larger limit on friendly 64-bit platforms if the
-  // experimental large-buffers flag is used.
-  static size_t maxBufferByteLength() {
 #ifdef JS_64BIT
-    if (supportLargeBuffers) {
-      return size_t(8) * 1024 * 1024 * 1024;  // 8 GB.
-    }
+  static constexpr size_t MaxByteLength =
+      size_t(8) * 1024 * 1024 * 1024;  // 8 GB.
+#else
+  static constexpr size_t MaxByteLength = MaxByteLengthForSmallBuffer;
 #endif
-    return MaxByteLengthForSmallBuffer;
-  }
 
   /** The largest number of bytes that can be stored inline. */
   static constexpr size_t MaxInlineBytes =
@@ -428,7 +423,7 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
   }
   bool hasInlineData() const { return dataPointer() == inlineDataPointer(); }
 
-  void releaseData(JSFreeOp* fop);
+  void releaseData(JS::GCContext* gcx);
 
   BufferKind bufferKind() const {
     return BufferKind(flags() & BUFFER_KIND_MASK);
@@ -470,7 +465,7 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
       Handle<ArrayBufferObject*> oldBuf,
       MutableHandle<ArrayBufferObject*> newBuf, JSContext* cx);
 
-  static void finalize(JSFreeOp* fop, JSObject* obj);
+  static void finalize(JS::GCContext* gcx, JSObject* obj);
 
   static BufferContents createMappedContents(int fd, size_t offset,
                                              size_t length);

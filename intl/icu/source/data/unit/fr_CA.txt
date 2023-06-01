@@ -55,7 +55,6 @@ fr_CA{
             square-mile{
                 one{"{0} mille carré"}
                 other{"{0} milles carrés"}
-                per{"{0} par mille carré"}
             }
             square-yard{
                 dnam{"verges carrées"}
@@ -64,10 +63,6 @@ fr_CA{
             }
         }
         concentr{
-            item{
-                one{"{0} item"}
-                other{"{0} items"}
-            }
             permille{
                 one{"{0} pour mille"}
                 other{"{0} pour mille"}
@@ -200,7 +195,7 @@ fr_CA{
         }
         energy{
             british-thermal-unit{
-                dnam{"Unités thermiques britanniques"}
+                dnam{"unités thermiques britanniques"}
                 one{"{0} unité thermique britannique"}
                 other{"{0} unités thermiques britanniques"}
             }
@@ -225,6 +220,7 @@ fr_CA{
                 other{"{0} kilojoules"}
             }
             kilowatt-hour{
+                dnam{"kilowattheures"}
                 one{"{0} kilowattheure"}
                 other{"{0} kilowattheures"}
             }
@@ -250,6 +246,11 @@ fr_CA{
             megahertz{
                 one{"{0} mégahertz"}
                 other{"{0} mégahertz"}
+            }
+        }
+        graphics{
+            dot{
+                dnam{"point"}
             }
         }
         length{
@@ -322,9 +323,6 @@ fr_CA{
             }
         }
         light{
-            candela{
-                dnam{"candela"}
-            }
             lux{
                 one{"{0} lux"}
                 other{"{0} lux"}
@@ -345,11 +343,6 @@ fr_CA{
             kilogram{
                 one{"{0} kilogramme"}
                 other{"{0} kilogrammes"}
-                per{"{0} par kilogramme"}
-            }
-            metric-ton{
-                one{"{0} tonne"}
-                other{"{0} tonnes"}
             }
             milligram{
                 one{"{0} milligramme"}
@@ -374,6 +367,10 @@ fr_CA{
             ton{
                 one{"{0} tonne courte"}
                 other{"{0} tonnes courtes"}
+            }
+            tonne{
+                one{"{0} tonne"}
+                other{"{0} tonnes"}
             }
         }
         power{
@@ -481,6 +478,12 @@ fr_CA{
                 one{"{0} verge cube"}
                 other{"{0} verges cubes"}
             }
+            dessert-spoon{
+                dnam{"cuillère à dessert"}
+            }
+            drop{
+                dnam{"goutte"}
+            }
             gallon-imperial{
                 dnam{"gallon impérial"}
             }
@@ -500,6 +503,9 @@ fr_CA{
             megaliter{
                 one{"{0} mégalitre"}
                 other{"{0} mégalitres"}
+            }
+            pinch{
+                dnam{"pincée"}
             }
             pint{
                 dnam{"chopine"}
@@ -546,10 +552,6 @@ fr_CA{
             }
         }
         duration{
-            century{
-                one{"´{0}s."}
-                other{"´{0}s."}
-            }
             decade{
                 dnam{"déc"}
                 one{"{0}déc"}
@@ -563,7 +565,6 @@ fr_CA{
             month{
                 one{"{0}m"}
                 other{"{0}m"}
-                per{"{0}/m"}
             }
             week{
                 dnam{"sem"}
@@ -912,9 +913,6 @@ fr_CA{
             }
         }
         duration{
-            century{
-                dnam{"s."}
-            }
             day{
                 one{"{0} j"}
                 other{"{0} j"}
@@ -1130,10 +1128,6 @@ fr_CA{
                 one{"{0} kg"}
                 other{"{0} kg"}
             }
-            metric-ton{
-                one{"{0} t"}
-                other{"{0} t"}
-            }
             microgram{
                 one{"{0} μg"}
                 other{"{0} μg"}
@@ -1158,6 +1152,10 @@ fr_CA{
                 dnam{"tc"}
                 one{"{0} tc"}
                 other{"{0} tc"}
+            }
+            tonne{
+                one{"{0} t"}
+                other{"{0} t"}
             }
         }
         power{

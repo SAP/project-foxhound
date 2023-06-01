@@ -88,8 +88,8 @@
     //--------- now check the content of the clipboard
     var clipboard = SpecialPowers.Cc["@mozilla.org/widget/clipboard;1"]
                                  .getService(SpecialPowers.Ci.nsIClipboard);
-    // does the clipboard contain text/unicode data ?
-    ok(clipboard.hasDataMatchingFlavors(["text/unicode"], clipboard.kGlobalClipboard),
+    // does the clipboard contain text/plain data ?
+    ok(clipboard.hasDataMatchingFlavors(["text/plain"], clipboard.kGlobalClipboard),
        "clipboard contains unicode text");
     // does the clipboard contain text/html data ?
     ok(clipboard.hasDataMatchingFlavors(["text/html"], clipboard.kGlobalClipboard),
@@ -118,7 +118,7 @@
        "Getting @items twice should return the same object");
     var haveFiles = false;
     ok(items instanceof DataTransferItemList, "@items implements DataTransferItemList");
-    ok(items.length > 0, "@items is not empty");
+    ok(items.length, "@items is not empty");
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
       ok(item instanceof DataTransferItem, "each element of @items must implement DataTransferItem");
@@ -136,7 +136,7 @@
 
     is(files, e.clipboardData.files,
        "Getting the files array twice should return the same array");
-    ok(files.length > 0, "There should be at least one file in the clipboard");
+    ok(files.length, "There should be at least one file in the clipboard");
     for (var i = 0; i < files.length; i++) {
       var file = files[i];
       ok(file instanceof File, ".files should contain only File objects");

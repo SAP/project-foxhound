@@ -19,11 +19,9 @@ const { RemoteSettings } = ChromeUtils.import(
   "resource://services-settings/remote-settings.js"
 );
 
-const { TelemetryController } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryController.jsm"
+const { TelemetryController } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryController.sys.mjs"
 );
-
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 let parserUtils = Cc["@mozilla.org/parserutils;1"].getService(
   Ci.nsIParserUtils

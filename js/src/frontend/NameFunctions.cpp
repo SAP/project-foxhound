@@ -13,10 +13,9 @@
 #include "frontend/ParseNodeVisitor.h"
 #include "frontend/ParserAtom.h"  // ParserAtomsTable
 #include "frontend/SharedContext.h"
+#include "js/Stack.h"  // JS::NativeStackLimit
 #include "util/Poison.h"
 #include "util/StringBuffer.h"
-#include "vm/TraceLogging.h"
-#include "vm/TraceLoggingTypes.h"
 
 using namespace js;
 using namespace js::frontend;
@@ -28,6 +27,7 @@ class NameResolver : public ParseNodeVisitor<NameResolver> {
 
   static const size_t MaxParents = 100;
 
+  FrontendContext* fc_;
   ParserAtomsTable& parserAtoms_;
   TaggedParserAtomIndex prefix_;
 
@@ -64,8 +64,12 @@ class NameResolver : public ParseNodeVisitor<NameResolver> {
     }
 
     /* Quote the string as needed. */
-    UniqueChars source = parserAtoms_.toQuotedString(cx_, name);
-    return source && buf_.append('[') &&
+    UniqueChars source = parserAtoms_.toQuotedString(name);
+    if (!source) {
+      ReportOutOfMemory(fc_);
+      return false;
+    }
+    return buf_.append('[') &&
            buf_.append(source.get(), strlen(source.get())) && buf_.append(']');
   }
 
@@ -240,7 +244,7 @@ class NameResolver : public ParseNodeVisitor<NameResolver> {
           !buf_.append(parserAtoms_, funbox->displayAtom())) {
         return false;
       }
-      *retId = buf_.finishParserAtom(parserAtoms_);
+      *retId = buf_.finishParserAtom(parserAtoms_, fc_);
       return !!*retId;
     }
 
@@ -258,6 +262,7 @@ class NameResolver : public ParseNodeVisitor<NameResolver> {
 
     // If the function is assigned to something, then that is very relevant.
     if (assignment) {
+      // e.g, foo = function() {}
       if (assignment->is<AssignmentNode>()) {
         assignment = assignment->as<AssignmentNode>().left();
       }
@@ -281,13 +286,46 @@ class NameResolver : public ParseNodeVisitor<NameResolver> {
         ParseNode* left = node->as<BinaryNode>().left();
         if (left->isKind(ParseNodeKind::ObjectPropertyName) ||
             left->isKind(ParseNodeKind::StringExpr)) {
+          // Here we handle two cases:
+          // 1) ObjectPropertyName category, e.g `foo: function() {}`
+          // 2) StringExpr category, e.g `"foo": function() {}`
           if (!appendPropertyReference(left->as<NameNode>().atom())) {
             return false;
           }
         } else if (left->isKind(ParseNodeKind::NumberExpr)) {
+          // This case handles Number expression Anonymous Functions
+          // for example:  `{ 10: function() {} }`.
           if (!appendNumericPropertyReference(
                   left->as<NumericLiteral>().value())) {
             return false;
+          }
+        } else if (left->isKind(ParseNodeKind::ComputedName) &&
+                   (left->as<UnaryNode>().kid()->isKind(
+                        ParseNodeKind::StringExpr) ||
+                    left->as<UnaryNode>().kid()->isKind(
+                        ParseNodeKind::NumberExpr)) &&
+                   node->as<PropertyDefinition>().accessorType() ==
+                       AccessorType::None) {
+          // In this branch we handle computed property with string
+          // or numeric literal:
+          // e.g, `{ ["foo"]: function(){} }`, and `{ [10]: function() {} }`.
+          //
+          // Note we only handle the names that are known at compile time,
+          // so if we have `var x = "foo"; ({ [x]: function(){} })`, we don't
+          // handle that here, it's handled at runtime by JSOp::SetFunName.
+          // The accessor type of the property must be AccessorType::None,
+          // given getters and setters need prefix and we cannot handle it here.
+          ParseNode* kid = left->as<UnaryNode>().kid();
+          if (kid->isKind(ParseNodeKind::StringExpr)) {
+            if (!appendPropertyReference(kid->as<NameNode>().atom())) {
+              return false;
+            }
+          } else {
+            MOZ_ASSERT(kid->isKind(ParseNodeKind::NumberExpr));
+            if (!appendNumericPropertyReference(
+                    kid->as<NumericLiteral>().value())) {
+              return false;
+            }
           }
         } else {
           MOZ_ASSERT(left->isKind(ParseNodeKind::ComputedName) ||
@@ -315,7 +353,7 @@ class NameResolver : public ParseNodeVisitor<NameResolver> {
       return true;
     }
 
-    *retId = buf_.finishParserAtom(parserAtoms_);
+    *retId = buf_.finishParserAtom(parserAtoms_, fc_);
     if (!*retId) {
       return false;
     }
@@ -451,11 +489,13 @@ class NameResolver : public ParseNodeVisitor<NameResolver> {
     return internalVisitSpecList(pn);
   }
 
-  explicit NameResolver(JSContext* cx, ParserAtomsTable& parserAtoms)
-      : ParseNodeVisitor(cx),
+  NameResolver(FrontendContext* fc, JS::NativeStackLimit stackLimit,
+               ParserAtomsTable& parserAtoms)
+      : ParseNodeVisitor(fc, stackLimit),
+        fc_(fc),
         parserAtoms_(parserAtoms),
         nparents_(0),
-        buf_(cx) {}
+        buf_(fc) {}
 
   /*
    * Resolve names for all anonymous functions in the given ParseNode tree.
@@ -486,10 +526,9 @@ class NameResolver : public ParseNodeVisitor<NameResolver> {
 
 } /* anonymous namespace */
 
-bool frontend::NameFunctions(JSContext* cx, ParserAtomsTable& parserAtoms,
-                             ParseNode* pn) {
-  AutoTraceLog traceLog(TraceLoggerForCurrentThread(cx),
-                        TraceLogger_BytecodeNameFunctions);
-  NameResolver nr(cx, parserAtoms);
+bool frontend::NameFunctions(FrontendContext* fc,
+                             JS::NativeStackLimit stackLimit,
+                             ParserAtomsTable& parserAtoms, ParseNode* pn) {
+  NameResolver nr(fc, stackLimit, parserAtoms);
   return nr.visit(pn);
 }

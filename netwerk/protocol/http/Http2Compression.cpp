@@ -323,15 +323,12 @@ void Http2BaseCompressor::DumpState(const char* preamble) {
 void Http2BaseCompressor::SetMaxBufferSizeInternal(uint32_t maxBufferSize) {
   MOZ_ASSERT(maxBufferSize <= mMaxBufferSetting);
 
-  uint32_t removedCount = 0;
-
   LOG(("Http2BaseCompressor::SetMaxBufferSizeInternal %u called",
        maxBufferSize));
 
   while (mHeaderTable.VariableLength() &&
          (mHeaderTable.ByteCount() > maxBufferSize)) {
     mHeaderTable.RemoveElement();
-    ++removedCount;
   }
 
   mMaxBuffer = maxBufferSize;
@@ -1087,13 +1084,12 @@ nsresult Http2Compressor::EncodeHeaderBlock(
   while (true) {
     int32_t startIndex = crlfIndex + 2;
 
-    crlfIndex = nvInput.Find("\r\n", false, startIndex);
+    crlfIndex = nvInput.Find("\r\n", startIndex);
     if (crlfIndex == -1) {
       break;
     }
 
-    int32_t colonIndex =
-        nvInput.Find(":", false, startIndex, crlfIndex - startIndex);
+    int32_t colonIndex = Substring(nvInput, 0, crlfIndex).Find(":", startIndex);
     if (colonIndex == -1) {
       break;
     }
@@ -1154,7 +1150,7 @@ nsresult Http2Compressor::EncodeHeaderBlock(
       int32_t nextCookie = valueIndex;
       while (haveMoreCookies) {
         int32_t semiSpaceIndex =
-            nvInput.Find("; ", false, nextCookie, crlfIndex - nextCookie);
+            Substring(nvInput, 0, crlfIndex).Find("; ", nextCookie);
         if (semiSpaceIndex == -1) {
           haveMoreCookies = false;
           semiSpaceIndex = crlfIndex;

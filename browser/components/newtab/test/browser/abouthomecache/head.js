@@ -3,8 +3,8 @@
 
 "use strict";
 
-let { AboutHomeStartupCache } = ChromeUtils.import(
-  "resource:///modules/BrowserGlue.jsm"
+let { AboutHomeStartupCache } = ChromeUtils.importESModule(
+  "resource:///modules/BrowserGlue.sys.mjs"
 );
 
 // Some Activity Stream preferences are JSON encoded, and quite complex.
@@ -37,6 +37,34 @@ let { AboutHomeStartupCache } = ChromeUtils.import(
     "browser.newtabpage.activity-stream.discoverystream.config",
     JSON.stringify(newConfig)
   );
+}
+
+/**
+ * Utility function that loads about:home in the current window in a new tab, and waits
+ * for the Discovery Stream cards to finish loading before running the taskFn function.
+ * Once taskFn exits, the about:home tab will be closed.
+ *
+ * @param {function} taskFn
+ *   A function that will be run after about:home has finished loading. This can be
+ *   an async function.
+ * @return {Promise}
+ * @resolves {undefined}
+ */
+// eslint-disable-next-line no-unused-vars
+function withFullyLoadedAboutHome(taskFn) {
+  return BrowserTestUtils.withNewTab("about:home", async browser => {
+    await SpecialPowers.spawn(browser, [], async () => {
+      await ContentTaskUtils.waitForCondition(
+        () =>
+          content.document.querySelectorAll(
+            "[data-section-id='topstories'] .ds-card-link"
+          ).length,
+        "Waiting for Discovery Stream to be rendered."
+      );
+    });
+
+    await taskFn(browser);
+  });
 }
 
 /**
@@ -148,7 +176,7 @@ async function simulateRestart(
 
   info("Waiting for about:home to load");
   let loaded = BrowserTestUtils.browserLoaded(browser, false, "about:home");
-  BrowserTestUtils.loadURI(browser, "about:home");
+  BrowserTestUtils.loadURIString(browser, "about:home");
   await loaded;
   info("about:home loaded");
 }

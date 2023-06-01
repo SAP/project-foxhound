@@ -2,20 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-XPCOMUtils.defineLazyGlobalGetters(this, [
-  "File",
-  "FormData",
-  "XMLHttpRequest",
-]);
 
-ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
+const lazy = {};
+
+ChromeUtils.defineModuleGetter(lazy, "OS", "resource://gre/modules/osfile.jsm");
 
 var EXPORTED_SYMBOLS = ["CrashSubmit"];
 
@@ -43,16 +36,16 @@ function parseINIStrings(path) {
 // Since we're basically re-implementing (with async) part of the crashreporter
 // client here, we'll just steal the strings we need from crashreporter.ini
 async function getL10nStrings() {
-  let path = OS.Path.join(
+  let path = lazy.OS.Path.join(
     Services.dirsvc.get("GreD", Ci.nsIFile).path,
     "crashreporter.ini"
   );
-  let pathExists = await OS.File.exists(path);
+  let pathExists = await lazy.OS.File.exists(path);
 
   if (!pathExists) {
     // we if we're on a mac
-    let parentDir = OS.Path.dirname(path);
-    path = OS.Path.join(
+    let parentDir = lazy.OS.Path.dirname(path);
+    path = lazy.OS.Path.join(
       parentDir,
       "MacOS",
       "crashreporter.app",
@@ -61,7 +54,7 @@ async function getL10nStrings() {
       "crashreporter.ini"
     );
 
-    let pathExists = await OS.File.exists(path);
+    let pathExists = await lazy.OS.File.exists(path);
 
     if (!pathExists) {
       // This happens on Android where everything is in an APK.
@@ -80,11 +73,11 @@ async function getL10nStrings() {
     reporturl: crstrings.CrashDetailsURL,
   };
 
-  path = OS.Path.join(
+  path = lazy.OS.Path.join(
     Services.dirsvc.get("XCurProcD", Ci.nsIFile).path,
     "crashreporter-override.ini"
   );
-  pathExists = await OS.File.exists(path);
+  pathExists = await lazy.OS.File.exists(path);
 
   if (pathExists) {
     crstrings = parseINIStrings(path);
@@ -103,22 +96,24 @@ async function getL10nStrings() {
 
 function getDir(name) {
   let uAppDataPath = Services.dirsvc.get("UAppData", Ci.nsIFile).path;
-  return OS.Path.join(uAppDataPath, "Crash Reports", name);
+  return lazy.OS.Path.join(uAppDataPath, "Crash Reports", name);
 }
 
 async function writeFileAsync(dirName, fileName, data) {
   let dirPath = getDir(dirName);
-  let filePath = OS.Path.join(dirPath, fileName);
+  let filePath = lazy.OS.Path.join(dirPath, fileName);
   // succeeds even with existing path, permissions 700
-  await OS.File.makeDir(dirPath, { unixFlags: OS.Constants.libc.S_IRWXU });
-  await OS.File.writeAtomic(filePath, data, { encoding: "utf-8" });
+  await lazy.OS.File.makeDir(dirPath, {
+    unixFlags: lazy.OS.Constants.libc.S_IRWXU,
+  });
+  await lazy.OS.File.writeAtomic(filePath, data, { encoding: "utf-8" });
 }
 
 function getPendingMinidump(id) {
   let pendingDir = getDir("pending");
 
   return [".dmp", ".extra", ".memory.json.gz"].map(suffix => {
-    return OS.Path.join(pendingDir, `${id}${suffix}`);
+    return lazy.OS.Path.join(pendingDir, `${id}${suffix}`);
   });
 }
 
@@ -139,7 +134,7 @@ function Submitter(id, recordSubmission, noThrottle, extraExtraKeyVals) {
   this.recordSubmission = recordSubmission;
   this.noThrottle = noThrottle;
   this.additionalDumps = [];
-  this.extraKeyVals = extraExtraKeyVals || {};
+  this.extraKeyVals = extraExtraKeyVals;
   // mimic deferred Promise behavior
   this.submitStatusPromise = new Promise((resolve, reject) => {
     this.resolveSubmitStatusPromise = resolve;
@@ -165,11 +160,11 @@ Submitter.prototype = {
 
       await Promise.all(
         toDelete.map(path => {
-          return OS.File.remove(path, { ignoreAbsent: true });
+          return lazy.OS.File.remove(path, { ignoreAbsent: true });
         })
       );
     } catch (ex) {
-      Cu.reportError(ex);
+      console.error(ex);
     }
 
     this.notifyStatus(SUCCESS, ret);
@@ -217,9 +212,7 @@ Submitter.prototype = {
     delete this.extraKeyVals.ServerURL;
 
     // Override the submission URL from the environment
-    let envOverride = Cc["@mozilla.org/process/environment;1"]
-      .getService(Ci.nsIEnvironment)
-      .get("MOZ_CRASHREPORTER_URL");
+    let envOverride = Services.env.get("MOZ_CRASHREPORTER_URL");
     if (envOverride != "") {
       serverURL = envOverride;
     }
@@ -229,12 +222,11 @@ Submitter.prototype = {
 
     let formData = new FormData();
 
+    // tell the server not to throttle this if requested
+    this.extraKeyVals.Throttleable = this.noThrottle ? "0" : "1";
+
     // add the data
     let payload = Object.assign({}, this.extraKeyVals);
-    if (this.noThrottle) {
-      // tell the server not to throttle this, since it was manually submitted
-      payload.Throttleable = "0";
-    }
     let json = new Blob([JSON.stringify(payload)], {
       type: "application/json",
     });
@@ -242,14 +234,18 @@ Submitter.prototype = {
 
     // add the minidumps
     let promises = [
-      File.createFromFileName(this.dump).then(file => {
+      File.createFromFileName(this.dump, {
+        type: "application/octet-stream",
+      }).then(file => {
         formData.append("upload_file_minidump", file);
       }),
     ];
 
     if (this.memory) {
       promises.push(
-        File.createFromFileName(this.memory).then(file => {
+        File.createFromFileName(this.memory, {
+          type: "application/gzip",
+        }).then(file => {
           formData.append("memory_report", file);
         })
       );
@@ -260,7 +256,9 @@ Submitter.prototype = {
       for (let i of this.additionalDumps) {
         names.push(i.name);
         promises.push(
-          File.createFromFileName(i.dump).then(file => {
+          File.createFromFileName(i.dump, {
+            type: "application/octet-stream",
+          }).then(file => {
             formData.append("upload_file_minidump_" + i.name, file);
           })
         );
@@ -358,7 +356,7 @@ Submitter.prototype = {
       "TelemetryServerURL",
     ];
     let decoder = new TextDecoder();
-    let extraData = await OS.File.read(extra);
+    let extraData = await lazy.OS.File.read(extra);
     let extraKeyVals = JSON.parse(decoder.decode(extraData));
 
     this.extraKeyVals = { ...extraKeyVals, ...this.extraKeyVals };
@@ -372,9 +370,9 @@ Submitter.prototype = {
 
     let [dump, extra, memory] = getPendingMinidump(this.id);
     let [dumpExists, extraExists, memoryExists] = await Promise.all([
-      OS.File.exists(dump),
-      OS.File.exists(extra),
-      OS.File.exists(memory),
+      lazy.OS.File.exists(dump),
+      lazy.OS.File.exists(extra),
+      lazy.OS.File.exists(memory),
     ]);
 
     if (!dumpExists || !extraExists) {
@@ -399,7 +397,7 @@ Submitter.prototype = {
           this.id + "-" + name
         );
 
-        dumpsExistsPromises.push(OS.File.exists(dump));
+        dumpsExistsPromises.push(lazy.OS.File.exists(dump));
         additionalDumps.push({ name, dump });
       }
 
@@ -428,18 +426,27 @@ Submitter.prototype = {
 // ===================================
 // External API goes here
 var CrashSubmit = {
+  // A set of strings representing how a user subnmitted a given crash
+  SUBMITTED_FROM_AUTO: "Auto",
+  SUBMITTED_FROM_INFOBAR: "Infobar",
+  SUBMITTED_FROM_ABOUT_CRASHES: "AboutCrashes",
+  SUBMITTED_FROM_CRASH_TAB: "CrashedTab",
+
   /**
    * Submit the crash report named id.dmp from the "pending" directory.
    *
    * @param id
    *        Filename (minus .dmp extension) of the minidump to submit.
+   * @param submittedFrom
+   *        One of the SUBMITTED_FROM_* constants representing how the
+   *        user submitted this crash.
    * @param params
    *        An object containing any of the following optional parameters:
    *        - recordSubmission
    *          If true, a submission event is recorded in CrashManager.
    *        - noThrottle
    *          If true, this crash report should be submitted with
-   *          an extra parameter of "Throttleable=0" indicating that
+   *          the Throttleable annotation set to "0" indicating that
    *          it should be processed right away. This should be set
    *          when the report is being submitted and the user expects
    *          to see the results immediately. Defaults to false.
@@ -452,11 +459,11 @@ var CrashSubmit = {
    *  @return a Promise that is fulfilled with the server crash ID when the
    *          submission succeeds and rejected otherwise.
    */
-  submit: function CrashSubmit_submit(id, params) {
+  submit: function CrashSubmit_submit(id, submittedFrom, params) {
     params = params || {};
     let recordSubmission = false;
     let noThrottle = false;
-    let extraExtraKeyVals = null;
+    let extraExtraKeyVals = {};
 
     if ("recordSubmission" in params) {
       recordSubmission = params.recordSubmission;
@@ -469,6 +476,8 @@ var CrashSubmit = {
     if ("extraExtraKeyVals" in params) {
       extraExtraKeyVals = params.extraExtraKeyVals;
     }
+
+    extraExtraKeyVals.SubmittedFrom = submittedFrom;
 
     let submitter = new Submitter(
       id,
@@ -492,7 +501,7 @@ var CrashSubmit = {
   delete: async function CrashSubmit_delete(id) {
     await Promise.all(
       getPendingMinidump(id).map(path => {
-        return OS.File.remove(path, { ignoreAbsent: true });
+        return lazy.OS.File.remove(path, { ignoreAbsent: true });
       })
     );
   },
@@ -509,10 +518,10 @@ var CrashSubmit = {
    */
   ignore: async function CrashSubmit_ignore(id) {
     let [dump /* , extra, memory */] = getPendingMinidump(id);
-    let file = await OS.File.open(
+    let file = await lazy.OS.File.open(
       `${dump}.ignore`,
       { create: true },
-      { unixFlags: OS.Constants.libc.O_CREAT }
+      { unixFlags: lazy.OS.Constants.libc.O_CREAT }
     );
     await file.close();
   },
@@ -531,9 +540,9 @@ var CrashSubmit = {
     let pendingDir = getDir("pending");
 
     try {
-      dirIter = new OS.File.DirectoryIterator(pendingDir);
+      dirIter = new lazy.OS.File.DirectoryIterator(pendingDir);
     } catch (ex) {
-      Cu.reportError(ex);
+      console.error(ex);
       throw ex;
     }
 
@@ -554,7 +563,7 @@ var CrashSubmit = {
             let id = matches[1];
 
             if (UUID_REGEX.test(id)) {
-              entries[id] = OS.File.stat(entry.path);
+              entries[id] = lazy.OS.File.stat(entry.path);
             }
           } else {
             // maybe it's a .ignore file
@@ -579,7 +588,7 @@ var CrashSubmit = {
         }
       }
     } catch (ex) {
-      Cu.reportError(ex);
+      console.error(ex);
       throw ex;
     } finally {
       dirIter.close();
@@ -602,9 +611,9 @@ var CrashSubmit = {
     let pendingDir = getDir("pending");
 
     try {
-      dirIter = new OS.File.DirectoryIterator(pendingDir);
+      dirIter = new lazy.OS.File.DirectoryIterator(pendingDir);
     } catch (ex) {
-      if (ex instanceof OS.File.Error && ex.becauseNoSuchFile) {
+      if (ex instanceof lazy.OS.File.Error && ex.becauseNoSuchFile) {
         return [];
       }
 
@@ -621,13 +630,13 @@ var CrashSubmit = {
               name: entry.name,
               path: entry.path,
               // dispatch promise instead of blocking iteration on `await`
-              infoPromise: OS.File.stat(entry.path),
+              infoPromise: lazy.OS.File.stat(entry.path),
             });
           }
         }
       });
     } catch (ex) {
-      Cu.reportError(ex);
+      console.error(ex);
       throw ex;
     } finally {
       dirIter.close();
@@ -656,9 +665,9 @@ var CrashSubmit = {
         let matches = extra.leafName.match(/(.+)\.extra$/);
 
         if (matches) {
-          let pathComponents = OS.Path.split(extra.path);
+          let pathComponents = lazy.OS.Path.split(extra.path);
           pathComponents[pathComponents.length - 1] = matches[1];
-          let path = OS.Path.join(...pathComponents);
+          let path = lazy.OS.Path.join(...pathComponents);
 
           toDelete.push(extra.path, `${path}.dmp`, `${path}.memory.json.gz`);
         }
@@ -666,7 +675,7 @@ var CrashSubmit = {
 
       await Promise.all(
         toDelete.map(path => {
-          return OS.File.remove(path, { ignoreAbsent: true });
+          return lazy.OS.File.remove(path, { ignoreAbsent: true });
         })
       );
     }

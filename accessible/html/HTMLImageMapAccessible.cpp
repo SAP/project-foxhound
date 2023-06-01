@@ -8,6 +8,7 @@
 #include "ARIAMap.h"
 #include "nsAccUtils.h"
 #include "DocAccessible-inl.h"
+#include "EventTree.h"
 #include "Role.h"
 
 #include "nsIFrame.h"
@@ -25,7 +26,7 @@ using namespace mozilla::a11y;
 
 HTMLImageMapAccessible::HTMLImageMapAccessible(nsIContent* aContent,
                                                DocAccessible* aDoc)
-    : ImageAccessibleWrap(aContent, aDoc) {
+    : ImageAccessible(aContent, aDoc) {
   mType = eImageMapType;
 
   UpdateChildAreas(false);
@@ -51,7 +52,9 @@ already_AddRefed<nsIURI> HTMLImageMapAccessible::AnchorURIAt(
   if (!area) return nullptr;
 
   nsIContent* linkContent = area->GetContent();
-  return linkContent ? linkContent->GetHrefURI() : nullptr;
+  return linkContent && linkContent->IsElement()
+             ? linkContent->AsElement()->GetHrefURI()
+             : nullptr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

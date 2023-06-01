@@ -3,8 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
 const { CommonUtils } = ChromeUtils.import(
   "resource://services-common/utils.js"
@@ -251,7 +251,7 @@ class FxAccountsKeys {
       const toRemove = DEPRECATED_KEY_SCOPES.filter(scope =>
         userData.scopedKeys.hasOwnProperty(scope)
       );
-      if (toRemove.length > 0) {
+      if (toRemove.length) {
         for (const scope of toRemove) {
           delete userData.scopedKeys[scope];
         }
@@ -615,7 +615,7 @@ class FxAccountsKeys {
       scopedKeyMetadata.keyRotationSecret
     );
     const salt = CommonUtils.hexToArrayBuffer(uid);
-    const context = new TextEncoder("utf8").encode(
+    const context = new TextEncoder().encode(
       "identity.mozilla.com/picl/v1/scoped_key\n" + scopedKeyMetadata.identifier
     );
 

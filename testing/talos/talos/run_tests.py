@@ -3,27 +3,24 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import absolute_import, print_function
-
 import copy
 import os
-import six
 import sys
 import time
 import traceback
 
 import mozinfo
 import mozversion
-from wptserve import server
-from wptserve.handlers import handler
-
-from talos import utils
+import six
+from mozgeckoprofiler import view_gecko_profile
 from mozlog import get_proxy_logger
-from talos.config import get_configs, ConfigurationError
+from talos import utils
+from talos.config import ConfigurationError, get_configs
 from talos.results import TalosResults
 from talos.ttest import TTest
 from talos.utils import TalosError, TalosRegression
-from mozgeckoprofiler import view_gecko_profile
+from wptserve import server
+from wptserve.handlers import handler
 
 # directory of this file
 here = os.path.dirname(os.path.realpath(__file__))
@@ -107,6 +104,17 @@ def setup_webserver(webserver):
         "GET", "tests/pdfpaint/tracemonkey.pdf", tracemonkey_pdf_handler
     )
     return httpd
+
+
+def skip_test(test_instance_dict, config):
+    # Determines if a test should be skipped, and returns
+    # a message with a reason why or None if it doesn't need
+    # to be skipped
+    if not test_instance_dict.get("pine", True) and config.get(
+        "project", ""
+    ).startswith("pine"):
+        return "Broken on the pine branch"
+    return None
 
 
 def run_tests(config, browser_config):
@@ -293,6 +301,17 @@ function FindProxyForURL(url, host) {
             testname = test["name"]
             LOG.test_start(testname)
 
+            # Skip test if necessary
+            skip_reason = skip_test(test, config)
+            if skip_reason is not None and skip_reason != "":
+                LOG.info("Skipping %s, reason: %s" % (testname, skip_reason))
+                LOG.test_end(
+                    testname,
+                    status="SKIP",
+                    message="Test skipped: %s" % skip_reason,
+                )
+                continue
+
             if not test.get("url"):
                 # set browser prefs for pageloader test setings (doesn't use cmd line args / url)
                 test["url"] = None
@@ -364,24 +383,28 @@ function FindProxyForURL(url, host) {
 
     LOG.info("Completed test suite (%s)" % timer.elapsed())
 
-    # output results
-    if results_urls and not browser_config["no_upload_results"]:
-        talos_results.output(results_urls)
-        if browser_config["develop"] or config["gecko_profile"]:
-            print(
-                "Thanks for running Talos locally. Results are in %s"
-                % (results_urls["output_urls"])
-            )
+    if talos_results.has_results():
+        # output results
+        if results_urls and not browser_config["no_upload_results"]:
+            talos_results.output(results_urls)
+            if browser_config["develop"] or config["gecko_profile"]:
+                print(
+                    "Thanks for running Talos locally. Results are in %s"
+                    % (results_urls["output_urls"])
+                )
 
-    # when running talos locally with gecko profiling on, use the view-gecko-profile
-    # tool to automatically load the latest gecko profile in profiler.firefox.com
-    if config["gecko_profile"] and browser_config["develop"]:
-        if os.environ.get("DISABLE_PROFILE_LAUNCH", "0") == "1":
-            LOG.info(
-                "Not launching profiler.firefox.com because DISABLE_PROFILE_LAUNCH=1"
-            )
-        else:
-            view_gecko_profile_from_talos()
+        # when running talos locally with gecko profiling on, use the view-gecko-profile
+        # tool to automatically load the latest gecko profile in profiler.firefox.com
+        if config["gecko_profile"] and browser_config["develop"]:
+            if os.environ.get("DISABLE_PROFILE_LAUNCH", "0") == "1":
+                LOG.info(
+                    "Not launching profiler.firefox.com because DISABLE_PROFILE_LAUNCH=1"
+                )
+            else:
+                view_gecko_profile_from_talos()
+    else:
+        LOG.error("No tests ran")
+        return 2
 
     # we will stop running tests on a failed test, or we will return 0 for
     # green

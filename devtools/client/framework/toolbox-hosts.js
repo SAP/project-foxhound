@@ -4,26 +4,23 @@
 
 "use strict";
 
-const EventEmitter = require("devtools/shared/event-emitter");
-const Services = require("Services");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
 loader.lazyRequireGetter(
   this,
   "gDevToolsBrowser",
-  "devtools/client/framework/devtools-browser",
+  "resource://devtools/client/framework/devtools-browser.js",
   true
 );
 
-loader.lazyRequireGetter(
-  this,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm",
-  true
-);
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+});
 
 /* A host should always allow this much space for the page to be displayed.
  * There is also a min-height on the browser, but we still don't want to set
- * frame.height to be larger than that, since it can cause problems with
+ * frame.style.height to be larger than that, since it can cause problems with
  * resizing the toolbox and panel layout. */
 const MIN_PAGE_SIZE = 25;
 
@@ -55,7 +52,7 @@ BottomHost.prototype = {
   /**
    * Create a box at the bottom of the host tab.
    */
-  create: async function() {
+  async create() {
     await gDevToolsBrowser.loadBrowserStyleSheet(this.hostTab.ownerGlobal);
 
     const gBrowser = this.hostTab.ownerDocument.defaultView.gBrowser;
@@ -66,17 +63,18 @@ BottomHost.prototype = {
 
     this._splitter = ownerDocument.createXULElement("splitter");
     this._splitter.setAttribute("class", "devtools-horizontal-splitter");
-    // Avoid resizing notification containers
-    this._splitter.setAttribute("resizebefore", "flex");
+    this._splitter.setAttribute("resizebefore", "none");
+    this._splitter.setAttribute("resizeafter", "sibling");
 
     this.frame = createDevToolsFrame(
       ownerDocument,
       "devtools-toolbox-bottom-iframe"
     );
-    this.frame.height = Math.min(
-      Services.prefs.getIntPref(this.heightPref),
-      this._browserContainer.clientHeight - MIN_PAGE_SIZE
-    );
+    this.frame.style.height =
+      Math.min(
+        Services.prefs.getIntPref(this.heightPref),
+        this._browserContainer.clientHeight - MIN_PAGE_SIZE
+      ) + "px";
 
     this._browserContainer.appendChild(this._splitter);
     this._browserContainer.appendChild(this.frame);
@@ -88,7 +86,7 @@ BottomHost.prototype = {
   /**
    * Raise the host.
    */
-  raise: function() {
+  raise() {
     focusTab(this.hostTab);
   },
 
@@ -96,16 +94,20 @@ BottomHost.prototype = {
    * Set the toolbox title.
    * Nothing to do for this host type.
    */
-  setTitle: function() {},
+  setTitle() {},
 
   /**
    * Destroy the bottom dock.
    */
-  destroy: function() {
+  destroy() {
     if (!this._destroyed) {
       this._destroyed = true;
 
-      Services.prefs.setIntPref(this.heightPref, this.frame.height);
+      const height = parseInt(this.frame.style.height, 10);
+      if (!isNaN(height)) {
+        Services.prefs.setIntPref(this.heightPref, height);
+      }
+
       this._browserContainer.removeChild(this._splitter);
       this._browserContainer.removeChild(this.frame);
       this.frame = null;
@@ -148,20 +150,26 @@ class SidebarHost {
       ownerDocument,
       "devtools-toolbox-side-iframe"
     );
-    this.frame.width = Math.min(
-      Services.prefs.getIntPref(this.widthPref),
-      this._browserPanel.clientWidth - MIN_PAGE_SIZE
-    );
+    this.frame.style.width =
+      Math.min(
+        Services.prefs.getIntPref(this.widthPref),
+        this._browserPanel.clientWidth - MIN_PAGE_SIZE
+      ) + "px";
 
     // We should consider the direction when changing the dock position.
     const topWindow = this.hostTab.ownerDocument.defaultView.top;
     const topDoc = topWindow.document.documentElement;
     const isLTR = topWindow.getComputedStyle(topDoc).direction === "ltr";
 
+    this._splitter.setAttribute("resizebefore", "none");
+    this._splitter.setAttribute("resizeafter", "none");
+
     if ((isLTR && this.type == "right") || (!isLTR && this.type == "left")) {
+      this._splitter.setAttribute("resizeafter", "sibling");
       this._browserPanel.appendChild(this._splitter);
       this._browserPanel.appendChild(this.frame);
     } else {
+      this._splitter.setAttribute("resizebefore", "sibling");
       this._browserPanel.insertBefore(this.frame, this._browserContainer);
       this._browserPanel.insertBefore(this._splitter, this._browserContainer);
     }
@@ -190,7 +198,11 @@ class SidebarHost {
     if (!this._destroyed) {
       this._destroyed = true;
 
-      Services.prefs.setIntPref(this.widthPref, this.frame.width);
+      const width = parseInt(this.frame.style.width, 10);
+      if (!isNaN(width)) {
+        Services.prefs.setIntPref(this.widthPref, width);
+      }
+
       this._browserPanel.removeChild(this._splitter);
       this._browserPanel.removeChild(this.frame);
     }
@@ -220,9 +232,10 @@ class RightHost extends SidebarHost {
 /**
  * Host object for the toolbox in a separate window
  */
-function WindowHost(hostTab) {
+function WindowHost(hostTab, options) {
   this._boundUnload = this._boundUnload.bind(this);
   this.hostTab = hostTab;
+  this.options = options;
   EventEmitter.decorate(this);
 }
 
@@ -234,7 +247,7 @@ WindowHost.prototype = {
   /**
    * Create a new xul window to contain the toolbox.
    */
-  create: function() {
+  create() {
     return new Promise(resolve => {
       let flags = "chrome,centerscreen,resizable,dialog=no";
 
@@ -242,10 +255,8 @@ WindowHost.prototype = {
       // set the private flag on the DevTools host window. Otherwise switching
       // hosts between docked and window modes can fail due to incompatible
       // docshell origin attributes. See 1581093.
-      if (
-        this.hostTab &&
-        PrivateBrowsingUtils.isWindowPrivate(this.hostTab.ownerGlobal)
-      ) {
+      const owner = this.hostTab?.ownerGlobal;
+      if (owner && lazy.PrivateBrowsingUtils.isWindowPrivate(owner)) {
         flags += ",private";
       }
 
@@ -255,6 +266,13 @@ WindowHost.prototype = {
       // and non-fission frames. See Bug 1650963.
       if (this.hostTab && !this.hostTab.ownerGlobal.gFissionBrowser) {
         flags += ",non-fission";
+      }
+
+      // When debugging local Web Extension, the toolbox is opened in an
+      // always foremost top level window in order to be kept visible
+      // when interacting with the Firefox Window.
+      if (this.options?.alwaysOnTop) {
+        flags += ",alwaysontop";
       }
 
       const win = Services.ww.openWindow(
@@ -294,7 +312,7 @@ WindowHost.prototype = {
   /**
    * Catch the user closing the window.
    */
-  _boundUnload: function(event) {
+  _boundUnload(event) {
     if (event.target.location != this.WINDOW_URL) {
       return;
     }
@@ -306,21 +324,21 @@ WindowHost.prototype = {
   /**
    * Raise the host.
    */
-  raise: function() {
+  raise() {
     this._window.focus();
   },
 
   /**
    * Set the toolbox title.
    */
-  setTitle: function(title) {
+  setTitle(title) {
     this._window.document.title = title;
   },
 
   /**
    * Destroy the window.
    */
-  destroy: function() {
+  destroy() {
     if (!this._destroyed) {
       this._destroyed = true;
 
@@ -343,7 +361,7 @@ function BrowserToolboxHost(hostTab, options) {
 BrowserToolboxHost.prototype = {
   type: "browsertoolbox",
 
-  create: async function() {
+  async create() {
     this.frame = createDevToolsFrame(
       this.doc,
       "devtools-toolbox-browsertoolbox-iframe"
@@ -357,19 +375,19 @@ BrowserToolboxHost.prototype = {
   /**
    * Raise the host.
    */
-  raise: function() {
+  raise() {
     this.doc.defaultView.focus();
   },
 
   /**
    * Set the toolbox title.
    */
-  setTitle: function(title) {
+  setTitle(title) {
     this.doc.title = title;
   },
 
   // Do nothing. The BrowserToolbox is destroyed by quitting the application.
-  destroy: function() {
+  destroy() {
     return Promise.resolve(null);
   },
 };
@@ -387,18 +405,18 @@ function PageHost(hostTab, options) {
 PageHost.prototype = {
   type: "page",
 
-  create: function() {
+  create() {
     return Promise.resolve(this.frame);
   },
 
   // Do nothing.
-  raise: function() {},
+  raise() {},
 
   // Do nothing.
-  setTitle: function(title) {},
+  setTitle(title) {},
 
   // Do nothing.
-  destroy: function() {
+  destroy() {
     return Promise.resolve(null);
   },
 };
@@ -418,9 +436,8 @@ function focusTab(tab) {
 function createDevToolsFrame(doc, className) {
   const frame = doc.createXULElement("browser");
   frame.setAttribute("type", "content");
-  frame.flex = 1; // Required to be able to shrink when the window shrinks
+  frame.setAttribute("flex", "1"); // Required to be able to shrink when the window shrinks
   frame.className = className;
-  frame.setAttribute("selectmenulist", "ContentSelectDropdown");
 
   const inXULDocument = doc.documentElement.namespaceURI === XUL_NS;
   if (inXULDocument) {

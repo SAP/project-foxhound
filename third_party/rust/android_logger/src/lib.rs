@@ -65,24 +65,22 @@
 
 #[cfg(target_os = "android")]
 extern crate android_log_sys as log_ffi;
-#[macro_use]
-extern crate lazy_static;
+extern crate once_cell;
+use once_cell::sync::OnceCell;
 #[macro_use]
 extern crate log;
 
 extern crate env_logger;
 
-use std::sync::RwLock;
-
+use log::{Level, Log, Metadata, Record};
 #[cfg(target_os = "android")]
 use log_ffi::LogPriority;
-use log::{Level, Log, Metadata, Record};
 use std::ffi::{CStr, CString};
-use std::mem;
 use std::fmt;
+use std::mem::{self, MaybeUninit};
 use std::ptr;
 
-pub use env_logger::filter::{Filter, Builder as FilterBuilder};
+pub use env_logger::filter::{Builder as FilterBuilder, Filter};
 pub use env_logger::fmt::Formatter;
 
 pub(crate) type FormatFn = Box<dyn Fn(&mut dyn fmt::Write, &Record) -> fmt::Result + Sync + Send>;
@@ -105,21 +103,19 @@ fn android_log(_priority: Level, _tag: &CStr, _msg: &CStr) {}
 
 /// Underlying android logger backend
 pub struct AndroidLogger {
-    config: RwLock<Config>,
+    config: OnceCell<Config>,
 }
 
 impl AndroidLogger {
     /// Create new logger instance from config
     pub fn new(config: Config) -> AndroidLogger {
         AndroidLogger {
-            config: RwLock::new(config),
+            config: OnceCell::from(config),
         }
     }
 }
 
-lazy_static! {
-   static ref ANDROID_LOGGER: AndroidLogger = AndroidLogger::default();
-}
+static ANDROID_LOGGER: OnceCell<AndroidLogger> = OnceCell::new();
 
 const LOGGING_TAG_MAX_LEN: usize = 23;
 const LOGGING_MSG_MAX_LEN: usize = 4000;
@@ -128,7 +124,7 @@ impl Default for AndroidLogger {
     /// Create a new logger with default config
     fn default() -> AndroidLogger {
         AndroidLogger {
-            config: RwLock::new(Config::default()),
+            config: OnceCell::from(Config::default()),
         }
     }
 }
@@ -139,23 +135,23 @@ impl Log for AndroidLogger {
     }
 
     fn log(&self, record: &Record) {
-        let config = self.config
-            .read()
-            .expect("failed to acquire android_log filter lock for read");
+        let config = self.config.get_or_init(Config::default);
 
         if !config.filter_matches(record) {
             return;
         }
 
         // tag must not exceed LOGGING_TAG_MAX_LEN
-        #[allow(deprecated)] // created an issue #35 for this
-        let mut tag_bytes: [u8; LOGGING_TAG_MAX_LEN + 1] = unsafe { mem::uninitialized() };
+        let mut tag_bytes: [MaybeUninit<u8>; LOGGING_TAG_MAX_LEN + 1] = uninit_array();
 
         let module_path = record.module_path().unwrap_or_default().to_owned();
 
         // If no tag was specified, use module name
         let custom_tag = &config.tag;
-        let tag = custom_tag.as_ref().map(|s| s.as_bytes()).unwrap_or(module_path.as_bytes());
+        let tag = custom_tag
+            .as_ref()
+            .map(|s| s.as_bytes())
+            .unwrap_or_else(|| module_path.as_bytes());
 
         // truncate the tag here to fit into LOGGING_TAG_MAX_LEN
         self.fill_tag_bytes(&mut tag_bytes, tag);
@@ -185,43 +181,31 @@ impl Log for AndroidLogger {
 }
 
 impl AndroidLogger {
-    fn fill_tag_bytes(&self, array: &mut [u8], tag: &[u8]) {
+    fn fill_tag_bytes(&self, array: &mut [MaybeUninit<u8>], tag: &[u8]) {
         if tag.len() > LOGGING_TAG_MAX_LEN {
-            for (input, output) in tag.iter()
+            for (input, output) in tag
+                .iter()
                 .take(LOGGING_TAG_MAX_LEN - 2)
                 .chain(b"..\0".iter())
                 .zip(array.iter_mut())
             {
-                *output = *input;
+                output.write(*input);
             }
         } else {
-            for (input, output) in tag.iter()
-                .chain(b"\0".iter())
-                .zip(array.iter_mut())
-            {
-                *output = *input;
+            for (input, output) in tag.iter().chain(b"\0".iter()).zip(array.iter_mut()) {
+                output.write(*input);
             }
         }
     }
 }
 
 /// Filter for android logger.
+#[derive(Default)]
 pub struct Config {
     log_level: Option<Level>,
     filter: Option<env_logger::filter::Filter>,
     tag: Option<CString>,
     custom_format: Option<FormatFn>,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            log_level: None,
-            filter: None,
-            tag: None,
-            custom_format: None,
-        }
-    }
 }
 
 impl Config {
@@ -236,7 +220,7 @@ impl Config {
 
     fn filter_matches(&self, record: &Record) -> bool {
         if let Some(ref filter) = self.filter {
-            filter.matches(&record)
+            filter.matches(record)
         } else {
             true
         }
@@ -270,13 +254,15 @@ impl Config {
     }
 }
 
-struct PlatformLogWriter<'a> {
-    #[cfg(target_os = "android")] priority: LogPriority,
-    #[cfg(not(target_os = "android"))] priority: Level,
+pub struct PlatformLogWriter<'a> {
+    #[cfg(target_os = "android")]
+    priority: LogPriority,
+    #[cfg(not(target_os = "android"))]
+    priority: Level,
     len: usize,
     last_newline_index: usize,
     tag: &'a CStr,
-    buffer: [u8; LOGGING_MSG_MAX_LEN + 1],
+    buffer: [MaybeUninit<u8>; LOGGING_MSG_MAX_LEN + 1],
 }
 
 impl<'a> PlatformLogWriter<'a> {
@@ -294,7 +280,7 @@ impl<'a> PlatformLogWriter<'a> {
             len: 0,
             last_newline_index: 0,
             tag,
-            buffer: unsafe { mem::uninitialized() },
+            buffer: uninit_array(),
         }
     }
 
@@ -306,7 +292,7 @@ impl<'a> PlatformLogWriter<'a> {
             len: 0,
             last_newline_index: 0,
             tag,
-            buffer: unsafe { mem::uninitialized() },
+            buffer: uninit_array(),
         }
     }
 
@@ -338,7 +324,7 @@ impl<'a> PlatformLogWriter<'a> {
     }
 
     /// Flush everything remaining to android logger.
-    fn flush(&mut self) {
+    pub fn flush(&mut self) {
         let total_len = self.len;
 
         if total_len == 0 {
@@ -352,21 +338,22 @@ impl<'a> PlatformLogWriter<'a> {
 
     /// Output buffer up until the \0 which will be placed at `len` position.
     fn output_specified_len(&mut self, len: usize) {
-        let mut last_byte: u8 = b'\0';
+        let mut last_byte = MaybeUninit::new(b'\0');
+
         mem::swap(&mut last_byte, unsafe {
             self.buffer.get_unchecked_mut(len)
         });
 
-        let msg: &CStr = unsafe { CStr::from_ptr(mem::transmute(self.buffer.as_ptr())) };
+        let msg: &CStr = unsafe { CStr::from_ptr(self.buffer.as_ptr().cast()) };
         android_log(self.priority, self.tag, msg);
 
-        *unsafe { self.buffer.get_unchecked_mut(len) } = last_byte;
+        unsafe { *self.buffer.get_unchecked_mut(len) = last_byte };
     }
 
     /// Copy `len` bytes from `index` position to starting position.
     fn copy_bytes_to_start(&mut self, index: usize, len: usize) {
-        let src = unsafe { self.buffer.as_ptr().offset(index as isize) };
         let dst = self.buffer.as_mut_ptr();
+        let src = unsafe { self.buffer.as_ptr().add(index) };
         unsafe { ptr::copy(src, dst, len) };
     }
 }
@@ -385,7 +372,7 @@ impl<'a> fmt::Write for PlatformLogWriter<'a> {
                 .zip(incomming_bytes)
                 .enumerate()
                 .fold(None, |acc, (i, (output, input))| {
-                    *output = *input;
+                    output.write(*input);
                     if *input == b'\n' {
                         Some(i)
                     } else {
@@ -423,7 +410,9 @@ impl<'a> fmt::Write for PlatformLogWriter<'a> {
 /// This action does not require initialization. However, without initialization it
 /// will use the default filter, which allows all logs.
 pub fn log(record: &Record) {
-    ANDROID_LOGGER.log(record)
+    ANDROID_LOGGER
+        .get_or_init(AndroidLogger::default)
+        .log(record)
 }
 
 /// Initializes the global logger with an android logger.
@@ -434,17 +423,20 @@ pub fn log(record: &Record) {
 /// It is ok to call this at the activity creation, and it will be
 /// repeatedly called on every lifecycle restart (i.e. screen rotation).
 pub fn init_once(config: Config) {
-    if let Err(err) = log::set_logger(&*ANDROID_LOGGER) {
+    let log_level = config.log_level;
+    let logger = ANDROID_LOGGER.get_or_init(|| AndroidLogger::new(config));
+
+    if let Err(err) = log::set_logger(logger) {
         debug!("android_logger: log::set_logger failed: {}", err);
-    } else {
-        if let Some(level) = config.log_level {
-            log::set_max_level(level.to_level_filter());
-        }
-        *ANDROID_LOGGER
-            .config
-            .write()
-            .expect("failed to acquire android_log filter lock for write") = config;
+    } else if let Some(level) = log_level {
+        log::set_max_level(level.to_level_filter());
     }
+}
+
+// FIXME: When `maybe_uninit_uninit_array ` is stabilized, use it instead of this helper
+fn uninit_array<const N: usize, T>() -> [MaybeUninit<T>; N] {
+    // SAFETY: Array contains MaybeUninit, which is fine to be uninit
+    unsafe { MaybeUninit::uninit().assume_init() }
 }
 
 #[cfg(test)]
@@ -506,12 +498,12 @@ mod tests {
         let logger = AndroidLogger::new(Config::default());
         let too_long_tag: [u8; LOGGING_TAG_MAX_LEN + 20] = [b'a'; LOGGING_TAG_MAX_LEN + 20];
 
-        let mut result: [u8; LOGGING_TAG_MAX_LEN + 1] = Default::default();
+        let mut result: [MaybeUninit<u8>; LOGGING_TAG_MAX_LEN + 1] = uninit_array();
         logger.fill_tag_bytes(&mut result, &too_long_tag);
 
         let mut expected_result = [b'a'; LOGGING_TAG_MAX_LEN - 2].to_vec();
         expected_result.extend("..\0".as_bytes());
-        assert_eq!(result.to_vec(), expected_result);
+        assert_eq!(unsafe { assume_init_slice(&result) }, expected_result);
     }
 
     #[test]
@@ -519,19 +511,19 @@ mod tests {
         let logger = AndroidLogger::new(Config::default());
         let short_tag: [u8; 3] = [b'a'; 3];
 
-        let mut result: [u8; LOGGING_TAG_MAX_LEN + 1] = Default::default();
+        let mut result: [MaybeUninit<u8>; LOGGING_TAG_MAX_LEN + 1] = uninit_array();
         logger.fill_tag_bytes(&mut result, &short_tag);
 
         let mut expected_result = short_tag.to_vec();
         expected_result.push(0);
-        assert_eq!(result.to_vec()[..4], expected_result);
+        assert_eq!(unsafe { assume_init_slice(&result[..4]) }, expected_result);
     }
 
     #[test]
     fn platform_log_writer_init_values() {
         let tag = CStr::from_bytes_with_nul(b"tag\0").unwrap();
 
-        let writer = PlatformLogWriter::new(Level::Warn, &tag);
+        let writer = PlatformLogWriter::new(Level::Warn, tag);
 
         assert_eq!(writer.tag, tag);
         // Android uses LogPriority instead, which doesn't implement equality checks
@@ -552,7 +544,10 @@ mod tests {
         // Should have flushed up until the last newline.
         assert_eq!(writer.len, 3);
         assert_eq!(writer.last_newline_index, 0);
-        assert_eq!(&writer.buffer.to_vec()[..writer.len], "\n90".as_bytes());
+        assert_eq!(
+            unsafe { assume_init_slice(&writer.buffer[..writer.len]) },
+            "\n90".as_bytes()
+        );
 
         writer.temporal_flush();
         // Should have flushed all remaining bytes.
@@ -595,7 +590,7 @@ mod tests {
         writer.output_specified_len(5);
 
         assert_eq!(
-            writer.buffer[..log_string.len()].to_vec(),
+            unsafe { assume_init_slice(&writer.buffer[..log_string.len()]) },
             log_string.as_bytes()
         );
     }
@@ -609,7 +604,10 @@ mod tests {
 
         writer.copy_bytes_to_start(3, 2);
 
-        assert_eq!(writer.buffer[..10].to_vec(), "3423456789".as_bytes());
+        assert_eq!(
+            unsafe { assume_init_slice(&writer.buffer[..10]) },
+            "3423456789".as_bytes()
+        );
     }
 
     #[test]
@@ -624,12 +622,16 @@ mod tests {
         writer.copy_bytes_to_start(10, 0);
 
         assert_eq!(
-            writer.buffer[..test_string.len()].to_vec(),
+            unsafe { assume_init_slice(&writer.buffer[..test_string.len()]) },
             test_string.as_bytes()
         );
     }
 
     fn get_tag_writer() -> PlatformLogWriter<'static> {
-        PlatformLogWriter::new(Level::Warn, &CStr::from_bytes_with_nul(b"tag\0").unwrap())
+        PlatformLogWriter::new(Level::Warn, CStr::from_bytes_with_nul(b"tag\0").unwrap())
+    }
+
+    unsafe fn assume_init_slice<T>(slice: &[MaybeUninit<T>]) -> &[T] {
+        &*(slice as *const [MaybeUninit<T>] as *const [T])
     }
 }

@@ -22,13 +22,13 @@ this.test = makeMemoryTest(TEST_URL, async function({ tab, panel }) {
   });
 
   ok(
-    !!(await OS.File.stat(snapshotFilePath)),
+    !!(await IOUtils.stat(snapshotFilePath)),
     "Should have the heap snapshot file"
   );
 
   const snapshot = ChromeUtils.readHeapSnapshot(snapshotFilePath);
   ok(
-    snapshot instanceof HeapSnapshot,
+    HeapSnapshot.isInstance(snapshot),
     "And we should be able to read a HeapSnapshot instance from the file"
   );
 });

@@ -16,6 +16,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "jxl/jxl_export.h"
+
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {
 #endif
@@ -41,27 +43,25 @@ typedef enum {
    * for HDR and wide gamut images when color profile conversion is required. */
   JXL_TYPE_FLOAT = 0,
 
-  /** Use 1-bit packed in uint8_t, first pixel in LSB, padded to uint8_t per
-   * row.
-   * TODO(lode): support first in MSB, other padding.
-   */
-  JXL_TYPE_BOOLEAN,
-
   /** Use type uint8_t. May clip wide color gamut data.
    */
-  JXL_TYPE_UINT8,
+  JXL_TYPE_UINT8 = 2,
 
   /** Use type uint16_t. May clip wide color gamut data.
    */
-  JXL_TYPE_UINT16,
-
-  /** Use type uint32_t. May clip wide color gamut data.
-   */
-  JXL_TYPE_UINT32,
+  JXL_TYPE_UINT16 = 3,
 
   /** Use 16-bit IEEE 754 half-precision floating point values */
-  JXL_TYPE_FLOAT16,
+  JXL_TYPE_FLOAT16 = 5,
 } JxlDataType;
+
+/* DEPRECATED: bit-packed 1-bit data type. Use JXL_TYPE_UINT8 instead.
+ */
+JXL_DEPRECATED static const int JXL_TYPE_BOOLEAN = 1;
+
+/* DEPRECATED: uint32_t data type. Use JXL_TYPE_FLOAT instead.
+ */
+JXL_DEPRECATED static const int JXL_TYPE_UINT32 = 4;
 
 /** Ordering of multi-byte data.
  */
@@ -81,7 +81,6 @@ typedef enum {
  * for pixels. This is not necessarily the same as the data type encoded in the
  * codestream. The channels are interleaved per pixel. The pixels are
  * organized row by row, left to right, top to bottom.
- * TODO(lode): implement padding / alignment (row stride)
  * TODO(lode): support different channel orders if needed (RGB, BGR, ...)
  */
 typedef struct {
@@ -111,9 +110,73 @@ typedef struct {
   size_t align;
 } JxlPixelFormat;
 
+/** Settings for the interpretation of the input and output buffers.
+ */
+typedef enum {
+  /** This is the default setting, where the encoder expects the input pixels
+   * to use the full range of the pixel format data type (e.g. for UINT16, the
+   * input range is 0 .. 65535 and the value 65535 is mapped to 1.0 when
+   * converting to float), and the decoder uses the full range to output
+   * pixels. If the bit depth in the basic info is different from this, the
+   * encoder expects the values to be rescaled accordingly (e.g multiplied by
+   * 65535/4095 for a 12-bit image using UINT16 input data type). */
+  JXL_BIT_DEPTH_FROM_PIXEL_FORMAT = 0,
+
+  /** If this setting is selected, the encoder expects the input pixels to be
+   * in the range defined by the bits_per_sample value of the basic info (e.g.
+   * for 12-bit images using UINT16 input data types, the allowed range is
+   * 0 .. 4095 and the value 4095 is mapped to 1.0 when converting to float),
+   * and the decoder outputs pixels in this range. */
+  JXL_BIT_DEPTH_FROM_CODESTREAM = 1,
+
+  /** This setting can only be used in the decoder to select a custom range for
+   * pixel output */
+  JXL_BIT_DEPTH_CUSTOM = 2,
+} JxlBitDepthType;
+
+/** Data type for describing the interpretation of the input and output buffers
+ * in terms of the range of allowed input and output pixel values. */
+typedef struct {
+  /** Bit depth setting, see comment on @ref JxlBitDepthType */
+  JxlBitDepthType type;
+
+  /** Custom bits per sample */
+  uint32_t bits_per_sample;
+
+  /** Custom exponent bits per sample */
+  uint32_t exponent_bits_per_sample;
+} JxlBitDepth;
+
 /** Data type holding the 4-character type name of an ISOBMFF box.
  */
 typedef char JxlBoxType[4];
+
+/** Types of progressive detail.
+ * Setting a progressive detail with value N implies all progressive details
+ * with smaller or equal value. Currently only the following level of
+ * progressive detail is implemented:
+ *  - kDC (which implies kFrames)
+ *  - kLastPasses (which implies kDC and kFrames)
+ *  - kPasses (which implies kLastPasses, kDC and kFrames)
+ */
+typedef enum {
+  // after completed kRegularFrames
+  kFrames = 0,
+  // after completed DC (1:8)
+  kDC = 1,
+  // after completed AC passes that are the last pass for their resolution
+  // target.
+  kLastPasses = 2,
+  // after completed AC passes that are not the last pass for their resolution
+  // target.
+  kPasses = 3,
+  // during DC frame when lower resolution are completed (1:32, 1:16)
+  kDCProgressive = 4,
+  // after completed groups
+  kDCGroups = 5,
+  // after completed groups
+  kGroups = 6,
+} JxlProgressiveDetail;
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }

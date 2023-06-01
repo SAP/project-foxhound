@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import os
 
 import manifestparser
@@ -349,7 +347,9 @@ def test_add_test_manifest(
             for test in mock_runner.tests:
                 assert test["filepath"].endswith(test["expected"] + ".py")
         else:
-            pytest.raises(IOError, "mock_runner.add_test(manifest_with_tests.filepath)")
+            with pytest.raises(IOError):
+                mock_runner.add_test(manifest_with_tests.filepath)
+
     assert manifest_with_tests.manifest_class().read.called
     assert manifest_with_tests.manifest_class().active_tests.called
 

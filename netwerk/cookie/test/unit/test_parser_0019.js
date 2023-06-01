@@ -1,5 +1,4 @@
 const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function inChildProcess() {
   return Services.appinfo.processType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
@@ -15,8 +14,6 @@ function run_test() {
     );
   }
 
-  let cs = Cc["@mozilla.org/cookieService;1"].getService(Ci.nsICookieService);
-
   let uri = NetUtil.newURI("http://example.org/");
   let channel = NetUtil.newChannel({
     uri,
@@ -25,9 +22,9 @@ function run_test() {
   });
 
   let set = "foo=b;max-age=3600, c=d;path=/";
-  cs.setCookieStringFromHttp(uri, set, channel);
+  Services.cookies.setCookieStringFromHttp(uri, set, channel);
 
   let expected = "foo=b";
-  let actual = cs.getCookieStringFromHttp(uri, channel);
+  let actual = Services.cookies.getCookieStringFromHttp(uri, channel);
   Assert.equal(actual, expected);
 }

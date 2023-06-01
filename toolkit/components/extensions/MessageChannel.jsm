@@ -97,20 +97,20 @@
  *
  */
 
-var EXPORTED_SYMBOLS = ["MessageChannel"];
+const EXPORTED_SYMBOLS = ["MessageChannel"];
+let MessageChannel;
 
-/* globals MessageChannel */
-
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 const { ExtensionUtils } = ChromeUtils.import(
   "resource://gre/modules/ExtensionUtils.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "MessageManagerProxy",
   "resource://gre/modules/MessageManagerProxy.jsm"
 );
@@ -119,7 +119,7 @@ function getMessageManager(target) {
   if (typeof target.sendAsyncMessage === "function") {
     return target;
   }
-  return new MessageManagerProxy(target);
+  return new lazy.MessageManagerProxy(target);
 }
 
 function matches(target, messageManager) {
@@ -168,9 +168,9 @@ var _makeDeferred = (resolve, reject) => {
  */
 let Deferred = () => {
   let res = {};
-  this._deferredResult = res;
+  _deferredResult = res;
   res.promise = new Promise(_makeDeferred);
-  this._deferredResult = null;
+  _deferredResult = null;
   return res;
 };
 
@@ -185,7 +185,7 @@ class FilteringMessageManager {
   /**
    * @param {string} messageName
    *     The name of the native message this broker listens for.
-   * @param {function} callback
+   * @param {Function} callback
    *     A function which is called for each message after it has been
    *     mapped to its handler. The function receives two arguments:
    *
@@ -426,10 +426,10 @@ class FilteringMessageManagerMap extends Map {
   /**
    * @param {string} messageName
    *     The native message name passed to `FilteringMessageManager` constructors.
-   * @param {function} callback
+   * @param {Function} callback
    *     The message callback function passed to
    *     `FilteringMessageManager` constructors.
-   * @param {function} [constructor = FilteringMessageManager]
+   * @param {Function} [constructor = FilteringMessageManager]
    *     The constructor for the message manager class that we're
    *     mapping to.
    */
@@ -570,7 +570,9 @@ class PendingMessage {
   }
 }
 
-this.MessageChannel = {
+// Web workers has MessageChannel API, which is unrelated to this.
+// eslint-disable-next-line no-global-assign
+MessageChannel = {
   init() {
     Services.obs.addObserver(this, "message-manager-close");
     Services.obs.addObserver(this, "message-manager-disconnect");

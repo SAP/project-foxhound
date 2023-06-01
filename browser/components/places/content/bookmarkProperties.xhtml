@@ -19,8 +19,7 @@
         headerparent="bookmarkpropertiesdialog"
         neediconheader="true"
         onunload="BookmarkPropertiesPanel.onDialogUnload();"
-        style="min-width: 30em;"
-        persist="screenX screenY width">
+        style="min-width: 40em;">
 <dialog id="bookmarkpropertiesdialog"
         buttons="accept, cancel">
 
@@ -34,7 +33,6 @@
   </stringbundleset>
 
   <script>
-    var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
     if (Services.prefs.getBoolPref("browser.bookmarks.editDialog.delayedApply.enabled", false)) {
       Services.scriptloader.loadSubScript("chrome://browser/content/places/editBookmark.js", this);
     } else {

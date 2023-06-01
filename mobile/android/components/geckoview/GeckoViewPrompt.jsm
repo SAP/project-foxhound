@@ -5,17 +5,15 @@
 
 var EXPORTED_SYMBOLS = ["PromptFactory"];
 
-const { GeckoViewUtils } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewUtils.jsm"
+const { GeckoViewUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewUtils.sys.mjs"
 );
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
+const lazy = {};
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  GeckoViewPrompter: "resource://gre/modules/GeckoViewPrompter.jsm",
-  Services: "resource://gre/modules/Services.jsm",
+ChromeUtils.defineESModuleGetters(lazy, {
+  DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
+  GeckoViewPrompter: "resource://gre/modules/GeckoViewPrompter.sys.mjs",
 });
 
 const { debug, warn } = GeckoViewUtils.initLogging("GeckoViewPrompt");
@@ -31,11 +29,11 @@ class PromptFactory {
       case "mozshowdropdown-sourcetouch":
         this._handleSelect(aEvent.composedTarget, /* aIsDropDown = */ true);
         break;
+      case "MozOpenDateTimePicker":
+        this._handleDateTime(aEvent.composedTarget);
+        break;
       case "click":
         this._handleClick(aEvent);
-        break;
-      case "contextmenu":
-        this._handleContextMenu(aEvent);
         break;
       case "DOMPopupBlocked":
         this._handlePopupBlocked(aEvent);
@@ -43,8 +41,6 @@ class PromptFactory {
     }
   }
 
-  // TODO(emilio): We should listen to MozOpenDateTimePicker instead, except
-  // the Gecko widget isn't supported for stuff like <input type=week>
   _handleClick(aEvent) {
     const target = aEvent.composedTarget;
     const className = ChromeUtils.getClassName(target);
@@ -73,19 +69,19 @@ class PromptFactory {
     }
 
     const type = target.type;
-    if (
-      type === "date" ||
-      type === "month" ||
-      type === "week" ||
-      type === "time" ||
-      type === "datetime-local"
-    ) {
-      this._handleDateTime(target, type);
-      aEvent.preventDefault();
+    if (type === "month" || type === "week") {
+      // If there's a shadow root, the MozOpenDateTimePicker event takes care
+      // of this. Right now for these input types there's never a shadow root.
+      // Once we support UA widgets for month/week inputs (see bug 888320), we
+      // can remove this.
+      if (!target.openOrClosedShadowRoot) {
+        this._handleDateTime(target);
+        aEvent.preventDefault();
+      }
     }
   }
 
-  _handleSelect(aElement, aIsDropDown) {
+  _generateSelectItems(aElement) {
     const win = aElement.ownerGlobal;
     let id = 0;
     const map = {};
@@ -102,10 +98,10 @@ class PromptFactory {
           id: String(id),
           disabled: disabled || child.disabled,
         };
-        if (child instanceof win.HTMLOptGroupElement) {
+        if (win.HTMLOptGroupElement.isInstance(child)) {
           item.label = child.label;
           item.items = enumList(child, item.disabled);
-        } else if (child instanceof win.HTMLOptionElement) {
+        } else if (win.HTMLOptionElement.isInstance(child)) {
           item.label = child.label || child.text;
           item.selected = child.selected;
         } else {
@@ -117,10 +113,50 @@ class PromptFactory {
       return items;
     })(aElement);
 
+    return [items, map, id];
+  }
+
+  _handleSelect(aElement, aIsDropDown) {
+    const win = aElement.ownerGlobal;
+    const [items] = this._generateSelectItems(aElement);
+
     if (aIsDropDown) {
       aElement.openInParentProcess = true;
     }
-    const prompt = new GeckoViewPrompter(win);
+
+    const prompt = new lazy.GeckoViewPrompter(win);
+
+    // Something changed the <select> while it was open.
+    const deferredUpdate = new lazy.DeferredTask(() => {
+      // Inner contents in choice prompt are updated.
+      const [newItems] = this._generateSelectItems(aElement);
+      prompt.update({
+        type: "choice",
+        mode: aElement.multiple ? "multiple" : "single",
+        choices: newItems,
+      });
+    }, 0);
+    const mut = new win.MutationObserver(() => {
+      deferredUpdate.arm();
+    });
+    mut.observe(aElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+    });
+
+    const dismissPrompt = () => prompt.dismiss();
+    aElement.addEventListener("blur", dismissPrompt, { mozSystemGroup: true });
+    const hidedropdown = event => {
+      if (aElement === event.target) {
+        prompt.dismiss();
+      }
+    };
+    const chromeEventHandler = aElement.ownerGlobal.docShell.chromeEventHandler;
+    chromeEventHandler.addEventListener("mozhidedropdown", hidedropdown, {
+      mozSystemGroup: true,
+    });
+
     prompt.asyncShowPrompt(
       {
         type: "choice",
@@ -128,6 +164,17 @@ class PromptFactory {
         choices: items,
       },
       result => {
+        deferredUpdate.disarm();
+        mut.disconnect();
+        aElement.removeEventListener("blur", dismissPrompt, {
+          mozSystemGroup: true,
+        });
+        chromeEventHandler.removeEventListener(
+          "mozhidedropdown",
+          hidedropdown,
+          { mozSystemGroup: true }
+        );
+
         if (aIsDropDown) {
           aElement.openInParentProcess = false;
         }
@@ -137,23 +184,22 @@ class PromptFactory {
           return;
         }
 
+        const [, map, id] = this._generateSelectItems(aElement);
         let dispatchEvents = false;
         if (!aElement.multiple) {
           const elem = map[result.choices[0]];
-          if (elem && elem instanceof win.HTMLOptionElement) {
+          if (elem && win.HTMLOptionElement.isInstance(elem)) {
             dispatchEvents = !elem.selected;
             elem.selected = true;
           } else {
-            Cu.reportError(
-              "Invalid id for select result: " + result.choices[0]
-            );
+            console.error("Invalid id for select result: " + result.choices[0]);
           }
         } else {
           for (let i = 0; i < id; i++) {
             const elem = map[i];
             const index = result.choices.indexOf(String(i));
             if (
-              elem instanceof win.HTMLOptionElement &&
+              win.HTMLOptionElement.isInstance(elem) &&
               elem.selected !== index >= 0
             ) {
               // Current selected is not the same as the new selected state.
@@ -164,7 +210,7 @@ class PromptFactory {
           }
           for (let i = 0; i < result.choices.length; i++) {
             if (result.choices[i] !== undefined && result.choices[i] !== null) {
-              Cu.reportError(
+              console.error(
                 "Invalid id for select result: " + result.choices[i]
               );
               break;
@@ -179,17 +225,51 @@ class PromptFactory {
     );
   }
 
-  _handleDateTime(aElement, aType) {
-    const prompt = new GeckoViewPrompter(aElement.ownerGlobal);
+  _handleDateTime(aElement) {
+    const prompt = new lazy.GeckoViewPrompter(aElement.ownerGlobal);
+
+    const chromeEventHandler = aElement.ownerGlobal.docShell.chromeEventHandler;
+    const dismissPrompt = () => prompt.dismiss();
+    // Some controls don't have UA widget (bug 888320)
+    if (
+      ["month", "week"].includes(aElement.type) &&
+      !aElement.openOrClosedShadowRoot
+    ) {
+      aElement.addEventListener("blur", dismissPrompt, {
+        mozSystemGroup: true,
+      });
+    } else {
+      chromeEventHandler.addEventListener(
+        "MozCloseDateTimePicker",
+        dismissPrompt
+      );
+    }
+
     prompt.asyncShowPrompt(
       {
         type: "datetime",
-        mode: aType,
+        mode: aElement.type,
         value: aElement.value,
         min: aElement.min,
         max: aElement.max,
+        step: aElement.step,
       },
       result => {
+        // Some controls don't have UA widget (bug 888320)
+        if (
+          ["month", "week"].includes(aElement.type) &&
+          !aElement.openOrClosedShadowRoot
+        ) {
+          aElement.removeEventListener("blur", dismissPrompt, {
+            mozSystemGroup: true,
+          });
+        } else {
+          chromeEventHandler.removeEventListener(
+            "MozCloseDateTimePicker",
+            dismissPrompt
+          );
+        }
+
         // OK: result
         // Cancel: !result
         if (
@@ -216,134 +296,13 @@ class PromptFactory {
     );
   }
 
-  _handleContextMenu(aEvent) {
-    const target = aEvent.composedTarget;
-    if (aEvent.defaultPrevented || target.isContentEditable) {
-      return;
-    }
-
-    // Look through all ancestors for a context menu per spec.
-    let parent = target;
-    let menu = target.contextMenu;
-    while (!menu && parent) {
-      menu = parent.contextMenu;
-      parent = parent.parentElement;
-    }
-    if (!menu) {
-      return;
-    }
-
-    const builder = {
-      _cursor: undefined,
-      _id: 0,
-      _map: {},
-      _stack: [],
-      items: [],
-
-      // nsIMenuBuilder
-      openContainer(aLabel) {
-        if (!this._cursor) {
-          // Top-level
-          this._cursor = this;
-          return;
-        }
-        const newCursor = {
-          id: String(this._id++),
-          items: [],
-          label: aLabel,
-        };
-        this._cursor.items.push(newCursor);
-        this._stack.push(this._cursor);
-        this._cursor = newCursor;
-      },
-
-      addItemFor(aElement, aCanLoadIcon) {
-        this._cursor.items.push({
-          disabled: aElement.disabled,
-          icon:
-            aCanLoadIcon && aElement.icon && aElement.icon.length
-              ? aElement.icon
-              : null,
-          id: String(this._id),
-          label: aElement.label,
-          selected: aElement.checked,
-        });
-        this._map[this._id++] = aElement;
-      },
-
-      addSeparator() {
-        this._cursor.items.push({
-          disabled: true,
-          id: String(this._id++),
-          separator: true,
-        });
-      },
-
-      undoAddSeparator() {
-        const sep = this._cursor.items[this._cursor.items.length - 1];
-        if (sep && sep.separator) {
-          this._cursor.items.pop();
-        }
-      },
-
-      closeContainer() {
-        const childItems =
-          this._cursor.label === "" ? this._cursor.items : null;
-        this._cursor = this._stack.pop();
-
-        if (
-          childItems !== null &&
-          this._cursor &&
-          this._cursor.items.length === 1
-        ) {
-          // Merge a single nameless child container into the parent container.
-          // This lets us build an HTML contextmenu within a submenu.
-          this._cursor.items = childItems;
-        }
-      },
-
-      toJSONString() {
-        return JSON.stringify(this.items);
-      },
-
-      click(aId) {
-        const item = this._map[aId];
-        if (item) {
-          item.click();
-        }
-      },
-    };
-
-    // XXX the "show" event is not cancelable but spec says it should be.
-    menu.sendShowEvent();
-    menu.build(builder);
-
-    const prompt = new GeckoViewPrompter(target.ownerGlobal);
-    prompt.asyncShowPrompt(
-      {
-        type: "choice",
-        mode: "menu",
-        choices: builder.items,
-      },
-      result => {
-        // OK: result
-        // Cancel: !result
-        if (result && result.choices !== undefined) {
-          builder.click(result.choices[0]);
-        }
-      }
-    );
-
-    aEvent.preventDefault();
-  }
-
   _handlePopupBlocked(aEvent) {
     const dwi = aEvent.requestingWindow;
     const popupWindowURISpec = aEvent.popupWindowURI
       ? aEvent.popupWindowURI.displaySpec
       : "about:blank";
 
-    const prompt = new GeckoViewPrompter(aEvent.requestingWindow);
+    const prompt = new lazy.GeckoViewPrompter(aEvent.requestingWindow);
     prompt.asyncShowPrompt(
       {
         type: "popup",
@@ -371,7 +330,7 @@ class PromptFactory {
         ].getService(Ci.nsIPromptFactory);
         return pwmgr.getPrompt(aDOMWin, aIID);
       } catch (e) {
-        Cu.reportError("Delegation to password manager failed: " + e);
+        console.error("Delegation to password manager failed: " + e);
       }
     }
 
@@ -386,7 +345,7 @@ class PromptFactory {
   callProxy(aMethod, aArguments) {
     const prompt = new PromptDelegate(aArguments[0]);
     let promptArgs;
-    if (aArguments[0] instanceof BrowsingContext) {
+    if (BrowsingContext.isInstance(aArguments[0])) {
       // Called by BrowsingContext prompt method, strip modalType.
       [, , /*browsingContext*/ /*modalType*/ ...promptArgs] = aArguments;
     } else {
@@ -472,7 +431,7 @@ PromptFactory.prototype.QueryInterface = ChromeUtils.generateQI([
 
 class PromptDelegate {
   constructor(aParent) {
-    this._prompter = new GeckoViewPrompter(aParent);
+    this._prompter = new lazy.GeckoViewPrompter(aParent);
   }
 
   BUTTON_TYPE_POSITIVE = 0;

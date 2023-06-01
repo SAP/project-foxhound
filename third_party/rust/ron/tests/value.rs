@@ -1,5 +1,6 @@
 use ron::value::{Map, Number, Value};
 use serde::Serialize;
+use std::f64;
 
 #[test]
 fn bool() {
@@ -23,7 +24,10 @@ fn map() {
 #[test]
 fn number() {
     assert_eq!("42".parse(), Ok(Value::Number(Number::new(42))));
-    assert_eq!("3.1415".parse(), Ok(Value::Number(Number::new(3.1415f64))));
+    assert_eq!(
+        "3.141592653589793".parse(),
+        Ok(Value::Number(Number::new(f64::consts::PI)))
+    );
 }
 
 #[test]
@@ -67,15 +71,15 @@ fn seq() {
 
 #[test]
 fn unit() {
-    use ron::error::{Error, ErrorCode, Position};
+    use ron::error::{Error, Position, SpannedError};
 
     assert_eq!("()".parse(), Ok(Value::Unit));
     assert_eq!("Foo".parse(), Ok(Value::Unit));
 
     assert_eq!(
         "".parse::<Value>(),
-        Err(Error {
-            code: ErrorCode::Eof,
+        Err(SpannedError {
+            code: Error::Eof,
             position: Position { col: 1, line: 1 }
         })
     );
@@ -108,4 +112,20 @@ fn roundtrip() {
         let scene: Value = from_str(&s).unwrap();
         println!("{:?}", scene);
     }
+}
+
+#[test]
+fn map_roundtrip_338() {
+    // https://github.com/ron-rs/ron/issues/338
+
+    let v: Value = ron::from_str("{}").unwrap();
+    println!("{:?}", v);
+
+    let ser = ron::to_string(&v).unwrap();
+    println!("{:?}", ser);
+
+    let roundtrip = ron::from_str(&ser).unwrap();
+    println!("{:?}", roundtrip);
+
+    assert_eq!(v, roundtrip);
 }

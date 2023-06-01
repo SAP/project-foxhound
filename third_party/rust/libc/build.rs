@@ -6,7 +6,7 @@ fn main() {
     // Avoid unnecessary re-building.
     println!("cargo:rerun-if-changed=build.rs");
 
-    let (rustc_minor_ver, is_nightly) = rustc_minor_nightly().expect("Failed to get rustc version");
+    let (rustc_minor_ver, is_nightly) = rustc_minor_nightly();
     let rustc_dep_of_std = env::var("CARGO_FEATURE_RUSTC_DEP_OF_STD").is_ok();
     let align_cargo_feature = env::var("CARGO_FEATURE_ALIGN").is_ok();
     let const_extern_fn_cargo_feature = env::var("CARGO_FEATURE_CONST_EXTERN_FN").is_ok();
@@ -60,6 +60,11 @@ fn main() {
         println!("cargo:rustc-cfg=libc_align");
     }
 
+    // Rust >= 1.26 supports i128 and u128:
+    if rustc_minor_ver >= 26 || rustc_dep_of_std {
+        println!("cargo:rustc-cfg=libc_int128");
+    }
+
     // Rust >= 1.30 supports `core::ffi::c_void`, so libc can just re-export it.
     // Otherwise, it defines an incompatible type to retaining
     // backwards-compatibility.
@@ -82,36 +87,52 @@ fn main() {
         println!("cargo:rustc-cfg=libc_ptr_addr_of");
     }
 
+    // Rust >= 1.37.0 allows underscores as anonymous constant names.
+    if rustc_minor_ver >= 37 || rustc_dep_of_std {
+        println!("cargo:rustc-cfg=libc_underscore_const_names");
+    }
+
     // #[thread_local] is currently unstable
     if rustc_dep_of_std {
         println!("cargo:rustc-cfg=libc_thread_local");
     }
 
-    if const_extern_fn_cargo_feature {
-        if !is_nightly || rustc_minor_ver < 40 {
-            panic!("const-extern-fn requires a nightly compiler >= 1.40")
-        }
+    // Rust >= 1.62.0 allows to use `const_extern_fn` for "Rust" and "C".
+    if rustc_minor_ver >= 62 {
         println!("cargo:rustc-cfg=libc_const_extern_fn");
+    } else {
+        // Rust < 1.62.0 requires a crate feature and feature gate.
+        if const_extern_fn_cargo_feature {
+            if !is_nightly || rustc_minor_ver < 40 {
+                panic!("const-extern-fn requires a nightly compiler >= 1.40");
+            }
+            println!("cargo:rustc-cfg=libc_const_extern_fn_unstable");
+            println!("cargo:rustc-cfg=libc_const_extern_fn");
+        }
     }
 }
 
-fn rustc_minor_nightly() -> Option<(u32, bool)> {
+fn rustc_minor_nightly() -> (u32, bool) {
     macro_rules! otry {
         ($e:expr) => {
             match $e {
                 Some(e) => e,
-                None => return None,
+                None => panic!("Failed to get rustc version"),
             }
         };
     }
 
     let rustc = otry!(env::var_os("RUSTC"));
-    let output = otry!(Command::new(rustc).arg("--version").output().ok());
+    let output = Command::new(rustc)
+        .arg("--version")
+        .output()
+        .ok()
+        .expect("Failed to get rustc version");
     let version = otry!(str::from_utf8(&output.stdout).ok());
     let mut pieces = version.split('.');
 
     if pieces.next() != Some("rustc 1") {
-        return None;
+        panic!("Failed to get rustc version");
     }
 
     let minor = pieces.next();
@@ -127,7 +148,7 @@ fn rustc_minor_nightly() -> Option<(u32, bool)> {
         .unwrap_or(false);
     let minor = otry!(otry!(minor).parse().ok());
 
-    Some((minor, nightly))
+    (minor, nightly)
 }
 
 fn which_freebsd() -> Option<i32> {

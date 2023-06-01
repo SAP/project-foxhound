@@ -25,52 +25,44 @@ const MAX_NUMBER_OF_PREFS = 50;
 const MAX_STRING_PREF_LENGTH = 128;
 const PDF_CONTENT_TYPE = "application/pdf";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  AsyncPrefs: "resource://gre/modules/AsyncPrefs.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
-  this,
-  "AsyncPrefs",
-  "resource://gre/modules/AsyncPrefs.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "NetUtil",
   "resource://gre/modules/NetUtil.jsm"
 );
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "NetworkManager",
   "resource://pdf.js/PdfJsNetwork.jsm"
 );
 
 ChromeUtils.defineModuleGetter(
-  this,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "PdfJsTelemetry",
   "resource://pdf.js/PdfJsTelemetry.jsm"
 );
 
-ChromeUtils.defineModuleGetter(this, "PdfJs", "resource://pdf.js/PdfJs.jsm");
+ChromeUtils.defineModuleGetter(lazy, "PdfJs", "resource://pdf.js/PdfJs.jsm");
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "PdfSandbox",
   "resource://pdf.js/PdfSandbox.jsm"
 );
-
-XPCOMUtils.defineLazyGlobalGetters(this, ["XMLHttpRequest"]);
 
 var Svc = {};
 XPCOMUtils.defineLazyServiceGetter(
@@ -86,7 +78,7 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsIHandlerService"
 );
 
-XPCOMUtils.defineLazyGetter(this, "gOurBinary", () => {
+XPCOMUtils.defineLazyGetter(lazy, "gOurBinary", () => {
   let file = Services.dirsvc.get("XREExeF", Ci.nsIFile);
   // Make sure to get the .app on macOS
   if (AppConstants.platform == "macosx") {
@@ -147,7 +139,9 @@ function getDOMWindow(aChannel, aPrincipal) {
 
 function getActor(window) {
   try {
-    return window.windowGlobalChild.getActor("Pdfjs");
+    const actorName =
+      AppConstants.platform === "android" ? "GeckoViewPdfjs" : "Pdfjs";
+    return window.windowGlobalChild.getActor(actorName);
   } catch (ex) {
     return null;
   }
@@ -269,13 +263,6 @@ class ChromeActions {
   constructor(domWindow, contentDispositionFilename) {
     this.domWindow = domWindow;
     this.contentDispositionFilename = contentDispositionFilename;
-    this.telemetryState = {
-      documentInfo: false,
-      firstPageInfo: false,
-      streamTypesUsed: {},
-      fontTypesUsed: {},
-      fallbackErrorsReported: {},
-    };
     this.sandbox = null;
     this.unloadListener = null;
   }
@@ -297,11 +284,11 @@ class ChromeActions {
     }
 
     try {
-      this.sandbox = new PdfSandbox(this.domWindow, data);
+      this.sandbox = new lazy.PdfSandbox(this.domWindow, data);
     } catch (err) {
       // If there's an error here, it means that something is really wrong
       // on pdf.js side during sandbox initialization phase.
-      Cu.reportError(err);
+      console.error(err);
       return sendResp(false);
     }
 
@@ -319,6 +306,11 @@ class ChromeActions {
     }
   }
 
+  dispatchAsyncEventInSandbox(event, sendResponse) {
+    this.dispatchEventInSandbox(event);
+    sendResponse();
+  }
+
   destroySandbox() {
     if (this.sandbox) {
       this.domWindow.removeEventListener("unload", this.unloadListener);
@@ -328,7 +320,7 @@ class ChromeActions {
   }
 
   isInPrivateBrowsing() {
-    return PrivateBrowsingUtils.isContentWindowPrivate(this.domWindow);
+    return lazy.PrivateBrowsingUtils.isContentWindowPrivate(this.domWindow);
   }
 
   getWindowOriginAttributes() {
@@ -340,12 +332,8 @@ class ChromeActions {
   }
 
   download(data, sendResponse) {
-    var self = this;
     var originalUrl = data.originalUrl;
     var blobUrl = data.blobUrl || originalUrl;
-    // The data may not be downloaded so we need just retry getting the pdf with
-    // the original url.
-    var originalUri = NetUtil.newURI(originalUrl);
     var filename = data.filename;
     if (
       typeof filename !== "string" ||
@@ -353,111 +341,12 @@ class ChromeActions {
     ) {
       filename = "document.pdf";
     }
-    var blobUri = NetUtil.newURI(blobUrl);
 
-    // If the download was triggered from the ctrl/cmd+s or "Save Page As"
-    // or the download button, launch the "Save As" dialog.
-    const saveOnDownload = getBoolPref(
-      "browser.download.improvements_to_download_panel",
-      false
-    );
-
-    if (
-      data.sourceEventType == "save" ||
-      (saveOnDownload && data.sourceEventType == "download")
-    ) {
-      let actor = getActor(this.domWindow);
-      actor.sendAsyncMessage("PDFJS:Parent:saveURL", {
-        blobUrl,
-        filename,
-      });
-      return;
-    }
-
-    // The download is from the fallback bar or the download button, so trigger
-    // the open dialog to make it easier for users to save in the downloads
-    // folder or launch a different PDF viewer.
-    var extHelperAppSvc = Cc[
-      "@mozilla.org/uriloader/external-helper-app-service;1"
-    ].getService(Ci.nsIExternalHelperAppService);
-
-    var docIsPrivate = this.isInPrivateBrowsing();
-    var netChannel = NetUtil.newChannel({
-      uri: blobUri,
-      loadUsingSystemPrincipal: true,
-    });
-    if (
-      "nsIPrivateBrowsingChannel" in Ci &&
-      netChannel instanceof Ci.nsIPrivateBrowsingChannel
-    ) {
-      netChannel.setPrivate(docIsPrivate);
-    }
-    NetUtil.asyncFetch(netChannel, function(aInputStream, aResult) {
-      if (!Components.isSuccessCode(aResult)) {
-        if (sendResponse) {
-          sendResponse(true);
-        }
-        return;
-      }
-      // Create a nsIInputStreamChannel so we can set the url on the channel
-      // so the filename will be correct.
-      var channel = Cc[
-        "@mozilla.org/network/input-stream-channel;1"
-      ].createInstance(Ci.nsIInputStreamChannel);
-      channel.QueryInterface(Ci.nsIChannel);
-      try {
-        // contentDisposition/contentDispositionFilename is readonly before FF18
-        channel.contentDisposition = Ci.nsIChannel.DISPOSITION_ATTACHMENT;
-        if (self.contentDispositionFilename && !data.isAttachment) {
-          channel.contentDispositionFilename = self.contentDispositionFilename;
-        } else {
-          channel.contentDispositionFilename = filename;
-        }
-      } catch (e) {}
-      channel.setURI(originalUri);
-      channel.loadInfo = netChannel.loadInfo;
-      channel.contentStream = aInputStream;
-      if (
-        "nsIPrivateBrowsingChannel" in Ci &&
-        channel instanceof Ci.nsIPrivateBrowsingChannel
-      ) {
-        channel.setPrivate(docIsPrivate);
-      }
-
-      var listener = {
-        extListener: null,
-        onStartRequest(aRequest) {
-          var loadContext = self.domWindow.docShell.QueryInterface(
-            Ci.nsILoadContext
-          );
-          this.extListener = extHelperAppSvc.doContent(
-            data.isAttachment ? "application/octet-stream" : PDF_CONTENT_TYPE,
-            aRequest,
-            loadContext,
-            false
-          );
-          this.extListener.onStartRequest(aRequest);
-        },
-        onStopRequest(aRequest, aStatusCode) {
-          if (this.extListener) {
-            this.extListener.onStopRequest(aRequest, aStatusCode);
-          }
-          // Notify the content code we're done downloading.
-          if (sendResponse) {
-            sendResponse(false);
-          }
-        },
-        onDataAvailable(aRequest, aDataInputStream, aOffset, aCount) {
-          this.extListener.onDataAvailable(
-            aRequest,
-            aDataInputStream,
-            aOffset,
-            aCount
-          );
-        },
-      };
-
-      channel.asyncOpen(listener);
+    let actor = getActor(this.domWindow);
+    actor.sendAsyncMessage("PDFJS:Parent:saveURL", {
+      blobUrl,
+      originalUrl,
+      filename,
     });
   }
 
@@ -465,17 +354,15 @@ class ChromeActions {
     return Services.locale.requestedLocale || "en-US";
   }
 
-  getStrings(data) {
+  getStrings() {
     try {
       // Lazy initialization of localizedStrings
-      if (!("localizedStrings" in this)) {
-        this.localizedStrings = getLocalizedStrings("viewer.properties");
-      }
-      var result = this.localizedStrings[data];
-      return JSON.stringify(result || null);
+      this.localizedStrings ||= getLocalizedStrings("viewer.properties");
+
+      return this.localizedStrings;
     } catch (e) {
       log("Unable to retrieve localized strings: " + e);
-      return "null";
+      return null;
     }
   }
 
@@ -490,6 +377,10 @@ class ChromeActions {
     return !!prefBrowser && prefGfx;
   }
 
+  supportsPinchToZoom() {
+    return getBoolPref("apz.allow_zooming", true);
+  }
+
   supportedMouseWheelZoomModifierKeys() {
     return {
       ctrlKey: getIntPref("mousewheel.with_control.action", 3) === 3,
@@ -501,73 +392,25 @@ class ChromeActions {
     return Cu.isInAutomation;
   }
 
+  isMobile() {
+    return AppConstants.platform === "android";
+  }
+
   reportTelemetry(data) {
     var probeInfo = JSON.parse(data);
     switch (probeInfo.type) {
-      case "documentInfo":
-        if (!this.telemetryState.documentInfo) {
-          PdfJsTelemetry.onDocumentVersion(probeInfo.version);
-          PdfJsTelemetry.onDocumentGenerator(probeInfo.generator);
-          if (probeInfo.formType) {
-            PdfJsTelemetry.onForm(probeInfo.formType);
-          }
-          this.telemetryState.documentInfo = true;
-        }
-        break;
       case "pageInfo":
-        if (!this.telemetryState.firstPageInfo) {
-          PdfJsTelemetry.onTimeToView(probeInfo.timestamp);
-          this.telemetryState.firstPageInfo = true;
-        }
+        lazy.PdfJsTelemetry.onTimeToView(probeInfo.timestamp);
         break;
-      case "documentStats":
-        // documentStats can be called several times for one documents.
-        // if stream/font types are reported, trying not to submit the same
-        // enumeration value multiple times.
-        var documentStats = probeInfo.stats;
-        if (!documentStats || typeof documentStats !== "object") {
-          break;
-        }
-        var i,
-          streamTypes = documentStats.streamTypes,
-          key;
-        var STREAM_TYPE_ID_LIMIT = 20;
-        i = 0;
-        for (key in streamTypes) {
-          if (++i > STREAM_TYPE_ID_LIMIT) {
-            break;
-          }
-          if (!this.telemetryState.streamTypesUsed[key]) {
-            PdfJsTelemetry.onStreamType(key);
-            this.telemetryState.streamTypesUsed[key] = true;
-          }
-        }
-        var fontTypes = documentStats.fontTypes;
-        var FONT_TYPE_ID_LIMIT = 20;
-        i = 0;
-        for (key in fontTypes) {
-          if (++i > FONT_TYPE_ID_LIMIT) {
-            break;
-          }
-          if (!this.telemetryState.fontTypesUsed[key]) {
-            PdfJsTelemetry.onFontType(key);
-            this.telemetryState.fontTypesUsed[key] = true;
-          }
-        }
+      case "editing":
+        lazy.PdfJsTelemetry.onEditing(probeInfo.data.type);
         break;
-      case "print":
-        PdfJsTelemetry.onPrint();
-        break;
-      case "unsupportedFeature":
-        if (!this.telemetryState.fallbackErrorsReported[probeInfo.featureId]) {
-          PdfJsTelemetry.onFallbackError(probeInfo.featureId);
-          this.telemetryState.fallbackErrorsReported[
-            probeInfo.featureId
-          ] = true;
-        }
-        break;
-      case "tagged":
-        PdfJsTelemetry.onTagged(probeInfo.tagged);
+      case "buttons":
+        const id = probeInfo.data.id.replace(
+          /([A-Z])/g,
+          c => `_${c.toLowerCase()}`
+        );
+        lazy.PdfJsTelemetry.onButtons(id);
         break;
     }
   }
@@ -648,10 +491,10 @@ class ChromeActions {
       prefName = PREF_PREFIX + "." + key;
       switch (typeof prefValue) {
         case "boolean":
-          AsyncPrefs.set(prefName, prefValue);
+          lazy.AsyncPrefs.set(prefName, prefValue);
           break;
         case "number":
-          AsyncPrefs.set(prefName, prefValue);
+          lazy.AsyncPrefs.set(prefName, prefValue);
           break;
         case "string":
           if (prefValue.length > MAX_STRING_PREF_LENGTH) {
@@ -660,7 +503,7 @@ class ChromeActions {
                 "for a string preference."
             );
           } else {
-            AsyncPrefs.set(prefName, prefValue);
+            lazy.AsyncPrefs.set(prefName, prefValue);
           }
           break;
       }
@@ -704,6 +547,30 @@ class ChromeActions {
       sendResponse(result);
     }
     return result;
+  }
+
+  /**
+   * Set the different editor states in order to be able to update the context
+   * menu.
+   * @param {Object} details
+   */
+  updateEditorStates({ details }) {
+    const doc = this.domWindow.document;
+    if (!doc.editorStates) {
+      doc.editorStates = {
+        isEditing: false,
+        isEmpty: true,
+        hasSomethingToUndo: false,
+        hasSomethingToRedo: false,
+        hasSelectedEditor: false,
+      };
+    }
+    const { editorStates } = doc;
+    for (const [key, value] of Object.entries(details)) {
+      if (typeof value === "boolean" && key in editorStates) {
+        editorStates[key] = value;
+      }
+    }
   }
 }
 
@@ -769,7 +636,7 @@ class RangedChromeActions extends ChromeActions {
       return xhr;
     };
 
-    this.networkManager = new NetworkManager(this.pdfUrl, {
+    this.networkManager = new lazy.NetworkManager(this.pdfUrl, {
       httpHeaders: httpHeaderVisitor.headers,
       getXhr,
     });
@@ -795,14 +662,17 @@ class RangedChromeActions extends ChromeActions {
       done = this.dataListener.isDone;
 
       this.dataListener.onprogress = (loaded, total) => {
+        const chunk = this.dataListener.readData();
+
         this.domWindow.postMessage(
           {
             pdfjsLoadAction: "progressiveRead",
             loaded,
             total,
-            chunk: this.dataListener.readData(),
+            chunk,
           },
-          PDF_VIEWER_ORIGIN
+          PDF_VIEWER_ORIGIN,
+          chunk ? [chunk.buffer] : undefined
         );
       };
       this.dataListener.oncomplete = () => {
@@ -829,7 +699,8 @@ class RangedChromeActions extends ChromeActions {
         done,
         filename: this.contentDispositionFilename,
       },
-      PDF_VIEWER_ORIGIN
+      PDF_VIEWER_ORIGIN,
+      data ? [data.buffer] : undefined
     );
 
     return true;
@@ -847,14 +718,15 @@ class RangedChromeActions extends ChromeActions {
     // errors from chrome code for non-range requests, so this doesn't
     // seem high-pri
     this.networkManager.requestRange(begin, end, {
-      onDone: function RangedChromeActions_onDone(aArgs) {
+      onDone: function RangedChromeActions_onDone({ begin, chunk }) {
         domWindow.postMessage(
           {
             pdfjsLoadAction: "range",
-            begin: aArgs.begin,
-            chunk: aArgs.chunk,
+            begin,
+            chunk,
           },
-          PDF_VIEWER_ORIGIN
+          PDF_VIEWER_ORIGIN,
+          chunk ? [chunk.buffer] : undefined
         );
       },
       onProgress: function RangedChromeActions_onProgress(evt) {
@@ -918,7 +790,8 @@ class StandardChromeActions extends ChromeActions {
           errorCode,
           filename: this.contentDispositionFilename,
         },
-        PDF_VIEWER_ORIGIN
+        PDF_VIEWER_ORIGIN,
+        data ? [data.buffer] : undefined
       );
 
       this.dataListener = null;
@@ -1041,7 +914,7 @@ PdfStreamConverter.prototype = {
     if (!executable) {
       return false;
     }
-    return !executable.equals(gOurBinary);
+    return !executable.equals(lazy.gOurBinary);
   },
 
   /*
@@ -1057,7 +930,7 @@ PdfStreamConverter.prototype = {
   _validateAndMaybeUpdatePDFPrefs() {
     let { processType, PROCESS_TYPE_DEFAULT } = Services.appinfo;
     // If we're not in the parent, or are the default, then just say yes.
-    if (processType != PROCESS_TYPE_DEFAULT || PdfJs.cachedIsDefault()) {
+    if (processType != PROCESS_TYPE_DEFAULT || lazy.PdfJs.cachedIsDefault()) {
       return { shouldOpen: true };
     }
 
@@ -1094,7 +967,7 @@ PdfStreamConverter.prototype = {
     rv.shouldOpen = true;
     // Log that we're doing this to help debug issues if people end up being
     // surprised by this behaviour.
-    Cu.reportError("Found unusable PDF preferences. Fixing back to PDF.js");
+    console.error("Found unusable PDF preferences. Fixing back to PDF.js");
 
     mime.preferredAction = Ci.nsIHandlerInfo.handleInternally;
     mime.alwaysAskBeforeHandling = false;
@@ -1108,8 +981,17 @@ PdfStreamConverter.prototype = {
     // We can be invoked for application/octet-stream; check if we want the
     // channel first:
     if (aFromType != "application/pdf") {
-      let ext = channelURI?.QueryInterface(Ci.nsIURL).fileExtension;
-      let isPDF = ext.toLowerCase() == "pdf";
+      // Check if the filename has a PDF extension.
+      let isPDF = false;
+      try {
+        isPDF = aChannel.contentDispositionFilename.endsWith(".pdf");
+      } catch (ex) {}
+      if (!isPDF) {
+        isPDF =
+          channelURI?.QueryInterface(Ci.nsIURL).fileExtension.toLowerCase() ==
+          "pdf";
+      }
+
       let browsingContext = aChannel?.loadInfo.targetBrowsingContext;
       let toplevelOctetStream =
         aFromType == "application/octet-stream" &&
@@ -1217,12 +1099,17 @@ PdfStreamConverter.prototype = {
 
     aRequest.QueryInterface(Ci.nsIWritablePropertyBag);
 
-    var contentDisposition = aRequest.DISPOSITION_INLINE;
     var contentDispositionFilename;
     try {
-      contentDisposition = aRequest.contentDisposition;
       contentDispositionFilename = aRequest.contentDispositionFilename;
     } catch (e) {}
+
+    if (
+      contentDispositionFilename &&
+      !/\.pdf$/i.test(contentDispositionFilename)
+    ) {
+      contentDispositionFilename += ".pdf";
+    }
 
     // Change the content type so we don't get stuck in a loop.
     aRequest.setProperty("contentType", aRequest.contentType);
@@ -1239,10 +1126,7 @@ PdfStreamConverter.prototype = {
       aRequest.setResponseHeader("Refresh", "", false);
     }
 
-    PdfJsTelemetry.onViewerIsUsed(
-      contentDisposition == aRequest.DISPOSITION_ATTACHMENT
-    );
-    PdfJsTelemetry.onDocumentSize(aRequest.contentLength);
+    lazy.PdfJsTelemetry.onViewerIsUsed();
 
     // The document will be loaded via the stream converter as html,
     // but since we may have come here via a download or attachment
@@ -1259,7 +1143,7 @@ PdfStreamConverter.prototype = {
     );
 
     // Create a new channel that is viewer loaded as a resource.
-    var channel = NetUtil.newChannel({
+    var channel = lazy.NetUtil.newChannel({
       uri: PDF_VIEWER_WEB_PAGE,
       loadUsingSystemPrincipal: true,
     });
@@ -1317,15 +1201,6 @@ PdfStreamConverter.prototype = {
         actor?.init(actions.supportsIntegratedFind());
 
         listener.onStopRequest(aRequest, statusCode);
-
-        if (domWindow.windowGlobalChild.browsingContext.parent) {
-          // This will need to be changed when fission supports object/embed (bug 1614524)
-          var isObjectEmbed = domWindow.frameElement
-            ? domWindow.frameElement.tagName == "OBJECT" ||
-              domWindow.frameElement.tagName == "EMBED"
-            : false;
-          PdfJsTelemetry.onEmbed(isObjectEmbed);
-        }
       },
     };
 
@@ -1337,7 +1212,7 @@ PdfStreamConverter.prototype = {
     // We can use the resource principal when data is fetched by the chrome,
     // e.g. useful for NoScript. Make make sure we reuse the origin attributes
     // from the request channel to keep isolation consistent.
-    var uri = NetUtil.newURI(PDF_VIEWER_WEB_PAGE);
+    var uri = lazy.NetUtil.newURI(PDF_VIEWER_WEB_PAGE);
     var resourcePrincipal = Services.scriptSecurityManager.createContentPrincipal(
       uri,
       aRequest.loadInfo.originAttributes

@@ -8,14 +8,13 @@
             unsetE10sPrefs, accConsumersChanged */
 
 // Load the shared-head file first.
-/* import-globals-from shared-head.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/accessible/tests/browser/shared-head.js",
   this
 );
 
-const { CommonUtils } = ChromeUtils.import(
-  "chrome://mochitests/content/browser/accessible/tests/browser/Common.jsm"
+const { CommonUtils } = ChromeUtils.importESModule(
+  "chrome://mochitests/content/browser/accessible/tests/browser/Common.sys.mjs"
 );
 
 /**

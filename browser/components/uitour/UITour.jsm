@@ -2,33 +2,42 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-"use strict";
-
 var EXPORTED_SYMBOLS = ["UITour"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
-XPCOMUtils.defineLazyModuleGetters(this, {
-  AboutReaderParent: "resource:///actors/AboutReaderParent.jsm",
-  AddonManager: "resource://gre/modules/AddonManager.jsm",
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
-  BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.jsm",
-  BuiltInThemeConfig: "resource:///modules/BuiltInThemeConfig.jsm",
-  CustomizableUI: "resource:///modules/CustomizableUI.jsm",
-  fxAccounts: "resource://gre/modules/FxAccounts.jsm",
-  FxAccounts: "resource://gre/modules/FxAccounts.jsm",
-  PanelMultiView: "resource:///modules/PanelMultiView.jsm",
-  ProfileAge: "resource://gre/modules/ProfileAge.jsm",
-  ResetProfile: "resource://gre/modules/ResetProfile.jsm",
-  Services: "resource://gre/modules/Services.jsm",
-  TelemetryController: "resource://gre/modules/TelemetryController.jsm",
-  UpdateUtils: "resource://gre/modules/UpdateUtils.jsm",
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  AboutReaderParent: "resource:///actors/AboutReaderParent.sys.mjs",
+  BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
+  ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
+  ResetProfile: "resource://gre/modules/ResetProfile.sys.mjs",
+  TelemetryController: "resource://gre/modules/TelemetryController.sys.mjs",
+  UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
 });
 
-// See LOG_LEVELS in Console.jsm. Common examples: "All", "Info", "Warn", & "Error".
+XPCOMUtils.defineLazyModuleGetters(lazy, {
+  AddonManager: "resource://gre/modules/AddonManager.jsm",
+  BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.jsm",
+  CustomizableUI: "resource:///modules/CustomizableUI.jsm",
+  FxAccounts: "resource://gre/modules/FxAccounts.jsm",
+  PanelMultiView: "resource:///modules/PanelMultiView.jsm",
+});
+
+XPCOMUtils.defineLazyGetter(lazy, "fxAccounts", () => {
+  return ChromeUtils.import(
+    "resource://gre/modules/FxAccounts.jsm"
+  ).getFxAccountsSingleton();
+});
+
+// See LOG_LEVELS in Console.sys.mjs. Common examples: "All", "Info", "Warn", &
+// "Error".
 const PREF_LOG_LEVEL = "browser.uitour.loglevel";
 
 const BACKGROUND_PAGE_ACTIONS_ALLOWED = new Set([
@@ -46,9 +55,11 @@ const BACKGROUND_PAGE_ACTIONS_ALLOWED = new Set([
 const MAX_BUTTONS = 4;
 
 // Array of which colorway/theme ids can be activated.
-XPCOMUtils.defineLazyGetter(this, "COLORWAY_IDS", () =>
-  [...BuiltInThemeConfig.keys()].filter(id =>
-    id.endsWith("-colorway@mozilla.org")
+XPCOMUtils.defineLazyGetter(lazy, "COLORWAY_IDS", () =>
+  [...lazy.BuiltInThemes.builtInThemeMap.keys()].filter(
+    id =>
+      id.endsWith("-colorway@mozilla.org") &&
+      !lazy.BuiltInThemes.themeIsExpired(id)
   )
 );
 
@@ -56,9 +67,10 @@ XPCOMUtils.defineLazyGetter(this, "COLORWAY_IDS", () =>
 const TARGET_SEARCHENGINE_PREFIX = "searchEngine-";
 
 // Create a new instance of the ConsoleAPI so we can control the maxLogLevel with a pref.
-XPCOMUtils.defineLazyGetter(this, "log", () => {
-  let ConsoleAPI = ChromeUtils.import("resource://gre/modules/Console.jsm", {})
-    .ConsoleAPI;
+XPCOMUtils.defineLazyGetter(lazy, "log", () => {
+  let { ConsoleAPI } = ChromeUtils.importESModule(
+    "resource://gre/modules/Console.sys.mjs"
+  );
   let consoleOptions = {
     maxLogLevelPref: PREF_LOG_LEVEL,
     prefix: "UITour",
@@ -201,7 +213,7 @@ var UITour = {
   ]),
 
   init() {
-    log.debug("Initializing UITour");
+    lazy.log.debug("Initializing UITour");
     // Lazy getter is initialized here so it can be replicated any time
     // in a test.
     delete this.url;
@@ -217,7 +229,7 @@ var UITour = {
       "onWidgetReset",
       "onAreaReset",
     ];
-    CustomizableUI.addListener(
+    lazy.CustomizableUI.addListener(
       listenerMethods.reduce((listener, method) => {
         listener[method] = () => this.clearAvailableTargetsCache();
         return listener;
@@ -245,22 +257,22 @@ var UITour = {
       window = Services.wm.getMostRecentWindow("navigator:browser");
     }
 
-    log.debug("onPageEvent:", aEvent.detail);
+    lazy.log.debug("onPageEvent:", aEvent.detail);
 
     if (typeof aEvent.detail != "object") {
-      log.warn("Malformed event - detail not an object");
+      lazy.log.warn("Malformed event - detail not an object");
       return false;
     }
 
     let action = aEvent.detail.action;
     if (typeof action != "string" || !action) {
-      log.warn("Action not defined");
+      lazy.log.warn("Action not defined");
       return false;
     }
 
     let data = aEvent.detail.data;
     if (typeof data != "object") {
-      log.warn("Malformed event - data not an object");
+      lazy.log.warn("Malformed event - data not an object");
       return false;
     }
 
@@ -269,7 +281,7 @@ var UITour = {
         aEvent.pageVisibilityState == "unloaded") &&
       !BACKGROUND_PAGE_ACTIONS_ALLOWED.has(action)
     ) {
-      log.warn(
+      lazy.log.warn(
         "Ignoring disallowed action from a hidden page:",
         action,
         aEvent.pageVisibilityState
@@ -287,7 +299,9 @@ var UITour = {
         targetPromise
           .then(target => {
             if (!target.node) {
-              log.error("UITour: Target could not be resolved: " + data.target);
+              lazy.log.error(
+                "UITour: Target could not be resolved: " + data.target
+              );
               return;
             }
             let effect = undefined;
@@ -296,7 +310,7 @@ var UITour = {
             }
             this.showHighlight(window, target, effect);
           })
-          .catch(log.error);
+          .catch(lazy.log.error);
         break;
       }
 
@@ -310,7 +324,9 @@ var UITour = {
         targetPromise
           .then(target => {
             if (!target.node) {
-              log.error("UITour: Target could not be resolved: " + data.target);
+              lazy.log.error(
+                "UITour: Target could not be resolved: " + data.target
+              );
               return;
             }
 
@@ -346,7 +362,7 @@ var UITour = {
                   buttons.push(button);
 
                   if (buttons.length == MAX_BUTTONS) {
-                    log.warn(
+                    lazy.log.warn(
                       "showInfo: Reached limit of allowed number of buttons"
                     );
                     break;
@@ -377,7 +393,7 @@ var UITour = {
               infoOptions
             );
           })
-          .catch(log.error);
+          .catch(lazy.log.error);
         break;
       }
 
@@ -409,7 +425,7 @@ var UITour = {
 
       case "getConfiguration": {
         if (typeof data.configuration != "string") {
-          log.warn("getConfiguration: No configuration option specified");
+          lazy.log.warn("getConfiguration: No configuration option specified");
           return false;
         }
 
@@ -424,7 +440,7 @@ var UITour = {
 
       case "setConfiguration": {
         if (typeof data.configuration != "string") {
-          log.warn("setConfiguration: No configuration option specified");
+          lazy.log.warn("setConfiguration: No configuration option specified");
           return false;
         }
 
@@ -434,7 +450,7 @@ var UITour = {
 
       case "openPreferences": {
         if (typeof data.pane != "string" && typeof data.pane != "undefined") {
-          log.warn("openPreferences: Invalid pane specified");
+          lazy.log.warn("openPreferences: Invalid pane specified");
           return false;
         }
         window.openPreferences(data.pane);
@@ -444,20 +460,32 @@ var UITour = {
       case "showFirefoxAccounts": {
         Promise.resolve()
           .then(() => {
+            return lazy.FxAccounts.canConnectAccount();
+          })
+          .then(canConnect => {
+            if (!canConnect) {
+              lazy.log.warn("showFirefoxAccounts: can't currently connect");
+              return null;
+            }
             return data.email
-              ? FxAccounts.config.promiseEmailURI(
+              ? lazy.FxAccounts.config.promiseEmailURI(
                   data.email,
                   data.entrypoint || "uitour"
                 )
-              : FxAccounts.config.promiseConnectAccountURI(
+              : lazy.FxAccounts.config.promiseConnectAccountURI(
                   data.entrypoint || "uitour"
                 );
           })
           .then(uri => {
+            if (!uri) {
+              return;
+            }
             const url = new URL(uri);
             // Call our helper to validate extraURLParams and populate URLSearchParams
             if (!this._populateURLParams(url, data.extraURLParams)) {
-              log.warn("showFirefoxAccounts: invalid campaign args specified");
+              lazy.log.warn(
+                "showFirefoxAccounts: invalid campaign args specified"
+              );
               return;
             }
             // We want to replace the current tab.
@@ -471,13 +499,13 @@ var UITour = {
       }
 
       case "showConnectAnotherDevice": {
-        FxAccounts.config
+        lazy.FxAccounts.config
           .promiseConnectDeviceURI(data.entrypoint || "uitour")
           .then(uri => {
             const url = new URL(uri);
             // Call our helper to validate extraURLParams and populate URLSearchParams
             if (!this._populateURLParams(url, data.extraURLParams)) {
-              log.warn(
+              lazy.log.warn(
                 "showConnectAnotherDevice: invalid campaign args specified"
               );
               return;
@@ -495,8 +523,8 @@ var UITour = {
 
       case "resetFirefox": {
         // Open a reset profile dialog window.
-        if (ResetProfile.resetSupported()) {
-          ResetProfile.openConfirmationDialog(window);
+        if (lazy.ResetProfile.resetSupported()) {
+          lazy.ResetProfile.openConfirmationDialog(window);
         }
         break;
       }
@@ -508,13 +536,13 @@ var UITour = {
           .then(target => {
             this.addNavBarWidget(target, browser, data.callbackID);
           })
-          .catch(log.error);
+          .catch(lazy.log.error);
         break;
       }
 
       case "setDefaultSearchEngine": {
         let enginePromise = this.selectSearchEngine(data.identifier);
-        enginePromise.catch(Cu.reportError);
+        enginePromise.catch(console.error);
         break;
       }
 
@@ -575,7 +603,7 @@ var UITour = {
               searchbar.openSuggestionsPanel();
             }
           })
-          .catch(Cu.reportError);
+          .catch(console.error);
         break;
       }
 
@@ -587,14 +615,14 @@ var UITour = {
       }
 
       case "forceShowReaderIcon": {
-        AboutReaderParent.forceShowReaderIcon(browser);
+        lazy.AboutReaderParent.forceShowReaderIcon(browser);
         break;
       }
 
       case "toggleReaderMode": {
         let targetPromise = this.getTarget(window, "readerMode-urlBar");
         targetPromise.then(target => {
-          AboutReaderParent.toggleReaderMode({ target: target.node });
+          lazy.AboutReaderParent.toggleReaderMode({ target: target.node });
         });
         break;
       }
@@ -646,7 +674,7 @@ var UITour = {
   },
 
   handleEvent(aEvent) {
-    log.debug("handleEvent: type =", aEvent.type, "event =", aEvent);
+    lazy.log.debug("handleEvent: type =", aEvent.type, "event =", aEvent);
     switch (aEvent.type) {
       case "TabSelect": {
         let window = aEvent.target.ownerGlobal;
@@ -676,7 +704,7 @@ var UITour = {
   },
 
   observe(aSubject, aTopic, aData) {
-    log.debug("observe: aTopic =", aTopic);
+    lazy.log.debug("observe: aTopic =", aTopic);
     switch (aTopic) {
       // The browser message manager is disconnected when the <browser> is
       // destroyed and we want to teardown at that point.
@@ -718,7 +746,7 @@ var UITour = {
       return true;
     }
     if (typeof extraURLParams != "string") {
-      log.warn("_populateURLParams: extraURLParams is not a string");
+      lazy.log.warn("_populateURLParams: extraURLParams is not a string");
       return false;
     }
     let urlParams;
@@ -726,14 +754,14 @@ var UITour = {
       if (extraURLParams) {
         urlParams = JSON.parse(extraURLParams);
         if (typeof urlParams != "object") {
-          log.warn(
+          lazy.log.warn(
             "_populateURLParams: extraURLParams is not a stringified object"
           );
           return false;
         }
       }
     } catch (ex) {
-      log.warn("_populateURLParams: extraURLParams is not a JSON object");
+      lazy.log.warn("_populateURLParams: extraURLParams is not a JSON object");
       return false;
     }
     if (urlParams) {
@@ -748,7 +776,7 @@ var UITour = {
             FLOW_BEGIN_TIME_LENGTH) ||
         (urlParams.flow_id && urlParams.flow_id.length !== FLOW_ID_LENGTH)
       ) {
-        log.warn(
+        lazy.log.warn(
           "_populateURLParams: flow parameters are not properly structured"
         );
         return false;
@@ -771,7 +799,7 @@ var UITour = {
           !validName ||
           !reSimpleString.test(name)
         ) {
-          log.warn("_populateURLParams: invalid campaign param specified");
+          lazy.log.warn("_populateURLParams: invalid campaign param specified");
           return false;
         }
         url.searchParams.append(name, value);
@@ -783,7 +811,7 @@ var UITour = {
    * Tear down a tour from a tab e.g. upon switching/closing tabs.
    */
   async teardownTourForBrowser(aWindow, aBrowser, aTourPageClosing = false) {
-    log.debug(
+    lazy.log.debug(
       "teardownTourForBrowser: aBrowser = ",
       aBrowser,
       aTourPageClosing
@@ -840,7 +868,7 @@ var UITour = {
    * Tear down all tours for a ChromeWindow.
    */
   teardownTourForWindow(aWindow) {
-    log.debug("teardownTourForWindow");
+    lazy.log.debug("teardownTourForWindow");
     aWindow.gBrowser.tabContainer.removeEventListener("TabSelect", this);
     aWindow.removeEventListener("SSWindowClosing", this);
 
@@ -855,7 +883,7 @@ var UITour = {
     }
 
     if (!allowedSchemes.has(aURI.scheme)) {
-      log.error("Unsafe scheme:", aURI.scheme);
+      lazy.log.error("Unsafe scheme:", aURI.scheme);
       return false;
     }
 
@@ -878,7 +906,7 @@ var UITour = {
 
   sendPageCallback(aBrowser, aCallbackID, aData = {}) {
     let detail = { data: aData, callbackID: aCallbackID };
-    log.debug("sendPageCallback", detail);
+    lazy.log.debug("sendPageCallback", detail);
     let contextToVisit = aBrowser.browsingContext;
     let global = contextToVisit.currentWindowGlobal;
     let actor = global.getActor("UITour");
@@ -895,15 +923,15 @@ var UITour = {
   },
 
   getTarget(aWindow, aTargetName, aSticky = false) {
-    log.debug("getTarget:", aTargetName);
+    lazy.log.debug("getTarget:", aTargetName);
     if (typeof aTargetName != "string" || !aTargetName) {
-      log.warn("getTarget: Invalid target name specified");
+      lazy.log.warn("getTarget: Invalid target name specified");
       return Promise.reject("Invalid target name specified");
     }
 
     let targetObject = this.targets.get(aTargetName);
     if (!targetObject) {
-      log.warn(
+      lazy.log.warn(
         "getTarget: The specified target name is not in the allowed set"
       );
       return Promise.reject(
@@ -920,7 +948,7 @@ var UITour = {
             try {
               node = targetQuery(aWindow.document);
             } catch (ex) {
-              log.warn("getTarget: Error running target query:", ex);
+              lazy.log.warn("getTarget: Error running target query:", ex);
               node = null;
             }
           } else {
@@ -939,7 +967,7 @@ var UITour = {
             allowAdd: targetObject.allowAdd,
           });
         })
-        .catch(log.error);
+        .catch(lazy.log.error);
     });
   },
 
@@ -950,7 +978,7 @@ var UITour = {
       let doc = aTarget.node.ownerGlobal.document;
       targetElement =
         doc.getElementById(aTarget.widgetName) ||
-        PanelMultiView.getViewNode(doc, aTarget.widgetName);
+        lazy.PanelMultiView.getViewNode(doc, aTarget.widgetName);
     }
 
     return targetElement.id.startsWith("appMenu-");
@@ -965,7 +993,7 @@ var UITour = {
    * @param {Object} aOptions Extra config arguments, example `autohide: true`.
    */
   _setMenuStateForAnnotation(aWindow, aShouldOpen, aOptions = {}) {
-    log.debug(
+    lazy.log.debug(
       "_setMenuStateForAnnotation: Menu is expected to be:",
       aShouldOpen ? "open" : "closed"
     );
@@ -974,14 +1002,16 @@ var UITour = {
     // If the panel is in the desired state, we're done.
     let panelIsOpen = menu.state != "closed";
     if (aShouldOpen == panelIsOpen) {
-      log.debug("_setMenuStateForAnnotation: Menu already in expected state");
+      lazy.log.debug(
+        "_setMenuStateForAnnotation: Menu already in expected state"
+      );
       return Promise.resolve();
     }
 
     // Actually show or hide the menu
     let promise = null;
     if (aShouldOpen) {
-      log.debug("_setMenuStateForAnnotation: Opening the menu");
+      lazy.log.debug("_setMenuStateForAnnotation: Opening the menu");
       promise = new Promise(resolve => {
         this.showMenu(aWindow, "appMenu", resolve, aOptions);
       });
@@ -989,7 +1019,7 @@ var UITour = {
       // If the menu was opened explictly by api user through `Mozilla.UITour.showMenu`,
       // it should be closed explictly by api user through `Mozilla.UITour.hideMenu`.
       // So we shouldn't get to here to close it for the highlight/info annotation.
-      log.debug("_setMenuStateForAnnotation: Closing the menu");
+      lazy.log.debug("_setMenuStateForAnnotation: Closing the menu");
       promise = new Promise(resolve => {
         menu.addEventListener("popuphidden", resolve, { once: true });
         this.hideMenu(aWindow, "appMenu");
@@ -1059,7 +1089,8 @@ var UITour = {
     let node = (aTarget.node = refreshedTarget.node);
     // If the target is in the overflow panel, just return the overflow button.
     if (node.closest("#widget-overflow-mainView")) {
-      return CustomizableUI.getWidget(node.id).forWindow(aChromeWindow).anchor;
+      return lazy.CustomizableUI.getWidget(node.id).forWindow(aChromeWindow)
+        .anchor;
     }
     return node;
   },
@@ -1123,7 +1154,7 @@ var UITour = {
         highlighter.parentElement.state == "showing" ||
         highlighter.parentElement.state == "open"
       ) {
-        log.debug("showHighlight: Closing previous highlight first");
+        lazy.log.debug("showHighlight: Closing previous highlight first");
         highlighter.parentElement.hidePopup();
       }
       /* The "overlap" position anchors from the top-left but we want to centre highlights at their
@@ -1154,7 +1185,7 @@ var UITour = {
       let anchorEl = await this._correctAnchor(aChromeWindow, aTarget);
       showHighlightElement(anchorEl);
     } catch (e) {
-      log.warn(e);
+      lazy.log.warn(e);
     }
   },
 
@@ -1280,7 +1311,7 @@ var UITour = {
 
       tooltip.setAttribute("targetName", aAnchor.targetName);
 
-      let alignment = "bottomcenter topright";
+      let alignment = "bottomright topright";
       if (aAnchor.infoPanelPosition) {
         alignment = aAnchor.infoPanelPosition;
       }
@@ -1305,7 +1336,7 @@ var UITour = {
       let anchorEl = await this._correctAnchor(aChromeWindow, aAnchor);
       showInfoElement(anchorEl);
     } catch (e) {
-      log.warn(e);
+      lazy.log.warn(e);
     }
   },
 
@@ -1368,7 +1399,7 @@ var UITour = {
   },
 
   showMenu(aWindow, aMenuName, aOpenCallback = null, aOptions = {}) {
-    log.debug("showMenu:", aMenuName);
+    lazy.log.debug("showMenu:", aMenuName);
     function openMenuButton(aMenuBtn) {
       if (!aMenuBtn || !aMenuBtn.hasMenu() || aMenuBtn.open) {
         if (aOpenCallback) {
@@ -1411,7 +1442,7 @@ var UITour = {
     } else if (aMenuName == "pocket") {
       let button = aWindow.document.getElementById("save-to-pocket-button");
       if (!button) {
-        log.error("Can't open the pocket menu without a button");
+        lazy.log.error("Can't open the pocket menu without a button");
         return;
       }
       aWindow.document.addEventListener("ViewShown", aOpenCallback, {
@@ -1442,7 +1473,7 @@ var UITour = {
   },
 
   hideMenu(aWindow, aMenuName) {
-    log.debug("hideMenu:", aMenuName);
+    lazy.log.debug("hideMenu:", aMenuName);
     function closeMenuButton(aMenuBtn) {
       if (aMenuBtn && aMenuBtn.hasMenu()) {
         aMenuBtn.openMenu(false);
@@ -1519,7 +1550,7 @@ var UITour = {
             }
             hideMethod(win);
           })
-          .catch(log.error);
+          .catch(lazy.log.error);
       }
     });
   },
@@ -1561,7 +1592,7 @@ var UITour = {
         this.getAvailableTargets(aBrowser, aWindow, aCallbackID);
         break;
       case "colorway":
-        this.sendPageCallback(aBrowser, aCallbackID, COLORWAY_IDS);
+        this.sendPageCallback(aBrowser, aCallbackID, lazy.COLORWAY_IDS);
         break;
       case "search":
       case "selectedSearchEngine":
@@ -1613,11 +1644,11 @@ var UITour = {
         this.sendPageCallback(
           aBrowser,
           aCallbackID,
-          ResetProfile.resetSupported()
+          lazy.ResetProfile.resetSupported()
         );
         break;
       default:
-        log.error(
+        lazy.log.error(
           "getConfiguration: Unknown configuration requested: " + aConfiguration
         );
         break;
@@ -1641,19 +1672,19 @@ var UITour = {
         let toEnable = this._prevTheme;
 
         // Activate the allowed colorway.
-        if (COLORWAY_IDS.includes(aValue)) {
+        if (lazy.COLORWAY_IDS.includes(aValue)) {
           // Save the previous theme if this is the first activation.
           if (!this._prevTheme) {
             this._prevTheme = (
-              await AddonManager.getAddonsByTypes(["theme"])
+              await lazy.AddonManager.getAddonsByTypes(["theme"])
             ).find(theme => theme.isActive);
           }
-          toEnable = await AddonManager.getAddonByID(aValue);
+          toEnable = await lazy.AddonManager.getAddonByID(aValue);
         }
         toEnable?.enable();
         break;
       default:
-        log.error(
+        lazy.log.error(
           "setConfiguration: Unknown configuration requested: " + aConfiguration
         );
         break;
@@ -1665,7 +1696,7 @@ var UITour = {
   // remote servers. See also `getFxAConnections()`
   getFxA(aBrowser, aCallbackID) {
     (async () => {
-      let setup = !!(await fxAccounts.getSignedInUser());
+      let setup = !!(await lazy.fxAccounts.getSignedInUser());
       let result = { setup };
       if (!setup) {
         this.sendPageCallback(aBrowser, aCallbackID, result);
@@ -1694,10 +1725,10 @@ var UITour = {
         };
       }
       // And the account state.
-      result.accountStateOK = await fxAccounts.hasLocalSession();
+      result.accountStateOK = await lazy.fxAccounts.hasLocalSession();
       this.sendPageCallback(aBrowser, aCallbackID, result);
     })().catch(err => {
-      log.error(err);
+      lazy.log.error(err);
       this.sendPageCallback(aBrowser, aCallbackID, {});
     });
   },
@@ -1707,23 +1738,23 @@ var UITour = {
   // usually hit the FxA servers to obtain this info.
   getFxAConnections(aBrowser, aCallbackID) {
     (async () => {
-      let setup = !!(await fxAccounts.getSignedInUser());
+      let setup = !!(await lazy.fxAccounts.getSignedInUser());
       let result = { setup };
       if (!setup) {
         this.sendPageCallback(aBrowser, aCallbackID, result);
         return;
       }
       // We are signed in so need to build a richer result.
-      let devices = fxAccounts.device.recentDeviceList;
+      let devices = lazy.fxAccounts.device.recentDeviceList;
       // A recent device list is fine, but if we don't even have that we should
       // wait for it to be fetched.
       if (!devices) {
         try {
-          await fxAccounts.device.refreshDeviceList();
+          await lazy.fxAccounts.device.refreshDeviceList();
         } catch (ex) {
-          log.warn("failed to fetch device list", ex);
+          lazy.log.warn("failed to fetch device list", ex);
         }
-        devices = fxAccounts.device.recentDeviceList;
+        devices = lazy.fxAccounts.device.recentDeviceList;
       }
       if (devices) {
         // A falsey `devices` should be impossible, so we omit `devices` from
@@ -1741,7 +1772,7 @@ var UITour = {
 
       try {
         // Each of the "account services", which we turn into a map keyed by ID.
-        let attachedClients = await fxAccounts.listAttachedOAuthClients();
+        let attachedClients = await lazy.fxAccounts.listAttachedOAuthClients();
         result.accountServices = attachedClients
           .filter(c => !!c.id)
           .reduce((accum, c) => {
@@ -1754,11 +1785,11 @@ var UITour = {
             return accum;
           }, {});
       } catch (ex) {
-        log.warn("Failed to build the attached clients list", ex);
+        lazy.log.warn("Failed to build the attached clients list", ex);
       }
       this.sendPageCallback(aBrowser, aCallbackID, result);
     })().catch(err => {
-      log.error(err);
+      lazy.log.error(err);
       this.sendPageCallback(aBrowser, aCallbackID, {});
     });
   },
@@ -1776,7 +1807,7 @@ var UITour = {
       appinfo.distribution = distribution;
 
       // Update channel, in a way that preserves 'beta' for RC beta builds:
-      appinfo.defaultUpdateChannel = UpdateUtils.getUpdateChannel(
+      appinfo.defaultUpdateChannel = lazy.UpdateUtils.getUpdateChannel(
         false /* no partner ID */
       );
 
@@ -1808,7 +1839,7 @@ var UITour = {
 
       // Expose Profile creation and last reset dates in weeks.
       const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
-      let profileAge = await ProfileAge();
+      let profileAge = await lazy.ProfileAge();
       let createdDate = await profileAge.created;
       let resetDate = await profileAge.reset;
       let createdWeeksAgo = Math.floor((Date.now() - createdDate) / ONE_WEEK);
@@ -1821,7 +1852,7 @@ var UITour = {
 
       this.sendPageCallback(aBrowser, aCallbackID, appinfo);
     })().catch(err => {
-      log.error(err);
+      lazy.log.error(err);
       this.sendPageCallback(aBrowser, aCallbackID, {});
     });
   },
@@ -1831,7 +1862,7 @@ var UITour = {
       let window = aChromeWindow;
       let data = this.availableTargetsCache.get(window);
       if (data) {
-        log.debug(
+        lazy.log.debug(
           "getAvailableTargets: Using cached targets list",
           data.targets.join(",")
         );
@@ -1858,7 +1889,7 @@ var UITour = {
       this.availableTargetsCache.set(window, data);
       this.sendPageCallback(aBrowser, aCallbackID, data);
     })().catch(err => {
-      log.error(err);
+      lazy.log.error(err);
       this.sendPageCallback(aBrowser, aCallbackID, {
         targets: [],
       });
@@ -1867,31 +1898,34 @@ var UITour = {
 
   addNavBarWidget(aTarget, aBrowser, aCallbackID) {
     if (aTarget.node) {
-      log.error(
+      lazy.log.error(
         "addNavBarWidget: can't add a widget already present:",
         aTarget
       );
       return;
     }
     if (!aTarget.allowAdd) {
-      log.error("addNavBarWidget: not allowed to add this widget:", aTarget);
+      lazy.log.error(
+        "addNavBarWidget: not allowed to add this widget:",
+        aTarget
+      );
       return;
     }
     if (!aTarget.widgetName) {
-      log.error(
+      lazy.log.error(
         "addNavBarWidget: can't add a widget without a widgetName property:",
         aTarget
       );
       return;
     }
 
-    CustomizableUI.addWidgetToArea(
+    lazy.CustomizableUI.addWidgetToArea(
       aTarget.widgetName,
-      CustomizableUI.AREA_NAVBAR
+      lazy.CustomizableUI.AREA_NAVBAR
     );
-    BrowserUsageTelemetry.recordWidgetChange(
+    lazy.BrowserUsageTelemetry.recordWidgetChange(
       aTarget.widgetName,
-      CustomizableUI.AREA_NAVBAR,
+      lazy.CustomizableUI.AREA_NAVBAR,
       "uitour"
     );
     this.sendPageCallback(aBrowser, aCallbackID);
@@ -1943,7 +1977,9 @@ var UITour = {
       Services.search.getVisibleEngines().then(engines => {
         for (let engine of engines) {
           if (engine.identifier == aID) {
-            Services.search.setDefault(engine).finally(resolve);
+            Services.search
+              .setDefault(engine, Ci.nsISearchService.CHANGE_REASON_UITOUR)
+              .finally(resolve);
             return;
           }
         }
@@ -1987,7 +2023,7 @@ UITour.init();
  */
 const UITourHealthReport = {
   recordTreatmentTag(tag, value) {
-    return TelemetryController.submitExternalPing(
+    return lazy.TelemetryController.submitExternalPing(
       "uitour-tag",
       {
         version: 1,

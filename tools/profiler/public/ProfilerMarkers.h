@@ -150,8 +150,9 @@ mozilla::ProfileBufferBlockIndex profiler_add_marker(
           aOptions.ThreadId().ThreadId())) {
     return {};
   }
-  return ::AddMarkerToBuffer(profiler_markers_detail::CachedCoreBuffer(), aName,
-                             aCategory, std::move(aOptions), aMarkerType,
+  AUTO_PROFILER_LABEL("profiler_add_marker", PROFILER);
+  return ::AddMarkerToBuffer(profiler_get_core_buffer(), aName, aCategory,
+                             std::move(aOptions), aMarkerType,
                              aPayloadArguments...);
 #endif
 }
@@ -215,19 +216,22 @@ class MOZ_RAII AutoProfilerTextMarker {
         mText(aText) {
     MOZ_ASSERT(mOptions.Timing().EndTime().IsNull(),
                "AutoProfilerTextMarker options shouldn't have an end time");
-    if (mOptions.Timing().StartTime().IsNull()) {
+    if (profiler_is_active_and_unpaused() &&
+        mOptions.Timing().StartTime().IsNull()) {
       mOptions.Set(mozilla::MarkerTiming::InstantNow());
     }
   }
 
   ~AutoProfilerTextMarker() {
-    AUTO_PROFILER_LABEL("TextMarker", PROFILER);
-    mOptions.TimingRef().SetIntervalEnd();
-    AUTO_PROFILER_STATS(AUTO_PROFILER_MARKER_TEXT);
-    profiler_add_marker(
-        mozilla::ProfilerString8View::WrapNullTerminatedString(mMarkerName),
-        mCategory, std::move(mOptions), geckoprofiler::markers::TextMarker{},
-        mText);
+    if (profiler_is_active_and_unpaused()) {
+      AUTO_PROFILER_LABEL("TextMarker", PROFILER);
+      mOptions.TimingRef().SetIntervalEnd();
+      AUTO_PROFILER_STATS(AUTO_PROFILER_MARKER_TEXT);
+      profiler_add_marker(
+          mozilla::ProfilerString8View::WrapNullTerminatedString(mMarkerName),
+          mCategory, std::move(mOptions), geckoprofiler::markers::TextMarker{},
+          mText);
+    }
   }
 
  protected:
@@ -306,6 +310,11 @@ class MOZ_RAII AutoProfilerTracing {
   AutoProfilerTracing PROFILER_RAII(categoryString, markerName,                \
                                     geckoprofiler::category::categoryPair,     \
                                     mozilla::Nothing())
+#define AUTO_PROFILER_TRACING_MARKER_INNERWINDOWID(                        \
+    categoryString, markerName, categoryPair, innerWindowId)               \
+  AutoProfilerTracing PROFILER_RAII(categoryString, markerName,            \
+                                    geckoprofiler::category::categoryPair, \
+                                    mozilla::Some(innerWindowId))
 #define AUTO_PROFILER_TRACING_MARKER_DOCSHELL(categoryString, markerName, \
                                               categoryPair, docShell)     \
   AutoProfilerTracing PROFILER_RAII(                                      \

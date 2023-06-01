@@ -18,13 +18,11 @@
 #include <stdint.h>  // uint32_t
 
 #include "js/Class.h"  // js::{Delete,Get,Has}PropertyOp, JSMayResolveOp, JS::ObjectOpResult
-#include "js/GCAPI.h"  // JS::AutoSuppressGCAnalysis
-#include "js/Id.h"     // INT_TO_JSID, jsid, JSID_INT_MAX, SYMBOL_TO_JSID
-#include "js/PropertyDescriptor.h"  // JSPROP_ENUMERATE, JS::PropertyDescriptor
-#include "js/RootingAPI.h"          // JS::Handle, JS::MutableHandle, JS::Rooted
-#include "js/Value.h"               // JS::ObjectValue, JS::Value
-#include "proxy/Proxy.h"            // js::Proxy
-#include "vm/GlobalObject.h"
+#include "js/GCAPI.h"         // JS::AutoSuppressGCAnalysis
+#include "js/Id.h"            // INT_TO_JSID, jsid, JSID_INT_MAX, SYMBOL_TO_JSID
+#include "js/RootingAPI.h"    // JS::Handle, JS::MutableHandle, JS::Rooted
+#include "js/Value.h"         // JS::ObjectValue, JS::Value
+#include "proxy/Proxy.h"      // js::Proxy
 #include "vm/JSContext.h"     // JSContext
 #include "vm/JSObject.h"      // JSObject
 #include "vm/NativeObject.h"  // js::NativeObject, js::Native{Get,Has,Set}Property, js::NativeGetPropertyNoGC, js::Qualified
@@ -203,11 +201,11 @@ inline bool GetElementNoGC(JSContext* cx, JSObject* obj,
     return false;
   }
 
-  if (index > JSID_INT_MAX) {
+  if (index > PropertyKey::IntMax) {
     return false;
   }
 
-  return GetPropertyNoGC(cx, obj, receiver, INT_TO_JSID(index), vp);
+  return GetPropertyNoGC(cx, obj, receiver, PropertyKey::Int(index), vp);
 }
 
 static MOZ_ALWAYS_INLINE bool ClassMayResolveId(const JSAtomState& names,
@@ -242,7 +240,7 @@ MOZ_ALWAYS_INLINE bool MaybeHasInterestingSymbolProperty(
     JSObject** holder /* = nullptr */) {
   MOZ_ASSERT(symbol->isInterestingSymbol());
 
-  jsid id = SYMBOL_TO_JSID(symbol);
+  jsid id = PropertyKey::Symbol(symbol);
   do {
     if (obj->maybeHasInterestingSymbolProperty() ||
         MOZ_UNLIKELY(
@@ -267,7 +265,7 @@ MOZ_ALWAYS_INLINE bool GetInterestingSymbolProperty(
   if (!MaybeHasInterestingSymbolProperty(cx, obj, sym, &holder)) {
 #ifdef DEBUG
     JS::Rooted<JS::Value> receiver(cx, JS::ObjectValue(*obj));
-    JS::Rooted<jsid> id(cx, SYMBOL_TO_JSID(sym));
+    JS::Rooted<jsid> id(cx, PropertyKey::Symbol(sym));
     if (!GetProperty(cx, obj, receiver, id, vp)) {
       return false;
     }
@@ -280,7 +278,7 @@ MOZ_ALWAYS_INLINE bool GetInterestingSymbolProperty(
 
   JS::Rooted<JSObject*> holderRoot(cx, holder);
   JS::Rooted<JS::Value> receiver(cx, JS::ObjectValue(*obj));
-  JS::Rooted<jsid> id(cx, SYMBOL_TO_JSID(sym));
+  JS::Rooted<jsid> id(cx, PropertyKey::Symbol(sym));
   return GetProperty(cx, holderRoot, receiver, id, vp);
 }
 

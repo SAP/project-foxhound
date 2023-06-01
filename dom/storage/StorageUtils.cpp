@@ -11,13 +11,10 @@
 #include "nsDebug.h"
 #include "nsIPrincipal.h"
 #include "nsIURI.h"
-#include "nsIURL.h"
 #include "nsNetUtil.h"
 #include "nsPrintfCString.h"
 
-namespace mozilla {
-namespace dom {
-namespace StorageUtils {
+namespace mozilla::dom::StorageUtils {
 
 bool PrincipalsEqual(nsIPrincipal* aObjectPrincipal,
                      nsIPrincipal* aSubjectPrincipal) {
@@ -110,6 +107,4 @@ nsCString Scheme0Scope(const nsACString& aOriginSuffix,
   return result;
 }
 
-}  // namespace StorageUtils
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::StorageUtils

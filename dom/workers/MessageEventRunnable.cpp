@@ -8,13 +8,13 @@
 
 #include "mozilla/dom/MessageEvent.h"
 #include "mozilla/dom/MessageEventBinding.h"
+#include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/TimelineConsumers.h"
 #include "mozilla/WorkerTimelineMarker.h"
 #include "nsQueryObject.h"
 #include "WorkerScope.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 MessageEventRunnable::MessageEventRunnable(WorkerPrivate* aWorkerPrivate,
                                            TargetAndBusyBehavior aBehavior)
@@ -49,8 +49,7 @@ bool MessageEventRunnable::DispatchDOMEvent(JSContext* aCx,
 
   UniquePtr<AbstractTimelineMarker> start;
   UniquePtr<AbstractTimelineMarker> end;
-  RefPtr<TimelineConsumers> timelines = TimelineConsumers::Get();
-  bool isTimelineRecording = timelines && !timelines->IsEmpty();
+  bool isTimelineRecording = !TimelineConsumers::IsEmpty();
 
   if (isTimelineRecording) {
     start = MakeUnique<WorkerTimelineMarker>(
@@ -80,8 +79,8 @@ bool MessageEventRunnable::DispatchDOMEvent(JSContext* aCx,
             ? ProfileTimelineWorkerOperationType::DeserializeDataOnMainThread
             : ProfileTimelineWorkerOperationType::DeserializeDataOffMainThread,
         MarkerTracingType::END);
-    timelines->AddMarkerForAllObservedDocShells(start);
-    timelines->AddMarkerForAllObservedDocShells(end);
+    TimelineConsumers::AddMarkerForAllObservedDocShells(start);
+    TimelineConsumers::AddMarkerForAllObservedDocShells(end);
   }
 
   if (NS_WARN_IF(rv.Failed())) {
@@ -154,5 +153,4 @@ void MessageEventRunnable::DispatchError(JSContext* aCx,
   aTarget->DispatchEvent(*event);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

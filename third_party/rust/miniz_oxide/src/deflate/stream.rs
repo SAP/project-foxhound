@@ -1,22 +1,24 @@
 //! Extra streaming compression functionality.
 //!
-//! As of now this is mainly inteded for use to build a higher-level wrapper.
+//! As of now this is mainly intended for use to build a higher-level wrapper.
 //!
 //! There is no DeflateState as the needed state is contained in the compressor struct itself.
-use core::convert::{AsMut, AsRef};
 
 use crate::deflate::core::{compress, CompressorOxide, TDEFLFlush, TDEFLStatus};
 use crate::{MZError, MZFlush, MZStatus, StreamResult};
 
-/// Try to compress from input to output with the given Compressor
+/// Try to compress from input to output with the given [`CompressorOxide`].
 ///
 /// # Errors
 ///
-/// Returns `MZError::Buf` If the size of the `output` slice is empty or no progress was made due to
-/// lack of expected input data or called after the compression was finished without
-/// MZFlush::Finish.
+/// Returns [`MZError::Buf`] If the size of the `output` slice is empty or no progress was made due
+/// to lack of expected input data, or if called without [`MZFlush::Finish`] after the compression
+/// was already finished.
 ///
-/// Returns `MZError::Param` if the compressor parameters are set wrong.
+/// Returns [`MZError::Param`] if the compressor parameters are set wrong.
+///
+/// Returns [`MZError::Stream`] when lower-level decompressor returns a
+/// [`TDEFLStatus::PutBufFailed`]; may not actually be possible.
 pub fn deflate(
     compressor: &mut CompressorOxide,
     input: &[u8],
@@ -42,8 +44,8 @@ pub fn deflate(
     let mut bytes_written = 0;
     let mut bytes_consumed = 0;
 
-    let mut next_in = input.as_ref();
-    let mut next_out = output.as_mut();
+    let mut next_in = input;
+    let mut next_out = output;
 
     let status = loop {
         let in_bytes;
@@ -100,8 +102,8 @@ mod test {
     use crate::deflate::CompressorOxide;
     use crate::inflate::decompress_to_vec_zlib;
     use crate::{MZFlush, MZStatus};
-    use std::prelude::v1::*;
-    use std::vec;
+    use alloc::boxed::Box;
+    use alloc::vec;
 
     #[test]
     fn test_state() {

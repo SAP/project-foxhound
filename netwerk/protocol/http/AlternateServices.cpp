@@ -8,22 +8,22 @@
 
 #include "AlternateServices.h"
 #include "LoadInfo.h"
-#include "nsComponentManagerUtils.h"
-#include "nsEscape.h"
-#include "nsHttpConnectionInfo.h"
-#include "nsHttpChannel.h"
-#include "nsHttpHandler.h"
-#include "nsIOService.h"
-#include "nsThreadUtils.h"
-#include "nsHttpTransaction.h"
-#include "nsISSLSocketControl.h"
-#include "nsIWellKnownOpportunisticUtils.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/StaticPrefs_network.h"
-#include "mozilla/dom/PContent.h"
 #include "mozilla/SyncRunnable.h"
-#include "mozilla/net/AltSvcTransactionParent.h"
+#include "mozilla/dom/PContent.h"
 #include "mozilla/net/AltSvcTransactionChild.h"
+#include "mozilla/net/AltSvcTransactionParent.h"
+#include "nsComponentManagerUtils.h"
+#include "nsEscape.h"
+#include "nsHttpChannel.h"
+#include "nsHttpConnectionInfo.h"
+#include "nsHttpHandler.h"
+#include "nsHttpTransaction.h"
+#include "nsIOService.h"
+#include "nsITLSSocketControl.h"
+#include "nsIWellKnownOpportunisticUtils.h"
+#include "nsThreadUtils.h"
 
 /* RFC 7838 Alternative Services
    http://httpwg.org/http-extensions/opsec.html
@@ -159,11 +159,10 @@ void AltSvcMapping::ProcessHeader(
       continue;
     }
 
-    uint32_t spdyIndex;
     SpdyInformation* spdyInfo = gHttpHandler->SpdyInfo();
-    if (!(NS_SUCCEEDED(spdyInfo->GetNPNIndex(npnToken, &spdyIndex)) &&
-          spdyInfo->ProtocolEnabled(spdyIndex)) &&
-        !(isHttp3 && StaticPrefs::network_http_http3_enable() &&
+    if (!(npnToken.Equals(spdyInfo->VersionString) &&
+          StaticPrefs::network_http_http2_enabled()) &&
+        !(isHttp3 && nsHttpHandler::IsHttp3Enabled() &&
           !gHttpHandler->IsHttp3Excluded(hostname.IsEmpty() ? originHost
                                                             : hostname))) {
       LOG(("Alt Svc unknown protocol %s, ignoring", npnToken.get()));
@@ -355,7 +354,7 @@ void AltSvcMapping::GetConnectionInfo(
     const OriginAttributes& originAttributes) {
   RefPtr<nsHttpConnectionInfo> ci = new nsHttpConnectionInfo(
       mOriginHost, mOriginPort, mNPNToken, mUsername, pi, originAttributes,
-      mAlternateHost, mAlternatePort, mIsHttp3);
+      mAlternateHost, mAlternatePort, mIsHttp3, false);
 
   // http:// without the mixed-scheme attribute needs to be segmented in the
   // connection manager connection information hash with this attribute
@@ -506,7 +505,7 @@ template <class Validator>
 AltSvcTransaction<Validator>::AltSvcTransaction(
     nsHttpConnectionInfo* ci, nsIInterfaceRequestor* callbacks, uint32_t caps,
     Validator* aValidator, bool aIsHttp3)
-    : SpeculativeTransaction(ci, callbacks, caps & ~NS_HTTP_ALLOW_KEEPALIVE),
+    : SpeculativeTransaction(ci, callbacks, caps),
       mValidator(aValidator),
       mIsHttp3(aIsHttp3),
       mRunning(true),
@@ -515,6 +514,8 @@ AltSvcTransaction<Validator>::AltSvcTransaction(
       mValidatedResult(false) {
   MOZ_ASSERT_IF(nsIOService::UseSocketProcess(), XRE_IsSocketProcess());
   MOZ_ASSERT_IF(!nsIOService::UseSocketProcess(), XRE_IsParentProcess());
+  // We don't want to let this transaction use consistent connection.
+  mCaps &= ~NS_HTTP_ALLOW_KEEPALIVE;
 }
 
 template <class Validator>
@@ -565,9 +566,8 @@ bool AltSvcTransaction<Validator>::MaybeValidate(nsresult reason) {
     return false;
   }
 
-  nsCOMPtr<nsISupports> secInfo;
-  mConnection->GetSecurityInfo(getter_AddRefs(secInfo));
-  nsCOMPtr<nsISSLSocketControl> socketControl = do_QueryInterface(secInfo);
+  nsCOMPtr<nsITLSSocketControl> socketControl;
+  mConnection->GetTLSSocketControl(getter_AddRefs(socketControl));
 
   LOG(("AltSvcTransaction::MaybeValidate() %p socketControl=%p\n", this,
        socketControl.get()));
@@ -747,11 +747,10 @@ class WellKnownChecker {
 
     if (NS_FAILED(gHttpHandler->NewChannelId(channelId)) ||
         NS_FAILED(chan->Init(uri, caps, nullptr, 0, nullptr, channelId,
-                             contentPolicyType)) ||
+                             contentPolicyType, loadInfo)) ||
         NS_FAILED(chan->SetAllowAltSvc(false)) ||
         NS_FAILED(chan->SetRedirectMode(
             nsIHttpChannelInternal::REDIRECT_MODE_ERROR)) ||
-        NS_FAILED(chan->SetLoadInfo(loadInfo)) ||
         NS_FAILED(chan->GetLoadFlags(&flags))) {
       return NS_ERROR_FAILURE;
     }
@@ -893,14 +892,14 @@ void AltSvcCache::EnsureStorageInited() {
     return;
   }
 
-  nsCOMPtr<nsIEventTarget> main = GetMainThreadEventTarget();
+  nsCOMPtr<nsIEventTarget> main = GetMainThreadSerialEventTarget();
   if (!main) {
     return;
   }
 
   SyncRunnable::DispatchToThread(
-      main, new SyncRunnable(NS_NewRunnableFunction(
-                "AltSvcCache::EnsureStorageInited", initTask)));
+      main,
+      NS_NewRunnableFunction("AltSvcCache::EnsureStorageInited", initTask));
 }
 
 already_AddRefed<AltSvcMapping> AltSvcCache::LookupMapping(
@@ -935,7 +934,7 @@ already_AddRefed<AltSvcMapping> AltSvcCache::LookupMapping(
   }
 
   if (rv->IsHttp3() &&
-      (!StaticPrefs::network_http_http3_enable() ||
+      (!nsHttpHandler::IsHttp3Enabled() ||
        !gHttpHandler->IsHttp3VersionSupported(rv->NPNToken()) ||
        gHttpHandler->IsHttp3Excluded(rv->AlternateHost()))) {
     // If Http3 is disabled or the version not supported anymore, remove the

@@ -1,8 +1,8 @@
 /* eslint-disable mozilla/no-arbitrary-setTimeout */
-const CHROME_BASE =
-  "chrome://mochitests/content/browser/browser/modules/test/browser/";
-Services.scriptloader.loadSubScript(CHROME_BASE + "head.js", this);
-/* import-globals-from ../../../../../browser/modules/test/browser/head.js */
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/browser/modules/test/browser/head.js",
+  this
+);
 
 const BLOCK = 0;
 const ALLOW = 1;
@@ -52,7 +52,6 @@ async function testDoorHanger(
         "privacy.restrict3rdpartystorage.userInteractionRequiredForHosts",
         "tracking.example.com,tracking.example.org",
       ],
-      ["browser.contentblocking.state-partitioning.mvp.ui.enabled", true],
       // Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
       ["network.cookie.sameSite.laxByDefault", false],
     ],

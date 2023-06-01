@@ -6,32 +6,21 @@
 
 var EXPORTED_SYMBOLS = ["FormAutofillChild"];
 
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
-  "setTimeout",
-  "resource://gre/modules/Timer.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "FormAutofill",
-  "resource://autofill/FormAutofill.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FormAutofillContent",
-  "resource://autofill/FormAutofillContent.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FormAutofillUtils",
-  "resource://autofill/FormAutofillUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "AutoCompleteChild",
-  "resource://gre/actors/AutoCompleteChild.jsm"
-);
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
+  AutoCompleteChild: "resource://gre/actors/AutoCompleteChild.jsm",
+  FormAutofill: "resource://autofill/FormAutofill.jsm",
+  FormAutofillContent: "resource://autofill/FormAutofillContent.jsm",
+  FormAutofillUtils: "resource://autofill/FormAutofillUtils.jsm",
+});
 
 /**
  * Handles content's interactions for the frame.
@@ -46,11 +35,11 @@ class FormAutofillChild extends JSWindowActorChild {
     this._hasPendingTask = false;
     this.testListener = null;
 
-    AutoCompleteChild.addPopupStateListener(this);
+    lazy.AutoCompleteChild.addPopupStateListener(this);
   }
 
   didDestroy() {
-    AutoCompleteChild.removePopupStateListener(this);
+    lazy.AutoCompleteChild.removePopupStateListener(this);
   }
 
   popupStateChanged(messageName, data, target) {
@@ -58,11 +47,11 @@ class FormAutofillChild extends JSWindowActorChild {
     try {
       docShell = this.docShell;
     } catch (ex) {
-      AutoCompleteChild.removePopupStateListener(this);
+      lazy.AutoCompleteChild.removePopupStateListener(this);
       return;
     }
 
-    if (!FormAutofill.isAutofillEnabled) {
+    if (!lazy.FormAutofill.isAutofillEnabled) {
       return;
     }
 
@@ -70,11 +59,11 @@ class FormAutofillChild extends JSWindowActorChild {
 
     switch (messageName) {
       case "FormAutoComplete:PopupClosed": {
-        FormAutofillContent.onPopupClosed(data.selectedRowStyle);
+        lazy.FormAutofillContent.onPopupClosed(data.selectedRowStyle);
         Services.tm.dispatchToMainThread(() => {
           chromeEventHandler.removeEventListener(
             "keydown",
-            FormAutofillContent._onKeyDown,
+            lazy.FormAutofillContent._onKeyDown,
             true
           );
         });
@@ -82,10 +71,10 @@ class FormAutofillChild extends JSWindowActorChild {
         break;
       }
       case "FormAutoComplete:PopupOpened": {
-        FormAutofillContent.onPopupOpened();
+        lazy.FormAutofillContent.onPopupOpened();
         chromeEventHandler.addEventListener(
           "keydown",
-          FormAutofillContent._onKeyDown,
+          lazy.FormAutofillContent._onKeyDown,
           true
         );
         break;
@@ -99,15 +88,24 @@ class FormAutofillChild extends JSWindowActorChild {
     }
     this._hasPendingTask = true;
 
-    setTimeout(() => {
-      FormAutofillContent.identifyAutofillFields(this._nextHandleElement);
+    lazy.setTimeout(() => {
+      lazy.FormAutofillContent.identifyAutofillFields(this._nextHandleElement);
       this._hasPendingTask = false;
       this._nextHandleElement = null;
       // This is for testing purpose only which sends a notification to indicate that the
       // form has been identified, and ready to open popup.
       this.sendAsyncMessage("FormAutofill:FieldsIdentified");
-      FormAutofillContent.updateActiveInput();
+      lazy.FormAutofillContent.updateActiveInput();
     });
+  }
+
+  shouldIgnoreFormAutofillEvent(event) {
+    let nodePrincipal = event.target.nodePrincipal;
+    return (
+      nodePrincipal.isSystemPrincipal ||
+      nodePrincipal.isNullPrincipal ||
+      nodePrincipal.schemeIs("about")
+    );
   }
 
   handleEvent(evt) {
@@ -115,15 +113,19 @@ class FormAutofillChild extends JSWindowActorChild {
       return;
     }
 
+    if (this.shouldIgnoreFormAutofillEvent(evt)) {
+      return;
+    }
+
     switch (evt.type) {
       case "focusin": {
-        if (FormAutofill.isAutofillEnabled) {
+        if (lazy.FormAutofill.isAutofillEnabled) {
           this.onFocusIn(evt);
         }
         break;
       }
       case "DOMFormBeforeSubmit": {
-        if (FormAutofill.isAutofillEnabled) {
+        if (lazy.FormAutofill.isAutofillEnabled) {
           this.onDOMFormBeforeSubmit(evt);
         }
         break;
@@ -136,10 +138,10 @@ class FormAutofillChild extends JSWindowActorChild {
   }
 
   onFocusIn(evt) {
-    FormAutofillContent.updateActiveInput();
+    lazy.FormAutofillContent.updateActiveInput();
 
     let element = evt.target;
-    if (!FormAutofillUtils.isFieldEligibleForAutofill(element)) {
+    if (!lazy.FormAutofillUtils.isCreditCardOrAddressFieldType(element)) {
       return;
     }
     this._nextHandleElement = element;
@@ -165,20 +167,21 @@ class FormAutofillChild extends JSWindowActorChild {
 
   /**
    * Handle the DOMFormBeforeSubmit event.
+   *
    * @param {Event} evt
    */
   onDOMFormBeforeSubmit(evt) {
     let formElement = evt.target;
 
-    if (!FormAutofill.isAutofillEnabled) {
+    if (!lazy.FormAutofill.isAutofillEnabled) {
       return;
     }
 
-    FormAutofillContent.formSubmitted(formElement);
+    lazy.FormAutofillContent.formSubmitted(formElement);
   }
 
   receiveMessage(message) {
-    if (!FormAutofill.isAutofillEnabled) {
+    if (!lazy.FormAutofill.isAutofillEnabled) {
       return;
     }
 
@@ -186,15 +189,15 @@ class FormAutofillChild extends JSWindowActorChild {
 
     switch (message.name) {
       case "FormAutofill:PreviewProfile": {
-        FormAutofillContent.previewProfile(doc);
+        lazy.FormAutofillContent.previewProfile(doc);
         break;
       }
       case "FormAutofill:ClearForm": {
-        FormAutofillContent.clearForm();
+        lazy.FormAutofillContent.clearForm();
         break;
       }
       case "FormAutofill:FillForm": {
-        FormAutofillContent.activeHandler.autofillFormFields(message.data);
+        lazy.FormAutofillContent.activeHandler.autofillFormFields(message.data);
         break;
       }
     }

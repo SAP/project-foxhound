@@ -176,7 +176,6 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::IntrinsicUnsafeGetObjectFromReservedSlot:
     case InlinableNative::IntrinsicUnsafeGetInt32FromReservedSlot:
     case InlinableNative::IntrinsicUnsafeGetStringFromReservedSlot:
-    case InlinableNative::IntrinsicUnsafeGetBooleanFromReservedSlot:
     case InlinableNative::IntrinsicIsCallable:
     case InlinableNative::IntrinsicIsConstructor:
     case InlinableNative::IntrinsicToObject:
@@ -262,6 +261,8 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::DataViewSetBigUint64:
     case InlinableNative::MapGet:
     case InlinableNative::MapHas:
+    case InlinableNative::Number:
+    case InlinableNative::NumberParseInt:
     case InlinableNative::NumberToString:
     case InlinableNative::ReflectGetPrototypeOf:
     case InlinableNative::SetHas:
@@ -272,6 +273,9 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::StringFromCharCode:
     case InlinableNative::StringFromCodePoint:
     case InlinableNative::StringCharAt:
+    case InlinableNative::StringIndexOf:
+    case InlinableNative::StringStartsWith:
+    case InlinableNative::StringEndsWith:
     case InlinableNative::StringToLowerCase:
     case InlinableNative::StringToUpperCase:
     case InlinableNative::Object:
@@ -280,6 +284,9 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::ObjectIsPrototypeOf:
     case InlinableNative::ObjectToString:
     case InlinableNative::TypedArrayConstructor:
+#ifdef FUZZING_JS_FUZZILLI
+    case InlinableNative::FuzzilliHash:
+#endif
       // Default to false for most natives.
       return false;
 

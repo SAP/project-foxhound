@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -11,28 +11,23 @@
 # Python environment (except that it's run with a sufficiently recent version of
 # Python 3), so we are restricted to stdlib modules.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import sys
 
 major, minor = sys.version_info[:2]
-if (major < 3) or (major == 3 and minor < 5):
+if (major < 3) or (major == 3 and minor < 6):
     print(
-        "Bootstrap currently only runs on Python 3.5+."
-        "Please try re-running with python3.5+."
+        "Bootstrap currently only runs on Python 3.6+."
+        "Please try re-running with python3.6+."
     )
     sys.exit(1)
 
+import ctypes
 import os
 import shutil
-import stat
 import subprocess
 import tempfile
-import zipfile
-
-from pathlib import Path
 from optparse import OptionParser
-from urllib.request import urlopen
+from pathlib import Path
 
 CLONE_MERCURIAL_PULL_FAIL = """
 Failed to pull from hg.mozilla.org.
@@ -54,16 +49,16 @@ def which(name):
 
     It returns the path of an executable or None if it couldn't be found.
     """
-    # git-cinnabar.exe doesn't exist, but .exe versions of the other executables
-    # do.
-    if WINDOWS and name != "git-cinnabar":
-        name += ".exe"
     search_dirs = os.environ["PATH"].split(os.pathsep)
+    potential_names = [name]
+    if WINDOWS:
+        potential_names.insert(0, name + ".exe")
 
     for path in search_dirs:
-        test = Path(path) / name
-        if test.is_file() and os.access(test, os.X_OK):
-            return test
+        for executable_name in potential_names:
+            test = Path(path) / executable_name
+            if test.is_file() and os.access(test, os.X_OK):
+                return test
 
     return None
 
@@ -107,7 +102,7 @@ def input_clone_dest(vcs, no_interactive):
             return None
 
 
-def hg_clone_firefox(hg: Path, dest: Path):
+def hg_clone_firefox(hg: Path, dest: Path, head_repo, head_rev):
     # We create an empty repo then modify the config before adding data.
     # This is necessary to ensure storage settings are optimally
     # configured.
@@ -141,16 +136,28 @@ def hg_clone_firefox(hg: Path, dest: Path):
         fh.write("# This is necessary to keep performance in check\n")
         fh.write("maxchainlen = 10000\n")
 
+    # Pulling a specific revision into an empty repository induces a lot of
+    # load on the Mercurial server, so we always pull from mozilla-unified (which,
+    # when done from an empty repository, is equivalent to a clone), and then pull
+    # the specific revision we want (if we want a specific one, otherwise we just
+    # use the "central" bookmark), at which point it will be an incremental pull,
+    # that the server can process more easily.
+    # This is the same thing that robustcheckout does on automation.
     res = subprocess.call(
         [str(hg), "pull", "https://hg.mozilla.org/mozilla-unified"], cwd=str(dest)
     )
+    if not res and head_repo:
+        res = subprocess.call(
+            [str(hg), "pull", head_repo, "-r", head_rev], cwd=str(dest)
+        )
     print("")
     if res:
         print(CLONE_MERCURIAL_PULL_FAIL % dest)
         return None
 
-    print('updating to "central" - the development head of Gecko and Firefox')
-    res = subprocess.call([str(hg), "update", "-r", "central"], cwd=str(dest))
+    head_rev = head_rev or "central"
+    print(f'updating to "{head_rev}" - the development head of Gecko and Firefox')
+    res = subprocess.call([str(hg), "update", "-r", head_rev], cwd=str(dest))
     if res:
         print(
             f"error updating; you will need to `cd {dest} && hg update -r central` "
@@ -159,38 +166,31 @@ def hg_clone_firefox(hg: Path, dest: Path):
     return dest
 
 
-def git_clone_firefox(git: Path, dest: Path, watchman: Path):
+def git_clone_firefox(git: Path, dest: Path, watchman: Path, head_repo, head_rev):
     tempdir = None
     cinnabar = None
     env = dict(os.environ)
     try:
         cinnabar = which("git-cinnabar")
         if not cinnabar:
-            cinnabar_url = (
-                "https://github.com/glandium/git-cinnabar/archive/" "master.zip"
-            )
+            from urllib.request import urlopen
+
+            cinnabar_url = "https://github.com/glandium/git-cinnabar/"
             # If git-cinnabar isn't installed already, that's fine; we can
-            # download a temporary copy. `mach bootstrap` will clone a full copy
-            # of the repo in the state dir; we don't want to copy all that logic
-            # to this tiny bootstrapping script.
+            # download a temporary copy. `mach bootstrap` will install a copy
+            # in the state dir; we don't want to copy all that logic to this
+            # tiny bootstrapping script.
             tempdir = Path(tempfile.mkdtemp())
-            with open(tempdir / "git-cinnabar.zip", mode="w+b") as archive:
-                with urlopen(cinnabar_url) as repo:
-                    shutil.copyfileobj(repo, archive)
-                archive.seek(0)
-                with zipfile.ZipFile(archive) as zipf:
-                    zipf.extractall(path=tempdir)
-            cinnabar_dir = tempdir / "git-cinnabar-master"
-            cinnabar = cinnabar_dir / "git-cinnabar"
-            # Make git-cinnabar and git-remote-hg executable.
-            st = os.stat(cinnabar)
-            cinnabar.chmod(st.st_mode | stat.S_IEXEC)
-            st = os.stat(cinnabar_dir / "git-remote-hg")
-            (cinnabar_dir / "git-remote-hg").chmod(st.st_mode | stat.S_IEXEC)
-            env["PATH"] = str(cinnabar_dir) + os.pathsep + env["PATH"]
+            with open(tempdir / "download.py", "wb") as fh:
+                shutil.copyfileobj(
+                    urlopen(f"{cinnabar_url}/raw/master/download.py"), fh
+                )
+
             subprocess.check_call(
-                ["git", "cinnabar", "download"], cwd=str(cinnabar_dir), env=env
+                [sys.executable, str(tempdir / "download.py")],
+                cwd=str(tempdir),
             )
+            env["PATH"] = str(tempdir) + os.pathsep + env["PATH"]
             print(
                 "WARNING! git-cinnabar is required for Firefox development  "
                 "with git. After the clone is complete, the bootstrapper "
@@ -205,8 +205,7 @@ def git_clone_firefox(git: Path, dest: Path, watchman: Path):
             [
                 str(git),
                 "clone",
-                "-b",
-                "bookmarks/central",
+                "--no-checkout",
                 "hg::https://hg.mozilla.org/mozilla-unified",
                 str(dest),
             ],
@@ -217,6 +216,19 @@ def git_clone_firefox(git: Path, dest: Path, watchman: Path):
         )
         subprocess.check_call(
             [str(git), "config", "pull.ff", "only"], cwd=str(dest), env=env
+        )
+
+        if head_repo:
+            subprocess.check_call(
+                [str(git), "cinnabar", "fetch", f"hg::{head_repo}", head_rev],
+                cwd=str(dest),
+                env=env,
+            )
+
+        subprocess.check_call(
+            [str(git), "checkout", "FETCH_HEAD" if head_rev else "bookmarks/central"],
+            cwd=str(dest),
+            env=env,
         )
 
         watchman_sample = dest / ".git/hooks/fsmonitor-watchman.sample"
@@ -242,39 +254,78 @@ def git_clone_firefox(git: Path, dest: Path, watchman: Path):
             subprocess.check_call(config_args, cwd=str(dest), env=env)
         return dest
     finally:
-        if not cinnabar:
-            print(
-                "Failed to install git-cinnabar. Try performing a manual "
-                "installation: https://github.com/glandium/git-cinnabar/wiki/"
-                "Mozilla:-A-git-workflow-for-Gecko-development"
-            )
         if tempdir:
             shutil.rmtree(str(tempdir))
 
 
-def clone(vcs, no_interactive):
-    hg = which("hg")
-    if not hg:
-        print(
-            "Mercurial is not installed. Mercurial is required to clone "
-            "Firefox%s." % (", even when cloning with Git" if vcs == "git" else "")
-        )
-        try:
-            # We're going to recommend people install the Mercurial package with
-            # pip3. That will work if `pip3` installs binaries to a location
-            # that's in the PATH, but it might not be. To help out, if we CAN
-            # import "mercurial" (in which case it's already been installed),
-            # offer that as a solution.
-            import mercurial  # noqa: F401
+def add_microsoft_defender_antivirus_exclusions(dest, no_system_changes):
+    if no_system_changes:
+        return
 
-            print(
-                "Hint: have you made sure that Mercurial is installed to a "
-                "location in your PATH?"
-            )
-        except ImportError:
-            print("Try installing hg with `pip3 install Mercurial`.")
-        return None
+    if not WINDOWS:
+        return
+
+    powershell_exe = which("powershell")
+
+    if not powershell_exe:
+        return
+
+    def print_attempt_exclusion(path):
+        print(
+            f"Attempting to add exclusion path to Microsoft Defender Antivirus for: {path}"
+        )
+
+    powershell_exe = str(powershell_exe)
+    paths = []
+
+    # mozilla-unified / clone dest
+    repo_dir = Path.cwd() / dest
+    paths.append(repo_dir)
+    print_attempt_exclusion(repo_dir)
+
+    # MOZILLABUILD
+    mozillabuild_dir = os.getenv("MOZILLABUILD")
+    if mozillabuild_dir:
+        paths.append(mozillabuild_dir)
+        print_attempt_exclusion(mozillabuild_dir)
+
+    # .mozbuild
+    mozbuild_dir = Path.home() / ".mozbuild"
+    paths.append(mozbuild_dir)
+    print_attempt_exclusion(mozbuild_dir)
+
+    args = ";".join(f"Add-MpPreference -ExclusionPath '{path}'" for path in paths)
+    command = f'-Command "{args}"'
+
+    # This will attempt to run as administrator by triggering a UAC prompt
+    # for admin credentials. If "No" is selected, no exclusions are added.
+    ctypes.windll.shell32.ShellExecuteW(None, "runas", powershell_exe, command, None, 0)
+
+
+def clone(options):
+    vcs = options.vcs
+    no_interactive = options.no_interactive
+    no_system_changes = options.no_system_changes
+
     if vcs == "hg":
+        hg = which("hg")
+        if not hg:
+            print("Mercurial is not installed. Mercurial is required to clone Firefox.")
+            try:
+                # We're going to recommend people install the Mercurial package with
+                # pip3. That will work if `pip3` installs binaries to a location
+                # that's in the PATH, but it might not be. To help out, if we CAN
+                # import "mercurial" (in which case it's already been installed),
+                # offer that as a solution.
+                import mercurial  # noqa: F401
+
+                print(
+                    "Hint: have you made sure that Mercurial is installed to a "
+                    "location in your PATH?"
+                )
+            except ImportError:
+                print("Try installing hg with `pip3 install Mercurial`.")
+            return None
         binary = hg
     else:
         binary = which(vcs)
@@ -287,16 +338,22 @@ def clone(vcs, no_interactive):
     if not dest:
         return None
 
+    add_microsoft_defender_antivirus_exclusions(dest, no_system_changes)
+
     print(f"Cloning Firefox {VCS_HUMAN_READABLE[vcs]} repository to {dest}")
+
+    head_repo = os.environ.get("GECKO_HEAD_REPOSITORY")
+    head_rev = os.environ.get("GECKO_HEAD_REV")
+
     if vcs == "hg":
-        return hg_clone_firefox(binary, dest)
+        return hg_clone_firefox(binary, dest, head_repo, head_rev)
     else:
         watchman = which("watchman")
-        return git_clone_firefox(binary, dest, watchman)
+        return git_clone_firefox(binary, dest, watchman, head_repo, head_rev)
 
 
 def bootstrap(srcdir: Path, application_choice, no_interactive, no_system_changes):
-    args = [sys.executable, str(srcdir / "mach")]
+    args = [sys.executable, "mach"]
 
     if no_interactive:
         # --no-interactive is a global argument, not a command argument,
@@ -346,7 +403,7 @@ def main(args):
 
     options, leftover = parser.parse_args(args)
     try:
-        srcdir = clone(options.vcs, options.no_interactive)
+        srcdir = clone(options)
         if not srcdir:
             return 1
         print("Clone complete.")

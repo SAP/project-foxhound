@@ -16,8 +16,7 @@
 #include "nsGkAtoms.h"
 #include "nsError.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class HTMLEmbedElement final : public nsGenericHTMLElement,
                                public nsObjectLoadingContent {
@@ -52,7 +51,7 @@ class HTMLEmbedElement final : public nsGenericHTMLElement,
   virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction()
       const override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
-  virtual EventStates IntrinsicState() const override;
+  virtual ElementState IntrinsicState() const override;
   virtual void DestroyContent() override;
 
   // nsObjectLoadingContent
@@ -145,7 +144,6 @@ class HTMLEmbedElement final : public nsGenericHTMLElement,
                                 bool aNotify);
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_HTMLEmbedElement_h

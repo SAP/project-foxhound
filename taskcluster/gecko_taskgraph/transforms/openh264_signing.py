@@ -5,14 +5,14 @@
 Transform the repackage signing task into an actual task description.
 """
 
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.treeherder import inherit_treeherder_from_dep
+from voluptuous import Optional
 
 from gecko_taskgraph.loader.single_dep import schema
-from gecko_taskgraph.transforms.base import TransformSequence
+from gecko_taskgraph.transforms.task import task_description_schema
 from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 from gecko_taskgraph.util.scriptworker import get_signing_cert_scope_per_platform
-from gecko_taskgraph.util.treeherder import inherit_treeherder_from_dep
-from gecko_taskgraph.transforms.task import task_description_schema
-from voluptuous import Optional
 
 transforms = TransformSequence()
 
@@ -67,12 +67,12 @@ def make_signing_description(config, jobs):
 
         if "win" in build_platform:
             # job['primary-dependency'].task['payload']['command']
-            upstream_artifact["formats"] = ["autograph_authenticode"]
+            upstream_artifact["formats"] = ["autograph_authenticode_sha2"]
         elif "mac" in build_platform:
             upstream_artifact["formats"] = ["mac_single_file"]
             upstream_artifact["singleFileGlobs"] = ["libgmpopenh264.dylib"]
             worker_type = "mac-signing"
-            worker["mac-behavior"] = "mac_single_file"
+            worker["mac-behavior"] = "mac_notarize_single_file"
         else:
             upstream_artifact["formats"] = ["autograph_gpg"]
 

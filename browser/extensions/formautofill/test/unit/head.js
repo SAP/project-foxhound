@@ -4,15 +4,14 @@
 
 "use strict";
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 var { ObjectUtils } = ChromeUtils.import(
   "resource://gre/modules/ObjectUtils.jsm"
 );
-var { FormLikeFactory } = ChromeUtils.import(
-  "resource://gre/modules/FormLikeFactory.jsm"
+var { FormLikeFactory } = ChromeUtils.importESModule(
+  "resource://gre/modules/FormLikeFactory.sys.mjs"
 );
 var { AddonTestUtils, MockAsyncShutdown } = ChromeUtils.import(
   "resource://testing-common/AddonTestUtils.jsm"
@@ -20,15 +19,15 @@ var { AddonTestUtils, MockAsyncShutdown } = ChromeUtils.import(
 var { ExtensionTestUtils } = ChromeUtils.import(
   "resource://testing-common/ExtensionXPCShellUtils.jsm"
 );
-var { FileTestUtils } = ChromeUtils.import(
-  "resource://testing-common/FileTestUtils.jsm"
+var { FileTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/FileTestUtils.sys.mjs"
 );
-var { MockDocument } = ChromeUtils.import(
-  "resource://testing-common/MockDocument.jsm"
+var { MockDocument } = ChromeUtils.importESModule(
+  "resource://testing-common/MockDocument.sys.mjs"
 );
 var { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
-var { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+var { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
 ChromeUtils.defineModuleGetter(
@@ -41,16 +40,9 @@ ChromeUtils.defineModuleGetter(
   "AddonManagerPrivate",
   "resource://gre/modules/AddonManager.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "DownloadPaths",
-  "resource://gre/modules/DownloadPaths.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+});
 
 ChromeUtils.defineModuleGetter(
   this,
@@ -93,6 +85,22 @@ const EXTENSION_ID = "formautofill@mozilla.org";
 
 AddonTestUtils.init(this);
 AddonTestUtils.overrideCertDB();
+
+function SetPref(name, value) {
+  switch (typeof value) {
+    case "string":
+      Services.prefs.setCharPref(name, value);
+      break;
+    case "number":
+      Services.prefs.setIntPref(name, value);
+      break;
+    case "boolean":
+      Services.prefs.setBoolPref(name, value);
+      break;
+    default:
+      throw new Error("Unknown type");
+  }
+}
 
 async function loadExtension() {
   AddonTestUtils.createAppInfo(
@@ -195,6 +203,7 @@ function verifySectionFieldDetails(sections, expectedResults) {
       let expectedField = expectedSectionInfo[fieldIndex];
       delete field._reason;
       delete field.elementWeakRef;
+      delete field.confidence;
       Assert.deepEqual(field, expectedField);
     });
   });
@@ -204,11 +213,11 @@ var FormAutofillHeuristics, LabelUtils;
 var AddressDataLoader, FormAutofillUtils;
 
 async function runHeuristicsTest(patterns, fixturePathPrefix) {
-  add_task(async function setup() {
-    ({ FormAutofillHeuristics, LabelUtils } = ChromeUtils.import(
+  add_setup(async () => {
+    ({ FormAutofillHeuristics } = ChromeUtils.import(
       "resource://autofill/FormAutofillHeuristics.jsm"
     ));
-    ({ AddressDataLoader, FormAutofillUtils } = ChromeUtils.import(
+    ({ AddressDataLoader, FormAutofillUtils, LabelUtils } = ChromeUtils.import(
       "resource://autofill/FormAutofillUtils.jsm"
     ));
   });
@@ -277,10 +286,10 @@ function getSyncChangeCounter(records, guid) {
  * Performs a partial deep equality check to determine if an object contains
  * the given fields.
  *
- * @param   {Object} object
+ * @param   {object} object
  *          The object to check. Unlike `ObjectUtils.deepEqual`, properties in
  *          `object` that are not in `fields` will be ignored.
- * @param   {Object} fields
+ * @param   {object} fields
  *          The fields to match.
  * @returns {boolean}
  *          Does `object` contain `fields` with matching values?
@@ -296,17 +305,8 @@ function objectMatches(object, fields) {
   return ObjectUtils.deepEqual(actual, fields);
 }
 
-add_task(async function head_initialize() {
-  Services.prefs.setStringPref("extensions.formautofill.available", "on");
+add_setup(async function head_initialize() {
   Services.prefs.setBoolPref("extensions.experiments.enabled", true);
-  Services.prefs.setBoolPref(
-    "extensions.formautofill.creditCards.available",
-    true
-  );
-  Services.prefs.setBoolPref(
-    "extensions.formautofill.creditCards.enabled",
-    true
-  );
   Services.prefs.setBoolPref(
     "extensions.formautofill.heuristics.enabled",
     true
@@ -314,26 +314,42 @@ add_task(async function head_initialize() {
   Services.prefs.setBoolPref("extensions.formautofill.section.enabled", true);
   Services.prefs.setBoolPref("dom.forms.autocomplete.formautofill", true);
 
+  Services.prefs.setCharPref(
+    "extensions.formautofill.addresses.supported",
+    "on"
+  );
+  Services.prefs.setCharPref(
+    "extensions.formautofill.creditCards.supported",
+    "on"
+  );
+  Services.prefs.setBoolPref("extensions.formautofill.addresses.enabled", true);
+  Services.prefs.setBoolPref(
+    "extensions.formautofill.creditCards.enabled",
+    true
+  );
+
   // Clean up after every test.
   registerCleanupFunction(function head_cleanup() {
-    Services.prefs.clearUserPref("extensions.formautofill.available");
     Services.prefs.clearUserPref("extensions.experiments.enabled");
     Services.prefs.clearUserPref(
-      "extensions.formautofill.creditCards.available"
+      "extensions.formautofill.creditCards.supported"
     );
+    Services.prefs.clearUserPref("extensions.formautofill.addresses.supported");
     Services.prefs.clearUserPref("extensions.formautofill.creditCards.enabled");
     Services.prefs.clearUserPref("extensions.formautofill.heuristics.enabled");
     Services.prefs.clearUserPref("extensions.formautofill.section.enabled");
     Services.prefs.clearUserPref("dom.forms.autocomplete.formautofill");
+    Services.prefs.clearUserPref("extensions.formautofill.addresses.enabled");
+    Services.prefs.clearUserPref("extensions.formautofill.creditCards.enabled");
   });
 
   await loadExtension();
 });
 
 let OSKeyStoreTestUtils;
-add_task(async function os_key_store_setup() {
-  ({ OSKeyStoreTestUtils } = ChromeUtils.import(
-    "resource://testing-common/OSKeyStoreTestUtils.jsm"
+add_setup(async function os_key_store_setup() {
+  ({ OSKeyStoreTestUtils } = ChromeUtils.importESModule(
+    "resource://testing-common/OSKeyStoreTestUtils.sys.mjs"
   ));
   OSKeyStoreTestUtils.setup();
   registerCleanupFunction(async function cleanup() {

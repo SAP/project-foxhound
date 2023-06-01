@@ -11,12 +11,12 @@
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
+#include "mozilla/dom/OffscreenCanvas.h"
 #include "mozilla/dom/UserActivation.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/BasePrincipal.h"
-#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StaticPrefs_webgl.h"
@@ -52,13 +52,16 @@ namespace mozilla::CanvasUtils {
 
 bool IsImageExtractionAllowed(dom::Document* aDocument, JSContext* aCx,
                               Maybe<nsIPrincipal*> aPrincipal) {
-  // Do the rest of the checks only if privacy.resistFingerprinting is on.
-  if (!nsContentUtils::ShouldResistFingerprinting(aDocument)) {
+  if (NS_WARN_IF(!aDocument)) {
+    return false;
+  }
+
+  if (!aDocument->ShouldResistFingerprinting()) {
     return true;
   }
 
   // Don't proceed if we don't have a document or JavaScript context.
-  if (!aDocument || !aCx || !aPrincipal) {
+  if (!aCx || !aPrincipal) {
     return false;
   }
 
@@ -200,7 +203,7 @@ bool GetCanvasContextType(const nsAString& str,
     }
   }
 
-  if (StaticPrefs::dom_webgpu_enabled()) {
+  if (gfxVars::AllowWebGPU()) {
     if (str.EqualsLiteral("webgpu")) {
       *out_type = dom::CanvasContextType::WebGPU;
       return true;
@@ -244,7 +247,11 @@ void DoDrawImageSecurityCheck(dom::HTMLCanvasElement* aCanvasElement,
   // No need to do a security check if the image used CORS for the load
   if (CORSUsed) return;
 
-  MOZ_ASSERT(aPrincipal, "Must have a principal here");
+  if (NS_WARN_IF(!aPrincipal)) {
+    MOZ_ASSERT_UNREACHABLE("Must have a principal here");
+    aCanvasElement->SetWriteOnly();
+    return;
+  }
 
   if (aCanvasElement->NodePrincipal()->Subsumes(aPrincipal)) {
     // This canvas has access to that image anyway
@@ -273,6 +280,52 @@ void DoDrawImageSecurityCheck(dom::HTMLCanvasElement* aCanvasElement,
   aCanvasElement->SetWriteOnly();
 }
 
+/**
+ * This security check utility might be called from an source that never taints
+ * others. For example, while painting a CanvasPattern, which is created from an
+ * ImageBitmap, onto a canvas. In this case, the caller could set the aCORSUsed
+ * true in order to pass this check and leave the aPrincipal to be a nullptr
+ * since the aPrincipal is not going to be used.
+ */
+void DoDrawImageSecurityCheck(dom::OffscreenCanvas* aOffscreenCanvas,
+                              nsIPrincipal* aPrincipal, bool aForceWriteOnly,
+                              bool aCORSUsed) {
+  // Callers should ensure that mCanvasElement is non-null before calling this
+  if (NS_WARN_IF(!aOffscreenCanvas)) {
+    return;
+  }
+
+  if (aOffscreenCanvas->IsWriteOnly()) {
+    return;
+  }
+
+  // If we explicitly set WriteOnly just do it and get out
+  if (aForceWriteOnly) {
+    aOffscreenCanvas->SetWriteOnly();
+    return;
+  }
+
+  // No need to do a security check if the image used CORS for the load
+  if (aCORSUsed) {
+    return;
+  }
+
+  // If we are on a worker thread, we might not have any principals at all.
+  nsIGlobalObject* global = aOffscreenCanvas->GetOwnerGlobal();
+  nsIPrincipal* canvasPrincipal = global ? global->PrincipalOrNull() : nullptr;
+  if (!aPrincipal || !canvasPrincipal) {
+    aOffscreenCanvas->SetWriteOnly();
+    return;
+  }
+
+  if (canvasPrincipal->Subsumes(aPrincipal)) {
+    // This canvas has access to that image anyway
+    return;
+  }
+
+  aOffscreenCanvas->SetWriteOnly();
+}
+
 bool CoerceDouble(const JS::Value& v, double* d) {
   if (v.isDouble()) {
     *d = v.toDouble();
@@ -289,35 +342,6 @@ bool CoerceDouble(const JS::Value& v, double* d) {
 bool HasDrawWindowPrivilege(JSContext* aCx, JSObject* /* unused */) {
   return nsContentUtils::CallerHasPermission(aCx,
                                              nsGkAtoms::all_urlsPermission);
-}
-
-bool IsOffscreenCanvasEnabled(JSContext* aCx, JSObject* /* unused */) {
-  if (StaticPrefs::gfx_offscreencanvas_enabled()) {
-    return true;
-  }
-
-  if (!StaticPrefs::gfx_offscreencanvas_domain_enabled()) {
-    return false;
-  }
-
-  const auto& allowlist = gfxVars::GetOffscreenCanvasDomainAllowlistOrDefault();
-
-  if (!NS_IsMainThread()) {
-    dom::WorkerPrivate* workerPrivate = dom::GetWorkerPrivateFromContext(aCx);
-    if (workerPrivate->UsesSystemPrincipal()) {
-      return true;
-    }
-
-    return nsContentUtils::IsURIInList(workerPrivate->GetBaseURI(), allowlist);
-  }
-
-  nsIPrincipal* principal = nsContentUtils::SubjectPrincipal(aCx);
-  if (principal->IsSystemPrincipal()) {
-    return true;
-  }
-
-  nsCOMPtr<nsIURI> uri = principal->GetURI();
-  return nsContentUtils::IsURIInList(uri, allowlist);
 }
 
 bool CheckWriteOnlySecurity(bool aCORSUsed, nsIPrincipal* aPrincipal,

@@ -3,8 +3,8 @@
 
 "use strict";
 
-const { DownloadIntegration } = ChromeUtils.import(
-  "resource://gre/modules/DownloadIntegration.jsm"
+const { DownloadIntegration } = ChromeUtils.importESModule(
+  "resource://gre/modules/DownloadIntegration.sys.mjs"
 );
 
 const TEST_PATH = getRootDirectory(gTestPath).replace(
@@ -22,10 +22,11 @@ const {
 let MockFilePicker = SpecialPowers.MockFilePicker;
 MockFilePicker.init(window);
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.download.improvements_to_download_panel", true],
+      ["browser.download.always_ask_before_handling_new_types", false],
       ["browser.download.useDownloadDir", false],
     ],
   });
@@ -272,7 +273,7 @@ async function setupFilePickerDirectory() {
     try {
       await IOUtils.remove(saveDir.path, { recursive: true });
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
     }
   });
 

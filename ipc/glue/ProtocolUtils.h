@@ -34,9 +34,6 @@
 #include "nsTArrayForwardDeclare.h"
 #include "nsTHashSet.h"
 
-// XXX Things that could be replaced by a forward header
-#include "mozilla/ipc/Transport.h"  // for Transport
-
 // XXX Things that could be moved to ProtocolUtils.cpp
 #include "base/process_util.h"  // for CloseProcessHandle
 #include "prenv.h"              // for PR_GetEnv
@@ -58,6 +55,10 @@ namespace {
 // protocol 0.  Oops!  We can get away with this until protocol 0
 // starts approaching its 65,536th message.
 enum {
+  // Message types used by DataPipe
+  DATA_PIPE_CLOSED_MESSAGE_TYPE = kuint16max - 18,
+  DATA_PIPE_BYTES_CONSUMED_MESSAGE_TYPE = kuint16max - 17,
+
   // Message types used by NodeChannel
   ACCEPT_INVITE_MESSAGE_TYPE = kuint16max - 16,
   REQUEST_INTRODUCTION_MESSAGE_TYPE = kuint16max - 15,
@@ -197,9 +198,8 @@ class IProtocol : public HasResultCodes {
   IProtocol* Lookup(int32_t aId);
   void Unregister(int32_t aId);
 
-  Shmem::SharedMemory* CreateSharedMemory(size_t aSize,
-                                          SharedMemory::SharedMemoryType aType,
-                                          bool aUnsafe, int32_t* aId);
+  Shmem::SharedMemory* CreateSharedMemory(size_t aSize, bool aUnsafe,
+                                          int32_t* aId);
   Shmem::SharedMemory* LookupSharedMemory(int32_t aId);
   bool IsTrackingSharedMemory(Shmem::SharedMemory* aSegment);
   bool DestroySharedMemory(Shmem& aShmem);
@@ -233,20 +233,17 @@ class IProtocol : public HasResultCodes {
   virtual void RemoveManagee(int32_t, IProtocol*) = 0;
   virtual void DeallocManagee(int32_t, IProtocol*) = 0;
 
-  Maybe<IProtocol*> ReadActor(const IPC::Message* aMessage,
-                              PickleIterator* aIter, bool aNullable,
+  Maybe<IProtocol*> ReadActor(IPC::MessageReader* aReader, bool aNullable,
                               const char* aActorDescription,
                               int32_t aProtocolTypeId);
 
   virtual Result OnMessageReceived(const Message& aMessage) = 0;
   virtual Result OnMessageReceived(const Message& aMessage,
-                                   Message*& aReply) = 0;
-  virtual Result OnCallReceived(const Message& aMessage, Message*& aReply) = 0;
-  bool AllocShmem(size_t aSize, Shmem::SharedMemory::SharedMemoryType aType,
-                  Shmem* aOutMem);
-  bool AllocUnsafeShmem(size_t aSize,
-                        Shmem::SharedMemory::SharedMemoryType aType,
-                        Shmem* aOutMem);
+                                   UniquePtr<Message>& aReply) = 0;
+  virtual Result OnCallReceived(const Message& aMessage,
+                                UniquePtr<Message>& aReply) = 0;
+  bool AllocShmem(size_t aSize, Shmem* aOutMem);
+  bool AllocUnsafeShmem(size_t aSize, Shmem* aOutMem);
   bool DeallocShmem(Shmem& aMem);
 
   void FatalError(const char* const aErrorMsg) const;
@@ -273,17 +270,19 @@ class IProtocol : public HasResultCodes {
   void SetManagerAndRegister(IProtocol* aManager, int32_t aId);
 
   // Helpers for calling `Send` on our underlying IPC channel.
-  bool ChannelSend(IPC::Message* aMsg);
-  bool ChannelSend(IPC::Message* aMsg, IPC::Message* aReply);
+  bool ChannelSend(UniquePtr<IPC::Message> aMsg);
+  bool ChannelSend(UniquePtr<IPC::Message> aMsg,
+                   UniquePtr<IPC::Message>* aReply);
   template <typename Value>
-  void ChannelSend(IPC::Message* aMsg, ResolveCallback<Value>&& aResolve,
+  void ChannelSend(UniquePtr<IPC::Message> aMsg,
+                   IPC::Message::msgid_t aReplyMsgId,
+                   ResolveCallback<Value>&& aResolve,
                    RejectCallback&& aReject) {
-    UniquePtr<IPC::Message> msg(aMsg);
     if (CanSend()) {
-      GetIPCChannel()->Send(std::move(msg), this, std::move(aResolve),
-                            std::move(aReject));
+      GetIPCChannel()->Send(std::move(aMsg), Id(), aReplyMsgId,
+                            std::move(aResolve), std::move(aReject));
     } else {
-      WarnMessageDiscarded(msg.get());
+      WarnMessageDiscarded(aMsg.get());
       aReject(ResponseRejectReason::SendError);
     }
   }
@@ -366,6 +365,8 @@ class IPCResult {
   bool mSuccess;
 };
 
+class UntypedEndpoint;
+
 template <class PFooSide>
 class Endpoint;
 
@@ -399,9 +400,8 @@ class IToplevelProtocol : public IProtocol {
   IProtocol* Lookup(int32_t aId);
   void Unregister(int32_t aId);
 
-  Shmem::SharedMemory* CreateSharedMemory(size_t aSize,
-                                          SharedMemory::SharedMemoryType aType,
-                                          bool aUnsafe, int32_t* aId);
+  Shmem::SharedMemory* CreateSharedMemory(size_t aSize, bool aUnsafe,
+                                          int32_t* aId);
   Shmem::SharedMemory* LookupSharedMemory(int32_t aId);
   bool IsTrackingSharedMemory(Shmem::SharedMemory* aSegment);
   bool DestroySharedMemory(Shmem& aShmem);
@@ -415,9 +415,11 @@ class IToplevelProtocol : public IProtocol {
   virtual void OnChannelError() = 0;
   virtual void ProcessingError(Result aError, const char* aMsgName) {}
 
-  bool Open(ScopedPort aPort, base::ProcessId aOtherPid);
+  bool Open(ScopedPort aPort, const nsID& aMessageChannelId,
+            base::ProcessId aOtherPid,
+            nsISerialEventTarget* aEventTarget = nullptr);
 
-  bool Open(MessageChannel* aChannel, nsISerialEventTarget* aEventTarget,
+  bool Open(IToplevelProtocol* aTarget, nsISerialEventTarget* aEventTarget,
             mozilla::ipc::Side aSide = mozilla::ipc::UnknownSide);
 
   // Open a toplevel actor such that both ends of the actor's channel are on
@@ -426,7 +428,7 @@ class IToplevelProtocol : public IProtocol {
   //
   // WARNING: Attempting to send a sync or intr message on the same thread
   // will crash.
-  bool OpenOnSameThread(MessageChannel* aChannel,
+  bool OpenOnSameThread(IToplevelProtocol* aTarget,
                         mozilla::ipc::Side aSide = mozilla::ipc::UnknownSide);
 
   /**
@@ -506,25 +508,19 @@ class IToplevelProtocol : public IProtocol {
 
 class IShmemAllocator {
  public:
-  virtual bool AllocShmem(size_t aSize,
-                          mozilla::ipc::SharedMemory::SharedMemoryType aShmType,
-                          mozilla::ipc::Shmem* aShmem) = 0;
-  virtual bool AllocUnsafeShmem(
-      size_t aSize, mozilla::ipc::SharedMemory::SharedMemoryType aShmType,
-      mozilla::ipc::Shmem* aShmem) = 0;
+  virtual bool AllocShmem(size_t aSize, mozilla::ipc::Shmem* aShmem) = 0;
+  virtual bool AllocUnsafeShmem(size_t aSize, mozilla::ipc::Shmem* aShmem) = 0;
   virtual bool DeallocShmem(mozilla::ipc::Shmem& aShmem) = 0;
 };
 
 #define FORWARD_SHMEM_ALLOCATOR_TO(aImplClass)                             \
-  virtual bool AllocShmem(                                                 \
-      size_t aSize, mozilla::ipc::SharedMemory::SharedMemoryType aShmType, \
-      mozilla::ipc::Shmem* aShmem) override {                              \
-    return aImplClass::AllocShmem(aSize, aShmType, aShmem);                \
+  virtual bool AllocShmem(size_t aSize, mozilla::ipc::Shmem* aShmem)       \
+      override {                                                           \
+    return aImplClass::AllocShmem(aSize, aShmem);                          \
   }                                                                        \
-  virtual bool AllocUnsafeShmem(                                           \
-      size_t aSize, mozilla::ipc::SharedMemory::SharedMemoryType aShmType, \
-      mozilla::ipc::Shmem* aShmem) override {                              \
-    return aImplClass::AllocUnsafeShmem(aSize, aShmType, aShmem);          \
+  virtual bool AllocUnsafeShmem(size_t aSize, mozilla::ipc::Shmem* aShmem) \
+      override {                                                           \
+    return aImplClass::AllocUnsafeShmem(aSize, aShmem);                    \
   }                                                                        \
   virtual bool DeallocShmem(mozilla::ipc::Shmem& aShmem) override {        \
     return aImplClass::DeallocShmem(aShmem);                               \
@@ -557,6 +553,10 @@ MOZ_NEVER_INLINE void LogMessageForProtocol(const char* aTopLevelProtocol,
                                             MessageDirection aDirection);
 
 MOZ_NEVER_INLINE void ProtocolErrorBreakpoint(const char* aMsg);
+
+// IPC::MessageReader and IPC::MessageWriter call this function for FatalError
+// calls which come from serialization/deserialization.
+MOZ_NEVER_INLINE void PickleFatalError(const char* aMsg, IProtocol* aActor);
 
 // The code generator calls this function for errors which come from the
 // methods of protocols.  Doing this saves codesize by making the error

@@ -4,14 +4,18 @@
 
 "use strict";
 
-const Services = require("Services");
-const {
-  WatcherRegistry,
-} = require("devtools/server/actors/watcher/WatcherRegistry.jsm");
-const {
-  WindowGlobalLogger,
-} = require("devtools/server/connectors/js-window-actor/WindowGlobalLogger.jsm");
-const Targets = require("devtools/server/actors/targets/index");
+const { WatcherRegistry } = ChromeUtils.importESModule(
+  "resource://devtools/server/actors/watcher/WatcherRegistry.sys.mjs",
+  {
+    // WatcherRegistry needs to be a true singleton and loads ActorManagerParent
+    // which also has to be a true singleton.
+    loadInDevToolsLoader: false,
+  }
+);
+const { WindowGlobalLogger } = ChromeUtils.importESModule(
+  "resource://devtools/server/connectors/js-window-actor/WindowGlobalLogger.sys.mjs"
+);
+const Targets = require("resource://devtools/server/actors/targets/index.js");
 
 const browsingContextAttachedObserverByWatcher = new Map();
 
@@ -158,8 +162,11 @@ async function createTargetForBrowsingContext({
  *
  * @param WatcherActor watcher
  *        The Watcher Actor requesting to stop watching for new targets.
+ * @param {object} options
+ * @param {boolean} options.isModeSwitching
+ *        true when this is called as the result of a change to the devtools.browsertoolbox.scope pref
  */
-function destroyTargets(watcher) {
+function destroyTargets(watcher, options) {
   // Go over all existing BrowsingContext in order to destroy all targets
   const browsingContexts = watcher.getAllBrowsingContexts();
 
@@ -178,6 +185,7 @@ function destroyTargets(watcher) {
       .destroyTarget({
         watcherActorID: watcher.actorID,
         sessionContext: watcher.sessionContext,
+        options,
       });
   }
 
@@ -267,8 +275,8 @@ module.exports = {
  *        and what BrowsingContext should be considered.
  */
 function getWatchingBrowsingContexts(watcher) {
-  // If we are watching for additional frame targets, it means that fission mode is enabled,
-  // either for a content toolbox or a BrowserToolbox via devtools.browsertoolbox.fission pref.
+  // If we are watching for additional frame targets, it means that the multiprocess or fission mode is enabled,
+  // either for a content toolbox or a BrowserToolbox via scope set to everything.
   const watchingAdditionalTargets = WatcherRegistry.isWatchingTargets(
     watcher,
     Targets.TYPES.FRAME
@@ -284,7 +292,7 @@ function getWatchingBrowsingContexts(watcher) {
   // => we should no longer reach any browsing context.
   //
   // For "all" (=browser toolbox), there is only the special ParentProcessTargetActor we might want to return here.
-  // But this is actually handled by the WatcherActor which uses `WatcherActor._getTargetActorInParentProcess` to convey session data.
+  // But this is actually handled by the WatcherActor which uses `WatcherActor.getTargetActorInParentProcess` to convey session data.
   // => we should no longer reach any browsing context.
   //
   // For "webextension" debugging, there is the special WebExtensionTargetActor, which doesn't run in the parent process,

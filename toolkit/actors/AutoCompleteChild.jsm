@@ -7,22 +7,15 @@ var EXPORTED_SYMBOLS = ["AutoCompleteChild"];
 
 /* eslint no-unused-vars: ["error", {args: "none"}] */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  ContentDOMReference: "resource://gre/modules/ContentDOMReference.sys.mjs",
+  LayoutUtils: "resource://gre/modules/LayoutUtils.sys.mjs",
+});
 
 ChromeUtils.defineModuleGetter(
-  this,
-  "LayoutUtils",
-  "resource://gre/modules/LayoutUtils.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "ContentDOMReference",
-  "resource://gre/modules/ContentDOMReference.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "LoginHelper",
   "resource://gre/modules/LoginHelper.jsm"
 );
@@ -91,7 +84,7 @@ class AutoCompleteChild extends JSWindowActorChild {
       try {
         listener.popupStateChanged(messageName, data, this.contentWindow);
       } catch (ex) {
-        Cu.reportError(ex);
+        console.error(ex);
       }
     }
   }
@@ -136,14 +129,14 @@ class AutoCompleteChild extends JSWindowActorChild {
       return;
     }
 
-    let rect = LayoutUtils.getElementBoundingScreenRect(element);
+    let rect = lazy.LayoutUtils.getElementBoundingScreenRect(element);
     let window = element.ownerGlobal;
     let dir = window.getComputedStyle(element).direction;
     let results = this.getResultsFromController(input);
-    let formOrigin = LoginHelper.getLoginOrigin(
+    let formOrigin = lazy.LoginHelper.getLoginOrigin(
       element.ownerDocument.documentURI
     );
-    let inputElementIdentifier = ContentDOMReference.get(element);
+    let inputElementIdentifier = lazy.ContentDOMReference.get(element);
 
     this.sendAsyncMessage("FormAutoComplete:MaybeOpenPopup", {
       results,

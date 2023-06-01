@@ -6,13 +6,13 @@
 #include "MediaEngineRemoteVideoSource.h"
 
 #include "CamerasChild.h"
-#include "Layers.h"
 #include "MediaManager.h"
 #include "MediaTrackConstraints.h"
 #include "mozilla/dom/MediaTrackSettingsBinding.h"
 #include "mozilla/ErrorNames.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/RefPtr.h"
+#include "PerformanceRecorder.h"
 #include "Tracing.h"
 #include "VideoFrameUtils.h"
 #include "VideoUtils.h"
@@ -90,6 +90,7 @@ static Maybe<VideoFacingModeEnum> GetFacingMode(const nsString& aDeviceName) {
 MediaEngineRemoteVideoSource::MediaEngineRemoteVideoSource(
     const MediaDevice* aMediaDevice)
     : mCapEngine(CaptureEngine(aMediaDevice->mMediaSource)),
+      mTrackingId(CaptureEngineToTrackingSourceStr(mCapEngine), 0),
       mMutex("MediaEngineRemoteVideoSource::mMutex"),
       mRescalingBufferPool(/* zero_initialize */ false,
                            /* max_number_of_buffers */ 1),
@@ -148,6 +149,8 @@ nsresult MediaEngineRemoteVideoSource::Allocate(
     MutexAutoLock lock(mMutex);
     mState = kAllocated;
     mCapability = newCapability;
+    mTrackingId =
+        TrackingId(CaptureEngineToTrackingSourceStr(mCapEngine), mCaptureId);
   }
 
   LOG("Video device %d allocated", mCaptureId);
@@ -383,6 +386,12 @@ webrtc::CaptureCapability& MediaEngineRemoteVideoSource::GetCapability(
   return *mCapabilities[aIndex];
 }
 
+const TrackingId& MediaEngineRemoteVideoSource::GetTrackingId() const {
+  AssertIsOnOwningThread();
+  MOZ_ASSERT(mState != kReleased);
+  return mTrackingId;
+}
+
 int MediaEngineRemoteVideoSource::DeliverFrame(
     uint8_t* aBuffer, const camera::VideoFrameProperties& aProps) {
   // Cameras IPC thread - take great care with accessing members!
@@ -404,6 +413,9 @@ int MediaEngineRemoteVideoSource::DeliverFrame(
     req_max_height = max_height ? Some(max_height) : Nothing();
     req_ideal_width = ideal_width ? Some(ideal_width) : Nothing();
     req_ideal_height = ideal_height ? Some(ideal_height) : Nothing();
+    if (!mFrameDeliveringTrackingId) {
+      mFrameDeliveringTrackingId = Some(mTrackingId);
+    }
   }
 
   // This is only used in the case of screen sharing, see bug 1453269.
@@ -471,7 +483,7 @@ int MediaEngineRemoteVideoSource::DeliverFrame(
   dst_width = std::max(2, dst_width);
   dst_height = std::max(2, dst_height);
 
-  rtc::Callback0<void> callback_unused;
+  std::function<void()> callback_unused = []() {};
   rtc::scoped_refptr<webrtc::I420BufferInterface> buffer =
       webrtc::WrapI420Buffer(
           aProps.width(), aProps.height(), aBuffer, aProps.yStride(),
@@ -481,9 +493,12 @@ int MediaEngineRemoteVideoSource::DeliverFrame(
 
   if ((dst_width != aProps.width() || dst_height != aProps.height()) &&
       dst_width <= aProps.width() && dst_height <= aProps.height()) {
+    PerformanceRecorder<CopyVideoStage> rec("MERVS::CropAndScale"_ns,
+                                            *mFrameDeliveringTrackingId,
+                                            dst_width, dst_height);
     // Destination resolution is smaller than source buffer. We'll rescale.
     rtc::scoped_refptr<webrtc::I420Buffer> scaledBuffer =
-        mRescalingBufferPool.CreateBuffer(dst_width, dst_height);
+        mRescalingBufferPool.CreateI420Buffer(dst_width, dst_height);
     if (!scaledBuffer) {
       MOZ_ASSERT_UNREACHABLE(
           "We might fail to allocate a buffer, but with this "
@@ -492,30 +507,32 @@ int MediaEngineRemoteVideoSource::DeliverFrame(
     }
     scaledBuffer->CropAndScaleFrom(*buffer);
     buffer = scaledBuffer;
+    rec.Record();
   }
 
   layers::PlanarYCbCrData data;
   data.mYChannel = const_cast<uint8_t*>(buffer->DataY());
-  data.mYSize = gfx::IntSize(buffer->width(), buffer->height());
   data.mYStride = buffer->StrideY();
   MOZ_ASSERT(buffer->StrideU() == buffer->StrideV());
   data.mCbCrStride = buffer->StrideU();
   data.mCbChannel = const_cast<uint8_t*>(buffer->DataU());
   data.mCrChannel = const_cast<uint8_t*>(buffer->DataV());
-  data.mCbCrSize =
-      gfx::IntSize((buffer->width() + 1) / 2, (buffer->height() + 1) / 2);
-  data.mPicX = 0;
-  data.mPicY = 0;
-  data.mPicSize = gfx::IntSize(buffer->width(), buffer->height());
+  data.mPictureRect = gfx::IntRect(0, 0, buffer->width(), buffer->height());
   data.mYUVColorSpace = gfx::YUVColorSpace::BT601;
+  data.mChromaSubsampling = gfx::ChromaSubsampling::HALF_WIDTH_AND_HEIGHT;
 
-  RefPtr<layers::PlanarYCbCrImage> image =
-      mImageContainer->CreatePlanarYCbCrImage();
-  if (!image->CopyData(data)) {
-    MOZ_ASSERT_UNREACHABLE(
-        "We might fail to allocate a buffer, but with this "
-        "being a recycling container that shouldn't happen");
-    return 0;
+  RefPtr<layers::PlanarYCbCrImage> image;
+  {
+    PerformanceRecorder<CopyVideoStage> rec(
+        "MERVS::Copy"_ns, *mFrameDeliveringTrackingId, dst_width, dst_height);
+    image = mImageContainer->CreatePlanarYCbCrImage();
+    if (!image->CopyData(data)) {
+      MOZ_ASSERT_UNREACHABLE(
+          "We might fail to allocate a buffer, but with this "
+          "being a recycling container that shouldn't happen");
+      return 0;
+    }
+    rec.Record();
   }
 
 #ifdef DEBUG
@@ -666,18 +683,49 @@ uint32_t MediaEngineRemoteVideoSource::GetBestFitnessDistance(
   return candidateSet[0].mDistance;
 }
 
+static const char* ConvertVideoTypeToCStr(webrtc::VideoType aType) {
+  switch (aType) {
+    case webrtc::VideoType::kI420:
+      return "I420";
+    case webrtc::VideoType::kIYUV:
+    case webrtc::VideoType::kYV12:
+      return "YV12";
+    case webrtc::VideoType::kRGB24:
+      return "24BG";
+    case webrtc::VideoType::kABGR:
+      return "ABGR";
+    case webrtc::VideoType::kARGB:
+      return "ARGB";
+    case webrtc::VideoType::kARGB4444:
+      return "R444";
+    case webrtc::VideoType::kRGB565:
+      return "RGBP";
+    case webrtc::VideoType::kARGB1555:
+      return "RGBO";
+    case webrtc::VideoType::kYUY2:
+      return "YUY2";
+    case webrtc::VideoType::kUYVY:
+      return "UYVY";
+    case webrtc::VideoType::kMJPEG:
+      return "MJPG";
+    case webrtc::VideoType::kNV21:
+      return "NV21";
+    case webrtc::VideoType::kNV12:
+      return "NV12";
+    case webrtc::VideoType::kBGRA:
+      return "BGRA";
+    case webrtc::VideoType::kUnknown:
+    default:
+      return "unknown";
+  }
+}
+
 static void LogCapability(const char* aHeader,
                           const webrtc::CaptureCapability& aCapability,
                           uint32_t aDistance) {
-  static const char* const codec[] = {"VP8",           "VP9",          "H264",
-                                      "I420",          "RED",          "ULPFEC",
-                                      "Generic codec", "Unknown codec"};
-
   LOG("%s: %4u x %4u x %2u maxFps, %s. Distance = %" PRIu32, aHeader,
       aCapability.width, aCapability.height, aCapability.maxFPS,
-      codec[std::min(std::max(uint32_t(0), uint32_t(aCapability.videoType)),
-                     uint32_t(sizeof(codec) / sizeof(*codec) - 1))],
-      aDistance);
+      ConvertVideoTypeToCStr(aCapability.videoType), aDistance);
 }
 
 bool MediaEngineRemoteVideoSource::ChooseCapability(
@@ -714,6 +762,12 @@ bool MediaEngineRemoteVideoSource::ChooseCapability(
       aCapability.height =
           (std::min(0xffff, c.mHeight.mIdeal.valueOr(0)) & 0xffff) << 16 |
           (std::min(0xffff, c.mHeight.mMax) & 0xffff);
+      aCapability.maxFPS =
+          c.mFrameRate.Clamp(c.mFrameRate.mIdeal.valueOr(aPrefs.mFPS));
+      return true;
+    }
+    case camera::BrowserEngine: {
+      FlattenedConstraints c(aConstraints);
       aCapability.maxFPS =
           c.mFrameRate.Clamp(c.mFrameRate.mIdeal.valueOr(aPrefs.mFPS));
       return true;

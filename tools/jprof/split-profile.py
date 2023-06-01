@@ -52,11 +52,9 @@
 # functions in the input file can lead to a logical splitting of the
 # profile into segments.
 
-from __future__ import absolute_import, print_function
-
-import sys
-import subprocess
 import os.path
+import subprocess
+import sys
 
 if len(sys.argv) < 5:
     sys.stderr.write("Expected arguments: <jprof> <split-file> <program> <jprof-log>\n")

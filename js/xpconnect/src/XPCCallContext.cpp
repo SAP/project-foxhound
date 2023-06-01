@@ -23,9 +23,8 @@ static inline bool IsTearoffClass(const JSClass* clazz) {
 XPCCallContext::XPCCallContext(
     JSContext* cx, HandleObject obj /* = nullptr               */,
     HandleObject funobj /* = nullptr               */,
-    HandleId name /* = JSID_VOID             */,
-    unsigned argc /* = NO_ARGS               */, Value* argv /* = nullptr */,
-    Value* rval /* = nullptr               */)
+    HandleId name /* = JSID_VOID             */, unsigned argc /* = NO_ARGS */,
+    Value* argv /* = nullptr */, Value* rval /* = nullptr               */)
     : mState(INIT_FAILED),
       mXPC(nsXPConnect::XPConnect()),
       mXPCJSContext(nullptr),
@@ -83,7 +82,7 @@ XPCCallContext::XPCCallContext(
     mScriptable = mWrapper->GetScriptable();
   }
 
-  if (!JSID_IS_VOID(name)) {
+  if (!name.isVoid()) {
     SetName(name);
   }
 

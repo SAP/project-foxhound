@@ -414,6 +414,11 @@ void MacroAssembler::mul32(Imm32 imm, Register srcDest) {
   mul32(scratch, srcDest);
 }
 
+void MacroAssembler::mulHighUnsigned32(Imm32 imm, Register src, Register dest) {
+  ScratchRegisterScope scratch(*this);
+  ma_umull(src, imm, dest, scratch, scratch);
+}
+
 void MacroAssembler::mulPtr(Register rhs, Register srcDest) {
   as_mul(srcDest, srcDest, rhs);
 }
@@ -1193,6 +1198,69 @@ void MacroAssembler::branch8(Condition cond, const Address& lhs, Imm32 rhs,
   ma_dataTransferN(IsLoad, 8, isSigned, lhs.base, Imm32(lhs.offset), scratch,
                    scratch2);
   ma_cmp(scratch, imm, scratch2);
+  ma_b(label, cond);
+}
+
+void MacroAssembler::branch8(Condition cond, const BaseIndex& lhs, Register rhs,
+                             Label* label) {
+  ScratchRegisterScope scratch(*this);
+  SecondScratchRegisterScope scratch2(*this);
+
+  // Inlined calls to load8{Zero,Sign}Extend() and branch32() to acquire
+  // exclusive access to scratch registers.
+
+  bool isSigned;
+  switch (cond) {
+    case Assembler::Equal:
+    case Assembler::NotEqual:
+    case Assembler::Above:
+    case Assembler::AboveOrEqual:
+    case Assembler::Below:
+    case Assembler::BelowOrEqual:
+      isSigned = false;
+      break;
+
+    case Assembler::GreaterThan:
+    case Assembler::GreaterThanOrEqual:
+    case Assembler::LessThan:
+    case Assembler::LessThanOrEqual:
+      isSigned = true;
+      break;
+
+    default:
+      MOZ_CRASH("unexpected condition");
+  }
+
+  if (isSigned) {
+    Register index = lhs.index;
+
+    // ARMv7 does not have LSL on an index register with an extended load.
+    if (lhs.scale != TimesOne) {
+      ma_lsl(Imm32::ShiftOf(lhs.scale), index, scratch);
+      index = scratch;
+    }
+
+    if (lhs.offset != 0) {
+      if (index != scratch) {
+        ma_mov(index, scratch);
+        index = scratch;
+      }
+      ma_add(Imm32(lhs.offset), index, scratch2);
+    }
+    ma_ldrsb(EDtrAddr(lhs.base, EDtrOffReg(index)), scratch);
+  } else {
+    Register base = lhs.base;
+    uint32_t scale = Imm32::ShiftOf(lhs.scale).value;
+
+    if (lhs.offset == 0) {
+      ma_ldrb(DTRAddr(base, DtrRegImmShift(lhs.index, LSL, scale)), scratch);
+    } else {
+      ma_add(base, Imm32(lhs.offset), scratch, scratch2);
+      ma_ldrb(DTRAddr(scratch, DtrRegImmShift(lhs.index, LSL, scale)), scratch);
+    }
+  }
+
+  ma_cmp(scratch, rhs);
   ma_b(label, cond);
 }
 

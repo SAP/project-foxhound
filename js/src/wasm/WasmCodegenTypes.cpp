@@ -21,6 +21,7 @@
 #include "wasm/WasmExprType.h"
 #include "wasm/WasmStubs.h"
 #include "wasm/WasmTypeDef.h"
+#include "wasm/WasmValidate.h"
 #include "wasm/WasmValue.h"
 
 using mozilla::MakeEnumeratedRange;
@@ -28,27 +29,6 @@ using mozilla::PodZero;
 
 using namespace js;
 using namespace js::wasm;
-
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-static const int8_t WormholeTrigger[] = {31, 0, 30, 2,  29, 4,  28, 6,
-                                         27, 8, 26, 10, 25, 12, 24};
-static_assert(sizeof(WormholeTrigger) == 15);
-
-static const int8_t WormholeSignatureBytes[16] = {0xD, 0xE, 0xA, 0xD, 0xD, 0x0,
-                                                  0x0, 0xD, 0xC, 0xA, 0xF, 0xE,
-                                                  0xB, 0xA, 0xB, 0xE};
-static_assert(sizeof(WormholeSignatureBytes) == 16);
-
-bool wasm::IsWormholeTrigger(const V128& shuffleMask) {
-  return memcmp(shuffleMask.bytes, WormholeTrigger, sizeof(WormholeTrigger)) ==
-         0;
-}
-
-jit::SimdConstant wasm::WormholeSignature() {
-  return jit::SimdConstant::CreateX16(WormholeSignatureBytes);
-}
-
-#endif
 
 ArgTypeVector::ArgTypeVector(const FuncType& funcType)
     : args_(funcType.args()),
@@ -83,31 +63,6 @@ void TrapSiteVectorArray::shrinkStorageToFit() {
   }
 }
 
-size_t TrapSiteVectorArray::serializedSize() const {
-  size_t ret = 0;
-  for (Trap trap : MakeEnumeratedRange(Trap::Limit)) {
-    ret += SerializedPodVectorSize((*this)[trap]);
-  }
-  return ret;
-}
-
-uint8_t* TrapSiteVectorArray::serialize(uint8_t* cursor) const {
-  for (Trap trap : MakeEnumeratedRange(Trap::Limit)) {
-    cursor = SerializePodVector(cursor, (*this)[trap]);
-  }
-  return cursor;
-}
-
-const uint8_t* TrapSiteVectorArray::deserialize(const uint8_t* cursor) {
-  for (Trap trap : MakeEnumeratedRange(Trap::Limit)) {
-    cursor = DeserializePodVector(cursor, &(*this)[trap]);
-    if (!cursor) {
-      return nullptr;
-    }
-  }
-  return cursor;
-}
-
 size_t TrapSiteVectorArray::sizeOfExcludingThis(
     MallocSizeOf mallocSizeOf) const {
   size_t ret = 0;
@@ -139,7 +94,7 @@ CodeRange::CodeRange(Kind kind, uint32_t funcIndex, Offsets offsets)
   u.func.lineOrBytecode_ = 0;
   u.func.beginToUncheckedCallEntry_ = 0;
   u.func.beginToTierEntry_ = 0;
-  MOZ_ASSERT(isEntry() || isIndirectStub());
+  MOZ_ASSERT(isEntry());
   MOZ_ASSERT(begin_ <= end_);
 }
 
@@ -161,28 +116,13 @@ CodeRange::CodeRange(Kind kind, CallableOffsets offsets)
 
 CodeRange::CodeRange(Kind kind, uint32_t funcIndex, CallableOffsets offsets)
     : begin_(offsets.begin), ret_(offsets.ret), end_(offsets.end), kind_(kind) {
-  MOZ_ASSERT(isImportExit() && !isImportJitExit());
+  MOZ_ASSERT(isImportExit() || isJitEntry());
   MOZ_ASSERT(begin_ < ret_);
   MOZ_ASSERT(ret_ < end_);
   u.funcIndex_ = funcIndex;
   u.func.lineOrBytecode_ = 0;
   u.func.beginToUncheckedCallEntry_ = 0;
   u.func.beginToTierEntry_ = 0;
-}
-
-CodeRange::CodeRange(uint32_t funcIndex, JitExitOffsets offsets)
-    : begin_(offsets.begin),
-      ret_(offsets.ret),
-      end_(offsets.end),
-      kind_(ImportJitExit) {
-  MOZ_ASSERT(isImportJitExit());
-  MOZ_ASSERT(begin_ < ret_);
-  MOZ_ASSERT(ret_ < end_);
-  u.funcIndex_ = funcIndex;
-  u.jitExit.beginToUntrustedFPStart_ = offsets.untrustedFPStart - begin_;
-  u.jitExit.beginToUntrustedFPEnd_ = offsets.untrustedFPEnd - begin_;
-  MOZ_ASSERT(jitExitUntrustedFPStart() == offsets.untrustedFPStart);
-  MOZ_ASSERT(jitExitUntrustedFPEnd() == offsets.untrustedFPEnd);
 }
 
 CodeRange::CodeRange(uint32_t funcIndex, uint32_t funcLineOrBytecode,
@@ -193,8 +133,8 @@ CodeRange::CodeRange(uint32_t funcIndex, uint32_t funcLineOrBytecode,
       kind_(Function) {
   MOZ_ASSERT(begin_ < ret_);
   MOZ_ASSERT(ret_ < end_);
-  MOZ_ASSERT(offsets.uncheckedCallEntry - begin_ <= UINT8_MAX);
-  MOZ_ASSERT(offsets.tierEntry - begin_ <= UINT8_MAX);
+  MOZ_ASSERT(offsets.uncheckedCallEntry - begin_ <= UINT16_MAX);
+  MOZ_ASSERT(offsets.tierEntry - begin_ <= UINT16_MAX);
   u.funcIndex_ = funcIndex;
   u.func.lineOrBytecode_ = funcLineOrBytecode;
   u.func.beginToUncheckedCallEntry_ = offsets.uncheckedCallEntry - begin_;
@@ -214,6 +154,41 @@ const CodeRange* wasm::LookupInSorted(const CodeRangeVector& codeRanges,
   return &codeRanges[match];
 }
 
+CallIndirectId CallIndirectId::forAsmJSFunc() {
+  return CallIndirectId(CallIndirectIdKind::AsmJS, 0);
+}
+
+CallIndirectId CallIndirectId::forFunc(const ModuleEnvironment& moduleEnv,
+                                       uint32_t funcIndex) {
+  // asm.js tables are homogenous and don't require a signature check
+  if (moduleEnv.isAsmJS()) {
+    return CallIndirectId::forAsmJSFunc();
+  }
+
+  FuncDesc func = moduleEnv.funcs[funcIndex];
+  if (!func.canRefFunc()) {
+    return CallIndirectId();
+  }
+  return CallIndirectId::forFuncType(moduleEnv,
+                                     moduleEnv.funcs[funcIndex].typeIndex);
+}
+
+CallIndirectId CallIndirectId::forFuncType(const ModuleEnvironment& moduleEnv,
+                                           uint32_t funcTypeIndex) {
+  // asm.js tables are homogenous and don't require a signature check
+  if (moduleEnv.isAsmJS()) {
+    return CallIndirectId::forAsmJSFunc();
+  }
+
+  const FuncType& funcType = moduleEnv.types->type(funcTypeIndex).funcType();
+  if (funcType.hasImmediateTypeId()) {
+    return CallIndirectId(CallIndirectIdKind::Immediate,
+                          funcType.immediateTypeId());
+  }
+  return CallIndirectId(CallIndirectIdKind::Global,
+                        moduleEnv.offsetOfTypeDef(funcTypeIndex));
+}
+
 CalleeDesc CalleeDesc::function(uint32_t funcIndex) {
   CalleeDesc c;
   c.which_ = Func;
@@ -226,13 +201,14 @@ CalleeDesc CalleeDesc::import(uint32_t globalDataOffset) {
   c.u.import.globalDataOffset_ = globalDataOffset;
   return c;
 }
-CalleeDesc CalleeDesc::wasmTable(const TableDesc& desc, TypeIdDesc funcTypeId) {
+CalleeDesc CalleeDesc::wasmTable(const TableDesc& desc,
+                                 CallIndirectId callIndirectId) {
   CalleeDesc c;
   c.which_ = WasmTable;
   c.u.table.globalDataOffset_ = desc.globalDataOffset;
   c.u.table.minLength_ = desc.initialLength;
   c.u.table.maxLength_ = desc.maximumLength;
-  c.u.table.funcTypeId_ = funcTypeId;
+  c.u.table.callIndirectId_ = callIndirectId;
   return c;
 }
 CalleeDesc CalleeDesc::asmJSTable(const TableDesc& desc) {
@@ -251,5 +227,10 @@ CalleeDesc CalleeDesc::builtinInstanceMethod(SymbolicAddress callee) {
   CalleeDesc c;
   c.which_ = BuiltinInstanceMethod;
   c.u.builtin_ = callee;
+  return c;
+}
+CalleeDesc CalleeDesc::wasmFuncRef() {
+  CalleeDesc c;
+  c.which_ = FuncRef;
   return c;
 }

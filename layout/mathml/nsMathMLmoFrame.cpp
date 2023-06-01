@@ -4,10 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsMathMLmoFrame.h"
+
 #include "gfxContext.h"
 #include "mozilla/PresShell.h"
 #include "nsCSSValue.h"
-#include "nsMathMLmoFrame.h"
+#include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsContentUtils.h"
 #include "nsFrameSelection.h"
@@ -129,12 +131,16 @@ void nsMathMLmoFrame::ProcessTextData() {
 
   // lookup all the forms under which the operator is listed in the dictionary,
   // and record whether the operator has accent="true" or movablelimits="true"
-  nsOperatorFlags flags[4];
-  float lspace[4], rspace[4];
-  nsMathMLOperators::LookupOperators(data, flags, lspace, rspace);
-  nsOperatorFlags allFlags = flags[NS_MATHML_OPERATOR_FORM_INFIX] |
-                             flags[NS_MATHML_OPERATOR_FORM_POSTFIX] |
-                             flags[NS_MATHML_OPERATOR_FORM_PREFIX];
+  nsOperatorFlags allFlags = 0;
+  for (const auto& form :
+       {NS_MATHML_OPERATOR_FORM_INFIX, NS_MATHML_OPERATOR_FORM_POSTFIX,
+        NS_MATHML_OPERATOR_FORM_PREFIX}) {
+    nsOperatorFlags flags = 0;
+    float dummy;
+    if (nsMathMLOperators::LookupOperator(data, form, &flags, &dummy, &dummy)) {
+      allFlags |= flags;
+    }
+  }
 
   mFlags |= allFlags & NS_MATHML_OPERATOR_ACCENT;
   mFlags |= allFlags & NS_MATHML_OPERATOR_MOVABLELIMITS;
@@ -175,7 +181,7 @@ void nsMathMLmoFrame::ProcessTextData() {
 // However, we re-use unchanged values.
 void nsMathMLmoFrame::ProcessOperatorData() {
   // if we have been here before, we will just use our cached form
-  nsOperatorFlags form = NS_MATHML_OPERATOR_GET_FORM(mFlags);
+  uint8_t form = NS_MATHML_OPERATOR_GET_FORM(mFlags);
   nsAutoString value;
   float fontSizeInflation = nsLayoutUtils::FontSizeInflationFor(this);
 
@@ -325,7 +331,13 @@ void nsMathMLmoFrame::ProcessOperatorData() {
     // lookup the operator dictionary
     nsAutoString data;
     mMathMLChar.GetData(data);
-    nsMathMLOperators::LookupOperator(data, form, &mFlags, &lspace, &rspace);
+    nsOperatorFlags flags = 0;
+    if (nsMathMLOperators::LookupOperatorWithFallback(data, form, &flags,
+                                                      &lspace, &rspace)) {
+      mFlags &= ~NS_MATHML_OPERATOR_FORM;  // clear the form bits
+      mFlags |= flags;                     // just add bits without overwriting
+    }
+
     // Spacing is zero if our outermost embellished operator is not in an
     // inferred mrow.
     if (!NS_MATHML_OPERATOR_EMBELLISH_IS_ISOLATED(mFlags) &&
@@ -481,9 +493,8 @@ void nsMathMLmoFrame::ProcessOperatorData() {
   mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::minsize_, value);
   if (!value.IsEmpty()) {
     nsCSSValue cssValue;
-    if (dom::MathMLElement::ParseNumericValue(
-            value, cssValue, dom::MathMLElement::PARSE_ALLOW_UNITLESS,
-            mContent->OwnerDoc())) {
+    if (dom::MathMLElement::ParseNumericValue(value, cssValue, 0,
+                                              mContent->OwnerDoc())) {
       nsCSSUnit unit = cssValue.GetUnit();
       if (eCSSUnit_Number == unit)
         mMinSize = cssValue.GetFloatValue();
@@ -513,9 +524,8 @@ void nsMathMLmoFrame::ProcessOperatorData() {
   mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::maxsize_, value);
   if (!value.IsEmpty()) {
     nsCSSValue cssValue;
-    if (dom::MathMLElement::ParseNumericValue(
-            value, cssValue, dom::MathMLElement::PARSE_ALLOW_UNITLESS,
-            mContent->OwnerDoc())) {
+    if (dom::MathMLElement::ParseNumericValue(value, cssValue, 0,
+                                              mContent->OwnerDoc())) {
       nsCSSUnit unit = cssValue.GetUnit();
       if (eCSSUnit_Number == unit)
         mMaxSize = cssValue.GetFloatValue();
@@ -543,12 +553,9 @@ static uint32_t GetStretchHint(nsOperatorFlags aFlags,
     // stretchy are true or false (see bug 69325).
     // . largeopOnly is taken if largeop=true and stretchy=false
     // . largeop is taken if largeop=true and stretchy=true
-    if (aStyleFont->mMathStyle == NS_STYLE_MATH_STYLE_NORMAL &&
+    if (aStyleFont->mMathStyle == StyleMathStyle::Normal &&
         NS_MATHML_OPERATOR_IS_LARGEOP(aFlags)) {
       stretchHint = NS_STRETCH_LARGEOP;  // (largeopOnly, not mask!)
-      if (NS_MATHML_OPERATOR_IS_INTEGRAL(aFlags)) {
-        stretchHint |= NS_STRETCH_INTEGRAL;
-      }
       if (NS_MATHML_OPERATOR_IS_STRETCHY(aFlags)) {
         stretchHint |= NS_STRETCH_NEARER | NS_STRETCH_LARGER;
       }
@@ -900,9 +907,9 @@ nsMathMLmoFrame::TransmitAutomaticData() {
 }
 
 void nsMathMLmoFrame::SetInitialChildList(ChildListID aListID,
-                                          nsFrameList& aChildList) {
+                                          nsFrameList&& aChildList) {
   // First, let the parent class do its work
-  nsMathMLTokenFrame::SetInitialChildList(aListID, aChildList);
+  nsMathMLTokenFrame::SetInitialChildList(aListID, std::move(aChildList));
   ProcessTextData();
 }
 
@@ -939,7 +946,7 @@ nsresult nsMathMLmoFrame::Place(DrawTarget* aDrawTarget, bool aPlaceOrigin,
      Stretch() method.
   */
 
-  if (!aPlaceOrigin && StyleFont()->mMathStyle == NS_STYLE_MATH_STYLE_NORMAL &&
+  if (!aPlaceOrigin && StyleFont()->mMathStyle == StyleMathStyle::Normal &&
       NS_MATHML_OPERATOR_IS_LARGEOP(mFlags) && UseMathMLChar()) {
     nsBoundingMetrics newMetrics;
     rv = mMathMLChar.Stretch(

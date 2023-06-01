@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* This is a JavaScript module (JSM) to be imported via
- * Components.utils.import() and acts as a singleton. Only the following
+ * ChromeUtils.import() and acts as a singleton. Only the following
  * listed symbols will exposed on import, and only when and where imported.
  */
 
@@ -16,17 +16,17 @@ var EXPORTED_SYMBOLS = [
 
 const { Logger } = ChromeUtils.import("resource://tps/logger.jsm");
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "formAutofillStorage",
-  "resource://formautofill/FormAutofillStorage.jsm"
-);
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
-  "OSKeyStore",
-  "resource://gre/modules/OSKeyStore.jsm"
+  lazy,
+  "formAutofillStorage",
+  "resource://autofill/FormAutofillStorage.jsm"
 );
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
+});
 
 class FormAutofillBase {
   constructor(props, subStorageName, fields) {
@@ -44,8 +44,8 @@ class FormAutofillBase {
   }
 
   async getStorage() {
-    await formAutofillStorage.initialize();
-    return formAutofillStorage[this._subStorageName];
+    await lazy.formAutofillStorage.initialize();
+    return lazy.formAutofillStorage[this._subStorageName];
   }
 
   async Create() {
@@ -74,9 +74,9 @@ class FormAutofillBase {
 }
 
 async function DumpStorage(subStorageName) {
-  await formAutofillStorage.initialize();
+  await lazy.formAutofillStorage.initialize();
   Logger.logInfo(`\ndumping ${subStorageName} list\n`, true);
-  const entries = formAutofillStorage[subStorageName]._data;
+  const entries = lazy.formAutofillStorage[subStorageName]._data;
   for (const entry of entries) {
     Logger.logInfo(JSON.stringify(entry), true);
   }
@@ -124,7 +124,7 @@ class CreditCard extends FormAutofillBase {
     await Promise.all(
       storage._data.map(
         async entry =>
-          (entry["cc-number"] = await OSKeyStore.decrypt(
+          (entry["cc-number"] = await lazy.OSKeyStore.decrypt(
             entry["cc-number-encrypted"]
           ))
       )

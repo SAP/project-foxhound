@@ -48,8 +48,8 @@ class TableRowsCollection final : public nsIHTMLCollection,
 
   NS_IMETHOD ParentDestroyed();
 
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(TableRowsCollection,
-                                                         nsIHTMLCollection)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS_AMBIGUOUS(TableRowsCollection,
+                                                        nsIHTMLCollection)
 
   // nsWrapperCache
   using nsWrapperCache::GetWrapperPreserveColor;
@@ -489,7 +489,7 @@ void TableRowsCollection::ContentRemoved(nsIContent* aChild,
   }
 }
 
-void TableRowsCollection::NodeWillBeDestroyed(const nsINode* aNode) {
+void TableRowsCollection::NodeWillBeDestroyed(nsINode* aNode) {
   // Set mInitialized to false so CleanUp doesn't try to remove our mutation
   // observer, as we're going away. CleanUp() will reset mInitialized to true as
   // it returns.

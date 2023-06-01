@@ -10,8 +10,7 @@ function typingModule(types, castToTypeIndex, brParams, blockResults) {
       (; push params onto the stack in the same order as they appear, leaving
          the last param at the top of the stack. ;)
       ${brParams.map((_, i) => `local.get ${i}`).join('\n')}
-      rtt.canon ${castToTypeIndex}
-      br_on_cast 0
+      br_on_cast 0 ${castToTypeIndex}
       unreachable
     )
   )`;
@@ -53,23 +52,20 @@ invalidTyping('(type $a (struct))', '$a', ['i32', 'f32', 'eqref'], ['f32', 'i32'
 {
   let { makeA, makeB, isA, isB } = wasmEvalText(`(module
     (type $a (struct))
-    (type $b (struct (field i32)))
+    (sub $a (type $b (struct (field i32))))
 
     (func (export "makeA") (result eqref)
-      rtt.canon $a
-      struct.new_default_with_rtt $a
+      struct.new_default $a
     )
 
     (func (export "makeB") (result eqref)
-      rtt.canon $b
-      struct.new_default_with_rtt $b
+      struct.new_default $b
     )
 
     (func (export "isA") (param eqref) (result i32)
       (block (result (ref $a))
         local.get 0
-        rtt.canon $a
-        br_on_cast 0
+        br_on_cast 0 $a
 
         i32.const 0
         br 1
@@ -81,8 +77,7 @@ invalidTyping('(type $a (struct))', '$a', ['i32', 'f32', 'eqref'], ['f32', 'i32'
     (func (export "isB") (param eqref) (result i32)
       (block (result (ref $a))
         local.get 0
-        rtt.canon $b
-        br_on_cast 0
+        br_on_cast 0 $b
 
         i32.const 0
         br 1
@@ -96,7 +91,7 @@ invalidTyping('(type $a (struct))', '$a', ['i32', 'f32', 'eqref'], ['f32', 'i32'
   let b = makeB();
 
   assertEq(isA(a), 1);
-  assertEq(isA(b), 0);
+  assertEq(isA(b), 1);
   assertEq(isB(a), 0);
   assertEq(isB(b), 1);
 }
@@ -128,19 +123,16 @@ invalidTyping('(type $a (struct))', '$a', ['i32', 'f32', 'eqref'], ['f32', 'i32'
       (type $f (struct (field i32)))
 
       (func (export "makeT") (result eqref)
-        rtt.canon $t
-        struct.new_default_with_rtt $t
+        struct.new_default $t
       )
       (func (export "makeF") (result eqref)
-        rtt.canon $f
-        struct.new_default_with_rtt $f
+        struct.new_default $f
       )
 
       (func (export "select") (param eqref) (result ${values.map((type) => type).join(" ")})
         (block (result (ref $t))
           local.get 0
-          rtt.canon $t
-          br_on_cast 0
+          br_on_cast 0 $t
 
           ${values.map((type, i) => `${type}.const ${values.length + i}`).join("\n")}
           br 1
@@ -171,4 +163,23 @@ invalidTyping('(type $a (struct))', '$a', ['i32', 'f32', 'eqref'], ['f32', 'i32'
   // random sundry of valtypes
   testExtra(['i32', 'f32', 'i64', 'f64']);
   testExtra(['i32', 'f32', 'i64', 'f64', 'i32', 'f32', 'i64', 'f64']);
+}
+
+// This test causes the `values` vector returned by
+// `OpIter<Policy>::readBrOnCast` to contain three entries, the last of which
+// is the argument, hence is reftyped.  This is used to verify an assertion to
+// that effect in FunctionCompiler::brOnCastCommon.
+{
+    let tOnCast =
+    `(module
+       (type $a (struct))
+       (func (export "onCast") (param f32 i32 eqref) (result f32 i32 (ref $a))
+         local.get 0
+         local.get 1
+         local.get 2
+         br_on_cast 0 $a
+         unreachable
+       )
+     )`;
+    let { onCast } = wasmEvalText(tOnCast).exports;
 }

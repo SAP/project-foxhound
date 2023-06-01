@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { BookmarkJSONUtils } = ChromeUtils.import(
-  "resource://gre/modules/BookmarkJSONUtils.jsm"
+const { BookmarkJSONUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/BookmarkJSONUtils.sys.mjs"
 );
 
 // An object representing the contents of bookmarks.json.
@@ -150,7 +150,7 @@ add_task(async function test_import_bookmarks_disallowed_url() {
 });
 
 add_task(async function test_import_bookmarks() {
-  let bookmarksFile = OS.Path.join(do_get_cwd().path, "bookmarks.json");
+  let bookmarksFile = PathUtils.join(do_get_cwd().path, "bookmarks.json");
 
   await BookmarkJSONUtils.importFromFile(bookmarksFile, { replace: true });
   await PlacesTestUtils.promiseAsyncUpdates();
@@ -158,8 +158,8 @@ add_task(async function test_import_bookmarks() {
 });
 
 add_task(async function test_export_bookmarks() {
-  bookmarksExportedFile = OS.Path.join(
-    OS.Constants.Path.profileDir,
+  bookmarksExportedFile = PathUtils.join(
+    PathUtils.profileDir,
     "bookmarks.exported.json"
   );
   await BookmarkJSONUtils.exportToFile(bookmarksExportedFile);
@@ -183,6 +183,41 @@ add_task(async function test_import_ontop() {
   await PlacesTestUtils.promiseAsyncUpdates();
   await BookmarkJSONUtils.exportToFile(bookmarksExportedFile);
   await PlacesTestUtils.promiseAsyncUpdates();
+  await BookmarkJSONUtils.importFromFile(bookmarksExportedFile, {
+    replace: true,
+  });
+  await PlacesTestUtils.promiseAsyncUpdates();
+  await testImportedBookmarks();
+});
+
+add_task(async function test_import_iconuri() {
+  await PlacesUtils.bookmarks.eraseEverything();
+  await PlacesUtils.history.clear();
+
+  let bookmarksFile = PathUtils.join(
+    do_get_cwd().path,
+    "bookmarks_iconuri.json"
+  );
+
+  await BookmarkJSONUtils.importFromFile(bookmarksFile, {
+    replace: true,
+  });
+  await PlacesTestUtils.promiseAsyncUpdates();
+  await testImportedBookmarks();
+});
+
+add_task(async function test_export_bookmarks_with_iconuri() {
+  bookmarksExportedFile = PathUtils.join(
+    PathUtils.profileDir,
+    "bookmarks.exported.json"
+  );
+  await BookmarkJSONUtils.exportToFile(bookmarksExportedFile);
+  await PlacesTestUtils.promiseAsyncUpdates();
+});
+
+add_task(async function test_import_exported_bookmarks_with_iconuri() {
+  await PlacesUtils.bookmarks.eraseEverything();
+  await PlacesUtils.history.clear();
   await BookmarkJSONUtils.importFromFile(bookmarksExportedFile, {
     replace: true,
   });

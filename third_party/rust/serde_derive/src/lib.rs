@@ -13,7 +13,7 @@
 //!
 //! [https://serde.rs/derive.html]: https://serde.rs/derive.html
 
-#![doc(html_root_url = "https://docs.rs/serde_derive/1.0.133")]
+#![doc(html_root_url = "https://docs.rs/serde_derive/1.0.152")]
 #![allow(unknown_lints, bare_trait_objects)]
 // Ignored clippy lints
 #![allow(
@@ -22,6 +22,7 @@
     clippy::cognitive_complexity,
     // clippy bug: https://github.com/rust-lang/rust-clippy/issues/7575
     clippy::collapsible_match,
+    clippy::derive_partial_eq_without_eq,
     clippy::enum_variant_names,
     // clippy bug: https://github.com/rust-lang/rust-clippy/issues/6797
     clippy::manual_map,
@@ -42,7 +43,6 @@
     clippy::enum_glob_use,
     clippy::indexing_slicing,
     clippy::items_after_statements,
-    clippy::let_underscore_drop,
     clippy::manual_assert,
     clippy::map_err_ignore,
     clippy::match_same_arms,
@@ -60,6 +60,7 @@
     clippy::use_self,
     clippy::wildcard_imports
 )]
+#![cfg_attr(all(test, exhaustive), feature(non_exhaustive_omitted_patterns_lint))]
 
 #[macro_use]
 extern crate quote;
@@ -83,6 +84,7 @@ mod de;
 mod dummy;
 mod pretend;
 mod ser;
+mod this;
 mod try;
 
 #[proc_macro_derive(Serialize, attributes(serde))]

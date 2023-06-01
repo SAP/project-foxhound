@@ -19,6 +19,9 @@
 #ifdef OS_LINUX
 #  include "linux_memfd_defs.h"
 #endif
+#ifdef MOZ_WIDGET_GTK
+#  include "mozilla/WidgetUtilsGtk.h"
+#endif
 
 #ifdef __FreeBSD__
 #  include <sys/capsicum.h>
@@ -33,9 +36,9 @@
 #include "base/string_util.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/ProfilerThreadSleep.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "prenv.h"
-#include "GeckoProfiler.h"
 
 namespace base {
 
@@ -78,6 +81,13 @@ bool SharedMemory::IsHandleValid(const SharedMemoryHandle& handle) {
 // static
 SharedMemoryHandle SharedMemory::NULLHandle() { return nullptr; }
 
+// static
+bool SharedMemory::UsingPosixShm() {
+  // Undocumented feature of AppendPosixShmPrefix to reduce code
+  // duplication: if the string pointer is null, it's ignored.
+  return AppendPosixShmPrefix(nullptr, 0);
+}
+
 #ifdef ANDROID
 
 // Android has its own shared memory API, ashmem.  It doesn't support
@@ -85,6 +95,7 @@ SharedMemoryHandle SharedMemory::NULLHandle() { return nullptr; }
 // because its SELinux policy prevents the procfs operations we'd use
 // (see bug 1670277 for more details).
 
+// static
 bool SharedMemory::AppendPosixShmPrefix(std::string* str, pid_t pid) {
   return false;
 }
@@ -259,23 +270,18 @@ bool SharedMemory::AppendPosixShmPrefix(std::string* str, pid_t pid) {
   if (HaveMemfd()) {
     return false;
   }
+  // See also UsingPosixShm().
+  if (!str) {
+    return true;
+  }
   *str += '/';
-#  ifdef OS_LINUX
+#  ifdef MOZ_WIDGET_GTK
   // The Snap package environment doesn't provide a private /dev/shm
   // (it's used for communication with services like PulseAudio);
   // instead AppArmor is used to restrict access to it.  Anything with
   // this prefix is allowed:
-  static const char* const kSnap = [] {
-    auto instanceName = PR_GetEnv("SNAP_INSTANCE_NAME");
-    if (instanceName != nullptr) {
-      return instanceName;
-    }
-    // Compatibility for snapd <= 2.35:
-    return PR_GetEnv("SNAP_NAME");
-  }();
-
-  if (kSnap) {
-    StringAppendF(str, "snap.%s.", kSnap);
+  if (const char* snap = mozilla::widget::GetSnapInstanceName()) {
+    StringAppendF(str, "snap.%s.", snap);
   }
 #  endif  // OS_LINUX
   // Hopefully the "implementation defined" name length limit is long

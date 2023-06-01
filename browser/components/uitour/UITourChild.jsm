@@ -4,8 +4,6 @@
 
 var EXPORTED_SYMBOLS = ["UITourChild"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 const PREF_TEST_WHITELIST = "browser.uitour.testingOrigins";
 const UITOUR_PERMISSION = "uitour";
 
@@ -43,7 +41,7 @@ class UITourChild extends JSWindowActorChild {
           return true;
         }
       } catch (ex) {
-        Cu.reportError(ex);
+        console.error(ex);
       }
     }
     return false;

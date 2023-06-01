@@ -1,6 +1,7 @@
 "use strict";
 
 const PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com/browser/browser/base/content/test/general/page_style_sample.html";
 
 /**
@@ -14,7 +15,7 @@ add_task(async function() {
     false
   );
   let browser = tab.linkedBrowser;
-  BrowserTestUtils.loadURI(browser, PAGE);
+  BrowserTestUtils.loadURIString(browser, PAGE);
   await promiseStylesheetsLoaded(tab, 18);
 
   let menupopup = document.getElementById("pageStyleMenu").menupopup;
@@ -31,7 +32,7 @@ add_task(async function() {
 
   // Now select stylesheet "1"
   let target = menupopup.querySelector("menuitem[label='1']");
-  target.click();
+  target.doCommand();
 
   gPageStyleMenu.fillPopup(menupopup);
   // gPageStyleMenu empties out the menu between opens, so we need

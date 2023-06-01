@@ -4,8 +4,10 @@
 
 "use strict";
 
-const AutocompletePopup = require("devtools/client/shared/autocomplete-popup");
-const { InplaceEditor } = require("devtools/client/shared/inplace-editor");
+const AutocompletePopup = require("resource://devtools/client/shared/autocomplete-popup.js");
+const {
+  InplaceEditor,
+} = require("resource://devtools/client/shared/inplace-editor.js");
 loadHelperScript("helper_inplace_editor.js");
 
 const TEST_URI =
@@ -70,7 +72,7 @@ add_task(async function() {
         start: runAutocompletionTest,
         contentType: InplaceEditor.CONTENT_TYPES.CSS_MIXED,
         done: resolve,
-        popup: popup,
+        popup,
       },
       doc
     );

@@ -5,27 +5,31 @@
 
 var EXPORTED_SYMBOLS = ["CustomizableUI"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AddonManagerPrivate: "resource://gre/modules/AddonManager.jsm",
   SearchWidgetTracker: "resource:///modules/SearchWidgetTracker.jsm",
   CustomizableWidgets: "resource:///modules/CustomizableWidgets.jsm",
   PanelMultiView: "resource:///modules/PanelMultiView.jsm",
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
-  ShortcutUtils: "resource://gre/modules/ShortcutUtils.jsm",
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.jsm",
   HomePage: "resource:///modules/HomePage.jsm",
 });
 
-XPCOMUtils.defineLazyGetter(this, "gWidgetsBundle", function() {
+XPCOMUtils.defineLazyGetter(lazy, "gWidgetsBundle", function() {
   const kUrl =
     "chrome://browser/locale/customizableui/customizableWidgets.properties";
   return Services.strings.createBundle(kUrl);
@@ -63,7 +67,7 @@ const kSubviewEvents = ["ViewShowing", "ViewHiding"];
  * The current version. We can use this to auto-add new default widgets as necessary.
  * (would be const but isn't because of testing purposes)
  */
-var kVersion = 17;
+var kVersion = 19;
 
 /**
  * Buttons removed from built-ins by version they were removed. kVersion must be
@@ -180,35 +184,36 @@ var gUIStateBeforeReset = {
 };
 
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "gDebuggingEnabled",
   kPrefCustomizationDebug,
   false,
   (pref, oldVal, newVal) => {
-    if (typeof log != "undefined") {
-      log.maxLogLevel = newVal ? "all" : "log";
+    if (typeof lazy.log != "undefined") {
+      lazy.log.maxLogLevel = newVal ? "all" : "log";
     }
   }
 );
 
-XPCOMUtils.defineLazyGetter(this, "log", () => {
-  let scope = {};
-  ChromeUtils.import("resource://gre/modules/Console.jsm", scope);
+XPCOMUtils.defineLazyGetter(lazy, "log", () => {
+  let { ConsoleAPI } = ChromeUtils.importESModule(
+    "resource://gre/modules/Console.sys.mjs"
+  );
   let consoleOptions = {
-    maxLogLevel: gDebuggingEnabled ? "all" : "log",
+    maxLogLevel: lazy.gDebuggingEnabled ? "all" : "log",
     prefix: "CustomizableUI",
   };
-  return new scope.ConsoleAPI(consoleOptions);
+  return new ConsoleAPI(consoleOptions);
 });
 
 var CustomizableUIInternal = {
   initialize() {
-    log.debug("Initializing");
+    lazy.log.debug("Initializing");
 
-    AddonManagerPrivate.databaseReady.then(async () => {
-      AddonManager.addAddonListener(this);
+    lazy.AddonManagerPrivate.databaseReady.then(async () => {
+      lazy.AddonManager.addAddonListener(this);
 
-      let addons = await AddonManager.getAddonsByTypes(["theme"]);
+      let addons = await lazy.AddonManager.getAddonsByTypes(["theme"]);
       gDefaultTheme = addons.find(addon => addon.id == kDefaultThemeID);
       gSelectedTheme = addons.find(addon => addon.isActive) || gDefaultTheme;
     });
@@ -223,11 +228,21 @@ var CustomizableUIInternal = {
     this.registerArea(
       CustomizableUI.AREA_FIXED_OVERFLOW_PANEL,
       {
-        type: CustomizableUI.TYPE_MENU_PANEL,
+        type: CustomizableUI.TYPE_PANEL,
         defaultPlacements: [],
         anchor: "nav-bar-overflow-button",
       },
       true
+    );
+
+    this.registerArea(
+      CustomizableUI.AREA_ADDONS,
+      {
+        type: CustomizableUI.TYPE_PANEL,
+        defaultPlacements: [],
+        anchor: "unified-extensions-button",
+      },
+      false
     );
 
     let navbarPlacements = [
@@ -274,6 +289,7 @@ var CustomizableUIInternal = {
       {
         type: CustomizableUI.TYPE_TOOLBAR,
         defaultPlacements: [
+          "firefox-view-button",
           "tabbrowser-tabs",
           "new-tab-button",
           "alltabs-button",
@@ -292,7 +308,7 @@ var CustomizableUIInternal = {
       true
     );
 
-    SearchWidgetTracker.init();
+    lazy.SearchWidgetTracker.init();
 
     Services.obs.addObserver(this, "browser-set-toolbar-visibility");
   },
@@ -307,6 +323,7 @@ var CustomizableUIInternal = {
     return new Set([
       ...this._builtinToolbars,
       CustomizableUI.AREA_FIXED_OVERFLOW_PANEL,
+      CustomizableUI.AREA_ADDONS,
     ]);
   },
 
@@ -323,7 +340,7 @@ var CustomizableUIInternal = {
   },
 
   _defineBuiltInWidgets() {
-    for (let widgetDefinition of CustomizableWidgets) {
+    for (let widgetDefinition of lazy.CustomizableWidgets) {
       this.createBuiltinWidget(widgetDefinition);
     }
   },
@@ -375,9 +392,13 @@ var CustomizableUIInternal = {
       }
     }
 
+    // Nothing to migrate now if we don't have placements.
+    if (!gSavedState.placements) {
+      return;
+    }
+
     if (
       currentVersion < 7 &&
-      gSavedState.placements &&
       gSavedState.placements[CustomizableUI.AREA_NAVBAR]
     ) {
       let placements = gSavedState.placements[CustomizableUI.AREA_NAVBAR];
@@ -400,11 +421,7 @@ var CustomizableUIInternal = {
       gSavedState.placements[CustomizableUI.AREA_NAVBAR] = newPlacements;
     }
 
-    if (
-      currentVersion < 8 &&
-      gSavedState.placements &&
-      gSavedState.placements["PanelUI-contents"]
-    ) {
+    if (currentVersion < 8 && gSavedState.placements["PanelUI-contents"]) {
       let savedPanelPlacements = gSavedState.placements["PanelUI-contents"];
       delete gSavedState.placements["PanelUI-contents"];
       let defaultPlacements = [
@@ -418,6 +435,7 @@ var CustomizableUIInternal = {
         "fullscreen-button",
         "find-button",
         "preferences-button",
+        // This widget no longer exists as of 2023, see Bug 1799009.
         "add-ons-button",
         "sync-button",
       ];
@@ -445,11 +463,7 @@ var CustomizableUIInternal = {
       }
     }
 
-    if (
-      currentVersion < 9 &&
-      gSavedState.placements &&
-      gSavedState.placements["nav-bar"]
-    ) {
+    if (currentVersion < 9 && gSavedState.placements["nav-bar"]) {
       let placements = gSavedState.placements["nav-bar"];
       if (placements.includes("urlbar-container")) {
         let urlbarIndex = placements.indexOf("urlbar-container");
@@ -491,7 +505,7 @@ var CustomizableUIInternal = {
       }
     }
 
-    if (currentVersion < 10 && gSavedState.placements) {
+    if (currentVersion < 10) {
       for (let placements of Object.values(gSavedState.placements)) {
         if (placements.includes("webcompat-reporter-button")) {
           placements.splice(placements.indexOf("webcompat-reporter-button"), 1);
@@ -502,7 +516,7 @@ var CustomizableUIInternal = {
 
     // Move the downloads button to the default position in the navbar if it's
     // not there already.
-    if (currentVersion < 11 && gSavedState.placements) {
+    if (currentVersion < 11) {
       let navbarPlacements = gSavedState.placements[CustomizableUI.AREA_NAVBAR];
       // First remove from wherever it currently lives, if anywhere:
       for (let placements of Object.values(gSavedState.placements)) {
@@ -534,7 +548,7 @@ var CustomizableUIInternal = {
       }
     }
 
-    if (currentVersion < 12 && gSavedState.placements) {
+    if (currentVersion < 12) {
       const removedButtons = [
         "loop-call-button",
         "loop-button-throttled",
@@ -552,7 +566,7 @@ var CustomizableUIInternal = {
 
     // Remove the old placements from the now-gone Nightly-only
     // "New non-e10s window" button.
-    if (currentVersion < 13 && gSavedState.placements) {
+    if (currentVersion < 13) {
       for (let placements of Object.values(gSavedState.placements)) {
         let buttonIndex = placements.indexOf("e10s-button");
         if (buttonIndex != -1) {
@@ -562,7 +576,7 @@ var CustomizableUIInternal = {
     }
 
     // Remove unsupported custom toolbar saved placements
-    if (currentVersion < 14 && gSavedState.placements) {
+    if (currentVersion < 14) {
       for (let area in gSavedState.placements) {
         if (!this._builtinAreas.has(area)) {
           delete gSavedState.placements[area];
@@ -571,7 +585,7 @@ var CustomizableUIInternal = {
     }
 
     // Add the FxA toolbar menu as the right most button item
-    if (currentVersion < 16 && gSavedState.placements) {
+    if (currentVersion < 16) {
       let navbarPlacements = gSavedState.placements[CustomizableUI.AREA_NAVBAR];
       // Place the menu item as the first item to the left of the hamburger menu
       if (navbarPlacements) {
@@ -580,7 +594,7 @@ var CustomizableUIInternal = {
     }
 
     // Add the save to Pocket button left of downloads button.
-    if (currentVersion < 17 && gSavedState.placements) {
+    if (currentVersion < 17) {
       let navbarPlacements = gSavedState.placements[CustomizableUI.AREA_NAVBAR];
       let persistedPageActionsPref = Services.prefs.getCharPref(
         "browser.pageActions.persistedActions",
@@ -605,6 +619,58 @@ var CustomizableUIInternal = {
         navbarPlacements.splice(newPosition, 0, "save-to-pocket-button");
       }
     }
+
+    // Add firefox-view if not present
+    if (currentVersion < 18) {
+      let tabstripPlacements =
+        gSavedState.placements[CustomizableUI.AREA_TABSTRIP];
+      if (
+        tabstripPlacements &&
+        !tabstripPlacements.includes("firefox-view-button")
+      ) {
+        tabstripPlacements.unshift("firefox-view-button");
+      }
+    }
+
+    // Unified Extensions addon button migration, which puts any browser action
+    // buttons in the overflow menu into the addons panel instead.
+    if (currentVersion < 19) {
+      let overflowPlacements =
+        gSavedState.placements[CustomizableUI.AREA_FIXED_OVERFLOW_PANEL] || [];
+      // The most likely case is that there are no AREA_ADDONS placements, in which case the
+      // array won't exist.
+      let addonsPlacements =
+        gSavedState.placements[CustomizableUI.AREA_ADDONS] || [];
+
+      // Migration algorithm for transitioning to Unified Extensions:
+      //
+      // 1. Create two arrays, one for extension widgets, one for built-in widgets.
+      // 2. Iterate all items in the overflow panel, and push them into the
+      //    appropriate array based on whether or not its an extension widget.
+      // 3. Overwrite the overflow panel placements with the built-in widgets array.
+      // 4. Prepend the extension widgets to the addonsPlacements array. Note that this
+      //    does not overwrite this array as a precaution because it's possible
+      //    (though pretty unlikely) that some widgets are already there.
+      //
+      // For extension widgets that were in the palette, they will be appended to the
+      // addons area when they're created within createWidget.
+      let extWidgets = [];
+      let builtInWidgets = [];
+      for (let widgetId of overflowPlacements) {
+        if (CustomizableUI.isWebExtensionWidget(widgetId)) {
+          extWidgets.push(widgetId);
+        } else {
+          builtInWidgets.push(widgetId);
+        }
+      }
+      gSavedState.placements[
+        CustomizableUI.AREA_FIXED_OVERFLOW_PANEL
+      ] = builtInWidgets;
+      gSavedState.placements[CustomizableUI.AREA_ADDONS] = [
+        ...extWidgets,
+        ...addonsPlacements,
+      ];
+    }
   },
 
   _updateForNewProtonVersion() {
@@ -627,7 +693,7 @@ var CustomizableUIInternal = {
 
     // Remove the home button if it hasn't been used and is set to about:home
     if (currentVersion < 1) {
-      let homePage = HomePage.get();
+      let homePage = lazy.HomePage.get();
       if (
         placements.includes("home-button") &&
         !Services.prefs.getBoolPref(kPrefHomeButtonUsed) &&
@@ -835,10 +901,7 @@ var CustomizableUIInternal = {
       throw new Error("defaultCollapsed only applies for TYPE_TOOLBAR areas.");
     }
     // Sanity check type:
-    let allTypes = [
-      CustomizableUI.TYPE_TOOLBAR,
-      CustomizableUI.TYPE_MENU_PANEL,
-    ];
+    let allTypes = [CustomizableUI.TYPE_TOOLBAR, CustomizableUI.TYPE_PANEL];
     if (!allTypes.includes(props.get("type"))) {
       throw new Error("Invalid area type " + props.get("type"));
     }
@@ -979,7 +1042,13 @@ var CustomizableUIInternal = {
       //
       // This notion of being "dirty" is stored in a cache which is persisted
       // in the saved state.
-      if (gDirtyAreaCache.has(area)) {
+      //
+      // Secondly, if the list of placements contains an API-provided widget,
+      // we need to call `buildArea` or it won't be built and put in the toolbar.
+      if (
+        gDirtyAreaCache.has(area) ||
+        placements.some(id => gPalette.has(id))
+      ) {
         this.buildArea(area, placements, aToolbar);
       } else {
         // We must have a builtin toolbar that's in the default state. We need
@@ -1018,10 +1087,10 @@ var CustomizableUIInternal = {
   buildArea(aArea, aPlacements, aAreaNode) {
     let document = aAreaNode.ownerDocument;
     let window = document.defaultView;
-    let inPrivateWindow = PrivateBrowsingUtils.isWindowPrivate(window);
+    let inPrivateWindow = lazy.PrivateBrowsingUtils.isWindowPrivate(window);
     let container = this.getCustomizationTarget(aAreaNode);
     let areaIsPanel =
-      gAreas.get(aArea).get("type") == CustomizableUI.TYPE_MENU_PANEL;
+      gAreas.get(aArea).get("type") == CustomizableUI.TYPE_PANEL;
 
     if (!container) {
       throw new Error(
@@ -1068,7 +1137,7 @@ var CustomizableUIInternal = {
 
         let [provider, node] = this.getWidgetNode(id, window);
         if (!node) {
-          log.debug("Unknown widget: " + id);
+          lazy.log.debug("Unknown widget: " + id);
           continue;
         }
 
@@ -1132,15 +1201,17 @@ var CustomizableUIInternal = {
                   widget.currentArea = null;
                 }
               }
-              if (palette && !this.isSpecialWidget(node.id)) {
-                palette.appendChild(node);
-                this.removeLocationAttributes(node);
-              } else {
-                container.removeChild(node);
-              }
+              this.notifyDOMChange(node, null, container, true, () => {
+                if (palette && !this.isSpecialWidget(node.id)) {
+                  palette.appendChild(node);
+                  this.removeLocationAttributes(node);
+                } else {
+                  container.removeChild(node);
+                }
+              });
             } else {
               node.setAttribute("removable", false);
-              log.debug(
+              lazy.log.debug(
                 "Adding non-removable widget to placements of " +
                   aArea +
                   ": " +
@@ -1198,10 +1269,20 @@ var CustomizableUIInternal = {
 
     let currentContextMenu =
       aNode.getAttribute("context") || aNode.getAttribute("contextmenu");
-    let contextMenuForPlace =
-      forcePanel || "menu-panel" == CustomizableUI.getPlaceForItem(aAreaNode)
-        ? kPanelItemContextMenu
-        : null;
+    let contextMenuForPlace;
+
+    if (
+      CustomizableUI.isWebExtensionWidget(aNode.id) &&
+      (aAreaNode?.id == CustomizableUI.AREA_ADDONS ||
+        aNode.getAttribute("overflowedItem") == "true")
+    ) {
+      contextMenuForPlace = null;
+    } else {
+      contextMenuForPlace =
+        forcePanel || "panel" == CustomizableUI.getPlaceForItem(aAreaNode)
+          ? kPanelItemContextMenu
+          : null;
+    }
     if (contextMenuForPlace && !currentContextMenu) {
       aNode.setAttribute("context", contextMenuForPlace);
     } else if (
@@ -1247,7 +1328,7 @@ var CustomizableUIInternal = {
     if (widget) {
       // If we have an instance of this widget already, just use that.
       if (widget.instances.has(document)) {
-        log.debug(
+        lazy.log.debug(
           "An instance of widget " +
             aWidgetId +
             " already exists in this " +
@@ -1259,39 +1340,39 @@ var CustomizableUIInternal = {
       return [CustomizableUI.PROVIDER_API, this.buildWidget(document, widget)];
     }
 
-    log.debug("Searching for " + aWidgetId + " in toolbox.");
+    lazy.log.debug("Searching for " + aWidgetId + " in toolbox.");
     let node = this.findWidgetInWindow(aWidgetId, aWindow);
     if (node) {
       return [CustomizableUI.PROVIDER_XUL, node];
     }
 
-    log.debug("No node for " + aWidgetId + " found.");
+    lazy.log.debug("No node for " + aWidgetId + " found.");
     return [null, null];
   },
 
-  registerMenuPanel(aPanelContents, aArea) {
-    if (gBuildAreas.has(aArea) && gBuildAreas.get(aArea).has(aPanelContents)) {
+  registerPanelNode(aNode, aArea) {
+    if (gBuildAreas.has(aArea) && gBuildAreas.get(aArea).has(aNode)) {
       return;
     }
 
-    aPanelContents._customizationTarget = aPanelContents;
-    this.addPanelCloseListeners(this._getPanelForNode(aPanelContents));
+    aNode._customizationTarget = aNode;
+    this.addPanelCloseListeners(this._getPanelForNode(aNode));
 
     let placements = gPlacements.get(aArea);
-    this.buildArea(aArea, placements, aPanelContents);
-    this.notifyListeners("onAreaNodeRegistered", aArea, aPanelContents);
+    this.buildArea(aArea, placements, aNode);
+    this.notifyListeners("onAreaNodeRegistered", aArea, aNode);
 
-    for (let child of aPanelContents.children) {
+    for (let child of aNode.children) {
       if (child.localName != "toolbarbutton") {
         if (child.localName == "toolbaritem") {
-          this.ensureButtonContextMenu(child, aPanelContents, true);
+          this.ensureButtonContextMenu(child, aNode, true);
         }
         continue;
       }
-      this.ensureButtonContextMenu(child, aPanelContents, true);
+      this.ensureButtonContextMenu(child, aNode, true);
     }
 
-    this.registerBuildArea(aArea, aPanelContents);
+    this.registerBuildArea(aArea, aNode);
   },
 
   onWidgetAdded(aWidgetId, aArea, aPosition) {
@@ -1319,7 +1400,7 @@ var CustomizableUIInternal = {
       let window = areaNode.ownerGlobal;
       if (
         !showInPrivateBrowsing &&
-        PrivateBrowsingUtils.isWindowPrivate(window)
+        lazy.PrivateBrowsingUtils.isWindowPrivate(window)
       ) {
         continue;
       }
@@ -1331,37 +1412,24 @@ var CustomizableUIInternal = {
       }
 
       if (!widgetNode || !container.contains(widgetNode)) {
-        log.info(
+        lazy.log.info(
           "Widget " + aWidgetId + " not found, unable to remove from " + aArea
         );
         continue;
       }
 
-      this.notifyListeners(
-        "onWidgetBeforeDOMChange",
-        widgetNode,
-        null,
-        container,
-        true
-      );
-
-      // We remove location attributes here to make sure they're gone too when a
-      // widget is removed from a toolbar to the palette. See bug 930950.
-      this.removeLocationAttributes(widgetNode);
-      // We also need to remove the panel context menu if it's there:
-      this.ensureButtonContextMenu(widgetNode);
-      if (gPalette.has(aWidgetId) || this.isSpecialWidget(aWidgetId)) {
-        container.removeChild(widgetNode);
-      } else {
-        window.gNavToolbox.palette.appendChild(widgetNode);
-      }
-      this.notifyListeners(
-        "onWidgetAfterDOMChange",
-        widgetNode,
-        null,
-        container,
-        true
-      );
+      this.notifyDOMChange(widgetNode, null, container, true, () => {
+        // We remove location attributes here to make sure they're gone too when a
+        // widget is removed from a toolbar to the palette. See bug 930950.
+        this.removeLocationAttributes(widgetNode);
+        // We also need to remove the panel context menu if it's there:
+        this.ensureButtonContextMenu(widgetNode);
+        if (gPalette.has(aWidgetId) || this.isSpecialWidget(aWidgetId)) {
+          container.removeChild(widgetNode);
+        } else {
+          window.gNavToolbox.palette.appendChild(widgetNode);
+        }
+      });
 
       let windowCache = gSingleWrapperCache.get(window);
       if (windowCache) {
@@ -1496,7 +1564,7 @@ var CustomizableUIInternal = {
 
     let placements = gPlacements.get(aArea);
     if (!placements) {
-      log.error(
+      lazy.log.error(
         "Could not find any placements for " + aArea + " when moving a widget."
       );
       return;
@@ -1517,14 +1585,14 @@ var CustomizableUIInternal = {
 
     if (
       !showInPrivateBrowsing &&
-      PrivateBrowsingUtils.isWindowPrivate(window)
+      lazy.PrivateBrowsingUtils.isWindowPrivate(window)
     ) {
       return;
     }
 
     let [, widgetNode] = this.getWidgetNode(aWidgetId, window);
     if (!widgetNode) {
-      log.error("Widget '" + aWidgetId + "' not found, unable to move");
+      lazy.log.error("Widget '" + aWidgetId + "' not found, unable to move");
       return;
     }
 
@@ -1581,19 +1649,27 @@ var CustomizableUIInternal = {
   },
 
   insertWidgetBefore(aNode, aNextNode, aContainer, aArea) {
+    this.notifyDOMChange(aNode, aNextNode, aContainer, false, () => {
+      this.setLocationAttributes(aNode, aArea);
+      aContainer.insertBefore(aNode, aNextNode);
+    });
+  },
+
+  notifyDOMChange(aNode, aNextNode, aContainer, aIsRemove, aCallback) {
     this.notifyListeners(
       "onWidgetBeforeDOMChange",
       aNode,
       aNextNode,
-      aContainer
+      aContainer,
+      aIsRemove
     );
-    this.setLocationAttributes(aNode, aArea);
-    aContainer.insertBefore(aNode, aNextNode);
+    aCallback();
     this.notifyListeners(
       "onWidgetAfterDOMChange",
       aNode,
       aNextNode,
-      aContainer
+      aContainer,
+      aIsRemove
     );
   },
 
@@ -1691,7 +1767,7 @@ var CustomizableUIInternal = {
     }
 
     if (!aId) {
-      log.error("findWidgetInWindow was passed an empty string.");
+      lazy.log.error("findWidgetInWindow was passed an empty string.");
       return null;
     }
 
@@ -1771,38 +1847,59 @@ var CustomizableUIInternal = {
     }
     if (
       !aWidget.showInPrivateBrowsing &&
-      PrivateBrowsingUtils.isWindowPrivate(aDocument.defaultView)
+      lazy.PrivateBrowsingUtils.isWindowPrivate(aDocument.defaultView)
     ) {
       return null;
     }
 
-    log.debug("Building " + aWidget.id + " of type " + aWidget.type);
+    lazy.log.debug("Building " + aWidget.id + " of type " + aWidget.type);
 
     let node;
+    let button;
     if (aWidget.type == "custom") {
       if (aWidget.onBuild) {
         node = aWidget.onBuild(aDocument);
       }
-      if (!node || !(node instanceof aDocument.defaultView.XULElement)) {
-        log.error(
+      if (
+        !node ||
+        !aDocument.defaultView.XULElement.isInstance(node) ||
+        (aWidget.viewId && !node.viewButton)
+      ) {
+        lazy.log.error(
           "Custom widget with id " +
             aWidget.id +
             " does not return a valid node"
         );
       }
-    } else {
-      if (aWidget.onBeforeCreated) {
-        aWidget.onBeforeCreated(aDocument);
+      // A custom widget can define a viewId for the panel and a viewButton
+      // property for the panel anchor.  With that, it will be treated as a view
+      // type where necessary to hook up the view panel.
+      if (aWidget.viewId) {
+        button = node.viewButton;
+      }
+    }
+    // Button and view widget types, plus custom widgets that have a viewId and thus a button.
+    if (button || aWidget.type != "custom") {
+      if (
+        aWidget.onBeforeCreated &&
+        aWidget.onBeforeCreated(aDocument) === false
+      ) {
+        return null;
       }
 
-      let button = aDocument.createXULElement("toolbarbutton");
+      if (!button) {
+        button = aDocument.createXULElement("toolbarbutton");
+        node = button;
+      }
       button.classList.add("toolbarbutton-1");
+      button.setAttribute("delegatesanchor", "true");
 
       let viewbutton = null;
       if (aWidget.type == "button-and-view") {
         button.setAttribute("id", aWidget.id + "-button");
         let dropmarker = aDocument.createXULElement("toolbarbutton");
         dropmarker.setAttribute("id", aWidget.id + "-dropmarker");
+        dropmarker.setAttribute("delegatesanchor", "true");
         dropmarker.classList.add(
           "toolbarbutton-1",
           "toolbarbutton-combined-buttons-dropmarker"
@@ -1811,11 +1908,9 @@ var CustomizableUIInternal = {
         node.classList.add("toolbaritem-combined-buttons");
         node.append(button, dropmarker);
         viewbutton = dropmarker;
-      } else {
-        node = button;
-        if (aWidget.type == "view") {
-          viewbutton = button;
-        }
+      } else if (aWidget.viewId) {
+        // Also set viewbutton for anything with a view
+        viewbutton = button;
       }
 
       node.setAttribute("id", aWidget.id);
@@ -1843,9 +1938,9 @@ var CustomizableUIInternal = {
       if (aWidget.shortcutId) {
         let keyEl = aDocument.getElementById(aWidget.shortcutId);
         if (keyEl) {
-          shortcut = ShortcutUtils.prettifyShortcut(keyEl);
+          shortcut = lazy.ShortcutUtils.prettifyShortcut(keyEl);
         } else {
-          log.error(
+          lazy.log.error(
             "Key element with id '" +
               aWidget.shortcutId +
               "' for widget '" +
@@ -1907,7 +2002,7 @@ var CustomizableUIInternal = {
       // opening a view with the mouse. (When opened with the keyboard, the
       // first item in the view should be focused after opening.)
       if (viewbutton) {
-        log.debug(
+        lazy.log.debug(
           "Widget " +
             aWidget.id +
             " has a view. Auto-registering event handlers."
@@ -1916,13 +2011,6 @@ var CustomizableUIInternal = {
         if (aWidget.source == CustomizableUI.SOURCE_BUILTIN) {
           node.classList.add("subviewbutton-nav");
         }
-
-        let keyPressHandler = this.handleWidgetKeyPress.bind(
-          this,
-          aWidget,
-          node
-        );
-        viewbutton.addEventListener("keypress", keyPressHandler);
       }
 
       if (aWidget.onCreated) {
@@ -1950,7 +2038,7 @@ var CustomizableUIInternal = {
       }
     }
     viewNode._addedEventListeners = true;
-    log.debug(
+    lazy.log.debug(
       "Widget " + widget.id + " showing and hiding event handlers set."
     );
   },
@@ -1985,14 +2073,16 @@ var CustomizableUIInternal = {
     }
     try {
       if (Array.isArray(aFormatArgs) && aFormatArgs.length) {
-        return gWidgetsBundle.formatStringFromName(name, aFormatArgs) || def;
+        return (
+          lazy.gWidgetsBundle.formatStringFromName(name, aFormatArgs) || def
+        );
       }
-      return gWidgetsBundle.GetStringFromName(name) || def;
+      return lazy.gWidgetsBundle.GetStringFromName(name) || def;
     } catch (ex) {
       // If an empty string was explicitly passed, treat it as an actual
       // value rather than a missing property.
       if (!def && (name != "" || kReqStringProps.includes(aProp))) {
-        log.error("Could not localize property '" + name + "'.");
+        lazy.log.error("Could not localize property '" + name + "'.");
       }
     }
     return def;
@@ -2014,7 +2104,7 @@ var CustomizableUIInternal = {
     } else {
       let commandId = aShortcutNode.getAttribute("command");
       if (commandId) {
-        shortcut = ShortcutUtils.findShortcut(
+        shortcut = lazy.ShortcutUtils.findShortcut(
           document.getElementById(commandId)
         );
       }
@@ -2025,7 +2115,7 @@ var CustomizableUIInternal = {
 
     aTargetNode.setAttribute(
       "shortcut",
-      ShortcutUtils.prettifyShortcut(shortcut)
+      lazy.ShortcutUtils.prettifyShortcut(shortcut)
     );
   },
 
@@ -2034,7 +2124,7 @@ var CustomizableUIInternal = {
       try {
         aWidget.onCommand.call(null, aEvent);
       } catch (e) {
-        log.error(e);
+        lazy.log.error(e);
       }
     } else {
       // XXXunf Need to think this through more, and formalize.
@@ -2051,34 +2141,46 @@ var CustomizableUIInternal = {
     let area = this.getPlacementOfWidget(aNode.id).area;
     let areaType = CustomizableUI.getAreaType(area);
     let anchor = aNode;
-    if (areaType != CustomizableUI.TYPE_MENU_PANEL) {
+
+    if (
+      aWidget.disallowSubView &&
+      (areaType == CustomizableUI.TYPE_PANEL ||
+        aNode.hasAttribute("overflowedItem"))
+    ) {
+      // Close the containing panel (e.g. overflow), PanelUI will reopen.
+      let wrapper = this.wrapWidget(aWidget.id).forWindow(ownerWindow);
+      if (wrapper?.anchor) {
+        this.hidePanelForNode(aNode);
+        anchor = wrapper.anchor;
+      }
+    } else if (areaType != CustomizableUI.TYPE_PANEL) {
       let wrapper = this.wrapWidget(aWidget.id).forWindow(ownerWindow);
 
       let hasMultiView = !!aNode.closest("panelmultiview");
-      if (wrapper && !hasMultiView && wrapper.anchor) {
+      if (!hasMultiView && wrapper?.anchor) {
         this.hidePanelForNode(aNode);
         anchor = wrapper.anchor;
       }
     }
-
     ownerWindow.PanelUI.showSubView(aWidget.viewId, anchor, aEvent);
   },
 
   handleWidgetCommand(aWidget, aNode, aEvent) {
     // Note that aEvent can be a keypress event for widgets of type "view".
-    log.debug("handleWidgetCommand");
+    lazy.log.debug("handleWidgetCommand");
 
+    let action;
     if (aWidget.onBeforeCommand) {
       try {
-        aWidget.onBeforeCommand.call(null, aEvent);
+        action = aWidget.onBeforeCommand.call(null, aEvent, aNode);
       } catch (e) {
-        log.error(e);
+        lazy.log.error(e);
       }
     }
 
-    if (aWidget.type == "button") {
+    if (aWidget.type == "button" || action == "command") {
       this.doWidgetCommand(aWidget, aNode, aEvent);
-    } else if (aWidget.type == "view") {
+    } else if (aWidget.type == "view" || action == "view") {
       this.showWidgetView(aWidget, aNode, aEvent);
     } else if (aWidget.type == "button-and-view") {
       // Do the command if we're in the toolbar and the button was clicked.
@@ -2101,12 +2203,12 @@ var CustomizableUIInternal = {
   },
 
   handleWidgetClick(aWidget, aNode, aEvent) {
-    log.debug("handleWidgetClick");
+    lazy.log.debug("handleWidgetClick");
     if (aWidget.onClick) {
       try {
         aWidget.onClick.call(null, aEvent);
       } catch (e) {
-        Cu.reportError(e);
+        console.error(e);
       }
     } else {
       // XXXunf Need to think this through more, and formalize.
@@ -2116,15 +2218,6 @@ var CustomizableUIInternal = {
         aWidget.id
       );
     }
-  },
-
-  handleWidgetKeyPress(aWidget, aNode, aEvent) {
-    if (aEvent.key != " " && aEvent.key != "Enter") {
-      return;
-    }
-    aEvent.stopPropagation();
-    aEvent.preventDefault();
-    this.handleWidgetCommand(aWidget, aNode, aEvent);
   },
 
   _getPanelForNode(aNode) {
@@ -2199,7 +2292,7 @@ var CustomizableUIInternal = {
   hidePanelForNode(aNode) {
     let panel = this._getPanelForNode(aNode);
     if (panel) {
-      PanelMultiView.hidePopup(panel);
+      lazy.PanelMultiView.hidePopup(panel);
     }
   },
 
@@ -2209,18 +2302,13 @@ var CustomizableUIInternal = {
       return;
     }
 
-    // If the user hit enter/return, we don't check preventDefault - it makes sense
-    // that this was prevented, but we probably still want to close the panel.
-    // If consumers don't want this to happen, they should specify the closemenu
-    // attribute.
-    if (
-      eventType != "command" &&
-      eventType != "keypress" &&
-      (aEvent.defaultPrevented || aEvent.button != 0)
-    ) {
+    if (eventType == "click" && aEvent.button != 0) {
       return;
     }
 
+    // We don't check preventDefault - it makes sense that this was prevented,
+    // but we probably still want to close the panel. If consumers don't want
+    // this to happen, they should specify the closemenu attribute.
     if (eventType != "command" && this._isOnInteractiveElement(aEvent)) {
       return;
     }
@@ -2235,7 +2323,8 @@ var CustomizableUIInternal = {
       if (
         target.getAttribute("closemenu") == "none" ||
         target.getAttribute("widget-type") == "view" ||
-        target.getAttribute("widget-type") == "button-and-view"
+        target.getAttribute("widget-type") == "button-and-view" ||
+        target.hasAttribute("view-button-id")
       ) {
         return;
       }
@@ -2248,7 +2337,7 @@ var CustomizableUIInternal = {
 
   getUnusedWidgets(aWindowPalette) {
     let window = aWindowPalette.ownerGlobal;
-    let isWindowPrivate = PrivateBrowsingUtils.isWindowPrivate(window);
+    let isWindowPrivate = lazy.PrivateBrowsingUtils.isWindowPrivate(window);
     // We use a Set because there can be overlap between the widgets in
     // gPalette and the items in the palette, especially after the first
     // customization, since programmatically generated widgets will remain
@@ -2266,9 +2355,9 @@ var CustomizableUIInternal = {
       }
     }
 
-    log.debug("Iterating the actual nodes of the window palette");
+    lazy.log.debug("Iterating the actual nodes of the window palette");
     for (let node of aWindowPalette.children) {
-      log.debug("In palette children: " + node.id);
+      lazy.log.debug("In palette children: " + node.id);
       if (node.id && !this.getPlacementOfWidget(node.id)) {
         widgets.add(node.id);
       }
@@ -2313,6 +2402,12 @@ var CustomizableUIInternal = {
   },
 
   addWidgetToArea(aWidgetId, aArea, aPosition, aInitialAdd) {
+    if (aArea == CustomizableUI.AREA_NO_AREA) {
+      throw new Error(
+        "AREA_NO_AREA is only used as an argument for " +
+          "canWidgetMoveToArea. Use removeWidgetFromArea instead."
+      );
+    }
     if (!gAreas.has(aArea)) {
       throw new Error("Unknown customization area: " + aArea);
     }
@@ -2320,7 +2415,7 @@ var CustomizableUIInternal = {
     // Hack: don't want special widgets in the panel (need to check here as well
     // as in canWidgetMoveToArea because the menu panel is lazy):
     if (
-      gAreas.get(aArea).get("type") == CustomizableUI.TYPE_MENU_PANEL &&
+      gAreas.get(aArea).get("type") == CustomizableUI.TYPE_PANEL &&
       this.isSpecialWidget(aWidgetId)
     ) {
       return;
@@ -2469,7 +2564,7 @@ var CustomizableUIInternal = {
   loadSavedState() {
     let state = Services.prefs.getCharPref(kPrefCustomizationState, "");
     if (!state) {
-      log.debug("No saved state found");
+      lazy.log.debug("No saved state found");
       // Nothing has been customized, so silently fall back to the defaults.
       return;
     }
@@ -2481,7 +2576,7 @@ var CustomizableUIInternal = {
     } catch (e) {
       Services.prefs.clearUserPref(kPrefCustomizationState);
       gSavedState = {};
-      log.debug(
+      lazy.log.debug(
         "Error loading saved UI customization state, falling back to defaults."
       );
     }
@@ -2508,7 +2603,7 @@ var CustomizableUIInternal = {
 
       let restored = false;
       if (placementsPreexisted) {
-        log.debug("Restoring " + aArea + " from pre-existing placements");
+        lazy.log.debug("Restoring " + aArea + " from pre-existing placements");
         for (let [position, id] of gPlacements.get(aArea).entries()) {
           this.moveWidgetWithinArea(id, position);
         }
@@ -2519,7 +2614,7 @@ var CustomizableUIInternal = {
       }
 
       if (!restored && gSavedState && aArea in gSavedState.placements) {
-        log.debug("Restoring " + aArea + " from saved state");
+        lazy.log.debug("Restoring " + aArea + " from saved state");
         let placements = gSavedState.placements[aArea];
         for (let id of placements) {
           this.addWidgetToArea(id, aArea);
@@ -2529,7 +2624,7 @@ var CustomizableUIInternal = {
       }
 
       if (!restored) {
-        log.debug("Restoring " + aArea + " from default state");
+        lazy.log.debug("Restoring " + aArea + " from default state");
         let defaults = gAreas.get(aArea).get("defaultPlacements");
         if (defaults) {
           for (let id of defaults) {
@@ -2543,13 +2638,17 @@ var CustomizableUIInternal = {
       // to be restored. This can occur when add-ons register widgets for a
       // lazily-restored area before it's been restored.
       if (gFuturePlacements.has(aArea)) {
+        let areaPlacements = gPlacements.get(aArea);
         for (let id of gFuturePlacements.get(aArea)) {
+          if (areaPlacements.includes(id)) {
+            continue;
+          }
           this.addWidgetToArea(id, aArea);
         }
         gFuturePlacements.delete(aArea);
       }
 
-      log.debug(
+      lazy.log.debug(
         "Placements for " +
           aArea +
           ":\n\t" +
@@ -2587,9 +2686,9 @@ var CustomizableUIInternal = {
       }
     }
 
-    log.debug("Saving state.");
+    lazy.log.debug("Saving state.");
     let serialized = JSON.stringify(state, this.serializerHelper);
-    log.debug("State saved as: " + serialized);
+    lazy.log.debug("State saved as: " + serialized);
     Services.prefs.setCharPref(kPrefCustomizationState, serialized);
     gDirty = false;
   },
@@ -2651,7 +2750,7 @@ var CustomizableUIInternal = {
           listener[aEvent].apply(listener, aArgs);
         }
       } catch (e) {
-        log.error(e + " -- " + e.fileName + ":" + e.lineNumber);
+        lazy.log.error(e + " -- " + e.fileName + ":" + e.lineNumber);
       }
     }
   },
@@ -2682,7 +2781,7 @@ var CustomizableUIInternal = {
     );
     // XXXunf This should probably throw.
     if (!widget) {
-      log.error("unable to normalize widget");
+      lazy.log.error("unable to normalize widget");
       return undefined;
     }
 
@@ -2789,6 +2888,16 @@ var CustomizableUIInternal = {
             }
           }
         }
+
+        // Extension widgets cannot enter the customization palette, so if
+        // at this point, we haven't found an area for them, move them into
+        // AREA_ADDONS.
+        if (
+          !widget.currentArea &&
+          CustomizableUI.isWebExtensionWidget(widget.id)
+        ) {
+          this.addWidgetToArea(widget.id, CustomizableUI.AREA_ADDONS);
+        }
       }
     } finally {
       // Ensure we always have this widget in gSeenWidgets, and save
@@ -2820,11 +2929,11 @@ var CustomizableUIInternal = {
 
     let widget = this.normalizeWidget(aData, CustomizableUI.SOURCE_BUILTIN);
     if (!widget) {
-      log.error("Error creating builtin widget: " + aData.id);
+      lazy.log.error("Error creating builtin widget: " + aData.id);
       return;
     }
 
-    log.debug("Creating built-in widget with id: " + widget.id);
+    lazy.log.debug("Creating built-in widget with id: " + widget.id);
     gPalette.set(widget.id, widget);
 
     if (conditionalDestroyPromise) {
@@ -2836,7 +2945,7 @@ var CustomizableUIInternal = {
           }
         },
         err => {
-          Cu.reportError(err);
+          console.error(err);
         }
       );
     }
@@ -2869,10 +2978,12 @@ var CustomizableUIInternal = {
       showInPrivateBrowsing: true,
       _introducedInVersion: -1,
       keepBroadcastAttributesWhenCustomizing: false,
+      disallowSubView: false,
+      webExtension: false,
     };
 
     if (typeof aData.id != "string" || !/^[a-z0-9-_]{1,}$/i.test(aData.id)) {
-      log.error("Given an illegal id in normalizeWidget: " + aData.id);
+      lazy.log.error("Given an illegal id in normalizeWidget: " + aData.id);
       return null;
     }
 
@@ -2885,7 +2996,7 @@ var CustomizableUIInternal = {
     const kReqStringProps = ["id"];
     for (let prop of kReqStringProps) {
       if (typeof aData[prop] != "string") {
-        log.error(
+        lazy.log.error(
           "Missing required property '" +
             prop +
             "' in normalizeWidget: " +
@@ -2911,6 +3022,8 @@ var CustomizableUIInternal = {
       "locationSpecific",
       "localized",
       "keepBroadcastAttributesWhenCustomizing",
+      "disallowSubView",
+      "webExtension",
     ];
     for (let prop of kOptBoolProps) {
       if (typeof aData[prop] == "boolean") {
@@ -2926,7 +3039,7 @@ var CustomizableUIInternal = {
     ) {
       widget.defaultArea = aData.defaultArea;
     } else if (!widget.removable) {
-      log.error(
+      lazy.log.error(
         "Widget '" +
           widget.id +
           "' is not removable but does not specify " +
@@ -2957,13 +3070,16 @@ var CustomizableUIInternal = {
       widget.onBeforeCommand = aData.onBeforeCommand;
     }
 
-    if (widget.type == "button" || widget.type == "button-and-view") {
-      widget.onCommand =
-        typeof aData.onCommand == "function" ? aData.onCommand : null;
+    if (typeof aData.onCommand == "function") {
+      widget.onCommand = aData.onCommand;
     }
-    if (widget.type == "view" || widget.type == "button-and-view") {
+    if (
+      widget.type == "view" ||
+      widget.type == "button-and-view" ||
+      aData.viewId
+    ) {
       if (typeof aData.viewId != "string") {
-        log.error(
+        lazy.log.error(
           "Expected a string for widget " +
             widget.id +
             " viewId, but got " +
@@ -2975,7 +3091,8 @@ var CustomizableUIInternal = {
 
       this.wrapWidgetEventHandler("onViewShowing", widget);
       this.wrapWidgetEventHandler("onViewHiding", widget);
-    } else if (widget.type == "custom") {
+    }
+    if (widget.type == "custom") {
       this.wrapWidgetEventHandler("onBuild", widget);
     }
 
@@ -3002,7 +3119,7 @@ var CustomizableUIInternal = {
           aArgs
         );
       } catch (e) {
-        Cu.reportError(e);
+        console.error(e);
         return undefined;
       }
     };
@@ -3064,7 +3181,11 @@ var CustomizableUIInternal = {
           true
         );
       }
-      if (widget.type == "view" || widget.type == "button-and-view") {
+      if (
+        widget.type == "view" ||
+        widget.type == "button-and-view" ||
+        widget.viewId
+      ) {
         let viewNode = window.document.getElementById(widget.viewId);
         if (viewNode) {
           for (let eventName of kSubviewEvents) {
@@ -3149,7 +3270,13 @@ var CustomizableUIInternal = {
     Services.prefs.clearUserPref(kPrefAutoHideDownloadsButton);
     gDefaultTheme.enable();
     gNewElementCount = 0;
-    log.debug("State reset");
+    lazy.log.debug("State reset");
+
+    // Later in the function, we're going to add any area-less extension
+    // buttons to the AREA_ADDONS area. We'll remember the old placements
+    // for that area so that we don't need to re-add widgets that are already
+    // in there in the DOM.
+    let oldAddonPlacements = gPlacements[CustomizableUI.AREA_ADDONS] || [];
 
     // Reset placements to make restoring default placements possible.
     gPlacements = new Map();
@@ -3159,7 +3286,26 @@ var CustomizableUIInternal = {
     gSavedState = null;
     // Restore the state for each area to its defaults
     for (let [areaId] of gAreas) {
-      this.restoreStateForArea(areaId);
+      // If the Unified Extensions UI is enabled, we'll be adding any
+      // extension buttons that aren't already in AREA_ADDONS there,
+      // so we can skip restoring the state for it.
+      if (areaId != CustomizableUI.AREA_ADDONS) {
+        this.restoreStateForArea(areaId);
+      }
+    }
+
+    // restoreStateForArea will have normally set an array for the placements
+    // for each area, but since we skip AREA_ADDONS intentionally, that array
+    // doesn't get set, so we do that manually here.
+    gPlacements.set(CustomizableUI.AREA_ADDONS, []);
+
+    for (let [widgetId] of gPalette) {
+      if (
+        CustomizableUI.isWebExtensionWidget(widgetId) &&
+        !oldAddonPlacements.includes(widgetId)
+      ) {
+        this.addWidgetToArea(widgetId, CustomizableUI.AREA_ADDONS);
+      }
     }
   },
 
@@ -3312,10 +3458,34 @@ var CustomizableUIInternal = {
     if (
       this.isSpecialWidget(aWidgetId) &&
       gAreas.has(aArea) &&
-      gAreas.get(aArea).get("type") == CustomizableUI.TYPE_MENU_PANEL
+      gAreas.get(aArea).get("type") == CustomizableUI.TYPE_PANEL
     ) {
       return false;
     }
+
+    if (
+      aArea == CustomizableUI.AREA_ADDONS &&
+      !CustomizableUI.isWebExtensionWidget(aWidgetId)
+    ) {
+      return false;
+    }
+
+    if (CustomizableUI.isWebExtensionWidget(aWidgetId)) {
+      // Extension widgets cannot move to the customization palette.
+      if (aArea == CustomizableUI.AREA_NO_AREA) {
+        return false;
+      }
+
+      // Extension widgets cannot move to panels, with the exception of the
+      // AREA_ADDONS area.
+      if (
+        gAreas.get(aArea).get("type") == CustomizableUI.TYPE_PANEL &&
+        aArea != CustomizableUI.AREA_ADDONS
+      ) {
+        return false;
+      }
+    }
+
     let placement = this.getPlacementOfWidget(aWidgetId);
     // Items in the palette can move, and items can move within their area:
     if (!placement || placement.area == aArea) {
@@ -3364,9 +3534,15 @@ var CustomizableUIInternal = {
     }
     addUnskippedChildren(this.getCustomizationTarget(container));
     if (container.getAttribute("overflowing") == "true") {
-      let overflowTarget = container.getAttribute("overflowtarget");
+      let overflowTarget = container.getAttribute("default-overflowtarget");
       addUnskippedChildren(
         container.ownerDocument.getElementById(overflowTarget)
+      );
+      let webExtOverflowTarget = container.getAttribute(
+        "addon-webext-overflowtarget"
+      );
+      addUnskippedChildren(
+        container.ownerDocument.getElementById(webExtOverflowTarget)
       );
     }
     // Then get the sorted list of placements, and filter based on the nodes
@@ -3430,7 +3606,7 @@ var CustomizableUIInternal = {
             nondefaultState = collapsed != defaultCollapsed;
           }
           if (defaultCollapsed !== null && nondefaultState) {
-            log.debug(
+            lazy.log.debug(
               "Found " +
                 areaId +
                 " had non-default toolbar visibility" +
@@ -3444,7 +3620,7 @@ var CustomizableUIInternal = {
           }
         }
       }
-      log.debug(
+      lazy.log.debug(
         "Checking default state for " +
           areaId +
           ":\n" +
@@ -3462,7 +3638,7 @@ var CustomizableUIInternal = {
           currentPlacements[i] != defaultPlacements[i] &&
           !this.matchingSpecials(currentPlacements[i], defaultPlacements[i])
         ) {
-          log.debug(
+          lazy.log.debug(
             "Found " +
               currentPlacements[i] +
               " in " +
@@ -3477,27 +3653,45 @@ var CustomizableUIInternal = {
     }
 
     if (Services.prefs.prefHasUserValue(kPrefUIDensity)) {
-      log.debug(kPrefUIDensity + " pref is non-default");
+      lazy.log.debug(kPrefUIDensity + " pref is non-default");
       return false;
     }
 
     if (Services.prefs.prefHasUserValue(kPrefAutoTouchMode)) {
-      log.debug(kPrefAutoTouchMode + " pref is non-default");
+      lazy.log.debug(kPrefAutoTouchMode + " pref is non-default");
       return false;
     }
 
     if (Services.prefs.prefHasUserValue(kPrefDrawInTitlebar)) {
-      log.debug(kPrefDrawInTitlebar + " pref is non-default");
+      lazy.log.debug(kPrefDrawInTitlebar + " pref is non-default");
       return false;
     }
 
     // This should just be `gDefaultTheme.isActive`, but bugs...
     if (gDefaultTheme && gDefaultTheme.id != gSelectedTheme.id) {
-      log.debug(gSelectedTheme.id + " theme is non-default");
+      lazy.log.debug(gSelectedTheme.id + " theme is non-default");
       return false;
     }
 
     return true;
+  },
+
+  getCollapsedToolbarIds(window) {
+    let collapsedToolbars = new Set();
+    for (let toolbarId of CustomizableUIInternal._builtinToolbars) {
+      let toolbar = window.document.getElementById(toolbarId);
+
+      // Menubar toolbars are special in that they're hidden with the autohide
+      // attribute.
+      let hidingAttribute =
+        toolbar.getAttribute("type") == "menubar" ? "autohide" : "collapsed";
+
+      if (toolbar.getAttribute(hidingAttribute) == "true") {
+        collapsedToolbars.add(toolbarId);
+      }
+    }
+
+    return collapsedToolbars;
   },
 
   setToolbarVisibility(aToolbarId, aIsVisible) {
@@ -3542,11 +3736,23 @@ var CustomizableUI = {
    * Constant reference to the ID of the non-dymanic (fixed) list in the overflow panel.
    */
   AREA_FIXED_OVERFLOW_PANEL: "widget-overflow-fixed-list",
-
   /**
-   * Constant indicating the area is a menu panel.
+   * Constant reference to the ID of the addons area.
    */
-  TYPE_MENU_PANEL: "menu-panel",
+  AREA_ADDONS: "unified-extensions-area",
+  /**
+   * Constant reference to the ID of the customization palette, which is
+   * where widgets go when they're not assigned to an area. Note that this
+   * area is "virtual" in that it's never set as a value for a widgets
+   * currentArea or defaultArea. It's only used for the `canWidgetMoveToArea`
+   * function to check if widgets can be moved to the palette. Callers who
+   * wish to move items to the palette should use `removeWidgetFromArea`.
+   */
+  AREA_NO_AREA: "customization-palette",
+  /**
+   * Constant indicating the area is a panel.
+   */
+  TYPE_PANEL: "panel",
   /**
    * Constant indicating the area is a toolbar.
    */
@@ -3715,7 +3921,7 @@ var CustomizableUI = {
    * @param aProps  the properties of the area. The following properties are
    *                recognized:
    *                - type:   the type of area. Either TYPE_TOOLBAR (default) or
-   *                          TYPE_MENU_PANEL;
+   *                          TYPE_PANEL;
    *                - anchor: for a menu panel or overflowable toolbar, the
    *                          anchoring node for the panel.
    *                - overflowable: set to true if your toolbar is overflowable.
@@ -3746,13 +3952,15 @@ var CustomizableUI = {
     CustomizableUIInternal.registerToolbarNode(aToolbar);
   },
   /**
-   * Register the menu panel node. This method should not be called by anyone
-   * apart from the built-in PanelUI.
+   * Register a panel node. A panel treated slightly differently from a toolbar in
+   * terms of what items can be moved into it. For example, a panel cannot have a
+   * spacer or a spring put into it.
+   *
    * @param aPanelContents the panel contents DOM node being registered.
    * @param aArea the area for which to register this node.
    */
-  registerMenuPanel(aPanelContents, aArea) {
-    CustomizableUIInternal.registerMenuPanel(aPanelContents, aArea);
+  registerPanelNode(aNode, aArea) {
+    CustomizableUIInternal.registerPanelNode(aNode, aArea);
   },
   /**
    * Unregister a customizable area. The inverse of registerArea.
@@ -3905,7 +4113,9 @@ var CustomizableUI = {
    *                             of the widget.
    * - viewId:        Only useful for views and button-and-view widgets (and
    *                  required there): the id of the <panelview> that should be
-   *                  shown when clicking the widget.
+   *                  shown when clicking the widget.  If used with a custom
+   *                  widget, the widget must also provide a toolbaritem where
+   *                  the first child is the view button.
    * - onBuild(aDoc): Only useful for custom widgets (and required there); a
    *                  function that will be invoked with the document in which
    *                  to build a widget. Should return the DOM node that has
@@ -3915,7 +4125,8 @@ var CustomizableUI = {
    *                  constructed, passing the document in which that will happen.
    *                  This is useful especially for 'view' type widgets that need
    *                  to construct their views on the fly (e.g. from bootstrapped
-   *                  add-ons)
+   *                  add-ons). If the function returns `false`, the widget will
+   *                  not be created.
    * - onCreated(aNode): Attached to all widgets; a function that will be invoked
    *                  whenever the widget has a DOM node constructed, passing the
    *                  constructed node as an argument.
@@ -3924,15 +4135,20 @@ var CustomizableUI = {
    *                  passing the document from which it was removed. This is
    *                  useful especially for 'view' type widgets that need to
    *                  cleanup after views that were constructed on the fly.
-   * - onBeforeCommand(aEvt): A function that will be invoked when the user
+   * - onBeforeCommand(aEvt, aNode): A function that will be invoked when the user
    *                          activates the button but before the command
    *                          is evaluated. Useful if code needs to run to
    *                          change the button's icon in preparation to the
-   *                          pending command action. Called for both type=button
-   *                          and type=view.
-   * - onCommand(aEvt): Only useful for button and button-and-view widgets; a
+   *                          pending command action. Called for any type that
+   *                          supports the handler.  The command type, either
+   *                          "view" or "command", may be returned to force the
+   *                          action that will occur.  View will open the panel
+   *                          and command will result in calling onCommand.
+   * - onCommand(aEvt): Useful for custom, button and button-and-view widgets; a
    *                    function that will be invoked when the user activates
-   *                    the button.
+   *                    the button. A custom widget with a view should
+   *                    return "view" or "command" to continue processing
+   *                    the command per the needs of the widget.
    * - onClick(aEvt): Attached to all widgets; a function that will be invoked
    *                  when the user clicks the widget.
    * - onViewShowing(aEvt): Only useful for views and button-and-view widgets; a
@@ -3978,6 +4194,8 @@ var CustomizableUI = {
    * - locationSpecific: If true, closes the panel if the location changes.
    *                     This is similar to tabSpecific, but also if the location
    *                     changes in the same tab, we may want to close the panel.
+   * - webExtension:  Set to true if this widget is being created on behalf of an
+   *                  extension.
    *
    * @param aProperties the specifications for the widget.
    * @return a wrapper around the created widget (see getWidget)
@@ -4151,7 +4369,7 @@ var CustomizableUI = {
    * property (areaType) for this purpose.
    *
    * @param aArea the ID of the area whose type you want to know
-   * @return TYPE_TOOLBAR or TYPE_MENU_PANEL depending on the area, null if
+   * @return TYPE_TOOLBAR or TYPE_PANEL depending on the area, null if
    *         the area is unknown.
    */
   getAreaType(aArea) {
@@ -4294,7 +4512,9 @@ var CustomizableUI = {
    * is already in the right area.
    *
    * @param aWidgetId the widget ID or DOM node you want to move somewhere
-   * @param aArea     the area ID you want to move it to.
+   * @param aArea     the area ID you want to move it to. This can also be
+   *                  AREA_NO_AREA to see if the widget can move to the
+   *                  customization palette, whether it's removable or not.
    * @return true if this is possible, false if it is not. The same caveats as
    *              for isWidgetRemovable apply, however, if no windows are open.
    */
@@ -4321,6 +4541,19 @@ var CustomizableUI = {
    */
   setToolbarVisibility(aToolbarId, aIsVisible) {
     CustomizableUIInternal.setToolbarVisibility(aToolbarId, aIsVisible);
+  },
+
+  /**
+   * Returns a Set with the IDs of any registered toolbar areas that are
+   * currently collapsed in a particular window. Menubars that are set to
+   * autohide and are in the temporary "open" state are still considered
+   * collapsed by default.
+   *
+   * @param {Window} window The browser window to check for collapsed toolbars.
+   * @return {Set<string>}
+   */
+  getCollapsedToolbarIds(window) {
+    return CustomizableUIInternal.getCollapsedToolbarIds(window);
   },
 
   /**
@@ -4385,6 +4618,21 @@ var CustomizableUI = {
    */
   isSpecialWidget(aWidgetId) {
     return CustomizableUIInternal.isSpecialWidget(aWidgetId);
+  },
+  /**
+   * Check if a widget is provided by an extension. This effectively checks
+   * whether `webExtension: true` passed when the widget was being created.
+   *
+   * If the widget being referred to hasn't yet been created, or has been
+   * destroyed, we fallback to checking the ID for the "-browser-action"
+   * suffix.
+   *
+   * @param aWidgetId the widget ID to check.
+   * @return true if the widget was provided by an extension, false otherwise.
+   */
+  isWebExtensionWidget(aWidgetId) {
+    let widget = this.getWidget(aWidgetId);
+    return widget?.webExtension || aWidgetId.endsWith("-browser-action");
   },
   /**
    * Add listeners to a panel that will close it. For use from the menu panel
@@ -4474,7 +4722,7 @@ var CustomizableUI = {
       if (node.localName == "toolbar") {
         place = "toolbar";
       } else if (node.id == CustomizableUI.AREA_FIXED_OVERFLOW_PANEL) {
-        place = "menu-panel";
+        place = "panel";
       } else if (node.id == "customization-palette") {
         place = "palette";
       }
@@ -4553,7 +4801,7 @@ var CustomizableUI = {
             let newEvent = new doc.defaultView.MouseEvent(event.type, event);
 
             // Telemetry should only pay attention to the original event.
-            BrowserUsageTelemetry.ignoreEvent(newEvent);
+            lazy.BrowserUsageTelemetry.ignoreEvent(newEvent);
             item.dispatchEvent(newEvent);
           });
         }
@@ -4577,7 +4825,7 @@ var CustomizableUI = {
             );
 
             // Telemetry should only pay attention to the original event.
-            BrowserUsageTelemetry.ignoreEvent(newEvent);
+            lazy.BrowserUsageTelemetry.ignoreEvent(newEvent);
             item.dispatchEvent(newEvent);
           });
         }
@@ -4629,6 +4877,47 @@ var CustomizableUI = {
   getCustomizationTarget(aElement) {
     return CustomizableUIInternal.getCustomizationTarget(aElement);
   },
+
+  getTestOnlyInternalProp(aProp) {
+    if (!Cu.isInAutomation) {
+      return null;
+    }
+    switch (aProp) {
+      case "CustomizableUIInternal":
+        return CustomizableUIInternal;
+      case "gAreas":
+        return gAreas;
+      case "gFuturePlacements":
+        return gFuturePlacements;
+      case "gPalette":
+        return gPalette;
+      case "gPlacements":
+        return gPlacements;
+      case "gSavedState":
+        return gSavedState;
+      case "gSeenWidgets":
+        return gSeenWidgets;
+      case "kVersion":
+        return kVersion;
+    }
+    return null;
+  },
+  setTestOnlyInternalProp(aProp, aValue) {
+    if (!Cu.isInAutomation) {
+      return;
+    }
+    switch (aProp) {
+      case "gSavedState":
+        gSavedState = aValue;
+        break;
+      case "kVersion":
+        kVersion = aValue;
+        break;
+      case "gDirty":
+        gDirty = aValue;
+        break;
+    }
+  },
 };
 Object.freeze(CustomizableUI);
 Object.freeze(CustomizableUI.windows);
@@ -4656,6 +4945,8 @@ function WidgetGroupWrapper(aWidget) {
     "tooltiptext",
     "showInPrivateBrowsing",
     "viewId",
+    "disallowSubView",
+    "webExtension",
   ];
   for (let prop of kBareProps) {
     let propertyName = prop;
@@ -4754,6 +5045,9 @@ function WidgetSingleWrapper(aWidget, aNode) {
     if (!anchorId) {
       anchorId = aNode.getAttribute("cui-anchorid");
     }
+    if (!anchorId) {
+      anchorId = aNode.getAttribute("view-button-id");
+    }
     if (anchorId) {
       return aNode.ownerDocument.getElementById(anchorId);
     }
@@ -4782,6 +5076,8 @@ function XULWidgetGroupWrapper(aWidgetId) {
   this.isGroup = true;
   this.id = aWidgetId;
   this.type = "custom";
+  // XUL Widgets can never be provided by extensions.
+  this.webExtension = false;
   this.provider = CustomizableUI.PROVIDER_XUL;
 
   this.forWindow = function XULWidgetGroupWrapper_forWindow(aWindow) {
@@ -4910,157 +5206,287 @@ function XULWidgetSingleWrapper(aWidgetId, aNode, aDocument) {
   Object.freeze(this);
 }
 
-const OVERFLOW_PANEL_HIDE_DELAY_MS = 500;
+/**
+ * OverflowableToolbar is a class that gives a <xul:toolbar> the ability to send
+ * toolbar items that are "overflowable" to lists in separate panels if and
+ * when the toolbar shrinks enough so that those items overflow out of bounds.
+ * Secondly, this class manages moving things out from those panels and back
+ * into the toolbar once it underflows and has the space to accommodate the
+ * items that had originally overflowed out.
+ *
+ * There are two panels that toolbar items can be overflowed to:
+ *
+ * 1. The default items overflow panel
+ *   This is where built-in default toolbar items will go to.
+ * 2. The Unified Extensions panel
+ *   This is where browser_action toolbar buttons created by extensions will
+ *   go to if the Unified Extensions UI is enabled - otherwise, those items will
+ *   go to the default items overflow panel.
+ *
+ * Finally, OverflowableToolbar manages the showing of the default items
+ * overflow panel when the associated anchor is clicked or dragged over. The
+ * Unified Extensions panel is managed separately by the extension code.
+ *
+ * In theory, we could have multiple overflowable toolbars, but in practice,
+ * only the nav-bar (CustomizableUI.AREA_NAVBAR) makes use of this class.
+ */
+class OverflowableToolbar {
+  /**
+   * The OverflowableToolbar class is constructed during browser window
+   * creation, but to optimize for window painting, we defer most work until
+   * after the window has painted. This property is set to true once
+   * initialization has completed.
+   *
+   * @type {boolean}
+   */
+  #initialized = false;
 
-function OverflowableToolbar(aToolbarNode) {
-  this._toolbar = aToolbarNode;
-  this._target = CustomizableUI.getCustomizationTarget(this._toolbar);
-  if (this._target.parentNode != this._toolbar) {
-    throw new Error(
-      "Customization target must be a direct child of an overflowable toolbar."
-    );
-  }
-  this._collapsed = new Map();
-  this._enabled = true;
+  /**
+   * A reference to the <xul:toolbar> that is overflowable.
+   *
+   * @type {Element}
+   */
+  #toolbar = null;
 
-  this._toolbar.setAttribute("overflowable", "true");
-  let doc = this._toolbar.ownerDocument;
-  this._list = doc.getElementById(this._toolbar.getAttribute("overflowtarget"));
-  this._list._customizationTarget = this._list;
+  /**
+   * A reference to the part of the <xul:toolbar> that accepts CustomizableUI
+   * widgets.
+   *
+   * @type {Element}
+   */
+  #target = null;
 
-  let window = this._toolbar.ownerGlobal;
-  if (window.gBrowserInit.delayedStartupFinished) {
-    this.init();
-  } else {
-    Services.obs.addObserver(this, "browser-delayed-startup-finished");
-  }
-}
+  /**
+   * A mapping from the ID of a toolbar item that has overflowed to the width
+   * that the toolbar item occupied in the toolbar at the time of overflow. Any
+   * item that is currently overflowed will have an entry in this map.
+   *
+   * @type {Map<string, number>}
+   */
+  #overflowedInfo = new Map();
 
-OverflowableToolbar.prototype = {
-  initialized: false,
+  /**
+   * The set of overflowed DOM nodes that were hidden at the time of overflowing.
+   */
+  #hiddenOverflowedNodes = new WeakSet();
 
-  observe(aSubject, aTopic, aData) {
-    if (
-      aTopic == "browser-delayed-startup-finished" &&
-      aSubject == this._toolbar.ownerGlobal
-    ) {
-      Services.obs.removeObserver(this, "browser-delayed-startup-finished");
-      this.init();
+  /**
+   * True if the overflowable toolbar is actively handling overflows and
+   * underflows. This value is set internally by the private #enable() and
+   * #disable() methods.
+   *
+   * @type {boolean}
+   */
+  #enabled = true;
+
+  /**
+   * A reference to the element that overflowed toolbar items will be
+   * appended to as children upon overflow.
+   *
+   * @type {Element}
+   */
+  #defaultList = null;
+
+  /**
+   * A reference to the button that opens the overflow panel. This is also
+   * the element that the panel will anchor to.
+   *
+   * @type {Element}
+   */
+  #defaultListButton = null;
+
+  /**
+   * A reference to the <xul:panel> overflow panel that contains the #defaultList
+   * element.
+   *
+   * @type {Element}
+   */
+  #defaultListPanel = null;
+
+  /**
+   * A reference to the the element that overflowed extension browser action
+   * toolbar items will be appended to as children upon overflow if the
+   * Unified Extension UI is enabled. This is created lazily and might be null,
+   * so you should use the #webExtList memoizing getter instead to get this.
+   *
+   * @type {Element|null}
+   */
+  #webExtListRef = null;
+
+  /**
+   * An empty object that is created in #checkOverflow to identify individual
+   * calls to #checkOverflow and avoid re-entrancy (since #checkOverflow is
+   * asynchronous, and in theory, could be called multiple times before any of
+   * those times have a chance to fully exit).
+   *
+   * @type {Object}
+   */
+  #checkOverflowHandle = null;
+
+  /**
+   * A timeout ID returned by setTimeout that identifies a timeout function that
+   * runs to hide the #defaultListPanel if the user happened to open the panel by dragging
+   * over the #defaultListButton and then didn't hover any part of the #defaultListPanel.
+   *
+   * @type {number}
+   */
+  #hideTimeoutId = null;
+
+  /**
+   * Public methods start here.
+   */
+
+  /**
+   * OverflowableToolbar constructor. This is run very early on in the lifecycle
+   * of a browser window, so it tries to defer most work to the init() method
+   * instead after first paint.
+   *
+   * Upon construction, a "overflowable" attribute will be set on the
+   * toolbar, set to the value of "true".
+   *
+   * Part of the API for OverflowableToolbar is declarative, in that it expects
+   * certain attributes to be set on the <xul:toolbar> that is overflowable.
+   * Those attributes are:
+   *
+   * default-overflowbutton:
+   *   The ID of the button that is used to open and anchor the overflow panel.
+   * default-overflowtarget:
+   *   The ID of the element that overflowed items will be appended to as
+   *   children. Note that the overflowed toolbar items are moved into and out
+   *   of this overflow target, so it is definitely advisable to let
+   *   OverflowableToolbar own managing the children of default-overflowtarget,
+   *   and to not modify it outside of this class.
+   * default-overflowpanel:
+   *   The ID of the <xul:panel> that contains the default-overflowtarget.
+   * addon-webext-overflowbutton:
+   *   The ID of the button that is used to open and anchor the Unified
+   *   Extensions panel.
+   * addon-webext-overflowtarget:
+   *   The ID of the element that overflowed extension toolbar buttons will
+   *   be appended to as children if the Unified Extensions UI is enabled.
+   *   Note that the overflowed toolbar items are moved into and out of this
+   *   overflow target, so it is definitely advisable to let OverflowableToolbar
+   *   own managing the children of addon-webext-overflowtarget, and to not
+   *   modify it outside of this class.
+   *
+   * @param {Element} aToolbarNode The <xul:toolbar> that will be overflowable.
+   * @throws {Error} Throws if the customization target of the toolbar somehow
+   *   isn't a direct descendent of the toolbar.
+   */
+  constructor(aToolbarNode) {
+    this.#toolbar = aToolbarNode;
+    this.#target = CustomizableUI.getCustomizationTarget(this.#toolbar);
+    if (this.#target.parentNode != this.#toolbar) {
+      throw new Error(
+        "Customization target must be a direct child of an overflowable toolbar."
+      );
     }
-  },
 
+    this.#toolbar.setAttribute("overflowable", "true");
+    let doc = this.#toolbar.ownerDocument;
+    this.#defaultList = doc.getElementById(
+      this.#toolbar.getAttribute("default-overflowtarget")
+    );
+    this.#defaultList._customizationTarget = this.#defaultList;
+
+    let window = this.#toolbar.ownerGlobal;
+
+    if (window.gBrowserInit.delayedStartupFinished) {
+      this.init();
+    } else {
+      Services.obs.addObserver(this, "browser-delayed-startup-finished");
+    }
+  }
+
+  /**
+   * Does final initialization of the OverflowableToolbar after the window has
+   * first painted. This will also kick off the first check to see if overflow
+   * has already occurred at the time of initialization.
+   */
   init() {
-    let doc = this._toolbar.ownerDocument;
+    let doc = this.#toolbar.ownerDocument;
     let window = doc.defaultView;
     window.addEventListener("resize", this);
     window.gNavToolbox.addEventListener("customizationstarting", this);
     window.gNavToolbox.addEventListener("aftercustomization", this);
 
-    let chevronId = this._toolbar.getAttribute("overflowbutton");
-    this._chevron = doc.getElementById(chevronId);
-    this._chevron.addEventListener("mousedown", this);
-    this._chevron.addEventListener("keypress", this);
-    this._chevron.addEventListener("dragover", this);
-    this._chevron.addEventListener("dragend", this);
+    let defaultListButton = this.#toolbar.getAttribute(
+      "default-overflowbutton"
+    );
+    this.#defaultListButton = doc.getElementById(defaultListButton);
+    this.#defaultListButton.addEventListener("mousedown", this);
+    this.#defaultListButton.addEventListener("keypress", this);
+    this.#defaultListButton.addEventListener("dragover", this);
+    this.#defaultListButton.addEventListener("dragend", this);
 
-    let panelId = this._toolbar.getAttribute("overflowpanel");
-    this._panel = doc.getElementById(panelId);
-    this._panel.addEventListener("popuphiding", this);
-    CustomizableUIInternal.addPanelCloseListeners(this._panel);
+    let panelId = this.#toolbar.getAttribute("default-overflowpanel");
+    this.#defaultListPanel = doc.getElementById(panelId);
+    this.#defaultListPanel.addEventListener("popuphiding", this);
+    CustomizableUIInternal.addPanelCloseListeners(this.#defaultListPanel);
 
     CustomizableUI.addListener(this);
 
-    this._checkOverflow();
+    this.#checkOverflow();
 
-    this.initialized = true;
-  },
+    this.#initialized = true;
+  }
 
+  /**
+   * Almost the exact reverse of init(). This is called when the browser window
+   * is unloading.
+   */
   uninit() {
-    this._toolbar.removeAttribute("overflowable");
+    this.#toolbar.removeAttribute("overflowable");
 
-    if (!this.initialized) {
+    if (!this.#initialized) {
       Services.obs.removeObserver(this, "browser-delayed-startup-finished");
       return;
     }
 
-    this._disable();
+    this.#disable();
 
-    let window = this._toolbar.ownerGlobal;
+    let window = this.#toolbar.ownerGlobal;
     window.removeEventListener("resize", this);
     window.gNavToolbox.removeEventListener("customizationstarting", this);
     window.gNavToolbox.removeEventListener("aftercustomization", this);
-    this._chevron.removeEventListener("mousedown", this);
-    this._chevron.removeEventListener("keypress", this);
-    this._chevron.removeEventListener("dragover", this);
-    this._chevron.removeEventListener("dragend", this);
-    this._panel.removeEventListener("popuphiding", this);
+    this.#defaultListButton.removeEventListener("mousedown", this);
+    this.#defaultListButton.removeEventListener("keypress", this);
+    this.#defaultListButton.removeEventListener("dragover", this);
+    this.#defaultListButton.removeEventListener("dragend", this);
+    this.#defaultListPanel.removeEventListener("popuphiding", this);
+
     CustomizableUI.removeListener(this);
-    CustomizableUIInternal.removePanelCloseListeners(this._panel);
-  },
+    CustomizableUIInternal.removePanelCloseListeners(this.#defaultListPanel);
+  }
 
-  handleEvent(aEvent) {
-    switch (aEvent.type) {
-      case "aftercustomization":
-        this._enable();
-        break;
-      case "mousedown":
-        if (aEvent.button != 0) {
-          break;
-        }
-        if (aEvent.target == this._chevron) {
-          this._onClickChevron(aEvent);
-        } else {
-          PanelMultiView.hidePopup(this._panel);
-        }
-        break;
-      case "keypress":
-        if (
-          aEvent.target == this._chevron &&
-          (aEvent.key == " " || aEvent.key == "Enter")
-        ) {
-          this._onClickChevron(aEvent);
-        }
-        break;
-      case "customizationstarting":
-        this._disable();
-        break;
-      case "dragover":
-        if (this._enabled) {
-          this._showWithTimeout();
-        }
-        break;
-      case "dragend":
-        PanelMultiView.hidePopup(this._panel);
-        break;
-      case "popuphiding":
-        this._onPanelHiding(aEvent);
-        break;
-      case "resize":
-        this._onResize(aEvent);
-    }
-  },
-
+  /**
+   * Opens the overflow #defaultListPanel if it's not already open. If the panel is in
+   * the midst of hiding when this is called, the panel will be re-opened.
+   *
+   * @returns {Promise}
+   * @resolves {undefined} once the panel is open.
+   */
   show(aEvent) {
-    if (this._panel.state == "open") {
+    if (this.#defaultListPanel.state == "open") {
       return Promise.resolve();
     }
     return new Promise(resolve => {
-      let doc = this._panel.ownerDocument;
-      this._panel.hidden = false;
-      let multiview = this._panel.querySelector("panelmultiview");
+      let doc = this.#defaultListPanel.ownerDocument;
+      this.#defaultListPanel.hidden = false;
+      let multiview = this.#defaultListPanel.querySelector("panelmultiview");
       let mainViewId = multiview.getAttribute("mainViewId");
       let mainView = doc.getElementById(mainViewId);
       let contextMenu = doc.getElementById(mainView.getAttribute("context"));
       Services.els.addSystemEventListener(contextMenu, "command", this, true);
-      let anchor = this._chevron.icon;
+      let anchor = this.#defaultListButton.icon;
 
       let popupshown = false;
-      this._panel.addEventListener(
+      this.#defaultListPanel.addEventListener(
         "popupshown",
         () => {
           popupshown = true;
-          this._panel.addEventListener("dragover", this);
-          this._panel.addEventListener("dragend", this);
+          this.#defaultListPanel.addEventListener("dragover", this);
+          this.#defaultListPanel.addEventListener("dragend", this);
           // Wait until the next tick to resolve so all popupshown
           // handlers have a chance to run before our promise resolution
           // handlers do.
@@ -5072,7 +5498,7 @@ OverflowableToolbar.prototype = {
       let openPanel = () => {
         // Ensure we update the gEditUIVisible flag when opening the popup, in
         // case the edit controls are in it.
-        this._panel.addEventListener(
+        this.#defaultListPanel.addEventListener(
           "popupshowing",
           () => {
             doc.defaultView.updateEditUIVisibility();
@@ -5080,7 +5506,7 @@ OverflowableToolbar.prototype = {
           { once: true }
         );
 
-        this._panel.addEventListener(
+        this.#defaultListPanel.addEventListener(
           "popuphidden",
           () => {
             if (!popupshown) {
@@ -5092,389 +5518,44 @@ OverflowableToolbar.prototype = {
           { once: true }
         );
 
-        PanelMultiView.openPopup(this._panel, anchor || this._chevron, {
-          triggerEvent: aEvent,
-        });
-        this._chevron.open = true;
+        lazy.PanelMultiView.openPopup(
+          this.#defaultListPanel,
+          anchor || this.#defaultListButton,
+          {
+            triggerEvent: aEvent,
+          }
+        );
+        this.#defaultListButton.open = true;
       };
 
       openPanel();
     });
-  },
+  }
 
   /**
-   * Exposes whether _onOverflow is currently running.
+   * Exposes whether #checkOverflow is currently running.
+   *
+   * @returns {boolean} True if #checkOverflow is currently running.
    */
   isHandlingOverflow() {
-    return !!this._onOverflowHandle;
-  },
-
-  _onClickChevron(aEvent) {
-    if (this._chevron.open) {
-      this._chevron.open = false;
-      PanelMultiView.hidePopup(this._panel);
-    } else if (this._panel.state != "hiding" && !this._chevron.disabled) {
-      this.show(aEvent);
-    }
-  },
-
-  _onPanelHiding(aEvent) {
-    if (aEvent.target != this._panel) {
-      // Ignore context menus, <select> popups, etc.
-      return;
-    }
-    this._chevron.open = false;
-    this._panel.removeEventListener("dragover", this);
-    this._panel.removeEventListener("dragend", this);
-    let doc = aEvent.target.ownerDocument;
-    doc.defaultView.updateEditUIVisibility();
-    let contextMenuId = this._panel.getAttribute("context");
-    if (contextMenuId) {
-      let contextMenu = doc.getElementById(contextMenuId);
-      Services.els.removeSystemEventListener(
-        contextMenu,
-        "command",
-        this,
-        true
-      );
-    }
-  },
+    return !!this.#checkOverflowHandle;
+  }
 
   /**
-   * Returns an array with two elements, the first one a boolean representing
-   * whether we're overflowing, the second one a number representing the
-   * maximum width items may occupy so we don't overflow.
+   * Finds the most appropriate place to insert toolbar item aNode if we've been
+   * asked to put it into the overflowable toolbar without being told exactly
+   * where.
+   *
+   * @param {Element} aNode The toolbar item being inserted.
+   * @returns {Array} [parent, nextNode]
+   *   parent: {Element} The parent element that should contain aNode.
+   *   nextNode: {Element|null} The node that should follow aNode after
+   *     insertion, if any. If this is null, aNode should be placed at the end
+   *     of parent.
    */
-  async _getOverflowInfo() {
-    let win = this._target.ownerGlobal;
-    let totalAvailWidth;
-    let targetWidth;
-    await win.promiseDocumentFlushed(() => {
-      let style = win.getComputedStyle(this._toolbar);
-      totalAvailWidth =
-        this._toolbar.clientWidth -
-        parseFloat(style.paddingLeft) -
-        parseFloat(style.paddingRight);
-      for (let child of this._toolbar.children) {
-        if (child.nodeName == "panel") {
-          // Ugh. PanelUI.showSubView puts customizationui-widget-panel
-          // directly into the toolbar. (bug 1158583)
-          continue;
-        }
-        style = win.getComputedStyle(child);
-        if (
-          style.display == "none" ||
-          (style.position != "static" && style.position != "relative")
-        ) {
-          continue;
-        }
-        totalAvailWidth -=
-          parseFloat(style.marginLeft) + parseFloat(style.marginRight);
-        if (child != this._target) {
-          totalAvailWidth -= child.clientWidth;
-        }
-      }
-      targetWidth = this._target.clientWidth;
-    });
-    log.debug(
-      `Getting overflow info: target width: ${targetWidth}; available width: ${totalAvailWidth}`
-    );
-    return [targetWidth > totalAvailWidth, totalAvailWidth];
-  },
-
-  /**
-   * Handle overflow in the toolbar by moving items to the overflow menu.
-   */
-  async _onOverflow() {
-    if (!this._enabled) {
-      return;
-    }
-
-    let win = this._target.ownerGlobal;
-    let onOverflowHandle = {};
-    this._onOverflowHandle = onOverflowHandle;
-
-    let [isOverflowing] = await this._getOverflowInfo();
-
-    // Stop if the window has closed or if we re-enter while waiting for
-    // layout.
-    if (win.closed || this._onOverflowHandle != onOverflowHandle) {
-      log.debug("Window closed or another overflow handler started.");
-      return;
-    }
-
-    let child = this._target.lastElementChild;
-    while (child && isOverflowing) {
-      let prevChild = child.previousElementSibling;
-
-      if (child.getAttribute("overflows") != "false") {
-        this._collapsed.set(child.id, this._target.clientWidth);
-        child.setAttribute("overflowedItem", true);
-        child.setAttribute("cui-anchorid", this._chevron.id);
-        CustomizableUIInternal.ensureButtonContextMenu(
-          child,
-          this._toolbar,
-          true
-        );
-        CustomizableUIInternal.notifyListeners(
-          "onWidgetOverflow",
-          child,
-          this._target
-        );
-
-        this._list.insertBefore(child, this._list.firstElementChild);
-        if (!CustomizableUI.isSpecialWidget(child.id)) {
-          this._toolbar.setAttribute("overflowing", "true");
-        }
-      }
-      child = prevChild;
-      [isOverflowing] = await this._getOverflowInfo();
-      // Stop if the window has closed or if we re-enter while waiting for
-      // layout.
-      if (win.closed || this._onOverflowHandle != onOverflowHandle) {
-        log.debug("Window closed or another overflow handler started.");
-        return;
-      }
-    }
-
-    win.UpdateUrlbarSearchSplitterState();
-
-    this._onOverflowHandle = null;
-  },
-
-  _onResize(aEvent) {
-    // Ignore bubbled-up resize events.
-    if (aEvent.target != aEvent.currentTarget) {
-      return;
-    }
-    this._checkOverflow();
-  },
-
-  /**
-   * Try to move toolbar items back to the toolbar from the overflow menu.
-   * @param {boolean} shouldMoveAllItems
-   *        Whether we should move everything (e.g. because we're being disabled)
-   * @param {number} totalAvailWidth
-   *        Optional; the width of the area in which we can put things.
-   *        Some consumers pass this to avoid reflows.
-   *        While there are items in the list, this width won't change, and so
-   *        we can avoid flushing layout by providing it and/or caching it.
-   *        Note that if `shouldMoveAllItems` is true, we never need the width
-   *        anyway.
-   */
-  async _moveItemsBackToTheirOrigin(shouldMoveAllItems, totalAvailWidth) {
-    log.debug(
-      `Attempting to move ${shouldMoveAllItems ? "all" : "some"} items back`
-    );
-    let placements = gPlacements.get(this._toolbar.id);
-    let win = this._target.ownerGlobal;
-    let moveItemsBackToTheirOriginHandle = {};
-    this._moveItemsBackToTheirOriginHandle = moveItemsBackToTheirOriginHandle;
-
-    while (this._list.firstElementChild) {
-      let child = this._list.firstElementChild;
-      let minSize = this._collapsed.get(child.id);
-      log.debug(`Considering moving ${child.id} back, minSize: ${minSize}`);
-
-      if (!shouldMoveAllItems && minSize) {
-        if (!totalAvailWidth) {
-          [, totalAvailWidth] = await this._getOverflowInfo();
-
-          // If the window has closed or if we re-enter because we were waiting
-          // for layout, stop.
-          if (
-            win.closed ||
-            this._moveItemsBackToTheirOriginHandle !=
-              moveItemsBackToTheirOriginHandle
-          ) {
-            log.debug(
-              "Window closed or _moveItemsBackToTheirOrigin called again."
-            );
-            return;
-          }
-        }
-        if (totalAvailWidth <= minSize) {
-          log.debug(
-            `Need ${minSize} but width is ${totalAvailWidth} so bailing`
-          );
-          break;
-        }
-      }
-
-      log.debug(`Moving ${child.id} back`);
-      this._collapsed.delete(child.id);
-      let beforeNodeIndex = placements.indexOf(child.id) + 1;
-      // If this is a skipintoolbarset item, meaning it doesn't occur in the placements list,
-      // we're inserting it at the end. This will mean first-in, first-out (more or less)
-      // leading to as little change in order as possible.
-      if (beforeNodeIndex == 0) {
-        beforeNodeIndex = placements.length;
-      }
-      let inserted = false;
-      for (; beforeNodeIndex < placements.length; beforeNodeIndex++) {
-        let beforeNode = this._target.getElementsByAttribute(
-          "id",
-          placements[beforeNodeIndex]
-        )[0];
-        // Unfortunately, XUL add-ons can mess with nodes after they are inserted,
-        // and this breaks the following code if the button isn't where we expect
-        // it to be (ie not a child of the target). In this case, ignore the node.
-        if (beforeNode && this._target == beforeNode.parentElement) {
-          this._target.insertBefore(child, beforeNode);
-          inserted = true;
-          break;
-        }
-      }
-      if (!inserted) {
-        this._target.appendChild(child);
-      }
-      child.removeAttribute("cui-anchorid");
-      child.removeAttribute("overflowedItem");
-      CustomizableUIInternal.ensureButtonContextMenu(child, this._target);
-      CustomizableUIInternal.notifyListeners(
-        "onWidgetUnderflow",
-        child,
-        this._target
-      );
-    }
-
-    win.UpdateUrlbarSearchSplitterState();
-
-    let collapsedWidgetIds = Array.from(this._collapsed.keys());
-    if (collapsedWidgetIds.every(w => CustomizableUI.isSpecialWidget(w))) {
-      this._toolbar.removeAttribute("overflowing");
-    }
-
-    this._moveItemsBackToTheirOriginHandle = null;
-  },
-
-  async _checkOverflow() {
-    if (!this._enabled) {
-      return;
-    }
-
-    let win = this._target.ownerGlobal;
-    if (win.document.documentElement.hasAttribute("inDOMFullscreen")) {
-      // Toolbars are hidden and cannot be made visible in DOM fullscreen mode
-      // so there's nothing to do here.
-      return;
-    }
-
-    log.debug("Checking overflow");
-    let [isOverflowing, totalAvailWidth] = await this._getOverflowInfo();
-    if (win.closed) {
-      return;
-    }
-
-    if (isOverflowing) {
-      this._onOverflow();
-    } else {
-      this._moveItemsBackToTheirOrigin(false, totalAvailWidth);
-    }
-  },
-
-  _disable() {
-    this._moveItemsBackToTheirOrigin(true);
-    this._enabled = false;
-  },
-
-  _enable() {
-    this._enabled = true;
-    this._checkOverflow();
-  },
-
-  onWidgetBeforeDOMChange(aNode, aNextNode, aContainer) {
-    if (
-      !this._enabled ||
-      (aContainer != this._target && aContainer != this._list)
-    ) {
-      return;
-    }
-    // When we (re)move an item, update all the items that come after it in the list
-    // with the minsize *of the item before the to-be-removed node*. This way, we
-    // ensure that we try to move items back as soon as that's possible.
-    if (aNode.parentNode == this._list) {
-      let updatedMinSize;
-      if (aNode.previousElementSibling) {
-        updatedMinSize = this._collapsed.get(aNode.previousElementSibling.id);
-      } else {
-        // Force (these) items to try to flow back into the bar:
-        updatedMinSize = 1;
-      }
-      let nextItem = aNode.nextElementSibling;
-      while (nextItem) {
-        this._collapsed.set(nextItem.id, updatedMinSize);
-        nextItem = nextItem.nextElementSibling;
-      }
-    }
-  },
-
-  onWidgetAfterDOMChange(aNode, aNextNode, aContainer) {
-    if (
-      !this._enabled ||
-      (aContainer != this._target && aContainer != this._list)
-    ) {
-      return;
-    }
-
-    let nowOverflowed = aNode.parentNode == this._list;
-    let wasOverflowed = this._collapsed.has(aNode.id);
-
-    // If this wasn't overflowed before...
-    if (!wasOverflowed) {
-      // ... but it is now, then we added to the overflow panel.
-      if (nowOverflowed) {
-        // We could be the first item in the overflow panel if we're being inserted
-        // before the previous first item in it. We can't assume the minimum
-        // size is the same (because the other item might be much wider), so if
-        // there is no previous item, just allow this item to be put back in the
-        // toolbar immediately by specifying a very low minimum size.
-        let sourceOfMinSize = aNode.previousElementSibling;
-        let minSize = sourceOfMinSize
-          ? this._collapsed.get(sourceOfMinSize.id)
-          : 1;
-        this._collapsed.set(aNode.id, minSize);
-        aNode.setAttribute("cui-anchorid", this._chevron.id);
-        aNode.setAttribute("overflowedItem", true);
-        CustomizableUIInternal.ensureButtonContextMenu(aNode, aContainer, true);
-        CustomizableUIInternal.notifyListeners(
-          "onWidgetOverflow",
-          aNode,
-          this._target
-        );
-      }
-    } else if (!nowOverflowed) {
-      // If it used to be overflowed...
-      // ... and isn't anymore, let's remove our bookkeeping:
-      this._collapsed.delete(aNode.id);
-      aNode.removeAttribute("cui-anchorid");
-      aNode.removeAttribute("overflowedItem");
-      CustomizableUIInternal.ensureButtonContextMenu(aNode, aContainer);
-      CustomizableUIInternal.notifyListeners(
-        "onWidgetUnderflow",
-        aNode,
-        this._target
-      );
-
-      let collapsedWidgetIds = Array.from(this._collapsed.keys());
-      if (collapsedWidgetIds.every(w => CustomizableUI.isSpecialWidget(w))) {
-        this._toolbar.removeAttribute("overflowing");
-      }
-    } else if (aNode.previousElementSibling) {
-      // but if it still is, it must have changed places. Bookkeep:
-      let prevId = aNode.previousElementSibling.id;
-      let minSize = this._collapsed.get(prevId);
-      this._collapsed.set(aNode.id, minSize);
-    }
-
-    // We might overflow now if an item was added, or we may be able to move
-    // stuff back into the toolbar if an item was removed.
-    this._checkOverflow();
-  },
-
   findOverflowedInsertionPoints(aNode) {
     let newNodeCanOverflow = aNode.getAttribute("overflows") != "false";
-    let areaId = this._toolbar.id;
+    let areaId = this.#toolbar.id;
     let placements = gPlacements.get(areaId);
     let nodeIndex = placements.indexOf(aNode.id);
     let nodeBeforeNewNodeIsOverflown = false;
@@ -5493,17 +5574,17 @@ OverflowableToolbar.prototype = {
       if (loopIndex > nodeIndex) {
         // Note that if aNode is in a template, its `ownerDocument` is *not*
         // going to be the browser.xhtml document, so we cannot rely on it.
-        let nextNode = this._toolbar.ownerDocument.getElementById(nextNodeId);
+        let nextNode = this.#toolbar.ownerDocument.getElementById(nextNodeId);
         // If the node we're inserting can overflow, and the next node
         // in the toolbar is overflown, we should insert this node
         // in the overflow panel before it.
         if (
           newNodeCanOverflow &&
-          this._collapsed.has(nextNodeId) &&
+          this.#overflowedInfo.has(nextNodeId) &&
           nextNode &&
-          nextNode.parentNode == this._list
+          nextNode.parentNode == this.#defaultList
         ) {
-          return [this._list, nextNode];
+          return [this.#defaultList, nextNode];
         }
         // Otherwise (if either we can't overflow, or the previous node
         // wasn't overflown), and the next node is in the toolbar itself,
@@ -5511,46 +5592,689 @@ OverflowableToolbar.prototype = {
         if (
           (!nodeBeforeNewNodeIsOverflown || !newNodeCanOverflow) &&
           nextNode &&
-          (nextNode.parentNode == this._target ||
+          (nextNode.parentNode == this.#target ||
             // Also check if the next node is in a customization wrapper
             // (toolbarpaletteitem). We don't need to do this for the
             // overflow case because overflow is disabled in customize mode.
             (nextNode.parentNode.localName == "toolbarpaletteitem" &&
-              nextNode.parentNode.parentNode == this._target))
+              nextNode.parentNode.parentNode == this.#target))
         ) {
-          return [this._target, nextNode];
+          return [this.#target, nextNode];
         }
-      } else if (loopIndex < nodeIndex && this._collapsed.has(nextNodeId)) {
+      } else if (
+        loopIndex < nodeIndex &&
+        this.#overflowedInfo.has(nextNodeId)
+      ) {
         nodeBeforeNewNodeIsOverflown = true;
       }
     }
 
-    let containerForAppending =
-      this._collapsed.size && newNodeCanOverflow ? this._list : this._target;
-    return [containerForAppending, null];
-  },
+    let overflowList = CustomizableUI.isWebExtensionWidget(aNode.id)
+      ? this.#webExtList
+      : this.#defaultList;
 
+    let containerForAppending =
+      this.#overflowedInfo.size && newNodeCanOverflow
+        ? overflowList
+        : this.#target;
+    return [containerForAppending, null];
+  }
+
+  /**
+   * Allows callers to query for the current parent of a toolbar item that may
+   * or may not be overflowed. That parent will either be #defaultList,
+   * #webExtList (if it's an extension button) or #target.
+   *
+   * Note: It is assumed that the caller has verified that aNode is placed
+   * within the toolbar customizable area according to CustomizableUI.
+   *
+   * @param {Element} aNode the node that can be overflowed by this
+   *   OverflowableToolbar.
+   * @returns {Element} The current containing node for aNode.
+   */
   getContainerFor(aNode) {
     if (aNode.getAttribute("overflowedItem") == "true") {
-      return this._list;
+      return CustomizableUI.isWebExtensionWidget(aNode.id)
+        ? this.#webExtList
+        : this.#defaultList;
     }
-    return this._target;
-  },
+    return this.#target;
+  }
 
-  _hideTimeoutId: null,
-  _showWithTimeout() {
-    this.show().then(() => {
-      let window = this._toolbar.ownerGlobal;
-      if (this._hideTimeoutId) {
-        window.clearTimeout(this._hideTimeoutId);
+  /**
+   * Private methods start here.
+   */
+
+  /**
+   * Handle overflow in the toolbar by moving items to the overflow menu.
+   */
+  async #onOverflow() {
+    if (!this.#enabled) {
+      return;
+    }
+
+    let win = this.#target.ownerGlobal;
+    let checkOverflowHandle = this.#checkOverflowHandle;
+    let webExtButtonID = this.#toolbar.getAttribute(
+      "addon-webext-overflowbutton"
+    );
+
+    let { isOverflowing, targetContentWidth } = await this.#getOverflowInfo();
+
+    // Stop if the window has closed or if we re-enter while waiting for
+    // layout.
+    if (win.closed || this.#checkOverflowHandle != checkOverflowHandle) {
+      lazy.log.debug("Window closed or another overflow handler started.");
+      return;
+    }
+
+    let webExtList = this.#webExtList;
+
+    let child = this.#target.lastElementChild;
+    while (child && isOverflowing) {
+      let prevChild = child.previousElementSibling;
+
+      if (child.getAttribute("overflows") != "false") {
+        this.#overflowedInfo.set(child.id, targetContentWidth);
+        let { width: childWidth } = win.windowUtils.getBoundsWithoutFlushing(
+          child
+        );
+        if (!childWidth) {
+          this.#hiddenOverflowedNodes.add(child);
+        }
+
+        child.setAttribute("overflowedItem", true);
+        CustomizableUIInternal.ensureButtonContextMenu(
+          child,
+          this.#toolbar,
+          true
+        );
+        CustomizableUIInternal.notifyListeners(
+          "onWidgetOverflow",
+          child,
+          this.#target
+        );
+
+        if (webExtList && CustomizableUI.isWebExtensionWidget(child.id)) {
+          child.setAttribute("cui-anchorid", webExtButtonID);
+          webExtList.insertBefore(child, webExtList.firstElementChild);
+        } else {
+          child.setAttribute("cui-anchorid", this.#defaultListButton.id);
+          this.#defaultList.insertBefore(
+            child,
+            this.#defaultList.firstElementChild
+          );
+          if (!CustomizableUI.isSpecialWidget(child.id) && childWidth) {
+            this.#toolbar.setAttribute("overflowing", "true");
+          }
+        }
       }
-      this._hideTimeoutId = window.setTimeout(() => {
-        if (!this._panel.firstElementChild.matches(":hover")) {
-          PanelMultiView.hidePopup(this._panel);
+      child = prevChild;
+      ({ isOverflowing, targetContentWidth } = await this.#getOverflowInfo());
+      // Stop if the window has closed or if we re-enter while waiting for
+      // layout.
+      if (win.closed || this.#checkOverflowHandle != checkOverflowHandle) {
+        lazy.log.debug("Window closed or another overflow handler started.");
+        return;
+      }
+    }
+
+    win.UpdateUrlbarSearchSplitterState();
+  }
+
+  /**
+   * Returns a Promise that resolves to a an object that describes the state
+   * that this OverflowableToolbar is currently in.
+   *
+   * @returns {Promise}
+   * @resolves {Object}
+   *   An object with the following properties:
+   *
+   *   isOverflowing: {boolean} True if at least one toolbar item has overflowed
+   *     into an overflow panel.
+   *   targetContentWidth: {number} The total width of the items within the
+   *     customization target area of the toolbar.
+   *   totalAvailWidth: {number} The maximum width items in the toolbar may
+   *     occupy before causing an overflow.
+   */
+  async #getOverflowInfo() {
+    function getInlineSize(aElement) {
+      return aElement.getBoundingClientRect().width;
+    }
+
+    function sumChildrenInlineSize(aParent, aExceptChild = null) {
+      let sum = 0;
+      for (let child of aParent.children) {
+        let style = win.getComputedStyle(child);
+        if (
+          style.display == "none" ||
+          win.XULPopupElement.isInstance(child) ||
+          (style.position != "static" && style.position != "relative")
+        ) {
+          continue;
+        }
+        sum += parseFloat(style.marginLeft) + parseFloat(style.marginRight);
+        if (child != aExceptChild) {
+          sum += getInlineSize(child);
+        }
+      }
+      return sum;
+    }
+
+    let win = this.#target.ownerGlobal;
+    let totalAvailWidth;
+    let targetWidth;
+    let targetChildrenWidth;
+
+    await win.promiseDocumentFlushed(() => {
+      let style = win.getComputedStyle(this.#toolbar);
+      let toolbarChildrenWidth = sumChildrenInlineSize(
+        this.#toolbar,
+        this.#target
+      );
+      totalAvailWidth =
+        getInlineSize(this.#toolbar) -
+        parseFloat(style.paddingLeft) -
+        parseFloat(style.paddingRight) -
+        toolbarChildrenWidth;
+      targetWidth = getInlineSize(this.#target);
+      targetChildrenWidth =
+        this.#target == this.#toolbar
+          ? toolbarChildrenWidth
+          : sumChildrenInlineSize(this.#target);
+    });
+
+    lazy.log.debug(
+      `Getting overflow info: target width: ${targetWidth} (${targetChildrenWidth}); avail: ${totalAvailWidth}`
+    );
+
+    // If the target has min-width: 0, their children might actually overflow
+    // it, so check for both cases explicitly.
+    let targetContentWidth = Math.max(targetWidth, targetChildrenWidth);
+    let isOverflowing = Math.floor(targetContentWidth) > totalAvailWidth;
+    return { isOverflowing, targetContentWidth, totalAvailWidth };
+  }
+
+  /**
+   * Tries to move toolbar items back to the toolbar from the overflow panel.
+   *
+   * @param {boolean} shouldMoveAllItems
+   *        Whether we should move everything (e.g. because we're being
+   *        disabled)
+   * @param {number} [totalAvailWidth=undefined]
+   *        Optional; the width of the toolbar area in which we can put things.
+   *        Some consumers pass this to avoid reflows.
+   *
+   *        While there are items in the list, this width won't change, and so
+   *        we can avoid flushing layout by providing it and/or caching it.
+   *        Note that if `shouldMoveAllItems` is true, we never need the width
+   *        anyway, and this value is ignored.
+   * @returns {Promise}
+   * @resolves {undefined} Once moving of items has completed.
+   */
+  async #moveItemsBackToTheirOrigin(shouldMoveAllItems, totalAvailWidth) {
+    lazy.log.debug(
+      `Attempting to move ${shouldMoveAllItems ? "all" : "some"} items back`
+    );
+    let placements = gPlacements.get(this.#toolbar.id);
+    let win = this.#target.ownerGlobal;
+    let doc = this.#target.ownerDocument;
+    let checkOverflowHandle = this.#checkOverflowHandle;
+
+    let overflowedItemStack = Array.from(this.#overflowedInfo.entries());
+
+    for (let i = overflowedItemStack.length - 1; i >= 0; --i) {
+      let [childID, minSize] = overflowedItemStack[i];
+
+      // The item may have been placed inside of a <xul:panel> that is lazily
+      // loaded and still in the view cache. PanelMultiView.getViewNode will
+      // do the work of checking the DOM for the child, and then falling back to
+      // the cache if that is the case.
+      let child = lazy.PanelMultiView.getViewNode(doc, childID);
+
+      if (!child) {
+        this.#overflowedInfo.delete(childID);
+        continue;
+      }
+
+      lazy.log.debug(
+        `Considering moving ${child.id} back, minSize: ${minSize}`
+      );
+
+      if (!shouldMoveAllItems && minSize) {
+        if (!totalAvailWidth) {
+          ({ totalAvailWidth } = await this.#getOverflowInfo());
+
+          // If the window has closed or if we re-enter because we were waiting
+          // for layout, stop.
+          if (win.closed || this.#checkOverflowHandle != checkOverflowHandle) {
+            lazy.log.debug("Window closed or #checkOverflow called again.");
+            return;
+          }
+        }
+        if (totalAvailWidth <= minSize) {
+          lazy.log.debug(
+            `Need ${minSize} but width is ${totalAvailWidth} so bailing`
+          );
+          break;
+        }
+      }
+
+      lazy.log.debug(`Moving ${child.id} back`);
+      this.#overflowedInfo.delete(child.id);
+      let beforeNodeIndex = placements.indexOf(child.id) + 1;
+      // If this is a skipintoolbarset item, meaning it doesn't occur in the placements list,
+      // we're inserting it at the end. This will mean first-in, first-out (more or less)
+      // leading to as little change in order as possible.
+      if (beforeNodeIndex == 0) {
+        beforeNodeIndex = placements.length;
+      }
+      let inserted = false;
+      for (; beforeNodeIndex < placements.length; beforeNodeIndex++) {
+        let beforeNode = this.#target.getElementsByAttribute(
+          "id",
+          placements[beforeNodeIndex]
+        )[0];
+        // Unfortunately, XUL add-ons can mess with nodes after they are inserted,
+        // and this breaks the following code if the button isn't where we expect
+        // it to be (ie not a child of the target). In this case, ignore the node.
+        if (beforeNode && this.#target == beforeNode.parentElement) {
+          this.#target.insertBefore(child, beforeNode);
+          inserted = true;
+          break;
+        }
+      }
+      if (!inserted) {
+        this.#target.appendChild(child);
+      }
+      child.removeAttribute("cui-anchorid");
+      child.removeAttribute("overflowedItem");
+      CustomizableUIInternal.ensureButtonContextMenu(child, this.#target);
+      CustomizableUIInternal.notifyListeners(
+        "onWidgetUnderflow",
+        child,
+        this.#target
+      );
+    }
+
+    win.UpdateUrlbarSearchSplitterState();
+
+    let defaultListItems = Array.from(this.#defaultList.children);
+    if (
+      defaultListItems.every(
+        item =>
+          CustomizableUI.isSpecialWidget(item.id) ||
+          this.#hiddenOverflowedNodes.has(item)
+      )
+    ) {
+      this.#toolbar.removeAttribute("overflowing");
+    }
+  }
+
+  /**
+   * Checks to see if there are overflowable items within the customization
+   * target of the toolbar that should be moved into the overflow panel, and
+   * if there are, moves them.
+   *
+   * Note that since this is an async function that can be called in bursts
+   * by resize events on the window, this function is often re-called even
+   * when a prior call hasn't yet resolved. In that situation, the older calls
+   * resolve early without doing any work and leave any DOM manipulation to the
+   * most recent call.
+   *
+   * This function is a no-op if the OverflowableToolbar is disabled or the
+   * DOM fullscreen UI is currently being used.
+   *
+   * @returns {Promise}
+   * @resolves {undefined} Once any movement of toolbar items has completed.
+   */
+  async #checkOverflow() {
+    if (!this.#enabled) {
+      return;
+    }
+
+    let win = this.#target.ownerGlobal;
+    if (win.document.documentElement.hasAttribute("inDOMFullscreen")) {
+      // Toolbars are hidden and cannot be made visible in DOM fullscreen mode
+      // so there's nothing to do here.
+      return;
+    }
+
+    let checkOverflowHandle = (this.#checkOverflowHandle = {});
+
+    lazy.log.debug("Checking overflow");
+    let { isOverflowing, totalAvailWidth } = await this.#getOverflowInfo();
+    if (win.closed || this.#checkOverflowHandle != checkOverflowHandle) {
+      return;
+    }
+
+    if (isOverflowing) {
+      await this.#onOverflow();
+    } else {
+      await this.#moveItemsBackToTheirOrigin(false, totalAvailWidth);
+    }
+
+    if (checkOverflowHandle == this.#checkOverflowHandle) {
+      this.#checkOverflowHandle = null;
+    }
+  }
+
+  /**
+   * Makes the OverflowableToolbar inert and moves all overflowable items back
+   * into the customization target of the toolbar.
+   */
+  #disable() {
+    // Abort any ongoing overflow check. #enable() will #checkOverflow()
+    // anyways, so this is enough.
+    this.#checkOverflowHandle = {};
+    this.#moveItemsBackToTheirOrigin(true);
+    this.#enabled = false;
+  }
+
+  /**
+   * Puts the OverflowableToolbar into the enabled state and then checks to see
+   * if any of the items in the customization target should be overflowed into
+   * the overflow panel list.
+   */
+  #enable() {
+    this.#enabled = true;
+    this.#checkOverflow();
+  }
+
+  /**
+   * Shows the overflow panel and sets a timeout to automatically re-hide the
+   * panel if it is not being hovered.
+   */
+  #showWithTimeout() {
+    const OVERFLOW_PANEL_HIDE_DELAY_MS = 500;
+
+    this.show().then(() => {
+      let window = this.#toolbar.ownerGlobal;
+      if (this.#hideTimeoutId) {
+        window.clearTimeout(this.#hideTimeoutId);
+      }
+      this.#hideTimeoutId = window.setTimeout(() => {
+        if (!this.#defaultListPanel.firstElementChild.matches(":hover")) {
+          lazy.PanelMultiView.hidePopup(this.#defaultListPanel);
         }
       }, OVERFLOW_PANEL_HIDE_DELAY_MS);
     });
-  },
-};
+  }
+
+  /**
+   * Gets and caches a reference to the DOM node with the ID set as the value
+   * of addon-webext-overflowtarget. If a cache already exists, that's returned
+   * instead. If addon-webext-overflowtarget has no value, null is returned.
+   *
+   * @returns {Element|null} the list that overflowed extension toolbar
+   *   buttons should go to if the Unified Extensions UI is enabled, or null
+   *   if no such list exists.
+   */
+  get #webExtList() {
+    if (!this.#webExtListRef) {
+      let targetID = this.#toolbar.getAttribute("addon-webext-overflowtarget");
+      if (!targetID) {
+        throw new Error(
+          "addon-webext-overflowtarget was not defined on the " +
+            `overflowable toolbar with id: ${this.#toolbar.id}`
+        );
+      }
+      let win = this.#toolbar.ownerGlobal;
+      let { panel } = win.gUnifiedExtensions;
+      this.#webExtListRef = panel.querySelector(`#${targetID}`);
+    }
+    return this.#webExtListRef;
+  }
+
+  /**
+   * Returns true if aNode is not null and is one of either this.#webExtList or
+   * this.#defaultList.
+   *
+   * @param {DOMElement} aNode The node to test.
+   * @returns {boolean}
+   */
+  #isOverflowList(aNode) {
+    return aNode == this.#defaultList || aNode == this.#webExtList;
+  }
+
+  /**
+   * Private event handlers start here.
+   */
+
+  /**
+   * Handles clicks on the #defaultListButton element.
+   *
+   * @param {MouseEvent} aEvent the click event.
+   */
+  #onClickDefaultListButton(aEvent) {
+    if (this.#defaultListButton.open) {
+      this.#defaultListButton.open = false;
+      lazy.PanelMultiView.hidePopup(this.#defaultListPanel);
+    } else if (
+      this.#defaultListPanel.state != "hiding" &&
+      !this.#defaultListButton.disabled
+    ) {
+      this.show(aEvent);
+    }
+  }
+
+  /**
+   * Handles the popuphiding event firing on the #defaultListPanel.
+   *
+   * @param {WidgetMouseEvent} aEvent the popuphiding event that fired on the
+   *   #defaultListPanel.
+   */
+  #onPanelHiding(aEvent) {
+    if (aEvent.target != this.#defaultListPanel) {
+      // Ignore context menus, <select> popups, etc.
+      return;
+    }
+    this.#defaultListButton.open = false;
+    this.#defaultListPanel.removeEventListener("dragover", this);
+    this.#defaultListPanel.removeEventListener("dragend", this);
+    let doc = aEvent.target.ownerDocument;
+    doc.defaultView.updateEditUIVisibility();
+    let contextMenuId = this.#defaultListPanel.getAttribute("context");
+    if (contextMenuId) {
+      let contextMenu = doc.getElementById(contextMenuId);
+      Services.els.removeSystemEventListener(
+        contextMenu,
+        "command",
+        this,
+        true
+      );
+    }
+  }
+
+  /**
+   * Handles a resize event fired on the window hosting this
+   * OverflowableToolbar.
+   *
+   * @param {UIEvent} aEvent the resize event.
+   */
+  #onResize(aEvent) {
+    // Ignore bubbled-up resize events.
+    if (aEvent.target != aEvent.currentTarget) {
+      return;
+    }
+    this.#checkOverflow();
+  }
+
+  /**
+   * CustomizableUI listener methods start here.
+   */
+
+  onWidgetBeforeDOMChange(aNode, aNextNode, aContainer) {
+    // This listener method is used to handle the case where a widget is
+    // moved or removed from an area via the CustomizableUI API while
+    // overflowed. It reorganizes the internal state of this OverflowableToolbar
+    // to handle that change.
+    if (!this.#enabled || !this.#isOverflowList(aContainer)) {
+      return;
+    }
+    // When we (re)move an item, update all the items that come after it in the list
+    // with the minsize *of the item before the to-be-removed node*. This way, we
+    // ensure that we try to move items back as soon as that's possible.
+    let updatedMinSize;
+    if (aNode.previousElementSibling) {
+      updatedMinSize = this.#overflowedInfo.get(
+        aNode.previousElementSibling.id
+      );
+    } else {
+      // Force (these) items to try to flow back into the bar:
+      updatedMinSize = 1;
+    }
+    let nextItem = aNode.nextElementSibling;
+    while (nextItem) {
+      this.#overflowedInfo.set(nextItem.id, updatedMinSize);
+      nextItem = nextItem.nextElementSibling;
+    }
+  }
+
+  onWidgetAfterDOMChange(aNode, aNextNode, aContainer) {
+    // This listener method is used to handle the case where a widget is
+    // moved or removed from an area via the CustomizableUI API while
+    // overflowed. It updates the DOM in the event that the movement or removal
+    // causes overflow or underflow of the toolbar.
+    if (
+      !this.#enabled ||
+      (aContainer != this.#target && !this.#isOverflowList(aContainer))
+    ) {
+      return;
+    }
+
+    let nowOverflowed = this.#isOverflowList(aNode.parentNode);
+    let wasOverflowed = this.#overflowedInfo.has(aNode.id);
+
+    // If this wasn't overflowed before...
+    if (!wasOverflowed) {
+      // ... but it is now, then we added to one of the overflow panels.
+      if (nowOverflowed) {
+        // We could be the first item in the overflow panel if we're being inserted
+        // before the previous first item in it. We can't assume the minimum
+        // size is the same (because the other item might be much wider), so if
+        // there is no previous item, just allow this item to be put back in the
+        // toolbar immediately by specifying a very low minimum size.
+        let sourceOfMinSize = aNode.previousElementSibling;
+        let minSize = sourceOfMinSize
+          ? this.#overflowedInfo.get(sourceOfMinSize.id)
+          : 1;
+        this.#overflowedInfo.set(aNode.id, minSize);
+        aNode.setAttribute("cui-anchorid", this.#defaultListButton.id);
+        aNode.setAttribute("overflowedItem", true);
+        CustomizableUIInternal.ensureButtonContextMenu(aNode, aContainer, true);
+        CustomizableUIInternal.notifyListeners(
+          "onWidgetOverflow",
+          aNode,
+          this.#target
+        );
+      }
+    } else if (!nowOverflowed) {
+      // If it used to be overflowed...
+      // ... and isn't anymore, let's remove our bookkeeping:
+      this.#overflowedInfo.delete(aNode.id);
+      aNode.removeAttribute("cui-anchorid");
+      aNode.removeAttribute("overflowedItem");
+      CustomizableUIInternal.ensureButtonContextMenu(aNode, aContainer);
+      CustomizableUIInternal.notifyListeners(
+        "onWidgetUnderflow",
+        aNode,
+        this.#target
+      );
+
+      let collapsedWidgetIds = Array.from(this.#overflowedInfo.keys());
+      if (collapsedWidgetIds.every(w => CustomizableUI.isSpecialWidget(w))) {
+        this.#toolbar.removeAttribute("overflowing");
+      }
+    } else if (aNode.previousElementSibling) {
+      // but if it still is, it must have changed places. Bookkeep:
+      let prevId = aNode.previousElementSibling.id;
+      let minSize = this.#overflowedInfo.get(prevId);
+      this.#overflowedInfo.set(aNode.id, minSize);
+    }
+
+    // We might overflow now if an item was added, or we may be able to move
+    // stuff back into the toolbar if an item was removed.
+    this.#checkOverflow();
+  }
+
+  /**
+   * @returns {Boolean} whether the given node is in the overflow list.
+   */
+  isInOverflowList(node) {
+    return node.parentNode == this.#defaultList;
+  }
+
+  /**
+   * nsIObserver implementation starts here.
+   */
+
+  observe(aSubject, aTopic, aData) {
+    // This nsIObserver method allows us to defer initialization until after
+    // this window has finished painting and starting up.
+    if (
+      aTopic == "browser-delayed-startup-finished" &&
+      aSubject == this.#toolbar.ownerGlobal
+    ) {
+      Services.obs.removeObserver(this, "browser-delayed-startup-finished");
+      this.init();
+    }
+  }
+
+  /**
+   * nsIDOMEventListener implementation starts here.
+   */
+
+  handleEvent(aEvent) {
+    switch (aEvent.type) {
+      case "aftercustomization": {
+        this.#enable();
+        break;
+      }
+      case "mousedown": {
+        if (aEvent.button != 0) {
+          break;
+        }
+        if (aEvent.target == this.#defaultListButton) {
+          this.#onClickDefaultListButton(aEvent);
+        } else {
+          lazy.PanelMultiView.hidePopup(this.#defaultListPanel);
+        }
+        break;
+      }
+      case "keypress": {
+        if (
+          aEvent.target == this.#defaultListButton &&
+          (aEvent.key == " " || aEvent.key == "Enter")
+        ) {
+          this.#onClickDefaultListButton(aEvent);
+        }
+        break;
+      }
+      case "customizationstarting": {
+        this.#disable();
+        break;
+      }
+      case "dragover": {
+        if (this.#enabled) {
+          this.#showWithTimeout();
+        }
+        break;
+      }
+      case "dragend": {
+        lazy.PanelMultiView.hidePopup(this.#defaultListPanel);
+        break;
+      }
+      case "popuphiding": {
+        this.#onPanelHiding(aEvent);
+        break;
+      }
+      case "resize": {
+        this.#onResize(aEvent);
+        break;
+      }
+    }
+  }
+}
 
 CustomizableUIInternal.initialize();

@@ -17,7 +17,7 @@ MockFilePicker.init(window);
 function test() {
   waitForExplicitFinish();
 
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.loadURIString(
     gBrowser,
     "http://mochi.test:8888/browser/toolkit/content/tests/browser/data/post_form_outer.sjs"
   );
@@ -77,6 +77,7 @@ function test() {
     // cache.
     internalSave(
       docToSave.location.href,
+      null,
       docToSave,
       null,
       null,
@@ -119,7 +120,6 @@ function test() {
   }
 }
 
-/* import-globals-from common/mockTransfer.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/toolkit/content/tests/browser/common/mockTransfer.js",
   this

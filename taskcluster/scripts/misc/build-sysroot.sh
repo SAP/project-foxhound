@@ -10,6 +10,13 @@ SNAPSHOT=20210208T213147Z
 sysroot=$(basename $TOOLCHAIN_ARTIFACT)
 sysroot=${sysroot%%.*}
 
+# To repackage Firefox as a .deb package
+# we bootstrap jessie systems on a bullseye image.
+# To keep the build and repackage environments
+# consistent the build baseline used here (jessie) should be
+# synchronized with the packaging baseline used in
+# taskcluster/docker/debian-repackage/Dockerfile
+# and python/mozbuild/mozbuild/repackaging/deb.py
 case "$arch" in
 i386|amd64)
   dist=jessie
@@ -18,6 +25,8 @@ i386|amd64)
   else
     gcc_version=4.9
   fi
+  # The Debian Jessie GPG key expired.
+  extra_apt_opt='Apt::Key::gpgvcommand "/usr/local/sbin/gpgvnoexpkeysig"'
   ;;
 arm64)
   dist=buster
@@ -66,6 +75,7 @@ queue_base="$TASKCLUSTER_ROOT_URL/api/queue/v1"
   $sysroot \
   - \
   --aptopt=/etc/apt/apt.conf.d/99taskcluster \
+  ${extra_apt_opt:+--aptopt="$extra_apt_opt"} \
   --dpkgopt=path-exclude="*" \
   --dpkgopt=path-include="/lib/*" \
   --dpkgopt=path-include="/lib32/*" \

@@ -6,16 +6,12 @@
 
 "use strict";
 
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // The xpcshell test harness sets PYTHON so we can read it here.
-var gEnv = Cc["@mozilla.org/process/environment;1"].getService(
-  Ci.nsIEnvironment
-);
-var gPythonName = gEnv.get("PYTHON");
+var gPythonName = Services.env.get("PYTHON");
 
 // If we're testing locally, the executable file is in "CurProcD". Otherwise,
 // it is in another location that we have to find.
@@ -138,7 +134,7 @@ function run_test() {
   // in-place (to fix stacks) when it runs dmd.py, and that's not safe to do
   // asynchronously.
 
-  gEnv.set("DMD", "1");
+  Services.env.set("DMD", "1");
 
   runProcess(gDmdTestFile, []);
 

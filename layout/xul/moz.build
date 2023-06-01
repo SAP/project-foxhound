@@ -7,9 +7,6 @@
 with Files("**"):
     BUG_COMPONENT = ("Core", "XUL")
 
-with Files("*Menu*"):
-    BUG_COMPONENT = ("Firefox", "Menus")
-
 if CONFIG["ENABLE_TESTS"]:
     MOCHITEST_MANIFESTS += ["test/mochitest.ini"]
     MOCHITEST_CHROME_MANIFESTS += ["test/chrome.ini"]
@@ -26,27 +23,16 @@ UNIFIED_SOURCES += [
     "nsBoxFrame.cpp",
     "nsBoxLayout.cpp",
     "nsBoxLayoutState.cpp",
-    "nsButtonBoxFrame.cpp",
-    "nsDeckFrame.cpp",
-    "nsDocElementBoxFrame.cpp",
     "nsImageBoxFrame.cpp",
     "nsLeafBoxFrame.cpp",
-    "nsMenuBarFrame.cpp",
-    "nsMenuBarListener.cpp",
-    "nsMenuFrame.cpp",
     "nsMenuPopupFrame.cpp",
-    "nsPopupSetFrame.cpp",
     "nsRepeatService.cpp",
-    "nsResizerFrame.cpp",
-    "nsRootBoxFrame.cpp",
     "nsScrollbarButtonFrame.cpp",
     "nsScrollbarFrame.cpp",
     "nsSliderFrame.cpp",
     "nsSplitterFrame.cpp",
     "nsSprocketLayout.cpp",
-    "nsStackLayout.cpp",
     "nsTextBoxFrame.cpp",
-    "nsTitleBarFrame.cpp",
     "nsXULPopupManager.cpp",
     "nsXULTooltipListener.cpp",
 ]
@@ -68,5 +54,3 @@ LOCAL_INCLUDES += [
     "/dom/base",
     "/dom/xul",
 ]
-
-REQUIRES_UNIFIED_BUILD = True

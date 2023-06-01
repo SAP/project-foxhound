@@ -2,20 +2,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import { isOriginalId } from "devtools-source-map";
-import { getSource } from "../selectors";
+import { isOriginalId } from "devtools/client/shared/source-map-loader/index";
+import { getSource, getLocationSource } from "../selectors";
 
 export async function getGeneratedLocation(
   state,
   source,
   location,
-  sourceMaps
+  sourceMapLoader
 ) {
   if (!isOriginalId(location.sourceId)) {
     return location;
   }
 
-  const { line, sourceId, column } = await sourceMaps.getGeneratedLocation(
+  const { line, sourceId, column } = await sourceMapLoader.getGeneratedLocation(
     location
   );
 
@@ -32,16 +32,16 @@ export async function getGeneratedLocation(
   };
 }
 
-export async function getOriginalLocation(generatedLocation, sourceMaps) {
+export async function getOriginalLocation(generatedLocation, sourceMapLoader) {
   if (isOriginalId(generatedLocation.sourceId)) {
     return location;
   }
 
-  return sourceMaps.getOriginalLocation(generatedLocation);
+  return sourceMapLoader.getOriginalLocation(generatedLocation);
 }
 
-export async function getMappedLocation(state, sourceMaps, location) {
-  const source = getSource(state, location.sourceId);
+export async function getMappedLocation(state, sourceMapLoader, location) {
+  const source = getLocationSource(state, location);
 
   if (!source) {
     throw new Error(`no source ${location.sourceId}`);
@@ -52,29 +52,37 @@ export async function getMappedLocation(state, sourceMaps, location) {
       state,
       source,
       location,
-      sourceMaps
+      sourceMapLoader
     );
     return { location, generatedLocation };
   }
 
   const generatedLocation = location;
-  const originalLocation = await sourceMaps.getOriginalLocation(
+  const originalLocation = await sourceMapLoader.getOriginalLocation(
     generatedLocation
   );
 
   return { location: originalLocation, generatedLocation };
 }
 
-export async function mapLocation(state, sourceMaps, location) {
-  const source = getSource(state, location.sourceId);
+/**
+ * Gets the "mapped location".
+ *
+ * If the passed location is on a generated source, it gets the
+ * related location in the original source.
+ * If the passed location is on an original source, it gets the
+ * related location in the generated source.
+ */
+export async function getRelatedMapLocation(state, sourceMapLoader, location) {
+  const source = getLocationSource(state, location);
 
   if (!source) {
     return location;
   }
 
   if (isOriginalId(location.sourceId)) {
-    return getGeneratedLocation(state, source, location, sourceMaps);
+    return getGeneratedLocation(state, source, location, sourceMapLoader);
   }
 
-  return sourceMaps.getOriginalLocation(location);
+  return sourceMapLoader.getOriginalLocation(location);
 }

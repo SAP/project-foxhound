@@ -49,32 +49,28 @@ class TimerThreadWrapper {
   nsresult Init();
   void Shutdown();
 
-  nsresult AddTimer(nsTimerImpl* aTimer, const MutexAutoLock& aProofOfLock);
-  nsresult RemoveTimer(nsTimerImpl* aTimer, const MutexAutoLock& aProofOfLock);
+  nsresult AddTimer(nsTimerImpl* aTimer, const MutexAutoLock& aProofOfLock)
+      MOZ_REQUIRES(aTimer->mMutex);
+  nsresult RemoveTimer(nsTimerImpl* aTimer, const MutexAutoLock& aProofOfLock)
+      MOZ_REQUIRES(aTimer->mMutex);
   TimeStamp FindNextFireTimeForCurrentThread(TimeStamp aDefault,
                                              uint32_t aSearchBound);
   uint32_t AllowedEarlyFiringMicroseconds();
 
  private:
   static mozilla::StaticMutex sMutex;
-  TimerThread* mThread;
+  TimerThread* mThread MOZ_GUARDED_BY(sMutex);
 };
 
 mozilla::StaticMutex TimerThreadWrapper::sMutex;
 
 nsresult TimerThreadWrapper::Init() {
-  nsresult rv;
   mozilla::StaticMutexAutoLock lock(sMutex);
   mThread = new TimerThread();
 
   NS_ADDREF(mThread);
-  rv = mThread->InitLocks();
 
-  if (NS_FAILED(rv)) {
-    NS_RELEASE(mThread);
-  }
-
-  return rv;
+  return NS_OK;
 }
 
 void TimerThreadWrapper::Shutdown() {
@@ -312,11 +308,12 @@ static mozilla::LogModule* GetTimerFiringsLog() { return sTimerFiringsLog; }
 /* static */
 mozilla::StaticMutex nsTimerImpl::sDeltaMutex;
 /* static */
-double nsTimerImpl::sDeltaSumSquared = 0;
+double nsTimerImpl::sDeltaSumSquared MOZ_GUARDED_BY(nsTimerImpl::sDeltaMutex) =
+    0;
 /* static */
-double nsTimerImpl::sDeltaSum = 0;
+double nsTimerImpl::sDeltaSum MOZ_GUARDED_BY(nsTimerImpl::sDeltaMutex) = 0;
 /* static */
-double nsTimerImpl::sDeltaNum = 0;
+double nsTimerImpl::sDeltaNum MOZ_GUARDED_BY(nsTimerImpl::sDeltaMutex) = 0;
 
 static void myNS_MeanAndStdDev(double n, double sumOfValues,
                                double sumOfSquaredValues, double* meanResult,
@@ -357,7 +354,7 @@ nsTimer::Release(void) {
 
 nsTimerImpl::nsTimerImpl(nsITimer* aTimer, nsIEventTarget* aTarget)
     : mEventTarget(aTarget),
-      mHolder(nullptr),
+      mIsInTimerThread(false),
       mType(0),
       mGeneration(0),
       mITimer(aTimer),
@@ -392,7 +389,6 @@ nsresult nsTimerImpl::InitCommon(const TimeDuration& aDelay, uint32_t aType,
                                  Callback&& newCallback,
                                  const MutexAutoLock& aProofOfLock) {
   if (!mEventTarget) {
-    NS_ERROR("mEventTarget is NULL");
     return NS_ERROR_NOT_INITIALIZED;
   }
 
@@ -614,9 +610,8 @@ void nsTimerImpl::Fire(int32_t aGeneration) {
     }
 
     // We modify mTimeout, so we must not be in the current TimerThread's
-    // mTimers list.  Adding to that list calls SetHolder(), so use mHolder
-    // as a proxy to know if we're in the list
-    MOZ_ASSERT(!mHolder);
+    // mTimers list.
+    MOZ_ASSERT(!mIsInTimerThread);
 
     ++mFiring;
     callbackDuringFire = mCallback;
@@ -782,11 +777,9 @@ void nsTimerImpl::GetName(nsACString& aName) {
   GetName(aName, lock);
 }
 
-void nsTimerImpl::SetHolder(nsTimerImplHolder* aHolder) { mHolder = aHolder; }
-
 nsTimer::~nsTimer() = default;
 
-size_t nsTimer::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const {
+size_t nsTimer::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) {
   return aMallocSizeOf(this);
 }
 
@@ -799,13 +792,8 @@ RefPtr<nsTimer> nsTimer::WithEventTarget(nsIEventTarget* aTarget) {
 }
 
 /* static */
-nsresult nsTimer::XPCOMConstructor(nsISupports* aOuter, REFNSIID aIID,
-                                   void** aResult) {
+nsresult nsTimer::XPCOMConstructor(REFNSIID aIID, void** aResult) {
   *aResult = nullptr;
-  if (aOuter != nullptr) {
-    return NS_ERROR_NO_AGGREGATION;
-  }
-
   auto timer = WithEventTarget(nullptr);
 
   return timer->QueryInterface(aIID, aResult);

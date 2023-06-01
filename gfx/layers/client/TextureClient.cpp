@@ -11,7 +11,6 @@
 #include "BufferTexture.h"
 #include "IPDLActor.h"
 #include "ImageContainer.h"  // for PlanarYCbCrData, etc
-#include "Layers.h"          // for Layer, etc
 #include "MainThreadUtils.h"
 #include "gfx2DGlue.h"
 #include "gfxPlatform.h"  // for gfxPlatform
@@ -268,7 +267,7 @@ static TextureType GetTextureType(gfx::SurfaceFormat aFormat,
       (moz2DBackend == gfx::BackendType::DIRECT2D ||
        moz2DBackend == gfx::BackendType::DIRECT2D1_1) &&
       aSize.width <= maxTextureSize && aSize.height <= maxTextureSize &&
-      !(aAllocFlags & ALLOC_UPDATE_FROM_SURFACE)) {
+      !(aAllocFlags & (ALLOC_UPDATE_FROM_SURFACE | ALLOC_DO_NOT_ACCELERATE))) {
     return TextureType::D3D11;
   }
 #endif
@@ -289,10 +288,6 @@ static TextureType GetTextureType(gfx::SurfaceFormat aFormat,
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
-  if (gfxVars::UseAHardwareBufferContent() &&
-      aSelector == BackendSelector::Content) {
-    return TextureType::AndroidHardwareBuffer;
-  }
   if (StaticPrefs::gfx_use_surfacetexture_textures_AtStartup()) {
     return TextureType::AndroidNativeWindow;
   }
@@ -364,8 +359,6 @@ TextureData* TextureData::Create(TextureForwarder* aAllocator,
       return MacIOSurfaceTextureData::Create(aSize, aFormat, moz2DBackend);
 #endif
 #ifdef MOZ_WIDGET_ANDROID
-    case TextureType::AndroidHardwareBuffer:
-      return AndroidHardwareBufferTextureData::Create(aSize, aFormat);
     case TextureType::AndroidNativeWindow:
       return AndroidNativeWindowTextureData::Create(aSize, aFormat);
 #endif
@@ -472,7 +465,7 @@ void DeallocateTextureClient(TextureDeallocParams params) {
   if (ipdlThread && !ipdlThread->IsOnCurrentThread()) {
     if (params.syncDeallocation) {
       bool done = false;
-      ReentrantMonitor barrier("DeallocateTextureClient");
+      ReentrantMonitor barrier MOZ_UNANNOTATED("DeallocateTextureClient");
       ReentrantMonitorAutoEnter autoMon(barrier);
       ipdlThread->Dispatch(NewRunnableFunction(
           "DeallocateTextureClientSyncProxyRunnable",
@@ -848,14 +841,6 @@ bool TextureClient::ToSurfaceDescriptor(SurfaceDescriptor& aOutDescriptor) {
   MOZ_ASSERT(IsValid());
 
   return mData ? mData->Serialize(aOutDescriptor) : false;
-}
-
-bool TextureClient::CropYCbCrPlanes(const gfx::IntSize& aYSize,
-                                    const gfx::IntSize& aCbCrSize) {
-  if (!mData) {
-    return false;
-  }
-  return mData->CropYCbCrPlanes(aYSize, aCbCrSize);
 }
 
 // static
@@ -1287,7 +1272,8 @@ already_AddRefed<TextureClient> TextureClient::CreateForYCbCr(
     const gfx::IntSize& aYSize, uint32_t aYStride,
     const gfx::IntSize& aCbCrSize, uint32_t aCbCrStride, StereoMode aStereoMode,
     gfx::ColorDepth aColorDepth, gfx::YUVColorSpace aYUVColorSpace,
-    gfx::ColorRange aColorRange, TextureFlags aTextureFlags) {
+    gfx::ColorRange aColorRange, gfx::ChromaSubsampling aSubsampling,
+    TextureFlags aTextureFlags) {
   if (!aAllocator || !aAllocator->GetLayersIPCActor()->IPCOpen()) {
     return nullptr;
   }
@@ -1298,7 +1284,8 @@ already_AddRefed<TextureClient> TextureClient::CreateForYCbCr(
 
   TextureData* data = BufferTextureData::CreateForYCbCr(
       aAllocator, aDisplay, aYSize, aYStride, aCbCrSize, aCbCrStride,
-      aStereoMode, aColorDepth, aYUVColorSpace, aColorRange, aTextureFlags);
+      aStereoMode, aColorDepth, aYUVColorSpace, aColorRange, aSubsampling,
+      aTextureFlags);
   if (!data) {
     return nullptr;
   }
@@ -1711,17 +1698,17 @@ bool UpdateYCbCrTextureClient(TextureClient* aTexture,
       BytesPerPixel(SurfaceFormatForColorDepth(aData.mColorDepth));
   MappedYCbCrTextureData srcData;
   srcData.y.data = aData.mYChannel;
-  srcData.y.size = aData.mYSize;
+  srcData.y.size = aData.YDataSize();
   srcData.y.stride = aData.mYStride;
   srcData.y.skip = aData.mYSkip;
   srcData.y.bytesPerPixel = bytesPerPixel;
   srcData.cb.data = aData.mCbChannel;
-  srcData.cb.size = aData.mCbCrSize;
+  srcData.cb.size = aData.CbCrDataSize();
   srcData.cb.stride = aData.mCbCrStride;
   srcData.cb.skip = aData.mCbSkip;
   srcData.cb.bytesPerPixel = bytesPerPixel;
   srcData.cr.data = aData.mCrChannel;
-  srcData.cr.size = aData.mCbCrSize;
+  srcData.cr.size = aData.CbCrDataSize();
   srcData.cr.stride = aData.mCbCrStride;
   srcData.cr.skip = aData.mCrSkip;
   srcData.cr.bytesPerPixel = bytesPerPixel;

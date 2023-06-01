@@ -3,19 +3,14 @@
 
 "use strict";
 
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 const { promiseShutdownManager, promiseStartupManager } = AddonTestUtils;
 
 let extension;
 let oldRemoveEngineFunc;
-
-async function getEngineNames() {
-  let engines = await Services.search.getEngines();
-  return engines.map(engine => engine._name);
-}
 
 add_task(async function setup() {
   await SearchTestUtils.useTestEngines("simple-engines");
@@ -26,7 +21,10 @@ add_task(async function setup() {
   await Services.search.init();
   await promiseAfterSettings();
 
-  extension = await SearchTestUtils.installSearchExtension({}, true);
+  extension = await SearchTestUtils.installSearchExtension(
+    {},
+    { skipUnload: true }
+  );
   await extension.awaitStartup();
 
   // For these tests, stub-out the removeEngine function, so that when we
@@ -104,7 +102,7 @@ add_task(async function test_extension_no_longer_specifies_engine() {
     useAddonManager: "permanent",
     manifest: {
       version: "2.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "example@tests.mozilla.org",
         },
@@ -164,42 +162,4 @@ add_task(async function test_missing_extension() {
   );
 
   await oldRemoveEngineFunc(Services.search.getEngineByName("Example"));
-});
-
-add_task(async function test_user_engine() {
-  Services.telemetry.clearScalars();
-
-  await Services.search.addUserEngine("test", "https://example.com/", "fake");
-
-  await Services.search.runBackgroundChecks();
-  let scalars = TelemetryTestUtils.getProcessScalars("parent", true, true);
-
-  Assert.deepEqual(
-    scalars,
-    {},
-    "Should not have recorded any issues for a user-defined engine"
-  );
-});
-
-add_task(async function test_policy_engine() {
-  Services.telemetry.clearScalars();
-
-  await Services.search.addPolicyEngine({
-    description: "test policy engine",
-    chrome_settings_overrides: {
-      search_provider: {
-        name: "test_policy_engine",
-        search_url: "https://www.example.org/?search={searchTerms}",
-      },
-    },
-  });
-
-  await Services.search.runBackgroundChecks();
-  let scalars = TelemetryTestUtils.getProcessScalars("parent", true, true);
-
-  Assert.deepEqual(
-    scalars,
-    {},
-    "Should not have recorded any issues for a policy defined engine"
-  );
 });

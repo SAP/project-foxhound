@@ -15,6 +15,7 @@
 #include "ConnectionEntry.h"
 #include "nsQueryObject.h"
 #include "mozilla/ChaosMode.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "nsHttpHandler.h"
 
 namespace mozilla {
@@ -242,8 +243,8 @@ bool ConnectionEntry::RestrictConnections() {
   // don't create any new ssl connections until the result of the
   // negotiation is known.
 
-  bool doRestrict = mConnInfo->FirstHopSSL() && gHttpHandler->IsSpdyEnabled() &&
-                    mUsingSpdy &&
+  bool doRestrict = mConnInfo->FirstHopSSL() &&
+                    StaticPrefs::network_http_http2_enabled() && mUsingSpdy &&
                     (mDnsAndConnectSockets.Length() || mActiveConns.Length());
 
   // If there are no restrictions, we are done
@@ -353,6 +354,17 @@ void ConnectionEntry::CloseIdleConnections(uint32_t maxToClose) {
   }
 }
 
+void ConnectionEntry::CloseH2WebsocketConnections() {
+  while (mH2WebsocketConns.Length()) {
+    RefPtr<HttpConnectionBase> conn(mH2WebsocketConns[0]);
+    mH2WebsocketConns.RemoveElementAt(0);
+
+    // safe to close connection since we are on the socket thread
+    // closing via transaction to break connection/transaction bond
+    conn->CloseTransaction(conn->Transaction(), NS_ERROR_ABORT, true);
+  }
+}
+
 nsresult ConnectionEntry::RemoveIdleConnection(nsHttpConnection* conn) {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
 
@@ -423,6 +435,8 @@ void ConnectionEntry::ClosePersistentConnections() {
   for (int32_t i = 0; i < activeCount; i++) {
     mActiveConns[i]->DontReuse();
   }
+
+  mCoalescingKeys.Clear();
 }
 
 uint32_t ConnectionEntry::PruneDeadConnections() {
@@ -505,6 +519,19 @@ bool ConnectionEntry::IsInActiveConns(HttpConnectionBase* conn) {
 void ConnectionEntry::InsertIntoActiveConns(HttpConnectionBase* conn) {
   mActiveConns.AppendElement(conn);
   gHttpHandler->ConnMgr()->IncrementActiveConnCount();
+}
+
+bool ConnectionEntry::IsInH2WebsocketConns(HttpConnectionBase* conn) {
+  return mH2WebsocketConns.Contains(conn);
+}
+
+void ConnectionEntry::InsertIntoH2WebsocketConns(HttpConnectionBase* conn) {
+  // no incrementing of connection count since it is just a "fake" connection
+  mH2WebsocketConns.AppendElement(conn);
+}
+
+void ConnectionEntry::RemoveH2WebsocketConns(HttpConnectionBase* conn) {
+  mH2WebsocketConns.RemoveElement(conn);
 }
 
 void ConnectionEntry::MakeAllDontReuseExcept(HttpConnectionBase* conn) {

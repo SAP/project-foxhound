@@ -13,14 +13,13 @@
 
 // The following are not lazily loaded as they are needed during initialization.
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { createLazyLoaders } = ChromeUtils.import(
   "resource://devtools/client/performance-new/typescript-lazy-load.jsm.js"
 );
 // For some reason TypeScript was giving me an error when de-structuring AppConstants. I
 // suspect a bug in TypeScript was at play.
-const AppConstants = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const AppConstants = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 ).AppConstants;
 
 /**
@@ -68,22 +67,30 @@ const PREF_PREFIX = "devtools.performance.recording.";
 // https://github.com/firefox-devtools/profiler/blob/main/src/app-logic/web-channel.js
 const CURRENT_WEBCHANNEL_VERSION = 1;
 
+const lazyRequire = {};
+// eslint-disable-next-line mozilla/lazy-getter-object-name
+ChromeUtils.defineESModuleGetters(lazyRequire, {
+  require: "resource://devtools/shared/loader/Loader.sys.mjs",
+});
 // Lazily load the require function, when it's needed.
-ChromeUtils.defineModuleGetter(
-  this,
-  "require",
-  "resource://devtools/shared/loader/Loader.jsm"
-);
+// Avoid using ChromeUtils.defineESModuleGetters for now as:
+// * we can't replace createLazyLoaders as we still load commonjs+jsm+esm
+//   It will be easier once we only load sys.mjs files.
+// * we would need to find a way to accomodate typescript to this special function.
+// @ts-ignore:next-line
+function require(path) {
+  // @ts-ignore:next-line
+  return lazyRequire.require(path);
+}
 
 // The following utilities are lazily loaded as they are not needed when controlling the
 // global state of the profiler, and only are used during specific funcationality like
 // symbolication or capturing a profile.
 const lazy = createLazyLoaders({
-  OS: () => ChromeUtils.import("resource://gre/modules/osfile.jsm"),
   Utils: () => require("devtools/client/performance-new/utils"),
   BrowserModule: () => require("devtools/client/performance-new/browser"),
   RecordingUtils: () =>
-    require("devtools/shared/performance-new/recording-utils"),
+    require("resource://devtools/shared/performance-new/recording-utils.js"),
   CustomizableUI: () =>
     ChromeUtils.import("resource:///modules/CustomizableUI.jsm"),
   PerfSymbolication: () =>
@@ -131,15 +138,7 @@ const presets = {
   "firefox-platform": {
     entries: 128 * 1024 * 1024,
     interval: 1,
-    features: [
-      "screenshots",
-      "js",
-      "leaf",
-      "stackwalk",
-      "cpu",
-      "java",
-      "processcpu",
-    ],
+    features: ["screenshots", "js", "stackwalk", "cpu", "java", "processcpu"],
     threads: [
       "GeckoMain",
       "Compositor",
@@ -162,7 +161,7 @@ const presets = {
   graphics: {
     entries: 128 * 1024 * 1024,
     interval: 1,
-    features: ["leaf", "stackwalk", "js", "cpu", "java", "processcpu"],
+    features: ["stackwalk", "js", "cpu", "java", "processcpu"],
     threads: [
       "GeckoMain",
       "Compositor",
@@ -190,7 +189,6 @@ const presets = {
     interval: 1,
     features: [
       "js",
-      "leaf",
       "stackwalk",
       "cpu",
       "audiocallbacktracing",
@@ -200,9 +198,11 @@ const presets = {
     threads: [
       "cubeb",
       "audio",
+      "BackgroundThreadPool",
       "camera",
       "capture",
       "Compositor",
+      "decoder",
       "GeckoMain",
       "gmp",
       "graph",
@@ -234,15 +234,7 @@ const presets = {
   networking: {
     entries: 128 * 1024 * 1024,
     interval: 1,
-    features: [
-      "screenshots",
-      "js",
-      "leaf",
-      "stackwalk",
-      "cpu",
-      "java",
-      "processcpu",
-    ],
+    features: ["screenshots", "js", "stackwalk", "cpu", "java", "processcpu"],
     threads: [
       "Compositor",
       "DNS Resolver",
@@ -263,6 +255,33 @@ const presets = {
       devtools: {
         label: "perftools-presets-networking-label",
         description: "perftools-presets-networking-description",
+      },
+    },
+  },
+  power: {
+    entries: 128 * 1024 * 1024,
+    interval: 10,
+    features: [
+      "screenshots",
+      "js",
+      "stackwalk",
+      "cpu",
+      "processcpu",
+      "nostacksampling",
+      "ipcmessages",
+      "markersallthreads",
+      "power",
+    ],
+    threads: ["GeckoMain", "Renderer"],
+    duration: 0,
+    l10nIds: {
+      popup: {
+        label: "profiler-popup-presets-power-label",
+        description: "profiler-popup-presets-power-description",
+      },
+      devtools: {
+        label: "perftools-presets-power-label",
+        description: "perftools-presets-power-description",
       },
     },
   },
@@ -433,6 +452,7 @@ function getPrefPostfix(pageContext) {
   switch (pageContext) {
     case "devtools":
     case "aboutprofiling":
+    case "aboutlogging":
       // Don't use any postfix on the prefs.
       return "";
     case "devtools-remote":
@@ -869,7 +889,8 @@ function registerProfileCaptureForBrowser(
 }
 
 // Provide a fake module.exports for the JSM to be properly read by TypeScript.
-/** @type {any} */ (this).module = { exports: {} };
+/** @type {any} */
+var module = { exports: {} };
 
 module.exports = {
   presets,

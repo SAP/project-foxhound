@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 from marionette_driver import errors
 
 from marionette_harness import MarionetteTestCase
@@ -22,7 +20,9 @@ class TestProxyCapabilities(MarionetteTestCase):
         with self.marionette.using_context("chrome"):
             self.marionette.execute_script(
                 """
-                Cu.import("resource://gre/modules/Preferences.jsm");
+                const { Preferences } = ChromeUtils.importESModule(
+                  "resource://gre/modules/Preferences.sys.mjs"
+                );
                 Preferences.resetBranch("network.proxy");
             """
             )

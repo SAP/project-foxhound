@@ -7,8 +7,6 @@
 #ifndef gc_Barrier_h
 #define gc_Barrier_h
 
-#include "mozilla/DebugOnly.h"
-
 #include <type_traits>  // std::true_type
 
 #include "NamespaceImports.h"
@@ -305,10 +303,25 @@ class NativeObject;
 
 namespace gc {
 
-void ValueReadBarrier(const Value& v);
-void ValuePreWriteBarrier(const Value& v);
-void IdPreWriteBarrier(jsid id);
-void CellPtrPreWriteBarrier(JS::GCCellPtr thing);
+inline void ValueReadBarrier(const Value& v) {
+  MOZ_ASSERT(v.isGCThing());
+  ReadBarrierImpl(v.toGCThing());
+}
+
+inline void ValuePreWriteBarrier(const Value& v) {
+  MOZ_ASSERT(v.isGCThing());
+  PreWriteBarrierImpl(v.toGCThing());
+}
+
+inline void IdPreWriteBarrier(jsid id) {
+  MOZ_ASSERT(id.isGCThing());
+  PreWriteBarrierImpl(&id.toGCThing()->asTenured());
+}
+
+inline void CellPtrPreWriteBarrier(JS::GCCellPtr thing) {
+  MOZ_ASSERT(thing);
+  PreWriteBarrierImpl(thing.asCell());
+}
 
 }  // namespace gc
 
@@ -319,15 +332,6 @@ bool CurrentThreadIsTouchingGrayThings();
 bool IsMarkedBlack(JSObject* obj);
 
 #endif
-
-struct MOZ_RAII AutoTouchingGrayThings {
-#ifdef DEBUG
-  AutoTouchingGrayThings();
-  ~AutoTouchingGrayThings();
-#else
-  AutoTouchingGrayThings() {}
-#endif
-};
 
 template <typename T, typename Enable = void>
 struct InternalBarrierMethods {};
@@ -368,22 +372,19 @@ struct InternalBarrierMethods<Value> {
 
     // If the target needs an entry, add it.
     js::gc::StoreBuffer* sb;
-    if (next.isNurseryAllocatableGCThing() &&
-        (sb = next.toGCThing()->storeBuffer())) {
+    if (next.isGCThing() && (sb = next.toGCThing()->storeBuffer())) {
       // If we know that the prev has already inserted an entry, we can
       // skip doing the lookup to add the new entry. Note that we cannot
       // safely assert the presence of the entry because it may have been
       // added via a different store buffer.
-      if (prev.isNurseryAllocatableGCThing() &&
-          prev.toGCThing()->storeBuffer()) {
+      if (prev.isGCThing() && prev.toGCThing()->storeBuffer()) {
         return;
       }
       sb->putValue(vp);
       return;
     }
     // Remove the prev entry if the new value does not need it.
-    if (prev.isNurseryAllocatableGCThing() &&
-        (sb = prev.toGCThing()->storeBuffer())) {
+    if (prev.isGCThing() && (sb = prev.toGCThing()->storeBuffer())) {
       sb->unputValue(vp);
     }
   }
@@ -529,8 +530,7 @@ class PreBarriered : public WriteBarriered<T> {
  public:
   PreBarriered() : WriteBarriered<T>(JS::SafelyInitialized<T>::create()) {}
   /*
-   * Allow implicit construction for use in generic contexts, such as
-   * DebuggerWeakMap::markKeys.
+   * Allow implicit construction for use in generic contexts.
    */
   MOZ_IMPLICIT PreBarriered(const T& v) : WriteBarriered<T>(v) {}
 
@@ -972,6 +972,11 @@ class HeapSlot : public WriteBarriered<Value> {
 
   void destroy() { pre(); }
 
+  void setUndefinedUnchecked() {
+    pre();
+    value.setUndefined();
+  }
+
 #ifdef DEBUG
   bool preconditionForSet(NativeObject* owner, Kind kind, uint32_t slot) const;
   void assertPreconditionForPostWriteBarrier(NativeObject* obj, Kind kind,
@@ -993,7 +998,7 @@ class HeapSlot : public WriteBarriered<Value> {
 #ifdef DEBUG
     assertPreconditionForPostWriteBarrier(owner, kind, slot, target);
 #endif
-    if (this->value.isNurseryAllocatableGCThing()) {
+    if (this->value.isGCThing()) {
       gc::Cell* cell = this->value.toGCThing();
       if (cell->storeBuffer()) {
         cell->storeBuffer()->putSlot(owner, kind, slot, 1);
@@ -1095,6 +1100,28 @@ class MOZ_HEAP_CLASS ImmutableTenuredPtr {
 
   T get() const { return value; }
   const T* address() { return &value; }
+};
+
+// Template to remove any barrier wrapper and get the underlying type.
+template <typename T>
+struct RemoveBarrier {
+  using Type = T;
+};
+template <typename T>
+struct RemoveBarrier<HeapPtr<T>> {
+  using Type = T;
+};
+template <typename T>
+struct RemoveBarrier<GCPtr<T>> {
+  using Type = T;
+};
+template <typename T>
+struct RemoveBarrier<PreBarriered<T>> {
+  using Type = T;
+};
+template <typename T>
+struct RemoveBarrier<WeakHeapPtr<T>> {
+  using Type = T;
 };
 
 #if MOZ_IS_GCC
@@ -1225,66 +1252,5 @@ template <class T>
 struct DefaultHasher<js::UnsafeBarePtr<T>> : js::UnsafeBarePtrHasher<T> {};
 
 }  // namespace mozilla
-
-namespace js {
-
-class ArrayObject;
-class DebugEnvironmentProxy;
-class GlobalObject;
-class PropertyName;
-class Scope;
-class ScriptSourceObject;
-class Shape;
-class BaseShape;
-class GetterSetter;
-class PropMap;
-class WasmInstanceObject;
-class WasmTableObject;
-
-namespace jit {
-class JitCode;
-}  // namespace jit
-
-using PreBarrieredId = PreBarriered<jsid>;
-using PreBarrieredObject = PreBarriered<JSObject*>;
-using PreBarrieredValue = PreBarriered<Value>;
-
-using GCPtrNativeObject = GCPtr<NativeObject*>;
-using GCPtrArrayObject = GCPtr<ArrayObject*>;
-using GCPtrAtom = GCPtr<JSAtom*>;
-using GCPtrBigInt = GCPtr<BigInt*>;
-using GCPtrFunction = GCPtr<JSFunction*>;
-using GCPtrLinearString = GCPtr<JSLinearString*>;
-using GCPtrObject = GCPtr<JSObject*>;
-using GCPtrScript = GCPtr<JSScript*>;
-using GCPtrString = GCPtr<JSString*>;
-using GCPtrShape = GCPtr<Shape*>;
-using GCPtrGetterSetter = GCPtr<GetterSetter*>;
-using GCPtrPropMap = GCPtr<PropMap*>;
-using GCPtrValue = GCPtr<Value>;
-using GCPtrId = GCPtr<jsid>;
-
-using ImmutablePropertyNamePtr = ImmutableTenuredPtr<PropertyName*>;
-using ImmutableSymbolPtr = ImmutableTenuredPtr<JS::Symbol*>;
-
-using WeakHeapPtrAtom = WeakHeapPtr<JSAtom*>;
-using WeakHeapPtrDebugEnvironmentProxy = WeakHeapPtr<DebugEnvironmentProxy*>;
-using WeakHeapPtrGlobalObject = WeakHeapPtr<GlobalObject*>;
-using WeakHeapPtrObject = WeakHeapPtr<JSObject*>;
-using WeakHeapPtrScript = WeakHeapPtr<JSScript*>;
-using WeakHeapPtrScriptSourceObject = WeakHeapPtr<ScriptSourceObject*>;
-using WeakHeapPtrShape = WeakHeapPtr<Shape*>;
-using WeakHeapPtrJitCode = WeakHeapPtr<jit::JitCode*>;
-using WeakHeapPtrSymbol = WeakHeapPtr<JS::Symbol*>;
-using WeakHeapPtrWasmInstanceObject = WeakHeapPtr<WasmInstanceObject*>;
-using WeakHeapPtrWasmTableObject = WeakHeapPtr<WasmTableObject*>;
-
-using HeapPtrJitCode = HeapPtr<jit::JitCode*>;
-using HeapPtrNativeObject = HeapPtr<NativeObject*>;
-using HeapPtrObject = HeapPtr<JSObject*>;
-using HeapPtrRegExpShared = HeapPtr<RegExpShared*>;
-using HeapPtrValue = HeapPtr<Value>;
-
-} /* namespace js */
 
 #endif /* gc_Barrier_h */

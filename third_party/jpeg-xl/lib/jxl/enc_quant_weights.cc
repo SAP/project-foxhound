@@ -105,10 +105,9 @@ Status EncodeQuant(const QuantEncoding& encoding, size_t idx, size_t size_x,
           JXL_RETURN_IF_ERROR(F16Coder::Write(
               encoding.afv_weights[c][i] * (i < 6 ? 1.0f / 64 : 1.0f), writer));
         }
-        JXL_RETURN_IF_ERROR(EncodeDctParams(encoding.dct_params, writer));
-        JXL_RETURN_IF_ERROR(
-            EncodeDctParams(encoding.dct_params_afv_4x4, writer));
       }
+      JXL_RETURN_IF_ERROR(EncodeDctParams(encoding.dct_params, writer));
+      JXL_RETURN_IF_ERROR(EncodeDctParams(encoding.dct_params_afv_4x4, writer));
       break;
     }
   }
@@ -176,6 +175,26 @@ void DequantMatricesSetCustomDC(DequantMatrices* matrices, const float* dc) {
   JXL_CHECK(br.Close());
 }
 
+void DequantMatricesScaleDC(DequantMatrices* matrices, const float scale) {
+  float dc[3];
+  for (size_t c = 0; c < 3; ++c) {
+    dc[c] = matrices->InvDCQuant(c) * (1.0f / scale);
+  }
+  DequantMatricesSetCustomDC(matrices, dc);
+}
+
+void DequantMatricesRoundtrip(DequantMatrices* matrices) {
+  // Do not pass modular en/decoder, as they only change entropy and not
+  // values.
+  BitWriter writer;
+  JXL_CHECK(DequantMatricesEncode(matrices, &writer, 0, nullptr));
+  writer.ZeroPadToByte();
+  BitReader br(writer.GetSpan());
+  // Called only in the encoder: should fail only for programmer errors.
+  JXL_CHECK(matrices->Decode(&br));
+  JXL_CHECK(br.Close());
+}
+
 void DequantMatricesSetCustom(DequantMatrices* matrices,
                               const std::vector<QuantEncoding>& encodings,
                               ModularFrameEncoder* encoder) {
@@ -188,16 +207,7 @@ void DequantMatricesSetCustom(DequantMatrices* matrices,
                              encodings[i], i);
     }
   }
-  // Roundtrip encode/decode the matrices to ensure same values as decoder.
-  // Do not pass modular en/decoder, as they only change entropy and not
-  // values.
-  BitWriter writer;
-  JXL_CHECK(DequantMatricesEncode(matrices, &writer, 0, nullptr));
-  writer.ZeroPadToByte();
-  BitReader br(writer.GetSpan());
-  // Called only in the encoder: should fail only for programmer errors.
-  JXL_CHECK(matrices->Decode(&br));
-  JXL_CHECK(br.Close());
+  DequantMatricesRoundtrip(matrices);
 }
 
 }  // namespace jxl

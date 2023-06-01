@@ -82,33 +82,25 @@ class DocAccessibleChild : public DocAccessibleChildBase {
   virtual mozilla::ipc::IPCResult RecvLandmarkRole(
       const uint64_t& aID, nsString* aLandmark) override;
 
-  virtual mozilla::ipc::IPCResult RecvARIARoleAtom(const uint64_t& aID,
-                                                   nsString* aRole) override;
-
   virtual mozilla::ipc::IPCResult RecvGroupPosition(
       const uint64_t& aID, int32_t* aLevel, int32_t* aSimilarItemsInGroup,
       int32_t* aPositionInGroup) override;
 
   virtual mozilla::ipc::IPCResult RecvAttributes(
       const uint64_t& aID, RefPtr<AccAttributes>* aAttributes) override;
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  virtual mozilla::ipc::IPCResult RecvScrollTo(
-      const uint64_t& aID, const uint32_t& aScrollType) override;
   virtual mozilla::ipc::IPCResult RecvScrollToPoint(const uint64_t& aID,
                                                     const uint32_t& aScrollType,
                                                     const int32_t& aX,
                                                     const int32_t& aY) override;
 
   virtual mozilla::ipc::IPCResult RecvAnnounce(
-      const uint64_t& aID, const nsString& aAnnouncement,
+      const uint64_t& aID, const nsAString& aAnnouncement,
       const uint16_t& aPriority) override;
 
   virtual mozilla::ipc::IPCResult RecvCaretLineNumber(
       const uint64_t& aID, int32_t* aLineNumber) override;
   virtual mozilla::ipc::IPCResult RecvCaretOffset(const uint64_t& aID,
                                                   int32_t* aOffset) override;
-  virtual mozilla::ipc::IPCResult RecvSetCaretOffset(
-      const uint64_t& aID, const int32_t& aOffset) override;
 
   virtual mozilla::ipc::IPCResult RecvCharacterCount(const uint64_t& aID,
                                                      int32_t* aCount) override;
@@ -188,10 +180,10 @@ class DocAccessibleChild : public DocAccessibleChildBase {
                                            nsString* aText) override;
 
   virtual mozilla::ipc::IPCResult RecvReplaceText(
-      const uint64_t& aID, const nsString& aText) override;
+      const uint64_t& aID, const nsAString& aText) override;
 
   virtual mozilla::ipc::IPCResult RecvInsertText(const uint64_t& aID,
-                                                 const nsString& aText,
+                                                 const nsAString& aText,
                                                  const int32_t& aPosition,
                                                  bool* aValid) override;
 
@@ -267,8 +259,8 @@ class DocAccessibleChild : public DocAccessibleChildBase {
                                                 uint32_t* aExtent) override;
 
   virtual mozilla::ipc::IPCResult RecvGetPosition(const uint64_t& aID,
-                                                  uint32_t* aColIdx,
-                                                  uint32_t* aRowIdx) override;
+                                                  uint32_t* aRowIdx,
+                                                  uint32_t* aColIdx) override;
 
   virtual mozilla::ipc::IPCResult RecvGetColRowExtents(
       const uint64_t& aID, uint32_t* aColIdx, uint32_t* aRowIdx,
@@ -389,11 +381,6 @@ class DocAccessibleChild : public DocAccessibleChildBase {
   virtual mozilla::ipc::IPCResult RecvUnselectAll(const uint64_t& aID,
                                                   bool* aSuccess) override;
 
-  virtual mozilla::ipc::IPCResult RecvTakeSelection(
-      const uint64_t& aID) override;
-  virtual mozilla::ipc::IPCResult RecvSetSelected(const uint64_t& aID,
-                                                  const bool& aSelect) override;
-
   virtual mozilla::ipc::IPCResult RecvDoAction(const uint64_t& aID,
                                                const uint8_t& aIndex,
                                                bool* aSuccess) override;
@@ -406,9 +393,6 @@ class DocAccessibleChild : public DocAccessibleChildBase {
                                                    nsString* aName) override;
 
   virtual mozilla::ipc::IPCResult RecvAccessKey(
-      const uint64_t& aID, uint32_t* aKey, uint32_t* aModifierMask) override;
-
-  virtual mozilla::ipc::IPCResult RecvKeyboardShortcut(
       const uint64_t& aID, uint32_t* aKey, uint32_t* aModifierMask) override;
 
   virtual mozilla::ipc::IPCResult RecvAtkKeyBinding(const uint64_t& aID,
@@ -430,18 +414,12 @@ class DocAccessibleChild : public DocAccessibleChildBase {
   virtual mozilla::ipc::IPCResult RecvStep(const uint64_t& aID,
                                            double* aStep) override;
 
-  virtual mozilla::ipc::IPCResult RecvFocusedChild(
-      const uint64_t& aID, PDocAccessibleChild** aResultDoc,
-      uint64_t* aResultID) override;
-
   virtual mozilla::ipc::IPCResult RecvLanguage(const uint64_t& aID,
                                                nsString* aLocale) override;
   virtual mozilla::ipc::IPCResult RecvDocType(const uint64_t& aID,
                                               nsString* aType) override;
   virtual mozilla::ipc::IPCResult RecvTitle(const uint64_t& aID,
                                             nsString* aTitle) override;
-  virtual mozilla::ipc::IPCResult RecvURL(const uint64_t& aID,
-                                          nsString* aURL) override;
   virtual mozilla::ipc::IPCResult RecvMimeType(const uint64_t& aID,
                                                nsString* aMime) override;
   virtual mozilla::ipc::IPCResult RecvURLDocTypeMimeType(
@@ -475,7 +453,6 @@ class DocAccessibleChild : public DocAccessibleChildBase {
  private:
   LocalAccessible* IdToAccessibleLink(const uint64_t& aID) const;
   LocalAccessible* IdToAccessibleSelect(const uint64_t& aID) const;
-  HyperTextAccessible* IdToHyperTextAccessible(const uint64_t& aID) const;
   TextLeafAccessible* IdToTextLeafAccessible(const uint64_t& aID) const;
   ImageAccessible* IdToImageAccessible(const uint64_t& aID) const;
   TableCellAccessible* IdToTableCellAccessible(const uint64_t& aID) const;

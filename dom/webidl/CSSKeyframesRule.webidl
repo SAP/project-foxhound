@@ -13,7 +13,10 @@ interface CSSKeyframesRule : CSSRule {
            attribute DOMString   name;
   readonly attribute CSSRuleList cssRules;
 
-  void            appendRule(DOMString rule);
-  void            deleteRule(DOMString select);
+  getter CSSKeyframeRule (unsigned long index);
+  readonly attribute unsigned long length;
+
+  undefined        appendRule(DOMString rule);
+  undefined        deleteRule(DOMString select);
   CSSKeyframeRule? findRule(DOMString select);
 };

@@ -5,8 +5,6 @@
 # This module provides functionality for the command-line build tool
 # (mach). It is packaged as a module because everything is a library.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import argparse
 import codecs
 import errno
@@ -17,25 +15,25 @@ import sys
 import traceback
 import uuid
 from collections.abc import Iterable
-from typing import Union, Dict, List
 from pathlib import Path
+from typing import Dict, List, Union
 
 from .base import (
     CommandContext,
+    FailedCommandError,
     MachError,
     MissingFileError,
     NoCommandError,
     UnknownCommandError,
     UnrecognizedArgumentError,
-    FailedCommandError,
 )
 from .config import ConfigSettings
 from .dispatcher import CommandAction
 from .logging import LoggingManager
 from .registrar import Registrar
-from .sentry import register_sentry, NoopErrorReporter
-from .telemetry import report_invocation_metrics, create_telemetry_from_environment
-from .util import setenv, UserError
+from .sentry import NoopErrorReporter, register_sentry
+from .telemetry import create_telemetry_from_environment, report_invocation_metrics
+from .util import UserError, setenv
 
 SUGGEST_MACH_BUSTED_TEMPLATE = r"""
 You can invoke |./mach busted| to check if this issue is already on file. If it
@@ -499,7 +497,11 @@ To see more help for a specific command, run:
         self.log_manager.register_structured_logger(logging.getLogger("mach"))
 
         write_times = True
-        if args.log_no_times or "MACH_NO_WRITE_TIMES" in os.environ:
+        if (
+            args.log_no_times
+            or "MACH_NO_WRITE_TIMES" in os.environ
+            or "MOZ_AUTOMATION" in os.environ
+        ):
             write_times = False
 
         # Always enable terminal logging. The log manager figures out if we are

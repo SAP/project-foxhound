@@ -43,7 +43,6 @@ const responseContent2 = "response body 2";
 const altContent = "!@#$%^&*()";
 const altContentType = "text/binary";
 
-var servedNotModified = false;
 var shouldPassRevalidation = true;
 
 var cache_storage = null;
@@ -53,15 +52,15 @@ function contentHandler(metadata, response) {
   response.setHeader("Cache-Control", "no-cache");
   response.setHeader("ETag", "test-etag1");
 
+  let etag;
   try {
-    var etag = metadata.getHeader("If-None-Match");
+    etag = metadata.getHeader("If-None-Match");
   } catch (ex) {
-    var etag = "";
+    etag = "";
   }
 
   if (etag == "test-etag1" && shouldPassRevalidation) {
     response.setStatusLine(metadata.httpVersion, 304, "Not Modified");
-    servedNotModified = true;
   } else {
     var content = shouldPassRevalidation ? responseContent : responseContent2;
     response.bodyOutputStream.write(content, content.length);

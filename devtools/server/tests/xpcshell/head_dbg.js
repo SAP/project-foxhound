@@ -8,7 +8,9 @@ var CC = Components.Constructor;
 
 // Populate AppInfo before anything (like the shared loader) accesses
 // System.appinfo, which is a lazy getter.
-const appInfo = ChromeUtils.import("resource://testing-common/AppInfo.jsm");
+const appInfo = ChromeUtils.importESModule(
+  "resource://testing-common/AppInfo.sys.mjs"
+);
 appInfo.updateAppInfo({
   ID: "devtools@tests.mozilla.org",
   name: "devtools-tests",
@@ -17,45 +19,55 @@ appInfo.updateAppInfo({
   crashReporter: true,
 });
 
-const { require, loader } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
+const { require, loader } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
 );
 const { worker } = ChromeUtils.import(
   "resource://devtools/shared/loader/worker-loader.js"
 );
 
-const { NetUtil } = require("resource://gre/modules/NetUtil.jsm");
+const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
-const Services = require("Services");
 // Always log packets when running tests. runxpcshelltests.py will throw
 // the output away anyway, unless you give it the --verbose flag.
 Services.prefs.setBoolPref("devtools.debugger.log", false);
 // Enable remote debugging for the relevant tests.
 Services.prefs.setBoolPref("devtools.debugger.remote-enabled", true);
 
-const makeDebugger = require("devtools/server/actors/utils/make-debugger");
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
+const makeDebugger = require("resource://devtools/server/actors/utils/make-debugger.js");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 const {
   ActorRegistry,
-} = require("devtools/server/actors/utils/actor-registry");
-const { DevToolsServer } = require("devtools/server/devtools-server");
+} = require("resource://devtools/server/actors/utils/actor-registry.js");
+const {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
 const { DevToolsServer: WorkerDevToolsServer } = worker.require(
-  "devtools/server/devtools-server"
+  "resource://devtools/server/devtools-server.js"
 );
-const { DevToolsClient } = require("devtools/client/devtools-client");
-const { ObjectFront } = require("devtools/client/fronts/object");
-const { LongStringFront } = require("devtools/client/fronts/string");
-const { createCommandsDictionary } = require("devtools/shared/commands/index");
+const {
+  DevToolsClient,
+} = require("resource://devtools/client/devtools-client.js");
+const { ObjectFront } = require("resource://devtools/client/fronts/object.js");
+const {
+  LongStringFront,
+} = require("resource://devtools/client/fronts/string.js");
+const {
+  createCommandsDictionary,
+} = require("resource://devtools/shared/commands/index.js");
+const {
+  CommandsFactory,
+} = require("resource://devtools/shared/commands/commands-factory.js");
 
-const { addDebuggerToGlobal } = ChromeUtils.import(
-  "resource://gre/modules/jsdebugger.jsm"
+const { addDebuggerToGlobal } = ChromeUtils.importESModule(
+  "resource://gre/modules/jsdebugger.sys.mjs"
 );
 
 const { AddonTestUtils } = ChromeUtils.import(
   "resource://testing-common/AddonTestUtils.jsm"
 );
-const { getAppInfo } = ChromeUtils.import(
-  "resource://testing-common/AppInfo.jsm"
+const { getAppInfo } = ChromeUtils.importESModule(
+  "resource://testing-common/AppInfo.sys.mjs"
 );
 
 const systemPrincipal = Cc["@mozilla.org/systemprincipal;1"].createInstance(
@@ -97,15 +109,8 @@ async function createTargetForFakeTab(title) {
 }
 
 async function createTargetForMainProcess() {
-  DevToolsServer.init();
-  DevToolsServer.registerAllActors();
-  DevToolsServer.allowChromeProcess = true;
-
-  const client = new DevToolsClient(DevToolsServer.connectPipe());
-  await client.connect();
-
-  const mainProcessDescriptor = await client.mainRoot.getMainProcess();
-  return mainProcessDescriptor.getTarget();
+  const commands = await CommandsFactory.forMainProcess();
+  return commands.descriptorFront.getTarget();
 }
 
 /**
@@ -166,10 +171,15 @@ function createLongStringFront(conn, form) {
   return front;
 }
 
-function createTestGlobal(name) {
-  const sandbox = Cu.Sandbox(
-    Cc["@mozilla.org/systemprincipal;1"].createInstance(Ci.nsIPrincipal)
+function createTestGlobal(name, options) {
+  const principal = Cc["@mozilla.org/systemprincipal;1"].createInstance(
+    Ci.nsIPrincipal
   );
+  // NOTE: The Sandbox constructor behaves differently based on the argument
+  //       length.
+  const sandbox = options
+    ? Cu.Sandbox(principal, options)
+    : Cu.Sandbox(principal);
   sandbox.__name = name;
   // Expose a few mocks to better represent a Window object.
   // These attributes will be used by DOCUMENT_EVENT resource listener.
@@ -303,7 +313,7 @@ function scriptErrorLogLevel(message) {
 // into the ether.
 var errorCount = 0;
 var listener = {
-  observe: function(message) {
+  observe(message) {
     try {
       let string;
       errorCount++;
@@ -514,7 +524,7 @@ function writeFile(fileName, content) {
     do {
       const numWritten = stream.write(content, content.length);
       content = content.slice(numWritten);
-    } while (content.length > 0);
+    } while (content.length);
   } finally {
     stream.close();
   }
@@ -716,18 +726,6 @@ async function unBlackBox(sourceFront, range = null) {
 }
 
 /**
- * Perform a "source" RDP request with the given SourceFront to get the source
- * content and content type.
- *
- * @param SourceFront sourceFront
- * @returns Promise
- */
-function getSourceContent(sourceFront) {
-  dumpn("Getting source content for " + sourceFront.actor);
-  return sourceFront.source();
-}
-
-/**
  * Get a source at the specified url.
  *
  * @param ThreadFront threadFront
@@ -917,6 +915,7 @@ function threadFrontTest(test, options = {}) {
       server,
       targetFront,
       commands,
+      isWorkerServer: server === WorkerDevToolsServer,
     };
     if (waitForFinish) {
       // Use dispatchToMainThread so that the test function does not have to

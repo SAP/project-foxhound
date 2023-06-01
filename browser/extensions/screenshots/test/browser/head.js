@@ -1,12 +1,5 @@
 "use strict";
 
-const { AddonManager } = ChromeUtils.import(
-  "resource://gre/modules/AddonManager.jsm"
-);
-const { ContentTaskUtils } = ChromeUtils.import(
-  "resource://testing-common/ContentTaskUtils.jsm"
-);
-
 const TEST_ROOT = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
   "http://example.com"
@@ -214,7 +207,7 @@ async function getImageSizeFromClipboard(browser) {
   });
 }
 
-add_task(async function common_initialize() {
+add_setup(async function common_initialize() {
   // Ensure Screenshots is initially enabled for all tests
   const addon = await AddonManager.getAddonByID("screenshots@mozilla.org");
   const isEnabled = addon.enabled;

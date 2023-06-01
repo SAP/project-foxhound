@@ -4,38 +4,99 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = ["webrtcUI", "MacOSWebRTCStatusbarIndicator"];
+var EXPORTED_SYMBOLS = [
+  "webrtcUI",
+  "showStreamSharingMenu",
+  "MacOSWebRTCStatusbarIndicator",
+];
 
 const { EventEmitter } = ChromeUtils.import(
   "resource:///modules/syncedtabs/EventEmitter.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppConstants",
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
+const lazy = {};
 ChromeUtils.defineModuleGetter(
-  this,
-  "PluralForm",
-  "resource://gre/modules/PluralForm.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "BrowserWindowTracker",
   "resource:///modules/BrowserWindowTracker.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
-  "XPCOMUtils",
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "SitePermissions",
   "resource:///modules/SitePermissions.jsm"
 );
+XPCOMUtils.defineLazyGetter(
+  lazy,
+  "syncL10n",
+  () => new Localization(["browser/webrtcIndicator.ftl"], true)
+);
+XPCOMUtils.defineLazyGetter(
+  lazy,
+  "listFormat",
+  () => new Services.intl.ListFormat(undefined)
+);
+
+const SHARING_L10NID_BY_TYPE = new Map([
+  [
+    "Camera",
+    [
+      "webrtc-indicator-menuitem-sharing-camera-with",
+      "webrtc-indicator-menuitem-sharing-camera-with-n-tabs",
+    ],
+  ],
+  [
+    "Microphone",
+    [
+      "webrtc-indicator-menuitem-sharing-microphone-with",
+      "webrtc-indicator-menuitem-sharing-microphone-with-n-tabs",
+    ],
+  ],
+  [
+    "Application",
+    [
+      "webrtc-indicator-menuitem-sharing-application-with",
+      "webrtc-indicator-menuitem-sharing-application-with-n-tabs",
+    ],
+  ],
+  [
+    "Screen",
+    [
+      "webrtc-indicator-menuitem-sharing-screen-with",
+      "webrtc-indicator-menuitem-sharing-screen-with-n-tabs",
+    ],
+  ],
+  [
+    "Window",
+    [
+      "webrtc-indicator-menuitem-sharing-window-with",
+      "webrtc-indicator-menuitem-sharing-window-with-n-tabs",
+    ],
+  ],
+  [
+    "Browser",
+    [
+      "webrtc-indicator-menuitem-sharing-browser-with",
+      "webrtc-indicator-menuitem-sharing-browser-with-n-tabs",
+    ],
+  ],
+]);
+
+// These identifiers are defined in MediaStreamTrack.webidl
+const MEDIA_SOURCE_L10NID_BY_TYPE = new Map([
+  ["camera", "webrtc-item-camera"],
+  ["screen", "webrtc-item-screen"],
+  ["application", "webrtc-item-application"],
+  ["window", "webrtc-item-window"],
+  ["browser", "webrtc-item-browser"],
+  ["microphone", "webrtc-item-microphone"],
+  ["audioCapture", "webrtc-item-audio-capture"],
+]);
 
 var webrtcUI = {
   initialized: false,
@@ -396,7 +457,7 @@ var webrtcUI = {
     // to our browser windows so that we know which ones are shared.
     this.sharedBrowserWindows = new WeakSet();
 
-    for (let win of BrowserWindowTracker.orderedWindows) {
+    for (let win of lazy.BrowserWindowTracker.orderedWindows) {
       let rawDeviceId;
       try {
         rawDeviceId = win.windowUtils.webrtcRawDeviceId;
@@ -556,13 +617,13 @@ var webrtcUI = {
 
       let gBrowser = browser.getTabBrowser();
       if (!gBrowser) {
-        Cu.reportError("Can't stop sharing stream - cannot find gBrowser.");
+        console.error("Can't stop sharing stream - cannot find gBrowser.");
         continue;
       }
 
       let tab = gBrowser.getTabForBrowser(browser);
       if (!tab) {
-        Cu.reportError("Can't stop sharing stream - cannot find tab.");
+        console.error("Can't stop sharing stream - cannot find tab.");
         continue;
       }
 
@@ -589,7 +650,7 @@ var webrtcUI = {
    */
   clearPermissionsAndStopSharing(types, tab) {
     let invalidTypes = types.filter(
-      type => type != "camera" && type != "screen" && type != "microphone"
+      type => !["camera", "screen", "microphone", "speaker"].includes(type)
     );
     if (invalidTypes.length) {
       throw new Error(`Invalid device types ${invalidTypes.join(",")}`);
@@ -600,7 +661,7 @@ var webrtcUI = {
     // If we clear a WebRTC permission we need to remove all permissions of
     // the same type across device ids. We also need to stop active WebRTC
     // devices related to the permission.
-    let perms = SitePermissions.getAllForBrowser(browser);
+    let perms = lazy.SitePermissions.getAllForBrowser(browser);
 
     // If capturing, don't revoke one of camera/microphone without the other.
     let sharingCameraOrMic =
@@ -609,14 +670,14 @@ var webrtcUI = {
 
     perms
       .filter(perm => {
-        let [id] = perm.id.split(SitePermissions.PERM_KEY_DELIMITER);
+        let [id] = perm.id.split(lazy.SitePermissions.PERM_KEY_DELIMITER);
         if (sharingCameraOrMic && (id == "camera" || id == "microphone")) {
           return true;
         }
         return types.includes(id);
       })
       .forEach(perm => {
-        SitePermissions.removeFromPrincipal(
+        lazy.SitePermissions.removeFromPrincipal(
           browser.contentPrincipal,
           perm.id,
           browser
@@ -698,7 +759,14 @@ var webrtcUI = {
     browserWindowIds.forEach(id => this.activePerms.delete(id));
   },
 
-  showSharingDoorhanger(aActiveStream) {
+  /**
+   * Shows the Permission Panel for the tab associated with the provided
+   * active stream.
+   * @param aActiveStream - The stream that the user wants to see permissions for.
+   * @param aEvent - The user input event that is invoking the panel. This can be
+   *        undefined / null if no such event exists.
+   */
+  showSharingDoorhanger(aActiveStream, aEvent) {
     let browserWindow = aActiveStream.browser.ownerGlobal;
     if (aActiveStream.tab) {
       browserWindow.gBrowser.selectedTab = aActiveStream.tab;
@@ -706,15 +774,13 @@ var webrtcUI = {
       aActiveStream.browser.focus();
     }
     browserWindow.focus();
-    let permissionBox = browserWindow.document.getElementById(
-      "identity-permission-box"
-    );
+
     if (AppConstants.platform == "macosx" && !Services.focus.activeWindow) {
       browserWindow.addEventListener(
         "activate",
         function() {
           Services.tm.dispatchToMainThread(function() {
-            permissionBox.click();
+            browserWindow.gPermissionPanel.openPopup(aEvent);
           });
         },
         { once: true }
@@ -724,7 +790,7 @@ var webrtcUI = {
         .activateApplication(true);
       return;
     }
-    permissionBox.click();
+    browserWindow.gPermissionPanel.openPopup(aEvent);
   },
 
   updateWarningLabel(aMenuList) {
@@ -791,9 +857,9 @@ var webrtcUI = {
         host = uri.specIgnoringRef;
       } else {
         // This is unfortunate, but we should display *something*...
-        const kBundleURI = "chrome://browser/locale/browser.properties";
-        let bundle = Services.strings.createBundle(kBundleURI);
-        host = bundle.GetStringFromName("getUserMedia.sharingMenuUnknownHost");
+        host = lazy.syncL10n.formatValueSync(
+          "webrtc-sharing-menuitem-unknown-host"
+        );
       }
     }
     return host;
@@ -825,7 +891,7 @@ var webrtcUI = {
         try {
           gIndicatorWindow.updateIndicatorState();
         } catch (err) {
-          Cu.reportError(
+          console.error(
             `error in gIndicatorWindow.updateIndicatorState(): ${err.message}`
           );
         }
@@ -915,7 +981,7 @@ var webrtcUI = {
    */
   _setSharedData() {
     let sharedTopInnerWindowIds = new Set();
-    for (let win of BrowserWindowTracker.orderedWindows) {
+    for (let win of lazy.BrowserWindowTracker.orderedWindows) {
       if (this.sharedBrowserWindows.has(win)) {
         sharedTopInnerWindowIds.add(
           win.browsingContext.currentWindowGlobal.innerWindowId
@@ -934,8 +1000,6 @@ var webrtcUI = {
 };
 
 function getGlobalIndicator() {
-  webrtcUI.recordEvent("show_indicator", "show_indicator");
-
   if (!webrtcUI.useLegacyGlobalIndicator) {
     const INDICATOR_CHROME_URI =
       "chrome://browser/content/webrtcIndicator.xhtml";
@@ -970,6 +1034,77 @@ function getGlobalIndicator() {
   }
 
   return new MacOSWebRTCStatusbarIndicator();
+}
+
+/**
+ * Add a localized stream sharing menu to the event target
+ *
+ * @param {Window} win - The parent `window`
+ * @param {Event} event - The popupshowing event for the <menu>.
+ * @param {boolean} inclWindow - Should the window stream be included in the active streams.
+ */
+function showStreamSharingMenu(win, event, inclWindow = false) {
+  win.MozXULElement.insertFTLIfNeeded("browser/webrtcIndicator.ftl");
+  const doc = win.document;
+  const menu = event.target;
+
+  let type = menu.getAttribute("type");
+  let activeStreams;
+  if (type == "Camera") {
+    activeStreams = webrtcUI.getActiveStreams(true, false, false);
+  } else if (type == "Microphone") {
+    activeStreams = webrtcUI.getActiveStreams(false, true, false);
+  } else if (type == "Screen") {
+    activeStreams = webrtcUI.getActiveStreams(false, false, true, inclWindow);
+    type = webrtcUI.showScreenSharingIndicator;
+  }
+
+  if (!activeStreams.length) {
+    event.preventDefault();
+    return;
+  }
+
+  const l10nIds = SHARING_L10NID_BY_TYPE.get(type) ?? [];
+  if (activeStreams.length == 1) {
+    let stream = activeStreams[0];
+
+    const sharingItem = doc.createXULElement("menuitem");
+    const streamTitle = stream.browser.contentTitle || stream.uri;
+    doc.l10n.setAttributes(sharingItem, l10nIds[0], { streamTitle });
+    sharingItem.setAttribute("disabled", "true");
+    menu.appendChild(sharingItem);
+
+    const controlItem = doc.createXULElement("menuitem");
+    doc.l10n.setAttributes(
+      controlItem,
+      "webrtc-indicator-menuitem-control-sharing"
+    );
+    controlItem.stream = stream;
+    controlItem.addEventListener("command", this);
+
+    menu.appendChild(controlItem);
+  } else {
+    // We show a different menu when there are several active streams.
+    const sharingItem = doc.createXULElement("menuitem");
+    doc.l10n.setAttributes(sharingItem, l10nIds[1], {
+      tabCount: activeStreams.length,
+    });
+    sharingItem.setAttribute("disabled", "true");
+    menu.appendChild(sharingItem);
+
+    for (let stream of activeStreams) {
+      const controlItem = doc.createXULElement("menuitem");
+      const streamTitle = stream.browser.contentTitle || stream.uri;
+      doc.l10n.setAttributes(
+        controlItem,
+        "webrtc-indicator-menuitem-control-sharing-on",
+        { streamTitle }
+      );
+      controlItem.stream = stream;
+      controlItem.addEventListener("command", this);
+      menu.appendChild(controlItem);
+    }
+  }
 }
 
 /**
@@ -1039,7 +1174,7 @@ class MacOSWebRTCStatusbarIndicator {
    * @param {Event} aEvent - The command event for the <menuitem>.
    */
   _command(aEvent) {
-    webrtcUI.showSharingDoorhanger(aEvent.target.stream);
+    webrtcUI.showSharingDoorhanger(aEvent.target.stream, aEvent);
   }
 
   /**
@@ -1049,69 +1184,8 @@ class MacOSWebRTCStatusbarIndicator {
    * @param {Event} aEvent - The popupshowing event for the <menu>.
    */
   _popupShowing(aEvent) {
-    let menu = aEvent.target;
-    let type = menu.getAttribute("type");
-    let activeStreams;
-    if (type == "Camera") {
-      activeStreams = webrtcUI.getActiveStreams(true, false, false);
-    } else if (type == "Microphone") {
-      activeStreams = webrtcUI.getActiveStreams(false, true, false);
-    } else if (type == "Screen") {
-      activeStreams = webrtcUI.getActiveStreams(false, false, true);
-      type = webrtcUI.showScreenSharingIndicator;
-    }
-
-    let bundle = Services.strings.createBundle(
-      "chrome://browser/locale/webrtcIndicator.properties"
-    );
-
-    if (activeStreams.length == 1) {
-      let stream = activeStreams[0];
-
-      let menuitem = menu.ownerDocument.createXULElement("menuitem");
-      let labelId = "webrtcIndicator.sharing" + type + "With.menuitem";
-      let label = stream.browser.contentTitle || stream.uri;
-      menuitem.setAttribute(
-        "label",
-        bundle.formatStringFromName(labelId, [label])
-      );
-      menuitem.setAttribute("disabled", "true");
-      menu.appendChild(menuitem);
-
-      menuitem = menu.ownerDocument.createXULElement("menuitem");
-      menuitem.setAttribute(
-        "label",
-        bundle.GetStringFromName("webrtcIndicator.controlSharing.menuitem")
-      );
-      menuitem.stream = stream;
-      menuitem.addEventListener("command", this);
-
-      menu.appendChild(menuitem);
-      return true;
-    }
-
-    // We show a different menu when there are several active streams.
-    let menuitem = menu.ownerDocument.createXULElement("menuitem");
-    let labelId = "webrtcIndicator.sharing" + type + "WithNTabs.menuitem";
-    let count = activeStreams.length;
-    let label = PluralForm.get(
-      count,
-      bundle.GetStringFromName(labelId)
-    ).replace("#1", count);
-    menuitem.setAttribute("label", label);
-    menuitem.setAttribute("disabled", "true");
-    menu.appendChild(menuitem);
-
-    for (let stream of activeStreams) {
-      let item = menu.ownerDocument.createXULElement("menuitem");
-      labelId = "webrtcIndicator.controlSharingOn.menuitem";
-      label = stream.browser.contentTitle || stream.uri;
-      item.setAttribute("label", bundle.formatStringFromName(labelId, [label]));
-      item.stream = stream;
-      item.addEventListener("command", this);
-      menu.appendChild(item);
-    }
-
+    const menu = aEvent.target;
+    showStreamSharingMenu(menu.ownerGlobal, aEvent);
     return true;
   }
 
@@ -1165,29 +1239,19 @@ class MacOSWebRTCStatusbarIndicator {
 }
 
 function onTabSharingMenuPopupShowing(e) {
-  let streams = webrtcUI.getActiveStreams(true, true, true);
+  const streams = webrtcUI.getActiveStreams(true, true, true, true);
   for (let streamInfo of streams) {
-    let stringName = "getUserMedia.sharingMenu";
-    let types = streamInfo.types;
-    if (types.camera) {
-      stringName += "Camera";
-    }
-    if (types.microphone) {
-      stringName += "Microphone";
-    }
-    if (types.screen) {
-      stringName += types.screen;
-    }
+    const names = streamInfo.devices.map(({ mediaSource }) => {
+      const l10nId = MEDIA_SOURCE_L10NID_BY_TYPE.get(mediaSource);
+      return l10nId ? lazy.syncL10n.formatValueSync(l10nId) : mediaSource;
+    });
 
-    let doc = e.target.ownerDocument;
-    let bundle = doc.defaultView.gNavigatorBundle;
-
-    let origin = webrtcUI.getHostOrExtensionName(null, streamInfo.uri);
-    let menuitem = doc.createXULElement("menuitem");
-    menuitem.setAttribute(
-      "label",
-      bundle.getFormattedString(stringName, [origin])
-    );
+    const doc = e.target.ownerDocument;
+    const menuitem = doc.createXULElement("menuitem");
+    doc.l10n.setAttributes(menuitem, "webrtc-sharing-menuitem", {
+      origin: webrtcUI.getHostOrExtensionName(null, streamInfo.uri),
+      itemList: lazy.listFormat.format(names),
+    });
     menuitem.stream = streamInfo;
     menuitem.addEventListener("command", onTabSharingMenuPopupCommand);
     e.target.appendChild(menuitem);
@@ -1201,29 +1265,25 @@ function onTabSharingMenuPopupHiding(e) {
 }
 
 function onTabSharingMenuPopupCommand(e) {
-  webrtcUI.showSharingDoorhanger(e.target.stream);
+  webrtcUI.showSharingDoorhanger(e.target.stream, e);
 }
 
 function showOrCreateMenuForWindow(aWindow) {
   let document = aWindow.document;
   let menu = document.getElementById("tabSharingMenu");
   if (!menu) {
-    let stringBundle = aWindow.gNavigatorBundle;
     menu = document.createXULElement("menu");
     menu.id = "tabSharingMenu";
-    let labelStringId = "getUserMedia.sharingMenu.label";
-    menu.setAttribute("label", stringBundle.getString(labelStringId));
+    document.l10n.setAttributes(menu, "webrtc-sharing-menu");
 
     let container, insertionPoint;
     if (AppConstants.platform == "macosx") {
-      container = document.getElementById("windowPopup");
-      insertionPoint = document.getElementById("sep-window-list");
+      container = document.getElementById("menu_ToolsPopup");
+      insertionPoint = document.getElementById("devToolsSeparator");
       let separator = document.createXULElement("menuseparator");
       separator.id = "tabSharingSeparator";
       container.insertBefore(separator, insertionPoint);
     } else {
-      let accesskeyStringId = "getUserMedia.sharingMenu.accesskey";
-      menu.setAttribute("accesskey", stringBundle.getString(accesskeyStringId));
       container = document.getElementById("main-menubar");
       insertionPoint = document.getElementById("helpMenu");
     }

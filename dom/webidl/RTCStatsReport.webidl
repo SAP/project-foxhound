@@ -6,6 +6,7 @@
  * The origin of this IDL file is
  * http://dev.w3.org/2011/webrtc/editor/webrtc.html#rtcstatsreport-object
  * http://www.w3.org/2011/04/webrtc/wiki/Stats
+ * https://www.w3.org/TR/webrtc-stats/
  */
 
 enum RTCStatsType {
@@ -31,9 +32,9 @@ dictionary RTCStats {
 };
 
 dictionary RTCRtpStreamStats : RTCStats {
-  unsigned long ssrc;
+  required unsigned long ssrc;
+  required DOMString kind;
   DOMString mediaType;
-  DOMString kind;
   DOMString transportId;
   DOMString codecId;
 };
@@ -62,17 +63,48 @@ dictionary RTCReceivedRtpStreamStats: RTCRtpStreamStats {
 };
 
 dictionary RTCInboundRtpStreamStats : RTCReceivedRtpStreamStats {
+  required DOMString trackIdentifier;
   DOMString remoteId;
   unsigned long framesDecoded;
+  unsigned long framesDropped;
+  unsigned long frameWidth;
+  unsigned long frameHeight;
+  double framesPerSecond;
+  unsigned long long qpSum;
+  double totalDecodeTime;
+  double totalInterFrameDelay;
+  double totalSquaredInterFrameDelay;
+  DOMHighResTimeStamp lastPacketReceivedTimestamp;
+  unsigned long long headerBytesReceived;
+  unsigned long long fecPacketsReceived;
+  unsigned long long fecPacketsDiscarded;
   unsigned long long bytesReceived;
   unsigned long nackCount;
   unsigned long firCount;
   unsigned long pliCount;
+  double totalProcessingDelay;
+  // Always missing from libwebrtc
+  // DOMHighResTimeStamp  estimatedPlayoutTimestamp;
+  double jitterBufferDelay;
+  unsigned long long jitterBufferEmittedCount;
+  unsigned long long totalSamplesReceived;
+  unsigned long long concealedSamples;
+  unsigned long long silentConcealedSamples;
+  unsigned long long concealmentEvents;
+  unsigned long long insertedSamplesForDeceleration;
+  unsigned long long removedSamplesForAcceleration;
+  double audioLevel;
+  double totalAudioEnergy;
+  double totalSamplesDuration;
+  unsigned long framesReceived;
 };
 
 dictionary RTCRemoteInboundRtpStreamStats : RTCReceivedRtpStreamStats {
   DOMString localId;
   double roundTripTime;
+  double totalRoundTripTime;
+  double fractionLost;
+  unsigned long long roundTripTimeMeasurements;
 };
 
 dictionary RTCSentRtpStreamStats : RTCRtpStreamStats {
@@ -87,6 +119,15 @@ dictionary RTCOutboundRtpStreamStats : RTCSentRtpStreamStats {
   unsigned long nackCount;
   unsigned long firCount;
   unsigned long pliCount;
+  unsigned long long headerBytesSent;
+  unsigned long long retransmittedPacketsSent;
+  unsigned long long retransmittedBytesSent;
+  unsigned long long totalEncodedBytesTarget;
+  unsigned long frameWidth;
+  unsigned long frameHeight;
+  unsigned long framesSent;
+  unsigned long hugeFramesSent;
+  double totalEncodeTime;
 };
 
 dictionary RTCRemoteOutboundRtpStreamStats : RTCSentRtpStreamStats {

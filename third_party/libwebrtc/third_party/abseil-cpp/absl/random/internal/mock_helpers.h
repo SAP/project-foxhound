@@ -18,6 +18,7 @@
 
 #include <tuple>
 #include <type_traits>
+#include <utility>
 
 #include "absl/base/internal/fast_type_id.h"
 #include "absl/types/optional.h"
@@ -80,6 +81,13 @@ class MockHelpers {
   }
 
  public:
+  // InvokeMock is private; this provides access for some specialized use cases.
+  template <typename URBG>
+  static inline bool PrivateInvokeMock(URBG* urbg, IdType type,
+                                       void* args_tuple, void* result) {
+    return urbg->InvokeMock(type, args_tuple, result);
+  }
+
   // Invoke a mock for the KeyT (may or may not be a signature).
   //
   // KeyT is used to generate a typeid-based lookup key for the mock.
@@ -109,14 +117,14 @@ class MockHelpers {
   // The mocked function signature will be composed from KeyT as:
   //   result_type(args...)
   template <typename KeyT, typename MockURBG>
-  static auto MockFor(MockURBG& m) -> decltype(
-      std::declval<MockURBG>()
-          .template RegisterMock<typename KeySignature<KeyT>::result_type,
-                                 typename KeySignature<KeyT>::arg_tuple_type>(
-              std::declval<IdType>())) {
+  static auto MockFor(MockURBG& m)
+      -> decltype(m.template RegisterMock<
+                  typename KeySignature<KeyT>::result_type,
+                  typename KeySignature<KeyT>::arg_tuple_type>(
+          m, std::declval<IdType>())) {
     return m.template RegisterMock<typename KeySignature<KeyT>::result_type,
                                    typename KeySignature<KeyT>::arg_tuple_type>(
-        ::absl::base_internal::FastTypeId<KeyT>());
+        m, ::absl::base_internal::FastTypeId<KeyT>());
   }
 };
 

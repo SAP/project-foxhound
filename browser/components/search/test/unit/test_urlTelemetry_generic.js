@@ -1,18 +1,20 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
+ChromeUtils.defineESModuleGetters(this, {
+  BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.sys.mjs",
+  SearchSERPTelemetry: "resource:///modules/SearchSERPTelemetry.sys.mjs",
+  SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
+  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(this, {
-  BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
-  SearchSERPTelemetry: "resource:///modules/SearchSERPTelemetry.jsm",
-  SearchUtils: "resource://gre/modules/SearchUtils.jsm",
-  Services: "resource://gre/modules/Services.jsm",
   sinon: "resource://testing-common/Sinon.jsm",
-  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.jsm",
 });
 
 const TEST_PROVIDER_INFO = [
@@ -22,6 +24,18 @@ const TEST_PROVIDER_INFO = [
     queryParamName: "q",
     codeParamName: "abc",
     taggedCodes: ["ff", "tb"],
+    expectedOrganicCodes: ["baz"],
+    organicCodes: ["foo"],
+    followOnParamNames: ["a"],
+    extraAdServersRegexps: [/^https:\/\/www\.example\.com\/ad2/],
+  },
+  {
+    telemetryId: "example2",
+    searchPageRegexp: /^https:\/\/www\.example2\.com\/search/,
+    queryParamName: "q",
+    codeParamName: "abc",
+    taggedCodes: ["ff", "tb"],
+    expectedOrganicCodes: ["baz"],
     organicCodes: ["foo"],
     followOnParamNames: ["a"],
     extraAdServersRegexps: [/^https:\/\/www\.example\.com\/ad2/],
@@ -32,57 +46,113 @@ const TESTS = [
   {
     title: "Tagged search",
     trackingUrl: "https://www.example.com/search?q=test&abc=ff",
-    expectedSearchCountEntry: "example.in-content:sap:ff",
-    expectedAdKey: "example:sap",
+    expectedSearchCountEntry: "example:tagged:ff",
+    expectedAdKey: "example:tagged",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
+    impression: {
+      provider: "example",
+      tagged: "true",
+      partner_code: "ff",
+    },
   },
   {
     title: "Tagged follow-on",
     trackingUrl: "https://www.example.com/search?q=test&abc=tb&a=next",
-    expectedSearchCountEntry: "example.in-content:sap-follow-on:tb",
-    expectedAdKey: "example:sap-follow-on",
+    expectedSearchCountEntry: "example:tagged-follow-on:tb",
+    expectedAdKey: "example:tagged-follow-on",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
+    impression: {
+      provider: "example",
+      tagged: "true",
+      partner_code: "tb",
+    },
   },
   {
     title: "Organic search matched code",
     trackingUrl: "https://www.example.com/search?q=test&abc=foo",
-    expectedSearchCountEntry: "example.in-content:organic:foo",
+    expectedSearchCountEntry: "example:organic:foo",
     expectedAdKey: "example:organic",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
+    impression: {
+      provider: "example",
+      tagged: "false",
+      partner_code: "foo",
+    },
   },
   {
     title: "Organic search non-matched code",
     trackingUrl: "https://www.example.com/search?q=test&abc=ff123",
-    expectedSearchCountEntry: "example.in-content:organic:other",
+    expectedSearchCountEntry: "example:organic:other",
     expectedAdKey: "example:organic",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
+    impression: {
+      provider: "example",
+      tagged: "false",
+      partner_code: "other",
+    },
   },
   {
     title: "Organic search non-matched code 2",
     trackingUrl: "https://www.example.com/search?q=test&abc=foo123",
-    expectedSearchCountEntry: "example.in-content:organic:other",
+    expectedSearchCountEntry: "example:organic:other",
     expectedAdKey: "example:organic",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
+    impression: {
+      provider: "example",
+      tagged: "false",
+      partner_code: "other",
+    },
+  },
+  {
+    title: "Organic search expected organic matched code",
+    trackingUrl: "https://www.example.com/search?q=test&abc=baz",
+    expectedSearchCountEntry: "example:organic:none",
+    expectedAdKey: "example:organic",
+    adUrls: ["https://www.example.com/ad2"],
+    nonAdUrls: ["https://www.example.com/ad3"],
+    impression: {
+      provider: "example",
+      tagged: "false",
+      partner_code: "",
+    },
   },
   {
     title: "Organic search no codes",
     trackingUrl: "https://www.example.com/search?q=test",
-    expectedSearchCountEntry: "example.in-content:organic:none",
+    expectedSearchCountEntry: "example:organic:none",
     expectedAdKey: "example:organic",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
+    impression: {
+      provider: "example",
+      tagged: "false",
+      partner_code: "",
+    },
+  },
+  {
+    title: "Different engines using the same adUrl",
+    trackingUrl: "https://www.example2.com/search?q=test",
+    expectedSearchCountEntry: "example2:organic:none",
+    expectedAdKey: "example2:organic",
+    adUrls: ["https://www.example.com/ad2"],
+    nonAdUrls: ["https://www.example.com/ad3"],
+    impression: {
+      provider: "example2",
+      tagged: "false",
+      partner_code: "",
+    },
   },
 ];
 
 /**
  * This function is primarily for testing the Ad URL regexps that are triggered
- * when a URL is clicked on. These regexps are also used for the `with_ads`
- * probe. However, we test the ad_clicks route as that is easier to hit.
+ * when a URL is clicked on. These regexps are also used for the `withads`
+ * probe. However, we test the adclicks route as that is easier to hit.
  *
  * @param {string} serpUrl
  *   The url to simulate where the page the click came from.
@@ -114,13 +184,13 @@ async function testAdUrlClicked(serpUrl, adUrl, expectedAdKey) {
   const scalars = TelemetryTestUtils.getProcessScalars("parent", true, true);
   if (!expectedAdKey) {
     Assert.ok(
-      !("browser.search.ad_clicks" in scalars),
+      !("browser.search.adclicks.unknown" in scalars),
       "Should not have recorded an ad click"
     );
   } else {
     TelemetryTestUtils.assertKeyedScalar(
       scalars,
-      "browser.search.ad_clicks",
+      "browser.search.adclicks.unknown",
       expectedAdKey,
       1
     );
@@ -131,6 +201,11 @@ do_get_profile();
 
 add_task(async function setup() {
   Services.prefs.setBoolPref(SearchUtils.BROWSER_SEARCH_PREF + "log", true);
+  Services.prefs.setBoolPref(
+    SearchUtils.BROWSER_SEARCH_PREF + "serpEventTelemetry.enabled",
+    true
+  );
+  Services.fog.initializeFOG();
   await SearchSERPTelemetry.init();
   SearchSERPTelemetry.overrideSearchTelemetryForTests(TEST_PROVIDER_INFO);
   sinon.stub(BrowserSearchTelemetry, "shouldRecordSearchCount").returns(true);
@@ -148,12 +223,12 @@ add_task(async function test_parsing_search_urls() {
       },
       test.trackingUrl
     );
-    let histogram = Services.telemetry.getKeyedHistogramById("SEARCH_COUNTS");
-    let snapshot = histogram.snapshot();
-    Assert.ok(snapshot);
-    Assert.ok(
-      test.expectedSearchCountEntry in snapshot,
-      "The histogram must contain the correct key"
+    let scalars = TelemetryTestUtils.getProcessScalars("parent", true, true);
+    TelemetryTestUtils.assertKeyedScalar(
+      scalars,
+      "browser.search.content.unknown",
+      test.expectedSearchCountEntry,
+      1
     );
 
     if ("adUrls" in test) {
@@ -165,9 +240,36 @@ add_task(async function test_parsing_search_urls() {
       }
     }
 
+    let recordedEvents = Glean.serp.impression.testGetValue();
+
+    Assert.equal(
+      recordedEvents.length,
+      1,
+      "should only see one impression event"
+    );
+
+    let recordedEvent = recordedEvents[0].extra;
+    Assert.equal(
+      recordedEvent.partner_code,
+      test.impression.partner_code,
+      "should see the correct partner code"
+    );
+    Assert.equal(
+      recordedEvent.tagged,
+      test.impression.tagged,
+      "should see the correct tagged value"
+    );
+    Assert.equal(
+      recordedEvent.provider,
+      test.impression.provider,
+      "should see the correct provider"
+    );
+
     if (test.tearDown) {
       test.tearDown();
     }
-    histogram.clear();
+
+    // We need to clear Glean events so they don't accumulate for each iteration.
+    Services.fog.testResetFOG();
   }
 });

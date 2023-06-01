@@ -4,17 +4,14 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
+const lazy = {};
+
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "AMO_ABUSEREPORT",
   "extensions.abuseReport.amWebAPI.enabled",
   false
@@ -267,7 +264,7 @@ class WebAPI extends APIObject {
   }
 
   get abuseReportPanelEnabled() {
-    return AMO_ABUSEREPORT;
+    return lazy.AMO_ABUSEREPORT;
   }
 
   eventListenerAdded(type) {

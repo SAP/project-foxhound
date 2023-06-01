@@ -4,12 +4,9 @@
 
 // tests the translation infobar, using a fake 'Translation' implementation.
 
-var tmp = {};
-ChromeUtils.import(
-  "resource:///modules/translation/TranslationParent.jsm",
-  tmp
+const { TranslationParent } = ChromeUtils.import(
+  "resource:///modules/translation/TranslationParent.jsm"
 );
-var { Translation, TranslationParent } = tmp;
 
 const kDetectLanguagePref = "browser.translation.detectLanguage";
 const kShowUIPref = "browser.translation.ui.show";
@@ -106,7 +103,7 @@ add_task(async function test_infobar() {
   let notif = showTranslationUI("fr");
   is(
     notif.state,
-    "" + Translation.STATE_OFFER,
+    Translation.STATE_OFFER,
     "the infobar is offering translation"
   );
   is(
@@ -120,7 +117,7 @@ add_task(async function test_infobar() {
   notif._getAnonElt("translate").click();
   is(
     notif.state,
-    "" + Translation.STATE_TRANSLATING,
+    Translation.STATE_TRANSLATING,
     "the infobar is in the translating state"
   );
   ok(
@@ -137,14 +134,14 @@ add_task(async function test_infobar() {
 
   info("Make the translation fail and check we are in the error state.");
   notif.translation.failTranslation();
-  is(notif.state, "" + Translation.STATE_ERROR, "infobar in the error state");
+  is(notif.state, Translation.STATE_ERROR, "infobar in the error state");
   checkURLBarIcon();
 
   info("Click the try again button");
   notif._getAnonElt("tryAgain").click();
   is(
     notif.state,
-    "" + Translation.STATE_TRANSLATING,
+    Translation.STATE_TRANSLATING,
     "infobar in the translating state"
   );
   ok(
@@ -165,7 +162,7 @@ add_task(async function test_infobar() {
   notif.translation.finishTranslation();
   is(
     notif.state,
-    "" + Translation.STATE_TRANSLATED,
+    Translation.STATE_TRANSLATED,
     "infobar in the translated state"
   );
   checkURLBarIcon(true);
@@ -210,7 +207,7 @@ add_task(async function test_infobar() {
   from.doCommand();
   is(
     notif.state,
-    "" + Translation.STATE_TRANSLATING,
+    Translation.STATE_TRANSLATING,
     "infobar in the translating state"
   );
   ok(
@@ -235,7 +232,7 @@ add_task(async function test_infobar() {
   to.doCommand();
   is(
     notif.state,
-    "" + Translation.STATE_TRANSLATING,
+    Translation.STATE_TRANSLATING,
     "infobar in the translating state"
   );
   ok(
@@ -257,7 +254,7 @@ add_task(async function test_infobar() {
   notif = showTranslationUI("fr");
   is(
     notif.state,
-    "" + Translation.STATE_OFFER,
+    Translation.STATE_OFFER,
     "the infobar is offering translation"
   );
   is(
@@ -270,7 +267,7 @@ add_task(async function test_infobar() {
   notif._getAnonElt("translate").click();
   is(
     notif.state,
-    "" + Translation.STATE_TRANSLATING,
+    Translation.STATE_TRANSLATING,
     "the infobar is in the translating state"
   );
   ok(
@@ -335,7 +332,7 @@ add_task(async function test_infobar_using_page() {
   let notif = notificationBox.getNotificationWithValue("translation");
   is(
     notif.state,
-    "" + Translation.STATE_OFFER,
+    Translation.STATE_OFFER,
     "the infobar is offering translation"
   );
   is(

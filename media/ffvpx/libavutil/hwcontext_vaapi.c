@@ -81,6 +81,9 @@ typedef struct VAAPIFramesContext {
     unsigned int rt_format;
     // Whether vaDeriveImage works.
     int derive_works;
+    // Caches whether VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2 is unsupported for
+    // surface imports.
+    int prime_2_import_unsupported;
 } VAAPIFramesContext;
 
 typedef struct VAAPIMapping {
@@ -121,12 +124,21 @@ static const VAAPIFormatDescriptor vaapi_format_map[] = {
 #ifdef VA_FOURCC_Y210
     MAP(Y210, YUV422_10,  Y210, 0),
 #endif
+#ifdef VA_FOURCC_Y212
+    MAP(Y212, YUV422_12,  Y212, 0),
+#endif
     MAP(411P, YUV411,  YUV411P, 0),
     MAP(422V, YUV422,  YUV440P, 0),
     MAP(444P, YUV444,  YUV444P, 0),
+#ifdef VA_FOURCC_XYUV
+    MAP(XYUV, YUV444,  VUYX,    0),
+#endif
     MAP(Y800, YUV400,  GRAY8,   0),
 #ifdef VA_FOURCC_P010
     MAP(P010, YUV420_10BPP, P010, 0),
+#endif
+#ifdef VA_FOURCC_P012
+    MAP(P012, YUV420_12, P012, 0),
 #endif
     MAP(BGRA, RGB32,   BGRA, 0),
     MAP(BGRX, RGB32,   BGR0, 0),
@@ -140,6 +152,16 @@ static const VAAPIFormatDescriptor vaapi_format_map[] = {
     MAP(XRGB, RGB32,   0RGB, 0),
 #ifdef VA_FOURCC_X2R10G10B10
     MAP(X2R10G10B10, RGB32_10, X2RGB10, 0),
+#endif
+#ifdef VA_FOURCC_Y410
+    // libva doesn't include a fourcc for XV30 and the driver only declares
+    // support for Y410, so we must fudge the mapping here.
+    MAP(Y410, YUV444_10,  XV30, 0),
+#endif
+#ifdef VA_FOURCC_Y412
+    // libva doesn't include a fourcc for XV36 and the driver only declares
+    // support for Y412, so we must fudge the mapping here.
+    MAP(Y412, YUV444_12,  XV36, 0),
 #endif
 };
 #undef MAP
@@ -466,7 +488,7 @@ static void vaapi_buffer_free(void *opaque, uint8_t *data)
     }
 }
 
-static AVBufferRef *vaapi_pool_alloc(void *opaque, buffer_size_t size)
+static AVBufferRef *vaapi_pool_alloc(void *opaque, size_t size)
 {
     AVHWFramesContext     *hwfc = opaque;
     VAAPIFramesContext     *ctx = hwfc->internal->priv;
@@ -991,10 +1013,14 @@ static const struct {
 } vaapi_drm_format_map[] = {
 #ifdef DRM_FORMAT_R8
     DRM_MAP(NV12, 2, DRM_FORMAT_R8,  DRM_FORMAT_RG88),
+    DRM_MAP(NV12, 2, DRM_FORMAT_R8,  DRM_FORMAT_GR88),
 #endif
     DRM_MAP(NV12, 1, DRM_FORMAT_NV12),
 #if defined(VA_FOURCC_P010) && defined(DRM_FORMAT_R16)
     DRM_MAP(P010, 2, DRM_FORMAT_R16, DRM_FORMAT_RG1616),
+#endif
+#if defined(VA_FOURCC_P012) && defined(DRM_FORMAT_R16)
+    DRM_MAP(P012, 2, DRM_FORMAT_R16, DRM_FORMAT_RG1616),
 #endif
     DRM_MAP(BGRA, 1, DRM_FORMAT_ARGB8888),
     DRM_MAP(BGRX, 1, DRM_FORMAT_XRGB8888),
@@ -1006,6 +1032,15 @@ static const struct {
 #endif
     DRM_MAP(ARGB, 1, DRM_FORMAT_BGRA8888),
     DRM_MAP(XRGB, 1, DRM_FORMAT_BGRX8888),
+#if defined(VA_FOURCC_XYUV) && defined(DRM_FORMAT_XYUV8888)
+    DRM_MAP(XYUV, 1, DRM_FORMAT_XYUV8888),
+#endif
+#if defined(VA_FOURCC_Y412) && defined(DRM_FORMAT_XVYU2101010)
+    DRM_MAP(Y410, 1, DRM_FORMAT_XVYU2101010),
+#endif
+#if defined(VA_FOURCC_Y412) && defined(DRM_FORMAT_XVYU12_16161616)
+    DRM_MAP(Y412, 1, DRM_FORMAT_XVYU12_16161616),
+#endif
 };
 #undef DRM_MAP
 
@@ -1024,16 +1059,23 @@ static void vaapi_unmap_from_drm(AVHWFramesContext *dst_fc,
 static int vaapi_map_from_drm(AVHWFramesContext *src_fc, AVFrame *dst,
                               const AVFrame *src, int flags)
 {
+#if VA_CHECK_VERSION(1, 1, 0)
+    VAAPIFramesContext     *src_vafc = src_fc->internal->priv;
+    int use_prime2;
+#else
+    int k;
+#endif
     AVHWFramesContext      *dst_fc =
         (AVHWFramesContext*)dst->hw_frames_ctx->data;
     AVVAAPIDeviceContext  *dst_dev = dst_fc->device_ctx->hwctx;
     const AVDRMFrameDescriptor *desc;
     const VAAPIFormatDescriptor *format_desc;
     VASurfaceID surface_id;
-    VAStatus vas;
+    VAStatus vas = VA_STATUS_SUCCESS;
     uint32_t va_fourcc;
-    int err, i, j, k;
+    int err, i, j;
 
+#if !VA_CHECK_VERSION(1, 1, 0)
     unsigned long buffer_handle;
     VASurfaceAttribExternalBuffers buffer_desc;
     VASurfaceAttrib attrs[2] = {
@@ -1050,6 +1092,7 @@ static int vaapi_map_from_drm(AVHWFramesContext *src_fc, AVFrame *dst,
             .value.value.p = &buffer_desc,
         }
     };
+#endif
 
     desc = (AVDRMFrameDescriptor*)src->data[0];
 
@@ -1085,6 +1128,119 @@ static int vaapi_map_from_drm(AVHWFramesContext *src_fc, AVFrame *dst,
     format_desc = vaapi_format_from_fourcc(va_fourcc);
     av_assert0(format_desc);
 
+#if VA_CHECK_VERSION(1, 1, 0)
+    use_prime2 = !src_vafc->prime_2_import_unsupported &&
+                 desc->objects[0].format_modifier != DRM_FORMAT_MOD_INVALID;
+    if (use_prime2) {
+        VADRMPRIMESurfaceDescriptor prime_desc;
+        VASurfaceAttrib prime_attrs[2] = {
+            {
+                .type  = VASurfaceAttribMemoryType,
+                .flags = VA_SURFACE_ATTRIB_SETTABLE,
+                .value.type    = VAGenericValueTypeInteger,
+                .value.value.i = VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2,
+            },
+            {
+                .type  = VASurfaceAttribExternalBufferDescriptor,
+                .flags = VA_SURFACE_ATTRIB_SETTABLE,
+                .value.type    = VAGenericValueTypePointer,
+                .value.value.p = &prime_desc,
+            }
+        };
+        prime_desc.fourcc = va_fourcc;
+        prime_desc.width = src_fc->width;
+        prime_desc.height = src_fc->height;
+        prime_desc.num_objects = desc->nb_objects;
+        for (i = 0; i < desc->nb_objects; ++i) {
+            prime_desc.objects[i].fd = desc->objects[i].fd;
+            prime_desc.objects[i].size = desc->objects[i].size;
+            prime_desc.objects[i].drm_format_modifier =
+                    desc->objects[i].format_modifier;
+        }
+
+        prime_desc.num_layers = desc->nb_layers;
+        for (i = 0; i < desc->nb_layers; ++i) {
+            prime_desc.layers[i].drm_format = desc->layers[i].format;
+            prime_desc.layers[i].num_planes = desc->layers[i].nb_planes;
+            for (j = 0; j < desc->layers[i].nb_planes; ++j) {
+                prime_desc.layers[i].object_index[j] =
+                        desc->layers[i].planes[j].object_index;
+                prime_desc.layers[i].offset[j] = desc->layers[i].planes[j].offset;
+                prime_desc.layers[i].pitch[j] = desc->layers[i].planes[j].pitch;
+            }
+
+            if (format_desc->chroma_planes_swapped &&
+                desc->layers[i].nb_planes == 3) {
+                FFSWAP(uint32_t, prime_desc.layers[i].pitch[1],
+                    prime_desc.layers[i].pitch[2]);
+                FFSWAP(uint32_t, prime_desc.layers[i].offset[1],
+                    prime_desc.layers[i].offset[2]);
+            }
+        }
+
+        /*
+         * We can query for PRIME_2 support with vaQuerySurfaceAttributes, but that
+         * that needs the config_id which we don't have here . Both Intel and
+         * Gallium seem to do the correct error checks, so lets just try the
+         * PRIME_2 import first.
+         */
+        vas = vaCreateSurfaces(dst_dev->display, format_desc->rt_format,
+                               src->width, src->height, &surface_id, 1,
+                               prime_attrs, FF_ARRAY_ELEMS(prime_attrs));
+        if (vas != VA_STATUS_SUCCESS)
+            src_vafc->prime_2_import_unsupported = 1;
+    }
+
+    if (!use_prime2 || vas != VA_STATUS_SUCCESS) {
+        int k;
+        unsigned long buffer_handle;
+        VASurfaceAttribExternalBuffers buffer_desc;
+        VASurfaceAttrib buffer_attrs[2] = {
+            {
+                .type  = VASurfaceAttribMemoryType,
+                .flags = VA_SURFACE_ATTRIB_SETTABLE,
+                .value.type    = VAGenericValueTypeInteger,
+                .value.value.i = VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME,
+            },
+            {
+                .type  = VASurfaceAttribExternalBufferDescriptor,
+                .flags = VA_SURFACE_ATTRIB_SETTABLE,
+                .value.type    = VAGenericValueTypePointer,
+                .value.value.p = &buffer_desc,
+            }
+        };
+
+        buffer_handle = desc->objects[0].fd;
+        buffer_desc.pixel_format = va_fourcc;
+        buffer_desc.width        = src_fc->width;
+        buffer_desc.height       = src_fc->height;
+        buffer_desc.data_size    = desc->objects[0].size;
+        buffer_desc.buffers      = &buffer_handle;
+        buffer_desc.num_buffers  = 1;
+        buffer_desc.flags        = 0;
+
+        k = 0;
+        for (i = 0; i < desc->nb_layers; i++) {
+            for (j = 0; j < desc->layers[i].nb_planes; j++) {
+                buffer_desc.pitches[k] = desc->layers[i].planes[j].pitch;
+                buffer_desc.offsets[k] = desc->layers[i].planes[j].offset;
+                ++k;
+            }
+        }
+        buffer_desc.num_planes = k;
+
+        if (format_desc->chroma_planes_swapped &&
+            buffer_desc.num_planes == 3) {
+            FFSWAP(uint32_t, buffer_desc.pitches[1], buffer_desc.pitches[2]);
+            FFSWAP(uint32_t, buffer_desc.offsets[1], buffer_desc.offsets[2]);
+        }
+
+        vas = vaCreateSurfaces(dst_dev->display, format_desc->rt_format,
+                               src->width, src->height,
+                               &surface_id, 1,
+                               buffer_attrs, FF_ARRAY_ELEMS(buffer_attrs));
+    }
+#else
     buffer_handle = desc->objects[0].fd;
     buffer_desc.pixel_format = va_fourcc;
     buffer_desc.width        = src_fc->width;
@@ -1114,6 +1270,7 @@ static int vaapi_map_from_drm(AVHWFramesContext *src_fc, AVFrame *dst,
                            src->width, src->height,
                            &surface_id, 1,
                            attrs, FF_ARRAY_ELEMS(attrs));
+#endif
     if (vas != VA_STATUS_SUCCESS) {
         av_log(dst_fc, AV_LOG_ERROR, "Failed to create surface from DRM "
                "object: %d (%s).\n", vas, vaErrorStr(vas));
@@ -1356,7 +1513,7 @@ static int vaapi_map_to_drm_abh(AVHWFramesContext *hwfc, AVFrame *dst,
         goto fail_derived;
     }
 
-    av_log(hwfc, AV_LOG_DEBUG, "DRM PRIME fd is %ld.\n",
+    av_log(hwfc, AV_LOG_DEBUG, "DRM PRIME fd is %"PRIdPTR".\n",
            mapping->buffer_info.handle);
 
     mapping->drm_desc.nb_objects = 1;

@@ -12,7 +12,7 @@
 
   function triggerKey() {
     SpecialPowers.loadChromeScript(() => {
-      const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+      /* eslint-env mozilla/chrome-script */
       const { EventUtils } = ChromeUtils.import(
         "resource://specialpowers/SpecialPowersEventUtils.jsm"
       );

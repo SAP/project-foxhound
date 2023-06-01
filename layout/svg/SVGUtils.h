@@ -23,7 +23,7 @@
 #include "nsCOMPtr.h"
 #include "nsID.h"
 #include "nsIFrame.h"
-#include "nsISupportsBase.h"
+#include "nsISupports.h"
 #include "nsMathUtils.h"
 #include "nsStyleStruct.h"
 #include <algorithm>
@@ -67,8 +67,6 @@ class GeneralPattern;
 #define SVG_HIT_TEST_STROKE 0x02
 #define SVG_HIT_TEST_CHECK_MRECT 0x04
 
-bool NS_SVGDisplayListHitTestingEnabled();
-bool NS_SVGDisplayListPaintingEnabled();
 bool NS_SVGNewGetBBoxEnabled();
 
 namespace mozilla {
@@ -467,8 +465,18 @@ class SVGUtils final {
         std::max(double(INT32_MIN), std::min(double(INT32_MAX), aVal)));
   }
 
+  /**
+   * Convert a floating-point value to a 64-bit integer value, clamping to
+   * the lowest and highest integers that can be safely compared to a double.
+   */
+  static int64_t ClampToInt64(double aVal) {
+    return static_cast<int64_t>(
+        std::clamp<double>(aVal, INT64_MIN, std::nexttoward(INT64_MAX, 0)));
+  }
+
   static nscolor GetFallbackOrPaintColor(
-      const ComputedStyle&, StyleSVGPaint nsStyleSVG::*aFillOrStroke);
+      const ComputedStyle&, StyleSVGPaint nsStyleSVG::*aFillOrStroke,
+      nscolor aDefaultContextFallbackColor);
 
   static void MakeFillPatternFor(nsIFrame* aFrame, gfxContext* aContext,
                                  GeneralPattern* aOutPattern,

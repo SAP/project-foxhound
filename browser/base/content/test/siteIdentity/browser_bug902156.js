@@ -34,7 +34,7 @@ const HTTPS_TEST_ROOT_2 = getRootDirectory(gTestPath).replace(
   "https://test2.example.com"
 );
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({ set: [[PREF_ACTIVE, true]] });
 });
 
@@ -73,7 +73,7 @@ add_task(async function test1() {
     // page and see if our decision is persistent
     url = HTTPS_TEST_ROOT_1 + "file_bug902156_2.html";
     browserLoaded = BrowserTestUtils.browserLoaded(browser, false, url);
-    BrowserTestUtils.loadURI(browser, url);
+    BrowserTestUtils.loadURIString(browser, url);
     await browserLoaded;
 
     // The Control Center button should appear but isMixedContentBlocked should be NOT true,

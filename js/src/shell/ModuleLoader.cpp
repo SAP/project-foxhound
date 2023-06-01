@@ -13,6 +13,7 @@
 #include "NamespaceImports.h"
 
 #include "builtin/TestingUtility.h"  // js::CreateScriptPrivate
+#include "js/Conversions.h"
 #include "js/MapAndSet.h"
 #include "js/Modules.h"
 #include "js/PropertyAndElement.h"  // JS_DefineProperty, JS_GetProperty
@@ -31,12 +32,12 @@ using namespace js::shell;
 
 static constexpr char16_t JavaScriptScheme[] = u"javascript:";
 
-static bool IsJavaScriptURL(HandleLinearString path) {
+static bool IsJavaScriptURL(Handle<JSLinearString*> path) {
   return StringStartsWith(path, JavaScriptScheme);
 }
 
 static JSString* ExtractJavaScriptURLSource(JSContext* cx,
-                                            HandleLinearString path) {
+                                            Handle<JSLinearString*> path) {
   MOZ_ASSERT(IsJavaScriptURL(path));
 
   const size_t schemeLength = js_strlen(JavaScriptScheme);
@@ -61,8 +62,11 @@ bool ModuleLoader::init(JSContext* cx, HandleString loadPath) {
   JS::SetModuleResolveHook(rt, ModuleLoader::ResolveImportedModule);
   JS::SetModuleMetadataHook(rt, ModuleLoader::GetImportMetaProperties);
   JS::SetModuleDynamicImportHook(rt, ModuleLoader::ImportModuleDynamically);
-  JS::SetSupportedAssertionsHook(rt,
-                                 ModuleLoader::GetSupportedImportAssertions);
+
+  JS::ImportAssertionVector assertions;
+  MOZ_ALWAYS_TRUE(assertions.reserve(1));
+  assertions.infallibleAppend(JS::ImportAssertion::Type);
+  JS::SetSupportedImportAssertions(rt, assertions);
 
   return true;
 }
@@ -82,6 +86,34 @@ bool ModuleLoader::GetImportMetaProperties(JSContext* cx,
                                            JS::HandleObject metaObject) {
   ShellContext* scx = GetShellContext(cx);
   return scx->moduleLoader->populateImportMeta(cx, privateValue, metaObject);
+}
+
+bool ModuleLoader::ImportMetaResolve(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  RootedValue modulePrivate(
+      cx, js::GetFunctionNativeReserved(&args.callee(), ModulePrivateSlot));
+
+  // https://html.spec.whatwg.org/#hostgetimportmetaproperties
+  // Step 4.1. Set specifier to ? ToString(specifier).
+  //
+  // https://tc39.es/ecma262/#sec-tostring
+  RootedValue v(cx, args.get(ImportMetaResolveSpecifierArg));
+  RootedString specifier(cx, JS::ToString(cx, v));
+  if (!specifier) {
+    return false;
+  }
+
+  // Step 4.2, 4.3 are implemented in importMetaResolve.
+  ShellContext* scx = GetShellContext(cx);
+  RootedString url(cx);
+  if (!scx->moduleLoader->importMetaResolve(cx, modulePrivate, specifier,
+                                            &url)) {
+    return false;
+  }
+
+  // Step 4.4. Return the serialization of url.
+  args.rval().setString(url);
+  return true;
 }
 
 // static
@@ -124,8 +156,9 @@ bool ModuleLoader::loadRootModule(JSContext* cx, HandleString path) {
 }
 
 bool ModuleLoader::registerTestModule(JSContext* cx, HandleObject moduleRequest,
-                                      HandleModuleObject module) {
-  RootedLinearString path(cx, resolve(cx, moduleRequest, UndefinedHandleValue));
+                                      Handle<ModuleObject*> module) {
+  Rooted<JSLinearString*> path(
+      cx, resolve(cx, moduleRequest, UndefinedHandleValue));
   if (!path) {
     return false;
   }
@@ -138,6 +171,11 @@ bool ModuleLoader::registerTestModule(JSContext* cx, HandleObject moduleRequest,
   return addModuleToRegistry(cx, path, module);
 }
 
+void ModuleLoader::clearModules(JSContext* cx) {
+  Handle<GlobalObject*> global = cx->global();
+  global->setReservedSlot(GlobalAppSlotModuleRegistry, UndefinedValue());
+}
+
 bool ModuleLoader::loadAndExecute(JSContext* cx, HandleString path,
                                   MutableHandleValue rval) {
   RootedObject module(cx, loadAndParse(cx, path));
@@ -145,7 +183,7 @@ bool ModuleLoader::loadAndExecute(JSContext* cx, HandleString path,
     return false;
   }
 
-  if (!JS::ModuleInstantiate(cx, module)) {
+  if (!JS::ModuleLink(cx, module)) {
     return false;
   }
 
@@ -155,7 +193,8 @@ bool ModuleLoader::loadAndExecute(JSContext* cx, HandleString path,
 JSObject* ModuleLoader::resolveImportedModule(
     JSContext* cx, JS::HandleValue referencingPrivate,
     JS::HandleObject moduleRequest) {
-  RootedLinearString path(cx, resolve(cx, moduleRequest, referencingPrivate));
+  Rooted<JSLinearString*> path(cx,
+                               resolve(cx, moduleRequest, referencingPrivate));
   if (!path) {
     return nullptr;
   }
@@ -166,7 +205,7 @@ JSObject* ModuleLoader::resolveImportedModule(
 bool ModuleLoader::populateImportMeta(JSContext* cx,
                                       JS::HandleValue privateValue,
                                       JS::HandleObject metaObject) {
-  RootedLinearString path(cx);
+  Rooted<JSLinearString*> path(cx);
   if (!privateValue.isUndefined()) {
     if (!getScriptPath(cx, privateValue, &path)) {
       return false;
@@ -181,7 +220,35 @@ bool ModuleLoader::populateImportMeta(JSContext* cx,
   }
 
   RootedValue pathValue(cx, StringValue(path));
-  return JS_DefineProperty(cx, metaObject, "url", pathValue, JSPROP_ENUMERATE);
+  if (!JS_DefineProperty(cx, metaObject, "url", pathValue, JSPROP_ENUMERATE)) {
+    return false;
+  }
+
+  JSFunction* resolveFunc = js::DefineFunctionWithReserved(
+      cx, metaObject, "resolve", ImportMetaResolve, ImportMetaResolveNumArgs,
+      JSPROP_ENUMERATE);
+  if (!resolveFunc) {
+    return false;
+  }
+
+  RootedObject resolveFuncObj(cx, JS_GetFunctionObject(resolveFunc));
+  js::SetFunctionNativeReserved(resolveFuncObj, ModulePrivateSlot,
+                                privateValue);
+
+  return true;
+}
+
+bool ModuleLoader::importMetaResolve(JSContext* cx,
+                                     JS::Handle<JS::Value> referencingPrivate,
+                                     JS::Handle<JSString*> specifier,
+                                     JS::MutableHandle<JSString*> urlOut) {
+  Rooted<JSLinearString*> path(cx, resolve(cx, specifier, referencingPrivate));
+  if (!path) {
+    return false;
+  }
+
+  urlOut.set(path);
+  return true;
 }
 
 bool ModuleLoader::dynamicImport(JSContext* cx,
@@ -276,7 +343,8 @@ bool ModuleLoader::tryDynamicImport(JSContext* cx,
                                     JS::HandleObject moduleRequest,
                                     JS::HandleObject promise,
                                     JS::MutableHandleValue rval) {
-  RootedLinearString path(cx, resolve(cx, moduleRequest, referencingPrivate));
+  Rooted<JSLinearString*> path(cx,
+                               resolve(cx, moduleRequest, referencingPrivate));
   if (!path) {
     return false;
   }
@@ -294,8 +362,18 @@ JSLinearString* ModuleLoader::resolve(JSContext* cx,
     return nullptr;
   }
 
-  RootedLinearString name(
+  Rooted<JSLinearString*> name(
       cx, JS_EnsureLinearString(cx, moduleRequest->specifier()));
+  if (!name) {
+    return nullptr;
+  }
+
+  return resolve(cx, name, referencingInfo);
+}
+
+JSLinearString* ModuleLoader::resolve(JSContext* cx, HandleString specifier,
+                                      HandleValue referencingInfo) {
+  Rooted<JSLinearString*> name(cx, JS_EnsureLinearString(cx, specifier));
   if (!name) {
     return nullptr;
   }
@@ -320,7 +398,7 @@ JSLinearString* ModuleLoader::resolve(JSContext* cx,
       return nullptr;
     }
 
-    RootedLinearString refPath(cx);
+    Rooted<JSLinearString*> refPath(cx);
     if (!getScriptPath(cx, referencingInfo, &refPath)) {
       return nullptr;
     }
@@ -354,11 +432,15 @@ JSLinearString* ModuleLoader::resolve(JSContext* cx,
     return nullptr;
   }
 
-  return JS_EnsureLinearString(cx, result);
+  Rooted<JSLinearString*> linear(cx, JS_EnsureLinearString(cx, result));
+  if (!linear) {
+    return nullptr;
+  }
+  return normalizePath(cx, linear);
 }
 
 JSObject* ModuleLoader::loadAndParse(JSContext* cx, HandleString pathArg) {
-  RootedLinearString path(cx, JS_EnsureLinearString(cx, pathArg));
+  Rooted<JSLinearString*> path(cx, JS_EnsureLinearString(cx, pathArg));
   if (!path) {
     return nullptr;
   }
@@ -390,15 +472,13 @@ JSObject* ModuleLoader::loadAndParse(JSContext* cx, HandleString pathArg) {
     return nullptr;
   }
 
-  JS::AutoStableStringChars stableChars(cx);
-  if (!stableChars.initTwoByte(cx, source)) {
+  JS::AutoStableStringChars linearChars(cx);
+  if (!linearChars.initTwoByte(cx, source)) {
     return nullptr;
   }
 
-  const char16_t* chars = stableChars.twoByteRange().begin().get();
   JS::SourceText<char16_t> srcBuf;
-  if (!srcBuf.init(cx, chars, source->length(),
-                   JS::SourceOwnership::Borrowed)) {
+  if (!srcBuf.initMaybeBorrowed(cx, linearChars)) {
     return nullptr;
   }
 
@@ -491,8 +571,8 @@ bool ModuleLoader::getScriptPath(JSContext* cx, HandleValue privateValue,
 }
 
 JSLinearString* ModuleLoader::normalizePath(JSContext* cx,
-                                            HandleLinearString pathArg) {
-  RootedLinearString path(cx, pathArg);
+                                            Handle<JSLinearString*> pathArg) {
+  Rooted<JSLinearString*> path(cx, pathArg);
 
   if (IsJavaScriptURL(path)) {
     return path;
@@ -506,7 +586,7 @@ JSLinearString* ModuleLoader::normalizePath(JSContext* cx,
   }
 
   // Remove the drive letter, if present.
-  RootedLinearString drive(cx);
+  Rooted<JSLinearString*> drive(cx);
   if (path->length() > 2 && mozilla::IsAsciiAlpha(CharAt(path, 0)) &&
       CharAt(path, 1) == u':' && CharAt(path, 2) == u'\\') {
     drive = SubString(cx, path, 0, 2);
@@ -526,7 +606,7 @@ JSLinearString* ModuleLoader::normalizePath(JSContext* cx,
       i = path->length();
     }
 
-    RootedLinearString part(cx, SubString(cx, path, lastSep, i));
+    Rooted<JSLinearString*> part(cx, SubString(cx, path, lastSep, i));
     if (!part) {
       return nullptr;
     }
@@ -559,7 +639,7 @@ JSLinearString* ModuleLoader::normalizePath(JSContext* cx,
     }
   }
 
-  RootedLinearString pathSep(cx, pathSeparatorStr);
+  Rooted<JSLinearString*> pathSep(cx, pathSeparatorStr);
   RootedString normalized(cx, JoinStrings(cx, components, pathSep));
   if (!normalized) {
     return nullptr;
@@ -577,7 +657,8 @@ JSLinearString* ModuleLoader::normalizePath(JSContext* cx,
   return JS_EnsureLinearString(cx, normalized);
 }
 
-JSString* ModuleLoader::fetchSource(JSContext* cx, HandleLinearString path) {
+JSString* ModuleLoader::fetchSource(JSContext* cx,
+                                    Handle<JSLinearString*> path) {
   if (IsJavaScriptURL(path)) {
     return ExtractJavaScriptURLSource(cx, path);
   }

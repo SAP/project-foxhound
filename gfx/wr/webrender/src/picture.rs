@@ -95,19 +95,19 @@
 //! improved as a follow up).
 
 use api::{MixBlendMode, PremultipliedColorF, FilterPrimitiveKind};
-use api::{PropertyBinding, PropertyBindingId, FilterPrimitive};
+use api::{PropertyBinding, PropertyBindingId, FilterPrimitive, RasterSpace};
 use api::{DebugFlags, ImageKey, ColorF, ColorU, PrimitiveFlags};
 use api::{ImageRendering, ColorDepth, YuvRangedColorSpace, YuvFormat, AlphaType};
 use api::units::*;
-use crate::batch::BatchFilter;
+use crate::command_buffer::PrimitiveCommand;
 use crate::box_shadow::BLUR_SAMPLE_SCALE;
-use crate::clip::{ClipStore, ClipChainInstance, ClipChainId, ClipInstance};
+use crate::clip::{ClipStore, ClipChainInstance, ClipLeafId, ClipNodeId, ClipTreeBuilder};
 use crate::spatial_tree::{SpatialTree, CoordinateSpaceMapping, SpatialNodeIndex, VisibleFace};
 use crate::composite::{CompositorKind, CompositeState, NativeSurfaceId, NativeTileId, CompositeTileSurface, tile_kind};
 use crate::composite::{ExternalSurfaceDescriptor, ExternalSurfaceDependency, CompositeTileDescriptor, CompositeTile};
 use crate::composite::{CompositorTransformIndex};
 use crate::debug_colors;
-use euclid::{vec2, vec3, Point2D, Scale, Vector2D, Box2D, SideOffsets2D};
+use euclid::{vec3, Point2D, Scale, Vector2D, Box2D};
 use euclid::approxeq::ApproxEq;
 use crate::filterdata::SFilterData;
 use crate::intern::ItemUid;
@@ -116,7 +116,7 @@ use crate::internal_types::{PlaneSplitterIndex, PlaneSplitAnchor, TextureSource}
 use crate::frame_builder::{FrameBuildingContext, FrameBuildingState, PictureState, PictureContext};
 use crate::gpu_cache::{GpuCache, GpuCacheAddress, GpuCacheHandle};
 use crate::gpu_types::{UvRectKind, ZBufferId};
-use plane_split::{Clipper, Polygon, Splitter};
+use plane_split::{Clipper, Polygon};
 use crate::prim_store::{PrimitiveTemplateKind, PictureIndex, PrimitiveInstance, PrimitiveInstanceKind};
 use crate::prim_store::{ColorBindingStorage, ColorBindingIndex, PrimitiveScratchBuffer};
 use crate::print_tree::{PrintTree, PrintTreePrinter};
@@ -129,13 +129,15 @@ use crate::renderer::BlendMode;
 use crate::resource_cache::{ResourceCache, ImageGeneration, ImageRequest};
 use crate::space::SpaceMapper;
 use crate::scene::SceneProperties;
+use crate::spatial_tree::CoordinateSystemId;
+use crate::surface::{SurfaceDescriptor, SurfaceTileDescriptor};
 use smallvec::SmallVec;
 use std::{mem, u8, marker, u32};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::collections::hash_map::Entry;
 use std::ops::Range;
 use crate::picture_textures::PictureCacheTextureHandle;
-use crate::util::{MaxRect, VecHelper, MatrixHelpers, Recycler, raster_rect_to_device_pixels, ScaleOffset};
+use crate::util::{MaxRect, VecHelper, MatrixHelpers, Recycler, ScaleOffset};
 use crate::filterdata::{FilterDataHandle};
 use crate::tile_cache::{SliceDebugInfo, TileDebugInfo, DirtyTileDebugInfo};
 use crate::visibility::{PrimitiveVisibilityFlags, FrameVisibilityContext};
@@ -144,7 +146,7 @@ use crate::scene_building::{SliceFlags};
 
 // Maximum blur radius for blur filter (different than box-shadow blur).
 // Taken from FilterNodeSoftware.cpp in Gecko.
-pub const MAX_BLUR_RADIUS: f32 = 100.;
+const MAX_BLUR_RADIUS: f32 = 100.;
 
 /// Specify whether a surface allows subpixel AA text rendering.
 #[derive(Debug, Copy, Clone)]
@@ -279,7 +281,7 @@ pub const TILE_SIZE_SCROLLBAR_VERTICAL: DeviceIntSize = DeviceIntSize {
 
 /// The maximum size per axis of a surface,
 ///  in WorldPixel coordinates.
-const MAX_SURFACE_SIZE: f32 = 4096.0;
+const MAX_SURFACE_SIZE: usize = 4096;
 /// Maximum size of a compositor surface.
 const MAX_COMPOSITOR_SURFACES_SIZE: f32 = 8192.0;
 
@@ -297,25 +299,6 @@ fn clamp(value: i32, low: i32, high: i32) -> i32 {
 
 fn clampf(value: f32, low: f32, high: f32) -> f32 {
     value.max(low).min(high)
-}
-
-/// Clamps the blur radius depending on scale factors.
-fn clamp_blur_radius(blur_radius: f32, scale_factors: (f32, f32)) -> f32 {
-    // Clamping must occur after scale factors are applied, but scale factors are not applied
-    // until later on. To clamp the blur radius, we first apply the scale factors and then clamp
-    // and finally revert the scale factors.
-
-    // TODO: the clamping should be done on a per-axis basis, but WR currently only supports
-    // having a single value for both x and y blur.
-    let largest_scale_factor = f32::max(scale_factors.0, scale_factors.1);
-    let scaled_blur_radius = blur_radius * largest_scale_factor;
-
-    if scaled_blur_radius > MAX_BLUR_RADIUS {
-        MAX_BLUR_RADIUS / largest_scale_factor
-    } else {
-        // Return the original blur radius to avoid any rounding errors
-        blur_radius
-    }
 }
 
 /// An index into the prims array in a TileDescriptor.
@@ -475,19 +458,13 @@ struct TilePreUpdateContext {
     frame_id: FrameId,
 }
 
-// Immutable context passed to picture cache tiles during post_update
-struct TilePostUpdateContext<'a> {
+// Immutable context passed to picture cache tiles during update_dirty_and_valid_rects
+struct TileUpdateDirtyContext<'a> {
     /// Maps from picture cache coords -> world space coords.
     pic_to_world_mapper: SpaceMapper<PicturePixel, WorldPixel>,
 
     /// Global scale factor from world -> device pixels.
     global_device_pixel_scale: DevicePixelScale,
-
-    /// The local clip rect (in picture space) of the entire picture cache
-    local_clip_rect: PictureRect,
-
-    /// The calculated backdrop information for this cache instance.
-    backdrop: Option<BackdropInfo>,
 
     /// Information about opacity bindings from the picture cache.
     opacity_bindings: &'a FastHashMap<PropertyBindingId, OpacityBindingInfo>,
@@ -495,22 +472,16 @@ struct TilePostUpdateContext<'a> {
     /// Information about color bindings from the picture cache.
     color_bindings: &'a FastHashMap<PropertyBindingId, ColorBindingInfo>,
 
-    /// Current size in device pixels of tiles for this cache
-    current_tile_size: DeviceIntSize,
-
     /// The local rect of the overall picture cache
     local_rect: PictureRect,
-
-    /// Pre-allocated z-id to assign to tiles during post_update.
-    z_id: ZBufferId,
 
     /// If true, the scale factor of the root transform for this picture
     /// cache changed, so we need to invalidate the tile and re-render.
     invalidate_all: bool,
 }
 
-// Mutable state passed to picture cache tiles during post_update
-struct TilePostUpdateState<'a> {
+// Mutable state passed to picture cache tiles during update_dirty_and_valid_rects
+struct TileUpdateDirtyState<'a> {
     /// Allow access to the texture cache for requesting tiles
     resource_cache: &'a mut ResourceCache,
 
@@ -522,6 +493,30 @@ struct TilePostUpdateState<'a> {
 
     /// Information about transform node differences from last frame.
     spatial_node_comparer: &'a mut SpatialNodeComparer,
+}
+
+// Immutable context passed to picture cache tiles during post_update
+struct TilePostUpdateContext {
+    /// The local clip rect (in picture space) of the entire picture cache
+    local_clip_rect: PictureRect,
+
+    /// The calculated backdrop information for this cache instance.
+    backdrop: Option<BackdropInfo>,
+
+    /// Current size in device pixels of tiles for this cache
+    current_tile_size: DeviceIntSize,
+
+    /// Pre-allocated z-id to assign to tiles during post_update.
+    z_id: ZBufferId,
+}
+
+// Mutable state passed to picture cache tiles during post_update
+struct TilePostUpdateState<'a> {
+    /// Allow access to the texture cache for requesting tiles
+    resource_cache: &'a mut ResourceCache,
+
+    /// Current configuration and setup for compositing all the picture cache tiles in renderer.
+    composite_state: &'a mut CompositeState,
 }
 
 /// Information about the dependencies of a single primitive instance.
@@ -572,6 +567,17 @@ impl PrimitiveDependencyInfo {
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct TileId(pub usize);
+
+/// Uniquely identifies a tile within a picture cache slice
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+#[derive(Debug, Copy, Clone, PartialEq, Hash, Eq)]
+pub struct TileKey {
+    // Tile index (x,y)
+    pub tile_offset: TileOffset,
+    // Sub-slice (z)
+    pub sub_slice_index: SubSliceIndex,
+}
 
 /// A descriptor for the kind of texture that a picture cache tile will
 /// be drawn into.
@@ -730,6 +736,8 @@ pub enum InvalidationReason {
     ValidRectChanged,
     // The overall scale of the picture cache changed
     ScaleChanged,
+    // The content of the sampling surface changed
+    SurfaceContentChanged,
 }
 
 /// Information about a cached tile.
@@ -783,6 +791,8 @@ pub struct Tile {
     /// The last frame this tile had its dependencies updated (dependency updating is
     /// skipped if a tile is off-screen).
     pub last_updated_frame_id: FrameId,
+
+    pub sub_graphs: Vec<(PictureRect, Vec<(PictureCompositeMode, SurfaceIndex)>)>,
 }
 
 impl Tile {
@@ -811,6 +821,7 @@ impl Tile {
             local_valid_rect: PictureBox2D::zero(),
             z_id: ZBufferId::invalid(),
             last_updated_frame_id: FrameId::INVALID,
+            sub_graphs: Vec::new(),
         }
     }
 
@@ -827,8 +838,8 @@ impl Tile {
     /// Check if the content of the previous and current tile descriptors match
     fn update_dirty_rects(
         &mut self,
-        ctx: &TilePostUpdateContext,
-        state: &mut TilePostUpdateState,
+        ctx: &TileUpdateDirtyContext,
+        state: &mut TileUpdateDirtyState,
         invalidation_reason: &mut Option<InvalidationReason>,
         frame_context: &FrameVisibilityContext,
     ) -> PictureRect {
@@ -861,8 +872,8 @@ impl Tile {
     /// later by changing how ComparableVec is used.
     fn update_content_validity(
         &mut self,
-        ctx: &TilePostUpdateContext,
-        state: &mut TilePostUpdateState,
+        ctx: &TileUpdateDirtyContext,
+        state: &mut TileUpdateDirtyState,
         frame_context: &FrameVisibilityContext,
     ) {
         // Check if the contents of the primitives, clips, and
@@ -936,6 +947,7 @@ impl Tile {
             PicturePoint::new(-1.0e32, -1.0e32),
         );
         self.invalidation_reason  = None;
+        self.sub_graphs.clear();
 
         self.world_tile_rect = ctx.pic_to_world_mapper
             .map(&self.local_tile_rect)
@@ -1064,12 +1076,12 @@ impl Tile {
 
     /// Called during tile cache instance post_update. Allows invalidation and dirty
     /// rect calculation after primitive dependencies have been updated.
-    fn post_update(
+    fn update_dirty_and_valid_rects(
         &mut self,
-        ctx: &TilePostUpdateContext,
-        state: &mut TilePostUpdateState,
+        ctx: &TileUpdateDirtyContext,
+        state: &mut TileUpdateDirtyState,
         frame_context: &FrameVisibilityContext,
-    ) -> bool {
+    ) {
         // Register the frame id of this tile with the spatial node comparer, to ensure
         // that it doesn't GC any spatial nodes from the comparer that are referenced
         // by this tile. Must be done before we early exit below, so that we retain
@@ -1080,7 +1092,7 @@ impl Tile {
         // so don't want to invalidate, merge, split etc. The tile won't need to be drawn
         // (and thus updated / invalidated) until it is on screen again.
         if !self.is_visible {
-            return false;
+            return;
         }
 
         // Calculate the overall valid rect for this tile.
@@ -1119,6 +1131,22 @@ impl Tile {
 
         // Invalidate the tile based on the content changing.
         self.update_content_validity(ctx, state, frame_context);
+    }
+
+    /// Called during tile cache instance post_update. Allows invalidation and dirty
+    /// rect calculation after primitive dependencies have been updated.
+    fn post_update(
+        &mut self,
+        ctx: &TilePostUpdateContext,
+        state: &mut TilePostUpdateState,
+        frame_context: &FrameVisibilityContext,
+    ) {
+        // If tile is not visible, just early out from here - we don't update dependencies
+        // so don't want to invalidate, merge, split etc. The tile won't need to be drawn
+        // (and thus updated / invalidated) until it is on screen again.
+        if !self.is_visible {
+            return;
+        }
 
         // If there are no primitives there is no need to draw or cache it.
         // Bug 1719232 - The final device valid rect does not always describe a non-empty
@@ -1135,7 +1163,7 @@ impl Tile {
             }
 
             self.is_visible = false;
-            return false;
+            return;
         }
 
         // Check if this tile can be considered opaque. Opacity state must be updated only
@@ -1281,8 +1309,6 @@ impl Tile {
 
         // Store the current surface backing info for use during batching.
         self.surface = Some(surface);
-
-        true
     }
 }
 
@@ -1541,9 +1567,6 @@ impl TileDescriptor {
 /// Represents the dirty region of a tile cache picture.
 #[derive(Clone)]
 pub struct DirtyRegion {
-    /// The individual filters that make up this region.
-    pub filters: Vec<BatchFilter>,
-
     /// The overall dirty rect, a combination of dirty_rects
     pub combined: WorldRect,
 
@@ -1557,7 +1580,6 @@ impl DirtyRegion {
         spatial_node_index: SpatialNodeIndex,
     ) -> Self {
         DirtyRegion {
-            filters: Vec::with_capacity(16),
             combined: WorldRect::zero(),
             spatial_node_index,
         }
@@ -1568,7 +1590,6 @@ impl DirtyRegion {
         &mut self,
         spatial_node_index: SpatialNodeIndex,
     ) {
-        self.filters.clear();
         self.combined = WorldRect::zero();
         self.spatial_node_index = spatial_node_index;
     }
@@ -1578,7 +1599,6 @@ impl DirtyRegion {
     pub fn add_dirty_region(
         &mut self,
         rect_in_pic_space: PictureRect,
-        sub_slice_index: SubSliceIndex,
         spatial_tree: &SpatialTree,
     ) {
         let map_pic_to_world = SpaceMapper::new_with_target(
@@ -1594,52 +1614,12 @@ impl DirtyRegion {
 
         // Include this in the overall dirty rect
         self.combined = self.combined.union(&world_rect);
-
-        self.filters.push(BatchFilter {
-            rect_in_pic_space,
-            sub_slice_index,
-        });
-    }
-
-    // TODO(gw): This returns a heap allocated object. Perhaps we can simplify this
-    //           logic? Although - it's only used very rarely so it may not be an issue.
-    pub fn inflate(
-        &self,
-        inflate_amount: f32,
-        spatial_tree: &SpatialTree,
-    ) -> DirtyRegion {
-        let map_pic_to_world = SpaceMapper::new_with_target(
-            spatial_tree.root_reference_frame_index(),
-            self.spatial_node_index,
-            WorldRect::max_rect(),
-            spatial_tree,
-        );
-
-        let mut filters = Vec::with_capacity(self.filters.len());
-        let mut combined = WorldRect::zero();
-
-        for filter in &self.filters {
-            let rect_in_pic_space = filter.rect_in_pic_space.inflate(inflate_amount, inflate_amount);
-
-            let world_rect = map_pic_to_world
-                .map(&rect_in_pic_space)
-                .expect("bug");
-
-            combined = combined.union(&world_rect);
-            filters.push(BatchFilter {
-                rect_in_pic_space,
-                sub_slice_index: filter.sub_slice_index,
-            });
-        }
-
-        DirtyRegion {
-            filters,
-            combined,
-            spatial_node_index: self.spatial_node_index,
-        }
     }
 }
 
+// TODO(gw): Tidy this up by:
+//      - Rename Clear variant to something more appropriate to what it does
+//      - Add an Other variant for things like opaque gradient backdrops
 #[derive(Debug, Copy, Clone)]
 pub enum BackdropKind {
     Color {
@@ -1655,15 +1635,22 @@ pub struct BackdropInfo {
     /// to determine where subpixel AA can be used, and where alpha blending
     /// can be disabled.
     pub opaque_rect: PictureRect,
+    /// If the backdrop covers the entire slice with an opaque color, this
+    /// will be set and can be used as a clear color for the slice's tiles.
+    pub spanning_opaque_color: Option<ColorF>,
     /// Kind of the backdrop
     pub kind: Option<BackdropKind>,
+    /// The picture space rectangle of the backdrop, if kind is set.
+    pub backdrop_rect: PictureRect,
 }
 
 impl BackdropInfo {
     fn empty() -> Self {
         BackdropInfo {
             opaque_rect: PictureRect::zero(),
+            spanning_opaque_color: None,
             kind: None,
+            backdrop_rect: PictureRect::zero(),
         }
     }
 }
@@ -1736,10 +1723,10 @@ pub struct TileCacheParams {
     // Optional background color of this tilecache. If present, can be used as an optimization
     // to enable opaque blending and/or subpixel AA in more places.
     pub background_color: Option<ColorF>,
-    // List of clips shared by all prims that are promoted to this tile cache
-    pub shared_clips: Vec<ClipInstance>,
-    // The clip chain handle representing `shared_clips`
-    pub shared_clip_chain: ClipChainId,
+    // Node in the clip-tree that defines where we exclude clips from child prims
+    pub shared_clip_node_id: ClipNodeId,
+    // Clip leaf that is used to build the clip-chain for this tile cache.
+    pub shared_clip_leaf_id: Option<ClipLeafId>,
     // Virtual surface sizes are always square, so this represents both the width and height
     pub virtual_surface_size: i32,
     // The number of compositor surfaces that are being requested for this tile cache.
@@ -1752,7 +1739,7 @@ pub struct TileCacheParams {
 /// a picture cache instance.
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct SubSliceIndex(u8);
 
 impl SubSliceIndex {
@@ -1846,6 +1833,12 @@ impl SubSlice {
     }
 }
 
+pub struct BackdropSurface {
+    pub id: NativeSurfaceId,
+    color: ColorF,
+    pub device_rect: DeviceRect,
+}
+
 /// Represents a cache of tiles that make up a picture primitives.
 pub struct TileCacheInstance {
     /// Index of the tile cache / slice for this frame builder. It's determined
@@ -1889,6 +1882,8 @@ pub struct TileCacheInstance {
     pub local_rect: PictureRect,
     /// The local clip rect, from the shared clips of this picture.
     pub local_clip_rect: PictureRect,
+    /// The screen rect, transformed to local picture space.
+    pub screen_rect_in_pic_space: PictureRect,
     /// The surface index that this tile cache will be drawn into.
     surface_index: SurfaceIndex,
     /// The background color from the renderer. If this is set opaque, we know it's
@@ -1899,14 +1894,10 @@ pub struct TileCacheInstance {
     /// The allowed subpixel mode for this surface, which depends on the detected
     /// opacity of the background.
     pub subpixel_mode: SubpixelMode,
-    /// A list of clip handles that exist on every (top-level) primitive in this picture.
-    /// It's often the case that these are root / fixed position clips. By handling them
-    /// here, we can avoid applying them to the items, which reduces work, but more importantly
-    /// reduces invalidations.
-    pub shared_clips: Vec<ClipInstance>,
-    /// The clip chain that represents the shared_clips above. Used to build the local
-    /// clip rect for this tile cache.
-    shared_clip_chain: ClipChainId,
+    // Node in the clip-tree that defines where we exclude clips from child prims
+    pub shared_clip_node_id: ClipNodeId,
+    // Clip leaf that is used to build the clip-chain for this tile cache.
+    pub shared_clip_leaf_id: Option<ClipLeafId>,
     /// The number of frames until this cache next evaluates what tile size to use.
     /// If a picture rect size is regularly changing just around a size threshold,
     /// we don't want to constantly invalidate and reallocate different tile size
@@ -1941,6 +1932,12 @@ pub struct TileCacheInstance {
     current_raster_scale: f32,
     /// Depth of off-screen surfaces that are currently pushed during dependency updates
     current_surface_traversal_depth: usize,
+    /// A list of extra dirty invalidation tests that can only be checked once we
+    /// know the dirty rect of all tiles
+    deferred_dirty_tests: Vec<DeferredDirtyTest>,
+    /// Is there a backdrop associated with this cache
+    found_prims_after_backdrop: bool,
+    pub backdrop_surface: Option<BackdropSurface>,
 }
 
 enum SurfacePromotionResult {
@@ -1976,12 +1973,13 @@ impl TileCacheInstance {
             tile_bounds_p1: TileOffset::zero(),
             local_rect: PictureRect::zero(),
             local_clip_rect: PictureRect::zero(),
+            screen_rect_in_pic_space: PictureRect::zero(),
             surface_index: SurfaceIndex(0),
             background_color: params.background_color,
             backdrop: BackdropInfo::empty(),
             subpixel_mode: SubpixelMode::Allow,
-            shared_clips: params.shared_clips,
-            shared_clip_chain: params.shared_clip_chain,
+            shared_clip_node_id: params.shared_clip_node_id,
+            shared_clip_leaf_id: params.shared_clip_leaf_id,
             current_tile_size: DeviceIntSize::zero(),
             frames_until_size_eval: 0,
             // Default to centering the virtual offset in the middle of the DC virtual surface
@@ -1999,12 +1997,34 @@ impl TileCacheInstance {
             invalidate_all_tiles: true,
             current_raster_scale: 1.0,
             current_surface_traversal_depth: 0,
+            deferred_dirty_tests: Vec::new(),
+            found_prims_after_backdrop: false,
+            backdrop_surface: None,
         }
     }
 
     /// Return the total number of tiles allocated by this tile cache
     pub fn tile_count(&self) -> usize {
         self.tile_rect.area() as usize * self.sub_slices.len()
+    }
+
+    /// Trims memory held by the tile cache, such as native surfaces.
+    pub fn memory_pressure(&mut self, resource_cache: &mut ResourceCache) {
+        for sub_slice in &mut self.sub_slices {
+            for tile in sub_slice.tiles.values_mut() {
+                if let Some(TileSurface::Texture { descriptor: SurfaceTextureDescriptor::Native { ref mut id, .. }, .. }) = tile.surface {
+                    // Reseting the id to None with take() ensures that a new
+                    // tile will be allocated during the next frame build.
+                    if let Some(id) = id.take() {
+                        resource_cache.destroy_compositor_tile(id);
+                    }
+                }
+            }
+            if let Some(native_surface) = sub_slice.native_surface.take() {
+                resource_cache.destroy_compositor_surface(native_surface.opaque);
+                resource_cache.destroy_compositor_surface(native_surface.alpha);
+            }
+        }
     }
 
     /// Reset this tile cache with the updated parameters from a new scene
@@ -2055,8 +2075,8 @@ impl TileCacheInstance {
         self.slice_flags = params.slice_flags;
         self.spatial_node_index = params.spatial_node_index;
         self.background_color = params.background_color;
-        self.shared_clips = params.shared_clips;
-        self.shared_clip_chain = params.shared_clip_chain;
+        self.shared_clip_leaf_id = params.shared_clip_leaf_id;
+        self.shared_clip_node_id = params.shared_clip_node_id;
 
         // Since the slice flags may have changed, ensure we re-evaluate the
         // appropriate tile size for this cache next update.
@@ -2078,6 +2098,10 @@ impl TileCacheInstance {
 
         for (_, external_surface) in self.external_native_surface_cache {
             resource_cache.destroy_compositor_surface(external_surface.native_surface_id)
+        }
+
+        if let Some(backdrop_surface) = &self.backdrop_surface {
+            resource_cache.destroy_compositor_surface(backdrop_surface.id);
         }
     }
 
@@ -2117,6 +2141,7 @@ impl TileCacheInstance {
         self.surface_index = surface_index;
         self.local_rect = pic_rect;
         self.local_clip_rect = PictureRect::max_rect();
+        self.deferred_dirty_tests.clear();
 
         for sub_slice in &mut self.sub_slices {
             sub_slice.reset();
@@ -2126,39 +2151,34 @@ impl TileCacheInstance {
         // during the prim dependency checks.
         self.backdrop = BackdropInfo::empty();
 
+        // Calculate the screen rect in picture space, for later comparison against
+        // backdrops, and prims potentially covering backdrops.
         let pic_to_world_mapper = SpaceMapper::new_with_target(
             frame_context.root_spatial_node_index,
             self.spatial_node_index,
             frame_context.global_screen_world_rect,
             frame_context.spatial_tree,
         );
+        self.screen_rect_in_pic_space = pic_to_world_mapper
+            .unmap(&frame_context.global_screen_world_rect)
+            .expect("unable to unmap screen rect");
 
         // If there is a valid set of shared clips, build a clip chain instance for this,
         // which will provide a local clip rect. This is useful for establishing things
         // like whether the backdrop rect supplied by Gecko can be considered opaque.
-        if self.shared_clip_chain != ClipChainId::NONE {
-            let shared_clips = &mut frame_state.scratch.picture.clip_chain_ids;
-            shared_clips.clear();
-
+        if let Some(shared_clip_leaf_id) = self.shared_clip_leaf_id {
             let map_local_to_surface = SpaceMapper::new(
                 self.spatial_node_index,
                 pic_rect,
             );
 
-            let mut current_clip_chain_id = self.shared_clip_chain;
-            while current_clip_chain_id != ClipChainId::NONE {
-                shared_clips.push(current_clip_chain_id);
-                let clip_chain_node = &frame_state.clip_store.clip_chain_nodes[current_clip_chain_id.0 as usize];
-                current_clip_chain_id = clip_chain_node.parent_clip_chain_id;
-            }
-
             frame_state.clip_store.set_active_clips(
-                LayoutRect::max_rect(),
                 self.spatial_node_index,
                 map_local_to_surface.ref_spatial_node_index,
-                &shared_clips,
+                shared_clip_leaf_id,
                 frame_context.spatial_tree,
                 &mut frame_state.data_stores.clip,
+                &frame_state.clip_tree,
             );
 
             let clip_chain_instance = frame_state.clip_store.build_clip_chain_instance(
@@ -2172,7 +2192,6 @@ impl TileCacheInstance {
                 &frame_context.global_screen_world_rect,
                 &mut frame_state.data_stores.clip,
                 true,
-                false,
             );
 
             // Ensure that if the entire picture cache is clipped out, the local
@@ -2333,15 +2352,11 @@ impl TileCacheInstance {
             world_tile_size.height / self.local_to_surface.scale.y,
         );
 
-        let screen_rect_in_pic_space = pic_to_world_mapper
-            .unmap(&frame_context.global_screen_world_rect)
-            .expect("unable to unmap screen rect");
-
         // Inflate the needed rect a bit, so that we retain tiles that we have drawn
         // but have just recently gone off-screen. This means that we avoid re-drawing
         // tiles if the user is scrolling up and down small amounts, at the cost of
         // a bit of extra texture memory.
-        let desired_rect_in_pic_space = screen_rect_in_pic_space
+        let desired_rect_in_pic_space = self.screen_rect_in_pic_space
             .inflate(0.0, 1.0 * self.tile_size.height);
 
         let needed_rect_in_pic_space = desired_rect_in_pic_space
@@ -2565,7 +2580,7 @@ impl TileCacheInstance {
             return SurfacePromotionResult::Failed;
         }
 
-        if self.slice_flags.contains(SliceFlags::IS_BLEND_CONTAINER) {
+        if self.slice_flags.contains(SliceFlags::IS_ATOMIC) {
             return SurfacePromotionResult::Failed;
         }
 
@@ -2767,7 +2782,8 @@ impl TileCacheInstance {
         // If this primitive is an external image, and supports being used
         // directly by a native compositor, then lookup the external image id
         // so we can pass that through.
-        let external_image_id = if flags.contains(PrimitiveFlags::SUPPORTS_EXTERNAL_COMPOSITOR_SURFACE) {
+        let external_image_id = if flags.contains(PrimitiveFlags::SUPPORTS_EXTERNAL_COMPOSITOR_SURFACE)
+            && image_rendering == ImageRendering::Auto {
             resource_cache.get_image_properties(api_keys[0])
                 .and_then(|properties| properties.external_image)
                 .and_then(|image| Some(image.id))
@@ -2958,15 +2974,21 @@ impl TileCacheInstance {
         pictures: &[PicturePrimitive],
         resource_cache: &mut ResourceCache,
         color_bindings: &ColorBindingStorage,
-        surface_stack: &[SurfaceIndex],
+        surface_stack: &[(PictureIndex, SurfaceIndex)],
         composite_state: &mut CompositeState,
         gpu_cache: &mut GpuCache,
+        scratch: &mut PrimitiveScratchBuffer,
         is_root_tile_cache: bool,
+        surfaces: &mut [SurfaceInfo],
     ) {
         // This primitive exists on the last element on the current surface stack.
         profile_scope!("update_prim_dependencies");
-        let prim_surface_index = *surface_stack.last().unwrap();
+        let prim_surface_index = surface_stack.last().unwrap().1;
         let prim_clip_chain = &prim_instance.vis.clip_chain;
+
+        // Accumulate the exact (clipped) local rect in to the parent surface
+        let mut surface = &mut surfaces[prim_surface_index.0];
+        surface.clipped_local_rect = surface.clipped_local_rect.union(&prim_clip_chain.pic_coverage_rect);
 
         // If the primitive is directly drawn onto this picture cache surface, then
         // the pic_coverage_rect is in the same space. If not, we need to map it from
@@ -2983,17 +3005,17 @@ impl TileCacheInstance {
             // surface stack, mapping the primitive rect into each surface space, including
             // the inflation factor from each intermediate surface.
             let mut current_pic_coverage_rect = prim_clip_chain.pic_coverage_rect;
-            let mut current_spatial_node_index = frame_context
-                .surfaces[prim_surface_index.0]
+            let mut current_spatial_node_index = surfaces[prim_surface_index.0]
                 .surface_spatial_node_index;
 
-            for surface_index in surface_stack.iter().rev() {
-                let surface = &frame_context.surfaces[surface_index.0];
+            for (pic_index, surface_index) in surface_stack.iter().rev() {
+                let surface = &surfaces[surface_index.0];
+                let pic = &pictures[pic_index.0];
 
                 let map_local_to_surface = SpaceMapper::new_with_target(
                     surface.surface_spatial_node_index,
                     current_spatial_node_index,
-                    surface.rect,
+                    surface.unclipped_local_rect,
                     frame_context.spatial_tree,
                 );
 
@@ -3002,7 +3024,15 @@ impl TileCacheInstance {
                 // just bail out from the dependencies and cull this primitive.
                 current_pic_coverage_rect = match map_local_to_surface.map(&current_pic_coverage_rect) {
                     Some(rect) => {
-                        rect.inflate(surface.inflation_factor, surface.inflation_factor)
+                        // TODO(gw): The casts here are a hack. We have some interface inconsistencies
+                        //           between layout/picture rects which don't really work with the
+                        //           current unit system, since sometimes the local rect of a picture
+                        //           is a LayoutRect, and sometimes it's a PictureRect. Consider how
+                        //           we can improve this?
+                        pic.composite_mode.as_ref().unwrap().get_coverage(
+                            surface,
+                            Some(rect.cast_unit()),
+                        ).cast_unit()
                     }
                     None => {
                         return;
@@ -3111,7 +3141,9 @@ impl TileCacheInstance {
                 if color.a >= 1.0 {
                     backdrop_candidate = Some(BackdropInfo {
                         opaque_rect: pic_coverage_rect,
+                        spanning_opaque_color: None,
                         kind: Some(BackdropKind::Color { color }),
+                        backdrop_rect: pic_coverage_rect,
                     });
                 }
 
@@ -3155,7 +3187,9 @@ impl TileCacheInstance {
                        image_data.color.a >= 1.0 {
                         backdrop_candidate = Some(BackdropInfo {
                             opaque_rect: pic_coverage_rect,
+                            spanning_opaque_color: None,
                             kind: None,
+                            backdrop_rect: PictureRect::zero(),
                         });
                     }
                 }
@@ -3274,7 +3308,9 @@ impl TileCacheInstance {
             PrimitiveInstanceKind::Clear { .. } => {
                 backdrop_candidate = Some(BackdropInfo {
                     opaque_rect: pic_coverage_rect,
+                    spanning_opaque_color: None,
                     kind: Some(BackdropKind::Clear),
+                    backdrop_rect: pic_coverage_rect,        
                 });
             }
             PrimitiveInstanceKind::LinearGradient { data_handle, .. }
@@ -3285,7 +3321,9 @@ impl TileCacheInstance {
                 {
                     backdrop_candidate = Some(BackdropInfo {
                         opaque_rect: pic_coverage_rect,
+                        spanning_opaque_color: None,
                         kind: None,
+                        backdrop_rect: PictureRect::zero(),
                     });
                 }
             }
@@ -3296,7 +3334,9 @@ impl TileCacheInstance {
                 {
                     backdrop_candidate = Some(BackdropInfo {
                         opaque_rect: pic_coverage_rect,
+                        spanning_opaque_color: None,
                         kind: None,
+                        backdrop_rect: PictureRect::zero(),
                     });
                 }
             }
@@ -3307,25 +3347,105 @@ impl TileCacheInstance {
                 {
                     backdrop_candidate = Some(BackdropInfo {
                         opaque_rect: pic_coverage_rect,
+                        spanning_opaque_color: None,
                         kind: None,
+                        backdrop_rect: PictureRect::zero(),
+                    });
+                }
+            }
+            PrimitiveInstanceKind::BackdropCapture { .. } => {}
+            PrimitiveInstanceKind::BackdropRender { pic_index, .. } => {
+                // If the area that the backdrop covers in the space of the surface it draws on
+                // is empty, skip any sub-graph processing. This is not just a performance win,
+                // it also ensures that we don't do a deferred dirty test that invalidates a tile
+                // even if the tile isn't actually dirty, which can cause panics later in the
+                // WR pipeline.
+                if !pic_coverage_rect.is_empty() {
+                    // Mark that we need the sub-graph this render depends on so that
+                    // we don't skip it during the prepare pass
+                    scratch.required_sub_graphs.insert(pic_index);
+
+                    // If this is a sub-graph, register the bounds on any affected tiles
+                    // so we know how much to expand the content tile by.
+
+                    // Implicitly, we know that any slice with a sub-graph disables compositor
+                    // surface promotion, so sub_slice_index will always be 0.
+                    debug_assert_eq!(sub_slice_index, 0);
+                    let sub_slice = &mut self.sub_slices[sub_slice_index];
+
+                    let mut surface_info = Vec::new();
+                    for (pic_index, surface_index) in surface_stack.iter().rev() {
+                        let pic = &pictures[pic_index.0];
+                        surface_info.push((pic.composite_mode.as_ref().unwrap().clone(), *surface_index));
+                    }
+
+                    for y in p0.y .. p1.y {
+                        for x in p0.x .. p1.x {
+                            let key = TileOffset::new(x, y);
+                            let tile = sub_slice.tiles.get_mut(&key).expect("bug: no tile");
+                            tile.sub_graphs.push((pic_coverage_rect, surface_info.clone()));
+                        }
+                    }
+
+                    // For backdrop-filter, we need to check if any of the dirty rects
+                    // in tiles that are affected by the filter primitive are dirty.
+                    self.deferred_dirty_tests.push(DeferredDirtyTest {
+                        tile_rect: TileRect::new(p0, p1),
+                        prim_rect: pic_coverage_rect,
                     });
                 }
             }
             PrimitiveInstanceKind::LineDecoration { .. } |
             PrimitiveInstanceKind::NormalBorder { .. } |
-            PrimitiveInstanceKind::TextRun { .. } |
-            PrimitiveInstanceKind::Backdrop { .. } => {
+            PrimitiveInstanceKind::TextRun { .. } => {
                 // These don't contribute dependencies
             }
         };
+        
+        // Calculate the screen rect in local space. When we calculate backdrops, we
+        // care only that they cover the visible rect, and don't have any overlapping
+        // prims in the visible rect. 
+        let visible_local_rect = self.local_rect.intersection(&self.screen_rect_in_pic_space).unwrap_or_default();
+        if pic_coverage_rect.intersects(&visible_local_rect) {
+            self.found_prims_after_backdrop = true;
+        }
 
         // If this primitive considers itself a backdrop candidate, apply further
         // checks to see if it matches all conditions to be a backdrop.
         let mut vis_flags = PrimitiveVisibilityFlags::empty();
-
         let sub_slice = &mut self.sub_slices[sub_slice_index];
-
         if let Some(mut backdrop_candidate) = backdrop_candidate {
+            // Update whether the surface that this primitive exists on
+            // can be considered opaque. Any backdrop kind other than
+            // a clear primitive (e.g. color, gradient, image) can be
+            // considered.
+            match backdrop_candidate.kind {
+                Some(BackdropKind::Color { .. }) | None => {
+                    let surface = &mut surfaces[prim_surface_index.0];
+
+                    let is_same_coord_system = frame_context.spatial_tree.is_matching_coord_system(
+                        prim_spatial_node_index,
+                        surface.surface_spatial_node_index,
+                    );
+
+                    // To be an opaque backdrop, it must:
+                    // - Be the same coordinate system (axis-aligned)
+                    // - Have no clip mask
+                    // - Have a rect that covers the surface local rect
+                    if is_same_coord_system &&
+                       !prim_clip_chain.needs_mask &&
+                       prim_clip_chain.pic_coverage_rect.contains_box(&surface.unclipped_local_rect)
+                    {
+                        // Note that we use `prim_clip_chain.pic_clip_rect` here rather
+                        // than `backdrop_candidate.opaque_rect`. The former is in the
+                        // local space of the surface, the latter is in the local space
+                        // of the top level tile-cache.
+                        surface.is_opaque = true;
+                    }
+                }
+                Some(BackdropKind::Clear) => {}
+            }
+
             let is_suitable_backdrop = match backdrop_candidate.kind {
                 Some(BackdropKind::Clear) => {
                     // Clear prims are special - they always end up in their own slice,
@@ -3343,14 +3463,10 @@ impl TileCacheInstance {
                     //  - The primitive is on the main picture cache surface.
                     //  - Same coord system as picture cache (ensures rects are axis-aligned).
                     //  - No clip masks exist.
-                    let same_coord_system = {
-                        let prim_spatial_node = frame_context.spatial_tree
-                            .get_spatial_node(prim_spatial_node_index);
-                        let surface_spatial_node = &frame_context.spatial_tree
-                            .get_spatial_node(self.spatial_node_index);
-
-                        prim_spatial_node.coordinate_system_id == surface_spatial_node.coordinate_system_id
-                    };
+                    let same_coord_system = frame_context.spatial_tree.is_matching_coord_system(
+                        prim_spatial_node_index,
+                        self.spatial_node_index,
+                    );
 
                     same_coord_system && on_picture_surface
                 }
@@ -3371,21 +3487,31 @@ impl TileCacheInstance {
                         )
                         .unwrap_or(PictureRect::zero());
                 }
-
+                
+                // We set the backdrop opaque_rect here, indicating the coverage area, which
+                // is useful for calculate_subpixel_mode. We will only set the backdrop kind
+                // if it covers the visible rect.
                 if backdrop_candidate.opaque_rect.contains_box(&self.backdrop.opaque_rect) {
                     self.backdrop.opaque_rect = backdrop_candidate.opaque_rect;
                 }
 
                 if let Some(kind) = backdrop_candidate.kind {
-                    if backdrop_candidate.opaque_rect.contains_box(&self.local_rect) {
-                        // If we have a color backdrop, mark the visibility flags
-                        // of the primitive so it is skipped during batching (and
-                        // also clears any previous primitives).
-                        if let BackdropKind::Color { .. } = kind {
-                            vis_flags |= PrimitiveVisibilityFlags::IS_BACKDROP;
-                        }
-
+                    if backdrop_candidate.opaque_rect.contains_box(&visible_local_rect) {
+                        self.found_prims_after_backdrop = false;
                         self.backdrop.kind = Some(kind);
+                        self.backdrop.backdrop_rect = backdrop_candidate.opaque_rect;
+                        
+                        // If we have a color backdrop that spans the entire local rect, mark
+                        // the visibility flags of the primitive so it is skipped during batching
+                        // (and also clears any previous primitives). Additionally, update our
+                        // background color to match the backdrop color, which will ensure that
+                        // our tiles are cleared to this color.
+                        if let BackdropKind::Color { color } = kind {
+                            if backdrop_candidate.opaque_rect.contains_box(&self.local_rect) {
+                                vis_flags |= PrimitiveVisibilityFlags::IS_BACKDROP;
+                                self.backdrop.spanning_opaque_color = Some(color);
+                            }
+                        }
                     }
                 }
             }
@@ -3419,12 +3545,10 @@ impl TileCacheInstance {
             }
         }
 
-        prim_instance.vis.state = VisibilityState::Coarse {
-            filter: BatchFilter {
-                rect_in_pic_space: pic_coverage_rect,
-                sub_slice_index: SubSliceIndex::new(sub_slice_index),
-            },
+        prim_instance.vis.state = VisibilityState::Visible {
             vis_flags,
+            tile_rect: TileRect::new(p0, p1),
+            sub_slice_index: SubSliceIndex::new(sub_slice_index),
         };
     }
 
@@ -3538,20 +3662,16 @@ impl TileCacheInstance {
             frame_context.spatial_tree,
         );
 
-        let mut ctx = TilePostUpdateContext {
+        let ctx = TileUpdateDirtyContext {
             pic_to_world_mapper,
             global_device_pixel_scale: frame_context.global_device_pixel_scale,
-            local_clip_rect: self.local_clip_rect,
-            backdrop: None,
             opacity_bindings: &self.opacity_bindings,
             color_bindings: &self.color_bindings,
-            current_tile_size: self.current_tile_size,
             local_rect: self.local_rect,
-            z_id: ZBufferId::invalid(),
             invalidate_all: self.invalidate_all_tiles,
         };
 
-        let mut state = TilePostUpdateState {
+        let mut state = TileUpdateDirtyState {
             resource_cache: frame_state.resource_cache,
             composite_state: frame_state.composite_state,
             compare_cache: &mut self.compare_cache,
@@ -3560,6 +3680,60 @@ impl TileCacheInstance {
 
         // Step through each tile and invalidate if the dependencies have changed. Determine
         // the current opacity setting and whether it's changed.
+        for sub_slice in &mut self.sub_slices {
+            for tile in sub_slice.tiles.values_mut() {
+                tile.update_dirty_and_valid_rects(&ctx, &mut state, frame_context);
+            }
+        }
+
+        // Process any deferred dirty checks
+        for sub_slice in &mut self.sub_slices {
+            for dirty_test in self.deferred_dirty_tests.drain(..) {
+                // Calculate the total dirty rect from all tiles that this primitive affects
+                let mut total_dirty_rect = PictureRect::zero();
+
+                for y in dirty_test.tile_rect.min.y .. dirty_test.tile_rect.max.y {
+                    for x in dirty_test.tile_rect.min.x .. dirty_test.tile_rect.max.x {
+                        let key = TileOffset::new(x, y);
+                        let tile = sub_slice.tiles.get_mut(&key).expect("bug: no tile");
+                        total_dirty_rect = total_dirty_rect.union(&tile.local_dirty_rect);
+                    }
+                }
+
+                // If that dirty rect intersects with the local rect of the primitive
+                // being checked, invalidate that region in all of the affected tiles.
+                // TODO(gw): This is somewhat conservative, we could be more clever
+                //           here and avoid invalidating every tile when this changes.
+                //           We could also store the dirty rect only when the prim
+                //           is encountered, so that we don't invalidate if something
+                //           *after* the query in the rendering order affects invalidation.
+                if total_dirty_rect.intersects(&dirty_test.prim_rect) {
+                    for y in dirty_test.tile_rect.min.y .. dirty_test.tile_rect.max.y {
+                        for x in dirty_test.tile_rect.min.x .. dirty_test.tile_rect.max.x {
+                            let key = TileOffset::new(x, y);
+                            let tile = sub_slice.tiles.get_mut(&key).expect("bug: no tile");
+                            tile.invalidate(
+                                Some(dirty_test.prim_rect),
+                                InvalidationReason::SurfaceContentChanged,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut ctx = TilePostUpdateContext {
+            local_clip_rect: self.local_clip_rect,
+            backdrop: None,
+            current_tile_size: self.current_tile_size,
+            z_id: ZBufferId::invalid(),
+        };
+
+        let mut state = TilePostUpdateState {
+            resource_cache: frame_state.resource_cache,
+            composite_state: frame_state.composite_state,
+        };
+
         for (i, sub_slice) in self.sub_slices.iter_mut().enumerate().rev() {
             // The backdrop is only relevant for the first sub-slice
             if i == 0 {
@@ -3636,14 +3810,12 @@ impl TileCacheInstance {
 
 pub struct PictureScratchBuffer {
     surface_stack: Vec<SurfaceIndex>,
-    clip_chain_ids: Vec<ClipChainId>,
 }
 
 impl Default for PictureScratchBuffer {
     fn default() -> Self {
         PictureScratchBuffer {
             surface_stack: Vec::new(),
-            clip_chain_ids: Vec::new(),
         }
     }
 }
@@ -3651,7 +3823,6 @@ impl Default for PictureScratchBuffer {
 impl PictureScratchBuffer {
     pub fn begin_frame(&mut self) {
         self.surface_stack.clear();
-        self.clip_chain_ids.clear();
     }
 
     pub fn recycle(&mut self, recycler: &mut Recycler) {
@@ -3661,22 +3832,8 @@ impl PictureScratchBuffer {
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct SurfaceIndex(pub usize);
-
-/// Describes the render task configuration for a picture surface.
-#[derive(Debug)]
-pub enum SurfaceRenderTasks {
-    /// The common type of surface is a single render task
-    Simple(RenderTaskId),
-    /// Some surfaces draw their content, and then have further tasks applied
-    /// to that input (such as blur passes for shadows). These tasks have a root
-    /// (the output of the surface), and a port (for attaching child task dependencies
-    /// to the content).
-    Chained { root_task_id: RenderTaskId, port_task_id: RenderTaskId },
-    /// Picture caches are a single surface consisting of multiple render
-    /// tasks, one per tile with dirty content.
-    Tiled(Vec<RenderTaskId>),
-}
 
 /// Information about an offscreen surface. For now,
 /// it contains information about the size and coordinate
@@ -3684,13 +3841,19 @@ pub enum SurfaceRenderTasks {
 /// information about the contents of the surface, which
 /// will allow surfaces to be cached / retained between
 /// frames and display lists.
-#[derive(Debug)]
 pub struct SurfaceInfo {
     /// A local rect defining the size of this surface, in the
-    /// coordinate system of the surface itself.
-    pub rect: PictureRect,
-    /// Part of the surface that we know to be opaque.
-    pub opaque_rect: PictureRect,
+    /// coordinate system of the surface itself. This contains
+    /// the unclipped bounding rect of child primitives.
+    pub unclipped_local_rect: PictureRect,
+    /// The local space coverage of child primitives after they are
+    /// are clipped to their owning clip-chain.
+    pub clipped_local_rect: PictureRect,
+    /// If true, we know this surface is completely opaque
+    pub is_opaque: bool,
+    /// The (conservative) valid part of this surface rect. Used
+    /// to reduce the size of render target allocation.
+    pub clipping_rect: PictureRect,
     /// Helper structs for mapping local rects in different
     /// coordinate systems into the surface coordinates.
     pub map_local_to_surface: SpaceMapper<LayoutPixel, PicturePixel>,
@@ -3698,27 +3861,26 @@ pub struct SurfaceInfo {
     /// and the rasterization root for this surface.
     pub raster_spatial_node_index: SpatialNodeIndex,
     pub surface_spatial_node_index: SpatialNodeIndex,
-    /// This is set when the render task is created.
-    pub render_tasks: Option<SurfaceRenderTasks>,
-    /// How much the local surface rect should be inflated (for blur radii).
-    pub inflation_factor: f32,
     /// The device pixel ratio specific to this surface.
     pub device_pixel_scale: DevicePixelScale,
-    /// The scale factors of the surface to raster transform.
-    pub scale_factors: (f32, f32),
-    /// The allocated raster rect for this surface
-    pub raster_rect: Option<DeviceRect>,
+    /// The scale factors of the surface to world transform.
+    pub world_scale_factors: (f32, f32),
+    /// Local scale factors surface to raster transform
+    pub local_scale: (f32, f32),
+    /// If true, allow snapping on this and child surfaces
+    pub allow_snapping: bool,
 }
 
 impl SurfaceInfo {
     pub fn new(
         surface_spatial_node_index: SpatialNodeIndex,
         raster_spatial_node_index: SpatialNodeIndex,
-        inflation_factor: f32,
         world_rect: WorldRect,
         spatial_tree: &SpatialTree,
         device_pixel_scale: DevicePixelScale,
-        scale_factors: (f32, f32),
+        world_scale_factors: (f32, f32),
+        local_scale: (f32, f32),
+        allow_snapping: bool,
     ) -> Self {
         let map_surface_to_world = SpaceMapper::new_with_target(
             spatial_tree.root_reference_frame_index(),
@@ -3737,22 +3899,110 @@ impl SurfaceInfo {
         );
 
         SurfaceInfo {
-            rect: PictureRect::zero(),
-            opaque_rect: PictureRect::zero(),
+            unclipped_local_rect: PictureRect::zero(),
+            clipped_local_rect: PictureRect::zero(),
+            is_opaque: false,
+            clipping_rect: PictureRect::zero(),
             map_local_to_surface,
-            render_tasks: None,
             raster_spatial_node_index,
             surface_spatial_node_index,
-            inflation_factor,
             device_pixel_scale,
-            scale_factors,
-            raster_rect: None,
+            world_scale_factors,
+            local_scale,
+            allow_snapping,
         }
     }
 
-    pub fn get_raster_rect(&self) -> DeviceRect {
-        self.raster_rect.expect("bug: queried before surface was initialized")
+    /// Clamps the blur radius depending on scale factors.
+    pub fn clamp_blur_radius(
+        &self,
+        x_blur_radius: f32,
+        y_blur_radius: f32,
+    ) -> (f32, f32) {
+        // Clamping must occur after scale factors are applied, but scale factors are not applied
+        // until later on. To clamp the blur radius, we first apply the scale factors and then clamp
+        // and finally revert the scale factors.
+
+        let sx_blur_radius = x_blur_radius * self.local_scale.0;
+        let sy_blur_radius = y_blur_radius * self.local_scale.1;
+
+        let largest_scaled_blur_radius = f32::max(
+            sx_blur_radius * self.world_scale_factors.0,
+            sy_blur_radius * self.world_scale_factors.1,
+        );
+
+        if largest_scaled_blur_radius > MAX_BLUR_RADIUS {
+            let sf = MAX_BLUR_RADIUS / largest_scaled_blur_radius;
+            (x_blur_radius * sf, y_blur_radius * sf)
+        } else {
+            // Return the original blur radius to avoid any rounding errors
+            (x_blur_radius, y_blur_radius)
+        }
     }
+
+    pub fn map_to_device_rect(
+        &self,
+        local_rect: &PictureRect,
+        spatial_tree: &SpatialTree,
+    ) -> DeviceRect {
+        let raster_rect = if self.raster_spatial_node_index != self.surface_spatial_node_index {
+            assert_eq!(self.device_pixel_scale.0, 1.0);
+
+            let local_to_world = SpaceMapper::new_with_target(
+                spatial_tree.root_reference_frame_index(),
+                self.surface_spatial_node_index,
+                WorldRect::max_rect(),
+                spatial_tree,
+            );
+
+            local_to_world.map(&local_rect).unwrap()
+        } else {
+            local_rect.cast_unit()
+        };
+
+        raster_rect * self.device_pixel_scale
+    }
+
+    /// Clip and transform a local rect to a device rect suitable for allocating
+    /// a child off-screen surface of this surface (e.g. for clip-masks)
+    pub fn get_surface_rect(
+        &self,
+        local_rect: &PictureRect,
+        spatial_tree: &SpatialTree,
+    ) -> Option<DeviceRect> {
+        let local_rect = match local_rect.intersection(&self.clipping_rect) {
+            Some(rect) => rect,
+            None => return None,
+        };
+
+        let raster_rect = if self.raster_spatial_node_index != self.surface_spatial_node_index {
+            assert_eq!(self.device_pixel_scale.0, 1.0);
+
+            let local_to_world = SpaceMapper::new_with_target(
+                spatial_tree.root_reference_frame_index(),
+                self.surface_spatial_node_index,
+                WorldRect::max_rect(),
+                spatial_tree,
+            );
+
+            local_to_world.map(&local_rect).unwrap()
+        } else {
+            local_rect.cast_unit()
+        };
+
+        Some((raster_rect * self.device_pixel_scale).round_out())
+    }
+}
+
+/// Information from `get_surface_rects` about the allocated size, UV sampling
+/// parameters etc for an off-screen surface
+struct SurfaceAllocInfo {
+    task_size: DeviceIntSize,
+    needs_scissor_rect: bool,
+    clipped: DeviceRect,
+    unclipped: DeviceRect,
+    clipped_local: PictureRect,
+    uv_rect_kind: UvRectKind,
 }
 
 #[derive(Debug)]
@@ -3760,24 +4010,11 @@ impl SurfaceInfo {
 pub struct RasterConfig {
     /// How this picture should be composited into
     /// the parent surface.
+    // TODO(gw): We should remove this and just use what is in PicturePrimitive
     pub composite_mode: PictureCompositeMode,
     /// Index to the surface descriptor for this
     /// picture.
     pub surface_index: SurfaceIndex,
-    /// Whether this picture establishes a rasterization root.
-    pub establishes_raster_root: bool,
-    /// Scaling factor applied to fit within MAX_SURFACE_SIZE when
-    /// establishing a raster root.
-    /// Most code doesn't need to know about it, since it is folded
-    /// into device_pixel_scale when the rendertask is set up.
-    /// However e.g. text rasterization uses it to ensure consistent
-    /// on-screen font size.
-    pub root_scaling_factor: f32,
-    /// The world rect of this picture clipped to the current culling
-    /// rect. This is used for determining the size of the render
-    /// target rect for this surface, and calculating raster scale
-    /// factors.
-    pub clipped_bounding_rect: WorldRect,
 }
 
 bitflags! {
@@ -3816,74 +4053,194 @@ pub enum PictureCompositeMode {
     },
     /// Apply an SVG filter
     SvgFilter(Vec<FilterPrimitive>, Vec<SFilterData>),
+    /// A surface that is used as an input to another primitive
+    IntermediateSurface,
 }
 
 impl PictureCompositeMode {
-    pub fn inflate_picture_rect(&self, picture_rect: PictureRect, scale_factors: (f32, f32)) -> PictureRect {
-        let mut result_rect = picture_rect;
+    pub fn get_rect(
+        &self,
+        surface: &SurfaceInfo,
+        sub_rect: Option<LayoutRect>,
+    ) -> LayoutRect {
+        let surface_rect = match sub_rect {
+            Some(sub_rect) => sub_rect,
+            None => surface.clipped_local_rect.cast_unit(),
+        };
+
         match self {
-            PictureCompositeMode::Filter(filter) => match filter {
-                Filter::Blur(width, height) => {
-                    let width_factor = clamp_blur_radius(*width, scale_factors).ceil() * BLUR_SAMPLE_SCALE;
-                    let height_factor = clamp_blur_radius(*height, scale_factors).ceil() * BLUR_SAMPLE_SCALE;
-                    result_rect = picture_rect.inflate(width_factor, height_factor);
-                },
-                Filter::DropShadows(shadows) => {
-                    let mut max_inflation: f32 = 0.0;
-                    for shadow in shadows {
-                        max_inflation = max_inflation.max(shadow.blur_radius);
-                    }
-                    max_inflation = clamp_blur_radius(max_inflation, scale_factors).ceil() * BLUR_SAMPLE_SCALE;
-                    result_rect = picture_rect.inflate(max_inflation, max_inflation);
-                },
-                _ => {}
+            PictureCompositeMode::Filter(Filter::Blur { width, height, should_inflate }) => {
+                if *should_inflate {
+                    let (width_factor, height_factor) = surface.clamp_blur_radius(*width, *height);
+
+                    surface_rect.inflate(
+                        width_factor.ceil() * BLUR_SAMPLE_SCALE,
+                        height_factor.ceil() * BLUR_SAMPLE_SCALE,
+                    )
+                } else {
+                    surface_rect
+                }
+            }
+            PictureCompositeMode::Filter(Filter::DropShadows(ref shadows)) => {
+                let mut max_blur_radius = 0.0;
+                for shadow in shadows {
+                    max_blur_radius = f32::max(max_blur_radius, shadow.blur_radius);
+                }
+
+                let (max_blur_radius_x, max_blur_radius_y) = surface.clamp_blur_radius(
+                    max_blur_radius,
+                    max_blur_radius,
+                );
+                let blur_inflation_x = max_blur_radius_x * BLUR_SAMPLE_SCALE;
+                let blur_inflation_y = max_blur_radius_y * BLUR_SAMPLE_SCALE;
+
+                surface_rect.inflate(blur_inflation_x, blur_inflation_y)
             }
             PictureCompositeMode::SvgFilter(primitives, _) => {
+                let mut result_rect = surface_rect;
                 let mut output_rects = Vec::with_capacity(primitives.len());
+
                 for (cur_index, primitive) in primitives.iter().enumerate() {
                     let output_rect = match primitive.kind {
                         FilterPrimitiveKind::Blur(ref primitive) => {
-                            let input = primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(picture_rect);
+                            let input = primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect);
                             let width_factor = primitive.width.round() * BLUR_SAMPLE_SCALE;
                             let height_factor = primitive.height.round() * BLUR_SAMPLE_SCALE;
                             input.inflate(width_factor, height_factor)
                         }
                         FilterPrimitiveKind::DropShadow(ref primitive) => {
                             let inflation_factor = primitive.shadow.blur_radius.ceil() * BLUR_SAMPLE_SCALE;
-                            let input = primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(picture_rect);
+                            let input = primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect);
                             let shadow_rect = input.inflate(inflation_factor, inflation_factor);
                             input.union(&shadow_rect.translate(primitive.shadow.offset * Scale::new(1.0)))
                         }
                         FilterPrimitiveKind::Blend(ref primitive) => {
-                            primitive.input1.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(picture_rect)
-                                .union(&primitive.input2.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(picture_rect))
+                            primitive.input1.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect)
+                                .union(&primitive.input2.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect))
                         }
                         FilterPrimitiveKind::Composite(ref primitive) => {
-                            primitive.input1.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(picture_rect)
-                                .union(&primitive.input2.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(picture_rect))
+                            primitive.input1.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect)
+                                .union(&primitive.input2.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect))
                         }
                         FilterPrimitiveKind::Identity(ref primitive) =>
-                            primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(picture_rect),
+                            primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect),
                         FilterPrimitiveKind::Opacity(ref primitive) =>
-                            primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(picture_rect),
+                            primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect),
                         FilterPrimitiveKind::ColorMatrix(ref primitive) =>
-                            primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(picture_rect),
+                            primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect),
                         FilterPrimitiveKind::ComponentTransfer(ref primitive) =>
-                            primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(picture_rect),
+                            primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect),
                         FilterPrimitiveKind::Offset(ref primitive) => {
-                            let input_rect = primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(picture_rect);
+                            let input_rect = primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect);
                             input_rect.translate(primitive.offset * Scale::new(1.0))
                         },
 
-                        FilterPrimitiveKind::Flood(..) => picture_rect,
+                        FilterPrimitiveKind::Flood(..) => surface_rect,
                     };
                     output_rects.push(output_rect);
                     result_rect = result_rect.union(&output_rect);
                 }
+                result_rect
             }
-            _ => {},
+            _ => {
+                surface_rect
+            }
         }
-        result_rect
+    }
+
+    pub fn get_coverage(
+        &self,
+        surface: &SurfaceInfo,
+        sub_rect: Option<LayoutRect>,
+    ) -> LayoutRect {
+        let surface_rect = match sub_rect {
+            Some(sub_rect) => sub_rect,
+            None => surface.clipped_local_rect.cast_unit(),
+        };
+
+        match self {
+            PictureCompositeMode::Filter(Filter::Blur { width, height, should_inflate }) => {
+                if *should_inflate {
+                    let (width_factor, height_factor) = surface.clamp_blur_radius(*width, *height);
+
+                    surface_rect.inflate(
+                        width_factor.ceil() * BLUR_SAMPLE_SCALE,
+                        height_factor.ceil() * BLUR_SAMPLE_SCALE,
+                    )
+                } else {
+                    surface_rect
+                }
+            }
+            PictureCompositeMode::Filter(Filter::DropShadows(ref shadows)) => {
+                let mut rect = surface_rect;
+
+                for shadow in shadows {
+                    let (blur_radius_x, blur_radius_y) = surface.clamp_blur_radius(
+                        shadow.blur_radius,
+                        shadow.blur_radius,
+                    );
+                    let blur_inflation_x = blur_radius_x * BLUR_SAMPLE_SCALE;
+                    let blur_inflation_y = blur_radius_y * BLUR_SAMPLE_SCALE;
+
+                    let shadow_rect = surface_rect
+                        .translate(shadow.offset)
+                        .inflate(blur_inflation_x, blur_inflation_y);
+                    rect = rect.union(&shadow_rect);
+                }
+
+                rect
+            }
+            PictureCompositeMode::SvgFilter(primitives, _) => {
+                let mut result_rect = surface_rect;
+                let mut output_rects = Vec::with_capacity(primitives.len());
+
+                for (cur_index, primitive) in primitives.iter().enumerate() {
+                    let output_rect = match primitive.kind {
+                        FilterPrimitiveKind::Blur(ref primitive) => {
+                            let input = primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect);
+                            let width_factor = primitive.width.round() * BLUR_SAMPLE_SCALE;
+                            let height_factor = primitive.height.round() * BLUR_SAMPLE_SCALE;
+
+                            input.inflate(width_factor, height_factor)
+                        }
+                        FilterPrimitiveKind::DropShadow(ref primitive) => {
+                            let inflation_factor = primitive.shadow.blur_radius.ceil() * BLUR_SAMPLE_SCALE;
+                            let input = primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect);
+                            let shadow_rect = input.inflate(inflation_factor, inflation_factor);
+                            input.union(&shadow_rect.translate(primitive.shadow.offset * Scale::new(1.0)))
+                        }
+                        FilterPrimitiveKind::Blend(ref primitive) => {
+                            primitive.input1.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect)
+                                .union(&primitive.input2.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect))
+                        }
+                        FilterPrimitiveKind::Composite(ref primitive) => {
+                            primitive.input1.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect)
+                                .union(&primitive.input2.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect))
+                        }
+                        FilterPrimitiveKind::Identity(ref primitive) =>
+                            primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect),
+                        FilterPrimitiveKind::Opacity(ref primitive) =>
+                            primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect),
+                        FilterPrimitiveKind::ColorMatrix(ref primitive) =>
+                            primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect),
+                        FilterPrimitiveKind::ComponentTransfer(ref primitive) =>
+                            primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect),
+                        FilterPrimitiveKind::Offset(ref primitive) => {
+                            let input_rect = primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(surface_rect);
+                            input_rect.translate(primitive.offset * Scale::new(1.0))
+                        },
+
+                        FilterPrimitiveKind::Flood(..) => surface_rect,
+                    };
+                    output_rects.push(output_rect);
+                    result_rect = result_rect.union(&output_rect);
+                }
+                result_rect
+            }
+            _ => {
+                surface_rect
+            }
+        }
     }
 }
 
@@ -3914,7 +4271,6 @@ pub enum Picture3DContext<C> {
 #[cfg_attr(feature = "capture", derive(Serialize))]
 pub struct OrderedPictureChild {
     pub anchor: PlaneSplitAnchor,
-    pub spatial_node_index: SpatialNodeIndex,
     pub gpu_address: GpuCacheAddress,
 }
 
@@ -3928,8 +4284,6 @@ bitflags! {
         /// the cluster is visible or not. It's read during the second pass when primitives
         /// consult their owning clusters to see if the primitive itself is visible.
         const IS_VISIBLE = 2;
-        /// Is a backdrop-filter cluster that requires special handling during post_update.
-        const IS_BACKDROP_FILTER = 4;
     }
 }
 
@@ -4025,6 +4379,12 @@ impl PrimitiveList {
         }
     }
 
+    pub fn merge(&mut self, other: PrimitiveList) {
+        self.clusters.extend(other.clusters);
+        self.child_pictures.extend(other.child_pictures);
+        self.compositor_surface_count += other.compositor_surface_count;
+    }
+
     /// Add a primitive instance to the end of the list
     pub fn add_prim(
         &mut self,
@@ -4033,6 +4393,7 @@ impl PrimitiveList {
         spatial_node_index: SpatialNodeIndex,
         prim_flags: PrimitiveFlags,
         prim_instances: &mut Vec<PrimitiveInstance>,
+        clip_tree_builder: &ClipTreeBuilder,
     ) {
         let mut flags = ClusterFlags::empty();
 
@@ -4041,9 +4402,6 @@ impl PrimitiveList {
         match prim_instance.kind {
             PrimitiveInstanceKind::Picture { pic_index, .. } => {
                 self.child_pictures.push(pic_index);
-            }
-            PrimitiveInstanceKind::Backdrop { .. } => {
-                flags.insert(ClusterFlags::IS_BACKDROP_FILTER);
             }
             _ => {}
         }
@@ -4056,7 +4414,8 @@ impl PrimitiveList {
             self.compositor_surface_count += 1;
         }
 
-        let culling_rect = prim_instance.clip_set.local_clip_rect
+        let clip_leaf = clip_tree_builder.get_leaf(prim_instance.clip_leaf_id);
+        let culling_rect = clip_leaf.local_clip_rect
             .intersection(&prim_rect)
             .unwrap_or_else(LayoutRect::zero);
 
@@ -4098,19 +4457,18 @@ impl PrimitiveList {
     }
 }
 
-/// Defines configuration options for a given picture primitive.
-#[cfg_attr(feature = "capture", derive(Serialize))]
-pub struct PictureOptions {
-    /// If true, WR should inflate the bounding rect of primitives when
-    /// using a filter effect that requires inflation.
-    pub inflate_if_required: bool,
-}
-
-impl Default for PictureOptions {
-    fn default() -> Self {
-        PictureOptions {
-            inflate_if_required: true,
-        }
+bitflags! {
+    #[cfg_attr(feature = "capture", derive(Serialize))]
+    /// Flags describing properties for a given PicturePrimitive
+    pub struct PictureFlags : u8 {
+        /// This picture is a resolve target (doesn't actually render content itself,
+        /// will have content copied in to it)
+        const IS_RESOLVE_TARGET = 1 << 0;
+        /// This picture establishes a sub-graph, which affects how SurfaceBuilder will
+        /// set up dependencies in the render task graph
+        const IS_SUB_GRAPH = 1 << 1;
+        /// If set, this picture should not apply snapping via changing the raster root
+        const DISABLE_SNAPPING = 1 << 2;
     }
 }
 
@@ -4119,9 +4477,6 @@ pub struct PicturePrimitive {
     /// List of primitives, and associated info for this picture.
     pub prim_list: PrimitiveList,
 
-    /// If true, apply the local clip rect to primitive drawn
-    /// in this picture.
-    pub apply_local_clip_rect: bool,
     /// If false and transform ends up showing the back of the picture,
     /// it will be considered invisible.
     pub is_backface_visible: bool,
@@ -4150,24 +4505,10 @@ pub struct PicturePrimitive {
     /// composited into the parent picture.
     pub spatial_node_index: SpatialNodeIndex,
 
-    /// The conservative local rect of this picture. It is
-    /// built dynamically during the first picture traversal.
-    /// It is composed of already snapped primitives.
-    pub estimated_local_rect: LayoutRect,
-
-    /// The local rect of this picture. It is built
-    /// dynamically during the frame visibility update. It
-    /// differs from the estimated_local_rect because it
-    /// will not contain culled primitives, takes into
-    /// account surface inflation and the whole clip chain.
-    /// It is frequently the same, but may be quite
-    /// different depending on how much was culled.
-    pub precise_local_rect: LayoutRect,
-
-    /// Store the state of the previous precise local rect
+    /// Store the state of the previous local rect
     /// for this picture. We need this in order to know when
     /// to invalidate segments / drop-shadow gpu cache handles.
-    pub prev_precise_local_rect: LayoutRect,
+    pub prev_local_rect: LayoutRect,
 
     /// If false, this picture needs to (re)build segments
     /// if it supports segment rendering. This can occur
@@ -4175,11 +4516,14 @@ pub struct PicturePrimitive {
     /// transform animation and/or scrolling.
     pub segments_are_valid: bool,
 
-    /// The config options for this picture.
-    pub options: PictureOptions,
-
     /// Set to true if we know for sure the picture is fully opaque.
     pub is_opaque: bool,
+
+    /// Requested raster space for this picture
+    pub raster_space: RasterSpace,
+
+    /// Flags for this picture primitive
+    pub flags: PictureFlags,
 }
 
 impl PicturePrimitive {
@@ -4191,11 +4535,10 @@ impl PicturePrimitive {
     ) {
         pt.new_level(format!("{:?}", self_index));
         pt.add_item(format!("cluster_count: {:?}", self.prim_list.clusters.len()));
-        pt.add_item(format!("estimated_local_rect: {:?}", self.estimated_local_rect));
-        pt.add_item(format!("precise_local_rect: {:?}", self.precise_local_rect));
         pt.add_item(format!("spatial_node_index: {:?}", self.spatial_node_index));
         pt.add_item(format!("raster_config: {:?}", self.raster_config));
         pt.add_item(format!("composite_mode: {:?}", self.composite_mode));
+        pt.add_item(format!("flags: {:?}", self.flags));
 
         for child_pic_index in &self.prim_list.child_pictures {
             pictures[child_pic_index.0].print(pictures, *child_pic_index, pt);
@@ -4215,6 +4558,7 @@ impl PicturePrimitive {
             Some(RasterConfig { composite_mode: PictureCompositeMode::ComponentTransferFilter(..), .. }) |
             Some(RasterConfig { composite_mode: PictureCompositeMode::TileCache { .. }, .. }) |
             Some(RasterConfig { composite_mode: PictureCompositeMode::SvgFilter(..), .. }) |
+            Some(RasterConfig { composite_mode: PictureCompositeMode::IntermediateSurface, .. }) |
             None => {
                 false
             }
@@ -4264,18 +4608,14 @@ impl PicturePrimitive {
         true
     }
 
-    // TODO(gw): We have the PictureOptions struct available. We
-    //           should move some of the parameter list in this
-    //           method to be part of the PictureOptions, and
-    //           avoid adding new parameters here.
     pub fn new_image(
         composite_mode: Option<PictureCompositeMode>,
         context_3d: Picture3DContext<OrderedPictureChild>,
-        apply_local_clip_rect: bool,
-        flags: PrimitiveFlags,
+        prim_flags: PrimitiveFlags,
         prim_list: PrimitiveList,
         spatial_node_index: SpatialNodeIndex,
-        options: PictureOptions,
+        raster_space: RasterSpace,
+        flags: PictureFlags,
     ) -> Self {
         PicturePrimitive {
             prim_list,
@@ -4285,23 +4625,19 @@ impl PicturePrimitive {
             raster_config: None,
             context_3d,
             extra_gpu_data_handles: SmallVec::new(),
-            apply_local_clip_rect,
-            is_backface_visible: flags.contains(PrimitiveFlags::IS_BACKFACE_VISIBLE),
+            is_backface_visible: prim_flags.contains(PrimitiveFlags::IS_BACKFACE_VISIBLE),
             spatial_node_index,
-            estimated_local_rect: LayoutRect::zero(),
-            precise_local_rect: LayoutRect::zero(),
-            prev_precise_local_rect: LayoutRect::zero(),
-            options,
+            prev_local_rect: LayoutRect::zero(),
             segments_are_valid: false,
             is_opaque: false,
+            raster_space,
+            flags,
         }
     }
 
     pub fn take_context(
         &mut self,
         pic_index: PictureIndex,
-        surface_spatial_node_index: SpatialNodeIndex,
-        raster_spatial_node_index: SpatialNodeIndex,
         parent_surface_index: Option<SurfaceIndex>,
         parent_subpixel_mode: SubpixelMode,
         frame_state: &mut FrameBuildingState,
@@ -4318,29 +4654,11 @@ impl PicturePrimitive {
 
         profile_scope!("take_context");
 
-        // Extract the raster and surface spatial nodes from the raster
-        // config, if this picture establishes a surface. Otherwise just
-        // pass in the spatial node indices from the parent context.
-        let (raster_spatial_node_index, surface_spatial_node_index, surface_index, inflation_factor) = match self.raster_config {
-            Some(ref raster_config) => {
-                let surface = &frame_state.surfaces[raster_config.surface_index.0];
-
-                (
-                    surface.raster_spatial_node_index,
-                    self.spatial_node_index,
-                    raster_config.surface_index,
-                    surface.inflation_factor,
-                )
-            }
-            None => {
-                (
-                    raster_spatial_node_index,
-                    surface_spatial_node_index,
-                    parent_surface_index.expect("bug: no parent"),
-                    0.0,
-                )
-            }
+        let surface_index = match self.raster_config {
+            Some(ref raster_config) => raster_config.surface_index,
+            None => parent_surface_index.expect("bug: no parent"),
         };
+        let surface_spatial_node_index = frame_state.surfaces[surface_index.0].surface_spatial_node_index;
 
         let map_pic_to_world = SpaceMapper::new_with_target(
             frame_context.root_spatial_node_index,
@@ -4358,22 +4676,17 @@ impl PicturePrimitive {
             pic_bounds,
         );
 
-        let (map_raster_to_world, map_pic_to_raster) = create_raster_mappers(
-            surface_spatial_node_index,
-            raster_spatial_node_index,
-            frame_context.global_screen_world_rect,
-            frame_context.spatial_tree,
-        );
-
         match self.raster_config {
             Some(RasterConfig { surface_index, composite_mode: PictureCompositeMode::TileCache { slice_id }, .. }) => {
                 let tile_cache = tile_caches.get_mut(&slice_id).unwrap();
                 let mut debug_info = SliceDebugInfo::new();
-                let mut surface_tasks = Vec::with_capacity(tile_cache.tile_count());
-                let mut surface_local_rect = PictureRect::zero();
+                let mut surface_render_tasks = FastHashMap::default();
+                let mut surface_dirty_rects = Vec::new();
+                let mut surface_local_dirty_rect = PictureRect::zero();
                 let device_pixel_scale = frame_state
                     .surfaces[surface_index.0]
                     .device_pixel_scale;
+                let mut at_least_one_tile_visible = false;
 
                 // Get the overall world space rect of the picture cache. Used to clip
                 // the tile rects below for occlusion testing to the relevant area.
@@ -4385,8 +4698,6 @@ impl PicturePrimitive {
 
                 for (sub_slice_index, sub_slice) in tile_cache.sub_slices.iter_mut().enumerate() {
                     for tile in sub_slice.tiles.values_mut() {
-                        surface_local_rect = surface_local_rect.union(&tile.current_descriptor.local_valid_rect);
-
                         if tile.is_visible {
                             // Get the world space rect that this tile will actually occupy on screen
                             let world_draw_rect = world_clip_rect.intersection(&tile.world_valid_rect);
@@ -4452,6 +4763,8 @@ impl PicturePrimitive {
 
                             continue;
                         }
+
+                        at_least_one_tile_visible = true;
 
                         if frame_context.debug_flags.contains(DebugFlags::PICTURE_CACHING_DBG) {
                             tile.root.draw_debug_rects(
@@ -4523,6 +4836,8 @@ impl PicturePrimitive {
                             .intersection(&tile.current_descriptor.local_valid_rect)
                             .unwrap_or_else(PictureRect::zero);
 
+                        surface_local_dirty_rect = surface_local_dirty_rect.union(&tile.local_dirty_rect);
+
                         // Update the world/device dirty rect
                         let world_dirty_rect = map_pic_to_world.map(&tile.local_dirty_rect).expect("bug");
 
@@ -4545,7 +4860,6 @@ impl PicturePrimitive {
                             // surface allocation).
                             tile_cache.dirty_region.add_dirty_region(
                                 tile.local_dirty_rect,
-                                SubSliceIndex::new(sub_slice_index),
                                 frame_context.spatial_tree,
                             );
 
@@ -4642,36 +4956,161 @@ impl PicturePrimitive {
                                     tile_cache.transform_index,
                                 ).to_i32();
 
-                                let task_size = tile_cache.current_tile_size;
+                                let composite_task_size = tile_cache.current_tile_size;
 
-                                let batch_filter = BatchFilter {
-                                    rect_in_pic_space: tile.local_dirty_rect,
+                                let tile_key = TileKey {
                                     sub_slice_index: SubSliceIndex::new(sub_slice_index),
+                                    tile_offset: tile.tile_offset,
                                 };
 
-                                let render_task_id = frame_state.rg_builder.add().init(
-                                    RenderTask::new(
-                                        RenderTaskLocation::Static {
-                                            surface: StaticRenderTaskSurface::PictureCache {
-                                                surface,
-                                            },
-                                            rect: task_size.into(),
-                                        },
-                                        RenderTaskKind::new_picture(
-                                            task_size,
-                                            tile_cache.current_tile_size.to_f32(),
-                                            pic_index,
-                                            content_origin,
-                                            surface_spatial_node_index,
-                                            device_pixel_scale,
-                                            Some(batch_filter),
-                                            Some(scissor_rect),
-                                            Some(valid_rect),
-                                        )
-                                    ),
-                                );
+                                let mut clear_color = ColorF::TRANSPARENT;
 
-                                surface_tasks.push(render_task_id);
+                                if SubSliceIndex::new(sub_slice_index).is_primary() {
+                                    if let Some(background_color) = tile_cache.background_color {
+                                        clear_color = background_color;
+                                    }
+                                    
+                                    // If this picture cache has a spanning_opaque_color, we will use
+                                    // that as the clear color. The primitive that was detected as a
+                                    // spanning primitive will have been set with IS_BACKDROP, causing
+                                    // it to be skipped and removing everything added prior to it
+                                    // during batching.
+                                    if let Some(color) = tile_cache.backdrop.spanning_opaque_color {
+                                        clear_color = color;
+                                    }
+                                }
+
+                                let cmd_buffer_index = frame_state.cmd_buffers.create_cmd_buffer();
+
+                                // TODO(gw): As a performance optimization, we could skip the resolve picture
+                                //           if the dirty rect is the same as the resolve rect (probably quite
+                                //           common for effects that scroll underneath a backdrop-filter, for example).
+                                let use_tile_composite = !tile.sub_graphs.is_empty();
+
+                                if use_tile_composite {
+                                    let mut local_content_rect = tile.local_dirty_rect;
+
+                                    for (sub_graph_rect, surface_stack) in &tile.sub_graphs {
+                                        if let Some(dirty_sub_graph_rect) = sub_graph_rect.intersection(&tile.local_dirty_rect) {
+                                            for (composite_mode, surface_index) in surface_stack {
+                                                let surface = &frame_state.surfaces[surface_index.0];
+
+                                                let rect = composite_mode.get_coverage(
+                                                    surface,
+                                                    Some(dirty_sub_graph_rect.cast_unit()),
+                                                ).cast_unit();
+
+                                                local_content_rect = local_content_rect.union(&rect);
+                                            }
+                                        }
+                                    }
+
+                                    // We know that we'll never need to sample > 300 device pixels outside the tile
+                                    // for blurring, so clamp the content rect here so that we don't try to allocate
+                                    // a really large surface in the case of a drop-shadow with large offset.
+                                    let max_content_rect = (tile.local_dirty_rect.cast_unit() * device_pixel_scale)
+                                        .inflate(
+                                            MAX_BLUR_RADIUS * BLUR_SAMPLE_SCALE,
+                                            MAX_BLUR_RADIUS * BLUR_SAMPLE_SCALE,
+                                        )
+                                        .round_out()
+                                        .to_i32();
+
+                                    let content_device_rect = (local_content_rect.cast_unit() * device_pixel_scale)
+                                        .round_out()
+                                        .to_i32();
+
+                                    let content_device_rect = content_device_rect
+                                        .intersection(&max_content_rect)
+                                        .expect("bug: no intersection with tile dirty rect");
+
+                                    let content_task_size = content_device_rect.size();
+                                    let normalized_content_rect = content_task_size.into();
+
+                                    let inner_offset = content_origin + scissor_rect.min.to_vector().to_f32();
+                                    let outer_offset = content_device_rect.min.to_f32();
+                                    let sub_rect_offset = (inner_offset - outer_offset).round().to_i32();
+
+                                    let render_task_id = frame_state.rg_builder.add().init(
+                                        RenderTask::new_dynamic(
+                                            content_task_size,
+                                            RenderTaskKind::new_picture(
+                                                content_task_size,
+                                                true,
+                                                content_device_rect.min.to_f32(),
+                                                surface_spatial_node_index,
+                                                // raster == surface implicitly for picture cache tiles
+                                                surface_spatial_node_index,
+                                                device_pixel_scale,
+                                                Some(normalized_content_rect),
+                                                None,
+                                                Some(clear_color),
+                                                cmd_buffer_index,
+                                                false,
+                                            )
+                                        ),
+                                    );
+
+                                    let composite_task_id = frame_state.rg_builder.add().init(
+                                        RenderTask::new(
+                                            RenderTaskLocation::Static {
+                                                surface: StaticRenderTaskSurface::PictureCache {
+                                                    surface,
+                                                },
+                                                rect: composite_task_size.into(),
+                                            },
+                                            RenderTaskKind::new_tile_composite(
+                                                sub_rect_offset,
+                                                scissor_rect,
+                                                valid_rect,
+                                                clear_color,
+                                            ),
+                                        ),
+                                    );
+
+                                    surface_render_tasks.insert(
+                                        tile_key,
+                                        SurfaceTileDescriptor {
+                                            current_task_id: render_task_id,
+                                            composite_task_id: Some(composite_task_id),
+                                        },
+                                    );
+                                } else {
+                                    let render_task_id = frame_state.rg_builder.add().init(
+                                        RenderTask::new(
+                                            RenderTaskLocation::Static {
+                                                surface: StaticRenderTaskSurface::PictureCache {
+                                                    surface,
+                                                },
+                                                rect: composite_task_size.into(),
+                                            },
+                                            RenderTaskKind::new_picture(
+                                                composite_task_size,
+                                                true,
+                                                content_origin,
+                                                surface_spatial_node_index,
+                                                // raster == surface implicitly for picture cache tiles
+                                                surface_spatial_node_index,
+                                                device_pixel_scale,
+                                                Some(scissor_rect),
+                                                Some(valid_rect),
+                                                Some(clear_color),
+                                                cmd_buffer_index,
+                                                false,
+                                            )
+                                        ),
+                                    );
+
+                                    surface_render_tasks.insert(
+                                        tile_key,
+                                        SurfaceTileDescriptor {
+                                            current_task_id: render_task_id,
+                                            composite_task_id: None,
+                                        },
+                                    );
+                                }
+
+                                surface_dirty_rects.push(tile.local_dirty_rect);
                             }
 
                             if frame_context.fb_config.testing {
@@ -4741,6 +5180,74 @@ impl PicturePrimitive {
                     sub_slice.alpha_tile_descriptors.sort_by_key(|desc| desc.tile_id);
                 }
 
+                // Check to see if we should add backdrops as native surfaces.
+                let backdrop_rect = tile_cache.backdrop.backdrop_rect
+                    .intersection(&tile_cache.local_rect)
+                    .and_then(|r| {
+                        r.intersection(&tile_cache.local_clip_rect)
+                });
+
+                let mut backdrop_in_use_and_visible = false;
+                if let Some(backdrop_rect) = backdrop_rect {
+                    let supports_surface_for_backdrop = match frame_state.composite_state.compositor_kind {
+                        CompositorKind::Draw { .. } => {
+                            false
+                        }
+                        CompositorKind::Native { capabilities, .. } => {
+                            capabilities.supports_surface_for_backdrop
+                        }
+                    };
+                    if supports_surface_for_backdrop && !tile_cache.found_prims_after_backdrop && at_least_one_tile_visible {
+                        if let Some(BackdropKind::Color { color }) = tile_cache.backdrop.kind {
+                            backdrop_in_use_and_visible = true;
+
+                            // We're going to let the compositor handle the backdrop as a native surface.
+                            // Hide all of our sub_slice tiles so they aren't also trying to draw it.
+                            for sub_slice in &mut tile_cache.sub_slices {
+                                for tile in sub_slice.tiles.values_mut() {
+                                    tile.is_visible = false;
+                                }
+                            }
+
+                            // Destroy our backdrop surface if it doesn't match the new color.
+                            // TODO: This is a performance hit for animated color backdrops.
+                            if let Some(backdrop_surface) = &tile_cache.backdrop_surface {
+                                if backdrop_surface.color != color {
+                                    frame_state.resource_cache.destroy_compositor_surface(backdrop_surface.id);
+                                    tile_cache.backdrop_surface = None;
+                                }
+                            }
+
+                            // Calculate the device_rect for the backdrop, which is just the backdrop_rect
+                            // converted into world space and scaled to device pixels.
+                            let world_backdrop_rect = map_pic_to_world.map(&backdrop_rect).expect("bug: unable to map backdrop rect");
+                            let device_rect = (world_backdrop_rect * frame_context.global_device_pixel_scale).round();
+
+                            // If we already have a backdrop surface, update the device rect. Otherwise, create
+                            // a backdrop surface.
+                            if let Some(backdrop_surface) = &mut tile_cache.backdrop_surface {
+                                backdrop_surface.device_rect = device_rect;
+                            } else {
+                                // Create native compositor surface with color for the backdrop and store the id.
+                                tile_cache.backdrop_surface = Some(BackdropSurface {
+                                    id: frame_state.resource_cache.create_compositor_backdrop_surface(color),
+                                    color,
+                                    device_rect,
+                                });
+                            }
+                        }
+                    }
+                }
+
+                if !backdrop_in_use_and_visible {
+                    if let Some(backdrop_surface) = &tile_cache.backdrop_surface {
+                        // We've already allocated a backdrop surface, but we're not using it.
+                        // Tell the compositor to get rid of it.
+                        frame_state.resource_cache.destroy_compositor_surface(backdrop_surface.id);
+                        tile_cache.backdrop_surface = None;
+                    }
+                }
+
                 // If invalidation debugging is enabled, dump the picture cache state to a tree printer.
                 if frame_context.debug_flags.contains(DebugFlags::INVALIDATION_DBG) {
                     tile_cache.print();
@@ -4758,207 +5265,128 @@ impl PicturePrimitive {
                         );
                 }
 
-                // TODO(gw): Much of the SurfaceInfo related code assumes it is in device pixels, rather than
-                //           raster pixels. Fixing that in one go is too invasive for now, but we need to
-                //           start incrementally fixing up the unit types used around here.
-                let surface_raster_rect = map_pic_to_raster.map(&surface_local_rect).expect("bug: unable to map to raster");
-                let surface_device_rect = surface_raster_rect.cast_unit() * device_pixel_scale;
+                let descriptor = SurfaceDescriptor::new_tiled(
+                    surface_render_tasks,
+                    surface_dirty_rects,
+                );
 
-                frame_state.init_surface_tiled(
+                frame_state.surface_builder.push_surface(
                     surface_index,
-                    surface_tasks,
-                    surface_device_rect,
+                    false,
+                    surface_local_dirty_rect,
+                    descriptor,
+                    frame_state.surfaces,
+                    frame_state.rg_builder,
                 );
             }
             Some(ref mut raster_config) => {
-                let pic_rect = self.precise_local_rect.cast_unit();
+                let pic_rect = frame_state
+                    .surfaces[raster_config.surface_index.0]
+                    .clipped_local_rect;
+
                 let parent_surface_index = parent_surface_index.expect("bug: no parent for child surface");
 
-                let mut device_pixel_scale = frame_state
-                    .surfaces[raster_config.surface_index.0]
-                    .device_pixel_scale;
+                // Layout space for the picture is picture space from the
+                // perspective of its child primitives.
+                let local_rect = pic_rect * Scale::new(1.0);
 
-                let scale_factors = frame_state
-                    .surfaces[raster_config.surface_index.0]
-                    .scale_factors;
-
-                // If the primitive has a filter that can sample with an offset, the clip rect has
-                // to take it into account.
-                let clip_inflation = match raster_config.composite_mode {
-                    PictureCompositeMode::Filter(Filter::DropShadows(ref shadows)) => {
-                        let mut max_offset = vec2(0.0, 0.0);
-                        let mut min_offset = vec2(0.0, 0.0);
-                        for shadow in shadows {
-                            let offset = layout_vector_as_picture_vector(shadow.offset);
-                            max_offset = max_offset.max(offset);
-                            min_offset = min_offset.min(offset);
-                        }
-
-                        // Get the shadow offsets in world space.
-                        let raster_min = map_pic_to_raster.map_vector(min_offset);
-                        let raster_max = map_pic_to_raster.map_vector(max_offset);
-                        let world_min = map_raster_to_world.map_vector(raster_min);
-                        let world_max = map_raster_to_world.map_vector(raster_max);
-
-                        // Grow the clip in the opposite direction of the shadow's offset.
-                        SideOffsets2D::from_vectors_outer(
-                            -world_max.max(vec2(0.0, 0.0)),
-                            -world_min.min(vec2(0.0, 0.0)),
-                        )
-                    }
-                    _ => SideOffsets2D::zero(),
-                };
-
-                let (mut clipped, mut unclipped) = match get_raster_rects(
-                    pic_rect,
-                    &map_pic_to_raster,
-                    &map_raster_to_world,
-                    raster_config.clipped_bounding_rect.outer_box(clip_inflation),
-                    device_pixel_scale,
-                ) {
-                    Some(info) => info,
-                    None => {
-                        return None
-                    }
-                };
-                let transform = map_pic_to_raster.get_transform();
-
-                /// If the picture (raster_config) establishes a raster root,
-                /// its requested resolution won't be clipped by the parent or
-                /// viewport; so we need to make sure the requested resolution is
-                /// "reasonable", ie. <= MAX_SURFACE_SIZE.  If not, scale the
-                /// picture down until it fits that limit.  This results in a new
-                /// device_rect, a new unclipped rect, and a new device_pixel_scale.
-                ///
-                /// Since the adjusted device_pixel_scale is passed into the
-                /// RenderTask (and then the shader via RenderTaskData) this mostly
-                /// works transparently, reusing existing support for variable DPI
-                /// support.  The on-the-fly scaling can be seen as on-the-fly,
-                /// per-task DPI adjustment.  Logical pixels are unaffected.
-                ///
-                /// The scaling factor is returned to the caller; blur radius,
-                /// font size, etc. need to be scaled accordingly.
-                fn adjust_scale_for_max_surface_size(
-                    raster_config: &RasterConfig,
-                    max_target_size: i32,
-                    pic_rect: PictureRect,
-                    map_pic_to_raster: &SpaceMapper<PicturePixel, RasterPixel>,
-                    map_raster_to_world: &SpaceMapper<RasterPixel, WorldPixel>,
-                    clipped_prim_bounding_rect: WorldRect,
-                    device_pixel_scale : &mut DevicePixelScale,
-                    device_rect: &mut DeviceRect,
-                    unclipped: &mut DeviceRect) -> Option<f32>
-                {
-                    let limit = if raster_config.establishes_raster_root {
-                        MAX_SURFACE_SIZE
-                    } else {
-                        max_target_size as f32
-                    };
-                    if device_rect.width() > limit || device_rect.height() > limit {
-                        // round_out will grow by 1 integer pixel if origin is on a
-                        // fractional position, so keep that margin for error with -1:
-                        let scale = (limit as f32 - 1.0) /
-                                    (f32::max(device_rect.width(), device_rect.height()));
-                        *device_pixel_scale = *device_pixel_scale * Scale::new(scale);
-                        let new_device_rect = device_rect.to_f32() * Scale::new(scale);
-                        *device_rect = new_device_rect.round_out();
-
-                        *unclipped = match get_raster_rects(
-                            pic_rect,
-                            &map_pic_to_raster,
-                            &map_raster_to_world,
-                            clipped_prim_bounding_rect,
-                            *device_pixel_scale
-                        ) {
-                            Some(info) => info.1,
-                            None => {
-                                return None
+                // If the precise rect changed since last frame, we need to invalidate
+                // any segments and gpu cache handles for drop-shadows.
+                // TODO(gw): Requiring storage of the `prev_precise_local_rect` here
+                //           is a total hack. It's required because `prev_precise_local_rect`
+                //           gets written to twice (during initial vis pass and also during
+                //           prepare pass). The proper longer term fix for this is to make
+                //           use of the conservative picture rect for segmenting (which should
+                //           be done during scene building).
+                if local_rect != self.prev_local_rect {
+                    match raster_config.composite_mode {
+                        PictureCompositeMode::Filter(Filter::DropShadows(..)) => {
+                            for handle in &self.extra_gpu_data_handles {
+                                frame_state.gpu_cache.invalidate(handle);
                             }
-                        };
-                        Some(scale)
+                        }
+                        _ => {}
                     }
-                    else
-                    {
-                        None
-                    }
+                    // Invalidate any segments built for this picture, since the local
+                    // rect has changed.
+                    self.segments_are_valid = false;
+                    self.prev_local_rect = local_rect;
                 }
 
+                let max_surface_size = frame_context
+                    .fb_config
+                    .max_surface_override
+                    .unwrap_or(MAX_SURFACE_SIZE) as f32;
+
+                let surface_rects = match get_surface_rects(
+                    raster_config.surface_index,
+                    &raster_config.composite_mode,
+                    parent_surface_index,
+                    &mut frame_state.surfaces,
+                    frame_context.spatial_tree,
+                    max_surface_size,
+                ) {
+                    Some(rects) => rects,
+                    None => return None,
+                };
+
+                let (raster_spatial_node_index, device_pixel_scale) = {
+                    let surface = &frame_state.surfaces[surface_index.0];
+                    (surface.raster_spatial_node_index, surface.device_pixel_scale)
+                };
+                let can_use_shared_surface = !self.flags.contains(PictureFlags::IS_RESOLVE_TARGET);
+
                 let primary_render_task_id;
+                let surface_descriptor;
                 match raster_config.composite_mode {
                     PictureCompositeMode::TileCache { .. } => {
                         unreachable!("handled above");
                     }
-                    PictureCompositeMode::Filter(Filter::Blur(width, height)) => {
-                        let width_std_deviation = clamp_blur_radius(width, scale_factors) * device_pixel_scale.0;
-                        let height_std_deviation = clamp_blur_radius(height, scale_factors) * device_pixel_scale.0;
-                        let mut blur_std_deviation = DeviceSize::new(
-                            width_std_deviation * scale_factors.0,
-                            height_std_deviation * scale_factors.1
+                    PictureCompositeMode::Filter(Filter::Blur { width, height, .. }) => {
+                        let surface = &frame_state.surfaces[raster_config.surface_index.0];
+                        let (width, height) = surface.clamp_blur_radius(width, height);
+
+                        let width_std_deviation = width * surface.local_scale.0 * device_pixel_scale.0;
+                        let height_std_deviation = height * surface.local_scale.1 * device_pixel_scale.0;
+                        let blur_std_deviation = DeviceSize::new(
+                            width_std_deviation,
+                            height_std_deviation,
                         );
-                        let mut device_rect = if self.options.inflate_if_required {
-                            let inflation_factor = frame_state.surfaces[raster_config.surface_index.0].inflation_factor;
-                            let inflation_factor = inflation_factor * device_pixel_scale.0;
 
-                            // The clipped field is the part of the picture that is visible
-                            // on screen. The unclipped field is the screen-space rect of
-                            // the complete picture, if no screen / clip-chain was applied
-                            // (this includes the extra space for blur region). To ensure
-                            // that we draw a large enough part of the picture to get correct
-                            // blur results, inflate that clipped area by the blur range, and
-                            // then intersect with the total screen rect, to minimize the
-                            // allocation size.
-                            clipped
-                                .inflate(inflation_factor * scale_factors.0, inflation_factor * scale_factors.1)
-                                .intersection(&unclipped)
-                                .unwrap()
-                        } else {
-                            clipped
-                        };
-
-                        let mut original_size = device_rect.size();
+                        let original_size = surface_rects.clipped.size();
 
                         // Adjust the size to avoid introducing sampling errors during the down-scaling passes.
                         // what would be even better is to rasterize the picture at the down-scaled size
                         // directly.
                         let adjusted_size = BlurTask::adjusted_blur_source_size(
-                            device_rect.size(),
+                            original_size,
                             blur_std_deviation,
                         );
-                        device_rect.set_size(adjusted_size);
 
-                        if let Some(scale) = adjust_scale_for_max_surface_size(
-                            raster_config, frame_context.fb_config.max_target_size,
-                            pic_rect, &map_pic_to_raster, &map_raster_to_world,
-                            raster_config.clipped_bounding_rect,
-                            &mut device_pixel_scale, &mut device_rect, &mut unclipped,
-                        ) {
-                            blur_std_deviation = blur_std_deviation * scale;
-                            original_size = original_size.to_f32() * scale;
-                            raster_config.root_scaling_factor = scale;
-                        }
+                        let cmd_buffer_index = frame_state.cmd_buffers.create_cmd_buffer();
 
+                        // Since we (may have) adjusted the render task size for downscaling accuracy
+                        // above, recalculate the uv rect for tasks that may sample from this blur output
                         let uv_rect_kind = calculate_uv_rect_kind(
-                            &pic_rect,
-                            &transform,
-                            &device_rect,
-                            device_pixel_scale,
+                            DeviceRect::from_origin_and_size(surface_rects.clipped.min, adjusted_size.to_f32()),
+                            surface_rects.unclipped,
                         );
-
-                        let task_size = device_rect.size().to_i32();
 
                         let picture_task_id = frame_state.rg_builder.add().init(
                             RenderTask::new_dynamic(
-                                task_size,
+                                adjusted_size,
                                 RenderTaskKind::new_picture(
-                                    task_size,
-                                    unclipped.size(),
-                                    pic_index,
-                                    device_rect.min,
+                                    adjusted_size,
+                                    surface_rects.needs_scissor_rect,
+                                    surface_rects.clipped.min,
                                     surface_spatial_node_index,
+                                    raster_spatial_node_index,
                                     device_pixel_scale,
                                     None,
                                     None,
                                     None,
+                                    cmd_buffer_index,
+                                    can_use_shared_surface,
                                 )
                             ).with_uv_rect_kind(uv_rect_kind)
                         );
@@ -4972,81 +5400,38 @@ impl PicturePrimitive {
                             original_size.to_i32(),
                         );
 
-                        primary_render_task_id = Some(blur_render_task_id);
+                        primary_render_task_id = blur_render_task_id;
 
-                        frame_state.init_surface_chain(
-                            raster_config.surface_index,
-                            blur_render_task_id,
+                        surface_descriptor = SurfaceDescriptor::new_chained(
                             picture_task_id,
-                            parent_surface_index,
-                            device_rect,
+                            blur_render_task_id,
+                            surface_rects.clipped_local,
                         );
                     }
                     PictureCompositeMode::Filter(Filter::DropShadows(ref shadows)) => {
-                        let mut max_std_deviation = 0.0;
-                        for shadow in shadows {
-                            max_std_deviation = f32::max(max_std_deviation, shadow.blur_radius);
-                        }
-                        max_std_deviation = clamp_blur_radius(max_std_deviation, scale_factors) * device_pixel_scale.0;
-                        let max_blur_range = max_std_deviation * BLUR_SAMPLE_SCALE;
+                        let surface = &frame_state.surfaces[raster_config.surface_index.0];
 
-                        // We cast clipped to f32 instead of casting unclipped to i32
-                        // because unclipped can overflow an i32.
-                        let mut device_rect = clipped
-                                .inflate(max_blur_range * scale_factors.0, max_blur_range * scale_factors.1)
-                                .intersection(&unclipped)
-                                .unwrap();
+                        let device_rect = surface_rects.clipped;
 
-                        let adjusted_size = BlurTask::adjusted_blur_source_size(
-                            device_rect.size(),
-                            DeviceSize::new(
-                                max_std_deviation * scale_factors.0,
-                                max_std_deviation * scale_factors.1
-                            ),
-                        );
-                        device_rect.set_size(adjusted_size);
-
-                        if let Some(scale) = adjust_scale_for_max_surface_size(
-                            raster_config, frame_context.fb_config.max_target_size,
-                            pic_rect, &map_pic_to_raster, &map_raster_to_world,
-                            raster_config.clipped_bounding_rect,
-                            &mut device_pixel_scale, &mut device_rect, &mut unclipped,
-                        ) {
-                            // std_dev adjusts automatically from using device_pixel_scale
-                            raster_config.root_scaling_factor = scale;
-                        }
-
-                        let uv_rect_kind = calculate_uv_rect_kind(
-                            &pic_rect,
-                            &transform,
-                            &device_rect,
-                            device_pixel_scale,
-                        );
-
-                        let task_size = device_rect.size().to_i32();
+                        let cmd_buffer_index = frame_state.cmd_buffers.create_cmd_buffer();
 
                         let picture_task_id = frame_state.rg_builder.add().init(
                             RenderTask::new_dynamic(
-                                task_size,
+                                surface_rects.task_size,
                                 RenderTaskKind::new_picture(
-                                    task_size,
-                                    unclipped.size(),
-                                    pic_index,
+                                    surface_rects.task_size,
+                                    surface_rects.needs_scissor_rect,
                                     device_rect.min,
                                     surface_spatial_node_index,
+                                    raster_spatial_node_index,
                                     device_pixel_scale,
                                     None,
                                     None,
                                     None,
+                                    cmd_buffer_index,
+                                    can_use_shared_surface,
                                 ),
-                            ).with_uv_rect_kind(uv_rect_kind)
-                        );
-
-                        // Add this content picture as a dependency of the parent surface, to
-                        // ensure it isn't free'd after the shadow uses it as an input.
-                        frame_state.add_child_render_task(
-                            parent_surface_index,
-                            picture_task_id,
+                            ).with_uv_rect_kind(surface_rects.uv_rect_kind)
                         );
 
                         let mut blur_tasks = BlurTaskCache::default();
@@ -5055,11 +5440,15 @@ impl PicturePrimitive {
 
                         let mut blur_render_task_id = picture_task_id;
                         for shadow in shadows {
-                            let blur_radius = clamp_blur_radius(shadow.blur_radius, scale_factors) * device_pixel_scale.0;
+                            let (blur_radius_x, blur_radius_y) = surface.clamp_blur_radius(
+                                shadow.blur_radius,
+                                shadow.blur_radius,
+                            );
+
                             blur_render_task_id = RenderTask::new_blur(
                                 DeviceSize::new(
-                                    blur_radius * scale_factors.0,
-                                    blur_radius * scale_factors.1,
+                                    blur_radius_x * surface.local_scale.0 * device_pixel_scale.0,
+                                    blur_radius_y * surface.local_scale.1 * device_pixel_scale.0,
                                 ),
                                 picture_task_id,
                                 frame_state.rg_builder,
@@ -5069,43 +5458,26 @@ impl PicturePrimitive {
                             );
                         }
 
-                        primary_render_task_id = Some(blur_render_task_id);
+                        // Add this content picture as a dependency of the parent surface, to
+                        // ensure it isn't free'd after the shadow uses it as an input.
+                        frame_state.surface_builder.add_picture_render_task(picture_task_id);
+
+                        primary_render_task_id = blur_render_task_id;
                         self.secondary_render_task_id = Some(picture_task_id);
 
-                        frame_state.init_surface_chain(
-                            raster_config.surface_index,
-                            blur_render_task_id,
+                        surface_descriptor = SurfaceDescriptor::new_chained(
                             picture_task_id,
-                            parent_surface_index,
-                            device_rect,
+                            blur_render_task_id,
+                            surface_rects.clipped_local,
                         );
                     }
                     PictureCompositeMode::MixBlend(mode) if BlendMode::from_mix_blend_mode(
                         mode,
                         frame_context.fb_config.gpu_supports_advanced_blend,
                         frame_context.fb_config.advanced_blend_is_coherent,
-                        frame_context.fb_config.dual_source_blending_is_enabled &&
-                            frame_context.fb_config.dual_source_blending_is_supported,
+                        frame_context.fb_config.dual_source_blending_is_supported,
                     ).is_none() => {
-                        if let Some(scale) = adjust_scale_for_max_surface_size(
-                            raster_config, frame_context.fb_config.max_target_size,
-                            pic_rect, &map_pic_to_raster, &map_raster_to_world,
-                            raster_config.clipped_bounding_rect,
-                            &mut device_pixel_scale, &mut clipped, &mut unclipped,
-                        ) {
-                            raster_config.root_scaling_factor = scale;
-                        }
-
-                        let uv_rect_kind = calculate_uv_rect_kind(
-                            &pic_rect,
-                            &transform,
-                            &clipped,
-                            device_pixel_scale,
-                        );
-
                         let parent_surface = &frame_state.surfaces[parent_surface_index.0];
-                        let parent_raster_spatial_node_index = parent_surface.raster_spatial_node_index;
-                        let parent_device_pixel_scale = parent_surface.device_pixel_scale;
 
                         // Create a space mapper that will allow mapping from the local rect
                         // of the mix-blend primitive into the space of the surface that we
@@ -5113,9 +5485,9 @@ impl PicturePrimitive {
                         // node here, so that we are in the correct device space of the parent
                         // surface, whether it establishes a raster root or not.
                         let map_pic_to_parent = SpaceMapper::new_with_target(
-                            parent_raster_spatial_node_index,
-                            self.spatial_node_index,
-                            RasterRect::max_rect(),         // TODO(gw): May need a conservative estimate?
+                            parent_surface.surface_spatial_node_index,
+                            surface_spatial_node_index,
+                            parent_surface.clipping_rect,
                             frame_context.spatial_tree,
                         );
                         let pic_in_raster_space = map_pic_to_parent
@@ -5124,12 +5496,8 @@ impl PicturePrimitive {
 
                         // Apply device pixel ratio for parent surface to get into device
                         // pixels for that surface.
-                        let backdrop_rect = raster_rect_to_device_pixels(
-                            pic_in_raster_space,
-                            parent_device_pixel_scale,
-                        );
-
-                        let parent_surface_rect = parent_surface.get_raster_rect();
+                        let backdrop_rect = pic_in_raster_space;
+                        let parent_surface_rect = parent_surface.clipping_rect;
 
                         // If there is no available parent surface to read back from (for example, if
                         // the parent surface is affected by a clip that doesn't affect the child
@@ -5143,11 +5511,20 @@ impl PicturePrimitive {
                                 // from the primitive rect within the readback region. This is
                                 // 0..1 for aligned surfaces, but doing it this way allows
                                 // accurate sampling if the primitive bounds have fractional values.
-                                let backdrop_uv = calculate_uv_rect_kind(
-                                    &pic_rect,
-                                    &map_pic_to_parent.get_transform(),
+
+                                let backdrop_rect = parent_surface.map_to_device_rect(
+                                    &backdrop_rect,
+                                    frame_context.spatial_tree,
+                                );
+
+                                let available_rect = parent_surface.map_to_device_rect(
                                     &available_rect,
-                                    parent_device_pixel_scale,
+                                    frame_context.spatial_tree,
+                                ).round_out();
+
+                                let backdrop_uv = calculate_uv_rect_kind(
+                                    available_rect,
+                                    backdrop_rect,
                                 );
 
                                 frame_state.rg_builder.add().init(
@@ -5167,255 +5544,227 @@ impl PicturePrimitive {
                             }
                         };
 
-                        frame_state.add_child_render_task(
-                            parent_surface_index,
+                        frame_state.surface_builder.add_child_render_task(
                             readback_task_id,
+                            frame_state.rg_builder,
                         );
 
                         self.secondary_render_task_id = Some(readback_task_id);
 
-                        let task_size = clipped.size().to_i32();
+                        let task_size = surface_rects.clipped.size().to_i32();
+
+                        let cmd_buffer_index = frame_state.cmd_buffers.create_cmd_buffer();
 
                         let render_task_id = frame_state.rg_builder.add().init(
                             RenderTask::new_dynamic(
                                 task_size,
                                 RenderTaskKind::new_picture(
                                     task_size,
-                                    unclipped.size(),
-                                    pic_index,
-                                    clipped.min,
+                                    surface_rects.needs_scissor_rect,
+                                    surface_rects.clipped.min,
                                     surface_spatial_node_index,
+                                    raster_spatial_node_index,
                                     device_pixel_scale,
                                     None,
                                     None,
                                     None,
+                                    cmd_buffer_index,
+                                    can_use_shared_surface,
                                 )
-                            ).with_uv_rect_kind(uv_rect_kind)
+                            ).with_uv_rect_kind(surface_rects.uv_rect_kind)
                         );
 
-                        primary_render_task_id = Some(render_task_id);
+                        primary_render_task_id = render_task_id;
 
-                        frame_state.init_surface(
-                            raster_config.surface_index,
+                        surface_descriptor = SurfaceDescriptor::new_simple(
                             render_task_id,
-                            parent_surface_index,
-                            clipped,
+                            surface_rects.clipped_local,
                         );
                     }
                     PictureCompositeMode::Filter(..) => {
-
-                        if let Some(scale) = adjust_scale_for_max_surface_size(
-                            raster_config, frame_context.fb_config.max_target_size,
-                            pic_rect, &map_pic_to_raster, &map_raster_to_world,
-                            raster_config.clipped_bounding_rect,
-                            &mut device_pixel_scale, &mut clipped, &mut unclipped,
-                        ) {
-                            raster_config.root_scaling_factor = scale;
-                        }
-
-                        let uv_rect_kind = calculate_uv_rect_kind(
-                            &pic_rect,
-                            &transform,
-                            &clipped,
-                            device_pixel_scale,
-                        );
-
-                        let task_size = clipped.size().to_i32();
+                        let cmd_buffer_index = frame_state.cmd_buffers.create_cmd_buffer();
 
                         let render_task_id = frame_state.rg_builder.add().init(
                             RenderTask::new_dynamic(
-                                task_size,
+                                surface_rects.task_size,
                                 RenderTaskKind::new_picture(
-                                    task_size,
-                                    unclipped.size(),
-                                    pic_index,
-                                    clipped.min,
+                                    surface_rects.task_size,
+                                    surface_rects.needs_scissor_rect,
+                                    surface_rects.clipped.min,
                                     surface_spatial_node_index,
+                                    raster_spatial_node_index,
                                     device_pixel_scale,
                                     None,
                                     None,
                                     None,
+                                    cmd_buffer_index,
+                                    can_use_shared_surface,
                                 )
-                            ).with_uv_rect_kind(uv_rect_kind)
+                            ).with_uv_rect_kind(surface_rects.uv_rect_kind)
                         );
 
-                        primary_render_task_id = Some(render_task_id);
+                        primary_render_task_id = render_task_id;
 
-                        frame_state.init_surface(
-                            raster_config.surface_index,
+                        surface_descriptor = SurfaceDescriptor::new_simple(
                             render_task_id,
-                            parent_surface_index,
-                            clipped,
+                            surface_rects.clipped_local,
                         );
                     }
                     PictureCompositeMode::ComponentTransferFilter(..) => {
-                        if let Some(scale) = adjust_scale_for_max_surface_size(
-                            raster_config, frame_context.fb_config.max_target_size,
-                            pic_rect, &map_pic_to_raster, &map_raster_to_world,
-                            raster_config.clipped_bounding_rect,
-                            &mut device_pixel_scale, &mut clipped, &mut unclipped,
-                        ) {
-                            raster_config.root_scaling_factor = scale;
-                        }
-
-                        let uv_rect_kind = calculate_uv_rect_kind(
-                            &pic_rect,
-                            &transform,
-                            &clipped,
-                            device_pixel_scale,
-                        );
-
-                        let task_size = clipped.size().to_i32();
+                        let cmd_buffer_index = frame_state.cmd_buffers.create_cmd_buffer();
 
                         let render_task_id = frame_state.rg_builder.add().init(
                             RenderTask::new_dynamic(
-                                task_size,
+                                surface_rects.task_size,
                                 RenderTaskKind::new_picture(
-                                    task_size,
-                                    unclipped.size(),
-                                    pic_index,
-                                    clipped.min,
+                                    surface_rects.task_size,
+                                    surface_rects.needs_scissor_rect,
+                                    surface_rects.clipped.min,
                                     surface_spatial_node_index,
+                                    raster_spatial_node_index,
                                     device_pixel_scale,
                                     None,
                                     None,
                                     None,
+                                    cmd_buffer_index,
+                                    can_use_shared_surface,
                                 )
-                            ).with_uv_rect_kind(uv_rect_kind)
+                            ).with_uv_rect_kind(surface_rects.uv_rect_kind)
                         );
 
-                        primary_render_task_id = Some(render_task_id);
+                        primary_render_task_id = render_task_id;
 
-                        frame_state.init_surface(
-                            raster_config.surface_index,
+                        surface_descriptor = SurfaceDescriptor::new_simple(
                             render_task_id,
-                            parent_surface_index,
-                            clipped,
+                            surface_rects.clipped_local,
                         );
                     }
                     PictureCompositeMode::MixBlend(..) |
                     PictureCompositeMode::Blit(_) => {
-                        if let Some(scale) = adjust_scale_for_max_surface_size(
-                            raster_config, frame_context.fb_config.max_target_size,
-                            pic_rect, &map_pic_to_raster, &map_raster_to_world,
-                            raster_config.clipped_bounding_rect,
-                            &mut device_pixel_scale, &mut clipped, &mut unclipped,
-                        ) {
-                            raster_config.root_scaling_factor = scale;
-                        }
-
-                        let uv_rect_kind = calculate_uv_rect_kind(
-                            &pic_rect,
-                            &transform,
-                            &clipped,
-                            device_pixel_scale,
-                        );
-
-                        let task_size = clipped.size().to_i32();
+                        let cmd_buffer_index = frame_state.cmd_buffers.create_cmd_buffer();
 
                         let render_task_id = frame_state.rg_builder.add().init(
                             RenderTask::new_dynamic(
-                                task_size,
+                                surface_rects.task_size,
                                 RenderTaskKind::new_picture(
-                                    task_size,
-                                    unclipped.size(),
-                                    pic_index,
-                                    clipped.min,
+                                    surface_rects.task_size,
+                                    surface_rects.needs_scissor_rect,
+                                    surface_rects.clipped.min,
                                     surface_spatial_node_index,
+                                    raster_spatial_node_index,
                                     device_pixel_scale,
                                     None,
                                     None,
                                     None,
+                                    cmd_buffer_index,
+                                    can_use_shared_surface,
                                 )
-                            ).with_uv_rect_kind(uv_rect_kind)
+                            ).with_uv_rect_kind(surface_rects.uv_rect_kind)
                         );
 
-                        primary_render_task_id = Some(render_task_id);
+                        primary_render_task_id = render_task_id;
 
-                        frame_state.init_surface(
-                            raster_config.surface_index,
+                        surface_descriptor = SurfaceDescriptor::new_simple(
                             render_task_id,
-                            parent_surface_index,
-                            clipped,
+                            surface_rects.clipped_local,
+                        );
+                    }
+                    PictureCompositeMode::IntermediateSurface => {
+                        if !scratch.required_sub_graphs.contains(&pic_index) {
+                            return None;
+                        }
+
+                        // TODO(gw): Remove all the mostly duplicated code in each of these
+                        //           match cases (they used to be quite different).
+                        let cmd_buffer_index = frame_state.cmd_buffers.create_cmd_buffer();
+
+                        let render_task_id = frame_state.rg_builder.add().init(
+                            RenderTask::new_dynamic(
+                                surface_rects.task_size,
+                                RenderTaskKind::new_picture(
+                                    surface_rects.task_size,
+                                    surface_rects.needs_scissor_rect,
+                                    surface_rects.clipped.min,
+                                    surface_spatial_node_index,
+                                    raster_spatial_node_index,
+                                    device_pixel_scale,
+                                    None,
+                                    None,
+                                    None,
+                                    cmd_buffer_index,
+                                    can_use_shared_surface,
+                                )
+                            ).with_uv_rect_kind(surface_rects.uv_rect_kind)
+                        );
+
+                        primary_render_task_id = render_task_id;
+
+                        surface_descriptor = SurfaceDescriptor::new_simple(
+                            render_task_id,
+                            surface_rects.clipped_local,
                         );
                     }
                     PictureCompositeMode::SvgFilter(ref primitives, ref filter_datas) => {
-
-                        if let Some(scale) = adjust_scale_for_max_surface_size(
-                            raster_config, frame_context.fb_config.max_target_size,
-                            pic_rect, &map_pic_to_raster, &map_raster_to_world,
-                            raster_config.clipped_bounding_rect,
-                            &mut device_pixel_scale, &mut clipped, &mut unclipped,
-                        ) {
-                            raster_config.root_scaling_factor = scale;
-                        }
-
-                        let uv_rect_kind = calculate_uv_rect_kind(
-                            &pic_rect,
-                            &transform,
-                            &clipped,
-                            device_pixel_scale,
-                        );
-
-                        let task_size = clipped.size().to_i32();
+                        let cmd_buffer_index = frame_state.cmd_buffers.create_cmd_buffer();
 
                         let picture_task_id = frame_state.rg_builder.add().init(
                             RenderTask::new_dynamic(
-                                task_size,
+                                surface_rects.task_size,
                                 RenderTaskKind::new_picture(
-                                    task_size,
-                                    unclipped.size(),
-                                    pic_index,
-                                    clipped.min,
+                                    surface_rects.task_size,
+                                    surface_rects.needs_scissor_rect,
+                                    surface_rects.clipped.min,
                                     surface_spatial_node_index,
+                                    raster_spatial_node_index,
                                     device_pixel_scale,
                                     None,
                                     None,
                                     None,
+                                    cmd_buffer_index,
+                                    can_use_shared_surface,
                                 )
-                            ).with_uv_rect_kind(uv_rect_kind)
+                            ).with_uv_rect_kind(surface_rects.uv_rect_kind)
                         );
 
                         let filter_task_id = RenderTask::new_svg_filter(
                             primitives,
                             filter_datas,
                             frame_state.rg_builder,
-                            clipped.size().to_i32(),
-                            uv_rect_kind,
+                            surface_rects.clipped.size().to_i32(),
+                            surface_rects.uv_rect_kind,
                             picture_task_id,
                             device_pixel_scale,
                         );
 
-                        primary_render_task_id = Some(filter_task_id);
+                        primary_render_task_id = filter_task_id;
 
-                        frame_state.init_surface_chain(
-                            raster_config.surface_index,
-                            filter_task_id,
+                        surface_descriptor = SurfaceDescriptor::new_chained(
                             picture_task_id,
-                            parent_surface_index,
-                            clipped,
+                            filter_task_id,
+                            surface_rects.clipped_local,
                         );
                     }
                 }
 
-                self.primary_render_task_id = primary_render_task_id;
+                let is_sub_graph = self.flags.contains(PictureFlags::IS_SUB_GRAPH);
 
-                // Update the device pixel ratio in the surface, in case it was adjusted due
-                // to the surface being too large. This ensures the correct scale is available
-                // in case it's used as input to a parent mix-blend-mode readback.
-                frame_state
-                    .surfaces[raster_config.surface_index.0]
-                    .device_pixel_scale = device_pixel_scale;
+                frame_state.surface_builder.push_surface(
+                    raster_config.surface_index,
+                    is_sub_graph,
+                    surface_rects.clipped_local,
+                    surface_descriptor,
+                    frame_state.surfaces,
+                    frame_state.rg_builder,
+                );
+
+                self.primary_render_task_id = Some(primary_render_task_id);
             }
             None => {}
         };
 
         let state = PictureState {
-            //TODO: check for MAX_CACHE_SIZE here?
             map_local_to_pic,
             map_pic_to_world,
-            map_pic_to_raster,
-            map_raster_to_world,
         };
 
         let mut dirty_region_count = 0;
@@ -5425,15 +5774,6 @@ impl PicturePrimitive {
         if let Some(RasterConfig { composite_mode: PictureCompositeMode::TileCache { slice_id }, .. }) = self.raster_config {
             let dirty_region = tile_caches[&slice_id].dirty_region.clone();
             frame_state.push_dirty_region(dirty_region);
-            dirty_region_count += 1;
-        }
-
-        if inflation_factor > 0.0 {
-            let inflated_region = frame_state.current_dirty_region().inflate(
-                inflation_factor,
-                frame_context.spatial_tree,
-            );
-            frame_state.push_dirty_region(inflated_region);
             dirty_region_count += 1;
         }
 
@@ -5449,6 +5789,7 @@ impl PicturePrimitive {
                     PictureCompositeMode::ComponentTransferFilter(..) |
                     PictureCompositeMode::Filter(..) |
                     PictureCompositeMode::MixBlend(..) |
+                    PictureCompositeMode::IntermediateSurface |
                     PictureCompositeMode::SvgFilter(..) => {
                         // TODO(gw): We can take advantage of the same logic that
                         //           exists in the opaque rect detection for tile
@@ -5494,8 +5835,7 @@ impl PicturePrimitive {
 
         let context = PictureContext {
             pic_index,
-            apply_local_clip_rect: self.apply_local_clip_rect,
-            raster_spatial_node_index,
+            raster_spatial_node_index: frame_state.surfaces[surface_index.0].raster_spatial_node_index,
             surface_spatial_node_index,
             surface_index,
             dirty_region_count,
@@ -5509,13 +5849,53 @@ impl PicturePrimitive {
 
     pub fn restore_context(
         &mut self,
+        pic_index: PictureIndex,
         prim_list: PrimitiveList,
         context: PictureContext,
+        prim_instances: &[PrimitiveInstance],
+        frame_context: &FrameBuildingContext,
         frame_state: &mut FrameBuildingState,
     ) {
         // Pop any dirty regions this picture set
         for _ in 0 .. context.dirty_region_count {
             frame_state.pop_dirty_region();
+        }
+
+        if self.raster_config.is_some() {
+            frame_state.surface_builder.pop_surface(
+                pic_index,
+                frame_state.rg_builder,
+                frame_state.cmd_buffers,
+            );
+        }
+
+        if let Picture3DContext::In { root_data: Some(ref mut list), plane_splitter_index, .. } = self.context_3d {
+            let splitter = &mut frame_state.plane_splitters[plane_splitter_index.0];
+
+            // Resolve split planes via BSP
+            PicturePrimitive::resolve_split_planes(
+                splitter,
+                list,
+                &mut frame_state.gpu_cache,
+                &frame_context.spatial_tree,
+            );
+
+            // Add the child prims to the relevant command buffers
+            for child in list {
+                let child_prim_instance = &prim_instances[child.anchor.instance_index.0 as usize];
+
+                let prim_cmd = PrimitiveCommand::complex(
+                    child.anchor.instance_index,
+                    child.gpu_address
+                );
+
+                frame_state.surface_builder.push_prim(
+                    &prim_cmd,
+                    child.anchor.spatial_node_index,
+                    &child_prim_instance.vis,
+                    frame_state.cmd_buffers,
+                );
+            }
         }
 
         self.prim_list = prim_list;
@@ -5535,7 +5915,7 @@ impl PicturePrimitive {
     ) -> bool {
         let transform = spatial_tree
             .get_world_transform(prim_spatial_node_index);
-        let matrix = transform.clone().into_transform().cast();
+        let matrix = transform.clone().into_transform().cast().to_untyped();
 
         // Apply the local clip rect here, before splitting. This is
         // because the local clip rect can't be applied in the vertex
@@ -5562,7 +5942,7 @@ impl PicturePrimitive {
             CoordinateSpaceMapping::ScaleOffset(scale_offset) if scale_offset.scale == Vector2D::new(1.0, 1.0) => {
                 let inv_matrix = scale_offset.inverse().to_transform().cast();
                 let polygon = Polygon::from_transformed_rect_with_inverse(
-                    local_rect.to_rect(),
+                    local_rect.to_rect().to_untyped(),
                     &matrix,
                     &inv_matrix,
                     plane_split_anchor,
@@ -5574,11 +5954,11 @@ impl PicturePrimitive {
                 let mut clipper = Clipper::new();
                 let results = clipper.clip_transformed(
                     Polygon::from_rect(
-                        local_rect.to_rect(),
+                        local_rect.to_rect().to_untyped(),
                         plane_split_anchor,
                     ),
                     &matrix,
-                    Some(world_rect.to_rect()),
+                    Some(world_rect.to_rect().to_untyped()),
                 );
                 if let Ok(results) = results {
                     for poly in results {
@@ -5591,16 +5971,12 @@ impl PicturePrimitive {
         true
     }
 
-    pub fn resolve_split_planes(
-        &mut self,
+    fn resolve_split_planes(
         splitter: &mut PlaneSplitter,
+        ordered: &mut Vec<OrderedPictureChild>,
         gpu_cache: &mut GpuCache,
         spatial_tree: &SpatialTree,
     ) {
-        let ordered = match self.context_3d {
-            Picture3DContext::In { root_data: Some(ref mut list), .. } => list,
-            _ => panic!("Expected to find 3D context root"),
-        };
         ordered.clear();
 
         // Process the accumulated split planes and order them for rendering.
@@ -5608,10 +5984,8 @@ impl PicturePrimitive {
         let sorted = splitter.sort(vec3(0.0, 0.0, 1.0));
         ordered.reserve(sorted.len());
         for poly in sorted {
-            let cluster = &self.prim_list.clusters[poly.anchor.cluster_index];
-            let spatial_node_index = cluster.spatial_node_index;
             let transform = match spatial_tree
-                .get_world_transform(spatial_node_index)
+                .get_world_transform(poly.anchor.spatial_node_index)
                 .inverse()
             {
                 Some(transform) => transform.into_transform(),
@@ -5620,10 +5994,10 @@ impl PicturePrimitive {
             };
 
             let local_points = [
-                transform.transform_point3d(poly.points[0].cast()),
-                transform.transform_point3d(poly.points[1].cast()),
-                transform.transform_point3d(poly.points[2].cast()),
-                transform.transform_point3d(poly.points[3].cast()),
+                transform.transform_point3d(poly.points[0].cast_unit().to_f32()),
+                transform.transform_point3d(poly.points[1].cast_unit().to_f32()),
+                transform.transform_point3d(poly.points[2].cast_unit().to_f32()),
+                transform.transform_point3d(poly.points[3].cast_unit().to_f32()),
             ];
 
             // If any of the points are un-transformable, just drop this
@@ -5645,7 +6019,6 @@ impl PicturePrimitive {
 
             ordered.push(OrderedPictureChild {
                 anchor: poly.anchor,
-                spatial_node_index,
                 gpu_address,
             });
         }
@@ -5667,38 +6040,83 @@ impl PicturePrimitive {
     pub fn assign_surface(
         &mut self,
         frame_context: &FrameBuildingContext,
+        parent_surface_index: Option<SurfaceIndex>,
         tile_caches: &mut FastHashMap<SliceId, Box<TileCacheInstance>>,
-        current_surface_index: Option<SurfaceIndex>,
         surfaces: &mut Vec<SurfaceInfo>,
-    ) -> SurfaceIndex {
+    ) -> Option<SurfaceIndex> {
         // Reset raster config in case we early out below.
         self.raster_config = None;
 
-        let surface_index = match self.composite_mode {
+        match self.composite_mode {
             Some(ref composite_mode) => {
-                // Retrieve the positioning node information for the parent surface.
-                let (parent_raster_node_index, parent_device_pixel_scale) = match current_surface_index {
-                    Some(index) => {
-                        let current_surface = &surfaces[index.0];
-                        (current_surface.raster_spatial_node_index, current_surface.device_pixel_scale)
-                    }
-                    None => {
-                        let root_spatial_node_index = frame_context.spatial_tree.root_reference_frame_index();
-                        (root_spatial_node_index, Scale::new(1.0))
-                    }
-                };
                 let surface_spatial_node_index = self.spatial_node_index;
 
-                let surface_to_parent_transform = frame_context.spatial_tree
-                    .get_relative_transform(surface_spatial_node_index, parent_raster_node_index);
-
                 // Currently, we ensure that the scaling factor is >= 1.0 as a smaller scale factor can result in blurry output.
-                let mut min_scale = 1.0;
+                let mut min_scale;
                 let mut max_scale = 1.0e32;
+
+                // If a raster root is established, this surface should be scaled based on the scale factors of the surface raster to parent raster transform.
+                // This scaling helps ensure that the content in this surface does not become blurry or pixelated when composited in the parent surface.
+
+                let world_scale_factors = match parent_surface_index {
+                    Some(parent_surface_index) => {
+                        let parent_surface = &surfaces[parent_surface_index.0];
+
+                        let local_to_surface = frame_context
+                            .spatial_tree
+                            .get_relative_transform(
+                                surface_spatial_node_index,
+                                parent_surface.surface_spatial_node_index,
+                            );
+
+                        // Since we can't determine reasonable scale factors for transforms
+                        // with perspective, just use a scale of (1,1) for now, which is
+                        // what Gecko does when it choosed to supplies a scale factor anyway.
+                        // In future, we might be able to improve the quality here by taking
+                        // into account the screen rect after clipping, but for now this gives
+                        // better results than just taking the matrix scale factors.
+                        let scale_factors = if local_to_surface.is_perspective() {
+                            (1.0, 1.0)
+                        } else {
+                            local_to_surface.scale_factors()
+                        };
+
+                        let scale_factors = (
+                            scale_factors.0 * parent_surface.world_scale_factors.0,
+                            scale_factors.1 * parent_surface.world_scale_factors.1,
+                        );
+
+                        scale_factors
+                    }
+                    None => {
+                        let local_to_surface_scale_factors = frame_context
+                            .spatial_tree
+                            .get_relative_transform(
+                                surface_spatial_node_index,
+                                frame_context.spatial_tree.root_reference_frame_index(),
+                            )
+                            .scale_factors();
+
+                        let scale_factors = (
+                            local_to_surface_scale_factors.0,
+                            local_to_surface_scale_factors.1,
+                        );
+
+                        scale_factors
+                    }
+                };
+
+                // TODO(gw): For now, we disable snapping on any sub-graph, as that implies
+                //           that the spatial / raster node must be the same as the parent
+                //           surface. In future, we may be able to support snapping in these
+                //           cases (if it's even useful?) or perhaps add a ENABLE_SNAPPING
+                //           picture flag, if the IS_SUB_GRAPH is ever useful in a different
+                //           context.
+                let allow_snapping = !self.flags.contains(PictureFlags::DISABLE_SNAPPING);
 
                 // Check if there is perspective or if an SVG filter is applied, and thus whether a new
                 // rasterization root should be established.
-                let establishes_raster_root = match composite_mode {
+                let (device_pixel_scale, raster_spatial_node_index, local_scale, world_scale_factors) = match composite_mode {
                     PictureCompositeMode::TileCache { slice_id } => {
                         let tile_cache = tile_caches.get_mut(&slice_id).unwrap();
 
@@ -5732,90 +6150,58 @@ impl PicturePrimitive {
                             max_scale = tile_cache.current_raster_scale;
                         }
 
-                        // We know that picture cache tiles are always axis-aligned, but we want to establish
-                        // raster roots for them, so that we can easily control the scale factors used depending
-                        // on whether we want to zoom in high-performance or high-quality mode.
-                        true
+                        // Pick the largest scale factor of the transform for the scaling factor.
+                        let scaling_factor = world_scale_factors.0.max(world_scale_factors.1).max(min_scale).min(max_scale);
+
+                        let device_pixel_scale = Scale::new(scaling_factor);
+
+                        (device_pixel_scale, surface_spatial_node_index, (1.0, 1.0), world_scale_factors)
                     }
-                    PictureCompositeMode::SvgFilter(..) => {
-                        // Filters must be applied before transforms, to do this, we can mark this picture as establishing a raster root.
-                        true
-                    }
-                    PictureCompositeMode::MixBlend(..) |
-                    PictureCompositeMode::Filter(..) |
-                    PictureCompositeMode::ComponentTransferFilter(..) |
-                    PictureCompositeMode::Blit(..) => {
-                        // TODO(gw): As follow ups, individually move each of these composite modes to create raster roots.
-                        surface_to_parent_transform.is_perspective()
+                    _ => {
+                        let surface_spatial_node = frame_context.spatial_tree.get_spatial_node(surface_spatial_node_index);
+
+                        let enable_snapping =
+                            allow_snapping &&
+                            surface_spatial_node.coordinate_system_id == CoordinateSystemId::root() &&
+                            surface_spatial_node.snapping_transform.is_some();
+
+                        if enable_snapping {
+                            let raster_spatial_node_index = frame_context.spatial_tree.root_reference_frame_index();
+
+                            let local_to_raster_transform = frame_context
+                                .spatial_tree
+                                .get_relative_transform(
+                                    self.spatial_node_index,
+                                    raster_spatial_node_index,
+                                );
+
+                            let local_scale = local_to_raster_transform.scale_factors();
+
+                            (Scale::new(1.0), raster_spatial_node_index, local_scale, (1.0, 1.0))
+                        } else {
+                            // If client supplied a specific local scale, use that instead of
+                            // estimating from parent transform
+                            let world_scale_factors = match self.raster_space {
+                                RasterSpace::Screen => world_scale_factors,
+                                RasterSpace::Local(scale) => (scale, scale),
+                            };
+
+                            let device_pixel_scale = Scale::new(world_scale_factors.0.max(world_scale_factors.1));
+
+                            (device_pixel_scale, surface_spatial_node_index, (1.0, 1.0), world_scale_factors)
+                        }
                     }
                 };
-
-                let (raster_spatial_node_index, device_pixel_scale) = if establishes_raster_root {
-                    // If a raster root is established, this surface should be scaled based on the scale factors of the surface raster to parent raster transform.
-                    // This scaling helps ensure that the content in this surface does not become blurry or pixelated when composited in the parent surface.
-                    let scale_factors = surface_to_parent_transform.scale_factors();
-
-                    // Pick the largest scale factor of the transform for the scaling factor.
-                    let scaling_factor = scale_factors.0.max(scale_factors.1).max(min_scale).min(max_scale);
-
-                    let device_pixel_scale = parent_device_pixel_scale * Scale::new(scaling_factor);
-                    (surface_spatial_node_index, device_pixel_scale)
-                } else {
-                    (parent_raster_node_index, parent_device_pixel_scale)
-                };
-
-                let scale_factors = frame_context
-                        .spatial_tree
-                        .get_relative_transform(surface_spatial_node_index, raster_spatial_node_index)
-                        .scale_factors();
-
-                // This inflation factor is to be applied to all primitives within the surface.
-                // Only inflate if the caller hasn't already inflated the bounding rects for this filter.
-                let mut inflation_factor = 0.0;
-                if self.options.inflate_if_required {
-                    match composite_mode {
-                        PictureCompositeMode::Filter(Filter::Blur(width, height)) => {
-                            let blur_radius = f32::max(clamp_blur_radius(*width, scale_factors), clamp_blur_radius(*height, scale_factors));
-                            // The amount of extra space needed for primitives inside
-                            // this picture to ensure the visibility check is correct.
-                            inflation_factor = blur_radius * BLUR_SAMPLE_SCALE;
-                        }
-                        PictureCompositeMode::SvgFilter(ref primitives, _) => {
-                            let mut max = 0.0;
-                            for primitive in primitives {
-                                if let FilterPrimitiveKind::Blur(ref blur) = primitive.kind {
-                                    max = f32::max(max, blur.width);
-                                    max = f32::max(max, blur.height);
-                                }
-                            }
-                            inflation_factor = clamp_blur_radius(max, scale_factors) * BLUR_SAMPLE_SCALE;
-                        }
-                        PictureCompositeMode::Filter(Filter::DropShadows(ref shadows)) => {
-                            // TODO(gw): This is incorrect, since we don't consider the drop shadow
-                            //           offset. However, fixing that is a larger task, so this is
-                            //           an improvement on the current case (this at least works where
-                            //           the offset of the drop-shadow is ~0, which is often true).
-
-                            // Can't use max_by_key here since f32 isn't Ord
-                            let mut max_blur_radius: f32 = 0.0;
-                            for shadow in shadows {
-                                max_blur_radius = max_blur_radius.max(shadow.blur_radius);
-                            }
-
-                            inflation_factor = clamp_blur_radius(max_blur_radius, scale_factors) * BLUR_SAMPLE_SCALE;
-                        }
-                        _ => {}
-                    }
-                }
 
                 let surface = SurfaceInfo::new(
                     surface_spatial_node_index,
                     raster_spatial_node_index,
-                    inflation_factor,
                     frame_context.global_screen_world_rect,
                     &frame_context.spatial_tree,
                     device_pixel_scale,
-                    scale_factors,
+                    world_scale_factors,
+                    local_scale,
+                    allow_snapping,
                 );
 
                 let surface_index = SurfaceIndex(surfaces.len());
@@ -5823,20 +6209,15 @@ impl PicturePrimitive {
 
                 self.raster_config = Some(RasterConfig {
                     composite_mode: composite_mode.clone(),
-                    establishes_raster_root,
                     surface_index,
-                    root_scaling_factor: 1.0,
-                    clipped_bounding_rect: WorldRect::zero(),
                 });
 
-                surface_index
+                Some(surface_index)
             }
             None => {
-                current_surface_index.expect("bug: pass-through picture without parent surface")
+                None
             }
-        };
-
-        surface_index
+        }
     }
 
     /// Called after updating child pictures during the initial
@@ -5849,8 +6230,6 @@ impl PicturePrimitive {
         parent_surface_index: Option<SurfaceIndex>,
         surfaces: &mut [SurfaceInfo],
         frame_context: &FrameBuildingContext,
-        data_stores: &mut DataStores,
-        prim_instances: &mut Vec<PrimitiveInstance>,
     ) {
         let surface = &mut surfaces[surface_index.0];
 
@@ -5882,62 +6261,6 @@ impl PicturePrimitive {
                 continue;
             }
 
-            // Update any primitives/cluster bounding rects that can only be done
-            // with information available during frame building.
-            if cluster.flags.contains(ClusterFlags::IS_BACKDROP_FILTER) {
-                let backdrop_to_world_mapper = SpaceMapper::new_with_target(
-                    frame_context.root_spatial_node_index,
-                    cluster.spatial_node_index,
-                    LayoutRect::max_rect(),
-                    frame_context.spatial_tree,
-                );
-
-                for prim_instance in &mut prim_instances[cluster.prim_range()] {
-                    match prim_instance.kind {
-                        PrimitiveInstanceKind::Backdrop { data_handle, .. } => {
-                            // The actual size and clip rect of this primitive are determined by computing the bounding
-                            // box of the projected rect of the backdrop-filter element onto the backdrop.
-                            let prim_data = &mut data_stores.backdrop[data_handle];
-                            let spatial_node_index = prim_data.kind.spatial_node_index;
-
-                            // We cannot use the relative transform between the backdrop and the element because
-                            // that doesn't take into account any projection transforms that both spatial nodes are children of.
-                            // Instead, we first project from the element to the world space and get a flattened 2D bounding rect
-                            // in the screen space, we then map this rect from the world space to the backdrop space to get the
-                            // proper bounding box where the backdrop-filter needs to be processed.
-
-                            let prim_to_world_mapper = SpaceMapper::new_with_target(
-                                frame_context.root_spatial_node_index,
-                                spatial_node_index,
-                                LayoutRect::max_rect(),
-                                frame_context.spatial_tree,
-                            );
-
-                            // First map to the screen and get a flattened rect
-                            let prim_rect = prim_to_world_mapper
-                                .map(&prim_data.kind.border_rect)
-                                .unwrap_or_else(LayoutRect::zero);
-                            // Backwards project the flattened rect onto the backdrop
-                            let prim_rect = backdrop_to_world_mapper
-                                .unmap(&prim_rect)
-                                .unwrap_or_else(LayoutRect::zero);
-
-                            // TODO(aosmond): Is this safe? Updating the primitive size during
-                            // frame building is usually problematic since scene building will cache
-                            // the primitive information in the GPU already.
-                            prim_data.common.prim_rect = prim_rect;
-                            prim_instance.clip_set.local_clip_rect = prim_rect;
-
-                            // Update the cluster bounding rect now that we have the backdrop rect.
-                            cluster.bounding_rect = cluster.bounding_rect.union(&prim_rect);
-                        }
-                        _ => {
-                            panic!("BUG: unexpected deferred primitive kind for cluster updates");
-                        }
-                    }
-                }
-            }
-
             // Map the cluster bounding rect into the space of the surface, and
             // include it in the surface bounding rect.
             surface.map_local_to_surface.set_target_spatial_node(
@@ -5949,7 +6272,7 @@ impl PicturePrimitive {
             // backface checks.
             cluster.flags.insert(ClusterFlags::IS_VISIBLE);
             if let Some(cluster_rect) = surface.map_local_to_surface.map(&cluster.bounding_rect) {
-                surface.rect = surface.rect.union(&cluster_rect);
+                surface.unclipped_local_rect = surface.unclipped_local_rect.union(&cluster_rect);
             }
         }
 
@@ -5957,42 +6280,28 @@ impl PicturePrimitive {
         // rect into the parent surface coordinate space, and propagate that up
         // to the parent.
         if let Some(ref mut raster_config) = self.raster_config {
-            // Inflate the local bounding rect if required by the filter effect.
-            if self.options.inflate_if_required {
-                surface.rect = raster_config.composite_mode.inflate_picture_rect(surface.rect, surface.scale_factors);
-            }
-
-            let mut surface_rect = surface.rect * Scale::new(1.0);
-
-            // Set the estimated and precise local rects. The precise local rect
-            // may be changed again during frame visibility.
-            self.estimated_local_rect = surface_rect;
-            self.precise_local_rect = surface_rect;
-
-            // Drop shadows draw both a content and shadow rect, so need to expand the local
-            // rect of any surfaces to be composited in parent surfaces correctly.
-            match raster_config.composite_mode {
-                PictureCompositeMode::Filter(Filter::DropShadows(ref shadows)) => {
-                    for shadow in shadows {
-                        let shadow_rect = self.estimated_local_rect.translate(shadow.offset);
-                        surface_rect = surface_rect.union(&shadow_rect);
-                    }
-                }
-                _ => {}
-            }
-
             // Propagate up to parent surface, now that we know this surface's static rect
             if let Some(parent_surface_index) = parent_surface_index {
+                let surface_rect = raster_config.composite_mode.get_coverage(
+                    surface,
+                    Some(surface.unclipped_local_rect.cast_unit()),
+                );
+
                 let parent_surface = &mut surfaces[parent_surface_index.0];
                 parent_surface.map_local_to_surface.set_target_spatial_node(
                     self.spatial_node_index,
                     frame_context.spatial_tree,
                 );
+
+                // Drop shadows draw both a content and shadow rect, so need to expand the local
+                // rect of any surfaces to be composited in parent surfaces correctly.
+
                 if let Some(parent_surface_rect) = parent_surface
                     .map_local_to_surface
                     .map(&surface_rect)
                 {
-                    parent_surface.rect = parent_surface.rect.union(&parent_surface_rect);
+                    parent_surface.unclipped_local_rect =
+                        parent_surface.unclipped_local_rect.union(&parent_surface_rect);
                 }
             }
         }
@@ -6000,20 +6309,9 @@ impl PicturePrimitive {
 
     pub fn prepare_for_render(
         &mut self,
-        frame_context: &FrameBuildingContext,
         frame_state: &mut FrameBuildingState,
         data_stores: &mut DataStores,
     ) -> bool {
-        if let Picture3DContext::In { root_data: Some(..), plane_splitter_index, .. } = self.context_3d {
-            let splitter = &mut frame_state.plane_splitters[plane_splitter_index.0];
-
-            self.resolve_split_planes(
-                splitter,
-                &mut frame_state.gpu_cache,
-                &frame_context.spatial_tree,
-            );
-        }
-
         let raster_config = match self.raster_config {
             Some(ref mut raster_config) => raster_config,
             None => {
@@ -6030,22 +6328,33 @@ impl PicturePrimitive {
 
         match raster_config.composite_mode {
             PictureCompositeMode::TileCache { .. } => {}
-            PictureCompositeMode::Filter(Filter::Blur(..)) => {}
+            PictureCompositeMode::Filter(Filter::Blur { .. }) => {}
             PictureCompositeMode::Filter(Filter::DropShadows(ref shadows)) => {
                 self.extra_gpu_data_handles.resize(shadows.len(), GpuCacheHandle::new());
                 for (shadow, extra_handle) in shadows.iter().zip(self.extra_gpu_data_handles.iter_mut()) {
                     if let Some(mut request) = frame_state.gpu_cache.request(extra_handle) {
+                        let surface = &frame_state.surfaces[raster_config.surface_index.0];
+                        let prim_rect = surface.clipped_local_rect.cast_unit();
+
                         // Basic brush primitive header is (see end of prepare_prim_for_render_inner in prim_store.rs)
                         //  [brush specific data]
                         //  [segment_rect, segment data]
-                        let shadow_rect = self.precise_local_rect.translate(shadow.offset);
+                        let (blur_inflation_x, blur_inflation_y) = surface.clamp_blur_radius(
+                            shadow.blur_radius,
+                            shadow.blur_radius,
+                        );
+
+                        let shadow_rect = prim_rect.inflate(
+                            blur_inflation_x * BLUR_SAMPLE_SCALE,
+                            blur_inflation_y * BLUR_SAMPLE_SCALE,
+                        ).translate(shadow.offset);
 
                         // ImageBrush colors
                         request.push(shadow.color.premultiplied());
                         request.push(PremultipliedColorF::WHITE);
                         request.push([
-                            self.precise_local_rect.width(),
-                            self.precise_local_rect.height(),
+                            shadow_rect.width(),
+                            shadow_rect.height(),
                             0.0,
                             0.0,
                         ]);
@@ -6085,99 +6394,12 @@ impl PicturePrimitive {
             }
             PictureCompositeMode::MixBlend(..) |
             PictureCompositeMode::Blit(_) |
+            PictureCompositeMode::IntermediateSurface |
             PictureCompositeMode::SvgFilter(..) => {}
         }
 
         true
     }
-}
-
-// Calculate a single homogeneous screen-space UV for a picture.
-fn calculate_screen_uv(
-    local_pos: &PicturePoint,
-    transform: &PictureToRasterTransform,
-    rendered_rect: &DeviceRect,
-    device_pixel_scale: DevicePixelScale,
-) -> DeviceHomogeneousVector {
-    let raster_pos = transform.transform_point2d_homogeneous(*local_pos);
-
-    DeviceHomogeneousVector::new(
-        (raster_pos.x * device_pixel_scale.0 - rendered_rect.min.x * raster_pos.w) / rendered_rect.width(),
-        (raster_pos.y * device_pixel_scale.0 - rendered_rect.min.y * raster_pos.w) / rendered_rect.height(),
-        0.0,
-        raster_pos.w,
-    )
-}
-
-// Calculate a UV rect within an image based on the screen space
-// vertex positions of a picture.
-fn calculate_uv_rect_kind(
-    pic_rect: &PictureRect,
-    transform: &PictureToRasterTransform,
-    rendered_rect: &DeviceRect,
-    device_pixel_scale: DevicePixelScale,
-) -> UvRectKind {
-    let top_left = calculate_screen_uv(
-        &pic_rect.top_left(),
-        transform,
-        &rendered_rect,
-        device_pixel_scale,
-    );
-
-    let top_right = calculate_screen_uv(
-        &pic_rect.top_right(),
-        transform,
-        &rendered_rect,
-        device_pixel_scale,
-    );
-
-    let bottom_left = calculate_screen_uv(
-        &pic_rect.bottom_left(),
-        transform,
-        &rendered_rect,
-        device_pixel_scale,
-    );
-
-    let bottom_right = calculate_screen_uv(
-        &pic_rect.bottom_right(),
-        transform,
-        &rendered_rect,
-        device_pixel_scale,
-    );
-
-    UvRectKind::Quad {
-        top_left,
-        top_right,
-        bottom_left,
-        bottom_right,
-    }
-}
-
-fn create_raster_mappers(
-    surface_spatial_node_index: SpatialNodeIndex,
-    raster_spatial_node_index: SpatialNodeIndex,
-    world_rect: WorldRect,
-    spatial_tree: &SpatialTree,
-) -> (SpaceMapper<RasterPixel, WorldPixel>, SpaceMapper<PicturePixel, RasterPixel>) {
-    let map_raster_to_world = SpaceMapper::new_with_target(
-        spatial_tree.root_reference_frame_index(),
-        raster_spatial_node_index,
-        world_rect,
-        spatial_tree,
-    );
-
-    let raster_bounds = map_raster_to_world
-        .unmap(&world_rect)
-        .unwrap_or_else(RasterRect::max_rect);
-
-    let map_pic_to_raster = SpaceMapper::new_with_target(
-        raster_spatial_node_index,
-        surface_spatial_node_index,
-        raster_bounds,
-        spatial_tree,
-    );
-
-    (map_raster_to_world, map_pic_to_raster)
 }
 
 fn get_transform_key(
@@ -6212,6 +6434,16 @@ impl ImageDependency {
         key: ImageKey::DUMMY,
         generation: ImageGeneration::INVALID,
     };
+}
+
+/// In some cases, we need to know the dirty rect of all tiles in order
+/// to correctly invalidate a primitive.
+#[derive(Debug)]
+struct DeferredDirtyTest {
+    /// The tile rect that the primitive being checked affects
+    tile_rect: TileRect,
+    /// The picture-cache local rect of the primitive being checked
+    prim_rect: PictureRect,
 }
 
 /// A helper struct to compare a primitive and all its sub-dependencies.
@@ -6858,43 +7090,6 @@ impl CompositeState {
     }
 }
 
-pub fn get_raster_rects(
-    pic_rect: PictureRect,
-    map_to_raster: &SpaceMapper<PicturePixel, RasterPixel>,
-    map_to_world: &SpaceMapper<RasterPixel, WorldPixel>,
-    prim_bounding_rect: WorldRect,
-    device_pixel_scale: DevicePixelScale,
-) -> Option<(DeviceRect, DeviceRect)> {
-    let unclipped_raster_rect = map_to_raster.map(&pic_rect)?;
-
-    let unclipped = raster_rect_to_device_pixels(
-        unclipped_raster_rect,
-        device_pixel_scale,
-    );
-
-    let unclipped_world_rect = map_to_world.map(&unclipped_raster_rect)?;
-    let clipped_world_rect = unclipped_world_rect.intersection(&prim_bounding_rect)?;
-
-    // We don't have to be able to do the back-projection from world into raster.
-    // Rendering only cares one way, so if that fails, we fall back to the full rect.
-    let clipped_raster_rect = match map_to_world.unmap(&clipped_world_rect) {
-        Some(rect) => rect.intersection(&unclipped_raster_rect)?,
-        None => return Some((unclipped, unclipped)),
-    };
-
-    let clipped = raster_rect_to_device_pixels(
-        clipped_raster_rect,
-        device_pixel_scale,
-    );
-
-    // Ensure that we won't try to allocate a zero-sized clip render task.
-    if clipped.is_empty() {
-        return None;
-    }
-
-    Some((clipped, unclipped))
-}
-
 fn get_relative_scale_offset(
     child_spatial_node_index: SpatialNodeIndex,
     parent_spatial_node_index: SpatialNodeIndex,
@@ -6918,4 +7113,267 @@ fn get_relative_scale_offset(
     scale_offset.offset = scale_offset.offset.round();
 
     scale_offset
+}
+
+pub fn calculate_screen_uv(
+    p: DevicePoint,
+    clipped: DeviceRect,
+) -> DeviceHomogeneousVector {
+    // TODO(gw): Switch to a simple mix, no bilerp / homogeneous vec needed anymore
+    DeviceHomogeneousVector::new(
+        (p.x - clipped.min.x) / (clipped.max.x - clipped.min.x),
+        (p.y - clipped.min.y) / (clipped.max.y - clipped.min.y),
+        0.0,
+        1.0,
+    )
+}
+
+fn get_surface_rects(
+    surface_index: SurfaceIndex,
+    composite_mode: &PictureCompositeMode,
+    parent_surface_index: SurfaceIndex,
+    surfaces: &mut [SurfaceInfo],
+    spatial_tree: &SpatialTree,
+    max_surface_size: f32,
+) -> Option<SurfaceAllocInfo> {
+    let parent_surface = &surfaces[parent_surface_index.0];
+
+    let local_to_parent = SpaceMapper::new_with_target(
+        parent_surface.surface_spatial_node_index,
+        surfaces[surface_index.0].surface_spatial_node_index,
+        parent_surface.clipping_rect,
+        spatial_tree,
+    );
+
+    let local_clip_rect = local_to_parent
+        .unmap(&parent_surface.clipping_rect)
+        .unwrap_or(PictureRect::max_rect())
+        .cast_unit();
+
+    let surface = &mut surfaces[surface_index.0];
+
+    let (clipped_local, unclipped_local) = match composite_mode {
+        PictureCompositeMode::Filter(Filter::DropShadows(ref shadows)) => {
+            let local_prim_rect = surface.clipped_local_rect;
+
+            let mut required_local_rect = match local_prim_rect.intersection(&local_clip_rect) {
+                Some(rect) => rect,
+                None => return None,
+            };
+
+            for shadow in shadows {
+                let (blur_radius_x, blur_radius_y) = surface.clamp_blur_radius(
+                    shadow.blur_radius,
+                    shadow.blur_radius,
+                );
+                let blur_inflation_x = blur_radius_x * BLUR_SAMPLE_SCALE;
+                let blur_inflation_y = blur_radius_y * BLUR_SAMPLE_SCALE;
+
+                let local_shadow_rect = local_prim_rect
+                    .translate(shadow.offset.cast_unit());
+
+                if let Some(clipped_shadow_rect) = local_clip_rect.intersection(&local_shadow_rect) {
+                    let required_shadow_rect = clipped_shadow_rect.inflate(blur_inflation_x, blur_inflation_y);
+
+                    let local_clipped_shadow_rect = required_shadow_rect.translate(-shadow.offset.cast_unit());
+
+                    required_local_rect = required_local_rect.union(&local_clipped_shadow_rect);
+                }
+            }
+
+            let unclipped = composite_mode.get_rect(surface, None);
+            let clipped = required_local_rect;
+
+            let clipped = match clipped.intersection(&unclipped.cast_unit()) {
+                Some(rect) => rect,
+                None => return None,
+            };
+
+            (clipped, unclipped)
+        }
+        _ => {
+            let surface_origin = surface.clipped_local_rect.min.to_vector().cast_unit();
+
+            let normalized_prim_rect = composite_mode
+                .get_rect(surface, None)
+                .translate(-surface_origin);
+
+            let normalized_clip_rect = local_clip_rect
+                .cast_unit()
+                .translate(-surface_origin);
+
+            let norm_clipped_rect = match normalized_prim_rect.intersection(&normalized_clip_rect) {
+                Some(rect) => rect,
+                None => return None,
+            };
+
+            let norm_clipped_rect = composite_mode.get_rect(surface, Some(norm_clipped_rect));
+
+            let norm_clipped_rect = match norm_clipped_rect.intersection(&normalized_prim_rect) {
+                Some(rect) => rect,
+                None => return None,
+            };
+
+            let unclipped = normalized_prim_rect.translate(surface_origin);
+            let clipped = norm_clipped_rect.translate(surface_origin);
+
+            (clipped.cast_unit(), unclipped.cast_unit())
+        }
+    };
+
+    let (mut clipped, mut unclipped) = if surface.raster_spatial_node_index != surface.surface_spatial_node_index {
+        assert_eq!(surface.device_pixel_scale.0, 1.0);
+
+        let local_to_world = SpaceMapper::new_with_target(
+            spatial_tree.root_reference_frame_index(),
+            surface.surface_spatial_node_index,
+            WorldRect::max_rect(),
+            spatial_tree,
+        );
+
+        let clipped = (local_to_world.map(&clipped_local.cast_unit()).unwrap() * surface.device_pixel_scale).round_out();
+        let unclipped = local_to_world.map(&unclipped_local).unwrap() * surface.device_pixel_scale;
+
+        (clipped, unclipped)
+    } else {
+        let clipped = (clipped_local.cast_unit() * surface.device_pixel_scale).round_out();
+        let unclipped = unclipped_local.cast_unit() * surface.device_pixel_scale;
+
+        (clipped, unclipped)
+    };
+
+    let task_size_f = clipped.size();
+
+    if task_size_f.width > max_surface_size || task_size_f.height > max_surface_size {
+        let max_dimension = clipped_local.width().max(clipped_local.height()).ceil();
+
+        surface.raster_spatial_node_index = surface.surface_spatial_node_index;
+        surface.device_pixel_scale = Scale::new(max_surface_size / max_dimension);
+
+        clipped = (clipped_local.cast_unit() * surface.device_pixel_scale).round();
+        unclipped = unclipped_local.cast_unit() * surface.device_pixel_scale;
+    }
+
+    let task_size = clipped.size().to_i32();
+    debug_assert!(task_size.width <= max_surface_size as i32);
+    debug_assert!(task_size.height <= max_surface_size as i32);
+
+    let uv_rect_kind = calculate_uv_rect_kind(
+        clipped,
+        unclipped,
+    );
+
+    // If the task size is zero sized, skip creation and drawing of it
+    if task_size.width == 0 || task_size.height == 0 {
+        return None;
+    }
+
+    // If the final clipped surface rect is not the same or larger as the unclipped
+    // local rect of the surface, we need to enable scissor rect (which disables
+    // merging batches between this and other render tasks allocated to the same
+    // render target). This is conservative - we could do better in future by
+    // distinguishing between clips that affect the surface itself vs. clips on
+    // child primitives that don't affect this.
+    let needs_scissor_rect = !clipped_local.contains_box(&surface.unclipped_local_rect);
+
+    Some(SurfaceAllocInfo {
+        task_size,
+        needs_scissor_rect,
+        clipped,
+        unclipped,
+        clipped_local,
+        uv_rect_kind,
+    })
+}
+
+fn calculate_uv_rect_kind(
+    clipped: DeviceRect,
+    unclipped: DeviceRect,
+) -> UvRectKind {
+    let top_left = calculate_screen_uv(
+        unclipped.top_left().cast_unit(),
+        clipped,
+    );
+
+    let top_right = calculate_screen_uv(
+        unclipped.top_right().cast_unit(),
+        clipped,
+    );
+
+    let bottom_left = calculate_screen_uv(
+        unclipped.bottom_left().cast_unit(),
+        clipped,
+    );
+
+    let bottom_right = calculate_screen_uv(
+        unclipped.bottom_right().cast_unit(),
+        clipped,
+    );
+
+    UvRectKind::Quad {
+        top_left,
+        top_right,
+        bottom_left,
+        bottom_right,
+    }
+}
+
+#[test]
+fn test_large_surface_scale_1() {
+    use crate::spatial_tree::{SceneSpatialTree, SpatialTree};
+
+    let mut cst = SceneSpatialTree::new();
+    let root_reference_frame_index = cst.root_reference_frame_index();
+
+    let mut spatial_tree = SpatialTree::new();
+    spatial_tree.apply_updates(cst.end_frame_and_get_pending_updates());
+    spatial_tree.update_tree(&SceneProperties::new());
+
+    let map_local_to_surface = SpaceMapper::new_with_target(
+        root_reference_frame_index,
+        root_reference_frame_index,
+        PictureRect::max_rect(),
+        &spatial_tree,
+    );
+
+    let mut surfaces = vec![
+        SurfaceInfo {
+            unclipped_local_rect: PictureRect::max_rect(),
+            clipped_local_rect: PictureRect::max_rect(),
+            is_opaque: true,
+            clipping_rect: PictureRect::max_rect(),
+            map_local_to_surface: map_local_to_surface.clone(),
+            raster_spatial_node_index: root_reference_frame_index,
+            surface_spatial_node_index: root_reference_frame_index,
+            device_pixel_scale: DevicePixelScale::new(1.0),
+            world_scale_factors: (1.0, 1.0),
+            local_scale: (1.0, 1.0),
+            allow_snapping: true,
+        },
+        SurfaceInfo {
+            unclipped_local_rect: PictureRect::new(
+                PicturePoint::new(52.76350021362305, 0.0),
+                PicturePoint::new(159.6738739013672, 35.0),
+            ),
+            clipped_local_rect: PictureRect::max_rect(),
+            is_opaque: true,
+            clipping_rect: PictureRect::max_rect(),
+            map_local_to_surface,
+            raster_spatial_node_index: root_reference_frame_index,
+            surface_spatial_node_index: root_reference_frame_index,
+            device_pixel_scale: DevicePixelScale::new(43.82798767089844),
+            world_scale_factors: (1.0, 1.0),
+            local_scale: (1.0, 1.0),
+            allow_snapping: true,
+        },
+    ];
+
+    get_surface_rects(
+        SurfaceIndex(1),
+        &PictureCompositeMode::Blit(BlitReason::ISOLATE),
+        SurfaceIndex(0),
+        &mut surfaces,
+        &spatial_tree,
+        MAX_SURFACE_SIZE as f32,
+    );
 }

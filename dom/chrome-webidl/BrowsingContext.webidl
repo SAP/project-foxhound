@@ -113,6 +113,8 @@ interface BrowsingContext {
 
   readonly attribute boolean isInBFCache;
 
+  readonly attribute boolean isDiscarded;
+
   /**
    * The sandbox flags on the browsing context. These reflect the value of the
    * sandbox attribute of the associated IFRAME or CSP-protectable content, if
@@ -142,6 +144,14 @@ interface BrowsingContext {
   // only be set from the parent process.
   //
   // A value of 0.0 causes us to use the global default scaling factor.
+  //
+  // NOTE that this override only affects a few minor things (the value exposed
+  // to devicePixelRatio and some media queries in content, and responsive
+  // image selection). Most notably, it does _not_ affect rendering.
+  //
+  // It is intended for RDM, and is probably not what you want in other cases.
+  // If you want to change the actual device pixel ratio that rendering code
+  // uses, you probably want to change the fullZoom.
   [SetterThrows] attribute float overrideDPPX;
 
   [SetterThrows] attribute boolean suspendMediaWhenInactive;
@@ -159,11 +169,11 @@ interface BrowsingContext {
 
   // Extension to give chrome JS the ability to set the window screen
   // orientation while in RDM.
-  [Throws] void setRDMPaneOrientation(OrientationType type, float rotationAngle);
+  [Throws] undefined setRDMPaneOrientation(OrientationType type, float rotationAngle);
 
   // Extension to give chrome JS the ability to set a maxTouchPoints override
   // while in RDM.
-  [Throws] void setRDMPaneMaxTouchPoints(octet maxTouchPoints);
+  [Throws] undefined setRDMPaneMaxTouchPoints(octet maxTouchPoints);
 
   // The watchedByDevTools flag indicates whether or not DevTools are currently
   // debugging this browsing context.
@@ -197,6 +207,12 @@ interface BrowsingContext {
   readonly attribute TouchEventsOverride touchEventsOverride;
 
   /**
+   * Returns true if the top-level BrowsingContext has been configured to
+   * default-target user-initiated link clicks to _blank.
+   */
+  readonly attribute boolean targetTopLevelLinkClicksToBlank;
+
+  /**
    * Partially determines whether script execution is allowed in this
    * BrowsingContext. Script execution will be permitted only if this
    * attribute is true and script execution is allowed in the parent
@@ -205,6 +221,12 @@ interface BrowsingContext {
    * May only be set in the parent process.
    */
   [SetterThrows] attribute boolean allowJavascript;
+
+  /**
+   * Determines whether we're forcing a desktop-mode viewport. Only settable in
+   * the top browsing context from the parent process.
+   */
+  [SetterThrows] attribute boolean forceDesktopViewport;
 
   /*
    * Default load flags (as defined in nsIRequest) that will be set on all
@@ -221,7 +243,7 @@ interface BrowsingContext {
   readonly attribute ChildSHistory? childSessionHistory;
 
   // Resets the location change rate limit. Used for testing.
-  void resetLocationChangeRateLimit();
+  undefined resetLocationChangeRateLimit();
 
   readonly attribute long childOffset;
 };
@@ -244,8 +266,8 @@ interface CanonicalBrowsingContext : BrowsingContext {
 
   readonly attribute WindowGlobalParent? embedderWindowGlobal;
 
-  void notifyStartDelayedAutoplayMedia();
-  [Throws] void notifyMediaMutedChanged(boolean muted);
+  undefined notifyStartDelayedAutoplayMedia();
+  [Throws] undefined notifyMediaMutedChanged(boolean muted);
 
   readonly attribute nsISecureBrowserUI? secureBrowserUI;
 
@@ -275,7 +297,7 @@ interface CanonicalBrowsingContext : BrowsingContext {
    *        the triggeringPrincipal, the referrer info.
    */
   [Throws]
-  void loadURI(DOMString aURI, optional LoadURIOptions aOptions = {});
+  undefined loadURI(DOMString aURI, optional LoadURIOptions aOptions = {});
 
    /**
     * Print the current document.
@@ -285,35 +307,45 @@ interface CanonicalBrowsingContext : BrowsingContext {
     *                       set to prevent prompting.
     * @return A Promise that resolves once printing is finished.
     */
-  [Throws]
-  Promise<void> print(nsIPrintSettings aPrintSettings);
+  [NewObject, BinaryName="printJS"]
+  Promise<undefined> print(nsIPrintSettings aPrintSettings);
 
   /**
    * These methods implement the nsIWebNavigation methods of the same names
    */
-  void goBack(optional long aCancelContentJSEpoch, optional boolean aRequireUserInteraction = false, optional boolean aUserActivation = false);
-  void goForward(optional long aCancelContentJSEpoch, optional boolean aRequireUserInteraction  = false, optional boolean aUserActivation = false);
-  void goToIndex(long aIndex, optional long aCancelContentJSEpoch, optional boolean aUserActivation = false);
-  void reload(unsigned long aReloadFlags);
-  void stop(unsigned long aStopFlags);
+  undefined goBack(optional long aCancelContentJSEpoch, optional boolean aRequireUserInteraction = false, optional boolean aUserActivation = false);
+  undefined goForward(optional long aCancelContentJSEpoch, optional boolean aRequireUserInteraction  = false, optional boolean aUserActivation = false);
+  undefined goToIndex(long aIndex, optional long aCancelContentJSEpoch, optional boolean aUserActivation = false);
+  undefined reload(unsigned long aReloadFlags);
+  undefined stop(unsigned long aStopFlags);
 
   readonly attribute nsISHistory? sessionHistory;
 
   readonly attribute MediaController? mediaController;
 
-  void resetScalingZoom();
+  undefined resetScalingZoom();
 
   // The current URI loaded in this BrowsingContext according to nsDocShell.
   // This may not match the current window global's document URI in some cases.
   readonly attribute URI? currentURI;
 
-  void clearRestoreState();
+  undefined clearRestoreState();
+
+  // Force this browsing context, which must correspond to an app window, to
+  // be active regardless of the window being minimized or fully occluded.
+  [SetterThrows] attribute boolean forceAppWindowActive;
 
   /**
    * This allows chrome to override the default choice of whether touch events
    * are available in a specific BrowsingContext and its descendents.
    */
   [SetterThrows] inherit attribute TouchEventsOverride touchEventsOverride;
+
+  /**
+   * Set to true to configure the top-level BrowsingContext to default-target
+   * user-initiated link clicks to _blank.
+   */
+  [SetterThrows] inherit attribute boolean targetTopLevelLinkClicksToBlank;
 
   /**
    * Set the cross-group opener of this BrowsingContext. This is used to
@@ -325,7 +357,7 @@ interface CanonicalBrowsingContext : BrowsingContext {
    * `window.open`.
    */
   [Throws]
-  void setCrossGroupOpener(CanonicalBrowsingContext crossGroupOpener);
+  undefined setCrossGroupOpener(CanonicalBrowsingContext crossGroupOpener);
 
   readonly attribute boolean isReplaced;
 
@@ -333,15 +365,15 @@ interface CanonicalBrowsingContext : BrowsingContext {
   /**
    * Notify APZ to start autoscrolling.
    *
-   * (aAnchorX, aAnchorY) are the coordinates of the autoscroll anchor, in CSS
-   *                      coordinates relative to the screen.
+   * (aAnchorX, aAnchorY) are the coordinates of the autoscroll anchor, in
+   *                      device coordinates relative to the screen.
    * aScrollId and aPresShellId identify the scroll frame that content chose to
    *                            scroll.
    *
    * Returns whether we were successfully able to notify APZ.
-   * If this function returns true, APZ (which may live in another process)
-   * may still reject the autoscroll, but it's then APZ's reponsibility
-   * to notify content via an "autoscroll-rejected-by-apz" message.
+   * If this function returns true, APZ (which may live in another process) may
+   * still reject the autoscroll, but it's then APZ's responsibility to notify
+   * content via an "autoscroll-rejected-by-apz" message.
    */
   boolean startApzAutoscroll(float aAnchorX, float aAnchorY,
                              unsigned long long aScrollId,
@@ -350,8 +382,8 @@ interface CanonicalBrowsingContext : BrowsingContext {
   /**
    * Notify APZ to stop autoscrolling.
    */
-  void stopApzAutoscroll(unsigned long long aScrollId,
-                         unsigned long aPresShellId);
+  undefined stopApzAutoscroll(unsigned long long aScrollId,
+                              unsigned long aPresShellId);
 };
 
 [Exposed=Window, ChromeOnly]

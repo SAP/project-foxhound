@@ -6,7 +6,6 @@ const CHROME_ONLY_TOGGLES = [
   "-moz-scrollbar-start-forward",
   "-moz-scrollbar-end-backward",
   "-moz-scrollbar-end-forward",
-  "-moz-scrollbar-thumb-proportional",
   "-moz-overlay-scrollbars",
   "-moz-windows-classic",
   "-moz-windows-compositor",
@@ -25,15 +24,20 @@ const CHROME_ONLY_TOGGLES = [
   "-moz-gtk-csd-maximize-button",
   "-moz-gtk-csd-close-button",
   "-moz-gtk-csd-reversed-placement",
-  "-moz-proton-places-tooltip",
+  "-moz-box-flexbox-emulation",
+  "-moz-panel-animations",
 ];
 
 // Non-parseable queries can be tested directly in
 // `test_chrome_only_media_queries.html`.
 const CHROME_ONLY_QUERIES = [
-  "(-moz-os-version: windows-win7)",
-  "(-moz-os-version: windows-win8)",
-  "(-moz-os-version: windows-win10)",
+  "(-moz-platform: linux)",
+  "(-moz-platform: windows)",
+  "(-moz-platform: macos)",
+  "(-moz-platform: android)",
+  "(-moz-platform: windows-win7)",
+  "(-moz-platform: windows-win8)",
+  "(-moz-platform: windows-win10)",
   "(-moz-content-prefers-color-scheme: dark)",
   "(-moz-content-prefers-color-scheme: light)",
 ];

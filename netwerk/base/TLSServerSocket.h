@@ -39,13 +39,15 @@ class TLSServerSocket final : public nsServerSocket, public nsITLSServerSocket {
 };
 
 class TLSServerConnectionInfo : public nsITLSServerConnectionInfo,
-                                public nsITLSClientStatus {
+                                public nsITLSClientStatus,
+                                public nsIInterfaceRequestor {
   friend class TLSServerSocket;
 
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSITLSSERVERCONNECTIONINFO
   NS_DECL_NSITLSCLIENTSTATUS
+  NS_DECL_NSIINTERFACEREQUESTOR
 
   TLSServerConnectionInfo() = default;
 
@@ -68,7 +70,8 @@ class TLSServerConnectionInfo : public nsITLSServerConnectionInfo,
   uint32_t mMacLength{0};
   // lock protects access to mSecurityObserver
   mozilla::Mutex mLock{"TLSServerConnectionInfo.mLock"};
-  nsCOMPtr<nsITLSServerSecurityObserver> mSecurityObserver;
+  nsCOMPtr<nsITLSServerSecurityObserver> mSecurityObserver
+      MOZ_GUARDED_BY(mLock);
 };
 
 }  // namespace net

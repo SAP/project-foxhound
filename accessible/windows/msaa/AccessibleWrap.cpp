@@ -213,7 +213,7 @@ void AccessibleWrap::InvalidateHandlers() {
 /* static */
 bool AccessibleWrap::DispatchTextChangeToHandler(Accessible* aAcc,
                                                  bool aIsInsert,
-                                                 const nsString& aText,
+                                                 const nsAString& aText,
                                                  int32_t aStart,
                                                  uint32_t aLen) {
   MOZ_ASSERT(XRE_IsParentProcess());
@@ -254,8 +254,11 @@ bool AccessibleWrap::DispatchTextChangeToHandler(Accessible* aAcc,
 
   VARIANT_BOOL isInsert = aIsInsert ? VARIANT_TRUE : VARIANT_FALSE;
 
-  IA2TextSegment textSegment{::SysAllocStringLen(aText.get(), aText.Length()),
-                             aStart, aStart + static_cast<long>(aLen)};
+  IA2TextSegment textSegment{
+      ::SysAllocStringLen(
+          reinterpret_cast<const wchar_t*>(aText.BeginReading()),
+          aText.Length()),
+      aStart, aStart + static_cast<long>(aLen)};
 
   ASYNC_INVOKER_FOR(IHandlerControl)
   invoker(controller.mCtrl, Some(controller.mIsProxy));
@@ -266,4 +269,21 @@ bool AccessibleWrap::DispatchTextChangeToHandler(Accessible* aAcc,
   ::SysFreeString(textSegment.text);
 
   return SUCCEEDED(hr);
+}
+
+/* static */
+void AccessibleWrap::SuppressHandlerA11yForClipboardCopy() {
+  if (!sHandlerControllers || sHandlerControllers->IsEmpty()) {
+    return;
+  }
+  // The original intent was that AccessibleHandler would be used in any
+  // process that wanted to access Gecko a11y. That didn't work out for various
+  // reasons. In practice, there is only a single AccessibleHandlerControl which
+  // is for our own parent process, used for in-process client calls. That also
+  // means we don't need to worry about async invokation here.
+  auto& controller = sHandlerControllers->ElementAt(0);
+  MOZ_ASSERT(controller.mPid == ::GetCurrentProcessId() &&
+             !controller.mIsProxy);
+  DebugOnly<HRESULT> hr = controller.mCtrl->SuppressA11yForClipboardCopy();
+  MOZ_ASSERT(SUCCEEDED(hr));
 }

@@ -4,7 +4,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsIMemoryReporter.h"
-#include "nsMemory.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Base64.h"
 #include "mozilla/CheckedInt.h"
@@ -210,7 +209,7 @@ void gfxASurface::SetDeviceOffset(const gfxPoint& offset) {
 gfxPoint gfxASurface::GetDeviceOffset() const {
   if (!mSurfaceValid) return gfxPoint(0.0, 0.0);
   gfxPoint pt;
-  cairo_surface_get_device_offset(mSurface, &pt.x, &pt.y);
+  cairo_surface_get_device_offset(mSurface, &pt.x.value, &pt.y.value);
   return pt;
 }
 

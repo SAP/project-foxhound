@@ -18,6 +18,7 @@ pub struct WakerRef<'a> {
 
 impl<'a> WakerRef<'a> {
     /// Create a new [`WakerRef`] from a [`Waker`] reference.
+    #[inline]
     pub fn new(waker: &'a Waker) -> Self {
         // copy the underlying (raw) waker without calling a clone,
         // as we won't call Waker::drop either.
@@ -31,6 +32,7 @@ impl<'a> WakerRef<'a> {
     /// an unsafe way (that will be valid only for a lifetime to be determined
     /// by the caller), and the [`Waker`] doesn't need to or must not be
     /// destroyed.
+    #[inline]
     pub fn new_unowned(waker: ManuallyDrop<Waker>) -> Self {
         Self { waker, _marker: PhantomData }
     }
@@ -39,6 +41,7 @@ impl<'a> WakerRef<'a> {
 impl Deref for WakerRef<'_> {
     type Target = Waker;
 
+    #[inline]
     fn deref(&self) -> &Waker {
         &self.waker
     }
@@ -55,7 +58,7 @@ where
 {
     // simply copy the pointer instead of using Arc::into_raw,
     // as we don't actually keep a refcount by using ManuallyDrop.<
-    let ptr = (&**wake as *const W) as *const ();
+    let ptr = Arc::as_ptr(wake).cast::<()>();
 
     let waker =
         ManuallyDrop::new(unsafe { Waker::from_raw(RawWaker::new(ptr, waker_vtable::<W>())) });

@@ -3,6 +3,7 @@
 add_task(async () => {
   const TEST_PATH = getRootDirectory(gTestPath).replace(
     "chrome://mochitests/content",
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com"
   );
 
@@ -19,7 +20,7 @@ add_task(async () => {
   );
   info("new tab loaded");
 
-  BrowserTestUtils.loadURI(browser, HTML_URI);
+  BrowserTestUtils.loadURIString(browser, HTML_URI);
   await browserLoaded;
   info("The test page has loaded!");
 

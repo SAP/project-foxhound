@@ -56,7 +56,6 @@ class TransactionIdAllocator;
 class LayerUserData;
 
 class WebRenderLayerManager final : public WindowRenderer {
-  typedef nsTArray<RefPtr<Layer>> LayerRefArray;
   typedef nsTHashSet<RefPtr<WebRenderUserData>> WebRenderUserDataRefTable;
 
  public:
@@ -102,6 +101,7 @@ class WebRenderLayerManager final : public WindowRenderer {
                     const mozilla::TimeStamp& aCompositeEnd);
 
   void ClearCachedResources();
+  void ClearAnimationResources();
   void UpdateTextureFactoryIdentifier(
       const TextureFactoryIdentifier& aNewIdentifier);
   TextureFactoryIdentifier GetTextureFactoryIdentifier();

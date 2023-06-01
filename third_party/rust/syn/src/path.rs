@@ -89,9 +89,8 @@ impl PathArguments {
         }
     }
 
-    #[cfg(feature = "parsing")]
-    fn is_none(&self) -> bool {
-        match *self {
+    pub fn is_none(&self) -> bool {
+        match self {
             PathArguments::None => true,
             PathArguments::AngleBracketed(_) | PathArguments::Parenthesized(_) => false,
         }
@@ -109,16 +108,16 @@ ast_enum! {
         Lifetime(Lifetime),
         /// A type argument.
         Type(Type),
-        /// A binding (equality constraint) on an associated type: the `Item =
-        /// u8` in `Iterator<Item = u8>`.
-        Binding(Binding),
-        /// An associated type bound: `Iterator<Item: Display>`.
-        Constraint(Constraint),
         /// A const expression. Must be inside of a block.
         ///
         /// NOTE: Identity expressions are represented as Type arguments, as
         /// they are indistinguishable syntactically.
         Const(Expr),
+        /// A binding (equality constraint) on an associated type: the `Item =
+        /// u8` in `Iterator<Item = u8>`.
+        Binding(Binding),
+        /// An associated type bound: `Iterator<Item: Display>`.
+        Constraint(Constraint),
     }
 }
 
@@ -231,7 +230,38 @@ pub mod parsing {
             }
 
             if input.peek(Ident) && input.peek2(Token![=]) {
-                return Ok(GenericArgument::Binding(input.parse()?));
+                let ident: Ident = input.parse()?;
+                let eq_token: Token![=] = input.parse()?;
+
+                let ty = if input.peek(Lit) {
+                    let begin = input.fork();
+                    input.parse::<Lit>()?;
+                    Type::Verbatim(verbatim::between(begin, input))
+                } else if input.peek(token::Brace) {
+                    let begin = input.fork();
+
+                    #[cfg(feature = "full")]
+                    {
+                        input.parse::<ExprBlock>()?;
+                    }
+
+                    #[cfg(not(feature = "full"))]
+                    {
+                        let content;
+                        braced!(content in input);
+                        content.parse::<Expr>()?;
+                    }
+
+                    Type::Verbatim(verbatim::between(begin, input))
+                } else {
+                    input.parse()?
+                };
+
+                return Ok(GenericArgument::Binding(Binding {
+                    ident,
+                    eq_token,
+                    ty,
+                }));
             }
 
             #[cfg(feature = "full")]
@@ -653,7 +683,7 @@ pub mod parsing {
 }
 
 #[cfg(feature = "printing")]
-mod printing {
+pub(crate) mod printing {
     use super::*;
     use crate::print::TokensOrDefault;
     use proc_macro2::TokenStream;
@@ -698,8 +728,6 @@ mod printing {
             match self {
                 GenericArgument::Lifetime(lt) => lt.to_tokens(tokens),
                 GenericArgument::Type(ty) => ty.to_tokens(tokens),
-                GenericArgument::Binding(tb) => tb.to_tokens(tokens),
-                GenericArgument::Constraint(tc) => tc.to_tokens(tokens),
                 GenericArgument::Const(e) => match *e {
                     Expr::Lit(_) => e.to_tokens(tokens),
 
@@ -715,6 +743,8 @@ mod printing {
                         e.to_tokens(tokens);
                     }),
                 },
+                GenericArgument::Binding(tb) => tb.to_tokens(tokens),
+                GenericArgument::Constraint(tc) => tc.to_tokens(tokens),
             }
         }
     }
@@ -725,11 +755,8 @@ mod printing {
             self.colon2_token.to_tokens(tokens);
             self.lt_token.to_tokens(tokens);
 
-            // Print lifetimes before types and consts, all before bindings,
-            // regardless of their order in self.args.
-            //
-            // TODO: ordering rules for const arguments vs type arguments have
-            // not been settled yet. https://github.com/rust-lang/rust/issues/44580
+            // Print lifetimes before types/consts/bindings, regardless of their
+            // order in self.args.
             let mut trailing_or_empty = true;
             for param in self.args.pairs() {
                 match **param.value() {
@@ -738,37 +765,24 @@ mod printing {
                         trailing_or_empty = param.punct().is_some();
                     }
                     GenericArgument::Type(_)
-                    | GenericArgument::Binding(_)
-                    | GenericArgument::Constraint(_)
-                    | GenericArgument::Const(_) => {}
-                }
-            }
-            for param in self.args.pairs() {
-                match **param.value() {
-                    GenericArgument::Type(_) | GenericArgument::Const(_) => {
-                        if !trailing_or_empty {
-                            <Token![,]>::default().to_tokens(tokens);
-                        }
-                        param.to_tokens(tokens);
-                        trailing_or_empty = param.punct().is_some();
-                    }
-                    GenericArgument::Lifetime(_)
+                    | GenericArgument::Const(_)
                     | GenericArgument::Binding(_)
                     | GenericArgument::Constraint(_) => {}
                 }
             }
             for param in self.args.pairs() {
                 match **param.value() {
-                    GenericArgument::Binding(_) | GenericArgument::Constraint(_) => {
+                    GenericArgument::Type(_)
+                    | GenericArgument::Const(_)
+                    | GenericArgument::Binding(_)
+                    | GenericArgument::Constraint(_) => {
                         if !trailing_or_empty {
                             <Token![,]>::default().to_tokens(tokens);
                         }
                         param.to_tokens(tokens);
                         trailing_or_empty = param.punct().is_some();
                     }
-                    GenericArgument::Lifetime(_)
-                    | GenericArgument::Type(_)
-                    | GenericArgument::Const(_) => {}
+                    GenericArgument::Lifetime(_) => {}
                 }
             }
 
@@ -804,39 +818,37 @@ mod printing {
         }
     }
 
-    impl private {
-        pub(crate) fn print_path(tokens: &mut TokenStream, qself: &Option<QSelf>, path: &Path) {
-            let qself = match qself {
-                Some(qself) => qself,
-                None => {
-                    path.to_tokens(tokens);
-                    return;
-                }
-            };
-            qself.lt_token.to_tokens(tokens);
-            qself.ty.to_tokens(tokens);
+    pub(crate) fn print_path(tokens: &mut TokenStream, qself: &Option<QSelf>, path: &Path) {
+        let qself = match qself {
+            Some(qself) => qself,
+            None => {
+                path.to_tokens(tokens);
+                return;
+            }
+        };
+        qself.lt_token.to_tokens(tokens);
+        qself.ty.to_tokens(tokens);
 
-            let pos = cmp::min(qself.position, path.segments.len());
-            let mut segments = path.segments.pairs();
-            if pos > 0 {
-                TokensOrDefault(&qself.as_token).to_tokens(tokens);
-                path.leading_colon.to_tokens(tokens);
-                for (i, segment) in segments.by_ref().take(pos).enumerate() {
-                    if i + 1 == pos {
-                        segment.value().to_tokens(tokens);
-                        qself.gt_token.to_tokens(tokens);
-                        segment.punct().to_tokens(tokens);
-                    } else {
-                        segment.to_tokens(tokens);
-                    }
+        let pos = cmp::min(qself.position, path.segments.len());
+        let mut segments = path.segments.pairs();
+        if pos > 0 {
+            TokensOrDefault(&qself.as_token).to_tokens(tokens);
+            path.leading_colon.to_tokens(tokens);
+            for (i, segment) in segments.by_ref().take(pos).enumerate() {
+                if i + 1 == pos {
+                    segment.value().to_tokens(tokens);
+                    qself.gt_token.to_tokens(tokens);
+                    segment.punct().to_tokens(tokens);
+                } else {
+                    segment.to_tokens(tokens);
                 }
-            } else {
-                qself.gt_token.to_tokens(tokens);
-                path.leading_colon.to_tokens(tokens);
             }
-            for segment in segments {
-                segment.to_tokens(tokens);
-            }
+        } else {
+            qself.gt_token.to_tokens(tokens);
+            path.leading_colon.to_tokens(tokens);
+        }
+        for segment in segments {
+            segment.to_tokens(tokens);
         }
     }
 }

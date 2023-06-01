@@ -16,6 +16,7 @@
 #include "nsComponentManagerUtils.h"
 
 #include "nsIFileURL.h"
+#include "nsIURIMutator.h"
 
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ErrorNames.h"
@@ -42,16 +43,19 @@ static NS_DEFINE_CID(kZipReaderCID, NS_ZIPREADER_CID);
 
 //-----------------------------------------------------------------------------
 
+//
+// set MOZ_LOG=nsJarProtocol:5
+//
+static LazyLogModule gJarProtocolLog("nsJarProtocol");
+
 // Ignore any LOG macro that we inherit from arbitrary headers. (We define our
 // own LOG macro below.)
 #ifdef LOG
 #  undef LOG
 #endif
-
-//
-// set NSPR_LOG_MODULES=nsJarProtocol:5
-//
-static LazyLogModule gJarProtocolLog("nsJarProtocol");
+#ifdef LOG_ENABLED
+#  undef LOG_ENABLED
+#endif
 
 #define LOG(args) MOZ_LOG(gJarProtocolLog, mozilla::LogLevel::Debug, args)
 #define LOG_ENABLED() MOZ_LOG_TEST(gJarProtocolLog, mozilla::LogLevel::Debug)
@@ -73,12 +77,18 @@ class nsJARInputThunk : public nsIInputStream {
         mJarReader(zipReader),
         mJarEntry(jarEntry),
         mContentLength(-1) {
-    if (fullJarURI) {
-#ifdef DEBUG
-      nsresult rv =
-#endif
-          fullJarURI->GetAsciiSpec(mJarDirSpec);
-      NS_ASSERTION(NS_SUCCEEDED(rv), "this shouldn't fail");
+    if (ENTRY_IS_DIRECTORY(mJarEntry) && fullJarURI) {
+      nsCOMPtr<nsIURI> urlWithoutQueryRef;
+      nsresult rv = NS_MutateURI(fullJarURI)
+                        .SetQuery(""_ns)
+                        .SetRef(""_ns)
+                        .Finalize(urlWithoutQueryRef);
+      if (NS_SUCCEEDED(rv) && urlWithoutQueryRef) {
+        rv = urlWithoutQueryRef->GetAsciiSpec(mJarDirSpec);
+        MOZ_ASSERT(NS_SUCCEEDED(rv), "Finding a jar dir spec shouldn't fail.");
+      } else {
+        MOZ_CRASH("Shouldn't fail to strip query and ref off jar URI.");
+      }
     }
   }
 
@@ -113,9 +123,6 @@ nsresult nsJARInputThunk::Init() {
     rv = mJarReader->GetInputStream(mJarEntry, getter_AddRefs(mJarStream));
   }
   if (NS_FAILED(rv)) {
-    // convert to the proper result if the entry wasn't found
-    // so that error pages work
-    if (rv == NS_ERROR_FILE_TARGET_DOES_NOT_EXIST) rv = NS_ERROR_FILE_NOT_FOUND;
     return rv;
   }
 
@@ -190,6 +197,7 @@ nsJARChannel::~nsJARChannel() {
   }
 
   // Proxy release the following members to main thread.
+  NS_ReleaseOnMainThread("nsJARChannel::mLoadInfo", mLoadInfo.forget());
   NS_ReleaseOnMainThread("nsJARChannel::mCallbacks", mCallbacks.forget());
   NS_ReleaseOnMainThread("nsJARChannel::mProgressSink", mProgressSink.forget());
   NS_ReleaseOnMainThread("nsJARChannel::mLoadGroup", mLoadGroup.forget());
@@ -278,10 +286,6 @@ nsresult nsJARChannel::CreateJarInput(nsIZipReaderCache* jarCache,
       new nsJARInputThunk(reader, mJarURI, mJarEntry, jarCache != nullptr);
   rv = input->Init();
   if (NS_FAILED(rv)) {
-    if (rv == NS_ERROR_FILE_NOT_FOUND ||
-        rv == NS_ERROR_FILE_TARGET_DOES_NOT_EXIST) {
-      CheckForBrokenChromeURL(mLoadInfo, mOriginalURI);
-    }
     return rv;
   }
 
@@ -392,7 +396,7 @@ nsresult nsJARChannel::OpenLocalFile() {
   if (mLoadGroup) {
     mLoadGroup->AddRequest(this, nullptr);
   }
-  mOpened = true;
+  SetOpened();
 
   if (mPreCachedJarReader || !mEnableOMT) {
     RefPtr<nsJARInputThunk> input;
@@ -481,6 +485,9 @@ nsresult nsJARChannel::OnOpenLocalFileComplete(nsresult aResult,
   MOZ_ASSERT(mIsPending);
 
   if (NS_FAILED(aResult)) {
+    if (aResult == NS_ERROR_FILE_NOT_FOUND) {
+      CheckForBrokenChromeURL(mLoadInfo, mOriginalURI);
+    }
     if (!aIsSyncCall) {
       NotifyError(aResult);
     }
@@ -561,6 +568,19 @@ nsJARChannel::GetStatus(nsresult* status) {
   else
     *status = mStatus;
   return NS_OK;
+}
+
+NS_IMETHODIMP nsJARChannel::SetCanceledReason(const nsACString& aReason) {
+  return SetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP nsJARChannel::GetCanceledReason(nsACString& aReason) {
+  return GetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP nsJARChannel::CancelWithReason(nsresult aStatus,
+                                             const nsACString& aReason) {
+  return CancelWithReasonImpl(aStatus, aReason);
 }
 
 NS_IMETHODIMP
@@ -714,59 +734,59 @@ nsJARChannel::SetNotificationCallbacks(nsIInterfaceRequestor* aCallbacks) {
 }
 
 NS_IMETHODIMP
-nsJARChannel::GetSecurityInfo(nsISupports** aSecurityInfo) {
+nsJARChannel::GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo) {
   MOZ_ASSERT(aSecurityInfo, "Null out param");
-  NS_IF_ADDREF(*aSecurityInfo = mSecurityInfo);
+  *aSecurityInfo = nullptr;
   return NS_OK;
 }
 
+bool nsJARChannel::GetContentTypeGuess(nsACString& aResult) const {
+  const char *ext = nullptr, *fileName = mJarEntry.get();
+  int32_t len = mJarEntry.Length();
+
+  // check if we're displaying a directory
+  // mJarEntry will be empty if we're trying to display
+  // the topmost directory in a zip, e.g. jar:foo.zip!/
+  if (ENTRY_IS_DIRECTORY(mJarEntry)) {
+    aResult.AssignLiteral(APPLICATION_HTTP_INDEX_FORMAT);
+    return true;
+  }
+
+  // Not a directory, take a guess by its extension
+  for (int32_t i = len - 1; i >= 0; i--) {
+    if (fileName[i] == '.') {
+      ext = &fileName[i + 1];
+      break;
+    }
+  }
+  if (!ext) {
+    return false;
+  }
+  nsIMIMEService* mimeServ = gJarHandler->MimeService();
+  if (!mimeServ) {
+    return false;
+  }
+  mimeServ->GetTypeFromExtension(nsDependentCString(ext), aResult);
+  return !aResult.IsEmpty();
+}
+
 NS_IMETHODIMP
-nsJARChannel::GetContentType(nsACString& result) {
+nsJARChannel::GetContentType(nsACString& aResult) {
   // If the Jar file has not been open yet,
   // We return application/x-unknown-content-type
   if (!mOpened) {
-    result.AssignLiteral(UNKNOWN_CONTENT_TYPE);
+    aResult.AssignLiteral(UNKNOWN_CONTENT_TYPE);
     return NS_OK;
   }
 
-  if (mContentType.IsEmpty()) {
-    //
-    // generate content type and set it
-    //
-    const char *ext = nullptr, *fileName = mJarEntry.get();
-    int32_t len = mJarEntry.Length();
-
-    // check if we're displaying a directory
-    // mJarEntry will be empty if we're trying to display
-    // the topmost directory in a zip, e.g. jar:foo.zip!/
-    if (ENTRY_IS_DIRECTORY(mJarEntry)) {
-      mContentType.AssignLiteral(APPLICATION_HTTP_INDEX_FORMAT);
-    } else {
-      // not a directory, take a guess by its extension
-      for (int32_t i = len - 1; i >= 0; i--) {
-        if (fileName[i] == '.') {
-          ext = &fileName[i + 1];
-          break;
-        }
-      }
-      if (ext) {
-        nsIMIMEService* mimeServ = gJarHandler->MimeService();
-        if (mimeServ)
-          mimeServ->GetTypeFromExtension(nsDependentCString(ext), mContentType);
-      }
-      if (mContentType.IsEmpty())
-        mContentType.AssignLiteral(UNKNOWN_CONTENT_TYPE);
-    }
-  }
-  result = mContentType;
+  aResult = mContentType;
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsJARChannel::SetContentType(const nsACString& aContentType) {
-  // If someone gives us a type hint we should just use that type instead of
-  // doing our guessing.  So we don't care when this is being called.
-
+  // We behave like HTTP channels (treat this as a hint if called before open,
+  // and override the charset if called after open).
   // mContentCharset is unchanged if not parsed
   NS_ParseResponseContentType(aContentType, mContentType, mContentCharset);
   return NS_OK;
@@ -828,9 +848,19 @@ nsJARChannel::SetContentLength(int64_t aContentLength) {
 }
 
 static void RecordZeroLengthEvent(bool aIsSync, const nsCString& aSpec,
-                                  nsresult aStatus, bool aCanceled) {
+                                  nsresult aStatus, bool aCanceled,
+                                  nsILoadInfo* aLoadInfo) {
   if (!StaticPrefs::network_jar_record_failure_reason()) {
     return;
+  }
+
+  if (aLoadInfo) {
+    bool shouldSkipCheckForBrokenURLOrZeroSized;
+    MOZ_ALWAYS_SUCCEEDS(aLoadInfo->GetShouldSkipCheckForBrokenURLOrZeroSized(
+        &shouldSkipCheckForBrokenURLOrZeroSized));
+    if (shouldSkipCheckForBrokenURLOrZeroSized) {
+      return;
+    }
   }
 
   // The event can only hold 80 characters.
@@ -1011,7 +1041,7 @@ nsJARChannel::Open(nsIInputStream** aStream) {
 
   auto recordEvent = MakeScopeExit([&] {
     if (mContentLength <= 0 || NS_FAILED(rv)) {
-      RecordZeroLengthEvent(true, mSpec, rv, mCanceled);
+      RecordZeroLengthEvent(true, mSpec, rv, mCanceled, mLoadInfo);
     }
   });
 
@@ -1036,9 +1066,18 @@ nsJARChannel::Open(nsIInputStream** aStream) {
   if (NS_FAILED(rv)) return rv;
 
   input.forget(aStream);
-  mOpened = true;
+  SetOpened();
 
   return NS_OK;
+}
+
+void nsJARChannel::SetOpened() {
+  MOZ_ASSERT(!mOpened, "Opening channel twice?");
+  mOpened = true;
+  // Compute the content type now.
+  if (!GetContentTypeGuess(mContentType)) {
+    mContentType.Assign(UNKNOWN_CONTENT_TYPE);
+  }
 }
 
 NS_IMETHODIMP
@@ -1224,7 +1263,7 @@ nsJARChannel::OnStopRequest(nsIRequest* req, nsresult status) {
 
   if (mListener) {
     if (!mOnDataCalled || NS_FAILED(status)) {
-      RecordZeroLengthEvent(false, mSpec, status, mCanceled);
+      RecordZeroLengthEvent(false, mSpec, status, mCanceled, mLoadInfo);
     }
 
     mListener->OnStopRequest(this, status);

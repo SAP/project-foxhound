@@ -2,14 +2,19 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import argparse
 
 from mozlog import commandline
 
 
 def add_common_arguments(parser):
+    parser.add_argument(
+        "--app-binary",
+        type=str,
+        dest="app_binary",
+        default=None,
+        help="path to application binary (eg: c:\program files\mozilla firefox\firefox.exe)",
+    )
     parser.add_argument(
         "--app-path",
         type=str,
@@ -90,17 +95,6 @@ def add_common_arguments(parser):
         dest="testingModulesDir",
         default=None,
         help="Directory where testing modules are located.",
-    )
-    parser.add_argument(
-        "--test-plugin-path",
-        type=str,
-        dest="pluginsPath",
-        default=None,
-        help="Path to the location of a plugins directory containing the "
-        "test plugin or plugins required for tests. "
-        "By default xpcshell's dir svc provider returns gre/plugins. "
-        "Use test-plugin-path to add a directory "
-        "to return for NS_APP_PLUGINS_DIR_LIST when queried.",
     )
     parser.add_argument(
         "--total-chunks",
@@ -286,6 +280,13 @@ def add_common_arguments(parser):
         "whether to use headless mode",
     )
     parser.add_argument(
+        "--conditioned-profile",
+        action="store_true",
+        default=False,
+        dest="conditionedProfile",
+        help="Run with conditioned profile instead of fresh blank profile",
+    )
+    parser.add_argument(
         "--self-test",
         action="store_true",
         default=False,
@@ -312,6 +313,13 @@ def add_common_arguments(parser):
         default=False,
         dest="crashAsPass",
         help="Harness level crashes will be treated as passing",
+    )
+    parser.add_argument(
+        "--disable-fission",
+        action="store_true",
+        default=False,
+        dest="disableFission",
+        help="disable fission mode (back to e10s || 1proc)",
     )
 
 

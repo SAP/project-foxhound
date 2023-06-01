@@ -143,7 +143,10 @@ pub fn fmap_trait_output(input: &DeriveInput, trait_path: &Path, trait_output: &
                         let ident = &data.ident;
                         GenericArgument::Type(parse_quote!(<#ident as #trait_path>::#trait_output))
                     },
-                    ref arg => panic!("arguments {:?} cannot be mapped yet", arg),
+                    &GenericParam::Const(ref inner) => {
+                        let ident = &inner.ident;
+                        GenericArgument::Const(parse_quote!(#ident))
+                    },
                 })
                 .collect(),
             colon2_token: Default::default(),
@@ -371,6 +374,11 @@ pub fn to_css_identifier(mut camel_case: &str) -> String {
         result.push_str(&segment.to_lowercase());
     }
     result
+}
+
+/// Transforms foo-bar to FOO_BAR.
+pub fn to_scream_case(css_case: &str) -> String {
+    css_case.to_uppercase().replace('-', "_")
 }
 
 /// Given "FooBar", returns "Foo" and sets `camel_case` to "Bar".

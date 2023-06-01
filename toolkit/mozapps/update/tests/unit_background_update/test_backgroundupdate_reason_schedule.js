@@ -34,6 +34,16 @@ AddonTestUtils.createAppInfo(
   "42"
 );
 
+add_setup(function test_setup() {
+  // FOG needs a profile directory to put its data in.
+  do_get_profile();
+
+  // We need to initialize it once, otherwise operations will be stuck in the pre-init queue.
+  Services.fog.initializeFOG();
+
+  setupProfileService();
+});
+
 add_task(
   {
     skip_if: () => !AppConstants.MOZ_BACKGROUNDTASKS,
@@ -55,7 +65,7 @@ add_task(
         name: "test Language Pack",
         version: "1.0",
         manifest_version: 2,
-        applications: {
+        browser_specific_settings: {
           gecko: {
             id: "@test-langpack",
             strict_min_version: "42.0",
@@ -89,6 +99,11 @@ add_task(
       result.includes(REASON.LANGPACK_INSTALLED),
       "Reasons include LANGPACK_INSTALLED"
     );
+    result = await checkGleanPing();
+    Assert.ok(
+      result.includes(REASON.LANGPACK_INSTALLED),
+      "Recognizes a language pack is installed."
+    );
 
     // Now turn off langpack updating.
     Services.prefs.setBoolPref("app.update.langpack.enabled", false);
@@ -97,6 +112,11 @@ add_task(
     Assert.ok(
       !result.includes(REASON.LANGPACK_INSTALLED),
       "Reasons does not include LANGPACK_INSTALLED"
+    );
+    result = await checkGleanPing();
+    Assert.ok(
+      !result.includes(REASON.LANGPACK_INSTALLED),
+      "No Glean metric when no language pack is installed."
     );
   }
 );

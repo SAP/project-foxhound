@@ -19,7 +19,7 @@ namespace roles {
 
 enum Role {
   /**
-   * Used when accessible hans't strong defined role.
+   * Used when the accessible has no strongly-defined role.
    */
   NOTHING = 0,
 
@@ -846,11 +846,6 @@ enum Role {
   MATHML_ROOT = 141,
 
   /**
-   * A MathML fenced element (mfenced in MathML).
-   */
-  MATHML_FENCED = 142,
-
-  /**
    * A MathML enclosed element (menclose in MathML).
    */
   MATHML_ENCLOSED = 143,
@@ -1083,7 +1078,21 @@ enum Role {
    */
   METER = 185,
 
-  LAST_ROLE = METER
+  /**
+   * Represents phrasing content that is presented with vertical alignment
+   * lower than the baseline and a smaller font size. For example, the "2" in
+   * the chemical formula H2O.
+   */
+  SUBSCRIPT = 186,
+
+  /**
+   * Represents phrasing content that is presented with vertical alignment
+   * higher than the baseline and a smaller font size. For example, the
+   * exponent in a math expression.
+   */
+  SUPERSCRIPT = 187,
+
+  LAST_ROLE = SUPERSCRIPT
 };
 
 }  // namespace roles

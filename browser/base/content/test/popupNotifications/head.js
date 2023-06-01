@@ -1,19 +1,13 @@
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesUtils",
-  "resource://gre/modules/PlacesUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+});
 
 /**
  * Called after opening a new window or switching windows, this will wait until
  * we are sure that an attempt to display a notification will not fail.
  */
 async function waitForWindowReadyForPopupNotifications(win) {
-  // These are the same checks that PopupNotifications.jsm makes before it
+  // These are the same checks that PopupNotifications.sys.mjs makes before it
   // allows a notification to open.
   await TestUtils.waitForCondition(
     () => win.gBrowser.selectedBrowser.docShellIsActive,
@@ -41,7 +35,7 @@ function promiseTabLoadEvent(tab, url) {
   let browser = tab.linkedBrowser;
 
   if (url) {
-    BrowserTestUtils.loadURI(browser, url);
+    BrowserTestUtils.loadURIString(browser, url);
   }
 
   return BrowserTestUtils.browserLoaded(browser, false, url);
@@ -55,6 +49,7 @@ const PREF_SECURITY_DELAY_INITIAL = Services.prefs.getIntPref(
 // tests to be run.
 /* global tests */
 function setup() {
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/").then(
     goNext
   );
@@ -152,6 +147,7 @@ function BasicNotification(testId) {
     },
   ];
   this.options = {
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     name: "http://example.com",
     eventCallback: eventName => {
       switch (eventName) {
@@ -348,7 +344,7 @@ function triggerSecondaryCommand(popup, index) {
   }
 
   // Extra secondary actions appear in a menu.
-  notification.secondaryButton.nextElementSibling.nextElementSibling.focus();
+  notification.secondaryButton.nextElementSibling.focus();
 
   popup.addEventListener(
     "popupshown",

@@ -10,48 +10,39 @@
 #include <emscripten.h>
 #endif
 
+#include <memory>
 #include <string>
 
 #include "lib/jxl/base/file_io.h"
+#include "lib/jxl/common.h"
+
+#if !defined(TEST_DATA_PATH)
+#include "tools/cpp/runfiles/runfiles.h"
+#endif
 
 namespace jxl {
 
-static inline PaddedBytes ReadTestData(const std::string& filename) {
-  std::string full_path = std::string(TEST_DATA_PATH "/") + filename;
-  PaddedBytes data;
-  bool ok = ReadFile(full_path, &data);
-#ifdef __EMSCRIPTEN__
-  // Fallback in case FS is not supported in current JS engine.
-  if (!ok) {
-    // {size_t size, uint8_t* bytes} pair.
-    uint32_t size_bytes[2] = {0, 0};
-    EM_ASM(
-        {
-          let buffer = null;
-          try {
-            buffer = readbuffer(UTF8ToString($0));
-          } catch {
-          }
-          if (!buffer) return;
-          let bytes = new Uint8Array(buffer);
-          let size = bytes.length;
-          let out = _malloc(size);
-          if (!out) return;
-          HEAP8.set(bytes, out);
-          HEAP32[$1 >> 2] = size;
-          HEAP32[($1 + 4) >> 2] = out;
-        },
-        full_path.c_str(), size_bytes);
-    size_t size = size_bytes[0];
-    uint8_t* bytes = reinterpret_cast<uint8_t*>(size_bytes[1]);
-    if (size) {
-      data.append(bytes, bytes + size);
-      free(reinterpret_cast<void*>(bytes));
-      ok = true;
-    }
-  }
+namespace {
+#if defined(TEST_DATA_PATH)
+std::string GetPath(const std::string& filename) {
+  return std::string(TEST_DATA_PATH "/") + filename;
+}
+#else
+using bazel::tools::cpp::runfiles::Runfiles;
+const std::unique_ptr<Runfiles> kRunfiles(Runfiles::Create(""));
+std::string GetPath(const std::string& filename) {
+  return kRunfiles->Rlocation("__main__/testdata/" + filename);
+}
 #endif
-  JXL_CHECK(ok);
+
+}  // namespace
+
+static inline PaddedBytes ReadTestData(const std::string& filename) {
+  std::string full_path = GetPath(filename);
+  PaddedBytes data;
+  JXL_CHECK(ReadFile(full_path, &data));
+  printf("Test data %s is %d bytes long.\n", filename.c_str(),
+         static_cast<int>(data.size()));
   return data;
 }
 

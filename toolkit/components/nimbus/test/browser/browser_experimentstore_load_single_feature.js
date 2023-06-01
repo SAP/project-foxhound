@@ -9,20 +9,17 @@ const { ExperimentStore } = ChromeUtils.import(
 const { ExperimentFakes } = ChromeUtils.import(
   "resource://testing-common/NimbusTestUtils.jsm"
 );
-const { NimbusFeatures, ExperimentAPI } = ChromeUtils.import(
+const { ExperimentAPI } = ChromeUtils.import(
   "resource://nimbus/ExperimentAPI.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "JSONFile",
-  "resource://gre/modules/JSONFile.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  JSONFile: "resource://gre/modules/JSONFile.sys.mjs",
+});
 
 const SINGLE_FEATURE_RECIPE = {
   ...ExperimentFakes.experiment(),
   branch: {
     feature: {
-      enabled: true,
       featureId: "urlbar",
       value: {
         valueThatWillDefinitelyShowUp: 42,

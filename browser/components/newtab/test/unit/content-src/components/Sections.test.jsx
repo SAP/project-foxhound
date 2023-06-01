@@ -1,11 +1,11 @@
 import { combineReducers, createStore } from "redux";
-import { INITIAL_STATE, reducers } from "common/Reducers.jsm";
+import { INITIAL_STATE, reducers } from "common/Reducers.sys.mjs";
 import {
   Section,
   SectionIntl,
   _Sections as Sections,
 } from "content-src/components/Sections/Sections";
-import { actionTypes as at } from "common/Actions.jsm";
+import { actionTypes as at } from "common/Actions.sys.mjs";
 import { mount, shallow } from "enzyme";
 import { PlaceholderCard } from "content-src/components/Card/Card";
 import { PocketLoggedInCta } from "content-src/components/PocketLoggedInCta/PocketLoggedInCta";

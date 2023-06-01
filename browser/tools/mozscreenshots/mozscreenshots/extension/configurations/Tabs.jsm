@@ -10,19 +10,12 @@ const CUST_TAB = "chrome://browser/skin/customize.svg";
 const PREFS_TAB = "chrome://global/skin/icons/settings.svg";
 const DEFAULT_FAVICON_TAB = `data:text/html,<meta%20charset="utf-8"><title>No%20favicon</title>`;
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
 );
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
-const { BrowserTestUtils } = ChromeUtils.import(
-  "resource://testing-common/BrowserTestUtils.jsm"
-);
-
-XPCOMUtils.defineLazyGlobalGetters(this, ["InspectorUtils"]);
 
 var Tabs = {
   init(libDir) {},
@@ -71,9 +64,6 @@ var Tabs = {
         // also hover the new tab button
         let newTabButton = browserWindow.gBrowser.tabContainer.newTabButton;
         hoverTab(newTabButton);
-        browserWindow.gBrowser.tabs[
-          browserWindow.gBrowser.tabs.length - 1
-        ].setAttribute("beforehovered", true);
 
         await new Promise((resolve, reject) => {
           setTimeout(resolve, 3000);
@@ -136,13 +126,12 @@ var Tabs = {
         await new Promise((resolve, reject) => {
           setTimeout(resolve, 3000);
         });
+
         // Make sure the tabstrip is scrolled all the way to the left.
-        let scrolled = BrowserTestUtils.waitForEvent(
-          browserWindow.gBrowser.tabContainer.arrowScrollbox,
-          "scrollend"
+        browserWindow.gBrowser.tabContainer.arrowScrollbox.scrollByIndex(
+          -100,
+          true
         );
-        browserWindow.gBrowser.tabContainer.arrowScrollbox.scrollByIndex(-100);
-        await scrolled;
 
         await allTabTitlesDisplayed(browserWindow);
       },
@@ -232,12 +221,5 @@ function hoverTab(tab, hover = true) {
     InspectorUtils.addPseudoClassLock(tab, ":hover");
   } else {
     InspectorUtils.clearPseudoClassLocks(tab);
-  }
-  // XXX TODO: this isn't necessarily testing what we ship
-  if (tab.nextElementSibling) {
-    tab.nextElementSibling.setAttribute("afterhovered", hover || null);
-  }
-  if (tab.previousElementSibling) {
-    tab.previousElementSibling.setAttribute("beforehovered", hover || null);
   }
 }

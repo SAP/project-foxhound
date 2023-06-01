@@ -47,10 +47,8 @@ class MathMLElement final : public MathMLElementBase,
       const override;
 
   enum {
-    PARSE_ALLOW_UNITLESS = 0x01,  // unitless 0 will be turned into 0px
     PARSE_ALLOW_NEGATIVE = 0x02,
     PARSE_SUPPRESS_WARNINGS = 0x04,
-    CONVERT_UNITLESS_TO_PERCENT = 0x08
   };
   static bool ParseNamedSpaceValue(const nsString& aString,
                                    nsCSSValue& aCSSValue, uint32_t aFlags,
@@ -66,7 +64,7 @@ class MathMLElement final : public MathMLElementBase,
   MOZ_CAN_RUN_SCRIPT
   nsresult PostHandleEvent(mozilla::EventChainPostVisitor& aVisitor) override;
   nsresult Clone(mozilla::dom::NodeInfo*, nsINode** aResult) const override;
-  virtual mozilla::EventStates IntrinsicState() const override;
+  virtual mozilla::dom::ElementState IntrinsicState() const override;
   virtual bool IsNodeOfType(uint32_t aFlags) const override;
 
   // Set during reflow as necessary. Does a style change notification,
@@ -75,18 +73,25 @@ class MathMLElement final : public MathMLElementBase,
   bool GetIncrementScriptLevel() const { return mIncrementScriptLevel; }
 
   int32_t TabIndexDefault() final;
-  virtual bool IsFocusableInternal(int32_t* aTabIndex,
-                                   bool aWithMouse) override;
-  virtual bool IsLink(nsIURI** aURI) const override;
-  virtual void GetLinkTarget(nsAString& aTarget) override;
-  virtual already_AddRefed<nsIURI> GetHrefURI() const override;
 
-  virtual void NodeInfoChanged(Document* aOldDoc) override {
+  bool IsFocusableInternal(int32_t* aTabIndex, bool aWithMouse) override;
+  already_AddRefed<nsIURI> GetHrefURI() const override;
+
+  void NodeInfoChanged(Document* aOldDoc) override {
     ClearHasPendingLinkUpdate();
     MathMLElementBase::NodeInfoChanged(aOldDoc);
   }
 
   bool IsEventAttributeNameInternal(nsAtom* aName) final;
+
+  bool Autofocus() const { return GetBoolAttr(nsGkAtoms::autofocus); }
+  void SetAutofocus(bool aAutofocus, ErrorResult& aRv) {
+    if (aAutofocus) {
+      SetAttr(nsGkAtoms::autofocus, u""_ns, aRv);
+    } else {
+      UnsetAttr(nsGkAtoms::autofocus, aRv);
+    }
+  }
 
  protected:
   virtual ~MathMLElement() = default;

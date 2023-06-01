@@ -280,3 +280,40 @@ addAccessibleTask(
     is(stringForRange(macDoc, range), "", "string value is correct");
   }
 );
+
+addAccessibleTask(
+  `<div role="listbox" id="box">
+    <input type="radio" name="test" role="option" title="First item"/>
+    <input type="radio" name="test" role="option" title="Second item"/>
+  </div>`,
+  async (browser, accDoc) => {
+    let box = getNativeInterface(accDoc, "box");
+    const children = box.getAttributeValue("AXChildren");
+    is(children.length, 2, "Listbox contains two items");
+    is(children[0].getAttributeValue("AXValue"), "First item");
+    is(children[1].getAttributeValue("AXValue"), "Second item");
+  }
+);
+
+addAccessibleTask(
+  `<div id="t">
+    A link <b>should</b> explain <em>clearly</em> what information the <i>reader</i> will get by clicking on that link.
+  </div>`,
+  async (browser, accDoc) => {
+    let t = getNativeInterface(accDoc, "t");
+    const children = t.getAttributeValue("AXChildren");
+    const expectedTitles = [
+      "A link ",
+      "should",
+      " explain ",
+      "clearly",
+      " what information the ",
+      "reader",
+      " will get by clicking on that link. ",
+    ];
+    is(children.length, 7, "container has seven children");
+    children.forEach((child, index) => {
+      is(child.getAttributeValue("AXValue"), expectedTitles[index]);
+    });
+  }
+);

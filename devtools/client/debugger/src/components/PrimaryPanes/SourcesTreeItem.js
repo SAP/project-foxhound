@@ -3,6 +3,7 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import React, { Component } from "react";
+import PropTypes from "prop-types";
 import { connect } from "../../utils/connect";
 import classnames from "classnames";
 import { showMenu } from "../../context-menu/menu";
@@ -12,31 +13,42 @@ import AccessibleImage from "../shared/AccessibleImage";
 
 import {
   getGeneratedSourceByURL,
-  getHasSiblingOfSameName,
-  hasPrettyTab as checkHasPrettyTab,
   getContext,
-  getExtensionNameBySourceUrl,
-  getSourceContent,
+  getFirstSourceActorForGeneratedSource,
 } from "../../selectors";
 import actions from "../../actions";
 
-import {
-  isUrlExtension,
-  isExtensionDirectoryPath,
-  shouldBlackbox,
-  sourceTypes,
-} from "../../utils/source";
-import {
-  isDirectory,
-  getPathWithoutThread,
-  getFileExtension,
-} from "../../utils/sources-tree";
+import { shouldBlackbox, sourceTypes } from "../../utils/source";
 import { copyToTheClipboard } from "../../utils/clipboard";
 import { features } from "../../utils/prefs";
 import { downloadFile } from "../../utils/utils";
-import { isFulfilled } from "../../utils/async-value";
 
 class SourceTreeItem extends Component {
+  static get propTypes() {
+    return {
+      autoExpand: PropTypes.bool.isRequired,
+      blackBoxSources: PropTypes.func.isRequired,
+      clearProjectDirectoryRoot: PropTypes.func.isRequired,
+      cx: PropTypes.object.isRequired,
+      depth: PropTypes.number.isRequired,
+      expanded: PropTypes.bool.isRequired,
+      focusItem: PropTypes.func.isRequired,
+      focused: PropTypes.bool.isRequired,
+      getBlackBoxSourcesGroups: PropTypes.func.isRequired,
+      hasMatchingGeneratedSource: PropTypes.bool.isRequired,
+      item: PropTypes.object.isRequired,
+      loadSourceText: PropTypes.func.isRequired,
+      getFirstSourceActorForGeneratedSource: PropTypes.func.isRequired,
+      projectRoot: PropTypes.string.isRequired,
+      selectSourceItem: PropTypes.func.isRequired,
+      setExpanded: PropTypes.func.isRequired,
+      setProjectDirectoryRoot: PropTypes.func.isRequired,
+      toggleBlackBox: PropTypes.func.isRequired,
+      isSourceBlackBoxed: PropTypes.bool.isRequired,
+      getParent: PropTypes.func.isRequired,
+    };
+  }
+
   componentDidMount() {
     const { autoExpand, item } = this.props;
     if (autoExpand) {
@@ -45,15 +57,15 @@ class SourceTreeItem extends Component {
   }
 
   onClick = e => {
-    const { item, focusItem, selectItem } = this.props;
+    const { item, focusItem, selectSourceItem } = this.props;
 
     focusItem(item);
-    if (!isDirectory(item)) {
-      selectItem(item);
+    if (item.type == "source") {
+      selectSourceItem(item);
     }
   };
 
-  onContextMenu = (event, item) => {
+  onContextMenu = event => {
     const copySourceUri2Label = L10N.getStr("copySourceUri2");
     const copySourceUri2Key = L10N.getStr("copySourceUri2.accesskey");
     const setDirectoryRootLabel = L10N.getStr("setDirectoryRoot.label");
@@ -65,52 +77,47 @@ class SourceTreeItem extends Component {
 
     const menuOptions = [];
 
-    if (!isDirectory(item)) {
-      // Flow requires some extra handling to ensure the value of contents.
-      const { contents } = item;
+    const { item } = this.props;
+    if (item.type == "source") {
+      const { source } = item;
+      const copySourceUri2 = {
+        id: "node-menu-copy-source",
+        label: copySourceUri2Label,
+        accesskey: copySourceUri2Key,
+        disabled: false,
+        click: () => copyToTheClipboard(source.url),
+      };
 
-      if (!Array.isArray(contents)) {
-        const copySourceUri2 = {
-          id: "node-menu-copy-source",
-          label: copySourceUri2Label,
-          accesskey: copySourceUri2Key,
-          disabled: false,
-          click: () => copyToTheClipboard(contents.url),
-        };
-
-        const { cx, source } = this.props;
-        if (source) {
-          const blackBoxMenuItem = {
-            id: "node-menu-blackbox",
-            label: source.isBlackBoxed
-              ? L10N.getStr("ignoreContextItem.unignore")
-              : L10N.getStr("ignoreContextItem.ignore"),
-            accesskey: source.isBlackBoxed
-              ? L10N.getStr("ignoreContextItem.unignore.accesskey")
-              : L10N.getStr("ignoreContextItem.ignore.accesskey"),
-            disabled: !shouldBlackbox(source),
-            click: () => this.props.toggleBlackBox(cx, source),
-          };
-          const downloadFileItem = {
-            id: "node-menu-download-file",
-            label: L10N.getStr("downloadFile.label"),
-            accesskey: L10N.getStr("downloadFile.accesskey"),
-            disabled: false,
-            click: () => this.handleDownloadFile(cx, source, item),
-          };
-          menuOptions.push(copySourceUri2, blackBoxMenuItem, downloadFileItem);
-        }
-      }
+      const { cx } = this.props;
+      const blackBoxMenuItem = {
+        id: "node-menu-blackbox",
+        label: this.props.isSourceBlackBoxed
+          ? L10N.getStr("ignoreContextItem.unignore")
+          : L10N.getStr("ignoreContextItem.ignore"),
+        accesskey: this.props.isSourceBlackBoxed
+          ? L10N.getStr("ignoreContextItem.unignore.accesskey")
+          : L10N.getStr("ignoreContextItem.ignore.accesskey"),
+        disabled: !shouldBlackbox(source),
+        click: () => this.props.toggleBlackBox(cx, source),
+      };
+      const downloadFileItem = {
+        id: "node-menu-download-file",
+        label: L10N.getStr("downloadFile.label"),
+        accesskey: L10N.getStr("downloadFile.accesskey"),
+        disabled: false,
+        click: () => this.handleDownloadFile(cx, source),
+      };
+      menuOptions.push(copySourceUri2, blackBoxMenuItem, downloadFileItem);
     }
 
-    if (isDirectory(item)) {
+    // All other types other than source are folder-like
+    if (item.type != "source") {
       this.addCollapseExpandAllOptions(menuOptions, item);
 
       if (features.root) {
-        const { path } = item;
         const { cx, depth, projectRoot } = this.props;
 
-        if (projectRoot.endsWith(path)) {
+        if (projectRoot == item.uniquePath) {
           menuOptions.push({
             id: "node-remove-directory-root",
             label: removeDirectoryRootLabel,
@@ -126,7 +133,7 @@ class SourceTreeItem extends Component {
             click: () =>
               this.props.setProjectDirectoryRoot(
                 cx,
-                path,
+                item.uniquePath,
                 this.renderItemName(depth)
               ),
           });
@@ -139,30 +146,26 @@ class SourceTreeItem extends Component {
     showMenu(event, menuOptions);
   };
 
-  handleDownloadFile = async (cx, source, item) => {
+  handleDownloadFile = async (cx, source) => {
     if (!source) {
       return;
     }
 
-    if (!this.props.sourceContent) {
-      await this.props.loadSourceText({ cx, source });
-    }
-    const data = this.props.sourceContent;
+    const data = await this.props.loadSourceText(cx, source);
     if (!data) {
       return;
     }
-    downloadFile(data, item.name);
+    downloadFile(data.value, source.displayURL.filename);
   };
 
   addBlackboxAllOption = (menuOptions, item) => {
     const { cx, depth, projectRoot } = this.props;
-    const { sourcesInside, sourcesOuside } = this.props.getSourcesGroups(item);
-    const allInsideBlackBoxed = sourcesInside.every(
-      source => source.isBlackBoxed
-    );
-    const allOusideBlackBoxed = sourcesOuside.every(
-      source => source.isBlackBoxed
-    );
+    const {
+      sourcesInside,
+      sourcesOutside,
+      allInsideBlackBoxed,
+      allOutsideBlackBoxed,
+    } = this.props.getBlackBoxSourcesGroups(item);
 
     let blackBoxInsideMenuItemLabel;
     let blackBoxOutsideMenuItemLabel;
@@ -170,8 +173,8 @@ class SourceTreeItem extends Component {
       blackBoxInsideMenuItemLabel = allInsideBlackBoxed
         ? L10N.getStr("unignoreAllInGroup.label")
         : L10N.getStr("ignoreAllInGroup.label");
-      if (sourcesOuside.length > 0) {
-        blackBoxOutsideMenuItemLabel = allOusideBlackBoxed
+      if (sourcesOutside.length) {
+        blackBoxOutsideMenuItemLabel = allOutsideBlackBoxed
           ? L10N.getStr("unignoreAllOutsideGroup.label")
           : L10N.getStr("ignoreAllOutsideGroup.label");
       }
@@ -179,8 +182,8 @@ class SourceTreeItem extends Component {
       blackBoxInsideMenuItemLabel = allInsideBlackBoxed
         ? L10N.getStr("unignoreAllInDir.label")
         : L10N.getStr("ignoreAllInDir.label");
-      if (sourcesOuside.length > 0) {
-        blackBoxOutsideMenuItemLabel = allOusideBlackBoxed
+      if (sourcesOutside.length) {
+        blackBoxOutsideMenuItemLabel = allOutsideBlackBoxed
           ? L10N.getStr("unignoreAllOutsideDir.label")
           : L10N.getStr("ignoreAllOutsideDir.label");
       }
@@ -196,14 +199,14 @@ class SourceTreeItem extends Component {
         this.props.blackBoxSources(cx, sourcesInside, !allInsideBlackBoxed),
     };
 
-    if (sourcesOuside.length > 0) {
+    if (sourcesOutside.length) {
       menuOptions.push({
         id: "node-blackbox-all",
         label: L10N.getStr("ignoreAll.label"),
         submenu: [
           blackBoxInsideMenuItem,
           {
-            id: allOusideBlackBoxed
+            id: allOutsideBlackBoxed
               ? "node-unblackbox-all-outside"
               : "node-blackbox-all-outside",
             label: blackBoxOutsideMenuItemLabel,
@@ -211,8 +214,8 @@ class SourceTreeItem extends Component {
             click: () =>
               this.props.blackBoxSources(
                 cx,
-                sourcesOuside,
-                !allOusideBlackBoxed
+                sourcesOutside,
+                !allOutsideBlackBoxed
               ),
           },
         ],
@@ -242,7 +245,7 @@ class SourceTreeItem extends Component {
 
   renderItemArrow() {
     const { item, expanded } = this.props;
-    return isDirectory(item) ? (
+    return item.type != "source" ? (
       <AccessibleImage className={classnames("arrow", { expanded })} />
     ) : (
       <span className="img no-arrow" />
@@ -250,58 +253,31 @@ class SourceTreeItem extends Component {
   }
 
   renderIcon(item, depth) {
-    const {
-      debuggeeUrl,
-      projectRoot,
-      source,
-      hasPrettyTab,
-      threads,
-    } = this.props;
-
-    if (item.name === "webpack://") {
-      return <AccessibleImage className="webpack" />;
-    } else if (item.name === "ng://") {
-      return <AccessibleImage className="angular" />;
-    } else if (isExtensionDirectoryPath(item.path)) {
-      return <AccessibleImage className="extension" />;
+    if (item.type == "thread") {
+      const icon = item.thread.targetType.includes("worker")
+        ? "worker"
+        : "window";
+      return <AccessibleImage className={classnames(icon)} />;
     }
-
-    // Threads level
-    if (depth === 0 && projectRoot === "") {
-      const thread = threads.find(thrd => thrd.actor == item.name);
-
-      if (thread) {
-        const icon = thread.targetType.includes("worker") ? "worker" : "window";
-        return (
-          <AccessibleImage
-            className={classnames(icon, {
-              debuggee: debuggeeUrl && debuggeeUrl.includes(item.name),
-            })}
-          />
-        );
+    if (item.type == "group") {
+      if (item.groupName === "Webpack") {
+        return <AccessibleImage className="webpack" />;
+      } else if (item.groupName === "Angular") {
+        return <AccessibleImage className="angular" />;
       }
+      // Check if the group relates to an extension.
+      // This happens when a webextension injects a content script.
+      if (item.isForExtensionSource) {
+        return <AccessibleImage className="extension" />;
+      }
+
+      return <AccessibleImage className="globe-small" />;
     }
-
-    if (isDirectory(item)) {
-      // Domain level
-      if (
-        (depth === 1 && projectRoot === "") ||
-        (depth === 0 && threads.find(thrd => thrd.actor === projectRoot))
-      ) {
-        return <AccessibleImage className="globe-small" />;
-      }
+    if (item.type == "directory") {
       return <AccessibleImage className="folder" />;
     }
-
-    if (source?.isBlackBoxed) {
-      return <AccessibleImage className="blackBox" />;
-    }
-
-    if (hasPrettyTab) {
-      return <AccessibleImage className="prettyPrint" />;
-    }
-
-    if (source) {
+    if (item.type == "source") {
+      const { source } = item;
       return (
         <SourceIcon
           source={source}
@@ -309,7 +285,7 @@ class SourceTreeItem extends Component {
             // In the SourceTree, extension files should use the file-extension based icon,
             // whereas we use the extension icon in other Components (eg. source tabs and breakpoints pane).
             icon === "extension"
-              ? sourceTypes[getFileExtension(source)] || "javascript"
+              ? sourceTypes[source.displayURL.fileExtension] || "javascript"
               : icon
           }
         />
@@ -320,42 +296,49 @@ class SourceTreeItem extends Component {
   }
 
   renderItemName(depth) {
-    const { item, threads, extensionName } = this.props;
+    const { item } = this.props;
 
-    if (depth === 0) {
-      const thread = threads.find(({ actor }) => actor == item.name);
-      if (thread) {
-        return (
-          thread.name +
-          (thread.serviceWorkerStatus ? ` (${thread.serviceWorkerStatus})` : "")
-        );
-      }
+    if (item.type == "thread") {
+      const { thread } = item;
+      return (
+        thread.name +
+        (thread.serviceWorkerStatus ? ` (${thread.serviceWorkerStatus})` : "")
+      );
+    }
+    if (item.type == "group") {
+      return unescape(item.groupName);
+    }
+    if (item.type == "directory") {
+      const parentItem = this.props.getParent(item);
+      return item.path.replace(parentItem.path, "").replace(/^\//, "");
+    }
+    if (item.type == "source") {
+      const { displayURL } = item.source;
+      const name =
+        displayURL.filename + (displayURL.search ? displayURL.search : "");
+      return unescape(name);
     }
 
-    if (isExtensionDirectory(depth, extensionName)) {
-      return extensionName;
-    }
-
-    switch (item.name) {
-      case "ng://":
-        return "Angular";
-      case "webpack://":
-        return "Webpack";
-      default:
-        return `${unescape(item.name)}`;
-    }
+    return null;
   }
 
   renderItemTooltip() {
-    const { item, depth, extensionName } = this.props;
+    const { item } = this.props;
 
-    if (isExtensionDirectory(depth, extensionName)) {
-      return item.name;
+    if (item.type == "thread") {
+      return item.thread.name;
+    }
+    if (item.type == "group") {
+      return item.groupName;
+    }
+    if (item.type == "directory") {
+      return item.path;
+    }
+    if (item.type == "source") {
+      return item.source.url;
     }
 
-    return item.type === "source"
-      ? unescape(item.contents.url)
-      : getPathWithoutThread(item.path);
+    return null;
   }
 
   render() {
@@ -370,7 +353,7 @@ class SourceTreeItem extends Component {
         className={classnames("node", { focused })}
         key={item.path}
         onClick={this.onClick}
-        onContextMenu={e => this.onContextMenu(e, item)}
+        onContextMenu={this.onContextMenu}
         title={this.renderItemTooltip()}
       >
         {this.renderItemArrow()}
@@ -392,27 +375,21 @@ function getHasMatchingGeneratedSource(state, source) {
   return !!getGeneratedSourceByURL(state, source.url);
 }
 
-function getSourceContentValue(state, source) {
-  const content = getSourceContent(state, source.id);
-  return content && isFulfilled(content) ? content.value : null;
-}
-
-function isExtensionDirectory(depth, extensionName) {
-  return extensionName && (depth === 1 || depth === 0);
-}
-
 const mapStateToProps = (state, props) => {
-  const { source, item } = props;
+  const { item } = props;
+  if (item.type == "source") {
+    const { source } = item;
+    return {
+      cx: getContext(state),
+      hasMatchingGeneratedSource: getHasMatchingGeneratedSource(state, source),
+      getFirstSourceActorForGeneratedSource: (sourceId, threadId) =>
+        getFirstSourceActorForGeneratedSource(state, sourceId, threadId),
+    };
+  }
   return {
     cx: getContext(state),
-    hasMatchingGeneratedSource: getHasMatchingGeneratedSource(state, source),
-    hasSiblingOfSameName: getHasSiblingOfSameName(state, source),
-    hasPrettyTab: source ? checkHasPrettyTab(state, source.url) : false,
-    sourceContent: source ? getSourceContentValue(state, source) : null,
-    extensionName:
-      (isUrlExtension(item.name) &&
-        getExtensionNameBySourceUrl(state, item.name)) ||
-      null,
+    getFirstSourceActorForGeneratedSource: (sourceId, threadId) =>
+      getFirstSourceActorForGeneratedSource(state, sourceId, threadId),
   };
 };
 

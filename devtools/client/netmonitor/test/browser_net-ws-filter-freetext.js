@@ -8,9 +8,6 @@
  */
 
 add_task(async function() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["devtools.netmonitor.features.webSockets", true]],
-  });
   const { tab, monitor } = await initNetMonitor(WS_PAGE_URL, {
     requestCount: 1,
   });
@@ -58,16 +55,11 @@ add_task(async function() {
   is(frames.length, 6, "There should be six frames");
 
   // Fill filter input with text and check displayed messages
-  const type = string => {
-    for (const ch of string) {
-      EventUtils.synthesizeKey(ch, {}, monitor.panelWin);
-    }
-  };
   const filterInput = document.querySelector(
     "#messages-view .devtools-filterinput"
   );
   filterInput.focus();
-  type("Payload 2");
+  typeInNetmonitor("Payload 2", monitor);
 
   // Wait till the text filter is applied.
   await waitUntil(() => getDisplayedMessages(store.getState()).length == 2);

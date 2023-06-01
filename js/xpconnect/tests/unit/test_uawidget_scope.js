@@ -2,10 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://gre/modules/Timer.jsm");
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.importESModule("resource://gre/modules/Timer.sys.mjs");
 const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const {TestUtils} = ChromeUtils.import("resource://testing-common/TestUtils.jsm");
+const {TestUtils} = ChromeUtils.importESModule("resource://testing-common/TestUtils.sys.mjs");
 
 function getWindowlessBrowser(url) {
   let ssm = Services.scriptSecurityManager;

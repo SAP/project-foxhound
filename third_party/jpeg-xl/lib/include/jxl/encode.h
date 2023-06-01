@@ -13,11 +13,12 @@
 #ifndef JXL_ENCODE_H_
 #define JXL_ENCODE_H_
 
+#include "jxl/cms_interface.h"
 #include "jxl/codestream_header.h"
-#include "jxl/decode.h"
 #include "jxl/jxl_export.h"
 #include "jxl/memory_manager.h"
 #include "jxl/parallel_runner.h"
+#include "jxl/version.h"
 
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {
@@ -73,15 +74,60 @@ typedef enum {
 
   /** DEPRECATED: the encoder does not return this status and there is no need
    * to handle or expect it.
+   * Instead, JXL_ENC_ERROR is returned with error condition
+   * JXL_ENC_ERR_NOT_SUPPORTED.
    */
   JXL_ENC_NOT_SUPPORTED = 3,
 
 } JxlEncoderStatus;
 
 /**
- * Id of encoder options for a frame. This includes options such as the
- * image quality and compression speed for this frame. This does not include
- * non-frame related encoder options such as for boxes.
+ * Error conditions:
+ * API usage errors have the 0x80 bit set to 1
+ * Other errors have the 0x80 bit set to 0
+ */
+typedef enum {
+  /** No error
+   */
+  JXL_ENC_ERR_OK = 0,
+
+  /** Generic encoder error due to unspecified cause
+   */
+  JXL_ENC_ERR_GENERIC = 1,
+
+  /** Out of memory
+   *  TODO(jon): actually catch this and return this error
+   */
+  JXL_ENC_ERR_OOM = 2,
+
+  /** JPEG bitstream reconstruction data could not be
+   *  represented (e.g. too much tail data)
+   */
+  JXL_ENC_ERR_JBRD = 3,
+
+  /** Input is invalid (e.g. corrupt JPEG file or ICC profile)
+   */
+  JXL_ENC_ERR_BAD_INPUT = 4,
+
+  /** The encoder doesn't (yet) support this. Either no version of libjxl
+   * supports this, and the API is used incorrectly, or the libjxl version
+   * should have been checked before trying to do this.
+   */
+  JXL_ENC_ERR_NOT_SUPPORTED = 0x80,
+
+  /** The encoder API is used in an incorrect way.
+   *  In this case, a debug build of libjxl should output a specific error
+   * message. (if not, please open an issue about it)
+   */
+  JXL_ENC_ERR_API_USAGE = 0x81,
+
+} JxlEncoderError;
+
+/**
+ * Id of encoder options for a frame. This includes options such as setting
+ * encoding effort/speed or overriding the use of certain coding tools, for this
+ * frame. This does not include non-frame related encoder options such as for
+ * boxes.
  */
 typedef enum {
   /** Sets encoder effort/speed level without affecting decoding speed. Valid
@@ -236,9 +282,12 @@ typedef enum {
    */
   JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM = 24,
 
-  /** Color space for modular encoding: -1=default, 0-35=reverse color transform
+  /** Reversible color transform for modular encoding: -1=default, 0-41=RCT
    * index, e.g. index 0 = none, index 6 = YCoCg.
-   * The default behavior is to try several, depending on the speed setting.
+   * If this option is set to a non-default value, the RCT will be globally
+   * applied to the whole frame.
+   * The default behavior is to try several RCTs locally per modular group,
+   * depending on the speed and distance setting.
    */
   JXL_ENC_FRAME_SETTING_MODULAR_COLOR_SPACE = 25,
 
@@ -271,6 +320,31 @@ typedef enum {
    * -1 = default, 0 = disable CFL, 1 = enable CFL.
    */
   JXL_ENC_FRAME_SETTING_JPEG_RECON_CFL = 30,
+
+  /** Prepare the frame for indexing in the frame index box.
+   * 0 = ignore this frame (same as not setting a value),
+   * 1 = index this frame within the Frame Index Box.
+   * If any frames are indexed, the first frame needs to
+   * be indexed, too. If the first frame is not indexed, and
+   * a later frame is attempted to be indexed, JXL_ENC_ERROR will occur.
+   * If non-keyframes, i.e., frames with cropping, blending or patches are
+   * attempted to be indexed, JXL_ENC_ERROR will occur.
+   */
+  JXL_ENC_FRAME_INDEX_BOX = 31,
+
+  /** Sets brotli encode effort for use in JPEG recompression and compressed
+   * metadata boxes (brob). Can be -1 (default) or 0 (fastest) to 11 (slowest).
+   * Default is based on the general encode effort in case of JPEG
+   * recompression, and 4 for brob boxes.
+   */
+  JXL_ENC_FRAME_SETTING_BROTLI_EFFORT = 32,
+
+  /** Enables or disables brotli compression of metadata boxes derived from
+   * a JPEG frame when using JxlEncoderAddJPEGFrame. This has no effect on boxes
+   * added using JxlEncoderAddBox.
+   * -1 = default, 0 = disable compression, 1 = enable compression.
+   */
+  JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES = 33,
 
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.
@@ -337,6 +411,15 @@ JxlEncoderSetParallelRunner(JxlEncoder* enc, JxlParallelRunner parallel_runner,
                             void* parallel_runner_opaque);
 
 /**
+ * Get the (last) error code in case JXL_ENC_ERROR was returned.
+ *
+ * @param enc encoder object.
+ * @return the JxlEncoderError that caused the (last) JXL_ENC_ERROR to be
+ * returned.
+ */
+JXL_EXPORT JxlEncoderError JxlEncoderGetError(JxlEncoder* enc);
+
+/**
  * Encodes JPEG XL file using the available bytes. @p *avail_out indicates how
  * many output bytes are available, and @p *next_out points to the input bytes.
  * *avail_out will be decremented by the amount of bytes that have been
@@ -347,6 +430,11 @@ JxlEncoderSetParallelRunner(JxlEncoder* enc, JxlParallelRunner parallel_runner,
  * The returned status indicates whether the encoder needs more output bytes.
  * When the return value is not JXL_ENC_ERROR or JXL_ENC_SUCCESS, the encoding
  * requires more JxlEncoderProcessOutput calls to continue.
+ *
+ * The caller must guarantee that *avail_out >= 32 when calling
+ * JxlEncoderProcessOutput; otherwise, JXL_ENC_NEED_MORE_OUTPUT will be
+ * returned. It is guaranteed that, if *avail_out >= 32, at least one byte of
+ * output will be written.
  *
  * This encodes the frames and/or boxes added so far. If the last frame or last
  * box has been added, @ref JxlEncoderCloseInput, @ref JxlEncoderCloseFrames
@@ -440,6 +528,22 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetFrameName(
     JxlEncoderFrameSettings* frame_settings, const char* frame_name);
 
 /**
+ * Sets the bit depth of the input buffer.
+ *
+ * For float pixel formats, only the default JXL_BIT_DEPTH_FROM_PIXEL_FORMAT
+ * setting is allowed, while for unsigned pixel formats,
+ * JXL_BIT_DEPTH_FROM_CODESTREAM setting is also allowed. See the comment on
+ * @ref JxlEncoderAddImageFrame for the effects of the bit depth setting.
+
+ * @param frame_settings set of options and metadata for this frame. Also
+ * includes reference to the encoder object.
+ * @param bit_depth the bit depth setting of the pixel input
+ * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderSetFrameBitDepth(
+    JxlEncoderFrameSettings* frame_settings, const JxlBitDepth* bit_depth);
+
+/**
  * Sets the buffer to read JPEG encoded bytes from for the next frame to encode.
  *
  * If JxlEncoderSetBasicInfo has not yet been called, calling
@@ -480,15 +584,22 @@ JxlEncoderAddJPEGFrame(const JxlEncoderFrameSettings* frame_settings,
  * - JXL_TYPE_FLOAT, with nominal range 0..1
  *
  * Note: the sample data type in pixel_format is allowed to be different from
- * what is described in the JxlBasicInfo. The type in pixel_format describes the
- * format of the uncompressed pixel buffer. The bits_per_sample and
- * exponent_bits_per_sample in the JxlBasicInfo describes what will actually be
- * encoded in the JPEG XL codestream. For example, to encode a 12-bit image, you
- * would set bits_per_sample to 12, and you could use e.g. JXL_TYPE_UINT16
- * (where the values are rescaled to 16-bit, i.e. multiplied by 65535/4095) or
- * JXL_TYPE_FLOAT (where the values are rescaled to 0..1, i.e. multiplied
- * by 1.f/4095.f). While it is allowed, it is obviously not recommended to use a
- * pixel_format with lower precision than what is specified in the JxlBasicInfo.
+ * what is described in the JxlBasicInfo. The type in pixel_format, together
+ * with an optional @ref JxlBitDepth parameter set by @ref
+ * JxlEncoderSetFrameBitDepth describes the format of the uncompressed pixel
+ * buffer. The bits_per_sample and exponent_bits_per_sample in the JxlBasicInfo
+ * describes what will actually be encoded in the JPEG XL codestream.
+ * For example, to encode a 12-bit image, you would set bits_per_sample to 12,
+ * while the input frame buffer can be in the following formats:
+ *  - if pixel format is in JXL_TYPE_UINT16 with default bit depth setting
+ *    (i.e. JXL_BIT_DEPTH_FROM_PIXEL_FORMAT), input sample values are rescaled
+ *    to 16-bit, i.e. multiplied by 65535/4095;
+ *  - if pixel format is in JXL_TYPE_UINT16 with JXL_BIT_DEPTH_FROM_CODESTREAM
+ *    bit depth setting, input sample values are provided unscaled;
+ *  - if pixel format is in JXL_TYPE_FLOAT, input sample values are rescaled
+ *    to 0..1, i.e.  multiplied by 1.f/4095.f.
+ * While it is allowed, it is obviously not recommended to use a pixel_format
+ * with lower precision than what is specified in the JxlBasicInfo.
  *
  * We support interleaved channels as described by the JxlPixelFormat:
  * - single-channel data, e.g. grayscale
@@ -498,13 +609,15 @@ JxlEncoderAddJPEGFrame(const JxlEncoderFrameSettings* frame_settings,
  *
  * Extra channels not handled here need to be set by @ref
  * JxlEncoderSetExtraChannelBuffer.
+ * If the image has alpha, and alpha is not passed here, it will implicitly be
+ * set to all-opaque (an alpha value of 1.0 everywhere).
  *
- * The color profile of the pixels depends on the value of uses_original_profile
- * in the JxlBasicInfo. If true, the pixels are assumed to be encoded in the
- * original profile that is set with JxlEncoderSetColorEncoding or
- * JxlEncoderSetICCProfile. If false, the pixels are assumed to be nonlinear
- * sRGB for integer data types (JXL_TYPE_UINT8, JXL_TYPE_UINT16), and linear
- * sRGB for floating point data types (JXL_TYPE_FLOAT16, JXL_TYPE_FLOAT).
+ * The pixels are assumed to be encoded in the original profile that is set with
+ * JxlEncoderSetColorEncoding or JxlEncoderSetICCProfile. If none of these
+ * functions were used, the pixels are assumed to be nonlinear sRGB for integer
+ * data types (JXL_TYPE_UINT8, JXL_TYPE_UINT16), and linear sRGB for floating
+ * point data types (JXL_TYPE_FLOAT16, JXL_TYPE_FLOAT).
+ *
  * Sample values in floating-point pixel formats are allowed to be outside the
  * nominal range, e.g. to represent out-of-sRGB-gamut colors in the
  * uses_original_profile=false case. They are however not allowed to be NaN or
@@ -520,7 +633,8 @@ JxlEncoderAddJPEGFrame(const JxlEncoderFrameSettings* frame_settings,
  * contents are copied internally.
  * @param buffer buffer type to input the pixel data from. Owned by the caller
  * and its contents are copied internally.
- * @param size size of buffer in bytes.
+ * @param size size of buffer in bytes. This size should match what is implied
+ * by the frame dimensions and the pixel format.
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
@@ -545,7 +659,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
  * number of channels for an extra channel is always assumed to be one.
  * @param buffer buffer type to input the pixel data from. Owned by the caller
  * and its contents are copied internally.
- * @param size size of buffer in bytes.
+ * @param size size of buffer in bytes. This size should match what is implied
+ * by the frame dimensions and the pixel format.
  * @param index index of the extra channel to use.
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
  */
@@ -558,10 +673,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
  * to effectively write the box to the output. @ref JxlEncoderUseBoxes must
  * be enabled before using this function.
  *
- * Background information about the container format and boxes follows here:
- *
- * For users of libjxl, boxes allow inserting application-specific data and
- * metadata (Exif, XML, JUMBF and user defined boxes).
+ * Boxes allow inserting application-specific data and metadata (Exif, XML/XMP,
+ * JUMBF and user defined boxes).
  *
  * The box format follows ISO BMFF and shares features and box types with other
  * image and video formats, including the Exif, XML and JUMBF boxes. The box
@@ -569,7 +682,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
  *
  * Boxes in general don't contain other boxes inside, except a JUMBF superbox.
  * Boxes follow each other sequentially and are byte-aligned. If the container
- * format is used, the JXL stream exists out of 3 or more concatenated boxes.
+ * format is used, the JXL stream consists of concatenated boxes.
  * It is also possible to use a direct codestream without boxes, but in that
  * case metadata cannot be added.
  *
@@ -581,80 +694,42 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
  * - N bytes: box contents.
  *
  * Only the box contents are provided to the contents argument of this function,
- * the encoder encodes the size header itself.
+ * the encoder encodes the size header itself. Most boxes are written
+ * automatically by the encoder as needed ("JXL ", "ftyp", "jxll", "jxlc",
+ * "jxlp", "jxli", "jbrd"), and this function only needs to be called to add
+ * optional metadata when encoding from pixels (using JxlEncoderAddImageFrame).
+ * When recompressing JPEG files (using JxlEncoderAddJPEGFrame), if the input
+ * JPEG contains EXIF, XMP or JUMBF metadata, the corresponding boxes are
+ * already added automatically.
  *
- * Box types are given by 4 characters. A list of known types follows:
- * - "JXL ": mandatory signature box, must come first, 12 bytes long including
- *   the box header
- * - "ftyp": a second mandatory signature box, must come second, 20 bytes long
- *   including the box header
- * - "jxll": A JXL level box. This indicates if the codestream is level 5 or
- *   level 10 compatible. If not present, it is level 5. Level 10 allows more
- *   features such as very high image resolution and bit-depths above 16 bits
- *   per channel. Added automatically by the encoder when
- *   JxlEncoderSetCodestreamLevel is used
- * - "jxlc": a box with the image codestream, in case the codestream is not
- *   split across multiple boxes. The codestream contains the JPEG XL image
- *   itself, including the basic info such as image dimensions, ICC color
- *   profile, and all the pixel data of all the image frames.
- * - "jxlp": a codestream box in case it is split across multiple boxes. The
- *   encoder will automatically do this if necessary. The contents are the same
- *   as in case of a jxlc box, when concatenated.
+ * Box types are given by 4 characters. The following boxes can be added with
+ * this function:
  * - "Exif": a box with EXIF metadata, can be added by libjxl users, or is
  *   automatically added when needed for JPEG reconstruction. The contents of
  *   this box must be prepended by a 4-byte tiff header offset, which may
- *   be 4 zero bytes.
- * - "XML ": a box with XMP or IPTC metadata, can be added by libjxl users, or
- *   is automatically added when needed for JPEG reconstruction
+ *   be 4 zero bytes in case the tiff header follows immediately.
+ *   The EXIF metadata must be in sync with what is encoded in the JPEG XL
+ *   codestream, specifically the image orientation. While this is not
+ *   recommended in practice, in case of conflicting metadata, the JPEG XL
+ *   codestream takes precedence.
+ * - "xml ": a box with XML data, in particular XMP metadata, can be added by
+ *   libjxl users, or is automatically added when needed for JPEG reconstruction
  * - "jumb": a JUMBF superbox, which can contain boxes with different types of
  *   metadata inside. This box type can be added by the encoder transparently,
  *   and other libraries to create and handle JUMBF content exist.
- * - "brob": a Brotli-compressed box, which otherwise represents an existing
- *   type of box such as Exif or XML. The encoder creates these when enabled and
- *   users of libjxl don't need to create them directly. Some box types are not
- *   allowed to be compressed: any of the signature, jxl* and jbrd boxes.
- * - "jxli": frame index box, can list the keyframes in case of a JXL animation,
- *   allowing the decoder to jump to individual frames more efficiently. This
- *   box type is specified, but not currently supported by the encoder or
- *   decoder.
- * - "jbrd": JPEG reconstruction box, contains the information required to
- *   byte-for-byte losslessly recontruct a JPEG-1 image. The JPEG coefficients
- *   (pixel content) themselves are encoded in the JXL codestream (jxlc or jxlp)
- *   itself. Exif and XMP metadata will be encoded in Exif and XMP boxes. The
- *   jbrd box itself contains information such as the app markers of the JPEG-1
- *   file and everything else required to fit the information together into the
- *   exact original JPEG file. This box is added automatically by the encoder
- *   when needed, and only when JPEG reconstruction is used.
- * - other: other application-specific boxes can be added. Their typename should
- *   not begin with "jxl" or "JXL" or conflict with other existing typenames.
+ * - Application-specific boxes. Their typename should not begin with "jxl" or
+ *   "JXL" or conflict with other existing typenames, and they should be
+ *   registered with MP4RA (mp4ra.org).
  *
- * Most boxes are automatically added by the encoder and should not be added
- * with JxlEncoderAddBox. Boxes that one may wish to add with JxlEncoderAddBox
- * are: Exif and XML (but not when using JPEG reconstruction since if the
- * JPEG has those, these boxes are already added automatically), jumb, and
- * application-specific boxes.
- *
- * Adding metadata boxes increases the filesize. When adding Exif metadata, the
- * data must be in sync with what is encoded in the JPEG XL codestream,
- * specifically the image orientation. While this is not recommended in
- * practice, in case of conflicting metadata, the JPEG XL codestream takes
- * precedence.
- *
- * It is possible to create a codestream without boxes, then what would be in
- * the jxlc box is written directly to the output
- *
- * It is possible to split the codestream across multiple boxes, in that case
- * multiple boxes of type jxlp are used. This is handled by the encoder when
- * needed.
+ * These boxes can be stored uncompressed or Brotli-compressed (using a "brob"
+ * box), depending on the compress_box parameter.
  *
  * @param enc encoder object.
- * @param type the box type, e.g. "Exif" for EXIF metadata, "XML " for XMP or
+ * @param type the box type, e.g. "Exif" for EXIF metadata, "xml " for XMP or
  * IPTC metadata, "jumb" for JUMBF metadata.
  * @param contents the full contents of the box, for example EXIF
- * data. For an "Exif" box, the EXIF data must be prepended by a 4-byte tiff
- * header offset, which may be 4 zero-bytes. The ISO BMFF box header must not
- * be included, only the contents. Owned by the caller and its contents are
- * copied internally.
+ * data. ISO BMFF box header must not be included, only the contents. Owned by
+ * the caller and its contents are copied internally.
  * @param size size of the box contents.
  * @param compress_box Whether to compress this box as a "brob" box. Requires
  * Brotli support.
@@ -733,6 +808,7 @@ JXL_EXPORT void JxlEncoderCloseInput(JxlEncoder* enc);
  * is an alternative to JxlEncoderSetICCProfile and only one of these two must
  * be used. This one sets the color encoding as a @ref JxlColorEncoding, while
  * the other sets it as ICC binary data.
+ * Must be called after JxlEncoderSetBasicInfo.
  *
  * @param enc encoder object.
  * @param color color encoding. Object owned by the caller and its contents are
@@ -748,6 +824,7 @@ JxlEncoderSetColorEncoding(JxlEncoder* enc, const JxlColorEncoding* color);
  * ICC color profile. This is an alternative to JxlEncoderSetColorEncoding and
  * only one of these two must be used. This one sets the color encoding as ICC
  * binary data, while the other defines it as a @ref JxlColorEncoding.
+ * Must be called after JxlEncoderSetBasicInfo.
  *
  * @param enc encoder object.
  * @param icc_profile bytes of the original ICC profile
@@ -818,7 +895,6 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
  * @param type type of the extra channel.
  * @param info global extra channel metadata. Object owned by the caller and its
  * contents are copied internally.
- * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
  */
 JXL_EXPORT void JxlEncoderInitExtraChannelInfo(JxlExtraChannelType type,
                                                JxlExtraChannelInfo* info);
@@ -871,7 +947,25 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelName(JxlEncoder* enc,
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
     JxlEncoderFrameSettings* frame_settings, JxlEncoderFrameSettingId option,
-    int32_t value);
+    int64_t value);
+
+/**
+ * Sets a frame-specific option of float type to the encoder options.
+ * The JxlEncoderFrameSettingId argument determines which option is set.
+ *
+ * @param frame_settings set of options and metadata for this frame. Also
+ * includes reference to the encoder object.
+ * @param option ID of the option to set.
+ * @param value Float value to set for this option.
+ * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR in
+ * case of an error, such as invalid or unknown option id, or invalid integer
+ * value for the given option. If an error is returned, the state of the
+ * JxlEncoderFrameSettings object is still valid and is the same as before this
+ * function was called.
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderFrameSettingsSetFloatOption(
+    JxlEncoderFrameSettings* frame_settings, JxlEncoderFrameSettingId option,
+    float value);
 
 /** Forces the encoder to use the box-based container format (BMFF) even
  * when not necessary.
@@ -912,8 +1006,8 @@ JXL_EXPORT JxlEncoderStatus
 JxlEncoderStoreJPEGMetadata(JxlEncoder* enc, JXL_BOOL store_jpeg_metadata);
 
 /** Sets the feature level of the JPEG XL codestream. Valid values are 5 and
- * 10. Keeping the default value of 5 is recommended for compatibility with all
- * decoders.
+ * 10, or -1 (to choose automatically). Using the minimum required level, or
+ * level 5 in most cases, is recommended for compatibility with all decoders.
  *
  * Level 5: for end-user image delivery, this level is the most widely
  * supported level by image decoders and the recommended level to use unless a
@@ -929,16 +1023,19 @@ JxlEncoderStoreJPEGMetadata(JxlEncoder* enc, JXL_BOOL store_jpeg_metadata);
  * 5 limitations, allows CMYK color and up to 32 bits per color channel, but
  * may be less widely supported.
  *
- * The default value is 5. To use level 10 features, the setting must be
- * explicitly set to 10, the encoder will not automatically enable it. If
- * incompatible parameters such as too high image resolution for the current
- * level are set, the encoder will return an error. For internal coding tools,
- * the encoder will only use those compatible with the level setting.
+ * The default value is -1. This means the encoder will automatically choose
+ * between level 5 and level 10 based on what information is inside the @ref
+ * JxlBasicInfo structure. Do note that some level 10 features, particularly
+ * those used by animated JPEG XL codestreams, might require level 10, even
+ * though the @ref JxlBasicInfo only suggests level 5. In this case, the level
+ * must be explicitly set to 10, otherwise the encoder will return an error.
+ * The encoder will restrict internal encoding choices to those compatible with
+ * the level setting.
  *
  * This setting can only be set at the beginning, before encoding starts.
  *
  * @param enc encoder object.
- * @param level the level value to set, must be 5 or 10.
+ * @param level the level value to set, must be -1, 5, or 10.
  * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR
  * otherwise.
  */
@@ -1002,7 +1099,7 @@ JxlEncoderOptionsSetLossless(JxlEncoderFrameSettings*, JXL_BOOL);
  * DEPRECATED: use JxlEncoderFrameSettingsSetOption(frame_settings,
  * JXL_ENC_FRAME_SETTING_EFFORT, effort) instead.
  */
-JXL_EXPORT JXL_DEPRECATED JxlEncoderStatus
+JXL_DEPRECATED JXL_EXPORT JxlEncoderStatus
 JxlEncoderOptionsSetEffort(JxlEncoderFrameSettings* frame_settings, int effort);
 
 /**
@@ -1015,7 +1112,7 @@ JxlEncoderOptionsSetEffort(JxlEncoderFrameSettings* frame_settings, int effort);
  * DEPRECATED: use JxlEncoderFrameSettingsSetOption(frame_settings,
  * JXL_ENC_FRAME_SETTING_DECODING_SPEED, tier) instead.
  */
-JXL_EXPORT JXL_DEPRECATED JxlEncoderStatus JxlEncoderOptionsSetDecodingSpeed(
+JXL_DEPRECATED JXL_EXPORT JxlEncoderStatus JxlEncoderOptionsSetDecodingSpeed(
     JxlEncoderFrameSettings* frame_settings, int tier);
 
 /**
@@ -1037,7 +1134,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetFrameDistance(
 
 /** DEPRECATED: use JxlEncoderSetFrameDistance instead.
  */
-JXL_EXPORT JxlEncoderStatus
+JXL_DEPRECATED JXL_EXPORT JxlEncoderStatus
 JxlEncoderOptionsSetDistance(JxlEncoderFrameSettings*, float);
 
 /**
@@ -1060,7 +1157,7 @@ JXL_EXPORT JxlEncoderFrameSettings* JxlEncoderFrameSettingsCreate(
 
 /** DEPRECATED: use JxlEncoderFrameSettingsCreate instead.
  */
-JXL_EXPORT JxlEncoderFrameSettings* JxlEncoderOptionsCreate(
+JXL_DEPRECATED JXL_EXPORT JxlEncoderFrameSettings* JxlEncoderOptionsCreate(
     JxlEncoder*, const JxlEncoderFrameSettings*);
 
 /**
@@ -1080,6 +1177,16 @@ JXL_EXPORT void JxlColorEncodingSetToSRGB(JxlColorEncoding* color_encoding,
  */
 JXL_EXPORT void JxlColorEncodingSetToLinearSRGB(
     JxlColorEncoding* color_encoding, JXL_BOOL is_gray);
+
+/**
+ * Enables usage of expert options.
+ *
+ * At the moment, the only expert option is setting an effort value of 10,
+ * which gives the best compression for pixel-lossless modes but is very slow.
+ *
+ * @param enc encoder object.
+ */
+JXL_EXPORT void JxlEncoderAllowExpertOptions(JxlEncoder* enc);
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }

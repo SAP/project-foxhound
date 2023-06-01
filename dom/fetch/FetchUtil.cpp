@@ -295,16 +295,17 @@ class WorkerStreamOwner final {
     RefPtr<WorkerStreamOwner> self =
         new WorkerStreamOwner(aStream, std::move(target));
 
-    self->mWorkerRef = WeakWorkerRef::Create(aWorker, [self]() {
-      if (self->mStream) {
-        // If this Close() calls JSStreamConsumer::OnInputStreamReady and drops
-        // the last reference to the JSStreamConsumer, 'this' will not be
-        // destroyed since ~JSStreamConsumer() only enqueues a release proxy.
-        self->mStream->Close();
-        self->mStream = nullptr;
-        self->mWorkerRef = nullptr;
-      }
-    });
+    self->mWorkerRef =
+        StrongWorkerRef::Create(aWorker, "JSStreamConsumer", [self]() {
+          if (self->mStream) {
+            // If this Close() calls JSStreamConsumer::OnInputStreamReady and
+            // drops the last reference to the JSStreamConsumer, 'this' will not
+            // be destroyed since ~JSStreamConsumer() only enqueues a release
+            // proxy.
+            self->mStream->Close();
+            self->mStream = nullptr;
+          }
+        });
 
     if (!self->mWorkerRef) {
       return nullptr;
@@ -326,7 +327,7 @@ class WorkerStreamOwner final {
   // Read from any thread but only set/cleared on the worker thread. The
   // lifecycle of WorkerStreamOwner prevents concurrent read/clear.
   nsCOMPtr<nsIAsyncInputStream> mStream;
-  RefPtr<WeakWorkerRef> mWorkerRef;
+  RefPtr<StrongWorkerRef> mWorkerRef;
   nsCOMPtr<nsIEventTarget> mOwningEventTarget;
 };
 
@@ -671,7 +672,7 @@ static bool ThrowException(JSContext* aCx, unsigned errorNumber) {
 }
 
 // static
-bool FetchUtil::StreamResponseToJS(JSContext* aCx, JS::HandleObject aObj,
+bool FetchUtil::StreamResponseToJS(JSContext* aCx, JS::Handle<JSObject*> aObj,
                                    JS::MimeType aMimeType,
                                    JS::StreamConsumer* aConsumer,
                                    WorkerPrivate* aMaybeWorker) {
@@ -692,7 +693,8 @@ bool FetchUtil::StreamResponseToJS(JSContext* aCx, JS::HandleObject aObj,
   }
 
   nsAutoCString mimeType;
-  response->GetMimeType(mimeType);
+  nsAutoCString mixedCaseMimeType;  // unused
+  response->GetMimeType(mimeType, mixedCaseMimeType);
 
   if (!mimeType.EqualsASCII(requiredMimeType)) {
     JS_ReportErrorNumberASCII(aCx, js::GetErrorMessage, nullptr,

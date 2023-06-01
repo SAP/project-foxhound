@@ -6,11 +6,7 @@
 
 """Generate rust bindings information for the IDL file specified"""
 
-from __future__ import absolute_import
-
-from xpidl import rust
-from xpidl import xpidl
-
+from xpidl import rust, xpidl
 
 derive_method_tmpl = """\
 Method {

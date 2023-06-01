@@ -10,17 +10,29 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/EventTarget.h"
-#include "mozilla/dom/SessionStoreDataCollector.h"
+#include "mozilla/dom/SessionStoreChild.h"
 #include "mozilla/dom/SessionStoreUtils.h"
 #include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_browser.h"
 
+#include "nsBaseHashtable.h"
 #include "nsDocShell.h"
+#include "nsGenericHTMLElement.h"
+#include "nsIXULRuntime.h"
 #include "nsPIDOMWindow.h"
+#include "nsTHashMap.h"
+#include "nsTHashtable.h"
+#include "nsLayoutUtils.h"
+
+using namespace mozilla;
+using namespace mozilla::dom;
 
 namespace {
 constexpr auto kInput = u"input"_ns;
 constexpr auto kScroll = u"mozvisualscroll"_ns;
+constexpr auto kResize = u"mozvisualresize"_ns;
 
 static constexpr char kNoAutoUpdates[] =
     "browser.sessionstore.debug.no_auto_updates";
@@ -28,13 +40,28 @@ static constexpr char kInterval[] = "browser.sessionstore.interval";
 static const char* kObservedPrefs[] = {kNoAutoUpdates, kInterval, nullptr};
 }  // namespace
 
-namespace mozilla::dom {
+inline void ImplCycleCollectionUnlink(
+    SessionStoreChangeListener::SessionStoreChangeTable& aField) {
+  aField.Clear();
+}
+
+inline void ImplCycleCollectionTraverse(
+    nsCycleCollectionTraversalCallback& aCallback,
+    const SessionStoreChangeListener::SessionStoreChangeTable& aField,
+    const char* aName, uint32_t aFlags = 0) {
+  for (auto iter = aField.ConstIter(); !iter.Done(); iter.Next()) {
+    CycleCollectionNoteChild(aCallback, iter.Key(), aName, aFlags);
+  }
+}
 
 NS_IMPL_CYCLE_COLLECTION(SessionStoreChangeListener, mBrowsingContext,
-                         mCurrentEventTarget)
+                         mCurrentEventTarget, mSessionStoreChild,
+                         mSessionStoreChanges)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(SessionStoreChangeListener)
+  NS_INTERFACE_MAP_ENTRY(nsINamed)
   NS_INTERFACE_MAP_ENTRY(nsIObserver)
+  NS_INTERFACE_MAP_ENTRY(nsITimerCallback)
   NS_INTERFACE_MAP_ENTRY(nsIDOMEventListener)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIObserver)
 NS_INTERFACE_MAP_END
@@ -43,9 +70,21 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(SessionStoreChangeListener)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(SessionStoreChangeListener)
 
 NS_IMETHODIMP
+SessionStoreChangeListener::GetName(nsACString& aName) {
+  aName.AssignLiteral("SessionStoreChangeListener");
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+SessionStoreChangeListener::Notify(nsITimer* aTimer) {
+  FlushSessionStore();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 SessionStoreChangeListener::Observe(nsISupports* aSubject, const char* aTopic,
                                     const char16_t* aData) {
-  Flush();
+  FlushSessionStore();
   return NS_OK;
 }
 
@@ -62,51 +101,37 @@ SessionStoreChangeListener::HandleEvent(dom::Event* aEvent) {
     return NS_OK;
   }
 
-  WindowGlobalChild* windowChild = inner->GetWindowGlobalChild();
-  if (!windowChild) {
+  WindowContext* windowContext = inner->GetWindowContext();
+  if (!windowContext) {
     return NS_OK;
   }
 
-  RefPtr<BrowsingContext> browsingContext = windowChild->BrowsingContext();
+  RefPtr<BrowsingContext> browsingContext = windowContext->GetBrowsingContext();
   if (!browsingContext) {
     return NS_OK;
   }
 
-  bool dynamic = false;
-  BrowsingContext* current = browsingContext;
-  while (current) {
-    if ((dynamic = current->CreatedDynamically())) {
-      break;
-    }
-    current = current->GetParent();
-  }
-
-  if (dynamic) {
+  if (browsingContext->IsDynamic()) {
     return NS_OK;
   }
 
   nsAutoString eventType;
   aEvent->GetType(eventType);
 
-  RefPtr<SessionStoreDataCollector> collector =
-      SessionStoreDataCollector::CollectSessionStoreData(windowChild);
-
-  if (!collector) {
-    return NS_OK;
-  }
-
   if (eventType == kInput) {
-    collector->RecordInputChange();
+    RecordChange(windowContext, Change::Input);
   } else if (eventType == kScroll) {
-    collector->RecordScrollChange();
+    RecordChange(windowContext, Change::Scroll);
+  } else if (eventType == kResize && browsingContext->IsTop()) {
+    RecordChange(windowContext, Change::Resize);
   }
-
   return NS_OK;
 }
 
 /* static */ already_AddRefed<SessionStoreChangeListener>
 SessionStoreChangeListener::Create(BrowsingContext* aBrowsingContext) {
-  MOZ_RELEASE_ASSERT(SessionStoreUtils::NATIVE_LISTENER);
+  MOZ_RELEASE_ASSERT(
+      StaticPrefs::browser_sessionstore_platform_collection_AtStartup());
   if (!aBrowsingContext) {
     return nullptr;
   }
@@ -128,13 +153,186 @@ void SessionStoreChangeListener::UpdateEventTargets() {
   AddEventListeners();
 }
 
-void SessionStoreChangeListener::Flush() {
-  mBrowsingContext->FlushSessionStore();
+static void CollectFormData(Document* aDocument,
+                            Maybe<sessionstore::FormData>& aFormData) {
+  aFormData.emplace();
+  auto& formData = aFormData.ref();
+  uint32_t size = SessionStoreUtils::CollectFormData(aDocument, formData);
+
+  Element* body = aDocument->GetBody();
+  if (aDocument->HasFlag(NODE_IS_EDITABLE) && body) {
+    IgnoredErrorResult result;
+    body->GetInnerHTML(formData.innerHTML(), result);
+    size += formData.innerHTML().Length();
+    if (!result.Failed()) {
+      formData.hasData() = true;
+    }
+  }
+
+  if (!formData.hasData()) {
+    return;
+  }
+
+  nsIURI* documentURI = aDocument->GetDocumentURI();
+  if (!documentURI) {
+    return;
+  }
+
+  documentURI->GetSpecIgnoringRef(formData.uri());
+
+  if (size > StaticPrefs::browser_sessionstore_dom_form_max_limit()) {
+    aFormData = Nothing();
+  }
+}
+
+static void GetZoom(BrowsingContext* aBrowsingContext,
+                    Maybe<SessionStoreZoom>& aZoom) {
+  nsIDocShell* docShell = aBrowsingContext->GetDocShell();
+  if (!docShell) {
+    return;
+  }
+
+  PresShell* presShell = docShell->GetPresShell();
+  if (!presShell) {
+    return;
+  }
+
+  LayoutDeviceIntSize displaySize;
+
+  if (!nsLayoutUtils::GetContentViewerSize(presShell->GetPresContext(),
+                                           displaySize)) {
+    return;
+  }
+
+  aZoom.emplace(presShell->GetResolution(), displaySize.width,
+                displaySize.height);
+}
+
+void SessionStoreChangeListener::FlushSessionStore() {
+  if (mTimer) {
+    mTimer->Cancel();
+    mTimer = nullptr;
+  }
+
+  bool collectSessionHistory = false;
+  bool collectWireFrame = false;
+  bool didResize = false;
+
+  for (auto& iter : mSessionStoreChanges) {
+    WindowContext* windowContext = iter.GetKey();
+    if (!windowContext) {
+      continue;
+    }
+
+    BrowsingContext* browsingContext = windowContext->GetBrowsingContext();
+
+    // This is a bit unfortunate, but is needed when a window context with a
+    // recorded change has become non-current before its data has been
+    // collected. This can happen either due to navigation or destruction, and
+    // in the previous case we don't want to collect, but in the latter we do.
+    // This could be cleaned up if we change. See bug 1770773.
+    if (!windowContext->IsCurrent() && !browsingContext->IsDiscarded()) {
+      continue;
+    }
+
+    RefPtr<Document> document = windowContext->GetDocument();
+    if (!document) {
+      continue;
+    }
+
+    EnumSet<Change> changes = iter.GetData();
+    Maybe<sessionstore::FormData> maybeFormData;
+    if (changes.contains(Change::Input)) {
+      CollectFormData(document, maybeFormData);
+    }
+
+    Maybe<nsPoint> maybeScroll;
+    PresShell* presShell = document->GetPresShell();
+
+    if (presShell && changes.contains(Change::Scroll)) {
+      maybeScroll = Some(presShell->GetVisualViewportOffset());
+    }
+
+    collectWireFrame = collectWireFrame || changes.contains(Change::WireFrame);
+
+    collectSessionHistory =
+        collectSessionHistory || changes.contains(Change::SessionHistory);
+
+    if (presShell && changes.contains(Change::Resize)) {
+      didResize = true;
+    }
+
+    mSessionStoreChild->IncrementalSessionStoreUpdate(
+        browsingContext, maybeFormData, maybeScroll, mEpoch);
+  }
+
+  if (collectWireFrame) {
+    collectSessionHistory = CollectWireframe() || collectSessionHistory;
+  }
+
+  mSessionStoreChanges.Clear();
+
+  Maybe<SessionStoreZoom> zoom;
+  if (didResize) {
+    GetZoom(mBrowsingContext->Top(), zoom);
+  }
+
+  mSessionStoreChild->UpdateSessionStore(collectSessionHistory, zoom);
+}
+
+/* static */
+SessionStoreChangeListener* SessionStoreChangeListener::CollectSessionStoreData(
+    WindowContext* aWindowContext, const EnumSet<Change>& aChanges) {
+  SessionStoreChild* sessionStoreChild =
+      SessionStoreChild::From(aWindowContext->GetWindowGlobalChild());
+  if (!sessionStoreChild) {
+    return nullptr;
+  }
+
+  SessionStoreChangeListener* sessionStoreChangeListener =
+      sessionStoreChild->GetSessionStoreChangeListener();
+
+  if (!sessionStoreChangeListener) {
+    return nullptr;
+  }
+
+  sessionStoreChangeListener->RecordChange(aWindowContext, aChanges);
+
+  return sessionStoreChangeListener;
+}
+
+void SessionStoreChangeListener::SetActor(
+    SessionStoreChild* aSessionStoreChild) {
+  mSessionStoreChild = aSessionStoreChild;
+}
+
+bool SessionStoreChangeListener::CollectWireframe() {
+  if (auto* docShell = nsDocShell::Cast(mBrowsingContext->GetDocShell())) {
+    return docShell->CollectWireframe();
+  }
+
+  return false;
+}
+
+void SessionStoreChangeListener::RecordChange(WindowContext* aWindowContext,
+                                              EnumSet<Change> aChange) {
+  EnsureTimer();
+
+  Unused << mSessionStoreChanges.WithEntryHandle(
+      aWindowContext, [&](auto entryHandle) -> EnumSet<Change>& {
+        if (entryHandle) {
+          *entryHandle += aChange;
+          return *entryHandle;
+        }
+
+        return entryHandle.Insert(aChange);
+      });
 }
 
 SessionStoreChangeListener::SessionStoreChangeListener(
     BrowsingContext* aBrowsingContext)
-    : mBrowsingContext(aBrowsingContext) {}
+    : mBrowsingContext(aBrowsingContext),
+      mEpoch(aBrowsingContext->GetSessionStoreEpoch()) {}
 
 void SessionStoreChangeListener::Init() {
   AddEventListeners();
@@ -154,6 +352,9 @@ void SessionStoreChangeListener::AddEventListeners() {
   if (EventTarget* target = GetEventTarget()) {
     target->AddSystemEventListener(kInput, this, false);
     target->AddSystemEventListener(kScroll, this, false);
+    if (StaticPrefs::browser_sessionstore_collect_zoom_AtStartup()) {
+      target->AddSystemEventListener(kResize, this, false);
+    }
     mCurrentEventTarget = target;
   }
 }
@@ -162,9 +363,27 @@ void SessionStoreChangeListener::RemoveEventListeners() {
   if (mCurrentEventTarget) {
     mCurrentEventTarget->RemoveSystemEventListener(kInput, this, false);
     mCurrentEventTarget->RemoveSystemEventListener(kScroll, this, false);
+    if (StaticPrefs::browser_sessionstore_collect_zoom_AtStartup()) {
+      mCurrentEventTarget->RemoveSystemEventListener(kResize, this, false);
+    }
   }
 
   mCurrentEventTarget = nullptr;
 }
 
-}  // namespace mozilla::dom
+void SessionStoreChangeListener::EnsureTimer() {
+  if (mTimer) {
+    return;
+  }
+
+  if (!StaticPrefs::browser_sessionstore_debug_no_auto_updates()) {
+    auto result = NS_NewTimerWithCallback(
+        this, StaticPrefs::browser_sessionstore_interval(),
+        nsITimer::TYPE_ONE_SHOT);
+    if (result.isErr()) {
+      return;
+    }
+
+    mTimer = result.unwrap();
+  }
+}

@@ -127,7 +127,7 @@
 
     static get markup() {
       return `
-      <richlistbox class="autocomplete-richlistbox" flex="1"/>
+      <richlistbox class="autocomplete-richlistbox"/>
     `;
     }
 
@@ -354,11 +354,9 @@
       this._collapseUnusedItems();
 
       this.richlistbox.style.removeProperty("height");
-      // We need to get the ceiling of the calculated value to ensure that the box fully contains
-      // all of its contents and doesn't cause a scrollbar since nsIBoxObject only expects a
-      // `long`. e.g. if `height` is 99.5 the richlistbox would render at height 99px with a
-      // scrollbar for the extra 0.5px.
-      this.richlistbox.height = Math.ceil(height);
+      // We need to get the ceiling of the calculated value to ensure that the
+      // box fully contains all of its contents and doesn't cause a scrollbar.
+      this.richlistbox.style.height = Math.ceil(height) + "px";
     }
 
     _appendCurrentResult(invalidateReason) {
@@ -406,6 +404,7 @@
             "autofill-clear-button",
             "autofill-insecureWarning",
             "generatedPassword",
+            "generic",
             "importableLearnMore",
             "importableLogins",
             "insecureWarning",
@@ -437,6 +436,9 @@
               break;
             case "autofill-insecureWarning":
               options = { is: "autocomplete-creditcard-insecure-field" };
+              break;
+            case "generic":
+              options = { is: "autocomplete-generic-richlistitem" };
               break;
             case "importableLearnMore":
               options = {

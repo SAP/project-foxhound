@@ -6,7 +6,7 @@
 "use strict";
 
 /**
- * @fileOverview
+ * @file
  * This module is used for managing preferences from WebExtension APIs.
  * It takes care of the precedence chain and decides whether a preference
  * needs to be updated when a change is requested by an API.
@@ -20,30 +20,29 @@
  *              values that correspond to the prefs to be set.
  */
 
-var EXPORTED_SYMBOLS = ["ExtensionPreferencesManager"];
-
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const EXPORTED_SYMBOLS = ["ExtensionPreferencesManager"];
+let ExtensionPreferencesManager;
 
 const { Management } = ChromeUtils.import(
   "resource://gre/modules/Extension.jsm"
 );
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "ExtensionSettingsStore",
   "resource://gre/modules/ExtensionSettingsStore.jsm"
 );
+ChromeUtils.defineESModuleGetters(lazy, {
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
-  this,
-  "Preferences",
-  "resource://gre/modules/Preferences.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "ExtensionCommon",
   "resource://gre/modules/ExtensionCommon.jsm"
 );
@@ -54,8 +53,8 @@ const { ExtensionUtils } = ChromeUtils.import(
 
 const { ExtensionError } = ExtensionUtils;
 
-XPCOMUtils.defineLazyGetter(this, "defaultPreferences", function() {
-  return new Preferences({ defaultBranch: true });
+XPCOMUtils.defineLazyGetter(lazy, "defaultPreferences", function() {
+  return new lazy.Preferences({ defaultBranch: true });
 });
 
 /* eslint-disable mozilla/balanced-listeners */
@@ -99,7 +98,7 @@ let settingsMap = new Map();
  * initial value of the setting. It reads an array of preference names from
  * the this scope, which gets bound to a settings object.
  *
- * @returns {Object}
+ * @returns {object}
  *          An object with one property per preference, which holds the current
  *          value of that preference.
  */
@@ -107,8 +106,8 @@ function initialValueCallback() {
   let initialValue = {};
   for (let pref of this.prefNames) {
     // If there is a prior user-set value, get it.
-    if (Preferences.isSet(pref)) {
-      initialValue[pref] = Preferences.get(pref);
+    if (lazy.Preferences.isSet(pref)) {
+      initialValue[pref] = lazy.Preferences.get(pref);
     }
   }
   return initialValue;
@@ -118,8 +117,8 @@ function initialValueCallback() {
  * Updates the initialValue stored to exclude any values that match
  * default preference values.
  *
- * @param {Object} initialValue Initial Value data from settings store.
- * @returns {Object}
+ * @param {object} initialValue Initial Value data from settings store.
+ * @returns {object}
  *          The initialValue object after updating the values.
  */
 function settingsUpdate(initialValue) {
@@ -127,7 +126,7 @@ function settingsUpdate(initialValue) {
     try {
       if (
         initialValue[pref] !== undefined &&
-        initialValue[pref] === defaultPreferences.get(pref)
+        initialValue[pref] === lazy.defaultPreferences.get(pref)
       ) {
         initialValue[pref] = undefined;
       }
@@ -144,11 +143,11 @@ function settingsUpdate(initialValue) {
  *
  * @param {string} name
  *        The api name of the setting.
- * @param {Object} setting
+ * @param {object} setting
  *        An object that represents a setting, which will have a setCallback
  *        property. If a onPrefsChanged function is provided it will be called
  *        with item when the preferences change.
- * @param {Object} item
+ * @param {object} item
  *        An object that represents an item handed back from the setting store
  *        from which the new pref values can be calculated.
  */
@@ -157,12 +156,12 @@ function setPrefs(name, setting, item) {
   let changed = false;
   for (let pref of setting.prefNames) {
     if (prefs[pref] === undefined) {
-      if (Preferences.isSet(pref)) {
+      if (lazy.Preferences.isSet(pref)) {
         changed = true;
-        Preferences.reset(pref);
+        lazy.Preferences.reset(pref);
       }
-    } else if (Preferences.get(pref) != prefs[pref]) {
-      Preferences.set(pref, prefs[pref]);
+    } else if (lazy.Preferences.get(pref) != prefs[pref]) {
+      lazy.Preferences.set(pref, prefs[pref]);
       changed = true;
     }
   }
@@ -197,9 +196,9 @@ function setPrefs(name, setting, item) {
  *          if preferences were not set.
 */
 async function processSetting(id, name, action) {
-  await ExtensionSettingsStore.initialize();
-  let expectedItem = ExtensionSettingsStore.getSetting(STORE_TYPE, name);
-  let item = ExtensionSettingsStore[action](id, STORE_TYPE, name);
+  await lazy.ExtensionSettingsStore.initialize();
+  let expectedItem = lazy.ExtensionSettingsStore.getSetting(STORE_TYPE, name);
+  let item = lazy.ExtensionSettingsStore[action](id, STORE_TYPE, name);
   if (item) {
     let setting = settingsMap.get(name);
     let expectedPrefs =
@@ -207,7 +206,8 @@ async function processSetting(id, name, action) {
     if (
       Object.keys(expectedPrefs).some(
         pref =>
-          expectedPrefs[pref] && Preferences.get(pref) != expectedPrefs[pref]
+          expectedPrefs[pref] &&
+          lazy.Preferences.get(pref) != expectedPrefs[pref]
       )
     ) {
       return false;
@@ -218,7 +218,7 @@ async function processSetting(id, name, action) {
   return false;
 }
 
-this.ExtensionPreferencesManager = {
+ExtensionPreferencesManager = {
   /**
    * Adds a setting to the settingsMap. This is how an API tells the
    * preferences manager what its setting object is. The preferences
@@ -226,7 +226,7 @@ this.ExtensionPreferencesManager = {
    * automatically.
    *
    * @param {string} name The unique id of the setting.
-   * @param {Object} setting
+   * @param {object} setting
    *        A setting object that should have properties for
    *        prefNames, getCallback and setCallback.
    */
@@ -242,7 +242,7 @@ this.ExtensionPreferencesManager = {
    * @returns {string|number|boolean} The default value of the preference.
    */
   getDefaultValue(prefName) {
-    return defaultPreferences.get(prefName);
+    return lazy.defaultPreferences.get(prefName);
   },
 
   /**
@@ -286,8 +286,8 @@ this.ExtensionPreferencesManager = {
    */
   async setSetting(id, name, value) {
     let setting = settingsMap.get(name);
-    await ExtensionSettingsStore.initialize();
-    let item = await ExtensionSettingsStore.addSetting(
+    await lazy.ExtensionSettingsStore.initialize();
+    let item = await lazy.ExtensionSettingsStore.addSetting(
       id,
       STORE_TYPE,
       name,
@@ -378,8 +378,11 @@ this.ExtensionPreferencesManager = {
    *        The id of the extension for which all settings are being unset.
    */
   async disableAll(id) {
-    await ExtensionSettingsStore.initialize();
-    let settings = ExtensionSettingsStore.getAllForExtension(id, STORE_TYPE);
+    await lazy.ExtensionSettingsStore.initialize();
+    let settings = lazy.ExtensionSettingsStore.getAllForExtension(
+      id,
+      STORE_TYPE
+    );
     let disablePromises = [];
     for (let name of settings) {
       disablePromises.push(this.disableSetting(id, name));
@@ -395,8 +398,11 @@ this.ExtensionPreferencesManager = {
    *        The id of the extension for which all settings are being enabled.
    */
   async enableAll(id) {
-    await ExtensionSettingsStore.initialize();
-    let settings = ExtensionSettingsStore.getAllForExtension(id, STORE_TYPE);
+    await lazy.ExtensionSettingsStore.initialize();
+    let settings = lazy.ExtensionSettingsStore.getAllForExtension(
+      id,
+      STORE_TYPE
+    );
     let enablePromises = [];
     for (let name of settings) {
       enablePromises.push(this.enableSetting(id, name));
@@ -412,8 +418,11 @@ this.ExtensionPreferencesManager = {
    *        The id of the extension for which all settings are being unset.
    */
   async removeAll(id) {
-    await ExtensionSettingsStore.initialize();
-    let settings = ExtensionSettingsStore.getAllForExtension(id, STORE_TYPE);
+    await lazy.ExtensionSettingsStore.initialize();
+    let settings = lazy.ExtensionSettingsStore.getAllForExtension(
+      id,
+      STORE_TYPE
+    );
     let removePromises = [];
     for (let name of settings) {
       removePromises.push(this.removeSetting(id, name));
@@ -424,10 +433,12 @@ this.ExtensionPreferencesManager = {
   /**
    * Removes a set of settings that are available under certain addon permissions.
    *
-   * @param {string} id           The extension id.
-   * @param {array<string>}
-   *                 permissions   The permission name from the extension manifest.
-   * @returns {Promise}           A promise that resolves when all related settings are removed.
+   * @param {string} id
+   *        The extension id.
+   * @param {Array<string>} permissions
+   *        The permission name from the extension manifest.
+   * @returns {Promise}
+   *        A promise that resolves when all related settings are removed.
    */
   async removeSettingsForPermissions(id, permissions) {
     if (!permissions || !permissions.length) {
@@ -449,11 +460,11 @@ this.ExtensionPreferencesManager = {
    * @param {string} name
    *        The unique id of the setting.
    *
-   * @returns {Object} The current setting object.
+   * @returns {object} The current setting object.
    */
   async getSetting(name) {
-    await ExtensionSettingsStore.initialize();
-    return ExtensionSettingsStore.getSetting(STORE_TYPE, name);
+    await lazy.ExtensionSettingsStore.initialize();
+    return lazy.ExtensionSettingsStore.getSetting(STORE_TYPE, name);
   },
 
   /**
@@ -481,13 +492,13 @@ this.ExtensionPreferencesManager = {
         return "not_controllable";
       }
       for (let prefName of setting.prefNames) {
-        if (Preferences.locked(prefName)) {
+        if (lazy.Preferences.locked(prefName)) {
           return "not_controllable";
         }
       }
     }
-    await ExtensionSettingsStore.initialize();
-    return ExtensionSettingsStore.getLevelOfControl(id, storeType, name);
+    await lazy.ExtensionSettingsStore.initialize();
+    return lazy.ExtensionSettingsStore.getLevelOfControl(id, storeType, name);
   },
 
   /**
@@ -514,14 +525,14 @@ this.ExtensionPreferencesManager = {
     callback,
     storeType,
     readOnly = false,
-    validate = () => {}
+    validate
   ) {
     if (arguments.length > 1) {
       Services.console.logStringMessage(
         `ExtensionPreferencesManager.getSettingsAPI for ${name} should be updated to use a single paramater object.`
       );
     }
-    return ExtensionPreferencesManager._getSettingsAPI(
+    return ExtensionPreferencesManager._getInternalSettingsAPI(
       arguments.length === 1
         ? extensionId
         : {
@@ -532,17 +543,56 @@ this.ExtensionPreferencesManager = {
             readOnly,
             validate,
           }
-    );
+    ).api;
   },
 
   /**
-   * Returns an API object with get/set/clear used for a setting.
+   * getPrimedSettingsListener returns a function used to create
+   * a primed event listener.
+   *
+   * If a module overrides onChange then it must provide it's own
+   * persistent listener logic.  See homepage_override in browserSettings
+   * for an example.
+   *
+   * addSetting must be called prior to priming listeners.
+   *
+   * @param {object} config see getSettingsAPI
+   *        {Extension} extension, passed through to validate and used for extensionId
+   *        {string} name
+   *          The unique id of the settings api in the module, e.g. "settings"
+   * @returns {object} prime listener object
+   */
+  getPrimedSettingsListener(config) {
+    let { name, extension } = config;
+    if (!name || !extension) {
+      throw new Error(
+        `name and extension are required for getPrimedSettingListener`
+      );
+    }
+    if (!settingsMap.get(name)) {
+      throw new Error(
+        `addSetting must be called prior to getPrimedSettingListener`
+      );
+    }
+    return ExtensionPreferencesManager._getInternalSettingsAPI({
+      name,
+      extension,
+    }).registerEvent;
+  },
+
+  /**
+   * Returns an object with a public API containing get/set/clear used for a setting,
+   * and a registerEvent function used for registering the event listener.
    *
    * @param {object} params The params object contains the following:
    *        {BaseContext} context
+   *        {Extension} extension, optional, passed through to validate and used for extensionId
    *        {string} extensionId, optional to support old API
+   *        {string} module
+   *          The name of the api module, e.g. "proxy"
    *        {string} name
-   *          The unique id of the setting.
+   *          The unique id of the settings api in the module, e.g. "settings"
+   *          "name" should match the name given in the addSetting call.
    *        {Function} callback
    *          The function that retreives the current setting from prefs.
    *        {string} storeType
@@ -553,21 +603,30 @@ this.ExtensionPreferencesManager = {
    *          Utility function for any specific validation, such as checking
    *          for supported platform.  Function should throw an error if necessary.
    *
-   * @returns {object} API object with get/set/clear methods
+   * @returns {object} internal API object with
+   *          {object} api
+   *            the public api available to extensions
+   *          {Function} registerEvent
+   *            the registration function used for priming events
    */
-  _getSettingsAPI(params) {
+  _getInternalSettingsAPI(params) {
     let {
       extensionId,
       context,
+      extension,
+      module,
       name,
       callback,
       storeType,
       readOnly = false,
       onChange,
-      validate = () => {},
+      validate,
     } = params;
-    if (!extensionId) {
-      extensionId = context.extension.id;
+    if (context) {
+      extension = context.extension;
+    }
+    if (!extensionId && extension) {
+      extensionId = extension.id;
     }
 
     const checkScope = details => {
@@ -579,9 +638,18 @@ this.ExtensionPreferencesManager = {
       }
     };
 
+    // Check the setting for anything we may need.
+    let setting = settingsMap.get(name);
+    readOnly = readOnly || !!setting?.readOnly;
+    validate = validate || setting?.validate || (() => {});
+    let getValue = callback || setting?.getCallback;
+    if (!getValue || typeof getValue !== "function") {
+      throw new Error(`Invalid get callback for setting ${name} in ${module}`);
+    }
+
     let settingsAPI = {
       async get(details) {
-        validate();
+        validate(extension);
         let levelOfControl = details.incognito
           ? "not_controllable"
           : await ExtensionPreferencesManager.getLevelOfControl(
@@ -595,11 +663,11 @@ this.ExtensionPreferencesManager = {
             : levelOfControl;
         return {
           levelOfControl,
-          value: await callback(),
+          value: await getValue(),
         };
       },
       set(details) {
-        validate();
+        validate(extension);
         checkScope(details);
         if (!readOnly) {
           return ExtensionPreferencesManager.setSetting(
@@ -611,7 +679,7 @@ this.ExtensionPreferencesManager = {
         return false;
       },
       clear(details) {
-        validate();
+        validate(extension);
         checkScope(details);
         if (!readOnly) {
           return ExtensionPreferencesManager.removeSetting(extensionId, name);
@@ -620,34 +688,43 @@ this.ExtensionPreferencesManager = {
       },
       onChange,
     };
+    let registerEvent = fire => {
+      let listener = async () => {
+        fire.async(await settingsAPI.get({}));
+      };
+      Management.on(`extension-setting-changed:${name}`, listener);
+      return {
+        unregister: () => {
+          Management.off(`extension-setting-changed:${name}`, listener);
+        },
+        convert(_fire) {
+          fire = _fire;
+        },
+      };
+    };
+
     // Any caller using the old call signature will not have passed
     // context to us.  This should only be experimental addons in the
     // wild.
     if (onChange === undefined && context) {
       // Some settings that are read-only may not have called addSetting, in
       // which case we have no way to listen on the pref changes.
-      let setting = settingsMap.get(name);
-      if (!setting) {
+      if (setting) {
+        settingsAPI.onChange = new lazy.ExtensionCommon.EventManager({
+          context,
+          module,
+          event: name,
+          name: `${name}.onChange`,
+          register: fire => {
+            return registerEvent(fire).unregister;
+          },
+        }).api();
+      } else {
         Services.console.logStringMessage(
           `ExtensionPreferencesManager API ${name} created but addSetting was not called.`
         );
-        return settingsAPI;
       }
-
-      settingsAPI.onChange = new ExtensionCommon.EventManager({
-        context,
-        name: `${name}.onChange`,
-        register: fire => {
-          let listener = async () => {
-            fire.async(await settingsAPI.get({}));
-          };
-          Management.on(`extension-setting-changed:${name}`, listener);
-          return () => {
-            Management.off(`extension-setting-changed:${name}`, listener);
-          };
-        },
-      }).api();
     }
-    return settingsAPI;
+    return { api: settingsAPI, registerEvent };
   },
 };

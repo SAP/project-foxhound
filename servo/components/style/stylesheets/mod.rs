@@ -5,10 +5,12 @@
 //! Style sheets and their CSS rules.
 
 mod cascading_at_rule;
+pub mod container_rule;
 mod counter_style_rule;
 mod document_rule;
 mod font_face_rule;
 pub mod font_feature_values_rule;
+pub mod font_palette_values_rule;
 pub mod import_rule;
 pub mod keyframes_rule;
 pub mod layer_rule;
@@ -20,7 +22,6 @@ mod page_rule;
 mod rule_list;
 mod rule_parser;
 mod rules_iterator;
-pub mod scroll_timeline_rule;
 mod style_rule;
 mod stylesheet;
 pub mod supports_rule;
@@ -45,10 +46,12 @@ use style_traits::ParsingMode;
 #[cfg(feature = "gecko")]
 use to_shmem::{self, SharedMemoryBuilder, ToShmem};
 
+pub use self::container_rule::ContainerRule;
 pub use self::counter_style_rule::CounterStyleRule;
 pub use self::document_rule::DocumentRule;
 pub use self::font_face_rule::FontFaceRule;
 pub use self::font_feature_values_rule::FontFeatureValuesRule;
+pub use self::font_palette_values_rule::FontPaletteValuesRule;
 pub use self::import_rule::ImportRule;
 pub use self::keyframes_rule::KeyframesRule;
 pub use self::layer_rule::{LayerBlockRule, LayerStatementRule};
@@ -63,7 +66,6 @@ pub use self::rules_iterator::{AllRules, EffectiveRules};
 pub use self::rules_iterator::{
     EffectiveRulesIterator, NestedRuleIterationCondition, RulesIterator,
 };
-pub use self::scroll_timeline_rule::ScrollTimelineRule;
 pub use self::style_rule::StyleRule;
 pub use self::stylesheet::{AllowImportRules, SanitizationData, SanitizationKind};
 pub use self::stylesheet::{DocumentStyleSheet, Namespaces, Stylesheet};
@@ -253,8 +255,10 @@ pub enum CssRule {
     Import(Arc<Locked<ImportRule>>),
     Style(Arc<Locked<StyleRule>>),
     Media(Arc<Locked<MediaRule>>),
+    Container(Arc<Locked<ContainerRule>>),
     FontFace(Arc<Locked<FontFaceRule>>),
     FontFeatureValues(Arc<Locked<FontFeatureValuesRule>>),
+    FontPaletteValues(Arc<Locked<FontPaletteValuesRule>>),
     CounterStyle(Arc<Locked<CounterStyleRule>>),
     Viewport(Arc<Locked<ViewportRule>>),
     Keyframes(Arc<Locked<KeyframesRule>>),
@@ -263,7 +267,6 @@ pub enum CssRule {
     Document(Arc<Locked<DocumentRule>>),
     LayerBlock(Arc<Locked<LayerBlockRule>>),
     LayerStatement(Arc<Locked<LayerStatementRule>>),
-    ScrollTimeline(Arc<Locked<ScrollTimelineRule>>),
 }
 
 impl CssRule {
@@ -287,8 +290,13 @@ impl CssRule {
                 lock.unconditional_shallow_size_of(ops) + lock.read_with(guard).size_of(guard, ops)
             },
 
+            CssRule::Container(ref lock) => {
+                lock.unconditional_shallow_size_of(ops) + lock.read_with(guard).size_of(guard, ops)
+            },
+
             CssRule::FontFace(_) => 0,
             CssRule::FontFeatureValues(_) => 0,
+            CssRule::FontPaletteValues(_) => 0,
             CssRule::CounterStyle(_) => 0,
             CssRule::Viewport(_) => 0,
             CssRule::Keyframes(_) => 0,
@@ -306,7 +314,7 @@ impl CssRule {
             },
 
             // TODO(emilio): Add memory reporting for these rules.
-            CssRule::LayerBlock(_) | CssRule::LayerStatement(_) | CssRule::ScrollTimeline(_) => 0,
+            CssRule::LayerBlock(_) | CssRule::LayerStatement(_) => 0,
         }
     }
 }
@@ -343,7 +351,8 @@ pub enum CssRuleType {
     // a constant somewhere.
     LayerBlock = 16,
     LayerStatement = 17,
-    ScrollTimeline = 18,
+    Container = 18,
+    FontPaletteValues = 19,
 }
 
 #[allow(missing_docs)]
@@ -363,6 +372,7 @@ impl CssRule {
             CssRule::Media(_) => CssRuleType::Media,
             CssRule::FontFace(_) => CssRuleType::FontFace,
             CssRule::FontFeatureValues(_) => CssRuleType::FontFeatureValues,
+            CssRule::FontPaletteValues(_) => CssRuleType::FontPaletteValues,
             CssRule::CounterStyle(_) => CssRuleType::CounterStyle,
             CssRule::Keyframes(_) => CssRuleType::Keyframes,
             CssRule::Namespace(_) => CssRuleType::Namespace,
@@ -372,17 +382,7 @@ impl CssRule {
             CssRule::Document(_) => CssRuleType::Document,
             CssRule::LayerBlock(_) => CssRuleType::LayerBlock,
             CssRule::LayerStatement(_) => CssRuleType::LayerStatement,
-            CssRule::ScrollTimeline(_) => CssRuleType::ScrollTimeline,
-        }
-    }
-
-    fn rule_state(&self) -> State {
-        match *self {
-            // CssRule::Charset(..) => State::Start,
-            CssRule::Import(..) => State::Imports,
-            CssRule::Namespace(..) => State::Namespaces,
-            // TODO(emilio): Do we need something for EarlyLayers?
-            _ => State::Body,
+            CssRule::Container(_) => CssRuleType::Container,
         }
     }
 
@@ -460,6 +460,12 @@ impl DeepCloneWithLock for CssRule {
                     lock.wrap(rule.deep_clone_with_lock(lock, guard, params)),
                 ))
             },
+            CssRule::Container(ref arc) => {
+                let rule = arc.read_with(guard);
+                CssRule::Container(Arc::new(
+                    lock.wrap(rule.deep_clone_with_lock(lock, guard, params)),
+                ))
+            },
             CssRule::Media(ref arc) => {
                 let rule = arc.read_with(guard);
                 CssRule::Media(Arc::new(
@@ -473,6 +479,10 @@ impl DeepCloneWithLock for CssRule {
             CssRule::FontFeatureValues(ref arc) => {
                 let rule = arc.read_with(guard);
                 CssRule::FontFeatureValues(Arc::new(lock.wrap(rule.clone())))
+            },
+            CssRule::FontPaletteValues(ref arc) => {
+                let rule = arc.read_with(guard);
+                CssRule::FontPaletteValues(Arc::new(lock.wrap(rule.clone())))
             },
             CssRule::CounterStyle(ref arc) => {
                 let rule = arc.read_with(guard);
@@ -518,10 +528,6 @@ impl DeepCloneWithLock for CssRule {
                     lock.wrap(rule.deep_clone_with_lock(lock, guard, params)),
                 ))
             },
-            CssRule::ScrollTimeline(ref arc) => {
-                let rule = arc.read_with(guard);
-                CssRule::ScrollTimeline(Arc::new(lock.wrap(rule.clone())))
-            },
         }
     }
 }
@@ -535,6 +541,7 @@ impl ToCssWithGuard for CssRule {
             CssRule::Style(ref lock) => lock.read_with(guard).to_css(guard, dest),
             CssRule::FontFace(ref lock) => lock.read_with(guard).to_css(guard, dest),
             CssRule::FontFeatureValues(ref lock) => lock.read_with(guard).to_css(guard, dest),
+            CssRule::FontPaletteValues(ref lock) => lock.read_with(guard).to_css(guard, dest),
             CssRule::CounterStyle(ref lock) => lock.read_with(guard).to_css(guard, dest),
             CssRule::Viewport(ref lock) => lock.read_with(guard).to_css(guard, dest),
             CssRule::Keyframes(ref lock) => lock.read_with(guard).to_css(guard, dest),
@@ -544,7 +551,7 @@ impl ToCssWithGuard for CssRule {
             CssRule::Document(ref lock) => lock.read_with(guard).to_css(guard, dest),
             CssRule::LayerBlock(ref lock) => lock.read_with(guard).to_css(guard, dest),
             CssRule::LayerStatement(ref lock) => lock.read_with(guard).to_css(guard, dest),
-            CssRule::ScrollTimeline(ref lock) => lock.read_with(guard).to_css(guard, dest),
+            CssRule::Container(ref lock) => lock.read_with(guard).to_css(guard, dest),
         }
     }
 }

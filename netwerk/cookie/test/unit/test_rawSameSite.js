@@ -1,5 +1,4 @@
 const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function inChildProcess() {
   return Services.appinfo.processType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
@@ -55,8 +54,6 @@ add_task(async _ => {
     );
   }
 
-  let cs = Cc["@mozilla.org/cookieService;1"].getService(Ci.nsICookieService);
-
   let uri = NetUtil.newURI("http://example.org/");
 
   let principal = Services.scriptSecurityManager.createContentPrincipal(
@@ -97,7 +94,7 @@ add_task(async _ => {
       Services.obs.addObserver(observer, "cookie-saved-on-disk");
     });
 
-    cs.setCookieStringFromHttp(uri, test.cookie, channel);
+    Services.cookies.setCookieStringFromHttp(uri, test.cookie, channel);
 
     await promise;
 

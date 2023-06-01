@@ -29,13 +29,12 @@ const SEC_ASN1Template CERT_SubjectPublicKeyInfoTemplate[] = {
     { 0 }
 };
 
-const SEC_ASN1Template CERT_PublicKeyAndChallengeTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(CERTPublicKeyAndChallenge) },
-      { SEC_ASN1_ANY, offsetof(CERTPublicKeyAndChallenge, spki) },
-      { SEC_ASN1_IA5_STRING, offsetof(CERTPublicKeyAndChallenge, challenge) },
-      { 0 }
-    };
+const SEC_ASN1Template CERT_PublicKeyAndChallengeTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(CERTPublicKeyAndChallenge) },
+    { SEC_ASN1_ANY, offsetof(CERTPublicKeyAndChallenge, spki) },
+    { SEC_ASN1_IA5_STRING, offsetof(CERTPublicKeyAndChallenge, challenge) },
+    { 0 }
+};
 
 const SEC_ASN1Template SECKEY_RSAPublicKeyTemplate[] = {
     { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SECKEYPublicKey) },
@@ -50,27 +49,26 @@ static const SEC_ASN1Template seckey_PointerToAlgorithmIDTemplate[] = {
 };
 
 /* Parameters for SEC_OID_PKCS1_RSA_PSS_SIGNATURE */
-const SEC_ASN1Template SECKEY_RSAPSSParamsTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SECKEYRSAPSSParams) },
-      { SEC_ASN1_OPTIONAL | SEC_ASN1_CONSTRUCTED | SEC_ASN1_EXPLICIT |
-            SEC_ASN1_CONTEXT_SPECIFIC | 0,
-        offsetof(SECKEYRSAPSSParams, hashAlg),
-        seckey_PointerToAlgorithmIDTemplate },
-      { SEC_ASN1_OPTIONAL | SEC_ASN1_CONSTRUCTED | SEC_ASN1_EXPLICIT |
-            SEC_ASN1_CONTEXT_SPECIFIC | 1,
-        offsetof(SECKEYRSAPSSParams, maskAlg),
-        seckey_PointerToAlgorithmIDTemplate },
-      { SEC_ASN1_OPTIONAL | SEC_ASN1_CONSTRUCTED | SEC_ASN1_EXPLICIT |
-            SEC_ASN1_XTRN | SEC_ASN1_CONTEXT_SPECIFIC | 2,
-        offsetof(SECKEYRSAPSSParams, saltLength),
-        SEC_ASN1_SUB(SEC_IntegerTemplate) },
-      { SEC_ASN1_OPTIONAL | SEC_ASN1_CONSTRUCTED | SEC_ASN1_EXPLICIT |
-            SEC_ASN1_XTRN | SEC_ASN1_CONTEXT_SPECIFIC | 3,
-        offsetof(SECKEYRSAPSSParams, trailerField),
-        SEC_ASN1_SUB(SEC_IntegerTemplate) },
-      { 0 }
-    };
+const SEC_ASN1Template SECKEY_RSAPSSParamsTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SECKEYRSAPSSParams) },
+    { SEC_ASN1_OPTIONAL | SEC_ASN1_CONSTRUCTED | SEC_ASN1_EXPLICIT |
+          SEC_ASN1_CONTEXT_SPECIFIC | 0,
+      offsetof(SECKEYRSAPSSParams, hashAlg),
+      seckey_PointerToAlgorithmIDTemplate },
+    { SEC_ASN1_OPTIONAL | SEC_ASN1_CONSTRUCTED | SEC_ASN1_EXPLICIT |
+          SEC_ASN1_CONTEXT_SPECIFIC | 1,
+      offsetof(SECKEYRSAPSSParams, maskAlg),
+      seckey_PointerToAlgorithmIDTemplate },
+    { SEC_ASN1_OPTIONAL | SEC_ASN1_CONSTRUCTED | SEC_ASN1_EXPLICIT |
+          SEC_ASN1_XTRN | SEC_ASN1_CONTEXT_SPECIFIC | 2,
+      offsetof(SECKEYRSAPSSParams, saltLength),
+      SEC_ASN1_SUB(SEC_IntegerTemplate) },
+    { SEC_ASN1_OPTIONAL | SEC_ASN1_CONSTRUCTED | SEC_ASN1_EXPLICIT |
+          SEC_ASN1_XTRN | SEC_ASN1_CONTEXT_SPECIFIC | 3,
+      offsetof(SECKEYRSAPSSParams, trailerField),
+      SEC_ASN1_SUB(SEC_IntegerTemplate) },
+    { 0 }
+};
 
 const SEC_ASN1Template SECKEY_DSAPublicKeyTemplate[] = {
     { SEC_ASN1_INTEGER, offsetof(SECKEYPublicKey, u.dsa.publicValue) },
@@ -1046,14 +1044,18 @@ SECKEY_PublicKeyStrengthInBits(const SECKEYPublicKey *pubk)
 unsigned
 SECKEY_SignatureLen(const SECKEYPublicKey *pubk)
 {
-    unsigned char b0;
     unsigned size;
 
     switch (pubk->keyType) {
         case rsaKey:
         case rsaPssKey:
-            b0 = pubk->u.rsa.modulus.data[0];
-            return b0 ? pubk->u.rsa.modulus.len : pubk->u.rsa.modulus.len - 1;
+            if (pubk->u.rsa.modulus.len == 0) {
+                return 0;
+            }
+            if (pubk->u.rsa.modulus.data[0] == 0) {
+                return pubk->u.rsa.modulus.len - 1;
+            }
+            return pubk->u.rsa.modulus.len;
         case dsaKey:
             return pubk->u.dsa.params.subPrime.len * 2;
         case ecKey:

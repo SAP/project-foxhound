@@ -103,7 +103,6 @@ const MAX_TRIM_LENGTH = 100;
 /**
  * Services to determine if e10s is enabled.
  */
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 /**
  * nsIAccessibilityService service.
@@ -811,7 +810,7 @@ function statesToString(aStates, aExtraStates) {
     str += list.item(index) + ", ";
   }
 
-  if (list.length != 0) {
+  if (list.length) {
     str += list.item(index);
   }
 
@@ -848,11 +847,11 @@ function getTextFromClipboard() {
     return "";
   }
 
-  trans.addDataFlavor("text/unicode");
+  trans.addDataFlavor("text/plain");
   Services.clipboard.getData(trans, Services.clipboard.kGlobalClipboard);
 
   var str = {};
-  trans.getTransferData("text/unicode", str);
+  trans.getTransferData("text/plain", str);
 
   if (str) {
     str = str.value.QueryInterface(Ci.nsISupportsString);

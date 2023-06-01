@@ -1,19 +1,19 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-let { LoginBreaches } = ChromeUtils.import(
-  "resource:///modules/LoginBreaches.jsm"
+let { LoginBreaches } = ChromeUtils.importESModule(
+  "resource:///modules/LoginBreaches.sys.mjs"
 );
 let { RemoteSettings } = ChromeUtils.import(
   "resource://services-settings/remote-settings.js"
 );
-let { _AboutLogins } = ChromeUtils.import(
-  "resource:///actors/AboutLoginsParent.jsm"
+let { _AboutLogins } = ChromeUtils.importESModule(
+  "resource:///actors/AboutLoginsParent.sys.mjs"
 );
-let { OSKeyStoreTestUtils } = ChromeUtils.import(
-  "resource://testing-common/OSKeyStoreTestUtils.jsm"
+let { OSKeyStoreTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/OSKeyStoreTestUtils.sys.mjs"
 );
-let { LoginTestUtils } = ChromeUtils.import(
+var { LoginTestUtils } = ChromeUtils.import(
   "resource://testing-common/LoginTestUtils.jsm"
 );
 
@@ -81,14 +81,14 @@ async function addLogin(login) {
 
 let EXPECTED_BREACH = null;
 let EXPECTED_ERROR_MESSAGE = null;
-add_task(async function setup_head() {
-  const db = await RemoteSettings(LoginBreaches.REMOTE_SETTINGS_COLLECTION).db;
+add_setup(async function setup_head() {
+  const db = RemoteSettings(LoginBreaches.REMOTE_SETTINGS_COLLECTION).db;
   if (EXPECTED_BREACH) {
     await db.create(EXPECTED_BREACH, {
       useRecordId: true,
     });
   }
-  await db.importChanges({}, 42);
+  await db.importChanges({}, Date.now());
   if (EXPECTED_BREACH) {
     await RemoteSettings(LoginBreaches.REMOTE_SETTINGS_COLLECTION).emit(
       "sync",
@@ -103,7 +103,7 @@ add_task(async function setup_head() {
     }
 
     if (msg.errorMessage.includes('Unknown event: ["jsonfile", "load"')) {
-      // Ignore telemetry errors from JSONFile.jsm.
+      // Ignore telemetry errors from JSONFile.sys.mjs.
       return;
     }
 
@@ -158,7 +158,7 @@ add_task(async function setup_head() {
       // Ignore MarionetteEvents error (Bug 1730837, Bug 1710079).
       return;
     }
-    ok(false, msg.message || msg.errorMessage);
+    Assert.ok(false, msg.message || msg.errorMessage);
   });
 
   registerCleanupFunction(async () => {
@@ -170,11 +170,11 @@ add_task(async function setup_head() {
 });
 
 /**
- * Waits for the master password prompt and performs an action.
+ * Waits for the primary password prompt and performs an action.
  * @param {string} action Set to "authenticate" to log in or "cancel" to
  *        close the dialog without logging in.
  */
-function waitForMPDialog(action) {
+function waitForMPDialog(action, aWindow = window) {
   const BRAND_BUNDLE = Services.strings.createBundle(
     "chrome://branding/locale/brand.properties"
   );
@@ -183,16 +183,20 @@ function waitForMPDialog(action) {
   return dialogShown.then(function([subject]) {
     let dialog = subject.Dialog;
     let expected = "Password Required - " + BRAND_FULL_NAME;
-    is(dialog.args.title, expected, "Dialog is the Master Password dialog");
+    Assert.equal(
+      dialog.args.title,
+      expected,
+      "Dialog is the Primary Password dialog"
+    );
     if (action == "authenticate") {
       SpecialPowers.wrap(dialog.ui.password1Textbox).setUserInput(
-        LoginTestUtils.masterPassword.masterPassword
+        LoginTestUtils.primaryPassword.primaryPassword
       );
       dialog.ui.button0.click();
     } else if (action == "cancel") {
       dialog.ui.button1.click();
     }
-    return BrowserTestUtils.waitForEvent(window, "DOMModalDialogClosed");
+    return BrowserTestUtils.waitForEvent(aWindow, "DOMModalDialogClosed");
   });
 }
 
@@ -205,10 +209,10 @@ function waitForMPDialog(action) {
  *        close the dialog without logging in.
  * @returns {Promise} Resolves after the MP dialog has been presented and actioned upon
  */
-function forceAuthTimeoutAndWaitForMPDialog(action) {
-  const AUTH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes (duplicated from AboutLoginsParent.jsm)
+function forceAuthTimeoutAndWaitForMPDialog(action, aWindow = window) {
+  const AUTH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes (duplicated from AboutLoginsParent.sys.mjs)
   _AboutLogins._authExpirationTime -= AUTH_TIMEOUT_MS + 1;
-  return waitForMPDialog(action);
+  return waitForMPDialog(action, aWindow);
 }
 
 /**
@@ -220,7 +224,7 @@ function forceAuthTimeoutAndWaitForMPDialog(action) {
  * @returns {Promise} Resolves after the OS auth dialog has been presented
  */
 function forceAuthTimeoutAndWaitForOSKeyStoreLogin({ loginResult }) {
-  const AUTH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes (duplicated from AboutLoginsParent.jsm)
+  const AUTH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes (duplicated from AboutLoginsParent.sys.mjs)
   _AboutLogins._authExpirationTime -= AUTH_TIMEOUT_MS + 1;
   return OSKeyStoreTestUtils.waitForOSKeyStoreLogin(loginResult);
 }

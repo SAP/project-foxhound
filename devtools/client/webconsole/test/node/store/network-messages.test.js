@@ -4,15 +4,15 @@
 
 const {
   getAllNetworkMessagesUpdateById,
-} = require("devtools/client/webconsole/selectors/messages");
+} = require("resource://devtools/client/webconsole/selectors/messages.js");
 const {
   setupActions,
   setupStore,
   clonePacket,
-} = require("devtools/client/webconsole/test/node/helpers");
+} = require("resource://devtools/client/webconsole/test/node/helpers.js");
 const {
   stubPackets,
-} = require("devtools/client/webconsole/test/node/fixtures/stubs/index");
+} = require("resource://devtools/client/webconsole/test/node/fixtures/stubs/index.js");
 
 const expect = require("expect");
 
@@ -21,7 +21,7 @@ describe("Network message reducer:", () => {
   let getState;
   let dispatch;
 
-  before(() => {
+  beforeAll(() => {
     actions = setupActions();
   });
 
@@ -94,7 +94,7 @@ describe("Network message reducer:", () => {
           {
             id: "message1",
             data: {
-              securityInfo: securityInfo,
+              securityInfo,
             },
           },
         ])

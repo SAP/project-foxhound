@@ -2,16 +2,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, division
-
 import functools
 from collections import deque
+from functools import reduce
 
+import six
+
+from ..handlers import SummaryHandler
 from .base import BaseFormatter
 from .process import strstatus
-from ..handlers import SummaryHandler
-import six
-from functools import reduce
 
 
 def output_subtests(func):
@@ -128,14 +127,14 @@ class TbplFormatter(BaseFormatter):
                 rv.append("Crash dump filename: %s" % data["minidump_path"])
 
             if data.get("stackwalk_stderr"):
-                rv.append("stderr from minidump_stackwalk:")
+                rv.append("stderr from minidump-stackwalk:")
                 rv.append(data["stackwalk_stderr"])
             elif data.get("stackwalk_stdout"):
                 rv.append(data["stackwalk_stdout"])
 
             if data.get("stackwalk_returncode", 0) != 0:
                 rv.append(
-                    "minidump_stackwalk exited with return code %d"
+                    "minidump-stackwalk exited with return code %d"
                     % data["stackwalk_returncode"]
                 )
 

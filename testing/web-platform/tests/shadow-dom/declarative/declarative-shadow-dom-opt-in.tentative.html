@@ -5,7 +5,7 @@
 <link rel="help" href="https://github.com/whatwg/dom/issues/831">
 <script src="/resources/testharness.js"></script>
 <script src="/resources/testharnessreport.js"></script>
-<script src='../resources/shadow-dom-utils.js'></script>
+<script src='../../html/resources/common.js'></script>
 
 <body>
 <style>
@@ -17,7 +17,7 @@
 <div id=mainpage style="display:none">
   <div class=wrapper>
     <div class=host>
-      <template shadowroot=open>
+      <template shadowrootmode=open>
         <span class=content>Content</span>
       </template>
     </div>
@@ -29,7 +29,7 @@ const content = `
   <html><body>
   <div class=wrapper>
     <div class=host>
-      <template shadowroot=open>
+      <template shadowrootmode=open>
         <span class=content>Content</span>
       </template>
     </div>
@@ -49,7 +49,7 @@ function assert_dsd(el,shouldHaveShadow) {
     assert_true(!host.shadowRoot, 'Shadow root FOUND - none should be present.');
     const tmpl = host.querySelector('template');
     assert_true(!!tmpl, 'The template should be left as a <template> element');
-    assert_equals(tmpl.getAttribute('shadowroot'),'open','The shadowroot attribute should still be present');
+    assert_equals(tmpl.getAttribute('shadowrootmode'),'open','The shadowrootmode attribute should still be present');
     assert_true(!!tmpl.content.querySelector('.content'),'Unable to locate content');
   }
 }
@@ -59,8 +59,8 @@ test(() => {
   assert_dsd(div,true);
 }, 'Non-fragment parsing needs no opt-in');
 
-const noChildElements = ['iframe','noscript','script','select','style','textarea','title','colgroup'];
-const elements = HTML5_ELEMENT_NAMES.filter(el => !noChildElements.includes(el));
+const noChildElements = ['iframe','noscript','script','select','style','template','textarea','title','colgroup'];
+const elements = HTML5_ELEMENTS.filter(el => !noChildElements.includes(el));
 for (let elementName of elements) {
   var t = test(function() {
     const el1 = document.createElement(elementName);

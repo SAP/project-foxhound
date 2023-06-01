@@ -4,7 +4,6 @@
 
 var EXPORTED_SYMBOLS = ["PasswordEngine", "LoginRec", "PasswordValidator"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { Collection, CryptoWrapper } = ChromeUtils.import(
   "resource://services-sync/record.js"
 );
@@ -55,7 +54,6 @@ function LoginRec(collection, id) {
   CryptoWrapper.call(this, collection, id);
 }
 LoginRec.prototype = {
-  __proto__: CryptoWrapper.prototype,
   _logName: "Sync.Record.Login",
 
   cleartextToString() {
@@ -66,6 +64,7 @@ LoginRec.prototype = {
     return JSON.stringify(o);
   },
 };
+Object.setPrototypeOf(LoginRec.prototype, CryptoWrapper.prototype);
 
 Utils.deferGetSet(LoginRec, "cleartext", [
   "hostname",
@@ -83,7 +82,6 @@ function PasswordEngine(service) {
   SyncEngine.call(this, "Passwords", service);
 }
 PasswordEngine.prototype = {
-  __proto__: SyncEngine.prototype,
   _storeObj: PasswordStore,
   _trackerObj: PasswordTracker,
   _recordObj: LoginRec,
@@ -186,6 +184,7 @@ PasswordEngine.prototype = {
     return new PasswordValidator();
   },
 };
+Object.setPrototypeOf(PasswordEngine.prototype, SyncEngine.prototype);
 
 function PasswordStore(name, engine) {
   Store.call(this, name, engine);
@@ -196,8 +195,6 @@ function PasswordStore(name, engine) {
   );
 }
 PasswordStore.prototype = {
-  __proto__: Store.prototype,
-
   _newPropertyBag() {
     return Cc["@mozilla.org/hash-property-bag;1"].createInstance(
       Ci.nsIWritablePropertyBag2
@@ -260,7 +257,7 @@ PasswordStore.prototype = {
     let logins = Services.logins.searchLogins(prop);
     await Async.promiseYield(); // Yield back to main thread after synchronous operation.
 
-    if (logins.length > 0) {
+    if (logins.length) {
       this._log.trace(logins.length + " items matching " + id + " found.");
       return logins[0];
     }
@@ -383,13 +380,12 @@ PasswordStore.prototype = {
     Services.logins.removeAllUserFacingLogins();
   },
 };
+Object.setPrototypeOf(PasswordStore.prototype, Store.prototype);
 
 function PasswordTracker(name, engine) {
   LegacyTracker.call(this, name, engine);
 }
 PasswordTracker.prototype = {
-  __proto__: LegacyTracker.prototype,
-
   onStart() {
     Svc.Obs.add("passwordmgr-storage-changed", this.asyncObserver);
   },
@@ -462,6 +458,7 @@ PasswordTracker.prototype = {
     return true;
   },
 };
+Object.setPrototypeOf(PasswordTracker.prototype, LegacyTracker.prototype);
 
 class PasswordValidator extends CollectionValidator {
   constructor() {

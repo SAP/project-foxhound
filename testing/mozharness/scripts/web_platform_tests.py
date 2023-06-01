@@ -4,34 +4,30 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 # ***** END LICENSE BLOCK *****
-from __future__ import absolute_import
 import copy
 import gzip
 import json
 import os
 import sys
-
 from datetime import datetime, timedelta
 
 # load modules from parent dir
 sys.path.insert(1, os.path.dirname(sys.path[0]))
 
 import mozinfo
-
 from mozharness.base.errors import BaseErrorList
+from mozharness.base.log import INFO
 from mozharness.base.script import PreScriptAction
 from mozharness.base.vcs.vcsbase import MercurialScript
 from mozharness.mozilla.automation import TBPL_RETRY
+from mozharness.mozilla.structuredlog import StructuredOutputParser
 from mozharness.mozilla.testing.android import AndroidMixin
-from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
 from mozharness.mozilla.testing.codecoverage import (
     CodeCoverageMixin,
     code_coverage_config_options,
 )
 from mozharness.mozilla.testing.errors import WptHarnessErrorList
-
-from mozharness.mozilla.structuredlog import StructuredOutputParser
-from mozharness.base.log import INFO
+from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
 
 
 class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
@@ -52,6 +48,15 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
                     "dest": "e10s",
                     "default": True,
                     "help": "Run without e10s enabled",
+                },
+            ],
+            [
+                ["--disable-fission"],
+                {
+                    "action": "store_true",
+                    "dest": "disable_fission",
+                    "default": False,
+                    "help": "Run without fission enabled",
                 },
             ],
             [
@@ -281,9 +286,6 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
 
         mozinfo.find_and_update_from_json(dirs["abs_test_install_dir"])
 
-        # Default to fission disabled
-        fission_enabled = "fission.autostart=true" in c["extra_prefs"]
-
         raw_log_file, error_summary_file = self.get_indexed_logs(
             dirs["abs_blob_upload_dir"], "wpt"
         )
@@ -314,7 +316,7 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
             self.is_android
             or mozinfo.info["tsan"]
             or "wdspec" in test_types
-            or fission_enabled
+            or not c["disable_fission"]
             # Bug 1392106 - skia error 0x80070005: Access is denied.
             or is_windows_7
             and mozinfo.info["debug"]
@@ -344,8 +346,8 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
         if c["extra_prefs"]:
             cmd.extend(["--setpref={}".format(p) for p in c["extra_prefs"]])
 
-        if not fission_enabled and "fission.autostart=false" not in c["extra_prefs"]:
-            cmd.append("--setpref=fission.autostart=false")
+        if c["disable_fission"]:
+            cmd.append("--disable-fission")
 
         if not c["e10s"]:
             cmd.append("--disable-e10s")

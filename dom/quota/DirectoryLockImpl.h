@@ -8,6 +8,7 @@
 #define DOM_QUOTA_DIRECTORYLOCKIMPL_H_
 
 #include "mozilla/InitializedOnce.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/dom/FlippedOnce.h"
 #include "mozilla/dom/quota/CommonMetadata.h"
 #include "mozilla/dom/quota/DirectoryLock.h"
@@ -29,6 +30,7 @@ class DirectoryLockImpl final : public ClientDirectoryLock,
   LazyInitializedOnceEarlyDestructible<
       const NotNull<RefPtr<OpenDirectoryListener>>>
       mOpenListener;
+  MozPromiseHolder<BoolPromise> mAcquirePromiseHolder;
 
   nsTArray<NotNull<DirectoryLockImpl*>> mBlocking;
   nsTArray<NotNull<DirectoryLockImpl*>> mBlockedOn;
@@ -46,6 +48,10 @@ class DirectoryLockImpl final : public ClientDirectoryLock,
   bool mRegistered;
   FlippedOnce<true> mPending;
   FlippedOnce<false> mInvalidated;
+
+#ifdef DEBUG
+  FlippedOnce<false> mAcquired;
+#endif
 
  public:
   DirectoryLockImpl(MovingNotNull<RefPtr<QuotaManager>> aQuotaManager,
@@ -171,7 +177,17 @@ class DirectoryLockImpl final : public ClientDirectoryLock,
 
   void Acquire(RefPtr<OpenDirectoryListener> aOpenListener) override;
 
+  RefPtr<BoolPromise> Acquire() override;
+
   void AcquireImmediately() override;
+
+  void AssertIsAcquiredExclusively() override
+#ifdef DEBUG
+      ;
+#else
+  {
+  }
+#endif
 
   void Log() const override;
 
@@ -248,6 +264,8 @@ class DirectoryLockImpl final : public ClientDirectoryLock,
         aOriginScope, aClientType, aExclusive, aInternal,
         aShouldUpdateLockIdTableFlag);
   }
+
+  void AcquireInternal();
 };
 
 }  // namespace mozilla::dom::quota

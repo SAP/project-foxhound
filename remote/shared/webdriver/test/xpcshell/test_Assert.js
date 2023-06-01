@@ -5,11 +5,11 @@
 "use strict";
 /* eslint-disable no-array-constructor, no-new-object */
 
-const { assert } = ChromeUtils.import(
-  "chrome://remote/content/shared/webdriver/Assert.jsm"
+const { assert } = ChromeUtils.importESModule(
+  "chrome://remote/content/shared/webdriver/Assert.sys.mjs"
 );
-const { error } = ChromeUtils.import(
-  "chrome://remote/content/shared/webdriver/Errors.jsm"
+const { error } = ChromeUtils.importESModule(
+  "chrome://remote/content/shared/webdriver/Errors.sys.mjs"
 );
 
 add_test(function test_session() {
@@ -114,6 +114,21 @@ add_test(function test_positiveInteger() {
   Assert.throws(() => assert.positiveInteger(-1), /InvalidArgumentError/);
   Assert.throws(() => assert.positiveInteger("foo"), /InvalidArgumentError/);
   Assert.throws(() => assert.positiveInteger("foo", "custom"), /custom/);
+
+  run_next_test();
+});
+
+add_test(function test_positiveNumber() {
+  assert.positiveNumber(1);
+  assert.positiveNumber(0);
+  assert.positiveNumber(1.1);
+  assert.positiveNumber(Number.MAX_VALUE);
+  // eslint-disable-next-line no-loss-of-precision
+  Assert.throws(() => assert.positiveNumber(1.8e308), /InvalidArgumentError/);
+  Assert.throws(() => assert.positiveNumber(-1), /InvalidArgumentError/);
+  Assert.throws(() => assert.positiveNumber(Infinity), /InvalidArgumentError/);
+  Assert.throws(() => assert.positiveNumber("foo"), /InvalidArgumentError/);
+  Assert.throws(() => assert.positiveNumber("foo", "custom"), /custom/);
 
   run_next_test();
 });

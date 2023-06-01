@@ -19,6 +19,7 @@
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "modules/rtp_rtcp/source/rtp_rtcp_impl2.h"
+#include "rtc_base/thread.h"
 #include "test/field_trial.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
@@ -82,6 +83,7 @@ class RtpSenderAudioTest : public ::testing::Test {
     rtp_module_->SetSequenceNumber(kSeqNum);
   }
 
+  rtc::AutoThread main_thread_;
   SimulatedClock fake_clock_;
   LoopbackTransportTest transport_;
   std::unique_ptr<ModuleRtpRtcpImpl2> rtp_module_;
@@ -106,7 +108,7 @@ TEST_F(RtpSenderAudioTest, SendAudio) {
 
 TEST_F(RtpSenderAudioTest, SendAudioWithAudioLevelExtension) {
   EXPECT_EQ(0, rtp_sender_audio_->SetAudioLevel(kAudioLevel));
-  rtp_module_->RegisterRtpHeaderExtension(AudioLevel::kUri,
+  rtp_module_->RegisterRtpHeaderExtension(AudioLevel::Uri(),
                                           kAudioLevelExtensionId);
 
   const char payload_name[] = "PAYLOAD_NAME";
@@ -148,8 +150,17 @@ TEST_F(RtpSenderAudioTest, SendAudioWithoutAbsoluteCaptureTime) {
                    .HasExtension<AbsoluteCaptureTimeExtension>());
 }
 
+// Essentially the same test as
+// SendAudioWithAbsoluteCaptureTimeWithCaptureClockOffset but with a field
+// trial. We will remove this test eventually.
 TEST_F(RtpSenderAudioTest, SendAudioWithAbsoluteCaptureTime) {
-  rtp_module_->RegisterRtpHeaderExtension(AbsoluteCaptureTimeExtension::kUri,
+  // Recreate rtp_sender_audio_ with new field trial.
+  test::ScopedFieldTrials field_trial(
+      "WebRTC-IncludeCaptureClockOffset/Disabled/");
+  rtp_sender_audio_ =
+      std::make_unique<RTPSenderAudio>(&fake_clock_, rtp_module_->RtpSender());
+
+  rtp_module_->RegisterRtpHeaderExtension(AbsoluteCaptureTimeExtension::Uri(),
                                           kAbsoluteCaptureTimeExtensionId);
   constexpr uint32_t kAbsoluteCaptureTimestampMs = 521;
   const char payload_name[] = "audio";
@@ -174,18 +185,9 @@ TEST_F(RtpSenderAudioTest, SendAudioWithAbsoluteCaptureTime) {
       absolute_capture_time->estimated_capture_clock_offset.has_value());
 }
 
-// Essentially the same test as SendAudioWithAbsoluteCaptureTime but with a
-// field trial. After the field trial is experimented, we will remove
-// SendAudioWithAbsoluteCaptureTime.
 TEST_F(RtpSenderAudioTest,
        SendAudioWithAbsoluteCaptureTimeWithCaptureClockOffset) {
-  // Recreate rtp_sender_audio_ wieh new field trial.
-  test::ScopedFieldTrials field_trial(
-      "WebRTC-IncludeCaptureClockOffset/Enabled/");
-  rtp_sender_audio_ =
-      std::make_unique<RTPSenderAudio>(&fake_clock_, rtp_module_->RtpSender());
-
-  rtp_module_->RegisterRtpHeaderExtension(AbsoluteCaptureTimeExtension::kUri,
+  rtp_module_->RegisterRtpHeaderExtension(AbsoluteCaptureTimeExtension::Uri(),
                                           kAbsoluteCaptureTimeExtensionId);
   constexpr uint32_t kAbsoluteCaptureTimestampMs = 521;
   const char payload_name[] = "audio";

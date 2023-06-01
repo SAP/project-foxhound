@@ -57,11 +57,10 @@ class nsHTMLButtonControlFrame : public nsContainerFrame,
                                   ComputedStyle* aComputedStyle) override;
 
 #ifdef DEBUG
-  virtual void AppendFrames(ChildListID aListID,
-                            nsFrameList& aFrameList) override;
-  virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
-                            const nsLineList::iterator* aPrevFrameLine,
-                            nsFrameList& aFrameList) override;
+  void AppendFrames(ChildListID aListID, nsFrameList&& aFrameList) override;
+  void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                    const nsLineList::iterator* aPrevFrameLine,
+                    nsFrameList&& aFrameList) override;
   virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
 #endif
 
@@ -74,8 +73,6 @@ class nsHTMLButtonControlFrame : public nsContainerFrame,
     return MakeFrameName(u"HTMLButtonControl"_ns, aResult);
   }
 #endif
-
-  virtual bool HonorPrintBackgroundSettings() const override { return false; }
 
   // nsIFormControlFrame
   void SetFocus(bool aOn, bool aRepaint) override;

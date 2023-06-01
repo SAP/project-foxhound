@@ -9,11 +9,13 @@ pub fn map_texture_usage(usage: crate::TextureUses) -> mtl::MTLTextureUsage {
     );
     mtl_usage.set(
         mtl::MTLTextureUsage::ShaderRead,
-        usage.intersects(Tu::RESOURCE | Tu::DEPTH_STENCIL_READ | Tu::STORAGE_READ),
+        usage.intersects(
+            Tu::RESOURCE | Tu::DEPTH_STENCIL_READ | Tu::STORAGE_READ | Tu::STORAGE_READ_WRITE,
+        ),
     );
     mtl_usage.set(
         mtl::MTLTextureUsage::ShaderWrite,
-        usage.intersects(Tu::STORAGE_WRITE),
+        usage.intersects(Tu::STORAGE_READ_WRITE),
     );
 
     mtl_usage
@@ -73,6 +75,7 @@ pub fn map_border_color(border_color: wgt::SamplerBorderColor) -> mtl::MTLSample
         wgt::SamplerBorderColor::TransparentBlack => TransparentBlack,
         wgt::SamplerBorderColor::OpaqueBlack => OpaqueBlack,
         wgt::SamplerBorderColor::OpaqueWhite => OpaqueWhite,
+        wgt::SamplerBorderColor::Zero => unreachable!(),
     }
 }
 

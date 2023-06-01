@@ -1,7 +1,12 @@
+/*!
+Shader validator.
+*/
+
 mod analyzer;
 mod compose;
 mod expression;
 mod function;
+mod handles;
 mod interface;
 mod r#type;
 
@@ -10,7 +15,7 @@ use crate::arena::{Arena, UniqueArena};
 
 use crate::{
     arena::Handle,
-    proc::{InvalidBaseType, Layouter},
+    proc::{LayoutError, Layouter},
     FastHashSet,
 };
 use bit_set::BitSet;
@@ -27,8 +32,25 @@ pub use function::{CallError, FunctionError, LocalVariableError};
 pub use interface::{EntryPointError, GlobalVariableError, VaryingError};
 pub use r#type::{Disalignment, TypeError, TypeFlags};
 
+use self::handles::InvalidHandleError;
+
 bitflags::bitflags! {
     /// Validation flags.
+    ///
+    /// If you are working with trusted shaders, then you may be able
+    /// to save some time by skipping validation.
+    ///
+    /// If you do not perform full validation, invalid shaders may
+    /// cause Naga to panic. If you do perform full validation and
+    /// [`Validator::validate`] returns `Ok`, then Naga promises that
+    /// code generation will either succeed or return an error; it
+    /// should never panic.
+    ///
+    /// The default value for `ValidationFlags` is
+    /// `ValidationFlags::all()`. If Naga's `"validate"` feature is
+    /// enabled, this requests full validation; otherwise, this
+    /// requests no validation. (The `"validate"` feature is disabled
+    /// by default.)
     #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
     #[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
     pub struct ValidationFlags: u8 {
@@ -47,6 +69,9 @@ bitflags::bitflags! {
         /// Constants.
         #[cfg(feature = "validate")]
         const CONSTANTS = 0x10;
+        /// Group, binding, and location attributes.
+        #[cfg(feature = "validate")]
+        const BINDINGS = 0x20;
     }
 }
 
@@ -62,13 +87,25 @@ bitflags::bitflags! {
     #[derive(Default)]
     #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
     #[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
-    pub struct Capabilities: u8 {
-        /// Support for `StorageClass:PushConstant`.
+    pub struct Capabilities: u16 {
+        /// Support for [`AddressSpace:PushConstant`].
         const PUSH_CONSTANT = 0x1;
         /// Float values with width = 8.
         const FLOAT64 = 0x2;
-        /// Support for `Builtin:PrimitiveIndex`.
+        /// Support for [`Builtin:PrimitiveIndex`].
         const PRIMITIVE_INDEX = 0x4;
+        /// Support for non-uniform indexing of sampled textures and storage buffer arrays.
+        const SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING = 0x8;
+        /// Support for non-uniform indexing of uniform buffers and storage texture arrays.
+        const UNIFORM_BUFFER_AND_STORAGE_TEXTURE_ARRAY_NON_UNIFORM_INDEXING = 0x10;
+        /// Support for non-uniform indexing of samplers.
+        const SAMPLER_NON_UNIFORM_INDEXING = 0x20;
+        /// Support for [`Builtin::ClipDistance`].
+        const CLIP_DISTANCE = 0x40;
+        /// Support for [`Builtin::CullDistance`].
+        const CULL_DISTANCE = 0x80;
+        /// Support for 16-bit normalized storage texture formats.
+        const STORAGE_TEXTURE_16BIT_NORM_FORMATS = 0x100;
     }
 }
 
@@ -87,8 +124,16 @@ bitflags::bitflags! {
 #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
 #[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
 pub struct ModuleInfo {
+    type_flags: Vec<TypeFlags>,
     functions: Vec<FunctionInfo>,
     entry_points: Vec<FunctionInfo>,
+}
+
+impl ops::Index<Handle<crate::Type>> for ModuleInfo {
+    type Output = TypeFlags;
+    fn index(&self, handle: Handle<crate::Type>) -> &Self::Output {
+        &self.type_flags[handle.index()]
+    }
 }
 
 impl ops::Index<Handle<crate::Function>> for ModuleInfo {
@@ -127,41 +172,38 @@ pub enum ConstantError {
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum ValidationError {
     #[error(transparent)]
-    Layouter(#[from] InvalidBaseType),
+    InvalidHandle(#[from] InvalidHandleError),
+    #[error(transparent)]
+    Layouter(#[from] LayoutError),
     #[error("Type {handle:?} '{name}' is invalid")]
     Type {
         handle: Handle<crate::Type>,
         name: String,
-        #[source]
-        error: TypeError,
+        source: TypeError,
     },
     #[error("Constant {handle:?} '{name}' is invalid")]
     Constant {
         handle: Handle<crate::Constant>,
         name: String,
-        #[source]
-        error: ConstantError,
+        source: ConstantError,
     },
     #[error("Global variable {handle:?} '{name}' is invalid")]
     GlobalVariable {
         handle: Handle<crate::GlobalVariable>,
         name: String,
-        #[source]
-        error: GlobalVariableError,
+        source: GlobalVariableError,
     },
     #[error("Function {handle:?} '{name}' is invalid")]
     Function {
         handle: Handle<crate::Function>,
         name: String,
-        #[source]
-        error: FunctionError,
+        source: FunctionError,
     },
     #[error("Entry point {name} at {stage:?} is invalid")]
     EntryPoint {
         stage: crate::ShaderStage,
         name: String,
-        #[source]
-        error: EntryPointError,
+        source: EntryPointError,
     },
     #[error("Module is corrupted")]
     Corrupted,
@@ -169,7 +211,7 @@ pub enum ValidationError {
 
 impl crate::TypeInner {
     #[cfg(feature = "validate")]
-    fn is_sized(&self) -> bool {
+    const fn is_sized(&self) -> bool {
         match *self {
             Self::Scalar { .. }
             | Self::Vector { .. }
@@ -182,26 +224,29 @@ impl crate::TypeInner {
             | Self::Pointer { .. }
             | Self::ValuePointer { .. }
             | Self::Struct { .. } => true,
-            Self::Array { .. } | Self::Image { .. } | Self::Sampler { .. } => false,
+            Self::Array { .. }
+            | Self::Image { .. }
+            | Self::Sampler { .. }
+            | Self::BindingArray { .. } => false,
         }
     }
 
     /// Return the `ImageDimension` for which `self` is an appropriate coordinate.
     #[cfg(feature = "validate")]
-    fn image_storage_coordinates(&self) -> Option<crate::ImageDimension> {
+    const fn image_storage_coordinates(&self) -> Option<crate::ImageDimension> {
         match *self {
             Self::Scalar {
-                kind: crate::ScalarKind::Sint,
+                kind: crate::ScalarKind::Sint | crate::ScalarKind::Uint,
                 ..
             } => Some(crate::ImageDimension::D1),
             Self::Vector {
                 size: crate::VectorSize::Bi,
-                kind: crate::ScalarKind::Sint,
+                kind: crate::ScalarKind::Sint | crate::ScalarKind::Uint,
                 ..
             } => Some(crate::ImageDimension::D2),
             Self::Vector {
                 size: crate::VectorSize::Tri,
-                kind: crate::ScalarKind::Sint,
+                kind: crate::ScalarKind::Sint | crate::ScalarKind::Uint,
                 ..
             } => Some(crate::ImageDimension::D3),
             _ => None,
@@ -223,6 +268,17 @@ impl Validator {
             valid_expression_list: Vec::new(),
             valid_expression_set: BitSet::new(),
         }
+    }
+
+    /// Reset the validator internals
+    pub fn reset(&mut self) {
+        self.types.clear();
+        self.layouter.clear();
+        self.location_mask.clear();
+        self.bind_group_masks.clear();
+        self.select_cases.clear();
+        self.valid_expression_list.clear();
+        self.valid_expression_set.clear();
     }
 
     #[cfg(feature = "validate")]
@@ -270,11 +326,16 @@ impl Validator {
         &mut self,
         module: &crate::Module,
     ) -> Result<ModuleInfo, WithSpan<ValidationError>> {
+        self.reset();
         self.reset_types(module.types.len());
+
+        #[cfg(feature = "validate")]
+        Self::validate_module_handles(module).map_err(|e| e.with_span())?;
+
         self.layouter
             .update(&module.types, &module.constants)
             .map_err(|e| {
-                let InvalidBaseType(handle) = e;
+                let handle = e.ty;
                 ValidationError::from(e).with_span_handle(handle, &module.types)
             })?;
 
@@ -282,58 +343,60 @@ impl Validator {
         if self.flags.contains(ValidationFlags::CONSTANTS) {
             for (handle, constant) in module.constants.iter() {
                 self.validate_constant(handle, &module.constants, &module.types)
-                    .map_err(|error| {
+                    .map_err(|source| {
                         ValidationError::Constant {
                             handle,
                             name: constant.name.clone().unwrap_or_default(),
-                            error,
+                            source,
                         }
                         .with_span_handle(handle, &module.constants)
                     })?
             }
         }
 
+        let mut mod_info = ModuleInfo {
+            type_flags: Vec::with_capacity(module.types.len()),
+            functions: Vec::with_capacity(module.functions.len()),
+            entry_points: Vec::with_capacity(module.entry_points.len()),
+        };
+
         for (handle, ty) in module.types.iter() {
             let ty_info = self
                 .validate_type(handle, &module.types, &module.constants)
-                .map_err(|error| {
+                .map_err(|source| {
                     ValidationError::Type {
                         handle,
                         name: ty.name.clone().unwrap_or_default(),
-                        error,
+                        source,
                     }
                     .with_span_handle(handle, &module.types)
                 })?;
+            mod_info.type_flags.push(ty_info.flags);
             self.types[handle.index()] = ty_info;
         }
 
         #[cfg(feature = "validate")]
         for (var_handle, var) in module.global_variables.iter() {
             self.validate_global_var(var, &module.types)
-                .map_err(|error| {
+                .map_err(|source| {
                     ValidationError::GlobalVariable {
                         handle: var_handle,
                         name: var.name.clone().unwrap_or_default(),
-                        error,
+                        source,
                     }
                     .with_span_handle(var_handle, &module.global_variables)
                 })?;
         }
 
-        let mut mod_info = ModuleInfo {
-            functions: Vec::with_capacity(module.functions.len()),
-            entry_points: Vec::with_capacity(module.entry_points.len()),
-        };
-
         for (handle, fun) in module.functions.iter() {
-            match self.validate_function(fun, module, &mod_info) {
+            match self.validate_function(fun, module, &mod_info, false) {
                 Ok(info) => mod_info.functions.push(info),
                 Err(error) => {
-                    return Err(error.and_then(|error| {
+                    return Err(error.and_then(|source| {
                         ValidationError::Function {
                             handle,
                             name: fun.name.clone().unwrap_or_default(),
-                            error,
+                            source,
                         }
                         .with_span_handle(handle, &module.functions)
                     }))
@@ -347,7 +410,7 @@ impl Validator {
                 return Err(ValidationError::EntryPoint {
                     stage: ep.stage,
                     name: ep.name.clone(),
-                    error: EntryPointError::Conflict,
+                    source: EntryPointError::Conflict,
                 }
                 .with_span()); // TODO: keep some EP span information?
             }
@@ -355,18 +418,35 @@ impl Validator {
             match self.validate_entry_point(ep, module, &mod_info) {
                 Ok(info) => mod_info.entry_points.push(info),
                 Err(error) => {
-                    return Err(error.and_then(|inner| {
+                    return Err(error.and_then(|source| {
                         ValidationError::EntryPoint {
                             stage: ep.stage,
                             name: ep.name.clone(),
-                            error: inner,
+                            source,
                         }
                         .with_span()
-                    }))
+                    }));
                 }
             }
         }
 
         Ok(mod_info)
     }
+}
+
+#[cfg(feature = "validate")]
+fn validate_atomic_compare_exchange_struct(
+    types: &UniqueArena<crate::Type>,
+    members: &[crate::StructMember],
+    scalar_predicate: impl FnOnce(&crate::TypeInner) -> bool,
+) -> bool {
+    members.len() == 2
+        && members[0].name.as_deref() == Some("old_value")
+        && scalar_predicate(&types[members[0].ty].inner)
+        && members[1].name.as_deref() == Some("exchanged")
+        && types[members[1].ty].inner
+            == crate::TypeInner::Scalar {
+                kind: crate::ScalarKind::Bool,
+                width: crate::BOOL_WIDTH,
+            }
 }

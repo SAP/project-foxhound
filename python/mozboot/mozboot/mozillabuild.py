@@ -2,15 +2,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import ctypes
 import os
 import platform
-import sys
 import subprocess
-
+import sys
 from pathlib import Path
+
+from mozbuild.util import mozilla_build_version
+from packaging.version import Version
+
 from mozboot.base import BaseBootstrapper
 
 
@@ -143,7 +144,24 @@ class MozillaBuildBootstrapper(BaseBootstrapper):
         # Mercurial upstream sometimes doesn't upload wheels, and building
         # from source requires MS Visual C++ 9.0. So we force pip to install
         # the last version that comes with wheels.
-        self.pip_install("mercurial", "--only-binary", "mercurial")
+        if mozilla_build_version() >= Version("4.0"):
+            pip_dir = (
+                Path(os.environ["MOZILLABUILD"]) / "python3" / "Scripts" / "pip.exe"
+            )
+        else:
+            pip_dir = (
+                Path(os.environ["MOZILLABUILD"]) / "python" / "Scripts" / "pip.exe"
+            )
+
+        command = [
+            str(pip_dir),
+            "install",
+            "--upgrade",
+            "mercurial",
+            "--only-binary",
+            "mercurial",
+        ]
+        self.run(command)
 
     def install_browser_packages(self, mozconfig_builder):
         pass
@@ -212,44 +230,11 @@ class MozillaBuildBootstrapper(BaseBootstrapper):
     def ensure_sccache_packages(self):
         from mozboot import sccache
 
-        self.install_toolchain_artifact("sccache")
         self.install_toolchain_artifact(sccache.RUSTC_DIST_TOOLCHAIN, no_unpack=True)
         self.install_toolchain_artifact(sccache.CLANG_DIST_TOOLCHAIN, no_unpack=True)
-
-    def ensure_stylo_packages(self):
-        # On-device artifact builds are supported; on-device desktop builds are not.
-        if is_aarch64_host():
-            raise Exception(
-                "You should not be performing desktop builds on an "
-                "AArch64 device.  If you want to do artifact builds "
-                "instead, please choose the appropriate artifact build "
-                "option when beginning bootstrap."
-            )
-
-        self.install_toolchain_artifact("clang")
-        self.install_toolchain_artifact("cbindgen")
-
-    def ensure_nasm_packages(self):
-        self.install_toolchain_artifact("nasm")
-
-    def ensure_node_packages(self):
-        self.install_toolchain_artifact("node")
-
-    def ensure_fix_stacks_packages(self):
-        self.install_toolchain_artifact("fix-stacks")
-
-    def ensure_minidump_stackwalk_packages(self):
-        self.install_toolchain_artifact("minidump_stackwalk")
 
     def _update_package_manager(self):
         pass
 
     def run(self, command):
         subprocess.check_call(command, stdin=sys.stdin)
-
-    def pip_install(self, *packages):
-        pip_dir = Path(os.environ["MOZILLABUILD"]) / "python" / "Scripts" / "pip.exe"
-
-        command = [str(pip_dir), "install", "--upgrade"]
-        command.extend(packages)
-        self.run(command)

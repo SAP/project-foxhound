@@ -6,25 +6,15 @@
 Runs the Mochitest test harness.
 """
 
-from __future__ import absolute_import, division, print_function, with_statement
 import os
 import sys
 
 SCRIPT_DIR = os.path.abspath(os.path.realpath(os.path.dirname(__file__)))
 sys.path.insert(0, SCRIPT_DIR)
 
-from argparse import Namespace
-from collections import defaultdict
-from contextlib import closing
-from distutils import spawn
 import ctypes
 import glob
 import json
-import mozcrash
-import mozdebug
-import mozinfo
-import mozprocess
-import mozrunner
 import numbers
 import platform
 import re
@@ -39,21 +29,30 @@ import time
 import traceback
 import uuid
 import zipfile
-import bisection
-
+from argparse import Namespace
+from collections import defaultdict
+from contextlib import closing
 from ctypes.util import find_library
 from datetime import datetime, timedelta
+from distutils import spawn
+
+import bisection
+import mozcrash
+import mozdebug
+import mozinfo
+import mozprocess
+import mozrunner
 from manifestparser import TestManifest
-from manifestparser.util import normsep
 from manifestparser.filters import (
     chunk_by_dir,
     chunk_by_runtime,
     chunk_by_slice,
+    failures,
     pathprefix,
     subsuite,
     tags,
-    failures,
 )
+from manifestparser.util import normsep
 from mozgeckoprofiler import symbolicate_profile_json, view_gecko_profile
 
 try:
@@ -66,19 +65,19 @@ except ImportError as e:  # noqa
 
     Marionette = reraise
 
-from leaks import ShutdownLeaks, LSANLeaks
+import mozleak
+from leaks import LSANLeaks, ShutdownLeaks
 from mochitest_options import (
     MochitestArgumentParser,
     build_obj,
     get_default_valgrind_suppression_files,
 )
-from mozprofile import Profile
-from mozprofile.cli import parse_preferences, parse_key_value, KeyValueParseError
-from mozprofile.permissions import ServerLocations
 from mozlog import commandline, get_proxy_logger
+from mozprofile import Profile
+from mozprofile.cli import KeyValueParseError, parse_key_value, parse_preferences
+from mozprofile.permissions import ServerLocations
 from mozrunner.utils import get_stack_fixer_function, test_environment
 from mozscreenshot import dump_screen
-import mozleak
 
 HAVE_PSUTIL = False
 try:
@@ -115,6 +114,15 @@ list of valid flavors.
 # of all the log files on treeherder.
 MOZ_LOG = ""
 
+########################################
+# Option for web server log            #
+########################################
+
+# If True, debug logging from the web server will be
+# written to mochitest-server-%d.txt artifacts on
+# treeherder.
+MOCHITEST_SERVER_LOGGING = False
+
 #####################
 # Test log handling #
 #####################
@@ -128,7 +136,7 @@ class MessageLogger(object):
 
     BUFFERING_THRESHOLD = 100
     # This is a delimiter used by the JS side to avoid logs interleaving
-    DELIMITER = u"\ue175\uee31\u2c32\uacbf"
+    DELIMITER = "\ue175\uee31\u2c32\uacbf"
     BUFFERED_ACTIONS = set(["test_status", "log"])
     VALID_ACTIONS = set(
         [
@@ -462,6 +470,8 @@ class MochitestServer(object):
 
     "Web server used to serve Mochitests, for closer fidelity to the real web."
 
+    instance_count = 0
+
     def __init__(self, options, logger):
         if isinstance(options, Namespace):
             options = vars(options)
@@ -482,6 +492,10 @@ class MochitestServer(object):
             "server": shutdownServer,
             "port": self.httpPort,
         }
+        self.debugURL = "http://%(server)s:%(port)s/server/debug?2" % {
+            "server": shutdownServer,
+            "port": self.httpPort,
+        }
         self.testPrefix = "undefined"
 
         if options.get("httpdPath"):
@@ -489,6 +503,8 @@ class MochitestServer(object):
         else:
             self._httpdPath = SCRIPT_DIR
         self._httpdPath = os.path.abspath(self._httpdPath)
+
+        MochitestServer.instance_count += 1
 
     def start(self):
         "Run the Mochitest server, returning the process ID of the server."
@@ -542,11 +558,31 @@ class MochitestServer(object):
             self._utilityPath, "xpcshell" + mozinfo.info["bin_suffix"]
         )
         command = [xpcshell] + args
-        self._process = mozprocess.ProcessHandler(command, cwd=SCRIPT_DIR, env=env)
+        server_logfile = None
+        if MOCHITEST_SERVER_LOGGING and "MOZ_UPLOAD_DIR" in os.environ:
+            server_logfile = os.path.join(
+                os.environ["MOZ_UPLOAD_DIR"],
+                "mochitest-server-%d.txt" % MochitestServer.instance_count,
+            )
+        self._process = mozprocess.ProcessHandler(
+            command, cwd=SCRIPT_DIR, env=env, logfile=server_logfile
+        )
         self._process.run()
         self._log.info("%s : launching %s" % (self.__class__.__name__, command))
         pid = self._process.pid
         self._log.info("runtests.py | Server pid: %d" % pid)
+        if MOCHITEST_SERVER_LOGGING and "MOZ_UPLOAD_DIR" in os.environ:
+            self._log.info("runtests.py enabling server debugging...")
+            i = 0
+            while i < 5:
+                try:
+                    with closing(urlopen(self.debugURL)) as c:
+                        self._log.info(six.ensure_text(c.read()))
+                    break
+                except Exception as e:
+                    self._log.info("exception when enabling debugging: %s" % str(e))
+                    time.sleep(1)
+                    i += 1
 
     def ensureReady(self, timeout):
         assert timeout >= 0
@@ -842,7 +878,7 @@ def findTestMediaDevices(log):
         gst = gst010
     else:
         gst = gst10
-    subprocess.check_call(
+    process = mozprocess.ProcessHandler(
         [
             gst,
             "--no-fault",
@@ -854,7 +890,8 @@ def findTestMediaDevices(log):
             "device=%s" % device,
         ]
     )
-    info["video"] = name
+    process.run()
+    info["video"] = {"name": name, "process": process}
 
     # check if PulseAudio module-null-sink is loaded
     pactl = spawn.find_executable("pactl")
@@ -879,7 +916,7 @@ def findTestMediaDevices(log):
             return None
 
     # Hardcode the name since it's always the same.
-    info["audio"] = "Monitor of Null Output"
+    info["audio"] = {"name": "Monitor of Null Output"}
     return info
 
 
@@ -942,8 +979,10 @@ class MochitestDesktop(object):
         self.sslTunnel = None
         self.manifest = None
         self.tests_by_manifest = defaultdict(list)
+        self.args_by_manifest = defaultdict(set)
         self.prefs_by_manifest = defaultdict(set)
         self.env_vars_by_manifest = defaultdict(set)
+        self.tests_dirs_by_manifest = defaultdict(set)
         self._active_tests = None
         self.currentTests = None
         self._locations = None
@@ -953,8 +992,11 @@ class MochitestDesktop(object):
         self.start_script = None
         self.mozLogs = None
         self.start_script_kwargs = {}
+        self.extraArgs = []
         self.extraPrefs = {}
         self.extraEnv = {}
+        self.extraTestsDirs = []
+        self.conditioned_profile_dir = None
 
         if logger_options.get("log"):
             self.log = logger_options["log"]
@@ -1177,6 +1219,47 @@ class MochitestDesktop(object):
             testURL = "about:blank"
         return testURL
 
+    def parseAndCreateTestsDirs(self, m):
+        testsDirs = list(self.tests_dirs_by_manifest[m])[0]
+        self.extraTestsDirs = []
+        if testsDirs:
+            self.extraTestsDirs = testsDirs.strip().split()
+            self.log.info(
+                "The following extra test directories will be created:\n  {}".format(
+                    "\n  ".join(self.extraTestsDirs)
+                )
+            )
+            self.createExtraTestsDirs(self.extraTestsDirs, m)
+
+    def createExtraTestsDirs(self, extraTestsDirs=None, manifest=None):
+        """Take a list of directories that might be needed to exist by the test
+        prior to even the main process be executed, and:
+         - verify it does not already exists
+         - create it if it does
+        Removal of those directories is handled in cleanup()
+        """
+        if type(extraTestsDirs) != list:
+            return
+
+        for d in extraTestsDirs:
+            if os.path.exists(d):
+                raise FileExistsError(
+                    "Directory '{}' already exists. This is a member of "
+                    "test-directories in manifest {}.".format(d, manifest)
+                )
+
+        created = []
+        for d in extraTestsDirs:
+            os.makedirs(d)
+            created += [d]
+
+        if created != extraTestsDirs:
+            raise EnvironmentError(
+                "Not all directories were created: extraTestsDirs={} -- created={}".format(
+                    extraTestsDirs, created
+                )
+            )
+
     def getTestsByScheme(
         self, options, testsToFilter=None, disabled=True, manifestToFilter=None
     ):
@@ -1350,6 +1433,14 @@ class MochitestDesktop(object):
                 self.log.info("Stopping websocket/process bridge")
             except Exception:
                 self.log.critical("Exception stopping websocket/process bridge")
+
+        if hasattr(self, "gstForV4l2loopbackProcess"):
+            try:
+                self.gstForV4l2loopbackProcess.kill()
+                self.gstForV4l2loopbackProcess.wait()
+                self.log.info("Stopping gst for v4l2loopback")
+            except Exception:
+                self.log.critical("Exception stopping gst for v4l2loopback")
 
     def copyExtraFilesToProfile(self, options):
         "Copy extra files or dirs specified on the command line to the testing profile."
@@ -1533,6 +1624,12 @@ toolbar#nav-bar {
                 subsuite(options.subsuite),
             ]
 
+            # Allow for only running tests/manifests which match this tag
+            if options.conditionedProfile:
+                if not options.test_tags:
+                    options.test_tags = []
+                options.test_tags.append("condprof")
+
             if options.test_tags:
                 filters.append(tags(options.test_tags))
 
@@ -1607,7 +1704,9 @@ toolbar#nav-bar {
                 del test["disabled"]
 
             pathAbs = os.path.abspath(test["path"])
-            assert pathAbs.startswith(self.testRootAbs)
+            assert os.path.normcase(pathAbs).startswith(
+                os.path.normcase(self.testRootAbs)
+            )
             tp = pathAbs[len(self.testRootAbs) :].replace("\\", "/").strip("/")
 
             if not self.isTest(options, tp):
@@ -1626,10 +1725,12 @@ toolbar#nav-bar {
                 manifest_key = "{}:{}".format(test["ancestor_manifest"], manifest_key)
 
             self.tests_by_manifest[manifest_key.replace("\\", "/")].append(tp)
+            self.args_by_manifest[manifest_key].add(test.get("args"))
             self.prefs_by_manifest[manifest_key].add(test.get("prefs"))
             self.env_vars_by_manifest[manifest_key].add(test.get("environment"))
+            self.tests_dirs_by_manifest[manifest_key].add(test.get("test-directories"))
 
-            for key in ["prefs", "environment"]:
+            for key in ["args", "prefs", "environment", "test-directories"]:
                 if key in test and not options.runByManifest and "disabled" not in test:
                     self.log.error(
                         "parsing {}: runByManifest mode must be enabled to "
@@ -1644,6 +1745,8 @@ toolbar#nav-bar {
                 testob["expected"] = test["expected"]
             if "https_first_disabled" in test:
                 testob["https_first_disabled"] = test["https_first_disabled"] == "true"
+            if "allow_xul_xbl" in test:
+                testob["allow_xul_xbl"] = test["allow_xul_xbl"] == "true"
             if "scheme" in test:
                 testob["scheme"] = test["scheme"]
             if "tags" in test:
@@ -1657,10 +1760,23 @@ toolbar#nav-bar {
                     testob["expected"] = patterns
             paths.append(testob)
 
-        # The 'prefs' key needs to be set in the DEFAULT section, unfortunately
+        # The 'args' key needs to be set in the DEFAULT section, unfortunately
         # we can't tell what comes from DEFAULT or not. So to validate this, we
-        # stash all prefs from tests in the same manifest into a set. If the
-        # length of the set > 1, then we know 'prefs' didn't come from DEFAULT.
+        # stash all args from tests in the same manifest into a set. If the
+        # length of the set > 1, then we know 'args' didn't come from DEFAULT.
+        args_not_default = [
+            m for m, p in six.iteritems(self.args_by_manifest) if len(p) > 1
+        ]
+        if args_not_default:
+            self.log.error(
+                "The 'args' key must be set in the DEFAULT section of a "
+                "manifest. Fix the following manifests: {}".format(
+                    "\n".join(args_not_default)
+                )
+            )
+            sys.exit(1)
+
+        # The 'prefs' key needs to be set in the DEFAULT section too.
         pref_not_default = [
             m for m, p in six.iteritems(self.prefs_by_manifest) if len(p) > 1
         ]
@@ -1974,6 +2090,16 @@ toolbar#nav-bar {
             # desktop seems to use the old
             certdbPath = options.profilePath
 
+        # certutil.exe depends on some DLLs in the app directory
+        # When running tests against an MSIX-installed Firefox, these DLLs
+        # cannot be used out of the install directory, they must be copied
+        # elsewhere first.
+        if "WindowsApps" in options.app:
+            install_dir = os.path.dirname(options.app)
+            for f in os.listdir(install_dir):
+                if f.endswith(".dll"):
+                    shutil.copy(os.path.join(install_dir, f), options.utilityPath)
+
         status = call(
             [certutil, "-N", "-d", certdbPath, "-f", pwfilePath], env=toolsEnv
         )
@@ -2067,6 +2193,88 @@ toolbar#nav-bar {
             path = os.path.join(profile_data_dir, profile)
             self.profile.merge(path, interpolation=interpolation)
 
+    @property
+    def conditioned_profile_copy(self):
+        """Returns a copy of the original conditioned profile that was created."""
+
+        condprof_copy = os.path.join(tempfile.mkdtemp(), "profile")
+        shutil.copytree(
+            self.conditioned_profile_dir,
+            condprof_copy,
+            ignore=shutil.ignore_patterns("lock"),
+        )
+        self.log.info("Created a conditioned-profile copy: %s" % condprof_copy)
+        return condprof_copy
+
+    def downloadConditionedProfile(self, profile_scenario, app):
+        from condprof.client import get_profile
+        from condprof.util import get_current_platform, get_version
+
+        if self.conditioned_profile_dir:
+            # We already have a directory, so provide a copy that
+            # will get deleted after it's done with
+            return self.conditioned_profile_copy
+
+        temp_download_dir = tempfile.mkdtemp()
+
+        # Call condprof's client API to yield our platform-specific
+        # conditioned-profile binary
+        platform = get_current_platform()
+
+        if not profile_scenario:
+            profile_scenario = "settled"
+
+        version = get_version(app)
+        try:
+            cond_prof_target_dir = get_profile(
+                temp_download_dir,
+                platform,
+                profile_scenario,
+                repo="mozilla-central",
+                version=version,
+                retries=2,  # quicker failure
+            )
+        except Exception:
+            if version is None:
+                # any other error is a showstopper
+                self.log.critical("Could not get the conditioned profile")
+                traceback.print_exc()
+                raise
+            version = None
+            try:
+                self.log.info("retrying a profile with no version specified")
+                cond_prof_target_dir = get_profile(
+                    temp_download_dir,
+                    platform,
+                    profile_scenario,
+                    repo="mozilla-central",
+                    version=version,
+                )
+            except Exception:
+                self.log.critical("Could not get the conditioned profile")
+                traceback.print_exc()
+                raise
+
+        # Now get the full directory path to our fetched conditioned profile
+        self.conditioned_profile_dir = os.path.join(
+            temp_download_dir, cond_prof_target_dir
+        )
+        if not os.path.exists(cond_prof_target_dir):
+            self.log.critical(
+                "Can't find target_dir {}, from get_profile()"
+                "temp_download_dir {}, platform {}, scenario {}".format(
+                    cond_prof_target_dir, temp_download_dir, platform, profile_scenario
+                )
+            )
+            raise OSError
+
+        self.log.info(
+            "Original self.conditioned_profile_dir is now set: {}".format(
+                self.conditioned_profile_dir
+            )
+        )
+        return self.conditioned_profile_copy
+
     def buildProfile(self, options):
         """create the profile and add optional chrome bits and files if requested"""
         # get extensions to install
@@ -2083,6 +2291,20 @@ toolbar#nav-bar {
             sandbox_whitelist_paths = [
                 os.path.join(p, "") for p in sandbox_whitelist_paths
             ]
+
+        if options.conditionedProfile:
+            if options.profilePath and os.path.exists(options.profilePath):
+                shutil.rmtree(options.profilePath, ignore_errors=True)
+            options.profilePath = self.downloadConditionedProfile("full", options.app)
+
+            # This is causing `certutil -N -d -f`` to not use -f (pwd file)
+            try:
+                os.remove(os.path.join(options.profilePath, "key4.db"))
+            except Exception as e:
+                self.log.info(
+                    "Caught exception while removing key4.db"
+                    "during setup of conditioned profile: %s" % e
+                )
 
         # Create the profile
         self.profile = Profile(
@@ -2163,10 +2385,11 @@ toolbar#nav-bar {
 
         # See if we should use fake media devices.
         if options.useTestMediaDevices:
-            prefs["media.audio_loopback_dev"] = self.mediaDevices["audio"]
-            prefs["media.video_loopback_dev"] = self.mediaDevices["video"]
+            prefs["media.audio_loopback_dev"] = self.mediaDevices["audio"]["name"]
+            prefs["media.video_loopback_dev"] = self.mediaDevices["video"]["name"]
             prefs["media.cubeb.output_device"] = "Null Output"
             prefs["media.volume_scale"] = "1.0"
+            self.gstForV4l2loopbackProcess = self.mediaDevices["video"]["process"]
 
         self.profile.set_preferences(prefs)
 
@@ -2206,12 +2429,16 @@ toolbar#nav-bar {
         return os.pathsep.join(gmp_paths)
 
     def cleanup(self, options, final=False):
-        """remove temporary files and profile"""
+        """remove temporary files, profile and virtual audio input device"""
         if hasattr(self, "manifest") and self.manifest is not None:
             if os.path.exists(self.manifest):
                 os.remove(self.manifest)
         if hasattr(self, "profile"):
             del self.profile
+        if hasattr(self, "extraTestsDirs"):
+            for d in self.extraTestsDirs:
+                if os.path.exists(d):
+                    shutil.rmtree(d)
         if options.pidFile != "" and os.path.exists(options.pidFile):
             try:
                 os.remove(options.pidFile)
@@ -2223,6 +2450,24 @@ toolbar#nav-bar {
                     % options.pidFile
                 )
         options.manifestFile = None
+
+        if hasattr(self, "virtualInputDeviceIdList"):
+            pactl = spawn.find_executable("pactl")
+
+            if not pactl:
+                self.log.error("Could not find pactl on system")
+                return None
+
+            for id in self.virtualInputDeviceIdList:
+                try:
+                    subprocess.check_call([pactl, "unload-module", str(id)])
+                except subprocess.CalledProcessError:
+                    self.log.error(
+                        "Could not remove pulse module with id {}".format(id)
+                    )
+                    return None
+
+            self.virtualInputDeviceIdList = []
 
     def dumpScreen(self, utilityPath):
         if self.haveDumpedScreen:
@@ -2606,27 +2851,34 @@ toolbar#nav-bar {
                 quiet=quiet,
             )
 
+            expected = None
             if crashAsPass:
                 # self.message_logger.is_test_running indicates we need a test_end message
                 if crash_count > 0 and self.message_logger.is_test_running:
                     # this works for browser-chrome, mochitest-plain has status=0
-                    message = {
-                        "action": "test_end",
-                        "status": "CRASH",
-                        "expected": "CRASH",
-                        "thread": None,
-                        "pid": None,
-                        "source": "mochitest",
-                        "time": int(time.time()) * 1000,
-                        "test": self.lastTestSeen,
-                        "message": "application terminated with exit code 0",
-                    }
-                    # need to send a test_end in order to have mozharness process messages properly
-                    # this requires a custom message vs log.error/log.warning/etc.
-                    self.message_logger.process_message(message)
+                    expected = "CRASH"
                 status = 0
             elif crash_count or zombieProcesses:
+                if self.message_logger.is_test_running:
+                    expected = "PASS"
                 status = 1
+
+            if expected:
+                # send this out so we always wrap up the test-end message
+                message = {
+                    "action": "test_end",
+                    "status": "CRASH",
+                    "expected": expected,
+                    "thread": None,
+                    "pid": None,
+                    "source": "mochitest",
+                    "time": int(time.time()) * 1000,
+                    "test": self.lastTestSeen,
+                    "message": "application terminated with exit code 0",
+                }
+                # need to send a test_end in order to have mozharness process messages properly
+                # this requires a custom message vs log.error/log.warning/etc.
+                self.message_logger.process_message(message)
         finally:
             # cleanup
             if os.path.exists(processLog):
@@ -2645,10 +2897,75 @@ toolbar#nav-bar {
         This method is used to clear the contents before each run of for loop.
         This method is used for --run-by-dir and --bisect-chunk.
         """
+        if options.conditionedProfile:
+            if options.profilePath and os.path.exists(options.profilePath):
+                shutil.rmtree(options.profilePath, ignore_errors=True)
+                if options.manifestFile and os.path.exists(options.manifestFile):
+                    os.remove(options.manifestFile)
+
         self.expectedError.clear()
         self.result.clear()
         options.manifestFile = None
         options.profilePath = None
+
+    def initializeVirtualInputDevices(self):
+        """
+        Configure the system to have a number of virtual audio input devices, that
+        each produce a tone at a particular frequency.
+
+        This method is only currently implemented for Linux.
+        """
+        if not mozinfo.isLinux:
+            return
+
+        pactl = spawn.find_executable("pactl")
+
+        if not pactl:
+            self.log.error("Could not find pactl on system")
+            return
+
+        DEVICES_COUNT = 4
+        DEVICES_BASE_FREQUENCY = 110  # Hz
+        self.virtualInputDeviceIdList = []
+        # If the device are already present, find their id and return early
+        o = subprocess.check_output([pactl, "list", "modules", "short"])
+        found_devices = 0
+        for input in o.splitlines():
+            device = input.decode().split("\t")
+            if device[1] == "module-sine-source":
+                self.virtualInputDeviceIdList.append(int(device[0]))
+                found_devices += 1
+
+        if found_devices == DEVICES_COUNT:
+            return
+        elif found_devices != 0:
+            # Remove all devices and reinitialize them properly
+            for id in self.virtualInputDeviceIdList:
+                try:
+                    subprocess.check_call([pactl, "unload-module", str(id)])
+                except subprocess.CalledProcessError:
+                    log.error("Could not remove pulse module with id {}".format(id))
+                    return None
+
+        # We want quite a number of input devices, each with a different tone
+        # frequency and device name so that we can recognize them easily during
+        # testing.
+        command = [pactl, "load-module", "module-sine-source", "rate=44100"]
+        for i in range(1, DEVICES_COUNT + 1):
+            freq = i * DEVICES_BASE_FREQUENCY
+            complete_command = command + [
+                "source_name=sine-{}".format(freq),
+                "frequency={}".format(freq),
+            ]
+            try:
+                o = subprocess.check_output(complete_command)
+                self.virtualInputDeviceIdList.append(o)
+
+            except subprocess.CalledProcessError:
+                self.log.error(
+                    "Could not create device with module-sine-source"
+                    " (freq={})".format(freq)
+                )
 
     def normalize_paths(self, paths):
         # Normalize test paths so they are relative to test root
@@ -2860,16 +3177,14 @@ toolbar#nav-bar {
     def runTests(self, options):
         """Prepare, configure, run tests and cleanup"""
         self.extraPrefs = parse_preferences(options.extraPrefs)
-
-        if "fission.autostart" not in self.extraPrefs:
-            self.extraPrefs["fission.autostart"] = options.fission
+        self.extraPrefs["fission.autostart"] = not options.disable_fission
 
         # for test manifest parsing.
         mozinfo.update(
             {
                 "a11y_checks": options.a11y_checks,
                 "e10s": options.e10s,
-                "fission": self.extraPrefs.get("fission.autostart", True),
+                "fission": not options.disable_fission,
                 "headless": options.headless,
                 # Until the test harness can understand default pref values,
                 # (https://bugzilla.mozilla.org/show_bug.cgi?id=1577912) this value
@@ -2893,7 +3208,15 @@ toolbar#nav-bar {
                 "verify": options.verify,
                 "verify_fission": options.verify_fission,
                 "webgl_ipc": self.extraPrefs.get("webgl.out-of-process", False),
+                "wmfme": (
+                    self.extraPrefs.get("media.wmf.media-engine.enabled", False)
+                    and self.extraPrefs.get(
+                        "media.wmf.media-engine.channel-decoder.enabled", False
+                    )
+                ),
                 "xorigin": options.xOriginTests,
+                "condprof": options.conditionedProfile,
+                "msix": "WindowsApps" in options.app,
             }
         )
 
@@ -2943,6 +3266,20 @@ toolbar#nav-bar {
         for m in sorted(manifests):
             self.log.info("Running manifest: {}".format(m))
 
+            args = list(self.args_by_manifest[m])[0]
+            self.extraArgs = []
+            if args:
+                for arg in args.strip().split():
+                    # Split off the argument value if available so that both
+                    # name and value will be set individually
+                    self.extraArgs.extend(arg.split("="))
+
+                self.log.info(
+                    "The following arguments will be set:\n  {}".format(
+                        "\n  ".join(self.extraArgs)
+                    )
+                )
+
             prefs = list(self.prefs_by_manifest[m])[0]
             self.extraPrefs = origPrefs.copy()
             if prefs:
@@ -2963,6 +3300,8 @@ toolbar#nav-bar {
                         "\n  ".join(self.extraEnv)
                     )
                 )
+
+            self.parseAndCreateTestsDirs(m)
 
             # If we are using --run-by-manifest, we should not use the profile path (if) provided
             # by the user, since we need to create a new directory for each run. We would face
@@ -3072,6 +3411,7 @@ toolbar#nav-bar {
                 self.log.error("Could not find test media devices to use")
                 return 1
             self.mediaDevices = devices
+            self.initializeVirtualInputDevices()
 
         # See if we were asked to run on Valgrind
         valgrindPath = None
@@ -3152,6 +3492,9 @@ toolbar#nav-bar {
                 # See bug 479518 and bug 1414063.
                 timeout = 370.0
 
+            if "MOZ_CHAOSMODE=0xfb" in options.environment and timeout:
+                timeout *= 2
+
             # Detect shutdown leaks for m-bc runs if
             # code coverage is not enabled.
             detectShutdownLeaks = False
@@ -3198,13 +3541,16 @@ toolbar#nav-bar {
                 if options.timeoutAsPass:
                     testURL += "&timeoutAsPass=true"
 
+                if options.conditionedProfile:
+                    testURL += "&conditionedProfile=true"
+
                 self.log.info("runtests.py | Running with scheme: {}".format(scheme))
                 self.log.info(
                     "runtests.py | Running with e10s: {}".format(options.e10s)
                 )
                 self.log.info(
                     "runtests.py | Running with fission: {}".format(
-                        mozinfo.info.get("fission", False)
+                        mozinfo.info.get("fission", True)
                     )
                 )
                 self.log.info(
@@ -3228,7 +3574,7 @@ toolbar#nav-bar {
                     self.browserEnv,
                     options.app,
                     profile=self.profile,
-                    extraArgs=options.browserArgs,
+                    extraArgs=options.browserArgs + self.extraArgs,
                     utilityPath=options.utilityPath,
                     debuggerInfo=debuggerInfo,
                     valgrindPath=valgrindPath,
@@ -3266,6 +3612,12 @@ toolbar#nav-bar {
         if options.crashAsPass:
             ignoreMissingLeaks.append("tab")
             ignoreMissingLeaks.append("socket")
+
+        # Provide a floor for Windows chrome leak detection, because we know
+        # we have some Windows-specific shutdown hangs that we avoid by timing
+        # out and leaking memory.
+        if options.flavor == "chrome" and mozinfo.isWin:
+            leakThresholds["default"] += 1296
 
         # Stop leak detection if m-bc code coverage is enabled
         # by maxing out the leak threshold for all processes.

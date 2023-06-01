@@ -5,16 +5,14 @@
 """
 module to handle Gecko profiling.
 """
-from __future__ import absolute_import
-
 import json
 import os
 import tempfile
 import zipfile
 
 import mozfile
-from mozlog import get_proxy_logger
 from mozgeckoprofiler import ProfileSymbolicator, save_gecko_profile
+from mozlog import get_proxy_logger
 
 LOG = get_proxy_logger()
 
@@ -39,7 +37,7 @@ class GeckoProfile(object):
         gecko_profile_interval = test_config.get("gecko_profile_interval", 1)
         gecko_profile_entries = test_config.get("gecko_profile_entries", 1000000)
         gecko_profile_features = test_config.get(
-            "gecko_profile_features", "js,leaf,stackwalk,cpu,threads"
+            "gecko_profile_features", "js,stackwalk,cpu,screenshots"
         )
         gecko_profile_threads = test_config.get(
             "gecko_profile_threads", "GeckoMain,Compositor"
@@ -111,7 +109,7 @@ class GeckoProfile(object):
         self, cycle, symbolicator, missing_symbols_zip, profile_path
     ):
         try:
-            with open(profile_path, "r") as profile_file:
+            with open(profile_path, "r", encoding="utf-8") as profile_file:
                 profile = json.load(profile_file)
             symbolicator.dump_and_integrate_missing_symbols(
                 profile, missing_symbols_zip

@@ -29,6 +29,7 @@
 #include "nsIDNSRecord.h"
 #include "nsIDNSService.h"
 #include "nsICancelable.h"
+#include "nsIPipe.h"
 #include "nsWrapperCacheInlines.h"
 #include "HttpConnectionUDP.h"
 #include "mozilla/StaticPrefs_network.h"
@@ -66,8 +67,9 @@ static nsresult ResolveHost(const nsACString& host,
   }
 
   nsCOMPtr<nsICancelable> tmpOutstanding;
-  return dns->AsyncResolveNative(host, nsIDNSService::RESOLVE_TYPE_DEFAULT, 0,
-                                 nullptr, listener, nullptr, aOriginAttributes,
+  return dns->AsyncResolveNative(host, nsIDNSService::RESOLVE_TYPE_DEFAULT,
+                                 nsIDNSService::RESOLVE_DEFAULT_FLAGS, nullptr,
+                                 listener, nullptr, aOriginAttributes,
                                  getter_AddRefs(tmpOutstanding));
 }
 
@@ -215,7 +217,7 @@ nsUDPMessage::GetOutputStream(nsIOutputStream** aOutputStream) {
 }
 
 NS_IMETHODIMP
-nsUDPMessage::GetRawData(JSContext* cx, JS::MutableHandleValue aRawData) {
+nsUDPMessage::GetRawData(JSContext* cx, JS::MutableHandle<JS::Value> aRawData) {
   if (!mJsobj) {
     mJsobj =
         dom::Uint8Array::Create(cx, nullptr, mData.Length(), mData.Elements());
@@ -367,7 +369,8 @@ UDPMessageProxy::GetData(nsACString& aData) {
 FallibleTArray<uint8_t>& UDPMessageProxy::GetDataAsTArray() { return mData; }
 
 NS_IMETHODIMP
-UDPMessageProxy::GetRawData(JSContext* cx, JS::MutableHandleValue aRawData) {
+UDPMessageProxy::GetRawData(JSContext* cx,
+                            JS::MutableHandle<JS::Value> aRawData) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -430,16 +433,12 @@ void nsUDPSocket::OnSocketReady(PRFileDesc* fd, int16_t outFlags) {
   uint32_t segsize = UDP_PACKET_CHUNK_SIZE;
   uint32_t segcount = 0;
   net_ResolveSegmentParams(segsize, segcount);
-  nsresult rv = NS_NewPipe2(getter_AddRefs(pipeIn), getter_AddRefs(pipeOut),
-                            true, true, segsize, segcount);
-
-  if (NS_FAILED(rv)) {
-    return;
-  }
+  NS_NewPipe2(getter_AddRefs(pipeIn), getter_AddRefs(pipeOut), true, true,
+              segsize, segcount);
 
   RefPtr<nsUDPOutputStream> os = new nsUDPOutputStream(this, mFD, prClientAddr);
-  rv = NS_AsyncCopy(pipeIn, os, mSts, NS_ASYNCCOPY_VIA_READSEGMENTS,
-                    UDP_PACKET_CHUNK_SIZE);
+  nsresult rv = NS_AsyncCopy(pipeIn, os, mSts, NS_ASYNCCOPY_VIA_READSEGMENTS,
+                             UDP_PACKET_CHUNK_SIZE);
 
   if (NS_FAILED(rv)) {
     return;
@@ -788,7 +787,7 @@ class SocketListenerProxy final : public nsIUDPSocketListener {
   explicit SocketListenerProxy(nsIUDPSocketListener* aListener)
       : mListener(new nsMainThreadPtrHolder<nsIUDPSocketListener>(
             "SocketListenerProxy::mListener", aListener)),
-        mTarget(GetCurrentEventTarget()) {}
+        mTarget(GetCurrentSerialEventTarget()) {}
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIUDPSOCKETLISTENER
@@ -880,7 +879,7 @@ class SocketListenerProxyBackground final : public nsIUDPSocketListener {
 
  public:
   explicit SocketListenerProxyBackground(nsIUDPSocketListener* aListener)
-      : mListener(aListener), mTarget(GetCurrentEventTarget()) {}
+      : mListener(aListener), mTarget(GetCurrentSerialEventTarget()) {}
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIUDPSOCKETLISTENER
@@ -1080,7 +1079,7 @@ nsUDPSocket::AsyncListen(nsIUDPSocketListener* aListener) {
   NS_ENSURE_TRUE(mSyncListener == nullptr, NS_ERROR_IN_PROGRESS);
   {
     MutexAutoLock lock(mLock);
-    mListenerTarget = GetCurrentEventTarget();
+    mListenerTarget = GetCurrentSerialEventTarget();
     if (NS_IsMainThread()) {
       // PNecko usage
       mListener = new SocketListenerProxy(aListener);

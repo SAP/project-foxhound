@@ -21,19 +21,18 @@
 const {
   PureComponent,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
+} = require("resource://devtools/client/shared/vendor/react.js");
 const {
   b,
   button,
   div,
   p,
-} = require("devtools/client/shared/vendor/react-dom-factories");
+} = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 const Localized = createFactory(
-  require("devtools/client/shared/vendor/fluent-react").Localized
+  require("resource://devtools/client/shared/vendor/fluent-react.js").Localized
 );
 
-const Services = require("Services");
-const { openDocLink } = require("devtools/client/shared/link");
+const { openDocLink } = require("resource://devtools/client/shared/link.js");
 
 const LEARN_MORE_URL = "https://profiler.firefox.com/docs";
 const ONBOARDING_PREF = "devtools.performance.new-panel-onboarding";
@@ -77,14 +76,6 @@ class OnboardingMessage extends PureComponent {
     openDocLink(LEARN_MORE_URL, {});
   };
 
-  handleSettingsClick = () => {
-    /** @type {any} */
-    const anyWindow = window;
-    /** @type {PanelWindow} - Coerce the window into the PanelWindow. */
-    const { gToolbox } = anyWindow;
-    gToolbox.selectTool("options");
-  };
-
   /**
    * Update the state whenever the devtools.performance.new-panel-onboarding
    * preference is updated.
@@ -114,11 +105,6 @@ class OnboardingMessage extends PureComponent {
       onClick: this.handleLearnMoreClick,
     });
 
-    const settingsLink = button({
-      className: "perf-external-link",
-      onClick: this.handleSettingsClick,
-    });
-
     const closeButton = Localized(
       {
         id: "perftools-onboarding-close-button",
@@ -140,13 +126,6 @@ class OnboardingMessage extends PureComponent {
             id: "perftools-onboarding-message",
             b: b(),
             a: learnMoreLink,
-          },
-          p({ className: "perf-onboarding-message-row" })
-        ),
-        Localized(
-          {
-            id: "perftools-onboarding-reenable-old-panel",
-            a: settingsLink,
           },
           p({ className: "perf-onboarding-message-row" })
         )

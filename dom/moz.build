@@ -8,9 +8,6 @@
 with Files("**"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
 
-with Files("plugins/**"):
-    BUG_COMPONENT = ("Core", "Plug-ins")
-
 JAR_MANIFESTS += ["jar.mn"]
 
 interfaces = [
@@ -84,10 +81,12 @@ DIRS += [
     "messagechannel",
     "promise",
     "smil",
+    "streams",
     "url",
     "webauthn",
     "webidl",
     "webshare",
+    "webtransport",
     "xml",
     "xslt",
     "xul",
@@ -107,12 +106,11 @@ DIRS += [
     "simpledb",
     "reporting",
     "localstorage",
-    "prio",
     "l10n",
+    "origin-trials",
+    "webscheduling",
 ]
 
-if CONFIG["MOZ_DOM_STREAMS"]:
-    DIRS += ["streams"]
 
 TEST_DIRS += [
     "tests",

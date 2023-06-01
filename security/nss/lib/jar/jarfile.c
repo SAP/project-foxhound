@@ -16,7 +16,7 @@
 /* commercial compression */
 #include "jzlib.h"
 
-#if defined(XP_UNIX) || defined(XP_BEOS)
+#if defined(XP_UNIX)
 #include "sys/stat.h"
 #endif
 
@@ -219,7 +219,7 @@ JAR_extract(JAR *jar, char *path, char *outpath)
                                           (unsigned int)phy->compression);
         }
 
-#if defined(XP_UNIX) || defined(XP_BEOS)
+#if defined(XP_UNIX)
         if (phy->mode)
             chmod(outpath, 0400 | (mode_t)phy->mode);
 #endif
@@ -755,14 +755,16 @@ jar_listzip(JAR *jar, JAR_FILE fp)
             ZZ_AppendLink(jar->phy, ent);
             pos = phy->offset + phy->length;
         } else if (sigVal == CSIG) {
+#if defined(XP_UNIX)
             unsigned int attr = 0;
+#endif
             if (JAR_FREAD(fp, Central, sizeof *Central) != sizeof *Central) {
                 /* apparently truncated archive */
                 err = JAR_ERR_CORRUPT;
                 goto loser;
             }
 
-#if defined(XP_UNIX) || defined(XP_BEOS)
+#if defined(XP_UNIX)
             /* with unix we need to locate any bits from
                the protection mask in the external attributes. */
             attr = Central->external_attributes[2]; /* magic */

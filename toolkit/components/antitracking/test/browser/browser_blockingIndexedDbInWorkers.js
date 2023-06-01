@@ -1,5 +1,3 @@
-/* import-globals-from antitracking_head.js */
-
 AntiTracking.runTestInNormalAndPrivateMode(
   "IndexedDB in workers",
   async _ => {
@@ -70,5 +68,6 @@ AntiTracking.runTestInNormalAndPrivateMode(
         resolve()
       );
     });
-  }
+  },
+  [["dom.indexedDB.hide_in_pbmode.enabled", false]]
 );

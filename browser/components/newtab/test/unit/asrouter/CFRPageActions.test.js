@@ -298,13 +298,20 @@ describe("CFRPageActions", () => {
     });
 
     describe("#_popupStateChange", () => {
-      it("should collapse the notification on 'dismissed'", () => {
+      it("should collapse the notification and send dismiss telemetry on 'dismissed'", () => {
         pageAction._expand();
+
+        sandbox.spy(pageAction, "_sendTelemetry");
 
         pageAction._popupStateChange("dismissed");
         assert.equal(
           pageAction.urlbarinput.getAttribute("cfr-recommendation-state"),
           "collapsed"
+        );
+
+        assert.equal(
+          pageAction._sendTelemetry.lastCall.args[0].event,
+          "DISMISS"
         );
       });
       it("should remove the notification on 'removed'", () => {
@@ -445,7 +452,7 @@ describe("CFRPageActions", () => {
       });
       it("should report an error when no attributes are present but subAttribute is requested", async () => {
         const fromJson = { value: "Foo" };
-        const stub = sandbox.stub(global.Cu, "reportError");
+        const stub = sandbox.stub(global.console, "error");
 
         await pageAction.getStrings(fromJson, "accesskey");
 
@@ -910,6 +917,61 @@ describe("CFRPageActions", () => {
         assert.equal(win, pageAction.window);
         assert.equal(dispatchStub, pageAction._dispatchCFRAction);
         assert.calledOnce(PageAction.prototype.showAddressBarNotifier);
+      });
+    });
+
+    describe("showPopup", () => {
+      let savedRec;
+      let pageAction;
+      let fakeAnchorId = "fake_anchor_id";
+      let sandboxShowPopup = sinon.createSandbox();
+      let fakePopUp = {
+        id: "fake_id",
+        template: "cfr_doorhanger",
+        content: {
+          skip_address_bar_notifier: true,
+          heading_text: "Fake Heading Text",
+          anchor_id: "fake_anchor_id",
+        },
+      };
+      beforeEach(() => {
+        const { id, content } = fakePopUp;
+        savedRec = {
+          id,
+          host: fakeHost,
+          content,
+        };
+        CFRPageActions.RecommendationMap.set(fakeBrowser, savedRec);
+        pageAction = new PageAction(window, dispatchStub);
+
+        sandboxShowPopup.stub(window.document, "getElementById");
+        sandboxShowPopup.stub(pageAction, "_renderPopup");
+        globals.set({
+          CustomizableUI: {
+            getWidget: sandboxShowPopup
+              .stub()
+              .withArgs(fakeAnchorId)
+              .returns({ areaType: "menu-panel" }),
+          },
+        });
+      });
+      afterEach(() => {
+        sandboxShowPopup.restore();
+        globals.restore();
+      });
+
+      it("Should use default anchor_id if an alternate hasn't been provided", async () => {
+        await pageAction.showPopup();
+
+        assert.calledWith(window.document.getElementById, fakeAnchorId);
+      });
+
+      it("Should use alt_anchor_if if one has been provided AND the anchor_id has been removed", async () => {
+        let fakeAltAnchorId = "fake_alt_anchor_id";
+
+        fakePopUp.content.alt_anchor_id = fakeAltAnchorId;
+        await pageAction.showPopup();
+        assert.calledWith(window.document.getElementById, fakeAltAnchorId);
       });
     });
 

@@ -17,8 +17,6 @@
 #include "sandbox/win/src/sandbox.h"
 #include "sandbox/win/src/sandbox_nt_util.h"
 
-#include "mozilla/sandboxing/permissionsService.h"
-
 namespace sandbox {
 
 FilesystemDispatcher::FilesystemDispatcher(PolicyBase* policy_base)
@@ -92,7 +90,6 @@ bool FilesystemDispatcher::NtCreateFile(IPCInfo* ipc,
                                         uint32_t create_disposition,
                                         uint32_t create_options) {
   if (!PreProcessName(name)) {
-    // The path requested might contain a reparse point.
     ipc->return_info.nt_status = STATUS_ACCESS_DENIED;
     return true;
   }
@@ -112,16 +109,6 @@ bool FilesystemDispatcher::NtCreateFile(IPCInfo* ipc,
   // knows what to do.
   EvalResult result =
       policy_base_->EvalPolicy(IpcTag::NTCREATEFILE, params.GetBase());
-
-  // If the policies forbid access (any result other than ASK_BROKER),
-  // then check for user-granted access to file.
-  if (ASK_BROKER != result &&
-      mozilla::sandboxing::PermissionsService::GetInstance()->
-        UserGrantedFileAccess(ipc->client_info->process_id, filename,
-                              desired_access, create_disposition)) {
-    result = ASK_BROKER;
-  }
-
   HANDLE handle;
   ULONG_PTR io_information = 0;
   NTSTATUS nt_status;
@@ -146,7 +133,6 @@ bool FilesystemDispatcher::NtOpenFile(IPCInfo* ipc,
                                       uint32_t share_access,
                                       uint32_t open_options) {
   if (!PreProcessName(name)) {
-    // The path requested might contain a reparse point.
     ipc->return_info.nt_status = STATUS_ACCESS_DENIED;
     return true;
   }
@@ -167,16 +153,6 @@ bool FilesystemDispatcher::NtOpenFile(IPCInfo* ipc,
   // knows what to do.
   EvalResult result =
       policy_base_->EvalPolicy(IpcTag::NTOPENFILE, params.GetBase());
-
-  // If the policies forbid access (any result other than ASK_BROKER),
-  // then check for user-granted access to file.
-  if (ASK_BROKER != result &&
-      mozilla::sandboxing::PermissionsService::GetInstance()->UserGrantedFileAccess(
-                                    ipc->client_info->process_id, filename,
-                                    desired_access, create_disposition)) {
-    result = ASK_BROKER;
-  }
-
   HANDLE handle;
   ULONG_PTR io_information = 0;
   NTSTATUS nt_status;
@@ -201,7 +177,6 @@ bool FilesystemDispatcher::NtQueryAttributesFile(IPCInfo* ipc,
     return false;
 
   if (!PreProcessName(name)) {
-    // The path requested might contain a reparse point.
     ipc->return_info.nt_status = STATUS_ACCESS_DENIED;
     return true;
   }
@@ -217,15 +192,6 @@ bool FilesystemDispatcher::NtQueryAttributesFile(IPCInfo* ipc,
   // knows what to do.
   EvalResult result =
       policy_base_->EvalPolicy(IpcTag::NTQUERYATTRIBUTESFILE, params.GetBase());
-
-  // If the policies forbid access (any result other than ASK_BROKER),
-  // then check for user-granted access to file.
-  if (ASK_BROKER != result &&
-      mozilla::sandboxing::PermissionsService::GetInstance()->
-        UserGrantedFileAccess(ipc->client_info->process_id, filename,
-                              0, 0)) {
-    result = ASK_BROKER;
-  }
 
   FILE_BASIC_INFORMATION* information =
       reinterpret_cast<FILE_BASIC_INFORMATION*>(info->Buffer());
@@ -250,7 +216,6 @@ bool FilesystemDispatcher::NtQueryFullAttributesFile(IPCInfo* ipc,
     return false;
 
   if (!PreProcessName(name)) {
-    // The path requested might contain a reparse point.
     ipc->return_info.nt_status = STATUS_ACCESS_DENIED;
     return true;
   }
@@ -266,15 +231,6 @@ bool FilesystemDispatcher::NtQueryFullAttributesFile(IPCInfo* ipc,
   // knows what to do.
   EvalResult result = policy_base_->EvalPolicy(
       IpcTag::NTQUERYFULLATTRIBUTESFILE, params.GetBase());
-
-  // If the policies forbid access (any result other than ASK_BROKER),
-  // then check for user-granted access to file.
-  if (ASK_BROKER != result &&
-      mozilla::sandboxing::PermissionsService::GetInstance()->
-        UserGrantedFileAccess(ipc->client_info->process_id, filename,
-                              0, 0)) {
-    result = ASK_BROKER;
-  }
 
   FILE_NETWORK_OPEN_INFORMATION* information =
       reinterpret_cast<FILE_NETWORK_OPEN_INFORMATION*>(info->Buffer());
@@ -312,7 +268,6 @@ bool FilesystemDispatcher::NtSetInformationFile(IPCInfo* ipc,
   name.assign(rename_info->FileName,
               rename_info->FileNameLength / sizeof(rename_info->FileName[0]));
   if (!PreProcessName(&name)) {
-    // The path requested might contain a reparse point.
     ipc->return_info.nt_status = STATUS_ACCESS_DENIED;
     return true;
   }
@@ -328,16 +283,6 @@ bool FilesystemDispatcher::NtSetInformationFile(IPCInfo* ipc,
   // knows what to do.
   EvalResult result =
       policy_base_->EvalPolicy(IpcTag::NTSETINFO_RENAME, params.GetBase());
-
-  // If the policies forbid access (any result other than ASK_BROKER),
-  // then check for user-granted write access to file.  We only permit
-  // the FileRenameInformation action.
-  if (ASK_BROKER != result && info_class == FileRenameInformation &&
-      mozilla::sandboxing::PermissionsService::GetInstance()->
-        UserGrantedFileAccess(ipc->client_info->process_id, filename,
-                              FILE_WRITE_ATTRIBUTES, 0)) {
-    result = ASK_BROKER;
-  }
 
   IO_STATUS_BLOCK* io_status =
       reinterpret_cast<IO_STATUS_BLOCK*>(status->Buffer());

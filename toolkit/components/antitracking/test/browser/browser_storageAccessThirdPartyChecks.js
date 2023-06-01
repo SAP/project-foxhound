@@ -1,4 +1,5 @@
-/* import-globals-from antitracking_head.js */
+const APS_PREF =
+  "privacy.partition.always_partition_third_party_non_cookie_storage";
 
 AntiTracking._createTask({
   name:
@@ -37,7 +38,7 @@ AntiTracking._createTask({
 
     await runChecks("image");
   },
-  extraPrefs: null,
+  extraPrefs: [[APS_PREF, false]],
   expectedBlockingNotifications:
     Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_TRACKER,
   runInPrivateWindow: false,
@@ -46,8 +47,6 @@ AntiTracking._createTask({
   callbackAfterRemoval: null,
   thirdPartyPage: TEST_3RD_PARTY_PAGE_HTTP,
   errorMessageDomains: [
-    "http://tracking.example.org",
-    "http://tracking.example.org",
     "http://tracking.example.org",
     "http://tracking.example.org",
     "http://tracking.example.org",
@@ -73,7 +72,10 @@ AntiTracking._createTask({
 
     await callRequestStorageAccess(null, true);
   },
-  extraPrefs: [["network.cookie.rejectForeignWithExceptions.enabled", false]],
+  extraPrefs: [
+    ["network.cookie.rejectForeignWithExceptions.enabled", false],
+    [APS_PREF, false],
+  ],
   expectedBlockingNotifications: 0,
   runInPrivateWindow: false,
   iframeSandbox: null,
@@ -104,6 +106,7 @@ AntiTracking._createTask({
 
     await callRequestStorageAccess(null, true);
   },
+  extraPrefs: [[APS_PREF, false]],
   expectedBlockingNotifications: 0,
   runInPrivateWindow: false,
   iframeSandbox: null,
@@ -134,6 +137,7 @@ AntiTracking._createTask({
 
     await callRequestStorageAccess(null, true);
   },
+  extraPrefs: [[APS_PREF, false]],
   expectedBlockingNotifications: 0,
   runInPrivateWindow: false,
   iframeSandbox: null,

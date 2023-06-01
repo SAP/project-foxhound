@@ -20,8 +20,7 @@ class nsIPrincipal;
 class nsIURI;
 class nsPIDOMWindowInner;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 //*****************************************************************************
 // Location: Script "location" object
@@ -36,7 +35,7 @@ class Location final : public nsISupports,
   Location(nsPIDOMWindowInner* aWindow, BrowsingContext* aBrowsingContext);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Location)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Location)
 
   // WebIDL API:
   void Assign(const nsAString& aUrl, nsIPrincipal& aSubjectPrincipal,
@@ -131,7 +130,6 @@ class Location final : public nsISupports,
   uint64_t mBrowsingContextId = 0;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_Location_h

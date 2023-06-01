@@ -213,10 +213,6 @@ nsSize nsIFrame::GetUncachedXULMinSize(nsBoxLayoutState& aBoxLayoutState) {
   return min;
 }
 
-nsSize nsIFrame::GetXULMinSizeForScrollArea(nsBoxLayoutState& aBoxLayoutState) {
-  return nsSize(0, 0);
-}
-
 nsSize nsIFrame::GetUncachedXULMaxSize(nsBoxLayoutState& aBoxLayoutState) {
   NS_ASSERTION(aBoxLayoutState.GetRenderingContext(),
                "must have rendering context");
@@ -312,8 +308,7 @@ nsresult nsIFrame::SyncXULLayout(nsBoxLayoutState& aBoxLayoutState) {
 nsresult nsIFrame::XULRedraw(nsBoxLayoutState& aState) {
   if (aState.PaintingDisabled()) return NS_OK;
 
-  // nsStackLayout, at least, expects us to repaint descendants even
-  // if a damage rect is provided
+  // Unclear whether we could get away with just InvalidateFrame().
   InvalidateFrameSubtree();
 
   return NS_OK;
@@ -378,8 +373,6 @@ bool nsIFrame::AddXULMinSize(nsIFrame* aBox, nsSize& aSize, bool& aWidthSet,
   aWidthSet = false;
   aHeightSet = false;
 
-  bool canOverride = true;
-
   nsPresContext* pc = aBox->PresContext();
 
   // See if a native theme wants to supply a minimum size.
@@ -388,8 +381,8 @@ bool nsIFrame::AddXULMinSize(nsIFrame* aBox, nsSize& aSize, bool& aWidthSet,
     nsITheme* theme = pc->Theme();
     StyleAppearance appearance = display->EffectiveAppearance();
     if (theme->ThemeSupportsWidget(pc, aBox, appearance)) {
-      LayoutDeviceIntSize size;
-      theme->GetMinimumWidgetSize(pc, aBox, appearance, &size, &canOverride);
+      LayoutDeviceIntSize size =
+          theme->GetMinimumWidgetSize(pc, aBox, appearance);
       if (size.width) {
         aSize.width = pc->DevPixelsToAppUnits(size.width);
         aWidthSet = true;
@@ -397,26 +390,6 @@ bool nsIFrame::AddXULMinSize(nsIFrame* aBox, nsSize& aSize, bool& aWidthSet,
       if (size.height) {
         aSize.height = pc->DevPixelsToAppUnits(size.height);
         aHeightSet = true;
-      }
-    } else {
-      switch (appearance) {
-        case StyleAppearance::ScrollbarVertical:
-        case StyleAppearance::ScrollbarHorizontal: {
-          ComputedStyle* style = nsLayoutUtils::StyleForScrollbar(aBox);
-          auto sizes = theme->GetScrollbarSizes(
-              pc, style->StyleUIReset()->mScrollbarWidth,
-              nsITheme::Overlay::No);
-          if (appearance == StyleAppearance::ScrollbarVertical) {
-            aSize.width = pc->DevPixelsToAppUnits(sizes.mVertical);
-            aWidthSet = true;
-          } else {
-            aSize.height = pc->DevPixelsToAppUnits(sizes.mHorizontal);
-            aHeightSet = true;
-          }
-          break;
-        }
-        default:
-          break;
       }
     }
   }
@@ -426,7 +399,7 @@ bool nsIFrame::AddXULMinSize(nsIFrame* aBox, nsSize& aSize, bool& aWidthSet,
   const auto& minWidth = position->mMinWidth;
   if (minWidth.ConvertsToLength()) {
     nscoord min = minWidth.ToLength();
-    if (!aWidthSet || (min > aSize.width && canOverride)) {
+    if (!aWidthSet || min > aSize.width) {
       aSize.width = min;
       aWidthSet = true;
     }
@@ -445,7 +418,7 @@ bool nsIFrame::AddXULMinSize(nsIFrame* aBox, nsSize& aSize, bool& aWidthSet,
   const auto& minHeight = position->mMinHeight;
   if (minHeight.ConvertsToLength()) {
     nscoord min = minHeight.ToLength();
-    if (!aHeightSet || (min > aSize.height && canOverride)) {
+    if (!aHeightSet || min > aSize.height) {
       aSize.height = min;
       aHeightSet = true;
     }
@@ -544,32 +517,6 @@ bool nsIFrame::AddXULMaxSize(nsIFrame* aBox, nsSize& aSize, bool& aWidthSet,
   }
 
   return (aWidthSet || aHeightSet);
-}
-
-bool nsIFrame::AddXULFlex(nsIFrame* aBox, nscoord& aFlex) {
-  bool flexSet = false;
-
-  // get the flexibility
-  aFlex = aBox->StyleXUL()->mBoxFlex;
-
-  // attribute value overrides CSS
-  nsIContent* content = aBox->GetContent();
-  if (content && content->IsXULElement()) {
-    nsresult error;
-    nsAutoString value;
-
-    content->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::flex, value);
-    if (!value.IsEmpty()) {
-      value.Trim("%");
-      aFlex = value.ToInteger(&error);
-      flexSet = true;
-    }
-  }
-
-  if (aFlex < 0) aFlex = 0;
-  if (aFlex >= nscoord_MAX) aFlex = nscoord_MAX - 1;
-
-  return flexSet || aFlex > 0;
 }
 
 void nsIFrame::AddXULBorderAndPadding(nsSize& aSize) {

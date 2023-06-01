@@ -9,8 +9,6 @@ script.py, along with config.py and log.py, represents the core of
 mozharness.
 """
 
-from __future__ import absolute_import, print_function
-
 import codecs
 import datetime
 import errno
@@ -27,6 +25,7 @@ import re
 import shutil
 import socket
 import ssl
+import stat
 import subprocess
 import sys
 import tarfile
@@ -37,12 +36,8 @@ import zlib
 from contextlib import contextmanager
 from io import BytesIO
 
-import six
-from six import binary_type
-
-from mozprocess import ProcessHandler
-
 import mozinfo
+import six
 from mozharness.base.config import BaseConfig
 from mozharness.base.log import (
     DEBUG,
@@ -56,6 +51,8 @@ from mozharness.base.log import (
     OutputParser,
     SimpleFileLogger,
 )
+from mozprocess import ProcessHandler
+from six import binary_type
 
 try:
     import httplib
@@ -66,9 +63,9 @@ try:
 except ImportError:
     import json
 try:
-    from urllib2 import quote, urlopen, Request
+    from urllib2 import Request, quote, urlopen
 except ImportError:
-    from urllib.request import quote, urlopen, Request
+    from urllib.request import Request, quote, urlopen
 try:
     import urlparse
 except ImportError:
@@ -77,8 +74,8 @@ if os.name == "nt":
     import locale
 
     try:
-        import win32file
         import win32api
+        import win32file
 
         PYWIN32 = True
     except ImportError:
@@ -92,6 +89,26 @@ except ImportError:
 
 class ContentLengthMismatch(Exception):
     pass
+
+
+def _validate_tar_member(member, path):
+    def _is_within_directory(directory, target):
+        abs_directory = os.path.abspath(directory)
+        abs_target = os.path.abspath(target)
+        prefix = os.path.commonprefix([abs_directory, abs_target])
+        return prefix == abs_directory
+
+    member_path = os.path.join(path, member.name)
+    if not _is_within_directory(path, member_path):
+        raise Exception("Attempted path traversal in tar file: " + member.name)
+    if member.mode & (stat.S_ISUID | stat.S_ISGID):
+        raise Exception("Attempted setuid or setgid in tar file: " + member.name)
+
+
+def _safe_extract(tar, path=".", members=None, *, numeric_owner=False):
+    for member in tar.getmembers():
+        _validate_tar_member(member, path)
+    tar.extractall(path, members, numeric_owner=numeric_owner)
 
 
 def platform_name():
@@ -624,7 +641,7 @@ class ScriptMixin(PlatformMixin):
             retry_exceptions=(
                 HTTPError,
                 URLError,
-                httplib.BadStatusLine,
+                httplib.HTTPException,
                 socket.timeout,
                 socket.error,
             ),
@@ -700,11 +717,12 @@ class ScriptMixin(PlatformMixin):
             mode (str): string of the form 'filemode[:compression]' (e.g. 'r:gz' or 'r:bz2')
             extract_to (str, optional): where to extract the compressed file.
         """
-        t = tarfile.open(fileobj=compressed_file, mode=mode)
-        t.extractall(path=extract_to)
+        with tarfile.open(fileobj=compressed_file, mode=mode) as t:
+            _safe_extract(t, path=extract_to)
 
     def download_unpack(self, url, extract_to=".", extract_dirs="*", verbose=False):
-        """Generic method to download and extract a compressed file without writing it to disk first.
+        """Generic method to download and extract a compressed file without writing it
+        to disk first.
 
         Args:
             url (str): URL where the file to be downloaded is located.
@@ -777,7 +795,7 @@ class ScriptMixin(PlatformMixin):
             retry_exceptions=(
                 HTTPError,
                 URLError,
-                httplib.BadStatusLine,
+                httplib.HTTPException,
                 socket.timeout,
                 socket.error,
                 ContentLengthMismatch,
@@ -1543,7 +1561,7 @@ class ScriptMixin(PlatformMixin):
                 return -1
             self.info("Running command: %s in %s" % (command, cwd))
         else:
-            self.info("Running command: %s" % command)
+            self.info("Running command: %s" % (command,))
         if isinstance(command, list) or isinstance(command, tuple):
             self.info("Copy/paste: %s" % subprocess.list2cmdline(command))
         shell = True
@@ -1641,12 +1659,11 @@ class ScriptMixin(PlatformMixin):
             )
             return -1
 
-        return_level = INFO
         if returncode not in success_codes:
-            return_level = error_level
             if throw_exception:
                 raise subprocess.CalledProcessError(returncode, command)
-        self.log("Return code: %d" % returncode, level=return_level)
+        # Force level to be INFO as message is not necessary in Treeherder
+        self.log("Return code: %d" % returncode, level=INFO)
 
         if halt_on_failure:
             _fail = False
@@ -1662,7 +1679,7 @@ class ScriptMixin(PlatformMixin):
             if _fail:
                 self.return_code = fatal_exit_code
                 self.fatal(
-                    "Halting on failure while running %s" % command,
+                    "Halting on failure while running %s" % (command,),
                     exit_code=fatal_exit_code,
                 )
         if return_type == "num_errors":
@@ -1843,7 +1860,8 @@ class ScriptMixin(PlatformMixin):
             self.rmtree(tmp_stdout_filename, log_level=DEBUG)
         if p.returncode and throw_exception:
             raise subprocess.CalledProcessError(p.returncode, command)
-        self.log("Return code: %d" % p.returncode, level=return_level)
+        # Force level to be INFO as message is not necessary in Treeherder
+        self.log("Return code: %d" % p.returncode, level=INFO)
         if halt_on_failure and return_level == ERROR:
             self.return_code = fatal_exit_code
             self.fatal(
@@ -1943,6 +1961,7 @@ class ScriptMixin(PlatformMixin):
                 )
                 with tarfile.open(filename) as bundle:
                     for entry in self._filter_entries(bundle.getnames(), extract_dirs):
+                        _validate_tar_member(bundle.getmember(entry), extract_to)
                         if verbose:
                             self.info(" %s" % entry)
                         bundle.extract(entry, path=extract_to)

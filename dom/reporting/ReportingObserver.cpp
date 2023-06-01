@@ -11,10 +11,9 @@
 #include "nsIGlobalObject.h"
 #include "nsThreadUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(ReportingObserver)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ReportingObserver)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(ReportingObserver)
   tmp->Disconnect();
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mReports)
@@ -28,10 +27,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(ReportingObserver)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mGlobal)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCallback)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(ReportingObserver)
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(ReportingObserver, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(ReportingObserver, Release)
 
 /* static */
 already_AddRefed<ReportingObserver> ReportingObserver::Constructor(
@@ -154,5 +149,4 @@ void ReportingObserver::MaybeNotify() {
 
 void ReportingObserver::ForgetReports() { mReports.Clear(); }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

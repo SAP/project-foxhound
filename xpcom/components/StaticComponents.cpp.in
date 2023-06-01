@@ -15,7 +15,7 @@
 #include "mozilla/StaticPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "mozJSComponentLoader.h"
+#include "mozJSModuleLoader.h"
 #include "nsCOMPtr.h"
 #include "nsComponentManager.h"
 #include "nsContentUtils.h"
@@ -87,6 +87,10 @@ const StringOffset gComponentJSMs[] = {
 //# @component_jsms@
 };
 
+const StringOffset gComponentESModules[] = {
+//# @component_esmodules@
+};
+
 /**
  * Returns a nsCString corresponding to the given entry in the `gStrings` string
  * table. The resulting nsCString points directly to static storage, and does
@@ -107,10 +111,12 @@ bool ContractEntry::Matches(const nsACString& aContractID) const {
   return aContractID == ContractID() && Module().Active();
 }
 
+enum class ComponentType { JSM, ESM };
 
-static nsresult ConstructJSMComponent(const nsACString& aURI,
-                                      const char* aConstructor,
-                                      nsISupports** aResult) {
+template <ComponentType type>
+static nsresult ConstructJSMOrESMComponent(const nsACString& aURI,
+                                           const char* aConstructor,
+                                           nsISupports** aResult) {
   if (!nsComponentManagerImpl::JSLoaderReady()) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -119,17 +125,21 @@ static nsresult ConstructJSMComponent(const nsACString& aURI,
   MOZ_ALWAYS_TRUE(jsapi.Init(xpc::PrivilegedJunkScope()));
   JSContext* cx = jsapi.cx();
 
-  JS::RootedObject global(cx);
-  JS::RootedObject exports(cx);
-  MOZ_TRY(mozJSComponentLoader::Get()->Import(cx, aURI, &global, &exports));
+  JS::Rooted<JSObject*> exports(cx);
+  if constexpr (type == ComponentType::JSM) {
+    JS::Rooted<JSObject*> global(cx);
+    MOZ_TRY(mozJSModuleLoader::Get()->Import(cx, aURI, &global, &exports));
+  } else {
+    MOZ_TRY(mozJSModuleLoader::Get()->ImportESModule(cx, aURI, &exports));
+  }
 
-  JS::RootedValue ctor(cx);
+  JS::Rooted<JS::Value> ctor(cx);
   if (!JS_GetProperty(cx, exports, aConstructor, &ctor) ||
       !ctor.isObject()) {
     return NS_ERROR_XPC_JSOBJECT_HAS_NO_FUNCTION_NAMED;
   }
 
-  JS::RootedObject inst(cx);
+  JS::Rooted<JSObject*> inst(cx);
   if (!JS::Construct(cx, ctor, JS::HandleValueArray::empty(), &inst)) {
     return NS_ERROR_FAILURE;
   }
@@ -138,12 +148,27 @@ static nsresult ConstructJSMComponent(const nsACString& aURI,
                                              (void**)aResult);
 }
 
+static nsresult ConstructJSMComponent(const nsACString& aURI,
+                                      const char* aConstructor,
+                                      nsISupports** aResult) {
+  return ConstructJSMOrESMComponent<ComponentType::JSM>(
+    aURI, aConstructor, aResult);
+}
+
+static nsresult ConstructESModuleComponent(const nsACString& aURI,
+                                      const char* aConstructor,
+                                      nsISupports** aResult) {
+  return ConstructJSMOrESMComponent<ComponentType::ESM>(
+    aURI, aConstructor, aResult);
+}
 
 //# @module_cid_table@
 
 //# @module_contract_id_table@
 
 //# @js_services_table@
+
+//# @protocol_handlers_table@
 
 static inline bool CalledInit(size_t aIdx) {
   return GetBit(gInitCalled, aIdx);
@@ -169,12 +194,7 @@ static void CallUnloadFuncs() {
 //# @unload_funcs@
 }
 
-static nsresult CreateInstanceImpl(ModuleID aID, nsISupports* aOuter,
-                                   const nsIID& aIID, void** aResult) {
-  if (aOuter) {
-    return NS_ERROR_NO_AGGREGATION;
-  }
-
+nsresult CreateInstanceImpl(ModuleID aID, const nsIID& aIID, void** aResult) {
   // The full set of constructors for all static modules.
   // This switch statement will be compiled to a relative address jump table
   // with no runtime relocations and a single indirect jump.
@@ -203,15 +223,9 @@ private:
 
 NS_IMPL_ISUPPORTS(StaticModuleFactory, nsIFactory)
 
-NS_IMETHODIMP StaticModuleFactory::CreateInstance(nsISupports* aOuter,
-                                                  const nsIID& aIID,
+NS_IMETHODIMP StaticModuleFactory::CreateInstance(const nsIID& aIID,
                                                   void** aResult) {
-  return CreateInstanceImpl(mID, aOuter, aIID, aResult);
-}
-
-NS_IMETHODIMP StaticModuleFactory::LockFactory(bool aLock) {
-  MOZ_CRASH("LockFactory is no longer a thing");
-  return NS_ERROR_NOT_IMPLEMENTED;
+  return CreateInstanceImpl(mID, aIID, aResult);
 }
 
 }  // anonymous namespace
@@ -234,9 +248,8 @@ nsCString StaticModule::ContractID() const {
   return GetString(mContractID);
 }
 
-nsresult StaticModule::CreateInstance(nsISupports* aOuter, const nsIID& aIID,
-                                      void** aResult) const {
-  return CreateInstanceImpl(ID(), aOuter, aIID, aResult);
+nsresult StaticModule::CreateInstance(const nsIID& aIID, void** aResult) const {
+  return CreateInstanceImpl(ID(), aIID, aResult);
 }
 
 GetServiceHelper StaticModule::GetService() const {
@@ -303,6 +316,15 @@ const JSServiceEntry* JSServiceEntry::Lookup(const nsACString& aName) {
   return LookupJSService(aName);
 }
 
+nsCString StaticProtocolHandler::Scheme() const {
+  return GetString(mScheme);
+}
+
+/* static */
+const StaticProtocolHandler* StaticProtocolHandler::Lookup(const nsACString& aScheme) {
+  return LookupProtocolHandler(aScheme);
+}
+
 /* static */ const StaticModule* StaticComponents::LookupByCID(
     const nsID& aCID) {
   return ModuleByCID(aCID);
@@ -341,6 +363,20 @@ StaticComponents::GetComponentJSMs() {
   return result.forget();
 }
 
+/* static */ already_AddRefed<nsIUTF8StringEnumerator>
+StaticComponents::GetComponentESModules() {
+  auto esModules = MakeUnique<nsTArray<nsCString>>(MOZ_ARRAY_LENGTH(gComponentESModules));
+
+  for (const auto& entry : gComponentESModules) {
+    esModules->AppendElement(GetString(entry));
+  }
+
+  nsCOMPtr<nsIUTF8StringEnumerator> result;
+  MOZ_ALWAYS_SUCCEEDS(NS_NewAdoptingUTF8StringEnumerator(getter_AddRefs(result),
+                                                         esModules.release()));
+  return result.forget();
+}
+
 /* static */ Span<const JSServiceEntry> StaticComponents::GetJSServices() {
   return { gJSServices, ArrayLength(gJSServices) };
 }
@@ -366,7 +402,7 @@ nsresult CreateInstanceHelper::operator()(const nsIID& aIID,
     return SetResult(NS_ERROR_FACTORY_NOT_REGISTERED);
   }
 
-  nsresult rv = entry.CreateInstance(nullptr, aIID, aResult);
+  nsresult rv = entry.CreateInstance(aIID, aResult);
   return SetResult(rv);
 }
 

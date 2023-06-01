@@ -28,8 +28,7 @@
 #include "TRR.h"
 #include "TRRService.h"
 
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 
 NS_IMPL_ADDREF(TRRServiceChannel)
 
@@ -90,12 +89,26 @@ NS_INTERFACE_MAP_END_INHERITING(HttpBaseChannel)
 TRRServiceChannel::TRRServiceChannel()
     : HttpAsyncAborter<TRRServiceChannel>(this),
       mProxyRequest(nullptr, "TRRServiceChannel::mProxyRequest"),
-      mCurrentEventTarget(GetCurrentEventTarget()) {
+      mCurrentEventTarget(GetCurrentSerialEventTarget()) {
   LOG(("TRRServiceChannel ctor [this=%p]\n", this));
 }
 
 TRRServiceChannel::~TRRServiceChannel() {
   LOG(("TRRServiceChannel dtor [this=%p]\n", this));
+}
+
+NS_IMETHODIMP TRRServiceChannel::SetCanceledReason(const nsACString& aReason) {
+  return SetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP TRRServiceChannel::GetCanceledReason(nsACString& aReason) {
+  return GetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP
+TRRServiceChannel::CancelWithReason(nsresult aStatus,
+                                    const nsACString& aReason) {
+  return CancelWithReasonImpl(aStatus, aReason);
 }
 
 NS_IMETHODIMP
@@ -161,7 +174,7 @@ TRRServiceChannel::Resume() {
 }
 
 NS_IMETHODIMP
-TRRServiceChannel::GetSecurityInfo(nsISupports** securityInfo) {
+TRRServiceChannel::GetSecurityInfo(nsITransportSecurityInfo** securityInfo) {
   NS_ENSURE_ARG_POINTER(securityInfo);
   *securityInfo = do_AddRef(mSecurityInfo).take();
   return NS_OK;
@@ -178,12 +191,12 @@ TRRServiceChannel::AsyncOpen(nsIStreamListener* aListener) {
     return mStatus;
   }
 
-  // HttpBaseChannel::MaybeWaitForUploadStreamLength can only be used on main
-  // thread, so we can only return an error here.
+  // HttpBaseChannel::MaybeWaitForUploadStreamNormalization can only be used on
+  // main thread, so we can only return an error here.
 #ifdef NIGHTLY_BUILD
-  MOZ_ASSERT(!LoadPendingInputStreamLengthOperation());
+  MOZ_ASSERT(!LoadPendingUploadStreamNormalization());
 #endif
-  if (LoadPendingInputStreamLengthOperation()) {
+  if (LoadPendingUploadStreamNormalization()) {
     return NS_ERROR_FAILURE;
   }
 
@@ -378,6 +391,9 @@ nsresult TRRServiceChannel::BeginConnect() {
   StoreAllowAltSvc(XRE_IsParentProcess() && LoadAllowAltSvc());
   bool http2Allowed = !gHttpHandler->IsHttp2Excluded(connInfo);
   bool http3Allowed = Http3Allowed();
+  if (!http3Allowed) {
+    mCaps |= NS_HTTP_DISALLOW_HTTP3;
+  }
 
   RefPtr<AltSvcMapping> mapping;
   if (!mConnectionInfo && LoadAllowAltSvc() &&  // per channel
@@ -442,13 +458,13 @@ nsresult TRRServiceChannel::BeginConnect() {
   }
 
   if (gHttpHandler->CriticalRequestPrioritization()) {
-    if (mClassOfService & nsIClassOfService::Leader) {
+    if (mClassOfService.Flags() & nsIClassOfService::Leader) {
       mCaps |= NS_HTTP_LOAD_AS_BLOCKING;
     }
-    if (mClassOfService & nsIClassOfService::Unblocked) {
+    if (mClassOfService.Flags() & nsIClassOfService::Unblocked) {
       mCaps |= NS_HTTP_LOAD_UNBLOCKED;
     }
-    if (mClassOfService & nsIClassOfService::UrgentStart &&
+    if (mClassOfService.Flags() & nsIClassOfService::UrgentStart &&
         gHttpHandler->IsUrgentStartEnabled()) {
       mCaps |= NS_HTTP_URGENT_START;
       SetPriority(nsISupportsPriority::PRIORITY_HIGHEST);
@@ -528,8 +544,10 @@ nsresult TRRServiceChannel::Connect() {
 }
 
 nsresult TRRServiceChannel::SetupTransaction() {
-  LOG(("TRRServiceChannel::SetupTransaction [this=%p, cos=%u, prio=%d]\n", this,
-       mClassOfService, mPriority));
+  LOG((
+      "TRRServiceChannel::SetupTransaction "
+      "[this=%p, cos=%lu, inc=%d, prio=%d]\n",
+      this, mClassOfService.Flags(), mClassOfService.Incremental(), mPriority));
 
   NS_ENSURE_TRUE(!mTransaction, NS_ERROR_ALREADY_INITIALIZED);
 
@@ -538,7 +556,13 @@ nsresult TRRServiceChannel::SetupTransaction() {
   if (!LoadAllowSpdy()) {
     mCaps |= NS_HTTP_DISALLOW_SPDY;
   }
-  if (!LoadAllowHttp3()) {
+  // Check a proxy info from mConnectionInfo. TRR channel may use a proxy that
+  // is set in mConnectionInfo but acutally the channel do not have mProxyInfo
+  // set. This can happend when network.trr.async_connInfo is true.
+  bool useNonDirectProxy = mConnectionInfo->ProxyInfo()
+                               ? !mConnectionInfo->ProxyInfo()->IsDirect()
+                               : false;
+  if (!Http3Allowed() || useNonDirectProxy) {
     mCaps |= NS_HTTP_DISALLOW_HTTP3;
   }
   if (LoadBeConservative()) {
@@ -755,7 +779,12 @@ void TRRServiceChannel::MaybeStartDNSPrefetch() {
   mDNSPrefetch =
       new nsDNSPrefetch(mURI, originAttributes, nsIRequest::GetTRRMode(), this,
                         LoadTimingEnabled());
-  mDNSPrefetch->PrefetchHigh(mCaps & NS_HTTP_REFRESH_DNS);
+  nsIDNSService::DNSFlags dnsFlags = nsIDNSService::RESOLVE_DEFAULT_FLAGS;
+  if (mCaps & NS_HTTP_REFRESH_DNS) {
+    dnsFlags |= nsIDNSService::RESOLVE_BYPASS_CACHE;
+  }
+  nsresult rv = mDNSPrefetch->PrefetchHigh(dnsFlags);
+  NS_ENSURE_SUCCESS_VOID(rv);
 }
 
 NS_IMETHODIMP
@@ -1275,8 +1304,8 @@ TRRServiceChannel::SetPriority(int32_t value) {
 }
 
 void TRRServiceChannel::OnClassOfServiceUpdated() {
-  LOG(("TRRServiceChannel::OnClassOfServiceUpdated this=%p, cos=%u", this,
-       mClassOfService));
+  LOG(("TRRServiceChannel::OnClassOfServiceUpdated this=%p, cos=%lu inc=%d",
+       this, mClassOfService.Flags(), mClassOfService.Incremental()));
 
   if (mTransaction) {
     gHttpHandler->UpdateClassOfServiceOnTransaction(mTransaction,
@@ -1286,8 +1315,28 @@ void TRRServiceChannel::OnClassOfServiceUpdated() {
 
 NS_IMETHODIMP
 TRRServiceChannel::SetClassFlags(uint32_t inFlags) {
-  uint32_t previous = mClassOfService;
-  mClassOfService = inFlags;
+  uint32_t previous = mClassOfService.Flags();
+  mClassOfService.SetFlags(inFlags);
+  if (previous != mClassOfService.Flags()) {
+    OnClassOfServiceUpdated();
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+TRRServiceChannel::SetIncremental(bool inFlag) {
+  bool previous = mClassOfService.Incremental();
+  mClassOfService.SetIncremental(inFlag);
+  if (previous != mClassOfService.Incremental()) {
+    OnClassOfServiceUpdated();
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+TRRServiceChannel::SetClassOfService(ClassOfService cos) {
+  ClassOfService previous = mClassOfService;
+  mClassOfService = cos;
   if (previous != mClassOfService) {
     OnClassOfServiceUpdated();
   }
@@ -1296,9 +1345,9 @@ TRRServiceChannel::SetClassFlags(uint32_t inFlags) {
 
 NS_IMETHODIMP
 TRRServiceChannel::AddClassFlags(uint32_t inFlags) {
-  uint32_t previous = mClassOfService;
-  mClassOfService |= inFlags;
-  if (previous != mClassOfService) {
+  uint32_t previous = mClassOfService.Flags();
+  mClassOfService.SetFlags(inFlags | mClassOfService.Flags());
+  if (previous != mClassOfService.Flags()) {
     OnClassOfServiceUpdated();
   }
   return NS_OK;
@@ -1306,9 +1355,9 @@ TRRServiceChannel::AddClassFlags(uint32_t inFlags) {
 
 NS_IMETHODIMP
 TRRServiceChannel::ClearClassFlags(uint32_t inFlags) {
-  uint32_t previous = mClassOfService;
-  mClassOfService &= ~inFlags;
-  if (previous != mClassOfService) {
+  uint32_t previous = mClassOfService.Flags();
+  mClassOfService.SetFlags(~inFlags & mClassOfService.Flags());
+  if (previous != mClassOfService.Flags()) {
     OnClassOfServiceUpdated();
   }
   return NS_OK;
@@ -1519,5 +1568,4 @@ TRRServiceChannel::TimingAllowCheck(nsIPrincipal* aOrigin, bool* aResult) {
 
 bool TRRServiceChannel::SameOriginWithOriginalUri(nsIURI* aURI) { return true; }
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net

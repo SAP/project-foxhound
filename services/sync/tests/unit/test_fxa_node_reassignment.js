@@ -15,8 +15,8 @@ const { Status } = ChromeUtils.import("resource://services-sync/status.js");
 const { SyncAuthManager } = ChromeUtils.import(
   "resource://services-sync/sync_auth.js"
 );
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
 
 add_task(async function setup() {
@@ -45,7 +45,6 @@ function prepareServer(cbAfterTokenFetch) {
   // A server callback to ensure we don't accidentally hit the wrong endpoint
   // after a node reassignment.
   let callback = {
-    __proto__: SyncServerCallback,
     onRequest(req, resp) {
       let full = `${req.scheme}://${req.host}:${req.port}${req.path}`;
       let expected = config.fxaccount.token.endpoint;
@@ -55,6 +54,7 @@ function prepareServer(cbAfterTokenFetch) {
       );
     },
   };
+  Object.setPrototypeOf(callback, SyncServerCallback);
   let server = new SyncServer(callback);
   server.registerUser("johndoe");
   server.start();

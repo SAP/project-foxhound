@@ -56,11 +56,11 @@ static inline nsINode* ForEachAncestorObserver(nsINode* aNode,
   nsINode* last;
   nsINode* node = aNode;
   do {
-    nsAutoTObserverArray<nsIMutationObserver*, 1>* observers =
+    mozilla::SafeDoublyLinkedList<nsIMutationObserver>* observers =
         node->GetMutationObservers();
-    if (observers && !observers->IsEmpty()) {
-      for (nsIMutationObserver* obs : observers->ForwardRange()) {
-        aFunc(obs);
+    if (observers && !observers->isEmpty()) {
+      for (auto iter = observers->begin(); iter != observers->end(); ++iter) {
+        aFunc(&*iter);
       }
     }
     last = node;
@@ -195,6 +195,26 @@ void MutationObservers::NotifyContentRemoved(nsINode* aContainer,
              "We expect the parent link to be still around at this point");
   DEFINE_NOTIFIERS(ContentRemoved, (aChild, aPreviousSibling));
   Notify<IsRemoval::Yes>(aContainer, notifyPresShell, notifyObserver);
+}
+
+void MutationObservers::NotifyARIAAttributeDefaultWillChange(
+    mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) {
+  // We don't notify the PresShell, so pass an empty lambda.
+  auto notifyPresShell = [](PresShell* aPresShell) {};
+  auto notifyObserver = [&](nsIMutationObserver* aObserver) {
+    aObserver->ARIAAttributeDefaultWillChange(aElement, aAttribute, aModType);
+  };
+  Notify(aElement, notifyPresShell, notifyObserver);
+}
+
+void MutationObservers::NotifyARIAAttributeDefaultChanged(
+    mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) {
+  // We don't notify the PresShell, so pass an empty lambda.
+  auto notifyPresShell = [](PresShell* aPresShell) {};
+  auto notifyObserver = [&](nsIMutationObserver* aObserver) {
+    aObserver->ARIAAttributeDefaultChanged(aElement, aAttribute, aModType);
+  };
+  Notify(aElement, notifyPresShell, notifyObserver);
 }
 
 }  // namespace mozilla

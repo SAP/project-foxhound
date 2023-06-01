@@ -35,7 +35,7 @@ function onCommonDialogLoaded(promptWindow) {
   expectingDialog = false;
   let dialog = promptWindow.Dialog;
   if (wantToClose) {
-    // This accepts the dialog, closing it
+    // This accepts the dialog, closing it.
     dialog.ui.button0.click();
   } else {
     // This keeps the page open
@@ -79,6 +79,7 @@ add_task(async function closeWindowWithMultipleTabsIncludingOneBeforeUnload() {
   await promiseTabLoadEvent(firstTab, TEST_PAGE);
   await promiseTabLoadEvent(
     BrowserTestUtils.addTab(newWin.gBrowser),
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com/"
   );
   let windowClosedPromise = BrowserTestUtils.domWindowClosed(newWin);

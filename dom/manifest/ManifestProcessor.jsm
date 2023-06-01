@@ -20,10 +20,6 @@
  */
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 const displayModes = new Set([
   "fullscreen",
   "standalone",
@@ -42,7 +38,6 @@ const orientationTypes = new Set([
 ]);
 const textDirections = new Set(["ltr", "rtl", "auto"]);
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 // ValueExtractor is used by the various processors to get values
 // from the manifest and to report errors.
 const { ValueExtractor } = ChromeUtils.import(

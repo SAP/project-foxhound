@@ -2,12 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { PrivateBrowsingUtils } = ChromeUtils.import(
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
+const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PrivateBrowsingUtils.sys.mjs"
 );
-const { EnableDelayHelper } = ChromeUtils.import(
-  "resource://gre/modules/SharedPromptUtils.jsm"
+const { EnableDelayHelper } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromptUtils.sys.mjs"
 );
 
 class MozHandler extends window.MozElements.MozRichlistitem {

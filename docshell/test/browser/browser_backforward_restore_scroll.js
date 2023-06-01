@@ -8,6 +8,7 @@ const ROOT = getRootDirectory(gTestPath).replace(
   "http://mochi.test:8888"
 );
 const URL1 = ROOT + "file_backforward_restore_scroll.html";
+// eslint-disable-next-line @microsoft/sdl/no-insecure-url
 const URL2 = "http://example.net/";
 
 const SCROLL0 = 500;
@@ -31,7 +32,7 @@ add_task(async function test() {
 
   // Navigate forwards then backwards.
   let loaded = promiseBrowserLoaded(URL2);
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, URL2);
+  BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, URL2);
   await loaded;
 
   loaded = promiseBrowserLoaded(URL1);

@@ -5,8 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "IdleTaskRunner.h"
+#include "mozilla/TaskCategory.h"
+#include "mozilla/TaskController.h"
 #include "nsRefreshDriver.h"
-#include "nsComponentManagerUtils.h"
 
 namespace mozilla {
 
@@ -188,7 +189,10 @@ void IdleTaskRunner::Schedule(bool aAllowIdleDispatch) {
   if (now >= mStartTime) {
     // Detect whether the refresh driver is ticking by checking if
     // GetIdleDeadlineHint returns its input parameter.
-    useRefreshDriver = (nsRefreshDriver::GetIdleDeadlineHint(now) != now);
+    useRefreshDriver =
+        (nsRefreshDriver::GetIdleDeadlineHint(
+             now, nsRefreshDriver::IdleCheck::OnlyThisProcessRefreshDriver) !=
+         now);
   } else {
     NS_WARNING_ASSERTION(!aAllowIdleDispatch,
                          "early callback, or time went backwards");

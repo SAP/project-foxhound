@@ -9,7 +9,7 @@ const TEST_URI = `
   <style>
   body {
     color: blue;
-    border-block-color: lime;
+    ruby-align: center;
     user-modify: read-only;
   }
   div {
@@ -22,7 +22,7 @@ const TEST_URI = `
 `;
 
 const TEST_DATA_SELECTED = [
-  { property: "border-block-color" },
+  { property: "ruby-align" },
   { property: "user-modify" },
 ];
 
@@ -34,7 +34,7 @@ const TEST_DATA_ALL = [
 const {
   COMPATIBILITY_UPDATE_SELECTED_NODE_FAILURE,
   COMPATIBILITY_UPDATE_TOP_LEVEL_TARGET_FAILURE,
-} = require("devtools/client/inspector/compatibility/actions/index");
+} = require("resource://devtools/client/inspector/compatibility/actions/index.js");
 
 add_task(async function() {
   const tab = await addTab(

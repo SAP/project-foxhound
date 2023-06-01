@@ -7,7 +7,7 @@
 // it is preffed on.
 
 var PREF_UA_STYLES = "devtools.inspector.showUserAgentStyles";
-const { PrefObserver } = require("devtools/client/shared/prefs");
+const { PrefObserver } = require("resource://devtools/client/shared/prefs.js");
 
 const TEST_URI = URL_ROOT + "doc_author-sheet.html";
 
@@ -173,7 +173,7 @@ async function compareAppliedStylesWithUI(inspector, view, filter) {
   let entries = await pageStyle.getApplied(inspector.selection.nodeFront, {
     inherited: true,
     matchedSelectors: true,
-    filter: filter,
+    filter,
   });
 
   // We may see multiple entries that map to a given rule; filter the

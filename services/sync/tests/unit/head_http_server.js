@@ -5,10 +5,10 @@
 var Cm = Components.manager;
 
 // Shared logging for all HTTP server functions.
-var { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+var { Log } = ChromeUtils.importESModule("resource://gre/modules/Log.sys.mjs");
 var { CommonUtils } = ChromeUtils.import("resource://services-common/utils.js");
-var { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+var { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 var {
   AccountState,
@@ -704,7 +704,7 @@ var SyncServerCallback = {
  * SyncServerCallback) as input.
  */
 function SyncServer(callback) {
-  this.callback = callback || { __proto__: SyncServerCallback };
+  this.callback = callback || Object.create(SyncServerCallback);
   this.server = new HttpServer();
   this.started = false;
   this.users = {};

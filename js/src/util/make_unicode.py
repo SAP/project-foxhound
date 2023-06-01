@@ -19,12 +19,10 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import print_function, unicode_literals
-
 import csv
 import io
-import re
 import os
+import re
 import sys
 from contextlib import closing
 from functools import partial
@@ -33,7 +31,10 @@ from operator import is_not, itemgetter
 from zipfile import ZipFile
 
 if sys.version_info.major == 2:
-    from itertools import ifilter as filter, imap as map, izip_longest as zip_longest
+    from itertools import ifilter as filter
+    from itertools import imap as map
+    from itertools import izip_longest as zip_longest
+
     from urllib2 import urlopen
 
     range = xrange
@@ -1303,7 +1304,7 @@ def make_unicode_file(
 
     def write_supplemental_identifier_method(name, group_set, println):
         println("bool")
-        println("js::unicode::{}(uint32_t codePoint)".format(name))
+        println("js::unicode::{}(char32_t codePoint)".format(name))
         println("{")
         for (from_code, to_code) in int_ranges(group_set.keys()):
             println(

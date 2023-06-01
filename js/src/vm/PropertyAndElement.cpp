@@ -35,7 +35,6 @@
 
 #include "vm/JSAtom-inl.h"            // js::AtomToId, js::IndexToId
 #include "vm/JSContext-inl.h"         // JSContext::check
-#include "vm/JSFunction-inl.h"        // js::NewNativeFunction
 #include "vm/JSObject-inl.h"          // js::NewBuiltinClassInstance
 #include "vm/NativeObject-inl.h"      // js::NativeLookupOwnPropertyNoResolve
 #include "vm/ObjectOperations-inl.h"  // js::GetProperty, js::GetElement, js::SetProperty, js::HasProperty, js::DeleteProperty, js::DeleteElement
@@ -947,7 +946,7 @@ JS_PUBLIC_API bool JS_DefineFunctions(JSContext* cx, JS::Handle<JSObject*> obj,
   CHECK_THREAD(cx);
   cx->check(obj);
 
-  return js::DefineFunctions(cx, obj, fs, NotIntrinsic);
+  return js::DefineFunctions(cx, obj, fs);
 }
 
 JS_PUBLIC_API JSFunction* JS_DefineFunction(JSContext* cx,

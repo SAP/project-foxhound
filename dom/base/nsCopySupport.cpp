@@ -32,8 +32,6 @@
 #include "nsHTMLDocument.h"
 #include "nsGkAtoms.h"
 #include "nsIFrame.h"
-#include "nsIURI.h"
-#include "nsGenericHTMLElement.h"
 
 // image copy stuff
 #include "nsIImageLoadingContent.h"
@@ -95,13 +93,14 @@ static nsresult EncodeForTextUnicode(nsIDocumentEncoder& aEncoder,
   // html content with pre-wrap style : text/plain. Otherwise text/html. see
   // nsHTMLCopyEncoder::SetSelection
   nsAutoString mimeType;
-  mimeType.AssignLiteral(kUnicodeMime);
+  mimeType.AssignLiteral("text/unicode");
 
   // Do the first and potentially trial encoding as preformatted and raw.
   uint32_t flags = aAdditionalEncoderFlags |
                    nsIDocumentEncoder::OutputPreformatted |
                    nsIDocumentEncoder::OutputRaw |
-                   nsIDocumentEncoder::OutputForPlainTextClipboardCopy;
+                   nsIDocumentEncoder::OutputForPlainTextClipboardCopy |
+                   nsIDocumentEncoder::OutputPersistNBSP;
 
   nsresult rv = aEncoder.Init(&aDocument, mimeType, flags);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -172,7 +171,7 @@ static nsresult EncodeAsTextHTMLWithContext(
 }
 
 struct EncodedDocumentWithContext {
-  // When determening `mSerializationForTextUnicode`, `text/unicode` is passed
+  // When determining `mSerializationForTextUnicode`, `text/unicode` is passed
   // as mime type to the encoder. It uses this as a switch to decide whether to
   // encode the document as `text/html` or `text/plain`. It  is `true` iff
   // `text/html` was used.
@@ -275,14 +274,13 @@ static nsresult CreateTransferable(
 
     if (!aEncodedDocumentWithContext.mSerializationForTextUnicode.IsEmpty()) {
       // unicode text
-      // Add the unicode DataFlavor to the transferable
+      // Add the plain text DataFlavor to the transferable
       // If we didn't have this, then nsDataObj::GetData matches
-      // text/unicode against the kURLMime flavour which is not desirable
+      // text/plain against the kURLMime flavour which is not desirable
       // (eg. when pasting into Notepad)
-      rv =
-          AppendString(aTransferable,
-                       aEncodedDocumentWithContext.mSerializationForTextUnicode,
-                       kUnicodeMime);
+      rv = AppendString(
+          aTransferable,
+          aEncodedDocumentWithContext.mSerializationForTextUnicode, kTextMime);
       NS_ENSURE_SUCCESS(rv, rv);
     }
 
@@ -309,10 +307,9 @@ static nsresult CreateTransferable(
   } else {
     if (!aEncodedDocumentWithContext.mSerializationForTextUnicode.IsEmpty()) {
       // Add the unicode DataFlavor to the transferable
-      rv =
-          AppendString(aTransferable,
-                       aEncodedDocumentWithContext.mSerializationForTextUnicode,
-                       kUnicodeMime);
+      rv = AppendString(
+          aTransferable,
+          aEncodedDocumentWithContext.mSerializationForTextUnicode, kTextMime);
       NS_ENSURE_SUCCESS(rv, rv);
     }
   }
@@ -476,7 +473,7 @@ nsresult nsCopySupport::ImageCopy(nsIImageLoadingContent* aImageElement,
     NS_ENSURE_SUCCESS(rv, rv);
 
     // append the string to the transferable
-    rv = AppendString(trans, NS_ConvertUTF8toUTF16(location), kUnicodeMime);
+    rv = AppendString(trans, NS_ConvertUTF8toUTF16(location), kTextMime);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -511,12 +508,8 @@ nsresult nsCopySupport::ImageCopy(nsIImageLoadingContent* aImageElement,
   NS_ENSURE_SUCCESS(rv, rv);
 
   // check whether the system supports the selection clipboard or not.
-  bool selectionSupported;
-  rv = clipboard->SupportsSelectionClipboard(&selectionSupported);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // put the transferable on the clipboard
-  if (selectionSupported) {
+  if (clipboard->IsClipboardTypeSupported(nsIClipboard::kSelectionClipboard)) {
+    // put the transferable on the clipboard
     rv = clipboard->SetData(trans, nullptr, nsIClipboard::kSelectionClipboard);
     NS_ENSURE_SUCCESS(rv, rv);
   }
@@ -604,70 +597,39 @@ static nsresult AppendImagePromise(nsITransferable* aTransferable,
   nsCOMPtr<nsINode> node = do_QueryInterface(aImageElement, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // Fix the file extension in the URL if necessary
-  nsCOMPtr<nsIMIMEService> mimeService =
-      do_GetService(NS_MIMESERVICE_CONTRACTID);
-  NS_ENSURE_TRUE(mimeService, NS_OK);
+  nsCOMPtr<nsIMIMEService> mimeService = do_GetService("@mozilla.org/mime;1");
+  if (NS_WARN_IF(!mimeService)) {
+    return NS_ERROR_FAILURE;
+  }
 
   nsCOMPtr<nsIURI> imgUri;
   rv = aImgRequest->GetFinalURI(getter_AddRefs(imgUri));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsIURL> imgUrl = do_QueryInterface(imgUri);
-  NS_ENSURE_TRUE(imgUrl, NS_OK);
-
-  nsAutoCString extension;
-  rv = imgUrl->GetFileExtension(extension);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCString mimeType;
-  rv = aImgRequest->GetMimeType(getter_Copies(mimeType));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCOMPtr<nsIMIMEInfo> mimeInfo;
-  mimeService->GetFromTypeAndExtension(mimeType, ""_ns,
-                                       getter_AddRefs(mimeInfo));
-  NS_ENSURE_TRUE(mimeInfo, NS_OK);
-
   nsAutoCString spec;
-  rv = imgUrl->GetSpec(spec);
+  rv = imgUri->GetSpec(spec);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // pass out the image source string
   nsString imageSourceString;
   CopyUTF8toUTF16(spec, imageSourceString);
 
-  bool validExtension;
-  if (extension.IsEmpty() ||
-      NS_FAILED(mimeInfo->ExtensionExists(extension, &validExtension)) ||
-      !validExtension) {
-    // Fix the file extension in the URL
-    nsAutoCString primaryExtension;
-    mimeInfo->GetPrimaryExtension(primaryExtension);
-    if (!primaryExtension.IsEmpty()) {
-      rv = NS_MutateURI(imgUri)
-               .Apply(&nsIURLMutator::SetFileExtension, primaryExtension,
-                      nullptr)
-               .Finalize(imgUrl);
-      NS_ENSURE_SUCCESS(rv, rv);
-    }
-  }
+  nsCString mimeType;
+  rv = aImgRequest->GetMimeType(getter_Copies(mimeType));
+  NS_ENSURE_SUCCESS(rv, rv);
 
   nsAutoCString fileName;
-  imgUrl->GetFileName(fileName);
+  rv = aImgRequest->GetFileName(fileName);
+  NS_ENSURE_SUCCESS(rv, rv);
 
-  NS_UnescapeURL(fileName);
-
-  // make the filename safe for the filesystem
-  fileName.ReplaceChar(FILE_PATH_SEPARATOR FILE_ILLEGAL_CHARACTERS, '-');
-
-  nsString imageDestFileName;
-  CopyUTF8toUTF16(fileName, imageDestFileName);
+  nsAutoString validFileName = NS_ConvertUTF8toUTF16(fileName);
+  mimeService->ValidateFileNameForSaving(
+      validFileName, mimeType, nsIMIMEService::VALIDATE_DEFAULT, validFileName);
 
   rv = AppendString(aTransferable, imageSourceString, kFilePromiseURLMime);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = AppendString(aTransferable, imageDestFileName, kFilePromiseDestFilename);
+  rv = AppendString(aTransferable, validFileName, kFilePromiseDestFilename);
   NS_ENSURE_SUCCESS(rv, rv);
 
   aTransferable->SetRequestingPrincipal(node->NodePrincipal());

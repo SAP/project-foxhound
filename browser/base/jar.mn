@@ -16,6 +16,7 @@ browser.jar:
         content/browser/logos/etp-mobile.svg          (content/logos/etp-mobile.svg)
         content/browser/logos/lockwise.svg            (content/logos/lockwise.svg)
         content/browser/logos/monitor.svg             (content/logos/monitor.svg)
+        content/browser/logos/relay.svg               (content/logos/relay.svg)
         content/browser/logos/vpn-promo-logo.svg      (content/logos/vpn-promo-logo.svg)
         content/browser/logos/proxy-light.svg         (content/logos/proxy-light.svg)
         content/browser/logos/proxy-dark.svg          (content/logos/proxy-dark.svg)
@@ -24,17 +25,14 @@ browser.jar:
         content/browser/logos/tracking-protection-dark-theme.svg (content/logos/tracking-protection-dark-theme.svg)
         content/browser/logos/vpn-dark.svg            (content/logos/vpn-dark.svg)
         content/browser/logos/vpn-light.svg           (content/logos/vpn-light.svg)
-        content/browser/certerror/aboutNetErrorCodes.js (content/certerror/aboutNetErrorCodes.js)
-        content/browser/certerror/aboutNetError.xhtml   (content/certerror/aboutNetError.xhtml)
-        content/browser/certerror/aboutNetError.js      (content/certerror/aboutNetError.js)
-        content/browser/certerror/supportpages/connection-not-secure.html (content/certerror/supportpages/connection-not-secure.html)
-        content/browser/certerror/supportpages/time-errors.html (content/certerror/supportpages/time-errors.html)
+        content/browser/logos/fxa-logo.svg            (content/logos/fxa-logo.svg)
         content/browser/aboutRobots-icon.png          (content/aboutRobots-icon.png)
         content/browser/aboutFrameCrashed.html        (content/aboutFrameCrashed.html)
         content/browser/aboutTabCrashed.css           (content/aboutTabCrashed.css)
         content/browser/aboutTabCrashed.js            (content/aboutTabCrashed.js)
         content/browser/aboutTabCrashed.xhtml         (content/aboutTabCrashed.xhtml)
-*       content/browser/browser.css                   (content/browser.css)
+        content/browser/blanktab.html                 (content/blanktab.html)
+        content/browser/browser.css                   (content/browser.css)
         content/browser/browser.js                    (content/browser.js)
 *       content/browser/browser.xhtml                 (content/browser.xhtml)
         content/browser/browser-a11yUtils.js          (content/browser-a11yUtils.js)
@@ -61,9 +59,9 @@ browser.jar:
         content/browser/browser-tabsintitlebar.js           (content/browser-tabsintitlebar.js)
         content/browser/browser-toolbarKeyNav.js            (content/browser-toolbarKeyNav.js)
         content/browser/browser-thumbnails.js               (content/browser-thumbnails.js)
+        content/browser/browser-unified-extensions.js       (content/browser-unified-extensions.js)
         content/browser/browser-graphics-utils.js           (content/browser-graphics-utils.js)
         content/browser/browser-webrtc.js                   (content/browser-webrtc.js)
-        content/browser/history-swipe-arrow.svg             (content/history-swipe-arrow.svg)
 *       content/browser/pageinfo/pageInfo.xhtml             (content/pageinfo/pageInfo.xhtml)
         content/browser/pageinfo/pageInfo.js                (content/pageinfo/pageInfo.js)
         content/browser/pageinfo/pageInfo.css               (content/pageinfo/pageInfo.css)
@@ -102,14 +100,9 @@ browser.jar:
 % override chrome://global/content/license.html chrome://browser/content/license.html
         content/browser/blockedSite.xhtml               (content/blockedSite.xhtml)
         content/browser/blockedSite.js                  (content/blockedSite.js)
-        content/browser/upgradeDialog.html            (content/upgradeDialog.html)
-        content/browser/upgradeDialog.js              (content/upgradeDialog.js)
         content/browser/spotlight.html                (content/spotlight.html)
         content/browser/spotlight.js                  (content/spotlight.js)
 *       content/browser/default-bookmarks.html        (content/default-bookmarks.html)
 
-% override chrome://global/content/netError.xhtml chrome://browser/content/certerror/aboutNetError.xhtml
-
 # L10n resources and overrides.
 % override chrome://global/locale/appstrings.properties chrome://browser/locale/appstrings.properties
-% override chrome://global/locale/netError.dtd chrome://browser/locale/netError.dtd

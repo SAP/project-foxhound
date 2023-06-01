@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 
 def test(mod, path, entity=None):
     # ignore anything but Firefox
@@ -35,6 +33,4 @@ def test(mod, path, entity=None):
     if mod == "extensions/spellcheck":
         # l10n ships en-US dictionary or something, do compare
         return "error"
-    if path == "defines.inc":
-        return "ignore" if entity == "MOZ_LANGPACK_CONTRIBUTORS" else "error"
     return "error"

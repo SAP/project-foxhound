@@ -7,12 +7,17 @@
 const {
   FrontClassWithSpec,
   registerFront,
-} = require("devtools/shared/protocol");
-const { eventSourceSpec } = require("devtools/shared/specs/eventsource");
+} = require("resource://devtools/shared/protocol.js");
+const {
+  eventSourceSpec,
+} = require("resource://devtools/shared/specs/eventsource.js");
 
 /**
  * A EventSourceFront is used as a front end for the EventSourceActor that is
  * created on the server, hiding implementation details.
+ *
+ * @backward-compat { version 111 } This front can be deleted when 111 is
+ * on the release channel.
  */
 class EventSourceFront extends FrontClassWithSpec(eventSourceSpec) {
   constructor(client, targetFront, parentFront) {

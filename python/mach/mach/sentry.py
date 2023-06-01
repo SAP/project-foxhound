@@ -2,27 +2,27 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import abc
 import re
-
 from pathlib import Path
 from threading import Thread
 
 import sentry_sdk
-from mach.util import get_state_dir
-from mach.telemetry import is_telemetry_enabled
 from mozversioncontrol import (
-    get_repository_object,
     InvalidRepoPath,
     MissingUpstreamRepo,
     MissingVCSTool,
+    get_repository_object,
 )
 from six import string_types
 
-# https://sentry.prod.mozaws.net/operations/mach/
-_SENTRY_DSN = "https://8228c9aff64949c2ba4a2154dc515f55@sentry.prod.mozaws.net/525"
+from mach.telemetry import is_telemetry_enabled
+from mach.util import get_state_dir
+
+# https://sentry.io/organizations/mozilla/projects/mach/
+_SENTRY_DSN = (
+    "https://5cfe351fb3a24e8d82c751252b48722b@o1069899.ingest.sentry.io/6250014"
+)
 
 
 class ErrorReporter(object):

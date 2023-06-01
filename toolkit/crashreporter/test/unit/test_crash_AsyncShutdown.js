@@ -7,15 +7,11 @@
 // to import modules into each function.
 
 function setup_crash() {
-  /* global AsyncShutdown */
-  const { AsyncShutdown } = ChromeUtils.import(
-    "resource://gre/modules/AsyncShutdown.jsm"
+  const { AsyncShutdown } = ChromeUtils.importESModule(
+    "resource://gre/modules/AsyncShutdown.sys.mjs"
   );
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
-  );
-  const { PromiseUtils } = ChromeUtils.import(
-    "resource://gre/modules/PromiseUtils.jsm"
+  const { PromiseUtils } = ChromeUtils.importESModule(
+    "resource://gre/modules/PromiseUtils.sys.mjs"
   );
 
   Services.prefs.setBoolPref("toolkit.asyncshutdown.testing", true);
@@ -48,12 +44,9 @@ function after_crash(mdump, extra) {
 // the latest operation succeeded
 
 function setup_osfile_crash_noerror() {
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
-  );
   const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-  const { PromiseUtils } = ChromeUtils.import(
-    "resource://gre/modules/PromiseUtils.jsm"
+  const { PromiseUtils } = ChromeUtils.importESModule(
+    "resource://gre/modules/PromiseUtils.sys.mjs"
   );
 
   Services.prefs.setIntPref("toolkit.asyncshutdown.crash_timeout", 1);
@@ -88,12 +81,9 @@ function after_osfile_crash_noerror(mdump, extra) {
 // the latest operation failed
 
 function setup_osfile_crash_exn() {
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
-  );
   const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-  const { PromiseUtils } = ChromeUtils.import(
-    "resource://gre/modules/PromiseUtils.jsm"
+  const { PromiseUtils } = ChromeUtils.importESModule(
+    "resource://gre/modules/PromiseUtils.sys.mjs"
   );
 
   Services.prefs.setIntPref("toolkit.asyncshutdown.crash_timeout", 1);

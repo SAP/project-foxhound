@@ -17,7 +17,6 @@
 
       this.addEventListener("focus", event => {
         this._cachedInsertionPoint = undefined;
-
         // See select handler. We need the sidebar's places commandset to be
         // updated as well
         document.commandDispatcher.updateCommands("focus");
@@ -67,6 +66,10 @@
             break;
           }
         }
+
+        // Indicate to drag and drop listeners
+        // whether or not this was the start of the drag
+        this._isDragSource = true;
 
         this._controller.setDataTransfer(event);
         event.stopPropagation();
@@ -123,6 +126,7 @@
       });
 
       this.addEventListener("dragend", event => {
+        this._isDragSource = false;
         PlacesControllerDragHelper.currentDropTarget = null;
       });
     }
@@ -160,7 +164,9 @@
     }
     /**
      * overriding
-     * @param {object} val
+     *
+     * @param {PlacesTreeView} val
+     *   The parent view
      */
     set view(val) {
       // We save the view so that we can avoid expensive get calls when
@@ -390,6 +396,10 @@
       return this._cachedInsertionPoint;
     }
 
+    get isDragSource() {
+      return this._isDragSource;
+    }
+
     get ownerWindow() {
       return window;
     }
@@ -466,6 +476,7 @@
      * will be opened, so that the node is visible.
      *
      * @param {string} placeURI
+     *   The URI that should be selected
      */
     selectPlaceURI(placeURI) {
       // Do nothing if a node matching the given uri is already selected
@@ -534,6 +545,7 @@
      * node is visible.
      *
      * @param {object} node
+     *   The node that should be selected
      */
     selectNode(node) {
       var view = this.view;
@@ -650,7 +662,6 @@
         : null;
 
       return new PlacesInsertionPoint({
-        parentId: PlacesUtils.getConcreteItemId(container),
         parentGuid: PlacesUtils.getConcreteItemGuid(container),
         index,
         orientation,
@@ -668,7 +679,7 @@
      * each given item guid. It will open any folder nodes that it needs
      * to in order to show the selected items.
      *
-     * @param {array} aGuids
+     * @param {Array} aGuids
      *   Guids to select.
      * @param {boolean} aOpenContainers
      *   Whether or not to open containers.
@@ -708,6 +719,7 @@
        * in its subtree.
        *
        * @param {object} node
+       *   The node to search.
        * @returns {boolean}
        *   Returns true if at least one item was found.
        */

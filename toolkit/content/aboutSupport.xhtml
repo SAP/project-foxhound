@@ -6,7 +6,6 @@
 
 <!DOCTYPE html [
   <!ENTITY % htmlDTD PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"> %htmlDTD;
-  <!ENTITY % brandDTD SYSTEM "chrome://branding/locale/brand.dtd"> %brandDTD;
 ]>
 
 <html xmlns="http://www.w3.org/1999/xhtml">
@@ -198,7 +197,7 @@
             <th class="column" data-l10n-id="app-basics-performance"/>
 
             <td>
-              <a href="about:performance">about:performance</a>
+              <a href="about:processes">about:processes</a>
             </td>
           </tr>
 
@@ -286,6 +285,20 @@
             <th class="column" data-l10n-id="app-basics-safe-mode"/>
 
             <td id="safemode-box">
+            </td>
+          </tr>
+
+          <tr>
+            <th class="column" data-l10n-id="app-basics-memory-size"/>
+
+            <td id="memory-size-box">
+            </td>
+          </tr>
+
+          <tr>
+            <th class="column" data-l10n-id="app-basics-disk-available"/>
+
+            <td id="disk-available-box">
             </td>
           </tr>
 
@@ -630,14 +643,33 @@
       <h2 class="major-section" id="place-database" data-l10n-id="place-database-title"/>
 
       <table>
-        <tr class="no-copy">
-          <th class="column" data-l10n-id="place-database-integrity"/>
+        <tbody>
+          <tr class="no-copy">
+            <th class="column" data-l10n-id="place-database-integrity"/>
 
-          <td>
-            <button id="verify-place-integrity-button" data-l10n-id="place-database-verify-integrity"/>
-            <pre id="verify-place-result" class="hidden no-copy"></pre>
-          </td>
-        </tr>
+            <td colspan="5">
+              <button id="verify-place-integrity-button" data-l10n-id="place-database-verify-integrity"/>
+              <pre id="verify-place-result" class="hidden no-copy"></pre>
+            </td>
+          </tr>
+          <tr class="no-copy">
+            <th class="column" data-l10n-id="place-database-stats"/>
+
+            <td colspan="5">
+              <button id="place-database-stats-toggle" data-l10n-id="place-database-stats-show"/>
+            </td>
+          </tr>
+        </tbody>
+        <tbody id="place-database-stats-tbody">
+          <tr>
+            <th data-l10n-id="place-database-stats-entity"/>
+            <th data-l10n-id="place-database-stats-count"/>
+            <th data-l10n-id="place-database-stats-size-kib"/>
+            <th data-l10n-id="place-database-stats-size-perc"/>
+            <th data-l10n-id="place-database-stats-efficiency-perc"/>
+            <th data-l10n-id="place-database-stats-sequentiality-perc"/>
+          </tr>
+        </tbody>
       </table>
 #endif
 

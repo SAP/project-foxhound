@@ -20,6 +20,7 @@
     <template id="page-range-template">
       <select id="range-picker" name="page-range-type" data-l10n-id="printui-page-range-picker" is="setting-select">
         <option value="all" selected data-l10n-id="printui-page-range-all"></option>
+        <option value="current" data-l10n-id="printui-page-range-current"></option>
         <option value="odd" data-l10n-id="printui-page-range-odd"></option>
         <option value="even" name="even" data-l10n-id="printui-page-range-even"></option>
         <option value="custom" data-l10n-id="printui-page-range-custom"></option>
@@ -179,7 +180,7 @@
               <scale-input></scale-input>
             </section>
 
-            <section id="pages-per-sheet" class="section-block" hidden>
+            <section id="pages-per-sheet" class="section-block">
               <label id="pages-per-sheet-label" for="pages-per-sheet-picker" class="block-label" data-l10n-id="printui-pages-per-sheet"></label>
               <select is="setting-select" id="pages-per-sheet-picker" class="row" data-setting-name="numPagesPerSheet">
                 <option value="1">1</option>

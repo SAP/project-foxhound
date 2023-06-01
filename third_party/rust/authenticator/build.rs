@@ -10,9 +10,9 @@ fn main() {}
 #[cfg(all(target_os = "linux", feature = "binding-recompile"))]
 fn main() {
     let bindings = bindgen::Builder::default()
-        .header("src/linux/hidwrapper.h")
-        .whitelist_var("_HIDIOCGRDESCSIZE")
-        .whitelist_var("_HIDIOCGRDESC")
+        .header("src/transport/linux/hidwrapper.h")
+        .allowlist_var("_HIDIOCGRDESCSIZE")
+        .allowlist_var("_HIDIOCGRDESC")
         .generate()
         .expect("Unable to get hidraw bindings");
 
@@ -45,10 +45,18 @@ fn main() {
         "ioctl_aarch64be.rs"
     } else if cfg!(all(target_arch = "s390x", target_endian = "big")) {
         "ioctl_s390xbe.rs"
+    } else if cfg!(all(target_arch = "riscv64", target_endian = "little")) {
+        "ioctl_riscv64.rs"
     } else {
         panic!("architecture not supported");
     };
     bindings
-        .write_to_file(out_path.join("src").join("linux").join(name))
+        .write_to_file(
+            out_path
+                .join("src")
+                .join("transport")
+                .join("linux")
+                .join(name),
+        )
         .expect("Couldn't write hidraw bindings");
 }

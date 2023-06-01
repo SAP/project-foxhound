@@ -5,7 +5,7 @@
 
 // Test the ResourceCommand API around STYLESHEET.
 
-const ResourceCommand = require("devtools/shared/commands/resource/resource-command");
+const ResourceCommand = require("resource://devtools/shared/commands/resource/resource-command.js");
 
 const STYLE_TEST_URL = URL_ROOT_SSL + "style_document.html";
 
@@ -17,8 +17,9 @@ const EXISTING_RESOURCES = [
       "https://example.com/browser/devtools/shared/commands/resource/tests/style_document.html",
     isNew: false,
     disabled: false,
+    constructed: false,
     ruleCount: 1,
-    mediaRules: [],
+    atRules: [],
   },
   {
     styleText: "body { margin: 1px; }",
@@ -28,8 +29,19 @@ const EXISTING_RESOURCES = [
       "https://example.com/browser/devtools/shared/commands/resource/tests/style_document.html",
     isNew: false,
     disabled: false,
+    constructed: false,
     ruleCount: 1,
-    mediaRules: [],
+    atRules: [],
+  },
+  {
+    styleText: "",
+    href: null,
+    nodeHref: null,
+    isNew: false,
+    disabled: false,
+    constructed: true,
+    ruleCount: 1,
+    atRules: [],
   },
   {
     styleText: "body { background-color: pink; }",
@@ -38,8 +50,9 @@ const EXISTING_RESOURCES = [
       "https://example.org/browser/devtools/shared/commands/resource/tests/style_iframe.html",
     isNew: false,
     disabled: false,
+    constructed: false,
     ruleCount: 1,
-    mediaRules: [],
+    atRules: [],
   },
   {
     styleText: "body { padding: 1px; }",
@@ -49,12 +62,13 @@ const EXISTING_RESOURCES = [
       "https://example.org/browser/devtools/shared/commands/resource/tests/style_iframe.html",
     isNew: false,
     disabled: false,
+    constructed: false,
     ruleCount: 1,
-    mediaRules: [],
+    atRules: [],
   },
 ];
 
-const ADDITIONAL_RESOURCE = {
+const ADDITIONAL_INLINE_RESOURCE = {
   styleText:
     "@media all { body { color: red; } } @media print { body { color: cyan; } } body { font-size: 10px; }",
   href: null,
@@ -62,8 +76,9 @@ const ADDITIONAL_RESOURCE = {
     "https://example.com/browser/devtools/shared/commands/resource/tests/style_document.html",
   isNew: false,
   disabled: false,
+  constructed: false,
   ruleCount: 3,
-  mediaRules: [
+  atRules: [
     {
       conditionText: "all",
       mediaText: "all",
@@ -81,6 +96,17 @@ const ADDITIONAL_RESOURCE = {
   ],
 };
 
+const ADDITIONAL_CONSTRUCTED_RESOURCE = {
+  styleText: "",
+  href: null,
+  nodeHref: null,
+  isNew: false,
+  disabled: false,
+  constructed: true,
+  ruleCount: 2,
+  atRules: [],
+};
+
 const ADDITIONAL_FROM_ACTOR_RESOURCE = {
   styleText: "body { font-size: 10px; }",
   href: null,
@@ -88,8 +114,9 @@ const ADDITIONAL_FROM_ACTOR_RESOURCE = {
     "https://example.com/browser/devtools/shared/commands/resource/tests/style_document.html",
   isNew: true,
   disabled: false,
+  constructed: false,
   ruleCount: 1,
-  mediaRules: [],
+  atRules: [],
 };
 
 add_task(async function() {
@@ -102,6 +129,12 @@ async function testResourceAvailableFeature() {
   info("Check resource available feature of the ResourceCommand");
 
   const tab = await addTab(STYLE_TEST_URL);
+  let resourceTimingEntryCounts = await getResourceTimingCount(tab);
+  is(
+    resourceTimingEntryCounts,
+    2,
+    "Should have two entires for resource timing"
+  );
 
   const { client, resourceCommand, targetCommand } = await initResourceCommand(
     tab
@@ -127,10 +160,17 @@ async function testResourceAvailableFeature() {
     await assertResource(availableResource, expectedResource);
   }
 
+  resourceTimingEntryCounts = await getResourceTimingCount(tab);
+  is(
+    resourceTimingEntryCounts,
+    2,
+    "Should still have two entires for resource timing after devtools APIs have been triggered"
+  );
+
   info("Check whether ResourceCommand gets additonal stylesheet");
   await ContentTask.spawn(
     tab.linkedBrowser,
-    ADDITIONAL_RESOURCE.styleText,
+    ADDITIONAL_INLINE_RESOURCE.styleText,
     text => {
       const document = content.document;
       const stylesheet = document.createElement("style");
@@ -143,11 +183,29 @@ async function testResourceAvailableFeature() {
   );
   await assertResource(
     availableResources[availableResources.length - 1],
-    ADDITIONAL_RESOURCE
+    ADDITIONAL_INLINE_RESOURCE
+  );
+
+  info("Check whether ResourceCommand gets additonal constructed stylesheet");
+  await ContentTask.spawn(tab.linkedBrowser, null, () => {
+    const document = content.document;
+    const s = new content.CSSStyleSheet();
+    // We use the different number of rules to meaningfully differentiate
+    // between constructed stylesheets.
+    s.replaceSync("foo { color: red } bar { color: blue }");
+    // TODO(bug 1751346): wrappedJSObject should be unnecessary.
+    document.wrappedJSObject.adoptedStyleSheets.push(s);
+  });
+  await waitUntil(
+    () => availableResources.length === EXISTING_RESOURCES.length + 2
+  );
+  await assertResource(
+    availableResources[availableResources.length - 1],
+    ADDITIONAL_CONSTRUCTED_RESOURCE
   );
 
   info(
-    "Check whether ResourceCommand gets additonal stylesheet which is added by DevTool"
+    "Check whether ResourceCommand gets additonal stylesheet which is added by DevTools"
   );
   const styleSheetsFront = await targetCommand.targetFront.getFront(
     "stylesheets"
@@ -156,7 +214,7 @@ async function testResourceAvailableFeature() {
     ADDITIONAL_FROM_ACTOR_RESOURCE.styleText
   );
   await waitUntil(
-    () => availableResources.length === EXISTING_RESOURCES.length + 2
+    () => availableResources.length === EXISTING_RESOURCES.length + 3
   );
   await assertResource(
     availableResources[availableResources.length - 1],
@@ -230,7 +288,7 @@ async function testResourceUpdateFeature() {
   is(styleSheetDisabled, true, "actual stylesheet was updated correctly");
 
   info("Check update function");
-  const expectedMediaRules = [
+  const expectedAtRules = [
     {
       conditionText: "screen",
       mediaText: "screen",
@@ -278,12 +336,9 @@ async function testResourceUpdateFeature() {
 
   assertUpdate(updates[3].update, {
     resourceId: resource.resourceId,
-    updateType: "media-rules-changed",
+    updateType: "at-rules-changed",
   });
-  assertMediaRules(
-    updates[3].update.resourceUpdates.mediaRules,
-    expectedMediaRules
-  );
+  assertAtRules(updates[3].update.resourceUpdates.atRules, expectedAtRules);
 
   // Check the actual page.
   const styleSheetResult = await getStyleSheetResult(tab);
@@ -293,7 +348,7 @@ async function testResourceUpdateFeature() {
     3,
     "ruleCount of actual stylesheet is updated correctly"
   );
-  assertMediaRules(styleSheetResult.mediaRules, expectedMediaRules);
+  assertAtRules(styleSheetResult.atRules, expectedAtRules);
 
   targetCommand.destroy();
   await client.close();
@@ -332,7 +387,12 @@ async function testNestedResourceUpdateFeature() {
 
   info("Apply new media query");
   // In order to avoid applying the media query (min-height: 400px).
-  tab.ownerGlobal.resizeTo(originalWindowWidth, 300);
+  if (originalWindowHeight !== 300) {
+    await new Promise(resolve => {
+      tab.ownerGlobal.addEventListener("resize", resolve, { once: true });
+      tab.ownerGlobal.resizeTo(originalWindowWidth, 300);
+    });
+  }
 
   // Retrieve the stylesheet of the top-level target
   const resource = availableResources.find(
@@ -345,7 +405,7 @@ async function testNestedResourceUpdateFeature() {
     false
   );
   await waitUntil(() => updates.length === 3);
-  is(resource.mediaRules[0].matches, false, "Media query is not matched yet");
+  is(resource.atRules[0].matches, false, "Media query is not matched yet");
 
   info("Change window size to fire matches-change event");
   tab.ownerGlobal.resizeTo(originalWindowWidth, 500);
@@ -361,7 +421,7 @@ async function testNestedResourceUpdateFeature() {
 
   is(
     JSON.stringify(targetUpdate.update.nestedResourceUpdates[0].path),
-    JSON.stringify(["mediaRules", 0, "matches"]),
+    JSON.stringify(["atRules", 0, "matches"]),
     "path of nestedResourceUpdates is correct"
   );
   is(
@@ -371,7 +431,7 @@ async function testNestedResourceUpdateFeature() {
   );
 
   // Check the resource.
-  const expectedMediaRules = [
+  const expectedAtRules = [
     {
       conditionText: "(min-height: 400px)",
       mediaText: "(min-height: 400px)",
@@ -379,7 +439,7 @@ async function testNestedResourceUpdateFeature() {
     },
   ];
 
-  assertMediaRules(targetUpdate.resource.mediaRules, expectedMediaRules);
+  assertAtRules(targetUpdate.resource.atRules, expectedAtRules);
 
   // Check the actual page.
   const styleSheetResult = await getStyleSheetResult(tab);
@@ -388,7 +448,7 @@ async function testNestedResourceUpdateFeature() {
     1,
     "ruleCount of actual stylesheet is updated correctly"
   );
-  assertMediaRules(styleSheetResult.mediaRules, expectedMediaRules);
+  assertAtRules(styleSheetResult.atRules, expectedAtRules);
 
   tab.ownerGlobal.resizeTo(originalWindowWidth, originalWindowHeight);
 
@@ -399,7 +459,10 @@ async function testNestedResourceUpdateFeature() {
 function findMatchingExpectedResource(resource) {
   return EXISTING_RESOURCES.find(
     expected =>
-      resource.href === expected.href && resource.nodeHref === expected.nodeHref
+      resource.href === expected.href &&
+      resource.nodeHref === expected.nodeHref &&
+      resource.ruleCount === expected.ruleCount &&
+      resource.constructed == expected.constructed
   );
 }
 
@@ -409,7 +472,7 @@ async function getStyleSheetResult(tab) {
     const stylesheet = document.styleSheets[0];
     const ruleCount = stylesheet.cssRules.length;
 
-    const mediaRules = [];
+    const atRules = [];
     for (const rule of stylesheet.cssRules) {
       if (!rule.media) {
         continue;
@@ -423,37 +486,37 @@ async function getStyleSheetResult(tab) {
         // Ignored
       }
 
-      mediaRules.push({
+      atRules.push({
         mediaText: rule.media.mediaText,
         conditionText: rule.conditionText,
         matches,
       });
     }
 
-    return { ruleCount, mediaRules };
+    return { ruleCount, atRules };
   });
 
   return result;
 }
 
-function assertMediaRules(mediaRules, expected) {
-  is(mediaRules.length, expected.length, "Length of the mediaRules is correct");
+function assertAtRules(atRules, expected) {
+  is(atRules.length, expected.length, "Length of the atRules is correct");
 
-  for (let i = 0; i < mediaRules.length; i++) {
+  for (let i = 0; i < atRules.length; i++) {
     is(
-      mediaRules[i].conditionText,
+      atRules[i].conditionText,
       expected[i].conditionText,
       "conditionText is correct"
     );
-    is(mediaRules[i].mediaText, expected[i].mediaText, "mediaText is correct");
-    is(mediaRules[i].matches, expected[i].matches, "matches is correct");
+    is(atRules[i].mediaText, expected[i].mediaText, "mediaText is correct");
+    is(atRules[i].matches, expected[i].matches, "matches is correct");
 
     if (expected[i].line !== undefined) {
-      is(mediaRules[i].line, expected[i].line, "line is correct");
+      is(atRules[i].line, expected[i].line, "line is correct");
     }
 
     if (expected[i].column !== undefined) {
-      is(mediaRules[i].column, expected[i].column, "column is correct");
+      is(atRules[i].column, expected[i].column, "column is correct");
     }
   }
 }
@@ -473,8 +536,9 @@ async function assertResource(resource, expected) {
   is(resource.nodeHref, expected.nodeHref, "nodeHref is correct");
   is(resource.isNew, expected.isNew, "isNew is correct");
   is(resource.disabled, expected.disabled, "disabled is correct");
+  is(resource.constructed, expected.constructed, "constructed is correct");
   is(resource.ruleCount, expected.ruleCount, "ruleCount is correct");
-  assertMediaRules(resource.mediaRules, expected.mediaRules);
+  assertAtRules(resource.atRules, expected.atRules);
 }
 
 function assertUpdate(update, expected) {
@@ -488,4 +552,10 @@ function assertUpdate(update, expected) {
   if (expected.event?.cause) {
     is(update.event?.cause, expected.event.cause, "cause is correct");
   }
+}
+
+function getResourceTimingCount(tab) {
+  return ContentTask.spawn(tab.linkedBrowser, [], () => {
+    return content.performance.getEntriesByType("resource").length;
+  });
 }

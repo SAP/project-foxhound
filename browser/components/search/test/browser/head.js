@@ -1,17 +1,22 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
+ChromeUtils.defineESModuleGetters(this, {
+  FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
+  FormHistoryTestUtils:
+    "resource://testing-common/FormHistoryTestUtils.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  SearchTestUtils: "resource://testing-common/SearchTestUtils.sys.mjs",
+  SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
+  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
+  UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(this, {
   ADLINK_CHECK_TIMEOUT_MS: "resource:///actors/SearchSERPTelemetryChild.jsm",
   AddonTestUtils: "resource://testing-common/AddonTestUtils.jsm",
   CustomizableUITestUtils:
     "resource://testing-common/CustomizableUITestUtils.jsm",
-  FormHistoryTestUtils: "resource://testing-common/FormHistoryTestUtils.jsm",
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
-  SearchTestUtils: "resource://testing-common/SearchTestUtils.jsm",
-  SearchUtils: "resource://gre/modules/SearchUtils.jsm",
-  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.jsm",
-  UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.jsm",
 });
 
 let gCUITestUtils = new CustomizableUITestUtils(window);
@@ -104,8 +109,6 @@ XPCOMUtils.defineLazyGetter(this, "SEARCH_AD_CLICK_SCALARS", () => {
     "unknown",
   ];
   return [
-    "browser.search.with_ads",
-    "browser.search.ad_clicks",
     ...sources.map(v => `browser.search.withads.${v}`),
     ...sources.map(v => `browser.search.adclicks.${v}`),
   ];
@@ -207,11 +210,69 @@ async function searchInSearchbar(inputText, win = window) {
 }
 
 function clearSearchbarHistory(win = window) {
-  return new Promise((resolve, reject) => {
-    info("cleanup the search history");
-    win.BrowserSearch.searchBar.FormHistory.update(
-      { op: "remove", fieldname: "searchbar-history" },
-      { handleCompletion: resolve, handleError: reject }
+  info("cleanup the search history");
+  return FormHistory.update({ op: "remove", fieldname: "searchbar-history" });
+}
+
+/**
+ * Checks that the recorded Glean impression event has an impression_id property
+ * pointing to a valid UUID and that the impression_id is unique.
+ *
+ * @param {Array} recordedEvents The recorded Glean impression events whose
+ * impression_id properties we need to verify.
+ */
+function assertUUIDs(recordedEvents) {
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  let impressionIdsSet = new Set();
+
+  for (let recordedEvent of recordedEvents) {
+    let impressionId = recordedEvent.extra.impression_id;
+
+    Assert.equal(
+      typeof impressionId,
+      "string",
+      "should be an impression_id on the event"
     );
-  });
+    Assert.ok(
+      UUID_REGEX.test(impressionId),
+      "impression_id should be a valid UUID"
+    );
+
+    Assert.ok(
+      !impressionIdsSet.has(impressionId),
+      "Should not have found a duplicate impression_id"
+    );
+    impressionIdsSet.add(impressionId);
+  }
+}
+
+/**
+ * Checks that we get the correct number of recorded Glean impression events
+ * and that the recorded Glean impression events have the correct keys and
+ * values.
+ *
+ * @param {Array} expectedEvents The expected impression events whose keys and
+ * values we use to validate the recorded Glean impression events.
+ */
+function assertImpressionEvents(expectedEvents) {
+  let recordedEvents = Glean.serp.impression.testGetValue();
+
+  Assert.equal(
+    recordedEvents.length,
+    expectedEvents.length,
+    "should have the correct number of Glean events"
+  );
+
+  for (let [idx, expectedEvent] of expectedEvents.entries()) {
+    let recordedEvent = recordedEvents[idx].extra;
+    for (let key of Object.keys(expectedEvent)) {
+      Assert.equal(
+        recordedEvent[key],
+        expectedEvent[key],
+        `the value for recorded key "${key}" should match the value for expected key "${key}"`
+      );
+    }
+  }
+
+  assertUUIDs(recordedEvents);
 }

@@ -35,7 +35,7 @@ async function openAndCheckContextMenu(contextMenu, target) {
 }
 
 // Ensure that we can run touch events properly for windows [10]
-add_task(async function setup() {
+add_setup(async function() {
   let isWindows = AppConstants.isPlatformAndVersionAtLeast("win", "10.0");
   await SpecialPowers.pushPrefEnv({
     set: [["apz.test.fails_with_native_injection", isWindows]],
@@ -52,6 +52,7 @@ add_task(async function test_contentarea_contextmenu_touch() {
 
 // Test the back and forward buttons.
 add_task(async function test_back_forward_button_contextmenu_touch() {
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   await BrowserTestUtils.withNewTab("http://example.com", async function(
     browser
   ) {
@@ -61,7 +62,8 @@ add_task(async function test_back_forward_button_contextmenu_touch() {
     let notDisabled = TestUtils.waitForCondition(
       () => !backbutton.hasAttribute("disabled")
     );
-    BrowserTestUtils.loadURI(browser, "http://example.org");
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+    BrowserTestUtils.loadURIString(browser, "http://example.org");
     await notDisabled;
     await openAndCheckContextMenu(contextMenu, backbutton);
 

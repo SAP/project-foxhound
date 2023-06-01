@@ -27,10 +27,10 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/convolve.h"
+#include "lib/jxl/enc_linalg.h"
+#include "lib/jxl/enc_optimize.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
-#include "lib/jxl/linalg.h"
-#include "lib/jxl/optimize.h"
 
 // Set JXL_DEBUG_DOT_DETECT to 1 to enable debugging.
 #ifndef JXL_DEBUG_DOT_DETECT
@@ -44,6 +44,11 @@
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Add;
+using hwy::HWY_NAMESPACE::Mul;
+using hwy::HWY_NAMESPACE::Sub;
 
 ImageF SumOfSquareDifferences(const Image3F& forig, const Image3F& smooth,
                               ThreadPool* pool) {
@@ -66,16 +71,14 @@ ImageF SumOfSquareDifferences(const Image3F& forig, const Image3F& smooth,
         float* JXL_RESTRICT sos_row = sum_of_squares.Row(y);
 
         for (size_t x = 0; x < forig.xsize(); x += Lanes(d)) {
-          auto v0 = Load(d, orig_row0 + x) - Load(d, smooth_row0 + x);
-          auto v1 = Load(d, orig_row1 + x) - Load(d, smooth_row1 + x);
-          auto v2 = Load(d, orig_row2 + x) - Load(d, smooth_row2 + x);
-          v0 *= v0;
-          v1 *= v1;
-          v2 *= v2;
-          v0 *= color_coef0;  // FMA doesn't help here.
-          v1 *= color_coef1;
-          v2 *= color_coef2;
-          const auto sos = v0 + v1 + v2;  // weighted sum of square diffs
+          auto v0 = Sub(Load(d, orig_row0 + x), Load(d, smooth_row0 + x));
+          auto v1 = Sub(Load(d, orig_row1 + x), Load(d, smooth_row1 + x));
+          auto v2 = Sub(Load(d, orig_row2 + x), Load(d, smooth_row2 + x));
+          v0 = Mul(Mul(v0, v0), color_coef0);
+          v1 = Mul(Mul(v1, v1), color_coef1);
+          v2 = Mul(Mul(v2, v2), color_coef2);
+          const auto sos =
+              Add(v0, Add(v1, v2));  // weighted sum of square diffs
           Store(sos, d, sos_row + x);
         }
       },
@@ -151,16 +154,18 @@ ImageF ComputeEnergyImage(const Image3F& orig, Image3F* smooth,
 
   // Prepare guidance images for dot selection.
   Image3F forig(orig.xsize(), orig.ysize());
-  Image3F tmp(orig.xsize(), orig.ysize());
   *smooth = Image3F(orig.xsize(), orig.ysize());
+  Rect rect(orig);
 
   const auto& weights1 = WeightsSeparable5Gaussian0_65();
   const auto& weights3 = WeightsSeparable5Gaussian3();
 
-  Separable5_3(orig, Rect(orig), weights1, pool, &forig);
-
-  Separable5_3(orig, Rect(orig), weights3, pool, &tmp);
-  Separable5_3(tmp, Rect(tmp), weights3, pool, smooth);
+  for (size_t c = 0; c < 3; ++c) {
+    // Use forig as temporary storage to reduce memory and keep it warmer.
+    Separable5(orig.Plane(c), rect, weights3, pool, &forig.Plane(c));
+    Separable5(forig.Plane(c), rect, weights3, pool, &smooth->Plane(c));
+    Separable5(orig.Plane(c), rect, weights1, pool, &forig.Plane(c));
+  }
 
 #if JXL_DEBUG_DOT_DETECT
   AuxOut aux;

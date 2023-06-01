@@ -4,29 +4,27 @@
 
 "use strict";
 
-const { Ci, Cu } = require("chrome");
 loader.lazyRequireGetter(
   this,
   "CssLogic",
-  "devtools/server/actors/inspector/css-logic",
+  "resource://devtools/server/actors/inspector/css-logic.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "getCSSStyleRules",
-  "devtools/shared/inspector/css-logic",
+  "resource://devtools/shared/inspector/css-logic.js",
   true
 );
-loader.lazyRequireGetter(this, "InspectorUtils", "InspectorUtils");
 loader.lazyRequireGetter(
   this,
   "nodeConstants",
-  "devtools/shared/dom-node-constants"
+  "resource://devtools/shared/dom-node-constants.js"
 );
 loader.lazyRequireGetter(
   this,
   ["isDefunct", "getAriaRoles"],
-  "devtools/server/actors/utils/accessibility",
+  "resource://devtools/server/actors/utils/accessibility.js",
   true
 );
 
@@ -45,7 +43,7 @@ const {
     },
     SCORES: { FAIL, WARNING },
   },
-} = require("devtools/shared/constants");
+} = require("resource://devtools/shared/constants.js");
 
 // Specified by the author CSS rule type.
 const STYLE_RULE = 1;

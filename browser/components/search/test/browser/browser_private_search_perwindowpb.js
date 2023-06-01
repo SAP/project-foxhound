@@ -4,14 +4,12 @@
 
 add_task(async function test_setup() {
   await gCUITestUtils.addSearchBar();
-  let engine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + "426329.xml"
-  );
+  await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + "426329.xml",
+    setAsDefault: true,
+  });
 
-  const current = await Services.search.getDefault();
-  await Services.search.setDefault(engine);
   registerCleanupFunction(async () => {
-    await Services.search.setDefault(current);
     gCUITestUtils.removeSearchBar();
   });
 });

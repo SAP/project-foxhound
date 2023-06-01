@@ -42,19 +42,19 @@ let doNothing = () => {};
 
 function checkActivate(desc, menu, item, expectedResult)
 {
-  let passed = true;
+  desc = desc + " for " + menu.id + ".activateItem(" + item.id + ")";
   try {
     menu.activateItem(item);
+    ok(expectedResult, desc);
   } catch (ex) {
-    passed = false;
+    ok(!expectedResult, `${desc}: ${ex}`);
   }
-  is(passed, expectedResult, desc + " for " + menu.id + ".activateItem(" + item.id + ")");
 }
 
 async function checkActivateItems(desc, openFn, expectedResults)
 {
   // Iterate over each menu/submenu and try activating the item from that menu.
-  // This should only pass when the item is a descedant of that menu and the
+  // This should only pass when the item is a descendant of that menu and the
   // menu is open.
   let menus = [ "contextmenu", "submenu", "innersubmenu" ];
   let items = [ "item1", "item2", "item3", "item4" ];
@@ -101,7 +101,7 @@ async function checkActivateItems(desc, openFn, expectedResults)
 }
 
 add_task(async function () {
-  await checkActivateItems("expected failure when no menus open", 
+  await checkActivateItems("expected failure when no menus open",
                            doNothing, [false, false, false, false]);
 
   let openContextMenu = async () => {
@@ -114,7 +114,7 @@ add_task(async function () {
     });
     await popupShownPromise;
   }
- 
+
   await checkActivateItems("one menu open", openContextMenu, [true, false, false, false]);
 
   // Open the second level of the context menu

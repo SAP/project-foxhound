@@ -31,7 +31,8 @@
 // Explicitly exclude tier-1 platforms.
 
 #if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || \
-     defined(_M_IX86) || defined(__arm__) || defined(__aarch64__))
+     defined(_M_IX86) || (defined(__arm__) && __ARM_ARCH >= 7) ||   \
+     defined(__aarch64__))
 #  error "Do not use on a tier-1 platform where inline assembly is available"
 #endif
 
@@ -48,12 +49,16 @@
 // code in this file.
 
 #if defined(JS_SIMULATOR_ARM64) || defined(JS_SIMULATOR_ARM) || \
-    defined(JS_SIMULATOR_MIPS64)
+    defined(JS_SIMULATOR_MIPS64) || defined(JS_SIMULATOR_LOONG64)
 // On some x86 (32-bit) systems this will not work because the compiler does not
 // open-code 64-bit atomics.  If so, try linking with -latomic.  If that doesn't
 // work, you're mostly on your own.
 #  define HAS_64BIT_ATOMICS
 #  define HAS_64BIT_LOCKFREE
+#endif
+
+#if defined(__arm__)
+#  define HAS_64BIT_ATOMICS
 #endif
 
 #if defined(__ppc64__) || defined(__PPC64__) || defined(__ppc64le__) || \
@@ -63,6 +68,11 @@
 #endif
 
 #if defined(__riscv) && __riscv_xlen == 64
+#  define HAS_64BIT_ATOMICS
+#  define HAS_64BIT_LOCKFREE
+#endif
+
+#if defined(__loongarch64)
 #  define HAS_64BIT_ATOMICS
 #  define HAS_64BIT_LOCKFREE
 #endif

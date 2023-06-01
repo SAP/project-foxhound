@@ -15,11 +15,11 @@ const { Downloader } = ChromeUtils.import(
   "resource://services-settings/Attachments.jsm"
 );
 
-const { TelemetryController } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryController.jsm"
+const { TelemetryController } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryController.sys.mjs"
 );
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 const ExtensionBlocklistMLBF = getExtensionBlocklistMLBF();
@@ -56,7 +56,9 @@ function setupAddonUpdate(addonId, addonVersion) {
   let updateXpi = AddonTestUtils.createTempWebExtensionFile({
     manifest: {
       version: addonVersion,
-      applications: { gecko: { id: addonId, update_url: SERVER_UPDATE_URL } },
+      browser_specific_settings: {
+        gecko: { id: addonId, update_url: SERVER_UPDATE_URL },
+      },
     },
   });
   let updateXpiPath = `/update-${addonId}-${addonVersion}.xpi`;
@@ -79,7 +81,9 @@ async function tryAddonInstall(addonId, addonVersion) {
   let xpiFile = AddonTestUtils.createTempWebExtensionFile({
     manifest: {
       version: addonVersion,
-      applications: { gecko: { id: addonId, update_url: SERVER_UPDATE_URL } },
+      browser_specific_settings: {
+        gecko: { id: addonId, update_url: SERVER_UPDATE_URL },
+      },
     },
   });
   const install = await promiseInstallFile(xpiFile, true);

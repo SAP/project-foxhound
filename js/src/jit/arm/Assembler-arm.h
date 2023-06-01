@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <type_traits>
 
 #include "jit/arm/Architecture-arm.h"
 #include "jit/arm/disasm/Disasm-arm.h"
@@ -179,21 +180,26 @@ static constexpr Register ABINonVolatileReg = r6;
 // and non-volatile registers.
 static constexpr Register ABINonArgReturnVolatileReg = lr;
 
-// TLS pointer argument register for WebAssembly functions. This must not alias
-// any other register used for passing function arguments or return values.
-// Preserved by WebAssembly functions.
-static constexpr Register WasmTlsReg = r9;
+// Instance pointer argument register for WebAssembly functions. This must not
+// alias any other register used for passing function arguments or return
+// values. Preserved by WebAssembly functions.
+static constexpr Register InstanceReg = r9;
 
 // Registers used for wasm table calls. These registers must be disjoint
-// from the ABI argument registers, WasmTlsReg and each other.
+// from the ABI argument registers, InstanceReg and each other.
 static constexpr Register WasmTableCallScratchReg0 = ABINonArgReg0;
 static constexpr Register WasmTableCallScratchReg1 = ABINonArgReg1;
 static constexpr Register WasmTableCallSigReg = ABINonArgReg2;
 static constexpr Register WasmTableCallIndexReg = ABINonArgReg3;
 
+// Registers used for ref calls.
+static constexpr Register WasmCallRefCallScratchReg0 = ABINonArgReg0;
+static constexpr Register WasmCallRefCallScratchReg1 = ABINonArgReg1;
+static constexpr Register WasmCallRefReg = ABINonArgReg3;
+
 // Register used as a scratch along the return path in the fast js -> wasm stub
-// code.  This must not overlap ReturnReg, JSReturnOperand, or WasmTlsReg.  It
-// must be a volatile register.
+// code.  This must not overlap ReturnReg, JSReturnOperand, or InstanceReg.
+// It must be a volatile register.
 static constexpr Register WasmJitEntryReturnScratch = r5;
 
 static constexpr Register PreBarrierReg = r1;
@@ -308,7 +314,6 @@ static const uint32_t WasmTrapInstructionLength = 4;
 // See comments in wasm::GenerateFunctionPrologue.  The difference between these
 // is the size of the largest callable prologue on the platform.
 static constexpr uint32_t WasmCheckedCallEntryOffset = 0u;
-static constexpr uint32_t WasmCheckedTailEntryOffset = 12u;
 
 static const Scale ScalePointer = TimesFour;
 
@@ -1253,10 +1258,6 @@ class Assembler : public AssemblerShared {
 #endif
   }
 
-  // We need to wait until an AutoJitContextAlloc is created by the
-  // MacroAssembler, before allocating any space.
-  void initWithAllocator() { m_buffer.initWithAllocator(); }
-
   void setUnlimitedBuffer() { m_buffer.setUnlimited(); }
 
   static Condition InvertCondition(Condition cond);
@@ -1877,8 +1878,6 @@ class Assembler : public AssemblerShared {
   static void ToggleToJmp(CodeLocationLabel inst_);
   static void ToggleToCmp(CodeLocationLabel inst_);
 
-  static uint8_t* BailoutTableStart(uint8_t* code);
-
   static size_t ToggledCallSize(uint8_t* code);
   static void ToggleCall(CodeLocationLabel inst_, bool enabled);
 
@@ -1960,7 +1959,11 @@ class InstDTR : public Instruction {
   // TODO: Replace the initialization with something that is safer.
   InstDTR(LoadStore ls, IsByte_ ib, Index mode, Register rt, DTRAddr addr,
           Assembler::Condition c)
-      : Instruction(ls | ib | mode | RT(rt) | addr.encode() | IsDTR, c) {}
+      : Instruction(std::underlying_type_t<LoadStore>(ls) |
+                        std::underlying_type_t<IsByte_>(ib) |
+                        std::underlying_type_t<Index>(mode) | RT(rt) |
+                        addr.encode() | IsDTR,
+                    c) {}
 
   static bool IsTHIS(const Instruction& i);
   static InstDTR* AsTHIS(const Instruction& i);

@@ -5,7 +5,7 @@
 
 // Test for reordering with an extension installed.
 
-const { Toolbox } = require("devtools/client/framework/toolbox");
+const { Toolbox } = require("resource://devtools/client/framework/toolbox.js");
 
 const EXTENSION = "@reorder.test";
 
@@ -31,7 +31,7 @@ add_task(async function() {
     useAddonManager: "temporary",
     manifest: {
       devtools_page: "extension.html",
-      applications: {
+      browser_specific_settings: {
         gecko: { id: EXTENSION },
       },
     },

@@ -53,7 +53,6 @@ class VideoStreamEncoderObserver : public CpuOveruseMetricsObserver {
     bool framerate_scaling_enabled;
   };
 
-  // TODO(nisse): Duplicates enum EncodedImageCallback::DropReason.
   enum class DropReason {
     kSource,
     kEncoderQueue,
@@ -66,7 +65,7 @@ class VideoStreamEncoderObserver : public CpuOveruseMetricsObserver {
 
   virtual void OnIncomingFrame(int width, int height) = 0;
 
-  // TODO(nisse): Merge into one callback per encoded frame.
+  // TODO(bugs.webrtc.org/8504): Merge into one callback per encoded frame.
   using CpuOveruseMetricsObserver::OnEncodedFrameTimeMeasured;
   virtual void OnSendEncodedImage(const EncodedImage& encoded_image,
                                   const CodecSpecificInfo* codec_info) = 0;
@@ -101,14 +100,14 @@ class VideoStreamEncoderObserver : public CpuOveruseMetricsObserver {
       const VideoBitrateAllocation& allocation) {}
 
   // Informes observer if an internal encoder scaler has reduced video
-  // resolution or not. |is_scaled| is a flag indicating if the video is scaled
+  // resolution or not. `is_scaled` is a flag indicating if the video is scaled
   // down.
   virtual void OnEncoderInternalScalerUpdate(bool is_scaled) {}
 
-  // TODO(nisse): VideoStreamEncoder wants to query the stats, which makes this
-  // not a pure observer. GetInputFrameRate is needed for the cpu adaptation, so
-  // can be deleted if that responsibility is moved out to a VideoStreamAdaptor
-  // class.
+  // TODO(bugs.webrtc.org/14246): VideoStreamEncoder wants to query the stats,
+  // which makes this not a pure observer. GetInputFrameRate is needed for the
+  // cpu adaptation, so can be deleted if that responsibility is moved out to a
+  // VideoStreamAdaptor class.
   virtual int GetInputFrameRate() const = 0;
 };
 

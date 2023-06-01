@@ -4,15 +4,17 @@
 
 "use strict";
 
-const { PureComponent } = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+const {
+  PureComponent,
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 
-const throttlingProfiles = require("devtools/client/shared/components/throttling/profiles");
-const Types = require("devtools/client/shared/components/throttling/types");
+const throttlingProfiles = require("resource://devtools/client/shared/components/throttling/profiles.js");
+const Types = require("resource://devtools/client/shared/components/throttling/types.js");
 
 // Localization
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const L10N = new LocalizationHelper(
   "devtools/client/locales/network-throttling.properties"
 );
@@ -21,7 +23,7 @@ const NO_THROTTLING_LABEL = L10N.getStr("responsive.noThrottling");
 loader.lazyRequireGetter(
   this,
   "showMenu",
-  "devtools/client/shared/components/menu/utils",
+  "resource://devtools/client/shared/components/menu/utils.js",
   true
 );
 
@@ -69,18 +71,28 @@ class NetworkThrottlingMenu extends PureComponent {
 
   render() {
     const { networkThrottling } = this.props;
-    const selectedProfile = networkThrottling.enabled
+    const label = networkThrottling.enabled
       ? networkThrottling.profile
       : NO_THROTTLING_LABEL;
+
+    let title = NO_THROTTLING_LABEL;
+
+    if (networkThrottling.enabled) {
+      const id = networkThrottling.profile;
+      const selectedProfile = throttlingProfiles.find(
+        profile => profile.id === id
+      );
+      title = selectedProfile.description;
+    }
 
     return dom.button(
       {
         id: "network-throttling-menu",
         className: "devtools-button devtools-dropdown-button",
-        title: selectedProfile,
+        title,
         onClick: this.onShowThrottlingMenu,
       },
-      dom.span({ className: "title" }, selectedProfile)
+      dom.span({ className: "title" }, label)
     );
   }
 }

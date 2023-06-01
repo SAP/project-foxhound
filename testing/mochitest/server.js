@@ -738,7 +738,7 @@ function testListing(metadata, response) {
       metadata.getProperty("directory"),
       true
     );
-  } else if (typeof Components != undefined) {
+  } else if (typeof Components != "undefined") {
     var manifest = metadata.queryString.match(/manifestFile=([^&]+)/)[1];
 
     [links, count] = convertManifestToTestLinks(
@@ -765,10 +765,6 @@ function testListing(metadata, response) {
           rel: "stylesheet",
           type: "text/css",
           href: "/static/harness.css",
-        }),
-        SCRIPT({
-          type: "text/javascript",
-          src: "/tests/SimpleTest/StructuredLog.jsm",
         }),
         SCRIPT({
           type: "text/javascript",

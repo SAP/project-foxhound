@@ -1,8 +1,8 @@
 /* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 
-const { E10SUtils } = ChromeUtils.import(
-  "resource://gre/modules/E10SUtils.jsm"
+const { E10SUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/E10SUtils.sys.mjs"
 );
 
 const URI_SECURE_COM = Services.io.newURI("https://example.com");
@@ -36,11 +36,9 @@ const principalPrivilegedMozilla = ssm.createContentPrincipal(
 );
 
 const {
-  DEFAULT_REMOTE_TYPE,
   EXTENSION_REMOTE_TYPE,
   FILE_REMOTE_TYPE,
   FISSION_WEB_REMOTE_TYPE,
-  LARGE_ALLOCATION_REMOTE_TYPE,
   NOT_REMOTE,
   PRIVILEGEDABOUT_REMOTE_TYPE,
   PRIVILEGEDMOZILLA_REMOTE_TYPE,
@@ -54,7 +52,8 @@ const {
   REMOTE_WORKER_TYPE_SERVICE,
 } = Ci.nsIE10SUtils;
 
-// Test ServiceWorker remoteType selection with multiprocess and/or site isolation enabled.
+// Test ServiceWorker remoteType selection with multiprocess and/or site
+// isolation enabled.
 add_task(function test_get_remote_type_for_service_worker() {
   // ServiceWorkers with system or null principal are unexpected and we expect
   // the method call to throw.
@@ -146,12 +145,12 @@ add_task(function test_get_remote_type_for_service_worker() {
   }
 });
 
-// Test SharedWorker remoteType selection with multiprocess and/or site isolation enabled.
+// Test SharedWorker remoteType selection with multiprocess and/or site
+// isolation enabled.
 add_task(function test_get_remote_type_for_shared_worker() {
-  // Verify that for shared worker registered from a large allocation or web
-  // coop+coep remote types we are going to select a web or fission remote type.
+  // Verify that for shared worker registered from a web coop+coep remote type
+  // we are going to select a web or fission remote type.
   for (const [principal, preferredRemoteType] of [
-    [principalSecureCom, LARGE_ALLOCATION_REMOTE_TYPE],
     [
       principalSecureCom,
       `${WEB_REMOTE_COOP_COEP_TYPE_PREFIX}=${principalSecureCom.siteOrigin}`,
@@ -245,7 +244,6 @@ add_task(function test_get_remote_type_for_shared_worker() {
   // Shared worker registered for web+custom urls.
   for (const [preferredRemoteType, expectedRemoteType] of [
     [WEB_REMOTE_TYPE, WEB_REMOTE_TYPE],
-    [LARGE_ALLOCATION_REMOTE_TYPE, WEB_REMOTE_TYPE],
     ["fakeRemoteType", "fakeRemoteType"],
     // This seems to be actually failing with a SecurityError
     // as soon as the SharedWorker constructor is being called with
@@ -269,7 +267,6 @@ add_task(function test_get_remote_type_for_shared_worker() {
   // Shared worker registered for ext+custom urls.
   for (const [preferredRemoteType, expectedRemoteType] of [
     [WEB_REMOTE_TYPE, WEB_REMOTE_TYPE],
-    [LARGE_ALLOCATION_REMOTE_TYPE, WEB_REMOTE_TYPE],
     ["fakeRemoteType", "fakeRemoteType"],
     // This seems to be actually prevented by failing a ClientIsValidPrincipalInfo
     // check (but only when the remote worker is being launched in the child process

@@ -1,23 +1,14 @@
-/* exported MANAGE_ADDRESSES_DIALOG_URL, MANAGE_CREDIT_CARDS_DIALOG_URL, EDIT_ADDRESS_DIALOG_URL, EDIT_CREDIT_CARD_DIALOG_URL,
-            BASE_URL, TEST_ADDRESS_1, TEST_ADDRESS_2, TEST_ADDRESS_3, TEST_ADDRESS_4, TEST_ADDRESS_5, TEST_ADDRESS_CA_1, TEST_ADDRESS_DE_1,
-            TEST_ADDRESS_IE_1,
-            TEST_CREDIT_CARD_1, TEST_CREDIT_CARD_2, TEST_CREDIT_CARD_3, TEST_CREDIT_CARD_4, TEST_CREDIT_CARD_5,
-            FORM_URL, CREDITCARD_FORM_URL, CREDITCARD_FORM_IFRAME_URL
-            FTU_PREF, ENABLED_AUTOFILL_ADDRESSES_PREF, ENABLED_AUTOFILL_ADDRESSES_CAPTURE_PREF, AUTOFILL_CREDITCARDS_AVAILABLE_PREF, ENABLED_AUTOFILL_CREDITCARDS_PREF,
-            SUPPORTED_COUNTRIES_PREF,
-            SYNC_USERNAME_PREF, SYNC_ADDRESSES_PREF, SYNC_CREDITCARDS_PREF, SYNC_CREDITCARDS_AVAILABLE_PREF, CREDITCARDS_USED_STATUS_PREF,
-            sleep, expectPopupOpen, openPopupOn, openPopupForSubframe, closePopup, closePopupForSubframe,
-            clickDoorhangerButton, getAddresses, saveAddress, removeAddresses, saveCreditCard,
-            getDisplayedPopupItems, getDoorhangerCheckbox, waitForPopupEnabled,
-            getNotification, getDoorhangerButton, removeAllRecords, expectWarningText, testDialog */
-
 "use strict";
 
-const { OSKeyStore } = ChromeUtils.import(
-  "resource://gre/modules/OSKeyStore.jsm"
+const { OSKeyStore } = ChromeUtils.importESModule(
+  "resource://gre/modules/OSKeyStore.sys.mjs"
 );
-const { OSKeyStoreTestUtils } = ChromeUtils.import(
-  "resource://testing-common/OSKeyStoreTestUtils.jsm"
+const { OSKeyStoreTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/OSKeyStoreTestUtils.sys.mjs"
+);
+
+const { FormAutofillParent } = ChromeUtils.import(
+  "resource://autofill/FormAutofillParent.jsm"
 );
 
 const MANAGE_ADDRESSES_DIALOG_URL =
@@ -28,10 +19,19 @@ const EDIT_ADDRESS_DIALOG_URL =
   "chrome://formautofill/content/editAddress.xhtml";
 const EDIT_CREDIT_CARD_DIALOG_URL =
   "chrome://formautofill/content/editCreditCard.xhtml";
+const PRIVACY_PREF_URL = "about:preferences#privacy";
 
 const HTTP_TEST_PATH = "/browser/browser/extensions/formautofill/test/browser/";
 const BASE_URL = "http://mochi.test:8888" + HTTP_TEST_PATH;
 const FORM_URL = BASE_URL + "autocomplete_basic.html";
+const ADDRESS_FORM_URL =
+  "https://example.org" +
+  HTTP_TEST_PATH +
+  "address/autocomplete_address_basic.html";
+const ADDRESS_FORM_WITHOUT_AUTOCOMPLETE_URL =
+  "https://example.org" +
+  HTTP_TEST_PATH +
+  "address/without_autocomplete_address_basic.html";
 const CREDITCARD_FORM_URL =
   "https://example.org" +
   HTTP_TEST_PATH +
@@ -40,15 +40,27 @@ const CREDITCARD_FORM_IFRAME_URL =
   "https://example.org" +
   HTTP_TEST_PATH +
   "creditCard/autocomplete_creditcard_iframe.html";
+const CREDITCARD_FORM_COMBINED_EXPIRY_URL =
+  "https://example.org" +
+  HTTP_TEST_PATH +
+  "creditCard/autocomplete_creditcard_cc_exp_field.html";
+const CREDITCARD_FORM_WITHOUT_AUTOCOMPLETE_URL =
+  "https://example.org" +
+  HTTP_TEST_PATH +
+  "creditCard/without_autocomplete_creditcard_basic.html";
+const EMPTY_URL = "https://example.org" + HTTP_TEST_PATH + "empty.html";
 
 const FTU_PREF = "extensions.formautofill.firstTimeUse";
-const CREDITCARDS_USED_STATUS_PREF = "extensions.formautofill.creditCards.used";
 const ENABLED_AUTOFILL_ADDRESSES_PREF =
   "extensions.formautofill.addresses.enabled";
 const ENABLED_AUTOFILL_ADDRESSES_CAPTURE_PREF =
   "extensions.formautofill.addresses.capture.enabled";
+const AUTOFILL_ADDRESSES_AVAILABLE_PREF =
+  "extensions.formautofill.addresses.supported";
+const ENABLED_AUTOFILL_ADDRESSES_SUPPORTED_COUNTRIES_PREF =
+  "extensions.formautofill.addresses.supportedCountries";
 const AUTOFILL_CREDITCARDS_AVAILABLE_PREF =
-  "extensions.formautofill.creditCards.available";
+  "extensions.formautofill.creditCards.supported";
 const ENABLED_AUTOFILL_CREDITCARDS_PREF =
   "extensions.formautofill.creditCards.enabled";
 const SUPPORTED_COUNTRIES_PREF = "extensions.formautofill.supportedCountries";
@@ -73,11 +85,13 @@ const TEST_ADDRESS_1 = {
 };
 
 const TEST_ADDRESS_2 = {
+  "given-name": "Anonymouse",
   "street-address": "Some Address",
   country: "US",
 };
 
 const TEST_ADDRESS_3 = {
+  "given-name": "John",
   "street-address": "Other Address",
   "postal-code": "12345",
 };
@@ -91,6 +105,8 @@ const TEST_ADDRESS_4 = {
   email: "timbl@w3.org",
 };
 
+// TODO: Number of field less than AUTOFILL_FIELDS_THRESHOLD
+//       need to confirm whether this is intentional
 const TEST_ADDRESS_5 = {
   tel: "+16172535702",
 };
@@ -143,7 +159,6 @@ const TEST_CREDIT_CARD_1 = {
   "cc-number": "4111111111111111",
   "cc-exp-month": 4,
   "cc-exp-year": new Date().getFullYear(),
-  "cc-type": "visa",
 };
 
 const TEST_CREDIT_CARD_2 = {
@@ -151,30 +166,44 @@ const TEST_CREDIT_CARD_2 = {
   "cc-number": "4929001587121045",
   "cc-exp-month": 12,
   "cc-exp-year": new Date().getFullYear() + 10,
-  "cc-type": "visa",
 };
 
 const TEST_CREDIT_CARD_3 = {
   "cc-number": "5103059495477870",
   "cc-exp-month": 1,
   "cc-exp-year": 2000,
-  "cc-type": "mastercard",
 };
 
 const TEST_CREDIT_CARD_4 = {
   "cc-number": "5105105105105100",
-  "cc-type": "mastercard",
 };
 
 const TEST_CREDIT_CARD_5 = {
   "cc-name": "Chris P. Bacon",
   "cc-number": "4012888888881881",
-  "cc-type": "visa",
 };
 
 const MAIN_BUTTON = "button";
 const SECONDARY_BUTTON = "secondaryButton";
 const MENU_BUTTON = "menubutton";
+
+/**
+ * Collection of timeouts that are used to ensure something should not happen.
+ */
+const TIMEOUT_ENSURE_PROFILE_NOT_SAVED = 1000;
+const TIMEOUT_ENSURE_CC_DIALOG_NOT_CLOSED = 500;
+const TIMEOUT_ENSURE_AUTOCOMPLETE_NOT_SHOWN = 1000;
+
+async function ensureCreditCardDialogNotClosed(win) {
+  const unloadHandler = () => {
+    ok(false, "Credit card dialog shouldn't be closed");
+  };
+  win.addEventListener("unload", unloadHandler);
+  await new Promise(resolve =>
+    setTimeout(resolve, TIMEOUT_ENSURE_CC_DIALOG_NOT_CLOSED)
+  );
+  win.removeEventListener("unload", unloadHandler);
+}
 
 function getDisplayedPopupItems(
   browser,
@@ -195,13 +224,179 @@ async function sleep(ms = 500) {
   await new Promise(resolve => setTimeout(resolve, ms));
 }
 
+async function ensureNoAutocompletePopup(browser) {
+  await new Promise(resolve =>
+    setTimeout(resolve, TIMEOUT_ENSURE_AUTOCOMPLETE_NOT_SHOWN)
+  );
+  const items = getDisplayedPopupItems(browser);
+  ok(!items.length, "Should not found autocomplete items");
+}
+
+/**
+ * Wait for "formautofill-storage-changed" events
+ *
+ * @param {Array<string>} eventTypes
+ *        eventType must be one of the following:
+ *        `add`, `update`, `remove`, `notifyUsed`, `removeAll`, `reconcile`
+ *
+ * @returns {Promise} resolves when all events are received
+ */
+async function waitForStorageChangedEvents(...eventTypes) {
+  return Promise.all(
+    eventTypes.map(type =>
+      TestUtils.topicObserved(
+        "formautofill-storage-changed",
+        (subject, data) => {
+          return data == type;
+        }
+      )
+    )
+  );
+}
+
+/**
+ * Wait until the element found matches the expected autofill value
+ *
+ * @param {object} target
+ *        The target in which to run the task.
+ * @param {string} selector
+ *        A selector used to query the element.
+ * @param {string} value
+ *        The expected autofilling value for the element
+ */
+async function waitForAutofill(target, selector, value) {
+  await SpecialPowers.spawn(target, [selector, value], async function(
+    selector,
+    val
+  ) {
+    await ContentTaskUtils.waitForCondition(() => {
+      let element = content.document.querySelector(selector);
+      return element.value == val;
+    }, "Autofill never fills");
+  });
+}
+
+/**
+ * Waits for the subDialog to be loaded
+ *
+ * @param {Window} win The window of the dialog
+ * @param {string} dialogUrl The url of the dialog that we are waiting for
+ *
+ * @returns {Promise} resolves when the sub dialog is loaded
+ */
+function waitForSubDialogLoad(win, dialogUrl) {
+  return new Promise((resolve, reject) => {
+    win.gSubDialog._dialogStack.addEventListener(
+      "dialogopen",
+      async function dialogopen(evt) {
+        let cwin = evt.detail.dialog._frame.contentWindow;
+        if (cwin.location != dialogUrl) {
+          return;
+        }
+        content.gSubDialog._dialogStack.removeEventListener(
+          "dialogopen",
+          dialogopen
+        );
+
+        resolve(cwin);
+      }
+    );
+  });
+}
+
+/**
+ * Use this function when you want to update the value of elements in
+ * a form and then submit the form. This function makes sure the form
+ * is "identified" (`identifyAutofillFields` is called) before submitting
+ * the form.
+ * This is guaranteed by first focusing on an element in the form to trigger
+ * the 'FormAutofill:FieldsIdentified' message.
+ *
+ * @param {object} target
+ *        The target in which to run the task.
+ * @param {object} args
+ * @param {string} args.focusSelector
+ *        A selector used to query the element to be focused
+ * @param {string} args.formId
+ *        The id of the form to be updated. This function uses "form" if
+ *        this argument is not present
+ * @param {string} args.formSelector
+ *        A selector used to query the form element
+ * @param {object} args.newValues
+ *        Elements to be updated. Key is the element selector, value is the
+ *        new value of the element.
+ *
+ * @param {boolean} submit
+ *        Set to true to submit the form after the task is done, false otherwise.
+ */
+async function focusUpdateSubmitForm(target, args, submit = true) {
+  let fieldsIdentifiedPromiseResolver;
+  let fieldsIdentifiedObserver = {
+    fieldsIdentified() {
+      FormAutofillParent.removeMessageObserver(fieldsIdentifiedObserver);
+      fieldsIdentifiedPromiseResolver();
+    },
+  };
+
+  let fieldsIdentifiedPromise = new Promise(resolve => {
+    fieldsIdentifiedPromiseResolver = resolve;
+    FormAutofillParent.addMessageObserver(fieldsIdentifiedObserver);
+  });
+
+  let alreadyFocused = await SpecialPowers.spawn(target, [args], obj => {
+    let focused = false;
+
+    let form;
+    if (obj.formSelector) {
+      form = content.document.querySelector(obj.formSelector);
+    } else {
+      form = content.document.getElementById(obj.formId ?? "form");
+    }
+    let element = form.querySelector(obj.focusSelector);
+    if (element != content.document.activeElement) {
+      info(`focus on element (id=${element.id})`);
+      element.focus();
+    } else {
+      focused = true;
+    }
+
+    for (const [selector, value] of Object.entries(obj.newValues)) {
+      element = form.querySelector(selector);
+      if (content.HTMLInputElement.isInstance(element)) {
+        element.setUserInput(value);
+      } else {
+        element.value = value;
+      }
+    }
+
+    return focused;
+  });
+
+  if (alreadyFocused) {
+    // If the element is already focused, assume the FieldsIdentified message
+    // was sent before.
+    fieldsIdentifiedPromiseResolver();
+  }
+
+  await fieldsIdentifiedPromise;
+
+  if (submit) {
+    await SpecialPowers.spawn(target, [args], obj => {
+      let form;
+      if (obj.formSelector) {
+        form = content.document.querySelector(obj.formSelector);
+      } else {
+        form = content.document.getElementById(obj.formId ?? "form");
+      }
+      info(`submit form (id=${form.id})`);
+      form.querySelector("input[type=submit]").click();
+    });
+  }
+}
+
 async function focusAndWaitForFieldsIdentified(browserOrContext, selector) {
   info("expecting the target input being focused and identified");
   /* eslint no-shadow: ["error", { "allow": ["selector", "previouslyFocused", "previouslyIdentified"] }] */
-
-  const { FormAutofillParent } = ChromeUtils.import(
-    "resource://autofill/FormAutofillParent.jsm"
-  );
 
   // If the input is previously focused, no more notifications will be
   // sent as the notification goes along with focus event.
@@ -221,8 +416,8 @@ async function focusAndWaitForFieldsIdentified(browserOrContext, selector) {
     browserOrContext,
     [selector],
     async function(selector) {
-      const { FormLikeFactory } = ChromeUtils.import(
-        "resource://gre/modules/FormLikeFactory.jsm"
+      const { FormLikeFactory } = ChromeUtils.importESModule(
+        "resource://gre/modules/FormLikeFactory.sys.mjs"
       );
       const input = content.document.querySelector(selector);
       const rootElement = FormLikeFactory.findRootForField(input);
@@ -247,7 +442,7 @@ async function focusAndWaitForFieldsIdentified(browserOrContext, selector) {
 
   // If a browsing context was supplied, focus its parent frame as well.
   if (
-    browserOrContext instanceof BrowsingContext &&
+    BrowsingContext.isInstance(browserOrContext) &&
     browserOrContext.parent != browserOrContext
   ) {
     await SpecialPowers.spawn(
@@ -272,8 +467,8 @@ async function focusAndWaitForFieldsIdentified(browserOrContext, selector) {
 
   await sleep();
   await SpecialPowers.spawn(browserOrContext, [], async function() {
-    const { FormLikeFactory } = ChromeUtils.import(
-      "resource://gre/modules/FormLikeFactory.jsm"
+    const { FormLikeFactory } = ChromeUtils.importESModule(
+      "resource://gre/modules/FormLikeFactory.sys.mjs"
     );
     FormLikeFactory.findRootForField(
       content.document.activeElement
@@ -281,9 +476,23 @@ async function focusAndWaitForFieldsIdentified(browserOrContext, selector) {
   });
 }
 
-async function expectPopupOpen(browser) {
-  info("expectPopupOpen");
-  await BrowserTestUtils.waitForPopupEvent(browser.autoCompletePopup, "shown");
+/**
+ * Run the task and wait until the autocomplete popup is opened.
+ *
+ * @param {object} browser A xul:browser.
+ * @param {Function} taskFn Task that will trigger the autocomplete popup
+ */
+async function runAndWaitForAutocompletePopupOpen(browser, taskFn) {
+  info("runAndWaitForAutocompletePopupOpen");
+  let popupShown = BrowserTestUtils.waitForPopupEvent(
+    browser.autoCompletePopup,
+    "shown"
+  );
+
+  // Run the task will open the autocomplete popup
+  await taskFn();
+
+  await popupShown;
   await BrowserTestUtils.waitForMutationCondition(
     browser.autoCompletePopup.richlistbox,
     { childList: true, subtree: true, attributes: true },
@@ -295,6 +504,7 @@ async function expectPopupOpen(browser) {
           return (
             (item.getAttribute("originaltype") == "autofill-profile" ||
               item.getAttribute("originaltype") == "autofill-insecureWarning" ||
+              item.getAttribute("originaltype") == "autofill-clear-button" ||
               item.getAttribute("originaltype") == "autofill-footer") &&
             item.hasAttribute("formautofillattached")
           );
@@ -346,28 +556,34 @@ async function openPopupOn(browser, selector) {
     "FormAutoComplete:PopupOpened"
   );
   await SimpleTest.promiseFocus(browser);
-  await focusAndWaitForFieldsIdentified(browser, selector);
-  if (!selector.includes("cc-")) {
-    info(`openPopupOn: before VK_DOWN on ${selector}`);
-    await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, browser);
-  }
-  await expectPopupOpen(browser);
+
+  await runAndWaitForAutocompletePopupOpen(browser, async () => {
+    await focusAndWaitForFieldsIdentified(browser, selector);
+    if (!selector.includes("cc-")) {
+      info(`openPopupOn: before VK_DOWN on ${selector}`);
+      await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, browser);
+    }
+  });
+
   await childNotifiedPromise;
 }
 
-async function openPopupForSubframe(browser, frameBrowsingContext, selector) {
+async function openPopupOnSubframe(browser, frameBrowsingContext, selector) {
   let childNotifiedPromise = waitPopupStateInChild(
     frameBrowsingContext,
     "FormAutoComplete:PopupOpened"
   );
 
   await SimpleTest.promiseFocus(browser);
-  await focusAndWaitForFieldsIdentified(frameBrowsingContext, selector);
-  if (!selector.includes("cc-")) {
-    info(`openPopupForSubframe: before VK_DOWN on ${selector}`);
-    await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, frameBrowsingContext);
-  }
-  await expectPopupOpen(browser);
+
+  await runAndWaitForAutocompletePopupOpen(browser, async () => {
+    await focusAndWaitForFieldsIdentified(frameBrowsingContext, selector);
+    if (!selector.includes("cc-")) {
+      info(`openPopupOnSubframe: before VK_DOWN on ${selector}`);
+      await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, frameBrowsingContext);
+    }
+  });
+
   await childNotifiedPromise;
 }
 
@@ -429,6 +645,14 @@ function getAddresses() {
   return getRecords({ collectionName: "addresses" });
 }
 
+async function ensureNoAddressSaved() {
+  await new Promise(resolve =>
+    setTimeout(resolve, TIMEOUT_ENSURE_PROFILE_NOT_SAVED)
+  );
+  const addresses = await getAddresses();
+  is(addresses.length, 0, "No address was saved");
+}
+
 function getCreditCards() {
   return getRecords({ collectionName: "creditCards" });
 }
@@ -469,6 +693,10 @@ function getNotification(index = 0) {
   ok(!!notifications.length, "at least one notification displayed");
   ok(true, notifications.length + " notification(s)");
   return notifications[index];
+}
+
+function waitForPopupShown() {
+  return BrowserTestUtils.waitForEvent(PopupNotifications.panel, "popupshown");
 }
 
 /**
@@ -515,17 +743,25 @@ function getDoorhangerButton(button) {
   return getNotification()[button];
 }
 
+/**
+ * Removes all addresses and credit cards from storage.
+ *
+ * **NOTE: If you add or update a record in a test, then you must wait for the
+ * respective storage event to fire before calling this function.**
+ * This is because this function doesn't guarantee that a record that
+ * is about to be added or update will also be removed,
+ * since the add or update is triggered by an asynchronous call.
+ *
+ * @see waitForStorageChangedEvents for more details about storage events to wait for
+ */
 async function removeAllRecords() {
   let addresses = await getAddresses();
   if (addresses.length) {
     await removeAddresses(addresses.map(address => address.guid));
   }
-
-  if (Services.prefs.getBoolPref(AUTOFILL_CREDITCARDS_AVAILABLE_PREF)) {
-    let creditCards = await getCreditCards();
-    if (creditCards.length) {
-      await removeCreditCards(creditCards.map(cc => cc.guid));
-    }
+  let creditCards = await getCreditCards();
+  if (creditCards.length) {
+    await removeCreditCards(creditCards.map(cc => cc.guid));
   }
 }
 
@@ -578,11 +814,26 @@ async function testDialog(url, testFn, arg = undefined) {
   return unloadPromise;
 }
 
-add_task(function setup() {
+/**
+ * Initializes the test storage for a task.
+ *
+ * @param {...object} items Can either be credit card or address objects
+ */
+async function setStorage(...items) {
+  for (let item of items) {
+    if (item["cc-number"]) {
+      await saveCreditCard(item);
+    } else {
+      await saveAddress(item);
+    }
+  }
+}
+
+add_setup(function() {
   OSKeyStoreTestUtils.setup();
 });
 
-registerCleanupFunction(removeAllRecords);
 registerCleanupFunction(async () => {
+  await removeAllRecords();
   await OSKeyStoreTestUtils.cleanup();
 });

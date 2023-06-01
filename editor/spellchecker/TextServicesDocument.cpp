@@ -5,14 +5,15 @@
 
 #include "TextServicesDocument.h"
 
+#include "EditorBase.h"               // for EditorBase
+#include "EditorUtils.h"              // for AutoTransactionBatchExternal
 #include "FilteredContentIterator.h"  // for FilteredContentIterator
-#include "mozilla/Assertions.h"       // for MOZ_ASSERT, etc
-#include "mozilla/EditorBase.h"       // for EditorBase
-#include "mozilla/EditorUtils.h"      // for AutoTransactionBatchExternal
-#include "mozilla/HTMLEditHelpers.h"  // for JoinNodesDirection
-#include "mozilla/HTMLEditUtils.h"    // for HTMLEditUtils
-#include "mozilla/IntegerRange.h"     // for IntegerRange
-#include "mozilla/mozalloc.h"         // for operator new, etc
+#include "HTMLEditUtils.h"            // for HTMLEditUtils
+#include "JoinSplitNodeDirection.h"   // for JoinNodesDirection
+
+#include "mozilla/Assertions.h"    // for MOZ_ASSERT, etc
+#include "mozilla/IntegerRange.h"  // for IntegerRange
+#include "mozilla/mozalloc.h"      // for operator new, etc
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/UniquePtr.h"          // for UniquePtr
 #include "mozilla/dom/AbstractRange.h"  // for AbstractRange
@@ -21,8 +22,9 @@
 #include "mozilla/dom/StaticRange.h"  // for StaticRange
 #include "mozilla/dom/Text.h"
 #include "mozilla/intl/WordBreaker.h"  // for WordRange, WordBreaker
-#include "nsAString.h"                 // for nsAString::Length, etc
-#include "nsContentUtils.h"            // for nsContentUtils
+
+#include "nsAString.h"       // for nsAString::Length, etc
+#include "nsContentUtils.h"  // for nsContentUtils
 #include "nsComposeTxtSrvFilter.h"
 #include "nsDebug.h"                 // for NS_ENSURE_TRUE, etc
 #include "nsDependentSubstring.h"    // for Substring
@@ -34,7 +36,7 @@
 #include "nsIEditorSpellCheck.h"     // for nsIEditorSpellCheck, etc
 #include "nsINode.h"                 // for nsINode
 #include "nsISelectionController.h"  // for nsISelectionController, etc
-#include "nsISupportsBase.h"         // for nsISupports
+#include "nsISupports.h"             // for nsISupports
 #include "nsISupportsUtils.h"        // for NS_IF_ADDREF, NS_ADDREF, etc
 #include "nsRange.h"                 // for nsRange
 #include "nsString.h"                // for nsString, nsAutoString
@@ -344,7 +346,7 @@ nsresult TextServicesDocument::ExpandRangeToWordBoundaries(
         "TextServicesDocument::OffsetEntryArray::FindWordRange() failed");
     return maybeWordRange.unwrapErr();
   }
-  rngStartNode = maybeWordRange.inspect().StartRef().GetContainerAsText();
+  rngStartNode = maybeWordRange.inspect().StartRef().GetContainerAs<Text>();
   rngStartOffset = maybeWordRange.inspect().StartRef().Offset();
 
   // Grab all the text in the block containing our
@@ -374,10 +376,11 @@ nsresult TextServicesDocument::ExpandRangeToWordBoundaries(
   // rngEndNode and rngEndOffset if it isn't already at the start of the
   // word and isn't equivalent to rngStartNode and rngStartOffset.
 
-  if (rngEndNode != maybeWordRange.inspect().StartRef().GetContainerAsText() ||
+  if (rngEndNode !=
+          maybeWordRange.inspect().StartRef().GetContainerAs<Text>() ||
       rngEndOffset != maybeWordRange.inspect().StartRef().Offset() ||
       (rngEndNode == rngStartNode && rngEndOffset == rngStartOffset)) {
-    rngEndNode = maybeWordRange.inspect().EndRef().GetContainerAsText();
+    rngEndNode = maybeWordRange.inspect().EndRef().GetContainerAs<Text>();
     rngEndOffset = maybeWordRange.inspect().EndRef().Offset();
   }
 
@@ -1353,7 +1356,7 @@ void TextServicesDocument::DidJoinContents(
   }
 
   Maybe<size_t> maybeJoinedIndex =
-      mOffsetTable.FirstIndexOf(*aJoinedPoint.ContainerAsText());
+      mOffsetTable.FirstIndexOf(*aJoinedPoint.ContainerAs<Text>());
   if (maybeJoinedIndex.isNothing()) {
     // It's okay if the node isn't in the offset table, the
     // editor could be cleaning house.
@@ -1385,7 +1388,7 @@ void TextServicesDocument::DidJoinContents(
   const uint32_t movedTextDataLength =
       aJoinNodesDirection == JoinNodesDirection::LeftNodeIntoRightNode
           ? aJoinedPoint.Offset()
-          : aJoinedPoint.ContainerAsText()->TextDataLength() -
+          : aJoinedPoint.ContainerAs<Text>()->TextDataLength() -
                 aJoinedPoint.Offset();
   for (uint32_t i = removedIndex; i < mOffsetTable.Length(); i++) {
     const UniquePtr<OffsetEntry>& entry = mOffsetTable[i];
@@ -1394,7 +1397,7 @@ void TextServicesDocument::DidJoinContents(
       break;
     }
     if (entry->mIsValid) {
-      entry->mTextNode = aJoinedPoint.ContainerAsText();
+      entry->mTextNode = aJoinedPoint.ContainerAs<Text>();
       if (aJoinNodesDirection == JoinNodesDirection::RightNodeIntoLeftNode) {
         // The text was moved from aRemovedContent to end of the container of
         // aJoinedPoint.
@@ -1409,7 +1412,7 @@ void TextServicesDocument::DidJoinContents(
     for (uint32_t i = joinedIndex; i < mOffsetTable.Length(); i++) {
       const UniquePtr<OffsetEntry>& entry = mOffsetTable[i];
       LockOffsetEntryArrayLengthInDebugBuild(observer, mOffsetTable);
-      if (entry->mTextNode != aJoinedPoint.ContainerAsText()) {
+      if (entry->mTextNode != aJoinedPoint.ContainerAs<Text>()) {
         break;
       }
       if (entry->mIsValid) {
@@ -1421,7 +1424,7 @@ void TextServicesDocument::DidJoinContents(
   // Now check to see if the iterator is pointing to the
   // left node. If it is, make it point to the joined node!
   if (mFilteredIter->GetCurrentNode() == aRemovedContent.AsText()) {
-    mFilteredIter->PositionAt(aJoinedPoint.ContainerAsText());
+    mFilteredIter->PositionAt(aJoinedPoint.ContainerAs<Text>());
   }
 }
 
@@ -2671,7 +2674,7 @@ TextServicesDocument::OffsetEntryArray::FindWordRange(
   // we do is get its index in the offset table so we can
   // calculate the dom point's string offset.
   Maybe<size_t> maybeEntryIndex =
-      FirstIndexOf(*aStartPointToScan.ContainerAsText());
+      FirstIndexOf(*aStartPointToScan.ContainerAs<Text>());
   if (NS_WARN_IF(maybeEntryIndex.isNothing())) {
     NS_WARNING(
         "TextServicesDocument::OffsetEntryArray::FirstIndexOf() didn't find "
@@ -2691,11 +2694,10 @@ TextServicesDocument::OffsetEntryArray::FindWordRange(
 
   const char16_t* str = aAllTextInBlock.BeginReading();
   uint32_t strLen = aAllTextInBlock.Length();
+  MOZ_ASSERT(strOffset <= strLen,
+             "The string offset shouldn't be greater than the string length!");
 
   intl::WordRange res = intl::WordBreaker::FindWord(str, strLen, strOffset);
-  if (res.mBegin == res.mEnd) {
-    return Err(str ? NS_ERROR_ILLEGAL_VALUE : NS_ERROR_NULL_POINTER);
-  }
 
   // Strip out the NBSPs at the ends
   while (res.mBegin <= res.mEnd && IS_NBSP_CHAR(str[res.mBegin])) {

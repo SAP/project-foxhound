@@ -6,26 +6,18 @@
 
 var EXPORTED_SYMBOLS = ["UptakeTelemetry", "Policy"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppConstants",
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "ClientID",
-  "resource://gre/modules/ClientID.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  ClientID: "resource://gre/modules/ClientID.sys.mjs",
+});
 
-XPCOMUtils.defineLazyGetter(this, "CryptoHash", () => {
+XPCOMUtils.defineLazyGetter(lazy, "CryptoHash", () => {
   return Components.Constructor(
     "@mozilla.org/security/hash;1",
     "nsICryptoHash",
@@ -34,7 +26,7 @@ XPCOMUtils.defineLazyGetter(this, "CryptoHash", () => {
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "gSampleRate",
   "services.common.uptake.sampleRate"
 );
@@ -52,7 +44,7 @@ var Policy = {
   _clientIDHash: null,
 
   getClientID() {
-    return ClientID.getClientID();
+    return lazy.ClientID.getClientID();
   },
 
   /**
@@ -72,7 +64,7 @@ var Policy = {
   async _doComputeClientIDHash() {
     const clientID = await this.getClientID();
     let byteArr = new TextEncoder().encode(clientID);
-    let hash = new CryptoHash("sha256");
+    let hash = new lazy.CryptoHash("sha256");
     hash.update(byteArr, byteArr.length);
     const bytes = hash.finish(false);
     let rem = 0;
@@ -103,6 +95,7 @@ class UptakeTelemetry {
    * - `SIGNATURE_ERROR`: Signature verification after diff-based sync has failed.
    * - `SIGNATURE_RETRY_ERROR`: Signature verification after full fetch has failed.
    * - `CONFLICT_ERROR`: Some remote changes are in conflict with local changes.
+   * - `CORRUPTION_ERROR`: Error related to corrupted local data.
    * - `SYNC_ERROR`: Synchronization of remote changes has failed.
    * - `APPLY_ERROR`: Application of changes locally has failed.
    * - `SERVER_ERROR`: Server failed to respond.
@@ -111,45 +104,30 @@ class UptakeTelemetry {
    * - `TIMEOUT_ERROR`: Server response has timed out.
    * - `NETWORK_ERROR`: Communication with server has failed.
    * - `NETWORK_OFFLINE_ERROR`: Network not available.
+   * - `SHUTDOWN_ERROR`: Error occuring during shutdown.
    * - `UNKNOWN_ERROR`: Uncategorized error.
    * - `CLEANUP_ERROR`: Clean-up of temporary files has failed.
+   * - `SYNC_BROKEN_ERROR`: Synchronization is broken.
    * - `CUSTOM_1_ERROR`: Update source specific error #1.
    * - `CUSTOM_2_ERROR`: Update source specific error #2.
    * - `CUSTOM_3_ERROR`: Update source specific error #3.
    * - `CUSTOM_4_ERROR`: Update source specific error #4.
    * - `CUSTOM_5_ERROR`: Update source specific error #5.
    *
-   * Only supported in Events Telemetry:
-   *
-   * - `SHUTDOWN_ERROR`: Error occuring during shutdown.
-   * - `CORRUPTION_ERROR`: Error related to corrupted local data.
-   *
    * @type {Object}
    */
   static get STATUS() {
     return {
-      ...UptakeTelemetry.HISTOGRAM_LABELS,
-      // Events only.
-      SHUTDOWN_ERROR: "shutdown_error",
-      CORRUPTION_ERROR: "corruption_error",
-    };
-  }
-
-  /**
-   * Labels that are defined in the histogram.
-   * See `toolkit/components/telemetry/Histograms.json`.
-   */
-  static get HISTOGRAM_LABELS() {
-    return {
       UP_TO_DATE: "up_to_date",
       SUCCESS: "success",
       BACKOFF: "backoff",
-      PREF_DISABLED: "pref_disabled",
       PARSE_ERROR: "parse_error",
       CONTENT_ERROR: "content_error",
+      PREF_DISABLED: "pref_disabled",
       SIGNATURE_ERROR: "sign_error",
       SIGNATURE_RETRY_ERROR: "sign_retry_error",
       CONFLICT_ERROR: "conflict_error",
+      CORRUPTION_ERROR: "corruption_error",
       SYNC_ERROR: "sync_error",
       APPLY_ERROR: "apply_error",
       SERVER_ERROR: "server_error",
@@ -158,8 +136,10 @@ class UptakeTelemetry {
       TIMEOUT_ERROR: "timeout_error",
       NETWORK_ERROR: "network_error",
       NETWORK_OFFLINE_ERROR: "offline_error",
-      CLEANUP_ERROR: "cleanup_error",
+      SHUTDOWN_ERROR: "shutdown_error",
       UNKNOWN_ERROR: "unknown_error",
+      CLEANUP_ERROR: "cleanup_error",
+      SYNC_BROKEN_ERROR: "sync_broken_error",
       CUSTOM_1_ERROR: "custom_1_error",
       CUSTOM_2_ERROR: "custom_2_error",
       CUSTOM_3_ERROR: "custom_3_error",
@@ -189,6 +169,10 @@ class UptakeTelemetry {
       throw new Error("`source` value is mandatory.");
     }
 
+    if (!Object.values(UptakeTelemetry.STATUS).includes(status)) {
+      throw new Error(`Unknown status '${status}'`);
+    }
+
     // Report event for real-time monitoring. See Events.yaml for registration.
     // Contrary to histograms, Telemetry Events are not enabled by default.
     // Enable them on first call to `report()`.
@@ -200,7 +184,7 @@ class UptakeTelemetry {
     const hash = await UptakeTelemetry.Policy.getClientIDHash();
     const channel = UptakeTelemetry.Policy.getChannel();
     const shouldSendEvent =
-      !["release", "esr"].includes(channel) || hash < gSampleRate;
+      !["release", "esr"].includes(channel) || hash < lazy.gSampleRate;
     if (shouldSendEvent) {
       // The Event API requires `extra` values to be of type string. Force it!
       const extraStr = Object.keys(extra).reduce((acc, k) => {
@@ -215,16 +199,5 @@ class UptakeTelemetry {
         extraStr
       );
     }
-
-    // Only report to histograms if status is an official label.
-    if (Object.values(UptakeTelemetry.HISTOGRAM_LABELS).includes(status)) {
-      // Report via histogram in main ping.
-      // Note: this is the legacy equivalent of the above event. We keep it for continuity.
-      Services.telemetry
-        .getKeyedHistogramById(TELEMETRY_HISTOGRAM_ID)
-        .add(source, status);
-    }
   }
 }
-
-this.UptakeTelemetry = UptakeTelemetry;

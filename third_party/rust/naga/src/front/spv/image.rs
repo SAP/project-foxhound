@@ -218,7 +218,7 @@ pub(super) fn patch_comparison_type(
     true
 }
 
-impl<I: Iterator<Item = u32>> super::Parser<I> {
+impl<I: Iterator<Item = u32>> super::Frontend<I> {
     pub(super) fn parse_image_couple(&mut self) -> Result<(), Error> {
         let _result_type_id = self.next()?;
         let result_id = self.next()?;
@@ -332,7 +332,8 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
             0
         };
 
-        let mut index = None;
+        let mut sample = None;
+        let mut level = None;
         while image_ops != 0 {
             let bit = 1 << image_ops.trailing_zeros();
             match spirv::ImageOperands::from_bits_truncate(bit) {
@@ -341,13 +342,13 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
                     let lod_lexp = self.lookup_expression.lookup(lod_expr)?;
                     let lod_handle =
                         self.get_expr_handle(lod_expr, lod_lexp, ctx, emitter, block, body_idx);
-                    index = Some(lod_handle);
+                    level = Some(lod_handle);
                     words_left -= 1;
                 }
                 spirv::ImageOperands::SAMPLE => {
                     let sample_expr = self.next()?;
                     let sample_handle = self.lookup_expression.lookup(sample_expr)?.handle;
-                    index = Some(sample_handle);
+                    sample = Some(sample_handle);
                     words_left -= 1;
                 }
                 other => {
@@ -393,7 +394,8 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
             image: image_lexp.handle,
             coordinate,
             array_index,
-            index,
+            sample,
+            level,
         };
         self.lookup_expression.insert(
             result_id,
@@ -534,19 +536,47 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
 
                 ctx.global_arena[handle].ty
             }
+
             crate::Expression::FunctionArgument(i) => {
                 ctx.parameter_sampling[i as usize] |= sampling_bit;
                 ctx.arguments[i as usize].ty
             }
+
+            crate::Expression::Access { base, .. } => match ctx.expressions[base] {
+                crate::Expression::GlobalVariable(handle) => {
+                    if let Some(flags) = self.handle_sampling.get_mut(&handle) {
+                        *flags |= sampling_bit;
+                    }
+
+                    match ctx.type_arena[ctx.global_arena[handle].ty].inner {
+                        crate::TypeInner::BindingArray { base, .. } => base,
+                        _ => return Err(Error::InvalidGlobalVar(ctx.expressions[base].clone())),
+                    }
+                }
+
+                ref other => return Err(Error::InvalidGlobalVar(other.clone())),
+            },
+
             ref other => return Err(Error::InvalidGlobalVar(other.clone())),
         };
+
         match ctx.expressions[si_lexp.sampler] {
             crate::Expression::GlobalVariable(handle) => {
-                *self.handle_sampling.get_mut(&handle).unwrap() |= sampling_bit
+                *self.handle_sampling.get_mut(&handle).unwrap() |= sampling_bit;
             }
+
             crate::Expression::FunctionArgument(i) => {
                 ctx.parameter_sampling[i as usize] |= sampling_bit;
             }
+
+            crate::Expression::Access { base, .. } => match ctx.expressions[base] {
+                crate::Expression::GlobalVariable(handle) => {
+                    *self.handle_sampling.get_mut(&handle).unwrap() |= sampling_bit;
+                }
+
+                ref other => return Err(Error::InvalidGlobalVar(other.clone())),
+            },
+
             ref other => return Err(Error::InvalidGlobalVar(other.clone())),
         }
 

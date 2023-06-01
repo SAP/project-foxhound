@@ -52,12 +52,14 @@ class DocAccessibleChild : public DocAccessibleChildBase {
                             const bool& aEnabled);
   bool SendCaretMoveEvent(const uint64_t& aID, const int32_t& aOffset,
                           const bool& aIsSelectionCollapsed,
-                          const bool& aIsAtEndOfLine);
+                          const bool& aIsAtEndOfLine,
+                          const int32_t& aGranularity);
   bool SendCaretMoveEvent(const uint64_t& aID,
                           const LayoutDeviceIntRect& aCaretRect,
                           const int32_t& aOffset,
                           const bool& aIsSelectionCollapsed,
-                          const bool& aIsAtEndOfLine);
+                          const bool& aIsAtEndOfLine,
+                          const int32_t& aGranularity);
   bool SendFocusEvent(const uint64_t& aID);
   bool SendFocusEvent(const uint64_t& aID,
                       const LayoutDeviceIntRect& aCaretRect);
@@ -67,7 +69,8 @@ class DocAccessibleChild : public DocAccessibleChildBase {
                            const bool aDoSync = false);
   bool SendSelectionEvent(const uint64_t& aID, const uint64_t& aWidgetID,
                           const uint32_t& aType);
-  bool SendRoleChangedEvent(const a11y::role& aRole);
+  bool SendRoleChangedEvent(const a11y::role& aRole,
+                            uint8_t aRoleMapEntryIndex);
   bool SendScrollingEvent(const uint64_t& aID, const uint64_t& aType,
                           const uint32_t& aScrollX, const uint32_t& aScrollY,
                           const uint32_t& aMaxScrollX,
@@ -175,17 +178,20 @@ class DocAccessibleChild : public DocAccessibleChildBase {
   struct SerializedCaretMove final : public DeferredEvent {
     SerializedCaretMove(DocAccessibleChild* aTarget, uint64_t aID,
                         const LayoutDeviceIntRect& aCaretRect, int32_t aOffset,
-                        bool aIsSelectionCollapsed, bool aIsAtEndOfLine)
+                        bool aIsSelectionCollapsed, bool aIsAtEndOfLine,
+                        int32_t aGranularity)
         : DeferredEvent(aTarget),
           mID(aID),
           mCaretRect(aCaretRect),
           mOffset(aOffset),
           mIsSelectionCollapsed(aIsSelectionCollapsed),
-          mIsAtEndOfLine(aIsAtEndOfLine) {}
+          mIsAtEndOfLine(aIsAtEndOfLine),
+          mGranularity(aGranularity) {}
 
     void Dispatch(DocAccessibleChild* aIPCDoc) override {
-      Unused << aIPCDoc->SendCaretMoveEvent(
-          mID, mCaretRect, mOffset, mIsSelectionCollapsed, mIsAtEndOfLine);
+      Unused << aIPCDoc->SendCaretMoveEvent(mID, mCaretRect, mOffset,
+                                            mIsSelectionCollapsed,
+                                            mIsAtEndOfLine, mGranularity);
     }
 
     uint64_t mID;
@@ -193,6 +199,7 @@ class DocAccessibleChild : public DocAccessibleChildBase {
     int32_t mOffset;
     bool mIsSelectionCollapsed;
     bool mIsAtEndOfLine;
+    int32_t mGranularity;
   };
 
   struct SerializedFocus final : public DeferredEvent {
@@ -252,14 +259,17 @@ class DocAccessibleChild : public DocAccessibleChildBase {
 
   struct SerializedRoleChanged final : public DeferredEvent {
     explicit SerializedRoleChanged(DocAccessibleChild* aTarget,
-                                   a11y::role aRole)
-        : DeferredEvent(aTarget), mRole(aRole) {}
+                                   a11y::role aRole, uint8_t aRoleMapEntryIndex)
+        : DeferredEvent(aTarget),
+          mRole(aRole),
+          mRoleMapEntryIndex(aRoleMapEntryIndex) {}
 
     void Dispatch(DocAccessibleChild* aIPCDoc) override {
-      Unused << aIPCDoc->SendRoleChangedEvent(mRole);
+      Unused << aIPCDoc->SendRoleChangedEvent(mRole, mRoleMapEntryIndex);
     }
 
     a11y::role mRole;
+    uint8_t mRoleMapEntryIndex;
   };
 
   struct SerializedScrolling final : public DeferredEvent {
@@ -303,10 +313,13 @@ class DocAccessibleChild : public DocAccessibleChildBase {
   struct SerializedChildDocConstructor final : public DeferredEvent {
     SerializedChildDocConstructor(DocAccessibleChild* aIPCDoc,
                                   DocAccessibleChild* aParentIPCDoc,
-                                  uint64_t aUniqueID, uint32_t aMsaaID)
+                                  uint64_t aUniqueID,
+                                  dom::BrowsingContext* aBrowsingContext,
+                                  uint32_t aMsaaID)
         : DeferredEvent(aParentIPCDoc),
           mIPCDoc(aIPCDoc),
           mUniqueID(aUniqueID),
+          mBrowsingContext(aBrowsingContext),
           mMsaaID(aMsaaID) {}
 
     void Dispatch(DocAccessibleChild* aParentIPCDoc) override {
@@ -314,12 +327,18 @@ class DocAccessibleChild : public DocAccessibleChildBase {
           static_cast<dom::BrowserChild*>(aParentIPCDoc->Manager());
       MOZ_ASSERT(browserChild);
       Unused << browserChild->SendPDocAccessibleConstructor(
-          mIPCDoc, aParentIPCDoc, mUniqueID, mMsaaID, IAccessibleHolder());
+          mIPCDoc, aParentIPCDoc, mUniqueID, mBrowsingContext, mMsaaID,
+          IAccessibleHolder());
       mIPCDoc->SetConstructedInParentProcess();
     }
 
     DocAccessibleChild* mIPCDoc;
     uint64_t mUniqueID;
+    // By the time we replay this, the document and its BrowsingContext might
+    // be dead, so we use MaybeDiscardedBrowsingContext here. Ideally, we just
+    // wouldn't replay this, but this is tricky because IPDL should manage the
+    // lifetime of DocAccessibleChild, which means we must send the constructor.
+    dom::MaybeDiscardedBrowsingContext mBrowsingContext;
     uint32_t mMsaaID;
   };
 

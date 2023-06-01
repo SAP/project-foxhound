@@ -35,7 +35,7 @@ const IMAGE_URI = URL_ROOT_SSL + "test_image.png?" + uuid;
 add_task(async function testParentProcessRequests() {
   // The test expects the main process commands instance to receive resources
   // for content process requests.
-  await pushPref("devtools.browsertoolbox.fission", true);
+  await pushPref("devtools.browsertoolbox.scope", "everything");
 
   const commands = await CommandsFactory.forMainProcess();
   await commands.targetCommand.startListening();
@@ -94,6 +94,8 @@ add_task(async function testParentProcessRequests() {
     FETCH_URI,
     "The first resource is for the fetch request"
   );
+  ok(fetchRequest.chromeContext, "The fetch request is privileged");
+
   const fetchStacktrace = receivedStacktraces[0].lastFrame;
   is(receivedStacktraces[0].resourceId, fetchRequest.stacktraceResourceId);
   is(fetchStacktrace.filename, gTestPath);
@@ -122,6 +124,8 @@ add_task(async function testParentProcessRequests() {
     "The second resource is for the first image request"
   );
   ok(!firstImageRequest.fromCache, "The first image request isn't cached");
+  ok(firstImageRequest.chromeContext, "The first image request is privileged");
+
   const firstImageStacktrace = receivedStacktraces[1].lastFrame;
   is(receivedStacktraces[1].resourceId, firstImageRequest.stacktraceResourceId);
   is(firstImageStacktrace.filename, gTestPath);
@@ -138,6 +142,98 @@ add_task(async function testParentProcessRequests() {
     "The third resource is for the second image request"
   );
   ok(secondImageRequest.fromCache, "The second image request is cached");
+  ok(
+    secondImageRequest.chromeContext,
+    "The second image request is privileged"
+  );
+
+  info(
+    "Open a content page to ensure we also receive request from content processes"
+  );
+  const pageUrl = "https://example.org/document-builder.sjs?html=foo";
+  const requestUrl = "https://example.org/document-builder.sjs?html=bar";
+  const tab = await addTab(pageUrl);
+
+  await waitFor(() => receivedNetworkEvents.length == 4);
+  const tabRequest = receivedNetworkEvents[3];
+  is(tabRequest.url, pageUrl, "The 4th resource is for the tab request");
+  ok(!tabRequest.chromeContext, "The 4th request is content");
+
+  info(
+    "Also spawn a privileged request from the content process, not bound to any WindowGlobal"
+  );
+  await SpecialPowers.spawn(tab.linkedBrowser, [requestUrl], async function(
+    uri
+  ) {
+    const { NetUtil } = ChromeUtils.import(
+      "resource://gre/modules/NetUtil.jsm"
+    );
+    const channel = NetUtil.newChannel({
+      uri,
+      loadUsingSystemPrincipal: true,
+    });
+    channel.open();
+  });
+  await removeTab(tab);
+
+  await waitFor(() => receivedNetworkEvents.length == 5);
+  const privilegedContentRequest = receivedNetworkEvents[4];
+  is(
+    privilegedContentRequest.url,
+    requestUrl,
+    "The 5th resource is for the privileged content process request"
+  );
+  ok(privilegedContentRequest.chromeContext, "The 5th request is privileged");
+
+  info("Now focus only on parent process resources");
+  await pushPref("devtools.browsertoolbox.scope", "parent-process");
+
+  info(
+    "Retrigger the two last requests. The tab document request and a privileged request. Both happening in the tab's content process."
+  );
+  const secondTab = await addTab(pageUrl);
+  await SpecialPowers.spawn(
+    secondTab.linkedBrowser,
+    [requestUrl],
+    async function(uri) {
+      const { NetUtil } = ChromeUtils.import(
+        "resource://gre/modules/NetUtil.jsm"
+      );
+      const channel = NetUtil.newChannel({
+        uri,
+        loadUsingSystemPrincipal: true,
+      });
+      channel.open();
+    }
+  );
+
+  await waitFor(() => receivedNetworkEvents.length == 6);
+
+  // nsIHttpChannel doesn't expose any attribute allowing to identify
+  // privileged requests done in content processes.
+  // Thus, preventing us from filtering them out correctly.
+  // Ideally, we would need some new attribute to know from which (content) process
+  // any channel originates from.
+  info(
+    "For now, we are still notified about the privileged content process request"
+  );
+  const secondPrivilegedContentRequest = receivedNetworkEvents[5];
+  is(
+    secondPrivilegedContentRequest.url,
+    requestUrl,
+    "The 6th resource is for the second privileged content process request"
+  );
+  ok(privilegedContentRequest.chromeContext, "The 6th request is privileged");
+
+  // Let some time to receive the tab request if that's not correctly filtered out
+  await wait(1000);
+  is(
+    receivedNetworkEvents.length,
+    6,
+    "But we don't receive the request for the tab request"
+  );
+
+  await removeTab(secondTab);
 
   await resourceCommand.unwatchResources(
     [resourceCommand.TYPES.NETWORK_EVENT],

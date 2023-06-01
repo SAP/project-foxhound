@@ -14,7 +14,7 @@ const { CFRPageActions } = ChromeUtils.import(
 /**
  * Load and modify a message for the test.
  */
-add_task(async function setup() {
+add_setup(async function() {
   const initialMsgCount = ASRouter.state.messages.length;
   const heartbeatMsg = (await CFRMessageProvider.getMessages()).find(
     m => m.id === "HEARTBEAT_TACTIC_2"
@@ -27,14 +27,14 @@ add_task(async function setup() {
     id: `HEARTBEAT_MESSAGE_${Date.now()}`,
   };
   const client = RemoteSettings("cfr");
-  await client.db.importChanges({}, 42, [testMessage], { clear: true });
+  await client.db.importChanges({}, Date.now(), [testMessage], { clear: true });
 
   // Force the CFR provider cache to 0 by modifying updateCycleInMs
   await SpecialPowers.pushPrefEnv({
     set: [
       [
         "browser.newtabpage.activity-stream.asrouter.providers.cfr",
-        `{"id":"cfr","enabled":true,"type":"remote-settings","bucket":"cfr","updateCycleInMs":0}`,
+        `{"id":"cfr","enabled":true,"type":"remote-settings","collection":"cfr","updateCycleInMs":0}`,
       ],
     ],
   });
@@ -83,13 +83,15 @@ add_task(async function test_heartbeat_tactic_2() {
     userPreferences: ["browser.userPreference.messaging-experiments"],
   };
   const client = RemoteSettings("message-groups");
-  await client.db.importChanges({}, 42, [groupConfiguration], { clear: true });
+  await client.db.importChanges({}, Date.now(), [groupConfiguration], {
+    clear: true,
+  });
 
   await SpecialPowers.pushPrefEnv({
     set: [
       [
         "browser.newtabpage.activity-stream.asrouter.providers.message-groups",
-        `{"id":"message-groups","enabled":true,"type":"remote-settings","bucket":"message-groups","updateCycleInMs":0}`,
+        `{"id":"message-groups","enabled":true,"type":"remote-settings","collection":"message-groups","updateCycleInMs":0}`,
       ],
       ["browser.userPreference.messaging-experiments", true],
     ],
@@ -113,7 +115,7 @@ add_task(async function test_heartbeat_tactic_2() {
   Assert.ok(ASRouter.isUnblockedMessage(msg), "Message is unblocked");
 
   let tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URL);
-  BrowserTestUtils.loadURI(tab1.linkedBrowser, TEST_URL);
+  BrowserTestUtils.loadURIString(tab1.linkedBrowser, TEST_URL);
 
   let chiclet = document.getElementById("contextual-feature-recommendation");
   Assert.ok(chiclet, "CFR chiclet element found");
@@ -135,7 +137,7 @@ add_task(async function test_heartbeat_tactic_2() {
   );
 
   let tab2 = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URL);
-  BrowserTestUtils.loadURI(tab2.linkedBrowser, TEST_URL);
+  BrowserTestUtils.loadURIString(tab2.linkedBrowser, TEST_URL);
 
   await BrowserTestUtils.waitForCondition(
     () => chiclet.hidden,

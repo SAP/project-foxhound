@@ -5,6 +5,7 @@ Object {
   "callExpressions": Array [],
   "classes": Array [],
   "comments": Array [],
+  "framework": null,
   "functions": Array [
     Object {
       "identifier": Object {
@@ -76,7 +77,6 @@ Object {
   ],
   "imports": Array [],
   "literals": Array [],
-  "loading": false,
   "memberExpressions": Array [],
   "objectProperties": Array [],
 }

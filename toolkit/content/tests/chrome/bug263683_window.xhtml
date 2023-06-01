@@ -20,7 +20,6 @@
     const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
     const {BrowserTestUtils} = ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
 
-    var gPrefsvc = SpecialPowers.Services.prefs.nsIPrefBranch;
     var gFindBar = null;
     var gBrowser;
 
@@ -54,7 +53,7 @@
       gBrowser = document.getElementById(browserId);
       gFindBar.browser = gBrowser;
       let promise = BrowserTestUtils.browserLoaded(gBrowser);
-      BrowserTestUtils.loadURI(gBrowser, 'data:text/html,<h2>Text mozilla</h2><input id="inp" type="text" />');
+      BrowserTestUtils.loadURIString(gBrowser, 'data:text/html,<h2>Text mozilla</h2><input id="inp" type="text" />');
       await promise;
       await onDocumentLoaded();
     }
@@ -138,7 +137,7 @@
       // For posterity, test iframes too.
 
       promise = BrowserTestUtils.browserLoaded(gBrowser);
-      BrowserTestUtils.loadURI(gBrowser, 'data:text/html,<h2>Text mozilla</h2><iframe id="leframe" ' +
+      BrowserTestUtils.loadURIString(gBrowser, 'data:text/html,<h2>Text mozilla</h2><iframe id="leframe" ' +
         'src="data:text/html,Text mozilla"></iframe>');
       await promise;
 
@@ -170,8 +169,8 @@
 
       await toggleHighlightAndWait(false);
 
-      let matches = gFindBar._foundMatches.value.match(/([\d]*)\sof\s([\d]*)/);
-      is(matches[1], "2", "Found correct amount of matches")
+      const matches = JSON.parse(gFindBar._foundMatches.dataset.l10nArgs);
+      is(matches.total, 2, "Found correct amount of matches")
 
       await SpecialPowers.spawn(gBrowser, [], async function(args) {
         function getSelection(docShell) {

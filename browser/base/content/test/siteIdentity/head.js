@@ -1,7 +1,3 @@
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-
 function openIdentityPopup() {
   gIdentityHandler._initializePopup();
   let mainView = document.getElementById("identity-popup-mainView");
@@ -14,8 +10,12 @@ function openPermissionPopup() {
   gPermissionPanel._initializePopup();
   let mainView = document.getElementById("permission-popup-mainView");
   let viewShown = BrowserTestUtils.waitForEvent(mainView, "ViewShown");
-  gPermissionPanel._openPopup();
+  gPermissionPanel.openPopup();
   return viewShown;
+}
+
+function getIdentityMode(aWindow = window) {
+  return aWindow.document.getElementById("identity-box").className;
 }
 
 /**
@@ -46,7 +46,7 @@ function promiseTabLoadEvent(tab, url) {
   let loaded = BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, handle);
 
   if (url) {
-    BrowserTestUtils.loadURI(tab.linkedBrowser, url);
+    BrowserTestUtils.loadURIString(tab.linkedBrowser, url);
   }
 
   return loaded;
@@ -261,7 +261,7 @@ async function assertMixedContentBlockingState(tabbrowser, states = {}) {
     .getElementById("identity-popup")
     .getAttribute("mixedcontent");
   let bodyAttr = doc
-    .getElementById("identity-popup-securityView-body")
+    .getElementById("identity-popup-securityView-extended-info")
     .getAttribute("mixedcontent");
 
   is(
@@ -305,14 +305,14 @@ async function assertMixedContentBlockingState(tabbrowser, states = {}) {
         .getElementById("identity-popup-securityView")
         .getElementsByClassName("identity-popup-security-connection")[0]
     )
-    .getPropertyValue("background-image");
+    .getPropertyValue("list-style-image");
   let securityContentBG = tabbrowser.ownerGlobal
     .getComputedStyle(
       document
         .getElementById("identity-popup-mainView")
         .getElementsByClassName("identity-popup-security-connection")[0]
     )
-    .getPropertyValue("background-image");
+    .getPropertyValue("list-style-image");
 
   if (stateInsecure) {
     is(
@@ -410,11 +410,26 @@ async function assertMixedContentBlockingState(tabbrowser, states = {}) {
 
 async function loadBadCertPage(url) {
   let loaded = BrowserTestUtils.waitForErrorPage(gBrowser.selectedBrowser);
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, url);
+  BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, url);
   await loaded;
 
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
     content.document.getElementById("exceptionDialogButton").click();
   });
   await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+}
+
+// nsITLSServerSocket needs a certificate with a corresponding private key
+// available. In mochitests, the certificate with the common name "Mochitest
+// client" has such a key.
+function getTestServerCertificate() {
+  const certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(
+    Ci.nsIX509CertDB
+  );
+  for (const cert of certDB.getCerts()) {
+    if (cert.commonName == "Mochitest client") {
+      return cert;
+    }
+  }
+  return null;
 }

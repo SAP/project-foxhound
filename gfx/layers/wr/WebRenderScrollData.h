@@ -16,8 +16,8 @@
 #include "LayersTypes.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/GfxMessageUtils.h"
-#include "mozilla/layers/LayerAttributes.h"
 #include "mozilla/layers/FocusTarget.h"
+#include "mozilla/layers/ScrollbarData.h"
 #include "mozilla/layers/WebRenderMessageUtils.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 #include "mozilla/HashTable.h"
@@ -221,6 +221,12 @@ class WebRenderLayerScrollData final {
   Maybe<uint64_t> mStickyPositionAnimationId;
   Maybe<uint64_t> mZoomAnimationId;
   Maybe<ViewID> mAsyncZoomContainerId;
+
+#if defined(DEBUG) || defined(MOZ_DUMP_PAINTING)
+  // The display item for which this layer was built.
+  // This is only set on the content side.
+  nsDisplayItem* mInitializedFrom = nullptr;
+#endif
 };
 
 // Data needed by APZ, for the whole layer tree. One instance of this class
@@ -328,20 +334,18 @@ template <>
 struct ParamTraits<mozilla::layers::WebRenderLayerScrollData> {
   typedef mozilla::layers::WebRenderLayerScrollData paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam);
+  static void Write(MessageWriter* aWriter, const paramType& aParam);
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   paramType* aResult);
+  static bool Read(MessageReader* aReader, paramType* aResult);
 };
 
 template <>
 struct ParamTraits<mozilla::layers::WebRenderScrollData> {
   typedef mozilla::layers::WebRenderScrollData paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam);
+  static void Write(MessageWriter* aWriter, const paramType& aParam);
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   paramType* aResult);
+  static bool Read(MessageReader* aReader, paramType* aResult);
 };
 
 }  // namespace IPC

@@ -2,40 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import { removeSourceActors } from "./source-actors";
-import { validateContext } from "../utils/context";
-
-import { getContext, getThread, getSourceActorsForThread } from "../selectors";
+import { createThread } from "../client/firefox/create";
 
 export function addTarget(targetFront) {
-  return async function(args) {
-    const { client, getState, dispatch } = args;
-    const cx = getContext(getState());
-    const thread = await client.addThread(targetFront);
-    validateContext(getState(), cx);
-
-    dispatch({ type: "INSERT_THREAD", cx, newThread: thread });
-  };
+  return { type: "INSERT_THREAD", newThread: createThread(targetFront) };
 }
 
 export function removeTarget(targetFront) {
-  return async function(args) {
-    const { getState, client, dispatch } = args;
-    const cx = getContext(getState());
-    const thread = getThread(getState(), targetFront.targetForm.threadActor);
-
-    if (!thread) {
-      return;
-    }
-
-    client.removeThread(thread);
-    const sourceActors = getSourceActorsForThread(getState(), thread.actor);
-    dispatch(removeSourceActors(sourceActors));
-    dispatch({
-      type: "REMOVE_THREAD",
-      cx,
-      oldThread: thread,
-    });
+  return {
+    type: "REMOVE_THREAD",
+    threadActorID: targetFront.targetForm.threadActor,
   };
 }
 

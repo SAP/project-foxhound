@@ -3,8 +3,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Arg, generateActorSpec } = require("devtools/shared/protocol");
+const {
+  Arg,
+  generateActorSpec,
+} = require("resource://devtools/shared/protocol.js");
 
+// @backward-compat { version 111 } This spec file can be deleted when 111 is on
+// the release channel.
 const webSocketSpec = generateActorSpec({
   typeName: "webSocket",
 

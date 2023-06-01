@@ -3,11 +3,11 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import io
-import mozunit
+import sys
 from os import path
 from pathlib import Path
-import sys
 
+import mozunit
 from expect_helper import expect
 
 # Shenanigans to import the js outputter extension
@@ -15,8 +15,9 @@ FOG_ROOT_PATH = path.abspath(
     path.join(path.dirname(__file__), path.pardir, path.pardir)
 )
 sys.path.append(path.join(FOG_ROOT_PATH, "build_scripts", "glean_parser_ext"))
-import js
 import run_glean_parser
+
+import js
 
 
 def test_all_metric_types():
@@ -26,7 +27,7 @@ def test_all_metric_types():
     Expect it to be fragile.
     To generate new expected output files, set `UPDATE_EXPECT=1` when running the test suite:
 
-    UPDATE_EXPECT=1 mach test toolkit/components/glean/pytest
+    UPDATE_EXPECT=1 mach test toolkit/components/glean/tests/pytest
     """
 
     options = {"allow_reserved": False}
@@ -50,7 +51,7 @@ def test_fake_pings():
     Expect it to be fragile.
     To generate new expected output files, set `UPDATE_EXPECT=1` when running the test suite:
 
-    UPDATE_EXPECT=1 mach test toolkit/components/glean/pytest
+    UPDATE_EXPECT=1 mach test toolkit/components/glean/tests/pytest
     """
 
     options = {"allow_reserved": False}

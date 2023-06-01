@@ -8,7 +8,9 @@ PromiseTestUtils.allowMatchingRejectionsGlobally(/packaging errors/);
 add_task(async function testInvalidIconSizes() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      browser_action: {},
+      browser_action: {
+        default_area: "navbar",
+      },
       page_action: {},
     },
 
@@ -74,14 +76,14 @@ add_task(async function testDefaultDetails() {
   let icons = [
     "foo/bar.png",
     "/foo/bar.png",
-    { "19": "foo/bar.png" },
     { "38": "foo/bar.png" },
+    { "70": "foo/bar.png" },
   ];
 
   if (window.devicePixelRatio > 1) {
-    icons.push({ "19": "baz/quux.png", "38": "foo/bar.png" });
+    icons.push({ "38": "baz/quux.png", "70": "foo/bar.png" });
   } else {
-    icons.push({ "19": "foo/bar.png", "38": "baz/quux@2x.png" });
+    icons.push({ "38": "foo/bar.png", "70": "baz/quux@2x.png" });
   }
 
   let expectedURL = new RegExp(
@@ -91,7 +93,7 @@ add_task(async function testDefaultDetails() {
   for (let icon of icons) {
     let extension = ExtensionTestUtils.loadExtension({
       manifest: {
-        browser_action: { default_icon: icon },
+        browser_action: { default_icon: icon, default_area: "navbar" },
         page_action: { default_icon: icon },
       },
 
@@ -121,7 +123,8 @@ add_task(async function testDefaultDetails() {
 
     await promiseAnimationFrame();
 
-    let browserActionButton = document.getElementById(browserActionId);
+    let browserActionButton = document.getElementById(browserActionId)
+      .firstElementChild;
     let image = getListStyleImage(browserActionButton);
 
     ok(
@@ -150,7 +153,7 @@ add_task(async function testSecureURLsDenied() {
 
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      browser_action: {},
+      browser_action: { default_area: "navbar" },
       page_action: {},
     },
 
@@ -218,6 +221,7 @@ add_task(async function testSecureManifestURLsDenied() {
         manifest: {
           [api]: {
             default_icon: url,
+            default_area: "navbar",
           },
         },
       });

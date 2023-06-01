@@ -96,6 +96,14 @@ interface nsIDOMWindowUtils : nsISupports {
   AString getDocumentMetadata(in AString aName);
 
   /**
+   * Relative to the top-level document.
+   *
+   * @param aX 0, if there's no such location.
+   * @param aY 0, if there's no such location.
+   */
+  void getLastOverWindowPointerLocationInCSSPixels(out float aX, out float aY);
+
+  /**
    * Force a synchronous layer transaction for this window if necessary.
    */
   [can_run_script]
@@ -385,6 +393,9 @@ interface nsIDOMWindowUtils : nsISupports {
    * @param rys array of radii in CSS pixels for each touch to be sent
    * @param rotationAngles array of angles in degrees for each touch to be sent
    * @param forces array of forces (floats from 0 to 1) for each touch to be sent
+   * @param tiltXs array of tiltX for each touch to be sent
+   * @param tiltYs array of tiltY for each touch to be sent
+   * @param twists array of twist for each touch to be sent
    * @param count number of touches in this set
    * @param aModifiers modifiers pressed, using constants defined as MODIFIER_*
    * @param aIgnoreRootScrollFrame whether the event should ignore viewport bounds
@@ -401,6 +412,9 @@ interface nsIDOMWindowUtils : nsISupports {
                          in Array<uint32_t> aRys,
                          in Array<float> aRotationAngles,
                          in Array<float> aForces,
+                         in Array<long> aTiltXs,
+                         in Array<long> aTiltYs,
+                         in Array<long> aTwists,
                          in long aModifiers,
                          [optional] in boolean aIgnoreRootScrollFrame);
 
@@ -434,6 +448,9 @@ interface nsIDOMWindowUtils : nsISupports {
                                  in Array<uint32_t> aRys,
                                  in Array<float> aRotationAngles,
                                  in Array<float> aForces,
+                                 in Array<long> aTiltXs,
+                                 in Array<long> aTiltYs,
+                                 in Array<long> aTwists,
                                  in long aModifiers,
                                  [optional] in boolean aIgnoreRootScrollFrame);
 
@@ -779,6 +796,10 @@ interface nsIDOMWindowUtils : nsISupports {
    * Send a native event as if the user panned on the touchpad with two
    * fingers.
    *
+   * NOTE: The synthesized native event will be fired asynchronously, and upon
+   * completion the observer, if provided, will be notified with a
+   * "touchpadpanevent" topic.
+   *
    * Widget support: Windows.
    * @param aScreenX, aScreenY screen coords of the focus point of this event.
    * @param aDeltaX, aDeltaY the amount of delta in the pan.
@@ -789,7 +810,8 @@ interface nsIDOMWindowUtils : nsISupports {
                              in long aScreenY,
                              in double aDeltaX,
                              in double aDeltaY,
-                             in long aModifierFlags);
+                             in long aModifierFlags,
+                             [optional] in nsIObserver aObserver);
 
   /**
    * Clears the SharedStyleSheetCache.
@@ -1142,6 +1164,11 @@ interface nsIDOMWindowUtils : nsISupports {
   readonly attribute unsigned long IMEStatus;
 
   /**
+   * Get the document URI which may be retrieved by native IME.
+   */
+  readonly attribute nsIURI inputContextURI;
+
+  /**
    * Get whether current input context (including IME status) in the widget
    * is set by content or not.
    */
@@ -1153,26 +1180,6 @@ interface nsIDOMWindowUtils : nsISupports {
    * Get a root node which is observed by IMEContentObserver.
    */
   readonly attribute Node nodeObservedByIMEContentObserver;
-
-  /**
-   * Get the number of screen pixels per CSS pixel.
-   *
-   * This is the same as window.devicePixelRatio, except it bypasses
-   * the fingerprinting resistance efforts that window.devicePixelRatio
-   * does (which is fine as this is only exposed to browser internals).
-   */
-  readonly attribute float screenPixelsPerCSSPixel;
-
-  /**
-   * Get the number of screen pixels per CSS pixel,
-   * not taking into account any override of the device pixel scale
-   * that's imposed by Responsive Design Mode.
-   *
-   * This is needed to e.g. correctly translate "window.mozInnerScreenX/Y"
-   * into device pixels even when "window" is the window of a document
-   * inside an RDM pane.
-   */
-  readonly attribute float screenPixelsPerCSSPixelNoOverride;
 
   /**
    * Get the current zoom factor.
@@ -1408,8 +1415,12 @@ interface nsIDOMWindowUtils : nsISupports {
   /**
    * Called when the child frame has fully exit fullscreen, so that the parent
    * process can also fully exit.
+   *
+   * @param aDontResoreViewSize false if content view size is restored by
+   *                            original view size that is on entering full
+   *                            screen.
    */
-  void exitFullscreen();
+  void exitFullscreen([optional] in boolean aDontRestoreViewSize);
 
   /**
    * If sendQueryContentEvent()'s aAdditionalFlags argument is
@@ -1504,11 +1515,6 @@ interface nsIDOMWindowUtils : nsISupports {
    * Is the window is in a modal state? [See enterModalState()]
    */
   boolean isInModalState();
-
-  /**
-   * Internal desktopMode flag.
-   */
-  attribute boolean desktopModeViewport;
 
   /**
    * Suspend/resume timeouts on this window and its descendant windows.
@@ -1771,11 +1777,8 @@ interface nsIDOMWindowUtils : nsISupports {
 
   /**
    * Get file ref count info for given database and file id.
-   *
    */
-  [implicit_jscontext]
   boolean getFileReferences(in AString aDatabaseName, in long long aId,
-                            [optional] in jsval aOptions,
                             [optional] out long aRefCnt,
                             [optional] out long aDBRefCnt);
 
@@ -1943,12 +1946,19 @@ interface nsIDOMWindowUtils : nsISupports {
 
   /**
    * If aHandlingInput is true, this informs the event state manager that
-   * we're handling user input. Otherwise, this is a no-op (as by default
-   * we're not handling user input).
+   * we're handling user input, and provides transient user activation.
+   * Otherwise, this is a no-op (as by default we're not handling user input).
    * Remember to call destruct() on the return value!
    * See also nsIDOMWindowUtils::isHandlingUserInput.
    */
   nsIJSRAIIHelper setHandlingUserInput(in boolean aHandlingInput);
+
+  /**
+   * Returns true if a keyboard event qualifies as "user activity" such that
+   * it would mark the document with the ChromeOnly userHasInteracted
+   * property.
+   */
+  bool isKeyboardEventUserActivity(in Event aKeyboardEvent);
 
   /**
    * Get the content- and compositor-side APZ test data instances.
@@ -1997,6 +2007,14 @@ interface nsIDOMWindowUtils : nsISupports {
   readonly attribute unsigned long long framesReflowed;
 
   /**
+   * Indicates whether the current frame's refresh driver has a pending tick,
+   * as reported by nsRefreshDriver::HasPendingTick.
+   *
+   * May throw NS_ERROR_NOT_AVAILABLE.
+   */
+  readonly attribute bool refreshDriverHasPendingTick;
+
+  /**
    * Controls the amount of chrome that should be visible on each side of
    * the window. Works like the chromemargin xul:window attribute.
    * This should only be used with non-XUL windows.
@@ -2005,6 +2023,14 @@ interface nsIDOMWindowUtils : nsISupports {
                        in int32_t aRight,
                        in int32_t aBottom,
                        in int32_t aLeft);
+
+  /**
+   * Controls the amount of space on each edge of the window that can be
+   * dragged to resize the window in that direction.
+   *
+   * @param aResizeMargin  In CSS pixels, will apply to all four window sides.
+   */
+  void setResizeMargin(in int32_t aResizeMargin);
 
   /**
    * Returns a JSObject which contains a list of frame uniformities
@@ -2066,10 +2092,10 @@ interface nsIDOMWindowUtils : nsISupports {
   readonly attribute int32_t gpuProcessPid;
 
   /**
-   * Adds an EventStates bit to the element.
+   * Adds an ElementState bit to the element.
    *
    * The state string must be one of the following:
-   *   * (none yet; but for example "higlighted" for NS_EVENT_STATE_HIGHLIGHTED)
+   *   * (none yet; but for example "higlighted" for ElementState::HIGHLIGHTED)
    *
    * The supported state strings are defined in kManuallyManagedStates
    * in nsDOMWindowUtils.cpp.
@@ -2078,7 +2104,7 @@ interface nsIDOMWindowUtils : nsISupports {
                                in AString state);
 
   /**
-   * Removes the specified EventStates bits from the element.
+   * Removes the specified ElementState bits from the element.
    *
    * See above for the strings that can be passed for |state|.
    */
@@ -2194,6 +2220,24 @@ interface nsIDOMWindowUtils : nsISupports {
    */
   void resetMobileViewportManager();
 
+  bool isCoepCredentialless();
+
+  /**
+   * Change the DPI setting for the primary monitor.
+   * This setHiDPIMode and restoreHiDPIMode below are only available on debug
+   * builds since these APIs are supposed to be used in tests.
+   *
+   * Note that on Mac, this API doesn't change the system DPI setting, rather it
+   * changes our internal state of DPI settings, thus it will not invoke the
+   * exact same stuff when the system DPI setting is changed.
+   *
+   */
+  void setHiDPIMode(in boolean aHiDPI);
+  /**
+   * Restore the modified HiDPI mode.
+   */
+  void restoreHiDPIMode();
+
   /**
    * NOTE: Currently works only on GTK+.
    */
@@ -2202,8 +2246,6 @@ interface nsIDOMWindowUtils : nsISupports {
   /**
    * Returns the number of times this document for this window has
    * been painted to the screen.
-   *
-   * Use this instead of window.mozPaintCount
    */
   readonly attribute unsigned long long paintCount;
 
@@ -2254,6 +2296,18 @@ interface nsIDOMWindowUtils : nsISupports {
 
   // Used for testing to check the suspend status.
   readonly attribute bool suspendedByBrowsingContextGroup;
+
+  // Whether there's any scroll-linked effect in this document. This is only
+  // meaningful after the script in question tried to mutate something in a
+  // scroll event callback until the next refresh driver tick happens.
+  //
+  // See https://firefox-source-docs.mozilla.org/performance/scroll-linked_effects.html
+  // about scroll-linked effects.
+  readonly attribute bool hasScrollLinkedEffect;
+
+  // Returns the current orientation lock value in browsing context.
+  // This value is defined in hal/HalScreenConfiguration.h
+  readonly attribute uint32_t orientationLock;
 };
 
 [scriptable, uuid(c694e359-7227-4392-a138-33c0cc1f15a6)]

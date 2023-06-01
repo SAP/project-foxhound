@@ -22,6 +22,10 @@ namespace mozilla {
 namespace a11y {
 class DocRemoteAccessibleWrap;
 
+/**
+ * Windows specific functionality for an accessibility tree node that originated
+ * in mDoc's content process.
+ */
 class AccessibleWrap : public LocalAccessible {
  public:  // construction, destruction
   AccessibleWrap(nsIContent* aContent, DocAccessible* aDoc);
@@ -64,8 +68,10 @@ class AccessibleWrap : public LocalAccessible {
   static void InvalidateHandlers();
 
   static bool DispatchTextChangeToHandler(Accessible* aAcc, bool aIsInsert,
-                                          const nsString& aText, int32_t aStart,
-                                          uint32_t aLen);
+                                          const nsAString& aText,
+                                          int32_t aStart, uint32_t aLen);
+
+  static void SuppressHandlerA11yForClipboardCopy();
 
  protected:
   virtual ~AccessibleWrap() = default;

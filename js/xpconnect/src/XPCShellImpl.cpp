@@ -37,6 +37,7 @@
 #include "nsDirectoryServiceUtils.h"
 #include "nsCOMPtr.h"
 #include "nsJSPrincipals.h"
+#include "nsJSUtils.h"
 #include "xpcpublic.h"
 #include "xpcprivate.h"
 #include "BackstagePass.h"
@@ -46,8 +47,8 @@
 
 #include "nsIXULRuntime.h"
 #include "nsIAppStartup.h"
-#include "GeckoProfiler.h"
 #include "Components.h"
+#include "ProfilerControl.h"
 
 #ifdef ANDROID
 #  include <android/log.h>
@@ -59,6 +60,7 @@
 #  include "mozilla/ScopeExit.h"
 #  include "mozilla/widget/AudioSession.h"
 #  include "mozilla/WinDllServices.h"
+#  include "mozilla/WindowsBCryptInitialization.h"
 #  include <windows.h>
 #  if defined(MOZ_SANDBOX)
 #    include "XREShellData.h"
@@ -118,15 +120,11 @@ class XPCShellDirProvider : public nsIDirectoryServiceProvider2 {
   // The app executable
   void SetAppFile(nsIFile* appFile);
   void ClearAppFile() { mAppFile = nullptr; }
-  // An additional custom plugin dir if specified
-  void SetPluginDir(nsIFile* pluginDir);
-  void ClearPluginDir() { mPluginDir = nullptr; }
 
  private:
   nsCOMPtr<nsIFile> mGREDir;
   nsCOMPtr<nsIFile> mGREBinDir;
   nsCOMPtr<nsIFile> mAppDir;
-  nsCOMPtr<nsIFile> mPluginDir;
   nsCOMPtr<nsIFile> mAppFile;
 };
 
@@ -638,6 +636,37 @@ static bool RegisterAppManifest(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
+#ifdef ANDROID
+static bool ChangeTestShellDir(JSContext* cx, unsigned argc, Value* vp) {
+  // This method should only be used by testing/xpcshell/head.js to change to
+  // the correct directory on Android Remote XPCShell tests.
+  //
+  // TODO: Bug 1801725 - Find a more ergonomic way to do this than exposing
+  // identical methods in XPCShellEnvironment and XPCShellImpl to chdir on
+  // android for Remote XPCShell tests on Android.
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  if (args.length() != 1) {
+    JS_ReportErrorASCII(cx, "changeTestShellDir() takes one argument");
+    return false;
+  }
+
+  nsAutoJSCString path;
+  if (!path.init(cx, args[0])) {
+    JS_ReportErrorASCII(
+        cx, "changeTestShellDir(): could not convert argument 1 to string");
+    return false;
+  }
+
+  if (chdir(path.get())) {
+    JS_ReportErrorASCII(cx, "changeTestShellDir(): could not change directory");
+    return false;
+  }
+
+  return true;
+}
+#endif
+
 #ifdef ENABLE_TESTS
 static bool RegisterXPCTestComponents(JSContext* cx, unsigned argc, Value* vp) {
   JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
@@ -645,7 +674,7 @@ static bool RegisterXPCTestComponents(JSContext* cx, unsigned argc, Value* vp) {
     JS_ReportErrorASCII(cx, "Wrong number of arguments");
     return false;
   }
-  nsresult rv = XRE_AddStaticComponent(&kXPCTestModule);
+  nsresult rv = xpcTestRegisterComponents();
   if (NS_FAILED(rv)) {
     XPCThrower::Throw(rv, cx);
     return false;
@@ -673,6 +702,9 @@ static const JSFunctionSpec glob_functions[] = {
     JS_FN("setInterruptCallback", SetInterruptCallback, 1,0),
     JS_FN("simulateNoScriptActivity", SimulateNoScriptActivity, 1,0),
     JS_FN("registerAppManifest", RegisterAppManifest, 1, 0),
+#ifdef ANDROID
+    JS_FN("changeTestShellDir", ChangeTestShellDir, 1,0),
+#endif
 #ifdef ENABLE_TESTS
     JS_FN("registerXPCTestComponents", RegisterXPCTestComponents, 0, 0),
 #endif
@@ -990,18 +1022,6 @@ static bool ProcessArgs(AutoJSAPI& jsapi, char** argv, int argc,
         compileOnly = true;
         isInteractive = false;
         break;
-      case 'p': {
-        // plugins path
-        char* pluginPath = argv[++i];
-        nsCOMPtr<nsIFile> pluginsDir;
-        if (NS_FAILED(
-                XRE_GetFileFromPath(pluginPath, getter_AddRefs(pluginsDir)))) {
-          fprintf(gErrFile, "Couldn't use given plugins dir.\n");
-          return printUsageAndSetExitCode();
-        }
-        aDirProvider->SetPluginDir(pluginsDir);
-        break;
-      }
       default:
         return printUsageAndSetExitCode();
     }
@@ -1311,14 +1331,14 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
 
     // Initialize e10s check on the main thread, if not already done
     BrowserTabsRemoteAutostart();
-#ifdef XP_WIN
+#if defined(XP_WIN)
     // Plugin may require audio session if installed plugin can initialize
     // asynchronized.
     AutoAudioSession audioSession;
 
     // Ensure that DLL Services are running
     RefPtr<DllServices> dllSvc(DllServices::Get());
-    dllSvc->StartUntrustedModulesProcessor();
+    dllSvc->StartUntrustedModulesProcessor(true);
     auto dllServicesDisable =
         MakeScopeExit([&dllSvc]() { dllSvc->DisableFull(); });
 
@@ -1332,8 +1352,13 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
           "Failed to initialize broker services, sandboxed "
           "processes will fail to start.");
     }
-#  endif
-#endif
+#  endif  // defined(MOZ_SANDBOX)
+
+    {
+      DebugOnly<bool> result = WindowsBCryptInitialization();
+      MOZ_ASSERT(result);
+    }
+#endif  // defined(XP_WIN)
 
 #ifdef MOZ_CODE_COVERAGE
     CodeCoverageHandler::Init();
@@ -1422,7 +1447,6 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
 
     dirprovider.ClearGREDirs();
     dirprovider.ClearAppDir();
-    dirprovider.ClearPluginDir();
     dirprovider.ClearAppFile();
   }  // this scopes the nsCOMPtrs
 
@@ -1467,10 +1491,6 @@ void XPCShellDirProvider::SetGREDirs(nsIFile* greDir) {
 void XPCShellDirProvider::SetAppFile(nsIFile* appFile) { mAppFile = appFile; }
 
 void XPCShellDirProvider::SetAppDir(nsIFile* appDir) { mAppDir = appDir; }
-
-void XPCShellDirProvider::SetPluginDir(nsIFile* pluginDir) {
-  mPluginDir = pluginDir;
-}
 
 NS_IMETHODIMP_(MozExternalRefCountType)
 XPCShellDirProvider::AddRef() { return 2; }
@@ -1543,29 +1563,6 @@ XPCShellDirProvider::GetFiles(const char* prop, nsISimpleEnumerator** result) {
       return NS_NewArrayEnumerator(result, dirs, NS_GET_IID(nsIFile));
     }
     return NS_ERROR_FAILURE;
-  } else if (!strcmp(prop, NS_APP_PLUGINS_DIR_LIST)) {
-    nsCOMArray<nsIFile> dirs;
-    // Add the test plugin location passed in by the caller or through
-    // runxpcshelltests.
-    if (mPluginDir) {
-      dirs.AppendObject(mPluginDir);
-      // If there was no path specified, default to the one set up by automation
-    } else {
-      nsCOMPtr<nsIFile> file;
-      bool exists;
-      // We have to add this path, buildbot copies the test plugin directory
-      // to (app)/bin when unpacking test zips.
-      if (mGREDir) {
-        mGREDir->Clone(getter_AddRefs(file));
-        if (NS_SUCCEEDED(mGREDir->Clone(getter_AddRefs(file)))) {
-          file->AppendNative("plugins"_ns);
-          if (NS_SUCCEEDED(file->Exists(&exists)) && exists) {
-            dirs.AppendObject(file);
-          }
-        }
-      }
-    }
-    return NS_NewArrayEnumerator(result, dirs, NS_GET_IID(nsIFile));
   }
   return NS_ERROR_FAILURE;
 }

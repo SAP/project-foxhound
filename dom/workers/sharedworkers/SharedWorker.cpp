@@ -66,7 +66,22 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
       do_QueryInterface(aGlobal.GetAsSupports());
   MOZ_ASSERT(window);
 
-  auto storageAllowed = StorageAllowedForWindow(window);
+  // Our current idiom is that storage-related APIs specialize for the system
+  // principal themselves, which is consistent with StorageAllowedForwindow not
+  // specializing for the system principal.  Without this specialization we
+  // would end up with ePrivateBrowsing for system principaled private browsing
+  // windows which is explicitly not what we want.  System Principal code always
+  // should have access to storage.  It may make sense to enhance
+  // StorageAllowedForWindow in the future to handle this after comprehensive
+  // auditing.
+  nsCOMPtr<nsIPrincipal> principal = aGlobal.GetSubjectPrincipal();
+  StorageAccess storageAllowed;
+  if (principal && principal->IsSystemPrincipal()) {
+    storageAllowed = StorageAccess::eAllow;
+  } else {
+    storageAllowed = StorageAllowedForWindow(window);
+  }
+
   if (storageAllowed == StorageAccess::eDeny) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return nullptr;
@@ -83,8 +98,6 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
   // StorageAccess value.
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
   if (storageAllowed == StorageAccess::ePrivateBrowsing) {
-    nsCOMPtr<Document> doc = window->GetExtantDoc();
-    nsCOMPtr<nsIPrincipal> principal = doc ? doc->NodePrincipal() : nullptr;
     uint32_t privateBrowsingId = 0;
     if (principal) {
       MOZ_ALWAYS_SUCCEEDS(principal->GetPrivateBrowsingId(&privateBrowsingId));
@@ -127,7 +140,15 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
   // Here, the PartitionedPrincipal is always equal to the SharedWorker's
   // principal because the channel is not opened yet, and, because of this, it's
   // not classified. We need to force the correct originAttributes.
-  if (ShouldPartitionStorage(storageAllowed)) {
+  //
+  // The sharedWorker's principal could be a null principal, e.g. loading a
+  // data url. In this case, we don't need to force the OAs for the partitioned
+  // principal because creating storage from a null principal will fail anyway.
+  // We should only do this for content principals.
+  //
+  // You can find more details in StoragePrincipalHelper.h
+  if (ShouldPartitionStorage(storageAllowed) &&
+      BasePrincipal::Cast(loadInfo.mPrincipal)->IsContentPrincipal()) {
     nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(window);
     if (!sop) {
       aRv.Throw(NS_ERROR_FAILURE);
@@ -214,6 +235,8 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
       loadInfo.mHasStorageAccessPermissionGranted, cjsData, loadInfo.mDomain,
       isSecureContext, ipcClientInfo, loadInfo.mReferrerInfo, storageAllowed,
       AntiTrackingUtils::IsThirdPartyWindow(window, nullptr),
+      loadInfo.mShouldResistFingerprinting,
+      OriginTrials::FromWindow(nsGlobalWindowInner::Cast(window)),
       void_t() /* OptionalServiceWorkerData */, agentClusterId,
       remoteType.unwrap());
 

@@ -91,8 +91,8 @@ async function checkGeolocation(browser, frameId, expect) {
       });
 
       await content.SpecialPowers.spawn(frame, [], async () => {
-        const { E10SUtils } = ChromeUtils.import(
-          "resource://gre/modules/E10SUtils.jsm"
+        const { E10SUtils } = ChromeUtils.importESModule(
+          "resource://gre/modules/E10SUtils.sys.mjs"
         );
 
         E10SUtils.wrapHandlingUserInput(this.content, true, function() {
@@ -112,7 +112,7 @@ async function checkGeolocation(browser, frameId, expect) {
   }
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   await new Promise(r => {
     SpecialPowers.pushPrefEnv(
       {

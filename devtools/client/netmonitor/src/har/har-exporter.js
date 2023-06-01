@@ -4,20 +4,21 @@
 
 "use strict";
 
-const Services = require("Services");
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
-const JSZip = require("devtools/client/shared/vendor/jszip");
-const clipboardHelper = require("devtools/shared/platform/clipboard");
-const { HarUtils } = require("devtools/client/netmonitor/src/har/har-utils");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
+const JSZip = require("resource://devtools/client/shared/vendor/jszip.js");
+const clipboardHelper = require("resource://devtools/shared/platform/clipboard.js");
+const {
+  HarUtils,
+} = require("resource://devtools/client/netmonitor/src/har/har-utils.js");
 const {
   HarBuilder,
-} = require("devtools/client/netmonitor/src/har/har-builder");
+} = require("resource://devtools/client/netmonitor/src/har/har-builder.js");
 
 var uid = 1;
 
 // Helper tracer. Should be generic sharable by other modules (bug 1171927)
 const trace = {
-  log: function(...args) {},
+  log(...args) {},
 };
 
 /**
@@ -77,8 +78,7 @@ const HarExporter = {
 
     let data = await this.fetchHarData(options);
 
-    const tabTarget = options.connector.getTabTarget();
-    const host = new URL(tabTarget.url);
+    const host = new URL(options.connector.currentTarget.url);
 
     const fileName = HarUtils.getHarFileName(
       defaultFileName,
@@ -108,7 +108,7 @@ const HarExporter = {
    * @param Object options
    *        Configuration object, see save() for detailed description.
    */
-  copy: function(options) {
+  copy(options) {
     return this.fetchHarData(options).then(jsonString => {
       clipboardHelper.copyString(jsonString);
       return jsonString;
@@ -121,7 +121,7 @@ const HarExporter = {
    * @param Object options
    *        Configuration object, see save() for detailed description.
    */
-  getHar: function(options) {
+  getHar(options) {
     return this.fetchHarData(options).then(data => {
       return data ? JSON.parse(data) : null;
     });
@@ -129,7 +129,7 @@ const HarExporter = {
 
   // Helpers
 
-  fetchHarData: function(options) {
+  fetchHarData(options) {
     // Generate page ID
     options.id = options.id || uid++;
 
@@ -190,17 +190,15 @@ const HarExporter = {
    * since it can involve additional RDP communication (e.g. resolving
    * long strings).
    */
-  buildHarData: async function(options) {
+  async buildHarData(options) {
     const { connector } = options;
-    const { getTabTarget } = connector;
-    const { title } = getTabTarget();
 
     // Disconnect from redux actions/store.
     connector.enableActions(false);
 
     options = {
       ...options,
-      title,
+      title: connector.currentTarget.title,
       getString: connector.getLongString,
       getTimingMarker: connector.getTimingMarker,
       requestData: connector.requestData,
@@ -219,7 +217,7 @@ const HarExporter = {
   /**
    * Build JSON string from the HAR data object.
    */
-  stringify: function(har) {
+  stringify(har) {
     if (!har) {
       return null;
     }

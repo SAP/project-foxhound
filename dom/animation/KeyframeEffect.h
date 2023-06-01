@@ -19,7 +19,6 @@
 #include "mozilla/AnimationPropertySegment.h"
 #include "mozilla/AnimationTarget.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/ComputedTimingFunction.h"
 #include "mozilla/EffectCompositor.h"
 #include "mozilla/Keyframe.h"
 #include "mozilla/KeyframeEffectParams.h"
@@ -179,7 +178,10 @@ class KeyframeEffect : public AnimationEffect {
       const IterationCompositeOperation& aIterationComposite);
 
   CompositeOperation Composite() const;
-  void SetComposite(const CompositeOperation& aComposite);
+  virtual void SetComposite(const CompositeOperation& aComposite);
+  void SetCompositeFromStyle(const CompositeOperation& aComposite) {
+    KeyframeEffect::SetComposite(aComposite);
+  }
 
   void NotifySpecifiedTimingUpdated();
   void NotifyAnimationTimingUpdated(PostRestyleMode aPostRestyle);
@@ -188,7 +190,8 @@ class KeyframeEffect : public AnimationEffect {
   virtual void SetKeyframes(JSContext* aContext,
                             JS::Handle<JSObject*> aKeyframes, ErrorResult& aRv);
   void SetKeyframes(nsTArray<Keyframe>&& aKeyframes,
-                    const ComputedStyle* aStyle);
+                    const ComputedStyle* aStyle,
+                    const AnimationTimeline* aTimeline);
 
   // Replace the start value of the transition. This is used for updating
   // transitions running on the compositor.
@@ -255,7 +258,10 @@ class KeyframeEffect : public AnimationEffect {
 
   // Update |mProperties| by recalculating from |mKeyframes| using
   // |aComputedStyle| to resolve specified values.
-  void UpdateProperties(const ComputedStyle* aComputedValues);
+  // Note: we use |aTimeline| to check if we need to ensure the base styles.
+  // If it is nullptr, we use the timeline from |mAnimation|.
+  void UpdateProperties(const ComputedStyle* aStyle,
+                        const AnimationTimeline* aTimeline = nullptr);
 
   // Update various bits of state related to running ComposeStyle().
   // We need to update this outside ComposeStyle() because we should avoid
@@ -400,8 +406,7 @@ class KeyframeEffect : public AnimationEffect {
     Style,
     None,
   };
-  already_AddRefed<ComputedStyle> GetTargetComputedStyle(
-      Flush aFlushType) const;
+  already_AddRefed<const ComputedStyle> GetTargetComputedStyle(Flush) const;
 
   // A wrapper for marking cascade update according to the current
   // target and its effectSet.
@@ -409,11 +414,13 @@ class KeyframeEffect : public AnimationEffect {
 
   void EnsureBaseStyles(const ComputedStyle* aComputedValues,
                         const nsTArray<AnimationProperty>& aProperties,
+                        const AnimationTimeline* aTimeline,
                         bool* aBaseStylesChanged);
   void EnsureBaseStyle(const AnimationProperty& aProperty,
                        nsPresContext* aPresContext,
                        const ComputedStyle* aComputedValues,
-                       RefPtr<ComputedStyle>& aBaseComputedValues);
+                       const AnimationTimeline* aTimeline,
+                       RefPtr<const ComputedStyle>& aBaseComputedValues);
 
   OwningAnimationTarget mTarget;
 
@@ -468,7 +475,7 @@ class KeyframeEffect : public AnimationEffect {
                         const AnimationPropertySegment& aSegment,
                         const ComputedTiming& aComputedTiming);
 
-  already_AddRefed<ComputedStyle> CreateComputedStyleForAnimationValue(
+  already_AddRefed<const ComputedStyle> CreateComputedStyleForAnimationValue(
       nsCSSPropertyID aProperty, const AnimationValue& aValue,
       nsPresContext* aPresContext, const ComputedStyle* aBaseComputedStyle);
 

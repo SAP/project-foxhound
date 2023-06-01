@@ -16,8 +16,7 @@
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/RTCIdentityProviderBinding.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 struct RTCIdentityProvider;
 
@@ -25,7 +24,7 @@ class RTCIdentityProviderRegistrar final : public nsISupports,
                                            public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(RTCIdentityProviderRegistrar)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(RTCIdentityProviderRegistrar)
 
   explicit RTCIdentityProviderRegistrar(nsIGlobalObject* aGlobal);
 
@@ -55,7 +54,6 @@ class RTCIdentityProviderRegistrar final : public nsISupports,
   RefPtr<ValidateAssertionCallback> mValidateAssertionCallback;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* RTCIDENTITYPROVIDER_H_ */

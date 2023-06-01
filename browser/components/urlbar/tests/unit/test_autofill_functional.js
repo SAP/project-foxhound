@@ -7,9 +7,11 @@
 add_task(async function setup() {
   registerCleanupFunction(async () => {
     Services.prefs.clearUserPref("browser.urlbar.suggest.searches");
+    Services.prefs.clearUserPref("browser.urlbar.suggest.quickactions");
   });
 
   Services.prefs.setBoolPref("browser.urlbar.suggest.searches", false);
+  Services.prefs.setBoolPref("browser.urlbar.suggest.quickactions", false);
 });
 
 add_task(async function test_urls_order() {
@@ -27,7 +29,7 @@ add_task(async function test_urls_order() {
     matches: [
       makeVisitResult(context, {
         uri: "http://visit2.mozilla.org/",
-        title: "visit2.mozilla.org",
+        title: "test visit for http://visit2.mozilla.org/",
         heuristic: true,
       }),
       makeVisitResult(context, {
@@ -55,7 +57,7 @@ add_task(async function test_bookmark_first() {
     matches: [
       makeVisitResult(context, {
         uri: "http://bookmark1.mozilla.org/",
-        title: "bookmark1.mozilla.org",
+        title: "A bookmark",
         heuristic: true,
       }),
       makeVisitResult(context, {
@@ -80,7 +82,7 @@ add_task(async function test_complete_querystring() {
     matches: [
       makeVisitResult(context, {
         uri: "http://smokey.mozilla.org/foo?bacon=delicious",
-        title: "smokey.mozilla.org/foo?bacon=delicious",
+        title: "test visit for http://smokey.mozilla.org/foo?bacon=delicious",
         heuristic: true,
       }),
     ],
@@ -103,7 +105,8 @@ add_task(async function test_complete_fragment() {
     matches: [
       makeVisitResult(context, {
         uri: "http://smokey.mozilla.org/foo?bacon=delicious#bar",
-        title: "smokey.mozilla.org/foo?bacon=delicious#bar",
+        title:
+          "test visit for http://smokey.mozilla.org/foo?bacon=delicious#bar",
         heuristic: true,
       }),
     ],

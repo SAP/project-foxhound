@@ -8,9 +8,9 @@
 
 #include "base/memory/ref_counted.h"
 #include "nsWindowsDllInterceptor.h"
+#include "sandbox/win/src/process_mitigations.h"
 #include "sandbox/win/src/sandbox_factory.h"
 #include "mozilla/DebugOnly.h"
-#include "mozilla/sandboxing/permissionsService.h"
 #include "mozilla/WindowsProcessMitigations.h"
 
 namespace mozilla {
@@ -177,6 +177,9 @@ static sandbox::BrokerServices* InitializeBrokerServices() {
   scoped_refptr<sandbox::TargetPolicy> policy = brokerServices->CreatePolicy();
   policy->CreateAlternateDesktop(true);
 
+  // Ensure the relevant mitigations are enforced.
+  mozilla::sandboxing::ApplyParentProcessMitigations();
+
   return brokerServices;
 }
 
@@ -187,8 +190,12 @@ sandbox::BrokerServices* GetInitializedBrokerServices() {
   return sInitializedBrokerServices;
 }
 
-PermissionsService* GetPermissionsService() {
-  return PermissionsService::GetInstance();
+void ApplyParentProcessMitigations() {
+  // The main reason for this call is for the token hardening, but chromium code
+  // also ensures DEP without ATL thunk so we do the same.
+  sandbox::ApplyProcessMitigationsToCurrentProcess(
+      sandbox::MITIGATION_DEP | sandbox::MITIGATION_DEP_NO_ATL_THUNK |
+      sandbox::MITIGATION_HARDEN_TOKEN_IL_POLICY);
 }
 
 }  // namespace sandboxing

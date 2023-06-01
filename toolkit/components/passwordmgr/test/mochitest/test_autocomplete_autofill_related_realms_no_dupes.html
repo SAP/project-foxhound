@@ -42,8 +42,8 @@ Login Manager test: no duplicate logins when using autofill and autocomplete wit
 
 /** Test for Login Manager: related realms autofill/autocomplete. **/
 
-let uname = $_(1, "uname");
-let pword = $_(1, "pword");
+const uname = getFormElementByName(1, "uname");
+const pword = getFormElementByName(1, "pword");
 
 function restoreForm() {
   uname.value = "";
@@ -68,7 +68,7 @@ async function promiseACPopupClosed() {
   }, "Wait for AC popup to be closed");
 }
 
-add_task(async function setup() {
+add_setup(async () => {
   listenForUnexpectedPopupShown();
 });
 

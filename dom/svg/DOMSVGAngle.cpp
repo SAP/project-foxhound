@@ -9,13 +9,9 @@
 #include "mozilla/dom/SVGAngleBinding.h"
 #include "mozilla/dom/SVGSVGElement.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_SVG_VAL_IMPL_CYCLE_COLLECTION_WRAPPERCACHED(DOMSVGAngle, mSVGElement)
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(DOMSVGAngle, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(DOMSVGAngle, Release)
 
 DOMSVGAngle::DOMSVGAngle(SVGSVGElement* aSVGElement)
     : mSVGElement(aSVGElement), mType(AngleType::CreatedValue) {
@@ -113,5 +109,4 @@ void DOMSVGAngle::GetValueAsString(nsAString& aValue) {
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

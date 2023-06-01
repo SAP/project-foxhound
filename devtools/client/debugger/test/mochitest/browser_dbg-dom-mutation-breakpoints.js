@@ -4,7 +4,7 @@
 
 // Tests adding, disble/enable, and removal of dom mutation breakpoints
 
-/* import-globals-from ../../../inspector/test/shared-head.js */
+"use strict";
 
 // Import helpers for the inspector
 Services.scriptloader.loadSubScript(

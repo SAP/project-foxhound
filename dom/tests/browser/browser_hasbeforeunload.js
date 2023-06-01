@@ -229,8 +229,8 @@ function controlFrameAt(browser, frameDepth, command) {
   return SpecialPowers.spawn(browser, [{ frameDepth, command }], async function(
     args
   ) {
-    const { TestUtils } = ChromeUtils.import(
-      "resource://testing-common/TestUtils.jsm"
+    const { TestUtils } = ChromeUtils.importESModule(
+      "resource://testing-common/TestUtils.sys.mjs"
     );
 
     let { command: contentCommand, frameDepth: contentFrameDepth } = args;
@@ -315,7 +315,7 @@ function controlFrameAt(browser, frameDepth, command) {
         break;
       }
     }
-  }).catch(Cu.reportError);
+  }).catch(console.error);
 }
 
 /**
@@ -408,6 +408,12 @@ function assertHasBeforeUnload(browser, expected) {
  * inner window is removed from the DOM.
  */
 add_task(async function test_inner_window_scenarios() {
+  // Turn this off because the test expects the page to be not bfcached.
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["docshell.shistory.bfcache.ship_allow_beforeunload_listeners", false],
+    ],
+  });
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
@@ -450,7 +456,7 @@ add_task(async function test_inner_window_scenarios() {
 
       // Now send the page back to the test page for
       // the next few tests.
-      BrowserTestUtils.loadURI(browser, PAGE_URL);
+      BrowserTestUtils.loadURIString(browser, PAGE_URL);
       await BrowserTestUtils.browserLoaded(browser);
 
       // We want to test hasBeforeUnload works properly with
@@ -592,6 +598,12 @@ add_task(async function test_inner_window_scenarios() {
  * to the iframe DOM nodes instead of the inner windows.
  */
 add_task(async function test_outer_window_scenarios() {
+  // Turn this off because the test expects the page to be not bfcached.
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["docshell.shistory.bfcache.ship_allow_beforeunload_listeners", false],
+    ],
+  });
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
@@ -659,7 +671,7 @@ add_task(async function test_outer_window_scenarios() {
 
       // Now send the page back to the test page for
       // the next few tests.
-      BrowserTestUtils.loadURI(browser, PAGE_URL);
+      BrowserTestUtils.loadURIString(browser, PAGE_URL);
       await BrowserTestUtils.browserLoaded(browser);
 
       // We should initially start with hasBeforeUnload set to false.
@@ -787,6 +799,12 @@ add_task(async function test_outer_window_scenarios() {
  * are added on both inner and outer windows.
  */
 add_task(async function test_mixed_inner_and_outer_window_scenarios() {
+  // Turn this off because the test expects the page to be not bfcached.
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["docshell.shistory.bfcache.ship_allow_beforeunload_listeners", false],
+    ],
+  });
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,

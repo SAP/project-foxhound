@@ -16,8 +16,13 @@
 #include "nsISupportsImpl.h"
 
 namespace mozilla {
+namespace dom {
+class CanonicalBrowsingContext;
+}
+
 namespace a11y {
 
+class TextRange;
 class xpcAccessibleGeneric;
 
 #if !defined(XP_WIN)
@@ -29,28 +34,17 @@ class DocAccessiblePlatformExtParent;
  * an accessible document in a content process.
  */
 class DocAccessibleParent : public RemoteAccessible,
-                            public PDocAccessibleParent {
+                            public PDocAccessibleParent,
+                            public nsIMemoryReporter {
  public:
-  NS_INLINE_DECL_REFCOUNTING(DocAccessibleParent);
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIMEMORYREPORTER
 
-  DocAccessibleParent()
-      : RemoteAccessible(this),
-        mParentDoc(kNoParentDoc),
-#if defined(XP_WIN)
-        mEmulatedWindowHandle(nullptr),
-#endif  // defined(XP_WIN)
-        mTopLevel(false),
-        mTopLevelInContentProcess(false),
-        mShutdown(false),
-        mFocus(0),
-        mCaretId(0),
-        mCaretOffset(-1),
-        mIsCaretAtEndOfLine(false) {
-    sMaxDocID++;
-    mActorID = sMaxDocID;
-    MOZ_ASSERT(!LiveDocs().Get(mActorID));
-    LiveDocs().InsertOrUpdate(mActorID, this);
-  }
+ private:
+  DocAccessibleParent();
+
+ public:
+  static already_AddRefed<DocAccessibleParent> New();
 
   /**
    * Set this as a top level document; i.e. it is not embedded by another remote
@@ -73,6 +67,14 @@ class DocAccessibleParent : public RemoteAccessible,
   void SetTopLevelInContentProcess() { mTopLevelInContentProcess = true; }
   bool IsTopLevelInContentProcess() const { return mTopLevelInContentProcess; }
 
+  /**
+   * Determine whether this is an out-of-process iframe document, embedded by a
+   * remote embedder document.
+   */
+  bool IsOOPIframeDoc() const {
+    return !mTopLevel && mTopLevelInContentProcess;
+  }
+
   bool IsShutdown() const { return mShutdown; }
 
   /**
@@ -83,7 +85,14 @@ class DocAccessibleParent : public RemoteAccessible,
   void MarkAsShutdown() {
     MOZ_ASSERT(mChildDocs.IsEmpty());
     MOZ_ASSERT(mAccessibles.Count() == 0);
+    MOZ_ASSERT(!mBrowsingContext);
     mShutdown = true;
+  }
+
+  void SetBrowsingContext(dom::CanonicalBrowsingContext* aBrowsingContext);
+
+  dom::CanonicalBrowsingContext* GetBrowsingContext() const {
+    return mBrowsingContext;
   }
 
   /*
@@ -107,16 +116,16 @@ class DocAccessibleParent : public RemoteAccessible,
       const LayoutDeviceIntRect& aCaretRect,
 #endif
       const int32_t& aOffset, const bool& aIsSelectionCollapsed,
-      const bool& aIsAtEndOfLine) final;
+      const bool& aIsAtEndOfLine, const int32_t& aGranularity) final;
 
   virtual mozilla::ipc::IPCResult RecvTextChangeEvent(
-      const uint64_t& aID, const nsString& aStr, const int32_t& aStart,
+      const uint64_t& aID, const nsAString& aStr, const int32_t& aStart,
       const uint32_t& aLen, const bool& aIsInsert,
       const bool& aFromUser) override;
 
 #if defined(XP_WIN)
   virtual mozilla::ipc::IPCResult RecvSyncTextChangeEvent(
-      const uint64_t& aID, const nsString& aStr, const int32_t& aStart,
+      const uint64_t& aID, const nsAString& aStr, const int32_t& aStart,
       const uint32_t& aLen, const bool& aIsInsert,
       const bool& aFromUser) override;
 
@@ -128,7 +137,6 @@ class DocAccessibleParent : public RemoteAccessible,
       const uint64_t& aID, const uint64_t& aWidgetID,
       const uint32_t& aType) override;
 
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   virtual mozilla::ipc::IPCResult RecvVirtualCursorChangeEvent(
       const uint64_t& aID, const uint64_t& aOldPositionID,
       const int32_t& aOldStartOffset, const int32_t& aOldEndOffset,
@@ -143,21 +151,26 @@ class DocAccessibleParent : public RemoteAccessible,
 
   virtual mozilla::ipc::IPCResult RecvCache(
       const mozilla::a11y::CacheUpdateType& aUpdateType,
-      nsTArray<CacheData>&& aData, const bool& aFinal) override;
+      nsTArray<CacheData>&& aData, const bool& aDispatchShowEvent) override;
+
+  virtual mozilla::ipc::IPCResult RecvSelectedAccessiblesChanged(
+      nsTArray<uint64_t>&& aSelectedIDs,
+      nsTArray<uint64_t>&& aUnselectedIDs) override;
 
   virtual mozilla::ipc::IPCResult RecvAccessiblesWillMove(
       nsTArray<uint64_t>&& aIDs) override;
 
 #if !defined(XP_WIN)
   virtual mozilla::ipc::IPCResult RecvAnnouncementEvent(
-      const uint64_t& aID, const nsString& aAnnouncement,
+      const uint64_t& aID, const nsAString& aAnnouncement,
       const uint16_t& aPriority) override;
+#endif
 
   virtual mozilla::ipc::IPCResult RecvTextSelectionChangeEvent(
       const uint64_t& aID, nsTArray<TextRangeData>&& aSelection) override;
-#endif
 
-  mozilla::ipc::IPCResult RecvRoleChangedEvent(const a11y::role& aRole) final;
+  mozilla::ipc::IPCResult RecvRoleChangedEvent(
+      const a11y::role& aRole, const uint8_t& aRoleMapEntryIndex) final;
 
   virtual mozilla::ipc::IPCResult RecvBindChildDoc(
       PDocAccessibleParent* aChildDoc, const uint64_t& aID) override;
@@ -172,10 +185,7 @@ class DocAccessibleParent : public RemoteAccessible,
 
   virtual mozilla::ipc::IPCResult RecvShutdown() override;
   void Destroy();
-  virtual void ActorDestroy(ActorDestroyReason aWhy) override {
-    MOZ_ASSERT(CheckDocTree());
-    if (!mShutdown) Destroy();
-  }
+  virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 
   /*
    * Return the main processes representation of the parent document (if any)
@@ -280,6 +290,13 @@ class DocAccessibleParent : public RemoteAccessible,
 #endif
 
   // Accessible
+  virtual Accessible* Parent() const override {
+    if (IsTopLevel()) {
+      return OuterDocOfRemoteBrowser();
+    }
+    return RemoteParent();
+  }
+
   virtual int32_t IndexInParent() const override {
     if (IsTopLevel() && OuterDocOfRemoteBrowser()) {
       // An OuterDoc can only have 1 child.
@@ -314,12 +331,31 @@ class DocAccessibleParent : public RemoteAccessible,
 
   bool IsCaretAtEndOfLine() const { return mIsCaretAtEndOfLine; }
 
+  virtual void SelectionRanges(nsTArray<TextRange>* aRanges) const override;
+
+  virtual Accessible* FocusedChild() override;
+
+  void URL(nsAString& aURL) const;
+  void URL(nsACString& aURL) const;
+
+  virtual Relation RelationByType(RelationType aType) const override;
+
+  // Tracks cached reverse relations (ie. those not set explicitly by an
+  // attribute like aria-labelledby) for accessibles in this doc. This map is of
+  // the form: {accID, {relationType, [targetAccID, targetAccID, ...]}}
+  nsTHashMap<uint64_t, nsTHashMap<RelationType, nsTArray<uint64_t>>>
+      mReverseRelations;
+
+  // Computed from the viewport cache, the accs referenced by these ids
+  // are currently on screen (making any acc not in this list offscreen).
+  nsTHashSet<uint64_t> mOnScreenAccessibles;
+
+  static DocAccessibleParent* GetFrom(dom::BrowsingContext* aBrowsingContext);
+
+  size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) override;
+
  private:
-  ~DocAccessibleParent() {
-    LiveDocs().Remove(mActorID);
-    MOZ_ASSERT(mChildDocs.Length() == 0);
-    MOZ_ASSERT(!ParentDoc());
-  }
+  ~DocAccessibleParent();
 
   class ProxyEntry : public PLDHashEntryHdr {
    public:
@@ -351,6 +387,8 @@ class DocAccessibleParent : public RemoteAccessible,
   [[nodiscard]] bool CheckDocTree() const;
   xpcAccessibleGeneric* GetXPCAccessible(RemoteAccessible* aProxy);
 
+  void FireEvent(RemoteAccessible* aAcc, const uint32_t& aType);
+
   /**
    * If this Accessible is being moved, prepare it for reuse. Otherwise, it is
    * being removed, so shut it down.
@@ -381,6 +419,7 @@ class DocAccessibleParent : public RemoteAccessible,
   bool mTopLevel;
   bool mTopLevelInContentProcess;
   bool mShutdown;
+  RefPtr<dom::CanonicalBrowsingContext> mBrowsingContext;
 
   nsTHashSet<RefPtr<dom::BrowserBridgeParent>> mPendingOOPChildDocs;
 
@@ -388,6 +427,7 @@ class DocAccessibleParent : public RemoteAccessible,
   uint64_t mCaretId;
   int32_t mCaretOffset;
   bool mIsCaretAtEndOfLine;
+  nsTArray<TextRangeData> mTextSelections;
 
   static uint64_t sMaxDocID;
   static nsTHashMap<nsUint64HashKey, DocAccessibleParent*>& LiveDocs() {

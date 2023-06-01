@@ -26,7 +26,7 @@ add_task(async function() {
   const { document: panelDoc, store } = changesView;
 
   await selectNode("div", inspector);
-  const onTrackChange = waitUntilAction(store, "TRACK_CHANGE");
+  const onTrackChange = waitForDispatch(store, "TRACK_CHANGE");
   await updateDeclaration(ruleView, 1, { color: "red" }, { color: "green" });
   await onTrackChange;
 
@@ -62,6 +62,6 @@ add_task(async function() {
 });
 
 function checkClipboardData(expected) {
-  const actual = SpecialPowers.getClipboardData("text/unicode");
+  const actual = SpecialPowers.getClipboardData("text/plain");
   return actual.trim() === expected.trim();
 }

@@ -4,16 +4,16 @@
 
 const {
   maybeEscapePropertyName,
-} = require("devtools/client/shared/components/reps/reps/rep-utils");
-const ArrayRep = require("devtools/client/shared/components/reps/reps/array");
-const GripArrayRep = require("devtools/client/shared/components/reps/reps/grip-array");
-const GripMap = require("devtools/client/shared/components/reps/reps/grip-map");
-const GripMapEntryRep = require("devtools/client/shared/components/reps/reps/grip-map-entry");
-const ErrorRep = require("devtools/client/shared/components/reps/reps/error");
-const BigIntRep = require("devtools/client/shared/components/reps/reps/big-int");
+} = require("resource://devtools/client/shared/components/reps/reps/rep-utils.js");
+const ArrayRep = require("resource://devtools/client/shared/components/reps/reps/array.js");
+const GripArrayRep = require("resource://devtools/client/shared/components/reps/reps/grip-array.js");
+const GripMap = require("resource://devtools/client/shared/components/reps/reps/grip-map.js");
+const GripEntryRep = require("resource://devtools/client/shared/components/reps/reps/grip-entry.js");
+const ErrorRep = require("resource://devtools/client/shared/components/reps/reps/error.js");
+const BigIntRep = require("resource://devtools/client/shared/components/reps/reps/big-int.js");
 const {
   isLongString,
-} = require("devtools/client/shared/components/reps/reps/string");
+} = require("resource://devtools/client/shared/components/reps/reps/string.js");
 
 const MAX_NUMERICAL_PROPERTIES = 100;
 
@@ -93,7 +93,7 @@ function nodeIsEntries(item) {
 }
 
 function nodeIsMapEntry(item) {
-  return GripMapEntryRep.supportsObject(getValue(item));
+  return GripEntryRep.supportsObject(getValue(item));
 }
 
 function nodeHasChildren(item) {
@@ -269,12 +269,18 @@ function nodeHasEntries(item) {
     return false;
   }
 
+  const className = value.class;
   return (
-    value.class === "Map" ||
-    value.class === "Set" ||
-    value.class === "WeakMap" ||
-    value.class === "WeakSet" ||
-    value.class === "Storage"
+    className === "Map" ||
+    className === "Set" ||
+    className === "WeakMap" ||
+    className === "WeakSet" ||
+    className === "Storage" ||
+    className === "URLSearchParams" ||
+    className === "Headers" ||
+    className === "FormData" ||
+    className === "MIDIInputMap" ||
+    className === "MIDIOutputMap"
   );
 }
 

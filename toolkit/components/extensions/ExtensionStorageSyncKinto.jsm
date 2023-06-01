@@ -11,17 +11,13 @@
 // TODO bug 1637465: Remove the Kinto-based storage implementation.
 
 var EXPORTED_SYMBOLS = [
-  "ExtensionStorageSync",
+  "ExtensionStorageSyncKinto",
   "KintoStorageTestUtils",
-  "extensionStorageSync",
+  "extensionStorageSyncKinto",
 ];
 
-const global = this;
-
-Cu.importGlobalProperties(["atob", "btoa"]);
-
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 const KINTO_PROD_SERVER_URL =
   "https://webextensions.settings.services.mozilla.com/v1";
@@ -39,43 +35,51 @@ const FXA_OAUTH_OPTIONS = {
 // Default is 5sec, which seems a bit aggressive on the open internet
 const KINTO_REQUEST_TIMEOUT = 30000;
 
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
+);
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 const { ExtensionUtils } = ChromeUtils.import(
   "resource://gre/modules/ExtensionUtils.jsm"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   BulkKeyBundle: "resource://services-sync/keys.js",
   CollectionKeyManager: "resource://services-sync/record.js",
   CommonUtils: "resource://services-common/utils.js",
   CryptoUtils: "resource://services-crypto/utils.js",
   ExtensionCommon: "resource://gre/modules/ExtensionCommon.jsm",
-  fxAccounts: "resource://gre/modules/FxAccounts.jsm",
   KintoHttpClient: "resource://services-common/kinto-http-client.js",
   Kinto: "resource://services-common/kinto-offline-client.js",
   FirefoxAdapter: "resource://services-common/kinto-storage-adapter.js",
   Observers: "resource://services-common/observers.js",
-  Services: "resource://gre/modules/Services.jsm",
   Utils: "resource://services-sync/util.js",
 });
 
+XPCOMUtils.defineLazyGetter(lazy, "fxAccounts", () => {
+  return ChromeUtils.import(
+    "resource://gre/modules/FxAccounts.jsm"
+  ).getFxAccountsSingleton();
+});
+
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "prefPermitsStorageSync",
   STORAGE_SYNC_ENABLED_PREF,
   true
 );
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "prefStorageSyncServerURL",
   STORAGE_SYNC_SERVER_URL_PREF,
   KINTO_DEFAULT_SERVER_URL
 );
-XPCOMUtils.defineLazyGetter(this, "WeaveCrypto", function() {
+XPCOMUtils.defineLazyGetter(lazy, "WeaveCrypto", function() {
   let { WeaveCrypto } = ChromeUtils.import(
     "resource://services-crypto/WeaveCrypto.js"
   );
@@ -94,7 +98,7 @@ const log = Log.repository.getLogger("Sync.Engine.Extension-Storage");
 // isn't available.
 let _fxaService = null;
 if (AppConstants.platform != "android") {
-  _fxaService = fxAccounts;
+  _fxaService = lazy.fxAccounts;
 }
 
 class ServerKeyringDeleted extends Error {
@@ -108,7 +112,7 @@ class ServerKeyringDeleted extends Error {
 /**
  * Check for FXA and throw an exception if we don't have access.
  *
- * @param {Object} fxAccounts  The reference we were hoping to use to
+ * @param {object} fxAccounts  The reference we were hoping to use to
  *     access FxA
  * @param {string} action  The thing we were doing when we decided to
  *     see if we had access to FxA
@@ -121,10 +125,10 @@ function throwIfNoFxA(fxAccounts, action) {
   }
 }
 
-// Global ExtensionStorageSync instance that extensions and Fx Sync use.
+// Global ExtensionStorageSyncKinto instance that extensions and Fx Sync use.
 // On Android, because there's no FXAccounts instance, any syncing
 // operations will fail.
-var extensionStorageSync = null;
+var extensionStorageSyncKinto = null;
 
 /**
  * Utility function to enforce an order of fields when computing an HMAC.
@@ -135,9 +139,14 @@ var extensionStorageSync = null;
  * @param {string}    ciphertext The ciphertext over which to compute the HMAC
  * @returns {string} The computed HMAC
  */
-function ciphertextHMAC(keyBundle, id, IV, ciphertext) {
-  const hasher = keyBundle.sha256HMACHasher;
-  return CommonUtils.bytesAsHex(Utils.digestUTF8(id + IV + ciphertext, hasher));
+async function ciphertextHMAC(keyBundle, id, IV, ciphertext) {
+  const hmacKey = lazy.CommonUtils.byteStringToArrayBuffer(keyBundle.hmacKey);
+  const encoder = new TextEncoder();
+  const data = encoder.encode(id + IV + ciphertext);
+  const hmac = await lazy.CryptoUtils.hmac("SHA-256", hmacKey, data);
+  return lazy.CommonUtils.bytesAsHex(
+    lazy.CommonUtils.arrayBufferToByteString(hmac)
+  );
 }
 
 /**
@@ -170,13 +179,13 @@ class EncryptionRemoteTransformer {
       throw new Error("Record ID is missing or invalid");
     }
 
-    let IV = WeaveCrypto.generateRandomIV();
-    let ciphertext = await WeaveCrypto.encrypt(
+    let IV = lazy.WeaveCrypto.generateRandomIV();
+    let ciphertext = await lazy.WeaveCrypto.encrypt(
       JSON.stringify(record),
       keyBundle.encryptionKeyB64,
       IV
     );
-    let hmac = ciphertextHMAC(keyBundle, id, IV, ciphertext);
+    let hmac = await ciphertextHMAC(keyBundle, id, IV, ciphertext);
     const encryptedResult = { ciphertext, IV, hmac, id };
 
     // Copy over the _status field, so that we handle concurrency
@@ -202,7 +211,7 @@ class EncryptionRemoteTransformer {
     }
     const keyBundle = await this.getKeys();
     // Authenticate the encrypted blob with the expected HMAC
-    let computedHMAC = ciphertextHMAC(
+    let computedHMAC = await ciphertextHMAC(
       keyBundle,
       record.id,
       record.IV,
@@ -210,11 +219,11 @@ class EncryptionRemoteTransformer {
     );
 
     if (computedHMAC != record.hmac) {
-      Utils.throwHMACMismatch(record.hmac, computedHMAC);
+      lazy.Utils.throwHMACMismatch(record.hmac, computedHMAC);
     }
 
     // Handle invalid data here. Elsewhere we assume that cleartext is an object.
-    let cleartext = await WeaveCrypto.decrypt(
+    let cleartext = await lazy.WeaveCrypto.decrypt(
       record.ciphertext,
       keyBundle.encryptionKeyB64,
       record.IV
@@ -255,14 +264,13 @@ class EncryptionRemoteTransformer {
    *
    * The default version just re-uses the record's ID.
    *
-   * @param {Object} record The record being encoded.
+   * @param {object} record The record being encoded.
    * @returns {Promise<string>} The ID to use.
    */
   getEncodedRecordId(record) {
     return Promise.resolve(record.id);
   }
 }
-global.EncryptionRemoteTransformer = EncryptionRemoteTransformer;
 
 /**
  * An EncryptionRemoteTransformer that provides a keybundle derived
@@ -279,7 +287,7 @@ class KeyRingEncryptionRemoteTransformer extends EncryptionRemoteTransformer {
     const self = this;
     return (async function() {
       let key = await self._fxaService.keys.getKeyForScope(STORAGE_SYNC_SCOPE);
-      return BulkKeyBundle.fromJWK(key);
+      return lazy.BulkKeyBundle.fromJWK(key);
     })();
   }
   // Pass through the kbHash field from the unencrypted record. If
@@ -296,7 +304,7 @@ class KeyRingEncryptionRemoteTransformer extends EncryptionRemoteTransformer {
     try {
       return await super.decode(record);
     } catch (e) {
-      if (Utils.isHMACMismatch(e)) {
+      if (lazy.Utils.isHMACMismatch(e)) {
         const currentKBHash = await getKBHash(this._fxaService);
         if (record.kbHash != currentKBHash) {
           // Some other client encoded this with a kB that we don't
@@ -328,10 +336,9 @@ class KeyRingEncryptionRemoteTransformer extends EncryptionRemoteTransformer {
     );
   }
 }
-global.KeyRingEncryptionRemoteTransformer = KeyRingEncryptionRemoteTransformer;
 
 /**
- * A Promise that centralizes initialization of ExtensionStorageSync.
+ * A Promise that centralizes initialization of ExtensionStorageSyncKinto.
  *
  * This centralizes the use of the Sqlite database, to which there is
  * only one connection which is shared by all threads.
@@ -341,18 +348,19 @@ global.KeyRingEncryptionRemoteTransformer = KeyRingEncryptionRemoteTransformer;
  * - connection: a Sqlite connection. Meant for internal use only.
  * - kinto: a KintoBase object, suitable for using in Firefox. All
  *   collections in this database will use the same Sqlite connection.
- * @returns {Promise<Object>}
+ *
+ * @returns {Promise<object>}
  */
 async function storageSyncInit() {
   // Memoize the result to share the connection.
   if (storageSyncInit.promise === undefined) {
     const path = "storage-sync.sqlite";
-    storageSyncInit.promise = FirefoxAdapter.openConnection({ path })
+    storageSyncInit.promise = lazy.FirefoxAdapter.openConnection({ path })
       .then(connection => {
         return {
           connection,
-          kinto: new Kinto({
-            adapter: FirefoxAdapter,
+          kinto: new lazy.Kinto({
+            adapter: lazy.FirefoxAdapter,
             adapterOptions: { sqliteHandle: connection },
             timeout: KINTO_REQUEST_TIMEOUT,
             retry: 0,
@@ -467,7 +475,7 @@ class CryptoCollection {
    */
   getNewSalt() {
     return btoa(
-      CryptoUtils.generateRandomBytesLegacy(
+      lazy.CryptoUtils.generateRandomBytesLegacy(
         STORAGE_SYNC_CRYPTO_SALT_LENGTH_BYTES
       )
     );
@@ -489,7 +497,8 @@ class CryptoCollection {
    * - salts: a normal JS Object with keys being collection IDs and
    *   values being base64-encoded salts to use when hashing IDs
    *   for that collection.
-   * @returns {Promise<Object>}
+   *
+   * @returns {Promise<object>}
    */
   async getKeyRingRecord() {
     const collection = await this.getCollection();
@@ -548,7 +557,7 @@ class CryptoCollection {
    */
   extensionIdToCollectionId(extensionId) {
     return this.hashWithExtensionSalt(
-      CommonUtils.encodeUTF8(extensionId),
+      lazy.CommonUtils.encodeUTF8(extensionId),
       extensionId
     ).then(hash => `ext-${hash}`);
   }
@@ -585,8 +594,8 @@ class CryptoCollection {
 
     const salt = atob(saltBase64);
     const message = `${salt}\x00${value}`;
-    const hash = CryptoUtils.digestBytes(message, hasher);
-    return CommonUtils.encodeBase64URL(hash, false);
+    const hash = lazy.CryptoUtils.digestBytes(message, hasher);
+    return lazy.CommonUtils.encodeBase64URL(hash, false);
   }
 
   /**
@@ -596,7 +605,7 @@ class CryptoCollection {
    */
   async getKeyRing() {
     const cryptoKeyRecord = await this.getKeyRingRecord();
-    const collectionKeys = new CollectionKeyManager();
+    const collectionKeys = new lazy.CollectionKeyManager();
     if (cryptoKeyRecord.keys) {
       collectionKeys.setContents(
         cryptoKeyRecord.keys,
@@ -625,9 +634,9 @@ class CryptoCollection {
     await collection.upsert(record);
   }
 
-  async sync(extensionStorageSync) {
+  async sync(extensionStorageSyncKinto) {
     const collection = await this.getCollection();
-    return extensionStorageSync._syncCollection(collection, {
+    return extensionStorageSyncKinto._syncCollection(collection, {
       strategy: "server_wins",
     });
   }
@@ -647,7 +656,6 @@ class CryptoCollection {
     await collection.clear();
   }
 }
-this.CryptoCollection = CryptoCollection;
 
 /**
  * An EncryptionRemoteTransformer for extension records.
@@ -684,7 +692,7 @@ let CollectionKeyEncryptionRemoteTransformer = class extends EncryptionRemoteTra
     // It isn't really clear whether kinto.js record IDs are
     // bytestrings or strings that happen to only contain ASCII
     // characters, so encode them to be sure.
-    const id = CommonUtils.encodeUTF8(record.id);
+    const id = lazy.CommonUtils.encodeUTF8(record.id);
     // Like extensionIdToCollectionId, the rules about Kinto record
     // IDs preclude equals signs or strings starting with a
     // non-alphanumeric, so prefix all IDs with a constant "id-".
@@ -693,8 +701,6 @@ let CollectionKeyEncryptionRemoteTransformer = class extends EncryptionRemoteTra
       .then(hash => `id-${hash}`);
   }
 };
-
-global.CollectionKeyEncryptionRemoteTransformer = CollectionKeyEncryptionRemoteTransformer;
 
 /**
  * Clean up now that one context is no longer using this extension's collection.
@@ -719,7 +725,7 @@ function cleanUpForContext(extension, context) {
  * @param {Extension} extension
  *                    The extension whose collection needs to
  *                    be opened.
- * @param {Object} options
+ * @param {object} options
  *                 Options to be passed to the call to `.collection()`.
  * @returns {Promise<Collection>}
  */
@@ -733,7 +739,7 @@ const openCollection = async function(extension, options = {}) {
   return coll;
 };
 
-class ExtensionStorageSync {
+class ExtensionStorageSyncKinto {
   /**
    * @param {FXAccounts} fxaService (Optional) If not
    *    present, trying to sync will fail.
@@ -757,7 +763,7 @@ class ExtensionStorageSync {
     // context that used the storage.sync APIs.
     const extensions = new Set(extensionContexts.keys());
 
-    const allEnabledExtensions = await AddonManager.getAddonsByTypes([
+    const allEnabledExtensions = await lazy.AddonManager.getAddonsByTypes([
       "extension",
     ]);
 
@@ -873,7 +879,7 @@ class ExtensionStorageSync {
    * one).
    *
    * @param {Collection} collection
-   * @param {Object} options
+   * @param {object} options
    *                 Additional options to be passed to sync().
    * @returns {Promise<SyncResultObject>}
    */
@@ -885,7 +891,7 @@ class ExtensionStorageSync {
       const allOptions = Object.assign(
         {},
         {
-          remote: prefStorageSyncServerURL,
+          remote: lazy.prefStorageSyncServerURL,
           headers: {
             Authorization: "Bearer " + token,
           },
@@ -935,10 +941,13 @@ class ExtensionStorageSync {
     log.error("Deleting default bucket and everything in it");
     return this._requestWithToken("Clearing server", function(token) {
       const headers = { Authorization: "Bearer " + token };
-      const kintoHttp = new KintoHttpClient(prefStorageSyncServerURL, {
-        headers: headers,
-        timeout: KINTO_REQUEST_TIMEOUT,
-      });
+      const kintoHttp = new lazy.KintoHttpClient(
+        lazy.prefStorageSyncServerURL,
+        {
+          headers: headers,
+          timeout: KINTO_REQUEST_TIMEOUT,
+        }
+      );
       return kintoHttp.deleteBucket("default");
     });
   }
@@ -960,7 +969,7 @@ class ExtensionStorageSync {
    * Check whether the keys record (provided) already has salts for
    * all the extensions given in extIds.
    *
-   * @param {Object} keysRecord A previously-retrieved keys record.
+   * @param {object} keysRecord A previously-retrieved keys record.
    * @param {Array<string>} extIds The IDs of the extensions which
    *                need salts.
    * @returns {boolean}
@@ -1206,7 +1215,7 @@ class ExtensionStorageSync {
    * @returns {Promise<Collection>}
    */
   getCollection(extension, context) {
-    if (prefPermitsStorageSync !== true) {
+    if (lazy.prefPermitsStorageSync !== true) {
       return Promise.reject({
         message: `Please set ${STORAGE_SYNC_ENABLED_PREF} to true in about:config`,
       });
@@ -1320,7 +1329,7 @@ class ExtensionStorageSync {
       records = {};
     } else {
       keys = Object.keys(spec);
-      records = Cu.cloneInto(spec, global);
+      records = Cu.cloneInto(spec, {});
     }
 
     for (let key of keys) {
@@ -1361,17 +1370,16 @@ class ExtensionStorageSync {
   }
 
   notifyListeners(extension, changes) {
-    Observers.notify("ext.storage.sync-changed");
+    lazy.Observers.notify("ext.storage.sync-changed");
     let listeners = this.listeners.get(extension) || new Set();
     if (listeners) {
       for (let listener of listeners) {
-        ExtensionCommon.runSafeSyncWithoutClone(listener, changes);
+        lazy.ExtensionCommon.runSafeSyncWithoutClone(listener, changes);
       }
     }
   }
 }
-this.ExtensionStorageSync = ExtensionStorageSync;
-extensionStorageSync = new ExtensionStorageSync(_fxaService);
+extensionStorageSyncKinto = new ExtensionStorageSyncKinto(_fxaService);
 
 // For test use only.
 const KintoStorageTestUtils = {

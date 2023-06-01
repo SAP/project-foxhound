@@ -14,7 +14,7 @@
 #include "nsIHttpChannelInternal.h"
 #include "nsIIOService.h"
 #include "nsIInputStream.h"
-#include "nsISupportsBase.h"
+#include "nsISupports.h"
 #include "nsISupportsUtils.h"
 #include "nsITimedChannel.h"
 #include "nsIUploadChannel2.h"
@@ -559,7 +559,8 @@ nsresult TRR::ReceivePush(nsIHttpChannel* pushed, nsHostRecord* pushedRec) {
   // Since we don't ever call nsHostResolver::NameLookup for this record,
   // we need to copy the trr mode from the previous record
   if (hostRecord->mEffectiveTRRMode == nsIRequest::TRR_DEFAULT_MODE) {
-    hostRecord->mEffectiveTRRMode = pushedRec->mEffectiveTRRMode;
+    hostRecord->mEffectiveTRRMode =
+        static_cast<nsIRequest::TRRMode>(pushedRec->mEffectiveTRRMode);
   }
 
   rv = mHostResolver->TrrLookup_unlocked(hostRecord, this);
@@ -667,10 +668,10 @@ void TRR::SaveAdditionalRecords(
     // Since we're not actually calling NameLookup for this record, we need
     // to set these fields to avoid assertions in CompleteLookup.
     // This is quite hacky, and should be fixed.
+    hostRecord->Reset();
     hostRecord->mResolving++;
-    hostRecord->mEffectiveTRRMode = mRec->mEffectiveTRRMode;
-    RefPtr<AddrHostRecord> addrRec = do_QueryObject(hostRecord);
-    addrRec->mTrrStart = TimeStamp::Now();
+    hostRecord->mEffectiveTRRMode =
+        static_cast<nsIRequest::TRRMode>(mRec->mEffectiveTRRMode);
     LOG(("Completing lookup for additional: %s",
          nsCString(recordEntry.GetKey()).get()));
     (void)mHostResolver->CompleteLookup(hostRecord, NS_OK, ai, mPB,
@@ -701,18 +702,15 @@ void TRR::StoreIPHintAsDNSRecord(const struct SVCB& aSVCBRecord) {
 
   mHostResolver->MaybeRenewHostRecord(hostRecord);
 
-  uint32_t ttl = AddrInfo::NO_TTL_DATA;
   RefPtr<AddrInfo> ai(new AddrInfo(aSVCBRecord.mSvcDomainName, ResolverType(),
-                                   TRRTYPE_A, std::move(addresses), ttl));
+                                   TRRTYPE_A, std::move(addresses), mTTL));
 
   // Since we're not actually calling NameLookup for this record, we need
   // to set these fields to avoid assertions in CompleteLookup.
   // This is quite hacky, and should be fixed.
   hostRecord->mResolving++;
-  hostRecord->mEffectiveTRRMode = mRec->mEffectiveTRRMode;
-  RefPtr<AddrHostRecord> addrRec = do_QueryObject(hostRecord);
-  addrRec->mTrrStart = TimeStamp::Now();
-
+  hostRecord->mEffectiveTRRMode =
+      static_cast<nsIRequest::TRRMode>(mRec->mEffectiveTRRMode);
   (void)mHostResolver->CompleteLookup(hostRecord, NS_OK, ai, mPB, mOriginSuffix,
                                       TRRSkippedReason::TRR_OK, this);
 }
@@ -799,6 +797,19 @@ void TRR::HandleDecodeError(nsresult aStatusCode) {
   }
 }
 
+bool TRR::HasUsableResponse() {
+  if (mType == TRRTYPE_A || mType == TRRTYPE_AAAA) {
+    return !mDNS.mAddresses.IsEmpty();
+  }
+  if (mType == TRRTYPE_TXT) {
+    return mResult.is<TypeRecordTxt>();
+  }
+  if (mType == TRRTYPE_HTTPSSVC) {
+    return mResult.is<TypeRecordHTTPSSVC>();
+  }
+  return false;
+}
+
 nsresult TRR::FollowCname(nsIChannel* aChannel) {
   nsresult rv = NS_OK;
   nsAutoCString cname;
@@ -824,8 +835,18 @@ nsresult TRR::FollowCname(nsIChannel* aChannel) {
 
   // restore mCname as DohDecode() change it
   mCname = cname;
-  if (NS_SUCCEEDED(rv) && !mDNS.mAddresses.IsEmpty()) {
+  if (NS_SUCCEEDED(rv) && HasUsableResponse()) {
     ReturnData(aChannel);
+    return NS_OK;
+  }
+
+  bool ra = mPacket && mPacket->RecursionAvailable().unwrapOr(false);
+  LOG(("ra = %d", ra));
+  if (rv == NS_ERROR_UNKNOWN_HOST && ra) {
+    // If recursion is available, but no addresses have been returned,
+    // we can just return a failure here.
+    LOG(("TRR::FollowCname not sending another request as RA flag is set."));
+    FailData(NS_ERROR_UNKNOWN_HOST);
     return NS_OK;
   }
 
@@ -849,6 +870,10 @@ nsresult TRR::FollowCname(nsIChannel* aChannel) {
 nsresult TRR::On200Response(nsIChannel* aChannel) {
   // decode body and create an AddrInfo struct for the response
   nsClassHashtable<nsCStringHashKey, DOHresp> additionalRecords;
+  RefPtr<TypeHostRecord> typeRec = do_QueryObject(mRec);
+  if (typeRec && typeRec->mOriginHost) {
+    GetOrCreateDNSPacket()->SetOriginHost(typeRec->mOriginHost);
+  }
   nsresult rv = GetOrCreateDNSPacket()->Decode(
       mHost, mType, mCname, StaticPrefs::network_trr_allow_rfc1918(), mDNS,
       mResult, additionalRecords, mTTL);

@@ -2,110 +2,82 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const {
-  document: gDoc,
-  ChromeUtils,
-} = window.docShell.chromeEventHandler.ownerGlobal;
-const { RemoteL10n } = ChromeUtils.import(
-  "resource://activity-stream/lib/RemoteL10n.jsm"
-);
+const browser = window.docShell.chromeEventHandler;
+const { document: gDoc, XPCOMUtils } = browser.ownerGlobal;
 
-function cloneTemplate(id) {
-  return document.getElementById(id).content.cloneNode(true);
+XPCOMUtils.defineLazyModuleGetters(this, {
+  AboutWelcomeParent: "resource:///actors/AboutWelcomeParent.jsm",
+});
+
+const CONFIG = window.arguments[0];
+
+function addStylesheet(href) {
+  const link = document.head.appendChild(document.createElement("link"));
+  link.rel = "stylesheet";
+  link.href = href;
 }
 
-async function renderSpotlight(ready) {
-  const [
-    { template, logo = {}, body, extra = {} },
-    params,
-  ] = window.arguments[0];
+/**
+ * Render content based on about:welcome multistage template.
+ */
+function renderMultistage(ready) {
+  const AWParent = new AboutWelcomeParent();
+  const receive = name => data =>
+    AWParent.onContentMessage(`AWPage:${name}`, data, browser);
 
-  // Apply desired message template.
-  const clone = cloneTemplate(template);
-  document.body.classList.add(template);
-
-  // Render logo element.
-  let imageEl = clone.querySelector(".logo");
-  // Allow backwards compatibility of previous content structure.
-  imageEl.src = logo.imageURL ?? window.arguments[0][0].logoImageURL;
-  imageEl.style.height = imageEl.style.width = logo.size;
-
-  // Set text data of an element by class name with local/remote as configured.
-  const setText = (className, config) => {
-    const el = clone.querySelector(`.${className}`);
-    if (!config.label) {
-      el.remove();
-      return;
-    }
-
-    el.appendChild(
-      RemoteL10n.createElement(document, "span", { content: config.label })
-    );
-    el.style.fontSize = config.size;
+  // Expose top level functions expected by the bundle.
+  window.AWGetFeatureConfig = () => CONFIG;
+  window.AWGetRegion = receive("GET_REGION");
+  window.AWGetSelectedTheme = receive("GET_SELECTED_THEME");
+  window.AWSelectTheme = data => receive("SELECT_THEME")(data?.toUpperCase());
+  // Do not send telemetry if message (e.g. spotlight in PBM) config sets metrics as 'block'.
+  if (CONFIG?.metrics !== "block") {
+    window.AWSendEventTelemetry = receive("TELEMETRY_EVENT");
+  }
+  window.AWSendToDeviceEmailsSupported = receive(
+    "SEND_TO_DEVICE_EMAILS_SUPPORTED"
+  );
+  window.AWSendToParent = (name, data) => receive(name)(data);
+  window.AWFinish = () => {
+    window.close();
   };
+  window.AWWaitForMigrationClose = receive("WAIT_FOR_MIGRATION_CLOSE");
 
-  // Render main body text elements.
-  Object.entries(body).forEach(entry => setText(...entry));
+  // Update styling to be compatible with about:welcome.
+  addStylesheet(
+    "chrome://activity-stream/content/aboutwelcome/aboutwelcome.css"
+  );
 
-  // Optionally apply and render extra behaviors.
-  const { expanded } = extra;
-  if (expanded) {
-    // Add the expanded behavior to the main text content.
-    clone
-      .querySelector("#content")
-      .append(cloneTemplate("extra-content-expanded"));
-    setText("expanded", expanded);
+  document.body.classList.add("onboardingContainer");
+  document.body.id = "root";
+  // This value is reported as the "page" in telemetry
+  document.body.dataset.page = "spotlight";
 
-    // Initialize state and handle toggle events.
-    const toggleBtn = clone.querySelector("#learn-more-toggle");
-    const toggle = () => {
-      const toExpand = !!toggleBtn.dataset.l10nId?.includes("collapsed");
-      document.l10n.setAttributes(
-        toggleBtn,
-        toExpand
-          ? "spotlight-learn-more-expanded"
-          : "spotlight-learn-more-collapsed"
-      );
-      toggleBtn.setAttribute("aria-expanded", toExpand);
-    };
-    toggleBtn.addEventListener("click", toggle);
-    toggle();
-  }
+  // Prevent applying the default modal shadow and margins because the content
+  // handles styling, including its own modal shadowing.
+  const box = browser.closest(".dialogBox");
+  const dialog = box.closest("dialog");
+  box.classList.add("spotlightBox");
+  dialog?.classList.add("spotlight");
+  // Prevent SubDialog methods from manually setting dialog size.
+  box.setAttribute("sizeto", "available");
+  addEventListener("pagehide", () => {
+    box.classList.remove("spotlightBox");
+    dialog?.classList.remove("spotlight");
+    box.removeAttribute("sizeto");
+  });
 
-  document.body.appendChild(clone);
-
-  let primaryBtn = document.getElementById("primary");
-  let secondaryBtn = document.getElementById("secondary");
-  if (primaryBtn) {
-    primaryBtn.addEventListener("click", () => {
-      params.primaryBtn = true;
-      window.close();
-    });
-
-    // If we just call focus() at some random time, it'll cause a flush,
-    // which slows things down unnecessarily, so instead we use rAF...
-    requestAnimationFrame(() => {
-      primaryBtn.focus({ preventFocusRing: true });
-    });
-  }
-  if (secondaryBtn) {
-    secondaryBtn.addEventListener("click", () => {
-      params.secondaryBtn = true;
-      window.close();
-    });
-  }
-
-  // Wait for translations to load before getting sizing information.
-  await document.l10n.ready;
-  await document.l10n.translateElements(clone.children);
-  requestAnimationFrame(() => requestAnimationFrame(ready));
+  // Load the bundle to render the content as configured.
+  document.head.appendChild(document.createElement("script")).src =
+    "resource://activity-stream/aboutwelcome/aboutwelcome.bundle.js";
+  ready();
 }
 
 // Indicate when we're ready to show and size (async localized) content.
 document.mozSubdialogReady = new Promise(resolve =>
   document.addEventListener(
     "DOMContentLoaded",
-    () => renderSpotlight(resolve),
+    () => renderMultistage(resolve),
     {
       once: true,
     }

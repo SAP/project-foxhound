@@ -89,7 +89,9 @@ class FilterInstance {
    *   frame space (i.e. relative to its origin, the top-left corner of its
    *   border box).
    */
-  static void PaintFilteredFrame(nsIFrame* aFilteredFrame, gfxContext* aCtx,
+  static void PaintFilteredFrame(nsIFrame* aFilteredFrame,
+                                 Span<const StyleFilter> aFilterChain,
+                                 gfxContext* aCtx,
                                  const SVGFilterPaintCallback& aPaintCallback,
                                  const nsRegion* aDirtyArea,
                                  imgDrawingParams& aImgParams,
@@ -121,9 +123,9 @@ class FilterInstance {
    * @param aPreFilterBounds The pre-filter ink overflow rect of
    *   aFilteredFrame, if non-null.
    */
-  static nsRect GetPostFilterBounds(nsIFrame* aFilteredFrame,
-                                    const gfxRect* aOverrideBBox = nullptr,
-                                    const nsRect* aPreFilterBounds = nullptr);
+  static Maybe<nsRect> GetPostFilterBounds(
+      nsIFrame* aFilteredFrame, const gfxRect* aOverrideBBox = nullptr,
+      const nsRect* aPreFilterBounds = nullptr);
 
   /**
    * Try to build WebRender filters for a frame if the filters applied to it are
@@ -134,8 +136,7 @@ class FilterInstance {
   static bool BuildWebRenderFilters(
       nsIFrame* aFilteredFrame,
       mozilla::Span<const mozilla::StyleFilter> aFilters,
-      WrFiltersHolder& aWrFilters, mozilla::Maybe<nsRect>& aPostFilterClip,
-      bool& aInitialized);
+      WrFiltersHolder& aWrFilters, bool& aInitialized);
 
  private:
   /**
@@ -176,8 +177,7 @@ class FilterInstance {
   static bool BuildWebRenderFiltersImpl(
       nsIFrame* aFilteredFrame,
       mozilla::Span<const mozilla::StyleFilter> aFilters,
-      WrFiltersHolder& aWrFilters, mozilla::Maybe<nsRect>& aPostFilterClip,
-      bool& aInitialized);
+      WrFiltersHolder& aWrFilters, bool& aInitialized);
 
   /**
    * Returns true if the filter instance was created successfully.
@@ -367,8 +367,8 @@ class FilterInstance {
   /**
    * The scale factors between user space and filter space.
    */
-  gfxSize mUserSpaceToFilterSpaceScale;
-  gfxSize mFilterSpaceToUserSpaceScale;
+  gfx::MatrixScalesDouble mUserSpaceToFilterSpaceScale;
+  gfx::MatrixScalesDouble mFilterSpaceToUserSpaceScale;
 
   /**
    * Pre-filter paint bounds of the element that is being filtered, in filter

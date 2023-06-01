@@ -7,7 +7,6 @@
 #include "mozilla/dom/ScriptSettings.h"
 
 #include <utility>
-#include "LoadedScript.h"
 #include "MainThreadUtils.h"
 #include "js/CharacterEncoding.h"
 #include "js/CompilationAndEvaluation.h"
@@ -21,6 +20,8 @@
 #include "js/Warnings.h"
 #include "js/Wrapper.h"
 #include "js/friend/ErrorMessages.h"
+#include "js/loader/LoadedScript.h"
+#include "js/loader/ScriptLoadRequest.h"
 #include "jsapi.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/BasePrincipal.h"
@@ -33,7 +34,6 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
-#include "mozilla/dom/ScriptLoadRequest.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "nsContentUtils.h"
 #include "nsDebug.h"
@@ -50,37 +50,6 @@
 
 namespace mozilla {
 namespace dom {
-
-JSObject* SourceElementCallback(JSContext* aCx, JS::HandleValue aPrivateValue) {
-  // NOTE: The result of this is only used by DevTools for matching sources, so
-  // it is safe to silently ignore any errors and return nullptr for them.
-
-  LoadedScript* script = static_cast<LoadedScript*>(aPrivateValue.toPrivate());
-
-  if (!script->GetFetchOptions()) {
-    return nullptr;
-  }
-
-  JS::Rooted<JS::Value> elementValue(aCx);
-  {
-    nsCOMPtr<Element> domElement = script->GetFetchOptions()->mElement;
-    if (!domElement) {
-      return nullptr;
-    }
-
-    JSObject* globalObject =
-        domElement->OwnerDoc()->GetScopeObject()->GetGlobalJSObject();
-    JSAutoRealm ar(aCx, globalObject);
-
-    nsresult rv = nsContentUtils::WrapNative(aCx, domElement, &elementValue,
-                                             /* aAllowWrapping = */ true);
-    if (NS_FAILED(rv)) {
-      return nullptr;
-    }
-  }
-
-  return &elementValue.toObject();
-}
 
 static MOZ_THREAD_LOCAL(ScriptSettingsStackEntry*) sScriptSettingsTLS;
 
@@ -343,7 +312,6 @@ void AutoJSAPI::InitInternal(nsIGlobalObject* aGlobalObject, JSObject* aGlobal,
   mOldWarningReporter.emplace(JS::GetWarningReporter(aCx));
 
   JS::SetWarningReporter(aCx, WarningOnlyErrorReporter);
-  JS::SetSourceElementCallback(aCx, SourceElementCallback);
 
 #ifdef DEBUG
   if (haveException) {
@@ -548,10 +516,24 @@ void AutoJSAPI::ReportException() {
       RefPtr<xpc::ErrorReport> xpcReport = new xpc::ErrorReport();
 
       RefPtr<nsGlobalWindowInner> inner = xpc::WindowOrNull(errorGlobal);
+
+      // For WebExtension content script, `WindowOrNull` method will return
+      // null, whereas we would still like to flag the exception with the
+      // related WindowGlobal the content script executed against. So we only
+      // update the `innerWindowID` and not `inner` as we don't want to dispatch
+      // exceptions caused by the content script to the webpage.
+      uint64_t innerWindowID = 0;
+      if (inner) {
+        innerWindowID = inner->WindowID();
+      } else if (nsGlobalWindowInner* win = xpc::SandboxWindowOrNull(
+                     JS::GetNonCCWObjectGlobal(errorGlobal), cx())) {
+        innerWindowID = win->WindowID();
+      }
+
       bool isChrome =
           nsContentUtils::ObjectPrincipal(errorGlobal)->IsSystemPrincipal();
       xpcReport->Init(jsReport.report(), jsReport.toStringResult().c_str(),
-                      isChrome, inner ? inner->WindowID() : 0);
+                      isChrome, innerWindowID);
       if (inner && jsReport.report()->errorNumber != JSMSG_OUT_OF_MEMORY) {
         JS::RootingContext* rcx = JS::RootingContext::get(cx());
         DispatchScriptErrorEvent(inner, rcx, xpcReport, exnStack.exception(),

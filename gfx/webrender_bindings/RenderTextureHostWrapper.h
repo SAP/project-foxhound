@@ -27,15 +27,27 @@ namespace wr {
 class RenderTextureHostWrapper final : public RenderTextureHostSWGL {
  public:
   explicit RenderTextureHostWrapper(ExternalImageId aExternalImageId);
+  RenderTextureHostWrapper(const layers::RemoteTextureId aTextureId,
+                           const layers::RemoteTextureOwnerId aOwnerId,
+                           const base::ProcessId aForPid);
 
   // RenderTextureHost
-  wr::WrExternalImage Lock(uint8_t aChannelIndex, gl::GLContext* aGL,
-                           wr::ImageRendering aRendering) override;
+  wr::WrExternalImage Lock(uint8_t aChannelIndex, gl::GLContext* aGL) override;
   void Unlock() override;
   void ClearCachedResources() override;
+  void PrepareForUse() override;
+  void NotifyForUse() override;
+  void NotifyNotUsed() override;
+  bool SyncObjectNeeded() override;
   RenderMacIOSurfaceTextureHost* AsRenderMacIOSurfaceTextureHost() override;
   RenderDXGITextureHost* AsRenderDXGITextureHost() override;
   RenderDXGIYCbCrTextureHost* AsRenderDXGIYCbCrTextureHost() override;
+  RenderDcompSurfaceTextureHost* AsRenderDcompSurfaceTextureHost() override;
+  RenderAndroidHardwareBufferTextureHost*
+  AsRenderAndroidHardwareBufferTextureHost() override;
+  RenderAndroidSurfaceTextureHost* AsRenderAndroidSurfaceTextureHost() override;
+  RenderTextureHostSWGL* AsRenderTextureHostSWGL() override;
+  bool IsWrappingAsyncRemoteTexture() override;
 
   // RenderTextureHostSWGL
   size_t GetPlaneCount() const override;
@@ -50,14 +62,24 @@ class RenderTextureHostWrapper final : public RenderTextureHostSWGL {
   // size of the wrapped object (which reports itself).
   size_t Bytes() override { return 0; }
 
+ protected:
+  // RenderTextureHost
+  std::pair<gfx::Point, gfx::Point> GetUvCoords(
+      gfx::IntSize aTextureSize) const override;
+
  private:
   ~RenderTextureHostWrapper() override;
 
   void EnsureTextureHost() const;
+  void EnsureRemoteTexture() const;
   RenderTextureHostSWGL* EnsureRenderTextureHostSWGL() const;
 
-  const ExternalImageId mExternalImageId;
+  ExternalImageId mExternalImageId;
   mutable RefPtr<RenderTextureHost> mTextureHost;
+
+  Maybe<layers::RemoteTextureId> mTextureId;
+  Maybe<layers::RemoteTextureOwnerId> mOwnerId;
+  Maybe<base::ProcessId> mForPid;
 };
 
 }  // namespace wr

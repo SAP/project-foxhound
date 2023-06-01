@@ -5,15 +5,15 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebAuthnCoseIdentifiers.h"
+#include "WebAuthnEnumStrings.h"
 #include "mozilla/dom/U2FHIDTokenManager.h"
 #include "mozilla/dom/WebAuthnUtil.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/StaticMutex.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
-static StaticMutex gInstanceMutex;
+static StaticMutex gInstanceMutex MOZ_UNANNOTATED;
 static U2FHIDTokenManager* gInstance;
 static nsIThread* gPBackgroundThread;
 
@@ -104,7 +104,8 @@ void U2FHIDTokenManager::Drop() {
 // *      attestation signature
 //
 RefPtr<U2FRegisterPromise> U2FHIDTokenManager::Register(
-    const WebAuthnMakeCredentialInfo& aInfo, bool aForceNoneAttestation) {
+    const WebAuthnMakeCredentialInfo& aInfo, bool aForceNoneAttestation,
+    void _status_callback(rust_ctap2_status_update_res*)) {
   mozilla::ipc::AssertIsOnBackgroundThread();
 
   uint64_t registerFlags = 0;
@@ -113,17 +114,12 @@ RefPtr<U2FRegisterPromise> U2FHIDTokenManager::Register(
     const auto& extra = aInfo.Extra().ref();
     const WebAuthnAuthenticatorSelection& sel = extra.AuthenticatorSelection();
 
-    UserVerificationRequirement userVerificaitonRequirement =
-        sel.userVerificationRequirement();
-
-    bool requireUserVerification =
-        userVerificaitonRequirement == UserVerificationRequirement::Required;
-
     bool requirePlatformAttachment = false;
     if (sel.authenticatorAttachment().isSome()) {
-      const AuthenticatorAttachment authenticatorAttachment =
+      const nsString& authenticatorAttachment =
           sel.authenticatorAttachment().value();
-      if (authenticatorAttachment == AuthenticatorAttachment::Platform) {
+      if (authenticatorAttachment.EqualsLiteral(
+              MOZ_WEBAUTHN_AUTHENTICATOR_ATTACHMENT_PLATFORM)) {
         requirePlatformAttachment = true;
       }
     }
@@ -132,7 +128,8 @@ RefPtr<U2FRegisterPromise> U2FHIDTokenManager::Register(
     if (sel.requireResidentKey()) {
       registerFlags |= U2F_FLAG_REQUIRE_RESIDENT_KEY;
     }
-    if (requireUserVerification) {
+    if (sel.userVerificationRequirement().EqualsLiteral(
+            MOZ_WEBAUTHN_USER_VERIFICATION_REQUIREMENT_REQUIRED)) {
       registerFlags |= U2F_FLAG_REQUIRE_USER_VERIFICATION;
     }
     if (requirePlatformAttachment) {
@@ -210,7 +207,8 @@ RefPtr<U2FRegisterPromise> U2FHIDTokenManager::Register(
 //  *     Signature
 //
 RefPtr<U2FSignPromise> U2FHIDTokenManager::Sign(
-    const WebAuthnGetAssertionInfo& aInfo) {
+    const WebAuthnGetAssertionInfo& aInfo,
+    void _status_callback(rust_ctap2_status_update_res*)) {
   mozilla::ipc::AssertIsOnBackgroundThread();
 
   CryptoBuffer rpIdHash, clientDataHash;
@@ -230,11 +228,9 @@ RefPtr<U2FSignPromise> U2FHIDTokenManager::Sign(
   if (aInfo.Extra().isSome()) {
     const auto& extra = aInfo.Extra().ref();
 
-    UserVerificationRequirement userVerificaitonReq =
-        extra.userVerificationRequirement();
-
     // Set flags for credential requests.
-    if (userVerificaitonReq == UserVerificationRequirement::Required) {
+    if (extra.userVerificationRequirement().EqualsLiteral(
+            MOZ_WEBAUTHN_USER_VERIFICATION_REQUIREMENT_REQUIRED)) {
       signFlags |= U2F_FLAG_REQUIRE_USER_VERIFICATION;
     }
 
@@ -412,8 +408,9 @@ void U2FHIDTokenManager::HandleSignResult(UniquePtr<U2FResult>&& aResult) {
   WebAuthnGetAssertionResult result(mTransaction.ref().mClientDataJSON,
                                     keyHandle, signatureBuf, authenticatorData,
                                     extensions, rawSignatureBuf, userHandle);
-  mSignPromise.Resolve(std::move(result), __func__);
+  nsTArray<WebAuthnGetAssertionResultWrapper> results = {
+      {result, mozilla::Nothing()}};
+  mSignPromise.Resolve(std::move(results), __func__);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -17,8 +17,7 @@
 #include "nsIGlobalObject.h"
 #include "nsTHashSet.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class Animation;
 class Document;
@@ -26,7 +25,9 @@ class ScrollTimeline;
 
 class AnimationTimeline : public nsISupports, public nsWrapperCache {
  public:
-  explicit AnimationTimeline(nsIGlobalObject* aWindow) : mWindow(aWindow) {
+  explicit AnimationTimeline(nsIGlobalObject* aWindow,
+                             RTPCallerType aRTPCallerType)
+      : mWindow(aWindow), mRTPCallerType(aRTPCallerType) {
     MOZ_ASSERT(mWindow);
   }
 
@@ -39,7 +40,7 @@ class AnimationTimeline : public nsISupports, public nsWrapperCache {
 
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(AnimationTimeline)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(AnimationTimeline)
 
   nsIGlobalObject* GetParentObject() const { return mWindow; }
 
@@ -49,7 +50,8 @@ class AnimationTimeline : public nsISupports, public nsWrapperCache {
   // Wrapper functions for AnimationTimeline DOM methods when called from
   // script.
   Nullable<double> GetCurrentTimeAsDouble() const {
-    return AnimationUtils::TimeDurationToDouble(GetCurrentTimeAsDuration());
+    return AnimationUtils::TimeDurationToDouble(GetCurrentTimeAsDuration(),
+                                                mRTPCallerType);
   }
 
   TimeStamp GetCurrentTimeAsTimeStamp() const {
@@ -99,13 +101,24 @@ class AnimationTimeline : public nsISupports, public nsWrapperCache {
   bool HasAnimations() const { return !mAnimations.IsEmpty(); }
 
   virtual void RemoveAnimation(Animation* aAnimation);
+  virtual void NotifyAnimationContentVisibilityChanged(Animation* aAnimation,
+                                                       bool visible);
 
   virtual Document* GetDocument() const = 0;
 
   virtual bool IsMonotonicallyIncreasing() const = 0;
 
+  RTPCallerType GetRTPCallerType() const { return mRTPCallerType; }
+
   virtual bool IsScrollTimeline() const { return false; }
   virtual const ScrollTimeline* AsScrollTimeline() const { return nullptr; }
+
+  // For a monotonic timeline, there is no upper bound on current time, and
+  // timeline duration is unresolved. For a non-monotonic (e.g. scroll)
+  // timeline, the duration has a fixed upper bound.
+  //
+  // https://drafts.csswg.org/web-animations-2/#timeline-duration
+  virtual Nullable<TimeDuration> TimelineDuration() const { return nullptr; }
 
  protected:
   nsCOMPtr<nsIGlobalObject> mWindow;
@@ -113,16 +126,19 @@ class AnimationTimeline : public nsISupports, public nsWrapperCache {
   // Animations observing this timeline
   //
   // We store them in (a) a hashset for quick lookup, and (b) an array
-  // to maintain a fixed sampling order.
+  // to maintain a fixed sampling order. Animations that are hidden by
+  // `content-visibility` are not sampled and will only be in the hashset.
   //
   // The hashset keeps a strong reference to each animation since
   // dealing with addref/release with LinkedList is difficult.
   typedef nsTHashSet<nsRefPtrHashKey<dom::Animation>> AnimationSet;
   AnimationSet mAnimations;
   LinkedList<dom::Animation> mAnimationOrder;
+
+  // Whether the Timeline is System, ResistFingerprinting, or neither
+  enum RTPCallerType mRTPCallerType;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_AnimationTimeline_h

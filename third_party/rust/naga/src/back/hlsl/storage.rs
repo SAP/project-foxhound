@@ -1,10 +1,12 @@
-//! Logic related to `ByteAddressBuffer` operations.
-//!
-//! HLSL backend uses byte address buffers for all storage buffers in IR.
+/*!
+Logic related to `ByteAddressBuffer` operations.
+
+HLSL backend uses byte address buffers for all storage buffers in IR.
+*/
 
 use super::{super::FunctionCtx, BackendResult, Error};
 use crate::{
-    proc::{NameKey, TypeResolution},
+    proc::{Alignment, NameKey, TypeResolution},
     Handle,
 };
 
@@ -42,17 +44,20 @@ impl<W: fmt::Write> super::Writer<'_, W> {
         chain: &[SubAccess],
         func_ctx: &FunctionCtx,
     ) -> BackendResult {
+        if chain.is_empty() {
+            write!(self.out, "0")?;
+        }
         for (i, access) in chain.iter().enumerate() {
             if i != 0 {
                 write!(self.out, "+")?;
             }
             match *access {
                 SubAccess::Offset(offset) => {
-                    write!(self.out, "{}", offset)?;
+                    write!(self.out, "{offset}")?;
                 }
                 SubAccess::Index { value, stride } => {
                     self.write_expr(module, value, func_ctx)?;
-                    write!(self.out, "*{}", stride)?;
+                    write!(self.out, "*{stride}")?;
                 }
             }
         }
@@ -92,7 +97,7 @@ impl<W: fmt::Write> super::Writer<'_, W> {
                 let chain = mem::take(&mut self.temp_access_chain);
                 let var_name = &self.names[&NameKey::GlobalVariable(var_handle)];
                 let cast = kind.to_hlsl_cast();
-                write!(self.out, "{}({}.Load(", cast, var_name)?;
+                write!(self.out, "{cast}({var_name}.Load(")?;
                 self.write_storage_address(module, &chain, func_ctx)?;
                 write!(self.out, "))")?;
                 self.temp_access_chain = chain;
@@ -120,19 +125,15 @@ impl<W: fmt::Write> super::Writer<'_, W> {
                     self.out,
                     "{}{}x{}(",
                     crate::ScalarKind::Float.to_hlsl_str(width)?,
-                    rows as u8,
                     columns as u8,
+                    rows as u8,
                 )?;
 
                 // Note: Matrices containing vec3s, due to padding, act like they contain vec4s.
-                let padded_columns = match columns {
-                    crate::VectorSize::Tri => 4,
-                    columns => columns as u32,
-                };
-                let row_stride = width as u32 * padded_columns;
-                let iter = (0..rows as u32).map(|i| {
+                let row_stride = Alignment::from(rows) * width as u32;
+                let iter = (0..columns as u32).map(|i| {
                     let ty_inner = crate::TypeInner::Vector {
-                        size: columns,
+                        size: rows,
                         kind: crate::ScalarKind::Float,
                         width,
                     };
@@ -148,18 +149,22 @@ impl<W: fmt::Write> super::Writer<'_, W> {
             } => {
                 write!(self.out, "{{")?;
                 let count = module.constants[const_handle].to_array_length().unwrap();
-                let stride = module.types[base].inner.span(&module.constants);
+                let stride = module.types[base].inner.size(&module.constants);
                 let iter = (0..count).map(|i| (TypeResolution::Handle(base), stride * i));
                 self.write_storage_load_sequence(module, var_handle, iter, func_ctx)?;
                 write!(self.out, "}}")?;
             }
             crate::TypeInner::Struct { ref members, .. } => {
-                write!(self.out, "{{")?;
+                let constructor = super::help::WrappedConstructor {
+                    ty: result_ty.handle().unwrap(),
+                };
+                self.write_wrapped_constructor_function_name(module, constructor)?;
+                write!(self.out, "(")?;
                 let iter = members
                     .iter()
                     .map(|m| (TypeResolution::Handle(m.ty), m.offset));
                 self.write_storage_load_sequence(module, var_handle, iter, func_ctx)?;
-                write!(self.out, "}}")?;
+                write!(self.out, ")")?;
             }
             _ => unreachable!(),
         }
@@ -178,14 +183,14 @@ impl<W: fmt::Write> super::Writer<'_, W> {
                 depth,
                 index,
                 ty: _,
-            } => write!(self.out, "{}{}[{}]", STORE_TEMP_NAME, depth, index)?,
+            } => write!(self.out, "{STORE_TEMP_NAME}{depth}[{index}]")?,
             StoreValue::TempAccess {
                 depth,
                 base,
                 member_index,
             } => {
                 let name = &self.names[&NameKey::StructMember(base, member_index)];
-                write!(self.out, "{}{}.{}", STORE_TEMP_NAME, depth, name)?
+                write!(self.out, "{STORE_TEMP_NAME}{depth}.{name}")?
             }
         }
         Ok(())
@@ -228,7 +233,7 @@ impl<W: fmt::Write> super::Writer<'_, W> {
                 // working around the borrow checker in `self.write_expr`
                 let chain = mem::take(&mut self.temp_access_chain);
                 let var_name = &self.names[&NameKey::GlobalVariable(var_handle)];
-                write!(self.out, "{}{}.Store(", level, var_name)?;
+                write!(self.out, "{level}{var_name}.Store(")?;
                 self.write_storage_address(module, &chain, func_ctx)?;
                 write!(self.out, ", asuint(")?;
                 self.write_store_value(module, &value, func_ctx)?;
@@ -252,15 +257,15 @@ impl<W: fmt::Write> super::Writer<'_, W> {
                 width,
             } => {
                 // first, assign the value to a temporary
-                writeln!(self.out, "{}{{", level)?;
+                writeln!(self.out, "{level}{{")?;
                 let depth = level.0 + 1;
                 write!(
                     self.out,
                     "{}{}{}x{} {}{} = ",
                     level.next(),
                     crate::ScalarKind::Float.to_hlsl_str(width)?,
-                    rows as u8,
                     columns as u8,
+                    rows as u8,
                     STORE_TEMP_NAME,
                     depth,
                 )?;
@@ -268,18 +273,14 @@ impl<W: fmt::Write> super::Writer<'_, W> {
                 writeln!(self.out, ";")?;
 
                 // Note: Matrices containing vec3s, due to padding, act like they contain vec4s.
-                let padded_columns = match columns {
-                    crate::VectorSize::Tri => 4,
-                    columns => columns as u32,
-                };
-                let row_stride = width as u32 * padded_columns;
+                let row_stride = Alignment::from(rows) * width as u32;
 
                 // then iterate the stores
-                for i in 0..rows as u32 {
+                for i in 0..columns as u32 {
                     self.temp_access_chain
                         .push(SubAccess::Offset(i * row_stride));
                     let ty_inner = crate::TypeInner::Vector {
-                        size: columns,
+                        size: rows,
                         kind: crate::ScalarKind::Float,
                         width,
                     };
@@ -292,7 +293,7 @@ impl<W: fmt::Write> super::Writer<'_, W> {
                     self.temp_access_chain.pop();
                 }
                 // done
-                writeln!(self.out, "{}}}", level)?;
+                writeln!(self.out, "{level}}}")?;
             }
             crate::TypeInner::Array {
                 base,
@@ -300,18 +301,18 @@ impl<W: fmt::Write> super::Writer<'_, W> {
                 ..
             } => {
                 // first, assign the value to a temporary
-                writeln!(self.out, "{}{{", level)?;
+                writeln!(self.out, "{level}{{")?;
                 write!(self.out, "{}", level.next())?;
                 self.write_value_type(module, &module.types[base].inner)?;
                 let depth = level.next().0;
-                write!(self.out, " {}{}", STORE_TEMP_NAME, depth)?;
-                self.write_array_size(module, crate::ArraySize::Constant(const_handle))?;
+                write!(self.out, " {STORE_TEMP_NAME}{depth}")?;
+                self.write_array_size(module, base, crate::ArraySize::Constant(const_handle))?;
                 write!(self.out, " = ")?;
                 self.write_store_value(module, &value, func_ctx)?;
                 writeln!(self.out, ";")?;
                 // then iterate the stores
                 let count = module.constants[const_handle].to_array_length().unwrap();
-                let stride = module.types[base].inner.span(&module.constants);
+                let stride = module.types[base].inner.size(&module.constants);
                 for i in 0..count {
                     self.temp_access_chain.push(SubAccess::Offset(i * stride));
                     let sv = StoreValue::TempIndex {
@@ -323,11 +324,11 @@ impl<W: fmt::Write> super::Writer<'_, W> {
                     self.temp_access_chain.pop();
                 }
                 // done
-                writeln!(self.out, "{}}}", level)?;
+                writeln!(self.out, "{level}}}")?;
             }
             crate::TypeInner::Struct { ref members, .. } => {
                 // first, assign the value to a temporary
-                writeln!(self.out, "{}{{", level)?;
+                writeln!(self.out, "{level}{{")?;
                 let depth = level.next().0;
                 let struct_ty = ty_resolution.handle().unwrap();
                 let struct_name = &self.names[&NameKey::Type(struct_ty)];
@@ -354,7 +355,7 @@ impl<W: fmt::Write> super::Writer<'_, W> {
                     self.temp_access_chain.pop();
                 }
                 // done
-                writeln!(self.out, "{}}}", level)?;
+                writeln!(self.out, "{level}}}")?;
             }
             _ => unreachable!(),
         }
@@ -385,10 +386,7 @@ impl<W: fmt::Write> super::Writer<'_, W> {
                     (base, AccessIndex::Constant(index))
                 }
                 ref other => {
-                    return Err(Error::Unimplemented(format!(
-                        "Pointer access of {:?}",
-                        other
-                    )))
+                    return Err(Error::Unimplemented(format!("Pointer access of {other:?}")))
                 }
             };
 
@@ -400,7 +398,9 @@ impl<W: fmt::Write> super::Writer<'_, W> {
                         stride: width as u32,
                     },
                     crate::TypeInner::Matrix { rows, width, .. } => Parent::Array {
-                        stride: width as u32 * if rows > crate::VectorSize::Bi { 4 } else { 2 },
+                        // The stride between matrices is the count of rows as this is how
+                        // long each column is.
+                        stride: Alignment::from(rows) * width as u32,
                     },
                     _ => unreachable!(),
                 },

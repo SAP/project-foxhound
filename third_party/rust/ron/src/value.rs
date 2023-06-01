@@ -1,12 +1,5 @@
 //! Value module.
 
-use serde::{
-    de::{
-        DeserializeOwned, DeserializeSeed, Deserializer, Error as SerdeError, MapAccess, SeqAccess,
-        Visitor,
-    },
-    forward_to_deserialize_any, Deserialize, Serialize,
-};
 use std::{
     cmp::{Eq, Ordering},
     hash::{Hash, Hasher},
@@ -14,7 +7,13 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use crate::de::{Error as RonError, Result};
+use serde::{
+    de::{DeserializeOwned, DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor},
+    forward_to_deserialize_any, Deserialize, Serialize,
+};
+
+use crate::de::Error;
+use crate::error::Result;
 
 /// A `Value` to `Value` map.
 ///
@@ -23,6 +22,7 @@ use crate::de::{Error as RonError, Result};
 /// The latter can be used by enabling the `indexmap` feature. This can be used
 /// to preserve the order of the parsed map.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(transparent)]
 pub struct Map(MapInner);
 
 impl Map {
@@ -37,8 +37,8 @@ impl Map {
     }
 
     /// Returns `true` if `self.len() == 0`, `false` otherwise.
-    pub fn is_empty(&self) -> usize {
-        self.0.len()
+    pub fn is_empty(&self) -> bool {
+        self.0.len() == 0
     }
 
     /// Inserts a new element, returning the previous element with this `key` if
@@ -279,7 +279,7 @@ impl Eq for Float {}
 
 impl Hash for Float {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u64(self.0 as u64);
+        state.write_u64(self.0.to_bits());
     }
 }
 
@@ -339,7 +339,7 @@ impl Value {
 /// Deserializer implementation for RON `Value`.
 /// This does not support enums (because `Value` doesn't store them).
 impl<'de> Deserializer<'de> for Value {
-    type Error = RonError;
+    type Error = Error;
 
     forward_to_deserialize_any! {
         bool f32 f64 char str string bytes
@@ -398,7 +398,7 @@ impl<'de> Deserializer<'de> for Value {
     {
         match self {
             Value::Number(Number::Integer(i)) => visitor.visit_i64(i),
-            v => Err(RonError::custom(format!("Expected a number, got {:?}", v))),
+            v => Err(Error::Message(format!("Expected a number, got {:?}", v))),
         }
     }
 
@@ -429,7 +429,7 @@ impl<'de> Deserializer<'de> for Value {
     {
         match self {
             Value::Number(Number::Integer(i)) => visitor.visit_u64(i as u64),
-            v => Err(RonError::custom(format!("Expected a number, got {:?}", v))),
+            v => Err(Error::Message(format!("Expected a number, got {:?}", v))),
         }
     }
 }
@@ -440,7 +440,7 @@ struct MapAccessor {
 }
 
 impl<'de> MapAccess<'de> for MapAccessor {
-    type Error = RonError;
+    type Error = Error;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
     where
@@ -469,7 +469,7 @@ struct Seq {
 }
 
 impl<'de> SeqAccess<'de> for Seq {
-    type Error = RonError;
+    type Error = Error;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
     where

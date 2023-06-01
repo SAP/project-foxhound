@@ -13,14 +13,17 @@ var gFissionBrowser = window.docShell.QueryInterface(Ci.nsILoadContext)
 var gWritingProfile = false;
 var gWrittenProfile = false;
 
-const { E10SUtils } = ChromeUtils.import(
-  "resource://gre/modules/E10SUtils.jsm"
+const { E10SUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/E10SUtils.sys.mjs"
 );
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserToolboxLauncher:
+    "resource://devtools/client/framework/browser-toolbox/Launcher.sys.mjs",
+});
 
 const FEATURES = {
   paintDumping: "nglayout.debug.paint_dumping",
@@ -47,8 +50,6 @@ const COMMANDS = [
 class Debugger {
   constructor() {
     this._flags = new Map();
-    this._visualDebugging = false;
-    this._visualEventDebugging = false;
     this._pagedMode = false;
     this._attached = false;
 
@@ -91,26 +92,6 @@ class Debugger {
     }
   }
 
-  get visualDebugging() {
-    return this._visualDebugging;
-  }
-
-  set visualDebugging(v) {
-    v = !!v;
-    this._visualDebugging = v;
-    this._sendMessage("setVisualDebugging", v);
-  }
-
-  get visualEventDebugging() {
-    return this._visualEventDebugging;
-  }
-
-  set visualEventDebugging(v) {
-    v = !!v;
-    this._visualEventDebugging = v;
-    this._sendMessage("setVisualEventDebugging", v);
-  }
-
   get pagedMode() {
     return this._pagedMode;
   }
@@ -123,6 +104,10 @@ class Debugger {
 
   setPagedMode(v) {
     this._sendMessage("setPagedMode", v);
+  }
+
+  openDevTools() {
+    lazy.BrowserToolboxLauncher.init();
   }
 
   async _sendMessage(name, arg) {
@@ -344,7 +329,7 @@ function OnLDBLoad() {
   Services.obs.addObserver(TabCrashedObserver, "ipc:content-shutdown");
   Services.obs.addObserver(TabCrashedObserver, "oop-frameloader-crashed");
 
-  // Pretend slightly to be like a normal browser, so that SessionStore.jsm
+  // Pretend slightly to be like a normal browser, so that SessionStore.sys.mjs
   // doesn't get too confused.  The effect is that we'll never switch process
   // type when navigating, and for layout debugging purposes we don't bother
   // about getting that right.
@@ -356,10 +341,7 @@ function OnLDBLoad() {
 
   if (gArgs.profile) {
     if (Services.profiler) {
-      let env = Cc["@mozilla.org/process/environment;1"].getService(
-        Ci.nsIEnvironment
-      );
-      if (!env.exists("MOZ_PROFILER_SYMBOLICATE")) {
+      if (!Services.env.exists("MOZ_PROFILER_SYMBOLICATE")) {
         dump(
           "Warning: MOZ_PROFILER_SYMBOLICATE environment variable not set; " +
             "profile will not be symbolicated.\n"
@@ -415,7 +397,7 @@ function dumpProfile() {
   gWritingProfile = true;
 
   let cwd = Services.dirsvc.get("CurWorkD", Ci.nsIFile).path;
-  let filename = OS.Path.join(cwd, gArgs.profileFilename);
+  let filename = PathUtils.join(cwd, gArgs.profileFilename);
 
   dump(`Writing profile to ${filename}...\n`);
 

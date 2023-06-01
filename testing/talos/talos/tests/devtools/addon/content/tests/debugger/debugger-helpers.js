@@ -5,7 +5,6 @@
 "use strict";
 
 const { openToolboxAndLog, reloadPageAndLog } = require("../head");
-const InspectorUtils = require("InspectorUtils");
 
 /*
  * These methods are used for working with debugger state changes in order
@@ -67,28 +66,32 @@ async function waitUntil(predicate, msg) {
   }
   return new Promise(resolve => {
     const timer = setInterval(() => {
-      if (predicate()) {
+      const predicateResult = predicate();
+      if (predicateResult) {
         clearInterval(timer);
         if (msg) {
           dump(`Finished Waiting until: ${msg}\n`);
         }
-        resolve();
+        resolve(predicateResult);
       }
     }, DEBUGGER_POLLING_INTERVAL);
   });
 }
+exports.waitUntil = waitUntil;
 
 function findSource(dbg, url) {
   const sources = dbg.selectors.getSourceList(dbg.getState());
   return sources.find(s => (s.url || "").includes(url));
 }
+exports.findSource = findSource;
 
 function getCM(dbg) {
   const el = dbg.win.document.querySelector(".CodeMirror");
   return el.CodeMirror;
 }
+exports.getCM = getCM;
 
-function waitForText(dbg, url, text) {
+function waitForText(dbg, text) {
   return waitUntil(() => {
     // the welcome box is removed once text is displayed
     const welcomebox = dbg.win.document.querySelector(".welcomebox");
@@ -100,12 +103,13 @@ function waitForText(dbg, url, text) {
     return editorText.includes(text);
   }, "text is visible");
 }
+exports.waitForText = waitForText;
 
 function waitForSymbols(dbg) {
   return waitUntil(() => {
     const state = dbg.store.getState();
     const source = dbg.selectors.getSelectedSource(state);
-    return dbg.selectors.hasSymbols(state, source);
+    return dbg.selectors.getSymbols(state, source);
   }, "has file metadata");
 }
 
@@ -124,6 +128,7 @@ function waitForSource(dbg, sourceURL) {
   }
   return waitForState(dbg, hasSource, `has source ${sourceURL}`);
 }
+exports.waitForSource = waitForSource;
 
 async function waitForPaused(dbg) {
   const onLoadedScope = waitForLoadedScopes(dbg);
@@ -179,18 +184,25 @@ function selectSource(dbg, url) {
   return waitForState(
     dbg,
     state => {
-      const source = dbg.selectors.getSelectedSourceWithContent(state);
-      if (!source || !source.content) {
+      const source = dbg.selectors.getSelectedSource(state);
+      if (!source) {
+        return false;
+      }
+      const sourceTextContent = dbg.selectors.getSelectedSourceTextContent(
+        state
+      );
+      if (!sourceTextContent) {
         return false;
       }
 
       // wait for symbols -- a flat map of all named variables in a file -- to be calculated.
       // this is a slow process and becomes slower the larger the file is
-      return dbg.selectors.hasSymbols(state, source);
+      return dbg.selectors.getSymbols(state, source);
     },
     "selected source"
   );
 }
+exports.selectSource = selectSource;
 
 function evalInContent(dbg, tab, testFunction) {
   dump(`Run function in content process: ${testFunction}\n`);
@@ -216,7 +228,7 @@ async function openDebuggerAndLog(label, expected) {
     const dbg = await createContext(panel);
     await waitForSource(dbg, expected.sourceURL);
     await selectSource(dbg, expected.file);
-    await waitForText(dbg, expected.file, expected.text);
+    await waitForText(dbg, expected.text);
     await waitForSymbols(dbg);
   };
 
@@ -235,7 +247,7 @@ async function reloadDebuggerAndLog(label, toolbox, expected) {
     const dbg = await createContext(panel);
     await waitForDispatch(dbg, "NAVIGATE");
     await waitForSources(dbg, expected.sources);
-    await waitForText(dbg, expected.file, expected.text);
+    await waitForText(dbg, expected.text);
     await waitForSymbols(dbg);
   };
   await reloadPageAndLog(`${label}.jsdebugger`, toolbox, onReload);
@@ -297,7 +309,7 @@ async function step(dbg, stepType) {
 exports.step = step;
 
 async function hoverOnToken(dbg, cx, textToWaitFor, textToHover) {
-  await waitForText(dbg, null, textToWaitFor);
+  await waitForText(dbg, textToWaitFor);
   const tokenElement = [
     ...dbg.win.document.querySelectorAll(".CodeMirror span"),
   ].find(el => el.textContent === "window");

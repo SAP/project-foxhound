@@ -345,7 +345,6 @@ static void set_good_speed_feature_framesize_independent(VP9_COMP *cpi,
     sf->intra_y_mode_mask[TX_32X32] = INTRA_DC;
     sf->intra_uv_mode_mask[TX_32X32] = INTRA_DC;
     sf->adaptive_interp_filter_search = 1;
-    sf->allow_partition_search_skip = 1;
 
     if (cpi->twopass.fr_content_type == FC_GRAPHICS_ANIMATION) {
       for (i = 0; i < MAX_MESH_STEP; ++i) {
@@ -457,6 +456,7 @@ static void set_rt_speed_feature_framesize_independent(
   sf->cb_pred_filter_search = 0;
   sf->force_smooth_interpol = 0;
   sf->rt_intra_dc_only_low_content = 0;
+  sf->mv.enable_adaptive_subpel_force_stop = 0;
 
   if (speed >= 1) {
     sf->allow_txfm_domain_distortion = 1;
@@ -495,11 +495,10 @@ static void set_rt_speed_feature_framesize_independent(
         (cpi->external_resize == 1 ||
          cpi->oxcf.resize_mode == RESIZE_DYNAMIC)) {
       MV_REFERENCE_FRAME ref_frame;
-      static const int flag_list[4] = { 0, VP9_LAST_FLAG, VP9_GOLD_FLAG,
-                                        VP9_ALT_FLAG };
       for (ref_frame = LAST_FRAME; ref_frame <= ALTREF_FRAME; ++ref_frame) {
         const YV12_BUFFER_CONFIG *yv12 = get_ref_frame_buffer(cpi, ref_frame);
-        if (yv12 != NULL && (cpi->ref_frame_flags & flag_list[ref_frame])) {
+        if (yv12 != NULL &&
+            (cpi->ref_frame_flags & ref_frame_to_flag(ref_frame))) {
           const struct scale_factors *const scale_fac =
               &cm->frame_refs[ref_frame - 1].sf;
           if (vp9_is_scaled(scale_fac)) sf->reference_masking = 0;
@@ -620,7 +619,7 @@ static void set_rt_speed_feature_framesize_independent(
     // increase in encoding time.
     if (cpi->use_svc && svc->spatial_layer_id > 0) sf->nonrd_keyframe = 1;
     if (cm->frame_type != KEY_FRAME && cpi->resize_state == ORIG &&
-        cpi->oxcf.rc_mode == VPX_CBR) {
+        cpi->oxcf.rc_mode == VPX_CBR && !cpi->rc.disable_overshoot_maxq_cbr) {
       if (cm->width * cm->height <= 352 * 288 && !cpi->use_svc &&
           cpi->oxcf.content != VP9E_CONTENT_SCREEN)
         sf->overshoot_detection_cbr_rt = RE_ENCODE_MAXQ;
@@ -633,6 +632,7 @@ static void set_rt_speed_feature_framesize_independent(
       sf->use_compound_nonrd_pickmode = 1;
     }
     if (cm->width * cm->height > 1280 * 720) sf->cb_pred_filter_search = 1;
+    if (!cpi->external_resize) sf->use_source_sad = 1;
   }
 
   if (speed >= 6) {
@@ -645,8 +645,6 @@ static void set_rt_speed_feature_framesize_independent(
     sf->mv.reduce_first_step_size = 1;
     sf->skip_encode_sb = 0;
 
-    if (!cpi->external_resize) sf->use_source_sad = 1;
-
     if (sf->use_source_sad) {
       sf->adapt_partition_source_sad = 1;
       sf->adapt_partition_thresh =
@@ -654,8 +652,10 @@ static void set_rt_speed_feature_framesize_independent(
       if (cpi->content_state_sb_fd == NULL &&
           (!cpi->use_svc ||
            svc->spatial_layer_id == svc->number_spatial_layers - 1)) {
-        cpi->content_state_sb_fd = (uint8_t *)vpx_calloc(
-            (cm->mi_stride >> 3) * ((cm->mi_rows >> 3) + 1), sizeof(uint8_t));
+        CHECK_MEM_ERROR(cm, cpi->content_state_sb_fd,
+                        (uint8_t *)vpx_calloc(
+                            (cm->mi_stride >> 3) * ((cm->mi_rows >> 3) + 1),
+                            sizeof(uint8_t)));
       }
     }
     if (cpi->oxcf.rc_mode == VPX_CBR && content != VP9E_CONTENT_SCREEN) {
@@ -668,7 +668,7 @@ static void set_rt_speed_feature_framesize_independent(
       sf->base_mv_aggressive = 1;
     }
     if (cm->frame_type != KEY_FRAME && cpi->resize_state == ORIG &&
-        cpi->oxcf.rc_mode == VPX_CBR)
+        cpi->oxcf.rc_mode == VPX_CBR && !cpi->rc.disable_overshoot_maxq_cbr)
       sf->overshoot_detection_cbr_rt = FAST_DETECTION_MAXQ;
   }
 
@@ -727,7 +727,10 @@ static void set_rt_speed_feature_framesize_independent(
   if (speed >= 8) {
     sf->adaptive_rd_thresh = 4;
     sf->skip_encode_sb = 1;
-    sf->nonrd_keyframe = 1;
+    if (cpi->svc.number_spatial_layers > 1 && !cpi->svc.simulcast_mode)
+      sf->nonrd_keyframe = 0;
+    else
+      sf->nonrd_keyframe = 1;
     if (!cpi->use_svc) cpi->max_copied_frame = 4;
     if (cpi->row_mt && cpi->oxcf.max_threads > 1)
       sf->adaptive_rd_thresh_row_mt = 1;
@@ -786,6 +789,15 @@ static void set_rt_speed_feature_framesize_independent(
     if (cm->width * cm->height >= 640 * 360) sf->variance_part_thresh_mult = 2;
   }
 
+  // Disable split to 8x8 for low-resolution at very high Q.
+  // For variance partition (speed >= 6). Ignore the first few frames
+  // as avg_frame_qindex starts at max_q (worst_quality).
+  if (cm->frame_type != KEY_FRAME && cm->width * cm->height <= 320 * 240 &&
+      sf->partition_search_type == VAR_BASED_PARTITION &&
+      cpi->rc.avg_frame_qindex[INTER_FRAME] > 208 &&
+      cpi->common.current_video_frame > 8)
+    sf->disable_16x16part_nonkey = 1;
+
   if (sf->nonrd_use_ml_partition)
     sf->partition_search_type = ML_BASED_PARTITION;
 
@@ -794,14 +806,17 @@ static void set_rt_speed_feature_framesize_independent(
       sf->partition_search_type = FIXED_PARTITION;
       sf->always_this_block_size = BLOCK_64X64;
     }
-    if (cpi->count_arf_frame_usage == NULL)
-      cpi->count_arf_frame_usage =
+    if (cpi->count_arf_frame_usage == NULL) {
+      CHECK_MEM_ERROR(
+          cm, cpi->count_arf_frame_usage,
           (uint8_t *)vpx_calloc((cm->mi_stride >> 3) * ((cm->mi_rows >> 3) + 1),
-                                sizeof(*cpi->count_arf_frame_usage));
+                                sizeof(*cpi->count_arf_frame_usage)));
+    }
     if (cpi->count_lastgolden_frame_usage == NULL)
-      cpi->count_lastgolden_frame_usage =
+      CHECK_MEM_ERROR(
+          cm, cpi->count_lastgolden_frame_usage,
           (uint8_t *)vpx_calloc((cm->mi_stride >> 3) * ((cm->mi_rows >> 3) + 1),
-                                sizeof(*cpi->count_lastgolden_frame_usage));
+                                sizeof(*cpi->count_lastgolden_frame_usage)));
   }
   if (svc->previous_frame_is_intra_only) {
     sf->partition_search_type = FIXED_PARTITION;
@@ -919,7 +934,6 @@ void vp9_set_speed_features_framesize_independent(VP9_COMP *cpi, int speed) {
   sf->max_delta_qindex = 0;
   sf->disable_filter_search_var_thresh = 0;
   sf->adaptive_interp_filter_search = 0;
-  sf->allow_partition_search_skip = 0;
   sf->allow_txfm_domain_distortion = 0;
   sf->tx_domain_thresh = 99.0;
   sf->allow_quant_coeff_opt = sf->optimize_coefficients;
@@ -928,6 +942,7 @@ void vp9_set_speed_features_framesize_independent(VP9_COMP *cpi, int speed) {
   sf->enable_tpl_model = oxcf->enable_tpl_model;
   sf->prune_ref_frame_for_rect_partitions = 0;
   sf->temporal_filter_search_method = MESH;
+  sf->allow_skip_txfm_ac_dc = 0;
 
   for (i = 0; i < TX_SIZES; i++) {
     sf->intra_y_mode_mask[i] = INTRA_ALL;

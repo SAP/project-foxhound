@@ -2,35 +2,26 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
-from abc import (
-    ABCMeta,
-    abstractmethod,
-)
-
 import errno
 import io
 import itertools
 import os
-import six
 import time
-
+from abc import ABCMeta, abstractmethod
 from contextlib import contextmanager
 
+import mozpack.path as mozpath
+import six
 from mach.mixin.logging import LoggingMixin
 
-import mozpack.path as mozpath
-from ..preprocessor import Preprocessor
-from ..pythonutil import iter_modules_in_path
-from ..util import (
-    FileAvoidWrite,
-    simple_diff,
-)
+from mozbuild.base import ExecutionSummary
+
 from ..frontend.data import ContextDerived
 from ..frontend.reader import EmptyConfig
+from ..preprocessor import Preprocessor
+from ..pythonutil import iter_modules_in_path
+from ..util import FileAvoidWrite, simple_diff
 from .configenvironment import ConfigEnvironment
-from mozbuild.base import ExecutionSummary
 
 
 class BuildBackend(LoggingMixin):
@@ -215,8 +206,8 @@ class BuildBackend(LoggingMixin):
         invalidate the XUL cache (which includes some JS) at application
         startup-time.  The application checks for .purgecaches in the
         application directory, which varies according to
-        --enable-application.  There's a further wrinkle on macOS, where
-        the real application directory is part of a Cocoa bundle
+        --enable-application/--enable-project.  There's a further wrinkle on
+        macOS, where the real application directory is part of a Cocoa bundle
         produced from the regular application directory by the build
         system.  In this case, we write to both locations, since the
         build system recreates the Cocoa bundle from the contents of the
@@ -272,7 +263,7 @@ class BuildBackend(LoggingMixin):
         return status
 
     @contextmanager
-    def _write_file(self, path=None, fh=None, readmode="rU"):
+    def _write_file(self, path=None, fh=None, readmode="r"):
         """Context manager to write a file.
 
         This is a glorified wrapper around FileAvoidWrite with integration to

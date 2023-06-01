@@ -14,16 +14,18 @@
 
 var EXPORTED_SYMBOLS = ["FxAccountsProfile"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { ON_PROFILE_CHANGE_NOTIFICATION, log } = ChromeUtils.import(
   "resource://gre/modules/FxAccountsCommon.js"
 );
-const { fxAccounts } = ChromeUtils.import(
+const { getFxAccountsSingleton } = ChromeUtils.import(
   "resource://gre/modules/FxAccounts.jsm"
 );
+const fxAccounts = getFxAccountsSingleton();
+
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "FxAccountsProfileClient",
   "resource://gre/modules/FxAccountsProfileClient.jsm"
 );
@@ -35,7 +37,7 @@ var FxAccountsProfile = function(options = {}) {
   this.fxai = options.fxai || fxAccounts._internal;
   this.client =
     options.profileClient ||
-    new FxAccountsProfileClient({
+    new lazy.FxAccountsProfileClient({
       fxai: this.fxai,
       serverURL: options.profileServerUrl,
     });

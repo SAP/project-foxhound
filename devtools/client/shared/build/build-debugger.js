@@ -11,7 +11,6 @@ const _path = require("path");
 const mappings = {
   "./source-editor": "devtools/client/shared/sourceeditor/editor",
   "../editor/source-editor": "devtools/client/shared/sourceeditor/editor",
-  immutable: "devtools/client/shared/vendor/immutable",
   react: "devtools/client/shared/vendor/react",
   "react-dom": "devtools/client/shared/vendor/react-dom",
   "react-dom-factories": "devtools/client/shared/vendor/react-dom-factories",
@@ -19,19 +18,13 @@ const mappings = {
   redux: "devtools/client/shared/vendor/redux",
   reselect: "devtools/client/shared/vendor/reselect",
   "prop-types": "devtools/client/shared/vendor/react-prop-types",
-  "devtools-services": "Services",
   "wasmparser/dist/cjs/WasmParser": "devtools/client/shared/vendor/WasmParser",
   "wasmparser/dist/cjs/WasmDis": "devtools/client/shared/vendor/WasmDis",
-  "whatwg-url": "devtools/client/shared/vendor/whatwg-url",
   "framework-actions": "devtools/client/framework/actions/index",
   "inspector-shared-utils": "devtools/client/inspector/shared/utils",
 };
 
 const mappingValues = Object.values(mappings);
-
-// Add two additional mappings that cannot be reused when creating the
-// webpack bundles.
-mappings["devtools-source-map"] = "devtools/client/shared/source-map/index.js";
 
 function isRequire(t, node) {
   return node && t.isCallExpression(node) && node.callee.name == "require";
@@ -42,7 +35,6 @@ function isRequire(t, node) {
 const VENDORS = [
   "classnames",
   "devtools-environment",
-  "devtools-utils",
   "fuzzaldrin-plus",
   "react-aria-components/src/tabs",
   "react-transition-group/Transition",

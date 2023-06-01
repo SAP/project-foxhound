@@ -8,6 +8,7 @@
 
 #include "FormControlAccessible.h"
 #include "HyperTextAccessibleWrap.h"
+#include "mozilla/a11y/AccTypes.h"
 #include "mozilla/dom/Element.h"
 #include "AccAttributes.h"
 #include "nsAccUtils.h"
@@ -27,6 +28,7 @@ class HTMLRadioButtonAccessible : public RadioButtonAccessible {
     // Ignore "RadioStateChange" DOM event in lieu of document observer
     // state change notification.
     mStateFlags |= eIgnoreDOMUIEvent;
+    mType = eHTMLRadioButtonType;
   }
 
   // LocalAccessible
@@ -36,6 +38,11 @@ class HTMLRadioButtonAccessible : public RadioButtonAccessible {
  protected:
   virtual void GetPositionAndSetSize(int32_t* aPosInSet,
                                      int32_t* aSetSize) override;
+
+  virtual void DOMAttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
+                                   int32_t aModType,
+                                   const nsAttrValue* aOldValue,
+                                   uint64_t aOldState) override;
 
  private:
   Relation ComputeGroupAttributes(int32_t* aPosInSet, int32_t* aSetSize) const;
@@ -57,9 +64,8 @@ class HTMLButtonAccessible : public HyperTextAccessibleWrap {
   virtual uint64_t NativeState() const override;
 
   // ActionAccessible
-  virtual uint8_t ActionCount() const override;
+  virtual bool HasPrimaryAction() const override;
   virtual void ActionNameAt(uint8_t aIndex, nsAString& aName) override;
-  virtual bool DoAction(uint8_t aIndex) const override;
 
   // Widgets
   virtual bool IsWidget() const override;
@@ -100,7 +106,7 @@ class HTMLTextFieldAccessible : public HyperTextAccessibleWrap {
   virtual bool AttributeChangesState(nsAtom* aAttribute) override;
 
   // ActionAccessible
-  virtual uint8_t ActionCount() const override;
+  virtual bool HasPrimaryAction() const override;
   virtual void ActionNameAt(uint8_t aIndex, nsAString& aName) override;
   virtual bool DoAction(uint8_t aIndex) const override;
 
@@ -245,7 +251,6 @@ class HTMLFormAccessible : public HyperTextAccessibleWrap {
                                        HyperTextAccessibleWrap)
 
   // LocalAccessible
-  virtual nsAtom* LandmarkRole() const override;
   virtual a11y::role NativeRole() const override;
 
  protected:

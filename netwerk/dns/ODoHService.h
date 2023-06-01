@@ -60,16 +60,16 @@ class ODoHService : public nsIDNSListener,
 
   mozilla::Mutex mLock;
   Atomic<bool, Relaxed> mQueryODoHConfigInProgress;
-  nsCString mODoHProxyURI;
-  nsCString mODoHTargetHost;
-  nsCString mODoHTargetPath;
-  nsCString mODoHRequestURI;
-  nsCString mODoHConfigsUri;
-  Maybe<nsTArray<ObliviousDoHConfig>> mODoHConfigs;
-  nsTArray<RefPtr<ODoH>> mPendingRequests;
+  nsCString mODoHProxyURI MOZ_GUARDED_BY(mLock);
+  nsCString mODoHTargetHost MOZ_GUARDED_BY(mLock);
+  nsCString mODoHTargetPath MOZ_GUARDED_BY(mLock);
+  nsCString mODoHRequestURI MOZ_GUARDED_BY(mLock);
+  nsCString mODoHConfigsUri MOZ_GUARDED_BY(mLock);
+  Maybe<nsTArray<ObliviousDoHConfig>> mODoHConfigs MOZ_GUARDED_BY(mLock);
+  nsTArray<RefPtr<ODoH>> mPendingRequests MOZ_GUARDED_BY(mLock);
   // This timer is always touched on main thread to avoid race conditions.
   nsCOMPtr<nsITimer> mTTLTimer;
-  nsCOMPtr<nsIStreamLoader> mLoader;
+  nsCOMPtr<nsIStreamLoader> mLoader MOZ_GUARDED_BY(mLock);
 };
 
 extern ODoHService* gODoHService;

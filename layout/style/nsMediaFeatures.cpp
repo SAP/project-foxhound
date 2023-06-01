@@ -19,6 +19,7 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/BrowsingContextBinding.h"
+#include "mozilla/dom/ScreenBinding.h"
 #include "nsIWidget.h"
 #include "nsContentUtils.h"
 #include "mozilla/RelativeLuminanceUtils.h"
@@ -28,14 +29,17 @@
 #include "mozilla/GeckoBindings.h"
 #include "PreferenceSheet.h"
 #include "nsGlobalWindowOuter.h"
+#ifdef XP_WIN
+#  include "mozilla/WindowsVersion.h"
+#endif
 
 using namespace mozilla;
 using mozilla::dom::DisplayMode;
 using mozilla::dom::Document;
 
 // A helper for four features below
-static nsSize GetSize(const Document* aDocument) {
-  nsPresContext* pc = aDocument->GetPresContext();
+static nsSize GetSize(const Document& aDocument) {
+  nsPresContext* pc = aDocument.GetPresContext();
 
   // Per spec, return a 0x0 viewport if we're not being rendered. See:
   //
@@ -57,20 +61,20 @@ static nsSize GetSize(const Document* aDocument) {
 }
 
 // A helper for three features below.
-static nsSize GetDeviceSize(const Document* aDocument) {
-  if (nsContentUtils::ShouldResistFingerprinting(aDocument)) {
+static nsSize GetDeviceSize(const Document& aDocument) {
+  if (aDocument.ShouldResistFingerprinting()) {
     return GetSize(aDocument);
   }
 
   // Media queries in documents in an RDM pane should use the simulated
   // device size.
   Maybe<CSSIntSize> deviceSize =
-      nsGlobalWindowOuter::GetRDMDeviceSize(*aDocument);
+      nsGlobalWindowOuter::GetRDMDeviceSize(aDocument);
   if (deviceSize.isSome()) {
     return CSSPixel::ToAppUnits(deviceSize.value());
   }
 
-  nsPresContext* pc = aDocument->GetPresContext();
+  nsPresContext* pc = aDocument.GetPresContext();
   // NOTE(emilio): We should probably figure out how to return an appropriate
   // device size here, though in a multi-screen world that makes no sense
   // really.
@@ -88,6 +92,10 @@ static nsSize GetDeviceSize(const Document* aDocument) {
   nsSize size;
   pc->DeviceContext()->GetDeviceSurfaceDimensions(size.width, size.height);
   return size;
+}
+
+bool Gecko_MediaFeatures_WindowsNonNativeMenus() {
+  return LookAndFeel::WindowsNonNativeMenusEnabled();
 }
 
 bool Gecko_MediaFeatures_IsResourceDocument(const Document* aDocument) {
@@ -117,7 +125,7 @@ static nsDeviceContext* GetDeviceContextFor(const Document* aDocument) {
 
 void Gecko_MediaFeatures_GetDeviceSize(const Document* aDocument,
                                        nscoord* aWidth, nscoord* aHeight) {
-  nsSize size = GetDeviceSize(aDocument);
+  nsSize size = GetDeviceSize(*aDocument);
   *aWidth = size.width;
   *aHeight = size.height;
 }
@@ -142,6 +150,17 @@ uint32_t Gecko_MediaFeatures_GetMonochromeBitsPerPixel(
   return color ? 0 : kDefaultMonochromeBpp;
 }
 
+dom::ScreenColorGamut Gecko_MediaFeatures_ColorGamut(
+    const Document* aDocument) {
+  auto colorGamut = dom::ScreenColorGamut::Srgb;
+  if (!aDocument->ShouldResistFingerprinting()) {
+    if (auto* dx = GetDeviceContextFor(aDocument)) {
+      colorGamut = dx->GetColorGamut();
+    }
+  }
+  return colorGamut;
+}
+
 uint32_t Gecko_MediaFeatures_GetColorDepth(const Document* aDocument) {
   if (Gecko_MediaFeatures_GetMonochromeBitsPerPixel(aDocument) != 0) {
     // If we're a monochrome device, then the color depth is zero.
@@ -152,9 +171,9 @@ uint32_t Gecko_MediaFeatures_GetColorDepth(const Document* aDocument) {
   // rendered.
   uint32_t depth = 24;
 
-  if (!nsContentUtils::ShouldResistFingerprinting(aDocument)) {
+  if (!aDocument->ShouldResistFingerprinting()) {
     if (nsDeviceContext* dx = GetDeviceContextFor(aDocument)) {
-      dx->GetDepth(depth);
+      depth = dx->GetDepth();
     }
   }
 
@@ -178,7 +197,7 @@ float Gecko_MediaFeatures_GetResolution(const Document* aDocument) {
     return pc->GetOverrideDPPX();
   }
 
-  if (nsContentUtils::ShouldResistFingerprinting(aDocument)) {
+  if (aDocument->ShouldResistFingerprinting()) {
     return pc->DeviceContext()->GetFullZoom();
   }
   // Get the actual device pixel ratio, which also takes zoom into account.
@@ -223,35 +242,41 @@ StyleDisplayMode Gecko_MediaFeatures_GetDisplayMode(const Document* aDocument) {
   return static_cast<StyleDisplayMode>(browsingContext->DisplayMode());
 }
 
-nsAtom* Gecko_MediaFeatures_GetOperatingSystemVersion(
-    const Document* aDocument) {
-  using OperatingSystemVersion = LookAndFeel::OperatingSystemVersion;
-
-  if (nsContentUtils::ShouldResistFingerprinting(aDocument)) {
-    return nullptr;
-  }
-
-  int32_t metricResult;
-  if (NS_FAILED(LookAndFeel::GetInt(
-          LookAndFeel::IntID::OperatingSystemVersionIdentifier,
-          &metricResult))) {
-    return nullptr;
-  }
-
-  switch (OperatingSystemVersion(metricResult)) {
-    case OperatingSystemVersion::Windows7:
-      return nsGkAtoms::windows_win7;
-    case OperatingSystemVersion::Windows8:
-      return nsGkAtoms::windows_win8;
-    case OperatingSystemVersion::Windows10:
-      return nsGkAtoms::windows_win10;
+bool Gecko_MediaFeatures_MatchesPlatform(StylePlatform aPlatform) {
+  switch (aPlatform) {
+#if defined(XP_WIN)
+    case StylePlatform::Windows:
+      return true;
+    case StylePlatform::WindowsWin10:
+    case StylePlatform::WindowsWin7:
+    case StylePlatform::WindowsWin8: {
+      if (IsWin10OrLater()) {
+        return aPlatform == StylePlatform::WindowsWin10;
+      }
+      if (IsWin8OrLater()) {
+        return aPlatform == StylePlatform::WindowsWin8;
+      }
+      return aPlatform == StylePlatform::WindowsWin7;
+    }
+#elif defined(ANDROID)
+    case StylePlatform::Android:
+      return true;
+#elif defined(MOZ_WIDGET_GTK)
+    case StylePlatform::Linux:
+      return true;
+#elif defined(XP_MACOSX)
+    case StylePlatform::Macos:
+      return true;
+#else
+#  error "Unknown platform?"
+#endif
     default:
-      return nullptr;
+      return false;
   }
 }
 
 bool Gecko_MediaFeatures_PrefersReducedMotion(const Document* aDocument) {
-  if (nsContentUtils::ShouldResistFingerprinting(aDocument)) {
+  if (aDocument->ShouldResistFingerprinting()) {
     return false;
   }
   return LookAndFeel::GetInt(LookAndFeel::IntID::PrefersReducedMotion, 0) == 1;
@@ -270,16 +295,53 @@ StylePrefersColorScheme Gecko_MediaFeatures_PrefersColorScheme(
 // as a signal.
 StylePrefersContrast Gecko_MediaFeatures_PrefersContrast(
     const Document* aDocument) {
-  if (nsContentUtils::ShouldResistFingerprinting(aDocument)) {
+  if (aDocument->ShouldResistFingerprinting()) {
     return StylePrefersContrast::NoPreference;
   }
-  if (!!LookAndFeel::GetInt(LookAndFeel::IntID::UseAccessibilityTheme, 0)) {
+  const auto& prefs = PreferenceSheet::PrefsFor(*aDocument);
+  if (!prefs.mUseAccessibilityTheme && prefs.mUseDocumentColors) {
+    return StylePrefersContrast::NoPreference;
+  }
+  const auto& colors = prefs.ColorsFor(ColorScheme::Light);
+  float ratio = RelativeLuminanceUtils::ContrastRatio(colors.mDefaultBackground,
+                                                      colors.mDefault);
+  // https://www.w3.org/TR/WCAG21/#contrast-minimum
+  if (ratio < 4.5f) {
+    return StylePrefersContrast::Less;
+  }
+  // https://www.w3.org/TR/WCAG21/#contrast-enhanced
+  if (ratio >= 7.0f) {
     return StylePrefersContrast::More;
   }
-  if (!PreferenceSheet::PrefsFor(*aDocument).mUseDocumentColors) {
-    return StylePrefersContrast::More;
+  return StylePrefersContrast::Custom;
+}
+
+StyleDynamicRange Gecko_MediaFeatures_DynamicRange(const Document* aDocument) {
+  // Bug 1759772: Once HDR color is available, update each platform
+  // LookAndFeel implementation to return StyleDynamicRange::High when
+  // appropriate.
+  return StyleDynamicRange::Standard;
+}
+
+StyleDynamicRange Gecko_MediaFeatures_VideoDynamicRange(
+    const Document* aDocument) {
+  if (aDocument->ShouldResistFingerprinting()) {
+    return StyleDynamicRange::Standard;
   }
-  return StylePrefersContrast::NoPreference;
+  // video-dynamic-range: high has 3 requirements:
+  // 1) high peak brightness
+  // 2) high contrast ratio
+  // 3) color depth > 24
+  // We check the color depth requirement before asking the LookAndFeel
+  // if it is HDR capable.
+  if (nsDeviceContext* dx = GetDeviceContextFor(aDocument)) {
+    if (dx->GetDepth() > 24 &&
+        LookAndFeel::GetInt(LookAndFeel::IntID::VideoDynamicRange)) {
+      return StyleDynamicRange::High;
+    }
+  }
+
+  return StyleDynamicRange::Standard;
 }
 
 static PointerCapabilities GetPointerCapabilities(const Document* aDocument,
@@ -304,8 +366,7 @@ static PointerCapabilities GetPointerCapabilities(const Document* aDocument,
 #else
       PointerCapabilities::Fine | PointerCapabilities::Hover;
 #endif
-
-  if (nsContentUtils::ShouldResistFingerprinting(aDocument)) {
+  if (aDocument->ShouldResistFingerprinting()) {
     return kDefaultCapabilities;
   }
 

@@ -4,7 +4,6 @@
 
 "use strict";
 
-/* import-globals-from ../head.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/remote/shared/messagehandler/test/browser/head.js",
   this
@@ -36,10 +35,6 @@ function sendTestBroadcastCommand(
   contextDescriptor,
   rootMessageHandler
 ) {
-  const { WindowGlobalMessageHandler } = ChromeUtils.import(
-    "chrome://remote/content/shared/messagehandler/WindowGlobalMessageHandler.jsm"
-  );
-
   info("Send a test broadcast command");
   return rootMessageHandler.handleCommand({
     moduleName: module,

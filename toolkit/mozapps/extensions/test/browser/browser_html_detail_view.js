@@ -1,13 +1,13 @@
 /* eslint max-len: ["error", 80] */
 
+"use strict";
+
 const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm",
-  {}
+  "resource://testing-common/AddonTestUtils.jsm"
 );
 
 const { ExtensionPermissions } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionPermissions.jsm",
-  {}
+  "resource://gre/modules/ExtensionPermissions.jsm"
 );
 
 const SUPPORT_URL = Services.urlFormatter.formatURL(
@@ -130,8 +130,8 @@ async function assertBackButtonIsDisabled(win) {
   ok(backButton.disabled, "back button is disabled");
 }
 
-add_task(async function enableHtmlViews() {
-  gProvider = new MockProvider();
+add_setup(async function enableHtmlViews() {
+  gProvider = new MockProvider(["extension", "sitepermission"]);
   gProvider.createAddons([
     {
       id: "addon1@mochi.test",
@@ -165,14 +165,32 @@ add_task(async function enableHtmlViews() {
       type: "extension",
     },
     {
+      id: "addon3@mochi.test",
+      name: "Test add-on 3",
+      creator: { name: "Look a super long description" },
+      description: "Short description",
+      fullDescription: "Mozilla\n".repeat(100),
+      userPermissions: {
+        origins: [],
+        permissions: ["alarms", "contextMenus"],
+      },
+      type: "extension",
+      contributionURL: "http://example.com/contribute",
+      updateDate: new Date("2022-03-07T01:00:00"),
+    },
+    {
+      // NOTE: Keep the mock properties in sync with the one that
+      // SitePermsAddonWrapper would be providing in real synthetic
+      // addon entries managed by the SitePermsAddonProvider.
       id: "sitepermission@mochi.test",
+      version: "2.0",
       name: "Test site permission add-on",
-      creator: { name: "you got it" },
       description: "permission description",
       fullDescription: "detailed description",
       siteOrigin: "http://mochi.test",
       sitePermissions: ["midi"],
       type: "sitepermission",
+      permissions: AddonManager.PERM_CAN_UNINSTALL,
     },
     {
       id: "theme1@mochi.test",
@@ -204,7 +222,7 @@ add_task(async function testOpenDetailView() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       name: "Test",
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
     },
     useAddonManager: "temporary",
   });
@@ -212,7 +230,7 @@ add_task(async function testOpenDetailView() {
   let extension2 = ExtensionTestUtils.loadExtension({
     manifest: {
       name: "Test",
-      applications: { gecko: { id: id2 } },
+      browser_specific_settings: { gecko: { id: id2 } },
     },
     useAddonManager: "temporary",
   });
@@ -316,7 +334,7 @@ add_task(async function testDetailOperations() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       name: "Test",
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
     },
     useAddonManager: "temporary",
   });
@@ -342,7 +360,7 @@ add_task(async function testDetailOperations() {
   let removeButton = panel.querySelector('[action="remove"]');
   ok(!removeButton.hidden, "The remove button is visible");
 
-  let separator = panel.querySelector("panel-item-separator:last-of-type");
+  let separator = panel.querySelector("hr:last-of-type");
   ok(separator.hidden, "The separator is hidden");
 
   let expandButton = panel.querySelector('[action="expand"]');
@@ -512,6 +530,19 @@ add_task(async function testFullDetails() {
     "The full description replaces newlines with <br>"
   );
 
+  let sitepermissionsRow = details.querySelector(
+    ".addon-detail-sitepermissions"
+  );
+  is(
+    sitepermissionsRow.hidden,
+    true,
+    "AddonSitePermissionsList should be hidden for this addon type"
+  );
+
+  // Check the show more button is not there
+  const showMoreBtn = card.querySelector(".addon-detail-description-toggle");
+  ok(showMoreBtn.hidden, "The show more button is not visible");
+
   let contrib = details.querySelector(".addon-detail-contribute");
   ok(contrib, "The contribution section is visible");
 
@@ -649,6 +680,42 @@ add_task(async function testFullDetails() {
   ]);
 });
 
+add_task(async function testFullDetailsShowMoreButton() {
+  Services.telemetry.clearEvents();
+  const id = "addon3@mochi.test";
+  const win = await loadInitialView("extension");
+
+  // The list card.
+  let card = getAddonCard(win, id);
+  const loaded = waitForViewLoad(win);
+  card.querySelector('[action="expand"]').click();
+  await loaded;
+
+  // This is now the detail card.
+  card = getAddonCard(win, id);
+
+  // Check the show more button is there
+  const showMoreBtn = card.querySelector(".addon-detail-description-toggle");
+  ok(!showMoreBtn.hidden, "The show more button is visible");
+
+  const descriptionWrapper = card.querySelector(
+    ".addon-detail-description-wrapper"
+  );
+  ok(
+    descriptionWrapper.classList.contains("addon-detail-description-collapse"),
+    "The long description is collapsed"
+  );
+
+  // After click the description should be expanded
+  showMoreBtn.click();
+  ok(
+    !descriptionWrapper.classList.contains("addon-detail-description-collapse"),
+    "The long description is expanded"
+  );
+
+  await closeView(win);
+});
+
 add_task(async function testMinimalExtension() {
   let win = await loadInitialView("extension");
   let doc = win.document;
@@ -696,7 +763,7 @@ add_task(async function testMinimalExtension() {
   checkLabel(row, "author");
   let text = row.lastChild;
   is(text.textContent, "I made it", "The author is set");
-  ok(text instanceof Text, "The author is a text node");
+  ok(Text.isInstance(text), "The author is a text node");
 
   is(rows.length, 0, "There are no more rows");
 
@@ -804,7 +871,6 @@ add_task(async function testStaticTheme() {
 
 add_task(async function testSitePermission() {
   let win = await loadInitialView("sitepermission");
-  let doc = win.document;
 
   // The list card.
   let card = getAddonCard(win, "sitepermission@mochi.test");
@@ -820,31 +886,21 @@ add_task(async function testSitePermission() {
   // Check all the deck buttons are hidden.
   assertDeckHeadingHidden(card.details.tabGroup);
 
-  let rows = getDetailRows(card);
-  is(rows.length, 4, "There are 4 rows");
-
-  // Automatic updates.
-  let row = rows.shift();
-  checkLabel(row, "updates");
-
-  // Private browsing.
-  let private = rows.shift();
-  checkLabel(private, "private-browsing");
-
-  let help = rows.shift();
-  ok(help.classList.contains("addon-detail-help-row"), "There's a help row");
-  ok(!row.hidden, "The help row is shown");
+  let sitepermissionsRow = card.querySelector(".addon-detail-sitepermissions");
   is(
-    doc.l10n.getAttributes(help).id,
-    "addon-detail-private-browsing-help",
-    "The help row is for private browsing"
+    BrowserTestUtils.is_visible(sitepermissionsRow),
+    true,
+    "AddonSitePermissionsList should be visible for this addon type"
   );
 
-  // Author.
-  let author = rows.shift();
-  checkLabel(author, "author");
+  let [versionRow, ...restRows] = getDetailRows(card);
+  checkLabel(versionRow, "version");
 
-  is(rows.length, 0, "There was only 1 row");
+  Assert.deepEqual(
+    restRows.map(row => row.getAttribute("class")),
+    [],
+    "All other details row are hidden as expected"
+  );
 
   let permissions = Array.from(
     card.querySelectorAll(".addon-permissions-list .permission-info")
@@ -861,7 +917,7 @@ add_task(async function testPrivateBrowsingExtension() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       name: "My PB extension",
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
     },
     useAddonManager: "permanent",
   });
@@ -907,6 +963,10 @@ add_task(async function testPrivateBrowsingExtension() {
 
   // Check the PB stuff.
   await updated;
+
+  // Not sure what better to await here.
+  await TestUtils.waitForCondition(() => !badge.hidden);
+
   ok(!badge.hidden, "The PB badge is now shown");
   ok(await hasPrivateAllowed(id), "PB is allowed");
   is(
@@ -1042,7 +1102,7 @@ add_task(async function testExternalUninstall() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       name: "Remove me",
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
     },
     useAddonManager: "temporary",
   });
@@ -1078,7 +1138,7 @@ add_task(async function testExternalThemeUninstall() {
   let id = "remove-theme@mochi.test";
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
       name: "Remove theme",
       theme: {},
     },
@@ -1116,7 +1176,7 @@ add_task(async function testPrivateBrowsingAllowedListView() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       name: "Allowed PB extension",
-      applications: { gecko: { id: "allowed@mochi.test" } },
+      browser_specific_settings: { gecko: { id: "allowed@mochi.test" } },
     },
     useAddonManager: "permanent",
   });

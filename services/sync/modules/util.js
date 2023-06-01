@@ -21,34 +21,26 @@ const {
   SYNC_KEY_ENCODED_LENGTH,
   WEAVE_VERSION,
 } = ChromeUtils.import("resource://services-sync/constants.js");
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
-
-// FxAccountsCommon.js doesn't use a "namespace", so create one here.
-XPCOMUtils.defineLazyGetter(this, "FxAccountsCommon", function() {
-  let FxAccountsCommon = {};
-  ChromeUtils.import(
-    "resource://gre/modules/FxAccountsCommon.js",
-    FxAccountsCommon
-  );
-  return FxAccountsCommon;
-});
+const lazy = {};
+const FxAccountsCommon = ChromeUtils.import(
+  "resource://gre/modules/FxAccountsCommon.js"
+);
 
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "cryptoSDR",
   "@mozilla.org/login-manager/crypto/SDR;1",
   "nsILoginManagerCrypto"
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "localDeviceType",
   "services.sync.client.type",
   DEVICE_TYPE_DESKTOP
@@ -81,8 +73,6 @@ var Utils = {
   digestUTF8: CryptoUtils.digestUTF8,
   digestBytes: CryptoUtils.digestBytes,
   sha256: CryptoUtils.sha256,
-  makeHMACKey: CryptoUtils.makeHMACKey,
-  makeHMACHasher: CryptoUtils.makeHMACHasher,
   hkdfExpand: CryptoUtils.hkdfExpand,
   pbkdf2Generate: CryptoUtils.pbkdf2Generate,
   getHTTPMACSHA1Header: CryptoUtils.getHTTPMACSHA1Header,
@@ -114,7 +104,7 @@ var Utils = {
         "."; // Build.
       /* eslint-enable no-multi-spaces */
     }
-    return this._userAgent + localDeviceType;
+    return this._userAgent + lazy.localDeviceType;
   },
 
   /**
@@ -352,7 +342,7 @@ var Utils = {
     let [fileName] = args.splice(-1);
 
     return PathUtils.join(
-      Services.dirsvc.get("ProfD", Ci.nsIFile).path,
+      PathUtils.profileDir,
       "weave",
       ...args,
       `${fileName}.json`
@@ -384,9 +374,9 @@ var Utils = {
     }
 
     try {
-      return await CommonUtils.readJSON(path);
+      return await IOUtils.readJSON(path);
     } catch (e) {
-      if (!(e instanceof OS.File.Error && e.becauseNoSuchFile)) {
+      if (!DOMException.isInstance(e) || e.name !== "NotFoundError") {
         if (that._log) {
           that._log.debug("Failed to load json", e);
         }
@@ -411,14 +401,14 @@ var Utils = {
    *        Promise resolved when the write has been performed.
    */
   async jsonSave(filePath, that, obj) {
-    let path = OS.Path.join(
-      OS.Constants.Path.profileDir,
+    let path = PathUtils.join(
+      PathUtils.profileDir,
       "weave",
       ...(filePath + ".json").split("/")
     );
-    let dir = OS.Path.dirname(path);
+    let dir = PathUtils.parent(path);
 
-    await OS.File.makeDir(dir, { from: OS.Constants.Path.profileDir });
+    await IOUtils.makeDirectory(dir, { createAncestors: true });
 
     if (that._log) {
       that._log.trace("Saving json to disk: " + path);
@@ -426,7 +416,7 @@ var Utils = {
 
     let json = typeof obj == "function" ? obj.call(that) : obj;
 
-    return CommonUtils.writeJSON(json, path);
+    return IOUtils.writeJSON(path, json);
   },
 
   /**
@@ -481,20 +471,20 @@ var Utils = {
    *        Object to use for logging
    */
   jsonMove(aFrom, aTo, that) {
-    let pathFrom = OS.Path.join(
-      OS.Constants.Path.profileDir,
+    let pathFrom = PathUtils.join(
+      PathUtils.profileDir,
       "weave",
       ...(aFrom + ".json").split("/")
     );
-    let pathTo = OS.Path.join(
-      OS.Constants.Path.profileDir,
+    let pathTo = PathUtils.join(
+      PathUtils.profileDir,
       "weave",
       ...(aTo + ".json").split("/")
     );
     if (that._log) {
       that._log.trace("Moving " + pathFrom + " to " + pathTo);
     }
-    return OS.File.move(pathFrom, pathTo, { noOverwrite: true });
+    return IOUtils.move(pathFrom, pathTo, { noOverwrite: true });
   },
 
   /**
@@ -509,15 +499,15 @@ var Utils = {
    *        Object to use for logging
    */
   jsonRemove(filePath, that) {
-    let path = OS.Path.join(
-      OS.Constants.Path.profileDir,
+    let path = PathUtils.join(
+      PathUtils.profileDir,
       "weave",
       ...(filePath + ".json").split("/")
     );
     if (that._log) {
       that._log.trace("Deleting " + path);
     }
-    return OS.File.remove(path, { ignoreAbsent: true });
+    return IOUtils.remove(path, { ignoreAbsent: true });
   },
 
   /**
@@ -645,17 +635,17 @@ var Utils = {
    * Is there a master password configured and currently locked?
    */
   mpLocked() {
-    return !cryptoSDR.isLoggedIn;
+    return !lazy.cryptoSDR.isLoggedIn;
   },
 
   // If Master Password is enabled and locked, present a dialog to unlock it.
   // Return whether the system is unlocked.
   ensureMPUnlocked() {
-    if (cryptoSDR.uiBusy) {
+    if (lazy.cryptoSDR.uiBusy) {
       return false;
     }
     try {
-      cryptoSDR.encrypt("bacon");
+      lazy.cryptoSDR.encrypt("bacon");
       return true;
     } catch (e) {}
     return false;
@@ -738,7 +728,7 @@ var Utils = {
   },
 
   getDeviceType() {
-    return localDeviceType;
+    return lazy.localDeviceType;
   },
 
   formatTimestamp(date) {
@@ -785,11 +775,7 @@ XPCOMUtils.defineLazyGetter(Utils, "_utf8Converter", function() {
   return converter;
 });
 
-XPCOMUtils.defineLazyGetter(
-  Utils,
-  "utf8Encoder",
-  () => new TextEncoder("utf-8")
-);
+XPCOMUtils.defineLazyGetter(Utils, "utf8Encoder", () => new TextEncoder());
 
 /*
  * Commonly-used services

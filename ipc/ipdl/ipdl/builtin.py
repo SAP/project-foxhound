@@ -31,8 +31,6 @@ Types = (
     "nsresult",
     "nsString",
     "nsCString",
-    "nsDependentSubstring",
-    "nsDependentCSubstring",
     "mozilla::ipc::Shmem",
     "mozilla::ipc::ByteBuf",
     "mozilla::UniquePtr",
@@ -54,12 +52,13 @@ HeaderIncludes = (
     "mozilla/UniquePtr.h",
     "mozilla/ipc/ByteBuf.h",
     "mozilla/ipc/FileDescriptor.h",
-    "mozilla/ipc/ProtocolUtilsFwd.h",
+    "mozilla/ipc/IPCForwards.h",
     "mozilla/ipc/Shmem.h",
 )
 
 CppIncludes = (
     "ipc/IPCMessageUtils.h",
+    "ipc/IPCMessageUtilsSpecializations.h",
     "nsIFile.h",
     "mozilla/ipc/Endpoint.h",
     "mozilla/ipc/ProtocolMessageUtils.h",

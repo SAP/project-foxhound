@@ -14,8 +14,69 @@ we are in the process of generating new WebIDL bindings for the WebExtensions AP
 
 .. warning::
 
-   TODO: link to dom/webidl docs from this doc page for more general in depth details about WebIDL
-   in Gecko.
+   For more general in depth details about WebIDL in Gecko:
+
+   - :doc:`/dom/bindings/webidl/index`
+   - :doc:`/dom/webIdlBindings/index`
+
+Review process on changes to webidl definitions
+-----------------------------------------------
+
+.. note::
+
+   When new webidl definitions are being introduced for a WebExtensions API, or
+   existing ones need to be updated to stay in sync with changes applied to the
+   JSONSchema definitions of the same WebExtensions API, the resulting patch
+   will include a **new or changed WebIDL located at dom/webidl** and that part of the
+   patch **will require a mandatory review and sign-off from a peer part of the**
+   webidl_ **phabricator review group**.
+
+This section includes a brief description about the special setup of the
+webidl files related to WebExtensions and other notes useful to the
+WebIDL peers that will be reviewing and signing off these webidl files.
+
+.. _webidl: https://phabricator.services.mozilla.com/tag/webidl/
+
+How/Where are these webidl interfaces restricted to the extensions background service workers?
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+All the webidl interfaces related to the extensions API are only visible in
+specific extension globals: the WebExtensions background service worker
+(a service worker declared in the extension ``manifest.json`` file, through
+the ``background.service_worker`` manifest field).
+
+All webidl interfaces related to the WebExtensions API interfaces are exposed
+through the ``ExtensionBrowser`` interface, which gets exposed into the
+``ServiceWorkerGlobalScope`` through the ``ExtensionGlobalsMixin`` interface and
+restricted to the WebExtensions background service worker through the
+``mozilla::extensions::ExtensionAPIAllowed`` helper function.
+
+See ``ExtensionBrowser`` and ``ExtensionGlobalsMixin`` interfaces defined from
+ExtensionBrowser.webidl_ and ``mozilla::extensions::ExtensionAPIAllowed`` defined in
+ExtensionBrowser.cpp_.
+
+.. _ExtensionBrowser.webidl: https://searchfox.org/mozilla-central/source/dom/webidl/ExtensionBrowser.webidl
+.. _ExtensionBrowser.cpp: https://searchfox.org/mozilla-central/source/toolkit/components/extensions/webidl-api/ExtensionBrowser.cpp
+
+Why do all the webidl interfaces for WebExtensions API use LegacyNoInterfaceObject?
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The existing WebExtensions API bindings are not exposing any constructor in the
+globals where they are available (e.g. the webidl bindings for the ``browser.alarms``
+API namespace is defined by the ``ExtensionAlarms`` webidl interface, but there
+shouldn't be any ``ExtensionAlarms`` constructor available as a global to extension
+code running in the background service worker).
+
+A previous attempt to create W3C specs for the WebExtensions APIs described in WebIDL
+syntaxes (https://browserext.github.io/browserext) was also using the same
+``NoInterfaceObject`` WebIDL attribute on the definitions of the API namespace
+with the same motivations (eg. see ``BrowserExtBrowserRuntime`` as defined here:
+https://browserext.github.io/browserext/#webidl-definition-4).
+
+Bug 1713877_ is tracking a followup to determine a long term replacement for the
+``LegacyNoInterfaceObject`` attribute currently being used.
+
+.. _1713877: https://bugzilla.mozilla.org/1713877
 
 Background Service Workers API Request Handling
 -----------------------------------------------
@@ -69,8 +130,8 @@ Once the WebIDL definition for an WebExtensions API namespace has been
 implemented and wired up, the following testing strategies are available to
 cover them as part of the WebExtensions testing suites:
 
-``toolkit/components/extensions/tests/xpcshell/webidl-api``
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+``toolkit/components/extensions/test/xpcshell/webidl-api``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The xpcshell tests added to this group of xpcshell tests are meant to provide testing coverage
 related to lower level components and behaviors (e.g. when making changes to the shared C++
@@ -90,8 +151,8 @@ are being disabled at build time (e.g. beta and release builds, where otherwise
 the test would permafail while riding the train once got on those builds).
 
 
-``toolkit/components/extensions/tests/xpcshell/xpcshell-serviceworker.ini``
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+``toolkit/components/extensions/test/xpcshell/xpcshell-serviceworker.ini``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 When a new or existing xpcshell tests added to this xpcshell-test manifest, all test extensions
 will be generated with a background service worker instead of a background page.
@@ -144,8 +205,8 @@ workers mode" specify the ``sw-webextensions`` tag:
 
    mach xpcshell-test --tag sw-webextensions path/to/test/file.js
 
-``toolkit/components/extensions/tests/mochitest/mochitest-serviceworker.ini``
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+``toolkit/components/extensions/test/mochitest/mochitest-serviceworker.ini``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Same as the xpcshell-serviceworker.ini manifest but for the mochitest-plain tests.
 

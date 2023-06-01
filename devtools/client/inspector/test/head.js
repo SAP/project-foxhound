@@ -2,8 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
-/* import-globals-from ../../shared/test/shared-head.js */
-/* import-globals-from ../../inspector/test/shared-head.js */
+
 "use strict";
 
 // Load the shared-head file first.
@@ -23,13 +22,14 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const INSPECTOR_L10N = new LocalizationHelper(
   "devtools/client/locales/inspector.properties"
 );
 
 registerCleanupFunction(() => {
   Services.prefs.clearUserPref("devtools.inspector.activeSidebar");
+  Services.prefs.clearUserPref("devtools.inspector.selectedSidebar");
 });
 
 registerCleanupFunction(function() {
@@ -614,7 +614,7 @@ const getHighlighterHelperFor = type =>
         }
 
         return {
-          getComputedStyle: async function(options = {}) {
+          async getComputedStyle(options = {}) {
             const pageStyle = highlightedNode.inspectorFront.pageStyle;
             return pageStyle.getComputed(highlightedNode, options);
           },
@@ -629,7 +629,7 @@ const getHighlighterHelperFor = type =>
         return highlighter.actorID;
       },
 
-      show: async function(selector = ":root", options, frameSelector = null) {
+      async show(selector = ":root", options, frameSelector = null) {
         if (frameSelector) {
           highlightedNode = await getNodeFrontInFrames(
             [frameSelector, selector],
@@ -641,11 +641,11 @@ const getHighlighterHelperFor = type =>
         return highlighter.show(highlightedNode, options);
       },
 
-      hide: async function() {
+      async hide() {
         await highlighter.hide();
       },
 
-      isElementHidden: async function(id) {
+      async isElementHidden(id) {
         return (
           (await highlighterTestFront.getHighlighterNodeAttribute(
             prefix + id,
@@ -655,14 +655,14 @@ const getHighlighterHelperFor = type =>
         );
       },
 
-      getElementTextContent: async function(id) {
+      async getElementTextContent(id) {
         return highlighterTestFront.getHighlighterNodeTextContent(
           prefix + id,
           highlighter
         );
       },
 
-      getElementAttribute: async function(id, name) {
+      async getElementAttribute(id, name) {
         return highlighterTestFront.getHighlighterNodeAttribute(
           prefix + id,
           name,
@@ -670,7 +670,7 @@ const getHighlighterHelperFor = type =>
         );
       },
 
-      waitForElementAttributeSet: async function(id, name) {
+      async waitForElementAttributeSet(id, name) {
         await poll(async function() {
           const value = await highlighterTestFront.getHighlighterNodeAttribute(
             prefix + id,
@@ -681,7 +681,7 @@ const getHighlighterHelperFor = type =>
         }, `Waiting for element ${id} to have attribute ${name} set`);
       },
 
-      waitForElementAttributeRemoved: async function(id, name) {
+      async waitForElementAttributeRemoved(id, name) {
         await poll(async function() {
           const value = await highlighterTestFront.getHighlighterNodeAttribute(
             prefix + id,
@@ -692,7 +692,7 @@ const getHighlighterHelperFor = type =>
         }, `Waiting for element ${id} to have attribute ${name} removed`);
       },
 
-      synthesizeMouse: async function({
+      async synthesizeMouse({
         selector = ":root",
         center,
         x,
@@ -732,7 +732,7 @@ const getHighlighterHelperFor = type =>
         }
       ),
 
-      finalize: async function() {
+      async finalize() {
         highlightedNode = null;
         await highlighter.finalize();
       },
@@ -1447,10 +1447,12 @@ async function getAllAdjustedQuadsForContentPageElement(
     browsingContext,
     [inBrowsingContextSelector, useTopWindowAsBoundary],
     (_selector, _useTopWindowAsBoundary) => {
-      const { require } = ChromeUtils.import(
-        "resource://devtools/shared/loader/Loader.jsm"
+      const { require } = ChromeUtils.importESModule(
+        "resource://devtools/shared/loader/Loader.sys.mjs"
       );
-      const { getAdjustedQuads } = require("devtools/shared/layout/utils");
+      const {
+        getAdjustedQuads,
+      } = require("resource://devtools/shared/layout/utils.js");
 
       const node = content.document.querySelector(_selector);
 

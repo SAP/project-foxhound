@@ -6,6 +6,7 @@ const { PermissionTestUtils } = ChromeUtils.import(
 
 const ROOT = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content/",
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com/"
 );
 let pageWithAlert = ROOT + "openPromptOffTimeout.html";
@@ -36,8 +37,7 @@ add_task(async function test_old_modal_ui() {
   );
   let openedTabGotAttentionPromise = BrowserTestUtils.waitForAttribute(
     "attention",
-    openedTab,
-    "true"
+    openedTab
   );
   // switch away from that tab again - this triggers the alert.
   await BrowserTestUtils.switchTab(gBrowser, firstTab);
@@ -45,8 +45,8 @@ add_task(async function test_old_modal_ui() {
   await openedTabGotAttentionPromise;
   // check for attention attribute
   is(
-    openedTab.getAttribute("attention"),
-    "true",
+    openedTab.hasAttribute("attention"),
+    true,
     "Tab with alert should have 'attention' attribute."
   );
   ok(!openedTab.selected, "Tab with alert should not be selected");
@@ -148,8 +148,7 @@ add_task(async function test_new_modal_ui() {
   );
   let openedTabGotAttentionPromise = BrowserTestUtils.waitForAttribute(
     "attention",
-    openedTab,
-    "true"
+    openedTab
   );
   // switch away from that tab again - this triggers the alert.
   await BrowserTestUtils.switchTab(gBrowser, firstTab);
@@ -157,8 +156,8 @@ add_task(async function test_new_modal_ui() {
   await openedTabGotAttentionPromise;
   // check for attention attribute
   is(
-    openedTab.getAttribute("attention"),
-    "true",
+    openedTab.hasAttribute("attention"),
+    true,
     "Tab with alert should have 'attention' attribute."
   );
   ok(!openedTab.selected, "Tab with alert should not be selected");

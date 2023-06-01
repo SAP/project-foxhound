@@ -7,6 +7,7 @@
 #include "nsISupports.idl"
 #include "nsIContentPolicy.idl"
 #include "nsIScriptSecurityManager.idl"
+#include "nsIInterceptionInfo.idl"
 
 interface nsIChannel;
 interface nsIContentSecurityPolicy;
@@ -309,6 +310,21 @@ interface nsILoadInfo : nsISupports
   nsIPrincipal binaryTriggeringPrincipal();
 
   /**
+   * The remote type of the process which caused the network load to start. I.e.
+   * this is the remote type of the process which provided the URL to be loaded.
+   *
+   * For subresource loads, this should be the same as the process which will
+   * handle the response, however for document loads this may both be different
+   * than the final process, as well as different from the process which starts
+   * the navigation.
+   *
+   * This field is intentionally not perfectly preserved over IPC, and will be
+   * reset to the remote type of the sending process when sent from a content
+   * process to the parent process.
+   */
+  attribute AUTF8String triggeringRemoteType;
+
+  /**
    * For non-document loads the principalToInherit is always null. For
    * loads of type TYPE_DOCUMENT or TYPE_SUBDOCUMENT the principalToInherit
    * might be null. If it's non null, then this is the principal that is
@@ -511,6 +527,12 @@ interface nsILoadInfo : nsISupports
   [infallible] attribute boolean parserCreatedScript;
 
   /**
+   * True if this request is known to have been triggered by a user
+   * manually requesting the URI to be saved.
+   */
+  [infallible] attribute boolean isUserTriggeredSave;
+
+  /**
    * True if this request is from DevTools.
    */
   [infallible] attribute boolean isInDevToolsContext;
@@ -669,7 +691,9 @@ interface nsILoadInfo : nsISupports
     MOZ_ASSERT(NS_SUCCEEDED(rv));
     return static_cast<ExtContentPolicyType>(result);
   }
+
 %}
+
 
   /**
    * The internal contentPolicyType of the channel, used for constructing
@@ -1214,9 +1238,9 @@ interface nsILoadInfo : nsISupports
    * when fetching the resource this loadinfo belongs to.
    *
    * a) Non-navigations:
-   * For non-navigation loads, GetCSP() returns what the spec refers to as the
+   * For non-navigation loads, GetCsp() returns what the spec refers to as the
    * "request's client's global object's CSP list". In practice, if this is the
-   * loadinfo of a subresource load (e.g an image load), then GetCSP() or
+   * loadinfo of a subresource load (e.g an image load), then GetCsp() or
    * GetPreloadCSP() returns the CSP of the document which embeds the image.
    * The returned CSP includes any policy delivered through the HTTP header or
    * also through the meta tag (modulo the difference for preloads, e.g. image
@@ -1227,7 +1251,7 @@ interface nsILoadInfo : nsISupports
    *
    * b) Navigations:
    *   * Top-level loads:
-   *     For top-level loads (navigations) GetCSP() will return null, unless
+   *     For top-level loads (navigations) GetCsp() will return null, unless
    *     the navigation is started by a WebExtension, in which case it will
    *     return the CSP of the webextension, if any.
    *     If you need to query the CSP that potentially should apply to the
@@ -1236,7 +1260,7 @@ interface nsILoadInfo : nsISupports
    *     is for non-navigation requests.
    *
    *   * Iframe-loads:
-   *     For iframe-loads (navigations) GetCSP() will return the CSP of the
+   *     For iframe-loads (navigations) GetCsp() will return the CSP of the
    *     parent document, unless the navigation is started by a WebExtension,
    *     in which case it will return the CSP of the webextension, if any.
    *
@@ -1320,6 +1344,7 @@ interface nsILoadInfo : nsISupports
   const uint32_t BLOCKING_REASON_CLASSIFY_CRYPTOMINING_URI = 2007;
   const uint32_t BLOCKING_REASON_CLASSIFY_FINGERPRINTING_URI = 2008;
   const uint32_t BLOCKING_REASON_CLASSIFY_SOCIALTRACKING_URI = 2009;
+  const uint32_t BLOCKING_REASON_CLASSIFY_EMAILTRACKING_URI = 2010;
   const uint32_t BLOCKING_REASON_MIXED_BLOCKED = 3001;
   // The general reason comes from nsCSPContext::permitsInternal(),
   // which is way too generic to distinguish an exact reason.
@@ -1374,6 +1399,7 @@ interface nsILoadInfo : nsISupports
   cenum CrossOriginEmbedderPolicy : 8 {
     EMBEDDER_POLICY_NULL = 0,
     EMBEDDER_POLICY_REQUIRE_CORP = 1,
+    EMBEDDER_POLICY_CREDENTIALLESS = 2,
   };
 
   /**
@@ -1386,6 +1412,11 @@ interface nsILoadInfo : nsISupports
   [infallible] attribute nsILoadInfo_CrossOriginEmbedderPolicy
         loadingEmbedderPolicy;
 
+  /**
+   * This attribute will be true if the top level document has COEP:
+   * credentialless enabled in Origin Trial.
+   */
+  [infallible] attribute boolean isOriginTrialCoepCredentiallessEnabledForTopLevel;
   /**
    * This attribute will be true if this is a load triggered by a media
    * element.
@@ -1403,10 +1434,34 @@ interface nsILoadInfo : nsISupports
    * elements
    */
   [infallible] attribute boolean isFromObjectOrEmbed;
-  
+
+  /**
+   * This attribute will be true if the URL is known to be possibly broken and
+   * CheckForBrokenChromeURL and RecordZeroLengthEvent should be skipped.
+   */
+  [infallible] readonly attribute boolean shouldSkipCheckForBrokenURLOrZeroSized;
+
   /**
    * If this is non-null, this property holds the URI as it was before query
    * stripping was performed.
    */
   attribute nsIURI unstrippedURI;
+
+  /**
+   * Propagated information from InterceptedHttpChannel
+   * It should be null when the channel is not created from FetchEvent.request
+   * or ServiceWorker NavigationPreload.
+   * nsIFetchEventInfo is C++ only, so it is not an attribute.
+   */
+  [noscript, notxpcom, nostdcall, binaryname(InterceptionInfo)]
+  nsIInterceptionInfo binaryInterceptionInfo();
+
+  [noscript, notxpcom, nostdcall, binaryname(SetInterceptionInfo)]
+  void binarySetInterceptionInfo(in nsIInterceptionInfo info);
+
+  /**
+   * Whether nsICookieInjector has injected a cookie for this request to
+   * handle a cookie banner. This is only done for top-level requests.
+   */
+  [infallible] attribute boolean hasInjectedCookieForCookieBannerHandling;
 };

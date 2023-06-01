@@ -8,7 +8,7 @@
  * unexpectedly.
  */
 
-var protocol = require("devtools/shared/protocol");
+var protocol = require("resource://devtools/shared/protocol.js");
 var { RetVal } = protocol;
 
 function simpleHello() {
@@ -31,7 +31,7 @@ const rootSpec = protocol.generateActorSpec({
 
 var RootActor = protocol.ActorClassWithSpec(rootSpec, {
   typeName: "root",
-  initialize: function(conn) {
+  initialize(conn) {
     protocol.Actor.prototype.initialize.call(this, conn);
     // Root actor owns itself.
     this.manage(this);
@@ -41,7 +41,7 @@ var RootActor = protocol.ActorClassWithSpec(rootSpec, {
 
   sayHello: simpleHello,
 
-  simpleReturn: function() {
+  simpleReturn() {
     return this.sequence++;
   },
 });

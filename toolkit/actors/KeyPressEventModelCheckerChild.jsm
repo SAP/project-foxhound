@@ -8,10 +8,9 @@
 
 var EXPORTED_SYMBOLS = ["KeyPressEventModelCheckerChild"];
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 class KeyPressEventModelCheckerChild extends JSWindowActorChild {
   // Currently, the event is dispatched only when the document becomes editable

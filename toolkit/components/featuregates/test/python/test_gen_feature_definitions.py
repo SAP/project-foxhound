@@ -5,15 +5,9 @@ from os import path
 from textwrap import dedent
 
 import mozunit
-import pytoml
-import six
+import toml
 import voluptuous
-
-
-if six.PY3:
-    from io import StringIO
-else:
-    from StringIO import StringIO
+from io import StringIO
 
 
 FEATURE_GATES_ROOT_PATH = path.abspath(
@@ -89,7 +83,7 @@ class TestFeatureGateException(unittest.TestCase):
 
     def test_str_with_file(self):
         error = FeatureGateException("oops", filename="some/bad/file.txt")
-        assert str(error) == 'In file "some/bad/file.txt": oops'
+        assert str(error) == 'In file "some/bad/file.txt":\n oops'
 
     def test_repr_no_file(self):
         error = FeatureGateException("oops")
@@ -137,7 +131,7 @@ class TestProcessFiles(unittest.TestCase):
             process_files([filename])
         error_group = context.exception
         assert len(error_group.errors) == 1
-        assert type(error_group.errors[0]) == pytoml.TomlError
+        assert type(error_group.errors[0]) == FeatureGateException
 
     def test_empty_feature(self):
         filename = make_test_file_path("empty_feature")

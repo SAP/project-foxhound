@@ -6,7 +6,7 @@
 
 #include "AudioDeviceInfo.h"
 #include "MediaEngine.h"
-#include "MediaEngineDefault.h"
+#include "MediaEngineFake.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/FeaturePolicyUtils.h"
@@ -16,6 +16,7 @@
 #include "mozilla/dom/NavigatorBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/WindowContext.h"
+#include "mozilla/intl/Localization.h"
 #include "mozilla/MediaManager.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "MediaTrackConstraints.h"
@@ -23,6 +24,7 @@
 #include "nsINamed.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsPIDOMWindow.h"
+#include "nsGlobalWindowInner.h"
 #include "nsQueryObject.h"
 
 namespace mozilla::dom {
@@ -31,9 +33,10 @@ using ConstDeviceSetPromise = MediaManager::ConstDeviceSetPromise;
 using LocalDeviceSetPromise = MediaManager::LocalDeviceSetPromise;
 using LocalMediaDeviceSetRefCnt = MediaManager::LocalMediaDeviceSetRefCnt;
 using MediaDeviceSetRefCnt = MediaManager::MediaDeviceSetRefCnt;
+using mozilla::intl::Localization;
 
 MediaDevices::MediaDevices(nsPIDOMWindowInner* aWindow)
-    : DOMEventTargetHelper(aWindow) {}
+    : DOMEventTargetHelper(aWindow), mDefaultOutputLabel(VoidString()) {}
 
 MediaDevices::~MediaDevices() {
   MOZ_ASSERT(NS_IsMainThread());
@@ -224,9 +227,8 @@ RefPtr<MediaDeviceSetRefCnt> MediaDevices::FilterExposedDevices(
       !Preferences::GetBool("media.setsinkid.enabled") ||
       !FeaturePolicyUtils::IsFeatureAllowed(doc, u"speaker-selection"_ns);
 
-  bool resistFingerprinting = nsContentUtils::ShouldResistFingerprinting(doc);
-  if (resistFingerprinting) {
-    RefPtr fakeEngine = new MediaEngineDefault();
+  if (doc->ShouldResistFingerprinting()) {
+    RefPtr fakeEngine = new MediaEngineFake();
     fakeEngine->EnumerateDevices(MediaSourceEnum::Microphone,
                                  MediaSinkEnum::Other, exposed);
     fakeEngine->EnumerateDevices(MediaSourceEnum::Camera, MediaSinkEnum::Other,
@@ -236,6 +238,8 @@ RefPtr<MediaDeviceSetRefCnt> MediaDevices::FilterExposedDevices(
     // they are exposed only when explicitly and individually allowed by the
     // user.
   }
+  bool outputIsDefault = true;  // First output is the default.
+  bool haveDefaultOutput = false;
   nsTHashSet<nsString> exposedMicrophoneGroupIds;
   for (const auto& device : aDevices) {
     switch (device->mKind) {
@@ -259,8 +263,33 @@ RefPtr<MediaDeviceSetRefCnt> MediaDevices::FilterExposedDevices(
             (!mExplicitlyGrantedAudioOutputRawIds.Contains(device->mRawID) &&
              // Assumes aDevices order has microphones before speakers.
              !exposedMicrophoneGroupIds.Contains(device->mRawGroupID))) {
+          outputIsDefault = false;
           continue;
         }
+        if (!haveDefaultOutput && !outputIsDefault) {
+          // Insert a virtual default device so that the first enumerated
+          // device is the default output.
+          if (mDefaultOutputLabel.IsVoid()) {
+            mDefaultOutputLabel.SetIsVoid(false);
+            AutoTArray<nsCString, 1> resourceIds{"dom/media.ftl"_ns};
+            RefPtr l10n = Localization::Create(resourceIds, /*sync*/ true);
+            nsAutoCString translation;
+            IgnoredErrorResult rv;
+            l10n->FormatValueSync("default-audio-output-device-label"_ns, {},
+                                  translation, rv);
+            if (!rv.Failed()) {
+              AppendUTF8toUTF16(translation, mDefaultOutputLabel);
+            }
+          }
+          RefPtr info = new AudioDeviceInfo(
+              nullptr, mDefaultOutputLabel, u""_ns, u""_ns,
+              CUBEB_DEVICE_TYPE_OUTPUT, CUBEB_DEVICE_STATE_ENABLED,
+              CUBEB_DEVICE_PREF_ALL, CUBEB_DEVICE_FMT_ALL,
+              CUBEB_DEVICE_FMT_S16NE, 2, 44100, 44100, 44100, 128, 128);
+          exposed->AppendElement(
+              new MediaDevice(new MediaEngineFake(), info, u""_ns));
+        }
+        haveDefaultOutput = true;
         break;
       case MediaDeviceKind::EndGuard_:
         continue;
@@ -689,8 +718,22 @@ void MediaDevices::OnDeviceChange() {
 
   // Do not fire event to content script when
   // privacy.resistFingerprinting is true.
-  if (nsContentUtils::ShouldResistFingerprinting()) {
-    return;
+
+  if (nsContentUtils::ShouldResistFingerprinting(
+          "Guarding the more expensive RFP check with a simple one")) {
+    nsCOMPtr<nsPIDOMWindowInner> window = GetOwner();
+    auto* wrapper = GetWrapper();
+    if (!window && wrapper) {
+      nsCOMPtr<nsIGlobalObject> global = xpc::NativeGlobal(wrapper);
+      window = do_QueryInterface(global);
+    }
+    if (!window) {
+      return;
+    }
+
+    if (nsGlobalWindowInner::Cast(window)->ShouldResistFingerprinting()) {
+      return;
+    }
   }
 
   mHaveUnprocessedDeviceListChange = true;

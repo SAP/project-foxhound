@@ -14,6 +14,7 @@
 #include "jsapi.h"
 #include "js/Array.h"
 #include "js/CharacterEncoding.h"
+#include "js/ErrorReport.h"
 #include "js/UniquePtr.h"
 #include "vm/FrameIter.h"
 #include "vm/JSContext.h"
@@ -241,7 +242,7 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx)
     if (i.hasScript()) {
       // Get source
       JSScript* script = i.script();
-      ScriptSource* ss = script->scriptSource();
+      js::ScriptSource* ss = script->scriptSource();
       if (ss) {
         scriptStartline = ss->startLine();
         hash = ss->md5Checksum(cx);

@@ -7,8 +7,8 @@
 // authentication. Also tests that nsIClientAuthDialogs.chooseCertificate
 // is called at the appropriate times and with the correct arguments.
 
-const { MockRegistrar } = ChromeUtils.import(
-  "resource://testing-common/MockRegistrar.jsm"
+const { MockRegistrar } = ChromeUtils.importESModule(
+  "resource://testing-common/MockRegistrar.sys.mjs"
 );
 
 const DialogState = {
@@ -123,7 +123,7 @@ const gClientAuthDialogs = {
   QueryInterface: ChromeUtils.generateQI(["nsIClientAuthDialogs"]),
 };
 
-add_task(async function setup() {
+add_setup(async function() {
   let clientAuthDialogsCID = MockRegistrar.register(
     "@mozilla.org/nsClientAuthDialogs;1",
     gClientAuthDialogs
@@ -157,15 +157,15 @@ add_task(async function setup() {
 /**
  * Test helper for the tests below.
  *
- * @param {String} prefValue
+ * @param {string} prefValue
  *        Value to set the "security.default_personal_cert" pref to.
- * @param {String} expectedURL
+ * @param {string} expectedURL
  *        If the connection is expected to load successfully, the URL that
  *        should load. If the connection is expected to fail and result in an
  *        error page, |undefined|.
- * @param {Boolean} expectCallingChooseCertificate
+ * @param {boolean} expectCallingChooseCertificate
  *        Determines whether we expect chooseCertificate to be called.
- * @param {Object} options
+ * @param {object} options
  *        Optional options object to pass on to the window that gets opened.
  */
 async function testHelper(
@@ -181,7 +181,7 @@ async function testHelper(
 
   let win = await BrowserTestUtils.openNewBrowserWindow(options);
 
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.loadURIString(
     win.gBrowser.selectedBrowser,
     "https://requireclientcert.example.com:443"
   );
@@ -307,12 +307,10 @@ add_task(async function testClearPrivateBrowsingState() {
 // Test that 3rd party certificates are taken into account when filtering client
 // certificates based on the acceptible CA list sent by the server.
 add_task(async function testCertFilteringWithIntermediate() {
-  let intermediateBytes = await OS.File.read(
+  let intermediateBytes = await IOUtils.readUTF8(
     getTestFilePath("intermediate.pem")
   ).then(
-    data => {
-      let decoder = new TextDecoder();
-      let pem = decoder.decode(data);
+    pem => {
       let base64 = pemToBase64(pem);
       let bin = atob(base64);
       let bytes = [];

@@ -4,98 +4,27 @@
 
 
 import os
-import platform
-import subprocess
-import six
 import sys
-from distutils.spawn import find_executable
-from distutils.version import StrictVersion
+from pathlib import PurePath
 
-from mozbuild.base import MozbuildObject
+from gecko_taskgraph.target_tasks import filter_by_uncommon_try_tasks
 from mach.util import get_state_dir
-from mozterm import Terminal
 
 from ..cli import BaseTryParser
-from ..tasks import generate_tasks, filter_tasks_by_paths
-from ..push import check_working_directory, push_to_try, generate_try_task_config
+from ..push import check_working_directory, generate_try_task_config, push_to_try
+from ..tasks import filter_tasks_by_paths, generate_tasks
+from ..util.fzf import (
+    FZF_NOT_FOUND,
+    PREVIEW_SCRIPT,
+    format_header,
+    fzf_bootstrap,
+    fzf_shortcuts,
+    run_fzf,
+)
 from ..util.manage_estimates import (
     download_task_history_data,
     make_trimmed_taskgraph_cache,
 )
-
-from gecko_taskgraph.target_tasks import filter_by_uncommon_try_tasks
-
-terminal = Terminal()
-
-here = os.path.abspath(os.path.dirname(__file__))
-build = MozbuildObject.from_environment(cwd=here)
-
-PREVIEW_SCRIPT = os.path.join(build.topsrcdir, "tools/tryselect/selectors/preview.py")
-
-FZF_NOT_FOUND = """
-Could not find the `fzf` binary.
-
-The `mach try fuzzy` command depends on fzf. Please install it following the
-appropriate instructions for your platform:
-
-    https://github.com/junegunn/fzf#installation
-
-Only the binary is required, if you do not wish to install the shell and
-editor integrations, download the appropriate binary and put it on your $PATH:
-
-    https://github.com/junegunn/fzf/releases
-""".lstrip()
-
-FZF_VERSION_FAILED = """
-Could not obtain the 'fzf' version.
-
-The 'mach try fuzzy' command depends on fzf, and requires version > 0.20.0
-for some of the features. Please install it following the appropriate
-instructions for your platform:
-
-    https://github.com/junegunn/fzf#installation
-
-Only the binary is required, if you do not wish to install the shell and
-editor integrations, download the appropriate binary and put it on your $PATH:
-
-    https://github.com/junegunn/fzf/releases
-""".lstrip()
-
-FZF_INSTALL_FAILED = """
-Failed to install fzf.
-
-Please install fzf manually following the appropriate instructions for your
-platform:
-
-    https://github.com/junegunn/fzf#installation
-
-Only the binary is required, if you do not wish to install the shell and
-editor integrations, download the appropriate binary and put it on your $PATH:
-
-    https://github.com/junegunn/fzf/releases
-""".lstrip()
-
-FZF_HEADER = """
-For more shortcuts, see {t.italic_white}mach help try fuzzy{t.normal} and {t.italic_white}man fzf
-{shortcuts}
-""".strip()
-
-fzf_shortcuts = {
-    "ctrl-a": "select-all",
-    "ctrl-d": "deselect-all",
-    "ctrl-t": "toggle-all",
-    "alt-bspace": "beginning-of-line+kill-line",
-    "?": "toggle-preview",
-}
-
-fzf_header_shortcuts = [
-    ("select", "tab"),
-    ("accept", "enter"),
-    ("cancel", "ctrl-c"),
-    ("select-all", "ctrl-a"),
-    ("cursor-up", "up"),
-    ("cursor-down", "down"),
-]
 
 
 class FuzzyParser(BaseTryParser):
@@ -185,140 +114,6 @@ class FuzzyParser(BaseTryParser):
     ]
 
 
-def run_cmd(cmd, cwd=None):
-    is_win = platform.system() == "Windows"
-    return subprocess.call(cmd, cwd=cwd, shell=True if is_win else False)
-
-
-def run_fzf_install_script(fzf_path):
-    if platform.system() == "Windows":
-        cmd = ["bash", "-c", "./install --bin"]
-    else:
-        cmd = ["./install", "--bin"]
-
-    if run_cmd(cmd, cwd=fzf_path):
-        print(FZF_INSTALL_FAILED)
-        sys.exit(1)
-
-
-def should_force_fzf_update(fzf_bin):
-    cmd = [fzf_bin, "--version"]
-    try:
-        fzf_version = subprocess.check_output(cmd)
-    except subprocess.CalledProcessError:
-        print(FZF_VERSION_FAILED)
-        sys.exit(1)
-
-    # Some fzf versions have extra, e.g 0.18.0 (ff95134)
-    fzf_version = six.ensure_text(fzf_version.split()[0])
-
-    # 0.20.0 introduced passing selections through a temporary file,
-    # which is good for large ctrl-a actions.
-    if StrictVersion(fzf_version) < StrictVersion("0.20.0"):
-        print("fzf version is old, forcing update.")
-        return True
-    return False
-
-
-def fzf_bootstrap(update=False):
-    """Bootstrap fzf if necessary and return path to the executable.
-
-    The bootstrap works by cloning the fzf repository and running the included
-    `install` script. If update is True, we will pull the repository and re-run
-    the install script.
-    """
-    fzf_bin = find_executable("fzf")
-    if fzf_bin and should_force_fzf_update(fzf_bin):
-        update = True
-
-    if fzf_bin and not update:
-        return fzf_bin
-
-    fzf_path = os.path.join(get_state_dir(), "fzf")
-
-    # Bug 1623197: We only want to run fzf's `install` if it's not in the $PATH
-    # Swap to os.path.commonpath when we're not on Py2
-    if fzf_bin and update and not fzf_bin.startswith(fzf_path):
-        print(
-            "fzf installed somewhere other than {}, please update manually".format(
-                fzf_path
-            )
-        )
-        sys.exit(1)
-
-    def get_fzf():
-        return find_executable("fzf", os.path.join(fzf_path, "bin"))
-
-    if os.path.isdir(fzf_path):
-        if update:
-            ret = run_cmd(["git", "pull"], cwd=fzf_path)
-            if ret:
-                print("Update fzf failed.")
-                sys.exit(1)
-
-            run_fzf_install_script(fzf_path)
-            return get_fzf()
-
-        fzf_bin = get_fzf()
-        if not fzf_bin or should_force_fzf_update(fzf_bin):
-            return fzf_bootstrap(update=True)
-
-        return fzf_bin
-
-    if not update:
-        install = input("Could not detect fzf, install it now? [y/n]: ")
-        if install.lower() != "y":
-            return
-
-    if not find_executable("git"):
-        print("Git not found.")
-        print(FZF_INSTALL_FAILED)
-        sys.exit(1)
-
-    cmd = ["git", "clone", "--depth", "1", "https://github.com/junegunn/fzf.git"]
-    if subprocess.call(cmd, cwd=os.path.dirname(fzf_path)):
-        print(FZF_INSTALL_FAILED)
-        sys.exit(1)
-
-    run_fzf_install_script(fzf_path)
-
-    print("Installed fzf to {}".format(fzf_path))
-    return get_fzf()
-
-
-def format_header():
-    shortcuts = []
-    for action, key in fzf_header_shortcuts:
-        shortcuts.append(
-            "{t.white}{action}{t.normal}: {t.yellow}<{key}>{t.normal}".format(
-                t=terminal, action=action, key=key
-            )
-        )
-    return FZF_HEADER.format(shortcuts=", ".join(shortcuts), t=terminal)
-
-
-def run_fzf(cmd, tasks):
-    env = dict(os.environ)
-    env.update(
-        {"PYTHONPATH": os.pathsep.join([p for p in sys.path if "requests" in p])}
-    )
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stdin=subprocess.PIPE,
-        env=env,
-        universal_newlines=True,
-    )
-    out = proc.communicate("\n".join(tasks))[0].splitlines()
-
-    selected = []
-    query = None
-    if out:
-        query = out[0]
-        selected = out[1:]
-    return query, selected
-
-
 def run(
     update=False,
     query=None,
@@ -327,7 +122,8 @@ def run(
     full=False,
     parameters=None,
     save_query=False,
-    push=True,
+    stage_changes=False,
+    dry_run=False,
     message="{msg}",
     test_paths=None,
     exact=False,
@@ -341,6 +137,7 @@ def run(
         print(FZF_NOT_FOUND)
         return 1
 
+    push = not stage_changes and not dry_run
     check_working_directory(push)
     tg = generate_tasks(
         parameters, full=full, disable_target_task_filter=disable_target_task_filter
@@ -391,7 +188,7 @@ def run(
             [
                 "--preview",
                 '{} {} -g {} -s -c {} -t "{{+f}}"'.format(
-                    sys.executable, PREVIEW_SCRIPT, dep_cache, cache_dir
+                    str(PurePath(sys.executable)), PREVIEW_SCRIPT, dep_cache, cache_dir
                 ),
             ]
         )
@@ -399,7 +196,9 @@ def run(
         base_cmd.extend(
             [
                 "--preview",
-                '{} {} -t "{{+f}}"'.format(sys.executable, PREVIEW_SCRIPT),
+                '{} {} -t "{{+f}}"'.format(
+                    str(PurePath(sys.executable)), PREVIEW_SCRIPT
+                ),
             ]
         )
 
@@ -450,6 +249,7 @@ def run(
         "fuzzy",
         message.format(msg=msg),
         try_task_config=generate_try_task_config("fuzzy", selected, try_config),
-        push=push,
+        stage_changes=stage_changes,
+        dry_run=dry_run,
         closed_tree=closed_tree,
     )

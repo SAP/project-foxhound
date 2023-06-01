@@ -15,17 +15,13 @@ const { ForgetAboutSite } = ChromeUtils.import(
   "resource://gre/modules/ForgetAboutSite.jsm"
 );
 
-const { PlacesUtils } = ChromeUtils.import(
-  "resource://gre/modules/PlacesUtils.jsm"
+const { PlacesUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PlacesUtils.sys.mjs"
 );
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesTestUtils",
-  "resource://testing-common/PlacesTestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+});
 
 const COOKIE_EXPIRY = Math.round(Date.now() / 1000) + 60;
 const COOKIE_NAME = "testcookie";
@@ -318,14 +314,14 @@ async function test_login_manager_logins_cleared_with_direct_match() {
   const TEST_HOST = "http://mozilla.org";
   add_login(TEST_HOST);
   await ForgetAboutSite.removeDataFromDomain("mozilla.org");
-  check_login_exists(TEST_HOST, false);
+  check_login_exists(TEST_HOST, true);
 }
 
 async function test_login_manager_logins_cleared_with_subdomain() {
   const TEST_HOST = "http://www.mozilla.org";
   add_login(TEST_HOST);
   await ForgetAboutSite.removeDataFromDomain("mozilla.org");
-  check_login_exists(TEST_HOST, false);
+  check_login_exists(TEST_HOST, true);
 }
 
 async function test_login_manager_logins_not_cleared_with_uri_contains_domain() {

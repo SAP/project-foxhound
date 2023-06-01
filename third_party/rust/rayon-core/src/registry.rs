@@ -8,7 +8,6 @@ use crate::{
     ErrorKind, ExitHandler, PanicHandler, StartHandler, ThreadPoolBuildError, ThreadPoolBuilder,
 };
 use crossbeam_deque::{Injector, Steal, Stealer, Worker};
-use std::any::Any;
 use std::cell::Cell;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
@@ -16,10 +15,8 @@ use std::hash::Hasher;
 use std::io;
 use std::mem;
 use std::ptr;
-#[allow(deprecated)]
-use std::sync::atomic::ATOMIC_USIZE_INIT;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Once};
+use std::sync::{Arc, Mutex, Once};
 use std::thread;
 use std::usize;
 
@@ -29,6 +26,7 @@ pub struct ThreadBuilder {
     name: Option<String>,
     stack_size: Option<usize>,
     worker: Worker<JobRef>,
+    stealer: Stealer<JobRef>,
     registry: Arc<Registry>,
     index: usize,
 }
@@ -41,7 +39,7 @@ impl ThreadBuilder {
 
     /// Gets the string that was specified by `ThreadPoolBuilder::name()`.
     pub fn name(&self) -> Option<&str> {
-        self.name.as_ref().map(String::as_str)
+        self.name.as_deref()
     }
 
     /// Gets the value that was specified by `ThreadPoolBuilder::stack_size()`.
@@ -52,7 +50,7 @@ impl ThreadBuilder {
     /// Executes the main loop for this thread. This will not return until the
     /// thread pool is dropped.
     pub fn run(self) {
-        unsafe { main_loop(self.worker, self.registry, self.index) }
+        unsafe { main_loop(self.worker, self.stealer, self.registry, self.index) }
     }
 }
 
@@ -135,6 +133,7 @@ pub(super) struct Registry {
     thread_infos: Vec<ThreadInfo>,
     sleep: Sleep,
     injected_jobs: Injector<JobRef>,
+    broadcasts: Mutex<Vec<Worker<JobRef>>>,
     panic_handler: Option<Box<PanicHandler>>,
     start_handler: Option<Box<StartHandler>>,
     exit_handler: Option<Box<ExitHandler>>,
@@ -214,7 +213,9 @@ impl Registry {
     where
         S: ThreadSpawn,
     {
-        let n_threads = builder.get_num_threads();
+        // Soft-limit the number of threads that we can actually support.
+        let n_threads = Ord::min(builder.get_num_threads(), crate::max_num_threads());
+
         let breadth_first = builder.get_breadth_first();
 
         let (workers, stealers): (Vec<_>, Vec<_>) = (0..n_threads)
@@ -230,12 +231,21 @@ impl Registry {
             })
             .unzip();
 
+        let (broadcasts, broadcast_stealers): (Vec<_>, Vec<_>) = (0..n_threads)
+            .map(|_| {
+                let worker = Worker::new_fifo();
+                let stealer = worker.stealer();
+                (worker, stealer)
+            })
+            .unzip();
+
         let logger = Logger::new(n_threads);
         let registry = Arc::new(Registry {
             logger: logger.clone(),
             thread_infos: stealers.into_iter().map(ThreadInfo::new).collect(),
             sleep: Sleep::new(logger, n_threads),
             injected_jobs: Injector::new(),
+            broadcasts: Mutex::new(broadcasts),
             terminate_count: AtomicUsize::new(1),
             panic_handler: builder.take_panic_handler(),
             start_handler: builder.take_start_handler(),
@@ -245,12 +255,13 @@ impl Registry {
         // If we return early or panic, make sure to terminate existing threads.
         let t1000 = Terminator(&registry);
 
-        for (index, worker) in workers.into_iter().enumerate() {
+        for (index, (worker, stealer)) in workers.into_iter().zip(broadcast_stealers).enumerate() {
             let thread = ThreadBuilder {
                 name: builder.get_thread_name(index),
                 stack_size: builder.get_stack_size(),
-                registry: registry.clone(),
+                registry: Arc::clone(&registry),
                 worker,
+                stealer,
                 index,
             };
             if let Err(e) = builder.get_spawn_handler().spawn(thread) {
@@ -261,17 +272,18 @@ impl Registry {
         // Returning normally now, without termination.
         mem::forget(t1000);
 
-        Ok(registry.clone())
+        Ok(registry)
     }
 
     pub(super) fn current() -> Arc<Registry> {
         unsafe {
             let worker_thread = WorkerThread::current();
-            if worker_thread.is_null() {
-                global_registry().clone()
+            let registry = if worker_thread.is_null() {
+                global_registry()
             } else {
-                (*worker_thread).registry.clone()
-            }
+                &(*worker_thread).registry
+            };
+            Arc::clone(registry)
         }
     }
 
@@ -319,18 +331,13 @@ impl Registry {
         self.thread_infos.len()
     }
 
-    pub(super) fn handle_panic(&self, err: Box<dyn Any + Send>) {
-        match self.panic_handler {
-            Some(ref handler) => {
-                // If the customizable panic handler itself panics,
-                // then we abort.
-                let abort_guard = unwind::AbortIfPanic;
+    pub(super) fn catch_unwind(&self, f: impl FnOnce()) {
+        if let Err(err) = unwind::halt_unwinding(f) {
+            // If there is no handler, or if that handler itself panics, then we abort.
+            let abort_guard = unwind::AbortIfPanic;
+            if let Some(ref handler) = self.panic_handler {
                 handler(err);
                 mem::forget(abort_guard);
-            }
-            None => {
-                // Default panic handler aborts.
-                let _ = unwind::AbortIfPanic; // let this drop.
             }
         }
     }
@@ -375,7 +382,7 @@ impl Registry {
     }
 
     /// Push a job into the "external jobs" queue; it will be taken by
-    /// whatever worker has nothing to do. Use this is you know that
+    /// whatever worker has nothing to do. Use this if you know that
     /// you are not on a worker of this registry.
     pub(super) fn inject(&self, injected_jobs: &[JobRef]) {
         self.log(|| JobsInjected {
@@ -419,6 +426,40 @@ impl Registry {
                 Steal::Empty => return None,
                 Steal::Retry => {}
             }
+        }
+    }
+
+    /// Push a job into each thread's own "external jobs" queue; it will be
+    /// executed only on that thread, when it has nothing else to do locally,
+    /// before it tries to steal other work.
+    ///
+    /// **Panics** if not given exactly as many jobs as there are threads.
+    pub(super) fn inject_broadcast(&self, injected_jobs: impl ExactSizeIterator<Item = JobRef>) {
+        assert_eq!(self.num_threads(), injected_jobs.len());
+        self.log(|| JobBroadcast {
+            count: self.num_threads(),
+        });
+        {
+            let broadcasts = self.broadcasts.lock().unwrap();
+
+            // It should not be possible for `state.terminate` to be true
+            // here. It is only set to true when the user creates (and
+            // drops) a `ThreadPool`; and, in that case, they cannot be
+            // calling `inject_broadcast()` later, since they dropped their
+            // `ThreadPool`.
+            debug_assert_ne!(
+                self.terminate_count.load(Ordering::Acquire),
+                0,
+                "inject_broadcast() sees state.terminate as true"
+            );
+
+            assert_eq!(broadcasts.len(), injected_jobs.len());
+            for (worker, job_ref) in broadcasts.iter().zip(injected_jobs) {
+                worker.push(job_ref);
+            }
+        }
+        for i in 0..self.num_threads() {
+            self.sleep.notify_worker_latch_is_set(i);
         }
     }
 
@@ -591,6 +632,9 @@ pub(super) struct WorkerThread {
     /// the "worker" half of our local deque
     worker: Worker<JobRef>,
 
+    /// the "stealer" half of the worker's broadcast deque
+    stealer: Stealer<JobRef>,
+
     /// local queue used for `spawn_fifo` indirection
     fifo: JobFifo,
 
@@ -686,9 +730,20 @@ impl WorkerThread {
 
         if popped_job.is_some() {
             self.log(|| JobPopped { worker: self.index });
+            return popped_job;
         }
 
-        popped_job
+        loop {
+            match self.stealer.steal() {
+                Steal::Success(job) => return Some(job),
+                Steal::Empty => return None,
+                Steal::Retry => {}
+            }
+        }
+    }
+
+    fn has_injected_job(&self) -> bool {
+        !self.stealer.is_empty() || self.registry.has_injected_job()
     }
 
     /// Wait until the latch is set. Try to keep busy by popping and
@@ -728,7 +783,7 @@ impl WorkerThread {
             } else {
                 self.registry
                     .sleep
-                    .no_work_found(&mut idle_state, latch, || self.registry.has_injected_job())
+                    .no_work_found(&mut idle_state, latch, || self.has_injected_job())
             }
         }
 
@@ -796,15 +851,22 @@ impl WorkerThread {
 
 /// ////////////////////////////////////////////////////////////////////////
 
-unsafe fn main_loop(worker: Worker<JobRef>, registry: Arc<Registry>, index: usize) {
+unsafe fn main_loop(
+    worker: Worker<JobRef>,
+    stealer: Stealer<JobRef>,
+    registry: Arc<Registry>,
+    index: usize,
+) {
     let worker_thread = &WorkerThread {
         worker,
+        stealer,
         fifo: JobFifo::new(),
         index,
         rng: XorShift64Star::new(),
-        registry: registry.clone(),
+        registry,
     };
     WorkerThread::set_current(worker_thread);
+    let registry = &*worker_thread.registry;
 
     // let registry know we are ready to do work
     registry.thread_infos[index].primed.set();
@@ -816,13 +878,7 @@ unsafe fn main_loop(worker: Worker<JobRef>, registry: Arc<Registry>, index: usiz
 
     // Inform a user callback that we started a thread.
     if let Some(ref handler) = registry.start_handler {
-        let registry = registry.clone();
-        match unwind::halt_unwinding(|| handler(index)) {
-            Ok(()) => {}
-            Err(err) => {
-                registry.handle_panic(err);
-            }
-        }
+        registry.catch_unwind(|| handler(index));
     }
 
     let my_terminate_latch = &registry.thread_infos[index].terminate;
@@ -845,13 +901,7 @@ unsafe fn main_loop(worker: Worker<JobRef>, registry: Arc<Registry>, index: usiz
 
     // Inform a user callback that we exited a thread.
     if let Some(ref handler) = registry.exit_handler {
-        let registry = registry.clone();
-        match unwind::halt_unwinding(|| handler(index)) {
-            Ok(()) => {}
-            Err(err) => {
-                registry.handle_panic(err);
-            }
-        }
+        registry.catch_unwind(|| handler(index));
         // We're already exiting the thread, there's nothing else to do.
     }
 }
@@ -893,8 +943,7 @@ impl XorShift64Star {
         let mut seed = 0;
         while seed == 0 {
             let mut hasher = DefaultHasher::new();
-            #[allow(deprecated)]
-            static COUNTER: AtomicUsize = ATOMIC_USIZE_INIT;
+            static COUNTER: AtomicUsize = AtomicUsize::new(0);
             hasher.write_usize(COUNTER.fetch_add(1, Ordering::Relaxed));
             seed = hasher.finish();
         }

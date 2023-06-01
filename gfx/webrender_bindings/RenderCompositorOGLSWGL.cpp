@@ -19,6 +19,7 @@
 
 #ifdef MOZ_WIDGET_ANDROID
 #  include "mozilla/java/GeckoSurfaceTextureWrappers.h"
+#  include "mozilla/webrender/RenderAndroidHardwareBufferTextureHost.h"
 #  include "mozilla/widget/AndroidCompositorWidget.h"
 #  include <android/native_window.h>
 #  include <android/native_window_jni.h>
@@ -27,7 +28,9 @@
 #ifdef MOZ_WIDGET_GTK
 #  include "mozilla/widget/GtkCompositorWidget.h"
 #  include <gdk/gdk.h>
-#  include <gdk/gdkx.h>
+#  ifdef MOZ_X11
+#    include <gdk/gdkx.h>
+#  endif
 #endif
 
 namespace mozilla {
@@ -129,9 +132,12 @@ EGLSurface RenderCompositorOGLSWGL::CreateEGLSurface() {
 
   EGLSurface surface = EGL_NO_SURFACE;
   surface = gl::GLContextEGL::CreateEGLSurfaceForCompositorWidget(
-      mWidget, gl::GLContextEGL::Cast(GetGLContext())->mConfig);
+      mWidget, gl::GLContextEGL::Cast(GetGLContext())->mSurfaceConfig);
   if (surface == EGL_NO_SURFACE) {
-    gfxCriticalNote << "Failed to create EGLSurface";
+    const auto* renderThread = RenderThread::Get();
+    gfxCriticalNote << "Failed to create EGLSurface. "
+                    << renderThread->RendererCount() << " renderers, "
+                    << renderThread->ActiveRendererCount() << " active.";
   }
 
   // The subsequent render after creating a new surface must be a full render.
@@ -149,7 +155,14 @@ void RenderCompositorOGLSWGL::DestroyEGLSurface() {
   // Release EGLSurface of back buffer before calling ResizeBuffers().
   if (mEGLSurface) {
     gle->SetEGLSurfaceOverride(EGL_NO_SURFACE);
-    egl->fDestroySurface(mEGLSurface);
+    if (!egl->fMakeCurrent(EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT)) {
+      const EGLint err = egl->mLib->fGetError();
+      gfxCriticalNote << "Error in eglMakeCurrent: " << gfx::hexa(err);
+    }
+    if (!egl->fDestroySurface(mEGLSurface)) {
+      const EGLint err = egl->mLib->fGetError();
+      gfxCriticalNote << "Error in eglDestroySurface: " << gfx::hexa(err);
+    }
     mEGLSurface = EGL_NO_SURFACE;
   }
 }
@@ -183,22 +196,47 @@ void RenderCompositorOGLSWGL::HandleExternalImage(
       LOCAL_GL_TEXTURE_EXTERNAL;  // This is required by SurfaceTexture
   GLenum wrapMode = LOCAL_GL_CLAMP_TO_EDGE;
 
-  auto* host = aExternalImage->AsRenderAndroidSurfaceTextureHost();
-  // We need to hold the texture source separately from the effect,
-  // since the effect doesn't hold a strong reference.
-  RefPtr<SurfaceTextureSource> layer = new SurfaceTextureSource(
-      (TextureSourceProvider*)mCompositor, host->mSurfTex, host->mFormat,
-      target, wrapMode, host->mSize, /* aIgnoreTransform */ true);
-  RefPtr<TexturedEffect> texturedEffect =
-      CreateTexturedEffect(host->mFormat, layer, aFrameSurface.mFilter,
-                           /* isAlphaPremultiplied */ true);
+  if (auto* host = aExternalImage->AsRenderAndroidSurfaceTextureHost()) {
+    host->UpdateTexImageIfNecessary();
 
-  gfx::Rect drawRect(0, 0, host->mSize.width, host->mSize.height);
+    // We need to hold the texture source separately from the effect,
+    // since the effect doesn't hold a strong reference.
+    RefPtr<SurfaceTextureSource> layer = new SurfaceTextureSource(
+        (TextureSourceProvider*)mCompositor, host->mSurfTex, host->mFormat,
+        target, wrapMode, host->mSize, host->mTransformOverride);
+    RefPtr<TexturedEffect> texturedEffect =
+        CreateTexturedEffect(host->mFormat, layer, aFrameSurface.mFilter,
+                             /* isAlphaPremultiplied */ true);
 
-  EffectChain effect;
-  effect.mPrimaryEffect = texturedEffect;
-  mCompositor->DrawQuad(drawRect, aFrameSurface.mClipRect, effect, 1.0,
-                        aFrameSurface.mTransform, drawRect);
+    gfx::Rect drawRect(0, 0, host->mSize.width, host->mSize.height);
+
+    EffectChain effect;
+    effect.mPrimaryEffect = texturedEffect;
+    mCompositor->DrawQuad(drawRect, aFrameSurface.mClipRect, effect, 1.0,
+                          aFrameSurface.mTransform, drawRect);
+  } else if (auto* host =
+                 aExternalImage->AsRenderAndroidHardwareBufferTextureHost()) {
+    // We need to hold the texture source separately from the effect,
+    // since the effect doesn't hold a strong reference.
+    RefPtr<AndroidHardwareBufferTextureSource> layer =
+        new AndroidHardwareBufferTextureSource(
+            (TextureSourceProvider*)mCompositor,
+            host->GetAndroidHardwareBuffer(),
+            host->GetAndroidHardwareBuffer()->mFormat, target, wrapMode,
+            host->GetSize());
+    RefPtr<TexturedEffect> texturedEffect = CreateTexturedEffect(
+        host->GetAndroidHardwareBuffer()->mFormat, layer, aFrameSurface.mFilter,
+        /* isAlphaPremultiplied */ true);
+
+    gfx::Rect drawRect(0, 0, host->GetSize().width, host->GetSize().height);
+
+    EffectChain effect;
+    effect.mPrimaryEffect = texturedEffect;
+    mCompositor->DrawQuad(drawRect, aFrameSurface.mClipRect, effect, 1.0,
+                          aFrameSurface.mTransform, drawRect);
+  } else {
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+  }
 #endif
 }
 

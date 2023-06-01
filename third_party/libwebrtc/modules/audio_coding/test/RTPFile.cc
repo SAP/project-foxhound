@@ -14,6 +14,8 @@
 
 #include <limits>
 
+#include "absl/strings/string_view.h"
+
 #ifdef WIN32
 #include <Winsock2.h>
 #else
@@ -80,14 +82,6 @@ RTPPacket::~RTPPacket() {
   delete[] payloadData;
 }
 
-RTPBuffer::RTPBuffer() {
-  _queueRWLock = RWLockWrapper::CreateRWLock();
-}
-
-RTPBuffer::~RTPBuffer() {
-  delete _queueRWLock;
-}
-
 void RTPBuffer::Write(const uint8_t payloadType,
                       const uint32_t timeStamp,
                       const int16_t seqNo,
@@ -96,19 +90,20 @@ void RTPBuffer::Write(const uint8_t payloadType,
                       uint32_t frequency) {
   RTPPacket* packet = new RTPPacket(payloadType, timeStamp, seqNo, payloadData,
                                     payloadSize, frequency);
-  _queueRWLock->AcquireLockExclusive();
+  MutexLock lock(&mutex_);
   _rtpQueue.push(packet);
-  _queueRWLock->ReleaseLockExclusive();
 }
 
 size_t RTPBuffer::Read(RTPHeader* rtp_header,
                        uint8_t* payloadData,
                        size_t payloadSize,
                        uint32_t* offset) {
-  _queueRWLock->AcquireLockShared();
-  RTPPacket* packet = _rtpQueue.front();
-  _rtpQueue.pop();
-  _queueRWLock->ReleaseLockShared();
+  RTPPacket* packet;
+  {
+    MutexLock lock(&mutex_);
+    packet = _rtpQueue.front();
+    _rtpQueue.pop();
+  }
   rtp_header->markerBit = 1;
   rtp_header->payloadType = packet->payloadType;
   rtp_header->sequenceNumber = packet->seqNo;
@@ -125,15 +120,15 @@ size_t RTPBuffer::Read(RTPHeader* rtp_header,
 }
 
 bool RTPBuffer::EndOfFile() const {
-  _queueRWLock->AcquireLockShared();
-  bool eof = _rtpQueue.empty();
-  _queueRWLock->ReleaseLockShared();
-  return eof;
+  MutexLock lock(&mutex_);
+  return _rtpQueue.empty();
 }
 
-void RTPFile::Open(const char* filename, const char* mode) {
-  if ((_rtpFile = fopen(filename, mode)) == NULL) {
-    printf("Cannot write file %s.\n", filename);
+void RTPFile::Open(absl::string_view filename, absl::string_view mode) {
+  std::string filename_str = std::string(filename);
+  if ((_rtpFile = fopen(filename_str.c_str(), std::string(mode).c_str())) ==
+      NULL) {
+    printf("Cannot write file %s.\n", filename_str.c_str());
     ADD_FAILURE() << "Unable to write file";
     exit(1);
   }

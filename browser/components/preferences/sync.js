@@ -5,7 +5,7 @@
 /* import-globals-from preferences.js */
 
 XPCOMUtils.defineLazyGetter(this, "FxAccountsCommon", function() {
-  return ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js", {});
+  return ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js");
 });
 
 const FXA_PAGE_LOGGED_OUT = 0;
@@ -128,13 +128,15 @@ var gSyncPane = {
     // Notify observers that the UI is now ready
     Services.obs.notifyObservers(window, "sync-pane-loaded");
 
-    // document.location.search is empty, so we simply match on `action=pair`.
     if (
-      location.href.includes("action=pair") &&
       location.hash == "#sync" &&
       UIState.get().status == UIState.STATUS_SIGNED_IN
     ) {
-      gSyncPane.pairAnotherDevice();
+      if (location.href.includes("action=pair")) {
+        gSyncPane.pairAnotherDevice();
+      } else if (location.href.includes("action=choose-what-to-sync")) {
+        gSyncPane._chooseWhatToSync(false);
+      }
     }
   },
 
@@ -188,10 +190,6 @@ var gSyncPane = {
     setEventListener("openChangeProfileImage", "keypress", function(event) {
       gSyncPane.openChangeProfileImage(event);
     });
-    setEventListener("verifiedManage", "keypress", function(event) {
-      gSyncPane.openManageFirefoxAccount(event);
-    });
-
     setEventListener("fxaChangeDeviceName", "command", function() {
       this._toggleComputerNameControls(true);
       this._focusComputerNameTextbox();
@@ -366,7 +364,7 @@ var gSyncPane = {
     document.getElementById("fxaEmailAddress").textContent = state.email;
 
     this._populateComputerName(Weave.Service.clientsEngine.localName);
-    for (let elt of document.querySelectorAll("needs-account-ready")) {
+    for (let elt of document.querySelectorAll(".needs-account-ready")) {
       elt.disabled = !syncReady;
     }
 
@@ -447,6 +445,9 @@ var gSyncPane = {
   },
 
   async signIn() {
+    if (!(await FxAccounts.canConnectAccount())) {
+      return;
+    }
     const url = await FxAccounts.config.promiseConnectAccountURI(
       this._getEntryPoint()
     );
@@ -458,6 +459,10 @@ var gSyncPane = {
     // lost the FxA account data - in which case we'll not get a URL as the re-auth
     // URL embeds account info and the server endpoint complains if we don't
     // supply it - So we just use the regular "sign in" URL in that case.
+    if (!(await FxAccounts.canConnectAccount())) {
+      return;
+    }
+
     let entryPoint = this._getEntryPoint();
     const url =
       (await FxAccounts.config.promiseForceSigninURI(entryPoint)) ||
@@ -489,23 +494,6 @@ var gSyncPane = {
       // Prevent page from scrolling on the space key.
       event.preventDefault();
     }
-  },
-
-  openManageFirefoxAccount(event) {
-    if (this.clickOrSpaceOrEnterPressed(event)) {
-      this.manageFirefoxAccount();
-      // Prevent page from scrolling on the space key.
-      event.preventDefault();
-    }
-  },
-
-  manageFirefoxAccount() {
-    FxAccounts.config.promiseManageURI(this._getEntryPoint()).then(url => {
-      this.openContentInBrowser(url, {
-        replaceQueryString: true,
-        triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
-      });
-    });
   },
 
   verifyFirefoxAccount() {

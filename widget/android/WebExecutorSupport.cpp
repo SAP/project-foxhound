@@ -383,14 +383,18 @@ nsresult WebExecutorSupport::CreateStreamLoader(
     channel->SetLoadFlags(nsIRequest::LOAD_ANONYMOUS);
   }
 
+  bool shouldResistFingerprinting =
+      nsContentUtils::ShouldResistFingerprinting(channel);
   nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
   if (aFlags & java::GeckoWebExecutor::FETCH_FLAGS_PRIVATE) {
     nsCOMPtr<nsIPrivateBrowsingChannel> pbChannel = do_QueryInterface(channel);
     NS_ENSURE_TRUE(pbChannel, NS_ERROR_FAILURE);
     pbChannel->SetPrivate(true);
-    cookieJarSettings = CookieJarSettings::Create(CookieJarSettings::ePrivate);
+    cookieJarSettings = CookieJarSettings::Create(CookieJarSettings::ePrivate,
+                                                  shouldResistFingerprinting);
   } else {
-    cookieJarSettings = CookieJarSettings::Create(CookieJarSettings::eRegular);
+    cookieJarSettings = CookieJarSettings::Create(CookieJarSettings::eRegular,
+                                                  shouldResistFingerprinting);
   }
   MOZ_ASSERT(cookieJarSettings);
 
@@ -438,8 +442,9 @@ static nsresult ResolveHost(nsCString& host, java::GeckoResult::Param result) {
 
   nsCOMPtr<nsICancelable> cancelable;
   RefPtr<DNSListener> listener = new DNSListener(host, result);
-  rv = dns->AsyncResolveNative(host, nsIDNSService::RESOLVE_TYPE_DEFAULT, 0,
-                               nullptr, listener, nullptr /* aListenerTarget */,
+  rv = dns->AsyncResolveNative(host, nsIDNSService::RESOLVE_TYPE_DEFAULT,
+                               nsIDNSService::RESOLVE_DEFAULT_FLAGS, nullptr,
+                               listener, nullptr /* aListenerTarget */,
                                OriginAttributes(), getter_AddRefs(cancelable));
   return rv;
 }

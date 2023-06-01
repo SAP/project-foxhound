@@ -9,9 +9,9 @@ function finishTest() {
   let l10n = document.l10n.getAttributes(elem);
   ok(
     [
-      "main-context-menu-bookmark-add",
-      "main-context-menu-bookmark-add-with-shortcut",
-      "main-context-menu-bookmark-add-mac",
+      "main-context-menu-bookmark-page",
+      "main-context-menu-bookmark-page-with-shortcut",
+      "main-context-menu-bookmark-page-mac",
     ].includes(l10n.id)
   );
 
@@ -41,8 +41,9 @@ function test() {
     }
   });
 
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.loadURIString(
     tab.linkedBrowser,
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com/browser/browser/base/content/test/general/dummy_page.html"
   );
 }

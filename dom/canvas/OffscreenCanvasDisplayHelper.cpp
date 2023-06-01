@@ -47,11 +47,14 @@ RefPtr<layers::ImageContainer> OffscreenCanvasDisplayHelper::GetImageContainer()
 
 void OffscreenCanvasDisplayHelper::UpdateContext(
     CanvasContextType aType, const Maybe<int32_t>& aChildId) {
-  MutexAutoLock lock(mMutex);
-  mImageContainer =
+  RefPtr<layers::ImageContainer> imageContainer =
       MakeRefPtr<layers::ImageContainer>(layers::ImageContainer::ASYNCHRONOUS);
+
+  MutexAutoLock lock(mMutex);
+
   mType = aType;
   mContextChildId = aChildId;
+  mImageContainer = std::move(imageContainer);
 
   if (aChildId) {
     mContextManagerId = Some(gfx::CanvasManagerChild::Get()->Id());
@@ -82,6 +85,16 @@ bool OffscreenCanvasDisplayHelper::CommitFrameToCompositor(
     MaybeQueueInvalidateElement();
   }
 
+  if (mData.mOwnerId.isSome()) {
+    // No need to update the ImageContainer as the presentation itself is
+    // handled in the compositor process.
+    return true;
+  }
+
+  if (!mImageContainer) {
+    return false;
+  }
+
   if (mData.mIsOpaque) {
     flags |= layers::TextureFlags::IS_OPAQUE;
     format = gfx::SurfaceFormat::B8G8R8X8;
@@ -105,34 +118,59 @@ bool OffscreenCanvasDisplayHelper::CommitFrameToCompositor(
     return false;
   }
 
-  if (mData.mDoPaintCallbacks) {
-    aContext->OnBeforePaintTransaction();
-  }
-
+  bool paintCallbacks = mData.mDoPaintCallbacks;
   RefPtr<layers::Image> image;
   RefPtr<gfx::SourceSurface> surface;
+  Maybe<layers::SurfaceDescriptor> desc;
 
-  Maybe<layers::SurfaceDescriptor> desc =
-      aContext->PresentFrontBuffer(nullptr, aTextureType);
-  if (desc) {
-    RefPtr<layers::TextureClient> texture =
-        layers::SharedSurfaceTextureData::CreateTextureClient(
-            *desc, format, mData.mSize, flags, imageBridge);
-    if (texture) {
-      image = new layers::TextureWrapperImage(
-          texture, gfx::IntRect(gfx::IntPoint(0, 0), mData.mSize));
+  {
+    MutexAutoUnlock unlock(mMutex);
+    if (paintCallbacks) {
+      aContext->OnBeforePaintTransaction();
     }
-  } else {
-    surface = aContext->GetFrontBufferSnapshot(/* requireAlphaPremult */ false);
-    if (surface) {
-      auto surfaceImage = MakeRefPtr<layers::SourceSurfaceImage>(surface);
-      surfaceImage->SetTextureFlags(flags);
-      image = surfaceImage;
+
+    desc = aContext->PresentFrontBuffer(nullptr, aTextureType);
+    if (!desc) {
+      surface =
+          aContext->GetFrontBufferSnapshot(/* requireAlphaPremult */ false);
+      if (surface && surface->GetType() == gfx::SurfaceType::WEBGL) {
+        // Ensure we can map in the surface. If we get a SourceSurfaceWebgl
+        // surface, then it may not be backed by raw pixels yet. We need to map
+        // it on the owning thread rather than the ImageBridge thread.
+        gfx::DataSourceSurface::ScopedMap map(
+            static_cast<gfx::DataSourceSurface*>(surface.get()),
+            gfx::DataSourceSurface::READ);
+        if (!map.IsMapped()) {
+          surface = nullptr;
+        }
+      }
+    }
+
+    if (paintCallbacks) {
+      aContext->OnDidPaintTransaction();
     }
   }
 
-  if (mData.mDoPaintCallbacks) {
-    aContext->OnDidPaintTransaction();
+  if (desc) {
+    if (desc->type() ==
+        layers::SurfaceDescriptor::TSurfaceDescriptorRemoteTexture) {
+      const auto& textureDesc = desc->get_SurfaceDescriptorRemoteTexture();
+      imageBridge->UpdateCompositable(mImageContainer, textureDesc.textureId(),
+                                      textureDesc.ownerId(), mData.mSize,
+                                      flags);
+    } else {
+      RefPtr<layers::TextureClient> texture =
+          layers::SharedSurfaceTextureData::CreateTextureClient(
+              *desc, format, mData.mSize, flags, imageBridge);
+      if (texture) {
+        image = new layers::TextureWrapperImage(
+            texture, gfx::IntRect(gfx::IntPoint(0, 0), mData.mSize));
+      }
+    }
+  } else if (surface) {
+    auto surfaceImage = MakeRefPtr<layers::SourceSurfaceImage>(surface);
+    surfaceImage->SetTextureFlags(flags);
+    image = surfaceImage;
   }
 
   if (image) {
@@ -140,11 +178,13 @@ bool OffscreenCanvasDisplayHelper::CommitFrameToCompositor(
     imageList.AppendElement(layers::ImageContainer::NonOwningImage(
         image, TimeStamp(), mLastFrameID++, mImageProducerID));
     mImageContainer->SetCurrentImages(imageList);
-  } else {
+  } else if (!desc ||
+             desc->type() !=
+                 layers::SurfaceDescriptor::TSurfaceDescriptorRemoteTexture) {
     mImageContainer->ClearAllImages();
   }
 
-  // We save the current surface because we might need it in GetSnapshot. If we
+  // We save any current surface because we might need it in GetSnapshot. If we
   // are on a worker thread and not WebGL, then this will be the only way we can
   // access the pixel data on the main thread.
   mFrontBufferSurface = surface;
@@ -152,8 +192,6 @@ bool OffscreenCanvasDisplayHelper::CommitFrameToCompositor(
 }
 
 void OffscreenCanvasDisplayHelper::MaybeQueueInvalidateElement() {
-  mMutex.AssertCurrentThreadOwns();
-
   if (!mPendingInvalidate) {
     mPendingInvalidate = true;
     NS_DispatchToMainThread(NS_NewRunnableFunction(
@@ -232,12 +270,14 @@ OffscreenCanvasDisplayHelper::GetSurfaceSnapshot() {
   Maybe<int32_t> childId;
   HTMLCanvasElement* canvasElement;
   RefPtr<gfx::SourceSurface> surface;
+  Maybe<layers::RemoteTextureOwnerId> ownerId;
 
   {
     MutexAutoLock lock(mMutex);
     hasAlpha = !mData.mIsOpaque;
     isAlphaPremult = mData.mIsAlphaPremult;
     originPos = mData.mOriginPos;
+    ownerId = mData.mOwnerId;
     managerId = mContextManagerId;
     childId = mContextChildId;
     canvasElement = mCanvasElement;
@@ -291,7 +331,9 @@ OffscreenCanvasDisplayHelper::GetSurfaceSnapshot() {
     // We don't have a usable surface, and the context lives in the compositor
     // process.
     return gfx::CanvasManagerChild::Get()->GetSnapshot(
-        managerId.value(), childId.value(), hasAlpha);
+        managerId.value(), childId.value(), ownerId,
+        hasAlpha ? gfx::SurfaceFormat::R8G8B8A8 : gfx::SurfaceFormat::R8G8B8X8,
+        hasAlpha && !isAlphaPremult, originPos == gl::OriginPos::BottomLeft);
   }
 
   // If we don't have any protocol IDs, or an existing surface, it is possible

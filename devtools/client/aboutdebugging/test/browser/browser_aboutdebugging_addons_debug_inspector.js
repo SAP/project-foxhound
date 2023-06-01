@@ -7,8 +7,8 @@ Services.scriptloader.loadSubScript(CHROME_URL_ROOT + "helper-addons.js", this);
 
 // There are shutdown issues for which multiple rejections are left uncaught.
 // See bug 1018184 for resolving these issues.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 PromiseTestUtils.allowMatchingRejectionsGlobally(/File closed/);
 
@@ -30,7 +30,7 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
 
   await installTemporaryExtensionFromXPI(
     {
-      background: function() {
+      background() {
         document.body.innerText = "Background Page Body Test Content";
       },
       id: ADDON_ID,
@@ -40,7 +40,7 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
   );
 
   info("Open a toolbox to debug the addon");
-  const { devtoolsTab, devtoolsWindow } = await openAboutDevtoolsToolbox(
+  const { devtoolsWindow } = await openAboutDevtoolsToolbox(
     document,
     tab,
     window,
@@ -80,7 +80,7 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
     "The dark color scheme simulation button exists and is hidden"
   );
 
-  await closeAboutDevtoolsToolbox(document, devtoolsTab, window);
+  await closeWebExtAboutDevtoolsToolbox(devtoolsWindow, window);
   await removeTemporaryExtension(ADDON_NAME, document);
   await removeTab(tab);
 });

@@ -4,8 +4,6 @@
 
 "use strict";
 
-const Services = require("Services");
-
 /**
  * This module controls various global flags that can be toggled on and off.
  * These flags are generally used to change the behavior of the code during
@@ -44,7 +42,7 @@ function makePrefTrackedFlag(exports, name, pref) {
     Services.obs.addObserver(unloadObserver, "devtools:loader:destroy");
   }
   Object.defineProperty(exports, name, {
-    get: function() {
+    get() {
       return flag;
     },
   });

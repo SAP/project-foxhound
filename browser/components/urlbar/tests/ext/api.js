@@ -6,16 +6,20 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
+
+ChromeUtils.defineESModuleGetters(this, {
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
+  UrlbarProviderExtension:
+    "resource:///modules/UrlbarProviderExtension.sys.mjs",
+  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
+  UrlbarView: "resource:///modules/UrlbarView.sys.mjs",
+});
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  Preferences: "resource://gre/modules/Preferences.jsm",
-  UrlbarProviderExtension: "resource:///modules/UrlbarProviderExtension.jsm",
-  UrlbarResult: "resource:///modules/UrlbarResult.jsm",
-  UrlbarView: "resource:///modules/UrlbarView.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(

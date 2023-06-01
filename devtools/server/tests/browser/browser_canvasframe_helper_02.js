@@ -7,20 +7,20 @@
 // XUL windows.
 
 add_task(async function() {
-  const browser = await addTab(
+  const tab = await addTab(
     "chrome://mochitests/content/browser/devtools/server/tests/browser/test-window.xhtml"
   );
 
-  await SpecialPowers.spawn(browser, [], async function() {
-    const { require } = ChromeUtils.import(
-      "resource://devtools/shared/loader/Loader.jsm"
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    const { require } = ChromeUtils.importESModule(
+      "resource://devtools/shared/loader/Loader.sys.mjs"
     );
     const {
       HighlighterEnvironment,
-    } = require("devtools/server/actors/highlighters");
+    } = require("resource://devtools/server/actors/highlighters.js");
     const {
       CanvasFrameAnonymousContentHelper,
-    } = require("devtools/server/actors/highlighters/utils/markup");
+    } = require("resource://devtools/server/actors/highlighters/utils/markup.js");
     const doc = content.document;
 
     const nodeBuilder = () => {

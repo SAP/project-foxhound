@@ -3,11 +3,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 :root {
+  -moz-box-layout: flex;
   --addon-icon-size: 32px;
+  --card-border-zap-gradient: linear-gradient(90deg, #9059FF 0%, #FF4AA2 52.08%, #FFBD4F 100%);
   --main-margin-start: 28px;
   --section-width: 664px;
   --sidebar-width: var(--in-content-sidebar-width);
-  --z-index-sticky-container: 1;
+  --z-index-sticky-container: 5;
+  --z-index-card-banner-text: 1;
   --z-index-popup: 10;
 }
 
@@ -75,7 +78,7 @@ body {
   display: inline-block;
   min-width: 20px;
   background-color: var(--in-content-accent-color);
-  color: #fff;
+  color: var(--in-content-primary-button-text-color);
   font-weight: bold;
   /* Use a large border-radius to get semi-circles on the sides. */
   border-radius: 1000px;
@@ -482,8 +485,38 @@ addon-details {
   color: var(--in-content-deemphasized-text);
 }
 
-.addon-detail-description {
+.addon-detail-description-wrapper {
   margin: 16px 0;
+}
+
+.addon-detail-description-collapse .addon-detail-description {
+  max-height: 20rem;
+  overflow: hidden;
+}
+
+/* Include button to beat out .button-link which is below this */
+button.addon-detail-description-toggle {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+  font-weight: normal;
+  gap: 4px;
+}
+
+.addon-detail-description-toggle::after {
+  content: "";
+  display: block;
+  background-image: url("chrome://global/skin/icons/arrow-up-12.svg");
+  background-repeat: no-repeat;
+  background-position: center;
+  -moz-context-properties: fill;
+  fill: currentColor;
+  width: 12px;
+  height: 12px;
+}
+
+.addon-detail-description-collapse .addon-detail-description-toggle::after {
+  transform: scaleY(-1);
 }
 
 .addon-detail-contribute {
@@ -583,32 +616,19 @@ addon-details {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: var(--in-content-accent-color);;
+  background-color: var(--in-content-accent-color);;
 }
 
-panel-item {
-  -moz-context-properties: fill;
-  fill: currentColor;
+panel-item[action="remove"]::part(button) {
+  background-image: url("chrome://global/skin/icons/delete.svg");
 }
 
-panel-item[action="remove"] {
-  --icon: url("chrome://global/skin/icons/delete.svg");
+panel-item[action="install-update"]::part(button) {
+  background-image: url("chrome://global/skin/icons/update-icon.svg");
 }
 
-panel-item[action="install-update"] {
-  --icon: url("chrome://global/skin/icons/update-icon.svg");
-}
-
-panel-item[action="report"] {
-  --icon: url(chrome://global/skin/icons/warning.svg);
-}
-
-panel-item-separator {
-  display: block;
-  height: 1px;
-  background: var(--in-content-box-border-color);
-  padding: 0;
-  margin: 6px 0;
+panel-item[action="report"]::part(button) {
+  background-image: url(chrome://global/skin/icons/warning.svg);
 }
 
 .hide-amo-link .amo-link-container {
@@ -665,13 +685,6 @@ addon-permissions-list > .addon-detail-row {
 
 .addon-permissions-list > li:dir(rtl) {
   background-position-x: right 0;
-}
-
-/* justify the permission toggle */
-li.permission-info > label {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
 }
 
 /* using a list-style-image prevents aligning the image */
@@ -733,10 +746,6 @@ button.tab-button:-moz-focusring {
 .tab-group[last-input-type="mouse"] > button.tab-button:-moz-focusring {
   outline: none;
   box-shadow: none;
-}
-
-panel-list {
-  font: menu;
 }
 
 section:not(:empty) ~ #empty-addons-message {
@@ -809,4 +818,67 @@ section:not(:empty) ~ #empty-addons-message {
 
 .permission-header > .addon-sitepermissions-host {
   font-weight: bolder;
+}
+
+.colorways-section > .list-section-heading {
+  margin-bottom: 0;
+}
+
+#colorways-expiry-date-container {
+  display: flex;
+  flex-grow: 1;
+  flex-direction: row;
+}
+
+#colorways-expiry-date {
+  display: inline-block;
+  background-image: var(--card-border-zap-gradient);
+  background-origin: border-box;
+  border: 1px solid transparent;
+  border-radius: 1.5em;
+}
+
+#colorways-expiry-date > span {
+  display: inline-block;
+  color: var(--in-content-page-color);
+  background: var(--in-content-page-background);
+  border-radius: 1.5em;
+  padding: .3em 1em;
+}
+
+#colorways-button {
+  flex-shrink: 0;
+  flex-grow: 0;
+  align-self: baseline;
+  margin-inline-end: 0;
+}
+
+#colorways-preview-text-container {
+  z-index: var(--z-index-card-banner-text);
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  /* Make sure text fits within addon card dimensions */
+  width: var(--section-width);
+  height: calc(var(--section-width) * 92 / 680);
+  margin: -16px -16px;
+}
+
+#colorways-preview-text-container > h3,
+#colorways-preview-text-container > p {
+  margin: 0;
+}
+
+#colorways-preview-text-container > h3 {
+  font-size: 2.6em;
+}
+
+#colorways-preview-text-container > p {
+  font-size: 1.1em;
+}
+
+#colorways-preview-text-container + .card-heading-image {
+  background-color: var(--in-content-box-background-odd);
 }

@@ -7,14 +7,14 @@
 #define nsListControlFrame_h___
 
 #ifdef DEBUG_evaughan
-//#define DEBUG_rods
+// #define DEBUG_rods
 #endif
 
 #ifdef DEBUG_rods
-//#define DO_REFLOW_DEBUG
-//#define DO_REFLOW_COUNTER
-//#define DO_UNCONSTRAINED_CHECK
-//#define DO_PIXELS
+// #define DO_REFLOW_DEBUG
+// #define DO_REFLOW_COUNTER
+// #define DO_UNCONSTRAINED_CHECK
+// #define DO_PIXELS
 #endif
 
 #include "mozilla/Attributes.h"
@@ -60,7 +60,7 @@ class nsListControlFrame final : public nsHTMLScrollFrame,
                        mozilla::WidgetGUIEvent* aEvent,
                        nsEventStatus* aEventStatus) final;
 
-  void SetInitialChildList(ChildListID aListID, nsFrameList& aChildList) final;
+  void SetInitialChildList(ChildListID aListID, nsFrameList&& aChildList) final;
 
   nscoord GetPrefISize(gfxContext* aRenderingContext) final;
   nscoord GetMinISize(gfxContext* aRenderingContext) final;
@@ -100,7 +100,6 @@ class nsListControlFrame final : public nsHTMLScrollFrame,
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   void SetFocus(bool aOn = true, bool aRepaint = false) final;
 
-  mozilla::ScrollStyles GetScrollStyles() const final;
   bool ShouldPropagateComputedBSizeToScrolledContent() const final;
 
   // for accessibility purposes
@@ -340,16 +339,6 @@ class nsListControlFrame final : public nsHTMLScrollFrame,
 
   // True if the selection can be set to nothing or disabled options.
   bool mForceSelection : 1;
-
-  // The last computed block size we reflowed at if we're a combobox
-  // dropdown.
-  // XXXbz should we be using a subclass here?  Or just not worry
-  // about the extra member on listboxes?
-  nscoord mLastDropdownComputedBSize;
-
-  // At the time of our last dropdown, the backstop color to draw in case we
-  // are translucent.
-  nscolor mLastDropdownBackstopColor;
 
   RefPtr<mozilla::HTMLSelectEventListener> mEventListener;
 

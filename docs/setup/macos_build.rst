@@ -45,10 +45,12 @@ need Mercurial to download and update the code. Additionally, we'll
 put user-wide python package installations on the ``$PATH``, so that
 both ``hg`` and ``moz-phab`` will be easily accessible:
 
+**NOTE** Pay special attention to the `==6.1.4`, as Mercurial >=6.2 is incompatible with several plugins
+
 .. code-block:: shell
 
-    echo "export PATH=\"$(python3 -m site --user-base)/bin:$PATH\"" >> ~/.zshenv
-    python3 -m pip install --user mercurial
+    echo 'export PATH="'"$(python3 -m site --user-base)"'/bin:$PATH"' >> ~/.zshenv
+    python3 -m pip install --user mercurial==6.1.4
 
 Now, restart your shell so that the ``PATH`` change took effect.
 You can test that Mercurial is installed by running:
@@ -95,15 +97,6 @@ If you aren't modifying the Firefox backend, then select one of the
 :ref:`Artifact Mode <Understanding Artifact Builds>` options. If you are
 building Firefox for Android, you should also see the :ref:`GeckoView Contributor Guide`.
 
-Cleanup
-~~~~~~~
-
-After finishing the bootstrap process, ``bootstrap.py`` can be removed.
-
-.. code-block:: shell
-
-    rm bootstrap.py
-
 3. Build
 --------
 
@@ -112,6 +105,7 @@ Now that your system is bootstrapped, you should be able to build!
 .. code-block:: shell
 
     cd mozilla-unified
+    hg up -C central
     ./mach build
     ./mach run
 
@@ -126,41 +120,3 @@ say hello in the `Introduction channel
 start working on <https://codetribute.mozilla.org/>`_.
 See the :ref:`Firefox Contributors' Quick Reference` to learn how to test your changes,
 send patches to Mozilla, update your source code locally, and more.
-
-Troubleshooting
----------------
-
-macOS SDK is unsupported
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. only:: comment
-
-    If you are editing this section to bump the SDK and Xcode version, I'd recommend
-    following the steps to ensure that they're not obsolete. Apple doesn't guarantee
-    the structure of Xcode, so the SDK could be moved to a different location or
-    stored differently.
-
-If the SDK included with your Xcode installation is not supported by Firefox,
-you'll need to manually install one that is compatible.
-We're currently using the 10.12 SDK on our build servers, so that's the one that you
-should install:
-
-1. Go to the `More Downloads for Apple Developers <https://developer.apple.com/download/more/>`_ page
-   and download Xcode 8.2.
-2. Once downloaded, extract ``Xcode_8.2.xip``.
-3. In your terminal, copy the SDK from the installer:
-
-.. code-block:: shell
-
-    mkdir -p ~/.mozbuild/macos-sdk
-    # This assumes that Xcode is in your "Downloads" folder
-    cp -aH ~/Downloads/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.12.sdk ~/.mozbuild/macos-sdk/
-
-4. Finally, inform the Firefox build about this SDK by creating (or editing) a file called ``mozconfig`` file
-   in the Firefox source code directory. Add the following line:
-
-.. code-block::
-
-    ac_add_options --with-macos-sdk=$HOME/.mozbuild/macos-sdk/MacOSX10.12.sdk
-
-5. Now, you should be able to successfully run ``./mach build``.

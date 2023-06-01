@@ -16,30 +16,38 @@
 namespace mozilla {
 namespace gfx {
 
-#define GFX_FEATURE_MAP(_)                                               \
-  /* Name,                        Type,         Description */           \
-  _(HW_COMPOSITING, Feature, "Compositing")                              \
-  _(D3D11_COMPOSITING, Feature, "Direct3D11 Compositing")                \
-  _(OPENGL_COMPOSITING, Feature, "OpenGL Compositing")                   \
-  _(DIRECT2D, Feature, "Direct2D")                                       \
-  _(D3D11_HW_ANGLE, Feature, "Direct3D11 hardware ANGLE")                \
-  _(DIRECT_DRAW, Feature, "DirectDraw")                                  \
-  _(GPU_PROCESS, Feature, "GPU Process")                                 \
-  _(WEBRENDER, Feature, "WebRender")                                     \
-  _(WEBRENDER_QUALIFIED, Feature, "WebRender qualified")                 \
-  _(WEBRENDER_COMPOSITOR, Feature, "WebRender native compositor")        \
-  _(WEBRENDER_PARTIAL, Feature, "WebRender partial present")             \
-  _(WEBRENDER_SHADER_CACHE, Feature, "WebRender shader disk cache")      \
-  _(WEBRENDER_OPTIMIZED_SHADERS, Feature, "WebRender optimized shaders") \
-  _(WEBRENDER_ANGLE, Feature, "WebRender ANGLE")                         \
-  _(WEBRENDER_DCOMP_PRESENT, Feature, "WebRender DirectComposition")     \
-  _(WEBRENDER_SOFTWARE, Feature, "WebRender software fallback")          \
-  _(OMTP, Feature, "Off Main Thread Painting")                           \
-  _(WEBGPU, Feature, "WebGPU")                                           \
-  _(X11_EGL, Feature, "X11 EGL")                                         \
-  _(DMABUF, Feature, "DMABUF")                                           \
-  _(WINDOW_OCCLUSION, Feature, "WINDOW_OCCLUSION")                       \
-  /* Add new entries above this comment */
+#define GFX_FEATURE_MAP(_)                                                   \
+  /* Name,                        Type,         Description */               \
+  _(HW_COMPOSITING, Feature, "Compositing")                                  \
+  _(D3D11_COMPOSITING, Feature, "Direct3D11 Compositing")                    \
+  _(OPENGL_COMPOSITING, Feature, "OpenGL Compositing")                       \
+  _(DIRECT2D, Feature, "Direct2D")                                           \
+  _(D3D11_HW_ANGLE, Feature, "Direct3D11 hardware ANGLE")                    \
+  _(DIRECT_DRAW, Feature, "DirectDraw")                                      \
+  _(GPU_PROCESS, Feature, "GPU Process")                                     \
+  _(WEBRENDER, Feature, "WebRender")                                         \
+  _(WEBRENDER_COMPOSITOR, Feature, "WebRender native compositor")            \
+  _(WEBRENDER_PARTIAL, Feature, "WebRender partial present")                 \
+  _(WEBRENDER_SHADER_CACHE, Feature, "WebRender shader disk cache")          \
+  _(WEBRENDER_OPTIMIZED_SHADERS, Feature, "WebRender optimized shaders")     \
+  _(WEBRENDER_ANGLE, Feature, "WebRender ANGLE")                             \
+  _(WEBRENDER_DCOMP_PRESENT, Feature, "WebRender DirectComposition")         \
+  _(OMTP, Feature, "Off Main Thread Painting")                               \
+  _(WEBGPU, Feature, "WebGPU")                                               \
+  _(X11_EGL, Feature, "X11 EGL")                                             \
+  _(DMABUF, Feature, "DMABUF")                                               \
+  _(WINDOW_OCCLUSION, Feature, "WINDOW_OCCLUSION")                           \
+  _(HARDWARE_VIDEO_DECODING, Feature, "Hardware video decoding")             \
+  _(VIDEO_OVERLAY, Feature, "video overlay")                                 \
+  _(HW_DECODED_VIDEO_ZERO_COPY, Feature, "Hardware decoded video zero copy") \
+  _(VP8_HW_DECODE, Feature, "VP8 hardware decoding")                         \
+  _(VP9_HW_DECODE, Feature, "VP9 hardware decoding")                         \
+  _(DMABUF_SURFACE_EXPORT, Feature, "WebGL DMABuf surface export")           \
+  _(REUSE_DECODER_DEVICE, Feature, "Reuse decoder device")                   \
+  _(BACKDROP_FILTER, Feature, "Backdrop filter")                             \
+  _(CANVAS_RENDERER_THREAD, Feature, "canvas renderer thread")               \
+  _(ACCELERATED_CANVAS2D, Feature, "Accelerated Canvas2D")
+/* Add new entries above this comment */
 
 enum class Feature : uint32_t {
 #define MAKE_ENUM(name, type, desc) name,
@@ -98,6 +106,9 @@ class FeatureState {
 
   bool DisabledByDefault() const;
 
+  // Clear all state.
+  void Reset();
+
  private:
   void SetUser(FeatureStatus aStatus, const char* aMessage,
                const nsACString& aFailureId);
@@ -110,9 +121,6 @@ class FeatureState {
   bool IsInitialized() const { return mDefault.IsInitialized(); }
 
   void AssertInitialized() const { MOZ_ASSERT(IsInitialized()); }
-
-  // Clear all state.
-  void Reset();
 
  private:
   struct Instance {

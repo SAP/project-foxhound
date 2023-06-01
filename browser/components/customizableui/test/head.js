@@ -4,15 +4,11 @@
 
 "use strict";
 
-// Avoid leaks by using tmp for imports...
-var tmp = {};
-ChromeUtils.import("resource:///modules/CustomizableUI.jsm", tmp);
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm", tmp);
-ChromeUtils.import(
-  "resource://testing-common/CustomizableUITestUtils.jsm",
-  tmp
-);
-var { CustomizableUI, AppConstants, CustomizableUITestUtils } = tmp;
+XPCOMUtils.defineLazyModuleGetters(this, {
+  CustomizableUI: "resource:///modules/CustomizableUI.jsm",
+  CustomizableUITestUtils:
+    "resource://testing-common/CustomizableUITestUtils.jsm",
+});
 
 var EventUtils = {};
 Services.scriptloader.loadSubScript(
@@ -91,9 +87,11 @@ function createOverflowableToolbarWithPlacements(id, placements) {
 
   tb.setAttribute("customizable", "true");
   tb.setAttribute("overflowable", "true");
-  tb.setAttribute("overflowpanel", overflowPanel.id);
-  tb.setAttribute("overflowtarget", overflowList.id);
-  tb.setAttribute("overflowbutton", chevron.id);
+  tb.setAttribute("default-overflowpanel", overflowPanel.id);
+  tb.setAttribute("default-overflowtarget", overflowList.id);
+  tb.setAttribute("default-overflowbutton", chevron.id);
+  tb.setAttribute("addon-webext-overflowbutton", "unified-extensions-button");
+  tb.setAttribute("addon-webext-overflowtarget", "overflowed-extensions-list");
 
   gNavToolbox.appendChild(tb);
   CustomizableUI.registerToolbarNode(tb);
@@ -401,7 +399,7 @@ function waitFor(aTimeout = 100) {
 function promiseTabLoadEvent(aTab, aURL) {
   let browser = aTab.linkedBrowser;
 
-  BrowserTestUtils.loadURI(browser, aURL);
+  BrowserTestUtils.loadURIString(browser, aURL);
   return BrowserTestUtils.browserLoaded(browser);
 }
 

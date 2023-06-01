@@ -12,6 +12,11 @@ DIRS = [
     "pingsender",
 ]
 
+if CONFIG["COMPILE_ENVIRONMENT"]:
+    EXPORTS.mozilla += ["!dap_ffi_generated.h"]
+
+    CbindgenHeader("dap_ffi_generated.h", inputs=["dap/ffi"])
+
 DEFINES["MOZ_APP_VERSION"] = '"%s"' % CONFIG["MOZ_APP_VERSION"]
 
 LOCAL_INCLUDES += [
@@ -29,13 +34,17 @@ if CONFIG["ENABLE_TESTS"]:
     # is no longer true and we could probably move it to tests/gtest.
     DIRS += ["geckoview/gtest", "tests/gtest"]
 
-TEST_DIRS += ["tests"]
+TEST_DIRS += ["tests", "dap/ffi-gtest"]
 
-XPCSHELL_TESTS_MANIFESTS += ["tests/unit/xpcshell.ini"]
+XPCSHELL_TESTS_MANIFESTS += [
+    "dap/tests/xpcshell/xpcshell.ini",
+    "tests/unit/xpcshell.ini",
+]
 BROWSER_CHROME_MANIFESTS += ["tests/browser/browser.ini"]
 
 XPIDL_SOURCES += [
     "core/nsITelemetry.idl",
+    "dap/nsIDAPTelemetry.idl",
 ]
 
 XPIDL_MODULE = "telemetry"
@@ -48,9 +57,10 @@ EXPORTS.mozilla += [
     "core/ipc/TelemetryComms.h",
     "core/ipc/TelemetryIPC.h",
     "core/Telemetry.h",
+    "dap/DAPTelemetry.h",
+    "dap/DAPTelemetryBindings.h",
     "other/CombinedStacks.h",
     "other/ProcessedStack.h",
-    "TelemetryOriginEnums.h",
 ]
 
 EXPORTS.mozilla.telemetry += [
@@ -65,9 +75,9 @@ SOURCES += [
     "core/TelemetryCommon.cpp",
     "core/TelemetryEvent.cpp",
     "core/TelemetryHistogram.cpp",
-    "core/TelemetryOrigin.cpp",
     "core/TelemetryScalar.cpp",
     "core/TelemetryUserInteraction.cpp",
+    "dap/DAPTelemetry.cpp",
     "geckoview/streaming/GeckoViewStreamingTelemetry.cpp",
     "other/CombinedStacks.cpp",
     "other/ProcessedStack.cpp",
@@ -84,47 +94,48 @@ if CONFIG["OS_ARCH"] == "WINNT":
 XPCOM_MANIFESTS += [
     "components.conf",
     "core/components.conf",
+    "dap/components.conf",
 ]
 
 EXTRA_COMPONENTS += ["TelemetryStartup.manifest"]
 
 EXTRA_JS_MODULES += [
-    "app/ClientID.jsm",
-    "app/TelemetryArchive.jsm",
-    "app/TelemetryController.jsm",
-    "app/TelemetryControllerBase.jsm",
-    "app/TelemetryControllerContent.jsm",
-    "app/TelemetryControllerParent.jsm",
-    "app/TelemetryEnvironment.jsm",
-    "app/TelemetryReportingPolicy.jsm",
-    "app/TelemetryScheduler.jsm",
-    "app/TelemetrySend.jsm",
-    "app/TelemetryStorage.jsm",
-    "app/TelemetryTimestamps.jsm",
-    "app/TelemetryUtils.jsm",
-    "pings/CoveragePing.jsm",
-    "pings/EventPing.jsm",
-    "pings/HealthPing.jsm",
-    "pings/ModulesPing.jsm",
-    "pings/PrioPing.jsm",
-    "pings/TelemetrySession.jsm",
-    "pings/UntrustedModulesPing.jsm",
-    "pings/UpdatePing.jsm",
-    "TelemetryStartup.jsm",
+    "app/ClientID.sys.mjs",
+    "app/TelemetryArchive.sys.mjs",
+    "app/TelemetryController.sys.mjs",
+    "app/TelemetryControllerBase.sys.mjs",
+    "app/TelemetryControllerContent.sys.mjs",
+    "app/TelemetryControllerParent.sys.mjs",
+    "app/TelemetryEnvironment.sys.mjs",
+    "app/TelemetryReportingPolicy.sys.mjs",
+    "app/TelemetryScheduler.sys.mjs",
+    "app/TelemetrySend.sys.mjs",
+    "app/TelemetryStorage.sys.mjs",
+    "app/TelemetryTimestamps.sys.mjs",
+    "app/TelemetryUtils.sys.mjs",
+    "dap/DAPTelemetrySender.sys.mjs",
+    "pings/CoveragePing.sys.mjs",
+    "pings/EventPing.sys.mjs",
+    "pings/HealthPing.sys.mjs",
+    "pings/ModulesPing.sys.mjs",
+    "pings/TelemetrySession.sys.mjs",
+    "pings/UntrustedModulesPing.sys.mjs",
+    "pings/UpdatePing.sys.mjs",
+    "TelemetryStartup.sys.mjs",
 ]
 
 EXTRA_JS_MODULES.backgroundtasks += [
-    "pings/BackgroundTask_pingsender.jsm",
+    "pings/BackgroundTask_pingsender.sys.mjs",
 ]
 
 if CONFIG["OS_ARCH"] == "WINNT":
     EXTRA_JS_MODULES += [
-        "pings/UninstallPing.jsm",
+        "pings/UninstallPing.sys.mjs",
     ]
 
 TESTING_JS_MODULES += [
-    "tests/unit/TelemetryArchiveTesting.jsm",
-    "tests/unit/TelemetryEnvironmentTesting.jsm",
+    "tests/unit/TelemetryArchiveTesting.sys.mjs",
+    "tests/unit/TelemetryEnvironmentTesting.sys.mjs",
 ]
 
 PYTHON_UNITTEST_MANIFESTS += [

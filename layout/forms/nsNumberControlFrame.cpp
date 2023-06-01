@@ -7,7 +7,6 @@
 #include "nsNumberControlFrame.h"
 
 #include "mozilla/BasicEvents.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/PresShell.h"
 #include "HTMLInputElement.h"
@@ -138,16 +137,17 @@ int32_t nsNumberControlFrame::GetSpinButtonForPointerEvent(
 }
 
 void nsNumberControlFrame::SpinnerStateChanged() const {
-  MOZ_ASSERT(mSpinUp && mSpinDown,
-             "We should not be called when we have no spinner");
-
-  nsIFrame* spinUpFrame = mSpinUp->GetPrimaryFrame();
-  if (spinUpFrame && spinUpFrame->IsThemed()) {
-    spinUpFrame->InvalidateFrame();
+  if (mSpinUp) {
+    nsIFrame* spinUpFrame = mSpinUp->GetPrimaryFrame();
+    if (spinUpFrame && spinUpFrame->IsThemed()) {
+      spinUpFrame->InvalidateFrame();
+    }
   }
-  nsIFrame* spinDownFrame = mSpinDown->GetPrimaryFrame();
-  if (spinDownFrame && spinDownFrame->IsThemed()) {
-    spinDownFrame->InvalidateFrame();
+  if (mSpinDown) {
+    nsIFrame* spinDownFrame = mSpinDown->GetPrimaryFrame();
+    if (spinDownFrame && spinDownFrame->IsThemed()) {
+      spinDownFrame->InvalidateFrame();
+    }
   }
 }
 

@@ -7,16 +7,18 @@
 const {
   createFactory,
   PureComponent,
-} = require("devtools/client/shared/vendor/react");
-const { ul } = require("devtools/client/shared/vendor/react-dom-factories");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const {
+  ul,
+} = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 
 const {
   MANIFEST_ISSUE_LEVELS,
-} = require("devtools/client/application/src/constants");
-const Types = require("devtools/client/application/src/types/index");
+} = require("resource://devtools/client/application/src/constants.js");
+const Types = require("resource://devtools/client/application/src/types/index.js");
 
 const ManifestIssue = createFactory(
-  require("devtools/client/application/src/components/manifest/ManifestIssue")
+  require("resource://devtools/client/application/src/components/manifest/ManifestIssue.js")
 );
 
 /**
@@ -42,7 +44,7 @@ class ManifestIssueList extends PureComponent {
   }
 
   render() {
-    const groups = this.groupIssuesByLevel().filter(list => list.length > 0);
+    const groups = this.groupIssuesByLevel().filter(list => !!list.length);
 
     return groups.map((list, listIndex) => {
       return ul(

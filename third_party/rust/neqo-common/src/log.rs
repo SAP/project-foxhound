@@ -4,6 +4,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![allow(clippy::module_name_repetitions)]
+
 use std::io::Write;
 use std::sync::Once;
 use std::time::Instant;
@@ -13,10 +15,15 @@ macro_rules! do_log {
     (target: $target:expr, $lvl:expr, $($arg:tt)+) => ({
         let lvl = $lvl;
         if lvl <= ::log::max_level() {
-            ::log::__private_api_log(
-                ::log::__log_format_args!($($arg)+),
-                lvl,
-                &($target, ::log::__log_module_path!(), ::log::__log_file!(), ::log::__log_line!()),
+            ::log::logger().log(
+                &::log::Record::builder()
+                    .args(format_args!($($arg)+))
+                    .level(lvl)
+                    .target($target)
+                    .module_path_static(Some(module_path!()))
+                    .file_static(Some(file!()))
+                    .line(Some(line!()))
+                    .build()
             );
         }
     });

@@ -6,9 +6,8 @@
 
 var EXPORTED_SYMBOLS = ["RFPHelper"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const kPrefResistFingerprinting = "privacy.resistFingerprinting";
@@ -147,7 +146,7 @@ class _RFPHelper {
 
   _removeRFPObservers() {
     try {
-      Services.pref.removeObserver(kPrefSpoofEnglish, this);
+      Services.prefs.removeObserver(kPrefSpoofEnglish, this);
     } catch (e) {
       // do nothing
     }
@@ -201,16 +200,7 @@ class _RFPHelper {
   _handleHttpOnModifyRequest(subject, data) {
     // If we are loading an HTTP page from content, show the
     // "request English language web pages?" prompt.
-    let httpChannel;
-    try {
-      httpChannel = subject.QueryInterface(Ci.nsIHttpChannel);
-    } catch (e) {
-      return;
-    }
-
-    if (!httpChannel) {
-      return;
-    }
+    let httpChannel = subject.QueryInterface(Ci.nsIHttpChannel);
 
     let notificationCallbacks = httpChannel.notificationCallbacks;
     if (!notificationCallbacks) {
@@ -344,7 +334,7 @@ class _RFPHelper {
   _parseLetterboxingDimensions(aPrefValue) {
     if (!aPrefValue || !aPrefValue.match(/^(?:\d+x\d+,\s*)*(?:\d+x\d+)$/)) {
       if (aPrefValue) {
-        Cu.reportError(
+        console.error(
           `Invalid pref value for ${kPrefLetterboxingDimensions}: ${aPrefValue}`
         );
       }

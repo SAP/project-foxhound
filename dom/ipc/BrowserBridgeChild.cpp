@@ -199,9 +199,8 @@ mozilla::ipc::IPCResult BrowserBridgeChild::RecvScrollRectIntoView(
       aRect.ScaleToOtherAppUnitsRoundOut(aAppUnitsPerDevPixel, parentAPD);
   rect += extraOffset;
   RefPtr<PresShell> presShell = frame->PresShell();
-  presShell->ScrollFrameRectIntoView(frame, rect, nsMargin(), aVertical,
-                                     aHorizontal, aScrollFlags);
-
+  presShell->ScrollFrameIntoView(frame, Some(rect), aVertical, aHorizontal,
+                                 aScrollFlags);
   return IPC_OK();
 }
 
@@ -246,6 +245,17 @@ mozilla::ipc::IPCResult BrowserBridgeChild::RecvIntrinsicSizeOrRatioChanged(
       static_cast<nsObjectLoadingContent*>(olc.get())
           ->SubdocumentIntrinsicSizeOrRatioChanged(aIntrinsicSize,
                                                    aIntrinsicRatio);
+    }
+  }
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult BrowserBridgeChild::RecvImageLoadComplete(
+    const nsresult& aResult) {
+  if (RefPtr<Element> owner = mFrameLoader->GetOwnerContent()) {
+    if (nsCOMPtr<nsIObjectLoadingContent> olc = do_QueryInterface(owner)) {
+      static_cast<nsObjectLoadingContent*>(olc.get())
+          ->SubdocumentImageLoadComplete(aResult);
     }
   }
   return IPC_OK();

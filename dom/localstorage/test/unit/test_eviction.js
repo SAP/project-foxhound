@@ -3,7 +3,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-async function testSteps() {
+add_task(async function testSteps() {
   const globalLimitKB = 5 * 1024;
 
   const data = {};
@@ -18,7 +18,10 @@ async function testSteps() {
 
   info("Setting prefs");
 
-  Services.prefs.setBoolPref("dom.storage.next_gen", true);
+  Services.prefs.setBoolPref(
+    "dom.storage.enable_unsupported_legacy_implementation",
+    false
+  );
   Services.prefs.setBoolPref("dom.storage.snapshot_reusing", false);
 
   info("Setting limits");
@@ -51,7 +54,7 @@ async function testSteps() {
       ok(false, "Should have thrown");
     } catch (ex) {
       ok(true, "Did throw");
-      ok(ex instanceof DOMException, "Threw DOMException");
+      ok(DOMException.isInstance(ex), "Threw DOMException");
       is(ex.name, "QuotaExceededError", "Threw right DOMException");
       is(ex.code, NS_ERROR_DOM_QUOTA_EXCEEDED_ERR, "Threw with right code");
     }
@@ -85,4 +88,4 @@ async function testSteps() {
   await requestFinished(request);
 
   is(request.result.usage, 0, "Zero usage");
-}
+});

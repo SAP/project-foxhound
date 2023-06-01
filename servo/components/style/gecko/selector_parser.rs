@@ -4,16 +4,18 @@
 
 //! Gecko-specific bits for selector-parsing.
 
-use crate::element_state::{DocumentState, ElementState};
+use crate::computed_value_flags::ComputedValueFlags;
 use crate::gecko_bindings::structs::RawServoSelectorList;
 use crate::gecko_bindings::sugar::ownership::{HasBoxFFI, HasFFI, HasSimpleFFI};
 use crate::invalidation::element::document_state::InvalidationMatchingData;
+use crate::properties::ComputedValues;
 use crate::selector_parser::{Direction, HorizontalDirection, SelectorParser};
 use crate::str::starts_with_ignore_ascii_case;
 use crate::string_cache::{Atom, Namespace, WeakAtom, WeakNamespace};
 use crate::values::{AtomIdent, AtomString};
 use cssparser::{BasicParseError, BasicParseErrorKind, Parser};
 use cssparser::{CowRcStr, SourceLocation, ToCss, Token};
+use dom::{DocumentState, ElementState};
 use selectors::parser::SelectorParseErrorKind;
 use selectors::SelectorList;
 use std::fmt;
@@ -139,15 +141,6 @@ impl NonTSPseudoClass {
     /// Returns whether the pseudo-class is enabled in content sheets.
     #[inline]
     fn is_enabled_in_content(&self) -> bool {
-        if matches!(
-            *self,
-            Self::MozLWTheme | Self::MozLWThemeBrightText | Self::MozLWThemeDarkText
-        ) {
-            return static_prefs::pref!("layout.css.moz-lwtheme.content.enabled");
-        }
-        if let NonTSPseudoClass::MozLocaleDir(..) = *self {
-            return static_prefs::pref!("layout.css.moz-locale-dir.content.enabled");
-        }
         !self.has_any_flag(NonTSPseudoClassFlag::PSEUDO_CLASS_ENABLED_IN_UA_SHEETS_AND_CHROME)
     }
 
@@ -184,8 +177,6 @@ impl NonTSPseudoClass {
             },
             NonTSPseudoClass::MozWindowInactive => DocumentState::WINDOW_INACTIVE,
             NonTSPseudoClass::MozLWTheme => DocumentState::LWTHEME,
-            NonTSPseudoClass::MozLWThemeBrightText => DocumentState::LWTHEME_BRIGHTTEXT,
-            NonTSPseudoClass::MozLWThemeDarkText => DocumentState::LWTHEME_DARKTEXT,
             _ => DocumentState::empty(),
         }
     }
@@ -208,15 +199,13 @@ impl NonTSPseudoClass {
                       NonTSPseudoClass::MozNativeAnonymous |
                       // :-moz-placeholder is parsed but never matches.
                       NonTSPseudoClass::MozPlaceholder |
-                      // :-moz-locale-dir and :-moz-window-inactive depend only on
-                      // the state of the document, which is invariant across all
-                      // the elements involved in a given style cache.
-                      NonTSPseudoClass::MozLocaleDir(_) |
-                      NonTSPseudoClass::MozWindowInactive |
-                      // Similar for the document themes.
+                      // :-moz-lwtheme, :-moz-locale-dir and
+                      // :-moz-window-inactive depend only on the state of the
+                      // document, which is invariant across all the elements
+                      // involved in a given style cache.
                       NonTSPseudoClass::MozLWTheme |
-                      NonTSPseudoClass::MozLWThemeBrightText |
-                      NonTSPseudoClass::MozLWThemeDarkText
+                      NonTSPseudoClass::MozLocaleDir(_) |
+                      NonTSPseudoClass::MozWindowInactive
             )
     }
 }
@@ -243,8 +232,24 @@ impl ::selectors::parser::NonTSPseudoClass for NonTSPseudoClass {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SelectorImpl;
 
+/// A set of extra data to carry along with the matching context, either for
+/// selector-matching or invalidation.
+#[derive(Default)]
+pub struct ExtraMatchingData<'a> {
+    /// The invalidation data to invalidate doc-state pseudo-classes correctly.
+    pub invalidation_data: InvalidationMatchingData,
+
+    /// The invalidation bits from matching container queries. These are here
+    /// just for convenience mostly.
+    pub cascade_input_flags: ComputedValueFlags,
+
+    /// The style of the originating element in order to evaluate @container
+    /// size queries affecting pseudo-elements.
+    pub originating_element_style: Option<&'a ComputedValues>,
+}
+
 impl ::selectors::SelectorImpl for SelectorImpl {
-    type ExtraMatchingData = InvalidationMatchingData;
+    type ExtraMatchingData<'a> = ExtraMatchingData<'a>;
     type AttrValue = AtomString;
     type Identifier = AtomIdent;
     type LocalName = AtomIdent;
@@ -314,8 +319,18 @@ impl<'a, 'i> ::selectors::Parser<'i> for SelectorParser<'a> {
     }
 
     #[inline]
+    fn parse_nth_child_of(&self) -> bool {
+        static_prefs::pref!("layout.css.nth-child-of.enabled")
+    }
+
+    #[inline]
     fn parse_is_and_where(&self) -> bool {
         true
+    }
+
+    #[inline]
+    fn parse_has(&self) -> bool {
+        static_prefs::pref!("layout.css.has-selector.enabled")
     }
 
     #[inline]
@@ -326,6 +341,11 @@ impl<'a, 'i> ::selectors::Parser<'i> for SelectorParser<'a> {
     #[inline]
     fn is_is_alias(&self, function: &str) -> bool {
         function.eq_ignore_ascii_case("-moz-any")
+    }
+
+    #[inline]
+    fn allow_forgiving_selectors(&self) -> bool {
+        !self.for_supports_rule
     }
 
     fn parse_non_ts_pseudo_class(
@@ -381,7 +401,8 @@ impl<'a, 'i> ::selectors::Parser<'i> for SelectorParser<'a> {
         location: SourceLocation,
         name: CowRcStr<'i>,
     ) -> Result<PseudoElement, ParseError<'i>> {
-        if let Some(pseudo) = PseudoElement::from_slice(&name) {
+        let allow_unkown_webkit = !self.for_supports_rule;
+        if let Some(pseudo) = PseudoElement::from_slice(&name, allow_unkown_webkit) {
             if self.is_pseudo_element_enabled(&pseudo) {
                 return Ok(pseudo);
             }
@@ -422,6 +443,11 @@ impl<'a, 'i> ::selectors::Parser<'i> for SelectorParser<'a> {
                     return Ok(pseudo);
                 }
             }
+        } else if name.eq_ignore_ascii_case("highlight") {
+            let pseudo = PseudoElement::Highlight(AtomIdent::from(parser.expect_ident()?.as_ref()));
+            if self.is_pseudo_element_enabled(&pseudo) {
+                return Ok(pseudo);
+            }
         }
         Err(
             parser.new_custom_error(SelectorParseErrorKind::UnsupportedPseudoClassOrElement(
@@ -458,3 +484,9 @@ unsafe impl HasFFI for SelectorList<SelectorImpl> {
 }
 unsafe impl HasSimpleFFI for SelectorList<SelectorImpl> {}
 unsafe impl HasBoxFFI for SelectorList<SelectorImpl> {}
+
+// Selector and component sizes are important for matching performance.
+size_of_test!(selectors::parser::Selector<SelectorImpl>, 8);
+size_of_test!(selectors::parser::Component<SelectorImpl>, 24);
+size_of_test!(PseudoElement, 16);
+size_of_test!(NonTSPseudoClass, 16);

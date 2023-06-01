@@ -1,12 +1,11 @@
-/* eslint-env mozilla/frame-script */
+/* eslint-env mozilla/chrome-script */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { clearInterval, setInterval, setTimeout } = ChromeUtils.import(
-  "resource://gre/modules/Timer.jsm"
+const { clearInterval, setInterval, setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
 );
 
-const { BrowserTestUtils } = ChromeUtils.import(
-  "resource://testing-common/BrowserTestUtils.jsm"
+const { BrowserTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/BrowserTestUtils.sys.mjs"
 );
 
 var tabSubDialogsEnabled = Services.prefs.getBoolPref(
@@ -30,15 +29,20 @@ Services.scriptloader.loadSubScript(
 );
 
 addMessageListener("handlePrompt", msg => {
+  info("Received handlePrompt message");
   handlePromptWhenItAppears(msg.action, msg.modalType, msg.isSelect);
 });
 
 async function handlePromptWhenItAppears(action, modalType, isSelect) {
-  if (!(await handlePrompt(action, modalType, isSelect))) {
-    setTimeout(
-      () => this.handlePromptWhenItAppears(action, modalType, isSelect),
-      100
-    );
+  try {
+    if (!(await handlePrompt(action, modalType, isSelect))) {
+      setTimeout(
+        () => this.handlePromptWhenItAppears(action, modalType, isSelect),
+        100
+      );
+    }
+  } catch (e) {
+    info(`handlePromptWhenItAppears: exception: ${e}`);
   }
 }
 
@@ -89,6 +93,8 @@ function checkTabModal(prompt, browser) {
 }
 
 async function handlePrompt(action, modalType, isSelect) {
+  info(`handlePrompt: modalType=${modalType}`);
+
   let ui;
   let browserWin = Services.wm.getMostRecentWindow("navigator:browser");
 
@@ -101,6 +107,7 @@ async function handlePrompt(action, modalType, isSelect) {
     let promptManager = gBrowser.getTabModalPromptBox(gBrowser.selectedBrowser);
     let prompts = promptManager.listPrompts();
     if (!prompts.length) {
+      info("handlePrompt: no prompt found. retrying...");
       return false; // try again in a bit
     }
 
@@ -109,6 +116,7 @@ async function handlePrompt(action, modalType, isSelect) {
   } else {
     let doc = getDialogDoc();
     if (!doc) {
+      info("handlePrompt: no document found. retrying...");
       return false; // try again in a bit
     }
 
@@ -136,9 +144,11 @@ async function handlePrompt(action, modalType, isSelect) {
   // Wait until the prompt has been closed before sending callback msg.
   // Unless the test explicitly doesn't request a button click.
   if (action.buttonClick !== "none") {
+    info(`handlePrompt: wait for dialogClosed`);
     await dialogClosed;
   }
 
+  info(`handlePrompt: send promptHandled`);
   sendAsyncMessage("promptHandled", { promptState });
   return true;
 }
@@ -253,6 +263,7 @@ function dismissSelect(ui, action) {
 }
 
 function dismissPrompt(ui, action) {
+  info(`dismissPrompt: action=${JSON.stringify(action)}`);
   if (action.setCheckbox) {
     // Annoyingly, the prompt code is driven by oncommand.
     ui.checkbox.checked = true;

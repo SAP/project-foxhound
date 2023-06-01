@@ -13,19 +13,13 @@ const kWhitelist = new Set([
 ]);
 
 const kESModuleList = new Set([
-  /browser\/res\/payments\/(components|containers|mixins)\/.*\.js$/,
-  /browser\/res\/payments\/paymentRequest\.js$/,
-  /browser\/res\/payments\/PaymentsStore\.js$/,
-  /browser\/aboutlogins\/components\/.*\.js$/,
-  /browser\/aboutlogins\/.*\.js$/,
-  /browser\/protections.js$/,
   /browser\/lockwise-card.js$/,
   /browser\/monitor-card.js$/,
   /browser\/proxy-card.js$/,
   /browser\/vpn-card.js$/,
-  /browser\/content\/browser\/certerror\/aboutNetError\.js$/,
   /toolkit\/content\/global\/certviewer\/components\/.*\.js$/,
   /toolkit\/content\/global\/certviewer\/.*\.js$/,
+  /chrome\/pdfjs\/content\/web\/.*\.js$/,
 ]);
 
 // Normally we would use reflect.jsm to get Reflect.parse. However, if
@@ -62,6 +56,10 @@ function uriIsWhiteListed(uri) {
  * @return true if the uri should be parsed as a module, otherwise parse it as a script.
  */
 function uriIsESModule(uri) {
+  if (uri.filePath.endsWith(".mjs")) {
+    return true;
+  }
+
   for (let whitelistItem of kESModuleList) {
     if (whitelistItem.test(uri.spec)) {
       return true;
@@ -137,7 +135,7 @@ add_task(async function checkAllTheJS() {
     // our zipreader APIs are all sync)
     let startTimeMs = Date.now();
     info("Collecting URIs");
-    uris = await generateURIsFromDirTree(appDir, [".js", ".jsm"]);
+    uris = await generateURIsFromDirTree(appDir, [".js", ".jsm", ".mjs"]);
     info("Collected URIs in " + (Date.now() - startTimeMs) + "ms");
 
     // Apply the filter specified on the command line, if any.
@@ -154,7 +152,7 @@ add_task(async function checkAllTheJS() {
 
   // We create an array of promises so we can parallelize all our parsing
   // and file loading activity:
-  await throttledMapPromises(uris, uri => {
+  await PerfTestHelpers.throttledMapPromises(uris, uri => {
     if (uriIsWhiteListed(uri)) {
       info("Not checking whitelisted " + uri.spec);
       return undefined;

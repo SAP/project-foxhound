@@ -8,7 +8,7 @@
            noautofocus="true"
            role="alert"/>
 
-    <popupnotification id="webRTC-shareDevices-notification" hidden="true" 
+    <popupnotification id="webRTC-shareDevices-notification" hidden="true"
                        descriptionid="webRTC-shareDevices-notification-description">
       <popupnotificationcontent id="webRTC-selectCamera" orient="vertical">
         <label id="webRTC-selectCamera-label"
@@ -25,6 +25,7 @@
 
       <popupnotificationcontent id="webRTC-selectWindowOrScreen" orient="vertical">
         <label id="webRTC-selectWindow-label"
+               data-l10n-id="popup-select-window-or-screen"
                control="webRTC-selectWindow-menulist"/>
         <menulist id="webRTC-selectWindow-menulist"
                   oncommand="webrtcUI.updateWarningLabel(this);"
@@ -166,3 +167,58 @@
         </vbox>
       </popupnotificationfooter>
     </popupnotification>
+
+    <popupnotification id="identity-credential-notification" hidden="true">
+      <popupnotificationcontent id="identity-credential-provider" orient="vertical">
+        <html:div id="identity-credential-provider-selector-container">
+        </html:div>
+        <description class="popup-notification-description" id="credential-provider-explanation" data-l10n-id="identity-credential-description-provider-explanation"/>
+        <html:template id="template-credential-provider-list-item">
+          <toolbarbutton class="credential-provider-list-item subviewbutton-nav subviewbutton" align="center" wrap="true">
+            <label flex="1" class="credential-provider-list-item-label"></label>
+          </toolbarbutton>
+        </html:template>
+      </popupnotificationcontent>
+      <popupnotificationcontent id="identity-credential-policy" orient="vertical">
+        <description id="identity-credential-policy-explanation"/>
+        <label class="text-link" is="text-link" data-l10n-id="identity-credential-privacy-policy" id="identity-credential-privacy-policy"></label>
+        <label class="text-link" is="text-link" data-l10n-id="identity-credential-terms-of-service" id="identity-credential-terms-of-service"></label>
+      </popupnotificationcontent>
+      <popupnotificationcontent id="identity-credential-account" orient="vertical" hidden="true">
+        <html:div id="identity-credential-account-selector-container">
+        </html:div>
+        <description class="popup-notification-description" id="credential-account-explanation"/>
+        <html:template id="template-credential-account-list-item">
+          <toolbarbutton class="credential-account-list-item subviewbutton-nav subviewbutton" align="center" wrap="true">
+            <label flex="1" class="credential-account-list-item-label"></label>
+          </toolbarbutton>
+        </html:template>
+      </popupnotificationcontent>
+    </popupnotification>
+
+    <popupnotification id="relay-integration-offer-notification" hidden="true">
+      <popupnotificationcontent orient="vertical">
+        <html:div>    
+          <html:p data-l10n-id="firefox-relay-offer-why-relay"></html:p>
+          <html:p data-l10n-id="firefox-relay-offer-how-we-integrate"></html:p>
+          <html:p id="firefox-relay-offer-what-relay-does" data-l10n-id="firefox-relay-offer-what-relay-does" data-l10n-args='{"sitename": "", "useremail": ""}'></html:p>
+        </html:div>
+      </popupnotificationcontent>
+    </popupnotification>
+
+    <popupnotification id="relay-integration-reuse-masks-notification" hidden="true">
+      <popupnotificationcontent orient="vertical">
+        <html:div>
+          <html:p class="error-message"></html:p>
+          <html:div class="reusable-relay-masks" />
+        </html:div>
+      </popupnotificationcontent>
+    </popupnotification>
+
+    <template id="firefox-relay-header">
+      <html:div class="relay-integration-header">
+        <html:div />
+        <html:span>Firefox</html:span>
+        <html:span> Relay</html:span>
+      </html:div>
+    </template>

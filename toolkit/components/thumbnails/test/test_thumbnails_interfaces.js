@@ -1,6 +1,8 @@
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+// This is an xpcshell test and gets a browser test env applied, so we
+// need to still manually import NetUtil.
+// eslint-disable-next-line mozilla/no-redeclare-with-import-autofix
 const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 // need profile so that PageThumbsStorageService can resolve the path to the underlying file

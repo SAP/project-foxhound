@@ -8,20 +8,20 @@
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { FormHistory } = ChromeUtils.import(
-  "resource://gre/modules/FormHistory.jsm"
+const { FormHistory } = ChromeUtils.importESModule(
+  "resource://gre/modules/FormHistory.sys.mjs"
 );
-const { SearchSuggestionController } = ChromeUtils.import(
-  "resource://gre/modules/SearchSuggestionController.jsm"
+const { SearchSuggestionController } = ChromeUtils.importESModule(
+  "resource://gre/modules/SearchSuggestionController.sys.mjs"
 );
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 const ENGINE_NAME = "other";
@@ -78,66 +78,23 @@ add_task(async function add_test_engines() {
     alternativeJSONType: true,
   };
 
-  getEngine = await SearchTestUtils.promiseNewSearchEngine(
-    `${gDataUrl}engineMaker.sjs?${JSON.stringify(getEngineData)}`
-  );
-  postEngine = await SearchTestUtils.promiseNewSearchEngine(
-    `${gDataUrl}engineMaker.sjs?${JSON.stringify(postEngineData)}`
-  );
-  unresolvableEngine = await SearchTestUtils.promiseNewSearchEngine(
-    `${gDataUrl}engineMaker.sjs?${JSON.stringify(unresolvableEngineData)}`
-  );
-  alternateJSONEngine = await SearchTestUtils.promiseNewSearchEngine(
-    `${gDataUrl}engineMaker.sjs?${JSON.stringify(
+  getEngine = await SearchTestUtils.promiseNewSearchEngine({
+    url: `${gDataUrl}engineMaker.sjs?${JSON.stringify(getEngineData)}`,
+  });
+  postEngine = await SearchTestUtils.promiseNewSearchEngine({
+    url: `${gDataUrl}engineMaker.sjs?${JSON.stringify(postEngineData)}`,
+  });
+  unresolvableEngine = await SearchTestUtils.promiseNewSearchEngine({
+    url: `${gDataUrl}engineMaker.sjs?${JSON.stringify(unresolvableEngineData)}`,
+  });
+  alternateJSONEngine = await SearchTestUtils.promiseNewSearchEngine({
+    url: `${gDataUrl}engineMaker.sjs?${JSON.stringify(
       alternateJSONSuggestEngineData
-    )}`
-  );
+    )}`,
+  });
 });
 
 // Begin tests
-
-add_task(async function simple_no_result_callback() {
-  let histogram = TelemetryTestUtils.getAndClearKeyedHistogram(
-    SEARCH_TELEMETRY_LATENCY
-  );
-
-  await new Promise(resolve => {
-    let controller = new SearchSuggestionController(result => {
-      Assert.equal(result.term, "no remote");
-      Assert.equal(result.local.length, 0);
-      Assert.equal(result.remote.length, 0);
-      resolve();
-    });
-
-    controller.fetch("no remote", false, getEngine);
-  });
-
-  assertLatencyHistogram(histogram, true);
-});
-
-add_task(async function simple_no_result_callback_and_promise() {
-  let histogram = TelemetryTestUtils.getAndClearKeyedHistogram(
-    SEARCH_TELEMETRY_LATENCY
-  );
-
-  // Make sure both the callback and promise get results
-  let deferred = PromiseUtils.defer();
-  let controller = new SearchSuggestionController(result => {
-    Assert.equal(result.term, "no results");
-    Assert.equal(result.local.length, 0);
-    Assert.equal(result.remote.length, 0);
-    deferred.resolve();
-  });
-
-  let result = await controller.fetch("no results", false, getEngine);
-  Assert.equal(result.term, "no results");
-  Assert.equal(result.local.length, 0);
-  Assert.equal(result.remote.length, 0);
-
-  await deferred.promise;
-
-  assertLatencyHistogram(histogram, true);
-});
 
 add_task(async function simple_no_result_promise() {
   let histogram = TelemetryTestUtils.getAndClearKeyedHistogram(
@@ -923,25 +880,10 @@ add_task(async function suggestions_contain_escaped_unicode() {
 // Helpers
 
 function updateSearchHistory(operation, value) {
-  return new Promise((resolve, reject) => {
-    FormHistory.update(
-      {
-        op: operation,
-        fieldname: "searchbar-history",
-        value,
-      },
-      {
-        handleError(error) {
-          do_throw("Error occurred updating form history: " + error);
-          reject(error);
-        },
-        handleCompletion(reason) {
-          if (!reason) {
-            resolve();
-          }
-        },
-      }
-    );
+  return FormHistory.update({
+    op: operation,
+    fieldname: "searchbar-history",
+    value,
   });
 }
 

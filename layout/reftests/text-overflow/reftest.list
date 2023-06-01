@@ -5,11 +5,11 @@ fuzzy(0-47,0-6) == marker-basic.html marker-basic-ref.html # Bug 1128229
 fuzzy(0-47,0-18) == bidi-simple.html bidi-simple-ref.html
 skip-if(!gtkWidget) fuzzy-if(gtkWidget,0-124,0-289) == bidi-simple-scrolled.html bidi-simple-scrolled-ref.html # Fails on Windows and OSX due to anti-aliasing
 fuzzy-if(Android,0-24,0-4000) fuzzy-if(cocoaWidget,0-1,0-40) fuzzy-if(asyncPan&&!layersGPUAccelerated,0-149,0-1836) == scroll-rounding.html scroll-rounding-ref.html # bug 760264
-fuzzy(0-16,0-454) fails-if(gtkWidget) fuzzy-if(winWidget,25-85,406-499) fuzzy-if(cocoaWidget&&!nativeThemePref,0-7,0-265) fuzzy-if(Android&&!nativeThemePref,0-3,0-466) == anonymous-block.html anonymous-block-ref.html # gtkWidget:bug 1309103, fuzzy: subpixel aa
+fuzzy(0-16,0-454) fails-if(gtkWidget) fuzzy-if(winWidget,25-85,406-499) fuzzy-if(cocoaWidget,0-7,0-265) fuzzy-if(Android,0-3,0-466) == anonymous-block.html anonymous-block-ref.html # gtkWidget:bug 1309103, fuzzy: subpixel aa
 fuzzy(0-47,0-3) == false-marker-overlap.html false-marker-overlap-ref.html
 == visibility-hidden.html visibility-hidden-ref.html
 fuzzy(0-47,0-24) == block-padding.html block-padding-ref.html
-fuzzy(0-3,0-825) == quirks-decorations.html quirks-decorations-ref.html
+fuzzy(0-155,0-825) == quirks-decorations.html quirks-decorations-ref.html
 == quirks-line-height.html quirks-line-height-ref.html
 == standards-decorations.html standards-decorations-ref.html
 == standards-line-height.html standards-line-height-ref.html
@@ -22,7 +22,7 @@ fuzzy(0-1,0-5) == clipped-elements.html clipped-elements-ref.html
 fuzzy(0-47,0-18) == two-value-syntax.html two-value-syntax-ref.html
 == single-value.html single-value-ref.html
 fuzzy-if(gtkWidget,0-10,0-2) == atomic-under-marker.html atomic-under-marker-ref.html
-pref(layout.css.xul-box-display-values.content.enabled,true) fuzzy(0-1,0-2616) skip-if(Android) fuzzy-if(asyncPan&&!layersGPUAccelerated,0-102,0-12352) fails-if(gtkWidget) == xulscroll.html xulscroll-ref.html # gtkWidget:bug 1309107, bug 1328771
+skip == chrome://reftest/content/text-overflow/xulscroll.html chrome://reftest/content/text-overflow/xulscroll-ref.html # bug 1789123 makes it work like regular flexbox, need to probably fix the test
 == combobox-zoom.html combobox-zoom-ref.html
 == dynamic-change-1.html dynamic-change-1-ref.html
 == float-edges-1.html float-edges-1-ref.html

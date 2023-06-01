@@ -6,6 +6,7 @@
 
 #include "DocumentL10n.h"
 #include "nsIContentSink.h"
+#include "nsContentUtils.h"
 #include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentL10nBinding.h"
@@ -116,6 +117,7 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(L10nReadyHandler)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(L10nReadyHandler)
 
 void DocumentL10n::TriggerInitialTranslation() {
+  MOZ_ASSERT(nsContentUtils::IsSafeToRunScript());
   if (mState >= DocumentL10nState::InitialTranslationTriggered) {
     return;
   }
@@ -175,6 +177,9 @@ already_AddRefed<Promise> DocumentL10n::TranslateDocument(ErrorResult& aRv) {
   MOZ_ASSERT(mState == DocumentL10nState::Constructed,
              "This method should be called only from Constructed state.");
   RefPtr<Promise> promise = Promise::Create(mGlobal, aRv);
+  if (NS_WARN_IF(aRv.Failed())) {
+    return nullptr;
+  }
 
   Element* elem = mDocument->GetDocumentElement();
   if (!elem) {
@@ -251,17 +256,18 @@ already_AddRefed<Promise> DocumentL10n::TranslateDocument(ErrorResult& aRv) {
     // 2.1.4. Collect promises with Promise::All (maybe empty).
     AutoEntryScript aes(mGlobal, "DocumentL10n InitialTranslationCompleted");
     promise = Promise::All(aes.cx(), promises, aRv);
+    if (NS_WARN_IF(aRv.Failed())) {
+      return nullptr;
+    }
   } else {
     // 2.2. Handle the case when we don't have proto.
 
     // 2.2.1. Otherwise, translate all available elements,
     //        without attempting to cache them.
     promise = TranslateElements(elements, nullptr, aRv);
-  }
-
-  if (NS_WARN_IF(!promise || aRv.Failed())) {
-    promise->MaybeRejectWithUndefined();
-    return promise.forget();
+    if (NS_WARN_IF(aRv.Failed())) {
+      return nullptr;
+    }
   }
 
   return promise.forget();
@@ -279,18 +285,18 @@ void DocumentL10n::MaybeRecordTelemetry() {
 
   nsCString key;
 
-  if (documentURI.Find("chrome://browser/content/browser.xhtml") == 0) {
+  if (documentURI.Find(u"chrome://browser/content/browser.xhtml") == 0) {
     if (mIsFirstBrowserWindow) {
       key = "browser_first_window";
       mIsFirstBrowserWindow = false;
     } else {
       key = "browser_new_window";
     }
-  } else if (documentURI.Find("about:home") == 0) {
+  } else if (documentURI.Find(u"about:home") == 0) {
     key = "about:home";
-  } else if (documentURI.Find("about:newtab") == 0) {
+  } else if (documentURI.Find(u"about:newtab") == 0) {
     key = "about:newtab";
-  } else if (documentURI.Find("about:preferences") == 0) {
+  } else if (documentURI.Find(u"about:preferences") == 0) {
     key = "about:preferences";
   } else {
     return;

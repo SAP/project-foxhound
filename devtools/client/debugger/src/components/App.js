@@ -24,7 +24,6 @@ const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
 const SplitBox = require("devtools/client/shared/components/splitter/SplitBox");
 const AppErrorBoundary = require("devtools/client/shared/components/AppErrorBoundary");
 
-import Services from "devtools-services";
 const shortcuts = new KeyShortcuts({ window });
 
 const { appinfo } = Services;
@@ -57,6 +56,25 @@ class App extends Component {
       shortcutsModalEnabled: false,
       startPanelSize: 0,
       endPanelSize: 0,
+    };
+  }
+
+  static get propTypes() {
+    return {
+      activeSearch: PropTypes.oneOf(["file", "project"]),
+      closeActiveSearch: PropTypes.func.isRequired,
+      closeProjectSearch: PropTypes.func.isRequired,
+      closeQuickOpen: PropTypes.func.isRequired,
+      endPanelCollapsed: PropTypes.bool.isRequired,
+      fluentBundles: PropTypes.array.isRequired,
+      openQuickOpen: PropTypes.func.isRequired,
+      orientation: PropTypes.oneOf(["horizontal", "vertical"]).isRequired,
+      quickOpenEnabled: PropTypes.bool.isRequired,
+      selectedSource: PropTypes.object,
+      setActiveSearch: PropTypes.func.isRequired,
+      setOrientation: PropTypes.func.isRequired,
+      startPanelCollapsed: PropTypes.bool.isRequired,
+      toolboxDoc: PropTypes.object.isRequired,
     };
   }
 
@@ -262,7 +280,7 @@ class App extends Component {
     const additionalClass = isMacOS ? "mac" : "";
 
     if (!features.shortcuts) {
-      return;
+      return null;
     }
 
     return (

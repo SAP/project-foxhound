@@ -5,17 +5,14 @@
 
 var EXPORTED_SYMBOLS = ["ShareDelegate"];
 
-const { GeckoViewUtils } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewUtils.jsm"
+const { GeckoViewUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewUtils.sys.mjs"
 );
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
+const lazy = {};
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  GeckoViewPrompter: "resource://gre/modules/GeckoViewPrompter.jsm",
-  Services: "resource://gre/modules/Services.jsm",
+ChromeUtils.defineESModuleGetters(lazy, {
+  GeckoViewPrompter: "resource://gre/modules/GeckoViewPrompter.sys.mjs",
 });
 
 const domBundle = Services.strings.createBundle(
@@ -44,7 +41,7 @@ class ShareDelegate {
       text: aText,
       uri: aUri ? aUri.displaySpec : null,
     };
-    const prompt = new GeckoViewPrompter(this._openerWindow);
+    const prompt = new lazy.GeckoViewPrompter(this._openerWindow);
     const result = await new Promise(resolve => {
       prompt.asyncShowPrompt(msg, resolve);
     });

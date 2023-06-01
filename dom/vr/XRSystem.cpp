@@ -20,8 +20,7 @@
 #include "VRDisplayClient.h"
 #include "VRManagerChild.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using namespace gfx;
 
@@ -174,7 +173,7 @@ already_AddRefed<Promise> XRSystem::RequestSession(
     for (const JS::Value& val : arr) {
       if (!val.isNull() && !val.isUndefined()) {
         bool bFound = false;
-        JS::RootedValue v(aCx, val);
+        JS::Rooted<JS::Value> v(aCx, val);
         int index = 0;
         if (FindEnumStringIndex<false>(
                 callCx, v, XRReferenceSpaceTypeValues::strings,
@@ -199,7 +198,7 @@ already_AddRefed<Promise> XRSystem::RequestSession(
     const Sequence<JS::Value>& arr = (aOptions.mOptionalFeatures.Value());
     for (const JS::Value& val : arr) {
       if (!val.isNull() && !val.isUndefined()) {
-        JS::RootedValue v(aCx, val);
+        JS::Rooted<JS::Value> v(aCx, val);
         int index = 0;
         if (FindEnumStringIndex<false>(
                 callCx, v, XRReferenceSpaceTypeValues::strings,
@@ -614,9 +613,6 @@ uint32_t RequestSessionRequest::GetPresentationGroup() const {
 // IsSessionSupportedRequest cycle collection
 NS_IMPL_CYCLE_COLLECTION(IsSessionSupportedRequest, mPromise)
 
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(IsSessionSupportedRequest, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(IsSessionSupportedRequest, Release)
-
 XRSessionMode IsSessionSupportedRequest::GetSessionMode() const {
   return mSessionMode;
 }
@@ -658,7 +654,7 @@ XRRequestSessionPermissionRequest::Cancel() {
 }
 
 NS_IMETHODIMP
-XRRequestSessionPermissionRequest::Allow(JS::HandleValue aChoices) {
+XRRequestSessionPermissionRequest::Allow(JS::Handle<JS::Value> aChoices) {
   nsTArray<PermissionChoice> choices;
   nsresult rv = TranslateChoices(aChoices, mPermissionRequests, choices);
   if (NS_FAILED(rv)) {
@@ -704,8 +700,4 @@ XRRequestSessionPermissionRequest::Create(
 // RequestSessionRequest cycle collection
 NS_IMPL_CYCLE_COLLECTION(RequestSessionRequest, mPromise)
 
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(RequestSessionRequest, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(RequestSessionRequest, Release)
-
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

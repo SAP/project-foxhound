@@ -5,11 +5,11 @@
 
 #include "nsCoreUtils.h"
 
+#include "nsAttrValue.h"
 #include "nsIAccessibleTypes.h"
 
-#include "nsIBaseWindow.h"
-#include "nsIDocShellTreeOwner.h"
 #include "mozilla/dom/Document.h"
+#include "nsAccUtils.h"
 #include "nsRange.h"
 #include "nsXULElement.h"
 #include "nsIDocShell.h"
@@ -45,6 +45,8 @@ using mozilla::dom::DOMRect;
 using mozilla::dom::Element;
 using mozilla::dom::Selection;
 using mozilla::dom::XULTreeElement;
+
+using mozilla::a11y::nsAccUtils;
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsCoreUtils
@@ -131,7 +133,6 @@ void nsCoreUtils::DispatchMouseEvent(EventMessage aMessage, int32_t aX,
 
   event.mClickCount = 1;
   event.mButton = MouseButton::ePrimary;
-  event.mTime = PR_IntervalNow();
   event.mInputSource = dom::MouseEvent_Binding::MOZ_SOURCE_UNKNOWN;
 
   nsEventStatus status = nsEventStatus_eIgnore;
@@ -151,8 +152,6 @@ void nsCoreUtils::DispatchTouchEvent(EventMessage aMessage, int32_t aX,
   }
 
   WidgetTouchEvent event(true, aMessage, aRootWidget);
-
-  event.mTime = PR_IntervalNow();
 
   // XXX: Touch has an identifier of -1 to hint that it is synthesized.
   RefPtr<dom::Touch> t = new dom::Touch(-1, LayoutDeviceIntPoint(aX, aY),
@@ -277,66 +276,49 @@ void nsCoreUtils::ConvertScrollTypeToPercents(uint32_t aScrollType,
   WhenToScroll whenY, whenX;
   switch (aScrollType) {
     case nsIAccessibleScrollType::SCROLL_TYPE_TOP_LEFT:
-      whereY = kScrollToTop;
+      whereY = WhereToScroll::Start;
       whenY = WhenToScroll::Always;
-      whereX = kScrollToLeft;
+      whereX = WhereToScroll::Start;
       whenX = WhenToScroll::Always;
       break;
     case nsIAccessibleScrollType::SCROLL_TYPE_BOTTOM_RIGHT:
-      whereY = kScrollToBottom;
+      whereY = WhereToScroll::End;
       whenY = WhenToScroll::Always;
-      whereX = kScrollToRight;
+      whereX = WhereToScroll::End;
       whenX = WhenToScroll::Always;
       break;
     case nsIAccessibleScrollType::SCROLL_TYPE_TOP_EDGE:
-      whereY = kScrollToTop;
+      whereY = WhereToScroll::Start;
       whenY = WhenToScroll::Always;
-      whereX = kScrollMinimum;
+      whereX = WhereToScroll::Nearest;
       whenX = WhenToScroll::IfNotFullyVisible;
       break;
     case nsIAccessibleScrollType::SCROLL_TYPE_BOTTOM_EDGE:
-      whereY = kScrollToBottom;
+      whereY = WhereToScroll::End;
       whenY = WhenToScroll::Always;
-      whereX = kScrollMinimum;
+      whereX = WhereToScroll::Nearest;
       whenX = WhenToScroll::IfNotFullyVisible;
       break;
     case nsIAccessibleScrollType::SCROLL_TYPE_LEFT_EDGE:
-      whereY = kScrollMinimum;
+      whereY = WhereToScroll::Nearest;
       whenY = WhenToScroll::IfNotFullyVisible;
-      whereX = kScrollToLeft;
+      whereX = WhereToScroll::Start;
       whenX = WhenToScroll::Always;
       break;
     case nsIAccessibleScrollType::SCROLL_TYPE_RIGHT_EDGE:
-      whereY = kScrollMinimum;
+      whereY = WhereToScroll::Nearest;
       whenY = WhenToScroll::IfNotFullyVisible;
-      whereX = kScrollToRight;
+      whereX = WhereToScroll::End;
       whenX = WhenToScroll::Always;
       break;
     default:
-      whereY = kScrollMinimum;
+      whereY = WhereToScroll::Nearest;
       whenY = WhenToScroll::IfNotFullyVisible;
-      whereX = kScrollMinimum;
+      whereX = WhereToScroll::Nearest;
       whenX = WhenToScroll::IfNotFullyVisible;
   }
   *aVertical = ScrollAxis(whereY, whenY);
   *aHorizontal = ScrollAxis(whereX, whenX);
-}
-
-LayoutDeviceIntPoint nsCoreUtils::GetScreenCoordsForWindow(nsINode* aNode) {
-  LayoutDeviceIntPoint coords(0, 0);
-  nsCOMPtr<nsIDocShellTreeItem> treeItem(GetDocShellFor(aNode));
-  if (!treeItem) return coords;
-
-  nsCOMPtr<nsIDocShellTreeOwner> treeOwner;
-  treeItem->GetTreeOwner(getter_AddRefs(treeOwner));
-  if (!treeOwner) return coords;
-
-  nsCOMPtr<nsIBaseWindow> baseWindow = do_QueryInterface(treeOwner);
-  if (baseWindow) {
-    baseWindow->GetPosition(&coords.x, &coords.y);  // in device pixels
-  }
-
-  return coords;
 }
 
 already_AddRefed<nsIDocShell> nsCoreUtils::GetDocShellFor(nsINode* aNode) {
@@ -391,11 +373,19 @@ bool nsCoreUtils::GetID(nsIContent* aContent, nsAString& aID) {
 
 bool nsCoreUtils::GetUIntAttr(nsIContent* aContent, nsAtom* aAttr,
                               int32_t* aUInt) {
-  nsAutoString value;
   if (!aContent->IsElement()) {
     return false;
   }
-  aContent->AsElement()->GetAttr(kNameSpaceID_None, aAttr, value);
+  return GetUIntAttrValue(nsAccUtils::GetARIAAttr(aContent->AsElement(), aAttr),
+                          aUInt);
+}
+
+bool nsCoreUtils::GetUIntAttrValue(const nsAttrValue* aVal, int32_t* aUInt) {
+  if (!aVal) {
+    return false;
+  }
+  nsAutoString value;
+  aVal->ToString(value);
   if (!value.IsEmpty()) {
     nsresult error = NS_OK;
     int32_t integer = value.ToInteger(&error);
@@ -593,13 +583,32 @@ bool nsCoreUtils::CanCreateAccessibleWithoutFrame(nsIContent* aContent) {
     // Out of the flat tree or in a display: none subtree.
     return false;
   }
-  if (element->IsDisplayContents()) {
-    return true;
+
+  // If we aren't display: contents or option/optgroup we can't create an
+  // accessible without frame. Our select combobox code relies on the latter.
+  if (!element->IsDisplayContents() &&
+      !element->IsAnyOfHTMLElements(nsGkAtoms::option, nsGkAtoms::optgroup)) {
+    return false;
   }
-  // We don't have a frame, but we're not display: contents either.
-  // For now, only create accessibles for <option>/<optgroup> as our combobox
-  // select code depends on it.
-  return element->IsAnyOfHTMLElements(nsGkAtoms::option, nsGkAtoms::optgroup);
+
+  // Even if we're display: contents or optgroups, we might not be able to
+  // create an accessible if we're in a content-visibility: hidden subtree.
+  //
+  // To check that, find the closest ancestor element with a frame.
+  for (nsINode* ancestor = element->GetFlattenedTreeParentNode();
+       ancestor && ancestor->IsContent();
+       ancestor = ancestor->GetFlattenedTreeParentNode()) {
+    if (nsIFrame* f = ancestor->AsContent()->GetPrimaryFrame()) {
+      if (f->HidesContent(nsIFrame::IncludeContentVisibility::Hidden) ||
+          f->IsHiddenByContentVisibilityOnAnyAncestor(
+              nsIFrame::IncludeContentVisibility::Hidden)) {
+        return false;
+      }
+      break;
+    }
+  }
+
+  return true;
 }
 
 bool nsCoreUtils::IsDocumentVisibleConsideringInProcessAncestors(

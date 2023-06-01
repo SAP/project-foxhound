@@ -27,17 +27,16 @@ const ONE_GIGA = 1024 * 1024 * 1024;
 const ONE_MEGA = 1024 * 1024;
 const ONE_KILO = 1024;
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+ChromeUtils.defineESModuleGetters(this, {
   ContextualIdentityService:
-    "resource://gre/modules/ContextualIdentityService.jsm",
+    "resource://gre/modules/ContextualIdentityService.sys.mjs",
 });
 
 XPCOMUtils.defineLazyGetter(this, "ProfilerPopupBackground", function() {
@@ -267,6 +266,7 @@ var State = {
       threads: null,
       displayRank: Control._getDisplayGroupRank(cur, windows),
       windows,
+      utilityActors: cur.utilityActors,
       // If this process has an unambiguous title, store it here.
       title: null,
     };
@@ -385,7 +385,11 @@ var View = {
     return row;
   },
 
-  displayCpu(data, cpuCell) {
+  displayCpu(data, cpuCell, maxSlopeCpu) {
+    // Put a value < 0% when we really don't want to see a bar as
+    // otherwise it sometimes appears due to rounding errors when we
+    // don't have an integer number of pixels.
+    let barWidth = -0.5;
     if (data.slopeCpu == null) {
       this._fillCell(cpuCell, {
         fluentName: "about-processes-cpu-user-and-kernel-not-ready",
@@ -425,17 +429,26 @@ var View = {
           },
           classes: ["cpu"],
         });
+
+        let cpuPercent = data.slopeCpu * 100;
+        if (maxSlopeCpu > 1) {
+          cpuPercent /= maxSlopeCpu;
+        }
+        // Ensure we always have a visible bar for non-0 values.
+        barWidth = Math.max(0.5, cpuPercent);
       }
     }
+    cpuCell.style.setProperty("--bar-width", barWidth);
   },
 
   /**
    * Display a row showing a single process (without its threads).
    *
    * @param {ProcessDelta} data The data to display.
+   * @param {Number} maxSlopeCpu The largest slopeCpu value.
    * @return {DOMElement} The row displaying the process.
    */
-  displayProcessRow(data) {
+  displayProcessRow(data, maxSlopeCpu) {
     const cellCount = 4;
     let rowId = "p:" + data.pid;
     let row = this._getOrCreateRow(rowId, cellCount);
@@ -466,10 +479,6 @@ var View = {
           break;
         case "webServiceWorker":
           fluentName = "about-processes-web-serviceworker";
-          fluentArgs.origin = data.origin;
-          break;
-        case "webLargeAllocation":
-          fluentName = "about-processes-web-large-allocation-process";
           fluentArgs.origin = data.origin;
           break;
         case "file":
@@ -518,6 +527,9 @@ var View = {
           break;
         case "preallocated":
           fluentName = "about-processes-preallocated-process";
+          break;
+        case "utility":
+          fluentName = "about-processes-utility-process";
           break;
         // The following are probably not going to show up for users
         // but let's handle the case anyway to avoid heisenoranges
@@ -575,6 +587,7 @@ var View = {
       }
       document.l10n.setAttributes(processNameElement, fluentName, fluentArgs);
       nameCell.className = ["type", "favicon", ...classNames].join(" ");
+      nameCell.setAttribute("id", data.pid + "-label");
 
       let image;
       switch (data.type) {
@@ -646,7 +659,7 @@ var View = {
 
     // Column: CPU
     let cpuCell = memoryCell.nextSibling;
-    this.displayCpu(data, cpuCell);
+    this.displayCpu(data, cpuCell, maxSlopeCpu);
 
     // Column: Kill button – but not for all processes.
     let killButton = cpuCell.nextSibling;
@@ -746,18 +759,27 @@ var View = {
     let span;
     if (!nameCell.firstChild) {
       nameCell.className = "name indent";
-      // Create the nodes
-      let img = document.createElement("span");
-      img.className = "twisty";
-      nameCell.appendChild(img);
+      // Create the nodes:
+      let imgBtn = document.createElement("span");
+      // Provide markup for an accessible disclosure button:
+      imgBtn.className = "twisty";
+      imgBtn.setAttribute("role", "button");
+      imgBtn.setAttribute("tabindex", "0");
+      // Label to include both summary and details texts
+      imgBtn.setAttribute("aria-labelledby", `${data.pid}-label ${rowId}`);
+      if (!imgBtn.hasAttribute("aria-expanded")) {
+        imgBtn.setAttribute("aria-expanded", "false");
+      }
+      nameCell.appendChild(imgBtn);
 
       span = document.createElement("span");
+      span.setAttribute("id", rowId);
       nameCell.appendChild(span);
     } else {
       // The only thing that can change is the thread count.
-      let img = nameCell.firstChild;
-      isOpen = img.classList.contains("open");
-      span = img.nextSibling;
+      let imgBtn = nameCell.firstChild;
+      isOpen = imgBtn.classList.contains("open");
+      span = imgBtn.nextSibling;
     }
     document.l10n.setAttributes(span, fluentName, fluentArgs);
 
@@ -839,12 +861,53 @@ var View = {
     }
   },
 
+  displayUtilityActorRow(data, parent) {
+    const cellCount = 2;
+    // The actor name is expected to be unique within a given utility process.
+    let rowId = "u:" + parent.pid + data.actorName;
+    let row = this._getOrCreateRow(rowId, cellCount);
+    row.actor = data;
+    row.className = "actor";
+
+    // Column: name
+    let nameCell = row.firstChild;
+    let fluentName;
+    let fluentArgs = {};
+    switch (data.actorName) {
+      case "audioDecoder_Generic":
+        fluentName = "about-processes-utility-actor-audio-decoder-generic";
+        break;
+
+      case "audioDecoder_AppleMedia":
+        fluentName = "about-processes-utility-actor-audio-decoder-applemedia";
+        break;
+
+      case "audioDecoder_WMF":
+        fluentName = "about-processes-utility-actor-audio-decoder-wmf";
+        break;
+
+      case "mfMediaEngineCDM":
+        fluentName = "about-processes-utility-actor-mf-media-engine";
+        break;
+
+      default:
+        fluentName = "about-processes-utility-actor-unknown";
+        break;
+    }
+    this._fillCell(nameCell, {
+      fluentName,
+      fluentArgs,
+      classes: ["name", "indent", "favicon"],
+    });
+  },
+
   /**
    * Display a row showing a single thread.
    *
    * @param {ThreadDelta} data The data to display.
+   * @param {Number} maxSlopeCpu The largest slopeCpu value.
    */
-  displayThreadRow(data) {
+  displayThreadRow(data, maxSlopeCpu) {
     const cellCount = 3;
     let rowId = "t:" + data.tid;
     let row = this._getOrCreateRow(rowId, cellCount);
@@ -863,7 +926,7 @@ var View = {
     });
 
     // Column: CPU
-    this.displayCpu(data, nameCell.nextSibling);
+    this.displayCpu(data, nameCell.nextSibling, maxSlopeCpu);
 
     // Third column (Buttons) is empty, nothing to do.
   },
@@ -1002,54 +1065,25 @@ var Control = {
 
     // Single click:
     // - show or hide the contents of a twisty;
+    // - close a process;
+    // - profile a process;
     // - change selection.
     tbody.addEventListener("click", event => {
       this._updateLastMouseEvent();
 
-      // Handle showing or hiding subitems of a row.
-      let target = event.target;
-      if (target.classList.contains("twisty")) {
-        this._handleTwisty(target);
-        return;
-      }
-      if (target.classList.contains("close-icon")) {
-        this._handleKill(target);
-        return;
-      }
+      this._handleActivate(event.target);
+    });
 
-      if (target.classList.contains("profiler-icon")) {
-        if (Services.profiler.IsActive()) {
-          return;
-        }
-        Services.profiler.StartProfiler(
-          10000000,
-          1,
-          ["default", "ipcmessages"],
-          ["pid:" + target.parentNode.parentNode.process.pid]
-        );
-        target.classList.add("profiler-active");
-        setTimeout(() => {
-          ProfilerPopupBackground.captureProfile("aboutprofiling");
-          target.classList.remove("profiler-active");
-        }, PROFILE_DURATION * 1000);
-        return;
+    // Enter or Space keypress:
+    // - show or hide the contents of a twisty;
+    // - close a process;
+    // - profile a process;
+    // - change selection.
+    tbody.addEventListener("keypress", event => {
+      // Handle showing or hiding subitems of a row, when keyboard is used.
+      if (event.key === "Enter" || event.key === " ") {
+        this._handleActivate(event.target);
       }
-
-      // Handle selection changes
-      let row = target.closest("tr");
-      if (!row) {
-        return;
-      }
-      if (this.selectedRow) {
-        this.selectedRow.removeAttribute("selected");
-        if (this.selectedRow.rowId == row.rowId) {
-          // Clicking the same row again clears the selection.
-          this.selectedRow = null;
-          return;
-        }
-      }
-      row.setAttribute("selected", "true");
-      this.selectedRow = row;
     });
 
     // Double click:
@@ -1102,11 +1136,15 @@ var Control = {
         if (!event.target.classList.contains("clickable")) {
           return;
         }
+        // Linux has conventions opposite to Windows and macOS on the direction of arrows
+        // when sorting.
+        const platformIsLinux = AppConstants.platform == "linux";
+        const ascArrow = platformIsLinux ? "arrow-up" : "arrow-down";
+        const descArrow = platformIsLinux ? "arrow-down" : "arrow-up";
 
         if (this._sortColumn) {
           const td = document.getElementById(this._sortColumn);
-          td.classList.remove("asc");
-          td.classList.remove("desc");
+          td.classList.remove(ascArrow, descArrow);
         }
 
         const columnId = event.target.id;
@@ -1118,13 +1156,8 @@ var Control = {
           this._sortAscendent = true;
         }
 
-        if (this._sortAscendent) {
-          event.target.classList.remove("desc");
-          event.target.classList.add("asc");
-        } else {
-          event.target.classList.remove("asc");
-          event.target.classList.add("desc");
-        }
+        event.target.classList.toggle(ascArrow, this._sortAscendent);
+        event.target.classList.toggle(descArrow, !this._sortAscendent);
 
         await this._updateDisplay(true);
       });
@@ -1183,13 +1216,17 @@ var Control = {
     this._hungItems = new Set();
 
     counters = this._sortProcesses(counters);
+
+    // Stored because it is used when opening the list of threads.
+    this._maxSlopeCpu = Math.max(...counters.map(process => process.slopeCpu));
+
     let previousProcess = null;
     for (let process of counters) {
       this._sortDOMWindows(process.windows);
 
       process.isHung = process.childID && hungItems.has(process.childID);
 
-      let processRow = View.displayProcessRow(process);
+      let processRow = View.displayProcessRow(process, this._maxSlopeCpu);
 
       if (process.type != "extension") {
         // We do not want to display extensions.
@@ -1200,9 +1237,15 @@ var Control = {
         }
       }
 
+      if (process.type === "utility") {
+        for (let actor of process.utilityActors) {
+          View.displayUtilityActorRow(actor, process);
+        }
+      }
+
       if (SHOW_THREADS) {
         if (View.displayThreadSummaryRow(process)) {
-          this._showThreads(processRow);
+          this._showThreads(processRow, this._maxSlopeCpu);
         }
       }
       if (
@@ -1246,11 +1289,11 @@ var Control = {
       b.slopeCpu - a.slopeCpu || b.active - a.active || b.totalCpu - a.totalCpu
     );
   },
-  _showThreads(row) {
+  _showThreads(row, maxSlopeCpu) {
     let process = row.process;
     this._sortThreads(process.threads);
     for (let thread of process.threads) {
-      View.displayThreadRow(thread);
+      View.displayThreadRow(thread, maxSlopeCpu);
     }
   },
   _sortThreads(threads) {
@@ -1342,7 +1385,6 @@ var Control = {
       // Web content comes next.
       case "webIsolated":
       case "webServiceWorker":
-      case "webLargeAllocation":
       case "withCoopCoep": {
         if (windows.some(w => w.tab)) {
           return RANK_WEB_TABS;
@@ -1374,18 +1416,39 @@ var Control = {
     }
   },
 
+  // Handle events on image controls.
+  _handleActivate(target) {
+    if (target.classList.contains("twisty")) {
+      this._handleTwisty(target);
+      return;
+    }
+    if (target.classList.contains("close-icon")) {
+      this._handleKill(target);
+      return;
+    }
+
+    if (target.classList.contains("profiler-icon")) {
+      this._handleProfiling(target);
+      return;
+    }
+
+    this._handleSelection(target);
+  },
+
   // Open/close list of threads.
   _handleTwisty(target) {
     let row = target.parentNode.parentNode;
     if (target.classList.toggle("open")) {
-      this._showThreads(row);
+      target.setAttribute("aria-expanded", "true");
+      this._showThreads(row, this._maxSlopeCpu);
       View.insertAfterRow(row);
     } else {
+      target.setAttribute("aria-expanded", "false");
       this._removeSubtree(row);
     }
   },
 
-  // Kill process/close tab/close subframe
+  // Kill process/close tab/close subframe.
   _handleKill(target) {
     let row = target.parentNode;
     if (row.process) {
@@ -1450,6 +1513,42 @@ var Control = {
         }
       }
     }
+  },
+
+  // Handle profiling of a process.
+  _handleProfiling(target) {
+    if (Services.profiler.IsActive()) {
+      return;
+    }
+    Services.profiler.StartProfiler(
+      10000000,
+      1,
+      ["default", "ipcmessages", "power"],
+      ["pid:" + target.parentNode.parentNode.process.pid]
+    );
+    target.classList.add("profiler-active");
+    setTimeout(() => {
+      ProfilerPopupBackground.captureProfile("aboutprofiling");
+      target.classList.remove("profiler-active");
+    }, PROFILE_DURATION * 1000);
+  },
+
+  // Handle selection changes.
+  _handleSelection(target) {
+    let row = target.closest("tr");
+    if (!row) {
+      return;
+    }
+    if (this.selectedRow) {
+      this.selectedRow.removeAttribute("selected");
+      if (this.selectedRow.rowId == row.rowId) {
+        // Clicking the same row again clears the selection.
+        this.selectedRow = null;
+        return;
+      }
+    }
+    row.setAttribute("selected", "true");
+    this.selectedRow = row;
   },
 };
 

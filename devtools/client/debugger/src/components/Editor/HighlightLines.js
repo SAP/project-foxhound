@@ -3,15 +3,24 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import { Component } from "react";
+import PropTypes from "prop-types";
 import { connect } from "../../utils/connect";
 import { getHighlightedLineRange } from "../../selectors";
 
 class HighlightLines extends Component {
+  static get propTypes() {
+    return {
+      editor: PropTypes.object.isRequired,
+      highlightedLineRange: PropTypes.object,
+    };
+  }
+
   componentDidMount() {
     this.highlightLineRange();
   }
 
-  componentWillUpdate() {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillUpdate() {
     this.clearHighlightRange();
   }
 

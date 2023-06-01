@@ -1,4 +1,7 @@
 #![cfg(feature = "derive")]
+// Various structs/fields that we are deriving `Arbitrary` for aren't actually
+// used except to exercise the derive.
+#![allow(dead_code)]
 
 use arbitrary::*;
 
@@ -164,7 +167,7 @@ fn one_lifetime() {
     assert_eq!("abc", lifetime.alpha);
 
     let (lower, upper) = <OneLifetime as Arbitrary>::size_hint(0);
-    assert_eq!(lower, 8);
+    assert_eq!(lower, 0);
     assert_eq!(upper, None);
 }
 
@@ -183,6 +186,93 @@ fn two_lifetimes() {
     assert_eq!("def", lifetime.beta);
 
     let (lower, upper) = <TwoLifetimes as Arbitrary>::size_hint(0);
-    assert_eq!(lower, 16);
+    assert_eq!(lower, 0);
     assert_eq!(upper, None);
+}
+
+#[test]
+fn recursive_and_empty_input() {
+    // None of the following derives should result in a stack overflow. See
+    // https://github.com/rust-fuzz/arbitrary/issues/107 for details.
+
+    #[derive(Debug, Arbitrary)]
+    enum Nat {
+        Succ(Box<Nat>),
+        Zero,
+    }
+
+    let _ = Nat::arbitrary(&mut Unstructured::new(&[]));
+
+    #[derive(Debug, Arbitrary)]
+    enum Nat2 {
+        Zero,
+        Succ(Box<Nat2>),
+    }
+
+    let _ = Nat2::arbitrary(&mut Unstructured::new(&[]));
+
+    #[derive(Debug, Arbitrary)]
+    struct Nat3 {
+        f: Option<Box<Nat3>>,
+    }
+
+    let _ = Nat3::arbitrary(&mut Unstructured::new(&[]));
+
+    #[derive(Debug, Arbitrary)]
+    struct Nat4(Option<Box<Nat4>>);
+
+    let _ = Nat4::arbitrary(&mut Unstructured::new(&[]));
+
+    #[derive(Debug, Arbitrary)]
+    enum Nat5 {
+        Zero,
+        Succ { f: Box<Nat5> },
+    }
+
+    let _ = Nat5::arbitrary(&mut Unstructured::new(&[]));
+}
+
+#[test]
+fn test_field_attributes() {
+    // A type that DOES NOT implement Arbitrary
+    #[derive(Debug)]
+    struct Weight(u8);
+
+    #[derive(Debug, Arbitrary)]
+    struct Parcel {
+        #[arbitrary(with = arbitrary_weight)]
+        weight: Weight,
+
+        #[arbitrary(default)]
+        width: u8,
+
+        #[arbitrary(value = 2 + 2)]
+        length: u8,
+
+        height: u8,
+
+        #[arbitrary(with = |u: &mut Unstructured| u.int_in_range(0..=100))]
+        price: u8,
+    }
+
+    fn arbitrary_weight(u: &mut Unstructured) -> arbitrary::Result<Weight> {
+        u.int_in_range(45..=56).map(Weight)
+    }
+
+    let parcel: Parcel = arbitrary_from(&[6, 199, 17]);
+
+    // 45 + 6 = 51
+    assert_eq!(parcel.weight.0, 51);
+
+    // u8::default()
+    assert_eq!(parcel.width, 0);
+
+    // 2 + 2 = 4
+    assert_eq!(parcel.length, 4);
+
+    // 199 is the 2nd byte used by arbitrary
+    assert_eq!(parcel.height, 199);
+
+    // 17 is the 3rd byte used by arbitrary
+    assert_eq!(parcel.price, 17);
 }

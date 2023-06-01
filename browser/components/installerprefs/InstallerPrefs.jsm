@@ -32,12 +32,11 @@ const INSTALLER_PREFS_BRANCH = "installer.";
 // any others will be ignored.
 const INSTALLER_PREFS_LIST = ["installer.taskbarpin.win10.enabled"];
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 // This constructor can take a list of prefs to override the default one,

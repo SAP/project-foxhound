@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* import-globals-from head.js */
-
 "use strict";
 
 const TEST_THIRD_PARTY_DOMAIN = TEST_DOMAIN_2;
@@ -43,7 +41,7 @@ async function verifyQueryString(browser, expected) {
   });
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["privacy.query_stripping.strip_list", "paramToStrip"],

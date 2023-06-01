@@ -26,12 +26,13 @@ void SourceTracker::OnFrameDelivered(const RtpPacketInfos& packet_infos) {
 
   int64_t now_ms = clock_->TimeInMilliseconds();
   MutexLock lock_scope(&lock_);
-  
+
   for (const auto& packet_info : packet_infos) {
     for (uint32_t csrc : packet_info.csrcs()) {
       SourceKey key(RtpSourceType::CSRC, csrc);
       SourceEntry& entry = UpdateEntry(key);
-      const auto packet_time = packet_info.receive_time_ms();
+
+      const auto packet_time = packet_info.receive_time().ms();
       entry.timestamp_ms = packet_time ? packet_time : now_ms;
       entry.audio_level = packet_info.audio_level();
       entry.absolute_capture_time = packet_info.absolute_capture_time();
@@ -65,9 +66,8 @@ std::vector<RtpSource> SourceTracker::GetSources() const {
     sources.emplace_back(
         entry.timestamp_ms, key.source, key.source_type, entry.rtp_timestamp,
         RtpSource::Extensions{entry.audio_level, entry.absolute_capture_time});
-
   }
-  
+
   std::sort(sources.begin(), sources.end(), [](const auto &a, const auto &b){
     return a.timestamp_ms() > b.timestamp_ms();
   });
@@ -77,7 +77,7 @@ std::vector<RtpSource> SourceTracker::GetSources() const {
 
 SourceTracker::SourceEntry& SourceTracker::UpdateEntry(const SourceKey& key) {
   // We intentionally do |find() + emplace()|, instead of checking the return
-  // value of |emplace()|, for performance reasons. It's much more likely for
+  // value of `emplace()`, for performance reasons. It's much more likely for
   // the key to already exist than for it not to.
   auto map_it = map_.find(key);
   if (map_it == map_.end()) {

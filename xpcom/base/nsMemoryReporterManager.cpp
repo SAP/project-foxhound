@@ -443,6 +443,10 @@ static bool InSharedRegion(mach_vm_address_t aAddr, cpu_type_t aType) {
       base = SHARED_REGION_BASE_ARM;
       size = SHARED_REGION_SIZE_ARM;
       break;
+    case CPU_TYPE_ARM64:
+      base = SHARED_REGION_BASE_ARM64;
+      size = SHARED_REGION_SIZE_ARM64;
+      break;
     case CPU_TYPE_I386:
       base = SHARED_REGION_BASE_I386;
       size = SHARED_REGION_SIZE_I386;
@@ -473,15 +477,16 @@ static bool InSharedRegion(mach_vm_address_t aAddr, cpu_type_t aType) {
   // Roughly based on libtop_update_vm_regions in
   // http://www.opensource.apple.com/source/top/top-100.1.2/libtop.c
   size_t privatePages = 0;
-  mach_vm_size_t size = 0;
-  for (mach_vm_address_t addr = MACH_VM_MIN_ADDRESS;; addr += size) {
-    vm_region_top_info_data_t info;
-    mach_msg_type_number_t infoCount = VM_REGION_TOP_INFO_COUNT;
-    mach_port_t objectName;
+  mach_vm_size_t topSize = 0;
+  for (mach_vm_address_t addr = MACH_VM_MIN_ADDRESS;; addr += topSize) {
+    vm_region_top_info_data_t topInfo;
+    mach_msg_type_number_t topInfoCount = VM_REGION_TOP_INFO_COUNT;
+    mach_port_t topObjectName;
 
     kern_return_t kr = mach_vm_region(
-        aPort ? aPort : mach_task_self(), &addr, &size, VM_REGION_TOP_INFO,
-        reinterpret_cast<vm_region_info_t>(&info), &infoCount, &objectName);
+        aPort ? aPort : mach_task_self(), &addr, &topSize, VM_REGION_TOP_INFO,
+        reinterpret_cast<vm_region_info_t>(&topInfo), &topInfoCount,
+        &topObjectName);
     if (kr == KERN_INVALID_ADDRESS) {
       // Done iterating VM regions.
       break;
@@ -489,26 +494,51 @@ static bool InSharedRegion(mach_vm_address_t aAddr, cpu_type_t aType) {
       return NS_ERROR_FAILURE;
     }
 
-    if (InSharedRegion(addr, cpu_type) && info.share_mode != SM_PRIVATE) {
+    if (InSharedRegion(addr, cpu_type) && topInfo.share_mode != SM_PRIVATE) {
       continue;
     }
 
-    switch (info.share_mode) {
+    switch (topInfo.share_mode) {
       case SM_LARGE_PAGE:
         // NB: Large pages are not shareable and always resident.
       case SM_PRIVATE:
-        privatePages += info.private_pages_resident;
-        privatePages += info.shared_pages_resident;
+        privatePages += topInfo.private_pages_resident;
+        privatePages += topInfo.shared_pages_resident;
         break;
       case SM_COW:
-        privatePages += info.private_pages_resident;
-        if (info.ref_count == 1) {
+        privatePages += topInfo.private_pages_resident;
+        if (topInfo.ref_count == 1) {
           // Treat copy-on-write pages as private if they only have one
           // reference.
-          privatePages += info.shared_pages_resident;
+          privatePages += topInfo.shared_pages_resident;
         }
         break;
-      case SM_SHARED:
+      case SM_SHARED: {
+        // Using mprotect() or similar to protect a page in the middle of a
+        // mapping can create aliased mappings. They look like shared mappings
+        // to the VM_REGION_TOP_INFO interface, so re-check with
+        // VM_REGION_EXTENDED_INFO.
+
+        mach_vm_size_t exSize = 0;
+        vm_region_extended_info_data_t exInfo;
+        mach_msg_type_number_t exInfoCount = VM_REGION_EXTENDED_INFO_COUNT;
+        mach_port_t exObjectName;
+        kr = mach_vm_region(aPort ? aPort : mach_task_self(), &addr, &exSize,
+                            VM_REGION_EXTENDED_INFO,
+                            reinterpret_cast<vm_region_info_t>(&exInfo),
+                            &exInfoCount, &exObjectName);
+        if (kr == KERN_INVALID_ADDRESS) {
+          // Done iterating VM regions.
+          break;
+        } else if (kr != KERN_SUCCESS) {
+          return NS_ERROR_FAILURE;
+        }
+
+        if (exInfo.share_mode == SM_PRIVATE_ALIASED) {
+          privatePages += exInfo.pages_resident;
+        }
+        break;
+      }
       default:
         break;
     }
@@ -521,6 +551,24 @@ static bool InSharedRegion(mach_vm_address_t aAddr, cpu_type_t aType) {
   }
 
   *aN = privatePages * pageSize;
+  return NS_OK;
+}
+
+[[nodiscard]] static nsresult PhysicalFootprintAmount(int64_t* aN,
+                                                      mach_port_t aPort = 0) {
+  MOZ_ASSERT(aN);
+
+  // The phys_footprint value (introduced in 10.11) of the TASK_VM_INFO data
+  // matches the value in the 'Memory' column of the Activity Monitor.
+  task_vm_info_data_t task_vm_info;
+  mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+  kern_return_t kr = task_info(aPort ? aPort : mach_task_self(), TASK_VM_INFO,
+                               (task_info_t)&task_vm_info, &count);
+  if (kr != KERN_SUCCESS) {
+    return NS_ERROR_FAILURE;
+  }
+
+  *aN = task_vm_info.phys_footprint;
   return NS_OK;
 }
 
@@ -1011,16 +1059,24 @@ class ResidentUniqueReporter final : public nsIMemoryReporter {
   NS_IMETHOD CollectReports(nsIHandleReportCallback* aHandleReport,
                             nsISupports* aData, bool aAnonymize) override {
     int64_t amount = 0;
+    // clang-format off
     if (NS_SUCCEEDED(ResidentUniqueDistinguishedAmount(&amount))) {
-      // clang-format off
       MOZ_COLLECT_REPORT(
         "resident-unique", KIND_OTHER, UNITS_BYTES, amount,
 "Memory mapped by the process that is present in physical memory and not "
 "shared with any other processes.  This is also known as the process's unique "
 "set size (USS).  This is the amount of RAM we'd expect to be freed if we "
 "closed this process.");
-      // clang-format on
     }
+#ifdef XP_MACOSX
+    if (NS_SUCCEEDED(PhysicalFootprintAmount(&amount))) {
+      MOZ_COLLECT_REPORT(
+        "resident-phys-footprint", KIND_OTHER, UNITS_BYTES, amount,
+"Memory footprint reported by MacOS's task_info API's phys_footprint field. "
+"This matches the memory column in Activity Monitor.");
+    }
+#endif
+    // clang-format on
     return NS_OK;
   }
 };
@@ -1677,8 +1733,11 @@ NS_IMETHODIMP
 nsMemoryReporterManager::CollectReports(nsIHandleReportCallback* aHandleReport,
                                         nsISupports* aData, bool aAnonymize) {
   size_t n = MallocSizeOf(this);
-  n += mStrongReporters->ShallowSizeOfIncludingThis(MallocSizeOf);
-  n += mWeakReporters->ShallowSizeOfIncludingThis(MallocSizeOf);
+  {
+    mozilla::MutexAutoLock autoLock(mMutex);
+    n += mStrongReporters->ShallowSizeOfIncludingThis(MallocSizeOf);
+    n += mWeakReporters->ShallowSizeOfIncludingThis(MallocSizeOf);
+  }
 
   MOZ_COLLECT_REPORT("explicit/memory-reporter-manager", KIND_HEAP, UNITS_BYTES,
                      n, "Memory used by the memory reporter infrastructure.");
@@ -1750,6 +1809,7 @@ nsMemoryReporterManager::GetReportsExtended(
   return rv;
 }
 
+// MainThread only
 nsresult nsMemoryReporterManager::StartGettingReports() {
   PendingProcessesState* s = mPendingProcessesState;
   nsresult rv;
@@ -1803,18 +1863,23 @@ nsresult nsMemoryReporterManager::StartGettingReports() {
     }
   }
 
-  if (!mIsRegistrationBlocked && net::gIOService) {
+  if (!IsRegistrationBlocked() && net::gIOService) {
     if (RefPtr<MemoryReportingProcess> proc =
             net::gIOService->GetSocketProcessMemoryReporter()) {
       s->mChildrenPending.AppendElement(proc.forget());
     }
   }
 
-  if (RefPtr<UtilityProcessManager> utility =
-          UtilityProcessManager::GetIfExists()) {
-    if (RefPtr<MemoryReportingProcess> proc =
-            utility->GetProcessMemoryReporter()) {
-      s->mChildrenPending.AppendElement(proc.forget());
+  if (!IsRegistrationBlocked()) {
+    if (RefPtr<UtilityProcessManager> utility =
+            UtilityProcessManager::GetIfExists()) {
+      for (RefPtr<UtilityProcessParent>& parent :
+           utility->GetAllProcessesProcessParent()) {
+        if (RefPtr<MemoryReportingProcess> proc =
+                utility->GetProcessMemoryReporter(parent)) {
+          s->mChildrenPending.AppendElement(proc.forget());
+        }
+      }
     }
   }
 
@@ -1909,6 +1974,7 @@ nsMemoryReporterManager::GetReportsForThisProcessExtended(
   return NS_OK;
 }
 
+// MainThread only
 NS_IMETHODIMP
 nsMemoryReporterManager::EndReport() {
   if (--mPendingReportersState->mReportsPending == 0) {
@@ -2386,6 +2452,16 @@ nsMemoryReporterManager::GetResidentUnique(int64_t* aAmount) {
   return NS_ERROR_NOT_AVAILABLE;
 #endif
 }
+
+#ifdef XP_MACOSX
+/*static*/
+int64_t nsMemoryReporterManager::PhysicalFootprint(mach_port_t aPort) {
+  int64_t amount = 0;
+  nsresult rv = PhysicalFootprintAmount(&amount, aPort);
+  NS_ENSURE_SUCCESS(rv, 0);
+  return amount;
+}
+#endif
 
 typedef
 #ifdef XP_WIN

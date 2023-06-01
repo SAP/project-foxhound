@@ -78,6 +78,8 @@ float EstimateDataBits(const ANSHistBin* histogram, const ANSHistBin* counts,
     }
   }
   if (total_histogram > 0) {
+    // Used only in assert.
+    (void)total_counts;
     JXL_ASSERT(total_counts == ANS_TAB_SIZE);
   }
   return sum;
@@ -85,7 +87,7 @@ float EstimateDataBits(const ANSHistBin* histogram, const ANSHistBin* counts,
 
 float EstimateDataBitsFlat(const ANSHistBin* histogram, size_t len) {
   const float flat_bits = std::max(FastLog2f(len), 0.0f);
-  int total_histogram = 0;
+  float total_histogram = 0;
   for (size_t i = 0; i < len; ++i) {
     total_histogram += histogram[i];
   }
@@ -392,20 +394,33 @@ uint32_t ComputeBestMethod(
     HistogramParams::ANSHistogramStrategy ans_histogram_strategy) {
   size_t method = 0;
   float fcost = ComputeHistoAndDataCost(histogram, alphabet_size, 0);
-  for (uint32_t shift = 0; shift <= ANS_LOG_TAB_SIZE;
-       ans_histogram_strategy != HistogramParams::ANSHistogramStrategy::kPrecise
-           ? shift += 2
-           : shift++) {
+  auto try_shift = [&](size_t shift) {
     float c = ComputeHistoAndDataCost(histogram, alphabet_size, shift + 1);
     if (c < fcost) {
       method = shift + 1;
       fcost = c;
-    } else if (ans_histogram_strategy ==
-               HistogramParams::ANSHistogramStrategy::kFast) {
-      // do not be as precise if estimating cost.
+    }
+  };
+  switch (ans_histogram_strategy) {
+    case HistogramParams::ANSHistogramStrategy::kPrecise: {
+      for (uint32_t shift = 0; shift <= ANS_LOG_TAB_SIZE; shift++) {
+        try_shift(shift);
+      }
       break;
     }
-  }
+    case HistogramParams::ANSHistogramStrategy::kApproximate: {
+      for (uint32_t shift = 0; shift <= ANS_LOG_TAB_SIZE; shift += 2) {
+        try_shift(shift);
+      }
+      break;
+    }
+    case HistogramParams::ANSHistogramStrategy::kFast: {
+      try_shift(0);
+      try_shift(ANS_LOG_TAB_SIZE / 2);
+      try_shift(ANS_LOG_TAB_SIZE);
+      break;
+    }
+  };
   *cost = fcost;
   return method;
 }
@@ -429,20 +444,24 @@ size_t BuildAndStoreANSEncodingData(
     {
       std::vector<uint8_t> depths(alphabet_size);
       std::vector<uint16_t> bits(alphabet_size);
-      BitWriter tmp_writer;
-      BitWriter* w = writer ? writer : &tmp_writer;
-      size_t start = w->BitsWritten();
-      BitWriter::Allotment allotment(
-          w, 8 * alphabet_size + 8);  // safe upper bound
-      BuildAndStoreHuffmanTree(histo.data(), alphabet_size, depths.data(),
-                               bits.data(), w);
-      ReclaimAndCharge(w, &allotment, 0, /*aux_out=*/nullptr);
-
+      if (writer == nullptr) {
+        BitWriter tmp_writer;
+        BitWriter::Allotment allotment(
+            &tmp_writer, 8 * alphabet_size + 8);  // safe upper bound
+        BuildAndStoreHuffmanTree(histo.data(), alphabet_size, depths.data(),
+                                 bits.data(), &tmp_writer);
+        ReclaimAndCharge(&tmp_writer, &allotment, 0, /*aux_out=*/nullptr);
+        cost = tmp_writer.BitsWritten();
+      } else {
+        size_t start = writer->BitsWritten();
+        BuildAndStoreHuffmanTree(histo.data(), alphabet_size, depths.data(),
+                                 bits.data(), writer);
+        cost = writer->BitsWritten() - start;
+      }
       for (size_t i = 0; i < alphabet_size; i++) {
         info[i].bits = depths[i] == 0 ? 0 : bits[i];
         info[i].depth = depths[i];
       }
-      cost = w->BitsWritten() - start;
     }
     // Estimate data cost.
     for (size_t i = 0; i < alphabet_size; i++) {
@@ -543,6 +562,12 @@ void ChooseUintConfigs(const HistogramParams& params,
   codes->uint_config.resize(clustered_histograms->size());
 
   if (params.uint_method == HistogramParams::HybridUintMethod::kNone) return;
+  if (params.uint_method == HistogramParams::HybridUintMethod::k000) {
+    codes->uint_config.clear();
+    codes->uint_config.resize(clustered_histograms->size(),
+                              HybridUintConfig(0, 0, 0));
+    return;
+  }
   if (params.uint_method == HistogramParams::HybridUintMethod::kContextMap) {
     codes->uint_config.clear();
     codes->uint_config.resize(clustered_histograms->size(),
@@ -680,9 +705,8 @@ class HistogramBuilder {
     if (histograms_.size() > 1) {
       if (!ans_fuzzer_friendly_) {
         std::vector<uint32_t> histogram_symbols;
-        ClusterHistograms(params, histograms_, histograms_.size(),
-                          kClustersLimit, &clustered_histograms,
-                          &histogram_symbols);
+        ClusterHistograms(params, histograms_, kClustersLimit,
+                          &clustered_histograms, &histogram_symbols);
         for (size_t c = 0; c < histograms_.size(); ++c) {
           (*context_map)[c] = static_cast<uint8_t>(histogram_symbols[c]);
         }
@@ -700,7 +724,8 @@ class HistogramBuilder {
         }
       }
       if (writer != nullptr) {
-        EncodeContextMap(*context_map, clustered_histograms.size(), writer);
+        EncodeContextMap(*context_map, clustered_histograms.size(), writer,
+                         layer, aux_out);
       }
     }
     if (aux_out != nullptr) {
@@ -1491,6 +1516,9 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
   // Unless we are using the kContextMap histogram option.
   if (params.uint_method == HistogramParams::HybridUintMethod::kContextMap) {
     uint_config = HybridUintConfig(2, 0, 1);
+  }
+  if (params.uint_method == HistogramParams::HybridUintMethod::k000) {
+    uint_config = HybridUintConfig(0, 0, 0);
   }
   if (ans_fuzzer_friendly_) {
     uint_config = HybridUintConfig(10, 0, 0);

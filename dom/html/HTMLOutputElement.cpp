@@ -7,7 +7,6 @@
 #include "mozilla/dom/HTMLOutputElement.h"
 
 #include "mozAutoDocUpdate.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/dom/HTMLFormElement.h"
 #include "mozilla/dom/HTMLOutputElementBinding.h"
 #include "nsContentUtils.h"
@@ -53,7 +52,10 @@ void HTMLOutputElement::SetCustomValidity(const nsAString& aError) {
 NS_IMETHODIMP
 HTMLOutputElement::Reset() {
   mValueModeFlag = eModeDefault;
-  return nsContentUtils::SetNodeTextContent(this, mDefaultValue, true);
+  // We can't pass mDefaultValue, because it'll be truncated when
+  // the element's descendants are changed, so pass a copy instead.
+  const nsAutoString currentDefaultValue(mDefaultValue);
+  return nsContentUtils::SetNodeTextContent(this, currentDefaultValue, true);
 }
 
 bool HTMLOutputElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
@@ -92,7 +94,7 @@ nsresult HTMLOutputElement::BindToTree(BindContext& aContext,
   return rv;
 }
 
-void HTMLOutputElement::GetValue(nsAString& aValue) {
+void HTMLOutputElement::GetValue(nsAString& aValue) const {
   nsContentUtils::GetNodeTextContent(this, true, aValue);
 }
 

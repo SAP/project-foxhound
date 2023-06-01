@@ -7,58 +7,65 @@
 #include "vm/Watchtower.h"
 
 #include "js/CallAndConstruct.h"
-#include "js/Id.h"
 #include "vm/Compartment.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/NativeObject.h"
+#include "vm/PlainObject.h"
 #include "vm/Realm.h"
 
 #include "vm/Compartment-inl.h"
 #include "vm/JSObject-inl.h"
+#include "vm/Realm-inl.h"
 
 using namespace js;
 
-static bool InvokeWatchtowerCallback(JSContext* cx, const char* kind,
-                                     HandleObject obj, HandleValue extra) {
-  // Invoke the callback set by the setWatchtowerCallback testing function with
-  // arguments (kind, obj, extra).
+static bool AddToWatchtowerLog(JSContext* cx, const char* kind,
+                               HandleObject obj, HandleValue extra) {
+  // Add an object storing {kind, object, extra} to the log for testing
+  // purposes.
 
-  if (!cx->watchtowerTestingCallbackRef()) {
-    return true;
-  }
+  MOZ_ASSERT(obj->useWatchtowerTestingLog());
 
   RootedString kindString(cx, NewStringCopyZ<CanGC>(cx, kind));
   if (!kindString) {
     return false;
   }
 
-  constexpr size_t NumArgs = 3;
-  JS::RootedValueArray<NumArgs> argv(cx);
-  argv[0].setString(kindString);
-  argv[1].setObject(*obj);
-  argv[2].set(extra);
-
-  RootedValue funVal(cx, ObjectValue(*cx->watchtowerTestingCallbackRef()));
-  AutoRealm ar(cx, &funVal.toObject());
-
-  for (size_t i = 0; i < NumArgs; i++) {
-    if (!cx->compartment()->wrap(cx, argv[i])) {
-      return false;
-    }
+  Rooted<PlainObject*> logObj(cx, NewPlainObjectWithProto(cx, nullptr));
+  if (!logObj) {
+    return false;
+  }
+  if (!JS_DefineProperty(cx, logObj, "kind", kindString, JSPROP_ENUMERATE)) {
+    return false;
+  }
+  if (!JS_DefineProperty(cx, logObj, "object", obj, JSPROP_ENUMERATE)) {
+    return false;
+  }
+  if (!JS_DefineProperty(cx, logObj, "extra", extra, JSPROP_ENUMERATE)) {
+    return false;
   }
 
-  RootedValue rval(cx);
-  return JS_CallFunctionValue(cx, nullptr, funVal, HandleValueArray(argv),
-                              &rval);
+  if (!cx->runtime()->watchtowerTestingLog->append(logObj)) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
+
+  return true;
 }
 
-static bool ReshapeForShadowedProp(JSContext* cx, HandleNativeObject obj,
+static bool ReshapeForShadowedProp(JSContext* cx, Handle<NativeObject*> obj,
                                    HandleId id) {
+  // |obj| has been used as the prototype of another object. Check if we're
+  // shadowing a property on its proto chain. In this case we need to reshape
+  // that object for shape teleporting to work correctly.
+  //
+  // See also the 'Shape Teleporting Optimization' comment in jit/CacheIR.cpp.
+
   MOZ_ASSERT(obj->isUsedAsPrototype());
 
   // Lookups on integer ids cannot be cached through prototypes.
-  if (JSID_IS_INT(id)) {
+  if (id.isInt()) {
     return true;
   }
 
@@ -79,25 +86,36 @@ static bool ReshapeForShadowedProp(JSContext* cx, HandleNativeObject obj,
   return true;
 }
 
+static void InvalidateMegamorphicCache(JSContext* cx,
+                                       Handle<NativeObject*> obj) {
+  // The megamorphic cache only checks the receiver object's shape. We need to
+  // invalidate the cache when a prototype object changes its set of properties,
+  // to account for cached properties that are deleted, turned into an accessor
+  // property, or shadowed by another object on the proto chain.
+
+  MOZ_ASSERT(obj->isUsedAsPrototype());
+
+  cx->caches().megamorphicCache.bumpGeneration();
+  cx->caches().megamorphicSetPropCache.bumpGeneration();
+}
+
 // static
-bool Watchtower::watchPropertyAddSlow(JSContext* cx, HandleNativeObject obj,
+bool Watchtower::watchPropertyAddSlow(JSContext* cx, Handle<NativeObject*> obj,
                                       HandleId id) {
   MOZ_ASSERT(watchesPropertyAdd(obj));
 
-  // If |obj| is a prototype of another object, check if we're shadowing a
-  // property on its proto chain. In this case we need to reshape that object
-  // for shape teleporting to work correctly.
-  //
-  // See also the 'Shape Teleporting Optimization' comment in jit/CacheIR.cpp.
   if (obj->isUsedAsPrototype()) {
     if (!ReshapeForShadowedProp(cx, obj, id)) {
       return false;
     }
+    if (!id.isInt()) {
+      InvalidateMegamorphicCache(cx, obj);
+    }
   }
 
-  if (MOZ_UNLIKELY(obj->useWatchtowerTestingCallback())) {
+  if (MOZ_UNLIKELY(obj->useWatchtowerTestingLog())) {
     RootedValue val(cx, IdToValue(id));
-    if (!InvokeWatchtowerCallback(cx, "add-prop", obj, val)) {
+    if (!AddToWatchtowerLog(cx, "add-prop", obj, val)) {
       return false;
     }
   }
@@ -158,14 +176,88 @@ bool Watchtower::watchProtoChangeSlow(JSContext* cx, HandleObject obj) {
     if (!ReshapeForProtoMutation(cx, obj)) {
       return false;
     }
+    if (obj->is<NativeObject>()) {
+      InvalidateMegamorphicCache(cx, obj.as<NativeObject>());
+    }
   }
 
-  if (MOZ_UNLIKELY(obj->useWatchtowerTestingCallback())) {
-    if (!InvokeWatchtowerCallback(cx, "proto-change", obj,
-                                  JS::UndefinedHandleValue)) {
+  if (MOZ_UNLIKELY(obj->useWatchtowerTestingLog())) {
+    if (!AddToWatchtowerLog(cx, "proto-change", obj,
+                            JS::UndefinedHandleValue)) {
       return false;
     }
   }
 
   return true;
+}
+
+// static
+bool Watchtower::watchPropertyRemoveSlow(JSContext* cx,
+                                         Handle<NativeObject*> obj,
+                                         HandleId id) {
+  MOZ_ASSERT(watchesPropertyRemove(obj));
+
+  if (obj->isUsedAsPrototype() && !id.isInt()) {
+    InvalidateMegamorphicCache(cx, obj);
+  }
+
+  if (MOZ_UNLIKELY(obj->useWatchtowerTestingLog())) {
+    RootedValue val(cx, IdToValue(id));
+    if (!AddToWatchtowerLog(cx, "remove-prop", obj, val)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// static
+bool Watchtower::watchPropertyChangeSlow(JSContext* cx,
+                                         Handle<NativeObject*> obj,
+                                         HandleId id) {
+  MOZ_ASSERT(watchesPropertyChange(obj));
+
+  if (obj->isUsedAsPrototype() && !id.isInt()) {
+    InvalidateMegamorphicCache(cx, obj);
+  }
+
+  if (MOZ_UNLIKELY(obj->useWatchtowerTestingLog())) {
+    RootedValue val(cx, IdToValue(id));
+    if (!AddToWatchtowerLog(cx, "change-prop", obj, val)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// static
+bool Watchtower::watchFreezeOrSealSlow(JSContext* cx,
+                                       Handle<NativeObject*> obj) {
+  MOZ_ASSERT(watchesFreezeOrSeal(obj));
+
+  if (MOZ_UNLIKELY(obj->useWatchtowerTestingLog())) {
+    if (!AddToWatchtowerLog(cx, "freeze-or-seal", obj,
+                            JS::UndefinedHandleValue)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// static
+void Watchtower::watchObjectSwapSlow(JSContext* cx, HandleObject a,
+                                     HandleObject b) {
+  MOZ_ASSERT(watchesObjectSwap(a, b));
+
+  if (a->isUsedAsPrototype() && a->is<NativeObject>()) {
+    InvalidateMegamorphicCache(cx, a.as<NativeObject>());
+  }
+  if (b->isUsedAsPrototype() && b->is<NativeObject>()) {
+    InvalidateMegamorphicCache(cx, b.as<NativeObject>());
+  }
+
+  // Note: we don't invoke the testing callback for swap because the objects may
+  // not be safe to expose to JS at this point. See bug 1754699.
 }

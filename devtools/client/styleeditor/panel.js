@@ -4,16 +4,17 @@
 
 "use strict";
 
-var Services = require("Services");
-var { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.jsm");
-var EventEmitter = require("devtools/shared/event-emitter");
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+var EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
-var {
-  StyleEditorUI,
-} = require("resource://devtools/client/styleeditor/StyleEditorUI.jsm");
-var {
-  getString,
-} = require("resource://devtools/client/styleeditor/StyleEditorUtil.jsm");
+var { StyleEditorUI } = ChromeUtils.importESModule(
+  "resource://devtools/client/styleeditor/StyleEditorUI.sys.mjs"
+);
+var { getString } = ChromeUtils.importESModule(
+  "resource://devtools/client/styleeditor/StyleEditorUtil.sys.mjs"
+);
 
 var StyleEditorPanel = function StyleEditorPanel(panelWin, toolbox, commands) {
   EventEmitter.decorate(this);
@@ -23,7 +24,6 @@ var StyleEditorPanel = function StyleEditorPanel(panelWin, toolbox, commands) {
   this._panelWin = panelWin;
   this._panelDoc = panelWin.document;
 
-  this.destroy = this.destroy.bind(this);
   this._showError = this._showError.bind(this);
 };
 
@@ -37,7 +37,7 @@ StyleEditorPanel.prototype = {
   /**
    * open is effectively an asynchronous constructor
    */
-  async open() {
+  async open(options) {
     // Initialize the CSS properties database.
     const { cssProperties } = await this._toolbox.target.getFront(
       "cssProperties"
@@ -51,7 +51,7 @@ StyleEditorPanel.prototype = {
       cssProperties
     );
     this.UI.on("error", this._showError);
-    await this.UI.initialize();
+    await this.UI.initialize(options);
 
     return this;
   },
@@ -63,7 +63,7 @@ StyleEditorPanel.prototype = {
    * @param  {string} data
    *         The parameters to customize the error message
    */
-  _showError: function(data) {
+  _showError(data) {
     if (!this._toolbox) {
       // could get an async error after we've been destroyed
       return;
@@ -99,8 +99,8 @@ StyleEditorPanel.prototype = {
   /**
    * Select a stylesheet.
    *
-   * @param {StyleSheetFront} front
-   *        The front of stylesheet to find and select in editor.
+   * @param {StyleSheetResource} stylesheet
+   *        The resource for the stylesheet to find and select in editor.
    * @param {number} line
    *        Line number to jump to after selecting. One-indexed
    * @param {number} col
@@ -109,12 +109,12 @@ StyleEditorPanel.prototype = {
    *         Promise that will resolve when the editor is selected and ready
    *         to be used.
    */
-  selectStyleSheet: function(front, line, col) {
+  selectStyleSheet(stylesheet, line, col) {
     if (!this.UI) {
       return null;
     }
 
-    return this.UI.selectStyleSheet(front, line - 1, col ? col - 1 : 0);
+    return this.UI.selectStyleSheet(stylesheet, line - 1, col ? col - 1 : 0);
   },
 
   /**
@@ -130,7 +130,7 @@ StyleEditorPanel.prototype = {
    *         Promise that will resolve when the editor is selected and ready
    *         to be used.
    */
-  selectOriginalSheet: function(originalId, line, col) {
+  selectOriginalSheet(originalId, line, col) {
     if (!this.UI) {
       return null;
     }
@@ -139,18 +139,18 @@ StyleEditorPanel.prototype = {
     return this.UI.selectStyleSheet(originalSheet, line - 1, col ? col - 1 : 0);
   },
 
-  getStylesheetFrontForGeneratedURL: function(url) {
+  getStylesheetResourceForGeneratedURL(url) {
     if (!this.UI) {
       return null;
     }
 
-    return this.UI.getStylesheetFrontForGeneratedURL(url);
+    return this.UI.getStylesheetResourceForGeneratedURL(url);
   },
 
   /**
    * Destroy the style editor.
    */
-  destroy: function() {
+  destroy() {
     if (this._destroyed) {
       return;
     }

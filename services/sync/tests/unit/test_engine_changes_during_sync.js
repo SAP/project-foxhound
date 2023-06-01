@@ -1,5 +1,5 @@
-const { FormHistory } = ChromeUtils.import(
-  "resource://gre/modules/FormHistory.jsm"
+const { FormHistory } = ChromeUtils.importESModule(
+  "resource://gre/modules/FormHistory.sys.mjs"
 );
 const { Service } = ChromeUtils.import("resource://services-sync/service.js");
 const { Bookmark, BookmarkFolder, BookmarkQuery } = ChromeUtils.import(
@@ -292,20 +292,13 @@ add_task(async function test_forms_change_during_sync() {
       await uploadOutgoing.call(this);
     } finally {
       _("Inserting local form history entry");
-      await new Promise(resolve => {
-        FormHistory.update(
-          [
-            {
-              op: "add",
-              fieldname: "favoriteDrink",
-              value: "cocoa",
-            },
-          ],
-          {
-            handleCompletion: resolve,
-          }
-        );
-      });
+      await FormHistory.update([
+        {
+          op: "add",
+          fieldname: "favoriteDrink",
+          value: "cocoa",
+        },
+      ]);
       await engine._tracker.asyncObserver.promiseObserversComplete();
     }
   };

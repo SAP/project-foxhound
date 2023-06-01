@@ -4,26 +4,28 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["ExtensionStorageIDB"];
+const EXPORTED_SYMBOLS = ["ExtensionStorageIDB"];
+let ExtensionStorageIDB;
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { IndexedDB } = ChromeUtils.import(
-  "resource://gre/modules/IndexedDB.jsm"
+const { IndexedDB } = ChromeUtils.importESModule(
+  "resource://gre/modules/IndexedDB.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   ExtensionStorage: "resource://gre/modules/ExtensionStorage.jsm",
   ExtensionUtils: "resource://gre/modules/ExtensionUtils.jsm",
   getTrimmedString: "resource://gre/modules/ExtensionTelemetry.jsm",
-  Services: "resource://gre/modules/Services.jsm",
   OS: "resource://gre/modules/osfile.jsm",
 });
 
 // The userContextID reserved for the extension storage (its purpose is ensuring that the IndexedDB
 // storage used by the browser.storage.local API is not directly accessible from the extension code,
-// it is defined and reserved as "userContextIdInternal.webextStorageLocal" in ContextualIdentityService.jsm).
+// it is defined and reserved as "userContextIdInternal.webextStorageLocal" in ContextualIdentityService.sys.mjs).
 const WEBEXT_STORAGE_USER_CONTEXT_ID = -1 >>> 0;
 
 const IDB_NAME = "webExtensions-storage-local";
@@ -78,11 +80,11 @@ var ErrorsTelemetry = {
     }
 
     if (
-      error instanceof DOMException ||
+      DOMException.isInstance(error) ||
       error instanceof DataMigrationAbortedError
     ) {
       if (error.name.length > 80) {
-        return getTrimmedString(error.name);
+        return lazy.getTrimmedString(error.name);
       }
 
       return error.name;
@@ -147,7 +149,7 @@ var ErrorsTelemetry = {
         "extensions.data",
         "migrateResult",
         "storageLocal",
-        getTrimmedString(extensionId),
+        lazy.getTrimmedString(extensionId),
         extra
       );
     } catch (err) {
@@ -162,11 +164,12 @@ var ErrorsTelemetry = {
    * Record telemetry related to the unexpected errors raised while executing
    * a storage.local API call.
    *
-   * @param {string} extensionId
+   * @param {object} options
+   * @param {string} options.extensionId
    *        The id of the extension migrated.
-   * @param {string} storageMethod
+   * @param {string} options.storageMethod
    *        The storage.local API method being run.
-   * @param {Error}  error
+   * @param {Error}  options.error
    *        The unexpected error raised during the API call.
    */
   recordStorageLocalError({ extensionId, storageMethod, error }) {
@@ -176,7 +179,7 @@ var ErrorsTelemetry = {
       "extensions.data",
       "storageLocalError",
       storageMethod,
-      getTrimmedString(extensionId),
+      lazy.getTrimmedString(extensionId),
       { error_name: this.getErrorName(error) }
     );
   },
@@ -211,7 +214,7 @@ class ExtensionStorageLocalIDB extends IndexedDB {
    *        said object. Any values which are StructuredCloneHolder
    *        instances are deserialized before being stored.
    * @param {object}  options
-   * @param {function} options.serialize
+   * @param {Function} options.serialize
    *        Set to a function which will be used to serialize the values into
    *        a StructuredCloneHolder object (if appropriate) and being sent
    *        across the processes (it is also used to detect data cloning errors
@@ -323,7 +326,7 @@ class ExtensionStorageLocalIDB extends IndexedDB {
    *
    * @param {string|Array<string>} keys
    *        A string key of a list of storage items keys to remove.
-   * @returns {Promise<Object>}
+   * @returns {Promise<object>}
    *          Returns an object which contains applied changes.
    */
   async remove(keys) {
@@ -362,7 +365,7 @@ class ExtensionStorageLocalIDB extends IndexedDB {
   /**
    * Asynchronously clears all storage entries.
    *
-   * @returns {Promise<Object>}
+   * @returns {Promise<object>}
    *          Returns an object which contains applied changes.
    */
   async clear() {
@@ -457,16 +460,18 @@ async function migrateJSONFileData(extension, storagePrincipal) {
   try {
     abortIfShuttingDown();
 
-    oldStoragePath = ExtensionStorage.getStorageFile(extension.id);
-    oldStorageExists = await OS.File.exists(oldStoragePath).catch(fileErr => {
-      // If we can't access the oldStoragePath here, then extension is also going to be unable to
-      // access it, and so we log the error but we don't stop the extension from switching to
-      // the IndexedDB backend.
-      extension.logWarning(
-        `Unable to access extension storage.local data file: ${fileErr.message}::${fileErr.stack}`
-      );
-      return false;
-    });
+    oldStoragePath = lazy.ExtensionStorage.getStorageFile(extension.id);
+    oldStorageExists = await lazy.OS.File.exists(oldStoragePath).catch(
+      fileErr => {
+        // If we can't access the oldStoragePath here, then extension is also going to be unable to
+        // access it, and so we log the error but we don't stop the extension from switching to
+        // the IndexedDB backend.
+        extension.logWarning(
+          `Unable to access extension storage.local data file: ${fileErr.message}::${fileErr.stack}`
+        );
+        return false;
+      }
+    );
 
     // Migrate any data stored in the JSONFile backend (if any), and remove the old data file
     // if the migration has been completed successfully.
@@ -478,7 +483,7 @@ async function migrateJSONFileData(extension, storagePrincipal) {
         `Migrating storage.local data for ${extension.policy.debugName}...`
       );
 
-      jsonFile = await ExtensionStorage.getFile(extension.id);
+      jsonFile = await lazy.ExtensionStorage.getFile(extension.id);
 
       abortIfShuttingDown();
 
@@ -529,7 +534,7 @@ async function migrateJSONFileData(extension, storagePrincipal) {
     nonFatalError = err;
   } finally {
     // Clear the jsonFilePromise cached by the ExtensionStorage.
-    await ExtensionStorage.clearCachedFile(extension.id).catch(err => {
+    await lazy.ExtensionStorage.clearCachedFile(extension.id).catch(err => {
       extension.logWarning(err.message);
     });
   }
@@ -540,12 +545,15 @@ async function migrateJSONFileData(extension, storagePrincipal) {
     try {
       // Only migrate the file when it actually exists (e.g. the file name is not going to exist
       // when it is corrupted, because JSONFile internally rename it to `.corrupt`.
-      if (await OS.File.exists(oldStoragePath)) {
-        let openInfo = await OS.File.openUnique(`${oldStoragePath}.migrated`, {
-          humanReadable: true,
-        });
+      if (await lazy.OS.File.exists(oldStoragePath)) {
+        let openInfo = await lazy.OS.File.openUnique(
+          `${oldStoragePath}.migrated`,
+          {
+            humanReadable: true,
+          }
+        );
         await openInfo.file.close();
-        await OS.File.move(oldStoragePath, openInfo.path);
+        await lazy.OS.File.move(oldStoragePath, openInfo.path);
       }
     } catch (err) {
       nonFatalError = err;
@@ -570,7 +578,7 @@ async function migrateJSONFileData(extension, storagePrincipal) {
  * This ExtensionStorage class implements a backend for the storage.local API which
  * uses IndexedDB to store the data.
  */
-this.ExtensionStorageIDB = {
+ExtensionStorageIDB = {
   BACKEND_ENABLED_PREF,
   IDB_MIGRATED_PREF_BRANCH,
   IDB_MIGRATE_RESULT_HISTOGRAM,
@@ -639,7 +647,7 @@ this.ExtensionStorageIDB = {
    * @param {BaseContext} context
    *        The extension context that is selecting the storage backend.
    *
-   * @returns {Promise<Object>}
+   * @returns {Promise<object>}
    *          Returns a promise which resolves to an object which provides a
    *          `backendEnabled` boolean property, and if it is true the extension should use
    *          the IDB backend and the object also includes a `storagePrincipal` property
@@ -801,7 +809,7 @@ this.ExtensionStorageIDB = {
    *          Return an ExtensionError error instance.
    */
   normalizeStorageError({ error, extensionId, storageMethod }) {
-    const { ExtensionError } = ExtensionUtils;
+    const { ExtensionError } = lazy.ExtensionUtils;
 
     if (error instanceof ExtensionError) {
       return error;
@@ -809,7 +817,7 @@ this.ExtensionStorageIDB = {
 
     let errorMessage;
 
-    if (error instanceof DOMException) {
+    if (DOMException.isInstance(error)) {
       switch (error.name) {
         case "DataCloneError":
           errorMessage = String(error);

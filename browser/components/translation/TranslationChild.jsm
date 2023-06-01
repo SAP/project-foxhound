@@ -6,11 +6,11 @@
 
 var EXPORTED_SYMBOLS = ["TranslationChild"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const lazy = {};
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "LanguageDetector",
-  "resource:///modules/translation/LanguageDetector.jsm"
+  "resource://gre/modules/translation/LanguageDetector.jsm"
 );
 
 const STATE_OFFER = 0;
@@ -70,7 +70,7 @@ class TranslationChild extends JSWindowActorChild {
       return;
     }
 
-    LanguageDetector.detectLanguage(string).then(result => {
+    lazy.LanguageDetector.detectLanguage(string).then(result => {
       // Bail if we're not confident.
       if (!result.confident) {
         return;
@@ -107,8 +107,7 @@ class TranslationChild extends JSWindowActorChild {
 
     let engine = Services.prefs.getCharPref("browser.translation.engine");
     let importScope = ChromeUtils.import(
-      `resource:///modules/translation/${engine}Translator.jsm`,
-      {}
+      `resource:///modules/translation/${engine}Translator.jsm`
     );
     let translator = new importScope[engine + "Translator"](
       translationDocument,

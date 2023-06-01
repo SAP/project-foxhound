@@ -16,10 +16,11 @@
 #include <limits.h>
 #include <type_traits>
 
-#include "jspubtd.h"
 #include "Taint.h"
 
+#include "js/AllocPolicy.h"
 #include "js/GCAnnotations.h"
+#include "js/HashTable.h"
 #include "js/shadow/String.h"  // JS::shadow::String
 #include "js/shadow/Symbol.h"  // JS::shadow::Symbol
 #include "js/shadow/Zone.h"    // JS::shadow::Zone
@@ -212,7 +213,9 @@ struct MarkBitmap {
   inline bool isMarkedBlack(const TenuredCell* cell);
   inline bool isMarkedGray(const TenuredCell* cell);
   inline bool markIfUnmarked(const TenuredCell* cell, MarkColor color);
+  inline bool markIfUnmarkedAtomic(const TenuredCell* cell, MarkColor color);
   inline void markBlack(const TenuredCell* cell);
+  inline void markBlackAtomic(const TenuredCell* cell);
   inline void copyMarkBit(TenuredCell* dst, const TenuredCell* src,
                           ColorBit colorBit);
   inline void unmark(const TenuredCell* cell);
@@ -582,7 +585,9 @@ static MOZ_ALWAYS_INLINE bool CellIsMarkedGray(const Cell* cell) {
   return TenuredCellIsMarkedGray(reinterpret_cast<const TenuredCell*>(cell));
 }
 
-extern JS_PUBLIC_API bool CellIsMarkedGrayIfKnown(const Cell* cell);
+extern JS_PUBLIC_API bool CanCheckGrayBits(const TenuredCell* cell);
+
+extern JS_PUBLIC_API bool CellIsMarkedGrayIfKnown(const TenuredCell* cell);
 
 #ifdef DEBUG
 extern JS_PUBLIC_API void AssertCellIsNotGray(const Cell* cell);
@@ -597,15 +602,13 @@ MOZ_ALWAYS_INLINE bool CellHasStoreBuffer(const Cell* cell) {
 } /* namespace detail */
 
 MOZ_ALWAYS_INLINE bool IsInsideNursery(const Cell* cell) {
-  if (!cell) {
-    return false;
-  }
+  MOZ_ASSERT(cell);
   return detail::CellHasStoreBuffer(cell);
 }
 
 MOZ_ALWAYS_INLINE bool IsInsideNursery(const TenuredCell* cell) {
-  MOZ_ASSERT_IF(
-      cell, !detail::CellHasStoreBuffer(reinterpret_cast<const Cell*>(cell)));
+  MOZ_ASSERT(cell);
+  MOZ_ASSERT(!IsInsideNursery(reinterpret_cast<const Cell*>(cell)));
   return false;
 }
 
@@ -673,10 +676,31 @@ static MOZ_ALWAYS_INLINE Zone* GetStringZone(JSString* str) {
 extern JS_PUBLIC_API Zone* GetObjectZone(JSObject* obj);
 
 static MOZ_ALWAYS_INLINE bool GCThingIsMarkedGray(GCCellPtr thing) {
-  if (thing.mayBeOwnedByOtherRuntime()) {
+  js::gc::Cell* cell = thing.asCell();
+  if (IsInsideNursery(cell)) {
     return false;
   }
-  return js::gc::detail::CellIsMarkedGrayIfKnown(thing.asCell());
+
+  auto* tenuredCell = reinterpret_cast<js::gc::TenuredCell*>(cell);
+  return js::gc::detail::CellIsMarkedGrayIfKnown(tenuredCell);
+}
+
+// Specialised gray marking check for use by the cycle collector. This is not
+// called during incremental GC or when the gray bits are invalid.
+static MOZ_ALWAYS_INLINE bool GCThingIsMarkedGrayInCC(GCCellPtr thing) {
+  js::gc::Cell* cell = thing.asCell();
+  if (IsInsideNursery(cell)) {
+    return false;
+  }
+
+  auto* tenuredCell = reinterpret_cast<js::gc::TenuredCell*>(cell);
+  if (!js::gc::detail::TenuredCellIsMarkedGray(tenuredCell)) {
+    return false;
+  }
+
+  MOZ_ASSERT(js::gc::detail::CanCheckGrayBits(tenuredCell));
+
+  return true;
 }
 
 extern JS_PUBLIC_API JS::TraceKind GCThingTraceKind(void* thing);
@@ -736,18 +760,13 @@ static MOZ_ALWAYS_INLINE void ExposeGCThingToActiveJS(JS::GCCellPtr thing) {
     return;
   }
 
-  // There's nothing to do for permanent GC things that might be owned by
-  // another runtime.
-  if (thing.mayBeOwnedByOtherRuntime()) {
-    return;
-  }
-
-  // Bug 1734801: I'd like to arrange for this to subsume the permanent GC thing
-  // check above.
   auto* cell = reinterpret_cast<TenuredCell*>(thing.asCell());
   if (detail::TenuredCellIsMarkedBlack(cell)) {
     return;
   }
+
+  // GC things owned by other runtimes are always black.
+  MOZ_ASSERT(!thing.mayBeOwnedByOtherRuntime());
 
   auto* zone = JS::shadow::Zone::from(JS::GetTenuredGCThingZone(thing));
   if (zone->needsIncrementalBarrier()) {
@@ -763,7 +782,7 @@ static MOZ_ALWAYS_INLINE void IncrementalReadBarrier(JS::GCCellPtr thing) {
   // This is a lighter version of ExposeGCThingToActiveJS that doesn't do gray
   // unmarking.
 
-  if (IsInsideNursery(thing.asCell()) || thing.mayBeOwnedByOtherRuntime()) {
+  if (IsInsideNursery(thing.asCell())) {
     return;
   }
 
@@ -771,6 +790,8 @@ static MOZ_ALWAYS_INLINE void IncrementalReadBarrier(JS::GCCellPtr thing) {
   auto* cell = reinterpret_cast<TenuredCell*>(thing.asCell());
   if (zone->needsIncrementalBarrier() &&
       !detail::TenuredCellIsMarkedBlack(cell)) {
+    // GC things owned by other runtimes are always black.
+    MOZ_ASSERT(!thing.mayBeOwnedByOtherRuntime());
     PerformIncrementalReadBarrier(thing);
   }
 }

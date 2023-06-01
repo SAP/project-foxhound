@@ -19,6 +19,7 @@
 #include "gfx2DGlue.h"
 #include "gfxPlatform.h"
 #include "imgFrame.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/CheckedInt.h"
@@ -60,7 +61,7 @@ class SurfaceCacheImpl;
 static StaticRefPtr<SurfaceCacheImpl> sInstance;
 
 // The mutex protecting the surface cache.
-static StaticMutex sInstanceMutex;
+static StaticMutex sInstanceMutex MOZ_UNANNOTATED;
 
 ///////////////////////////////////////////////////////////////////////////////
 // SurfaceCache Implementation
@@ -132,6 +133,10 @@ class CachedSurface {
       return DrawableSurface();
     }
 
+    return mProvider->Surface();
+  }
+
+  DrawableSurface GetDrawableSurfaceEvenIfPlaceholder() const {
     return mProvider->Surface();
   }
 
@@ -1224,6 +1229,21 @@ class SurfaceCacheImpl final : public nsIMemoryReporter {
     aDiscard = std::move(mCachedSurfacesDiscard);
   }
 
+  already_AddRefed<CachedSurface> GetSurfaceForResetAnimation(
+      const ImageKey aImageKey, const SurfaceKey& aSurfaceKey,
+      const StaticMutexAutoLock& aAutoLock) {
+    RefPtr<CachedSurface> surface;
+
+    RefPtr<ImageSurfaceCache> cache = GetImageCache(aImageKey);
+    if (!cache) {
+      // No cached surfaces for this image.
+      return surface.forget();
+    }
+
+    surface = cache->Lookup(aSurfaceKey, /* aForAccess = */ false);
+    return surface.forget();
+  }
+
   void LockSurface(NotNull<CachedSurface*> aSurface,
                    const StaticMutexAutoLock& aAutoLock) {
     if (aSurface->IsPlaceholder() || aSurface->IsLocked()) {
@@ -1379,7 +1399,8 @@ class SurfaceCacheImpl final : public nsIMemoryReporter {
     bool needsDispatch = mReleasingImagesOnMainThread.IsEmpty();
     mReleasingImagesOnMainThread.AppendElement(image);
 
-    if (!needsDispatch || gXPCOMThreadsShutDown) {
+    if (!needsDispatch ||
+        AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMShutdownFinal)) {
       // Either there is already a ongoing task for ClearReleasingImages() or
       // it's too late in shutdown to dispatch.
       return;
@@ -1601,7 +1622,9 @@ void SurfaceCache::Initialize() {
   // Compute the size of the surface cache.
   uint64_t memorySize = PR_GetPhysicalMemorySize();
   if (memorySize == 0) {
+#if !defined(__DragonFly__)
     MOZ_ASSERT_UNREACHABLE("PR_GetPhysicalMemorySize not implemented here");
+#endif
     memorySize = 256 * 1024 * 1024;  // Fall back to 256MB.
   }
   uint64_t proposedSize = memorySize / surfaceCacheSizeFactor;
@@ -1794,6 +1817,39 @@ void SurfaceCache::DiscardAll() {
 }
 
 /* static */
+void SurfaceCache::ResetAnimation(const ImageKey aImageKey,
+                                  const SurfaceKey& aSurfaceKey) {
+  RefPtr<CachedSurface> surface;
+  nsTArray<RefPtr<CachedSurface>> discard;
+  {
+    StaticMutexAutoLock lock(sInstanceMutex);
+    if (!sInstance) {
+      return;
+    }
+
+    surface =
+        sInstance->GetSurfaceForResetAnimation(aImageKey, aSurfaceKey, lock);
+    sInstance->TakeDiscard(discard, lock);
+  }
+
+  // Calling Reset will acquire the AnimationSurfaceProvider::mFramesMutex
+  // mutex. In other places we acquire the mFramesMutex then call into the
+  // surface cache (acquiring the surface cache mutex), so that determines a
+  // lock order which we must obey by calling Reset after releasing the surface
+  // cache mutex.
+  if (surface) {
+    DrawableSurface drawableSurface =
+        surface->GetDrawableSurfaceEvenIfPlaceholder();
+    if (drawableSurface) {
+      MOZ_ASSERT(surface->GetSurfaceKey() == aSurfaceKey,
+                 "ResetAnimation() not returning an exact match?");
+
+      drawableSurface.Reset();
+    }
+  }
+}
+
+/* static */
 void SurfaceCache::CollectSizeOfSurfaces(
     const ImageKey aImageKey, nsTArray<SurfaceMemoryCounter>& aCounters,
     MallocSizeOf aMallocSizeOf) {
@@ -1881,7 +1937,7 @@ void SurfaceCache::ReleaseImageOnMainThread(
 
   // Don't try to dispatch the release after shutdown, we'll just leak the
   // runnable.
-  if (gXPCOMThreadsShutDown) {
+  if (AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMShutdownFinal)) {
     return;
   }
 

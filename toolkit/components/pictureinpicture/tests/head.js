@@ -3,8 +3,8 @@
 
 "use strict";
 
-const { TOGGLE_POLICIES } = ChromeUtils.import(
-  "resource://gre/modules/PictureInPictureControls.jsm"
+const { TOGGLE_POLICIES } = ChromeUtils.importESModule(
+  "resource://gre/modules/PictureInPictureControls.sys.mjs"
 );
 
 const TEST_ROOT = getRootDirectory(gTestPath).replace(
@@ -21,6 +21,7 @@ const TEST_PAGE_WITH_IFRAME = TEST_ROOT_2 + "test-page-with-iframe.html";
 const TEST_PAGE_WITH_SOUND = TEST_ROOT + "test-page-with-sound.html";
 const TEST_PAGE_WITH_NAN_VIDEO_DURATION =
   TEST_ROOT + "test-page-with-nan-video-duration.html";
+const TEST_PAGE_WITH_WEBVTT = TEST_ROOT + "test-page-with-webvtt.html";
 const WINDOW_TYPE = "Toolkit:PictureInPicture";
 const TOGGLE_POSITION_PREF =
   "media.videocontrols.picture-in-picture.video-toggle.position";
@@ -88,27 +89,51 @@ const DEFAULT_TOGGLE_STYLES = {
  * Picture-in-Picture for that <video>, and resolves with the
  * Picture-in-Picture window once it is ready to be used.
  *
+ * If triggerFn is not specified, then open using the
+ * MozTogglePictureInPicture event.
+ *
  * @param {Element,BrowsingContext} browser The <xul:browser> or
  * BrowsingContext hosting the <video>
  *
  * @param {String} videoID The ID of the video to trigger
  * Picture-in-Picture on.
  *
+ * @param {boolean} triggerFn Use the given function to open the pip window,
+ *                  which runs in the parent process.
+ *
  * @return Promise
  * @resolves With the Picture-in-Picture window when ready.
  */
-async function triggerPictureInPicture(browser, videoID) {
+async function triggerPictureInPicture(browser, videoID, triggerFn) {
   let domWindowOpened = BrowserTestUtils.domWindowOpenedAndLoaded(null);
-  let videoReady = SpecialPowers.spawn(browser, [videoID], async videoID => {
-    let video = content.document.getElementById(videoID);
-    let event = new content.CustomEvent("MozTogglePictureInPicture", {
-      bubbles: true,
+
+  let videoReady = null;
+  if (triggerFn) {
+    await SpecialPowers.spawn(browser, [videoID], async videoID => {
+      let video = content.document.getElementById(videoID);
+      video.focus();
     });
-    video.dispatchEvent(event);
-    await ContentTaskUtils.waitForCondition(() => {
-      return video.isCloningElementVisually;
-    }, "Video is being cloned visually.");
-  });
+
+    triggerFn();
+
+    videoReady = SpecialPowers.spawn(browser, [videoID], async videoID => {
+      let video = content.document.getElementById(videoID);
+      await ContentTaskUtils.waitForCondition(() => {
+        return video.isCloningElementVisually;
+      }, "Video is being cloned visually.");
+    });
+  } else {
+    videoReady = SpecialPowers.spawn(browser, [videoID], async videoID => {
+      let video = content.document.getElementById(videoID);
+      let event = new content.CustomEvent("MozTogglePictureInPicture", {
+        bubbles: true,
+      });
+      video.dispatchEvent(event);
+      await ContentTaskUtils.waitForCondition(() => {
+        return video.isCloningElementVisually;
+      }, "Video is being cloned visually.");
+    });
+  }
   let win = await domWindowOpened;
   await Promise.all([
     SimpleTest.promiseFocus(win),
@@ -273,7 +298,7 @@ async function toggleOpacityReachesThreshold(
  * @param {String} videoID The ID of the video element that we expect the toggle
  * to appear on.
  * @param {Number} policy Optional argument. If policy is defined, then it should
- * be one of the values in the TOGGLE_POLICIES from PictureInPictureControls.jsm.
+ * be one of the values in the TOGGLE_POLICIES from PictureInPictureControls.sys.mjs.
  * If undefined, this function will ensure no policy attribute is set.
  *
  * @return Promise
@@ -300,8 +325,8 @@ async function assertTogglePolicy(
     }, "Waiting for the hovering state to be set on the video.");
 
     if (policy) {
-      const { TOGGLE_POLICY_STRINGS } = ChromeUtils.import(
-        "resource://gre/modules/PictureInPictureControls.jsm"
+      const { TOGGLE_POLICY_STRINGS } = ChromeUtils.importESModule(
+        "resource://gre/modules/PictureInPictureControls.sys.mjs"
       );
       let policyAttr = toggle.getAttribute("policy");
       Assert.equal(
@@ -409,8 +434,8 @@ async function prepareForToggleClick(browser, videoID) {
       // mousemove events. We don't exactly know when that IntersectionObserver
       // will fire, so we poll a special testing function that will tell us when
       // the video that we care about is being tracked.
-      let { PictureInPictureToggleChild } = ChromeUtils.import(
-        "resource://gre/actors/PictureInPictureChild.jsm"
+      let { PictureInPictureToggleChild } = ChromeUtils.importESModule(
+        "resource://gre/actors/PictureInPictureChild.sys.mjs"
       );
       await ContentTaskUtils.waitForCondition(
         () => {
@@ -463,7 +488,9 @@ async function getToggleClientRect(
 ) {
   let args = { videoID, toggleID: toggleStyles.rootID };
   return ContentTask.spawn(browser, args, async args => {
-    const { Rect } = ChromeUtils.import("resource://gre/modules/Geometry.jsm");
+    const { Rect } = ChromeUtils.importESModule(
+      "resource://gre/modules/Geometry.sys.mjs"
+    );
 
     let { videoID, toggleID } = args;
     let video = content.document.getElementById(videoID);
@@ -508,7 +535,7 @@ async function getToggleClientRect(
  * in this region will not result in the window opening.
  *
  * If policy is defined, then it should be one of the values in the
- * TOGGLE_POLICIES from PictureInPictureControls.jsm.
+ * TOGGLE_POLICIES from PictureInPictureControls.sys.mjs.
  *
  * See the documentation for the DEFAULT_TOGGLE_STYLES object for a sense
  * of what styleRules is expected to be. If left undefined, styleRules will
@@ -560,7 +587,7 @@ async function testToggle(testURL, expectations, prepFn = async () => {}) {
  * @param {Boolean} canToggle True if we expect the toggle to be visible and
  * clickable by the mouse for the associated video.
  * @param {Number} policy Optional argument. If policy is defined, then it should
- * be one of the values in the TOGGLE_POLICIES from PictureInPictureControls.jsm.
+ * be one of the values in the TOGGLE_POLICIES from PictureInPictureControls.sys.mjs.
  * @param {Object} toggleStyles Optional argument. See the documentation for the
  * DEFAULT_TOGGLE_STYLES object for a sense of what styleRules is expected to be.
  *
@@ -847,4 +874,81 @@ async function isVideoMuted(browser, videoID) {
   return SpecialPowers.spawn(browser, [videoID], async videoID => {
     return content.document.getElementById(videoID).muted;
   });
+}
+
+/**
+ * Initializes videos and text tracks for the current test case.
+ * First track is the default track to be loaded onto the video.
+ * Once initialization is done, play then pause the requested video.
+ * so that text tracks are loaded.
+ * @param {Element} browser The <xul:browser> hosting the <video>
+ * @param {String} videoID The ID of the video being checked
+ * @param {Integer} defaultTrackIndex The index of the track to be loaded, or none if -1
+ */
+async function prepareVideosAndWebVTTTracks(
+  browser,
+  videoID,
+  defaultTrackIndex = 0
+) {
+  info("Preparing video and initial text tracks");
+  await ensureVideosReady(browser);
+  await SpecialPowers.spawn(
+    browser,
+    [{ videoID, defaultTrackIndex }],
+    async args => {
+      let video = content.document.getElementById(args.videoID);
+      let tracks = video.textTracks;
+
+      is(tracks.length, 5, "Number of tracks loaded should be 5");
+
+      // Enable track for originating video
+      if (args.defaultTrackIndex >= 0) {
+        info(`Loading track ${args.defaultTrackIndex + 1}`);
+        let track = tracks[args.defaultTrackIndex];
+        tracks.mode = "showing";
+        track.mode = "showing";
+      }
+
+      // Briefly play the video to load text tracks onto the pip window.
+      info("Playing video to load text tracks");
+      video.play();
+      info("Pausing video");
+      video.pause();
+      ok(video.paused, "Video should be paused before proceeding with test");
+    }
+  );
+}
+
+/**
+ * Plays originating video until the next cue is loaded.
+ * Once the next cue is loaded, pause the video.
+ * @param {Element} browser The <xul:browser> hosting the <video>
+ * @param {String} videoID The ID of the video being checked
+ * @param {Integer} textTrackIndex The index of the track to be loaded, or none if -1
+ */
+async function waitForNextCue(browser, videoID, textTrackIndex = 0) {
+  if (textTrackIndex < 0) {
+    ok(false, "Cannot wait for next cue with invalid track index");
+  }
+
+  await SpecialPowers.spawn(
+    browser,
+    [{ videoID, textTrackIndex }],
+    async args => {
+      let video = content.document.getElementById(args.videoID);
+      info("Playing video to activate next cue");
+      video.play();
+      ok(!video.paused, "Video is playing");
+
+      info("Waiting until cuechange is called");
+      await ContentTaskUtils.waitForEvent(
+        video.textTracks[args.textTrackIndex],
+        "cuechange"
+      );
+
+      info("Pausing video to read text track");
+      video.pause();
+      ok(video.paused, "Video is paused");
+    }
+  );
 }

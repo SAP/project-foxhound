@@ -40,7 +40,16 @@
   ${EndIf}
 
   ; Adds a pinned Task Bar shortcut (see MigrateTaskBarShortcut for details).
-  ${MigrateTaskBarShortcut}
+  ; When we enabled this feature for Windows 10 & 11 we decided _not_ to pin
+  ; during an update (even once) because we already offered to do when the
+  ; the user originally installed, and we don't want to go against their
+  ; explicit wishes.
+  ; For Windows 7 and 8, we've been doing this ~forever, and those users may
+  ; not have experienced the onboarding offer to pin to taskbar, so we're
+  ; leaving it enabled there.
+  ${If} ${AtMostWin2012R2}
+    ${MigrateTaskBarShortcut} "$AddTaskbarSC"
+  ${EndIf}
 
   ; Update the name/icon/AppModelID of our shortcuts as needed, then update the
   ; lastwritetime of the Start Menu shortcut to clear the tile icon cache.
@@ -84,6 +93,20 @@
 
   ; Fix the distribution.ini file if applicable
   ${FixDistributionsINI}
+
+  ; https://bugzilla.mozilla.org/show_bug.cgi?id=1616355
+  ; Migrate postSigningData file if present, and if it doesn't already exist.
+  ${GetLocalAppDataFolder} $0
+  ${If} ${FileExists} "$INSTDIR\postSigningData"
+    ; If it already exists, just delete the appdata one.
+    ; It's possible this was for a different install, but it's impossible to
+    ; know for sure, so we may as well just get rid of it.
+    Delete /REBOOTOK "$0\Mozilla\Firefox\postSigningData"
+  ${Else}
+    ${If} ${FileExists} "$0\Mozilla\Firefox\postSigningData"
+      Rename "$0\Mozilla\Firefox\postSigningData" "$INSTDIR\postSigningData"
+    ${EndIf}
+  ${EndIf}
 
   RmDir /r /REBOOTOK "$INSTDIR\${TO_BE_DELETED}"
 
@@ -145,6 +168,10 @@
   ${ResetLauncherProcessDefaults}
 !endif
 
+  ${If} ${AtLeastWin10}
+    ${WriteToastNotificationRegistration} $TmpVal
+  ${EndIf}
+
 ; Make sure the scheduled task registration for the default browser agent gets
 ; updated, but only if we're not the instance of PostUpdate that was started
 ; by the service, because this needs to run as the actual user. Also, don't do
@@ -184,6 +211,17 @@ ${RemoveDefaultBrowserAgentShortcut}
   ${EndIf}
 !macroend
 !define TouchStartMenuShortcut "!insertmacro TouchStartMenuShortcut"
+
+!macro AddPrivateBrowsingShortcut
+  ${IfNot} ${FileExists} "$SMPROGRAMS\$(PRIVATE_BROWSING_SHORTCUT_TITLE).lnk"
+    CreateShortcut "$SMPROGRAMS\$(PRIVATE_BROWSING_SHORTCUT_TITLE).lnk" "$INSTDIR\${PrivateBrowsingEXE}" "" "$INSTDIR\${PrivateBrowsingEXE}" ${IDI_PBICON_PB_EXE_ZERO_BASED}
+    ShellLink::SetShortcutWorkingDirectory "$SMPROGRAMS\$(PRIVATE_BROWSING_SHORTCUT_TITLE).lnk" "$INSTDIR"
+    ShellLink::SetShortcutDescription "$SMPROGRAMS\$(PRIVATE_BROWSING_SHORTCUT_TITLE).lnk" "$(PRIVATE_BROWSING_SHORTCUT_TITLE)"
+    ApplicationID::Set "$SMPROGRAMS\$(PRIVATE_BROWSING_SHORTCUT_TITLE).lnk" "$AppUserModelID;PrivateBrowsingAUMID" "true"
+    ${LogStartMenuShortcut} "$(PRIVATE_BROWSING_SHORTCUT_TITLE).lnk"
+  ${EndIf}
+!macroend
+!define AddPrivateBrowsingShortcut "!insertmacro AddPrivateBrowsingShortcut"
 
 !macro SetAsDefaultAppGlobal
   ${RemoveDeprecatedKeys} ; Does not use SHCTX
@@ -487,30 +525,33 @@ ${RemoveDefaultBrowserAgentShortcut}
   ; Keep this list synchronized with
   ; https://searchfox.org/mozilla-central/source/browser/installer/windows/msix/AppxManifest.xml.in.
   ; and `os.environment.launched_to_handle` and `os.environment.invoked_to_handle` telemetry in
-  ; https://searchfox.org/mozilla-central/source/browser/components/BrowserContentHandler.jsm.
-  ${AddAssociationIfNoneExist} ".pdf" "FirefoxHTML$5"
+  ; https://searchfox.org/mozilla-central/source/browser/components/BrowserContentHandler.sys.mjs.
   ${AddAssociationIfNoneExist} ".oga" "FirefoxHTML$5"
   ${AddAssociationIfNoneExist} ".ogg" "FirefoxHTML$5"
   ${AddAssociationIfNoneExist} ".ogv" "FirefoxHTML$5"
-  ${AddAssociationIfNoneExist} ".pdf" "FirefoxHTML$5"
   ${AddAssociationIfNoneExist} ".webm" "FirefoxHTML$5"
   ${AddAssociationIfNoneExist} ".svg" "FirefoxHTML$5"
   ${AddAssociationIfNoneExist} ".webp"  "FirefoxHTML$5"
   ${AddAssociationIfNoneExist} ".avif" "FirefoxHTML$5"
 
-  ; An empty string is used for the 5th param because FirefoxHTML is not a
-  ; protocol handler
-  ${AddDisabledDDEHandlerValues} "FirefoxHTML$5" "$2" "$8,1" \
+  ${AddAssociationIfNoneExist} ".pdf" "FirefoxPDF$5"
+
+  ; An empty string is used for the 5th param because FirefoxHTML- is not a
+  ; protocol handler.  Ditto for FirefoxPDF-.
+  ${AddDisabledDDEHandlerValues} "FirefoxHTML$5" "$2" "$8,${IDI_DOCUMENT_ZERO_BASED}" \
                                  "${AppRegName} HTML Document" ""
 
-  ${AddDisabledDDEHandlerValues} "FirefoxURL$5" "$2" "$8,1" "${AppRegName} URL" \
+  ${AddDisabledDDEHandlerValues} "FirefoxPDF$5" "$2" "$8,${IDI_DOCUMENT_PDF_ZERO_BASED}" \
+                                 "${AppRegName} PDF Document" ""
+
+  ${AddDisabledDDEHandlerValues} "FirefoxURL$5" "$2" "$8,${IDI_DOCUMENT_ZERO_BASED}" "${AppRegName} URL" \
                                  "true"
   ; An empty string is used for the 4th & 5th params because the following
   ; protocol handlers already have a display name and the additional keys
   ; required for a protocol handler.
-  ${AddDisabledDDEHandlerValues} "http" "$2" "$8,1" "" ""
-  ${AddDisabledDDEHandlerValues} "https" "$2" "$8,1" "" ""
-  ${AddDisabledDDEHandlerValues} "mailto" "$2" "$8,1" "" ""
+  ${AddDisabledDDEHandlerValues} "http" "$2" "$8,${IDI_DOCUMENT_ZERO_BASED}" "" ""
+  ${AddDisabledDDEHandlerValues} "https" "$2" "$8,${IDI_DOCUMENT_ZERO_BASED}" "" ""
+  ${AddDisabledDDEHandlerValues} "mailto" "$2" "$8,${IDI_DOCUMENT_ZERO_BASED}" "" ""
 !macroend
 !define SetHandlers "!insertmacro SetHandlers"
 
@@ -558,7 +599,7 @@ ${RemoveDefaultBrowserAgentShortcut}
 
   WriteRegStr ${RegKey} "$0" "" "${BrandFullName}"
 
-  WriteRegStr ${RegKey} "$0\DefaultIcon" "" "$8,0"
+  WriteRegStr ${RegKey} "$0\DefaultIcon" "" "$8,${IDI_APPICON_ZERO_BASED}"
 
   ; The Reinstall Command is defined at
   ; http://msdn.microsoft.com/library/default.asp?url=/library/en-us/shellcc/platform/shell/programmersguide/shell_adv/registeringapps.asp
@@ -577,18 +618,19 @@ ${RemoveDefaultBrowserAgentShortcut}
 
   ; Capabilities registry keys
   WriteRegStr ${RegKey} "$0\Capabilities" "ApplicationDescription" "$(REG_APP_DESC)"
-  WriteRegStr ${RegKey} "$0\Capabilities" "ApplicationIcon" "$8,0"
+  WriteRegStr ${RegKey} "$0\Capabilities" "ApplicationIcon" "$8,${IDI_APPICON_ZERO_BASED}"
   WriteRegStr ${RegKey} "$0\Capabilities" "ApplicationName" "${BrandShortName}"
 
   WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".htm"   "FirefoxHTML$2"
   WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".html"  "FirefoxHTML$2"
-  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".pdf"   "FirefoxHTML$2"
   WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".shtml" "FirefoxHTML$2"
   WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".xht"   "FirefoxHTML$2"
   WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".xhtml" "FirefoxHTML$2"
   WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".svg"   "FirefoxHTML$2"
   WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".webp"  "FirefoxHTML$2"
   WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".avif"  "FirefoxHTML$2"
+
+  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".pdf"   "FirefoxPDF$2"
 
   WriteRegStr ${RegKey} "$0\Capabilities\StartMenu" "StartMenuInternet" "$1"
 
@@ -619,7 +661,7 @@ ${RemoveDefaultBrowserAgentShortcut}
     ; Make sure files associated this way use the document icon instead of the
     ; application icon.
     WriteRegStr ${RegKey} "Software\Classes\Applications\${FileMainEXE}\DefaultIcon" \
-                "" "$8,1"
+                "" "$8,${IDI_DOCUMENT_ZERO_BASED}"
     ; If we're going to create this key at all, we also need to list our supported
     ; file types in it, because otherwise we'll be shown as a suggestion for every
     ; single file type, whether we support it in any way or not.
@@ -752,8 +794,8 @@ ${RemoveDefaultBrowserAgentShortcut}
   ${Unless} ${Errors}
     ReadRegStr $1 ${RegKey} "Software\Classes\$3\DefaultIcon" ""
     ${GetLongPath} "$INSTDIR\${FileMainEXE}" $2
-    ${If} "$1" != "$2,1"
-      WriteRegStr ${RegKey} "Software\Classes\$3\DefaultIcon" "" "$2,1"
+    ${If} "$1" != "$2,${IDI_DOCUMENT_ZERO_BASED}"
+      WriteRegStr ${RegKey} "Software\Classes\$3\DefaultIcon" "" "$2,${IDI_DOCUMENT_ZERO_BASED}"
     ${EndIf}
   ${EndUnless}
 !macroend
@@ -849,7 +891,7 @@ ${RemoveDefaultBrowserAgentShortcut}
 
     ; Write the uninstall registry keys
     ${WriteRegStr2} $1 "$0" "Comments" "${BrandFullNameInternal} ${AppVersion}$3 (${ARCH} ${AB_CD})" 0
-    ${WriteRegStr2} $1 "$0" "DisplayIcon" "$8\${FileMainEXE},0" 0
+    ${WriteRegStr2} $1 "$0" "DisplayIcon" "$8\${FileMainEXE},${IDI_APPICON_ZERO_BASED}" 0
     ${WriteRegStr2} $1 "$0" "DisplayName" "${BrandFullNameInternal}$3 (${ARCH} ${AB_CD})" 0
     ${WriteRegStr2} $1 "$0" "DisplayVersion" "${AppVersion}" 0
     ${WriteRegStr2} $1 "$0" "HelpLink" "${HelpLink}" 0
@@ -968,24 +1010,32 @@ ${RemoveDefaultBrowserAgentShortcut}
   ${If} "$R9" == "true"
     ; An empty string is used for the 5th param because FirefoxHTML is not a
     ; protocol handler.
-    ${AddDisabledDDEHandlerValues} "FirefoxHTML-$AppUserModelID" "$2" "$8,1" \
+    ${AddDisabledDDEHandlerValues} "FirefoxHTML-$AppUserModelID" "$2" "$8,${IDI_DOCUMENT_ZERO_BASED}" \
                                    "${AppRegName} HTML Document" ""
   ${Else}
     ${IsHandlerForInstallDir} "FirefoxHTML" $R9
     ${If} "$R9" == "true"
-      ${AddDisabledDDEHandlerValues} "FirefoxHTML" "$2" "$8,1" \
+      ${AddDisabledDDEHandlerValues} "FirefoxHTML" "$2" "$8,${IDI_DOCUMENT_ZERO_BASED}" \
                                      "${AppRegName} HTML Document" ""
     ${EndIf}
   ${EndIf}
 
+  ; FirefoxPDF-* was added after FirefoxHTML and FirefoxURL, so we've never
+  ; supported bare "FirefoxPDF".  But we won't have it from the installer, so we
+  ; add/update it unconditionally.  `PostUpdate` is gated on `uninstall.log`
+  ; being present, so the invocation here will only happen for installed
+  ; directories, not unpackaged directories.
+  ${AddDisabledDDEHandlerValues} "FirefoxPDF-$AppUserModelID" "$2" "$8,${IDI_DOCUMENT_PDF_ZERO_BASED}" \
+                                 "${AppRegName} PDF Document" ""
+
   ${IsHandlerForInstallDir} "FirefoxURL-$AppUserModelID" $R9
   ${If} "$R9" == "true"
-    ${AddDisabledDDEHandlerValues} "FirefoxURL-$AppUserModelID" "$2" "$8,1" \
+    ${AddDisabledDDEHandlerValues} "FirefoxURL-$AppUserModelID" "$2" "$8,${IDI_DOCUMENT_ZERO_BASED}" \
                                    "${AppRegName} URL" "true"
   ${Else}
     ${IsHandlerForInstallDir} "FirefoxURL" $R9
     ${If} "$R9" == "true"
-      ${AddDisabledDDEHandlerValues} "FirefoxURL" "$2" "$8,1" \
+      ${AddDisabledDDEHandlerValues} "FirefoxURL" "$2" "$8,${IDI_DOCUMENT_ZERO_BASED}" \
                                      "${AppRegName} URL" "true"
     ${EndIf}
   ${EndIf}
@@ -997,22 +1047,22 @@ ${RemoveDefaultBrowserAgentShortcut}
   ${IsHandlerForInstallDir} "ftp" $R9
   ${If} "$R9" == "true"
     ; In the past, we supported ftp, so we need to delete any registration.
-    ${AddDisabledDDEHandlerValues} "ftp" "$2" "$8,1" "" "delete"
+    ${AddDisabledDDEHandlerValues} "ftp" "$2" "$8,${IDI_DOCUMENT_ZERO_BASED}" "" "delete"
   ${EndIf}
 
   ${IsHandlerForInstallDir} "http" $R9
   ${If} "$R9" == "true"
-    ${AddDisabledDDEHandlerValues} "http" "$2" "$8,1" "" ""
+    ${AddDisabledDDEHandlerValues} "http" "$2" "$8,${IDI_DOCUMENT_ZERO_BASED}" "" ""
   ${EndIf}
 
   ${IsHandlerForInstallDir} "https" $R9
   ${If} "$R9" == "true"
-    ${AddDisabledDDEHandlerValues} "https" "$2" "$8,1" "" ""
+    ${AddDisabledDDEHandlerValues} "https" "$2" "$8,${IDI_DOCUMENT_ZERO_BASED}" "" ""
   ${EndIf}
 
   ${IsHandlerForInstallDir} "mailto" $R9
   ${If} "$R9" == "true"
-    ${AddDisabledDDEHandlerValues} "mailto" "$2" "$8,1" "" ""
+    ${AddDisabledDDEHandlerValues} "mailto" "$2" "$8,${IDI_DOCUMENT_ZERO_BASED}" "" ""
   ${EndIf}
 !macroend
 !define UpdateProtocolHandlers "!insertmacro UpdateProtocolHandlers"
@@ -1215,14 +1265,14 @@ ${RemoveDefaultBrowserAgentShortcut}
 !macroend
 !define FixDistributionsINI "!insertmacro FixDistributionsINI"
 
-; Adds a pinned shortcut to Task Bar on update for Windows 7 and above if this
-; macro has never been called before and the application is default (see
-; PinToTaskBar for more details).
-; Since defaults handling is handled by Windows in Win8 and later, we always
-; attempt to pin a taskbar on that OS.  If Windows sets the defaults at
-; installation time, then we don't get the opportunity to run this code at
-; that time.
-!macro MigrateTaskBarShortcut
+; For updates, adds a pinned shortcut to Task Bar on update for Windows 7
+; and 8 if this macro has never been called before and the application
+; is default (see PinToTaskBar for more details). This doesn't get called
+; for Windows 10 and 11 on updates, so we will never pin on update there.
+;
+; For installs, adds a taskbar pin if SHOULD_PIN is 1. (Defaults to 1,
+; but is controllable through the UI, ini file, and command line flags.)
+!macro MigrateTaskBarShortcut SHOULD_PIN
   ${GetShortcutsLogPath} $0
   ${If} ${FileExists} "$0"
     ClearErrors
@@ -1234,47 +1284,8 @@ ${RemoveDefaultBrowserAgentShortcut}
         "Software\Mozilla\${AppName}\Installer\$AppUserModelID" \
         "WasPinnedToTaskbar" 1
       ${If} ${AtLeastWin7}
-        ; If we didn't run the stub installer, AddTaskbarSC will be empty.
-        ; We determine whether to pin based on whether we're the default
-        ; browser, or if we're on win8 or later, we always pin.
-        ${If} $AddTaskbarSC == ""
-          ; No need to check the default on Win8 and later
-          ${If} ${AtMostWin2008R2}
-            ; Check if the Firefox is the http handler for this user
-            SetShellVarContext current ; Set SHCTX to the current user
-            ${IsHandlerForInstallDir} "http" $R9
-            ${If} $TmpVal == "HKLM"
-              SetShellVarContext all ; Set SHCTX to all users
-            ${EndIf}
-          ${EndIf}
-          ${If} "$R9" == "true"
-          ${OrIf} ${AtLeastWin8}
-            ${PinToTaskBar}
-          ${EndIf}
-        ${ElseIf} $AddTaskbarSC == "1"
+        ${If} "${SHOULD_PIN}" == "1"
           ${PinToTaskBar}
-        ${EndIf}
-      ${EndIf}
-    ${ElseIf} ${AtLeastWin10}
-      ${GetInstallerRegistryPref} "Software\Mozilla\${AppName}" \
-        "installer.taskbarpin.win10.enabled" $2
-      ${If} $2 == "true"
-        ; On Windows 10, we may have previously tried to make a taskbar pin
-        ; and failed because the API we tried to use was blocked by the OS.
-        ; We have an option that works in more cases now, so we're going to try
-        ; again, but also record that we've done so by writing a particular
-        ; registry value, so that we don't continue to do this repeatedly.
-        ClearErrors
-        ReadRegDWORD $2 HKCU \
-            "Software\Mozilla\${AppName}\Installer\$AppUserModelID" \
-            "WasPinnedToTaskbar"
-        ${If} ${Errors}
-          WriteRegDWORD HKCU \
-            "Software\Mozilla\${AppName}\Installer\$AppUserModelID" \
-            "WasPinnedToTaskbar" 1
-          ${If} $AddTaskbarSC != "0"
-            ${PinToTaskBar}
-          ${EndIf}
         ${EndIf}
       ${EndIf}
     ${EndIf}
@@ -1343,17 +1354,22 @@ ${RemoveDefaultBrowserAgentShortcut}
               ; Pin the shortcut to the TaskBar. 5386 is the shell32.dll
               ; resource id for the "Pin to Taskbar" string.
               InvokeShellVerb::DoIt "$SMPROGRAMS" "$1" "5386"
-            ${Else}
+            ${ElseIf} ${AtMostWaaS} 1809
               ; In Windows 10 the "Pin to Taskbar" resource was removed, so we
               ; can't access the verb that way anymore. We have a create a
               ; command key using the GUID that's assigned to this action and
-              ; then invoke that as a verb.
+              ; then invoke that as a verb. This works up until build 1809
               ReadRegStr $R9 HKLM \
                 "Software\Microsoft\Windows\CurrentVersion\Explorer\CommandStore\shell\Windows.taskbarpin" \
                 "ExplorerCommandHandler"
               WriteRegStr HKCU "Software\Classes\*\shell\${AppRegName}-$AppUserModelID" "ExplorerCommandHandler" $R9
               InvokeShellVerb::DoIt "$SMPROGRAMS" "$1" "${AppRegName}-$AppUserModelID"
               DeleteRegKey HKCU "Software\Classes\*\shell\${AppRegName}-$AppUserModelID"
+            ${Else}
+              ; In the Windows 10 1903 and up (and Windows 11) the above no
+              ; longer works. We have yet another method for these versions
+              ; which is detailed in the PinToTaskbar plugin code.
+              PinToTaskbar::Pin "$SMPROGRAMS\$1"
             ${EndIf}
 
             ; Delete the shortcut if it was created
@@ -1620,7 +1636,7 @@ Function SetAsDefaultAppUserHKCU
     Pop $0
   ${EndUnless}
   ${RemoveDeprecatedKeys}
-  ${MigrateTaskBarShortcut}
+  ${MigrateTaskBarShortcut} "$R0"
 FunctionEnd
 
 ; Helper for updating the shortcut application model IDs.
@@ -1645,6 +1661,11 @@ FunctionEnd
 !ifdef NO_LOG
 
 Function SetAsDefaultAppUser
+  ; AddTaskbarSC is needed by MigrateTaskBarShortcut, which is called by
+  ; SetAsDefaultAppUserHKCU. If this is called via ExecCodeSegment,
+  ; MigrateTaskBarShortcut will not see the value of AddTaskbarSC, so we
+  ; send it via a register instead.
+  StrCpy $R0 $AddTaskbarSC
   ; On Win8, we want to avoid having a UAC prompt since we'll already have
   ; another action for control panel default browser selection popping up
   ; to the user.  Win8 is the first OS where the start menu keys can be
@@ -1747,3 +1768,41 @@ FunctionEnd
 !macroend
 !define ResetLauncherProcessDefaults "!insertmacro ResetLauncherProcessDefaults"
 !endif
+
+!macro WriteToastNotificationRegistration RegKey
+  ; Find or create a GUID to use for this installation.  For simplicity, We
+  ; always update our registration.
+  ClearErrors
+  ReadRegStr $0 SHCTX "Software\Classes\AppUserModelId\${ToastAumidPrefix}$AppUserModelID" "CustomActivator"
+  ${If} "$0" == ""
+    ; Create a GUID.
+    System::Call "rpcrt4::UuidCreate(g . r0)i"
+    ; StringFromGUID2 (which is what System::Call uses internally to stringify
+    ; GUIDs) includes braces in its output.  In this case, we want the braces.
+  ${EndIf}
+
+  ; Check if this is an ESR release.
+  ClearErrors
+  ${WordFind} "${UpdateChannel}" "esr" "E#" $1
+  ${If} ${Errors}
+    StrCpy $1 ""
+  ${Else}
+    StrCpy $1 " ESR"
+  ${EndIf}
+
+  ; Write the following keys and values to the registry.
+  ; HKEY_CURRENT_USER\Software\Classes\AppID\{GUID}                                     DllSurrogate    : REG_SZ        = ""
+  ;                                   \AppUserModelId\{ToastAumidPrefix}{install hash}  CustomActivator : REG_SZ        = {GUID}
+  ;                                                                                     DisplayName     : REG_EXPAND_SZ = {display name}
+  ;                                                                                     IconUri         : REG_EXPAND_SZ = {icon path}
+  ;                                   \CLSID\{GUID}                                     AppID           : REG_SZ        = {GUID}
+  ;                                                \InprocServer32                      (Default)       : REG_SZ        = {notificationserver.dll path}
+  ${WriteRegStr2} ${RegKey} "Software\Classes\AppID\$0" "DllSurrogate" "" 0
+  ${WriteRegStr2} ${RegKey} "Software\Classes\AppUserModelId\${ToastAumidPrefix}$AppUserModelID" "CustomActivator" "$0" 0
+  ${WriteRegStr2} ${RegKey} "Software\Classes\AppUserModelId\${ToastAumidPrefix}$AppUserModelID" "DisplayName" "${BrandFullNameInternal}$1" 0
+  ; Sadly, we can't use embedded resources like `firefox.exe,1`.
+  ${WriteRegStr2} ${RegKey} "Software\Classes\AppUserModelId\${ToastAumidPrefix}$AppUserModelID" "IconUri" "$INSTDIR\browser\VisualElements\VisualElements_70.png" 0
+  ${WriteRegStr2} ${RegKey} "Software\Classes\CLSID\$0" "AppID" "$0" 0
+  ${WriteRegStr2} ${RegKey} "Software\Classes\CLSID\$0\InProcServer32" "" "$INSTDIR\notificationserver.dll" 0
+!macroend
+!define WriteToastNotificationRegistration "!insertmacro WriteToastNotificationRegistration"

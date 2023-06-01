@@ -35,6 +35,33 @@ TEST_F(APZCBasicTester, Overzoom) {
   EXPECT_LT(std::abs(fm.GetVisualScrollOffset().y), 1e-5);
 }
 
+TEST_F(APZCBasicTester, ZoomLimits) {
+  SCOPED_GFX_PREF_FLOAT("apz.min_zoom", 0.9f);
+  SCOPED_GFX_PREF_FLOAT("apz.max_zoom", 2.0f);
+
+  // the visible area of the document in CSS pixels is x=10 y=0 w=100 h=100
+  FrameMetrics fm;
+  fm.SetCompositionBounds(ParentLayerRect(0, 0, 100, 100));
+  fm.SetScrollableRect(CSSRect(0, 0, 125, 150));
+  fm.SetZoom(CSSToParentLayerScale(1.0));
+  fm.SetIsRootContent(true);
+  apzc->SetFrameMetrics(fm);
+
+  MakeApzcZoomable();
+
+  // This should take the zoom scale to 0.8, but we've capped it at 0.9.
+  PinchWithPinchInputAndCheckStatus(apzc, ScreenIntPoint(50, 50), 0.5, true);
+
+  fm = apzc->GetFrameMetrics();
+  EXPECT_EQ(0.9f, fm.GetZoom().scale);
+
+  // This should take the zoom scale to 2.7, but we've capped it at 2.
+  PinchWithPinchInputAndCheckStatus(apzc, ScreenIntPoint(50, 50), 3, true);
+
+  fm = apzc->GetFrameMetrics();
+  EXPECT_EQ(2.0f, fm.GetZoom().scale);
+}
+
 TEST_F(APZCBasicTester, SimpleTransform) {
   ParentLayerPoint pointOut;
   AsyncTransform viewTransformOut;
@@ -65,9 +92,9 @@ TEST_F(APZCBasicTester, ComplexTransform) {
 
   const char* treeShape = "x(x)";
   // LayerID                     0 1
-  nsIntRegion layerVisibleRegion[] = {
-      nsIntRegion(IntRect(0, 0, 300, 300)),
-      nsIntRegion(IntRect(0, 0, 150, 300)),
+  LayerIntRegion layerVisibleRegion[] = {
+      LayerIntRect(0, 0, 300, 300),
+      LayerIntRect(0, 0, 150, 300),
   };
   Matrix4x4 transforms[] = {
       Matrix4x4(),
@@ -360,6 +387,78 @@ TEST_F(APZCBasicTester, MultipleSmoothScrollsSmooth) {
   }
 }
 
+class APZCSmoothScrollTester : public APZCBasicTester {
+ public:
+  // Test that a smooth scroll animation correctly handles its destination
+  // being updated by a relative scroll delta.
+  void TestSmoothScrollDestinationUpdate() {
+    // Set up scroll frame. Starting scroll position is (0, 0).
+    ScrollMetadata metadata;
+    FrameMetrics& metrics = metadata.GetMetrics();
+    metrics.SetScrollableRect(CSSRect(0, 0, 100, 10000));
+    metrics.SetLayoutViewport(CSSRect(0, 0, 100, 100));
+    metrics.SetZoom(CSSToParentLayerScale(1.0));
+    metrics.SetCompositionBounds(ParentLayerRect(0, 0, 100, 100));
+    metrics.SetVisualScrollOffset(CSSPoint(0, 0));
+    metrics.SetIsRootContent(true);
+    apzc->SetFrameMetrics(metrics);
+
+    // Start smooth scroll via main-thread request.
+    nsTArray<ScrollPositionUpdate> scrollUpdates;
+    scrollUpdates.AppendElement(ScrollPositionUpdate::NewPureRelativeScroll(
+        ScrollOrigin::Other, ScrollMode::Smooth,
+        CSSPoint::ToAppUnits(CSSPoint(0, 1000))));
+    metadata.SetScrollUpdates(scrollUpdates);
+    metrics.SetScrollGeneration(scrollUpdates.LastElement().GetGeneration());
+    apzc->NotifyLayersUpdated(metadata, false, true);
+
+    // Sample the smooth scroll animation until we get past y=500.
+    apzc->AssertStateIsSmoothScroll();
+    float y = 0;
+    while (y < 500) {
+      SampleAnimationOneFrame();
+      y = apzc->GetFrameMetrics().GetVisualScrollOffset().y;
+    }
+
+    // Send a relative scroll of y = -400.
+    scrollUpdates.Clear();
+    scrollUpdates.AppendElement(ScrollPositionUpdate::NewRelativeScroll(
+        CSSPoint::ToAppUnits(CSSPoint(0, 500)),
+        CSSPoint::ToAppUnits(CSSPoint(0, 100))));
+    metadata.SetScrollUpdates(scrollUpdates);
+    metrics.SetScrollGeneration(scrollUpdates.LastElement().GetGeneration());
+    apzc->NotifyLayersUpdated(metadata, false, false);
+
+    // Verify the relative scroll was applied but didn't cancel the animation.
+    float y2 = apzc->GetFrameMetrics().GetVisualScrollOffset().y;
+    ASSERT_EQ(y2, y - 400);
+    apzc->AssertStateIsSmoothScroll();
+
+    // Sample the animation again and check that it respected the relative
+    // scroll.
+    SampleAnimationOneFrame();
+    float y3 = apzc->GetFrameMetrics().GetVisualScrollOffset().y;
+    ASSERT_GT(y3, y2);
+    ASSERT_LT(y3, 500);
+
+    // Continue animation until done and check that it ended up at a correctly
+    // adjusted destination.
+    apzc->AdvanceAnimationsUntilEnd();
+    float y4 = apzc->GetFrameMetrics().GetVisualScrollOffset().y;
+    ASSERT_EQ(y4, 600);  // 1000 (initial destination) - 400 (relative scroll)
+  }
+};
+
+TEST_F(APZCSmoothScrollTester, SmoothScrollDestinationUpdateBezier) {
+  SCOPED_GFX_PREF_BOOL("general.smoothScroll.msdPhysics.enabled", false);
+  TestSmoothScrollDestinationUpdate();
+}
+
+TEST_F(APZCSmoothScrollTester, SmoothScrollDestinationUpdateMsd) {
+  SCOPED_GFX_PREF_BOOL("general.smoothScroll.msdPhysics.enabled", true);
+  TestSmoothScrollDestinationUpdate();
+}
+
 TEST_F(APZCBasicTester, ZoomAndScrollableRectChangeAfterZoomChange) {
   // We want to check that a small scrollable rect change (which causes us to
   // reclamp our scroll position, including in the sampled state) does not move
@@ -497,4 +596,41 @@ TEST_F(APZCBasicTester, ZoomToRectAndCompositionBoundsChange) {
   }
 
   EXPECT_FALSE(apzc->IsAsyncZooming());
+}
+
+TEST_F(APZCBasicTester, StartTolerance) {
+  SCOPED_GFX_PREF_FLOAT("apz.touch_start_tolerance", 10 / tm->GetDPI());
+
+  FrameMetrics fm;
+  fm.SetCompositionBounds(ParentLayerRect(0, 0, 100, 100));
+  fm.SetScrollableRect(CSSRect(0, 0, 100, 300));
+  fm.SetVisualScrollOffset(CSSPoint(0, 50));
+  fm.SetIsRootContent(true);
+  apzc->SetFrameMetrics(fm);
+
+  uint64_t touchBlock = TouchDown(apzc, {50, 50}, mcc->Time()).mInputBlockId;
+  SetDefaultAllowedTouchBehavior(apzc, touchBlock);
+
+  CSSPoint initialScrollOffset =
+      apzc->GetFrameMetrics().GetVisualScrollOffset();
+
+  mcc->AdvanceByMillis(1);
+  TouchMove(apzc, {50, 70}, mcc->Time());
+
+  // Expect 10 pixels of scrolling: the distance from (50,50) to (50,70)
+  // minus the 10-pixel touch start tolerance.
+  ASSERT_EQ(initialScrollOffset.y - 10,
+            apzc->GetFrameMetrics().GetVisualScrollOffset().y);
+
+  mcc->AdvanceByMillis(1);
+  TouchMove(apzc, {50, 90}, mcc->Time());
+
+  // Expect 30 pixels of scrolling: the distance from (50,50) to (50,90)
+  // minus the 10-pixel touch start tolerance.
+  ASSERT_EQ(initialScrollOffset.y - 30,
+            apzc->GetFrameMetrics().GetVisualScrollOffset().y);
+
+  // Clean up by ending the touch gesture.
+  mcc->AdvanceByMillis(1);
+  TouchUp(apzc, {50, 90}, mcc->Time());
 }

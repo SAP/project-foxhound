@@ -9,9 +9,6 @@
 const { RemoteSettings } = ChromeUtils.import(
   "resource://services-settings/remote-settings.js"
 );
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
 
 const COLLECTION_NAME = "url-classifier-skip-urls";
 const FEATURE_TRACKING_NAME = "tracking-annotation-test";
@@ -21,8 +18,6 @@ const FEATURE_SOCIAL_PREF_NAME = "urlclassifier.socialtracking-annotation-test";
 const FEATURE_FINGERPRINTING_NAME = "fingerprinting-annotation-test";
 const FEATURE_FINGERPRINTING_PREF_NAME =
   "urlclassifier.fingerprinting-annotation-test";
-
-XPCOMUtils.defineLazyGlobalGetters(this, ["EventTarget"]);
 
 do_get_profile();
 
@@ -58,8 +53,8 @@ add_task(async function test_list_changes() {
   ];
 
   // Add some initial data.
-  let db = await RemoteSettings(COLLECTION_NAME).db;
-  await db.importChanges({}, 42, records);
+  let db = RemoteSettings(COLLECTION_NAME).db;
+  await db.importChanges({}, Date.now(), records);
   let promise = waitForEvent(updateEvent, "update");
 
   exceptionListService.registerAndRunExceptionListObserver(
@@ -187,8 +182,8 @@ add_task(async function test_list_init_data() {
   ];
 
   // Add some initial data.
-  let db = await RemoteSettings(COLLECTION_NAME).db;
-  await db.importChanges({}, 42, records);
+  let db = RemoteSettings(COLLECTION_NAME).db;
+  await db.importChanges({}, Date.now(), records);
 
   // The first registered feature make ExceptionListService get the initial data
   // from remote setting.

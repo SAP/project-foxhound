@@ -14,8 +14,9 @@
 #include "nsISupportsImpl.h"
 #include "nsTHashSet.h"
 
-struct nsStyleDisplay;
 class ServoCSSAnimationBuilder;
+
+struct nsStyleUIReset;
 
 namespace mozilla {
 class ComputedStyle;
@@ -60,16 +61,26 @@ class nsAnimationManager final
   //   first Keyframe with an offset differing to |aOffset| or, if the end
   //   of the iterator is reached, sets |aIndex| to the index after the last
   //   Keyframe.
-  template <class IterType, class TimingFunctionType>
+  template <class IterType>
   static bool FindMatchingKeyframe(
       IterType&& aIter, double aOffset,
-      const TimingFunctionType& aTimingFunctionToMatch, size_t& aIndex) {
+      const mozilla::StyleComputedTimingFunction& aTimingFunctionToMatch,
+      mozilla::dom::CompositeOperationOrAuto aCompositionToMatch,
+      size_t& aIndex) {
     aIndex = 0;
     for (mozilla::Keyframe& keyframe : aIter) {
       if (keyframe.mOffset.value() != aOffset) {
         break;
       }
-      if (keyframe.mTimingFunction == aTimingFunctionToMatch) {
+      const bool matches = [&] {
+        if (keyframe.mComposite != aCompositionToMatch) {
+          return false;
+        }
+        return keyframe.mTimingFunction
+                   ? *keyframe.mTimingFunction == aTimingFunctionToMatch
+                   : aTimingFunctionToMatch.IsLinearKeyword();
+      }();
+      if (matches) {
         return true;
       }
       ++aIndex;
@@ -91,7 +102,7 @@ class nsAnimationManager final
   nsTHashSet<RefPtr<nsAtom>> mMaybeReferencedAnimations;
 
   void DoUpdateAnimations(const mozilla::NonOwningAnimationTarget& aTarget,
-                          const nsStyleDisplay& aStyleDisplay,
+                          const nsStyleUIReset& aStyle,
                           ServoCSSAnimationBuilder& aBuilder);
 };
 

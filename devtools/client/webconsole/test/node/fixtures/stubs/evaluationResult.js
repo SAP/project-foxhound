@@ -10,12 +10,12 @@
 
 const {
   parsePacketsWithFronts,
-} = require("chrome://mochitests/content/browser/devtools/client/webconsole/test/browser/stub-generator-helpers");
-const { prepareMessage } = require("devtools/client/webconsole/utils/messages");
+} = require("chrome://mochitests/content/browser/devtools/client/webconsole/test/browser/stub-generator-helpers.js");
+const { prepareMessage } = require("resource://devtools/client/webconsole/utils/messages.js");
 const {
   ConsoleMessage,
   NetworkEventMessage,
-} = require("devtools/client/webconsole/types");
+} = require("resource://devtools/client/webconsole/types.js");
 
 const rawPackets = new Map();
 rawPackets.set(`new Date(0)`, {
@@ -159,12 +159,7 @@ rawPackets.set(`inspect({a: 1})`, {
               "value": 1
             }
           },
-          "ownSymbols": [],
-          "privateProperties": [],
-          "ownPropertiesLength": 1,
-          "ownSymbolsLength": 0,
-          "privatePropertiesLength": 0,
-          "safeGetterValues": {}
+          "ownPropertiesLength": 1
         }
       },
       "actorID": "server0.conn2.windowGlobal10737418243/obj29"
@@ -481,12 +476,7 @@ rawPackets.set(`eval throw Object`, {
             "value": "cucumber"
           }
         },
-        "ownSymbols": [],
-        "privateProperties": [],
-        "ownPropertiesLength": 1,
-        "ownSymbolsLength": 0,
-        "privatePropertiesLength": 0,
-        "safeGetterValues": {}
+        "ownPropertiesLength": 1
       }
     },
     "actorID": "server0.conn2.windowGlobal10737418243/obj44"

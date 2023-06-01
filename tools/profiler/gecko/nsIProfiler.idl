@@ -9,10 +9,12 @@
 #include "mozilla/Maybe.h"
 #include "nsTArrayForwardDeclare.h"
 #include "nsStringFwd.h"
+#include "mozilla/MozPromise.h"
 %}
 
 [ref] native nsCString(const nsCString);
 [ref] native StringArrayRef(const nsTArray<nsCString>);
+native ProfileDataBufferMozPromise(RefPtr<mozilla::MozPromise<FallibleTArray<uint8_t>, nsresult, true>>);
 
 /**
  * Start-up parameters for subprocesses are passed through nsIObserverService,
@@ -34,24 +36,37 @@ interface nsIProfilerStartParams : nsISupports
 [scriptable, builtinclass, uuid(ead3f75c-0e0e-4fbb-901c-1e5392ef5b2a)]
 interface nsIProfiler : nsISupports
 {
-  void StartProfiler(in uint32_t aEntries, in double aInterval,
-                     in Array<AUTF8String> aFeatures,
-                     [optional] in Array<AUTF8String> aFilters,
-                     [optional] in uint64_t aActiveTabID,
-                     [optional] in double aDuration);
-  void StopProfiler();
+  /*
+   * Control functions return as soon as this process' profiler has done its
+   * work. The returned promise gets resolved when sub-processes have completed
+   * their operation, or immediately if there are no sub-processes.
+   */
+  [implicit_jscontext]
+  Promise StartProfiler(in uint32_t aEntries, in double aInterval,
+                        in Array<AUTF8String> aFeatures,
+                        [optional] in Array<AUTF8String> aFilters,
+                        [optional] in uint64_t aActiveTabID,
+                        [optional] in double aDuration);
+  [implicit_jscontext]
+  Promise StopProfiler();
   boolean IsPaused();
-  void Pause();
-  void Resume();
+  [implicit_jscontext]
+  Promise Pause();
+  [implicit_jscontext]
+  Promise Resume();
   boolean IsSamplingPaused();
-  void PauseSampling();
-  void ResumeSampling();
+  [implicit_jscontext]
+  Promise PauseSampling();
+  [implicit_jscontext]
+  Promise ResumeSampling();
 
   /*
-   * Resolves the returned promise after at least one full periodic sampling.
-   * Rejects the promise if sampler is not running (yet, or anymore, or paused).
+   * Resolves the returned promise after at least one full periodic sampling in
+   * each process.
+   * Rejects the promise if sampler is not running (yet, or anymore, or paused)
+   * in the parent process.
    * This is mainly useful in tests, to wait just long enough to guarantee that
-   * one sample was taken in the main process.
+   * at least one sample was taken in each process.
    */
   [implicit_jscontext]
   Promise waitOnePeriodicSampling();
@@ -79,11 +94,27 @@ interface nsIProfiler : nsISupports
   Promise getProfileDataAsGzippedArrayBuffer([optional] in double aSinceTime);
 
   /**
-   * Returns a promise that resolves once the file has been written.
+   * Asynchronously dump the profile collected so far to a file.
+   * Returns a promise that resolves once the file has been written, with data
+   * from all responsive Firefox processes. Note: This blocks the parent process
+   * while collecting its own data, then unblocks while child processes data is
+   * being collected.
+   * `aFilename` may be a full path, or a path relative to where Firefox was
+   * launched. The target directory must already exist.
    */
   [implicit_jscontext]
   Promise dumpProfileToFileAsync(in ACString aFilename,
                                  [optional] in double aSinceTime);
+
+  /**
+   * Synchronously dump the profile collected so far in this process to a file.
+   * This profile will only contain data from the parent process, and from child
+   * processes that have ended during the session; other currently-live
+   * processes are ignored.
+   * `aFilename` may be a full path, or a path relative to where Firefox was
+   * launched. The target directory must already exist.
+   */
+  void dumpProfileToFile(in string aFilename);
 
   boolean IsActive();
 
@@ -173,8 +204,5 @@ interface nsIProfiler : nsISupports
   [implicit_jscontext]
   Promise getSymbolTable(in ACString aDebugPath, in ACString aBreakpadID);
 
-  /**
-   * Dump the collected profile to a file.
-   */
-  void dumpProfileToFile(in string aFilename);
+  [notxpcom, nostdcall] ProfileDataBufferMozPromise getProfileDataAsGzippedArrayBufferAndroid(in double aSinceTime);
 };

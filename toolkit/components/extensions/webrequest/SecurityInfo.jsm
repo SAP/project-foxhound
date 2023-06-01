@@ -6,25 +6,26 @@
 
 const EXPORTED_SYMBOLS = ["SecurityInfo"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const wpl = Ci.nsIWebProgressListener;
+const lazy = {};
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "NSSErrorsService",
   "@mozilla.org/nss_errors_service;1",
   "nsINSSErrorsService"
 );
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "sss",
   "@mozilla.org/ssservice;1",
   "nsISiteSecurityService"
 );
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "pkps",
   "@mozilla.org/security/publickeypinningservice;1",
   "nsIPublicKeyPinningService"
@@ -40,16 +41,16 @@ const SecurityInfo = {
    *
    * @param {nsIChannel} channel
    *        If null channel is assumed to be insecure.
-   * @param {Object} options
+   * @param {object} options
    *
-   * @returns {Object}
+   * @returns {object}
    *         Returns an object containing following members:
    *          - state: The security of the connection used to fetch this
    *                   request. Has one of following string values:
-   *                    * "insecure": the connection was not secure (only http)
-   *                    * "weak": the connection has minor security issues
-   *                    * "broken": secure connection failed (e.g. expired cert)
-   *                    * "secure": the connection was properly secured.
+   *                    - "insecure": the connection was not secure (only http)
+   *                    - "weak": the connection has minor security issues
+   *                    - "broken": secure connection failed (e.g. expired cert)
+   *                    - "secure": the connection was properly secured.
    *          If state == broken:
    *            - errorMessage: full error message from
    *                            nsITransportSecurityInfo.
@@ -103,13 +104,12 @@ const SecurityInfo = {
      */
 
     let securityInfo = channel.securityInfo;
+
     if (!securityInfo) {
       return info;
     }
 
-    securityInfo.QueryInterface(Ci.nsITransportSecurityInfo);
-
-    if (NSSErrorsService.isNSSErrorCode(securityInfo.errorCode)) {
+    if (lazy.NSSErrorsService.isNSSErrorCode(securityInfo.errorCode)) {
       // The connection failed.
       info.state = "broken";
       info.errorMessage = securityInfo.errorMessage;
@@ -151,6 +151,9 @@ const SecurityInfo = {
     // Cipher suite.
     info.cipherSuite = securityInfo.cipherName;
 
+    // Length (in bits) of the secret key
+    info.secretKeyLength = securityInfo.secretKeyLength;
+
     // Key exchange group name.
     if (securityInfo.keaGroupName !== "none") {
       info.keaGroupName = securityInfo.keaGroupName;
@@ -161,10 +164,26 @@ const SecurityInfo = {
       info.signatureSchemeName = securityInfo.signatureSchemeName;
     }
 
-    info.isDomainMismatch = securityInfo.isDomainMismatch;
+    if (
+      securityInfo.overridableErrorCategory ==
+      Ci.nsITransportSecurityInfo.ERROR_TRUST
+    ) {
+      info.overridableErrorCategory = "trust_error";
+      info.isUntrusted = true;
+    } else if (
+      securityInfo.overridableErrorCategory ==
+      Ci.nsITransportSecurityInfo.ERROR_DOMAIN
+    ) {
+      info.overridableErrorCategory = "domain_mismatch";
+      info.isDomainMismatch = true;
+    } else if (
+      securityInfo.overridableErrorCategory ==
+      Ci.nsITransportSecurityInfo.ERROR_TIME
+    ) {
+      info.overridableErrorCategory = "expired_or_not_yet_valid";
+      info.isNotValidAtThisTime = true;
+    }
     info.isExtendedValidation = securityInfo.isExtendedValidation;
-    info.isNotValidAtThisTime = securityInfo.isNotValidAtThisTime;
-    info.isUntrusted = securityInfo.isUntrusted;
 
     info.certificateTransparencyStatus = this.getTransparencyStatus(
       securityInfo.certificateTransparencyStatus
@@ -188,19 +207,8 @@ const SecurityInfo = {
 
     // HSTS and static pinning if available.
     if (uri && uri.host) {
-      // SiteSecurityService uses different storage if the channel is
-      // private. Thus we must give isSecureURI correct flags or we
-      // might get incorrect results.
-      let flags = 0;
-      if (
-        channel instanceof Ci.nsIPrivateBrowsingChannel &&
-        channel.isChannelPrivate
-      ) {
-        flags = Ci.nsISocketProvider.NO_PERMANENT_STORAGE;
-      }
-
-      info.hsts = sss.isSecureURI(uri, flags);
-      info.hpkp = pkps.hostHasPins(uri);
+      info.hsts = lazy.sss.isSecureURI(uri, channel.loadInfo.originAttributes);
+      info.hpkp = lazy.pkps.hostHasPins(uri);
     } else {
       info.hsts = false;
       info.hpkp = false;
@@ -222,8 +230,8 @@ const SecurityInfo = {
    *
    * @param {nsIX509Cert} cert
    *        The certificate to extract the information from.
-   * @param {Object} options
-   * @returns {Object}
+   * @param {object} options
+   * @returns {object}
    *         An object with following format:
    *           {
    *             subject: subjectName,
@@ -313,9 +321,9 @@ const SecurityInfo = {
    * @param {number} state
    *        nsITransportSecurityInfo.securityState.
    *
-   * @returns {array<string>}
+   * @returns {Array<string>}
    *         List of weakness reasons. A subset of { cipher } where
-   *         * cipher: The cipher suite is consireded to be weak (RC4).
+   *         cipher: The cipher suite is consireded to be weak (RC4).
    */
   getReasonsForWeakness(state) {
     // If there's non-fatal security issues the request has STATE_IS_BROKEN

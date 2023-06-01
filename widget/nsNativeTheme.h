@@ -20,6 +20,7 @@
 #include "nsINamed.h"
 #include "nsITimer.h"
 #include "nsIContent.h"
+#include "mozilla/dom/RustTypes.h"
 
 class nsIFrame;
 class nsPresContext;
@@ -27,7 +28,6 @@ class nsPresContext;
 namespace mozilla {
 class ComputedStyle;
 enum class StyleAppearance : uint8_t;
-class EventStates;
 }  // namespace mozilla
 
 class nsNativeTheme : public nsITimerCallback, public nsINamed {
@@ -53,7 +53,7 @@ class nsNativeTheme : public nsITimerCallback, public nsINamed {
     eTreeSortDirection_Ascending
   };
   // Returns the content state (hover, focus, etc), see EventStateManager.h
-  static mozilla::EventStates GetContentState(
+  static mozilla::dom::ElementState GetContentState(
       nsIFrame* aFrame, mozilla::StyleAppearance aAppearance);
 
   // Returns whether the widget is already styled by content
@@ -139,9 +139,6 @@ class nsNativeTheme : public nsITimerCallback, public nsINamed {
   // menupopup:
   bool IsSubmenu(nsIFrame* aFrame, bool* aLeftOfParent);
 
-  // True if it's not a menubar item or menulist item
-  bool IsRegularMenuItem(nsIFrame* aFrame);
-
   static bool CheckBooleanAttr(nsIFrame* aFrame, nsAtom* aAtom);
   static int32_t CheckIntAttr(nsIFrame* aFrame, nsAtom* aAtom,
                               int32_t defaultValue);
@@ -158,10 +155,10 @@ class nsNativeTheme : public nsITimerCallback, public nsINamed {
 
   bool IsRangeHorizontal(nsIFrame* aFrame);
 
-  static bool IsDarkBackground(nsIFrame* aFrame);
-  static bool IsDarkColor(nscolor aColor);
+  static bool IsDarkBackgroundForScrollbar(nsIFrame*);
+  static bool IsDarkBackground(nsIFrame*);
 
-  static bool IsWidgetScrollbarPart(mozilla::StyleAppearance aAppearance);
+  static bool IsWidgetScrollbarPart(mozilla::StyleAppearance);
 
  private:
   uint32_t mAnimatedContentTimeout;

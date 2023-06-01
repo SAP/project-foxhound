@@ -1,6 +1,5 @@
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
 
 add_task(function init() {

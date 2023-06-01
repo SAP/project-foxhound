@@ -13,8 +13,7 @@
 nsresult NS_NewSVGFEDisplacementMapElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using SVGFEDisplacementMapElementBase = SVGFE;
 
@@ -26,24 +25,24 @@ class SVGFEDisplacementMapElement : public SVGFEDisplacementMapElementBase {
   explicit SVGFEDisplacementMapElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
       : SVGFEDisplacementMapElementBase(std::move(aNodeInfo)) {}
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* aCx,
+                     JS::Handle<JSObject*> aGivenProto) override;
 
  public:
-  virtual FilterPrimitiveDescription GetPrimitiveDescription(
+  FilterPrimitiveDescription GetPrimitiveDescription(
       SVGFilterInstance* aInstance, const IntRect& aFilterSubregion,
       const nsTArray<bool>& aInputsAreTainted,
       nsTArray<RefPtr<SourceSurface>>& aInputImages) override;
-  virtual bool AttributeAffectsRendering(int32_t aNameSpaceID,
-                                         nsAtom* aAttribute) const override;
-  virtual SVGAnimatedString& GetResultImageName() override {
+  bool AttributeAffectsRendering(int32_t aNameSpaceID,
+                                 nsAtom* aAttribute) const override;
+  SVGAnimatedString& GetResultImageName() override {
     return mStringAttributes[RESULT];
   }
-  virtual void GetSourceImageNames(nsTArray<SVGStringInfo>& aSources) override;
+  void GetSourceImageNames(nsTArray<SVGStringInfo>& aSources) override;
 
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  virtual nsresult BindToTree(BindContext& aCtx, nsINode& aParent) override;
+  nsresult BindToTree(BindContext& aCtx, nsINode& aParent) override;
 
   // WebIDL
   already_AddRefed<DOMSVGAnimatedString> In1();
@@ -67,9 +66,9 @@ class SVGFEDisplacementMapElement : public SVGFEDisplacementMapElementBase {
     }
   }
 
-  virtual NumberAttributesInfo GetNumberInfo() override;
-  virtual EnumAttributesInfo GetEnumInfo() override;
-  virtual StringAttributesInfo GetStringInfo() override;
+  NumberAttributesInfo GetNumberInfo() override;
+  EnumAttributesInfo GetEnumInfo() override;
+  StringAttributesInfo GetStringInfo() override;
 
   enum { SCALE };
   SVGAnimatedNumber mNumberAttributes[1];
@@ -85,7 +84,6 @@ class SVGFEDisplacementMapElement : public SVGFEDisplacementMapElementBase {
   static StringInfo sStringInfo[3];
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // DOM_SVG_SVGFEDISPLACEMENTMAPELEMENT_H_

@@ -322,10 +322,13 @@ struct BaseEventFlags {
   inline void ResetCrossProcessDispatchingState() {
     MOZ_ASSERT(!IsCrossProcessForwardingStopped());
     mPostedToRemoteProcess = false;
-    // Ignore propagation state in the different process if it's marked as
+    // Ignore propagation state in the remote process if it's marked as
     // "waiting reply from remote process" because the process needs to
     // stop propagation in the process until receiving a reply event.
-    if (IsWaitingReplyFromRemoteProcess()) {
+    // Note that the propagation stopped flag is important for the reply event
+    // handler in the main process because it's used for making whether it's
+    // ignored by the remote process or not.
+    if (!XRE_IsParentProcess() && IsWaitingReplyFromRemoteProcess()) {
       mPropagationStopped = mImmediatePropagationStopped = false;
     }
     // mDispatchedAtLeastOnce indicates the state in current process.
@@ -416,20 +419,14 @@ struct EventFlags : public BaseEventFlags {
 
 class WidgetEventTime {
  public:
-  // Elapsed time, in milliseconds, from a platform-specific zero time
-  // to the time the message was created
-  uint64_t mTime;
-  // Timestamp when the message was created. Set in parallel to 'time' until we
-  // determine if it is safe to drop 'time' (see bug 77992).
+  // Timestamp when the message was created.
   TimeStamp mTimeStamp;
 
-  WidgetEventTime() : mTime(0), mTimeStamp(TimeStamp::Now()) {}
+  WidgetEventTime() : mTimeStamp(TimeStamp::Now()) {}
 
-  WidgetEventTime(uint64_t aTime, TimeStamp aTimeStamp)
-      : mTime(aTime), mTimeStamp(aTimeStamp) {}
+  explicit WidgetEventTime(TimeStamp aTimeStamp) : mTimeStamp(aTimeStamp) {}
 
   void AssignEventTime(const WidgetEventTime& aOther) {
-    mTime = aOther.mTime;
     mTimeStamp = aOther.mTimeStamp;
   }
 };
@@ -790,10 +787,6 @@ class WidgetEvent : public WidgetEventTime {
    * event.
    */
   bool HasIMEEventMessage() const;
-  /**
-   * Returns true if the event mMessage is one of plugin activation events.
-   */
-  bool HasPluginActivationEventMessage() const;
 
   /**
    * Returns true if the event can be sent to remote process.
@@ -1010,50 +1003,6 @@ class WidgetEvent : public WidgetEventTime {
 };
 
 /******************************************************************************
- * mozilla::NativeEventData
- *
- * WidgetGUIEvent's mPluginEvent member used to be a void* pointer,
- * used to reference external, OS-specific data structures.
- *
- * That void* pointer wasn't serializable by itself, causing
- * certain plugin events not to function in e10s. See bug 586656.
- *
- * To make this serializable, we changed this void* pointer into
- * a proper buffer, and copy these external data structures into this
- * buffer.
- *
- * That buffer is NativeEventData::mBuffer below.
- *
- * We wrap this in that NativeEventData class providing operators to
- * be compatible with existing code that was written around
- * the old void* field.
- ******************************************************************************/
-
-class NativeEventData final {
-  CopyableTArray<uint8_t> mBuffer;
-
-  friend struct IPC::ParamTraits<mozilla::NativeEventData>;
-
- public:
-  explicit operator bool() const { return !mBuffer.IsEmpty(); }
-
-  template <typename T>
-  explicit operator const T*() const {
-    return mBuffer.IsEmpty() ? nullptr
-                             : reinterpret_cast<const T*>(mBuffer.Elements());
-  }
-
-  template <typename T>
-  void Copy(const T& other) {
-    static_assert(!std::is_pointer_v<T>, "Don't want a pointer!");
-    mBuffer.SetLength(sizeof(T));
-    memcpy(mBuffer.Elements(), &other, mBuffer.Length());
-  }
-
-  void Clear() { mBuffer.Clear(); }
-};
-
-/******************************************************************************
  * mozilla::WidgetGUIEvent
  ******************************************************************************/
 
@@ -1084,25 +1033,9 @@ class WidgetGUIEvent : public WidgetEvent {
   // Originator of the event
   nsCOMPtr<nsIWidget> mWidget;
 
-  /*
-   * Ideally though, we wouldn't allow arbitrary reinterpret_cast'ing here;
-   * instead, we would at least store type information here so that
-   * this class can't be used to reinterpret one structure type into another.
-   * We can also wonder if it would be possible to properly extend
-   * WidgetGUIEvent and other Event classes to remove the need for this
-   * mPluginEvent field.
-   */
-  typedef NativeEventData PluginEvent;
-
-  // Event for NPAPI plugin
-  PluginEvent mPluginEvent;
-
   void AssignGUIEventData(const WidgetGUIEvent& aEvent, bool aCopyTargets) {
     AssignEventData(aEvent, aCopyTargets);
-
     // widget should be initialized with the constructor.
-
-    mPluginEvent = aEvent.mPluginEvent;
   }
 };
 

@@ -16,8 +16,35 @@
 #include <memory>
 #include <functional>
 
-namespace mozilla {
-namespace camera {
+namespace mozilla::camera {
+
+enum class CaptureDeviceType { Camera, Screen, Window, Browser };
+
+struct CaptureDeviceInfo {
+  CaptureDeviceType type;
+
+  CaptureDeviceInfo() : type(CaptureDeviceType::Camera) {}
+  explicit CaptureDeviceInfo(CaptureDeviceType t) : type(t) {}
+
+  const char* TypeName() const {
+    switch (type) {
+      case CaptureDeviceType::Camera: {
+        return "Camera";
+      }
+      case CaptureDeviceType::Screen: {
+        return "Screen";
+      }
+      case CaptureDeviceType::Window: {
+        return "Window";
+      }
+      case CaptureDeviceType::Browser: {
+        return "Browser";
+      }
+    }
+    assert(false);
+    return "UNKOWN-CaptureDeviceType!";
+  }
+};
 
 // Historically the video engine was part of webrtc
 // it was removed (and reimplemented in Talk)
@@ -35,7 +62,7 @@ class VideoEngine {
   NS_INLINE_DECL_REFCOUNTING(VideoEngine)
 
   static already_AddRefed<VideoEngine> Create(
-      UniquePtr<const webrtc::Config>&& aConfig);
+      const CaptureDeviceType& aCaptureDeviceType);
 #if defined(ANDROID)
   static int SetAndroidObjects();
 #endif
@@ -59,8 +86,6 @@ class VideoEngine {
   std::shared_ptr<webrtc::VideoCaptureModule::DeviceInfo>
   GetOrCreateVideoCaptureDeviceInfo();
 
-  const UniquePtr<const webrtc::Config>& GetConfiguration();
-
   class CaptureEntry {
    public:
     CaptureEntry(int32_t aCapnum,
@@ -79,17 +104,15 @@ class VideoEngine {
                  const std::function<void(CaptureEntry& entry)>&& fn);
 
  private:
-  explicit VideoEngine(UniquePtr<const webrtc::Config>&& aConfig);
+  explicit VideoEngine(const CaptureDeviceType& aCaptureDeviceType);
   int32_t mId;
-  webrtc::CaptureDeviceInfo mCaptureDevInfo;
+  CaptureDeviceInfo mCaptureDevInfo;
   std::shared_ptr<webrtc::VideoCaptureModule::DeviceInfo> mDeviceInfo;
-  UniquePtr<const webrtc::Config> mConfig;
   std::map<int32_t, CaptureEntry> mCaps;
   std::map<int32_t, int32_t> mIdMap;
   // The validity period for non-camera capture device infos`
   webrtc::Timestamp mExpiryTime = webrtc::Timestamp::Micros(0);
   int32_t GenerateId();
 };
-}  // namespace camera
-}  // namespace mozilla
+}  // namespace mozilla::camera
 #endif

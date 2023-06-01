@@ -10,14 +10,14 @@
  */
 
 // Provide an exports object for the JSM to be properly read by TypeScript.
-/** @type {any} */ (this).exports = {};
+/** @type {any} */
+var exports = {};
 
 const { createLazyLoaders } = ChromeUtils.import(
   "resource://devtools/client/performance-new/typescript-lazy-load.jsm.js"
 );
 
 const lazy = createLazyLoaders({
-  Services: () => ChromeUtils.import("resource://gre/modules/Services.jsm"),
   CustomizableUI: () =>
     ChromeUtils.import("resource:///modules/CustomizableUI.jsm"),
   CustomizableWidgets: () =>
@@ -98,7 +98,6 @@ function openPopup(document) {
 function initialize(toggleProfilerKeyShortcuts) {
   const { CustomizableUI } = lazy.CustomizableUI();
   const { CustomizableWidgets } = lazy.CustomizableWidgets();
-  const { Services } = lazy.Services();
 
   const widget = CustomizableUI.getWidget(WIDGET_ID);
   if (widget && widget.provider == CustomizableUI.PROVIDER_API) {
@@ -140,10 +139,7 @@ function initialize(toggleProfilerKeyShortcuts) {
       // but we try to avoid interfering with profiling of automated tests.
       if (
         Services.profiler.IsActive() &&
-        (!Cu.isInAutomation ||
-          !Cc["@mozilla.org/process/environment;1"]
-            .getService(Ci.nsIEnvironment)
-            .exists("MOZ_PROFILER_STARTUP"))
+        (!Cu.isInAutomation || !Services.env.exists("MOZ_PROFILER_STARTUP"))
       ) {
         Services.profiler.StopProfiler();
       }

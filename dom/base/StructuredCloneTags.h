@@ -9,15 +9,14 @@
 
 #include "js/StructuredClone.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // CHANGING THE ORDER/PLACEMENT OF EXISTING ENUM VALUES MAY BREAK INDEXEDDB.
 // PROCEED WITH EXTREME CAUTION.
 //
 // If you are planning to add new tags which could be used by IndexedDB,
 // consider to use empty slots. See EMPTY_SLOT_x
-enum StructuredCloneTags {
+enum StructuredCloneTags : uint32_t {
   SCTAG_BASE = JS_SCTAG_USER_MIN,
 
   // IMPORTANT: Don't change the order of these enum values. You could break
@@ -96,7 +95,7 @@ enum StructuredCloneTags {
 
   // IMPORTANT: Don't change the order of these enum values. You could break
   // IDB.
-  EMPTY_SLOT_8,
+  SCTAG_DOM_DOMEXCEPTION,
 
   // IMPORTANT: Don't change the order of these enum values. You could break
   // IDB.
@@ -106,8 +105,20 @@ enum StructuredCloneTags {
   // IDB.
   SCTAG_DOM_STRUCTUREDCLONETESTER,
 
+  // IMPORTANT: Don't change the order of these enum values. You could break
+  // IDB.
+  SCTAG_DOM_FILESYSTEMHANDLE,
+
+  // IMPORTANT: Don't change the order of these enum values. You could break
+  // IDB.
+  SCTAG_DOM_FILESYSTEMFILEHANDLE,
+
+  // IMPORTANT: Don't change the order of these enum values. You could break
+  // IDB.
+  SCTAG_DOM_FILESYSTEMDIRECTORYHANDLE,
+
   // If you are planning to add new tags which could be used by IndexedDB,
-  // consider to use empty slots. See EMPTY_SLOT_x
+  // consider to use an empty slot. See EMPTY_SLOT_x
 
   // Please update the static assertions in StructuredCloneHolder.cpp and in
   // IDBObjectStore.cpp, method CommonStructuredCloneReadCallback.
@@ -118,11 +129,6 @@ enum StructuredCloneTags {
   // IndexedDB directly or via
   // StructuredCloneHolder::{Read,Write}FullySerializableObjects. In theory they
   // can be 'less' stable.
-
-  // Principal written out by worker threads when serializing objects. When
-  // reading on the main thread this principal will be converted to a normal
-  // principal object using nsJSPrincipals::AutoSetActiveWorkerPrincipal.
-  SCTAG_DOM_WORKER_PRINCIPAL,
 
   SCTAG_DOM_IMAGEBITMAP,
   SCTAG_DOM_MAP_MESSAGEPORT,
@@ -141,11 +147,18 @@ enum StructuredCloneTags {
 
   SCTAG_DOM_CLONED_ERROR_OBJECT,
 
+  SCTAG_DOM_READABLESTREAM,
+
+  SCTAG_DOM_WRITABLESTREAM,
+
+  SCTAG_DOM_TRANSFORMSTREAM,
+
+  SCTAG_DOM_VIDEOFRAME,
+
   // IMPORTANT: If you plan to add an new IDB tag, it _must_ be add before the
   // "less stable" tags!
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // StructuredCloneTags_h__

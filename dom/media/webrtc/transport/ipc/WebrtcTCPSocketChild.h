@@ -11,9 +11,7 @@
 #include "mozilla/dom/ipc/IdType.h"
 #include "transport/nr_socket_proxy_config.h"
 
-namespace mozilla {
-
-namespace net {
+namespace mozilla::net {
 
 class WebrtcTCPSocketCallback;
 
@@ -23,14 +21,15 @@ class WebrtcTCPSocketChild : public PWebrtcTCPSocketChild {
 
   mozilla::ipc::IPCResult RecvOnClose(const nsresult& aReason) override;
 
-  mozilla::ipc::IPCResult RecvOnConnected(const nsCString& aProxyType) override;
+  mozilla::ipc::IPCResult RecvOnConnected(
+      const nsACString& aProxyType) override;
 
   mozilla::ipc::IPCResult RecvOnRead(nsTArray<uint8_t>&& aReadData) override;
 
   explicit WebrtcTCPSocketChild(WebrtcTCPSocketCallback* aProxyCallbacks);
 
-  void AsyncOpen(const nsCString& aHost, const int& aPort,
-                 const nsCString& aLocalAddress, const int& aLocalPort,
+  void AsyncOpen(const nsACString& aHost, const int& aPort,
+                 const nsACString& aLocalAddress, const int& aLocalPort,
                  bool aUseTls,
                  const std::shared_ptr<NrSocketProxyConfig>& aProxyConfig);
 
@@ -43,7 +42,6 @@ class WebrtcTCPSocketChild : public PWebrtcTCPSocketChild {
   RefPtr<WebrtcTCPSocketCallback> mProxyCallbacks;
 };
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net
 
 #endif  // mozilla_net_WebrtcTCPSocketChild_h

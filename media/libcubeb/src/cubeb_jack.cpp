@@ -8,7 +8,7 @@
  */
 #define _DEFAULT_SOURCE
 #define _BSD_SOURCE
-#ifndef __FreeBSD__
+#if !defined(__FreeBSD__) && !defined(__NetBSD__)
 #define _POSIX_SOURCE
 #endif
 #include "cubeb-internal.h"
@@ -788,10 +788,10 @@ cbjack_destroy(cubeb * context)
 
   if (context->jack_client != NULL)
     WRAP(jack_client_close)(context->jack_client);
-
+#ifndef DISABLE_LIBJACK_DLOPEN
   if (context->libjack)
     dlclose(context->libjack);
-
+#endif
   free(context);
 }
 
@@ -925,15 +925,18 @@ cbjack_stream_init(cubeb * context, cubeb_stream ** stream,
   if (stm->devs == DUPLEX) {
     stm->resampler = cubeb_resampler_create(
         stm, &stm->in_params, &stm->out_params, stream_actual_rate,
-        stm->data_callback, stm->user_ptr, CUBEB_RESAMPLER_QUALITY_DESKTOP);
+        stm->data_callback, stm->user_ptr, CUBEB_RESAMPLER_QUALITY_DESKTOP,
+        CUBEB_RESAMPLER_RECLOCK_NONE);
   } else if (stm->devs == IN_ONLY) {
     stm->resampler = cubeb_resampler_create(
         stm, &stm->in_params, nullptr, stream_actual_rate, stm->data_callback,
-        stm->user_ptr, CUBEB_RESAMPLER_QUALITY_DESKTOP);
+        stm->user_ptr, CUBEB_RESAMPLER_QUALITY_DESKTOP,
+        CUBEB_RESAMPLER_RECLOCK_NONE);
   } else if (stm->devs == OUT_ONLY) {
     stm->resampler = cubeb_resampler_create(
         stm, nullptr, &stm->out_params, stream_actual_rate, stm->data_callback,
-        stm->user_ptr, CUBEB_RESAMPLER_QUALITY_DESKTOP);
+        stm->user_ptr, CUBEB_RESAMPLER_QUALITY_DESKTOP,
+        CUBEB_RESAMPLER_RECLOCK_NONE);
   }
 
   if (!stm->resampler) {

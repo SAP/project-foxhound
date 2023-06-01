@@ -4,7 +4,7 @@
 "use strict";
 const {
   getUrlBaseName,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 /**
  * Tests if request initiator is reported correctly.
  */
@@ -152,7 +152,7 @@ add_task(async function() {
   store.dispatch(Actions.batchEnable(false));
 
   const wait = waitForNetworkEvents(monitor, EXPECTED_REQUESTS.length);
-  BrowserTestUtils.loadURI(tab.linkedBrowser, INITIATOR_URL);
+  BrowserTestUtils.loadURIString(tab.linkedBrowser, INITIATOR_URL);
 
   registerFaviconNotifier(tab.linkedBrowser);
 

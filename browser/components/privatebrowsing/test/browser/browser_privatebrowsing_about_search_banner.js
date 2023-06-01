@@ -5,8 +5,8 @@
 // This test makes sure that about:privatebrowsing correctly shows the search
 // banner.
 
-const { AboutPrivateBrowsingParent } = ChromeUtils.import(
-  "resource:///actors/AboutPrivateBrowsingParent.jsm"
+const { AboutPrivateBrowsingParent } = ChromeUtils.importESModule(
+  "resource:///actors/AboutPrivateBrowsingParent.sys.mjs"
 );
 
 const PREF_UI_ENABLED = "browser.search.separatePrivateDefault.ui.enabled";
@@ -16,7 +16,7 @@ const PREF_MAX_SEARCH_BANNER_SHOW_COUNT =
   "browser.search.separatePrivateDefault.ui.banner.max";
 const MAX_SHOW_COUNT = 5;
 
-add_task(async function setup() {
+add_setup(async function() {
   SpecialPowers.pushPrefEnv({
     set: [
       [PREF_UI_ENABLED, false],

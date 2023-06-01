@@ -146,10 +146,13 @@ mozilla::LazyLogModule ApplicationReputationService::prlog(
 // reputation checks.
 /* static */
 const char* const ApplicationReputationService::kNonBinaryExecutables[] = {
+    // clang-format off
     ".ad",
+    ".afploc",
     ".air",
-    ".fileloc",
-    ".inetloc",
+    ".atloc",
+    ".ftploc",
+    // clang-format on
 };
 
 // Items that should be submitted for application reputation checks that users
@@ -1291,12 +1294,9 @@ nsresult PendingLookup::StartLookup() {
 
 nsresult PendingLookup::GetSpecHash(nsACString& aSpec,
                                     nsACString& hexEncodedHash) {
-  nsresult rv;
-
-  nsCOMPtr<nsICryptoHash> cryptoHash =
-      do_CreateInstance("@mozilla.org/security/hash;1", &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = cryptoHash->Init(nsICryptoHash::SHA256);
+  nsCOMPtr<nsICryptoHash> cryptoHash;
+  nsresult rv =
+      NS_NewCryptoHash(nsICryptoHash::SHA256, getter_AddRefs(cryptoHash));
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = cryptoHash->Update(

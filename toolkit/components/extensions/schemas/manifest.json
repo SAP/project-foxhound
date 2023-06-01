@@ -18,7 +18,8 @@
           "applications": {
             "$ref": "BrowserSpecificSettings",
             "description": "The applications property is deprecated, please use 'browser_specific_settings'",
-            "optional": true
+            "optional": true,
+            "max_manifest_version": 2
           },
 
           "browser_specific_settings": {
@@ -53,7 +54,8 @@
 
           "version": {
             "type": "string",
-            "optional": false
+            "optional": false,
+            "format": "versionString"
           },
 
           "homepage_url": {
@@ -250,6 +252,12 @@
             ]
           },
 
+          "granted_host_permissions": {
+            "type": "boolean",
+            "optional": true,
+            "default": false
+          },
+
           "host_permissions": {
             "min_manifest_version": 3,
             "type": "array",
@@ -282,16 +290,31 @@
               {
                 "min_manifest_version": 3,
                 "type": "array",
+                "postprocess": "webAccessibleMatching",
+                "minItems": 1,
                 "items": {
                   "type": "object",
                   "properties": {
                     "resources": {
                       "type": "array",
+                      "minItems": 1,
                       "items": { "type": "string" }
                     },
                     "matches": {
+                      "optional": true,
                       "type": "array",
-                      "items": { "$ref": "MatchPatternRestricted" }
+                      "minItems": 1,
+                      "items": { "$ref": "MatchPattern" }
+                    },
+                    "extension_ids": {
+                      "optional": true,
+                      "type": "array",
+                      "items": {
+                        "choices": [
+                          {"$ref": "ExtensionID" },
+                          { "type": "string", "enum": ["*"] }
+                        ]
+                      }
                     }
                   }
                 }
@@ -315,13 +338,6 @@
 
         "$import": "ManifestBase",
         "properties": {
-          "homepage_url": {
-            "type": "string",
-            "format": "url",
-            "optional": true,
-            "preprocess": "localize"
-          },
-
           "langpack_id": {
             "type": "string",
             "pattern": "^[a-zA-Z][a-zA-Z-]+$"
@@ -391,13 +407,6 @@
 
         "$import": "ManifestBase",
         "properties": {
-          "homepage_url": {
-            "type": "string",
-            "format": "url",
-            "optional": true,
-            "preprocess": "localize"
-          },
-
           "dictionaries": {
             "type": "object",
             "patternProperties": {
@@ -488,14 +497,25 @@
         ]
       },
       {
+        "id": "PermissionPrivileged",
+        "choices": [
+          {
+            "type": "string",
+            "enum": [
+              "mozillaAddons"
+            ]
+          }
+        ]
+      },
+      {
         "id": "PermissionNoPrompt",
         "choices": [
-          { "$ref": "OptionalPermission" },
+          { "$ref": "OptionalPermissionNoPrompt" },
+          { "$ref": "PermissionPrivileged" },
           {
             "type": "string",
             "enum": [
               "alarms",
-              "mozillaAddons",
               "storage",
               "unlimitedStorage"
             ]

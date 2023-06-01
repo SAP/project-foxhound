@@ -12,7 +12,7 @@
 const FISSION_TEST_URL = URL_ROOT_SSL + "fission_document.html";
 const WORKER_FILE = "test_worker.js";
 const WORKER_URL = URL_ROOT_SSL + WORKER_FILE;
-const IFRAME_WORKER_URL = WORKER_FILE;
+const IFRAME_WORKER_URL = URL_ROOT_ORG_SSL + WORKER_FILE;
 
 add_task(async function() {
   // Disable the preloaded process as it creates processes intermittently
@@ -92,7 +92,7 @@ add_task(async function() {
 
   info("Check that navigating away does destroy all targets");
   const onBrowserLoaded = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.loadURIString(
     tab.linkedBrowser,
     "data:text/html,<meta charset=utf8>Away"
   );
@@ -128,4 +128,7 @@ add_task(async function() {
     iframeWorkerTargetAfterGoingBack,
     "The target list handled the worker created in the iframe from the BF Cache"
   );
+
+  targetCommand.destroy();
+  await commands.destroy();
 });

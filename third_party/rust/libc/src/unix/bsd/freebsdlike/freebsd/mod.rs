@@ -41,12 +41,12 @@ pub type caddr_t = *mut ::c_char;
 
 pub type fhandle_t = fhandle;
 
-// It's an alias over "struct __kvm_t". However, its fields aren't supposed to be used directly,
-// making the type definition system dependent. Better not bind it exactly.
-pub type kvm_t = ::c_void;
+pub type au_id_t = ::uid_t;
+pub type au_asid_t = ::pid_t;
 
-#[cfg_attr(feature = "extra_traits", derive(Debug, Hash))]
-#[derive(PartialEq, Eq)]
+pub type cpusetid_t = ::c_int;
+
+#[cfg_attr(feature = "extra_traits", derive(Debug, Hash, PartialEq, Eq))]
 #[repr(u32)]
 pub enum devstat_support_flags {
     DEVSTAT_ALL_SUPPORTED = 0x00,
@@ -61,8 +61,7 @@ impl ::Clone for devstat_support_flags {
     }
 }
 
-#[cfg_attr(feature = "extra_traits", derive(Debug, Hash))]
-#[derive(PartialEq, Eq)]
+#[cfg_attr(feature = "extra_traits", derive(Debug, Hash, PartialEq, Eq))]
 #[repr(u32)]
 pub enum devstat_trans_flags {
     DEVSTAT_NO_DATA = 0x00,
@@ -78,8 +77,7 @@ impl ::Clone for devstat_trans_flags {
     }
 }
 
-#[cfg_attr(feature = "extra_traits", derive(Debug, Hash))]
-#[derive(PartialEq, Eq)]
+#[cfg_attr(feature = "extra_traits", derive(Debug, Hash, PartialEq, Eq))]
 #[repr(u32)]
 pub enum devstat_tag_type {
     DEVSTAT_TAG_SIMPLE = 0x00,
@@ -94,8 +92,7 @@ impl ::Clone for devstat_tag_type {
     }
 }
 
-#[cfg_attr(feature = "extra_traits", derive(Debug, Hash))]
-#[derive(PartialEq, Eq)]
+#[cfg_attr(feature = "extra_traits", derive(Debug, Hash, PartialEq, Eq))]
 #[repr(u32)]
 pub enum devstat_match_flags {
     DEVSTAT_MATCH_NONE = 0x00,
@@ -110,8 +107,7 @@ impl ::Clone for devstat_match_flags {
     }
 }
 
-#[cfg_attr(feature = "extra_traits", derive(Debug, Hash))]
-#[derive(PartialEq, Eq)]
+#[cfg_attr(feature = "extra_traits", derive(Debug, Hash, PartialEq, Eq))]
 #[repr(u32)]
 pub enum devstat_priority {
     DEVSTAT_PRIORITY_MIN = 0x000,
@@ -132,8 +128,7 @@ impl ::Clone for devstat_priority {
     }
 }
 
-#[cfg_attr(feature = "extra_traits", derive(Debug, Hash))]
-#[derive(PartialEq, Eq)]
+#[cfg_attr(feature = "extra_traits", derive(Debug, Hash, PartialEq, Eq))]
 #[repr(u32)]
 pub enum devstat_type_flags {
     DEVSTAT_TYPE_DIRECT = 0x000,
@@ -165,8 +160,7 @@ impl ::Clone for devstat_type_flags {
     }
 }
 
-#[cfg_attr(feature = "extra_traits", derive(Debug, Hash))]
-#[derive(PartialEq, Eq)]
+#[cfg_attr(feature = "extra_traits", derive(Debug, Hash, PartialEq, Eq))]
 #[repr(u32)]
 pub enum devstat_metric {
     DSM_NONE,
@@ -223,8 +217,7 @@ impl ::Clone for devstat_metric {
     }
 }
 
-#[cfg_attr(feature = "extra_traits", derive(Debug, Hash))]
-#[derive(PartialEq, Eq)]
+#[cfg_attr(feature = "extra_traits", derive(Debug, Hash, PartialEq, Eq))]
 #[repr(u32)]
 pub enum devstat_select_mode {
     DS_SELECT_ADD,
@@ -323,11 +316,6 @@ s! {
         pub sc_egid: ::gid_t,
         pub sc_ngroups: ::c_int,
         pub sc_groups: [::gid_t; 1],
-    }
-
-    pub struct accept_filter_arg {
-        pub af_name: [::c_char; 16],
-        af_arg: [[::c_char; 10]; 24],
     }
 
     pub struct ptrace_vm_entry {
@@ -603,6 +591,11 @@ s! {
     pub struct shmstat {
         pub size: u64,
         pub mode: u16,
+    }
+
+    pub struct spacectl_range {
+        pub r_offset: ::off_t,
+        pub r_len: ::off_t
     }
 
     pub struct rusage_ext {
@@ -960,6 +953,60 @@ s! {
         pub sc_ngroups: ::c_int,
         pub sc_groups: [::gid_t; 1],
     }
+
+    pub struct ifconf {
+        pub ifc_len: ::c_int,
+        #[cfg(libc_union)]
+        pub ifc_ifcu: __c_anonymous_ifc_ifcu,
+    }
+
+    pub struct au_mask_t {
+        pub am_success: ::c_uint,
+        pub am_failure: ::c_uint,
+    }
+
+    pub struct au_tid_t {
+        pub port: u32,
+        pub machine: u32,
+    }
+
+    pub struct auditinfo_t {
+        pub ai_auid: ::au_id_t,
+        pub ai_mask: ::au_mask_t,
+        pub ai_termid: au_tid_t,
+        pub ai_asid: ::au_asid_t,
+    }
+
+    pub struct tcp_fastopen {
+        pub enable: ::c_int,
+        pub psk: [u8; ::TCP_FASTOPEN_PSK_LEN as usize],
+    }
+
+    pub struct tcp_function_set {
+        pub function_set_name: [::c_char; ::TCP_FUNCTION_NAME_LEN_MAX as usize],
+        pub pcbcnt: u32,
+    }
+
+    pub struct _umtx_time {
+        pub _timeout: ::timespec,
+        pub _flags: u32,
+        pub _clockid: u32,
+    }
+
+    pub struct shm_largepage_conf {
+        pub psind: ::c_int,
+        pub alloc_policy: ::c_int,
+        __pad: [::c_int; 10],
+    }
+
+    pub struct memory_type {
+        __priva: [::uintptr_t; 32],
+        __privb: [::uintptr_t; 26],
+    }
+
+    pub struct memory_type_list {
+        __priv: [::uintptr_t; 2],
+    }
 }
 
 s_no_extra_traits! {
@@ -1140,6 +1187,12 @@ s_no_extra_traits! {
         pub ifr_ifru: __c_anonymous_ifr_ifru,
         #[cfg(not(libc_union))]
         pub ifr_ifru: ::sockaddr,
+    }
+
+    #[cfg(libc_union)]
+    pub union __c_anonymous_ifc_ifcu {
+        pub ifcu_buf: ::caddr_t,
+        pub ifcu_req: *mut ifreq,
     }
 
     pub struct ifstat {
@@ -1549,6 +1602,37 @@ cfg_if! {
             }
         }
 
+        #[cfg(libc_union)]
+        impl Eq for __c_anonymous_ifc_ifcu {}
+
+        #[cfg(libc_union)]
+        impl PartialEq for __c_anonymous_ifc_ifcu {
+            fn eq(&self, other: &__c_anonymous_ifc_ifcu) -> bool {
+                unsafe {
+                    self.ifcu_buf == other.ifcu_buf &&
+                    self.ifcu_req == other.ifcu_req
+                }
+            }
+        }
+
+        #[cfg(libc_union)]
+        impl ::fmt::Debug for __c_anonymous_ifc_ifcu {
+            fn fmt(&self, f: &mut ::fmt::Formatter) -> ::fmt::Result {
+                f.debug_struct("ifc_ifcu")
+                    .field("ifcu_buf", unsafe { &self.ifcu_buf })
+                    .field("ifcu_req", unsafe { &self.ifcu_req })
+                    .finish()
+            }
+        }
+
+        #[cfg(libc_union)]
+        impl ::hash::Hash for __c_anonymous_ifc_ifcu {
+            fn hash<H: ::hash::Hasher>(&self, state: &mut H) {
+                unsafe { self.ifcu_buf.hash(state) };
+                unsafe { self.ifcu_req.hash(state) };
+            }
+        }
+
         impl PartialEq for ifstat {
             fn eq(&self, other: &ifstat) -> bool {
                 let self_ascii: &[::c_char] = &self.ascii;
@@ -1814,9 +1898,17 @@ impl ::Clone for dot3Vendors {
     }
 }
 
+// aio.h
+pub const LIO_VECTORED: ::c_int = 4;
+pub const LIO_WRITEV: ::c_int = 5;
+pub const LIO_READV: ::c_int = 6;
+
 // sys/devicestat.h
 pub const DEVSTAT_N_TRANS_FLAGS: ::c_int = 4;
 pub const DEVSTAT_NAME_LEN: ::c_int = 16;
+
+// sys/cpuset.h
+pub const CPU_SETSIZE: ::c_int = 256;
 
 pub const SIGEV_THREAD_ID: ::c_int = 4;
 
@@ -2061,7 +2153,6 @@ pub const KERN_IOV_MAX: ::c_int = 35;
 pub const KERN_HOSTUUID: ::c_int = 36;
 pub const KERN_ARND: ::c_int = 37;
 pub const KERN_MAXPHYS: ::c_int = 38;
-pub const KERN_STACKTOP: ::c_int = 39;
 
 pub const KERN_PROC_ALL: ::c_int = 0;
 pub const KERN_PROC_PID: ::c_int = 1;
@@ -2163,9 +2254,9 @@ pub const CTL_P1003_1B_SEM_VALUE_MAX: ::c_int = 23;
 pub const CTL_P1003_1B_SIGQUEUE_MAX: ::c_int = 24;
 pub const CTL_P1003_1B_TIMER_MAX: ::c_int = 25;
 
-pub const TIOCGPTN: ::c_uint = 0x4004740f;
-pub const TIOCPTMASTER: ::c_uint = 0x2000741c;
-pub const TIOCSIG: ::c_uint = 0x2004745f;
+pub const TIOCGPTN: ::c_ulong = 0x4004740f;
+pub const TIOCPTMASTER: ::c_ulong = 0x2000741c;
+pub const TIOCSIG: ::c_ulong = 0x2004745f;
 pub const TIOCM_DCD: ::c_int = 0x40;
 pub const H4DISC: ::c_int = 0x7;
 
@@ -2178,6 +2269,7 @@ pub const FIONWRITE: ::c_ulong = 0x40046677;
 pub const FIONSPACE: ::c_ulong = 0x40046676;
 pub const FIOSEEKDATA: ::c_ulong = 0xc0086661;
 pub const FIOSEEKHOLE: ::c_ulong = 0xc0086662;
+pub const FIOSSHMLPGCNF: ::c_ulong = 0x80306664;
 
 pub const JAIL_API_VERSION: u32 = 2;
 pub const JAIL_CREATE: ::c_int = 0x01;
@@ -2197,7 +2289,6 @@ pub const MNT_MULTILABEL: ::c_int = 0x04000000;
 pub const MNT_NFS4ACLS: ::c_int = 0x00000010;
 pub const MNT_SNAPSHOT: ::c_int = 0x01000000;
 pub const MNT_UNION: ::c_int = 0x00000020;
-pub const MNT_EXPUBLIC: ::c_int = 0x20000000;
 pub const MNT_NONBUSY: ::c_int = 0x04000000;
 
 pub const SCM_CREDS2: ::c_int = 0x08;
@@ -2263,6 +2354,8 @@ pub const PT_GETDBREGS: ::c_int = 37;
 pub const PT_SETDBREGS: ::c_int = 38;
 pub const PT_VM_TIMESTAMP: ::c_int = 40;
 pub const PT_VM_ENTRY: ::c_int = 41;
+pub const PT_GETREGSET: ::c_int = 42;
+pub const PT_SETREGSET: ::c_int = 43;
 pub const PT_FIRSTMACH: ::c_int = 64;
 
 pub const PTRACE_EXEC: ::c_int = 0x0001;
@@ -2295,6 +2388,10 @@ pub const PROC_PROTMAX_CTL: ::c_int = 15;
 pub const PROC_PROTMAX_STATUS: ::c_int = 16;
 pub const PROC_STACKGAP_CTL: ::c_int = 17;
 pub const PROC_STACKGAP_STATUS: ::c_int = 18;
+pub const PROC_NO_NEW_PRIVS_CTL: ::c_int = 19;
+pub const PROC_NO_NEW_PRIVS_STATUS: ::c_int = 20;
+pub const PROC_WXMAP_CTL: ::c_int = 21;
+pub const PROC_WXMAP_STATUS: ::c_int = 22;
 pub const PROC_PROCCTL_MD_MIN: ::c_int = 0x10000000;
 
 pub const PPROT_SET: ::c_int = 1;
@@ -2323,6 +2420,13 @@ pub const PROC_STACKGAP_ENABLE: ::c_int = 0x0001;
 pub const PROC_STACKGAP_DISABLE: ::c_int = 0x0002;
 pub const PROC_STACKGAP_ENABLE_EXEC: ::c_int = 0x0004;
 pub const PROC_STACKGAP_DISABLE_EXEC: ::c_int = 0x0008;
+
+pub const PROC_NO_NEW_PRIVS_ENABLE: ::c_int = 1;
+pub const PROC_NO_NEW_PRIVS_DISABLE: ::c_int = 2;
+
+pub const PROC_WX_MAPPINGS_PERMIT: ::c_int = 0x0001;
+pub const PROC_WX_MAPPINGS_DISALLOW_EXEC: ::c_int = 0x0002;
+pub const PROC_WXORX_ENFORCE: ::c_int = 0x80000000;
 
 pub const AF_SLOW: ::c_int = 33;
 pub const AF_SCLUSTER: ::c_int = 34;
@@ -2435,6 +2539,8 @@ pub const IFCAP_TOE4: ::c_int = 0x04000;
 pub const IFCAP_TOE6: ::c_int = 0x08000;
 /// interface hw can filter vlan tag
 pub const IFCAP_VLAN_HWFILTER: ::c_int = 0x10000;
+/// can do SIOCGIFCAPNV/SIOCSIFCAPNV
+pub const IFCAP_NV: ::c_int = 0x20000;
 /// can do IFCAP_TSO on VLANs
 pub const IFCAP_VLAN_HWTSO: ::c_int = 0x40000;
 /// the runtime link state is dynamic
@@ -2470,7 +2576,7 @@ pub const IFCAP_TSO: ::c_int = IFCAP_TSO4 | IFCAP_TSO6;
 pub const IFCAP_WOL: ::c_int = IFCAP_WOL_UCAST | IFCAP_WOL_MCAST | IFCAP_WOL_MAGIC;
 pub const IFCAP_TOE: ::c_int = IFCAP_TOE4 | IFCAP_TOE6;
 pub const IFCAP_TXTLS: ::c_int = IFCAP_TXTLS4 | IFCAP_TXTLS6;
-pub const IFCAP_CANTCHANGE: ::c_int = IFCAP_NETMAP;
+pub const IFCAP_CANTCHANGE: ::c_int = IFCAP_NETMAP | IFCAP_NV;
 
 pub const IFQ_MAXLEN: ::c_int = 50;
 pub const IFNET_SLOWHZ: ::c_int = 1;
@@ -2795,10 +2901,24 @@ pub const TCP_MD5SIG: ::c_int = 16;
 pub const TCP_INFO: ::c_int = 32;
 pub const TCP_CONGESTION: ::c_int = 64;
 pub const TCP_CCALGOOPT: ::c_int = 65;
+pub const TCP_MAXUNACKTIME: ::c_int = 68;
+pub const TCP_MAXPEAKRATE: ::c_int = 69;
+pub const TCP_IDLE_REDUCE: ::c_int = 70;
+pub const TCP_REMOTE_UDP_ENCAPS_PORT: ::c_int = 71;
+pub const TCP_DELACK: ::c_int = 72;
+pub const TCP_FIN_IS_RST: ::c_int = 73;
+pub const TCP_LOG_LIMIT: ::c_int = 74;
+pub const TCP_SHARED_CWND_ALLOWED: ::c_int = 75;
+pub const TCP_PROC_ACCOUNTING: ::c_int = 76;
+pub const TCP_USE_CMP_ACKS: ::c_int = 77;
+pub const TCP_PERF_INFO: ::c_int = 78;
+pub const TCP_LRD: ::c_int = 79;
 pub const TCP_KEEPINIT: ::c_int = 128;
 pub const TCP_FASTOPEN: ::c_int = 1025;
 pub const TCP_PCAP_OUT: ::c_int = 2048;
 pub const TCP_PCAP_IN: ::c_int = 4096;
+pub const TCP_FASTOPEN_PSK_LEN: ::c_int = 16;
+pub const TCP_FUNCTION_NAME_LEN_MAX: ::c_int = 32;
 
 pub const IP_BINDANY: ::c_int = 24;
 pub const IP_BINDMULTI: ::c_int = 25;
@@ -2806,6 +2926,7 @@ pub const IP_RSS_LISTEN_BUCKET: ::c_int = 26;
 pub const IP_ORIGDSTADDR: ::c_int = 27;
 pub const IP_RECVORIGDSTADDR: ::c_int = IP_ORIGDSTADDR;
 
+pub const IP_DONTFRAG: ::c_int = 67;
 pub const IP_RECVTOS: ::c_int = 68;
 
 pub const IPV6_BINDANY: ::c_int = 64;
@@ -2969,8 +3090,6 @@ pub const SF_SNAPSHOT: ::c_ulong = 0x00200000;
 
 // fcntl commands
 pub const F_ADD_SEALS: ::c_int = 19;
-pub const F_DUP2FD: ::c_int = 10;
-pub const F_DUP2FD_CLOEXEC: ::c_int = 18;
 pub const F_GET_SEALS: ::c_int = 20;
 pub const F_OGETLK: ::c_int = 7;
 pub const F_OSETLK: ::c_int = 8;
@@ -2978,12 +3097,16 @@ pub const F_OSETLKW: ::c_int = 9;
 pub const F_RDAHEAD: ::c_int = 16;
 pub const F_READAHEAD: ::c_int = 15;
 pub const F_SETLK_REMOTE: ::c_int = 14;
+pub const F_KINFO: ::c_int = 22;
 
 // for use with F_ADD_SEALS
 pub const F_SEAL_GROW: ::c_int = 4;
 pub const F_SEAL_SEAL: ::c_int = 1;
 pub const F_SEAL_SHRINK: ::c_int = 2;
 pub const F_SEAL_WRITE: ::c_int = 8;
+
+// for use with fspacectl
+pub const SPACECTL_DEALLOC: ::c_int = 1;
 
 // For getrandom()
 pub const GRND_NONBLOCK: ::c_uint = 0x1;
@@ -3137,30 +3260,67 @@ pub const KKST_STATE_RUNNING: ::c_int = 2;
 pub const PRI_MIN: ::c_int = 0;
 pub const PRI_MAX: ::c_int = 255;
 pub const PRI_MIN_ITHD: ::c_int = PRI_MIN;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PRI_MAX_ITHD: ::c_int = PRI_MIN_REALTIME - 1;
 pub const PI_REALTIME: ::c_int = PRI_MIN_ITHD + 0;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const PI_AV: ::c_int = PRI_MIN_ITHD + 4;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const PI_NET: ::c_int = PRI_MIN_ITHD + 8;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const PI_DISK: ::c_int = PRI_MIN_ITHD + 12;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const PI_TTY: ::c_int = PRI_MIN_ITHD + 16;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const PI_DULL: ::c_int = PRI_MIN_ITHD + 20;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const PI_SOFT: ::c_int = PRI_MIN_ITHD + 24;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const PRI_MIN_REALTIME: ::c_int = 48;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PRI_MAX_REALTIME: ::c_int = PRI_MIN_KERN - 1;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const PRI_MIN_KERN: ::c_int = 80;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PRI_MAX_KERN: ::c_int = PRI_MIN_TIMESHARE - 1;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PSWP: ::c_int = PRI_MIN_KERN + 0;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PVM: ::c_int = PRI_MIN_KERN + 4;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PINOD: ::c_int = PRI_MIN_KERN + 8;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PRIBIO: ::c_int = PRI_MIN_KERN + 12;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PVFS: ::c_int = PRI_MIN_KERN + 16;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PZERO: ::c_int = PRI_MIN_KERN + 20;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PSOCK: ::c_int = PRI_MIN_KERN + 24;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PWAIT: ::c_int = PRI_MIN_KERN + 28;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PLOCK: ::c_int = PRI_MIN_KERN + 32;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PPAUSE: ::c_int = PRI_MIN_KERN + 36;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const PRI_MIN_TIMESHARE: ::c_int = 120;
 pub const PRI_MAX_TIMESHARE: ::c_int = PRI_MIN_IDLE - 1;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
+#[allow(deprecated)]
 pub const PUSER: ::c_int = PRI_MIN_TIMESHARE;
 pub const PRI_MIN_IDLE: ::c_int = 224;
 pub const PRI_MAX_IDLE: ::c_int = PRI_MAX;
@@ -3258,24 +3418,32 @@ pub const TDF_CANSWAP: ::c_int = 0x00000040;
 pub const TDF_KTH_SUSP: ::c_int = 0x00000100;
 pub const TDF_ALLPROCSUSP: ::c_int = 0x00000200;
 pub const TDF_BOUNDARY: ::c_int = 0x00000400;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const TDF_ASTPENDING: ::c_int = 0x00000800;
 pub const TDF_SBDRY: ::c_int = 0x00002000;
 pub const TDF_UPIBLOCKED: ::c_int = 0x00004000;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const TDF_NEEDSUSPCHK: ::c_int = 0x00008000;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const TDF_NEEDRESCHED: ::c_int = 0x00010000;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const TDF_NEEDSIGCHK: ::c_int = 0x00020000;
 pub const TDF_NOLOAD: ::c_int = 0x00040000;
 pub const TDF_SERESTART: ::c_int = 0x00080000;
 pub const TDF_THRWAKEUP: ::c_int = 0x00100000;
 pub const TDF_SEINTR: ::c_int = 0x00200000;
 pub const TDF_SWAPINREQ: ::c_int = 0x00400000;
+#[deprecated(since = "0.2.133", note = "Removed in FreeBSD 14")]
 pub const TDF_UNUSED23: ::c_int = 0x00800000;
 pub const TDF_SCHED0: ::c_int = 0x01000000;
 pub const TDF_SCHED1: ::c_int = 0x02000000;
 pub const TDF_SCHED2: ::c_int = 0x04000000;
 pub const TDF_SCHED3: ::c_int = 0x08000000;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const TDF_ALRMPEND: ::c_int = 0x10000000;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const TDF_PROFPEND: ::c_int = 0x20000000;
+#[deprecated(since = "0.2.133", note = "Not stable across OS versions")]
 pub const TDF_MACPEND: ::c_int = 0x40000000;
 
 pub const TDB_SUSPEND: ::c_int = 0x00000001;
@@ -3504,63 +3672,6 @@ pub const MNT_RECURSE: u64 = 0x100000000000;
 /// Unmount in async context.
 pub const MNT_DEFERRED: u64 = 0x200000000000;
 
-/// Forced unmount in progress.
-pub const MNTK_UNMOUNTF: u32 = 0x00000001;
-/// Filtered async flag.
-pub const MNTK_ASYNC: u32 = 0x00000002;
-/// Async disabled by softdep.
-pub const MNTK_SOFTDEP: u32 = 0x00000004;
-/// Don't do msync.
-pub const MNTK_NOMSYNC: u32 = 0x00000008;
-/// Lock draining is happening.
-pub const MNTK_DRAINING: u32 = 0x00000010;
-/// Refcount expiring is happening.
-pub const MNTK_REFEXPIRE: u32 = 0x00000020;
-/// Allow shared locking for more ops.
-pub const MNTK_EXTENDED_SHARED: u32 = 0x00000040;
-/// Allow shared locking for writes.
-pub const MNTK_SHARED_WRITES: u32 = 0x00000080;
-/// Disallow page faults during reads and writes. Filesystem shall properly handle i/o
-/// state on EFAULT.
-pub const MNTK_NO_IOPF: u32 = 0x00000100;
-/// Pending recursive unmount.
-pub const MNTK_RECURSE: u32 = 0x00000200;
-/// Waiting to drain MNTK_UPPER_PENDING.
-pub const MNTK_UPPER_WAITER: u32 = 0x00000400;
-pub const MNTK_LOOKUP_EXCL_DOTDOT: u32 = 0x00000800;
-pub const MNTK_UNMAPPED_BUFS: u32 = 0x00002000;
-/// FS uses the buffer cache.
-pub const MNTK_USES_BCACHE: u32 = 0x00004000;
-/// Keep use ref for text.
-pub const MNTK_TEXT_REFS: u32 = 0x00008000;
-pub const MNTK_VMSETSIZE_BUG: u32 = 0x00010000;
-/// A hack for F_ISUNIONSTACK.
-pub const MNTK_UNIONFS: u32 = 0x00020000;
-/// fast path lookup is supported.
-pub const MNTK_FPLOOKUP: u32 = 0x00040000;
-/// Suspended by all-fs suspension.
-pub const MNTK_SUSPEND_ALL: u32 = 0x00080000;
-/// Waiting on unmount taskqueue.
-pub const MNTK_TASKQUEUE_WAITER: u32 = 0x00100000;
-/// Disable async.
-pub const MNTK_NOASYNC: u32 = 0x00800000;
-/// Unmount in progress.
-pub const MNTK_UNMOUNT: u32 = 0x01000000;
-/// Waiting for unmount to finish.
-pub const MNTK_MWAIT: u32 = 0x02000000;
-/// Request write suspension.
-pub const MNTK_SUSPEND: u32 = 0x08000000;
-/// Block secondary writes.
-pub const MNTK_SUSPEND2: u32 = 0x04000000;
-/// Write operations are suspended.
-pub const MNTK_SUSPENDED: u32 = 0x10000000;
-/// auto disable cache for nullfs mounts over this fs.
-pub const MNTK_NULL_NOCACHE: u32 = 0x20000000;
-/// FS supports shared lock lookups.
-pub const MNTK_LOOKUP_SHARED: u32 = 0x40000000;
-/// Don't send KNOTEs from VOP hooks.
-pub const MNTK_NOKNOTE: u32 = 0x80000000;
-
 /// Get configured filesystems.
 pub const VFS_VFSCONF: ::c_int = 0;
 /// Generic filesystem information.
@@ -3620,6 +3731,66 @@ pub const DST_CAN: ::c_int = 6;
 
 pub const CPUCLOCK_WHICH_PID: ::c_int = 0;
 pub const CPUCLOCK_WHICH_TID: ::c_int = 1;
+
+pub const MFD_CLOEXEC: ::c_uint = 0x00000001;
+pub const MFD_ALLOW_SEALING: ::c_uint = 0x00000002;
+pub const MFD_HUGETLB: ::c_uint = 0x00000004;
+pub const MFD_HUGE_MASK: ::c_uint = 0xFC000000;
+pub const MFD_HUGE_64KB: ::c_uint = 16 << 26;
+pub const MFD_HUGE_512KB: ::c_uint = 19 << 26;
+pub const MFD_HUGE_1MB: ::c_uint = 20 << 26;
+pub const MFD_HUGE_2MB: ::c_uint = 21 << 26;
+pub const MFD_HUGE_8MB: ::c_uint = 23 << 26;
+pub const MFD_HUGE_16MB: ::c_uint = 24 << 26;
+pub const MFD_HUGE_32MB: ::c_uint = 25 << 26;
+pub const MFD_HUGE_256MB: ::c_uint = 28 << 26;
+pub const MFD_HUGE_512MB: ::c_uint = 29 << 26;
+pub const MFD_HUGE_1GB: ::c_uint = 30 << 26;
+pub const MFD_HUGE_2GB: ::c_uint = 31 << 26;
+pub const MFD_HUGE_16GB: ::c_uint = 34 << 26;
+
+pub const SHM_LARGEPAGE_ALLOC_DEFAULT: ::c_int = 0;
+pub const SHM_LARGEPAGE_ALLOC_NOWAIT: ::c_int = 1;
+pub const SHM_LARGEPAGE_ALLOC_HARD: ::c_int = 2;
+pub const SHM_RENAME_NOREPLACE: ::c_int = 1 << 0;
+pub const SHM_RENAME_EXCHANGE: ::c_int = 1 << 1;
+
+// sys/umtx.h
+
+pub const UMTX_OP_WAIT: ::c_int = 2;
+pub const UMTX_OP_WAKE: ::c_int = 3;
+pub const UMTX_OP_MUTEX_TRYLOCK: ::c_int = 4;
+pub const UMTX_OP_MUTEX_LOCK: ::c_int = 5;
+pub const UMTX_OP_MUTEX_UNLOCK: ::c_int = 6;
+pub const UMTX_OP_SET_CEILING: ::c_int = 7;
+pub const UMTX_OP_CV_WAIT: ::c_int = 8;
+pub const UMTX_OP_CV_SIGNAL: ::c_int = 9;
+pub const UMTX_OP_CV_BROADCAST: ::c_int = 10;
+pub const UMTX_OP_WAIT_UINT: ::c_int = 11;
+pub const UMTX_OP_RW_RDLOCK: ::c_int = 12;
+pub const UMTX_OP_RW_WRLOCK: ::c_int = 13;
+pub const UMTX_OP_RW_UNLOCK: ::c_int = 14;
+pub const UMTX_OP_WAIT_UINT_PRIVATE: ::c_int = 15;
+pub const UMTX_OP_WAKE_PRIVATE: ::c_int = 16;
+pub const UMTX_OP_MUTEX_WAIT: ::c_int = 17;
+pub const UMTX_OP_NWAKE_PRIVATE: ::c_int = 21;
+pub const UMTX_OP_MUTEX_WAKE2: ::c_int = 22;
+pub const UMTX_OP_SEM2_WAIT: ::c_int = 23;
+pub const UMTX_OP_SEM2_WAKE: ::c_int = 24;
+pub const UMTX_OP_SHM: ::c_int = 25;
+pub const UMTX_OP_ROBUST_LISTS: ::c_int = 26;
+
+pub const UMTX_ABSTIME: u32 = 1;
+
+pub const CPU_LEVEL_ROOT: ::c_int = 1;
+pub const CPU_LEVEL_CPUSET: ::c_int = 2;
+pub const CPU_LEVEL_WHICH: ::c_int = 3;
+
+pub const CPU_WHICH_TID: ::c_int = 1;
+pub const CPU_WHICH_PID: ::c_int = 2;
+pub const CPU_WHICH_CPUSET: ::c_int = 3;
+pub const CPU_WHICH_IRQ: ::c_int = 4;
+pub const CPU_WHICH_JAIL: ::c_int = 5;
 
 const_fn! {
     {const} fn _ALIGN(p: usize) -> usize {
@@ -3698,23 +3869,34 @@ f! {
     }
 
     pub fn CPU_SET(cpu: usize, cpuset: &mut cpuset_t) -> () {
-        let bitset_bits = ::mem::size_of::<::c_long>();
+        let bitset_bits = 8 * ::mem::size_of::<::c_long>();
         let (idx, offset) = (cpu / bitset_bits, cpu % bitset_bits);
         cpuset.__bits[idx] |= 1 << offset;
         ()
     }
 
     pub fn CPU_CLR(cpu: usize, cpuset: &mut cpuset_t) -> () {
-        let bitset_bits = ::mem::size_of::<::c_long>();
+        let bitset_bits = 8 * ::mem::size_of::<::c_long>();
         let (idx, offset) = (cpu / bitset_bits, cpu % bitset_bits);
         cpuset.__bits[idx] &= !(1 << offset);
         ()
     }
 
     pub fn CPU_ISSET(cpu: usize, cpuset: &cpuset_t) -> bool {
-        let bitset_bits = ::mem::size_of::<::c_long>();
+        let bitset_bits = 8 * ::mem::size_of::<::c_long>();
         let (idx, offset) = (cpu / bitset_bits, cpu % bitset_bits);
         0 != cpuset.__bits[idx] & (1 << offset)
+    }
+
+    pub fn CPU_COUNT(cpuset: &cpuset_t) -> ::c_int {
+        let mut s: u32 = 0;
+        let cpuset_size = ::mem::size_of::<cpuset_t>();
+        let bitset_size = ::mem::size_of::<::c_long>();
+
+        for i in cpuset.__bits[..(cpuset_size / bitset_size)].iter() {
+            s += i.count_ones();
+        };
+        s as ::c_int
     }
 
     pub fn SOCKCRED2SIZE(ngrps: usize) -> usize {
@@ -3754,12 +3936,15 @@ cfg_if! {
 }
 
 extern "C" {
+    #[cfg_attr(doc, doc(alias = "__errno_location"))]
+    #[cfg_attr(doc, doc(alias = "errno"))]
     pub fn __error() -> *mut ::c_int;
 
     pub fn aio_cancel(fd: ::c_int, aiocbp: *mut aiocb) -> ::c_int;
     pub fn aio_error(aiocbp: *const aiocb) -> ::c_int;
     pub fn aio_fsync(op: ::c_int, aiocbp: *mut aiocb) -> ::c_int;
     pub fn aio_read(aiocbp: *mut aiocb) -> ::c_int;
+    pub fn aio_readv(aiocbp: *mut ::aiocb) -> ::c_int;
     pub fn aio_return(aiocbp: *mut aiocb) -> ::ssize_t;
     pub fn aio_suspend(
         aiocb_list: *const *const aiocb,
@@ -3767,6 +3952,16 @@ extern "C" {
         timeout: *const ::timespec,
     ) -> ::c_int;
     pub fn aio_write(aiocbp: *mut aiocb) -> ::c_int;
+    pub fn aio_writev(aiocbp: *mut ::aiocb) -> ::c_int;
+
+    pub fn copy_file_range(
+        infd: ::c_int,
+        inoffp: *mut ::off_t,
+        outfd: ::c_int,
+        outoffp: *mut ::off_t,
+        len: ::size_t,
+        flags: ::c_uint,
+    ) -> ::ssize_t;
 
     pub fn devname_r(
         dev: ::dev_t,
@@ -3851,6 +4046,14 @@ extern "C" {
         nbytes: ::size_t,
     ) -> ::ssize_t;
 
+    pub fn fspacectl(
+        fd: ::c_int,
+        cmd: ::c_int,
+        rqsr: *const spacectl_range,
+        flags: ::c_int,
+        rmsr: *mut spacectl_range,
+    ) -> ::c_int;
+
     pub fn jail(jail: *mut ::jail) -> ::c_int;
     pub fn jail_attach(jid: ::c_int) -> ::c_int;
     pub fn jail_remove(jid: ::c_int) -> ::c_int;
@@ -3879,6 +4082,7 @@ extern "C" {
         infop: *mut ::siginfo_t,
         options: ::c_int,
     ) -> ::c_int;
+    pub fn ptsname_r(fd: ::c_int, buf: *mut ::c_char, buflen: ::size_t) -> ::c_int;
 
     pub fn ftok(pathname: *const ::c_char, proj_id: ::c_int) -> ::key_t;
     pub fn shmget(key: ::key_t, size: ::size_t, shmflg: ::c_int) -> ::c_int;
@@ -4000,9 +4204,8 @@ extern "C" {
 
     // sched.h linux compatibility api
     pub fn sched_getaffinity(pid: ::pid_t, cpusetsz: ::size_t, cpuset: *mut ::cpuset_t) -> ::c_int;
-    // FIXME: the first argument's type might not be correct, fix later if that changes.
     pub fn sched_setaffinity(
-        pid: ::c_int,
+        pid: ::pid_t,
         cpusetsz: ::size_t,
         cpuset: *const ::cpuset_t,
     ) -> ::c_int;
@@ -4088,10 +4291,23 @@ extern "C" {
         setsize: ::size_t,
         mask: *const cpuset_t,
     ) -> ::c_int;
+    pub fn cpuset(setid: *mut ::cpusetid_t) -> ::c_int;
+    pub fn cpuset_getid(
+        level: cpulevel_t,
+        which: cpuwhich_t,
+        id: ::id_t,
+        setid: *mut ::cpusetid_t,
+    ) -> ::c_int;
+    pub fn cpuset_setid(which: cpuwhich_t, id: ::id_t, setid: ::cpusetid_t) -> ::c_int;
     pub fn cap_enter() -> ::c_int;
     pub fn cap_getmode(modep: *mut ::c_uint) -> ::c_int;
+    pub fn cap_fcntls_get(fd: ::c_int, fcntlrightsp: *mut u32) -> ::c_int;
+    pub fn cap_fcntls_limit(fd: ::c_int, fcntlrights: u32) -> ::c_int;
+    pub fn cap_ioctls_get(fd: ::c_int, cmds: *mut u_long, maxcmds: usize) -> isize;
+    pub fn cap_ioctls_limit(fd: ::c_int, cmds: *const u_long, ncmds: usize) -> ::c_int;
     pub fn __cap_rights_init(version: ::c_int, rights: *mut cap_rights_t, ...)
         -> *mut cap_rights_t;
+    pub fn __cap_rights_get(version: ::c_int, fd: ::c_int, rightsp: *mut cap_rights_t) -> ::c_int;
     pub fn __cap_rights_set(rights: *mut cap_rights_t, ...) -> *mut cap_rights_t;
     pub fn __cap_rights_clear(rights: *mut cap_rights_t, ...) -> *mut cap_rights_t;
     pub fn __cap_rights_is_set(rights: *const cap_rights_t, ...) -> bool;
@@ -4101,6 +4317,7 @@ extern "C" {
     pub fn cap_rights_remove(dst: *mut cap_rights_t, src: *const cap_rights_t)
         -> *mut cap_rights_t;
     pub fn cap_rights_contains(big: *const cap_rights_t, little: *const cap_rights_t) -> bool;
+    pub fn cap_sandboxed() -> bool;
 
     pub fn reallocarray(ptr: *mut ::c_void, nmemb: ::size_t, size: ::size_t) -> *mut ::c_void;
 
@@ -4148,76 +4365,83 @@ extern "C" {
     pub fn procctl(idtype: ::idtype_t, id: ::id_t, cmd: ::c_int, data: *mut ::c_void) -> ::c_int;
 
     pub fn getpagesize() -> ::c_int;
+    pub fn getpagesizes(pagesize: *mut ::size_t, nelem: ::c_int) -> ::c_int;
 
-    pub fn adjtime(arg1: *const ::timeval, arg2: *mut ::timeval) -> ::c_int;
     pub fn clock_getcpuclockid2(arg1: ::id_t, arg2: ::c_int, arg3: *mut clockid_t) -> ::c_int;
+
+    pub fn shm_create_largepage(
+        path: *const ::c_char,
+        flags: ::c_int,
+        psind: ::c_int,
+        alloc_policy: ::c_int,
+        mode: ::mode_t,
+    ) -> ::c_int;
+    pub fn shm_rename(
+        path_from: *const ::c_char,
+        path_to: *const ::c_char,
+        flags: ::c_int,
+    ) -> ::c_int;
+    pub fn memfd_create(name: *const ::c_char, flags: ::c_uint) -> ::c_int;
+    pub fn setaudit(auditinfo: *const auditinfo_t) -> ::c_int;
+
+    pub fn _umtx_op(
+        obj: *mut ::c_void,
+        op: ::c_int,
+        val: ::c_ulong,
+        uaddr: *mut ::c_void,
+        uaddr2: *mut ::c_void,
+    ) -> ::c_int;
+}
+
+#[link(name = "memstat")]
+extern "C" {
+    pub fn memstat_strerror(error: ::c_int) -> *const ::c_char;
+    pub fn memstat_mtl_alloc() -> *mut memory_type_list;
+    pub fn memstat_mtl_first(list: *mut memory_type_list) -> *mut memory_type;
+    pub fn memstat_mtl_next(mtp: *mut memory_type) -> *mut memory_type;
+    pub fn memstat_mtl_find(
+        list: *mut memory_type_list,
+        allocator: ::c_int,
+        name: *const ::c_char,
+    ) -> *mut memory_type;
+    pub fn memstat_mtl_free(list: *mut memory_type_list);
+    pub fn memstat_mtl_geterror(list: *mut memory_type_list) -> ::c_int;
+    pub fn memstat_get_name(mtp: *const memory_type) -> *const ::c_char;
 }
 
 #[link(name = "kvm")]
 extern "C" {
-    pub fn kvm_open(
-        execfile: *const ::c_char,
-        corefile: *const ::c_char,
-        swapfile: *const ::c_char,
-        flags: ::c_int,
-        errstr: *const ::c_char,
-    ) -> *mut kvm_t;
-    pub fn kvm_close(kd: *mut kvm_t) -> ::c_int;
-    pub fn kvm_dpcpu_setcpu(kd: *mut kvm_t, cpu: ::c_uint) -> ::c_int;
-    pub fn kvm_getargv(kd: *mut kvm_t, p: *const kinfo_proc, nchr: ::c_int) -> *mut *mut ::c_char;
-    pub fn kvm_getcptime(kd: *mut kvm_t, cp_time: *mut ::c_long) -> ::c_int;
-    pub fn kvm_getenvv(kd: *mut kvm_t, p: *const kinfo_proc, nchr: ::c_int) -> *mut *mut ::c_char;
-    pub fn kvm_geterr(kd: *mut kvm_t) -> *mut ::c_char;
-    pub fn kvm_getloadavg(kd: *mut kvm_t, loadavg: *mut ::c_double, nelem: ::c_int) -> ::c_int;
-    pub fn kvm_getmaxcpu(kd: *mut kvm_t) -> ::c_int;
-    pub fn kvm_getncpus(kd: *mut kvm_t) -> ::c_int;
-    pub fn kvm_getpcpu(kd: *mut kvm_t, cpu: ::c_int) -> *mut ::c_void;
-    pub fn kvm_counter_u64_fetch(kd: *mut kvm_t, base: ::c_ulong) -> u64;
-    pub fn kvm_getprocs(
-        kd: *mut kvm_t,
-        op: ::c_int,
-        arg: ::c_int,
-        cnt: *mut ::c_int,
-    ) -> *mut kinfo_proc;
+    pub fn kvm_dpcpu_setcpu(kd: *mut ::kvm_t, cpu: ::c_uint) -> ::c_int;
+    pub fn kvm_getargv(kd: *mut ::kvm_t, p: *const kinfo_proc, nchr: ::c_int)
+        -> *mut *mut ::c_char;
+    pub fn kvm_getcptime(kd: *mut ::kvm_t, cp_time: *mut ::c_long) -> ::c_int;
+    pub fn kvm_getenvv(kd: *mut ::kvm_t, p: *const kinfo_proc, nchr: ::c_int)
+        -> *mut *mut ::c_char;
+    pub fn kvm_geterr(kd: *mut ::kvm_t) -> *mut ::c_char;
+    pub fn kvm_getmaxcpu(kd: *mut ::kvm_t) -> ::c_int;
+    pub fn kvm_getncpus(kd: *mut ::kvm_t) -> ::c_int;
+    pub fn kvm_getpcpu(kd: *mut ::kvm_t, cpu: ::c_int) -> *mut ::c_void;
+    pub fn kvm_counter_u64_fetch(kd: *mut ::kvm_t, base: ::c_ulong) -> u64;
     pub fn kvm_getswapinfo(
-        kd: *mut kvm_t,
+        kd: *mut ::kvm_t,
         info: *mut kvm_swap,
         maxswap: ::c_int,
         flags: ::c_int,
     ) -> ::c_int;
-    pub fn kvm_native(kd: *mut kvm_t) -> ::c_int;
-    pub fn kvm_nlist(kd: *mut kvm_t, nl: *mut nlist) -> ::c_int;
-    pub fn kvm_nlist2(kd: *mut kvm_t, nl: *mut kvm_nlist) -> ::c_int;
-    pub fn kvm_openfiles(
-        execfile: *const ::c_char,
-        corefile: *const ::c_char,
-        swapfile: *const ::c_char,
-        flags: ::c_int,
-        errbuf: *mut ::c_char,
-    ) -> *mut kvm_t;
-    pub fn kvm_read(
-        kd: *mut kvm_t,
-        addr: ::c_ulong,
-        buf: *mut ::c_void,
-        nbytes: ::size_t,
-    ) -> ::ssize_t;
+    pub fn kvm_native(kd: *mut ::kvm_t) -> ::c_int;
+    pub fn kvm_nlist(kd: *mut ::kvm_t, nl: *mut nlist) -> ::c_int;
+    pub fn kvm_nlist2(kd: *mut ::kvm_t, nl: *mut kvm_nlist) -> ::c_int;
     pub fn kvm_read_zpcpu(
-        kd: *mut kvm_t,
+        kd: *mut ::kvm_t,
         base: ::c_ulong,
         buf: *mut ::c_void,
         size: ::size_t,
         cpu: ::c_int,
     ) -> ::ssize_t;
     pub fn kvm_read2(
-        kd: *mut kvm_t,
+        kd: *mut ::kvm_t,
         addr: kvaddr_t,
         buf: *mut ::c_void,
-        nbytes: ::size_t,
-    ) -> ::ssize_t;
-    pub fn kvm_write(
-        kd: *mut kvm_t,
-        addr: ::c_ulong,
-        buf: *const ::c_void,
         nbytes: ::size_t,
     ) -> ::ssize_t;
 }
@@ -4254,6 +4478,11 @@ extern "C" {
         scale: ::c_int,
         flags: ::c_int,
     ) -> ::c_int;
+
+    pub fn flopen(path: *const ::c_char, flags: ::c_int, ...) -> ::c_int;
+    pub fn flopenat(fd: ::c_int, path: *const ::c_char, flags: ::c_int, ...) -> ::c_int;
+
+    pub fn getlocalbase() -> *const ::c_char;
 }
 
 #[link(name = "procstat")]
@@ -4364,10 +4593,10 @@ extern "C" {
 
 #[link(name = "devstat")]
 extern "C" {
-    pub fn devstat_getnumdevs(kd: *mut kvm_t) -> ::c_int;
-    pub fn devstat_getgeneration(kd: *mut kvm_t) -> ::c_long;
-    pub fn devstat_getversion(kd: *mut kvm_t) -> ::c_int;
-    pub fn devstat_checkversion(kd: *mut kvm_t) -> ::c_int;
+    pub fn devstat_getnumdevs(kd: *mut ::kvm_t) -> ::c_int;
+    pub fn devstat_getgeneration(kd: *mut ::kvm_t) -> ::c_long;
+    pub fn devstat_getversion(kd: *mut ::kvm_t) -> ::c_int;
+    pub fn devstat_checkversion(kd: *mut ::kvm_t) -> ::c_int;
     pub fn devstat_selectdevs(
         dev_select: *mut *mut device_selection,
         num_selected: *mut ::c_int,

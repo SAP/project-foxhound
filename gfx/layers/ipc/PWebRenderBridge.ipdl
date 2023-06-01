@@ -36,6 +36,7 @@ using mozilla::VsyncId from "mozilla/VsyncDispatcher.h";
 namespace mozilla {
 namespace layers {
 
+[ManualDealloc, ParentImpl=virtual]
 sync protocol PWebRenderBridge
 {
   manager PCompositorBridge;
@@ -68,6 +69,7 @@ parent:
   sync GetSnapshot(PTexture texture) returns (bool aNeedsYFlip);
   async SetLayersObserverEpoch(LayersObserverEpoch childEpoch);
   async ClearCachedResources();
+  async ClearAnimationResources();
   async SetDefaultClearColor(uint32_t aColor);
   // Invalidate rendered frame
   async InvalidateRenderedFrame();

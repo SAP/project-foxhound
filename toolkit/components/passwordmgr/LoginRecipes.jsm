@@ -20,25 +20,23 @@ const OPTIONAL_KEYS = [
 ];
 const SUPPORTED_KEYS = REQUIRED_KEYS.concat(OPTIONAL_KEYS);
 
-const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["URL", "fetch"]);
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "LoginHelper",
   "resource://gre/modules/LoginHelper.jsm"
 );
 
-XPCOMUtils.defineLazyGetter(this, "log", () =>
-  LoginHelper.createLogger("LoginRecipes")
+XPCOMUtils.defineLazyGetter(lazy, "log", () =>
+  lazy.LoginHelper.createLogger("LoginRecipes")
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   RemoteSettings: "resource://services-settings/remote-settings.js",
 });
 
@@ -100,9 +98,9 @@ LoginRecipesParent.prototype = {
           ? new RegExp(rawRecipe.pathRegex)
           : undefined;
         this.add(rawRecipe);
-      } catch (ex) {
+      } catch (e) {
         recipeErrors++;
-        log.error("Error loading recipe", rawRecipe, ex);
+        lazy.log.error("Error loading recipe.", rawRecipe, e);
       }
     }
     if (recipeErrors) {
@@ -115,7 +113,7 @@ LoginRecipesParent.prototype = {
    * Reset the set of recipes to the ones from the time of construction.
    */
   reset() {
-    log.debug("Resetting recipes with defaults:", this._defaults);
+    lazy.log.debug("Resetting recipes with defaults:", this._defaults);
     this._recipesByHost = new Map();
     if (this._defaults) {
       let initPromise;
@@ -125,9 +123,11 @@ LoginRecipesParent.prototype = {
        * With Remote Settings, the dump is used to initialize the local database without network,
        * and the list of password recipes can be refreshed without restarting and without software update.
        */
-      if (LoginHelper.remoteRecipesEnabled) {
+      if (lazy.LoginHelper.remoteRecipesEnabled) {
         if (!this._rsClient) {
-          this._rsClient = RemoteSettings(LoginHelper.remoteRecipesCollection);
+          this._rsClient = lazy.RemoteSettings(
+            lazy.LoginHelper.remoteRecipesCollection
+          );
           // Set up sync observer to update local recipes from Remote Settings recipes
           this._rsClient.on("sync", event => this.onRemoteSettingsSync(event));
         }
@@ -137,7 +137,9 @@ LoginRecipesParent.prototype = {
           .then(resp => resp.json())
           .then(({ data }) => data);
       } else {
-        log.error("Invalid recipe path found, setting empty recipes list!");
+        lazy.log.error(
+          "Invalid recipe path found, setting empty recipes list!"
+        );
         initPromise = new Promise(() => []);
       }
       this.initializationPromise = initPromise.then(async siteRecipes => {
@@ -156,7 +158,6 @@ LoginRecipesParent.prototype = {
    * @param {Object} recipe
    */
   add(recipe) {
-    log.debug("Adding recipe:", recipe);
     let recipeKeys = Object.keys(recipe);
     let unknownKeys = recipeKeys.filter(key => !SUPPORTED_KEYS.includes(key));
     if (unknownKeys.length) {
@@ -244,11 +245,11 @@ LoginRecipesParent.prototype = {
   },
 };
 
-this.LoginRecipesContent = {
+const LoginRecipesContent = {
   _recipeCache: new WeakMap(),
 
   _clearRecipeCache() {
-    log.debug("_clearRecipeCache");
+    lazy.log.debug("Clearing recipe cache.");
     this._recipeCache = new WeakMap();
   },
 
@@ -260,7 +261,6 @@ this.LoginRecipesContent = {
    * @param {Set} recipes - recipes that apply to the host
    */
   cacheRecipes(aHost, win, recipes) {
-    log.debug("cacheRecipes: for:", aHost);
     let recipeMap = this._recipeCache.get(win);
 
     if (!recipeMap) {
@@ -275,14 +275,13 @@ this.LoginRecipesContent = {
    * Tries to fetch recipes for a given host, using a local cache if possible.
    * Otherwise, the recipes are cached for later use.
    *
-   * @param {JSWindowActor} aActor - actor making request
    * @param {String} aHost (e.g. example.com:8080 [non-default port] or sub.example.com)
    * @param {Object} win - the window of the host
    * @return {Set} of recipes that apply to the host
    */
-  getRecipes(aActor, aHost, win) {
+  getRecipes(aHost, win) {
     let recipes;
-    let recipeMap = this._recipeCache.get(win);
+    const recipeMap = this._recipeCache.get(win);
 
     if (recipeMap) {
       recipes = recipeMap.get(aHost);
@@ -292,7 +291,11 @@ this.LoginRecipesContent = {
       }
     }
 
-    log.warn("getRecipes: falling back to a synchronous message for:", aHost);
+    if (!Cu.isInAutomation) {
+      // this is a blocking call we expect in tests and rarely expect in
+      // production, for example when Remote Settings are updated.
+      lazy.log.warn(`Falling back to a synchronous message for: ${aHost}.`);
+    }
     recipes = Services.cpmm.sendSyncMessage("PasswordManager:findRecipes", {
       formOrigin: aHost,
     })[0];
@@ -311,7 +314,6 @@ this.LoginRecipesContent = {
     let formDocURL = aForm.ownerDocument.location;
     let hostRecipes = aRecipes;
     let recipes = new Set();
-    log.debug("_filterRecipesForForm", aRecipes);
     if (!hostRecipes) {
       return recipes;
     }
@@ -339,7 +341,7 @@ this.LoginRecipesContent = {
    */
   getFieldOverrides(aRecipes, aForm) {
     let recipes = this._filterRecipesForForm(aRecipes, aForm);
-    log.debug("getFieldOverrides: filtered recipes:", recipes.size, recipes);
+    lazy.log.debug(`Filtered recipes size: ${recipes.size}.`);
     if (!recipes.size) {
       return null;
     }
@@ -374,15 +376,17 @@ this.LoginRecipesContent = {
     }
     let field = aParent.ownerDocument.querySelector(aSelector);
     if (!field) {
-      log.debug("Login field selector wasn't matched:", aSelector);
+      lazy.log.debug(`Login field selector wasn't matched: ${aSelector}.`);
       return null;
     }
     // ownerGlobal doesn't exist in content privileged windows.
     if (
       // eslint-disable-next-line mozilla/use-ownerGlobal
-      !(field instanceof aParent.ownerDocument.defaultView.HTMLInputElement)
+      !aParent.ownerDocument.defaultView.HTMLInputElement.isInstance(field)
     ) {
-      log.warn("Login field isn't an <input> so ignoring it:", aSelector);
+      lazy.log.warn(
+        `Login field with selector ${aSelector} isn't an <input> so ignoring it.`
+      );
       return null;
     }
     return field;

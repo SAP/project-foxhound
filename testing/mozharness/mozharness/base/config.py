@@ -24,8 +24,6 @@ TODO:
   these settings are set.
 """
 
-from __future__ import absolute_import, print_function
-
 import os
 import socket
 import sys
@@ -38,8 +36,8 @@ from mozharness.base.log import CRITICAL, DEBUG, ERROR, FATAL, INFO, WARNING
 try:
     from urllib2 import URLError, urlopen
 except ImportError:
-    from urllib.request import urlopen
     from urllib.error import URLError
+    from urllib.request import urlopen
 
 
 try:
@@ -436,6 +434,13 @@ class BaseConfig(object):
             metavar="ACTIONS",
             help="Don't perform action",
         )
+        action_option_group.add_option(
+            "--requires-gpu",
+            action="store_true",
+            dest="requires_gpu",
+            default=False,
+            help="Indicates if the task requires gpu. ",
+        )
         for action in self.all_actions:
             action_option_group.add_option(
                 "--%s" % action,
@@ -531,14 +536,21 @@ class BaseConfig(object):
                     file_path = os.path.join(os.getcwd(), file_name)
                     download_config_file(cf, file_path)
                     all_cfg_files_and_dicts.append(
-                        (file_path, parse_config_file(file_path, search_path=["."]))
+                        (
+                            file_path,
+                            parse_config_file(
+                                file_path,
+                                search_path=["."],
+                            ),
+                        )
                     )
                 else:
                     all_cfg_files_and_dicts.append(
                         (
                             cf,
                             parse_config_file(
-                                cf, search_path=config_paths + [DEFAULT_CONFIG_PATH]
+                                cf,
+                                search_path=config_paths + [DEFAULT_CONFIG_PATH],
                             ),
                         )
                     )
@@ -572,6 +584,10 @@ class BaseConfig(object):
                     self.list_actions()
                 print("Required config file not set! (use --config-file option)")
                 raise SystemExit(-1)
+
+        os.environ["REQUIRE_GPU"] = "0"
+        if options.requires_gpu:
+            os.environ["REQUIRE_GPU"] = "1"
 
         # this is what get_cfgs_from_files returns. It will represent each
         # config file name and its assoctiated dict

@@ -6,7 +6,7 @@
 
 "use strict";
 
-const { PrefObserver } = require("devtools/client/shared/prefs");
+const { PrefObserver } = require("resource://devtools/client/shared/prefs.js");
 
 const TEST_URI = `data:text/html;charset=utf-8,<!DOCTYPE html>
   Web Console test for bug 1307871 - preference for toggling timestamps in messages`;
@@ -16,7 +16,11 @@ add_task(async function() {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   info("Call the log function defined in the test page");
-  const onMessage = waitForMessage(hud, "simple text message");
+  const onMessage = waitForMessageByType(
+    hud,
+    "simple text message",
+    ".console-api"
+  );
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     content.wrappedJSObject.console.log("simple text message");
   });

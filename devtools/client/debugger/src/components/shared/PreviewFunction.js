@@ -12,6 +12,12 @@ import "./PreviewFunction.css";
 const IGNORED_SOURCE_URLS = ["debugger eval code"];
 
 export default class PreviewFunction extends Component {
+  static get propTypes() {
+    return {
+      func: PropTypes.object.isRequired,
+    };
+  }
+
   renderFunctionName(func) {
     const { l10n } = this.context;
     const name = formatDisplayName(func, undefined, l10n);
@@ -45,21 +51,18 @@ export default class PreviewFunction extends Component {
   jumpToDefinitionButton(func) {
     const { location } = func;
 
-    if (
-      location &&
-      location.url &&
-      !IGNORED_SOURCE_URLS.includes(location.url)
-    ) {
-      const lastIndex = location.url.lastIndexOf("/");
-
-      return (
-        <button
-          className="jump-definition"
-          draggable="false"
-          title={`${location.url.slice(lastIndex + 1)}:${location.line}`}
-        />
-      );
+    if (!location?.url || IGNORED_SOURCE_URLS.includes(location.url)) {
+      return null;
     }
+
+    const lastIndex = location.url.lastIndexOf("/");
+    return (
+      <button
+        className="jump-definition"
+        draggable="false"
+        title={`${location.url.slice(lastIndex + 1)}:${location.line}`}
+      />
+    );
   }
 
   render() {

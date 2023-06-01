@@ -9,32 +9,32 @@
 
 const EXPORTED_SYMBOLS = ["LoginTestUtils"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   RemoteSettings: "resource://services-settings/remote-settings.js",
 });
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-let { Assert: AssertCls } = ChromeUtils.import(
-  "resource://testing-common/Assert.jsm"
+let { Assert: AssertCls } = ChromeUtils.importESModule(
+  "resource://testing-common/Assert.sys.mjs"
 );
 let Assert = AssertCls;
 
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
-
-const { FileTestUtils } = ChromeUtils.import(
-  "resource://testing-common/FileTestUtils.jsm"
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
 );
 
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+const { FileTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/FileTestUtils.sys.mjs"
+);
 
 const LoginInfo = Components.Constructor(
   "@mozilla.org/login-manager/loginInfo;1",
@@ -42,7 +42,7 @@ const LoginInfo = Components.Constructor(
   "init"
 );
 
-this.LoginTestUtils = {
+const LoginTestUtils = {
   setAssertReporter(reporterFunc) {
     Assert = new AssertCls(Cu.waiveXrays(reporterFunc));
   },
@@ -502,16 +502,16 @@ LoginTestUtils.recipes = {
   },
 };
 
-LoginTestUtils.masterPassword = {
-  masterPassword: "omgsecret!",
+LoginTestUtils.primaryPassword = {
+  primaryPassword: "omgsecret!",
 
   _set(enable, stayLoggedIn) {
     let oldPW, newPW;
     if (enable) {
       oldPW = "";
-      newPW = this.masterPassword;
+      newPW = this.primaryPassword;
     } else {
-      oldPW = this.masterPassword;
+      oldPW = this.primaryPassword;
       newPW = "";
     }
     try {
@@ -619,10 +619,7 @@ LoginTestUtils.file = {
    */
   async setupCsvFileWithLines(csvLines, extension = "csv") {
     let tmpFile = FileTestUtils.getTempFile(`firefox_logins.${extension}`);
-    await OS.File.writeAtomic(
-      tmpFile.path,
-      new TextEncoder().encode(csvLines.join("\r\n"))
-    );
+    await IOUtils.writeUTF8(tmpFile.path, csvLines.join("\r\n"));
     return tmpFile;
   },
 };
@@ -632,22 +629,17 @@ LoginTestUtils.remoteSettings = {
   async setupWebsitesWithSharedCredentials(
     relatedRealms = [["other-example.com", "example.com", "example.co.uk"]]
   ) {
-    let db = await RemoteSettings(this.relatedRealmsCollection).db;
+    let db = lazy.RemoteSettings(this.relatedRealmsCollection).db;
     await db.clear();
     await db.create({
       id: "some-fake-ID-abc",
       relatedRealms,
     });
-    await db.importChanges({}, 1234567);
+    await db.importChanges({}, Date.now());
   },
   async cleanWebsitesWithSharedCredentials() {
-    let db = await RemoteSettings(this.relatedRealmsCollection).db;
-    await db.clear();
-    await db.importChanges({}, 1234);
-  },
-  async updateTimestamp() {
-    let db = await RemoteSettings(this.relatedRealmsCollection).db;
-    await db.importChanges({}, 12345678);
+    let db = lazy.RemoteSettings(this.relatedRealmsCollection).db;
+    await db.importChanges({}, Date.now(), [], { clear: true });
   },
   improvedPasswordRulesCollection: "password-rules",
 
@@ -655,7 +647,7 @@ LoginTestUtils.remoteSettings = {
     origin = "example.com",
     rules = "minlength: 6; maxlength: 16; required: lower, upper; required: digit; required: [&<>'\"!#$%(),:;=?[^`{|}~]]; max-consecutive: 2;"
   ) {
-    let db = await RemoteSettings(this.improvedPasswordRulesCollection).db;
+    let db = lazy.RemoteSettings(this.improvedPasswordRulesCollection).db;
     await db.clear();
     await db.create({
       id: "some-fake-ID",
@@ -667,11 +659,10 @@ LoginTestUtils.remoteSettings = {
       Domain: origin,
       "password-rules": rules,
     });
-    await db.importChanges({}, 1234567);
+    await db.importChanges({}, Date.now());
   },
   async cleanImprovedPasswordRules() {
-    let db = await RemoteSettings(this.improvedPasswordRulesCollection).db;
-    await db.clear();
-    await db.importChanges({}, 1234);
+    let db = lazy.RemoteSettings(this.improvedPasswordRulesCollection).db;
+    await db.importChanges({}, Date.now(), [], { clear: true });
   },
 };

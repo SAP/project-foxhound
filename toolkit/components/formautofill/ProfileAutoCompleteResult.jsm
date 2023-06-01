@@ -5,32 +5,24 @@
 "use strict";
 
 var EXPORTED_SYMBOLS = ["AddressResult", "CreditCardResult"];
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+const lazy = {};
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-const { FormAutofill } = ChromeUtils.import(
-  "resource://autofill/FormAutofill.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FormAutofillUtils",
-  "resource://autofill/FormAutofillUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "CreditCard",
-  "resource://gre/modules/CreditCard.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  CreditCard: "resource://gre/modules/CreditCard.sys.mjs",
+});
 
-XPCOMUtils.defineLazyPreferenceGetter(
-  this,
-  "insecureWarningEnabled",
-  "security.insecure_field_warning.contextual.enabled"
-);
+XPCOMUtils.defineLazyModuleGetters(lazy, {
+  FormAutofillUtils: "resource://autofill/FormAutofillUtils.jsm",
+});
 
-this.log = null;
-FormAutofill.defineLazyLogGetter(this, EXPORTED_SYMBOLS[0]);
+XPCOMUtils.defineLazyGetter(
+  lazy,
+  "l10n",
+  () => new Localization(["browser/preferences/formAutofill.ftl"], true)
+);
 
 class ProfileAutoCompleteResult {
   constructor(
@@ -40,8 +32,6 @@ class ProfileAutoCompleteResult {
     matchingProfiles,
     { resultCode = null, isSecure = true, isInputAutofilled = false }
   ) {
-    log.debug("Constructing new ProfileAutoCompleteResult:", [...arguments]);
-
     // nsISupports
     this.QueryInterface = ChromeUtils.generateQI(["nsIAutoCompleteResult"]);
 
@@ -111,8 +101,9 @@ class ProfileAutoCompleteResult {
   /**
    * Get the secondary label based on the focused field name and related field names
    * in the same form.
+   *
    * @param   {string} focusedFieldName The field name of the focused input
-   * @param   {Array<Object>} allFieldNames The field names in the same section
+   * @param   {Array<object>} allFieldNames The field names in the same section
    * @param   {object} profile The profile providing the labels to show.
    * @returns {string} The secondary label
    */
@@ -149,6 +140,7 @@ class ProfileAutoCompleteResult {
 
   /**
    * Retrieves a comment (metadata instance)
+   *
    * @param   {number} index The index of the comment requested
    * @returns {string} The comment at the specified index
    */
@@ -159,6 +151,7 @@ class ProfileAutoCompleteResult {
 
   /**
    * Retrieves a style hint specific to a particular index.
+   *
    * @param   {number} index The index of the style hint requested
    * @returns {string} The style hint at the specified index
    */
@@ -176,6 +169,7 @@ class ProfileAutoCompleteResult {
 
   /**
    * Retrieves an image url.
+   *
    * @param   {number} index The index of the image url requested
    * @returns {string} The image url at the specified index
    */
@@ -186,6 +180,7 @@ class ProfileAutoCompleteResult {
 
   /**
    * Retrieves a result
+   *
    * @param   {number} index The index of the result requested
    * @returns {string} The result at the specified index
    */
@@ -195,6 +190,7 @@ class ProfileAutoCompleteResult {
 
   /**
    * Returns true if the value at the given index is removable
+   *
    * @param   {number}  index The index of the result to remove
    * @returns {boolean} True if the value is removable
    */
@@ -204,6 +200,7 @@ class ProfileAutoCompleteResult {
 
   /**
    * Removes a result from the resultset
+   *
    * @param {number} index The index of the result to remove
    */
   removeValueAt(index) {
@@ -321,10 +318,10 @@ class AddressResult extends ProfileAutoCompleteResult {
     labels.push({
       primary: "",
       secondary: "",
-      categories: FormAutofillUtils.getCategoriesFromFieldNames(
+      categories: lazy.FormAutofillUtils.getCategoriesFromFieldNames(
         this._allFieldNames
       ),
-      focusedCategory: FormAutofillUtils.getCategoryFromFieldName(
+      focusedCategory: lazy.FormAutofillUtils.getCategoryFromFieldName(
         this._focusedFieldName
       ),
     });
@@ -380,7 +377,7 @@ class CreditCardResult extends ProfileAutoCompleteResult {
 
       if (matching) {
         if (currentFieldName == "cc-number") {
-          let { affix, label } = CreditCard.formatMaskedNumber(
+          let { affix, label } = lazy.CreditCard.formatMaskedNumber(
             profile[currentFieldName]
           );
           return affix + label;
@@ -394,15 +391,12 @@ class CreditCardResult extends ProfileAutoCompleteResult {
 
   _generateLabels(focusedFieldName, allFieldNames, profiles) {
     if (!this._isSecure) {
-      if (!insecureWarningEnabled) {
-        return [];
-      }
-      let brandName = FormAutofillUtils.brandBundle.GetStringFromName(
+      let brandName = lazy.FormAutofillUtils.brandBundle.GetStringFromName(
         "brandShortName"
       );
 
       return [
-        FormAutofillUtils.stringBundle.formatStringFromName(
+        lazy.FormAutofillUtils.stringBundle.formatStringFromName(
           "insecureFieldWarningDescription",
           [brandName]
         ),
@@ -426,7 +420,7 @@ class CreditCardResult extends ProfileAutoCompleteResult {
         let primary = profile[focusedFieldName];
 
         if (focusedFieldName == "cc-number") {
-          let { affix, label } = CreditCard.formatMaskedNumber(primary);
+          let { affix, label } = lazy.CreditCard.formatMaskedNumber(primary);
           primaryAffix = affix;
           primary = label;
         }
@@ -438,14 +432,11 @@ class CreditCardResult extends ProfileAutoCompleteResult {
         // The card type is displayed visually using an image. For a11y, we need
         // to expose it as text. We do this using aria-label. However,
         // aria-label overrides the text content, so we must include that also.
-        let ccTypeName;
-        try {
-          ccTypeName = FormAutofillUtils.stringBundle.GetStringFromName(
-            `cardNetwork.${profile["cc-type"]}`
-          );
-        } catch (e) {
-          ccTypeName = null; // Unknown.
-        }
+        const ccType = profile["cc-type"];
+        const ccTypeL10nId = lazy.CreditCard.getNetworkL10nId(ccType);
+        const ccTypeName = ccTypeL10nId
+          ? lazy.l10n.formatValueSync(ccTypeL10nId)
+          : ccType ?? ""; // Unknown card type
         const ariaLabel = [ccTypeName, primaryAffix, primary, secondary]
           .filter(chunk => !!chunk) // Exclude empty chunks.
           .join(" ");
@@ -487,7 +478,7 @@ class CreditCardResult extends ProfileAutoCompleteResult {
 
   getStyleAt(index) {
     this._checkIndexBounds(index);
-    if (!this._isSecure && insecureWarningEnabled) {
+    if (!this._isSecure) {
       return "autofill-insecureWarning";
     }
 
@@ -497,6 +488,6 @@ class CreditCardResult extends ProfileAutoCompleteResult {
   getImageAt(index) {
     this._checkIndexBounds(index);
     let network = this._cardTypes[index];
-    return CreditCard.getCreditCardLogo(network);
+    return lazy.CreditCard.getCreditCardLogo(network);
   }
 }

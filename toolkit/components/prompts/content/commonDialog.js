@@ -2,14 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { CommonDialog } = ChromeUtils.import(
-  "resource://gre/modules/CommonDialog.jsm"
+const { CommonDialog } = ChromeUtils.importESModule(
+  "resource://gre/modules/CommonDialog.sys.mjs"
 );
 
 // imported by adjustableTitle.js loaded in the same context:
 /* globals PromptUtils */
-
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var propBag, args, Dialog;
 

@@ -19,10 +19,6 @@
 #include "nsDebug.h"   // for NS_WARNING, NS_ASSERTION
 #include "nsRegion.h"  // for nsIntRegion
 
-#ifdef MOZ_WIDGET_ANDROID
-#  include "mozilla/layers/AndroidHardwareBuffer.h"
-#endif
-
 namespace mozilla {
 namespace layers {
 
@@ -35,12 +31,14 @@ bool CompositableParentManager::ReceiveCompositableUpdate(
   if (!compositable) {
     return false;
   }
-  return ReceiveCompositableUpdate(aEdit.detail(), WrapNotNull(compositable));
+  return ReceiveCompositableUpdate(aEdit.detail(), WrapNotNull(compositable),
+                                   aEdit.compositable());
 }
 
 bool CompositableParentManager::ReceiveCompositableUpdate(
     const CompositableOperationDetail& aDetail,
-    NotNull<CompositableHost*> aCompositable) {
+    NotNull<CompositableHost*> aCompositable,
+    const CompositableHandle& aHandle) {
   switch (aDetail.type()) {
     case CompositableOperationDetail::TOpRemoveTexture: {
       const OpRemoveTexture& op = aDetail.get_OpRemoveTexture();
@@ -83,14 +81,21 @@ bool CompositableParentManager::ReceiveCompositableUpdate(
       }
       break;
     }
-    case CompositableOperationDetail::TOpDeliverAcquireFence: {
-      const OpDeliverAcquireFence& op = aDetail.get_OpDeliverAcquireFence();
-      RefPtr<TextureHost> tex = TextureHost::AsTextureHost(op.textureParent());
-      MOZ_ASSERT(tex.get());
-      MOZ_ASSERT(tex->AsAndroidHardwareBufferTextureHost());
+    case CompositableOperationDetail::TOpUseRemoteTexture: {
+      const OpUseRemoteTexture& op = aDetail.get_OpUseRemoteTexture();
+      aCompositable->UseRemoteTexture(op.textureId(), op.ownerId(),
+                                      GetChildProcessId(), op.size(),
+                                      op.textureFlags());
+      break;
+    }
+    case CompositableOperationDetail::TOpEnableRemoteTexturePushCallback: {
+      const OpEnableRemoteTexturePushCallback& op =
+          aDetail.get_OpEnableRemoteTexturePushCallback();
 
-      auto fenceFd = op.fenceFd();
-      tex->SetAcquireFence(std::move(fenceFd));
+      aCompositable->SetAsyncRef(
+          AsyncCompositableRef(GetChildProcessId(), aHandle));
+      aCompositable->EnableRemoteTexturePushCallback(
+          op.ownerId(), GetChildProcessId(), op.size(), op.textureFlags());
       break;
     }
     default: {
@@ -154,7 +159,7 @@ void CompositableParentManager::ReleaseCompositable(
   if (iter == mCompositables.end()) {
     return;
   }
-
+  iter->second->OnReleased();
   mCompositables.erase(iter);
 }
 

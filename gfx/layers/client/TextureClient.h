@@ -64,6 +64,7 @@ class TextureData;
 class GPUVideoTextureData;
 class TextureClient;
 class ITextureClientRecycleAllocator;
+class SharedSurfaceTextureData;
 #ifdef GFX_DEBUG_TRACK_CLIENTS_IN_POOL
 class TextureClientPool;
 #endif
@@ -94,6 +95,9 @@ enum TextureAllocationFlags {
   // The texture is going to be updated using UpdateFromSurface and needs to
   // support that call.
   ALLOC_UPDATE_FROM_SURFACE = 1 << 7,
+
+  // Do not use an accelerated texture type.
+  ALLOC_DO_NOT_ACCELERATE = 1 << 8,
 };
 
 enum class BackendSelector { Content, Canvas };
@@ -307,17 +311,6 @@ class TextureData {
     return mozilla::ipc::FileDescriptor();
   }
 
-  /**
-   * Crop YCbCr planes to a smaller size. An use case is that we would need to
-   * allocate a larger size for planes in order to meet the special alignement
-   * requirement (eg. for ffmpeg video decoding), but crop planes to a correct
-   * range after allocation is done.
-   */
-  virtual bool CropYCbCrPlanes(const gfx::IntSize& aYSize,
-                               const gfx::IntSize& aCbCrSize) {
-    return false;
-  }
-
  protected:
   MOZ_COUNTED_DEFAULT_CTOR(TextureData)
 };
@@ -373,7 +366,7 @@ class TextureClient : public AtomicRefCountedWithFinalize<TextureClient> {
       const gfx::IntSize& aCbCrSize, uint32_t aCbCrStride,
       StereoMode aStereoMode, gfx::ColorDepth aColorDepth,
       gfx::YUVColorSpace aYUVColorSpace, gfx::ColorRange aColorRange,
-      TextureFlags aTextureFlags);
+      gfx::ChromaSubsampling aSubsampling, TextureFlags aTextureFlags);
 
   // Creates and allocates a TextureClient (can be accessed through raw
   // pointers).
@@ -479,15 +472,6 @@ class TextureClient : public AtomicRefCountedWithFinalize<TextureClient> {
    */
   bool CopyToTextureClient(TextureClient* aTarget, const gfx::IntRect* aRect,
                            const gfx::IntPoint* aPoint);
-
-  /**
-   * Crop YCbCr planes to a smaller size. An use case is that we would need to
-   * allocate a larger size for planes in order to meet the special alignement
-   * requirement (eg. for ffmpeg video decoding), but crop planes to a correct
-   * range after allocation is done.
-   */
-  bool CropYCbCrPlanes(const gfx::IntSize& aYSize,
-                       const gfx::IntSize& aCbCrSize);
 
   /**
    * Allocate and deallocate a TextureChild actor.

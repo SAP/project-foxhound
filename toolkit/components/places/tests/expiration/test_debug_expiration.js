@@ -229,77 +229,95 @@ add_task(async function test_expire_icons() {
 
   const entries = [
     {
-      desc: "Expired because it redirects",
-      page: "http://source.old.org/",
-      icon: "http://source.old.org/test_icon.png",
-      expired: true,
-      redirect: "http://dest.old.org/",
+      desc: "Not expired because recent",
+      page: "https://recent.notexpired.org/",
+      icon: "https://recent.notexpired.org/test_icon.png",
+      root: "https://recent.notexpired.org/favicon.ico",
+      iconExpired: false,
+      removed: false,
+    },
+    {
+      desc: "Not expired because recent, no root",
+      page: "https://recentnoroot.notexpired.org/",
+      icon: "https://recentnoroot.notexpired.org/test_icon.png",
+      iconExpired: false,
+      removed: false,
+    },
+    {
+      desc: "Expired because old with root",
+      page: "https://oldroot.expired.org/",
+      icon: "https://oldroot.expired.org/test_icon.png",
+      root: "https://oldroot.expired.org/favicon.ico",
+      iconExpired: true,
       removed: true,
     },
     {
-      desc: "Not expired because recent",
-      page: "http://source.new.org/",
-      icon: "http://source.new.org/test_icon.png",
-      expired: false,
-      redirect: "http://dest.new.org/",
+      desc: "Not expired because bookmarked, even if old with root",
+      page: "https://oldrootbm.notexpired.org/",
+      icon: "https://oldrootbm.notexpired.org/test_icon.png",
+      root: "https://oldrootbm.notexpired.org/favicon.ico",
+      bookmarked: true,
+      iconExpired: true,
       removed: false,
     },
     {
-      desc: "Not expired because does not match, even if old",
-      page: "http://stay.moz.org/",
-      icon: "http://stay.moz.org/test_icon.png",
-      expired: true,
+      desc: "Not Expired because old but has no root",
+      page: "https://old.notexpired.org/",
+      icon: "https://old.notexpired.org/test_icon.png",
+      iconExpired: true,
       removed: false,
     },
     {
-      desc: "Not expired because does not have a root icon, even if old",
-      page: "http://noroot.ref.org/#test",
-      icon: "http://noroot.ref.org/test_icon.png",
-      expired: true,
-      removed: false,
-    },
-    {
-      desc: "Expired because has a root icon",
+      desc: "Expired because it's an orphan page",
       page: "http://root.ref.org/#test",
-      icon: "http://root.ref.org/test_icon.png",
-      root: "http://root.ref.org/favicon.ico",
-      expired: true,
+      icon: undefined,
+      iconExpired: false,
       removed: true,
     },
     {
-      desc: "Not expired because recent",
-      page: "http://new.ref.org/#test",
-      icon: "http://new.ref.org/test_icon.png",
-      expired: false,
-      root: "http://new.ref.org/favicon.ico",
-      removed: false,
+      desc: "Expired because it's an orphan page",
+      page: "http://root.ref.org/#test",
+      icon: undefined,
+      skipHistory: true,
+      iconExpired: false,
+      removed: true,
     },
   ];
 
   for (let entry of entries) {
-    if (entry.redirect) {
-      await PlacesTestUtils.addVisits(entry.page);
-      await PlacesTestUtils.addVisits({
-        uri: entry.redirect,
-        transition: TRANSITION_REDIRECT_PERMANENT,
-        referrer: entry.page,
-      });
-    } else {
+    if (!entry.skipHistory) {
       await PlacesTestUtils.addVisits(entry.page);
     }
+    if (entry.bookmarked) {
+      await PlacesUtils.bookmarks.insert({
+        url: entry.page,
+        parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+      });
+    }
 
-    PlacesUtils.favicons.replaceFaviconDataFromDataURL(
-      Services.io.newURI(entry.icon),
-      dataUrl,
-      0,
-      Services.scriptSecurityManager.getSystemPrincipal()
-    );
-    await PlacesTestUtils.addFavicons(new Map([[entry.page, entry.icon]]));
-    Assert.equal(
-      await getFaviconUrlForPage(entry.page),
-      entry.icon,
-      "Sanity check the icon exists"
-    );
+    if (entry.icon) {
+      PlacesUtils.favicons.replaceFaviconDataFromDataURL(
+        Services.io.newURI(entry.icon),
+        dataUrl,
+        0,
+        Services.scriptSecurityManager.getSystemPrincipal()
+      );
+      await PlacesTestUtils.addFavicons(new Map([[entry.page, entry.icon]]));
+      Assert.equal(
+        await getFaviconUrlForPage(entry.page),
+        entry.icon,
+        "Sanity check the icon exists"
+      );
+    } else {
+      // This is an orphan page entry.
+      await PlacesUtils.withConnectionWrapper("addOrphanPage", async db => {
+        await db.execute(
+          `INSERT INTO moz_pages_w_icons (page_url, page_url_hash)
+           VALUES (:url, hash(:url))`,
+          { url: entry.page }
+        );
+      });
+    }
 
     if (entry.root) {
       PlacesUtils.favicons.replaceFaviconDataFromDataURL(
@@ -310,11 +328,13 @@ add_task(async function test_expire_icons() {
       );
       await PlacesTestUtils.addFavicons(new Map([[entry.page, entry.root]]));
     }
-    if (entry.expired) {
+
+    if (entry.iconExpired) {
       // Set an expired time on the icon.
       await PlacesUtils.withConnectionWrapper("expireFavicon", async db => {
         await db.execute(
-          `UPDATE moz_icons SET expire_ms = 1 WHERE icon_url = :url`,
+          `UPDATE moz_icons_to_pages SET expire_ms = 1
+           WHERE icon_id = (SELECT id FROM moz_icons WHERE icon_url = :url)`,
           { url: entry.icon }
         );
         if (entry.root) {
@@ -325,32 +345,56 @@ add_task(async function test_expire_icons() {
         }
       });
     }
+    if (entry.icon) {
+      Assert.equal(
+        await getFaviconUrlForPage(entry.page),
+        entry.icon,
+        "Sanity check the initial icon value"
+      );
+    }
   }
 
   info("Run expiration");
   await promiseForceExpirationStep(-1);
 
   info("Check expiration");
-  // Remove the root icons before checking the associated icons have been expired.
-  await PlacesUtils.withConnectionWrapper("test_debug_expiration.js", db =>
-    db.execute(`DELETE FROM moz_icons WHERE root = 1`)
-  );
   for (let entry of entries) {
     Assert.ok(page_in_database(entry.page));
 
-    if (entry.removed) {
-      await Assert.rejects(
-        getFaviconUrlForPage(entry.page),
-        /Unable to find an icon/,
-        entry.desc
-      );
-    } else {
+    if (!entry.removed) {
       Assert.equal(
         await getFaviconUrlForPage(entry.page),
         entry.icon,
         entry.desc
       );
+      continue;
     }
+
+    if (entry.root) {
+      Assert.equal(
+        await getFaviconUrlForPage(entry.page),
+        entry.root,
+        entry.desc
+      );
+      continue;
+    }
+
+    if (entry.icon) {
+      await Assert.rejects(
+        getFaviconUrlForPage(entry.page),
+        /Unable to find an icon/,
+        entry.desc
+      );
+      continue;
+    }
+
+    // This was an orphan page entry.
+    let db = await PlacesUtils.promiseDBConnection();
+    let rows = await db.execute(
+      `SELECT count(*) FROM moz_pages_w_icons WHERE page_url_hash = hash(:url)`,
+      { url: entry.page }
+    );
+    Assert.equal(rows[0].getResultByIndex(0), 0, "Orphan page was removed");
   }
 
   // Clean up.

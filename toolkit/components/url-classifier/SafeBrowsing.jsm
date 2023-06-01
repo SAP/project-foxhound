@@ -4,8 +4,6 @@
 
 var EXPORTED_SYMBOLS = ["SafeBrowsing"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 const PREF_DEBUG_ENABLED = "browser.safebrowsing.debug";
 let loggingEnabled = false;
 
@@ -148,26 +146,6 @@ const FEATURES = [
     },
   },
   {
-    name: "flashBlock",
-    list: [
-      "urlclassifier.flashAllowTable",
-      "urlclassifier.flashAllowExceptTable",
-      "urlclassifier.flashTable",
-      "urlclassifier.flashExceptTable",
-      "urlclassifier.flashSubDocTable",
-      "urlclassifier.flashSubDocExceptTable",
-    ],
-    enabled() {
-      return Services.prefs.getBoolPref("plugins.flashBlock.enabled");
-    },
-    update() {
-      return Services.prefs.getBoolPref(
-        "browser.safebrowsing.features.flashBlock.update",
-        this.enabled()
-      );
-    },
-  },
-  {
     name: "fingerprinting-annotation",
     list: [
       "urlclassifier.features.fingerprinting.annotate.blacklistTables",
@@ -275,6 +253,42 @@ const FEATURES = [
       );
     },
   },
+  {
+    name: "emailtracking-protection",
+    list: [
+      "urlclassifier.features.emailtracking.blocklistTables",
+      "urlclassifier.features.emailtracking.allowlistTables",
+    ],
+    enabled() {
+      return Services.prefs.getBoolPref(
+        "privacy.trackingprotection.emailtracking.enabled",
+        false
+      );
+    },
+    update() {
+      return Services.prefs.getBoolPref(
+        "browser.safebrowsing.features.emailtracking.update",
+        this.enabled()
+      );
+    },
+  },
+  {
+    name: "emailtracking-data-collection",
+    list: [
+      "urlclassifier.features.emailtracking.datacollection.blocklistTables",
+      "urlclassifier.features.emailtracking.datacollection.allowlistTables",
+    ],
+    enabled() {
+      // Data collection features are enabled by default.
+      return true;
+    },
+    update() {
+      return Services.prefs.getBoolPref(
+        "browser.safebrowsing.features.emailtracking.datacollection.update",
+        this.enabled()
+      );
+    },
+  },
 ];
 
 var SafeBrowsing = {
@@ -287,7 +301,6 @@ var SafeBrowsing = {
     Services.prefs.addObserver("browser.safebrowsing", this);
     Services.prefs.addObserver("privacy.trackingprotection", this);
     Services.prefs.addObserver("urlclassifier", this);
-    Services.prefs.addObserver("plugins.flashBlock.enabled", this);
 
     this.readPrefs();
 
@@ -372,7 +385,7 @@ var SafeBrowsing = {
       default:
         let err =
           "SafeBrowsing getReportURL() called with unknown kind: " + kind;
-        Cu.reportError(err);
+        console.error(err);
         throw err;
     }
 

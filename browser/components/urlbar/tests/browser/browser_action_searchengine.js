@@ -6,7 +6,7 @@
  * expected URL for the engine.
  */
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.search.separatePrivateDefault.ui.enabled", true],
@@ -14,19 +14,16 @@ add_task(async function setup() {
     ],
   });
 
-  await SearchTestUtils.installSearchExtension({ name: "MozSearch" });
+  await SearchTestUtils.installSearchExtension(
+    { name: "MozSearch" },
+    { setAsDefault: true }
+  );
   await SearchTestUtils.installSearchExtension({
     name: "MozSearchPrivate",
     search_url: "https://example.com/private",
   });
 
-  let originalEngine = await Services.search.getDefault();
-  await Services.search.setDefault(
-    Services.search.getEngineByName("MozSearch")
-  );
-
   registerCleanupFunction(async function() {
-    await Services.search.setDefault(originalEngine);
     await PlacesUtils.history.clear();
     await UrlbarTestUtils.formHistory.clear();
   });
@@ -109,11 +106,17 @@ add_task(async function test_search_private_window() {
 
   let engine = Services.search.getEngineByName("MozSearchPrivate");
   let originalEngine = await Services.search.getDefaultPrivate();
-  await Services.search.setDefaultPrivate(engine);
+  await Services.search.setDefaultPrivate(
+    engine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 
   registerCleanupFunction(async () => {
     await BrowserTestUtils.closeWindow(win);
-    await Services.search.setDefaultPrivate(originalEngine);
+    await Services.search.setDefaultPrivate(
+      originalEngine,
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    );
   });
 
   const win = await BrowserTestUtils.openNewBrowserWindow({ private: true });

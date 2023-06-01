@@ -5,17 +5,15 @@
 Apply some defaults and minor modifications to the jobs defined in the build
 kind.
 """
-
-
-from gecko_taskgraph.transforms.base import TransformSequence
-from gecko_taskgraph.util.attributes import RELEASE_PROJECTS, is_try, release_level
-from gecko_taskgraph.util.schema import resolve_keyed_by
-from gecko_taskgraph.util.treeherder import add_suffix
-from gecko_taskgraph.util.workertypes import worker_type_implementation
+import logging
 
 from mozbuild.artifact_builds import JOB_CHOICES as ARTIFACT_JOBS
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.schema import resolve_keyed_by
+from taskgraph.util.treeherder import add_suffix
 
-import logging
+from gecko_taskgraph.util.attributes import RELEASE_PROJECTS, is_try, release_level
+from gecko_taskgraph.util.workertypes import worker_type_implementation
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +27,7 @@ def set_defaults(config, jobs):
         job["treeherder"].setdefault("kind", "build")
         job["treeherder"].setdefault("tier", 1)
         _, worker_os = worker_type_implementation(
-            config.graph_config, job["worker-type"]
+            config.graph_config, config.params, job["worker-type"]
         )
         worker = job.setdefault("worker", {})
         worker.setdefault("env", {})
@@ -174,11 +172,16 @@ def use_profile_data(config, jobs):
         job["worker"]["env"].update({"TASKCLUSTER_PGO_PROFILE_USE": "1"})
 
         _, worker_os = worker_type_implementation(
-            config.graph_config, job["worker-type"]
+            config.graph_config, config.params, job["worker-type"]
         )
         if worker_os == "linux":
             # LTO linkage needs more open files than the default from run-task.
             job["worker"]["env"].update({"MOZ_LIMIT_NOFILE": "8192"})
+
+        if job.get("use-sccache"):
+            raise Exception(
+                "use-sccache is incompatible with use-pgo in {}".format(job["name"])
+            )
 
         yield job
 
@@ -201,6 +204,7 @@ def enable_full_crashsymbols(config, jobs):
     'enable-full-crashsymbols' set to True and on release branches, or
     on try"""
     branches = RELEASE_PROJECTS | {
+        "toolchains",
         "try",
     }
     for job in jobs:
@@ -211,4 +215,24 @@ def enable_full_crashsymbols(config, jobs):
         else:
             logger.debug("Disabling full symbol generation for %s", job["name"])
             job["attributes"].pop("enable-full-crashsymbols", None)
+        yield job
+
+
+@transforms.add
+def set_expiry(config, jobs):
+    for job in jobs:
+        attributes = job["attributes"]
+        if (
+            "shippable" in attributes
+            and attributes["shippable"]
+            and config.kind
+            in {
+                "build",
+            }
+        ):
+            expiration_policy = "long"
+        else:
+            expiration_policy = "medium"
+
+        job["expiration-policy"] = expiration_policy
         yield job

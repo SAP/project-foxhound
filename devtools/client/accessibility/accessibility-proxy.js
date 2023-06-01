@@ -7,14 +7,16 @@
 loader.lazyRequireGetter(
   this,
   "CombinedProgress",
-  "devtools/client/accessibility/utils/audit",
+  "resource://devtools/client/accessibility/utils/audit.js",
   true
 );
 
 const {
   accessibility: { AUDIT_TYPE },
-} = require("devtools/shared/constants");
-const { FILTERS } = require("devtools/client/accessibility/constants");
+} = require("resource://devtools/shared/constants.js");
+const {
+  FILTERS,
+} = require("resource://devtools/client/accessibility/constants.js");
 
 /**
  * Component responsible for tracking all Accessibility fronts in parent and

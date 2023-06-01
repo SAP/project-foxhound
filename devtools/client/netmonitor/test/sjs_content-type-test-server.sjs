@@ -3,7 +3,6 @@
 
 "use strict";
 
-/* eslint-disable-next-line mozilla/reject-importGlobalProperties */
 Cu.importGlobalProperties(["TextEncoder"]);
 
 function gzipCompressString(string, obs) {
@@ -31,7 +30,7 @@ function gzipCompressString(string, obs) {
 
 function doubleGzipCompressString(string, observer) {
   const observer2 = {
-    onStreamComplete: function(loader, context, status, length, result) {
+    onStreamComplete(loader, context, status, length, result) {
       const buffer = String.fromCharCode.apply(this, result);
       gzipCompressString(buffer, observer);
     },
@@ -276,6 +275,15 @@ function handleRequest(request, response) {
           response.finish();
           break;
         }
+        case "json-valid-xssi-protection": {
+          response.setStatusLine(request.httpVersion, status, "OK");
+          response.setHeader("Content-Type", "text/json; charset=utf-8", false);
+          setCacheHeaders();
+          response.write(')]}\'\n{"greeting": "Hello good XSSI protection"}');
+          response.finish();
+          break;
+        }
+
         case "font": {
           response.setStatusLine(request.httpVersion, status, "OK");
           response.setHeader("Content-Type", "font/woff", false);
@@ -287,6 +295,13 @@ function handleRequest(request, response) {
         case "image": {
           response.setStatusLine(request.httpVersion, status, "OK");
           response.setHeader("Content-Type", "image/png", false);
+          setCacheHeaders();
+          response.finish();
+          break;
+        }
+        case "application-ogg": {
+          response.setStatusLine(request.httpVersion, status, "OK");
+          response.setHeader("Content-Type", "application/ogg", false);
           setCacheHeaders();
           response.finish();
           break;
@@ -337,13 +352,7 @@ function handleRequest(request, response) {
           setCacheHeaders();
 
           const observer = {
-            onStreamComplete: function(
-              loader,
-              context,
-              statusl,
-              length,
-              result
-            ) {
+            onStreamComplete(loader, context, statusl, length, result) {
               const buffer = String.fromCharCode.apply(this, result);
               response.setHeader("Content-Length", "" + buffer.length, false);
               response.write(buffer);

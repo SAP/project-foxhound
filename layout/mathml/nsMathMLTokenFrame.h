@@ -40,15 +40,14 @@ class nsMathMLTokenFrame : public nsMathMLContainerFrame {
 
   virtual eMathMLFrameType GetMathMLFrameType() override;
 
-  virtual void SetInitialChildList(ChildListID aListID,
-                                   nsFrameList& aChildList) override;
+  void SetInitialChildList(ChildListID aListID,
+                           nsFrameList&& aChildList) override;
 
-  virtual void AppendFrames(ChildListID aListID,
-                            nsFrameList& aChildList) override;
+  void AppendFrames(ChildListID aListID, nsFrameList&& aChildList) override;
 
-  virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
-                            const nsLineList::iterator* aPrevFrameLine,
-                            nsFrameList& aChildList) override;
+  void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                    const nsLineList::iterator* aPrevFrameLine,
+                    nsFrameList&& aChildList) override;
 
   virtual void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
                       const ReflowInput& aReflowInput,

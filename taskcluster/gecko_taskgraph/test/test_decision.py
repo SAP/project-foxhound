@@ -3,20 +3,19 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-import os
 import json
+import os
 import shutil
-import unittest
 import tempfile
+import unittest
+from unittest.mock import patch
 
 import pytest
-from mozunit import main, MockedOpen
+from mozunit import MockedOpen, main
 from taskgraph.util.yaml import load_yaml
-from unittest.mock import patch
 
 from gecko_taskgraph import decision
 from gecko_taskgraph.parameters import register_parameters
-
 
 FAKE_GRAPH_CONFIG = {"product-dir": "browser", "taskgraph": {}}
 
@@ -75,8 +74,12 @@ class TestGetDecisionParameters(unittest.TestCase):
         }
 
     @patch("gecko_taskgraph.decision.get_hg_revision_branch")
-    def test_simple_options(self, mock_get_hg_revision_branch):
+    @patch("gecko_taskgraph.decision._determine_more_accurate_base_rev")
+    def test_simple_options(
+        self, mock_determine_more_accurate_base_rev, mock_get_hg_revision_branch
+    ):
         mock_get_hg_revision_branch.return_value = "default"
+        mock_determine_more_accurate_base_rev.return_value = "baserev"
         with MockedOpen({self.ttc_file: None}):
             params = decision.get_decision_parameters(FAKE_GRAPH_CONFIG, self.options)
         self.assertEqual(params["pushlog_id"], "143")
@@ -88,8 +91,12 @@ class TestGetDecisionParameters(unittest.TestCase):
         self.assertEqual(params["try_task_config"], {})
 
     @patch("gecko_taskgraph.decision.get_hg_revision_branch")
-    def test_no_email_owner(self, mock_get_hg_revision_branch):
+    @patch("gecko_taskgraph.decision._determine_more_accurate_base_rev")
+    def test_no_email_owner(
+        self, mock_determine_more_accurate_base_rev, mock_get_hg_revision_branch
+    ):
         mock_get_hg_revision_branch.return_value = "default"
+        mock_determine_more_accurate_base_rev.return_value = "baserev"
         self.options["owner"] = "ffxbld"
         with MockedOpen({self.ttc_file: None}):
             params = decision.get_decision_parameters(FAKE_GRAPH_CONFIG, self.options)
@@ -97,9 +104,16 @@ class TestGetDecisionParameters(unittest.TestCase):
 
     @patch("gecko_taskgraph.decision.get_hg_revision_branch")
     @patch("gecko_taskgraph.decision.get_hg_commit_message")
-    def test_try_options(self, mock_get_hg_commit_message, mock_get_hg_revision_branch):
+    @patch("gecko_taskgraph.decision._determine_more_accurate_base_rev")
+    def test_try_options(
+        self,
+        mock_determine_more_accurate_base_rev,
+        mock_get_hg_commit_message,
+        mock_get_hg_revision_branch,
+    ):
         mock_get_hg_commit_message.return_value = "try: -b do -t all --artifact"
         mock_get_hg_revision_branch.return_value = "default"
+        mock_determine_more_accurate_base_rev.return_value = "baserev"
         self.options["project"] = "try"
         with MockedOpen({self.ttc_file: None}):
             params = decision.get_decision_parameters(FAKE_GRAPH_CONFIG, self.options)
@@ -117,11 +131,16 @@ class TestGetDecisionParameters(unittest.TestCase):
 
     @patch("gecko_taskgraph.decision.get_hg_revision_branch")
     @patch("gecko_taskgraph.decision.get_hg_commit_message")
+    @patch("gecko_taskgraph.decision._determine_more_accurate_base_rev")
     def test_try_task_config(
-        self, mock_get_hg_commit_message, mock_get_hg_revision_branch
+        self,
+        mock_get_hg_commit_message,
+        mock_get_hg_revision_branch,
+        mock_determine_more_accurate_base_rev,
     ):
         mock_get_hg_commit_message.return_value = "Fuzzy query=foo"
         mock_get_hg_revision_branch.return_value = "default"
+        mock_determine_more_accurate_base_rev.return_value = "baserev"
         ttc = {"tasks": ["a", "b"]}
         self.options["project"] = "try"
         with MockedOpen({self.ttc_file: json.dumps(ttc)}):

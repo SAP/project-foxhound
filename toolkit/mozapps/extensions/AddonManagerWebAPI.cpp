@@ -11,6 +11,7 @@
 #include "mozilla/dom/NavigatorBinding.h"
 
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_extensions.h"
 #include "nsGlobalWindow.h"
 #include "xpcpublic.h"
 
@@ -20,23 +21,34 @@
 namespace mozilla {
 using namespace mozilla::dom;
 
+#ifndef MOZ_THUNDERBIRD
+#  define MOZ_AMO_HOSTNAME "addons.mozilla.org"
+#  define MOZ_AMO_STAGE_HOSTNAME "addons.allizom.org"
+#  define MOZ_AMO_DEV_HOSTNAME "addons-dev.allizom.org"
+#else
+#  define MOZ_AMO_HOSTNAME "addons.thunderbird.net"
+#  define MOZ_AMO_STAGE_HOSTNAME "addons-stage.thunderbird.net"
+#  undef MOZ_AMO_DEV_HOSTNAME
+#endif
+
 static bool IsValidHost(const nsACString& host) {
   // This hidden pref allows users to disable mozAddonManager entirely if they
   // want for fingerprinting resistance. Someone like Tor browser will use this
   // pref.
-  if (Preferences::GetBool(
-          "privacy.resistFingerprinting.block_mozAddonManager")) {
+  if (StaticPrefs::privacy_resistFingerprinting_block_mozAddonManager()) {
     return false;
   }
 
-  if (host.EqualsLiteral("addons.mozilla.org")) {
+  if (host.EqualsLiteral(MOZ_AMO_HOSTNAME)) {
     return true;
   }
 
   // When testing allow access to the developer sites.
-  if (Preferences::GetBool("extensions.webapi.testing", false)) {
-    if (host.LowerCaseEqualsLiteral("addons.allizom.org") ||
-        host.LowerCaseEqualsLiteral("addons-dev.allizom.org") ||
+  if (StaticPrefs::extensions_webapi_testing()) {
+    if (host.LowerCaseEqualsLiteral(MOZ_AMO_STAGE_HOSTNAME) ||
+#ifdef MOZ_AMO_DEV_HOSTNAME
+        host.LowerCaseEqualsLiteral(MOZ_AMO_DEV_HOSTNAME) ||
+#endif
         host.LowerCaseEqualsLiteral("example.com")) {
       return true;
     }
@@ -54,7 +66,7 @@ bool AddonManagerWebAPI::IsValidSite(nsIURI* uri) {
 
   if (!uri->SchemeIs("https")) {
     if (!(xpc::IsInAutomation() &&
-          Preferences::GetBool("extensions.webapi.testing.http", false))) {
+          StaticPrefs::extensions_webapi_testing_http())) {
       return false;
     }
   }

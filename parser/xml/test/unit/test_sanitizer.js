@@ -1,5 +1,5 @@
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 if (AppConstants.platform != "android") {
   // We load HTML documents, which try to track link state, which requires
@@ -22,8 +22,8 @@ function run_test() {
     // is set to true *before* profile-change-teardown notifications are fired.
     // To work around this, just force the history service to be created earlier:
 
-    let { PlacesUtils } = ChromeUtils.import(
-      "resource://gre/modules/PlacesUtils.jsm"
+    let { PlacesUtils } = ChromeUtils.importESModule(
+      "resource://gre/modules/PlacesUtils.sys.mjs"
     );
     Assert.ok(
       PlacesUtils.history.databaseStatus <= 1,
@@ -43,9 +43,11 @@ function run_test() {
   // and default settings
 
   for (var item in vectors) {
-    var evil = vectors[item].data;
-    var sanitized = vectors[item].sanitized;
-    var out = ParserUtils.sanitize(evil, sanitizeFlags);
+    let { data, sanitized, flags } = vectors[item];
+    if (!flags) {
+      flags = sanitizeFlags;
+    }
+    var out = ParserUtils.sanitize(data, flags);
     Assert.equal(sanitized, out);
   }
 }

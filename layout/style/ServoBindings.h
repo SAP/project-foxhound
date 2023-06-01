@@ -64,9 +64,10 @@ GROUP_RULE_FUNCS(Supports)
 GROUP_RULE_FUNCS(LayerBlock)
 BASIC_RULE_FUNCS(LayerStatement)
 BASIC_RULE_FUNCS(FontFeatureValues)
+BASIC_RULE_FUNCS(FontPaletteValues)
 BASIC_RULE_FUNCS(FontFace)
 BASIC_RULE_FUNCS(CounterStyle)
-BASIC_RULE_FUNCS(ScrollTimeline)
+GROUP_RULE_FUNCS(Container)
 
 #undef GROUP_RULE_FUNCS
 #undef BASIC_RULE_FUNCS
@@ -85,6 +86,7 @@ BASIC_SERDE_FUNCS(StyleTransform)
 BASIC_SERDE_FUNCS(StyleOffsetPath)
 BASIC_SERDE_FUNCS(StyleOffsetRotate)
 BASIC_SERDE_FUNCS(StylePositionOrAuto)
+BASIC_SERDE_FUNCS(StyleComputedTimingFunction)
 
 #undef BASIC_SERDE_FUNCS
 

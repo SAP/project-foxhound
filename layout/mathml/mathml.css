@@ -9,17 +9,22 @@
 
 @namespace url(http://www.w3.org/1998/Math/MathML);
 
+* {
+  writing-mode: horizontal-tb !important;
+}
+
 /**************************************************************************/
 /* <math> - outermost math element                                        */
 /**************************************************************************/
 
 math {
-  writing-mode: horizontal-tb !important;
   direction: ltr;
   unicode-bidi: embed;
   display: inline;
   font-size: inherit;
   font-style: normal;
+  font-weight: normal;
+  text-indent: 0;
   font-family: serif;
   line-height: normal;
   word-spacing: normal;
@@ -42,18 +47,20 @@ math[display="inline" i] {
 /* Token elements                                                         */
 /**************************************************************************/
 
-ms {
-  display: inline;
+@media not (-moz-mathml-core-ms) {
+  ms {
+    display: inline;
+  }
+  ms:before, ms:after {
+    content: "\0022"
+  }
+  ms[lquote]:before {
+    content: attr(lquote)
+  }
+  ms[rquote]:after {
+    content: attr(rquote)
+  }
 }
-ms:before, ms:after {
-  content: "\0022"
-}
-ms[lquote]:before {
-  content: attr(lquote)
-}
-ms[rquote]:after {
-  content: attr(rquote)
- }
 
 /**************************************************************************/
 /* Links                                                                  */
@@ -310,4 +317,14 @@ mscarries {
    (see bug 1108378). */
 mphantom {
     visibility: hidden;
+}
+
+@media (-moz-mathml-core-maction-and-semantics) {
+  /* Implement MathML Core's semantics/maction support
+     https://w3c.github.io/mathml-core/#dfn-semantics
+     https://w3c.github.io/mathml-core/#dfn-maction */
+  maction > :not(:first-child),
+  semantics > :not(:first-child) {
+    display: none;
+  }
 }

@@ -30,17 +30,16 @@
  * @constructor
  */
 var Meta;
-let Services;
 if (typeof Components != "undefined") {
   // Global definition of |exports|, to keep everybody happy.
   // In non-main thread, |exports| is provided by the module
   // loader.
+  // eslint-disable-next-line mozilla/reject-global-this
   this.exports = {};
-  ({ Services } = ChromeUtils.import("resource://gre/modules/Services.jsm"));
-  this.Services = Services;
-  Meta = ChromeUtils.import("resource://gre/modules/PromiseWorker.jsm", {})
+  Meta = ChromeUtils.import("resource://gre/modules/PromiseWorker.jsm")
     .BasePromiseWorker.Meta;
 } else {
+  /* import-globals-from /toolkit/components/workerloader/require.js */
   importScripts("resource://gre/modules/workers/require.js");
   Meta = require("resource://gre/modules/workers/PromiseWorker.js").Meta;
 }
@@ -1361,8 +1360,10 @@ Object.defineProperty(exports.OS.Shared, "TEST", {
 
 // /////////////////// Permanent boilerplate
 if (typeof Components != "undefined") {
+  // eslint-disable-next-line mozilla/reject-global-this
   this.EXPORTED_SYMBOLS = EXPORTED_SYMBOLS;
   for (let symbol of EXPORTED_SYMBOLS) {
+    // eslint-disable-next-line mozilla/reject-global-this
     this[symbol] = exports[symbol];
   }
 }

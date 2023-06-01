@@ -39,13 +39,14 @@ UNIFIED_SOURCES += [
     "TestNSPRLogModulesParser.cpp",
     "TestObserverArray.cpp",
     "TestObserverService.cpp",
+    "TestOwningNonNull.cpp",
     "TestPLDHash.cpp",
     "TestPriorityQueue.cpp",
     "TestQueue.cpp",
     "TestRacingServiceManager.cpp",
     "TestRecursiveMutex.cpp",
+    "TestRustRegex.cpp",
     "TestRWLock.cpp",
-    "TestSeekableStreamWrapper.cpp",
     "TestSegmentedBuffer.cpp",
     "TestSlicedInputStream.cpp",
     "TestSmallArrayLRUCache.cpp",
@@ -109,6 +110,7 @@ if CONFIG["OS_TARGET"] == "WINNT":
         "TestAvailableMemoryWatcherWin.cpp",
         "TestFileNTFSSpecialPaths.cpp",
         "TestFilePreferencesWin.cpp",
+        "TestHandleWatcher.cpp",
     ]
 else:
     UNIFIED_SOURCES += [
@@ -152,6 +154,7 @@ SOURCES += [
 LOCAL_INCLUDES += [
     "../../base",
     "/toolkit/components/telemetry/tests/gtest",
+    "/xpcom/components",
 ]
 
 GeneratedFile(

@@ -9,10 +9,16 @@
 #  include "mozilla/X11Util.h"
 #endif
 
+#include "base/platform_thread.h"  // for PlatformThreadId
+#include "gfxEnv.h"
 #include "GLTypes.h"
 #include "mozilla/EnumTypeTraits.h"
+#include "mozilla/gfx/Logging.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/StaticMutex.h"
+#include "mozilla/StaticPtr.h"
 #include "nsISupports.h"
 #include "prlink.h"
 
@@ -69,7 +75,10 @@ enum class EGLLibExtension {
   ANGLE_device_creation_d3d11,
   ANGLE_platform_angle,
   ANGLE_platform_angle_d3d,
+  EXT_device_enumeration,
   EXT_device_query,
+  EXT_platform_device,
+  MESA_platform_surfaceless,
   Max
 };
 
@@ -105,6 +114,10 @@ enum class EGLExtension {
   EXT_buffer_age,
   KHR_partial_update,
   NV_robustness_video_memory_purge,
+  EXT_image_dma_buf_import,
+  EXT_image_dma_buf_import_modifiers,
+  MESA_image_dma_buf_export,
+  KHR_no_config_context,
   Max
 };
 
@@ -125,13 +138,21 @@ class GLLibraryEGL final {
   std::unordered_map<EGLDisplay, std::weak_ptr<EglDisplay>> mActiveDisplays;
 
  public:
-  static RefPtr<GLLibraryEGL> Create(nsACString* const out_failureId);
+  static RefPtr<GLLibraryEGL> Get(nsACString* const out_failureId);
+  static void Shutdown();
 
  private:
   ~GLLibraryEGL() = default;
 
+  static StaticMutex sMutex;
+  static StaticRefPtr<GLLibraryEGL> sInstance MOZ_GUARDED_BY(sMutex);
+
   bool Init(nsACString* const out_failureId);
   void InitLibExtensions();
+
+  std::shared_ptr<EglDisplay> CreateDisplayLocked(
+      bool forceAccel, nsACString* const out_failureId,
+      const StaticMutexAutoLock& aProofOfLock);
 
  public:
   Maybe<SymbolLoader> GetSymbolLoader() const;
@@ -232,12 +253,51 @@ class GLLibraryEGL final {
  private:
   EGLBoolean fTerminate(EGLDisplay display) const { WRAP(fTerminate(display)); }
 
+  // -
+
+  mutable Mutex mMutex = Mutex{"GLLibraryEGL::mMutex"};
+  mutable std::unordered_map<EGLContext, PlatformThreadId>
+      mOwningThreadByContext MOZ_GUARDED_BY(mMutex);
+
   EGLBoolean fMakeCurrent(EGLDisplay dpy, EGLSurface draw, EGLSurface read,
                           EGLContext ctx) const {
+    const bool CHECK_CONTEXT_OWNERSHIP = true;
+    if (CHECK_CONTEXT_OWNERSHIP) {
+      const MutexAutoLock lock(mMutex);
+
+      const auto tid = PlatformThread::CurrentId();
+      const auto prevCtx = fGetCurrentContext();
+
+      if (prevCtx) {
+        mOwningThreadByContext[prevCtx] = 0;
+      }
+      if (ctx) {
+        auto& ctxOwnerThread = mOwningThreadByContext[ctx];
+        if (ctxOwnerThread && ctxOwnerThread != tid) {
+          gfxCriticalError()
+              << "EGLContext#" << ctx << " is owned by/Current on"
+              << " thread#" << ctxOwnerThread << " but MakeCurrent requested on"
+              << " thread#" << tid << "!";
+          if (gfxEnv::MOZ_EGL_RELEASE_ASSERT_CONTEXT_OWNERSHIP()) {
+            MOZ_CRASH("MOZ_EGL_RELEASE_ASSERT_CONTEXT_OWNERSHIP");
+          }
+          return false;
+        }
+        ctxOwnerThread = tid;
+      }
+    }
+
     WRAP(fMakeCurrent(dpy, draw, read, ctx));
   }
 
+  // -
+
   EGLBoolean fDestroyContext(EGLDisplay dpy, EGLContext ctx) const {
+    {
+      const MutexAutoLock lock(mMutex);
+      mOwningThreadByContext.erase(ctx);
+    }
+
     WRAP(fDestroyContext(dpy, ctx));
   }
 
@@ -422,6 +482,10 @@ class GLLibraryEGL final {
     WRAP(fQueryDeviceAttribEXT(device, attribute, value));
   }
 
+  const char* fQueryDeviceStringEXT(EGLDeviceEXT device, EGLint name) {
+    WRAP(fQueryDeviceStringEXT(device, name));
+  }
+
  private:
   // NV_stream_consumer_gltexture_yuv
   EGLBoolean fStreamConsumerGLTextureExternalAttribsNV(
@@ -452,6 +516,26 @@ class GLLibraryEGL final {
                               const EGLint* rects, EGLint n_rects) {
     WRAP(fSetDamageRegion(dpy, surface, rects, n_rects));
   }
+  // EGL_MESA_image_dma_buf_export
+  EGLBoolean fExportDMABUFImageQuery(EGLDisplay dpy, EGLImage image,
+                                     int* fourcc, int* num_planes,
+                                     uint64_t* modifiers) {
+    WRAP(
+        fExportDMABUFImageQueryMESA(dpy, image, fourcc, num_planes, modifiers));
+  }
+  EGLBoolean fExportDMABUFImage(EGLDisplay dpy, EGLImage image, int* fds,
+                                EGLint* strides, EGLint* offsets) {
+    WRAP(fExportDMABUFImageMESA(dpy, image, fds, strides, offsets));
+  }
+
+ public:
+  // EGL_EXT_device_enumeration
+  EGLBoolean fQueryDevicesEXT(EGLint max_devices, EGLDeviceEXT* devices,
+                              EGLint* num_devices) {
+    WRAP(fQueryDevicesEXT(max_devices, devices, num_devices));
+  }
+
+#undef WRAP
 
 #undef WRAP
 #undef PROFILE_CALL
@@ -559,6 +643,9 @@ class GLLibraryEGL final {
     EGLBoolean(GLAPIENTRY* fQueryDeviceAttribEXT)(EGLDeviceEXT device,
                                                   EGLint attribute,
                                                   EGLAttrib* value);
+    const char*(GLAPIENTRY* fQueryDeviceStringEXT)(EGLDeviceEXT device,
+                                                   EGLint name);
+
     // NV_stream_consumer_gltexture_yuv
     EGLBoolean(GLAPIENTRY* fStreamConsumerGLTextureExternalAttribsNV)(
         EGLDisplay dpy, EGLStreamKHR stream, const EGLAttrib* attrib_list);
@@ -584,6 +671,22 @@ class GLLibraryEGL final {
                                              EGLint n_rects);
     EGLClientBuffer(GLAPIENTRY* fGetNativeClientBufferANDROID)(
         const struct AHardwareBuffer* buffer);
+
+    // EGL_MESA_image_dma_buf_export
+    EGLBoolean(GLAPIENTRY* fExportDMABUFImageQueryMESA)(EGLDisplay dpy,
+                                                        EGLImage image,
+                                                        int* fourcc,
+                                                        int* num_planes,
+                                                        uint64_t* modifiers);
+    EGLBoolean(GLAPIENTRY* fExportDMABUFImageMESA)(EGLDisplay dpy,
+                                                   EGLImage image, int* fds,
+                                                   EGLint* strides,
+                                                   EGLint* offsets);
+
+    EGLBoolean(GLAPIENTRY* fQueryDevicesEXT)(EGLint max_devices,
+                                             EGLDeviceEXT* devices,
+                                             EGLint* num_devices);
+
   } mSymbols = {};
 };
 
@@ -599,8 +702,9 @@ class EglDisplay final {
   struct PrivateUseOnly final {};
 
  public:
-  static std::shared_ptr<EglDisplay> Create(GLLibraryEGL&, EGLDisplay,
-                                            bool isWarp);
+  static std::shared_ptr<EglDisplay> Create(
+      GLLibraryEGL&, EGLDisplay, bool isWarp,
+      const StaticMutexAutoLock& aProofOfLock);
 
   // Only `public` for make_shared.
   EglDisplay(const PrivateUseOnly&, GLLibraryEGL&, EGLDisplay, bool isWarp);
@@ -841,6 +945,19 @@ class EglDisplay final {
                               EGLint n_rects) {
     MOZ_ASSERT(IsExtensionSupported(EGLExtension::KHR_partial_update));
     return mLib->fSetDamageRegion(mDisplay, surface, rects, n_rects);
+  }
+
+  EGLBoolean fExportDMABUFImageQuery(EGLImage image, int* fourcc,
+                                     int* num_planes,
+                                     uint64_t* modifiers) const {
+    MOZ_ASSERT(IsExtensionSupported(EGLExtension::MESA_image_dma_buf_export));
+    return mLib->fExportDMABUFImageQuery(mDisplay, image, fourcc, num_planes,
+                                         modifiers);
+  }
+  EGLBoolean fExportDMABUFImage(EGLImage image, int* fds, EGLint* strides,
+                                EGLint* offsets) const {
+    MOZ_ASSERT(IsExtensionSupported(EGLExtension::MESA_image_dma_buf_export));
+    return mLib->fExportDMABUFImage(mDisplay, image, fds, strides, offsets);
   }
 };
 

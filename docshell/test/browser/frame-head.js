@@ -6,7 +6,12 @@
 // Functions that are automatically loaded as frame scripts for
 // timeline tests.
 
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+// eslint assumes we inherit browser window stuff, but this
+// framescript doesn't.
+// eslint-disable-next-line mozilla/no-redeclare-with-import-autofix
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 
 // Functions that look like mochitest functions but forward to the
 // browser process.

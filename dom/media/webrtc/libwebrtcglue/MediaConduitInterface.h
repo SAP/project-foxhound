@@ -15,15 +15,25 @@
 #include "MediaConduitErrors.h"
 #include "mozilla/media/MediaUtils.h"
 #include "mozilla/MozPromise.h"
-#include "VideoTypes.h"
 #include "WebrtcVideoCodecFactory.h"
 #include "nsTArray.h"
 #include "mozilla/dom/RTCRtpSourcesBinding.h"
+#include "PerformanceRecorder.h"
 #include "transport/mediapacket.h"
 
 // libwebrtc includes
+#include "api/audio/audio_frame.h"
+#include "api/call/transport.h"
+#include "api/rtp_headers.h"
+#include "api/rtp_parameters.h"
+#include "api/transport/rtp/rtp_source.h"
 #include "api/video/video_frame_buffer.h"
-#include "call/call.h"
+#include "call/audio_receive_stream.h"
+#include "call/audio_send_stream.h"
+#include "call/call_basic_stats.h"
+#include "call/video_receive_stream.h"
+#include "call/video_send_stream.h"
+#include "rtc_base/copy_on_write_buffer.h"
 
 namespace webrtc {
 class VideoFrame;
@@ -149,6 +159,8 @@ class MediaSessionConduit {
   virtual Maybe<Ssrc> GetRemoteSSRC() const = 0;
   virtual void UnsetRemoteSSRC(Ssrc aSsrc) = 0;
 
+  virtual void DisableSsrcChanges() = 0;
+
   virtual bool HasCodecPluginID(uint64_t aPluginID) const = 0;
 
   virtual MediaEventSource<void>& RtcpByeEvent() = 0;
@@ -167,7 +179,7 @@ class MediaSessionConduit {
   virtual Maybe<RefPtr<AudioSessionConduit>> AsAudioSessionConduit() = 0;
   virtual Maybe<RefPtr<VideoSessionConduit>> AsVideoSessionConduit() = 0;
 
-  virtual Maybe<webrtc::Call::Stats> GetCallStats() const = 0;
+  virtual Maybe<webrtc::CallBasicStats> GetCallStats() const = 0;
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MediaSessionConduit)
 
@@ -318,7 +330,7 @@ class VideoSessionConduit : public MediaSessionConduit {
   static RefPtr<VideoSessionConduit> Create(
       RefPtr<WebrtcCallWrapper> aCall,
       nsCOMPtr<nsISerialEventTarget> aStsThread, Options aOptions,
-      std::string aPCHandle);
+      std::string aPCHandle, const TrackingId& aRecvTrackingId);
 
   enum FrameRequestType {
     FrameRequestNone,
@@ -361,8 +373,6 @@ class VideoSessionConduit : public MediaSessionConduit {
       RefPtr<mozilla::VideoRenderer> aRenderer) = 0;
   virtual void DetachRenderer() = 0;
 
-  virtual void DisableSsrcChanges() = 0;
-
   /**
    * Function to deliver a capture video frame for encoding and transport.
    * If the frame's timestamp is 0, it will be automatcally generated.
@@ -385,7 +395,8 @@ class VideoSessionConduit : public MediaSessionConduit {
 
   bool UsingFEC() const { return mUsingFEC; }
 
-  virtual Maybe<webrtc::VideoReceiveStream::Stats> GetReceiverStats() const = 0;
+  virtual Maybe<webrtc::VideoReceiveStreamInterface::Stats> GetReceiverStats()
+      const = 0;
   virtual Maybe<webrtc::VideoSendStream::Stats> GetSenderStats() const = 0;
 
   virtual void CollectTelemetryData() = 0;
@@ -473,7 +484,8 @@ class AudioSessionConduit : public MediaSessionConduit {
    */
   virtual bool IsSamplingFreqSupported(int freq) const = 0;
 
-  virtual Maybe<webrtc::AudioReceiveStream::Stats> GetReceiverStats() const = 0;
+  virtual Maybe<webrtc::AudioReceiveStreamInterface::Stats> GetReceiverStats()
+      const = 0;
   virtual Maybe<webrtc::AudioSendStream::Stats> GetSenderStats() const = 0;
 };
 }  // namespace mozilla

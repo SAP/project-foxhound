@@ -75,13 +75,16 @@ exclude = [
 ]
 include = [
   "AnimationTimeline",
+  "AnimationIterationCount",
   "Appearance",
   "BreakBetween",
   "BreakWithin",
   "BorderStyle",
+  "BoolInteger",
   "OutlineStyle",
   "CaptionSide",
   "FontSizeAdjust",
+  "FontPalette",
   "ComputedFontStretchRange",
   "ComputedFontStyleDescriptor",
   "ComputedFontWeightRange",
@@ -91,27 +94,34 @@ include = [
   "DisplayOutside",
   "DisplayInside",
   "DisplayMode",
+  "Platform",
   "PrefersColorScheme",
   "PrefersContrast",
+  "DynamicRange",
   "FillRule",
   "FontDisplay",
   "FontFaceSourceListComponent",
+  "FontFaceSourceTechFlags",
   "FontLanguageOverride",
+  "FontSynthesis",
   "GenericFontFamily",
   "FontFamily",
   "FontFamilyNameSyntax",
   "OverflowWrap",
-  "TimingFunction",
   "OffsetPath",
   "OffsetRotate",
   "UnicodeRange",
   "UserSelect",
   "Float",
+  "Clear",
   "OverscrollBehavior",
   "ScrollSnapAlign",
   "ScrollSnapAxis",
+  "ScrollSnapStop",
   "ScrollSnapStrictness",
   "ScrollSnapType",
+  "ScrollTimelineName",
+  "ViewTimelineInset",
   "OverflowAnchor",
   "OverflowClipBox",
   "Resize",
@@ -127,6 +137,7 @@ include = [
   "NonNegativeLengthOrAuto",
   "TextDecorationSkipInk",
   "TextDecorationLength",
+  "Time",
   "Rect",
   "IntersectionObserverRootMargin",
   "Size",
@@ -144,13 +155,21 @@ include = [
   "ZIndex",
   "TransformOrigin",
   "LineBreak",
+  "LineClamp",
   "WordBreak",
   "Contain",
+  "ContainerType",
+  "ContainerName",
+  "ContentVisibility",
+  "ContainIntrinsicSize",
   "Origin",
   "RestyleHint",
   "TouchAction",
   "WillChange",
   "TextDecorationLine",
+  "MasonryAutoFlow",
+  "MasonryPlacement",
+  "MasonryItemOrder",
   "TextUnderlinePosition",
   "TextTransform",
   "TextJustify",
@@ -197,7 +216,8 @@ include = [
   "SVGPaintKind",
   "GridTemplateComponent",
   "TextEmphasisStyle",
-  "VariantAlternatesList",
+  "TextEmphasisPosition",
+  "FontVariantAlternates",
   "PaintOrder",
   "SVGPaintOrder",
   "ClipRectOrAuto",
@@ -232,6 +252,7 @@ include = [
   "DefaultFontSizes",
   "RuleChangeKind",
   "PageName",
+  "PageOrientation",
   "PageSize",
   "DProperty",
   "ImageRendering",
@@ -239,6 +260,9 @@ include = [
   "ScrollbarGutter",
   "ScrollDirection",
   "HyphenateCharacter",
+  "ComputedLinearStop",
+  "PiecewiseLinearFunction",
+  "BeforeFlag"
 ]
 item_types = ["enums", "structs", "unions", "typedefs", "functions", "constants"]
 renaming_overrides_prefixing = true
@@ -287,12 +311,14 @@ renaming_overrides_prefixing = true
 "Keyframe" = "Keyframe"
 "nsChangeHint" = "nsChangeHint"
 "ServoElementSnapshotTable" = "ServoElementSnapshotTable"
-"nsTimingFunction" = "nsTimingFunction"
 "Keyframe" = "Keyframe"
 "ComputedKeyframeValues" = "ComputedKeyframeValues"
 "OriginFlags" = "OriginFlags"
 "ServoTraversalFlags" = "ServoTraversalFlags"
 "ServoStyleSetSizes" = "ServoStyleSetSizes"
+"BeforeFlag" = "StyleEasingBeforeFlag"
+"FontPaletteValueSet" = "gfx::FontPaletteValueSet"
+"PaletteValues" = "gfx::FontPaletteValueSet::PaletteValues"
 
 [export.body]
 "CSSPixelLength" = """
@@ -395,6 +421,8 @@ renaming_overrides_prefixing = true
   // Just some convenient aliases for LengthOrAuto, to avoid confusing naming.
   inline bool IsLength() const;
   inline const StyleLength& AsLength() const;
+
+  static inline StyleGenericLengthPercentageOrAuto Zero();
 """
 
 "GenericSize" = """
@@ -506,7 +534,6 @@ renaming_overrides_prefixing = true
 """
 
 "GenericColor" = """
-  static inline StyleGenericColor CurrentColor();
   static inline StyleGenericColor FromColor(nscolor);
   static inline StyleGenericColor Black();
   static inline StyleGenericColor White();
@@ -772,34 +799,15 @@ renaming_overrides_prefixing = true
   inline nsRect ToLayoutRect(nscoord aAutoSize = NS_MAXSIZE) const;
 """
 
-"GenericRotate" = """
+"TimingFunction" = """
  public:
-  // The implementation of IPC LayersMessages needs this to be public.
-  StyleGenericRotate(): tag(Tag::None) {}
-"""
+  bool IsLinearKeyword() const { return IsKeyword() && AsKeyword() == StyleTimingKeyword::Linear; }
+  static StyleTimingFunction LinearKeyword() { return Keyword(StyleTimingKeyword::Linear); }
 
-"GenericScale" = """
- public:
-  // The implementation of IPC LayersMessages needs this to be public.
-  StyleGenericScale(): tag(Tag::None) {}
-"""
+  inline double At(double, bool aBeforeFlag) const;
+  inline void AppendToString(nsACString&) const;
 
-"GenericTranslate" = """
- public:
-  // The implementation of IPC LayersMessages needs this to be public.
-  StyleGenericTranslate(): tag(Tag::None) {}
-"""
-
-"GenericOffsetPath" = """
- public:
-  // The implementation of IPC LayersMessages needs this to be public.
-  StyleGenericOffsetPath(): tag(Tag::None) {}
-"""
-
-"GenericPositionOrAuto" = """
- public:
-  // The implementation of IPC LayersMessages needs this to be public.
-  StyleGenericPositionOrAuto(): tag(Tag::Auto) {}
+  inline static double GetPortion(const Maybe<StyleTimingFunction>&, double, bool aBeforeFlag);
 """
 
 "GenericImage" = """
@@ -882,12 +890,54 @@ renaming_overrides_prefixing = true
   bool IsNamedFamily(const nsAString&) const;
 """
 
-"AnimationTimeline" = """
- public:
-  StyleAnimationTimeline(): tag(Tag::Auto) {}
-"""
-
 "TimelineOrKeyframesName" = """
  public:
   inline nsAtom* AsAtom() const;
+"""
+
+"FontWeight" = """
+ SERVO_FIXED_POINT_HELPERS(StyleFontWeight, uint16_t, StyleFONT_WEIGHT_FRACTION_BITS);
+
+ inline bool IsBold() const;
+"""
+
+"FontStyle" = """
+ SERVO_FIXED_POINT_HELPERS(StyleFontStyle, int16_t, StyleFONT_STYLE_FRACTION_BITS);
+
+ inline bool IsItalic() const;
+ inline bool IsOblique() const;
+ inline float ObliqueAngle() const;  // Only for use when IsOblique() is true
+ inline float SlantAngle() const;  // Returns angle for any font-style, including
+                                   // normal/italic as well as explicit oblique
+"""
+
+"FontStretch" = """
+ SERVO_FIXED_POINT_HELPERS(StyleFontStretch, uint16_t, StyleFONT_STRETCH_FRACTION_BITS);
+"""
+
+"AnimationName" = """
+ public:
+  StyleAnimationName(): _0(RefPtr<nsAtom>(nsGkAtoms::_empty).forget()) {}
+"""
+
+"GenericViewTimelineInset" = """
+ public:
+  inline StyleGenericViewTimelineInset();
+"""
+
+"Time" = """
+ float ToSeconds() const { return seconds; }
+ float ToMilliseconds() const { return seconds * 1000.0f; }
+"""
+
+"FontFaceSourceTechFlags" = """
+  inline static StyleFontFaceSourceTechFlags Empty() {
+    return StyleFontFaceSourceTechFlags{0};
+  }
+"""
+
+"FontPalette" = """
+  inline static StyleFontPalette Normal() {
+    return StyleFontPalette{StyleAtom(nsGkAtoms::normal->ToAddRefed())};
+  }
 """

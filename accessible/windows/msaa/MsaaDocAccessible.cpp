@@ -8,6 +8,7 @@
 
 #include "DocAccessibleChild.h"
 #include "mozilla/StaticPrefs_accessibility.h"
+#include "nsAccUtils.h"
 #include "nsWinUtils.h"
 #include "Role.h"
 
@@ -115,7 +116,8 @@ MsaaDocAccessible::get_accParent(
       nsIFrame* frame = docAcc->GetFrame();
       if (frame) {
         nsIWidget* widget = frame->GetNearestWidget();
-        if (widget->WindowType() == eWindowType_child && !widget->GetParent()) {
+        if (widget->GetWindowType() == widget::WindowType::Child &&
+            !widget->GetParent()) {
           // Bug 1427304: Windows opened with popup=yes (such as the WebRTC
           // sharing indicator) get two HWNDs. The root widget is associated
           // with the inner HWND, but the outer HWND still answers to
@@ -153,19 +155,18 @@ MsaaDocAccessible::get_accValue(VARIANT aVarChild, BSTR __RPC_FAR* aValue) {
   HRESULT hr = MsaaAccessible::get_accValue(aVarChild, aValue);
   if (FAILED(hr) || *aValue || aVarChild.lVal != CHILDID_SELF) return hr;
 
-  DocAccessible* docAcc = DocAcc();
   // MsaaAccessible::get_accValue should have failed (and thus we should have
   // returned early) if the Accessible is dead.
-  MOZ_ASSERT(docAcc);
+  MOZ_ASSERT(mAcc);
   // If document is being used to create a widget, don't use the URL hack
-  roles::Role role = docAcc->Role();
+  roles::Role role = mAcc->Role();
   if (role != roles::DOCUMENT && role != roles::APPLICATION &&
       role != roles::DIALOG && role != roles::ALERT &&
       role != roles::NON_NATIVE_DOCUMENT)
     return hr;
 
   nsAutoString url;
-  docAcc->URL(url);
+  nsAccUtils::DocumentURL(mAcc, url);
   if (url.IsEmpty()) return S_FALSE;
 
   *aValue = ::SysAllocStringLen(url.get(), url.Length());

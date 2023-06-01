@@ -323,10 +323,28 @@ extern JS_PUBLIC_API bool GetFirstArgumentAsTypeHint(JSContext* cx,
 
 } /* namespace JS */
 
+/**
+ * Defines a builtin constructor and prototype. Returns the prototype object.
+ *
+ * - Defines a property named `name` on `obj`, with its value set to a
+ *   newly-created JS function that invokes the `constructor` JSNative. The
+ *   `length` of the function is `nargs`.
+ *
+ * - Creates a prototype object with proto `protoProto` and class `protoClass`.
+ *   If `protoProto` is `nullptr`, `Object.prototype` will be used instead.
+ *   If `protoClass` is `nullptr`, the prototype object will be a plain JS
+ *   object.
+ *
+ * - The `ps` and `fs` properties/functions will be defined on the prototype
+ *   object.
+ *
+ * - The `static_ps` and `static_fs` properties/functions will be defined on the
+ *   constructor.
+ */
 extern JS_PUBLIC_API JSObject* JS_InitClass(
-    JSContext* cx, JS::HandleObject obj, JS::HandleObject parent_proto,
-    const JSClass* clasp, JSNative constructor, unsigned nargs,
-    const JSPropertySpec* ps, const JSFunctionSpec* fs,
+    JSContext* cx, JS::HandleObject obj, const JSClass* protoClass,
+    JS::HandleObject protoProto, const char* name, JSNative constructor,
+    unsigned nargs, const JSPropertySpec* ps, const JSFunctionSpec* fs,
     const JSPropertySpec* static_ps, const JSFunctionSpec* static_fs);
 
 /**
@@ -354,13 +372,6 @@ namespace JS {
 extern JS_PUBLIC_API bool OrdinaryHasInstance(JSContext* cx,
                                               HandleObject objArg,
                                               HandleValue v, bool* bp);
-
-// Implementation of
-// https://www.ecma-international.org/ecma-262/6.0/#sec-instanceofoperator
-// This is almost identical to JS_HasInstance, except the latter may call a
-// custom hasInstance class op instead of InstanceofOperator.
-extern JS_PUBLIC_API bool InstanceofOperator(JSContext* cx, HandleObject obj,
-                                             HandleValue v, bool* bp);
 
 }  // namespace JS
 
@@ -813,6 +824,7 @@ extern JS_PUBLIC_API void JS_SetOffthreadIonCompilationEnabled(JSContext* cx,
   Register(JIT_TRUSTEDPRINCIPALS_ENABLE, "jit_trustedprincipals.enable") \
   Register(ION_CHECK_RANGE_ANALYSIS, "ion.check-range-analysis") \
   Register(ION_FREQUENT_BAILOUT_THRESHOLD, "ion.frequent-bailout-threshold") \
+  Register(BASE_REG_FOR_LOCALS, "base-reg-for-locals") \
   Register(INLINING_BYTECODE_MAX_LENGTH, "inlining.bytecode-max-length") \
   Register(BASELINE_INTERPRETER_ENABLE, "blinterp.enable") \
   Register(BASELINE_ENABLE, "baseline.enable") \
@@ -826,10 +838,11 @@ extern JS_PUBLIC_API void JS_SetOffthreadIonCompilationEnabled(JSContext* cx,
   Register(SPECTRE_STRING_MITIGATIONS, "spectre.string-mitigations") \
   Register(SPECTRE_VALUE_MASKING, "spectre.value-masking") \
   Register(SPECTRE_JIT_TO_CXX_CALLS, "spectre.jit-to-cxx-calls") \
+  Register(WATCHTOWER_MEGAMORPHIC, "watchtower.megamorphic") \
   Register(WASM_FOLD_OFFSETS, "wasm.fold-offsets") \
   Register(WASM_DELAY_TIER2, "wasm.delay-tier2") \
   Register(WASM_JIT_BASELINE, "wasm.baseline") \
-  Register(WASM_JIT_OPTIMIZING, "wasm.optimizing") \
+  Register(WASM_JIT_OPTIMIZING, "wasm.optimizing")
 // clang-format on
 
 typedef enum JSJitCompilerOption {
@@ -847,6 +860,14 @@ extern JS_PUBLIC_API void JS_SetGlobalJitCompilerOption(JSContext* cx,
 extern JS_PUBLIC_API bool JS_GetGlobalJitCompilerOption(JSContext* cx,
                                                         JSJitCompilerOption opt,
                                                         uint32_t* valueOut);
+
+namespace JS {
+
+// Disable all Spectre mitigations for this process after creating the initial
+// JSContext. Must be called on this context's thread.
+extern JS_PUBLIC_API void DisableSpectreMitigationsAfterInit();
+
+};  // namespace JS
 
 /**
  * Convert a uint32_t index into a jsid.

@@ -377,6 +377,11 @@ TEST(Time, FloorConversion) {
 }
 
 TEST(Time, RoundtripConversion) {
+#if defined(ABSL_SKIP_TIME_TESTS_BROKEN_ON_MSVC_OPT) && \
+    ABSL_SKIP_TIME_TESTS_BROKEN_ON_MSVC_OPT
+  GTEST_SKIP();
+#endif
+
 #define TEST_CONVERSION_ROUND_TRIP(SOURCE, FROM, TO, MATCHER) \
   EXPECT_THAT(TO(FROM(SOURCE)), MATCHER(SOURCE))
 
@@ -558,6 +563,11 @@ TEST(Time, FromChrono) {
 }
 
 TEST(Time, ToChronoTime) {
+#if defined(ABSL_SKIP_TIME_TESTS_BROKEN_ON_MSVC_OPT) && \
+    ABSL_SKIP_TIME_TESTS_BROKEN_ON_MSVC_OPT
+  GTEST_SKIP();
+#endif
+
   EXPECT_EQ(std::chrono::system_clock::from_time_t(-1),
             absl::ToChronoTime(absl::FromTimeT(-1)));
   EXPECT_EQ(std::chrono::system_clock::from_time_t(0),
@@ -1070,7 +1080,8 @@ TEST(Time, ConversionSaturation) {
   EXPECT_EQ("292277026596-12-04T15:30:07+00:00",
             absl::FormatTime(absl::RFC3339_full, t, utc));
   EXPECT_EQ(
-      absl::UnixEpoch() + absl::Seconds(std::numeric_limits<int64_t>::max()), t);
+      absl::UnixEpoch() + absl::Seconds(std::numeric_limits<int64_t>::max()),
+      t);
 
   // Checks that we can also get the maximal Time value for a far-east zone.
   const absl::TimeZone plus14 = absl::FixedTimeZone(14 * 60 * 60);
@@ -1078,7 +1089,8 @@ TEST(Time, ConversionSaturation) {
   EXPECT_EQ("292277026596-12-05T05:30:07+14:00",
             absl::FormatTime(absl::RFC3339_full, t, plus14));
   EXPECT_EQ(
-      absl::UnixEpoch() + absl::Seconds(std::numeric_limits<int64_t>::max()), t);
+      absl::UnixEpoch() + absl::Seconds(std::numeric_limits<int64_t>::max()),
+      t);
 
   // One second later should push us to infinity.
   t = absl::FromCivil(absl::CivilSecond(292277026596, 12, 4, 15, 30, 8), utc);
@@ -1092,7 +1104,8 @@ TEST(Time, ConversionSaturation) {
   EXPECT_EQ("-292277022657-01-27T08:29:52+00:00",
             absl::FormatTime(absl::RFC3339_full, t, utc));
   EXPECT_EQ(
-      absl::UnixEpoch() + absl::Seconds(std::numeric_limits<int64_t>::min()), t);
+      absl::UnixEpoch() + absl::Seconds(std::numeric_limits<int64_t>::min()),
+      t);
 
   // Checks that we can also get the minimal Time value for a far-west zone.
   const absl::TimeZone minus12 = absl::FixedTimeZone(-12 * 60 * 60);
@@ -1101,7 +1114,8 @@ TEST(Time, ConversionSaturation) {
   EXPECT_EQ("-292277022657-01-26T20:29:52-12:00",
             absl::FormatTime(absl::RFC3339_full, t, minus12));
   EXPECT_EQ(
-      absl::UnixEpoch() + absl::Seconds(std::numeric_limits<int64_t>::min()), t);
+      absl::UnixEpoch() + absl::Seconds(std::numeric_limits<int64_t>::min()),
+      t);
 
   // One second before should push us to -infinity.
   t = absl::FromCivil(absl::CivilSecond(-292277022657, 1, 27, 8, 29, 51), utc);

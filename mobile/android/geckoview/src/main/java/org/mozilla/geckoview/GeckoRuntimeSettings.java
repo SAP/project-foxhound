@@ -22,7 +22,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
-import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import org.mozilla.gecko.EventDispatcher;
 import org.mozilla.gecko.GeckoSystemStateListener;
@@ -202,23 +202,6 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
      */
     public @NonNull Builder fontSizeFactor(final float fontSizeFactor) {
       getSettings().setFontSizeFactor(fontSizeFactor);
-      return this;
-    }
-
-    /**
-     * Enable the Enteprise Roots feature.
-     *
-     * <p>When Enabled, GeckoView will fetch the third-party root certificates added to the Android
-     * OS CA store and will use them internally.
-     *
-     * @param enabled whether to enable this feature or not
-     * @return The builder instance
-     * @deprecated use {@link #setEnterpriseRootsEnabled} instead.
-     */
-    @Deprecated
-    @DeprecationSchedule(version = 98, id = "runtime-settings-typo")
-    public @NonNull Builder enterpiseRootsEnabled(final boolean enabled) {
-      getSettings().setEnterpriseRootsEnabled(enabled);
       return this;
     }
 
@@ -500,7 +483,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
   /* package */ final Pref<Boolean> mInputAutoZoom = new Pref<>("formhelper.autozoom", true);
   /* package */ final Pref<Boolean> mDoubleTapZooming =
       new Pref<>("apz.allow_double_tap_zooming", true);
-  /* package */ final Pref<Integer> mGlMsaaLevel = new Pref<>("gl.msaa-level", 0);
+  /* package */ final Pref<Integer> mGlMsaaLevel = new Pref<>("webgl.msaa-samples", 4);
   /* package */ final Pref<Boolean> mTelemetryEnabled =
       new Pref<>("toolkit.telemetry.geckoview.streaming", false);
   /* package */ final Pref<String> mGeckoViewLogLevel = new Pref<>("geckoview.logging", "Debug");
@@ -795,23 +778,23 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
   }
 
   private String computeAcceptLanguages() {
-    final ArrayList<String> locales = new ArrayList<String>();
+    final LinkedHashMap<String, String> locales = new LinkedHashMap<>();
 
     // Explicitly-set app prefs come first:
     if (mRequestedLocales != null) {
       for (final String locale : mRequestedLocales) {
-        locales.add(locale.toLowerCase(Locale.ROOT));
+        locales.put(locale.toLowerCase(Locale.ROOT), locale);
       }
     }
     // OS prefs come second:
     for (final String locale : getDefaultLocales()) {
       final String localeLowerCase = locale.toLowerCase(Locale.ROOT);
-      if (!locales.contains(localeLowerCase)) {
-        locales.add(localeLowerCase);
+      if (!locales.containsKey(localeLowerCase)) {
+        locales.put(localeLowerCase, locale);
       }
     }
 
-    return TextUtils.join(",", locales);
+    return TextUtils.join(",", locales.values());
   }
 
   private static String[] getDefaultLocales() {
@@ -969,7 +952,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
 
   private float sanitizeFontSizeFactor(final float fontSizeFactor) {
     if (fontSizeFactor < 0) {
-      if (BuildConfig.DEBUG) {
+      if (BuildConfig.DEBUG_BUILD) {
         throw new IllegalArgumentException("fontSizeFactor cannot be < 0");
       } else {
         Log.e(LOGTAG, "fontSizeFactor cannot be < 0");

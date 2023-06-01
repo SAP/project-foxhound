@@ -1,0 +1,31 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+include PBackgroundSharedTypes;
+
+[RefCounted] using class mozilla::ipc::DataPipeReceiver from "mozilla/ipc/DataPipe.h";
+[RefCounted] using class mozilla::ipc::DataPipeSender from "mozilla/ipc/DataPipe.h";
+
+namespace mozilla {
+namespace dom {
+
+async protocol PWebTransport
+{
+ parent:
+  /**
+   * TODO: documentation
+   */
+  async Close(uint32_t code, nsCString reason);
+
+ child:
+
+  async IncomingUnidirectionalStream(DataPipeReceiver receive);
+  async IncomingBidirectionalStream(DataPipeReceiver receive, DataPipeSender send);
+
+  async CloseAll()
+      returns(nsresult rv);
+};
+
+} // namespace dom
+} // namespace mozilla

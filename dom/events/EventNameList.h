@@ -238,7 +238,6 @@ EVENT(securitypolicyviolation, eSecurityPolicyViolation, EventNameType_All,
 EVENT(seeked, eSeeked, EventNameType_HTML, eBasicEventClass)
 EVENT(seeking, eSeeking, EventNameType_HTML, eBasicEventClass)
 EVENT(select, eFormSelect, EventNameType_HTMLXUL, eBasicEventClass)
-EVENT(show, eShow, EventNameType_HTML, eBasicEventClass)
 EVENT(slotchange, eSlotChange, EventNameType_All, eBasicEventClass)
 EVENT(stalled, eStalled, EventNameType_HTML, eBasicEventClass)
 EVENT(start, eMarqueeStart, EventNameType_HTMLMarqueeOnly, eBasicEventClass)
@@ -327,7 +326,7 @@ WINDOW_ONLY_EVENT(devicemotion, eDeviceMotion, EventNameType_None,
                   eBasicEventClass)
 WINDOW_ONLY_EVENT(deviceorientation, eDeviceOrientation, EventNameType_None,
                   eBasicEventClass)
-WINDOW_ONLY_EVENT(absolutedeviceorientation, eAbsoluteDeviceOrientation,
+WINDOW_ONLY_EVENT(deviceorientationabsolute, eDeviceOrientationAbsolute,
                   EventNameType_None, eBasicEventClass)
 WINDOW_ONLY_EVENT(userproximity, eUserProximity, EventNameType_None,
                   eBasicEventClass)
@@ -541,6 +540,8 @@ EVENT(webkittransitionend, eUnidentifiedEvent, EventNameType_All,
 NON_IDL_EVENT(audioprocess, eAudioProcess, EventNameType_None, eBasicEventClass)
 
 NON_IDL_EVENT(complete, eAudioComplete, EventNameType_None, eBasicEventClass)
+
+EVENT(scrollend, eScrollend, EventNameType_All, eBasicEventClass)
 
 #ifdef DEFINED_FORWARDED_EVENT
 #  undef DEFINED_FORWARDED_EVENT

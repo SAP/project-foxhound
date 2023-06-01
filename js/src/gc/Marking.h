@@ -12,29 +12,20 @@
 #ifndef gc_Marking_h
 #define gc_Marking_h
 
+#include "gc/Barrier.h"
 #include "js/TypeDecls.h"
-#include "vm/TaggedProto.h"
 
-class JSLinearString;
-class JSRope;
 class JSTracer;
 struct JSClass;
 
 namespace js {
-class BaseShape;
 class GCMarker;
-class NativeObject;
 class Shape;
 class WeakMapBase;
-
-namespace jit {
-class JitCode;
-}  // namespace jit
 
 namespace gc {
 
 struct Cell;
-class TenuredCell;
 
 /*** Liveness ***/
 
@@ -94,7 +85,7 @@ inline Cell* ToMarkable(const Value& v) {
 
 inline Cell* ToMarkable(Cell* cell) { return cell; }
 
-bool UnmarkGrayGCThingUnchecked(JSRuntime* rt, JS::GCCellPtr thing);
+bool UnmarkGrayGCThingUnchecked(GCMarker* marker, JS::GCCellPtr thing);
 
 } /* namespace gc */
 
@@ -153,19 +144,6 @@ inline void CheckGCThingAfterMovingGC(const WeakHeapPtr<T*>& t);
 #endif  // JSGC_HASH_TABLE_CHECKS
 
 } /* namespace gc */
-
-// Debugging functions to check tracing invariants.
-#ifdef DEBUG
-template <typename T>
-void CheckTracedThing(JSTracer* trc, T* thing);
-template <typename T>
-void CheckTracedThing(JSTracer* trc, const T& thing);
-#else
-template <typename T>
-inline void CheckTracedThing(JSTracer* trc, T* thing) {}
-template <typename T>
-inline void CheckTracedThing(JSTracer* trc, const T& thing) {}
-#endif
 
 } /* namespace js */
 

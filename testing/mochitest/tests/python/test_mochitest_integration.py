@@ -2,21 +2,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import os
 from functools import partial
 
-from manifestparser import TestManifest
-
 import mozunit
 import pytest
-from moztest.selftest.output import get_mozharness_status, filter_action
 from conftest import setup_args
-
-from mozharness.base.log import INFO, WARNING, ERROR
-from mozharness.mozilla.automation import TBPL_SUCCESS, TBPL_WARNING, TBPL_FAILURE
-
+from manifestparser import TestManifest
+from mozharness.base.log import ERROR, INFO, WARNING
+from mozharness.mozilla.automation import TBPL_FAILURE, TBPL_SUCCESS, TBPL_WARNING
+from moztest.selftest.output import filter_action, get_mozharness_status
 
 here = os.path.abspath(os.path.dirname(__file__))
 get_mozharness_status = partial(get_mozharness_status, "mochitest")
@@ -49,6 +44,43 @@ def test_manifest(setup_test_harness, request):
         )
 
     return inner
+
+
+@pytest.mark.parametrize(
+    "flavor,manifest",
+    [
+        ("plain", "mochitest-args.ini"),
+        ("browser-chrome", "browser-args.ini"),
+    ],
+)
+def test_output_extra_args(flavor, manifest, runtests, test_manifest, test_name):
+    # Explicitly provide a manifestFile property that includes the
+    # manifest file that contains command line arguments.
+    extra_opts = {
+        "manifestFile": test_manifest([manifest]),
+        "runByManifest": True,
+    }
+
+    results = {
+        "status": 0,
+        "tbpl_status": TBPL_SUCCESS,
+        "log_level": (INFO, WARNING),
+    }
+
+    status, lines = runtests(test_name("pass"), **extra_opts)
+    assert status == results["status"]
+
+    tbpl_status, log_level, _ = get_mozharness_status(lines, status)
+    assert tbpl_status == results["tbpl_status"]
+    assert log_level in results["log_level"]
+
+    # Filter log entries for the application command including the used
+    # command line arguments.
+    lines = filter_action("log", lines)
+    command = next(
+        l["message"] for l in lines if l["message"].startswith("Application command")
+    )
+    assert "--headless --window-size 800,600 --new-tab http://example.org" in command
 
 
 @pytest.mark.parametrize("runFailures", ["selftest", ""])
@@ -116,7 +148,7 @@ def test_output_crash(flavor, runFailures, runtests, test_name):
         "status": 0 if runFailures else 1,
         "tbpl_status": TBPL_FAILURE,
         "log_level": ERROR,
-        "lines": 1 if runFailures else 0,
+        "lines": 1,
     }
     if runFailures:
         extra_opts["runFailures"] = runFailures
@@ -153,7 +185,12 @@ def test_output_crash(flavor, runFailures, runtests, test_name):
 @pytest.mark.parametrize("flavor", ["plain"])
 def test_output_asan(flavor, runFailures, runtests, test_name):
     extra_opts = {}
-    results = {"status": 1, "tbpl_status": TBPL_FAILURE, "log_level": ERROR, "lines": 0}
+    results = {
+        "status": 245,
+        "tbpl_status": TBPL_FAILURE,
+        "log_level": ERROR,
+        "lines": 0,
+    }
 
     status, lines = runtests(
         test_name("crash"), environment=["MOZ_CRASHREPORTER_SHUTDOWN=1"], **extra_opts

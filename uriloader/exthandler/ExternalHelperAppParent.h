@@ -4,6 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef mozilla_dom_ExternalHelperAppParent_h
+#define mozilla_dom_ExternalHelperAppParent_h
+
 #include "mozilla/dom/PExternalHelperAppParent.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "nsIChannel.h"
@@ -69,8 +72,8 @@ class ExternalHelperAppParent
   NS_DECL_NSIREQUESTOBSERVER
 
   mozilla::ipc::IPCResult RecvOnStartRequest(
-      const nsCString& entityID) override;
-  mozilla::ipc::IPCResult RecvOnDataAvailable(const nsCString& data,
+      const nsACString& entityID) override;
+  mozilla::ipc::IPCResult RecvOnDataAvailable(const nsACString& data,
                                               const uint64_t& offset,
                                               const uint32_t& count) override;
   mozilla::ipc::IPCResult RecvOnStopRequest(const nsresult& code) override;
@@ -79,11 +82,11 @@ class ExternalHelperAppParent
 
   ExternalHelperAppParent(nsIURI* uri, const int64_t& contentLength,
                           const bool& wasFileChannel,
-                          const nsCString& aContentDispositionHeader,
+                          const nsACString& aContentDispositionHeader,
                           const uint32_t& aContentDispositionHint,
-                          const nsString& aContentDispositionFilename);
-  void Init(const Maybe<mozilla::net::LoadInfoArgs>& aLoadInfoArgs,
-            const nsCString& aMimeContentType, const bool& aForceSave,
+                          const nsAString& aContentDispositionFilename);
+  bool Init(const Maybe<mozilla::net::LoadInfoArgs>& aLoadInfoArgs,
+            const nsACString& aMimeContentType, const bool& aForceSave,
             nsIURI* aReferrer, BrowsingContext* aContext,
             const bool& aShouldCloseWindow);
 
@@ -112,3 +115,4 @@ class ExternalHelperAppParent
 
 }  // namespace dom
 }  // namespace mozilla
+#endif

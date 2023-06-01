@@ -499,16 +499,15 @@ already_AddRefed<gfxTextRun> nsOpenTypeTable::MakeTextRun(
   RefPtr<gfxTextRun> textRun =
       gfxTextRun::Create(&params, 1, aFontGroup, gfx::ShapedTextFlags(),
                          nsTextFrameUtils::Flags());
-  textRun->AddGlyphRun(aFontGroup->GetFirstValidFont(),
-                       FontMatchType::Kind::kFontGroup, 0, false,
+  RefPtr<gfxFont> font = aFontGroup->GetFirstValidFont();
+  textRun->AddGlyphRun(font, FontMatchType::Kind::kFontGroup, 0, false,
                        gfx::ShapedTextFlags::TEXT_ORIENT_HORIZONTAL, false);
   // We don't care about CSS writing mode here;
   // math runs are assumed to be horizontal.
   gfxTextRun::DetailedGlyph detailedGlyph;
   detailedGlyph.mGlyphID = aGlyph.glyphID;
   detailedGlyph.mAdvance = NSToCoordRound(
-      aAppUnitsPerDevPixel *
-      aFontGroup->GetFirstValidFont()->GetGlyphAdvance(aGlyph.glyphID));
+      aAppUnitsPerDevPixel * font->GetGlyphAdvance(aGlyph.glyphID));
   textRun->SetDetailedGlyphs(0, 1, &detailedGlyph);
 
   return textRun.forget();
@@ -760,8 +759,8 @@ void nsMathMLChar::SetData(nsString& aData) {
 static bool IsSizeOK(nscoord a, nscoord b, uint32_t aHint) {
   // Normal: True if 'a' is around +/-10% of the target 'b' (10% is
   // 1-DelimiterFactor). This often gives a chance to the base size to
-  // win, especially in the context of <mfenced> without tall elements
-  // or in sloppy markups without protective <mrow></mrow>
+  // win, especially in the context of sloppy markups without protective
+  // <mrow></mrow>
   bool isNormal =
       (aHint & NS_STRETCH_NORMAL) &&
       Abs<float>(a - b) < (1.0f - NS_MATHML_DELIMITER_FACTOR) * float(b);
@@ -875,7 +874,7 @@ bool nsMathMLChar::SetFontFamily(nsPresContext* aPresContext,
 
       const auto& firstFontInList = familyList.list.AsSpan()[0];
 
-      gfxFont* firstFont = fm->GetThebesFontGroup()->GetFirstValidFont();
+      RefPtr<gfxFont> firstFont = fm->GetThebesFontGroup()->GetFirstValidFont();
       RefPtr<nsAtom> firstFontName =
           NS_Atomize(firstFont->GetFontEntry()->FamilyName());
 
@@ -987,7 +986,7 @@ bool nsMathMLChar::StretchEnumContext::TryVariants(
     ch = aGlyphTable->BigOf(mDrawTarget, oneDevPixel, *aFontGroup, uchar,
                             isVertical, 0);
     if (ch.IsGlyphID()) {
-      gfxFont* mathFont = aFontGroup->get()->GetFirstMathFont();
+      RefPtr<gfxFont> mathFont = aFontGroup->get()->GetFirstMathFont();
       // For OpenType MATH fonts, we will rely on the DisplayOperatorMinHeight
       // to select the right size variant. Note that the value is sometimes too
       // small so we use kLargeOpFactor/kIntegralFactor as a minimum value.
@@ -998,7 +997,7 @@ bool nsMathMLChar::StretchEnumContext::TryVariants(
             aGlyphTable->MakeTextRun(mDrawTarget, oneDevPixel, *aFontGroup, ch);
         nsBoundingMetrics bm = MeasureTextRun(mDrawTarget, textRun.get());
         float largeopFactor = kLargeOpFactor;
-        if (NS_STRETCH_INTEGRAL & mStretchHint) {
+        if (nsMathMLOperators::IsIntegralOperator(mChar->mData)) {
           // integrals are drawn taller
           largeopFactor = kIntegralFactor;
         }
@@ -1027,7 +1026,7 @@ bool nsMathMLChar::StretchEnumContext::TryVariants(
         aGlyphTable->MakeTextRun(mDrawTarget, oneDevPixel, *aFontGroup, ch);
     nsBoundingMetrics bm = MeasureTextRun(mDrawTarget, textRun.get());
     if (ch.IsGlyphID()) {
-      gfxFont* mathFont = aFontGroup->get()->GetFirstMathFont();
+      RefPtr<gfxFont> mathFont = aFontGroup->get()->GetFirstMathFont();
       if (mathFont) {
         // MeasureTextRun should have set the advance width to the right
         // bearing for OpenType MATH fonts. We now subtract the italic
@@ -1294,7 +1293,8 @@ bool nsMathMLChar::StretchEnumContext::EnumCallback(
     glyphTable = &gGlyphTableList->mUnicodeTable;
   } else {
     // If the font contains an Open Type MATH table, use it.
-    openTypeTable = nsOpenTypeTable::Create(fontGroup->GetFirstValidFont());
+    RefPtr<gfxFont> font = fontGroup->GetFirstValidFont();
+    openTypeTable = nsOpenTypeTable::Create(font);
     if (openTypeTable) {
       glyphTable = openTypeTable.get();
     } else if (StaticPrefs::mathml_stixgeneral_operator_stretching_disabled()) {
@@ -1491,9 +1491,16 @@ nsresult nsMathMLChar::StretchInternal(
     // really shouldn't be doing things this way but for now
     // insert fallbacks into the list
     AutoTArray<nsCString, 16> mathFallbacks;
-    gfxFontUtils::GetPrefsFontList("font.name.serif.x-math", mathFallbacks);
-    gfxFontUtils::AppendPrefsFontList("font.name-list.serif.x-math",
-                                      mathFallbacks);
+    nsAutoCString value;
+    gfxPlatformFontList* pfl = gfxPlatformFontList::PlatformFontList();
+    pfl->Lock();
+    if (pfl->GetFontPrefs()->LookupName("serif.x-math"_ns, value)) {
+      gfxFontUtils::ParseFontList(value, mathFallbacks);
+    }
+    if (pfl->GetFontPrefs()->LookupNameList("serif.x-math"_ns, value)) {
+      gfxFontUtils::ParseFontList(value, mathFallbacks);
+    }
+    pfl->Unlock();
     InsertMathFallbacks(font.family.families, mathFallbacks);
 
 #ifdef NOISY_SEARCH
@@ -1540,7 +1547,8 @@ nsresult nsMathMLChar::StretchInternal(
   // operator. Verify whether a font with an OpenType MATH table is available
   // and record missing math script otherwise.
   gfxMissingFontRecorder* MFR = presContext->MissingFontRecorder();
-  if (MFR && !fm->GetThebesFontGroup()->GetFirstMathFont()) {
+  RefPtr<gfxFont> firstMathFont = fm->GetThebesFontGroup()->GetFirstMathFont();
+  if (MFR && !firstMathFont) {
     MFR->RecordScript(intl::Script::MATHEMATICAL_NOTATION);
   }
 
@@ -1606,7 +1614,7 @@ nsresult nsMathMLChar::StretchInternal(
 
     // increase the height if it is not largeopFactor times larger
     // than the initial one.
-    if (NS_STRETCH_INTEGRAL & aStretchHint) {
+    if (nsMathMLOperators::IsIntegralOperator(mData)) {
       // integrals are drawn taller
       largeopFactor = kIntegralFactor;
     }
@@ -1631,9 +1639,9 @@ nsresult nsMathMLChar::Stretch(nsIFrame* aForFrame, DrawTarget* aDrawTarget,
                                const nsBoundingMetrics& aContainerSize,
                                nsBoundingMetrics& aDesiredStretchSize,
                                uint32_t aStretchHint, bool aRTL) {
-  NS_ASSERTION(!(aStretchHint & ~(NS_STRETCH_VARIABLE_MASK |
-                                  NS_STRETCH_LARGEOP | NS_STRETCH_INTEGRAL)),
-               "Unexpected stretch flags");
+  NS_ASSERTION(
+      !(aStretchHint & ~(NS_STRETCH_VARIABLE_MASK | NS_STRETCH_LARGEOP)),
+      "Unexpected stretch flags");
 
   mDraw = DRAW_NORMAL;
   mMirrored = aRTL && nsMathMLOperators::IsMirrorableOperator(mData);

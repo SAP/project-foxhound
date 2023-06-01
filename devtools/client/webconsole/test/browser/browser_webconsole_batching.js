@@ -8,7 +8,9 @@
 const TEST_URI =
   "http://example.com/browser/devtools/client/webconsole/" +
   "test/browser/test-batching.html";
-const { l10n } = require("devtools/client/webconsole/utils/messages");
+const {
+  l10n,
+} = require("resource://devtools/client/webconsole/utils/messages.js");
 
 add_task(async function() {
   const hud = await openNewTabAndConsole(TEST_URI);
@@ -23,9 +25,15 @@ async function testSimpleBatchLogging(hud, messageNumber) {
   ) {
     content.wrappedJSObject.batchLog(numMessages);
   });
-
+  const allMessages = await waitFor(async () => {
+    const msgs = await findAllMessagesVirtualized(hud);
+    if (msgs.length == messageNumber) {
+      return msgs;
+    }
+    return null;
+  });
   for (let i = 0; i < messageNumber; i++) {
-    const node = await waitFor(() => findMessageAtIndex(hud, i, i));
+    const node = allMessages[i].querySelector(".message-body");
     is(
       node.textContent,
       i.toString(),
@@ -40,16 +48,11 @@ async function testBatchLoggingAndClear(hud, messageNumber) {
   ) {
     content.wrappedJSObject.batchLogAndClear(numMessages);
   });
-  await waitFor(() => findMessage(hud, l10n.getStr("consoleCleared")));
+  await waitFor(() =>
+    findConsoleAPIMessage(hud, l10n.getStr("consoleCleared"))
+  );
   ok(true, "console cleared message is displayed");
 
-  // Passing the text argument as an empty string will returns all the message,
-  // whatever their content is.
-  const messages = findMessages(hud, "");
+  const messages = findAllMessages(hud);
   is(messages.length, 1, "console was cleared as expected");
-}
-
-function findMessageAtIndex(hud, text, index) {
-  const selector = `.message:nth-of-type(${index + 1}) .message-body`;
-  return findMessage(hud, text, selector);
 }

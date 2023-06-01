@@ -1,8 +1,8 @@
 package org.mozilla.geckoview.test.crash
 
-import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.filters.MediumTest
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.MediumTest
+import androidx.test.platform.app.InstrumentationRegistry
 import org.hamcrest.Matchers.equalTo
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeThat
@@ -31,10 +31,13 @@ class ParentCrashTest : BaseSessionTest() {
         val client = TestCrashHandler.Client(targetContext)
 
         assertTrue(client.connect(timeout))
-        client.setEvalNextCrashDump(/* expectFatal */ true, GeckoRuntime.CRASHED_PROCESS_TYPE_MAIN)
+        client.setEvalNextCrashDump(GeckoRuntime.CRASHED_PROCESS_TYPE_MAIN)
 
         val runtime = TestRuntimeService.RuntimeInstance.start(
-            targetContext, RuntimeCrashTestService::class.java, temporaryProfile.get())
+            targetContext,
+            RuntimeCrashTestService::class.java,
+            temporaryProfile.get()
+        )
         runtime.loadUri("about:crashparent")
 
         val evalResult = client.getEvalResult(timeout)

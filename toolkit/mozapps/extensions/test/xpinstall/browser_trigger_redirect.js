@@ -1,6 +1,9 @@
 // ----------------------------------------------------------------------------
 // Tests that the InstallTrigger callback can redirect to a relative url.
 function test() {
+  // This test depends on InstallTrigger.install availability.
+  setInstallTriggerPrefs();
+
   Harness.installConfirmCallback = confirm_install;
   Harness.installEndedCallback = install_ended;
   Harness.installsCompletedCallback = finish_test;
@@ -14,7 +17,7 @@ function test() {
   );
 
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
-  BrowserTestUtils.loadURI(gBrowser, TESTROOT + "triggerredirect.html");
+  BrowserTestUtils.loadURIString(gBrowser, TESTROOT + "triggerredirect.html");
 }
 
 function confirm_install(panel) {

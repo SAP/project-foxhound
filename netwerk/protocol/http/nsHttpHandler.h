@@ -27,6 +27,7 @@
 #include "nsISpeculativeConnect.h"
 #include "nsTHashMap.h"
 #include "nsTHashSet.h"
+
 #ifdef DEBUG
 #  include "nsIOService.h"
 #endif
@@ -35,7 +36,9 @@
 // method implementations to the cpp file
 #include "nsIChannel.h"
 #include "nsIHttpChannel.h"
+#include "nsSocketTransportService2.h"
 
+class nsIHttpActivityDistributor;
 class nsIHttpUpgradeListener;
 class nsIPrefBranch;
 class nsICancelable;
@@ -45,10 +48,7 @@ class nsIRequestContextService;
 class nsISiteSecurityService;
 class nsIStreamConverterService;
 
-namespace mozilla {
-namespace net {
-
-bool OnSocketThread();
+namespace mozilla::net {
 
 class ATokenBucketEvent;
 class EventTokenBucket;
@@ -118,11 +118,12 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   [[nodiscard]] nsresult AddStandardRequestHeaders(
       nsHttpRequestHead*, bool isSecure,
-      ExtContentPolicyType aContentPolicyType);
+      ExtContentPolicyType aContentPolicyType,
+      bool aShouldResistFingerprinting);
   [[nodiscard]] nsresult AddConnectionHeader(nsHttpRequestHead*, uint32_t caps);
   bool IsAcceptableEncoding(const char* encoding, bool isSecure);
 
-  const nsCString& UserAgent();
+  const nsCString& UserAgent(bool aShouldResistFingerprinting);
 
   enum HttpVersion HttpVersion() { return mHttpVersion; }
   enum HttpVersion ProxyHttpVersion() { return mProxyHttpVersion; }
@@ -148,11 +149,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
     return mEnablePersistentHttpsCaching;
   }
 
-  bool IsSpdyEnabled() { return mEnableSpdy; }
-  bool IsHttp2Enabled() { return mHttp2Enabled; }
-  bool EnforceHttp2TlsProfile() { return mEnforceHttp2TlsProfile; }
-  bool CoalesceSpdy() { return mCoalesceSpdy; }
-  bool UseSpdyPersistentSettings() { return mSpdyPersistentSettings; }
   uint32_t SpdySendingChunkSize() { return mSpdySendingChunkSize; }
   uint32_t SpdySendBufferSize() { return mSpdySendBufferSize; }
   uint32_t SpdyPushAllowance() { return mSpdyPushAllowance; }
@@ -160,7 +156,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   uint32_t DefaultSpdyConcurrent() { return mDefaultSpdyConcurrent; }
   PRIntervalTime SpdyPingThreshold() { return mSpdyPingThreshold; }
   PRIntervalTime SpdyPingTimeout() { return mSpdyPingTimeout; }
-  bool AllowPush() { return mAllowPush; }
   bool AllowAltSvc() { return mEnableAltSvc; }
   bool AllowAltSvcOE() { return mEnableAltSvcOE; }
   bool AllowOriginExtension() { return mEnableOriginExtension; }
@@ -172,9 +167,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   bool CriticalRequestPrioritization() {
     return mCriticalRequestPrioritization;
   }
-
-  bool UseH2Deps() { return mUseH2Deps; }
-  bool IsH2WebsocketsEnabled() { return mEnableH2Websockets; }
 
   uint32_t MaxConnectionsPerOrigin() {
     return mMaxPersistentConnectionsPerServer;
@@ -280,7 +272,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
                                                int32_t priority);
 
   void UpdateClassOfServiceOnTransaction(HttpTransactionShell* trans,
-                                         uint32_t classOfService);
+                                         const ClassOfService& classOfService);
 
   // Called to cancel a transaction, which may or may not be assigned to
   // a connection.  Callable from any thread.
@@ -374,6 +366,11 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
     NotifyObservers(chan, NS_HTTP_ON_MODIFY_REQUEST_TOPIC);
   }
 
+  // Same as OnModifyRequest but before cookie headers are written.
+  void OnModifyRequestBeforeCookies(nsIHttpChannel* chan) {
+    NotifyObservers(chan, NS_HTTP_ON_MODIFY_REQUEST_BEFORE_COOKIES_TOPIC);
+  }
+
   void OnModifyDocumentRequest(nsIIdentChannel* chan) {
     NotifyObservers(chan, NS_DOCUMENT_ON_MODIFY_REQUEST_TOPIC);
   }
@@ -441,6 +438,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   uint32_t DefaultHpackBuffer() const { return mDefaultHpackBuffer; }
 
+  static bool IsHttp3Enabled();
   bool IsHttp3VersionSupported(const nsACString& version);
 
   static bool IsHttp3SupportedByServer(nsHttpResponseHead* aResponseHead);
@@ -468,8 +466,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   TimeStamp GetLastActiveTabLoadOptimizationHit();
   void SetLastActiveTabLoadOptimizationHit(TimeStamp const& when);
   bool IsBeforeLastActiveTabLoadOptimization(TimeStamp const& when);
-
-  bool DumpHpackTables() { return mDumpHpackTables; }
 
   HttpTrafficAnalyzer* GetHttpTrafficAnalyzer();
 
@@ -499,6 +495,13 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // avoid first-use overhead
   static void PresetAcceptLanguages();
 
+  bool HttpActivityDistributorActivated();
+  void ObserveHttpActivityWithArgs(const HttpActivityArgs& aArgs,
+                                   uint32_t aActivityType,
+                                   uint32_t aActivitySubtype, PRTime aTimestamp,
+                                   uint64_t aExtraSizeData,
+                                   const nsACString& aExtraStringData);
+
  private:
   nsHttpHandler();
 
@@ -523,7 +526,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   friend class SocketProcessChild;
   void SetHttpHandlerInitArgs(const HttpHandlerInitArgs& aArgs);
-  void SetDeviceModelId(const nsCString& aModelId);
+  void SetDeviceModelId(const nsACString& aModelId);
 
   // Checks if there are any user certs or active smart cards on a different
   // thread. Updates mSpeculativeConnectEnabled when done.
@@ -644,9 +647,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   nsCString mUserAgent;
   nsCString mSpoofedUserAgent;
   nsCString mUserAgentOverride;
-
-  nsCString mExperimentUserAgent;
-
   bool mUserAgentIsDirty{true};  // true if mUserAgent should be rebuilt
   bool mAcceptLanguagesIsDirty{true};
 
@@ -665,25 +665,17 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // The value of 'hidden' network.http.debug-observations : 1;
   uint32_t mDebugObservations : 1;
 
-  uint32_t mEnableSpdy : 1;
-  uint32_t mHttp2Enabled : 1;
-  uint32_t mUseH2Deps : 1;
-  uint32_t mEnforceHttp2TlsProfile : 1;
-  uint32_t mCoalesceSpdy : 1;
-  uint32_t mSpdyPersistentSettings : 1;
-  uint32_t mAllowPush : 1;
   uint32_t mEnableAltSvc : 1;
   uint32_t mEnableAltSvcOE : 1;
   uint32_t mEnableOriginExtension : 1;
-  uint32_t mEnableH2Websockets : 1;
-  uint32_t mDumpHpackTables : 1;
 
   // Try to use SPDY features instead of HTTP/1.1 over SSL
   SpdyInformation mSpdyInfo;
 
   uint32_t mSpdySendingChunkSize{ASpdySession::kSendingChunkSize};
   uint32_t mSpdySendBufferSize{ASpdySession::kTCPSendBufferSize};
-  uint32_t mSpdyPushAllowance{131072};  // match default pref
+  uint32_t mSpdyPushAllowance{
+      ASpdySession::kInitialPushAllowance};  // match default pref
   uint32_t mSpdyPullAllowance{ASpdySession::kInitialRwin};
   uint32_t mDefaultSpdyConcurrent{ASpdySession::kDefaultMaxConcurrent};
   PRIntervalTime mSpdyPingThreshold;
@@ -815,7 +807,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
       "nsHttpConnectionMgr::LastActiveTabLoadOptimization"};
   TimeStamp mLastActiveTabLoadOptimizationHit;
 
-  Mutex mHttpExclusionLock{"nsHttpHandler::HttpExclusion"};
+  Mutex mHttpExclusionLock MOZ_UNANNOTATED{"nsHttpHandler::HttpExclusion"};
 
  public:
   [[nodiscard]] nsresult NewChannelId(uint64_t& channelId);
@@ -849,6 +841,8 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // The pref set artificial altSvc-s for origin for testing.
   // This maps an origin to an altSvc.
   nsClassHashtable<nsCStringHashKey, nsCString> mAltSvcMappingTemptativeMap;
+
+  nsCOMPtr<nsIHttpActivityDistributor> mActivityDistributor;
 };
 
 extern StaticRefPtr<nsHttpHandler> gHttpHandler;
@@ -904,7 +898,6 @@ class HSTSDataCallbackWrapper final {
   std::function<void(bool)> mCallback;
 };
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net
 
 #endif  // nsHttpHandler_h__

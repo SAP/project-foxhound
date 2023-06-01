@@ -16,8 +16,8 @@
 // separate file to avoid cluttering the top of the API header with
 // implementation details.
 
-#ifndef ABSL_TYPES_variant_internal_H_
-#define ABSL_TYPES_variant_internal_H_
+#ifndef ABSL_TYPES_VARIANT_INTERNAL_H_
+#define ABSL_TYPES_VARIANT_INTERNAL_H_
 
 #include <cassert>
 #include <cstddef>
@@ -45,7 +45,7 @@ ABSL_NAMESPACE_BEGIN
 template <class... Types>
 class variant;
 
-ABSL_INTERNAL_INLINE_CONSTEXPR(size_t, variant_npos, -1);
+ABSL_INTERNAL_INLINE_CONSTEXPR(size_t, variant_npos, static_cast<size_t>(-1));
 
 template <class T>
 struct variant_size;
@@ -1643,4 +1643,4 @@ ABSL_NAMESPACE_END
 }  // namespace absl
 
 #endif  // !defined(ABSL_USES_STD_VARIANT)
-#endif  // ABSL_TYPES_variant_internal_H_
+#endif  // ABSL_TYPES_VARIANT_INTERNAL_H_

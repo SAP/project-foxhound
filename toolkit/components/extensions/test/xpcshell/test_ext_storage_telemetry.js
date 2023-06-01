@@ -8,11 +8,11 @@ const { ExtensionStorageIDB } = ChromeUtils.import(
 const { getTrimmedString } = ChromeUtils.import(
   "resource://gre/modules/ExtensionTelemetry.jsm"
 );
-const { TelemetryController } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryController.jsm"
+const { TelemetryController } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryController.sys.mjs"
 );
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 const HISTOGRAM_JSON_IDS = [
@@ -93,7 +93,7 @@ async function test_telemetry_background() {
     ...baseExtInfo,
     manifest: {
       ...baseManifest,
-      applications: {
+      browser_specific_settings: {
         gecko: { id: EXTENSION_ID1 },
       },
     },
@@ -102,7 +102,7 @@ async function test_telemetry_background() {
     ...baseExtInfo,
     manifest: {
       ...baseManifest,
-      applications: {
+      browser_specific_settings: {
         gecko: { id: EXTENSION_ID2 },
       },
     },
@@ -263,11 +263,6 @@ async function test_telemetry_background() {
 }
 
 add_task(async function setup() {
-  Services.prefs.setBoolPref(
-    "toolkit.telemetry.testing.overrideProductsCheck",
-    true
-  );
-
   // Telemetry test setup needed to ensure that the builtin events are defined
   // and they can be collected and verified.
   await TelemetryController.testSetup();

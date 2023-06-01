@@ -17,12 +17,14 @@
 #include "jsnum.h"
 
 #include "builtin/Array.h"
+#include "js/ErrorReport.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "util/StringBuffer.h"
+#include "vm/ArrayObject.h"
+#include "vm/JSContext.h"
 #include "vm/PlainObject.h"  // js::NewPlainObjectWithProperties
-#include "vm/Realm.h"
 
-#include "vm/NativeObject-inl.h"
+#include "vm/JSAtom-inl.h"
 
 using namespace js;
 
@@ -185,7 +187,6 @@ JSONParserBase::Token JSONParser<CharT>::readString() {
 
       // TaintFox: Add taint operation.
       str->taint().extend(TaintOperationFromContext(cx, "JSON.parse", true));
-
       return stringToken(str);
     }
 
@@ -328,8 +329,9 @@ JSONParserBase::Token JSONParser<CharT>::readNumber() {
     }
 
     double d;
-    if (!GetFullInteger(cx, digitStart.get(), current.get(), 10,
+    if (!GetFullInteger(digitStart.get(), current.get(), 10,
                         IntegerSeparatorHandling::None, &d)) {
+      ReportOutOfMemory(cx);
       return token(OOM);
     }
     return numberToken(negative ? -d : d);
@@ -375,10 +377,7 @@ JSONParserBase::Token JSONParser<CharT>::readNumber() {
     }
   }
 
-  double d;
-  if (!FullStringToDouble(cx, digitStart.get(), current.get(), &d)) {
-    return token(OOM);
-  }
+  double d = FullStringToDouble(digitStart.get(), current.get());
   return numberToken(negative ? -d : d);
 }
 
@@ -607,8 +606,8 @@ inline bool JSONParserBase::finishObject(MutableHandleValue vp,
                                          PropertyVector& properties) {
   MOZ_ASSERT(&properties == &stack.back().properties());
 
-  JSObject* obj = NewPlainObjectWithProperties(
-      cx, properties.begin(), properties.length(), GenericObject);
+  JSObject* obj = NewPlainObjectWithMaybeDuplicateKeys(cx, properties.begin(),
+                                                       properties.length());
   if (!obj) {
     return false;
   }

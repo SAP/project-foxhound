@@ -10,15 +10,13 @@
 #include "mozilla/GeckoArgs.h"
 #include "mozilla/ipc/IOThreadChild.h"
 #include "mozilla/ipc/ProcessUtils.h"
+#include "mozilla/StaticPrefs_dom.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
 using mozilla::ipc::IOThreadChild;
 
 StaticRefPtr<VRParent> sVRParent;
-
-VRProcessChild::VRProcessChild(ProcessId aParentPid)
-    : ProcessChild(aParentPid) {}
 
 VRProcessChild::~VRProcessChild() { sVRParent = nullptr; }
 
@@ -40,8 +38,7 @@ bool VRProcessChild::Init(int aArgc, char* aArgv[]) {
   }
 
   sVRParent = new VRParent();
-  sVRParent->Init(ParentPid(), *parentBuildID,
-                  IOThreadChild::TakeInitialPort());
+  sVRParent->Init(TakeInitialEndpoint(), *parentBuildID);
 
   return true;
 }

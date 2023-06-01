@@ -5,9 +5,15 @@
 
 "use strict";
 
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
+
+ChromeUtils.defineESModuleGetters(this, {
+  ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(this, {
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
-  ShortcutUtils: "resource://gre/modules/ShortcutUtils.jsm",
   ExtensionShortcutKeyMap: "resource://gre/modules/ExtensionShortcuts.jsm",
 });
 

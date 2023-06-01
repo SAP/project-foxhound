@@ -9,13 +9,11 @@
 
 var EXPORTED_SYMBOLS = ["PageThumbUtils"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const lazy = {};
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "BrowserUtils",
-  "resource://gre/modules/BrowserUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
+});
 
 var PageThumbUtils = {
   // The default thumbnail size for images
@@ -120,7 +118,7 @@ var PageThumbUtils = {
       utils.getScrollbarSize(false, sbWidth, sbHeight);
     } catch (e) {
       // This might fail if the window does not have a presShell.
-      Cu.reportError("Unable to get scrollbar size in determineCropSize.");
+      console.error("Unable to get scrollbar size in determineCropSize.");
       sbWidth.value = sbHeight.value = 0;
     }
 
@@ -315,7 +313,7 @@ var PageThumbUtils = {
       utils.getScrollbarSize(false, sbWidth, sbHeight);
     } catch (e) {
       // This might fail if the window does not have a presShell.
-      Cu.reportError("Unable to get scrollbar size in determineCropSize.");
+      console.error("Unable to get scrollbar size in determineCropSize.");
       sbWidth.value = sbHeight.value = 0;
     }
 
@@ -344,7 +342,7 @@ var PageThumbUtils = {
   },
 
   shouldStoreContentThumbnail(aDocument, aDocShell) {
-    if (BrowserUtils.isFindbarVisible(aDocShell)) {
+    if (lazy.BrowserUtils.isFindbarVisible(aDocShell)) {
       return false;
     }
 

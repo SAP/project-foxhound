@@ -13,8 +13,8 @@
 
 #include <string>
 
+#include "api/make_ref_counted.h"
 #include "modules/audio_device/include/audio_device.h"
-#include "rtc_base/ref_counted_object.h"
 #include "test/gmock.h"
 
 namespace webrtc {
@@ -23,11 +23,10 @@ namespace test {
 class MockAudioDeviceModule : public AudioDeviceModule {
  public:
   static rtc::scoped_refptr<MockAudioDeviceModule> CreateNice() {
-    return new rtc::RefCountedObject<
-        ::testing::NiceMock<MockAudioDeviceModule>>();
+    return rtc::make_ref_counted<::testing::NiceMock<MockAudioDeviceModule>>();
   }
   static rtc::scoped_refptr<MockAudioDeviceModule> CreateStrict() {
-    return new rtc::RefCountedObject<
+    return rtc::make_ref_counted<
         ::testing::StrictMock<MockAudioDeviceModule>>();
   }
 

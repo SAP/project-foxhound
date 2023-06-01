@@ -169,6 +169,15 @@ static bool RestartApplication() {
   }
   [mSubmitReportButton setState:(submitChecked ? NSOnState : NSOffState)];
 
+  // load default state of include URL checkbox
+  BOOL includeChecked = YES;
+  if (nil != [userDefaults objectForKey:@"IncludeURL"]) {
+    includeChecked = [userDefaults boolForKey:@"IncludeURL"];
+  } else {
+    [userDefaults setBool:includeChecked forKey:@"IncludeURL"];
+  }
+  [mIncludeURLButton setState:(includeChecked ? NSOnState : NSOffState)];
+
   [self updateSubmit];
   [self updateURL];
   [self updateEmail];
@@ -278,6 +287,9 @@ static bool RestartApplication() {
 
 - (IBAction)includeURLClicked:(id)sender {
   [self updateURL];
+  NSUserDefaults* userDefaults = [NSUserDefaults standardUserDefaults];
+  [userDefaults setBool:([mIncludeURLButton state] == NSOnState) forKey:@"IncludeURL"];
+  [userDefaults synchronize];
 }
 
 - (void)textDidChange:(NSNotification*)aNotification {
@@ -713,13 +725,9 @@ bool UIGetIniPath(string& path) {
 }
 
 bool UIGetSettingsPath(const string& vendor, const string& product, string& settingsPath) {
-  FSRef foundRef;
-  OSErr err = FSFindFolder(kUserDomain, kApplicationSupportFolderType, kCreateFolder, &foundRef);
-  if (err != noErr) return false;
-
-  unsigned char path[PATH_MAX];
-  FSRefMakePath(&foundRef, path, sizeof(path));
-  NSString* destPath = [NSString stringWithUTF8String:reinterpret_cast<char*>(path)];
+  NSArray* paths =
+      NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES);
+  NSString* destPath = [paths firstObject];
 
   // Note that MacOS ignores the vendor when creating the profile hierarchy -
   // all application preferences directories live alongside one another in

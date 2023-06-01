@@ -8,12 +8,16 @@
 
 /* globals Services, XPCOMUtils */
 
+ChromeUtils.defineESModuleGetters(this, {
+  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
+  SessionStartup: "resource:///modules/sessionstore/SessionStartup.sys.mjs",
+  StartupPerformance:
+    "resource:///modules/sessionstore/StartupPerformance.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(this, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
-  SessionStartup: "resource:///modules/sessionstore/SessionStartup.jsm",
-  setTimeout: "resource://gre/modules/Timer.jsm",
-  StartupPerformance: "resource:///modules/sessionstore/StartupPerformance.jsm",
 });
 
 /* globals ExtensionAPI */
@@ -42,8 +46,8 @@ this.sessionrestore = class extends ExtensionAPI {
     // the profile to disk.
     async function getTalosParentProfiler() {
       try {
-        var { TalosParentProfiler } = ChromeUtils.import(
-          "resource://talos-powers/TalosParentProfiler.jsm"
+        var { TalosParentProfiler } = ChromeUtils.importESModule(
+          "resource://talos-powers/TalosParentProfiler.sys.mjs"
         );
         return TalosParentProfiler;
       } catch (err) {

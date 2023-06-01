@@ -1,7 +1,6 @@
 "use strict";
 
 const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const ReferrerInfo = Components.Constructor(
   "@mozilla.org/referrer-info;1",
   "nsIReferrerInfo",
@@ -359,6 +358,8 @@ function continue_test_redirect() {
   });
 }
 
+// Test is currently disabled.
+// eslint-disable-next-line no-unused-vars
 function test_redirect() {
   open_and_continue([redirect_inituri, redirect_targeturi], function() {
     if (running_single_process) {
@@ -369,6 +370,8 @@ function test_redirect() {
   });
 }
 
+// Test is currently disabled.
+// eslint-disable-next-line no-unused-vars
 function test_startup() {
   if (!running_single_process && !is_child_process()) {
     // This one we can just proxy to the child and be done with, no extra setup
@@ -689,6 +692,7 @@ function test_visitor_doom() {
         aURI,
         aIdEnhance,
         aDataSize,
+        aAltDataSize,
         aFetchCount,
         aLastModifiedTime,
         aExpirationTime,
@@ -734,6 +738,7 @@ function test_visitor_doom() {
           aURI,
           aIdEnhance,
           aDataSize,
+          aAltDataSize,
           aFetchCount,
           aLastModifiedTime,
           aExpirationTime,

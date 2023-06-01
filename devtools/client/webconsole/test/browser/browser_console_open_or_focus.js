@@ -8,7 +8,7 @@
 requestLongerTimeout(2);
 
 const TEST_MESSAGE = "testmessage";
-const { Tools } = require("devtools/client/definitions");
+const { Tools } = require("resource://devtools/client/definitions.js");
 
 add_task(async function() {
   info("Get main browser window");
@@ -23,7 +23,7 @@ add_task(async function() {
 
   info("Emit a log message to display it in the Browser Console");
   console.log(TEST_MESSAGE);
-  await waitFor(() => findMessage(hud, TEST_MESSAGE));
+  await waitFor(() => findConsoleAPIMessage(hud, TEST_MESSAGE));
 
   let currWindow = Services.wm.getMostRecentWindow(null);
   is(

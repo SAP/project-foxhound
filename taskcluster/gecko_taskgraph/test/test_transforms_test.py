@@ -7,6 +7,7 @@ Tests for the 'tests.py' transforms
 import hashlib
 import json
 from functools import partial
+from pprint import pprint
 
 import mozunit
 import pytest
@@ -22,7 +23,7 @@ def make_test_task():
         task = {
             "attributes": {},
             "build-platform": "linux64",
-            "mozharness": {},
+            "mozharness": {"extra-options": []},
             "test-platform": "linux64",
             "treeherder-symbol": "g(t)",
             "try-name": "task",
@@ -42,6 +43,8 @@ def test_split_variants(monkeypatch, run_transform, make_test_task):
             "foo": {
                 "description": "foo variant",
                 "suffix": "foo",
+                "component": "foo bar",
+                "expiration": "never",
                 "merge": {
                     "mozharness": {
                         "extra-options": [
@@ -53,6 +56,8 @@ def test_split_variants(monkeypatch, run_transform, make_test_task):
             "bar": {
                 "description": "bar variant",
                 "suffix": "bar",
+                "component": "foo bar",
+                "expiration": "never",
                 "when": {
                     "$eval": "task['test-platform'][:5] == 'linux'",
                 },
@@ -183,15 +188,15 @@ def test_split_variants(monkeypatch, run_transform, make_test_task):
         pytest.param(
             {
                 "attributes": {},
-                "test-platform": "android-hw-s7-8-0-android-aarch64-shippable-qr/opt",
+                "test-platform": "android-hw-a51-11-0-arm7-shippable-qr/opt",
             },
             {
                 "platform": {
-                    "arch": "aarch64",
-                    "device": "s7",
+                    "arch": "arm7",
+                    "device": "a51",
                     "os": {
                         "name": "android",
-                        "version": "8.0",
+                        "version": "11.0",
                     },
                 },
                 "build": {
@@ -236,6 +241,64 @@ def test_set_test_setting(run_transform, task, expected):
     task = list(run_transform(test_transforms.other.set_test_setting, task))[0]
     assert "test-setting" in task
     assert task["test-setting"] == expected
+
+
+def assert_spi_not_disabled(task):
+    extra_options = task["mozharness"]["extra-options"]
+    # The pref to enable this gets set outside of this transform, so only
+    # bother asserting that the pref to disable does not exist.
+    assert (
+        "--setpref=media.peerconnection.mtransport_process=false" not in extra_options
+    )
+    assert "--setpref=network.process.enabled=false" not in extra_options
+
+
+def assert_spi_disabled(task):
+    extra_options = task["mozharness"]["extra-options"]
+    assert "--setpref=media.peerconnection.mtransport_process=false" in extra_options
+    assert "--setpref=media.peerconnection.mtransport_process=true" not in extra_options
+    assert "--setpref=network.process.enabled=false" in extra_options
+    assert "--setpref=network.process.enabled=true" not in extra_options
+
+
+@pytest.mark.parametrize(
+    "task,callback",
+    (
+        pytest.param(
+            {"attributes": {"unittest_variant": "socketprocess"}},
+            assert_spi_not_disabled,
+            id="socketprocess",
+        ),
+        pytest.param(
+            {
+                "attributes": {"unittest_variant": "socketprocess_networking"},
+            },
+            assert_spi_not_disabled,
+            id="socketprocess_networking",
+        ),
+        pytest.param({}, assert_spi_disabled, id="no variant"),
+        pytest.param(
+            {"suite": "cppunit", "attributes": {"unittest_variant": "socketprocess"}},
+            assert_spi_not_disabled,
+            id="excluded suite",
+        ),
+        pytest.param(
+            {"attributes": {"unittest_variant": "no-fission+socketprocess"}},
+            assert_spi_not_disabled,
+            id="composite variant",
+        ),
+    ),
+)
+def test_ensure_spi_disabled_on_all_but_spi(
+    make_test_task, run_transform, task, callback
+):
+    task.setdefault("suite", "mochitest-plain")
+    task = make_test_task(**task)
+    task = list(
+        run_transform(test_transforms.other.ensure_spi_disabled_on_all_but_spi, task)
+    )[0]
+    pprint(task)
+    callback(task)
 
 
 if __name__ == "__main__":

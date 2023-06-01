@@ -3,13 +3,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import print_function
-
+import argparse
 import os
 import site
 import subprocess
-import argparse
-
 from glob import glob
 
 scriptdir = os.path.abspath(os.path.dirname(__file__))

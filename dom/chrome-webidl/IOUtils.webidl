@@ -4,6 +4,8 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+interface nsIFile;
+
 /**
  * IOUtils is a simple, efficient interface for performing file I/O from a
  * privileged chrome-only context. All asynchronous I/O tasks are run on
@@ -33,6 +35,7 @@ namespace IOUtils {
    * @return Resolves with an array of unsigned byte values read from disk,
    *         otherwise rejects with a DOMException.
    */
+  [NewObject]
   Promise<Uint8Array> read(DOMString path, optional ReadOptions opts = {});
   /**
    * Reads the UTF-8 text file located at |path| and returns the decoded
@@ -45,6 +48,7 @@ namespace IOUtils {
    * @return Resolves with the file contents encoded as a string, otherwise
    *         rejects with a DOMException.
    */
+  [NewObject]
   Promise<UTF8String> readUTF8(DOMString path, optional ReadUTF8Options opts = {});
   /**
    * Read the UTF-8 text file located at |path| and return the contents
@@ -56,6 +60,7 @@ namespace IOUtils {
    *
    * @return Resolves with the contents of the file parsed as JSON.
    */
+  [NewObject]
   Promise<any> readJSON(DOMString path, optional ReadUTF8Options opts = {});
   /**
    * Attempts to safely write |data| to a file at |path|.
@@ -74,6 +79,7 @@ namespace IOUtils {
    * @return Resolves with the number of bytes successfully written to the file,
    *         otherwise rejects with a DOMException.
    */
+  [NewObject]
   Promise<unsigned long long> write(DOMString path, Uint8Array data, optional WriteOptions options = {});
   /**
    * Attempts to encode |string| to UTF-8, then safely write the result to a
@@ -86,6 +92,7 @@ namespace IOUtils {
    * @return Resolves with the number of bytes successfully written to the file,
    *         otherwise rejects with a DOMException.
    */
+  [NewObject]
   Promise<unsigned long long> writeUTF8(DOMString path, UTF8String string, optional WriteOptions options = {});
   /**
    * Attempts to serialize |value| into a JSON string and encode it as into a
@@ -99,6 +106,7 @@ namespace IOUtils {
    * @return Resolves with the number of bytes successfully written to the file,
    *         otherwise rejects with a DOMException.
    */
+  [NewObject]
   Promise<unsigned long long> writeJSON(DOMString path, any value, optional WriteOptions options = {});
   /**
    * Moves the file from |sourcePath| to |destPath|, creating necessary parents.
@@ -113,7 +121,8 @@ namespace IOUtils {
    * @return Resolves if the file is moved successfully, otherwise rejects with
    *         a DOMException.
    */
-  Promise<void> move(DOMString sourcePath, DOMString destPath, optional MoveOptions options = {});
+  [NewObject]
+  Promise<undefined> move(DOMString sourcePath, DOMString destPath, optional MoveOptions options = {});
   /**
    * Removes a file or directory at |path| according to |options|.
    *
@@ -123,7 +132,8 @@ namespace IOUtils {
    * @return Resolves if the file is removed successfully, otherwise rejects
    *         with a DOMException.
    */
-  Promise<void> remove(DOMString path, optional RemoveOptions options = {});
+  [NewObject]
+  Promise<undefined> remove(DOMString path, optional RemoveOptions options = {});
   /**
    * Creates a new directory at |path| according to |options|.
    *
@@ -132,7 +142,8 @@ namespace IOUtils {
    * @return Resolves if the directory is created successfully, otherwise
    *         rejects with a DOMException.
    */
-  Promise<void> makeDirectory(DOMString path, optional MakeDirectoryOptions options = {});
+  [NewObject]
+  Promise<undefined> makeDirectory(DOMString path, optional MakeDirectoryOptions options = {});
   /**
    * Obtains information about a file, such as size, modification dates, etc.
    *
@@ -144,6 +155,7 @@ namespace IOUtils {
    *
    * @see FileInfo
    */
+  [NewObject]
   Promise<FileInfo> stat(DOMString path);
   /**
    * Copies a file or directory from |sourcePath| to |destPath| according to
@@ -157,9 +169,27 @@ namespace IOUtils {
    * @return Resolves if the file was copied successfully, otherwise rejects
    *         with a DOMException.
    */
-  Promise<void> copy(DOMString sourcePath, DOMString destPath, optional CopyOptions options = {});
+  [NewObject]
+  Promise<undefined> copy(DOMString sourcePath, DOMString destPath, optional CopyOptions options = {});
   /**
-   * Updates the |modification| time for the file at |path|.
+   * Updates the access time for the file at |path|.
+   *
+   * @param path         An absolute file path identifying the file whose
+   *                     modification time is to be set. This file must exist
+   *                     and will not be created.
+   * @param modification An optional access time for the file expressed in
+   *                     milliseconds since the Unix epoch
+   *                     (1970-01-01T00:00:00Z). The current system time is used
+   *                     if this parameter is not provided.
+   *
+   * @return Resolves with the updated access time time expressed in
+   *         milliseconds since the Unix epoch, otherwise rejects with a
+   *         DOMException.
+   */
+  [NewObject]
+  Promise<long long> setAccessTime(DOMString path, optional long long access);
+  /**
+   * Updates the modification time for the file at |path|.
    *
    * @param path         An absolute file path identifying the file whose
    *                     modification time is to be set. This file must exist
@@ -173,6 +203,7 @@ namespace IOUtils {
    *         milliseconds since the Unix epoch, otherwise rejects with a
    *         DOMException.
    */
+  [NewObject]
   Promise<long long> setModificationTime(DOMString path, optional long long modification);
   /**
    * Retrieves a (possibly empty) list of immediate children of the directory at
@@ -184,6 +215,7 @@ namespace IOUtils {
    *         children of the directory at |path|, otherwise rejects with a
    *         DOMException.
    */
+  [NewObject]
   Promise<sequence<DOMString>> getChildren(DOMString path, optional GetChildrenOptions options = {});
   /**
    * Set the permissions of the file at |path|.
@@ -204,7 +236,8 @@ namespace IOUtils {
    * @return Resolves if the permissions were set successfully, otherwise
    *         rejects with a DOMException.
    */
-  Promise<void> setPermissions(DOMString path, unsigned long permissions, optional boolean honorUmask = true);
+  [NewObject]
+  Promise<undefined> setPermissions(DOMString path, unsigned long permissions, optional boolean honorUmask = true);
   /**
    * Return whether or not the file exists at the given path.
    *
@@ -212,6 +245,7 @@ namespace IOUtils {
    *
    * @return A promise that resolves to whether or not the given file exists.
    */
+  [NewObject]
   Promise<boolean> exists(DOMString path);
 
   /**
@@ -223,6 +257,7 @@ namespace IOUtils {
    *
    * @return A promise that resolves to a unique filename.
    */
+  [NewObject]
   Promise<DOMString> createUniqueFile(DOMString parent, DOMString prefix, optional unsigned long permissions = 0644);
 
   /**
@@ -234,7 +269,19 @@ namespace IOUtils {
    *
    * @return A promise that resolves to a unique directory name.
    */
+  [NewObject]
   Promise<DOMString> createUniqueDirectory(DOMString parent, DOMString prefix, optional unsigned long permissions = 0755);
+
+  /**
+   * Compute the hash of a file as a hex digest.
+   *
+   * @param path   The absolute path of the file to hash.
+   * @param method The hashing method to use.
+   *
+   * @return A promise that resolves to the hex digest of the file's hash in lowercase.
+   */
+  [NewObject]
+  Promise<UTF8String> computeHexDigest(DOMString path, HashAlgorithm method);
 
 #if defined(XP_WIN)
   /**
@@ -244,6 +291,7 @@ namespace IOUtils {
    *
    * @return A promise that resolves to the Windows-specific file attributes.
    */
+  [NewObject]
   Promise<WindowsFileAttributes> getWindowsAttributes(DOMString path);
 
   /**
@@ -256,7 +304,8 @@ namespace IOUtils {
    *
    * @return A promise that resolves is the attributes were set successfully.
    */
-  Promise<void> setWindowsAttributes(DOMString path, optional WindowsFileAttributes attrs = {});
+  [NewObject]
+  Promise<undefined> setWindowsAttributes(DOMString path, optional WindowsFileAttributes attrs = {});
 #elif defined(XP_MACOSX)
   /**
    * Return whether or not the file has a specific extended attribute.
@@ -267,6 +316,7 @@ namespace IOUtils {
    * @return A promise that resolves to whether or not the file has an extended
    *         attribute, or rejects with an error.
    */
+  [NewObject]
   Promise<boolean> hasMacXAttr(DOMString path, UTF8String attr);
   /**
    * Return the value of an extended attribute for a file.
@@ -277,6 +327,7 @@ namespace IOUtils {
    * @return A promise that resolves to the value of the extended attribute, or
    *         rejects with an error.
    */
+  [NewObject]
   Promise<Uint8Array> getMacXAttr(DOMString path, UTF8String attr);
   /**
    * Set the extended attribute on a file.
@@ -288,7 +339,8 @@ namespace IOUtils {
    * @return A promise that resolves to whether or not the file has an extended
    *         attribute, or rejects with an error.
    */
-  Promise<void> setMacXAttr(DOMString path, UTF8String attr, Uint8Array value);
+  [NewObject]
+  Promise<undefined> setMacXAttr(DOMString path, UTF8String attr, Uint8Array value);
   /**
    * Delete the extended attribute on a file.
    *
@@ -298,14 +350,51 @@ namespace IOUtils {
    * @return A promise that resolves if the attribute was deleted, or rejects
    *         with an error.
    */
-  Promise<void> delMacXAttr(DOMString path, UTF8String attr);
+  [NewObject]
+  Promise<undefined> delMacXAttr(DOMString path, UTF8String attr);
 #endif
+
+  /**
+   * Return a nsIFile whose parent directory exists. The parent directory of the
+   * file will be created off main thread if it does not already exist.
+   *
+   * @param components The path components. The first component must be an
+   *                   absolute path.
+   *
+   * @return A promise that resolves to an nsIFile for the requested file.
+   */
+  [NewObject]
+  Promise<nsIFile> getFile(DOMString... components);
+
+  /**
+   * Return an nsIFile corresponding to a directory. It will be created
+   * off-main-thread if it does not already exist.
+   *
+   * @param components The path components. The first component must be an
+   *                   absolute path.
+   *
+   * @return A promise that resolves to an nsIFile for the requested directory.
+   */
+  [NewObject]
+  Promise<nsIFile> getDirectory(DOMString... components);
 };
 
 [Exposed=Window]
 partial namespace IOUtils {
+  /**
+   * The async shutdown client for the profile-before-change shutdown phase.
+   */
   [Throws]
   readonly attribute any profileBeforeChange;
+
+  /**
+   * The async shutdown client for the profile-before-change-telemetry shutdown
+   * phase.
+   *
+   * ONLY telemetry should register blockers on this client.
+   */
+  [Throws]
+  readonly attribute any sendTelemetry;
 };
 
 [Exposed=Worker]
@@ -319,6 +408,30 @@ partial namespace IOUtils {
    */
   [Throws]
   SyncReadFile openFileForSyncReading(DOMString path);
+
+#ifdef XP_UNIX
+  /**
+   * Launch a child process; uses `base::LaunchApp` from IPC.  (This WebIDL
+   * binding is currently Unix-only; it could also be supported on Windows
+   * but it would use u16-based strings, so it would basically be a separate
+   * copy of the bindings.)
+   *
+   * This interface was added for use by `Subprocess.sys.jsm`; other would-be
+   * callers may want to just use Subprocess instead of calling this directly.
+   *
+   * @param argv The command to run and its arguments.
+   * @param options Various parameters about how the child process is launched
+   *                and its initial environment.
+   *
+   * @return The process ID.  Note that various errors (e.g., the
+   *         executable to be launched doesn't exist) may not be
+   *         encountered until after the process is created, so a
+   *         successful return doesn't necessarily imply a successful
+   *         launch.
+   */
+  [Throws]
+  unsigned long launchProcess(sequence<UnixString> argv, LaunchOptions options);
+#endif
 };
 
 /**
@@ -342,13 +455,13 @@ interface SyncReadFile {
    *               range is given by |dest.length|.)
    */
   [Throws]
-  void readBytesInto(Uint8Array dest, long long offset);
+  undefined readBytesInto(Uint8Array dest, long long offset);
 
   /**
    * Close the file. Subsequent calls to readBytesInto will throw.
    * If the file is not closed manually, it will be closed once this object is GC'ed.
    */
-  void close();
+  undefined close();
 };
 
 /**
@@ -396,6 +509,10 @@ enum WriteMode {
    * This mode will refuse to create the file if it does not exist.
    */
   "append",
+  /**
+   * Append to the end of the file, or create it if it does not exist.
+   */
+  "appendOrCreate",
   /**
    * Create a new file.
    *
@@ -523,21 +640,18 @@ dictionary FileInfo {
    * obtained.
    */
   DOMString path;
+
   /**
    * Identifies if the file at |path| is a regular file, directory, or something
    * something else.
    */
   FileType type;
+
   /**
    * If this represents a regular file, the size of the file in bytes.
    * Otherwise, -1.
    */
   long long size;
-  /**
-   * The timestamp of the last file modification, represented in milliseconds
-   * since Epoch (1970-01-01T00:00:00.000Z).
-   */
-  long long lastModified;
 
   /**
    * The timestamp of file creation, represented in milliseconds since Epoch
@@ -546,6 +660,19 @@ dictionary FileInfo {
    * This is only available on MacOS and Windows.
    */
   long long creationTime;
+
+  /**
+   * The timestmp of last file accesss, represented in milliseconds since Epoch
+   * (1970-01-01T00:00:00.000Z).
+   */
+  long long lastAccessed;
+
+  /**
+   * The timestamp of the last file modification, represented in milliseconds
+   * since Epoch (1970-01-01T00:00:00.000Z).
+   */
+  long long lastModified;
+
   /**
    * The permissions of the file, expressed as a UNIX file mode.
    *
@@ -555,6 +682,11 @@ dictionary FileInfo {
    */
   unsigned long permissions;
 };
+
+/**
+ * The supported hash algorithms for |IOUtils.hashFile|.
+ */
+enum HashAlgorithm { "sha1", "sha256", "sha384", "sha512" };
 
 #ifdef XP_WIN
 /**
@@ -573,5 +705,62 @@ dictionary WindowsFileAttributes {
    * Whether or not the file is classified as a system file.
    */
   boolean system;
+};
+#endif
+
+#ifdef XP_UNIX
+/**
+ * Used where the POSIX API allows an arbitrary byte string but in
+ * practice it's usually UTF-8, so JS strings are accepted for
+ * convenience.
+ */
+typedef (UTF8String or Uint8Array) UnixString;
+
+/**
+ * Options for the `launchApp` method.  See also `base::LaunchOptions`
+ * in C++.
+ */
+dictionary LaunchOptions {
+  /**
+   * The environment variables, as a sequence of `NAME=value` strings.
+   * (The underlying C++ code can also inherit the current environment
+   * with optional changes; that feature could be added here if needed.)
+   */
+  required sequence<UnixString> environment;
+
+  /**
+   * The initial current working directory.
+   */
+  UnixString workdir;
+
+  /**
+   * File descriptors to pass to the child process.  Any fds not
+   * mentioned here, other than stdin/out/err, will not be inherited
+   * even if they aren't marked close-on-exec.
+   */
+  sequence<FdMapping> fdMap;
+
+  /**
+   * On macOS 10.14+, disclaims responsibility for the child process
+   * with respect to privacy/security permission prompts and
+   * decisions.  Ignored if not supported by the OS.
+   */
+  boolean disclaim = false;
+};
+
+/**
+ * Describes a file descriptor to give to the child process.
+ */
+dictionary FdMapping {
+  /**
+   * The fd in the parent process to pass.  This must remain open during
+   * the call to `launchApp` but can be closed after it returns (or throws).
+   */
+  required unsigned long src;
+
+  /**
+   * The fd number to map it to in the child process.
+   */
+  required unsigned long dst;
 };
 #endif

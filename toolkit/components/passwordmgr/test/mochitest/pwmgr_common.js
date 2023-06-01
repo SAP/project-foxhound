@@ -4,10 +4,10 @@
 
 /* import-globals-from ../../../../../toolkit/components/satchel/test/satchel_common.js */
 
-const { LoginTestUtils } = SpecialPowers.Cu.import(
-  "resource://testing-common/LoginTestUtils.jsm",
-  {}
+const { LoginTestUtils } = SpecialPowers.ChromeUtils.import(
+  "resource://testing-common/LoginTestUtils.jsm"
 );
+const Services = SpecialPowers.Services;
 
 // Setup LoginTestUtils to report assertions to the mochitest harness.
 LoginTestUtils.setAssertReporter(
@@ -16,13 +16,8 @@ LoginTestUtils.setAssertReporter(
   })
 );
 
-const { LoginHelper } = SpecialPowers.Cu.import(
-  "resource://gre/modules/LoginHelper.jsm",
-  {}
-);
-const { Services } = SpecialPowers.Cu.import(
-  "resource://gre/modules/Services.jsm",
-  {}
+const { LoginHelper } = SpecialPowers.ChromeUtils.import(
+  "resource://gre/modules/LoginHelper.jsm"
 );
 
 const {
@@ -47,36 +42,6 @@ let authPromptIsCommonDialog =
     ));
 
 /**
- * Returns the element with the specified |name| attribute.
- */
-function $_(formNum, name) {
-  var form = document.getElementById("form" + formNum);
-  if (!form) {
-    ok(false, "$_ couldn't find requested form " + formNum);
-    return null;
-  }
-
-  var element = form.children.namedItem(name);
-  if (!element) {
-    ok(false, "$_ couldn't find requested element " + name);
-    return null;
-  }
-
-  // Note that namedItem is a bit stupid, and will prefer an
-  // |id| attribute over a |name| attribute when looking for
-  // the element. Login Mananger happens to use .namedItem
-  // anyway, but let's rigorously check it here anyway so
-  // that we don't end up with tests that mistakenly pass.
-
-  if (element.getAttribute("name") != name) {
-    ok(false, "$_ got confused.");
-    return null;
-  }
-
-  return element;
-}
-
-/**
  * Recreate a DOM tree using the outerHTML to ensure that any event listeners
  * and internal state for the elements are removed.
  */
@@ -85,13 +50,24 @@ function recreateTree(element) {
   element.outerHTML = element.outerHTML;
 }
 
+function _checkArrayValues(actualValues, expectedValues, msg) {
+  is(
+    actualValues.length,
+    expectedValues.length,
+    "Checking array values: " + msg
+  );
+  for (let i = 0; i < expectedValues.length; i++) {
+    is(actualValues[i], expectedValues[i], msg + " Checking array entry #" + i);
+  }
+}
+
 /**
  * Check autocomplete popup results to ensure that expected
  * *labels* are being shown correctly as items in the popup.
  */
 function checkAutoCompleteResults(actualValues, expectedValues, hostname, msg) {
   if (hostname === null) {
-    checkArrayValues(actualValues, expectedValues, msg);
+    _checkArrayValues(actualValues, expectedValues, msg);
     return;
   }
 
@@ -123,7 +99,7 @@ function checkAutoCompleteResults(actualValues, expectedValues, hostname, msg) {
   }
 
   // Check the rest of the autocomplete item values.
-  checkArrayValues(actualValues.slice(0, -1), expectedValues, msg);
+  _checkArrayValues(actualValues.slice(0, -1), expectedValues, msg);
 }
 
 function getIframeBrowsingContext(window, iframeNumber = 0) {
@@ -516,24 +492,24 @@ function registerRunTests(existingPasswordFieldsCount = 0) {
   });
 }
 
-function enableMasterPassword() {
-  setMasterPassword(true);
+function enablePrimaryPassword() {
+  setPrimaryPassword(true);
 }
 
-function disableMasterPassword() {
-  setMasterPassword(false);
+function disablePrimaryPassword() {
+  setPrimaryPassword(false);
 }
 
-function setMasterPassword(enable) {
-  PWMGR_COMMON_PARENT.sendAsyncMessage("setMasterPassword", { enable });
+function setPrimaryPassword(enable) {
+  PWMGR_COMMON_PARENT.sendAsyncMessage("setPrimaryPassword", { enable });
 }
 
 function isLoggedIn() {
   return PWMGR_COMMON_PARENT.sendQuery("isLoggedIn");
 }
 
-function logoutMasterPassword() {
-  runInParent(function parent_logoutMasterPassword() {
+function logoutPrimaryPassword() {
+  runInParent(function parent_logoutPrimaryPassword() {
     var sdr = Cc["@mozilla.org/security/sdr;1"].getService(
       Ci.nsISecretDecoderRing
     );
@@ -733,12 +709,8 @@ function runInParent(aFunctionOrURL) {
  */
 function addLoginsInParent(...aLogins) {
   let script = runInParent(function addLoginsInParentInner() {
+    /* eslint-env mozilla/chrome-script */
     addMessageListener("addLogins", logins => {
-      // eslint-disable-next-line no-shadow
-      const { Services } = ChromeUtils.import(
-        "resource://gre/modules/Services.jsm"
-      );
-
       let nsLoginInfo = Components.Constructor(
         "@mozilla.org/login-manager/loginInfo;1",
         Ci.nsILoginInfo,
@@ -819,10 +791,7 @@ SimpleTest.registerCleanupFunction(() => {
   PWMGR_COMMON_PARENT.sendAsyncMessage("cleanup");
 
   runInParent(function cleanupParent() {
-    // eslint-disable-next-line no-shadow
-    const { Services } = ChromeUtils.import(
-      "resource://gre/modules/Services.jsm"
-    );
+    /* eslint-env mozilla/chrome-script */
     // eslint-disable-next-line no-shadow
     const { LoginManagerParent } = ChromeUtils.import(
       "resource://gre/modules/LoginManagerParent.jsm"

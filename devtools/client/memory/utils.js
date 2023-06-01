@@ -4,22 +4,21 @@
 
 "use strict";
 
-const { Cc, Ci } = require("chrome");
-
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const STRINGS_URI = "devtools/client/locales/memory.properties";
 const L10N = (exports.L10N = new LocalizationHelper(STRINGS_URI));
 
-const { OS } = require("resource://gre/modules/osfile.jsm");
-const { assert } = require("devtools/shared/DevToolsUtils");
-const { Preferences } = require("resource://gre/modules/Preferences.jsm");
+const { assert } = require("resource://devtools/shared/DevToolsUtils.js");
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
+);
 const CUSTOM_CENSUS_DISPLAY_PREF = "devtools.memory.custom-census-displays";
 const CUSTOM_LABEL_DISPLAY_PREF = "devtools.memory.custom-label-displays";
 const CUSTOM_TREE_MAP_DISPLAY_PREF = "devtools.memory.custom-tree-map-displays";
 const BYTES = 1024;
 const KILOBYTES = Math.pow(BYTES, 2);
 const MEGABYTES = Math.pow(BYTES, 3);
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 const {
   snapshotState: states,
   diffingState,
@@ -27,7 +26,7 @@ const {
   treeMapState,
   dominatorTreeState,
   individualsState,
-} = require("devtools/client/memory/constants");
+} = require("resource://devtools/client/memory/constants.js");
 
 /**
  * Takes a snapshot object and returns the localized form of its timestamp to be
@@ -43,7 +42,7 @@ exports.getSnapshotTitle = function(snapshot) {
 
   if (snapshot.imported) {
     // Strip out the extension if it's the expected ".fxsnapshot"
-    return OS.Path.basename(snapshot.path.replace(/\.fxsnapshot$/, ""));
+    return PathUtils.filename(snapshot.path.replace(/\.fxsnapshot$/, ""));
   }
 
   const date = new Date(snapshot.creationTime / 1000);

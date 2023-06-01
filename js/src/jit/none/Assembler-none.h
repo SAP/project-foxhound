@@ -99,8 +99,11 @@ static constexpr Register WasmTableCallScratchReg0{Registers::invalid_reg};
 static constexpr Register WasmTableCallScratchReg1{Registers::invalid_reg};
 static constexpr Register WasmTableCallSigReg{Registers::invalid_reg};
 static constexpr Register WasmTableCallIndexReg{Registers::invalid_reg};
-static constexpr Register WasmTlsReg{Registers::invalid_reg};
+static constexpr Register InstanceReg{Registers::invalid_reg};
 static constexpr Register WasmJitEntryReturnScratch{Registers::invalid_reg};
+static constexpr Register WasmCallRefCallScratchReg0{Registers::invalid_reg};
+static constexpr Register WasmCallRefCallScratchReg1{Registers::invalid_reg};
+static constexpr Register WasmCallRefReg{Registers::invalid_reg};
 
 static constexpr uint32_t ABIStackAlignment = 4;
 static constexpr uint32_t CodeAlignment = 16;

@@ -6,6 +6,9 @@
 
 SPHINX_TREES["/uriloader/exthandler"] = "docs"
 
+with Files("**"):
+    BUG_COMPONENT = ("Firefox", "File Handling")
+
 TEST_DIRS += ["tests"]
 
 XPIDL_SOURCES += [
@@ -103,17 +106,13 @@ if CONFIG["MOZ_ENABLE_DBUS"]:
         "DBusHelpers.h",
     ]
 
-EXTRA_COMPONENTS += [
-    "HandlerService.js",
-    "HandlerService.manifest",
-]
-
 EXTRA_JS_MODULES += [
-    "WebHandlerApp.jsm",
+    "ExtHandlerService.sys.mjs",
+    "WebHandlerApp.sys.mjs",
 ]
 
 EXTRA_JS_MODULES.handlers += [
-    "HandlerList.jsm",
+    "HandlerList.sys.mjs",
 ]
 
 XPCOM_MANIFESTS += [

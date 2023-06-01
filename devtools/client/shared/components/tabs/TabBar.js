@@ -9,19 +9,23 @@
 const {
   Component,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 
 const Sidebar = createFactory(
-  require("devtools/client/shared/components/Sidebar")
+  require("resource://devtools/client/shared/components/Sidebar.js")
 );
 
-loader.lazyRequireGetter(this, "Menu", "devtools/client/framework/menu");
+loader.lazyRequireGetter(
+  this,
+  "Menu",
+  "resource://devtools/client/framework/menu.js"
+);
 loader.lazyRequireGetter(
   this,
   "MenuItem",
-  "devtools/client/framework/menu-item"
+  "resource://devtools/client/framework/menu-item.js"
 );
 
 // Shortcuts
@@ -93,7 +97,8 @@ class Tabbar extends Component {
     this.renderTab = this.renderTab.bind(this);
   }
 
-  componentWillReceiveProps(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
     const { activeTabId, children = [] } = nextProps;
     const tabs = this.createTabs(children);
     const activeTab = tabs.findIndex((tab, index) => tab.id === activeTabId);
@@ -210,12 +215,12 @@ class Tabbar extends Component {
 
     const tabs = this.state.tabs.slice();
     tabs[index] = Object.assign({}, tabs[index], {
-      isVisible: isVisible,
+      isVisible,
     });
 
     this.setState(
       Object.assign({}, this.state, {
-        tabs: tabs,
+        tabs,
       })
     );
   }
@@ -240,7 +245,7 @@ class Tabbar extends Component {
       () => {
         // Select the next active tab and force the select event handler to initialize
         // the panel if needed.
-        if (tabs.length > 0 && this.props.onSelect) {
+        if (tabs.length && this.props.onSelect) {
           this.props.onSelect(this.getTabId(activeTab));
         }
       }
@@ -316,7 +321,7 @@ class Tabbar extends Component {
     });
 
     // Show a drop down menu with frames.
-    menu.popupAtTarget(target, this.props.menuDocument);
+    menu.popupAtTarget(target);
 
     return menu;
   }

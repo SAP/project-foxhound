@@ -10,7 +10,6 @@
 
 #include "ImageBridgeParent.h"  // for ImageBridgeParent
 #include "ImageContainer.h"     // for ImageContainer
-#include "Layers.h"             // for Layer, etc
 #include "SynchronousTask.h"
 #include "mozilla/Assertions.h"        // for MOZ_ASSERT, etc
 #include "mozilla/Monitor.h"           // for Monitor, MonitorAutoLock
@@ -22,7 +21,6 @@
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/MessageChannel.h"         // for MessageChannel, etc
-#include "mozilla/ipc/Transport.h"              // for Transport
 #include "mozilla/layers/CompositableClient.h"  // for CompositableChild, etc
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/ISurfaceAllocator.h"  // for ISurfaceAllocator
@@ -42,10 +40,6 @@
 
 #if defined(XP_WIN)
 #  include "mozilla/gfx/DeviceManagerDx.h"
-#endif
-
-#ifdef MOZ_WIDGET_ANDROID
-#  include "mozilla/layers/AndroidHardwareBuffer.h"
 #endif
 
 namespace mozilla {
@@ -114,14 +108,6 @@ void ImageBridgeChild::UseTextures(
 
     bool readLocked = t.mTextureClient->OnForwardedToHost();
 
-    auto fenceFd = t.mTextureClient->GetInternalData()->GetAcquireFence();
-    if (fenceFd.IsValid()) {
-      mTxn->AddNoSwapEdit(CompositableOperation(
-          aCompositable->GetIPCHandle(),
-          OpDeliverAcquireFence(nullptr, t.mTextureClient->GetIPDLActor(),
-                                fenceFd)));
-    }
-
     textures.AppendElement(
         TimedTexture(nullptr, t.mTextureClient->GetIPDLActor(), t.mTimeStamp,
                      t.mPictureRect, t.mFrameID, t.mProducerID, readLocked));
@@ -133,20 +119,37 @@ void ImageBridgeChild::UseTextures(
                                             OpUseTexture(textures)));
 }
 
+void ImageBridgeChild::UseRemoteTexture(CompositableClient* aCompositable,
+                                        const RemoteTextureId aTextureId,
+                                        const RemoteTextureOwnerId aOwnerId,
+                                        const gfx::IntSize aSize,
+                                        const TextureFlags aFlags) {
+  MOZ_ASSERT(aCompositable);
+  MOZ_ASSERT(aCompositable->GetIPCHandle());
+  MOZ_ASSERT(aCompositable->IsConnected());
+
+  mTxn->AddNoSwapEdit(CompositableOperation(
+      aCompositable->GetIPCHandle(),
+      OpUseRemoteTexture(aTextureId, aOwnerId, aSize, aFlags)));
+}
+
+void ImageBridgeChild::EnableRemoteTexturePushCallback(
+    CompositableClient* aCompositable, const RemoteTextureOwnerId aOwnerId,
+    const gfx::IntSize aSize, const TextureFlags aFlags) {
+  MOZ_ASSERT(aCompositable);
+  MOZ_ASSERT(aCompositable->GetIPCHandle());
+  MOZ_ASSERT(aCompositable->IsConnected());
+
+  mTxn->AddNoSwapEdit(CompositableOperation(
+      aCompositable->GetIPCHandle(),
+      OpEnableRemoteTexturePushCallback(aOwnerId, aSize, aFlags)));
+}
+
 void ImageBridgeChild::HoldUntilCompositableRefReleasedIfNecessary(
     TextureClient* aClient) {
   if (!aClient) {
     return;
   }
-
-#ifdef MOZ_WIDGET_ANDROID
-  auto bufferId = aClient->GetInternalData()->GetBufferId();
-  if (bufferId.isSome()) {
-    MOZ_ASSERT(aClient->GetFlags() & TextureFlags::WAIT_HOST_USAGE_END);
-    AndroidHardwareBufferManager::Get()->HoldUntilNotifyNotUsed(
-        bufferId.ref(), GetFwdTransactionId(), /* aUsesImageBridge */ true);
-  }
-#endif
 
   // Wait ReleaseCompositableRef only when TextureFlags::RECYCLE or
   // TextureFlags::WAIT_HOST_USAGE_END is set on ImageBridge.
@@ -179,7 +182,7 @@ void ImageBridgeChild::CancelWaitForNotifyNotUsed(uint64_t aTextureId) {
 }
 
 // Singleton
-static StaticMutex sImageBridgeSingletonLock;
+static StaticMutex sImageBridgeSingletonLock MOZ_UNANNOTATED;
 static StaticRefPtr<ImageBridgeChild> sImageBridgeChildSingleton;
 static StaticRefPtr<nsIThread> sImageBridgeChildThread;
 
@@ -267,23 +270,18 @@ void ImageBridgeChild::Connect(CompositableClient* aCompositable,
   MOZ_ASSERT(InImageBridgeChildThread());
   MOZ_ASSERT(CanSend());
 
-  // Note: this is static, rather than per-IBC, so IDs are not re-used across
-  // ImageBridgeChild instances. This is relevant for the GPU process, where
-  // we don't want old IDs to potentially leak into a recreated ImageBridge.
-  static uint64_t sNextID = 1;
-  uint64_t id = sNextID++;
+  CompositableHandle handle = CompositableHandle::GetNext();
 
   // ImageClient of ImageContainer provides aImageContainer.
   // But offscreen canvas does not provide it.
   if (aImageContainer) {
     MutexAutoLock lock(mContainerMapLock);
-    MOZ_ASSERT(mImageContainerListeners.find(id) ==
+    MOZ_ASSERT(mImageContainerListeners.find(uint64_t(handle)) ==
                mImageContainerListeners.end());
     mImageContainerListeners.emplace(
-        id, aImageContainer->GetImageContainerListener());
+        uint64_t(handle), aImageContainer->GetImageContainerListener());
   }
 
-  CompositableHandle handle(id);
   aCompositable->InitIPDL(handle);
   SendNewCompositable(handle, aCompositable->GetTextureInfo());
 }
@@ -328,7 +326,43 @@ void ImageBridgeChild::UpdateImageClient(RefPtr<ImageContainer> aContainer) {
   }
 
   BeginTransaction();
-  client->UpdateImage(aContainer, Layer::CONTENT_OPAQUE);
+  client->UpdateImage(aContainer);
+  EndTransaction();
+}
+
+void ImageBridgeChild::UpdateCompositable(
+    const RefPtr<ImageContainer> aContainer, const RemoteTextureId aTextureId,
+    const RemoteTextureOwnerId aOwnerId, const gfx::IntSize aSize,
+    const TextureFlags aFlags) {
+  if (!aContainer) {
+    return;
+  }
+
+  if (!InImageBridgeChildThread()) {
+    RefPtr<Runnable> runnable = WrapRunnable(
+        RefPtr<ImageBridgeChild>(this), &ImageBridgeChild::UpdateCompositable,
+        aContainer, aTextureId, aOwnerId, aSize, aFlags);
+    GetThread()->Dispatch(runnable.forget());
+    return;
+  }
+
+  if (!CanSend()) {
+    return;
+  }
+
+  RefPtr<ImageClient> client = aContainer->GetImageClient();
+  if (NS_WARN_IF(!client)) {
+    return;
+  }
+
+  // If the client has become disconnected before this event was dispatched,
+  // early return now.
+  if (!client->IsConnected()) {
+    return;
+  }
+
+  BeginTransaction();
+  UseRemoteTexture(client, aTextureId, aOwnerId, aSize, aFlags);
   EndTransaction();
 }
 
@@ -458,8 +492,7 @@ void ImageBridgeChild::Bind(Endpoint<PImageBridgeChild>&& aEndpoint) {
 }
 
 void ImageBridgeChild::BindSameProcess(RefPtr<ImageBridgeParent> aParent) {
-  ipc::MessageChannel* parentChannel = aParent->GetIPCChannel();
-  Open(parentChannel, aParent->GetThread(), mozilla::ipc::ChildSide);
+  Open(aParent, aParent->GetThread(), mozilla::ipc::ChildSide);
 
   // This reference is dropped in DeallocPImageBridgeChild.
   this->AddRef();
@@ -629,36 +662,31 @@ RefPtr<ImageClient> ImageBridgeChild::CreateImageClientNow(
   return client;
 }
 
-bool ImageBridgeChild::AllocUnsafeShmem(
-    size_t aSize, ipc::SharedMemory::SharedMemoryType aType,
-    ipc::Shmem* aShmem) {
+bool ImageBridgeChild::AllocUnsafeShmem(size_t aSize, ipc::Shmem* aShmem) {
   if (!InImageBridgeChildThread()) {
-    return DispatchAllocShmemInternal(aSize, aType, aShmem,
+    return DispatchAllocShmemInternal(aSize, aShmem,
                                       true);  // true: unsafe
   }
 
   if (!CanSend()) {
     return false;
   }
-  return PImageBridgeChild::AllocUnsafeShmem(aSize, aType, aShmem);
+  return PImageBridgeChild::AllocUnsafeShmem(aSize, aShmem);
 }
 
-bool ImageBridgeChild::AllocShmem(size_t aSize,
-                                  ipc::SharedMemory::SharedMemoryType aType,
-                                  ipc::Shmem* aShmem) {
+bool ImageBridgeChild::AllocShmem(size_t aSize, ipc::Shmem* aShmem) {
   if (!InImageBridgeChildThread()) {
-    return DispatchAllocShmemInternal(aSize, aType, aShmem,
+    return DispatchAllocShmemInternal(aSize, aShmem,
                                       false);  // false: unsafe
   }
 
   if (!CanSend()) {
     return false;
   }
-  return PImageBridgeChild::AllocShmem(aSize, aType, aShmem);
+  return PImageBridgeChild::AllocShmem(aSize, aShmem);
 }
 
 void ImageBridgeChild::ProxyAllocShmemNow(SynchronousTask* aTask, size_t aSize,
-                                          SharedMemory::SharedMemoryType aType,
                                           ipc::Shmem* aShmem, bool aUnsafe,
                                           bool* aSuccess) {
   AutoCompleteTask complete(aTask);
@@ -669,22 +697,22 @@ void ImageBridgeChild::ProxyAllocShmemNow(SynchronousTask* aTask, size_t aSize,
 
   bool ok = false;
   if (aUnsafe) {
-    ok = AllocUnsafeShmem(aSize, aType, aShmem);
+    ok = AllocUnsafeShmem(aSize, aShmem);
   } else {
-    ok = AllocShmem(aSize, aType, aShmem);
+    ok = AllocShmem(aSize, aShmem);
   }
   *aSuccess = ok;
 }
 
-bool ImageBridgeChild::DispatchAllocShmemInternal(
-    size_t aSize, SharedMemory::SharedMemoryType aType, ipc::Shmem* aShmem,
-    bool aUnsafe) {
+bool ImageBridgeChild::DispatchAllocShmemInternal(size_t aSize,
+                                                  ipc::Shmem* aShmem,
+                                                  bool aUnsafe) {
   SynchronousTask task("AllocatorProxy alloc");
 
   bool success = false;
   RefPtr<Runnable> runnable = WrapRunnable(
       RefPtr<ImageBridgeChild>(this), &ImageBridgeChild::ProxyAllocShmemNow,
-      &task, aSize, aType, aShmem, aUnsafe, &success);
+      &task, aSize, aShmem, aUnsafe, &success);
   GetThread()->Dispatch(runnable.forget());
 
   task.Wait();
@@ -762,21 +790,6 @@ mozilla::ipc::IPCResult ImageBridgeChild::RecvParentAsyncMessages(
       case AsyncParentMessageData::TOpNotifyNotUsed: {
         const OpNotifyNotUsed& op = message.get_OpNotifyNotUsed();
         NotifyNotUsed(op.TextureId(), op.fwdTransactionId());
-        break;
-      }
-      case AsyncParentMessageData::TOpDeliverReleaseFence: {
-#ifdef MOZ_WIDGET_ANDROID
-        const OpDeliverReleaseFence& op = message.get_OpDeliverReleaseFence();
-        ipc::FileDescriptor fenceFd;
-        if (op.fenceFd().isSome()) {
-          fenceFd = *op.fenceFd();
-        }
-        AndroidHardwareBufferManager::Get()->NotifyNotUsed(
-            std::move(fenceFd), op.bufferId(), op.fwdTransactionId(),
-            op.usesImageBridge());
-#else
-        MOZ_ASSERT_UNREACHABLE("unexpected to be called");
-#endif
         break;
       }
       default:

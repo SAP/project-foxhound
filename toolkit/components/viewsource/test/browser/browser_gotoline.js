@@ -2,10 +2,6 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-const { ContentTaskUtils } = ChromeUtils.import(
-  "resource://testing-common/ContentTaskUtils.jsm"
-);
-
 var content = "line 1\nline 2\nline 3";
 
 add_task(async function() {

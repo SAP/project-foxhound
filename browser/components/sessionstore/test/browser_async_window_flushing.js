@@ -106,7 +106,7 @@ add_task(async function test_remove_uninteresting_window() {
   // site.
   let tab = newWin.gBrowser.selectedTab;
   let browser = tab.linkedBrowser;
-  BrowserTestUtils.loadURI(browser, PAGE);
+  BrowserTestUtils.loadURIString(browser, PAGE);
 
   await BrowserTestUtils.browserLoaded(browser, false, PAGE);
   await TabStateFlusher.flush(browser);
@@ -115,7 +115,7 @@ add_task(async function test_remove_uninteresting_window() {
   // history entries and make itself seem uninteresting.
   await SpecialPowers.spawn(browser, [], async function() {
     // Epic hackery to make this browser seem suddenly boring.
-    docShell.setCurrentURI(Services.io.newURI("about:blank"));
+    docShell.setCurrentURIForSessionStore(Services.io.newURI("about:blank"));
 
     if (!SpecialPowers.Services.appinfo.sessionHistoryInParent) {
       let { sessionHistory } = docShell.QueryInterface(Ci.nsIWebNavigation);
@@ -178,7 +178,7 @@ add_task(async function test_synchronously_remove_window_state() {
   // interesting.
   let newWin = await BrowserTestUtils.openNewBrowserWindow();
   let browser = newWin.gBrowser.selectedBrowser;
-  BrowserTestUtils.loadURI(browser, PAGE);
+  BrowserTestUtils.loadURIString(browser, PAGE);
   await BrowserTestUtils.browserLoaded(browser, false, PAGE);
   await TabStateFlusher.flush(browser);
 

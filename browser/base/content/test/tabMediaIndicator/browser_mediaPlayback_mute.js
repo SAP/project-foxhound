@@ -2,9 +2,9 @@ const PAGE = GetTestWebBasedURL("file_mediaPlayback2.html");
 const FRAME = GetTestWebBasedURL("file_mediaPlaybackFrame2.html");
 
 function wait_for_event(browser, event) {
-  return BrowserTestUtils.waitForEvent(browser, event, false, event => {
+  return BrowserTestUtils.waitForEvent(browser, event, false, e => {
     is(
-      event.originalTarget,
+      e.originalTarget,
       browser,
       "Event must be dispatched to correct browser."
     );
@@ -36,7 +36,7 @@ function test_audio_in_browser() {
 }
 
 async function test_on_browser(url, browser) {
-  BrowserTestUtils.loadURI(browser, url);
+  BrowserTestUtils.loadURIString(browser, url);
   await wait_for_event(browser, "DOMAudioPlaybackStarted");
 
   var result = await SpecialPowers.spawn(browser, [], test_audio_in_browser);
@@ -55,7 +55,7 @@ async function test_on_browser(url, browser) {
 }
 
 async function test_visibility(url, browser) {
-  BrowserTestUtils.loadURI(browser, url);
+  BrowserTestUtils.loadURIString(browser, url);
   await wait_for_event(browser, "DOMAudioPlaybackStarted");
 
   var result = await SpecialPowers.spawn(browser, [], test_audio_in_browser);

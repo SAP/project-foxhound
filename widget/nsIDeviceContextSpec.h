@@ -9,6 +9,8 @@
 #include "gfxPoint.h"
 #include "nsISupports.h"
 #include "mozilla/StaticPrefs_print.h"
+#include "mozilla/gfx/PrintPromise.h"
+#include "mozilla/MoveOnlyFunction.h"
 
 class nsIWidget;
 class nsIPrintSettings;
@@ -40,8 +42,7 @@ class nsIDeviceContextSpec : public nsISupports {
    * @param aIsPrintPreview True if creating Spec for PrintPreview
    * @return NS_OK or a suitable error code.
    */
-  NS_IMETHOD Init(nsIWidget* aWidget, nsIPrintSettings* aPrintSettings,
-                  bool aIsPrintPreview) = 0;
+  NS_IMETHOD Init(nsIPrintSettings* aPrintSettings, bool aIsPrintPreview) = 0;
 
   virtual already_AddRefed<PrintTarget> MakePrintTarget() = 0;
 
@@ -59,34 +60,44 @@ class nsIDeviceContextSpec : public nsISupports {
   }
 
   /**
-   * Override to return something other than the default.
-   *
    * @return DPI for printing.
    */
-  virtual float GetDPI() { return mozilla::StaticPrefs::print_default_dpi(); }
+  float GetDPI() { return mozilla::StaticPrefs::print_default_dpi(); }
 
   /**
-   * Override to return something other than the default.
-   *
    * @return the printing scale to be applied to the context for printing.
    */
-  virtual float GetPrintingScale() { return 72.0f / GetDPI(); }
+  float GetPrintingScale();
 
   /**
-   * Override to return something other than the default.
-   *
    * @return the point to translate the context to for printing.
    */
-  virtual gfxPoint GetPrintingTranslate() { return gfxPoint(0, 0); }
+  gfxPoint GetPrintingTranslate();
 
   NS_IMETHOD BeginDocument(const nsAString& aTitle,
                            const nsAString& aPrintToFileName,
                            int32_t aStartPage, int32_t aEndPage) = 0;
 
-  NS_IMETHOD EndDocument() = 0;
-  NS_IMETHOD AbortDocument() { return EndDocument(); }
+  virtual RefPtr<mozilla::gfx::PrintEndDocumentPromise> EndDocument() = 0;
   NS_IMETHOD BeginPage() = 0;
   NS_IMETHOD EndPage() = 0;
+
+ protected:
+  using AsyncEndDocumentFunction = mozilla::MoveOnlyFunction<nsresult()>;
+  static RefPtr<mozilla::gfx::PrintEndDocumentPromise> EndDocumentAsync(
+      const char* aCallSite, AsyncEndDocumentFunction aFunction);
+
+  static RefPtr<mozilla::gfx::PrintEndDocumentPromise>
+  EndDocumentPromiseFromResult(nsresult aResult, const char* aSite);
+
+  nsCOMPtr<nsIPrintSettings> mPrintSettings;
+
+#ifdef MOZ_ENABLE_SKIA_PDF
+  // This variable is independant of nsIPrintSettings::kOutputFormatPDF (i.e.
+  // save-to-PDF). If set to true, then even when we print to a printer we
+  // output and send it PDF.
+  bool mPrintViaSkPDF = false;
+#endif
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIDeviceContextSpec, NS_IDEVICE_CONTEXT_SPEC_IID)

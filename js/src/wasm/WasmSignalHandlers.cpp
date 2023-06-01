@@ -25,6 +25,7 @@
 #include "vm/JitActivation.h"  // js::jit::JitActivation
 #include "vm/Realm.h"
 #include "vm/Runtime.h"
+#include "wasm/WasmCode.h"
 #include "wasm/WasmInstance.h"
 
 #if defined(XP_WIN)
@@ -155,6 +156,17 @@ using mozilla::DebugOnly;
                                defined(__ppc64le__) || defined(__PPC64LE__))
 #      define R01_sig(p) ((p)->uc_mcontext.gp_regs[1])
 #      define R32_sig(p) ((p)->uc_mcontext.gp_regs[32])
+#    endif
+#    if defined(__linux__) && defined(__loongarch__)
+#      define EPC_sig(p) ((p)->uc_mcontext.__pc)
+#      define RRA_sig(p) ((p)->uc_mcontext.__gregs[1])
+#      define R03_sig(p) ((p)->uc_mcontext.__gregs[3])
+#      define RFP_sig(p) ((p)->uc_mcontext.__gregs[22])
+#    endif
+#    if defined(__sun__) && defined(__sparc__)
+#      define PC_sig(p) ((p)->uc_mcontext.gregs[REG_PC])
+#      define FP_sig(p) ((p)->uc_mcontext.gregs[REG_FPRS])
+#      define SP_sig(p) ((p)->uc_mcontext.gregs[REG_SP])
 #    endif
 #  elif defined(__NetBSD__)
 #    define EIP_sig(p) ((p)->uc_mcontext.__gregs[_REG_EIP])
@@ -294,6 +306,23 @@ typedef struct ucontext {
   // Other fields are not used so don't define them here.
 } ucontext_t;
 
+#      elif defined(__loongarch64)
+
+typedef struct {
+  uint64_t pc;
+  uint64_t gregs[32];
+  uint64_t fpregs[32];
+  uint32_t fpc_csr;
+} mcontext_t;
+
+typedef struct ucontext {
+  uint32_t uc_flags;
+  struct ucontext* uc_link;
+  stack_t uc_stack;
+  mcontext_t uc_mcontext;
+  // Other fields are not used so don't define them here.
+} ucontext_t;
+
 #      elif defined(__i386__)
 // x86 version for Android.
 typedef struct {
@@ -376,6 +405,11 @@ struct macos_aarch64_context {
 #    define PC_sig(p) R32_sig(p)
 #    define SP_sig(p) R01_sig(p)
 #    define FP_sig(p) R01_sig(p)
+#  elif defined(__loongarch__)
+#    define PC_sig(p) EPC_sig(p)
+#    define FP_sig(p) RFP_sig(p)
+#    define SP_sig(p) R03_sig(p)
+#    define LR_sig(p) RRA_sig(p)
 #  endif
 
 static void SetContextPC(CONTEXT* context, uint8_t* pc) {
@@ -410,7 +444,8 @@ static uint8_t* ContextToSP(CONTEXT* context) {
 #  endif
 }
 
-#  if defined(__arm__) || defined(__aarch64__) || defined(__mips__)
+#  if defined(__arm__) || defined(__aarch64__) || defined(__mips__) || \
+      defined(__loongarch__)
 static uint8_t* ContextToLR(CONTEXT* context) {
 #    ifdef LR_sig
   return reinterpret_cast<uint8_t*>(LR_sig(context));
@@ -426,7 +461,8 @@ static JS::ProfilingFrameIterator::RegisterState ToRegisterState(
   state.fp = ContextToFP(context);
   state.pc = ContextToPC(context);
   state.sp = ContextToSP(context);
-#  if defined(__arm__) || defined(__aarch64__) || defined(__mips__)
+#  if defined(__arm__) || defined(__aarch64__) || defined(__mips__) || \
+      defined(__loongarch__)
   state.lr = ContextToLR(context);
 #  else
   state.lr = (void*)UINTPTR_MAX;
@@ -471,100 +507,6 @@ struct AutoHandlingTrap {
   MOZ_ASSERT(sAlreadyHandlingTrap.get());
 
   uint8_t* pc = ContextToPC(context);
-
-#  ifdef ENABLE_WASM_CALL_INDIRECT_NULL
-  // If pc is null and a plausible return address can be obtained then the pc
-  // will be set to that address and indirectCallToNull will be set to true.
-  // After that, the normal filtering will validate the pc, and we will check
-  // below that there is an IndirectCallToNull trap at that address.
-
-  bool indirectCallToNull = false;
-  if (pc == nullptr) {
-#    if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
-
-    // On Intel we must read the return address from the stack, but before
-    // doing that we want to validate the sp as much as possible.
-
-    uint8_t* sp = ContextToSP(context);
-
-    // Check that sp has pointer alignment.
-
-    if (uintptr_t(sp) & (sizeof(uintptr_t) - 1)) {
-      return false;
-    }
-
-    // Check that the stack would be aligned for the Wasm ABI after popping the
-    // return address.
-
-    if (uintptr_t(sp + sizeof(uintptr_t)) & (jit::WasmStackAlignment - 1)) {
-      return false;
-    }
-
-    // Check that the SP/FP relationship is sane.
-
-    if (sp >= ContextToFP(context)) {
-      return false;
-    }
-
-    // Check that sp is within the stack base and limit, when we can.
-
-    if (assertCx) {
-      if (uintptr_t(sp) >= assertCx->nativeStackBase() ||
-          uintptr_t(sp) < assertCx->jitStackLimitNoInterrupt) {
-        return false;
-      }
-    } else {
-      // (Darwin-on-Intel only) We're on a different thread, hence TlsContext
-      // could supply no JSContext to us, and we can't verify that the sp points
-      // into the stack area.  It may not matter much, because if we get a wild
-      // sp value then either it points to unmapped memory and we will fault, or
-      // it points to an address that is either not code or does not have the
-      // correct trap value associated with it.
-    }
-
-    // Even when we know sp points into a stack and is aligned, we don't know
-    // for sure whether the memory at *sp will be mapped, and the load could
-    // fault.  That would indicate buggy code however, and regular recursive
-    // SIGSEGV handling should take care of it, see comments above.
-    //
-    // One reason for unmapped stack is that the stack has never extended that
-    // far down before.  In this case the sp could have been moved into the
-    // unmapped area by a bug.  Importantly the sp will not be moved into the
-    // unmapped area by a legitimate call instruction, since it pushes the
-    // return address and a page will be mapped in for that through a mechanism
-    // that does not affect us here (as we're guarded on pc==0, which would not
-    // be the case for a stack fault).
-    //
-    // Another reason for unmapped stack is that the memory could have become
-    // unmapped *after* the return address was successfully pushed and the pc
-    // updated.  This would be a weird race, again a bug.
-
-    pc = *reinterpret_cast<uint8_t**>(sp);
-    indirectCallToNull = true;
-
-#    elif defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) || \
-        defined(JS_CODEGEN_MIPS64)
-
-    uint8_t* lr = ContextToLR(context);
-
-    // Check that the return address is a plausible code pointer.  On these
-    // platforms, instructions are all four bytes long.
-
-    if (uintptr_t(lr) & 3) {
-      return false;
-    }
-
-    pc = lr;
-    indirectCallToNull = true;
-
-#    else
-
-#      error "Platform code needed"
-
-#    endif
-  }
-#  endif  // ENABLE_WASM_CALL_INDIRECT_NULL
-
   const CodeSegment* codeSegment = LookupCodeSegment(pc);
   if (!codeSegment || !codeSegment->isModule()) {
     return false;
@@ -572,54 +514,22 @@ struct AutoHandlingTrap {
 
   const ModuleSegment& segment = *codeSegment->asModule();
 
-  Trap trap1, trap2;
+  Trap trap;
   BytecodeOffset bytecode;
-  if (!segment.code().lookupTrap(pc, &trap1, &trap2, &bytecode)) {
+  if (!segment.code().lookupTrap(pc, &trap, &bytecode)) {
     return false;
   }
-
-#  ifdef ENABLE_WASM_CALL_INDIRECT_NULL
-  if (indirectCallToNull) {
-    // Final validation: We must find the right trap type at the call.
-    if (trap1 != Trap::IndirectCallToNull &&
-        trap2 != Trap::IndirectCallToNull) {
-      return false;
-    }
-
-    // Commit.  Quash the other trap (if present) and roll the PC back to the
-    // return point in the caller.
-    if (trap1 != Trap::IndirectCallToNull) {
-      trap1 = trap2;
-    }
-    trap2 = Trap::Limit;
-    SetContextPC(context, pc);
-  } else {
-    // Not an indirect call to null, so pick the other trap, if present.
-    if (trap1 == Trap::IndirectCallToNull) {
-      if (trap2 == Trap::Limit) {
-        return false;
-      }
-      trap1 = trap2;
-    }
-    trap2 = Trap::Limit;
-  }
-#  endif
-  // We must have exactly one trap here.
-  MOZ_ASSERT(trap1 != Trap::Limit && trap2 == Trap::Limit);
 
   // We have a safe, expected wasm trap, so fp is well-defined to be a Frame*.
   // For the first sanity check, the Trap::IndirectCallBadSig special case is
   // due to this trap occurring in the indirect call prologue, while fp points
   // to the caller's Frame which can be in a different Module. In any case,
   // though, the containing JSContext is the same.
-  //
-  // (Note the special case does not apply to Trap::IndirectCallToNull because
-  // in that case the pc has been rolled back to the caller.)
 
   auto* frame = reinterpret_cast<Frame*>(ContextToFP(context));
-  Instance* instance = GetNearestEffectiveTls(frame)->instance;
+  Instance* instance = GetNearestEffectiveInstance(frame);
   MOZ_RELEASE_ASSERT(&instance->code() == &segment.code() ||
-                     trap1 == Trap::IndirectCallBadSig);
+                     trap == Trap::IndirectCallBadSig);
 
   JSContext* cx =
       instance->realm()->runtimeFromAnyThread()->mainContextFromAnyThread();
@@ -629,7 +539,7 @@ struct AutoHandlingTrap {
   // point of the trap to allow stack unwinding or resumption, both of which
   // will call finishWasmTrap().
   jit::JitActivation* activation = cx->activation()->asJit();
-  activation->startWasmTrap(trap1, bytecode.offset(), ToRegisterState(context));
+  activation->startWasmTrap(trap, bytecode.offset(), ToRegisterState(context));
   SetContextPC(context, segment.trapCode());
   return true;
 }
@@ -822,7 +732,7 @@ static void MachExceptionHandlerThread() {
 
 #  else  // If not Windows or Mac, assume Unix
 
-#    ifdef __mips__
+#    if defined(__mips__) || defined(__loongarch__)
 static const uint32_t kWasmTrapSignal = SIGFPE;
 #    else
 static const uint32_t kWasmTrapSignal = SIGILL;
@@ -884,8 +794,6 @@ static void WasmTrapHandler(int signum, siginfo_t* info, void* context) {
 extern "C" MFBT_API bool IsSignalHandlingBroken();
 #  endif
 
-#endif  // !(JS_CODEGEN_NONE)
-
 struct InstallState {
   bool tried;
   bool success;
@@ -895,7 +803,13 @@ struct InstallState {
 static ExclusiveData<InstallState> sEagerInstallState(
     mutexid::WasmSignalInstallState);
 
+#endif  // !(JS_CODEGEN_NONE)
+
 void wasm::EnsureEagerProcessSignalHandlers() {
+#ifdef JS_CODEGEN_NONE
+  // If there is no JIT, then there should be no Wasm signal handlers.
+  return;
+#else
   auto eagerInstallState = sEagerInstallState.lock();
   if (eagerInstallState->tried) {
     return;
@@ -903,11 +817,6 @@ void wasm::EnsureEagerProcessSignalHandlers() {
 
   eagerInstallState->tried = true;
   MOZ_RELEASE_ASSERT(eagerInstallState->success == false);
-
-#if defined(JS_CODEGEN_NONE)
-  // If there is no JIT, then there should be no Wasm signal handlers.
-  return;
-#else
 
 #  if defined(ANDROID) && defined(MOZ_LINKER)
   // Signal handling is broken on some android systems.
@@ -923,13 +832,12 @@ void wasm::EnsureEagerProcessSignalHandlers() {
 
 #    if defined(MOZ_ASAN)
   // Under ASan we need to let the ASan runtime's ShadowExceptionHandler stay
-  // in the first handler position. This requires some coordination with
-  // MemoryProtectionExceptionHandler::isDisabled().
+  // in the first handler position.
   const bool firstHandler = false;
 #    else
   // Otherwise, WasmTrapHandler needs to go first, so that we can recover
   // from wasm faults and continue execution without triggering handlers
-  // such as MemoryProtectionExceptionHandler that assume we are crashing.
+  // such as Breakpad that assume we are crashing.
   const bool firstHandler = true;
 #    endif
   if (!AddVectoredExceptionHandler(firstHandler, WasmTrapHandler)) {
@@ -980,6 +888,7 @@ void wasm::EnsureEagerProcessSignalHandlers() {
 #endif
 }
 
+#ifndef JS_CODEGEN_NONE
 static ExclusiveData<InstallState> sLazyInstallState(
     mutexid::WasmSignalInstallState);
 
@@ -992,7 +901,7 @@ static bool EnsureLazyProcessSignalHandlers() {
   lazyInstallState->tried = true;
   MOZ_RELEASE_ASSERT(lazyInstallState->success == false);
 
-#ifdef XP_DARWIN
+#  ifdef XP_DARWIN
   // Create the port that all JSContext threads will redirect their traps to.
   kern_return_t kret;
   kret = mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE,
@@ -1014,13 +923,17 @@ static bool EnsureLazyProcessSignalHandlers() {
     return false;
   }
   handlerThread.detach();
-#endif
+#  endif
 
   lazyInstallState->success = true;
   return true;
 }
+#endif  // JS_CODEGEN_NONE
 
 bool wasm::EnsureFullSignalHandlers(JSContext* cx) {
+#ifdef JS_CODEGEN_NONE
+  return false;
+#else
   if (cx->wasm().triedToInstallSignalHandlers) {
     return cx->wasm().haveSignalHandlers;
   }
@@ -1040,7 +953,7 @@ bool wasm::EnsureFullSignalHandlers(JSContext* cx) {
     return false;
   }
 
-#ifdef XP_DARWIN
+#  ifdef XP_DARWIN
   // In addition to the process-wide signal handler setup, OSX needs each
   // thread configured to send its exceptions to sMachDebugPort. While there
   // are also task-level (i.e. process-level) exception ports, those are
@@ -1058,14 +971,18 @@ bool wasm::EnsureFullSignalHandlers(JSContext* cx) {
   if (kret != KERN_SUCCESS) {
     return false;
   }
-#endif
+#  endif
 
   cx->wasm().haveSignalHandlers = true;
   return true;
+#endif
 }
 
 bool wasm::MemoryAccessTraps(const RegisterState& regs, uint8_t* addr,
                              uint32_t numBytes, uint8_t** newPC) {
+#ifdef JS_CODEGEN_NONE
+  return false;
+#else
   const wasm::CodeSegment* codeSegment = wasm::LookupCodeSegment(regs.pc);
   if (!codeSegment || !codeSegment->isModule()) {
     return false;
@@ -1073,30 +990,67 @@ bool wasm::MemoryAccessTraps(const RegisterState& regs, uint8_t* addr,
 
   const wasm::ModuleSegment& segment = *codeSegment->asModule();
 
-  Trap trap1, trap2;
+  Trap trap;
   BytecodeOffset bytecode;
-  if (!segment.code().lookupTrap(regs.pc, &trap1, &trap2, &bytecode) ||
-      (trap1 != Trap::OutOfBounds && trap2 != Trap::OutOfBounds)) {
+  if (!segment.code().lookupTrap(regs.pc, &trap, &bytecode)) {
     return false;
   }
+  switch (trap) {
+    case Trap::OutOfBounds:
+      break;
+    case Trap::NullPointerDereference:
+      break;
+#  ifdef WASM_HAS_HEAPREG
+    case Trap::IndirectCallToNull:
+      // We use the null pointer exception from loading the heapreg to
+      // handle indirect calls to null.
+      break;
+#  endif
+    default:
+      return false;
+  }
 
-  Instance& instance =
-      *GetNearestEffectiveTls(Frame::fromUntaggedWasmExitFP(regs.fp))->instance;
+  const Instance& instance =
+      *GetNearestEffectiveInstance(Frame::fromUntaggedWasmExitFP(regs.fp));
   MOZ_ASSERT(&instance.code() == &segment.code());
 
-  if (!instance.memoryAccessInGuardRegion((uint8_t*)addr, numBytes)) {
-    return false;
+  switch (trap) {
+    case Trap::OutOfBounds:
+      if (!instance.memoryAccessInGuardRegion((uint8_t*)addr, numBytes)) {
+        return false;
+      }
+      break;
+    case Trap::NullPointerDereference:
+      if ((uintptr_t)addr >= NullPtrGuardSize) {
+        return false;
+      }
+      break;
+#  ifdef WASM_HAS_HEAPREG
+    case Trap::IndirectCallToNull:
+      // Null pointer plus the appropriate offset.
+      if (addr !=
+          reinterpret_cast<uint8_t*>(wasm::Instance::offsetOfMemoryBase())) {
+        return false;
+      }
+      break;
+#  endif
+    default:
+      MOZ_CRASH("Should not happen");
   }
 
   JSContext* cx = TlsContext.get();  // Cold simulator helper function
   jit::JitActivation* activation = cx->activation()->asJit();
-  activation->startWasmTrap(Trap::OutOfBounds, bytecode.offset(), regs);
+  activation->startWasmTrap(trap, bytecode.offset(), regs);
   *newPC = segment.trapCode();
   return true;
+#endif
 }
 
 bool wasm::HandleIllegalInstruction(const RegisterState& regs,
                                     uint8_t** newPC) {
+#ifdef JS_CODEGEN_NONE
+  return false;
+#else
   const wasm::CodeSegment* codeSegment = wasm::LookupCodeSegment(regs.pc);
   if (!codeSegment || !codeSegment->isModule()) {
     return false;
@@ -1104,16 +1058,16 @@ bool wasm::HandleIllegalInstruction(const RegisterState& regs,
 
   const wasm::ModuleSegment& segment = *codeSegment->asModule();
 
-  Trap trap1, trap2;
+  Trap trap;
   BytecodeOffset bytecode;
-  if (!segment.code().lookupTrap(regs.pc, &trap1, &trap2, &bytecode)) {
+  if (!segment.code().lookupTrap(regs.pc, &trap, &bytecode)) {
     return false;
   }
-  MOZ_ASSERT(trap2 == Trap::Limit, "There should only be one trap here");
 
   JSContext* cx = TlsContext.get();  // Cold simulator helper function
   jit::JitActivation* activation = cx->activation()->asJit();
-  activation->startWasmTrap(trap1, bytecode.offset(), regs);
+  activation->startWasmTrap(trap, bytecode.offset(), regs);
   *newPC = segment.trapCode();
   return true;
+#endif
 }

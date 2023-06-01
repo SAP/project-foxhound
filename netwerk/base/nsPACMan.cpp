@@ -554,9 +554,10 @@ nsresult nsPACMan::LoadPACFromURI(const nsACString& aSpec,
   if (!mLoadPending) {
     nsCOMPtr<nsIRunnable> runnable = NewRunnableMethod(
         "nsPACMan::StartLoading", this, &nsPACMan::StartLoading);
-    nsresult rv = NS_IsMainThread()
-                      ? Dispatch(runnable.forget())
-                      : GetCurrentEventTarget()->Dispatch(runnable.forget());
+    nsresult rv =
+        NS_IsMainThread()
+            ? Dispatch(runnable.forget())
+            : GetCurrentSerialEventTarget()->Dispatch(runnable.forget());
     if (NS_FAILED(rv)) return rv;
     mLoadPending = true;
   }
@@ -802,7 +803,9 @@ bool nsPACMan::ProcessPending() {
 
   RefPtr<PendingPACQuery> query(dont_AddRef(mPendingQ.popFirst()));
 
-  if (mShutdown || IsLoading()) {
+  // Having |mLoadFailureCount > 0| means we haven't had a sucessful PAC load
+  // yet. We should use DIRECT instead.
+  if (mShutdown || IsLoading() || mLoadFailureCount > 0) {
     query->Complete(NS_ERROR_NOT_AVAILABLE, ""_ns);
     return true;
   }
@@ -868,6 +871,7 @@ nsPACMan::OnStreamComplete(nsIStreamLoader* loader, nsISupports* context,
                            const uint8_t* data) {
   MOZ_ASSERT(NS_IsMainThread(), "wrong thread");
 
+  bool loadSucceeded = NS_SUCCEEDED(status) && HttpRequestSucceeded(loader);
   {
     auto locked = mLoader.Lock();
     if (locked.ref() != loader) {
@@ -876,13 +880,21 @@ nsPACMan::OnStreamComplete(nsIStreamLoader* loader, nsISupports* context,
       // should be NS_ERROR_ABORT, and if so, then we know that we can and
       // should delay any processing.
       LOG(("OnStreamComplete: called more than once\n"));
-      if (status == NS_ERROR_ABORT) return NS_OK;
+      if (status == NS_ERROR_ABORT) {
+        return NS_OK;
+      }
+    } else if (!loadSucceeded) {
+      // We have to clear the loader to indicate that we are not loading PAC
+      // currently.
+      // Note that we can only clear the loader when |loader| and |mLoader| are
+      // the same one.
+      locked.ref() = nullptr;
     }
   }
 
   LOG(("OnStreamComplete: entry\n"));
 
-  if (NS_SUCCEEDED(status) && HttpRequestSucceeded(loader)) {
+  if (loadSucceeded) {
     // Get the URI spec used to load this PAC script.
     nsAutoCString pacURI;
     {

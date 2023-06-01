@@ -7,8 +7,8 @@ Services.scriptloader.loadSubScript(CHROME_URL_ROOT + "helper-addons.js", this);
 
 // There are shutdown issues for which multiple rejections are left uncaught.
 // See bug 1018184 for resolving these issues.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 PromiseTestUtils.allowMatchingRejectionsGlobally(/File closed/);
 
@@ -20,6 +20,12 @@ const ADDON_NAME = "test-devtools-webextension";
 
 const OTHER_ADDON_ID = "other-test-devtools-webextension@mozilla.org";
 const OTHER_ADDON_NAME = "other-test-devtools-webextension";
+
+const POPUPONLY_ADDON_ID = "popuponly-test-devtools-webextension@mozilla.org";
+const POPUPONLY_ADDON_NAME = "popuponly-test-devtools-webextension";
+
+const BACKGROUND_ADDON_ID = "background-test-devtools-webextension@mozilla.org";
+const BACKGROUND_ADDON_NAME = "background-test-devtools-webextension";
 
 /**
  * This test file ensures that the webextension addon developer toolbox:
@@ -34,7 +40,7 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
 
   await installTemporaryExtensionFromXPI(
     {
-      background: function() {
+      background() {
         window.myWebExtensionAddonFunction = function() {
           console.log(
             "Background page function called",
@@ -52,6 +58,7 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
         browser_action: {
           default_title: "WebExtension Popup Debugging",
           default_popup: "popup.html",
+          default_area: "navbar",
         },
       },
       files: {
@@ -85,7 +92,7 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
   // Install another addon in order to ensure we don't get its logs
   await installTemporaryExtensionFromXPI(
     {
-      background: function() {
+      background() {
         console.log("Other addon log");
 
         const style = document.createElement("style");
@@ -98,6 +105,7 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
         browser_action: {
           default_title: "Other addon popup",
           default_popup: "other-popup.html",
+          default_area: "navbar",
         },
       },
       files: {
@@ -128,7 +136,7 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
     document
   );
 
-  const { devtoolsTab, devtoolsWindow } = await openAboutDevtoolsToolbox(
+  const { devtoolsWindow } = await openAboutDevtoolsToolbox(
     document,
     tab,
     window,
@@ -140,14 +148,15 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
 
   info("Trigger some code in the background page logging some stuff");
   const onMessage = waitUntil(() => {
-    return findMessages(hud, "Background page exception").length > 0;
+    return !!findMessagesByType(hud, "Background page exception", ".error")
+      .length;
   });
   hud.ui.wrapper.dispatchEvaluateExpression("myWebExtensionAddonFunction()");
   await onMessage;
 
   info("Open the two add-ons popups to cover popups messages");
   const onPopupMessage = waitUntil(() => {
-    return findMessages(hud, "Popup exception").length > 0;
+    return !!findMessagesByType(hud, "Popup exception", ".error").length;
   });
   clickOnAddonWidget(OTHER_ADDON_ID);
   clickOnAddonWidget(ADDON_ID);
@@ -157,67 +166,65 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
   await wait(1000);
 
   is(
-    findMessages(hud, "Background page exception").length,
+    findMessagesByType(hud, "Background page exception", ".error").length,
     1,
     "We get the background page exception"
   );
   is(
-    findMessages(hud, "Popup exception").length,
+    findMessagesByType(hud, "Popup exception", ".error").length,
     1,
     "We get the popup exception"
   );
   is(
-    findMessages(
+    findMessagesByType(
       hud,
-      "Expected color but found ‘error’.  Error in parsing value for ‘color’.  Declaration dropped."
+      "Expected color but found ‘error’.  Error in parsing value for ‘color’.  Declaration dropped.",
+      ".warn"
     ).length,
     1,
     "We get the addon's background page CSS error message"
   );
   is(
-    findMessages(
+    findMessagesByType(
       hud,
-      "Expected color but found ‘popup-error’.  Error in parsing value for ‘color’.  Declaration dropped."
+      "Expected color but found ‘popup-error’.  Error in parsing value for ‘color’.  Declaration dropped.",
+      ".warn"
     ).length,
     1,
     "We get the addon's popup CSS error message"
   );
 
   // Verify that we don't get the other addon log and errors
-  is(
-    findMessages(hud, "Other addon log").length,
-    0,
+  ok(
+    !findMessageByType(hud, "Other addon log", ".console-api"),
     "We don't get the other addon log"
   );
-  is(
-    findMessages(hud, "Other addon exception").length,
-    0,
+  ok(
+    !findMessageByType(hud, "Other addon exception", ".console-api"),
     "We don't get the other addon exception"
   );
-  is(
-    findMessages(hud, "Other popup log").length,
-    0,
+  ok(
+    !findMessageByType(hud, "Other popup log", ".console-api"),
     "We don't get the other addon popup log"
   );
-  is(
-    findMessages(hud, "Other popup exception").length,
-    0,
+  ok(
+    !findMessageByType(hud, "Other popup exception", ".error"),
     "We don't get the other addon popup exception"
   );
-  is(
-    findMessages(
+  ok(
+    !findMessageByType(
       hud,
-      "Expected color but found ‘error’.  Error in parsing value for ‘background-color’.  Declaration dropped."
-    ).length,
-    0,
+      "Expected color but found ‘error’.  Error in parsing value for ‘background-color’.  Declaration dropped.",
+      ".warn"
+    ),
     "We don't get the other addon's background page CSS error message"
   );
-  is(
-    findMessages(
+  ok(
+    !findMessageByType(
       hud,
-      "Expected color but found ‘popup-error’.  Error in parsing value for ‘background-color’.  Declaration dropped."
-    ).length,
-    0,
+      "Expected color but found ‘popup-error’.  Error in parsing value for ‘background-color’.  Declaration dropped.",
+      ".warn"
+    ),
     "We don't get the other addon's popup CSS error message"
   );
 
@@ -230,12 +237,13 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
   await onDomCompleteResource;
 
   info("Try to evaluate something after reload");
-  const onEvaluationResultAfterReload = waitUntil(() => {
-    return findMessages(hud, "result:2").length > 0;
-  });
-  const onMessageAfterReload = waitUntil(() => {
-    return findMessages(hud, "message after reload", ".console-api").length > 0;
-  });
+
+  const onEvaluationResultAfterReload = waitUntil(() =>
+    findMessageByType(hud, "result:2", ".result")
+  );
+  const onMessageAfterReload = waitUntil(() =>
+    findMessageByType(hud, "message after reload", ".console-api")
+  );
   hud.ui.wrapper.dispatchEvaluateExpression(
     "console.log('message after reload'); 'result:' + (1 + 1)"
   );
@@ -244,7 +252,7 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
   // And we received the evaluation result
   await onEvaluationResultAfterReload;
 
-  await closeAboutDevtoolsToolbox(document, devtoolsTab, window);
+  await closeWebExtAboutDevtoolsToolbox(devtoolsWindow, window);
 
   // Note that it seems to be important to remove the addons in the reverse order
   // from which they were installed...
@@ -253,10 +261,181 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
   await removeTab(tab);
 });
 
-function findMessages(hud, text, selector = ".message") {
-  const messages = hud.ui.outputNode.querySelectorAll(selector);
-  const elements = Array.prototype.filter.call(messages, el =>
-    el.textContent.includes(text)
+add_task(async function testWebExtensionNoBgScript() {
+  await pushPref("devtools.webconsole.filter.css", true);
+  await enableExtensionDebugging();
+  const { document, tab, window } = await openAboutDebugging();
+  await selectThisFirefoxPage(document, window.AboutDebugging.store);
+
+  await installTemporaryExtensionFromXPI(
+    {
+      extraProperties: {
+        browser_action: {
+          default_title: "WebExtension Popup Only",
+          default_popup: "popup.html",
+          default_area: "navbar",
+        },
+      },
+      files: {
+        "popup.html": `<!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <script src="popup.js"></script>
+          </head>
+          <body>
+            Popup
+          </body>
+        </html>
+      `,
+        "popup.js": function() {
+          console.log("Popup-only log");
+
+          const style = document.createElement("style");
+          style.textContent = "* { color: popup-only-error; }";
+          document.documentElement.appendChild(style);
+
+          throw new Error("Popup-only exception");
+        },
+      },
+      id: POPUPONLY_ADDON_ID,
+      name: POPUPONLY_ADDON_NAME,
+    },
+    document
   );
-  return elements;
-}
+
+  const { devtoolsWindow } = await openAboutDevtoolsToolbox(
+    document,
+    tab,
+    window,
+    POPUPONLY_ADDON_NAME
+  );
+  const toolbox = getToolbox(devtoolsWindow);
+  const webconsole = await toolbox.selectTool("webconsole");
+  const { hud } = webconsole;
+
+  info("Open the add-on popup");
+  const onPopupMessage = waitUntil(() => {
+    return !!findMessagesByType(hud, "Popup-only exception", ".error").length;
+  });
+  clickOnAddonWidget(POPUPONLY_ADDON_ID);
+  await onPopupMessage;
+
+  info("Wait a bit to catch unexpected duplicates or mixed up messages");
+  await wait(1000);
+  is(
+    findMessagesByType(hud, "Popup-only exception", ".error").length,
+    1,
+    "We get the popup exception"
+  );
+  is(
+    findMessagesByType(hud, "Popup-only log", ".console-api").length,
+    1,
+    "We get the addon's popup log"
+  );
+  is(
+    findMessagesByType(
+      hud,
+      "Expected color but found ‘popup-only-error’.  Error in parsing value for ‘color’.  Declaration dropped.",
+      ".warn"
+    ).length,
+    1,
+    "We get the addon's popup CSS error message"
+  );
+
+  await closeWebExtAboutDevtoolsToolbox(devtoolsWindow, window);
+  await removeTemporaryExtension(POPUPONLY_ADDON_NAME, document);
+  await removeTab(tab);
+});
+
+// Check that reloading the addon several times does not break the console,
+// see Bug 1778951.
+add_task(async function testWebExtensionTwoReloads() {
+  await enableExtensionDebugging();
+  const { document, tab, window } = await openAboutDebugging();
+  await selectThisFirefoxPage(document, window.AboutDebugging.store);
+
+  await installTemporaryExtensionFromXPI(
+    {
+      background() {
+        console.log("Background page log");
+      },
+      extraProperties: {
+        browser_action: {
+          default_title: "WebExtension with background script",
+          default_popup: "popup.html",
+          default_area: "navbar",
+        },
+      },
+      files: {
+        "popup.html": `<!DOCTYPE html>
+        <html>
+          <body>
+            Popup
+          </body>
+        </html>
+      `,
+      },
+      id: BACKGROUND_ADDON_ID,
+      name: BACKGROUND_ADDON_NAME,
+    },
+    document
+  );
+
+  // Retrieve the addonTarget element before calling `openAboutDevtoolsToolbox`,
+  // otherwise it will pick the about:devtools-toolbox tab with the same name
+  // instead.
+  const addonTarget = findDebugTargetByText(BACKGROUND_ADDON_NAME, document);
+
+  const { devtoolsWindow } = await openAboutDevtoolsToolbox(
+    document,
+    tab,
+    window,
+    BACKGROUND_ADDON_NAME
+  );
+  const toolbox = getToolbox(devtoolsWindow);
+  const webconsole = await toolbox.selectTool("webconsole");
+  const { hud } = webconsole;
+
+  // Verify that console evaluations still work after reloading the addon
+  info("Reload the webextension itself");
+  let { onDomCompleteResource } = await waitForNextTopLevelDomCompleteResource(
+    toolbox.commands
+  );
+  const reloadButton = addonTarget.querySelector(
+    ".qa-temporary-extension-reload-button"
+  );
+  reloadButton.click();
+  await onDomCompleteResource;
+
+  info("Try to evaluate something after 1st addon reload");
+  // Wait before evaluating the message, otherwise they might be cleaned up by
+  // the console UI.
+  info("Wait until the background script log is visible");
+  await waitUntil(() =>
+    findMessageByType(hud, "Background page log", ".message")
+  );
+
+  hud.ui.wrapper.dispatchEvaluateExpression("40+1");
+  await waitUntil(() => findMessageByType(hud, "41", ".result"));
+
+  info("Reload the extension a second time");
+  ({ onDomCompleteResource } = await waitForNextTopLevelDomCompleteResource(
+    toolbox.commands
+  ));
+  reloadButton.click();
+  await onDomCompleteResource;
+
+  info("Wait until the background script log is visible - after reload");
+  await waitUntil(() =>
+    findMessageByType(hud, "Background page log", ".message")
+  );
+
+  info("Try to evaluate something after 2nd addon reload");
+  hud.ui.wrapper.dispatchEvaluateExpression("40+2");
+  await waitUntil(() => findMessageByType(hud, "42", ".result"));
+
+  await closeWebExtAboutDevtoolsToolbox(devtoolsWindow, window);
+  await removeTemporaryExtension(BACKGROUND_ADDON_NAME, document);
+  await removeTab(tab);
+});

@@ -246,18 +246,7 @@ add_task(async function() {
     return;
   }
 
-  {
-    let omniJa = Services.dirsvc.get("XCurProcD", Ci.nsIFile);
-    omniJa.append("omni.ja");
-    if (!omniJa.exists()) {
-      ok(
-        false,
-        "This test requires a packaged build, " +
-          "run 'mach package' and then use --appname=dist"
-      );
-      return;
-    }
-  }
+  TestUtils.assertPackagedBuild();
 
   let startupRecorder = Cc["@mozilla.org/test/startuprecorder;1"].getService()
     .wrappedJSObject;
@@ -437,9 +426,7 @@ add_task(async function() {
     ok(shouldPass, "No unexpected main thread I/O during startup");
   } else {
     const filename = "profile_startup_content_mainthreadio.json";
-    let path = Cc["@mozilla.org/process/environment;1"]
-      .getService(Ci.nsIEnvironment)
-      .get("MOZ_UPLOAD_DIR");
+    let path = Services.env.get("MOZ_UPLOAD_DIR");
     let profilePath = PathUtils.join(path, filename);
     await IOUtils.writeJSON(profilePath, startupRecorder.data.profile);
     ok(

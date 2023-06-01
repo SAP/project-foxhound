@@ -17,22 +17,22 @@ fn join_with_comma(list: &[ExpectedToken]) -> String {
     string
 }
 
-/// One of the expected tokens returned in [`InvalidToken`](ErrorKind::InvalidToken)
+/// One of the expected tokens returned in [`InvalidToken`](ErrorKind::InvalidToken).
 #[derive(Debug, PartialEq)]
 pub enum ExpectedToken {
-    /// A specific token was expected
+    /// A specific token was expected.
     Token(TokenValue),
-    /// A type was expected
+    /// A type was expected.
     TypeName,
-    /// An identifier was expected
+    /// An identifier was expected.
     Identifier,
-    /// An integer literal was expected
+    /// An integer literal was expected.
     IntLiteral,
-    /// A float literal was expected
+    /// A float literal was expected.
     FloatLiteral,
-    /// A boolean literal was expected
+    /// A boolean literal was expected.
     BoolLiteral,
-    /// The end of file was expected
+    /// The end of file was expected.
     Eof,
 }
 impl From<TokenValue> for ExpectedToken {
@@ -43,7 +43,7 @@ impl From<TokenValue> for ExpectedToken {
 impl std::fmt::Display for ExpectedToken {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
-            ExpectedToken::Token(ref token) => write!(f, "{:?}", token),
+            ExpectedToken::Token(ref token) => write!(f, "{token:?}"),
             ExpectedToken::TypeName => write!(f, "a type"),
             ExpectedToken::Identifier => write!(f, "identifier"),
             ExpectedToken::IntLiteral => write!(f, "integer literal"),
@@ -54,7 +54,7 @@ impl std::fmt::Display for ExpectedToken {
     }
 }
 
-/// Information about the cause of an error
+/// Information about the cause of an error.
 #[derive(Debug, Error)]
 #[cfg_attr(test, derive(PartialEq))]
 pub enum ErrorKind {
@@ -84,7 +84,7 @@ pub enum ErrorKind {
     /// A reference to a type that wasn't declared was used.
     #[error("Unknown type: {0}")]
     UnknownType(String),
-    /// A reference to a non existant member of a type was made.
+    /// A reference to a non existent member of a type was made.
     #[error("Unknown field: {0}")]
     UnknownField(String),
     /// An unknown layout qualifier was used.
@@ -94,8 +94,13 @@ pub enum ErrorKind {
     /// prioritize work.
     #[error("Unknown layout qualifier: {0}")]
     UnknownLayoutQualifier(String),
+    /// Unsupported matrix of the form matCx2
+    ///
+    /// Our IR expects matrices of the form matCx2 to have a stride of 8 however
+    /// matrices in the std140 layout have a stride of at least 16
+    #[error("unsupported matrix of the form matCx2 in std140 block layout")]
+    UnsupportedMatrixTypeInStd140,
     /// A variable with the same name already exists in the current scope.
-    #[cfg(feature = "glsl-validate")]
     #[error("Variable already declared: {0}")]
     VariableAlreadyDeclared(String),
     /// A semantic error was detected in the shader.
@@ -104,6 +109,11 @@ pub enum ErrorKind {
     /// An error was returned by the preprocessor.
     #[error("{0:?}")]
     PreprocessorError(PreprocessorError),
+    /// The parser entered an illegal state and exited
+    ///
+    /// This obviously is a bug and as such should be reported in the github issue tracker
+    #[error("Internal error: {0}")]
+    InternalError(&'static str),
 }
 
 impl From<ConstantSolvingError> for ErrorKind {
@@ -112,7 +122,7 @@ impl From<ConstantSolvingError> for ErrorKind {
     }
 }
 
-/// Error returned during shader parsing
+/// Error returned during shader parsing.
 #[derive(Debug, Error)]
 #[error("{kind}")]
 #[cfg_attr(test, derive(PartialEq))]

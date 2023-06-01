@@ -4,10 +4,9 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const LoginInfo = new Components.Constructor(
   "@mozilla.org/login-manager/loginInfo;1",
@@ -15,44 +14,48 @@ const LoginInfo = new Components.Constructor(
   "init"
 );
 
-XPCOMUtils.defineLazyGetter(this, "LoginRelatedRealmsParent", () => {
+const lazy = {};
+
+XPCOMUtils.defineLazyGetter(lazy, "LoginRelatedRealmsParent", () => {
   const { LoginRelatedRealmsParent } = ChromeUtils.import(
     "resource://gre/modules/LoginRelatedRealms.jsm"
   );
   return new LoginRelatedRealmsParent();
 });
 
-XPCOMUtils.defineLazyGetter(this, "PasswordRulesManager", () => {
+XPCOMUtils.defineLazyGetter(lazy, "PasswordRulesManager", () => {
   const { PasswordRulesManagerParent } = ChromeUtils.import(
     "resource://gre/modules/PasswordRulesManager.jsm"
   );
   return new PasswordRulesManagerParent();
 });
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
+ChromeUtils.defineESModuleGetters(lazy, {
+  ChromeMigrationUtils: "resource:///modules/ChromeMigrationUtils.sys.mjs",
+  MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+});
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  ChromeMigrationUtils: "resource:///modules/ChromeMigrationUtils.jsm",
+XPCOMUtils.defineLazyModuleGetters(lazy, {
+  FirefoxRelay: "resource://gre/modules/FirefoxRelay.jsm",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
   LoginHelper: "resource://gre/modules/LoginHelper.jsm",
-  MigrationUtils: "resource:///modules/MigrationUtils.jsm",
   PasswordGenerator: "resource://gre/modules/PasswordGenerator.jsm",
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "prompterSvc",
   "@mozilla.org/login-manager/prompter;1",
   Ci.nsILoginManagerPrompter
 );
 
-XPCOMUtils.defineLazyGetter(this, "log", () => {
-  let logger = LoginHelper.createLogger("LoginManagerParent");
+XPCOMUtils.defineLazyGetter(lazy, "log", () => {
+  let logger = lazy.LoginHelper.createLogger("LoginManagerParent");
   return logger.log.bind(logger);
 });
-XPCOMUtils.defineLazyGetter(this, "debug", () => {
-  let logger = LoginHelper.createLogger("LoginManagerParent");
+XPCOMUtils.defineLazyGetter(lazy, "debug", () => {
+  let logger = lazy.LoginHelper.createLogger("LoginManagerParent");
   return logger.debug.bind(logger);
 });
 const EXPORTED_SYMBOLS = ["LoginManagerParent"];
@@ -82,8 +85,8 @@ let gGeneratedPasswordsByPrincipalOrigin = new Map();
 let gRecipeManager = null;
 
 /**
- * Tracks the last time the user cancelled the master password prompt,
- *  to avoid spamming master password prompts on autocomplete searches.
+ * Tracks the last time the user cancelled the primary password prompt,
+ *  to avoid spamming primary password prompts on autocomplete searches.
  */
 let gLastMPLoginCancelled = Number.NEGATIVE_INFINITY;
 
@@ -121,9 +124,8 @@ let gGeneratedPasswordObserver = {
         (guid == generatedPW.storageGUID ||
           topic == "passwordmgr-autosaved-login-merged")
       ) {
-        log(
-          "Removing storageGUID for generated-password cache entry on origin:",
-          origin
+        lazy.log(
+          `Removing storageGUID for generated-password cache entry on origin: ${origin}.`
         );
         generatedPW.storageGUID = null;
       }
@@ -133,7 +135,7 @@ let gGeneratedPasswordObserver = {
 
 Services.ppmm.addMessageListener("PasswordManager:findRecipes", message => {
   let formHost = new URL(message.data.formOrigin).host;
-  return gRecipeManager.getRecipesForHost(formHost);
+  return gRecipeManager?.getRecipesForHost(formHost) ?? [];
 });
 
 /**
@@ -146,10 +148,13 @@ async function getImportableLogins(formOrigin) {
   // Include the experiment state for data and UI decisions; otherwise skip
   // importing if not supported or disabled.
   const state =
-    LoginHelper.suggestImportCount > 0 && LoginHelper.showAutoCompleteImport;
+    lazy.LoginHelper.suggestImportCount > 0 &&
+    lazy.LoginHelper.showAutoCompleteImport;
   return state
     ? {
-        browsers: await ChromeMigrationUtils.getImportableLogins(formOrigin),
+        browsers: await lazy.ChromeMigrationUtils.getImportableLogins(
+          formOrigin
+        ),
         state,
       }
     : null;
@@ -212,7 +217,7 @@ class LoginManagerParent extends JSWindowActorParent {
     let logins;
     let matchData = {
       origin: formOrigin,
-      schemeUpgrades: LoginHelper.schemeUpgrades,
+      schemeUpgrades: lazy.LoginHelper.schemeUpgrades,
       acceptDifferentSubdomains,
     };
     if (!ignoreActionAndRealm) {
@@ -222,8 +227,8 @@ class LoginManagerParent extends JSWindowActorParent {
         matchData.httpRealm = httpRealm;
       }
     }
-    if (LoginHelper.relatedRealmsEnabled) {
-      matchData.acceptRelatedRealms = LoginHelper.relatedRealmsEnabled;
+    if (lazy.LoginHelper.relatedRealmsEnabled) {
+      matchData.acceptRelatedRealms = lazy.LoginHelper.relatedRealmsEnabled;
       matchData.relatedRealms = relatedRealms;
     }
     try {
@@ -232,14 +237,14 @@ class LoginManagerParent extends JSWindowActorParent {
       // Record the last time the user cancelled the MP prompt
       // to avoid spamming them with MP prompts for autocomplete.
       if (e.result == Cr.NS_ERROR_ABORT) {
-        log("User cancelled master password prompt.");
+        lazy.log("User cancelled primary password prompt.");
         gLastMPLoginCancelled = Date.now();
         return [];
       }
       throw e;
     }
 
-    logins = LoginHelper.shadowHTTPLogins(logins);
+    logins = lazy.LoginHelper.shadowHTTPLogins(logins);
 
     let resolveBy = [
       "subdomain",
@@ -247,7 +252,7 @@ class LoginManagerParent extends JSWindowActorParent {
       "scheme",
       "timePasswordChanged",
     ];
-    return LoginHelper.dedupeLogins(
+    return lazy.LoginHelper.dedupeLogins(
       logins,
       ["username", "password"],
       resolveBy,
@@ -266,7 +271,7 @@ class LoginManagerParent extends JSWindowActorParent {
     let context = {};
     XPCOMUtils.defineLazyGetter(context, "origin", () => {
       // We still need getLoginOrigin to remove the path for file: URIs until we fix bug 1625391.
-      let origin = LoginHelper.getLoginOrigin(
+      let origin = lazy.LoginHelper.getLoginOrigin(
         this.manager.documentPrincipal?.originNoSuffix
       );
       if (!origin) {
@@ -274,10 +279,10 @@ class LoginManagerParent extends JSWindowActorParent {
       }
       return origin;
     });
+
     switch (msg.name) {
       case "PasswordManager:updateDoorhangerSuggestions": {
-        this.possibleValues.usernames = data.possibleValues.usernames;
-        this.possibleValues.passwords = data.possibleValues.passwords;
+        this.#onUpdateDoorhangerSuggestions(data.possibleValues);
         break;
       }
 
@@ -295,45 +300,22 @@ class LoginManagerParent extends JSWindowActorParent {
       }
 
       case "PasswordManager:onFormSubmit": {
-        Services.obs.notifyObservers(
-          null,
-          "passwordmgr-form-submission-detected",
-          context.origin
-        );
+        this.#onFormSubmit(context);
         break;
       }
 
       case "PasswordManager:onPasswordEditedOrGenerated": {
-        log("Received PasswordManager:onPasswordEditedOrGenerated");
-        if (gListenerForTests) {
-          log("calling gListenerForTests");
-          gListenerForTests("PasswordEditedOrGenerated", {});
-        }
-        let browser = this.getRootBrowser();
-        this._onPasswordEditedOrGenerated(browser, context.origin, data);
+        this.#onPasswordEditedOrGenerated(context, data);
         break;
       }
 
       case "PasswordManager:onIgnorePasswordEdit": {
-        log("Received PasswordManager:onIgnorePasswordEdit");
-        if (gListenerForTests) {
-          log("calling gListenerForTests");
-          gListenerForTests("PasswordIgnoreEdit", {});
-        }
+        this.#onIgnorePasswordEdit();
         break;
       }
 
       case "PasswordManager:ShowDoorhanger": {
-        let browser = this.getRootBrowser();
-        let submitPromise = this.showDoorhanger(browser, context.origin, data);
-        if (gListenerForTests) {
-          submitPromise.then(() => {
-            gListenerForTests("ShowDoorhanger", {
-              origin: context.origin,
-              data,
-            });
-          });
-        }
+        this.#onShowDoorhanger(context, data);
         break;
       }
 
@@ -342,91 +324,172 @@ class LoginManagerParent extends JSWindowActorParent {
       }
 
       case "PasswordManager:removeLogin": {
-        let login = LoginHelper.vanillaObjectToLogin(data.login);
-        Services.logins.removeLogin(login);
+        this.#onRemoveLogin(data.login);
         break;
       }
 
       case "PasswordManager:OpenImportableLearnMore": {
-        let window = this.getRootBrowser().ownerGlobal;
-        window.openTrustedLinkIn(
-          Services.urlFormatter.formatURLPref("app.support.baseURL") +
-            "password-import",
-          "tab",
-          { relatedToCurrent: true }
-        );
+        this.#onOpenImportableLearnMore();
         break;
       }
 
       case "PasswordManager:HandleImportable": {
-        const { browserId } = data;
-
-        // Directly migrate passwords for a single profile.
-        const migrator = await MigrationUtils.getMigrator(browserId);
-        const profiles = await migrator.getSourceProfiles();
-        if (
-          profiles.length == 1 &&
-          NimbusFeatures["password-autocomplete"].getVariable(
-            "directMigrateSingleProfile"
-          )
-        ) {
-          const loginAdded = new Promise(resolve => {
-            const obs = (subject, topic, data) => {
-              if (data == "addLogin") {
-                Services.obs.removeObserver(obs, "passwordmgr-storage-changed");
-                resolve();
-              }
-            };
-            Services.obs.addObserver(obs, "passwordmgr-storage-changed");
-          });
-
-          await migrator.migrate(
-            MigrationUtils.resourceTypes.PASSWORDS,
-            null,
-            profiles[0]
-          );
-          await loginAdded;
-
-          // Reshow the popup with the imported password.
-          this.sendAsyncMessage("PasswordManager:repopulateAutocompletePopup");
-        } else {
-          // Open the migration wizard pre-selecting the appropriate browser.
-          MigrationUtils.showMigrationWizard(
-            this.getRootBrowser().ownerGlobal,
-            [MigrationUtils.MIGRATION_ENTRYPOINT_PASSWORDS, browserId]
-          );
-        }
+        await this.#onHandleImportable(data.browserId);
         break;
       }
 
       case "PasswordManager:OpenPreferences": {
-        let window = this.getRootBrowser().ownerGlobal;
-        LoginHelper.openPasswordManager(window, {
-          filterString: data.hostname,
-          entryPoint: data.entryPoint,
-        });
+        this.#onOpenPreferences(data.hostname, data.entryPoint);
         break;
       }
 
       // Used by tests to detect that a form-fill has occurred. This redirects
       // to the top-level browsing context.
       case "PasswordManager:formProcessed": {
-        let topActor = this.browsingContext.currentWindowGlobal.getActor(
-          "LoginManager"
-        );
-        topActor.sendAsyncMessage("PasswordManager:formProcessed", {
-          formid: data.formid,
-        });
-        if (gListenerForTests) {
-          gListenerForTests("FormProcessed", {
-            browsingContext: this.browsingContext,
-          });
-        }
+        this.#onFormProcessed(data.formid);
         break;
+      }
+
+      case "PasswordManager:offerRelayIntegration": {
+        return this.#offerRelayIntegration(context.origin);
+      }
+
+      case "PasswordManager:generateRelayUsername": {
+        return this.#generateRelayUsername(context.origin);
       }
     }
 
     return undefined;
+  }
+
+  #onUpdateDoorhangerSuggestions(possibleValues) {
+    this.possibleValues.usernames = possibleValues.usernames;
+    this.possibleValues.passwords = possibleValues.passwords;
+  }
+
+  #onFormSubmit(context) {
+    Services.obs.notifyObservers(
+      null,
+      "passwordmgr-form-submission-detected",
+      context.origin
+    );
+  }
+
+  #onPasswordEditedOrGenerated(context, data) {
+    lazy.log("#onPasswordEditedOrGenerated: Received PasswordManager.");
+    if (gListenerForTests) {
+      lazy.log("#onPasswordEditedOrGenerated: Calling gListenerForTests.");
+      gListenerForTests("PasswordEditedOrGenerated", {});
+    }
+    let browser = this.getRootBrowser();
+    this._onPasswordEditedOrGenerated(browser, context.origin, data);
+  }
+
+  #onIgnorePasswordEdit() {
+    lazy.log("#onIgnorePasswordEdit: Received PasswordManager.");
+    if (gListenerForTests) {
+      lazy.log("#onIgnorePasswordEdit: Calling gListenerForTests.");
+      gListenerForTests("PasswordIgnoreEdit", {});
+    }
+  }
+
+  #onShowDoorhanger(context, data) {
+    const browser = this.getRootBrowser();
+    const submitPromise = this.showDoorhanger(browser, context.origin, data);
+    if (gListenerForTests) {
+      submitPromise.then(() => {
+        gListenerForTests("ShowDoorhanger", {
+          origin: context.origin,
+          data,
+        });
+      });
+    }
+  }
+
+  #onRemoveLogin(login) {
+    login = lazy.LoginHelper.vanillaObjectToLogin(login);
+    Services.logins.removeLogin(login);
+  }
+
+  #onOpenImportableLearnMore() {
+    const window = this.getRootBrowser().ownerGlobal;
+    window.openTrustedLinkIn(
+      Services.urlFormatter.formatURLPref("app.support.baseURL") +
+        "password-import",
+      "tab",
+      { relatedToCurrent: true }
+    );
+  }
+
+  async #onHandleImportable(browserId) {
+    // Directly migrate passwords for a single profile.
+    const migrator = await lazy.MigrationUtils.getMigrator(browserId);
+    const profiles = await migrator.getSourceProfiles();
+    if (
+      profiles.length == 1 &&
+      lazy.NimbusFeatures["password-autocomplete"].getVariable(
+        "directMigrateSingleProfile"
+      )
+    ) {
+      const loginAdded = new Promise(resolve => {
+        const obs = (_subject, _topic, data) => {
+          if (data == "addLogin") {
+            Services.obs.removeObserver(obs, "passwordmgr-storage-changed");
+            resolve();
+          }
+        };
+        Services.obs.addObserver(obs, "passwordmgr-storage-changed");
+      });
+
+      await migrator.migrate(
+        lazy.MigrationUtils.resourceTypes.PASSWORDS,
+        null,
+        profiles[0]
+      );
+      await loginAdded;
+
+      // Reshow the popup with the imported password.
+      this.sendAsyncMessage("PasswordManager:repopulateAutocompletePopup");
+    } else {
+      // Open the migration wizard pre-selecting the appropriate browser.
+      lazy.MigrationUtils.showMigrationWizard(
+        this.getRootBrowser().ownerGlobal,
+        {
+          entrypoint: lazy.MigrationUtils.MIGRATION_ENTRYPOINTS.PASSWORDS,
+          migratorKey: browserId,
+        }
+      );
+    }
+  }
+
+  #onOpenPreferences(hostname, entryPoint) {
+    const window = this.getRootBrowser().ownerGlobal;
+    lazy.LoginHelper.openPasswordManager(window, {
+      filterString: hostname,
+      entryPoint,
+    });
+  }
+
+  #onFormProcessed(formid) {
+    const topActor = this.browsingContext.currentWindowGlobal.getActor(
+      "LoginManager"
+    );
+    topActor.sendAsyncMessage("PasswordManager:formProcessed", { formid });
+    if (gListenerForTests) {
+      gListenerForTests("FormProcessed", {
+        browsingContext: this.browsingContext,
+      });
+    }
+  }
+
+  async #offerRelayIntegration(origin) {
+    const browser = lazy.LoginHelper.getBrowserForPrompt(this.getRootBrowser());
+    return lazy.FirefoxRelay.offerRelayIntegration(browser, origin);
+  }
+
+  async #generateRelayUsername(origin) {
+    const browser = lazy.LoginHelper.getBrowserForPrompt(this.getRootBrowser());
+    return lazy.FirefoxRelay.generateUsername(browser, origin);
   }
 
   /**
@@ -450,13 +513,28 @@ class LoginManagerParent extends JSWindowActorParent {
         this._suggestImportTimer = null;
         Services.prefs.setIntPref(
           "signon.suggestImportCount",
-          LoginHelper.suggestImportCount - this._suggestImportCount
+          lazy.LoginHelper.suggestImportCount - this._suggestImportCount
         );
       },
       LoginManagerParent.SUGGEST_IMPORT_DEBOUNCE_MS,
       Ci.nsITimer.TYPE_ONE_SHOT
     );
     this._suggestImportCount = count;
+  }
+
+  async #getRecipesForHost(origin) {
+    let recipes;
+    if (origin) {
+      try {
+        const formHost = new URL(origin).host;
+        let recipeManager = await LoginManagerParent.recipeParentPromise;
+        recipes = recipeManager.getRecipesForHost(formHost);
+      } catch (ex) {
+        // Some schemes e.g. chrome aren't supported by URL
+      }
+    }
+
+    return recipes ?? [];
   }
 
   /**
@@ -470,25 +548,15 @@ class LoginManagerParent extends JSWindowActorParent {
     inputElementIdentifier,
     style,
   }) {
-    let recipes = [];
-    if (loginFormOrigin) {
-      let formHost;
-      try {
-        formHost = new URL(loginFormOrigin).host;
-        let recipeManager = await LoginManagerParent.recipeParentPromise;
-        recipes = recipeManager.getRecipesForHost(formHost);
-      } catch (ex) {
-        // Some schemes e.g. chrome aren't supported by URL
-      }
-    }
+    const recipes = await this.#getRecipesForHost(loginFormOrigin);
 
     // Convert the array of nsILoginInfo to vanilla JS objects since nsILoginInfo
     // doesn't support structured cloning.
-    let jsLogins = [LoginHelper.loginToVanillaObject(login)];
+    const jsLogins = [lazy.LoginHelper.loginToVanillaObject(login)];
 
-    let browserURI = browser.currentURI.spec;
-    let originMatches =
-      LoginHelper.getLoginOrigin(browserURI) == loginFormOrigin;
+    const browserURI = browser.currentURI.spec;
+    const originMatches =
+      lazy.LoginHelper.getLoginOrigin(browserURI) == loginFormOrigin;
 
     this.sendAsyncMessage("PasswordManager:fillForm", {
       inputElementIdentifier,
@@ -506,41 +574,36 @@ class LoginManagerParent extends JSWindowActorParent {
   async sendLoginDataToChild(
     formOrigin,
     actionOrigin,
-    { guid, showMasterPassword }
+    { guid, showPrimaryPassword }
   ) {
-    let recipes = [];
-    let formHost;
-    try {
-      formHost = new URL(formOrigin).host;
-      let recipeManager = await LoginManagerParent.recipeParentPromise;
-      recipes = recipeManager.getRecipesForHost(formHost);
-    } catch (ex) {
-      // Some schemes e.g. chrome aren't supported by URL
-    }
+    const recipes = await this.#getRecipesForHost(formOrigin);
 
-    if (!showMasterPassword && !Services.logins.isLoggedIn) {
+    if (!showPrimaryPassword && !Services.logins.isLoggedIn) {
       return { logins: [], recipes };
     }
 
-    // If we're currently displaying a master password prompt, defer
+    // If we're currently displaying a primary password prompt, defer
     // processing this form until the user handles the prompt.
     if (Services.logins.uiBusy) {
-      log("deferring sendLoginDataToChild for", formOrigin);
+      lazy.log(
+        "UI is busy. Deferring sendLoginDataToChild for form: ",
+        formOrigin
+      );
 
       let uiBusyPromiseResolve;
-      let uiBusyPromise = new Promise(resolve => {
+      const uiBusyPromise = new Promise(resolve => {
         uiBusyPromiseResolve = resolve;
       });
 
-      let self = this;
-      let observer = {
+      const self = this;
+      const observer = {
         QueryInterface: ChromeUtils.generateQI([
           "nsIObserver",
           "nsISupportsWeakReference",
         ]),
 
-        observe(subject, topic, data) {
-          log("Got deferred sendLoginDataToChild notification:", topic);
+        observe(_subject, topic, _data) {
+          lazy.log("Got deferred sendLoginDataToChild notification:", topic);
           // Only run observer once.
           Services.obs.removeObserver(this, "passwordmgr-crypto-login");
           Services.obs.removeObserver(this, "passwordmgr-crypto-loginCanceled");
@@ -549,8 +612,8 @@ class LoginManagerParent extends JSWindowActorParent {
             return;
           }
 
-          let result = self.sendLoginDataToChild(formOrigin, actionOrigin, {
-            showMasterPassword,
+          const result = self.sendLoginDataToChild(formOrigin, actionOrigin, {
+            showPrimaryPassword,
           });
           uiBusyPromiseResolve(result);
         },
@@ -576,29 +639,30 @@ class LoginManagerParent extends JSWindowActorParent {
       });
     } else {
       let relatedRealmsOrigins = [];
-      if (LoginHelper.relatedRealmsEnabled) {
-        relatedRealmsOrigins = await LoginRelatedRealmsParent.findRelatedRealms(
+      if (lazy.LoginHelper.relatedRealmsEnabled) {
+        relatedRealmsOrigins = await lazy.LoginRelatedRealmsParent.findRelatedRealms(
           formOrigin
         );
       }
       logins = await LoginManagerParent.searchAndDedupeLogins(formOrigin, {
         formActionOrigin: actionOrigin,
         ignoreActionAndRealm: true,
-        acceptDifferentSubdomains: LoginHelper.includeOtherSubdomainsInLookup,
+        acceptDifferentSubdomains:
+          lazy.LoginHelper.includeOtherSubdomainsInLookup,
         relatedRealms: relatedRealmsOrigins,
       });
 
-      if (LoginHelper.relatedRealmsEnabled) {
-        debug(
+      if (lazy.LoginHelper.relatedRealmsEnabled) {
+        lazy.debug(
           "Adding related logins on page load",
           logins.map(l => l.origin)
         );
       }
     }
-    log("sendLoginDataToChild:", logins.length, "deduped logins");
+    lazy.log(`Deduped ${logins.length} logins.`);
     // Convert the array of nsILoginInfo to vanilla JS objects since nsILoginInfo
     // doesn't support structured cloning.
-    let jsLogins = LoginHelper.loginsToVanillaObjects(logins);
+    let jsLogins = lazy.LoginHelper.loginsToVanillaObjects(logins);
     return {
       importable: await getImportableLogins(formOrigin),
       logins: jsLogins,
@@ -614,31 +678,30 @@ class LoginManagerParent extends JSWindowActorParent {
       previousResult,
       forcePasswordGeneration,
       hasBeenTypePassword,
-      isSecure,
       isProbablyANewPasswordField,
+      scenarioName,
     }
   ) {
     // Note: previousResult is a regular object, not an
     // nsIAutoCompleteResult.
 
-    // Cancel if the master password prompt is already showing or we unsuccessfully prompted for it too recently.
+    // Cancel if the primary password prompt is already showing or we unsuccessfully prompted for it too recently.
     if (!Services.logins.isLoggedIn) {
       if (Services.logins.uiBusy) {
-        log(
-          "Not searching logins for autocomplete since the master password prompt is already showing"
+        lazy.log(
+          "Not searching logins for autocomplete since the primary password prompt is already showing."
         );
         // Return an empty array to make LoginManagerChild clear the
         // outstanding request it has temporarily saved.
         return { logins: [] };
       }
 
-      let timeDiff = Date.now() - gLastMPLoginCancelled;
+      const timeDiff = Date.now() - gLastMPLoginCancelled;
       if (timeDiff < LoginManagerParent._repromptTimeout) {
-        log(
-          "Not searching logins for autocomplete since the master password " +
-            `prompt was last cancelled ${Math.round(
-              timeDiff / 1000
-            )} seconds ago.`
+        lazy.log(
+          `Not searching logins for autocomplete since the primary password prompt was last cancelled ${Math.round(
+            timeDiff / 1000
+          )} seconds ago.`
         );
         // Return an empty array to make LoginManagerChild clear the
         // outstanding request it has temporarily saved.
@@ -646,22 +709,22 @@ class LoginManagerParent extends JSWindowActorParent {
       }
     }
 
-    let searchStringLower = searchString.toLowerCase();
+    const searchStringLower = searchString.toLowerCase();
     let logins;
     if (
       previousResult &&
       searchStringLower.startsWith(previousResult.searchString.toLowerCase())
     ) {
-      log("Using previous autocomplete result");
+      lazy.log("Using previous autocomplete result.");
 
       // We have a list of results for a shorter search string, so just
       // filter them further based on the new search string.
-      logins = LoginHelper.vanillaObjectsToLogins(previousResult.logins);
+      logins = lazy.LoginHelper.vanillaObjectsToLogins(previousResult.logins);
     } else {
-      log("Creating new autocomplete search result.");
+      lazy.log("Creating new autocomplete search result.");
       let relatedRealmsOrigins = [];
-      if (LoginHelper.relatedRealmsEnabled) {
-        relatedRealmsOrigins = await LoginRelatedRealmsParent.findRelatedRealms(
+      if (lazy.LoginHelper.relatedRealmsEnabled) {
+        relatedRealmsOrigins = await lazy.LoginRelatedRealmsParent.findRelatedRealms(
           formOrigin
         );
       }
@@ -669,20 +732,22 @@ class LoginManagerParent extends JSWindowActorParent {
       logins = await LoginManagerParent.searchAndDedupeLogins(formOrigin, {
         formActionOrigin: actionOrigin,
         ignoreActionAndRealm: true,
-        acceptDifferentSubdomains: LoginHelper.includeOtherSubdomainsInLookup,
+        acceptDifferentSubdomains:
+          lazy.LoginHelper.includeOtherSubdomainsInLookup,
         relatedRealms: relatedRealmsOrigins,
       });
     }
 
-    let matchingLogins = logins.filter(function(fullMatch) {
-      let match = fullMatch.username;
-
+    const matchingLogins = logins.filter(fullMatch => {
       // Remove results that are too short, or have different prefix.
       // Also don't offer empty usernames as possible results except
       // for on password fields.
       if (hasBeenTypePassword) {
         return true;
       }
+
+      const match = fullMatch.username;
+
       return match && match.toLowerCase().startsWith(searchStringLower);
     });
 
@@ -698,11 +763,13 @@ class LoginManagerParent extends JSWindowActorParent {
       // We either generate a new password here, or grab the previously generated password
       // if we're still on the same domain when we generated the password
       generatedPassword = await this.getGeneratedPassword();
-      let potentialConflictingLogins = await Services.logins.searchLoginsAsync({
-        origin: formOrigin,
-        formActionOrigin: actionOrigin,
-        httpRealm: null,
-      });
+      const potentialConflictingLogins = await Services.logins.searchLoginsAsync(
+        {
+          origin: formOrigin,
+          formActionOrigin: actionOrigin,
+          httpRealm: null,
+        }
+      );
       willAutoSaveGeneratedPassword = !potentialConflictingLogins.find(
         login => login.username == ""
       );
@@ -710,10 +777,17 @@ class LoginManagerParent extends JSWindowActorParent {
 
     // Convert the array of nsILoginInfo to vanilla JS objects since nsILoginInfo
     // doesn't support structured cloning.
-    let jsLogins = LoginHelper.loginsToVanillaObjects(matchingLogins);
+    let jsLogins = lazy.LoginHelper.loginsToVanillaObjects(matchingLogins);
     return {
       generatedPassword,
       importable: await getImportableLogins(formOrigin),
+      autocompleteItems: hasBeenTypePassword
+        ? []
+        : await lazy.FirefoxRelay.autocompleteItemsAsync({
+            formOrigin,
+            scenarioName,
+            hasInput: !!searchStringLower.length,
+          }),
       logins: jsLogins,
       willAutoSaveGeneratedPassword,
     };
@@ -741,9 +815,9 @@ class LoginManagerParent extends JSWindowActorParent {
 
   async getGeneratedPassword() {
     if (
-      !LoginHelper.enabled ||
-      !LoginHelper.generationAvailable ||
-      !LoginHelper.generationEnabled
+      !lazy.LoginHelper.enabled ||
+      !lazy.LoginHelper.generationAvailable ||
+      !lazy.LoginHelper.generationEnabled
     ) {
       return null;
     }
@@ -775,12 +849,12 @@ class LoginManagerParent extends JSWindowActorParent {
        */
       storageGUID: null,
     };
-    if (LoginHelper.improvedPasswordRulesEnabled) {
-      generatedPW.value = await PasswordRulesManager.generatePassword(
+    if (lazy.LoginHelper.improvedPasswordRulesEnabled) {
+      generatedPW.value = await lazy.PasswordRulesManager.generatePassword(
         browsingContext.currentWindowGlobal.documentURI
       );
     } else {
-      generatedPW.value = PasswordGenerator.generatePassword({});
+      generatedPW.value = lazy.PasswordGenerator.generatePassword({});
     }
 
     // Add these observers when a password is assigned.
@@ -835,7 +909,42 @@ class LoginManagerParent extends JSWindowActorParent {
    * Used for stubbing by tests.
    */
   _getPrompter() {
-    return prompterSvc;
+    return lazy.prompterSvc;
+  }
+
+  // Look for an existing login that matches the form login.
+  #findSameLogin(logins, formLogin) {
+    return logins.find(login => {
+      let same;
+
+      // If one login has a username but the other doesn't, ignore
+      // the username when comparing and only match if they have the
+      // same password. Otherwise, compare the logins and match even
+      // if the passwords differ.
+      if (!login.username && formLogin.username) {
+        let restoreMe = formLogin.username;
+        formLogin.username = "";
+        same = lazy.LoginHelper.doLoginsMatch(formLogin, login, {
+          ignorePassword: false,
+          ignoreSchemes: lazy.LoginHelper.schemeUpgrades,
+        });
+        formLogin.username = restoreMe;
+      } else if (!formLogin.username && login.username) {
+        formLogin.username = login.username;
+        same = lazy.LoginHelper.doLoginsMatch(formLogin, login, {
+          ignorePassword: false,
+          ignoreSchemes: lazy.LoginHelper.schemeUpgrades,
+        });
+        formLogin.username = ""; // we know it's always blank.
+      } else {
+        same = lazy.LoginHelper.doLoginsMatch(formLogin, login, {
+          ignorePassword: true,
+          ignoreSchemes: lazy.LoginHelper.schemeUpgrades,
+        });
+      }
+
+      return same;
+    });
   }
 
   async showDoorhanger(
@@ -854,22 +963,20 @@ class LoginManagerParent extends JSWindowActorParent {
     function recordLoginUse(login) {
       Services.logins.recordPasswordUse(
         login,
-        browser && PrivateBrowsingUtils.isBrowserPrivate(browser),
+        browser && lazy.PrivateBrowsingUtils.isBrowserPrivate(browser),
         login.username ? "form_login" : "form_password",
         !!autoFilledLoginGuid
       );
     }
 
     // If password storage is disabled, bail out.
-    if (!LoginHelper.storageEnabled) {
+    if (!lazy.LoginHelper.storageEnabled) {
       return;
     }
 
     if (!Services.logins.getLoginSavingEnabled(formOrigin)) {
-      log(
-        "(form submission ignored -- saving is disabled for:",
-        formOrigin,
-        ")"
+      lazy.log(
+        `Form submission ignored because saving is disabled for origin: ${formOrigin}.`
       );
       return;
     }
@@ -877,15 +984,14 @@ class LoginManagerParent extends JSWindowActorParent {
     let browsingContext = BrowsingContext.get(browsingContextId);
     let framePrincipalOrigin =
       browsingContext.currentWindowGlobal.documentPrincipal.origin;
-    log("showDoorhanger, got framePrincipalOrigin: ", framePrincipalOrigin);
 
     let formLogin = new LoginInfo(
       formOrigin,
       formActionOrigin,
       null,
-      usernameField ? usernameField.value : "",
+      usernameField?.value ?? "",
       newPasswordField.value,
-      usernameField ? usernameField.name : "",
+      usernameField?.name ?? "",
       newPasswordField.name
     );
     // we don't auto-save logins on form submit
@@ -902,7 +1008,9 @@ class LoginManagerParent extends JSWindowActorParent {
         (!formLogin.username || // Also cover cases where only the password is requested.
           loginsForGuid[0].username == formLogin.username)
       ) {
-        log("The filled login matches the form submission. Nothing to change.");
+        lazy.log(
+          "The filled login matches the form submission. Nothing to change."
+        );
         recordLoginUse(loginsForGuid[0]);
         return;
       }
@@ -912,17 +1020,14 @@ class LoginManagerParent extends JSWindowActorParent {
     let canMatchExistingLogin = true;
     // Below here we have one login per hostPort + action + username with the
     // matching scheme being preferred.
-    let logins = await LoginManagerParent.searchAndDedupeLogins(formOrigin, {
+    const logins = await LoginManagerParent.searchAndDedupeLogins(formOrigin, {
       formActionOrigin,
     });
 
-    let generatedPW = gGeneratedPasswordsByPrincipalOrigin.get(
+    const generatedPW = gGeneratedPasswordsByPrincipalOrigin.get(
       framePrincipalOrigin
     );
-    let autoSavedStorageGUID = "";
-    if (generatedPW && generatedPW.storageGUID) {
-      autoSavedStorageGUID = generatedPW.storageGUID;
-    }
+    const autoSavedStorageGUID = generatedPW?.storageGUID ?? "";
 
     // If we didn't find a username field, but seem to be changing a
     // password, allow the user to select from a list of applicable
@@ -933,9 +1038,8 @@ class LoginManagerParent extends JSWindowActorParent {
 
         if (existingLogin.password == formLogin.password) {
           recordLoginUse(existingLogin);
-          log(
-            "(Not prompting to save/change since we have no username and the " +
-              "only saved password matches the new password)"
+          lazy.log(
+            "Not prompting to save/change since we have no username and the only saved password matches the new password."
           );
           return;
         }
@@ -951,45 +1055,11 @@ class LoginManagerParent extends JSWindowActorParent {
     }
 
     if (canMatchExistingLogin && !existingLogin) {
-      // Look for an existing login that matches the form login.
-      for (let login of logins) {
-        let same;
-
-        // If one login has a username but the other doesn't, ignore
-        // the username when comparing and only match if they have the
-        // same password. Otherwise, compare the logins and match even
-        // if the passwords differ.
-        if (!login.username && formLogin.username) {
-          let restoreMe = formLogin.username;
-          formLogin.username = "";
-          same = LoginHelper.doLoginsMatch(formLogin, login, {
-            ignorePassword: false,
-            ignoreSchemes: LoginHelper.schemeUpgrades,
-          });
-          formLogin.username = restoreMe;
-        } else if (!formLogin.username && login.username) {
-          formLogin.username = login.username;
-          same = LoginHelper.doLoginsMatch(formLogin, login, {
-            ignorePassword: false,
-            ignoreSchemes: LoginHelper.schemeUpgrades,
-          });
-          formLogin.username = ""; // we know it's always blank.
-        } else {
-          same = LoginHelper.doLoginsMatch(formLogin, login, {
-            ignorePassword: true,
-            ignoreSchemes: LoginHelper.schemeUpgrades,
-          });
-        }
-
-        if (same) {
-          existingLogin = login;
-          break;
-        }
-      }
+      existingLogin = this.#findSameLogin(logins, formLogin);
     }
 
-    let promptBrowser = LoginHelper.getBrowserForPrompt(browser);
-    let prompter = this._getPrompter(browser);
+    const promptBrowser = lazy.LoginHelper.getBrowserForPrompt(browser);
+    const prompter = this._getPrompter(browser);
 
     if (!canMatchExistingLogin) {
       prompter.promptToChangePasswordWithUsernames(
@@ -999,12 +1069,13 @@ class LoginManagerParent extends JSWindowActorParent {
       );
       return;
     }
+
     if (existingLogin) {
-      log("Found an existing login matching this form submission");
+      lazy.log("Found an existing login matching this form submission.");
 
       // Change password if needed.
       if (existingLogin.password != formLogin.password) {
-        log("...passwords differ, prompting to change.");
+        lazy.log("Passwords differ, prompting to change.");
         prompter.promptToChangePassword(
           promptBrowser,
           existingLogin,
@@ -1016,8 +1087,7 @@ class LoginManagerParent extends JSWindowActorParent {
           this.possibleValues
         );
       } else if (!existingLogin.username && formLogin.username) {
-        log("...empty username update, prompting to change.");
-        let prompter = this._getPrompter(browser);
+        lazy.log("Empty username update, prompting to change.");
         prompter.promptToChangePassword(
           promptBrowser,
           existingLogin,
@@ -1078,13 +1148,12 @@ class LoginManagerParent extends JSWindowActorParent {
       triggeredByFillingGenerated = false,
     }
   ) {
-    log(
-      "_onPasswordEditedOrGenerated, triggeredByFillingGenerated:",
-      triggeredByFillingGenerated
+    lazy.log(
+      `_onPasswordEditedOrGenerated: triggeredByFillingGenerated: ${triggeredByFillingGenerated}.`
     );
 
     // If password storage is disabled, bail out.
-    if (!LoginHelper.storageEnabled) {
+    if (!lazy.LoginHelper.storageEnabled) {
       return;
     }
 
@@ -1092,17 +1161,17 @@ class LoginManagerParent extends JSWindowActorParent {
       // No UI should be shown to offer generation in this case but a user may
       // disable saving for the site after already filling one and they may then
       // edit it.
-      log("_onPasswordEditedOrGenerated: saving is disabled for:", formOrigin);
+      lazy.log(`Saving is disabled for origin: ${formOrigin}.`);
       return;
     }
 
     if (!newPasswordField.value) {
-      log("_onPasswordEditedOrGenerated: The password field is empty");
+      lazy.log("The password field is empty.");
       return;
     }
 
     if (!browser) {
-      log("_onPasswordEditedOrGenerated: The browser is gone");
+      lazy.log("The browser is gone.");
       return;
     }
 
@@ -1114,26 +1183,24 @@ class LoginManagerParent extends JSWindowActorParent {
     if (!triggeredByFillingGenerated && !Services.logins.isLoggedIn) {
       // Don't show the dismissed doorhanger on "input" or "change" events
       // when the Primary Password is locked
-      log(
-        "_onPasswordEditedOrGenerated: edited field is not a generated password field, and Primary Password is locked"
+      lazy.log(
+        "Edited field is not a generated password field, and Primary Password is locked."
       );
       return;
     }
 
     let framePrincipalOrigin =
       browsingContext.currentWindowGlobal.documentPrincipal.origin;
-    log(
-      "_onPasswordEditedOrGenerated: got framePrincipalOrigin: ",
-      framePrincipalOrigin
-    );
+
+    lazy.log("Got framePrincipalOrigin: ", framePrincipalOrigin);
 
     let formLogin = new LoginInfo(
       formOrigin,
       formActionOrigin,
       null,
-      usernameField ? usernameField.value : "",
+      usernameField?.value ?? "",
       newPasswordField.value,
-      usernameField ? usernameField.name : "",
+      usernameField?.name ?? "",
       newPasswordField.name
     );
     let existingLogin = null;
@@ -1153,7 +1220,9 @@ class LoginManagerParent extends JSWindowActorParent {
         (!formLogin.username || // Also cover cases where only the password is requested.
           matchedLogin.username == formLogin.username)
       ) {
-        log("The filled login matches the changed fields. Nothing to change.");
+        lazy.log(
+          "The filled login matches the changed fields. Nothing to change."
+        );
         // We may want to update an existing doorhanger
         existingLogin = matchedLogin;
       }
@@ -1172,7 +1241,7 @@ class LoginManagerParent extends JSWindowActorParent {
     let formLoginWithoutUsername;
 
     if (triggeredByFillingGenerated && generatedPW) {
-      log("Got cached generatedPW");
+      lazy.log("Got cached generatedPW.");
       formLoginWithoutUsername = new LoginInfo(
         formOrigin,
         formActionOrigin,
@@ -1183,7 +1252,7 @@ class LoginManagerParent extends JSWindowActorParent {
 
       if (newPasswordField.value != generatedPW.value) {
         // The user edited the field after generation to a non-empty value.
-        log("The field containing the generated password has changed");
+        lazy.log("The field containing the generated password has changed.");
 
         // Record telemetry for the first edit
         if (!generatedPW.edited) {
@@ -1192,7 +1261,7 @@ class LoginManagerParent extends JSWindowActorParent {
             "filled_field_edited",
             "generatedpassword"
           );
-          log("filled_field_edited telemetry event recorded");
+          lazy.log("filled_field_edited telemetry event recorded.");
           generatedPW.edited = true;
         }
       }
@@ -1210,7 +1279,7 @@ class LoginManagerParent extends JSWindowActorParent {
           "autocomplete_field",
           "generatedpassword"
         );
-        log("autocomplete_field telemetry event recorded");
+        lazy.log("autocomplete_field telemetry event recorded.");
         generatedPW.filled = true;
       }
 
@@ -1223,9 +1292,7 @@ class LoginManagerParent extends JSWindowActorParent {
         });
 
         if (autoSavedLogin) {
-          log(
-            "_onPasswordEditedOrGenerated: login to change is the auto-saved login"
-          );
+          lazy.log("login to change is the auto-saved login.");
           existingLogin = autoSavedLogin;
         }
         // The generated password login may have been deleted in the meantime.
@@ -1234,9 +1301,7 @@ class LoginManagerParent extends JSWindowActorParent {
       generatedPW.value = newPasswordField.value;
 
       if (!existingLogin) {
-        log(
-          "_onPasswordEditedOrGenerated: Didnt match generated-password login"
-        );
+        lazy.log("Did not match generated-password login.");
 
         // Check if we already have a login saved for this site since we don't want to overwrite it in
         // case the user still needs their old password to successfully complete a password change.
@@ -1248,11 +1313,11 @@ class LoginManagerParent extends JSWindowActorParent {
           if (matchedLogin.password == formLoginWithoutUsername.password) {
             // This login is already saved so show no new UI.
             // We may want to update an existing doorhanger though...
-            log("_onPasswordEditedOrGenerated: Matching login already saved");
+            lazy.log("Matching login already saved.");
             existingLogin = matchedLogin;
           }
-          log(
-            "_onPasswordEditedOrGenerated: Login with empty username already saved for this site"
+          lazy.log(
+            "_onPasswordEditedOrGenerated: Login with empty username already saved for this site."
           );
         }
       }
@@ -1273,9 +1338,9 @@ class LoginManagerParent extends JSWindowActorParent {
         existingLogin = logins[0];
 
         if (existingLogin.password == formLogin.password) {
-          log(
-            "(Not prompting to save/change since we have no username and the " +
-              "only saved password matches the new password)"
+          lazy.log(
+            "Not prompting to save/change since we have no username and the " +
+              "only saved password matches the new password."
           );
           return;
         }
@@ -1291,41 +1356,9 @@ class LoginManagerParent extends JSWindowActorParent {
     }
 
     if (canMatchExistingLogin && !existingLogin) {
-      // Look for an existing login that matches the form login.
-      for (let login of logins) {
-        let same;
-
-        // If one login has a username but the other doesn't, ignore
-        // the username when comparing and only match if they have the
-        // same password. Otherwise, compare the logins and match even
-        // if the passwords differ.
-        if (!login.username && formLogin.username) {
-          let restoreMe = formLogin.username;
-          formLogin.username = "";
-          same = LoginHelper.doLoginsMatch(formLogin, login, {
-            ignorePassword: false,
-            ignoreSchemes: LoginHelper.schemeUpgrades,
-          });
-          formLogin.username = restoreMe;
-        } else if (!formLogin.username && login.username) {
-          formLogin.username = login.username;
-          same = LoginHelper.doLoginsMatch(formLogin, login, {
-            ignorePassword: false,
-            ignoreSchemes: LoginHelper.schemeUpgrades,
-          });
-          formLogin.username = ""; // we know it's always blank.
-        } else {
-          same = LoginHelper.doLoginsMatch(formLogin, login, {
-            ignorePassword: true,
-            ignoreSchemes: LoginHelper.schemeUpgrades,
-          });
-        }
-
-        if (same) {
-          existingLogin = login;
-          log("_onPasswordEditedOrGenerated: matched saved login");
-          break;
-        }
+      existingLogin = this.#findSameLogin(logins, formLogin);
+      if (existingLogin) {
+        lazy.log("Matched saved login.");
       }
     }
 
@@ -1335,11 +1368,11 @@ class LoginManagerParent extends JSWindowActorParent {
         existingLogin == autoSavedLogin &&
         existingLogin.password !== formLogin.password
       ) {
-        log("_onPasswordEditedOrGenerated: updating auto-saved login");
+        lazy.log("Updating auto-saved login.");
 
         Services.logins.modifyLogin(
           existingLogin,
-          LoginHelper.newPropertyBag({
+          lazy.LoginHelper.newPropertyBag({
             password: formLogin.password,
           })
         );
@@ -1348,9 +1381,7 @@ class LoginManagerParent extends JSWindowActorParent {
         // throw so that the prompts later uses the new password.
         existingLogin.password = formLogin.password;
       } else if (!autoSavedLogin) {
-        log(
-          "_onPasswordEditedOrGenerated: auto-saving new login with empty username"
-        );
+        lazy.log("Auto-saving new login with empty username.");
         existingLogin = Services.logins.addLogin(formLoginWithoutUsername);
         // Remember the GUID where we saved the generated password so we can update
         // the login if the user later edits the generated password.
@@ -1358,11 +1389,11 @@ class LoginManagerParent extends JSWindowActorParent {
         notifySaved = true;
       }
     } else {
-      log("_onPasswordEditedOrGenerated: not auto-saving this login");
+      lazy.log("Not auto-saving this login.");
     }
 
-    let prompter = this._getPrompter(browser);
-    let promptBrowser = LoginHelper.getBrowserForPrompt(browser);
+    const prompter = this._getPrompter(browser);
+    const promptBrowser = lazy.LoginHelper.getBrowserForPrompt(browser);
 
     if (existingLogin) {
       // Show a change doorhanger to allow modifying an already-saved login
@@ -1381,9 +1412,8 @@ class LoginManagerParent extends JSWindowActorParent {
         (shouldAutoSaveLogin && !formLogin.username) ||
         existingLogin.password != formLogin.password
       ) {
-        log(
-          "_onPasswordEditedOrGenerated: promptToChangePassword with autoSavedStorageGUID: " +
-            autoSavedStorageGUID
+        lazy.log(
+          `promptToChangePassword with autoSavedStorageGUID: ${autoSavedStorageGUID}`
         );
         prompter.promptToChangePassword(
           promptBrowser,
@@ -1396,7 +1426,7 @@ class LoginManagerParent extends JSWindowActorParent {
           this.possibleValues
         );
       } else if (!existingLogin.username && formLogin.username) {
-        log("...empty username update, prompting to change.");
+        lazy.log("Empty username update, prompting to change.");
         prompter.promptToChangePassword(
           promptBrowser,
           existingLogin,
@@ -1408,13 +1438,13 @@ class LoginManagerParent extends JSWindowActorParent {
           this.possibleValues
         );
       } else {
-        log("_onPasswordEditedOrGenerated: No change to existing login");
+        lazy.log("No change to existing login.");
         // is there a doorhanger we should update?
         let popupNotifications = promptBrowser.ownerGlobal.PopupNotifications;
         let notif = popupNotifications.getNotification("password", browser);
-        log(
-          "_onPasswordEditedOrGenerated: Has doorhanger?",
-          notif && notif.dismissed
+        lazy.log(
+          `_onPasswordEditedOrGenerated: Has doorhanger? ${notif &&
+            notif.dismissed}`
         );
         if (notif && notif.dismissed) {
           prompter.promptToChangePassword(
@@ -1431,7 +1461,7 @@ class LoginManagerParent extends JSWindowActorParent {
       }
       return;
     }
-    log("_onPasswordEditedOrGenerated: no matching login to save/update");
+    lazy.log("No matching login to save/update.");
     prompter.promptToSavePassword(
       promptBrowser,
       formLogin,

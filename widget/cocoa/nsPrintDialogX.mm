@@ -25,6 +25,46 @@ using mozilla::gfx::PrintTarget;
 
 NS_IMPL_ISUPPORTS(nsPrintDialogServiceX, nsIPrintDialogService)
 
+// Splits our single pages-per-sheet count for native NSPrintInfo:
+static void setPagesPerSheet(NSPrintInfo* aPrintInfo, int32_t aPPS) {
+  int32_t across, down;
+  // Assumes portrait - we'll swap if landscape.
+  switch (aPPS) {
+    case 2:
+      across = 1;
+      down = 2;
+      break;
+    case 4:
+      across = 2;
+      down = 2;
+      break;
+    case 6:
+      across = 2;
+      down = 3;
+      break;
+    case 9:
+      across = 3;
+      down = 3;
+      break;
+    case 16:
+      across = 4;
+      down = 4;
+      break;
+    default:
+      across = 1;
+      down = 1;
+      break;
+  }
+  if ([aPrintInfo orientation] == NSPaperOrientationLandscape) {
+    std::swap(across, down);
+  }
+
+  NSMutableDictionary* dict = [aPrintInfo dictionary];
+
+  [dict setObject:[NSNumber numberWithInt:across] forKey:@"NSPagesAcross"];
+  [dict setObject:[NSNumber numberWithInt:down] forKey:@"NSPagesDown"];
+}
+
 nsPrintDialogServiceX::nsPrintDialogServiceX() {}
 
 nsPrintDialogServiceX::~nsPrintDialogServiceX() {}
@@ -33,7 +73,8 @@ NS_IMETHODIMP
 nsPrintDialogServiceX::Init() { return NS_OK; }
 
 NS_IMETHODIMP
-nsPrintDialogServiceX::Show(nsPIDOMWindowOuter* aParent, nsIPrintSettings* aSettings) {
+nsPrintDialogServiceX::ShowPrintDialog(mozIDOMWindowProxy* aParent, bool aHaveSelection,
+                                       nsIPrintSettings* aSettings) {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   MOZ_ASSERT(aSettings, "aSettings must not be null");
@@ -42,13 +83,6 @@ nsPrintDialogServiceX::Show(nsPIDOMWindowOuter* aParent, nsIPrintSettings* aSett
   if (!settingsX) {
     return NS_ERROR_FAILURE;
   }
-
-  nsCOMPtr<nsIPrintSettingsService> printSettingsSvc =
-      do_GetService("@mozilla.org/gfx/printsettings-service;1");
-
-  // Read the saved printer settings from prefs. (This relies on the printer name
-  // stored in settingsX to read the printer-specific prefs.)
-  printSettingsSvc->InitPrintSettingsFromPrefs(settingsX, true, nsIPrintSettings::kInitSaveAll);
 
   NSPrintInfo* printInfo = settingsX->CreateOrCopyPrintInfo(/* aWithScaling = */ true);
   if (NS_WARN_IF(!printInfo)) {
@@ -73,6 +107,12 @@ nsPrintDialogServiceX::Show(nsPIDOMWindowOuter* aParent, nsIPrintSettings* aSett
     }
   }
 
+  // Temporarily set the pages-per-sheet count set in our print preview to
+  // pre-populate the system dialog with the same value:
+  int32_t pagesPerSheet;
+  aSettings->GetNumPagesPerSheet(&pagesPerSheet);
+  setPagesPerSheet(printInfo, pagesPerSheet);
+
   // Put the print info into the current print operation, since that's where
   // [panel runModal] will look for it. We create the view because otherwise
   // we'll get unrelated warnings printed to the console.
@@ -86,7 +126,8 @@ nsPrintDialogServiceX::Show(nsPIDOMWindowOuter* aParent, nsIPrintSettings* aSett
                     NSPrintPanelShowsPaperSize | NSPrintPanelShowsOrientation |
                     NSPrintPanelShowsScaling];
   PrintPanelAccessoryController* viewController =
-      [[PrintPanelAccessoryController alloc] initWithSettings:aSettings];
+      [[PrintPanelAccessoryController alloc] initWithSettings:aSettings
+                                                haveSelection:aHaveSelection];
   [panel addAccessoryController:viewController];
   [viewController release];
 
@@ -109,6 +150,16 @@ nsPrintDialogServiceX::Show(nsPIDOMWindowOuter* aParent, nsIPrintSettings* aSett
     return NS_ERROR_ABORT;
   }
 
+  // We handle pages-per-sheet internally and we want to prevent the macOS
+  // printing code from also applying the pages-per-sheet count. So we need
+  // to move the count off the NSPrintInfo and over to the nsIPrintSettings.
+  NSMutableDictionary* dict = [result dictionary];
+  auto pagesAcross = [[dict objectForKey:@"NSPagesAcross"] intValue];
+  auto pagesDown = [[dict objectForKey:@"NSPagesDown"] intValue];
+  [dict setObject:[NSNumber numberWithUnsignedInt:1] forKey:@"NSPagesAcross"];
+  [dict setObject:[NSNumber numberWithUnsignedInt:1] forKey:@"NSPagesDown"];
+  aSettings->SetNumPagesPerSheet(pagesAcross * pagesDown);
+
   // Export settings.
   [viewController exportSettings];
 
@@ -118,19 +169,14 @@ nsPrintDialogServiceX::Show(nsPIDOMWindowOuter* aParent, nsIPrintSettings* aSett
   // will be carried through.
   settingsX->SetFromPrintInfo(result, /* aAdoptPrintInfo = */ true);
 
-  // Save settings unless saving is pref'd off
-  if (Preferences::GetBool("print.save_print_settings", false)) {
-    printSettingsSvc->SavePrintSettingsToPrefs(settingsX, true,
-                                               nsIPrintSettings::kInitSaveNativeData);
-  }
-
   return NS_OK;
 
   NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 NS_IMETHODIMP
-nsPrintDialogServiceX::ShowPageSetup(nsPIDOMWindowOuter* aParent, nsIPrintSettings* aNSSettings) {
+nsPrintDialogServiceX::ShowPageSetupDialog(mozIDOMWindowProxy* aParent,
+                                           nsIPrintSettings* aNSSettings) {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   MOZ_ASSERT(aParent, "aParent must not be null");
@@ -161,10 +207,9 @@ nsPrintDialogServiceX::ShowPageSetup(nsPIDOMWindowOuter* aParent, nsIPrintSettin
     nsCOMPtr<nsIPrintSettingsService> printSettingsService =
         do_GetService("@mozilla.org/gfx/printsettings-service;1");
     if (printSettingsService && Preferences::GetBool("print.save_print_settings", false)) {
-      uint32_t flags = nsIPrintSettings::kInitSaveNativeData |
-                       nsIPrintSettings::kInitSavePaperSize |
+      uint32_t flags = nsIPrintSettings::kInitSavePaperSize |
                        nsIPrintSettings::kInitSaveOrientation | nsIPrintSettings::kInitSaveScaling;
-      printSettingsService->SavePrintSettingsToPrefs(aNSSettings, true, flags);
+      printSettingsService->MaybeSavePrintSettingsToPrefs(aNSSettings, flags);
     }
     return NS_OK;
   }
@@ -200,7 +245,7 @@ nsPrintDialogServiceX::ShowPageSetup(nsPIDOMWindowOuter* aParent, nsIPrintSettin
 - (NSPopUpButton*)headerFooterItemListWithFrame:(NSRect)aRect
                                    selectedItem:(const nsAString&)aCurrentString;
 
-- (void)addOptionsSection;
+- (void)addOptionsSection:(bool)aHaveSelection;
 
 - (void)addAppearanceSection;
 
@@ -220,12 +265,12 @@ static const char sHeaderFooterTags[][4] = {"", "&T", "&U", "&D", "&P", "&PT"};
 
 // Public methods
 
-- (id)initWithSettings:(nsIPrintSettings*)aSettings {
+- (id)initWithSettings:(nsIPrintSettings*)aSettings haveSelection:(bool)aHaveSelection {
   [super initWithFrame:NSMakeRect(0, 0, 540, 185)];
 
   mSettings = aSettings;
   [self initBundle];
-  [self addOptionsSection];
+  [self addOptionsSection:aHaveSelection];
   [self addAppearanceSection];
   [self addHeaderFooterSection];
 
@@ -332,16 +377,14 @@ static const char sHeaderFooterTags[][4] = {"", "&T", "&U", "&D", "&P", "&PT"};
 
 // Build sections
 
-- (void)addOptionsSection {
+- (void)addOptionsSection:(bool)aHaveSelection {
   // Title
   [self addLabel:"optionsTitleMac" withFrame:NSMakeRect(0, 155, 151, 22)];
 
   // "Print Selection Only"
   mPrintSelectionOnlyCheckbox = [self checkboxWithLabel:"selectionOnly"
                                                andFrame:NSMakeRect(156, 155, 0, 0)];
-
-  bool canPrintSelection = mSettings->GetIsPrintSelectionRBEnabled();
-  [mPrintSelectionOnlyCheckbox setEnabled:canPrintSelection];
+  [mPrintSelectionOnlyCheckbox setEnabled:aHaveSelection];
 
   if (mSettings->GetPrintSelectionOnly()) {
     [mPrintSelectionOnlyCheckbox setState:NSOnState];
@@ -526,10 +569,11 @@ static const char sHeaderFooterTags[][4] = {"", "&T", "&U", "&D", "&P", "&PT"};
 
 @implementation PrintPanelAccessoryController
 
-- (id)initWithSettings:(nsIPrintSettings*)aSettings {
+- (id)initWithSettings:(nsIPrintSettings*)aSettings haveSelection:(bool)aHaveSelection {
   [super initWithNibName:nil bundle:nil];
 
-  NSView* accView = [[PrintPanelAccessoryView alloc] initWithSettings:aSettings];
+  NSView* accView = [[PrintPanelAccessoryView alloc] initWithSettings:aSettings
+                                                        haveSelection:aHaveSelection];
   [self setView:accView];
   [accView release];
   return self;

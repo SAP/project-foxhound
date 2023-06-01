@@ -12,8 +12,7 @@
 #include "nsISupports.h"
 #include "mozilla/Attributes.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class MediaError final : public nsISupports, public nsWrapperCache {
   ~MediaError() = default;
@@ -24,7 +23,7 @@ class MediaError final : public nsISupports, public nsWrapperCache {
 
   // nsISupports
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(MediaError)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(MediaError)
 
   HTMLMediaElement* GetParentObject() const { return mParent; }
 
@@ -44,7 +43,6 @@ class MediaError final : public nsISupports, public nsWrapperCache {
   const nsCString mMessage;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_MediaError_h

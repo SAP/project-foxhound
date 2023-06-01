@@ -41,9 +41,6 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(AudioBuffer)
   }
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(AudioBuffer, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(AudioBuffer, Release)
-
 /**
  * AudioBuffers can be shared between AudioContexts, so we need a separate
  * mechanism to track their memory usage. This thread-safe class keeps track of
@@ -72,7 +69,7 @@ class AudioBufferMemoryTracker : public nsIMemoryReporter {
   void Init();
 
   /* This protects all members of this class. */
-  static StaticMutex sMutex;
+  static StaticMutex sMutex MOZ_UNANNOTATED;
   static StaticRefPtr<AudioBufferMemoryTracker> sSingleton;
   nsTHashSet<const AudioBuffer*> mBuffers;
 };
@@ -135,6 +132,7 @@ MOZ_DEFINE_MALLOC_SIZE_OF(AudioBufferMemoryTrackerMallocSizeOf)
 NS_IMETHODIMP
 AudioBufferMemoryTracker::CollectReports(nsIHandleReportCallback* aHandleReport,
                                          nsISupports* aData, bool) {
+  StaticMutexAutoLock lock(sMutex);
   const size_t amount =
       std::accumulate(mBuffers.cbegin(), mBuffers.cend(), size_t(0),
                       [](size_t val, const AudioBuffer* buffer) {
@@ -320,18 +318,17 @@ void AudioBuffer::CopyFromChannel(const Float32Array& aDestination,
         nsPrintfCString("Channel number (%u) is out of range", aChannelNumber));
     return;
   }
-
+  uint32_t length = Length();
+  if (aBufferOffset >= length) {
+    return;
+  }
   JS::AutoCheckCannotGC nogc;
   aDestination.ComputeState();
-
-  int64_t length = Length();
-  int64_t offset = aBufferOffset;
-  int64_t destLength = aDestination.Length();
-  uint32_t count = std::max(int64_t(0), std::min(length - offset, destLength));
+  uint32_t count = std::min(length - aBufferOffset, aDestination.Length());
 
   JSObject* channelArray = mJSChannels[aChannelNumber];
   if (channelArray) {
-    if (JS_GetTypedArrayLength(channelArray) != Length()) {
+    if (JS_GetTypedArrayLength(channelArray) != length) {
       // The array's buffer was detached.
       return;
     }
@@ -371,16 +368,14 @@ void AudioBuffer::CopyToChannel(JSContext* aJSContext,
 
   JS::AutoCheckCannotGC nogc;
   JSObject* channelArray = mJSChannels[aChannelNumber];
-  if (JS_GetTypedArrayLength(channelArray) != Length()) {
-    // The array's buffer was detached.
+  // This may differ from Length() if the buffer has been detached.
+  uint32_t length = JS_GetTypedArrayLength(channelArray);
+  if (aBufferOffset >= length) {
     return;
   }
 
   aSource.ComputeState();
-  int64_t length = JS_GetTypedArrayLength(channelArray);
-  int64_t offset = aBufferOffset;
-  int64_t srcLength = aSource.Length();
-  uint32_t count = std::max(int64_t(0), std::min(length - offset, srcLength));
+  uint32_t count = std::min(length - aBufferOffset, aSource.Length());
   bool isShared = false;
   float* channelData = JS_GetFloat32ArrayData(channelArray, &isShared, nogc);
   // The channelData arrays should all have originated in

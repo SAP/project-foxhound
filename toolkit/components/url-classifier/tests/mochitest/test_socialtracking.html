@@ -9,8 +9,6 @@
 <body>
 <script class="testbody" type="text/javascript">
 
-/* eslint-env mozilla/frame-script */
-
 var tests = [
   // All disabled.
   { config: [ false, false ], loadExpected: true },
@@ -38,6 +36,7 @@ async function runTest(test) {
     [ "privacy.trackingprotection.enabled", false ],
     [ "privacy.trackingprotection.annotate_channels", false ],
     [ "privacy.trackingprotection.cryptomining.enabled", false ],
+    [ "privacy.trackingprotection.emailtracking.enabled", false ],
     [ "privacy.trackingprotection.fingerprinting.enabled", false ],
     [ "privacy.trackingprotection.socialtracking.enabled", true ],
   ]});
@@ -67,6 +66,7 @@ async function runTest(test) {
 
 async function runTests() {
   let chromeScript = SpecialPowers.loadChromeScript(_ => {
+    /* eslint-env mozilla/chrome-script */
     const {UrlClassifierTestUtils} = ChromeUtils.import("resource://testing-common/UrlClassifierTestUtils.jsm");
 
     addMessageListener("loadTrackers", __ => {

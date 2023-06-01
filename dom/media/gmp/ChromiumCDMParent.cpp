@@ -352,7 +352,7 @@ bool ChromiumCDMParent::InitCDMInputBuffer(gmp::CDMInputBuffer& aBuffer,
   }
 
   Shmem shmem;
-  if (!AllocShmem(aSample->Size(), Shmem::SharedMemory::TYPE_BASIC, &shmem)) {
+  if (!AllocShmem(aSample->Size(), &shmem)) {
     return false;
   }
   memcpy(shmem.get<uint8_t>(), aSample->Data(), aSample->Size());
@@ -391,7 +391,7 @@ bool ChromiumCDMParent::SendBufferToCDM(uint32_t aSizeInBytes) {
   GMP_LOG_DEBUG("ChromiumCDMParent::SendBufferToCDM() size=%" PRIu32,
                 aSizeInBytes);
   Shmem shmem;
-  if (!AllocShmem(aSizeInBytes, Shmem::SharedMemory::TYPE_BASIC, &shmem)) {
+  if (!AllocShmem(aSizeInBytes, &shmem)) {
     return false;
   }
   if (!SendGiveBuffer(std::move(shmem))) {
@@ -960,6 +960,8 @@ already_AddRefed<VideoData> ChromiumCDMParent::CreateVideoFrame(
   b.mPlanes[2].mStride = aFrame.mVPlane().mStride();
   b.mPlanes[2].mSkip = 0;
 
+  b.mChromaSubsampling = gfx::ChromaSubsampling::HALF_WIDTH_AND_HEIGHT;
+
   // We unfortunately can't know which colorspace the video is using at this
   // stage.
   b.mYUVColorSpace =
@@ -971,6 +973,14 @@ already_AddRefed<VideoData> ChromiumCDMParent::CreateVideoFrame(
       media::TimeUnit::FromMicroseconds(aFrame.mTimestamp()),
       media::TimeUnit::FromMicroseconds(aFrame.mDuration()), b, false,
       media::TimeUnit::FromMicroseconds(-1), pictureRegion, mKnowsCompositor);
+
+  if (!v || !v->mImage) {
+    NS_WARNING("Failed to decode video frame.");
+    return v.forget();
+  }
+
+  // This is a DRM image.
+  v->mImage->SetIsDRM(true);
 
   return v.forget();
 }

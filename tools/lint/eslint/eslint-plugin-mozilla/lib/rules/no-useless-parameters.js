@@ -9,15 +9,17 @@
 
 "use strict";
 
-// -----------------------------------------------------------------------------
-// Rule Definition
-// -----------------------------------------------------------------------------
-
 module.exports = {
   meta: {
-    type: "suggestion",
+    docs: {
+      url:
+        "https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint-plugin-mozilla/no-useless-parameters.html",
+    },
     fixable: "code",
+    schema: [],
+    type: "suggestion",
   },
+
   create(context) {
     function getRangeAfterArgToEnd(argNumber, args) {
       let sourceCode = context.getSourceCode();
@@ -26,10 +28,6 @@ module.exports = {
         args[args.length - 1].range[1],
       ];
     }
-
-    // ---------------------------------------------------------------------------
-    // Public
-    //  --------------------------------------------------------------------------
 
     return {
       CallExpression(node) {

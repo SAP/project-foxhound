@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import division, print_function, unicode_literals
-
 import math
 import os
 import shutil
@@ -20,9 +18,7 @@ if sys.version_info[0] < 3:
 else:
     from importlib.abc import MetaPathFinder
 
-
 from types import ModuleType
-
 
 STATE_DIR_FIRST_RUN = """
 Mach and the build system store shared state in a common directory
@@ -30,11 +26,9 @@ on the filesystem. The following directory will be created:
 
   {}
 
-If you would like to use a different directory, hit CTRL+c, set the
-MOZBUILD_STATE_PATH environment variable to the directory you'd like to
-use, and run Mach again.
-
-Press ENTER/RETURN to continue or CTRL+c to abort.
+If you would like to use a different directory, rename or move it to your
+desired location, and set the MOZBUILD_STATE_PATH environment variable
+accordingly.
 """.strip()
 
 
@@ -104,6 +98,7 @@ def _maybe_activate_mozillabuild_environment():
         return
 
     mozillabuild = Path(os.environ.get("MOZILLABUILD", r"C:\mozilla-build"))
+    os.environ.setdefault("MOZILLABUILD", str(mozillabuild))
     assert mozillabuild.exists(), (
         f'MozillaBuild was not found at "{mozillabuild}".\n'
         "If it's installed in a different location, please "
@@ -111,25 +106,17 @@ def _maybe_activate_mozillabuild_environment():
         "accordingly."
     )
 
-    for entry in os.environ.get("PATH", "").split(":"):
-        entry = Path(entry)
-        if mozillabuild in entry.parents:
-            # We're already running with MozillaBuild directories in our PATH: either
-            # that's because we're inside the MozillaBuild shell, or the active developer
-            # has manually set up the PATH entries.
-            return
-
     use_msys2 = (mozillabuild / "msys2").exists()
     if use_msys2:
         mozillabuild_msys_tools_path = mozillabuild / "msys2" / "usr" / "bin"
     else:
         mozillabuild_msys_tools_path = mozillabuild / "msys" / "bin"
 
-    os.environ.setdefault("MOZILLABUILD", str(mozillabuild))
-    os.environ["PATH"] += (
-        f"{os.pathsep}{mozillabuild_msys_tools_path}"
-        f"{os.pathsep}{mozillabuild / 'bin'}"
-    )
+    paths_to_add = [mozillabuild_msys_tools_path, mozillabuild / "bin"]
+    existing_paths = [Path(p) for p in os.environ.get("PATH", "").split(os.pathsep)]
+    for new_path in paths_to_add:
+        if new_path not in existing_paths:
+            os.environ["PATH"] += f"{os.pathsep}{new_path}"
 
 
 def initialize(topsrcdir):
@@ -152,7 +139,7 @@ def initialize(topsrcdir):
         )
     ]
 
-    from mach.util import setenv, get_state_dir
+    from mach.util import get_state_dir, setenv
 
     state_dir = _create_state_dir()
 
@@ -164,7 +151,6 @@ def initialize(topsrcdir):
 
     import mach.base
     import mach.main
-
     from mach.main import MachCommandReference
 
     # Centralized registry of available mach commands
@@ -340,7 +326,13 @@ def initialize(topsrcdir):
         "data-review": MachCommandReference(
             "toolkit/components/glean/build_scripts/mach_commands.py"
         ),
+        "perf-data-review": MachCommandReference(
+            "toolkit/components/glean/build_scripts/mach_commands.py"
+        ),
         "update-glean-tags": MachCommandReference(
+            "toolkit/components/glean/build_scripts/mach_commands.py"
+        ),
+        "update-glean": MachCommandReference(
             "toolkit/components/glean/build_scripts/mach_commands.py"
         ),
         "browsertime": MachCommandReference("tools/browsertime/mach_commands.py"),
@@ -359,6 +351,18 @@ def initialize(topsrcdir):
         "power": MachCommandReference("tools/power/mach_commands.py"),
         "try": MachCommandReference("tools/tryselect/mach_commands.py"),
         "import-pr": MachCommandReference("tools/vcs/mach_commands.py"),
+        "test-interventions": MachCommandReference(
+            "testing/webcompat/mach_commands.py"
+        ),
+        "esmify": MachCommandReference("tools/esmify/mach_commands.py"),
+        "xpcshell": MachCommandReference("js/xpconnect/mach_commands.py"),
+        "uniffi": MachCommandReference(
+            "toolkit/components/uniffi-bindgen-gecko-js/mach_commands.py"
+        ),
+        "storybook": MachCommandReference(
+            "browser/components/storybook/mach_commands.py"
+        ),
+        "widgets": MachCommandReference("toolkit/content/widgets/mach_commands.py"),
     }
 
     # Set a reasonable limit to the number of open files.
@@ -545,7 +549,8 @@ def _finalize_telemetry_glean(telemetry, is_bootstrap, success):
         # psutil may not be available (we may not have been able to download
         # a wheel or build it from source).
         system_metrics.logical_cores.add(logical_cores)
-        system_metrics.physical_cores.add(physical_cores)
+        if physical_cores is not None:
+            system_metrics.physical_cores.add(physical_cores)
         if memory_total is not None:
             system_metrics.memory.accumulate(
                 int(math.ceil(float(memory_total) / (1024 * 1024 * 1024)))
@@ -574,11 +579,6 @@ def _create_state_dir():
         if not os.path.exists(state_dir):
             if not os.environ.get("MOZ_AUTOMATION"):
                 print(STATE_DIR_FIRST_RUN.format(state_dir))
-                try:
-                    sys.stdin.readline()
-                    print("\n")
-                except KeyboardInterrupt:
-                    sys.exit(1)
 
             print("Creating default state directory: {}".format(state_dir))
 

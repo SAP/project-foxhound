@@ -19,7 +19,7 @@ add_task(async function() {
     content.wrappedJSObject.console.log("oi-test", proxy);
   });
 
-  const node = await waitFor(() => findMessage(hud, "oi-test"));
+  const node = await waitFor(() => findConsoleAPIMessage(hud, "oi-test"));
   const oi = node.querySelector(".tree");
   const [proxyNode] = getObjectInspectorNodes(oi);
 
@@ -29,12 +29,12 @@ add_task(async function() {
 
   const targetNode = findObjectInspectorNode(oi, "<target>");
   expandObjectInspectorNode(targetNode);
-  await waitFor(() => getObjectInspectorChildrenNodes(targetNode).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(targetNode).length);
   checkChildren(targetNode, [`<target>`, `<handler>`]);
 
   const handlerNode = findObjectInspectorNode(oi, "<handler>");
   expandObjectInspectorNode(handlerNode);
-  await waitFor(() => getObjectInspectorChildrenNodes(handlerNode).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(handlerNode).length);
   checkChildren(handlerNode, [`<target>`, `<handler>`]);
 });
 

@@ -269,6 +269,14 @@ HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::AbsDiff;
+using hwy::HWY_NAMESPACE::Eq;
+using hwy::HWY_NAMESPACE::IfThenElseZero;
+using hwy::HWY_NAMESPACE::IfThenZeroElse;
+using hwy::HWY_NAMESPACE::Round;
+using hwy::HWY_NAMESPACE::Sqrt;
+
 bool MultiBlockTransformCrossesHorizontalBoundary(
     const AcStrategyImage& ac_strategy, size_t start_x, size_t y,
     size_t end_x) {
@@ -331,6 +339,36 @@ bool MultiBlockTransformCrossesVerticalBoundary(
   return false;
 }
 
+static const float kChromaErrorWeight[AcStrategy::kNumValidStrategies] = {
+    0.95f,  // DCT = 0,
+    1.0f,   // IDENTITY = 1,
+    0.5f,   // DCT2X2 = 2,
+    1.0f,   // DCT4X4 = 3,
+    2.0f,   // DCT16X16 = 4,
+    2.0f,   // DCT32X32 = 5,
+    1.4f,   // DCT16X8 = 6,
+    1.4f,   // DCT8X16 = 7,
+    2.0f,   // DCT32X8 = 8,
+    2.0f,   // DCT8X32 = 9,
+    2.0f,   // DCT32X16 = 10,
+    2.0f,   // DCT16X32 = 11,
+    2.0f,   // DCT4X8 = 12,
+    2.0f,   // DCT8X4 = 13,
+    1.7f,   // AFV0 = 14,
+    1.7f,   // AFV1 = 15,
+    1.7f,   // AFV2 = 16,
+    1.7f,   // AFV3 = 17,
+    2.0f,   // DCT64X64 = 18,
+    2.0f,   // DCT64X32 = 19,
+    2.0f,   // DCT32X64 = 20,
+    2.0f,   // DCT128X128 = 21,
+    2.0f,   // DCT128X64 = 22,
+    2.0f,   // DCT64X128 = 23,
+    2.0f,   // DCT256X256 = 24,
+    2.0f,   // DCT256X128 = 25,
+    2.0f,   // DCT128X256 = 26,
+};
+
 float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
                       const ACSConfig& config,
                       const float* JXL_RESTRICT cmap_factors, float* block,
@@ -347,6 +385,8 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
   HWY_FULL(float) df;
 
   const size_t num_blocks = acs.covered_blocks_x() * acs.covered_blocks_y();
+  // avoid large blocks when there is a lot going on in red-green.
+  float cmul[3] = {kChromaErrorWeight[acs.RawStrategy()], 1.0f, 1.0f};
   float quant_norm8 = 0;
   float masking = 0;
   if (num_blocks == 1) {
@@ -409,27 +449,27 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
     auto cost_delta = Set(df, config.cost_delta);
     for (size_t i = 0; i < num_blocks * kDCTBlockSize; i += Lanes(df)) {
       const auto in = Load(df, block + c * size + i);
-      const auto in_y = Load(df, block + size + i) * cmap_factor;
+      const auto in_y = Mul(Load(df, block + size + i), cmap_factor);
       const auto im = Load(df, inv_matrix + i);
-      const auto val = (in - in_y) * im * q;
+      const auto val = Mul(Sub(in, in_y), Mul(im, q));
       const auto rval = Round(val);
       const auto diff = AbsDiff(val, rval);
-      info_loss += diff;
-      info_loss2 += diff * diff;
+      info_loss = Add(info_loss, diff);
+      info_loss2 = MulAdd(diff, diff, info_loss2);
       const auto q = Abs(rval);
-      const auto q_is_zero = q == Zero(df);
-      entropy_v += IfThenElseZero(q >= Set(df, 1.5f), cost2);
+      const auto q_is_zero = Eq(q, Zero(df));
+      entropy_v = Add(entropy_v, IfThenElseZero(Ge(q, Set(df, 1.5f)), cost2));
       // We used to have q * C here, but that cost model seems to
       // be punishing large values more than necessary. Sqrt tries
       // to avoid large values less aggressively. Having high accuracy
       // around zero is most important at low qualities, and there
       // we have directly specified costs for 0, 1, and 2.
-      entropy_v += Sqrt(q) * cost_delta;
-      nzeros_v += IfThenZeroElse(q_is_zero, Set(df, 1.0f));
+      entropy_v = MulAdd(Sqrt(q), cost_delta, entropy_v);
+      nzeros_v = Add(nzeros_v, IfThenZeroElse(q_is_zero, Set(df, 1.0f)));
     }
-    entropy_v += nzeros_v * cost1;
+    entropy_v = MulAdd(nzeros_v, cost1, entropy_v);
 
-    entropy += GetLane(SumOfLanes(df, entropy_v));
+    entropy += cmul[c] * GetLane(SumOfLanes(df, entropy_v));
     size_t num_nzeros = GetLane(SumOfLanes(df, nzeros_v));
     // Add #bit of num_nonzeros, as an estimate of the cost for encoding the
     // number of non-zeros of the block.
@@ -470,23 +510,23 @@ uint8_t FindBest8x8Transform(size_t x, size_t y, int encoding_speed_tier,
           AcStrategy::Type::DCT4X4,
           5,
           4.0f,
-          1.0179946967008329f,
+          0.7f,
       },
       {
           AcStrategy::Type::DCT2X2,
-          4,
-          4.0f,
-          0.76721119707580943f,
+          5,
+          0.0f,
+          0.66f,
       },
       {
           AcStrategy::Type::DCT4X8,
-          5,
+          4,
           0.0f,
           0.700754622182473063f,
       },
       {
           AcStrategy::Type::DCT8X4,
-          5,
+          4,
           0.0f,
           0.700754622182473063f,
       },
@@ -797,7 +837,7 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
   // Favor all 8x8 transforms (against 16x8 and larger transforms)) at
   // low butteraugli_target distances.
   static const float k8x8mul1 = -0.55;
-  static const float k8x8mul2 = 1.0735757687292623f;
+  static const float k8x8mul2 = 1.0;
   static const float k8x8base = 1.4;
   const float mul8x8 = k8x8mul2 + k8x8mul1 / (butteraugli_target + k8x8base);
   for (size_t iy = 0; iy < rect.ysize(); iy++) {
@@ -822,27 +862,27 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
     float entropy_mul;
   };
   static const float k8X16mul1 = -0.55;
-  static const float k8X16mul2 = 0.9019587899705066;
+  static const float k8X16mul2 = 0.867;
   static const float k8X16base = 1.6;
   const float entropy_mul16X8 =
       k8X16mul2 + k8X16mul1 / (butteraugli_target + k8X16base);
   //  const float entropy_mul16X8 = mul8X16 * 0.91195782912371126f;
 
   static const float k16X16mul1 = -0.35;
-  static const float k16X16mul2 = 0.82;
+  static const float k16X16mul2 = 0.80;
   static const float k16X16base = 2.0;
   const float entropy_mul16X16 =
       k16X16mul2 + k16X16mul1 / (butteraugli_target + k16X16base);
   //  const float entropy_mul16X16 = mul16X16 * 0.83183417727960129f;
 
   static const float k32X16mul1 = -0.1;
-  static const float k32X16mul2 = 0.84;
+  static const float k32X16mul2 = 0.86;
   static const float k32X16base = 2.5;
   const float entropy_mul16X32 =
       k32X16mul2 + k32X16mul1 / (butteraugli_target + k32X16base);
 
-  const float entropy_mul32X32 = 0.9;
-  const float entropy_mul64X64 = 1.43f;
+  const float entropy_mul32X32 = 0.94;
+  const float entropy_mul64X64 = 1.52f;
   // TODO(jyrki): Consider this feedback in further changes:
   // Also effectively when the multipliers for smaller blocks are
   // below 1, this raises the bar for the bigger blocks even higher
@@ -863,8 +903,8 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
       // subdivisions. {AcStrategy::Type::DCT32X32, 5, 1, 5,
       // 0.9822994906548809f},
       // TODO(jyrki): re-enable 64x32 and 64x64 if/when possible.
-      {AcStrategy::Type::DCT64X32, 6, 1, 3, 1.26f},
-      {AcStrategy::Type::DCT32X64, 6, 1, 3, 1.26f},
+      {AcStrategy::Type::DCT64X32, 6, 1, 3, 1.29f},
+      {AcStrategy::Type::DCT32X64, 6, 1, 3, 1.29f},
       // {AcStrategy::Type::DCT64X64, 8, 1, 3, 2.0846542128012948f},
   };
   /*
@@ -1007,6 +1047,17 @@ void AcStrategyHeuristics::Init(const Image3F& src,
   config.dequant = &enc_state->shared.matrices;
   const CompressParams& cparams = enc_state->cparams;
   const float butteraugli_target = cparams.butteraugli_distance;
+
+  if (cparams.speed_tier >= SpeedTier::kCheetah) {
+    JXL_CHECK(enc_state->shared.matrices.EnsureComputed(1));  // DCT8 only
+  } else {
+    uint32_t acs_mask = 0;
+    // All transforms up to 64x64.
+    for (size_t i = 0; i < AcStrategy::DCT128X128; i++) {
+      acs_mask |= (1 << i);
+    }
+    JXL_CHECK(enc_state->shared.matrices.EnsureComputed(acs_mask));
+  }
 
   // Image row pointers and strides.
   config.quant_field_row = enc_state->initial_quant_field.Row(0);

@@ -3,11 +3,10 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-from gecko_taskgraph.util.python_path import find_object
+from taskgraph.util.python_path import find_object
 
 from ..cli import BaseTryParser
 from ..push import push_to_try
-
 
 TRY_AUTO_PARAMETERS = {
     "optimize_strategies": "gecko_taskgraph.optimize:tryselect.bugbug_reduced_manifests_config_selection_medium",  # noqa
@@ -79,7 +78,8 @@ class AutoParser(BaseTryParser):
 
 def run(
     message="{msg}",
-    push=True,
+    stage_changes=False,
+    dry_run=False,
     closed_tree=False,
     strategy=None,
     tasks_regex=None,
@@ -106,5 +106,10 @@ def run(
         "parameters": params,
     }
     return push_to_try(
-        "auto", msg, try_task_config=task_config, push=push, closed_tree=closed_tree
+        "auto",
+        msg,
+        try_task_config=task_config,
+        stage_changes=stage_changes,
+        dry_run=dry_run,
+        closed_tree=closed_tree,
     )

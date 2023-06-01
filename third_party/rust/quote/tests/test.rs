@@ -1,6 +1,5 @@
 #![allow(
-    clippy::blacklisted_name,
-    clippy::let_underscore_drop,
+    clippy::disallowed_names,
     clippy::shadow_unrelated,
     clippy::unseparated_literal_suffix,
     clippy::used_underscore_binding
@@ -180,7 +179,8 @@ fn test_integer() {
         #ii8 #ii16 #ii32 #ii64 #ii128 #iisize
         #uu8 #uu16 #uu32 #uu64 #uu128 #uusize
     };
-    let expected = "1 1i32 1u256 - 1i8 - 1i16 - 1i32 - 1i64 - 1i128 - 1isize 1u8 1u16 1u32 1u64 1u128 1usize";
+    let expected =
+        "1 1i32 1u256 - 1i8 - 1i16 - 1i32 - 1i64 - 1i128 - 1isize 1u8 1u16 1u32 1u64 1u128 1usize";
     assert_eq!(expected, tokens.to_string());
 }
 
@@ -200,7 +200,7 @@ fn test_floating() {
 
 #[test]
 fn test_char() {
-    let zero = '\0';
+    let zero = '\u{1}';
     let pound = '#';
     let quote = '"';
     let apost = '\'';
@@ -210,23 +210,23 @@ fn test_char() {
     let tokens = quote! {
         #zero #pound #quote #apost #newline #heart
     };
-    let expected = "'\\u{0}' '#' '\"' '\\'' '\\n' '\u{2764}'";
+    let expected = "'\\u{1}' '#' '\"' '\\'' '\\n' '\u{2764}'";
     assert_eq!(expected, tokens.to_string());
 }
 
 #[test]
 fn test_str() {
-    let s = "\0 a 'b \" c";
+    let s = "\u{1} a 'b \" c";
     let tokens = quote!(#s);
-    let expected = "\"\\u{0} a 'b \\\" c\"";
+    let expected = "\"\\u{1} a 'b \\\" c\"";
     assert_eq!(expected, tokens.to_string());
 }
 
 #[test]
 fn test_string() {
-    let s = "\0 a 'b \" c".to_string();
+    let s = "\u{1} a 'b \" c".to_string();
     let tokens = quote!(#s);
-    let expected = "\"\\u{0} a 'b \\\" c\"";
+    let expected = "\"\\u{1} a 'b \\\" c\"";
     assert_eq!(expected, tokens.to_string());
 }
 

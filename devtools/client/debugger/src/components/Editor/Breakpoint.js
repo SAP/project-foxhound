@@ -3,6 +3,7 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import { PureComponent } from "react";
+import PropTypes from "prop-types";
 import classnames from "classnames";
 
 import { getDocument, toEditorLine } from "../../utils/editor";
@@ -16,6 +17,17 @@ breakpointSvg.innerHTML =
   '<svg viewBox="0 0 60 15" width="60" height="15"><path d="M53.07.5H1.5c-.54 0-1 .46-1 1v12c0 .54.46 1 1 1h51.57c.58 0 1.15-.26 1.53-.7l4.7-6.3-4.7-6.3c-.38-.44-.95-.7-1.53-.7z"/></svg>';
 
 class Breakpoint extends PureComponent {
+  static get propTypes() {
+    return {
+      cx: PropTypes.object.isRequired,
+      breakpoint: PropTypes.object.isRequired,
+      breakpointActions: PropTypes.object.isRequired,
+      editor: PropTypes.object.isRequired,
+      editorActions: PropTypes.object.isRequired,
+      selectedSource: PropTypes.object,
+    };
+  }
+
   componentDidMount() {
     this.addBreakpoint(this.props);
   }
@@ -62,22 +74,25 @@ class Breakpoint extends PureComponent {
 
     const selectedLocation = getSelectedLocation(breakpoint, selectedSource);
     if (event.metaKey) {
-      return editorActions.continueToHere(cx, selectedLocation.line);
+      editorActions.continueToHere(cx, selectedLocation.line);
+      return;
     }
 
     if (event.shiftKey) {
       if (features.columnBreakpoints) {
-        return breakpointActions.toggleBreakpointsAtLine(
+        breakpointActions.toggleBreakpointsAtLine(
           cx,
           !breakpoint.disabled,
           selectedLocation.line
         );
+        return;
       }
 
-      return breakpointActions.toggleDisabledBreakpoint(cx, breakpoint);
+      breakpointActions.toggleDisabledBreakpoint(cx, breakpoint);
+      return;
     }
 
-    return breakpointActions.removeBreakpointsAtLine(
+    breakpointActions.removeBreakpointsAtLine(
       cx,
       selectedLocation.sourceId,
       selectedLocation.line

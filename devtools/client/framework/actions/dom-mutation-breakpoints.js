@@ -3,11 +3,11 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 "use strict";
 
-const { assert } = require("devtools/shared/DevToolsUtils");
+const { assert } = require("resource://devtools/shared/DevToolsUtils.js");
 const {
   getDOMMutationBreakpoint,
   getDOMMutationBreakpoints,
-} = require("devtools/client/framework/reducers/dom-mutation-breakpoints");
+} = require("resource://devtools/client/framework/reducers/dom-mutation-breakpoints.js");
 
 exports.registerWalkerListeners = registerWalkerListeners;
 function registerWalkerListeners(store, walker) {
@@ -22,7 +22,7 @@ function handleWalkerMutations(mutations, store) {
   const mutationItems = mutations.filter(
     mutation => mutation.type === "mutationBreakpoint"
   );
-  if (mutationItems.length > 0) {
+  if (mutationItems.length) {
     store.dispatch(updateBreakpointsForMutations(mutationItems));
   }
 }
@@ -90,7 +90,7 @@ function updateBreakpointsForMutations(mutationItems) {
       }
     }
 
-    if (removedNodeFronts.length > 0) {
+    if (removedNodeFronts.length) {
       dispatch({
         type: "REMOVE_DOM_MUTATION_BREAKPOINTS_FOR_FRONTS",
         nodeFronts: removedNodeFronts,

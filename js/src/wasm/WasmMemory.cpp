@@ -19,6 +19,9 @@
 #include "wasm/WasmMemory.h"
 
 #include "mozilla/MathAlgorithms.h"
+
+#include "js/Conversions.h"
+#include "js/ErrorReport.h"
 #include "vm/ArrayBufferObject.h"
 #include "wasm/WasmCodegenTypes.h"
 #include "wasm/WasmProcess.h"
@@ -45,7 +48,7 @@ bool wasm::ToIndexType(JSContext* cx, HandleValue value, IndexType* indexType) {
     return false;
   }
 
-  RootedLinearString typeLinearStr(cx, typeStr->ensureLinear(cx));
+  Rooted<JSLinearString*> typeLinearStr(cx, typeStr->ensureLinear(cx));
   if (!typeLinearStr) {
     return false;
   }
@@ -72,12 +75,12 @@ bool wasm::ToIndexType(JSContext* cx, HandleValue value, IndexType* indexType) {
  *
  * A memory address in an access instruction has three components, the "memory
  * base", the "pointer", and the "offset".  The "memory base" - the HeapReg on
- * most platforms and a value loaded from the Tls on x86 - is a native pointer
- * that points to the start of the linear memory array; we'll ignore the memory
- * base in the following.  The "pointer" is the i32 or i64 index supplied by the
- * program as a separate value argument to the access instruction; it is usually
- * variable but can be constant.  The "offset" is a constant encoded in the
- * access instruction.
+ * most platforms and a value loaded from the instance on x86 - is a native
+ * pointer that points to the start of the linear memory array; we'll ignore the
+ * memory base in the following.  The "pointer" is the i32 or i64 index supplied
+ * by the program as a separate value argument to the access instruction; it is
+ * usually variable but can be constant.  The "offset" is a constant encoded in
+ * the access instruction.
  *
  * The "effective address" (EA) is the non-overflowed sum of the pointer and the
  * offset (if the sum overflows the program traps); the pointer, offset, and EA
@@ -136,7 +139,7 @@ bool wasm::ToIndexType(JSContext* cx, HandleValue value, IndexType* indexType) {
  *
  * The boundsCheckLimit.
  *
- * The bounds check limit that is stored in the Tls is always valid and is
+ * The bounds check limit that is stored in the instance is always valid and is
  * always a 64-bit datum, and it is always correct to load it and use it as a
  * 64-bit value.  However, in situations when the 32 upper bits are known to be
  * zero, it is also correct to load just the low 32 bits from the address of the
@@ -157,9 +160,6 @@ bool wasm::ToIndexType(JSContext* cx, HandleValue value, IndexType* indexType) {
  *
  * On x64 and arm64 with Baseline and Ion, we allow 32-bit memories up to 4GB,
  * and 64-bit memories can be larger.
- *
- * On arm64 with Cranelift, memories limited to 4GB-128K, since new code would
- * have to be written to deal with the 64-bit limit.
  *
  * On mips64, memories are limited to 2GB, for now.
  *
@@ -246,27 +246,12 @@ static_assert(MaxInlineMemoryCopyLength < MinOffsetGuardLimit, "precondition");
 static_assert(MaxInlineMemoryFillLength < MinOffsetGuardLimit, "precondition");
 
 #ifdef JS_64BIT
-#  ifdef ENABLE_WASM_CRANELIFT
-// TODO (large ArrayBuffer): Cranelift needs to be updated to use more than the
-// low 32 bits of the boundsCheckLimit, so for now we limit its heap size to
-// something that satisfies the 32-bit invariants.
-//
-// The "-2" here accounts for the !huge-memory case in CreateSpecificWasmBuffer,
-// which is guarding against an overflow.  Also see
-// WasmMemoryObject::boundsCheckLimit() for related assertions.
-wasm::Pages wasm::MaxMemoryPages(IndexType) {
-  size_t desired = MaxMemory32LimitField - 2;
-  size_t actual = ArrayBufferObject::maxBufferByteLength() / PageSize;
-  return wasm::Pages(std::min(desired, actual));
-}
-#  else
 wasm::Pages wasm::MaxMemoryPages(IndexType t) {
   MOZ_ASSERT_IF(t == IndexType::I64, !IsHugeMemoryEnabled(t));
   size_t desired = MaxMemoryLimitField(t);
-  size_t actual = ArrayBufferObject::maxBufferByteLength() / PageSize;
+  constexpr size_t actual = ArrayBufferObject::MaxByteLength / PageSize;
   return wasm::Pages(std::min(desired, actual));
 }
-#  endif
 
 size_t wasm::MaxMemoryBoundsCheckLimit(IndexType t) {
   return MaxMemoryPages(t).byteLength();
@@ -277,7 +262,7 @@ size_t wasm::MaxMemoryBoundsCheckLimit(IndexType t) {
 // range of an int32_t, which means the maximum heap size as observed by wasm
 // code is one wasm page less than 2GB.
 wasm::Pages wasm::MaxMemoryPages(IndexType t) {
-  MOZ_ASSERT(ArrayBufferObject::maxBufferByteLength() >= INT32_MAX / PageSize);
+  static_assert(ArrayBufferObject::MaxByteLength >= INT32_MAX / PageSize);
   return wasm::Pages(INT32_MAX / PageSize);
 }
 
@@ -334,16 +319,6 @@ Pages wasm::ClampedMaxPages(IndexType t, Pages initialPages,
     // There is a specified maximum, clamp it to the implementation limit of
     // maximum pages
     clampedMaxPages = std::min(*sourceMaxPages, wasm::MaxMemoryPages(t));
-
-#if defined(JS_64BIT) && defined(ENABLE_WASM_CRANELIFT)
-    // On 64-bit platforms when we aren't using huge memory and we're using
-    // Cranelift, we must satisfy the 32-bit invariants that:
-    //    clampedMaxSize + wasm::PageSize < UINT32_MAX
-    // This is ensured by clamping sourceMaxPages to wasm::MaxMemoryPages(),
-    // which has special logic for cranelift.
-    MOZ_ASSERT_IF(!useHugeMemory,
-                  clampedMaxPages.byteLength() + wasm::PageSize < UINT32_MAX);
-#endif
 
 #ifndef JS_64BIT
     static_assert(sizeof(uintptr_t) == 4, "assuming not 64 bit implies 32 bit");

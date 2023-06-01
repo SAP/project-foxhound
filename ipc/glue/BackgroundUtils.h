@@ -26,17 +26,15 @@ template <class ParamType>
 struct OriginAttributesParamTraits {
   typedef ParamType paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam) {
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
     nsAutoCString suffix;
     aParam.CreateSuffix(suffix);
-    WriteParam(aMsg, suffix);
+    WriteParam(aWriter, suffix);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   paramType* aResult) {
+  static bool Read(MessageReader* aReader, paramType* aResult) {
     nsAutoCString suffix;
-    return ReadParam(aMsg, aIter, &suffix) &&
-           aResult->PopulateFromSuffix(suffix);
+    return ReadParam(aReader, &suffix) && aResult->PopulateFromSuffix(suffix);
   }
 };
 }  // namespace detail
@@ -83,6 +81,14 @@ Result<nsCOMPtr<nsIPrincipal>, nsresult> PrincipalInfoToPrincipal(
 nsresult PrincipalToPrincipalInfo(nsIPrincipal* aPrincipal,
                                   PrincipalInfo* aPrincipalInfo,
                                   bool aSkipBaseDomain = false);
+
+/**
+ * Compare storage keys for equivalence.
+ *
+ * Only use with storage keys retrieved from nsIGlobalObject::GetStorageKey!
+ * Bug 1776271 tracks enhancing this into a proper type.
+ */
+bool StorageKeysEqual(const PrincipalInfo& aLeft, const PrincipalInfo& aRight);
 
 /**
  * Convert a CSPInfo to an nsIContentSecurityPolicy.
@@ -138,16 +144,18 @@ nsresult LoadInfoToLoadInfoArgs(
  */
 nsresult LoadInfoArgsToLoadInfo(
     const Maybe<mozilla::net::LoadInfoArgs>& aOptionalLoadInfoArgs,
-    nsILoadInfo** outLoadInfo);
+    const nsACString& aOriginRemoteType, nsILoadInfo** outLoadInfo);
 nsresult LoadInfoArgsToLoadInfo(
     const Maybe<mozilla::net::LoadInfoArgs>& aOptionalLoadInfoArgs,
-    nsINode* aCspToInheritLoadingContext, nsILoadInfo** outLoadInfo);
+    const nsACString& aOriginRemoteType, nsINode* aCspToInheritLoadingContext,
+    nsILoadInfo** outLoadInfo);
 nsresult LoadInfoArgsToLoadInfo(
     const Maybe<net::LoadInfoArgs>& aOptionalLoadInfoArgs,
+    const nsACString& aOriginRemoteType, mozilla::net::LoadInfo** outLoadInfo);
+nsresult LoadInfoArgsToLoadInfo(
+    const Maybe<net::LoadInfoArgs>& aOptionalLoadInfoArgs,
+    const nsACString& aOriginRemoteType, nsINode* aCspToInheritLoadingContext,
     mozilla::net::LoadInfo** outLoadInfo);
-nsresult LoadInfoArgsToLoadInfo(
-    const Maybe<net::LoadInfoArgs>& aOptionalLoadInfoArgs,
-    nsINode* aCspToInheritLoadingContext, mozilla::net::LoadInfo** outLoadInfo);
 
 /**
  * Fills ParentLoadInfoForwarderArgs with properties we want to carry to child

@@ -28,8 +28,7 @@
 #define SRIERROR(args) \
   MOZ_LOG(SRILogHelper::GetSriLog(), mozilla::LogLevel::Error, args)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /**
  * Returns whether or not the sub-resource about to be loaded is eligible
@@ -201,11 +200,8 @@ nsresult SRICheckDataVerifier::EnsureCryptoHash() {
     return NS_OK;
   }
 
-  nsresult rv;
-  nsCOMPtr<nsICryptoHash> cryptoHash =
-      do_CreateInstance("@mozilla.org/security/hash;1", &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = cryptoHash->Init(mHashType);
+  nsCOMPtr<nsICryptoHash> cryptoHash;
+  nsresult rv = NS_NewCryptoHash(mHashType, getter_AddRefs(cryptoHash));
   NS_ENSURE_SUCCESS(rv, rv);
 
   mCryptoHash = cryptoHash;
@@ -491,5 +487,4 @@ nsresult SRICheckDataVerifier::ExportEmptyDataSummary(uint32_t aDataLen,
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

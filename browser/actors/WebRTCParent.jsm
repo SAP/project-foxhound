@@ -6,63 +6,43 @@
 
 var EXPORTED_SYMBOLS = ["WebRTCParent"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
-  this,
-  "PluralForm",
-  "resource://gre/modules/PluralForm.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "SitePermissions",
   "resource:///modules/SitePermissions.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "webrtcUI",
   "resource:///modules/webrtcUI.jsm"
 );
 
-XPCOMUtils.defineLazyGetter(this, "gBrandBundle", function() {
-  return Services.strings.createBundle(
-    "chrome://branding/locale/brand.properties"
-  );
-});
-
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "OSPermissions",
   "@mozilla.org/ospermissionrequest;1",
   "nsIOSPermissionRequest"
 );
-
-// Keep in sync with defines at base_capturer_pipewire.cc
-// With PipeWire we can't select which system resource is shared so
-// we don't create a window/screen list. Instead we place these constants
-// as window name/id so frontend code can identify PipeWire backend
-// and does not try to create screen/window preview.
-const PIPEWIRE_PORTAL_NAME = "####_PIPEWIRE_PORTAL_####";
-const PIPEWIRE_ID = 0xaffffff;
 
 class WebRTCParent extends JSWindowActorParent {
   didDestroy() {
     // Media stream tracks end on unload, so call stopRecording() on them early
     // *before* we go away, to ensure we're working with the right principal.
     this.stopRecording(this.manager.outerWindowId);
-    webrtcUI.forgetStreamsFromBrowserContext(this.browsingContext);
+    lazy.webrtcUI.forgetStreamsFromBrowserContext(this.browsingContext);
     // Must clear activePerms here to prevent them from being read by laggard
     // stopRecording() calls, which due to IPC, may come in *after* navigation.
     // This is to prevent granting temporary grace periods to the wrong page.
-    webrtcUI.activePerms.delete(this.manager.outerWindowId);
+    lazy.webrtcUI.activePerms.delete(this.manager.outerWindowId);
   }
 
   getBrowser() {
@@ -81,7 +61,7 @@ class WebRTCParent extends JSWindowActorParent {
           )
         );
 
-        let blockers = Array.from(webrtcUI.peerConnectionBlockers);
+        let blockers = Array.from(lazy.webrtcUI.peerConnectionBlockers);
 
         (async function() {
           for (let blocker of blockers) {
@@ -91,17 +71,17 @@ class WebRTCParent extends JSWindowActorParent {
                 return false;
               }
             } catch (err) {
-              Cu.reportError(`error in PeerConnection blocker: ${err.message}`);
+              console.error(`error in PeerConnection blocker: ${err.message}`);
             }
           }
           return true;
         })().then(decision => {
           let message;
           if (decision) {
-            webrtcUI.emitter.emit("peer-request-allowed", params);
+            lazy.webrtcUI.emitter.emit("peer-request-allowed", params);
             message = "rtcpeer:Allow";
           } else {
-            webrtcUI.emitter.emit("peer-request-blocked", params);
+            lazy.webrtcUI.emitter.emit("peer-request-blocked", params);
             message = "rtcpeer:Deny";
           }
 
@@ -117,7 +97,7 @@ class WebRTCParent extends JSWindowActorParent {
           origin: this.manager.documentPrincipal.origin,
           callID: aMessage.data,
         });
-        webrtcUI.emitter.emit("peer-request-cancel", params);
+        lazy.webrtcUI.emitter.emit("peer-request-cancel", params);
         break;
       }
       case "webrtc:Request": {
@@ -166,7 +146,7 @@ class WebRTCParent extends JSWindowActorParent {
           if (!data.remove) {
             data.principal = this.manager.topWindowContext.documentPrincipal;
           }
-          webrtcUI.streamAddedOrRemoved(this.browsingContext, data);
+          lazy.webrtcUI.streamAddedOrRemoved(this.browsingContext, data);
         }
         this.updateIndicators(data);
         break;
@@ -176,7 +156,7 @@ class WebRTCParent extends JSWindowActorParent {
 
   updateIndicators(aData) {
     let browsingContext = this.browsingContext;
-    let state = webrtcUI.updateIndicators(browsingContext.top);
+    let state = lazy.webrtcUI.updateIndicators(browsingContext.top);
 
     let browser = this.getBrowser();
     if (!browser) {
@@ -233,13 +213,13 @@ class WebRTCParent extends JSWindowActorParent {
     let camStatus = {},
       micStatus = {};
     if (camNeeded || micNeeded) {
-      OSPermissions.getMediaCapturePermissionState(camStatus, micStatus);
+      lazy.OSPermissions.getMediaCapturePermissionState(camStatus, micStatus);
     }
     if (camNeeded) {
       let camPermission = camStatus.value;
       let camAccessible = await this.checkAndGetOSPermission(
         camPermission,
-        OSPermissions.requestVideoCapturePermission
+        lazy.OSPermissions.requestVideoCapturePermission
       );
       if (!camAccessible) {
         return false;
@@ -249,7 +229,7 @@ class WebRTCParent extends JSWindowActorParent {
       let micPermission = micStatus.value;
       let micAccessible = await this.checkAndGetOSPermission(
         micPermission,
-        OSPermissions.requestAudioCapturePermission
+        lazy.OSPermissions.requestAudioCapturePermission
       );
       if (!micAccessible) {
         return false;
@@ -257,9 +237,9 @@ class WebRTCParent extends JSWindowActorParent {
     }
     let scrStatus = {};
     if (scrNeeded) {
-      OSPermissions.getScreenCapturePermissionState(scrStatus);
-      if (scrStatus.value == OSPermissions.PERMISSION_STATE_DENIED) {
-        OSPermissions.maybeRequestScreenCapturePermission();
+      lazy.OSPermissions.getScreenCapturePermissionState(scrStatus);
+      if (scrStatus.value == lazy.OSPermissions.PERMISSION_STATE_DENIED) {
+        lazy.OSPermissions.maybeRequestScreenCapturePermission();
         return false;
       }
     }
@@ -274,12 +254,12 @@ class WebRTCParent extends JSWindowActorParent {
   //
   async checkAndGetOSPermission(devicePermission, requestPermissionFunc) {
     if (
-      devicePermission == OSPermissions.PERMISSION_STATE_DENIED ||
-      devicePermission == OSPermissions.PERMISSION_STATE_RESTRICTED
+      devicePermission == lazy.OSPermissions.PERMISSION_STATE_DENIED ||
+      devicePermission == lazy.OSPermissions.PERMISSION_STATE_RESTRICTED
     ) {
       return false;
     }
-    if (devicePermission == OSPermissions.PERMISSION_STATE_NOTDETERMINED) {
+    if (devicePermission == lazy.OSPermissions.PERMISSION_STATE_NOTDETERMINED) {
       let deviceAllowed = await requestPermissionFunc();
       if (!deviceAllowed) {
         return false;
@@ -289,7 +269,7 @@ class WebRTCParent extends JSWindowActorParent {
   }
 
   stopRecording(aOuterWindowId, aMediaSource, aRawId) {
-    for (let { browsingContext, state } of webrtcUI._streams) {
+    for (let { browsingContext, state } of lazy.webrtcUI._streams) {
       if (browsingContext == this.browsingContext) {
         let { principal } = state;
         for (let { mediaSource, rawId } of state.devices) {
@@ -313,12 +293,12 @@ class WebRTCParent extends JSWindowActorParent {
    * Important to call for permission grace periods to work correctly.
    */
   activateDevicePerm(aOuterWindowId, aMediaSource, aId) {
-    if (!webrtcUI.activePerms.has(this.manager.outerWindowId)) {
-      webrtcUI.activePerms.set(this.manager.outerWindowId, new Set());
+    if (!lazy.webrtcUI.activePerms.has(this.manager.outerWindowId)) {
+      lazy.webrtcUI.activePerms.set(this.manager.outerWindowId, new Map());
     }
-    webrtcUI.activePerms
+    lazy.webrtcUI.activePerms
       .get(this.manager.outerWindowId)
-      .add(aOuterWindowId + aMediaSource + aId);
+      .set(aOuterWindowId + aMediaSource + aId, aMediaSource);
   }
 
   /**
@@ -338,11 +318,11 @@ class WebRTCParent extends JSWindowActorParent {
     // If we don't have active permissions for the given window anymore don't
     // set a grace period. This happens if there has been a user revoke and
     // webrtcUI clears the permissions.
-    if (!webrtcUI.activePerms.has(this.manager.outerWindowId)) {
+    if (!lazy.webrtcUI.activePerms.has(this.manager.outerWindowId)) {
       return;
     }
-    let set = webrtcUI.activePerms.get(this.manager.outerWindowId);
-    set.delete(aOuterWindowId + aMediaSource + aId);
+    let map = lazy.webrtcUI.activePerms.get(this.manager.outerWindowId);
+    map.delete(aOuterWindowId + aMediaSource + aId);
 
     // Add a permission grace period for camera and microphone only
     if (
@@ -351,7 +331,7 @@ class WebRTCParent extends JSWindowActorParent {
     ) {
       return;
     }
-    let gracePeriodMs = webrtcUI.deviceGracePeriodTimeoutMs;
+    let gracePeriodMs = lazy.webrtcUI.deviceGracePeriodTimeoutMs;
     if (gracePeriodMs > 0) {
       // A grace period is extended (even past navigation) to this outer window
       // + origin + deviceId only. This avoids re-prompting without the user
@@ -365,14 +345,13 @@ class WebRTCParent extends JSWindowActorParent {
       // page already, and we must not leak permission to unrelated pages.
       //
       let permissionName = [aMediaSource, aId].join("^");
-      SitePermissions.setForPrincipal(
+      lazy.SitePermissions.setForPrincipal(
         aPermissionPrincipal,
         permissionName,
-        SitePermissions.ALLOW,
-        SitePermissions.SCOPE_TEMPORARY,
+        lazy.SitePermissions.ALLOW,
+        lazy.SitePermissions.SCOPE_TEMPORARY,
         this.browsingContext.top.embedderElement,
-        gracePeriodMs,
-        aPermissionPrincipal.URI
+        gracePeriodMs
       );
     }
   }
@@ -392,8 +371,36 @@ class WebRTCParent extends JSWindowActorParent {
     if (aRequest.sharingScreen) {
       return false;
     }
-    if (aRequest.audioOutputDevices?.length) {
-      return false;
+    let {
+      callID,
+      windowID,
+      audioInputDevices,
+      videoInputDevices,
+      audioOutputDevices,
+      hasInherentAudioConstraints,
+      hasInherentVideoConstraints,
+      audioOutputId,
+    } = aRequest;
+
+    if (audioOutputDevices?.length) {
+      // Prompt if a specific device is not requested, available and allowed.
+      let device = audioOutputDevices.find(({ id }) => id == audioOutputId);
+      if (
+        !device ||
+        !lazy.SitePermissions.getForPrincipal(
+          aPrincipal,
+          ["speaker", device.id].join("^"),
+          this.getBrowser()
+        ).state == lazy.SitePermissions.ALLOW
+      ) {
+        return false;
+      }
+      this.sendAsyncMessage("webrtc:Allow", {
+        callID,
+        windowID,
+        devices: [device.deviceIndex],
+      });
+      return true;
     }
 
     let { perms } = Services;
@@ -411,28 +418,19 @@ class WebRTCParent extends JSWindowActorParent {
       (aRequest.isThirdPartyOrigin && !aRequest.shouldDelegatePermission) ||
       aRequest.secondOrigin;
 
-    let set = webrtcUI.activePerms.get(this.manager.outerWindowId);
-    let {
-      callID,
-      windowID,
-      audioInputDevices,
-      videoInputDevices,
-      hasInherentAudioConstraints,
-      hasInherentVideoConstraints,
-    } = aRequest;
-
+    let map = lazy.webrtcUI.activePerms.get(this.manager.outerWindowId);
     // We consider a camera or mic active if it is active or was active within a
     // grace period of milliseconds ago.
-    const isAllowed = ({ mediaSource, id }, permissionID) =>
-      set?.has(windowID + mediaSource + id) ||
+    const isAllowed = ({ mediaSource, rawId }, permissionID) =>
+      map?.get(windowID + mediaSource + rawId) ||
       (!limited &&
-        (SitePermissions.getForPrincipal(aPrincipal, permissionID).state ==
-          SitePermissions.ALLOW ||
-          SitePermissions.getForPrincipal(
+        (lazy.SitePermissions.getForPrincipal(aPrincipal, permissionID).state ==
+          lazy.SitePermissions.ALLOW ||
+          lazy.SitePermissions.getForPrincipal(
             aPrincipal,
-            [mediaSource, id].join("^"),
+            [mediaSource, rawId].join("^"),
             this.getBrowser()
-          ).state == SitePermissions.ALLOW));
+          ).state == lazy.SitePermissions.ALLOW));
 
     let microphone;
     if (audioInputDevices.length) {
@@ -483,11 +481,15 @@ class WebRTCParent extends JSWindowActorParent {
         perms.EXPIRE_SESSION
       );
       devices.push(camera.deviceIndex);
-      this.activateDevicePerm(windowID, camera.mediaSource, camera.id);
+      this.activateDevicePerm(windowID, camera.mediaSource, camera.rawId);
     }
     if (microphone) {
       devices.push(microphone.deviceIndex);
-      this.activateDevicePerm(windowID, microphone.mediaSource, microphone.id);
+      this.activateDevicePerm(
+        windowID,
+        microphone.mediaSource,
+        microphone.rawId
+      );
     }
     this.checkOSPermission(!!camera, !!microphone, false).then(
       havePermission => {
@@ -555,8 +557,8 @@ function prompt(aActor, aBrowser, aRequest) {
     const permissionID =
       type == "AudioCapture" ? "microphone" : type.toLowerCase();
     if (
-      SitePermissions.getForPrincipal(principal, permissionID, aBrowser)
-        .state == SitePermissions.BLOCK
+      lazy.SitePermissions.getForPrincipal(principal, permissionID, aBrowser)
+        .state == lazy.SitePermissions.BLOCK
     ) {
       aActor.denyRequest(aRequest);
       return;
@@ -564,171 +566,135 @@ function prompt(aActor, aBrowser, aRequest) {
   }
 
   let chromeDoc = aBrowser.ownerDocument;
-  let stringBundle = chromeDoc.defaultView.gNavigatorBundle;
-  let localization = new Localization(
-    ["branding/brand.ftl", "browser/browser.ftl"],
+  const localization = new Localization(
+    ["browser/webrtcIndicator.ftl", "branding/brand.ftl"],
     true
   );
 
-  // Mind the order, because for simplicity we're iterating over the list using
-  // "includes()". This allows the rotation of string identifiers. We list the
-  // full identifiers here so they can be cross-referenced more easily.
-  let joinedRequestTypes = requestTypes.join("And");
-  let requestMessages;
-  if (aRequest.secondOrigin) {
-    requestMessages = [
-      // Individual request types first.
-      "getUserMedia.shareCameraUnsafeDelegation2.message",
-      "getUserMedia.shareMicrophoneUnsafeDelegations2.message",
-      "getUserMedia.shareScreenUnsafeDelegation2.message",
-      "getUserMedia.shareAudioCaptureUnsafeDelegation2.message",
-      "selectAudioOutput.shareSpeakerUnsafeDelegation.message",
-      // Combinations of the above request types last.
-      "getUserMedia.shareCameraAndMicrophoneUnsafeDelegation2.message",
-      "getUserMedia.shareCameraAndAudioCaptureUnsafeDelegation2.message",
-      "getUserMedia.shareScreenAndMicrophoneUnsafeDelegation2.message",
-      "getUserMedia.shareScreenAndAudioCaptureUnsafeDelegation2.message",
-    ];
-  } else {
-    requestMessages = [
-      // Individual request types first.
-      "getUserMedia.shareCamera3.message",
-      "getUserMedia.shareMicrophone3.message",
-      "getUserMedia.shareScreen4.message",
-      "getUserMedia.shareAudioCapture3.message",
-      "selectAudioOutput.shareSpeaker.message",
-      // Combinations of the above request types last.
-      "getUserMedia.shareCameraAndMicrophone3.message",
-      "getUserMedia.shareCameraAndAudioCapture3.message",
-      "getUserMedia.shareScreenAndMicrophone4.message",
-      "getUserMedia.shareScreenAndAudioCapture4.message",
-    ];
+  /** @type {"Screen" | "Camera" | null} */
+  let reqVideoInput = null;
+  if (videoInputDevices.length) {
+    reqVideoInput = sharingScreen ? "Screen" : "Camera";
   }
+  /** @type {"AudioCapture" | "Microphone" | null} */
+  let reqAudioInput = null;
+  if (audioInputDevices.length) {
+    reqAudioInput = sharingAudio ? "AudioCapture" : "Microphone";
+  }
+  const reqAudioOutput = !!audioOutputDevices.length;
 
-  let stringId = requestMessages.find(id => id.includes(joinedRequestTypes));
-  let message = aRequest.secondOrigin
-    ? stringBundle.getFormattedString(stringId, ["<>", "{}"])
-    : stringBundle.getFormattedString(stringId, ["<>"]);
+  const stringId = getPromptMessageId(
+    reqVideoInput,
+    reqAudioInput,
+    reqAudioOutput,
+    !!aRequest.secondOrigin
+  );
+  const message = localization.formatValueSync(stringId, {
+    origin: "<>",
+    thirdParty: "{}",
+  });
 
   let notification; // Used by action callbacks.
-  let mainAction = {
-    label: stringBundle.getString("getUserMedia.allow.label"),
-    accessKey: stringBundle.getString("getUserMedia.allow.accesskey"),
-    // The real callback will be set during the "showing" event. The
-    // empty function here is so that PopupNotifications.show doesn't
-    // reject the action.
-    callback() {},
-  };
+  const actionL10nIds = [{ id: "webrtc-action-allow" }];
 
   let notificationSilencingEnabled = Services.prefs.getBoolPref(
     "privacy.webrtc.allowSilencingNotifications"
   );
 
+  const isNotNowLabelEnabled =
+    reqAudioOutput || allowedOrActiveCameraOrMicrophone(aBrowser);
   let secondaryActions = [];
-  if (notificationSilencingEnabled && sharingScreen) {
+  if (reqAudioOutput || (notificationSilencingEnabled && sharingScreen)) {
     // We want to free up the checkbox at the bottom of the permission
     // panel for the notification silencing option, so we use a
     // different configuration for the permissions panel when
     // notification silencing is enabled.
 
-    // The formatMessagesSync method returns an array of results
-    // for each message that was requested, and for the ones with
-    // attributes, returns an attributes array with objects like:
-    //
-    // { name: "someName", value: "somevalue" }
-    //
-    // For these strings, which use .label and .accesskey attributes,
-    // this convertAttributesToObjects function looks at the attributes
-    // property of each message, and returns back an array of objects,
-    // where each object property is one of the attribute names, and
-    // the property value is the attribute value.
-    //
-    // So, the above example would be converted into:
-    //
-    // { someName: "someValue" }
-    //
-    // which is much easier to access and pass along to other things.
-    let convertAttributesToObjects = messages => {
-      return messages.map(msg => {
-        return msg.attributes.reduce((acc, attribute) => {
-          acc[attribute.name] = attribute.value;
-          return acc;
-        }, {});
-      });
-    };
-
-    let [block, alwaysBlock] = convertAttributesToObjects(
-      localization.formatMessagesSync([
-        { id: "popup-screen-sharing-block" },
-        { id: "popup-screen-sharing-always-block" },
-      ])
-    );
-
+    let permissionName = reqAudioOutput ? "speaker" : "screen";
+    // When selecting speakers, we always offer 'Not now' instead of 'Block'.
+    // When selecting screens, we offer 'Not now' if and only if we have a
+    // (temporary) allow permission for some mic/cam device.
+    const id = isNotNowLabelEnabled
+      ? "webrtc-action-not-now"
+      : "webrtc-action-block";
+    actionL10nIds.push({ id }, { id: "webrtc-action-always-block" });
     secondaryActions = [
       {
-        label: block.label,
-        accessKey: block.accesskey,
         callback(aState) {
           aActor.denyRequest(aRequest);
-          SitePermissions.setForPrincipal(
-            principal,
-            "screen",
-            SitePermissions.BLOCK,
-            SitePermissions.SCOPE_TEMPORARY,
-            notification.browser
-          );
+          if (!isNotNowLabelEnabled) {
+            lazy.SitePermissions.setForPrincipal(
+              principal,
+              permissionName,
+              lazy.SitePermissions.BLOCK,
+              lazy.SitePermissions.SCOPE_TEMPORARY,
+              notification.browser
+            );
+          }
         },
       },
       {
-        label: alwaysBlock.label,
-        accessKey: alwaysBlock.accesskey,
         callback(aState) {
           aActor.denyRequest(aRequest);
-          SitePermissions.setForPrincipal(
+          lazy.SitePermissions.setForPrincipal(
             principal,
-            "screen",
-            SitePermissions.BLOCK,
-            SitePermissions.SCOPE_PERSISTENT,
+            permissionName,
+            lazy.SitePermissions.BLOCK,
+            lazy.SitePermissions.SCOPE_PERSISTENT,
             notification.browser
           );
         },
       },
     ];
   } else {
+    // We have a (temporary) allow permission for some device
+    // hence we offer a 'Not now' label instead of 'Block'.
+    const id = isNotNowLabelEnabled
+      ? "webrtc-action-not-now"
+      : "webrtc-action-block";
+    actionL10nIds.push({ id });
     secondaryActions = [
       {
-        label: stringBundle.getString("getUserMedia.block.label"),
-        accessKey: stringBundle.getString("getUserMedia.block.accesskey"),
         callback(aState) {
           aActor.denyRequest(aRequest);
+
+          const isPersistent = aState?.checkboxChecked;
+
+          // Choosing 'Not now' will not set a block permission
+          // we just deny the request. This enables certain use cases
+          // where sites want to switch devices, but users back out of the permission request
+          // (See Bug 1609578).
+          // Selecting 'Remember this decision' and clicking 'Not now' will set a persistent block
+          if (!isPersistent && isNotNowLabelEnabled) {
+            return;
+          }
 
           // Denying a camera / microphone prompt means we set a temporary or
           // persistent permission block. There may still be active grace period
           // permissions at this point. We need to remove them.
           clearTemporaryGrants(
             notification.browser,
-            videoInputDevices.length && !sharingScreen,
-            audioInputDevices.length
+            reqVideoInput === "Camera",
+            !!reqAudioInput
           );
 
-          let scope = SitePermissions.SCOPE_TEMPORARY;
-          if (aState && aState.checkboxChecked) {
-            scope = SitePermissions.SCOPE_PERSISTENT;
-          }
-          if (audioInputDevices.length) {
-            SitePermissions.setForPrincipal(
+          const scope = isPersistent
+            ? lazy.SitePermissions.SCOPE_PERSISTENT
+            : lazy.SitePermissions.SCOPE_TEMPORARY;
+          if (reqAudioInput) {
+            lazy.SitePermissions.setForPrincipal(
               principal,
               "microphone",
-              SitePermissions.BLOCK,
+              lazy.SitePermissions.BLOCK,
               scope,
               notification.browser
             );
           }
-          if (videoInputDevices.length) {
-            SitePermissions.setForPrincipal(
+          if (reqVideoInput) {
+            lazy.SitePermissions.setForPrincipal(
               principal,
               sharingScreen ? "screen" : "camera",
-              SitePermissions.BLOCK,
+              lazy.SitePermissions.BLOCK,
               scope,
               notification.browser
             );
@@ -738,10 +704,35 @@ function prompt(aActor, aBrowser, aRequest) {
     ];
   }
 
-  let productName = gBrandBundle.GetStringFromName("brandShortName");
+  // The formatMessagesSync method returns an array of results
+  // for each message that was requested, and for the ones with
+  // attributes, returns an attributes array with objects like:
+  //     { name: "label", value: "somevalue" }
+  const [mainMessage, ...secondaryMessages] = localization
+    .formatMessagesSync(actionL10nIds)
+    .map(msg =>
+      msg.attributes.reduce(
+        (acc, { name, value }) => ({ ...acc, [name]: value }),
+        {}
+      )
+    );
+
+  const mainAction = {
+    label: mainMessage.label,
+    accessKey: mainMessage.accesskey,
+    // The real callback will be set during the "showing" event. The
+    // empty function here is so that PopupNotifications.show doesn't
+    // reject the action.
+    callback() {},
+  };
+
+  for (let i = 0; i < secondaryActions.length; ++i) {
+    secondaryActions[i].label = secondaryMessages[i].label;
+    secondaryActions[i].accessKey = secondaryMessages[i].accesskey;
+  }
 
   let options = {
-    name: webrtcUI.getHostOrExtensionName(principal.URI),
+    name: lazy.webrtcUI.getHostOrExtensionName(principal.URI),
     persistent: true,
     hideClose: true,
     eventCallback(aTopic, aNewBrowser, isCancel) {
@@ -753,11 +744,12 @@ function prompt(aActor, aBrowser, aRequest) {
 
       // Clean-up video streams of screensharing previews.
       if (
-        ((aTopic == "dismissed" || aTopic == "removed") &&
-          requestTypes.includes("Screen")) ||
-        !requestTypes.includes("Screen")
+        reqVideoInput !== "Screen" ||
+        aTopic == "dismissed" ||
+        aTopic == "removed"
       ) {
         let video = doc.getElementById("webRTC-previewVideo");
+        video.deviceId = null; // Abort previews still being started.
         if (video.stream) {
           video.stream.getTracks().forEach(t => t.stop());
           video.stream = null;
@@ -806,7 +798,14 @@ function prompt(aActor, aBrowser, aRequest) {
         menulist.selectedItem = null;
 
         for (let device of devices) {
-          addDeviceToList(menupopup, device.name, device.deviceIndex);
+          let item = addDeviceToList(
+            menupopup,
+            device.name,
+            device.deviceIndex
+          );
+          if (device.id == aRequest.audioOutputId) {
+            menulist.selectedItem = item;
+          }
         }
 
         let label = doc.getElementById(labelID);
@@ -846,22 +845,11 @@ function prompt(aActor, aBrowser, aRequest) {
         menupopup.parentNode.removeAttribute("value");
         menupopup.parentNode.selectedItem = null;
 
-        let label = doc.getElementById("webRTC-selectWindow-label");
-        const gumStringId = "getUserMedia.selectWindowOrScreen2";
-        label.setAttribute(
-          "value",
-          stringBundle.getString(gumStringId + ".label")
-        );
-        label.setAttribute(
-          "accesskey",
-          stringBundle.getString(gumStringId + ".accesskey")
-        );
-
         // "Select a Window or Screen" is the default because we can't and don't
         // want to pick a 'default' window to share (Full screen is "scary").
         addDeviceToList(
           menupopup,
-          stringBundle.getString("getUserMedia.pickWindowOrScreen.label"),
+          localization.formatValueSync("webrtc-pick-window-or-screen"),
           "-1"
         );
         menupopup.appendChild(doc.createXULElement("menuseparator"));
@@ -874,61 +862,53 @@ function prompt(aActor, aBrowser, aRequest) {
           let device = devices[i];
           let type = device.mediaSource;
           let name;
-          // Building screen list from available screens.
-          if (type == "screen") {
-            if (device.name == "Primary Monitor") {
-              name = stringBundle.getString(
-                "getUserMedia.shareEntireScreen.label"
-              );
-            } else {
-              name = stringBundle.getFormattedString(
-                "getUserMedia.shareMonitor.label",
-                [monitorIndex]
-              );
-              ++monitorIndex;
-            }
-          } else {
-            name = device.name;
+          if (device.canRequestOsLevelPrompt) {
             // When we share content by PipeWire add only one item to the device
             // list. When it's selected PipeWire portal dialog is opened and
             // user confirms actual window/screen sharing there.
             // Don't mark it as scary as there's an extra confirmation step by
             // PipeWire portal dialog.
-            if (name == PIPEWIRE_PORTAL_NAME && device.id == PIPEWIRE_ID) {
-              isPipeWire = true;
-              let sawcStringId = "getUserMedia.sharePipeWirePortal.label";
-              let item = addDeviceToList(
-                menupopup,
-                stringBundle.getString(sawcStringId),
-                i,
-                type
-              );
-              item.deviceId = device.id;
-              item.mediaSource = type;
 
-              // In this case the OS sharing dialog will be the only option and
-              // can be safely pre-selected.
-              menupopup.parentNode.selectedItem = item;
-              menupopup.parentNode.disabled = true;
-              break;
+            isPipeWire = true;
+            let item = addDeviceToList(
+              menupopup,
+              localization.formatValueSync("webrtc-share-pipe-wire-portal"),
+              i,
+              type
+            );
+            item.deviceId = device.rawId;
+            item.mediaSource = type;
+
+            // In this case the OS sharing dialog will be the only option and
+            // can be safely pre-selected.
+            menupopup.parentNode.selectedItem = item;
+            menupopup.parentNode.disabled = true;
+            break;
+          } else if (type == "screen") {
+            // Building screen list from available screens.
+            if (device.name == "Primary Monitor") {
+              name = localization.formatValueSync("webrtc-share-entire-screen");
+            } else {
+              name = localization.formatValueSync("webrtc-share-monitor", {
+                monitorIndex,
+              });
+              ++monitorIndex;
             }
+          } else {
+            name = device.name;
+
             if (type == "application") {
               // The application names returned by the platform are of the form:
               // <window count>\x1e<application name>
-              let sepIndex = name.indexOf("\x1e");
-              let count = name.slice(0, sepIndex);
-              let sawcStringId =
-                "getUserMedia.shareApplicationWindowCount.label";
-              name = PluralForm.get(
-                parseInt(count),
-                stringBundle.getString(sawcStringId)
-              )
-                .replace("#1", name.slice(sepIndex + 1))
-                .replace("#2", count);
+              const [count, appName] = name.split("\x1e");
+              name = localization.formatValueSync("webrtc-share-application", {
+                appName,
+                windowCount: parseInt(count),
+              });
             }
           }
           let item = addDeviceToList(menupopup, name, i, type);
-          item.deviceId = device.id;
+          item.deviceId = device.rawId;
           item.mediaSource = type;
           if (device.scary) {
             item.scary = true;
@@ -949,52 +929,32 @@ function prompt(aActor, aBrowser, aRequest) {
             video.stream = null;
           }
 
-          let type = event.target.mediaSource;
-          let deviceId = event.target.deviceId;
+          const { deviceId, mediaSource, scary } = event.target;
           if (deviceId == undefined) {
             doc.getElementById("webRTC-preview").hidden = true;
             video.src = null;
             return;
           }
 
-          let scary = event.target.scary;
           let warning = doc.getElementById("webRTC-previewWarning");
           let warningBox = doc.getElementById("webRTC-previewWarningBox");
           warningBox.hidden = !scary;
           let chromeWin = doc.defaultView;
           if (scary) {
-            warningBox.hidden = false;
-            let string;
-            let bundle = chromeWin.gNavigatorBundle;
+            const warnId =
+              mediaSource == "screen"
+                ? "webrtc-share-screen-warning"
+                : "webrtc-share-browser-warning";
+            doc.l10n.setAttributes(warning, warnId);
 
-            let learnMoreText = bundle.getString(
-              "getUserMedia.shareScreen.learnMoreLabel"
-            );
-            let baseURL = Services.urlFormatter.formatURLPref(
-              "app.support.baseURL"
-            );
-
-            if (type == "screen") {
-              string = bundle.getString(
-                "getUserMedia.shareScreenWarning2.message"
-              );
-            } else {
-              let brand = doc
-                .getElementById("bundle_brand")
-                .getString("brandShortName");
-              string = bundle.getFormattedString(
-                "getUserMedia.shareFirefoxWarning2.message",
-                [brand]
-              );
-            }
-
-            warning.textContent = string;
-
-            let learnMore = doc.getElementById(
+            const learnMore = doc.getElementById(
               "webRTC-previewWarning-learnMore"
             );
+            const baseURL = Services.urlFormatter.formatURLPref(
+              "app.support.baseURL"
+            );
             learnMore.setAttribute("href", baseURL + "screenshare-safety");
-            learnMore.textContent = learnMoreText;
+            doc.l10n.setAttributes(learnMore, "webrtc-share-screen-learn-more");
 
             // On Catalina, we don't want to blow our chance to show the
             // OS-level helper prompt to enable screen recording if the user
@@ -1008,9 +968,9 @@ function prompt(aActor, aBrowser, aRequest) {
             // web-sharing perspective, which is why this code resides here.
             // A restart doesn't appear to be necessary in spite of OS wording.
             let scrStatus = {};
-            OSPermissions.getScreenCapturePermissionState(scrStatus);
-            if (scrStatus.value == OSPermissions.PERMISSION_STATE_DENIED) {
-              OSPermissions.maybeRequestScreenCapturePermission();
+            lazy.OSPermissions.getScreenCapturePermissionState(scrStatus);
+            if (scrStatus.value == lazy.OSPermissions.PERMISSION_STATE_DENIED) {
+              lazy.OSPermissions.maybeRequestScreenCapturePermission();
             }
           }
 
@@ -1026,7 +986,7 @@ function prompt(aActor, aBrowser, aRequest) {
           if (!isPipeWire) {
             video.deviceId = deviceId;
             let constraints = {
-              video: { mediaSource: type, deviceId: { exact: deviceId } },
+              video: { mediaSource, deviceId: { exact: deviceId } },
             };
             chromeWin.navigator.mediaDevices.getUserMedia(constraints).then(
               stream => {
@@ -1052,7 +1012,7 @@ function prompt(aActor, aBrowser, aRequest) {
                   // No preview for you.
                   return;
                 }
-                Cu.reportError(
+                console.error(
                   `error in preview: ${err.message} ${err.constraint}`
                 );
               }
@@ -1080,14 +1040,12 @@ function prompt(aActor, aBrowser, aRequest) {
       }
 
       doc.getElementById("webRTC-selectCamera").hidden =
-        !videoInputDevices.length || sharingScreen;
+        reqVideoInput !== "Camera";
       doc.getElementById("webRTC-selectWindowOrScreen").hidden =
-        !sharingScreen || !videoInputDevices.length;
+        reqVideoInput !== "Screen";
       doc.getElementById("webRTC-selectMicrophone").hidden =
-        !audioInputDevices.length || sharingAudio;
-      doc.getElementById(
-        "webRTC-selectSpeaker"
-      ).hidden = !audioOutputDevices.length;
+        reqAudioInput !== "Microphone";
+      doc.getElementById("webRTC-selectSpeaker").hidden = !reqAudioOutput;
 
       let camMenupopup = doc.getElementById("webRTC-selectCamera-menupopup");
       let windowMenupopup = doc.getElementById("webRTC-selectWindow-menupopup");
@@ -1098,7 +1056,6 @@ function prompt(aActor, aBrowser, aRequest) {
         "webRTC-selectSpeaker-menupopup"
       );
       let describedByIDs = ["webRTC-shareDevices-notification-description"];
-      let describedBySuffix = "icon";
 
       if (sharingScreen) {
         listScreenShareDevices(windowMenupopup, videoInputDevices);
@@ -1108,8 +1065,7 @@ function prompt(aActor, aBrowser, aRequest) {
         listDevices(camMenupopup, videoInputDevices, labelID);
         notificationElement.removeAttribute("invalidselection");
         if (videoInputDevices.length == 1) {
-          describedByIDs.push("webRTC-selectCamera-" + describedBySuffix);
-          describedByIDs.push(labelID);
+          describedByIDs.push("webRTC-selectCamera-icon", labelID);
         }
       }
 
@@ -1117,16 +1073,14 @@ function prompt(aActor, aBrowser, aRequest) {
         let labelID = "webRTC-selectMicrophone-single-device-label";
         listDevices(micMenupopup, audioInputDevices, labelID);
         if (audioInputDevices.length == 1) {
-          describedByIDs.push("webRTC-selectMicrophone-" + describedBySuffix);
-          describedByIDs.push(labelID);
+          describedByIDs.push("webRTC-selectMicrophone-icon", labelID);
         }
       }
 
       let labelID = "webRTC-selectSpeaker-single-device-label";
       listDevices(speakerMenupopup, audioOutputDevices, labelID);
-      if (audioInputDevices.length == 1) {
-        describedByIDs.push("webRTC-selectSpeaker-icon");
-        describedByIDs.push(labelID);
+      if (audioOutputDevices.length == 1) {
+        describedByIDs.push("webRTC-selectSpeaker-icon", labelID);
       }
 
       // PopupNotifications knows to clear the aria-describedby attribute
@@ -1148,11 +1102,10 @@ function prompt(aActor, aBrowser, aRequest) {
 
         let allowedDevices = [];
         let perms = Services.perms;
-        if (videoInputDevices.length) {
-          let listId =
-            "webRTC-select" +
-            (sharingScreen ? "Window" : "Camera") +
-            "-menulist";
+        if (reqVideoInput) {
+          let listId = sharingScreen
+            ? "webRTC-selectWindow-menulist"
+            : "webRTC-selectCamera-menulist";
           let videoDeviceIndex = doc.getElementById(listId).value;
           let allowVideoDevice = videoDeviceIndex != "-1";
           if (allowVideoDevice) {
@@ -1165,51 +1118,59 @@ function prompt(aActor, aBrowser, aRequest) {
               perms.ALLOW_ACTION,
               perms.EXPIRE_SESSION
             );
-            let { mediaSource, id } = videoInputDevices.find(
+            let { mediaSource, rawId } = videoInputDevices.find(
               ({ deviceIndex }) => deviceIndex == videoDeviceIndex
             );
-            aActor.activateDevicePerm(aRequest.windowID, mediaSource, id);
+            aActor.activateDevicePerm(aRequest.windowID, mediaSource, rawId);
             if (remember) {
-              SitePermissions.setForPrincipal(
+              lazy.SitePermissions.setForPrincipal(
                 principal,
                 "camera",
-                SitePermissions.ALLOW
+                lazy.SitePermissions.ALLOW
               );
             }
           }
         }
-        if (audioInputDevices.length) {
-          if (!sharingAudio) {
-            let audioDeviceIndex = doc.getElementById(
-              "webRTC-selectMicrophone-menulist"
-            ).value;
-            let allowMic = audioDeviceIndex != "-1";
-            if (allowMic) {
-              allowedDevices.push(audioDeviceIndex);
-              let { mediaSource, id } = audioInputDevices.find(
-                ({ deviceIndex }) => deviceIndex == audioDeviceIndex
+
+        if (reqAudioInput === "Microphone") {
+          let audioDeviceIndex = doc.getElementById(
+            "webRTC-selectMicrophone-menulist"
+          ).value;
+          let allowMic = audioDeviceIndex != "-1";
+          if (allowMic) {
+            allowedDevices.push(audioDeviceIndex);
+            let { mediaSource, rawId } = audioInputDevices.find(
+              ({ deviceIndex }) => deviceIndex == audioDeviceIndex
+            );
+            aActor.activateDevicePerm(aRequest.windowID, mediaSource, rawId);
+            if (remember) {
+              lazy.SitePermissions.setForPrincipal(
+                principal,
+                "microphone",
+                lazy.SitePermissions.ALLOW
               );
-              aActor.activateDevicePerm(aRequest.windowID, mediaSource, id);
-              if (remember) {
-                SitePermissions.setForPrincipal(
-                  principal,
-                  "microphone",
-                  SitePermissions.ALLOW
-                );
-              }
             }
-          } else {
-            // Only one device possible for audio capture.
-            allowedDevices.push(0);
           }
+        } else if (reqAudioInput === "AudioCapture") {
+          // Only one device possible for audio capture.
+          allowedDevices.push(0);
         }
-        if (audioOutputDevices.length) {
+
+        if (reqAudioOutput) {
           let audioDeviceIndex = doc.getElementById(
             "webRTC-selectSpeaker-menulist"
           ).value;
           let allowSpeaker = audioDeviceIndex != "-1";
           if (allowSpeaker) {
             allowedDevices.push(audioDeviceIndex);
+            let { id } = audioOutputDevices.find(
+              ({ deviceIndex }) => deviceIndex == audioDeviceIndex
+            );
+            lazy.SitePermissions.setForPrincipal(
+              principal,
+              ["speaker", id].join("^"),
+              lazy.SitePermissions.ALLOW
+            );
           }
         }
 
@@ -1218,10 +1179,10 @@ function prompt(aActor, aBrowser, aRequest) {
           return;
         }
 
-        let camNeeded = !!videoInputDevices.length && !sharingScreen;
-        let scrNeeded = !!videoInputDevices.length && sharingScreen;
-        let micNeeded = !!audioInputDevices.length;
-        let havePermission = await aActor.checkOSPermission(
+        const camNeeded = reqVideoInput === "Camera";
+        const micNeeded = !!reqAudioInput;
+        const scrNeeded = reqVideoInput === "Screen";
+        const havePermission = await aActor.checkOSPermission(
           camNeeded,
           micNeeded,
           scrNeeded
@@ -1246,7 +1207,7 @@ function prompt(aActor, aBrowser, aRequest) {
 
   function shouldShowAlwaysRemember() {
     // Don't offer "always remember" action in PB mode
-    if (PrivateBrowsingUtils.isBrowserPrivate(aBrowser)) {
+    if (lazy.PrivateBrowsingUtils.isBrowserPrivate(aBrowser)) {
       return false;
     }
 
@@ -1262,9 +1223,8 @@ function prompt(aActor, aBrowser, aRequest) {
       return false;
     }
 
-    // "Always allow this speaker" not yet supported for
-    // selectAudioOutput().  Bug 1712892
-    if (audioOutputDevices.length) {
+    // Speaker grants are always remembered, so no checkbox is required.
+    if (reqAudioOutput) {
       return false;
     }
 
@@ -1276,28 +1236,22 @@ function prompt(aActor, aBrowser, aRequest) {
     // screen/audio sharing (because we can't guess which window the user wants to
     // share without prompting). Note that we never enter this block for private
     // browsing windows.
-    let reasonForNoPermanentAllow = "";
+    let reason = "";
     if (sharingScreen) {
-      reasonForNoPermanentAllow =
-        "getUserMedia.reasonForNoPermanentAllow.screen3";
+      reason = "webrtc-reason-for-no-permanent-allow-screen";
     } else if (sharingAudio) {
-      reasonForNoPermanentAllow =
-        "getUserMedia.reasonForNoPermanentAllow.audio";
+      reason = "webrtc-reason-for-no-permanent-allow-audio";
     } else if (!aRequest.secure) {
-      reasonForNoPermanentAllow =
-        "getUserMedia.reasonForNoPermanentAllow.insecure";
+      reason = "webrtc-reason-for-no-permanent-allow-insecure";
     }
 
     options.checkbox = {
-      label: stringBundle.getString("getUserMedia.remember"),
+      label: localization.formatValueSync("webrtc-remember-allow-checkbox"),
       checked: principal.isAddonOrExpandedAddonPrincipal,
-      checkedState: reasonForNoPermanentAllow
+      checkedState: reason
         ? {
             disableMainAction: true,
-            warningLabel: stringBundle.getFormattedString(
-              reasonForNoPermanentAllow,
-              [productName]
-            ),
+            warningLabel: localization.formatValueSync(reason),
           }
         : undefined,
     };
@@ -1307,12 +1261,8 @@ function prompt(aActor, aBrowser, aRequest) {
   // screen, then the checkbox for the permission panel is what controls
   // notification silencing.
   if (notificationSilencingEnabled && sharingScreen) {
-    let [silenceNotifications] = localization.formatMessagesSync([
-      { id: "popup-mute-notifications-checkbox" },
-    ]);
-
     options.checkbox = {
-      label: silenceNotifications.value,
+      label: localization.formatValueSync("webrtc-mute-notifications-checkbox"),
       checked: false,
       checkedState: {
         disableMainAction: false,
@@ -1320,25 +1270,19 @@ function prompt(aActor, aBrowser, aRequest) {
     };
   }
 
-  let iconType = "Devices";
-  if (requestTypes.length == 1) {
-    switch (requestTypes[0]) {
-      case "AudioCapture":
-        iconType = "Microphone";
-        break;
-      case "Microphone":
-      case "Speaker":
-        iconType = requestTypes[0];
-        break;
+  let anchorId = "webRTC-shareDevices-notification-icon";
+  if (reqVideoInput === "Screen") {
+    anchorId = "webRTC-shareScreen-notification-icon";
+  } else if (!reqVideoInput) {
+    if (reqAudioInput && !reqAudioOutput) {
+      anchorId = "webRTC-shareMicrophone-notification-icon";
+    } else if (!reqAudioInput && reqAudioOutput) {
+      anchorId = "webRTC-shareSpeaker-notification-icon";
     }
   }
-  if (requestTypes.includes("Screen")) {
-    iconType = "Screen";
-  }
-  let anchorId = "webRTC-share" + iconType + "-notification-icon";
 
   if (aRequest.secondOrigin) {
-    options.secondName = webrtcUI.getHostOrExtensionName(
+    options.secondName = lazy.webrtcUI.getHostOrExtensionName(
       null,
       aRequest.secondOrigin
     );
@@ -1381,6 +1325,117 @@ function prompt(aActor, aBrowser, aRequest) {
   }
 }
 
+/**
+ * @param {"Screen" | "Camera" | null} reqVideoInput
+ * @param {"AudioCapture" | "Microphone" | null} reqAudioInput
+ * @param {boolean} reqAudioOutput
+ * @param {boolean} delegation - Is the access delegated to a third party?
+ * @returns {string} Localization message identifier
+ */
+function getPromptMessageId(
+  reqVideoInput,
+  reqAudioInput,
+  reqAudioOutput,
+  delegation
+) {
+  switch (reqVideoInput) {
+    case "Camera":
+      switch (reqAudioInput) {
+        case "Microphone":
+          return delegation
+            ? "webrtc-allow-share-camera-and-microphone-unsafe-delegation"
+            : "webrtc-allow-share-camera-and-microphone";
+        case "AudioCapture":
+          return delegation
+            ? "webrtc-allow-share-camera-and-audio-capture-unsafe-delegation"
+            : "webrtc-allow-share-camera-and-audio-capture";
+        default:
+          return delegation
+            ? "webrtc-allow-share-camera-unsafe-delegation"
+            : "webrtc-allow-share-camera";
+      }
+
+    case "Screen":
+      switch (reqAudioInput) {
+        case "Microphone":
+          return delegation
+            ? "webrtc-allow-share-screen-and-microphone-unsafe-delegation"
+            : "webrtc-allow-share-screen-and-microphone";
+        case "AudioCapture":
+          return delegation
+            ? "webrtc-allow-share-screen-and-audio-capture-unsafe-delegation"
+            : "webrtc-allow-share-screen-and-audio-capture";
+        default:
+          return delegation
+            ? "webrtc-allow-share-screen-unsafe-delegation"
+            : "webrtc-allow-share-screen";
+      }
+
+    default:
+      switch (reqAudioInput) {
+        case "Microphone":
+          return delegation
+            ? "webrtc-allow-share-microphone-unsafe-delegation"
+            : "webrtc-allow-share-microphone";
+        case "AudioCapture":
+          return delegation
+            ? "webrtc-allow-share-audio-capture-unsafe-delegation"
+            : "webrtc-allow-share-audio-capture";
+        default:
+          // This should be always true, if we've reached this far.
+          if (reqAudioOutput) {
+            return delegation
+              ? "webrtc-allow-share-speaker-unsafe-delegation"
+              : "webrtc-allow-share-speaker";
+          }
+          return undefined;
+      }
+  }
+}
+
+/**
+ * Checks whether we have a microphone/camera in use by checking the activePerms map
+ * or if we have an allow permission for a microphone/camera in sitePermissions
+ * @param {Browser} browser - Browser to find all active and allowed microphone and camera devices for
+ * @return true if one of the above conditions is met
+ */
+function allowedOrActiveCameraOrMicrophone(browser) {
+  // Do we have an allow permission for cam/mic in the permissions manager?
+  if (
+    lazy.SitePermissions.getAllForBrowser(browser).some(perm => {
+      return (
+        perm.state == lazy.SitePermissions.ALLOW &&
+        (perm.id.startsWith("camera") || perm.id.startsWith("microphone"))
+      );
+    })
+  ) {
+    // Return early, no need to check for active devices
+    return true;
+  }
+
+  // Do we have an active device?
+  return (
+    // Find all windowIDs that belong to our browsing contexts
+    browser.browsingContext
+      .getAllBrowsingContextsInSubtree()
+      // Only keep the outerWindowIds
+      .map(bc => bc.currentWindowGlobal?.outerWindowId)
+      .filter(id => id != null)
+      // We have an active device if one of our windowIds has a non empty map in the activePerms map
+      // that includes one device of type "camera" or "microphone"
+      .some(id => {
+        let map = lazy.webrtcUI.activePerms.get(id);
+        if (!map) {
+          // This windowId has no active device
+          return false;
+        }
+        // Let's see if one of the devices is a camera or a microphone
+        let types = [...map.values()];
+        return types.includes("microphone") || types.includes("camera");
+      })
+  );
+}
+
 function removePrompt(aBrowser, aCallId) {
   let chromeWin = aBrowser.ownerGlobal;
   let notification = chromeWin.PopupNotifications.getNotification(
@@ -1403,21 +1458,21 @@ function clearTemporaryGrants(browser, clearCamera, clearMicrophone) {
     // Nothing to clear.
     return;
   }
-  let perms = SitePermissions.getAllForBrowser(browser);
+  let perms = lazy.SitePermissions.getAllForBrowser(browser);
   perms
     .filter(perm => {
-      let [id, key] = perm.id.split(SitePermissions.PERM_KEY_DELIMITER);
+      let [id, key] = perm.id.split(lazy.SitePermissions.PERM_KEY_DELIMITER);
       // We only want to clear WebRTC grace periods. These are temporary, device
       // specifc (double-keyed) microphone or camera permissions.
       return (
         key &&
-        perm.state == SitePermissions.ALLOW &&
-        perm.scope == SitePermissions.SCOPE_TEMPORARY &&
+        perm.state == lazy.SitePermissions.ALLOW &&
+        perm.scope == lazy.SitePermissions.SCOPE_TEMPORARY &&
         ((clearCamera && id == "camera") ||
           (clearMicrophone && id == "microphone"))
       );
     })
     .forEach(perm =>
-      SitePermissions.removeFromPrincipal(null, perm.id, browser)
+      lazy.SitePermissions.removeFromPrincipal(null, perm.id, browser)
     );
 }

@@ -65,16 +65,18 @@ let setupPerformanceAPISpoofAndDisableTest = async function(
   let win = await BrowserTestUtils.openNewBrowserWindow();
   let tab = await BrowserTestUtils.openNewForegroundTab(win.gBrowser, url);
 
-  // No matter what we set the precision to, if we're in ResistFingerprinting mode
-  // we use the larger of the precision pref and the constant 100ms
+  // No matter what we set the precision to, if we're in ResistFingerprinting
+  // mode we use the larger of the precision pref and the RFP time-atom constant
   if (resistFingerprinting) {
-    expectedPrecision = expectedPrecision < 100 ? 100 : expectedPrecision;
+    const RFP_TIME_ATOM_MS = 16.667;
+    expectedPrecision = Math.max(RFP_TIME_ATOM_MS, expectedPrecision);
   }
   await SpecialPowers.spawn(
     tab.linkedBrowser,
     [
       {
         list: PERFORMANCE_TIMINGS,
+        resistFingerprinting,
         precision: expectedPrecision,
         isRoundedFunc: isTimeValueRounded.toString(),
         workerCall,
@@ -95,30 +97,35 @@ let setupPerformanceAPISpoofAndDisableTest = async function(
 };
 
 let isTimeValueRounded = (x, expectedPrecision) => {
-  let rounded = Math.floor(x / expectedPrecision) * expectedPrecision;
+  const nearestExpected = Math.round(x / expectedPrecision) * expectedPrecision;
   // First we do the perfectly normal check that should work just fine
-  if (rounded === x || x === 0) {
+  if (x === nearestExpected) {
     return true;
   }
 
-  // When we're diving by non-whole numbers, we may not get perfect
+  // When we're dividing by non-whole numbers, we may not get perfect
   // multiplication/division because of floating points.
   // When dealing with ms since epoch, a double's precision is on the order
   // of 1/5 of a microsecond, so we use a value a little higher than that as
   // our epsilon.
   // To be clear, this error is introduced in our re-calculation of 'rounded'
   // above in JavaScript.
-  if (Math.abs(rounded - x + expectedPrecision) < 0.0005) {
-    return true;
-  } else if (Math.abs(rounded - x) < 0.0005) {
+  const error = Math.abs(x - nearestExpected);
+  if (Math.abs(error) < 0.0005) {
     return true;
   }
 
   // Then we handle the case where you're sub-millisecond and the timer is not
   // We check that the timer is not sub-millisecond by assuming it is not if it
   // returns an even number of milliseconds
-  if (expectedPrecision < 1 && Math.round(x) == x) {
-    if (Math.round(rounded) == x) {
+  if (
+    Math.round(expectedPrecision) != expectedPrecision &&
+    Math.round(x) == x
+  ) {
+    let acceptableIntRounding = false;
+    acceptableIntRounding |= Math.floor(nearestExpected) == x;
+    acceptableIntRounding |= Math.ceil(nearestExpected) == x;
+    if (acceptableIntRounding) {
       return true;
     }
   }
@@ -129,12 +136,10 @@ let isTimeValueRounded = (x, expectedPrecision) => {
       expectedPrecision +
       " Measured Value: " +
       x +
-      " Rounded Vaue: " +
-      rounded +
-      " Fuzzy1: " +
-      Math.abs(rounded - x + expectedPrecision) +
-      " Fuzzy 2: " +
-      Math.abs(rounded - x)
+      " Nearest Expected Vaue: " +
+      nearestExpected +
+      " Error: " +
+      error
   );
 
   return false;
@@ -169,9 +174,10 @@ let setupAndRunCrossOriginIsolatedTest = async function(
   );
 
   // No matter what we set the precision to, if we're in ResistFingerprinting
-  // mode we use the larger of the precision pref and the constant 100ms
+  // mode we use the larger of the precision pref and the RFP time-atom constant
   if (resistFingerprinting) {
-    expectedPrecision = expectedPrecision < 100 ? 100 : expectedPrecision;
+    const RFP_TIME_ATOM_MS = 16.667;
+    expectedPrecision = Math.max(RFP_TIME_ATOM_MS, expectedPrecision);
   }
   await SpecialPowers.spawn(
     tab.linkedBrowser,
@@ -579,4 +585,392 @@ class OpenTest extends RoundedWindowTest {
       this.popupChromeUIHeight
     );
   }
+}
+
+// ============================================================
+const partial = (func, ...args) => (...rest) => func(...args, ...rest);
+
+async function runActualTest(
+  uri,
+  iframe_domain,
+  cross_origin_domain,
+  testFunction,
+  expectedResults,
+  extraData
+) {
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: uri,
+    },
+    async function(browser) {
+      let result = await SpecialPowers.spawn(
+        browser,
+        [iframe_domain, cross_origin_domain, extraData],
+        async function(iframe_domain_, cross_origin_domain_, extraData_) {
+          return content.wrappedJSObject.runTheTest(
+            iframe_domain_,
+            cross_origin_domain_,
+            extraData_
+          );
+        }
+      );
+
+      testFunction(result, expectedResults, extraData);
+    }
+  );
+}
+
+async function defaultsTest(
+  uri,
+  iframe_domain,
+  cross_origin_domain,
+  testFunction,
+  expectedResults,
+  extraData,
+  extraPrefs
+) {
+  if (extraData == undefined) {
+    extraData = {};
+  }
+  extraData.testDesc = "default";
+  expectedResults.shouldRFPApply = false;
+  if (extraPrefs != undefined) {
+    await SpecialPowers.pushPrefEnv({
+      set: extraPrefs,
+    });
+  }
+  await runActualTest(
+    uri,
+    iframe_domain,
+    cross_origin_domain,
+    testFunction,
+    expectedResults,
+    extraData
+  );
+  if (extraPrefs != undefined) {
+    await SpecialPowers.popPrefEnv();
+  }
+}
+
+async function simpleRFPTest(
+  uri,
+  iframe_domain,
+  cross_origin_domain,
+  testFunction,
+  expectedResults,
+  extraData,
+  extraPrefs
+) {
+  if (extraData == undefined) {
+    extraData = {};
+  }
+  extraData.testDesc = "simple RFP enabled";
+  expectedResults.shouldRFPApply = true;
+  await SpecialPowers.pushPrefEnv({
+    set: [["privacy.resistFingerprinting", true]].concat(extraPrefs || []),
+  });
+
+  await runActualTest(
+    uri,
+    iframe_domain,
+    cross_origin_domain,
+    testFunction,
+    expectedResults,
+    extraData
+  );
+
+  await SpecialPowers.popPrefEnv();
+}
+
+// (A) RFP is exempted on the framer and framee and each contacts an exempted cross-origin resource
+async function testA(
+  uri,
+  iframe_domain,
+  cross_origin_domain,
+  testFunction,
+  expectedResults,
+  extraData,
+  extraPrefs
+) {
+  if (extraData == undefined) {
+    extraData = {};
+  }
+  extraData.testDesc = "test (A)";
+  expectedResults.shouldRFPApply = false;
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["privacy.resistFingerprinting", true],
+      ["privacy.resistFingerprinting.testGranularityMask", 4],
+      [
+        "privacy.resistFingerprinting.exemptedDomains",
+        "example.com, example.org, example.net",
+      ],
+    ].concat(extraPrefs || []),
+  });
+
+  await runActualTest(
+    uri,
+    iframe_domain,
+    cross_origin_domain,
+    testFunction,
+    expectedResults,
+    extraData
+  );
+
+  await SpecialPowers.popPrefEnv();
+}
+
+// (B) RFP is exempted on the framer and framee and each contacts a non-exempted cross-origin resource
+async function testB(
+  uri,
+  iframe_domain,
+  cross_origin_domain,
+  testFunction,
+  expectedResults,
+  extraData,
+  extraPrefs
+) {
+  if (extraData == undefined) {
+    extraData = {};
+  }
+  extraData.testDesc = "test (B)";
+  expectedResults.shouldRFPApply = false;
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["privacy.resistFingerprinting", true],
+      ["privacy.resistFingerprinting.testGranularityMask", 4],
+      [
+        "privacy.resistFingerprinting.exemptedDomains",
+        "example.com, example.org",
+      ],
+    ].concat(extraPrefs || []),
+  });
+
+  await runActualTest(
+    uri,
+    iframe_domain,
+    cross_origin_domain,
+    testFunction,
+    expectedResults,
+    extraData
+  );
+
+  await SpecialPowers.popPrefEnv();
+}
+
+// (C) RFP is exempted on the framer but not the framee and each contacts an exempted cross-origin resource
+async function testC(
+  uri,
+  iframe_domain,
+  cross_origin_domain,
+  testFunction,
+  expectedResults,
+  extraData,
+  extraPrefs
+) {
+  if (extraData == undefined) {
+    extraData = {};
+  }
+  extraData.testDesc = "test (C)";
+  expectedResults.shouldRFPApply = true;
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["privacy.resistFingerprinting", true],
+      ["privacy.resistFingerprinting.testGranularityMask", 4],
+      [
+        "privacy.resistFingerprinting.exemptedDomains",
+        "example.com, example.net",
+      ],
+    ].concat(extraPrefs || []),
+  });
+
+  await runActualTest(
+    uri,
+    iframe_domain,
+    cross_origin_domain,
+    testFunction,
+    expectedResults,
+    extraData
+  );
+
+  await SpecialPowers.popPrefEnv();
+}
+
+// (D) RFP is exempted on the framer but not the framee and each contacts a non-exempted cross-origin resource
+async function testD(
+  uri,
+  iframe_domain,
+  cross_origin_domain,
+  testFunction,
+  expectedResults,
+  extraData,
+  extraPrefs
+) {
+  if (extraData == undefined) {
+    extraData = {};
+  }
+  extraData.testDesc = "test (D)";
+  expectedResults.shouldRFPApply = true;
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["privacy.resistFingerprinting", true],
+      ["privacy.resistFingerprinting.testGranularityMask", 4],
+      ["privacy.resistFingerprinting.exemptedDomains", "example.com"],
+    ].concat(extraPrefs || []),
+  });
+
+  await runActualTest(
+    uri,
+    iframe_domain,
+    cross_origin_domain,
+    testFunction,
+    expectedResults,
+    extraData
+  );
+
+  await SpecialPowers.popPrefEnv();
+}
+
+// (E) RFP is not exempted on the framer nor the framee and each contacts an exempted cross-origin resource
+async function testE(
+  uri,
+  iframe_domain,
+  cross_origin_domain,
+  testFunction,
+  expectedResults,
+  extraData,
+  extraPrefs
+) {
+  if (extraData == undefined) {
+    extraData = {};
+  }
+  extraData.testDesc = "test (E)";
+  expectedResults.shouldRFPApply = true;
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["privacy.resistFingerprinting", true],
+      ["privacy.resistFingerprinting.testGranularityMask", 4],
+      ["privacy.resistFingerprinting.exemptedDomains", "example.net"],
+    ].concat(extraPrefs || []),
+  });
+
+  await runActualTest(
+    uri,
+    iframe_domain,
+    cross_origin_domain,
+    testFunction,
+    expectedResults,
+    extraData
+  );
+
+  await SpecialPowers.popPrefEnv();
+}
+
+// (F) RFP is not exempted on the framer nor the framee and each contacts a non-exempted cross-origin resource
+async function testF(
+  uri,
+  iframe_domain,
+  cross_origin_domain,
+  testFunction,
+  expectedResults,
+  extraData,
+  extraPrefs
+) {
+  if (extraData == undefined) {
+    extraData = {};
+  }
+  extraData.testDesc = "test (F)";
+  expectedResults.shouldRFPApply = true;
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["privacy.resistFingerprinting", true],
+      ["privacy.resistFingerprinting.testGranularityMask", 4],
+      ["privacy.resistFingerprinting.exemptedDomains", ""],
+    ].concat(extraPrefs || []),
+  });
+
+  await runActualTest(
+    uri,
+    iframe_domain,
+    cross_origin_domain,
+    testFunction,
+    expectedResults,
+    extraData
+  );
+
+  await SpecialPowers.popPrefEnv();
+}
+
+// (G) RFP is not exempted on the framer but is on the framee and each contacts an exempted cross-origin resource
+async function testG(
+  uri,
+  iframe_domain,
+  cross_origin_domain,
+  testFunction,
+  expectedResults,
+  extraData,
+  extraPrefs
+) {
+  if (extraData == undefined) {
+    extraData = {};
+  }
+  extraData.testDesc = "test (G)";
+  expectedResults.shouldRFPApply = true;
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["privacy.resistFingerprinting", true],
+      ["privacy.resistFingerprinting.testGranularityMask", 4],
+      [
+        "privacy.resistFingerprinting.exemptedDomains",
+        "example.org, example.net",
+      ],
+    ].concat(extraPrefs || []),
+  });
+
+  await runActualTest(
+    uri,
+    iframe_domain,
+    cross_origin_domain,
+    testFunction,
+    expectedResults,
+    extraData
+  );
+
+  await SpecialPowers.popPrefEnv();
+}
+
+// (H) RFP is not exempted on the framer but is on the framee and each contacts a non-exempted cross-origin resource
+async function testH(
+  uri,
+  iframe_domain,
+  cross_origin_domain,
+  testFunction,
+  expectedResults,
+  extraData,
+  extraPrefs
+) {
+  if (extraData == undefined) {
+    extraData = {};
+  }
+  extraData.testDesc = "test (H)";
+  expectedResults.shouldRFPApply = true;
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["privacy.resistFingerprinting", true],
+      ["privacy.resistFingerprinting.testGranularityMask", 4],
+      ["privacy.resistFingerprinting.exemptedDomains", "example.org"],
+    ].concat(extraPrefs || []),
+  });
+
+  await runActualTest(
+    uri,
+    iframe_domain,
+    cross_origin_domain,
+    testFunction,
+    expectedResults,
+    extraData
+  );
+
+  await SpecialPowers.popPrefEnv();
 }

@@ -1,13 +1,13 @@
 "use strict";
 
-const { PlacesUtils } = ChromeUtils.import(
-  "resource://gre/modules/PlacesUtils.jsm"
+const { PlacesUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PlacesUtils.sys.mjs"
 );
-const { NewTabUtils } = ChromeUtils.import(
-  "resource://gre/modules/NewTabUtils.jsm"
+const { NewTabUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/NewTabUtils.sys.mjs"
 );
-const { PlacesTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PlacesTestUtils.jsm"
+const { PlacesTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PlacesTestUtils.sys.mjs"
 );
 
 const SEARCH_SHORTCUTS_EXPERIMENT_PREF =
@@ -75,12 +75,7 @@ add_task(async function test_topSites() {
     },
     background() {
       browser.test.onMessage.addListener(async options => {
-        let sites;
-        if (typeof options !== undefined) {
-          sites = await browser.topSites.get(options);
-        } else {
-          sites = await browser.topSites.get();
-        }
+        let sites = await browser.topSites.get(options);
         browser.test.sendMessage("sites", sites);
       });
     },
@@ -224,12 +219,7 @@ add_task(async function test_topSites_complete() {
     },
     background() {
       browser.test.onMessage.addListener(async options => {
-        let sites;
-        if (typeof options !== undefined) {
-          sites = await browser.topSites.get(options);
-        } else {
-          sites = await browser.topSites.get();
-        }
+        let sites = await browser.topSites.get(options);
         browser.test.sendMessage("sites", sites);
       });
     },

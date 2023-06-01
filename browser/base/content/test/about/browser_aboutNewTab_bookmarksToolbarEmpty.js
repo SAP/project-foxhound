@@ -6,19 +6,22 @@
 const bookmarksInfo = [
   {
     title: "firefox",
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     url: "http://example.com",
   },
   {
     title: "rules",
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     url: "http://example.com/2",
   },
   {
     title: "yo",
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     url: "http://example.com/2",
   },
 ];
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     // Ensure we can wait for about:newtab to load.
     set: [["browser.newtab.preload", false]],

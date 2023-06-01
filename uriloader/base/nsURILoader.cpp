@@ -10,7 +10,7 @@
 #include "nsILoadGroup.h"
 #include "nsIDocumentLoader.h"
 #include "nsIStreamListener.h"
-#include "nsIURI.h"
+#include "nsIURL.h"
 #include "nsIChannel.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
@@ -268,21 +268,38 @@ nsresult nsDocumentOpenInfo::DispatchContent(nsIRequest* request) {
 
   LOG(("  forceExternalHandling: %s", forceExternalHandling ? "yes" : "no"));
 
-  // For a PDF, check if it will be handled internally. If so, treat it as a
-  // non-attachment by clearing 'forceExternalHandling' again. This allows it
-  // open a PDF directly instead of downloading it first. It may still
-  // end up being handled by a helper app depending anyway on the later checks.
   if (forceExternalHandling &&
-      mContentType.LowerCaseEqualsASCII(APPLICATION_PDF) &&
-      StaticPrefs::browser_download_improvements_to_download_panel()) {
-    nsCOMPtr<nsILoadInfo> loadInfo;
-    aChannel->GetLoadInfo(getter_AddRefs(loadInfo));
+      StaticPrefs::browser_download_open_pdf_attachments_inline()) {
+    // Check if this is a PDF which should be opened internally. We also handle
+    // octet-streams that look like they might be PDFs based on their extension.
+    bool isPDF = mContentType.LowerCaseEqualsASCII(APPLICATION_PDF);
+    if (!isPDF &&
+        (mContentType.LowerCaseEqualsASCII(APPLICATION_OCTET_STREAM) ||
+         mContentType.IsEmpty())) {
+      nsAutoString flname;
+      aChannel->GetContentDispositionFilename(flname);
+      isPDF = StringEndsWith(flname, u".pdf"_ns);
+      if (!isPDF) {
+        nsCOMPtr<nsIURI> uri;
+        aChannel->GetURI(getter_AddRefs(uri));
+        nsCOMPtr<nsIURL> url(do_QueryInterface(uri));
+        if (url) {
+          nsAutoCString ext;
+          url->GetFileExtension(ext);
+          isPDF = ext.EqualsLiteral("pdf");
+        }
+      }
+    }
 
-    // But only do this for top-level documents for now. Otherwise, google
-    // documents don't export or print properly.
-    RefPtr<dom::BrowsingContext> browsingContext;
-    loadInfo->GetTargetBrowsingContext(getter_AddRefs(browsingContext));
-    if (!browsingContext->IsSubframe()) {
+    // For a PDF, check if the preference is set that forces attachments to be
+    // opened inline. If so, treat it as a non-attachment by clearing
+    // 'forceExternalHandling' again. This allows it open a PDF directly
+    // instead of downloading it first. It may still end up being handled by
+    // a helper app depending anyway on the later checks.
+    if (isPDF) {
+      nsCOMPtr<nsILoadInfo> loadInfo;
+      aChannel->GetLoadInfo(getter_AddRefs(loadInfo));
+
       nsCOMPtr<nsIMIMEInfo> mimeInfo;
 
       nsCOMPtr<nsIMIMEService> mimeSvc(
@@ -460,7 +477,7 @@ nsresult nsDocumentOpenInfo::DispatchContent(nsIRequest* request) {
     request->SetLoadFlags(loadFlags | nsIChannel::LOAD_RETARGETED_DOCUMENT_URI |
                           nsIChannel::LOAD_TARGETED);
 
-    if (isGuessFromExt) {
+    if (isGuessFromExt || mContentType.IsEmpty()) {
       mContentType = APPLICATION_GUESS_FROM_EXT;
       aChannel->SetContentType(nsLiteralCString(APPLICATION_GUESS_FROM_EXT));
     }
@@ -553,7 +570,15 @@ nsresult nsDocumentOpenInfo::ConvertData(nsIRequest* request,
 
 nsresult nsDocumentOpenInfo::TryStreamConversion(nsIChannel* aChannel) {
   constexpr auto anyType = "*/*"_ns;
-  nsresult rv = ConvertData(aChannel, m_contentListener, mContentType, anyType);
+
+  // A empty content type should be treated like the unknown content type.
+  nsCString srcContentType(mContentType);
+  if (srcContentType.IsEmpty()) {
+    srcContentType.AssignLiteral(UNKNOWN_CONTENT_TYPE);
+  }
+
+  nsresult rv =
+      ConvertData(aChannel, m_contentListener, srcContentType, anyType);
   if (NS_FAILED(rv)) {
     m_targetStreamListener = nullptr;
   } else if (m_targetStreamListener) {

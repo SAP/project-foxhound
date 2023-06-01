@@ -21,6 +21,10 @@
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/Text.h"
 
+class nsRange;
+
+struct CharacterDataChangeInfo;
+
 namespace mozilla {
 
 class EditorBase;
@@ -77,7 +81,10 @@ class TextComposition final {
   TextRangeArray* GetRanges() const { return mRanges; }
   // Returns the widget which is proper to call NotifyIME().
   already_AddRefed<nsIWidget> GetWidget() const {
-    return mPresContext ? mPresContext->GetRootWidget() : nullptr;
+    if (!mPresContext) {
+      return nullptr;
+    }
+    return do_AddRef(mPresContext->GetRootWidget());
   }
   // Returns the tab parent which has this composition in its remote process.
   BrowserParent* GetBrowserParent() const { return mBrowserParent; }
@@ -135,8 +142,8 @@ class TextComposition final {
    * app.  If there is no composition string the DOM tree, these return
    * unset range boundaries.
    */
-  RawRangeBoundary GetStartRef() const;
-  RawRangeBoundary GetEndRef() const;
+  RawRangeBoundary FirstIMESelectionStartRef() const;
+  RawRangeBoundary LastIMESelectionEndRef() const;
 
   /**
    * The offset of composition string in the text node.  If composition string
@@ -231,9 +238,8 @@ class TextComposition final {
   };
 
   /**
-   * OnCreateCompositionTransaction() is called by
-   * CompositionTransaction::Create() immediately after creating
-   * new CompositionTransaction instance.
+   * OnUpdateCompositionInEditor() is called when editor updates composition
+   * string in the DOM tree.
    *
    * @param aStringToInsert     The string to insert the text node actually.
    *                            This may be different from the data of
@@ -243,20 +249,12 @@ class TextComposition final {
    * @param aTextNode           The text node which includes composition string.
    * @param aOffset             The offset of composition string in aTextNode.
    */
-  void OnCreateCompositionTransaction(const nsAString& aStringToInsert,
-                                      Text* aTextNode, uint32_t aOffset) {
-    if (!mContainerTextNode) {
-      mContainerTextNode = aTextNode;
-      mCompositionStartOffsetInTextNode = aOffset;
-      NS_WARNING_ASSERTION(mCompositionStartOffsetInTextNode != UINT32_MAX,
-                           "The text node is really too long.");
-    }
-#ifdef DEBUG
-    else {
-      MOZ_ASSERT(aTextNode == mContainerTextNode);
-      MOZ_ASSERT(aOffset == mCompositionStartOffsetInTextNode);
-    }
-#endif  // #ifdef DEBUG
+  void OnUpdateCompositionInEditor(const nsAString& aStringToInsert,
+                                   Text& aTextNode, uint32_t aOffset) {
+    mContainerTextNode = &aTextNode;
+    mCompositionStartOffsetInTextNode = aOffset;
+    NS_WARNING_ASSERTION(mCompositionStartOffsetInTextNode != UINT32_MAX,
+                         "The text node is really too long.");
     mCompositionLengthInTextNode = aStringToInsert.Length();
     NS_WARNING_ASSERTION(mCompositionLengthInTextNode != UINT32_MAX,
                          "The string to insert is really too long.");
@@ -273,6 +271,13 @@ class TextComposition final {
     // mCompositionLengthInTextNode because editor needs them to restore
     // composition in new text node.
   }
+
+  /**
+   * OnCharacterDataChanged() is called when IMEContentObserver receives
+   * character data change notifications.
+   */
+  void OnCharacterDataChanged(Text& aText,
+                              const CharacterDataChangeInfo& aInfo);
 
  private:
   // Private destructor, to discourage deletion outside of Release():

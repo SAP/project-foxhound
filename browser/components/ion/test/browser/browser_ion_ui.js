@@ -4,18 +4,16 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Ajv",
-  "resource://testing-common/ajv-6.12.6.js"
+const { JsonSchema } = ChromeUtils.importESModule(
+  "resource://gre/modules/JsonSchema.sys.mjs"
 );
 
-const { TelemetryArchive } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryArchive.jsm"
+const { TelemetryArchive } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryArchive.sys.mjs"
 );
 
-const { TelemetryStorage } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryStorage.jsm"
+const { TelemetryStorage } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryStorage.sys.mjs"
 );
 
 const ORIG_AVAILABLE_LOCALES = Services.locale.availableLocales;
@@ -312,13 +310,12 @@ add_task(async function testMockSchema() {
       throw new Error(`Failed to load ${schemaName}`);
     }
 
-    const ajv = new Ajv({ allErrors: true });
-    const validate = ajv.compile(schema);
+    const validator = new JsonSchema.Validator(schema, { shortCircuit: false });
 
     for (const entry of values) {
-      const valid = validate(entry);
-      if (!valid) {
-        throw new Error(JSON.stringify(validate.errors));
+      const result = validator.validate(entry);
+      if (!result.valid) {
+        throw new Error(JSON.stringify(result.errors));
       }
     }
   }

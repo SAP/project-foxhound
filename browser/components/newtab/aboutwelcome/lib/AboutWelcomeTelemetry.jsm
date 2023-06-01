@@ -4,30 +4,34 @@
 "use strict";
 
 const EXPORTED_SYMBOLS = ["AboutWelcomeTelemetry"];
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  ClientID: "resource://gre/modules/ClientID.sys.mjs",
+  TelemetrySession: "resource://gre/modules/TelemetrySession.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   PingCentre: "resource:///modules/PingCentre.jsm",
-  ClientID: "resource://gre/modules/ClientID.jsm",
-  Services: "resource://gre/modules/Services.jsm",
-  TelemetrySession: "resource://gre/modules/TelemetrySession.jsm",
   AttributionCode: "resource:///modules/AttributionCode.jsm",
 });
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "structuredIngestionEndpointBase",
   "browser.newtabpage.activity-stream.telemetry.structuredIngestion.endpoint",
   ""
 );
-XPCOMUtils.defineLazyGetter(this, "telemetryClientId", () =>
-  ClientID.getClientID()
+XPCOMUtils.defineLazyGetter(lazy, "telemetryClientId", () =>
+  lazy.ClientID.getClientID()
 );
 XPCOMUtils.defineLazyGetter(
-  this,
+  lazy,
   "browserSessionId",
-  () => TelemetrySession.getMetadata("").sessionId
+  () => lazy.TelemetrySession.getMetadata("").sessionId
 );
 const TELEMETRY_TOPIC = "about:welcome";
 const PING_TYPE = "onboarding";
@@ -49,7 +53,7 @@ class AboutWelcomeTelemetry {
    */
   get pingCentre() {
     Object.defineProperty(this, "pingCentre", {
-      value: new PingCentre({ topic: TELEMETRY_TOPIC }),
+      value: new lazy.PingCentre({ topic: TELEMETRY_TOPIC }),
     });
     return this.pingCentre;
   }
@@ -60,7 +64,7 @@ class AboutWelcomeTelemetry {
     // because it contains leading and trailing braces. Need to trim them first.
     const docID = uuid.slice(1, -1);
     const extension = `${STRUCTURED_INGESTION_NAMESPACE_MS}/${PING_TYPE}/${PING_VERSION}/${docID}`;
-    return `${structuredIngestionEndpointBase}/${extension}`;
+    return `${lazy.structuredIngestionEndpointBase}/${extension}`;
   }
 
   /**
@@ -76,7 +80,7 @@ class AboutWelcomeTelemetry {
    * read the cached results for the most if not all of the pings.
    */
   _maybeAttachAttribution(ping) {
-    const attribution = AttributionCode.getCachedAttributionData();
+    const attribution = lazy.AttributionCode.getCachedAttributionData();
     if (attribution && Object.keys(attribution).length) {
       ping.attribution = attribution;
     }
@@ -91,8 +95,8 @@ class AboutWelcomeTelemetry {
       ...event,
       addon_version: Services.appinfo.appBuildID,
       locale: Services.locale.appLocaleAsBCP47,
-      client_id: await telemetryClientId,
-      browser_session_id: browserSessionId,
+      client_id: await lazy.telemetryClientId,
+      browser_session_id: lazy.browserSessionId,
     };
 
     return this._maybeAttachAttribution(ping);
@@ -106,7 +110,8 @@ class AboutWelcomeTelemetry {
     const ping = await this._createPing(event);
     this.pingCentre.sendStructuredIngestionPing(
       ping,
-      this._generateStructuredIngestionEndpoint()
+      this._generateStructuredIngestionEndpoint(),
+      STRUCTURED_INGESTION_NAMESPACE_MS
     );
   }
 }

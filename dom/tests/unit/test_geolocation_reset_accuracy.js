@@ -1,5 +1,3 @@
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 const providerCID = Components.ID("{14aa4b81-e266-45cb-88f8-89595dece114}");
 const providerContract = "@mozilla.org/geolocation/provider;1";
 
@@ -10,14 +8,8 @@ var provider = {
     "nsIFactory",
     "nsIGeolocationProvider",
   ]),
-  createInstance: function eventsink_ci(outer, iid) {
-    if (outer) {
-      throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
-    }
+  createInstance: function eventsink_ci(iid) {
     return this.QueryInterface(iid);
-  },
-  lockFactory: function eventsink_lockf(lock) {
-    throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
   },
   startup() {},
   watch() {},
@@ -60,7 +52,7 @@ function run_test() {
       provider
     );
 
-    Services.catMan.nsICategoryManager.addCategoryEntry(
+    Services.catMan.addCategoryEntry(
       categoryName,
       "unit test",
       providerContract,

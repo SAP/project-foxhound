@@ -12,6 +12,8 @@
 
 #include "nsCOMPtr.h"
 
+#include "mozilla/gfx/PrintPromise.h"
+
 #include <ApplicationServices/ApplicationServices.h>
 
 class nsDeviceContextSpecX : public nsIDeviceContextSpec {
@@ -20,13 +22,12 @@ class nsDeviceContextSpecX : public nsIDeviceContextSpec {
 
   nsDeviceContextSpecX();
 
-  NS_IMETHOD Init(nsIWidget* aWidget, nsIPrintSettings* aPS,
-                  bool aIsPrintPreview) override;
+  NS_IMETHOD Init(nsIPrintSettings* aPS, bool aIsPrintPreview) override;
   already_AddRefed<PrintTarget> MakePrintTarget() final;
   NS_IMETHOD BeginDocument(const nsAString& aTitle,
                            const nsAString& aPrintToFileName,
                            int32_t aStartPage, int32_t aEndPage) override;
-  NS_IMETHOD EndDocument() override;
+  RefPtr<mozilla::gfx::PrintEndDocumentPromise> EndDocument() override;
   NS_IMETHOD BeginPage() override { return NS_OK; };
   NS_IMETHOD EndPage() override { return NS_OK; };
 
@@ -37,14 +38,16 @@ class nsDeviceContextSpecX : public nsIDeviceContextSpec {
   virtual ~nsDeviceContextSpecX();
 
  protected:
-  PMPrintSession mPrintSession;    // printing context.
-  PMPageFormat mPageFormat;        // page format.
-  PMPrintSettings mPrintSettings;  // print settings.
+  PMPrintSession mPrintSession = nullptr;
+  PMPageFormat mPageFormat = nullptr;
+  PMPrintSettings mPMPrintSettings = nullptr;
+  nsCOMPtr<nsIOutputStream> mOutputStream;  // Output stream from settings.
 #ifdef MOZ_ENABLE_SKIA_PDF
-  nsCOMPtr<nsIFile>
-      mTempFile;  // file "print" output is generated to if printing via PDF
-  bool mPrintViaSkPDF;
+  // file "print" output generated if printing via PDF
+  nsCOMPtr<nsIFile> mTempFile;
 #endif
+ private:
+  nsresult DoEndDocument();
 };
 
 #endif  // nsDeviceContextSpecX_h_

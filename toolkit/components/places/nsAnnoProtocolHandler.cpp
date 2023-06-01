@@ -131,7 +131,8 @@ class faviconAsyncLoader : public AsyncStatementCallback, public nsICancelable {
 
     aListener->OnStartRequest(aChannel);
     aListener->OnStopRequest(aChannel, aResult);
-    aChannel->Cancel(NS_BINDING_ABORTED);
+    aChannel->CancelWithReason(NS_BINDING_ABORTED,
+                               "faviconAsyncLoader::CancelRequest"_ns);
   }
 
   NS_IMETHOD HandleCompletion(uint16_t aReason) override {
@@ -250,25 +251,6 @@ NS_IMPL_ISUPPORTS(nsAnnoProtocolHandler, nsIProtocolHandler)
 NS_IMETHODIMP
 nsAnnoProtocolHandler::GetScheme(nsACString& aScheme) {
   aScheme.AssignLiteral("moz-anno");
-  return NS_OK;
-}
-
-// nsAnnoProtocolHandler::GetDefaultPort
-//
-//    There is no default port for annotation URLs
-
-NS_IMETHODIMP
-nsAnnoProtocolHandler::GetDefaultPort(int32_t* aDefaultPort) {
-  *aDefaultPort = -1;
-  return NS_OK;
-}
-
-// nsAnnoProtocolHandler::GetProtocolFlags
-
-NS_IMETHODIMP
-nsAnnoProtocolHandler::GetProtocolFlags(uint32_t* aProtocolFlags) {
-  *aProtocolFlags = (URI_NORELATIVE | URI_NOAUTH | URI_DANGEROUS_TO_LOAD |
-                     URI_IS_LOCAL_RESOURCE);
   return NS_OK;
 }
 

@@ -48,7 +48,12 @@ EXPORTS.mozilla.glean.bindings += [
     "bindings/private/StringList.h",
     "bindings/private/Timespan.h",
     "bindings/private/TimingDistribution.h",
+    "bindings/private/Url.h",
     "bindings/private/Uuid.h",
+]
+
+EXPORTS.mozilla.glean.bindings.jog += [
+    "bindings/jog/JOG.h",
 ]
 
 if CONFIG["COMPILE_ENVIRONMENT"]:
@@ -56,12 +61,20 @@ if CONFIG["COMPILE_ENVIRONMENT"]:
         "!fog_ffi_generated.h",
     ]
 
+    EXPORTS.mozilla.glean.bindings.jog += [
+        "!jog_ffi_generated.h",
+    ]
+
     CbindgenHeader("fog_ffi_generated.h", inputs=["/toolkit/components/glean"])
+    CbindgenHeader(
+        "jog_ffi_generated.h", inputs=["/toolkit/components/glean/bindings/jog"]
+    )
 
 UNIFIED_SOURCES += [
     "bindings/Category.cpp",
     "bindings/Glean.cpp",
     "bindings/GleanPings.cpp",
+    "bindings/jog/JOG.cpp",
     "bindings/private/Boolean.cpp",
     "bindings/private/Common.cpp",
     "bindings/private/Counter.cpp",
@@ -79,6 +92,7 @@ UNIFIED_SOURCES += [
     "bindings/private/StringList.cpp",
     "bindings/private/Timespan.cpp",
     "bindings/private/TimingDistribution.cpp",
+    "bindings/private/Url.cpp",
     "bindings/private/Uuid.cpp",
     "ipc/FOGIPC.cpp",
     "ipc/Support.cpp",
@@ -99,6 +113,7 @@ tags_yamls = ["../../../" + x for x in tags_yamls]
 deps = [
     "metrics_index.py",
     "build_scripts/glean_parser_ext/cpp.py",
+    "build_scripts/glean_parser_ext/jog.py",
     "build_scripts/glean_parser_ext/js.py",
     "build_scripts/glean_parser_ext/run_glean_parser.py",
     "build_scripts/glean_parser_ext/rust.py",
@@ -108,6 +123,7 @@ deps = [
     "build_scripts/glean_parser_ext/templates/cpp_pings.jinja2",
     "build_scripts/glean_parser_ext/templates/gifft.jinja2",
     "build_scripts/glean_parser_ext/templates/gifft_events.jinja2",
+    "build_scripts/glean_parser_ext/templates/jog_factory.jinja2",
     "build_scripts/glean_parser_ext/templates/js.jinja2",
     "build_scripts/glean_parser_ext/templates/js_pings.jinja2",
     "build_scripts/glean_parser_ext/templates/rust.jinja2",
@@ -115,48 +131,20 @@ deps = [
 ]
 
 GeneratedFile(
+    "GleanMetrics.h",
+    "GleanJSMetricsLookup.h",
     "api/src/metrics.rs",
     script="build_scripts/glean_parser_ext/run_glean_parser.py",
-    flags=[CONFIG["MOZ_APP_VERSION"]],
+    flags=[CONFIG["MOZ_APP_VERSION"], "GleanJSMetricsLookup.h", "api/src/metrics.rs"],
     inputs=deps + metrics_yamls + tags_yamls,
-)
-
-GeneratedFile(
-    "GleanMetrics.h",
-    script="build_scripts/glean_parser_ext/run_glean_parser.py",
-    entry_point="cpp_metrics",
-    flags=[CONFIG["MOZ_APP_VERSION"]],
-    inputs=deps + metrics_yamls + tags_yamls,
-)
-
-GeneratedFile(
-    "GleanJSMetricsLookup.h",
-    script="build_scripts/glean_parser_ext/run_glean_parser.py",
-    entry_point="js_metrics",
-    flags=[CONFIG["MOZ_APP_VERSION"]],
-    inputs=deps + metrics_yamls + tags_yamls,
-)
-
-GeneratedFile(
-    "api/src/pings.rs",
-    script="build_scripts/glean_parser_ext/run_glean_parser.py",
-    flags=[CONFIG["MOZ_APP_VERSION"]],
-    inputs=deps + pings_yamls + tags_yamls,
 )
 
 GeneratedFile(
     "GleanPings.h",
-    script="build_scripts/glean_parser_ext/run_glean_parser.py",
-    entry_point="cpp_metrics",
-    flags=[CONFIG["MOZ_APP_VERSION"]],
-    inputs=deps + pings_yamls + tags_yamls,
-)
-
-GeneratedFile(
     "GleanJSPingsLookup.h",
+    "api/src/pings.rs",
     script="build_scripts/glean_parser_ext/run_glean_parser.py",
-    entry_point="js_metrics",
-    flags=[CONFIG["MOZ_APP_VERSION"]],
+    flags=[CONFIG["MOZ_APP_VERSION"], "GleanJSPingsLookup.h", "api/src/pings.rs"],
     inputs=deps + pings_yamls + tags_yamls,
 )
 
@@ -185,6 +173,31 @@ GeneratedFile(
     flags=[CONFIG["MOZ_APP_VERSION"], "Scalar"],
     inputs=deps + metrics_yamls + tags_yamls,
 )
+
+# JOG provides both the Rust factory for building runtime-registered metrics
+# and pings _and_ the YAML file used at runtime to register those metrics and
+# pings for Artifact Builds.
+# The factory lives inside the `fog` crate to avoid a circular dependency.
+GeneratedFile(
+    "api/src/factory.rs",
+    script="build_scripts/glean_parser_ext/run_glean_parser.py",
+    entry_point="jog_factory",
+    flags=[CONFIG["MOZ_APP_VERSION"]],
+    inputs=deps + pings_yamls + metrics_yamls + tags_yamls,
+)
+
+# Only generate jogfile.json in Artifact Builds since
+# its presence triggers main-thread I/O (!MOZILLA_OFFICIAL builds only).
+if not CONFIG["COMPILE_ENVIRONMENT"]:
+    GeneratedFile(
+        "jogfile.json",
+        script="build_scripts/glean_parser_ext/run_glean_parser.py",
+        entry_point="jog_file",
+        flags=[CONFIG["MOZ_APP_VERSION"]],
+        inputs=deps + pings_yamls + metrics_yamls + tags_yamls,
+    )
+    # Once generated, it needs to be placed in GreD so it can be found.
+    FINAL_TARGET_FILES += ["!jogfile.json"]
 
 DIRS += [
     "tests",  # Must be in DIRS, not TEST_DIRS or python-test won't find it.

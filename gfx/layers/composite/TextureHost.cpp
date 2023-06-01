@@ -18,7 +18,8 @@
 #include "mozilla/layers/ISurfaceAllocator.h"  // for ISurfaceAllocator
 #include "mozilla/layers/ImageBridgeParent.h"  // for ImageBridgeParent
 #include "mozilla/layers/LayersSurfaces.h"     // for SurfaceDescriptor, etc
-#include "mozilla/layers/TextureHostOGL.h"     // for TextureHostOGL
+#include "mozilla/layers/RemoteTextureMap.h"
+#include "mozilla/layers/TextureHostOGL.h"  // for TextureHostOGL
 #include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/layers/TextureClient.h"
 #include "mozilla/layers/GPUVideoTextureHost.h"
@@ -40,16 +41,16 @@
 #include "gfxUtils.h"
 #include "IPDLActor.h"
 
-#ifdef MOZ_ENABLE_D3D10_LAYER
-#  include "../d3d11/CompositorD3D11.h"
-#endif
-
 #ifdef XP_MACOSX
 #  include "../opengl/MacIOSurfaceTextureHostOGL.h"
 #endif
 
 #ifdef XP_WIN
+#  include "../d3d11/CompositorD3D11.h"
 #  include "mozilla/layers/TextureD3D11.h"
+#  ifdef MOZ_WMF_MEDIA_ENGINE
+#    include "mozilla/layers/DcompSurfaceImage.h"
+#  endif
 #endif
 
 #if 0
@@ -100,6 +101,9 @@ class TextureParent : public ParentActor<PTextureParent> {
 static bool WrapWithWebRenderTextureHost(ISurfaceAllocator* aDeallocator,
                                          LayersBackend aBackend,
                                          TextureFlags aFlags) {
+  if (!aDeallocator) {
+    return false;
+  }
   if ((aFlags & TextureFlags::SNAPSHOT) ||
       (!aDeallocator->UsesImageBridge() &&
        !aDeallocator->AsCompositorBridgeParentBase())) {
@@ -163,6 +167,7 @@ already_AddRefed<TextureHost> CreateDummyBufferTextureHost(
     mozilla::layers::TextureFlags aFlags) {
   // Ensure that the host will delete the memory.
   aFlags &= ~TextureFlags::DEALLOCATE_CLIENT;
+  aFlags |= TextureFlags::DUMMY_TEXTURE;
   UniquePtr<TextureData> textureData(BufferTextureData::Create(
       gfx::IntSize(1, 1), gfx::SurfaceFormat::B8G8R8A8, gfx::BackendType::SKIA,
       aBackend, aFlags, TextureAllocationFlags::ALLOC_DEFAULT, nullptr));
@@ -207,13 +212,21 @@ already_AddRefed<TextureHost> TextureHost::Create(
     case SurfaceDescriptor::TSurfaceDescriptorDXGIYCbCr:
       result = CreateTextureHostD3D11(aDesc, aDeallocator, aBackend, aFlags);
       break;
+#  ifdef MOZ_WMF_MEDIA_ENGINE
+    case SurfaceDescriptor::TSurfaceDescriptorDcompSurface:
+      result =
+          CreateTextureHostDcompSurface(aDesc, aDeallocator, aBackend, aFlags);
+      break;
+#  endif
 #endif
     case SurfaceDescriptor::TSurfaceDescriptorRecorded: {
       const SurfaceDescriptorRecorded& desc =
           aDesc.get_SurfaceDescriptorRecorded();
       UniquePtr<SurfaceDescriptor> realDesc =
-          aDeallocator->AsCompositorBridgeParentBase()
-              ->LookupSurfaceDescriptorForClientTexture(desc.textureId());
+          aDeallocator
+              ? aDeallocator->AsCompositorBridgeParentBase()
+                    ->LookupSurfaceDescriptorForClientTexture(desc.textureId())
+              : nullptr;
       if (!realDesc) {
         gfxCriticalNote << "Failed to get descriptor for recorded texture.";
         // Create a dummy to prevent any crashes due to missing IPDL actors.
@@ -236,8 +249,7 @@ already_AddRefed<TextureHost> TextureHost::Create(
 
   if (result && WrapWithWebRenderTextureHost(aDeallocator, aBackend, aFlags)) {
     MOZ_ASSERT(aExternalImageId.isSome());
-    result =
-        new WebRenderTextureHost(aDesc, aFlags, result, aExternalImageId.ref());
+    result = new WebRenderTextureHost(aFlags, result, aExternalImageId.ref());
   }
 
   if (result) {
@@ -302,7 +314,7 @@ already_AddRefed<TextureHost> CreateBackendIndependentTextureHost(
           break;
         }
         case MemoryOrShmem::Tuintptr_t: {
-          if (!aDeallocator->IsSameProcess()) {
+          if (aDeallocator && !aDeallocator->IsSameProcess()) {
             NS_ERROR(
                 "A client process is trying to peek at our address space using "
                 "a MemoryTexture!");
@@ -335,8 +347,9 @@ already_AddRefed<TextureHost> CreateBackendIndependentTextureHost(
   return result.forget();
 }
 
-TextureHost::TextureHost(TextureFlags aFlags)
+TextureHost::TextureHost(TextureHostType aType, TextureFlags aFlags)
     : AtomicRefCountedWithFinalize("TextureHost"),
+      mTextureHostType(aType),
       mActor(nullptr),
       mFlags(aFlags),
       mCompositableCount(0),
@@ -351,10 +364,15 @@ TextureHost::~TextureHost() {
     // before destroying the lock itself.
     ReadUnlock();
   }
+  if (mDestroyedCallback) {
+    mDestroyedCallback();
+  }
 }
 
 void TextureHost::Finalize() {
-  MaybeDestroyRenderTexture();
+  if (!(GetFlags() & TextureFlags::BORROWED_EXTERNAL_ID)) {
+    MaybeDestroyRenderTexture();
+  }
 
   if (!(GetFlags() & TextureFlags::DEALLOCATE_CLIENT)) {
     DeallocateSharedData();
@@ -374,8 +392,21 @@ void TextureHost::RecycleTexture(TextureFlags aFlags) {
   mFlags = aFlags;
 }
 
+void TextureHost::PrepareForUse() {
+  if ((mFlags & TextureFlags::REMOTE_TEXTURE) && AsSurfaceTextureHost()) {
+    MOZ_ASSERT(mExternalImageId.isSome());
+    // Call PrepareForUse on render thread.
+    // See RenderAndroidSurfaceTextureHostOGL::PrepareForUse.
+    wr::RenderThread::Get()->PrepareForUse(*mExternalImageId);
+  }
+}
+
 void TextureHost::NotifyNotUsed() {
   if (!mActor) {
+    if ((mFlags & TextureFlags::REMOTE_TEXTURE) && AsSurfaceTextureHost()) {
+      MOZ_ASSERT(mExternalImageId.isSome());
+      wr::RenderThread::Get()->NotifyNotUsed(*mExternalImageId);
+    }
     return;
   }
 
@@ -437,7 +468,7 @@ TextureSource::TextureSource() : mCompositableCount(0) {}
 TextureSource::~TextureSource() = default;
 BufferTextureHost::BufferTextureHost(const BufferDescriptor& aDesc,
                                      TextureFlags aFlags)
-    : TextureHost(aFlags), mLocked(false) {
+    : TextureHost(TextureHostType::Buffer, aFlags), mLocked(false) {
   mDescriptor = aDesc;
   switch (mDescriptor.type()) {
     case BufferDescriptor::TYCbCrDescriptor: {
@@ -527,11 +558,12 @@ void BufferTextureHost::PushResourceUpdates(
     MOZ_ASSERT(aImageKeys.length() == 3);
 
     const layers::YCbCrDescriptor& desc = mDescriptor.get_YCbCrDescriptor();
+    gfx::IntSize ySize = desc.display().Size();
+    gfx::IntSize cbcrSize = ImageDataSerializer::GetCroppedCbCrSize(desc);
     wr::ImageDescriptor yDescriptor(
-        desc.ySize(), desc.yStride(),
-        SurfaceFormatForColorDepth(desc.colorDepth()));
+        ySize, desc.yStride(), SurfaceFormatForColorDepth(desc.colorDepth()));
     wr::ImageDescriptor cbcrDescriptor(
-        desc.cbCrSize(), desc.cbCrStride(),
+        cbcrSize, desc.cbCrStride(),
         SurfaceFormatForColorDepth(desc.colorDepth()));
     (aResources.*method)(aImageKeys[0], yDescriptor, aExtID, imageType, 0);
     (aResources.*method)(aImageKeys[1], cbcrDescriptor, aExtID, imageType, 1);
@@ -552,7 +584,7 @@ void BufferTextureHost::PushDisplayItems(wr::DisplayListBuilder& aBuilder,
       aFlags.contains(PushDisplayItemFlag::SUPPORTS_EXTERNAL_BUFFER_TEXTURES);
   if (GetFormat() != gfx::SurfaceFormat::YUV) {
     MOZ_ASSERT(aImageKeys.length() == 1);
-    aBuilder.PushImage(aBounds, aClip, true, aFilter, aImageKeys[0],
+    aBuilder.PushImage(aBounds, aClip, true, false, aFilter, aImageKeys[0],
                        !(mFlags & TextureFlags::NON_PREMULTIPLIED),
                        wr::ColorF{1.0f, 1.0f, 1.0f, 1.0f},
                        preferCompositorSurface, useExternalSurface);

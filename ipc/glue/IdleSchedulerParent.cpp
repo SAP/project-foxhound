@@ -8,12 +8,12 @@
 #include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/Unused.h"
 #include "mozilla/ipc/IdleSchedulerParent.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/Telemetry.h"
 #include "nsSystemInfo.h"
 #include "nsThreadUtils.h"
 #include "nsITimer.h"
 #include "nsIThread.h"
-#include "nsXPCOMPrivate.h"  // for gXPCOMThreadsShutDown
 
 namespace mozilla::ipc {
 
@@ -24,6 +24,8 @@ LinkedList<IdleSchedulerParent> IdleSchedulerParent::sIdleAndGCRequests;
 int32_t IdleSchedulerParent::sMaxConcurrentIdleTasksInChildProcesses = 1;
 uint32_t IdleSchedulerParent::sMaxConcurrentGCs = 1;
 uint32_t IdleSchedulerParent::sActiveGCs = 0;
+bool IdleSchedulerParent::sRecordGCTelemetry = false;
+uint32_t IdleSchedulerParent::sNumWaitingGC = 0;
 uint32_t IdleSchedulerParent::sChildProcessesRunningPrioritizedOperation = 0;
 uint32_t IdleSchedulerParent::sChildProcessesAlive = 0;
 nsITimer* IdleSchedulerParent::sStarvationPreventer = nullptr;
@@ -33,6 +35,8 @@ uint32_t IdleSchedulerParent::sPrefConcurrentGCsMax = 0;
 uint32_t IdleSchedulerParent::sPrefConcurrentGCsCPUDivisor = 0;
 
 IdleSchedulerParent::IdleSchedulerParent() {
+  MOZ_ASSERT(!AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMShutdownThreads));
+
   sChildProcessesAlive++;
 
   uint32_t max_gcs_pref =
@@ -59,19 +63,20 @@ IdleSchedulerParent::IdleSchedulerParent() {
           if (NS_SUCCEEDED(CollectProcessInfo(processInfo))) {
             uint32_t num_cpus = processInfo.cpuCount;
             // We have a new cpu count, Update the number of idle tasks.
-            nsCOMPtr<nsIRunnable> runnable = NS_NewRunnableFunction(
-                "IdleSchedulerParent::CalculateNumIdleTasks", [num_cpus]() {
-                  // We're setting this within this lambda because it's run on
-                  // the correct thread and avoids a race.
-                  sNumCPUs = num_cpus;
+            if (MOZ_LIKELY(!AppShutdown::IsInOrBeyond(
+                    ShutdownPhase::XPCOMShutdownThreads))) {
+              nsCOMPtr<nsIRunnable> runnable = NS_NewRunnableFunction(
+                  "IdleSchedulerParent::CalculateNumIdleTasks", [num_cpus]() {
+                    // We're setting this within this lambda because it's run on
+                    // the correct thread and avoids a race.
+                    sNumCPUs = num_cpus;
 
-                  // This reads the sPrefConcurrentGCsMax and
-                  // sPrefConcurrentGCsCPUDivisor values set below, it will run
-                  // after the code that sets those.
-                  CalculateNumIdleTasks();
-                });
+                    // This reads the sPrefConcurrentGCsMax and
+                    // sPrefConcurrentGCsCPUDivisor values set below, it will
+                    // run after the code that sets those.
+                    CalculateNumIdleTasks();
+                  });
 
-            if (MOZ_LIKELY(!gXPCOMThreadsShutDown)) {
               thread->Dispatch(runnable, NS_DISPATCH_NORMAL);
             }
           }
@@ -282,6 +287,8 @@ IPCResult IdleSchedulerParent::RecvRequestGC(RequestGCResolver&& aResolver) {
     sIdleAndGCRequests.insertBack(this);
   }
 
+  sRecordGCTelemetry = true;
+  sNumWaitingGC++;
   Schedule(nullptr);
   return IPC_OK();
 }
@@ -295,6 +302,7 @@ IPCResult IdleSchedulerParent::RecvStartedGC() {
   sActiveGCs++;
 
   if (mRequestingGC) {
+    sNumWaitingGC--;
     // We have to respond to the request before dropping it, even though the
     // content process is already doing the GC.
     mRequestingGC.value()(true);
@@ -302,6 +310,7 @@ IPCResult IdleSchedulerParent::RecvStartedGC() {
     if (!IsWaitingForIdle()) {
       remove();
     }
+    sRecordGCTelemetry = true;
   }
 
   return IPC_OK();
@@ -311,6 +320,7 @@ IPCResult IdleSchedulerParent::RecvDoneGC() {
   MOZ_ASSERT(mDoingGC);
   sActiveGCs--;
   mDoingGC = false;
+  sRecordGCTelemetry = true;
   Schedule(nullptr);
   return IPC_OK();
 }
@@ -355,6 +365,9 @@ void IdleSchedulerParent::SendMayGC() {
   mRequestingGC = Nothing();
   mDoingGC = true;
   sActiveGCs++;
+  sRecordGCTelemetry = true;
+  MOZ_ASSERT(sNumWaitingGC > 0);
+  sNumWaitingGC--;
 }
 
 void IdleSchedulerParent::Schedule(IdleSchedulerParent* aRequester) {
@@ -410,6 +423,11 @@ void IdleSchedulerParent::Schedule(IdleSchedulerParent* aRequester) {
 
   if (!sIdleAndGCRequests.isEmpty() && HasSpareCycles(activeCount)) {
     EnsureStarvationTimer();
+  }
+
+  if (sRecordGCTelemetry) {
+    sRecordGCTelemetry = false;
+    Telemetry::Accumulate(Telemetry::GC_WAIT_FOR_IDLE_COUNT, sNumWaitingGC);
   }
 }
 

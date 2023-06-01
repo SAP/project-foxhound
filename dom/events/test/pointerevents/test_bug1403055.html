@@ -43,14 +43,14 @@ function withoutImplicitlyPointerCaptureForTouch() {
   });
 
   done.addEventListener("mouseup", () => {
-    ok(target0_events.length == 0, " should receive " + target0_events + " on target0");
-    ok(target1_events.length == 0, " should receive " + target1_events + " on target1");
+    ok(!target0_events.length, " should receive " + target0_events + " on target0");
+    ok(!target1_events.length, " should receive " + target1_events + " on target1");
     SpecialPowers.pushPrefEnv({"set": [["dom.w3c_pointer_events.implicit_capture", true]]},
                               withImplicitlyPointerCaptureForTouch);
   }, {once : true});
 
   synthesizeTouch(target0, 5, 5, { type: "touchstart" });
-  synthesizeTouch(target0, 5, 5, { type: "touchmove" });
+  synthesizeTouch(target0, 6, 6, { type: "touchmove" });
   synthesizeTouch(target1, 5, 5, { type: "touchmove" });
   synthesizeTouch(target1, 5, 5, { type: "touchcancel" });
   synthesizeMouseAtCenter(done, { type: "mousedown" });
@@ -68,7 +68,7 @@ function withImplicitlyPointerCaptureForTouch() {
   });
 
   done.addEventListener("mouseup", () => {
-    ok(target0_events.length == 0, " should receive " + target0_events + " on target0");
+    ok(!target0_events.length, " should receive " + target0_events + " on target0");
     SimpleTest.finish();
   }, {once : true});
 

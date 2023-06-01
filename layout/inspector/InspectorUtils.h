@@ -16,7 +16,6 @@ class nsAtom;
 class nsINode;
 class nsINodeList;
 class nsRange;
-class ComputedStyle;
 
 namespace mozilla {
 class BindingStyleRule;
@@ -126,7 +125,7 @@ class InspectorUtils {
 
   // Utilities for working with CSS colors
   static void RgbToColorName(GlobalObject& aGlobal, uint8_t aR, uint8_t aG,
-                             uint8_t aB, nsAString& aResult, ErrorResult& aRv);
+                             uint8_t aB, nsAString& aResult);
 
   // Convert a given CSS color string to rgba. Returns null on failure or an
   // InspectorRGBATuple on success.

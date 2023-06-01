@@ -4,19 +4,17 @@
 
 "use strict";
 
-const { Ci, Cc } = require("chrome");
-const nodeFilterConstants = require("devtools/shared/dom-node-filter-constants");
+const nodeFilterConstants = require("resource://devtools/shared/dom-node-filter-constants.js");
 loader.lazyRequireGetter(
   this,
   "DevToolsUtils",
-  "devtools/shared/DevToolsUtils"
+  "resource://devtools/shared/DevToolsUtils.js"
 );
-loader.lazyRequireGetter(this, "ChromeUtils");
-loader.lazyRequireGetter(
-  this,
+const lazy = {};
+ChromeUtils.defineModuleGetter(
+  lazy,
   "NetUtil",
-  "resource://gre/modules/NetUtil.jsm",
-  true
+  "resource://gre/modules/NetUtil.jsm"
 );
 
 const SHEET_TYPE = {
@@ -29,7 +27,7 @@ const SHEET_TYPE = {
 loader.lazyRequireGetter(
   this,
   "setIgnoreLayoutChanges",
-  "devtools/server/actors/reflow",
+  "resource://devtools/server/actors/reflow.js",
   true
 );
 exports.setIgnoreLayoutChanges = (...args) =>
@@ -457,7 +455,7 @@ exports.isNativeAnonymous = isAnonymous;
  */
 function isTemplateElement(node) {
   return (
-    node.ownerGlobal && node instanceof node.ownerGlobal.HTMLTemplateElement
+    node.ownerGlobal && node.ownerGlobal.HTMLTemplateElement.isInstance(node)
   );
 }
 exports.isTemplateElement = isTemplateElement;
@@ -833,8 +831,15 @@ function getAbsoluteScrollOffsetsForNode(node) {
 }
 exports.getAbsoluteScrollOffsetsForNode = getAbsoluteScrollOffsetsForNode;
 
-function isIframe(node) {
-  return ChromeUtils.getClassName(node) == "HTMLIFrameElement";
+/**
+ * Check if the provided node is a <frame> or <iframe> element.
+ *
+ * @param {DOMNode} node
+ * @returns {Boolean}
+ */
+function isFrame(node) {
+  const className = ChromeUtils.getClassName(node);
+  return className == "HTMLIFrameElement" || className == "HTMLFrameElement";
 }
 
 /**
@@ -864,7 +869,7 @@ exports.isRemoteBrowserElement = isRemoteBrowserElement;
  * @return {Boolean}
  */
 function isRemoteFrame(node) {
-  if (isIframe(node)) {
+  if (isFrame(node)) {
     return node.frameLoader?.isRemoteFrame;
   }
 
@@ -889,7 +894,7 @@ function isFrameWithChildTarget(targetActor, node) {
     return false;
   }
 
-  return isRemoteFrame(node) || (isIframe(node) && targetActor.ignoreSubFrames);
+  return isRemoteFrame(node) || (isFrame(node) && targetActor.ignoreSubFrames);
 }
 
 exports.isFrameWithChildTarget = isFrameWithChildTarget;
@@ -901,7 +906,7 @@ exports.isFrameWithChildTarget = isFrameWithChildTarget;
  * @returns {Boolean}
  */
 function isFrameBlockedByCSP(node) {
-  if (!isIframe(node)) {
+  if (!isFrame(node)) {
     return false;
   }
 
@@ -911,7 +916,7 @@ function isFrameBlockedByCSP(node) {
 
   let uri;
   try {
-    uri = NetUtil.newURI(node.src);
+    uri = lazy.NetUtil.newURI(node.src);
   } catch (e) {
     return false;
   }

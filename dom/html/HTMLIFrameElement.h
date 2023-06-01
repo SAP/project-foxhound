@@ -15,8 +15,7 @@
 #include "nsGenericHTMLFrameElement.h"
 #include "nsDOMTokenList.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class FeaturePolicy;
 
@@ -214,7 +213,6 @@ class HTMLIFrameElement final : public nsGenericHTMLFrameElement {
   RefPtr<nsDOMTokenList> mSandbox;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif

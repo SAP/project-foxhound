@@ -14,9 +14,8 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
-use crate::with_glean;
 use glean_core::upload::PingUploadTask;
-pub use glean_core::upload::{PingRequest, UploadResult};
+pub use glean_core::upload::{PingRequest, UploadResult, UploadTaskAction};
 
 pub use http_uploader::*;
 
@@ -69,27 +68,6 @@ impl UploadManager {
         }
     }
 
-    /// Wait for the last upload thread to end and ensure no new one is started.
-    pub(crate) fn test_wait_for_upload(&self) {
-        // Spin-waiting is fine, this is for tests only.
-        while self
-            .inner
-            .thread_running
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_err()
-        {
-            thread::yield_now();
-        }
-    }
-
-    /// Clear the flag of a running thread.
-    ///
-    /// This should only be called after `test_wait_for_upload` returned
-    /// and the global Glean object is fully destroyed.
-    pub(crate) fn test_clear_upload_thread(&self) {
-        self.inner.thread_running.store(false, Ordering::SeqCst);
-    }
-
     /// Signals Glean to upload pings at the next best opportunity.
     pub(crate) fn trigger_upload(&self) {
         // If no other upload proces is running, we're the one starting it.
@@ -109,31 +87,38 @@ impl UploadManager {
         thread::Builder::new()
             .name("glean.upload".into())
             .spawn(move || {
+                log::trace!("Started glean.upload thread");
                 loop {
-                    let incoming_task = with_glean(|glean| glean.get_upload_task());
+                    let incoming_task = glean_core::glean_get_upload_task();
 
-                    log::trace!("Received upload task: {:?}", incoming_task);
                     match incoming_task {
-                        PingUploadTask::Upload(request) => {
+                        PingUploadTask::Upload { request } => {
+                            log::trace!("Received upload task with request {:?}", request);
                             let doc_id = request.document_id.clone();
                             let upload_url = format!("{}{}", inner.server_endpoint, request.path);
                             let headers: Vec<(String, String)> =
                                 request.headers.into_iter().collect();
                             let result = inner.uploader.upload(upload_url, request.body, headers);
                             // Process the upload response.
-                            with_glean(|glean| glean.process_ping_upload_response(&doc_id, result));
+                            match glean_core::glean_process_ping_upload_response(doc_id, result) {
+                                UploadTaskAction::Next => continue,
+                                UploadTaskAction::End => break,
+                            }
                         }
-                        PingUploadTask::Wait(time) => {
+                        PingUploadTask::Wait { time } => {
+                            log::trace!("Instructed to wait for {:?}ms", time);
                             thread::sleep(Duration::from_millis(time));
                         }
-                        PingUploadTask::Done => {
-                            // Nothing to do here, break out of the loop and clear the
-                            // running flag.
-                            inner.thread_running.store(false, Ordering::SeqCst);
-                            return;
+                        PingUploadTask::Done { .. } => {
+                            log::trace!("Received PingUploadTask::Done. Exiting.");
+                            // Nothing to do here, break out of the loop.
+                            break;
                         }
                     }
                 }
+
+                // Clear the running flag to signal that this thread is done.
+                inner.thread_running.store(false, Ordering::SeqCst);
             })
             .expect("Failed to spawn Glean's uploader thread");
     }

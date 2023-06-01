@@ -5,7 +5,7 @@
 /* exported checkSitePermissions */
 
 const { Services } = SpecialPowers;
-const { NetUtil } = SpecialPowers.Cu.import(
+const { NetUtil } = SpecialPowers.ChromeUtils.import(
   "resource://gre/modules/NetUtil.jsm"
 );
 
@@ -26,10 +26,6 @@ function checkSitePermissions(uuid, expectedPermAction, assertMessage) {
     webextUnlimitedStorage: Services.perms.testPermissionFromPrincipal(
       principal,
       "WebExtensions-unlimitedStorage"
-    ),
-    indexedDB: Services.perms.testPermissionFromPrincipal(
-      principal,
-      "indexedDB"
     ),
     persistentStorage: Services.perms.testPermissionFromPrincipal(
       principal,

@@ -97,6 +97,7 @@ macro_rules! foreign_obj_type {
         impl ::std::ops::Deref for $ref_ident {
             type Target = $parent_ref;
 
+            #[inline]
             fn deref(&self) -> &$parent_ref {
                 unsafe { &*(self as *const $ref_ident as *const $parent_ref)  }
             }
@@ -255,6 +256,7 @@ where
 {
     type Target = ArrayRef<T>;
 
+    #[inline]
     fn deref(&self) -> &ArrayRef<T> {
         unsafe { mem::transmute(self.as_ptr()) }
     }
@@ -389,6 +391,10 @@ impl MetalLayerRef {
 
     pub fn next_drawable(&self) -> Option<&MetalDrawableRef> {
         unsafe { msg_send![self, nextDrawable] }
+    }
+
+    pub fn contents_scale(&self) -> CGFloat {
+        unsafe { msg_send![self, contentsScale] }
     }
 
     pub fn set_contents_scale(&self, scale: CGFloat) {

@@ -4,25 +4,25 @@
 
 "use strict";
 
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 
 const {
   evalWithDebugger,
-} = require("devtools/server/actors/webconsole/eval-with-debugger");
+} = require("resource://devtools/server/actors/webconsole/eval-with-debugger.js");
 
 if (!isWorker) {
   loader.lazyRequireGetter(
     this,
     "getSyntaxTrees",
-    "devtools/shared/webconsole/parser-helper",
+    "resource://devtools/shared/webconsole/parser-helper.js",
     true
   );
 }
-loader.lazyRequireGetter(
-  this,
+const lazy = {};
+ChromeUtils.defineModuleGetter(
+  lazy,
   "Reflect",
-  "resource://gre/modules/reflect.jsm",
-  true
+  "resource://gre/modules/reflect.jsm"
 );
 loader.lazyRequireGetter(
   this,
@@ -31,7 +31,7 @@ loader.lazyRequireGetter(
     "shouldInputBeAutocompleted",
     "shouldInputBeEagerlyEvaluated",
   ],
-  "devtools/shared/webconsole/analyze-input-string",
+  "resource://devtools/shared/webconsole/analyze-input-string.js",
   true
 );
 
@@ -100,6 +100,7 @@ const MAX_AUTOCOMPLETIONS = (exports.MAX_AUTOCOMPLETIONS = 1500);
 function JSPropertyProvider({
   dbgObject,
   environment,
+  frameActorId,
   inputValue,
   cursor,
   authorizedEvaluations = [],
@@ -135,7 +136,7 @@ function JSPropertyProvider({
   if (webconsoleActor && shouldInputBeEagerlyEvaluated(inputAnalysis)) {
     const eagerResponse = evalWithDebugger(
       mainExpression,
-      { eager: true, selectedNodeActor },
+      { eager: true, selectedNodeActor, frameActor: frameActorId },
       webconsoleActor
     );
 
@@ -561,7 +562,7 @@ function prepareReturnedObject({
         // In order to know if the property is suited for dot notation, we use Reflect
         // to parse an expression where we try to access the property with a dot. If it
         // throws, this means that we need to do an element access instead.
-        Reflect.parse(`({${match}: true})`);
+        lazy.Reflect.parse(`({${match}: true})`);
       } catch (e) {
         matches.delete(match);
       }
@@ -683,7 +684,7 @@ function getExactMatchImpl(obj, name, { chainIterator, getProperty }) {
 }
 
 var JSObjectSupport = {
-  chainIterator: function*(obj) {
+  *chainIterator(obj) {
     while (obj) {
       yield obj;
       try {
@@ -695,7 +696,7 @@ var JSObjectSupport = {
     }
   },
 
-  getProperties: function(obj) {
+  getProperties(obj) {
     try {
       return Object.getOwnPropertyNames(obj);
     } catch (error) {
@@ -704,14 +705,14 @@ var JSObjectSupport = {
     }
   },
 
-  getProperty: function() {
+  getProperty() {
     // getProperty is unsafe with raw JS objects.
     throw new Error("Unimplemented!");
   },
 };
 
 var DebuggerObjectSupport = {
-  chainIterator: function*(obj) {
+  *chainIterator(obj) {
     while (obj) {
       yield obj;
       try {
@@ -723,7 +724,7 @@ var DebuggerObjectSupport = {
     }
   },
 
-  getProperties: function(obj) {
+  getProperties(obj) {
     try {
       return obj.getOwnPropertyNames();
     } catch (error) {
@@ -732,21 +733,21 @@ var DebuggerObjectSupport = {
     }
   },
 
-  getProperty: function(obj, name, rootObj) {
+  getProperty(obj, name, rootObj) {
     // This is left unimplemented in favor to DevToolsUtils.getProperty().
     throw new Error("Unimplemented!");
   },
 };
 
 var DebuggerEnvironmentSupport = {
-  chainIterator: function*(obj) {
+  *chainIterator(obj) {
     while (obj) {
       yield obj;
       obj = obj.parent;
     }
   },
 
-  getProperties: function(obj) {
+  getProperties(obj) {
     const names = obj.names();
 
     // Include 'this' in results (in sorted order)
@@ -760,7 +761,7 @@ var DebuggerEnvironmentSupport = {
     return names;
   },
 
-  getProperty: function(obj, name) {
+  getProperty(obj, name) {
     let result;
     // Try/catch since name can be anything, and getVariable throws if
     // it's not a valid ECMAScript identifier name

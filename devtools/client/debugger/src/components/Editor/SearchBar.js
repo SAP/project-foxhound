@@ -11,7 +11,8 @@ import actions from "../../actions";
 import {
   getActiveSearch,
   getSelectedSource,
-  getSourceContent,
+  getSelectedLocation,
+  getSettledSourceTextContent,
   getFileSearchQuery,
   getFileSearchModifiers,
   getFileSearchResults,
@@ -42,6 +43,25 @@ class SearchBar extends Component {
       count: 0,
       index: -1,
       inputFocused: false,
+    };
+  }
+
+  static get propTypes() {
+    return {
+      closeFileSearch: PropTypes.func.isRequired,
+      cx: PropTypes.object.isRequired,
+      doSearch: PropTypes.func.isRequired,
+      editor: PropTypes.object,
+      modifiers: PropTypes.object.isRequired,
+      query: PropTypes.string.isRequired,
+      searchOn: PropTypes.bool.isRequired,
+      searchResults: PropTypes.object.isRequired,
+      selectedContentLoaded: PropTypes.bool.isRequired,
+      selectedSource: PropTypes.object.isRequired,
+      setActiveSearch: PropTypes.func.isRequired,
+      showClose: PropTypes.bool,
+      toggleFileSearchModifier: PropTypes.func.isRequired,
+      traverseResults: PropTypes.func.isRequired,
     };
   }
 
@@ -160,7 +180,7 @@ class SearchBar extends Component {
 
     this.traverseResults(e, e.shiftKey);
     e.preventDefault();
-    return this.doSearch(e.target.value);
+    this.doSearch(e.target.value);
   };
 
   onHistoryScroll = query => {
@@ -263,7 +283,6 @@ class SearchBar extends Component {
       searchResults: { count },
       searchOn,
       showClose = true,
-      size = "big",
     } = this.props;
 
     if (!searchOn) {
@@ -294,7 +313,7 @@ class SearchBar extends Component {
           {showClose && (
             <React.Fragment>
               <span className="pipe-divider" />
-              <CloseButton handleClick={this.closeSearch} buttonClass={size} />
+              <CloseButton handleClick={this.closeSearch} buttonClass={"big"} />
             </React.Fragment>
           )}
         </div>
@@ -309,13 +328,14 @@ SearchBar.contextTypes = {
 
 const mapStateToProps = (state, p) => {
   const selectedSource = getSelectedSource(state);
+  const selectedLocation = getSelectedLocation(state);
 
   return {
     cx: getContext(state),
     searchOn: getActiveSearch(state) === "file",
     selectedSource,
-    selectedContentLoaded: selectedSource
-      ? !!getSourceContent(state, selectedSource.id)
+    selectedContentLoaded: selectedLocation
+      ? !!getSettledSourceTextContent(state, selectedLocation)
       : false,
     query: getFileSearchQuery(state),
     modifiers: getFileSearchModifiers(state),

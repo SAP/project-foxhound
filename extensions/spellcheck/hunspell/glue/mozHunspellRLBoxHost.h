@@ -78,8 +78,8 @@ class mozHunspellCallbacks {
    * Add filename to allow list.
    */
   static void AllowFile(const nsCString& aFilename);
-  friend RLBoxHunspell* RLBoxHunspell::Create(const nsAutoCString& affpath,
-                                              const nsAutoCString& dpath);
+  friend RLBoxHunspell* RLBoxHunspell::Create(const nsCString& affpath,
+                                              const nsCString& dpath);
   /**
    * Clear allow list and map of hunspell file managers.
    */
@@ -102,7 +102,7 @@ class mozHunspellCallbacks {
   /**
    * Reader-writer lock for the sFileMgrMap
    */
-  static mozilla::detail::StaticRWLock sFileMgrMapLock;
+  static mozilla::StaticRWLock sFileMgrMapLock;
   /**
    * Tracks the next possibly unused id for sFileMgrMap
    */

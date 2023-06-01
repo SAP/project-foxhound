@@ -2,19 +2,23 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   IDBHelpers: "resource://services-settings/IDBHelpers.jsm",
   Utils: "resource://services-settings/Utils.jsm",
   CommonUtils: "resource://services-common/utils.js",
   ObjectUtils: "resource://gre/modules/ObjectUtils.jsm",
 });
-XPCOMUtils.defineLazyGetter(this, "console", () => Utils.log);
+XPCOMUtils.defineLazyGetter(lazy, "console", () => lazy.Utils.log);
 
 var EXPORTED_SYMBOLS = ["Database"];
 
@@ -24,6 +28,10 @@ var EXPORTED_SYMBOLS = ["Database"];
  * (with the objective of getting rid of kinto-offline-client)
  */
 class Database {
+  static destroy() {
+    return destroyIDB();
+  }
+
   constructor(identifier) {
     ensureShutdownBlocker();
     this.identifier = identifier;
@@ -37,7 +45,7 @@ class Database {
         "records",
         (store, rejectTransaction) => {
           // Fast-path the (very common) no-filters case
-          if (ObjectUtils.isEmpty(filters)) {
+          if (lazy.ObjectUtils.isEmpty(filters)) {
             const range = IDBKeyRange.only(this.identifier);
             const request = store.index("cid").getAll(range);
             request.onsuccess = e => {
@@ -54,7 +62,7 @@ class Database {
               const cursor = event.target.result;
               if (cursor) {
                 const { value } = cursor;
-                if (Utils.filterObject(objFilters, value)) {
+                if (lazy.Utils.filterObject(objFilters, value)) {
                   results.push(value);
                 }
                 cursor.continue();
@@ -67,13 +75,13 @@ class Database {
         { mode: "readonly" }
       );
     } catch (e) {
-      throw new IDBHelpers.IndexedDBError(e, "list()", this.identifier);
+      throw new lazy.IDBHelpers.IndexedDBError(e, "list()", this.identifier);
     }
     // Remove IDB key field from results.
     for (const result of results) {
       delete result._cid;
     }
-    return order ? Utils.sortObjects(order, results) : results;
+    return order ? lazy.Utils.sortObjects(order, results) : results;
   }
 
   async importChanges(metadata, timestamp, records = [], options = {}) {
@@ -122,24 +130,24 @@ class Database {
             storeTimestamps.put({ cid: _cid, value: timestamp });
           }
 
-          if (records.length == 0) {
+          if (!records.length) {
             return;
           }
 
           // Separate tombstones from creations/updates.
           const toDelete = records.filter(r => r.deleted);
           const toInsert = records.filter(r => !r.deleted);
-          console.debug(
+          lazy.console.debug(
             `${_cid} ${toDelete.length} to delete, ${toInsert.length} to insert`
           );
           // Delete local records for each tombstone.
-          IDBHelpers.bulkOperationHelper(
+          lazy.IDBHelpers.bulkOperationHelper(
             storeRecords,
             {
               reject: rejectTransaction,
               completion() {
                 // Overwrite all other data.
-                IDBHelpers.bulkOperationHelper(
+                lazy.IDBHelpers.bulkOperationHelper(
                   storeRecords,
                   {
                     reject: rejectTransaction,
@@ -156,7 +164,7 @@ class Database {
         { desc: "importChanges() in " + _cid }
       );
     } catch (e) {
-      throw new IDBHelpers.IndexedDBError(e, "importChanges()", _cid);
+      throw new lazy.IDBHelpers.IndexedDBError(e, "importChanges()", _cid);
     }
   }
 
@@ -171,7 +179,7 @@ class Database {
         { mode: "readonly" }
       );
     } catch (e) {
-      throw new IDBHelpers.IndexedDBError(
+      throw new lazy.IDBHelpers.IndexedDBError(
         e,
         "getLastModified()",
         this.identifier
@@ -184,7 +192,7 @@ class Database {
     // contain timestamps for last_modified. Work around this here, and return
     // the timestamp as zero, so that the entries should get updated.
     if (isNaN(entry.value)) {
-      console.warn(`Local timestamp is NaN for ${this.identifier}`);
+      lazy.console.warn(`Local timestamp is NaN for ${this.identifier}`);
       return 0;
     }
     return entry.value;
@@ -201,7 +209,11 @@ class Database {
         { mode: "readonly" }
       );
     } catch (e) {
-      throw new IDBHelpers.IndexedDBError(e, "getMetadata()", this.identifier);
+      throw new lazy.IDBHelpers.IndexedDBError(
+        e,
+        "getMetadata()",
+        this.identifier
+      );
     }
     return entry ? entry.metadata : null;
   }
@@ -219,7 +231,7 @@ class Database {
         { mode: "readonly" }
       );
     } catch (e) {
-      throw new IDBHelpers.IndexedDBError(
+      throw new lazy.IDBHelpers.IndexedDBError(
         e,
         "getAttachment()",
         this.identifier
@@ -242,7 +254,7 @@ class Database {
         { desc: "saveAttachment(" + attachmentId + ") in " + this.identifier }
       );
     } catch (e) {
-      throw new IDBHelpers.IndexedDBError(
+      throw new lazy.IDBHelpers.IndexedDBError(
         e,
         "saveAttachment()",
         this.identifier
@@ -250,11 +262,101 @@ class Database {
     }
   }
 
+  /**
+   * Delete all attachments which don't match any record.
+   *
+   * Attachments are linked to records, except when a fixed `attachmentId` is used.
+   * A record can be updated or deleted, potentially by deleting a record and restoring an updated version
+   * of the record with the same ID. Potentially leaving orphaned attachments in the database.
+   * Since we run the pruning logic after syncing, any attachment without a
+   * matching record can be discarded as they will be unreachable forever.
+   *
+   * @param {Array<String>} excludeIds List of attachments IDs to exclude from pruning.
+   */
+  async pruneAttachments(excludeIds) {
+    const _cid = this.identifier;
+    let deletedCount = 0;
+    try {
+      await executeIDB(
+        ["attachments", "records"],
+        async (stores, rejectTransaction) => {
+          const [attachmentsStore, recordsStore] = stores;
+
+          // List all stored attachments.
+          // All keys ≥ [_cid, ..] && < [_cid, []]. See comment in `importChanges()`
+          const rangeAllKeys = IDBKeyRange.bound(
+            [_cid],
+            [_cid, []],
+            false,
+            true
+          );
+          const allAttachments = await new Promise((resolve, reject) => {
+            const request = attachmentsStore.getAll(rangeAllKeys);
+            request.onsuccess = e => resolve(e.target.result);
+            request.onerror = e => reject(e);
+          });
+          if (!allAttachments.length) {
+            lazy.console.debug(
+              `${this.identifier} No attachments in IDB cache. Nothing to do.`
+            );
+            return;
+          }
+
+          // List all stored records.
+          const allRecords = await new Promise((resolve, reject) => {
+            const rangeAllIndexed = IDBKeyRange.only(_cid);
+            const request = recordsStore.index("cid").getAll(rangeAllIndexed);
+            request.onsuccess = e => resolve(e.target.result);
+            request.onerror = e => reject(e);
+          });
+
+          console.error("allRecords", allRecords);
+
+          // Compare known records IDs to those stored along the attachments.
+          const currentRecordsIDs = new Set(allRecords.map(r => r.id));
+          const attachmentsToDelete = allAttachments.reduce((acc, entry) => {
+            // Skip excluded attachments.
+            if (excludeIds.includes(entry.attachmentId)) {
+              return acc;
+            }
+            // Delete attachment if associated record does not exist.
+            if (!currentRecordsIDs.has(entry.attachment.record.id)) {
+              acc.push([_cid, entry.attachmentId]);
+            }
+            return acc;
+          }, []);
+
+          // Perform a bulk delete of all obsolete attachments.
+          lazy.console.debug(
+            `${this.identifier} Bulk delete ${attachmentsToDelete.length} obsolete attachments`
+          );
+          lazy.IDBHelpers.bulkOperationHelper(
+            attachmentsStore,
+            {
+              reject: rejectTransaction,
+            },
+            "delete",
+            attachmentsToDelete
+          );
+          deletedCount = attachmentsToDelete.length;
+        },
+        { desc: "pruneAttachments() in " + this.identifier }
+      );
+    } catch (e) {
+      throw new lazy.IDBHelpers.IndexedDBError(
+        e,
+        "pruneAttachments()",
+        this.identifier
+      );
+    }
+    return deletedCount;
+  }
+
   async clear() {
     try {
       await this.importChanges(null, null, [], { clear: true });
     } catch (e) {
-      throw new IDBHelpers.IndexedDBError(e, "clear()", this.identifier);
+      throw new lazy.IDBHelpers.IndexedDBError(e, "clear()", this.identifier);
     }
   }
 
@@ -264,7 +366,7 @@ class Database {
 
   async create(record) {
     if (!("id" in record)) {
-      record = { ...record, id: CommonUtils.generateUUID() };
+      record = { ...record, id: lazy.CommonUtils.generateUUID() };
     }
     try {
       await executeIDB(
@@ -275,7 +377,7 @@ class Database {
         { desc: "create() in " + this.identifier }
       );
     } catch (e) {
-      throw new IDBHelpers.IndexedDBError(e, "create()", this.identifier);
+      throw new lazy.IDBHelpers.IndexedDBError(e, "create()", this.identifier);
     }
     return record;
   }
@@ -290,7 +392,7 @@ class Database {
         { desc: "update() in " + this.identifier }
       );
     } catch (e) {
-      throw new IDBHelpers.IndexedDBError(e, "update()", this.identifier);
+      throw new lazy.IDBHelpers.IndexedDBError(e, "update()", this.identifier);
     }
   }
 
@@ -304,7 +406,7 @@ class Database {
         { desc: "delete() in " + this.identifier }
       );
     } catch (e) {
-      throw new IDBHelpers.IndexedDBError(e, "delete()", this.identifier);
+      throw new lazy.IDBHelpers.IndexedDBError(e, "delete()", this.identifier);
     }
   }
 }
@@ -324,7 +426,7 @@ async function openIDB() {
   // IndexedDB work more than once.
   if (!gDBPromise) {
     // Open and initialize/upgrade if needed.
-    gDBPromise = IDBHelpers.openIDB();
+    gDBPromise = lazy.IDBHelpers.openIDB();
   }
   let db = await gDBPromise;
   if (!gDB) {
@@ -351,7 +453,7 @@ async function executeIDB(storeNames, callback, options = {}) {
     // both that and a bool we set ourselves when `profile-before-change`
     // starts.
     if (gShutdownStarted || Services.startup.shuttingDown) {
-      throw new IDBHelpers.ShutdownError(
+      throw new lazy.IDBHelpers.ShutdownError(
         "The application is shutting down",
         "execute()"
       );
@@ -365,7 +467,7 @@ async function executeIDB(storeNames, callback, options = {}) {
 
   // Check for shutdown again as we've await'd something...
   if (!gDB && (gShutdownStarted || Services.startup.shuttingDown)) {
-    throw new IDBHelpers.ShutdownError(
+    throw new lazy.IDBHelpers.ShutdownError(
       "The application is shutting down",
       "execute()"
     );
@@ -373,7 +475,7 @@ async function executeIDB(storeNames, callback, options = {}) {
 
   // Start the actual transaction:
   const { mode = "readwrite", desc = "" } = options;
-  let { promise, transaction } = IDBHelpers.executeIDB(
+  let { promise, transaction } = lazy.IDBHelpers.executeIDB(
     gDB,
     storeNames,
     mode,
@@ -397,6 +499,35 @@ async function executeIDB(storeNames, callback, options = {}) {
     finishedFn = () => gPendingWriteOperations.delete(obj);
   }
   return promise.finally(finishedFn);
+}
+
+async function destroyIDB() {
+  if (gDB) {
+    if (gShutdownStarted || Services.startup.shuttingDown) {
+      throw new lazy.IDBHelpers.ShutdownError(
+        "The application is shutting down",
+        "destroyIDB()"
+      );
+    }
+
+    // This will return immediately; the actual close will happen once
+    // there are no more running transactions.
+    gDB.close();
+    const allTransactions = new Set([
+      ...gPendingWriteOperations,
+      ...gPendingReadOnlyTransactions,
+    ]);
+    for (let transaction of Array.from(allTransactions)) {
+      try {
+        transaction.abort();
+      } catch (ex) {
+        // Ignore errors to abort transactions, we'll destroy everything.
+      }
+    }
+  }
+  gDB = null;
+  gDBPromise = null;
+  return lazy.IDBHelpers.destroyIDB();
 }
 
 function makeNestedObjectFromArr(arr, val, nestedFiltersObj) {
@@ -443,12 +574,12 @@ Database._shutdownHandler = () => {
       // Ensure we don't throw/break, because either way we're in shutdown.
 
       // In particular, `transaction.abort` can throw if the transaction
-      // is complete, ie if we manage to get called inbetween the
+      // is complete, ie if we manage to get called in between the
       // transaction completing, and our completion handler being called
       // to remove the item from the set. We don't care about that.
       if (ex.result != NS_ERROR_DOM_INDEXEDDB_NOT_ALLOWED_ERR) {
         // Report any other errors:
-        Cu.reportError(ex);
+        console.error(ex);
       }
     }
   }
@@ -469,7 +600,7 @@ function ensureShutdownBlocker() {
     return;
   }
   gShutdownBlocker = true;
-  AsyncShutdown.profileBeforeChange.addBlocker(
+  lazy.AsyncShutdown.profileBeforeChange.addBlocker(
     "RemoteSettingsClient - finish IDB access.",
     Database._shutdownHandler,
     {

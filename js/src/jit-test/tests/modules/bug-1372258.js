@@ -3,7 +3,7 @@
 // Overwrite built-in parseModule with off-thread module parser.
 function parseModule(source) {
     offThreadCompileModuleToStencil(source);
-    var stencil = finishOffThreadCompileModuleToStencil();
+    var stencil = finishOffThreadStencil();
     return instantiateModuleStencil(stencil);
 }
 
@@ -22,5 +22,5 @@ for (let i = 0; i < count; i++) {
 }
 let b = registerModule('b', parseModule(s));
 
-b.declarationInstantiation();
-b.evaluation();
+moduleLink(b);
+moduleEvaluate(b);

@@ -16,8 +16,7 @@
 #include "mozilla/dom/NodeInfo.h"
 #include "nsGenericHTMLElement.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class GeneratedImageContent final : public nsGenericHTMLElement {
  public:
@@ -33,10 +32,10 @@ class GeneratedImageContent final : public nsGenericHTMLElement {
                "Someone messed up our nodeinfo");
   }
 
-  EventStates IntrinsicState() const override {
-    EventStates state = nsGenericHTMLElement::IntrinsicState();
+  ElementState IntrinsicState() const override {
+    ElementState state = nsGenericHTMLElement::IntrinsicState();
     if (mBroken) {
-      state |= NS_EVENT_STATE_BROKEN;
+      state |= ElementState::BROKEN;
     }
     return state;
   }
@@ -70,7 +69,6 @@ class GeneratedImageContent final : public nsGenericHTMLElement {
   bool mBroken = false;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // dom_base_GeneratedImageContent_h

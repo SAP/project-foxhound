@@ -9,6 +9,11 @@ const { UIState } = ChromeUtils.import("resource://services-sync/UIState.jsm");
 
 ChromeUtils.defineModuleGetter(
   this,
+  "ExperimentAPI",
+  "resource://nimbus/ExperimentAPI.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
   "FxAccounts",
   "resource://gre/modules/FxAccounts.jsm"
 );
@@ -73,7 +78,7 @@ this.SyncedTabsPanelList = class SyncedTabsPanelList {
       }
       // force a background sync.
       SyncedTabs.syncTabs().catch(ex => {
-        Cu.reportError(ex);
+        console.error(ex);
       });
       this.deck.toggleAttribute("syncingtabs", true);
       // show the current list - it will be updated by our observer.
@@ -99,7 +104,7 @@ this.SyncedTabsPanelList = class SyncedTabsPanelList {
         return this.__showSyncedTabs(paginationInfo);
       },
       e => {
-        Cu.reportError(e);
+        console.error(e);
       }
     );
   }
@@ -151,7 +156,7 @@ this.SyncedTabsPanelList = class SyncedTabsPanelList {
         for (let client of clients) {
           // add a menu separator for all clients other than the first.
           if (fragment.lastElementChild) {
-            let separator = document.createXULElement("menuseparator");
+            let separator = document.createXULElement("toolbarseparator");
             fragment.appendChild(separator);
           }
           // We add the client's elements to a container, and indicate which
@@ -174,12 +179,9 @@ this.SyncedTabsPanelList = class SyncedTabsPanelList {
           fragment.appendChild(container);
         }
         this.tabsList.appendChild(fragment);
-        PanelView.forNode(
-          this.tabsList.closest("panelview")
-        ).descriptionHeightWorkaround();
       })
       .catch(err => {
-        Cu.reportError(err);
+        console.error(err);
       })
       .then(() => {
         // an observer for tests.
@@ -255,8 +257,8 @@ this.SyncedTabsPanelList = class SyncedTabsPanelList {
       if (hasNextPage) {
         client.tabs = client.tabs.slice(0, maxTabs);
       }
-      for (let tab of client.tabs) {
-        let tabEnt = this._createSyncedTabElement(tab);
+      for (let [index, tab] of client.tabs.entries()) {
+        let tabEnt = this._createSyncedTabElement(tab, index);
         container.appendChild(tabEnt);
       }
       if (hasNextPage) {
@@ -266,7 +268,7 @@ this.SyncedTabsPanelList = class SyncedTabsPanelList {
     }
   }
 
-  _createSyncedTabElement(tabInfo) {
+  _createSyncedTabElement(tabInfo, index) {
     let item = document.createXULElement("toolbarbutton");
     let tooltipText = (tabInfo.title ? tabInfo.title + "\n" : "") + tabInfo.url;
     item.setAttribute("itemtype", "tab");
@@ -283,6 +285,15 @@ this.SyncedTabsPanelList = class SyncedTabsPanelList {
     // We need to use "click" instead of "command" here so openUILink
     // respects different buttons (eg, to open in a new tab).
     item.addEventListener("click", e => {
+      // We want to differentiate between when the fxa panel is within the app menu/hamburger bar
+      let object = "fxa_avatar_menu";
+      const appMenuPanel = document.getElementById("appMenu-popup");
+      if (appMenuPanel.contains(e.currentTarget)) {
+        object = "fxa_app_menu";
+      }
+      SyncedTabs.recordSyncedTabsTelemetry(object, "click", {
+        tab_pos: index.toString(),
+      });
       document.defaultView.openUILink(tabInfo.url, e, {
         triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal(
           {}
@@ -303,6 +314,7 @@ this.SyncedTabsPanelList = class SyncedTabsPanelList {
 
     let showMoreItem = document.createXULElement("toolbarbutton");
     showMoreItem.setAttribute("itemtype", "showmorebutton");
+    showMoreItem.setAttribute("closemenu", "none");
     showMoreItem.classList.add(
       "subviewbutton",
       "subviewbutton-nav",
@@ -337,7 +349,9 @@ var gSync = {
 
   get log() {
     if (!this._log) {
-      const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+      const { Log } = ChromeUtils.importESModule(
+        "resource://gre/modules/Log.sys.mjs"
+      );
       let syncLog = Log.repository.getLogger("Sync.Browser");
       syncLog.manageLevelFromPref("services.sync.log.logger.browser");
       this._log = syncLog;
@@ -565,7 +579,7 @@ var gSync = {
 
   observe(subject, topic, data) {
     if (!this._initialized) {
-      Cu.reportError("browser-sync observer called after unload: " + topic);
+      console.error("browser-sync observer called after unload: ", topic);
       return;
     }
     switch (topic) {
@@ -790,9 +804,26 @@ var gSync = {
     let fxaStatus = document.documentElement.getAttribute("fxastatus");
 
     if (fxaStatus == "not_configured") {
-      this.openFxAEmailFirstPageFromFxaMenu(
-        PanelMultiView.getViewNode(document, "PanelUI-fxa")
-      );
+      let extraParams = {};
+      let fxaButtonVisibilityExperiment =
+        ExperimentAPI.getExperimentMetaData({
+          featureId: "fxaButtonVisibility",
+        }) ??
+        ExperimentAPI.getRolloutMetaData({
+          featureId: "fxaButtonVisibility",
+        });
+      if (fxaButtonVisibilityExperiment) {
+        extraParams = {
+          entrypoint_experiment: fxaButtonVisibilityExperiment.slug,
+          entrypoint_variation: fxaButtonVisibilityExperiment.branch.slug,
+        };
+      }
+
+      let panel =
+        anchor.id == "appMenu-fxa-label2"
+          ? PanelMultiView.getViewNode(document, "PanelUI-fxa")
+          : undefined;
+      this.openFxAEmailFirstPageFromFxaMenu(panel, extraParams);
       PanelUI.hide();
       return;
     }
@@ -1130,6 +1161,9 @@ var gSync = {
   },
 
   async openSignInAgainPage(entryPoint) {
+    if (!(await FxAccounts.canConnectAccount())) {
+      return;
+    }
     const url = await FxAccounts.config.promiseForceSigninURI(entryPoint);
     switchToTabHavingURI(url, true, {
       replaceQueryString: true,
@@ -1185,18 +1219,24 @@ var gSync = {
     }
   },
 
-  async openFxAEmailFirstPage(entryPoint) {
-    const url = await FxAccounts.config.promiseConnectAccountURI(entryPoint);
+  async openFxAEmailFirstPage(entryPoint, extraParams = {}) {
+    if (!(await FxAccounts.canConnectAccount())) {
+      return;
+    }
+    const url = await FxAccounts.config.promiseConnectAccountURI(
+      entryPoint,
+      extraParams
+    );
     switchToTabHavingURI(url, true, { replaceQueryString: true });
   },
 
-  async openFxAEmailFirstPageFromFxaMenu(panel = undefined) {
+  async openFxAEmailFirstPageFromFxaMenu(panel = undefined, extraParams = {}) {
     this.emitFxaToolbarTelemetry("login", panel);
     let entryPoint = "fxa_discoverability_native";
     if (panel) {
       entryPoint = "fxa_app_menu";
     }
-    this.openFxAEmailFirstPage(entryPoint);
+    this.openFxAEmailFirstPage(entryPoint, extraParams);
   },
 
   async openFxAManagePage(entryPoint) {
@@ -1223,7 +1263,7 @@ var gSync = {
         this.log.error(`Target ${target.id} unsuitable for send tab.`);
       }
     }
-    // If a master-password is enabled then it must be unlocked so FxA can get
+    // If a primary-password is enabled then it must be unlocked so FxA can get
     // the encryption keys from the login manager. (If we end up using the "sync"
     // fallback that would end up prompting by itself, but the FxA command route
     // will not) - so force that here.
@@ -1368,7 +1408,7 @@ var gSync = {
                 ?.id != "widget-overflow-list" &&
               document.getElementById("fxa-toolbar-menu-button")) ||
             document.getElementById("PanelUI-menu-button");
-          ConfirmationHint.show(anchorNode, "sendToDevice");
+          ConfirmationHint.show(anchorNode, "confirmation-hint-send-to-device");
         }
         fxAccounts.flushLogFile();
       });
@@ -1839,7 +1879,7 @@ var gSync = {
       let navbar = document.getElementById(CustomizableUI.AREA_NAVBAR);
       navbar.overflowable.show().then(() => {
         PanelUI.showSubView("PanelUI-remotetabs", anchor);
-      }, Cu.reportError);
+      }, console.error);
     } else {
       // It is placed somewhere else - just try and show it.
       PanelUI.showSubView("PanelUI-remotetabs", anchor);

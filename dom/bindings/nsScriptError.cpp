@@ -33,7 +33,7 @@ nsScriptErrorBase::nsScriptErrorBase()
       mCategory(),
       mOuterWindowID(0),
       mInnerWindowID(0),
-      mTimeStamp(0),
+      mMicroSecondTimeStamp(0),
       mInitializedOnMainThread(false),
       mIsFromPrivateWindow(false),
       mIsFromChromeContext(false),
@@ -163,27 +163,27 @@ nsScriptErrorBase::GetHasException(bool* aHasException) {
 }
 
 NS_IMETHODIMP
-nsScriptErrorBase::GetException(JS::MutableHandleValue aException) {
+nsScriptErrorBase::GetException(JS::MutableHandle<JS::Value> aException) {
   aException.setUndefined();
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsScriptErrorBase::SetException(JS::HandleValue aStack) {
+nsScriptErrorBase::SetException(JS::Handle<JS::Value> aStack) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
-nsScriptErrorBase::GetStack(JS::MutableHandleValue aStack) {
+nsScriptErrorBase::GetStack(JS::MutableHandle<JS::Value> aStack) {
   aStack.setUndefined();
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsScriptErrorBase::SetStack(JS::HandleValue aStack) { return NS_OK; }
+nsScriptErrorBase::SetStack(JS::Handle<JS::Value> aStack) { return NS_OK; }
 
 NS_IMETHODIMP
-nsScriptErrorBase::GetStackGlobal(JS::MutableHandleValue aStackGlobal) {
+nsScriptErrorBase::GetStackGlobal(JS::MutableHandle<JS::Value> aStackGlobal) {
   aStackGlobal.setUndefined();
   return NS_OK;
 }
@@ -227,11 +227,10 @@ NS_IMETHODIMP
 nsScriptErrorBase::Init(const nsAString& message, const nsAString& sourceName,
                         const nsAString& sourceLine, uint32_t lineNumber,
                         uint32_t columnNumber, uint32_t flags,
-                        const char* category, bool fromPrivateWindow,
+                        const nsACString& category, bool fromPrivateWindow,
                         bool fromChromeContext) {
   InitializationHelper(message, sourceLine, lineNumber, columnNumber, flags,
-                       category ? nsDependentCString(category) : EmptyCString(),
-                       0 /* inner Window ID */, fromChromeContext);
+                       category, 0 /* inner Window ID */, fromChromeContext);
   AssignSourceNameHelper(mSourceName, sourceName);
 
   mIsFromPrivateWindow = fromPrivateWindow;
@@ -249,7 +248,7 @@ void nsScriptErrorBase::InitializationHelper(
   mColumnNumber = columnNumber;
   mFlags = flags;
   mCategory = category;
-  mTimeStamp = JS_Now() / 1000;
+  mMicroSecondTimeStamp = JS_Now();
   mInnerWindowID = aInnerWindowID;
   mIsFromChromeContext = aFromChromeContext;
 }
@@ -380,7 +379,13 @@ nsScriptErrorBase::GetInnerWindowID(uint64_t* aInnerWindowID) {
 
 NS_IMETHODIMP
 nsScriptErrorBase::GetTimeStamp(int64_t* aTimeStamp) {
-  *aTimeStamp = mTimeStamp;
+  *aTimeStamp = mMicroSecondTimeStamp / 1000;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsScriptErrorBase::GetMicroSecondTimeStamp(int64_t* aTimeStamp) {
+  *aTimeStamp = mMicroSecondTimeStamp;
   return NS_OK;
 }
 

@@ -14,6 +14,7 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/EnumeratedArray.h"
+#include "mozilla/Maybe.h"
 
 #include "CrashAnnotations.h"
 
@@ -42,6 +43,9 @@
 class nsIFile;
 
 namespace CrashReporter {
+
+using mozilla::Maybe;
+using mozilla::Nothing;
 
 /**
  * Returns true if the crash reporter is using the dummy implementation.
@@ -95,6 +99,7 @@ nsresult AnnotateCrashReport(Annotation key, bool data);
 nsresult AnnotateCrashReport(Annotation key, int data);
 nsresult AnnotateCrashReport(Annotation key, unsigned int data);
 nsresult AnnotateCrashReport(Annotation key, const nsACString& data);
+nsresult AppendToCrashReportAnnotation(Annotation key, const nsACString& data);
 nsresult RemoveCrashReportAnnotation(Annotation key);
 nsresult AppendAppNotesToCrashReport(const nsACString& data);
 
@@ -140,8 +145,11 @@ void GetAnnotation(uint32_t childPid, Annotation annotation,
 // Functions for working with minidumps and .extras
 typedef mozilla::EnumeratedArray<Annotation, Annotation::Count, nsCString>
     AnnotationTable;
-void DeleteMinidumpFilesForID(const nsAString& id);
-bool GetMinidumpForID(const nsAString& id, nsIFile** minidump);
+void DeleteMinidumpFilesForID(
+    const nsAString& aId,
+    const Maybe<nsString>& aAdditionalMinidump = Nothing());
+bool GetMinidumpForID(const nsAString& id, nsIFile** minidump,
+                      const Maybe<nsString>& aAdditionalMinidump = Nothing());
 bool GetIDFromMinidump(nsIFile* minidump, nsAString& id);
 bool GetExtraFileForID(const nsAString& id, nsIFile** extraFile);
 bool GetExtraFileForMinidump(nsIFile* minidump, nsIFile** extraFile);
@@ -249,10 +257,9 @@ void DeregisterChildCrashAnnotationFileDescriptor(ProcessId aProcess);
 ThreadId CurrentThreadId();
 
 /*
- * Take a minidump of the target process and pair it with an incoming minidump
- * provided by the caller or a new minidump of the calling process and thread.
- * The caller will own both dumps after this call. If this function fails
- * it will attempt to delete any files that were created.
+ * Take a minidump of the target process and pair it with a new minidump of the
+ * calling process and thread. The caller will own both dumps after this call.
+ * If this function fails it will attempt to delete any files that were created.
  *
  * The .extra information created will not include an 'additional_minidumps'
  * annotation.
@@ -261,29 +268,15 @@ ThreadId CurrentThreadId();
  * @param aTargetBlamedThread The target thread for the minidump.
  * @param aIncomingPairName The name to apply to the paired dump the caller
  *   passes in.
- * @param aIncomingDumpToPair Existing dump to pair with the new dump. if this
- *   is null, TakeMinidumpAndPair will take a new minidump of the calling
- *   process and thread and use it in aIncomingDumpToPairs place.
- * @param aTargetDumpOut The target minidump file paired up with
- *   aIncomingDumpToPair.
+ * @param aTargetDumpOut The target minidump file paired up with the new one.
  * @param aTargetAnnotations The crash annotations of the target process.
  * @return bool indicating success or failure
  */
 bool CreateMinidumpsAndPair(ProcessHandle aTargetPid,
                             ThreadId aTargetBlamedThread,
                             const nsACString& aIncomingPairName,
-                            nsIFile* aIncomingDumpToPair,
                             AnnotationTable& aTargetAnnotations,
                             nsIFile** aTargetDumpOut);
-
-// Create an additional minidump for a child of a process which already has
-// a minidump (|parentMinidump|).
-// The resulting dump will get the id of the parent and use the |name| as
-// an extension.
-bool CreateAdditionalChildMinidump(ProcessHandle childPid,
-                                   ThreadId childBlamedThread,
-                                   nsIFile* parentMinidump,
-                                   const nsACString& name);
 
 #if defined(XP_WIN) || defined(XP_MACOSX)
 // Parent-side API for children
@@ -343,9 +336,6 @@ bool UnsetRemoteExceptionHandler();
 void SetNotificationPipeForChild(FileHandle childCrashFd);
 void SetCrashAnnotationPipeForChild(FileHandle childCrashAnnotationFd);
 #endif
-
-// Annotates the crash report with the name of the calling thread.
-void SetCurrentThreadName(const char* aName);
 
 }  // namespace CrashReporter
 

@@ -4,21 +4,18 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const lazy = {};
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+});
 
 let { getChromeWindow } = ChromeUtils.import(
   "resource:///modules/syncedtabs/util.js"
 );
 
-let log = ChromeUtils.import(
-  "resource://gre/modules/Log.jsm",
-  {}
+let log = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
 ).Log.repository.getLogger("Sync.RemoteTabs");
 
 var EXPORTED_SYMBOLS = ["TabListView"];
@@ -371,6 +368,15 @@ TabListView.prototype = {
     }
   },
 
+  onOpenSelectedInContainerTab(event) {
+    let item = this._getSelectedTabNode();
+    if (item) {
+      this.props.onOpenTab(item.dataset.url, "tab", {
+        userContextId: parseInt(event.target?.dataset.usercontextid),
+      });
+    }
+  },
+
   onOpenAllInTabs() {
     let item = this._getSelectedClientNode();
     if (item) {
@@ -461,6 +467,10 @@ TabListView.prototype = {
         switch (menu.getAttribute("id")) {
           case "SyncedTabsSidebarContext":
             this.handleContentContextMenuCommand(event);
+            break;
+
+          case "SyncedTabsOpenSelectedInContainerTabMenu":
+            this.onOpenSelectedInContainerTab(event);
             break;
 
           case "SyncedTabsSidebarTabsFilterContext":
@@ -556,7 +566,15 @@ TabListView.prototype = {
       let show = false;
       if (showTabOptions) {
         if (el.getAttribute("id") == "syncedTabsOpenSelectedInPrivateWindow") {
-          show = PrivateBrowsingUtils.enabled;
+          show = lazy.PrivateBrowsingUtils.enabled;
+        } else if (
+          el.getAttribute("id") === "syncedTabsOpenSelectedInContainerTab"
+        ) {
+          show =
+            Services.prefs.getBoolPref("privacy.userContext.enabled", false) &&
+            !lazy.PrivateBrowsingUtils.isWindowPrivate(
+              getChromeWindow(this._window)
+            );
         } else if (
           el.getAttribute("id") != "syncedTabsOpenAllInTabs" &&
           el.getAttribute("id") != "syncedTabsManageDevices"

@@ -1,7 +1,5 @@
 "use strict";
-const { E10SUtils } = ChromeUtils.import(
-  "resource://gre/modules/E10SUtils.jsm"
-);
+
 const triggeringPrincipal_base64 = E10SUtils.SERIALIZED_SYSTEMPRINCIPAL;
 
 const MAX_CONCURRENT_TABS = "browser.engagement.max_concurrent_tab_count";
@@ -35,7 +33,7 @@ add_task(async function test_privateMode() {
   let privateWin = await BrowserTestUtils.openNewBrowserWindow({
     private: true,
   });
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.loadURIString(
     privateWin.gBrowser.selectedBrowser,
     "http://example.com/"
   );
@@ -120,10 +118,9 @@ add_task(async function test_sessionRestore() {
   };
 
   // Save the current session.
-  let SessionStore = ChromeUtils.import(
-    "resource:///modules/sessionstore/SessionStore.jsm",
-    {}
-  ).SessionStore;
+  let { SessionStore } = ChromeUtils.importESModule(
+    "resource:///modules/sessionstore/SessionStore.sys.mjs"
+  );
 
   // Load the custom state and wait for SSTabRestored, as we want to make sure
   // that the URI counting code was hit.

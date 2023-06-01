@@ -19,41 +19,34 @@
  */
 var EXPORTED_SYMBOLS = ["TRRRacer", "DNSLookup", "LookupAggregator"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 Services.telemetry.setEventRecordingEnabled(
   "security.doh.trrPerformance",
   true
 );
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
+const lazy = {};
+
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "gNetworkLinkService",
   "@mozilla.org/network/network-link-service;1",
   "nsINetworkLinkService"
 );
 
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "gCaptivePortalService",
   "@mozilla.org/network/captive-portal-service;1",
   "nsICaptivePortalService"
 );
 
-XPCOMUtils.defineLazyServiceGetter(
-  this,
-  "gDNSService",
-  "@mozilla.org/network/dns-service;1",
-  "nsIDNSService"
-);
-
 // The canonical domain whose subdomains we will be resolving.
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "kCanonicalDomain",
   "doh-rollout.trrRace.canonicalDomain",
   "firefox-dns-perf-test.net."
@@ -61,7 +54,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
 
 // The number of random subdomains to resolve per TRR.
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "kRepeats",
   "doh-rollout.trrRace.randomSubdomainCount",
   5
@@ -69,7 +62,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
 
 // The "popular" domain that we expect the TRRs to have cached.
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "kPopularDomains",
   "doh-rollout.trrRace.popularDomains",
   null,
@@ -91,7 +84,7 @@ function getRandomSubdomain() {
     .generateUUID()
     .toString()
     .slice(1, -1); // Discard surrounding braces
-  return `${uuid}.${kCanonicalDomain}`;
+  return `${uuid}.${lazy.kCanonicalDomain}`;
 }
 
 // A wrapper around async DNS lookups. The results are passed on to the supplied
@@ -110,17 +103,17 @@ class DNSLookup {
     this.retryCount++;
     try {
       this.usedDomain = this._domain || getRandomSubdomain();
-      gDNSService.asyncResolve(
+      Services.dns.asyncResolve(
         this.usedDomain,
         Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
         Ci.nsIDNSService.RESOLVE_BYPASS_CACHE,
-        gDNSService.newTRRResolverInfo(this.trrServer),
+        Services.dns.newAdditionalInfo(this.trrServer, -1),
         this,
         Services.tm.currentThread,
         {}
       );
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
     }
   }
 
@@ -150,11 +143,11 @@ class LookupAggregator {
     this.captivePortal = false;
 
     this.domains = [];
-    for (let i = 0; i < kRepeats; ++i) {
+    for (let i = 0; i < lazy.kRepeats; ++i) {
       // false-y domain will cause DNSLookup to generate a random one.
       this.domains.push(null);
     }
-    this.domains.push(...kPopularDomains);
+    this.domains.push(...lazy.kPopularDomains);
     this.totalLookups = this.trrList.length * this.domains.length;
     this.completedLookups = 0;
     this.results = [];
@@ -162,7 +155,7 @@ class LookupAggregator {
 
   run() {
     if (this._ran || this._aborted) {
-      Cu.reportError("Trying to re-run a LookupAggregator.");
+      console.error("Trying to re-run a LookupAggregator.");
       return;
     }
 
@@ -213,9 +206,12 @@ class LookupAggregator {
 
     for (let { domain, trr, status, time, retryCount } of this.results) {
       if (
-        !(kPopularDomains.includes(domain) || domain.includes(kCanonicalDomain))
+        !(
+          lazy.kPopularDomains.includes(domain) ||
+          domain.includes(lazy.kCanonicalDomain)
+        )
       ) {
-        Cu.reportError("Expected known domain for reporting, got " + domain);
+        console.error("Expected known domain for reporting, got ", domain);
         return;
       }
 
@@ -255,12 +251,14 @@ class TRRRacer {
 
   run() {
     if (
-      gNetworkLinkService.isLinkUp &&
-      gCaptivePortalService.state != gCaptivePortalService.LOCKED_PORTAL
+      lazy.gNetworkLinkService.isLinkUp &&
+      lazy.gCaptivePortalService.state !=
+        lazy.gCaptivePortalService.LOCKED_PORTAL
     ) {
       this._runNewAggregator();
       if (
-        gCaptivePortalService.state == gCaptivePortalService.UNLOCKED_PORTAL
+        lazy.gCaptivePortalService.state ==
+        lazy.gCaptivePortalService.UNLOCKED_PORTAL
       ) {
         this._aggregator.markCaptivePortal();
       }
@@ -385,7 +383,8 @@ class TRRRacer {
       case "ipc:network:captive-portal-set-state":
         if (
           this._aggregator &&
-          gCaptivePortalService.state == gCaptivePortalService.LOCKED_PORTAL
+          lazy.gCaptivePortalService.state ==
+            lazy.gCaptivePortalService.LOCKED_PORTAL
         ) {
           if (this._retryCount < 5) {
             this._aggregator.abort();
@@ -393,8 +392,8 @@ class TRRRacer {
             this._aggregator.markCaptivePortal();
           }
         } else if (
-          gCaptivePortalService.state ==
-            gCaptivePortalService.UNLOCKED_PORTAL &&
+          lazy.gCaptivePortalService.state ==
+            lazy.gCaptivePortalService.UNLOCKED_PORTAL &&
           (!this._aggregator || this._aggregator.aborted)
         ) {
           this._runNewAggregator();

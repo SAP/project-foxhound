@@ -22,10 +22,6 @@ ChromeUtils.defineModuleGetter(
   "resource:///modules/BrowserUsageTelemetry.jsm"
 );
 
-const { SessionStore } = ChromeUtils.import(
-  "resource:///modules/sessionstore/SessionStore.jsm"
-);
-
 // Reset internal URI counter in case URIs were opened by other tests.
 Services.obs.notifyObservers(null, TELEMETRY_SUBSESSION_TOPIC);
 
@@ -338,7 +334,7 @@ add_task(async function test_tabsHistogram() {
   );
   openedTabs.push(tab);
   BrowserUsageTelemetry._lastRecordTabCount = 0;
-  BrowserTestUtils.loadURI(tab.linkedBrowser, "http://example.com/");
+  BrowserTestUtils.loadURIString(tab.linkedBrowser, "http://example.com/");
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
   checkTabCountHistogram(
     tabCountHist.snapshot(),
@@ -414,7 +410,7 @@ add_task(async function test_tabsHistogram() {
     Date.now() - MINIMUM_TAB_COUNT_INTERVAL_MS / 2;
   {
     let oldLastRecordTabCount = BrowserUsageTelemetry._lastRecordTabCount;
-    BrowserTestUtils.loadURI(tab.linkedBrowser, "http://example.com/");
+    BrowserTestUtils.loadURIString(tab.linkedBrowser, "http://example.com/");
     await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
     checkTabCountHistogram(
       tabCountHist.snapshot(),
@@ -432,7 +428,7 @@ add_task(async function test_tabsHistogram() {
     Date.now() - (MINIMUM_TAB_COUNT_INTERVAL_MS + 1000);
   {
     let oldLastRecordTabCount = BrowserUsageTelemetry._lastRecordTabCount;
-    BrowserTestUtils.loadURI(tab.linkedBrowser, "http://example.com/");
+    BrowserTestUtils.loadURIString(tab.linkedBrowser, "http://example.com/");
     await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
     checkTabCountHistogram(
       tabCountHist.snapshot(),
@@ -538,7 +534,10 @@ add_task(async function test_loadedTabsHistogram() {
   resetTimestamps();
 
   await Promise.all([
-    BrowserTestUtils.loadURI(lazyTab.linkedBrowser, "http://example.com/"),
+    BrowserTestUtils.loadURIString(
+      lazyTab.linkedBrowser,
+      "http://example.com/"
+    ),
     BrowserTestUtils.browserLoaded(
       lazyTab.linkedBrowser,
       false,
@@ -599,8 +598,8 @@ add_task(async function test_restored_max_pinned_count() {
   // Following pinned tab testing example from
   // https://searchfox.org/mozilla-central/rev/1843375acbbca68127713e402be222350ac99301/browser/components/sessionstore/test/browser_pinned_tabs.js
   Services.telemetry.clearScalars();
-  const { E10SUtils } = ChromeUtils.import(
-    "resource://gre/modules/E10SUtils.jsm"
+  const { E10SUtils } = ChromeUtils.importESModule(
+    "resource://gre/modules/E10SUtils.sys.mjs"
   );
   const BACKUP_STATE = SessionStore.getBrowserState();
   const triggeringPrincipal_base64 = E10SUtils.SERIALIZED_SYSTEMPRINCIPAL;

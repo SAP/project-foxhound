@@ -1,5 +1,3 @@
-/* import-globals-from antitracking_head.js */
-
 AntiTracking.runTest(
   "Test whether we receive any persistent permissions in normal windows",
   // Blocking callback
@@ -12,14 +10,9 @@ AntiTracking.runTest(
     try {
       // We load the test script in the parent process to check permissions.
       let chromeScript = SpecialPowers.loadChromeScript(_ => {
-        // eslint-disable-next-line no-undef
+        /* eslint-env mozilla/chrome-script */
         addMessageListener("go", _ => {
-          const { Services } = ChromeUtils.import(
-            "resource://gre/modules/Services.jsm"
-          );
-
           function ok(what, msg) {
-            // eslint-disable-next-line no-undef
             sendAsyncMessage("ok", { what: !!what, msg });
           }
 
@@ -46,7 +39,6 @@ AntiTracking.runTest(
             ok(perm.expireTime > 0, "Permission must have a expiry time");
           }
 
-          // eslint-disable-next-line no-undef
           sendAsyncMessage("done");
         });
       });
@@ -99,7 +91,12 @@ AntiTracking.runTest(
       );
     });
   },
-  null, // no extra prefs
+  [
+    [
+      "privacy.partition.always_partition_third_party_non_cookie_storage",
+      false,
+    ],
+  ], // extra prefs
   true, // run the window.open() test
   true, // run the user interaction test
   0, // don't expect blocking notifications

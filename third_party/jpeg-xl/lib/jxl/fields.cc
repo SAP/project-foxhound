@@ -9,8 +9,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <hwy/base.h>
 
-#include "hwy/base.h"
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/printf_macros.h"
 
@@ -259,7 +259,7 @@ class AllDefaultVisitor : public VisitorBase {
 
 class ReadVisitor : public VisitorBase {
  public:
-  ReadVisitor(BitReader* reader) : VisitorBase(), reader_(reader) {}
+  explicit ReadVisitor(BitReader* reader) : VisitorBase(), reader_(reader) {}
 
   Status Bits(const size_t bits, const uint32_t /*default_value*/,
               uint32_t* JXL_RESTRICT value) override {

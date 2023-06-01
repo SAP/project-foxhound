@@ -105,13 +105,13 @@ Network Monitor
 See the network requests made when a page is loaded.
 
 
-Performance Tools
+Performance Panel
 -----------------
 
-.. image:: landingpage_performance.png
+.. image:: landingpage_performance_2022.png
     :class: border
-    :target: performance
-    :alt: Performance Tools in Firefox 57 Developer Tools.
+    :target: https://profiler.firefox.com/docs/
+    :alt: Performance Panel in Firefox 103 Developer Tools.
 
 Analyze your site's general responsiveness, JavaScript, and layout performance.
 
@@ -211,7 +211,7 @@ If you open the developer tools using :ref:`keyboard shortcuts <keyboard-shortcu
    * - :doc:`about:debugging <about_colon_debugging/index>`
      - Debug add-ons, content tabs, and workers running in the browser.
 
-   * - :ref:`Connecting to Firefox for Android <about-color-debugging-connecting-over-the-network>`
+   * - :ref:`Connecting to Firefox for Android <about-colon-debugging-connecting-to-a-remote-device>`
      - Connect the developer tools to an instance of Firefox running on an Android device.
 
    * - :doc:`Connecting to iframes <working_with_iframes/index>`

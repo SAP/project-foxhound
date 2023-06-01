@@ -10,6 +10,7 @@
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/UniquePtrExtensions.h"
 
 class nsIURI;
 
@@ -33,11 +34,43 @@ nsresult NewObjectOutputWrappedStorageStream(
 // allocated with 'new []'.  After calling this function, the caller would
 // typically call StartupCache::PutBuffer with the returned buffer.
 nsresult NewBufferFromStorageStream(nsIStorageStream* storageStream,
-                                    UniquePtr<char[]>* buffer, uint32_t* len);
+                                    UniqueFreePtr<char[]>* buffer,
+                                    uint32_t* len);
 
 nsresult ResolveURI(nsIURI* in, nsIURI** out);
 
-nsresult PathifyURI(nsIURI* in, nsACString& out);
+// PathifyURI transforms uris into useful zip paths
+// to make it easier to manipulate startup cache entries
+// using standard zip tools.
+//
+// Transformations applied:
+//  * resource:// URIs are resolved to their corresponding file/jar URI to
+//    canonicalize resources URIs other than gre and app.
+//  * Paths under GRE or APP directory have their base path replaced with
+//    resource/gre or resource/app to avoid depending on install location.
+//  * jar:file:///path/to/file.jar!/sub/path urls are replaced with
+//    /path/to/file.jar/sub/path
+//
+// The result is concatenated with loaderType and stored into the string
+// passed in.
+//
+// For example, in the js loader (loaderType = "jsloader"):
+//  resource://gre/modules/XPCOMUtils.sys.mjs or
+//  file://$GRE_DIR/modules/XPCOMUtils.sys.mjs or
+//  jar:file://$GRE_DIR/omni.jar!/modules/XPCOMUtils.sys.mjs becomes
+//     jsloader/resource/gre/modules/XPCOMUtils.sys.mjs
+//  file://$PROFILE_DIR/extensions/{uuid}/components/component.js becomes
+//     jsloader/$PROFILE_DIR/extensions/%7Buuid%7D/components/component.js
+//  jar:file://$PROFILE_DIR/extensions/some.xpi!/components/component.js becomes
+//     jsloader/$PROFILE_DIR/extensions/some.xpi/components/component.js
+nsresult PathifyURI(const char* loaderType, size_t loaderTypeLength, nsIURI* in,
+                    nsACString& out);
+
+template <int N>
+nsresult PathifyURI(const char (&loaderType)[N], nsIURI* in, nsACString& out) {
+  return PathifyURI(loaderType, N - 1, in, out);
+}
+
 }  // namespace scache
 }  // namespace mozilla
 

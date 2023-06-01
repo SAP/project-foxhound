@@ -18,14 +18,17 @@ const { ExperimentFakes } = ChromeUtils.import(
 
 let rsClient;
 
-add_task(async function setup() {
+add_setup(async function() {
+  rsClient = RemoteSettings("nimbus-desktop-experiments");
+  await rsClient.db.importChanges({}, Date.now(), [], { clear: true });
+
   await SpecialPowers.pushPrefEnv({
     set: [
       ["messaging-system.log", "all"],
+      ["datareporting.healthreport.uploadEnabled", true],
       ["app.shield.optoutstudies.enabled", true],
     ],
   });
-  rsClient = RemoteSettings("nimbus-desktop-experiments");
 
   registerCleanupFunction(async () => {
     await SpecialPowers.popPrefEnv();
@@ -46,7 +49,7 @@ add_task(async function test_experimentEnrollment() {
       randomizationUnit: "normandy_id",
     },
   });
-  await rsClient.db.importChanges({}, 42, [recipe], {
+  await rsClient.db.importChanges({}, Date.now(), [recipe], {
     clear: true,
   });
 

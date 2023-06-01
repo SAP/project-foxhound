@@ -11,16 +11,12 @@ import os
 from abc import ABCMeta, abstractmethod
 
 from manifestparser import TestManifest
-from manifestparser.filters import chunk_by_runtime
+from manifestparser.filters import chunk_by_runtime, tags
 from mozbuild.util import memoize
-from moztest.resolve import (
-    TEST_SUITES,
-    TestResolver,
-    TestManifestLoader,
-)
+from moztest.resolve import TEST_SUITES, TestManifestLoader, TestResolver
 
 from gecko_taskgraph import GECKO
-from gecko_taskgraph.util.bugbug import BugbugTimeoutException, CT_LOW, push_schedules
+from gecko_taskgraph.util.bugbug import CT_LOW, BugbugTimeoutException, push_schedules
 
 logger = logging.getLogger(__name__)
 here = os.path.abspath(os.path.dirname(__file__))
@@ -50,10 +46,17 @@ def guess_mozinfo_from_task(task):
         "ccov": setting["build"].get("ccov", False),
         "debug": setting["build"]["type"] in ("debug", "debug-isolated-process"),
         "e10s": not setting["runtime"].get("1proc", False),
-        "fission": any("fission" in key for key in setting["runtime"].keys()),
+        "no-fission": "no-fission" in setting["runtime"].keys(),
+        "fission": any(
+            "1proc" not in key or "no-fission" not in key
+            for key in setting["runtime"].keys()
+        ),
         "headless": "-headless" in task["test-name"],
+        "condprof": "conditioned_profile" in setting["runtime"].keys(),
         "tsan": setting["build"].get("tsan", False),
         "xorigin": any("xorigin" in key for key in setting["runtime"].keys()),
+        "socketprocess_networking": "socketprocess_networking"
+        in setting["runtime"].keys(),
     }
     for platform in ("android", "linux", "mac", "win"):
         if p_os["name"].startswith(platform):
@@ -221,10 +224,14 @@ class DefaultLoader(BaseManifestLoader):
 
         manifests = {chunk_by_runtime.get_manifest(t) for t in tests}
 
+        filters = None
+        if mozinfo["condprof"]:
+            filters = [tags(["condprof"])]
+
         # Compute  the active tests.
         m = TestManifest()
         m.tests = tests
-        tests = m.active_tests(disabled=False, exists=False, **mozinfo)
+        tests = m.active_tests(disabled=False, exists=False, filters=filters, **mozinfo)
         active = {chunk_by_runtime.get_manifest(t) for t in tests}
         skipped = manifests - active
         return {"active": list(active), "skipped": list(skipped)}

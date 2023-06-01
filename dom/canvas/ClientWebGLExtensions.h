@@ -19,7 +19,7 @@ class ClientWebGLExtensionBase : public nsWrapperCache {
 
  public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(ClientWebGLExtensionBase)
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(ClientWebGLExtensionBase)
+  NS_DECL_CYCLE_COLLECTION_NATIVE_WRAPPERCACHE_CLASS(ClientWebGLExtensionBase)
 
  protected:
   explicit ClientWebGLExtensionBase(ClientWebGLContext& context)
@@ -228,8 +228,7 @@ class ClientWebGLExtensionInstancedArrays : public ClientWebGLExtensionBase {
       AutoJsWarning("drawElementsInstancedANGLE: Extension is `invalidated`.");
       return;
     }
-    mContext->DrawElementsInstanced(mode, count, type, offset, primcount,
-                                    FuncScopeId::drawElementsInstanced);
+    mContext->DrawElementsInstanced(mode, count, type, offset, primcount);
   }
   void VertexAttribDivisorANGLE(GLuint index, GLuint divisor) {
     if (MOZ_UNLIKELY(!mContext)) {

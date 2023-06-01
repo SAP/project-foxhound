@@ -2,24 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { webrtcUI } = ChromeUtils.import("resource:///modules/webrtcUI.jsm");
 
-const BUNDLE_URL = "chrome://browser/locale/webrtcIndicator.properties";
-var gStringBundle;
-
 function init(event) {
-  gStringBundle = Services.strings.createBundle(BUNDLE_URL);
-
-  let brand = Services.strings.createBundle(
-    "chrome://branding/locale/brand.properties"
-  );
-  let brandShortName = brand.GetStringFromName("brandShortName");
-  document.title = gStringBundle.formatStringFromName(
-    "webrtcIndicator.windowtitle",
-    [brandShortName]
-  );
-
   for (let id of ["audioVideoButton", "screenSharePopup"]) {
     let popup = document.getElementById(id);
     popup.addEventListener("popupshowing", onPopupMenuShowing);
@@ -41,48 +26,56 @@ function init(event) {
 }
 
 function updateIndicatorState() {
-  // If gStringBundle isn't set, the window hasn't finished loading.
-  if (!gStringBundle) {
-    return;
-  }
-
   updateWindowAttr("sharingvideo", webrtcUI.showCameraIndicator);
   updateWindowAttr("sharingaudio", webrtcUI.showMicrophoneIndicator);
   updateWindowAttr("sharingscreen", webrtcUI.showScreenSharingIndicator);
 
   // Camera and microphone button tooltip.
-  let shareTypes = [];
+  const audioVideoButton = document.getElementById("audioVideoButton");
+  let avL10nId;
   if (webrtcUI.showCameraIndicator) {
-    shareTypes.push("Camera");
-  }
-  if (webrtcUI.showMicrophoneIndicator) {
-    shareTypes.push("Microphone");
-  }
-
-  let audioVideoButton = document.getElementById("audioVideoButton");
-  if (shareTypes.length) {
-    let stringId =
-      "webrtcIndicator.sharing" + shareTypes.join("And") + ".tooltip";
-    audioVideoButton.setAttribute(
-      "tooltiptext",
-      gStringBundle.GetStringFromName(stringId)
-    );
+    avL10nId = webrtcUI.showMicrophoneIndicator
+      ? "webrtc-indicator-sharing-camera-and-microphone"
+      : "webrtc-indicator-sharing-camera";
   } else {
+    avL10nId = webrtcUI.showMicrophoneIndicator
+      ? "webrtc-indicator-sharing-microphone"
+      : "";
+  }
+  if (avL10nId) {
+    document.l10n.setAttributes(audioVideoButton, avL10nId);
+  } else {
+    audioVideoButton.removeAttribute("data-l10n-id");
     audioVideoButton.removeAttribute("tooltiptext");
   }
 
   // Screen sharing button tooltip.
-  let screenShareButton = document.getElementById("screenShareButton");
-  if (webrtcUI.showScreenSharingIndicator) {
-    let stringId =
-      "webrtcIndicator.sharing" +
-      webrtcUI.showScreenSharingIndicator +
-      ".tooltip";
-    screenShareButton.setAttribute(
-      "tooltiptext",
-      gStringBundle.GetStringFromName(stringId)
-    );
+  const screenShareButton = document.getElementById("screenShareButton");
+  let ssL10nId;
+  const ssi = webrtcUI.showScreenSharingIndicator;
+  switch (ssi) {
+    case "Application":
+      ssL10nId = "webrtc-indicator-sharing-application";
+      break;
+    case "Browser":
+      ssL10nId = "webrtc-indicator-sharing-browser";
+      break;
+    case "Screen":
+      ssL10nId = "webrtc-indicator-sharing-screen";
+      break;
+    case "Window":
+      ssL10nId = "webrtc-indicator-sharing-window";
+      break;
+    default:
+      if (ssi) {
+        console.error(`Unknown showScreenSharingIndicator: ${ssi}`);
+      }
+      ssL10nId = "";
+  }
+  if (ssL10nId) {
+    document.l10n.setAttributes(screenShareButton, ssL10nId);
   } else {
+    screenShareButton.removeAttribute("data-l10n-id");
     screenShareButton.removeAttribute("tooltiptext");
   }
 
@@ -112,7 +105,7 @@ function onPopupMenuShowing(event) {
   }
   if (activeStreams.length) {
     let index = activeStreams.length - 1;
-    webrtcUI.showSharingDoorhanger(activeStreams[index]);
+    webrtcUI.showSharingDoorhanger(activeStreams[index], event);
     event.preventDefault();
     return;
   }
@@ -134,7 +127,7 @@ function onPopupMenuHiding(event) {
 }
 
 function onPopupMenuCommand(event) {
-  webrtcUI.showSharingDoorhanger(event.target.stream);
+  webrtcUI.showSharingDoorhanger(event.target.stream, event);
 }
 
 function onFirefoxButtonClick(event) {

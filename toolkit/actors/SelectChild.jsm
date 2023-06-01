@@ -6,25 +6,19 @@
 
 var EXPORTED_SYMBOLS = ["SelectChild", "SelectContentHelper"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "LayoutUtils",
-  "resource://gre/modules/LayoutUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "DeferredTask",
-  "resource://gre/modules/DeferredTask.jsm"
-);
+const lazy = {};
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["InspectorUtils"]);
+ChromeUtils.defineESModuleGetters(lazy, {
+  DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
+  LayoutUtils: "resource://gre/modules/LayoutUtils.sys.mjs",
+});
 
-const kStateActive = 0x00000001; // NS_EVENT_STATE_ACTIVE
-const kStateHover = 0x00000004; // NS_EVENT_STATE_HOVER
+const kStateActive = 0x00000001; // ElementState::ACTIVE
+const kStateHover = 0x00000004; // ElementState::HOVER
 
 // Duplicated in SelectParent.jsm
 // Please keep these lists in sync.
@@ -62,7 +56,7 @@ var SelectContentHelper = function(aElement, aOptions, aActor) {
   this._lockedDescendants = null;
   this.init();
   this.showDropDown();
-  this._updateTimer = new DeferredTask(this._update.bind(this), 0);
+  this._updateTimer = new lazy.DeferredTask(this._update.bind(this), 0);
 };
 
 Object.defineProperty(SelectContentHelper, "open", {
@@ -129,7 +123,9 @@ SelectContentHelper.prototype = {
       isOpenedViaTouch: this.isOpenedViaTouch,
       options,
       rect,
+      custom: !this.element.nodePrincipal.isSystemPrincipal,
       selectedIndex: this.element.selectedIndex,
+      isDarkBackground: ChromeUtils.isDarkBackground(this.element),
       style: supportedStyles(computedStyles, SUPPORTED_SELECT_PROPERTIES),
       defaultStyle: supportedStyles(defaultStyles, SUPPORTED_SELECT_PROPERTIES),
     });
@@ -173,7 +169,7 @@ SelectContentHelper.prototype = {
   },
 
   _getBoundingContentRect() {
-    return LayoutUtils.getElementBoundingScreenRect(this.element);
+    return lazy.LayoutUtils.getElementBoundingScreenRect(this.element);
   },
 
   _buildOptionList() {
@@ -198,7 +194,9 @@ SelectContentHelper.prototype = {
     );
     this.actor.sendAsyncMessage("Forms:UpdateDropDown", {
       options: this._buildOptionList(),
+      custom: !this.element.nodePrincipal.isSystemPrincipal,
       selectedIndex: this.element.selectedIndex,
+      isDarkBackground: ChromeUtils.isDarkBackground(this.element),
       style: supportedStyles(computedStyles, SUPPORTED_SELECT_PROPERTIES),
       defaultStyle: supportedStyles(defaultStyles, SUPPORTED_SELECT_PROPERTIES),
     });

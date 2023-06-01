@@ -8,9 +8,9 @@
 #ifndef __nsGNOMEShellSearchProvider_h__
 #define __nsGNOMEShellSearchProvider_h__
 
-#include "mozilla/DBusHelpers.h"
 #include "nsINavHistoryService.h"
 #include "nsUnixRemoteServer.h"
+#include "nsString.h"
 #include "nsCOMPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "nsGNOMEShellDBusHelper.h"

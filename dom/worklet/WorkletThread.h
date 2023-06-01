@@ -17,8 +17,7 @@
 
 class nsIRunnable;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class WorkletThread final : public nsThread, public nsIObserver {
  public:
@@ -30,7 +29,7 @@ class WorkletThread final : public nsThread, public nsIObserver {
   // Threads that call EnsureCycleCollectedJSContext must call
   // DeleteCycleCollectedJSContext::Get() before terminating.  Clients of
   // Create() do not need to do this as Terminate() will ensure this happens.
-  void EnsureCycleCollectedJSContext(JSRuntime* aParentRuntime);
+  static void EnsureCycleCollectedJSContext(JSRuntime* aParentRuntime);
   static void DeleteCycleCollectedJSContext();
 
   static bool IsOnWorkletThread();
@@ -69,7 +68,6 @@ class WorkletThread final : public nsThread, public nsIObserver {
   bool mIsTerminating;  // main thread
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_worklet_WorkletThread_h

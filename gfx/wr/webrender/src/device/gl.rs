@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use super::super::shader_source::{OPTIMIZED_SHADERS, UNOPTIMIZED_SHADERS};
-use api::{ColorF, ImageDescriptor, ImageFormat, Parameter, BoolParameter, IntParameter};
+use api::{ImageDescriptor, ImageFormat, Parameter, BoolParameter, IntParameter, ImageRendering};
 use api::{MixBlendMode, ImageBufferKind, VoidPtrToSizeFn};
 use api::{CrashAnnotator, CrashAnnotation, CrashAnnotatorGuard};
 use api::units::*;
@@ -387,6 +387,7 @@ pub struct ExternalTexture {
     id: gl::GLuint,
     target: gl::GLuint,
     uv_rect: TexelRect,
+    image_rendering: ImageRendering,
 }
 
 impl ExternalTexture {
@@ -394,11 +395,13 @@ impl ExternalTexture {
         id: u32,
         target: ImageBufferKind,
         uv_rect: TexelRect,
+        image_rendering: ImageRendering,
     ) -> Self {
         ExternalTexture {
             id,
             target: get_gl_target(target),
             uv_rect,
+            image_rendering,
         }
     }
 
@@ -530,6 +533,7 @@ impl Texture {
                 self.size.width as f32,
                 self.size.height as f32,
             ),
+            image_rendering: ImageRendering::Auto,
         };
         self.id = 0; // don't complain, moved out
         ext
@@ -973,6 +977,9 @@ pub struct Capabilities {
     /// Whether we must perform a full unscissored glClear on alpha targets
     /// prior to rendering.
     pub requires_alpha_target_full_clear: bool,
+    /// Whether clearing a render target (immediately after binding it) is faster using a scissor
+    /// rect to clear just the required area, or clearing the entire target without a scissor rect.
+    pub prefers_clear_scissor: bool,
     /// Whether the driver can correctly invalidate render targets. This can be
     /// a worthwhile optimization, but is buggy on some devices.
     pub supports_render_target_invalidate: bool,
@@ -1161,6 +1168,10 @@ pub struct Device {
     /// at draw call time, neither of which is desirable.
     #[cfg(debug_assertions)]
     shader_is_ready: bool,
+
+    // count created/deleted textures to report in the profiler.
+    pub textures_created: u32,
+    pub textures_deleted: u32,
 }
 
 /// Contains the parameters necessary to bind a draw target.
@@ -1245,6 +1256,17 @@ impl DrawTarget {
             DrawTarget::Texture { dimensions, .. } => dimensions,
             DrawTarget::External { size, .. } => size.cast_unit(),
             DrawTarget::NativeSurface { dimensions, .. } => dimensions,
+        }
+    }
+
+    pub fn offset(&self) -> DeviceIntPoint {
+        match *self {
+            DrawTarget::Default { .. } |
+            DrawTarget::Texture { .. } |
+            DrawTarget::External { .. } => {
+                DeviceIntPoint::zero()
+            }
+            DrawTarget::NativeSurface { offset, .. } => offset,
         }
     }
 
@@ -1371,6 +1393,24 @@ impl From<DrawTarget> for ReadTarget {
             }
         }
     }
+}
+
+/// Parses the major, release, and patch versions from a GL_VERSION string on
+/// Mali devices. For example, for the version string
+/// "OpenGL ES 3.2 v1.r36p0-01eac0.28ab3a577f105e026887e2b4c93552fb" this
+/// returns Some((1, 36, 0)). Returns None if the version cannot be parsed.
+fn parse_mali_version(version_string: &str) -> Option<(u32, u32, u32)> {
+    let (_prefix, version_string) = version_string.split_once("v")?;
+    let (v_str, version_string) = version_string.split_once(".r")?;
+    let v = v_str.parse().ok()?;
+
+    let (r_str, version_string) = version_string.split_once("p")?;
+    let r = r_str.parse().ok()?;
+
+    let (p_str, _) = version_string.split_once("-")?;
+    let p = p_str.parse().ok()?;
+
+    Some((v, r, p))
 }
 
 impl Device {
@@ -1640,9 +1680,11 @@ impl Device {
         // Software webrender relies on the unoptimized shader source.
         let use_optimized_shaders = use_optimized_shaders && !is_software_webrender;
 
-        // On the android emulator, glShaderSource can crash if the source
-        // strings are not null-terminated. See bug 1591945.
-        let requires_null_terminated_shader_source = is_emulator;
+        // On the android emulator, and possibly some Mali devices, glShaderSource
+        // can crash if the source strings are not null-terminated.
+        // See bug 1591945 and bug 1799722.
+        let requires_null_terminated_shader_source = is_emulator || renderer_name == "Mali-T628"
+            || renderer_name == "Mali-T720" || renderer_name == "Mali-T760";
 
         // The android emulator gets confused if you don't explicitly unbind any texture
         // from GL_TEXTURE_EXTERNAL_OES before binding another to GL_TEXTURE_2D. See bug 1636085.
@@ -1652,7 +1694,8 @@ impl Device {
              //  && renderer_name.starts_with("AMD");
              //  (XXX: we apply this restriction to all GPUs to handle switching)
 
-        let is_angle = renderer_name.starts_with("ANGLE");
+        let is_windows_angle = cfg!(target_os = "windows")
+            && renderer_name.starts_with("ANGLE");
         let is_adreno_3xx = renderer_name.starts_with("Adreno (TM) 3");
 
         // Some GPUs require the stride of the data during texture uploads to be
@@ -1671,9 +1714,9 @@ impl Device {
             // On AMD Mac, it must always be a multiple of 256 bytes.
             // We apply this restriction to all GPUs to handle switching
             StrideAlignment::Bytes(NonZeroUsize::new(256).unwrap())
-        } else if is_angle {
-            // On ANGLE, PBO texture uploads get incorrectly truncated if
-            // the stride is greater than the width * bpp.
+        } else if is_windows_angle {
+            // On ANGLE-on-D3D, PBO texture uploads get incorrectly truncated
+            // if the stride is greater than the width * bpp.
             StrideAlignment::Bytes(NonZeroUsize::new(1).unwrap())
         } else {
             // Other platforms may have similar requirements and should be added
@@ -1750,11 +1793,32 @@ impl Device {
         let is_adreno_4xx = renderer_name.starts_with("Adreno (TM) 4");
         let requires_alpha_target_full_clear = is_adreno_4xx;
 
+        // Testing on Intel and nVidia GPUs, as well as software webrender, showed large performance
+        // wins applying a scissor rect when clearing render targets. Assume this is the best
+        // default. On mobile GPUs, however, it can be much more efficient to clear the entire
+        // render target. For now, enable the scissor everywhere except Android hardware
+        // webrender. We can tweak this further if needs be.
+        let prefers_clear_scissor = !cfg!(target_os = "android") || is_software_webrender;
+
+        let mut supports_render_target_invalidate = true;
+
         // On PowerVR Rogue devices we have seen that invalidating render targets after we are done
         // with them can incorrectly cause pending renders to be written to different targets
         // instead. See bug 1719345.
         let is_powervr_rogue = renderer_name.starts_with("PowerVR Rogue");
-        let supports_render_target_invalidate = !is_powervr_rogue;
+        if is_powervr_rogue {
+            supports_render_target_invalidate = false;
+        }
+
+        // On Mali-G78 devices with a driver version v1.r36p0 we have seen that invalidating render
+        // targets can result in image corruption, perhaps due to subsequent reuses of the render
+        // target not correctly reinitializing them to a valid state. See bug 1787520.
+        if renderer_name.starts_with("Mali-G78") || renderer_name.starts_with("Mali-G710") {
+            match parse_mali_version(&version_string) {
+                Some(version) if version >= (1, 36, 0) => supports_render_target_invalidate = false,
+                _ => {}
+            }
+        }
 
         // On Linux we we have seen uploads to R8 format textures result in
         // corruption on some AMD cards.
@@ -1801,6 +1865,7 @@ impl Device {
                 requires_batched_texture_uploads,
                 supports_alpha_target_clears,
                 requires_alpha_target_full_clear,
+                prefers_clear_scissor,
                 supports_render_target_invalidate,
                 supports_r8_texture_upload,
                 uses_native_clip_mask,
@@ -1846,6 +1911,9 @@ impl Device {
 
             #[cfg(debug_assertions)]
             shader_is_ready: false,
+
+            textures_created: 0,
+            textures_deleted: 0,
         }
     }
 
@@ -2042,6 +2110,9 @@ impl Device {
             self.shader_is_ready = false;
         }
 
+        self.textures_created = 0;
+        self.textures_deleted = 0;
+
         // If our profiler state has changed, apply or remove the profiling
         // wrapper from our GL context.
         let being_profiled = profiler::thread_is_being_profiled();
@@ -2097,11 +2168,16 @@ impl Device {
     }
 
     fn bind_texture_impl(
-        &mut self, slot: TextureSlot, id: gl::GLuint, target: gl::GLenum, set_swizzle: Option<Swizzle>
+        &mut self,
+        slot: TextureSlot,
+        id: gl::GLuint,
+        target: gl::GLenum,
+        set_swizzle: Option<Swizzle>,
+        image_rendering: Option<ImageRendering>,
     ) {
         debug_assert!(self.inside_frame);
 
-        if self.bound_textures[slot.0] != id || set_swizzle.is_some() {
+        if self.bound_textures[slot.0] != id || set_swizzle.is_some() || image_rendering.is_some() {
             self.gl.active_texture(gl::TEXTURE0 + slot.0 as gl::GLuint);
             // The android emulator gets confused if you don't explicitly unbind any texture
             // from GL_TEXTURE_EXTERNAL_OES before binding to GL_TEXTURE_2D. See bug 1636085.
@@ -2123,6 +2199,14 @@ impl Device {
                     debug_assert_eq!(swizzle, Swizzle::default());
                 }
             }
+            if let Some(image_rendering) = image_rendering {
+                let filter = match image_rendering {
+                    ImageRendering::Auto | ImageRendering::CrispEdges => gl::LINEAR,
+                    ImageRendering::Pixelated => gl::NEAREST,
+                };
+                self.gl.tex_parameter_i(target, gl::TEXTURE_MIN_FILTER, filter as i32);
+                self.gl.tex_parameter_i(target, gl::TEXTURE_MAG_FILTER, filter as i32);
+            }
             self.gl.active_texture(gl::TEXTURE0);
             self.bound_textures[slot.0] = id;
         }
@@ -2138,14 +2222,20 @@ impl Device {
         } else {
             None
         };
-        self.bind_texture_impl(slot.into(), texture.id, texture.target, set_swizzle);
+        self.bind_texture_impl(slot.into(), texture.id, texture.target, set_swizzle, None);
     }
 
     pub fn bind_external_texture<S>(&mut self, slot: S, external_texture: &ExternalTexture)
     where
         S: Into<TextureSlot>,
     {
-        self.bind_texture_impl(slot.into(), external_texture.id, external_texture.target, None);
+        self.bind_texture_impl(
+            slot.into(),
+            external_texture.id,
+            external_texture.target,
+            None,
+            Some(external_texture.image_rendering),
+        );
     }
 
     pub fn bind_read_target_impl(
@@ -2381,24 +2471,6 @@ impl Device {
             // Link!
             self.gl.link_program(program.id);
 
-            if cfg!(debug_assertions) {
-                // Check that all our overrides worked
-                for (i, attr) in descriptor
-                    .vertex_attributes
-                    .iter()
-                    .chain(descriptor.instance_attributes.iter())
-                    .enumerate()
-                {
-                    //Note: we can't assert here because the driver may optimize out some of the
-                    // vertex attributes legitimately, returning their location to be -1.
-                    let location = self.gl.get_attrib_location(program.id, attr.name);
-                    if location != i as gl::GLint {
-                        warn!("Attribute {:?} is not found in the shader {}. Expected at {}, found at {}",
-                            attr, program.source_info.base_filename, i, location);
-                    }
-                }
-            }
-
             // GL recommends detaching and deleting shaders once the link
             // is complete (whether successful or not). This allows the driver
             // to free any memory associated with the parsing and compilation.
@@ -2552,6 +2624,8 @@ impl Device {
                 self.init_fbos(&mut texture, true);
             }
         }
+
+        self.textures_created += 1;
 
         texture
     }
@@ -2888,6 +2962,8 @@ impl Device {
                 *bound_texture = 0;
             }
         }
+
+        self.textures_deleted += 1;
 
         // Disarm the assert in Texture::drop().
         texture.id = 0;
@@ -3851,14 +3927,6 @@ impl Device {
             (gl::ONE, gl::ONE_MINUS_SRC_ALPHA),
         );
     }
-    pub fn set_blend_mode_subpixel_constant_text_color(&mut self, color: ColorF) {
-        // color is an unpremultiplied color.
-        self.gl.blend_color(color.r, color.g, color.b, 1.0);
-        self.set_blend_factors(
-            (gl::CONSTANT_COLOR, gl::ONE_MINUS_SRC_COLOR),
-            (gl::CONSTANT_ALPHA, gl::ONE_MINUS_SRC_ALPHA),
-        );
-    }
     pub fn set_blend_mode_subpixel_dual_source(&mut self) {
         self.set_blend_factors(
             (gl::ONE, gl::ONE_MINUS_SRC1_COLOR),
@@ -3875,6 +3943,12 @@ impl Device {
         self.set_blend_factors(
             (gl::ONE, gl::ONE_MINUS_SRC_COLOR),
             (gl::ONE, gl::ONE_MINUS_SRC_ALPHA),
+        );
+    }
+    pub fn set_blend_mode_plus_lighter(&mut self) {
+        self.set_blend_factors(
+            (gl::ONE, gl::ONE),
+            (gl::ONE, gl::ONE),
         );
     }
     pub fn set_blend_mode_exclusion(&mut self) {
@@ -3914,6 +3988,9 @@ impl Device {
                 // blend factor only make sense for the normal mode
                 self.gl.blend_func_separate(gl::ZERO, gl::SRC_COLOR, gl::ZERO, gl::SRC_ALPHA);
                 gl::FUNC_ADD
+            },
+            MixBlendMode::PlusLighter => {
+                return self.set_blend_mode_plus_lighter();
             },
             MixBlendMode::Multiply => gl::MULTIPLY_KHR,
             MixBlendMode::Screen => gl::SCREEN_KHR,
@@ -4239,7 +4316,7 @@ impl UploadPBOPool {
     /// Obtain a PBO, either by reusing an existing PBO or allocating a new one.
     /// min_size specifies the minimum required size of the PBO. The returned PBO
     /// may be larger than required.
-    fn get_pbo(&mut self, device: &mut Device, min_size: usize) -> Result<UploadPBO, ()> {
+    fn get_pbo(&mut self, device: &mut Device, min_size: usize) -> Result<UploadPBO, String> {
 
         // If min_size is smaller than our default size, then use the default size.
         // The exception to this is when due to driver bugs we cannot upload from
@@ -4269,9 +4346,9 @@ impl UploadPBOPool {
                             gl::MAP_WRITE_BIT | gl::MAP_UNSYNCHRONIZED_BIT,
                         ) as *mut _;
 
-                        let ptr = ptr::NonNull::new(ptr).ok_or_else(|| {
-                            error!("Failed to transiently map PBO of size {} bytes", buffer.pbo.reserved_size);
-                        })?;
+                        let ptr = ptr::NonNull::new(ptr).ok_or_else(
+                            || format!("Failed to transiently map PBO of size {} bytes", buffer.pbo.reserved_size)
+                        )?;
 
                         buffer.mapping = PBOMapping::Transient(ptr);
                     }
@@ -4314,9 +4391,9 @@ impl UploadPBOPool {
                 gl::MAP_WRITE_BIT | gl::MAP_PERSISTENT_BIT | gl::MAP_FLUSH_EXPLICIT_BIT,
             ) as *mut _;
 
-            let ptr = ptr::NonNull::new(ptr).ok_or_else(|| {
-                error!("Failed to persistently map PBO of size {} bytes", pbo.reserved_size);
-            })?;
+            let ptr = ptr::NonNull::new(ptr).ok_or_else(
+                || format!("Failed to transiently map PBO of size {} bytes", pbo.reserved_size)
+            )?;
 
             PBOMapping::Persistent(ptr)
         } else {
@@ -4335,9 +4412,9 @@ impl UploadPBOPool {
                 gl::MAP_WRITE_BIT,
             ) as *mut _;
 
-            let ptr = ptr::NonNull::new(ptr).ok_or_else(|| {
-                error!("Failed to transiently map PBO of size {} bytes", pbo.reserved_size);
-            })?;
+            let ptr = ptr::NonNull::new(ptr).ok_or_else(
+                || format!("Failed to transiently map PBO of size {} bytes", pbo.reserved_size)
+            )?;
 
             PBOMapping::Transient(ptr)
         };
@@ -4476,7 +4553,7 @@ impl<'a> TextureUploader<'a> {
         device: &mut Device,
         format: ImageFormat,
         size: DeviceIntSize,
-    ) -> Result<UploadStagingBuffer<'a>, ()> {
+    ) -> Result<UploadStagingBuffer<'a>, String> {
         assert!(matches!(device.upload_method, UploadMethod::PixelBuffer(_)), "Texture uploads should only be staged when using pixel buffers.");
 
         // for optimal PBO texture uploads the offset and stride of the data in

@@ -2,12 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
-  "LayoutUtils",
-  "resource://gre/modules/LayoutUtils.jsm"
-);
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  LayoutUtils: "resource://gre/modules/LayoutUtils.sys.mjs",
+});
 
 var EXPORTED_SYMBOLS = ["DateTimePickerChild"];
 
@@ -78,7 +76,7 @@ class DateTimePickerChild extends JSWindowActorChild {
    * relative to the left/top of the content area.
    */
   getBoundingContentRect(aElement) {
-    return LayoutUtils.getElementBoundingScreenRect(aElement);
+    return lazy.LayoutUtils.getElementBoundingScreenRect(aElement);
   }
 
   getTimePickerPref() {
@@ -91,6 +89,10 @@ class DateTimePickerChild extends JSWindowActorChild {
   receiveMessage(aMessage) {
     switch (aMessage.name) {
       case "FormDateTime:PickerClosed": {
+        if (!this._inputElement) {
+          return;
+        }
+
         this.close();
         break;
       }
@@ -131,9 +133,8 @@ class DateTimePickerChild extends JSWindowActorChild {
       case "MozOpenDateTimePicker": {
         // Time picker is disabled when preffed off
         if (
-          !(
-            aEvent.originalTarget instanceof
-            aEvent.originalTarget.ownerGlobal.HTMLInputElement
+          !aEvent.originalTarget.ownerGlobal.HTMLInputElement.isInstance(
+            aEvent.originalTarget
           ) ||
           (aEvent.originalTarget.type == "time" && !this.getTimePickerPref())
         ) {

@@ -7,7 +7,6 @@
  */
 
 // This file expects the following files to be loaded.
-/* import-globals-from ../../../modules/StructuredLog.jsm */
 /* import-globals-from LogController.js */
 /* import-globals-from MemoryStats.js */
 /* import-globals-from MozillaLogger.js */
@@ -15,6 +14,13 @@
 /* eslint-disable no-unsanitized/property */
 
 "use strict";
+
+const {
+  StructuredLogger,
+  StructuredFormatter,
+} = SpecialPowers.ChromeUtils.importESModule(
+  "resource://testing-common/StructuredLog.sys.mjs"
+);
 
 function getElement(id) {
   return typeof id == "string" ? document.getElementById(id) : id;
@@ -120,7 +126,8 @@ TestRunner.slowestTestTime = 0;
 TestRunner.slowestTestURL = "";
 TestRunner.interactiveDebugger = false;
 TestRunner.cleanupCrashes = false;
-TestRunner.timeoutAspass = false;
+TestRunner.timeoutAsPass = false;
+TestRunner.conditionedProfile = false;
 
 TestRunner._expectingProcessCrash = false;
 TestRunner._structuredFormatter = new StructuredFormatter();
@@ -305,7 +312,7 @@ TestRunner.generateFailureList = function() {
 // This delimiter is used to avoid interleaving Mochitest/Gecko logs.
 var LOG_DELIMITER = "\ue175\uee31\u2c32\uacbf";
 
-// A log callback for StructuredLog.jsm
+// A log callback for StructuredLog.sys.mjs
 TestRunner._dumpMessage = function(message) {
   var str;
 
@@ -333,16 +340,18 @@ TestRunner._dumpMessage = function(message) {
   }
 };
 
-// From https://searchfox.org/mozilla-central/source/testing/modules/StructuredLog.jsm
+// From https://searchfox.org/mozilla-central/source/testing/modules/StructuredLog.sys.mjs
 TestRunner.structuredLogger = new StructuredLogger(
   "mochitest",
-  TestRunner._dumpMessage
+  TestRunner._dumpMessage,
+  [],
+  TestRunner
 );
 TestRunner.structuredLogger.deactivateBuffering = function() {
-  TestRunner.structuredLogger._logData("buffering_off");
+  TestRunner.structuredLogger.logData("buffering_off");
 };
 TestRunner.structuredLogger.activateBuffering = function() {
-  TestRunner.structuredLogger._logData("buffering_on");
+  TestRunner.structuredLogger.logData("buffering_on");
 };
 
 TestRunner.log = function(msg) {
@@ -498,10 +507,9 @@ TestRunner.runTests = function(/*url...*/) {
 
   // Initialize code coverage
   if (TestRunner.jscovDirPrefix != "") {
-    var CoverageCollector = SpecialPowers.Cu.import(
-      "resource://testing-common/CoverageUtils.jsm",
-      {}
-    ).CoverageCollector;
+    var { CoverageCollector } = SpecialPowers.ChromeUtils.importESModule(
+      "resource://testing-common/CoverageUtils.sys.mjs"
+    );
     coverageCollector = new CoverageCollector(TestRunner.jscovDirPrefix);
   }
 
@@ -564,7 +572,7 @@ TestRunner.getNextUrl = function() {
  * Run the next test. If no test remains, calls onComplete().
  **/
 TestRunner._haltTests = false;
-TestRunner.runNextTest = function() {
+async function _runNextTest() {
   if (
     TestRunner._currentTest < TestRunner._urls.length &&
     !TestRunner._haltTests
@@ -582,6 +590,12 @@ TestRunner.runNextTest = function() {
 
     TestRunner.structuredLogger.testStart(url);
 
+    if (TestRunner._urls[TestRunner._currentTest].test.allow_xul_xbl) {
+      await SpecialPowers.pushPermissions([
+        { type: "allowXULXBL", allow: true, context: "http://mochi.test:8888" },
+        { type: "allowXULXBL", allow: true, context: "http://example.org" },
+      ]);
+    }
     TestRunner._makeIframe(url, 0);
   } else {
     $("current-test").innerHTML = "<b>Finished</b>";
@@ -659,7 +673,8 @@ TestRunner.runNextTest = function() {
       coverageCollector.finalize();
     }
   }
-};
+}
+TestRunner.runNextTest = _runNextTest;
 
 TestRunner.expectChildProcessCrash = function() {
   TestRunner._expectingProcessCrash = true;
@@ -935,7 +950,7 @@ TestRunner.displayLoopErrors = function(tableName, tests) {
   if (TestRunner.countResults(tests).notOK > 0) {
     var table = $(tableName);
     var curtest;
-    if (table.rows.length == 0) {
+    if (!table.rows.length) {
       //if table headers are not yet generated, make them
       var row = table.insertRow(table.rows.length);
       var cell = row.insertCell(0);

@@ -122,35 +122,34 @@ static const ssl3ExtensionHandler certificateRequestHandlers[] = {
  * the client hello is empty (for example, the extended master secret
  * extension, if it were listed last). See bug 1243641.
  */
-static const sslExtensionBuilder clientHelloSendersTLS[] =
-    {
-      { ssl_server_name_xtn, &ssl3_ClientSendServerNameXtn },
-      { ssl_extended_master_secret_xtn, &ssl3_SendExtendedMasterSecretXtn },
-      { ssl_renegotiation_info_xtn, &ssl3_SendRenegotiationInfoXtn },
-      { ssl_supported_groups_xtn, &ssl_SendSupportedGroupsXtn },
-      { ssl_ec_point_formats_xtn, &ssl3_SendSupportedPointFormatsXtn },
-      { ssl_session_ticket_xtn, &ssl3_ClientSendSessionTicketXtn },
-      { ssl_app_layer_protocol_xtn, &ssl3_ClientSendAppProtoXtn },
-      { ssl_use_srtp_xtn, &ssl3_ClientSendUseSRTPXtn },
-      { ssl_cert_status_xtn, &ssl3_ClientSendStatusRequestXtn },
-      { ssl_delegated_credentials_xtn, &tls13_ClientSendDelegatedCredentialsXtn },
-      { ssl_signed_cert_timestamp_xtn, &ssl3_ClientSendSignedCertTimestampXtn },
-      { ssl_tls13_key_share_xtn, &tls13_ClientSendKeyShareXtn },
-      { ssl_tls13_early_data_xtn, &tls13_ClientSendEarlyDataXtn },
-      /* Some servers (e.g. WebSphere Application Server 7.0 and Tomcat) will
+static const sslExtensionBuilder clientHelloSendersTLS[] = {
+    { ssl_server_name_xtn, &ssl3_ClientSendServerNameXtn },
+    { ssl_extended_master_secret_xtn, &ssl3_SendExtendedMasterSecretXtn },
+    { ssl_renegotiation_info_xtn, &ssl3_SendRenegotiationInfoXtn },
+    { ssl_supported_groups_xtn, &ssl_SendSupportedGroupsXtn },
+    { ssl_ec_point_formats_xtn, &ssl3_SendSupportedPointFormatsXtn },
+    { ssl_session_ticket_xtn, &ssl3_ClientSendSessionTicketXtn },
+    { ssl_app_layer_protocol_xtn, &ssl3_ClientSendAppProtoXtn },
+    { ssl_use_srtp_xtn, &ssl3_ClientSendUseSRTPXtn },
+    { ssl_cert_status_xtn, &ssl3_ClientSendStatusRequestXtn },
+    { ssl_delegated_credentials_xtn, &tls13_ClientSendDelegatedCredentialsXtn },
+    { ssl_signed_cert_timestamp_xtn, &ssl3_ClientSendSignedCertTimestampXtn },
+    { ssl_tls13_key_share_xtn, &tls13_ClientSendKeyShareXtn },
+    { ssl_tls13_early_data_xtn, &tls13_ClientSendEarlyDataXtn },
+    /* Some servers (e.g. WebSphere Application Server 7.0 and Tomcat) will
        * time out or terminate the connection if the last extension in the
        * client hello is empty. They are not intolerant of TLS 1.2, so list
        * signature_algorithms at the end. See bug 1243641. */
-      { ssl_tls13_supported_versions_xtn, &tls13_ClientSendSupportedVersionsXtn },
-      { ssl_signature_algorithms_xtn, &ssl3_SendSigAlgsXtn },
-      { ssl_tls13_cookie_xtn, &tls13_ClientSendHrrCookieXtn },
-      { ssl_tls13_psk_key_exchange_modes_xtn, &tls13_ClientSendPskModesXtn },
-      { ssl_tls13_post_handshake_auth_xtn, &tls13_ClientSendPostHandshakeAuthXtn },
-      { ssl_record_size_limit_xtn, &ssl_SendRecordSizeLimitXtn },
-      /* The pre_shared_key extension MUST be last. */
-      { ssl_tls13_pre_shared_key_xtn, &tls13_ClientSendPreSharedKeyXtn },
-      { 0, NULL }
-    };
+    { ssl_tls13_supported_versions_xtn, &tls13_ClientSendSupportedVersionsXtn },
+    { ssl_signature_algorithms_xtn, &ssl3_SendSigAlgsXtn },
+    { ssl_tls13_cookie_xtn, &tls13_ClientSendHrrCookieXtn },
+    { ssl_tls13_psk_key_exchange_modes_xtn, &tls13_ClientSendPskModesXtn },
+    { ssl_tls13_post_handshake_auth_xtn, &tls13_ClientSendPostHandshakeAuthXtn },
+    { ssl_record_size_limit_xtn, &ssl_SendRecordSizeLimitXtn },
+    /* The pre_shared_key extension MUST be last. */
+    { ssl_tls13_pre_shared_key_xtn, &tls13_ClientSendPreSharedKeyXtn },
+    { 0, NULL }
+};
 
 static const sslExtensionBuilder clientHelloSendersSSL3[] = {
     { ssl_renegotiation_info_xtn, &ssl3_SendRenegotiationInfoXtn },
@@ -550,12 +549,23 @@ ssl3_HandleParsedExtensions(sslSocket *ss, SSLHandshakeType message)
                     if (allowNotOffered) {
                         continue; /* Skip over unknown extensions. */
                     }
-                /* Fall through. */
+                    /* RFC8446 Section 4.2 - Implementations MUST NOT send extension responses if
+                     * the remote endpoint did not send the corresponding extension request ...
+                     * Upon receiving such an extension, an endpoint MUST abort the handshake with
+                     * an "unsupported_extension" alert. */
+                    SSL_TRC(3, ("%d: TLS13: unknown extension %d in message %d",
+                                SSL_GETPID(), extension, message));
+                    tls13_FatalError(ss, SSL_ERROR_RX_UNEXPECTED_EXTENSION,
+                                     unsupported_extension);
+                    return SECFailure;
                 case tls13_extension_disallowed:
-                    SSL_TRC(3, ("%d: TLS13: unexpected extension %d in message %d",
+                    /* RFC8446 Section 4.2 - If an implementation receives an extension which it
+                     * recognizes and which is not specified for the message in which it appears,
+                     * it MUST abort the handshake with an "illegal_parameter" alert. */
+                    SSL_TRC(3, ("%d: TLS13: disallowed extension %d in message %d",
                                 SSL_GETPID(), extension, message));
                     tls13_FatalError(ss, SSL_ERROR_EXTENSION_DISALLOWED_FOR_VERSION,
-                                     unsupported_extension);
+                                     illegal_parameter);
                     return SECFailure;
             }
         }

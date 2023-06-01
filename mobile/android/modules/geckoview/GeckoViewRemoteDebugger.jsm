@@ -6,31 +6,29 @@
 
 var EXPORTED_SYMBOLS = ["GeckoViewRemoteDebugger"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { GeckoViewUtils } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewUtils.jsm"
+const { GeckoViewUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  Services: "resource://gre/modules/Services.jsm",
-});
+const lazy = {};
 
-XPCOMUtils.defineLazyGetter(this, "require", () => {
-  const { require } = ChromeUtils.import(
-    "resource://devtools/shared/loader/Loader.jsm"
+XPCOMUtils.defineLazyGetter(lazy, "require", () => {
+  const { require } = ChromeUtils.importESModule(
+    "resource://devtools/shared/loader/Loader.sys.mjs"
   );
   return require;
 });
 
-XPCOMUtils.defineLazyGetter(this, "DevToolsServer", () => {
-  const { DevToolsServer } = require("devtools/server/devtools-server");
+XPCOMUtils.defineLazyGetter(lazy, "DevToolsServer", () => {
+  const { DevToolsServer } = lazy.require("devtools/server/devtools-server");
   return DevToolsServer;
 });
 
-XPCOMUtils.defineLazyGetter(this, "SocketListener", () => {
-  const { SocketListener } = require("devtools/shared/security/socket");
+XPCOMUtils.defineLazyGetter(lazy, "SocketListener", () => {
+  const { SocketListener } = lazy.require("devtools/shared/security/socket");
   return SocketListener;
 });
 
@@ -61,16 +59,16 @@ var GeckoViewRemoteDebugger = {
     }
 
     debug`onEnable`;
-    DevToolsServer.init();
-    DevToolsServer.registerAllActors();
-    const {
-      createRootActor,
-    } = require("resource://gre/modules/dbg-browser-actors.js");
-    DevToolsServer.setRootActor(createRootActor);
-    DevToolsServer.allowChromeProcess = true;
-    DevToolsServer.chromeWindowType = "navigator:geckoview";
+    lazy.DevToolsServer.init();
+    lazy.DevToolsServer.registerAllActors();
+    const { createRootActor } = lazy.require(
+      "resource://gre/modules/dbg-browser-actors.js"
+    );
+    lazy.DevToolsServer.setRootActor(createRootActor);
+    lazy.DevToolsServer.allowChromeProcess = true;
+    lazy.DevToolsServer.chromeWindowType = "navigator:geckoview";
     // Force the Server to stay alive even if there are no connections at the moment.
-    DevToolsServer.keepAlive = true;
+    lazy.DevToolsServer.keepAlive = true;
 
     // Socket address for USB remote debugger expects
     // @ANDROID_PACKAGE_NAME/firefox-debugger-socket.
@@ -79,10 +77,7 @@ var GeckoViewRemoteDebugger = {
     //
     // If package name isn't available, it will be "@firefox-debugger-socket".
 
-    const env = Cc["@mozilla.org/process/environment;1"].getService(
-      Ci.nsIEnvironment
-    );
-    let packageName = env.get("MOZ_ANDROID_PACKAGE_NAME");
+    let packageName = Services.env.get("MOZ_ANDROID_PACKAGE_NAME");
     if (packageName) {
       packageName = packageName + "/";
     } else {
@@ -110,14 +105,19 @@ var GeckoViewRemoteDebugger = {
 class USBRemoteDebugger {
   start(aPortOrPath) {
     try {
-      const AuthenticatorType = DevToolsServer.Authenticators.get("PROMPT");
+      const AuthenticatorType = lazy.DevToolsServer.Authenticators.get(
+        "PROMPT"
+      );
       const authenticator = new AuthenticatorType.Server();
       authenticator.allowConnection = this.allowConnection.bind(this);
       const socketOptions = {
         authenticator,
         portOrPath: aPortOrPath,
       };
-      this._listener = new SocketListener(DevToolsServer, socketOptions);
+      this._listener = new lazy.SocketListener(
+        lazy.DevToolsServer,
+        socketOptions
+      );
       this._listener.open();
       debug`USB remote debugger - listening on ${aPortOrPath}`;
     } catch (e) {
@@ -140,12 +140,12 @@ class USBRemoteDebugger {
 
   allowConnection(aSession) {
     if (!this._listener) {
-      return DevToolsServer.AuthenticationResult.DENY;
+      return lazy.DevToolsServer.AuthenticationResult.DENY;
     }
 
     if (aSession.server.port) {
-      return DevToolsServer.AuthenticationResult.DENY;
+      return lazy.DevToolsServer.AuthenticationResult.DENY;
     }
-    return DevToolsServer.AuthenticationResult.ALLOW;
+    return lazy.DevToolsServer.AuthenticationResult.ALLOW;
   }
 }

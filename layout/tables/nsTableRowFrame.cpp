@@ -10,6 +10,7 @@
 #include "nsTableRowGroupFrame.h"
 #include "nsPresContext.h"
 #include "mozilla/ComputedStyle.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "nsStyleConsts.h"
 #include "nsGkAtoms.h"
 #include "nsIContent.h"
@@ -205,53 +206,51 @@ void nsTableRowFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
 }
 
 void nsTableRowFrame::AppendFrames(ChildListID aListID,
-                                   nsFrameList& aFrameList) {
-  NS_ASSERTION(aListID == kPrincipalList, "unexpected child list");
+                                   nsFrameList&& aFrameList) {
+  NS_ASSERTION(aListID == FrameChildListID::Principal, "unexpected child list");
 
   DrainSelfOverflowList();  // ensure the last frame is in mFrames
   const nsFrameList::Slice& newCells =
-      mFrames.AppendFrames(nullptr, aFrameList);
+      mFrames.AppendFrames(nullptr, std::move(aFrameList));
 
   // Add the new cell frames to the table
   nsTableFrame* tableFrame = GetTableFrame();
-  for (nsFrameList::Enumerator e(newCells); !e.AtEnd(); e.Next()) {
-    nsIFrame* childFrame = e.get();
+  for (nsIFrame* childFrame : newCells) {
     NS_ASSERTION(childFrame->IsTableCellFrame(),
                  "Not a table cell frame/pseudo frame construction failure");
     tableFrame->AppendCell(static_cast<nsTableCellFrame&>(*childFrame),
                            GetRowIndex());
   }
 
-  PresShell()->FrameNeedsReflow(this, IntrinsicDirty::TreeChange,
+  PresShell()->FrameNeedsReflow(this, IntrinsicDirty::FrameAndAncestors,
                                 NS_FRAME_HAS_DIRTY_CHILDREN);
   tableFrame->SetGeometryDirty();
 }
 
 void nsTableRowFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                                    const nsLineList::iterator* aPrevFrameLine,
-                                   nsFrameList& aFrameList) {
-  NS_ASSERTION(aListID == kPrincipalList, "unexpected child list");
+                                   nsFrameList&& aFrameList) {
+  NS_ASSERTION(aListID == FrameChildListID::Principal, "unexpected child list");
   NS_ASSERTION(!aPrevFrame || aPrevFrame->GetParent() == this,
                "inserting after sibling frame with different parent");
   if (mFrames.IsEmpty() || (aPrevFrame && !aPrevFrame->GetNextSibling())) {
     // This is actually an append (though our caller didn't figure that out),
     // and our append codepath is both simpler/faster _and_ less buggy.
     // https://bugzilla.mozilla.org/show_bug.cgi?id=1388898 tracks the bugginess
-    AppendFrames(aListID, aFrameList);
+    AppendFrames(aListID, std::move(aFrameList));
     return;
   }
 
   DrainSelfOverflowList();  // ensure aPrevFrame is in mFrames
   // Insert Frames in the frame list
   const nsFrameList::Slice& newCells =
-      mFrames.InsertFrames(nullptr, aPrevFrame, aFrameList);
+      mFrames.InsertFrames(nullptr, aPrevFrame, std::move(aFrameList));
 
   nsTableCellFrame* prevCellFrame =
       static_cast<nsTableCellFrame*>(nsTableFrame::GetFrameAtOrBefore(
           this, aPrevFrame, LayoutFrameType::TableCell));
   nsTArray<nsTableCellFrame*> cellChildren;
-  for (nsFrameList::Enumerator e(newCells); !e.AtEnd(); e.Next()) {
-    nsIFrame* childFrame = e.get();
+  for (nsIFrame* childFrame : newCells) {
     NS_ASSERTION(childFrame->IsTableCellFrame(),
                  "Not a table cell frame/pseudo frame construction failure");
     cellChildren.AppendElement(static_cast<nsTableCellFrame*>(childFrame));
@@ -264,13 +263,13 @@ void nsTableRowFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
   nsTableFrame* tableFrame = GetTableFrame();
   tableFrame->InsertCells(cellChildren, GetRowIndex(), colIndex);
 
-  PresShell()->FrameNeedsReflow(this, IntrinsicDirty::TreeChange,
+  PresShell()->FrameNeedsReflow(this, IntrinsicDirty::FrameAndAncestors,
                                 NS_FRAME_HAS_DIRTY_CHILDREN);
   tableFrame->SetGeometryDirty();
 }
 
 void nsTableRowFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
-  NS_ASSERTION(aListID == kPrincipalList, "unexpected child list");
+  NS_ASSERTION(aListID == FrameChildListID::Principal, "unexpected child list");
 
   MOZ_ASSERT((nsTableCellFrame*)do_QueryFrame(aOldFrame));
   nsTableCellFrame* cellFrame = static_cast<nsTableCellFrame*>(aOldFrame);
@@ -281,7 +280,7 @@ void nsTableRowFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
   // Remove the frame and destroy it
   mFrames.DestroyFrame(aOldFrame);
 
-  PresShell()->FrameNeedsReflow(this, IntrinsicDirty::TreeChange,
+  PresShell()->FrameNeedsReflow(this, IntrinsicDirty::FrameAndAncestors,
                                 NS_FRAME_HAS_DIRTY_CHILDREN);
 
   tableFrame->SetGeometryDirty();
@@ -357,7 +356,7 @@ void nsTableRowFrame::DidResize() {
 
           // ...unless relative positioning is in effect, in which case the
           // cell may have been moved away from the row's block-start
-          if (cellFrame->IsRelativelyPositioned()) {
+          if (cellFrame->IsRelativelyOrStickyPositioned()) {
             // Find out where the cell would have been without relative
             // positioning.
             LogicalPoint oldNormalPos =
@@ -551,7 +550,7 @@ void nsTableRowFrame::PaintCellBackgroundsForFrame(
     }
     cellRect += toReferenceFrame;
     nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
-        aBuilder, aFrame, cellRect, aLists.BorderBackground(), true, nullptr,
+        aBuilder, aFrame, cellRect, aLists.BorderBackground(), true,
         aFrame->GetRectRelativeToSelf() + toReferenceFrame, cell);
   }
 }
@@ -899,7 +898,7 @@ void nsTableRowFrame::ReflowChildren(nsPresContext* aPresContext,
       if (kidReflowInput) {
         // We reflowed. Apply relative positioning in the normal way.
         flags = ReflowChildFlags::ApplyRelativePositioning;
-      } else if (kidFrame->IsRelativelyPositioned()) {
+      } else if (kidFrame->IsRelativelyOrStickyPositioned()) {
         // We didn't reflow.  Do the positioning part of what
         // MovePositionBy does internally.  (This codepath should really
         // be merged into the else below if we can.)
@@ -1058,8 +1057,6 @@ void nsTableRowFrame::Reflow(nsPresContext* aPresContext,
   // nsIFrame::FixupPositionedTableParts in another pass, so propagate our
   // dirtiness to them before our parent clears our dirty bits.
   PushDirtyBitToAbsoluteFrames();
-
-  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aDesiredSize);
 }
 
 /**
@@ -1073,6 +1070,8 @@ nscoord nsTableRowFrame::ReflowCellFrame(nsPresContext* aPresContext,
                                          nsTableCellFrame* aCellFrame,
                                          nscoord aAvailableBSize,
                                          nsReflowStatus& aStatus) {
+  MOZ_ASSERT(aAvailableBSize != NS_UNCONSTRAINEDSIZE,
+             "Why split cell frame if available bsize is unconstrained?");
   WritingMode wm = aReflowInput.GetWritingMode();
 
   // Reflow the cell frame with the specified height. Use the existing width
@@ -1096,8 +1095,11 @@ nscoord nsTableRowFrame::ReflowCellFrame(nsPresContext* aPresContext,
 
   ReflowChild(aCellFrame, aPresContext, desiredSize, cellReflowInput, 0, 0,
               ReflowChildFlags::NoMoveFrame, aStatus);
-  bool fullyComplete = aStatus.IsComplete() && !aStatus.IsTruncated();
-  if (fullyComplete) {
+  const bool isTruncated =
+      aAvailableBSize < desiredSize.BSize(wm) &&
+      !aIsTopOfPage;  // XXX Is !aIsTopOfPage check really necessary?
+  const bool isCompleteAndNotTruncated = aStatus.IsComplete() && !isTruncated;
+  if (isCompleteAndNotTruncated) {
     desiredSize.BSize(wm) = aAvailableBSize;
   }
   aCellFrame->SetSize(
@@ -1106,7 +1108,7 @@ nscoord nsTableRowFrame::ReflowCellFrame(nsPresContext* aPresContext,
   // Note: BlockDirAlignChild can affect the overflow rect.
   // XXX What happens if this cell has 'vertical-align: baseline' ?
   // XXX Why is it assumed that the cell's ascent hasn't changed ?
-  if (fullyComplete) {
+  if (isCompleteAndNotTruncated) {
     aCellFrame->BlockDirAlignChild(wm, mMaxCellAscent);
   }
 

@@ -47,6 +47,7 @@ For the purposes of this telemetry a set of areas are defined:
   * ``pageaction-panel`` - The page action (meatball) menu.
   * ``nav-bar-start`` - The area of the navigation toolbar before the address bar.
   * ``nav-bar-end`` - The area of the navigastion toolbar after the address bar.
+  * ``unified-extensions-area`` - The unified extensions panel.
 
 * In ``about:preferences`` the different cagtegories are used:
 
@@ -108,7 +109,7 @@ interacts with the browser. The area is one of those above with the addition of
 When an interaction occurs the widget's identifier is used as the key and the
 scalar is incremented. If the widget is provided by an add-on then the add-on
 identifier is dropped and an identifier of the form ``addonX`` is used where X
-is a number. The number used is stable for a single session. Everytime the user
+is a number. The number used is stable for a single session. Every time the user
 moves or interacts with an add-on the same number is used but then the numbers
 for each add-on may change after Firefox has been restarted.
 
@@ -128,3 +129,20 @@ full path to the file will typically look something like
 
 This value is meant to be resilient to re-installation, so that file will not
 be removed when Firefox is uninstalled.
+
+Context menu entrypoints
+========================
+
+Some context menus are re-used in multiple places. By default, we simply count
+the number of interactions per item within a context menu, and do not record
+the entrypoint that caused the context menu to open.
+
+It is possible to opt-in to recording the entrypoint that caused the context
+menu to open. This is done by adding an entry to
+``ENTRYPOINT_TRACKED_CONTEXT_MENU_IDS``, mapping the ID of the context menu
+to a keyed Scalar under ``browser.ui.interaction.``. This scalar is recorded
+only if an interaction is recorded within the context menu itself.
+
+When the keyed scalar is recorded, the key will be a unique ID for the
+trigger node that caused the context menu to open. The value is the count
+of openings from that trigger node.

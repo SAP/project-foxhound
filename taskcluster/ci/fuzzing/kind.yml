@@ -15,13 +15,14 @@ kind-dependencies:
     - build
 
 job-defaults:
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         max-run-time: 3600
         docker-image: {in-tree: debian11-amd64-build}
     treeherder:
         kind: test
         tier: 3
+    if-dependencies: [build]
 
 jobs:
     simple:
@@ -61,6 +62,3 @@ jobs:
             command: >
                 export GECKO_BINARY_PATH=$MOZ_FETCHES_DIR/firefox/firefox &&
                 ./mach python-test --subsuite fuzzing
-        when:
-            files-changed:
-                - 'tools/fuzzing/smoke/**'

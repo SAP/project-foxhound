@@ -10,6 +10,7 @@
 #include "LocalAccessible-inl.h"
 #include "mozilla/a11y/PlatformChild.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/StaticPrefs_accessibility.h"
 #include "RootAccessible.h"
 
@@ -200,22 +201,26 @@ bool DocAccessibleChild::SendFocusEvent(const uint64_t& aID,
 bool DocAccessibleChild::SendCaretMoveEvent(const uint64_t& aID,
                                             const int32_t& aOffset,
                                             const bool& aIsSelectionCollapsed,
-                                            const bool& aIsAtEndOfLine) {
+                                            const bool& aIsAtEndOfLine,
+                                            const int32_t& aGranularity) {
   return SendCaretMoveEvent(aID, GetCaretRectFor(aID), aOffset,
-                            aIsSelectionCollapsed, aIsAtEndOfLine);
+                            aIsSelectionCollapsed, aIsAtEndOfLine,
+                            aGranularity);
 }
 
 bool DocAccessibleChild::SendCaretMoveEvent(
     const uint64_t& aID, const LayoutDeviceIntRect& aCaretRect,
     const int32_t& aOffset, const bool& aIsSelectionCollapsed,
-    const bool& aIsAtEndOfLine) {
+    const bool& aIsAtEndOfLine, const int32_t& aGranularity) {
   if (IsConstructedInParentProcess()) {
     return PDocAccessibleChild::SendCaretMoveEvent(
-        aID, aCaretRect, aOffset, aIsSelectionCollapsed, aIsAtEndOfLine);
+        aID, aCaretRect, aOffset, aIsSelectionCollapsed, aIsAtEndOfLine,
+        aGranularity);
   }
 
   PushDeferredEvent(MakeUnique<SerializedCaretMove>(
-      this, aID, aCaretRect, aOffset, aIsSelectionCollapsed, aIsAtEndOfLine));
+      this, aID, aCaretRect, aOffset, aIsSelectionCollapsed, aIsAtEndOfLine,
+      aGranularity));
   return true;
 }
 
@@ -251,12 +256,14 @@ bool DocAccessibleChild::SendSelectionEvent(const uint64_t& aID,
   return true;
 }
 
-bool DocAccessibleChild::SendRoleChangedEvent(const a11y::role& aRole) {
+bool DocAccessibleChild::SendRoleChangedEvent(const a11y::role& aRole,
+                                              uint8_t aRoleMapEntryIndex) {
   if (IsConstructedInParentProcess()) {
-    return PDocAccessibleChild::SendRoleChangedEvent(aRole);
+    return PDocAccessibleChild::SendRoleChangedEvent(aRole, aRoleMapEntryIndex);
   }
 
-  PushDeferredEvent(MakeUnique<SerializedRoleChanged>(this, aRole));
+  PushDeferredEvent(
+      MakeUnique<SerializedRoleChanged>(this, aRole, aRoleMapEntryIndex));
   return true;
 }
 
@@ -283,7 +290,9 @@ bool DocAccessibleChild::ConstructChildDocInParentProcess(
     auto browserChild = static_cast<dom::BrowserChild*>(Manager());
     MOZ_ASSERT(browserChild);
     bool result = browserChild->SendPDocAccessibleConstructor(
-        aNewChildDoc, this, aUniqueID, aMsaaID, IAccessibleHolder());
+        aNewChildDoc, this, aUniqueID,
+        aNewChildDoc->mDoc->DocumentNode()->GetBrowsingContext(), aMsaaID,
+        IAccessibleHolder());
     if (result) {
       aNewChildDoc->SetConstructedInParentProcess();
     }
@@ -291,7 +300,8 @@ bool DocAccessibleChild::ConstructChildDocInParentProcess(
   }
 
   PushDeferredEvent(MakeUnique<SerializedChildDocConstructor>(
-      aNewChildDoc, this, aUniqueID, aMsaaID));
+      aNewChildDoc, this, aUniqueID,
+      aNewChildDoc->mDoc->DocumentNode()->GetBrowsingContext(), aMsaaID));
   return true;
 }
 

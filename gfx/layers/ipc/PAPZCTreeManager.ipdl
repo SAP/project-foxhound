@@ -9,11 +9,11 @@ include "ipc/nsGUIEventIPC.h";
 
 include protocol PCompositorBridge;
 
-using CSSRect from "Units.h";
-using LayoutDeviceCoord from "Units.h";
+using mozilla::CSSRect from "Units.h";
+using mozilla::LayoutDeviceCoord from "Units.h";
 using mozilla::LayoutDevicePoint from "Units.h";
-using ScreenPoint from "Units.h";
-using ZoomTarget from "mozilla/layers/DoubleTapToZoom.h";
+using mozilla::ScreenPoint from "Units.h";
+using mozilla::layers::ZoomTarget from "mozilla/layers/DoubleTapToZoom.h";
 using mozilla::layers::ZoomConstraints from "mozilla/layers/ZoomConstraints.h";
 using mozilla::layers::ScrollableLayerGuid from "mozilla/layers/ScrollableLayerGuid.h";
 using mozilla::layers::ScrollableLayerGuid::ViewID from "mozilla/layers/ScrollableLayerGuid.h";
@@ -21,6 +21,7 @@ using mozilla::layers::TouchBehaviorFlags from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::AsyncDragMetrics from "mozilla/layers/AsyncDragMetrics.h";
 using mozilla::layers::GeckoContentController_TapType from "mozilla/layers/GeckoContentControllerTypes.h";
 using mozilla::layers::APZHandledResult from "mozilla/layers/APZInputBridge.h";
+using mozilla::layers::BrowserGestureResponse from "mozilla/layers/APZInputBridge.h";
 using class mozilla::layers::KeyboardMap from "mozilla/layers/KeyboardMap.h";
 using mozilla::wr::RenderRoot from "mozilla/webrender/WebRenderTypes.h";
 
@@ -39,6 +40,7 @@ namespace layers {
  * lives in the main thread of the main or the content process. APZCTreeManagerParent
  * and APZCTreeManagerChild implement this protocol.
  */
+[ManualDealloc]
 protocol PAPZCTreeManager
 {
 manager PCompositorBridge;
@@ -51,8 +53,6 @@ parent:
   async ZoomToRect(ScrollableLayerGuid aGuid, ZoomTarget aZoomTarget, uint32_t Flags);
 
   async ContentReceivedInputBlock(uint64_t aInputBlockId, bool PreventDefault);
-
-  async AddInputBlockCallback(uint64_t aInputBlockId);
 
   async SetTargetAPZC(uint64_t aInputBlockId, ScrollableLayerGuid[] Targets);
 
@@ -72,6 +72,9 @@ parent:
 
   async SetLongTapEnabled(bool aTapGestureEnabled);
 
+  async SetBrowserGestureResponse(uint64_t aInputBlockId,
+                                  BrowserGestureResponse aResponse);
+
   async __delete__();
 
 child:
@@ -85,8 +88,7 @@ child:
 
   async CancelAutoscroll(ViewID aScrollId);
 
-  async CallInputBlockCallback(uint64_t aInputBlockId,
-                               APZHandledResult aHandledResult);
+  async NotifyScaleGestureComplete(ViewID aScrollId, float aScale);
 };
 
 } // namespace gfx

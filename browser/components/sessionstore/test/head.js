@@ -2,9 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { E10SUtils } = ChromeUtils.import(
-  "resource://gre/modules/E10SUtils.jsm"
-);
 const triggeringPrincipal_base64 = E10SUtils.SERIALIZED_SYSTEMPRINCIPAL;
 
 const TAB_STATE_NEEDS_RESTORE = 1;
@@ -20,17 +17,17 @@ const HTTPSROOT = ROOT.replace(
   "https://example.com/"
 );
 
-const { SessionSaver } = ChromeUtils.import(
-  "resource:///modules/sessionstore/SessionSaver.jsm"
+const { SessionSaver } = ChromeUtils.importESModule(
+  "resource:///modules/sessionstore/SessionSaver.sys.mjs"
 );
-const { SessionFile } = ChromeUtils.import(
-  "resource:///modules/sessionstore/SessionFile.jsm"
+const { SessionFile } = ChromeUtils.importESModule(
+  "resource:///modules/sessionstore/SessionFile.sys.mjs"
 );
-const { TabState } = ChromeUtils.import(
-  "resource:///modules/sessionstore/TabState.jsm"
+const { TabState } = ChromeUtils.importESModule(
+  "resource:///modules/sessionstore/TabState.sys.mjs"
 );
-const { TabStateFlusher } = ChromeUtils.import(
-  "resource:///modules/sessionstore/TabStateFlusher.jsm"
+const { TabStateFlusher } = ChromeUtils.importESModule(
+  "resource:///modules/sessionstore/TabStateFlusher.sys.mjs"
 );
 const ss = SessionStore;
 
@@ -323,7 +320,7 @@ var promiseForEachSessionRestoreFile = async function(cb) {
       });
     } catch (ex) {
       // Ignore missing files
-      if (!(ex instanceof DOMException && ex.name == "NotFoundError")) {
+      if (!(DOMException.isInstance(ex) && ex.name == "NotFoundError")) {
         throw ex;
       }
     }
@@ -745,4 +742,11 @@ function addNonCoopTask(aFile, aTest, aUrlRoot) {
   }
   Object.defineProperty(taskToBeAdded, "name", { value: aTest.name });
   add_task(taskToBeAdded);
+}
+
+async function openAndCloseTab(window, url) {
+  let tab = BrowserTestUtils.addTab(window.gBrowser, url);
+  await promiseBrowserLoaded(tab.linkedBrowser, true, url);
+  await TabStateFlusher.flush(tab.linkedBrowser);
+  await promiseRemoveTabAndSessionState(tab);
 }

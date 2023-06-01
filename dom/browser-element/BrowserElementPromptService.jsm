@@ -9,8 +9,6 @@ var Cm = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
 
 var EXPORTED_SYMBOLS = ["BrowserElementPromptService"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 function debug(msg) {
   // dump("BrowserElementPromptService - " + msg + "\n");
 }
@@ -662,10 +660,7 @@ var BrowserElementPromptService = {
     var newInstance = new BrowserElementPromptFactory(oldInstance);
 
     var newFactory = {
-      createInstance(outer, iid) {
-        if (outer != null) {
-          throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
-        }
+      createInstance(iid) {
         return newInstance.QueryInterface(iid);
       },
     };

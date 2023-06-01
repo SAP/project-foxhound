@@ -8,10 +8,10 @@
 #include <netinet/ether.h>
 #include <net/if.h>
 #include <poll.h>
+#include <unistd.h>
 #include <linux/rtnetlink.h>
 
 #include "nsThreadUtils.h"
-#include "nsServiceManagerUtils.h"
 #include "NetlinkService.h"
 #include "nsIThread.h"
 #include "nsString.h"
@@ -21,16 +21,13 @@
 #include "../NetworkLinkServiceDefines.h"
 
 #include "mozilla/Base64.h"
-#include "mozilla/FileUtils.h"
 #include "mozilla/FunctionTypeTraits.h"
-#include "mozilla/Services.h"
-#include "mozilla/Sprintf.h"
+#include "mozilla/ProfilerThreadSleep.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/DebugOnly.h"
 
 #if defined(HAVE_RES_NINIT)
 #  include <netinet/in.h>
-#  include <arpa/nameser.h>
 #  include <resolv.h>
 #endif
 
@@ -1199,7 +1196,10 @@ NetlinkService::Run() {
       }
     }
 
-    int rc = EINTR_RETRY(poll(fds, 2, GetPollWait()));
+    int rc = eintr_retry([&]() {
+      AUTO_PROFILER_THREAD_SLEEP;
+      return poll(fds, 2, GetPollWait());
+    });
 
     if (rc > 0) {
       if (fds[0].revents & POLLIN) {

@@ -5,7 +5,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 XPCSHELL_TESTS_MANIFESTS += [
-    "tests/unit/interactions/xpcshell.ini",
     "tests/unit/xpcshell.ini",
 ]
 MOCHITEST_CHROME_MANIFESTS += ["tests/chrome/chrome.ini"]
@@ -16,22 +15,17 @@ BROWSER_CHROME_MANIFESTS += [
 
 JAR_MANIFESTS += ["jar.mn"]
 
+SPHINX_TREES["/browser/places"] = "docs"
+
 EXTRA_JS_MODULES += [
-    "CommonNames.jsm",
-    "DomainGroupBuilder.jsm",
-    "Interactions.jsm",
-    "InteractionsBlocklist.jsm",
-    "PlacesUIUtils.jsm",
-    "SnapshotGroups.jsm",
-    "SnapshotMonitor.jsm",
-    "Snapshots.jsm",
-    "SnapshotScorer.jsm",
-    "SnapshotSelector.jsm",
+    "Interactions.sys.mjs",
+    "InteractionsBlocklist.sys.mjs",
+    "PlacesUIUtils.sys.mjs",
 ]
 
 FINAL_TARGET_FILES.actors += [
-    "InteractionsChild.jsm",
-    "InteractionsParent.jsm",
+    "InteractionsChild.sys.mjs",
+    "InteractionsParent.sys.mjs",
 ]
 
 with Files("**"):

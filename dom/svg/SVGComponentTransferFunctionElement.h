@@ -19,9 +19,7 @@
     }                                                     \
   }
 
-namespace mozilla {
-
-namespace dom {
+namespace mozilla::dom {
 
 class DOMSVGAnimatedNumberList;
 
@@ -45,8 +43,8 @@ class SVGComponentTransferFunctionElement
 
   NS_DECL_ISUPPORTS_INHERITED
 
-  virtual bool AttributeAffectsRendering(int32_t aNameSpaceID,
-                                         nsAtom* aAttribute) const override;
+  bool AttributeAffectsRendering(int32_t aNameSpaceID,
+                                 nsAtom* aAttribute) const override;
 
   virtual int32_t GetChannel() = 0;
 
@@ -54,8 +52,8 @@ class SVGComponentTransferFunctionElement
                          ComponentTransferAttributes& aAttributes);
 
   // WebIDL
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override = 0;
+  JSObject* WrapNode(JSContext* aCx,
+                     JS::Handle<JSObject*> aGivenProto) override = 0;
   already_AddRefed<DOMSVGAnimatedEnumeration> Type();
   already_AddRefed<DOMSVGAnimatedNumberList> TableValues();
   already_AddRefed<DOMSVGAnimatedNumber> Slope();
@@ -65,9 +63,9 @@ class SVGComponentTransferFunctionElement
   already_AddRefed<DOMSVGAnimatedNumber> Offset();
 
  protected:
-  virtual NumberAttributesInfo GetNumberInfo() override;
-  virtual EnumAttributesInfo GetEnumInfo() override;
-  virtual NumberListAttributesInfo GetNumberListInfo() override;
+  NumberAttributesInfo GetNumberInfo() override;
+  EnumAttributesInfo GetEnumInfo() override;
+  NumberListAttributesInfo GetNumberListInfo() override;
 
   enum { TABLEVALUES };
   SVGAnimatedNumberList mNumberListAttributes[1];
@@ -86,14 +84,12 @@ class SVGComponentTransferFunctionElement
 NS_DEFINE_STATIC_IID_ACCESSOR(SVGComponentTransferFunctionElement,
                               NS_SVG_FE_COMPONENT_TRANSFER_FUNCTION_ELEMENT_CID)
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 nsresult NS_NewSVGFEFuncRElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class SVGFEFuncRElement : public SVGComponentTransferFunctionElement {
   friend nsresult(::NS_NewSVGFEFuncRElement(
@@ -106,22 +102,20 @@ class SVGFEFuncRElement : public SVGComponentTransferFunctionElement {
       : SVGComponentTransferFunctionElement(std::move(aNodeInfo)) {}
 
  public:
-  virtual int32_t GetChannel() override { return 0; }
+  int32_t GetChannel() override { return 0; }
 
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* aCx,
+                     JS::Handle<JSObject*> aGivenProto) override;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 nsresult NS_NewSVGFEFuncGElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class SVGFEFuncGElement : public SVGComponentTransferFunctionElement {
   friend nsresult(::NS_NewSVGFEFuncGElement(
@@ -134,22 +128,20 @@ class SVGFEFuncGElement : public SVGComponentTransferFunctionElement {
       : SVGComponentTransferFunctionElement(std::move(aNodeInfo)) {}
 
  public:
-  virtual int32_t GetChannel() override { return 1; }
+  int32_t GetChannel() override { return 1; }
 
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* aCx,
+                     JS::Handle<JSObject*> aGivenProto) override;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 nsresult NS_NewSVGFEFuncBElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class SVGFEFuncBElement : public SVGComponentTransferFunctionElement {
   friend nsresult(::NS_NewSVGFEFuncBElement(
@@ -162,22 +154,20 @@ class SVGFEFuncBElement : public SVGComponentTransferFunctionElement {
       : SVGComponentTransferFunctionElement(std::move(aNodeInfo)) {}
 
  public:
-  virtual int32_t GetChannel() override { return 2; }
+  int32_t GetChannel() override { return 2; }
 
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* aCx,
+                     JS::Handle<JSObject*> aGivenProto) override;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 nsresult NS_NewSVGFEFuncAElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class SVGFEFuncAElement : public SVGComponentTransferFunctionElement {
   friend nsresult(::NS_NewSVGFEFuncAElement(
@@ -190,15 +180,14 @@ class SVGFEFuncAElement : public SVGComponentTransferFunctionElement {
       : SVGComponentTransferFunctionElement(std::move(aNodeInfo)) {}
 
  public:
-  virtual int32_t GetChannel() override { return 3; }
+  int32_t GetChannel() override { return 3; }
 
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* aCx,
+                     JS::Handle<JSObject*> aGivenProto) override;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // DOM_SVG_SVGCOMPONENTTRANSFERFUNCTIONELEMENT_H_

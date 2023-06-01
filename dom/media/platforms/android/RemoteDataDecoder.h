@@ -8,7 +8,6 @@
 #include "AndroidDecoderModule.h"
 #include "SurfaceTexture.h"
 #include "TimeUnits.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/java/CodecProxyWrappers.h"
 
@@ -78,7 +77,7 @@ class RemoteDataDecoder : public MediaDataDecoder,
 
   // Preallocated Java object used as a reusable storage for input buffer
   // information. Contents must be changed only on mThread.
-  java::sdk::BufferInfo::GlobalRef mInputBufferInfo;
+  java::sdk::MediaCodec::BufferInfo::GlobalRef mInputBufferInfo;
 
   // Session ID attached to samples. It is returned by CodecProxy::Input().
   // Accessed on mThread only.

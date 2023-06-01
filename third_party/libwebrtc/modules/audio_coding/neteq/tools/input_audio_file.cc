@@ -10,14 +10,15 @@
 
 #include "modules/audio_coding/neteq/tools/input_audio_file.h"
 
+#include "absl/strings/string_view.h"
 #include "rtc_base/checks.h"
 
 namespace webrtc {
 namespace test {
 
-InputAudioFile::InputAudioFile(const std::string file_name, bool loop_at_end)
+InputAudioFile::InputAudioFile(absl::string_view file_name, bool loop_at_end)
     : loop_at_end_(loop_at_end) {
-  fp_ = fopen(file_name.c_str(), "rb");
+  fp_ = fopen(std::string(file_name).c_str(), "rb");
   RTC_DCHECK(fp_) << file_name << " could not be opened.";
 }
 
@@ -81,9 +82,9 @@ void InputAudioFile::DuplicateInterleaved(const int16_t* source,
                                           size_t samples,
                                           size_t channels,
                                           int16_t* destination) {
-  // Start from the end of |source| and |destination|, and work towards the
+  // Start from the end of `source` and `destination`, and work towards the
   // beginning. This is to allow in-place interleaving of the same array (i.e.,
-  // |source| and |destination| are the same array).
+  // `source` and `destination` are the same array).
   for (int i = static_cast<int>(samples - 1); i >= 0; --i) {
     for (int j = static_cast<int>(channels - 1); j >= 0; --j) {
       destination[i * channels + j] = source[i];

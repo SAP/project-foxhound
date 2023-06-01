@@ -3,12 +3,11 @@
 
 // There are shutdown issues for which multiple rejections are left uncaught.
 // See bug 1018184 for resolving these issues.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 PromiseTestUtils.allowMatchingRejectionsGlobally(/File closed/);
 
-/* import-globals-from ../../../inspector/test/shared-head.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/inspector/test/shared-head.js",
   this
@@ -24,9 +23,8 @@ requestLongerTimeout(4);
  * test locally.
  */
 add_task(async function() {
-  const ToolboxTask = await initBrowserToolboxTask({
-    enableBrowserToolboxFission: true,
-  });
+  await pushPref("devtools.browsertoolbox.scope", "everything");
+  const ToolboxTask = await initBrowserToolboxTask();
   await ToolboxTask.importFunctions({
     getNodeFront,
     getNodeFrontInFrames,

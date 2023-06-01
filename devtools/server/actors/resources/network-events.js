@@ -4,23 +4,33 @@
 
 "use strict";
 
-const Services = require("Services");
-const { Pool } = require("devtools/shared/protocol/Pool");
-const {
-  isWindowGlobalPartOfContext,
-} = require("devtools/server/actors/watcher/browsing-context-helpers.jsm");
-
-loader.lazyRequireGetter(
-  this,
-  "NetworkObserver",
-  "devtools/server/actors/network-monitor/network-observer",
-  true
+const { Pool } = require("resource://devtools/shared/protocol/Pool.js");
+const { isWindowGlobalPartOfContext } = ChromeUtils.importESModule(
+  "resource://devtools/server/actors/watcher/browsing-context-helpers.sys.mjs"
 );
+const { WatcherRegistry } = ChromeUtils.importESModule(
+  "resource://devtools/server/actors/watcher/WatcherRegistry.sys.mjs",
+  {
+    // WatcherRegistry needs to be a true singleton and loads ActorManagerParent
+    // which also has to be a true singleton.
+    loadInDevToolsLoader: false,
+  }
+);
+const Targets = require("resource://devtools/server/actors/targets/index.js");
+
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  NetworkObserver:
+    "resource://devtools/shared/network-observer/NetworkObserver.sys.mjs",
+  NetworkUtils:
+    "resource://devtools/shared/network-observer/NetworkUtils.sys.mjs",
+});
 
 loader.lazyRequireGetter(
   this,
   "NetworkEventActor",
-  "devtools/server/actors/network-monitor/network-event-actor",
+  "resource://devtools/server/actors/network-monitor/network-event-actor.js",
   true
 );
 
@@ -51,17 +61,21 @@ class NetworkEventWatcher {
     this.onNetworkEventUpdated = onUpdated;
     // Boolean to know if we keep previous document network events or not.
     this.persist = false;
-    this.listener = new NetworkObserver(
-      { sessionContext: watcherActor.sessionContext },
-      { onNetworkEvent: this.onNetworkEvent.bind(this) }
-    );
+    this.listener = new lazy.NetworkObserver({
+      ignoreChannelFunction: this.shouldIgnoreChannel.bind(this),
+      onNetworkEvent: this.onNetworkEvent.bind(this),
+    });
 
-    this.listener.init();
     Services.obs.addObserver(this, "window-global-destroyed");
   }
 
-  get conn() {
-    return this.watcherActor.conn;
+  /**
+   * Clear all the network events and the related actors.
+   */
+  clear() {
+    this.networkEvents.clear();
+    this.listener.clear();
+    this.pool.destroy();
   }
 
   /**
@@ -84,7 +98,7 @@ class NetworkEventWatcher {
    *
    */
   getThrottleData() {
-    return this.listener.throttleData;
+    return this.listener.getThrottleData();
   }
 
   /**
@@ -94,7 +108,7 @@ class NetworkEventWatcher {
    *
    */
   setThrottleData(data) {
-    this.listener.throttleData = data;
+    this.listener.setThrottleData(data);
   }
 
   /**
@@ -102,7 +116,7 @@ class NetworkEventWatcher {
    * @param {Boolean} save
    */
   setSaveRequestAndResponseBodies(save) {
-    this.listener.saveRequestAndResponseBodies = save;
+    this.listener.setSaveRequestAndResponseBodies(save);
   }
 
   /**
@@ -197,6 +211,47 @@ class NetworkEventWatcher {
     }
   }
 
+  /**
+   * Called by NetworkObserver in order to know if the channel should be ignored
+   */
+  shouldIgnoreChannel(channel) {
+    // First of all, check if the channel matches the watcherActor's session.
+    const filters = { sessionContext: this.watcherActor.sessionContext };
+    if (!lazy.NetworkUtils.matchRequest(channel, filters)) {
+      return true;
+    }
+
+    // When we are in the browser toolbox in parent process scope,
+    // the session context is still "all", but we are no longer watching frame and process targets.
+    // In this case, we should ignore all requests belonging to a BrowsingContext that isn't in the parent process
+    // (i.e. the process where this Watcher runs)
+    const isParentProcessOnlyBrowserToolbox =
+      this.watcherActor.sessionContext.type == "all" &&
+      !WatcherRegistry.isWatchingTargets(
+        this.watcherActor,
+        Targets.TYPES.FRAME
+      );
+    if (isParentProcessOnlyBrowserToolbox) {
+      // We should ignore all requests coming from BrowsingContext running in another process
+      const browsingContextID = lazy.NetworkUtils.getChannelBrowsingContextID(
+        channel
+      );
+      const browsingContext = BrowsingContext.get(browsingContextID);
+      // We accept any request that isn't bound to any BrowsingContext.
+      // This is most likely a privileged request done from a JSM/C++.
+      // `isInProcess` will be true, when the document executes in the parent process.
+      //
+      // Note that we will still accept all requests that aren't bound to any BrowsingContext
+      // See browser_resources_network_events_parent_process.js test with privileged request
+      // made from the content processes.
+      // We miss some attribute on channel/loadInfo to know that it comes from the content process.
+      if (browsingContext?.currentWindowGlobal.isInProcess === false) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   onNetworkEvent(event) {
     const { channelId } = event;
 
@@ -205,6 +260,7 @@ class NetworkEventWatcher {
         `Got notified about channel ${channelId} more than once.`
       );
     }
+
     const actor = new NetworkEventActor(
       this.watcherActor.conn,
       this.watcherActor.sessionContext,
@@ -219,6 +275,8 @@ class NetworkEventWatcher {
     const resource = actor.asResource();
 
     this.networkEvents.set(resource.resourceId, {
+      browsingContextID: resource.browsingContextID,
+      innerWindowId: resource.innerWindowId,
       resourceId: resource.resourceId,
       resourceType: resource.resourceType,
       isBlocked: !!resource.blockedReason,
@@ -238,6 +296,8 @@ class NetworkEventWatcher {
     }
 
     const {
+      browsingContextID,
+      innerWindowId,
       resourceId,
       resourceType,
       resourceUpdates,
@@ -301,6 +361,8 @@ class NetworkEventWatcher {
         resourceType,
         resourceId,
         resourceUpdates,
+        browsingContextID,
+        innerWindowId,
       },
     ]);
   }
@@ -316,9 +378,9 @@ class NetworkEventWatcher {
    */
   destroy() {
     if (this.listener) {
+      this.clear();
       this.listener.destroy();
       Services.obs.removeObserver(this, "window-global-destroyed");
-      this.pool.destroy();
     }
   }
 }

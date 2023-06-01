@@ -373,7 +373,14 @@ ICUResult ToICUSkeleton(const DateTimeFormat::ComponentsBag& aBag,
         MOZ_TRY(PushString(aSkeleton, u"GGGGG"));
         break;
       case DateTimeFormat::Text::Short:
-        MOZ_TRY(PushString(aSkeleton, u"G"));
+        // Use "GGG" instead of "G" to return the same results as other
+        // browsers. This is exploiting the following ICU bug
+        // <https://unicode-org.atlassian.net/browse/ICU-22138>. As soon as that
+        // bug has been fixed, we can change this back to "G".
+        //
+        // In practice the bug only affects "G", so we only apply it for "G"
+        // and not for other symbols like "B" or "z".
+        MOZ_TRY(PushString(aSkeleton, u"GGG"));
         break;
       case DateTimeFormat::Text::Long:
         MOZ_TRY(PushString(aSkeleton, u"GGGG"));
@@ -593,42 +600,6 @@ DateTimeFormat::TryCreateFromSkeleton(
   }
   auto dateTimeFormat = result.unwrap();
   MOZ_TRY(dateTimeFormat->CacheSkeleton(aSkeleton));
-  return dateTimeFormat;
-}
-
-/* static */
-Result<UniquePtr<DateTimeFormat>, ICUError>
-DateTimeFormat::TryCreateFromSkeleton(
-    Span<const char> aLocale, Span<const char> aSkeleton,
-    DateTimePatternGenerator* aDateTimePatternGenerator,
-    Maybe<DateTimeFormat::HourCycle> aHourCycle,
-    Maybe<Span<const char>> aTimeZoneOverride) {
-  // Convert the skeleton to UTF-16.
-  DateTimeFormat::SkeletonVector skeletonUtf16Buffer;
-
-  if (!FillUTF16Vector(aSkeleton, skeletonUtf16Buffer)) {
-    return Err(ICUError::OutOfMemory);
-  }
-
-  // Convert the timezone to UTF-16 if it exists.
-  DateTimeFormat::PatternVector tzUtf16Vec;
-  Maybe<Span<const char16_t>> timeZone = Nothing{};
-  if (aTimeZoneOverride) {
-    if (!FillUTF16Vector(*aTimeZoneOverride, tzUtf16Vec)) {
-      return Err(ICUError::OutOfMemory);
-    };
-    timeZone =
-        Some(Span<const char16_t>(tzUtf16Vec.begin(), tzUtf16Vec.length()));
-  }
-
-  auto result = DateTimeFormat::TryCreateFromSkeleton(
-      aLocale, skeletonUtf16Buffer, aDateTimePatternGenerator, aHourCycle,
-      timeZone);
-  if (result.isErr()) {
-    return result;
-  }
-  auto dateTimeFormat = result.unwrap();
-  MOZ_TRY(dateTimeFormat->CacheSkeleton(skeletonUtf16Buffer));
   return dateTimeFormat;
 }
 

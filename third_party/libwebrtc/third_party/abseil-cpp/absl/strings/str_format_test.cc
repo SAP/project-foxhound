@@ -1,3 +1,16 @@
+// Copyright 2020 The Abseil Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include "absl/strings/str_format.h"
 
@@ -706,6 +719,7 @@ TEST_F(FormatWrapperTest, ParsedFormat) {
 ABSL_NAMESPACE_END
 }  // namespace absl
 
+namespace {
 using FormatExtensionTest = ::testing::Test;
 
 struct Point {
@@ -737,6 +751,7 @@ TEST_F(FormatExtensionTest, AbslFormatConvertExample) {
   // FormatUntyped will return false for bad character.
   EXPECT_FALSE(absl::FormatUntyped(&actual, f1, {absl::FormatArg(p)}));
 }
+}  // namespace
 
 // Some codegen thunks that we can use to easily dump the generated assembly for
 // different StrFormat calls.

@@ -18,8 +18,6 @@ using namespace mozilla;
 
 class nsFrameIterator : public nsIFrameEnumerator {
  public:
-  typedef nsIFrame::ChildListID ChildListID;
-
   NS_DECL_ISUPPORTS
 
   virtual void First() override;
@@ -204,9 +202,7 @@ bool nsFrameIterator::IsDone() { return mOffEdge != 0; }
 
 void nsFrameIterator::First() { mCurrent = mStart; }
 
-static bool IsRootFrame(nsIFrame* aFrame) {
-  return aFrame->IsCanvasFrame() || aFrame->IsXULRootFrame();
-}
+static bool IsRootFrame(nsIFrame* aFrame) { return aFrame->IsCanvasFrame(); }
 
 void nsFrameIterator::Last() {
   nsIFrame* result;
@@ -256,16 +252,17 @@ void nsFrameIterator::Next() {
           result = parent;
         }
         break;
-      } else {
-        result = GetParentFrameNotPopup(parent);
-        if (!result || IsRootFrame(result) ||
-            (mLockScroll && result->IsScrollFrame())) {
-          result = nullptr;
-          break;
-        }
-        if (mType == ePostOrder) break;
-        parent = result;
       }
+      result = GetParentFrameNotPopup(parent);
+      if (!result || IsRootFrame(result) ||
+          (mLockScroll && result->IsScrollFrame())) {
+        result = nullptr;
+        break;
+      }
+      if (mType == ePostOrder) {
+        break;
+      }
+      parent = result;
     }
   }
 
@@ -313,7 +310,9 @@ void nsFrameIterator::Prev() {
         result = nullptr;
         break;
       }
-      if (mType == ePreOrder) break;
+      if (mType == ePreOrder) {
+        break;
+      }
       parent = result;
     }
   }
@@ -421,8 +420,7 @@ bool nsFrameIterator::IsPopupFrame(nsIFrame* aFrame) {
   if (mSkipPopupChecks) {
     return false;
   }
-
-  return (aFrame && aFrame->StyleDisplay()->mDisplay == StyleDisplay::MozPopup);
+  return aFrame && aFrame->IsMenuPopupFrame();
 }
 
 // nsVisualIterator implementation

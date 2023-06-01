@@ -39,13 +39,15 @@ impl super::CommandEncoder {
         }
     }
 
-    fn enter_any(&mut self) -> &mtl::CommandEncoderRef {
+    fn enter_any(&mut self) -> Option<&mtl::CommandEncoderRef> {
         if let Some(ref encoder) = self.state.render {
-            encoder
+            Some(encoder)
         } else if let Some(ref encoder) = self.state.compute {
-            encoder
+            Some(encoder)
+        } else if let Some(ref encoder) = self.state.blit {
+            Some(encoder)
         } else {
-            self.enter_blit()
+            None
         }
     }
 
@@ -72,13 +74,20 @@ impl super::CommandState {
     ) -> Option<(u32, &'a [u32])> {
         let stage_info = &self.stage_infos[stage];
         let slot = stage_info.sizes_slot?;
+
         result_sizes.clear();
-        for br in stage_info.sized_bindings.iter() {
-            // If it's None, this isn't the right time to update the sizes
-            let size = self.storage_buffer_length_map.get(br)?;
-            result_sizes.push(size.get().min(!0u32 as u64) as u32);
+        result_sizes.extend(stage_info.sized_bindings.iter().map(|br| {
+            self.storage_buffer_length_map
+                .get(br)
+                .map(|size| u32::try_from(size.get()).unwrap_or(u32::MAX))
+                .unwrap_or_default()
+        }));
+
+        if !result_sizes.is_empty() {
+            Some((slot as _, result_sizes))
+        } else {
+            None
         }
-        Some((slot as _, result_sizes))
     }
 }
 
@@ -92,12 +101,12 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
             } else {
                 queue.new_command_buffer_with_unretained_references()
             };
+            if let Some(label) = label {
+                cmd_buf_ref.set_label(label);
+            }
             cmd_buf_ref.to_owned()
         });
 
-        if let Some(label) = label {
-            raw.set_label(label);
-        }
         self.raw_cmd_buf = Some(raw);
 
         Ok(())
@@ -218,15 +227,21 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
                 .buffer_layout
                 .bytes_per_row
                 .map_or(0, |v| v.get() as u64);
-            let bytes_per_image = copy
-                .buffer_layout
-                .rows_per_image
-                .map_or(0, |v| v.get() as u64 * bytes_per_row);
+            let image_byte_stride = if extent.depth > 1 {
+                copy.buffer_layout
+                    .rows_per_image
+                    .map_or(0, |v| v.get() as u64 * bytes_per_row)
+            } else {
+                // Don't pass a stride when updating a single layer, otherwise metal validation
+                // fails when updating a subset of the image due to the stride being larger than
+                // the amount of data to copy.
+                0
+            };
             encoder.copy_from_buffer_to_texture(
                 &src.raw,
                 copy.buffer_layout.offset,
                 bytes_per_row,
-                bytes_per_image,
+                image_byte_stride,
                 conv::map_copy_extent(&extent),
                 &dst.raw,
                 copy.texture_base.array_layer as u64,
@@ -343,24 +358,26 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
             //TODO: set visibility results buffer
 
             for (i, at) in desc.color_attachments.iter().enumerate() {
-                let at_descriptor = descriptor.color_attachments().object_at(i as u64).unwrap();
-                at_descriptor.set_texture(Some(&at.target.view.raw));
-                if let Some(ref resolve) = at.resolve_target {
-                    //Note: the selection of levels and slices is already handled by `TextureView`
-                    at_descriptor.set_resolve_texture(Some(&resolve.view.raw));
+                if let Some(at) = at.as_ref() {
+                    let at_descriptor = descriptor.color_attachments().object_at(i as u64).unwrap();
+                    at_descriptor.set_texture(Some(&at.target.view.raw));
+                    if let Some(ref resolve) = at.resolve_target {
+                        //Note: the selection of levels and slices is already handled by `TextureView`
+                        at_descriptor.set_resolve_texture(Some(&resolve.view.raw));
+                    }
+                    let load_action = if at.ops.contains(crate::AttachmentOps::LOAD) {
+                        mtl::MTLLoadAction::Load
+                    } else {
+                        at_descriptor.set_clear_color(conv::map_clear_color(&at.clear_value));
+                        mtl::MTLLoadAction::Clear
+                    };
+                    let store_action = conv::map_store_action(
+                        at.ops.contains(crate::AttachmentOps::STORE),
+                        at.resolve_target.is_some(),
+                    );
+                    at_descriptor.set_load_action(load_action);
+                    at_descriptor.set_store_action(store_action);
                 }
-                let load_action = if at.ops.contains(crate::AttachmentOps::LOAD) {
-                    mtl::MTLLoadAction::Load
-                } else {
-                    at_descriptor.set_clear_color(conv::map_clear_color(&at.clear_value));
-                    mtl::MTLLoadAction::Clear
-                };
-                let store_action = conv::map_store_action(
-                    at.ops.contains(crate::AttachmentOps::STORE),
-                    at.resolve_target.is_some(),
-                );
-                at_descriptor.set_load_action(load_action);
-                at_descriptor.set_store_action(store_action);
             }
 
             if let Some(ref at) = desc.depth_stencil_attachment {
@@ -627,13 +644,23 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
     }
 
     unsafe fn insert_debug_marker(&mut self, label: &str) {
-        self.enter_any().insert_debug_signpost(label);
+        if let Some(encoder) = self.enter_any() {
+            encoder.insert_debug_signpost(label);
+        }
     }
     unsafe fn begin_debug_marker(&mut self, group_label: &str) {
-        self.enter_any().push_debug_group(group_label);
+        if let Some(encoder) = self.enter_any() {
+            encoder.push_debug_group(group_label);
+        } else if let Some(ref buf) = self.raw_cmd_buf {
+            buf.push_debug_group(group_label);
+        }
     }
     unsafe fn end_debug_marker(&mut self) {
-        self.enter_any().pop_debug_group();
+        if let Some(encoder) = self.enter_any() {
+            encoder.pop_debug_group();
+        } else if let Some(ref buf) = self.raw_cmd_buf {
+            buf.pop_debug_group();
+        }
     }
 
     unsafe fn set_render_pipeline(&mut self, pipeline: &super::RenderPipeline) {
@@ -702,7 +729,7 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
         index: u32,
         binding: crate::BufferBinding<'a, super::Api>,
     ) {
-        let buffer_index = self.shared.private_caps.max_buffers_per_stage as u64 - 1 - index as u64;
+        let buffer_index = self.shared.private_caps.max_vertex_buffers as u64 - 1 - index as u64;
         let encoder = self.state.render.as_ref().unwrap();
         encoder.set_vertex_buffer(buffer_index, Some(&binding.buffer.raw), binding.offset);
     }
@@ -878,11 +905,13 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
         self.begin_pass();
 
         let raw = self.raw_cmd_buf.as_ref().unwrap();
-        let encoder = raw.new_compute_command_encoder();
-        if let Some(label) = desc.label {
-            encoder.set_label(label);
-        }
-        self.state.compute = Some(encoder.to_owned());
+        objc::rc::autoreleasepool(|| {
+            let encoder = raw.new_compute_command_encoder();
+            if let Some(label) = desc.label {
+                encoder.set_label(label);
+            }
+            self.state.compute = Some(encoder.to_owned());
+        });
     }
     unsafe fn end_compute_pass(&mut self) {
         self.state.compute.take().unwrap().end_encoding();

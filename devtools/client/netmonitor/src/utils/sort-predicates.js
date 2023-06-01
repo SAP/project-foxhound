@@ -11,13 +11,13 @@ const {
   getResponseHeader,
   getStartTime,
   ipToLong,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 const {
   RESPONSE_HEADERS,
-} = require("devtools/client/netmonitor/src/constants");
+} = require("resource://devtools/client/netmonitor/src/constants.js");
 const {
   getUrlBaseName,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 
 /**
  * Predicates used when sorting items.
@@ -42,6 +42,11 @@ function compareValues(first, second) {
 function waterfall(first, second) {
   const result = compareValues(first.startedMs, second.startedMs);
   return result || compareValues(first.id, second.id);
+}
+
+function priority(first, second) {
+  const result = compareValues(first.priority, second.priority);
+  return result || waterfall(first, second);
 }
 
 function status(first, second) {
@@ -309,5 +314,6 @@ const sorters = {
   latency,
   waterfall,
   url,
+  priority,
 };
 exports.Sorters = Object.assign(sorters, responseHeaders);

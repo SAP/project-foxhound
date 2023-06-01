@@ -10,9 +10,12 @@ use neqo_common::{event::Provider, qdebug, qinfo, qtrace, Datagram, Header};
 use neqo_crypto::{generate_ech_keys, init_db, AllowZeroRtt, AntiReplay};
 use neqo_http3::{
     Error, Http3OrWebTransportStream, Http3Parameters, Http3Server, Http3ServerEvent,
+    WebTransportRequest, WebTransportServerEvent, WebTransportSessionAcceptAction,
 };
 use neqo_transport::server::Server;
-use neqo_transport::{ConnectionEvent, ConnectionParameters, Output, RandomConnectionIdGenerator};
+use neqo_transport::{
+    ConnectionEvent, ConnectionParameters, Output, RandomConnectionIdGenerator, StreamType,
+};
 use std::env;
 
 use std::cell::RefCell;
@@ -27,6 +30,7 @@ use core::fmt::Display;
 use mio::net::UdpSocket;
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio_extras::timer::{Builder, Timeout, Timer};
+use std::cmp::{max, min};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -52,6 +56,9 @@ const HTTP_RESPONSE_WITH_WRONG_FRAME: &[u8] = &[
 trait HttpServer: Display {
     fn process(&mut self, dgram: Option<Datagram>) -> Output;
     fn process_events(&mut self);
+    fn get_timeout(&self) -> Option<Duration> {
+        None
+    }
 }
 
 struct Http3TestServer {
@@ -61,6 +68,9 @@ struct Http3TestServer {
     posts: HashMap<Http3OrWebTransportStream, usize>,
     responses: HashMap<Http3OrWebTransportStream, Vec<u8>>,
     current_connection_hash: u64,
+    sessions_to_close: HashMap<Instant, Vec<WebTransportRequest>>,
+    sessions_to_create_stream: Vec<(WebTransportRequest, StreamType)>,
+    webtransport_bidi_stream: HashSet<Http3OrWebTransportStream>,
 }
 
 impl ::std::fmt::Display for Http3TestServer {
@@ -76,19 +86,28 @@ impl Http3TestServer {
             posts: HashMap::new(),
             responses: HashMap::new(),
             current_connection_hash: 0,
+            sessions_to_close: HashMap::new(),
+            sessions_to_create_stream: Vec::new(),
+            webtransport_bidi_stream: HashSet::new(),
         }
     }
 
     fn new_response(&mut self, mut stream: Http3OrWebTransportStream, mut data: Vec<u8>) {
         if data.len() == 0 {
-            stream.stream_close_send().unwrap();
+            let _ = stream.stream_close_send();
             return;
         }
-        let sent = stream.send_data(&data).unwrap();
-        if sent < data.len() {
-            self.responses.insert(stream, data.split_off(sent));
-        } else {
-            stream.stream_close_send().unwrap();
+        match stream.send_data(&data) {
+            Ok(sent) => {
+                if sent < data.len() {
+                    self.responses.insert(stream, data.split_off(sent));
+                } else {
+                    stream.stream_close_send().unwrap();
+                }
+            }
+            Err(e) => {
+                eprintln!("error is {:?}", e);
+            }
         }
     }
 
@@ -110,6 +129,33 @@ impl Http3TestServer {
             }
         }
     }
+
+    fn maybe_close_session(&mut self) {
+        let now = Instant::now();
+        for (expires, sessions) in self.sessions_to_close.iter_mut() {
+            if *expires <= now {
+                for s in sessions.iter_mut() {
+                    mem::drop(s.close_session(0, ""));
+                }
+            }
+        }
+        self.sessions_to_close.retain(|expires, _| *expires >= now);
+    }
+
+    fn maybe_create_wt_stream(&mut self) {
+        if self.sessions_to_create_stream.is_empty() {
+            return;
+        }
+        let tuple = self.sessions_to_create_stream.pop().unwrap();
+        let mut session = tuple.0;
+        let mut wt_server_stream = session.create_stream(tuple.1).unwrap();
+        if tuple.1 == StreamType::UniDi {
+            let content = b"0123456789".to_vec();
+            wt_server_stream.send_data(&content).unwrap();
+        } else {
+            self.webtransport_bidi_stream.insert(wt_server_stream);
+        }
+    }
 }
 
 impl HttpServer for Http3TestServer {
@@ -118,6 +164,9 @@ impl HttpServer for Http3TestServer {
     }
 
     fn process_events(&mut self) {
+        self.maybe_close_session();
+        self.maybe_create_wt_stream();
+
         while let Some(event) = self.server.next_event() {
             qtrace!("Event: {:?}", event);
             match event {
@@ -317,6 +366,10 @@ impl HttpServer for Http3TestServer {
                     data,
                     fin,
                 } => {
+                    if self.webtransport_bidi_stream.contains(&stream) {
+                        self.new_response(stream, data);
+                        break;
+                    }
                     if let Some(r) = self.posts.get_mut(&stream) {
                         *r += data.len();
                     }
@@ -343,12 +396,129 @@ impl HttpServer for Http3TestServer {
                         self.current_connection_hash = h.finish();
                     }
                 }
-                Http3ServerEvent::PriorityUpdate { .. }
-                | Http3ServerEvent::StreamReset { .. }
-                | Http3ServerEvent::StreamStopSending { .. }
-                | Http3ServerEvent::WebTransport(_) => {}
+                Http3ServerEvent::PriorityUpdate { .. } => {}
+                Http3ServerEvent::StreamReset { stream, error } => {
+                    qtrace!("Http3ServerEvent::StreamReset {:?} {:?}", stream, error);
+                }
+                Http3ServerEvent::StreamStopSending { stream, error } => {
+                    qtrace!(
+                        "Http3ServerEvent::StreamStopSending {:?} {:?}",
+                        stream,
+                        error
+                    );
+                }
+                Http3ServerEvent::WebTransport(WebTransportServerEvent::NewSession {
+                    mut session,
+                    headers,
+                }) => {
+                    qdebug!(
+                        "WebTransportServerEvent::NewSession {:?} {:?}",
+                        session,
+                        headers
+                    );
+                    let path_hdr = headers.iter().find(|&h| h.name() == ":path");
+                    match path_hdr {
+                        Some(ph) if !ph.value().is_empty() => {
+                            let path = ph.value();
+                            qtrace!("Serve request {}", path);
+                            if path == "/success" {
+                                session
+                                    .response(&WebTransportSessionAcceptAction::Accept)
+                                    .unwrap();
+                            } else if path == "/redirect" {
+                                session
+                                    .response(&WebTransportSessionAcceptAction::Reject(
+                                        [
+                                            Header::new(":status", "302"),
+                                            Header::new("location", "/"),
+                                        ]
+                                        .to_vec(),
+                                    ))
+                                    .unwrap();
+                            } else if path == "/reject" {
+                                session
+                                    .response(&WebTransportSessionAcceptAction::Reject(
+                                        [Header::new(":status", "404")].to_vec(),
+                                    ))
+                                    .unwrap();
+                            } else if path == "/closeafter0ms" {
+                                session
+                                    .response(&WebTransportSessionAcceptAction::Accept)
+                                    .unwrap();
+                            } else if path == "/closeafter100ms" {
+                                session
+                                    .response(&WebTransportSessionAcceptAction::Accept)
+                                    .unwrap();
+                                let expires = Instant::now() + Duration::from_millis(100);
+                                if !self.sessions_to_close.contains_key(&expires) {
+                                    self.sessions_to_close.insert(expires, Vec::new());
+                                }
+                                self.sessions_to_close
+                                    .get_mut(&expires)
+                                    .unwrap()
+                                    .push(session);
+                            } else if path == "/create_unidi_stream" {
+                                session
+                                    .response(&WebTransportSessionAcceptAction::Accept)
+                                    .unwrap();
+                                self.sessions_to_create_stream
+                                    .push((session, StreamType::UniDi));
+                            } else if path == "/create_bidi_stream" {
+                                session
+                                    .response(&WebTransportSessionAcceptAction::Accept)
+                                    .unwrap();
+                                self.sessions_to_create_stream
+                                    .push((session, StreamType::BiDi));
+                            } else {
+                                session
+                                    .response(&WebTransportSessionAcceptAction::Accept)
+                                    .unwrap();
+                            }
+                        }
+                        _ => {
+                            session
+                                .response(&WebTransportSessionAcceptAction::Reject(
+                                    [Header::new(":status", "404")].to_vec(),
+                                ))
+                                .unwrap();
+                        }
+                    }
+                }
+                Http3ServerEvent::WebTransport(WebTransportServerEvent::SessionClosed {
+                    session,
+                    reason,
+                }) => {
+                    qdebug!(
+                        "WebTransportServerEvent::SessionClosed {:?} {:?}",
+                        session,
+                        reason
+                    );
+                }
+                Http3ServerEvent::WebTransport(WebTransportServerEvent::NewStream(stream)) => {
+                    if !stream.stream_info.is_http() {
+                        self.webtransport_bidi_stream.insert(stream);
+                    }
+                }
+                Http3ServerEvent::WebTransport(WebTransportServerEvent::Datagram {
+                    mut session,
+                    datagram,
+                }) => {
+                    qdebug!(
+                        "WebTransportServerEvent::Datagram {:?} {:?}",
+                        session,
+                        datagram
+                    );
+                    session.send_datagram(datagram.as_ref(), None).unwrap();
+                }
             }
         }
+    }
+
+    fn get_timeout(&self) -> Option<Duration> {
+        if let Some(next) = self.sessions_to_close.keys().min() {
+            return Some(max(*next - Instant::now(), Duration::from_millis(0)));
+        }
+        None
     }
 }
 
@@ -425,7 +595,10 @@ fn process(
             emit_packet(socket, dgram);
             true
         }
-        Output::Callback(new_timeout) => {
+        Output::Callback(mut new_timeout) => {
+            if let Some(t) = server.get_timeout() {
+                new_timeout = min(new_timeout, t);
+            }
             if let Some(svr_timeout) = svr_timeout {
                 timer.cancel_timeout(svr_timeout);
             }
@@ -446,15 +619,15 @@ fn read_dgram(
     local_address: &SocketAddr,
 ) -> Result<Option<Datagram>, io::Error> {
     let buf = &mut [0u8; 2048];
-    let (sz, remote_addr) = match socket.recv_from(&mut buf[..]) {
-        Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => return Ok(None),
-        Err(err) => {
+    let res = socket.recv_from(&mut buf[..]);
+    if let Some(err) = res.as_ref().err() {
+        if err.kind() != io::ErrorKind::WouldBlock {
             eprintln!("UDP recv error: {:?}", err);
-            return Err(err);
         }
-        Ok(res) => res,
+        return Ok(None);
     };
 
+    let (sz, remote_addr) = res.unwrap();
     if sz == buf.len() {
         eprintln!("Might have received more than {} bytes", buf.len());
     }
@@ -570,7 +743,9 @@ impl ServersRunner {
                     Http3Parameters::default()
                         .max_table_size_encoder(MAX_TABLE_SIZE)
                         .max_table_size_decoder(MAX_TABLE_SIZE)
-                        .max_blocked_streams(MAX_BLOCKED_STREAMS),
+                        .max_blocked_streams(MAX_BLOCKED_STREAMS)
+                        .webtransport(true)
+                        .connection_parameters(ConnectionParameters::default().datagram_size(1200)),
                     None,
                 )
                 .expect("We cannot make a server!"),

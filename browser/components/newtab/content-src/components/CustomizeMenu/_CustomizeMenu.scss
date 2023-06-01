@@ -1,4 +1,3 @@
-
 @media (max-height: 701px) {
   .personalize-button {
     position: absolute;
@@ -250,40 +249,17 @@
     .more-info-pocket-wrapper {
       margin-inline-start: -2px;
       overflow: hidden;
-      transition: max-height 250ms $customize-menu-expand-bezier;
-
-      &.shrink {
-        max-height: 0;
-      }
 
       .more-information {
         padding-top: 12px;
         position: relative;
-        transition: top 250ms $customize-menu-expand-bezier;
-      }
-
-      .more-information.expand {
-        top: 0;
+        transition: margin-top 250ms $customize-menu-expand-bezier;
       }
     }
 
     .more-info-top-wrapper {
-      max-height: 78px;
-
-      .more-information {
-        top: -77px;
-      }
-
       .check-wrapper {
         margin-top: 10px;
-      }
-    }
-
-    .more-info-pocket-wrapper {
-      max-height: 35px;
-
-      .more-information {
-        top: -35px;
       }
     }
   }

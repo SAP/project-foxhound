@@ -909,6 +909,8 @@ TEST_P(EchCHPaddingTest, EchChPaddingEqual) {
   SSL_SetURL(client_->ssl_fd(), name1);
   if (grease_mode1) {
     EXPECT_EQ(SECSuccess, SSL_EnableTls13GreaseEch(client_->ssl_fd(), PR_TRUE));
+    EXPECT_EQ(SECSuccess,
+              SSL_SetTls13GreaseEchSize(client_->ssl_fd(), max_name_len));
     client_->ExpectEch(false);
     server_->ExpectEch(false);
   } else {
@@ -927,6 +929,8 @@ TEST_P(EchCHPaddingTest, EchChPaddingEqual) {
   SSL_SetURL(client_->ssl_fd(), name2);
   if (grease_mode2) {
     EXPECT_EQ(SECSuccess, SSL_EnableTls13GreaseEch(client_->ssl_fd(), PR_TRUE));
+    EXPECT_EQ(SECSuccess,
+              SSL_SetTls13GreaseEchSize(client_->ssl_fd(), max_name_len));
     client_->ExpectEch(false);
     server_->ExpectEch(false);
   } else {
@@ -944,14 +948,8 @@ TEST_P(EchCHPaddingTest, EchChPaddingEqual) {
   // Note: It will not be 0 % 32 because we pad the Payload, but have a number
   // of extra bytes from the rest of the ECH extension (e.g. ciphersuite)
   ASSERT_EQ(echXtnLen1 % 32, echXtnLen2 % 32);
-  // Where both connections used the same effective maximum length and both
-  // SNIs are below that maximum, we expect the same size length.
-  PRUint8 effective_len1 =
-      grease_mode1 ? TLS13_ECH_GREASE_SNI_LEN : max_name_len;
-  PRUint8 effective_len2 =
-      grease_mode2 ? TLS13_ECH_GREASE_SNI_LEN : max_name_len;
-  if (effective_len1 == effective_len2 && name_str1.size() <= effective_len1 &&
-      name_str2.size() <= effective_len2) {
+  // Both connections should have the same size after padding.
+  if (name_str1.size() <= max_name_len && name_str2.size() <= max_name_len) {
     ASSERT_EQ(echXtnLen1, echXtnLen2);
   }
 }
@@ -1970,10 +1968,12 @@ TEST_F(TlsConnectStreamTls13, EchRejectUnknownCriticalExtension) {
   len_buf.Write(0, tmp + non_crit_exts.len() - 2, 2);
   echconfig.Splice(len_buf, 4, 2);
 
+  /* Expect that retry configs containing unsupported mandatory extensions can
+   * not be set and lead to SEC_ERROR_INVALID_ARGS. */
   EXPECT_EQ(SECFailure,
             SSL_SetClientEchConfigs(client_->ssl_fd(), crit_rec.data(),
                                     crit_rec.len()));
-  EXPECT_EQ(SEC_ERROR_UNKNOWN_CRITICAL_EXTENSION, PORT_GetError());
+  EXPECT_EQ(SEC_ERROR_INVALID_ARGS, PORT_GetError());
   EXPECT_EQ(SECSuccess, SSL_EnableTls13GreaseEch(client_->ssl_fd(),
                                                  PR_FALSE));  // Don't GREASE
   auto filter = MakeTlsFilter<TlsExtensionCapture>(
@@ -2342,7 +2342,9 @@ TEST_F(TlsConnectStreamTls13, EchBadCiphersuite) {
   ConnectExpectFail();
 }
 
-// Connect to a 1.2 server, it should ignore ECH.
+/* ECH (configured) client connects to a 1.2 server, this MUST lead to an
+ * 'ech_required' alert being sent by the client when handling the handshake
+ * finished messages [draft-ietf-tls-esni-14, Section 6.1.6]. */
 TEST_F(TlsConnectStreamTls13, EchToTls12Server) {
   EnsureTlsSetup();
   SetupEch(client_, server_);
@@ -2353,7 +2355,14 @@ TEST_F(TlsConnectStreamTls13, EchToTls12Server) {
 
   client_->ExpectEch(false);
   server_->ExpectEch(false);
-  Connect();
+
+  client_->ExpectSendAlert(kTlsAlertEchRequired, kTlsAlertFatal);
+  server_->ExpectReceiveAlert(kTlsAlertEchRequired, kTlsAlertFatal);
+  ConnectExpectFailOneSide(TlsAgent::CLIENT);
+  client_->CheckErrorCode(SSL_ERROR_ECH_RETRY_WITHOUT_ECH);
+
+  /* Reset expectations for the TlsAgent deconstructor. */
+  server_->ExpectReceiveAlert(kTlsAlertCloseNotify, kTlsAlertWarning);
 }
 
 TEST_F(TlsConnectStreamTls13, NoEchFromTls12Client) {
@@ -2411,8 +2420,8 @@ TEST_F(TlsConnectStreamTls13, EchOuterExtensionsInCHOuter) {
                                       ssl_tls13_outer_extensions_xtn,
                                       outer_buf);
 
-  ConnectExpectAlert(server_, kTlsAlertUnsupportedExtension);
-  client_->CheckErrorCode(SSL_ERROR_UNSUPPORTED_EXTENSION_ALERT);
+  ConnectExpectAlert(server_, kTlsAlertIllegalParameter);
+  client_->CheckErrorCode(SSL_ERROR_ILLEGAL_PARAMETER_ALERT);
   server_->CheckErrorCode(SSL_ERROR_RX_MALFORMED_CLIENT_HELLO);
 }
 

@@ -4,31 +4,33 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  clearTimeout: "resource://gre/modules/Timer.jsm",
-  LocationHelper: "resource://gre/modules/LocationHelper.jsm",
-  setTimeout: "resource://gre/modules/Timer.jsm",
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
+XPCOMUtils.defineLazyModuleGetters(lazy, {
+  LocationHelper: "resource://gre/modules/LocationHelper.jsm",
+});
 
 // GeolocationPositionError has no interface object, so we can't use that here.
 const POSITION_UNAVAILABLE = 2;
 
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "gLoggingEnabled",
   "geo.provider.network.logging.enabled",
   false
 );
 
 function LOG(aMsg) {
-  if (gLoggingEnabled) {
+  if (lazy.gLoggingEnabled) {
     dump("*** WIFI GEO: " + aMsg + "\n");
   }
 }
@@ -352,7 +354,16 @@ NetworkGeolocationProvider.prototype = {
     this.started = false;
   },
 
-  setHighAccuracy(enable) {},
+  setHighAccuracy(enable) {
+    // Mochitest wants to check this value
+    if (Services.prefs.getBoolPref("geo.provider.testing")) {
+      Services.obs.notifyObservers(
+        null,
+        "testing-geolocation-high-accuracy",
+        enable
+      );
+    }
+  },
 
   onChange(accessPoints) {
     // we got some wifi data, rearm the timer.
@@ -360,7 +371,7 @@ NetworkGeolocationProvider.prototype = {
 
     let wifiData = null;
     if (accessPoints) {
-      wifiData = LocationHelper.formatWifiAccessPoints(accessPoints);
+      wifiData = lazy.LocationHelper.formatWifiAccessPoints(accessPoints);
     }
     this.sendLocationRequest(wifiData);
   },
@@ -461,7 +472,7 @@ NetworkGeolocationProvider.prototype = {
       );
     } catch (err) {
       LOG("Location request hit error: " + err.name);
-      Cu.reportError(err);
+      console.error(err);
       if (err.name == "AbortError") {
         this.onStatus(true, "xhr-timeout");
       } else {
@@ -485,13 +496,13 @@ NetworkGeolocationProvider.prototype = {
       fetchOpts.body = JSON.stringify({ wifiAccessPoints: wifiData });
     }
 
-    let timeoutId = setTimeout(
+    let timeoutId = lazy.setTimeout(
       () => fetchController.abort(),
       Services.prefs.getIntPref("geo.provider.network.timeout")
     );
 
     let req = await fetch(url, fetchOpts);
-    clearTimeout(timeoutId);
+    lazy.clearTimeout(timeoutId);
     let result = req.json();
     return result;
   },

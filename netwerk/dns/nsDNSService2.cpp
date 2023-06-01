@@ -32,7 +32,7 @@
 #include "nsQueryObject.h"
 #include "nsIObserverService.h"
 #include "nsINetworkLinkService.h"
-#include "DNSResolverInfo.h"
+#include "DNSAdditionalInfo.h"
 #include "TRRService.h"
 
 #include "mozilla/Attributes.h"
@@ -134,6 +134,12 @@ nsDNSRecord::IsTRR(bool* retval) {
   } else {
     *retval = false;
   }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDNSRecord::ResolvedInSocketProcess(bool* retval) {
+  *retval = false;
   return NS_OK;
 }
 
@@ -346,8 +352,14 @@ nsDNSRecord::ReportUnusable(uint16_t aPort) {
 }
 
 NS_IMETHODIMP
-nsDNSRecord::GetEffectiveTRRMode(uint32_t* aMode) {
+nsDNSRecord::GetEffectiveTRRMode(nsIRequest::TRRMode* aMode) {
   *aMode = mHostRecord->EffectiveTRRMode();
+  return NS_OK;
+}
+
+NS_IMETHODIMP nsDNSRecord::GetTrrSkipReason(
+    nsITRRSkipReason::value* aTrrSkipReason) {
+  *aTrrSkipReason = mHostRecord->TrrSkipReason();
   return NS_OK;
 }
 
@@ -445,7 +457,7 @@ class nsDNSAsyncRequest final : public nsResolveHostCallback,
   nsDNSAsyncRequest(nsHostResolver* res, const nsACString& host,
                     const nsACString& trrServer, uint16_t type,
                     const OriginAttributes& attrs, nsIDNSListener* listener,
-                    uint16_t flags, uint16_t af)
+                    nsIDNSService::DNSFlags flags, uint16_t af)
       : mResolver(res),
         mHost(host),
         mTrrServer(trrServer),
@@ -470,7 +482,7 @@ class nsDNSAsyncRequest final : public nsResolveHostCallback,
   const OriginAttributes
       mOriginAttributes;  // The originAttributes for this resolving
   nsCOMPtr<nsIDNSListener> mListener;
-  uint16_t mFlags = 0;
+  nsIDNSService::DNSFlags mFlags = nsIDNSService::RESOLVE_DEFAULT_FLAGS;
   uint16_t mAF = 0;
 
  private:
@@ -486,7 +498,8 @@ void nsDNSAsyncRequest::OnResolveHostComplete(nsHostResolver* resolver,
   // the caller to be able to addref/release multiple times without
   // destroying the record prematurely.
   nsCOMPtr<nsIDNSRecord> rec;
-  if (NS_SUCCEEDED(status)) {
+  if (NS_SUCCEEDED(status) ||
+      mFlags & nsIDNSService::RESOLVE_WANT_RECORD_ON_ERROR) {
     MOZ_ASSERT(hostRecord, "no host record");
     if (hostRecord->type != nsDNSService::RESOLVE_TYPE_DEFAULT) {
       rec = new nsDNSByTypeRecord(hostRecord);
@@ -604,6 +617,54 @@ class NotifyDNSResolution : public Runnable {
 
 //-----------------------------------------------------------------------------
 
+static StaticRefPtr<DNSServiceWrapper> gDNSServiceWrapper;
+
+NS_IMPL_ISUPPORTS(DNSServiceWrapper, nsIDNSService, nsPIDNSService)
+
+// static
+already_AddRefed<nsIDNSService> DNSServiceWrapper::GetSingleton() {
+  if (!gDNSServiceWrapper) {
+    gDNSServiceWrapper = new DNSServiceWrapper();
+    gDNSServiceWrapper->mDNSServiceInUse = ChildDNSService::GetSingleton();
+    if (gDNSServiceWrapper->mDNSServiceInUse) {
+      ClearOnShutdown(&gDNSServiceWrapper);
+      nsDNSPrefetch::Initialize(gDNSServiceWrapper);
+    } else {
+      gDNSServiceWrapper = nullptr;
+    }
+  }
+
+  return do_AddRef(gDNSServiceWrapper);
+}
+
+// static
+void DNSServiceWrapper::SwitchToBackupDNSService() {
+  if (!gDNSServiceWrapper) {
+    return;
+  }
+
+  gDNSServiceWrapper->mBackupDNSService = nsDNSService::GetSingleton();
+
+  MutexAutoLock lock(gDNSServiceWrapper->mLock);
+  gDNSServiceWrapper->mBackupDNSService.swap(
+      gDNSServiceWrapper->mDNSServiceInUse);
+}
+
+nsIDNSService* DNSServiceWrapper::DNSService() {
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  MutexAutoLock lock(mLock);
+  return mDNSServiceInUse.get();
+}
+
+nsPIDNSService* DNSServiceWrapper::PIDNSService() {
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  nsCOMPtr<nsPIDNSService> service = do_QueryInterface(DNSService());
+  return service.get();
+}
+
+//-----------------------------------------------------------------------------
 NS_IMPL_ISUPPORTS_INHERITED(nsDNSService, DNSServiceBase, nsIDNSService,
                             nsPIDNSService, nsIMemoryReporter)
 
@@ -628,9 +689,8 @@ already_AddRefed<nsIDNSService> GetOrInitDNSService() {
       return nullptr;
     }
 
-    SyncRunnable::DispatchToThread(mainThread,
-                                   new SyncRunnable(NS_NewRunnableFunction(
-                                       "GetOrInitDNSService", initTask)));
+    SyncRunnable::DispatchToThread(
+        mainThread, NS_NewRunnableFunction("GetOrInitDNSService", initTask));
   } else {
     initTask();
   }
@@ -645,7 +705,11 @@ already_AddRefed<nsIDNSService> nsDNSService::GetXPCOMSingleton() {
         return GetSingleton();
       }
 
-      if (XRE_IsContentProcess() || XRE_IsParentProcess()) {
+      if (XRE_IsParentProcess()) {
+        return DNSServiceWrapper::GetSingleton();
+      }
+
+      if (XRE_IsContentProcess()) {
         return ChildDNSService::GetSingleton();
       }
 
@@ -918,8 +982,8 @@ nsresult nsDNSService::PreprocessHostname(bool aLocalDomain,
 }
 
 nsresult nsDNSService::AsyncResolveInternal(
-    const nsACString& aHostname, uint16_t type, uint32_t flags,
-    nsIDNSResolverInfo* aResolver, nsIDNSListener* aListener,
+    const nsACString& aHostname, uint16_t type, nsIDNSService::DNSFlags flags,
+    nsIDNSAdditionalInfo* aInfo, nsIDNSListener* aListener,
     nsIEventTarget* target_, const OriginAttributes& aOriginAttributes,
     nsICancelable** result) {
   // grab reference to global host resolver and IDN service.  beware
@@ -975,7 +1039,7 @@ nsresult nsDNSService::AsyncResolveInternal(
   // make sure JS callers get notification on the main thread
   nsCOMPtr<nsIXPConnectWrappedJS> wrappedListener = do_QueryInterface(listener);
   if (wrappedListener && !target) {
-    target = GetMainThreadEventTarget();
+    target = GetMainThreadSerialEventTarget();
   }
 
   if (target) {
@@ -987,21 +1051,22 @@ nsresult nsDNSService::AsyncResolveInternal(
 
   MOZ_ASSERT(listener);
   RefPtr<nsDNSAsyncRequest> req =
-      new nsDNSAsyncRequest(res, hostname, DNSResolverInfo::URL(aResolver),
-                            type, aOriginAttributes, listener, flags, af);
+      new nsDNSAsyncRequest(res, hostname, DNSAdditionalInfo::URL(aInfo), type,
+                            aOriginAttributes, listener, flags, af);
   if (!req) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  rv = res->ResolveHost(req->mHost, DNSResolverInfo::URL(aResolver), type,
+  rv = res->ResolveHost(req->mHost, DNSAdditionalInfo::URL(aInfo),
+                        DNSAdditionalInfo::Port(aInfo), type,
                         req->mOriginAttributes, flags, af, req);
   req.forget(result);
   return rv;
 }
 
 nsresult nsDNSService::CancelAsyncResolveInternal(
-    const nsACString& aHostname, uint16_t aType, uint32_t aFlags,
-    nsIDNSResolverInfo* aResolver, nsIDNSListener* aListener, nsresult aReason,
+    const nsACString& aHostname, uint16_t aType, nsIDNSService::DNSFlags aFlags,
+    nsIDNSAdditionalInfo* aInfo, nsIDNSListener* aListener, nsresult aReason,
     const OriginAttributes& aOriginAttributes) {
   // grab reference to global host resolver and IDN service.  beware
   // simultaneous shutdown!!
@@ -1032,18 +1097,20 @@ nsresult nsDNSService::CancelAsyncResolveInternal(
   uint16_t af =
       (aType != RESOLVE_TYPE_DEFAULT) ? 0 : GetAFForLookup(hostname, aFlags);
 
-  res->CancelAsyncRequest(hostname, DNSResolverInfo::URL(aResolver), aType,
+  res->CancelAsyncRequest(hostname, DNSAdditionalInfo::URL(aInfo), aType,
                           aOriginAttributes, aFlags, af, aListener, aReason);
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsDNSService::AsyncResolve(const nsACString& aHostname,
-                           nsIDNSService::ResolveType aType, uint32_t flags,
-                           nsIDNSResolverInfo* aResolver,
+                           nsIDNSService::ResolveType aType,
+                           nsIDNSService::DNSFlags flags,
+                           nsIDNSAdditionalInfo* aInfo,
                            nsIDNSListener* listener, nsIEventTarget* target_,
-                           JS::HandleValue aOriginAttributes, JSContext* aCx,
-                           uint8_t aArgc, nsICancelable** result) {
+                           JS::Handle<JS::Value> aOriginAttributes,
+                           JSContext* aCx, uint8_t aArgc,
+                           nsICancelable** result) {
   OriginAttributes attrs;
 
   if (aArgc == 1) {
@@ -1052,36 +1119,35 @@ nsDNSService::AsyncResolve(const nsACString& aHostname,
     }
   }
 
-  return AsyncResolveInternal(aHostname, aType, flags, aResolver, listener,
-                              target_, attrs, result);
+  return AsyncResolveInternal(aHostname, aType, flags, aInfo, listener, target_,
+                              attrs, result);
 }
 
 NS_IMETHODIMP
-nsDNSService::AsyncResolveNative(const nsACString& aHostname,
-                                 nsIDNSService::ResolveType aType,
-                                 uint32_t flags, nsIDNSResolverInfo* aResolver,
-                                 nsIDNSListener* aListener,
-                                 nsIEventTarget* target_,
-                                 const OriginAttributes& aOriginAttributes,
-                                 nsICancelable** result) {
-  return AsyncResolveInternal(aHostname, aType, flags, aResolver, aListener,
+nsDNSService::AsyncResolveNative(
+    const nsACString& aHostname, nsIDNSService::ResolveType aType,
+    nsIDNSService::DNSFlags flags, nsIDNSAdditionalInfo* aInfo,
+    nsIDNSListener* aListener, nsIEventTarget* target_,
+    const OriginAttributes& aOriginAttributes, nsICancelable** result) {
+  return AsyncResolveInternal(aHostname, aType, flags, aInfo, aListener,
                               target_, aOriginAttributes, result);
 }
 
 NS_IMETHODIMP
-nsDNSService::NewTRRResolverInfo(const nsACString& aTrrURL,
-                                 nsIDNSResolverInfo** aResolver) {
-  RefPtr<DNSResolverInfo> res = new DNSResolverInfo(aTrrURL);
-  res.forget(aResolver);
+nsDNSService::NewAdditionalInfo(const nsACString& aTrrURL, int32_t aPort,
+                                nsIDNSAdditionalInfo** aInfo) {
+  RefPtr<DNSAdditionalInfo> res = new DNSAdditionalInfo(aTrrURL, aPort);
+  res.forget(aInfo);
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsDNSService::CancelAsyncResolve(const nsACString& aHostname,
                                  nsIDNSService::ResolveType aType,
-                                 uint32_t aFlags, nsIDNSResolverInfo* aResolver,
+                                 nsIDNSService::DNSFlags aFlags,
+                                 nsIDNSAdditionalInfo* aInfo,
                                  nsIDNSListener* aListener, nsresult aReason,
-                                 JS::HandleValue aOriginAttributes,
+                                 JS::Handle<JS::Value> aOriginAttributes,
                                  JSContext* aCx, uint8_t aArgc) {
   OriginAttributes attrs;
 
@@ -1091,22 +1157,24 @@ nsDNSService::CancelAsyncResolve(const nsACString& aHostname,
     }
   }
 
-  return CancelAsyncResolveInternal(aHostname, aType, aFlags, aResolver,
-                                    aListener, aReason, attrs);
+  return CancelAsyncResolveInternal(aHostname, aType, aFlags, aInfo, aListener,
+                                    aReason, attrs);
 }
 
 NS_IMETHODIMP
 nsDNSService::CancelAsyncResolveNative(
     const nsACString& aHostname, nsIDNSService::ResolveType aType,
-    uint32_t aFlags, nsIDNSResolverInfo* aResolver, nsIDNSListener* aListener,
-    nsresult aReason, const OriginAttributes& aOriginAttributes) {
-  return CancelAsyncResolveInternal(aHostname, aType, aFlags, aResolver,
-                                    aListener, aReason, aOriginAttributes);
+    nsIDNSService::DNSFlags aFlags, nsIDNSAdditionalInfo* aInfo,
+    nsIDNSListener* aListener, nsresult aReason,
+    const OriginAttributes& aOriginAttributes) {
+  return CancelAsyncResolveInternal(aHostname, aType, aFlags, aInfo, aListener,
+                                    aReason, aOriginAttributes);
 }
 
 NS_IMETHODIMP
-nsDNSService::Resolve(const nsACString& aHostname, uint32_t flags,
-                      JS::HandleValue aOriginAttributes, JSContext* aCx,
+nsDNSService::Resolve(const nsACString& aHostname,
+                      nsIDNSService::DNSFlags flags,
+                      JS::Handle<JS::Value> aOriginAttributes, JSContext* aCx,
                       uint8_t aArgc, nsIDNSRecord** result) {
   OriginAttributes attrs;
 
@@ -1120,7 +1188,8 @@ nsDNSService::Resolve(const nsACString& aHostname, uint32_t flags,
 }
 
 NS_IMETHODIMP
-nsDNSService::ResolveNative(const nsACString& aHostname, uint32_t flags,
+nsDNSService::ResolveNative(const nsACString& aHostname,
+                            nsIDNSService::DNSFlags flags,
                             const OriginAttributes& aOriginAttributes,
                             nsIDNSRecord** result) {
   // Synchronous resolution is not available on the main thread.
@@ -1132,13 +1201,13 @@ nsDNSService::ResolveNative(const nsACString& aHostname, uint32_t flags,
 }
 
 nsresult nsDNSService::DeprecatedSyncResolve(
-    const nsACString& aHostname, uint32_t flags,
+    const nsACString& aHostname, nsIDNSService::DNSFlags flags,
     const OriginAttributes& aOriginAttributes, nsIDNSRecord** result) {
   return ResolveInternal(aHostname, flags, aOriginAttributes, result);
 }
 
 nsresult nsDNSService::ResolveInternal(
-    const nsACString& aHostname, uint32_t flags,
+    const nsACString& aHostname, nsIDNSService::DNSFlags flags,
     const OriginAttributes& aOriginAttributes, nsIDNSRecord** result) {
   // grab reference to global host resolver and IDN service.  beware
   // simultaneous shutdown!!
@@ -1199,7 +1268,7 @@ nsresult nsDNSService::ResolveInternal(
     flags |= RESOLVE_DISABLE_TRR;
   }
 
-  rv = res->ResolveHost(hostname, ""_ns, RESOLVE_TYPE_DEFAULT,
+  rv = res->ResolveHost(hostname, ""_ns, -1, RESOLVE_TYPE_DEFAULT,
                         aOriginAttributes, flags, af, syncReq);
   if (NS_SUCCEEDED(rv)) {
     // wait for result
@@ -1273,7 +1342,8 @@ nsDNSService::Observe(nsISupports* subject, const char* topic,
   return NS_OK;
 }
 
-uint16_t nsDNSService::GetAFForLookup(const nsACString& host, uint32_t flags) {
+uint16_t nsDNSService::GetAFForLookup(const nsACString& host,
+                                      nsIDNSService::DNSFlags flags) {
   if (mDisableIPv6 || (flags & RESOLVE_DISABLE_IPV6)) {
     return PR_AF_INET;
   }
@@ -1368,11 +1438,41 @@ nsDNSService::SetDetectedTrrURI(const nsACString& aURI) {
 }
 
 NS_IMETHODIMP
+nsDNSService::SetHeuristicDetectionResult(nsITRRSkipReason::value aValue) {
+  if (mTrrService) {
+    mTrrService->SetHeuristicDetectionResult(aValue);
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDNSService::GetHeuristicDetectionResult(nsITRRSkipReason::value* aValue) {
+  if (!mTrrService) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  *aValue = mTrrService->GetHeuristicDetectionResult();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDNSService::GetTRRSkipReasonName(nsITRRSkipReason::value aValue,
+                                   nsACString& aName) {
+  return mozilla::net::GetTRRSkipReasonName(aValue, aName);
+}
+
+NS_IMETHODIMP
 nsDNSService::GetCurrentTrrURI(nsACString& aURI) {
   if (mTrrService) {
     mTrrService->GetURI(aURI);
   }
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDNSService::SetTRRModeInChild(nsIDNSService::ResolverMode mode) {
+  MOZ_ASSERT(false, "Why are we calling this?");
+  return NS_ERROR_NOT_AVAILABLE;
 }
 
 NS_IMETHODIMP
@@ -1391,6 +1491,20 @@ nsDNSService::GetCurrentTrrConfirmationState(uint32_t* aConfirmationState) {
     *aConfirmationState = mTrrService->ConfirmationState();
   }
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDNSService::GetTrrDomain(nsACString& aTRRDomain) {
+  nsAutoCString url;
+  if (mTrrService) {
+    mTrrService->GetURI(url);
+  }
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = NS_NewURI(getter_AddRefs(uri), url);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+  return uri->GetHost(aTRRDomain);
 }
 
 size_t nsDNSService::SizeOfIncludingThis(
@@ -1459,3 +1573,212 @@ nsDNSService::ResetExcludedSVCDomainName(const nsACString& aOwnerName) {
   mFailedSVCDomainNames.Remove(aOwnerName);
   return NS_OK;
 }
+
+namespace mozilla::net {
+nsresult GetTRRSkipReasonName(TRRSkippedReason aReason, nsACString& aName) {
+  static_assert(TRRSkippedReason::TRR_UNSET == 0);
+  static_assert(TRRSkippedReason::TRR_OK == 1);
+  static_assert(TRRSkippedReason::TRR_NO_GSERVICE == 2);
+  static_assert(TRRSkippedReason::TRR_PARENTAL_CONTROL == 3);
+  static_assert(TRRSkippedReason::TRR_OFF_EXPLICIT == 4);
+  static_assert(TRRSkippedReason::TRR_REQ_MODE_DISABLED == 5);
+  static_assert(TRRSkippedReason::TRR_MODE_NOT_ENABLED == 6);
+  static_assert(TRRSkippedReason::TRR_FAILED == 7);
+  static_assert(TRRSkippedReason::TRR_MODE_UNHANDLED_DEFAULT == 8);
+  static_assert(TRRSkippedReason::TRR_MODE_UNHANDLED_DISABLED == 9);
+  static_assert(TRRSkippedReason::TRR_DISABLED_FLAG == 10);
+  static_assert(TRRSkippedReason::TRR_TIMEOUT == 11);
+  static_assert(TRRSkippedReason::TRR_CHANNEL_DNS_FAIL == 12);
+  static_assert(TRRSkippedReason::TRR_IS_OFFLINE == 13);
+  static_assert(TRRSkippedReason::TRR_NOT_CONFIRMED == 14);
+  static_assert(TRRSkippedReason::TRR_DID_NOT_MAKE_QUERY == 15);
+  static_assert(TRRSkippedReason::TRR_UNKNOWN_CHANNEL_FAILURE == 16);
+  static_assert(TRRSkippedReason::TRR_HOST_BLOCKED_TEMPORARY == 17);
+  static_assert(TRRSkippedReason::TRR_SEND_FAILED == 18);
+  static_assert(TRRSkippedReason::TRR_NET_RESET == 19);
+  static_assert(TRRSkippedReason::TRR_NET_TIMEOUT == 20);
+  static_assert(TRRSkippedReason::TRR_NET_REFUSED == 21);
+  static_assert(TRRSkippedReason::TRR_NET_INTERRUPT == 22);
+  static_assert(TRRSkippedReason::TRR_NET_INADEQ_SEQURITY == 23);
+  static_assert(TRRSkippedReason::TRR_NO_ANSWERS == 24);
+  static_assert(TRRSkippedReason::TRR_DECODE_FAILED == 25);
+  static_assert(TRRSkippedReason::TRR_EXCLUDED == 26);
+  static_assert(TRRSkippedReason::TRR_SERVER_RESPONSE_ERR == 27);
+  static_assert(TRRSkippedReason::TRR_RCODE_FAIL == 28);
+  static_assert(TRRSkippedReason::TRR_NO_CONNECTIVITY == 29);
+  static_assert(TRRSkippedReason::TRR_NXDOMAIN == 30);
+  static_assert(TRRSkippedReason::TRR_REQ_CANCELLED == 31);
+  static_assert(TRRSkippedReason::ODOH_KEY_NOT_USABLE == 32);
+  static_assert(TRRSkippedReason::ODOH_UPDATE_KEY_FAILED == 33);
+  static_assert(TRRSkippedReason::ODOH_KEY_NOT_AVAILABLE == 34);
+  static_assert(TRRSkippedReason::ODOH_ENCRYPTION_FAILED == 35);
+  static_assert(TRRSkippedReason::ODOH_DECRYPTION_FAILED == 36);
+  static_assert(TRRSkippedReason::TRR_HEURISTIC_TRIPPED_GOOGLE_SAFESEARCH ==
+                37);
+  static_assert(TRRSkippedReason::TRR_HEURISTIC_TRIPPED_YOUTUBE_SAFESEARCH ==
+                38);
+  static_assert(TRRSkippedReason::TRR_HEURISTIC_TRIPPED_ZSCALER_CANARY == 39);
+  static_assert(TRRSkippedReason::TRR_HEURISTIC_TRIPPED_CANARY == 40);
+  static_assert(TRRSkippedReason::TRR_HEURISTIC_TRIPPED_MODIFIED_ROOTS == 41);
+  static_assert(TRRSkippedReason::TRR_HEURISTIC_TRIPPED_PARENTAL_CONTROLS ==
+                42);
+  static_assert(TRRSkippedReason::TRR_HEURISTIC_TRIPPED_THIRD_PARTY_ROOTS ==
+                43);
+  static_assert(TRRSkippedReason::TRR_HEURISTIC_TRIPPED_ENTERPRISE_POLICY ==
+                44);
+  static_assert(TRRSkippedReason::TRR_HEURISTIC_TRIPPED_VPN == 45);
+  static_assert(TRRSkippedReason::TRR_HEURISTIC_TRIPPED_PROXY == 46);
+  static_assert(TRRSkippedReason::TRR_HEURISTIC_TRIPPED_NRPT == 47);
+
+  switch (aReason) {
+    case TRRSkippedReason::TRR_UNSET:
+      aName = "TRR_UNSET"_ns;
+      break;
+    case TRRSkippedReason::TRR_OK:
+      aName = "TRR_OK"_ns;
+      break;
+    case TRRSkippedReason::TRR_NO_GSERVICE:
+      aName = "TRR_NO_GSERVICE"_ns;
+      break;
+    case TRRSkippedReason::TRR_PARENTAL_CONTROL:
+      aName = "TRR_PARENTAL_CONTROL"_ns;
+      break;
+    case TRRSkippedReason::TRR_OFF_EXPLICIT:
+      aName = "TRR_OFF_EXPLICIT"_ns;
+      break;
+    case TRRSkippedReason::TRR_REQ_MODE_DISABLED:
+      aName = "TRR_REQ_MODE_DISABLED"_ns;
+      break;
+    case TRRSkippedReason::TRR_MODE_NOT_ENABLED:
+      aName = "TRR_MODE_NOT_ENABLED"_ns;
+      break;
+    case TRRSkippedReason::TRR_FAILED:
+      aName = "TRR_FAILED"_ns;
+      break;
+    case TRRSkippedReason::TRR_MODE_UNHANDLED_DEFAULT:
+      aName = "TRR_MODE_UNHANDLED_DEFAULT"_ns;
+      break;
+    case TRRSkippedReason::TRR_MODE_UNHANDLED_DISABLED:
+      aName = "TRR_MODE_UNHANDLED_DISABLED"_ns;
+      break;
+    case TRRSkippedReason::TRR_DISABLED_FLAG:
+      aName = "TRR_DISABLED_FLAG"_ns;
+      break;
+    case TRRSkippedReason::TRR_TIMEOUT:
+      aName = "TRR_TIMEOUT"_ns;
+      break;
+    case TRRSkippedReason::TRR_CHANNEL_DNS_FAIL:
+      aName = "TRR_CHANNEL_DNS_FAIL"_ns;
+      break;
+    case TRRSkippedReason::TRR_IS_OFFLINE:
+      aName = "TRR_IS_OFFLINE"_ns;
+      break;
+    case TRRSkippedReason::TRR_NOT_CONFIRMED:
+      aName = "TRR_NOT_CONFIRMED"_ns;
+      break;
+    case TRRSkippedReason::TRR_DID_NOT_MAKE_QUERY:
+      aName = "TRR_DID_NOT_MAKE_QUERY"_ns;
+      break;
+    case TRRSkippedReason::TRR_UNKNOWN_CHANNEL_FAILURE:
+      aName = "TRR_UNKNOWN_CHANNEL_FAILURE"_ns;
+      break;
+    case TRRSkippedReason::TRR_HOST_BLOCKED_TEMPORARY:
+      aName = "TRR_HOST_BLOCKED_TEMPORARY"_ns;
+      break;
+    case TRRSkippedReason::TRR_SEND_FAILED:
+      aName = "TRR_SEND_FAILED"_ns;
+      break;
+    case TRRSkippedReason::TRR_NET_RESET:
+      aName = "TRR_NET_RESET"_ns;
+      break;
+    case TRRSkippedReason::TRR_NET_TIMEOUT:
+      aName = "TRR_NET_TIMEOUT"_ns;
+      break;
+    case TRRSkippedReason::TRR_NET_REFUSED:
+      aName = "TRR_NET_REFUSED"_ns;
+      break;
+    case TRRSkippedReason::TRR_NET_INTERRUPT:
+      aName = "TRR_NET_INTERRUPT"_ns;
+      break;
+    case TRRSkippedReason::TRR_NET_INADEQ_SEQURITY:
+      aName = "TRR_NET_INADEQ_SEQURITY"_ns;
+      break;
+    case TRRSkippedReason::TRR_NO_ANSWERS:
+      aName = "TRR_NO_ANSWERS"_ns;
+      break;
+    case TRRSkippedReason::TRR_DECODE_FAILED:
+      aName = "TRR_DECODE_FAILED"_ns;
+      break;
+    case TRRSkippedReason::TRR_EXCLUDED:
+      aName = "TRR_EXCLUDED"_ns;
+      break;
+    case TRRSkippedReason::TRR_SERVER_RESPONSE_ERR:
+      aName = "TRR_SERVER_RESPONSE_ERR"_ns;
+      break;
+    case TRRSkippedReason::TRR_RCODE_FAIL:
+      aName = "TRR_RCODE_FAIL"_ns;
+      break;
+    case TRRSkippedReason::TRR_NO_CONNECTIVITY:
+      aName = "TRR_NO_CONNECTIVITY"_ns;
+      break;
+    case TRRSkippedReason::TRR_NXDOMAIN:
+      aName = "TRR_NXDOMAIN"_ns;
+      break;
+    case TRRSkippedReason::TRR_REQ_CANCELLED:
+      aName = "TRR_REQ_CANCELLED"_ns;
+      break;
+    case TRRSkippedReason::ODOH_KEY_NOT_USABLE:
+      aName = "ODOH_KEY_NOT_USABLE"_ns;
+      break;
+    case TRRSkippedReason::ODOH_UPDATE_KEY_FAILED:
+      aName = "ODOH_UPDATE_KEY_FAILED"_ns;
+      break;
+    case TRRSkippedReason::ODOH_KEY_NOT_AVAILABLE:
+      aName = "ODOH_KEY_NOT_AVAILABLE"_ns;
+      break;
+    case TRRSkippedReason::ODOH_ENCRYPTION_FAILED:
+      aName = "ODOH_ENCRYPTION_FAILED"_ns;
+      break;
+    case TRRSkippedReason::ODOH_DECRYPTION_FAILED:
+      aName = "ODOH_DECRYPTION_FAILED"_ns;
+      break;
+    case TRRSkippedReason::TRR_HEURISTIC_TRIPPED_GOOGLE_SAFESEARCH:
+      aName = "TRR_HEURISTIC_TRIPPED_GOOGLE_SAFESEARCH"_ns;
+      break;
+    case TRRSkippedReason::TRR_HEURISTIC_TRIPPED_YOUTUBE_SAFESEARCH:
+      aName = "TRR_HEURISTIC_TRIPPED_YOUTUBE_SAFESEARCH"_ns;
+      break;
+    case TRRSkippedReason::TRR_HEURISTIC_TRIPPED_ZSCALER_CANARY:
+      aName = "TRR_HEURISTIC_TRIPPED_ZSCALER_CANARY"_ns;
+      break;
+    case TRRSkippedReason::TRR_HEURISTIC_TRIPPED_CANARY:
+      aName = "TRR_HEURISTIC_TRIPPED_CANARY"_ns;
+      break;
+    case TRRSkippedReason::TRR_HEURISTIC_TRIPPED_MODIFIED_ROOTS:
+      aName = "TRR_HEURISTIC_TRIPPED_MODIFIED_ROOTS"_ns;
+      break;
+    case TRRSkippedReason::TRR_HEURISTIC_TRIPPED_PARENTAL_CONTROLS:
+      aName = "TRR_HEURISTIC_TRIPPED_PARENTAL_CONTROLS"_ns;
+      break;
+    case TRRSkippedReason::TRR_HEURISTIC_TRIPPED_THIRD_PARTY_ROOTS:
+      aName = "TRR_HEURISTIC_TRIPPED_THIRD_PARTY_ROOTS"_ns;
+      break;
+    case TRRSkippedReason::TRR_HEURISTIC_TRIPPED_ENTERPRISE_POLICY:
+      aName = "TRR_HEURISTIC_TRIPPED_ENTERPRISE_POLICY"_ns;
+      break;
+    case TRRSkippedReason::TRR_HEURISTIC_TRIPPED_VPN:
+      aName = "TRR_HEURISTIC_TRIPPED_VPN"_ns;
+      break;
+    case TRRSkippedReason::TRR_HEURISTIC_TRIPPED_PROXY:
+      aName = "TRR_HEURISTIC_TRIPPED_PROXY"_ns;
+      break;
+    case TRRSkippedReason::TRR_HEURISTIC_TRIPPED_NRPT:
+      aName = "TRR_HEURISTIC_TRIPPED_NRPT"_ns;
+      break;
+    default:
+      MOZ_ASSERT(false, "Unknown value");
+  }
+
+  return NS_OK;
+}
+}  // namespace mozilla::net

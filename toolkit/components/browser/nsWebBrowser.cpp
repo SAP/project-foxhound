@@ -26,7 +26,6 @@
 #include "nsIURI.h"
 #include "nsIWebBrowserPersist.h"
 #include "nsFocusManager.h"
-#include "Layers.h"
 #include "nsILoadContext.h"
 #include "nsComponentManagerUtils.h"
 #include "nsDocShell.h"
@@ -84,9 +83,9 @@ nsIWidget* nsWebBrowser::EnsureWidget() {
     return nullptr;
   }
 
-  nsWidgetInitData widgetInit;
-  widgetInit.clipChildren = true;
-  widgetInit.mWindowType = eWindowType_child;
+  widget::InitData widgetInit;
+  widgetInit.mClipChildren = true;
+  widgetInit.mWindowType = widget::WindowType::Child;
   LayoutDeviceIntRect bounds(0, 0, 0, 0);
 
   mInternalWidget->SetWidgetListener(&mWidgetListenerDelegate);
@@ -810,6 +809,8 @@ nsWebBrowser::SaveDocument(nsISupports* aDocumentish, nsISupports* aFile,
   nsresult rv;
   mPersist = do_CreateInstance(NS_WEBBROWSERPERSIST_CONTRACTID, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
+  RefPtr<nsIWebBrowserPersist> localPersist(mPersist);
+  Unused << localPersist;
   mPersist->SetProgressListener(this);
   mPersist->SetPersistFlags(mPersistFlags);
   mPersist->GetCurrentState(&mPersistCurrentState);
@@ -858,10 +859,8 @@ nsWebBrowser::Destroy() {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsWebBrowser::GetUnscaledDevicePixelsPerCSSPixel(double* aScale) {
-  *aScale = mParentWidget ? mParentWidget->GetDefaultScale().scale : 1.0;
-  return NS_OK;
+double nsWebBrowser::GetWidgetCSSToDeviceScale() {
+  return mParentWidget ? mParentWidget->GetDefaultScale().scale : 1.0;
 }
 
 NS_IMETHODIMP
@@ -957,12 +956,22 @@ nsWebBrowser::GetPositionAndSize(int32_t* aX, int32_t* aY, int32_t* aCX,
       *aCY = bounds.Height();
     }
     return NS_OK;
-  } else {
-    // Can directly return this as it is the
-    // same interface, thus same returns.
-    return mDocShell->GetPositionAndSize(aX, aY, aCX, aCY);
   }
-  return NS_OK;
+
+  // Can directly return this as it is the
+  // same interface, thus same returns.
+  return mDocShell->GetPositionAndSize(aX, aY, aCX, aCY);
+}
+
+NS_IMETHODIMP
+nsWebBrowser::SetDimensions(DimensionRequest&& aRequest) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+nsWebBrowser::GetDimensions(DimensionKind aDimensionKind, int32_t* aX,
+                            int32_t* aY, int32_t* aCX, int32_t* aCY) {
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
@@ -1176,18 +1185,18 @@ bool nsWebBrowser::PaintWindow(nsIWidget* aWidget,
 }
 
 void nsWebBrowser::FocusActivate(uint64_t aActionId) {
-  nsFocusManager* fm = nsFocusManager::GetFocusManager();
-  nsCOMPtr<nsPIDOMWindowOuter> window = GetWindow();
-  if (fm && window) {
-    fm->WindowRaised(window, aActionId);
+  if (RefPtr<nsFocusManager> fm = nsFocusManager::GetFocusManager()) {
+    if (nsCOMPtr<nsPIDOMWindowOuter> window = GetWindow()) {
+      fm->WindowRaised(window, aActionId);
+    }
   }
 }
 
 void nsWebBrowser::FocusDeactivate(uint64_t aActionId) {
-  nsFocusManager* fm = nsFocusManager::GetFocusManager();
-  nsCOMPtr<nsPIDOMWindowOuter> window = GetWindow();
-  if (fm && window) {
-    fm->WindowLowered(window, aActionId);
+  if (RefPtr<nsFocusManager> fm = nsFocusManager::GetFocusManager()) {
+    if (nsCOMPtr<nsPIDOMWindowOuter> window = GetWindow()) {
+      fm->WindowLowered(window, aActionId);
+    }
   }
 }
 

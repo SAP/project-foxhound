@@ -180,6 +180,16 @@ Object.assign(SyncedTabsListStore.prototype, EventEmitter.prototype, {
     this._selectedRow = [parentRow, childRow];
     this.inputFocused = false;
     this._change("all");
+    // Record the telemetry event
+    let extraOptions = {
+      tab_pos: this._selectedRow[1].toString(),
+      filter: this.filter,
+    };
+    this._SyncedTabs.recordSyncedTabsTelemetry(
+      "synced_tabs_sidebar",
+      "click",
+      extraOptions
+    );
   },
 
   _tabCount() {
@@ -244,6 +254,6 @@ Object.assign(SyncedTabsListStore.prototype, EventEmitter.prototype, {
         this.data = result;
         this._change(updateType);
       })
-      .catch(Cu.reportError);
+      .catch(console.error);
   },
 });

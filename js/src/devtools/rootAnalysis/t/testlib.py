@@ -3,9 +3,9 @@ import os
 import re
 import subprocess
 import sys
+from collections import defaultdict, namedtuple
 
 from sixgill import Body
-from collections import defaultdict, namedtuple
 
 scriptdir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
@@ -103,7 +103,6 @@ sixgill_bin = '{bindir}'
         if upto:
             cmd += ["--last", upto]
         cmd.append("--source=%s" % self.indir)
-        cmd.append("--objdir=%s" % self.outdir)
         cmd.append("--js=%s" % self.cfg.js)
         if self.cfg.verbose:
             cmd.append("--verbose")

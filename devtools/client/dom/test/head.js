@@ -1,7 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 /* eslint no-unused-vars: [2, {"vars": "local", "args": "none"}] */
-/* import-globals-from ../../shared/test/shared-head.js */
 
 "use strict";
 
@@ -12,7 +11,7 @@ Services.scriptloader.loadSubScript(
 );
 
 // DOM panel actions.
-const constants = require("devtools/client/dom/content/constants");
+const constants = require("resource://devtools/client/dom/content/constants.js");
 
 // Uncomment this pref to dump all devtools emitted events to the console.
 // Services.prefs.setBoolPref("devtools.dom.enabled", true);
@@ -46,7 +45,7 @@ async function addTestTab(url) {
   // initialization. So this might be racy.
   const doc = panel.panelWin.document;
   const nodes = [...doc.querySelectorAll(".treeLabel")];
-  ok(nodes.length > 0, "The DOM panel is already populated");
+  ok(!!nodes.length, "The DOM panel is already populated");
 
   return {
     tab,

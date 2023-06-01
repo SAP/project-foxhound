@@ -93,6 +93,7 @@ MOZSEARCH_ARCHIVE_BASENAME = $(PKG_BASENAME).mozsearch-index
 MOZSEARCH_RUST_ANALYSIS_BASENAME = $(PKG_BASENAME).mozsearch-rust
 MOZSEARCH_RUST_STDLIB_BASENAME = $(PKG_BASENAME).mozsearch-rust-stdlib
 MOZSEARCH_INCLUDEMAP_BASENAME = $(PKG_BASENAME).mozsearch-distinclude
+MOZSEARCH_SCIP_INDEX_BASENAME = $(PKG_BASENAME).mozsearch-scip-index
 
 # Mozharness naming
 MOZHARNESS_PACKAGE = mozharness.zip
@@ -111,6 +112,9 @@ GTEST_PACKAGE = $(PKG_BASENAME).gtest.tests.tar.gz
 # macOS codesigning package naming
 MACOS_CODESIGN_ARCHIVE_BASENAME = $(PKG_BASENAME).codesign-entitlements
 
+# `.xpt` artifacts: for use in artifact builds.
+XPT_ARTIFACTS_ARCHIVE_BASENAME = $(PKG_BASENAME).xpt_artifacts
+
 ifneq (,$(wildcard $(DIST)/bin/application.ini))
 BUILDID = $(shell $(PYTHON3) $(MOZILLA_DIR)/config/printconfigsetting.py $(DIST)/bin/application.ini App BuildID)
 else
@@ -120,7 +124,6 @@ endif
 MOZ_SOURCESTAMP_FILE = $(DIST)/$(PKG_PATH)/$(MOZ_INFO_BASENAME).txt
 MOZ_BUILDINFO_FILE = $(DIST)/$(PKG_PATH)/$(MOZ_INFO_BASENAME).json
 MOZ_BUILDHUB_JSON = $(DIST)/$(PKG_PATH)/buildhub.json
-MOZ_NORMANDY_JSON = $(DIST)/$(PKG_PATH)/$(PKG_BASENAME).normandy.json
 MOZ_BUILDID_INFO_TXT_FILE = $(DIST)/$(PKG_PATH)/$(MOZ_INFO_BASENAME)_info.txt
 MOZ_MOZINFO_FILE = $(DIST)/$(PKG_PATH)/$(MOZ_INFO_BASENAME).mozinfo.json
 MOZ_TEST_PACKAGES_FILE = $(DIST)/$(PKG_PATH)/$(PKG_BASENAME).test_packages.json

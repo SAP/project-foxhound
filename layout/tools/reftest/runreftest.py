@@ -5,10 +5,6 @@
 """
 Runs the reftest test harness.
 """
-from __future__ import print_function
-
-from __future__ import absolute_import, print_function
-
 import json
 import multiprocessing
 import os
@@ -37,9 +33,10 @@ import mozlog
 import mozprocess
 import mozprofile
 import mozrunner
-from manifestparser import TestManifest, filters as mpf
+from manifestparser import TestManifest
+from manifestparser import filters as mpf
 from mozrunner.utils import get_stack_fixer_function, test_environment
-from mozscreenshot import printstatus, dump_screen
+from mozscreenshot import dump_screen, printstatus
 from six import reraise, string_types
 from six.moves import range
 
@@ -57,8 +54,8 @@ except ImportError as e:  # noqa
 
     Marionette = reraise_
 
-from output import OutputHandler, ReftestFormatter
 import reftestcommandline
+from output import OutputHandler, ReftestFormatter
 
 here = os.path.abspath(os.path.dirname(__file__))
 
@@ -455,7 +452,6 @@ class RefTest(object):
         # Run the "deferred" font-loader immediately, because if it finishes
         # mid-test, the extra reflow that is triggered can disrupt the test.
         prefs["gfx.font_loader.delay"] = 0
-        prefs["gfx.font_loader.interval"] = 0
         # Ensure bundled fonts are activated, even if not enabled by default
         # on the platform, so that tests can rely on them.
         prefs["gfx.bundled-fonts.activate"] = 1
@@ -475,15 +471,14 @@ class RefTest(object):
         elif manifests:
             prefs["reftest.manifests"] = json.dumps(manifests)
 
-        # Unconditionally update the e10s pref.
-        if options.e10s:
-            prefs["browser.tabs.remote.autostart"] = True
-        else:
+        # Unconditionally update the e10s pref, default True
+        prefs["browser.tabs.remote.autostart"] = True
+        if not options.e10s:
             prefs["browser.tabs.remote.autostart"] = False
 
-        if options.fission:
-            prefs["fission.autostart"] = True
-        else:
+        # default fission to True
+        prefs["fission.autostart"] = True
+        if options.disableFission:
             prefs["fission.autostart"] = False
 
         if not self.run_by_manifest:

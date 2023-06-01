@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/XMLDocument.h"
-#include "nsParserCIID.h"
 #include "nsCharsetSource.h"
 #include "nsIXMLContentSink.h"
 #include "nsPresContext.h"
@@ -32,6 +31,7 @@
 #include "nsIConsoleService.h"
 #include "nsIScriptError.h"
 #include "nsHTMLDocument.h"
+#include "nsParser.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/Encoding.h"
@@ -192,8 +192,7 @@ nsresult NS_NewXMLDocument(Document** aInstancePtrResult, bool aLoadedAsData,
   return NS_OK;
 }
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 XMLDocument::XMLDocument(const char* aContentType)
     : Document(aContentType),
@@ -220,7 +219,8 @@ void XMLDocument::ResetToURI(nsIURI* aURI, nsILoadGroup* aLoadGroup,
                              nsIPrincipal* aPartitionedPrincipal) {
   if (mChannelIsPending) {
     StopDocumentLoad();
-    mChannel->Cancel(NS_BINDING_ABORTED);
+    mChannel->CancelWithReason(NS_BINDING_ABORTED,
+                               "XMLDocument::ResetToURI"_ns);
     mChannelIsPending = false;
   }
 
@@ -258,10 +258,7 @@ nsresult XMLDocument::StartDocumentLoad(
   rv = aChannel->GetURI(getter_AddRefs(aUrl));
   if (NS_FAILED(rv)) return rv;
 
-  static NS_DEFINE_CID(kCParserCID, NS_PARSER_CID);
-
-  mParser = do_CreateInstance(kCParserCID, &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
+  mParser = new nsParser();
 
   nsCOMPtr<nsIXMLContentSink> sink;
 
@@ -285,7 +282,7 @@ nsresult XMLDocument::StartDocumentLoad(
   mParser->SetDocumentCharset(encoding, charsetSource);
   mParser->SetCommand(aCommand);
   mParser->SetContentSink(sink);
-  mParser->Parse(aUrl, this);
+  mParser->Parse(aUrl);
 
   return NS_OK;
 }
@@ -338,5 +335,4 @@ JSObject* XMLDocument::WrapNode(JSContext* aCx,
   return XMLDocument_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

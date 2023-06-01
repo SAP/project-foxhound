@@ -4,7 +4,7 @@
 
 "use strict";
 
-const protocol = require("devtools/shared/protocol");
+const protocol = require("resource://devtools/shared/protocol.js");
 
 const helloSpec = protocol.generateActorSpec({
   typeName: "helloActor",
@@ -15,5 +15,5 @@ const helloSpec = protocol.generateActorSpec({
 });
 
 var HelloActor = protocol.ActorClassWithSpec(helloSpec, {
-  hello: function() {},
+  hello() {},
 });

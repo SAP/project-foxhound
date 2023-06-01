@@ -263,9 +263,6 @@ async function testFileAccessMacOnly() {
   // the $TMPDIR to derive the path to the registry.
   let fontRegistryDir = macTempDir.parent.clone();
   fontRegistryDir.appendRelativePath("C/com.apple.FontRegistry");
-
-  // Assume the font registry directory has been created by the system.
-  Assert.ok(fontRegistryDir.exists(), `${fontRegistryDir.path} exists`);
   if (fontRegistryDir.exists()) {
     tests.push({
       desc: `FontRegistry (${fontRegistryDir.path})`,
@@ -279,8 +276,6 @@ async function testFileAccessMacOnly() {
     // exists in the the font registry directory.
     let fontFile = fontRegistryDir.clone();
     fontFile.appendRelativePath("font");
-    // Assume the `font` file has been created by the system.
-    Assert.ok(fontFile.exists(), `${fontFile.path} exists`);
     if (fontFile.exists()) {
       tests.push({
         desc: `FontRegistry file (${fontFile.path})`,
@@ -410,21 +405,9 @@ async function testFileAccessLinuxOnly() {
   // allows to handle both $HOME/.config/ or $XDG_CONFIG_HOME
   let configDir = GetHomeSubdir(".config");
 
-  const xdgConfigHome = GetEnvironmentVariable("XDG_CONFIG_HOME");
-  let populateFakeXdgConfigHome = async aPath => {
-    const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-    await OS.File.makeDir(aPath, { unixMode: OS.Constants.S_IRWXU });
-    ok(await OS.File.exists(aPath), `XDG_CONFIG_HOME ${aPath} was created`);
-  };
-
-  let unpopulateFakeXdgConfigHome = async aPath => {
-    const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-    await OS.File.removeDir(aPath);
-  };
+  const xdgConfigHome = Services.env.get("XDG_CONFIG_HOME");
 
   if (xdgConfigHome.length > 1) {
-    await populateFakeXdgConfigHome(xdgConfigHome);
-
     configDir = GetDir(xdgConfigHome);
     configDir.normalize();
 
@@ -508,18 +491,11 @@ async function testFileAccessLinuxOnly() {
   // Create a file under $HOME/.config/ or $XDG_CONFIG_HOME and ensure we can
   // read it
   let fileUnderConfig = GetSubdirFile(configDir);
-  let fileUnderConfigCreated = await createFile(fileUnderConfig.path);
-  if (!fileUnderConfigCreated.ok) {
-    ok(false, `Failure to create ${fileUnderConfig.path}`);
-  }
+  await IOUtils.writeUTF8(fileUnderConfig.path, "TEST FILE DUMMY DATA");
   ok(
-    fileUnderConfigCreated,
+    await IOUtils.exists(fileUnderConfig.path),
     `File ${fileUnderConfig.path} was properly created`
   );
-  let removeFileUnderConfig = async aPath => {
-    const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-    await OS.File.remove(aPath);
-  };
 
   tests.push({
     desc: `${configDir.path}/xxx is readable (${fileUnderConfig.path})`,
@@ -528,7 +504,7 @@ async function testFileAccessLinuxOnly() {
     file: fileUnderConfig,
     minLevel: minHomeReadSandboxLevel(),
     func: readFile,
-    cleanup: removeFileUnderConfig,
+    cleanup: aPath => IOUtils.remove(aPath),
   });
 
   let configFile = GetSubdirFile(configDir);
@@ -560,28 +536,30 @@ async function testFileAccessLinuxOnly() {
 
   let populateFakeConfigMozilla = async aPath => {
     // called with configMozilla
-    const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-    await OS.File.makeDir(aPath, { unixMode: OS.Constants.S_IRWXU });
-    await createFile(emptyFile.path);
+    await IOUtils.makeDirectory(aPath, { permissions: 0o700 });
+    await IOUtils.writeUTF8(emptyFile.path, "");
     ok(
-      await OS.File.exists(emptyFile.path),
+      await IOUtils.exists(emptyFile.path),
       `Temp file ${emptyFile.path} was created`
     );
   };
 
   let unpopulateFakeConfigMozilla = async aPath => {
     // called with emptyFile
-    const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-    await OS.File.remove(aPath);
-    ok(!(await OS.File.exists(aPath)), `Temp file ${aPath} was removed`);
-    const parentDir = OS.Path.dirname(aPath);
+    await IOUtils.remove(aPath);
+    ok(!(await IOUtils.exists(aPath)), `Temp file ${aPath} was removed`);
+    const parentDir = PathUtils.parent(aPath);
     try {
-      await OS.File.removeEmptyDir(parentDir);
+      await IOUtils.remove(parentDir, { recursive: false });
     } catch (ex) {
-      // 39=ENOTEMPTY, if we get that there it means the directory was not
-      // empty and since we assert earlier we removed the temp file we created
-      // it means we should not worrying about removing this directory ...
-      if (ex.unixErrno !== 39) {
+      if (
+        !DOMException.isInstance(ex) ||
+        ex.name !== "OperationError" ||
+        /Could not remove the non-empty directory/.test(ex.message)
+      ) {
+        // If we get here it means the directory was not empty and since we assert
+        // earlier we removed the temp file we created it means we should not
+        // worrying about removing this directory ...
         throw ex;
       }
     }
@@ -635,31 +613,20 @@ async function testFileAccessLinuxOnly() {
       file: configDir,
       minLevel: minHomeReadSandboxLevel(),
       func: readDir,
-      cleanup: unpopulateFakeXdgConfigHome,
     });
   }
 
-  // Assert that if we run with SNAP=  env, then we allow access to it in the
+  await runTestsList(tests);
+}
+
+async function testFileAccessLinuxSnap() {
+  let webBrowser = GetWebBrowser();
+
+  let tests = [];
+
+  // Assert that if we run with SNAP= env, then we allow access to it in the
   // content process
-  let snap = GetEnvironmentVariable("SNAP");
-  let populateFakeSnap = async aPath => {
-    const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-    await OS.File.makeDir(aPath, { unixMode: OS.Constants.S_IRWXU });
-    ok(await OS.File.exists(aPath), `SNAP ${aPath} was created`);
-    info(`SNAP ${aPath} was created`);
-  };
-
-  let unpopulateFakeSnap = async aPath => {
-    const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-    await OS.File.remove(aPath);
-    ok(!(await OS.File.exists(aPath)), `SNAP ${aPath} was removed`);
-    info(`SNAP ${aPath} was removed`);
-
-    const parentDir = OS.Path.dirname(aPath);
-    await OS.File.removeDir(parentDir);
-    info(`SNAP ${parentDir} was removed`);
-  };
-
+  let snap = Services.env.get("SNAP");
   let snapExpectedResult = false;
   if (snap.length > 1) {
     snapExpectedResult = true;
@@ -667,19 +634,12 @@ async function testFileAccessLinuxOnly() {
     snap = "/tmp/.snap_firefox_current/";
   }
 
-  // We need to create a fake SNAP= directory but not populate the env var
-  // to assert that blocking access is in effect
-  //
-  // And we also need this directory to be accessible for us to create it during
-  // tests, but default to unreadable for the content process.
-  await populateFakeSnap(snap);
-
   let snapDir = GetDir(snap);
   snapDir.normalize();
 
   let snapFile = GetSubdirFile(snapDir);
   await createFile(snapFile.path);
-  ok(await OS.File.exists(snapFile.path), `SNAP ${snapFile.path} was created`);
+  ok(await IOUtils.exists(snapFile.path), `SNAP ${snapFile.path} was created`);
   info(`SNAP (file) ${snapFile.path} was created`);
 
   tests.push({
@@ -689,7 +649,6 @@ async function testFileAccessLinuxOnly() {
     file: snapFile,
     minLevel: minHomeReadSandboxLevel(),
     func: readFile,
-    cleanup: unpopulateFakeSnap,
   });
 
   await runTestsList(tests);

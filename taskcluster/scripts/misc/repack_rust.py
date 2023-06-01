@@ -9,8 +9,6 @@ with the necessary tool and target support for the Firefox
 build environment.
 """
 
-from __future__ import absolute_import, print_function
-
 import argparse
 import errno
 import glob
@@ -18,14 +16,12 @@ import hashlib
 import os
 import shutil
 import subprocess
-from contextlib import contextmanager
 import tarfile
-import tempfile
 import textwrap
+from contextlib import contextmanager
 
 import requests
-import pytoml as toml
-
+import toml
 import zstandard
 
 
@@ -307,7 +303,13 @@ def fetch_manifest(channel="stable", host=None, targets=()):
                 "available": requests.head(url).status_code == 200,
             }
 
-        for pkg in ("cargo", "rustc", "rustfmt-preview", "clippy-preview"):
+        for pkg in (
+            "cargo",
+            "rustc",
+            "rustfmt-preview",
+            "clippy-preview",
+            "rust-analyzer-preview",
+        ):
             manifest["pkg"][pkg] = {
                 "version": "bors",
                 "target": {
@@ -341,7 +343,7 @@ def fetch_manifest(channel="stable", host=None, targets=()):
     url = "https://static.rust-lang.org/dist%s/channel-rust-%s.toml" % (prefix, channel)
     req = requests.get(url)
     req.raise_for_status()
-    manifest = toml.loads(req.content)
+    manifest = toml.loads(req.text)
     if manifest["manifest-version"] != "2":
         raise NotImplementedError(
             "Unrecognized manifest version %s." % manifest["manifest-version"]
@@ -396,10 +398,11 @@ def build_src(install_dir, host, targets, patches):
         docs = false
         sanitizers = true
         extended = true
-        tools = ["analysis", "cargo", "rustfmt", "clippy", "src"]
+        tools = ["analysis", "cargo", "rustfmt", "clippy", "src", "rust-analyzer"]
 
         [rust]
         ignore-git = false
+        use-lld = true
 
         [install]
         prefix = "{prefix}"
@@ -432,7 +435,6 @@ def build_src(install_dir, host, targets, patches):
         file.write(final_config)
 
     # Setup the env so compilers and toolchains are visible
-    binutils = os.path.join(fetches, "binutils", "bin")
     clang = os.path.join(fetches, "clang")
     clang_bin = os.path.join(clang, "bin")
     clang_lib = os.path.join(clang, "lib")
@@ -440,7 +442,7 @@ def build_src(install_dir, host, targets, patches):
     env = os.environ.copy()
     env.update(
         {
-            "PATH": os.pathsep.join((binutils, clang_bin, os.environ["PATH"])),
+            "PATH": os.pathsep.join((clang_bin, os.environ["PATH"])),
             "LD_LIBRARY_PATH": clang_lib,
         }
     )
@@ -490,6 +492,7 @@ def repack(
         rustsrc = fetch_package(manifest, "rust-src", host)
         rustfmt = fetch_optional(manifest, "rustfmt-preview", host)
         clippy = fetch_optional(manifest, "clippy-preview", host)
+        rust_analyzer = fetch_optional(manifest, "rust-analyzer-preview", host)
 
         log("Installing packages...")
 
@@ -506,12 +509,13 @@ def repack(
             install(os.path.basename(rustfmt["url"]), install_dir)
         if clippy:
             install(os.path.basename(clippy["url"]), install_dir)
+        if rust_analyzer:
+            install(os.path.basename(rust_analyzer["url"]), install_dir)
         for std in stds:
             install(os.path.basename(std["url"]), install_dir)
             pass
-    # Workaround for https://github.com/rust-lang/rust/issues/74657:
-    # Remove the .llvmbc and .llvmcmd sections (sections for the LLVM bitcode)
-    # from the compiler_builtins rlib.
+    # Workaround for https://github.com/rust-lang/rust/issues/98746:
+    # Remove debug symbols from the compiler_builtins rlib.
     hack_targets = ()
     if compiler_builtins_hack:
         hack_targets = (
@@ -531,38 +535,10 @@ def repack(
                 install_dir, "lib", "rustlib", t, "lib", "libcompiler_builtins*"
             )
         ):
-            log("Postprocessing %s" % lib)
-            with tempfile.TemporaryDirectory() as d:
-                # Extract all the files from the .rlib
-                subprocess.check_call(
-                    [os.path.join(llvm_bin, "llvm-ar"), "x", os.path.abspath(lib)],
-                    cwd=d,
-                )
-                files = os.listdir(d)
-                for f in files:
-                    if not f.endswith(".o"):
-                        continue
-                    # For each .o file, remove the aforementioned sections.
-                    subprocess.check_call(
-                        [
-                            os.path.join(llvm_bin, "llvm-objcopy"),
-                            "-R",
-                            ".llvmbc",
-                            "-R",
-                            ".llvmcmd",
-                            f,
-                        ],
-                        cwd=d,
-                    )
-                # Create a new .rlib with the updated object files.
-                subprocess.check_call(
-                    [os.path.join(llvm_bin, "llvm-ar"), "crv", os.path.abspath(lib)]
-                    + files,
-                    cwd=d,
-                )
-                subprocess.check_call(
-                    [os.path.join(llvm_bin, "llvm-ranlib"), os.path.abspath(lib)], cwd=d
-                )
+            log("Strip debuginfo from %s" % lib)
+            subprocess.check_call(
+                [os.path.join(llvm_bin, "llvm-strip"), "-d", os.path.abspath(lib)],
+            )
 
     log("Creating archive...")
     tar_file = install_dir + ".tar.zst"
@@ -582,48 +558,6 @@ def repack(
         # Move the tarball to the output directory for upload.
         log("Moving %s to the upload directory..." % tar_file)
         shutil.move(tar_file, upload_dir)
-
-
-def repack_cargo(host, channel="nightly"):
-    log("Repacking cargo for %s..." % host)
-    # Cargo doesn't seem to have a .toml manifest.
-    base_url = "https://static.rust-lang.org/cargo-dist/"
-    req = requests.get(os.path.join(base_url, "channel-cargo-" + channel))
-    req.raise_for_status()
-    file = ""
-    for line in req.iter_lines():
-        if line.find(host) != -1:
-            file = line.strip()
-    if not file:
-        log("No manifest entry for %s!" % host)
-        return
-    manifest = {
-        "date": req.headers["Last-Modified"],
-        "pkg": {
-            "cargo": {
-                "version": channel,
-                "target": {
-                    host: {
-                        "url": os.path.join(base_url, file),
-                        "hash": None,
-                        "available": True,
-                    },
-                },
-            },
-        },
-    }
-    log("Using manifest for cargo %s." % channel)
-    log("Fetching packages...")
-    cargo = fetch_package(manifest, "cargo", host)
-    log("Installing packages...")
-    install_dir = "cargo"
-    shutil.rmtree(install_dir)
-    install(os.path.basename(cargo["url"]), install_dir)
-    tar_basename = "cargo-%s-repack" % host
-    log("Tarring %s..." % tar_basename)
-    tar_file = tar_basename + ".tar.zst"
-    build_tar_package(tar_file, ".", install_dir)
-    shutil.rmtree(install_dir)
 
 
 def expand_platform(name):
@@ -693,7 +627,7 @@ def args():
     parser.add_argument(
         "--compiler-builtins-hack",
         action="store_true",
-        help="Enable workaround for " "https://github.com/rust-lang/rust/issues/74657.",
+        help="Enable workaround for " "https://github.com/rust-lang/rust/issues/98746.",
     )
     parser.add_argument(
         "--host",

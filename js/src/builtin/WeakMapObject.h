@@ -12,8 +12,6 @@
 
 namespace js {
 
-class GlobalObject;
-
 // Abstract base class for WeakMapObject and WeakSetObject.
 class WeakCollectionObject : public NativeObject {
  public:
@@ -23,10 +21,7 @@ class WeakCollectionObject : public NativeObject {
     return maybePtrFromReservedSlot<ObjectValueWeakMap>(DataSlot);
   }
 
-  size_t sizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) {
-    ObjectValueWeakMap* map = getMap();
-    return map ? map->sizeOfIncludingThis(aMallocSizeOf) : 0;
-  }
+  size_t sizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf);
 
   [[nodiscard]] static bool nondeterministicGetKeys(
       JSContext* cx, Handle<WeakCollectionObject*> obj,

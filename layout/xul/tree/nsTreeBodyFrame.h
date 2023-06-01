@@ -76,6 +76,7 @@ class nsTreeBodyFrame final : public nsLeafBoxFrame,
     nsCOMPtr<nsITreeView> view = mView;
     return view.forget();
   }
+  already_AddRefed<nsITreeSelection> GetSelection() const;
   nsresult GetView(nsITreeView** aView);
   nsresult SetView(nsITreeView* aView);
   bool GetFocused() const { return mFocused; }
@@ -126,18 +127,19 @@ class nsTreeBodyFrame final : public nsLeafBoxFrame,
 
   // nsIScrollbarMediator
   virtual void ScrollByPage(nsScrollbarFrame* aScrollbar, int32_t aDirection,
-                            nsIScrollbarMediator::ScrollSnapMode aSnap =
-                                nsIScrollbarMediator::DISABLE_SNAP) override;
+                            mozilla::ScrollSnapFlags aSnapFlags =
+                                mozilla::ScrollSnapFlags::Disabled) override;
   virtual void ScrollByWhole(nsScrollbarFrame* aScrollbar, int32_t aDirection,
-                             nsIScrollbarMediator::ScrollSnapMode aSnap =
-                                 nsIScrollbarMediator::DISABLE_SNAP) override;
+                             mozilla::ScrollSnapFlags aSnapFlags =
+                                 mozilla::ScrollSnapFlags::Disabled) override;
   virtual void ScrollByLine(nsScrollbarFrame* aScrollbar, int32_t aDirection,
-                            nsIScrollbarMediator::ScrollSnapMode aSnap =
-                                nsIScrollbarMediator::DISABLE_SNAP) override;
+                            mozilla::ScrollSnapFlags aSnapFlags =
+                                mozilla::ScrollSnapFlags::Disabled) override;
   virtual void ScrollByUnit(nsScrollbarFrame* aScrollbar,
                             mozilla::ScrollMode aMode, int32_t aDirection,
                             mozilla::ScrollUnit aUnit,
-                            ScrollSnapMode aSnap = DISABLE_SNAP) override;
+                            mozilla::ScrollSnapFlags aSnapFlags =
+                                mozilla::ScrollSnapFlags::Disabled) override;
   virtual void RepeatButtonScroll(nsScrollbarFrame* aScrollbar) override;
   virtual void ThumbMoved(nsScrollbarFrame* aScrollbar, nscoord aOldPos,
                           nscoord aNewPos) override;
@@ -484,38 +486,34 @@ class nsTreeBodyFrame final : public nsLeafBoxFrame,
  protected:  // Data Members
   class Slots {
    public:
-    Slots()
-        : mDropAllowed(false),
-          mIsDragging(false),
-          mDropRow(-1),
-          mDropOrient(-1),
-          mScrollLines(0),
-          mDragAction(0) {}
+    Slots() = default;
 
     ~Slots() {
-      if (mTimer) mTimer->Cancel();
+      if (mTimer) {
+        mTimer->Cancel();
+      }
     }
 
     friend class nsTreeBodyFrame;
 
    protected:
     // If the drop is actually allowed here or not.
-    bool mDropAllowed;
+    bool mDropAllowed = false;
 
     // True while dragging over the tree.
-    bool mIsDragging;
+    bool mIsDragging = false;
 
     // The row the mouse is hovering over during a drop.
-    int32_t mDropRow;
+    int32_t mDropRow = -1;
 
     // Where we want to draw feedback (above/on this row/below) if allowed.
-    int16_t mDropOrient;
+    int16_t mDropOrient = -1;
 
     // Number of lines to be scrolled.
-    int16_t mScrollLines;
+    int16_t mScrollLines = 0;
 
     // The drag action that was received for this slot
-    uint32_t mDragAction;
+    uint32_t mDragAction = 0;
 
     // Timer for opening/closing spring loaded folders or scrolling the tree.
     nsCOMPtr<nsITimer> mTimer;
@@ -524,7 +522,7 @@ class nsTreeBodyFrame final : public nsLeafBoxFrame,
     nsTArray<int32_t> mArray;
   };
 
-  Slots* mSlots;
+  mozilla::UniquePtr<Slots> mSlots;
 
   nsRevocableEventPtr<ScrollEvent> mScrollEvent;
 

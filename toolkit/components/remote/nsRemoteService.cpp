@@ -5,18 +5,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifdef XP_UNIX
-#  include <sys/types.h>
-#  include <pwd.h>
-#endif
-
 #ifdef MOZ_WIDGET_GTK
-#  include "mozilla/WidgetUtilsGtk.h"
-#  include "nsGTKRemoteServer.h"
 #  ifdef MOZ_ENABLE_DBUS
 #    include "nsDBusRemoteServer.h"
 #    include "nsDBusRemoteClient.h"
 #  else
+#    include "nsGTKRemoteServer.h"
 #    include "nsXRemoteClient.h"
 #  endif
 #elif defined(XP_WIN)
@@ -31,9 +25,7 @@
 #include "nsIObserverService.h"
 #include "nsString.h"
 #include "nsServiceManagerUtils.h"
-#include "mozilla/ModuleUtils.h"
 #include "SpecialSystemDirectory.h"
-#include "mozilla/CmdLineAndEnvUtils.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 
@@ -60,27 +52,34 @@ void nsRemoteService::LockStartup() {
   nsCOMPtr<nsIFile> mutexDir;
   nsresult rv = GetSpecialSystemDirectory(OS_TemporaryDirectory,
                                           getter_AddRefs(mutexDir));
-  if (NS_SUCCEEDED(rv)) {
-    mutexDir->AppendNative(mProgram);
+  NS_ENSURE_SUCCESS_VOID(rv);
+  rv = mutexDir->AppendNative(mProgram);
+  NS_ENSURE_SUCCESS_VOID(rv);
 
+  const mozilla::TimeStamp epoch = mozilla::TimeStamp::Now();
+  do {
+    // If we have been waiting for another instance to release the lock it will
+    // have deleted the lock directory when doing so we have to make sure it
+    // exists every time we poll for the lock.
     rv = mutexDir->Create(nsIFile::DIRECTORY_TYPE, 0700);
     if (NS_SUCCEEDED(rv) || rv == NS_ERROR_FILE_ALREADY_EXISTS) {
       mRemoteLockDir = mutexDir;
+    } else {
+      NS_WARNING("Unable to create startup lock directory.");
+      return;
     }
-  }
 
-  if (mRemoteLockDir) {
-    const mozilla::TimeStamp epoch = mozilla::TimeStamp::Now();
-    do {
-      rv = mRemoteLock.Lock(mRemoteLockDir, nullptr);
-      if (NS_SUCCEEDED(rv)) break;
-      PR_Sleep(START_SLEEP_MSEC);
-    } while ((mozilla::TimeStamp::Now() - epoch) <
-             mozilla::TimeDuration::FromSeconds(START_TIMEOUT_SEC));
-    if (NS_FAILED(rv)) {
-      NS_WARNING("Cannot lock remote start mutex");
+    rv = mRemoteLock.Lock(mRemoteLockDir, nullptr);
+    if (NS_SUCCEEDED(rv)) {
+      return;
     }
-  }
+
+    mRemoteLockDir = nullptr;
+    PR_Sleep(START_SLEEP_MSEC);
+  } while ((mozilla::TimeStamp::Now() - epoch) <
+           mozilla::TimeDuration::FromSeconds(START_TIMEOUT_SEC));
+
+  NS_WARNING("Failed to lock for startup, continuing anyway.");
 }
 
 void nsRemoteService::UnlockStartup() {
@@ -93,7 +92,7 @@ void nsRemoteService::UnlockStartup() {
   }
 }
 
-RemoteResult nsRemoteService::StartClient(const char* aDesktopStartupID) {
+RemoteResult nsRemoteService::StartClient(const char* aStartupToken) {
   if (mProfile.IsEmpty()) {
     return REMOTE_NOT_FOUND;
   }
@@ -118,9 +117,9 @@ RemoteResult nsRemoteService::StartClient(const char* aDesktopStartupID) {
 
   nsCString response;
   bool success = false;
-  rv = client->SendCommandLine(mProgram.get(), mProfile.get(), gArgc, gArgv,
-                               aDesktopStartupID, getter_Copies(response),
-                               &success);
+  rv =
+      client->SendCommandLine(mProgram.get(), mProfile.get(), gArgc, gArgv,
+                              aStartupToken, getter_Copies(response), &success);
   // did the command fail?
   if (!success) return REMOTE_NOT_FOUND;
 

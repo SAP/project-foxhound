@@ -8,22 +8,35 @@
 
 // Macros and functions useful for tests.
 
+// gmock unconditionally redefines those macros (to wrong values).
+// Lets include it only here and mitigate the problem.
+#pragma push_macro("PRIdS")
+#pragma push_macro("PRIuS")
 #include "gmock/gmock.h"
+#pragma pop_macro("PRIuS")
+#pragma pop_macro("PRIdS")
+
 #include "gtest/gtest.h"
 #include "jxl/codestream_header.h"
 #include "jxl/encode.h"
+#include "lib/extras/dec/decode.h"
+#include "lib/extras/dec/jxl.h"
+#include "lib/extras/enc/jxl.h"
+#include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"  // JPEGXL_ENABLE_TRANSCODE_JPEG
-#include "lib/jxl/dec_file.h"
-#include "lib/jxl/dec_params.h"
+#include "lib/jxl/enc_butteraugli_comparator.h"
+#include "lib/jxl/enc_butteraugli_pnorm.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/test_image.h"
 
 #ifdef JXL_DISABLE_SLOW_TESTS
 #define JXL_SLOW_TEST(X) DISABLED_##X
@@ -36,6 +49,12 @@
 #else
 #define JXL_TRANSCODE_JPEG_TEST(X) DISABLED_##X
 #endif  // JPEGXL_ENABLE_TRANSCODE_JPEG
+
+#if JPEGXL_ENABLE_BOXES
+#define JXL_BOXES_TEST(X) X
+#else
+#define JXL_BOXES_TEST(X) DISABLED_##X
+#endif  // JPEGXL_ENABLE_BOXES
 
 #ifdef THREAD_SANITIZER
 #define JXL_TSAN_SLOW_TEST(X) DISABLED_##X
@@ -53,7 +72,9 @@
 
 // Ensures that we don't make our test bounds too lax, effectively disabling the
 // tests.
-MATCHER_P(IsSlightlyBelow, max, "") { return max * 0.75 <= arg && arg <= max; }
+MATCHER_P(IsSlightlyBelow, max, "") {
+  return max * 0.75 <= arg && arg <= max * 1.0;
+}
 
 namespace jxl {
 namespace test {
@@ -78,24 +99,18 @@ void JxlBasicInfoSetFromPixelFormat(JxlBasicInfo* basic_info,
       basic_info->bits_per_sample = 16;
       basic_info->exponent_bits_per_sample = 0;
       break;
-    case JXL_TYPE_UINT32:
-      basic_info->bits_per_sample = 32;
-      basic_info->exponent_bits_per_sample = 0;
-      break;
-    case JXL_TYPE_BOOLEAN:
-      basic_info->bits_per_sample = 1;
-      basic_info->exponent_bits_per_sample = 0;
-      break;
+    default:
+      JXL_ABORT("Unhandled JxlDataType");
+  }
+  if (pixel_format->num_channels < 3) {
+    basic_info->num_color_channels = 1;
+  } else {
+    basic_info->num_color_channels = 3;
   }
   if (pixel_format->num_channels == 2 || pixel_format->num_channels == 4) {
-    basic_info->alpha_exponent_bits = 0;
-    if (basic_info->bits_per_sample == 32) {
-      basic_info->alpha_bits = 16;
-      basic_info->num_extra_channels = 1;
-    } else {
-      basic_info->alpha_bits = basic_info->bits_per_sample;
-      basic_info->num_extra_channels = 1;
-    }
+    basic_info->alpha_exponent_bits = basic_info->exponent_bits_per_sample;
+    basic_info->alpha_bits = basic_info->bits_per_sample;
+    basic_info->num_extra_channels = 1;
   } else {
     basic_info->alpha_exponent_bits = 0;
     basic_info->alpha_bits = 0;
@@ -103,8 +118,9 @@ void JxlBasicInfoSetFromPixelFormat(JxlBasicInfo* basic_info,
 }
 
 MATCHER_P(MatchesPrimariesAndTransferFunction, color_encoding, "") {
-  return arg.primaries == color_encoding.primaries &&
-         arg.tf.IsSame(color_encoding.tf);
+  return (arg.ICC() == color_encoding.ICC() ||
+          (arg.primaries == color_encoding.primaries &&
+           arg.tf.IsSame(color_encoding.tf)));
 }
 
 MATCHER(MatchesPrimariesAndTransferFunction, "") {
@@ -113,9 +129,28 @@ MATCHER(MatchesPrimariesAndTransferFunction, "") {
       result_listener);
 }
 
+template <typename Params>
+void SetThreadParallelRunner(Params params, ThreadPool* pool) {
+  if (pool && !params.runner_opaque) {
+    params.runner = pool->runner();
+    params.runner_opaque = pool->runner_opaque();
+  }
+}
+
+template <typename Source>
+Status DecodeFile(extras::JXLDecompressParams dparams, const Source& file,
+                  CodecInOut* JXL_RESTRICT io, ThreadPool* pool) {
+  SetThreadParallelRunner(dparams, pool);
+  extras::PackedPixelFile ppf;
+  JXL_RETURN_IF_ERROR(DecodeImageJXL(file.data(), file.size(), dparams,
+                                     /*decoded_bytes=*/nullptr, &ppf));
+  JXL_RETURN_IF_ERROR(ConvertPackedPixelFileToCodecInOut(ppf, pool, io));
+  return true;
+}
+
 // Returns compressed size [bytes].
 size_t Roundtrip(const CodecInOut* io, const CompressParams& cparams,
-                 const DecompressParams& dparams, ThreadPool* pool,
+                 extras::JXLDecompressParams dparams, ThreadPool* pool,
                  CodecInOut* JXL_RESTRICT io2, AuxOut* aux_out = nullptr) {
   PaddedBytes compressed;
 
@@ -167,38 +202,21 @@ size_t Roundtrip(const CodecInOut* io, const CompressParams& cparams,
   return compressed.size();
 }
 
-void CoalesceGIFAnimationWithAlpha(CodecInOut* io) {
-  ImageBundle canvas = io->frames[0].Copy();
-  for (size_t i = 1; i < io->frames.size(); i++) {
-    const ImageBundle& frame = io->frames[i];
-    ImageBundle rendered = canvas.Copy();
-    for (size_t y = 0; y < frame.ysize(); y++) {
-      float* row0 =
-          rendered.color()->PlaneRow(0, frame.origin.y0 + y) + frame.origin.x0;
-      float* row1 =
-          rendered.color()->PlaneRow(1, frame.origin.y0 + y) + frame.origin.x0;
-      float* row2 =
-          rendered.color()->PlaneRow(2, frame.origin.y0 + y) + frame.origin.x0;
-      float* rowa =
-          rendered.alpha()->Row(frame.origin.y0 + y) + frame.origin.x0;
-      const float* row0f = frame.color().PlaneRow(0, y);
-      const float* row1f = frame.color().PlaneRow(1, y);
-      const float* row2f = frame.color().PlaneRow(2, y);
-      const float* rowaf = frame.alpha().Row(y);
-      for (size_t x = 0; x < frame.xsize(); x++) {
-        if (rowaf[x] != 0) {
-          row0[x] = row0f[x];
-          row1[x] = row1f[x];
-          row2[x] = row2f[x];
-          rowa[x] = rowaf[x];
-        }
-      }
-    }
-    if (frame.use_for_next_frame) {
-      canvas = rendered.Copy();
-    }
-    io->frames[i] = std::move(rendered);
-  }
+// Returns compressed size [bytes].
+size_t Roundtrip(const extras::PackedPixelFile& ppf_in,
+                 extras::JXLCompressParams cparams,
+                 extras::JXLDecompressParams dparams, ThreadPool* pool,
+                 extras::PackedPixelFile* ppf_out) {
+  SetThreadParallelRunner(cparams, pool);
+  SetThreadParallelRunner(dparams, pool);
+  std::vector<uint8_t> compressed;
+  EXPECT_TRUE(extras::EncodeImageJXL(cparams, ppf_in, /*jpeg_bytes=*/nullptr,
+                                     &compressed));
+  size_t decoded_bytes = 0;
+  EXPECT_TRUE(extras::DecodeImageJXL(compressed.data(), compressed.size(),
+                                     dparams, &decoded_bytes, ppf_out));
+  EXPECT_EQ(decoded_bytes, compressed.size());
+  return compressed.size();
 }
 
 // A POD descriptor of a ColorEncoding. Only used in tests as the return value
@@ -215,10 +233,13 @@ static inline ColorEncoding ColorEncodingFromDescriptor(
     const ColorEncodingDescriptor& desc) {
   ColorEncoding c;
   c.SetColorSpace(desc.color_space);
-  c.white_point = desc.white_point;
-  c.primaries = desc.primaries;
-  c.tf.SetTransferFunction(desc.tf);
+  if (desc.color_space != ColorSpace::kXYB) {
+    c.white_point = desc.white_point;
+    c.primaries = desc.primaries;
+    c.tf.SetTransferFunction(desc.tf);
+  }
   c.rendering_intent = desc.rendering_intent;
+  JXL_CHECK(c.CreateICC());
   return c;
 }
 
@@ -275,88 +296,6 @@ std::vector<ColorEncodingDescriptor> AllEncodings() {
   return all_encodings;
 }
 
-// Returns a test image with some autogenerated pixel content, using 16 bits per
-// channel, big endian order, 1 to 4 channels
-// The seed parameter allows to create images with different pixel content.
-std::vector<uint8_t> GetSomeTestImage(size_t xsize, size_t ysize,
-                                      size_t num_channels, uint16_t seed) {
-  // Cause more significant image difference for successive seeds.
-  Rng generator(seed);
-
-  // Returns random integer in interval [0, max_value)
-  auto rng = [&generator](size_t max_value) -> size_t {
-    return generator.UniformU(0, max_value);
-  };
-
-  // Dark background gradient color
-  uint16_t r0 = rng(32768);
-  uint16_t g0 = rng(32768);
-  uint16_t b0 = rng(32768);
-  uint16_t a0 = rng(32768);
-  uint16_t r1 = rng(32768);
-  uint16_t g1 = rng(32768);
-  uint16_t b1 = rng(32768);
-  uint16_t a1 = rng(32768);
-
-  // Circle with different color
-  size_t circle_x = rng(xsize);
-  size_t circle_y = rng(ysize);
-  size_t circle_r = rng(std::min(xsize, ysize));
-
-  // Rectangle with random noise
-  size_t rect_x0 = rng(xsize);
-  size_t rect_y0 = rng(ysize);
-  size_t rect_x1 = rng(xsize);
-  size_t rect_y1 = rng(ysize);
-  if (rect_x1 < rect_x0) std::swap(rect_x0, rect_y1);
-  if (rect_y1 < rect_y0) std::swap(rect_y0, rect_y1);
-
-  size_t num_pixels = xsize * ysize;
-  // 16 bits per channel, big endian, 4 channels
-  std::vector<uint8_t> pixels(num_pixels * num_channels * 2);
-  // Create pixel content to test, actual content does not matter as long as it
-  // can be compared after roundtrip.
-  for (size_t y = 0; y < ysize; y++) {
-    for (size_t x = 0; x < xsize; x++) {
-      uint16_t r = r0 * (ysize - y - 1) / ysize + r1 * y / ysize;
-      uint16_t g = g0 * (ysize - y - 1) / ysize + g1 * y / ysize;
-      uint16_t b = b0 * (ysize - y - 1) / ysize + b1 * y / ysize;
-      uint16_t a = a0 * (ysize - y - 1) / ysize + a1 * y / ysize;
-      // put some shape in there for visual debugging
-      if ((x - circle_x) * (x - circle_x) + (y - circle_y) * (y - circle_y) <
-          circle_r * circle_r) {
-        r = (65535 - x * y) ^ seed;
-        g = (x << 8) + y + seed;
-        b = (y << 8) + x * seed;
-        a = 32768 + x * 256 - y;
-      } else if (x > rect_x0 && x < rect_x1 && y > rect_y0 && y < rect_y1) {
-        r = rng(65536);
-        g = rng(65536);
-        b = rng(65536);
-        a = rng(65536);
-      }
-      size_t i = (y * xsize + x) * 2 * num_channels;
-      pixels[i + 0] = (r >> 8);
-      pixels[i + 1] = (r & 255);
-      if (num_channels >= 2) {
-        // This may store what is called 'g' in the alpha channel of a 2-channel
-        // image, but that's ok since the content is arbitrary
-        pixels[i + 2] = (g >> 8);
-        pixels[i + 3] = (g & 255);
-      }
-      if (num_channels >= 3) {
-        pixels[i + 4] = (b >> 8);
-        pixels[i + 5] = (b & 255);
-      }
-      if (num_channels >= 4) {
-        pixels[i + 6] = (a >> 8);
-        pixels[i + 7] = (a & 255);
-      }
-    }
-  }
-  return pixels;
-}
-
 // Returns a CodecInOut based on the buf, xsize, ysize, and the assumption
 // that the buffer was created using `GetSomeTestImage`.
 jxl::CodecInOut SomeTestImageToCodecInOut(const std::vector<uint8_t>& buf,
@@ -367,36 +306,20 @@ jxl::CodecInOut SomeTestImageToCodecInOut(const std::vector<uint8_t>& buf,
   io.metadata.m.SetAlphaBits(16);
   io.metadata.m.color_encoding = jxl::ColorEncoding::SRGB(
       /*is_gray=*/num_channels == 1 || num_channels == 2);
+  JxlPixelFormat format = {static_cast<uint32_t>(num_channels), JXL_TYPE_UINT16,
+                           JXL_BIG_ENDIAN, 0};
   EXPECT_TRUE(ConvertFromExternal(
       jxl::Span<const uint8_t>(buf.data(), buf.size()), xsize, ysize,
-      jxl::ColorEncoding::SRGB(/*is_gray=*/num_channels == 1 ||
-                               num_channels == 2),
-      /*has_alpha=*/num_channels == 2 || num_channels == 4,
-      /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16, JXL_BIG_ENDIAN,
-      /*flipped_y=*/false, /*pool=*/nullptr,
-      /*ib=*/&io.Main(), /*float_in=*/false));
+      jxl::ColorEncoding::SRGB(/*is_gray=*/num_channels < 3),
+      /*bits_per_sample=*/16, format,
+      /*pool=*/nullptr,
+      /*ib=*/&io.Main()));
   return io;
 }
 
 bool Near(double expected, double value, double max_dist) {
   double dist = expected > value ? expected - value : value - expected;
   return dist <= max_dist;
-}
-
-// Loads a Big-Endian float
-float LoadBEFloat(const uint8_t* p) {
-  uint32_t u = LoadBE32(p);
-  float result;
-  memcpy(&result, &u, 4);
-  return result;
-}
-
-// Loads a Little-Endian float
-float LoadLEFloat(const uint8_t* p) {
-  uint32_t u = LoadLE32(p);
-  float result;
-  memcpy(&result, &u, 4);
-  return result;
 }
 
 // Based on highway scalar implementation, for testing
@@ -433,39 +356,33 @@ float LoadBEFloat16(const uint8_t* p) {
 
 size_t GetPrecision(JxlDataType data_type) {
   switch (data_type) {
-    case JXL_TYPE_BOOLEAN:
-      return 1;
     case JXL_TYPE_UINT8:
       return 8;
     case JXL_TYPE_UINT16:
       return 16;
-    case JXL_TYPE_UINT32:
-      return 32;
     case JXL_TYPE_FLOAT:
       // Floating point mantissa precision
       return 24;
     case JXL_TYPE_FLOAT16:
       return 11;
+    default:
+      JXL_ABORT("Unhandled JxlDataType");
   }
-  JXL_ASSERT(false);  // unknown type
 }
 
 size_t GetDataBits(JxlDataType data_type) {
   switch (data_type) {
-    case JXL_TYPE_BOOLEAN:
-      return 1;
     case JXL_TYPE_UINT8:
       return 8;
     case JXL_TYPE_UINT16:
       return 16;
-    case JXL_TYPE_UINT32:
-      return 32;
     case JXL_TYPE_FLOAT:
       return 32;
     case JXL_TYPE_FLOAT16:
       return 16;
+    default:
+      JXL_ABORT("Unhandled JxlDataType");
   }
-  JXL_ASSERT(false);  // unknown type
 }
 
 // Procedure to convert pixels to double precision, not efficient, but
@@ -473,36 +390,26 @@ size_t GetDataBits(JxlDataType data_type) {
 // precisions needed for the maximum data types the API supports: uint32_t
 // integers, and, single precision float. The values are in range 0-1 for SDR.
 std::vector<double> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
-                                    size_t ysize,
-                                    const JxlPixelFormat& format) {
+                                    size_t ysize, const JxlPixelFormat& format,
+                                    double factor = 0.0) {
   std::vector<double> result(xsize * ysize * 4);
   size_t num_channels = format.num_channels;
   bool gray = num_channels == 1 || num_channels == 2;
   bool alpha = num_channels == 2 || num_channels == 4;
+  JxlEndianness endianness = format.endianness;
+  // Compute actual type:
+  if (endianness == JXL_NATIVE_ENDIAN) {
+    endianness = IsLittleEndian() ? JXL_LITTLE_ENDIAN : JXL_BIG_ENDIAN;
+  }
 
   size_t stride =
       xsize * jxl::DivCeil(GetDataBits(format.data_type) * num_channels,
                            jxl::kBitsPerByte);
   if (format.align > 1) stride = jxl::RoundUpTo(stride, format.align);
 
-  if (format.data_type == JXL_TYPE_BOOLEAN) {
-    for (size_t y = 0; y < ysize; ++y) {
-      jxl::BitReader br(jxl::Span<const uint8_t>(pixels + stride * y, stride));
-      for (size_t x = 0; x < xsize; ++x) {
-        size_t j = (y * xsize + x) * 4;
-        double r = br.ReadBits(1);
-        double g = gray ? r : br.ReadBits(1);
-        double b = gray ? r : br.ReadBits(1);
-        double a = alpha ? br.ReadBits(1) : 1;
-        result[j + 0] = r;
-        result[j + 1] = g;
-        result[j + 2] = b;
-        result[j + 3] = a;
-      }
-      JXL_CHECK(br.Close());
-    }
-  } else if (format.data_type == JXL_TYPE_UINT8) {
-    double mul = 1.0 / 255.0;  // Multiplier to bring to 0-1.0 range
+  if (format.data_type == JXL_TYPE_UINT8) {
+    // Multiplier to bring to 0-1.0 range
+    double mul = factor > 0.0 ? factor : 1.0 / 255.0;
     for (size_t y = 0; y < ysize; ++y) {
       for (size_t x = 0; x < xsize; ++x) {
         size_t j = (y * xsize + x) * 4;
@@ -518,13 +425,15 @@ std::vector<double> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
       }
     }
   } else if (format.data_type == JXL_TYPE_UINT16) {
-    double mul = 1.0 / 65535.0;  // Multiplier to bring to 0-1.0 range
+    JXL_ASSERT(endianness != JXL_NATIVE_ENDIAN);
+    // Multiplier to bring to 0-1.0 range
+    double mul = factor > 0.0 ? factor : 1.0 / 65535.0;
     for (size_t y = 0; y < ysize; ++y) {
       for (size_t x = 0; x < xsize; ++x) {
         size_t j = (y * xsize + x) * 4;
         size_t i = y * stride + x * num_channels * 2;
         double r, g, b, a;
-        if (format.endianness == JXL_BIG_ENDIAN) {
+        if (endianness == JXL_BIG_ENDIAN) {
           r = (pixels[i + 0] << 8) + pixels[i + 1];
           g = gray ? r : (pixels[i + 2] << 8) + pixels[i + 3];
           b = gray ? r : (pixels[i + 4] << 8) + pixels[i + 5];
@@ -545,38 +454,14 @@ std::vector<double> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
         result[j + 3] = a * mul;
       }
     }
-  } else if (format.data_type == JXL_TYPE_UINT32) {
-    double mul = 1.0 / 4294967295.0;  // Multiplier to bring to 0-1.0 range
-    for (size_t y = 0; y < ysize; ++y) {
-      for (size_t x = 0; x < xsize; ++x) {
-        size_t j = (y * xsize + x) * 4;
-        size_t i = y * stride + x * num_channels * 4;
-        double r, g, b, a;
-        if (format.endianness == JXL_BIG_ENDIAN) {
-          r = LoadBE32(pixels + i);
-          g = gray ? r : LoadBE32(pixels + i + 4);
-          b = gray ? r : LoadBE32(pixels + i + 8);
-          a = alpha ? LoadBE32(pixels + i + num_channels * 2 - 4) : 4294967295;
-
-        } else {
-          r = LoadLE32(pixels + i);
-          g = gray ? r : LoadLE32(pixels + i + 4);
-          b = gray ? r : LoadLE32(pixels + i + 8);
-          a = alpha ? LoadLE32(pixels + i + num_channels * 2 - 4) : 4294967295;
-        }
-        result[j + 0] = r * mul;
-        result[j + 1] = g * mul;
-        result[j + 2] = b * mul;
-        result[j + 3] = a * mul;
-      }
-    }
   } else if (format.data_type == JXL_TYPE_FLOAT) {
+    JXL_ASSERT(endianness != JXL_NATIVE_ENDIAN);
     for (size_t y = 0; y < ysize; ++y) {
       for (size_t x = 0; x < xsize; ++x) {
         size_t j = (y * xsize + x) * 4;
         size_t i = y * stride + x * num_channels * 4;
         double r, g, b, a;
-        if (format.endianness == JXL_BIG_ENDIAN) {
+        if (endianness == JXL_BIG_ENDIAN) {
           r = LoadBEFloat(pixels + i);
           g = gray ? r : LoadBEFloat(pixels + i + 4);
           b = gray ? r : LoadBEFloat(pixels + i + 8);
@@ -594,12 +479,13 @@ std::vector<double> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
       }
     }
   } else if (format.data_type == JXL_TYPE_FLOAT16) {
+    JXL_ASSERT(endianness != JXL_NATIVE_ENDIAN);
     for (size_t y = 0; y < ysize; ++y) {
       for (size_t x = 0; x < xsize; ++x) {
         size_t j = (y * xsize + x) * 4;
         size_t i = y * stride + x * num_channels * 2;
         double r, g, b, a;
-        if (format.endianness == JXL_BIG_ENDIAN) {
+        if (endianness == JXL_BIG_ENDIAN) {
           r = LoadBEFloat16(pixels + i);
           g = gray ? r : LoadBEFloat16(pixels + i + 2);
           b = gray ? r : LoadBEFloat16(pixels + i + 4);
@@ -684,6 +570,134 @@ size_t ComparePixels(const uint8_t* a, const uint8_t* b, size_t xsize,
   }
   return numdiff;
 }
+double DistanceRMS(const uint8_t* a, const uint8_t* b, size_t xsize,
+                   size_t ysize, const JxlPixelFormat& format) {
+  // Convert both images to equal full precision for comparison.
+  std::vector<double> a_full = ConvertToRGBA32(a, xsize, ysize, format);
+  std::vector<double> b_full = ConvertToRGBA32(b, xsize, ysize, format);
+  double sum = 0.0;
+  for (size_t y = 0; y < ysize; y++) {
+    double row_sum = 0.0;
+    for (size_t x = 0; x < xsize; x++) {
+      size_t i = (y * xsize + x) * 4;
+      for (size_t c = 0; c < format.num_channels; ++c) {
+        double diff = a_full[i + c] - b_full[i + c];
+        row_sum += diff * diff;
+      }
+    }
+    sum += row_sum;
+  }
+  sum /= (xsize * ysize);
+  return sqrt(sum);
+}
+
+float ButteraugliDistance(const extras::PackedPixelFile& a,
+                          const extras::PackedPixelFile& b,
+                          ThreadPool* pool = nullptr) {
+  CodecInOut io0;
+  EXPECT_TRUE(ConvertPackedPixelFileToCodecInOut(a, pool, &io0));
+  CodecInOut io1;
+  EXPECT_TRUE(ConvertPackedPixelFileToCodecInOut(b, pool, &io1));
+  return ButteraugliDistance(io0, io1, ButteraugliParams(), GetJxlCms(),
+                             /*distmap=*/nullptr, pool);
+}
+
+float ComputeDistance2(const extras::PackedPixelFile& a,
+                       const extras::PackedPixelFile& b) {
+  CodecInOut io0;
+  EXPECT_TRUE(ConvertPackedPixelFileToCodecInOut(a, nullptr, &io0));
+  CodecInOut io1;
+  EXPECT_TRUE(ConvertPackedPixelFileToCodecInOut(b, nullptr, &io1));
+  return ComputeDistance2(io0.Main(), io1.Main(), GetJxlCms());
+}
+
+bool SameAlpha(const extras::PackedPixelFile& a,
+               const extras::PackedPixelFile& b) {
+  JXL_CHECK(a.info.xsize == b.info.xsize);
+  JXL_CHECK(a.info.ysize == b.info.ysize);
+  JXL_CHECK(a.info.alpha_bits == b.info.alpha_bits);
+  JXL_CHECK(a.info.alpha_exponent_bits == b.info.alpha_exponent_bits);
+  JXL_CHECK(a.info.alpha_bits > 0);
+  JXL_CHECK(a.frames.size() == b.frames.size());
+  for (size_t i = 0; i < a.frames.size(); ++i) {
+    const extras::PackedImage& color_a = a.frames[i].color;
+    const extras::PackedImage& color_b = b.frames[i].color;
+    JXL_CHECK(color_a.format.num_channels == color_b.format.num_channels);
+    JXL_CHECK(color_a.format.data_type == color_b.format.data_type);
+    JXL_CHECK(color_a.format.endianness == color_b.format.endianness);
+    JXL_CHECK(color_a.pixels_size == color_b.pixels_size);
+    size_t pwidth =
+        extras::PackedImage::BitsPerChannel(color_a.format.data_type) / 8;
+    size_t num_color = color_a.format.num_channels < 3 ? 1 : 3;
+    const uint8_t* p_a = reinterpret_cast<const uint8_t*>(color_a.pixels());
+    const uint8_t* p_b = reinterpret_cast<const uint8_t*>(color_b.pixels());
+    for (size_t y = 0; y < a.info.ysize; ++y) {
+      for (size_t x = 0; x < a.info.xsize; ++x) {
+        size_t idx =
+            ((y * a.info.xsize + x) * color_a.format.num_channels + num_color) *
+            pwidth;
+        if (memcmp(&p_a[idx], &p_b[idx], pwidth) != 0) {
+          return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
+bool SamePixels(const extras::PackedImage& a, const extras::PackedImage& b) {
+  JXL_CHECK(a.xsize == b.xsize);
+  JXL_CHECK(a.ysize == b.ysize);
+  JXL_CHECK(a.format.num_channels == b.format.num_channels);
+  JXL_CHECK(a.format.data_type == b.format.data_type);
+  JXL_CHECK(a.format.endianness == b.format.endianness);
+  JXL_CHECK(a.pixels_size == b.pixels_size);
+  const uint8_t* p_a = reinterpret_cast<const uint8_t*>(a.pixels());
+  const uint8_t* p_b = reinterpret_cast<const uint8_t*>(b.pixels());
+  for (size_t y = 0; y < a.ysize; ++y) {
+    for (size_t x = 0; x < a.xsize; ++x) {
+      size_t idx = (y * a.xsize + x) * a.pixel_stride();
+      if (memcmp(&p_a[idx], &p_b[idx], a.pixel_stride()) != 0) {
+        printf("Mismatch at row %" PRIuS " col %" PRIuS "\n", y, x);
+        printf("  a: ");
+        for (size_t j = 0; j < a.pixel_stride(); ++j) {
+          printf(" %3u", p_a[idx + j]);
+        }
+        printf("\n  b: ");
+        for (size_t j = 0; j < a.pixel_stride(); ++j) {
+          printf(" %3u", p_b[idx + j]);
+        }
+        printf("\n");
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+bool SamePixels(const extras::PackedPixelFile& a,
+                const extras::PackedPixelFile& b) {
+  JXL_CHECK(a.info.xsize == b.info.xsize);
+  JXL_CHECK(a.info.ysize == b.info.ysize);
+  JXL_CHECK(a.info.bits_per_sample == b.info.bits_per_sample);
+  JXL_CHECK(a.info.exponent_bits_per_sample == b.info.exponent_bits_per_sample);
+  JXL_CHECK(a.frames.size() == b.frames.size());
+  for (size_t i = 0; i < a.frames.size(); ++i) {
+    const auto& frame_a = a.frames[i];
+    const auto& frame_b = b.frames[i];
+    if (!SamePixels(frame_a.color, frame_b.color)) {
+      return false;
+    }
+    JXL_CHECK(frame_a.extra_channels.size() == frame_b.extra_channels.size());
+    for (size_t j = 0; j < frame_a.extra_channels.size(); ++j) {
+      if (!SamePixels(frame_a.extra_channels[i], frame_b.extra_channels[i])) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 }  // namespace test
 
 bool operator==(const jxl::PaddedBytes& a, const jxl::PaddedBytes& b) {

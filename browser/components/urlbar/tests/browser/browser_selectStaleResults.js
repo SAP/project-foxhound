@@ -7,11 +7,15 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  UrlbarView: "resource:///modules/UrlbarView.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  UrlbarView: "resource:///modules/UrlbarView.sys.mjs",
 });
 
-add_task(async function init() {
+add_setup(async function() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.suggest.quickactions", false]],
+  });
+
   // Increase the timeout of the remove-stale-rows timer so that it doesn't
   // interfere with the tests.
   let originalRemoveStaleRowsTimeout = UrlbarView.removeStaleRowsTimeout;
@@ -60,7 +64,7 @@ add_task(async function viewContainsStaleRows() {
 
   // Below we'll do a search for "xx".  Get the row that will show the last
   // result in that search.
-  let row = gURLBar.view._rows.children[halfResults];
+  let row = UrlbarTestUtils.getRowAt(window, halfResults);
 
   // Add a mutation listener on that row.  Wait for its "stale" attribute to be
   // removed.
@@ -99,9 +103,9 @@ add_task(async function viewContainsStaleRows() {
   Assert.equal(queryContext.results.length, halfResults + 1);
 
   // But there should be maxResults visible rows in the view.
-  let items = Array.from(gURLBar.view._rows.children).filter(r =>
-    gURLBar.view._isElementVisible(r)
-  );
+  let items = Array.from(
+    UrlbarTestUtils.getResultsContainer(window).children
+  ).filter(r => BrowserTestUtils.is_visible(r));
   Assert.equal(items.length, maxResults);
 
   // Arrow down through all the results.  After arrowing down from the last "xx"
@@ -161,12 +165,15 @@ add_task(async function staleReplacedWithFresh() {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.urlbar.suggest.searches", true]],
   });
-  let engine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + "searchSuggestionEngineSlow.xml"
-  );
+  let engine = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + "searchSuggestionEngineSlow.xml",
+  });
   let oldDefaultEngine = await Services.search.getDefault();
   await Services.search.moveEngine(engine, 0);
-  await Services.search.setDefault(engine);
+  await Services.search.setDefault(
+    engine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 
   let maxResults = UrlbarPrefs.get("maxRichResults");
 
@@ -234,13 +241,13 @@ add_task(async function staleReplacedWithFresh() {
   //   test1
   let mutationPromise = new Promise(resolve => {
     let observer = new MutationObserver(mutations => {
-      let row = gURLBar.view._rows.children[maxResults - 2];
+      let row = UrlbarTestUtils.getRowAt(window, maxResults - 2);
       if (row && row._elements.get("title").textContent == "test2") {
         observer.disconnect();
         resolve();
       }
     });
-    observer.observe(gURLBar.view._rows, {
+    observer.observe(UrlbarTestUtils.getResultsContainer(window), {
       subtree: true,
       characterData: true,
       childList: true,
@@ -297,5 +304,8 @@ add_task(async function staleReplacedWithFresh() {
     EventUtils.synthesizeKey("KEY_Escape")
   );
   await SpecialPowers.popPrefEnv();
-  await Services.search.setDefault(oldDefaultEngine);
+  await Services.search.setDefault(
+    oldDefaultEngine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 });

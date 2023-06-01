@@ -41,6 +41,7 @@ Navigator includes NavigatorConcurrentHardware;
 Navigator includes NavigatorStorage;
 Navigator includes NavigatorAutomationInformation;
 Navigator includes GPUProvider;
+Navigator includes GlobalPrivacyControl;
 
 interface mixin NavigatorID {
   // WebKit/Blink/Trident/Presto support this (hardcoded "Mozilla").
@@ -82,11 +83,11 @@ interface mixin NavigatorOnLine {
 interface mixin NavigatorContentUtils {
   // content handler registration
   [Throws, ChromeOnly]
-  void checkProtocolHandlerAllowed(DOMString scheme, URI handlerURI, URI documentURI);
+  undefined checkProtocolHandlerAllowed(DOMString scheme, URI handlerURI, URI documentURI);
   [Throws, SecureContext]
-  void registerProtocolHandler(DOMString scheme, DOMString url);
+  undefined registerProtocolHandler(DOMString scheme, DOMString url);
   // NOT IMPLEMENTED
-  //void unregisterProtocolHandler(DOMString scheme, DOMString url);
+  //undefined unregisterProtocolHandler(DOMString scheme, DOMString url);
 };
 
 [SecureContext]
@@ -97,7 +98,7 @@ interface mixin NavigatorStorage {
 
 interface mixin NavigatorStorageUtils {
   // NOT IMPLEMENTED
-  //void yieldForStorageUpdates();
+  //undefined yieldForStorageUpdates();
 };
 
 partial interface Navigator {
@@ -105,13 +106,12 @@ partial interface Navigator {
   readonly attribute Permissions permissions;
 };
 
-// Things that definitely need to be in the spec and and are not for some
-// reason.  See https://www.w3.org/Bugs/Public/show_bug.cgi?id=22406
 partial interface Navigator {
-  [Throws]
+  [Throws, SameObject]
   readonly attribute MimeTypeArray mimeTypes;
-  [Throws]
+  [Throws, SameObject]
   readonly attribute PluginArray plugins;
+  readonly attribute boolean pdfViewerEnabled;
 };
 
 // http://www.w3.org/TR/tracking-dnt/ sort of
@@ -120,7 +120,7 @@ partial interface Navigator {
 };
 
 // https://globalprivacycontrol.github.io/gpc-spec/
-partial interface Navigator {
+interface mixin GlobalPrivacyControl {
   [Pref="privacy.globalprivacycontrol.functionality.enabled"]
   readonly attribute boolean globalPrivacyControl;
 };
@@ -169,8 +169,8 @@ partial interface Navigator {
      * @param persistent make the permission session-persistent
      */
     [ChromeOnly]
-    void setVibrationPermission(boolean permitted,
-                                optional boolean persistent = true);
+    undefined setVibrationPermission(boolean permitted,
+                                     optional boolean persistent = true);
 };
 
 partial interface Navigator {
@@ -210,13 +210,13 @@ partial interface Navigator {
   sequence<Gamepad?> getGamepads();
 };
 partial interface Navigator {
-  [Pref="dom.gamepad.test.enabled"]
+  [Throws, Pref="dom.gamepad.test.enabled"]
   GamepadServiceTest requestGamepadServiceTest();
 };
 
 // https://immersive-web.github.io/webvr/spec/1.1/#interface-navigator
 partial interface Navigator {
-  [Throws, SecureContext, Pref="dom.vr.enabled"]
+  [NewObject, SecureContext, Pref="dom.vr.enabled"]
   Promise<sequence<VRDisplay>> getVRDisplays();
   // TODO: Use FrozenArray once available. (Bug 1236777)
   [SecureContext, Frozen, Cached, Pure, Pref="dom.vr.enabled"]
@@ -226,10 +226,10 @@ partial interface Navigator {
   [ChromeOnly, Pref="dom.vr.enabled"]
   readonly attribute boolean isWebVRContentPresenting;
   [ChromeOnly, Pref="dom.vr.enabled"]
-  void requestVRPresentation(VRDisplay display);
+  undefined requestVRPresentation(VRDisplay display);
 };
 partial interface Navigator {
-  [Pref="dom.vr.puppet.enabled"]
+  [Throws, Pref="dom.vr.puppet.enabled"]
   VRServiceTest requestVRServiceTest();
 };
 
@@ -241,12 +241,12 @@ partial interface Navigator {
 
 // http://webaudio.github.io/web-midi-api/#requestmidiaccess
 partial interface Navigator {
-  [Throws, Pref="dom.webmidi.enabled"]
+  [NewObject, Func="Navigator::HasMidiSupport"]
   Promise<MIDIAccess> requestMIDIAccess(optional MIDIOptions options = {});
 };
 
-callback NavigatorUserMediaSuccessCallback = void (MediaStream stream);
-callback NavigatorUserMediaErrorCallback = void (MediaStreamError error);
+callback NavigatorUserMediaSuccessCallback = undefined (MediaStream stream);
+callback NavigatorUserMediaErrorCallback = undefined (MediaStreamError error);
 
 partial interface Navigator {
   [Throws, Func="Navigator::HasUserMediaSupport"]
@@ -257,14 +257,14 @@ partial interface Navigator {
    Func="Navigator::HasUserMediaSupport",
    NeedsCallerType,
    UseCounter]
-  void mozGetUserMedia(MediaStreamConstraints constraints,
-                       NavigatorUserMediaSuccessCallback successCallback,
-                       NavigatorUserMediaErrorCallback errorCallback);
+  undefined mozGetUserMedia(MediaStreamConstraints constraints,
+                            NavigatorUserMediaSuccessCallback successCallback,
+                            NavigatorUserMediaErrorCallback errorCallback);
 };
 
 // Service Workers/Navigation Controllers
 partial interface Navigator {
-  [Func="ServiceWorkerContainer::IsEnabled", SameObject]
+  [Func="ServiceWorkersEnabled", SameObject, BinaryName="serviceWorkerJS"]
   readonly attribute ServiceWorkerContainer serviceWorker;
 };
 
@@ -304,14 +304,20 @@ interface mixin NavigatorAutomationInformation {
 
 // https://www.w3.org/TR/clipboard-apis/#navigator-interface
 partial interface Navigator {
-  [Pref="dom.events.asyncClipboard", SecureContext, SameObject]
+  [SecureContext, SameObject]
   readonly attribute Clipboard clipboard;
+};
+
+// Used for testing of origin trials.
+partial interface Navigator {
+  [Trial="TestTrial"]
+  readonly attribute boolean testTrialGatedAttribute;
 };
 
 // https://wicg.github.io/web-share/#navigator-interface
 partial interface Navigator {
-  [SecureContext, Throws, Func="Navigator::HasShareSupport"]
-  Promise<void> share(optional ShareData data = {});
+  [SecureContext, NewObject, Func="Navigator::HasShareSupport"]
+  Promise<undefined> share(optional ShareData data = {});
   [SecureContext, Func="Navigator::HasShareSupport"]
   boolean canShare(optional ShareData data = {});
 };
@@ -339,3 +345,27 @@ interface mixin NavigatorLocks {
   readonly attribute LockManager locks;
 };
 Navigator includes NavigatorLocks;
+
+// https://w3c.github.io/autoplay/#autoplay-policy
+enum AutoplayPolicy {
+  "allowed",
+  "allowed-muted",
+  "disallowed"
+};
+
+enum AutoplayPolicyMediaType {
+  "mediaelement",
+  "audiocontext"
+};
+
+// https://w3c.github.io/autoplay/#autoplay-detection-methods
+partial interface Navigator {
+  [Pref="dom.media.autoplay-policy-detection.enabled"]
+  AutoplayPolicy getAutoplayPolicy(AutoplayPolicyMediaType type);
+
+  [Pref="dom.media.autoplay-policy-detection.enabled"]
+  AutoplayPolicy getAutoplayPolicy(HTMLMediaElement element);
+
+  [Pref="dom.media.autoplay-policy-detection.enabled"]
+  AutoplayPolicy getAutoplayPolicy(AudioContext context);
+};

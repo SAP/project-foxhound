@@ -8,7 +8,7 @@
  * This file is for Mac OS X only; see builds/mac/ftoldmac.c for
  * classic platforms built by MPW.
  *
- * Copyright (C) 1996-2021 by
+ * Copyright (C) 1996-2022 by
  * Just van Rossum, David Turner, Robert Wilhelm, and Werner Lemberg.
  *
  * This file is part of the FreeType project, and may only be used,
@@ -84,14 +84,10 @@
   /* `configure' checks the availability of `ResourceIndex' strictly */
   /* and sets HAVE_TYPE_RESOURCE_INDEX 1 or 0 always.  If it is      */
   /* not set (e.g., a build without `configure'), the availability   */
-  /* is guessed from the SDK version.                                */
+  /* is guessed from the SDK version. Starting with the 10.6 SDK,    */
+  /* `ResourceIndex` is always 1.                                    */
 #ifndef HAVE_TYPE_RESOURCE_INDEX
-#if !defined( MAC_OS_X_VERSION_10_5 ) || \
-    ( MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_5 )
-#define HAVE_TYPE_RESOURCE_INDEX 0
-#else
 #define HAVE_TYPE_RESOURCE_INDEX 1
-#endif
 #endif /* !HAVE_TYPE_RESOURCE_INDEX */
 
 #if ( HAVE_TYPE_RESOURCE_INDEX == 0 )
@@ -105,7 +101,7 @@
   /* Don't want warnings about our own use of deprecated functions. */
 #define FT_DEPRECATED_ATTRIBUTE
 
-#include FT_MAC_H
+#include <freetype/ftmac.h>
 
 #ifndef kATSOptionFlagsUnRestrictedScope /* since Mac OS X 10.1 */
 #define kATSOptionFlagsUnRestrictedScope kATSOptionFlagsDefault
@@ -314,7 +310,7 @@
                                     NULL, NULL, NULL ) )
       return ( OSType ) 0;
 
-    return ((FInfo *)(info.finderInfo))->fdType;
+    return ( (FInfo *)( info.finderInfo ) )->fdType;
   }
 
 
@@ -462,7 +458,7 @@
 
         if ( ps_name_len != 0 )
         {
-          ft_memcpy(ps_name, names[0] + 1, ps_name_len);
+          ft_memcpy( ps_name, names[0] + 1, ps_name_len );
           ps_name[ps_name_len] = 0;
         }
         if ( style->indexes[face_index] > 1 &&

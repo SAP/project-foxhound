@@ -12,6 +12,14 @@
     visible: true
   });
 
+  async function checkForH264Support() {
+    const pc = new RTCPeerConnection();
+    const offer = await pc.createOffer({offerToReceiveVideo: true});
+    return offer.sdp.match(/a=rtpmap:[1-9][0-9]* H264/);
+  }
+
+  let resolutionAlignment = 1;
+
   var mustRejectWith = (msg, reason, f) =>
     f().then(() => ok(false, msg),
              e => is(e.name, reason, msg));
@@ -38,15 +46,24 @@
 
     v1.srcObject = stream;
     var sender = pc1.addTrack(stream.getVideoTracks()[0], stream);
+    let parameters = sender.getParameters();
+    is(parameters.encodings.length, 1, "Default number of encodings should be 1");
+    parameters.encodings[0].scaleResolutionDownBy = 0.5;
 
     await mustRejectWith(
         "Invalid scaleResolutionDownBy must reject", "RangeError",
-        () => sender.setParameters(
-            { encodings:[{ scaleResolutionDownBy: 0.5 } ] })
+        () => sender.setParameters(parameters)
     );
 
-    await sender.setParameters({ encodings: [{ maxBitrate: 60000,
-                                               scaleResolutionDownBy: 2 }] });
+    parameters = sender.getParameters();
+    parameters.encodings[0].scaleResolutionDownBy = 2;
+    parameters.encodings[0].maxBitrate = 60000;
+
+    await sender.setParameters(parameters);
+
+    parameters = sender.getParameters();
+    is(parameters.encodings[0].scaleResolutionDownBy, 2, "Should be able to set scaleResolutionDownBy");
+    is(parameters.encodings[0].maxBitrate, 60000, "Should be able to set maxBitrate");
 
     let offer = await pc1.createOffer();
     if (codec == "VP8") {
@@ -69,8 +86,14 @@
 
     ok(v1.videoWidth > 0, "source width is positive");
     ok(v1.videoHeight > 0, "source height is positive");
-    is(v2.videoWidth, v1.videoWidth / 2, "sink is half the width of source");
-    is(v2.videoHeight, v1.videoHeight / 2, "sink is half the height of source");
+    const expectedWidth =
+      v1.videoWidth / 2 - (v1.videoWidth / 2 % resolutionAlignment);
+    const expectedHeight =
+      v1.videoHeight / 2 - (v1.videoHeight / 2 % resolutionAlignment);
+    is(v2.videoWidth, expectedWidth,
+       "sink is half the width of the source");
+    is(v2.videoHeight, expectedHeight,
+       "sink is half the height of the source");
     stream.getTracks().forEach(track => track.stop());
     v1.srcObject = v2.srcObject = null;
     pc1.close()
@@ -79,9 +102,16 @@
 
   runNetworkTest(async () => {
     await matchPlatformH264CodecPrefs();
+    const hasH264 = await checkForH264Support();
+    if (hasH264 && navigator.userAgent.includes("Android")) {
+      // Android only has a hw encoder for h264
+      resolutionAlignment = 16;
+    }
     await pushPrefs(['media.peerconnection.video.lock_scaling', true]);
     await testScale("VP8");
-    await testScale("H264");
+    if (hasH264) {
+      await testScale("H264");
+    }
   });
 </script>
 </pre>

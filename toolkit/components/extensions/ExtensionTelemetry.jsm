@@ -5,13 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-var EXPORTED_SYMBOLS = ["ExtensionTelemetry", "getTrimmedString"];
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
+var EXPORTED_SYMBOLS = [
+  "ExtensionTelemetry",
+  "getTrimmedString",
+  "getErrorNameForTelemetry",
+];
 
 // Map of the base histogram ids for the metrics recorded for the extensions.
 const histograms = {
@@ -20,12 +18,13 @@ const histograms = {
   browserActionPopupOpen: "WEBEXT_BROWSERACTION_POPUP_OPEN_MS",
   browserActionPreloadResult: "WEBEXT_BROWSERACTION_POPUP_PRELOAD_RESULT_COUNT",
   contentScriptInjection: "WEBEXT_CONTENT_SCRIPT_INJECTION_MS",
+  eventPageRunningTime: "WEBEXT_EVENTPAGE_RUNNING_TIME_MS",
+  eventPageIdleResult: "WEBEXT_EVENTPAGE_IDLE_RESULT_COUNT",
   pageActionPopupOpen: "WEBEXT_PAGEACTION_POPUP_OPEN_MS",
   storageLocalGetJSON: "WEBEXT_STORAGE_LOCAL_GET_MS",
   storageLocalSetJSON: "WEBEXT_STORAGE_LOCAL_SET_MS",
   storageLocalGetIDB: "WEBEXT_STORAGE_LOCAL_IDB_GET_MS",
   storageLocalSetIDB: "WEBEXT_STORAGE_LOCAL_IDB_SET_MS",
-  userScriptInjection: "WEBEXT_USER_SCRIPT_INJECTION_MS",
 };
 
 /**
@@ -50,6 +49,36 @@ function getTrimmedString(str) {
   // the trimmed version is going to be composed by the first 40 chars and the last 37 and 3 dots
   // that joins the two parts, to visually indicate that the string has been trimmed.
   return `${str.slice(0, 40)}...${str.slice(length - 37, length)}`;
+}
+
+/**
+ * Get a string representing the error which can be included in telemetry data.
+ * If the resulting string is longer than 80 characters it is going to be
+ * trimmed using the `getTrimmedString` helper function.
+ *
+ * @param {Error | DOMException | Components.Exception} error
+ *        The error object to convert into a string representation.
+ *
+ * @returns {string}
+ *          - The `error.name` string on DOMException or Components.Exception
+ *            (trimmed to 80 chars).
+ *          - "NoError" if error is falsey.
+ *          - "UnkownError" as a fallback.
+ */
+function getErrorNameForTelemetry(error) {
+  let text = "UnknownError";
+  if (!error) {
+    text = "NoError";
+  } else if (
+    DOMException.isInstance(error) ||
+    error instanceof Components.Exception
+  ) {
+    text = error.name;
+    if (text.length > 80) {
+      text = getTrimmedString(text);
+    }
+  }
+  return text;
 }
 
 /**
@@ -122,7 +151,7 @@ class ExtensionTelemetryMetric {
    *
    * @param {string} metric
    *        The metric to record (used to retrieve the base histogram id from the _histogram object).
-   * @param {Object}                              options
+   * @param {object}                              options
    * @param {Extension | BrowserExtensionContent} options.extension
    *        The extension to record the telemetry for.
    * @param {string | undefined}                  [options.category]

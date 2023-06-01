@@ -6,29 +6,22 @@
 
 const EXPORTED_SYMBOLS = ["LoginManagerContextMenu"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "LoginHelper",
   "resource://gre/modules/LoginHelper.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "LoginManagerParent",
-  "resource://gre/modules/LoginManagerParent.jsm"
-);
-XPCOMUtils.defineLazyGetter(this, "log", () => {
-  return LoginHelper.createLogger("LoginManagerContextMenu");
-});
 
 /**
  * Password manager object for the browser contextual menu.
  */
-this.LoginManagerContextMenu = {
+const LoginManagerContextMenu = {
   /**
    * Look for login items and add them to the contextual menu.
    *
@@ -127,11 +120,11 @@ this.LoginManagerContextMenu = {
   _findLogins(formOrigin) {
     let searchParams = {
       origin: formOrigin,
-      schemeUpgrades: LoginHelper.schemeUpgrades,
+      schemeUpgrades: lazy.LoginHelper.schemeUpgrades,
     };
-    let logins = LoginHelper.searchLoginsWithObject(searchParams);
+    let logins = lazy.LoginHelper.searchLoginsWithObject(searchParams);
     let resolveBy = ["scheme", "timePasswordChanged"];
-    logins = LoginHelper.dedupeLogins(
+    logins = lazy.LoginHelper.dedupeLogins(
       logins,
       ["username", "password"],
       resolveBy,
@@ -214,7 +207,7 @@ this.LoginManagerContextMenu = {
         loginFormOrigin: formOrigin,
         login,
       })
-      .catch(Cu.reportError);
+      .catch(console.error);
   },
 
   /**

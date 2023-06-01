@@ -15,17 +15,6 @@
 using namespace rlbox;
 using namespace mozilla;
 
-// Helper function for allocating and copying nsAutoCString into sandbox
-static tainted_hunspell<char*> allocStrInSandbox(
-    rlbox_sandbox_hunspell& aSandbox, const nsAutoCString& str) {
-  size_t size = str.Length() + 1;
-  tainted_hunspell<char*> t_str = aSandbox.malloc_in_sandbox<char>(size);
-  if (t_str) {
-    rlbox::memcpy(aSandbox, t_str, str.get(), size);
-  }
-  return t_str;
-}
-
 // Helper function for allocating and copying std::string into sandbox
 static tainted_hunspell<char*> allocStrInSandbox(
     rlbox_sandbox_hunspell& aSandbox, const std::string& str) {
@@ -38,11 +27,11 @@ static tainted_hunspell<char*> allocStrInSandbox(
 }
 
 /* static */
-RLBoxHunspell* RLBoxHunspell::Create(const nsAutoCString& affpath,
-                                     const nsAutoCString& dpath) {
+RLBoxHunspell* RLBoxHunspell::Create(const nsCString& affpath,
+                                     const nsCString& dpath) {
   MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
 
-  mozilla::UniquePtr<rlbox_sandbox_hunspell, RLBoxDeleter> sandbox(
+  mozilla::UniquePtr<rlbox_sandbox_hunspell> sandbox(
       new rlbox_sandbox_hunspell());
 
 #if defined(MOZ_WASM_SANDBOXING_HUNSPELL) && !defined(HAVE_64BIT_BUILD)
@@ -53,13 +42,15 @@ RLBoxHunspell* RLBoxHunspell::Create(const nsAutoCString& affpath,
   const uint64_t defaultMaxSizeForSandbox =
       wasm_rt_get_default_max_linear_memory_size();
 
-  // We first get the size of the dictionary
+  // We first get the size of the dictionary.
+  // This is actually the first read we try on dpath and it might fail for
+  // whatever filesystem reasons (invalid path, unaccessible, ...).
   Result<int64_t, nsresult> dictSizeResult =
       mozHunspellFileMgrHost::GetSize(dpath);
-  MOZ_RELEASE_ASSERT(dictSizeResult.isOk());
+  NS_ENSURE_TRUE(dictSizeResult.isOk(), nullptr);
 
   int64_t dictSize = dictSizeResult.unwrap();
-  MOZ_RELEASE_ASSERT(dictSize >= 0);
+  NS_ENSURE_TRUE(dictSize >= 0, nullptr);
 
   // Next, we compute the expected memory needed for hunspell spell checking.
   // This will vary based on the size of the dictionary file, which varies by
@@ -84,6 +75,9 @@ RLBoxHunspell* RLBoxHunspell::Create(const nsAutoCString& affpath,
 
   NS_ENSURE_TRUE(success, nullptr);
 
+  mozilla::UniquePtr<rlbox_sandbox_hunspell, RLBoxDeleter> sandbox_initialized(
+      sandbox.release());
+
   // Add the aff and dict files to allow list
   if (!affpath.IsEmpty()) {
     mozHunspellCallbacks::AllowFile(affpath);
@@ -92,12 +86,13 @@ RLBoxHunspell* RLBoxHunspell::Create(const nsAutoCString& affpath,
     mozHunspellCallbacks::AllowFile(dpath);
   }
 
-  return new RLBoxHunspell(std::move(sandbox), affpath, dpath);
+  // TODO Bug 1788857: Verify error handling in case of inaccessible file
+  return new RLBoxHunspell(std::move(sandbox_initialized), affpath, dpath);
 }
 
 RLBoxHunspell::RLBoxHunspell(
     mozilla::UniquePtr<rlbox_sandbox_hunspell, RLBoxDeleter> aSandbox,
-    const nsAutoCString& affpath, const nsAutoCString& dpath)
+    const nsCString& affpath, const nsCString& dpath)
     : mSandbox(std::move(aSandbox)), mHandle(nullptr) {
   // Register callbacks
   mCreateFilemgr =
@@ -121,10 +116,11 @@ RLBoxHunspell::RLBoxHunspell(
   // Copy the affpath and dpath into the sandbox
   // These allocations should definitely succeed as these are first allocations
   // inside the sandbox.
-  tainted_hunspell<char*> t_affpath = allocStrInSandbox(*mSandbox, affpath);
+  tainted_hunspell<char*> t_affpath =
+      allocStrInSandbox(*mSandbox, affpath.get());
   MOZ_RELEASE_ASSERT(t_affpath);
 
-  tainted_hunspell<char*> t_dpath = allocStrInSandbox(*mSandbox, dpath);
+  tainted_hunspell<char*> t_dpath = allocStrInSandbox(*mSandbox, dpath.get());
   MOZ_RELEASE_ASSERT(t_dpath);
 
   // Create handle

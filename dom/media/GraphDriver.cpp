@@ -17,7 +17,7 @@
 #include "mozilla/MathAlgorithms.h"
 #include "CubebDeviceEnumerator.h"
 #include "MediaTrackGraphImpl.h"
-#include "AudioThreadRegistry.h"
+#include "CallbackThreadRegistry.h"
 #include "Tracing.h"
 
 #ifdef MOZ_WEBRTC
@@ -83,7 +83,7 @@ class MediaTrackGraphShutdownThreadRunnable : public Runnable {
     MOZ_ASSERT(NS_IsMainThread());
     MOZ_ASSERT(mThread);
 
-    mThread->Shutdown();
+    mThread->AsyncShutdown();
     mThread = nullptr;
     return NS_OK;
   }
@@ -142,7 +142,7 @@ void ThreadedDriver::Start() {
   // See AudioInitTask
   nsresult rv = NS_NewNamedThread("MediaTrackGrph", getter_AddRefs(mThread));
   if (NS_SUCCEEDED(rv)) {
-    mThread->EventTarget()->Dispatch(event.forget(), NS_DISPATCH_NORMAL);
+    mThread->Dispatch(event.forget(), NS_DISPATCH_NORMAL);
   }
 }
 
@@ -154,7 +154,7 @@ void ThreadedDriver::Shutdown() {
   if (mThread) {
     LOG(LogLevel::Debug,
         ("%p: Stopping ThreadedDriver's %p thread", Graph(), this));
-    mThread->Shutdown();
+    mThread->AsyncShutdown();
     mThread = nullptr;
   }
 }
@@ -502,7 +502,7 @@ AudioCallbackDriver::AudioCallbackDriver(
       mInputDeviceID(aInputDeviceID),
       mIterationDurationMS(MEDIA_GRAPH_TARGET_PERIOD_MS),
       mStarted(false),
-      mInitShutdownThread(SharedThreadPool::Get("CubebOperation"_ns, 1)),
+      mInitShutdownThread(CUBEB_TASK_THREAD),
       mAudioThreadId(ProfilerThreadId{}),
       mAudioThreadIdInCb(std::thread::id()),
       mAudioStreamState(AudioStreamState::None),
@@ -671,13 +671,11 @@ void AudioCallbackDriver::Init() {
   CubebUtils::AudioDeviceID outputId = mOutputDeviceID;
   CubebUtils::AudioDeviceID inputId = mInputDeviceID;
 
-  // XXX Only pass input input if we have an input listener.  Always
-  // set up output because it's easier, and it will just get silence.
-  if (cubeb_stream_init(cubebContext, &stream, "AudioCallbackDriver", inputId,
-                        inputWanted ? &input : nullptr,
-                        forcedOutputDeviceId ? forcedOutputDeviceId : outputId,
-                        &output, latencyFrames, DataCallback_s, StateCallback_s,
-                        this) == CUBEB_OK) {
+  if (CubebUtils::CubebStreamInit(
+          cubebContext, &stream, "AudioCallbackDriver", inputId,
+          inputWanted ? &input : nullptr,
+          forcedOutputDeviceId ? forcedOutputDeviceId : outputId, &output,
+          latencyFrames, DataCallback_s, StateCallback_s, this) == CUBEB_OK) {
     mAudioStream.own(stream);
     DebugOnly<int> rv =
         cubeb_stream_set_volume(mAudioStream, CubebUtils::GetVolumeScale());
@@ -852,7 +850,8 @@ long AudioCallbackDriver::DataCallback(const AudioDataValue* aInputBuffer,
                                        AudioDataValue* aOutputBuffer,
                                        long aFrames) {
   if (!mSandboxed && CheckThreadIdChanged()) {
-    CubebUtils::GetAudioThreadRegistry()->Register(mAudioThreadId);
+    CallbackThreadRegistry::Get()->Register(mAudioThreadId,
+                                            "NativeAudioCallback");
   }
 
   if (mAudioStreamState.compareExchange(AudioStreamState::Pending,
@@ -878,7 +877,7 @@ long AudioCallbackDriver::DataCallback(const AudioDataValue* aInputBuffer,
     // We're supposed to stop.
     PodZero(aOutputBuffer, aFrames * mOutputChannelCount);
     if (!mSandboxed) {
-      CubebUtils::GetAudioThreadRegistry()->Unregister(mAudioThreadId);
+      CallbackThreadRegistry::Get()->Unregister(mAudioThreadId);
     }
     return aFrames - 1;
   }
@@ -1000,7 +999,7 @@ long AudioCallbackDriver::DataCallback(const AudioDataValue* aInputBuffer,
     // Update the flag before handing over the graph and going to drain.
     mAudioStreamState = AudioStreamState::Stopping;
     if (!mSandboxed) {
-      CubebUtils::GetAudioThreadRegistry()->Unregister(mAudioThreadId);
+      CallbackThreadRegistry::Get()->Unregister(mAudioThreadId);
     }
     return aFrames - 1;
   }
@@ -1017,7 +1016,7 @@ long AudioCallbackDriver::DataCallback(const AudioDataValue* aInputBuffer,
     nextDriver->SetState(mIterationStart, mIterationEnd, mStateComputedTime);
     nextDriver->Start();
     if (!mSandboxed) {
-      CubebUtils::GetAudioThreadRegistry()->Unregister(mAudioThreadId);
+      CallbackThreadRegistry::Get()->Unregister(mAudioThreadId);
     }
     // Returning less than aFrames starts the draining and eventually stops the
     // audio thread. This function will never get called again.

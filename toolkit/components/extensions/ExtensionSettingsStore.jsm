@@ -6,7 +6,7 @@
 "use strict";
 
 /**
- * @fileOverview
+ * @file
  * This module is used for storing changes to settings that are
  * requested by extensions, and for finding out what the current value
  * of a setting should be, based on the precedence chain.
@@ -42,23 +42,20 @@
 
 var EXPORTED_SYMBOLS = ["ExtensionSettingsStore"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { ExtensionParent } = ChromeUtils.import(
+  "resource://gre/modules/ExtensionParent.jsm"
+);
+
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "AddonManager",
   "resource://gre/modules/AddonManager.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "JSONFile",
-  "resource://gre/modules/JSONFile.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionParent",
-  "resource://gre/modules/ExtensionParent.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  JSONFile: "resource://gre/modules/JSONFile.sys.mjs",
+});
 
 // Defined for readability of precedence and selection code.  keyInfo.selected will be
 // one of these defines, or the id of an extension if an extension has been explicitly
@@ -67,7 +64,7 @@ const SETTING_USER_SET = null;
 const SETTING_PRECEDENCE_ORDER = undefined;
 
 const JSON_FILE_NAME = "extension-settings.json";
-const JSON_FILE_VERSION = 2;
+const JSON_FILE_VERSION = 3;
 const STORE_PATH = PathUtils.join(
   Services.dirsvc.get("ProfD", Ci.nsIFile).path,
   JSON_FILE_NAME
@@ -82,6 +79,9 @@ function dataPostProcessor(json) {
     for (let storeType in json) {
       for (let setting in json[storeType]) {
         for (let extData of json[storeType][setting].precedenceList) {
+          if (setting == "overrideContentColorScheme" && extData.value > 2) {
+            extData.value = 2;
+          }
           if (typeof extData.installDate != "number") {
             extData.installDate = new Date(extData.installDate).valueOf();
           }
@@ -96,7 +96,7 @@ function dataPostProcessor(json) {
 // Loads the data from the JSON file into memory.
 function initialize() {
   if (!_initializePromise) {
-    _store = new JSONFile({
+    _store = new lazy.JSONFile({
       path: STORE_PATH,
       dataPostProcessor,
     });
@@ -191,7 +191,7 @@ function getItem(type, key, id) {
  * @param {string} key
  *        A string that uniquely identifies the setting.
  *
- * @returns {array} an array of objects with properties for key, value, id, and enabled
+ * @returns {Array} an array of objects with properties for key, value, id, and enabled
  */
 function getAllItems(type, key) {
   ensureType(type);
@@ -360,14 +360,14 @@ var ExtensionSettingsStore = {
    *        A string that uniquely identifies the setting.
    * @param {string} value
    *        The value to be stored in the setting.
-   * @param {function} initialValueCallback
+   * @param {Function} initialValueCallback
    *        A function to be called to determine the initial value for the
    *        setting. This will be passed the value in the callbackArgument
    *        argument. If omitted the initial value will be undefined.
    * @param {any} callbackArgument
    *        The value to be passed into the initialValueCallback. It defaults to
    *        the value of the key argument.
-   * @param {function} settingDataUpdate
+   * @param {Function} settingDataUpdate
    *        A function to be called to modify the initial value if necessary.
    *
    * @returns {object | null} Either an object with properties for key and
@@ -409,7 +409,7 @@ var ExtensionSettingsStore = {
     let newInstall = false;
     if (foundIndex === -1) {
       // No item for this extension, so add a new one.
-      let addon = await AddonManager.getAddonByID(id);
+      let addon = await lazy.AddonManager.getAddonByID(id);
       keyInfo.precedenceList.push({
         id,
         installDate: addon.installDate.valueOf(),
@@ -533,7 +533,7 @@ var ExtensionSettingsStore = {
    * @param {string} type
    *        The type of setting to be returned.
    *
-   * @returns {array}
+   * @returns {Array}
    *          A list of settings which have been stored for the extension.
    */
   getAllForExtension(id, type) {
@@ -574,7 +574,7 @@ var ExtensionSettingsStore = {
    * @param {string} key
    *        A string that uniquely identifies the setting.
    *
-   * @returns {array} an array of objects with properties for key, value, id, and enabled
+   * @returns {Array} an array of objects with properties for key, value, id, and enabled
    */
   getAllSettings(type, key) {
     return getAllItems(type, key);
@@ -631,7 +631,7 @@ var ExtensionSettingsStore = {
       }
       // When user set, the setting is never "controllable" unless the installDate
       // is later than the user date.
-      let addon = await AddonManager.getAddonByID(id);
+      let addon = await lazy.AddonManager.getAddonByID(id);
       return !addon || keyInfo.selectedDate > addon.installDate.valueOf()
         ? "not_controllable"
         : "controllable_by_this_extension";
@@ -647,7 +647,7 @@ var ExtensionSettingsStore = {
       return "controlled_by_this_extension";
     }
 
-    let addon = await AddonManager.getAddonByID(id);
+    let addon = await lazy.AddonManager.getAddonByID(id);
     return !addon || topItem.installDate > addon.installDate.valueOf()
       ? "controlled_by_other_extensions"
       : "controllable_by_this_extension";

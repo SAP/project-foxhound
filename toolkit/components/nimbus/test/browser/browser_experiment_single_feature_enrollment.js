@@ -6,22 +6,21 @@
 const { ExperimentFakes } = ChromeUtils.import(
   "resource://testing-common/NimbusTestUtils.jsm"
 );
-const { ExperimentAPI, NimbusFeatures } = ChromeUtils.import(
+const { ExperimentAPI } = ChromeUtils.import(
   "resource://nimbus/ExperimentAPI.jsm"
 );
 
 const SINGLE_FEATURE_RECIPE = {
   appId: "firefox-desktop",
   appName: "firefox_desktop",
-  application: "firefox-desktop",
   arguments: {},
   branches: [
     {
       feature: {
-        enabled: true,
         featureId: "urlbar",
         isEarlyStartup: true,
         value: {
+          enabled: true,
           quickSuggestEnabled: false,
           quickSuggestNonSponsoredIndex: -1,
           quickSuggestShouldShowOnboardingDialog: true,
@@ -34,10 +33,10 @@ const SINGLE_FEATURE_RECIPE = {
     },
     {
       feature: {
-        enabled: true,
         featureId: "urlbar",
         isEarlyStartup: true,
         value: {
+          enabled: true,
           quickSuggestEnabled: true,
           quickSuggestNonSponsoredIndex: -1,
           quickSuggestShouldShowOnboardingDialog: false,

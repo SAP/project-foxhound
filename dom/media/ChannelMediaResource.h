@@ -68,11 +68,14 @@ class ChannelMediaResource
   struct SharedInfo {
     NS_INLINE_DECL_REFCOUNTING(SharedInfo);
 
-    SharedInfo() : mHadCrossOriginRedirects(false) {}
-
-    nsCOMPtr<nsIPrincipal> mPrincipal;
     nsTArray<ChannelMediaResource*> mResources;
-    bool mHadCrossOriginRedirects;
+    // Null if there is not yet any data from any origin.
+    nsCOMPtr<nsIPrincipal> mPrincipal;
+    // Meaningful only when mPrincipal is non-null,
+    // unaffected by intermediate cross-origin redirects.
+    bool mFinalResponsesAreOpaque = false;
+
+    bool mHadCrossOriginRedirects = false;
 
    private:
     ~SharedInfo() = default;
@@ -186,7 +189,7 @@ class ChannelMediaResource
     void Revoke();
 
    private:
-    Mutex mMutex;
+    Mutex mMutex MOZ_UNANNOTATED;
     // mResource should only be modified on the main thread with the lock.
     // So it can be read without lock on the main thread or on other threads
     // with the lock.
@@ -210,6 +213,8 @@ class ChannelMediaResource
   nsresult OnChannelRedirect(nsIChannel* aOld, nsIChannel* aNew,
                              uint32_t aFlags, int64_t aOffset);
 
+  // Use only before MediaDecoder shutdown.  Main thread only.
+  dom::HTMLMediaElement* MediaElement() const;
   // Opens the channel, using an HTTP byte range request to start at aOffset
   // if possible. Main thread only.
   nsresult OpenChannel(int64_t aOffset);

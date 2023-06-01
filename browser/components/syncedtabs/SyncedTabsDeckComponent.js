@@ -4,10 +4,9 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const { SyncedTabsDeckStore } = ChromeUtils.import(
   "resource:///modules/syncedtabs/SyncedTabsDeckStore.js"
@@ -29,13 +28,8 @@ let { getChromeWindow } = ChromeUtils.import(
 );
 const { UIState } = ChromeUtils.import("resource://services-sync/UIState.jsm");
 
-XPCOMUtils.defineLazyGetter(this, "FxAccountsCommon", function() {
-  return ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js", {});
-});
-
-let log = ChromeUtils.import(
-  "resource://gre/modules/Log.jsm",
-  {}
+let log = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
 ).Log.repository.getLogger("Sync.RemoteTabs");
 
 var EXPORTED_SYMBOLS = ["SyncedTabsDeckComponent"];
@@ -99,11 +93,10 @@ SyncedTabsDeckComponent.prototype = {
 
     // Add app locale change support for HTML sidebar
     Services.obs.addObserver(this, "intl:app-locales-changed");
-    Services.prefs.addObserver("intl.l10n.pseudo", this);
     this.updateDir();
 
     // Go ahead and trigger sync
-    this._SyncedTabs.syncTabs().catch(Cu.reportError);
+    this._SyncedTabs.syncTabs().catch(console.error);
 
     this._deckView = new this._DeckView(this._window, this.tabListComponent, {
       onConnectDeviceClick: event => this.openConnectDevice(event),
@@ -124,7 +117,6 @@ SyncedTabsDeckComponent.prototype = {
     Services.obs.removeObserver(this, this._SyncedTabs.TOPIC_TABS_CHANGED);
     Services.obs.removeObserver(this, UIState.ON_UPDATE);
     Services.obs.removeObserver(this, "intl:app-locales-changed");
-    Services.prefs.removeObserver("intl.l10n.pseudo", this);
     this._deckView.destroy();
   },
 
@@ -139,11 +131,6 @@ SyncedTabsDeckComponent.prototype = {
         break;
       case "intl:app-locales-changed":
         this.updateDir();
-        break;
-      case "nsPref:changed":
-        if (data == "intl.l10n.pseudo") {
-          this.updateDir();
-        }
         break;
       default:
         break;
@@ -173,7 +160,7 @@ SyncedTabsDeckComponent.prototype = {
       }
       return this.PANELS.SINGLE_DEVICE_INFO;
     } catch (err) {
-      Cu.reportError(err);
+      console.error(err);
       return this.PANELS.NOT_AUTHED_INFO;
     }
   },
@@ -195,7 +182,7 @@ SyncedTabsDeckComponent.prototype = {
     // return promise for tests
     return this.getPanelStatus()
       .then(panelId => this._deckStore.selectPanel(panelId))
-      .catch(Cu.reportError);
+      .catch(console.error);
   },
 
   openSyncPrefs() {

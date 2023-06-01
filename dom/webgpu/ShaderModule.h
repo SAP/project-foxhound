@@ -10,26 +10,31 @@
 #include "nsWrapperCache.h"
 #include "ObjectModel.h"
 
-namespace mozilla {
-namespace webgpu {
+namespace mozilla::webgpu {
 
+class CompilationInfo;
 class Device;
 
 class ShaderModule final : public ObjectBase, public ChildOf<Device> {
  public:
-  GPU_DECL_CYCLE_COLLECTION(ShaderModule)
+  GPU_DECL_CYCLE_COLLECTION(
+      ShaderModule)  // TODO: kvark's WIP patch was passing CompilationInfo as a
+                     // second argument here.
   GPU_DECL_JS_WRAP(ShaderModule)
 
-  ShaderModule(Device* const aParent, RawId aId);
+  ShaderModule(Device* const aParent, RawId aId,
+               const RefPtr<dom::Promise>& aCompilationInfo);
+  already_AddRefed<dom::Promise> CompilationInfo(ErrorResult& aRv);
 
   const RawId mId;
 
  private:
   virtual ~ShaderModule();
   void Cleanup();
+
+  RefPtr<dom::Promise> mCompilationInfo;
 };
 
-}  // namespace webgpu
-}  // namespace mozilla
+}  // namespace mozilla::webgpu
 
 #endif  // GPU_ShaderModule_H_

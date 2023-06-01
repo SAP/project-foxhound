@@ -10,8 +10,10 @@
 #include <cstdint>
 #include <queue>
 #include "base/basictypes.h"
+#include "base/process.h"
 #include "build/build_config.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/WeakPtr.h"
 #include "chrome/common/ipc_message.h"
 
@@ -22,6 +24,8 @@
 namespace IPC {
 
 class Message;
+class MessageReader;
+class MessageWriter;
 
 //------------------------------------------------------------------------------
 
@@ -40,6 +44,10 @@ class Channel {
   struct ChannelId {};
 #endif
 
+  // For channels which are created after initialization, handles to the pipe
+  // endpoints may be passed around directly using IPC messages.
+  using ChannelHandle = mozilla::UniqueFileHandle;
+
   // Implemented by consumers of a Channel to receive messages.
   //
   // All listeners will only be called on the IO thread, and must be destroyed
@@ -49,11 +57,11 @@ class Channel {
     virtual ~Listener() = default;
 
     // Called when a message is received.
-    virtual void OnMessageReceived(Message&& message) = 0;
+    virtual void OnMessageReceived(mozilla::UniquePtr<Message> message) = 0;
 
     // Called when the channel is connected and we have received the internal
     // Hello message from the peer.
-    virtual void OnChannelConnected(int32_t peer_pid) {}
+    virtual void OnChannelConnected(base::ProcessId peer_pid) {}
 
     // Called when an error is detected that causes the channel to close.
     // This method is not called when a channel is closed normally.
@@ -61,7 +69,8 @@ class Channel {
 
     // If the listener has queued messages, swap them for |queue| like so
     //   swap(impl->my_queued_messages, queue);
-    virtual void GetQueuedMessages(std::queue<Message>& queue) {}
+    virtual void GetQueuedMessages(
+        std::queue<mozilla::UniquePtr<Message>>& queue) {}
   };
 
   enum Mode { MODE_SERVER, MODE_CLIENT };
@@ -80,9 +89,6 @@ class Channel {
 
     // Amount of data to read at once from the pipe.
     kReadBufferSize = 4 * 1024,
-
-    // Maximum size of a message that we allow to be copied (rather than moved).
-    kMaxCopySize = 32 * 1024,
   };
 
   // Initialize a Channel.
@@ -95,19 +101,13 @@ class Channel {
   // |listener| receives a callback on the current thread for each newly
   // received message.
   //
+  // The Channel must be created and destroyed on the IO thread, and all
+  // methods, unless otherwise noted, are only safe to call on the I/O thread.
+  //
   Channel(const ChannelId& channel_id, Mode mode, Listener* listener);
 
-  // XXX it would nice not to have yet more platform-specific code in
-  // here but it's just not worth the trouble.
-#if defined(OS_POSIX)
-  // Connect to a pre-created channel |fd| as |mode|.
-  Channel(int fd, Mode mode, Listener* listener);
-#elif defined(OS_WIN)
-  // Connect to a pre-created channel as |mode|.  Clients connect to
-  // the pre-existing server pipe, and servers take over |server_pipe|.
-  Channel(const ChannelId& channel_id, void* server_pipe, Mode mode,
-          Listener* listener);
-#endif
+  // Initialize a pre-created channel |pipe| as |mode|.
+  Channel(ChannelHandle pipe, Mode mode, Listener* listener);
 
   ~Channel();
 
@@ -126,8 +126,8 @@ class Channel {
 
   // Send a message over the Channel to the listener on the other end.
   //
-  // |message| must be allocated using operator new.  This object will be
-  // deleted once the contents of the Message have been sent.
+  // This method may be called from any thread, so long as the `Channel` is not
+  // destroyed before it returns.
   //
   // If you Send() a message on a Close()'d channel, we delete the message
   // immediately.
@@ -137,28 +137,16 @@ class Channel {
   // `-1` until `OnChannelConnected` has been called.
   int32_t OtherPid() const;
 
-  // Unsound_IsClosed() and Unsound_NumQueuedMessages() are safe to call from
-  // any thread, but the value returned may be out of date, because we don't
-  // use any synchronization when reading or writing it.
-  bool Unsound_IsClosed() const;
-  uint32_t Unsound_NumQueuedMessages() const;
+  // IsClosed() is safe to call from any thread, but the value returned may
+  // be out of date.
+  bool IsClosed() const;
 
 #if defined(OS_POSIX)
   // On POSIX an IPC::Channel wraps a socketpair(), this method returns the
   // FD # for the client end of the socket and the equivalent FD# to use for
   // mapping it into the Child process.
   // This method may only be called on the server side of a channel.
-  //
-  // If the kTestingChannelID flag is specified on the command line then
-  // a named FIFO is used as the channel transport mechanism rather than a
-  // socketpair() in which case this method returns -1 for both parameters.
   void GetClientFileDescriptorMapping(int* src_fd, int* dest_fd) const;
-
-  // Return the file descriptor for communication with the peer.
-  int GetFileDescriptor() const;
-
-  // Reset the file descriptor for communication with the peer.
-  void ResetFileDescriptor(int fd);
 
   // Close the client side of the socketpair.
   void CloseClientFileDescriptor();
@@ -174,9 +162,6 @@ class Channel {
 #  endif
 
 #elif defined(OS_WIN)
-  // Return the server pipe handle.
-  void* GetServerPipeHandle() const;
-
   // Tell this pipe to accept handles. Exactly one side of the IPC connection
   // must be set as `MODE_SERVER`, and that side will be responsible for calling
   // `DuplicateHandle` to transfer the handle between processes.
@@ -200,10 +185,14 @@ class Channel {
   static void SetClientChannelFd(int fd);
 #endif  // defined(MOZ_WIDGET_ANDROID)
 
+  // Create a new pair of pipe endpoints which can be used to establish a
+  // native IPC::Channel connection.
+  static bool CreateRawPipe(ChannelHandle* server, ChannelHandle* client);
+
  private:
   // PIMPL to which all channel calls are delegated.
   class ChannelImpl;
-  ChannelImpl* channel_impl_;
+  RefPtr<ChannelImpl> channel_impl_;
 
   enum {
 #if defined(OS_MACOSX)

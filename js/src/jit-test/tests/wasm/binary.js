@@ -223,7 +223,9 @@ const multiValueModule = moduleWithSections([sigSection([v2vSig]), declSection([
 // In this test module, 0 denotes a void-to-void block type.
 assertEq(WebAssembly.validate(multiValueModule), true);
 
-// Ensure all invalid opcodes rejected
+// Ensure all invalid opcodes are rejected.  Note that the game here (and for
+// the prefixed cases below) is to present only opcodes which will be rejected by
+// *both* Baseline and Ion.
 for (let op of undefinedOpcodes) {
     let binary = moduleWithSections([v2vSigSection, declSection([0]), bodySection([funcBody({locals:[], body:[op]})])]);
     assertErrorMessage(() => wasmEval(binary), CompileError, /((unrecognized|Unknown) opcode)|(tail calls support is not enabled)|(Exceptions support is not enabled)|(Unexpected EOF)/);
@@ -246,10 +248,13 @@ function checkIllegalPrefixed(prefix, opcode) {
 let reservedGc = {};
 if (wasmGcEnabled()) {
     reservedGc = {
-        0x0: true,
-        0x3: true,
-        0x6: true,
-        0x7: true
+      // Structure operations
+      0x07: true, 0x08: true, 0x03: true, 0x04: true, 0x05: true, 0x06: true,
+      // Array operations
+      0x1b: true, 0x1a: true, 0x1c: true, 0x1d: true, 0x10: true, 0x13: true,
+      0x14: true, 0x15: true, 0x16: true, 0x17: true, 0x18: true,
+      // Ref operations
+      0x44: true, 0x45: true, 0x46: true, 0x47: true,
     };
 }
 for (let i = 0; i < 256; i++) {
@@ -294,12 +299,17 @@ for (let i = 0; i < 256; i++) {
 // done about that.
 
 if (!wasmSimdEnabled()) {
-    for (let i = 0; i < 256; i++) {
+    for (let i = 0; i < 0x130; i++) {
         checkIllegalPrefixed(SimdPrefix, i);
     }
 } else {
     let reservedSimd = [
-        0x9a, 0xbb, 0xc2,
+        0x9a, 0xa2, 0xa5, 0xa6, 0xaf, 0xb0, 0xb2, 0xb3, 0xb4, 0xbb,
+        0xc2, 0xc5, 0xc6, 0xcf, 0xd0, 0xd2, 0xd3, 0xd4, 0xe2, 0xee,
+        0x115, 0x116, 0x117,
+        0x118, 0x119, 0x11a, 0x11b, 0x11c, 0x11d, 0x11e, 0x11f,
+        0x120, 0x121, 0x122, 0x123, 0x124, 0x125, 0x126, 0x127,
+        0x128, 0x129, 0x12a, 0x12b, 0x12c, 0x12d, 0x12e, 0x12f,
     ];
     for (let i of reservedSimd) {
         checkIllegalPrefixed(SimdPrefix, i);
@@ -376,3 +386,19 @@ function testValidNameSectionWithProfiling() {
     disableGeckoProfiling();
 }
 testValidNameSectionWithProfiling();
+
+// Memory alignment can use non-minimal LEB128
+wasmEval(moduleWithSections([
+    v2vSigSection,
+    declSection([0]),
+    memorySection(0),
+    bodySection([
+        funcBody({locals: [], body: [
+            I32ConstCode, 0x00, // i32.const 0
+            I32Load,
+                0x81, 0x00, // alignment 1, non-minimal
+                0x00, // offset 0
+            DropCode,
+        ]}),
+    ]),
+]));

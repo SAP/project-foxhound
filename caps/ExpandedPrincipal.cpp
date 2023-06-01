@@ -9,12 +9,12 @@
 #include "nsIObjectInputStream.h"
 #include "nsReadableUtils.h"
 #include "mozilla/Base64.h"
+#include "mozilla/extensions/WebExtensionPolicy.h"
 #include "json/json.h"
 
 using namespace mozilla;
 
-NS_IMPL_CLASSINFO(ExpandedPrincipal, nullptr, nsIClassInfo::MAIN_THREAD_ONLY,
-                  NS_EXPANDEDPRINCIPAL_CID)
+NS_IMPL_CLASSINFO(ExpandedPrincipal, nullptr, 0, NS_EXPANDEDPRINCIPAL_CID)
 NS_IMPL_QUERY_INTERFACE_CI(ExpandedPrincipal, nsIPrincipal,
                            nsIExpandedPrincipal)
 NS_IMPL_CI_INTERFACE_GETTER(ExpandedPrincipal, nsIPrincipal,
@@ -171,10 +171,15 @@ bool ExpandedPrincipal::AddonAllowsLoad(nsIURI* aURI,
   return false;
 }
 
-void ExpandedPrincipal::SetCsp(nsIContentSecurityPolicy* aCSP) { mCSP = aCSP; }
+void ExpandedPrincipal::SetCsp(nsIContentSecurityPolicy* aCSP) {
+  AssertIsOnMainThread();
+  mCSP = new nsMainThreadPtrHolder<nsIContentSecurityPolicy>(
+      "ExpandedPrincipal::mCSP", aCSP);
+}
 
 NS_IMETHODIMP
 ExpandedPrincipal::GetCsp(nsIContentSecurityPolicy** aCsp) {
+  AssertIsOnMainThread();
   NS_IF_ADDREF(*aCsp = mCSP);
   return NS_OK;
 }
@@ -368,7 +373,7 @@ ExpandedPrincipal::IsThirdPartyURI(nsIURI* aURI, bool* aRes) {
   // the content script is running, ignore the extension's principal.
 
   for (const auto& principal : mPrincipals) {
-    if (!Cast(principal)->AddonPolicy()) {
+    if (!Cast(principal)->AddonPolicyCore()) {
       return Cast(principal)->IsThirdPartyURI(aURI, aRes);
     }
   }

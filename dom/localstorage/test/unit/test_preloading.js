@@ -3,7 +3,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-async function testSteps() {
+add_task(async function testSteps() {
   const principals = [
     getPrincipal("http://example.com", {}),
     getPrincipal("http://example.com", { privateBrowsingId: 1 }),
@@ -15,7 +15,10 @@ async function testSteps() {
 
   info("Setting prefs");
 
-  Services.prefs.setBoolPref("dom.storage.next_gen", true);
+  Services.prefs.setBoolPref(
+    "dom.storage.enable_unsupported_legacy_implementation",
+    false
+  );
   Services.prefs.setBoolPref("dom.storage.snapshot_reusing", false);
 
   for (const principal of principals) {
@@ -78,4 +81,4 @@ async function testSteps() {
       "Data is not preloaded after clearing origin"
     );
   }
-}
+});

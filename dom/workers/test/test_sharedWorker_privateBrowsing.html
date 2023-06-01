@@ -17,7 +17,7 @@ function testOnWindow(aIsPrivate, aCallback) {
   win.addEventListener("load", function() {
     win.addEventListener("DOMContentLoaded", function onInnerLoad() {
       if (win.content.location.href != contentPage) {
-        BrowserTestUtils.loadURI(win.gBrowser, contentPage);
+        BrowserTestUtils.loadURIString(win.gBrowser, contentPage);
         return;
       }
 
@@ -61,9 +61,21 @@ function doTests() {
   });
 }
 
+function doSystemSharedWorkerTest() {
+  try {
+    let chromeShared =
+      new wP.SharedWorker("chrome://mochitests/content/dom/workers/test/sharedWorker_privateBrowsing.js");
+    ok(true, "system SharedWorker created without throwing or crashing!");
+  } catch (_ex) {
+    ok(false, "system SharedWorker should not throw or crash");
+  }
+  runTest();
+}
+
 var steps = [
   setupWindow,
-  doTests
+  doTests,
+  doSystemSharedWorkerTest,
 ];
 
 function runTest() {

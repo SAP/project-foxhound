@@ -209,10 +209,10 @@ void ChildSHistory::GotoIndex(int32_t aIndex, int32_t aOffset,
     nsCOMPtr<nsISHistory> shistory = mHistory;
     mBrowsingContext->HistoryGo(
         aOffset, mHistoryEpoch, aRequireUserInteraction, aUserActivation,
-        [shistory](int32_t&& aRequestedIndex) {
+        [shistory](Maybe<int32_t>&& aRequestedIndex) {
           // FIXME Should probably only do this for non-fission.
-          if (shistory) {
-            shistory->InternalSetRequestedIndex(aRequestedIndex);
+          if (aRequestedIndex.isSome() && shistory) {
+            shistory->InternalSetRequestedIndex(aRequestedIndex.value());
           }
         });
   } else {
@@ -264,7 +264,7 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(ChildSHistory)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(ChildSHistory)
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(ChildSHistory)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ChildSHistory)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(ChildSHistory)
   if (tmp->mHistory) {
@@ -277,8 +277,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(ChildSHistory)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mBrowsingContext, mHistory)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(ChildSHistory)
 
 JSObject* ChildSHistory::WrapObject(JSContext* cx,
                                     JS::Handle<JSObject*> aGivenProto) {

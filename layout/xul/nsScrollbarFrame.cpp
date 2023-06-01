@@ -251,9 +251,12 @@ int32_t nsScrollbarFrame::MoveToNewPosition(
     MOZ_ASSERT(m);
     // aImplementsScrollByUnit being Yes indicates the caller doesn't care
     // about the return value.
-    m->ScrollByUnit(this,
-                    mSmoothScroll ? ScrollMode::Smooth : ScrollMode::Instant,
-                    mDirection, mScrollUnit, nsIScrollbarMediator::ENABLE_SNAP);
+    // Note that this `MoveToNewPosition` is used for scrolling triggered by
+    // repeating scrollbar button press, so we'd use an intended-direction
+    // scroll snap flag.
+    m->ScrollByUnit(
+        this, mSmoothScroll ? ScrollMode::Smooth : ScrollMode::Instant,
+        mDirection, mScrollUnit, ScrollSnapFlags::IntendedDirection);
     return 0;
   }
 
@@ -401,7 +404,6 @@ nsresult nsScrollbarFrame::CreateAnonymousContent(
         nodeInfoManager->GetNodeInfo(nsGkAtoms::slider, nullptr,
                                      kNameSpaceID_XUL, nsINode::ELEMENT_NODE));
     mSlider->SetAttr(kNameSpaceID_None, nsGkAtoms::orient, orient, false);
-    mSlider->SetAttr(kNameSpaceID_None, nsGkAtoms::flex, u"1"_ns, false);
 
     aElements.AppendElement(ContentInfo(mSlider, key));
 

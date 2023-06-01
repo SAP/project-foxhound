@@ -239,13 +239,12 @@ loser:
     return SECFailure;
 }
 
-const SEC_ASN1Template hashParameterTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SECItem) },
-      { SEC_ASN1_OBJECT_ID, 0 },
-      { SEC_ASN1_SKIP_REST },
-      { 0 }
-    };
+const SEC_ASN1Template hashParameterTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SECItem) },
+    { SEC_ASN1_OBJECT_ID, 0 },
+    { SEC_ASN1_SKIP_REST },
+    { 0 }
+};
 
 /*
  * Get just the encryption algorithm from the signature algorithm
@@ -347,8 +346,8 @@ sec_DecodeSigAlg(const SECKEYPublicKey *key, SECOidTag sigAlg,
                 PORT_DestroyCheapArena(&tmpArena);
 
                 /* only accept hash algorithms */
-                if (HASH_GetHashTypeByOidTag(*hashalg) == HASH_AlgNULL) {
-                    /* error set by HASH_GetHashTypeByOidTag */
+                if (rv != SECSuccess || HASH_GetHashTypeByOidTag(*hashalg) == HASH_AlgNULL) {
+                    /* error set by sec_DecodeRSAPSSParams or HASH_GetHashTypeByOidTag */
                     return SECFailure;
                 }
             } else {

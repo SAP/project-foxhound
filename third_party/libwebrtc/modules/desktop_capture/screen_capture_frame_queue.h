@@ -13,12 +13,6 @@
 
 #include <memory>
 
-#include "rtc_base/constructor_magic.h"
-// TODO(zijiehe): These headers are not used in this file, but to avoid build
-// break in remoting/host. We should add headers in each individual files.
-#include "modules/desktop_capture/desktop_frame.h"         // Remove
-#include "modules/desktop_capture/shared_desktop_frame.h"  // Remove
-
 namespace webrtc {
 
 // Represents a queue of reusable video frames. Provides access to the 'current'
@@ -37,15 +31,18 @@ namespace webrtc {
 template <typename FrameType>
 class ScreenCaptureFrameQueue {
  public:
-  ScreenCaptureFrameQueue() : current_(0) {}
+  ScreenCaptureFrameQueue() = default;
   ~ScreenCaptureFrameQueue() = default;
+
+  ScreenCaptureFrameQueue(const ScreenCaptureFrameQueue&) = delete;
+  ScreenCaptureFrameQueue& operator=(const ScreenCaptureFrameQueue&) = delete;
 
   // Moves to the next frame in the queue, moving the 'current' frame to become
   // the 'previous' one.
   void MoveToNextFrame() { current_ = (current_ + 1) % kQueueLength; }
 
   // Replaces the current frame with a new one allocated by the caller. The
-  // existing frame (if any) is destroyed. Takes ownership of |frame|.
+  // existing frame (if any) is destroyed. Takes ownership of `frame`.
   void ReplaceCurrentFrame(std::unique_ptr<FrameType> frame) {
     frames_[current_] = std::move(frame);
   }
@@ -67,12 +64,10 @@ class ScreenCaptureFrameQueue {
 
  private:
   // Index of the current frame.
-  int current_;
+  int current_ = 0;
 
   static const int kQueueLength = 2;
   std::unique_ptr<FrameType> frames_[kQueueLength];
-
-  RTC_DISALLOW_COPY_AND_ASSIGN(ScreenCaptureFrameQueue);
 };
 
 }  // namespace webrtc

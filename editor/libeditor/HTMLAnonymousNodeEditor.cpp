@@ -4,7 +4,9 @@
 
 #include "HTMLEditor.h"
 
+#include "CSSEditUtils.h"
 #include "HTMLEditUtils.h"
+
 #include "mozilla/Attributes.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
@@ -71,11 +73,18 @@ static int32_t GetCSSFloatValue(nsComputedDOMStyle* aComputedStyle,
   return NS_SUCCEEDED(rv) ? val : 0;
 }
 
-class ElementDeletionObserver final : public nsStubMutationObserver {
+/******************************************************************************
+ * mozilla::ElementDeletionObserver
+ *****************************************************************************/
+
+class ElementDeletionObserver final : public nsStubMultiMutationObserver {
  public:
   ElementDeletionObserver(nsIContent* aNativeAnonNode,
                           Element* aObservedElement)
-      : mNativeAnonNode(aNativeAnonNode), mObservedElement(aObservedElement) {}
+      : mNativeAnonNode(aNativeAnonNode), mObservedElement(aObservedElement) {
+    AddMutationObserverToNode(aNativeAnonNode);
+    AddMutationObserverToNode(aObservedElement);
+  }
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIMUTATIONOBSERVER_PARENTCHAINCHANGED
@@ -106,7 +115,7 @@ void ElementDeletionObserver::ParentChainChanged(nsIContent* aContent) {
   NS_RELEASE_THIS();
 }
 
-void ElementDeletionObserver::NodeWillBeDestroyed(const nsINode* aNode) {
+void ElementDeletionObserver::NodeWillBeDestroyed(nsINode* aNode) {
   NS_ASSERTION(aNode == mNativeAnonNode || aNode == mObservedElement,
                "Wrong aNode!");
   if (aNode == mNativeAnonNode) {
@@ -120,6 +129,10 @@ void ElementDeletionObserver::NodeWillBeDestroyed(const nsINode* aNode) {
 
   NS_RELEASE_THIS();
 }
+
+/******************************************************************************
+ * mozilla::HTMLEditor
+ *****************************************************************************/
 
 ManualNACPtr HTMLEditor::CreateAnonymousElement(nsAtom* aTag,
                                                 nsIContent& aParentContent,
@@ -198,8 +211,6 @@ ManualNACPtr HTMLEditor::CreateAnonymousElement(nsAtom* aTag,
   auto* observer = new ElementDeletionObserver(newNativeAnonymousContent,
                                                aParentContent.AsElement());
   NS_ADDREF(observer);  // NodeWillBeDestroyed releases.
-  aParentContent.AddMutationObserver(observer);
-  newNativeAnonymousContent->AddMutationObserver(observer);
 
 #ifdef DEBUG
   // Editor anonymous content gets passed to PostRecreateFramesFor... which
@@ -436,7 +447,7 @@ nsresult HTMLEditor::RefreshEditingUI() {
   }
 
   // now, let's display all contextual UI for good
-  nsIContent* hostContent = GetActiveEditingHost();
+  nsIContent* hostContent = ComputeEditingHost();
 
   if (IsObjectResizerEnabled() && focusElement &&
       HTMLEditUtils::IsSimplyEditableNode(*focusElement) &&
@@ -570,7 +581,7 @@ nsresult HTMLEditor::GetPositionAndDimensions(Element& aElement, int32_t& aX,
 nsresult HTMLEditor::SetAnonymousElementPositionWithoutTransaction(
     nsStyledElement& aStyledElement, int32_t aX, int32_t aY) {
   nsresult rv;
-  rv = mCSSEditUtils->SetCSSPropertyPixelsWithoutTransaction(
+  rv = CSSEditUtils::SetCSSPropertyPixelsWithoutTransaction(
       aStyledElement, *nsGkAtoms::left, aX);
   if (rv == NS_ERROR_EDITOR_DESTROYED) {
     NS_WARNING(
@@ -582,7 +593,7 @@ nsresult HTMLEditor::SetAnonymousElementPositionWithoutTransaction(
       NS_SUCCEEDED(rv),
       "CSSEditUtils::SetCSSPropertyPixelsWithoutTransaction(nsGkAtoms::left) "
       "failed, but ignored");
-  rv = mCSSEditUtils->SetCSSPropertyPixelsWithoutTransaction(
+  rv = CSSEditUtils::SetCSSPropertyPixelsWithoutTransaction(
       aStyledElement, *nsGkAtoms::top, aY);
   if (rv == NS_ERROR_EDITOR_DESTROYED) {
     NS_WARNING(

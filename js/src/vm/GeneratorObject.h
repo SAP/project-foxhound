@@ -12,11 +12,12 @@
 #include "vm/ArrayObject.h"
 #include "vm/BytecodeUtil.h"
 #include "vm/GeneratorResumeKind.h"  // GeneratorResumeKind
-#include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/Stack.h"
 
 namespace js {
+
+class InterpreterActivation;
 
 namespace frontend {
 class TaggedParserAtomIndex;
@@ -243,7 +244,7 @@ AbstractGeneratorObject* GetGeneratorObjectForEnvironment(JSContext* cx,
                                                           HandleObject env);
 
 GeneratorResumeKind ParserAtomToResumeKind(
-    JSContext* cx, frontend::TaggedParserAtomIndex atom);
+    frontend::TaggedParserAtomIndex atom);
 JSAtom* ResumeKindToAtom(JSContext* cx, GeneratorResumeKind kind);
 
 }  // namespace js

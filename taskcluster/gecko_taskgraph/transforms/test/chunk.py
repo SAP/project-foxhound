@@ -1,21 +1,22 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-import copy
 
-import gecko_taskgraph
-from gecko_taskgraph.transforms.base import TransformSequence
-from gecko_taskgraph.util.attributes import keymatch, is_try
+import taskgraph
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.attributes import keymatch
+from taskgraph.util.treeherder import join_symbol, split_symbol
+
+from gecko_taskgraph.util.attributes import is_try
 from gecko_taskgraph.util.chunking import (
+    DefaultLoader,
     chunk_manifests,
     get_manifest_loader,
     get_runtimes,
     guess_mozinfo_from_task,
-    DefaultLoader,
 )
+from gecko_taskgraph.util.copy_task import copy_task
 from gecko_taskgraph.util.perfile import perfile_number_of_chunks
-from gecko_taskgraph.util.treeherder import split_symbol, join_symbol
-
 
 DYNAMIC_CHUNK_DURATION = 20 * 60  # seconds
 """The approximate time each test chunk should take to run."""
@@ -73,8 +74,8 @@ def set_test_manifests(config, tasks):
         # chunked at the test runtime and those that are chunked in the taskgraph.
         task.setdefault("tags", {})["tests_grouped"] = "1"
 
-        if gecko_taskgraph.fast:
-            # We want to avoid evaluating manifests when gecko_taskgraph.fast is set. But
+        if taskgraph.fast:
+            # We want to avoid evaluating manifests when taskgraph.fast is set. But
             # manifests are required for dynamic chunking. Just set the number of
             # chunks to one in this case.
             if task["chunks"] == "dynamic":
@@ -195,7 +196,7 @@ def split_chunks(config, tasks):
             this_chunk = i + 1
 
             # copy the test and update with the chunk number
-            chunked = copy.deepcopy(task)
+            chunked = copy_task(task)
             chunked["this-chunk"] = this_chunk
 
             if chunked_manifests is not None:

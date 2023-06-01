@@ -45,7 +45,7 @@ static uint32_t GetShortFallbackDelay() {
 
 nsFontFaceLoader::nsFontFaceLoader(gfxUserFontEntry* aUserFontEntry,
                                    uint32_t aSrcIndex,
-                                   FontFaceSet* aFontFaceSet,
+                                   FontFaceSetImpl* aFontFaceSet,
                                    nsIChannel* aChannel)
     : mUserFontEntry(aUserFontEntry),
       mFontFaceSet(aFontFaceSet),
@@ -64,7 +64,10 @@ nsFontFaceLoader::nsFontFaceLoader(gfxUserFontEntry* aUserFontEntry,
   // We add an explicit load block rather than just rely on the network
   // request's block, since we need to do some OMT work after the load
   // is finished before we unblock load.
-  mFontFaceSet->Document()->BlockOnload();
+  auto* doc = mFontFaceSet->GetDocument();
+  if (doc) {
+    doc->BlockOnload();
+  }
 }
 
 nsFontFaceLoader::~nsFontFaceLoader() {
@@ -79,7 +82,10 @@ nsFontFaceLoader::~nsFontFaceLoader() {
   }
   if (mFontFaceSet) {
     mFontFaceSet->RemoveLoader(this);
-    mFontFaceSet->Document()->UnblockOnload(false);
+    auto* doc = mFontFaceSet->GetDocument();
+    if (doc) {
+      doc->UnblockOnload(false);
+    }
   }
 }
 
@@ -94,10 +100,16 @@ void nsFontFaceLoader::StartedLoading(nsIStreamLoader* aStreamLoader) {
   }
 
   if (loadTimeout > 0) {
+    nsIEventTarget* target;
+    auto* doc = mFontFaceSet->GetDocument();
+    if (doc) {
+      target = doc->EventTargetFor(TaskCategory::Other);
+    } else {
+      target = GetMainThreadSerialEventTarget();
+    }
     NS_NewTimerWithFuncCallback(
         getter_AddRefs(mLoadTimer), LoadTimerCallback, static_cast<void*>(this),
-        loadTimeout, nsITimer::TYPE_ONE_SHOT, "LoadTimerCallback",
-        mFontFaceSet->Document()->EventTargetFor(TaskCategory::Other));
+        loadTimeout, nsITimer::TYPE_ONE_SHOT, "LoadTimerCallback", target);
   } else {
     mUserFontEntry->mFontDataLoadingState = gfxUserFontEntry::LOADING_SLOWLY;
   }
@@ -184,10 +196,10 @@ void nsFontFaceLoader::LoadTimerCallback(nsITimer* aTimer, void* aClosure) {
   // before, we mark this entry as "loading slowly", so the fallback
   // font will be used in the meantime, and tell the context to refresh.
   if (updateUserFontSet) {
-    nsTArray<gfxUserFontSet*> fontSets;
+    nsTArray<RefPtr<gfxUserFontSet>> fontSets;
     ufe->GetUserFontSets(fontSets);
     for (gfxUserFontSet* fontSet : fontSets) {
-      nsPresContext* ctx = FontFaceSet::GetPresContextFor(fontSet);
+      nsPresContext* ctx = FontFaceSetImpl::GetPresContextFor(fontSet);
       if (ctx) {
         fontSet->IncrementGeneration();
         ctx->UserFontSetUpdated(ufe);
@@ -271,7 +283,7 @@ nsFontFaceLoader::OnStreamComplete(nsIStreamLoader* aLoader,
     }
   }
 
-  mFontFaceSet->GetUserFontSet()->RecordFontLoadDone(aStringLen, doneTime);
+  mFontFaceSet->RecordFontLoadDone(aStringLen, doneTime);
 
   // The userFontEntry is responsible for freeing the downloaded data
   // (aString) when finished with it; the pointer is no longer valid
@@ -296,10 +308,10 @@ nsresult nsFontFaceLoader::FontLoadComplete() {
   }
 
   // when new font loaded, need to reflow
-  nsTArray<gfxUserFontSet*> fontSets;
+  nsTArray<RefPtr<gfxUserFontSet>> fontSets;
   mUserFontEntry->GetUserFontSets(fontSets);
   for (gfxUserFontSet* fontSet : fontSets) {
-    nsPresContext* ctx = FontFaceSet::GetPresContextFor(fontSet);
+    nsPresContext* ctx = FontFaceSetImpl::GetPresContextFor(fontSet);
     if (ctx) {
       // Update layout for the presence of the new font.  Since this is
       // asynchronous, reflows will coalesce.
@@ -310,7 +322,10 @@ nsresult nsFontFaceLoader::FontLoadComplete() {
 
   MOZ_DIAGNOSTIC_ASSERT(mFontFaceSet);
   mFontFaceSet->RemoveLoader(this);
-  mFontFaceSet->Document()->UnblockOnload(false);
+  auto* doc = mFontFaceSet->GetDocument();
+  if (doc) {
+    doc->UnblockOnload(false);
+  }
   mFontFaceSet = nullptr;
 
   return NS_OK;
@@ -344,14 +359,18 @@ void nsFontFaceLoader::Cancel() {
 
   mUserFontEntry->LoadCanceled();
   mUserFontEntry = nullptr;
-  mFontFaceSet->Document()->UnblockOnload(false);
+  auto* doc = mFontFaceSet->GetDocument();
+  if (doc) {
+    doc->UnblockOnload(false);
+  }
   mFontFaceSet = nullptr;
   if (mLoadTimer) {
     mLoadTimer->Cancel();
     mLoadTimer = nullptr;
   }
   if (nsCOMPtr<nsIChannel> channel = std::move(mChannel)) {
-    channel->Cancel(NS_BINDING_ABORTED);
+    channel->CancelWithReason(NS_BINDING_ABORTED,
+                              "nsFontFaceLoader::OnStopRequest"_ns);
   }
 }
 

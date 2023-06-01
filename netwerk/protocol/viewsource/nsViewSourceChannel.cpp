@@ -263,6 +263,20 @@ nsViewSourceChannel::GetStatus(nsresult* status) {
   return mChannel->GetStatus(status);
 }
 
+NS_IMETHODIMP nsViewSourceChannel::SetCanceledReason(
+    const nsACString& aReason) {
+  return nsIViewSourceChannel::SetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP nsViewSourceChannel::GetCanceledReason(nsACString& aReason) {
+  return nsIViewSourceChannel::GetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP nsViewSourceChannel::CancelWithReason(nsresult aStatus,
+                                                    const nsACString& aReason) {
+  return nsIViewSourceChannel::CancelWithReasonImpl(aStatus, aReason);
+}
+
 NS_IMETHODIMP
 nsViewSourceChannel::Cancel(nsresult status) {
   NS_ENSURE_TRUE(mChannel, NS_ERROR_FAILURE);
@@ -457,7 +471,8 @@ nsViewSourceChannel::GetContentType(nsACString& aContentType) {
     // content decoder will then kick in automatically, and it
     // will call our SetOriginalContentType method instead of our
     // SetContentType method to set the type it determines.
-    if (!contentType.EqualsLiteral(UNKNOWN_CONTENT_TYPE)) {
+    if (!contentType.EqualsLiteral(UNKNOWN_CONTENT_TYPE) &&
+        !contentType.IsEmpty()) {
       contentType = VIEWSOURCE_CONTENT_TYPE;
     }
 
@@ -621,7 +636,7 @@ nsViewSourceChannel::SetNotificationCallbacks(
 }
 
 NS_IMETHODIMP
-nsViewSourceChannel::GetSecurityInfo(nsISupports** aSecurityInfo) {
+nsViewSourceChannel::GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo) {
   NS_ENSURE_TRUE(mChannel, NS_ERROR_FAILURE);
 
   return mChannel->GetSecurityInfo(aSecurityInfo);
@@ -765,13 +780,6 @@ nsViewSourceChannel::SetTopBrowsingContextId(uint64_t aId) {
 }
 
 NS_IMETHODIMP
-nsViewSourceChannel::GetFlashPluginState(
-    nsIHttpChannel::FlashPluginState* aResult) {
-  return !mHttpChannel ? NS_ERROR_NULL_POINTER
-                       : mHttpChannel->GetFlashPluginState(aResult);
-}
-
-NS_IMETHODIMP
 nsViewSourceChannel::GetRequestMethod(nsACString& aRequestMethod) {
   return !mHttpChannel ? NS_ERROR_NULL_POINTER
                        : mHttpChannel->GetRequestMethod(aRequestMethod);
@@ -852,18 +860,6 @@ nsViewSourceChannel::ShouldStripRequestBodyHeader(const nsACString& aMethod,
   return !mHttpChannel
              ? NS_ERROR_NULL_POINTER
              : mHttpChannel->ShouldStripRequestBodyHeader(aMethod, aResult);
-}
-
-NS_IMETHODIMP
-nsViewSourceChannel::GetAllowPipelining(bool* aAllowPipelining) {
-  return !mHttpChannel ? NS_ERROR_NULL_POINTER
-                       : mHttpChannel->GetAllowPipelining(aAllowPipelining);
-}
-
-NS_IMETHODIMP
-nsViewSourceChannel::SetAllowPipelining(bool aAllowPipelining) {
-  return !mHttpChannel ? NS_ERROR_NULL_POINTER
-                       : mHttpChannel->SetAllowPipelining(aAllowPipelining);
 }
 
 NS_IMETHODIMP
@@ -1061,6 +1057,11 @@ nsViewSourceChannel::LogMimeTypeMismatch(const nsACString& aMessageName,
                                            aContentType);
 }
 
+// FIXME: Should this forward to mHttpChannel? This was previously handled by a
+// default empty implementation.
+void nsViewSourceChannel::SetSource(
+    mozilla::UniquePtr<mozilla::ProfileChunkedBuffer> aSource) {}
+
 const nsTArray<mozilla::net::PreferredAlternativeDataTypeParams>&
 nsViewSourceChannel::PreferredAlternativeDataTypes() {
   if (mCacheInfoChannel) {
@@ -1086,6 +1087,11 @@ void nsViewSourceChannel::DoDiagnosticAssertWhenOnStopNotCalledOnDestroy() {
     mHttpChannelInternal->DoDiagnosticAssertWhenOnStopNotCalledOnDestroy();
   }
 }
+
+// FIXME: Should this forward to mHttpChannelInternal? This was previously
+// handled by a default empty implementation.
+void nsViewSourceChannel::SetConnectionInfo(
+    mozilla::net::nsHttpConnectionInfo* aInfo) {}
 
 // nsIChildChannel methods
 

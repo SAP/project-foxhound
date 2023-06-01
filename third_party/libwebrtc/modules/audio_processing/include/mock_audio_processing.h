@@ -13,6 +13,7 @@
 
 #include <memory>
 
+#include "absl/strings/string_view.h"
 #include "modules/audio_processing/include/aec_dump.h"
 #include "modules/audio_processing/include/audio_processing.h"
 #include "modules/audio_processing/include/audio_processing_statistics.h"
@@ -67,22 +68,34 @@ class MockEchoControl : public EchoControl {
   MOCK_METHOD(bool, ActiveProcessing, (), (const, override));
 };
 
-class MockAudioProcessing : public ::testing::NiceMock<AudioProcessing> {
+class MockEchoDetector : public EchoDetector {
+ public:
+  virtual ~MockEchoDetector() {}
+  MOCK_METHOD(void,
+              Initialize,
+              (int capture_sample_rate_hz,
+               int num_capture_channels,
+               int render_sample_rate_hz,
+               int num_render_channels),
+              (override));
+  MOCK_METHOD(void,
+              AnalyzeRenderAudio,
+              (rtc::ArrayView<const float> render_audio),
+              (override));
+  MOCK_METHOD(void,
+              AnalyzeCaptureAudio,
+              (rtc::ArrayView<const float> capture_audio),
+              (override));
+  MOCK_METHOD(Metrics, GetMetrics, (), (const, override));
+};
+
+class MockAudioProcessing : public AudioProcessing {
  public:
   MockAudioProcessing() {}
 
   virtual ~MockAudioProcessing() {}
 
   MOCK_METHOD(int, Initialize, (), (override));
-  MOCK_METHOD(int,
-              Initialize,
-              (int capture_input_sample_rate_hz,
-               int capture_output_sample_rate_hz,
-               int render_sample_rate_hz,
-               ChannelLayout capture_input_layout,
-               ChannelLayout capture_output_layout,
-               ChannelLayout render_input_layout),
-              (override));
   MOCK_METHOD(int,
               Initialize,
               (const ProcessingConfig& processing_config),
@@ -96,6 +109,7 @@ class MockAudioProcessing : public ::testing::NiceMock<AudioProcessing> {
   MOCK_METHOD(size_t, num_reverse_channels, (), (const, override));
   MOCK_METHOD(void, set_output_will_be_muted, (bool muted), (override));
   MOCK_METHOD(void, SetRuntimeSetting, (RuntimeSetting setting), (override));
+  MOCK_METHOD(bool, PostRuntimeSetting, (RuntimeSetting setting), (override));
   MOCK_METHOD(int,
               ProcessStream,
               (const int16_t* const src,
@@ -139,7 +153,7 @@ class MockAudioProcessing : public ::testing::NiceMock<AudioProcessing> {
   MOCK_METHOD(int, recommended_stream_analog_level, (), (const, override));
   MOCK_METHOD(bool,
               CreateAndAttachAecDump,
-              (const std::string& file_name,
+              (absl::string_view file_name,
                int64_t max_log_size_bytes,
                rtc::TaskQueue* worker_queue),
               (override));

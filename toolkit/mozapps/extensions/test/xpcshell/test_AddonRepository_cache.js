@@ -37,7 +37,7 @@ const ADDONS = [
         page: "options.html",
       },
 
-      applications: {
+      browser_specific_settings: {
         gecko: { id: "test_AddonRepository_1@tests.mozilla.org" },
       },
     },
@@ -47,7 +47,7 @@ const ADDONS = [
       name: "XPI Add-on 2",
       version: "1.2",
       theme: {},
-      applications: {
+      browser_specific_settings: {
         gecko: { id: "test_AddonRepository_2@tests.mozilla.org" },
       },
     },
@@ -60,7 +60,7 @@ const ADDONS = [
         32: "icon.png",
       },
       theme: {},
-      applications: {
+      browser_specific_settings: {
         gecko: { id: "test_AddonRepository_3@tests.mozilla.org" },
       },
     },
@@ -70,7 +70,9 @@ const ADDONS = [
   },
 ];
 
-const ADDON_IDS = ADDONS.map(addon => addon.manifest.applications.gecko.id);
+const ADDON_IDS = ADDONS.map(
+  addon => addon.manifest.browser_specific_settings.gecko.id
+);
 const ADDON_FILES = ADDONS.map(addon =>
   AddonTestUtils.createTempWebExtensionFile(addon)
 );
@@ -657,7 +659,7 @@ add_task(async function run_test_13() {
   Assert.ok(gDBFile.exists());
   Services.prefs.setCharPref(PREF_GETADDONS_BYIDS, EMPTY_RESULT);
 
-  await AddonManagerInternal.backgroundUpdateCheck();
+  await AddonManagerPrivate.backgroundUpdateCheck();
   // Database should have been deleted
   Assert.ok(!gDBFile.exists());
 
@@ -670,7 +672,7 @@ add_task(async function run_test_13() {
 add_task(async function run_test_14() {
   Services.prefs.setBoolPref(PREF_GETADDONS_CACHE_ENABLED, true);
 
-  await AddonManagerInternal.backgroundUpdateCheck();
+  await AddonManagerPrivate.backgroundUpdateCheck();
   await AddonRepository.flush();
   Assert.ok(gDBFile.exists());
 
@@ -683,7 +685,7 @@ add_task(async function run_test_14() {
 add_task(async function run_test_15() {
   Services.prefs.setCharPref(PREF_GETADDONS_BYIDS, GETADDONS_RESULTS);
 
-  await AddonManagerInternal.backgroundUpdateCheck();
+  await AddonManagerPrivate.backgroundUpdateCheck();
   let aAddons = await promiseAddonsByIDs(ADDON_IDS);
   check_results(aAddons, WITH_CACHE);
 });
@@ -705,7 +707,7 @@ add_task(async function run_test_17() {
     "foo,bar,extension,baz"
   );
 
-  await AddonManagerInternal.backgroundUpdateCheck();
+  await AddonManagerPrivate.backgroundUpdateCheck();
   let aAddons = await promiseAddonsByIDs(ADDON_IDS);
   check_results(aAddons, WITH_EXTENSION_CACHE);
 });

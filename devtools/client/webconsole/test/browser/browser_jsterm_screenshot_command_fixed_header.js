@@ -8,10 +8,6 @@
 const TEST_URI =
   "http://example.com/browser/devtools/client/webconsole/test/browser/test_jsterm_screenshot_command.html";
 
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
-);
-
 // on some machines, such as macOS, dpr is set to 2. This is expected behavior, however
 // to keep tests consistant across OSs we are setting the dpr to 1
 const dpr = "--dpr 1";
@@ -31,15 +27,16 @@ add_task(async function() {
   const command = `:screenshot ${file.path} ${dpr} --fullpage`;
   // `-fullpage` is appended at the end of the provided filename
   const actualFilePath = file.path.replace(".png", "-fullpage.png");
-  await executeAndWaitForMessage(
+  await executeAndWaitForMessageByType(
     hud,
     command,
-    `Saved to ${file.path.replace(".png", "-fullpage.png")}`
+    `Saved to ${file.path.replace(".png", "-fullpage.png")}`,
+    ".console-api"
   );
 
   info("Create an image using the downloaded file as source");
   const image = new Image();
-  image.src = OS.Path.toFileURI(actualFilePath);
+  image.src = PathUtils.toFileURI(actualFilePath);
   await once(image, "load");
 
   info("Check that the fixed element is rendered at the expected position");
@@ -66,6 +63,6 @@ add_task(async function() {
   );
 
   info("Remove the downloaded screenshot file and cleanup downloads");
-  await OS.File.remove(actualFilePath);
+  await IOUtils.remove(actualFilePath);
   await resetDownloads();
 });

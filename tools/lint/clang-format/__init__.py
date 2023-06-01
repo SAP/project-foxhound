@@ -3,47 +3,32 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import os
-import signal
 import re
+import signal
+import sys
+import xml.etree.ElementTree as ET
 
-from buildconfig import substs
 from mozboot.util import get_tools_dir
 from mozlint import result
 from mozlint.pathutils import expand_exclusions
 from mozprocess import ProcessHandler
 
 CLANG_FORMAT_NOT_FOUND = """
-Could not find clang-format! Install clang-format with:
-
-    $ ./mach bootstrap
-
-And make sure that it is in the PATH
+Could not find clang-format! It should've been installed automatically - \
+please report a bug here:
+https://bugzilla.mozilla.org/enter_bug.cgi?product=Firefox%20Build%20System&component=Lint%20and%20Formatting
 """.strip()
 
 
-def parse_issues(config, output, paths, log):
+def setup(root, mach_command_context, **lintargs):
+    if get_clang_format_binary():
+        return 0
 
-    diff_line = re.compile("^(.*):(.*):(.*): warning: .*;(.*);(.*)")
-    results = []
-    for line in output:
-        match = diff_line.match(line)
-        file, line_no, col, diff, diff2 = match.groups()
-        log.debug(
-            "file={} line={} col={} diff={} diff2={}".format(
-                file, line_no, col, diff, diff2
-            )
-        )
-        d = diff + "\n" + diff2
-        res = {
-            "path": file,
-            "diff": d,
-            "level": "warning",
-            "lineno": line_no,
-            "column": col,
-        }
-        results.append(result.from_config(config, **res))
+    from mozbuild.code_analysis.mach_commands import get_clang_tools
 
-    return results
+    rc, _ = get_clang_tools(mach_command_context)
+    if rc:
+        return 1
 
 
 class ClangFormatProcess(ProcessHandler):
@@ -81,7 +66,15 @@ def get_clang_format_binary():
 
     clang_tools_path = os.path.join(get_tools_dir(), "clang-tools")
     bin_path = os.path.join(clang_tools_path, "clang-tidy", "bin")
-    return os.path.join(bin_path, "clang-format" + substs.get("HOST_BIN_SUFFIX", ""))
+    binary = os.path.join(bin_path, "clang-format")
+
+    if sys.platform.startswith("win"):
+        binary += ".exe"
+
+    if not os.path.isfile(binary):
+        return None
+
+    return binary
 
 
 def is_ignored_path(ignored_dir_re, topsrcdir, f):
@@ -149,35 +142,96 @@ def lint(paths, config, fix=None, **lintargs):
     version = run_process(config, base_command)
     log.debug("Version: {}".format(version))
 
-    cmd_args.append("--dry-run")
+    cmd_args.append("--output-replacements-xml")
     base_command = cmd_args + paths
     log.debug("Command: {}".format(" ".join(cmd_args)))
     output = run_process(config, base_command)
-    output_list = []
 
-    if len(output) % 3 != 0:
-        raise Exception(
-            "clang-format output should be a multiple of 3. Output: %s" % output
-        )
+    def replacement(parser):
+        for end, e in parser.read_events():
+            assert end == "end"
+            if e.tag == "replacement":
+                item = {k: int(v) for k, v in e.items()}
+                assert sorted(item.keys()) == ["length", "offset"]
+                item["with"] = (e.text or "").encode("utf-8")
+                yield item
 
-    fixed = (int)(len(output) / 3)
-    if fix:
-        cmd_args.remove("--dry-run")
-        cmd_args.append("-i")
-        base_command = cmd_args + paths
-        log.debug("Command: {}".format(" ".join(cmd_args)))
-        output = run_process(config, base_command)
-    else:
-        fixed = 0
+    # When given multiple paths as input, --output-replacements-xml
+    # will output one xml per path, in the order they are given, but
+    # XML parsers don't know how to handle that, so do it manually.
+    parser = None
+    replacements = []
+    for line in output:
+        if line.startswith("<?xml "):
+            if parser:
+                replacements.append(list(replacement(parser)))
+            parser = ET.XMLPullParser(["end"])
+        parser.feed(line)
+    replacements.append(list(replacement(parser)))
 
-    for i in range(0, len(output), 3):
-        # Merge the element 3 by 3 (clang-format output)
-        line = output[i]
-        line += ";" + output[i + 1]
-        line += ";" + output[i + 2]
-        output_list.append(line)
+    results = []
+    fixed = 0
+    for path, replacement in zip(paths, replacements):
+        if not replacement:
+            continue
+        with open(path, "rb") as fh:
+            data = fh.read()
 
-    if fix:
-        # clang-format is able to fix all issues so don't bother parsing the output.
-        return {"results": [], "fixed": fixed}
-    return {"results": parse_issues(config, output_list, paths, log), "fixed": fixed}
+        linenos = []
+        patched_data = b""
+        last_offset = 0
+        lineno_before = 1
+        lineno_after = 1
+
+        for item in replacement:
+            offset = item["offset"]
+            length = item["length"]
+            replace_with = item["with"]
+            since_last_offset = data[last_offset:offset]
+            replaced = data[offset : offset + length]
+
+            lines_since_last_offset = since_last_offset.count(b"\n")
+            lineno_before += lines_since_last_offset
+            lineno_after += lines_since_last_offset
+            start_lineno = (lineno_before, lineno_after)
+
+            lineno_before += replaced.count(b"\n")
+            lineno_after += replace_with.count(b"\n")
+            end_lineno = (lineno_before, lineno_after)
+
+            if linenos and start_lineno[0] <= linenos[-1][1][0]:
+                linenos[-1] = (linenos[-1][0], end_lineno)
+            else:
+                linenos.append((start_lineno, end_lineno))
+
+            patched_data += since_last_offset + replace_with
+            last_offset = offset + len(replaced)
+        patched_data += data[last_offset:]
+
+        lines_before = data.decode("utf-8", "replace").splitlines()
+        lines_after = patched_data.decode("utf-8", "replace").splitlines()
+        for (start_before, start_after), (end_before, end_after) in linenos:
+            diff = "".join(
+                "-" + l + "\n" for l in lines_before[start_before - 1 : end_before]
+            )
+            diff += "".join(
+                "+" + l + "\n" for l in lines_after[start_after - 1 : end_after]
+            )
+
+            results.append(
+                result.from_config(
+                    config,
+                    path=path,
+                    diff=diff,
+                    level="warning",
+                    lineno=start_before,
+                    column=0,
+                )
+            )
+
+        if fix:
+            with open(path, "wb") as fh:
+                fh.write(patched_data)
+            fixed += len(linenos)
+
+    return {"results": results, "fixed": fixed}

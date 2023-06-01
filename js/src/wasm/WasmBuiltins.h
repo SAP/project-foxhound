@@ -119,19 +119,18 @@ enum class SymbolicAddress {
   TableSize,
   RefFunc,
   RefTest,
-  RttSub,
   PreBarrierFiltering,
   PostBarrier,
+  PostBarrierPrecise,
+  PostBarrierPreciseWithOffset,
   PostBarrierFiltering,
   StructNew,
-#if defined(ENABLE_WASM_EXCEPTIONS)
   ExceptionNew,
   ThrowException,
-  ConsumePendingException,
-  PushRefIntoExn,
-#endif
   ArrayNew,
-  InlineTypedObjectClass,
+  ArrayNewData,
+  ArrayNewElem,
+  ArrayCopy,
 #define DECL_INTRINSIC_SA(op, export, sa_name, abitype, entry, idx) sa_name,
   FOR_EACH_INTRINSIC(DECL_INTRINSIC_SA)
 #undef DECL_INTRINSIC_SA
@@ -246,17 +245,17 @@ extern const SymbolicAddressSignature SASigTableSize;
 extern const SymbolicAddressSignature SASigRefFunc;
 extern const SymbolicAddressSignature SASigPreBarrierFiltering;
 extern const SymbolicAddressSignature SASigPostBarrier;
+extern const SymbolicAddressSignature SASigPostBarrierPrecise;
+extern const SymbolicAddressSignature SASigPostBarrierPreciseWithOffset;
 extern const SymbolicAddressSignature SASigPostBarrierFiltering;
 extern const SymbolicAddressSignature SASigStructNew;
-#ifdef ENABLE_WASM_EXCEPTIONS
 extern const SymbolicAddressSignature SASigExceptionNew;
 extern const SymbolicAddressSignature SASigThrowException;
-extern const SymbolicAddressSignature SASigConsumePendingException;
-extern const SymbolicAddressSignature SASigPushRefIntoExn;
-#endif
 extern const SymbolicAddressSignature SASigArrayNew;
+extern const SymbolicAddressSignature SASigArrayNewData;
+extern const SymbolicAddressSignature SASigArrayNewElem;
+extern const SymbolicAddressSignature SASigArrayCopy;
 extern const SymbolicAddressSignature SASigRefTest;
-extern const SymbolicAddressSignature SASigRttSub;
 #define EXT_INTR_SA_DECL(op, export, sa_name, abitype, entry, idx) \
   extern const SymbolicAddressSignature SASig##sa_name;
 FOR_EACH_INTRINSIC(EXT_INTR_SA_DECL)
@@ -267,6 +266,7 @@ bool IsRoundingFunction(SymbolicAddress callee, jit::RoundingMode* mode);
 // A SymbolicAddress that NeedsBuiltinThunk() will call through a thunk to the
 // C++ function. This will be true for all normal calls from normal wasm
 // function code. Only calls to C++ from other exits/thunks do not need a thunk.
+// See "The Wasm-builtin ABIs in WasmFrame.h".
 
 bool NeedsBuiltinThunk(SymbolicAddress sym);
 

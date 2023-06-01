@@ -32,9 +32,6 @@ namespace net {
 
 LazyLogModule gSocketProcessLog("socketprocess");
 
-SocketProcessImpl::SocketProcessImpl(ProcessId aParentPid)
-    : ProcessChild(aParentPid) {}
-
 SocketProcessImpl::~SocketProcessImpl() = default;
 
 bool SocketProcessImpl::Init(int aArgc, char* aArgv[]) {
@@ -50,7 +47,6 @@ bool SocketProcessImpl::Init(int aArgc, char* aArgv[]) {
   LoadLibraryW(L"softokn3.dll");
   LoadLibraryW(L"freebl3.dll");
   LoadLibraryW(L"ipcclientcerts.dll");
-  LoadLibraryW(L"gdi32.dll");
   LoadLibraryW(L"winmm.dll");
   mozilla::SandboxTarget::Instance()->StartSandbox();
 #elif defined(__OpenBSD__) && defined(MOZ_SANDBOX)
@@ -71,8 +67,7 @@ bool SocketProcessImpl::Init(int aArgc, char* aArgv[]) {
     return false;
   }
 
-  return mSocketProcessChild.Init(ParentPid(), *parentBuildID,
-                                  IOThreadChild::TakeInitialPort());
+  return mSocketProcessChild.Init(TakeInitialEndpoint(), *parentBuildID);
 }
 
 void SocketProcessImpl::CleanUp() { mSocketProcessChild.CleanUp(); }

@@ -10,7 +10,7 @@
 <window windowtype="mozilla:devicemanager"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         xmlns:html="http://www.w3.org/1999/xhtml"
-        data-l10n-id="devmgr"
+        data-l10n-id="devmgr-window"
         data-l10n-attrs="style"
         persist="screenX screenY width height"
         onload="LoadModules();">
@@ -36,10 +36,10 @@
   <!-- / List of devices -->
   <!-- Device status -->
   <tree id="info_tree" seltype="single" hidecolumnpicker="true"
-        flex="3" style="min-width: 10em">
+        style="-moz-box-flex: 3; min-width: 10em">
     <treecols>
-      <treecol id="title1Col" flex="5" primary="true" data-l10n-id="devmgr-header-details"/>
-      <treecol id="title2Col" flex="7" data-l10n-id="devmgr-header-value"/>
+      <treecol id="title1Col" style="-moz-box-flex: 5" primary="true" data-l10n-id="devmgr-header-details"/>
+      <treecol id="title2Col" style="-moz-box-flex: 7" data-l10n-id="devmgr-header-value"/>
     </treecols>
     <treechildren id="info_list"/>
   </tree>

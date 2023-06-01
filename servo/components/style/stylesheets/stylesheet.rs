@@ -359,6 +359,7 @@ impl SanitizationKind {
             CssRule::Media(..) |
             CssRule::Supports(..) |
             CssRule::Import(..) |
+            CssRule::Container(..) |
             // TODO(emilio): Perhaps Layer should not be always sanitized? But
             // we sanitize @media and co, so this seems safer for now.
             CssRule::LayerStatement(..) |
@@ -369,9 +370,9 @@ impl SanitizationKind {
             CssRule::Keyframes(..) |
             CssRule::Page(..) |
             CssRule::FontFeatureValues(..) |
+            CssRule::FontPaletteValues(..) |
             CssRule::Viewport(..) |
-            CssRule::CounterStyle(..) |
-            CssRule::ScrollTimeline(..) => !is_standard,
+            CssRule::CounterStyle(..) => !is_standard,
         }
     }
 }

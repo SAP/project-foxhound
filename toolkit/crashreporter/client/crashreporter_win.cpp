@@ -23,9 +23,7 @@
 #include "windows/sender/crash_report_sender.h"
 #include "common/windows/string_utils-inl.h"
 
-#define CRASH_REPORTER_VALUE L"Enabled"
 #define SUBMIT_REPORT_VALUE L"SubmitCrashReport"
-#define SUBMIT_REPORT_OLD L"SubmitReport"
 #define INCLUDE_URL_VALUE L"IncludeURL"
 
 #define SENDURL_ORIGINAL L"https://crash-reports.mozilla.com/submit"
@@ -122,23 +120,6 @@ static bool GetBoolValue(HKEY hRegKey, LPCTSTR valueName, DWORD* value) {
   return false;
 }
 
-// Removes a value from HKEY_LOCAL_MACHINE and HKEY_CURRENT_USER, if it exists.
-static void RemoveUnusedValues(const wchar_t* key, LPCTSTR valueName) {
-  HKEY hRegKey;
-
-  if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, key, 0, KEY_SET_VALUE, &hRegKey) ==
-      ERROR_SUCCESS) {
-    RegDeleteValue(hRegKey, valueName);
-    RegCloseKey(hRegKey);
-  }
-
-  if (RegOpenKeyEx(HKEY_CURRENT_USER, key, 0, KEY_SET_VALUE, &hRegKey) ==
-      ERROR_SUCCESS) {
-    RegDeleteValue(hRegKey, valueName);
-    RegCloseKey(hRegKey);
-  }
-}
-
 static bool CheckBoolKey(const wchar_t* key, const wchar_t* valueName,
                          bool* enabled) {
   /*
@@ -176,9 +157,6 @@ static void SetBoolKey(const wchar_t* key, const wchar_t* value, bool enabled) {
    *       code in in nsExceptionHandler.cpp.
    */
   HKEY hRegKey;
-
-  // remove the old value from the registry if it exists
-  RemoveUnusedValues(key, SUBMIT_REPORT_OLD);
 
   if (RegCreateKey(HKEY_CURRENT_USER, key, &hRegKey) == ERROR_SUCCESS) {
     DWORD data = (enabled ? 1 : 0);
@@ -370,7 +348,7 @@ static void MaybeResizeProgressText(HWND hwndDlg) {
 
   StretchDialog(hwndDlg, diff);
 
-  for (int i = 0; i < sizeof(kDefaultAttachedBottom) / sizeof(UINT); i++) {
+  for (size_t i = 0; i < sizeof(kDefaultAttachedBottom) / sizeof(UINT); i++) {
     gAttachedBottom.insert(kDefaultAttachedBottom[i]);
   }
 }
@@ -668,7 +646,7 @@ static void StretchControlsToFit(HWND hwndDlg) {
   RECT dlgRect;
   GetClientRect(hwndDlg, &dlgRect);
 
-  for (int i = 0; i < sizeof(controls) / sizeof(controls[0]); i++) {
+  for (size_t i = 0; i < sizeof(controls) / sizeof(controls[0]); i++) {
     RECT r;
     HWND hwndControl = GetDlgItem(hwndDlg, controls[i]);
     GetRelativeRect(hwndControl, hwndDlg, &r);
@@ -1045,7 +1023,7 @@ string WideToUTF8(const wstring& wide, bool* success) {
 /* === Crashreporter UI Functions === */
 
 bool UIInit() {
-  for (int i = 0; i < sizeof(kDefaultAttachedBottom) / sizeof(UINT); i++) {
+  for (size_t i = 0; i < sizeof(kDefaultAttachedBottom) / sizeof(UINT); i++) {
     gAttachedBottom.insert(kDefaultAttachedBottom[i]);
   }
 

@@ -6,12 +6,14 @@
 
 #include "OffscreenCanvas.h"
 
+#include "mozilla/Atomics.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/OffscreenCanvasBinding.h"
 #include "mozilla/dom/OffscreenCanvasDisplayHelper.h"
 #include "mozilla/dom/OffscreenCanvasRenderingContext2D.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/layers/ImageBridgeChild.h"
 #include "mozilla/Telemetry.h"
@@ -48,7 +50,6 @@ OffscreenCanvas::OffscreenCanvas(nsIGlobalObject* aGlobal, uint32_t aWidth,
                                  layers::TextureType aTextureType,
                                  OffscreenCanvasDisplayHelper* aDisplay)
     : DOMEventTargetHelper(aGlobal),
-      mAttrDirty(false),
       mNeutered(false),
       mIsWriteOnly(false),
       mWidth(aWidth),
@@ -81,10 +82,8 @@ void OffscreenCanvas::SetWidth(uint32_t aWidth, ErrorResult& aRv) {
     return;
   }
 
-  if (mWidth != aWidth) {
-    mWidth = aWidth;
-    CanvasAttrChanged();
-  }
+  mWidth = aWidth;
+  CanvasAttrChanged();
 }
 
 void OffscreenCanvas::SetHeight(uint32_t aHeight, ErrorResult& aRv) {
@@ -94,17 +93,8 @@ void OffscreenCanvas::SetHeight(uint32_t aHeight, ErrorResult& aRv) {
     return;
   }
 
-  if (mHeight != aHeight) {
-    mHeight = aHeight;
-    CanvasAttrChanged();
-  }
-}
-
-void OffscreenCanvas::UpdateNeuteredSize(uint32_t aWidth, uint32_t aHeight) {
-  MOZ_ASSERT(mNeutered);
-  MOZ_ASSERT(!mCurrentContext);
-  mWidth = aWidth;
   mHeight = aHeight;
+  CanvasAttrChanged();
 }
 
 void OffscreenCanvas::GetContext(
@@ -113,7 +103,8 @@ void OffscreenCanvas::GetContext(
     Nullable<OwningOffscreenRenderingContext>& aResult, ErrorResult& aRv) {
   if (mNeutered) {
     aResult.SetNull();
-    aRv.Throw(NS_ERROR_FAILURE);
+    aRv.ThrowInvalidStateError(
+        "Cannot create context for placeholder canvas transferred to worker.");
     return;
   }
 
@@ -250,41 +241,59 @@ OffscreenCanvasCloneData* OffscreenCanvas::ToCloneData() {
 
 already_AddRefed<ImageBitmap> OffscreenCanvas::TransferToImageBitmap(
     ErrorResult& aRv) {
-  RefPtr<ImageBitmap> result =
-      ImageBitmap::CreateFromOffscreenCanvas(GetOwnerGlobal(), *this, aRv);
-  if (aRv.Failed()) {
+  if (mNeutered) {
+    aRv.ThrowInvalidStateError(
+        "Cannot get bitmap from placeholder canvas transferred to worker.");
     return nullptr;
   }
 
-  if (result && mCurrentContext) {
-    // FIXME(aosmond): The spec is unclear about the state of the canvas after
-    // clearing. Does it expect to preserve the WebGL state, other than the
-    // buffer state? Once we have clarity, we should ensure we clear the WebGL
-    // canvas as desired.
-    mCurrentContext->Reset();
-    mCurrentContext->SetDimensions(result->Width(), result->Height());
+  if (!mCurrentContext) {
+    aRv.ThrowInvalidStateError(
+        "Cannot get bitmap from canvas without a context.");
+    return nullptr;
+  }
+
+  RefPtr<ImageBitmap> result =
+      ImageBitmap::CreateFromOffscreenCanvas(GetOwnerGlobal(), *this, aRv);
+  if (!result) {
+    return nullptr;
+  }
+
+  if (mCurrentContext) {
+    mCurrentContext->ResetBitmap();
   }
   return result.forget();
 }
 
 already_AddRefed<EncodeCompleteCallback>
-OffscreenCanvas::CreateEncodeCompleteCallback(
-    nsCOMPtr<nsIGlobalObject>&& aGlobal, Promise* aPromise) {
+OffscreenCanvas::CreateEncodeCompleteCallback(Promise* aPromise) {
   // Encoder callback when encoding is complete.
   class EncodeCallback : public EncodeCompleteCallback {
    public:
-    EncodeCallback(nsCOMPtr<nsIGlobalObject>&& aGlobal, Promise* aPromise)
-        : mGlobal(std::move(aGlobal)), mPromise(aPromise) {}
+    explicit EncodeCallback(Promise* aPromise)
+        : mPromise(aPromise), mCanceled(false) {}
 
-    // This is called on main thread.
+    void MaybeInitWorkerRef() {
+      WorkerPrivate* wp = GetCurrentThreadWorkerPrivate();
+      if (wp) {
+        mWorkerRef = WeakWorkerRef::Create(
+            wp, [self = RefPtr{this}]() { self->Cancel(); });
+        if (!mWorkerRef) {
+          Cancel();
+        }
+      }
+    }
+
     nsresult ReceiveBlobImpl(already_AddRefed<BlobImpl> aBlobImpl) override {
       RefPtr<BlobImpl> blobImpl = aBlobImpl;
+      mWorkerRef = nullptr;
 
       if (mPromise) {
-        if (NS_WARN_IF(!blobImpl)) {
+        RefPtr<nsIGlobalObject> global = mPromise->GetGlobalObject();
+        if (NS_WARN_IF(!global) || NS_WARN_IF(!blobImpl)) {
           mPromise->MaybeReject(NS_ERROR_FAILURE);
         } else {
-          RefPtr<Blob> blob = Blob::Create(mGlobal, blobImpl);
+          RefPtr<Blob> blob = Blob::Create(global, blobImpl);
           if (NS_WARN_IF(!blob)) {
             mPromise->MaybeReject(NS_ERROR_FAILURE);
           } else {
@@ -293,30 +302,45 @@ OffscreenCanvas::CreateEncodeCompleteCallback(
         }
       }
 
-      mGlobal = nullptr;
       mPromise = nullptr;
 
       return NS_OK;
     }
 
-    nsCOMPtr<nsIGlobalObject> mGlobal;
+    bool CanBeDeletedOnAnyThread() override { return mCanceled; }
+
+    void Cancel() {
+      mPromise = nullptr;
+      mWorkerRef = nullptr;
+      mCanceled = true;
+    }
+
     RefPtr<Promise> mPromise;
+    RefPtr<WeakWorkerRef> mWorkerRef;
+    Atomic<bool> mCanceled;
   };
 
-  return MakeAndAddRef<EncodeCallback>(std::move(aGlobal), aPromise);
+  RefPtr<EncodeCallback> p = MakeAndAddRef<EncodeCallback>(aPromise);
+  p->MaybeInitWorkerRef();
+  return p.forget();
 }
 
 already_AddRefed<Promise> OffscreenCanvas::ConvertToBlob(
     const ImageEncodeOptions& aOptions, ErrorResult& aRv) {
   // do a trust check if this is a write-only canvas
   if (mIsWriteOnly) {
-    aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
+    aRv.ThrowSecurityError("Cannot get blob from write-only canvas.");
     return nullptr;
   }
 
   if (mNeutered) {
     aRv.ThrowInvalidStateError(
         "Cannot get blob from placeholder canvas transferred to worker.");
+    return nullptr;
+  }
+
+  if (mWidth == 0 || mHeight == 0) {
+    aRv.ThrowIndexSizeError("Cannot get blob from empty canvas.");
     return nullptr;
   }
 
@@ -331,13 +355,16 @@ already_AddRefed<Promise> OffscreenCanvas::ConvertToBlob(
   nsContentUtils::ASCIIToLower(aOptions.mType, type);
 
   nsAutoString encodeOptions;
-  if (aOptions.mQuality.WasPassed()) {
+
+  // Only image/jpeg and image/webp support the quality parameter.
+  if (aOptions.mQuality.WasPassed() &&
+      (type.EqualsLiteral("image/jpeg") || type.EqualsLiteral("image/webp"))) {
     encodeOptions.AppendLiteral("quality=");
     encodeOptions.AppendInt(NS_lround(aOptions.mQuality.Value() * 100.0));
   }
 
   RefPtr<EncodeCompleteCallback> callback =
-      CreateEncodeCompleteCallback(std::move(global), promise);
+      CreateEncodeCompleteCallback(promise);
   bool usePlaceholder = ShouldResistFingerprinting();
   CanvasRenderingContextHelper::ToBlob(callback, type, encodeOptions,
                                        /* aUsingCustomOptions */ false,
@@ -355,13 +382,18 @@ already_AddRefed<Promise> OffscreenCanvas::ToBlob(JSContext* aCx,
                                                   ErrorResult& aRv) {
   // do a trust check if this is a write-only canvas
   if (mIsWriteOnly) {
-    aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
+    aRv.ThrowSecurityError("Cannot get blob from write-only canvas.");
     return nullptr;
   }
 
   if (mNeutered) {
     aRv.ThrowInvalidStateError(
         "Cannot get blob from placeholder canvas transferred to worker.");
+    return nullptr;
+  }
+
+  if (mWidth == 0 || mHeight == 0) {
+    aRv.ThrowIndexSizeError("Cannot get blob from empty canvas.");
     return nullptr;
   }
 
@@ -373,7 +405,7 @@ already_AddRefed<Promise> OffscreenCanvas::ToBlob(JSContext* aCx,
   }
 
   RefPtr<EncodeCompleteCallback> callback =
-      CreateEncodeCompleteCallback(std::move(global), promise);
+      CreateEncodeCompleteCallback(promise);
   bool usePlaceholder = ShouldResistFingerprinting();
   CanvasRenderingContextHelper::ToBlob(aCx, callback, aType, aParams,
                                        usePlaceholder, aRv);
@@ -410,11 +442,7 @@ already_AddRefed<OffscreenCanvas> OffscreenCanvas::CreateFromCloneData(
 /* static */
 bool OffscreenCanvas::PrefEnabledOnWorkerThread(JSContext* aCx,
                                                 JSObject* aObj) {
-  if (NS_IsMainThread()) {
-    return true;
-  }
-
-  return CanvasUtils::IsOffscreenCanvasEnabled(aCx, aObj);
+  return NS_IsMainThread() || StaticPrefs::gfx_offscreencanvas_enabled();
 }
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(OffscreenCanvas, DOMEventTargetHelper,

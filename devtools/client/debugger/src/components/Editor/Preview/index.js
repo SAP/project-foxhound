@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
+import PropTypes from "prop-types";
 import React, { PureComponent } from "react";
 import { connect } from "../../../utils/connect";
 
@@ -23,6 +24,20 @@ class Preview extends PureComponent {
   constructor(props) {
     super(props);
     this.state = { selecting: false };
+  }
+
+  static get propTypes() {
+    return {
+      clearPreview: PropTypes.func.isRequired,
+      cx: PropTypes.object.isRequired,
+      editor: PropTypes.object.isRequired,
+      editorRef: PropTypes.object.isRequired,
+      highlightedCalls: PropTypes.array,
+      isPaused: PropTypes.bool.isRequired,
+      preview: PropTypes.object,
+      setExceptionPreview: PropTypes.func.isRequired,
+      updatePreview: PropTypes.func.isRequired,
+    };
   }
 
   componentDidMount() {
@@ -60,7 +75,8 @@ class Preview extends PureComponent {
     const isTargetException = target.classList.contains(EXCEPTION_MARKER);
 
     if (isTargetException) {
-      return setExceptionPreview(cx, target, tokenPos, editor.codeMirror);
+      setExceptionPreview(cx, target, tokenPos, editor.codeMirror);
+      return;
     }
 
     if (
@@ -76,14 +92,12 @@ class Preview extends PureComponent {
   onMouseUp = () => {
     if (this.props.isPaused) {
       this.setState({ selecting: false });
-      return true;
     }
   };
 
   onMouseDown = () => {
     if (this.props.isPaused) {
       this.setState({ selecting: true });
-      return true;
     }
   };
 

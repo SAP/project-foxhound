@@ -1,7 +1,6 @@
-from __future__ import absolute_import, print_function
+from contextlib import contextmanager
 
 from marionette_harness import MarionetteTestCase
-from contextlib import contextmanager
 
 
 class ExperimentStatus:
@@ -141,9 +140,7 @@ class TestWin32kAutostart(MarionetteTestCase):
           // We're running in a function, in a sandbox, that inherits from an
           // X-ray wrapped window. Anything we want to be globally available
           // needs to be defined on that window.
-          ChromeUtils.import("resource://gre/modules/Services.jsm", window);
-          window.env = Cc["@mozilla.org/process/environment;1"]
-                    .getService(Ci.nsIEnvironment);
+          window.env = Services.env;
         """
         )
 
@@ -151,7 +148,7 @@ class TestWin32kAutostart(MarionetteTestCase):
     def full_restart(self):
         profile = self.marionette.instance.profile
         try:
-            self.marionette.quit(in_app=True, clean=False)
+            self.marionette.quit()
             yield profile
         finally:
             self.marionette.start_session()
@@ -168,7 +165,7 @@ class TestWin32kAutostart(MarionetteTestCase):
         if Prefs.WIN32K in self.marionette.instance.required_prefs:
             self.win32kRequired = self.marionette.instance.required_prefs[Prefs.WIN32K]
             del self.marionette.instance.required_prefs[Prefs.WIN32K]
-            self.marionette.restart(clean=True)
+            self.marionette.restart(in_app=False, clean=True)
 
         self.setUpSession()
 
@@ -202,7 +199,7 @@ class TestWin32kAutostart(MarionetteTestCase):
     def tearDown(self):
         if self.win32kRequired is not None:
             self.marionette.instance.required_prefs[Prefs.WIN32K] = self.win32kRequired
-        self.marionette.restart(clean=True)
+        self.marionette.restart(in_app=False, clean=True)
 
         super(TestWin32kAutostart, self).tearDown()
 
@@ -474,7 +471,7 @@ class TestWin32kAutostart(MarionetteTestCase):
         )
 
     def test_9(self):
-        # [D=T] Nothing [A#1T] -> Enrolled Treatment [A S=EnabledByTreatmentGroup SS=Enabl...
+        # [D=T] Nothing [A#1T] -> Enrolled Treatment [A S=EnabledByDefault SS=EnabledByDef...
 
         if self.default_is is not True:
             return
@@ -489,7 +486,7 @@ class TestWin32kAutostart(MarionetteTestCase):
         self.set_enrollment_status(ExperimentStatus.ENROLLED_TREATMENT)
 
         self.check_win32k_status(
-            status=ContentWin32kLockdownState.EnabledByTreatmentGroup,
+            status=ContentWin32kLockdownState.EnabledByDefault,
             sessionStatus=ContentWin32kLockdownState.EnabledByDefault,
             experimentStatus=ExperimentStatus.UNENROLLED,
             pref=True,
@@ -988,7 +985,7 @@ class TestWin32kAutostart(MarionetteTestCase):
         )
 
     def test_22(self):
-        # [D=T] On [A#3T] -> Restart [A#4T] -> Enrolled Treatment [A S=EnabledByTreatmentG...
+        # [D=T] On [A#3T] -> Restart [A#4T] -> Enrolled Treatment [A S=EnabledByDefault SS...
 
         if self.default_is is not True:
             return
@@ -1015,7 +1012,7 @@ class TestWin32kAutostart(MarionetteTestCase):
         self.set_enrollment_status(ExperimentStatus.ENROLLED_TREATMENT)
 
         self.check_win32k_status(
-            status=ContentWin32kLockdownState.EnabledByTreatmentGroup,
+            status=ContentWin32kLockdownState.EnabledByDefault,
             sessionStatus=ContentWin32kLockdownState.EnabledByDefault,
             experimentStatus=ExperimentStatus.UNENROLLED,
             pref=True,
@@ -1525,7 +1522,7 @@ class TestWin32kAutostart(MarionetteTestCase):
         self.check_win32k_status(
             status=ContentWin32kLockdownState.DisabledByUserPref,
             sessionStatus=ContentWin32kLockdownState.DisabledByControlGroup,
-            experimentStatus=ExperimentStatus.DISQUALIFIED,
+            experimentStatus=ExperimentStatus.ENROLLED_CONTROL,
             pref=False,
             enrollmentStatusPref=ExperimentStatus.DISQUALIFIED,
         )
@@ -1563,7 +1560,7 @@ class TestWin32kAutostart(MarionetteTestCase):
         self.check_win32k_status(
             status=ContentWin32kLockdownState.MissingRemoteWebGL,
             sessionStatus=ContentWin32kLockdownState.DisabledByControlGroup,
-            experimentStatus=ExperimentStatus.UNENROLLED,
+            experimentStatus=ExperimentStatus.ENROLLED_CONTROL,
             pref=True,
             enrollmentStatusPref=ExperimentStatus.ENROLLED_CONTROL,
         )
@@ -1967,7 +1964,7 @@ class TestWin32kAutostart(MarionetteTestCase):
         self.check_win32k_status(
             status=ContentWin32kLockdownState.EnabledByTreatmentGroup,
             sessionStatus=ContentWin32kLockdownState.EnabledByTreatmentGroup,
-            experimentStatus=ExperimentStatus.UNENROLLED,
+            experimentStatus=ExperimentStatus.ENROLLED_TREATMENT,
             pref=True,
             enrollmentStatusPref=ExperimentStatus.ENROLLED_TREATMENT,
         )
@@ -2015,7 +2012,7 @@ class TestWin32kAutostart(MarionetteTestCase):
         self.check_win32k_status(
             status=ContentWin32kLockdownState.DisabledByUserPref,
             sessionStatus=ContentWin32kLockdownState.EnabledByTreatmentGroup,
-            experimentStatus=ExperimentStatus.DISQUALIFIED,
+            experimentStatus=ExperimentStatus.ENROLLED_TREATMENT,
             pref=False,
             enrollmentStatusPref=ExperimentStatus.DISQUALIFIED,
         )

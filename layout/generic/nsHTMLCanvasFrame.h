@@ -31,7 +31,6 @@ nsIFrame* NS_NewHTMLCanvasFrame(mozilla::PresShell* aPresShell,
 class nsHTMLCanvasFrame final : public nsContainerFrame {
  public:
   typedef mozilla::layers::CanvasRenderer CanvasRenderer;
-  typedef mozilla::layers::Layer Layer;
   typedef mozilla::layers::LayerManager LayerManager;
   typedef mozilla::layers::WebRenderCanvasData WebRenderCanvasData;
 
@@ -56,6 +55,8 @@ class nsHTMLCanvasFrame final : public nsContainerFrame {
   virtual nscoord GetPrefISize(gfxContext* aRenderingContext) override;
   virtual mozilla::IntrinsicSize GetIntrinsicSize() override;
   mozilla::AspectRatio GetIntrinsicRatio() const override;
+
+  void UnionChildOverflow(mozilla::OverflowAreas& aOverflowAreas) override;
 
   SizeComputationResult ComputeSize(
       gfxContext* aRenderingContext, mozilla::WritingMode aWM,

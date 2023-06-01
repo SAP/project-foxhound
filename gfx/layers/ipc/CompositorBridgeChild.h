@@ -82,8 +82,6 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
   mozilla::ipc::IPCResult RecvNotifyFrameStats(
       nsTArray<FrameStats>&& aFrameStats);
 
-  mozilla::ipc::IPCResult RecvInvalidateLayers(const LayersId& aLayersId);
-
   mozilla::ipc::IPCResult RecvNotifyJankedAnimations(
       const LayersId& aLayersId, nsTArray<uint64_t>&& aJankedAnimations);
 
@@ -152,12 +150,8 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
 
   base::ProcessId GetParentPid() const override { return OtherPid(); }
 
-  bool AllocUnsafeShmem(size_t aSize,
-                        mozilla::ipc::SharedMemory::SharedMemoryType aShmType,
-                        mozilla::ipc::Shmem* aShmem) override;
-  bool AllocShmem(size_t aSize,
-                  mozilla::ipc::SharedMemory::SharedMemoryType aShmType,
-                  mozilla::ipc::Shmem* aShmem) override;
+  bool AllocUnsafeShmem(size_t aSize, mozilla::ipc::Shmem* aShmem) override;
+  bool AllocShmem(size_t aSize, mozilla::ipc::Shmem* aShmem) override;
   bool DeallocShmem(mozilla::ipc::Shmem& aShmem) override;
 
   PCompositorWidgetChild* AllocPCompositorWidgetChild(

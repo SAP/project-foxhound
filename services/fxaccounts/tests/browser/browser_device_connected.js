@@ -15,7 +15,7 @@ const DEVICES_URL = "https://example.com/devices";
 
 let expectedBody;
 
-add_task(async function setup() {
+add_setup(async function() {
   const origManageDevicesURI = FxAccounts.config.promiseManageDevicesURI;
   FxAccounts.config.promiseManageDevicesURI = () =>
     Promise.resolve(DEVICES_URL);
@@ -29,7 +29,7 @@ add_task(async function setup() {
 
 async function testDeviceConnected(deviceName) {
   info("testDeviceConnected with deviceName=" + deviceName);
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:mozilla");
+  BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, "about:mozilla");
   await waitForDocLoadComplete();
 
   let waitForTabPromise = BrowserTestUtils.waitForNewTab(gBrowser);

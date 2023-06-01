@@ -69,8 +69,7 @@ class ClipManager {
 
  private:
   wr::WrSpatialId SpatialIdAfterOverride(const wr::WrSpatialId& aSpatialId);
-
-  Maybe<wr::WrSpatialId> GetScrollLayer(const ActiveScrolledRoot* aASR);
+  wr::WrSpatialId GetScrollLayer(const ActiveScrolledRoot* aASR);
 
   Maybe<wr::WrSpatialId> DefineScrollLayers(const ActiveScrolledRoot* aASR,
                                             nsDisplayItem* aItem);
@@ -93,9 +92,8 @@ class ClipManager {
   // general we need to do this anytime PushOverrideForASR is called, as that is
   // called for the same set of conditions for which we cannot deduplicate
   // clips.
-  typedef std::unordered_map<const DisplayItemClipChain*,
-                             AutoTArray<wr::WrClipId, 4>>
-      ClipIdMap;
+  using ClipIdMap = std::unordered_map<const DisplayItemClipChain*,
+                                       AutoTArray<wr::WrClipId, 4>>;
   std::stack<ClipIdMap> mCacheStack;
 
   // A map that holds the cache overrides created by (a) "out of band" clips,
@@ -119,11 +117,13 @@ class ClipManager {
   // This holds some clip state for a single nsDisplayItem
   struct ItemClips {
     ItemClips(const ActiveScrolledRoot* aASR,
-              const DisplayItemClipChain* aChain, bool aSeparateLeaf);
+              const DisplayItemClipChain* aChain, int32_t aAppUnitsPerDevPixel,
+              bool aSeparateLeaf);
 
     // These are the "inputs" - they come from the nsDisplayItem
     const ActiveScrolledRoot* mASR;
     const DisplayItemClipChain* mChain;
+    int32_t mAppUnitsPerDevPixel;
     bool mSeparateLeaf;
 
     // These are the "outputs" - they are pushed to WR as needed
@@ -133,7 +133,6 @@ class ClipManager {
     void UpdateSeparateLeaf(wr::DisplayListBuilder& aBuilder,
                             int32_t aAppUnitsPerDevPixel);
     bool HasSameInputs(const ItemClips& aOther);
-    void CopyOutputsFrom(const ItemClips& aOther);
     wr::WrSpaceAndClipChain GetSpaceAndClipChain() const;
   };
 

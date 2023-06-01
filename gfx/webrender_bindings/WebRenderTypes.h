@@ -61,6 +61,14 @@ struct ExternalImageKeyPair {
 /* Generate a brand new window id and return it. */
 WindowId NewWindowId();
 
+inline bool WindowSizeSanityCheck(int32_t aWidth, int32_t aHeight) {
+  if (aWidth < 0 || aWidth > wr::MAX_RENDER_TASK_SIZE || aHeight < 0 ||
+      aHeight > wr::MAX_RENDER_TASK_SIZE) {
+    return false;
+  }
+  return true;
+}
+
 inline DebugFlags NewDebugFlags(uint32_t aFlags) { return {aFlags}; }
 
 inline Maybe<wr::ImageFormat> SurfaceFormatToImageFormat(
@@ -291,6 +299,8 @@ static inline MixBlendMode ToMixBlendMode(gfx::CompositionOp compositionOp) {
       return MixBlendMode::Color;
     case gfx::CompositionOp::OP_LUMINOSITY:
       return MixBlendMode::Luminosity;
+    case gfx::CompositionOp::OP_ADD:
+      return MixBlendMode::PlusLighter;
     default:
       return MixBlendMode::Normal;
   }

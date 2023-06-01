@@ -91,7 +91,9 @@ MediaResult RemoteVideoDecoderChild::ProcessOutput(
 MediaResult RemoteVideoDecoderChild::InitIPDL(
     const VideoInfo& aVideoInfo, float aFramerate,
     const CreateDecoderParams::OptionSet& aOptions,
-    Maybe<layers::TextureFactoryIdentifier> aIdentifier) {
+    Maybe<layers::TextureFactoryIdentifier> aIdentifier,
+    const Maybe<uint64_t>& aMediaEngineId,
+    const Maybe<TrackingId>& aTrackingId) {
   MOZ_ASSERT_IF(mLocation == RemoteDecodeIn::GpuProcess, aIdentifier);
 
   RefPtr<RemoteDecoderManagerChild> manager =
@@ -122,8 +124,8 @@ MediaResult RemoteVideoDecoderChild::InitIPDL(
 
   mIPDLSelfRef = this;
   VideoDecoderInfoIPDL decoderInfo(aVideoInfo, aFramerate);
-  Unused << manager->SendPRemoteDecoderConstructor(this, decoderInfo, aOptions,
-                                                   aIdentifier);
+  Unused << manager->SendPRemoteDecoderConstructor(
+      this, decoderInfo, aOptions, aIdentifier, aMediaEngineId, aTrackingId);
 
   return NS_OK;
 }
@@ -132,8 +134,10 @@ RemoteVideoDecoderParent::RemoteVideoDecoderParent(
     RemoteDecoderManagerParent* aParent, const VideoInfo& aVideoInfo,
     float aFramerate, const CreateDecoderParams::OptionSet& aOptions,
     const Maybe<layers::TextureFactoryIdentifier>& aIdentifier,
-    nsISerialEventTarget* aManagerThread, TaskQueue* aDecodeTaskQueue)
-    : RemoteDecoderParent(aParent, aOptions, aManagerThread, aDecodeTaskQueue),
+    nsISerialEventTarget* aManagerThread, TaskQueue* aDecodeTaskQueue,
+    const Maybe<uint64_t>& aMediaEngineId, Maybe<TrackingId> aTrackingId)
+    : RemoteDecoderParent(aParent, aOptions, aManagerThread, aDecodeTaskQueue,
+                          aMediaEngineId, std::move(aTrackingId)),
       mVideoInfo(aVideoInfo),
       mFramerate(aFramerate) {
   if (aIdentifier) {
@@ -157,6 +161,7 @@ IPCResult RemoteVideoDecoderParent::RecvConstruct(
       mVideoInfo,     mKnowsCompositor,
       imageContainer, CreateDecoderParams::VideoFrameRate(mFramerate),
       mOptions,       CreateDecoderParams::NoWrapper(true),
+      mMediaEngineId, mTrackingId,
   };
 
   mParent->EnsurePDMFactory().CreateDecoder(params)->Then(
@@ -270,10 +275,14 @@ MediaResult RemoteVideoDecoderParent::ProcessDecodedData(
         MediaDataIPDL(data->mOffset, data->mTime, data->mTimecode,
                       data->mDuration, data->mKeyframe),
         video->mDisplay,
-        RemoteImageHolder(mParent,
-                          XRE_IsGPUProcess() ? VideoBridgeSource::GpuProcess
-                                             : VideoBridgeSource::RddProcess,
-                          size, sd),
+        RemoteImageHolder(
+            mParent,
+            XRE_IsGPUProcess()
+                ? VideoBridgeSource::GpuProcess
+                : (XRE_IsRDDProcess()
+                       ? VideoBridgeSource::RddProcess
+                       : VideoBridgeSource::MFMediaEngineCDMProcess),
+            size, video->mImage->GetColorDepth(), sd),
         video->mFrameID);
 
     array.AppendElement(std::move(output));

@@ -20,15 +20,8 @@ const gActionDescrMap = {
   expand: "Expand",
   activate: "Activate",
   cycle: "Cycle",
+  "click ancestor": "Click ancestor",
 };
-
-const isCacheEnabled = Services.prefs.getBoolPref(
-  "accessibility.cache.enabled",
-  false
-);
-// Some RemoteAccessible methods aren't supported on Windows when the cache is
-// disabled.
-const isWinNoCache = !isCacheEnabled && AppConstants.platform == "win";
 
 async function testActions(browser, docAcc, id, expectedActions, domEvents) {
   const acc = findAccessibleChildByID(docAcc, id);
@@ -94,14 +87,23 @@ addAccessibleTask(
   <a id="link1" href="#">linkable textleaf accessible</a>
   <div id="link2" onclick="">linkable textleaf accessible</div>
 
+  <a id="link3" href="#">
+    <img id="link3img" alt="image in link"
+          src="http://example.com/a11y/accessible/tests/mochitest/moz.png">
+  </a>
+
   <div>
     <label for="TextBox_t2" id="label1">
       <span>Explicit</span>
     </label>
     <input name="in2" id="TextBox_t2" type="text" maxlength="17">
   </div>
+
+  <div onclick=""><p id="p_in_clickable_div">p in clickable div</p></div>
   `,
   async function(browser, docAcc) {
+    is(docAcc.actionCount, 0, "Doc should not have any actions");
+
     const _testActions = async (id, expectedActions, domEvents) => {
       await testActions(browser, docAcc, id, expectedActions, domEvents);
     };
@@ -113,7 +115,10 @@ addAccessibleTask(
     await _testActions("onclick_img", ["click"], gClickEvents);
     await _testActions("link1", ["jump"], gClickEvents);
     await _testActions("link2", ["click"], gClickEvents);
+    await _testActions("link3", ["jump"], gClickEvents);
+    await _testActions("link3img", ["click ancestor"], gClickEvents);
     await _testActions("label1", ["click"], gClickEvents);
+    await _testActions("p_in_clickable_div", ["click ancestor"], gClickEvents);
 
     await invokeContentTask(browser, [], () => {
       content.document
@@ -150,6 +155,7 @@ addAccessibleTask(
     await invokeContentTask(browser, [], () => {
       content.document
         .getElementById("onclick_img")
+        // eslint-disable-next-line @microsoft/sdl/no-insecure-url
         .setAttribute("longdesc", "http://example.com");
     });
     acc = findAccessibleChildByID(docAcc, "onclick_img");
@@ -163,11 +169,98 @@ addAccessibleTask(
     acc = findAccessibleChildByID(docAcc, "onclick_img");
     await untilCacheIs(() => acc.actionCount, 1, "img has 1 actions");
     await _testActions("onclick_img", ["showlongdesc"]);
+
+    // Remove 'href' from link and test linkable child
+    const link1Acc = findAccessibleChildByID(docAcc, "link1");
+    is(
+      link1Acc.firstChild.getActionName(0),
+      "click ancestor",
+      "linkable child has click ancestor action"
+    );
+    await invokeContentTask(browser, [], () => {
+      let link1 = content.document.getElementById("link1");
+      link1.removeAttribute("href");
+    });
+    await untilCacheIs(() => link1Acc.actionCount, 0, "link has no actions");
+    is(link1Acc.firstChild.actionCount, 0, "linkable child's actions removed");
+
+    // Add a click handler to the body. Ensure it propagates to descendants.
+    await invokeContentTask(browser, [], () => {
+      content.document.body.onclick = () => {};
+    });
+    await untilCacheIs(() => docAcc.actionCount, 1, "Doc has 1 action");
+    await _testActions("link1", ["click ancestor"]);
+
+    await invokeContentTask(browser, [], () => {
+      content.document.body.onclick = null;
+    });
+    await untilCacheIs(() => docAcc.actionCount, 0, "Doc has no actions");
+    is(link1Acc.actionCount, 0, "link has no actions");
+
+    // Add a click handler to the root element. Ensure it propagates to
+    // descendants.
+    await invokeContentTask(browser, [], () => {
+      content.document.documentElement.onclick = () => {};
+    });
+    await untilCacheIs(() => docAcc.actionCount, 1, "Doc has 1 action");
+    await _testActions("link1", ["click ancestor"]);
   },
   {
     chrome: true,
     topLevel: !isWinNoCache,
     iframe: !isWinNoCache,
     remoteIframe: !isWinNoCache,
+  }
+);
+
+/**
+ * Test access key.
+ */
+addAccessibleTask(
+  `
+<button id="noKey">noKey</button>
+<button id="key" accesskey="a">key</button>
+  `,
+  async function(browser, docAcc) {
+    const noKey = findAccessibleChildByID(docAcc, "noKey");
+    is(noKey.accessKey, "", "noKey has no accesskey");
+    const key = findAccessibleChildByID(docAcc, "key");
+    is(key.accessKey, MAC ? "⌃⌥a" : "Alt+Shift+a", "key has correct accesskey");
+
+    info("Changing accesskey");
+    await invokeContentTask(browser, [], () => {
+      content.document.getElementById("key").accessKey = "b";
+    });
+    await untilCacheIs(
+      () => key.accessKey,
+      MAC ? "⌃⌥b" : "Alt+Shift+b",
+      "Correct accesskey after change"
+    );
+
+    info("Removing accesskey");
+    await invokeContentTask(browser, [], () => {
+      content.document.getElementById("key").removeAttribute("accesskey");
+    });
+    await untilCacheIs(
+      () => key.accessKey,
+      "",
+      "Empty accesskey after removal"
+    );
+
+    info("Adding accesskey");
+    await invokeContentTask(browser, [], () => {
+      content.document.getElementById("key").accessKey = "c";
+    });
+    await untilCacheIs(
+      () => key.accessKey,
+      MAC ? "⌃⌥c" : "Alt+Shift+c",
+      "Correct accesskey after addition"
+    );
+  },
+  {
+    chrome: true,
+    topLevel: !isWinNoCache,
+    iframe: false, // Bug 1796846
+    remoteIframe: false, // Bug 1796846
   }
 );

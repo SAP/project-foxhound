@@ -9,20 +9,20 @@ const { shallow } = require("enzyme");
 const {
   REPS,
   getRep,
-} = require("devtools/client/shared/components/reps/reps/rep");
+} = require("resource://devtools/client/shared/components/reps/reps/rep.js");
 
 const {
   expectActorAttribute,
-} = require("devtools/client/shared/components/test/node/components/reps/test-helpers");
+} = require("resource://devtools/client/shared/components/test/node/components/reps/test-helpers.js");
 
 const {
   MODE,
-} = require("devtools/client/shared/components/reps/reps/constants");
+} = require("resource://devtools/client/shared/components/reps/reps/constants.js");
 const { Rep, CommentNode } = REPS;
-const stubs = require("devtools/client/shared/components/test/node/stubs/reps/comment-node");
+const stubs = require("resource://devtools/client/shared/components/test/node/stubs/reps/comment-node.js");
 
 describe("CommentNode", () => {
-  const stub = stubs.get("Comment");
+  const stub = stubs.get("Comment")._grip;
 
   it("selects CommentNode Rep correctly", () => {
     expect(getRep(stub)).toEqual(CommentNode.rep);
@@ -52,7 +52,7 @@ describe("CommentNode", () => {
   });
 
   it("renders as expected", () => {
-    const object = stubs.get("Comment");
+    const object = stubs.get("Comment")._grip;
     const renderRep = props => shallow(CommentNode.rep({ object, ...props }));
 
     let component = renderRep({ mode: undefined });

@@ -5,6 +5,8 @@
 "use strict";
 
 module.exports = {
+  extends: ["plugin:mozilla/valid-jsdoc"],
+
   globals: {
     // These are defined in the WebExtension script scopes by ExtensionCommon.jsm
     Cc: true,
@@ -13,6 +15,7 @@ module.exports = {
     Cu: true,
     AppConstants: true,
     ExtensionAPI: true,
+    ExtensionAPIPersistent: true,
     ExtensionCommon: true,
     ExtensionUtils: true,
     extensions: true,
@@ -27,24 +30,10 @@ module.exports = {
     "mozilla/balanced-listeners": "error",
     "mozilla/no-aArgs": "error",
     "mozilla/var-only-at-top-level": "error",
-
-    "valid-jsdoc": [
-      "error",
-      {
-        prefer: {
-          return: "returns",
-        },
-        preferType: {
-          Boolean: "boolean",
-          Number: "number",
-          String: "string",
-          bool: "boolean",
-        },
-        requireParamDescription: false,
-        requireReturn: false,
-        requireReturnDescription: false,
-      },
-    ],
+    // Disable reject-importGlobalProperties because we don't want to include
+    // these in the sandbox directly as that would potentially mean the
+    // imported properties would be instatiated up-front rather than lazily.
+    "mozilla/reject-importGlobalProperties": "off",
 
     // Functions are not required to consistently return something or nothing
     "consistent-return": "off",

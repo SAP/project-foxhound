@@ -7,33 +7,23 @@
 const { LogManager } = ChromeUtils.import(
   "resource://normandy/lib/LogManager.jsm"
 );
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  IndexedDB: "resource://gre/modules/IndexedDB.sys.mjs",
+  TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "IndexedDB",
-  "resource://gre/modules/IndexedDB.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "TelemetryEnvironment",
-  "resource://gre/modules/TelemetryEnvironment.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "CleanupManager",
   "resource://normandy/lib/CleanupManager.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "PrefUtils",
   "resource://normandy/lib/PrefUtils.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "TelemetryEvents",
   "resource://normandy/lib/TelemetryEvents.jsm"
 );
@@ -83,7 +73,7 @@ const DB_VERSION = 1;
  * Create a new connection to the database.
  */
 function openDatabase() {
-  return IndexedDB.open(DB_NAME, DB_VERSION, db => {
+  return lazy.IndexedDB.open(DB_NAME, DB_VERSION, db => {
     db.createObjectStore(STORE_NAME, {
       keyPath: "slug",
     });
@@ -139,6 +129,9 @@ var PreferenceRollouts = {
     "bug-1648229-rollout-comcast-steering-rollout-release-78-80",
     "bug-1732206-rollout-fission-release-rollout-release-94-95",
     "bug-1745237-rollout-fission-beta-96-97-rollout-beta-96-97",
+    "bug-1750601-rollout-doh-steering-in-canada-staggered-starting-for-release-97-98",
+    "bug-1758988-rollout-doh-enablment-to-new-countries-staggered-st-release-98-100",
+    "bug-1758818-rollout-enabling-doh-in-new-countries-staggered-sta-release-98-100",
   ]),
 
   /**
@@ -182,18 +175,23 @@ var PreferenceRollouts = {
   },
 
   async init() {
-    CleanupManager.addCleanupHandler(() => this.saveStartupPrefs());
+    lazy.CleanupManager.addCleanupHandler(() => this.saveStartupPrefs());
 
     for (const rollout of await this.getAllActive()) {
       if (this.GRADUATION_SET.has(rollout.slug)) {
         await this.graduate(rollout, "in-graduation-set");
         continue;
       }
-      TelemetryEnvironment.setExperimentActive(rollout.slug, rollout.state, {
-        type: "normandy-prefrollout",
-        enrollmentId:
-          rollout.enrollmentId || TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
-      });
+      lazy.TelemetryEnvironment.setExperimentActive(
+        rollout.slug,
+        rollout.state,
+        {
+          type: "normandy-prefrollout",
+          enrollmentId:
+            rollout.enrollmentId ||
+            lazy.TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
+        }
+      );
     }
   },
 
@@ -201,7 +199,7 @@ var PreferenceRollouts = {
   async onTelemetryDisabled() {
     const rollouts = await this.getAll();
     for (const rollout of rollouts) {
-      rollout.enrollmentId = TelemetryEvents.NO_ENROLLMENT_ID_MARKER;
+      rollout.enrollmentId = lazy.TelemetryEvents.NO_ENROLLMENT_ID_MARKER;
     }
     await this.updateMany(rollouts);
   },
@@ -341,7 +339,7 @@ var PreferenceRollouts = {
 
     for (const rollout of await this.getAllActive()) {
       for (const prefSpec of rollout.preferences) {
-        PrefUtils.setPref(
+        lazy.PrefUtils.setPref(
           STARTUP_PREFS_BRANCH + prefSpec.preferenceName,
           prefSpec.value
         );
@@ -354,10 +352,15 @@ var PreferenceRollouts = {
     rollout.state = this.STATE_GRADUATED;
     const db = await getDatabase();
     await getStore(db, "readwrite").put(rollout);
-    TelemetryEvents.sendEvent("graduate", "preference_rollout", rollout.slug, {
-      reason,
-      enrollmentId:
-        rollout.enrollmentId || TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
-    });
+    lazy.TelemetryEvents.sendEvent(
+      "graduate",
+      "preference_rollout",
+      rollout.slug,
+      {
+        reason,
+        enrollmentId:
+          rollout.enrollmentId || lazy.TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
+      }
+    );
   },
 };

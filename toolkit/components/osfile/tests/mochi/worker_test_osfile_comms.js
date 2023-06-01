@@ -2,10 +2,10 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /* eslint-env mozilla/chrome-worker, node */
-/* global finish, log */
 
 "use strict";
 
+/* import-globals-from /testing/mochitest/tests/SimpleTest/WorkerSimpleTest.js */
 importScripts("chrome://mochikit/content/tests/SimpleTest/WorkerSimpleTest.js");
 
 // The set of samples for communications test. Declare as a global
@@ -17,6 +17,7 @@ self.onmessage = function(msg) {
   self.onmessage = function on_unexpected_message(msg) {
     throw new Error("Unexpected message " + JSON.stringify(msg.data));
   };
+  /* import-globals-from /toolkit/components/osfile/osfile.jsm */
   importScripts("resource://gre/modules/osfile.jsm");
   info("Initialization complete");
 

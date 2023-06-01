@@ -10,23 +10,19 @@ const tagssvc = PlacesUtils.tagging;
 const PT = PlacesTransactions;
 const menuGuid = PlacesUtils.bookmarks.menuGuid;
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Preferences",
-  "resource://gre/modules/Preferences.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
+});
 
 // Create and add bookmarks observer.
 var observer = {
-  __proto__: NavBookmarkObserver.prototype,
-
   tagRelatedGuids: new Set(),
 
   reset() {
     this.itemsAdded = new Map();
     this.itemsRemoved = new Map();
-    this.itemsChanged = new Map();
     this.itemsMoved = new Map();
+    this.itemsKeywordChanged = new Map();
     this.itemsTitleChanged = new Map();
     this.itemsUrlChanged = new Map();
   },
@@ -70,6 +66,15 @@ var observer = {
             itemType: event.itemType,
           });
           break;
+        case "bookmark-keyword-changed":
+          if (this.tagRelatedGuids.has(event.guid)) {
+            return;
+          }
+
+          this.itemsKeywordChanged.set(event.guid, {
+            keyword: event.keyword,
+          });
+          break;
         case "bookmark-title-changed":
           if (this.tagRelatedGuids.has(event.guid)) {
             return;
@@ -92,35 +97,6 @@ var observer = {
       }
     }
   },
-
-  onItemChanged(
-    aItemId,
-    aProperty,
-    aIsAnnoProperty,
-    aNewValue,
-    aLastModified,
-    aItemType,
-    aParentId,
-    aGuid,
-    aParentGuid
-  ) {
-    if (this.tagRelatedGuids.has(aGuid)) {
-      return;
-    }
-
-    let changesForGuid = this.itemsChanged.get(aGuid);
-    if (changesForGuid === undefined) {
-      changesForGuid = new Map();
-      this.itemsChanged.set(aGuid, changesForGuid);
-    }
-    let change = {
-      isAnnoProperty: aIsAnnoProperty,
-      newValue: aNewValue,
-      lastModified: aLastModified,
-      itemType: aItemType,
-    };
-    changesForGuid.set(aProperty, change);
-  },
 };
 observer.reset();
 
@@ -128,25 +104,25 @@ observer.reset();
 var bmStartIndex = 0;
 
 function run_test() {
-  bmsvc.addObserver(observer);
   observer.handlePlacesEvents = observer.handlePlacesEvents.bind(observer);
   obsvc.addListener(
     [
       "bookmark-added",
       "bookmark-removed",
       "bookmark-moved",
+      "bookmark-keyword-changed",
       "bookmark-title-changed",
       "bookmark-url-changed",
     ],
     observer.handlePlacesEvents
   );
   registerCleanupFunction(function() {
-    bmsvc.removeObserver(observer);
     obsvc.removeListener(
       [
         "bookmark-added",
         "bookmark-removed",
         "bookmark-moved",
+        "bookmark-keyword-changed",
         "bookmark-title-changed",
         "bookmark-url-changed",
       ],
@@ -282,20 +258,6 @@ function ensureItemsRemoved(...items) {
   );
 }
 
-function ensureItemsChanged(...items) {
-  for (let item of items) {
-    Assert.ok(observer.itemsChanged.has(item.guid));
-    let changes = observer.itemsChanged.get(item.guid);
-    Assert.ok(changes.has(item.property));
-    let info = changes.get(item.property);
-    Assert.ok(!info.isAnnoProperty);
-    Assert.equal(info.newValue, item.newValue);
-    if ("url" in item) {
-      Assert.ok(item.url.equals(info.url));
-    }
-  }
-}
-
 function ensureItemsMoved(...items) {
   Assert.equal(
     observer.itemsMoved.size,
@@ -328,6 +290,17 @@ function ensureItemsMoved(...items) {
       item.newIndex,
       "Should have the correct new index"
     );
+  }
+}
+
+function ensureItemsKeywordChanged(...items) {
+  for (const item of items) {
+    Assert.ok(
+      observer.itemsKeywordChanged.has(item.guid),
+      `Observer should have a keyword changed for ${item.guid}`
+    );
+    const info = observer.itemsKeywordChanged.get(item.guid);
+    Assert.equal(info.keyword, item.keyword, "Should have the correct keyword");
   }
 }
 
@@ -1507,10 +1480,9 @@ add_task(async function test_edit_keyword() {
   const KEYWORD = "test_keyword";
   bm_info.guid = await PT.NewBookmark(bm_info).transact();
   function ensureKeywordChange(aCurrentKeyword = "") {
-    ensureItemsChanged({
+    ensureItemsKeywordChanged({
       guid: bm_info.guid,
-      property: "keyword",
-      newValue: aCurrentKeyword,
+      keyword: aCurrentKeyword,
     });
   }
 
@@ -1559,10 +1531,9 @@ add_task(async function test_edit_keyword_null_postData() {
   const KEYWORD = "test_keyword";
   bm_info.guid = await PT.NewBookmark(bm_info).transact();
   function ensureKeywordChange(aCurrentKeyword = "") {
-    ensureItemsChanged({
+    ensureItemsKeywordChanged({
       guid: bm_info.guid,
-      property: "keyword",
-      newValue: aCurrentKeyword,
+      keyword: aCurrentKeyword,
     });
   }
 
@@ -1610,10 +1581,9 @@ add_task(async function test_edit_specific_keyword() {
   };
   bm_info.guid = await PT.NewBookmark(bm_info).transact();
   function ensureKeywordChange(aCurrentKeyword = "", aPreviousKeyword = "") {
-    ensureItemsChanged({
+    ensureItemsKeywordChanged({
       guid: bm_info.guid,
-      property: "keyword",
-      newValue: aCurrentKeyword,
+      keyword: aCurrentKeyword,
     });
   }
 

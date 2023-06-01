@@ -4,31 +4,28 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppConstants",
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "SessionStore",
-  "resource:///modules/sessionstore/SessionStore.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
+});
 
 var gStateObject;
 var gTreeData;
+var gTreeInitialized = false;
 
 // Page initialization
 
 window.onload = function() {
   let toggleTabs = document.getElementById("tabsToggle");
   if (toggleTabs) {
-    let treeContainer = document.querySelector(".tree-container");
+    let tabList = document.getElementById("tabList");
 
     let toggleHiddenTabs = () => {
-      toggleTabs.classList.toggle("show-tabs");
-      treeContainer.classList.toggle("expanded");
+      toggleTabs.classList.toggle("tabs-hidden");
+      tabList.hidden = toggleTabs.classList.contains("tabs-hidden");
+      initTreeView();
     };
     toggleTabs.onclick = toggleHiddenTabs;
   }
@@ -81,20 +78,18 @@ window.onload = function() {
 
   initTreeView();
 
-  errorTryAgainButton.focus({ preventFocusRing: true });
+  errorTryAgainButton.focus({ focusVisible: false });
 };
 
 function isTreeViewVisible() {
-  let tabList = document.querySelector(".tree-container");
-  return tabList.hasAttribute("available");
+  return !document.getElementById("tabList").hidden;
 }
 
 async function initTreeView() {
-  // If we aren't visible we initialize as we are made visible (and it's OK
-  // to initialize multiple times)
-  if (!isTreeViewVisible()) {
+  if (gTreeInitialized || !isTreeViewVisible()) {
     return;
   }
+
   var tabList = document.getElementById("tabList");
   let l10nIds = [];
   for (
@@ -140,19 +135,14 @@ async function initTreeView() {
 
   tabList.view = treeView;
   tabList.view.selection.select(0);
+  gTreeInitialized = true;
 }
 
 // User actions
 function updateTabListVisibility() {
-  let tabList = document.querySelector(".tree-container");
-  let container = document.querySelector(".container");
-  if (document.getElementById("radioRestoreChoose").checked) {
-    tabList.setAttribute("available", "true");
-    container.classList.add("restore-chosen");
-  } else {
-    tabList.removeAttribute("available");
-    container.classList.remove("restore-chosen");
-  }
+  document.getElementById("tabList").hidden = !document.getElementById(
+    "radioRestoreChoose"
+  ).checked;
   initTreeView();
 }
 

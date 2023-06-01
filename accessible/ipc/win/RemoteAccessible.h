@@ -19,14 +19,17 @@
 namespace mozilla {
 namespace a11y {
 
+/**
+ * Windows specific functionality for an accessibility tree node that originated
+ * in the parent process.
+ */
 class RemoteAccessible : public RemoteAccessibleBase<RemoteAccessible> {
  public:
   RemoteAccessible(uint64_t aID, RemoteAccessible* aParent,
                    DocAccessibleParent* aDoc, role aRole, AccType aType,
                    AccGenericType aGenericTypes, uint8_t aRoleMapEntryIndex)
       : RemoteAccessibleBase(aID, aParent, aDoc, aRole, aType, aGenericTypes,
-                             aRoleMapEntryIndex),
-        mSafeToRecurse(true) {
+                             aRoleMapEntryIndex) {
     MOZ_COUNT_CTOR(RemoteAccessible);
   }
 
@@ -35,6 +38,7 @@ class RemoteAccessible : public RemoteAccessibleBase<RemoteAccessible> {
 #include "mozilla/a11y/RemoteAccessibleShared.h"
 
   virtual void TakeFocus() const override;
+  virtual void SetCaretOffset(int32_t aOffset) override;
 
   bool GetCOMInterface(void** aOutAccessible) const;
   void SetCOMInterface(const RefPtr<IAccessible>& aIAccessible) {
@@ -56,7 +60,7 @@ class RemoteAccessible : public RemoteAccessibleBase<RemoteAccessible> {
 
  private:
   RefPtr<IAccessible> mCOMProxy;
-  bool mSafeToRecurse;
+  bool mSafeToRecurse = true;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

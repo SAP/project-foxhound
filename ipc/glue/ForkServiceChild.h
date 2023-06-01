@@ -66,13 +66,12 @@ class ForkServiceChild {
 
  private:
   // Called when a message is received.
-  void OnMessageReceived(IPC::Message&& message);
+  void OnMessageReceived(UniquePtr<IPC::Message> message);
   void OnError();
 
   UniquePtr<MiniTransceiver> mTcver;
   static UniquePtr<ForkServiceChild> sForkServiceChild;
   pid_t mRecvPid;
-  bool mWaitForHello;
   bool mFailed;  // The forkserver has crashed or disconnected.
   GeckoChildProcessHost* mProcess;
 };

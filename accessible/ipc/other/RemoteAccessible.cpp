@@ -13,6 +13,7 @@
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/Unused.h"
 #include "mozilla/a11y/Platform.h"
+#include "Relation.h"
 #include "RelationType.h"
 #include "mozilla/a11y/Role.h"
 #include "mozilla/StaticPrefs_accessibility.h"
@@ -46,6 +47,11 @@ ENameValueFlag RemoteAccessible::Name(nsString& aName) const {
 }
 
 void RemoteAccessible::Value(nsString& aValue) const {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    RemoteAccessibleBase<RemoteAccessible>::Value(aValue);
+    return;
+  }
+
   Unused << mDoc->SendValue(mID, &aValue);
 }
 
@@ -71,21 +77,15 @@ already_AddRefed<AccAttributes> RemoteAccessible::Attributes() {
   return attrs.forget();
 }
 
-nsTArray<RemoteAccessible*> RemoteAccessible::RelationByType(
-    RelationType aType) const {
+Relation RemoteAccessible::RelationByType(RelationType aType) const {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::RelationByType(aType);
+  }
+
   nsTArray<uint64_t> targetIDs;
   Unused << mDoc->SendRelationByType(mID, static_cast<uint32_t>(aType),
                                      &targetIDs);
-
-  size_t targetCount = targetIDs.Length();
-  nsTArray<RemoteAccessible*> targets(targetCount);
-  for (size_t i = 0; i < targetCount; i++) {
-    if (RemoteAccessible* proxy = mDoc->GetAccessible(targetIDs[i])) {
-      targets.AppendElement(proxy);
-    }
-  }
-
-  return targets;
+  return Relation(new RemoteAccIterator(std::move(targetIDs), Document()));
 }
 
 void RemoteAccessible::Relations(
@@ -124,15 +124,13 @@ bool RemoteAccessible::IsSearchbox() const {
 }
 
 nsAtom* RemoteAccessible::LandmarkRole() const {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::LandmarkRole();
+  }
+
   nsString landmark;
   Unused << mDoc->SendLandmarkRole(mID, &landmark);
   return NS_GetStaticAtom(landmark);
-}
-
-nsStaticAtom* RemoteAccessible::ARIARoleAtom() const {
-  nsString role;
-  Unused << mDoc->SendARIARoleAtom(mID, &role);
-  return NS_GetStaticAtom(role);
 }
 
 GroupPos RemoteAccessible::GroupPosition() {
@@ -144,10 +142,6 @@ GroupPos RemoteAccessible::GroupPosition() {
   Unused << mDoc->SendGroupPosition(mID, &groupPos.level, &groupPos.setSize,
                                     &groupPos.posInSet);
   return groupPos;
-}
-
-void RemoteAccessible::ScrollTo(uint32_t aScrollType) {
-  Unused << mDoc->SendScrollTo(mID, aScrollType);
 }
 
 void RemoteAccessible::ScrollToPoint(uint32_t aScrollType, int32_t aX,
@@ -172,10 +166,6 @@ int32_t RemoteAccessible::CaretOffset() const {
   return offset;
 }
 
-void RemoteAccessible::SetCaretOffset(int32_t aOffset) {
-  Unused << mDoc->SendSetCaretOffset(mID, aOffset);
-}
-
 uint32_t RemoteAccessible::CharacterCount() const {
   if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
     return RemoteAccessibleBase<RemoteAccessible>::CharacterCount();
@@ -186,16 +176,24 @@ uint32_t RemoteAccessible::CharacterCount() const {
 }
 
 int32_t RemoteAccessible::SelectionCount() {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::SelectionCount();
+  }
   int32_t count = 0;
   Unused << mDoc->SendSelectionCount(mID, &count);
   return count;
 }
 
-void RemoteAccessible::TextSubstring(int32_t aStartOffset, int32_t aEndOfset,
+void RemoteAccessible::TextSubstring(int32_t aStartOffset, int32_t aEndOffset,
                                      nsAString& aText) const {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::TextSubstring(
+        aStartOffset, aEndOffset, aText);
+  }
+
   bool valid;
   nsString text;
-  Unused << mDoc->SendTextSubstring(mID, aStartOffset, aEndOfset, &text,
+  Unused << mDoc->SendTextSubstring(mID, aStartOffset, aEndOffset, &text,
                                     &valid);
   aText = std::move(text);
 }
@@ -273,6 +271,12 @@ already_AddRefed<AccAttributes> RemoteAccessible::DefaultTextAttributes() {
 LayoutDeviceIntRect RemoteAccessible::TextBounds(int32_t aStartOffset,
                                                  int32_t aEndOffset,
                                                  uint32_t aCoordType) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    MOZ_ASSERT(IsHyperText(), "is not hypertext?");
+    return RemoteAccessibleBase<RemoteAccessible>::TextBounds(
+        aStartOffset, aEndOffset, aCoordType);
+  }
+
   LayoutDeviceIntRect rect;
   Unused << mDoc->SendTextBounds(mID, aStartOffset, aEndOffset, aCoordType,
                                  &rect);
@@ -281,6 +285,12 @@ LayoutDeviceIntRect RemoteAccessible::TextBounds(int32_t aStartOffset,
 
 LayoutDeviceIntRect RemoteAccessible::CharBounds(int32_t aOffset,
                                                  uint32_t aCoordType) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    MOZ_ASSERT(IsHyperText(), "is not hypertext?");
+    return RemoteAccessibleBase<RemoteAccessible>::CharBounds(aOffset,
+                                                              aCoordType);
+  }
+
   LayoutDeviceIntRect rect;
   Unused << mDoc->SendCharBounds(mID, aOffset, aCoordType, &rect);
   return rect;
@@ -288,6 +298,12 @@ LayoutDeviceIntRect RemoteAccessible::CharBounds(int32_t aOffset,
 
 int32_t RemoteAccessible::OffsetAtPoint(int32_t aX, int32_t aY,
                                         uint32_t aCoordType) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    MOZ_ASSERT(IsHyperText(), "is not hypertext?");
+    return RemoteAccessibleBase<RemoteAccessible>::OffsetAtPoint(aX, aY,
+                                                                 aCoordType);
+  }
+
   int32_t retVal = -1;
   Unused << mDoc->SendOffsetAtPoint(mID, aX, aY, aCoordType, &retVal);
   return retVal;
@@ -305,20 +321,23 @@ bool RemoteAccessible::SelectionBoundsAt(int32_t aSelectionNum, nsString& aData,
 bool RemoteAccessible::SetSelectionBoundsAt(int32_t aSelectionNum,
                                             int32_t aStartOffset,
                                             int32_t aEndOffset) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::SetSelectionBoundsAt(
+        aSelectionNum, aStartOffset, aEndOffset);
+  }
+
   bool retVal = false;
   Unused << mDoc->SendSetSelectionBoundsAt(mID, aSelectionNum, aStartOffset,
                                            aEndOffset, &retVal);
   return retVal;
 }
 
-bool RemoteAccessible::AddToSelection(int32_t aStartOffset,
-                                      int32_t aEndOffset) {
-  bool retVal = false;
-  Unused << mDoc->SendAddToSelection(mID, aStartOffset, aEndOffset, &retVal);
-  return retVal;
-}
-
 bool RemoteAccessible::RemoveFromSelection(int32_t aSelectionNum) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::RemoveFromSelection(
+        aSelectionNum);
+  }
+
   bool retVal = false;
   Unused << mDoc->SendRemoveFromSelection(mID, aSelectionNum, &retVal);
   return retVal;
@@ -377,18 +396,6 @@ bool RemoteAccessible::PasteText(int32_t aPosition) {
   return valid;
 }
 
-LayoutDeviceIntPoint RemoteAccessible::ImagePosition(uint32_t aCoordType) {
-  LayoutDeviceIntPoint retVal;
-  Unused << mDoc->SendImagePosition(mID, aCoordType, &retVal);
-  return retVal;
-}
-
-LayoutDeviceIntSize RemoteAccessible::ImageSize() {
-  LayoutDeviceIntSize retVal;
-  Unused << mDoc->SendImageSize(mID, &retVal);
-  return retVal;
-}
-
 uint32_t RemoteAccessible::StartOffset() {
   if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
     return RemoteAccessibleBase<RemoteAccessible>::StartOffset();
@@ -399,9 +406,13 @@ uint32_t RemoteAccessible::StartOffset() {
   return retVal;
 }
 
-uint32_t RemoteAccessible::EndOffset(bool* aOk) {
+uint32_t RemoteAccessible::EndOffset() {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::EndOffset();
+  }
+  bool ok;
   uint32_t retVal = 0;
-  Unused << mDoc->SendEndOffset(mID, &retVal, aOk);
+  Unused << mDoc->SendEndOffset(mID, &retVal, &ok);
   return retVal;
 }
 
@@ -477,8 +488,8 @@ void RemoteAccessible::GetColRowExtents(uint32_t* aColIdx, uint32_t* aRowIdx,
                                        aRowExtent);
 }
 
-void RemoteAccessible::GetPosition(uint32_t* aColIdx, uint32_t* aRowIdx) {
-  Unused << mDoc->SendGetPosition(mID, aColIdx, aRowIdx);
+void RemoteAccessible::GetPosition(uint32_t* aRowIdx, uint32_t* aColIdx) {
+  Unused << mDoc->SendGetPosition(mID, aRowIdx, aColIdx);
 }
 
 uint32_t RemoteAccessible::ColExtent() {
@@ -673,6 +684,10 @@ void RemoteAccessible::TableUnselectRow(uint32_t aRow) {
 }
 
 bool RemoteAccessible::TableIsProbablyForLayout() {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::TableIsProbablyForLayout();
+  }
+
   bool forLayout = false;
   Unused << mDoc->SendTableIsProbablyForLayout(mID, &forLayout);
   return forLayout;
@@ -692,8 +707,12 @@ RemoteAccessible* RemoteAccessible::AtkTableRowHeader(int32_t aRow) {
   return ok ? mDoc->GetAccessible(headerID) : nullptr;
 }
 
-void RemoteAccessible::SelectedItems(
-    nsTArray<RemoteAccessible*>* aSelectedItems) {
+void RemoteAccessible::SelectedItems(nsTArray<Accessible*>* aSelectedItems) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    RemoteAccessibleBase<RemoteAccessible>::SelectedItems(aSelectedItems);
+    return;
+  }
+
   AutoTArray<uint64_t, 10> itemIDs;
   Unused << mDoc->SendSelectedItems(mID, &itemIDs);
   aSelectedItems->SetCapacity(itemIDs.Length());
@@ -703,12 +722,20 @@ void RemoteAccessible::SelectedItems(
 }
 
 uint32_t RemoteAccessible::SelectedItemCount() {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::SelectedItemCount();
+  }
+
   uint32_t count = 0;
   Unused << mDoc->SendSelectedItemCount(mID, &count);
   return count;
 }
 
-RemoteAccessible* RemoteAccessible::GetSelectedItem(uint32_t aIndex) {
+Accessible* RemoteAccessible::GetSelectedItem(uint32_t aIndex) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::GetSelectedItem(aIndex);
+  }
+
   uint64_t selectedItemID = 0;
   bool ok = false;
   Unused << mDoc->SendGetSelectedItem(mID, aIndex, &selectedItemID, &ok);
@@ -716,41 +743,54 @@ RemoteAccessible* RemoteAccessible::GetSelectedItem(uint32_t aIndex) {
 }
 
 bool RemoteAccessible::IsItemSelected(uint32_t aIndex) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::IsItemSelected(aIndex);
+  }
+
   bool selected = false;
   Unused << mDoc->SendIsItemSelected(mID, aIndex, &selected);
   return selected;
 }
 
 bool RemoteAccessible::AddItemToSelection(uint32_t aIndex) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::AddItemToSelection(aIndex);
+  }
+
   bool success = false;
   Unused << mDoc->SendAddItemToSelection(mID, aIndex, &success);
   return success;
 }
 
 bool RemoteAccessible::RemoveItemFromSelection(uint32_t aIndex) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::RemoveItemFromSelection(
+        aIndex);
+  }
+
   bool success = false;
   Unused << mDoc->SendRemoveItemFromSelection(mID, aIndex, &success);
   return success;
 }
 
 bool RemoteAccessible::SelectAll() {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::SelectAll();
+  }
+
   bool success = false;
   Unused << mDoc->SendSelectAll(mID, &success);
   return success;
 }
 
 bool RemoteAccessible::UnselectAll() {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::UnselectAll();
+  }
+
   bool success = false;
   Unused << mDoc->SendUnselectAll(mID, &success);
   return success;
-}
-
-void RemoteAccessible::TakeSelection() {
-  Unused << mDoc->SendTakeSelection(mID);
-}
-
-void RemoteAccessible::SetSelected(bool aSelect) {
-  Unused << mDoc->SendSetSelected(mID, aSelect);
 }
 
 bool RemoteAccessible::DoAction(uint8_t aIndex) const {
@@ -785,17 +825,13 @@ void RemoteAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
   aName.Assign(name);
 }
 
-KeyBinding RemoteAccessible::AccessKey() {
+KeyBinding RemoteAccessible::AccessKey() const {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::AccessKey();
+  }
   uint32_t key = 0;
   uint32_t modifierMask = 0;
   Unused << mDoc->SendAccessKey(mID, &key, &modifierMask);
-  return KeyBinding(key, modifierMask);
-}
-
-KeyBinding RemoteAccessible::KeyboardShortcut() {
-  uint32_t key = 0;
-  uint32_t modifierMask = 0;
-  Unused << mDoc->SendKeyboardShortcut(mID, &key, &modifierMask);
   return KeyBinding(key, modifierMask);
 }
 
@@ -849,47 +885,13 @@ double RemoteAccessible::Step() const {
   return step;
 }
 
-RemoteAccessible* RemoteAccessible::FocusedChild() {
-  if (IsOuterDoc()) {
-    // If FocusedChild was called on an outer doc, it should behave
-    // like a non-doc accessible and return its focused child, or null.
-    // If the inner doc is OOP (fission), calling FocusedChild on the outer
-    // doc would return null.
-    RemoteAccessible* child = RemoteFirstChild();
-    if (!child) {
-      return (State() & states::FOCUSED) ? this : nullptr;
-    }
-    MOZ_ASSERT(child->IsDoc());
-    return (child->State() & states::FOCUSED) ? child : nullptr;
-  }
-
-  auto* doc = mDoc;
-  uint64_t id = mID;
-  if (IsDoc()) {
-    // If this is a doc we should return the focused descendant, not just the
-    // direct child. In order to do that, we need to get a doc that is in
-    // the same process as the focused accessible. So we need the focused doc.
-    if (dom::BrowserParent* browser = dom::BrowserParent::GetFocused()) {
-      if (auto* focusedDoc = browser->GetTopLevelDocAccessible()) {
-        if (!focusedDoc->IsTopLevel()) {
-          // Redirect SendFocusedChild to OOP iframe doc.
-          doc = focusedDoc;
-        }
-      }
-    }
-  }
-
-  PDocAccessibleParent* resultDoc = nullptr;
-  uint64_t resultID = 0;
-  Unused << doc->SendFocusedChild(id, &resultDoc, &resultID);
-
-  auto* useDoc = static_cast<DocAccessibleParent*>(resultDoc);
-  // If useDoc is null, this means there is no focused child.
-  return useDoc ? useDoc->GetAccessible(resultID) : nullptr;
-}
-
 Accessible* RemoteAccessible::ChildAtPoint(
     int32_t aX, int32_t aY, LocalAccessible::EWhichChildAtPoint aWhichChild) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::ChildAtPoint(aX, aY,
+                                                                aWhichChild);
+  }
+
   RemoteAccessible* target = this;
   do {
     if (target->IsOuterDoc()) {
@@ -942,15 +944,24 @@ LayoutDeviceIntRect RemoteAccessible::Bounds() const {
   return rect;
 }
 
-nsIntRect RemoteAccessible::BoundsInCSSPixels() {
+nsIntRect RemoteAccessible::BoundsInCSSPixels() const {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::BoundsInCSSPixels();
+  }
+
   nsIntRect rect;
   Unused << mDoc->SendExtentsInCSSPixels(mID, &rect.x, &rect.y, &rect.width,
                                          &rect.height);
   return rect;
 }
 
-void RemoteAccessible::Language(nsString& aLocale) {
-  Unused << mDoc->SendLanguage(mID, &aLocale);
+void RemoteAccessible::Language(nsAString& aLocale) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::Language(aLocale);
+  }
+  nsString locale;
+  Unused << mDoc->SendLanguage(mID, &locale);
+  aLocale = std::move(locale);
 }
 
 void RemoteAccessible::DocType(nsString& aType) {
@@ -959,10 +970,6 @@ void RemoteAccessible::DocType(nsString& aType) {
 
 void RemoteAccessible::Title(nsString& aTitle) {
   Unused << mDoc->SendTitle(mID, &aTitle);
-}
-
-void RemoteAccessible::URL(nsString& aURL) {
-  Unused << mDoc->SendURL(mID, &aURL);
 }
 
 void RemoteAccessible::MimeType(nsString aMime) {

@@ -4,8 +4,6 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 /**
  * Note: the schema can be found in
  * https://searchfox.org/mozilla-central/source/toolkit/components/telemetry/Events.yaml
@@ -18,7 +16,7 @@ const EXTRAS_FIELD_NAMES = [
   "action_position",
 ];
 
-this.UTEventReporting = class UTEventReporting {
+class UTEventReporting {
   constructor() {
     Services.telemetry.setEventRecordingEnabled("activity_stream", true);
     this.sendUserEvent = this.sendUserEvent.bind(this);
@@ -63,6 +61,6 @@ this.UTEventReporting = class UTEventReporting {
   uninit() {
     Services.telemetry.setEventRecordingEnabled("activity_stream", false);
   }
-};
+}
 
 const EXPORTED_SYMBOLS = ["UTEventReporting"];

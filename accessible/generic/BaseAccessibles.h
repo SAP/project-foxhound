@@ -45,13 +45,11 @@ class LeafAccessible : public AccessibleWrap {
 /**
  * Used for text or image accessible nodes contained by link accessibles or
  * accessibles for nodes with registered click event handler. It knows how to
- * report the state of the host link (traveled or not) and can activate (click)
- * the host accessible programmatically.
+ * report the state of the host link (traveled or not) and can focus the host
+ * accessible programmatically.
  */
 class LinkableAccessible : public AccessibleWrap {
  public:
-  enum { eAction_Jump = 0 };
-
   LinkableAccessible(nsIContent* aContent, DocAccessible* aDoc)
       : AccessibleWrap(aContent, aDoc) {}
 
@@ -63,15 +61,11 @@ class LinkableAccessible : public AccessibleWrap {
   virtual void TakeFocus() const override;
 
   // ActionAccessible
-  virtual uint8_t ActionCount() const override;
-  virtual void ActionNameAt(uint8_t aIndex, nsAString& aName) override;
-  virtual bool DoAction(uint8_t index) const override;
   virtual KeyBinding AccessKey() const override;
 
   // ActionAccessible helpers
   const LocalAccessible* ActionWalk(bool* aIsLink = nullptr,
-                                    bool* aIsOnclick = nullptr,
-                                    bool* aIsLabelWithControl = nullptr) const;
+                                    bool* aIsOnclick = nullptr) const;
   // HyperLinkAccessible
   virtual already_AddRefed<nsIURI> AnchorURIAt(
       uint32_t aAnchorIndex) const override;
@@ -98,6 +92,22 @@ class EnumRoleAccessible : public AccessibleWrap {
 
  protected:
   virtual ~EnumRoleAccessible() {}
+};
+
+/**
+ * Like EnumRoleAccessible, but with text support.
+ */
+template <a11y::role R>
+class EnumRoleHyperTextAccessible : public HyperTextAccessibleWrap {
+ public:
+  EnumRoleHyperTextAccessible(nsIContent* aContent, DocAccessible* aDoc)
+      : HyperTextAccessibleWrap(aContent, aDoc) {}
+
+  // LocalAccessible
+  virtual a11y::role NativeRole() const override { return R; }
+
+ protected:
+  virtual ~EnumRoleHyperTextAccessible() {}
 };
 
 /**

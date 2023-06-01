@@ -3,9 +3,6 @@
 
 "use strict";
 
-/* import-globals-from ../../debugger/test/mochitest/helpers.js */
-/* import-globals-from ../../debugger/test/mochitest/helpers/context.js */
-
 // The test can take a while to run
 requestLongerTimeout(3);
 
@@ -14,7 +11,7 @@ const TEST_URI_ORG = `${URL_ROOT_ORG_SSL}${FILENAME}`;
 const TEST_URI_COM = `${URL_ROOT_COM_SSL}${FILENAME}`;
 
 Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/helpers.js",
+  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/shared-head.js",
   this
 );
 
@@ -46,7 +43,7 @@ add_task(async function testMultipleNavigations() {
     gBrowser,
     TEST_URI_ORG
   );
-  BrowserTestUtils.loadURI(gBrowser, TEST_URI_ORG);
+  BrowserTestUtils.loadURIString(gBrowser, TEST_URI_ORG);
   await onLocationChange;
 
   info("And then navigate to a different origin");
@@ -54,7 +51,7 @@ add_task(async function testMultipleNavigations() {
     gBrowser,
     TEST_URI_COM
   );
-  BrowserTestUtils.loadURI(gBrowser, TEST_URI_COM);
+  BrowserTestUtils.loadURIString(gBrowser, TEST_URI_COM);
   await onLocationChange;
 
   info(

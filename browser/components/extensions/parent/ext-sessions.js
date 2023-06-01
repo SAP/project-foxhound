@@ -13,11 +13,9 @@ ChromeUtils.defineModuleGetter(
   "AddonManagerPrivate",
   "resource://gre/modules/AddonManager.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "SessionStore",
-  "resource:///modules/sessionstore/SessionStore.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
+});
 
 const SS_ON_CLOSED_OBJECTS_CHANGED = "sessionstore-closed-objects-changed";
 
@@ -92,7 +90,25 @@ const getEncodedKey = function getEncodedKey(extensionId, key) {
   return `extension:${extensionId}:${key}`;
 };
 
-this.sessions = class extends ExtensionAPI {
+this.sessions = class extends ExtensionAPIPersistent {
+  PERSISTENT_EVENTS = {
+    onChanged({ fire }) {
+      let observer = () => {
+        fire.async();
+      };
+
+      Services.obs.addObserver(observer, SS_ON_CLOSED_OBJECTS_CHANGED);
+      return {
+        unregister() {
+          Services.obs.removeObserver(observer, SS_ON_CLOSED_OBJECTS_CHANGED);
+        },
+        convert(_fire) {
+          fire = _fire;
+        },
+      };
+    },
+  };
+
   getAPI(context) {
     let { extension } = context;
 
@@ -251,20 +267,9 @@ this.sessions = class extends ExtensionAPI {
 
         onChanged: new EventManager({
           context,
-          name: "sessions.onChanged",
-          register: fire => {
-            let observer = () => {
-              fire.async();
-            };
-
-            Services.obs.addObserver(observer, SS_ON_CLOSED_OBJECTS_CHANGED);
-            return () => {
-              Services.obs.removeObserver(
-                observer,
-                SS_ON_CLOSED_OBJECTS_CHANGED
-              );
-            };
-          },
+          module: "sessions",
+          event: "onChanged",
+          extensionApi: this,
         }).api(),
       },
     };

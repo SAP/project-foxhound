@@ -68,10 +68,10 @@ where
             CssRule::CounterStyle(_) |
             CssRule::Viewport(_) |
             CssRule::Keyframes(_) |
-            CssRule::ScrollTimeline(_) |
             CssRule::Page(_) |
             CssRule::LayerStatement(_) |
-            CssRule::FontFeatureValues(_) => None,
+            CssRule::FontFeatureValues(_) |
+            CssRule::FontPaletteValues(_) => None,
             CssRule::Import(ref import_rule) => {
                 let import_rule = import_rule.read_with(guard);
                 if !C::process_import(guard, device, quirks_mode, import_rule) {
@@ -87,6 +87,10 @@ where
                     return None;
                 }
                 Some(doc_rule.rules.read_with(guard).0.iter())
+            },
+            CssRule::Container(ref lock) => {
+                let container_rule = lock.read_with(guard);
+                Some(container_rule.rules.read_with(guard).0.iter())
             },
             CssRule::Media(ref lock) => {
                 let media_rule = lock.read_with(guard);

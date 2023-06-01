@@ -102,7 +102,7 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
                                                   ErrorResult&);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(StyleSheet)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(StyleSheet)
 
   already_AddRefed<StyleSheet> CreateEmptyChildSheet(
       already_AddRefed<dom::MediaList> aMediaList) const;
@@ -515,6 +515,11 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   // Take the recently cloned sheets from the `@import` rules, and reparent them
   // correctly to `aPrimarySheet`.
   void FixUpAfterInnerClone();
+
+  // aFromClone says whether this comes from a clone of the stylesheet (and thus
+  // we should also fix up the wrappers for the individual rules in the rule
+  // lists).
+  void FixUpRuleListAfterContentsChangeIfNeeded(bool aFromClone = false);
 
   void DropRuleList();
 

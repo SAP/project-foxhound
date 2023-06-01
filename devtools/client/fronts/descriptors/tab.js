@@ -3,31 +3,31 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const Services = require("Services");
-const { tabDescriptorSpec } = require("devtools/shared/specs/descriptors/tab");
+const {
+  tabDescriptorSpec,
+} = require("resource://devtools/shared/specs/descriptors/tab.js");
+const DESCRIPTOR_TYPES = require("resource://devtools/client/fronts/descriptors/descriptor-types.js");
 
 loader.lazyRequireGetter(
   this,
   "gDevTools",
-  "devtools/client/framework/devtools",
+  "resource://devtools/client/framework/devtools.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "WindowGlobalTargetFront",
-  "devtools/client/fronts/targets/window-global",
+  "resource://devtools/client/fronts/targets/window-global.js",
   true
 );
 const {
   FrontClassWithSpec,
   registerFront,
-} = require("devtools/shared/protocol");
+} = require("resource://devtools/shared/protocol.js");
 const {
   DescriptorMixin,
-} = require("devtools/client/fronts/descriptors/descriptor-mixin");
+} = require("resource://devtools/client/fronts/descriptors/descriptor-mixin.js");
 
-const SERVER_TARGET_SWITCHING_ENABLED_PREF =
-  "devtools.target-switching.server.enabled";
 const POPUP_DEBUG_PREF = "devtools.popups.debug";
 
 /**
@@ -65,6 +65,8 @@ class TabDescriptorFront extends DescriptorMixin(
       );
     }
   }
+
+  descriptorType = DESCRIPTOR_TYPES.TAB;
 
   form(json) {
     this.actorID = json.actor;
@@ -111,12 +113,6 @@ class TabDescriptorFront extends DescriptorMixin(
   setLocalTab(localTab) {
     this._localTab = localTab;
     this._setupLocalTabListeners();
-
-    // This is pure legacy. We always assumed closing the DevToolsClient
-    // when the tab was closed. It is mostly important for tests,
-    // but also ensure cleaning up the client and everything on tab closing.
-    // (this flag is handled by DescriptorMixin)
-    this.shouldCloseClient = true;
   }
 
   get isTabDescriptor() {
@@ -145,12 +141,7 @@ class TabDescriptorFront extends DescriptorMixin(
   }
 
   isServerTargetSwitchingEnabled() {
-    const isEnabled = Services.prefs.getBoolPref(
-      SERVER_TARGET_SWITCHING_ENABLED_PREF,
-      false
-    );
-    const enabled = isEnabled && !this._disableTargetSwitching;
-    return enabled;
+    return !this._disableTargetSwitching;
   }
 
   /**
@@ -179,8 +170,8 @@ class TabDescriptorFront extends DescriptorMixin(
     return this._form.isZombieTab;
   }
 
-  get outerWindowID() {
-    return this._form.outerWindowID;
+  get browserId() {
+    return this._form.browserId;
   }
 
   get selected() {
@@ -251,7 +242,6 @@ class TabDescriptorFront extends DescriptorMixin(
       this._targetFront.off("target-destroyed", this._onTargetDestroyed);
     }
     this._targetFront = targetFront;
-    targetFront.setDescriptor(this);
 
     targetFront.on("target-destroyed", this._onTargetDestroyed);
 
@@ -312,7 +302,7 @@ class TabDescriptorFront extends DescriptorMixin(
         // Always destroy the toolbox opened for this local tab descriptor.
         // When the toolbox is in a Window Host, it won't be removed from the
         // DOM when the tab is closed.
-        const toolbox = gDevTools.getToolboxForDescriptor(this);
+        const toolbox = gDevTools.getToolboxForDescriptorFront(this);
         if (toolbox) {
           // Toolbox.destroy will call target.destroy eventually.
           await toolbox.destroy();

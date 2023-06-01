@@ -10,6 +10,7 @@
 #include "mozilla/java/GeckoResultWrappers.h"
 #include "mozilla/java/GeckoSessionNatives.h"
 #include "mozilla/java/WebResponseWrappers.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/widget/WindowEvent.h"
 
 class nsPIDOMWindowOuter;
@@ -53,6 +54,7 @@ class GeckoViewSupport final
  private:
   nsCOMPtr<nsPIDOMWindowOuter> mDOMWindow;
   bool mIsReady{false};
+  RefPtr<dom::CanonicalBrowsingContext> GetContentCanonicalBrowsingContext();
 
  public:
   // Create and attach a window.
@@ -62,8 +64,7 @@ class GeckoViewSupport final
                    jni::Object::Param aDispatcher,
                    jni::Object::Param aSessionAccessibility,
                    jni::Object::Param aInitData, jni::String::Param aId,
-                   jni::String::Param aChromeURI, int32_t aScreenId,
-                   bool aPrivateMode);
+                   jni::String::Param aChromeURI, bool aPrivateMode);
 
   // Close and destroy the nsWindow.
   void Close();
@@ -90,6 +91,8 @@ class GeckoViewSupport final
 
   void OnShowDynamicToolbar() const;
 
+  void OnUpdateSessionStore(mozilla::jni::Object::Param aBundle);
+
   void PassExternalResponse(java::WebResponse::Param aResponse);
 
   void AttachMediaSessionController(
@@ -104,6 +107,10 @@ class GeckoViewSupport final
     RefPtr<Runnable> disposer(aDisposer);
     disposer->Run();
   }
+
+  MOZ_CAN_RUN_SCRIPT void PrintToPdf(
+      const java::GeckoSession::Window::LocalRef& inst,
+      jni::Object::Param aStream);
 };
 
 }  // namespace widget

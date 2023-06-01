@@ -4,12 +4,11 @@
 
 "use strict";
 
-const { Cu } = require("chrome");
-const CONSOLE_WORKER_IDS = (exports.CONSOLE_WORKER_IDS = [
+const CONSOLE_WORKER_IDS = (exports.CONSOLE_WORKER_IDS = new Set([
   "SharedWorker",
   "ServiceWorker",
   "Worker",
-]);
+]));
 
 var WebConsoleUtils = {
   /**
@@ -18,55 +17,9 @@ var WebConsoleUtils = {
    *
    * @return string
    */
-  getWorkerType: function(message) {
-    const id = message ? message.innerID : null;
-    return CONSOLE_WORKER_IDS[CONSOLE_WORKER_IDS.indexOf(id)] || null;
-  },
-
-  /**
-   * Clone an object.
-   *
-   * @param object object
-   *        The object you want cloned.
-   * @param boolean recursive
-   *        Tells if you want to dig deeper into the object, to clone
-   *        recursively.
-   * @param function [filter]
-   *        Optional, filter function, called for every property. Three
-   *        arguments are passed: key, value and object. Return true if the
-   *        property should be added to the cloned object. Return false to skip
-   *        the property.
-   * @return object
-   *         The cloned object.
-   */
-  cloneObject: function(object, recursive, filter) {
-    if (typeof object != "object") {
-      return object;
-    }
-
-    let temp;
-
-    if (Array.isArray(object)) {
-      temp = [];
-      object.forEach(function(value, index) {
-        if (!filter || filter(index, value, object)) {
-          temp.push(recursive ? WebConsoleUtils.cloneObject(value) : value);
-        }
-      });
-    } else {
-      temp = {};
-      for (const key in object) {
-        const value = object[key];
-        if (
-          object.hasOwnProperty(key) &&
-          (!filter || filter(key, value, object))
-        ) {
-          temp[key] = recursive ? WebConsoleUtils.cloneObject(value) : value;
-        }
-      }
-    }
-
-    return temp;
+  getWorkerType(message) {
+    const innerID = message?.innerID;
+    return CONSOLE_WORKER_IDS.has(innerID) ? innerID : null;
   },
 
   /**
@@ -76,7 +29,7 @@ var WebConsoleUtils = {
    * @return integer|null
    *         Inner ID for the given window, null if we can't access it.
    */
-  getInnerWindowId: function(window) {
+  getInnerWindowId(window) {
     // Might throw with SecurityError: Permission denied to access property
     // "windowGlobalChild" on cross-origin object.
     try {
@@ -94,7 +47,7 @@ var WebConsoleUtils = {
    * @return Array
    *         list of inner window ids.
    */
-  getInnerWindowIDsForFrames: function(window) {
+  getInnerWindowIDsForFrames(window) {
     const innerWindowID = this.getInnerWindowId(window);
     if (innerWindowID === null) {
       return [];
@@ -125,7 +78,7 @@ var WebConsoleUtils = {
    * @return mixed
    *         The value grip.
    */
-  createValueGrip: function(value, objectWrapper) {
+  createValueGrip(value, objectWrapper) {
     switch (typeof value) {
       case "boolean":
         return value;
@@ -150,6 +103,8 @@ var WebConsoleUtils = {
         }
       // Fall through.
       case "function":
+      case "record":
+      case "tuple":
         return objectWrapper(value);
       default:
         console.error(
@@ -222,7 +177,7 @@ var WebConsoleCommands = {
    *
    * @see WebConsoleCommands.register
    */
-  _registerOriginal: function(name, command) {
+  _registerOriginal(name, command) {
     this.register(name, command);
     this._originalCommands.set(name, this.getCommand(name));
   },
@@ -254,7 +209,7 @@ var WebConsoleCommands = {
    *     }
    *   });
    */
-  register: function(name, command) {
+  register(name, command) {
     this._registeredCommands.set(name, command);
   },
 
@@ -266,7 +221,7 @@ var WebConsoleCommands = {
    *
    * @param {string} name The name of the command
    */
-  unregister: function(name) {
+  unregister(name) {
     this._registeredCommands.delete(name);
     if (this._originalCommands.has(name)) {
       this.register(name, this._originalCommands.get(name));
@@ -280,7 +235,7 @@ var WebConsoleCommands = {
    *
    * @return {(function|object)} The command.
    */
-  getCommand: function(name) {
+  getCommand(name) {
     return this._registeredCommands.get(name);
   },
 
@@ -291,7 +246,7 @@ var WebConsoleCommands = {
    *
    * @return {boolean} True if the command is registered.
    */
-  hasCommand: function(name) {
+  hasCommand(name) {
     return this._registeredCommands.has(name);
   },
 };
@@ -355,7 +310,7 @@ WebConsoleCommands._registerOriginal("$$", function(owner, selector) {
  * Returns last console evaluation or undefined
  */
 WebConsoleCommands._registerOriginal("$_", {
-  get: function(owner) {
+  get(owner) {
     return owner.consoleActor.getLastConsoleInputEvaluation();
   },
 });
@@ -445,7 +400,7 @@ WebConsoleCommands._registerOriginal("$x", function(
  *         Inspector, or null if no selection exists.
  */
 WebConsoleCommands._registerOriginal("$0", {
-  get: function(owner) {
+  get(owner) {
     return owner.makeDebuggeeValue(owner.selectedNode);
   },
 });
@@ -615,14 +570,10 @@ WebConsoleCommands._registerOriginal("block", function(owner, args = {}) {
     return;
   }
 
-  owner.helperResult = (async () => {
-    await owner.consoleActor.blockRequest(args);
-
-    return {
-      type: "blockURL",
-      args,
-    };
-  })();
+  owner.helperResult = {
+    type: "blockURL",
+    args,
+  };
 });
 
 /*
@@ -642,14 +593,10 @@ WebConsoleCommands._registerOriginal("unblock", function(owner, args = {}) {
     return;
   }
 
-  owner.helperResult = (async () => {
-    await owner.consoleActor.unblockRequest(args);
-
-    return {
-      type: "unblockURL",
-      args,
-    };
-  })();
+  owner.helperResult = {
+    type: "unblockURL",
+    args,
+  };
 });
 
 /**

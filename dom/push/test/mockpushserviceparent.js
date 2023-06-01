@@ -1,4 +1,4 @@
-/* eslint-env mozilla/frame-script */
+/* eslint-env mozilla/chrome-script */
 
 "use strict";
 
@@ -76,7 +76,7 @@ addMessageListener("socket-setup", function() {
     serverURI: "wss://push.example.org/",
     makeWebSocket(uri) {
       mockSocket = new MockWebSocketParent(uri);
-      while (serverMsgs.length > 0) {
+      while (serverMsgs.length) {
         let msg = serverMsgs.shift();
         mockSocket.serverSendMsg(msg);
       }

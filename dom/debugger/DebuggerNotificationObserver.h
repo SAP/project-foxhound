@@ -15,8 +15,7 @@
 
 class nsIGlobalObject;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class DebuggerNotification;
 
@@ -24,7 +23,7 @@ class DebuggerNotificationObserver final : public nsISupports,
                                            public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(DebuggerNotificationObserver)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(DebuggerNotificationObserver)
 
   static already_AddRefed<DebuggerNotificationObserver> Constructor(
       GlobalObject& aGlobal, ErrorResult& aRv);
@@ -56,7 +55,6 @@ class DebuggerNotificationObserver final : public nsISupports,
   nsCOMPtr<nsIGlobalObject> mOwnerGlobal;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_DebuggerNotificationObserver_h

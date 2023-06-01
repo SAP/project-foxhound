@@ -27,7 +27,6 @@
 #include "mozilla/dom/SerializedStackHolder.h"
 #include "mozilla/dom/StreamBlobImpl.h"
 #include "mozilla/dom/StructuredCloneHolder.h"
-#include "mozilla/dom/UnionConversions.h"
 #include "mozilla/dom/URLSearchParams.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/dom/WorkerRef.h"
@@ -44,9 +43,7 @@
 
 #include "mozilla/UniquePtr.h"
 
-namespace mozilla {
-
-namespace dom {
+namespace mozilla::dom {
 
 /**
  *  XMLHttpRequest in workers
@@ -394,7 +391,7 @@ class LoadStartDetectionRunnable final : public Runnable,
       }
 
       if (mSyncLoopTarget) {
-        aWorkerPrivate->StopSyncLoop(mSyncLoopTarget, true);
+        aWorkerPrivate->StopSyncLoop(mSyncLoopTarget, NS_OK);
       }
 
       if (mXMLHttpRequestPrivate->SendInProgress()) {
@@ -829,7 +826,7 @@ void Proxy::Teardown(bool aSendUnpin) {
         // We have an unclosed sync loop.  Fix that now.
         RefPtr<MainThreadStopSyncLoopRunnable> runnable =
             new MainThreadStopSyncLoopRunnable(
-                mWorkerPrivate, std::move(mSyncLoopTarget), false);
+                mWorkerPrivate, std::move(mSyncLoopTarget), NS_ERROR_FAILURE);
         MOZ_ALWAYS_TRUE(runnable->Dispatch());
       }
 
@@ -1355,6 +1352,7 @@ XMLHttpRequestWorker::XMLHttpRequestWorker(WorkerPrivate* aWorkerPrivate,
       mBackgroundRequest(false),
       mWithCredentials(false),
       mCanceled(false),
+      mFlagSendActive(false),
       mMozAnon(false),
       mMozSystem(false),
       mMimeTypeOverride(VoidString()) {
@@ -1656,11 +1654,11 @@ void XMLHttpRequestWorker::SendInternal(const BodyExtractorBase* aBody,
   AutoUnpinXHR autoUnpin(this);
   Maybe<AutoSyncLoopHolder> autoSyncLoop;
 
-  nsCOMPtr<nsIEventTarget> syncLoopTarget;
+  nsCOMPtr<nsISerialEventTarget> syncLoopTarget;
   bool isSyncXHR = mProxy->mIsSyncXHR;
   if (isSyncXHR) {
     autoSyncLoop.emplace(mWorkerPrivate, Canceling);
-    syncLoopTarget = autoSyncLoop->GetEventTarget();
+    syncLoopTarget = autoSyncLoop->GetSerialEventTarget();
     if (!syncLoopTarget) {
       aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
       return;
@@ -1694,7 +1692,7 @@ void XMLHttpRequestWorker::SendInternal(const BodyExtractorBase* aBody,
 
   autoUnpin.Clear();
 
-  bool succeeded = autoSyncLoop->Run();
+  bool succeeded = NS_SUCCEEDED(autoSyncLoop->Run());
   mStateData->mFlagSend = false;
 
   // Don't clobber an existing exception that we may have thrown on aRv
@@ -1880,6 +1878,17 @@ void XMLHttpRequestWorker::Send(
         aData,
     ErrorResult& aRv) {
   mWorkerPrivate->AssertIsOnWorkerThread();
+
+  if (mFlagSendActive) {
+    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_XHR_HAS_INVALID_CONTEXT);
+    return;
+  }
+  mFlagSendActive = true;
+  auto clearRecursionFlag = MakeScopeExit([&]() {
+    // No one else should have touched this flag.
+    MOZ_ASSERT(mFlagSendActive);
+    mFlagSendActive = false;
+  });
 
   if (mCanceled) {
     aRv.ThrowUncatchableException();
@@ -2159,7 +2168,8 @@ void XMLHttpRequestWorker::GetResponse(JSContext* aCx,
             Blob::Create(GetOwnerGlobal(), mResponseData->mResponseBlobImpl);
       }
 
-      if (!GetOrCreateDOMReflector(aCx, mResponseBlob, aResponse)) {
+      if (!mResponseBlob ||
+          !GetOrCreateDOMReflector(aCx, mResponseBlob, aResponse)) {
         aResponse.setNull();
       }
 
@@ -2234,5 +2244,4 @@ void XMLHttpRequestWorker::ResetResponseData() {
   mResponseJSONValue.setUndefined();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

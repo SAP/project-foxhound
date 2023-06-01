@@ -7,14 +7,13 @@ use std::ffi::CString;
 use std::ops::DerefMut;
 use std::path::PathBuf;
 
+use firefox_on_glean::{metrics, pings};
 #[cfg(target_os = "android")]
 use nserror::NS_ERROR_NOT_IMPLEMENTED;
 use nserror::{nsresult, NS_ERROR_FAILURE};
 use nsstring::{nsACString, nsCString, nsString};
-#[cfg(not(target_os = "android"))]
-use xpcom::interfaces::mozIViaduct;
-use xpcom::interfaces::{nsIFile, nsIXULAppInfo};
-use xpcom::XpCom;
+use xpcom::interfaces::{nsIFile, nsIPrefService, nsIProperties, nsIXULAppInfo, nsIXULRuntime};
+use xpcom::{RefPtr, XpCom};
 
 use glean::{ClientInfoMetrics, Configuration};
 
@@ -88,7 +87,7 @@ fn fog_init_internal(
     upload_enabled: bool,
     uploader: Option<Box<dyn glean::net::PingUploader>>,
 ) -> Result<(), nsresult> {
-    fog::metrics::fog::initialization.start();
+    metrics::fog::initialization.start();
 
     log::debug!("Initializing FOG.");
 
@@ -98,8 +97,6 @@ fn fog_init_internal(
 
     conf.upload_enabled = upload_enabled;
     conf.uploader = uploader;
-
-    setup_viaduct();
 
     // If we're operating in automation without any specific source tags to set,
     // set the tag "automation" so any pings that escape don't clutter the tables.
@@ -113,12 +110,12 @@ fn fog_init_internal(
 
     log::debug!("Configuration: {:#?}", conf);
 
+    // Register all custom pings before we initialize.
+    pings::register_pings(Some(&conf.application_id));
+
     glean::initialize(conf, client_info);
 
-    // Register all custom pings before we initialize.
-    fog::pings::register_pings();
-
-    fog::metrics::fog::initialization.stop();
+    metrics::fog::initialization.stop();
 
     Ok(())
 }
@@ -139,6 +136,7 @@ fn build_configuration(
     let client_info = ClientInfoMetrics {
         app_build,
         app_display_version,
+        channel: Some(channel),
     };
     log::debug!("Client Info: {:#?}", client_info);
 
@@ -150,10 +148,7 @@ fn build_configuration(
         String::from(SERVER)
     };
 
-    // In the event that this isn't "firefox.desktop", we don't use core's MPS.
-    let mut use_core_mps = false;
     let application_id = if app_id_override.is_empty() {
-        use_core_mps = true;
         "firefox.desktop".to_string()
     } else {
         app_id_override.to_utf8().to_string()
@@ -165,10 +160,10 @@ fn build_configuration(
         application_id,
         max_events: None,
         delay_ping_lifetime_io: true,
-        channel: Some(channel),
         server_endpoint: Some(server),
         uploader: None,
-        use_core_mps,
+        use_core_mps: true,
+        trim_data_to_registered_pings: true,
     };
 
     Ok((configuration, client_info))
@@ -201,40 +196,10 @@ fn setup_observers() -> Result<(), nsresult> {
     Ok(())
 }
 
-/// Ensure Viaduct is initialized for networking unconditionally so we don't
-/// need to check again if upload is later enabled.
-///
-/// Failing to initialize viaduct will log an error.
-#[cfg(not(target_os = "android"))]
-fn setup_viaduct() {
-    // SAFETY: Everything here is self-contained.
-    //
-    // * We try to create an instance of an xpcom interface
-    // * We bail out if that fails.
-    // * We call a method on it without additional inputs.
-    unsafe {
-        if let Some(viaduct) =
-            xpcom::create_instance::<mozIViaduct>(cstr!("@mozilla.org/toolkit/viaduct;1"))
-        {
-            let result = viaduct.EnsureInitialized();
-            if result.failed() {
-                log::error!("Failed to ensure viaduct was initialized due to {}. Ping upload may not be available.", result.error_name());
-            }
-        } else {
-            log::error!("Failed to create Viaduct via XPCOM. Ping upload may not be available.");
-        }
-    }
-}
-
-#[cfg(target_os = "android")]
-fn setup_viaduct() {
-    // No viaduct is setup on Android.
-}
-
 /// Construct and return the data_path from the profile dir, or return an error.
 fn get_data_path() -> Result<String, nsresult> {
-    let dir_svc = match xpcom::services::get_DirectoryService() {
-        Some(ds) => ds,
+    let dir_svc: RefPtr<nsIProperties> = match xpcom::components::Directory::service() {
+        Ok(ds) => ds,
         _ => return Err(NS_ERROR_FAILURE),
     };
     let mut profile_dir = xpcom::GetterAddrefs::<nsIFile>::new();
@@ -262,9 +227,11 @@ fn get_data_path() -> Result<String, nsresult> {
 /// build_id ad app_version will be "unknown".
 /// Other problems result in an error being returned instead.
 fn get_app_info() -> Result<(String, String, String), nsresult> {
-    let xul = xpcom::services::get_XULRuntime().ok_or(NS_ERROR_FAILURE)?;
+    let xul: RefPtr<nsIXULRuntime> =
+        xpcom::components::XULRuntime::service().map_err(|_| NS_ERROR_FAILURE)?;
 
-    let pref_service = xpcom::services::get_PrefService().ok_or(NS_ERROR_FAILURE)?;
+    let pref_service: RefPtr<nsIPrefService> =
+        xpcom::components::Preferences::service().map_err(|_| NS_ERROR_FAILURE)?;
     let branch = xpcom::getter_addrefs(|p| {
         // Safe because:
         //  * `null` is explicitly allowed per documentation

@@ -8,12 +8,9 @@
 #include "WorkerPrivate.h"
 #include "WorkerRunnable.h"
 
-#include "WorkerPrivate.h"
-#include "WorkerRunnable.h"
 #include "mozilla/dom/ReferrerInfo.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -121,6 +118,36 @@ WorkerEventTarget::DelayedDispatch(already_AddRefed<nsIRunnable>, uint32_t) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
+NS_IMETHODIMP
+WorkerEventTarget::RegisterShutdownTask(nsITargetShutdownTask* aTask) {
+  MutexAutoLock lock(mMutex);
+
+  if (!mWorkerPrivate) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (!mWorkerPrivate->RegisterShutdownTask(aTask)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+WorkerEventTarget::UnregisterShutdownTask(nsITargetShutdownTask* aTask) {
+  MutexAutoLock lock(mMutex);
+
+  if (!mWorkerPrivate) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (!mWorkerPrivate->UnregisterShutdownTask(aTask)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  return NS_OK;
+}
+
 NS_IMETHODIMP_(bool)
 WorkerEventTarget::IsOnCurrentThreadInfallible() {
   MutexAutoLock lock(mMutex);
@@ -139,5 +166,4 @@ WorkerEventTarget::IsOnCurrentThread(bool* aIsOnCurrentThread) {
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

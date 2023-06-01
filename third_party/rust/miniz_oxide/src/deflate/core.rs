@@ -209,15 +209,21 @@ pub enum CompressionStrategy {
 /// A list of deflate flush types.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum TDEFLFlush {
-    /// Compress as much as there is space for, and then return
-    /// waiting for more input.
+    /// Normal operation.
+    ///
+    /// Compress as much as there is space for, and then return waiting for more input.
     None = 0,
-    /// Try to flush the current data and output an empty raw block.
+
+    /// Try to flush all the current data and output an empty raw block.
     Sync = 2,
-    /// Same as sync, but reset the dictionary so that the following data does not depend
-    /// on previous data.
+
+    /// Same as [`Sync`][Self::Sync], but reset the dictionary so that the following data does not
+    /// depend on previous data.
     Full = 3,
-    /// Try to flush everything and end the stream.
+
+    /// Try to flush everything and end the deflate stream.
+    ///
+    /// On success this will yield a [`TDEFLStatus::Done`] return status.
     Finish = 4,
 }
 
@@ -245,13 +251,27 @@ impl TDEFLFlush {
     }
 }
 
-/// Return status codes.
+/// Return status of compression.
 #[repr(i32)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum TDEFLStatus {
+    /// Usage error.
+    ///
+    /// This indicates that either the [`CompressorOxide`] experienced a previous error, or the
+    /// stream has already been [`TDEFLFlush::Finish`]'d.
     BadParam = -2,
+
+    /// Error putting data into output buffer.
+    ///
+    /// This usually indicates a too-small buffer.
     PutBufFailed = -1,
+
+    /// Compression succeeded normally.
     Okay = 0,
+
+    /// Compression succeeded and the deflate stream was ended.
+    ///
+    /// This is the result of calling compression with [`TDEFLFlush::Finish`].
     Done = 1,
 }
 
@@ -415,13 +435,13 @@ impl CompressorOxide {
     }
 
     /// Get the adler32 checksum of the currently encoded data.
-    pub fn adler32(&self) -> u32 {
+    pub const fn adler32(&self) -> u32 {
         self.params.adler32
     }
 
     /// Get the return status of the previous [`compress`](fn.compress.html)
     /// call with this compressor.
-    pub fn prev_return_status(&self) -> TDEFLStatus {
+    pub const fn prev_return_status(&self) -> TDEFLStatus {
         self.params.prev_return_status
     }
 
@@ -429,7 +449,7 @@ impl CompressorOxide {
     ///
     /// # Notes
     /// This function may be deprecated or changed in the future to use more rust-style flags.
-    pub fn flags(&self) -> i32 {
+    pub const fn flags(&self) -> i32 {
         self.params.flags as i32
     }
 
@@ -456,7 +476,7 @@ impl CompressorOxide {
 
     /// Set the compression level of the compressor.
     ///
-    /// Using this to change level after compresson has started is supported.
+    /// Using this to change level after compression has started is supported.
     /// # Notes
     /// The compression strategy will be reset to the default one when this is called.
     pub fn set_compression_level(&mut self, level: CompressionLevel) {
@@ -466,7 +486,7 @@ impl CompressorOxide {
 
     /// Set the compression level of the compressor using an integer value.
     ///
-    /// Using this to change level after compresson has started is supported.
+    /// Using this to change level after compression has started is supported.
     /// # Notes
     /// The compression strategy will be reset to the default one when this is called.
     pub fn set_compression_level_raw(&mut self, level: u8) {
@@ -480,7 +500,7 @@ impl CompressorOxide {
     /// a corrupted stream.
     ///
     /// # Notes
-    /// This function mainly intented for setting the initial settings after e.g creating with
+    /// This function mainly intended for setting the initial settings after e.g creating with
     /// `default` or after calling `CompressorOxide::reset()`, and behaviour may be changed
     /// to disallow calling it after starting compression in the future.
     pub fn set_format_and_level(&mut self, data_format: DataFormat, level: u8) {
@@ -753,17 +773,17 @@ struct HuffmanOxide {
 const LITLEN_TABLE: usize = 0;
 /// Tables for distances.
 const DIST_TABLE: usize = 1;
-/// Tables for the run-length encoded huffman lenghts for literals/lengths/distances.
+/// Tables for the run-length encoded huffman lengths for literals/lengths/distances.
 const HUFF_CODES_TABLE: usize = 2;
 
 /// Status of RLE encoding of huffman code lengths.
-struct RLE {
+struct Rle {
     pub z_count: u32,
     pub repeat_count: u32,
     pub prev_code_size: u8,
 }
 
-impl RLE {
+impl Rle {
     fn prev_code_size(
         &mut self,
         packed_code_sizes: &mut [u8],
@@ -853,12 +873,12 @@ impl HuffmanOxide {
         let mut current_symbols = symbols0;
         let mut new_symbols = symbols1;
 
-        for pass in 0..n_passes {
+        for (pass, hist_item) in hist.iter().enumerate().take(n_passes) {
             let mut offsets = [0; 256];
             let mut offset = 0;
             for i in 0..256 {
                 offsets[i] = offset;
-                offset += hist[pass][i];
+                offset += hist_item[i];
             }
 
             for sym in current_symbols.iter() {
@@ -1004,8 +1024,13 @@ impl HuffmanOxide {
             memset(&mut self.codes[table_num][..], 0);
 
             let mut last = num_used_symbols;
-            for i in 1..=code_size_limit {
-                let first = last - num_codes[i] as usize;
+            for (i, &num_item) in num_codes
+                .iter()
+                .enumerate()
+                .take(code_size_limit + 1)
+                .skip(1)
+            {
+                let first = last - num_item as usize;
                 for symbol in &symbols[first..last] {
                     self.code_sizes[table_num][symbol.sym_index as usize] = i as u8;
                 }
@@ -1086,7 +1111,7 @@ impl HuffmanOxide {
         code_sizes_to_pack[num_lit_codes..total_code_sizes_to_pack]
             .copy_from_slice(&self.code_sizes[1][..num_dist_codes]);
 
-        let mut rle = RLE {
+        let mut rle = Rle {
             z_count: 0,
             repeat_count: 0,
             prev_code_size: 0xFF,
@@ -1148,7 +1173,7 @@ impl HuffmanOxide {
             );
         }
 
-        let mut packed_code_size_index = 0 as usize;
+        let mut packed_code_size_index = 0;
         while packed_code_size_index < packed_pos {
             let code = packed_code_sizes[packed_code_size_index] as usize;
             packed_code_size_index += 1;
@@ -1779,7 +1804,7 @@ fn compress_normal(d: &mut CompressorOxide, callback: &mut CallbackOxide) -> boo
             let mut ins_pos = lookahead_pos + lookahead_size as usize - 2;
             // Start the hash value from the first two bytes
             let mut hash = update_hash(
-                u32::from(dictb.dict[(ins_pos & LZ_DICT_SIZE_MASK) as usize]),
+                u16::from(dictb.dict[(ins_pos & LZ_DICT_SIZE_MASK) as usize]),
                 dictb.dict[((ins_pos + 1) & LZ_DICT_SIZE_MASK) as usize],
             );
 
@@ -2012,7 +2037,7 @@ fn compress_fast(d: &mut CompressorOxide, callback: &mut CallbackOxide) -> bool 
                     // Trigram was tested, so we can start with "+ 3" displacement.
                     let mut p = cur_pos + 3;
                     let mut q = probe_pos + 3;
-                    cur_match_len = 'find_match: loop {
+                    cur_match_len = (|| {
                         for _ in 0..32 {
                             let p_data: u64 = d.dict.read_unaligned_u64(p);
                             let q_data: u64 = d.dict.read_unaligned_u64(q);
@@ -2022,16 +2047,16 @@ fn compress_fast(d: &mut CompressorOxide, callback: &mut CallbackOxide) -> bool 
                                 q += 8;
                             } else {
                                 let trailing = xor_data.trailing_zeros();
-                                break 'find_match p as u32 - cur_pos as u32 + (trailing >> 3);
+                                return p as u32 - cur_pos as u32 + (trailing >> 3);
                             }
                         }
 
-                        break 'find_match if cur_match_dist == 0 {
+                        if cur_match_dist == 0 {
                             0
                         } else {
                             MAX_MATCH_LEN as u32
-                        };
-                    };
+                        }
+                    })();
 
                     if cur_match_len < MIN_MATCH_LEN.into()
                         || (cur_match_len == MIN_MATCH_LEN.into() && cur_match_dist >= 8 * 1024)
@@ -2172,7 +2197,13 @@ fn flush_output_buffer(c: &mut CallbackOxide, p: &mut ParamsOxide) -> (TDEFLStat
 ///
 /// The value of `flush` determines if the compressor should attempt to flush all output
 /// and alternatively try to finish the stream.
-/// Should be `TDeflflush::Finish` on the final call.
+///
+/// Use [`TDEFLFlush::Finish`] on the final call to signal that the stream is finishing.
+///
+/// Note that this function does not keep track of whether a flush marker has been output, so
+/// if called using [`TDEFLFlush::Sync`], the caller needs to ensure there is enough space in the
+/// output buffer if they want to avoid repeated flush markers.
+/// See #105 for details.
 ///
 /// # Returns
 /// Returns a tuple containing the current status of the compressor, the current position
@@ -2306,11 +2337,11 @@ fn compress_inner(
 }
 
 /// Create a set of compression flags using parameters used by zlib and other compressors.
-/// Mainly intented for use with transition from c libraries as it deals with raw integers.
+/// Mainly intended for use with transition from c libraries as it deals with raw integers.
 ///
 /// # Parameters
 /// `level` determines compression level. Clamped to maximum of 10. Negative values result in
-/// `Compressionlevel::DefaultLevel`.
+/// `CompressionLevel::DefaultLevel`.
 /// `window_bits`: Above 0, wraps the stream in a zlib wrapper, 0 or negative for a raw deflate
 /// stream.
 /// `strategy`: Sets the strategy if this conforms to any of the values in `CompressionStrategy`.
@@ -2357,8 +2388,7 @@ mod test {
         MZ_DEFAULT_WINDOW_BITS,
     };
     use crate::inflate::decompress_to_vec;
-    use std::prelude::v1::*;
-    use std::vec;
+    use alloc::vec;
 
     #[test]
     fn u16_to_slice() {
@@ -2398,6 +2428,34 @@ mod test {
 
         assert_eq!(status, TDEFLStatus::Done);
         assert_eq!(in_consumed, slice.len());
+
+        let decoded = decompress_to_vec(&encoded[..]).unwrap();
+        assert_eq!(&decoded[..], &slice[..]);
+    }
+
+    #[test]
+    /// Check fast compress mode
+    fn compress_fast() {
+        let slice = [
+            1, 2, 3, 4, 1, 2, 3, 1, 2, 3, 1, 2, 6, 1, 2, 3, 1, 2, 3, 2, 3, 1, 2, 3,
+        ];
+        let mut encoded = vec![];
+        let flags = create_comp_flags_from_zip_params(1, 0, 0);
+        let mut d = CompressorOxide::new(flags);
+        let (status, in_consumed) =
+            compress_to_output(&mut d, &slice, TDEFLFlush::Finish, |out: &[u8]| {
+                encoded.extend_from_slice(out);
+                true
+            });
+
+        assert_eq!(status, TDEFLStatus::Done);
+        assert_eq!(in_consumed, slice.len());
+
+        // Needs to be altered if algorithm improves.
+        assert_eq!(
+            &encoded[..],
+            [99, 100, 98, 102, 1, 98, 48, 98, 3, 147, 204, 76, 204, 140, 76, 204, 0]
+        );
 
         let decoded = decompress_to_vec(&encoded[..]).unwrap();
         assert_eq!(&decoded[..], &slice[..]);

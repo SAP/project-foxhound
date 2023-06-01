@@ -520,17 +520,16 @@ StringTaint::StringTaint(const StringTaint& other) : ranges_(nullptr)
 
 void StringTaint::assignFromSubTaint(const StringTaint& other, uint32_t begin, uint32_t end)
 {
+    MOZ_COUNT_CTOR(StringTaint);
+    auto ranges = new std::vector<TaintRange>();
     if (other.ranges_) {
-        MOZ_COUNT_CTOR(StringTaint);
-        ranges_ = new std::vector<TaintRange>();
-
         // Use binary search to get first range
         auto range = std::lower_bound(other.begin(), other.end(), begin);
         for (; range != other.end(); range++) {
-            if (range->begin() < end && range->end() > begin) {
-                ranges_->push_back(TaintRange(std::max(range->begin(), begin) - begin,
-                                              std::min(range->end(), end) - begin,
-                                              range->flow()));
+            if (range->begin() < end && range->end() > begin && end > begin) {
+                ranges->push_back(TaintRange(std::max(range->begin(), begin) - begin,
+                                             std::min(range->end(), end) - begin,
+                                             range->flow()));
             }
             // Break out early if possible
             if (range->end() > end) {
@@ -538,6 +537,7 @@ void StringTaint::assignFromSubTaint(const StringTaint& other, uint32_t begin, u
             }
         }
     }
+    assign(ranges);
     CHECK_RANGES(ranges_);
 }
 
@@ -687,7 +687,6 @@ void StringTaint::insert(uint32_t index, const StringTaint& taint)
 
     while (it != end()) {
         auto& range = *it;
-        MOZ_ASSERT(range.begin() >= last);
         ranges->emplace_back(range.begin(), range.end(), range.flow());
         it++;
     }
@@ -731,9 +730,9 @@ void StringTaint::set(uint32_t index, const TaintFlow& flow)
 StringTaint& StringTaint::subtaint(uint32_t begin, uint32_t end)
 {
     MOZ_ASSERT(begin <= end);
-    StringTaint st(*this, begin, end);
+    StringTaint subtaint(*this, begin, end);
     // Assign will steal the pointer from st
-    assign(st.ranges_);
+    assign(subtaint.ranges_);
     return *this;
 }
 
@@ -863,7 +862,7 @@ StringTaint& StringTaint::append(TaintRange range)
 
 void StringTaint::concat(const StringTaint& other, uint32_t offset)
 {
-    MOZ_ASSERT_IF(ranges_, ranges_->back().end() <= offset);
+    MOZ_ASSERT_IF(ranges_ && ranges_->size() > 0, ranges_->back().end() <= offset);
 
     for (auto& range : other)
         append(TaintRange(range.begin() + offset, range.end() + offset, range.flow()));

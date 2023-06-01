@@ -45,7 +45,7 @@ Project names are the repositories.  They can be:
 * `mozilla-central`
 * `mozilla-beta`
 * `mozilla-release`
-* `mozilla-esr91`
+* `mozilla-esr102`
 * ... A partial list can be found in taskcluster/gecko_taskgraph/util/attributes.py
 
 For try, this attribute applies only if ``-p all`` is specified.  All jobs can
@@ -253,6 +253,13 @@ toolchain-env
 Extra environment variables that will be set on the worker when fetching this
 toolchain.
 
+toolchain-command
+=================
+An extra attribute used to communicate to the build system bootstrap code the
+command used to build the toolchain. This is useful because the commands are
+formatted differently depending on the worker type, sometimes unconveniently
+to parse afterwards.
+
 always_target
 =============
 
@@ -295,6 +302,11 @@ artifact_map
 For beetmover jobs, this indicates which yaml file should be used to
 generate the upstream artifacts and payload instructions to the task.
 
+release_artifacts
+=================
+A set of artifacts that are candidates for downstream release tasks to operate
+on.
+
 batch
 =====
 Used by `perftest` to indicates that a task can be run as a batch.
@@ -312,6 +324,12 @@ skip-upload-crashsymbols
 Shippable/nightly builds are normally required to set enable-full-crashsymbols,
 but in some limited corner cases (universal builds), that is not wanted, because
 the symbols are uploaded independently already.
+
+upload-generated-sources
+========================
+generated-sources are normally only uploaded to S3 for shippable/nightly
+builds.  This attributes turns that on for other builds such as macosx
+before unification.
 
 cron
 ====

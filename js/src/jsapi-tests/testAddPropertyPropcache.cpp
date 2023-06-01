@@ -26,7 +26,6 @@ static const JSClassOps AddPropertyClassOps = {
     nullptr,      // mayResolve
     nullptr,      // finalize
     nullptr,      // call
-    nullptr,      // hasInstance
     nullptr,      // construct
     nullptr,      // trace
 };
@@ -41,13 +40,7 @@ BEGIN_TEST(testAddPropertyHook) {
    */
   static const int ExpectedCount = 100;
 
-  JS::RootedObject obj(cx, JS_NewPlainObject(cx));
-  CHECK(obj);
-  JS::RootedValue proto(cx, JS::ObjectValue(*obj));
-  JS_InitClass(cx, global, obj, &AddPropertyClass, nullptr, 0, nullptr, nullptr,
-               nullptr, nullptr);
-
-  obj = JS::NewArrayObject(cx, 0);
+  JS::RootedObject obj(cx, JS::NewArrayObject(cx, 0));
   CHECK(obj);
   JS::RootedValue arr(cx, JS::ObjectValue(*obj));
 

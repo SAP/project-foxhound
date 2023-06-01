@@ -33,12 +33,10 @@ class ContentParent;
 class MediaSource;
 
 class BlobURLProtocolHandler final : public nsIProtocolHandler,
-                                     public nsIProtocolHandlerWithDynamicFlags,
                                      public nsSupportsWeakReference {
  public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIPROTOCOLHANDLER
-  NS_DECL_NSIPROTOCOLHANDLERWITHDYNAMICFLAGS
 
   BlobURLProtocolHandler();
 
@@ -76,7 +74,7 @@ class BlobURLProtocolHandler final : public nsIProtocolHandler,
                            nsIPrincipal* aTriggeringPrincipal,
                            const OriginAttributes& aOriginAttributes,
                            uint64_t aInnerWindowId,
-                           const Maybe<nsID>& blobAgentClusterId,
+                           const Maybe<nsID>& aAgentClusterId,
                            bool aAlsoIfRevoked = false);
 
   static void Traverse(const nsACString& aUri,

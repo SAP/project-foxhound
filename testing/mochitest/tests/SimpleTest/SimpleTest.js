@@ -1,27 +1,13 @@
 /* -*- js-indent-level: 4; tab-width: 4; indent-tabs-mode: nil -*- */
 /* vim:set ts=4 sw=4 sts=4 et: */
-/**
- * SimpleTest, a partial Test.Simple/Test.More API compatible test library.
- *
- * Why?
- *
- * Test.Simple doesn't work on IE < 6.
- * TODO:
- *  * Support the Test.Simple API used by MochiKit, to be able to test MochiKit
- * itself against IE 5.5
- *
- * NOTE: Pay attention to cross-browser compatibility in this file. For
- * instance, do not use const or JS > 1.5 features which are not yet
- * implemented everywhere.
- *
- **/
 
 // Generally gTestPath should be set by the harness.
 /* global gTestPath */
 
-// This can be loaded into a child process.
-/* eslint-env mozilla/frame-script */
-
+/**
+ * SimpleTest framework object.
+ * @class
+ */
 var SimpleTest = {};
 var parentRunner = null;
 
@@ -255,7 +241,7 @@ if (typeof partial == "undefined") {
       args.push(arguments[i]);
     }
     return function() {
-      if (arguments.length > 0) {
+      if (arguments.length) {
         for (let i = 1; i < arguments.length; i++) {
           args.push(arguments[i]);
         }
@@ -372,7 +358,8 @@ function usesFailurePatterns() {
 /**
  * Checks whether there is any failure pattern matches the given error
  * message, and if found, bumps the counter of the failure pattern.
- * Returns whether a matched failure pattern is found.
+ *
+ * @return {boolean} Whether a matched failure pattern is found.
  */
 function recordIfMatchesFailurePattern(name, diag) {
   let index = SimpleTest.expected.findIndex(([pat, count]) => {
@@ -567,6 +554,7 @@ SimpleTest.todo = function(condition, name, diag) {
  * Returns the absolute URL to a test data file from where tests
  * are served. i.e. the file doesn't necessarely exists where tests
  * are executed.
+ *
  * (For android, mochitest are executed on the device, while
  * all mochitest html (and others) files are served from the test runner
  * slave)
@@ -823,6 +811,9 @@ SimpleTest.waitForExplicitFinish = function() {
  * For example, in a test that may take a long time to complete, using
  * "SimpleTest.requestLongerTimeout(5)" will give it 5 times as long to
  * finish.
+ *
+ * @param {Number} factor
+ *        The multiplication factor to use on the timeout for this test.
  */
 SimpleTest.requestLongerTimeout = function(factor) {
   if (parentRunner) {
@@ -845,6 +836,8 @@ SimpleTest.requestLongerTimeout = function(factor) {
  * either one or two arguments:  one argument gives an exact number
  * expected, and two arguments give a range.  For example, a test might do
  * one of the following:
+ *
+ * @example
  *
  *   // Currently triggers two assertions (bug NNNNNN).
  *   SimpleTest.expectAssertions(2);
@@ -909,17 +902,18 @@ window.setTimeout = function SimpleTest_setTimeoutShim() {
 
 /**
  * Request the framework to allow usage of setTimeout(func, timeout)
- * where |timeout > 0|.  This is required to note that the author of
+ * where ``timeout > 0``.  This is required to note that the author of
  * the test is aware of the inherent flakiness in the test caused by
  * that, and asserts that there is no way around using the magic timeout
  * value number for some reason.
  *
- * The reason parameter should be a string representation of the
- * reason why using such flaky timeouts.
- *
- * Use of this function is STRONGLY discouraged.  Think twice before
+ * Use of this function is **STRONGLY** discouraged.  Think twice before
  * using it.  Such magic timeout values could result in intermittent
  * failures in your test, and are almost never necessary!
+ *
+ * @param {String} reason
+ *        A string representation of the reason why the test needs timeouts.
+ *
  */
 SimpleTest.requestFlakyTimeout = function(reason) {
   SimpleTest.is(typeof reason, "string", "A valid string reason is expected");
@@ -938,19 +932,20 @@ SimpleTest.requestFlakyTimeout = function(reason) {
  * The target object should be specified if it is different than 'window'. The
  * actual focused window may be a descendant window of aObject.
  *
- * @param aObject
- *        Optional object to be focused, and may be either:
+ * @param {Window|browser|BrowsingContext} [aObject]
+ *        Optional object to be focused, and may be any of:
  *          window - a window object to focus
  *          browser - a <browser>/<iframe> element. The top-level window
  *                    within the frame will be focused.
  *          browsing context - a browsing context containing a window to focus
  *        If not specified, defaults to the global 'window'.
- * @param expectBlankPage
- *        True if targetWindow.location is 'about:blank'. Defaults to false
- * @param aBlurSubframe
+ * @param {boolean} [expectBlankPage=false]
+ *        True if targetWindow.location is 'about:blank'.
+ * @param {boolean} [aBlurSubframe=false]
  *        If true, and a subframe within the window to focus is focused, blur
  *        it so that the specified window or browsing context will receive
  *        focus events.
+ *
  * @returns The browsing context that was focused.
  */
 SimpleTest.promiseFocus = async function(
@@ -1068,11 +1063,11 @@ const kTextHtmlSuffixClipboardDataWindows =
  * Polls the clipboard waiting for the expected value. A known value different than
  * the expected value is put on the clipboard first (and also polled for) so we
  * can be sure the value we get isn't just the expected value because it was already
- * on the clipboard. This only uses the global clipboard and only for text/unicode
+ * on the clipboard. This only uses the global clipboard and only for text/plain
  * values.
  *
- * @param aExpectedStringOrValidatorFn
- *        The string value that is expected to be on the clipboard or a
+ * @param {String|Function} aExpectedStringOrValidatorFn
+ *        The string value that is expected to be on the clipboard, or a
  *        validator function getting expected clipboard data and returning a bool.
  *        If you specify string value, line breakers in clipboard are treated
  *        as LineFeed.  Therefore, you cannot include CarriageReturn to the
@@ -1084,24 +1079,23 @@ const kTextHtmlSuffixClipboardDataWindows =
  *        https://searchfox.org/mozilla-central/rev/8f7b017a31326515cb467e69eef1f6c965b4f00e/widget/windows/nsDataObj.cpp#1798-1805,1839-1840,1842
  *        Therefore, you can specify selected (copied) HTML data simply on any
  *        platforms.
- * @param aSetupFn
+ * @param {Function} aSetupFn
  *        A function responsible for setting the clipboard to the expected value,
  *        called after the known value setting succeeds.
- * @param aSuccessFn
+ * @param {Function} aSuccessFn
  *        A function called when the expected value is found on the clipboard.
- * @param aFailureFn
+ * @param {Function} aFailureFn
  *        A function called if the expected value isn't found on the clipboard
  *        within 5s. It can also be called if the known value can't be found.
- * @param aFlavor [optional] The flavor to look for.  Defaults to "text/unicode".
- * @param aTimeout [optional]
+ * @param {String} [aFlavor="text/plain"]
+ *        The flavor to look for.
+ * @param {Number} [aTimeout=5000]
  *        The timeout (in milliseconds) to wait for a clipboard change.
- *        Defaults to 5000.
- * @param aExpectFailure [optional]
+ * @param {boolean} [aExpectFailure=false]
  *        If true, fail if the clipboard contents are modified within the timeout
  *        interval defined by aTimeout.  When aExpectFailure is true, the argument
  *        aExpectedStringOrValidatorFn must be null, as it won't be used.
- *        Defaults to false.
- * @param aDontInitializeClipboardIfExpectFailure [optional]
+ * @param {boolean} [aDontInitializeClipboardIfExpectFailure=false]
  *        If aExpectFailure and this is set to true, this does NOT initialize
  *        clipboard with random data before running aSetupFn.
  */
@@ -1137,7 +1131,7 @@ SimpleTest.promiseClipboardChange = async function(
   aExpectFailure,
   aDontInitializeClipboardIfExpectFailure
 ) {
-  let requestedFlavor = aFlavor || "text/unicode";
+  let requestedFlavor = aFlavor || "text/plain";
 
   // The known value we put on the clipboard before running aSetupFn
   let initialVal = "waitForClipboard-known-value-" + Math.random();
@@ -1229,7 +1223,7 @@ SimpleTest.promiseClipboardChange = async function(
       function(aData) {
         return aData == preExpectedVal;
       },
-      "text/unicode",
+      "text/plain",
       false
     );
 
@@ -1251,11 +1245,11 @@ SimpleTest.promiseClipboardChange = async function(
 /**
  * Wait for a condition for a while (actually up to 3s here).
  *
- * @param aCond
+ * @param {Function} aCond
  *        A function returns the result of the condition
- * @param aCallback
+ * @param {Function} aCallback
  *        A function called after the condition is passed or timeout.
- * @param aErrorMsg
+ * @param {String} aErrorMsg
  *        The message displayed when the condition failed to pass
  *        before timeout.
  */
@@ -1286,6 +1280,9 @@ SimpleTest.promiseWaitForCondition = async function(aCond, aErrorMsg) {
 /**
  * Executes a function shortly after the call, but lets the caller continue
  * working (or finish).
+ *
+ * @param {Function} aFunc
+ *        Function to execute soon.
  */
 SimpleTest.executeSoon = function(aFunc) {
   if ("SpecialPowers" in window) {
@@ -1295,6 +1292,15 @@ SimpleTest.executeSoon = function(aFunc) {
   return null; // Avoid warning.
 };
 
+/**
+ * Register a cleanup/teardown function (which may be async) to run after all
+ * tasks have finished, before running the next test. If async (or the function
+ * returns a promise), the framework will wait for the promise/async function
+ * to resolve.
+ *
+ * @param {Function} aFunc
+ *        The cleanup/teardown function to run.
+ */
 SimpleTest.registerCleanupFunction = function(aFunc) {
   SimpleTest._cleanupFunctions.push(aFunc);
 };
@@ -1310,6 +1316,9 @@ SimpleTest.testInChaosMode = function() {
   }
   SpecialPowers.DOMWindowUtils.enterChaosMode();
   SimpleTest._inChaosMode = true;
+  // increase timeout here as chaosmode is very slow (i.e. 10x)
+  // doing 20x as this overwrites anything the tests set
+  SimpleTest.requestLongerTimeout(20);
 };
 
 SimpleTest.timeout = async function() {
@@ -1412,7 +1421,7 @@ SimpleTest.finish = function() {
         "expectUncaughtException was called but no uncaught exception was detected!"
       );
     }
-    if (SimpleTest._tests.length == 0) {
+    if (!SimpleTest._tests.length) {
       SimpleTest.ok(
         false,
         "[SimpleTest.finish()] No checks actually run. " +
@@ -1432,12 +1441,23 @@ SimpleTest.finish = function() {
           "This test is expected to leave a service worker registered"
         );
       }
-    } else if (workers.length > 0) {
-      SimpleTest.ok(
-        false,
-        "This test left a service worker registered without cleaning it up"
-      );
+    } else if (workers.length) {
+      let FULL_PROFILE_WORKERS_TO_IGNORE = [];
+      if (parentRunner.conditionedProfile) {
+        // Full profile has service workers in the profile, without clearing the profile
+        // service workers will be leftover, in all my testing youtube is the only one.
+        FULL_PROFILE_WORKERS_TO_IGNORE = ["https://www.youtube.com/sw.js"];
+      } else {
+        SimpleTest.ok(
+          false,
+          "This test left a service worker registered without cleaning it up"
+        );
+      }
+
       for (let worker of workers) {
+        if (FULL_PROFILE_WORKERS_TO_IGNORE.includes(worker.scriptSpec)) {
+          continue;
+        }
         SimpleTest.ok(
           false,
           `Left over worker: ${worker.scriptSpec} (scope: ${worker.scope})`
@@ -1507,28 +1527,29 @@ SimpleTest.finish = function() {
  * Monitor console output from now until endMonitorConsole is called.
  *
  * Expect to receive all console messages described by the elements of
- * |msgs|, an array, in the order listed in |msgs|; each element is an
+ * ``msgs``, an array, in the order listed in ``msgs``; each element is an
  * object which may have any number of the following properties:
- *   message, errorMessage, sourceName, sourceLine, category:
- *     string or regexp
+ *
+ *   message, errorMessage, sourceName, sourceLine, category: string or regexp
  *   lineNumber, columnNumber: number
  *   isScriptError, isWarning: boolean
+ *
  * Strings, numbers, and booleans must compare equal to the named
  * property of the Nth console message.  Regexps must match.  Any
  * fields present in the message but not in the pattern object are ignored.
  *
- * In addition to the above properties, elements in |msgs| may have a |forbid|
- * boolean property.  When |forbid| is true, a failure is logged each time a
+ * In addition to the above properties, elements in ``msgs`` may have a ``forbid``
+ * boolean property.  When ``forbid`` is true, a failure is logged each time a
  * matching message is received.
  *
- * If |forbidUnexpectedMsgs| is true, then the messages received in the console
- * must exactly match the non-forbidden messages in |msgs|; for each received
- * message not described by the next element in |msgs|, a failure is logged.  If
+ * If ``forbidUnexpectedMsgs`` is true, then the messages received in the console
+ * must exactly match the non-forbidden messages in ``msgs``; for each received
+ * message not described by the next element in ``msgs``, a failure is logged.  If
  * false, then other non-forbidden messages are ignored, but all expected
  * messages must still be received.
  *
- * After endMonitorConsole is called, |continuation| will be called
- * asynchronously.  (Normally, you will want to pass |SimpleTest.finish| here.)
+ * After endMonitorConsole is called, ``continuation`` will be called
+ * asynchronously.  (Normally, you will want to pass ``SimpleTest.finish`` here.)
  *
  * It is incorrect to use this function in a test which has not called
  * SimpleTest.waitForExplicitFinish.
@@ -1630,12 +1651,13 @@ SimpleTest.endMonitorConsole = function() {
 };
 
 /**
- * Run |testfn| synchronously, and monitor its console output.
+ * Run ``testfn`` synchronously, and monitor its console output.
  *
- * |msgs| is handled as described above for monitorConsole.
+ * ``msgs`` is handled as described above for monitorConsole.
  *
- * After |testfn| returns, console monitoring will stop, and
- * |continuation| will be called asynchronously.
+ * After ``testfn`` returns, console monitoring will stop, and ``continuation``
+ * will be called asynchronously.
+ *
  */
 SimpleTest.expectConsoleMessages = function(testfn, msgs, continuation) {
   SimpleTest.monitorConsole(continuation, msgs);
@@ -1644,8 +1666,8 @@ SimpleTest.expectConsoleMessages = function(testfn, msgs, continuation) {
 };
 
 /**
- * Wrapper around |expectConsoleMessages| for the case where the test has
- * only one |testfn| to run.
+ * Wrapper around ``expectConsoleMessages`` for the case where the test has
+ * only one ``testfn`` to run.
  */
 SimpleTest.runTestExpectingConsoleMessages = function(testfn, msgs) {
   SimpleTest.waitForExplicitFinish();
@@ -2034,7 +2056,7 @@ var add_task = (function() {
   }
 
   // The "add_task" function
-  return function(generatorFunction) {
+  return function(generatorFunction, options = { isSetup: false }) {
     if (task_list.length === 0) {
       // This is the first time add_task has been called.
       // First, confirm that SimpleTest is available.
@@ -2091,18 +2113,31 @@ var add_task = (function() {
                 skipTask(name);
                 continue;
               }
-              info("add_task | Entering test " + name);
+              const taskInfo = action =>
+                info(
+                  `${
+                    task.isSetup ? "add_setup" : "add_task"
+                  } | ${action} ${name}`
+                );
+              taskInfo("Entering");
               let result = await task();
               if (isGenerator(result)) {
                 ok(false, "Task returned a generator");
               }
-              info("add_task | Leaving test " + name);
+              taskInfo("Leaving");
             }
           } catch (ex) {
             try {
+              let serializedEx;
+              if (ex instanceof Error) {
+                serializedEx = `${ex}`;
+              } else {
+                serializedEx = JSON.stringify(ex);
+              }
+
               SimpleTest.record(
                 false,
-                "" + ex,
+                serializedEx,
                 "Should not throw any errors",
                 ex.stack
               );
@@ -2124,10 +2159,21 @@ var add_task = (function() {
     generatorFunction.only = () => (run_only_this_task = generatorFunction);
     // Add the task to the list of tasks to run after
     // the main thread is finished.
-    task_list.push(generatorFunction);
+    if (options.isSetup) {
+      generatorFunction.isSetup = true;
+      let lastSetupIndex = task_list.findLastIndex(t => t.isSetup) + 1;
+      task_list.splice(lastSetupIndex, 0, generatorFunction);
+    } else {
+      task_list.push(generatorFunction);
+    }
     return generatorFunction;
   };
 })();
+
+// Like add_task, but setup tasks are executed first.
+function add_setup(generatorFunction) {
+  return add_task(generatorFunction, { isSetup: true });
+}
 
 // Request complete log when using failure patterns so that failure info
 // from infra can be useful.

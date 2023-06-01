@@ -12,7 +12,6 @@
 #include "States.h"
 
 #include "nsContentUtils.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/MutationEventBinding.h"
 
@@ -39,10 +38,12 @@ uint64_t HTMLLinkAccessible::NativeState() const {
 }
 
 uint64_t HTMLLinkAccessible::NativeLinkState() const {
-  EventStates eventState = mContent->AsElement()->State();
-  if (eventState.HasState(NS_EVENT_STATE_UNVISITED)) return states::LINKED;
+  dom::ElementState state = mContent->AsElement()->State();
+  if (state.HasState(dom::ElementState::UNVISITED)) {
+    return states::LINKED;
+  }
 
-  if (eventState.HasState(NS_EVENT_STATE_VISITED)) {
+  if (state.HasState(dom::ElementState::VISITED)) {
     return states::LINKED | states::TRAVERSED;
   }
 
@@ -74,8 +75,9 @@ void HTMLLinkAccessible::Value(nsString& aValue) const {
   }
 }
 
-uint8_t HTMLLinkAccessible::ActionCount() const {
-  return IsLinked() ? 1 : HyperTextAccessible::ActionCount();
+bool HTMLLinkAccessible::HasPrimaryAction() const {
+  return IsLinked() || HyperTextAccessible::HasPrimaryAction();
+  ;
 }
 
 void HTMLLinkAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
@@ -88,16 +90,6 @@ void HTMLLinkAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
 
   // Action 0 (default action): Jump to link
   if (aIndex == eAction_Jump) aName.AssignLiteral("jump");
-}
-
-bool HTMLLinkAccessible::DoAction(uint8_t aIndex) const {
-  if (!IsLinked()) return HyperTextAccessible::DoAction(aIndex);
-
-  // Action 0 (default action): Jump to link
-  if (aIndex != eAction_Jump) return false;
-
-  DoCommand();
-  return true;
 }
 
 bool HTMLLinkAccessible::AttributeChangesState(nsAtom* aAttribute) {
@@ -130,14 +122,13 @@ bool HTMLLinkAccessible::IsLink() const {
 
 already_AddRefed<nsIURI> HTMLLinkAccessible::AnchorURIAt(
     uint32_t aAnchorIndex) const {
-  return aAnchorIndex == 0 ? mContent->GetHrefURI() : nullptr;
+  return aAnchorIndex == 0 ? mContent->AsElement()->GetHrefURI() : nullptr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // HTMLLinkAccessible
 
 bool HTMLLinkAccessible::IsLinked() const {
-  EventStates state = mContent->AsElement()->State();
-  return state.HasAtLeastOneOfStates(NS_EVENT_STATE_VISITED |
-                                     NS_EVENT_STATE_UNVISITED);
+  dom::ElementState state = mContent->AsElement()->State();
+  return state.HasAtLeastOneOfStates(dom::ElementState::VISITED_OR_UNVISITED);
 }

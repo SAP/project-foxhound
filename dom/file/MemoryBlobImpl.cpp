@@ -9,7 +9,6 @@
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/SHA1.h"
 #include "nsIMemoryReporter.h"
-#include "nsMemory.h"
 #include "nsPrintfCString.h"
 #include "nsRFPService.h"
 #include "nsStringStream.h"
@@ -29,10 +28,9 @@ already_AddRefed<MemoryBlobImpl> MemoryBlobImpl::CreateWithCustomLastModified(
 // static
 already_AddRefed<MemoryBlobImpl> MemoryBlobImpl::CreateWithLastModifiedNow(
     void* aMemoryBuffer, uint64_t aLength, const nsAString& aName,
-    const nsAString& aContentType, bool aCrossOriginIsolated) {
-  int64_t lastModificationDate = nsRFPService::ReduceTimePrecisionAsUSecs(
-      PR_Now(), 0,
-      /* aIsSystemPrincipal */ false, aCrossOriginIsolated);
+    const nsAString& aContentType, RTPCallerType aRTPCallerType) {
+  int64_t lastModificationDate =
+      nsRFPService::ReduceTimePrecisionAsUSecs(PR_Now(), 0, aRTPCallerType);
   return CreateWithCustomLastModified(aMemoryBuffer, aLength, aName,
                                       aContentType, lastModificationDate);
 }
@@ -48,14 +46,14 @@ nsresult MemoryBlobImpl::DataOwnerAdapter::Create(DataOwner* aDataOwner,
 
 already_AddRefed<BlobImpl> MemoryBlobImpl::CreateSlice(
     uint64_t aStart, uint64_t aLength, const nsAString& aContentType,
-    ErrorResult& aRv) {
+    ErrorResult& aRv) const {
   RefPtr<BlobImpl> impl =
       new MemoryBlobImpl(this, aStart, aLength, aContentType);
   return impl.forget();
 }
 
 void MemoryBlobImpl::CreateInputStream(nsIInputStream** aStream,
-                                       ErrorResult& aRv) {
+                                       ErrorResult& aRv) const {
   if (mLength >= INT32_MAX) {
     aRv.Throw(NS_ERROR_FAILURE);
     return;

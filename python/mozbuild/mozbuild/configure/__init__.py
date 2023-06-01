@@ -2,41 +2,39 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import codecs
 import inspect
 import logging
 import os
 import re
-import six
-from six.moves import builtins as __builtin__
 import sys
 import types
 from collections import OrderedDict
 from contextlib import contextmanager
 from functools import wraps
+
+import mozpack.path as mozpath
+import six
+from six.moves import builtins as __builtin__
+
+from mozbuild.configure.help import HelpFormatter
 from mozbuild.configure.options import (
+    HELP_OPTIONS_CATEGORY,
     CommandLineHelper,
     ConflictingOptionError,
-    HELP_OPTIONS_CATEGORY,
     InvalidOptionError,
     Option,
     OptionValue,
 )
-from mozbuild.configure.help import HelpFormatter
-from mozbuild.configure.util import ConfigureOutputHandler, getpreferredencoding, LineIO
+from mozbuild.configure.util import ConfigureOutputHandler, LineIO, getpreferredencoding
 from mozbuild.util import (
+    ReadOnlyDict,
+    ReadOnlyNamespace,
     exec_,
     memoize,
     memoized_property,
-    ReadOnlyDict,
-    ReadOnlyNamespace,
     system_encoding,
 )
-
-import mozpack.path as mozpath
-
 
 # TRACE logging level, below (thus more verbose than) DEBUG
 TRACE = 5
@@ -118,8 +116,13 @@ class DependsFunction(object):
     def __init__(self, sandbox, func, dependencies, when=None):
         assert isinstance(sandbox, ConfigureSandbox)
         assert not inspect.isgeneratorfunction(func)
+        # Allow non-functions when there are no dependencies. This is equivalent
+        # to passing a lambda that returns the given value.
+        if not (inspect.isroutine(func) or not dependencies):
+            print(func)
+        assert inspect.isroutine(func) or not dependencies
         self._func = func
-        self._name = func.__name__
+        self._name = getattr(func, "__name__", None)
         self.dependencies = dependencies
         self.sandboxed = wraps(func)(SandboxDependsFunction(self))
         self.sandbox = sandbox
@@ -153,8 +156,10 @@ class DependsFunction(object):
         if self.when and not self.sandbox._value_for(self.when):
             return None
 
-        resolved_args = [self.sandbox._value_for(d) for d in self.dependencies]
-        return self._func(*resolved_args)
+        if inspect.isroutine(self._func):
+            resolved_args = [self.sandbox._value_for(d) for d in self.dependencies]
+            return self._func(*resolved_args)
+        return self._func
 
     def __repr__(self):
         return "<%s %s(%s)>" % (
@@ -829,7 +834,16 @@ class ConfigureSandbox(dict):
                 raise ConfigureError(
                     "Cannot decorate generator functions with @depends"
                 )
-            func = self._prepare_function(func)
+            if inspect.isroutine(func):
+                if func in self._templates:
+                    raise TypeError("Cannot use a @template function here")
+                func = self._prepare_function(func)
+            elif isinstance(func, SandboxDependsFunction):
+                raise TypeError("Cannot nest @depends functions")
+            elif dependencies:
+                raise TypeError(
+                    "Cannot wrap literal values in @depends with dependencies"
+                )
             depends = DependsFunction(self, func, dependencies, when=when)
             return depends.sandboxed
 

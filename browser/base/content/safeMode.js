@@ -3,12 +3,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 const appStartup = Services.startup;
 
-const { ResetProfile } = ChromeUtils.import(
-  "resource://gre/modules/ResetProfile.jsm"
+const { ResetProfile } = ChromeUtils.importESModule(
+  "resource://gre/modules/ResetProfile.sys.mjs"
 );
 
 var defaultToReset = false;
@@ -19,10 +17,7 @@ function restartApp() {
 
 function resetProfile() {
   // Set the reset profile environment variable.
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  env.set("MOZ_RESET_PROFILE_RESTART", "1");
+  Services.env.set("MOZ_RESET_PROFILE_RESTART", "1");
 }
 
 function showResetDialog() {

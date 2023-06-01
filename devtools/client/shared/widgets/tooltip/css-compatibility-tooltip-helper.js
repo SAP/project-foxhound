@@ -4,7 +4,6 @@
 
 "use strict";
 
-const ChromeUtils = require("ChromeUtils");
 const { BrowserLoader } = ChromeUtils.import(
   "resource://devtools/shared/loader/browser-loader.js"
 );
@@ -12,7 +11,7 @@ const { BrowserLoader } = ChromeUtils.import(
 loader.lazyRequireGetter(
   this,
   "openDocLink",
-  "devtools/client/shared/link",
+  "resource://devtools/client/shared/link.js",
   true
 );
 
@@ -56,10 +55,10 @@ class CssCompatibilityTooltipHelper {
     const {
       createFactory,
       createElement,
-    } = require("devtools/client/shared/vendor/react");
-    const ReactDOM = require("devtools/client/shared/vendor/react-dom");
+    } = require("resource://devtools/client/shared/vendor/react.js");
+    const ReactDOM = require("resource://devtools/client/shared/vendor/react-dom.js");
     const UnsupportedBrowserList = createFactory(
-      require("devtools/client/inspector/compatibility/components/UnsupportedBrowserList")
+      require("resource://devtools/client/inspector/compatibility/components/UnsupportedBrowserList.js")
     );
 
     const unsupportedBrowserList = createElement(UnsupportedBrowserList, {

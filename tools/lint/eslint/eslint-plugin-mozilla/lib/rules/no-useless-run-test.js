@@ -8,15 +8,17 @@
 
 "use strict";
 
-// -----------------------------------------------------------------------------
-// Rule Definition
-// -----------------------------------------------------------------------------
-
 module.exports = {
   meta: {
-    type: "suggestion",
+    docs: {
+      url:
+        "https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint-plugin-mozilla/no-useless-run-test.html",
+    },
     fixable: "code",
+    schema: [],
+    type: "suggestion",
   },
+
   create(context) {
     return {
       "Program > FunctionDeclaration": function(node) {
@@ -45,7 +47,7 @@ module.exports = {
               // rather than the token before the comments, so that we don't
               // remove the comments - for run_test, these are likely to be useful
               // information about the test.
-              if (startNode && startNode.length) {
+              if (startNode?.length) {
                 startNode = startNode[startNode.length - 1];
               } else {
                 startNode = sourceCode.getTokenBefore(node);

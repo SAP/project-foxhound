@@ -3,18 +3,13 @@
 
 "use strict";
 
-const availableRegions = [
-  ...Services.intl.getAvailableLocaleDisplayNames("region"),
-  null,
-];
-
 const DOMAIN_LOCALES = {
   "ebay-ca": ["en-CA"],
   "ebay-ch": ["rm"],
   "ebay-de": ["de", "dsb", "hsb"],
   "ebay-es": ["an", "ast", "ca", "ca-valencia", "es-ES", "eu", "gl"],
   "ebay-ie": ["ga-IE", "ie"],
-  "ebay-it": ["it", "lij"],
+  "ebay-it": ["fur", "it", "lij", "sc"],
   "ebay-nl": ["fy-NL", "nl"],
   "ebay-uk": ["cy", "en-GB", "gd"],
 };
@@ -46,6 +41,7 @@ const test = new SearchConfigTest({
             "en-GB",
             "es-ES",
             "eu",
+            "fur",
             "fr",
             "fy-NL",
             "ga-IE",
@@ -56,6 +52,7 @@ const test = new SearchConfigTest({
             "lij",
             "nl",
             "rm",
+            "sc",
             "wo",
           ],
         },

@@ -31,10 +31,9 @@
 
 .container {
   overflow: auto;
-  padding: 40px;
+  padding: 0 40px;
   box-sizing: border-box;
   height: 100%;
-  min-width: 520px;
 }
 
 @media (max-width: 830px) {
@@ -60,10 +59,9 @@ form {
 
 :host([data-editing]) .edit-button,
 :host([data-editing]) .copy-button,
-:host([data-is-new-login].no-logins) .cancel-button,
 :host([data-is-new-login]) .delete-button,
 :host([data-is-new-login]) .origin-saved-value,
-:host([data-is-new-login]) .meta-info,
+:host([data-is-new-login]) login-timeline,
 :host([data-is-new-login]) .login-item-title,
 :host(:not([data-is-new-login])) .new-login-title,
 :host(:not([data-editing])) .form-actions-row {
@@ -106,7 +104,6 @@ input[type="url"]:read-only {
 .header {
   display: flex;
   align-items: center;
-  border-bottom: 1px solid var(--in-content-border-color);
   margin-bottom: 40px;
 }
 
@@ -184,11 +181,13 @@ input[type = "url"]:focus:-moz-ui-invalid:not(:placeholder-shown) ~ .tooltip-con
 .arrow-box {
   position: relative;
   padding: 12px;
-	background: var(--in-content-box-background);
+	background-color: var(--in-content-box-background);
 	border: 1px solid var(--in-content-border-color);
+  border-radius: 4px;
 }
 
-.arrow-box::after, .arrow-box::before {
+.arrow-box::before,
+.arrow-box::after {
   inset-inline-end: 100%;
   top: 40px; /* This allows the arrow to stay in the correct position, even if the text length is changed */
 	border: solid transparent;
@@ -266,8 +265,10 @@ input[type = "url"]:focus:-moz-ui-invalid:not(:placeholder-shown) ~ .tooltip-con
   margin-bottom: 8px;
 }
 
+moz-button-group,
 :host([data-editing]) .detail-cell input:read-write:not([type="checkbox"]) {
-  width: 280px;
+  width: 298px;
+  box-sizing: border-box;
 }
 
 .copy-button {
@@ -302,20 +303,6 @@ input[type = "url"]:focus:-moz-ui-invalid:not(:placeholder-shown) ~ .tooltip-con
   background-position-x: right;
 }
 
-.meta-info {
-  font-size: smaller;
-  color: var(--in-content-deemphasized-text);
-  margin-block: 0 8px;
-}
-
-.meta-info:first-of-type::before {
-  content: "";
-  display: block;
-  margin-bottom: 20px;
-  border-top: 1px solid var(--in-content-border-color);
-  width: 40px;
-}
-
 input.password-display,
 input[name="password"] {
   font-family: monospace !important; /* override `all: unset` in the rule above */
@@ -348,24 +335,13 @@ input[name="password"] {
 }
 
 .login-item-favicon {
-  width: 24px;
-}
-
-.login-item-favicon-wrapper {
   margin-inline-end: 12px;
   height: 24px;
   width: 24px;
   flex-shrink: 0;
-  background-image: url("chrome://global/skin/icons/defaultFavicon.svg");
-  background-repeat: no-repeat;
-  background-size: contain;
   -moz-context-properties: fill, fill-opacity;
   fill: currentColor;
   fill-opacity: 0.75;
-}
-
-.login-item-favicon-wrapper.hide-default-favicon {
-  background-image: none;
 }
 
 .vulnerable-alert,

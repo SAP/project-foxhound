@@ -29,8 +29,7 @@ HeadlessClipboard::SetData(nsITransferable* aTransferable,
 
   // Only support plain text for now.
   nsCOMPtr<nsISupports> clip;
-  nsresult rv =
-      aTransferable->GetTransferData(kUnicodeMime, getter_AddRefs(clip));
+  nsresult rv = aTransferable->GetTransferData(kTextMime, getter_AddRefs(clip));
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -60,7 +59,7 @@ HeadlessClipboard::GetData(nsITransferable* aTransferable,
     return rv;
   }
   nsCOMPtr<nsISupports> genericDataWrapper = do_QueryInterface(dataWrapper);
-  rv = aTransferable->SetTransferData(kUnicodeMime, genericDataWrapper);
+  rv = aTransferable->SetTransferData(kTextMime, genericDataWrapper);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -86,7 +85,7 @@ HeadlessClipboard::HasDataMatchingFlavors(
   }
   // Retrieve the union of all aHasType in aFlavorList
   for (auto& flavor : aFlavorList) {
-    if (flavor.EqualsLiteral(kUnicodeMime) && mClipboard->HasText()) {
+    if (flavor.EqualsLiteral(kTextMime) && mClipboard->HasText()) {
       *aHasType = true;
       break;
     }
@@ -95,17 +94,36 @@ HeadlessClipboard::HasDataMatchingFlavors(
 }
 
 NS_IMETHODIMP
-HeadlessClipboard::SupportsSelectionClipboard(bool* aIsSupported) {
-  *aIsSupported = false;
+HeadlessClipboard::IsClipboardTypeSupported(int32_t aWhichClipboard,
+                                            bool* _retval) {
+  NS_ENSURE_ARG_POINTER(_retval);
+  *_retval = kGlobalClipboard == aWhichClipboard;
   return NS_OK;
 }
 
-NS_IMETHODIMP
-HeadlessClipboard::SupportsFindClipboard(bool* _retval) {
-  NS_ENSURE_ARG_POINTER(_retval);
+RefPtr<GenericPromise> HeadlessClipboard::AsyncGetData(
+    nsITransferable* aTransferable, int32_t aWhichClipboard) {
+  nsresult rv = GetData(aTransferable, aWhichClipboard);
+  if (NS_FAILED(rv)) {
+    return GenericPromise::CreateAndReject(rv, __func__);
+  }
 
-  *_retval = false;
-  return NS_OK;
+  return GenericPromise::CreateAndResolve(true, __func__);
+}
+
+RefPtr<DataFlavorsPromise> HeadlessClipboard::AsyncHasDataMatchingFlavors(
+    const nsTArray<nsCString>& aFlavorList, int32_t aWhichClipboard) {
+  nsTArray<nsCString> results;
+  for (const auto& flavor : aFlavorList) {
+    bool hasMatchingFlavor = false;
+    nsresult rv = HasDataMatchingFlavors(AutoTArray<nsCString, 1>{flavor},
+                                         aWhichClipboard, &hasMatchingFlavor);
+    if (NS_SUCCEEDED(rv) && hasMatchingFlavor) {
+      results.AppendElement(flavor);
+    }
+  }
+
+  return DataFlavorsPromise::CreateAndResolve(std::move(results), __func__);
 }
 
 }  // namespace widget

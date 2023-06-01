@@ -4,7 +4,7 @@
 
 import { createSelector } from "reselect";
 
-import { isGeneratedId } from "devtools-source-map";
+import { isGeneratedId } from "devtools/client/shared/source-map-loader/index";
 import { makeBreakpointId } from "../utils/breakpoint";
 
 // This method is only used from the main test helper
@@ -28,11 +28,6 @@ export function getBreakpoint(state, location) {
 
   const breakpoints = getBreakpointsMap(state);
   return breakpoints[makeBreakpointId(location)];
-}
-
-export function getBreakpointsDisabled(state) {
-  const breakpoints = getBreakpointsList(state);
-  return breakpoints.every(breakpoint => breakpoint.disabled);
 }
 
 export function getBreakpointsForSource(state, sourceId, line) {

@@ -11,6 +11,7 @@
 #include <queue>
 
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/scope_guard.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/options.h"
 
@@ -185,15 +186,57 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
           pixel_type *JXL_RESTRICT r = channel.Row(y);
           std::fill(r, r + channel.w, v);
         }
-
       } else {
         JXL_DEBUG_V(8, "Fast track.");
-        for (size_t y = 0; y < channel.h; y++) {
-          pixel_type *JXL_RESTRICT r = channel.Row(y);
-          for (size_t x = 0; x < channel.w; x++) {
-            uint32_t v = reader->ReadHybridUintClustered(ctx_id, br);
-            r[x] = make_pixel(v, multiplier, offset);
+        if (multiplier == 1 && offset == 0) {
+          for (size_t y = 0; y < channel.h; y++) {
+            pixel_type *JXL_RESTRICT r = channel.Row(y);
+            for (size_t x = 0; x < channel.w; x++) {
+              uint32_t v = reader->ReadHybridUintClustered(ctx_id, br);
+              r[x] = UnpackSigned(v);
+            }
           }
+        } else {
+          for (size_t y = 0; y < channel.h; y++) {
+            pixel_type *JXL_RESTRICT r = channel.Row(y);
+            for (size_t x = 0; x < channel.w; x++) {
+              uint32_t v = reader->ReadHybridUintClustered(ctx_id, br);
+              r[x] = make_pixel(v, multiplier, offset);
+            }
+          }
+        }
+      }
+    } else if (predictor == Predictor::Gradient && offset == 0 &&
+               multiplier == 1 && reader->HuffRleOnly()) {
+      JXL_DEBUG_V(8, "Gradient RLE (fjxl) very fast track.");
+      uint32_t run = 0;
+      uint32_t v = 0;
+      pixel_type_w sv = 0;
+      for (size_t y = 0; y < channel.h; y++) {
+        pixel_type *JXL_RESTRICT r = channel.Row(y);
+        const pixel_type *JXL_RESTRICT rtop = (y ? channel.Row(y - 1) : r - 1);
+        const pixel_type *JXL_RESTRICT rtopleft =
+            (y ? channel.Row(y - 1) - 1 : r - 1);
+        pixel_type_w guess = (y ? rtop[0] : 0);
+        if (run == 0) {
+          reader->ReadHybridUintClusteredHuffRleOnly(ctx_id, br, &v, &run);
+          sv = UnpackSigned(v);
+        } else {
+          run--;
+        }
+        r[0] = sv + guess;
+        for (size_t x = 1; x < channel.w; x++) {
+          pixel_type left = r[x - 1];
+          pixel_type top = rtop[x];
+          pixel_type topleft = rtopleft[x];
+          pixel_type_w guess = ClampedGradient(top, left, topleft);
+          if (!run) {
+            reader->ReadHybridUintClusteredHuffRleOnly(ctx_id, br, &v, &run);
+            sv = UnpackSigned(v);
+          } else {
+            run--;
+          }
+          r[x] = sv + guess;
         }
       }
     } else if (predictor == Predictor::Gradient && offset == 0 &&
@@ -321,12 +364,36 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
       pixel_type *JXL_RESTRICT p = channel.Row(y);
       PrecomputeReferences(channel, y, *image, chan, &references);
       InitPropsRow(&properties, static_props, y);
-      for (size_t x = 0; x < channel.w; x++) {
-        PredictionResult res =
-            PredictTreeNoWP(&properties, channel.w, p + x, onerow, x, y,
-                            tree_lookup, references);
-        uint64_t v = reader->ReadHybridUintClustered(res.context, br);
-        p[x] = make_pixel(v, res.multiplier, res.guess);
+      if (y > 1 && channel.w > 8 && references.w == 0) {
+        for (size_t x = 0; x < 2; x++) {
+          PredictionResult res =
+              PredictTreeNoWP(&properties, channel.w, p + x, onerow, x, y,
+                              tree_lookup, references);
+          uint64_t v = reader->ReadHybridUintClustered(res.context, br);
+          p[x] = make_pixel(v, res.multiplier, res.guess);
+        }
+        for (size_t x = 2; x < channel.w - 2; x++) {
+          PredictionResult res =
+              PredictTreeNoWPNEC(&properties, channel.w, p + x, onerow, x, y,
+                                 tree_lookup, references);
+          uint64_t v = reader->ReadHybridUintClustered(res.context, br);
+          p[x] = make_pixel(v, res.multiplier, res.guess);
+        }
+        for (size_t x = channel.w - 2; x < channel.w; x++) {
+          PredictionResult res =
+              PredictTreeNoWP(&properties, channel.w, p + x, onerow, x, y,
+                              tree_lookup, references);
+          uint64_t v = reader->ReadHybridUintClustered(res.context, br);
+          p[x] = make_pixel(v, res.multiplier, res.guess);
+        }
+      } else {
+        for (size_t x = 0; x < channel.w; x++) {
+          PredictionResult res =
+              PredictTreeNoWP(&properties, channel.w, p + x, onerow, x, y,
+                              tree_lookup, references);
+          uint64_t v = reader->ReadHybridUintClustered(res.context, br);
+          p[x] = make_pixel(v, res.multiplier, res.guess);
+        }
       }
     }
   } else {
@@ -387,7 +454,19 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
   if (image.channel.empty()) return true;
 
   // decode transforms
-  JXL_RETURN_IF_ERROR(Bundle::Read(br, &header));
+  Status status = Bundle::Read(br, &header);
+  if (!allow_truncated_group) JXL_RETURN_IF_ERROR(status);
+  if (status.IsFatalError()) return status;
+  if (!br->AllReadsWithinBounds()) {
+    // Don't do/undo transforms if header is incomplete.
+    header.transforms.clear();
+    image.transform = header.transforms;
+    for (size_t c = 0; c < image.channel.size(); c++) {
+      ZeroFillImage(&image.channel[c].plane);
+    }
+    return Status(StatusCode::kNotEnoughBytes);
+  }
+
   JXL_DEBUG_V(3, "Image data underwent %" PRIuS " transformations: ",
               header.transforms.size());
   image.transform = header.transforms;
@@ -397,10 +476,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
   if (image.error) {
     return JXL_FAILURE("Corrupt file. Aborting.");
   }
-  if (br->AllReadsWithinBounds()) {
-    // Only check if the transforms list is complete.
-    JXL_RETURN_IF_ERROR(ValidateChannelDimensions(image, *options));
-  }
+  JXL_RETURN_IF_ERROR(ValidateChannelDimensions(image, *options));
 
   size_t nb_channels = image.channel.size();
 
@@ -421,6 +497,15 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
     num_chans++;
   }
   if (num_chans == 0) return true;
+
+  size_t next_channel = 0;
+  auto scope_guard = MakeScopeGuard([&]() {
+    // Do not do anything if truncated groups are not allowed.
+    if (!allow_truncated_group) return;
+    for (size_t c = next_channel; c < nb_channels; c++) {
+      ZeroFillImage(&image.channel[c].plane);
+    }
+  });
 
   // Read tree.
   Tree tree_storage;
@@ -463,26 +548,29 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
 
   // Read channels
   ANSSymbolReader reader(code, br, distance_multiplier);
-  for (size_t i = 0; i < nb_channels; i++) {
-    Channel &channel = image.channel[i];
+  for (; next_channel < nb_channels; next_channel++) {
+    Channel &channel = image.channel[next_channel];
     if (!channel.w || !channel.h) {
       continue;  // skip empty channels
     }
-    if (i >= image.nb_meta_channels && (channel.w > options->max_chan_size ||
-                                        channel.h > options->max_chan_size)) {
+    if (next_channel >= image.nb_meta_channels &&
+        (channel.w > options->max_chan_size ||
+         channel.h > options->max_chan_size)) {
       break;
     }
-    JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS(br, &reader, *context_map,
-                                                  *tree, header.wp_header, i,
-                                                  group_id, &image));
+    JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS(
+        br, &reader, *context_map, *tree, header.wp_header, next_channel,
+        group_id, &image));
     // Truncated group.
     if (!br->AllReadsWithinBounds()) {
       if (!allow_truncated_group) return JXL_FAILURE("Truncated input");
-      ZeroFillImage(&channel.plane);
-      while (++i < nb_channels) ZeroFillImage(&image.channel[i].plane);
       return Status(StatusCode::kNotEnoughBytes);
     }
   }
+
+  // Make sure no zero-filling happens even if next_channel < nb_channels.
+  scope_guard.Disarm();
+
   if (!reader.CheckANSFinalState()) {
     return JXL_FAILURE("ANS decode final state failed");
   }
@@ -503,18 +591,19 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
 #endif
   GroupHeader local_header;
   if (header == nullptr) header = &local_header;
+  size_t bit_pos = br->TotalBitsConsumed();
   auto dec_status = ModularDecode(br, image, *header, group_id, options, tree,
                                   code, ctx_map, allow_truncated_group);
   if (!allow_truncated_group) JXL_RETURN_IF_ERROR(dec_status);
   if (dec_status.IsFatalError()) return dec_status;
   if (undo_transforms) image.undo_transforms(header->wp_header);
   if (image.error) return JXL_FAILURE("Corrupt file. Aborting.");
-  size_t bit_pos = br->TotalBitsConsumed();
   JXL_DEBUG_V(4,
               "Modular-decoded a %" PRIuS "x%" PRIuS " nbchans=%" PRIuS
               " image from %" PRIuS " bytes",
               image.w, image.h, image.channel.size(),
               (br->TotalBitsConsumed() - bit_pos) / 8);
+  JXL_DEBUG_V(5, "Modular image: %s", image.DebugString().c_str());
   (void)bit_pos;
 #ifdef JXL_ENABLE_ASSERT
   // Check that after applying all transforms we are back to the requested image

@@ -18,12 +18,16 @@ EXTRA_JS_MODULES += [
     "ExtensionChildDevToolsUtils.jsm",
     "ExtensionCommon.jsm",
     "ExtensionContent.jsm",
+    "ExtensionDNR.sys.mjs",
+    "ExtensionDNRLimits.sys.mjs",
+    "ExtensionDNRStore.sys.mjs",
     "ExtensionPageChild.jsm",
     "ExtensionParent.jsm",
     "ExtensionPermissions.jsm",
     "ExtensionPreferencesManager.jsm",
     "ExtensionProcessScript.jsm",
     "extensionProcessScriptLoader.js",
+    "ExtensionScriptingStore.jsm",
     "ExtensionSettingsStore.jsm",
     "ExtensionShortcuts.jsm",
     "ExtensionStorage.jsm",
@@ -53,6 +57,8 @@ TESTING_JS_MODULES += [
     "ExtensionTestCommon.jsm",
     "ExtensionXPCShellUtils.jsm",
     "MessageChannel.jsm",
+    "test/xpcshell/data/TestWorkerWatcherChild.jsm",
+    "test/xpcshell/data/TestWorkerWatcherParent.jsm",
 ]
 
 DIRS += [
@@ -139,5 +145,3 @@ with Files("docs/**"):
     SCHEDULES.exclusive = ["docs"]
 
 include("/ipc/chromium/chromium-config.mozbuild")
-
-REQUIRES_UNIFIED_BUILD = True

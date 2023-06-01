@@ -324,28 +324,40 @@ interface nsIWebProgressListener : nsISupports
    *
    * STATE_ALLOWED_TRACKING_CONTENT
    *   Tracking content which should be blocked from loading was allowed.
+   *
+   * STATE_BLOCKED_EMAILTRACING_CONTENT
+   *   EmailTracking content has been blocked from loading.
+   *
+   * STATE_LOADED_EMAILTRACKING_LEVEL_1_CONTENT
+   *   EmailTracking content from the Disconnect level 1 has been loaded.
+   *
+   * STATE_LOADED_EMAILTRACKING_LEVEL_2_CONTENT
+   *   EmailTracking content from the Disconnect level 2 has been loaded.
    */
-  const unsigned long STATE_BLOCKED_TRACKING_CONTENT        = 0x00001000;
-  const unsigned long STATE_LOADED_LEVEL_1_TRACKING_CONTENT = 0x00002000;
-  const unsigned long STATE_LOADED_LEVEL_2_TRACKING_CONTENT = 0x00100000;
-  const unsigned long STATE_BLOCKED_FINGERPRINTING_CONTENT  = 0x00000040;
-  const unsigned long STATE_LOADED_FINGERPRINTING_CONTENT   = 0x00000400;
-  const unsigned long STATE_BLOCKED_CRYPTOMINING_CONTENT    = 0x00000800;
-  const unsigned long STATE_LOADED_CRYPTOMINING_CONTENT     = 0x00200000;
-  const unsigned long STATE_BLOCKED_UNSAFE_CONTENT          = 0x00004000;
-  const unsigned long STATE_COOKIES_LOADED                  = 0x00008000;
-  const unsigned long STATE_COOKIES_LOADED_TRACKER          = 0x00040000;
-  const unsigned long STATE_COOKIES_LOADED_SOCIALTRACKER    = 0x00080000;
-  const unsigned long STATE_COOKIES_BLOCKED_BY_PERMISSION   = 0x10000000;
-  const unsigned long STATE_COOKIES_BLOCKED_TRACKER         = 0x20000000;
-  const unsigned long STATE_COOKIES_BLOCKED_SOCIALTRACKER   = 0x01000000;
-  const unsigned long STATE_COOKIES_BLOCKED_ALL             = 0x40000000;
-  const unsigned long STATE_COOKIES_PARTITIONED_FOREIGN     = 0x80000000;
-  const unsigned long STATE_COOKIES_BLOCKED_FOREIGN         = 0x00000080;
-  const unsigned long STATE_BLOCKED_SOCIALTRACKING_CONTENT  = 0x00010000;
-  const unsigned long STATE_LOADED_SOCIALTRACKING_CONTENT   = 0x00020000;
-  const unsigned long STATE_REPLACED_TRACKING_CONTENT       = 0x00000010;
-  const unsigned long STATE_ALLOWED_TRACKING_CONTENT        = 0x00000020;
+  const unsigned long STATE_BLOCKED_TRACKING_CONTENT             = 0x00001000;
+  const unsigned long STATE_LOADED_LEVEL_1_TRACKING_CONTENT      = 0x00002000;
+  const unsigned long STATE_LOADED_LEVEL_2_TRACKING_CONTENT      = 0x00100000;
+  const unsigned long STATE_BLOCKED_FINGERPRINTING_CONTENT       = 0x00000040;
+  const unsigned long STATE_LOADED_FINGERPRINTING_CONTENT        = 0x00000400;
+  const unsigned long STATE_BLOCKED_CRYPTOMINING_CONTENT         = 0x00000800;
+  const unsigned long STATE_LOADED_CRYPTOMINING_CONTENT          = 0x00200000;
+  const unsigned long STATE_BLOCKED_UNSAFE_CONTENT               = 0x00004000;
+  const unsigned long STATE_COOKIES_LOADED                       = 0x00008000;
+  const unsigned long STATE_COOKIES_LOADED_TRACKER               = 0x00040000;
+  const unsigned long STATE_COOKIES_LOADED_SOCIALTRACKER         = 0x00080000;
+  const unsigned long STATE_COOKIES_BLOCKED_BY_PERMISSION        = 0x10000000;
+  const unsigned long STATE_COOKIES_BLOCKED_TRACKER              = 0x20000000;
+  const unsigned long STATE_COOKIES_BLOCKED_SOCIALTRACKER        = 0x01000000;
+  const unsigned long STATE_COOKIES_BLOCKED_ALL                  = 0x40000000;
+  const unsigned long STATE_COOKIES_PARTITIONED_FOREIGN          = 0x80000000;
+  const unsigned long STATE_COOKIES_BLOCKED_FOREIGN              = 0x00000080;
+  const unsigned long STATE_BLOCKED_SOCIALTRACKING_CONTENT       = 0x00010000;
+  const unsigned long STATE_LOADED_SOCIALTRACKING_CONTENT        = 0x00020000;
+  const unsigned long STATE_REPLACED_TRACKING_CONTENT            = 0x00000010;
+  const unsigned long STATE_ALLOWED_TRACKING_CONTENT             = 0x00000020;
+  const unsigned long STATE_BLOCKED_EMAILTRACKING_CONTENT        = 0x00400000;
+  const unsigned long STATE_LOADED_EMAILTRACKING_LEVEL_1_CONTENT = 0x00800000;
+  const unsigned long STATE_LOADED_EMAILTRACKING_LEVEL_2_CONTENT = 0x00000100;
 
   /**
    * Flag for HTTPS-Only Mode upgrades
@@ -450,11 +462,16 @@ interface nsIWebProgressListener : nsISupports
    *   This flag is on for same-document location changes where only the URI's
    *   reference fragment has changed. This flag implies
    *   LOCATION_CHANGE_SAME_DOCUMENT.
+   *
+   * LOCATION_CHANGE_SESSION_STORE
+   *   This flag is on for location changes that are the result of the session
+   *   store updating the URI of aWebProgress without actually navigating.
    */
   const unsigned long LOCATION_CHANGE_SAME_DOCUMENT   = 0x00000001;
   const unsigned long LOCATION_CHANGE_ERROR_PAGE      = 0x00000002;
   const unsigned long LOCATION_CHANGE_RELOAD          = 0x00000004;
   const unsigned long LOCATION_CHANGE_HASHCHANGE      = 0x00000008;
+  const unsigned long LOCATION_CHANGE_SESSION_STORE   = 0x00000010;
 
   /**
    * Called when the location of the window being watched changes.  This is not

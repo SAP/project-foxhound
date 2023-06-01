@@ -15,17 +15,21 @@
  * for the U2F and WebAuthn APIs.
  */
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class U2FSoftTokenManager final : public U2FTokenTransport {
  public:
   explicit U2FSoftTokenManager(uint32_t aCounter);
 
-  RefPtr<U2FRegisterPromise> Register(const WebAuthnMakeCredentialInfo& aInfo,
-                                      bool aForceNoneAttestation) override;
+  RefPtr<U2FRegisterPromise> Register(
+      const WebAuthnMakeCredentialInfo& aInfo, bool aForceNoneAttestation,
+      void _ctap2_status_callback(
+          rust_ctap2_status_update_res* status)) override;
 
-  RefPtr<U2FSignPromise> Sign(const WebAuthnGetAssertionInfo& aInfo) override;
+  RefPtr<U2FSignPromise> Sign(
+      const WebAuthnGetAssertionInfo& aInfo,
+      void _ctap2_status_callback(
+          rust_ctap2_status_update_res* status)) override;
 
   void Cancel() override;
 
@@ -51,7 +55,6 @@ class U2FSoftTokenManager final : public U2FTokenTransport {
   uint32_t mCounter;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_U2FSoftTokenManager_h

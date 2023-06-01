@@ -28,17 +28,13 @@ pub unsafe extern "C" fn fog_rate_test_get_value(
     num: &mut i32,
     den: &mut i32,
 ) {
-    let (n, d) = with_metric!(RATE_MAP, id, metric, test_get!(metric, ping_name));
-    *num = n;
-    *den = d;
+    let rate = with_metric!(RATE_MAP, id, metric, test_get!(metric, ping_name));
+    *num = rate.numerator;
+    *den = rate.denominator;
 }
 
 #[no_mangle]
-pub extern "C" fn fog_rate_test_get_error(
-    id: u32,
-    ping_name: &nsACString,
-    error_str: &mut nsACString,
-) -> bool {
-    let err = with_metric!(RATE_MAP, id, metric, test_get_errors!(metric, ping_name));
+pub extern "C" fn fog_rate_test_get_error(id: u32, error_str: &mut nsACString) -> bool {
+    let err = with_metric!(RATE_MAP, id, metric, test_get_errors!(metric));
     err.map(|err_str| error_str.assign(&err_str)).is_some()
 }

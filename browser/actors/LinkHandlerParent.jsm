@@ -6,13 +6,11 @@
 
 const EXPORTED_SYMBOLS = ["LinkHandlerParent"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const lazy = {};
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesUIUtils",
-  "resource:///modules/PlacesUIUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
+});
 
 let gTestListeners = new Set();
 
@@ -91,11 +89,7 @@ class LinkHandlerParent extends JSWindowActorParent {
         }
 
         if (win.BrowserSearch) {
-          win.BrowserSearch.addEngine(
-            browser,
-            aMsg.data.engine,
-            Services.io.newURI(aMsg.data.url)
-          );
+          win.BrowserSearch.addEngine(browser, aMsg.data.engine);
         }
         break;
     }
@@ -130,7 +124,7 @@ class LinkHandlerParent extends JSWindowActorParent {
     try {
       iconURI = Services.io.newURI(iconURL);
     } catch (ex) {
-      Cu.reportError(ex);
+      console.error(ex);
       return;
     }
     if (iconURI.scheme != "data") {
@@ -146,7 +140,7 @@ class LinkHandlerParent extends JSWindowActorParent {
     }
     if (canStoreIcon) {
       try {
-        PlacesUIUtils.loadFavicon(
+        lazy.PlacesUIUtils.loadFavicon(
           browser,
           Services.scriptSecurityManager.getSystemPrincipal(),
           Services.io.newURI(pageURL),
@@ -155,7 +149,7 @@ class LinkHandlerParent extends JSWindowActorParent {
           iconURI
         );
       } catch (ex) {
-        Cu.reportError(ex);
+        console.error(ex);
       }
     }
 

@@ -24,8 +24,11 @@
 #include "nsServiceManagerUtils.h"
 #include "nsString.h"
 #include "nsThreadUtils.h"
+#include "snappy/snappy.h"
 
 namespace mozilla::dom::cache {
+
+static_assert(SNAPPY_VERSION == 0x010109);
 
 using mozilla::dom::quota::Client;
 using mozilla::dom::quota::CloneFileAndAppend;
@@ -66,8 +69,7 @@ nsresult DirectoryPaddingWrite(nsIFile& aBaseDir,
 const auto kMorgueDirectory = u"morgue"_ns;
 
 bool IsFileNotFoundError(const nsresult aRv) {
-  return aRv == NS_ERROR_FILE_NOT_FOUND ||
-         aRv == NS_ERROR_FILE_TARGET_DOES_NOT_EXIST;
+  return aRv == NS_ERROR_FILE_NOT_FOUND;
 }
 
 Result<NotNull<nsCOMPtr<nsIFile>>, nsresult> BodyGetCacheDir(nsIFile& aBaseDir,
@@ -153,13 +155,12 @@ Result<std::pair<nsID, nsCOMPtr<nsISupports>>, nsresult> BodyStartWriteStream(
   QM_TRY_INSPECT(const auto& tmpFile,
                  BodyIdToFile(aBaseDir, id, BODY_FILE_TMP));
 
-  QM_TRY_INSPECT(
-      const auto& fileStream,
+  QM_TRY_UNWRAP(
+      nsCOMPtr<nsIOutputStream> fileStream,
       CreateFileOutputStream(PERSISTENCE_TYPE_DEFAULT, aDirectoryMetadata,
                              Client::DOMCACHE, tmpFile.get()));
 
-  const auto compressed =
-      MakeRefPtr<SnappyCompressOutputStream>(fileStream.get());
+  const auto compressed = MakeRefPtr<SnappyCompressOutputStream>(fileStream);
 
   const nsCOMPtr<nsIEventTarget> target =
       do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID);
@@ -200,18 +201,15 @@ nsresult BodyFinalizeWrite(nsIFile& aBaseDir, const nsID& aId) {
   return NS_OK;
 }
 
-Result<NotNull<nsCOMPtr<nsIInputStream>>, nsresult> BodyOpen(
+Result<MovingNotNull<nsCOMPtr<nsIInputStream>>, nsresult> BodyOpen(
     const CacheDirectoryMetadata& aDirectoryMetadata, nsIFile& aBaseDir,
     const nsID& aId) {
   QM_TRY_INSPECT(const auto& finalFile,
                  BodyIdToFile(aBaseDir, aId, BODY_FILE_FINAL));
 
-  QM_TRY_RETURN(
-      CreateFileInputStream(PERSISTENCE_TYPE_DEFAULT, aDirectoryMetadata,
-                            Client::DOMCACHE, finalFile.get())
-          .map([](NotNull<RefPtr<FileInputStream>>&& stream) {
-            return WrapNotNullUnchecked(nsCOMPtr<nsIInputStream>{stream.get()});
-          }));
+  QM_TRY_RETURN(CreateFileInputStream(PERSISTENCE_TYPE_DEFAULT,
+                                      aDirectoryMetadata, Client::DOMCACHE,
+                                      finalFile.get()));
 }
 
 nsresult BodyMaybeUpdatePaddingSize(

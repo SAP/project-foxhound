@@ -46,11 +46,12 @@ class JumpListBuilder : public nsIJumpListBuilder, public nsIObserver {
   static Atomic<bool> sBuildingList;
 
  private:
-  mscom::AgileReference mJumpListMgr;
-  uint32_t mMaxItems;
+  mscom::AgileReference mJumpListMgr MOZ_GUARDED_BY(mMonitor);
+  uint32_t mMaxItems MOZ_GUARDED_BY(mMonitor);
   bool mHasCommit;
   nsCOMPtr<nsIThread> mIOThread;
   ReentrantMonitor mMonitor;
+  nsString mAppUserModelId;
 
   bool IsSeparator(nsCOMPtr<nsIJumpListItem>& item);
   void RemoveIconCacheAndGetJumplistShortcutURIs(IObjectArray* aObjArray,

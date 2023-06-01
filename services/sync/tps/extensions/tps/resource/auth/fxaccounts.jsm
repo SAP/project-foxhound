@@ -6,13 +6,16 @@
 
 var EXPORTED_SYMBOLS = ["Authentication"];
 
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
-const { clearTimeout, setTimeout } = ChromeUtils.import(
-  "resource://gre/modules/Timer.jsm"
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
 );
-const { fxAccounts } = ChromeUtils.import(
+const { clearTimeout, setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
+const { getFxAccountsSingleton } = ChromeUtils.import(
   "resource://gre/modules/FxAccounts.jsm"
 );
+const fxAccounts = getFxAccountsSingleton();
 const { FxAccountsClient } = ChromeUtils.import(
   "resource://gre/modules/FxAccountsClient.jsm"
 );
@@ -20,16 +23,6 @@ const { FxAccountsConfig } = ChromeUtils.import(
   "resource://gre/modules/FxAccountsConfig.jsm"
 );
 const { Logger } = ChromeUtils.import("resource://tps/logger.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
-
-XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
 
 /**
  * Helper object for Firefox Accounts authentication

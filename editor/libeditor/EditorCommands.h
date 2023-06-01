@@ -6,6 +6,7 @@
 #ifndef mozilla_EditorCommands_h
 #define mozilla_EditorCommands_h
 
+#include "mozilla/EditorForwards.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/StaticPtr.h"
@@ -25,9 +26,6 @@ class nsITransferable;
 class nsStaticAtom;
 
 namespace mozilla {
-
-class EditorBase;
-class HTMLEditor;
 
 /**
  * EditorCommandParamType tells you that EditorCommand subclasses refer
@@ -305,19 +303,6 @@ class EditorCommand : public nsIControllerCommand {
       case Command::FormatIncreaseZIndex:
         return EditorCommandParamType::None;
 
-      // nsClipboardGetContentsCommand
-      // XXX nsClipboardGetContentsCommand is implemented by
-      //     nsGlobalWindowCommands.cpp but cmd_getContents command is not
-      //     used internally, but it's accessible from JS with
-      //     queryCommandValue(), etc.  So, this class is out of scope of
-      //     editor module for now but we should return None for making
-      //     Document code simpler.  We should reimplement the command class
-      //     in editor later for making Document's related methods possible
-      //     to access directly.  Anyway, it does not support `DoCommand()`
-      //     nor `DoCommandParams()` so that let's return `None` here.
-      case Command::GetHTML:
-        return EditorCommandParamType::None;
-
       default:
         MOZ_ASSERT_UNREACHABLE("Unknown Command");
         return EditorCommandParamType::None;
@@ -577,7 +562,7 @@ class StateUpdatingCommandBase : public EditorCommand {
 
   // get the current state (on or off) for this style or block format
   MOZ_CAN_RUN_SCRIPT virtual nsresult GetCurrentState(
-      nsAtom* aTagName, HTMLEditor* aHTMLEditor,
+      nsStaticAtom& aTagName, HTMLEditor& aHTMLEditor,
       nsCommandParams& aParams) const = 0;
 
   // add/remove the style
@@ -650,7 +635,7 @@ class StyleUpdatingCommand final : public StateUpdatingCommandBase {
 
   // get the current state (on or off) for this style or block format
   MOZ_CAN_RUN_SCRIPT nsresult
-  GetCurrentState(nsAtom* aTagName, HTMLEditor* aHTMLEditor,
+  GetCurrentState(nsStaticAtom& aTagName, HTMLEditor& aHTMLEditor,
                   nsCommandParams& aParams) const final;
 
   // add/remove the style
@@ -696,7 +681,7 @@ class ListCommand final : public StateUpdatingCommandBase {
 
   // get the current state (on or off) for this style or block format
   MOZ_CAN_RUN_SCRIPT nsresult
-  GetCurrentState(nsAtom* aTagName, HTMLEditor* aHTMLEditor,
+  GetCurrentState(nsStaticAtom& aTagName, HTMLEditor& aHTMLEditor,
                   nsCommandParams& aParams) const final;
 
   // add/remove the style
@@ -715,7 +700,7 @@ class ListItemCommand final : public StateUpdatingCommandBase {
 
   // get the current state (on or off) for this style or block format
   MOZ_CAN_RUN_SCRIPT nsresult
-  GetCurrentState(nsAtom* aTagName, HTMLEditor* aHTMLEditor,
+  GetCurrentState(nsStaticAtom& aTagName, HTMLEditor& aHTMLEditor,
                   nsCommandParams& aParams) const final;
 
   // add/remove the style
@@ -857,7 +842,7 @@ class AbsolutePositioningCommand final : public StateUpdatingCommandBase {
   virtual ~AbsolutePositioningCommand() = default;
 
   MOZ_CAN_RUN_SCRIPT nsresult
-  GetCurrentState(nsAtom* aTagName, HTMLEditor* aHTMLEditor,
+  GetCurrentState(nsStaticAtom& aTagName, HTMLEditor& aHTMLEditor,
                   nsCommandParams& aParams) const final;
   MOZ_CAN_RUN_SCRIPT nsresult ToggleState(nsStaticAtom& aTagName,
                                           HTMLEditor& aHTMLEditor,

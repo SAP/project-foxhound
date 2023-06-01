@@ -19,6 +19,12 @@ panel {
   --panel-border-color: transparent;
   --panel-border-radius: 0;
   --panel-width: initial;
+
+  /* This var is used on panelUI-shared.css to calculate panel shadow margins,
+   * but as shadows on macOS are being taken care of by the OS, there's
+   * no need for CSS to do calculations, so just set it to 0px here. */
+  --panel-shadow-margin: 0px;
+  --panel-shadow: none;
 }
 
 menupopup > menu > menupopup {
@@ -33,19 +39,9 @@ panel[titlebar] {
   appearance: none; /* to disable rounded corners */
 }
 
-panel[type="arrow"] {
+:is(panel, menupopup)[type="arrow"] {
   appearance: none;
   background: transparent;
-}
-
-panel[type="arrow"][side="top"],
-panel[type="arrow"][side="bottom"] {
-  margin-inline: -16px;
-}
-
-panel[type="arrow"][side="left"],
-panel[type="arrow"][side="right"] {
-  margin-block: -16px;
 }
 
 :is(panel, menupopup)::part(content) {
@@ -55,17 +51,19 @@ panel[type="arrow"][side="right"] {
   background: var(--panel-background);
   color: var(--panel-color);
   border-radius: var(--panel-border-radius);
-  box-shadow: 0 0 0 1px var(--panel-border-color);
+  box-shadow: var(--panel-shadow);
   padding: var(--panel-padding);
   width: var(--panel-width);
-  border: none;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--panel-border-color);
 }
 
 :is(panel, menupopup)[orient=vertical]::part(content) {
   -moz-box-orient: vertical;
 }
 
-panel[type="arrow"]::part(content) {
+:is(panel, menupopup)[type="arrow"]::part(content) {
   margin: 1px;
 }
 

@@ -54,8 +54,7 @@
 
 class nsINode;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 class Document;
 class Feature;
 template <typename T>
@@ -68,7 +67,7 @@ class FeaturePolicy final : public nsISupports, public nsWrapperCache {
 
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(FeaturePolicy)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(FeaturePolicy)
 
   explicit FeaturePolicy(nsINode* aNode);
 
@@ -200,7 +199,6 @@ class FeaturePolicy final : public nsISupports, public nsWrapperCache {
   nsCOMPtr<nsIPrincipal> mSrcOrigin;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_FeaturePolicy_h

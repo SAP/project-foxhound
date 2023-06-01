@@ -48,8 +48,8 @@ function toolboxRegister(aToolbox) {
     // See ok(tab, ...) assert below and Bug 1596345.
     label: "Test Tool",
     inMenu: true,
-    isTargetSupported: () => true,
-    build: function() {
+    isToolSupported: () => true,
+    build() {
       info("per-toolbox tool has been built.");
       resolveToolInstanceBuild();
 

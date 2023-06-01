@@ -322,7 +322,7 @@ describe("ToolbarPanelHub", () => {
     });
     it("should not do anything if the window is closed", () => {
       instance._hideAppmenuButton(fakeWindow, true);
-      assert.notCalled(PanelMultiView.getViewNode);
+      assert.notCalled(global.PanelMultiView.getViewNode);
     });
     it("should not throw if the element does not exist", () => {
       let fn = instance._hideAppmenuButton.bind(null, {
@@ -868,14 +868,14 @@ describe("ToolbarPanelHub", () => {
         .throws();
       const onboardingMsgs = await OnboardingMessageProvider.getUntranslatedMessages();
       const msg = onboardingMsgs.find(m => m.template === "protections_panel");
-      sandbox.spy(global.Cu, "reportError");
+      sandbox.spy(global.console, "error");
 
       await fakeInsert();
 
       eventListeners.mouseup();
 
       assert.calledOnce(stub);
-      assert.calledOnce(global.Cu.reportError);
+      assert.calledOnce(global.console.error);
       assert.calledOnce(global.SpecialMessageActions.handleAction);
       assert.calledWithExactly(
         global.SpecialMessageActions.handleAction,

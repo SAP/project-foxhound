@@ -3,7 +3,9 @@
 
 "use strict";
 
-const { DevToolsServer } = require("devtools/server/devtools-server");
+const {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
 
 // Bug 1277805: Too slow for debug runs
 requestLongerTimeout(2);
@@ -84,13 +86,6 @@ function test() {
       for (const actor of pool.__poolMap.keys()) {
         // Ignore the root front as it is only release on client close
         if (actor == "root") {
-          continue;
-        }
-        // Bug 1056342: Profiler fails today because of framerate actor, but
-        // this appears more complex to rework, so leave it for that bug to
-        // resolve.
-        if (actor.includes("framerateActor")) {
-          todo(false, "Front for " + actor + " still held in pool!");
           continue;
         }
         ok(false, "Front for " + actor + " still held in pool!");

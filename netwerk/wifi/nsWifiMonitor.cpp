@@ -19,6 +19,10 @@
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Services.h"
 
+#ifdef XP_MACOSX
+#  include "nsCocoaFeatures.h"
+#endif
+
 using namespace mozilla;
 
 LazyLogModule gWifiMonitorLog("WifiMonitor");
@@ -38,6 +42,7 @@ nsWifiMonitor::nsWifiMonitor()
 NS_IMETHODIMP
 nsWifiMonitor::Observe(nsISupports* subject, const char* topic,
                        const char16_t* data) {
+  MOZ_ASSERT(NS_IsMainThread());
   if (!strcmp(topic, "xpcom-shutdown")) {
     LOG(("Shutting down\n"));
 
@@ -49,12 +54,27 @@ nsWifiMonitor::Observe(nsISupports* subject, const char* topic,
   return NS_OK;
 }
 
+uint32_t nsWifiMonitor::GetMonitorThreadStackSize() {
+#ifdef XP_MACOSX
+  // If this ASSERT fails, we've increased our default stack size and
+  // may no longer need to special-case the stack size on macOS.
+  MOZ_ASSERT(kMacOS13MonitorStackSize > nsIThreadManager::DEFAULT_STACK_SIZE);
+  return nsCocoaFeatures::OnVenturaOrLater()
+             ? kMacOS13MonitorStackSize
+             : nsIThreadManager::DEFAULT_STACK_SIZE;
+#else
+  return nsIThreadManager::DEFAULT_STACK_SIZE;
+#endif
+}
+
 NS_IMETHODIMP nsWifiMonitor::StartWatching(nsIWifiListener* aListener) {
   LOG(("nsWifiMonitor::StartWatching %p thread %p listener %p\n", this,
        mThread.get(), aListener));
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (!aListener) return NS_ERROR_NULL_POINTER;
+  if (!aListener) {
+    return NS_ERROR_NULL_POINTER;
+  }
   if (!mKeepGoing) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -72,8 +92,11 @@ NS_IMETHODIMP nsWifiMonitor::StartWatching(nsIWifiListener* aListener) {
   }
 
   if (!mThread) {
-    rv = NS_NewNamedThread("Wifi Monitor", getter_AddRefs(mThread), this);
-    if (NS_FAILED(rv)) return rv;
+    rv = NS_NewNamedThread("Wifi Monitor", getter_AddRefs(mThread), this,
+                           {.stackSize = GetMonitorThreadStackSize()});
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
   }
 
   mListeners.AppendElement(
@@ -90,7 +113,9 @@ NS_IMETHODIMP nsWifiMonitor::StopWatching(nsIWifiListener* aListener) {
        mThread.get(), aListener));
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (!aListener) return NS_ERROR_NULL_POINTER;
+  if (!aListener) {
+    return NS_ERROR_NULL_POINTER;
+  }
 
   ReentrantMonitorAutoEnter mon(mReentrantMonitor);
 
@@ -154,7 +179,7 @@ NS_IMETHODIMP nsWifiMonitor::Run() {
   }
 
   if (doError) {
-    nsCOMPtr<nsIEventTarget> target = GetMainThreadEventTarget();
+    nsCOMPtr<nsIEventTarget> target = GetMainThreadSerialEventTarget();
     if (!target) return NS_ERROR_UNEXPECTED;
 
     nsCOMPtr<nsIRunnable> runnable(

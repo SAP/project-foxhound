@@ -12,7 +12,6 @@
 #include "jit/x86-shared/MacroAssembler-x86-shared.h"
 #include "js/HeapAPI.h"
 #include "wasm/WasmBuiltins.h"
-#include "wasm/WasmTlsData.h"
 
 namespace js {
 namespace jit {
@@ -1022,6 +1021,10 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
                      FloatRegister dest);
   void vmulpdSimd128(const SimdConstant& v, FloatRegister lhs,
                      FloatRegister dest);
+  void vandpdSimd128(const SimdConstant& v, FloatRegister lhs,
+                     FloatRegister dest);
+  void vminpdSimd128(const SimdConstant& v, FloatRegister lhs,
+                     FloatRegister dest);
   void vpacksswbSimd128(const SimdConstant& v, FloatRegister lhs,
                         FloatRegister dest);
   void vpackuswbSimd128(const SimdConstant& v, FloatRegister lhs,
@@ -1029,6 +1032,10 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
   void vpackssdwSimd128(const SimdConstant& v, FloatRegister lhs,
                         FloatRegister dest);
   void vpackusdwSimd128(const SimdConstant& v, FloatRegister lhs,
+                        FloatRegister dest);
+  void vpunpckldqSimd128(const SimdConstant& v, FloatRegister lhs,
+                         FloatRegister dest);
+  void vunpcklpsSimd128(const SimdConstant& v, FloatRegister lhs,
                         FloatRegister dest);
   void vpshufbSimd128(const SimdConstant& v, FloatRegister lhs,
                       FloatRegister dest);
@@ -1055,6 +1062,8 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
                        FloatRegister dest);
   void vcmplepsSimd128(const SimdConstant& v, FloatRegister lhs,
                        FloatRegister dest);
+  void vcmpgepsSimd128(const SimdConstant& v, FloatRegister lhs,
+                       FloatRegister dest);
   void vcmpeqpdSimd128(const SimdConstant& v, FloatRegister lhs,
                        FloatRegister dest);
   void vcmpneqpdSimd128(const SimdConstant& v, FloatRegister lhs,
@@ -1062,6 +1071,10 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
   void vcmpltpdSimd128(const SimdConstant& v, FloatRegister lhs,
                        FloatRegister dest);
   void vcmplepdSimd128(const SimdConstant& v, FloatRegister lhs,
+                       FloatRegister dest);
+  void vpmaddubswSimd128(const SimdConstant& v, FloatRegister lhs,
+                         FloatRegister dest);
+  void vpmuludqSimd128(const SimdConstant& v, FloatRegister lhs,
                        FloatRegister dest);
 
   Condition testInt32Truthy(bool truthy, const ValueOperand& operand) {
@@ -1092,10 +1105,6 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
     }
   }
 
-  void loadInstructionPointerAfterCall(Register dest) {
-    movl(Operand(StackPointer, 0x0), dest);
-  }
-
   // Note: this function clobbers the source register.
   inline void convertUInt32ToDouble(Register src, FloatRegister dest);
 
@@ -1109,13 +1118,10 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
   inline void ensureDouble(const ValueOperand& source, FloatRegister dest,
                            Label* failure);
 
-  void loadWasmPinnedRegsFromTls() {
-    // x86 doesn't have any pinned registers.
-  }
-
  public:
   // Used from within an Exit frame to handle a pending exception.
-  void handleFailureWithHandlerTail(Label* profilerExitTail);
+  void handleFailureWithHandlerTail(Label* profilerExitTail,
+                                    Label* bailoutTail);
 
   // Instrumentation for entering and leaving the profiler.
   void profilerEnterFrame(Register framePtr, Register scratch);

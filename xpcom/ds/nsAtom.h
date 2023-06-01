@@ -17,7 +17,7 @@
 
 namespace mozilla {
 struct AtomsSizes;
-}
+}  // namespace mozilla
 
 class nsStaticAtom;
 class nsDynamicAtom;

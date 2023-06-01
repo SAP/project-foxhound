@@ -4,6 +4,7 @@
 "use strict";
 
 async function changeRangeTo(helper, destination) {
+  info(`changeRangeTo(${destination})`);
   let rangeSelect = helper.get("range-picker");
   let options = getRangeOptions(helper);
   let numberMove =
@@ -15,10 +16,7 @@ async function changeRangeTo(helper, destination) {
 
   let input = BrowserTestUtils.waitForEvent(rangeSelect, "input");
 
-  let popupOpen = BrowserTestUtils.waitForEvent(
-    document.getElementById("ContentSelectDropdown"),
-    "popupshown"
-  );
+  let popupOpen = BrowserTestUtils.waitForSelectPopupShown(window);
 
   rangeSelect.focus();
   rangeSelect.scrollIntoView({ block: "center" });
@@ -233,6 +231,22 @@ add_task(async function testPageRangeSelect() {
     await changeRangeTo(helper, "all");
     let pageRanges = pageRangeInput.formatPageRange();
     ok(!pageRanges.length, "Page range for all should be []");
+
+    await changeRangeTo(helper, "current");
+    pageRanges = pageRangeInput.formatPageRange();
+    ok(
+      pageRanges.length == 2 &&
+        [1, 1].every((page, index) => page === pageRanges[index]),
+      "The first page should be the current page"
+    );
+
+    pageRangeInput._validateRangeInput("9", 50);
+    pageRanges = pageRangeInput.formatPageRange();
+    ok(
+      pageRanges.length == 2 &&
+        [9, 9].every((page, index) => page === pageRanges[index]),
+      `Expected page range for "${pageRanges}" matches [9, 9]"`
+    );
 
     await changeRangeTo(helper, "odd");
     pageRanges = pageRangeInput.formatPageRange();

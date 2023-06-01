@@ -73,7 +73,7 @@ function startServer(cert) {
 
   let listener = {
     onSocketAccepted(socket, transport) {
-      let connectionInfo = transport.securityInfo.QueryInterface(
+      let connectionInfo = transport.securityCallbacks.getInterface(
         Ci.nsITLSServerConnectionInfo
       );
       connectionInfo.setSecurityObserver(listener);
@@ -127,35 +127,18 @@ add_task(async function() {
     set: [["network.dns.disableIPv6", true]],
   });
 
-  let certService = Cc["@mozilla.org/security/local-cert-service;1"].getService(
-    Ci.nsILocalCertService
-  );
   let certOverrideService = Cc[
     "@mozilla.org/security/certoverride;1"
   ].getService(Ci.nsICertOverrideService);
 
-  let cert = await new Promise((resolve, reject) => {
-    certService.getOrCreateCert("http-over-https-proxy", {
-      handleCert(c, rv) {
-        if (!Components.isSuccessCode(rv)) {
-          reject(rv);
-          return;
-        }
-        resolve(c);
-      },
-    });
-  });
+  let cert = getTestServerCertificate();
   // Start the proxy and configure Firefox to trust its certificate.
   let server = startServer(cert);
-  let overrideBits =
-    Ci.nsICertOverrideService.ERROR_UNTRUSTED |
-    Ci.nsICertOverrideService.ERROR_MISMATCH;
   certOverrideService.rememberValidityOverride(
     "localhost",
     server.port,
     {},
     cert,
-    overrideBits,
     true
   );
   // Configure Firefox to use the proxy.
@@ -172,8 +155,8 @@ add_task(async function() {
     "network.proxy.type",
     Ci.nsIProtocolProxyService.PROXYCONFIG_SYSTEM
   );
-  let { MockRegistrar } = ChromeUtils.import(
-    "resource://testing-common/MockRegistrar.jsm"
+  let { MockRegistrar } = ChromeUtils.importESModule(
+    "resource://testing-common/MockRegistrar.sys.mjs"
   );
   let mockProxy = MockRegistrar.register(
     "@mozilla.org/system-proxy-settings;1",
@@ -191,10 +174,12 @@ add_task(async function() {
   // the "proxy" we just started. Even though our connection to the proxy is
   // secure, in a real situation the connection from the proxy to
   // http://example.com won't be secure, so we treat it as not secure.
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   await BrowserTestUtils.withNewTab("http://example.com/", async browser => {
     let identityMode = window.document.getElementById("identity-box").className;
     is(identityMode, "notSecure", "identity should be 'not secure'");
 
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     await testPageInfoNotEncrypted("http://example.com");
   });
 });

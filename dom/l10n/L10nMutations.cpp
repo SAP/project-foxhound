@@ -7,6 +7,7 @@
 #include "L10nMutations.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "nsRefreshDriver.h"
+#include "DOMLocalization.h"
 #include "mozilla/intl/Localization.h"
 
 using namespace mozilla;
@@ -197,28 +198,24 @@ void L10nMutations::FlushPendingTranslations() {
     return;
   }
 
-  ErrorResult rv;
-
-  Sequence<OwningNonNull<Element>> elements;
-
+  nsTArray<OwningNonNull<Element>> elements;
   for (auto& elem : mPendingElements) {
-    if (!elem->HasAttr(kNameSpaceID_None, nsGkAtoms::datal10nid)) {
-      continue;
-    }
-
-    if (!elements.AppendElement(*elem, fallible)) {
-      mozalloc_handle_oom(0);
+    if (elem->HasAttr(nsGkAtoms::datal10nid)) {
+      elements.AppendElement(*elem);
     }
   }
 
   mPendingElementsHash.Clear();
   mPendingElements.Clear();
 
-  RefPtr<Promise> promise = mDOMLocalization->TranslateElements(elements, rv);
-
-  RefPtr<PromiseNativeHandler> l10nMutationFinalizationHandler =
-      new L10nMutationFinalizationHandler(mDOMLocalization->GetParentObject());
-  promise->AppendNativeHandler(l10nMutationFinalizationHandler);
+  RefPtr<Promise> promise =
+      mDOMLocalization->TranslateElements(elements, IgnoreErrors());
+  if (promise) {
+    RefPtr<PromiseNativeHandler> l10nMutationFinalizationHandler =
+        new L10nMutationFinalizationHandler(
+            mDOMLocalization->GetParentObject());
+    promise->AppendNativeHandler(l10nMutationFinalizationHandler);
+  }
 }
 
 void L10nMutations::Disconnect() {

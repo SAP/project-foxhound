@@ -6,6 +6,8 @@ use std::str;
 // opening a GitHub issue if your build environment requires some way to enable
 // these cfgs other than by executing our build script.
 fn main() {
+    println!("cargo:rerun-if-changed=build.rs");
+
     let minor = match rustc_minor_version() {
         Some(minor) => minor,
         None => return,
@@ -13,14 +15,14 @@ fn main() {
 
     // Underscore const names stabilized in Rust 1.37:
     // https://blog.rust-lang.org/2019/08/15/Rust-1.37.0.html#using-unnamed-const-items-for-macros
-    if minor >= 37 {
-        println!("cargo:rustc-cfg=underscore_consts");
+    if minor < 37 {
+        println!("cargo:rustc-cfg=no_underscore_consts");
     }
 
     // The ptr::addr_of! macro stabilized in Rust 1.51:
     // https://blog.rust-lang.org/2021/03/25/Rust-1.51.0.html#stabilized-apis
-    if minor >= 51 {
-        println!("cargo:rustc-cfg=ptr_addr_of");
+    if minor < 51 {
+        println!("cargo:rustc-cfg=no_ptr_addr_of");
     }
 }
 

@@ -11,7 +11,6 @@
 #include "nsIBrowserChild.h"
 #include "nsIDialogParamBlock.h"
 #include "nsIDocShell.h"
-#include "nsIEmbeddingSiteWindow.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIPrintSettings.h"
 #include "nsIWebBrowserChrome.h"
@@ -62,18 +61,19 @@ nsPrintDialogServiceWin::Init() {
 }
 
 NS_IMETHODIMP
-nsPrintDialogServiceWin::Show(nsPIDOMWindowOuter* aParent,
-                              nsIPrintSettings* aSettings) {
+nsPrintDialogServiceWin::ShowPrintDialog(mozIDOMWindowProxy* aParent,
+                                         bool aHaveSelection,
+                                         nsIPrintSettings* aSettings) {
   NS_ENSURE_ARG(aParent);
   HWND hWnd = GetHWNDForDOMWindow(aParent);
   NS_ASSERTION(hWnd, "Couldn't get native window for PRint Dialog!");
 
-  return NativeShowPrintDialog(hWnd, aSettings);
+  return NativeShowPrintDialog(hWnd, aHaveSelection, aSettings);
 }
 
 NS_IMETHODIMP
-nsPrintDialogServiceWin::ShowPageSetup(nsPIDOMWindowOuter* aParent,
-                                       nsIPrintSettings* aNSSettings) {
+nsPrintDialogServiceWin::ShowPageSetupDialog(mozIDOMWindowProxy* aParent,
+                                             nsIPrintSettings* aNSSettings) {
   NS_ENSURE_ARG(aParent);
   NS_ENSURE_ARG(aNSSettings);
 
@@ -92,9 +92,9 @@ nsPrintDialogServiceWin::ShowPageSetup(nsPIDOMWindowOuter* aParent,
     return status == 0 ? NS_ERROR_ABORT : NS_OK;
   }
 
-  // We don't call nsPrintSettingsService::SavePrintSettingsToPrefs here since
-  // it's called for us in printPageSetup.js.  Maybe we should move that call
-  // here for consistency with the other platforms though?
+  // We don't call nsPrintSettingsService::MaybeSavePrintSettingsToPrefs here
+  // since it's called for us in printPageSetup.js.  Maybe we should move that
+  // call here for consistency with the other platforms though?
 
   return rv;
 }
@@ -154,10 +154,10 @@ HWND nsPrintDialogServiceWin::GetHWNDForDOMWindow(mozIDOMWindowProxy* aWindow) {
   }
 
   if (chrome) {
-    nsCOMPtr<nsIEmbeddingSiteWindow> site(do_QueryInterface(chrome));
+    nsCOMPtr<nsIBaseWindow> site(do_QueryInterface(chrome));
     if (site) {
       HWND w;
-      site->GetSiteWindow(reinterpret_cast<void**>(&w));
+      site->GetParentNativeWindow(reinterpret_cast<void**>(&w));
       return w;
     }
   }

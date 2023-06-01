@@ -1,7 +1,3 @@
-const { ContentTaskUtils } = ChromeUtils.import(
-  "resource://testing-common/ContentTaskUtils.jsm"
-);
-
 const TEST_URL =
   "https://example.com/browser/browser/base/content/test/fullscreen/open_and_focus_helper.html";
 

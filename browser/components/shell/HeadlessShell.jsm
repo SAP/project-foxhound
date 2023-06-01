@@ -6,13 +6,12 @@
 
 var EXPORTED_SYMBOLS = ["HeadlessShell", "ScreenshotParent"];
 
-const { E10SUtils } = ChromeUtils.import(
-  "resource://gre/modules/E10SUtils.jsm"
+const { E10SUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/E10SUtils.sys.mjs"
 );
-const { HiddenFrame } = ChromeUtils.import(
-  "resource://gre/modules/HiddenFrame.jsm"
+const { HiddenFrame } = ChromeUtils.importESModule(
+  "resource://gre/modules/HiddenFrame.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // Refrences to the progress listeners to keep them from being gc'ed
 // before they are called.
@@ -39,7 +38,7 @@ function loadContentWindow(browser, url) {
     uri = Services.io.newURI(url);
   } catch (e) {
     let msg = `Invalid URL passed to loadContentWindow(): ${url}`;
-    Cu.reportError(msg);
+    console.error(msg);
     return Promise.reject(new Error(msg));
   }
 

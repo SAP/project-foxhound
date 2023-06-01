@@ -3,42 +3,30 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import { getThreadPauseState } from "../reducers/pause";
-import { getSelectedSourceId, getSelectedLocation } from "../selectors/sources";
+import { getSelectedSourceId, getSelectedLocation } from "./sources";
 
-import { isGeneratedId } from "devtools-source-map";
+import { isGeneratedId } from "devtools/client/shared/source-map-loader/index";
 
 // eslint-disable-next-line
 import { getSelectedLocation as _getSelectedLocation } from "../utils/selected-location";
 import { createSelector } from "reselect";
 
-const getSelectedFrames = createSelector(
-  state => state.pause.threads,
+export const getSelectedFrame = createSelector(
+  (state, thread) => state.pause.threads[thread],
   threadPauseState => {
-    const selectedFrames = {};
-    for (const thread in threadPauseState) {
-      const pausedThread = threadPauseState[thread];
-      const { selectedFrameId, frames } = pausedThread;
-      if (frames) {
-        selectedFrames[thread] = frames.find(
-          frame => frame.id == selectedFrameId
-        );
-      }
+    if (!threadPauseState) return null;
+    const { selectedFrameId, frames } = threadPauseState;
+    if (frames) {
+      return frames.find(frame => frame.id == selectedFrameId);
     }
-    return selectedFrames;
+    return null;
   }
 );
 
-export function getSelectedFrame(state, thread) {
-  const selectedFrames = getSelectedFrames(state);
-  return selectedFrames[thread];
-}
-
 export const getVisibleSelectedFrame = createSelector(
   getSelectedLocation,
-  getSelectedFrames,
-  getCurrentThread,
-  (selectedLocation, selectedFrames, thread) => {
-    const selectedFrame = selectedFrames[thread];
+  state => getSelectedFrame(state, getCurrentThread(state)),
+  (selectedLocation, selectedFrame) => {
     if (!selectedFrame) {
       return null;
     }
@@ -63,6 +51,11 @@ export function getThreadContext(state) {
 
 export function getPauseReason(state, thread) {
   return getThreadPauseState(state.pause, thread).why;
+}
+
+export function getShouldBreakpointsPaneOpenOnPause(state, thread) {
+  return getThreadPauseState(state.pause, thread)
+    .shouldBreakpointsPaneOpenOnPause;
 }
 
 export function getPauseCommand(state, thread) {
@@ -163,7 +156,7 @@ export function getSelectedFrameBindings(state, thread) {
 
   const frameScope = scopes.generated[selectedFrameId];
   if (!frameScope || frameScope.pending) {
-    return;
+    return null;
   }
 
   let currentScope = frameScope.scope;
@@ -271,8 +264,4 @@ export function getSelectedInlinePreviews(state) {
 
 export function getLastExpandedScopes(state, thread) {
   return getThreadPauseState(state.pause, thread).lastExpandedScopes;
-}
-
-export function getPausePreviewLocation(state) {
-  return state.pause.previewLocation;
 }

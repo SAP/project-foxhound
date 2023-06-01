@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, unicode_literals
-
 import mozfile
 from mach.decorators import Command, CommandArgument
 from mach.site import MozSiteMetadata
@@ -71,6 +69,7 @@ def install_moz_phab(command_context, force=False):
         or sys.platform.startswith("openbsd")
         or sys.platform.startswith("dragonfly")
         or sys.platform.startswith("freebsd")
+        or sys.platform.startswith("netbsd")
     ):
         # On all Linux and BSD distros we consider doing a user installation.
         platform_prefers_user_install = True

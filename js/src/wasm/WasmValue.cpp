@@ -22,11 +22,12 @@
 #include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "js/Printf.h"
 #include "js/Value.h"
+#include "vm/BigIntType.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/StringType.h"
-#include "wasm/TypedObject.h"
+#include "wasm/WasmGcObject.h"
 #include "wasm/WasmJS.h"
 #include "wasm/WasmLog.h"
 
@@ -53,7 +54,6 @@ Val::Val(const LitVal& val) {
     case ValType::V128:
       cell_.v128_ = val.v128();
       return;
-    case ValType::Rtt:
     case ValType::Ref:
       cell_.ref_ = val.ref();
       return;
@@ -66,11 +66,39 @@ void Val::readFromRootedLocation(const void* loc) {
   memcpy(&cell_, loc, type_.size());
 }
 
+void Val::initFromRootedLocation(ValType type, const void* loc) {
+  MOZ_ASSERT(!type_.isValid());
+  type_ = type;
+  memset(&cell_, 0, sizeof(Cell));
+  memcpy(&cell_, loc, type_.size());
+}
+
+void Val::initFromHeapLocation(ValType type, const void* loc) {
+  MOZ_ASSERT(!type_.isValid());
+  type_ = type;
+  memset(&cell_, 0, sizeof(Cell));
+  readFromHeapLocation(loc);
+}
+
 void Val::writeToRootedLocation(void* loc, bool mustWrite64) const {
   memcpy(loc, &cell_, type_.size());
   if (mustWrite64 && type_.size() == 4) {
     memset((uint8_t*)(loc) + 4, 0, 4);
   }
+}
+
+void Val::readFromHeapLocation(const void* loc) {
+  memcpy(&cell_, loc, type_.size());
+}
+
+void Val::writeToHeapLocation(void* loc) const {
+  if (type_.isRefRepr()) {
+    // TODO/AnyRef-boxing: With boxed immediates and strings, the write
+    // barrier is going to have to be more complicated.
+    *((GCPtr<JSObject*>*)loc) = cell_.ref_.asJSObject();
+    return;
+  }
+  memcpy(loc, &cell_, type_.size());
 }
 
 bool Val::fromJSValue(JSContext* cx, ValType targetType, HandleValue val,
@@ -102,26 +130,25 @@ bool wasm::CheckRefType(JSContext* cx, RefType targetType, HandleValue v,
                              JSMSG_WASM_BAD_REF_NONNULLABLE_VALUE);
     return false;
   }
+
   switch (targetType.kind()) {
     case RefType::Func:
-      if (!CheckFuncRefValue(cx, v, fnval)) {
-        return false;
-      }
-      break;
+      return CheckFuncRefValue(cx, v, fnval);
     case RefType::Extern:
-      if (!BoxAnyRef(cx, v, refval)) {
-        return false;
-      }
-      break;
+      return BoxAnyRef(cx, v, refval);
     case RefType::Eq:
-      if (!CheckEqRefValue(cx, v, refval)) {
-        return false;
-      }
+      return CheckEqRefValue(cx, v, refval);
+    case RefType::Any:
+    case RefType::Struct:
+    case RefType::Array:
+    case RefType::TypeRef:
       break;
-    case RefType::TypeIndex:
-      MOZ_CRASH("temporarily unsupported Ref type");
   }
-  return true;
+
+  MOZ_ASSERT(!ValType(targetType).isExposable());
+  JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
+                           JSMSG_WASM_BAD_VAL_TYPE);
+  return false;
 }
 
 bool wasm::CheckFuncRefValue(JSContext* cx, HandleValue v,
@@ -156,8 +183,8 @@ bool wasm::CheckEqRefValue(JSContext* cx, HandleValue v,
 
   if (v.isObject()) {
     JSObject& obj = v.toObject();
-    if (obj.is<TypedObject>()) {
-      vp.set(AnyRef::fromJSObject(&obj.as<TypedObject>()));
+    if (obj.is<WasmGcObject>()) {
+      vp.set(AnyRef::fromJSObject(&obj.as<WasmGcObject>()));
       return true;
     }
   }
@@ -360,8 +387,6 @@ bool wasm::ToWebAssemblyValue(JSContext* cx, HandleValue val, FieldType type,
       return ToWebAssemblyValue_f64<Debug>(cx, val, (double*)loc, mustWrite64);
     case FieldType::V128:
       break;
-    case FieldType::Rtt:
-      break;
     case FieldType::Ref:
 #ifdef ENABLE_WASM_FUNCTION_REFERENCES
       if (!type.isNullable() && val.isNull()) {
@@ -382,7 +407,10 @@ bool wasm::ToWebAssemblyValue(JSContext* cx, HandleValue val, FieldType type,
         case RefType::Eq:
           return ToWebAssemblyValue_eqref<Debug>(cx, val, (void**)loc,
                                                  mustWrite64);
-        case RefType::TypeIndex:
+        case RefType::Any:
+        case RefType::Struct:
+        case RefType::Array:
+        case RefType::TypeRef:
           break;
       }
   }
@@ -449,7 +477,13 @@ bool ToJSValue_funcref(JSContext* cx, void* src, MutableHandleValue dst) {
   return true;
 }
 template <typename Debug = NoDebug>
-bool ToJSValue_anyref(JSContext* cx, void* src, MutableHandleValue dst) {
+bool ToJSValue_externref(JSContext* cx, void* src, MutableHandleValue dst) {
+  dst.set(UnboxAnyRef(AnyRef::fromCompiledCode(src)));
+  Debug::print(src);
+  return true;
+}
+template <typename Debug = NoDebug>
+bool ToJSValue_eqref(JSContext* cx, void* src, MutableHandleValue dst) {
   dst.set(UnboxAnyRef(AnyRef::fromCompiledCode(src)));
   Debug::print(src);
   return true;
@@ -458,8 +492,8 @@ bool ToJSValue_anyref(JSContext* cx, void* src, MutableHandleValue dst) {
 template <typename Debug = NoDebug>
 bool ToJSValue_lossless(JSContext* cx, const void* src, MutableHandleValue dst,
                         ValType type) {
-  RootedVal srcVal(cx, type);
-  srcVal.get().readFromRootedLocation(src);
+  RootedVal srcVal(cx);
+  srcVal.get().initFromRootedLocation(type, src);
   RootedObject prototype(
       cx, GlobalObject::getOrCreatePrototype(cx, JSProto_WasmGlobal));
   Rooted<WasmGlobalObject*> srcGlobal(
@@ -497,20 +531,21 @@ bool wasm::ToJSValue(JSContext* cx, const void* src, FieldType type,
                                   dst);
     case FieldType::V128:
       break;
-    case FieldType::Rtt:
-      break;
     case FieldType::Ref:
       switch (type.refTypeKind()) {
         case RefType::Func:
           return ToJSValue_funcref<Debug>(
               cx, *reinterpret_cast<void* const*>(src), dst);
         case RefType::Extern:
-          return ToJSValue_anyref<Debug>(
+          return ToJSValue_externref<Debug>(
               cx, *reinterpret_cast<void* const*>(src), dst);
         case RefType::Eq:
-          return ToJSValue_anyref<Debug>(
+          return ToJSValue_eqref<Debug>(
               cx, *reinterpret_cast<void* const*>(src), dst);
-        case RefType::TypeIndex:
+        case RefType::Any:
+        case RefType::Struct:
+        case RefType::Array:
+        case RefType::TypeRef:
           break;
       }
   }

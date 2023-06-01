@@ -14,21 +14,6 @@ include("build/moz.configure/init.configure")
 # - Spidermonkey-specific options and rules should go in js/moz.configure.
 # - etc.
 
-option(
-    "--enable-artifact-builds",
-    env="MOZ_ARTIFACT_BUILDS",
-    help="Download and use prebuilt binary artifacts.",
-)
-
-
-@depends("--enable-artifact-builds")
-def artifact_builds(value):
-    if value:
-        return True
-
-
-set_config("MOZ_ARTIFACT_BUILDS", artifact_builds)
-
 imply_option(
     "--enable-artifact-build-symbols",
     depends(artifact_builds)(lambda v: False if v is None else None),
@@ -169,12 +154,13 @@ option(env="MOZ_PGO", help="Build with profile guided optimizations")
 set_config("MOZ_PGO", depends("MOZ_PGO")(lambda x: bool(x)))
 
 
+# Imply --enable-release when MOZILLA_OFFICIAL is set rather than adjusting the
+# default so that we can't have both MOZILLA_OFFICIAL and --disable-release set.
 imply_option("--enable-release", mozilla_official)
-imply_option("--enable-release", depends_if("MOZ_AUTOMATION")(lambda x: True))
 
 option(
     "--enable-release",
-    default=milestone.is_release_or_beta,
+    default=milestone.is_release_or_beta | depends("MOZ_AUTOMATION")(lambda x: bool(x)),
     help="{Build|Do not build} with more conservative, release "
     "engineering-oriented options.{ This may slow down builds.|}",
 )
@@ -202,6 +188,7 @@ set_config("ENABLE_UNIFIED_BUILD", True, when="--disable-unified-build")
 
 
 include("build/moz.configure/bootstrap.configure")
+
 
 # The execution model of the configure sandbox doesn't allow for
 # check_prog to use bootstrap_search_path directly because check_prog
@@ -380,6 +367,7 @@ imply_option("--build-backends", build_backend)
     "--help",
 )
 @imports("sys")
+@imports(_from="mozbuild.backend.clangd", _import="find_vscode_cmd")
 def build_backend_defaults(
     host,
     target,
@@ -410,6 +398,12 @@ def build_backend_defaults(
         and project not in ("mobile/android", "memory", "tools/update-programs")
     ):
         all_backends.append("VisualStudio")
+    if (
+        compile_environment
+        and find_vscode_cmd()
+        and project not in ("mobile/android", "memory", "tools/update-programs")
+    ):
+        all_backends.append("Clangd")
     return tuple(all_backends) or None
 
 
@@ -523,7 +517,7 @@ add_old_configure_assignment("CLANG_PLUGIN", clang_plugin_path)
 
 # Awk detection
 # ==============================================================
-awk = check_prog("AWK", ("gawk", "mawk", "nawk", "awk"))
+awk = check_prog("AWK", ("gawk", "mawk", "nawk", "awk"), paths=prefer_mozillabuild_path)
 
 # Until the AWK variable is not necessary in old-configure
 
@@ -597,12 +591,10 @@ option(env="MAKE", nargs=1, help="Path to GNU make")
 @depends("MAKE", host)
 def possible_makes(make, host):
     candidates = []
-    if host.kernel == "WINNT":
-        candidates.append("mingw32-make")
     if make:
         candidates.append(make[0])
     if host.kernel == "WINNT":
-        candidates.extend(("mozmake", "make", "gmake"))
+        candidates.extend(("mozmake", "mingw32-make", "make", "gmake"))
     else:
         candidates.extend(("gmake", "make"))
     return candidates
@@ -1052,15 +1044,15 @@ def config_status_deps(build_env, build_project):
         + extra_deps
         + [
             os.path.join(topsrcdir, "CLOBBER"),
-            os.path.join(topsrcdir, "configure.in"),
-            os.path.join(topsrcdir, "js", "src", "configure.in"),
+            os.path.join(topsrcdir, "configure"),
+            os.path.join(topsrcdir, "js", "src", "configure"),
             os.path.join(topsrcdir, "nsprpub", "configure"),
             os.path.join(topsrcdir, "config", "milestone.txt"),
             os.path.join(topsrcdir, "browser", "config", "version.txt"),
             os.path.join(topsrcdir, "browser", "config", "version_display.txt"),
-            os.path.join(topsrcdir, "build", "build_virtualenv_packages.txt"),
-            os.path.join(topsrcdir, "build", "common_virtualenv_packages.txt"),
-            os.path.join(topsrcdir, "build", "mach_virtualenv_packages.txt"),
+            os.path.join(topsrcdir, "python", "sites", "build.txt"),
+            os.path.join(topsrcdir, "python", "sites", "common.txt"),
+            os.path.join(topsrcdir, "python", "sites", "mach.txt"),
             os.path.join(topsrcdir, "python", "mach", "mach", "site.py"),
             os.path.join(topsrcdir, "aclocal.m4"),
             os.path.join(topsrcdir, "old-configure.in"),

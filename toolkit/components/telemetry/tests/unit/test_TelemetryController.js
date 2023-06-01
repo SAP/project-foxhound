@@ -8,37 +8,35 @@
  * checked in the second request.
  */
 
-const { CommonUtils } = ChromeUtils.import(
-  "resource://services-common/utils.js"
+const { ClientID } = ChromeUtils.importESModule(
+  "resource://gre/modules/ClientID.sys.mjs"
 );
-const { ClientID } = ChromeUtils.import("resource://gre/modules/ClientID.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { TelemetryController } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryController.jsm"
+const { TelemetryController } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryController.sys.mjs"
 );
-const { TelemetryStorage } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryStorage.jsm"
+const { TelemetryStorage } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryStorage.sys.mjs"
 );
-const { TelemetrySend } = ChromeUtils.import(
-  "resource://gre/modules/TelemetrySend.jsm"
+const { TelemetrySend } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetrySend.sys.mjs"
 );
-const { TelemetryArchive } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryArchive.jsm"
+const { TelemetryArchive } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryArchive.sys.mjs"
 );
-const { TelemetryUtils } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryUtils.jsm"
+const { TelemetryUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryUtils.sys.mjs"
 );
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
-const { ContentTaskUtils } = ChromeUtils.import(
-  "resource://testing-common/ContentTaskUtils.jsm"
+const { ContentTaskUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/ContentTaskUtils.sys.mjs"
 );
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
-const { TelemetryArchiveTesting } = ChromeUtils.import(
-  "resource://testing-common/TelemetryArchiveTesting.jsm"
+const { TelemetryArchiveTesting } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryArchiveTesting.sys.mjs"
 );
 
 ChromeUtils.defineModuleGetter(
@@ -60,8 +58,7 @@ const TEST_PING_TYPE = "test-ping-type";
 var gClientID = null;
 
 XPCOMUtils.defineLazyGetter(this, "DATAREPORTING_PATH", async function() {
-  let profileDir = await PathUtils.getProfileDir();
-  return PathUtils.join(profileDir, "datareporting");
+  return PathUtils.join(PathUtils.profileDir, "datareporting");
 });
 
 function sendPing(aSendClientId, aSendEnvironment) {
@@ -621,7 +618,7 @@ add_task(async function test_telemetryCleanFHRDatabase() {
   const DEFAULT_DB_NAME = "healthreport.sqlite";
 
   // Check that we're able to remove a FHR DB with a custom name.
-  const profileDir = await PathUtils.getProfileDir();
+  const profileDir = PathUtils.profileDir;
   const CUSTOM_DB_PATHS = [
     PathUtils.join(profileDir, CUSTOM_DB_NAME),
     PathUtils.join(profileDir, CUSTOM_DB_NAME + "-wal"),
@@ -640,7 +637,7 @@ add_task(async function test_telemetryCleanFHRDatabase() {
     try {
       await IOUtils.read(dbFilePath);
     } catch (e) {
-      Assert.ok(e instanceof DOMException);
+      Assert.ok(DOMException.isInstance(e));
       Assert.equal(
         e.name,
         "NotFoundError",
@@ -672,7 +669,7 @@ add_task(async function test_telemetryCleanFHRDatabase() {
     try {
       await IOUtils.read(dbFilePath);
     } catch (e) {
-      Assert.ok(e instanceof DOMException);
+      Assert.ok(DOMException.isInstance(e));
       Assert.equal(
         e.name,
         "NotFoundError",
@@ -790,7 +787,7 @@ add_task(async function test_sendNewProfile() {
     subsessionId: null,
     profileSubsessionCounter: 3785,
   };
-  await CommonUtils.writeJSON(sessionState, stateFilePath);
+  await IOUtils.writeJSON(stateFilePath, sessionState);
   await TelemetryController.testReset();
   await TelemetryController.testShutdown();
 

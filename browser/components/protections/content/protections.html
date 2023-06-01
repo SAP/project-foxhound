@@ -17,11 +17,7 @@
     <link rel="stylesheet" href="chrome://global/skin/in-content/common.css">
     <link rel="stylesheet" href="chrome://browser/content/protections.css">
     <link rel="icon" href="chrome://browser/skin/controlcenter/dashboard.svg">
-    <script type="module" src="chrome://browser/content/protections.js"></script>
-    <script type="module" src="chrome://browser/content/lockwise-card.js"></script>
-    <script type="module" src="chrome://browser/content/monitor-card.js"></script>
-    <script type="module" src="chrome://browser/content/proxy-card.js"></script>
-    <script type="module" src="chrome://browser/content/vpn-card.js"></script>
+    <script type="module" src="chrome://browser/content/protections.mjs"></script>
     <title data-l10n-id="protection-report-webpage-title"></title>
   </head>
 
@@ -67,7 +63,7 @@
                 <label id="graphLegendDescription" data-l10n-id="graph-legend-description"></label>
                 <input id="tab-social" data-type="social" type="radio" name="tabs" aria-labelledby="socialLabel socialTitle" aria-describedby="socialContent" checked>
                 <label id="socialLabel" for="tab-social" data-type="social">
-                  <img class="icon-small" src="chrome://browser/skin/controlcenter/socialblock.svg" data-type="social"/>
+                  <img class="icon-small" src="chrome://browser/skin/thumb-down.svg" data-type="social"/>
                   <span data-type="social"></span>
                 </label>
 

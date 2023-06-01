@@ -3,6 +3,7 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import React, { Component } from "react";
+import PropTypes from "prop-types";
 import { showMenu } from "../../context-menu/menu";
 import { connect } from "../../utils/connect";
 import { score as fuzzaldrinScore } from "fuzzaldrin-plus";
@@ -14,7 +15,8 @@ import { findFunctionText } from "../../utils/function";
 
 import actions from "../../actions";
 import {
-  getSelectedSourceWithContent,
+  getSelectedSource,
+  getSelectedSourceTextContent,
   getSymbols,
   getCursorPosition,
   getContext,
@@ -62,6 +64,20 @@ export class Outline extends Component {
     this.state = { filter: "", focusedItem: null };
   }
 
+  static get propTypes() {
+    return {
+      alphabetizeOutline: PropTypes.bool.isRequired,
+      cursorPosition: PropTypes.object,
+      cx: PropTypes.object.isRequired,
+      flashLineRange: PropTypes.func.isRequired,
+      getFunctionText: PropTypes.func.isRequired,
+      onAlphabetizeClick: PropTypes.func.isRequired,
+      selectLocation: PropTypes.func.isRequired,
+      selectedSource: PropTypes.object.isRequired,
+      symbols: PropTypes.object.isRequired,
+    };
+  }
+
   componentDidUpdate(prevProps) {
     const { cursorPosition, symbols } = this.props;
     if (
@@ -85,7 +101,7 @@ export class Outline extends Component {
     let classes = [];
     let functions = [];
 
-    if (symbols && !symbols.loading) {
+    if (symbols) {
       ({ classes, functions } = symbols);
     }
 
@@ -95,8 +111,9 @@ export class Outline extends Component {
         name != "anonymous" && containsPosition(location, cursorPosition)
     );
 
-    if (enclosedItems.length == 0) {
-      return this.setState({ focusedItem: null });
+    if (!enclosedItems.length) {
+      this.setState({ focusedItem: null });
+      return;
     }
 
     // Find the closest item to the selected location to focus
@@ -205,7 +222,7 @@ export class Outline extends Component {
   renderClassFunctions(klass, functions) {
     const { symbols } = this.props;
 
-    if (!symbols || symbols.loading || klass == null || functions.length == 0) {
+    if (!symbols || klass == null || !functions.length) {
       return null;
     }
 
@@ -294,7 +311,7 @@ export class Outline extends Component {
       return this.renderPlaceholder();
     }
 
-    if (!symbols || symbols.loading) {
+    if (!symbols) {
       return this.renderLoading();
     }
 
@@ -319,17 +336,23 @@ export class Outline extends Component {
 }
 
 const mapStateToProps = state => {
-  const selectedSource = getSelectedSourceWithContent(state);
+  const selectedSource = getSelectedSource(state);
   const symbols = selectedSource ? getSymbols(state, selectedSource) : null;
 
   return {
     cx: getContext(state),
     symbols,
-    selectedSource: selectedSource,
+    selectedSource,
     cursorPosition: getCursorPosition(state),
     getFunctionText: line => {
       if (selectedSource) {
-        return findFunctionText(line, selectedSource, symbols);
+        const selectedSourceTextContent = getSelectedSourceTextContent(state);
+        return findFunctionText(
+          line,
+          selectedSource,
+          selectedSourceTextContent,
+          symbols
+        );
       }
 
       return null;

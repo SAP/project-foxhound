@@ -2,14 +2,14 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-const { Downloads } = ChromeUtils.import(
-  "resource://gre/modules/Downloads.jsm"
+const { Downloads } = ChromeUtils.importESModule(
+  "resource://gre/modules/Downloads.sys.mjs"
 );
 
 const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
 const server = createHttpServer();

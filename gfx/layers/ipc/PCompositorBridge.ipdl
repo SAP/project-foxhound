@@ -20,6 +20,7 @@ include protocol PWebRenderBridge;
 include "mozilla/GfxMessageUtils.h";
 include "mozilla/layers/LayersMessageUtils.h";
 include "mozilla/layers/WebRenderMessageUtils.h";
+include "mozilla/layers/CompositorBridgeParent.h";
 
 using struct mozilla::null_t from "mozilla/ipc/IPCCore.h";
 using struct mozilla::layers::LayersId from "mozilla/layers/LayersTypes.h";
@@ -87,7 +88,8 @@ struct FrameStats {
  * protocol, which is per-browser. A lot of the functions in the protocol are
  * basically multiplexing/demultiplexing stuff in PLayerTransaction.
  */
-[RefCounted] sync protocol PCompositorBridge
+[ParentImpl="CompositorBridgeParentBase"]
+sync protocol PCompositorBridge
 {
   manager PCompositorManager;
 
@@ -99,11 +101,6 @@ struct FrameStats {
   manages PWebRenderBridge;
 
 child:
-  // The child should invalidate retained layers. This is used for local
-  // compositor device resets, such as in CompositorD3D9, and ensures that
-  // TextureSources are recreated.
-  async InvalidateLayers(LayersId layersId);
-
   // The compositor completed a layers transaction. id is the layers id
   // of the child layer tree that was composited (or 0 when notifying
   // the root layer tree).

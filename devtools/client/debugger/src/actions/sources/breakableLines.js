@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import { isOriginalId } from "devtools-source-map";
+import { isOriginalId } from "devtools/client/shared/source-map-loader/index";
 import { getSourceActorsForSource, getBreakableLines } from "../../selectors";
 import { setBreakpointPositions } from "../breakpoints/breakpointPositions";
 import { loadSourceActorBreakableLines } from "../source-actors";
@@ -10,7 +10,7 @@ import { loadSourceActorBreakableLines } from "../source-actors";
 function calculateBreakableLines(positions) {
   const lines = [];
   for (const line in positions) {
-    if (positions[line].length > 0) {
+    if (positions[line].length) {
       lines.push(Number(line));
     }
   }
@@ -45,7 +45,7 @@ export function setBreakableLines(cx, sourceId) {
 
       await Promise.all(
         actors.map(({ id }) =>
-          dispatch(loadSourceActorBreakableLines({ id, cx }))
+          dispatch(loadSourceActorBreakableLines({ sourceActorId: id, cx }))
         )
       );
     }

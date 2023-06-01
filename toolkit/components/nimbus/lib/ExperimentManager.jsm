@@ -6,23 +6,28 @@
 
 const EXPORTED_SYMBOLS = ["ExperimentManager", "_ExperimentManager"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  FirstStartup: "resource://gre/modules/FirstStartup.sys.mjs",
+  TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   ClientEnvironment: "resource://normandy/lib/ClientEnvironment.jsm",
   ExperimentStore: "resource://nimbus/lib/ExperimentStore.jsm",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
   NormandyUtils: "resource://normandy/lib/NormandyUtils.jsm",
   Sampling: "resource://gre/modules/components-utils/Sampling.jsm",
   TelemetryEvents: "resource://normandy/lib/TelemetryEvents.jsm",
-  TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.jsm",
-  FirstStartup: "resource://gre/modules/FirstStartup.jsm",
-  Services: "resource://gre/modules/Services.jsm",
+  PrefUtils: "resource://normandy/lib/PrefUtils.jsm",
 });
 
-XPCOMUtils.defineLazyGetter(this, "log", () => {
+XPCOMUtils.defineLazyGetter(lazy, "log", () => {
   const { Logger } = ChromeUtils.import(
     "resource://messaging-system/lib/Logger.jsm"
   );
@@ -33,7 +38,10 @@ const TELEMETRY_EVENT_OBJECT = "nimbus_experiment";
 const TELEMETRY_EXPERIMENT_ACTIVE_PREFIX = "nimbus-";
 const TELEMETRY_DEFAULT_EXPERIMENT_TYPE = "nimbus";
 
+const UPLOAD_ENABLED_PREF = "datareporting.healthreport.uploadEnabled";
 const STUDIES_OPT_OUT_PREF = "app.shield.optoutstudies.enabled";
+
+const STUDIES_ENABLED_CHANGED = "nimbus:studies-enabled-changed";
 
 function featuresCompat(branch) {
   if (!branch || (!branch.feature && !branch.features)) {
@@ -48,6 +56,12 @@ function featuresCompat(branch) {
   return features;
 }
 
+function getFeatureFromBranch(branch, featureId) {
+  return featuresCompat(branch).find(
+    featureConfig => featureConfig.featureId === featureId
+  );
+}
+
 /**
  * A module for processes Experiment recipes, choosing and storing enrollment state,
  * and sending experiment-related Telemetry.
@@ -55,9 +69,27 @@ function featuresCompat(branch) {
 class _ExperimentManager {
   constructor({ id = "experimentmanager", store } = {}) {
     this.id = id;
-    this.store = store || new ExperimentStore();
+    this.store = store || new lazy.ExperimentStore();
     this.sessions = new Map();
+    // By default, no extra context.
+    this.extraContext = {};
+    Services.prefs.addObserver(UPLOAD_ENABLED_PREF, this);
     Services.prefs.addObserver(STUDIES_OPT_OUT_PREF, this);
+
+    // A Map from pref names to pref observers and metadata. See
+    // `_updatePrefObservers` for the full structure.
+    this._prefs = new Map();
+    // A Map from enrollment slugs to a Set of prefs that enrollment is setting
+    // or would set (e.g., if the enrollment is a rollout and there wasn't an
+    // active experiment already setting it).
+    this._prefsBySlug = new Map();
+  }
+
+  get studiesEnabled() {
+    return (
+      Services.prefs.getBoolPref(UPLOAD_ENABLED_PREF) &&
+      Services.prefs.getBoolPref(STUDIES_OPT_OUT_PREF)
+    );
   }
 
   /**
@@ -72,7 +104,8 @@ class _ExperimentManager {
    */
   createTargetingContext() {
     let context = {
-      isFirstStartup: FirstStartup.state === FirstStartup.IN_PROGRESS,
+      isFirstStartup: lazy.FirstStartup.state === lazy.FirstStartup.IN_PROGRESS,
+      ...this.extraContext,
     };
     Object.defineProperty(context, "activeExperiments", {
       get: async () => {
@@ -90,18 +123,29 @@ class _ExperimentManager {
   }
 
   /**
-   * Runs on startup, including before first run
+   * Runs on startup, including before first run.
+   *
+   * @param {object} extraContext extra targeting context provided by the
+   * ambient environment.
    */
-  async onStartup() {
+  async onStartup(extraContext = {}) {
     await this.store.init();
+    this.extraContext = extraContext;
+
     const restoredExperiments = this.store.getAllActive();
     const restoredRollouts = this.store.getAllRollouts();
 
     for (const experiment of restoredExperiments) {
       this.setExperimentActive(experiment);
+      if (this._restoreEnrollmentPrefs(experiment)) {
+        this._updatePrefObservers(experiment);
+      }
     }
     for (const rollout of restoredRollouts) {
       this.setExperimentActive(rollout);
+      if (this._restoreEnrollmentPrefs(rollout)) {
+        this._updatePrefObservers(rollout);
+      }
     }
 
     this.observe();
@@ -127,29 +171,43 @@ class _ExperimentManager {
     if (this.store.has(slug)) {
       this.updateEnrollment(recipe);
     } else if (isEnrollmentPaused) {
-      log.debug(`Enrollment is paused for "${slug}"`);
+      lazy.log.debug(`Enrollment is paused for "${slug}"`);
     } else if (!(await this.isInBucketAllocation(recipe.bucketConfig))) {
-      log.debug("Client was not enrolled because of the bucket sampling");
+      lazy.log.debug("Client was not enrolled because of the bucket sampling");
     } else {
       await this.enroll(recipe, source);
     }
   }
 
-  _checkUnseenEnrollments(enrollments, sourceToCheck, recipeMismatches) {
+  _checkUnseenEnrollments(
+    enrollments,
+    sourceToCheck,
+    recipeMismatches,
+    invalidRecipes,
+    invalidBranches,
+    invalidFeatures
+  ) {
     for (const enrollment of enrollments) {
       const { slug, source } = enrollment;
       if (sourceToCheck !== source) {
         continue;
       }
       if (!this.sessions.get(source)?.has(slug)) {
-        log.debug(`Stopping study for recipe ${slug}`);
+        lazy.log.debug(`Stopping study for recipe ${slug}`);
         try {
-          let reason = recipeMismatches.includes(slug)
-            ? "targeting-mismatch"
-            : "recipe-not-seen";
+          let reason;
+          if (recipeMismatches.includes(slug)) {
+            reason = "targeting-mismatch";
+          } else if (invalidRecipes.includes(slug)) {
+            reason = "invalid-recipe";
+          } else if (invalidBranches.has(slug) || invalidFeatures.has(slug)) {
+            reason = "invalid-branch";
+          } else {
+            reason = "recipe-not-seen";
+          }
           this.unenroll(slug, reason);
         } catch (err) {
-          Cu.reportError(err);
+          console.error(err);
         }
       }
     }
@@ -160,8 +218,26 @@ class _ExperimentManager {
    * Runs when the all recipes been processed during an update, including at first run.
    * @param {string} sourceToCheck
    * @param {object} options Extra context used in telemetry reporting
+   * @param {string[]} options.recipeMismatches
+   *         The list of experiments that do not match targeting.
+   * @param {string[]} options.invalidRecipes
+   *         The list of recipes that do not match
+   * @param {Map<string, string[]>} options.invalidBranches
+   *         A mapping of experiment slugs to a list of branches that failed
+   *         feature validation.
+   * @param {Map<string, string[]>} options.invalidFeatures
+   *        The mapping of experiment slugs to a list of invalid feature IDs.
    */
-  onFinalize(sourceToCheck, { recipeMismatches } = { recipeMismatches: [] }) {
+  onFinalize(
+    sourceToCheck,
+    {
+      recipeMismatches = [],
+      invalidRecipes = [],
+      invalidBranches = new Map(),
+      invalidFeatures = new Map(),
+      validationEnabled = true,
+    } = {}
+  ) {
     if (!sourceToCheck) {
       throw new Error("When calling onFinalize, you must specify a source.");
     }
@@ -170,13 +246,41 @@ class _ExperimentManager {
     this._checkUnseenEnrollments(
       activeExperiments,
       sourceToCheck,
-      recipeMismatches
+      recipeMismatches,
+      invalidRecipes,
+      invalidBranches,
+      invalidFeatures
     );
     this._checkUnseenEnrollments(
       activeRollouts,
       sourceToCheck,
-      recipeMismatches
+      recipeMismatches,
+      invalidRecipes,
+      invalidBranches,
+      invalidFeatures
     );
+
+    // If validation is disabled, then we will never send validation failed
+    // telemetry.
+    if (validationEnabled) {
+      for (const slug of invalidRecipes) {
+        this.sendValidationFailedTelemetry(slug, "invalid-recipe");
+      }
+      for (const [slug, branches] of invalidBranches.entries()) {
+        for (const branch of branches) {
+          this.sendValidationFailedTelemetry(slug, "invalid-branch", {
+            branch,
+          });
+        }
+      }
+      for (const [slug, featureIds] of invalidFeatures.entries()) {
+        for (const featureId of featureIds) {
+          this.sendValidationFailedTelemetry(slug, "invalid-feature", {
+            feature: featureId,
+          });
+        }
+      }
+    }
 
     this.sessions.delete(sourceToCheck);
   }
@@ -189,20 +293,22 @@ class _ExperimentManager {
    */
   isInBucketAllocation(bucketConfig) {
     if (!bucketConfig) {
-      log.debug("Cannot enroll if recipe bucketConfig is not set.");
+      lazy.log.debug("Cannot enroll if recipe bucketConfig is not set.");
       return false;
     }
 
     let id;
     if (bucketConfig.randomizationUnit === "normandy_id") {
-      id = ClientEnvironment.userId;
+      id = lazy.ClientEnvironment.userId;
     } else {
       // Others not currently supported.
-      log.debug(`Invalid randomizationUnit: ${bucketConfig.randomizationUnit}`);
+      lazy.log.debug(
+        `Invalid randomizationUnit: ${bucketConfig.randomizationUnit}`
+      );
       return false;
     }
 
-    return Sampling.bucketSample(
+    return lazy.Sampling.bucketSample(
       [id, bucketConfig.namespace],
       bucketConfig.start,
       bucketConfig.count,
@@ -233,7 +339,7 @@ class _ExperimentManager {
     const features = featuresCompat(branch);
     for (let feature of features) {
       if (storeLookupByFeature(feature?.featureId)) {
-        log.debug(
+        lazy.log.debug(
           `Skipping enrollment for "${slug}" because there is an existing ${
             recipe.isRollout ? "rollout" : "experiment"
           } for this feature.`
@@ -260,20 +366,26 @@ class _ExperimentManager {
     source,
     options = {}
   ) {
+    const { prefs, prefsToSet } = this._getPrefsForBranch(branch, isRollout);
+
     /** @type {Enrollment} */
     const experiment = {
       slug,
       branch,
       active: true,
-      enrollmentId: NormandyUtils.generateUuid(),
+      enrollmentId: lazy.NormandyUtils.generateUuid(),
       experimentType,
-      isRollout,
       source,
       userFacingName,
       userFacingDescription,
       lastSeen: new Date().toJSON(),
       featureIds,
+      prefs,
     };
+
+    if (typeof isRollout !== "undefined") {
+      experiment.isRollout = isRollout;
+    }
 
     // Tag this as a forced enrollment. This prevents all unenrolling unless
     // manually triggered from about:studies
@@ -291,7 +403,10 @@ class _ExperimentManager {
     }
     this.sendEnrollmentTelemetry(experiment);
 
-    log.debug(
+    this._setEnrollmentPrefs(prefsToSet);
+    this._updatePrefObservers(experiment);
+
+    lazy.log.debug(
       `New ${isRollout ? "rollout" : "experiment"} started: ${slug}, ${
         branch.slug
       }`
@@ -309,35 +424,37 @@ class _ExperimentManager {
      */
     const features = featuresCompat(branch);
     for (let feature of features) {
-      let experiment = this.store.getExperimentForFeature(feature?.featureId);
-      let rollout = this.store.getRolloutForFeature(feature?.featureId);
-      if (experiment) {
-        log.debug(
-          `Existing experiment found for the same feature ${feature.featureId}, unenrolling.`
+      const isRollout = recipe.isRollout ?? false;
+      let enrollment = isRollout
+        ? this.store.getRolloutForFeature(feature?.featureId)
+        : this.store.getExperimentForFeature(feature?.featureId);
+      if (enrollment) {
+        lazy.log.debug(
+          `Existing ${
+            isRollout ? "rollout" : "experiment"
+          } found for the same feature ${feature.featureId}, unenrolling.`
         );
 
-        this.unenroll(experiment.slug, source);
-      }
-      if (rollout) {
-        log.debug(
-          `Existing experiment found for the same feature ${feature.featureId}, unenrolling.`
-        );
-
-        this.unenroll(rollout.slug, source);
+        this.unenroll(enrollment.slug, source);
       }
     }
 
     recipe.userFacingName = `${recipe.userFacingName} - Forced enrollment`;
 
-    return this._enroll(
+    const slug = `optin-${recipe.slug}`;
+    const enrollment = this._enroll(
       {
         ...recipe,
-        slug: `optin-${recipe.slug}`,
+        slug,
       },
       branch,
       source,
       { force: true }
     );
+
+    Services.obs.notifyObservers(null, "nimbus:force-enroll", slug);
+
+    return enrollment;
   }
 
   /**
@@ -351,7 +468,7 @@ class _ExperimentManager {
 
     // Don't update experiments that were already unenrolled.
     if (enrollment.active === false) {
-      log.debug(`Enrollment ${recipe.slug} has expired, aborting.`);
+      lazy.log.debug(`Enrollment ${recipe.slug} has expired, aborting.`);
       return false;
     }
 
@@ -369,10 +486,14 @@ class _ExperimentManager {
   }
 
   /**
-   * Stop an experiment that is currently active
+   * Stop an enrollment that is currently active
    *
    * @param {string} slug
+   *        The slug of the enrollment to stop.
    * @param {string} reason
+   *        An optional reason for the unenrollment.
+   *
+   *        This will be reported in telemetry.
    */
   unenroll(slug, reason = "unknown") {
     const enrollment = this.store.get(slug);
@@ -381,6 +502,37 @@ class _ExperimentManager {
       throw new Error(`Could not find an experiment with the slug "${slug}"`);
     }
 
+    this._unenroll(enrollment, { reason });
+  }
+
+  /**
+   * Stop an enrollment that is currently active.
+   *
+   * @param {Enrollment} enrollment
+   *        The enrollment to end.
+   *
+   * @param {object} options
+   * @param {string} options.reason
+   *        An optional reason for the unenrollment.
+   *
+   *        This will be reported in telemetry.
+   *
+   * @param {object?} options.changedPref
+   *        If the unenrollment was due to pref change, this will contain the
+   *        information about the pref that changed.
+   *
+   * @param {string} options.changedPref.name
+   *        The name of the pref that caused the unenrollment.
+   *
+   * @param {string} options.changedPref.branch
+   *        The branch that was changed ("user" or "default").
+   */
+  _unenroll(
+    enrollment,
+    { reason = "unknown", changedPref = undefined, duringRestore = false } = {}
+  ) {
+    const { slug } = enrollment;
+
     if (!enrollment.active) {
       this.sendFailureTelemetry("unenrollFailed", slug, "already-unenrolled");
       throw new Error(
@@ -388,32 +540,45 @@ class _ExperimentManager {
       );
     }
 
-    TelemetryEnvironment.setExperimentInactive(slug);
+    lazy.TelemetryEnvironment.setExperimentInactive(slug);
+    // We also need to set the experiment inactive in the Glean Experiment API
+    Services.fog.setExperimentInactive(slug);
     this.store.updateExperiment(slug, { active: false });
 
-    TelemetryEvents.sendEvent("unenroll", TELEMETRY_EVENT_OBJECT, slug, {
+    lazy.TelemetryEvents.sendEvent("unenroll", TELEMETRY_EVENT_OBJECT, slug, {
       reason,
       branch: enrollment.branch.slug,
       enrollmentId:
-        enrollment.enrollmentId || TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
+        enrollment.enrollmentId || lazy.TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
+    });
+    // Sent Glean event equivalent
+    Glean.nimbusEvents.unenrollment.record({
+      experiment: slug,
+      branch: enrollment.branch.slug,
+      enrollment_id:
+        enrollment.enrollmentId || lazy.TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
+      reason,
     });
 
-    log.debug(`Recipe unenrolled: ${slug}`);
+    this._unsetEnrollmentPrefs(enrollment, { changedPref, duringRestore });
+
+    lazy.log.debug(`Recipe unenrolled: ${slug}`);
   }
 
   /**
    * Unenroll from all active studies if user opts out.
    */
   observe(aSubject, aTopic, aPrefName) {
-    if (Services.prefs.getBoolPref(STUDIES_OPT_OUT_PREF)) {
-      return;
+    if (!this.studiesEnabled) {
+      for (const { slug } of this.store.getAllActive()) {
+        this.unenroll(slug, "studies-opt-out");
+      }
+      for (const { slug } of this.store.getAllRollouts()) {
+        this.unenroll(slug, "studies-opt-out");
+      }
     }
-    for (const { slug } of this.store.getAllActive()) {
-      this.unenroll(slug, "studies-opt-out");
-    }
-    for (const { slug } of this.store.getAllRollouts()) {
-      this.unenroll(slug, "studies-opt-out");
-    }
+
+    Services.obs.notifyObservers(null, STUDIES_ENABLED_CHANGED);
   }
 
   /**
@@ -424,8 +589,36 @@ class _ExperimentManager {
    * @param {string} reason
    */
   sendFailureTelemetry(eventName, slug, reason) {
-    TelemetryEvents.sendEvent(eventName, TELEMETRY_EVENT_OBJECT, slug, {
+    lazy.TelemetryEvents.sendEvent(eventName, TELEMETRY_EVENT_OBJECT, slug, {
       reason,
+    });
+    if (eventName == "enrollFailed") {
+      Glean.nimbusEvents.enrollFailed.record({
+        experiment: slug,
+        reason,
+      });
+    } else if (eventName == "unenrollFailed") {
+      Glean.nimbusEvents.unenrollFailed.record({
+        experiment: slug,
+        reason,
+      });
+    }
+  }
+
+  sendValidationFailedTelemetry(slug, reason, extra) {
+    lazy.TelemetryEvents.sendEvent(
+      "validationFailed",
+      TELEMETRY_EVENT_OBJECT,
+      slug,
+      {
+        reason,
+        ...extra,
+      }
+    );
+    Glean.nimbusEvents.validationFailed.record({
+      experiment: slug,
+      reason,
+      ...extra,
     });
   }
 
@@ -434,10 +627,18 @@ class _ExperimentManager {
    * @param {Enrollment} experiment
    */
   sendEnrollmentTelemetry({ slug, branch, experimentType, enrollmentId }) {
-    TelemetryEvents.sendEvent("enroll", TELEMETRY_EVENT_OBJECT, slug, {
+    lazy.TelemetryEvents.sendEvent("enroll", TELEMETRY_EVENT_OBJECT, slug, {
       experimentType,
       branch: branch.slug,
-      enrollmentId: enrollmentId || TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
+      enrollmentId:
+        enrollmentId || lazy.TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
+    });
+    Glean.nimbusEvents.enrollment.record({
+      experiment: slug,
+      branch: branch.slug,
+      enrollment_id:
+        enrollmentId || lazy.TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
+      experiment_type: experimentType,
     });
   }
 
@@ -447,15 +648,22 @@ class _ExperimentManager {
    * @param {Enrollment} experiment
    */
   setExperimentActive(experiment) {
-    TelemetryEnvironment.setExperimentActive(
+    lazy.TelemetryEnvironment.setExperimentActive(
       experiment.slug,
       experiment.branch.slug,
       {
         type: `${TELEMETRY_EXPERIMENT_ACTIVE_PREFIX}${experiment.experimentType}`,
         enrollmentId:
-          experiment.enrollmentId || TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
+          experiment.enrollmentId ||
+          lazy.TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
       }
     );
+    // Report the experiment to the Glean Experiment API
+    Services.fog.setExperimentActive(experiment.slug, experiment.branch.slug, {
+      type: `${TELEMETRY_EXPERIMENT_ACTIVE_PREFIX}${experiment.experimentType}`,
+      enrollmentId:
+        experiment.enrollmentId || lazy.TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
+    });
   }
 
   /**
@@ -493,8 +701,8 @@ class _ExperimentManager {
     }
 
     while (Object.keys(branchValues).length < branches.length + 1) {
-      const id = NormandyUtils.generateUuid();
-      const enrolls = await Sampling.bucketSample(
+      const id = lazy.NormandyUtils.generateUuid();
+      const enrolls = await lazy.Sampling.bucketSample(
         [id, namespace],
         start,
         count,
@@ -511,7 +719,7 @@ class _ExperimentManager {
 
         if (!Object.keys(branchValues).includes(pickedBranch)) {
           branchValues[pickedBranch] = id;
-          log.debug(`Found a value for "${pickedBranch}"`);
+          lazy.log.debug(`Found a value for "${pickedBranch}"`);
         }
       } else if (!branchValues.notInExperiment) {
         branchValues.notInExperiment = id;
@@ -528,7 +736,7 @@ class _ExperimentManager {
    * @returns {Promise<Branch>}
    * @memberof _ExperimentManager
    */
-  async chooseBranch(slug, branches, userId = ClientEnvironment.userId) {
+  async chooseBranch(slug, branches, userId = lazy.ClientEnvironment.userId) {
     const ratios = branches.map(({ ratio = 1 }) => ratio);
 
     // It's important that the input be:
@@ -539,8 +747,527 @@ class _ExperimentManager {
     //   receive users)
     const input = `${this.id}-${userId}-${slug}-branch`;
 
-    const index = await Sampling.ratioSample(input, ratios);
+    const index = await lazy.Sampling.ratioSample(input, ratios);
     return branches[index];
+  }
+
+  /**
+   * Generate the list of prefs a recipe will set.
+   *
+   * @params {object} branch The recipe branch that will be enrolled.
+   * @params {boolean} isRollout Whether or not this recipe is a rollout.
+   *
+   * @returns {object} An object with the following keys:
+   *
+   *                   `prefs`:
+   *                        The full list of prefs that this recipe would set,
+   *                        if there are no conflicts. This will include prefs
+   *                        that, for example, will not be set because this
+   *                        enrollment is a rollout and there is an active
+   *                        experiment that set the same pref.
+   *
+   *                   `prefsToSet`:
+   *                        Prefs that should be set once enrollment is
+   *                        complete.
+   */
+  _getPrefsForBranch(branch, isRollout = false) {
+    const prefs = [];
+    const prefsToSet = [];
+
+    const getConflictingEnrollment = this._makeEnrollmentCache(isRollout);
+
+    for (const { featureId, value: featureValue } of featuresCompat(branch)) {
+      const feature = lazy.NimbusFeatures[featureId];
+
+      if (!feature) {
+        continue;
+      }
+
+      // It is possible to enroll in both an experiment and a rollout, so we
+      // need to check if we have another enrollment for the same feature.
+      const conflictingEnrollment = getConflictingEnrollment(featureId);
+
+      const prefBranch =
+        feature.manifest.isEarlyStartup ?? false ? "user" : "default";
+
+      for (const [variable, value] of Object.entries(featureValue)) {
+        const prefName = feature.getSetPrefName(variable);
+
+        if (prefName) {
+          let originalValue;
+          const conflictingPref = conflictingEnrollment?.prefs?.find(
+            p => p.name === prefName
+          );
+
+          if (conflictingPref) {
+            // If there is another enrollment that has already set the pref we
+            // care about, we use its stored originalValue.
+            originalValue = conflictingPref.originalValue;
+          } else if (
+            prefBranch === "user" &&
+            !Services.prefs.prefHasUserValue(prefName)
+          ) {
+            // If there is a default value set, then attempting to read the user
+            // branch would result in returning the default branch value.
+            originalValue = null;
+          } else {
+            originalValue = lazy.PrefUtils.getPref(prefName, {
+              branch: prefBranch,
+            });
+          }
+
+          prefs.push({
+            name: prefName,
+            branch: prefBranch,
+            featureId,
+            variable,
+            originalValue,
+          });
+
+          // An experiment takes precedence if there is already a pref set.
+          if (!isRollout || !conflictingPref) {
+            prefsToSet.push({ name: prefName, value, prefBranch });
+          }
+        }
+      }
+    }
+
+    return { prefs, prefsToSet };
+  }
+
+  /**
+   * Set a list of prefs from enrolling in an experiment or rollout.
+   *
+   * The ExperimentManager's pref observers will be disabled while setting each
+   * pref so as not to accidentally unenroll an existing rollout that an
+   * experiment would override.
+   *
+   * @param {object[]} prefsToSet
+   *                   A list of objects containing the prefs to set.
+   *
+   *                   Each object has the following properties:
+   *
+   *                   * `name`: The name of the pref.
+   *                   * `value`: The value of the pref.
+   *                   * `prefBranch`: The branch to set the pref on (either "user" or "default").
+   */
+  _setEnrollmentPrefs(prefsToSet) {
+    for (const { name, value, prefBranch } of prefsToSet) {
+      const entry = this._prefs.get(name);
+
+      // If another enrollment exists that has set this pref, temporarily
+      // disable the pref observer so as not to cause unenrollment.
+      if (entry) {
+        entry.enrollmentChanging = true;
+      }
+
+      lazy.PrefUtils.setPref(name, value, { branch: prefBranch });
+
+      if (entry) {
+        entry.enrollmentChanging = false;
+      }
+    }
+  }
+
+  /**
+   * Unset prefs set during this enrollment.
+   *
+   * If this enrollment is an experiment and there is an existing rollout that
+   * would set a pref that was covered by this enrollment, the pref will be
+   * updated to that rollout's value.
+   *
+   * Otherwise, it will be set to the original value from before the enrollment
+   * began.
+   *
+   * @param {Enrollment} enrollment
+   *        The enrollment that has ended.
+   *
+   * @param {object} options
+   *
+   * @param {object?} options.changedPref
+   *        If provided, a changed pref that caused the unenrollment that
+   *        triggered unsetting these prefs. This is provided as to not
+   *        overwrite a changed pref with an original value.
+   *
+   * @param {string} options.changedPref.name
+   *        The name of the changed pref.
+   *
+   * @param {string} options.changedPref.branch
+   *        The branch that was changed ("user" or "default").
+   *
+   * @param {boolean} options.duringRestore
+   *        The unenrollment was caused during restore.
+   */
+  _unsetEnrollmentPrefs(enrollment, { changedPref, duringRestore } = {}) {
+    if (!enrollment.prefs?.length) {
+      return;
+    }
+
+    const getConflictingEnrollment = this._makeEnrollmentCache(
+      enrollment.isRollout
+    );
+
+    for (const pref of enrollment.prefs) {
+      this._removePrefObserver(pref.name, enrollment.slug);
+
+      if (
+        changedPref?.name == pref.name &&
+        changedPref.branch === pref.branch
+      ) {
+        // Resetting the original value would overwite the pref the user just
+        // set. Skip it.
+        continue;
+      }
+
+      let newValue = pref.originalValue;
+
+      // If we are unenrolling from an experiment during a restore, we must
+      // ignore any potential conflicting rollout in the store, because its
+      // hasn't gone through `_restoreEnrollmentPrefs`, which might also cause
+      // it to unenroll.
+      //
+      // Both enrollments will have the same `originalValue` stored, so it will
+      // always be restored.
+      if (!duringRestore || enrollment.isRollout) {
+        const conflictingEnrollment = getConflictingEnrollment(pref.featureId);
+        const conflictingPref = conflictingEnrollment?.prefs?.find(
+          p => p.name === pref.name
+        );
+
+        if (conflictingPref) {
+          if (enrollment.isRollout) {
+            // If we are unenrolling from a rollout, we have an experiment that
+            // has set the pref. Since experiments take priority, we do not unset
+            // it.
+            continue;
+          } else {
+            // If we are an unenrolling from an experiment, we have a rollout that would
+            // set the same pref, so we update the pref to that value instead of
+            // the original value.
+            newValue = getFeatureFromBranch(
+              conflictingEnrollment.branch,
+              pref.featureId
+            ).value[pref.variable];
+          }
+        }
+      }
+
+      // If another enrollment exists that has set this pref, temporarily
+      // disable the pref observer so as not to cause unenrollment when we
+      // update the pref to its value.
+      const entry = this._prefs.get(pref.name);
+      if (entry) {
+        entry.enrollmentChanging = true;
+      }
+
+      lazy.PrefUtils.setPref(pref.name, newValue, {
+        branch: pref.branch,
+      });
+
+      if (entry) {
+        entry.enrollmentChanging = false;
+      }
+    }
+  }
+
+  /**
+   * Restore the prefs set by an enrollment.
+   *
+   * @param {object} enrollment The enrollment.
+   * @param {object} enrollment.branch The branch that was enrolled.
+   * @param {object[]} enrollment.prefs The prefs that are set by the enrollment.
+   * @param {object[]} enrollment.isRollout The prefs that are set by the enrollment.
+   *
+   * @returns {boolean} Whether the restore was successful. If false, the
+   *                    enrollment has ended.
+   */
+  _restoreEnrollmentPrefs(enrollment) {
+    const { branch, prefs = [], isRollout } = enrollment;
+
+    if (!prefs?.length) {
+      return false;
+    }
+
+    const featuresById = Object.assign(
+      ...featuresCompat(branch).map(f => ({ [f.featureId]: f }))
+    );
+
+    for (const { name, featureId, variable } of prefs) {
+      // If the feature no longer exists, unenroll.
+      if (!Object.hasOwn(lazy.NimbusFeatures, featureId)) {
+        this._unenroll(enrollment, {
+          reason: "invalid-feature",
+          duringRestore: true,
+        });
+        return false;
+      }
+
+      const variables = lazy.NimbusFeatures[featureId].manifest.variables;
+
+      // If the feature is missing a variable that set a pref, unenroll.
+      if (!Object.hasOwn(variables, variable)) {
+        this._unenroll(enrollment, {
+          reason: "pref-variable-missing",
+          duringRestore: true,
+        });
+        return false;
+      }
+
+      const variableDef = variables[variable];
+
+      // If the variable is no longer a pref-setting variable, unenroll.
+      if (!Object.hasOwn(variableDef, "setPref")) {
+        this._unenroll(enrollment, {
+          reason: "pref-variable-no-longer",
+          duringRestore: true,
+        });
+        return false;
+      }
+
+      // If the variable is setting a different preference, unenroll.
+      if (variableDef.setPref !== name) {
+        this._unenroll(enrollment, {
+          reason: "pref-variable-changed",
+          duringRestore: true,
+        });
+        return false;
+      }
+    }
+
+    for (const { name, branch: prefBranch, featureId, variable } of prefs) {
+      // User prefs are already persisted.
+      if (prefBranch === "user") {
+        continue;
+      }
+
+      // If we are a rollout, we need to check for an existing experiment that
+      // has set the same pref. If so, we do not need to set the pref because
+      // experiments take priority.
+      if (isRollout) {
+        const conflictingEnrollment = this.store.getExperimentForFeature(
+          featureId
+        );
+        const conflictingPref = conflictingEnrollment?.prefs?.find(
+          p => p.name === name
+        );
+
+        if (conflictingPref) {
+          continue;
+        }
+      }
+
+      const value = featuresById[featureId].value[variable];
+
+      if (prefBranch !== "user") {
+        lazy.PrefUtils.setPref(name, value, { branch: prefBranch });
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Make a cache to look up enrollments of the oppposite kind by feature ID.
+   *
+   * @param {boolean} isRollout Whether or not the current enrollment is a
+   *                            rollout. If true, the cache will return
+   *                            experiments. If false, the cache will return
+   *                            rollouts.
+   *
+   * @returns {function} The cache, as a callable function.
+   */
+  _makeEnrollmentCache(isRollout) {
+    const getOtherEnrollment = (isRollout
+      ? this.store.getExperimentForFeature
+      : this.store.getRolloutForFeature
+    ).bind(this.store);
+
+    const conflictingEnrollments = {};
+    return featureId => {
+      if (!Object.hasOwn(conflictingEnrollments, featureId)) {
+        conflictingEnrollments[featureId] = getOtherEnrollment(featureId);
+      }
+
+      return conflictingEnrollments[featureId];
+    };
+  }
+
+  /**
+   * Update the set of observers with prefs set by the given enrollment.
+   *
+   * @param {Enrollment} enrollment
+   *        The enrollment that is setting prefs.
+   */
+  _updatePrefObservers({ slug, prefs }) {
+    if (!prefs?.length) {
+      return;
+    }
+
+    for (const pref of prefs) {
+      const { name } = pref;
+
+      if (!this._prefs.has(name)) {
+        const observer = () => this._onExperimentPrefChanged(pref);
+        const entry = {
+          slugs: new Set([slug]),
+          enrollmentChanging: false,
+          observer,
+        };
+
+        Services.prefs.addObserver(name, observer);
+
+        this._prefs.set(name, entry);
+      } else {
+        this._prefs.get(name).slugs.add(slug);
+      }
+
+      if (!this._prefsBySlug.has(slug)) {
+        this._prefsBySlug.set(slug, new Set([name]));
+      } else {
+        this._prefsBySlug.get(slug).add(name);
+      }
+    }
+  }
+
+  /**
+   * Remove an entry for the pref observer for the given pref and slug.
+   *
+   * If there are no more enrollments listening to a pref, the observer will be removed.
+   *
+   * This is called when an enrollment is ending.
+   *
+   * @param {string} name The name of the pref.
+   * @param {string} slug The slug of the enrollment that is being unenrolled.
+   */
+  _removePrefObserver(name, slug) {
+    // Update the pref observer that the current enrollment is no longer
+    // involved in the pref.
+    //
+    // If no enrollments have a variable setting the pref, then we can remove
+    // the observers.
+    const entry = this._prefs.get(name);
+
+    // If this is happening due to a pref change, the observers will already be removed.
+    if (entry) {
+      entry.slugs.delete(slug);
+      if (entry.slugs.size == 0) {
+        Services.prefs.removeObserver(name, entry.observer);
+        this._prefs.delete(name);
+      }
+    }
+
+    const bySlug = this._prefsBySlug.get(slug);
+    if (bySlug) {
+      bySlug.delete(name);
+      if (bySlug.size == 0) {
+        this._prefsBySlug.delete(slug);
+      }
+    }
+  }
+
+  /**
+   * Handle a change to a pref set by enrollments by ending those enrollments.
+   *
+   * @param {object} pref
+   *        Information about the pref that was changed.
+   *
+   * @param {string} pref.name
+   *        The name of the pref that was changed.
+   *
+   * @param {string} pref.branch
+   *        The branch enrollments set the pref on.
+   *
+   * @param {string} pref.featureId
+   *        The feature ID of the feature containing the variable that set the
+   *        pref.
+   *
+   * @param {string} pref.variable
+   *        The variable in the given feature whose value determined the pref's
+   *        value.
+   */
+  _onExperimentPrefChanged(pref) {
+    const entry = this._prefs.get(pref.name);
+    // If this was triggered while we are enrolling or unenrolling from an
+    // experiment, then we don't want to unenroll from the rollout because the
+    // experiment's value is taking precendence.
+    //
+    // Otherwise, all enrollments that set the variable corresponding to this
+    // pref must be unenrolled.
+    if (entry.enrollmentChanging) {
+      return;
+    }
+
+    // Copy the `Set` into an `Array` because we modify the set later in
+    // `_removePrefObserver` and we need to iterate over it multiple times.
+    const slugs = Array.from(entry.slugs);
+
+    // Remove all pref observers set by enrollments. We are potentially about
+    // to set these prefs during unenrollment, so we don't want to trigger
+    // them and cause nested unenrollments.
+    for (const slug of slugs) {
+      const toRemove = Array.from(this._prefsBySlug.get(slug) ?? []);
+      for (const name of toRemove) {
+        this._removePrefObserver(name, slug);
+      }
+    }
+
+    // Unenroll from the rollout first to save calls to setPref.
+    const enrollments = Array.from(slugs).map(slug => this.store.get(slug));
+
+    // There is a maximum of two enrollments (one experiment and one rollout).
+    if (enrollments.length == 2) {
+      // Order enrollments so that we unenroll from the rollout first.
+      if (!enrollments[0].isRollout) {
+        enrollments.reverse();
+      }
+    }
+
+    // We want to know what branch was changed so we can know if we should
+    // restore prefs. (e.g., if we have a pref set on the user branch and the
+    // user branch changed, we do not want to then overwrite the user's choice).
+
+    // This is not complicated if a pref simply changed. However, we also must
+    // detect `nsIPrefBranch::clearUserPref()`, which wipes out the user branch
+    // and leaves the default branch untouched. That is where this gets
+    // complicated:
+
+    let branch;
+    if (Services.prefs.prefHasUserValue(pref.name)) {
+      // If there is a user branch value, then the user branch changed.
+      branch = "user";
+    } else if (!Services.prefs.prefHasDefaultValue(pref.name)) {
+      // If there is not default branch value, then the user branch must have
+      // been cleared becuase you cannot clear the default branch.
+      branch = "user";
+    } else if (pref.branch === "default") {
+      const feature = getFeatureFromBranch(
+        enrollments.at(-1).branch,
+        pref.featureId
+      );
+      const expectedValue = feature.value[pref.variable];
+      const value = lazy.PrefUtils.getPref(pref.name, { branch: pref.branch });
+
+      if (value === expectedValue) {
+        // If the pref was set on the default branch and still matches the
+        // expected value, then the user branch must have been cleared.
+        branch = "user";
+      } else {
+        branch = "default";
+      }
+    } else {
+      // If the pref was set on the user branch and we don't have a user branch
+      // value, then the user branch must have been cleared.
+      branch = "user";
+    }
+
+    const changedPref = {
+      name: pref.name,
+      branch,
+    };
+
+    for (const enrollment of enrollments) {
+      this._unenroll(enrollment, { reason: "changed-pref", changedPref });
+    }
   }
 }
 

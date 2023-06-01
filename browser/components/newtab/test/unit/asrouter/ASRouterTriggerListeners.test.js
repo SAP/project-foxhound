@@ -17,6 +17,11 @@ describe("ASRouterTriggerListeners", () => {
     "openBookmarkedURL"
   );
   const openArticleURLListener = ASRouterTriggerListeners.get("openArticleURL");
+  const nthTabClosedListener = ASRouterTriggerListeners.get("nthTabClosed");
+  const idleListener = ASRouterTriggerListeners.get("activityAfterIdle");
+  const cookieBannerDetectedListener = ASRouterTriggerListeners.get(
+    "cookieBannerDetected"
+  );
   const hosts = ["www.mozilla.com", "www.mozilla.org"];
 
   const regionFake = {
@@ -111,80 +116,6 @@ describe("ASRouterTriggerListeners", () => {
   });
 
   describe("captivePortal", () => {
-    describe("_shouldShowCaptivePortalVPNPromo", () => {
-      it("should return true if disable pref is false && neither home nor current regions are cn", () => {
-        regionFake._home = "us";
-        regionFake._current = "ca";
-        sandbox
-          .stub(ASRouterPreferences, "disableCaptivePortalVPNPromo")
-          .get(() => false);
-
-        assert.isTrue(
-          captivePortalLoginListener._shouldShowCaptivePortalVPNPromo()
-        );
-      });
-
-      it("should return false if disable pref is false and only the home region is 'cn'", () => {
-        regionFake._home = "cn";
-        regionFake._current = "us";
-        sandbox
-          .stub(ASRouterPreferences, "disableCaptivePortalVPNPromo")
-          .get(() => false);
-
-        assert.isFalse(
-          captivePortalLoginListener._shouldShowCaptivePortalVPNPromo()
-        );
-      });
-
-      it("should return false if disable pref is false and only the current region is 'cn'", () => {
-        regionFake._home = "us";
-        regionFake._current = "cn";
-        sandbox
-          .stub(ASRouterPreferences, "disableCaptivePortalVPNPromo")
-          .get(() => false);
-
-        assert.isFalse(
-          captivePortalLoginListener._shouldShowCaptivePortalVPNPromo()
-        );
-      });
-
-      it("should return false if the disable pref is false and a region check is cn", () => {
-        regionFake._home = "us";
-        regionFake._current = "cn";
-        sandbox
-          .stub(ASRouterPreferences, "disableCaptivePortalVPNPromo")
-          .get(() => false);
-
-        assert.isFalse(
-          captivePortalLoginListener._shouldShowCaptivePortalVPNPromo()
-        );
-      });
-
-      it("should return false if the disable pref is true and no regions are cn", () => {
-        regionFake._home = "us";
-        regionFake._current = "ca";
-        sandbox
-          .stub(ASRouterPreferences, "disableCaptivePortalVPNPromo")
-          .get(() => true);
-
-        assert.isFalse(
-          captivePortalLoginListener._shouldShowCaptivePortalVPNPromo()
-        );
-      });
-
-      it("should return false if the disable pref is true and a region is cn", () => {
-        regionFake._home = "us";
-        regionFake._current = "cn";
-        sandbox
-          .stub(ASRouterPreferences, "disableCaptivePortalVPNPromo")
-          .get(() => true);
-
-        assert.isFalse(
-          captivePortalLoginListener._shouldShowCaptivePortalVPNPromo()
-        );
-      });
-    });
-
     describe("observe", () => {
       it("should not call the trigger handler if _shouldShowCaptivePortalVPNPromo returns false", () => {
         sandbox
@@ -396,6 +327,119 @@ describe("ASRouterTriggerListeners", () => {
         assert.isTrue(
           frequentVisitsListener._matchPatternSet.patterns.has("foo")
         );
+      });
+    });
+  });
+
+  describe("nthTabClosed", () => {
+    describe("#init", () => {
+      beforeEach(() => {
+        nthTabClosedListener.init(triggerHandler);
+      });
+      afterEach(() => {
+        nthTabClosedListener.uninit();
+      });
+
+      it("should set ._initialized to true and save the triggerHandler", () => {
+        assert.ok(nthTabClosedListener._initialized);
+        assert.equal(nthTabClosedListener._triggerHandler, triggerHandler);
+      });
+
+      it("if already initialised, it should only update the trigger handler", () => {
+        const newTriggerHandler = () => {};
+        nthTabClosedListener.init(newTriggerHandler);
+        assert.ok(nthTabClosedListener._initialized);
+        assert.equal(nthTabClosedListener._triggerHandler, newTriggerHandler);
+      });
+
+      it("should add an event listeners to all existing browser windows", () => {
+        assert.calledOnce(existingWindow.addEventListener);
+        assert.calledWith(existingWindow.addEventListener, "TabClose");
+      });
+    });
+
+    describe("#uninit", () => {
+      beforeEach(async () => {
+        nthTabClosedListener.init(triggerHandler);
+        nthTabClosedListener.uninit();
+      });
+      it("should set ._initialized to false and clear the triggerHandler, closed tabs count", () => {
+        assert.notOk(nthTabClosedListener._initialized);
+        assert.equal(nthTabClosedListener._triggerHandler, null);
+        assert.equal(nthTabClosedListener._closedTabs, 0);
+      });
+
+      it("should do nothing if already uninitialised", () => {
+        nthTabClosedListener.uninit();
+        assert.notOk(nthTabClosedListener._initialized);
+      });
+
+      it("should remove event listeners from all existing browser windows", () => {
+        assert.calledOnce(existingWindow.removeEventListener);
+      });
+    });
+  });
+
+  describe("activityAfterIdle", () => {
+    let addObsStub;
+    let removeObsStub;
+    describe("#init", () => {
+      beforeEach(() => {
+        addObsStub = sandbox.stub(global.Services.obs, "addObserver");
+        sandbox
+          .stub(global.Services.wm, "getEnumerator")
+          .returns([{ closed: false, document: { hidden: false } }]);
+        idleListener.init(triggerHandler);
+      });
+      afterEach(() => {
+        idleListener.uninit();
+      });
+
+      it("should set ._initialized to true and save the triggerHandler", () => {
+        assert.ok(idleListener._initialized);
+        assert.equal(idleListener._triggerHandler, triggerHandler);
+      });
+
+      it("if already initialised, it should only update the trigger handler", () => {
+        const newTriggerHandler = () => {};
+        idleListener.init(newTriggerHandler);
+        assert.ok(idleListener._initialized);
+        assert.equal(idleListener._triggerHandler, newTriggerHandler);
+      });
+
+      it("should add observers for idle and activity", () => {
+        assert.called(addObsStub);
+      });
+
+      it("should add event listeners to all existing browser windows", () => {
+        assert.called(existingWindow.addEventListener);
+      });
+    });
+
+    describe("#uninit", () => {
+      beforeEach(async () => {
+        removeObsStub = sandbox.stub(global.Services.obs, "removeObserver");
+        sandbox.stub(global.Services.wm, "getEnumerator").returns([]);
+        idleListener.init(triggerHandler);
+        idleListener.uninit();
+      });
+      it("should set ._initialized to false and clear the triggerHandler and timestamps", () => {
+        assert.notOk(idleListener._initialized);
+        assert.equal(idleListener._triggerHandler, null);
+        assert.equal(idleListener._quietSince, null);
+      });
+
+      it("should do nothing if already uninitialised", () => {
+        idleListener.uninit();
+        assert.notOk(idleListener._initialized);
+      });
+
+      it("should remove observers for idle and activity", () => {
+        assert.called(removeObsStub);
+      });
+
+      it("should remove event listeners from all existing browser windows", () => {
+        assert.called(existingWindow.removeEventListener);
       });
     });
   });
@@ -629,6 +673,58 @@ describe("ASRouterTriggerListeners", () => {
         );
         assert.calledOnce(aRequest.QueryInterface);
         assert.notCalled(newTriggerHandler);
+      });
+    });
+  });
+
+  describe("cookieBannerDetected", () => {
+    describe("#init", () => {
+      beforeEach(() => {
+        cookieBannerDetectedListener.init(triggerHandler);
+      });
+      afterEach(() => {
+        cookieBannerDetectedListener.uninit();
+      });
+
+      it("should set ._initialized to true and save the triggerHandler", () => {
+        assert.ok(cookieBannerDetectedListener._initialized);
+        assert.equal(
+          cookieBannerDetectedListener._triggerHandler,
+          triggerHandler
+        );
+      });
+
+      it("if already initialised, it should only update the trigger handler", () => {
+        const newTriggerHandler = () => {};
+        cookieBannerDetectedListener.init(newTriggerHandler);
+        assert.ok(cookieBannerDetectedListener._initialized);
+        assert.equal(
+          cookieBannerDetectedListener._triggerHandler,
+          newTriggerHandler
+        );
+      });
+
+      it("should add an event listeners to all existing browser windows", () => {
+        assert.calledOnce(existingWindow.addEventListener);
+      });
+    });
+    describe("#uninit", () => {
+      beforeEach(async () => {
+        cookieBannerDetectedListener.init(triggerHandler);
+        cookieBannerDetectedListener.uninit();
+      });
+      it("should set ._initialized to false and clear the triggerHandler and timestamps", () => {
+        assert.notOk(cookieBannerDetectedListener._initialized);
+        assert.equal(cookieBannerDetectedListener._triggerHandler, null);
+      });
+
+      it("should do nothing if already uninitialised", () => {
+        cookieBannerDetectedListener.uninit();
+        assert.notOk(cookieBannerDetectedListener._initialized);
+      });
+
+      it("should remove event listeners from all existing browser windows", () => {
+        assert.called(existingWindow.removeEventListener);
       });
     });
   });

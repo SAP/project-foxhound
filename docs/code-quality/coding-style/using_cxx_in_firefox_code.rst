@@ -58,11 +58,11 @@ list of acceptable features is given below:
      - 4.8.1
      - 2.9
      - Yes
-   * - default member - initializers (except for bit-fields)
+   * - default member-initializers (except for bit-fields)
      - 4.7
      - 3.0
      - Yes
-   * - default member - initializers (for bit-fields)
+   * - default member-initializers (for bit-fields)
      - 8
      - 6
      - **No**
@@ -278,6 +278,10 @@ list of acceptable features is given below:
      - 7.0
      - 4.0
      - **No** (see notes)
+   * - Designated initializers (C++20)
+     - 8.0 (4.7)
+     - 10.0 (3.0)
+     - Yes [*sic*] (see notes)
    * - #pragma once
      - 3.4
      - Yes
@@ -296,33 +300,48 @@ Sources
 Notes
 ~~~~~
 
-rvalue references: Implicit move method generation cannot be used.
+rvalue references
+  Implicit move method generation cannot be used.
 
-Attributes: Several common attributes are defined in
-`mozilla/Attributes.h <https://searchfox.org/mozilla-central/source/mfbt/Attributes.h>`__
-or nscore.h.
+Attributes
+  Several common attributes are defined in
+  `mozilla/Attributes.h <https://searchfox.org/mozilla-central/source/mfbt/Attributes.h>`__
+  or nscore.h.
 
-Alignment: Some alignment utilities are defined in
-`mozilla/Alignment.h <https://searchfox.org/mozilla-central/source/mfbt/Alignment.h>`__.
-/!\\ MOZ_ALIGNOF and alignof don't have the same semantics. Be careful
-of what you expect from them.
+Alignment
+  Some alignment utilities are defined in `mozilla/Alignment.h
+  <https://searchfox.org/mozilla-central/source/mfbt/Alignment.h>`__.
 
-``[[deprecated]]``: If we have deprecated code, we should be removing it
-rather than marking it as such. Marking things as ``[[deprecated]]``
-also means the compiler will warn if you use the deprecated API, which
-turns into a fatal error in our automation builds, which is not helpful.
+  .. caution::
+    ``MOZ_ALIGNOF`` and ``alignof`` don't have the same semantics. Be careful of what you
+    expect from them.
 
-Sized deallocation: Our compilers all support this (custom flags are
-required for GCC and Clang), but turning it on breaks some classes'
-``operator new`` methods, and `some
-work <https://bugzilla.mozilla.org/show_bug.cgi?id=1250998>`__ would
-need to be done to make it an efficiency win with our custom memory
-allocator.
+``[[deprecated]]``
+  If we have deprecated code, we should be removing it rather than marking it as
+  such. Marking things as ``[[deprecated]]`` also means the compiler will warn
+  if you use the deprecated API, which turns into a fatal error in our
+  automation builds, which is not helpful.
 
-Aligned allocation/deallocation: Our custom memory allocator doesn't
-have support for these functions.
+Sized deallocation
+  Our compilers all support this (custom flags are required for GCC and Clang),
+  but turning it on breaks some classes' ``operator new`` methods, and `some
+  work <https://bugzilla.mozilla.org/show_bug.cgi?id=1250998>`__ would need to
+  be done to make it an efficiency win with our custom memory allocator.
 
-Thread locals: ``thread_local`` is not supported on Android.
+Aligned allocation/deallocation
+  Our custom memory allocator doesn't have support for these functions.
+
+Thread locals
+  ``thread_local`` is not supported on Android.
+
+Designated initializers
+  Despite their late addition to C++ (and lack of *official* support by
+  compilers until relatively recently), `C++20's designated initializers
+  <https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p0329r4.pdf>`__ are
+  merely a subset of `a feature originally introduced in C99
+  <https://gcc.gnu.org/onlinedocs/gcc/Designated-Inits.html>`__ -- and this
+  subset has been accepted without comment in C++ code since at least GCC 4.7
+  and Clang 3.0.
 
 
 C++ and Mozilla standard libraries
@@ -377,7 +396,7 @@ Data structures
    * - ``nsClassHashtable``
      - ``nsClassHashtable.h``
      -
-     - Adaptation of nsTHashtable, see `XPCOM hashtable guide <https://developer.mozilla.org/docs/Mozilla/Tech/XPCOM/Guide/Hashtables>`__
+     - Adaptation of nsTHashtable, see :ref:`XPCOM Hashtable Guide`
    * - ``nsCOMArray``
      - ``nsCOMArray.h``
      -
@@ -385,7 +404,7 @@ Data structures
    * - ``nsDataHashtable``
      - ``nsClassHashtable.h``
      - ``std::unordered_map``
-     - Adaptation of ``nsTHashtable``, see `XPCOM hashtable guide <https://developer.mozilla.org/docs/Mozilla/Tech/XPCOM/Guide/Hashtables>`__
+     - Adaptation of ``nsTHashtable``, see :ref:`XPCOM Hashtable Guide`
    * - ``nsDeque``
      - ``nsDeque.h``
      - ``std::deque<void *>``
@@ -401,7 +420,7 @@ Data structures
    * - ``nsInterfaceHashtable``
      - ``nsInterfaceHashtable.h``
      - ``std::unordered_map``
-     - Adaptation of ``nsTHashtable``, see `XPCOM hashtable guide <https://developer.mozilla.org/docs/Mozilla/Tech/XPCOM/Guide/Hashtables>`__
+     - Adaptation of ``nsTHashtable``, see :ref:`XPCOM Hashtable Guide`
    * - ``mozilla::LinkedList``
      - ``mozilla/LinkedList.h``
      - ``std::list``
@@ -409,7 +428,7 @@ Data structures
    * - ``nsRef PtrHashtable``
      - ``nsRefPtrHashtable.h``
      - ``std::unordered_map``
-     - Adaptation of ``nsTHashtable``, see `XPCOM hashtable guide <https://developer.mozilla.org/docs/Mozilla/Tech/XPCOM/Guide/Hashtables>`__
+     - Adaptation of ``nsTHashtable``, see :ref:`XPCOM Hashtable Guide`
    * - ``mozilla::SegmentedVector``
      - ``mozilla/SegmentedVector.h``
      - ``std::deque`` w/o O(1) pop_front
@@ -425,7 +444,7 @@ Data structures
    * - ``nsTHashtable``
      - ``nsTHashtable.h``
      - ``std::unordered_{map,set}``
-     - See `XPCOM hashtable guide <https://developer.mozilla.org/docs/Mozilla/Tech/XPCOM/Guide/Hashtables>`__,  you probably want a subclass
+     - See :ref:`XPCOM Hashtable Guide`,  you probably want a subclass
    * - ``nsTObserverArray``
      - ``nsTObserverArray.h``
      -
@@ -512,8 +531,7 @@ Safety utilities
 Strings
 ~~~~~~~
 
-See the `Mozilla internal string
-guide <https://developer.mozilla.org/docs/Mozilla/Tech/XPCOM/Guide/Internal_strings>`__ for
+See the :doc:`Mozilla internal string guide </xpcom/stringguide>` for
 usage of ``nsAString`` (our copy-on-write replacement for
 ``std::u16string``) and ``nsACString`` (our copy-on-write replacement
 for ``std::string``).

@@ -90,12 +90,12 @@ add_task(async function() {
     const menuLabel = await getMenuLabel(toolbox);
 
     return {
-      deckHeight: deckHeight,
-      containerHeight: containerHeight,
-      webconsoleHeight: webconsoleHeight,
-      splitterVisibility: splitterVisibility,
-      splitterHeight: splitterHeight,
-      openedConsolePanel: openedConsolePanel,
+      deckHeight,
+      containerHeight,
+      webconsoleHeight,
+      splitterVisibility,
+      splitterHeight,
+      openedConsolePanel,
       menuLabel,
     };
   }
@@ -307,7 +307,7 @@ add_task(async function() {
           currentUIState.webconsoleHeight +
           currentUIState.splitterHeight
       ),
-      currentUIState.containerHeight,
+      Math.round(currentUIState.containerHeight),
       "Everything adds up to container height"
     );
     ok(

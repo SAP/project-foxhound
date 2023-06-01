@@ -5,10 +5,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/MessageEvent.h"
 #include "mozilla/dom/MessageEventBinding.h"
+#include "mozilla/dom/RemoteWorkerChild.h"
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/AbstractThread.h"
+#include "mozilla/Encoding.h"
 #include "mozilla/PerformanceUtils.h"
 #include "nsProxyRelease.h"
 #include "nsQueryObject.h"
@@ -25,8 +28,7 @@
 #  include <unistd.h>  // for getpid()
 #endif                 // defined(XP_WIN)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -66,11 +68,15 @@ class DebuggerMessageEventRunnable : public WorkerDebuggerRunnable {
 
 class CompileDebuggerScriptRunnable final : public WorkerDebuggerRunnable {
   nsString mScriptURL;
+  const mozilla::Encoding* mDocumentEncoding;
 
  public:
   CompileDebuggerScriptRunnable(WorkerPrivate* aWorkerPrivate,
-                                const nsAString& aScriptURL)
-      : WorkerDebuggerRunnable(aWorkerPrivate), mScriptURL(aScriptURL) {}
+                                const nsAString& aScriptURL,
+                                const mozilla::Encoding* aDocumentEncoding)
+      : WorkerDebuggerRunnable(aWorkerPrivate),
+        mScriptURL(aScriptURL),
+        mDocumentEncoding(aDocumentEncoding) {}
 
  private:
   virtual bool WorkerRun(JSContext* aCx,
@@ -93,7 +99,7 @@ class CompileDebuggerScriptRunnable final : public WorkerDebuggerRunnable {
     ErrorResult rv;
     JSAutoRealm ar(aCx, global);
     workerinternals::LoadMainScript(aWorkerPrivate, nullptr, mScriptURL,
-                                    DebuggerScript, rv);
+                                    DebuggerScript, rv, mDocumentEncoding);
     rv.WouldReportJSException();
     // Explicitly ignore NS_BINDING_ABORTED on rv.  Or more precisely, still
     // return false and don't SetWorkerScriptExecutedSuccessfully() in that
@@ -357,9 +363,19 @@ WorkerDebugger::Initialize(const nsAString& aURL) {
     return NS_ERROR_UNEXPECTED;
   }
 
+  // This should be non-null for dedicated workers and null for Shared and
+  // Service workers. All Encoding values are static and will live as long
+  // as the process and the convention is to therefore use raw pointers.
+  const mozilla::Encoding* aDocumentEncoding =
+      NS_IsMainThread() && !mWorkerPrivate->GetParent() &&
+              mWorkerPrivate->GetDocument()
+          ? mWorkerPrivate->GetDocument()->GetDocumentCharacterSet().get()
+          : nullptr;
+
   if (!mIsInitialized) {
     RefPtr<CompileDebuggerScriptRunnable> runnable =
-        new CompileDebuggerScriptRunnable(mWorkerPrivate, aURL);
+        new CompileDebuggerScriptRunnable(mWorkerPrivate, aURL,
+                                          aDocumentEncoding);
     if (!runnable->Dispatch()) {
       return NS_ERROR_FAILURE;
     }
@@ -484,7 +500,6 @@ void WorkerDebugger::ReportErrorToDebuggerOnMainThread(
 
 RefPtr<PerformanceInfoPromise> WorkerDebugger::ReportPerformanceInfo() {
   AssertIsOnMainThread();
-  RefPtr<BrowsingContext> top;
   RefPtr<WorkerDebugger> self = this;
 
 #if defined(XP_WIN)
@@ -494,7 +509,6 @@ RefPtr<PerformanceInfoPromise> WorkerDebugger::ReportPerformanceInfo() {
 #endif
   bool isTopLevel = false;
   uint64_t windowID = mWorkerPrivate->WindowID();
-  PerformanceMemoryInfo memoryInfo;
 
   // Walk up to our containing page and its window
   WorkerPrivate* wp = mWorkerPrivate;
@@ -505,7 +519,7 @@ RefPtr<PerformanceInfoPromise> WorkerDebugger::ReportPerformanceInfo() {
   if (win) {
     BrowsingContext* context = win->GetBrowsingContext();
     if (context) {
-      top = context->Top();
+      RefPtr<BrowsingContext> top = context->Top();
       if (top && top->GetCurrentWindowContext()) {
         windowID = top->GetCurrentWindowContext()->OuterWindowId();
         isTopLevel = context->IsTop();
@@ -532,41 +546,59 @@ RefPtr<PerformanceInfoPromise> WorkerDebugger::ReportPerformanceInfo() {
   // Firefox.
   FallibleTArray<CategoryDispatch> items;
 
+  if (mWorkerPrivate->GetParent()) {
+    // We cannot properly measure the memory usage of nested workers
+    // (https://phabricator.services.mozilla.com/D146673#4948924)
+    return PerformanceInfoPromise::CreateAndResolve(
+        PerformanceInfo(url, pid, windowID, duration, perfId, true, isTopLevel,
+                        PerformanceMemoryInfo(), items),
+        __func__);
+  }
+
   CategoryDispatch item =
       CategoryDispatch(DispatchCategory::Worker.GetValue(), count);
   if (!items.AppendElement(item, fallible)) {
     NS_ERROR("Could not complete the operation");
   }
 
-  if (!isTopLevel) {
+  // Switch to the worker thread to gather the JS Runtime's memory usage.
+  RefPtr<WorkerPrivate::JSMemoryUsagePromise> memoryUsagePromise =
+      mWorkerPrivate->GetJSMemoryUsage();
+  if (!memoryUsagePromise) {
+    // The worker is shutting down, so we don't count the JavaScript memory.
     return PerformanceInfoPromise::CreateAndResolve(
         PerformanceInfo(url, pid, windowID, duration, perfId, true, isTopLevel,
-                        memoryInfo, items),
+                        PerformanceMemoryInfo(), items),
         __func__);
   }
 
   // We need to keep a ref on workerPrivate, passed to the promise,
-  // to make sure it's still aloive when collecting the info
-  // (and CheckedUnsafePtr does not convert directly to RefPtr).
+  // to make sure it's still alive when collecting the info, and we can't do
+  // this in WorkerPrivate::GetJSMemoryUsage() since that could cause it to be
+  // freed on the worker thread.
+  // Because CheckedUnsafePtr does not convert directly to RefPtr, we have an
+  // extra step here.
   WorkerPrivate* workerPtr = mWorkerPrivate;
   RefPtr<WorkerPrivate> workerRef = workerPtr;
-  RefPtr<AbstractThread> mainThread = AbstractThread::MainThread();
 
-  return CollectMemoryInfo(top, mainThread)
-      ->Then(
-          mainThread, __func__,
-          [workerRef, url, pid, perfId, windowID, duration, isTopLevel,
-           items = std::move(items)](const PerformanceMemoryInfo& aMemoryInfo) {
-            return PerformanceInfoPromise::CreateAndResolve(
-                PerformanceInfo(url, pid, windowID, duration, perfId, true,
-                                isTopLevel, aMemoryInfo, items),
-                __func__);
-          },
-          [workerRef]() {
-            return PerformanceInfoPromise::CreateAndReject(NS_ERROR_FAILURE,
-                                                           __func__);
-          });
+  // This captures an unused reference to memoryUsagePromise because the worker
+  // can be released while this promise is still alive.
+  return memoryUsagePromise->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      [url, pid, perfId, windowID, duration, isTopLevel,
+       items = std::move(items), _w = std::move(workerRef),
+       memoryUsagePromise](uint64_t jsMem) {
+        PerformanceMemoryInfo memInfo;
+        memInfo.jsMemUsage() = jsMem;
+        return PerformanceInfoPromise::CreateAndResolve(
+            PerformanceInfo(url, pid, windowID, duration, perfId, true,
+                            isTopLevel, memInfo, items),
+            __func__);
+      },
+      []() {
+        return PerformanceInfoPromise::CreateAndReject(NS_ERROR_FAILURE,
+                                                       __func__);
+      });
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

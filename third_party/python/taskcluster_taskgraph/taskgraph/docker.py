@@ -7,12 +7,15 @@ import json
 import os
 import tarfile
 from io import BytesIO
+from textwrap import dedent
+
+try:
+    import zstandard as zstd
+except ImportError as e:
+    zstd = e
 
 from taskgraph.util import docker
-from taskgraph.util.taskcluster import (
-    get_artifact_url,
-    get_session,
-)
+from taskgraph.util.taskcluster import get_artifact_url, get_session
 
 
 def get_image_digest(image_name):
@@ -118,7 +121,15 @@ def load_image(url, imageName=None, imageTag=None):
 
     Returns an object with properties 'image', 'tag' and 'layer'.
     """
-    import zstandard as zstd
+    if isinstance(zstd, ImportError):
+        raise ImportError(
+            dedent(
+                """
+                zstandard is not installed! Use `pip install taskcluster-taskgraph[load-image]`
+                to use this feature.
+                """
+            )
+        ) from zstd
 
     # If imageName is given and we don't have an imageTag
     # we parse out the imageTag from imageName, or default it to 'latest'
@@ -133,7 +144,7 @@ def load_image(url, imageName=None, imageTag=None):
 
     def download_and_modify_image():
         # This function downloads and edits the downloaded tar file on the fly.
-        # It emits chunked buffers of the editted tar file, as a generator.
+        # It emits chunked buffers of the edited tar file, as a generator.
         print(f"Downloading from {url}")
         # get_session() gets us a requests.Session set to retry several times.
         req = get_session().get(url, stream=True)

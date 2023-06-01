@@ -161,6 +161,7 @@ class ProtectionCategory {
       return false;
     }
     this.categoryItem.classList.toggle("blocked", this.enabled);
+    this.categoryItem.classList.toggle("subviewbutton-nav", this.enabled);
     return true;
   }
 
@@ -457,7 +458,6 @@ let TrackingProtection = new (class TrackingProtection extends ProtectionCategor
     // still show the panel. To reduce the confusion, tell the user that we have
     // not detected any tracker.
     if (!items.childNodes.length) {
-      let emptyBox = document.createXULElement("vbox");
       let emptyImage = document.createXULElement("image");
       emptyImage.classList.add("protections-popup-trackersView-empty-image");
       emptyImage.classList.add("trackers-icon");
@@ -468,9 +468,8 @@ let TrackingProtection = new (class TrackingProtection extends ProtectionCategor
         "contentBlocking.trackersView.empty.label"
       );
 
-      emptyBox.appendChild(emptyImage);
-      emptyBox.appendChild(emptyLabel);
-      items.appendChild(emptyBox);
+      items.appendChild(emptyImage);
+      items.appendChild(emptyLabel);
 
       this.subViewList.classList.add("empty");
     } else {
@@ -612,7 +611,7 @@ let ThirdPartyCookies = new (class ThirdPartyCookies extends ProtectionCategory 
       case Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN:
         return "cookiesfromunvisitedsitesblocked";
       default:
-        Cu.reportError(
+        console.error(
           `Error: Unknown cookieBehavior pref observed: ${this.behaviorPref}`
         );
       // fall through
@@ -685,7 +684,7 @@ let ThirdPartyCookies = new (class ThirdPartyCookies extends ProtectionCategory 
           label = "contentBlocking.cookies.blockingTrackers3.label";
           break;
         default:
-          Cu.reportError(
+          console.error(
             `Error: Unknown cookieBehavior pref observed: ${this.behaviorPref}`
           );
           break;
@@ -757,14 +756,23 @@ let ThirdPartyCookies = new (class ThirdPartyCookies extends ProtectionCategory 
       case Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN:
         title = titleStringPrefix + "3rdParty.title";
         this.subViewHeading.hidden = true;
+        if (this.subViewHeading.nextSibling.nodeName == "toolbarseparator") {
+          this.subViewHeading.nextSibling.hidden = true;
+        }
         break;
       case Ci.nsICookieService.BEHAVIOR_REJECT:
         title = titleStringPrefix + "all.title";
         this.subViewHeading.hidden = true;
+        if (this.subViewHeading.nextSibling.nodeName == "toolbarseparator") {
+          this.subViewHeading.nextSibling.hidden = true;
+        }
         break;
       case Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN:
         title = "protections.blocking.cookies.unvisited.title";
         this.subViewHeading.hidden = true;
+        if (this.subViewHeading.nextSibling.nodeName == "toolbarseparator") {
+          this.subViewHeading.nextSibling.hidden = true;
+        }
         break;
       case Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER:
       case Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN:
@@ -773,7 +781,7 @@ let ThirdPartyCookies = new (class ThirdPartyCookies extends ProtectionCategory 
           : "protections.blocking.cookies.trackers.title";
         break;
       default:
-        Cu.reportError(
+        console.error(
           `Error: Unknown cookieBehavior pref when updating subview: ${this.behaviorPref}`
         );
         break;
@@ -1050,6 +1058,258 @@ let SocialTracking = new (class SocialTrackingProtection extends ProtectionCateg
 })();
 
 /**
+ * Singleton to manage the cookie banner feature section in the protections
+ * panel and the cookie banner handling subview.
+ */
+let cookieBannerHandling = new (class {
+  // Check if this is a private window. We don't expect PBM state to change
+  // during the lifetime of this window.
+  #isPrivateBrowsing = PrivateBrowsingUtils.isWindowPrivate(window);
+
+  constructor() {
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "_serviceModePref",
+      "cookiebanners.service.mode",
+      Ci.nsICookieBannerService.MODE_DISABLED
+    );
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "_serviceModePrefPrivateBrowsing",
+      "cookiebanners.service.mode.privateBrowsing",
+      Ci.nsICookieBannerService.MODE_DISABLED
+    );
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "_serviceDetectOnly",
+      "cookiebanners.service.detectOnly",
+      false
+    );
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "_uiDisabled",
+      "cookiebanners.ui.desktop.enabled",
+      false
+    );
+  }
+
+  /**
+   * Tests if the current site has a user-created exception from the default
+   * cookie banner handling mode. Currently that means the feature is disabled
+   * for the current site.
+   *
+   * Note: bug 1790688 will move this mode handling logic into the
+   * nsCookieBannerService.
+   *
+   * @returns {boolean} - true if the user has manually created an exception.
+   */
+  get #hasException() {
+    // If the CBH feature is preffed off, we can't have an exception.
+    if (!Services.cookieBanners.isEnabled) {
+      return false;
+    }
+
+    // URLs containing IP addresses are not supported by the CBH service, and
+    // will throw. In this case, users can't create an exception, so initialize
+    // `pref` to the default value returned by `getDomainPref`.
+    let pref = Ci.nsICookieBannerService.MODE_UNSET;
+    try {
+      pref = Services.cookieBanners.getDomainPref(
+        gBrowser.currentURI,
+        this.#isPrivateBrowsing
+      );
+    } catch (ex) {
+      console.error(
+        "Cookie Banner Handling error checking for per-site exceptions: ",
+        ex
+      );
+    }
+    return pref == Ci.nsICookieBannerService.MODE_DISABLED;
+  }
+
+  /**
+   * Tests if the cookie banner handling code supports the current site.
+   *
+   * See nsICookieBannerService.hasRuleForBrowsingContextTree for details.
+   *
+   * @returns {boolean} - true if the base domain is in the list of rules.
+   */
+  get isSiteSupported() {
+    return (
+      Services.cookieBanners.isEnabled &&
+      Services.cookieBanners.hasRuleForBrowsingContextTree(
+        gBrowser.selectedBrowser.browsingContext
+      )
+    );
+  }
+
+  /*
+   * @returns {string} - Base domain (eTLD + 1) used for clearing site data.
+   */
+  get #currentBaseDomain() {
+    return gBrowser.contentPrincipal.baseDomain;
+  }
+
+  // Element getters
+
+  #cookieBannerSectionEl;
+  get #cookieBannerSection() {
+    if (this.#cookieBannerSectionEl) {
+      return this.#cookieBannerSectionEl;
+    }
+    return (this.#cookieBannerSectionEl = document.getElementById(
+      "protections-popup-cookie-banner-section"
+    ));
+  }
+
+  #cookieBannerSectionSeparatorEl;
+  get #cookieBannerSectionSeparator() {
+    if (this.#cookieBannerSectionSeparatorEl) {
+      return this.#cookieBannerSectionSeparatorEl;
+    }
+    return (this.#cookieBannerSectionSeparatorEl = document.getElementById(
+      "protections-popup-cookie-banner-section-separator"
+    ));
+  }
+
+  #cookieBannerSwitchEl;
+  get #cookieBannerSwitch() {
+    if (this.#cookieBannerSwitchEl) {
+      return this.#cookieBannerSwitchEl;
+    }
+    return (this.#cookieBannerSwitchEl = document.getElementById(
+      "protections-popup-cookie-banner-switch"
+    ));
+  }
+
+  #cookieBannerSubviewEl;
+  get #cookieBannerSubview() {
+    if (this.#cookieBannerSubviewEl) {
+      return this.#cookieBannerSubviewEl;
+    }
+    return (this.#cookieBannerSubviewEl = document.getElementById(
+      "protections-popup-cookieBannerView"
+    ));
+  }
+
+  /*
+   * Initialize or update the cookie banner handling section state. To be called
+   * initially or whenever the panel opens for a new site.
+   *
+   */
+  updateSection() {
+    let showSection = this.#shouldShowSection();
+
+    for (let el of [
+      this.#cookieBannerSection,
+      this.#cookieBannerSectionSeparator,
+    ]) {
+      el.toggleAttribute("uiDisabled", !showSection);
+    }
+
+    // Reflect ternary CBH state in two boolean DOM attributes.
+    this.#cookieBannerSection.toggleAttribute(
+      "hasException",
+      this.#hasException
+    );
+    this.#cookieBannerSection.toggleAttribute("enabled", this.isSiteSupported);
+
+    // On unsupported sites, disable button styling and click behavior.
+    // Note: to be replaced with a "please support site" subview in bug 1801971.
+    this.#cookieBannerSection.toggleAttribute(
+      "disabled",
+      !this.isSiteSupported
+    );
+    if (this.isSiteSupported) {
+      this.#cookieBannerSection.removeAttribute("disabled");
+      this.#cookieBannerSwitch.classList.add("subviewbutton-nav");
+      this.#cookieBannerSwitch.removeAttribute("disabled");
+    } else {
+      this.#cookieBannerSection.setAttribute("disabled", true);
+      this.#cookieBannerSwitch.classList.remove("subviewbutton-nav");
+      this.#cookieBannerSwitch.setAttribute("disabled", true);
+    }
+  }
+
+  #shouldShowSection() {
+    // UI is globally disabled by pref.
+    if (!this._uiDisabled) {
+      return false;
+    }
+    // Don't show UI for detect-only mode.
+    if (this._serviceDetectOnly) {
+      return false;
+    }
+
+    let mode;
+
+    if (this.#isPrivateBrowsing) {
+      mode = this._serviceModePrefPrivateBrowsing;
+    } else {
+      mode = this._serviceModePref;
+    }
+
+    // Only show the section if the feature is enabled for the normal or PBM
+    // window.
+    return mode != Ci.nsICookieBannerService.MODE_DISABLED;
+  }
+
+  /*
+   * Updates the cookie banner handling subview just before it's shown.
+   *
+   * Note that this subview can only be shown if we have cookie banner rules
+   * for a given site, so in this function, we assume the site is supported,
+   * and only check if the user has manually created an exception for the
+   * current base domain.
+   */
+  updateSubView() {
+    this.#cookieBannerSubview.toggleAttribute(
+      "hasException",
+      this.#hasException
+    );
+
+    let siteDescription = this.#cookieBannerSubview.querySelectorAll(
+      "description#cookieBannerView-disable-site, description#cookieBannerView-enable-site"
+    );
+    let host = this.#currentBaseDomain;
+    siteDescription.forEach(d =>
+      d.setAttribute("data-l10n-args", JSON.stringify({ host }))
+    );
+  }
+
+  async #disableCookieBannerHandling() {
+    await SiteDataManager.remove(this.#currentBaseDomain);
+    Services.cookieBanners.setDomainPref(
+      gBrowser.currentURI,
+      Ci.nsICookieBannerService.MODE_DISABLED,
+      this.#isPrivateBrowsing
+    );
+  }
+
+  #enableCookieBannerHandling() {
+    Services.cookieBanners.removeDomainPref(
+      gBrowser.currentURI,
+      this.#isPrivateBrowsing
+    );
+  }
+
+  async onCookieBannerToggleCommand() {
+    let hasException = this.#cookieBannerSection.toggleAttribute(
+      "hasException"
+    );
+    if (hasException) {
+      await this.#disableCookieBannerHandling();
+      gProtectionsHandler.recordClick("cookieb_toggle_off");
+    } else {
+      this.#enableCookieBannerHandling();
+      gProtectionsHandler.recordClick("cookieb_toggle_on");
+    }
+    gProtectionsHandler._hidePopup();
+    gBrowser.reloadTab(gBrowser.selectedTab);
+  }
+})();
+
+/**
  * Utility object to handle manipulations of the protections indicators in the UI
  */
 var gProtectionsHandler = {
@@ -1096,12 +1356,6 @@ var gProtectionsHandler = {
     delete this.iconBox;
     return (this.iconBox = document.getElementById(
       "tracking-protection-icon-box"
-    ));
-  },
-  get _protectionsIconBox() {
-    delete this._protectionsIconBox;
-    return (this._protectionsIconBox = document.getElementById(
-      "tracking-protection-icon-animatable-box"
     ));
   },
   get _protectionsPopupMultiView() {
@@ -1424,6 +1678,16 @@ var gProtectionsHandler = {
     );
   },
 
+  async onCookieBannerClick(event) {
+    if (!cookieBannerHandling.isSiteSupported) {
+      return;
+    }
+    await cookieBannerHandling.updateSubView();
+    this._protectionsPopupMultiView.showSubView(
+      "protections-popup-cookieBannerView"
+    );
+  },
+
   recordClick(object, value = null, source = "protectionspopup") {
     Services.telemetry.recordEvent(
       `security.ui.${source}`,
@@ -1618,7 +1882,7 @@ var gProtectionsHandler = {
    * Update the in-panel UI given a blocking event. Called when the popup
    * is being shown, or when the popup is open while a new event comes in.
    */
-  updatePanelForBlockingEvent(event, isShown) {
+  updatePanelForBlockingEvent(event) {
     // Update the categories:
     for (let blocker of Object.values(this.blockers)) {
       if (blocker.categoryItem.hasAttribute("uidisabled")) {
@@ -1627,6 +1891,10 @@ var gProtectionsHandler = {
       blocker.categoryItem.classList.toggle(
         "notFound",
         !blocker.isDetected(event)
+      );
+      blocker.categoryItem.classList.toggle(
+        "subviewbutton-nav",
+        blocker.isDetected(event)
       );
     }
 
@@ -1640,16 +1908,6 @@ var gProtectionsHandler = {
     if (this.anyDetected) {
       // Reorder categories if any are in use.
       this.reorderCategoryItems();
-
-      if (isShown) {
-        // Until we encounter a site that triggers them, category elements might
-        // be invisible when descriptionHeightWorkaround gets called, i.e. they
-        // are omitted from the workaround and the content overflows the panel.
-        // Solution: call it manually here.
-        PanelMultiView.forNode(
-          this._protectionsPopupMainView
-        ).descriptionHeightWorkaround();
-      }
     }
   },
 
@@ -1753,7 +2011,7 @@ var gProtectionsHandler = {
       this._protectionsPopup?.state
     );
     if (isPanelOpen) {
-      this.updatePanelForBlockingEvent(event, true);
+      this.updatePanelForBlockingEvent(event);
     }
 
     // Notify other consumers, like CFR.
@@ -1870,6 +2128,8 @@ var gProtectionsHandler = {
     } else {
       this._protectionsPopup.removeAttribute("milestone");
     }
+
+    cookieBannerHandling.updateSection();
 
     this._protectionsPopup.toggleAttribute("detected", this.anyDetected);
     this._protectionsPopup.toggleAttribute("blocking", this.anyBlocking);
@@ -2022,6 +2282,10 @@ var gProtectionsHandler = {
     delete this._TPSwitchCommanding;
   },
 
+  onCookieBannerToggleCommand() {
+    cookieBannerHandling.onCookieBannerToggleCommand();
+  },
+
   setTrackersBlockedCounter(trackerCount) {
     let forms = gNavigatorBundle.getString(
       "protections.footer.blockedTrackerCounter.description"
@@ -2149,7 +2413,7 @@ var gProtectionsHandler = {
         "popupshown",
         () => {
           this._toastPanelTimer = setTimeout(() => {
-            PanelMultiView.hidePopup(this._protectionsPopup);
+            PanelMultiView.hidePopup(this._protectionsPopup, true);
             delete this._toastPanelTimer;
           }, this._protectionsPopupToastTimeout);
         },
@@ -2172,10 +2436,10 @@ var gProtectionsHandler = {
       this._protectionsPopup,
       this._trackingProtectionIconContainer,
       {
-        position: "bottomcenter topleft",
+        position: "bottomleft topleft",
         triggerEvent: event,
       }
-    ).catch(Cu.reportError);
+    ).catch(console.error);
   },
 
   showSiteNotWorkingView() {
@@ -2264,9 +2528,6 @@ var gProtectionsHandler = {
     body += `${ThirdPartyCookies.prefEnabled}: ${Services.prefs.getIntPref(
       ThirdPartyCookies.prefEnabled
     )}\n`;
-    body += `network.cookie.lifetimePolicy: ${Services.prefs.getIntPref(
-      "network.cookie.lifetimePolicy"
-    )}\n`;
     body += `privacy.annotate_channels.strict_list.enabled: ${Services.prefs.getBoolPref(
       "privacy.annotate_channels.strict_list.enabled"
     )}\n`;
@@ -2304,16 +2565,19 @@ var gProtectionsHandler = {
       .then(response => {
         this._protectionsPopupSendReportButton.disabled = false;
         if (!response.ok) {
-          Cu.reportError(
+          console.error(
             `Content Blocking report to ${reportEndpoint} failed with status ${response.status}`
           );
           this._protectionsPopupSiteNotWorkingReportError.hidden = false;
         } else {
           this._protectionsPopup.hidePopup();
-          ConfirmationHint.show(this.iconBox, "breakageReport");
+          ConfirmationHint.show(
+            this.iconBox,
+            "confirmation-hint-breakage-report-sent"
+          );
         }
       })
-      .catch(Cu.reportError);
+      .catch(console.error);
   },
 
   onSendReportClicked() {

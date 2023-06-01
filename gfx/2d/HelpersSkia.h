@@ -29,7 +29,13 @@ static inline SkColorType GfxFormatToSkiaColorType(SurfaceFormat format) {
       return kRGB_565_SkColorType;
     case SurfaceFormat::A8:
       return kAlpha_8_SkColorType;
+    case SurfaceFormat::R8G8B8A8:
+      return kRGBA_8888_SkColorType;
+    case SurfaceFormat::A8R8G8B8:
+      MOZ_DIAGNOSTIC_ASSERT(false, "A8R8G8B8 unsupported by Skia");
+      return kRGBA_8888_SkColorType;
     default:
+      MOZ_DIAGNOSTIC_ASSERT(false, "Unknown surface format");
       return kRGBA_8888_SkColorType;
   }
 }
@@ -325,6 +331,21 @@ static inline bool IsBackedByPixels(const SkCanvas* aCanvas) {
   }
   return true;
 }
+
+/**
+ * Computes appropriate resolution scale to be used with SkPath::getFillPath
+ * based on the scaling of the supplied transform.
+ */
+float ComputeResScaleForStroking(const Matrix& aTransform);
+
+/**
+ * This is a wrapper around SkGeometry's SkConic that can be used to convert
+ * conic sections in an SkPath to a sequence of quadratic curves. The quads
+ * vector is organized such that for the Nth quad, it's control points are
+ * 2*N, 2*N+1, 2*N+2. This function returns the resulting number of quads.
+ */
+int ConvertConicToQuads(const Point& aP0, const Point& aP1, const Point& aP2,
+                        float aWeight, std::vector<Point>& aQuads);
 
 }  // namespace gfx
 }  // namespace mozilla

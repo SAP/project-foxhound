@@ -5,8 +5,10 @@
 
 var EXPORTED_SYMBOLS = ["RemoteSettingsTimer"];
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "RemoteSettings",
   "resource://services-settings/remote-settings.js"
 );
@@ -19,8 +21,8 @@ RemoteSettingsTimer.prototype = {
 
   // By default, this timer fires once every 24 hours. See the "services.settings.poll_interval" pref.
   notify(timer) {
-    RemoteSettings.pollChanges({ trigger: "timer" }).catch(e =>
-      Cu.reportError(e)
+    lazy.RemoteSettings.pollChanges({ trigger: "timer" }).catch(e =>
+      console.error(e)
     );
   },
 };

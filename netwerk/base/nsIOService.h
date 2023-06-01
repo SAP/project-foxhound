@@ -19,7 +19,8 @@
 #include "nsWeakReference.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/Mutex.h"
+#include "mozilla/RWLock.h"
+#include "mozilla/net/ProtocolHandlerInfo.h"
 #include "prtime.h"
 #include "nsICaptivePortalService.h"
 #include "nsIObserverService.h"
@@ -34,14 +35,6 @@
 // See Bug 552829
 #define NS_IPC_IOSERVICE_SET_OFFLINE_TOPIC "ipc:network:set-offline"
 #define NS_IPC_IOSERVICE_SET_CONNECTIVITY_TOPIC "ipc:network:set-connectivity"
-
-static const char gScheme[][sizeof("moz-safe-about")] = {
-    "chrome",   "file",          "http",      "https",
-    "jar",      "data",          "about",     "moz-safe-about",
-    "resource", "moz-extension", "page-icon", "blob"};
-
-static const char gForcedExternalSchemes[][sizeof("moz-nullprincipal")] = {
-    "place", "fake-favicon-uri", "favicon", "moz-nullprincipal"};
 
 class nsINetworkLinkService;
 class nsIPrefBranch;
@@ -142,9 +135,16 @@ class nsIOService final : public nsIIOService,
   friend SocketProcessMemoryReporter;
   RefPtr<MemoryReportingProcess> GetSocketProcessMemoryReporter();
 
+  // Lookup the ProtocolHandlerInfo based on a given scheme.
+  // Safe to call from any thread.
+  ProtocolHandlerInfo LookupProtocolHandler(const nsACString& aScheme);
+
   static void OnTLSPrefChange(const char* aPref, void* aSelf);
 
   nsresult LaunchSocketProcess();
+
+  static bool TooManySocketProcessCrash();
+  static void IncreaseSocketProcessCrashCount();
 
  private:
   // These shouldn't be called directly:
@@ -155,12 +155,6 @@ class nsIOService final : public nsIIOService,
   nsresult SetConnectivityInternal(bool aConnectivity);
 
   nsresult OnNetworkLinkEvent(const char* data);
-
-  nsresult GetCachedProtocolHandler(const char* scheme,
-                                    nsIProtocolHandler** hdlrResult,
-                                    uint32_t start = 0, uint32_t end = 0);
-  nsresult CacheProtocolHandler(const char* scheme,
-                                nsIProtocolHandler* handler);
 
   nsresult InitializeCaptivePortalService();
   nsresult RecheckCaptivePortalIfLocalRedirect(nsIChannel* newChan);
@@ -185,7 +179,8 @@ class nsIOService final : public nsIIOService,
       const mozilla::Maybe<mozilla::dom::ClientInfo>& aLoadingClientInfo,
       const mozilla::Maybe<mozilla::dom::ServiceWorkerDescriptor>& aController,
       uint32_t aSecurityFlags, nsContentPolicyType aContentPolicyType,
-      uint32_t aSandboxFlags, nsIChannel** result);
+      uint32_t aSandboxFlags, bool aSkipCheckForBrokenURLOrZeroSized,
+      nsIChannel** result);
 
   nsresult NewChannelFromURIWithProxyFlagsInternal(nsIURI* aURI,
                                                    nsIURI* aProxyURI,
@@ -200,6 +195,9 @@ class nsIOService final : public nsIIOService,
   void DestroySocketProcess();
 
   nsresult SetOfflineInternal(bool offline, bool notifySocketProcess = true);
+
+  bool UsesExternalProtocolHandler(const nsACString& aScheme)
+      MOZ_REQUIRES_SHARED(mLock);
 
  private:
   mozilla::Atomic<bool, mozilla::Relaxed> mOffline{true};
@@ -222,19 +220,20 @@ class nsIOService final : public nsIIOService,
   nsCOMPtr<nsINetworkLinkService> mNetworkLinkService;
   bool mNetworkLinkServiceInitialized{false};
 
-  // Cached protocol handlers, only accessed on the main thread
-  nsWeakPtr mWeakHandler[NS_N(gScheme)];
-
   // cached categories
   nsCategoryCache<nsIChannelEventSink> mChannelEventSinks{
       NS_CHANNEL_EVENT_SINK_CATEGORY};
 
-  Mutex mMutex{"nsIOService::mMutex"};
-  nsTArray<int32_t> mRestrictedPortList;
+  RWLock mLock{"nsIOService::mLock"};
+  nsTArray<int32_t> mRestrictedPortList MOZ_GUARDED_BY(mLock);
+  nsTArray<nsCString> mForceExternalSchemes MOZ_GUARDED_BY(mLock);
+  nsTHashMap<nsCString, RuntimeProtocolHandler> mRuntimeProtocolHandlers
+      MOZ_GUARDED_BY(mLock);
 
   uint32_t mTotalRequests{0};
   uint32_t mCacheWon{0};
   uint32_t mNetWon{0};
+  static uint32_t sSocketProcessCrashedCount;
 
   // These timestamps are needed for collecting telemetry on PR_Connect,
   // PR_ConnectContinue and PR_Close blocking time.  If we spend very long
@@ -258,7 +257,9 @@ class nsIOService final : public nsIIOService,
   nsTHashSet<nsCString> mObserverTopicForSocketProcess;
   // Some noticications (e.g., NS_XPCOM_SHUTDOWN_OBSERVER_ID) are triggered in
   // socket process, so we should not send the notifications again.
-  nsTHashSet<nsCString> mSocketProcessTopicBlackList;
+  nsTHashSet<nsCString> mSocketProcessTopicBlockedList;
+  // Used to store the topics that are already observed by IOService.
+  nsTHashSet<nsCString> mIOServiceTopicList;
 
   nsCOMPtr<nsIObserverService> mObserverService;
 

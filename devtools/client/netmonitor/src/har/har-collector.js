@@ -4,14 +4,13 @@
 
 "use strict";
 
-const Services = require("Services");
 const {
   getLongStringFullText,
-} = require("devtools/client/shared/string-utils");
+} = require("resource://devtools/client/shared/string-utils.js");
 
 // Helper tracer. Should be generic sharable by other modules (bug 1171927)
 const trace = {
-  log: function(...args) {},
+  log(...args) {},
 };
 
 /**
@@ -37,7 +36,7 @@ function HarCollector(options) {
 HarCollector.prototype = {
   // Connection
 
-  start: async function() {
+  async start() {
     await this.commands.resourceCommand.watchResources(
       [this.commands.resourceCommand.TYPES.NETWORK_EVENT],
       {
@@ -47,7 +46,7 @@ HarCollector.prototype = {
     );
   },
 
-  stop: async function() {
+  async stop() {
     await this.commands.resourceCommand.unwatchResources(
       [this.commands.resourceCommand.TYPES.NETWORK_EVENT],
       {
@@ -57,7 +56,7 @@ HarCollector.prototype = {
     );
   },
 
-  clear: function() {
+  clear() {
     // Any pending requests events will be ignored (they turn
     // into zombies, since not present in the files array).
     this.files = new Map();
@@ -67,7 +66,7 @@ HarCollector.prototype = {
     this.requests = [];
   },
 
-  waitForHarLoad: function() {
+  waitForHarLoad() {
     // There should be yet another timeout e.g.:
     // 'devtools.netmonitor.har.pageLoadTimeout'
     // that should force export even if page isn't fully loaded.
@@ -79,7 +78,7 @@ HarCollector.prototype = {
     });
   },
 
-  waitForResponses: function() {
+  waitForResponses() {
     trace.log("HarCollector.waitForResponses; " + this.requests.length);
 
     // All requests for additional data must be received to have complete
@@ -118,7 +117,7 @@ HarCollector.prototype = {
    * of time. The time is set in preferences:
    * 'devtools.netmonitor.har.pageLoadedTimeout'
    */
-  waitForTimeout: function() {
+  waitForTimeout() {
     // The auto-export is not done if the timeout is set to zero (or less).
     // This is useful in cases where the export is done manually through
     // API exposed to the content.
@@ -140,7 +139,7 @@ HarCollector.prototype = {
     });
   },
 
-  resetPageLoadTimeout: function() {
+  resetPageLoadTimeout() {
     // Remove the current timeout.
     if (this.pageLoadTimeout) {
       trace.log("HarCollector.resetPageLoadTimeout;");
@@ -158,17 +157,17 @@ HarCollector.prototype = {
 
   // Collected Data
 
-  getFile: function(actorId) {
+  getFile(actorId) {
     return this.files.get(actorId);
   },
 
-  getItems: function() {
+  getItems() {
     return this.items;
   },
 
   // Event Handlers
 
-  onResourceAvailable: function(resources) {
+  onResourceAvailable(resources) {
     for (const resource of resources) {
       trace.log("HarCollector.onNetworkEvent; ", resource);
 
@@ -195,9 +194,9 @@ HarCollector.prototype = {
         id: actor,
         startedDeltaMs: startTime - this.firstRequestStart,
         startedMs: startTime,
-        method: method,
-        url: url,
-        isXHR: isXHR,
+        method,
+        url,
+        isXHR,
       };
 
       this.files.set(actor, file);
@@ -207,7 +206,7 @@ HarCollector.prototype = {
     }
   },
 
-  onResourceUpdated: function(updates) {
+  onResourceUpdated(updates) {
     for (const { resource } of updates) {
       // Skip events from unknown actors (not in the list).
       // It can happen when there are zombie requests received after
@@ -329,7 +328,7 @@ HarCollector.prototype = {
    * @param object response
    *        The message received from the server.
    */
-  onRequestHeaders: function(response) {
+  onRequestHeaders(response) {
     const file = this.getFile(response.from);
     file.requestHeaders = response;
 
@@ -342,7 +341,7 @@ HarCollector.prototype = {
    * @param object response
    *        The message received from the server.
    */
-  onRequestCookies: function(response) {
+  onRequestCookies(response) {
     const file = this.getFile(response.from);
     file.requestCookies = response;
 
@@ -355,7 +354,7 @@ HarCollector.prototype = {
    * @param object response
    *        The message received from the server.
    */
-  onRequestPostData: function(response) {
+  onRequestPostData(response) {
     trace.log("HarCollector.onRequestPostData;", response);
 
     const file = this.getFile(response.from);
@@ -376,7 +375,7 @@ HarCollector.prototype = {
    * @param object response
    *        The message received from the server.
    */
-  onResponseHeaders: function(response) {
+  onResponseHeaders(response) {
     const file = this.getFile(response.from);
     file.responseHeaders = response;
 
@@ -389,7 +388,7 @@ HarCollector.prototype = {
    * @param object response
    *        The message received from the server.
    */
-  onResponseCookies: function(response) {
+  onResponseCookies(response) {
     const file = this.getFile(response.from);
     file.responseCookies = response;
 
@@ -402,7 +401,7 @@ HarCollector.prototype = {
    * @param object response
    *        The message received from the server.
    */
-  onResponseContent: function(response) {
+  onResponseContent(response) {
     const file = this.getFile(response.from);
     file.responseContent = response;
 
@@ -421,7 +420,7 @@ HarCollector.prototype = {
    * @param object response
    *        The message received from the server.
    */
-  onEventTimings: function(response) {
+  onEventTimings(response) {
     const file = this.getFile(response.from);
     file.eventTimings = response;
     file.totalTime = response.totalTime;
@@ -429,7 +428,7 @@ HarCollector.prototype = {
 
   // Helpers
 
-  getLongHeaders: function(headers) {
+  getLongHeaders(headers) {
     for (const header of headers) {
       if (typeof header.value == "object") {
         try {
@@ -454,7 +453,7 @@ HarCollector.prototype = {
    *         A promise that is resolved when the full string contents
    *         are available, or rejected if something goes wrong.
    */
-  getString: async function(stringGrip) {
+  async getString(stringGrip) {
     const promise = getLongStringFullText(this.commands.client, stringGrip);
     this.requests.push(promise);
     return promise;

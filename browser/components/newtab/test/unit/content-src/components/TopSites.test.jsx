@@ -1,10 +1,13 @@
-import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
+import {
+  actionCreators as ac,
+  actionTypes as at,
+} from "common/Actions.sys.mjs";
 import { GlobalOverrider } from "test/unit/utils";
 import { MIN_RICH_FAVICON_SIZE } from "content-src/components/TopSites/TopSitesConstants";
 import {
   TOP_SITES_DEFAULT_ROWS,
   TOP_SITES_MAX_SITES_PER_ROW,
-} from "common/Reducers.jsm";
+} from "common/Reducers.sys.mjs";
 import {
   TopSite,
   TopSiteLink,
@@ -469,6 +472,34 @@ describe("<TopSiteLink>", () => {
     const wrapper = shallow(<TopSiteLink className="foo bar" />);
     assert.ok(wrapper.find("li").hasClass("top-site-outer foo bar"));
   });
+  describe("#_allowDrop", () => {
+    let wrapper;
+    let event;
+    beforeEach(() => {
+      event = {
+        dataTransfer: {
+          types: ["text/topsite-index"],
+        },
+      };
+      wrapper = shallow(
+        <TopSiteLink isDraggable={true} onDragEvent={() => {}} />
+      );
+    });
+    it("should be droppable for basic case", () => {
+      const result = wrapper.instance()._allowDrop(event);
+      assert.isTrue(result);
+    });
+    it("should not be droppable for sponsored_position", () => {
+      wrapper.setProps({ link: { sponsored_position: 1 } });
+      const result = wrapper.instance()._allowDrop(event);
+      assert.isFalse(result);
+    });
+    it("should not be droppable for link.type", () => {
+      wrapper.setProps({ link: { type: "SPOC" } });
+      const result = wrapper.instance()._allowDrop(event);
+      assert.isFalse(result);
+    });
+  });
   describe("#onDragEvent", () => {
     let simulate;
     let wrapper;
@@ -524,6 +555,32 @@ describe("<TopSiteLink>", () => {
       const event = simulate("click");
 
       assert.notOk(event.prevented);
+    });
+    it("should prevent dragging with sponsored_position from dragstart", () => {
+      const preventDefault = sinon.stub();
+      const blur = sinon.stub();
+      wrapper.setProps({ link: { sponsored_position: 1 } });
+      wrapper.instance().onDragEvent({
+        type: "dragstart",
+        preventDefault,
+        target: { blur },
+      });
+      assert.calledOnce(preventDefault);
+      assert.calledOnce(blur);
+      assert.isUndefined(wrapper.instance().dragged);
+    });
+    it("should prevent dragging with link.shim from dragstart", () => {
+      const preventDefault = sinon.stub();
+      const blur = sinon.stub();
+      wrapper.setProps({ link: { type: "SPOC" } });
+      wrapper.instance().onDragEvent({
+        type: "dragstart",
+        preventDefault,
+        target: { blur },
+      });
+      assert.calledOnce(preventDefault);
+      assert.calledOnce(blur);
+      assert.isUndefined(wrapper.instance().dragged);
     });
   });
 
@@ -716,8 +773,11 @@ describe("<TopSite>", () => {
     it("should dispatch a UserEventAction with the right data for SPOC top site", () => {
       const dispatch = sinon.stub();
       const siteInfo = {
+        id: 1,
         iconType: "custom_screenshot",
         type: "SPOC",
+        pos: 1,
+        label: "test advertiser",
       };
       const wrapper = shallow(
         <TopSite
@@ -729,7 +789,7 @@ describe("<TopSite>", () => {
 
       wrapper.find(TopSiteLink).simulate("click", { preventDefault() {} });
 
-      const [action] = dispatch.firstCall.args;
+      let [action] = dispatch.firstCall.args;
       assert.isUserEventAction(action);
 
       assert.propertyVal(action.data, "event", "CLICK");
@@ -737,6 +797,23 @@ describe("<TopSite>", () => {
       assert.propertyVal(action.data, "action_position", 0);
       assert.propertyVal(action.data.value, "card_type", "spoc");
       assert.propertyVal(action.data.value, "icon_type", "custom_screenshot");
+
+      // Pocket SPOC click event.
+      [action] = dispatch.getCall(2).args;
+      assert.equal(action.type, at.TELEMETRY_IMPRESSION_STATS);
+
+      assert.propertyVal(action.data, "click", 0);
+      assert.propertyVal(action.data, "source", "TOP_SITES");
+
+      // Topsite SPOC click event.
+      [action] = dispatch.getCall(3).args;
+      assert.equal(action.type, at.TOP_SITES_IMPRESSION_STATS);
+
+      assert.propertyVal(action.data, "type", "click");
+      assert.propertyVal(action.data, "tile_id", 1);
+      assert.propertyVal(action.data, "source", "newtab");
+      assert.propertyVal(action.data, "position", 2);
+      assert.propertyVal(action.data, "advertiser", "test advertiser");
     });
     it("should dispatch OPEN_LINK with the right data", () => {
       const dispatch = sinon.stub();
@@ -1525,6 +1602,41 @@ describe("<TopSiteList>", () => {
       site1,
       site3,
       draggedSite,
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
+    site2.type = "SPOC";
+    instance.setState({
+      draggedIndex: 2,
+      draggedSite: site3,
+      draggedTitle: "baz",
+    });
+    draggedSite = Object.assign({}, site3, { isPinned: true, isDragged: true });
+    assert.deepEqual(instance._makeTopSitesPreview(0), [
+      draggedSite,
+      site2,
+      site1,
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
+    site2.type = "";
+    site2.sponsored_position = 2;
+    instance.setState({
+      draggedIndex: 2,
+      draggedSite: site3,
+      draggedTitle: "baz",
+    });
+    draggedSite = Object.assign({}, site3, { isPinned: true, isDragged: true });
+    assert.deepEqual(instance._makeTopSitesPreview(0), [
+      draggedSite,
+      site2,
+      site1,
       null,
       null,
       null,

@@ -1,9 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
 const { Observers } = ChromeUtils.import(
   "resource://services-common/observers.js"
@@ -15,19 +14,16 @@ function SteamStore(engine) {
   this.wasWiped = false;
 }
 SteamStore.prototype = {
-  __proto__: Store.prototype,
-
   async wipe() {
     this.wasWiped = true;
   },
 };
+Object.setPrototypeOf(SteamStore.prototype, Store.prototype);
 
 function SteamTracker(name, engine) {
   LegacyTracker.call(this, name || "Steam", engine);
 }
-SteamTracker.prototype = {
-  __proto__: LegacyTracker.prototype,
-};
+Object.setPrototypeOf(SteamTracker.prototype, LegacyTracker.prototype);
 
 function SteamEngine(name, service) {
   SyncEngine.call(this, name, service);
@@ -35,7 +31,6 @@ function SteamEngine(name, service) {
   this.wasSynced = false;
 }
 SteamEngine.prototype = {
-  __proto__: SyncEngine.prototype,
   _storeObj: SteamStore,
   _trackerObj: SteamTracker,
 
@@ -47,6 +42,7 @@ SteamEngine.prototype = {
     this.wasSynced = true;
   },
 };
+Object.setPrototypeOf(SteamEngine.prototype, SyncEngine.prototype);
 
 var engineObserver = {
   topics: [],
@@ -125,11 +121,9 @@ add_task(async function test_invalidChangedIDs() {
   let tracker = engine._tracker;
 
   await tracker._beforeSave();
-  await OS.File.writeAtomic(
-    tracker._storage.path,
-    new TextEncoder().encode("5"),
-    { tmpPath: tracker._storage.path + ".tmp" }
-  );
+  await IOUtils.writeUTF8(tracker._storage.path, "5", {
+    tmpPath: tracker._storage.path + ".tmp",
+  });
 
   ok(!tracker._storage.dataReady);
   const changes = await tracker.getChangedIDs();

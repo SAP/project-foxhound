@@ -10,10 +10,10 @@
 
 // We expose a singleton from this module. Some tests may import the
 // constructor via a backstage pass.
-this.EXPORTED_SYMBOLS = ["formAutofillStorage", "FormAutofillStorage"];
+const EXPORTED_SYMBOLS = ["formAutofillStorage", "FormAutofillStorage"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const {
@@ -21,30 +21,34 @@ const {
   CreditCardsBase,
   AddressesBase,
 } = ChromeUtils.import("resource://autofill/FormAutofillStorageBase.jsm");
+const { JSONFile } = ChromeUtils.importESModule(
+  "resource://gre/modules/JSONFile.sys.mjs"
+);
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  GeckoViewAutocomplete: "resource://gre/modules/GeckoViewAutocomplete.jsm",
-  CreditCard: "resource://gre/modules/GeckoViewAutocomplete.jsm",
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   Address: "resource://gre/modules/GeckoViewAutocomplete.jsm",
-  JSONFile: "resource://gre/modules/JSONFile.jsm",
+  CreditCard: "resource://gre/modules/GeckoViewAutocomplete.jsm",
+  GeckoViewAutocomplete: "resource://gre/modules/GeckoViewAutocomplete.jsm",
 });
 
 class GeckoViewStorage extends JSONFile {
   constructor() {
-    super({ path: null });
+    super({ path: null, sanitizedBasename: "GeckoViewStorage" });
   }
 
   async updateCreditCards() {
-    const creditCards = await GeckoViewAutocomplete.fetchCreditCards().then(
-      results => results?.map(r => CreditCard.parse(r).toGecko()) ?? [],
+    const creditCards = await lazy.GeckoViewAutocomplete.fetchCreditCards().then(
+      results => results?.map(r => lazy.CreditCard.parse(r).toGecko()) ?? [],
       _ => []
     );
     super.data.creditCards = creditCards;
   }
 
   async updateAddresses() {
-    const addresses = await GeckoViewAutocomplete.fetchAddresses().then(
-      results => results?.map(r => Address.parse(r).toGecko()) ?? [],
+    const addresses = await lazy.GeckoViewAutocomplete.fetchAddresses().then(
+      results => results?.map(r => lazy.Address.parse(r).toGecko()) ?? [],
       _ => []
     );
     super.data.addresses = addresses;
@@ -76,7 +80,7 @@ class Addresses extends AddressesBase {
   }
 
   async _saveRecord(record, { sourceSync = false } = {}) {
-    GeckoViewAutocomplete.onAddressSave(Address.fromGecko(record));
+    lazy.GeckoViewAutocomplete.onAddressSave(lazy.Address.fromGecko(record));
   }
 
   /**
@@ -84,10 +88,11 @@ class Addresses extends AddressesBase {
    *
    * @param   {string} guid
    *          Indicates which record to retrieve.
+   * @param   {object} options
    * @param   {boolean} [options.rawData = false]
    *          Returns a raw record without modifications and the computed fields
    *          (this includes private fields)
-   * @returns {Promise<Object>}
+   * @returns {Promise<object>}
    *          A clone of the record.
    */
   async get(guid, { rawData = false } = {}) {
@@ -98,11 +103,12 @@ class Addresses extends AddressesBase {
   /**
    * Returns all records.
    *
+   * @param   {object} options
    * @param   {boolean} [options.rawData = false]
    *          Returns raw records without modifications and the computed fields.
    * @param   {boolean} [options.includeDeleted = false]
    *          Also return any tombstone records.
-   * @returns {Promise<Array.<Object>>}
+   * @returns {Promise<Array.<object>>}
    *          An array containing clones of all records.
    */
   async getAll({ rawData = false, includeDeleted = false } = {}) {
@@ -146,7 +152,9 @@ class CreditCards extends CreditCardsBase {
   }
 
   async _saveRecord(record, { sourceSync = false } = {}) {
-    GeckoViewAutocomplete.onCreditCardSave(CreditCard.fromGecko(record));
+    lazy.GeckoViewAutocomplete.onCreditCardSave(
+      lazy.CreditCard.fromGecko(record)
+    );
   }
 
   /**
@@ -154,10 +162,11 @@ class CreditCards extends CreditCardsBase {
    *
    * @param   {string} guid
    *          Indicates which record to retrieve.
+   * @param   {object} options
    * @param   {boolean} [options.rawData = false]
    *          Returns a raw record without modifications and the computed fields
    *          (this includes private fields)
-   * @returns {Promise<Object>}
+   * @returns {Promise<object>}
    *          A clone of the record.
    */
   async get(guid, { rawData = false } = {}) {
@@ -168,11 +177,12 @@ class CreditCards extends CreditCardsBase {
   /**
    * Returns all records.
    *
+   * @param   {object} options
    * @param   {boolean} [options.rawData = false]
    *          Returns raw records without modifications and the computed fields.
    * @param   {boolean} [options.includeDeleted = false]
    *          Also return any tombstone records.
-   * @returns {Promise<Array.<Object>>}
+   * @returns {Promise<Array.<object>>}
    *          An array containing clones of all records.
    */
   async getAll({ rawData = false, includeDeleted = false } = {}) {
@@ -191,27 +201,35 @@ class CreditCards extends CreditCardsBase {
   }
 
   /**
-   * Normalize the given record and return the first matched guid if storage has the same record.
-   * @param {Object} targetCreditCard
-   *        The credit card for duplication checking.
-   * @returns {Promise<string|null>}
-   *          Return the first guid if storage has the same credit card and null otherwise.
+   * Find a duplicate credit card record in the storage.
+   *
+   * A record is considered as a duplicate of another record when two records
+   * are the "same". This might be true even when some of their fields are
+   * different. For example, one record has the same credit card number but has
+   * different expiration date as the other record are still considered as
+   * "duplicate".
+   * This is different from `getMatchRecord`, which ensures all the fields with
+   * value in the the record is equal to the returned record.
+   *
+   * @param {object} record
+   *        The credit card for duplication checking. please make sure the
+   *        record is normalized.
+   * @returns {object}
+   *          Return the first duplicated record found in storage, null otherwise.
    */
-  async getDuplicateGuid(targetCreditCard) {
-    let clonedTargetCreditCard = this._clone(targetCreditCard);
-    this._normalizeRecord(clonedTargetCreditCard);
-    if (!clonedTargetCreditCard["cc-number"]) {
+  async *getDuplicateRecord(record) {
+    if (!record["cc-number"]) {
       return null;
     }
 
     await this._store.updateCreditCards();
-    for (let creditCard of this._data) {
-      if (creditCard.deleted) {
+    for (const recordInStorage of this._data) {
+      if (recordInStorage.deleted) {
         continue;
       }
 
-      if (creditCard["cc-number"] == clonedTargetCreditCard["cc-number"]) {
-        return creditCard.guid;
+      if (recordInStorage["cc-number"] == record["cc-number"]) {
+        yield recordInStorage;
       }
     }
     return null;
@@ -253,6 +271,7 @@ class FormAutofillStorage extends FormAutofillStorageBase {
 
   /**
    * Initializes the in-memory async store API.
+   *
    * @returns {JSONFile}
    *          The JSONFile store.
    */
@@ -262,4 +281,4 @@ class FormAutofillStorage extends FormAutofillStorageBase {
 }
 
 // The singleton exposed by this module.
-this.formAutofillStorage = new FormAutofillStorage();
+const formAutofillStorage = new FormAutofillStorage();

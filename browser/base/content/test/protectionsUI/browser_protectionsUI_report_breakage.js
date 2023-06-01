@@ -4,10 +4,13 @@
 "use strict";
 
 const TRACKING_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://tracking.example.org/browser/browser/base/content/test/protectionsUI/trackingPage.html";
 const BENIGN_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://tracking.example.org/browser/browser/base/content/test/protectionsUI/benignPage.html";
 const COOKIE_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://not-tracking.example.com/browser/browser/base/content/test/protectionsUI/cookiePage.html";
 
 const CM_PREF = "privacy.trackingprotection.cryptomining.enabled";
@@ -19,11 +22,11 @@ const PREF_REPORT_BREAKAGE_URL = "browser.contentblocking.reportBreakage.url";
 
 let { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 let { CommonUtils } = ChromeUtils.import("resource://services-common/utils.js");
-let { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+let { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 
-add_task(async function setup() {
+add_setup(async function() {
   await UrlClassifierTestUtils.addTestTrackers();
 
   registerCleanupFunction(() => {
@@ -327,7 +330,6 @@ async function testReportBreakageSubmit(url, tags, error, hasException) {
         "network.http.referer.defaultPolicy",
         "network.http.referer.defaultPolicy.pbmode",
         "network.cookie.cookieBehavior",
-        "network.cookie.lifetimePolicy",
         "privacy.annotate_channels.strict_list.enabled",
         "privacy.restrict3rdpartystorage.expiration",
         "privacy.trackingprotection.fingerprinting.enabled",

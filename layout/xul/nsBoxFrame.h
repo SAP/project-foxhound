@@ -29,11 +29,8 @@ class DrawTarget;
 }  // namespace gfx
 }  // namespace mozilla
 
-nsIFrame* NS_NewBoxFrame(mozilla::PresShell* aPresShell,
-                         mozilla::ComputedStyle* aStyle, bool aIsRoot,
-                         nsBoxLayout* aLayoutManager);
-nsIFrame* NS_NewBoxFrame(mozilla::PresShell* aPresShell,
-                         mozilla::ComputedStyle* aStyle);
+nsContainerFrame* NS_NewBoxFrame(mozilla::PresShell* aPresShell,
+                                 mozilla::ComputedStyle* aStyle);
 
 class nsBoxFrame : public nsContainerFrame {
  protected:
@@ -45,11 +42,8 @@ class nsBoxFrame : public nsContainerFrame {
   NS_DECL_QUERYFRAME
 #endif
 
-  friend nsIFrame* NS_NewBoxFrame(mozilla::PresShell* aPresShell,
-                                  ComputedStyle* aStyle, bool aIsRoot,
-                                  nsBoxLayout* aLayoutManager);
-  friend nsIFrame* NS_NewBoxFrame(mozilla::PresShell* aPresShell,
-                                  ComputedStyle* aStyle);
+  friend nsContainerFrame* NS_NewBoxFrame(mozilla::PresShell* aPresShell,
+                                          ComputedStyle* aStyle);
 
   // gets the rect inside our border and debug border. If you wish to paint
   // inside a box call this method to get the rect so you don't draw on the
@@ -63,7 +57,6 @@ class nsBoxFrame : public nsContainerFrame {
   virtual nsSize GetXULPrefSize(nsBoxLayoutState& aBoxLayoutState) override;
   virtual nsSize GetXULMinSize(nsBoxLayoutState& aBoxLayoutState) override;
   virtual nsSize GetXULMaxSize(nsBoxLayoutState& aBoxLayoutState) override;
-  virtual nscoord GetXULFlex() override;
   virtual nscoord GetXULBoxAscent(nsBoxLayoutState& aBoxLayoutState) override;
   virtual Valignment GetXULVAlign() const override { return mValign; }
   virtual Halignment GetXULHAlign() const override { return mHalign; }
@@ -89,16 +82,13 @@ class nsBoxFrame : public nsContainerFrame {
                       const ReflowInput& aReflowInput,
                       nsReflowStatus& aStatus) override;
 
-  virtual void SetInitialChildList(ChildListID aListID,
-                                   nsFrameList& aChildList) override;
-  virtual void AppendFrames(ChildListID aListID,
-                            nsFrameList& aFrameList) override;
-  virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
-                            const nsLineList::iterator* aPrevFrameLine,
-                            nsFrameList& aFrameList) override;
+  void SetInitialChildList(ChildListID aListID,
+                           nsFrameList&& aChildList) override;
+  void AppendFrames(ChildListID aListID, nsFrameList&& aFrameList) override;
+  void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                    const nsLineList::iterator* aPrevFrameLine,
+                    nsFrameList&& aFrameList) override;
   virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
-
-  virtual nsContainerFrame* GetContentInsertionFrame() override;
 
   virtual void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
 
@@ -125,8 +115,6 @@ class nsBoxFrame : public nsContainerFrame {
   virtual void DidReflow(nsPresContext* aPresContext,
                          const ReflowInput* aReflowInput) override;
 
-  virtual bool HonorPrintBackgroundSettings() const override;
-
   // virtual so nsButtonBoxFrame, nsSliderFrame and nsMenuFrame
   // can override it
   virtual void BuildDisplayListForChildren(nsDisplayListBuilder* aBuilder,
@@ -138,34 +126,18 @@ class nsBoxFrame : public nsContainerFrame {
   static nsresult LayoutChildAt(nsBoxLayoutState& aState, nsIFrame* aBox,
                                 const nsRect& aRect);
 
-  /**
-   * Utility method to redirect events on descendants to this frame.
-   * Supports 'allowevents' attribute on descendant elements to allow those
-   * elements and their descendants to receive events.
-   */
-  void WrapListsInRedirector(nsDisplayListBuilder* aBuilder,
-                             const nsDisplayListSet& aIn,
-                             const nsDisplayListSet& aOut);
-
-  /**
-   * Return our wrapper block, if any.
-   */
-  void AppendDirectlyOwnedAnonBoxes(nsTArray<OwnedAnonBox>& aResult) override;
-
   // Gets a next / prev sibling accounting for ordinal group. Slow, please avoid
   // usage if possible.
   static nsIFrame* SlowOrdinalGroupAwareSibling(nsIFrame*, bool aNext);
 
  private:
   explicit nsBoxFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
-      : nsBoxFrame(aStyle, aPresContext, kClassID, false, nullptr) {}
+      : nsBoxFrame(aStyle, aPresContext, kClassID) {}
 
  protected:
-  nsBoxFrame(ComputedStyle* aStyle, nsPresContext* aPresContext, ClassID aID,
-             bool aIsRoot = false, nsBoxLayout* aLayoutManager = nullptr);
+  nsBoxFrame(ComputedStyle* aStyle, nsPresContext* aPresContext, ClassID aID);
   virtual ~nsBoxFrame();
 
-  virtual bool GetInitialEqualSize(bool& aEqualSize);
   virtual void GetInitialOrientation(bool& aIsHorizontal);
   virtual void GetInitialDirection(bool& aIsNormal);
   virtual bool GetInitialHAlignment(Halignment& aHalign);
@@ -178,7 +150,6 @@ class nsBoxFrame : public nsContainerFrame {
   nsSize mPrefSize;
   nsSize mMinSize;
   nsSize mMaxSize;
-  nscoord mFlex;
   nscoord mAscent;
 
   nsCOMPtr<nsBoxLayout> mLayoutManager;

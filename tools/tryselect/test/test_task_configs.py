@@ -2,18 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import inspect
+import subprocess
 from argparse import ArgumentParser
+from textwrap import dedent
 
 import mozunit
 import pytest
-import subprocess
-from textwrap import dedent
-
-from tryselect.task_config import all_task_configs, Pernosco
-
+from tryselect.task_config import Pernosco, all_task_configs
 
 # task configs have a list of tests of the form (input, expected)
 TASK_CONFIG_TESTS = {

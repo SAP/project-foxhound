@@ -55,6 +55,7 @@ static unsigned int HexStrToInt(NSString* str) {
   [mColorPanel setDelegate:self];
   [mColorPanel setTitle:aTitle];
   [mColorPanel setColor:aInitialColor];
+  [mColorPanel setFrameOrigin:[NSEvent mouseLocation]];
   [mColorPanel makeKeyAndOrderFront:nil];
 }
 
@@ -92,9 +93,10 @@ nsColorPicker::~nsColorPicker() {
   }
 }
 
+// TODO(bug 1805397): Implement default colors
 NS_IMETHODIMP
 nsColorPicker::Init(mozIDOMWindowProxy* aParent, const nsAString& aTitle,
-                    const nsAString& aInitialColor) {
+                    const nsAString& aInitialColor, const nsTArray<nsString>& aDefaultColors) {
   MOZ_ASSERT(NS_IsMainThread(), "Color pickers can only be opened from main thread currently");
   mTitle = aTitle;
   mColor = aInitialColor;

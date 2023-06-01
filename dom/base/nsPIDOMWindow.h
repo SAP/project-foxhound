@@ -50,8 +50,7 @@ class nsPIWindowRoot;
 
 using SuspendTypes = uint32_t;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 class AudioContext;
 class BrowsingContext;
 class BrowsingContextGroup;
@@ -75,15 +74,7 @@ class WindowContext;
 class WindowGlobalChild;
 class CustomElementRegistry;
 enum class CallerType : uint32_t;
-}  // namespace dom
-}  // namespace mozilla
-
-enum UIStateChangeType {
-  UIStateChangeType_NoChange,
-  UIStateChangeType_Set,
-  UIStateChangeType_Clear,
-  UIStateChangeType_Invalid  // used for serialization only
-};
+}  // namespace mozilla::dom
 
 enum class FullscreenReason {
   // Toggling the fullscreen mode requires trusted context.
@@ -794,21 +785,12 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
 
   bool IsRootOuterWindow() { return mIsRootOuterWindow; }
 
-  /**
-   * Set initial keyboard indicator state for focus rings.
-   */
-  void SetInitialKeyboardIndicators(UIStateChangeType aShowFocusRings);
-
   // Internal getter/setter for the frame element, this version of the
   // getter crosses chrome boundaries whereas the public scriptable
   // one doesn't for security reasons.
   mozilla::dom::Element* GetFrameElementInternal() const;
   void SetFrameElementInternal(mozilla::dom::Element* aFrameElement);
 
-  void SetDesktopModeViewport(bool aDesktopModeViewport) {
-    mDesktopModeViewport = aDesktopModeViewport;
-  }
-  bool IsDesktopModeViewport() const { return mDesktopModeViewport; }
   bool IsBackground() { return mIsBackground; }
 
   // Audio API
@@ -819,8 +801,6 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
   bool ShouldDelayMediaFromStart() const;
 
   void RefreshMediaElementsVolume();
-
-  float GetDevicePixelRatio(mozilla::dom::CallerType aCallerType);
 
   virtual nsPIDOMWindowOuter* GetPrivateRoot() = 0;
 
@@ -884,10 +864,10 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
     return mDoc;
   }
 
-  // Set the window up with an about:blank document with the current subject
-  // principal and potentially a CSP and a COEP.
-  virtual void SetInitialPrincipalToSubject(
-      nsIContentSecurityPolicy* aCSP,
+  // Set the window up with an about:blank document with the given principal and
+  // potentially a CSP and a COEP.
+  virtual void SetInitialPrincipal(
+      nsIPrincipal* aNewWindowPrincipal, nsIContentSecurityPolicy* aCSP,
       const mozilla::Maybe<nsILoadInfo::CrossOriginEmbedderPolicy>& aCoep) = 0;
 
   // Returns an object containing the window's state.  This also suspends
@@ -1036,11 +1016,6 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
   virtual bool ShouldShowFocusRing() = 0;
 
   /**
-   * Set the keyboard indicator state for accelerators and focus rings.
-   */
-  virtual void SetKeyboardIndicators(UIStateChangeType aShowFocusRings) = 0;
-
-  /**
    * Indicates that the page in the window has been hidden. This is used to
    * reset the focus state.
    */
@@ -1169,9 +1144,6 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
   // is false.  Too bad we have so many different concepts of
   // "active".
   bool mIsBackground;
-
-  // current desktop mode flag.
-  bool mDesktopModeViewport;
 
   bool mIsRootOuterWindow;
 

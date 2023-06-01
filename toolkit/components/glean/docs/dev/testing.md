@@ -1,5 +1,13 @@
 # Testing
 
+```{admonition} This documentation is about testing FOG itself
+This document contains information about how FOG tests itself,
+how to add new tests, how and what to log, and stuff like that.
+If you're interested in learning how to test instrumentation you added,
+you'll want to read
+[the instrumetnation testing docs](../user/instrumentation_tests) instead.
+```
+
 Given the multiple API languages, processes, and dependencies,
 testing FOG is a matter of choosing the right tool for the situation.
 
@@ -7,9 +15,9 @@ testing FOG is a matter of choosing the right tool for the situation.
 
 To run all the things, here's the tl;dr:
 
-`./mach build && ./mach lint -Ww -o --fix
+`./mach build && ./mach lint -W -w -o --fix
 && ./mach lint --linter clippy toolkit/components/glean/api/src
-&& ./mach rusttests && ./mach gtest FOG*
+&& ./mach rusttests && ./mach gtest "FOG*"
 && python3 ./mach python-test toolkit/components/glean/tests/pytest
 && ./mach test toolkit/components/glean/tests/xpcshell
 && ./mach telemetry-tests-client toolkit/components/telemetry/tests/marionette/tests/client/test_fog* --gecko-log "-"

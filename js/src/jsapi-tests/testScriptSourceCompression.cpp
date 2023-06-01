@@ -506,7 +506,7 @@ BEGIN_TEST(testScriptSourceCompression_offThread) {
   JS::SourceText<char16_t> source;
   CHECK(source.init(cx, std::move(chars), len));
 
-  js::Monitor monitor(js::mutexid::ShellOffThreadState);
+  js::Monitor monitor MOZ_UNANNOTATED(js::mutexid::ShellOffThreadState);
   JS::CompileOptions options(cx);
   JS::OffThreadToken* token;
 
@@ -524,7 +524,7 @@ BEGIN_TEST(testScriptSourceCompression_offThread) {
     lock.wait();
   }
 
-  RefPtr<JS::Stencil> stencil = JS::FinishCompileToStencilOffThread(cx, token);
+  RefPtr<JS::Stencil> stencil = JS::FinishOffThreadStencil(cx, token);
   CHECK(stencil);
   JS::InstantiateOptions instantiateOptions(options);
   JS::Rooted<JSScript*> script(

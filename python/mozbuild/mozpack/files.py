@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import bisect
 import codecs
 import errno
@@ -11,42 +9,26 @@ import inspect
 import os
 import platform
 import shutil
-import six
 import stat
 import subprocess
 import uuid
-import mozbuild.makeutil as makeutil
+from collections import OrderedDict
+from io import BytesIO
 from itertools import chain, takewhile
+from tarfile import TarFile, TarInfo
+from tempfile import NamedTemporaryFile, mkstemp
+
+import mozpack.path as mozpath
+import six
+from jsmin import JavascriptMinify
+from mozpack.chrome.manifest import ManifestEntry, ManifestInterfaces
+from mozpack.errors import ErrorMessage, errors
+from mozpack.executables import elfhack, is_executable, may_elfhack, may_strip, strip
+from mozpack.mozjar import JarReader
+
+import mozbuild.makeutil as makeutil
 from mozbuild.preprocessor import Preprocessor
 from mozbuild.util import FileAvoidWrite, ensure_unicode, memoize
-from mozpack.executables import (
-    is_executable,
-    may_strip,
-    strip,
-    may_elfhack,
-    elfhack,
-)
-from mozpack.chrome.manifest import (
-    ManifestEntry,
-    ManifestInterfaces,
-)
-from io import BytesIO
-from mozpack.errors import (
-    ErrorMessage,
-    errors,
-)
-from mozpack.mozjar import JarReader
-import mozpack.path as mozpath
-from collections import OrderedDict
-from jsmin import JavascriptMinify
-from tempfile import (
-    mkstemp,
-    NamedTemporaryFile,
-)
-from tarfile import (
-    TarFile,
-    TarInfo,
-)
 
 try:
     import hglib
@@ -363,22 +345,6 @@ class AbsoluteSymlinkFile(File):
 
         File.__init__(self, path)
 
-    @staticmethod
-    def excluded(dest):
-        if platform.system() != "Windows":
-            return False
-
-        # Exclude local resources from symlinking since the sandbox on Windows
-        # does not allow accessing reparse points. See bug 1695556.
-        from buildconfig import topobjdir
-
-        denylist = [("dist", "bin"), ("_tests", "modules")]
-        fulllist = [os.path.join(topobjdir, *paths) for paths in denylist]
-
-        fulldest = os.path.join(os.path.abspath(os.curdir), dest)
-
-        return mozpath.basedir(fulldest, fulllist) is not None
-
     def copy(self, dest, skip_if_older=True):
         assert isinstance(dest, six.string_types)
 
@@ -389,7 +355,7 @@ class AbsoluteSymlinkFile(File):
 
         # Handle the simple case where symlinks are definitely not supported by
         # falling back to file copy.
-        if not hasattr(os, "symlink") or AbsoluteSymlinkFile.excluded(dest):
+        if not hasattr(os, "symlink"):
             return File.copy(self, dest, skip_if_older=skip_if_older)
 
         # Always verify the symlink target path exists.
@@ -570,7 +536,7 @@ class PreprocessedFile(BaseFile):
         pp = Preprocessor(defines=self.defines, marker=self.marker)
         pp.setSilenceDirectiveWarnings(self.silence_missing_directive_warnings)
 
-        with _open(self.path, "rU") as input:
+        with _open(self.path, "r") as input:
             with _open(os.devnull, "w") as output:
                 pp.processFile(input=input, output=output)
 
@@ -627,7 +593,7 @@ class PreprocessedFile(BaseFile):
         pp = Preprocessor(defines=self.defines, marker=self.marker)
         pp.setSilenceDirectiveWarnings(self.silence_missing_directive_warnings)
 
-        with _open(self.path, "rU") as input:
+        with _open(self.path, "r") as input:
             pp.processFile(input=input, output=dest, depfile=deps_out)
 
         dest.close()
@@ -773,10 +739,10 @@ class ManifestFile(BaseFile):
         return len(self._entries) + len(self._interfaces) == 0
 
 
-class MinifiedProperties(BaseFile):
+class MinifiedCommentStripped(BaseFile):
     """
-    File class for minified properties. This wraps around a BaseFile instance,
-    and removes lines starting with a # from its content.
+    File class for content minified by stripping comments. This wraps around a
+    BaseFile instance, and removes lines starting with a # from its content.
     """
 
     def __init__(self, file):
@@ -786,7 +752,7 @@ class MinifiedProperties(BaseFile):
     def open(self):
         """
         Return a file-like object allowing to read() the minified content of
-        the properties file.
+        the underlying file.
         """
         content = "".join(
             l
@@ -935,8 +901,8 @@ class BaseFinder(object):
         if not self._minify or isinstance(file, ExecutableFile):
             return file
 
-        if path.endswith(".properties"):
-            return MinifiedProperties(file)
+        if path.endswith((".ftl", ".properties")):
+            return MinifiedCommentStripped(file)
 
         if self._minify_js and path.endswith((".js", ".jsm")):
             return MinifiedJavaScript(file, self._minify_js_verify_command)

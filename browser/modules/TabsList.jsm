@@ -4,13 +4,17 @@
 
 "use strict";
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "PanelMultiView",
   "resource:///modules/PanelMultiView.jsm"
 );
 
 var EXPORTED_SYMBOLS = ["TabsPanel"];
+
+const TAB_DROP_TYPE = "application/x-moz-tabbrowser-tab";
 
 function setAttributes(element, attrs) {
   for (let [name, value] of Object.entries(attrs)) {
@@ -23,11 +27,23 @@ function setAttributes(element, attrs) {
 }
 
 class TabsListBase {
-  constructor({ className, filterFn, insertBefore, containerNode }) {
+  constructor({
+    className,
+    filterFn,
+    insertBefore,
+    containerNode,
+    dropIndicator = null,
+  }) {
     this.className = className;
     this.filterFn = filterFn;
     this.insertBefore = insertBefore;
     this.containerNode = containerNode;
+    this.dropIndicator = dropIndicator;
+
+    if (this.dropIndicator) {
+      this.dropTargetRow = null;
+      this.dropTargetDirection = 0;
+    }
 
     this.doc = containerNode.ownerDocument;
     this.gBrowser = this.doc.defaultView.gBrowser;
@@ -57,6 +73,21 @@ class TabsListBase {
         break;
       case "command":
         this._selectTab(event.target.tab);
+        break;
+      case "dragstart":
+        this._onDragStart(event);
+        break;
+      case "dragover":
+        this._onDragOver(event);
+        break;
+      case "dragleave":
+        this._onDragLeave(event);
+        break;
+      case "dragend":
+        this._onDragEnd(event);
+        break;
+      case "drop":
+        this._onDrop(event);
         break;
     }
   }
@@ -98,14 +129,24 @@ class TabsListBase {
     }
     this.tabToElement = new Map();
     this._cleanupListeners();
+    this._clearDropTarget();
   }
 
   _setupListeners() {
     this.listenersRegistered = true;
+
     this.gBrowser.tabContainer.addEventListener("TabAttrModified", this);
     this.gBrowser.tabContainer.addEventListener("TabClose", this);
     this.gBrowser.tabContainer.addEventListener("TabMove", this);
     this.gBrowser.tabContainer.addEventListener("TabPinned", this);
+
+    if (this.dropIndicator) {
+      this.containerNode.addEventListener("dragstart", this);
+      this.containerNode.addEventListener("dragover", this);
+      this.containerNode.addEventListener("dragleave", this);
+      this.containerNode.addEventListener("dragend", this);
+      this.containerNode.addEventListener("drop", this);
+    }
   }
 
   _cleanupListeners() {
@@ -113,6 +154,15 @@ class TabsListBase {
     this.gBrowser.tabContainer.removeEventListener("TabClose", this);
     this.gBrowser.tabContainer.removeEventListener("TabMove", this);
     this.gBrowser.tabContainer.removeEventListener("TabPinned", this);
+
+    if (this.dropIndicator) {
+      this.containerNode.removeEventListener("dragstart", this);
+      this.containerNode.removeEventListener("dragover", this);
+      this.containerNode.removeEventListener("dragleave", this);
+      this.containerNode.removeEventListener("dragend", this);
+      this.containerNode.removeEventListener("drop", this);
+    }
+
     this.listenersRegistered = false;
   }
 
@@ -199,6 +249,7 @@ class TabsPanel extends TabsListBase {
         if (!this.listenersRegistered && event.target == this.view) {
           this.panelMultiView = this.view.panelMultiView;
           this._populate(event);
+          this.gBrowser.translateTabContextMenu();
         }
         break;
       case "command":
@@ -225,7 +276,7 @@ class TabsPanel extends TabsListBase {
 
   _selectTab(tab) {
     super._selectTab(tab);
-    PanelMultiView.hidePopup(this.view.closest("panel"));
+    lazy.PanelMultiView.hidePopup(this.view.closest("panel"));
   }
 
   _setupListeners() {
@@ -256,7 +307,7 @@ class TabsPanel extends TabsListBase {
       "all-tabs-button subviewbutton subviewbutton-iconic"
     );
     button.setAttribute("flex", "1");
-    button.setAttribute("crop", "right");
+    button.setAttribute("crop", "end");
     button.tab = tab;
 
     row.appendChild(button);
@@ -312,6 +363,171 @@ class TabsPanel extends TabsListBase {
       } else {
         image.classList.remove("tab-throbber-tabslist");
       }
+    }
+  }
+
+  _onDragStart(event) {
+    const row = this._getDragTargetRow(event);
+    if (!row) {
+      return;
+    }
+
+    this.gBrowser.tabContainer.startTabDrag(event, row.firstElementChild.tab, {
+      fromTabList: true,
+    });
+  }
+
+  _getDragTargetRow(event) {
+    let row = event.target;
+    while (row && row.localName !== "toolbaritem") {
+      row = row.parentNode;
+    }
+    return row;
+  }
+
+  _isMovingTabs(event) {
+    var effects = this.gBrowser.tabContainer.getDropEffectForTabDrag(event);
+    return effects == "move";
+  }
+
+  _onDragOver(event) {
+    if (!this._isMovingTabs(event)) {
+      return;
+    }
+
+    if (!this._updateDropTarget(event)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  _getRowIndex(row) {
+    return Array.prototype.indexOf.call(this.containerNode.children, row);
+  }
+
+  _onDrop(event) {
+    if (!this._isMovingTabs(event)) {
+      return;
+    }
+
+    if (!this._updateDropTarget(event)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    let draggedTab = event.dataTransfer.mozGetDataAt(TAB_DROP_TYPE, 0);
+
+    if (draggedTab === this.dropTargetRow.firstElementChild.tab) {
+      this._clearDropTarget();
+      return;
+    }
+
+    const targetTab = this.dropTargetRow.firstElementChild.tab;
+
+    // NOTE: Given the list is opened only when the window is focused,
+    //       we don't have to check `draggedTab.container`.
+
+    let pos;
+    if (draggedTab._tPos < targetTab._tPos) {
+      pos = targetTab._tPos + this.dropTargetDirection;
+    } else {
+      pos = targetTab._tPos + this.dropTargetDirection + 1;
+    }
+    this.gBrowser.moveTabTo(draggedTab, pos);
+
+    this._clearDropTarget();
+  }
+
+  _onDragLeave(event) {
+    if (!this._isMovingTabs(event)) {
+      return;
+    }
+
+    let target = event.relatedTarget;
+    while (target && target != this.containerNode) {
+      target = target.parentNode;
+    }
+    if (target) {
+      return;
+    }
+
+    this._clearDropTarget();
+  }
+
+  _onDragEnd(event) {
+    if (!this._isMovingTabs(event)) {
+      return;
+    }
+
+    this._clearDropTarget();
+  }
+
+  _updateDropTarget(event) {
+    const row = this._getDragTargetRow(event);
+    if (!row) {
+      return false;
+    }
+
+    const rect = row.getBoundingClientRect();
+    const index = this._getRowIndex(row);
+    if (index === -1) {
+      return false;
+    }
+
+    const threshold = rect.height * 0.5;
+    if (event.clientY < rect.top + threshold) {
+      this._setDropTarget(row, -1);
+    } else {
+      this._setDropTarget(row, 0);
+    }
+
+    return true;
+  }
+
+  _setDropTarget(row, direction) {
+    this.dropTargetRow = row;
+    this.dropTargetDirection = direction;
+
+    const holder = this.dropIndicator.parentNode;
+    const holderOffset = holder.getBoundingClientRect().top;
+
+    // Set top to before/after the target row.
+    let top;
+    if (this.dropTargetDirection === -1) {
+      if (this.dropTargetRow.previousSibling) {
+        const rect = this.dropTargetRow.previousSibling.getBoundingClientRect();
+        top = rect.top + rect.height;
+      } else {
+        const rect = this.dropTargetRow.getBoundingClientRect();
+        top = rect.top;
+      }
+    } else {
+      const rect = this.dropTargetRow.getBoundingClientRect();
+      top = rect.top + rect.height;
+    }
+
+    // Avoid overflowing the sub view body.
+    const indicatorHeight = 12;
+    const subViewBody = holder.parentNode;
+    const subViewBodyRect = subViewBody.getBoundingClientRect();
+    top = Math.min(top, subViewBodyRect.bottom - indicatorHeight);
+
+    this.dropIndicator.style.top = `${top - holderOffset - 12}px`;
+    this.dropIndicator.collapsed = false;
+  }
+
+  _clearDropTarget() {
+    if (this.dropTargetRow) {
+      this.dropTargetRow = null;
+    }
+
+    if (this.dropIndicator) {
+      this.dropIndicator.style.top = `0px`;
+      this.dropIndicator.collapsed = true;
     }
   }
 }

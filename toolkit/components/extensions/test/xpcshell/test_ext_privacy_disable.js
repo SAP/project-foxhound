@@ -17,11 +17,9 @@ ChromeUtils.defineModuleGetter(
   "Management",
   "resource://gre/modules/Extension.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "Preferences",
-  "resource://gre/modules/Preferences.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
+});
 
 const {
   createAppInfo,
@@ -112,7 +110,7 @@ add_task(async function test_disable() {
     ExtensionTestUtils.loadExtension({
       background,
       manifest: {
-        applications: {
+        browser_specific_settings: {
           gecko: {
             id: OLD_ID,
           },
@@ -125,7 +123,7 @@ add_task(async function test_disable() {
     ExtensionTestUtils.loadExtension({
       background,
       manifest: {
-        applications: {
+        browser_specific_settings: {
           gecko: {
             id: NEW_ID,
           },

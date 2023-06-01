@@ -11,28 +11,23 @@
 /* globals require, __dirname, global, Buffer, process */
 
 const { NodeServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-let gDNS;
 
 /// Sets the TRR related prefs and adds the certificate we use for the HTTP2
 /// server.
 function trr_test_setup() {
   dump("start!\n");
 
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  let h2Port = env.get("MOZHTTP2_PORT");
+  let h2Port = Services.env.get("MOZHTTP2_PORT");
   Assert.notEqual(h2Port, null);
   Assert.notEqual(h2Port, "");
 
   // Set to allow the cert presented by our H2 server
   do_get_profile();
 
-  Services.prefs.setBoolPref("network.http.spdy.enabled", true);
-  Services.prefs.setBoolPref("network.http.spdy.enabled.http2", true);
+  Services.prefs.setBoolPref("network.http.http2.enabled", true);
   // the TRR server is on 127.0.0.1
   if (AppConstants.platform == "android") {
     Services.prefs.setCharPref("network.trr.bootstrapAddr", "10.0.2.2");
@@ -57,8 +52,10 @@ function trr_test_setup() {
   );
   addCertFromFile(certdb, "http2-ca.pem", "CTu,u,u");
 
-  // Turn off strict fallback mode for most tests, it is tested specifically.
+  // Turn off strict fallback mode and TRR retry for most tests,
+  // it is tested specifically.
   Services.prefs.setBoolPref("network.trr.strict_native_fallback", false);
+  Services.prefs.setBoolPref("network.trr.retry_on_recoverable_errors", false);
 
   // Turn off temp blocklist feature in tests. When enabled we may issue a
   // lookup to resolve a parent name when blocklisting, which may bleed into
@@ -92,8 +89,7 @@ function trr_clear_prefs() {
   Services.prefs.clearUserPref("network.trr.fetch_off_main_thread");
   Services.prefs.clearUserPref("captivedetect.canonicalURL");
 
-  Services.prefs.clearUserPref("network.http.spdy.enabled");
-  Services.prefs.clearUserPref("network.http.spdy.enabled.http2");
+  Services.prefs.clearUserPref("network.http.http2.enabled");
   Services.prefs.clearUserPref("network.dns.localDomains");
   Services.prefs.clearUserPref("network.dns.native-is-localhost");
   Services.prefs.clearUserPref(
@@ -122,6 +118,7 @@ class TRRDNSListener {
         expectEarlyFail: args[5] ?? "",
         flags: args[6] ?? 0,
         type: args[7] ?? Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
+        port: args[8] ?? -1,
       };
     }
     this.expectedAnswer = this.options.expectedAnswer ?? undefined;
@@ -132,6 +129,7 @@ class TRRDNSListener {
     });
     this.type = this.options.type ?? Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT;
     let trrServer = this.options.trrServer || "";
+    let port = this.options.port || -1;
 
     // This may be called in a child process that doesn't have Services available.
     // eslint-disable-next-line mozilla/use-services
@@ -140,27 +138,23 @@ class TRRDNSListener {
     );
     const currentThread = threadManager.currentThread;
 
-    if (!gDNS) {
-      gDNS = Cc["@mozilla.org/network/dns-service;1"].getService(
-        Ci.nsIDNSService
-      );
-    }
-
-    this.resolverInfo =
-      trrServer == "" ? null : gDNS.newTRRResolverInfo(trrServer);
+    this.additionalInfo =
+      trrServer == "" && port == -1
+        ? null
+        : Services.dns.newAdditionalInfo(trrServer, port);
     try {
-      this.request = gDNS.asyncResolve(
+      this.request = Services.dns.asyncResolve(
         this.name,
         this.type,
         this.options.flags || 0,
-        this.resolverInfo,
+        this.additionalInfo,
         this,
         currentThread,
         {} // defaultOriginAttributes
       );
-      Assert.ok(!this.options.expectEarlyFail);
+      Assert.ok(!this.options.expectEarlyFail, "asyncResolve ok");
     } catch (e) {
-      Assert.ok(this.options.expectEarlyFail);
+      Assert.ok(this.options.expectEarlyFail, "asyncResolve fail");
       this.resolve({ error: e });
     }
   }
@@ -239,7 +233,7 @@ class TRRDNSListener {
   }
 
   cancel(aStatus = Cr.NS_ERROR_ABORT) {
-    gDNS.cancelAsyncResolve(
+    Services.dns.cancelAsyncResolve(
       this.name,
       this.type,
       this.options.flags || 0,
@@ -267,7 +261,8 @@ class TRRServerCode {
       let u = url.parse(req.url, true);
       let handler = global.path_handlers[u.pathname];
       if (handler) {
-        return handler(req, resp, u);
+        handler(req, resp, u);
+        return;
       }
 
       // Didn't find a handler for this path.
@@ -346,7 +341,7 @@ function trrQueryHandler(req, resp, url) {
     req.on("data", chunk => {
       requestBody = Buffer.concat([requestBody, chunk]);
       if (requestBody.length == contentLength) {
-        return processRequest(req, resp, requestBody);
+        processRequest(req, resp, requestBody);
       }
     });
   } else if (method == "GET") {
@@ -357,7 +352,7 @@ function trrQueryHandler(req, resp, url) {
     }
 
     requestBody = Buffer.from(url.query.dns, "base64");
-    return processRequest(req, resp, requestBody);
+    processRequest(req, resp, requestBody);
   } else {
     // unexpected method.
     resp.writeHead(405);
@@ -412,6 +407,9 @@ function trrQueryHandler(req, resp, url) {
     };
 
     if (response.delay) {
+      // This function is handled within the httpserver where setTimeout is
+      // available.
+      // eslint-disable-next-line no-undef
       setTimeout(
         arg => {
           writeResponse(arg[0], arg[1], arg[2]);
@@ -570,7 +568,9 @@ class TRRProxyCode {
         }
       });
       socket.on("error", error => {
-        throw `Unxpected error when conneting the HTTP/2 server from the HTTP/2 proxy during CONNECT handling: '${error}'`;
+        throw new Error(
+          `Unxpected error when conneting the HTTP/2 server from the HTTP/2 proxy during CONNECT handling: '${error}'`
+        );
       });
     });
   }

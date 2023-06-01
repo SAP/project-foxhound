@@ -7,9 +7,12 @@
 #include "AccGroupInfo.h"
 #include "DocAccessible-inl.h"
 #include "XULTreeAccessible.h"
+#include "nsAccUtils.h"
 
+#include "mozilla/a11y/DocAccessibleParent.h"
 #include "mozilla/dom/DocumentOrShadowRoot.h"
 #include "mozilla/dom/HTMLLabelElement.h"
+#include "mozilla/StaticPrefs_accessibility.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -211,7 +214,7 @@ IDRefsIterator::IDRefsIterator(DocAccessible* aDoc, nsIContent* aContent,
                                nsAtom* aIDRefsAttr)
     : mContent(aContent), mDoc(aDoc), mCurrIdx(0) {
   if (mContent->IsElement()) {
-    mContent->AsElement()->GetAttr(kNameSpaceID_None, aIDRefsAttr, mIDs);
+    mContent->AsElement()->GetAttr(aIDRefsAttr, mIDs);
   }
 }
 
@@ -278,12 +281,15 @@ LocalAccessible* IDRefsIterator::Next() {
 // SingleAccIterator
 ////////////////////////////////////////////////////////////////////////////////
 
-LocalAccessible* SingleAccIterator::Next() {
-  RefPtr<LocalAccessible> nextAcc;
-  mAcc.swap(nextAcc);
-  if (!nextAcc || nextAcc->IsDefunct()) {
+Accessible* SingleAccIterator::Next() {
+  Accessible* nextAcc = mAcc;
+  mAcc = nullptr;
+  if (!nextAcc) {
     return nullptr;
   }
+
+  MOZ_ASSERT(!nextAcc->IsLocal() || !nextAcc->AsLocal()->IsDefunct(),
+             "Iterator references defunct accessible?");
   return nextAcc;
 }
 
@@ -291,17 +297,15 @@ LocalAccessible* SingleAccIterator::Next() {
 // ItemIterator
 ////////////////////////////////////////////////////////////////////////////////
 
-LocalAccessible* ItemIterator::Next() {
+Accessible* ItemIterator::Next() {
   if (mContainer) {
-    Accessible* first = AccGroupInfo::FirstItemOf(mContainer);
-    mAnchor = first ? first->AsLocal() : nullptr;
+    mAnchor = AccGroupInfo::FirstItemOf(mContainer);
     mContainer = nullptr;
     return mAnchor;
   }
 
   if (mAnchor) {
-    Accessible* next = AccGroupInfo::NextItemTo(mAnchor);
-    mAnchor = next ? next->AsLocal() : nullptr;
+    mAnchor = AccGroupInfo::NextItemTo(mAnchor);
   }
 
   return mAnchor;
@@ -340,5 +344,26 @@ LocalAccessible* XULTreeItemIterator::Next() {
     mCurrRowIdx++;
   }
 
+  return nullptr;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// RemoteAccIterator
+////////////////////////////////////////////////////////////////////////////////
+
+RemoteAccIterator::RemoteAccIterator(nsTArray<uint64_t>&& aIds,
+                                     DocAccessibleParent* aDoc)
+    : mOwnedIds(std::move(aIds)), mIds(mOwnedIds), mDoc(aDoc), mIndex(0) {
+  MOZ_ASSERT(!StaticPrefs::accessibility_cache_enabled_AtStartup());
+}
+
+Accessible* RemoteAccIterator::Next() {
+  while (mIndex < mIds.Length()) {
+    uint64_t id = mIds[mIndex++];
+    Accessible* acc = mDoc->GetAccessible(id);
+    if (acc) {
+      return acc;
+    }
+  }
   return nullptr;
 }

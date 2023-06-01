@@ -1,13 +1,3 @@
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
-
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-var { SitePermissions } = ChromeUtils.import(
-  "resource:///modules/SitePermissions.jsm"
-);
 var { PermissionTestUtils } = ChromeUtils.import(
   "resource://testing-common/PermissionTestUtils.jsm"
 );
@@ -104,7 +94,7 @@ function promiseIndicatorWindow() {
 }
 
 async function assertWebRTCIndicatorStatus(expected) {
-  let ui = ChromeUtils.import("resource:///modules/webrtcUI.jsm", {}).webrtcUI;
+  let ui = ChromeUtils.import("resource:///modules/webrtcUI.jsm").webrtcUI;
   let expectedState = expected ? "visible" : "hidden";
   let msg = "WebRTC indicator " + expectedState;
   if (!expected && ui.showGlobalIndicator) {
@@ -450,10 +440,19 @@ const kActionAlways = 1;
 const kActionDeny = 2;
 const kActionNever = 3;
 
-function activateSecondaryAction(aAction) {
+async function activateSecondaryAction(aAction) {
   let notification = PopupNotifications.panel.firstElementChild;
   switch (aAction) {
     case kActionNever:
+      if (notification.notification.secondaryActions.length > 1) {
+        // "Always Block" is the first (and only) item in the menupopup.
+        await Promise.all([
+          BrowserTestUtils.waitForEvent(notification.menupopup, "popupshown"),
+          notification.menubutton.click(),
+        ]);
+        notification.menupopup.querySelector("menuitem").click();
+        return;
+      }
       if (!notification.checkbox.checked) {
         notification.checkbox.click();
       }
@@ -705,12 +704,12 @@ async function promiseRequestDevice(
   );
 }
 
-async function promiseRequestAudioOutput() {
+async function promiseRequestAudioOutput(options) {
   info("requesting audio output");
   const bc = gBrowser.selectedBrowser;
-  return SpecialPowers.spawn(bc, [], async function() {
+  return SpecialPowers.spawn(bc, [options], async function(opts) {
     const global = content.wrappedJSObject;
-    global.requestAudioOutput();
+    global.requestAudioOutput(Cu.cloneInto(opts, content));
   });
 }
 
@@ -861,7 +860,8 @@ function checkDeviceSelectors(aExpectedTypes, aWindow = window) {
   }
   let document = aWindow.document;
 
-  for (let type of ["Microphone", "Camera", "Speaker"]) {
+  let expectedDescribedBy = "webRTC-shareDevices-notification-description";
+  for (let type of ["Camera", "Microphone", "Speaker"]) {
     let selector = document.getElementById(`webRTC-select${type}`);
     if (!aExpectedTypes.includes(type.toLowerCase())) {
       ok(selector.hidden, `${type} selector hidden`);
@@ -882,11 +882,17 @@ function checkDeviceSelectors(aExpectedTypes, aWindow = window) {
         selectorList.selectedItem.getAttribute("label"),
         `${type} label should be showing the lone device label.`
       );
+      expectedDescribedBy += ` webRTC-select${type}-icon webRTC-select${type}-single-device-label`;
     } else {
       ok(!selectorList.hidden, `${type} selector list should not be hidden.`);
       ok(label.hidden, `${type} selector label should be hidden.`);
     }
   }
+  let ariaDescribedby = aWindow.PopupNotifications.panel.getAttribute(
+    "aria-describedby"
+  );
+  is(ariaDescribedby, expectedDescribedBy, "aria-describedby");
+
   let screenSelector = document.getElementById("webRTC-selectWindowOrScreen");
   if (aExpectedTypes.includes("screen")) {
     ok(!screenSelector.hidden, "screen selector visible");

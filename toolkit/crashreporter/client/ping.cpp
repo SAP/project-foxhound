@@ -53,7 +53,7 @@ static string GenerateUUID() {
 
   CFRelease(uuid);
 #elif defined(HAVE_ARC4RANDOM_BUF)  // Android, BSD, ...
-  arc4random_buf(id, sizeof(UUID));
+  arc4random_buf(&id, sizeof(UUID));
 #else                               // Linux
   int fd = open("/dev/urandom", O_RDONLY);
 
@@ -123,7 +123,7 @@ static Json::Value CreateMetadataNode(const Json::Value& aExtra) {
     Annotation annotation;
 
     if (AnnotationFromString(annotation, iter.memberName())) {
-      if (IsAnnotationWhitelistedForPing(annotation)) {
+      if (IsAnnotationAllowlistedForPing(annotation)) {
         node[iter.memberName()] = *iter;
       }
     }
@@ -232,7 +232,7 @@ static Json::Value CreateRootNode(
   return root;
 }
 
-// Generates the URL used to submit the crash ping, see TelemetrySend.jsm
+// Generates the URL used to submit the crash ping, see TelemetrySend.sys.mjs
 string GenerateSubmissionUrl(const string& aUrl, const string& aId,
                              const string& aName, const string& aVersion,
                              const string& aChannel, const string& aBuildId) {
@@ -273,20 +273,16 @@ bool SendCrashPing(Json::Value& aExtra, const string& aHash, string& aPingUuid,
                    const string& pingDir) {
   // Remove the telemetry-related data from the crash annotations
   Json::Value value;
-  if (!aExtra.removeMember(kTelemetryClientId, &value)) {
-    return false;
-  }
+  aExtra.removeMember(kTelemetryClientId, &value);
   string clientId = value.asString();
-
-  if (!aExtra.removeMember(kTelemetryUrl, &value)) {
-    return false;
-  }
+  aExtra.removeMember(kTelemetryUrl, &value);
   string serverUrl = value.asString();
+  aExtra.removeMember(kTelemetrySessionId, &value);
+  string sessionId = value.asString();
 
-  if (!aExtra.removeMember(kTelemetrySessionId, &value)) {
+  if (clientId.empty() || serverUrl.empty() || sessionId.empty()) {
     return false;
   }
-  string sessionId = value.asString();
 
   string buildId = aExtra["BuildID"].asString();
   string channel = aExtra["ReleaseChannel"].asString();

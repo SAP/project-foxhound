@@ -7,8 +7,10 @@
 const { shallow, mount } = require("enzyme");
 const {
   ELLIPSIS,
-} = require("devtools/client/shared/components/reps/reps/rep-utils");
-const { REPS } = require("devtools/client/shared/components/reps/reps/rep");
+} = require("resource://devtools/client/shared/components/reps/reps/rep-utils.js");
+const {
+  REPS,
+} = require("resource://devtools/client/shared/components/reps/reps/rep.js");
 const { Rep } = REPS;
 
 const renderRep = (string, props) =>
@@ -69,8 +71,8 @@ const testCases = [
       useQuotes: true,
     },
     result:
-      '"\\t\\n\\r\\"\'\\\\\\u001f\\u009f\\ufeff\\ufffe\\ud8000\\u2063' +
-      '\\ufffc\\u2028\\ueeee\ufffd"',
+      "`\\t\\n\\r\"'\\\\\\u001f\\u009f\\ufeff\\ufffe\\ud8000\\u2063" +
+      "\\ufffc\\u2028\\ueeee\ufffd`",
   },
   {
     name: "testUnpairedSurrogate",
@@ -166,6 +168,70 @@ const testCases = [
       transformEmptyString: false,
     },
     result: `""`,
+  },
+  {
+    name: "testQuotingSingleQuote",
+    props: {
+      object: "'",
+      useQuotes: true,
+    },
+    result: `"'"`,
+  },
+  {
+    name: "testQuotingDoubleQuote",
+    props: {
+      object: '"',
+      useQuotes: true,
+    },
+    result: `'"'`,
+  },
+  {
+    name: "testQuotingBacktick",
+    props: {
+      object: "`",
+      useQuotes: true,
+    },
+    result: '"`"',
+  },
+  {
+    name: "testQuotingSingleAndDoubleQuotes",
+    props: {
+      object: "'\"",
+      useQuotes: true,
+    },
+    result: "`'\"`",
+  },
+  {
+    name: "testQuotingSingleAndDoubleQuotesAnd${",
+    props: {
+      object: "'\"${",
+      useQuotes: true,
+    },
+    result: '"\'\\"${"',
+  },
+  {
+    name: "testQuotingSingleQuoteAndBacktick",
+    props: {
+      object: "'`",
+      useQuotes: true,
+    },
+    result: '"\'`"',
+  },
+  {
+    name: "testQuotingDoubleQuoteAndBacktick",
+    props: {
+      object: '"`',
+      useQuotes: true,
+    },
+    result: "'\"`'",
+  },
+  {
+    name: "testQuotingSingleAndDoubleQuotesAndBacktick",
+    props: {
+      object: "'\"`",
+      useQuotes: true,
+    },
+    result: '"\'\\"`"',
   },
 ];
 

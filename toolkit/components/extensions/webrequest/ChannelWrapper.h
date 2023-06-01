@@ -116,8 +116,7 @@ class ChannelWrapper final : public DOMEventTargetHelper,
                              private detail::ChannelHolder {
  public:
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(ChannelWrapper,
-                                                         DOMEventTargetHelper)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(ChannelWrapper, DOMEventTargetHelper)
 
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_CHANNELWRAPPER_IID)
 
@@ -249,7 +248,8 @@ class ChannelWrapper final : public DOMEventTargetHelper,
 
   nsISupports* GetParentObject() const { return mParent; }
 
-  JSObject* WrapObject(JSContext* aCx, JS::HandleObject aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
  protected:
   ~ChannelWrapper();

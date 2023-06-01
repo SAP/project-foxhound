@@ -1,0 +1,69 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src chrome:; object-src 'none'">
+    <meta name="color-scheme" content="light dark">
+
+    <title data-l10n-id="about-translations-title"></title>
+
+    <link rel="stylesheet" href="chrome://global/skin/global.css" type="text/css"/>
+    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" type="text/css"/>
+    <link rel="stylesheet" href="chrome://global/content/translations/translations.css">
+
+    <link rel="localization" href="browser/branding/brandings.ftl"/>
+    <link rel="localization" href="locales-preview/translations.ftl"/>
+
+    <script type="module" src="chrome://global/content/translations/translations.mjs"></script>
+  </head>
+  <body>
+    <h1 data-l10n-id="about-translations-header"></h1>
+    <main class="about-translations-contents">
+
+      <header class="about-translations-header">
+        <div class="about-translations-header-start">
+          <select
+            class="about-translations-select"
+            id="language-from"
+            disabled>
+            <option data-l10n-id="about-translations-select" value=""></option>
+          </select>
+        </div>
+        <div class="about-translations-header-end">
+          <select
+            class="about-translations-select"
+            id="language-to"
+            disabled>
+            <option data-l10n-id="about-translations-select" value=""></option>
+          </select>
+        </div>
+      </header>
+
+      <main class="about-translations-input">
+        <div class="about-translations-input-start">
+          <textarea
+            class="about-translations-input-textarea"
+            data-l10n-id="about-translations-textarea"
+            id="translation-from"
+            ></textarea>
+        </div>
+        <div class="about-translations-input-end">
+          <div
+            class="about-translations-input-results about-translations-input-results-blank"
+            data-l10n-id="about-translations-results-placeholder"
+            id="translation-to-blank">
+          </div>
+          <div
+            class="about-translations-input-results"
+            id="translation-to">
+          </div>
+        </div>
+      </main>
+
+    </div>
+  </body>
+</html>

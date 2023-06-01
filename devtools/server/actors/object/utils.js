@@ -4,36 +4,37 @@
 
 "use strict";
 
-const { Cu } = require("chrome");
-const { DevToolsServer } = require("devtools/server/devtools-server");
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
+const {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 const { assert } = DevToolsUtils;
 
 loader.lazyRequireGetter(
   this,
   "LongStringActor",
-  "devtools/server/actors/string",
+  "resource://devtools/server/actors/string.js",
   true
 );
 
 loader.lazyRequireGetter(
   this,
   "symbolGrip",
-  "devtools/server/actors/object/symbol",
+  "resource://devtools/server/actors/object/symbol.js",
   true
 );
 
 loader.lazyRequireGetter(
   this,
   "ObjectActor",
-  "devtools/server/actors/object",
+  "resource://devtools/server/actors/object.js",
   true
 );
 
 loader.lazyRequireGetter(
   this,
   "EnvironmentActor",
-  "devtools/server/actors/environment",
+  "resource://devtools/server/actors/environment.js",
   true
 );
 
@@ -118,18 +119,7 @@ function createValueGrip(value, pool, makeObjectGrip) {
       return value;
 
     case "string":
-      if (stringIsLong(value)) {
-        for (const child of pool.poolChildren()) {
-          if (child instanceof LongStringActor && child.str == value) {
-            return child.form();
-          }
-        }
-
-        const actor = new LongStringActor(pool.conn, value);
-        pool.manage(actor);
-        return actor.form();
-      }
-      return value;
+      return createStringGrip(pool, value);
 
     case "number":
       if (value === Infinity) {
@@ -149,6 +139,16 @@ function createValueGrip(value, pool, makeObjectGrip) {
         text: value.toString(),
       };
 
+    // TODO(bug 1772157)
+    // Record/tuple grips aren't fully implemented yet.
+    case "record":
+      return {
+        class: "Record",
+      };
+    case "tuple":
+      return {
+        class: "Tuple",
+      };
     case "undefined":
       return { type: "undefined" };
 
@@ -470,14 +470,26 @@ function createStringGrip(targetActor, string) {
  * @param Number depth
  *        Depth of the object compared to the top level object,
  *        when we are inspecting nested attributes.
+ * @param Object [objectActorAttributes]
+ *        An optional object whose properties will be assigned to the ObjectActor if one
+ *        is created.
  * @return object
  */
-function createValueGripForTarget(targetActor, value, depth = 0) {
-  return createValueGrip(
-    value,
-    targetActor,
-    createObjectGrip.bind(null, targetActor, depth)
-  );
+function createValueGripForTarget(
+  targetActor,
+  value,
+  depth = 0,
+  objectActorAttributes = {}
+) {
+  const makeObjectGrip = (objectActorValue, pool) =>
+    createObjectGrip(
+      targetActor,
+      depth,
+      objectActorValue,
+      pool,
+      objectActorAttributes
+    );
+  return createValueGrip(value, targetActor, makeObjectGrip);
 }
 
 /**
@@ -521,14 +533,23 @@ function createEnvironmentActor(environment, targetActor) {
  *        The object you want.
  * @param object pool
  *        A Pool where the new actor instance is added.
+ * @param object [objectActorAttributes]
+ *        An optional object whose properties will be assigned to the ObjectActor being created.
  * @param object
  *        The object grip.
  */
-function createObjectGrip(targetActor, depth, object, pool) {
+function createObjectGrip(
+  targetActor,
+  depth,
+  object,
+  pool,
+  objectActorAttributes = {}
+) {
   let gripDepth = depth;
   const actor = new ObjectActor(
     object,
     {
+      ...objectActorAttributes,
       thread: targetActor.threadActor,
       getGripDepth: () => gripDepth,
       incrementGripDepth: () => gripDepth++,
@@ -539,6 +560,7 @@ function createObjectGrip(targetActor, depth, object, pool) {
     targetActor.conn
   );
   pool.manage(actor);
+
   return actor.form();
 }
 

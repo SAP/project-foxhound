@@ -141,7 +141,7 @@ impl Guid {
         let mut output = [0u8; MAX_FAST_GUID_LEN];
 
         let bytes_written =
-            base64::encode_config_slice(&bytes, base64::URL_SAFE_NO_PAD, &mut output[..12]);
+            base64::encode_config_slice(bytes, base64::URL_SAFE_NO_PAD, &mut output[..12]);
 
         debug_assert!(bytes_written == 12);
 
@@ -252,7 +252,7 @@ const BASE64URL_BYTES: [u8; 256] = [
 
 impl Ord for Guid {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.as_bytes().cmp(&other.as_bytes())
+        self.as_bytes().cmp(other.as_bytes())
     }
 }
 
@@ -369,6 +369,8 @@ impl std::default::Default for Guid {
 
 macro_rules! impl_guid_eq {
     ($($other: ty),+) => {$(
+        // This macro is used for items with and without lifetimes.
+        #[allow(clippy::extra_unused_lifetimes)]
         impl<'a> PartialEq<$other> for Guid {
             #[inline]
             fn eq(&self, other: &$other) -> bool {
@@ -376,6 +378,7 @@ macro_rules! impl_guid_eq {
             }
         }
 
+        #[allow(clippy::extra_unused_lifetimes)]
         impl<'a> PartialEq<Guid> for $other {
             #[inline]
             fn eq(&self, other: &Guid) -> bool {
@@ -416,6 +419,12 @@ mod test {
         assert!(!Guid::from("aaaabbbbccccd").is_valid_for_places()); // too long
         assert!(!Guid::from("aaaabbbbccc").is_valid_for_places()); // too short
         assert!(!Guid::from("aaaabbbbccc=").is_valid_for_places()); // right length, bad character
+        assert!(!Guid::empty().is_valid_for_places()); // empty isn't valid to insert.
+    }
+
+    #[test]
+    fn test_valid_for_sync_server() {
+        assert!(!Guid::empty().is_valid_for_sync_server()); // empty isn't valid remotely.
     }
 
     #[allow(clippy::cmp_owned)] // See clippy note below.

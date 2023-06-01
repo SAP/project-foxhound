@@ -22,12 +22,10 @@
 
 var EXPORTED_SYMBOLS = ["ClientEngine", "ClientsRec"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { Async } = ChromeUtils.import("resource://services-common/async.js");
 const {
   DEVICE_TYPE_DESKTOP,
   DEVICE_TYPE_MOBILE,
-  SCORE_INCREMENT_XLARGE,
   SINGLE_USER_THRESHOLD,
   SYNC_API_VERSION,
 } = ChromeUtils.import("resource://services-sync/constants.js");
@@ -40,17 +38,23 @@ const { CryptoWrapper } = ChromeUtils.import(
 const { Resource } = ChromeUtils.import("resource://services-sync/resource.js");
 const { Svc, Utils } = ChromeUtils.import("resource://services-sync/util.js");
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "fxAccounts",
-  "resource://gre/modules/FxAccounts.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
+
+const lazy = {};
+
+XPCOMUtils.defineLazyGetter(lazy, "fxAccounts", () => {
+  return ChromeUtils.import(
+    "resource://gre/modules/FxAccounts.jsm"
+  ).getFxAccountsSingleton();
+});
 
 const { PREF_ACCOUNT_ROOT } = ChromeUtils.import(
   "resource://gre/modules/FxAccountsCommon.js"
 );
 
-const CLIENTS_TTL = 1814400; // 21 days
+const CLIENTS_TTL = 15552000; // 180 days
 const CLIENTS_TTL_REFRESH = 604800; // 7 days
 const STALE_CLIENT_REMOTE_AGE = 604800; // 7 days
 
@@ -83,10 +87,10 @@ function ClientsRec(collection, id) {
   CryptoWrapper.call(this, collection, id);
 }
 ClientsRec.prototype = {
-  __proto__: CryptoWrapper.prototype,
   _logName: "Sync.Record.Clients",
   ttl: CLIENTS_TTL,
 };
+Object.setPrototypeOf(ClientsRec.prototype, CryptoWrapper.prototype);
 
 Utils.deferGetSet(ClientsRec, "cleartext", [
   "name",
@@ -105,12 +109,11 @@ Utils.deferGetSet(ClientsRec, "cleartext", [
 function ClientEngine(service) {
   SyncEngine.call(this, "Clients", service);
 
-  this.fxAccounts = fxAccounts;
+  this.fxAccounts = lazy.fxAccounts;
   this.addClientCommandQueue = Async.asyncQueueCaller(this._log);
   Utils.defineLazyIDProperty(this, "localID", "services.sync.client.GUID");
 }
 ClientEngine.prototype = {
-  __proto__: SyncEngine.prototype,
   _storeObj: ClientStore,
   _recordObj: ClientsRec,
   _trackerObj: ClientsTracker,
@@ -242,14 +245,14 @@ ClientEngine.prototype = {
     }
     // Sometimes the sync clients don't always correctly update the device name
     // However FxA always does, so try to pull the name from there first
-    let fxaDevice = this.fxAccounts.device.recentDeviceList.find(
+    let fxaDevice = this.fxAccounts.device.recentDeviceList?.find(
       device => device.id === client.fxaDeviceId
     );
 
     // should be very rare, but could happen if we have yet to fetch devices,
     // or the client recently disconnected
     if (!fxaDevice) {
-      this.log.warn(
+      this._log.warn(
         "Couldn't find associated FxA device, falling back to client name"
       );
       return client.name;
@@ -374,7 +377,7 @@ ClientEngine.prototype = {
     this._log.debug("Updating the known stale clients");
     // _fetchFxADevices side effect updates this._knownStaleFxADeviceIds.
     await this._fetchFxADevices();
-    let localFxADeviceId = await fxAccounts.device.getLocalId();
+    let localFxADeviceId = await lazy.fxAccounts.device.getLocalId();
     // Process newer records first, so that if we hit a record with a device ID
     // we've seen before, we can mark it stale immediately.
     let clientList = Object.values(this._store._remoteClients).sort(
@@ -459,7 +462,7 @@ ClientEngine.prototype = {
           await this._removeRemoteClient(id);
         }
       }
-      let localFxADeviceId = await fxAccounts.device.getLocalId();
+      let localFxADeviceId = await lazy.fxAccounts.device.getLocalId();
       // Bug 1264498: Mobile clients don't remove themselves from the clients
       // collection when the user disconnects Sync, so we mark as stale clients
       // with the same name that haven't synced in over a week.
@@ -590,7 +593,7 @@ ClientEngine.prototype = {
       const fxaDeviceId = this.getClientFxaDeviceId(id);
       return fxaDeviceId ? acc.concat(fxaDeviceId) : acc;
     }, []);
-    if (idsToNotify.length > 0) {
+    if (idsToNotify.length) {
       this._notifyOtherClientsModified(idsToNotify);
     }
   },
@@ -629,7 +632,7 @@ ClientEngine.prototype = {
     };
     let excludedIds = null;
     if (!ids) {
-      const localFxADeviceId = await fxAccounts.device.getLocalId();
+      const localFxADeviceId = await lazy.fxAccounts.device.getLocalId();
       excludedIds = [localFxADeviceId];
     }
     try {
@@ -944,13 +947,12 @@ ClientEngine.prototype = {
     this._modified.delete(id);
   },
 };
+Object.setPrototypeOf(ClientEngine.prototype, SyncEngine.prototype);
 
 function ClientStore(name, engine) {
   Store.call(this, name, engine);
 }
 ClientStore.prototype = {
-  __proto__: Store.prototype,
-
   _remoteClients: {},
 
   async create(record) {
@@ -1083,13 +1085,12 @@ ClientStore.prototype = {
     this._remoteClients = {};
   },
 };
+Object.setPrototypeOf(ClientStore.prototype, Store.prototype);
 
 function ClientsTracker(name, engine) {
   LegacyTracker.call(this, name, engine);
 }
 ClientsTracker.prototype = {
-  __proto__: LegacyTracker.prototype,
-
   _enabled: false,
 
   onStart() {
@@ -1119,3 +1120,4 @@ ClientsTracker.prototype = {
     }
   },
 };
+Object.setPrototypeOf(ClientsTracker.prototype, LegacyTracker.prototype);

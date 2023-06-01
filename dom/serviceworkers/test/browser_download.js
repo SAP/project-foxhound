@@ -1,9 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-var Downloads = ChromeUtils.import("resource://gre/modules/Downloads.jsm", {})
-  .Downloads;
-
 var gTestRoot = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content/",
   "http://mochi.test:8888/"
@@ -72,8 +69,8 @@ function test() {
               ok(file.exists(), "download completed");
               is(file.fileSize, 33, "downloaded file has correct size");
               file.remove(false);
-              downloadList.remove(aDownload).catch(Cu.reportError);
-              downloadList.removeView(downloadListener).catch(Cu.reportError);
+              downloadList.remove(aDownload).catch(console.error);
+              downloadList.removeView(downloadListener).catch(console.error);
               gBrowser.removeTab(tab);
               Services.ww.unregisterNotification(windowObserver);
 
@@ -89,7 +86,7 @@ function test() {
           return downloadList.addView(downloadListener);
         })
         .then(function() {
-          BrowserTestUtils.loadURI(gBrowser, url);
+          BrowserTestUtils.loadURIString(gBrowser, url);
         });
     }
   );

@@ -5,15 +5,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import print_function
-
 import contextlib
 import io
 import os
-import tempfile
 import shutil
 import sys
-
+import tempfile
 from functools import partial
 from itertools import chain
 from operator import itemgetter
@@ -25,13 +22,18 @@ UNSUPPORTED_FEATURES = set(
         "Intl.DateTimeFormat-quarter",
         "Intl.Segmenter",
         "Intl.Locale-info",
+        "Intl.DurationFormat",
         "Atomics.waitAsync",
         "legacy-regexp",
         "json-modules",
         "resizable-arraybuffer",
         "Temporal",
-        "callable-boundary-realms",
-        "array-find-from-last",
+        "regexp-v-flag",
+        "decorators",
+        "regexp-duplicate-named-groups",
+        "String.prototype.isWellFormed",  # Bug 1803523
+        "String.prototype.toWellFormed",  # Bug 1803523
+        "symbols-as-weakmap-keys",  # Bug 1710433
     ]
 )
 FEATURE_CHECK_NEEDED = {
@@ -39,10 +41,21 @@ FEATURE_CHECK_NEEDED = {
     "FinalizationRegistry": "!this.hasOwnProperty('FinalizationRegistry')",
     "SharedArrayBuffer": "!this.hasOwnProperty('SharedArrayBuffer')",
     "WeakRef": "!this.hasOwnProperty('WeakRef')",
+    "array-grouping": "!Array.prototype.group",
+    "change-array-by-copy": "!Array.prototype.with",
+    "Array.fromAsync": "!Array.fromAsync",
 }
-RELEASE_OR_BETA = set([])
+RELEASE_OR_BETA = set(
+    [
+        "Intl.NumberFormat-v3",
+    ]
+)
 SHELL_OPTIONS = {
     "import-assertions": "--enable-import-assertions",
+    "ShadowRealm": "--enable-shadow-realms",
+    "array-grouping": "--enable-array-grouping",
+    "change-array-by-copy": "--enable-change-array-by-copy",
+    "Array.fromAsync": "--enable-array-from-async",
 }
 
 
@@ -470,6 +483,7 @@ def process_test262(test262Dir, test262OutDir, strictTests, externManifests):
         "byteConversionValues.js"
     ]
     explicitIncludes[os.path.join("built-ins", "Promise")] = ["promiseHelper.js"]
+    explicitIncludes[os.path.join("built-ins", "Temporal")] = ["temporalHelpers.js"]
     explicitIncludes[os.path.join("built-ins", "TypedArray")] = [
         "byteConversionValues.js",
         "detachArrayBuffer.js",
@@ -553,7 +567,6 @@ def fetch_local_changes(inDir, outDir, srcDir, strictTests):
     import subprocess
 
     # TODO: fail if it's in the default branch? or require a branch name?
-
     # Checks for unstaged or non committed files. A clean branch provides a clean status.
     status = subprocess.check_output(
         ("git -C %s status --porcelain" % srcDir).split(" ")
@@ -852,7 +865,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Update the test262 test suite.")
     parser.add_argument(
         "--url",
-        default="git://github.com/tc39/test262.git",
+        default="https://github.com/tc39/test262.git",
         help="URL to git repository (default: %(default)s)",
     )
     parser.add_argument(

@@ -7,10 +7,6 @@
 // This is loaded into chrome windows with the subscript loader. If you need to
 // define globals, wrap in a block to prevent leaking onto `window`.
 {
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
-  );
-
   MozElements.NotificationBox = class NotificationBox {
     /**
      * Creates a new class to handle a notification box, but does not add any
@@ -418,13 +414,9 @@
       </hbox>
       <toolbarbutton ondblclick="event.stopPropagation();"
                      class="messageCloseButton close-icon tabbable"
-                     tooltiptext="&closeNotification.tooltip;"
+                     data-l10n-id="close-notification-message"
                      oncommand="this.parentNode.dismiss();"/>
       `;
-    }
-
-    static get entities() {
-      return ["chrome://global/locale/notification.dtd"];
     }
 
     constructor() {
@@ -437,6 +429,7 @@
     }
 
     connectedCallback() {
+      MozXULElement.insertFTLIfNeeded("toolkit/global/notification.ftl");
       this.appendChild(this.constructor.fragment);
 
       for (let [propertyName, selector] of [
@@ -515,10 +508,26 @@
 
     /**
      * Changes the text of an existing notification. If the notification was
-     * created with a custom fragment, it will be overwritten with plain text.
+     * created with a custom fragment, it will be overwritten with plain text
+     * or a localized message.
+     *
+     * @param {string | { "l10n-id": string, "l10n-args"?: string }} value
      */
     set label(value) {
-      this.messageText.textContent = value;
+      if (value && typeof value == "object" && "l10n-id" in value) {
+        const message = document.createElement("span");
+        document.l10n.setAttributes(
+          message,
+          value["l10n-id"],
+          value["l10n-args"]
+        );
+        while (this.messageText.firstChild) {
+          this.messageText.firstChild.remove();
+        }
+        this.messageText.appendChild(message);
+      } else {
+        this.messageText.textContent = value;
+      }
     }
 
     /**
@@ -716,8 +725,28 @@
         }
       }
 
+      /**
+       * Changes the text of an existing notification. If the notification was
+       * created with a custom fragment, it will be overwritten with plain text
+       * or a localized message.
+       *
+       * @param {string | { "l10n-id": string, "l10n-args"?: string }} value
+       */
       set label(value) {
-        this.messageText.textContent = value;
+        if (value && typeof value == "object" && "l10n-id" in value) {
+          const message = document.createElement("span");
+          document.l10n.setAttributes(
+            message,
+            value["l10n-id"],
+            value["l10n-args"]
+          );
+          while (this.messageText.firstChild) {
+            this.messageText.firstChild.remove();
+          }
+          this.messageText.appendChild(message);
+        } else {
+          this.messageText.textContent = value;
+        }
         this.setAlertRole();
       }
 

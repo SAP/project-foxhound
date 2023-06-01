@@ -372,7 +372,7 @@ static bool OptimizableConstantAccess(MDefinition* base,
 }
 
 void LIRGenerator::visitWasmHeapBase(MWasmHeapBase* ins) {
-  auto* lir = new (alloc()) LWasmHeapBase(useRegisterAtStart(ins->tlsPtr()));
+  auto* lir = new (alloc()) LWasmHeapBase(useRegisterAtStart(ins->instance()));
   define(lir, ins);
 }
 
@@ -687,7 +687,7 @@ void LIRGeneratorX86::lowerWasmBuiltinDivI64(MWasmBuiltinDivI64* div) {
     LUDivOrModI64* lir = new (alloc())
         LUDivOrModI64(useInt64FixedAtStart(div->lhs(), Register64(eax, ebx)),
                       useInt64FixedAtStart(div->rhs(), Register64(ecx, edx)),
-                      useFixedAtStart(div->tls(), WasmTlsReg));
+                      useFixedAtStart(div->instance(), InstanceReg));
     defineReturn(lir, div);
     return;
   }
@@ -695,7 +695,7 @@ void LIRGeneratorX86::lowerWasmBuiltinDivI64(MWasmBuiltinDivI64* div) {
   LDivOrModI64* lir = new (alloc())
       LDivOrModI64(useInt64FixedAtStart(div->lhs(), Register64(eax, ebx)),
                    useInt64FixedAtStart(div->rhs(), Register64(ecx, edx)),
-                   useFixedAtStart(div->tls(), WasmTlsReg));
+                   useFixedAtStart(div->instance(), InstanceReg));
   defineReturn(lir, div);
 }
 
@@ -716,7 +716,7 @@ void LIRGeneratorX86::lowerWasmBuiltinModI64(MWasmBuiltinModI64* mod) {
     LUDivOrModI64* lir = new (alloc())
         LUDivOrModI64(useInt64FixedAtStart(lhs, Register64(eax, ebx)),
                       useInt64FixedAtStart(rhs, Register64(ecx, edx)),
-                      useFixedAtStart(mod->tls(), WasmTlsReg));
+                      useFixedAtStart(mod->instance(), InstanceReg));
     defineReturn(lir, mod);
     return;
   }
@@ -724,7 +724,7 @@ void LIRGeneratorX86::lowerWasmBuiltinModI64(MWasmBuiltinModI64* mod) {
   LDivOrModI64* lir = new (alloc())
       LDivOrModI64(useInt64FixedAtStart(lhs, Register64(eax, ebx)),
                    useInt64FixedAtStart(rhs, Register64(ecx, edx)),
-                   useFixedAtStart(mod->tls(), WasmTlsReg));
+                   useFixedAtStart(mod->instance(), InstanceReg));
   defineReturn(lir, mod);
 }
 
@@ -753,7 +753,7 @@ void LIRGeneratorX86::lowerBigIntMod(MBigIntMod* ins) {
 void LIRGenerator::visitSubstr(MSubstr* ins) {
   // Due to lack of registers on x86, we reuse the string register as
   // temporary. As a result we only need two temporary registers and take a
-  // bugos temporary as fifth argument.
+  // bogus temporary as fifth argument.
   LSubstr* lir = new (alloc())
       LSubstr(useRegister(ins->string()), useRegister(ins->begin()),
               useRegister(ins->length()), temp(), LDefinition::BogusTemp(),

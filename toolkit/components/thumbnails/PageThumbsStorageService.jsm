@@ -4,16 +4,17 @@
 
 const THUMBNAIL_DIRECTORY = "thumbnails";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
-XPCOMUtils.defineLazyGetter(this, "gCryptoHash", function() {
+const lazy = {};
+
+XPCOMUtils.defineLazyGetter(lazy, "gCryptoHash", function() {
   return Cc["@mozilla.org/security/hash;1"].createInstance(Ci.nsICryptoHash);
 });
 
-XPCOMUtils.defineLazyGetter(this, "gUnicodeConverter", function() {
+XPCOMUtils.defineLazyGetter(lazy, "gUnicodeConverter", function() {
   let converter = Cc[
     "@mozilla.org/intl/scriptableunicodeconverter"
   ].createInstance(Ci.nsIScriptableUnicodeConverter);
@@ -29,8 +30,8 @@ PageThumbsStorageService.prototype = {
   _path: null,
   get path() {
     if (!this._path) {
-      this._path = OS.Path.join(
-        OS.Constants.Path.localProfileDir,
+      this._path = PathUtils.join(
+        PathUtils.localProfileDir,
         THUMBNAIL_DIRECTORY
       );
     }
@@ -46,12 +47,12 @@ PageThumbsStorageService.prototype = {
   },
 
   getFilePathForURL(aURL) {
-    return OS.Path.join(this.path, this.getLeafNameForURL(aURL));
+    return PathUtils.join(this.path, this.getLeafNameForURL(aURL));
   },
 
   _calculateMD5Hash(aValue) {
-    let hash = gCryptoHash;
-    let value = gUnicodeConverter.convertToByteArray(aValue);
+    let hash = lazy.gCryptoHash;
+    let value = lazy.gUnicodeConverter.convertToByteArray(aValue);
 
     hash.init(hash.MD5);
     hash.update(value, value.length);

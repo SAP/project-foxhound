@@ -15,22 +15,23 @@
 
 #include "jsapi.h"
 
+#include "frontend/FrontendContext.h"  // AutoReportFrontendContext
 #include "frontend/TokenStream.h"
 #include "irregexp/RegExpAPI.h"
-#include "jit/InlinableNatives.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_NEWREGEXP_FLAGGED
 #include "js/PropertySpec.h"
 #include "js/RegExpFlags.h"  // JS::RegExpFlag, JS::RegExpFlags
 #include "util/StringBuffer.h"
 #include "util/Unicode.h"
 #include "vm/JSContext.h"
+#include "vm/RegExpObject.h"
 #include "vm/RegExpStatics.h"
 #include "vm/SelfHosting.h"
 #include "vm/WellKnownAtom.h"  // js_*_str
 
 #include "vm/EnvironmentObject-inl.h"
+#include "vm/GeckoProfiler-inl.h"
 #include "vm/JSObject-inl.h"
-#include "vm/NativeObject-inl.h"
 #include "vm/ObjectOperations-inl.h"
 #include "vm/PlainObject-inl.h"
 
@@ -47,7 +48,7 @@ using JS::RegExpFlags;
 // Allocate an object for the |.groups| or |.indices.groups| property
 // of a regexp match result.
 static PlainObject* CreateGroupsObject(JSContext* cx,
-                                       HandlePlainObject groupsTemplate) {
+                                       Handle<PlainObject*> groupsTemplate) {
   if (groupsTemplate->inDictionaryMode()) {
     return NewPlainObjectWithProto(cx, nullptr);
   }
@@ -103,8 +104,8 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
   MOZ_ASSERT(numPairs > 0);
 
   // Steps 20-21: Allocate the match result object.
-  RootedArrayObject arr(cx, NewDenseFullyAllocatedArrayWithTemplate(
-                                cx, numPairs, templateObject));
+  Rooted<ArrayObject*> arr(cx, NewDenseFullyAllocatedArrayWithTemplate(
+                                   cx, numPairs, templateObject));
   if (!arr) {
     return false;
   }
@@ -127,7 +128,7 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
       // Taintfox: taint propagated by NewDependentString, just need
       // to add the operation here
       if (str->taint().hasTaint()) {
-        RootedAtom src(cx, re->getSource());
+        Rooted<JSAtom*> src(cx, re->getSource());
         JSString* srcStr = EscapeRegExpPattern(cx, src);
         str->taint().extend(
           TaintOperation("RegExp.prototype.exec", true, TaintLocationFromContext(cx),
@@ -141,8 +142,8 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
   // Step 34a (reordered): Allocate and initialize the indices object if needed.
   // This is an inlined implementation of MakeIndicesArray:
   // https://tc39.es/ecma262/#sec-makeindicesarray
-  RootedArrayObject indices(cx);
-  RootedPlainObject indicesGroups(cx);
+  Rooted<ArrayObject*> indices(cx);
+  Rooted<PlainObject*> indicesGroups(cx);
   if (hasIndices) {
     // MakeIndicesArray: step 8
     ArrayObject* indicesTemplate =
@@ -156,7 +157,7 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
 
     // MakeIndicesArray: steps 10-12
     if (re->numNamedCaptures() > 0) {
-      RootedPlainObject groupsTemplate(cx, re->getGroupsTemplate());
+      Rooted<PlainObject*> groupsTemplate(cx, re->getGroupsTemplate());
       indicesGroups = CreateGroupsObject(cx, groupsTemplate);
       if (!indicesGroups) {
         return false;
@@ -177,7 +178,7 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
         indices->setDenseInitializedLength(i + 1);
         indices->initDenseElement(i, UndefinedValue());
       } else {
-        RootedArrayObject indexPair(cx, NewDenseFullyAllocatedArray(cx, 2));
+        Rooted<ArrayObject*> indexPair(cx, NewDenseFullyAllocatedArray(cx, 2));
         if (!indexPair) {
           return false;
         }
@@ -192,10 +193,10 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
   }
 
   // Steps 30-31 (reordered): Allocate the groups object (if needed).
-  RootedPlainObject groups(cx);
+  Rooted<PlainObject*> groups(cx);
   bool groupsInDictionaryMode = false;
   if (re->numNamedCaptures() > 0) {
-    RootedPlainObject groupsTemplate(cx, re->getGroupsTemplate());
+    Rooted<PlainObject*> groupsTemplate(cx, re->getGroupsTemplate());
     groupsInDictionaryMode = groupsTemplate->inDictionaryMode();
     groups = CreateGroupsObject(cx, groupsTemplate);
     if (!groups) {
@@ -212,7 +213,7 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
   // the correct values.
   if (groupsInDictionaryMode) {
     RootedIdVector keys(cx);
-    RootedPlainObject groupsTemplate(cx, re->getGroupsTemplate());
+    Rooted<PlainObject*> groupsTemplate(cx, re->getGroupsTemplate());
     if (!GetPropertyKeys(cx, groupsTemplate, 0, &keys)) {
       return false;
     }
@@ -302,7 +303,7 @@ static int32_t CreateRegExpSearchResult(const MatchPairs& matches) {
  */
 static RegExpRunStatus ExecuteRegExpImpl(JSContext* cx, RegExpStatics* res,
                                          MutableHandleRegExpShared re,
-                                         HandleLinearString input,
+                                         Handle<JSLinearString*> input,
                                          size_t searchIndex,
                                          VectorMatchPairs* matches) {
   RegExpRunStatus status =
@@ -320,7 +321,7 @@ static RegExpRunStatus ExecuteRegExpImpl(JSContext* cx, RegExpStatics* res,
 /* Legacy ExecuteRegExp behavior is baked into the JSAPI. */
 bool js::ExecuteRegExpLegacy(JSContext* cx, RegExpStatics* res,
                              Handle<RegExpObject*> reobj,
-                             HandleLinearString input, size_t* lastIndex,
+                             Handle<JSLinearString*> input, size_t* lastIndex,
                              bool test, MutableHandleValue rval) {
   RootedRegExpShared shared(cx, RegExpObject::getShared(cx, reobj));
   if (!shared) {
@@ -352,15 +353,17 @@ bool js::ExecuteRegExpLegacy(JSContext* cx, RegExpStatics* res,
   return CreateRegExpMatchResult(cx, shared, input, matches, rval);
 }
 
-static bool CheckPatternSyntaxSlow(JSContext* cx, HandleAtom pattern,
+static bool CheckPatternSyntaxSlow(JSContext* cx, Handle<JSAtom*> pattern,
                                    RegExpFlags flags) {
   LifoAllocScope allocScope(&cx->tempLifoAlloc());
+  AutoReportFrontendContext fc(cx);
   CompileOptions options(cx);
-  frontend::DummyTokenStream dummyTokenStream(cx, options);
-  return irregexp::CheckPatternSyntax(cx, dummyTokenStream, pattern, flags);
+  frontend::DummyTokenStream dummyTokenStream(&fc, options);
+  return irregexp::CheckPatternSyntax(cx, cx->stackLimitForCurrentPrincipal(),
+                                      dummyTokenStream, pattern, flags);
 }
 
-static RegExpShared* CheckPatternSyntax(JSContext* cx, HandleAtom pattern,
+static RegExpShared* CheckPatternSyntax(JSContext* cx, Handle<JSAtom*> pattern,
                                         RegExpFlags flags) {
   // If we already have a RegExpShared for this pattern/flags, we can
   // avoid the much slower CheckPatternSyntaxSlow call.
@@ -405,7 +408,7 @@ static bool RegExpInitializeIgnoringLastIndex(JSContext* cx,
                                               Handle<RegExpObject*> obj,
                                               HandleValue patternValue,
                                               HandleValue flagsValue) {
-  RootedAtom pattern(cx);
+  Rooted<JSAtom*> pattern(cx);
   if (patternValue.isUndefined()) {
     /* Step 1. */
     pattern = cx->names().empty;
@@ -481,7 +484,7 @@ bool js::IsRegExp(JSContext* cx, HandleValue value, bool* result) {
 
   /* Steps 2-3. */
   RootedValue isRegExp(cx);
-  RootedId matchId(cx, SYMBOL_TO_JSID(cx->wellKnownSymbols().match));
+  RootedId matchId(cx, PropertyKey::Symbol(cx->wellKnownSymbols().match));
   if (!GetProperty(cx, obj, obj, matchId, &isRegExp)) {
     return false;
   }
@@ -528,7 +531,7 @@ MOZ_ALWAYS_INLINE bool regexp_compile_impl(JSContext* cx,
     // don't reuse the RegExpShared below.
     RootedObject patternObj(cx, &patternValue.toObject());
 
-    RootedAtom sourceAtom(cx);
+    Rooted<JSAtom*> sourceAtom(cx);
     RegExpFlags flags = RegExpFlag::NoFlags;
     {
       // Step 3b.
@@ -582,6 +585,7 @@ static bool regexp_compile(JSContext* cx, unsigned argc, Value* vp) {
  * ES 2017 draft rev 6a13789aa9e7c6de4e96b7d3e24d9e6eba6584ad 21.2.3.1.
  */
 bool js::regexp_construct(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSConstructorProfilerEntry pseudoFrame(cx, "RegExp");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Steps 1.
@@ -626,7 +630,7 @@ bool js::regexp_construct(JSContext* cx, unsigned argc, Value* vp) {
     // don't assume |patternObj.is<RegExpObject>()|.
     RootedObject patternObj(cx, &patternValue.toObject());
 
-    RootedAtom sourceAtom(cx);
+    Rooted<JSAtom*> sourceAtom(cx);
     RegExpFlags flags;
     RootedRegExpShared shared(cx);
     {
@@ -754,7 +758,7 @@ bool js::regexp_construct_raw_flags(JSContext* cx, unsigned argc, Value* vp) {
   MOZ_ASSERT(!args.isConstructing());
 
   // Step 4.a.
-  RootedAtom sourceAtom(cx, AtomizeString(cx, args[0].toString()));
+  Rooted<JSAtom*> sourceAtom(cx, AtomizeString(cx, args[0].toString()));
   if (!sourceAtom) {
     return false;
   }
@@ -864,10 +868,12 @@ static bool regexp_source(JSContext* cx, unsigned argc, JS::Value* vp) {
   return RegExpGetter(
       cx, args, "source",
       [cx, args](RegExpObject* unwrapped) {
-        RootedAtom src(cx, unwrapped->getSource());
+        Rooted<JSAtom*> src(cx, unwrapped->getSource());
         MOZ_ASSERT(src);
-        // Mark potentially cross-compartment JSAtom.
-        cx->markAtom(src);
+        // Mark potentially cross-zone JSAtom.
+        if (cx->zone() != unwrapped->zone()) {
+          cx->markAtom(src);
+        }
 
         // Step 7.
         JSString* escaped = EscapeRegExpPattern(cx, src);
@@ -1037,7 +1043,7 @@ const JSPropertySpec js::regexp_static_props[] = {
     JS_PS_END};
 
 template <typename CharT>
-static bool IsTrailSurrogateWithLeadSurrogateImpl(HandleLinearString input,
+static bool IsTrailSurrogateWithLeadSurrogateImpl(Handle<JSLinearString*> input,
                                                   size_t index) {
   JS::AutoCheckCannotGC nogc;
   MOZ_ASSERT(index > 0 && index < input->length());
@@ -1047,7 +1053,7 @@ static bool IsTrailSurrogateWithLeadSurrogateImpl(HandleLinearString input,
          unicode::IsLeadSurrogate(inputChars[index - 1]);
 }
 
-static bool IsTrailSurrogateWithLeadSurrogate(HandleLinearString input,
+static bool IsTrailSurrogateWithLeadSurrogate(Handle<JSLinearString*> input,
                                               int32_t index) {
   if (index <= 0 || size_t(index) >= input->length()) {
     return false;
@@ -1084,7 +1090,7 @@ static RegExpRunStatus ExecuteRegExp(JSContext* cx, HandleObject regexp,
     return RegExpRunStatus_Error;
   }
 
-  RootedLinearString input(cx, string->ensureLinear(cx));
+  Rooted<JSLinearString*> input(cx, string->ensureLinear(cx));
   if (!input) {
     return RegExpRunStatus_Error;
   }
@@ -1189,19 +1195,17 @@ bool js::RegExpMatcher(JSContext* cx, unsigned argc, Value* vp) {
  * This code cannot re-enter JIT code.
  */
 bool js::RegExpMatcherRaw(JSContext* cx, HandleObject regexp,
-                          HandleString input, int32_t maybeLastIndex,
+                          HandleString input, int32_t lastIndex,
                           MatchPairs* maybeMatches, MutableHandleValue output) {
+  MOZ_ASSERT(lastIndex >= 0 && size_t(lastIndex) <= input->length());
+
   // RegExp execution was successful only if the pairs have actually been
   // filled in. Note that IC code always passes a nullptr maybeMatches.
   if (maybeMatches && maybeMatches->pairsRaw()[0] > MatchPair::NoMatch) {
     RootedRegExpShared shared(cx, regexp->as<RegExpObject>().getShared());
     return CreateRegExpMatchResult(cx, shared, input, *maybeMatches, output);
   }
-
-  // |maybeLastIndex| only contains a valid value when the RegExp execution
-  // was not successful.
-  MOZ_ASSERT(maybeLastIndex >= 0);
-  return RegExpMatcherImpl(cx, regexp, input, maybeLastIndex, output);
+  return RegExpMatcherImpl(cx, regexp, input, lastIndex, output);
 }
 
 /*
@@ -1478,12 +1482,13 @@ static bool InterpretDollar(JSLinearString* matched, JSLinearString* string,
 }
 
 template <typename CharT>
-static bool FindReplaceLengthString(JSContext* cx, HandleLinearString matched,
-                                    HandleLinearString string, size_t position,
-                                    size_t tailPos,
+static bool FindReplaceLengthString(JSContext* cx,
+                                    Handle<JSLinearString*> matched,
+                                    Handle<JSLinearString*> string,
+                                    size_t position, size_t tailPos,
                                     Handle<CapturesVector> captures,
                                     Handle<CapturesVector> namedCaptures,
-                                    HandleLinearString replacement,
+                                    Handle<JSLinearString*> replacement,
                                     size_t firstDollarIndex, size_t* sizep) {
   CheckedInt<uint32_t> replen = replacement->length();
 
@@ -1522,11 +1527,11 @@ static bool FindReplaceLengthString(JSContext* cx, HandleLinearString matched,
   return true;
 }
 
-static bool FindReplaceLength(JSContext* cx, HandleLinearString matched,
-                              HandleLinearString string, size_t position,
+static bool FindReplaceLength(JSContext* cx, Handle<JSLinearString*> matched,
+                              Handle<JSLinearString*> string, size_t position,
                               size_t tailPos, Handle<CapturesVector> captures,
                               Handle<CapturesVector> namedCaptures,
-                              HandleLinearString replacement,
+                              Handle<JSLinearString*> replacement,
                               size_t firstDollarIndex, size_t* sizep) {
   return replacement->hasLatin1Chars()
              ? FindReplaceLengthString<Latin1Char>(
@@ -1543,12 +1548,12 @@ static bool FindReplaceLength(JSContext* cx, HandleLinearString matched,
  * necessary.
  */
 template <typename CharT>
-static void DoReplace(HandleLinearString matched, HandleLinearString string,
-                      size_t position, size_t tailPos,
-                      Handle<CapturesVector> captures,
+static void DoReplace(Handle<JSLinearString*> matched,
+                      Handle<JSLinearString*> string, size_t position,
+                      size_t tailPos, Handle<CapturesVector> captures,
                       Handle<CapturesVector> namedCaptures,
-                      HandleLinearString replacement, size_t firstDollarIndex,
-                      StringBuffer& sb) {
+                      Handle<JSLinearString*> replacement,
+                      size_t firstDollarIndex, StringBuffer& sb) {
   JS::AutoCheckCannotGC nogc;
   const CharT* replacementBegin = replacement->chars<CharT>(nogc);
   const CharT* currentChar = replacementBegin;
@@ -1588,7 +1593,7 @@ static void DoReplace(HandleLinearString matched, HandleLinearString string,
  * use in InitNamedReplacements.
  */
 template <typename CharT>
-static bool CollectNames(JSContext* cx, HandleLinearString replacement,
+static bool CollectNames(JSContext* cx, Handle<JSLinearString*> replacement,
                          size_t firstDollarIndex,
                          MutableHandle<GCVector<jsid>> names) {
   JS::AutoCheckCannotGC nogc;
@@ -1640,7 +1645,8 @@ static bool CollectNames(JSContext* cx, HandleLinearString replacement,
  * that when we need to access the nth named capture in InterpretDollar,
  * we can just use the nth value stored in namedCaptures.
  */
-static bool InitNamedCaptures(JSContext* cx, HandleLinearString replacement,
+static bool InitNamedCaptures(JSContext* cx,
+                              Handle<JSLinearString*> replacement,
                               HandleObject groups, size_t firstDollarIndex,
                               MutableHandle<CapturesVector> namedCaptures) {
   Rooted<GCVector<jsid>> names(cx, cx);
@@ -1690,9 +1696,9 @@ static bool InitNamedCaptures(JSContext* cx, HandleLinearString replacement,
   return true;
 }
 
-static bool NeedTwoBytes(HandleLinearString string,
-                         HandleLinearString replacement,
-                         HandleLinearString matched,
+static bool NeedTwoBytes(Handle<JSLinearString*> string,
+                         Handle<JSLinearString*> replacement,
+                         Handle<JSLinearString*> matched,
                          Handle<CapturesVector> captures,
                          Handle<CapturesVector> namedCaptures) {
   if (string->hasTwoByteChars()) {
@@ -1728,9 +1734,9 @@ static bool NeedTwoBytes(HandleLinearString string,
 
 /* ES 2021 21.1.3.17.1 */
 // https://tc39.es/ecma262/#sec-getsubstitution
-bool js::RegExpGetSubstitution(JSContext* cx, HandleArrayObject matchResult,
-                               HandleLinearString string, size_t position,
-                               HandleLinearString replacement,
+bool js::RegExpGetSubstitution(JSContext* cx, Handle<ArrayObject*> matchResult,
+                               Handle<JSLinearString*> string, size_t position,
+                               Handle<JSLinearString*> replacement,
                                size_t firstDollarIndex, HandleValue groups,
                                MutableHandleValue rval) {
   MOZ_ASSERT(firstDollarIndex < replacement->length());
@@ -1743,7 +1749,8 @@ bool js::RegExpGetSubstitution(JSContext* cx, HandleArrayObject matchResult,
   MOZ_ASSERT(matchResultLength == matchResult->getDenseInitializedLength());
 
   const Value& matchedValue = matchResult->getDenseElement(0);
-  RootedLinearString matched(cx, matchedValue.toString()->ensureLinear(cx));
+  Rooted<JSLinearString*> matched(cx,
+                                  matchedValue.toString()->ensureLinear(cx));
   if (!matched) {
     return false;
   }
@@ -2000,7 +2007,7 @@ bool js::RegExpPrototypeOptimizableRaw(JSContext* cx, JSObject* proto) {
   // those values should be tested in selfhosted JS.
   bool has = false;
   if (!HasOwnDataPropertyPure(
-          cx, proto, SYMBOL_TO_JSID(cx->wellKnownSymbols().match), &has)) {
+          cx, proto, PropertyKey::Symbol(cx->wellKnownSymbols().match), &has)) {
     return false;
   }
   if (!has) {
@@ -2008,7 +2015,8 @@ bool js::RegExpPrototypeOptimizableRaw(JSContext* cx, JSObject* proto) {
   }
 
   if (!HasOwnDataPropertyPure(
-          cx, proto, SYMBOL_TO_JSID(cx->wellKnownSymbols().search), &has)) {
+          cx, proto, PropertyKey::Symbol(cx->wellKnownSymbols().search),
+          &has)) {
     return false;
   }
   if (!has) {

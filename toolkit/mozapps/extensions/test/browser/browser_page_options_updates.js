@@ -11,8 +11,7 @@ registerCleanupFunction(() => {
 });
 
 const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm",
-  {}
+  "resource://testing-common/AddonTestUtils.jsm"
 );
 
 const PREF_UPDATE_ENABLED = "extensions.update.enabled";
@@ -81,7 +80,7 @@ add_task(async function testResetUpdateStates() {
   let id = "update-state@mochi.test";
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
     },
     useAddonManager: "permanent",
   });

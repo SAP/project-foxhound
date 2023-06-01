@@ -4,11 +4,12 @@
 
 const EXPORTED_SYMBOLS = ["AbuseReporter", "AbuseReportError"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-
-Cu.importGlobalProperties(["fetch"]);
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
 
 const PREF_ABUSE_REPORT_URL = "extensions.abuseReport.url";
 const PREF_AMO_DETAILS_API_URL = "extensions.abuseReport.amoDetailsURL";
@@ -23,24 +24,33 @@ const MAX_STRING_LENGTH = 255;
 const MIN_MS_BETWEEN_SUBMITS = 30000;
 
 // The addon types currently supported by the integrated abuse report panel.
-const SUPPORTED_ADDON_TYPES = ["extension", "theme", "sitepermission"];
+const SUPPORTED_ADDON_TYPES = [
+  "extension",
+  "theme",
+  "sitepermission",
+  // TODO(Bug 1789718): Remove after the deprecated XPIProvider-based implementation is also removed.
+  "sitepermission-deprecated",
+];
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  ClientID: "resource://gre/modules/ClientID.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AMTelemetry: "resource://gre/modules/AddonManager.jsm",
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
-  ClientID: "resource://gre/modules/ClientID.jsm",
-  Services: "resource://gre/modules/Services.jsm",
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "ABUSE_REPORT_URL",
   PREF_ABUSE_REPORT_URL
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "AMO_DETAILS_API_URL",
   PREF_AMO_DETAILS_API_URL
 );
@@ -134,7 +144,7 @@ const AbuseReporter = {
    *          class, which represent an ongoing report.
    */
   async createAbuseReport(addonId, { reportEntryPoint } = {}) {
-    let addon = await AddonManager.getAddonByID(addonId);
+    let addon = await lazy.AddonManager.getAddonByID(addonId);
 
     if (!addon) {
       // The addon isn't installed, query the details from the AMO API endpoint.
@@ -142,7 +152,7 @@ const AbuseReporter = {
     }
 
     if (!addon) {
-      AMTelemetry.recordReportEvent({
+      lazy.AMTelemetry.recordReportEvent({
         addonId,
         errorType: "ERROR_ADDON_NOTFOUND",
         reportEntryPoint,
@@ -205,7 +215,7 @@ const AbuseReporter = {
     try {
       // This should be the API endpoint documented at:
       // https://addons-server.readthedocs.io/en/latest/topics/api/addons.html#detail
-      details = await fetch(`${AMO_DETAILS_API_URL}/${addonId}`, {
+      details = await fetch(`${lazy.AMO_DETAILS_API_URL}/${addonId}`, {
         credentials: "omit",
         referrerPolicy: "no-referrer",
         headers: { "Content-Type": "application/json" },
@@ -229,7 +239,7 @@ const AbuseReporter = {
       // Log the original error in the browser console.
       Cu.reportError(err);
 
-      AMTelemetry.recordReportEvent({
+      lazy.AMTelemetry.recordReportEvent({
         addonId,
         errorType: err.errorType || "ERROR_AMODETAILS_FAILURE",
         reportEntryPoint,
@@ -273,7 +283,7 @@ const AbuseReporter = {
       },
       isRecommended: details.is_recommended,
       // Set signed state to unknown because it isn't installed.
-      signedState: AddonManager.SIGNEDSTATE_UNKNOWN,
+      signedState: lazy.AddonManager.SIGNEDSTATE_UNKNOWN,
       // Set the installTelemetryInfo.source to "not_installed".
       installTelemetryInfo: { source: "not_installed" },
     };
@@ -321,25 +331,25 @@ const AbuseReporter = {
     };
 
     switch (addon.signedState) {
-      case AddonManager.SIGNEDSTATE_BROKEN:
+      case lazy.AddonManager.SIGNEDSTATE_BROKEN:
         data.addon_signature = "broken";
         break;
-      case AddonManager.SIGNEDSTATE_UNKNOWN:
+      case lazy.AddonManager.SIGNEDSTATE_UNKNOWN:
         data.addon_signature = "unknown";
         break;
-      case AddonManager.SIGNEDSTATE_MISSING:
+      case lazy.AddonManager.SIGNEDSTATE_MISSING:
         data.addon_signature = "missing";
         break;
-      case AddonManager.SIGNEDSTATE_PRELIMINARY:
+      case lazy.AddonManager.SIGNEDSTATE_PRELIMINARY:
         data.addon_signature = "preliminary";
         break;
-      case AddonManager.SIGNEDSTATE_SIGNED:
+      case lazy.AddonManager.SIGNEDSTATE_SIGNED:
         data.addon_signature = "signed";
         break;
-      case AddonManager.SIGNEDSTATE_SYSTEM:
+      case lazy.AddonManager.SIGNEDSTATE_SYSTEM:
         data.addon_signature = "system";
         break;
-      case AddonManager.SIGNEDSTATE_PRIVILEGED:
+      case lazy.AddonManager.SIGNEDSTATE_PRIVILEGED:
         data.addon_signature = "privileged";
         break;
       default:
@@ -353,7 +363,7 @@ const AbuseReporter = {
       data.addon_signature = "curated";
     }
 
-    data.client_id = await ClientID.getClientIdHash();
+    data.client_id = await lazy.ClientID.getClientIdHash();
 
     data.app = Services.appinfo.name.toLowerCase();
     data.appversion = Services.appinfo.version;
@@ -395,7 +405,7 @@ const AbuseReporter = {
    *          A method that closes the report dialog (used by the caller
    *          to close the dialog when the user chooses to close the window
    *          that started the abuse report flow).
-   * @prop    {Promise<AbuseReport|undefined} promiseReport
+   * @prop    {Promise<AbuseReport|undefined>} promiseReport
    *          A promise resolved to an AbuseReport instance if the report should
    *          be submitted, or undefined if the user has cancelled the report.
    *          Rejects if it fails to create an AbuseReport instance or to open
@@ -539,7 +549,7 @@ class AbuseReport {
 
   recordTelemetry(errorType) {
     const { addon, reportEntryPoint } = this;
-    AMTelemetry.recordReportEvent({
+    lazy.AMTelemetry.recordReportEvent({
       addonId: addon.id,
       addonType: addon.type,
       errorType,
@@ -591,7 +601,7 @@ class AbuseReport {
 
     let response;
     try {
-      response = await fetch(ABUSE_REPORT_URL, {
+      response = await fetch(lazy.ABUSE_REPORT_URL, {
         signal: abortController.signal,
         method: "POST",
         credentials: "omit",

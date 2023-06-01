@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
+"use strict";
+
 // Ignore strange errors when shutting down.
 PromiseTestUtils.allowMatchingRejectionsGlobally(/No such actor/);
 
@@ -68,23 +70,6 @@ add_task(async function() {
     "Group has expected location"
   );
 });
-
-// checks to see if the frame is selected and the title is correct
-function isFrameSelected(dbg, index, title) {
-  const $frame = findElement(dbg, "frame", index);
-
-  const {
-    selectors: { getSelectedFrame, getCurrentThread },
-    getState,
-  } = dbg;
-
-  const frame = getSelectedFrame(getCurrentThread());
-
-  const elSelected = $frame.classList.contains("selected");
-  const titleSelected = frame.displayName == title;
-
-  return elSelected && titleSelected;
-}
 
 function toggleButton(dbg) {
   const callStackBody = findElement(dbg, "callStackBody");

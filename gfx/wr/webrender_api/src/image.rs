@@ -10,7 +10,6 @@ use std::ops::{Add, Sub};
 use std::sync::Arc;
 // local imports
 use crate::{IdNamespace, TileSize};
-use crate::display_item::ImageRendering;
 use crate::font::{FontInstanceKey, FontInstanceData, FontKey, FontTemplate};
 use crate::units::*;
 
@@ -93,8 +92,8 @@ pub struct ExternalImage<'a> {
 pub trait ExternalImageHandler {
     /// Lock the external image. Then, WR could start to read the image content.
     /// The WR client should not change the image content until the unlock()
-    /// call. Provide ImageRendering for NativeTexture external images.
-    fn lock(&mut self, key: ExternalImageId, channel_index: u8, rendering: ImageRendering) -> ExternalImage;
+    /// call.
+    fn lock(&mut self, key: ExternalImageId, channel_index: u8) -> ExternalImage;
     /// Unlock the external image. WR should not read the image content
     /// after this call.
     fn unlock(&mut self, key: ExternalImageId, channel_index: u8);
@@ -160,7 +159,7 @@ pub enum ImageFormat {
     /// Two-channels, byte storage. Similar to `R8`, this just means
     /// "two channels" rather than "red and green".
     RG8 = 5,
-    /// Two-channels, byte storage. Similar to `R16`, this just means
+    /// Two-channels, short storage. Similar to `R16`, this just means
     /// "two channels" rather than "red and green".
     RG16 = 6,
 
@@ -355,7 +354,7 @@ impl ImageData {
 /// The resources exposed by the resource cache available for use by the blob rasterizer.
 pub trait BlobImageResources {
     /// Returns the `FontTemplate` for the given key.
-    fn get_font_data(&self, key: FontKey) -> &FontTemplate;
+    fn get_font_data(&self, key: FontKey) -> Option<FontTemplate>;
     /// Returns the `FontInstanceData` for the given key, if found.
     fn get_font_instance_data(&self, key: FontInstanceKey) -> Option<FontInstanceData>;
 }

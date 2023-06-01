@@ -1,8 +1,8 @@
 package org.mozilla.geckoview.test
 
-import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.filters.MediumTest
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.MediumTest
+import androidx.test.platform.app.InstrumentationRegistry
 import org.hamcrest.Matchers
 import org.junit.After
 import org.junit.Assert.assertTrue
@@ -16,7 +16,6 @@ import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSession.ContentDelegate
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.IgnoreCrash
 
-
 @RunWith(AndroidJUnit4::class)
 @MediumTest
 class ContentCrashTest : BaseSessionTest() {
@@ -25,7 +24,7 @@ class ContentCrashTest : BaseSessionTest() {
     @Before
     fun setup() {
         assertTrue(client.connect(env.defaultTimeoutMillis))
-        client.setEvalNextCrashDump(/* expectFatal */ false, GeckoRuntime.CRASHED_PROCESS_TYPE_FOREGROUND_CHILD)
+        client.setEvalNextCrashDump(GeckoRuntime.CRASHED_PROCESS_TYPE_FOREGROUND_CHILD)
     }
 
     @IgnoreCrash

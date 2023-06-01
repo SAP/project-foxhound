@@ -11,98 +11,59 @@
 #ifndef MODULES_DESKTOP_CAPTURE_TAB_CAPTURER_H_
 #define MODULES_DESKTOP_CAPTURE_TAB_CAPTURER_H_
 
-#include <memory>
-#include <string>
-
-#include "modules/desktop_capture/desktop_capture_options.h"
 #include "modules/desktop_capture/desktop_capturer.h"
+#include "mozilla/MozPromise.h"
+#include "nsDeque.h"
 #include "nsThreadUtils.h"
-#include "mozilla/dom/ImageBitmap.h"
-#include "mozilla/Monitor.h"
 
 namespace mozilla {
+namespace dom {
+class ImageBitmap;
+}
 
+class CaptureFrameRequest;
 class TabCapturedHandler;
+class TaskQueue;
 
-class TabCapturer {
+class TabCapturerWebrtc : public webrtc::DesktopCapturer {
  private:
-  ~TabCapturer();
+  ~TabCapturerWebrtc();
 
  public:
+  friend class CaptureFrameRequest;
   friend class TabCapturedHandler;
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(TabCapturer)
 
-  explicit TabCapturer(const webrtc::DesktopCaptureOptions& options);
+  explicit TabCapturerWebrtc(const webrtc::DesktopCaptureOptions& options);
 
   static std::unique_ptr<webrtc::DesktopCapturer> CreateRawWindowCapturer(
       const webrtc::DesktopCaptureOptions& options);
 
-  // support for DesktopCapturer interface.
-  void Start(webrtc::DesktopCapturer::Callback* callback);
-  void CaptureFrame();
-  bool GetSourceList(webrtc::DesktopCapturer::SourceList* sources);
-  bool SelectSource(webrtc::DesktopCapturer::SourceId id);
-  bool FocusOnSelectedSource();
-  bool IsOccluded(const webrtc::DesktopVector& pos);
-
-  // Capture code
-  void CaptureFrameNow();
-  void OnFrame(dom::ImageBitmap* aBitmap);
-
-  class StartRunnable : public Runnable {
-   public:
-    explicit StartRunnable(TabCapturer* videoSource)
-        : Runnable("TabCapturer::StartRunnable"), mVideoSource(videoSource) {}
-    NS_IMETHOD Run() override;
-    const RefPtr<TabCapturer> mVideoSource;
-  };
-
- private:
-  // Used to protect mCallback, since TabCapturer's lifetime might be
-  // longer than mCallback's on stop/shutdown, and we may be waiting on a
-  // tab to finish capturing on MainThread.
-  Monitor mMonitor;
-  webrtc::DesktopCapturer::Callback* mCallback = nullptr;
-
-  uint64_t mBrowserId = 0;
-  bool mCapturing = false;
-
-  RTC_DISALLOW_COPY_AND_ASSIGN(TabCapturer);
-};
-
-// Warning: webrtc capture wants this in a uniqueptr, but it greatly eases
-// things for us if it's a refcounted object (so we can pass it around to
-// Dispatch/etc). Solve this by having a DesktopCapturer that just holds the
-// refcounted TabCapturer.
-
-// XXX This is a little ugly; we could decompose into front-end (webrtc)
-// and backend (refcounted), but that doesn't actually make things a lot better.
-class TabCapturerWebrtc : public webrtc::DesktopCapturer {
- public:
-  explicit TabCapturerWebrtc(const webrtc::DesktopCaptureOptions& options) {
-    mInternal = new TabCapturer(options);
-  }
-
-  ~TabCapturerWebrtc() override = default;
+  TabCapturerWebrtc(const TabCapturerWebrtc&) = delete;
+  TabCapturerWebrtc& operator=(const TabCapturerWebrtc&) = delete;
 
   // DesktopCapturer interface.
-  void Start(Callback* callback) override { mInternal->Start(callback); }
-  void CaptureFrame() override { mInternal->CaptureFrame(); }
-  bool GetSourceList(SourceList* sources) override {
-    return mInternal->GetSourceList(sources);
-  }
-  bool SelectSource(SourceId id) override {
-    return mInternal->SelectSource(id);
-  }
-  bool FocusOnSelectedSource() override {
-    return mInternal->FocusOnSelectedSource();
-  }
-  bool IsOccluded(const webrtc::DesktopVector& pos) override {
-    return mInternal->IsOccluded(pos);
-  }
+  void Start(Callback* callback) override;
+  void CaptureFrame() override;
+  bool GetSourceList(SourceList* sources) override;
+  bool SelectSource(SourceId id) override;
+  bool FocusOnSelectedSource() override;
+  bool IsOccluded(const webrtc::DesktopVector& pos) override;
 
  private:
-  RefPtr<TabCapturer> mInternal;
+  // Capture code
+  using CapturePromise = MozPromise<RefPtr<dom::ImageBitmap>, nsresult, true>;
+  RefPtr<CapturePromise> CaptureFrameNow();
+
+  // Helper that checks for overrun requests. Returns true if aRequest had not
+  // been dropped.
+  bool CompleteRequest(CaptureFrameRequest* aRequest);
+
+  const RefPtr<TaskQueue> mMainThreadWorker;
+  webrtc::DesktopCapturer::Callback* mCallback = nullptr;
+  uint64_t mBrowserId = 0;
+
+  // mMainThreadWorker only
+  nsRefPtrDeque<CaptureFrameRequest> mRequests;
 };
 
 }  // namespace mozilla

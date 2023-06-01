@@ -8,16 +8,16 @@
  * Test the export logins file picker appears.
  */
 
-let { OSKeyStore } = ChromeUtils.import(
-  "resource://gre/modules/OSKeyStore.jsm"
+let { OSKeyStore } = ChromeUtils.importESModule(
+  "resource://gre/modules/OSKeyStore.sys.mjs"
 );
-let { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+let { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 let { MockFilePicker } = SpecialPowers;
 
-add_task(async function setup() {
+add_setup(async function() {
   await TestUtils.waitForCondition(() => {
     Services.telemetry.clearEvents();
     let events = Services.telemetry.snapshotEvents(
@@ -40,7 +40,7 @@ function waitForFilePicker() {
   return new Promise(resolve => {
     MockFilePicker.showCallback = () => {
       MockFilePicker.showCallback = null;
-      ok(true, "Saw the file picker");
+      Assert.ok(true, "Saw the file picker");
       resolve();
     };
   });
@@ -117,13 +117,13 @@ add_task(async function test_open_export() {
       );
 
       if (osReAuthPromise) {
-        ok(osReAuthPromise, "Waiting for OS re-auth promise");
+        Assert.ok(osReAuthPromise, "Waiting for OS re-auth promise");
         await osReAuthPromise;
       }
 
       info("waiting for Export file picker to get opened");
       await filePicker;
-      ok(true, "Export file picker opened");
+      Assert.ok(true, "Export file picker opened");
 
       info("Waiting for the export to complete");
       let expectedEvents = [

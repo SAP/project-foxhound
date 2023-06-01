@@ -117,6 +117,7 @@ VIAddVersionKey "OriginalFilename" "helper.exe"
 !insertmacro un.CleanUpdateDirectories
 !insertmacro un.CleanVirtualStore
 !insertmacro un.DeleteShortcuts
+!insertmacro un.GetCommonDirectory
 !insertmacro un.GetLongPath
 !insertmacro un.GetSecondInstallPath
 !insertmacro un.InitHashAppModelId
@@ -327,22 +328,9 @@ Function un.OpenRefreshHelpURL
   ExecShell "open" "${URLProfileRefreshHelp}"
 FunctionEnd
 
-; Returns the common directory (typically
-; "C:\ProgramData\Mozilla-1de4eec8-1241-4177-a864-e594e8d1fb38") on the stack.
-Function un.GetCommonDirectory
-  Push $0   ; Save $0
-
-  ; This gets C:\ProgramData or the equivalent.
-  ${GetCommonAppDataFolder} $0
-
-  ; Add our subdirectory, this is hardcoded as grandparent of the update directory in
-  ; several other places.
-  StrCpy $0 "$0\Mozilla-1de4eec8-1241-4177-a864-e594e8d1fb38"
-
-  Exch $0   ; Restore original $0 and put our $0 on the stack.
-FunctionEnd
-
 Function un.SendUninstallPing
+  ; Notably, we only check the non-private AUMID here. There's no good reason
+  ; to send the uninstall ping twice.
   ${If} $AppUserModelID == ""
     Return
   ${EndIf}
@@ -428,6 +416,15 @@ Section "Uninstall"
   DetailPrint $(STATUS_UNINSTALL_MAIN)
   SetDetailsPrint none
 
+  ; Some system cleanup is most easily handled when XPCOM functionality is
+  ; available - e.g. removing notifications from Window's Action Center. We
+  ; handle this in the `uninstall` background task.
+  ;
+  ; Return value is saved to an unused variable to prevent the the error flag
+  ; from being set.
+  Var /GLOBAL UnusedExecCatchReturn
+  ExecWait '"$INSTDIR\${FileMainEXE}" --backgroundtask uninstall' $UnusedExecCatchReturn
+
   ; Delete the app exe to prevent launching the app while we are uninstalling.
   ClearErrors
   ${DeleteFile} "$INSTDIR\${FileMainEXE}"
@@ -446,17 +443,21 @@ Section "Uninstall"
   ${un.RegCleanUninstall}
   ${un.DeleteShortcuts}
 
-  ; Unregister resources associated with Win7 taskbar jump lists.
-  ${If} ${AtLeastWin7}
-  ${AndIf} "$AppUserModelID" != ""
-    ApplicationID::UninstallJumpLists "$AppUserModelID"
-  ${EndIf}
-
-  ; Remove the update sync manager's multi-instance lock file
   ${If} "$AppUserModelID" != ""
+    ; Unregister resources associated with Win7 taskbar jump lists.
+    ${If} ${AtLeastWin7}
+      ApplicationID::UninstallJumpLists "$AppUserModelID"
+    ${EndIf}
+    ; Remove the update sync manager's multi-instance lock file
     Call un.GetCommonDirectory
     Pop $0
     Delete /REBOOTOK "$0\UpdateLock-$AppUserModelID"
+  ${EndIf}
+
+  ${If} "$AppUserModelIDPrivate" != ""
+    ${If} ${AtLeastWin7}
+      ApplicationID::UninstallJumpLists "$AppUserModelIDPrivate"
+    ${EndIf}
   ${EndIf}
 
   ; Remove the updates directory
@@ -480,8 +481,9 @@ Section "Uninstall"
     ${un.SetAppLSPCategories}
   ${EndIf}
 
-  ${un.RegCleanAppHandler} "FirefoxURL-$AppUserModelID"
   ${un.RegCleanAppHandler} "FirefoxHTML-$AppUserModelID"
+  ${un.RegCleanAppHandler} "FirefoxPDF-$AppUserModelID"
+  ${un.RegCleanAppHandler} "FirefoxURL-$AppUserModelID"
   ${un.RegCleanProtocolHandler} "http"
   ${un.RegCleanProtocolHandler} "https"
   ${un.RegCleanProtocolHandler} "mailto"
@@ -493,11 +495,12 @@ Section "Uninstall"
   ${un.RegCleanFileHandler}  ".oga"   "FirefoxHTML-$AppUserModelID"
   ${un.RegCleanFileHandler}  ".ogg"   "FirefoxHTML-$AppUserModelID"
   ${un.RegCleanFileHandler}  ".ogv"   "FirefoxHTML-$AppUserModelID"
-  ${un.RegCleanFileHandler}  ".pdf"   "FirefoxHTML-$AppUserModelID"
   ${un.RegCleanFileHandler}  ".webm"  "FirefoxHTML-$AppUserModelID"
   ${un.RegCleanFileHandler}  ".svg"   "FirefoxHTML-$AppUserModelID"
   ${un.RegCleanFileHandler}  ".webp"  "FirefoxHTML-$AppUserModelID"
   ${un.RegCleanFileHandler}  ".avif"  "FirefoxHTML-$AppUserModelID"
+
+  ${un.RegCleanFileHandler}  ".pdf"   "FirefoxPDF-$AppUserModelID"
 
   SetShellVarContext all  ; Set SHCTX to HKLM
   ${un.GetSecondInstallPath} "Software\Mozilla" $R9
@@ -513,7 +516,8 @@ Section "Uninstall"
   DeleteRegValue HKCU "Software\RegisteredApplications" "${AppRegName}-$AppUserModelID"
 
   ; Remove old protocol handler and StartMenuInternet keys without install path
-  ; hashes, but only if they're for this installation.
+  ; hashes, but only if they're for this installation.  We've never supported
+  ; bare FirefoxPDF.
   ReadRegStr $0 HKLM "Software\Classes\FirefoxHTML\DefaultIcon" ""
   StrCpy $0 $0 -2
   ${If} $0 == "$INSTDIR\${FileMainEXE}"
@@ -612,6 +616,42 @@ Section "Uninstall"
   DeleteRegValue HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Telemetry"
 !endif
 
+  ; Remove Toast Notification registration.
+  ${If} ${AtLeastWin10}
+    ; Find any GUID used for this installation.
+    ClearErrors
+    ReadRegStr $0 HKLM "Software\Classes\AppUserModelId\${ToastAumidPrefix}$AppUserModelID" "CustomActivator"
+
+    DeleteRegValue HKLM "Software\Classes\AppUserModelId\${ToastAumidPrefix}$AppUserModelID" "CustomActivator"
+    DeleteRegValue HKLM "Software\Classes\AppUserModelId\${ToastAumidPrefix}$AppUserModelID" "DisplayName"
+    DeleteRegValue HKLM "Software\Classes\AppUserModelId\${ToastAumidPrefix}$AppUserModelID" "IconUri"
+    DeleteRegKey HKLM "Software\Classes\AppUserModelId\${ToastAumidPrefix}$AppUserModelID"
+    ${If} "$0" != ""
+      DeleteRegValue HKLM "Software\Classes\AppID\$0" "DllSurrogate"
+      DeleteRegKey HKLM "Software\Classes\AppID\$0"
+      DeleteRegValue HKLM "Software\Classes\CLSID\$0" "AppID"
+      DeleteRegValue HKLM "Software\Classes\CLSID\$0\InProcServer32" ""
+      DeleteRegKey HKLM "Software\Classes\CLSID\$0\InProcServer32"
+      DeleteRegKey HKLM "Software\Classes\CLSID\$0"
+    ${EndIf}
+
+    ClearErrors
+    ReadRegStr $0 HKCU "Software\Classes\AppUserModelId\${ToastAumidPrefix}$AppUserModelID" "CustomActivator"
+
+    DeleteRegValue HKCU "Software\Classes\AppUserModelId\${ToastAumidPrefix}$AppUserModelID" "CustomActivator"
+    DeleteRegValue HKCU "Software\Classes\AppUserModelId\${ToastAumidPrefix}$AppUserModelID" "DisplayName"
+    DeleteRegValue HKCU "Software\Classes\AppUserModelId\${ToastAumidPrefix}$AppUserModelID" "IconUri"
+    DeleteRegKey HKCU "Software\Classes\AppUserModelId\${ToastAumidPrefix}$AppUserModelID"
+    ${If} "$0" != ""
+      DeleteRegValue HKCU "Software\Classes\AppID\$0" "DllSurrogate"
+      DeleteRegKey HKCU "Software\Classes\AppID\$0"
+      DeleteRegValue HKCU "Software\Classes\CLSID\$0" "AppID"
+      DeleteRegValue HKCU "Software\Classes\CLSID\$0\InProcServer32" ""
+      DeleteRegKey HKCU "Software\Classes\CLSID\$0\InProcServer32"
+      DeleteRegKey HKCU "Software\Classes\CLSID\$0"
+    ${EndIf}
+  ${EndIf}
+
   ; Uninstall the default browser agent scheduled task and all other scheduled
   ; tasks registered by Firefox.
   ; This also removes the registry entries that the WDBA creates.
@@ -640,6 +680,9 @@ Section "Uninstall"
   ${EndIf}
   ${If} ${FileExists} "$INSTDIR\installation_telemetry.json"
     Delete /REBOOTOK "$INSTDIR\installation_telemetry.json"
+  ${EndIf}
+  ${If} ${FileExists} "$INSTDIR\postSigningData"
+    Delete /REBOOTOK "$INSTDIR\postSigningData"
   ${EndIf}
 
   ; Explicitly remove empty webapprt dir in case it exists (bug 757978).

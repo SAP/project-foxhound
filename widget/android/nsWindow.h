@@ -63,18 +63,18 @@ class nsWindow final : public nsBaseWidget {
   NS_INLINE_DECL_REFCOUNTING_INHERITED(nsWindow, nsBaseWidget)
 
   static void InitNatives();
-  void SetScreenId(uint32_t aScreenId) { mScreenId = aScreenId; }
   void OnGeckoViewReady();
   RefPtr<mozilla::MozPromise<bool, bool, false>> OnLoadRequest(
       nsIURI* aUri, int32_t aWindowType, int32_t aFlags,
       nsIPrincipal* aTriggeringPrincipal, bool aHasUserGesture,
       bool aIsTopLevel);
 
+  void OnUpdateSessionStore(mozilla::jni::Object::Param aBundle);
+
  private:
   // Unique ID given to each widget, used to map Surfaces to widgets
   // in the CompositorSurfaceManager.
   int32_t mWidgetId;
-  uint32_t mScreenId;
 
  private:
   RefPtr<mozilla::widget::AndroidView> mAndroidView;
@@ -115,8 +115,6 @@ class nsWindow final : public nsBaseWidget {
   static mozilla::Modifiers GetModifiers(int32_t aMetaState);
   static mozilla::TimeStamp GetEventTimeStamp(int64_t aEventTime);
 
-  void OnSizeChanged(const mozilla::gfx::IntSize& aSize);
-
   void InitEvent(mozilla::WidgetGUIEvent& event,
                  LayoutDeviceIntPoint* aPoint = 0);
 
@@ -139,7 +137,7 @@ class nsWindow final : public nsBaseWidget {
   [[nodiscard]] virtual nsresult Create(nsIWidget* aParent,
                                         nsNativeWidget aNativeParent,
                                         const LayoutDeviceIntRect& aRect,
-                                        nsWidgetInitData* aInitData) override;
+                                        InitData* aInitData) override;
   virtual void Destroy() override;
   virtual void SetParent(nsIWidget* aNewParent) override;
   virtual nsIWidget* GetParent(void) override;
@@ -154,6 +152,7 @@ class nsWindow final : public nsBaseWidget {
   virtual void Resize(double aX, double aY, double aWidth, double aHeight,
                       bool aRepaint) override;
   void SetZIndex(int32_t aZIndex) override;
+  virtual nsSizeMode SizeMode() override { return mSizeMode; }
   virtual void SetSizeMode(nsSizeMode aMode) override;
   virtual void Enable(bool aState) override;
   virtual bool IsEnabled() const override;
@@ -164,7 +163,6 @@ class nsWindow final : public nsBaseWidget {
   virtual nsresult DispatchEvent(mozilla::WidgetGUIEvent* aEvent,
                                  nsEventStatus& aStatus) override;
   nsEventStatus DispatchEvent(mozilla::WidgetGUIEvent* aEvent);
-  virtual already_AddRefed<nsIScreen> GetWidgetScreen() override;
   virtual nsresult MakeFullScreen(bool aFullScreen) override;
   void SetCursor(const Cursor& aDefaultCursor) override;
   void* GetNativeData(uint32_t aDataType) override;
@@ -241,6 +239,9 @@ class nsWindow final : public nsBaseWidget {
   virtual mozilla::ScreenIntMargin GetSafeAreaInsets() const override;
   void UpdateSafeAreaInsets(const mozilla::ScreenIntMargin& aSafeAreaInsets);
 
+  mozilla::jni::NativeWeakPtr<mozilla::widget::NPZCSupport>
+  GetNPZCSupportWeakPtr();
+
  protected:
   void BringToFront();
   nsWindow* FindTopLevel();
@@ -260,6 +261,7 @@ class nsWindow final : public nsBaseWidget {
   mozilla::ScreenIntCoord mDynamicToolbarMaxHeight;
   mozilla::ScreenIntMargin mSafeAreaInsets;
 
+  nsSizeMode mSizeMode;
   bool mIsFullScreen;
 
   bool UseExternalCompositingSurface() const override { return true; }
@@ -271,6 +273,8 @@ class nsWindow final : public nsBaseWidget {
  private:
   void CreateLayerManager();
   void RedrawAll();
+
+  void OnSizeChanged(const mozilla::gfx::IntSize& aSize);
 
   mozilla::layers::LayersId GetRootLayerId() const;
   RefPtr<mozilla::layers::UiCompositorControllerChild>

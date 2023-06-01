@@ -1,15 +1,19 @@
 "use strict";
 
-import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
+import {
+  actionCreators as ac,
+  actionTypes as at,
+} from "common/Actions.sys.mjs";
 import { FakePrefs, GlobalOverrider } from "test/unit/utils";
 import {
   insertPinned,
   TOP_SITES_DEFAULT_ROWS,
   TOP_SITES_MAX_SITES_PER_ROW,
-} from "common/Reducers.jsm";
+} from "common/Reducers.sys.mjs";
 import { getDefaultOptions } from "lib/ActivityStreamStorage.jsm";
 import injector from "inject!lib/TopSitesFeed.jsm";
 import { Screenshots } from "lib/Screenshots.jsm";
+import { LinksCache } from "lib/LinksCache.jsm";
 
 const FAKE_FAVICON = "data987";
 const FAKE_FAVICON_SIZE = 128;
@@ -112,10 +116,15 @@ describe("Top Sites Feed", () => {
         off: sinon.stub(),
       },
     };
-    globals.set("PageThumbs", fakePageThumbs);
-    globals.set("NewTabUtils", fakeNewTabUtils);
-    globals.set("gFilterAdultEnabled", false);
-    globals.set("NimbusFeatures", fakeNimbusFeatures);
+    globals.set({
+      PageThumbs: fakePageThumbs,
+      NewTabUtils: fakeNewTabUtils,
+      gFilterAdultEnabled: false,
+      NimbusFeatures: fakeNimbusFeatures,
+      LinksCache,
+      FilterAdult: filterAdultStub,
+      Screenshots: fakeScreenshot,
+    });
     sandbox.spy(global.XPCOMUtils, "defineLazyGetter");
     FakePrefs.prototype.prefs["default.sites"] = "https://foo.com/";
     ({ TopSitesFeed, DEFAULT_TOP_SITES } = injector({
@@ -721,7 +730,7 @@ describe("Top Sites Feed", () => {
     });
     it("should catch indexedDB errors", async () => {
       feed._storage.get.throws(new Error());
-      globals.sandbox.spy(global.Cu, "reportError");
+      globals.sandbox.spy(global.console, "error");
 
       try {
         await feed.refresh({ broadcast: false });
@@ -729,7 +738,7 @@ describe("Top Sites Feed", () => {
         assert.fails();
       }
 
-      assert.calledOnce(Cu.reportError);
+      assert.calledOnce(console.error);
     });
   });
   describe("#updateSectionPrefs", () => {

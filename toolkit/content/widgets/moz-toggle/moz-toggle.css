@@ -1,0 +1,123 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:host {
+  display: grid;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+:host([disabled]) {
+  opacity: 0.4
+}
+
+.toggle-button,
+.label-wrapper {
+  grid-row: 1;
+}
+
+.description-wrapper {
+  color: var(--in-content-deemphasized-text);
+}
+
+.description-wrapper,
+.description-wrapper ::slotted([slot="support-link"]) {
+  grid-row: 2;
+  font-size: 0.867rem;
+  line-height: 1.25;
+  margin: 0;
+  grid-column: 1 / -1;
+}
+
+.toggle-button {
+  --button-height: 16px;
+  --button-half-height: 8px;
+  --button-width: 32px;
+  --button-border-width: 1px;
+  /* dot-size = button-height - 2*dot-margin - 2*button-border-width */
+  --dot-size: 12px;
+  --dot-margin: 1px;
+  /* --dot-transform-x = button-width - 2*dot-margin - dot-size - 2*button-border-width */
+  --dot-transform-x: 16px;
+  --border-color: #8F8F9D;
+}
+
+.toggle-button {
+  appearance: none;
+  padding: 0;
+  margin: 0;
+  border: var(--button-border-width) solid var(--border-color);
+  height: var(--button-height);
+  width: var(--button-width);
+  border-radius: var(--button-half-height);
+  background-color: var(--in-content-button-background);
+  box-sizing: border-box;
+}
+
+.toggle-button:focus-visible {
+  outline: var(--in-content-focus-outline-width) solid var(--in-content-focus-outline-color);
+  outline-offset: var(--in-content-focus-outline-offset);
+}
+
+.toggle-button:enabled:hover {
+  background-color: var(--in-content-button-background-hover);
+  border-color: var(--border-color);
+}
+
+.toggle-button:enabled:active {
+  background-color: var(--in-content-button-background-active);
+  border-color: var(--border-color);
+}
+
+.toggle-button[aria-pressed="true"] {
+  background-color: var(--in-content-primary-button-background);
+  border-color: transparent;
+}
+
+.toggle-button[aria-pressed="true"]:enabled:hover {
+  background-color: var(--in-content-primary-button-background-hover);
+  border-color: transparent;
+}
+
+.toggle-button[aria-pressed="true"]:enabled:active,
+.toggle-button[aria-pressed="true"].toggle-button:checked:enabled:hover:active {
+  background-color: var(--in-content-primary-button-background-active);
+  border-color: transparent;
+}
+
+.toggle-button::before {
+  display: block;
+  content: "";
+  background-color: var(--border-color);
+  height: var(--dot-size);
+  width: var(--dot-size);
+  margin: var(--dot-margin);
+  border-radius: 50%;
+  outline: 1px solid transparent;
+  outline-offset: -1px;
+  translate: 0;
+}
+
+.toggle-button[aria-pressed="true"]::before {
+  translate: var(--dot-transform-x);
+  /* TODO: Bug 1798404 - This color doesn't match the spec in dark mode. This should
+  be re-visited when we're defining tokens. */
+  background-color: var(--in-content-box-background);
+}
+
+.toggle-button[aria-pressed="true"]:-moz-locale-dir(rtl)::before,
+.toggle-button[aria-pressed="true"]:dir(rtl)::before {
+  translate: calc(-1 * var(--dot-transform-x));
+}
+
+.toggle-button[aria-pressed="true"]:not(:active, :hover:active)::before {
+  outline-color: var(--in-content-box-background);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .toggle-button::before {
+    transition: translate 100ms;
+  }
+}

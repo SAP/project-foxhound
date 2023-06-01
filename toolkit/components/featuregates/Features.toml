@@ -7,7 +7,7 @@ preference = "layout.css.grid-template-masonry-value.enabled"
 type = "boolean"
 bug-numbers = [1607954]
 is-public = true
-default-value = {default = false, nightly = true}
+default-value = {default = false, nightly = true, thunderbird = true}
 
 [web-api-webgpu]
 title = "experimental-features-web-gpu2"
@@ -31,17 +31,6 @@ bug-numbers = [1539075]
 is-public = {default = false, nightly = true}
 default-value = false
 
-[css-constructable-stylesheets]
-title = "experimental-features-css-constructable-stylesheets"
-description = "experimental-features-css-constructable-stylesheets-description"
-description-links = {mdn-cssstylesheet = "https://developer.mozilla.org/docs/Web/API/CSSStyleSheet", mdn-shadowdom = "https://developer.mozilla.org/docs/Web/Web_Components/Using_shadow_DOM", bugzilla = "https://bugzilla.mozilla.org/show_bug.cgi?id=1520690"}
-restart-required = false
-preference = "layout.css.constructable-stylesheets.enabled"
-type = "boolean"
-bug-numbers = [1520690]
-is-public = {default = false, nightly = true}
-default-value = false
-
 [devtools-compatibility-panel]
 title = "experimental-features-devtools-compatibility-panel"
 description = "experimental-features-devtools-compatibility-panel-description"
@@ -52,16 +41,6 @@ type = "boolean"
 bug-numbers = [1605154, 1605153]
 is-public = true
 default-value = true
-
-[cookie-samesite-lax-by-default]
-title = "experimental-features-cookie-samesite-lax-by-default2"
-description = "experimental-features-cookie-samesite-lax-by-default2-description"
-restart-required = false
-preference = "network.cookie.sameSite.laxByDefault"
-type = "boolean"
-bug-numbers = [1618610, 1617609]
-default-value = {default = false, early_beta_or_earlier = true}
-is-public = true
 
 [cookie-samesite-none-requires-secure]
 title = "experimental-features-cookie-samesite-none-requires-secure2"
@@ -83,16 +62,6 @@ bug-numbers = [1614351]
 is-public = true
 default-value = {default = false, nightly = true}
 
-[cookie-samesite-schemeful]
-title = "experimental-features-cookie-samesite-schemeful"
-description = "experimental-features-cookie-samesite-schemeful-description"
-restart-required = false
-preference = "network.cookie.sameSite.schemeful"
-type = "boolean"
-bug-numbers = [1651119, 1617609]
-is-public = true
-default-value = {default = false, early_beta_or_earlier = true}
-
 [devtools-serviceworker-debugger-support]
 title = "experimental-features-devtools-serviceworker-debugger-support"
 description = "experimental-features-devtools-serviceworker-debugger-support-description"
@@ -113,16 +82,6 @@ bug-numbers = [1643027]
 is-public = true
 default-value = false
 
-[win32-lockdown]
-title = "experimental-features-win32k-lockdown"
-description = "experimental-features-win32k-lockdown-description"
-restart-required = true
-preference = "security.sandbox.content.win32k-disable"
-type = "boolean"
-bug-numbers = [1697865]
-is-public = true
-default-value = false
-
 [url-bar-ime-search]
 title = "experimental-features-ime-search"
 description = "experimental-features-ime-search-description"
@@ -133,12 +92,17 @@ bug-numbers = [1673971]
 is-public = true
 default-value = false
 
-[firefox-100]
-title = "experimental-features-firefox-100"
-description = "experimental-features-firefox-100-description"
-restart-required = false
-preference = "general.useragent.forceVersion100"
+[accessibility-cache]
+title = "experimental-features-accessibility-cache"
+description = "experimental-features-accessibility-cache-description"
+restart-required = true
+preference = "accessibility.cache.enabled"
 type = "boolean"
-bug-numbers = [1748798]
-is-public = true
-default-value = false
+bug-numbers = [1694563]
+is-public = {default = false, nightly = true}
+[accessibility-cache.default-value]
+default = false
+nightly = true
+android = true
+"early_beta_or_earlier,win" = true
+"early_beta_or_earlier,linux" = true

@@ -10,7 +10,6 @@ XPIDL_SOURCES += [
     "nsIComponentManager.idl",
     "nsIComponentRegistrar.idl",
     "nsIFactory.idl",
-    "nsIModule.idl",
     "nsIServiceManager.idl",
 ]
 
@@ -43,6 +42,7 @@ if CONFIG["COMPILE_ENVIRONMENT"]:
         "StaticComponentData.h",
         "StaticComponents.cpp",
         "services.json",
+        "components.rs",
         script="gen_static_components.py",
         inputs=["!manifest-lists.json", "StaticComponents.cpp.in"],
     )
@@ -77,9 +77,6 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
     CXXFLAGS += CONFIG["MOZ_GTK3_CFLAGS"]
     if CONFIG["MOZ_ENABLE_DBUS"]:
         CXXFLAGS += CONFIG["MOZ_DBUS_GLIB_CFLAGS"]
-
-if CONFIG["MOZ_BACKGROUNDTASKS"]:
-    DEFINES["MOZ_BACKGROUNDTASKS"] = True
 
 include("/ipc/chromium/chromium-config.mozbuild")
 

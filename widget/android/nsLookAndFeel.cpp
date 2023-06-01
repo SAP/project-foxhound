@@ -23,23 +23,9 @@ using namespace mozilla::widget;
 
 static const char16_t UNICODE_BULLET = 0x2022;
 
-static void AccentColorPrefChanged(const char*, void*) {
-  LookAndFeel::NotifyChangedAllWindows(widget::ThemeChangeKind::Style);
-}
+nsLookAndFeel::nsLookAndFeel() = default;
 
-nsLookAndFeel::nsLookAndFeel() {
-  Preferences::RegisterCallback(
-      AccentColorPrefChanged,
-      nsDependentCString(
-          StaticPrefs::GetPrefName_widget_non_native_theme_use_theme_accent()));
-}
-
-nsLookAndFeel::~nsLookAndFeel() {
-  Preferences::UnregisterCallback(
-      AccentColorPrefChanged,
-      nsDependentCString(
-          StaticPrefs::GetPrefName_widget_non_native_theme_use_theme_accent()));
-}
+nsLookAndFeel::~nsLookAndFeel() = default;
 
 nsresult nsLookAndFeel::GetSystemColors() {
   if (!jni::IsAvailable()) {
@@ -102,7 +88,7 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aColorScheme,
       // Matched to action_accent in java codebase. This works fine with both
       // light and dark color scheme.
       nscolor accent =
-          Color(ColorID::MozAccentColor, aColorScheme, UseStandins::No);
+          Color(ColorID::Accentcolor, aColorScheme, UseStandins::No);
       aColor =
           NS_RGBA(NS_GET_R(accent), NS_GET_G(accent), NS_GET_B(accent), 78);
       return NS_OK;
@@ -166,9 +152,6 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aColorScheme,
     case ColorID::IMESelectedConvertedTextUnderline:
       aColor = NS_TRANSPARENT;
       break;
-    case ColorID::SpellCheckerUnderline:
-      aColor = NS_RGB(0xff, 0x00, 0x00);
-      break;
 
       // css2  http://www.w3.org/TR/REC-CSS2/ui.html#system-colors
     case ColorID::Activeborder:     // active window border
@@ -186,16 +169,18 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aColorScheme,
     // FIXME: -moz-cellhighlight should show some kind of unfocused state.
     case ColorID::MozCellhighlight:
     case ColorID::Selecteditem:
-    case ColorID::MozAccentColor:
+    case ColorID::Accentcolor:
       aColor = UseNativeAccent() ? mSystemColors.colorAccent
-                                 : widget::sDefaultAccent.ToABGR();
+                                 : GetStandinForNativeColor(
+                                       ColorID::Accentcolor, aColorScheme);
       break;
     case ColorID::MozCellhighlighttext:
     case ColorID::Selecteditemtext:
-    case ColorID::MozAccentColorForeground:
+    case ColorID::Accentcolortext:
       aColor = UseNativeAccent() ? ThemeColors::ComputeCustomAccentForeground(
                                        mSystemColors.colorAccent)
-                                 : widget::sDefaultAccentForeground.ToABGR();
+                                 : GetStandinForNativeColor(
+                                       ColorID::Accentcolortext, aColorScheme);
       break;
     case ColorID::Fieldtext:
       aColor = NS_RGB(0x1a, 0x1a, 0x1a);
@@ -220,6 +205,7 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aColorScheme,
     case ColorID::MozButtondisabledface:
     case ColorID::Threedface:
     case ColorID::Threedlightshadow:
+    case ColorID::Buttonborder:
     case ColorID::MozDisabledfield:
       aColor = NS_RGB(0xec, 0xe7, 0xe2);
       break;
@@ -272,6 +258,11 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aColorScheme,
       break;
     case ColorID::MozNativehyperlinktext:
       aColor = NS_RGB(0, 0, 0xee);
+      break;
+    case ColorID::Marktext:
+    case ColorID::Mark:
+    case ColorID::SpellCheckerUnderline:
+      aColor = GetStandinForNativeColor(aID, aColorScheme);
       break;
     default:
       /* default color is BLACK */
@@ -334,22 +325,12 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       aResult = eScrollArrowStyle_Single;
       break;
 
-    case IntID::ScrollSliderStyle:
-      aResult = eScrollThumbStyle_Proportional;
-      break;
-
     case IntID::UseOverlayScrollbars:
       aResult = 1;
       break;
 
-    case IntID::WindowsDefaultTheme:
-    case IntID::OperatingSystemVersionIdentifier:
-      aResult = 0;
-      rv = NS_ERROR_NOT_IMPLEMENTED;
-      break;
-
     case IntID::SpellCheckerUnderlineStyle:
-      aResult = NS_STYLE_TEXT_DECORATION_STYLE_WAVY;
+      aResult = int32_t(StyleTextDecorationStyle::Wavy);
       break;
 
     case IntID::ScrollbarButtonAutoRepeatBehavior:
@@ -428,9 +409,9 @@ nsresult nsLookAndFeel::NativeGetFloat(FloatID aID, float& aResult) {
 bool nsLookAndFeel::NativeGetFont(FontID aID, nsString& aFontName,
                                   gfxFontStyle& aFontStyle) {
   aFontName.AssignLiteral("Roboto");
-  aFontStyle.style = FontSlantStyle::Normal();
-  aFontStyle.weight = FontWeight::Normal();
-  aFontStyle.stretch = FontStretch::Normal();
+  aFontStyle.style = FontSlantStyle::NORMAL;
+  aFontStyle.weight = FontWeight::NORMAL;
+  aFontStyle.stretch = FontStretch::NORMAL;
   aFontStyle.size = 9.0 * 96.0f / 72.0f;
   aFontStyle.systemFont = true;
   return true;

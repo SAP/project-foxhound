@@ -35,6 +35,9 @@ function check_channel(subject) {
 // ----------------------------------------------------------------------------
 // Tests we send the right cookies when installing through an InstallTrigger call
 function test() {
+  // This test depends on InstallTrigger.install availability.
+  setInstallTriggerPrefs();
+
   Harness.installConfirmCallback = confirm_install;
   Harness.installEndedCallback = install_ended;
   Harness.installsCompletedCallback = finish_test;
@@ -63,7 +66,7 @@ function test() {
     userContextId: MY_CONTEXT,
   });
   Services.obs.addObserver(check_channel, "http-on-before-connect");
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.loadURIString(
     gBrowser,
     TESTROOT + "installtrigger.html?" + triggers
   );

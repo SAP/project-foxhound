@@ -8,8 +8,8 @@
 // up a dummy app info.  In the backgroundtask itself, the application under
 // test will configure real app info.  This opens a possibility for some
 // incompatibility, but there doesn't appear to be such an issue at this time.
-const { updateAppInfo } = ChromeUtils.import(
-  "resource://testing-common/AppInfo.jsm"
+const { updateAppInfo } = ChromeUtils.importESModule(
+  "resource://testing-common/AppInfo.sys.mjs"
 );
 updateAppInfo({
   name: "XPCShell",
@@ -18,8 +18,8 @@ updateAppInfo({
   platformVersion: "48",
 });
 
-const { EnterprisePolicyTesting } = ChromeUtils.import(
-  "resource://testing-common/EnterprisePolicyTesting.jsm"
+const { EnterprisePolicyTesting } = ChromeUtils.importESModule(
+  "resource://testing-common/EnterprisePolicyTesting.sys.mjs"
 );
 
 // This initializes the policy engine for xpcshell tests

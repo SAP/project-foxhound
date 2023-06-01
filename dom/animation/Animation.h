@@ -11,6 +11,7 @@
 #include "nsCycleCollectionParticipant.h"
 #include "mozilla/AnimationPerformanceWarning.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/EffectCompositor.h"  // For EffectCompositor::CascadeLevel
 #include "mozilla/LinkedList.h"
@@ -111,7 +112,8 @@ class Animation : public DOMEventTargetHelper,
     return GetCurrentTimeForHoldTime(mHoldTime);
   }
   Nullable<double> GetCurrentTimeAsDouble() const;
-  void SetCurrentTime(const TimeDuration& aNewCurrentTime);
+  void SetCurrentTime(const TimeDuration& aSeekTime);
+  void SetCurrentTimeNoUpdate(const TimeDuration& aSeekTime);
   void SetCurrentTimeAsDouble(const Nullable<double>& aCurrentTime,
                               ErrorResult& aRv);
 
@@ -164,7 +166,13 @@ class Animation : public DOMEventTargetHelper,
             // won't be relevant and hence won't be returned by GetAnimations().
             // We don't want its timeline to keep it alive (which would happen
             // if we return true) since otherwise it will effectively be leaked.
-            PlaybackRate() != 0.0);
+            PlaybackRate() != 0.0) ||
+           // Always return true for not idle animations attached to not
+           // monotonically increasing timelines even if the animation is
+           // finished. This is required to accommodate cases where timeline
+           // ticks back in time.
+           (mTimeline && !mTimeline->IsMonotonicallyIncreasing() &&
+            PlayState() != AnimationPlayState::Idle);
   }
 
   /**
@@ -220,11 +228,6 @@ class Animation : public DOMEventTargetHelper,
    */
   void TriggerOnNextTick(const Nullable<TimeDuration>& aReadyTime);
   /**
-   * For the non-monotonically increasing timeline (e.g. ScrollTimeline), this
-   * is used when playing or pausing because we don't put the animations into
-   * PendingAnimationTracker, and we would like to use the current scroll
-   * position as the ready time.
-   *
    * For the monotonically increasing timeline, we use this only for testing:
    * Start or pause a pending animation using the current timeline time. This
    * is used to support existing tests that expect animations to begin
@@ -236,6 +239,13 @@ class Animation : public DOMEventTargetHelper,
    * added to.
    */
   void TriggerNow();
+  /**
+   * For the non-monotonically increasing timeline (e.g. ScrollTimeline), we try
+   * to trigger it in ScrollTimelineAnimationTracker by this method. This uses
+   * the current scroll position as the ready time. Return true if we don't need
+   * to trigger it or we trigger it successfully.
+   */
+  bool TryTriggerNowForFiniteTimeline();
   /**
    * When TriggerOnNextTick is called, we store the ready time but we don't
    * apply it until the next tick. In the meantime, GetStartTime() will return
@@ -451,6 +461,30 @@ class Animation : public DOMEventTargetHelper,
     return mTimeline && mTimeline->IsScrollTimeline();
   }
 
+  /**
+   * Returns true if this is at the progress timeline boundary.
+   * https://drafts.csswg.org/web-animations-2/#at-progress-timeline-boundary
+   */
+  enum class ProgressTimelinePosition : uint8_t { Boundary, NotBoundary };
+  static ProgressTimelinePosition AtProgressTimelineBoundary(
+      const Nullable<TimeDuration>& aTimelineDuration,
+      const Nullable<TimeDuration>& aCurrentTime,
+      const TimeDuration& aEffectStartTime, const double aPlaybackRate);
+  ProgressTimelinePosition AtProgressTimelineBoundary() const {
+    return AtProgressTimelineBoundary(
+        mTimeline ? mTimeline->TimelineDuration() : nullptr,
+        GetCurrentTimeAsDuration(),
+        mStartTime.IsNull() ? TimeDuration() : mStartTime.Value(),
+        mPlaybackRate);
+  }
+
+  void SetHiddenByContentVisibility(bool hidden);
+  bool IsHiddenByContentVisibility() const {
+    return mHiddenByContentVisibility;
+  }
+
+  DocGroup* GetDocGroup();
+
  protected:
   void SilentlySetCurrentTime(const TimeDuration& aNewCurrentTime);
   void CancelNoUpdate();
@@ -567,6 +601,9 @@ class Animation : public DOMEventTargetHelper,
     return mTimeline && !mTimeline->IsMonotonicallyIncreasing();
   }
 
+  void UpdatePendingAnimationTracker(AnimationTimeline* aOldTimeline,
+                                     AnimationTimeline* aNewTimeline);
+
   RefPtr<AnimationTimeline> mTimeline;
   RefPtr<AnimationEffect> mEffect;
   // The beginning of the delay period.
@@ -618,6 +655,8 @@ class Animation : public DOMEventTargetHelper,
   bool mFinishedAtLastComposeStyle = false;
   bool mWasReplaceableAtLastTick = false;
 
+  bool mHiddenByContentVisibility = false;
+
   // Indicates that the animation should be exposed in an element's
   // getAnimations() list.
   bool mIsRelevant = false;
@@ -636,6 +675,11 @@ class Animation : public DOMEventTargetHelper,
   RefPtr<MicroTaskRunnable> mFinishNotificationTask;
 
   nsString mId;
+
+  bool mResetCurrentTimeOnResume = false;
+
+  // Whether the Animation is System, ResistFingerprinting, or neither
+  RTPCallerType mRTPCallerType;
 
  private:
   // The id for this animaiton on the compositor.

@@ -460,6 +460,21 @@ static NTSTATUS NTAPI patched_LdrLoadDll(PWCHAR filePath, PULONG flags,
         goto continue_loading;
       }
 
+      if ((info->mFlags & DllBlockInfo::UTILITY_PROCESSES_ONLY) &&
+          !(sInitFlags & eDllBlocklistInitFlagIsUtilityProcess)) {
+        goto continue_loading;
+      }
+
+      if ((info->mFlags & DllBlockInfo::SOCKET_PROCESSES_ONLY) &&
+          !(sInitFlags & eDllBlocklistInitFlagIsSocketProcess)) {
+        goto continue_loading;
+      }
+
+      if ((info->mFlags & DllBlockInfo::GPU_PROCESSES_ONLY) &&
+          !(sInitFlags & eDllBlocklistInitFlagIsGPUProcess)) {
+        goto continue_loading;
+      }
+
       if ((info->mFlags & DllBlockInfo::BROWSER_PROCESS_ONLY) &&
           (sInitFlags & eDllBlocklistInitFlagIsChildProcess)) {
         goto continue_loading;
@@ -520,7 +535,12 @@ continue_loading:
   NTSTATUS ret;
   HANDLE myHandle;
 
-  ret = stub_LdrLoadDll(filePath, flags, moduleFileName, &myHandle);
+  {
+#if defined(_M_AMD64) || defined(_M_ARM64)
+    AutoSuppressStackWalking suppress;
+#endif
+    ret = stub_LdrLoadDll(filePath, flags, moduleFileName, &myHandle);
+  }
 
   if (handle) {
     *handle = myHandle;
@@ -531,11 +551,11 @@ continue_loading:
   return ret;
 }
 
-#if defined(EARLY_BETA_OR_EARLIER)
+#if defined(NIGHTLY_BUILD)
 // Map of specific thread proc addresses we should block. In particular,
 // LoadLibrary* APIs which indicate DLL injection
 static void* gStartAddressesToBlock[4];
-#endif  // defined(EARLY_BETA_OR_EARLIER)
+#endif  // defined(NIGHTLY_BUILD)
 
 static bool ShouldBlockThread(void* aStartAddress) {
   // Allows crashfirefox.exe to continue to work. Also if your threadproc is
@@ -544,7 +564,7 @@ static bool ShouldBlockThread(void* aStartAddress) {
     return false;
   }
 
-#if defined(EARLY_BETA_OR_EARLIER)
+#if defined(NIGHTLY_BUILD)
   for (auto p : gStartAddressesToBlock) {
     if (p == aStartAddress) {
       return true;
@@ -582,7 +602,7 @@ static WindowsDllInterceptor Kernel32Intercept;
 static void GetNativeNtBlockSetWriter();
 
 static glue::LoaderObserver gMozglueLoaderObserver;
-static nt::WinLauncherFunctions gWinLauncherFunctions;
+static nt::WinLauncherServices gWinLauncher;
 
 MFBT_API void DllBlocklist_Initialize(uint32_t aInitFlags) {
   if (sBlocklistInitAttempted) {
@@ -592,8 +612,7 @@ MFBT_API void DllBlocklist_Initialize(uint32_t aInitFlags) {
 
   sInitFlags = aInitFlags;
 
-  glue::ModuleLoadFrame::StaticInit(&gMozglueLoaderObserver,
-                                    &gWinLauncherFunctions);
+  glue::ModuleLoadFrame::StaticInit(&gMozglueLoaderObserver, &gWinLauncher);
 
 #ifdef _M_AMD64
   if (!IsWin8OrLater()) {
@@ -618,7 +637,7 @@ MFBT_API void DllBlocklist_Initialize(uint32_t aInitFlags) {
     }
   }
 
-#if defined(EARLY_BETA_OR_EARLIER)
+#if defined(NIGHTLY_BUILD)
   // Populate a list of thread start addresses to block.
   HMODULE hKernel = GetModuleHandleW(L"kernel32.dll");
   if (hKernel) {
@@ -749,7 +768,7 @@ MFBT_API void DllBlocklist_SetFullDllServices(
   glue::AutoExclusiveLock lock(gDllServicesLock);
   if (aSvc) {
     aSvc->SetAuthenticodeImpl(GetAuthenticode());
-    aSvc->SetWinLauncherFunctions(gWinLauncherFunctions);
+    aSvc->SetWinLauncherServices(gWinLauncher);
     gMozglueLoaderObserver.Forward(aSvc);
   }
 

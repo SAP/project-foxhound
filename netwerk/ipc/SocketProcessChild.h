@@ -25,9 +25,7 @@ class BackgroundDataBridgeParent;
 
 // The IPC actor implements PSocketProcessChild in child process.
 // This is allocated and kept alive by SocketProcessImpl.
-class SocketProcessChild final
-    : public PSocketProcessChild,
-      public mozilla::ipc::ChildToParentStreamActorManager {
+class SocketProcessChild final : public PSocketProcessChild {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(SocketProcessChild)
 
@@ -35,8 +33,8 @@ class SocketProcessChild final
 
   static SocketProcessChild* GetSingleton();
 
-  bool Init(base::ProcessId aParentPid, const char* aParentBuildID,
-            mozilla::ipc::ScopedPort aPort);
+  bool Init(mozilla::ipc::UntypedEndpoint&& aEndpoint,
+            const char* aParentBuildID);
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
@@ -68,25 +66,12 @@ class SocketProcessChild final
 
   already_AddRefed<PHttpTransactionChild> AllocPHttpTransactionChild();
 
-  PFileDescriptorSetChild* AllocPFileDescriptorSetChild(
-      const FileDescriptor& fd);
-  bool DeallocPFileDescriptorSetChild(PFileDescriptorSetChild* aActor);
-
-  PChildToParentStreamChild* AllocPChildToParentStreamChild();
-  bool DeallocPChildToParentStreamChild(PChildToParentStreamChild* aActor);
-  PParentToChildStreamChild* AllocPParentToChildStreamChild();
-  bool DeallocPParentToChildStreamChild(PParentToChildStreamChild* aActor);
-
   void CleanUp();
   void DestroySocketProcessBridgeParent(ProcessId aId);
 
-  PChildToParentStreamChild* SendPChildToParentStreamConstructor(
-      PChildToParentStreamChild* aActor) override;
-  PFileDescriptorSetChild* SendPFileDescriptorSetConstructor(
-      const FileDescriptor& aFD) override;
   already_AddRefed<PHttpConnectionMgrChild> AllocPHttpConnectionMgrChild(
       const HttpHandlerInitArgs& aArgs);
-  mozilla::ipc::IPCResult RecvUpdateDeviceModelId(const nsCString& aModelId);
+  mozilla::ipc::IPCResult RecvUpdateDeviceModelId(const nsACString& aModelId);
   mozilla::ipc::IPCResult RecvOnHttpActivityDistributorActivated(
       const bool& aIsActivated);
   mozilla::ipc::IPCResult RecvOnHttpActivityDistributorObserveProxyResponse(
@@ -104,14 +89,15 @@ class SocketProcessChild final
   bool IsShuttingDown() { return mShuttingDown; }
 
   already_AddRefed<PDNSRequestChild> AllocPDNSRequestChild(
-      const nsCString& aHost, const nsCString& aTrrServer,
-      const uint16_t& aType, const OriginAttributes& aOriginAttributes,
-      const uint32_t& aFlags);
-  mozilla::ipc::IPCResult RecvPDNSRequestConstructor(
-      PDNSRequestChild* aActor, const nsCString& aHost,
-      const nsCString& aTrrServer, const uint16_t& aType,
+      const nsACString& aHost, const nsACString& aTrrServer,
+      const int32_t& aPort, const uint16_t& aType,
       const OriginAttributes& aOriginAttributes,
-      const uint32_t& aFlags) override;
+      const nsIDNSService::DNSFlags& aFlags);
+  mozilla::ipc::IPCResult RecvPDNSRequestConstructor(
+      PDNSRequestChild* aActor, const nsACString& aHost,
+      const nsACString& aTrrServer, const int32_t& aPort, const uint16_t& aType,
+      const OriginAttributes& aOriginAttributes,
+      const nsIDNSService::DNSFlags& aFlags) override;
 
   void AddDataBridgeToMap(uint64_t aChannelId,
                           BackgroundDataBridgeParent* aActor);
@@ -119,7 +105,8 @@ class SocketProcessChild final
   Maybe<RefPtr<BackgroundDataBridgeParent>> GetAndRemoveDataBridge(
       uint64_t aChannelId);
 
-  mozilla::ipc::IPCResult RecvClearSessionCache();
+  mozilla::ipc::IPCResult RecvClearSessionCache(
+      ClearSessionCacheResolver&& aResolve);
 
   already_AddRefed<PTRRServiceChild> AllocPTRRServiceChild(
       const bool& aCaptiveIsPassed, const bool& aParentalControlEnabled,
@@ -134,11 +121,8 @@ class SocketProcessChild final
   mozilla::ipc::IPCResult RecvPNativeDNSResolverOverrideConstructor(
       PNativeDNSResolverOverrideChild* aActor) override;
 
-  mozilla::ipc::IPCResult RecvNotifyObserver(const nsCString& aTopic,
-                                             const nsString& aData);
-
-  virtual already_AddRefed<PRemoteLazyInputStreamChild>
-  AllocPRemoteLazyInputStreamChild(const nsID& aID, const uint64_t& aSize);
+  mozilla::ipc::IPCResult RecvNotifyObserver(const nsACString& aTopic,
+                                             const nsAString& aData);
 
   mozilla::ipc::IPCResult RecvGetSocketData(GetSocketDataResolver&& aResolve);
   mozilla::ipc::IPCResult RecvGetDNSCacheEntries(
@@ -160,6 +144,7 @@ class SocketProcessChild final
 #if defined(XP_WIN)
   mozilla::ipc::IPCResult RecvGetUntrustedModulesData(
       GetUntrustedModulesDataResolver&& aResolver);
+  mozilla::ipc::IPCResult RecvUnblockUntrustedModulesThread();
 #endif  // defined(XP_WIN)
 
  protected:
@@ -176,7 +161,7 @@ class SocketProcessChild final
 
   bool mShuttingDown{false};
   // Protect the table below.
-  Mutex mMutex{"SocketProcessChild::mMutex"};
+  Mutex mMutex MOZ_UNANNOTATED{"SocketProcessChild::mMutex"};
   nsTHashMap<uint64_t, RefPtr<BackgroundDataBridgeParent>>
       mBackgroundDataBridgeMap;
 };

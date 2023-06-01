@@ -14,8 +14,6 @@ const { RemoteSettings } = ChromeUtils.import(
 const COLLECTION_NAME = "partitioning-exempt-urls";
 const PREF_NAME = "privacy.restrict3rdpartystorage.skip_list";
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["EventTarget"]);
-
 do_get_profile();
 
 class UpdateEvent extends EventTarget {}
@@ -45,8 +43,8 @@ add_task(async _ => {
   ];
 
   // Add some initial data
-  let db = await RemoteSettings(COLLECTION_NAME).db;
-  await db.importChanges({}, 42, records);
+  let db = RemoteSettings(COLLECTION_NAME).db;
+  await db.importChanges({}, Date.now(), records);
 
   let promise = waitForEvent(updateEvent, "update");
   let obs = data => {

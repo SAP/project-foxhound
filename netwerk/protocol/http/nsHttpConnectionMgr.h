@@ -27,8 +27,7 @@
 
 class nsIHttpUpgradeListener;
 
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 class EventTokenBucket;
 class NullHttpTransaction;
 struct HttpRetParams;
@@ -91,7 +90,8 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
   // The connection manager needs to know when a normal HTTP connection has been
   // upgraded to SPDY because the dispatch and idle semantics are a little
   // bit different.
-  void ReportSpdyConnection(nsHttpConnection*, bool usingSpdy);
+  void ReportSpdyConnection(nsHttpConnection*, bool usingSpdy,
+                            bool disallowHttp3);
 
   void ReportHttp3Connection(HttpConnectionBase*);
 
@@ -187,7 +187,6 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
       const nsHttpConnectionInfo* ci);
 
  public:
-  static nsAHttpConnection* MakeConnectionHandle(HttpConnectionBase* aWrapped);
   void RegisterOriginCoalescingKey(HttpConnectionBase*, const nsACString& host,
                                    int32_t port);
   // A test if be-conservative should be used when proxy is setup for the
@@ -210,7 +209,8 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
   ReentrantMonitor mReentrantMonitor{"nsHttpConnectionMgr.mReentrantMonitor"};
   // This is used as a flag that we're shut down, and no new events should be
   // dispatched.
-  nsCOMPtr<nsIEventTarget> mSocketThreadTarget;
+  nsCOMPtr<nsIEventTarget> mSocketThreadTarget
+      MOZ_GUARDED_BY(mReentrantMonitor);
 
   Atomic<bool, mozilla::Relaxed> mIsShuttingDown{false};
 
@@ -276,7 +276,8 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
 
   ConnectionEntry* GetOrCreateConnectionEntry(
       nsHttpConnectionInfo*, bool prohibitWildCard, bool aNoHttp2,
-      bool aNoHttp3, bool* aAvailableForDispatchNow = nullptr);
+      bool aNoHttp3, bool* aIsWildcard,
+      bool* aAvailableForDispatchNow = nullptr);
 
   [[nodiscard]] nsresult MakeNewConnection(
       ConnectionEntry* ent, PendingTransactionInfo* pendingTransInfo);
@@ -294,7 +295,7 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
                                                          bool aNoHttp2,
                                                          bool aNoHttp3);
   void UpdateCoalescingForNewConn(HttpConnectionBase* conn,
-                                  ConnectionEntry* ent);
+                                  ConnectionEntry* ent, bool aNoHttp3);
 
   void ProcessSpdyPendingQ(ConnectionEntry* ent);
   void DispatchSpdyPendingQ(nsTArray<RefPtr<PendingTransactionInfo>>& pendingQ,
@@ -313,7 +314,7 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
   void OnMsgNewTransaction(int32_t, ARefBase*);
   void OnMsgNewTransactionWithStickyConn(int32_t, ARefBase*);
   void OnMsgReschedTransaction(int32_t, ARefBase*);
-  void OnMsgUpdateClassOfServiceOnTransaction(int32_t, ARefBase*);
+  void OnMsgUpdateClassOfServiceOnTransaction(ClassOfService, ARefBase*);
   void OnMsgCancelTransaction(int32_t, ARefBase*);
   void OnMsgCancelTransactions(int32_t, ARefBase*);
   void OnMsgProcessPendingQ(int32_t, ARefBase*);
@@ -460,7 +461,6 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
   void CheckTransInPendingQueue(nsHttpTransaction* aTrans);
 };
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net
 
 #endif  // !nsHttpConnectionMgr_h__

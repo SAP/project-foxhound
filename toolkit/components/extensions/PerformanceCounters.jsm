@@ -15,24 +15,25 @@ var EXPORTED_SYMBOLS = ["PerformanceCounters"];
 const { ExtensionUtils } = ChromeUtils.import(
   "resource://gre/modules/ExtensionUtils.jsm"
 );
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { DeferredTask } = ChromeUtils.import(
-  "resource://gre/modules/DeferredTask.jsm"
+const { DeferredTask } = ChromeUtils.importESModule(
+  "resource://gre/modules/DeferredTask.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const { DefaultMap } = ExtensionUtils;
 
+const lazy = {};
+
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "gTimingEnabled",
   "extensions.webextensions.enablePerformanceCounters",
   false
 );
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "gTimingMaxAge",
   "extensions.webextensions.performanceCountersMaxAge",
   1000
@@ -94,7 +95,7 @@ class Counters {
    * @returns {boolean}
    */
   get enabled() {
-    return gTimingEnabled;
+    return lazy.gTimingEnabled;
   }
 
   /**
@@ -107,7 +108,7 @@ class Counters {
    * @returns {number}
    */
   get maxAge() {
-    return gTimingMaxAge;
+    return lazy.gTimingMaxAge;
   }
 
   /**

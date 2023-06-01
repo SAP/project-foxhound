@@ -197,7 +197,7 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel) {
   mLastPaintBounds = mBounds;
 
   if (!aDC && (renderer->GetBackendType() == LayersBackend::LAYERS_NONE) &&
-      (eTransparencyTransparent == mTransparencyMode)) {
+      (TransparencyMode::Transparent == mTransparencyMode)) {
     // For layered translucent windows all drawing should go to memory DC and no
     // WM_PAINT messages are normally generated. To support asynchronous
     // painting we force generation of WM_PAINT messages by invalidating window
@@ -216,7 +216,8 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel) {
   HDC hDC = aDC ? aDC : (::BeginPaint(mWnd, &ps));
   mPaintDC = hDC;
 
-  bool forceRepaint = aDC || (eTransparencyTransparent == mTransparencyMode);
+  bool forceRepaint =
+      aDC || (TransparencyMode::Transparent == mTransparencyMode);
   LayoutDeviceIntRegion region = GetRegionToPaint(forceRepaint, ps, hDC);
 
   if (knowsCompositor && layerManager) {
@@ -258,7 +259,7 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel) {
         RefPtr<gfxASurface> targetSurface;
 
         // don't support transparency for non-GDI rendering, for now
-        if (eTransparencyTransparent == mTransparencyMode) {
+        if (TransparencyMode::Transparent == mTransparencyMode) {
           // This mutex needs to be held when EnsureTransparentSurface is
           // called.
           MutexAutoLock lock(mBasicLayersSurface->GetTransparentSurfaceLock());
@@ -267,7 +268,7 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel) {
 
         RefPtr<gfxWindowsSurface> targetSurfaceWin;
         if (!targetSurface) {
-          uint32_t flags = (mTransparencyMode == eTransparencyOpaque)
+          uint32_t flags = (mTransparencyMode == TransparencyMode::Opaque)
                                ? 0
                                : gfxWindowsSurface::FLAG_IS_TRANSPARENT;
           targetSurfaceWin = new gfxWindowsSurface(hDC, flags);
@@ -293,13 +294,12 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel) {
         // don't need to double buffer with anything but GDI
         BufferMode doubleBuffering = mozilla::layers::BufferMode::BUFFER_NONE;
         switch (mTransparencyMode) {
-          case eTransparencyGlass:
-          case eTransparencyBorderlessGlass:
+          case TransparencyMode::BorderlessGlass:
           default:
             // If we're not doing translucency, then double buffer
             doubleBuffering = mozilla::layers::BufferMode::BUFFERED;
             break;
-          case eTransparencyTransparent:
+          case TransparencyMode::Transparent:
             // If we're rendering with translucency, we're going to be
             // rendering the whole window; make sure we clear it first
             dt->ClearRect(
@@ -316,7 +316,7 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel) {
           result = listener->PaintWindow(this, region);
         }
 
-        if (eTransparencyTransparent == mTransparencyMode) {
+        if (TransparencyMode::Transparent == mTransparencyMode) {
           // Data from offscreen drawing surface was copied to memory bitmap of
           // transparent bitmap. Now it can be read from memory bitmap to apply
           // alpha channel and after that displayed on the screen.
@@ -325,7 +325,7 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel) {
       } break;
       case LayersBackend::LAYERS_WR: {
         result = listener->PaintWindow(this, region);
-        if (!gfxEnv::DisableForcePresent() &&
+        if (!gfxEnv::MOZ_DISABLE_FORCE_PRESENT() &&
             gfxWindowsPlatform::GetPlatform()->DwmCompositionEnabled()) {
           nsCOMPtr<nsIRunnable> event = NewRunnableMethod(
               "nsWindow::ForcePresent", this, &nsWindow::ForcePresent);
@@ -361,7 +361,7 @@ bool nsWindow::NeedsToTrackWindowOcclusionState() {
     return false;
   }
 
-  if (mCompositorSession && mWindowType == eWindowType_toplevel) {
+  if (mCompositorSession && mWindowType == WindowType::TopLevel) {
     return true;
   }
 
@@ -373,7 +373,7 @@ void nsWindow::NotifyOcclusionState(mozilla::widget::OcclusionState aState) {
 
   bool isFullyOccluded = aState == mozilla::widget::OcclusionState::OCCLUDED;
   // When window is minimized, it is not set as fully occluded.
-  if (mSizeMode == nsSizeMode_Minimized) {
+  if (mFrameState->GetSizeMode() == nsSizeMode_Minimized) {
     isFullyOccluded = false;
   }
 
@@ -386,15 +386,16 @@ void nsWindow::NotifyOcclusionState(mozilla::widget::OcclusionState aState) {
   mIsFullyOccluded = isFullyOccluded;
 
   MOZ_LOG(gWindowsLog, LogLevel::Info,
-          ("nsWindow::NotifyOcclusionState() mIsFullyOccluded %d mSizeMode %d",
-           mIsFullyOccluded, mSizeMode));
+          ("nsWindow::NotifyOcclusionState() mIsFullyOccluded %d "
+           "mFrameState->GetSizeMode() %d",
+           mIsFullyOccluded, mFrameState->GetSizeMode()));
 
   wr::DebugFlags flags{0};
   flags.bits = gfx::gfxVars::WebRenderDebugFlags();
   bool debugEnabled = bool(flags & wr::DebugFlags::WINDOW_VISIBILITY_DBG);
   if (debugEnabled && mCompositorWidgetDelegate) {
-    mCompositorWidgetDelegate->NotifyVisibilityUpdated(mSizeMode,
-                                                       mIsFullyOccluded);
+    mCompositorWidgetDelegate->NotifyVisibilityUpdated(
+        mFrameState->GetSizeMode(), mIsFullyOccluded);
   }
 
   if (mWidgetListener) {
@@ -403,6 +404,12 @@ void nsWindow::NotifyOcclusionState(mozilla::widget::OcclusionState aState) {
 }
 
 void nsWindow::MaybeEnableWindowOcclusion(bool aEnable) {
+  // WindowOcclusion is enabled/disabled only when compositor session exists.
+  // See nsWindow::NeedsToTrackWindowOcclusionState().
+  if (!mCompositorSession) {
+    return;
+  }
+
   bool enabled = gfxConfig::IsEnabled(gfx::Feature::WINDOW_OCCLUSION);
 
   if (aEnable) {
@@ -414,8 +421,8 @@ void nsWindow::MaybeEnableWindowOcclusion(bool aEnable) {
       flags.bits = gfx::gfxVars::WebRenderDebugFlags();
       bool debugEnabled = bool(flags & wr::DebugFlags::WINDOW_VISIBILITY_DBG);
       if (debugEnabled && mCompositorWidgetDelegate) {
-        mCompositorWidgetDelegate->NotifyVisibilityUpdated(mSizeMode,
-                                                           mIsFullyOccluded);
+        mCompositorWidgetDelegate->NotifyVisibilityUpdated(
+            mFrameState->GetSizeMode(), mIsFullyOccluded);
       }
     }
     return;
@@ -435,8 +442,8 @@ void nsWindow::MaybeEnableWindowOcclusion(bool aEnable) {
   flags.bits = gfx::gfxVars::WebRenderDebugFlags();
   bool debugEnabled = bool(flags & wr::DebugFlags::WINDOW_VISIBILITY_DBG);
   if (debugEnabled && mCompositorWidgetDelegate) {
-    mCompositorWidgetDelegate->NotifyVisibilityUpdated(mSizeMode,
-                                                       mIsFullyOccluded);
+    mCompositorWidgetDelegate->NotifyVisibilityUpdated(
+        mFrameState->GetSizeMode(), mIsFullyOccluded);
   }
 }
 
@@ -444,7 +451,7 @@ void nsWindow::MaybeEnableWindowOcclusion(bool aEnable) {
 // call for RequesetFxrOutput as soon as the compositor for this widget is
 // available.
 void nsWindow::CreateCompositor() {
-  nsWindowBase::CreateCompositor();
+  nsBaseWidget::CreateCompositor();
 
   MaybeEnableWindowOcclusion(/* aEnable */ true);
 
@@ -456,7 +463,7 @@ void nsWindow::CreateCompositor() {
 void nsWindow::DestroyCompositor() {
   MaybeEnableWindowOcclusion(/* aEnable */ false);
 
-  nsWindowBase::DestroyCompositor();
+  nsBaseWidget::DestroyCompositor();
 }
 
 void nsWindow::RequestFxrOutput() {

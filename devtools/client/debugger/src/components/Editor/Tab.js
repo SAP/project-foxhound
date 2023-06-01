@@ -3,6 +3,7 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import React, { PureComponent } from "react";
+import PropTypes from "prop-types";
 import { connect } from "../../utils/connect";
 
 import { showMenu, buildMenu } from "../../context-menu/menu";
@@ -25,16 +26,37 @@ import {
 import { getTabMenuItems } from "../../utils/tabs";
 
 import {
-  getSelectedSource,
+  getSelectedLocation,
   getActiveSearch,
   getSourcesForTabs,
-  getHasSiblingOfSameName,
+  isSourceBlackBoxed,
   getContext,
 } from "../../selectors";
 
 import classnames from "classnames";
 
 class Tab extends PureComponent {
+  static get propTypes() {
+    return {
+      activeSearch: PropTypes.string,
+      closeTab: PropTypes.func.isRequired,
+      closeTabs: PropTypes.func.isRequired,
+      copyToClipboard: PropTypes.func.isRequired,
+      cx: PropTypes.object.isRequired,
+      onDragEnd: PropTypes.func.isRequired,
+      onDragOver: PropTypes.func.isRequired,
+      onDragStart: PropTypes.func.isRequired,
+      selectSource: PropTypes.func.isRequired,
+      selectedLocation: PropTypes.object,
+      showSource: PropTypes.func.isRequired,
+      source: PropTypes.object.isRequired,
+      sourceActor: PropTypes.object.isRequired,
+      tabSources: PropTypes.array.isRequired,
+      toggleBlackBox: PropTypes.func.isRequired,
+      togglePrettyPrint: PropTypes.func.isRequired,
+    };
+  }
+
   onTabContextMenu = (event, tab) => {
     event.preventDefault();
     this.showContextMenu(event, tab);
@@ -50,8 +72,9 @@ class Tab extends PureComponent {
       showSource,
       toggleBlackBox,
       togglePrettyPrint,
-      selectedSource,
+      selectedLocation,
       source,
+      isBlackBoxed,
     } = this.props;
 
     const tabCount = tabSources.length;
@@ -60,7 +83,7 @@ class Tab extends PureComponent {
     const tabURLs = tabSources.map(t => t.url);
     const otherTabURLs = otherTabs.map(t => t.url);
 
-    if (!sourceTab || !selectedSource) {
+    if (!sourceTab || !selectedLocation || !selectedLocation.sourceId) {
       return;
     }
 
@@ -104,28 +127,28 @@ class Tab extends PureComponent {
       {
         item: {
           ...tabMenuItems.copySource,
-          disabled: selectedSource.id !== tab,
+          disabled: selectedLocation.sourceId !== tab,
           click: () => copyToClipboard(sourceTab),
         },
       },
       {
         item: {
           ...tabMenuItems.copySourceUri2,
-          disabled: !selectedSource.url,
+          disabled: !selectedLocation.sourceUrl,
           click: () => copyToTheClipboard(getRawSourceURL(sourceTab.url)),
         },
       },
       {
         item: {
           ...tabMenuItems.showSource,
-          disabled: !selectedSource.url,
+          disabled: !selectedLocation.sourceUrl,
           click: () => showSource(cx, tab),
         },
       },
       {
         item: {
           ...tabMenuItems.toggleBlackBox,
-          label: source.isBlackBoxed
+          label: isBlackBoxed
             ? L10N.getStr("ignoreContextItem.unignore")
             : L10N.getStr("ignoreContextItem.ignore"),
           disabled: !shouldBlackbox(source),
@@ -155,20 +178,20 @@ class Tab extends PureComponent {
   render() {
     const {
       cx,
-      selectedSource,
+      selectedLocation,
       selectSource,
       closeTab,
       source,
+      sourceActor,
       tabSources,
-      hasSiblingOfSameName,
       onDragOver,
       onDragStart,
       onDragEnd,
     } = this.props;
     const sourceId = source.id;
     const active =
-      selectedSource &&
-      sourceId == selectedSource.id &&
+      selectedLocation &&
+      sourceId == selectedLocation.sourceId &&
       !this.isProjectSearchEnabled() &&
       !this.isSourceSearchEnabled();
     const isPrettyCode = isPretty(source);
@@ -181,7 +204,7 @@ class Tab extends PureComponent {
     function handleTabClick(e) {
       e.preventDefault();
       e.stopPropagation();
-      return selectSource(cx, sourceId);
+      return selectSource(cx, sourceId, sourceActor?.actor);
     }
 
     const className = classnames("source-tab", {
@@ -190,7 +213,7 @@ class Tab extends PureComponent {
     });
 
     const path = getDisplayPath(source, tabSources);
-    const query = hasSiblingOfSameName ? getSourceQueryString(source) : "";
+    const query = getSourceQueryString(source);
 
     return (
       <div
@@ -208,6 +231,7 @@ class Tab extends PureComponent {
       >
         <SourceIcon
           source={source}
+          forTab={true}
           modifier={icon =>
             ["file", "javascript"].includes(icon) ? null : icon
           }
@@ -226,14 +250,12 @@ class Tab extends PureComponent {
 }
 
 const mapStateToProps = (state, { source }) => {
-  const selectedSource = getSelectedSource(state);
-
   return {
     cx: getContext(state),
     tabSources: getSourcesForTabs(state),
-    selectedSource,
+    selectedLocation: getSelectedLocation(state),
+    isBlackBoxed: isSourceBlackBoxed(state, source),
     activeSearch: getActiveSearch(state),
-    hasSiblingOfSameName: getHasSiblingOfSameName(state, source),
   };
 };
 

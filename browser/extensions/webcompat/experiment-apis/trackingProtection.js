@@ -6,6 +6,7 @@
 
 /* global ExtensionAPI, ExtensionCommon, ExtensionParent, Services, XPCOMUtils */
 
+// eslint-disable-next-line mozilla/reject-importGlobalProperties
 XPCOMUtils.defineLazyGlobalGetters(this, ["URL", "ChannelWrapper"]);
 
 class AllowList {
@@ -22,7 +23,7 @@ class AllowList {
 
   setAllows(patterns, hosts) {
     this._allowPatterns = patterns;
-    this._allowMatcher = new MatchPatternSet(patterns) || [];
+    this._allowMatcher = new MatchPatternSet(patterns || []);
     this._allowHosts = hosts || [];
     return this;
   }

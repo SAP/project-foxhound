@@ -10,25 +10,61 @@ var EXPORTED_SYMBOLS = [
     "OnRefTestUnload",
 ];
 
-Cu.import("resource://gre/modules/FileUtils.jsm");
-Cu.import("resource://reftest/globals.jsm", this);
-Cu.import("resource://reftest/httpd.jsm", this);
-Cu.import("resource://reftest/manifest.jsm", this);
-Cu.import("resource://reftest/StructuredLog.jsm", this);
-Cu.import("resource://reftest/PerTestCoverageUtils.jsm", this);
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import('resource://gre/modules/XPCOMUtils.jsm');
+const { FileUtils } = ChromeUtils.importESModule(
+    "resource://gre/modules/FileUtils.sys.mjs"
+);
+const {
+    XHTML_NS,
+    XUL_NS,
 
-const { E10SUtils } = ChromeUtils.import(
-  "resource://gre/modules/E10SUtils.jsm"
+    IO_SERVICE_CONTRACTID,
+    DEBUG_CONTRACTID,
+    NS_DIRECTORY_SERVICE_CONTRACTID,
+    NS_OBSERVER_SERVICE_CONTRACTID,
+
+    TYPE_REFTEST_EQUAL,
+    TYPE_REFTEST_NOTEQUAL,
+    TYPE_LOAD,
+    TYPE_SCRIPT,
+    TYPE_PRINT,
+
+    URL_TARGET_TYPE_TEST,
+    URL_TARGET_TYPE_REFERENCE,
+
+    EXPECTED_PASS,
+    EXPECTED_FAIL,
+    EXPECTED_RANDOM,
+    EXPECTED_FUZZY,
+
+    PREF_BOOLEAN,
+    PREF_STRING,
+    PREF_INTEGER,
+
+    FOCUS_FILTER_NON_NEEDS_FOCUS_TESTS,
+
+    g,
+} = ChromeUtils.import("resource://reftest/globals.jsm");
+const { HttpServer } = ChromeUtils.import("resource://reftest/httpd.jsm");
+const { ReadTopManifest, CreateUrls } = ChromeUtils.import(
+    "resource://reftest/manifest.jsm"
+);
+const { StructuredLogger } = ChromeUtils.importESModule(
+    "resource://reftest/StructuredLog.sys.mjs"
+);
+const { PerTestCoverageUtils } = ChromeUtils.import(
+    "resource://reftest/PerTestCoverageUtils.jsm"
+);
+const { XPCOMUtils } = ChromeUtils.importESModule(
+    "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyGetter(this, "OS", function() {
-    const { OS } = Cu.import("resource://gre/modules/osfile.jsm");
-    return OS;
-});
+const { E10SUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/E10SUtils.sys.mjs"
+);
 
-XPCOMUtils.defineLazyServiceGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyServiceGetters(lazy, {
   proxyService: [
     "@mozilla.org/network/protocol-proxy-service;1",
     "nsIProtocolProxyService",
@@ -150,9 +186,6 @@ function OnRefTestLoad(win)
     g.pendingCrashDumpDir.append("Crash Reports");
     g.pendingCrashDumpDir.append("pending");
 
-    var env = Cc["@mozilla.org/process/environment;1"].
-              getService(Ci.nsIEnvironment);
-
     g.browserIsRemote = Services.appinfo.browserTabsRemoteAutostart;
     g.browserIsFission = Services.appinfo.fissionAutostart;
 
@@ -182,7 +215,7 @@ function OnRefTestLoad(win)
     g.browser.setAttribute("remote", g.browserIsRemote ? "true" : "false");
     // Make sure the browser element is exactly 800x1000, no matter
     // what size our window is
-    g.browser.setAttribute("style", "padding: 0px; margin: 0px; border:none; min-width: 800px; min-height: 1000px; max-width: 800px; max-height: 1000px");
+    g.browser.setAttribute("style", "padding: 0px; margin: 0px; border:none; min-width: 800px; min-height: 1000px; max-width: 800px; max-height: 1000px; color-scheme: env(-moz-content-preferred-color-scheme)");
 
     if (Services.appinfo.OS == "Android") {
       let doc = g.containingWindow.document.getElementById('main-window');
@@ -216,7 +249,7 @@ function InitAndStartRefTests()
     try {
       prefs.setBoolPref("android.widget_paints_background", false);
     } catch (e) {}
-    
+
     // If fission is enabled, then also put data: URIs in the default web process,
     // since most reftests run in the file process, and this will make data:
     // <iframe>s OOP.
@@ -324,7 +357,7 @@ function StartHTTPServer()
     g.server.identity.add("https", "example.org", "443");
 
     const proxyFilter = {
-        proxyInfo: proxyService.newProxyInfo(
+        proxyInfo: lazy.proxyService.newProxyInfo(
             "http", // type of proxy
             "localhost", //proxy host
             g.server.identity.primaryPort, // proxy host port
@@ -344,7 +377,7 @@ function StartHTTPServer()
         },
     };
 
-    proxyService.registerChannelFilter(proxyFilter, 0);
+    lazy.proxyService.registerChannelFilter(proxyFilter, 0);
 
     g.httpServerPort = g.server.identity.primaryPort;
 }
@@ -396,9 +429,8 @@ function ReadTests() {
 
         if (testList) {
             logger.debug("Reading test objects from: " + testList);
-            let promise = OS.File.read(testList).then(function onSuccess(array) {
-                let decoder = new TextDecoder();
-                g.urls = JSON.parse(decoder.decode(array)).map(CreateUrls);
+            let promise = IOUtils.readJSON(testList).then(function onSuccess(json) {
+                g.urls = json.map(CreateUrls);
                 StartTests();
             }).catch(function onFailure(e) {
                 logger.error("Failed to load test objects: " + e);
@@ -445,9 +477,7 @@ function ReadTests() {
 
             if (dumpTests) {
                 logger.debug("Dumping test objects to file: " + dumpTests);
-                let encoder = new TextEncoder();
-                let tests = encoder.encode(JSON.stringify(g.urls));
-                OS.File.writeAtomic(dumpTests, tests, {flush: true}).then(
+                IOUtils.writeJSON(dumpTests, g.urls, { flush: true }).then(
                   function onSuccess() {
                     DoneTests();
                   },
@@ -647,7 +677,7 @@ function Blur()
     g.containingWindow.blur();
 }
 
-function StartCurrentTest()
+async function StartCurrentTest()
 {
     g.testLog = [];
 
@@ -676,7 +706,7 @@ function StartCurrentTest()
 
     if ((g.urls.length == 0 && g.repeat == 0) ||
         (g.runUntilFailure && HasUnexpectedResult())) {
-        RestoreChangedPreferences();
+        await RestoreChangedPreferences();
         DoneTests();
     } else if (g.urls.length == 0 && g.repeat > 0) {
         // Repeat
@@ -732,6 +762,14 @@ function updateBrowserRemotenessByURL(aBrowser, aURL) {
   return Promise.resolve();
 }
 
+// This logic should match SpecialPowersParent._applyPrefs.
+function PrefRequiresRefresh(name) {
+  return name == "layout.css.prefers-color-scheme.content-override" ||
+         name.startsWith("ui.") ||
+         name.startsWith("browser.display.") ||
+         name.startsWith("font.");
+}
+
 async function StartCurrentURI(aURLTargetType)
 {
     const isStartingRef = (aURLTargetType == URL_TARGET_TYPE_REFERENCE);
@@ -739,13 +777,15 @@ async function StartCurrentURI(aURLTargetType)
     g.currentURL = g.urls[0][isStartingRef ? "url2" : "url1"].spec;
     g.currentURLTargetType = aURLTargetType;
 
-    RestoreChangedPreferences();
+    await RestoreChangedPreferences();
 
     var prefs = Cc["@mozilla.org/preferences-service;1"].
         getService(Ci.nsIPrefBranch);
 
     const prefSettings =
       g.urls[0][isStartingRef ? "prefSettings2" : "prefSettings1"];
+
+    var prefsRequireRefresh = false;
 
     if (prefSettings.length > 0) {
         var badPref = undefined;
@@ -789,10 +829,13 @@ async function StartCurrentURI(aURLTargetType)
                     }
                 }
                 if (!prefExists || oldVal != ps.value) {
+                    var requiresRefresh = PrefRequiresRefresh(ps.name);
+                    prefsRequireRefresh = prefsRequireRefresh || requiresRefresh;
                     g.prefsToRestore.push( { name: ps.name,
-                                            type: ps.type,
-                                            value: oldVal,
-                                            prefExisted: prefExists } );
+                                             type: ps.type,
+                                             value: oldVal,
+                                             requiresRefresh,
+                                             prefExisted: prefExists } );
                     var value = ps.value;
                     if (ps.type == PREF_BOOLEAN) {
                         prefs.setBoolPref(ps.name, value);
@@ -820,7 +863,7 @@ async function StartCurrentURI(aURLTargetType)
 
                 // skip the test that had a bad preference
                 g.urls.shift();
-                StartCurrentTest();
+                await StartCurrentTest();
                 return;
             } else {
                 throw e;
@@ -845,6 +888,10 @@ async function StartCurrentURI(aURLTargetType)
         TestBuffer("START " + g.currentURL);
         await updateBrowserRemotenessByURL(g.browser, g.currentURL);
 
+        if (prefsRequireRefresh) {
+            await new Promise(resolve => g.containingWindow.requestAnimationFrame(resolve));
+        }
+
         var type = g.urls[0].type
         if (TYPE_SCRIPT == type) {
             SendLoadScriptTest(g.currentURL, g.loadTimeout);
@@ -865,7 +912,7 @@ function DoneTests()
             g.suiteStarted = false
             logger.suiteEnd({'results': g.testResults});
         } else {
-            logger._logData('results', {results: g.testResults});
+            logger.logData('results', {results: g.testResults});
         }
         logger.info("Slowest test took " + g.slowestTestTime + "ms (" + g.slowestTestURL + ")");
         logger.info("Total canvas count = " + g.recycledCanvases.length);
@@ -914,8 +961,13 @@ function UpdateCanvasCache(url, canvas)
 async function DoDrawWindow(ctx, x, y, w, h)
 {
     if (g.useDrawSnapshot) {
-      let image = await g.browser.drawSnapshot(x, y, w, h, 1.0, "#fff");
-      ctx.drawImage(image, x, y);
+      try {
+        let image = await g.browser.drawSnapshot(x, y, w, h, 1.0, "#fff");
+        ctx.drawImage(image, x, y);
+      } catch (ex) {
+        logger.error(g.currentURL + " | drawSnapshot failed: " + ex);
+        ++g.testResults.Exception;
+      }
       return;
     }
 
@@ -1460,7 +1512,7 @@ function FinishTestItem()
     g.failedAssignedLayerMessages = [];
 }
 
-function DoAssertionCheck(numAsserts)
+async function DoAssertionCheck(numAsserts)
 {
     if (g.debug.isDebugBuild) {
         if (g.browserIsRemote) {
@@ -1492,7 +1544,7 @@ function DoAssertionCheck(numAsserts)
 
     // And start the next test.
     g.urls.shift();
-    StartCurrentTest();
+    await StartCurrentTest();
 }
 
 function ResetRenderingState()
@@ -1501,30 +1553,38 @@ function ResetRenderingState()
     // We would want to clear any viewconfig here, if we add support for it
 }
 
-function RestoreChangedPreferences()
+async function RestoreChangedPreferences()
 {
-    if (g.prefsToRestore.length > 0) {
-        var prefs = Cc["@mozilla.org/preferences-service;1"].
-                    getService(Ci.nsIPrefBranch);
-        g.prefsToRestore.reverse();
-        g.prefsToRestore.forEach(function(ps) {
-            if (ps.prefExisted) {
-                var value = ps.value;
-                if (ps.type == PREF_BOOLEAN) {
-                    prefs.setBoolPref(ps.name, value);
-                } else if (ps.type == PREF_STRING) {
-                    prefs.setStringPref(ps.name, value);
-                    value = '"' + value + '"';
-                } else if (ps.type == PREF_INTEGER) {
-                    prefs.setIntPref(ps.name, value);
-                }
-                logger.info("RESTORE PREFERENCE pref(" + ps.name + "," + value + ")");
-            } else {
-                prefs.clearUserPref(ps.name);
-                logger.info("RESTORE PREFERENCE pref(" + ps.name + ", <no value set>) (clearing user pref)");
+    if (!g.prefsToRestore.length) {
+        return;
+    }
+    var prefs = Cc["@mozilla.org/preferences-service;1"].
+                getService(Ci.nsIPrefBranch);
+    var requiresRefresh = false;
+    g.prefsToRestore.reverse();
+    g.prefsToRestore.forEach(function(ps) {
+        requiresRefresh = requiresRefresh || ps.requiresRefresh;
+        if (ps.prefExisted) {
+            var value = ps.value;
+            if (ps.type == PREF_BOOLEAN) {
+                prefs.setBoolPref(ps.name, value);
+            } else if (ps.type == PREF_STRING) {
+                prefs.setStringPref(ps.name, value);
+                value = '"' + value + '"';
+            } else if (ps.type == PREF_INTEGER) {
+                prefs.setIntPref(ps.name, value);
             }
-        });
-        g.prefsToRestore = [];
+            logger.info("RESTORE PREFERENCE pref(" + ps.name + "," + value + ")");
+        } else {
+            prefs.clearUserPref(ps.name);
+            logger.info("RESTORE PREFERENCE pref(" + ps.name + ", <no value set>) (clearing user pref)");
+        }
+    });
+
+    g.prefsToRestore = [];
+
+    if (requiresRefresh) {
+        await new Promise(resolve => g.containingWindow.requestAnimationFrame(resolve));
     }
 }
 
@@ -1624,9 +1684,9 @@ function RegisterMessageListenersAndLoadContentScript(aReload)
     });
 }
 
-function RecvAssertionCount(count)
+async function RecvAssertionCount(count)
 {
-    DoAssertionCheck(count);
+    await DoAssertionCheck(count);
 }
 
 function RecvContentReady(info)
@@ -1713,7 +1773,7 @@ function RecvStartPrint(isPrintSelection, printRange)
     file.append(fileName);
 
     let PSSVC = Cc["@mozilla.org/gfx/printsettings-service;1"].getService(Ci.nsIPrintSettingsService);
-    let ps = PSSVC.newPrintSettings;
+    let ps = PSSVC.createNewPrintSettings();
     ps.printSilent = true;
     ps.printBGImages = true;
     ps.printBGColors = true;
@@ -1721,7 +1781,7 @@ function RecvStartPrint(isPrintSelection, printRange)
     ps.unwriteableMarginRight = 0;
     ps.unwriteableMarginLeft = 0;
     ps.unwriteableMarginBottom = 0;
-    ps.printToFile = true;
+    ps.outputDestination = Ci.nsIPrintSettings.kOutputDestinationFile;
     ps.toFileName = file.path;
     ps.outputFormat = Ci.nsIPrintSettings.kOutputFormatPDF;
     ps.printSelectionOnly = isPrintSelection;
@@ -1860,20 +1920,18 @@ function pdfjsHasLoadedPromise() {
 }
 
 function readPdf(path, callback) {
-    OS.File.open(path, { read: true }).then(function (file) {
-        file.read().then(function (data) {
-            pdfjsLib.GlobalWorkerOptions.workerSrc = "resource://pdf.js/build/pdf.worker.js";
-            pdfjsLib.getDocument({
-                data: data
-            }).promise.then(function (pdf) {
-                callback(null, pdf);
-            }, function (e) {
-                callback(new Error(`Couldn't parse ${path}, exception: ${e}`));
-            });
-            return;
+    IOUtils.read(path).then(function (data) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "resource://pdf.js/build/pdf.worker.js";
+        pdfjsLib.getDocument({
+            data: data
+        }).promise.then(function (pdf) {
+            callback(null, pdf);
         }, function (e) {
-            callback(new Error(`Couldn't read PDF ${path}, exception: ${e}`));
+            callback(new Error(`Couldn't parse ${path}, exception: ${e}`));
         });
+        return;
+    }, function (e) {
+        callback(new Error(`Couldn't read PDF ${path}, exception: ${e}`));
     });
 }
 

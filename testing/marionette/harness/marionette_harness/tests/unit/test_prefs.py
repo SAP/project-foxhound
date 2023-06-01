@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import six
 
 from marionette_driver import geckoinstance
@@ -178,9 +176,9 @@ class TestPreferences(MarionetteTestCase):
         ):
 
             self.assertTrue(self.marionette.get_pref(self.prefs["bool"]), True)
-            self.assertEquals(self.marionette.get_pref(self.prefs["int"]), 24)
-            self.assertEquals(self.marionette.get_pref(self.prefs["string"]), "def")
-            self.assertEquals(self.marionette.get_pref(pref_not_existent), "existent")
+            self.assertEqual(self.marionette.get_pref(self.prefs["int"]), 24)
+            self.assertEqual(self.marionette.get_pref(self.prefs["string"]), "def")
+            self.assertEqual(self.marionette.get_pref(pref_not_existent), "existent")
 
         self.assertFalse(self.marionette.get_pref(self.prefs["bool"]))
         self.assertEqual(self.marionette.get_pref(self.prefs["int"]), 42)
@@ -211,9 +209,9 @@ class TestPreferences(MarionetteTestCase):
 
         try:
             with self.marionette.using_prefs({self.prefs["string"]: "def"}):
-                self.assertEquals(self.marionette.get_pref(self.prefs["string"]), "def")
+                self.assertEqual(self.marionette.get_pref(self.prefs["string"]), "def")
                 self.marionette.execute_script("return foo.bar.baz;")
         except JavascriptException:
             pass
 
-        self.assertEquals(self.marionette.get_pref(self.prefs["string"]), "abc")
+        self.assertEqual(self.marionette.get_pref(self.prefs["string"]), "abc")

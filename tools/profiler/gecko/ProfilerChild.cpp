@@ -8,9 +8,15 @@
 
 #include "GeckoProfiler.h"
 #include "platform.h"
+#include "ProfilerCodeAddressService.h"
+#include "ProfilerControl.h"
 #include "ProfilerParent.h"
 
+#include "chrome/common/ipc_channel.h"
+#include "nsPrintfCString.h"
 #include "nsThreadUtils.h"
+
+#include <memory>
 
 namespace mozilla {
 
@@ -155,7 +161,7 @@ void ProfilerChild::ResetChunkManager() {
 }
 
 mozilla::ipc::IPCResult ProfilerChild::RecvStart(
-    const ProfilerInitParams& params) {
+    const ProfilerInitParams& params, StartResolver&& aResolve) {
   nsTArray<const char*> filterArray;
   for (size_t i = 0; i < params.filters().Length(); ++i) {
     filterArray.AppendElement(params.filters()[i].get());
@@ -167,11 +173,12 @@ mozilla::ipc::IPCResult ProfilerChild::RecvStart(
 
   SetupChunkManager();
 
+  aResolve(/* unused */ true);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult ProfilerChild::RecvEnsureStarted(
-    const ProfilerInitParams& params) {
+    const ProfilerInitParams& params, EnsureStartedResolver&& aResolve) {
   nsTArray<const char*> filterArray;
   for (size_t i = 0; i < params.filters().Length(); ++i) {
     filterArray.AppendElement(params.filters()[i].get());
@@ -184,49 +191,72 @@ mozilla::ipc::IPCResult ProfilerChild::RecvEnsureStarted(
 
   SetupChunkManager();
 
+  aResolve(/* unused */ true);
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult ProfilerChild::RecvStop() {
+mozilla::ipc::IPCResult ProfilerChild::RecvStop(StopResolver&& aResolve) {
   ResetChunkManager();
   profiler_stop();
+  aResolve(/* unused */ true);
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult ProfilerChild::RecvPause() {
+mozilla::ipc::IPCResult ProfilerChild::RecvPause(PauseResolver&& aResolve) {
   profiler_pause();
+  aResolve(/* unused */ true);
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult ProfilerChild::RecvResume() {
+mozilla::ipc::IPCResult ProfilerChild::RecvResume(ResumeResolver&& aResolve) {
   profiler_resume();
+  aResolve(/* unused */ true);
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult ProfilerChild::RecvPauseSampling() {
+mozilla::ipc::IPCResult ProfilerChild::RecvPauseSampling(
+    PauseSamplingResolver&& aResolve) {
   profiler_pause_sampling();
+  aResolve(/* unused */ true);
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult ProfilerChild::RecvResumeSampling() {
+mozilla::ipc::IPCResult ProfilerChild::RecvResumeSampling(
+    ResumeSamplingResolver&& aResolve) {
   profiler_resume_sampling();
+  aResolve(/* unused */ true);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult ProfilerChild::RecvWaitOnePeriodicSampling(
+    WaitOnePeriodicSamplingResolver&& aResolve) {
+  std::shared_ptr<WaitOnePeriodicSamplingResolver> resolve =
+      std::make_shared<WaitOnePeriodicSamplingResolver>(std::move(aResolve));
+  if (!profiler_callback_after_sampling(
+          [self = RefPtr(this), resolve](SamplingState aSamplingState) mutable {
+            if (self->mDestroyed) {
+              return;
+            }
+            MOZ_RELEASE_ASSERT(self->mThread);
+            self->mThread->Dispatch(NS_NewRunnableFunction(
+                "nsProfiler::WaitOnePeriodicSampling result on main thread",
+                [resolve = std::move(resolve), aSamplingState]() {
+                  (*resolve)(aSamplingState ==
+                                 SamplingState::SamplingCompleted ||
+                             aSamplingState ==
+                                 SamplingState::NoStackSamplingCompleted);
+                }));
+          })) {
+    // Callback was not added (e.g., profiler is not running) and will never be
+    // invoked, so we need to resolve the promise here.
+    (*resolve)(false);
+  }
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult ProfilerChild::RecvClearAllPages() {
   profiler_clear_all_pages();
   return IPC_OK();
-}
-
-static nsCString CollectProfileOrEmptyString(bool aIsShuttingDown) {
-  nsCString profileCString;
-  UniquePtr<char[]> profile =
-      profiler_get_profile(/* aSinceTime */ 0, aIsShuttingDown);
-  if (profile) {
-    size_t len = strlen(profile.get());
-    profileCString.Adopt(profile.release(), len);
-  }
-  return profileCString;
 }
 
 mozilla::ipc::IPCResult ProfilerChild::RecvAwaitNextChunkManagerUpdate(
@@ -273,6 +303,8 @@ struct GatherProfileThreadParameters
 
   RefPtr<ProfilerChild> profilerChild;
 
+  FailureLatchSource failureLatchSource;
+
   // Separate RefPtr used when working on separate thread. This way, if the
   // "ProfilerChild" thread decides to overwrite its mGatherProfileProgress with
   // a new one, the work done here will still only use the old one.
@@ -297,16 +329,19 @@ void ProfilerChild::GatherProfileThreadFunction(
       parameters->progress, "Gather-profile thread started", "Profile sent");
   using namespace mozilla::literals::ProportionValue_literals;  // For `1_pc`.
 
-  auto writer = MakeUnique<SpliceableChunkedJSONWriter>();
-  profiler_get_profile_json(
-      *writer,
-      /* aSinceTime */ 0,
-      /* aIsShuttingDown */ false,
-      progressLogger.CreateSubLoggerFromTo(
-          1_pc,
-          "profiler_get_profile_json_into_lazily_allocated_buffer started",
-          99_pc,
-          "profiler_get_profile_json_into_lazily_allocated_buffer done"));
+  auto writer =
+      MakeUnique<SpliceableChunkedJSONWriter>(parameters->failureLatchSource);
+  if (!profiler_get_profile_json(
+          *writer,
+          /* aSinceTime */ 0,
+          /* aIsShuttingDown */ false,
+          progressLogger.CreateSubLoggerFromTo(
+              1_pc, "profiler_get_profile_json started", 99_pc,
+              "profiler_get_profile_json done"))) {
+    // Failed to get a profile, reset the writer pointer, so that we'll send a
+    // failure message.
+    writer.reset();
+  }
 
   if (NS_WARN_IF(NS_FAILED(
           parameters->profilerChild->mThread->Dispatch(NS_NewRunnableFunction(
@@ -330,17 +365,60 @@ void ProfilerChild::GatherProfileThreadFunction(
                 // Shmem allocation and promise resolution must be made on the
                 // ProfilerChild thread, that's why this task was needed here.
                 mozilla::ipc::Shmem shmem;
-                writer->ChunkedWriteFunc().CopyDataIntoLazilyAllocatedBuffer(
-                    [&](size_t allocationSize) -> char* {
+                if (writer) {
+                  if (const size_t len = writer->ChunkedWriteFunc().Length();
+                      len < UINT32_MAX) {
+                    bool shmemSuccess = true;
+                    const bool copySuccess =
+                        writer->ChunkedWriteFunc()
+                            .CopyDataIntoLazilyAllocatedBuffer(
+                                [&](size_t allocationSize) -> char* {
+                                  MOZ_ASSERT(allocationSize == len + 1);
+                                  if (parameters->profilerChild->AllocShmem(
+                                          allocationSize, &shmem)) {
+                                    return shmem.get<char>();
+                                  }
+                                  shmemSuccess = false;
+                                  return nullptr;
+                                });
+                    if (!shmemSuccess || !copySuccess) {
+                      const nsPrintfCString message(
+                          (!shmemSuccess)
+                              ? "*Could not create shmem for profile from pid "
+                                "%u (%zu B)"
+                              : "*Could not write profile from pid %u (%zu B)",
+                          unsigned(profiler_current_process_id().ToNumber()),
+                          len);
                       if (parameters->profilerChild->AllocShmem(
-                              allocationSize,
-                              mozilla::ipc::Shmem::SharedMemory::TYPE_BASIC,
-                              &shmem)) {
-                        return shmem.get<char>();
+                              message.Length() + 1, &shmem)) {
+                        strcpy(shmem.get<char>(), message.Data());
                       }
-                      return nullptr;
-                    });
-                writer = nullptr;
+                    }
+                  } else {
+                    const nsPrintfCString message(
+                        "*Profile from pid %u bigger (%zu) than shmem max "
+                        "(%zu)",
+                        unsigned(profiler_current_process_id().ToNumber()), len,
+                        size_t(UINT32_MAX));
+                    if (parameters->profilerChild->AllocShmem(
+                            message.Length() + 1, &shmem)) {
+                      strcpy(shmem.get<char>(), message.Data());
+                    }
+                  }
+                  writer = nullptr;
+                } else {
+                  // No profile.
+                  const char* failure =
+                      parameters->failureLatchSource.GetFailure();
+                  const nsPrintfCString message(
+                      "*Could not generate profile from pid %u%s%s",
+                      unsigned(profiler_current_process_id().ToNumber()),
+                      failure ? ", failure: " : "", failure ? failure : "");
+                  if (parameters->profilerChild->AllocShmem(
+                          message.Length() + 1, &shmem)) {
+                    strcpy(shmem.get<char>(), message.Data());
+                  }
+                }
 
                 parameters->resolver(std::move(shmem));
               }))))) {
@@ -370,7 +448,7 @@ mozilla::ipc::IPCResult ProfilerChild::RecvGatherProfile(
   if (!gatherProfileThread) {
     // Failed to create and start worker thread, resolve with an empty profile.
     mozilla::ipc::Shmem shmem;
-    if (AllocShmem(1, mozilla::ipc::Shmem::SharedMemory::TYPE_BASIC, &shmem)) {
+    if (AllocShmem(1, &shmem)) {
       shmem.get<char>()[0] = '\0';
     }
     parameters->resolver(std::move(shmem));
@@ -408,7 +486,68 @@ void ProfilerChild::Destroy() {
 }
 
 nsCString ProfilerChild::GrabShutdownProfile() {
-  return CollectProfileOrEmptyString(/* aIsShuttingDown */ true);
+  LOG("GrabShutdownProfile");
+
+  UniquePtr<ProfilerCodeAddressService> service =
+      profiler_code_address_service_for_presymbolication();
+  FailureLatchSource failureLatch;
+  SpliceableChunkedJSONWriter writer{failureLatch};
+  writer.Start();
+  if (!profiler_stream_json_for_this_process(writer, /* aSinceTime */ 0,
+                                             /* aIsShuttingDown */ true,
+                                             service.get(), ProgressLogger{})) {
+    const char* failure = writer.GetFailure();
+    return nsPrintfCString("*Profile unavailable for pid %u%s%s",
+                           unsigned(profiler_current_process_id().ToNumber()),
+                           failure ? ", failure: " : "",
+                           failure ? failure : "");
+  }
+  writer.StartArrayProperty("processes");
+  writer.EndArray();
+  writer.End();
+
+  const size_t len = writer.ChunkedWriteFunc().Length();
+  // This string is destined to be sent as a shutdown profile, which is limited
+  // by the maximum IPC message size.
+  // TODO: IPC to change to shmem (bug 1780330), raising this limit to
+  // JS::MaxStringLength.
+  if (len >= size_t(IPC::Channel::kMaximumMessageSize)) {
+    return nsPrintfCString(
+        "*Profile from pid %u bigger (%zu) than IPC max (%zu)",
+        unsigned(profiler_current_process_id().ToNumber()), len,
+        size_t(IPC::Channel::kMaximumMessageSize));
+  }
+
+  nsCString profileCString;
+  if (!profileCString.SetLength(len, fallible)) {
+    return nsPrintfCString(
+        "*Could not allocate %zu bytes for profile from pid %u", len,
+        unsigned(profiler_current_process_id().ToNumber()));
+  }
+  MOZ_ASSERT(*(profileCString.Data() + len) == '\0',
+             "We expected a null at the end of the string buffer, to be "
+             "rewritten by CopyDataIntoLazilyAllocatedBuffer");
+
+  char* const profileBeginWriting = profileCString.BeginWriting();
+  if (!profileBeginWriting) {
+    return nsPrintfCString("*Could not write profile from pid %u",
+                           unsigned(profiler_current_process_id().ToNumber()));
+  }
+
+  // Here, we have enough space reserved in `profileCString`, starting at
+  // `profileBeginWriting`, copy the JSON profile there.
+  if (!writer.ChunkedWriteFunc().CopyDataIntoLazilyAllocatedBuffer(
+          [&](size_t aBufferLen) -> char* {
+            MOZ_RELEASE_ASSERT(aBufferLen == len + 1);
+            return profileBeginWriting;
+          })) {
+    return nsPrintfCString("*Could not copy profile from pid %u",
+                           unsigned(profiler_current_process_id().ToNumber()));
+  }
+  MOZ_ASSERT(*(profileCString.Data() + len) == '\0',
+             "We still expected a null at the end of the string buffer");
+
+  return profileCString;
 }
 
 }  // namespace mozilla

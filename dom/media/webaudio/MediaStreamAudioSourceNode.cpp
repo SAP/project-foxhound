@@ -13,6 +13,7 @@
 #include "nsContentUtils.h"
 #include "nsIScriptError.h"
 #include "nsID.h"
+#include "Tracing.h"
 
 namespace mozilla::dom {
 
@@ -136,8 +137,7 @@ static int AudioTrackCompare(const RefPtr<AudioStreamTrack>& aLhs,
   nsAutoStringN<NSID_LENGTH> IDRhs;
   aLhs->GetId(IDLhs);
   aRhs->GetId(IDRhs);
-  return NS_ConvertUTF16toUTF8(IDLhs).Compare(
-      NS_ConvertUTF16toUTF8(IDRhs).get());
+  return Compare(NS_ConvertUTF16toUTF8(IDLhs), NS_ConvertUTF16toUTF8(IDRhs));
 }
 
 void MediaStreamAudioSourceNode::AttachToRightTrack(

@@ -4,15 +4,18 @@
 
 "use strict";
 
-const Services = require("Services");
-const WebConsole = require("devtools/client/webconsole/webconsole");
-const { Utils } = require("devtools/client/webconsole/utils");
+const WebConsole = require("resource://devtools/client/webconsole/webconsole.js");
+const { Utils } = require("resource://devtools/client/webconsole/utils.js");
 
-loader.lazyRequireGetter(this, "Telemetry", "devtools/client/shared/telemetry");
+loader.lazyRequireGetter(
+  this,
+  "Telemetry",
+  "resource://devtools/client/shared/telemetry.js"
+);
 loader.lazyRequireGetter(
   this,
   "BrowserConsoleManager",
-  "devtools/client/webconsole/browser-console-manager",
+  "resource://devtools/client/webconsole/browser-console-manager.js",
   true
 );
 
@@ -29,6 +32,9 @@ loader.lazyRequireGetter(
  * This object extends the WebConsole object located in webconsole.js
  */
 class BrowserConsole extends WebConsole {
+  #bcInitializer = null;
+  #bcDestroyer = null;
+  #telemetry;
   /*
    * @constructor
    * @param object commands
@@ -41,9 +47,7 @@ class BrowserConsole extends WebConsole {
   constructor(commands, iframeWindow, chromeWindow) {
     super(null, commands, iframeWindow, chromeWindow, true);
 
-    this._telemetry = new Telemetry();
-    this._bcInitializer = null;
-    this._bcDestroyer = null;
+    this.#telemetry = new Telemetry();
   }
 
   /**
@@ -53,17 +57,15 @@ class BrowserConsole extends WebConsole {
    *         A promise for the initialization.
    */
   init() {
-    if (this._bcInitializer) {
-      return this._bcInitializer;
+    if (this.#bcInitializer) {
+      return this.#bcInitializer;
     }
 
-    this._bcInitializer = (async () => {
+    this.#bcInitializer = (async () => {
       // Only add the shutdown observer if we've opened a Browser Console window.
       ShutdownObserver.init();
 
-      // browserconsole is not connected with a toolbox so we pass -1 as the
-      // toolbox session id.
-      this._telemetry.toolOpened("browserconsole", -1, this);
+      this.#telemetry.toolOpened("browserconsole", this);
 
       await super.init(false);
 
@@ -72,7 +74,7 @@ class BrowserConsole extends WebConsole {
       const id = Utils.supportsString(this.hudId);
       Services.obs.notifyObservers(id, "web-console-created");
     })();
-    return this._bcInitializer;
+    return this.#bcInitializer;
   }
 
   /**
@@ -82,27 +84,24 @@ class BrowserConsole extends WebConsole {
    *         A promise object that is resolved once the Browser Console is closed.
    */
   destroy() {
-    if (this._bcDestroyer) {
-      return this._bcDestroyer;
+    if (this.#bcDestroyer) {
+      return this.#bcDestroyer;
     }
 
-    this._bcDestroyer = (async () => {
-      // browserconsole is not connected with a toolbox so we pass -1 as the
-      // toolbox session id.
-      this._telemetry.toolClosed("browserconsole", -1, this);
+    this.#bcDestroyer = (async () => {
+      this.#telemetry.toolClosed("browserconsole", this);
 
       this.commands.targetCommand.destroy();
-      // Wait for any pending connection initialization.
-      await Promise.all(
-        this.ui.getAllProxies().map(proxy => proxy.getConnectionPromise())
-      );
-
       await super.destroy();
       await this.currentTarget.destroy();
       this.chromeWindow.close();
     })();
 
-    return this._bcDestroyer;
+    return this.#bcDestroyer;
+  }
+
+  updateWindowTitle() {
+    BrowserConsoleManager.updateWindowTitle(this.chromeWindow);
   }
 }
 

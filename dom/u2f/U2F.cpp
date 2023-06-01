@@ -31,8 +31,7 @@ class nsHTMLDocument {
                                             const nsACString& aOrigHost);
 };
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 constexpr auto kFinishEnrollment = u"navigator.id.finishEnrollment"_ns;
 constexpr auto kGetAssertion = u"navigator.id.getAssertion"_ns;
@@ -44,7 +43,7 @@ NS_INTERFACE_MAP_END_INHERITING(WebAuthnManagerBase)
 NS_IMPL_ADDREF_INHERITED(U2F, WebAuthnManagerBase)
 NS_IMPL_RELEASE_INHERITED(U2F, WebAuthnManagerBase)
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(U2F)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(U2F)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(U2F, WebAuthnManagerBase)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mTransaction)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
@@ -53,7 +52,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(U2F, WebAuthnManagerBase)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTransaction)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(U2F)
 
 /***********************************************************************
  * Utility Functions
@@ -642,5 +640,4 @@ void U2F::HandleVisibilityChange() {
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -19,7 +19,7 @@ Add the following lines to your "Cargo.toml" file:
 
 ```toml
 [dependencies]
-os_str_bytes = "6.0"
+os_str_bytes = "6.4"
 ```
 
 See the [documentation] for available functionality and examples.
@@ -40,24 +40,39 @@ The minimum supported Rust toolchain version depends on the platform:
         <td>nightly (<a href="https://doc.rust-lang.org/unstable-book/library-features/sgx-platform.html"><code>sgx_platform</code></a>)</td>
     </tr>
     <tr>
+        <td>HermitCore</td>
+        <td><code>*-*-hermit</code></td>
+        <td>1.57.0</td>
+    </tr>
+    <tr>
+        <td>SOLID</td>
+        <td><code>*-*-solid_asp3(-*)</code></td>
+        <td>1.57.0</td>
+    </tr>
+    <tr>
         <td>Unix</td>
         <td>Unix</td>
-        <td>1.52.0</td>
+        <td>1.57.0</td>
     </tr>
     <tr>
         <td>WASI</td>
         <td><code>*-wasi</code></td>
-        <td>1.52.0</td>
+        <td>1.57.0</td>
     </tr>
     <tr>
         <td>WebAssembly</td>
         <td><code>wasm32-*-unknown</code></td>
-        <td>1.52.0</td>
+        <td>1.57.0</td>
     </tr>
     <tr>
         <td>Windows</td>
-        <td><code>*-windows-*</code></td>
-        <td>1.52.0</td>
+        <td><code>*-*-windows-*</code></td>
+        <td>1.57.0</td>
+    </tr>
+    <tr>
+        <td>Xous</td>
+        <td><code>*-*-xous-*</code></td>
+        <td>unstable</td>
     </tr>
 </table>
 
@@ -68,7 +83,7 @@ crate's minor version:
 
 ```toml
 [dependencies]
-os_str_bytes = "~6.0"
+os_str_bytes = "~6.4"
 ```
 
 ## License

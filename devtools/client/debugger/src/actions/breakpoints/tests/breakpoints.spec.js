@@ -13,10 +13,27 @@ import {
 import { mockCommandClient } from "../../tests/helpers/mockCommandClient";
 import { mockPendingBreakpoint } from "../../tests/helpers/breakpoints.js";
 import { makePendingLocationId } from "../../../utils/breakpoint";
+import { asyncStore } from "../../../utils/prefs";
+const {
+  registerStoreObserver,
+} = require("devtools/client/shared/redux/subscriber");
+
+jest.mock("../../../utils/prefs", () => ({
+  prefs: {
+    expressions: [],
+  },
+  asyncStore: {
+    pendingBreakpoints: {},
+  },
+  features: {
+    inlinePreview: true,
+  },
+}));
 
 function mockClient(positionsResponse = {}) {
   return {
     ...mockCommandClient,
+    setSkipPausing: jest.fn(),
     getSourceActorBreakpointPositions: async () => positionsResponse,
     getSourceActorBreakableLines: async () => [],
   };
@@ -33,9 +50,8 @@ describe("breakpoints", () => {
     };
 
     const source = await dispatch(actions.newGeneratedSource(makeSource("a")));
-    await dispatch(actions.loadSourceText({ cx, source }));
     await dispatch(
-      actions.setSelectedLocation(cx, source, {
+      actions.selectLocation(cx, {
         line: 1,
         column: 1,
         sourceId: source.id,
@@ -62,9 +78,8 @@ describe("breakpoints", () => {
       sourceUrl: "http://localhost:8000/examples/a",
     };
     const source = await dispatch(actions.newGeneratedSource(makeSource("a")));
-    await dispatch(actions.loadSourceText({ cx, source }));
     await dispatch(
-      actions.setSelectedLocation(cx, source, {
+      actions.selectLocation(cx, {
         line: 1,
         column: 1,
         sourceId: source.id,
@@ -88,9 +103,8 @@ describe("breakpoints", () => {
       sourceUrl: "http://localhost:8000/examples/a",
     };
     const source = await dispatch(actions.newGeneratedSource(makeSource("a")));
-    await dispatch(actions.loadSourceText({ cx, source }));
     await dispatch(
-      actions.setSelectedLocation(cx, source, {
+      actions.selectLocation(cx, {
         line: 1,
         column: 1,
         sourceId: source.id,
@@ -121,9 +135,8 @@ describe("breakpoints", () => {
     };
 
     const source = await dispatch(actions.newGeneratedSource(makeSource("a")));
-    await dispatch(actions.loadSourceText({ cx, source }));
     await dispatch(
-      actions.setSelectedLocation(cx, source, {
+      actions.selectLocation(cx, {
         line: 1,
         column: 1,
         sourceId: source.id,
@@ -159,13 +172,22 @@ describe("breakpoints", () => {
     };
 
     const aSource = await dispatch(actions.newGeneratedSource(makeSource("a")));
-    await dispatch(actions.loadSourceText({ cx, source: aSource }));
 
     const bSource = await dispatch(actions.newGeneratedSource(makeSource("b")));
-    await dispatch(actions.loadSourceText({ cx, source: bSource }));
+    const bSourceActor = selectors.getFirstSourceActorForGeneratedSource(
+      getState(),
+      bSource.id
+    );
 
     await dispatch(
-      actions.setSelectedLocation(cx, aSource, {
+      actions.loadGeneratedSourceText({
+        cx,
+        sourceActor: bSourceActor,
+      })
+    );
+
+    await dispatch(
+      actions.selectLocation(cx, {
         line: 1,
         column: 1,
         sourceId: aSource.id,
@@ -204,10 +226,28 @@ describe("breakpoints", () => {
     };
 
     const aSource = await dispatch(actions.newGeneratedSource(makeSource("a")));
-    await dispatch(actions.loadSourceText({ cx, source: aSource }));
+    const aSourceActor = selectors.getFirstSourceActorForGeneratedSource(
+      getState(),
+      aSource.id
+    );
+    await dispatch(
+      actions.loadGeneratedSourceText({
+        cx,
+        sourceActor: aSourceActor,
+      })
+    );
 
     const bSource = await dispatch(actions.newGeneratedSource(makeSource("b")));
-    await dispatch(actions.loadSourceText({ cx, source: bSource }));
+    const bSourceActor = selectors.getFirstSourceActorForGeneratedSource(
+      getState(),
+      bSource.id
+    );
+    await dispatch(
+      actions.loadGeneratedSourceText({
+        cx,
+        sourceActor: bSourceActor,
+      })
+    );
 
     await dispatch(actions.addBreakpoint(cx, loc1));
     await dispatch(actions.addBreakpoint(cx, loc2));
@@ -235,7 +275,16 @@ describe("breakpoints", () => {
     };
 
     const aSource = await dispatch(actions.newGeneratedSource(makeSource("a")));
-    await dispatch(actions.loadSourceText({ cx, source: aSource }));
+    const aSourceActor = selectors.getFirstSourceActorForGeneratedSource(
+      getState(),
+      aSource.id
+    );
+    await dispatch(
+      actions.loadGeneratedSourceText({
+        cx,
+        sourceActor: aSourceActor,
+      })
+    );
 
     await dispatch(actions.addBreakpoint(cx, loc));
     let bp = selectors.getBreakpoint(getState(), loc);
@@ -278,10 +327,28 @@ describe("breakpoints", () => {
     };
 
     const aSource = await dispatch(actions.newGeneratedSource(makeSource("a")));
-    await dispatch(actions.loadSourceText({ cx, source: aSource }));
+    const aSourceActor = selectors.getFirstSourceActorForGeneratedSource(
+      getState(),
+      aSource.id
+    );
+    await dispatch(
+      actions.loadGeneratedSourceText({
+        cx,
+        sourceActor: aSourceActor,
+      })
+    );
 
     const bSource = await dispatch(actions.newGeneratedSource(makeSource("b")));
-    await dispatch(actions.loadSourceText({ cx, source: bSource }));
+    const bSourceActor = selectors.getFirstSourceActorForGeneratedSource(
+      getState(),
+      bSource.id
+    );
+    await dispatch(
+      actions.loadGeneratedSourceText({
+        cx,
+        sourceActor: bSourceActor,
+      })
+    );
 
     await dispatch(actions.addBreakpoint(cx, loc1));
     await dispatch(actions.addBreakpoint(cx, loc2));
@@ -305,12 +372,34 @@ describe("breakpoints", () => {
   it("should remove all the breakpoints", async () => {
     const mockedPendingBreakpoint = mockPendingBreakpoint({ column: 2 });
     const id = makePendingLocationId(mockedPendingBreakpoint.location);
-    const pendingBreakpoints = { [id]: mockedPendingBreakpoint };
 
-    const { dispatch, getState, cx } = createStore(
-      mockClient({ "5": [1], "6": [2] }),
-      { pendingBreakpoints }
-    );
+    const pendingBreakpoints = {
+      [id]: mockedPendingBreakpoint,
+    };
+
+    asyncStore.pendingBreakpoints = pendingBreakpoints;
+
+    const store = createStore(mockClient({ "5": [1], "6": [2] }), {
+      pendingBreakpoints,
+    });
+
+    const { dispatch, getState, cx } = store;
+
+    // This mocks the updatePrefs observer which listens & updates the asyncStore
+    // when the reducer state changes. See https://searchfox.org/mozilla-central/
+    // rev/287583a4a605eee8cd2d41381ffaea7a93d7b987/devtools/client/debugger/
+    // src/utils/bootstrap.js#114-142
+    function mockUpdatePrefs(state, oldState) {
+      if (
+        selectors.getPendingBreakpoints(oldState) &&
+        selectors.getPendingBreakpoints(oldState) !==
+          selectors.getPendingBreakpoints(state)
+      ) {
+        asyncStore.pendingBreakpoints = selectors.getPendingBreakpoints(state);
+      }
+    }
+
+    registerStoreObserver(store, mockUpdatePrefs);
 
     const loc1 = {
       sourceId: "a",
@@ -327,21 +416,47 @@ describe("breakpoints", () => {
     };
 
     const aSource = await dispatch(actions.newGeneratedSource(makeSource("a")));
-    await dispatch(actions.loadSourceText({ cx, source: aSource }));
+    const aSourceActor = selectors.getFirstSourceActorForGeneratedSource(
+      getState(),
+      aSource.id
+    );
+    await dispatch(
+      actions.loadGeneratedSourceText({
+        cx,
+        sourceActor: aSourceActor,
+      })
+    );
 
     const bSource = await dispatch(actions.newGeneratedSource(makeSource("b")));
-    await dispatch(actions.loadSourceText({ cx, source: bSource }));
+    const bSourceActor = selectors.getFirstSourceActorForGeneratedSource(
+      getState(),
+      bSource.id
+    );
+    await dispatch(
+      actions.loadGeneratedSourceText({
+        cx,
+        sourceActor: bSourceActor,
+      })
+    );
+
+    expect(selectors.getBreakpointsList(getState())).toHaveLength(0);
+    expect(selectors.getPendingBreakpointList(getState())).toHaveLength(1);
+    expect(Object.keys(asyncStore.pendingBreakpoints)).toHaveLength(1);
 
     await dispatch(actions.addBreakpoint(cx, loc1));
     await dispatch(actions.addBreakpoint(cx, loc2));
 
+    // The breakpoint list contains all the live breakpoints while the pending-breakpoint
+    // list stores contains all the breakpoints persisted across toolbox reopenings.
+    expect(selectors.getBreakpointsList(getState())).toHaveLength(2);
+    expect(selectors.getPendingBreakpointList(getState())).toHaveLength(3);
+    expect(Object.keys(asyncStore.pendingBreakpoints)).toHaveLength(3);
+
     await dispatch(actions.removeAllBreakpoints(cx));
 
-    const bps = selectors.getBreakpointsList(getState());
-    const pendingBps = selectors.getPendingBreakpointList(getState());
-
-    expect(bps).toHaveLength(0);
-    expect(pendingBps).toHaveLength(0);
+    expect(selectors.getBreakpointsList(getState())).toHaveLength(0);
+    expect(selectors.getPendingBreakpointList(getState())).toHaveLength(0);
+    expect(Object.keys(asyncStore.pendingBreakpoints)).toHaveLength(0);
   });
 
   it("should toggle a breakpoint at a location", async () => {
@@ -350,11 +465,7 @@ describe("breakpoints", () => {
 
     const { dispatch, getState, cx } = createStore(mockClient({ "5": [1] }));
 
-    const source = await dispatch(
-      actions.newGeneratedSource(makeSource("foo1"))
-    );
-    await dispatch(actions.loadSourceText({ cx, source }));
-
+    await dispatch(actions.newGeneratedSource(makeSource("foo1")));
     await dispatch(actions.selectLocation(cx, loc));
 
     await dispatch(actions.toggleBreakpointAtLine(cx, 5));
@@ -371,11 +482,7 @@ describe("breakpoints", () => {
 
     const { dispatch, getState, cx } = createStore(mockClient({ "5": [1] }));
 
-    const source = await dispatch(
-      actions.newGeneratedSource(makeSource("foo1"))
-    );
-    await dispatch(actions.loadSourceText({ cx, source }));
-
+    await dispatch(actions.newGeneratedSource(makeSource("foo1")));
     await dispatch(actions.selectLocation(cx, { sourceId: "foo1", line: 1 }));
 
     await dispatch(actions.toggleBreakpointAtLine(cx, 5));
@@ -401,7 +508,11 @@ describe("breakpoints", () => {
     };
 
     const source = await dispatch(actions.newGeneratedSource(makeSource("a")));
-    await dispatch(actions.loadSourceText({ cx, source }));
+    const sourceActor = selectors.getFirstSourceActorForGeneratedSource(
+      getState(),
+      source.id
+    );
+    await dispatch(actions.loadGeneratedSourceText({ cx, sourceActor }));
 
     await dispatch(actions.addBreakpoint(cx, loc));
 
@@ -430,7 +541,11 @@ describe("breakpoints", () => {
     };
 
     const source = await dispatch(actions.newGeneratedSource(makeSource("a")));
-    await dispatch(actions.loadSourceText({ cx, source }));
+    const sourceActor = selectors.getFirstSourceActorForGeneratedSource(
+      getState(),
+      source.id
+    );
+    await dispatch(actions.loadGeneratedSourceText({ cx, sourceActor }));
 
     await dispatch(actions.addBreakpoint(cx, loc));
     let bp = selectors.getBreakpoint(getState(), loc);
@@ -469,7 +584,11 @@ describe("breakpoints", () => {
     const source = await dispatch(
       actions.newGeneratedSource(makeSource("a.js"))
     );
-    await dispatch(actions.loadSourceText({ cx, source }));
+    const sourceActor = selectors.getFirstSourceActorForGeneratedSource(
+      getState(),
+      source.id
+    );
+    await dispatch(actions.loadGeneratedSourceText({ cx, sourceActor }));
 
     await dispatch(actions.addBreakpoint(cx, loc));
     await dispatch(actions.togglePrettyPrint(cx, "a.js"));
@@ -496,7 +615,11 @@ describe("breakpoints", () => {
     const source = await dispatch(
       actions.newGeneratedSource(makeSource("a.js"))
     );
-    await dispatch(actions.loadSourceText({ cx, source }));
+    const sourceActor = selectors.getFirstSourceActorForGeneratedSource(
+      getState(),
+      source.id
+    );
+    await dispatch(actions.loadGeneratedSourceText({ cx, sourceActor }));
 
     await dispatch(actions.addBreakpoint(cx, loc));
     await dispatch(actions.togglePrettyPrint(cx, "a.js"));

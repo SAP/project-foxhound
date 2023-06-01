@@ -19,43 +19,42 @@
 
 var EXPORTED_SYMBOLS = ["ExtensionControlledPopup"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { ExtensionCommon } = ChromeUtils.import(
   "resource://gre/modules/ExtensionCommon.jsm"
 );
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "AddonManager",
   "resource://gre/modules/AddonManager.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "BrowserUIUtils",
   "resource:///modules/BrowserUIUtils.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "CustomizableUI",
   "resource:///modules/CustomizableUI.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "ExtensionSettingsStore",
   "resource://gre/modules/ExtensionSettingsStore.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+});
 
 let { makeWidgetId } = ExtensionCommon;
 
-XPCOMUtils.defineLazyGetter(this, "strBundle", function() {
+XPCOMUtils.defineLazyGetter(lazy, "strBundle", function() {
   return Services.strings.createBundle(
     "chrome://global/locale/extensions.properties"
   );
@@ -63,7 +62,7 @@ XPCOMUtils.defineLazyGetter(this, "strBundle", function() {
 
 const PREF_BRANCH_INSTALLED_ADDON = "extensions.installedDistroAddon.";
 
-XPCOMUtils.defineLazyGetter(this, "distributionAddonsList", function() {
+XPCOMUtils.defineLazyGetter(lazy, "distributionAddonsList", function() {
   let addonList = Services.prefs
     .getChildList(PREF_BRANCH_INSTALLED_ADDON)
     .map(id => id.replace(PREF_BRANCH_INSTALLED_ADDON, ""));
@@ -155,16 +154,19 @@ class ExtensionControlledPopup {
 
   userHasConfirmed(id) {
     // We don't show a doorhanger for distribution installed add-ons.
-    if (distributionAddonsList.has(id)) {
+    if (lazy.distributionAddonsList.has(id)) {
       return true;
     }
-    let setting = ExtensionSettingsStore.getSetting(this.confirmedType, id);
+    let setting = lazy.ExtensionSettingsStore.getSetting(
+      this.confirmedType,
+      id
+    );
     return !!(setting && setting.value);
   }
 
   async setConfirmation(id) {
-    await ExtensionSettingsStore.initialize();
-    return ExtensionSettingsStore.addSetting(
+    await lazy.ExtensionSettingsStore.initialize();
+    return lazy.ExtensionSettingsStore.addSetting(
       id,
       this.confirmedType,
       id,
@@ -174,8 +176,12 @@ class ExtensionControlledPopup {
   }
 
   async clearConfirmation(id) {
-    await ExtensionSettingsStore.initialize();
-    return ExtensionSettingsStore.removeSetting(id, this.confirmedType, id);
+    await lazy.ExtensionSettingsStore.initialize();
+    return lazy.ExtensionSettingsStore.removeSetting(
+      id,
+      this.confirmedType,
+      id
+    );
   }
 
   observe(subject, topic, data) {
@@ -204,7 +210,7 @@ class ExtensionControlledPopup {
   }
 
   async addObserver(extensionId) {
-    await ExtensionSettingsStore.initialize();
+    await lazy.ExtensionSettingsStore.initialize();
 
     if (!this.observerRegistered && !this.userHasConfirmed(extensionId)) {
       Services.obs.addObserver(this, this.observerTopic);
@@ -218,14 +224,14 @@ class ExtensionControlledPopup {
   // The extensionId will be looked up in ExtensionSettingsStore if it is not
   // provided using this.settingType and this.settingKey.
   async open(targetWindow, extensionId) {
-    await ExtensionSettingsStore.initialize();
+    await lazy.ExtensionSettingsStore.initialize();
 
     // Remove the observer since it would open the same dialog again the next time
     // the observer event fires.
     this.removeObserver();
 
     if (!extensionId) {
-      let item = ExtensionSettingsStore.getSetting(
+      let item = lazy.ExtensionSettingsStore.getSetting(
         this.settingType,
         this.settingKey
       );
@@ -233,7 +239,7 @@ class ExtensionControlledPopup {
     }
 
     let win = targetWindow || this.topWindow;
-    let isPrivate = PrivateBrowsingUtils.isWindowPrivate(win);
+    let isPrivate = lazy.PrivateBrowsingUtils.isWindowPrivate(win);
     if (
       isPrivate &&
       extensionId &&
@@ -279,7 +285,7 @@ class ExtensionControlledPopup {
       }
       await win.document.l10n.translateFragment(panel);
     }
-    let addon = await AddonManager.getAddonByID(extensionId);
+    let addon = await lazy.AddonManager.getAddonByID(extensionId);
     this.populateDescription(doc, addon);
 
     // Setup the command handler.
@@ -326,11 +332,13 @@ class ExtensionControlledPopup {
       anchorButton = doc.getElementById(this.anchorId);
     } else {
       // Look for a browserAction on the toolbar.
-      let action = CustomizableUI.getWidget(
+      let action = lazy.CustomizableUI.getWidget(
         `${makeWidgetId(extensionId)}-browser-action`
       );
       if (action) {
-        action = action.areaType == "toolbar" && action.forWindow(win).node;
+        action =
+          action.areaType == "toolbar" &&
+          action.forWindow(win).node.firstElementChild;
       }
 
       // Anchor to a toolbar browserAction if found, otherwise use the menu button.
@@ -360,14 +368,14 @@ class ExtensionControlledPopup {
     description.textContent = "";
 
     let addonDetails = this.getAddonDetails(doc, addon);
-    let message = strBundle.GetStringFromName(this.descriptionMessageId);
+    let message = lazy.strBundle.GetStringFromName(this.descriptionMessageId);
     if (this.getLocalizedDescription) {
       description.appendChild(
         this.getLocalizedDescription(doc, message, addonDetails)
       );
     } else {
       description.appendChild(
-        BrowserUIUtils.getLocalizedFragment(doc, message, addonDetails)
+        lazy.BrowserUIUtils.getLocalizedFragment(doc, message, addonDetails)
       );
     }
 
@@ -376,7 +384,9 @@ class ExtensionControlledPopup {
     link.href =
       Services.urlFormatter.formatURLPref("app.support.baseURL") +
       this.learnMoreLink;
-    link.textContent = strBundle.GetStringFromName(this.learnMoreMessageId);
+    link.textContent = lazy.strBundle.GetStringFromName(
+      this.learnMoreMessageId
+    );
     description.appendChild(link);
   }
 
@@ -411,33 +421,24 @@ class ExtensionControlledPopup {
     if (focusedWindow != win) {
       promiseEvent("focus");
     }
-    let unloadListener;
-    // eslint-disable-next-line no-async-promise-executor
-    return new Promise(async (resolve, reject) => {
-      if (promises.length) {
+    if (promises.length) {
+      let unloadListener;
+      let unloadPromise = new Promise((resolve, reject) => {
         unloadListener = () => {
           for (let [type, listener] of listenersToRemove) {
             win.removeEventListener(type, listener);
           }
-          reject();
+          reject(new Error("window unloaded"));
         };
         win.addEventListener("unload", unloadListener, { once: true });
-      }
-      let error;
+      });
       try {
-        await Promise.all(promises);
-      } catch (ex) {
-        error = ex;
-      }
-      if (unloadListener) {
+        let allPromises = Promise.all(promises);
+        await Promise.race([allPromises, unloadPromise]);
+      } finally {
         win.removeEventListener("unload", unloadListener);
       }
-      if (error) {
-        reject(new Error("window unloaded"));
-      } else {
-        resolve();
-      }
-    });
+    }
   }
 
   static _getAndMaybeCreatePanel(doc) {

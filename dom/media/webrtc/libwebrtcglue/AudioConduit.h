@@ -153,6 +153,11 @@ class WebrtcAudioConduit : public AudioSessionConduit,
   Ssrcs GetLocalSSRCs() const override;
   Maybe<Ssrc> GetRemoteSSRC() const override;
 
+  void DisableSsrcChanges() override {
+    MOZ_ASSERT(mCallThread->IsOnCurrentThread());
+    mAllowSsrcChange = false;
+  }
+
  private:
   /**
    * Override the remote ssrc configured on mRecvStreamConfig.
@@ -167,9 +172,10 @@ class WebrtcAudioConduit : public AudioSessionConduit,
  public:
   void UnsetRemoteSSRC(uint32_t aSsrc) override {}
 
-  Maybe<webrtc::AudioReceiveStream::Stats> GetReceiverStats() const override;
+  Maybe<webrtc::AudioReceiveStreamInterface::Stats> GetReceiverStats()
+      const override;
   Maybe<webrtc::AudioSendStream::Stats> GetSenderStats() const override;
-  Maybe<webrtc::Call::Stats> GetCallStats() const override;
+  Maybe<webrtc::CallBasicStats> GetCallStats() const override;
 
   bool IsSamplingFreqSupported(int freq) const override;
 
@@ -204,6 +210,10 @@ class WebrtcAudioConduit : public AudioSessionConduit,
   void CreateRecvStream();
   void DeleteRecvStream();
 
+  // Are SSRC changes without signaling allowed or not.
+  // Call thread only.
+  bool mAllowSsrcChange = true;
+
   // Const so can be accessed on any thread. Most methods are called on the Call
   // thread.
   const RefPtr<WebrtcCallWrapper> mCall;
@@ -214,11 +224,11 @@ class WebrtcAudioConduit : public AudioSessionConduit,
   WebrtcReceiveTransport mRecvTransport;
 
   // Accessed only on the Call thread.
-  webrtc::AudioReceiveStream::Config mRecvStreamConfig;
+  webrtc::AudioReceiveStreamInterface::Config mRecvStreamConfig;
 
   // Written only on the Call thread. Guarded by mLock, except for reads on the
   // Call thread.
-  webrtc::AudioReceiveStream* mRecvStream;
+  webrtc::AudioReceiveStreamInterface* mRecvStream;
 
   // Accessed only on the Call thread.
   webrtc::AudioSendStream::Config mSendStreamConfig;
@@ -237,7 +247,7 @@ class WebrtcAudioConduit : public AudioSessionConduit,
   // Accessed only on the Call thread.
   bool mDtmfEnabled;
 
-  mutable RWLock mLock;
+  mutable RWLock mLock MOZ_UNANNOTATED;
 
   // Call worker thread. All access to mCall->Call() happens here.
   const RefPtr<AbstractThread> mCallThread;
@@ -252,7 +262,7 @@ class WebrtcAudioConduit : public AudioSessionConduit,
     Mirror<bool> mTransmitting;
     Mirror<Ssrcs> mLocalSsrcs;
     Mirror<std::string> mLocalCname;
-    Mirror<std::string> mLocalMid;
+    Mirror<std::string> mMid;
     Mirror<Ssrc> mRemoteSsrc;
     Mirror<std::string> mSyncGroup;
     Mirror<RtpExtList> mLocalRecvRtpExtensions;

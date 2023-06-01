@@ -46,7 +46,7 @@ function handleRequest(req, resp) {
     req
       .getHeader("Cookie")
       .split(";")
-      .indexOf("red") >= 0
+      .includes("red")
   ) {
     resp.write(
       '<html style="background: #f00;">' + setCookieScript + "</html>"
@@ -60,7 +60,7 @@ function handleRequest(req, resp) {
     req
       .getHeader("Cookie")
       .split(";")
-      .indexOf("green") >= 0
+      .includes("green")
   ) {
     resp.write(
       '<html style="background: #0f0;">' + setCookieScript + "</html>"
@@ -78,16 +78,14 @@ function handleRequest(req, resp) {
 
   if (opts.wait) {
     resp.write("Waiting " + opts.wait + " ms... ");
-    timer = Components.classes["@mozilla.org/timer;1"].createInstance(
-      Components.interfaces.nsITimer
-    );
+    timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
     timer.init(
       function ding() {
         resp.write("OK!");
         resp.finish();
       },
       opts.wait,
-      Components.interfaces.nsITimer.TYPE_ONE_SHOT
+      Ci.nsITimer.TYPE_ONE_SHOT
     );
     return;
   }

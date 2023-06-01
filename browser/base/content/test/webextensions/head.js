@@ -9,9 +9,6 @@ const BASE = getRootDirectory(gTestPath).replace(
   "https://example.com/"
 );
 
-var { ExtensionsUI } = ChromeUtils.import(
-  "resource:///modules/ExtensionsUI.jsm"
-);
 XPCOMUtils.defineLazyGetter(this, "Management", () => {
   // eslint-disable-next-line no-shadow
   const { Management } = ChromeUtils.import(
@@ -58,8 +55,8 @@ function promisePopupNotificationShown(name) {
 }
 
 function promiseAppMenuNotificationShown(id) {
-  const { AppMenuNotifications } = ChromeUtils.import(
-    "resource://gre/modules/AppMenuNotifications.jsm"
+  const { AppMenuNotifications } = ChromeUtils.importESModule(
+    "resource://gre/modules/AppMenuNotifications.sys.mjs"
   );
   return new Promise(resolve => {
     function popupshown() {
@@ -520,7 +517,7 @@ async function interactiveUpdateTest(autoUpdate, checkFn) {
 
   // Navigate away from the starting page to force about:addons to load
   // in a new tab during the tests below.
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:mozilla");
+  BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, "about:mozilla");
   await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
 
   // Install version 1.0 of the test extension
@@ -648,7 +645,7 @@ async function interactiveUpdateTest(autoUpdate, checkFn) {
 // Individual tests can store a cleanup function in the testCleanup global
 // to ensure it gets called before the final check is performed.
 let testCleanup;
-add_task(async function() {
+add_setup(async function head_setup() {
   let addons = await AddonManager.getAllAddons();
   let existingAddons = new Set(addons.map(a => a.id));
 

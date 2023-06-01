@@ -6,6 +6,7 @@
 
 #include "VideoBridgeParent.h"
 #include "CompositorThread.h"
+#include "mozilla/DataMutex.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/layers/TextureHost.h"
 #include "mozilla/layers/VideoBridgeUtils.h"
@@ -16,31 +17,35 @@ namespace layers {
 using namespace mozilla::ipc;
 using namespace mozilla::gfx;
 
-static VideoBridgeParent* sVideoBridgeFromRddProcess;
-static VideoBridgeParent* sVideoBridgeFromGpuProcess;
+using VideoBridgeTable =
+    EnumeratedArray<VideoBridgeSource, VideoBridgeSource::_Count,
+                    VideoBridgeParent*>;
+
+static StaticDataMutex<VideoBridgeTable> sVideoBridgeFromProcess(
+    "VideoBridges");
 
 VideoBridgeParent::VideoBridgeParent(VideoBridgeSource aSource)
     : mCompositorThreadHolder(CompositorThreadHolder::GetSingleton()),
       mClosed(false) {
   mSelfRef = this;
+  auto videoBridgeFromProcess = sVideoBridgeFromProcess.Lock();
   switch (aSource) {
+    case VideoBridgeSource::RddProcess:
+    case VideoBridgeSource::GpuProcess:
+    case VideoBridgeSource::MFMediaEngineCDMProcess:
+      (*videoBridgeFromProcess)[aSource] = this;
+      break;
     default:
       MOZ_CRASH("Unhandled case");
-    case VideoBridgeSource::RddProcess:
-      sVideoBridgeFromRddProcess = this;
-      break;
-    case VideoBridgeSource::GpuProcess:
-      sVideoBridgeFromGpuProcess = this;
-      break;
   }
 }
 
 VideoBridgeParent::~VideoBridgeParent() {
-  if (sVideoBridgeFromRddProcess == this) {
-    sVideoBridgeFromRddProcess = nullptr;
-  }
-  if (sVideoBridgeFromGpuProcess == this) {
-    sVideoBridgeFromGpuProcess = nullptr;
+  auto videoBridgeFromProcess = sVideoBridgeFromProcess.Lock();
+  for (auto& bridgeParent : *videoBridgeFromProcess) {
+    if (bridgeParent == this) {
+      bridgeParent = nullptr;
+    }
   }
 }
 
@@ -66,15 +71,15 @@ void VideoBridgeParent::Bind(Endpoint<PVideoBridgeParent>&& aEndpoint) {
 VideoBridgeParent* VideoBridgeParent::GetSingleton(
     const Maybe<VideoBridgeSource>& aSource) {
   MOZ_ASSERT(aSource.isSome());
+  auto videoBridgeFromProcess = sVideoBridgeFromProcess.Lock();
   switch (aSource.value()) {
+    case VideoBridgeSource::RddProcess:
+    case VideoBridgeSource::GpuProcess:
+    case VideoBridgeSource::MFMediaEngineCDMProcess:
+      MOZ_ASSERT((*videoBridgeFromProcess)[aSource.value()]);
+      return (*videoBridgeFromProcess)[aSource.value()];
     default:
       MOZ_CRASH("Unhandled case");
-    case VideoBridgeSource::RddProcess:
-      MOZ_ASSERT(sVideoBridgeFromRddProcess);
-      return sVideoBridgeFromRddProcess;
-    case VideoBridgeSource::GpuProcess:
-      MOZ_ASSERT(sVideoBridgeFromGpuProcess);
-      return sVideoBridgeFromGpuProcess;
   }
 }
 
@@ -91,10 +96,11 @@ void VideoBridgeParent::ActorDestroy(ActorDestroyReason aWhy) {
 
 /* static */
 void VideoBridgeParent::Shutdown() {
-  if (sVideoBridgeFromRddProcess) {
-    sVideoBridgeFromRddProcess->ReleaseCompositorThread();
-  } else if (sVideoBridgeFromGpuProcess) {
-    sVideoBridgeFromGpuProcess->ReleaseCompositorThread();
+  auto videoBridgeFromProcess = sVideoBridgeFromProcess.Lock();
+  for (auto& bridgeParent : *videoBridgeFromProcess) {
+    if (bridgeParent) {
+      bridgeParent->ReleaseCompositorThread();
+    }
   }
 }
 
@@ -134,22 +140,18 @@ void VideoBridgeParent::SendAsyncMessage(
   MOZ_ASSERT(false, "AsyncMessages not supported");
 }
 
-bool VideoBridgeParent::AllocShmem(size_t aSize,
-                                   ipc::SharedMemory::SharedMemoryType aType,
-                                   ipc::Shmem* aShmem) {
+bool VideoBridgeParent::AllocShmem(size_t aSize, ipc::Shmem* aShmem) {
   if (mClosed) {
     return false;
   }
-  return PVideoBridgeParent::AllocShmem(aSize, aType, aShmem);
+  return PVideoBridgeParent::AllocShmem(aSize, aShmem);
 }
 
-bool VideoBridgeParent::AllocUnsafeShmem(
-    size_t aSize, ipc::SharedMemory::SharedMemoryType aType,
-    ipc::Shmem* aShmem) {
+bool VideoBridgeParent::AllocUnsafeShmem(size_t aSize, ipc::Shmem* aShmem) {
   if (mClosed) {
     return false;
   }
-  return PVideoBridgeParent::AllocUnsafeShmem(aSize, aType, aShmem);
+  return PVideoBridgeParent::AllocUnsafeShmem(aSize, aShmem);
 }
 
 bool VideoBridgeParent::DeallocShmem(ipc::Shmem& aShmem) {

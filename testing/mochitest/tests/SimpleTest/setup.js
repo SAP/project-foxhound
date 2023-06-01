@@ -31,7 +31,7 @@ if (!("SpecialPowers" in window)) {
 function parseQueryString(encodedString, useArrays) {
   // strip a leading '?' from the encoded string
   var qstr =
-    encodedString.length > 0 && encodedString[0] == "?"
+    encodedString.length && encodedString[0] == "?"
       ? encodedString.substring(1)
       : encodedString;
   var pairs = qstr.replace(/\+/g, "%20").split(/(\&amp\;|\&\#38\;|\&#x26;|\&)/);
@@ -189,6 +189,10 @@ if (params.timeoutAsPass) {
   TestRunner.timeoutAsPass = true;
 }
 
+if (params.conditionedProfile) {
+  TestRunner.conditionedProfile = true;
+}
+
 // Log things to the console if appropriate.
 TestRunner.logger.addListener("dumpListener", consoleLevel + "", function(msg) {
   dump(msg.info.join(" ") + "\n");
@@ -292,7 +296,7 @@ function hookup() {
 }
 
 function hookupTests(testList) {
-  if (testList.length > 0) {
+  if (testList.length) {
     gTestList = testList;
   } else {
     gTestList = [];

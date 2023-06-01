@@ -3,18 +3,20 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Preferences } = require("resource://gre/modules/Preferences.jsm");
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
+);
 const {
   assert,
   reportException,
   isSet,
-} = require("devtools/shared/DevToolsUtils");
+} = require("resource://devtools/shared/DevToolsUtils.js");
 const {
   censusIsUpToDate,
   getSnapshot,
   createSnapshot,
   dominatorTreeIsComputed,
-} = require("devtools/client/memory/utils");
+} = require("resource://devtools/client/memory/utils.js");
 const {
   actions,
   snapshotState: states,
@@ -23,11 +25,11 @@ const {
   treeMapState,
   dominatorTreeState,
   individualsState,
-} = require("devtools/client/memory/constants");
-const view = require("devtools/client/memory/actions/view");
-const refresh = require("devtools/client/memory/actions/refresh");
-const diffing = require("devtools/client/memory/actions/diffing");
-const TaskCache = require("devtools/client/memory/actions/task-cache");
+} = require("resource://devtools/client/memory/constants.js");
+const view = require("resource://devtools/client/memory/actions/view.js");
+const refresh = require("resource://devtools/client/memory/actions/refresh.js");
+const diffing = require("resource://devtools/client/memory/actions/diffing.js");
+const TaskCache = require("resource://devtools/client/memory/actions/task-cache.js");
 
 /**
  * A series of actions are fired from this task to save, read and generate the
@@ -144,7 +146,7 @@ const readSnapshot = (exports.readSnapshot = TaskCache.declareCacheableTask({
     return id;
   },
 
-  task: async function(heapWorker, id, removeFromCache, dispatch, getState) {
+  async task(heapWorker, id, removeFromCache, dispatch, getState) {
     const snapshot = getSnapshot(getState(), id);
     assert(
       [states.SAVED, states.IMPORTING].includes(snapshot.state),
@@ -205,7 +207,7 @@ function makeTakeCensusTask({
       return `take-census-task-${thisTakeCensusTaskId}-${id}`;
     },
 
-    task: async function(heapWorker, id, removeFromCache, dispatch, getState) {
+    async task(heapWorker, id, removeFromCache, dispatch, getState) {
       const snapshot = getSnapshot(getState(), id);
       if (!snapshot) {
         removeFromCache();
@@ -557,7 +559,7 @@ const computeDominatorTree = (exports.computeDominatorTree = TaskCache.declareCa
       return id;
     },
 
-    task: async function(heapWorker, id, removeFromCache, dispatch, getState) {
+    async task(heapWorker, id, removeFromCache, dispatch, getState) {
       const snapshot = getSnapshot(getState(), id);
       assert(
         !snapshot.dominatorTree?.dominatorTreeId,
@@ -602,7 +604,7 @@ const fetchDominatorTree = (exports.fetchDominatorTree = TaskCache.declareCachea
       return id;
     },
 
-    task: async function(heapWorker, id, removeFromCache, dispatch, getState) {
+    async task(heapWorker, id, removeFromCache, dispatch, getState) {
       const snapshot = getSnapshot(getState(), id);
       assert(
         dominatorTreeIsComputed(snapshot),
@@ -658,7 +660,7 @@ exports.fetchImmediatelyDominated = TaskCache.declareCacheableTask({
     return `${id}-${lazyChildren.key()}`;
   },
 
-  task: async function(
+  async task(
     heapWorker,
     id,
     lazyChildren,
@@ -728,7 +730,7 @@ const computeAndFetchDominatorTree = (exports.computeAndFetchDominatorTree = Tas
       return id;
     },
 
-    task: async function(heapWorker, id, removeFromCache, dispatch, getState) {
+    async task(heapWorker, id, removeFromCache, dispatch, getState) {
       const dominatorTreeId = await dispatch(
         computeDominatorTree(heapWorker, id)
       );

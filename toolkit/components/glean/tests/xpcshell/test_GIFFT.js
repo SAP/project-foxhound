@@ -3,13 +3,14 @@
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 const Telemetry = Services.telemetry;
@@ -29,14 +30,9 @@ function keyedScalarValue(aScalarName) {
   return "parent" in snapshot ? snapshot.parent[aScalarName] : undefined;
 }
 
-add_task(function test_setup() {
+add_setup(function test_setup() {
   // FOG needs a profile directory to put its data in.
   do_get_profile();
-
-  Services.prefs.setBoolPref(
-    "toolkit.telemetry.testing.overrideProductsCheck",
-    true
-  );
 
   Services.prefs.setBoolPref(
     "toolkit.telemetry.testing.overrideProductsCheck",
@@ -53,7 +49,7 @@ add_task(function test_setup() {
 add_task(function test_gifft_counter() {
   Glean.testOnlyIpc.aCounter.add(20);
   Assert.equal(20, Glean.testOnlyIpc.aCounter.testGetValue());
-  Assert.equal(20, scalarValue("telemetry.test.unsigned_int_kind"));
+  Assert.equal(20, scalarValue("telemetry.test.mirror_for_counter"));
 });
 
 add_task(function test_gifft_boolean() {
@@ -98,6 +94,32 @@ add_task(function test_gifft_memory_dist() {
   Telemetry.getHistogramById("TELEMETRY_TEST_LINEAR").clear();
   Assert.equal(24, data.sum, "Histogram's in `memory_unit` units");
   Assert.equal(2, data.values["1"], "Both samples in a low bucket");
+
+  // MemoryDistribution's Accumulate method to takes
+  // a platform specific type (size_t).
+  // Glean's, however, is i64, and, glean_memory_dist is uint64_t
+  // What happens when we give accumulate dubious values?
+  // This may occur on some uncommon platforms.
+  // Note: there are issues in JS with numbers above 2**53
+  Glean.testOnlyIpc.aMemoryDist.accumulate(36893488147419103232);
+  let dubiousValue = Object.entries(
+    Glean.testOnlyIpc.aMemoryDist.testGetValue().values
+  )[0][1];
+  Assert.equal(
+    dubiousValue,
+    1,
+    "Greater than 64-Byte number did not accumulate correctly"
+  );
+
+  // Values lower than the out-of-range value are not clamped
+  // resulting in an exception being thrown from the glean side
+  // when the value exceeds the glean maximum allowed value
+  Glean.testOnlyIpc.aMemoryDist.accumulate(Math.pow(2, 31));
+  Assert.throws(
+    () => Glean.testOnlyIpc.aMemoryDist.testGetValue(),
+    /NS_ERROR_LOSS_OF_SIGNIFICANT_DATA/,
+    "Did not accumulate correctly"
+  );
 });
 
 add_task(function test_gifft_custom_dist() {
@@ -124,7 +146,12 @@ add_task(function test_gifft_custom_dist() {
 
 add_task(async function test_gifft_timing_dist() {
   let t1 = Glean.testOnlyIpc.aTimingDist.start();
+  // Interleave some other metric's samples. bug 1768636.
+  let ot1 = Glean.testOnly.whatTimeIsIt.start();
   let t2 = Glean.testOnlyIpc.aTimingDist.start();
+  let ot2 = Glean.testOnly.whatTimeIsIt.start();
+  Glean.testOnly.whatTimeIsIt.cancel(ot1);
+  Glean.testOnly.whatTimeIsIt.cancel(ot2);
 
   await sleep(5);
 
@@ -142,7 +169,8 @@ add_task(async function test_gifft_timing_dist() {
   const EPSILON = 40000;
 
   // Variance in timing makes getting the sum impossible to know.
-  Assert.greater(data.sum, 15 * NANOS_IN_MILLIS - EPSILON);
+  // 10 and 5 input value can be trunacted to 4. + 9. >= 13. from cast
+  Assert.greater(data.sum, 13 * NANOS_IN_MILLIS - EPSILON);
 
   // No guarantees from timers means no guarantees on buckets.
   // But we can guarantee it's only two samples.
@@ -156,7 +184,8 @@ add_task(async function test_gifft_timing_dist() {
   );
 
   data = Telemetry.getHistogramById("TELEMETRY_TEST_EXPONENTIAL").snapshot();
-  Assert.greaterOrEqual(data.sum, 15, "Histogram's in milliseconds");
+  // Suffers from same cast truncation issue of 9.... and 4.... values
+  Assert.greaterOrEqual(data.sum, 13, "Histogram's in milliseconds");
   Assert.equal(
     2,
     Object.entries(data.values).reduce(
@@ -253,7 +282,9 @@ add_task(function test_gifft_labeled_counter() {
     "Can't get the value when you're error'd"
   );
 
-  let value = keyedScalarValue("telemetry.test.keyed_unsigned_int");
+  let value = keyedScalarValue(
+    "telemetry.test.another_mirror_for_labeled_counter"
+  );
   Assert.deepEqual(
     {
       a_label: 4,
@@ -279,7 +310,7 @@ add_task(async function test_gifft_timespan() {
     10 * NANOS_IN_MILLIS - EPSILON
   );
   // Mirrored to milliseconds.
-  Assert.greaterOrEqual(scalarValue("telemetry.test.mirror_for_timespan"), 10);
+  Assert.greaterOrEqual(scalarValue("telemetry.test.mirror_for_timespan"), 9);
 });
 
 add_task(async function test_gifft_timespan_raw() {
@@ -312,9 +343,10 @@ add_task(async function test_gifft_labeled_boolean() {
     Glean.testOnly.mirrorsForLabeledBools.__other__.testGetValue()
   );
   Glean.testOnly.mirrorsForLabeledBools.InvalidLabel.set(true);
-  Assert.equal(
-    true,
-    Glean.testOnly.mirrorsForLabeledBools.__other__.testGetValue()
+  Assert.throws(
+    () => Glean.testOnly.mirrorsForLabeledBools.__other__.testGetValue(),
+    /NS_ERROR_LOSS_OF_SIGNIFICANT_DATA/,
+    "Should throw because of a recording error."
   );
 
   // In Telemetry there is no invalid label
@@ -376,7 +408,7 @@ add_task(
       /NS_ERROR_LOSS_OF_SIGNIFICANT_DATA/,
       "Can't get the value when you're error'd"
     );
-    Assert.equal(undefined, scalarValue("telemetry.test.unsigned_int_kind"));
+    Assert.equal(undefined, scalarValue("telemetry.test.mirror_for_counter"));
     // Clear the error state
     Services.fog.testResetFOG();
 
@@ -393,7 +425,7 @@ add_task(
       Glean.testOnlyIpc.aCounter.testGetValue()
     );
     // Telemetry will have wrapped around to 1
-    Assert.equal(1, scalarValue("telemetry.test.unsigned_int_kind"));
+    Assert.equal(1, scalarValue("telemetry.test.mirror_for_counter"));
 
     // 2) Quantity: i64 (saturates), mirrored to uint Scalar: u32 (overflows)
     // 2.1) Negative parameters refused.
@@ -455,5 +487,52 @@ add_task(
     // 4) Timespan
     // ( Can't overflow time without finding a way to get TimeStamp to think
     // we're 2^32 milliseconds later without waiting a month )
+
+    // 5) TimingDistribution
+    // ( Can't overflow time with start() and stopAndAccumulate() without
+    // waiting for ages. But we _do_ have a test-only raw API...)
+    // The max sample for timing_distribution is 600000000000.
+    // The type for timing_distribution samples is i64.
+    // This means when we explore the edges of GIFFT's limits, we're well past
+    // Glean's limits. All we can get out of Glean is errors.
+    // (Which is good for data, difficult for tests.)
+    // But GIFFT should properly saturate in Telemetry at i32::max,
+    // so we shall test that.
+    Glean.testOnlyIpc.aTimingDist.testAccumulateRawMillis(Math.pow(2, 31) + 1);
+    Glean.testOnlyIpc.aTimingDist.testAccumulateRawMillis(Math.pow(2, 32) + 1);
+    Assert.throws(
+      () => Glean.testOnlyIpc.aTimingDist.testGetValue(),
+      /NS_ERROR_LOSS_OF_SIGNIFICANT_DATA/,
+      "Can't get the value when you're error'd"
+    );
+    let snapshot = Telemetry.getHistogramById(
+      "TELEMETRY_TEST_EXPONENTIAL"
+    ).snapshot();
+    Assert.equal(
+      snapshot.values["2147483646"],
+      2,
+      "samples > i32::max should end up in the top bucket"
+    );
   }
 );
+
+add_task(function test_gifft_url() {
+  const value = "https://www.example.com";
+  Glean.testOnlyIpc.aUrl.set(value);
+
+  Assert.equal(value, Glean.testOnlyIpc.aUrl.testGetValue());
+  Assert.equal(value, scalarValue("telemetry.test.mirror_for_url"));
+});
+
+add_task(function test_gifft_url_cropped() {
+  const value = `https://example.com${"/test".repeat(47)}`;
+  Glean.testOnlyIpc.aUrl.set(value);
+
+  Assert.equal(value, Glean.testOnlyIpc.aUrl.testGetValue());
+  // We expect the mirrored URL to be truncated at the maximum
+  // length supported by string scalars.
+  Assert.equal(
+    value.substring(0, 50),
+    scalarValue("telemetry.test.mirror_for_url")
+  );
+});

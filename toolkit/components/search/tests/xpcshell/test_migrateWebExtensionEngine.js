@@ -20,7 +20,10 @@ add_task(async function test_migrateLegacyEngine() {
   engine.wrappedJSObject._loadPath = `jar:[profile]/extensions/${kExtensionID}.xpi!/simple.xml`;
   engine.wrappedJSObject._extensionID = null;
 
-  await Services.search.setDefault(engine);
+  await Services.search.setDefault(
+    engine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 
   // This should replace the existing engine
   let extension = await SearchTestUtils.installSearchExtension(
@@ -29,14 +32,11 @@ add_task(async function test_migrateLegacyEngine() {
       name: "simple",
       search_url: "https://example.com/",
     },
-    true
+    { skipUnload: true }
   );
 
   engine = Services.search.getEngineByName("simple");
-  Assert.equal(
-    engine.wrappedJSObject._loadPath,
-    "[other]addEngineWithDetails:" + kExtensionID
-  );
+  Assert.equal(engine.wrappedJSObject._loadPath, "[addon]" + kExtensionID);
   Assert.equal(engine.wrappedJSObject._extensionID, kExtensionID);
 
   Assert.equal(
@@ -56,7 +56,10 @@ add_task(async function test_migrateLegacyEngineDifferentName() {
   engine.wrappedJSObject._loadPath = `jar:[profile]/extensions/${kExtensionID}.xpi!/simple.xml`;
   engine.wrappedJSObject._extensionID = null;
 
-  await Services.search.setDefault(engine);
+  await Services.search.setDefault(
+    engine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 
   // This should replace the existing engine - it has the same id, but a different name.
   let extension = await SearchTestUtils.installSearchExtension(
@@ -65,7 +68,7 @@ add_task(async function test_migrateLegacyEngineDifferentName() {
       name: "simple search",
       search_url: "https://example.com/",
     },
-    true
+    { skipUnload: true }
   );
 
   engine = Services.search.getEngineByName("simple");
@@ -73,10 +76,7 @@ add_task(async function test_migrateLegacyEngineDifferentName() {
 
   // The engine should have changed its name.
   engine = Services.search.getEngineByName("simple search");
-  Assert.equal(
-    engine.wrappedJSObject._loadPath,
-    "[other]addEngineWithDetails:" + kExtensionID
-  );
+  Assert.equal(engine.wrappedJSObject._loadPath, "[addon]" + kExtensionID);
   Assert.equal(engine.wrappedJSObject._extensionID, kExtensionID);
 
   Assert.equal(
@@ -86,66 +86,4 @@ add_task(async function test_migrateLegacyEngineDifferentName() {
   );
 
   await extension.unload();
-});
-
-add_task(async function test_migrateLegacySkipsPolicyAndUser() {
-  const loadPath = "jar:[profile]/extensions/set-via-policy/simple.xml";
-  await Services.search.addOpenSearchEngine(gDataUrl + "simple.xml", null);
-
-  // Modify the loadpath so it looks like an legacy plugin loadpath
-  let engine = Services.search.getEngineByName("simple");
-  // Although this load path should never have existed, we ensure that policy/user
-  // engines don't upgrade existing OpenSearch engines.
-  engine.wrappedJSObject._loadPath = loadPath;
-  engine.wrappedJSObject._extensionID = null;
-
-  await Services.search.setDefault(engine);
-
-  // This should not replace the existing engine, but be rejected with a
-  // duplicate engine warning.
-  await Assert.rejects(
-    Services.search.addPolicyEngine({
-      chrome_settings_overrides: {
-        search_provider: {
-          name: "simple",
-          search_url: "https://example.com",
-        },
-      },
-    }),
-    /NS_ERROR_FILE_ALREADY_EXISTS/,
-    "Should have rejected adding the engine"
-  );
-
-  // This will be added is the name is different, but will also not replace
-  // the existing engine.
-  await Services.search.addPolicyEngine({
-    chrome_settings_overrides: {
-      search_provider: {
-        name: "simple search",
-        search_url: "https://example.com",
-      },
-    },
-  });
-
-  engine = Services.search.getEngineByName("simple");
-  Assert.ok(engine, "Should have kept the old engine");
-  Assert.equal(
-    engine.wrappedJSObject._loadPath,
-    loadPath,
-    "Should have kept the load path"
-  );
-
-  engine = Services.search.getEngineByName("simple search");
-  Assert.ok(engine, "Should have added the new engine");
-  Assert.equal(
-    engine.wrappedJSObject._loadPath,
-    "[other]addEngineWithDetails:set-via-policy",
-    "Should have the correct load path"
-  );
-
-  Assert.equal(
-    (await Services.search.getDefault()).name,
-    "simple",
-    "Should have kept the original engine as default"
-  );
 });

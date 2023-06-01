@@ -11,7 +11,6 @@
 #include "mozilla/ipc/PTestShellParent.h"
 #include "mozilla/ipc/PTestShellCommandParent.h"
 
-#include "js/TypeDecls.h"
 #include "js/RootingAPI.h"
 #include "js/Value.h"
 #include "nsString.h"
@@ -29,11 +28,11 @@ class TestShellParent : public PTestShellParent {
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 
   PTestShellCommandParent* AllocPTestShellCommandParent(
-      const nsString& aCommand);
+      const nsAString& aCommand);
 
   bool DeallocPTestShellCommandParent(PTestShellCommandParent* aActor);
 
-  bool CommandDone(TestShellCommandParent* aActor, const nsString& aResponse);
+  bool CommandDone(TestShellCommandParent* aActor, const nsAString& aResponse);
 };
 
 class TestShellCommandParent : public PTestShellCommandParent {
@@ -44,16 +43,16 @@ class TestShellCommandParent : public PTestShellCommandParent {
 
   bool SetCallback(JSContext* aCx, const JS::Value& aCallback);
 
-  bool RunCallback(const nsString& aResponse);
+  bool RunCallback(const nsAString& aResponse);
 
   void ReleaseCallback();
 
  protected:
-  bool ExecuteCallback(const nsString& aResponse);
+  bool ExecuteCallback(const nsAString& aResponse);
 
   void ActorDestroy(ActorDestroyReason why) override;
 
-  mozilla::ipc::IPCResult Recv__delete__(const nsString& aResponse) {
+  mozilla::ipc::IPCResult Recv__delete__(const nsAString& aResponse) {
     if (!ExecuteCallback(aResponse)) {
       return IPC_FAIL_NO_REASON(this);
     }

@@ -3,25 +3,29 @@
 
 "use strict";
 
-const reduxActions = require("devtools/client/webconsole/actions/index");
-const { configureStore } = require("devtools/client/webconsole/store");
+const reduxActions = require("resource://devtools/client/webconsole/actions/index.js");
+const {
+  configureStore,
+} = require("resource://devtools/client/webconsole/store.js");
 const {
   IdGenerator,
-} = require("devtools/client/webconsole/utils/id-generator");
+} = require("resource://devtools/client/webconsole/utils/id-generator.js");
 const {
   stubPackets,
-} = require("devtools/client/webconsole/test/node/fixtures/stubs/index");
+} = require("resource://devtools/client/webconsole/test/node/fixtures/stubs/index.js");
 const {
-  getAllMessagesById,
-} = require("devtools/client/webconsole/selectors/messages");
-const { getPrefsService } = require("devtools/client/webconsole/utils/prefs");
+  getMutableMessagesById,
+} = require("resource://devtools/client/webconsole/selectors/messages.js");
+const {
+  getPrefsService,
+} = require("resource://devtools/client/webconsole/utils/prefs.js");
 const prefsService = getPrefsService({});
-const { PREFS } = require("devtools/client/webconsole/constants");
-const Telemetry = require("devtools/client/shared/telemetry");
+const { PREFS } = require("resource://devtools/client/webconsole/constants.js");
+const Telemetry = require("resource://devtools/client/shared/test-helpers/jest-fixtures/telemetry.js");
 const {
   getSerializedPacket,
   parsePacketAndCreateFronts,
-} = require("devtools/client/webconsole/test/browser/stub-generator-helpers");
+} = require("resource://devtools/client/webconsole/test/browser/stub-generator-helpers.js");
 
 /**
  * Prepare actions for use in testing.
@@ -54,7 +58,7 @@ function setupStore(
   }
   const store = configureStore(webConsoleUI, {
     ...storeOptions,
-    thunkArgs: { toolbox: { sessionId: -1 } },
+    thunkArgs: { toolbox: {} },
     telemetry: new Telemetry(),
   });
 
@@ -81,8 +85,8 @@ function clonePacket(packet) {
  * @return {Message} - The message, or undefined if the index does not exists in the map.
  */
 function getMessageAt(state, index) {
-  const messages = getAllMessagesById(state);
-  return messages.get([...messages.keys()][index]);
+  const messageMap = getMutableMessagesById(state);
+  return messageMap.get(state.messages.mutableMessagesOrder[index]);
 }
 
 /**
@@ -102,7 +106,7 @@ function getFirstMessage(state) {
  * @return {Message} - The last message, or undefined if there are no message in store.
  */
 function getLastMessage(state) {
-  const lastIndex = getAllMessagesById(state).size - 1;
+  const lastIndex = state.messages.mutableMessagesOrder.length - 1;
   return getMessageAt(state, lastIndex);
 }
 
@@ -125,6 +129,8 @@ function getPrivatePacket(key) {
   const packet = clonePacket(stubPackets.get(key));
   if (packet.message) {
     packet.message.private = true;
+  } else if (packet.pageError) {
+    packet.pageError.private = true;
   }
   if (Object.getOwnPropertyNames(packet).includes("private")) {
     packet.private = true;
@@ -132,33 +138,16 @@ function getPrivatePacket(key) {
   return packet;
 }
 
-function getWebConsoleUiMock(hud, proxyOverrides) {
-  const proxy = getProxyMock(proxyOverrides);
+function getWebConsoleUiMock(hud) {
   return {
     emit: () => {},
     emitForTests: () => {},
     hud,
-    getAllProxies: () => [proxy],
-    proxy,
     clearNetworkRequests: () => {},
     clearMessagesCache: () => {},
-    releaseActor: proxy.releaseActor,
-    getProxy: () => proxy,
     inspectObjectActor: () => {},
-    toolbox: {
-      sessionId: 1,
-    },
+    toolbox: {},
     watchCssMessages: () => {},
-  };
-}
-
-function getProxyMock(overrides = {}) {
-  return {
-    releaseActor: actor => {},
-    target: {
-      ensureCSSErrorReportingEnabled: () => {},
-    },
-    ...overrides,
   };
 }
 

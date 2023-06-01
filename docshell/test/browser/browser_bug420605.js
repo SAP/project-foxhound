@@ -2,8 +2,8 @@
  * https://bugzilla.mozilla.org/show_bug.cgi?id=420605
  */
 
-const { PlacesTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PlacesTestUtils.jsm"
+const { PlacesTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PlacesTestUtils.sys.mjs"
 );
 
 add_task(async function test() {
@@ -119,7 +119,7 @@ add_task(async function test() {
     "DOMContentLoaded",
     true
   ).then(onPageLoad);
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, pageurl);
+  BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, pageurl);
 
   await promiseIcon1;
   await promiseIcon2;

@@ -2,11 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
-from mozbuild.util import EnumString
 from collections import OrderedDict
 
+from mozbuild.util import EnumString
 
 CompilerType = EnumString.subclass(
     "clang",
@@ -47,6 +45,7 @@ CPU_bitness = {
     "arm": 32,
     "hppa": 32,
     "ia64": 64,
+    "loongarch64": 64,
     "m68k": 32,
     "mips32": 32,
     "mips64": 64,
@@ -95,6 +94,7 @@ CPU_preprocessor_checks = OrderedDict(
         ("mips64", "__mips64"),
         ("mips32", "__mips__"),
         ("riscv64", "__riscv && __riscv_xlen == 64"),
+        ("loongarch64", "__loongarch64"),
         ("sh4", "__sh__"),
         ("wasm32", "__wasm32__"),
     )

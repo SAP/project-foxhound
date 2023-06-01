@@ -59,8 +59,12 @@ elif not CONFIG["MOZ_SYSTEM_NSS"]:
     ]
     gyp_vars["nspr_libs"] = "nspr"
 else:
-    # Build mozpkix and mozpkix-test only
     gyp_vars["nspr_libs"] = "nspr"
+    # Bug 1805371: We need a static copy of NSS for the tlsserver test
+    # binaries even when building with system NSS. But there's no good
+    # way to build NSS that does not pollute dist/bin with shared
+    # object files. For now, we have to build mozpkix only and disable
+    # the affected tests.
     gyp_vars["mozpkix_only"] = 1
 
 # This disables building some NSS tools.
@@ -86,6 +90,9 @@ gyp_vars["disable_tests"] = 1
 gyp_vars["disable_dbm"] = 1
 gyp_vars["disable_libpkix"] = 1
 gyp_vars["enable_sslkeylogfile"] = 1
+# Whether we're using system NSS or Rust nssckbi, we don't need
+# to build C nssckbi
+gyp_vars["disable_ckbi"] = 1
 # pkg-config won't reliably find zlib on our builders, so just force it.
 # System zlib is only used for modutil and signtool unless
 # SSL zlib is enabled, which we are disabling immediately below this.
@@ -131,8 +138,9 @@ sandbox_vars = {
     # with linker scripts.
     "COMPILE_FLAGS": {
         "VISIBILITY": [],
-        # XXX: We should fix these warnings.
-        "WARNINGS_AS_ERRORS": [],
+        "WARNINGS_CFLAGS": [
+            f for f in CONFIG["WARNINGS_CFLAGS"] if f != "-Wsign-compare"
+        ],
     },
     # NSS' build system doesn't currently build NSS with PGO.
     # We could probably do so, but not without a lot of

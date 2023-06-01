@@ -437,7 +437,6 @@ void nsPageSequenceFrame::Reflow(nsPresContext* aPresContext,
   CenterPages();
 
   NS_FRAME_TRACE_REFLOW_OUT("nsPageSequenceFrame::Reflow", aStatus);
-  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aReflowOutput);
 }
 
 //----------------------------------------------------------------------
@@ -731,7 +730,7 @@ void nsPageSequenceFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   aBuilder->SetDisablePartialUpdates(true);
   DisplayBorderBackgroundOutline(aBuilder, aLists);
 
-  nsDisplayList content;
+  nsDisplayList content(aBuilder);
 
   {
     // Clear clip state while we construct the children of the

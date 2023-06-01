@@ -14,7 +14,6 @@ import { prefs, features } from "../utils/prefs";
 export const initialUIState = () => ({
   selectedPrimaryPaneTab: "sources",
   activeSearch: null,
-  shownSource: null,
   startPanelCollapsed: prefs.startPanelCollapsed,
   endPanelCollapsed: prefs.endPanelCollapsed,
   frameworkGroupingOn: prefs.frameworkGroupingOn,
@@ -26,7 +25,6 @@ export const initialUIState = () => ({
   cursorPosition: null,
   inlinePreviewEnabled: features.inlinePreview,
   editorWrappingEnabled: prefs.editorWrapping,
-  sourceMapsEnabled: prefs.clientSourceMapsEnabled,
   javascriptEnabled: true,
 });
 
@@ -57,15 +55,11 @@ function update(state = initialUIState(), action) {
 
     case "TOGGLE_SOURCE_MAPS_ENABLED": {
       prefs.clientSourceMapsEnabled = action.value;
-      return { ...state, sourceMapsEnabled: action.value };
+      return { ...state };
     }
 
     case "SET_ORIENTATION": {
       return { ...state, orientation: action.orientation };
-    }
-
-    case "SHOW_SOURCE": {
-      return { ...state, shownSource: action.source };
     }
 
     case "TOGGLE_PANE": {

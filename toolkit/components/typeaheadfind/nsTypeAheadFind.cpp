@@ -5,12 +5,9 @@
 
 #include "nsCOMPtr.h"
 #include "nsDocShell.h"
-#include "nsMemory.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/ModuleUtils.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/Services.h"
-#include "nsCURILoader.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsNetUtil.h"
 #include "nsIURL.h"
@@ -24,21 +21,13 @@
 #include "nsGenericHTMLElement.h"
 
 #include "nsIFrame.h"
-#include "nsContainerFrame.h"
-#include "nsFrameTraversal.h"
 #include "mozilla/dom/Document.h"
 #include "nsIContent.h"
 #include "nsTextFragment.h"
 #include "nsIEditor.h"
 
 #include "nsIDocShellTreeItem.h"
-#include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsContentCID.h"
-#include "nsLayoutCID.h"
-#include "nsWidgetsCID.h"
-#include "nsIFormControl.h"
-#include "nsNameSpaceManager.h"
 #include "nsIObserverService.h"
 #include "nsISound.h"
 #include "nsFocusManager.h"
@@ -352,7 +341,7 @@ nsresult nsTypeAheadFind::FindItNow(uint32_t aMode, bool aIsLinksOnly,
   if (!aDontIterateFrames) {
     // The use of GetInProcessSameTypeRootTreeItem (and later in this method) is
     // OK here as out-of-process frames are handled externally by
-    // FinderParent.jsm, which will end up only calling this method with
+    // FinderParent.sys.mjs, which will end up only calling this method with
     // aDontIterateFrames set to true.
     startingDocShell->GetInProcessSameTypeRootTreeItem(
         getter_AddRefs(rootContentTreeItem));
@@ -983,9 +972,8 @@ nsresult nsTypeAheadFind::FindInternal(uint32_t aMode,
       nsCOMPtr<Document> document = presShell->GetDocument();
       if (!document) return NS_ERROR_UNEXPECTED;
 
-      nsFocusManager* fm = nsFocusManager::GetFocusManager();
-      if (fm) {
-        nsPIDOMWindowOuter* window = document->GetWindow();
+      if (RefPtr<nsFocusManager> fm = nsFocusManager::GetFocusManager()) {
+        nsCOMPtr<nsPIDOMWindowOuter> window = document->GetWindow();
         RefPtr<Element> focusedElement;
         nsCOMPtr<mozIDOMWindowProxy> focusedWindow;
         fm->GetFocusedElementForWindow(window, false,

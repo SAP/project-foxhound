@@ -4,9 +4,7 @@ const { ChromeMigrationUtils } = ChromeUtils.import(
 const { ExperimentAPI } = ChromeUtils.import(
   "resource://nimbus/ExperimentAPI.jsm"
 );
-const { MigrationUtils } = ChromeUtils.import(
-  "resource:///modules/MigrationUtils.jsm"
-);
+
 const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
 
 // Dummy migrator to change and detect importable behavior.
@@ -32,9 +30,15 @@ add_task(async function check_fluent_ids() {
   for (const browser of ChromeMigrationUtils.CONTEXTUAL_LOGIN_IMPORT_BROWSERS) {
     const id = `autocomplete-import-logins-${browser}`;
     const message = await document.l10n.formatValue(id, { host });
-    ok(message.includes(`data-l10n-name="line1"`), `${id} included line1`);
-    ok(message.includes(`data-l10n-name="line2"`), `${id} included line2`);
-    ok(message.includes(host), `${id} replaced host`);
+    Assert.ok(
+      message.includes(`data-l10n-name="line1"`),
+      `${id} included line1`
+    );
+    Assert.ok(
+      message.includes(`data-l10n-name="line2"`),
+      `${id} included line2`
+    );
+    Assert.ok(message.includes(host), `${id} replaced host`);
   }
 });
 
@@ -50,7 +54,7 @@ add_task(async function test_initialize() {
     .stub(MigrationUtils, "getMigrator")
     .resolves(gTestMigrator);
 
-  const experiment = sinon.stub(ExperimentAPI, "activateBranch").returns({
+  const experiment = sinon.stub(ExperimentAPI, "getActiveBranch").returns({
     slug: "foo",
     ratio: 1,
     features: [
@@ -82,13 +86,13 @@ add_task(async function import_suggestion_wizard() {
     },
     async function(browser) {
       const popup = document.getElementById("PopupAutoComplete");
-      ok(popup, "Got popup");
+      Assert.ok(popup, "Got popup");
       await openACPopup(popup, browser, "#form-basic-username");
 
       const importableItem = popup.querySelector(
         `[originaltype="importableLogins"]`
       );
-      ok(importableItem, "Got importable suggestion richlistitem");
+      Assert.ok(importableItem, "Got importable suggestion richlistitem");
 
       await BrowserTestUtils.waitForCondition(
         () => !importableItem.collapsed,
@@ -108,8 +112,12 @@ add_task(async function import_suggestion_wizard() {
       executeSoon(() => EventUtils.synthesizeMouseAtCenter(importableItem, {}));
 
       wizard = await wizardPromise;
-      ok(wizard, "Wizard opened");
-      is(gTestMigrator.migrate.callCount, 0, "Direct migrate not used");
+      Assert.ok(wizard, "Wizard opened");
+      Assert.equal(
+        gTestMigrator.migrate.callCount,
+        0,
+        "Direct migrate not used"
+      );
 
       await closePopup(popup);
     }
@@ -130,11 +138,11 @@ add_task(async function import_suggestion_learn_more() {
     },
     async function(browser) {
       const popup = document.getElementById("PopupAutoComplete");
-      ok(popup, "Got popup");
+      Assert.ok(popup, "Got popup");
       await openACPopup(popup, browser, "#form-basic-username");
 
       const learnMoreItem = popup.querySelector(`[type="importableLearnMore"]`);
-      ok(learnMoreItem, "Got importable learn more richlistitem");
+      Assert.ok(learnMoreItem, "Got importable learn more richlistitem");
 
       await BrowserTestUtils.waitForCondition(
         () => !learnMoreItem.collapsed,
@@ -149,7 +157,7 @@ add_task(async function import_suggestion_learn_more() {
       );
       EventUtils.synthesizeMouseAtCenter(learnMoreItem, {});
       supportTab = await supportTabPromise;
-      ok(supportTab, "Support tab opened");
+      Assert.ok(supportTab, "Support tab opened");
 
       await closePopup(popup);
     }
@@ -168,13 +176,13 @@ add_task(async function import_suggestion_migrate() {
     },
     async function(browser) {
       const popup = document.getElementById("PopupAutoComplete");
-      ok(popup, "Got popup");
+      Assert.ok(popup, "Got popup");
       await openACPopup(popup, browser, "#form-basic-username");
 
       const importableItem = popup.querySelector(
         `[originaltype="importableLogins"]`
       );
-      ok(importableItem, "Got importable suggestion richlistitem");
+      Assert.ok(importableItem, "Got importable suggestion richlistitem");
 
       await BrowserTestUtils.waitForCondition(
         () => !importableItem.collapsed,
@@ -192,7 +200,7 @@ add_task(async function import_suggestion_migrate() {
       EventUtils.synthesizeMouseAtCenter(importableItem, {});
 
       const callCount = await migratePromise;
-      is(callCount, 1, "Direct migrate used once");
+      Assert.equal(callCount, 1, "Direct migrate used once");
 
       const importedItem = await BrowserTestUtils.waitForCondition(
         () => popup.querySelector(`[originaltype="loginWithOrigin"]`),
@@ -205,7 +213,7 @@ add_task(async function import_suggestion_migrate() {
         [],
         () => content.document.getElementById("form-basic-username").value
       );
-      is(username, "import", "username from import filled in");
+      Assert.equal(username, "import", "username from import filled in");
 
       LoginTestUtils.clearData();
     }
@@ -220,7 +228,7 @@ add_task(async function import_suggestion_not_shown() {
     },
     async function(browser) {
       const popup = document.getElementById("PopupAutoComplete");
-      ok(popup, "Got popup");
+      Assert.ok(popup, "Got popup");
       let opened = false;
       openACPopup(popup, browser, "#form-basic-password").then(
         () => (opened = true)
@@ -232,13 +240,13 @@ add_task(async function import_suggestion_not_shown() {
       });
 
       const footer = popup.querySelector(`[originaltype="loginsFooter"]`);
-      ok(footer, "Got footer richlistitem");
+      Assert.ok(footer, "Got footer richlistitem");
 
       await TestUtils.waitForCondition(() => {
         return !EventUtils.isHidden(footer);
       }, "Waiting for footer to become visible");
 
-      ok(
+      Assert.ok(
         !popup.querySelector(`[originaltype="importableLogins"]`),
         "No importable suggestion shown"
       );

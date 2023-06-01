@@ -24,6 +24,8 @@ MARKUPMAP(abbr, New_HyperText, 0)
 
 MARKUPMAP(acronym, New_HyperText, 0)
 
+MARKUPMAP(address, New_HyperText, roles::GROUPING)
+
 MARKUPMAP(article, New_HyperText, roles::ARTICLE, Attr(xmlroles, article))
 
 MARKUPMAP(aside, New_HyperText, roles::LANDMARK)
@@ -230,7 +232,9 @@ MARKUPMAP(
             aElement, aContext->Document());
       }
       if (aElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
-                                nsGkAtoms::date, eIgnoreCase)) {
+                                nsGkAtoms::date, eIgnoreCase) ||
+          aElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
+                                nsGkAtoms::datetime_local, eIgnoreCase)) {
         return new HTMLDateTimeAccessible<roles::DATE_EDITOR>(
             aElement, aContext->Document());
       }
@@ -331,6 +335,8 @@ MARKUPMAP(
     },
     0)
 
+MARKUPMAP(sub, New_HyperText, roles::SUBSCRIPT)
+
 MARKUPMAP(
     summary,
     [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
@@ -338,12 +344,14 @@ MARKUPMAP(
     },
     roles::SUMMARY)
 
+MARKUPMAP(sup, New_HyperText, roles::SUPERSCRIPT)
+
 MARKUPMAP(
     table,
     [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
       if (!aElement->GetPrimaryFrame() ||
           aElement->GetPrimaryFrame()->AccessibleType() != eHTMLTableType) {
-        return new ARIAGridAccessibleWrap(aElement, aContext->Document());
+        return new ARIAGridAccessible(aElement, aContext->Document());
       }
 
       // Make sure that our children are proper layout table parts
@@ -356,7 +364,7 @@ MARKUPMAP(
           nsIFrame* childFrame = child->GetPrimaryFrame();
           if (childFrame && (!childFrame->IsTableRowGroupFrame() &&
                              !childFrame->IsTableRowFrame())) {
-            return new ARIAGridAccessibleWrap(aElement, aContext->Document());
+            return new ARIAGridAccessible(aElement, aContext->Document());
           }
         }
       }
@@ -382,11 +390,11 @@ MARKUPMAP(
         if (!aContext->IsHTMLTableRow() || !aElement->GetPrimaryFrame() ||
             aElement->GetPrimaryFrame()->AccessibleType() !=
                 eHTMLTableCellType) {
-          return new ARIAGridCellAccessibleWrap(aElement, aContext->Document());
+          return new ARIAGridCellAccessible(aElement, aContext->Document());
         }
         if (aElement->HasAttr(kNameSpaceID_None, nsGkAtoms::scope)) {
-          return new HTMLTableHeaderCellAccessibleWrap(aElement,
-                                                       aContext->Document());
+          return new HTMLTableHeaderCellAccessible(aElement,
+                                                   aContext->Document());
         }
       }
       return nullptr;
@@ -400,11 +408,18 @@ MARKUPMAP(
     [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
       if (aContext->IsTableRow() &&
           aContext->GetContent() == aElement->GetParent()) {
-        if (!aContext->IsHTMLTableRow()) {
-          return new ARIAGridCellAccessibleWrap(aElement, aContext->Document());
+        // If HTML:th element is part of its HTML:table, which has CSS
+        // display style other than 'table', then create a generic table
+        // cell accessible, because there's no underlying table layout and
+        // thus native HTML table cell class doesn't work. The same is
+        // true if the cell itself has CSS display:block;.
+        if (!aContext->IsHTMLTableRow() || !aElement->GetPrimaryFrame() ||
+            aElement->GetPrimaryFrame()->AccessibleType() !=
+                eHTMLTableCellType) {
+          return new ARIAGridCellAccessible(aElement, aContext->Document());
         }
-        return new HTMLTableHeaderCellAccessibleWrap(aElement,
-                                                     aContext->Document());
+        return new HTMLTableHeaderCellAccessible(aElement,
+                                                 aContext->Document());
       }
       return nullptr;
     },

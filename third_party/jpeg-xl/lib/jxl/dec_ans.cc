@@ -48,7 +48,7 @@ inline int DecodeVarLenUint16(BitReader* input) {
   return 0;
 }
 
-Status ReadHistogram(int precision_bits, std::vector<int>* counts,
+Status ReadHistogram(int precision_bits, std::vector<int32_t>* counts,
                      BitReader* input) {
   int simple_code = input->ReadBits(1);
   if (simple_code == 1) {
@@ -74,9 +74,6 @@ Status ReadHistogram(int precision_bits, std::vector<int>* counts,
     int is_flat = input->ReadBits(1);
     if (is_flat == 1) {
       int alphabet_size = DecodeVarLenUint8(input) + 1;
-      if (alphabet_size == 0) {
-        return JXL_FAILURE("Invalid alphabet size for flat histogram.");
-      }
       *counts = CreateFlatHistogram(alphabet_size, 1 << precision_bits);
       return true;
     }
@@ -231,7 +228,7 @@ Status DecodeANSCodes(const size_t num_histograms,
     AliasTable::Entry* alias_tables =
         reinterpret_cast<AliasTable::Entry*>(result->alias_tables.get());
     for (size_t c = 0; c < num_histograms; ++c) {
-      std::vector<int> counts;
+      std::vector<int32_t> counts;
       if (!ReadHistogram(ANS_LOG_TAB_SIZE, &counts, in)) {
         return JXL_FAILURE("Invalid histogram bitstream.");
       }

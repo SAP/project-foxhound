@@ -9,7 +9,7 @@
 import {
   Reducer as ReduxReducer,
   Store as ReduxStore,
-} from "devtools/client/shared/vendor/redux";
+} from "resource://devtools/client/shared/vendor/redux.js";
 
 export interface PanelWindow {
   gToolbox?: any;
@@ -47,8 +47,8 @@ export interface Commands {
   targetCommand: {
     targetFront: {
       getTrait: (
-        traitName: "noDisablingOnPrivateBrowsing"
-      ) => boolean | undefined;
+        traitName: string
+      ) => unknown;
     };
   };
 }
@@ -66,7 +66,6 @@ export interface PerfFront {
   ) => Promise<[number[], number[], number[]]>;
   isActive: () => Promise<boolean>;
   isSupportedPlatform: () => Promise<boolean>;
-  isLockedForPrivateBrowsing: () => Promise<boolean>;
   on: (type: string, listener: () => void) => void;
   off: (type: string, listener: () => void) => void;
   destroy: () => void;
@@ -87,13 +86,7 @@ export interface PreferenceFront {
 }
 
 export interface RootTraits {
-  // In Firefox >= 98, this will be true, and will be missing for older
-  // versions. The functionality controlled by this property can be removed once
-  // Firefox 98 hits release.
-  noDisablingOnPrivateBrowsing?: boolean;
-
-  // There are other properties too, but we don't use them here as they're not
-  // related to the performance panel.
+  // There are no traits used by the performance front end at the moment.
 }
 
 export type RecordingState =
@@ -109,9 +102,7 @@ export type RecordingState =
   | "request-to-stop-profiler"
   // The profiler notified us that our request to start it actually started
   // it, or it was already started.
-  | "recording"
-  // Profiling is not available when in private browsing mode.
-  | "locked-by-private-browsing";
+  | "recording";
 
 // We are currently migrating to a new UX workflow with about:profiling.
 // This type provides an easy way to change the implementation based
@@ -119,6 +110,7 @@ export type RecordingState =
 export type PageContext =
   | "devtools"
   | "devtools-remote"
+  | "aboutlogging"
   | "aboutprofiling"
   | "aboutprofiling-remote";
 
@@ -208,12 +200,6 @@ export type RestartBrowserWithEnvironmentVariable = (
 export type OnProfileReceived = (profile: MinimallyTypedGeckoProfile) => void;
 
 /**
- * This is the type signature for a function to query the browser for an
- * environment variable. Currently only implemented for the popup.
- */
-export type GetEnvironmentVariable = (envName: string) => string;
-
-/**
  * This is the type signature for a function to query the browser for the
  * ID of the active tab.
  */
@@ -264,19 +250,12 @@ export type Action =
   | {
       type: "REPORT_PROFILER_READY";
       isActive: boolean;
-      isLockedForPrivateBrowsing: boolean;
     }
   | {
       type: "REPORT_PROFILER_STARTED";
     }
   | {
       type: "REPORT_PROFILER_STOPPED";
-    }
-  | {
-      type: "REPORT_PRIVATE_BROWSING_STARTED";
-    }
-  | {
-      type: "REPORT_PRIVATE_BROWSING_STOPPED";
     }
   | {
       type: "REQUESTING_TO_START_RECORDING";
@@ -564,7 +543,7 @@ type QuerySymbolicationApiResponse = string;
 
 /**
  * This represents an event channel that can talk to a content page on the web.
- * This interface is a manually typed version of toolkit/modules/WebChannel.jsm
+ * This interface is a manually typed version of toolkit/modules/WebChannel.sys.mjs
  * and is opinionated about the types of messages we can send with it.
  *
  * The definition is here rather than gecko.d.ts because it was simpler than getting

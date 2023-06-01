@@ -9,26 +9,12 @@
 
 // Globals
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Downloads",
-  "resource://gre/modules/Downloads.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "DownloadsCommon",
-  "resource:///modules/DownloadsCommon.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesUtils",
-  "resource://gre/modules/PlacesUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  Downloads: "resource://gre/modules/Downloads.sys.mjs",
+  DownloadsCommon: "resource:///modules/DownloadsCommon.sys.mjs",
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
   this,
   "HttpServer",
@@ -111,8 +97,10 @@ function continueResponses() {
 /**
  * Creates a download, which could be interrupted in the middle of it's progress.
  */
-function promiseInterruptibleDownload() {
-  let interruptibleFile = FileUtils.getFile("TmpD", ["interruptible.txt"]);
+function promiseInterruptibleDownload(extension = ".txt") {
+  let interruptibleFile = FileUtils.getFile("TmpD", [
+    `interruptible${extension}`,
+  ]);
   interruptibleFile.createUnique(
     Ci.nsIFile.NORMAL_FILE_TYPE,
     FileUtils.PERMS_FILE
@@ -235,12 +223,14 @@ async function task_addDownloads(aItems) {
       canceled:
         item.state == DownloadsCommon.DOWNLOAD_CANCELED ||
         item.state == DownloadsCommon.DOWNLOAD_PAUSED,
+      deleted: item.deleted ?? false,
       error:
         item.state == DownloadsCommon.DOWNLOAD_FAILED
           ? new Error("Failed.")
           : null,
       hasPartialData: item.state == DownloadsCommon.DOWNLOAD_PAUSED,
       hasBlockedData: item.hasBlockedData || false,
+      openDownloadsListOnStart: item.openDownloadsListOnStart ?? true,
       contentType: item.contentType,
       startTime: new Date(startTimeMs++),
     };
@@ -263,9 +253,8 @@ async function task_openPanel() {
 }
 
 async function setDownloadDir() {
-  let tmpDir = await PathUtils.getTempDir();
-  tmpDir = PathUtils.join(
-    tmpDir,
+  let tmpDir = PathUtils.join(
+    PathUtils.tempDir,
     "testsavedir" + Math.floor(Math.random() * 2 ** 32)
   );
   // Create this dir if it doesn't exist (ignores existing dirs)
@@ -274,7 +263,7 @@ async function setDownloadDir() {
     try {
       await IOUtils.remove(tmpDir, { recursive: true });
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
     }
   });
   Services.prefs.setIntPref("browser.download.folderList", 2);
@@ -283,6 +272,7 @@ async function setDownloadDir() {
 }
 
 let gHttpServer = null;
+let gShouldServeInterruptibleFileAsDownload = false;
 function startServer() {
   gHttpServer = new HttpServer();
   gHttpServer.start(-1);
@@ -329,6 +319,9 @@ function startServer() {
     // Process the first part of the response.
     aResponse.processAsync();
     aResponse.setHeader("Content-Type", "text/plain", false);
+    if (gShouldServeInterruptibleFileAsDownload) {
+      aResponse.setHeader("Content-Disposition", "attachment");
+    }
     aResponse.setHeader(
       "Content-Length",
       "" + TEST_DATA_SHORT.length * 2,
@@ -343,8 +336,15 @@ function startServer() {
         aResponse.finish();
         info("Interruptible request finished.");
       })
-      .catch(Cu.reportError);
+      .catch(console.error);
   });
+}
+
+function serveInterruptibleAsDownload() {
+  gShouldServeInterruptibleFileAsDownload = true;
+  registerCleanupFunction(
+    () => (gShouldServeInterruptibleFileAsDownload = false)
+  );
 }
 
 function httpUrl(aFileName) {

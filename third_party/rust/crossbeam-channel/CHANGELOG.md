@@ -1,6 +1,26 @@
+# Version 0.5.6
+
+- Bump the minimum supported Rust version to 1.38. (#877)
+
+# Version 0.5.5
+
+- Replace Spinlock with Mutex. (#835)
+
+# Version 0.5.4
+
+- Workaround a bug in upstream related to TLS access on AArch64 Linux. (#802)
+
+# Version 0.5.3
+
+**Note:** This release has been yanked. See [#802](https://github.com/crossbeam-rs/crossbeam/issues/802) for details.
+
+- Fix panic on very large timeout. (#798)
+
 # Version 0.5.2
 
-- Fix stacked borrows violations. (#763, #764)
+**Note:** This release has been yanked. See [#802](https://github.com/crossbeam-rs/crossbeam/issues/802) for details.
+
+- Fix stacked borrows violations when `-Zmiri-tag-raw-pointers` is enabled. (#763, #764)
 
 # Version 0.5.1
 
@@ -21,6 +41,8 @@
 - Fix UB and breaking change introduced in 0.4.3
 
 # Version 0.4.3
+
+**Note:** This release has been yanked. See [GHSA-v5m7-53cv-f3hx](https://github.com/crossbeam-rs/crossbeam/security/advisories/GHSA-v5m7-53cv-f3hx) for details.
 
 - Change license to "MIT OR Apache-2.0".
 

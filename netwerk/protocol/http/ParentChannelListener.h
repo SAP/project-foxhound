@@ -26,10 +26,6 @@ namespace net {
     }                                                \
   }
 
-// Note: nsIInterfaceRequestor must be the first base so that do_QueryObject()
-// works correctly on this object, as it's needed to compute a void* pointing to
-// the beginning of this object.
-
 class ParentChannelListener final : public nsIInterfaceRequestor,
                                     public nsIStreamListener,
                                     public nsIMultiPartChannelListener,
@@ -50,8 +46,7 @@ class ParentChannelListener final : public nsIInterfaceRequestor,
 
   explicit ParentChannelListener(
       nsIStreamListener* aListener,
-      dom::CanonicalBrowsingContext* aBrowsingContext,
-      bool aUsePrivateBrowsing);
+      dom::CanonicalBrowsingContext* aBrowsingContext);
 
   // Called to set a new listener which replaces the old one after a redirect.
   void SetListenerAfterRedirect(nsIStreamListener* aListener);

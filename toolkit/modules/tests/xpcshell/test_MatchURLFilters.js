@@ -7,8 +7,8 @@ const { MatchURLFilters } = ChromeUtils.import(
   "resource://gre/modules/MatchURLFilters.jsm"
 );
 
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 
 function createTestFilter({ url, filters }) {
@@ -657,16 +657,16 @@ add_task(async function test_match_url_filters() {
           pathContains: "b/p",
           pathPrefix: "/sub",
           pathSuffix: "/path",
-          queryEquals: "p=v",
+          queryEquals: "p1=v",
           queryContains: "1=",
           queryPrefix: "p1",
           querySuffix: "=v",
           urlEquals: "https://www.mozilla.org/sub/path?p1=v#ref",
           urlContains: "org/sub",
-          urlPrefix: "https://moz",
+          urlPrefix: "https://www.moz",
           urlSuffix: "#ref",
-          urlMatches: "v#ref$",
-          originAndPathMatches: ".*://moz.*/",
+          urlMatches: "p1=v$",
+          originAndPathMatches: ".*://www.moz.*/",
         },
       ],
       url: "https://www.mozilla.org/sub/path?p1=v#ref",

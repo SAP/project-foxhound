@@ -149,9 +149,20 @@ void SVGImageFrame::DidSetComputedStyle(ComputedStyle* aOldStyle) {
     return;
   }
 
-  auto newOrientation = StyleVisibility()->mImageOrientation;
+  nsCOMPtr<imgIRequest> currentRequest;
+  nsCOMPtr<nsIImageLoadingContent> imageLoader =
+      do_QueryInterface(GetContent());
+  if (imageLoader) {
+    imageLoader->GetRequest(nsIImageLoadingContent::CURRENT_REQUEST,
+                            getter_AddRefs(currentRequest));
+  }
 
-  if (aOldStyle->StyleVisibility()->mImageOrientation != newOrientation) {
+  StyleImageOrientation newOrientation =
+      StyleVisibility()->UsedImageOrientation(currentRequest);
+  StyleImageOrientation oldOrientation =
+      aOldStyle->StyleVisibility()->UsedImageOrientation(currentRequest);
+
+  if (oldOrientation != newOrientation) {
     nsCOMPtr<imgIContainer> image(mImageContainer->Unwrap());
     mImageContainer = nsLayoutUtils::OrientImage(image, newOrientation);
   }
@@ -356,8 +367,7 @@ void SVGImageFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
     nscoord appUnitsPerDevPx = PresContext()->AppUnitsPerDevPixel();
     nsRect dirtyRect;  // only used if aDirtyRect is non-null
     if (aDirtyRect) {
-      NS_ASSERTION(!NS_SVGDisplayListPaintingEnabled() ||
-                       (mState & NS_FRAME_IS_NONDISPLAY),
+      NS_ASSERTION(HasAnyStateBits(NS_FRAME_IS_NONDISPLAY),
                    "Display lists handle dirty rect intersection test");
       dirtyRect = ToAppUnits(*aDirtyRect, appUnitsPerDevPx);
 
@@ -399,9 +409,9 @@ void SVGImageFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
       // come from width/height *attributes* in SVG). They influence the region
       // of the SVG image's internal document that is visible, in combination
       // with preserveAspectRatio and viewBox.
-      const Maybe<SVGImageContext> context(Some(
-          SVGImageContext(Some(CSSIntSize::Truncate(width, height)),
-                          Some(imgElem->mPreserveAspectRatio.GetAnimValue()))));
+      const SVGImageContext context(
+          Some(CSSIntSize::Truncate(width, height)),
+          Some(imgElem->mPreserveAspectRatio.GetAnimValue()));
 
       // For the actual draw operation to draw crisply (and at the right size),
       // our destination rect needs to be |width|x|height|, *in dev pixels*.
@@ -420,7 +430,7 @@ void SVGImageFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
       aImgParams.result &= nsLayoutUtils::DrawSingleUnscaledImage(
           aContext, PresContext(), mImageContainer,
           nsLayoutUtils::GetSamplingFilterForFrame(this), nsPoint(0, 0),
-          aDirtyRect ? &dirtyRect : nullptr, Nothing(), flags);
+          aDirtyRect ? &dirtyRect : nullptr, SVGImageContext(), flags);
     }
 
     if (opacity != 1.0f ||
@@ -517,6 +527,8 @@ bool SVGImageFrame::CreateWebRenderCommands(
         return true;
       }
 
+      mImageContainer->GetResolution().ApplyTo(nativeWidth, nativeHeight);
+
       auto preserveAspectRatio = imgElem->mPreserveAspectRatio.GetAnimValue();
       uint16_t align = preserveAspectRatio.GetAlign();
       uint16_t meetOrSlice = preserveAspectRatio.GetMeetOrSlice();
@@ -606,14 +618,15 @@ bool SVGImageFrame::CreateWebRenderCommands(
     }
   }
 
-  Maybe<SVGImageContext> svgContext;
+  SVGImageContext svgContext;
   if (mImageContainer->GetType() == imgIContainer::TYPE_VECTOR) {
     if (StaticPrefs::image_svg_blob_image()) {
       flags |= imgIContainer::FLAG_RECORD_BLOB;
     }
     // Forward preserveAspectRatio to inner SVGs
-    svgContext.emplace(Some(CSSIntSize::Truncate(width, height)),
-                       Some(imgElem->mPreserveAspectRatio.GetAnimValue()));
+    svgContext.SetViewportSize(Some(CSSIntSize::Truncate(width, height)));
+    svgContext.SetPreserveAspectRatio(
+        Some(imgElem->mPreserveAspectRatio.GetAnimValue()));
   }
 
   Maybe<ImageIntRegion> region;
@@ -653,8 +666,6 @@ bool SVGImageFrame::CreateWebRenderCommands(
                                                    aBuilder, aResources,
                                                    destRect, clipRect);
     }
-
-    nsDisplayItemGenericImageGeometry::UpdateDrawResult(aItem, drawResult);
   }
 
   return true;
@@ -851,8 +862,9 @@ void SVGImageListener::Notify(imgIRequest* aRequest, int32_t aType,
     nsCOMPtr<imgIContainer> image;
     aRequest->GetImage(getter_AddRefs(image));
     if (image) {
-      image = nsLayoutUtils::OrientImage(
-          image, mFrame->StyleVisibility()->mImageOrientation);
+      StyleImageOrientation orientation =
+          mFrame->StyleVisibility()->UsedImageOrientation(aRequest);
+      image = nsLayoutUtils::OrientImage(image, orientation);
       image->SetAnimationMode(mFrame->PresContext()->ImageAnimationMode());
       mFrame->mImageContainer = std::move(image);
     }

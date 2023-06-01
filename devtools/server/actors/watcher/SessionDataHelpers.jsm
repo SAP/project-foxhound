@@ -11,38 +11,45 @@
 
 var EXPORTED_SYMBOLS = ["SessionDataHelpers"];
 
+const lazy = {};
+
 if (typeof module == "object") {
   // Allow this JSM to also be loaded as a CommonJS module
   // Because this module is used from the worker thread,
   // (via target-actor-mixin), and workers can't load JSMs via ChromeUtils.import.
   loader.lazyRequireGetter(
-    this,
+    lazy,
     "validateBreakpointLocation",
-    "devtools/shared/validate-breakpoint.jsm",
+    "resource://devtools/shared/validate-breakpoint.jsm",
     true
   );
 
   loader.lazyRequireGetter(
-    this,
+    lazy,
     "validateEventBreakpoint",
-    "devtools/server/actors/utils/event-breakpoints",
+    "resource://devtools/server/actors/utils/event-breakpoints.js",
     true
   );
 } else {
-  const { XPCOMUtils } = ChromeUtils.import(
-    "resource://gre/modules/XPCOMUtils.jsm"
+  const { XPCOMUtils } = ChromeUtils.importESModule(
+    "resource://gre/modules/XPCOMUtils.sys.mjs"
   );
-  XPCOMUtils.defineLazyGetter(this, "validateBreakpointLocation", () => {
+  // Ignore the "duplicate" definitions here as this are also defined
+  // in the if block above.
+  // eslint-disable-next-line mozilla/valid-lazy
+  XPCOMUtils.defineLazyGetter(lazy, "validateBreakpointLocation", () => {
     return ChromeUtils.import(
       "resource://devtools/shared/validate-breakpoint.jsm"
     ).validateBreakpointLocation;
   });
-  XPCOMUtils.defineLazyGetter(this, "validateEventBreakpoint", () => {
-    const { loader } = ChromeUtils.import(
-      "resource://devtools/shared/loader/Loader.jsm"
+  // eslint-disable-next-line mozilla/valid-lazy
+  XPCOMUtils.defineLazyGetter(lazy, "validateEventBreakpoint", () => {
+    const { loader } = ChromeUtils.importESModule(
+      "resource://devtools/shared/loader/Loader.sys.mjs"
     );
-    return loader.require("devtools/server/actors/utils/event-breakpoints")
-      .validateEventBreakpoint;
+    return loader.require(
+      "resource://devtools/server/actors/utils/event-breakpoints.js"
+    ).validateEventBreakpoint;
   });
 }
 
@@ -61,7 +68,7 @@ const SUPPORTED_DATA = {
 // Optional function, if data isn't a primitive data type in order to produce a key
 // for the given data entry
 const DATA_KEY_FUNCTION = {
-  [SUPPORTED_DATA.BLACKBOXING]: function({ url, range }) {
+  [SUPPORTED_DATA.BLACKBOXING]({ url, range }) {
     return (
       url +
       (range
@@ -69,21 +76,21 @@ const DATA_KEY_FUNCTION = {
         : "")
     );
   },
-  [SUPPORTED_DATA.BREAKPOINTS]: function({ location }) {
-    validateBreakpointLocation(location);
+  [SUPPORTED_DATA.BREAKPOINTS]({ location }) {
+    lazy.validateBreakpointLocation(location);
     const { sourceUrl, sourceId, line, column } = location;
     return `${sourceUrl}:${sourceId}:${line}:${column}`;
   },
-  [SUPPORTED_DATA.TARGET_CONFIGURATION]: function({ key }) {
+  [SUPPORTED_DATA.TARGET_CONFIGURATION]({ key }) {
     // Configuration data entries are { key, value } objects, `key` can be used
     // as the unique identifier for the entry.
     return key;
   },
-  [SUPPORTED_DATA.THREAD_CONFIGURATION]: function({ key }) {
+  [SUPPORTED_DATA.THREAD_CONFIGURATION]({ key }) {
     // See target configuration comment
     return key;
   },
-  [SUPPORTED_DATA.XHR_BREAKPOINTS]: function({ path, method }) {
+  [SUPPORTED_DATA.XHR_BREAKPOINTS]({ path, method }) {
     if (typeof path != "string") {
       throw new Error(
         `XHR Breakpoints expect to have path string, got ${typeof path} instead.`
@@ -96,13 +103,13 @@ const DATA_KEY_FUNCTION = {
     }
     return `${path}:${method}`;
   },
-  [SUPPORTED_DATA.EVENT_BREAKPOINTS]: function(id) {
+  [SUPPORTED_DATA.EVENT_BREAKPOINTS](id) {
     if (typeof id != "string") {
       throw new Error(
         `Event Breakpoints expect the id to be a string , got ${typeof id} instead.`
       );
     }
-    if (!validateEventBreakpoint(id)) {
+    if (!lazy.validateEventBreakpoint(id)) {
       throw new Error(
         `The id string should be a valid event breakpoint id, ${id} is not.`
       );
@@ -137,6 +144,9 @@ const SessionDataHelpers = {
     const toBeAdded = [];
     const keyFunction = DATA_KEY_FUNCTION[type] || idFunction;
     for (const entry of entries) {
+      if (!sessionData[type]) {
+        sessionData[type] = [];
+      }
       const existingIndex = sessionData[type].findIndex(existingEntry => {
         return keyFunction(existingEntry) === keyFunction(entry);
       });
@@ -170,9 +180,11 @@ const SessionDataHelpers = {
     let includesAtLeastOne = false;
     const keyFunction = DATA_KEY_FUNCTION[type] || idFunction;
     for (const entry of entries) {
-      const idx = sessionData[type].findIndex(existingEntry => {
-        return keyFunction(existingEntry) === keyFunction(entry);
-      });
+      const idx = sessionData[type]
+        ? sessionData[type].findIndex(existingEntry => {
+            return keyFunction(existingEntry) === keyFunction(entry);
+          })
+        : -1;
       if (idx !== -1) {
         sessionData[type].splice(idx, 1);
         includesAtLeastOne = true;

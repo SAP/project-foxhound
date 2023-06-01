@@ -120,7 +120,7 @@ void ClonedErrorHolder::Init(JSContext* aCx, JS::Handle<JSObject*> aError,
   if (stack) {
     ar.emplace(aCx, stack);
   }
-  JS::RootedValue stackValue(aCx, JS::ObjectOrNullValue(stack));
+  JS::Rooted<JS::Value> stackValue(aCx, JS::ObjectOrNullValue(stack));
   mStack.Write(aCx, stackValue, aRv);
 }
 
@@ -256,7 +256,7 @@ static bool ToJSString(JSContext* aCx, const nsACString& aStr,
 }
 
 bool ClonedErrorHolder::ToErrorValue(JSContext* aCx,
-                                     JS::MutableHandleValue aResult) {
+                                     JS::MutableHandle<JS::Value> aResult) {
   JS::Rooted<JS::Value> stackVal(aCx);
   JS::Rooted<JSObject*> stack(aCx);
 
@@ -288,6 +288,12 @@ bool ClonedErrorHolder::ToErrorValue(JSContext* aCx,
     // strings as the empty string.
     if (mFilename.IsVoid()) {
       mFilename.Assign(""_ns);
+    }
+
+    // When fuzzing, we can also end up with the message to be null,
+    // so we should handle that case as well.
+    if (mMessage.IsVoid()) {
+      mMessage.Assign(""_ns);
     }
 
     if (!ToJSString(aCx, mFilename, &filename) ||

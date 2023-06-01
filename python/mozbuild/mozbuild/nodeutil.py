@@ -2,19 +2,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
 import os
-import subprocess
 import platform
+import subprocess
 from distutils.version import StrictVersion
 
 from mozboot.util import get_tools_dir
 from mozfile import which
 from six import PY3
 
-NODE_MIN_VERSION = StrictVersion("10.23.1")
-NPM_MIN_VERSION = StrictVersion("6.14.10")
+NODE_MIN_VERSION = StrictVersion("12.22.12")
+NPM_MIN_VERSION = StrictVersion("6.14.16")
 
 
 def find_node_paths():

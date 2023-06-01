@@ -5,16 +5,20 @@
 //! An invalidation processor for style changes due to document state changes.
 
 use crate::dom::TElement;
-use crate::element_state::DocumentState;
 use crate::invalidation::element::invalidation_map::Dependency;
 use crate::invalidation::element::invalidator::{DescendantInvalidationLists, InvalidationVector};
 use crate::invalidation::element::invalidator::{Invalidation, InvalidationProcessor};
 use crate::invalidation::element::state_and_attributes;
 use crate::stylist::CascadeData;
-use selectors::matching::{MatchingContext, MatchingMode, QuirksMode, VisitedHandlingMode};
+use dom::DocumentState;
+use selectors::matching::{
+    MatchingContext, MatchingMode, NeedsSelectorFlags, QuirksMode, VisitedHandlingMode,
+};
+use selectors::NthIndexCache;
 
 /// A struct holding the members necessary to invalidate document state
 /// selectors.
+#[derive(Debug)]
 pub struct InvalidationMatchingData {
     /// The document state that has changed, which makes it always match.
     pub document_state: DocumentState,
@@ -40,18 +44,22 @@ pub struct DocumentStateInvalidationProcessor<'a, E: TElement, I> {
 impl<'a, E: TElement, I> DocumentStateInvalidationProcessor<'a, E, I> {
     /// Creates a new DocumentStateInvalidationProcessor.
     #[inline]
-    pub fn new(rules: I, document_states_changed: DocumentState, quirks_mode: QuirksMode) -> Self {
-        let mut matching_context = MatchingContext::new_for_visited(
+    pub fn new(
+        rules: I,
+        document_states_changed: DocumentState,
+        nth_index_cache: &'a mut NthIndexCache,
+        quirks_mode: QuirksMode,
+    ) -> Self {
+        let mut matching_context = MatchingContext::<'a, E::Impl>::new_for_visited(
             MatchingMode::Normal,
             None,
-            None,
+            nth_index_cache,
             VisitedHandlingMode::AllLinksVisitedAndUnvisited,
             quirks_mode,
+            NeedsSelectorFlags::No,
         );
 
-        matching_context.extra_data = InvalidationMatchingData {
-            document_state: document_states_changed,
-        };
+        matching_context.extra_data.invalidation_data.document_state = document_states_changed;
 
         Self {
             rules,
@@ -126,5 +134,9 @@ where
 
     fn invalidated_self(&mut self, element: E) {
         state_and_attributes::invalidated_self(element);
+    }
+
+    fn invalidated_sibling(&mut self, sibling: E, of: E) {
+        state_and_attributes::invalidated_sibling(sibling, of);
     }
 }

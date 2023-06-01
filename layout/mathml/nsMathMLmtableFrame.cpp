@@ -264,27 +264,6 @@ class nsDisplaymtdBorder final : public nsDisplayBorder {
   nsDisplaymtdBorder(nsDisplayListBuilder* aBuilder, nsMathMLmtdFrame* aFrame)
       : nsDisplayBorder(aBuilder, aFrame) {}
 
-  nsDisplayItemGeometry* AllocateGeometry(
-      nsDisplayListBuilder* aBuilder) override {
-    return new nsDisplayItemGenericImageGeometry(this, aBuilder);
-  }
-
-  void ComputeInvalidationRegion(nsDisplayListBuilder* aBuilder,
-                                 const nsDisplayItemGeometry* aGeometry,
-                                 nsRegion* aInvalidRegion) const override {
-    auto geometry =
-        static_cast<const nsDisplayItemGenericImageGeometry*>(aGeometry);
-
-    if (aBuilder->ShouldSyncDecodeImages() &&
-        geometry->ShouldInvalidateToSyncDecodeImages()) {
-      bool snap;
-      aInvalidRegion->Or(*aInvalidRegion, GetBounds(aBuilder, &snap));
-    }
-
-    nsDisplayItem::ComputeInvalidationRegion(aBuilder, aGeometry,
-                                             aInvalidRegion);
-  }
-
   virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder,
                            bool* aSnap) const override {
     *aSnap = true;
@@ -311,11 +290,9 @@ class nsDisplaymtdBorder final : public nsDisplayBorder {
                                  ? PaintBorderFlags::SyncDecodeImages
                                  : PaintBorderFlags();
 
-    ImgDrawResult result = nsCSSRendering::PaintBorderWithStyleBorder(
+    Unused << nsCSSRendering::PaintBorderWithStyleBorder(
         mFrame->PresContext(), *aCtx, mFrame, GetPaintRect(aBuilder, aCtx),
         bounds, styleBorder, mFrame->Style(), flags, mFrame->GetSkipSides());
-
-    nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
   }
 
   bool CreateWebRenderCommands(
@@ -466,9 +443,8 @@ static void ExtractSpacingValues(const nsAString& aString, nsAtom* aAttribute,
       } else {
         newValue = aDefaultValue0;
       }
-      nsMathMLFrame::ParseNumericValue(
-          valueString, &newValue, dom::MathMLElement::PARSE_ALLOW_UNITLESS,
-          presContext, computedStyle, aFontSizeInflation);
+      nsMathMLFrame::ParseNumericValue(valueString, &newValue, 0, presContext,
+                                       computedStyle, aFontSizeInflation);
       aSpacingArray.AppendElement(newValue);
 
       startIndex += count;
@@ -620,19 +596,19 @@ static void ParseAlignAttribute(nsString& aValue, eAlign& aAlign,
   // ToInteger ignores the whitespaces around the number
   aValue.CompressWhitespace(true, false);
 
-  if (0 == aValue.Find("top")) {
+  if (0 == aValue.Find(u"top")) {
     len = 3;  // 3 is the length of 'top'
     aAlign = eAlign_top;
-  } else if (0 == aValue.Find("bottom")) {
+  } else if (0 == aValue.Find(u"bottom")) {
     len = 6;  // 6 is the length of 'bottom'
     aAlign = eAlign_bottom;
-  } else if (0 == aValue.Find("center")) {
+  } else if (0 == aValue.Find(u"center")) {
     len = 6;  // 6 is the length of 'center'
     aAlign = eAlign_center;
-  } else if (0 == aValue.Find("baseline")) {
+  } else if (0 == aValue.Find(u"baseline")) {
     len = 8;  // 8 is the length of 'baseline'
     aAlign = eAlign_baseline;
-  } else if (0 == aValue.Find("axis")) {
+  } else if (0 == aValue.Find(u"axis")) {
     len = 4;  // 4 is the length of 'axis'
     aAlign = eAlign_axis;
   }
@@ -705,7 +681,7 @@ nsresult nsMathMLmtableWrapperFrame::AttributeChanged(int32_t aNameSpaceID,
 
   // align - just need to issue a dirty (resize) reflow command
   if (aAttribute == nsGkAtoms::align) {
-    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::Resize,
+    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::None,
                                   NS_FRAME_IS_DIRTY);
     return NS_OK;
   }
@@ -717,7 +693,8 @@ nsresult nsMathMLmtableWrapperFrame::AttributeChanged(int32_t aNameSpaceID,
     nsMathMLContainerFrame::RebuildAutomaticDataForChildren(GetParent());
     // Need to reflow the parent, not us, because this can actually
     // affect siblings.
-    PresShell()->FrameNeedsReflow(GetParent(), IntrinsicDirty::StyleChange,
+    PresShell()->FrameNeedsReflow(GetParent(),
+                                  IntrinsicDirty::FrameAncestorsAndDescendants,
                                   NS_FRAME_IS_DIRTY);
     return NS_OK;
   }
@@ -747,8 +724,8 @@ nsresult nsMathMLmtableWrapperFrame::AttributeChanged(int32_t aNameSpaceID,
   }
 
   // Explicitly request a reflow in our subtree to pick up any changes
-  presContext->PresShell()->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
-                                             NS_FRAME_IS_DIRTY);
+  presContext->PresShell()->FrameNeedsReflow(
+      this, IntrinsicDirty::FrameAncestorsAndDescendants, NS_FRAME_IS_DIRTY);
 
   return NS_OK;
 }
@@ -890,7 +867,6 @@ void nsMathMLmtableWrapperFrame::Reflow(nsPresContext* aPresContext,
   mBoundingMetrics.rightBearing = aDesiredSize.Width();
 
   aDesiredSize.mBoundingMetrics = mBoundingMetrics;
-  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aDesiredSize);
 }
 
 nsContainerFrame* NS_NewMathMLmtableFrame(PresShell* aPresShell,
@@ -904,8 +880,8 @@ NS_IMPL_FRAMEARENA_HELPERS(nsMathMLmtableFrame)
 nsMathMLmtableFrame::~nsMathMLmtableFrame() = default;
 
 void nsMathMLmtableFrame::SetInitialChildList(ChildListID aListID,
-                                              nsFrameList& aChildList) {
-  nsTableFrame::SetInitialChildList(aListID, aChildList);
+                                              nsFrameList&& aChildList) {
+  nsTableFrame::SetInitialChildList(aListID, std::move(aChildList));
   MapAllAttributesIntoCSS(this);
 }
 
@@ -1081,8 +1057,8 @@ nsresult nsMathMLmtrFrame::AttributeChanged(int32_t aNameSpaceID,
   ParseFrameAttribute(this, aAttribute, allowMultiValues);
 
   // Explicitly request a reflow in our subtree to pick up any changes
-  presContext->PresShell()->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
-                                             NS_FRAME_IS_DIRTY);
+  presContext->PresShell()->FrameNeedsReflow(
+      this, IntrinsicDirty::FrameAncestorsAndDescendants, NS_FRAME_IS_DIRTY);
 
   return NS_OK;
 }

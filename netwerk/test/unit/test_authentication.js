@@ -145,6 +145,7 @@ AuthPrompt2.prototype = {
     const kAllKnownFlags = 127; // Don't fail test for newly added flags
     Assert.equal(expectedFlags, authInfo.flags & kAllKnownFlags);
 
+    // eslint-disable-next-line no-nested-ternary
     var expectedScheme = isNTLM ? "ntlm" : isDigest ? "digest" : "basic";
     Assert.equal(expectedScheme, authInfo.authenticationScheme);
 
@@ -291,8 +292,6 @@ function makeChan(url, loadingUrl) {
     contentPolicyType: Ci.nsIContentPolicy.TYPE_OTHER,
   });
 }
-
-var current_test = 0;
 
 var httpserv = null;
 
@@ -855,7 +854,7 @@ let buildLargePayload = (function() {
   let ret = "";
   return function() {
     // Return cached value.
-    if (ret.length > 0) {
+    if (ret.length) {
       return ret;
     }
     for (let i = 0; i < size; i++) {

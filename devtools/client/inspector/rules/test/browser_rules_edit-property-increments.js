@@ -9,12 +9,10 @@
 // Bug 1275446 - This test happen to hit the default timeout on linux32
 requestLongerTimeout(2);
 
-loader.lazyRequireGetter(
-  this,
-  "AppConstants",
-  "resource://gre/modules/AppConstants.jsm",
-  true
-);
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
+});
 
 const TEST_URI = `
   <style>
@@ -27,6 +25,8 @@ const TEST_URI = `
       transition: initial;
       z-index: 0;
       opacity: 1;
+      line-height: 1;
+      --custom: 0;
     }
   </style>
   <div id="test"></div>
@@ -51,6 +51,8 @@ add_task(async function() {
   await testOddCases(view);
   await testZeroValueIncrements(view);
   await testOpacityIncrements(view);
+  await testLineHeightIncrements(view);
+  await testCssVariableIncrements(view);
 });
 
 async function testMarginIncrements(view) {
@@ -646,6 +648,100 @@ async function testOpacityIncrements(view) {
   });
 }
 
+async function testLineHeightIncrements(view) {
+  info("Testing keyboard increments on the line height property");
+
+  const opacityPropEditor = getTextProperty(view, 1, { "line-height": "1" })
+    .editor;
+
+  // line-height accepts both values with or without units, check that we don't
+  // force using a unit if none was specified.
+  await runIncrementTest(opacityPropEditor, view, {
+    1: {
+      ...getSmallIncrementKey(),
+      start: "0",
+      end: "0.1",
+      selectAll: true,
+    },
+    2: {
+      ...getSmallIncrementKey(),
+      start: "0px",
+      end: "0.1px",
+      selectAll: true,
+    },
+    3: {
+      start: "0",
+      end: "1",
+      selectAll: true,
+    },
+    4: {
+      start: "0px",
+      end: "1px",
+      selectAll: true,
+    },
+    5: {
+      down: true,
+      ...getSmallIncrementKey(),
+      start: "0",
+      end: "-0.1",
+      selectAll: true,
+    },
+    6: {
+      down: true,
+      ...getSmallIncrementKey(),
+      start: "0px",
+      end: "-0.1px",
+      selectAll: true,
+    },
+    7: {
+      down: true,
+      start: "0",
+      end: "-1",
+      selectAll: true,
+    },
+    8: {
+      down: true,
+      start: "0px",
+      end: "-1px",
+      selectAll: true,
+    },
+  });
+}
+
+async function testCssVariableIncrements(view) {
+  info("Testing keyboard increments on the css variable property");
+
+  const opacityPropEditor = getTextProperty(view, 1, { "--custom": "0" })
+    .editor;
+
+  await runIncrementTest(opacityPropEditor, view, {
+    1: {
+      ...getSmallIncrementKey(),
+      start: "0",
+      end: "0.1",
+      selectAll: true,
+    },
+    2: {
+      start: "0",
+      end: "1",
+      selectAll: true,
+    },
+    3: {
+      down: true,
+      ...getSmallIncrementKey(),
+      start: "0",
+      end: "-0.1",
+      selectAll: true,
+    },
+    4: {
+      down: true,
+      start: "0",
+      end: "-1",
+      selectAll: true,
+    },
+  });
+}
+
 async function runIncrementTest(propertyEditor, view, tests) {
   propertyEditor.valueSpan.scrollIntoView();
   const editor = await focusEditableField(view, propertyEditor.valueSpan);
@@ -686,7 +782,7 @@ async function testIncrement(editor, options, view) {
   }
 
   let smallIncrementKey = { ctrlKey: options.ctrl };
-  if (AppConstants.platform === "macosx") {
+  if (lazy.AppConstants.platform === "macosx") {
     smallIncrementKey = { altKey: options.alt };
   }
 
@@ -708,7 +804,7 @@ async function testIncrement(editor, options, view) {
 }
 
 function getSmallIncrementKey() {
-  if (AppConstants.platform === "macosx") {
+  if (lazy.AppConstants.platform === "macosx") {
     return { alt: true };
   }
   return { ctrl: true };

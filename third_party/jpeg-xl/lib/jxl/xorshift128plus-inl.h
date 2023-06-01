@@ -21,8 +21,10 @@ namespace HWY_NAMESPACE {
 namespace {
 
 // These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Add;
 using hwy::HWY_NAMESPACE::ShiftLeft;
 using hwy::HWY_NAMESPACE::ShiftRight;
+using hwy::HWY_NAMESPACE::Xor;
 
 // Adapted from https://github.com/vpxyz/xorshift/blob/master/xorshift128plus/
 // (MIT-license)
@@ -41,17 +43,30 @@ class Xorshift128Plus {
     }
   }
 
+  HWY_MAYBE_UNUSED Xorshift128Plus(const uint32_t seed1, const uint32_t seed2,
+                                   const uint32_t seed3, const uint32_t seed4) {
+    // Init state using SplitMix64 generator
+    s0_[0] = SplitMix64(((static_cast<uint64_t>(seed1) << 32) + seed2) +
+                        0x9E3779B97F4A7C15ull);
+    s1_[0] = SplitMix64(((static_cast<uint64_t>(seed3) << 32) + seed4) +
+                        0x9E3779B97F4A7C15ull);
+    for (size_t i = 1; i < N; ++i) {
+      s0_[i] = SplitMix64(s0_[i - 1]);
+      s1_[i] = SplitMix64(s1_[i - 1]);
+    }
+  }
+
   HWY_INLINE HWY_MAYBE_UNUSED void Fill(uint64_t* HWY_RESTRICT random_bits) {
 #if HWY_CAP_INTEGER64
     const HWY_FULL(uint64_t) d;
     for (size_t i = 0; i < N; i += Lanes(d)) {
       auto s1 = Load(d, s0_ + i);
       const auto s0 = Load(d, s1_ + i);
-      const auto bits = s1 + s0;  // b, c
+      const auto bits = Add(s1, s0);  // b, c
       Store(s0, d, s0_ + i);
-      s1 ^= ShiftLeft<23>(s1);
+      s1 = Xor(s1, ShiftLeft<23>(s1));
       Store(bits, d, random_bits + i);
-      s1 ^= s0 ^ ShiftRight<18>(s1) ^ ShiftRight<5>(s0);
+      s1 = Xor(s1, Xor(s0, Xor(ShiftRight<18>(s1), ShiftRight<5>(s0))));
       Store(s1, d, s1_ + i);
     }
 #else

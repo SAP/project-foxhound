@@ -1,8 +1,8 @@
 // A hack for docs.rs to build documentation that has both windows and linux documentation in the
 // same rustdoc build visible.
-#[cfg(all(docsrs, not(unix)))]
+#[cfg(all(libloading_docs, not(unix)))]
 mod unix_imports {}
-#[cfg(any(not(docsrs), unix))]
+#[cfg(any(not(libloading_docs), unix))]
 mod unix_imports {
     pub(super) use std::os::unix::ffi::OsStrExt;
 }
@@ -365,9 +365,7 @@ pub struct Symbol<T> {
 impl<T> Symbol<T> {
     /// Convert the loaded `Symbol` into a raw pointer.
     pub fn into_raw(self) -> *mut raw::c_void {
-        let pointer = self.pointer;
-        mem::forget(self);
-        pointer
+        self.pointer
     }
 }
 

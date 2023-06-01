@@ -5,33 +5,29 @@
 Transform the beetmover task into an actual task description.
 """
 
+from collections import defaultdict
+from copy import deepcopy
+
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.schema import optionally_keyed_by, resolve_keyed_by
+from taskgraph.util.taskcluster import get_artifact_prefix
+from voluptuous import Any, Optional, Required
 
 from gecko_taskgraph.loader.single_dep import schema
-from gecko_taskgraph.transforms.base import TransformSequence
 from gecko_taskgraph.transforms.beetmover import craft_release_properties
+from gecko_taskgraph.transforms.task import task_description_schema
 from gecko_taskgraph.util.attributes import (
     copy_attributes_from_dependent_job,
     release_level,
 )
 from gecko_taskgraph.util.partners import (
-    get_partner_config_by_kind,
     apply_partner_priority,
-)
-from gecko_taskgraph.util.schema import (
-    optionally_keyed_by,
-    resolve_keyed_by,
+    get_partner_config_by_kind,
 )
 from gecko_taskgraph.util.scriptworker import (
     add_scope_prefix,
     get_beetmover_bucket_scope,
 )
-from gecko_taskgraph.util.taskcluster import get_artifact_prefix
-from gecko_taskgraph.transforms.task import task_description_schema
-from voluptuous import Any, Required, Optional
-
-from collections import defaultdict
-from copy import deepcopy
-
 
 beetmover_description_schema = schema.extend(
     {
@@ -72,7 +68,9 @@ def split_public_and_private(config, jobs):
     # in a single task. Only use a single task for each type though.
     partner_config = get_partner_config_by_kind(config, config.kind)
     for job in jobs:
-        upstream_artifacts = job["primary-dependency"].release_artifacts
+        upstream_artifacts = job["primary-dependency"].attributes.get(
+            "release_artifacts"
+        )
         attribution_task_ref = "<{}>".format(job["primary-dependency"].label)
         prefix = get_artifact_prefix(job["primary-dependency"])
         artifacts = defaultdict(list)
@@ -116,9 +114,7 @@ def split_public_and_private(config, jobs):
                 this_job["scopes"] = [partner_bucket_scope, action_scope]
                 this_job["partner_public"] = False
 
-            partner_path_key = "partner-{destination}-path".format(
-                destination=destination
-            )
+            partner_path_key = f"partner-{destination}-path"
             partner_path = this_job[partner_path_key].format(**repl_dict)
             this_job.setdefault("worker", {})[
                 "upstream-artifacts"

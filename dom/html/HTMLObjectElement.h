@@ -15,8 +15,7 @@
 #include "nsGenericHTMLElement.h"
 #include "nsObjectLoadingContent.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class FormData;
 template <typename T>
@@ -64,7 +63,7 @@ class HTMLObjectElement final : public nsGenericHTMLFormControlElement,
   virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction()
       const override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
-  virtual EventStates IntrinsicState() const override;
+  virtual ElementState IntrinsicState() const override;
   virtual void DestroyContent() override;
 
   // nsObjectLoadingContent
@@ -218,7 +217,6 @@ class HTMLObjectElement final : public nsGenericHTMLFormControlElement,
   bool mIsDoneAddingChildren;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_HTMLObjectElement_h

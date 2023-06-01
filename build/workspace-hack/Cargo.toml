@@ -1,6 +1,7 @@
 [package]
 name = "mozilla-central-workspace-hack"
 version = "0.1.0"
+license = "MPL-2.0"
 
 # This is a hack to help rust code in the tree that are built by different
 # invocations of cargo share dependencies rather than rebuilding them. This is
@@ -32,7 +33,7 @@ serde = { features = ["default", "derive", "rc", "serde_derive", "std"], version
 serde_derive = { features = ["default", "deserialize_in_place"], version = "1.0.66" }
 quote = { features = ["default", "proc-macro"], version = "1.0" }
 libc = { features = ["default", "std", "use_std"], version = "0.2" }
-bindgen = { default-features = false, features = ["runtime"], version = "0.56" }
+bindgen = { default-features = false, features = ["runtime"], version = "0.63" }
 
 [target."cfg(windows)".dependencies.winapi]
 version = "0.3.6"

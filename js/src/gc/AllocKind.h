@@ -19,7 +19,6 @@
 #include <stdint.h>
 
 #include "js/TraceKind.h"
-#include "js/Utility.h"
 
 class JSDependentString;
 class JSExternalString;
@@ -35,6 +34,10 @@ class FatInlineAtom;
 class NormalAtom;
 class NormalPropMap;
 class DictionaryPropMap;
+class DictionaryShape;
+class SharedShape;
+class ProxyShape;
+class WasmGCShape;
 
 namespace gc {
 
@@ -76,7 +79,7 @@ namespace gc {
 #define FOR_EACH_NONOBJECT_NONNURSERY_ALLOCKIND(D) \
  /* AllocKind              TraceKind     TypeName               SizedType              BGFinal Nursery Compact */ \
     D(SCRIPT,              Script,       js::BaseScript,        js::BaseScript,        false,  false,  true) \
-    D(SHAPE,               Shape,        js::Shape,             js::Shape,             true,   false,  true) \
+    D(SHAPE,               Shape,        js::Shape,             js::SizedShape,        true,   false,  true) \
     D(BASE_SHAPE,          BaseShape,    js::BaseShape,         js::BaseShape,         true,   false,  true) \
     D(GETTER_SETTER,       GetterSetter, js::GetterSetter,      js::GetterSetter,      true,   false,  true) \
     D(COMPACT_PROP_MAP,    PropMap,      js::CompactPropMap,    js::CompactPropMap,    true,   false,  true) \
@@ -199,8 +202,8 @@ using ObjectAllocKindArray =
  *
  * The AllocKind is available as MapTypeToAllocKind<SomeType>::kind.
  *
- * There are specializations for strings since more than one derived string type
- * shares the same alloc kind.
+ * There are specializations for strings and shapes since more than one derived
+ * type shares the same alloc kind.
  */
 template <typename T>
 struct MapTypeToAllocKind {};
@@ -228,6 +231,23 @@ struct MapTypeToAllocKind<JSLinearString> {
 template <>
 struct MapTypeToAllocKind<JSThinInlineString> {
   static const AllocKind kind = AllocKind::STRING;
+};
+
+template <>
+struct MapTypeToAllocKind<js::SharedShape> {
+  static const AllocKind kind = AllocKind::SHAPE;
+};
+template <>
+struct MapTypeToAllocKind<js::DictionaryShape> {
+  static const AllocKind kind = AllocKind::SHAPE;
+};
+template <>
+struct MapTypeToAllocKind<js::ProxyShape> {
+  static const AllocKind kind = AllocKind::SHAPE;
+};
+template <>
+struct MapTypeToAllocKind<js::WasmGCShape> {
+  static const AllocKind kind = AllocKind::SHAPE;
 };
 
 static inline JS::TraceKind MapAllocToTraceKind(AllocKind kind) {

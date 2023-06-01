@@ -12,19 +12,13 @@ Services.scriptloader.loadSubScript(
   EventUtils
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "PromiseUtils",
-  "resource://gre/modules/PromiseUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesTestUtils",
-  "resource://testing-common/PlacesTestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
+});
 
-const TEST_SITE = "http://example.net";
-const TEST_THIRD_PARTY_SITE = "http://mochi.test:8888";
+const TEST_SITE = "https://example.org";
+const TEST_THIRD_PARTY_SITE = "https://example.net";
 
 const TEST_PAGE =
   TEST_SITE +
@@ -35,7 +29,7 @@ const FAVICON_URI =
   "/browser/browser/components/originattributes/" +
   "test/browser/file_favicon.png";
 const TEST_THIRD_PARTY_PAGE =
-  "http://example.com/browser/browser/components/" +
+  "http://example.net/browser/browser/components/" +
   "originattributes/test/browser/file_favicon_thirdParty.html";
 const THIRD_PARTY_FAVICON_URI =
   TEST_THIRD_PARTY_SITE +
@@ -328,15 +322,10 @@ async function doTestForAllTabsFavicon(aTestPage, aFaviconHost, aFaviconURL) {
   tabBrowser.removeAttribute("overflow");
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   // Make sure userContext is enabled.
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["privacy.userContext.enabled", true],
-      ["dom.security.https_first", false],
-      // Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
-      ["network.cookie.sameSite.laxByDefault", false],
-    ],
+    set: [["privacy.userContext.enabled", true]],
   });
 });
 

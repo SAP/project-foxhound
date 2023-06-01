@@ -34,7 +34,7 @@ class LockManagerChild;
 class LockManager final : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(LockManager)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(LockManager)
 
   explicit LockManager(nsIGlobalObject* aGlobal);
 
@@ -61,6 +61,8 @@ class LockManager final : public nsISupports, public nsWrapperCache {
   nsCOMPtr<nsIGlobalObject> mOwner;
   RefPtr<locks::LockManagerChild> mActor;
 
+  // Revokes itself and triggers LockManagerChild deletion on worker shutdown
+  // callback.
   RefPtr<WeakWorkerRef> mWorkerRef;
 };
 

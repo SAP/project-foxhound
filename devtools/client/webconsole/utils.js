@@ -4,9 +4,6 @@
 
 "use strict";
 
-const { Cc, Ci } = require("chrome");
-const Services = require("Services");
-
 // Number of terminal entries for the self-xss prevention to go away
 const CONSOLE_ENTRY_THRESHOLD = 5;
 
@@ -19,7 +16,7 @@ var WebConsoleUtils = {
    * @param string string
    * @return nsISupportsString
    */
-  supportsString: function(string) {
+  supportsString(string) {
     const str = Cc["@mozilla.org/supports-string;1"].createInstance(
       Ci.nsISupportsString
     );

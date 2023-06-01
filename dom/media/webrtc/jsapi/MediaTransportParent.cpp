@@ -124,12 +124,18 @@ mozilla::ipc::IPCResult MediaTransportParent::RecvExitPrivateMode() {
 }
 
 mozilla::ipc::IPCResult MediaTransportParent::RecvCreateIceCtx(
-    const string& name, nsTArray<RTCIceServer>&& iceServers,
+    const string& name) {
+  mImpl->mHandler->CreateIceCtx(name);
+  return ipc::IPCResult::Ok();
+}
+
+mozilla::ipc::IPCResult MediaTransportParent::RecvSetIceConfig(
+    nsTArray<RTCIceServer>&& iceServers,
     const RTCIceTransportPolicy& icePolicy) {
-  nsresult rv = mImpl->mHandler->CreateIceCtx(name, iceServers, icePolicy);
+  nsresult rv = mImpl->mHandler->SetIceConfig(iceServers, icePolicy);
   if (NS_FAILED(rv)) {
     return ipc::IPCResult::Fail(WrapNotNull(this), __func__,
-                                "MediaTransportHandler::Init failed");
+                                "MediaTransportHandler::SetIceConfig failed");
   }
   return ipc::IPCResult::Ok();
 }
@@ -190,9 +196,8 @@ mozilla::ipc::IPCResult MediaTransportParent::RecvStartIceChecks(
 }
 
 mozilla::ipc::IPCResult MediaTransportParent::RecvSendPacket(
-    const string& transportId, const MediaPacket& packet) {
-  MediaPacket copy(packet);  // Laaaaaaame.
-  mImpl->mHandler->SendPacket(transportId, std::move(copy));
+    const string& transportId, MediaPacket&& packet) {
+  mImpl->mHandler->SendPacket(transportId, std::move(packet));
   return ipc::IPCResult::Ok();
 }
 
@@ -221,12 +226,9 @@ mozilla::ipc::IPCResult MediaTransportParent::RecvGetIceStats(
           [aResolve = std::move(aResolve)](
               dom::RTCStatsPromise::ResolveOrRejectValue&& aResult) {
             if (aResult.IsResolve()) {
-              aResolve(
-                  dom::NotReallyMovableButLetsPretendItIsRTCStatsCollection(
-                      *aResult.ResolveValue()));
+              aResolve(aResult.ResolveValue());
             } else {
-              dom::NotReallyMovableButLetsPretendItIsRTCStatsCollection empty;
-              aResolve(empty);
+              aResolve(MakeUnique<dom::RTCStatsCollection>());
             }
           });
 

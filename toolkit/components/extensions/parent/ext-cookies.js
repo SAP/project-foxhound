@@ -219,7 +219,7 @@ const checkSetCookiePermissions = (extension, uri, cookie) => {
  *
  * If allowPattern is true, an OriginAttributesPattern may be returned instead.
  *
- * @param {Object} details
+ * @param {object} details
  *        The details received from the extension.
  * @param {BaseContext} context
  * @param {boolean} allowPattern
@@ -227,12 +227,12 @@ const checkSetCookiePermissions = (extension, uri, cookie) => {
  *        OriginAttributes. The get/set/remove cookie methods operate on exact
  *        OriginAttributes, the getAll method allows a partial pattern and may
  *        potentially match cookies with distinct origin attributes.
- * @returns {Object} An object with the following properties:
+ * @returns {object} An object with the following properties:
  *  - originAttributes {OriginAttributes|OriginAttributesPattern}
  *  - isPattern {boolean} Whether originAttributes is a pattern.
  *  - isPrivate {boolean} Whether the cookie belongs to private browsing mode.
  *  - storeId {string} The storeId of the cookie.
- **/
+ */
 const oaFromDetails = (details, context, allowPattern) => {
   // Default values, may be filled in based on details.
   let originAttributes = {
@@ -299,7 +299,8 @@ const oaFromDetails = (details, context, allowPattern) => {
 
 /**
  * Query the cookie store for matching cookies.
- * @param {Object} detailsIn
+ *
+ * @param {object} detailsIn
  * @param {Array} props          Properties the extension is interested in matching against.
  *                               The firstPartyDomain / partitionKey / storeId
  *                               props are always accounted for.
@@ -450,7 +451,69 @@ const validateFirstPartyDomain = details => {
   }
 };
 
-this.cookies = class extends ExtensionAPI {
+this.cookies = class extends ExtensionAPIPersistent {
+  PERSISTENT_EVENTS = {
+    onChanged({ fire }) {
+      let observer = (subject, topic, data) => {
+        let notify = (removed, cookie, cause) => {
+          cookie.QueryInterface(Ci.nsICookie);
+
+          if (this.extension.allowedOrigins.matchesCookie(cookie)) {
+            fire.async({
+              removed,
+              cookie: convertCookie({
+                cookie,
+                isPrivate: topic == "private-cookie-changed",
+              }),
+              cause,
+            });
+          }
+        };
+
+        // We do our best effort here to map the incompatible states.
+        switch (data) {
+          case "deleted":
+            notify(true, subject, "explicit");
+            break;
+          case "added":
+            notify(false, subject, "explicit");
+            break;
+          case "changed":
+            notify(true, subject, "overwrite");
+            notify(false, subject, "explicit");
+            break;
+          case "batch-deleted":
+            subject.QueryInterface(Ci.nsIArray);
+            for (let i = 0; i < subject.length; i++) {
+              let cookie = subject.queryElementAt(i, Ci.nsICookie);
+              if (!cookie.isSession && cookie.expiry * 1000 <= Date.now()) {
+                notify(true, cookie, "expired");
+              } else {
+                notify(true, cookie, "evicted");
+              }
+            }
+            break;
+        }
+      };
+
+      const { privateBrowsingAllowed } = this.extension;
+      Services.obs.addObserver(observer, "cookie-changed");
+      if (privateBrowsingAllowed) {
+        Services.obs.addObserver(observer, "private-cookie-changed");
+      }
+      return {
+        unregister() {
+          Services.obs.removeObserver(observer, "cookie-changed");
+          if (privateBrowsingAllowed) {
+            Services.obs.removeObserver(observer, "private-cookie-changed");
+          }
+        },
+        convert(_fire) {
+          fire = _fire;
+        },
+      };
+    },
+  };
   getAPI(context) {
     let { extension } = context;
     let self = {
@@ -609,64 +672,9 @@ this.cookies = class extends ExtensionAPI {
 
         onChanged: new EventManager({
           context,
-          name: "cookies.onChanged",
-          register: fire => {
-            let observer = (subject, topic, data) => {
-              let notify = (removed, cookie, cause) => {
-                cookie.QueryInterface(Ci.nsICookie);
-
-                if (extension.allowedOrigins.matchesCookie(cookie)) {
-                  fire.async({
-                    removed,
-                    cookie: convertCookie({
-                      cookie,
-                      isPrivate: topic == "private-cookie-changed",
-                    }),
-                    cause,
-                  });
-                }
-              };
-
-              // We do our best effort here to map the incompatible states.
-              switch (data) {
-                case "deleted":
-                  notify(true, subject, "explicit");
-                  break;
-                case "added":
-                  notify(false, subject, "explicit");
-                  break;
-                case "changed":
-                  notify(true, subject, "overwrite");
-                  notify(false, subject, "explicit");
-                  break;
-                case "batch-deleted":
-                  subject.QueryInterface(Ci.nsIArray);
-                  for (let i = 0; i < subject.length; i++) {
-                    let cookie = subject.queryElementAt(i, Ci.nsICookie);
-                    if (
-                      !cookie.isSession &&
-                      cookie.expiry * 1000 <= Date.now()
-                    ) {
-                      notify(true, cookie, "expired");
-                    } else {
-                      notify(true, cookie, "evicted");
-                    }
-                  }
-                  break;
-              }
-            };
-
-            Services.obs.addObserver(observer, "cookie-changed");
-            if (context.privateBrowsingAllowed) {
-              Services.obs.addObserver(observer, "private-cookie-changed");
-            }
-            return () => {
-              Services.obs.removeObserver(observer, "cookie-changed");
-              if (context.privateBrowsingAllowed) {
-                Services.obs.removeObserver(observer, "private-cookie-changed");
-              }
-            };
-          },
+          module: "cookies",
+          event: "onChanged",
+          extensionApi: this,
         }).api(),
       },
     };

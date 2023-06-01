@@ -10,14 +10,14 @@ namespace mozilla {
 namespace net {
 
 //-------------------------------------------------------------------
-[RefCounted] async protocol PBackgroundDataBridge
+async protocol PBackgroundDataBridge
 {
   manager PBackground;
 
 child:
   async OnTransportAndData(uint64_t  offset,
                            uint32_t  count,
-                           nsDependentCSubstring data);
+                           nsCString data);
 
   async OnStopRequest(nsresult aStatus,
                       ResourceTimingStructArgs timing,

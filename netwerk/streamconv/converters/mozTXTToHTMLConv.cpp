@@ -786,11 +786,19 @@ bool mozTXTToHTMLConv::GlyphHit(const char16_t* aInString, int32_t aInLength,
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ">:o",
-                                 u"😄"_ns,  // yell, U+1F620
+                                 u"🤬"_ns,  // swearing, U+1F92C
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ">:-o",
-                                 u"😠"_ns,  // yell, U+1F620
+                                 u"🤬"_ns,  // swearing, U+1F92C
+                                 outputHTML, glyphTextLen) ||
+
+                        SmilyHit(aInString, aInLength, bArg, ">:(",
+                                 u"😠"_ns,  // angry, U+1F620
+                                 outputHTML, glyphTextLen) ||
+
+                        SmilyHit(aInString, aInLength, bArg, ">:-(",
+                                 u"😠"_ns,  // angry, U+1F620
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, "8-)",
@@ -814,7 +822,7 @@ bool mozTXTToHTMLConv::GlyphHit(const char16_t* aInString, int32_t aInLength,
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ":-X",
-                                 u"😷"_ns,  // sealed, U+1F637
+                                 u"🤐"_ns,  // sealed, U+1F910
                                  outputHTML, glyphTextLen))) {
       aOutputString.Append(outputHTML);
       return true;
@@ -1135,7 +1143,7 @@ mozTXTToHTMLConv::ScanHTML(const nsAString& input, uint32_t whattodo,
       // if a tag, skip until </a>.
       // Make sure there's a white-space character after, not to match "abbr".
       {
-        i = aInString.Find("</a>", true, i);
+        i = aInString.LowerCaseFindASCII("</a>", i);
         if (i == kNotFound) {
           i = lengthOfInString;
         } else {
@@ -1144,7 +1152,7 @@ mozTXTToHTMLConv::ScanHTML(const nsAString& input, uint32_t whattodo,
       } else if (Substring(aInString, i + 1, 3).LowerCaseEqualsASCII("!--"))
       // if out-commended code, skip until -->
       {
-        i = aInString.Find("-->", false, i);
+        i = aInString.Find(u"-->", i);
         if (i == kNotFound) {
           i = lengthOfInString;
         } else {
@@ -1155,7 +1163,7 @@ mozTXTToHTMLConv::ScanHTML(const nsAString& input, uint32_t whattodo,
                  canFollow.FindChar(aInString[i + 6]) != kNotFound)
       // if style tag, skip until </style>
       {
-        i = aInString.Find("</style>", true, i);
+        i = aInString.LowerCaseFindASCII("</style>", i);
         if (i == kNotFound) {
           i = lengthOfInString;
         } else {
@@ -1167,7 +1175,7 @@ mozTXTToHTMLConv::ScanHTML(const nsAString& input, uint32_t whattodo,
                  canFollow.FindChar(aInString[i + 7]) != kNotFound)
       // if script tag, skip until </script>
       {
-        i = aInString.Find("</script>", true, i);
+        i = aInString.LowerCaseFindASCII("</script>", i);
         if (i == kNotFound) {
           i = lengthOfInString;
         } else {
@@ -1179,7 +1187,7 @@ mozTXTToHTMLConv::ScanHTML(const nsAString& input, uint32_t whattodo,
       // if head tag, skip until </head>
       // Make sure not to match <header>.
       {
-        i = aInString.Find("</head>", true, i);
+        i = aInString.LowerCaseFindASCII("</head>", i);
         if (i == kNotFound) {
           i = lengthOfInString;
         } else {

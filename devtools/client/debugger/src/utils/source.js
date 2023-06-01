@@ -16,7 +16,6 @@ import { memoizeLast } from "../utils/memoizeLast";
 import { renderWasmText } from "./wasm";
 import { toEditorLine } from "./editor";
 export { isMinified } from "./isMinified";
-import { getURL, getFileExtension } from "./sources-tree";
 
 import { isFulfilled } from "./async-value";
 
@@ -29,10 +28,10 @@ export const sourceTypes = {
   vue: "vue",
 };
 
-const javascriptLikeExtensions = ["marko", "es6", "vue", "jsm"];
+export const javascriptLikeExtensions = new Set(["marko", "es6", "vue", "jsm"]);
 
 function getPath(source) {
-  const { path } = getURL(source);
+  const { path } = source.displayURL;
   let lastIndex = path.lastIndexOf("/");
   let nextToLastIndex = path.lastIndexOf("/", lastIndex - 1);
 
@@ -76,7 +75,8 @@ export function shouldBlackbox(source) {
  */
 export function isFrameBlackBoxed(frame, source, blackboxedRanges) {
   return (
-    !!source?.isBlackBoxed &&
+    source &&
+    !!blackboxedRanges[source.url] &&
     (!blackboxedRanges[source.url].length ||
       !!findBlackBoxRange(source, blackboxedRanges, {
         start: frame.location.line,
@@ -125,10 +125,10 @@ export function findBlackBoxRange(source, blackboxedRanges, lineRange) {
  * @static
  */
 export function isJavaScript(source, content) {
-  const extension = getFileExtension(source).toLowerCase();
+  const extension = source.displayURL.fileExtension;
   const contentType = content.type === "wasm" ? null : content.contentType;
   return (
-    javascriptLikeExtensions.includes(extension) ||
+    javascriptLikeExtensions.has(extension) ||
     !!(contentType && contentType.includes("javascript"))
   );
 }
@@ -143,15 +143,6 @@ export function isPretty(source) {
 
 export function isPrettyURL(url) {
   return url ? url.endsWith(":formatted") : false;
-}
-
-export function isThirdParty(source) {
-  const { url } = source;
-  if (!source || !url) {
-    return false;
-  }
-
-  return url.includes("node_modules") || url.includes("bower_components");
 }
 
 /**
@@ -189,9 +180,7 @@ function resolveFileURL(
 }
 
 export function getFormattedSourceId(id) {
-  const firstIndex = id.indexOf("/");
-  const secondIndex = id.indexOf("/", firstIndex);
-  return `SOURCE${id.slice(firstIndex, secondIndex)}`;
+  return id.substring(id.lastIndexOf("/") + 1);
 }
 
 /**
@@ -210,7 +199,7 @@ export function getFilename(
     return getFormattedSourceId(id);
   }
 
-  const { filename } = getURL(source);
+  const { filename } = source.displayURL;
   return getRawSourceURL(filename);
 }
 
@@ -244,7 +233,7 @@ export function getDisplayPath(mySource, sources) {
     );
   });
 
-  if (similarSources.length == 0) {
+  if (!similarSources.length) {
     return undefined;
   }
 
@@ -295,22 +284,6 @@ export function getFileURL(source, truncate = true) {
   return resolveFileURL(url, getUnicodeUrl, truncate);
 }
 
-const contentTypeModeMap = {
-  "text/javascript": { name: "javascript" },
-  "text/typescript": { name: "javascript", typescript: true },
-  "text/coffeescript": { name: "coffeescript" },
-  "text/typescript-jsx": {
-    name: "jsx",
-    base: { name: "javascript", typescript: true },
-  },
-  "text/jsx": { name: "jsx" },
-  "text/x-elm": { name: "elm" },
-  "text/x-clojure": { name: "clojure" },
-  "text/x-clojurescript": { name: "clojure" },
-  "text/wasm": { name: "text" },
-  "text/html": { name: "htmlmixed" },
-};
-
 export function getSourcePath(url) {
   if (!url) {
     return "";
@@ -340,100 +313,6 @@ export function getSourceLineCount(content) {
   }
 
   return count + 1;
-}
-
-/**
- *
- * Checks if a source is minified based on some heuristics
- * @param key
- * @param text
- * @return boolean
- * @memberof utils/source
- * @static
- */
-
-/**
- *
- * Returns Code Mirror mode for source content type
- * @param contentType
- * @return String
- * @memberof utils/source
- * @static
- */
-// eslint-disable-next-line complexity
-export function getMode(source, content, symbols) {
-  const extension = getFileExtension(source);
-
-  if (content.type !== "text") {
-    return { name: "text" };
-  }
-
-  const { contentType, value: text } = content;
-
-  if (extension === "jsx" || (symbols && symbols.hasJsx)) {
-    if (symbols && symbols.hasTypes) {
-      return { name: "text/typescript-jsx" };
-    }
-    return { name: "jsx" };
-  }
-
-  if (symbols && symbols.hasTypes) {
-    if (symbols.hasJsx) {
-      return { name: "text/typescript-jsx" };
-    }
-
-    return { name: "text/typescript" };
-  }
-
-  const languageMimeMap = [
-    { ext: "c", mode: "text/x-csrc" },
-    { ext: "kt", mode: "text/x-kotlin" },
-    { ext: "cpp", mode: "text/x-c++src" },
-    { ext: "m", mode: "text/x-objectivec" },
-    { ext: "rs", mode: "text/x-rustsrc" },
-    { ext: "hx", mode: "text/x-haxe" },
-  ];
-
-  // check for C and other non JS languages
-  const result = languageMimeMap.find(({ ext }) => extension === ext);
-  if (result !== undefined) {
-    return { name: result.mode };
-  }
-
-  // if the url ends with a known Javascript-like URL, provide JavaScript mode.
-  // uses the first part of the URL to ignore query string
-  if (javascriptLikeExtensions.find(ext => ext === extension)) {
-    return { name: "javascript" };
-  }
-
-  // Use HTML mode for files in which the first non whitespace
-  // character is `<` regardless of extension.
-  const isHTMLLike = text.match(/^\s*</);
-  if (!contentType) {
-    if (isHTMLLike) {
-      return { name: "htmlmixed" };
-    }
-    return { name: "text" };
-  }
-
-  // // @flow or /* @flow */
-  if (text.match(/^\s*(\/\/ @flow|\/\* @flow \*\/)/)) {
-    return contentTypeModeMap["text/typescript"];
-  }
-
-  if (/script|elm|jsx|clojure|wasm|html/.test(contentType)) {
-    if (contentType in contentTypeModeMap) {
-      return contentTypeModeMap[contentType];
-    }
-
-    return contentTypeModeMap["text/javascript"];
-  }
-
-  if (isHTMLLike) {
-    return { name: "htmlmixed" };
-  }
-
-  return { name: "text" };
 }
 
 export function isInlineScript(source) {
@@ -484,7 +363,27 @@ export function getTextAtPosition(sourceId, asyncContent, location) {
   return lineText.slice(column, column + 100).trim();
 }
 
-export function getSourceClassnames(source, symbols) {
+/**
+ * Compute the CSS classname string to use for the icon of a given source.
+ *
+ * @param {Object} source
+ *        The reducer source object.
+ * @param {Object} symbols
+ *        The reducer symbol object for the given source.
+ * @param {Boolean} isBlackBoxed
+ *        To be set to true, when the given source is blackboxed.
+ * @param {Boolean} hasPrettyTab
+ *        To be set to true, if the given source isn't the pretty printed one,
+ *        but another tab for that source is opened pretty printed.
+ * @return String
+ *        The classname to use.
+ */
+export function getSourceClassnames(
+  source,
+  symbols,
+  isBlackBoxed,
+  hasPrettyTab = false
+) {
   // Conditionals should be ordered by priority of icon!
   const defaultClassName = "file";
 
@@ -492,15 +391,18 @@ export function getSourceClassnames(source, symbols) {
     return defaultClassName;
   }
 
-  if (isPretty(source)) {
+  // In the SourceTree, we don't show the pretty printed sources,
+  // but still want to show the pretty print icon when a pretty printed tab
+  // for the current source is opened.
+  if (isPretty(source) || hasPrettyTab) {
     return "prettyPrint";
   }
 
-  if (source.isBlackBoxed) {
+  if (isBlackBoxed) {
     return "blackBox";
   }
 
-  if (symbols && !symbols.loading && symbols.framework) {
+  if (symbols && symbols.framework) {
     return symbols.framework.toLowerCase();
   }
 
@@ -508,11 +410,11 @@ export function getSourceClassnames(source, symbols) {
     return "extension";
   }
 
-  return sourceTypes[getFileExtension(source)] || defaultClassName;
+  return sourceTypes[source.displayURL.fileExtension] || defaultClassName;
 }
 
 export function getRelativeUrl(source, root) {
-  const { group, path } = getURL(source);
+  const { group, path } = source.displayURL;
   if (!root) {
     return path;
   }
@@ -523,32 +425,40 @@ export function getRelativeUrl(source, root) {
 }
 
 /**
+ * source.url doesn't include thread actor ID, so before calling underRoot(), the thread actor ID
+ * must be removed from the root, which this function handles.
+ * @param {string} root The root url to be cleaned
+ * @param {Set<Thread>} threads The list of threads
+ * @returns {string} The root url with thread actor IDs removed
+ */
+export function removeThreadActorId(root, threads) {
+  threads.forEach(thread => {
+    if (root.includes(thread.actor)) {
+      root = root.slice(thread.actor.length + 1);
+    }
+  });
+  return root;
+}
+
+/**
  * Checks if the source is descendant of the root identified by the
  * root url specified. The root might likely be projectDirectoryRoot which
  * is a defined by a pref that allows users restrict the source tree to
  * a subset of sources.
  *
- * @params {Object} source
+ * @param {Object} source
  *                  The source object
- * @params {String} rootUrl
- *                  The url for the root node
- * @params {Array}  threads
- *                  A list of existing threads
+ * @param {String} rootUrlWithoutThreadActor
+ *                 The url for the root node, without the thread actor ID. This can be obtained
+ *                 by calling removeThreadActorId()
  */
-export function isDescendantOfRoot(source, rootUrl, threads) {
-  // source.url doesn't include thread actor ID, so remove the thread actor ID from the root
-  threads.forEach(thread => {
-    if (rootUrl.includes(thread.actor)) {
-      rootUrl = rootUrl.slice(thread.actor.length + 1);
-    }
-  });
-
+export function isDescendantOfRoot(source, rootUrlWithoutThreadActor) {
   if (source.url && source.url.includes("chrome://")) {
-    const { group, path } = getURL(source);
-    return (group + path).includes(rootUrl);
+    const { group, path } = source.displayURL;
+    return (group + path).includes(rootUrlWithoutThreadActor);
   }
 
-  return !!source.url && source.url.includes(rootUrl);
+  return !!source.url && source.url.includes(rootUrlWithoutThreadActor);
 }
 
 export function isGenerated(source) {
@@ -557,7 +467,7 @@ export function isGenerated(source) {
 
 export function getSourceQueryString(source) {
   if (!source) {
-    return;
+    return "";
   }
 
   return parseURL(getRawSourceURL(source.url)).search;
@@ -565,20 +475,4 @@ export function getSourceQueryString(source) {
 
 export function isUrlExtension(url) {
   return url.includes("moz-extension:") || url.includes("chrome-extension");
-}
-
-export function isExtensionDirectoryPath(url) {
-  if (isUrlExtension(url)) {
-    const urlArr = url.replace(/\/+/g, "/").split("/");
-    let extensionIndex = urlArr.indexOf("moz-extension:");
-    if (extensionIndex === -1) {
-      extensionIndex = urlArr.indexOf("chrome-extension:");
-    }
-    return !urlArr[extensionIndex + 2];
-  }
-}
-
-export function getPlainUrl(url) {
-  const queryStart = url.indexOf("?");
-  return queryStart !== -1 ? url.slice(0, queryStart) : url;
 }

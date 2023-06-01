@@ -3,15 +3,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 const DIR_UPDATES = "updates";
@@ -31,7 +30,9 @@ const PREF_APP_UPDATE_ALTUPDATEDIRPATH = "app.update.altUpdateDirPath";
 const PREF_APP_UPDATE_LOG = "app.update.log";
 const PREF_APP_UPDATE_FILE_LOGGING = "app.update.log.file";
 
-XPCOMUtils.defineLazyGetter(this, "gLogEnabled", function aus_gLogEnabled() {
+const lazy = {};
+
+XPCOMUtils.defineLazyGetter(lazy, "gLogEnabled", function aus_gLogEnabled() {
   return Services.prefs.getBoolPref(PREF_APP_UPDATE_LOG, false);
 });
 
@@ -422,7 +423,7 @@ function cleanupDir(dir, recurse) {
  *          The string to write to the error console.
  */
 function LOG(string) {
-  if (gLogEnabled) {
+  if (lazy.gLogEnabled) {
     dump("*** AUS:SVC " + string + "\n");
     Services.console.logStringMessage("AUS:SVC " + string);
   }

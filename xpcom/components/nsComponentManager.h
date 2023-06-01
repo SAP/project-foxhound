@@ -51,8 +51,6 @@ struct PRThread;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-extern const mozilla::Module kXPCOMModule;
-
 namespace {
 class EntryWrapper;
 }  // namespace
@@ -79,7 +77,7 @@ class nsComponentManagerImpl final : public nsIComponentManager,
   NS_DECL_NSICOMPONENTREGISTRAR
   NS_DECL_NSIMEMORYREPORTER
 
-  static nsresult Create(nsISupports* aOuter, REFNSIID aIID, void** aResult);
+  static nsresult Create(REFNSIID aIID, void** aResult);
 
   nsresult RegistryLocationForFile(nsIFile* aFile, nsCString& aResult);
   nsresult FileForRegistryLocation(const nsCString& aLocation, nsIFile** aSpec);
@@ -105,7 +103,7 @@ class nsComponentManagerImpl final : public nsIComponentManager,
   nsTHashMap<nsIDPointerHashKey, nsFactoryEntry*> mFactories;
   nsTHashMap<nsCStringHashKey, nsFactoryEntry*> mContractIDs;
 
-  mozilla::Monitor mLock;
+  mozilla::Monitor mLock MOZ_UNANNOTATED;
 
   mozilla::Maybe<EntryWrapper> LookupByCID(const nsID& aCID);
   mozilla::Maybe<EntryWrapper> LookupByCID(const mozilla::MonitorAutoLock&,
@@ -139,54 +137,6 @@ class nsComponentManagerImpl final : public nsIComponentManager,
 
   static nsTArray<ComponentLocation>* sModuleLocations;
 
-  class KnownModule {
-   public:
-    /**
-     * Static or binary module.
-     */
-    explicit KnownModule(const mozilla::Module* aModule)
-        : mModule(aModule), mLoaded(false), mFailed(false) {}
-
-    explicit KnownModule(mozilla::FileLocation& aFile)
-        : mModule(nullptr), mFile(aFile), mLoaded(false), mFailed(false) {}
-
-    ~KnownModule() {
-      if (mLoaded && mModule->unloadProc) {
-        mModule->unloadProc();
-      }
-    }
-
-    bool Load();
-
-    const mozilla::Module* Module() const { return mModule; }
-
-    /**
-     * For error logging, get a description of this module, either the
-     * file path, or <static module>.
-     */
-    nsCString Description() const;
-
-   private:
-    const mozilla::Module* mModule;
-    mozilla::FileLocation mFile;
-    bool mLoaded;
-    bool mFailed;
-  };
-
-  // The KnownModule is kept alive by these members, it is
-  // referenced by pointer from the factory entries.
-  nsTArray<mozilla::UniquePtr<KnownModule>> mKnownStaticModules;
-  // The key is the URI string of the module
-  nsClassHashtable<nsCStringHashKey, KnownModule> mKnownModules;
-
-  // Mutex not held
-  void RegisterModule(const mozilla::Module* aModule);
-
-  // Mutex held
-  void RegisterCIDEntryLocked(const mozilla::Module::CIDEntry* aEntry,
-                              KnownModule* aModule);
-  void RegisterContractIDLocked(const mozilla::Module::ContractIDEntry* aEntry);
-
   // Mutex not held
   void RegisterManifest(NSLocationType aType, mozilla::FileLocation& aFile,
                         bool aChromeOnly);
@@ -205,10 +155,6 @@ class nsComponentManagerImpl final : public nsIComponentManager,
 
   void ManifestManifest(ManifestProcessingContext& aCx, int aLineNo,
                         char* const* aArgv);
-  void ManifestComponent(ManifestProcessingContext& aCx, int aLineNo,
-                         char* const* aArgv);
-  void ManifestContract(ManifestProcessingContext& aCx, int aLineNo,
-                        char* const* aArgv);
   void ManifestCategory(ManifestProcessingContext& aCx, int aLineNo,
                         char* const* aArgv);
 
@@ -221,8 +167,6 @@ class nsComponentManagerImpl final : public nsIComponentManager,
     SHUTDOWN_IN_PROGRESS,
     SHUTDOWN_COMPLETE
   } mStatus;
-
-  mozilla::ArenaAllocator<1024 * 1, 8> mArena;
 
   struct PendingServiceInfo {
     const nsCID* cid;
@@ -254,23 +198,18 @@ class nsComponentManagerImpl final : public nsIComponentManager,
 #define NS_ERROR_IS_DIR NS_ERROR_GENERATE_FAILURE(NS_ERROR_MODULE_XPCOM, 24)
 
 struct nsFactoryEntry {
-  nsFactoryEntry(const mozilla::Module::CIDEntry* aEntry,
-                 nsComponentManagerImpl::KnownModule* aModule);
-
   // nsIComponentRegistrar.registerFactory support
   nsFactoryEntry(const nsCID& aClass, nsIFactory* aFactory);
 
-  ~nsFactoryEntry();
+  ~nsFactoryEntry() = default;
 
   already_AddRefed<nsIFactory> GetFactory();
 
-  nsresult CreateInstance(nsISupports* aOuter, const nsIID& aIID,
-                          void** aResult);
+  nsresult CreateInstance(const nsIID& aIID, void** aResult);
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf);
 
-  const mozilla::Module::CIDEntry* mCIDEntry;
-  nsComponentManagerImpl::KnownModule* mModule;
+  const nsCID mCID;
 
   nsCOMPtr<nsIFactory> mFactory;
   nsCOMPtr<nsISupports> mServiceObject;

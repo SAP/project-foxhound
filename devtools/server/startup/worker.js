@@ -48,11 +48,12 @@ this.rpc = function(method, ...params) {
 loadSubScript("resource://devtools/shared/loader/worker-loader.js");
 
 const { WorkerTargetActor } = worker.require(
-  "devtools/server/actors/targets/worker"
+  "resource://devtools/server/actors/targets/worker.js"
 );
-const { DevToolsServer } = worker.require("devtools/server/devtools-server");
+const { DevToolsServer } = worker.require(
+  "resource://devtools/server/devtools-server.js"
+);
 
-DevToolsServer.init();
 DevToolsServer.createRootActor = function() {
   throw new Error("Should never get here!");
 };
@@ -68,6 +69,11 @@ this.addEventListener("message", async function(event) {
     case "connect":
       const { forwardingPrefix } = packet;
 
+      // Force initializing the server each time on connect
+      // as it may have been destroyed by a previous, now closed toolbox.
+      // Once the last connection drops, the server auto destroy itself.
+      DevToolsServer.init();
+
       // Step 3: Create a connection to the parent.
       const connection = DevToolsServer.connectToParent(forwardingPrefix, this);
 
@@ -75,7 +81,8 @@ this.addEventListener("message", async function(event) {
       const workerTargetActor = new WorkerTargetActor(
         connection,
         global,
-        packet.workerDebuggerData
+        packet.workerDebuggerData,
+        packet.options.sessionContext
       );
       // Make the worker manage itself so it is put in a Pool and assigned an actorID.
       workerTargetActor.manage(workerTargetActor);
@@ -86,7 +93,6 @@ this.addEventListener("message", async function(event) {
           postMessage(JSON.stringify({ type: "worker-thread-attached" }));
         }
       );
-      workerTargetActor.attach();
 
       // Step 5: Send a response packet to the parent to notify
       // it that a connection has been established.
@@ -104,7 +110,7 @@ this.addEventListener("message", async function(event) {
       );
 
       // We might receive data to watch.
-      if (packet.options?.sessionData) {
+      if (packet.options.sessionData) {
         const promises = [];
         for (const [type, entries] of Object.entries(
           packet.options.sessionData

@@ -7,8 +7,8 @@ const { AboutWelcomeParent } = ChromeUtils.import(
 const TEST_PROTON_CONTENT = [
   {
     id: "AW_PIN_FIREFOX_STEP1",
-    order: 0,
     content: {
+      position: "corner",
       title: "Step 1",
       primary_button: {
         label: "Pin Firefox",
@@ -16,11 +16,11 @@ const TEST_PROTON_CONTENT = [
           navigate: true,
         },
       },
+      has_noodles: true,
     },
   },
   {
     id: "AW_SET_DEFAULT_STEP2",
-    order: 1,
     content: {
       title: "Step 2",
       primary_button: {
@@ -35,6 +35,7 @@ const TEST_PROTON_CONTENT = [
           navigate: true,
         },
       },
+      has_noodles: true,
     },
   },
 ];
@@ -128,6 +129,16 @@ add_task(async function test_AWMultistage_RemovePinScreen() {
     // Expected selectors:
     ["main.AW_ONLY_DEFAULT"],
     // Unexpected selectors:
-    ["main.AW_PIN_FIREFOX_STEP1", "nav.steps"]
+    ["main.AW_PIN_FIREFOX_STEP1"]
+  );
+
+  // Ensure step indicator is not displayed
+  await test_element_styles(
+    browser,
+    "div.steps",
+    // Expected styles:
+    {
+      display: "none",
+    }
   );
 });

@@ -8,7 +8,6 @@
 
 #include "mozilla/Assertions.h"   // MOZ_ASSERT, MOZ_ASSERT_IF
 #include "mozilla/EndianUtils.h"  // mozilla::NativeEndian, MOZ_LITTLE_ENDIAN
-#include "mozilla/RefPtr.h"       // RefPtr
 #include "mozilla/Result.h"       // mozilla::{Result, Ok, Err}, MOZ_TRY
 #include "mozilla/Utf8.h"         // mozilla::Utf8Unit
 
@@ -19,6 +18,7 @@
 #include <type_traits>  // std::is_same_v
 #include <utility>      // std::move
 
+#include "frontend/FrontendContext.h"  // FrontendContext
 #include "js/Transcoding.h"  // JS::TranscodeResult, JS::TranscodeBuffer, JS::TranscodeRange
 #include "js/UniquePtr.h"   // UniquePtr
 #include "js/Utility.h"     // JS::FreePolicy, js_delete
@@ -30,14 +30,25 @@ using namespace js;
 using mozilla::Utf8Unit;
 
 #ifdef DEBUG
-bool XDRCoderBase::validateResultCode(JSContext* cx,
+bool XDRCoderBase::validateResultCode(JSContext* cx, FrontendContext* fc,
                                       JS::TranscodeResult code) const {
   // NOTE: This function is called to verify that we do not have a pending
   // exception on the JSContext at the same time as a TranscodeResult failure.
   if (cx->isHelperThreadContext()) {
     return true;
   }
-  return cx->isExceptionPending() == bool(code == JS::TranscodeResult::Throw);
+
+  // NOTE: Errors during XDR encode/decode are supposed to be reported to
+  //       FrontendContext, instead of JSContext.
+  //       This branch is for covering remaining consumer of JSContext for
+  //       error reporting (e.g. memory allocation).
+  // TODO: Remove this once JSContext is removed from frontend and all errors
+  //       are reported to FrontendContext.
+  if (cx->isExceptionPending()) {
+    return bool(code == JS::TranscodeResult::Throw);
+  }
+
+  return fc->hadErrors() == bool(code == JS::TranscodeResult::Throw);
 }
 #endif
 

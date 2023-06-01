@@ -8,9 +8,9 @@
 
 #include "nsWrapperCache.h"
 #include "ObjectModel.h"
+#include "CompilationMessage.h"
 
-namespace mozilla {
-namespace webgpu {
+namespace mozilla::webgpu {
 class ShaderModule;
 
 class CompilationInfo final : public nsWrapperCache,
@@ -19,13 +19,21 @@ class CompilationInfo final : public nsWrapperCache,
   GPU_DECL_CYCLE_COLLECTION(CompilationInfo)
   GPU_DECL_JS_WRAP(CompilationInfo)
 
- private:
   explicit CompilationInfo(ShaderModule* const aParent);
+
+  void SetMessages(
+      nsTArray<mozilla::webgpu::WebGPUCompilationMessage>& aMessages);
+
+  void GetMessages(
+      nsTArray<RefPtr<mozilla::webgpu::CompilationMessage>>& aMessages);
+
+ private:
   ~CompilationInfo() = default;
   void Cleanup() {}
+
+  nsTArray<RefPtr<mozilla::webgpu::CompilationMessage>> mMessages;
 };
 
-}  // namespace webgpu
-}  // namespace mozilla
+}  // namespace mozilla::webgpu
 
 #endif  // GPU_CompilationInfo_H_

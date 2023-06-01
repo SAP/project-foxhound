@@ -4,11 +4,12 @@
 
 var EXPORTED_SYMBOLS = ["ErrorHandler", "SyncScheduler"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
+);
 const {
   CREDENTIALS_CHANGED,
   ENGINE_APPLY_FAIL,
@@ -46,29 +47,31 @@ const { CommonUtils } = ChromeUtils.import(
   "resource://services-common/utils.js"
 );
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "Status",
   "resource://services-sync/status.js"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "AddonManager",
   "resource://gre/modules/AddonManager.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "fxAccounts",
-  "resource://gre/modules/FxAccounts.jsm"
-);
+XPCOMUtils.defineLazyGetter(lazy, "fxAccounts", () => {
+  return ChromeUtils.import(
+    "resource://gre/modules/FxAccounts.jsm"
+  ).getFxAccountsSingleton();
+});
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "IdleService",
   "@mozilla.org/widget/useridleservice;1",
   "nsIUserIdleService"
 );
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "CaptivePortalService",
   "@mozilla.org/network/captive-portal-service;1",
   "nsICaptivePortalService"
@@ -206,7 +209,8 @@ SyncScheduler.prototype = {
     try {
       if (
         Services.io.offline ||
-        CaptivePortalService.state == CaptivePortalService.LOCKED_PORTAL
+        lazy.CaptivePortalService.state ==
+          lazy.CaptivePortalService.LOCKED_PORTAL
       ) {
         return true;
       }
@@ -282,17 +286,16 @@ SyncScheduler.prototype = {
     Svc.Obs.add("weave:service:logout:finish", this);
     Svc.Obs.add("weave:service:sync:error", this);
     Svc.Obs.add("weave:service:backoff:interval", this);
-    Svc.Obs.add("weave:service:ready", this);
     Svc.Obs.add("weave:engine:sync:applied", this);
     Svc.Obs.add("weave:service:setup-complete", this);
     Svc.Obs.add("weave:service:start-over", this);
     Svc.Obs.add("FxA:hawk:backoff:interval", this);
 
-    if (Status.checkSetup() == STATUS_OK) {
+    if (lazy.Status.checkSetup() == STATUS_OK) {
       Svc.Obs.add("wake_notification", this);
       Svc.Obs.add("captive-portal-login-success", this);
       Svc.Obs.add("sleep_notification", this);
-      IdleService.addIdleObserver(this, this.idleTime);
+      lazy.IdleService.addIdleObserver(this, this.idleTime);
     }
   },
 
@@ -301,7 +304,7 @@ SyncScheduler.prototype = {
     this._log.trace("Handling " + topic);
     switch (topic) {
       case "weave:engine:score:updated":
-        if (Status.login == LOGIN_SUCCEEDED) {
+        if (lazy.Status.login == LOGIN_SUCCEEDED) {
           CommonUtils.namedTimer(
             this.calculateScore,
             SCORE_UPDATE_DELAY,
@@ -346,7 +349,7 @@ SyncScheduler.prototype = {
 
         // reset backoff info, if the server tells us to continue backing off,
         // we'll handle that later
-        Status.resetBackoff();
+        lazy.Status.resetBackoff();
 
         this.globalScore = 0;
         break;
@@ -354,7 +357,10 @@ SyncScheduler.prototype = {
         this.nextSync = 0;
         this.adjustSyncInterval();
 
-        if (Status.service == SYNC_FAILED_PARTIAL && this.requiresBackoff) {
+        if (
+          lazy.Status.service == SYNC_FAILED_PARTIAL &&
+          this.requiresBackoff
+        ) {
           this.requiresBackoff = false;
           this.handleSyncError();
           return;
@@ -365,7 +371,7 @@ SyncScheduler.prototype = {
         this.updateGlobalScore();
         if (
           this.globalScore > this.syncThreshold &&
-          Status.service == STATUS_OK
+          lazy.Status.service == STATUS_OK
         ) {
           // The global score should be 0 after a sync. If it's not, either
           // items were changed during the last sync (and we should schedule an
@@ -387,7 +393,7 @@ SyncScheduler.prototype = {
         }
 
         this._syncErrors = 0;
-        if (Status.sync == NO_SYNC_NODE_FOUND) {
+        if (lazy.Status.sync == NO_SYNC_NODE_FOUND) {
           // If we don't have a Sync node, override the interval, even if we've
           // scheduled a follow-up sync.
           this._log.trace("Scheduling a sync at interval NO_SYNC_NODE_FOUND.");
@@ -411,7 +417,7 @@ SyncScheduler.prototype = {
       case "weave:service:login:error":
         this.clearSyncTriggers();
 
-        if (Status.login == MASTER_PASSWORD_LOCKED) {
+        if (lazy.Status.login == MASTER_PASSWORD_LOCKED) {
           // Try again later, just as if we threw an error... only without the
           // error count.
           this._log.debug("Couldn't log in: master password is locked.");
@@ -419,7 +425,7 @@ SyncScheduler.prototype = {
             "Scheduling a sync at MASTER_PASSWORD_LOCKED_RETRY_INTERVAL"
           );
           this.scheduleAtInterval(MASTER_PASSWORD_LOCKED_RETRY_INTERVAL);
-        } else if (!this._fatalLoginStatus.includes(Status.login)) {
+        } else if (!this._fatalLoginStatus.includes(lazy.Status.login)) {
           // Not a fatal login error, just an intermittent network or server
           // issue. Keep on syncin'.
           this.checkSyncStatus();
@@ -446,24 +452,23 @@ SyncScheduler.prototype = {
         );
         // Leave up to 25% more time for the back off.
         let interval = requested_interval * (1 + Math.random() * 0.25);
-        Status.backoffInterval = interval;
-        Status.minimumNextSync = Date.now() + requested_interval;
-        this._log.debug("Fuzzed minimum next sync: " + Status.minimumNextSync);
-        break;
-      case "weave:service:ready":
-        // Applications can specify this preference if they want autoconnect
-        // to happen after a fixed delay.
-        let delay = Svc.Prefs.get("autoconnectDelay");
-        if (delay) {
-          this.delayedAutoConnect(delay);
-        }
+        lazy.Status.backoffInterval = interval;
+        lazy.Status.minimumNextSync = Date.now() + requested_interval;
+        this._log.debug(
+          "Fuzzed minimum next sync: " + lazy.Status.minimumNextSync
+        );
         break;
       case "weave:engine:sync:applied":
         let numItems = subject.succeeded;
         this._log.trace(
           "Engine " + data + " successfully applied " + numItems + " items."
         );
-        if (numItems) {
+        // Bug 1800186 - the tabs engine always reports incoming items, so we don't
+        // want special scheduling in this scenario.
+        // (However, even when we fix the underlying cause of that, we probably still can
+        // ignore tabs here - new incoming tabs don't need to trigger the extra syncs we do
+        // based on this flag.)
+        if (data != "tabs" && numItems) {
           this.hasIncomingItems = true;
         }
         if (subject.newFailed) {
@@ -474,7 +479,7 @@ SyncScheduler.prototype = {
         break;
       case "weave:service:setup-complete":
         Services.prefs.savePrefFile(null);
-        IdleService.addIdleObserver(this, this.idleTime);
+        lazy.IdleService.addIdleObserver(this, this.idleTime);
         Svc.Obs.add("wake_notification", this);
         Svc.Obs.add("captive-portal-login-success", this);
         Svc.Obs.add("sleep_notification", this);
@@ -482,7 +487,7 @@ SyncScheduler.prototype = {
       case "weave:service:start-over":
         this.setDefaults();
         try {
-          IdleService.removeIdleObserver(this, this.idleTime);
+          lazy.IdleService.removeIdleObserver(this, this.idleTime);
         } catch (ex) {
           if (ex.result != Cr.NS_ERROR_FAILURE) {
             throw ex;
@@ -653,8 +658,10 @@ SyncScheduler.prototype = {
    */
   syncIfMPUnlocked(engines, why) {
     // No point if we got kicked out by the master password dialog.
-    if (Status.login == MASTER_PASSWORD_LOCKED && Utils.mpLocked()) {
-      this._log.debug("Not initiating sync: Login status is " + Status.login);
+    if (lazy.Status.login == MASTER_PASSWORD_LOCKED && Utils.mpLocked()) {
+      this._log.debug(
+        "Not initiating sync: Login status is " + lazy.Status.login
+      );
 
       // If we're not syncing now, we need to schedule the next one.
       this._log.trace(
@@ -678,7 +685,7 @@ SyncScheduler.prototype = {
         now >=
           this.missedFxACommandsLastFetch + this.missedFxACommandsFetchInterval
       ) {
-        fxAccounts.commands
+        lazy.fxAccounts.commands
           .pollDeviceCommands()
           .then(() => {
             this.missedFxACommandsLastFetch = now;
@@ -700,16 +707,16 @@ SyncScheduler.prototype = {
     }
 
     // Ensure the interval is set to no less than the backoff.
-    if (Status.backoffInterval && interval < Status.backoffInterval) {
+    if (lazy.Status.backoffInterval && interval < lazy.Status.backoffInterval) {
       this._log.trace(
         "Requested interval " +
           interval +
           " ms is smaller than the backoff interval. " +
           "Using backoff interval " +
-          Status.backoffInterval +
+          lazy.Status.backoffInterval +
           " ms instead."
       );
-      interval = Status.backoffInterval;
+      interval = lazy.Status.backoffInterval;
     }
     let nextSync = this.nextSync;
     if (nextSync != 0) {
@@ -756,7 +763,7 @@ SyncScheduler.prototype = {
     let interval = Utils.calculateBackoff(
       this._syncErrors,
       MINIMUM_BACKOFF_INTERVAL,
-      Status.backoffInterval
+      lazy.Status.backoffInterval
     );
     if (minimumInterval) {
       interval = Math.max(minimumInterval, interval);
@@ -768,36 +775,12 @@ SyncScheduler.prototype = {
     this.scheduleNextSync(interval, { why: "client-backoff-schedule" });
   },
 
-  /**
-   * Automatically start syncing after the given delay (in seconds).
-   *
-   * Applications can define the `services.sync.autoconnectDelay` preference
-   * to have this called automatically during start-up with the pref value as
-   * the argument. Alternatively, they can call it themselves to control when
-   * Sync should first start to sync.
-   */
-  delayedAutoConnect: function delayedAutoConnect(delay) {
-    if (this.service._checkSetup() == STATUS_OK) {
-      CommonUtils.namedTimer(
-        this.autoConnect,
-        delay * 1000,
-        this,
-        "_autoTimer"
-      );
-    }
-  },
-
   autoConnect: function autoConnect() {
     if (this.service._checkSetup() == STATUS_OK && !this.service._checkSync()) {
       // Schedule a sync based on when a previous sync was scheduled.
       // scheduleNextSync() will do the right thing if that time lies in
       // the past.
       this.scheduleNextSync(this.nextSync - Date.now(), { why: "startup" });
-    }
-
-    // Once autoConnect is called we no longer need _autoTimer.
-    if (this._autoTimer) {
-      this._autoTimer.clear();
     }
   },
 
@@ -811,7 +794,7 @@ SyncScheduler.prototype = {
 
     // Do nothing on the first couple of failures, if we're not in
     // backoff due to 5xx errors.
-    if (!Status.enforceBackoff) {
+    if (!lazy.Status.enforceBackoff) {
       if (this._syncErrors < MAX_ERROR_COUNT_BEFORE_BACKOFF) {
         this.scheduleNextSync(null, { why: "reschedule" });
         return;
@@ -821,7 +804,7 @@ SyncScheduler.prototype = {
           MAX_ERROR_COUNT_BEFORE_BACKOFF +
           "; enforcing backoff."
       );
-      Status.enforceBackoff = true;
+      lazy.Status.enforceBackoff = true;
     }
 
     this.scheduleAtInterval();
@@ -876,7 +859,7 @@ ErrorHandler.prototype = {
           // An engine isn't able to apply one or more incoming records.
           // We don't fail hard on this, but it usually indicates a bug,
           // so for now treat it as sync error (c.f. Service._syncEngine())
-          Status.engines = [data, ENGINE_APPLY_FAIL];
+          lazy.Status.engines = [data, ENGINE_APPLY_FAIL];
           this._log.debug(data + " failed to apply some records.");
         }
         break;
@@ -886,7 +869,7 @@ ErrorHandler.prototype = {
 
         this.checkServerError(exception);
 
-        Status.engines = [
+        lazy.Status.engines = [
           engine_name,
           exception.failureCode || ENGINE_UNKNOWN_FAIL,
         ];
@@ -905,7 +888,7 @@ ErrorHandler.prototype = {
         this.resetFileLog();
         break;
       case "weave:service:sync:error": {
-        if (Status.sync == CREDENTIALS_CHANGED) {
+        if (lazy.Status.sync == CREDENTIALS_CHANGED) {
           this.service.logout();
         }
 
@@ -926,19 +909,22 @@ ErrorHandler.prototype = {
         break;
       }
       case "weave:service:sync:finish":
-        this._log.trace("Status.service is " + Status.service);
+        this._log.trace("Status.service is " + lazy.Status.service);
 
         // Check both of these status codes: in the event of a failure in one
         // engine, Status.service will be SYNC_FAILED_PARTIAL despite
         // Status.sync being SYNC_SUCCEEDED.
         // *facepalm*
-        if (Status.sync == SYNC_SUCCEEDED && Status.service == STATUS_OK) {
+        if (
+          lazy.Status.sync == SYNC_SUCCEEDED &&
+          lazy.Status.service == STATUS_OK
+        ) {
           // Great. Let's clear our mid-sync 401 note.
           this._log.trace("Clearing lastSyncReassigned.");
           Svc.Prefs.reset("lastSyncReassigned");
         }
 
-        if (Status.service == SYNC_FAILED_PARTIAL) {
+        if (lazy.Status.service == SYNC_FAILED_PARTIAL) {
           this._log.error("Some engines did not sync correctly.");
         }
         this.resetFileLog();
@@ -970,7 +956,7 @@ ErrorHandler.prototype = {
     // active extensions that are not hidden.
     let addons = [];
     try {
-      addons = await AddonManager.getAddonsByTypes(["extension"]);
+      addons = await lazy.AddonManager.getAddonsByTypes(["extension"]);
     } catch (e) {
       this._log.warn("Failed to dump addons", e);
     }
@@ -993,7 +979,7 @@ ErrorHandler.prototype = {
     }
     const logType = await logManager.resetFileLog();
     if (logType == logManager.ERROR_LOG_WRITTEN) {
-      Cu.reportError(
+      console.error(
         "Sync encountered an error - see about:sync-log for the log file."
       );
     }
@@ -1011,7 +997,7 @@ ErrorHandler.prototype = {
     switch (resp.status) {
       case 400:
         if (resp == RESPONSE_OVER_QUOTA) {
-          Status.sync = OVER_QUOTA;
+          lazy.Status.sync = OVER_QUOTA;
         }
         break;
 
@@ -1041,14 +1027,14 @@ ErrorHandler.prototype = {
       case 502:
       case 503:
       case 504:
-        Status.enforceBackoff = true;
+        lazy.Status.enforceBackoff = true;
         if (resp.status == 503 && resp.headers["retry-after"]) {
           let retryAfter = resp.headers["retry-after"];
           this._log.debug("Got Retry-After: " + retryAfter);
           if (this.service.isLoggedIn) {
-            Status.sync = SERVER_MAINTENANCE;
+            lazy.Status.sync = SERVER_MAINTENANCE;
           } else {
-            Status.login = SERVER_MAINTENANCE;
+            lazy.Status.login = SERVER_MAINTENANCE;
           }
           Svc.Obs.notify(
             "weave:service:backoff:interval",
@@ -1069,9 +1055,9 @@ ErrorHandler.prototype = {
         // The constant says it's about login, but in fact it just
         // indicates general network error.
         if (this.service.isLoggedIn) {
-          Status.sync = LOGIN_FAILED_NETWORK_ERROR;
+          lazy.Status.sync = LOGIN_FAILED_NETWORK_ERROR;
         } else {
-          Status.login = LOGIN_FAILED_NETWORK_ERROR;
+          lazy.Status.login = LOGIN_FAILED_NETWORK_ERROR;
         }
         break;
     }

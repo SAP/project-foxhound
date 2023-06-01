@@ -2,21 +2,21 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from marionette_driver import Wait
-from marionette_driver.addons import Addons
-
 import os
 import sys
+
+from marionette_driver import Wait
+from marionette_driver.addons import Addons
 
 # Add this directory to the import path.
 sys.path.append(os.path.dirname(__file__))
 
 from service_worker_testutils import (
-    MarionetteServiceWorkerTestCase,
-    EXT_ID,
     EXT_DIR_PATH,
+    EXT_ID,
     PREF_BG_SW_ENABLED,
     PREF_PERSIST_TEMP_ADDONS,
+    MarionetteServiceWorkerTestCase,
 )
 
 
@@ -31,7 +31,7 @@ class PurgeExtensionServiceWorkersOnPrefDisabled(MarionetteServiceWorkerTestCase
         self.marionette.restart(in_app=True)
 
     def tearDown(self):
-        self.marionette.restart(clean=True)
+        self.marionette.restart(in_app=False, clean=True)
         super(PurgeExtensionServiceWorkersOnPrefDisabled, self).tearDown()
 
     def test_unregistering_service_worker_when_clearing_data(self):

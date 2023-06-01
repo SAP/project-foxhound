@@ -2,11 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "SearchTestUtils",
-  "resource://testing-common/SearchTestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  SearchTestUtils: "resource://testing-common/SearchTestUtils.sys.mjs",
+});
 
 SearchTestUtils.init(this);
 
@@ -30,10 +28,7 @@ function sendEventToContent(browser, data) {
   );
 }
 
-add_task(async function setup() {
-  const originalEngine = await Services.search.getDefault();
-  const originalPrivateEngine = await Services.search.getDefaultPrivate();
-
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.newtab.preload", false],
@@ -42,23 +37,20 @@ add_task(async function setup() {
     ],
   });
 
-  let engine = await SearchTestUtils.promiseNewSearchEngine(
-    "chrome://mochitests/content/browser/browser/components/search/test/browser/testEngine.xml"
-  );
-  await Services.search.setDefault(engine);
+  await SearchTestUtils.promiseNewSearchEngine({
+    url:
+      "chrome://mochitests/content/browser/browser/components/search/test/browser/testEngine.xml",
+    setAsDefault: true,
+  });
 
-  let engine2 = await SearchTestUtils.promiseNewSearchEngine(
-    "chrome://mochitests/content/browser/browser/components/search/test/browser/testEngine_diacritics.xml"
-  );
-  await Services.search.setDefaultPrivate(engine2);
+  await SearchTestUtils.promiseNewSearchEngine({
+    url:
+      "chrome://mochitests/content/browser/browser/components/search/test/browser/testEngine_diacritics.xml",
+    setAsDefaultPrivate: true,
+  });
 
-  await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + "testEngine_chromeicon.xml"
-  );
-
-  registerCleanupFunction(async () => {
-    await Services.search.setDefault(originalEngine);
-    await Services.search.setDefaultPrivate(originalPrivateEngine);
+  await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + "testEngine_chromeicon.xml",
   });
 });
 
@@ -106,7 +98,10 @@ add_task(async function SetDefaultEngine() {
   });
 
   let enginePromise = await waitForTestMsg(browser, "CurrentEngine");
-  await Services.search.setDefault(oldDefaultEngine);
+  await Services.search.setDefault(
+    oldDefaultEngine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
   msg = await enginePromise.donePromise;
   checkMsg(msg, {
     type: "CurrentEngine",
@@ -120,7 +115,10 @@ add_task(async function setDefaultEnginePrivate() {
   const engine = await Services.search.getEngineByName("FooChromeIcon");
   const { browser } = await addTab();
   let enginePromise = await waitForTestMsg(browser, "CurrentPrivateEngine");
-  await Services.search.setDefaultPrivate(engine);
+  await Services.search.setDefaultPrivate(
+    engine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
   let msg = await enginePromise.donePromise;
   checkMsg(msg, {
     type: "CurrentPrivateEngine",
@@ -441,9 +439,9 @@ async function waitForNewEngine(browser, basename) {
   let statePromise = await waitForTestMsg(browser, "CurrentState", 2);
 
   // Wait for addOpenSearchEngine().
-  let engine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + basename
-  );
+  let engine = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + basename,
+  });
   let results = await statePromise.donePromise;
   return [engine, ...results];
 }

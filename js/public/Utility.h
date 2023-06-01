@@ -407,9 +407,10 @@ static inline void* js_realloc(void* p, size_t bytes) {
 }
 
 static inline void js_free(void* p) {
-  // TODO: This should call |moz_arena_free(js::MallocArena, p)| but we
+  // Bug 1784164: This should call |moz_arena_free(js::MallocArena, p)| but we
   // currently can't enforce that all memory freed here was allocated by
-  // js_malloc().
+  // js_malloc(). All other memory should go through a different allocator and
+  // deallocator.
   free(p);
 }
 #endif /* JS_USE_CUSTOM_ALLOCATOR */
@@ -462,9 +463,9 @@ static inline void js_free(void* p) {
  * - Ordinarily, use js_free/js_delete.
  *
  * - For deallocations during GC finalization, use one of the following
- *   operations on the JSFreeOp provided to the finalizer:
+ *   operations on the JS::GCContext provided to the finalizer:
  *
- *     JSFreeOp::{free_,delete_}
+ *     JS::GCContext::{free_,delete_}
  */
 
 /*

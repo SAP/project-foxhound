@@ -98,7 +98,6 @@
 #include "nsIPermissionManager.h"
 #include "nsMimeTypes.h"
 #include "nsIHttpChannelInternal.h"
-#include "nsIClassOfService.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsStreamListenerWrapper.h"
 #include "nsITimedChannel.h"
@@ -116,8 +115,7 @@
 
 using namespace mozilla::net;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // Maximum size that we'll grow an ArrayBuffer instead of doubling,
 // once doubling reaches this threshold
@@ -192,7 +190,6 @@ XMLHttpRequestMainThread::XMLHttpRequestMainThread(
     : XMLHttpRequest(aGlobalObject),
       mResponseBodyDecodedPos(0),
       mResponseType(XMLHttpRequestResponseType::_empty),
-      mRequestObserver(nullptr),
       mState(XMLHttpRequest_Binding::UNSENT),
       mFlagSynchronous(false),
       mFlagAborted(false),
@@ -220,7 +217,6 @@ XMLHttpRequestMainThread::XMLHttpRequestMainThread(
       mLoadTransferred(0),
       mIsSystem(false),
       mIsAnon(false),
-      mFirstStartRequestSeen(false),
       mInLoadProgressEvent(false),
       mResultJSON(JS::UndefinedValue()),
       mArrayBufferBuilder(new ArrayBufferBuilder()),
@@ -334,12 +330,7 @@ void XMLHttpRequestMainThread::ResetResponse() {
   mEofDecoded = false;
 }
 
-void XMLHttpRequestMainThread::SetRequestObserver(
-    nsIRequestObserver* aObserver) {
-  mRequestObserver = aObserver;
-}
-
-NS_IMPL_CYCLE_COLLECTION_MULTI_ZONE_JSHOLDER_CLASS(XMLHttpRequestMainThread)
+NS_IMPL_CYCLE_COLLECTION_CLASS(XMLHttpRequestMainThread)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(XMLHttpRequestMainThread,
                                                   XMLHttpRequestEventTarget)
@@ -939,7 +930,8 @@ void XMLHttpRequestMainThread::CloseRequest() {
   mWaitingForOnStopRequest = false;
   mErrorLoad = ErrorType::eTerminated;
   if (mChannel) {
-    mChannel->Cancel(NS_BINDING_ABORTED);
+    mChannel->CancelWithReason(NS_BINDING_ABORTED,
+                               "XMLHttpRequestMainThread::CloseRequest"_ns);
   }
   if (mTimeoutTimer) {
     mTimeoutTimer->Cancel();
@@ -1871,10 +1863,6 @@ XMLHttpRequestMainThread::OnStartRequest(nsIRequest* request) {
   AUTO_PROFILER_LABEL("XMLHttpRequestMainThread::OnStartRequest", NETWORK);
 
   nsresult rv = NS_OK;
-  if (!mFirstStartRequestSeen && mRequestObserver) {
-    mFirstStartRequestSeen = true;
-    mRequestObserver->OnStartRequest(request);
-  }
 
   if (request != mChannel) {
     // Can this still happen?
@@ -1940,7 +1928,7 @@ XMLHttpRequestMainThread::OnStartRequest(nsIRequest* request) {
   // Fallback to 'application/octet-stream'
   nsAutoCString type;
   channel->GetContentType(type);
-  if (type.EqualsLiteral(UNKNOWN_CONTENT_TYPE)) {
+  if (type.IsEmpty() || type.EqualsLiteral(UNKNOWN_CONTENT_TYPE)) {
     channel->SetContentType(nsLiteralCString(APPLICATION_OCTET_STREAM));
   }
 
@@ -2036,7 +2024,7 @@ XMLHttpRequestMainThread::OnStartRequest(nsIRequest* request) {
       }
     } else if (!(type.EqualsLiteral("text/xml") ||
                  type.EqualsLiteral("application/xml") ||
-                 type.RFind("+xml", true, -1, 4) != kNotFound)) {
+                 StringEndsWith(type, "+xml"_ns))) {
       // Follow https://xhr.spec.whatwg.org/
       // If final MIME type is not null, text/html, text/xml, application/xml,
       // or does not end in +xml, return null.
@@ -2091,10 +2079,6 @@ XMLHttpRequestMainThread::OnStartRequest(nsIRequest* request) {
                           responseStatus == 204 || responseStatus == 205 ||
                           responseStatus == 304)) {
       mResponseXML->SetSuppressParserErrorConsoleMessages(true);
-    }
-
-    if (mPrincipal->IsSystemPrincipal()) {
-      mResponseXML->ForceEnableXULXBL();
     }
 
     nsCOMPtr<nsILoadInfo> loadInfo = mChannel->LoadInfo();
@@ -2157,12 +2141,6 @@ XMLHttpRequestMainThread::OnStopRequest(nsIRequest* request, nsresult status) {
   }
 
   mWaitingForOnStopRequest = false;
-
-  if (mRequestObserver) {
-    NS_ASSERTION(mFirstStartRequestSeen, "Inconsistent state!");
-    mFirstStartRequestSeen = false;
-    mRequestObserver->OnStopRequest(request, status);
-  }
 
   // make sure to notify the listener if we were aborted
   // XXX in fact, why don't we do the cleanup below in this case??
@@ -2622,7 +2600,7 @@ nsresult XMLHttpRequestMainThread::InitiateFetch(
       mAuthorRequestHeaders.Set("accept", "*/*"_ns);
     }
 
-    mAuthorRequestHeaders.ApplyToChannel(httpChannel, false);
+    mAuthorRequestHeaders.ApplyToChannel(httpChannel, false, false);
 
     if (!IsSystemXHR()) {
       nsCOMPtr<nsPIDOMWindowInner> owner = GetOwner();
@@ -3206,7 +3184,8 @@ void XMLHttpRequestMainThread::SetRequestHeader(const nsACString& aName,
 
   // Step 5
   bool isPrivilegedCaller = IsSystemXHR();
-  bool isForbiddenHeader = nsContentUtils::IsForbiddenRequestHeader(aName);
+  bool isForbiddenHeader =
+      nsContentUtils::IsForbiddenRequestHeader(aName, aValue);
   if (!isPrivilegedCaller && isForbiddenHeader) {
     AutoTArray<nsString, 1> params;
     CopyUTF8toUTF16(aName, *params.AppendElement());
@@ -3444,9 +3423,30 @@ nsresult XMLHttpRequestMainThread::OnRedirectVerifyCallback(nsresult result) {
 
     nsCOMPtr<nsIHttpChannel> newHttpChannel(do_QueryInterface(mChannel));
     if (newHttpChannel) {
+      // we need to strip Authentication headers for cross-origin requests
+      // Ref: https://fetch.spec.whatwg.org/#http-redirect-fetch
+      bool skipAuthHeader = false;
+      if (StaticPrefs::network_fetch_redirect_stripAuthHeader()) {
+        nsCOMPtr<nsIURI> oldUri;
+        MOZ_ALWAYS_SUCCEEDS(
+            NS_GetFinalChannelURI(oldHttpChannel, getter_AddRefs(oldUri)));
+
+        nsCOMPtr<nsIURI> newUri;
+        MOZ_ALWAYS_SUCCEEDS(
+            NS_GetFinalChannelURI(newHttpChannel, getter_AddRefs(newUri)));
+
+        nsresult rv = nsContentUtils::GetSecurityManager()->CheckSameOriginURI(
+            newUri, oldUri, false, false);
+
+        if (NS_FAILED(rv)) {
+          skipAuthHeader = true;
+        }
+      }
+
       // Ensure all original headers are duplicated for the new channel (bug
       // #553888)
-      mAuthorRequestHeaders.ApplyToChannel(newHttpChannel, rewriteToGET);
+      mAuthorRequestHeaders.ApplyToChannel(newHttpChannel, rewriteToGET,
+                                           skipAuthHeader);
     }
   } else {
     mErrorLoad = ErrorType::eRedirect;
@@ -4033,14 +4033,13 @@ nsresult ArrayBufferBuilder::MapToFileInPackage(const nsCString& aFile,
   nsresult rv;
 
   // Open Jar file to get related attributes of target file.
-  RefPtr<nsZipArchive> zip = new nsZipArchive();
-  rv = zip->OpenArchive(aJarFile);
-  if (NS_FAILED(rv)) {
-    return rv;
+  RefPtr<nsZipArchive> zip = nsZipArchive::OpenArchive(aJarFile);
+  if (!zip) {
+    return NS_ERROR_FAILURE;
   }
   nsZipItem* zipItem = zip->GetItem(aFile.get());
   if (!zipItem) {
-    return NS_ERROR_FILE_TARGET_DOES_NOT_EXIST;
+    return NS_ERROR_FILE_NOT_FOUND;
   }
 
   // If file was added to the package as stored(uncompressed), map to the
@@ -4140,7 +4139,8 @@ void RequestHeaders::MergeOrSet(const nsACString& aName,
 void RequestHeaders::Clear() { mHeaders.Clear(); }
 
 void RequestHeaders::ApplyToChannel(nsIHttpChannel* aChannel,
-                                    bool aStripRequestBodyHeader) const {
+                                    bool aStripRequestBodyHeader,
+                                    bool aStripAuthHeader) const {
   for (const RequestHeader& header : mHeaders) {
     if (aStripRequestBodyHeader &&
         (header.mName.LowerCaseEqualsASCII("content-type") ||
@@ -4149,6 +4149,12 @@ void RequestHeaders::ApplyToChannel(nsIHttpChannel* aChannel,
          header.mName.LowerCaseEqualsASCII("content-location"))) {
       continue;
     }
+
+    if (aStripAuthHeader &&
+        header.mName.LowerCaseEqualsASCII("authorization")) {
+      continue;
+    }
+
     // Update referrerInfo to override referrer header in system privileged.
     if (header.mName.LowerCaseEqualsASCII("referer")) {
       DebugOnly<nsresult> rv = aChannel->SetNewReferrerInfo(
@@ -4230,5 +4236,4 @@ bool RequestHeaders::CharsetIterator::Next() {
   return true;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

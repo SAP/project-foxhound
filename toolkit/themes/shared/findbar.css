@@ -61,6 +61,7 @@ html|input.findbar-textbox {
   padding: 2px 5px;
   padding-inline-start: 8px;
   width: 18em;
+  box-sizing: border-box;
 }
 
 html|input.findbar-textbox:-moz-lwtheme {
@@ -75,8 +76,8 @@ html|input.findbar-textbox:-moz-lwtheme {
 
 html|input.findbar-textbox:focus {
   border-color: transparent;
-  outline: 2px solid color-mix(in srgb, var(--focus-outline-color, -moz-accent-color) 50%, transparent);
-  outline-offset: -2px;
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-inset);
 }
 
 html|input.findbar-textbox:-moz-lwtheme::selection {
@@ -89,9 +90,8 @@ html|input.findbar-textbox:not(:focus):-moz-lwtheme::selection {
 }
 
 html|input.findbar-textbox[status="notfound"] {
-  border-color: transparent;
-  outline: 2px solid var(--input-error-border-color, #E22850);
-  outline-offset: -2px;
+  background-color: rgba(226,40,80,.3);
+  color: inherit;
 }
 
 html|input.findbar-textbox[flash="true"] {
@@ -159,23 +159,7 @@ html|input.findbar-textbox[flash="true"] {
 }
 
 .findbar-find-status[status="notfound"] {
-  color: var(--error-text-color, color-mix(in srgb, currentColor 40%, #C50042));
-}
-
-@media not (prefers-contrast) {
-/* Revert default placeholder text fade to fade with color below. */
-html|input.findbar-textbox::placeholder {
-  opacity: 1;
-}
-
-html|input.findbar-textbox::placeholder,
-.findbar-highlight,
-.findbar-case-sensitive,
-.findbar-match-diacritics,
-.findbar-entire-word,
-.findbar-label {
-  color: color-mix(in srgb, currentColor 70%, transparent);
-}
+  font-weight: bold;
 }
 
 .find-status-icon {
@@ -188,9 +172,4 @@ html|input.findbar-textbox::placeholder,
 .close-icon.findbar-closebutton {
   margin: 2px 8px;
   width: 24px;
-}
-
-.findbar-find-status[status="notfound"] {
-  color: var(--error-text-color, color-mix(in srgb, currentColor 40%, #C50042));
-  opacity: 0.8;
 }

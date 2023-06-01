@@ -1,16 +1,12 @@
 "use strict";
 
 var prefs;
-var spdypref;
 var http2pref;
 var origin;
 var rcwnpref;
 
 function run_test() {
-  var env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  var h2Port = env.get("MOZHTTP2_PORT");
+  var h2Port = Services.env.get("MOZHTTP2_PORT");
   Assert.notEqual(h2Port, null);
   Assert.notEqual(h2Port, "");
 
@@ -18,12 +14,10 @@ function run_test() {
   do_get_profile();
   prefs = Services.prefs;
 
-  spdypref = prefs.getBoolPref("network.http.spdy.enabled");
-  http2pref = prefs.getBoolPref("network.http.spdy.enabled.http2");
+  http2pref = prefs.getBoolPref("network.http.http2.enabled");
   rcwnpref = prefs.getBoolPref("network.http.rcwn.enabled");
 
-  prefs.setBoolPref("network.http.spdy.enabled", true);
-  prefs.setBoolPref("network.http.spdy.enabled.http2", true);
+  prefs.setBoolPref("network.http.http2.enabled", true);
   prefs.setCharPref(
     "network.dns.localDomains",
     "foo.example.com, bar.example.com"
@@ -44,8 +38,7 @@ function run_test() {
 }
 
 function resetPrefs() {
-  prefs.setBoolPref("network.http.spdy.enabled", spdypref);
-  prefs.setBoolPref("network.http.spdy.enabled.http2", http2pref);
+  prefs.setBoolPref("network.http.http2.enabled", http2pref);
   prefs.setBoolPref("network.http.rcwn.enabled", rcwnpref);
   prefs.clearUserPref("network.dns.localDomains");
 }

@@ -7,38 +7,39 @@
 loader.lazyRequireGetter(
   this,
   "PropTypes",
-  "devtools/client/shared/vendor/react-prop-types"
+  "resource://devtools/client/shared/vendor/react-prop-types.js"
 );
 loader.lazyRequireGetter(
   this,
   "HTMLTooltip",
-  "devtools/client/shared/widgets/tooltip/HTMLTooltip",
+  "resource://devtools/client/shared/widgets/tooltip/HTMLTooltip.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "createPortal",
-  "devtools/client/shared/vendor/react-dom",
+  "resource://devtools/client/shared/vendor/react-dom.js",
   true
 );
 
 // React & Redux
-const { Component } = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const { connect } = require("devtools/client/shared/vendor/react-redux");
+const {
+  Component,
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const {
+  connect,
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
 
 const {
   getAutocompleteState,
-} = require("devtools/client/webconsole/selectors/autocomplete");
-const autocompleteActions = require("devtools/client/webconsole/actions/autocomplete");
-const { l10n } = require("devtools/client/webconsole/utils/messages");
+} = require("resource://devtools/client/webconsole/selectors/autocomplete.js");
+const autocompleteActions = require("resource://devtools/client/webconsole/actions/autocomplete.js");
+const {
+  l10n,
+} = require("resource://devtools/client/webconsole/utils/messages.js");
 
-const utmParams = new URLSearchParams({
-  utm_source: "mozilla",
-  utm_medium: "devtools-webconsole",
-  utm_campaign: "default",
-});
-const LEARN_MORE_URL = `https://developer.mozilla.org/docs/Tools/Web_Console/Invoke_getters_from_autocomplete?${utmParams}`;
+const LEARN_MORE_URL = `https://firefox-source-docs.mozilla.org/devtools-user/web_console/invoke_getters_from_autocomplete/`;
 
 class ConfirmDialog extends Component {
   static get propTypes() {

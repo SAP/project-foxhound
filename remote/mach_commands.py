@@ -2,39 +2,22 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import (
-    absolute_import,
-    print_function,
-    unicode_literals,
-)
-
 import argparse
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
-
 from collections import OrderedDict
 
-from six import iteritems
-
-from mach.decorators import (
-    Command,
-    CommandArgument,
-    SubCommand,
-)
-
-from mozbuild.base import (
-    MozbuildObject,
-    BinaryNotFoundException,
-)
-from mozbuild import nodeutil
 import mozlog
 import mozprofile
-
+from mach.decorators import Command, CommandArgument, SubCommand
+from mozbuild import nodeutil
+from mozbuild.base import BinaryNotFoundException, MozbuildObject
 
 EX_CONFIG = 78
 EX_SOFTWARE = 70
@@ -47,7 +30,7 @@ def setup():
     if not npm:
         exit(EX_CONFIG, "could not find npm executable")
     path = os.path.abspath(os.path.join(npm, os.pardir))
-    os.environ["PATH"] = "{}:{}".format(path, os.environ["PATH"])
+    os.environ["PATH"] = "{}{}{}".format(path, os.pathsep, os.environ["PATH"])
 
 
 def remotedir(command_context):
@@ -150,7 +133,7 @@ def vendor_puppeteer(command_context, repository, commitish, install):
         )
 
     if install:
-        env = {"PUPPETEER_SKIP_DOWNLOAD": "1"}
+        env = {"HUSKY": "0", "PUPPETEER_SKIP_DOWNLOAD": "1"}
         npm(
             "install",
             cwd=os.path.join(command_context.topsrcdir, puppeteer_dir),
@@ -192,6 +175,7 @@ def npm(*args, **kwargs):
     from mozprocess import processhandler
 
     env = None
+    npm, _ = nodeutil.find_npm_executable()
     if kwargs.get("env"):
         env = os.environ.copy()
         env.update(kwargs["env"])
@@ -201,17 +185,17 @@ def npm(*args, **kwargs):
         proc_kwargs["processOutputLine"] = kwargs["processOutputLine"]
 
     p = processhandler.ProcessHandler(
-        cmd="npm",
+        cmd=npm,
         args=list(args),
         cwd=kwargs.get("cwd"),
         env=env,
         universal_newlines=True,
-        **proc_kwargs
+        **proc_kwargs,
     )
     if not kwargs.get("wait", True):
         return p
 
-    wait_proc(p, cmd="npm", exit_on_fail=kwargs.get("exit_on_fail", True))
+    wait_proc(p, cmd=npm, exit_on_fail=kwargs.get("exit_on_fail", True))
 
     return p.returncode
 
@@ -277,8 +261,10 @@ class MochaOutputHandler(object):
             if not status and not test_start:
                 return
             test_info = event[1]
-            test_name = test_info.get("fullTitle", "")
+            test_full_title = test_info.get("fullTitle", "")
+            test_name = test_full_title
             test_path = test_info.get("file", "")
+            test_file_name = os.path.basename(test_path).replace(".js", "")
             test_err = test_info.get("err")
             if status == "FAIL" and test_err:
                 if "timeout" in test_err.lower():
@@ -292,7 +278,45 @@ class MochaOutputHandler(object):
             if test_start:
                 self.logger.test_start(test_name)
                 return
-            expected = self.expected.get(test_name, ["PASS"])
+            expected_name = "[{}] {}".format(test_file_name, test_full_title)
+            expected_item = next(
+                (
+                    expectation
+                    for expectation in list(self.expected)
+                    if expectation["testIdPattern"] == expected_name
+                ),
+                None,
+            )
+            if expected_item is None:
+                # if there is no expectation data for a specific test case,
+                # try to find data for a whole file.
+                expected_item_for_file = next(
+                    (
+                        expectation
+                        for expectation in list(self.expected)
+                        if expectation["testIdPattern"] == f"[{test_file_name}]"
+                    ),
+                    None,
+                )
+                if expected_item_for_file is None:
+                    # if there is no expectation data for the file,
+                    # try to find data for all tests.
+                    expected_item_for_all_tests = next(
+                        (
+                            expectation
+                            for expectation in list(self.expected)
+                            if expectation["testIdPattern"] == ""
+                        ),
+                        None,
+                    )
+                    if expected_item_for_all_tests is None:
+                        expected = ["PASS"]
+                    else:
+                        expected = expected_item_for_all_tests["expectations"]
+                else:
+                    expected = expected_item_for_file["expectations"]
+            else:
+                expected = expected_item["expectations"]
             # mozlog doesn't really allow unexpected skip,
             # so if a test is disabled just expect that and note the unexpected skip
             # Also, mocha doesn't log test-start for skipped tests
@@ -324,34 +348,7 @@ class MochaOutputHandler(object):
                 known_intermittent=known_intermittent,
             )
 
-    def new_expected(self):
-        new_expected = OrderedDict()
-        for test_name, status in iteritems(self.test_results):
-            if test_name not in self.expected:
-                new_status = [status]
-            else:
-                if status in self.expected[test_name]:
-                    new_status = self.expected[test_name]
-                else:
-                    new_status = [status]
-            new_expected[test_name] = new_status
-        return new_expected
-
-    def after_end(self, subset=False):
-        if not subset:
-            missing = set(self.expected) - set(self.test_results)
-            extra = set(self.test_results) - set(self.expected)
-            if missing:
-                self.has_unexpected = True
-                for test_name in missing:
-                    self.logger.error("TEST-UNEXPECTED-MISSING %s" % (test_name,))
-            if self.expected and extra:
-                self.has_unexpected = True
-                for test_name in extra:
-                    self.logger.error(
-                        "TEST-UNEXPECTED-MISSING Unknown new test %s" % (test_name,)
-                    )
-
+    def after_end(self):
         if self.unexpected_skips:
             self.has_unexpected = True
             for test_name in self.unexpected_skips:
@@ -398,6 +395,8 @@ class PuppeteerRunner(MozbuildObject):
 
         Possible optional test parameters:
 
+        `bidi`:
+          Boolean to indicate whether to test Firefox with BiDi protocol.
         `binary`:
           Path for the browser binary to use.  Defaults to the local
           build.
@@ -408,14 +407,10 @@ class PuppeteerRunner(MozbuildObject):
           before invoking npm.  Overrides default preferences.
         `enable_webrender`:
           Boolean to indicate whether to enable WebRender compositor in Gecko.
-        `write_results`:
-          Path to write the results json file
-        `subset`
-          Indicates only a subset of tests are being run, so we should
-          skip the check for missing results
         """
         setup()
 
+        with_bidi = params.get("bidi", False)
         binary = params.get("binary") or self.get_binary_path()
         product = params.get("product", "firefox")
 
@@ -441,16 +436,33 @@ class PuppeteerRunner(MozbuildObject):
             "--timeout",
             "20000",
             "--no-parallel",
+            "--no-coverage",
         ]
+        env["HEADLESS"] = str(params.get("headless", False))
+        test_command = "test:" + product
+
         if product == "firefox":
             env["BINARY"] = binary
             env["PUPPETEER_PRODUCT"] = "firefox"
-
             env["MOZ_WEBRENDER"] = "%d" % params.get("enable_webrender", False)
+        else:
+            env["PUPPETEER_CACHE_DIR"] = os.path.join(
+                self.topobjdir,
+                "_tests",
+                "remote",
+                "test",
+                "puppeteer",
+                ".cache",
+            )
 
-        command = ["run", "unit", "--"] + mocha_options
+        if with_bidi is True:
+            test_command = test_command + ":bidi"
+        elif env["HEADLESS"] == "True":
+            test_command = test_command + ":headless"
+        else:
+            test_command = test_command + ":headful"
 
-        env["HEADLESS"] = str(params.get("headless", False))
+        command = ["run", test_command, "--"] + mocha_options
 
         prefs = {}
         for k, v in params.get("extra_prefs", {}).items():
@@ -464,21 +476,40 @@ class PuppeteerRunner(MozbuildObject):
             env["EXTRA_LAUNCH_OPTIONS"] = json.dumps(extra_options)
 
         expected_path = os.path.join(
-            os.path.dirname(__file__), "test", "puppeteer-expected.json"
+            os.path.dirname(__file__),
+            "test",
+            "puppeteer",
+            "test",
+            "TestExpectations.json",
         )
-        if product == "firefox" and os.path.exists(expected_path):
+        if os.path.exists(expected_path):
             with open(expected_path) as f:
                 expected_data = json.load(f)
         else:
-            expected_data = {}
+            expected_data = []
 
-        output_handler = MochaOutputHandler(logger, expected_data)
+        expected_platform = platform.uname().system.lower()
+        if expected_platform == "windows":
+            expected_platform = "win32"
+
+        # Filter expectation data for the selected browser,
+        # headless or headful mode, the operating system,
+        # run in BiDi mode or not.
+        expectations = [
+            expectation
+            for expectation in expected_data
+            if is_relevant_expectation(
+                expectation, product, with_bidi, env["HEADLESS"], expected_platform
+            )
+        ]
+
+        output_handler = MochaOutputHandler(logger, expectations)
         proc = npm(
             *command,
             cwd=self.puppeteer_dir,
             env=env,
             processOutputLine=output_handler,
-            wait=False
+            wait=False,
         )
         output_handler.proc = proc
 
@@ -486,19 +517,13 @@ class PuppeteerRunner(MozbuildObject):
         # failure, so use an output_timeout as a fallback
         wait_proc(proc, "npm", output_timeout=60, exit_on_fail=False)
 
-        output_handler.after_end(params.get("subset", False))
+        output_handler.after_end()
 
         # Non-zero return codes are non-fatal for now since we have some
         # issues with unresolved promises that shouldn't otherwise block
         # running the tests
         if proc.returncode != 0:
             logger.warning("npm exited with code %s" % proc.returncode)
-
-        if params["write_results"]:
-            with open(params["write_results"], "w") as f:
-                json.dump(
-                    output_handler.new_expected(), f, indent=2, separators=(",", ": ")
-                )
 
         if output_handler.has_unexpected:
             exit(1, "Got unexpected results")
@@ -508,6 +533,11 @@ def create_parser_puppeteer():
     p = argparse.ArgumentParser()
     p.add_argument(
         "--product", type=str, default="firefox", choices=["chrome", "firefox"]
+    )
+    p.add_argument(
+        "--bidi",
+        action="store_true",
+        help="Flag that indicates whether to test Firefox with BiDi protocol.",
     )
     p.add_argument(
         "--binary",
@@ -520,9 +550,11 @@ def create_parser_puppeteer():
         help="Flag that indicates that tests run in a CI environment.",
     )
     p.add_argument(
-        "--enable-fission",
+        "--disable-fission",
         action="store_true",
-        help="Enable Fission (site isolation) in Gecko.",
+        default=False,
+        dest="disable_fission",
+        help="Disable Fission (site isolation) in Gecko.",
     )
     p.add_argument(
         "--enable-webrender",
@@ -555,28 +587,39 @@ def create_parser_puppeteer():
         "debug level messages with -v, trace messages with -vv,"
         "and to not truncate long trace messages with -vvv",
     )
-    p.add_argument(
-        "--write-results",
-        action="store",
-        nargs="?",
-        default=None,
-        const=os.path.join(
-            os.path.dirname(__file__), "test", "puppeteer-expected.json"
-        ),
-        help="Path to write updated results to (defaults to the "
-        "expectations file if the argument is provided but "
-        "no path is passed)",
-    )
-    p.add_argument(
-        "--subset",
-        action="store_true",
-        default=False,
-        help="Indicate that only a subset of the tests are running, "
-        "so checks for missing tests should be skipped",
-    )
     p.add_argument("tests", nargs="*")
     mozlog.commandline.add_logging_group(p)
     return p
+
+
+def is_relevant_expectation(
+    expectation, expected_product, with_bidi, is_headless, expected_platform
+):
+    parameters = expectation["parameters"]
+
+    if expected_product == "firefox":
+        is_expected_product = "chrome" not in parameters
+    else:
+        is_expected_product = "firefox" not in parameters
+
+    if with_bidi is True:
+        is_expected_protocol = "webDriverBiDi" in parameters
+    else:
+        is_expected_protocol = "webDriverBiDi" not in parameters
+
+    if is_headless == "True":
+        is_expected_mode = "headful" not in parameters
+    else:
+        is_expected_mode = "headless" not in parameters
+
+    is_expected_platform = expected_platform in expectation["platforms"]
+
+    return (
+        is_expected_product
+        and is_expected_protocol
+        and is_expected_mode
+        and is_expected_platform
+    )
 
 
 @Command(
@@ -585,21 +628,28 @@ def create_parser_puppeteer():
     description="Run Puppeteer unit tests.",
     parser=create_parser_puppeteer,
 )
+@CommandArgument(
+    "--no-install",
+    dest="install",
+    action="store_false",
+    default=True,
+    help="Do not install the Puppeteer package",
+)
 def puppeteer_test(
     command_context,
+    bidi=None,
     binary=None,
     ci=False,
-    enable_fission=False,
+    disable_fission=False,
     enable_webrender=False,
     headless=False,
     extra_prefs=None,
     extra_options=None,
+    install=False,
     verbosity=0,
     tests=None,
     product="firefox",
-    write_results=None,
-    subset=False,
-    **kwargs
+    **kwargs,
 ):
 
     logger = mozlog.commandline.setup_logging(
@@ -636,9 +686,8 @@ def puppeteer_test(
             exit(EX_USAGE)
         options[kv[0]] = kv[1].strip()
 
-    if enable_fission:
-        prefs.update({"fission.autostart": True})
-    else:
+    prefs.update({"fission.autostart": True})
+    if disable_fission:
         prefs.update({"fission.autostart": False})
 
     if verbosity == 1:
@@ -648,17 +697,17 @@ def puppeteer_test(
     if verbosity > 2:
         prefs["remote.log.truncate"] = False
 
-    install_puppeteer(command_context, product, ci)
+    if install:
+        install_puppeteer(command_context, product, ci)
 
     params = {
+        "bidi": bidi,
         "binary": binary,
         "headless": headless,
         "enable_webrender": enable_webrender,
         "extra_prefs": prefs,
         "product": product,
         "extra_launcher_options": options,
-        "write_results": write_results,
-        "subset": subset,
     }
     puppeteer = command_context._spawn(PuppeteerRunner)
     try:
@@ -673,26 +722,36 @@ def puppeteer_test(
 
 def install_puppeteer(command_context, product, ci):
     setup()
-    env = {}
-    from mozversioncontrol import get_repository_object
+    env = {"HUSKY": "0"}
 
-    repo = get_repository_object(command_context.topsrcdir)
     puppeteer_dir = os.path.join("remote", "test", "puppeteer")
-    changed_files = False
-    for f in repo.get_changed_files():
-        if f.startswith(puppeteer_dir) and f.endswith(".ts"):
-            changed_files = True
-            break
+    puppeteer_dir_full_path = os.path.join(command_context.topsrcdir, puppeteer_dir)
+    puppeteer_test_dir = os.path.join(puppeteer_dir, "test")
 
-    if product != "chrome":
+    if product == "chrome":
+        env["PUPPETEER_CACHE_DIR"] = os.path.join(
+            command_context.topobjdir, "_tests", puppeteer_dir, ".cache"
+        )
+    else:
         env["PUPPETEER_SKIP_DOWNLOAD"] = "1"
-    lib_dir = os.path.join(command_context.topsrcdir, puppeteer_dir, "lib")
-    if changed_files and os.path.isdir(lib_dir):
-        # clobber lib to force `tsc compile` step
-        shutil.rmtree(lib_dir)
+
+    if not ci:
+        npm(
+            "run",
+            "clean",
+            cwd=puppeteer_dir_full_path,
+            env=env,
+            exit_on_fail=False,
+        )
 
     command = "ci" if ci else "install"
-    npm(command, cwd=os.path.join(command_context.topsrcdir, puppeteer_dir), env=env)
+    npm(command, cwd=puppeteer_dir_full_path, env=env)
+    npm(
+        "run",
+        "build",
+        cwd=os.path.join(command_context.topsrcdir, puppeteer_test_dir),
+        env=env,
+    )
 
 
 def exit(code, error=None):

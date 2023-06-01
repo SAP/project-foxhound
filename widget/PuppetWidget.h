@@ -27,6 +27,7 @@
 #include "mozilla/layers/MemoryPressureObserver.h"
 
 namespace mozilla {
+enum class NativeKeyBindingsType : uint8_t;
 
 namespace dom {
 class BrowserChild;
@@ -72,15 +73,15 @@ class PuppetWidget : public nsBaseWidget,
   using nsBaseWidget::Create;  // for Create signature not overridden here
   virtual nsresult Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
                           const LayoutDeviceIntRect& aRect,
-                          nsWidgetInitData* aInitData = nullptr) override;
+                          widget::InitData* aInitData = nullptr) override;
   void InfallibleCreate(nsIWidget* aParent, nsNativeWidget aNativeParent,
                         const LayoutDeviceIntRect& aRect,
-                        nsWidgetInitData* aInitData = nullptr);
+                        widget::InitData* aInitData = nullptr);
 
   void InitIMEState();
 
   virtual already_AddRefed<nsIWidget> CreateChild(
-      const LayoutDeviceIntRect& aRect, nsWidgetInitData* aInitData = nullptr,
+      const LayoutDeviceIntRect& aRect, widget::InitData* aInitData = nullptr,
       bool aForceUseIWidgetParent = false) override;
 
   virtual void Destroy() override;
@@ -113,6 +114,9 @@ class PuppetWidget : public nsBaseWidget,
   virtual void Enable(bool aState) override { mEnabled = aState; }
   virtual bool IsEnabled() const override { return mEnabled; }
 
+  virtual nsSizeMode SizeMode() override { return mSizeMode; }
+  virtual void SetSizeMode(nsSizeMode aMode) override { mSizeMode = aMode; }
+
   virtual void SetFocus(Raise, mozilla::dom::CallerType aCallerType) override;
 
   virtual void Invalidate(const LayoutDeviceIntRect& aRect) override;
@@ -134,7 +138,7 @@ class PuppetWidget : public nsBaseWidget,
     return GetWindowPosition();
   }
 
-  int32_t RoundsWidgetCoordinatesTo() override;
+  int32_t RoundsWidgetCoordinatesTo() override { return mRounding; }
 
   void InitEvent(WidgetGUIEvent& aEvent,
                  LayoutDeviceIntPoint* aPoint = nullptr);
@@ -167,8 +171,8 @@ class PuppetWidget : public nsBaseWidget,
   // same-process subdocuments, we force the widget here to be
   // transparent, which in turn will cause layout to use a transparent
   // backstop background color.
-  virtual nsTransparencyMode GetTransparencyMode() override {
-    return eTransparencyTransparent;
+  virtual TransparencyMode GetTransparencyMode() override {
+    return TransparencyMode::Transparent;
   }
 
   virtual WindowRenderer* GetWindowRenderer() override;
@@ -180,8 +184,6 @@ class PuppetWidget : public nsBaseWidget,
   // new layer manager without changing the state of the widget.
   bool CreateRemoteLayerManager(
       const std::function<bool(WebRenderLayerManager*)>& aInitializeFunc);
-
-  bool HasWindowRenderer() { return !!mWindowRenderer; }
 
   virtual void SetInputContext(const InputContext& aContext,
                                const InputContextAction& aAction) override;
@@ -199,12 +201,8 @@ class PuppetWidget : public nsBaseWidget,
 
   virtual void SetCursor(const Cursor&) override;
 
-  // Gets the DPI of the screen corresponding to this widget.
-  // Contacts the parent process which gets the DPI from the
-  // proper widget there. TODO: Handle DPI changes that happen
-  // later on.
-  virtual float GetDPI() override;
-  virtual double GetDefaultScaleInternal() override;
+  float GetDPI() override { return mDPI; }
+  double GetDefaultScaleInternal() override { return mDefaultScale; }
 
   virtual bool NeedsPaint() override;
 
@@ -279,7 +277,8 @@ class PuppetWidget : public nsBaseWidget,
   virtual nsresult SynthesizeNativeTouchpadPan(TouchpadGesturePhase aEventPhase,
                                                LayoutDeviceIntPoint aPoint,
                                                double aDeltaX, double aDeltaY,
-                                               int32_t aModifierFlags) override;
+                                               int32_t aModifierFlags,
+                                               nsIObserver* aObserver) override;
 
   virtual void LockNativePointer() override;
   virtual void UnlockNativePointer() override;
@@ -382,10 +381,10 @@ class PuppetWidget : public nsBaseWidget,
   NativeIMEContext mNativeIMEContext;
   ContentCacheInChild mContentCache;
 
-  // The DPI of the screen corresponding to this widget
-  float mDPI;
-  int32_t mRounding;
-  double mDefaultScale;
+  // The DPI of the parent widget containing this widget.
+  float mDPI = GetFallbackDPI();
+  int32_t mRounding = 1;
+  double mDefaultScale = GetFallbackDefaultScale().scale;
 
   ScreenIntMargin mSafeAreaInsets;
 
@@ -396,6 +395,8 @@ class PuppetWidget : public nsBaseWidget,
   bool mVisible;
 
  private:
+  nsSizeMode mSizeMode;
+
   bool mNeedIMEStateInit;
   // When remote process requests to commit/cancel a composition, the
   // composition may have already been committed in the main process.  In such

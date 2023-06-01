@@ -14,11 +14,9 @@ const {
 } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 const PING_SAVE_FOLDER = "saved-telemetry-pings";
-const PING_TIMEOUT_LENGTH = 5000;
 const OLD_FORMAT_PINGS = 4;
 const RECENT_PINGS = 4;
 
-var gCreatedPings = 0;
 var gSeenPings = 0;
 
 /**
@@ -52,7 +50,6 @@ var createSavedPings = async function(aPingInfos) {
         let filePath = getSavePathForPingId(pingId);
         await File.setDates(filePath, null, age);
       }
-      gCreatedPings++;
       pingIds.push(pingId);
     }
   }
@@ -61,24 +58,12 @@ var createSavedPings = async function(aPingInfos) {
 };
 
 /**
- * Deletes locally saved pings if they exist.
- *
- * @param aPingIds an Array of ping ids to delete.
- * @returns Promise
- */
-var clearPings = async function(aPingIds) {
-  for (let pingId of aPingIds) {
-    await TelemetryStorage.removePendingPing(pingId);
-  }
-};
-
-/**
  * Fakes the pending pings storage quota.
  * @param {Integer} aPendingQuota The new quota, in bytes.
  */
 function fakePendingPingsQuota(aPendingQuota) {
-  let { Policy } = ChromeUtils.import(
-    "resource://gre/modules/TelemetryStorage.jsm"
+  let { Policy } = ChromeUtils.importESModule(
+    "resource://gre/modules/TelemetryStorage.sys.mjs"
   );
   Policy.getPendingPingsQuota = () => aPendingQuota;
 }
@@ -102,25 +87,6 @@ function getSavePathForPingId(aPingId) {
 function assertReceivedPings(aExpectedNum) {
   Assert.equal(gSeenPings, aExpectedNum);
 }
-
-/**
- * Throws if any pings with the id in aPingIds is saved locally.
- *
- * @param aPingIds an Array of pings ids to check.
- * @returns Promise
- */
-var assertNotSaved = async function(aPingIds) {
-  let saved = 0;
-  for (let id of aPingIds) {
-    let filePath = getSavePathForPingId(id);
-    if (await File.exists(filePath)) {
-      saved++;
-    }
-  }
-  if (saved > 0) {
-    do_throw("Found " + saved + " unexpected saved pings.");
-  }
-};
 
 /**
  * Our handler function for the HttpServer that simply

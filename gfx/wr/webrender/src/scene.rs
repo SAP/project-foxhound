@@ -8,11 +8,11 @@ use api::units::*;
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use crate::render_api::MemoryReport;
 use crate::composite::CompositorKind;
-use crate::clip::{ClipStore, ClipStoreStats};
+use crate::clip::{ClipStore, ClipTree};
 use crate::spatial_tree::SpatialTree;
-use crate::frame_builder::{ChasePrimitive, FrameBuilderConfig};
+use crate::frame_builder::{FrameBuilderConfig};
 use crate::hit_test::{HitTester, HitTestingScene, HitTestingSceneStats};
-use crate::internal_types::{FastHashMap, PlaneSplitter};
+use crate::internal_types::FastHashMap;
 use crate::picture::SurfaceInfo;
 use crate::picture_graph::PictureGraph;
 use crate::prim_store::{PrimitiveStore, PrimitiveStoreStats, PictureIndex, PrimitiveInstance};
@@ -289,9 +289,10 @@ pub struct BuiltScene {
     pub tile_cache_config: TileCacheConfig,
     pub tile_cache_pictures: Vec<PictureIndex>,
     pub picture_graph: PictureGraph,
-    pub plane_splitters: Vec<PlaneSplitter>,
+    pub num_plane_splitters: usize,
     pub prim_instances: Vec<PrimitiveInstance>,
     pub surfaces: Vec<SurfaceInfo>,
+    pub clip_tree: ClipTree,
 }
 
 impl BuiltScene {
@@ -302,19 +303,18 @@ impl BuiltScene {
             output_rect: DeviceIntRect::zero(),
             background_color: None,
             prim_store: PrimitiveStore::new(&PrimitiveStoreStats::empty()),
-            clip_store: ClipStore::new(&ClipStoreStats::empty()),
+            clip_store: ClipStore::new(),
             hit_testing_scene: Arc::new(HitTestingScene::new(&HitTestingSceneStats::empty())),
             tile_cache_config: TileCacheConfig::new(0),
             tile_cache_pictures: Vec::new(),
             picture_graph: PictureGraph::new(),
-            plane_splitters: Vec::new(),
+            num_plane_splitters: 0,
             prim_instances: Vec::new(),
             surfaces: Vec::new(),
+            clip_tree: ClipTree::new(),
             config: FrameBuilderConfig {
                 default_font_render_mode: FontRenderMode::Mono,
-                dual_source_blending_is_enabled: true,
                 dual_source_blending_is_supported: false,
-                chase_primitive: ChasePrimitive::Nothing,
                 testing: false,
                 gpu_supports_fast_clears: false,
                 gpu_supports_advanced_blend: false,
@@ -325,11 +325,13 @@ impl BuiltScene {
                 background_color: None,
                 compositor_kind: CompositorKind::default(),
                 tile_size_override: None,
+                max_surface_override: None,
                 max_depth_ids: 0,
                 max_target_size: 0,
                 force_invalidation: false,
                 is_software: false,
                 low_quality_pinch_zoom: false,
+                uses_native_antialiasing: false,
             },
         }
     }
@@ -339,7 +341,6 @@ impl BuiltScene {
         SceneStats {
             prim_store_stats: self.prim_store.get_stats(),
             hit_test_stats: self.hit_testing_scene.get_stats(),
-            clip_store_stats: self.clip_store.get_stats(),
         }
     }
 
@@ -361,7 +362,6 @@ impl BuiltScene {
 pub struct SceneStats {
     pub prim_store_stats: PrimitiveStoreStats,
     pub hit_test_stats: HitTestingSceneStats,
-    pub clip_store_stats: ClipStoreStats,
 }
 
 impl SceneStats {
@@ -369,7 +369,6 @@ impl SceneStats {
         SceneStats {
             prim_store_stats: PrimitiveStoreStats::empty(),
             hit_test_stats: HitTestingSceneStats::empty(),
-            clip_store_stats: ClipStoreStats::empty(),
         }
     }
 }

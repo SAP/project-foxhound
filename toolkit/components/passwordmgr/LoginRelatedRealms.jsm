@@ -4,18 +4,19 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   LoginHelper: "resource://gre/modules/LoginHelper.jsm",
   RemoteSettings: "resource://services-settings/remote-settings.js",
 });
 
-XPCOMUtils.defineLazyGetter(this, "log", () => {
-  let logger = LoginHelper.createLogger("LoginRelatedRealms");
+XPCOMUtils.defineLazyGetter(lazy, "log", () => {
+  let logger = lazy.LoginHelper.createLogger("LoginRelatedRealms");
   return logger;
 });
 
@@ -54,16 +55,14 @@ class LoginRelatedRealmsParent extends JSWindowActorParent {
 
   async getSharedCredentialsCollection() {
     if (!this._sharedCredentialsClient) {
-      this._sharedCredentialsClient = RemoteSettings(
-        LoginHelper.relatedRealmsCollection
+      this._sharedCredentialsClient = lazy.RemoteSettings(
+        lazy.LoginHelper.relatedRealmsCollection
       );
       this._sharedCredentialsClient.on("sync", event =>
         this.onRemoteSettingsSync(event)
       );
       this._relatedDomainsList = await this._sharedCredentialsClient.get();
-      log.debug("Initialized related realms", this._relatedDomainsList);
     }
-    log.debug("this._relatedDomainsList", this._relatedDomainsList);
     return this._relatedDomainsList;
   }
 
@@ -111,7 +110,7 @@ class LoginRelatedRealmsParent extends JSWindowActorParent {
       }
       return filteredRealms;
     } catch (e) {
-      log.error(e);
+      lazy.log.error(e);
       return [];
     }
   }

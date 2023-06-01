@@ -16,6 +16,7 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/PodOperations.h"
 #include <deque>
+#include "Tracing.h"
 
 namespace mozilla::dom {
 
@@ -31,7 +32,8 @@ class SharedBuffers final {
    public:
     explicit OutputQueue(const char* aName) : mMutex(aName) {}
 
-    size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const {
+    size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const
+        MOZ_REQUIRES(mMutex) {
       mMutex.AssertCurrentThreadOwns();
 
       size_t amount = 0;
@@ -42,16 +44,18 @@ class SharedBuffers final {
       return amount;
     }
 
-    Mutex& Lock() const { return const_cast<OutputQueue*>(this)->mMutex; }
+    Mutex& Lock() const MOZ_RETURN_CAPABILITY(mMutex) {
+      return const_cast<OutputQueue*>(this)->mMutex;
+    }
 
-    size_t ReadyToConsume() const {
+    size_t ReadyToConsume() const MOZ_REQUIRES(mMutex) {
       // Accessed on both main thread and media graph thread.
       mMutex.AssertCurrentThreadOwns();
       return mBufferList.size();
     }
 
     // Produce one buffer
-    AudioChunk& Produce() {
+    AudioChunk& Produce() MOZ_REQUIRES(mMutex) {
       mMutex.AssertCurrentThreadOwns();
       MOZ_ASSERT(NS_IsMainThread());
       mBufferList.push_back(AudioChunk());
@@ -59,7 +63,7 @@ class SharedBuffers final {
     }
 
     // Consumes one buffer.
-    AudioChunk Consume() {
+    AudioChunk Consume() MOZ_REQUIRES(mMutex) {
       mMutex.AssertCurrentThreadOwns();
       MOZ_ASSERT(!NS_IsMainThread());
       MOZ_ASSERT(ReadyToConsume() > 0);
@@ -69,7 +73,7 @@ class SharedBuffers final {
     }
 
     // Empties the buffer queue.
-    void Clear() {
+    void Clear() MOZ_REQUIRES(mMutex) {
       mMutex.AssertCurrentThreadOwns();
       mBufferList.clear();
     }
@@ -80,7 +84,7 @@ class SharedBuffers final {
     // Synchronizes access to mBufferList.  Note that it's the responsibility
     // of the callers to perform the required locking, and we assert that every
     // time we access mBufferList.
-    Mutex mMutex;
+    Mutex mMutex MOZ_UNANNOTATED;
     // The list representing the queue.
     BufferList mBufferList;
   };
@@ -266,6 +270,8 @@ class ScriptProcessorNodeEngine final : public AudioNodeEngine {
   void ProcessBlock(AudioNodeTrack* aTrack, GraphTime aFrom,
                     const AudioBlock& aInput, AudioBlock* aOutput,
                     bool* aFinished) override {
+    TRACE("ScriptProcessorNodeEngine::ProcessBlock");
+
     // This node is not connected to anything. Per spec, we don't fire the
     // onaudioprocess event. We also want to clear out the input and output
     // buffer queue, and output a null buffer.
@@ -529,6 +535,11 @@ void ScriptProcessorNode::UpdateConnectedStatus() {
     MarkActive();
   } else {
     MarkInactive();
+  }
+
+  // MarkInactive above might have released this node, check if it has a track.
+  if (!mTrack) {
+    return;
   }
 
   auto engine = static_cast<ScriptProcessorNodeEngine*>(mTrack->Engine());

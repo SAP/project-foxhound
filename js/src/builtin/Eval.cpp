@@ -12,7 +12,6 @@
 #include "mozilla/HashFunctions.h"
 #include "mozilla/Range.h"
 
-#include "ds/LifoAlloc.h"
 #include "frontend/BytecodeCompilation.h"
 #include "gc/HashUtil.h"
 #include "js/CompilationAndEvaluation.h"
@@ -21,12 +20,17 @@
 #include "js/friend/WindowProxy.h"     // js::IsWindowProxy
 #include "js/SourceText.h"
 #include "js/StableStringChars.h"
+#include "vm/EnvironmentObject.h"
+#include "vm/FrameIter.h"
 #include "vm/GlobalObject.h"
+#include "vm/Interpreter.h"
 #include "vm/JSContext.h"
 #include "vm/JSONParser.h"
 
-#include "debugger/DebugAPI-inl.h"
-#include "vm/Interpreter-inl.h"
+#include "gc/Marking-inl.h"
+#include "vm/EnvironmentObject-inl.h"
+#include "vm/JSContext-inl.h"
+#include "vm/Stack-inl.h"
 
 using namespace js;
 
@@ -90,7 +94,7 @@ class EvalScriptGuard {
   EvalCacheLookup lookup_;
   mozilla::Maybe<DependentAddPtr<EvalCache>> p_;
 
-  RootedLinearString lookupStr_;
+  Rooted<JSLinearString*> lookupStr_;
 
  public:
   explicit EvalScriptGuard(JSContext* cx)
@@ -242,7 +246,7 @@ static bool EvalKernel(JSContext* cx, HandleValue v, EvalType evalType,
 
   // Steps 3-4.
   RootedString str(cx, v.toString());
-  if (!GlobalObject::isRuntimeCodeGenEnabled(cx, str, cx->global())) {
+  if (!cx->isRuntimeCodeGenEnabled(JS::RuntimeCode::JS, str)) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_CSP_BLOCKED_EVAL);
     return false;
@@ -257,7 +261,7 @@ static bool EvalKernel(JSContext* cx, HandleValue v, EvalType evalType,
       evalType != DIRECT_EVAL,
       cx->global() == &env->as<GlobalLexicalEnvironmentObject>().global());
 
-  RootedLinearString linearStr(cx, str->ensureLinear(cx));
+  Rooted<JSLinearString*> linearStr(cx, str->ensureLinear(cx));
   if (!linearStr) {
     return false;
   }
@@ -297,7 +301,7 @@ static bool EvalKernel(JSContext* cx, HandleValue v, EvalType evalType,
       introducerFilename = maybeScript->scriptSource()->introducerFilename();
     }
 
-    RootedScope enclosing(cx);
+    Rooted<Scope*> enclosing(cx);
     if (evalType == DIRECT_EVAL) {
       enclosing = callerScript->innermostScope(pc);
     } else {
@@ -333,12 +337,7 @@ static bool EvalKernel(JSContext* cx, HandleValue v, EvalType evalType,
     }
 
     SourceText<char16_t> srcBuf;
-
-    const char16_t* chars = linearChars.twoByteRange().begin().get();
-    SourceOwnership ownership = linearChars.maybeGiveOwnershipToCaller()
-                                    ? SourceOwnership::TakeOwnership
-                                    : SourceOwnership::Borrowed;
-    if (!srcBuf.init(cx, chars, linearStr->length(), linearStr->taint(), ownership)) {
+    if (!srcBuf.initMaybeBorrowed(cx, linearChars, linearStr->taint())) {
       return false;
     }
 
@@ -358,14 +357,8 @@ static bool EvalKernel(JSContext* cx, HandleValue v, EvalType evalType,
     esg.setNewScript(script);
   }
 
-  // If this is a direct eval we need to use the caller's newTarget.
-  RootedValue newTargetVal(cx);
-  if (esg.script()->isDirectEvalInFunction()) {
-    newTargetVal = caller.newTarget();
-  }
-
-  return ExecuteKernel(cx, esg.script(), env, newTargetVal,
-                       NullFramePtr() /* evalInFrame */, vp);
+  return ExecuteKernel(cx, esg.script(), env, NullFramePtr() /* evalInFrame */,
+                       vp);
 }
 
 bool js::IndirectEval(JSContext* cx, unsigned argc, Value* vp) {
@@ -407,8 +400,8 @@ static bool ExecuteInExtensibleLexicalEnvironment(
   MOZ_RELEASE_ASSERT(scriptArg->hasNonSyntacticScope());
 
   RootedValue rval(cx);
-  return ExecuteKernel(cx, scriptArg, env, UndefinedHandleValue,
-                       NullFramePtr() /* evalInFrame */, &rval);
+  return ExecuteKernel(cx, scriptArg, env, NullFramePtr() /* evalInFrame */,
+                       &rval);
 }
 
 JS_PUBLIC_API bool js::ExecuteInFrameScriptEnvironment(

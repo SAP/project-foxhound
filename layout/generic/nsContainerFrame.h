@@ -90,7 +90,7 @@ class nsContainerFrame : public nsSplittableFrame {
    * @see     #Init()
    */
   virtual void SetInitialChildList(ChildListID aListID,
-                                   nsFrameList& aChildList);
+                                   nsFrameList&& aChildList);
 
   /**
    * This method is responsible for appending frames to the frame
@@ -101,7 +101,7 @@ class nsContainerFrame : public nsSplittableFrame {
    * @param   aFrameList list of child frames to append. Each of the frames has
    *            its NS_FRAME_IS_DIRTY bit set.  Must not be empty.
    */
-  virtual void AppendFrames(ChildListID aListID, nsFrameList& aFrameList);
+  virtual void AppendFrames(ChildListID aListID, nsFrameList&& aFrameList);
 
   /**
    * This method is responsible for inserting frames into the frame
@@ -117,7 +117,7 @@ class nsContainerFrame : public nsSplittableFrame {
    */
   virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                             const nsLineList::iterator* aPrevFrameLine,
-                            nsFrameList& aFrameList);
+                            nsFrameList&& aFrameList);
 
   /**
    * This method is responsible for removing a frame in the frame
@@ -186,17 +186,6 @@ class nsContainerFrame : public nsSplittableFrame {
       nsPresContext* aPresContext, nsIFrame* aFrame, nsView* aView,
       const nsRect& aInkOverflowArea,
       ReflowChildFlags aFlags = ReflowChildFlags::Default);
-
-  // Syncs properties to the top level view and window, like transparency and
-  // shadow.
-  // The SET_ASYNC indicates that the actual nsIWidget calls to sync the window
-  // properties should be done async.
-  enum {
-    SET_ASYNC = 0x01,
-  };
-  static void SyncWindowProperties(nsPresContext* aPresContext,
-                                   nsIFrame* aFrame, nsView* aView,
-                                   gfxContext* aRC, uint32_t aFlags);
 
   /**
    * Converts the minimum and maximum sizes given in inner window app units to
@@ -362,7 +351,7 @@ class nsContainerFrame : public nsSplittableFrame {
   static inline void DefaultChildFrameMerge(nsFrameList& aDest,
                                             nsFrameList& aSrc,
                                             nsContainerFrame* aParent) {
-    aDest.AppendFrames(nullptr, aSrc);
+    aDest.AppendFrames(nullptr, std::move(aSrc));
   }
 
   /**

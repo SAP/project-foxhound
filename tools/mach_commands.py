@@ -2,21 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import argparse
-import subprocess
-from datetime import datetime, timedelta
 import logging
-from operator import itemgetter
+import subprocess
 import sys
+from datetime import datetime, timedelta
+from operator import itemgetter
 
-from mach.decorators import (
-    CommandArgument,
-    Command,
-    SubCommand,
-)
-
+from mach.decorators import Command, CommandArgument, SubCommand
 from mozbuild.base import MozbuildObject
 
 
@@ -90,6 +83,7 @@ def busted_file(command_context, against):
         component = "General"
     else:
         import inspect
+
         import mozpack.path as mozpath
 
         # Look up the file implementing that command, then cross-refernce
@@ -224,17 +218,12 @@ PASTEMO_MAX_CONTENT_LENGTH = 250 * 1024 * 1024
 
 PASTEMO_URL = "https://paste.mozilla.org/api/"
 
-MACH_PASTEBIN_DESCRIPTION = """
-Command line interface to paste.mozilla.org.
 
-Takes either a filename whose content should be pasted, or reads
-content from standard input. If a highlighter is specified it will
-be used, otherwise the file name will be used to determine an
-appropriate highlighter.
-"""
-
-
-@Command("pastebin", category="misc", description=MACH_PASTEBIN_DESCRIPTION)
+@Command(
+    "pastebin",
+    category="misc",
+    description="Command line interface to paste.mozilla.org.",
+)
 @CommandArgument(
     "--list-highlighters",
     action="store_true",
@@ -261,6 +250,14 @@ appropriate highlighter.
     help="Path to file for upload to paste.mozilla.org",
 )
 def pastebin(command_context, list_highlighters, highlighter, expires, verbose, path):
+    """Command line interface to `paste.mozilla.org`.
+
+    Takes either a filename whose content should be pasted, or reads
+    content from standard input. If a highlighter is specified it will
+    be used, otherwise the file name will be used to determine an
+    appropriate highlighter.
+    """
+
     import requests
 
     def verbose_print(*args, **kwargs):
@@ -435,7 +432,7 @@ def mozregression_create_parser():
 @Command(
     "mozregression",
     category="misc",
-    description=("Regression range finder for nightly and inbound builds."),
+    description="Regression range finder for nightly and inbound builds.",
     parser=mozregression_create_parser,
 )
 def run(command_context, **options):
@@ -489,7 +486,7 @@ def npm(command_context, args):
     if not npm_path:
         exit(-1, "could not find npm executable")
     path = os.path.abspath(os.path.dirname(npm_path))
-    os.environ["PATH"] = "{}:{}".format(path, os.environ["PATH"])
+    os.environ["PATH"] = "{}{}{}".format(path, os.pathsep, os.environ["PATH"])
 
     # karma-firefox-launcher needs the path to firefox binary.
     firefox_bin = command_context.get_binary_path(validate_exists=False)
@@ -517,7 +514,7 @@ from functools import partial
 @Command(
     "logspam",
     category="misc",
-    description=("Warning categorizer for treeherder test runs."),
+    description="Warning categorizer for treeherder test runs.",
 )
 def logspam(command_context):
     pass
@@ -542,3 +539,56 @@ def create(command_context, **options):
     command_context.activate_virtualenv()
     logspam = PypiBasedTool("logspam")
     logspam.run(command="file", **options)
+
+
+# mots_loader will be used when running commands and subcommands, as well as
+# when creating the parsers.
+mots_loader = PypiBasedTool("mots")
+
+
+def mots_create_parser(subcommand=None):
+    return mots_loader.create_parser(subcommand)
+
+
+def mots_run_subcommand(command, command_context, **options):
+    command_context.activate_virtualenv()
+    mots_loader.run(command=command, **options)
+
+
+class motsSubCommand(SubCommand):
+    """A helper subclass that reduces repitition when defining subcommands."""
+
+    def __init__(self, subcommand):
+        super().__init__(
+            "mots",
+            subcommand,
+            parser=partial(mots_create_parser, subcommand),
+        )
+
+
+@Command(
+    "mots",
+    category="misc",
+    description="Manage module information in-tree using the mots CLI.",
+    parser=mots_create_parser,
+)
+def mots(command_context, **options):
+    """The main mots command call."""
+    command_context.activate_virtualenv()
+    mots_loader.run(**options)
+
+
+# Define subcommands that will be proxied through mach.
+for sc in (
+    "clean",
+    "check-hashes",
+    "export",
+    "export-and-clean",
+    "module",
+    "query",
+    "settings",
+    "user",
+    "validate",
+):
+    # Pass through args and kwargs, but add the subcommand string as the first argument.
+    motsSubCommand(sc)(lambda *a, **kw: mots_run_subcommand(sc, *a, **kw))

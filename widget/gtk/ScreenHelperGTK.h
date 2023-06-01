@@ -16,6 +16,7 @@
 #endif
 
 class nsWindow;
+struct wl_registry;
 
 namespace mozilla {
 namespace widget {
@@ -28,7 +29,7 @@ class ScreenGetter {
   virtual void Init(){};
 
   virtual void RefreshScreens(){};
-  virtual RefPtr<nsIScreen> GetScreenForWindow(nsWindow* aWindow) {
+  virtual RefPtr<widget::Screen> GetScreenForWindow(nsWindow* aWindow) {
     return nullptr;
   }
 };
@@ -55,25 +56,12 @@ class ScreenGetterGtk : public ScreenGetter {
 };
 
 class ScreenGetterWayland;
-
-struct MonitorConfig {
-  int id = 0;
-  int x = 0;
-  int y = 0;
-  int width_mm = 0;
-  int height_mm = 0;
-  int width = 0;
-  int height = 0;
-  int scale = 0;
-
- public:
-  explicit MonitorConfig(int aId) : id(aId){};
-};
+struct MonitorConfig;
 
 #ifdef MOZ_WAYLAND
 class ScreenGetterWayland : public ScreenGetter {
  public:
-  ScreenGetterWayland() : mRegistry(){};
+  ScreenGetterWayland();
   ~ScreenGetterWayland();
 
   void Init();
@@ -82,7 +70,7 @@ class ScreenGetterWayland : public ScreenGetter {
   bool RemoveMonitorConfig(int aId);
   already_AddRefed<Screen> MakeScreenWayland(gint aMonitor);
 
-  RefPtr<nsIScreen> GetScreenForWindow(nsWindow* aWindow);
+  RefPtr<widget::Screen> GetScreenForWindow(nsWindow* aWindow);
 
   // For internal use from signal callback functions
   void RefreshScreens();
@@ -92,8 +80,11 @@ class ScreenGetterWayland : public ScreenGetter {
   bool MonitorUsesNonIntegerScale(int aMonitor);
 
  private:
-  void* mRegistry;
-  AutoTArray<MonitorConfig, 4> mMonitors;
+  wl_registry* mRegistry = nullptr;
+  // We use UniquePtr<> here to ensure that MonitorConfig is heap-allocated
+  // so it's not invalidated by any change to mMonitors that could happen in the
+  // meantime.
+  AutoTArray<UniquePtr<MonitorConfig>, 4> mMonitors;
   AutoTArray<RefPtr<Screen>, 4> mScreenList;
 };
 #endif
@@ -104,7 +95,7 @@ class ScreenHelperGTK final : public ScreenManager::Helper {
   ~ScreenHelperGTK();
 
   static gint GetGTKMonitorScaleFactor(gint aMonitorNum = 0);
-  static RefPtr<nsIScreen> GetScreenForWindow(nsWindow* aWindow);
+  static RefPtr<widget::Screen> GetScreenForWindow(nsWindow* aWindow);
 };
 
 }  // namespace widget

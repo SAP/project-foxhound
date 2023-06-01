@@ -28,12 +28,14 @@ function authHandler(metadata, response) {
   ) {
     response.setStatusLine(metadata.httpVersion, 200, "OK, authorized");
     response.setHeader("WWW-Authenticate", 'Basic realm="secret"', false);
+    response.setHeader("Content-Type", "text/javascript", false);
 
     body = "success";
   } else {
     // didn't know guest:guest, failure
     response.setStatusLine(metadata.httpVersion, 401, "Unauthorized");
     response.setHeader("WWW-Authenticate", 'Basic realm="secret"', false);
+    response.setHeader("Content-Type", "text/javascript", false);
 
     body = "failed";
   }
@@ -47,10 +49,6 @@ httpserv.start(-1);
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserv.identity.primaryPort;
-});
-
-XPCOMUtils.defineLazyGetter(this, "PORT", function() {
-  return httpserv.identity.primaryPort;
 });
 
 function AuthPrompt(promptExpected) {

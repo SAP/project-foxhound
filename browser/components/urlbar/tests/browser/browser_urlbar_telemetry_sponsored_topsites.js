@@ -3,12 +3,15 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+ChromeUtils.defineESModuleGetters(this, {
   CONTEXTUAL_SERVICES_PING_TYPES:
-    "resource:///modules/PartnerLinkAttribution.jsm",
+    "resource:///modules/PartnerLinkAttribution.sys.mjs",
+  NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
+  PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(this, {
   HttpServer: "resource://testing-common/httpd.js",
-  PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.jsm",
-  NewTabUtils: "resource://gre/modules/NewTabUtils.jsm",
 });
 
 const EN_US_TOPSITES =
@@ -26,7 +29,7 @@ function submitHandler(request, response) {
 // Spy for telemetry sender
 let spy;
 
-add_task(async function setup() {
+add_setup(async function() {
   sandbox = sinon.createSandbox();
   spy = sandbox.spy(
     PartnerLinkAttribution._pingCentre,

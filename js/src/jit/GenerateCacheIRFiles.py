@@ -4,10 +4,11 @@
 
 # This script generates jit/CacheIROpsGenerated.h from CacheIROps.yaml
 
-import buildconfig
-import yaml
-import six
 from collections import OrderedDict
+
+import buildconfig
+import six
+import yaml
 from mozbuild.preprocessor import Preprocessor
 
 HEADER_TEMPLATE = """\
@@ -105,6 +106,7 @@ arg_writer_info = {
     "JSNativeImm": ("JSNative", "writeJSNativeImm"),
     "StaticStringImm": ("const char*", "writeStaticStringImm"),
     "AllocKindImm": ("gc::AllocKind", "writeAllocKindImm"),
+    "CompletionKindImm": ("CompletionKind", "writeCompletionKindImm"),
 }
 
 
@@ -203,6 +205,7 @@ arg_reader_info = {
     "JSNativeImm": ("JSNative", "", "reinterpret_cast<JSNative>(reader.pointer())"),
     "StaticStringImm": ("const char*", "", "reinterpret_cast<char*>(reader.pointer())"),
     "AllocKindImm": ("gc::AllocKind", "", "reader.allocKind()"),
+    "CompletionKindImm": ("CompletionKind", "", "reader.completionKind()"),
 }
 
 
@@ -287,6 +290,7 @@ arg_spewer_method = {
     "JSNativeImm": "spewJSNativeImm",
     "StaticStringImm": "spewStaticStringImm",
     "AllocKindImm": "spewAllocKindImm",
+    "CompletionKindImm": "spewCompletionKindImm",
 }
 
 
@@ -422,6 +426,7 @@ arg_length = {
     "JSNativeImm": "sizeof(uintptr_t)",
     "StaticStringImm": "sizeof(uintptr_t)",
     "AllocKindImm": 1,
+    "CompletionKindImm": 1,
 }
 
 

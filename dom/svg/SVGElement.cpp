@@ -86,8 +86,7 @@ nsresult NS_NewSVGElement(
   return rv;
 }
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 using namespace SVGUnitTypes_Binding;
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGElement)
@@ -932,8 +931,6 @@ nsChangeHint SVGElement::GetAttributeChangeHint(const nsAtom* aAttribute,
   return retval;
 }
 
-bool SVGElement::IsNodeOfType(uint32_t aFlags) const { return false; }
-
 void SVGElement::NodeInfoChanged(Document* aOldDoc) {
   SVGElementBase::NodeInfoChanged(aOldDoc);
   aOldDoc->UnscheduleSVGForPresAttrEvaluation(this);
@@ -992,15 +989,11 @@ const Element::MappedAttributeEntry SVGElement::sTextContentElementsMap[] = {
     // Properties that we don't support are commented out.
     // { nsGkAtoms::alignment_baseline },
     // { nsGkAtoms::baseline_shift },
-    {nsGkAtoms::direction},
-    {nsGkAtoms::dominant_baseline},
-    {nsGkAtoms::letter_spacing},
-    {nsGkAtoms::text_anchor},
-    {nsGkAtoms::text_decoration},
-    {nsGkAtoms::unicode_bidi},
-    {nsGkAtoms::word_spacing},
-    {nsGkAtoms::writing_mode},
-    {nullptr}};
+    {nsGkAtoms::direction},       {nsGkAtoms::dominant_baseline},
+    {nsGkAtoms::letter_spacing},  {nsGkAtoms::text_anchor},
+    {nsGkAtoms::text_decoration}, {nsGkAtoms::unicode_bidi},
+    {nsGkAtoms::white_space},     {nsGkAtoms::word_spacing},
+    {nsGkAtoms::writing_mode},    {nullptr}};
 
 // PresentationAttributes-FontSpecification
 /* static */
@@ -1067,8 +1060,8 @@ SVGSVGElement* SVGElement::GetOwnerSVGElement() {
     if (ancestor->IsSVGElement(nsGkAtoms::foreignObject)) {
       return nullptr;
     }
-    if (ancestor->IsSVGElement(nsGkAtoms::svg)) {
-      return static_cast<SVGSVGElement*>(ancestor);
+    if (auto* svg = SVGSVGElement::FromNode(ancestor)) {
+      return svg;
     }
     ancestor = ancestor->GetFlattenedTreeParent();
   }
@@ -1152,9 +1145,12 @@ namespace {
 
 class MOZ_STACK_CLASS MappedAttrParser {
  public:
-  MappedAttrParser(css::Loader* aLoader, nsIURI* aBaseURI,
-                   SVGElement* aElement);
-  ~MappedAttrParser();
+  explicit MappedAttrParser(SVGElement& aElement) : mElement(aElement) {}
+  ~MappedAttrParser() {
+    MOZ_ASSERT(!mDecl,
+               "If mDecl was initialized, it should have been returned via "
+               "TakeDeclarationBlock (and have its pointer cleared)");
+  };
 
   // Parses a mapped attribute value.
   void ParseMappedAttrValue(nsAtom* aMappedAttrName,
@@ -1167,38 +1163,40 @@ class MOZ_STACK_CLASS MappedAttrParser {
   // If we've parsed any values for mapped attributes, this method returns the
   // already_AddRefed css::Declaration that incorporates the parsed
   // values. Otherwise, this method returns null.
-  already_AddRefed<DeclarationBlock> GetDeclarationBlock();
+  already_AddRefed<DeclarationBlock> TakeDeclarationBlock() {
+    return mDecl.forget();
+  }
+
+  DeclarationBlock& EnsureDeclarationBlock() {
+    if (!mDecl) {
+      mDecl = new DeclarationBlock();
+    }
+    return *mDecl;
+  }
+
+  URLExtraData& EnsureExtraData() {
+    if (!mExtraData) {
+      nsCOMPtr<nsIReferrerInfo> referrerInfo =
+          ReferrerInfo::CreateForSVGResources(mElement.OwnerDoc());
+      mExtraData = MakeRefPtr<URLExtraData>(mElement.GetBaseURI(), referrerInfo,
+                                            mElement.NodePrincipal());
+    }
+    return *mExtraData;
+  }
 
  private:
-  // MEMBER DATA
-  // -----------
-  css::Loader* mLoader;
-
-  nsCOMPtr<nsIURI> mBaseURI;
-
-  // Declaration for storing parsed values (lazily initialized)
+  // Declaration for storing parsed values (lazily initialized).
   RefPtr<DeclarationBlock> mDecl;
 
+  // URL data for parsing stuff. Also lazy.
+  RefPtr<URLExtraData> mExtraData;
+
   // For reporting use counters
-  SVGElement* mElement;
+  SVGElement& mElement;
 };
-
-MappedAttrParser::MappedAttrParser(css::Loader* aLoader, nsIURI* aBaseURI,
-                                   SVGElement* aElement)
-    : mLoader(aLoader), mBaseURI(aBaseURI), mElement(aElement) {}
-
-MappedAttrParser::~MappedAttrParser() {
-  MOZ_ASSERT(!mDecl,
-             "If mDecl was initialized, it should have been returned via "
-             "GetDeclarationBlock (and had its pointer cleared)");
-}
 
 void MappedAttrParser::ParseMappedAttrValue(nsAtom* aMappedAttrName,
                                             const nsAString& aMappedAttrValue) {
-  if (!mDecl) {
-    mDecl = new DeclarationBlock();
-  }
-
   // Get the nsCSSPropertyID ID for our mapped attribute.
   nsCSSPropertyID propertyID =
       nsCSSProps::LookupProperty(nsAtomCString(aMappedAttrName));
@@ -1206,18 +1204,12 @@ void MappedAttrParser::ParseMappedAttrValue(nsAtom* aMappedAttrName,
     bool changed = false;  // outparam for ParseProperty.
     NS_ConvertUTF16toUTF8 value(aMappedAttrValue);
 
-    // FIXME (bug 1343964): Figure out a better solution for sending the base
-    // uri to servo
-    nsCOMPtr<nsIReferrerInfo> referrerInfo =
-        ReferrerInfo::CreateForSVGResources(mElement->OwnerDoc());
-
-    auto data = MakeRefPtr<URLExtraData>(mBaseURI, referrerInfo,
-                                         mElement->NodePrincipal());
+    auto* doc = mElement.OwnerDoc();
     changed = Servo_DeclarationBlock_SetPropertyById(
-        mDecl->Raw(), propertyID, &value, false, data,
-        ParsingMode::AllowUnitlessLength,
-        mElement->OwnerDoc()->GetCompatibilityMode(), mLoader,
-        StyleCssRuleType::Style, {});
+        EnsureDeclarationBlock().Raw(), propertyID, &value, false,
+        &EnsureExtraData(), ParsingMode::AllowUnitlessLength,
+        doc->GetCompatibilityMode(), doc->CSSLoader(), StyleCssRuleType::Style,
+        {});
 
     // TODO(emilio): If we want to record these from CSSOM more generally, we
     // can pass the document use counters down the FFI call. For now manually
@@ -1225,7 +1217,7 @@ void MappedAttrParser::ParseMappedAttrValue(nsAtom* aMappedAttrName,
     if (changed && StaticPrefs::layout_css_use_counters_enabled()) {
       UseCounter useCounter = nsCSSProps::UseCounterFor(propertyID);
       MOZ_ASSERT(useCounter != eUseCounter_UNKNOWN);
-      mElement->OwnerDoc()->SetUseCounter(useCounter);
+      doc->SetUseCounter(useCounter);
     }
     return;
   }
@@ -1235,31 +1227,23 @@ void MappedAttrParser::ParseMappedAttrValue(nsAtom* aMappedAttrName,
   if (aMappedAttrName == nsGkAtoms::lang) {
     propertyID = eCSSProperty__x_lang;
     RefPtr<nsAtom> atom = NS_Atomize(aMappedAttrValue);
-    Servo_DeclarationBlock_SetIdentStringValue(mDecl->Raw(), propertyID, atom);
+    Servo_DeclarationBlock_SetIdentStringValue(EnsureDeclarationBlock().Raw(),
+                                               propertyID, atom);
   }
 }
 
 void MappedAttrParser::TellStyleAlreadyParsedResult(
     nsAtom const* aAtom, SVGAnimatedLength const& aLength) {
-  if (!mDecl) {
-    mDecl = new DeclarationBlock();
-  }
   nsCSSPropertyID propertyID = nsCSSProps::LookupProperty(nsAtomCString(aAtom));
-  SVGElement::UpdateDeclarationBlockFromLength(*mDecl, propertyID, aLength,
+  SVGElement::UpdateDeclarationBlockFromLength(EnsureDeclarationBlock(),
+                                               propertyID, aLength,
                                                SVGElement::ValToUse::Base);
 }
 
 void MappedAttrParser::TellStyleAlreadyParsedResult(
     const SVGAnimatedPathSegList& aPath) {
-  if (!mDecl) {
-    mDecl = new DeclarationBlock();
-  }
-  SVGElement::UpdateDeclarationBlockFromPath(*mDecl, aPath,
+  SVGElement::UpdateDeclarationBlockFromPath(EnsureDeclarationBlock(), aPath,
                                              SVGElement::ValToUse::Base);
-}
-
-already_AddRefed<DeclarationBlock> MappedAttrParser::GetDeclarationBlock() {
-  return mDecl.forget();
 }
 
 }  // namespace
@@ -1268,25 +1252,23 @@ already_AddRefed<DeclarationBlock> MappedAttrParser::GetDeclarationBlock() {
 // Implementation Helpers:
 
 void SVGElement::UpdateContentDeclarationBlock() {
-  NS_ASSERTION(!mContentDeclarationBlock,
-               "we already have a content declaration block");
+  MOZ_ASSERT(!mContentDeclarationBlock,
+             "we already have a content declaration block");
 
-  uint32_t attrCount = mAttrs.AttrCount();
-  if (!attrCount) {
-    // nothing to do
-    return;
-  }
-
-  Document* doc = OwnerDoc();
-  MappedAttrParser mappedAttrParser(doc->CSSLoader(), GetBaseURI(), this);
+  MappedAttrParser mappedAttrParser(*this);
 
   bool lengthAffectsStyle =
       SVGGeometryProperty::ElementMapsLengthsToStyle(this);
 
-  for (uint32_t i = 0; i < attrCount; ++i) {
-    const nsAttrName* attrName = mAttrs.AttrNameAt(i);
-    if (!attrName->IsAtom() || !IsAttributeMapped(attrName->Atom())) continue;
+  uint32_t i = 0;
+  while (BorrowedAttrInfo info = GetAttrInfoAt(i++)) {
+    const nsAttrName* attrName = info.mName;
+    if (!attrName->IsAtom() || !IsAttributeMapped(attrName->Atom())) {
+      continue;
+    }
 
+    // FIXME(emilio): This check is dead, since IsAtom() implies that
+    // NamespaceID() == None.
     if (attrName->NamespaceID() != kNameSpaceID_None &&
         !attrName->Equals(nsGkAtoms::lang, kNameSpaceID_XML)) {
       continue;
@@ -1294,7 +1276,8 @@ void SVGElement::UpdateContentDeclarationBlock() {
 
     if (attrName->Equals(nsGkAtoms::lang, kNameSpaceID_None) &&
         HasAttr(kNameSpaceID_XML, nsGkAtoms::lang)) {
-      continue;  // xml:lang has precedence
+      // xml:lang has precedence, and will get set via Gecko_GetXMLLangValue().
+      continue;
     }
 
     if (lengthAffectsStyle) {
@@ -1336,10 +1319,10 @@ void SVGElement::UpdateContentDeclarationBlock() {
     }
 
     nsAutoString value;
-    mAttrs.AttrAt(i)->ToString(value);
+    info.mValue->ToString(value);
     mappedAttrParser.ParseMappedAttrValue(attrName->Atom(), value);
   }
-  mContentDeclarationBlock = mappedAttrParser.GetDeclarationBlock();
+  mContentDeclarationBlock = mappedAttrParser.TakeDeclarationBlock();
 }
 
 const DeclarationBlock* SVGElement::GetContentDeclarationBlock() const {
@@ -2464,5 +2447,4 @@ void SVGElement::AddSizeOfExcludingThis(nsWindowSizes& aSizes,
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

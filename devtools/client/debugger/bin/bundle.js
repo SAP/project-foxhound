@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-const sourceMapAssets = require("devtools-source-map/assets");
 const path = require("path");
 var fs = require("fs");
 const rimraf = require("rimraf");
@@ -23,6 +22,15 @@ function moveFile(src, dest) {
   rimraf.sync(src);
 }
 
+/**
+ * The `bundle` module will build the following:
+ * - vendors.js and vendors.css:
+ *     Bundle for all the external packages still used by the Debugger frontend.
+ *     Source at devtools/client/debugger/src/vendors.js
+ * - parser-worker.js, pretty-print-worker.js, search-worker:
+ *     Workers used only by the debugger.
+ *     Sources at devtools/client/debugger/src/workers/*
+ */
 (async function bundle() {
   process.env.TARGET = "firefox-panel";
   process.env.OUTPUT_PATH = bundlePath;
@@ -46,24 +54,5 @@ function moveFile(src, dest) {
     return;
   }
 
-  console.log(`[bundle] Done bundling. Copy bundles to devtools/client/shared`);
-
-  moveFile(
-    path.join(bundlePath, "source-map-worker.js"),
-    path.join(clientPath, "shared/source-map/worker.js")
-  );
-
-  for (const filename of Object.keys(sourceMapAssets)) {
-    moveFile(
-      path.join(bundlePath, "source-map-worker-assets", filename),
-      path.join(clientPath, "shared/source-map/assets", filename)
-    );
-  }
-
-  moveFile(
-    path.join(bundlePath, "source-map-index.js"),
-    path.join(clientPath, "shared/source-map/index.js")
-  );
-
-  console.log("[bundle] Task completed.");
+  console.log(`[bundle] Done bundling.`);
 })();

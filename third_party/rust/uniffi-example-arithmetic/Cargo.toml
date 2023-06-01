@@ -1,0 +1,21 @@
+[package]
+name = "uniffi-example-arithmetic"
+edition = "2021"
+version = "0.22.0"
+authors = ["Firefox Sync Team <sync-team@mozilla.com>"]
+license = "MPL-2.0"
+publish = false
+
+[lib]
+crate-type = ["lib", "cdylib"]
+name = "arithmetical"
+
+[dependencies]
+uniffi = {path = "../../uniffi"}
+thiserror = "1.0"
+
+[build-dependencies]
+uniffi = {path = "../../uniffi", features = ["build"] }
+
+[dev-dependencies]
+uniffi = {path = "../../uniffi", features = ["bindgen-tests"] }

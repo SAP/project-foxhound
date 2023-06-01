@@ -84,23 +84,17 @@ test_runner(async function test_pktUI_getAndShowRecsForItem_locale({
 });
 
 test_runner(async function test_pktUI_showPanel({ sandbox }) {
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["extensions.pocket.site", "test-site"],
-      ["extensions.pocket.refresh.layout.enabled", true],
-    ],
-  });
   const testFrame = {
     setAttribute: sandbox.stub(),
     style: { width: 0, height: 0 },
   };
   pktUI.setToolbarPanelFrame(testFrame);
 
-  pktUI.showPanel("about:pocket-saved", { width: 10, height: 10 });
+  pktUI.showPanel("about:pocket-saved", `saved`);
 
   Assert.deepEqual(testFrame.setAttribute.args[0], [
     "src",
-    `about:pocket-saved?layoutRefresh=true&pockethost=test-site&locale=${SpecialPowers.Services.locale.appLocaleAsBCP47}`,
+    `about:pocket-saved?utmSource=firefox_pocket_save_button&locale=${SpecialPowers.Services.locale.appLocaleAsBCP47}`,
   ]);
-  Assert.deepEqual(testFrame.style, { width: "10px", height: "10px" });
+  Assert.deepEqual(testFrame.style, { width: "350px", height: "110px" });
 });

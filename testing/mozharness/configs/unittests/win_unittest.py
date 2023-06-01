@@ -2,7 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
 import os
 import platform
 import sys
@@ -14,6 +13,10 @@ INSTALLER_PATH = os.path.join(ABS_WORK_DIR, "installer.zip")
 NODEJS_PATH = None
 if "MOZ_FETCHES_DIR" in os.environ:
     NODEJS_PATH = os.path.join(os.environ["MOZ_FETCHES_DIR"], "node/node.exe")
+
+REQUIRE_GPU = False
+if "REQUIRE_GPU" in os.environ:
+    REQUIRE_GPU = os.environ["REQUIRE_GPU"] == "1"
 
 PYWIN32 = "pypiwin32==219"
 if sys.version_info > (3, 0):
@@ -125,10 +128,10 @@ config = {
             "options": [
                 "--self-test",
                 "--symbols-path=%(symbols_path)s",
-                "--test-plugin-path=%(test_plugin_path)s",
                 "--log-raw=%(raw_log_file)s",
                 "--log-errorsummary=%(error_summary_file)s",
                 "--utility-path=tests/bin",
+                "--manifest=tests/xpcshell/tests/xpcshell.ini",
             ],
             "run_filename": "runxpcshelltests.py",
             "testsdir": "xpcshell",
@@ -167,6 +170,8 @@ config = {
             "--subsuite=devtools",
             "--chunk-by-runtime",
         ],
+        "mochitest-browser-a11y": ["--flavor=browser", "--subsuite=a11y"],
+        "mochitest-browser-media": ["--flavor=browser", "--subsuite=media-bc"],
         "mochitest-a11y": ["--flavor=a11y", "--disable-e10s"],
         "mochitest-remote": ["--flavor=browser", "--subsuite=remote"],
     },
@@ -201,7 +206,14 @@ config = {
         "xpcshell": {
             "options": [
                 "--xpcshell=%(abs_app_dir)s/" + XPCSHELL_NAME,
-                "--manifest=tests/xpcshell/tests/xpcshell.ini",
+            ],
+            "tests": [],
+        },
+        "xpcshell-msix": {
+            "options": [
+                "--app-binary=%(binary_path)s",
+                "--app-path=%(install_dir)s",
+                "--xre-path=%(install_dir)s",
             ],
             "tests": [],
         },
@@ -238,6 +250,9 @@ config = {
                     "external_tools",
                     "machine-configuration.json",
                 ),
+                "--platform=win10-vm"
+                if REQUIRE_GPU and (platform.release() == "10")
+                else "--platform=win7",
             ],
             "architectures": ["32bit", "64bit"],
             "halt_on_failure": True,
@@ -252,7 +267,7 @@ config = {
             ],
             "architectures": ["32bit", "64bit"],
             "halt_on_failure": True,
-            "enabled": (platform.release() == 10),
+            "enabled": (platform.release() == "10"),
         },
         {
             "name": "set windows VisualFX",
@@ -265,6 +280,17 @@ config = {
             ],
             "architectures": ["32bit", "64bit"],
             "halt_on_failure": True,
+            "enabled": True,
+        },
+        {
+            "name": "create scrollbars always show key",
+            "cmd": [
+                "powershell",
+                "-command",
+                "New-ItemProperty -Path 'HKCU:\Control Panel\Accessibility' -Name 'DynamicScrollbars' -Value 0",
+            ],
+            "architectures": ["32bit", "64bit"],
+            "halt_on_failure": False,
             "enabled": True,
         },
         {

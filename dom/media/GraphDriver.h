@@ -31,6 +31,11 @@ class nsAutoRefTraits<cubeb_stream> : public nsPointerRefTraits<cubeb_stream> {
 
 namespace mozilla {
 
+// A thread pool containing only one thread to execute the cubeb operations. We
+// should always use this thread to init, destroy, start, or stop cubeb streams,
+// to avoid data racing or deadlock issues across platforms.
+#define CUBEB_TASK_THREAD SharedThreadPool::Get("CubebOperation"_ns, 1)
+
 /**
  * Assume we can run an iteration of the MediaTrackGraph loop in this much time
  * or less.
@@ -270,7 +275,7 @@ class GraphDriver {
    * A driver cannot be started twice, it must be shutdown
    * before being started again. */
   virtual void Start() = 0;
-  /* Shutdown GraphDriver (synchronously) */
+  /* Shutdown GraphDriver */
   MOZ_CAN_RUN_SCRIPT virtual void Shutdown() = 0;
   /* Rate at which the GraphDriver runs, in ms. This can either be user
    * controlled (because we are using a {System,Offline}ClockDriver, and decide
@@ -377,7 +382,7 @@ class MediaTrackGraphInitThreadRunnable;
  */
 class ThreadedDriver : public GraphDriver {
   class IterationWaitHelper {
-    Monitor mMonitor;
+    Monitor mMonitor MOZ_UNANNOTATED;
     // The below members are guarded by mMonitor.
     bool mNeedAnotherIteration = false;
     TimeStamp mWakeTime;
@@ -440,7 +445,7 @@ class ThreadedDriver : public GraphDriver {
   nsIThread* Thread() const { return mThread; }
 
   bool OnThread() const override {
-    return !mThread || mThread->EventTarget()->IsOnCurrentThread();
+    return !mThread || mThread->IsOnCurrentThread();
   }
 
   bool ThreadRunning() const override { return mThreadRunning; }

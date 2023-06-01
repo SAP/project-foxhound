@@ -38,7 +38,6 @@
 #include "ManifestParser.h"
 #include "nsNetUtil.h"
 #include "mozilla/Services.h"
-#include "mozJSComponentLoader.h"
 
 #include "mozilla/GenericFactory.h"
 #include "nsSupportsPrimitives.h"
@@ -116,6 +115,12 @@ bool ProcessSelectorMatches(ProcessSelector aSelector) {
     return !!(aSelector & Module::ALLOW_IN_UTILITY_PROCESS);
   }
 
+  // Only allow XPCOM modules which can be loaded in all processes to be loaded
+  // in the IPDLUnitTest process.
+  if (type == GeckoProcessType_IPDLUnitTest) {
+    return size_t(aSelector) == Module::kMaxProcessSelector;
+  }
+
   if (aSelector & Module::MAIN_PROCESS_ONLY) {
     return type == GeckoProcessType_Default;
   }
@@ -158,7 +163,7 @@ class MOZ_STACK_CLASS EntryWrapper final {
   return mEntry.match((Matcher()))
 
   const nsID& CID() {
-    MATCH(const nsID&, return *entry->mCIDEntry->cid, return entry->CID());
+    MATCH(const nsID&, return entry->mCID, return entry->CID());
   }
 
   already_AddRefed<nsIFactory> GetFactory() {
@@ -172,14 +177,11 @@ class MOZ_STACK_CLASS EntryWrapper final {
    * side-steps the necessity of creating a nsIFactory instance for static
    * modules.
    */
-  nsresult CreateInstance(nsISupports* aOuter, const nsIID& aIID,
-                          void** aResult) {
+  nsresult CreateInstance(const nsIID& aIID, void** aResult) {
     if (mEntry.is<nsFactoryEntry*>()) {
-      return mEntry.as<nsFactoryEntry*>()->CreateInstance(aOuter, aIID,
-                                                          aResult);
+      return mEntry.as<nsFactoryEntry*>()->CreateInstance(aIID, aResult);
     }
-    return mEntry.as<const StaticModule*>()->CreateInstance(aOuter, aIID,
-                                                            aResult);
+    return mEntry.as<const StaticModule*>()->CreateInstance(aIID, aResult);
   }
 
   /**
@@ -200,15 +202,10 @@ class MOZ_STACK_CLASS EntryWrapper final {
   }
 
   /**
-   * Returns the description string for the module this entry belongs to. For
-   * static entries, always returns "<unknown module>".
+   * Returns the description string for the module this entry belongs to.
+   * Currently always returns "<unknown module>".
    */
-  nsCString ModuleDescription() {
-    MATCH(nsCString,
-          return entry->mModule ? entry->mModule->Description()
-                                : "<unknown module>"_ns,
-          return "<unknown module>"_ns);
-  }
+  nsCString ModuleDescription() { return "<unknown module>"_ns; }
 
  private:
   Variant<nsFactoryEntry*, const StaticModule*> mEntry;
@@ -220,7 +217,7 @@ class MOZ_STACK_CLASS EntryWrapper final {
 static already_AddRefed<nsIFile> GetLocationFromDirectoryService(
     const char* aProp) {
   nsCOMPtr<nsIProperties> directoryService;
-  nsDirectoryService::Create(nullptr, NS_GET_IID(nsIProperties),
+  nsDirectoryService::Create(NS_GET_IID(nsIProperties),
                              getter_AddRefs(directoryService));
 
   if (!directoryService) {
@@ -253,12 +250,7 @@ static already_AddRefed<nsIFile> CloneAndAppend(nsIFile* aBase,
 // nsComponentManagerImpl
 ////////////////////////////////////////////////////////////////////////////////
 
-nsresult nsComponentManagerImpl::Create(nsISupports* aOuter, REFNSIID aIID,
-                                        void** aResult) {
-  if (aOuter) {
-    return NS_ERROR_NO_AGGREGATION;
-  }
-
+nsresult nsComponentManagerImpl::Create(REFNSIID aIID, void** aResult) {
   if (!gComponentManager) {
     return NS_ERROR_FAILURE;
   }
@@ -266,35 +258,13 @@ nsresult nsComponentManagerImpl::Create(nsISupports* aOuter, REFNSIID aIID,
   return gComponentManager->QueryInterface(aIID, aResult);
 }
 
-static const int CONTRACTID_HASHTABLE_INITIAL_LENGTH = 32;
+static const int CONTRACTID_HASHTABLE_INITIAL_LENGTH = 8;
 
 nsComponentManagerImpl::nsComponentManagerImpl()
     : mFactories(CONTRACTID_HASHTABLE_INITIAL_LENGTH),
       mContractIDs(CONTRACTID_HASHTABLE_INITIAL_LENGTH),
       mLock("nsComponentManagerImpl.mLock"),
       mStatus(NOT_INITIALIZED) {}
-
-extern const mozilla::Module kNeckoModule;
-extern const mozilla::Module kPowerManagerModule;
-extern const mozilla::Module kContentProcessWidgetModule;
-#if defined(MOZ_WIDGET_COCOA) || defined(MOZ_WIDGET_UIKIT)
-extern const mozilla::Module kWidgetModule;
-#endif
-extern const mozilla::Module kLayoutModule;
-extern const mozilla::Module kKeyValueModule;
-extern const mozilla::Module kXREModule;
-extern const mozilla::Module kEmbeddingModule;
-
-static nsTArray<const mozilla::Module*>* sExtraStaticModules;
-
-/* static */
-void nsComponentManagerImpl::InitializeStaticModules() {
-  if (sExtraStaticModules) {
-    return;
-  }
-
-  sExtraStaticModules = new nsTArray<const mozilla::Module*>;
-}
 
 nsTArray<nsComponentManagerImpl::ComponentLocation>*
     nsComponentManagerImpl::sModuleLocations;
@@ -364,25 +334,7 @@ nsresult nsComponentManagerImpl::Init() {
   nsCOMPtr<nsIFile> appDir =
       GetLocationFromDirectoryService(NS_XPCOM_CURRENT_PROCESS_DIR);
 
-  InitializeStaticModules();
-
   nsCategoryManager::GetSingleton()->SuppressNotifications(true);
-
-  RegisterModule(&kXPCOMModule);
-  RegisterModule(&kNeckoModule);
-  RegisterModule(&kPowerManagerModule);
-  RegisterModule(&kContentProcessWidgetModule);
-#if defined(MOZ_WIDGET_COCOA) || defined(MOZ_WIDGET_UIKIT)
-  RegisterModule(&kWidgetModule);
-#endif
-  RegisterModule(&kLayoutModule);
-  RegisterModule(&kKeyValueModule);
-  RegisterModule(&kXREModule);
-  RegisterModule(&kEmbeddingModule);
-
-  for (uint32_t i = 0; i < sExtraStaticModules->Length(); ++i) {
-    RegisterModule((*sExtraStaticModules)[i]);
-  }
 
   auto* catMan = nsCategoryManager::GetSingleton();
   for (const auto& cat : gStaticCategories) {
@@ -408,7 +360,6 @@ nsresult nsComponentManagerImpl::Init() {
     // processes really need chrome manifests...?
     case GeckoProcessType_Default:
     case GeckoProcessType_Content:
-    case GeckoProcessType_IPDLUnitTest:
     case GeckoProcessType_GMPlugin:
       loadChromeManifests = true;
       break;
@@ -488,13 +439,12 @@ nsresult nsComponentManagerImpl::Init() {
   mStatus = NORMAL;
 
   MOZ_ASSERT(!XRE_IsContentProcess() ||
+                 CONTRACTID_HASHTABLE_INITIAL_LENGTH <= 8 ||
                  mFactories.Count() > CONTRACTID_HASHTABLE_INITIAL_LENGTH / 3,
              "Initial component hashtable size is too large");
 
   return NS_OK;
 }
-
-static const int kModuleVersionWithSelector = 51;
 
 template <typename T>
 static void AssertNotMallocAllocated(T* aPtr) {
@@ -536,148 +486,6 @@ static void AssertNotStackAllocated(T* aPtr) {
 #endif
 }
 
-static inline nsCString AsLiteralCString(const char* aStr) {
-  AssertNotMallocAllocated(aStr);
-  AssertNotStackAllocated(aStr);
-
-  nsCString str;
-  str.AssignLiteral(aStr, strlen(aStr));
-  return str;
-}
-
-void nsComponentManagerImpl::RegisterModule(const mozilla::Module* aModule) {
-  mLock.AssertNotCurrentThreadOwns();
-
-  if (aModule->mVersion >= kModuleVersionWithSelector &&
-      !ProcessSelectorMatches(aModule->selector)) {
-    return;
-  }
-
-  {
-    // Scope the monitor so that we don't hold it while calling into the
-    // category manager.
-    MonitorAutoLock lock(mLock);
-
-    KnownModule* m = new KnownModule(aModule);
-    mKnownStaticModules.AppendElement(m);
-
-    if (aModule->mCIDs) {
-      const mozilla::Module::CIDEntry* entry;
-      for (entry = aModule->mCIDs; entry->cid; ++entry) {
-        RegisterCIDEntryLocked(entry, m);
-      }
-    }
-
-    if (aModule->mContractIDs) {
-      const mozilla::Module::ContractIDEntry* entry;
-      for (entry = aModule->mContractIDs; entry->contractid; ++entry) {
-        RegisterContractIDLocked(entry);
-      }
-      MOZ_ASSERT(!entry->cid, "Incorrectly terminated contract list");
-    }
-  }
-
-  if (aModule->mCategoryEntries) {
-    const mozilla::Module::CategoryEntry* entry;
-    for (entry = aModule->mCategoryEntries; entry->category; ++entry)
-      nsCategoryManager::GetSingleton()->AddCategoryEntry(
-          AsLiteralCString(entry->category), AsLiteralCString(entry->entry),
-          AsLiteralCString(entry->value));
-  }
-}
-
-void nsComponentManagerImpl::RegisterCIDEntryLocked(
-    const mozilla::Module::CIDEntry* aEntry, KnownModule* aModule) {
-  mLock.AssertCurrentThreadOwns();
-
-  if (!ProcessSelectorMatches(aEntry->processSelector)) {
-    return;
-  }
-
-#ifdef DEBUG
-  // If we're still in the static initialization phase, check that we're not
-  // registering something that was already registered.
-  if (mStatus != NORMAL) {
-    if (StaticComponents::LookupByCID(*aEntry->cid)) {
-      MOZ_CRASH_UNSAFE_PRINTF(
-          "While registering XPCOM module %s, trying to re-register CID '%s' "
-          "already registered by a static component.",
-          aModule->Description().get(), AutoIDString(*aEntry->cid).get());
-    }
-  }
-#endif
-
-  mFactories.WithEntryHandle(aEntry->cid, [&](auto&& entry) {
-    if (entry) {
-      nsFactoryEntry* f = entry.Data();
-      NS_WARNING("Re-registering a CID?");
-
-      nsCString existing;
-      if (f->mModule) {
-        existing = f->mModule->Description();
-      } else {
-        existing = "<unknown module>";
-      }
-      MonitorAutoUnlock unlock(mLock);
-      LogMessage(
-          "While registering XPCOM module %s, trying to re-register CID '%s' "
-          "already registered by %s.",
-          aModule->Description().get(), AutoIDString(*aEntry->cid).get(),
-          existing.get());
-    } else {
-      entry.Insert(new nsFactoryEntry(aEntry, aModule));
-    }
-  });
-}
-
-void nsComponentManagerImpl::RegisterContractIDLocked(
-    const mozilla::Module::ContractIDEntry* aEntry) {
-  mLock.AssertCurrentThreadOwns();
-
-  if (!ProcessSelectorMatches(aEntry->processSelector)) {
-    return;
-  }
-
-#ifdef DEBUG
-  // If we're still in the static initialization phase, check that we're not
-  // registering something that was already registered.
-  if (mStatus != NORMAL) {
-    if (const StaticModule* module = StaticComponents::LookupByContractID(
-            nsAutoCString(aEntry->contractid))) {
-      MOZ_CRASH_UNSAFE_PRINTF(
-          "Could not map contract ID '%s' to CID %s because it is already "
-          "mapped to CID %s.",
-          aEntry->contractid, AutoIDString(*aEntry->cid).get(),
-          AutoIDString(module->CID()).get());
-    }
-  }
-#endif
-
-  nsFactoryEntry* f = mFactories.Get(aEntry->cid);
-  if (!f) {
-    NS_WARNING("No CID found when attempting to map contract ID");
-
-    MonitorAutoUnlock unlock(mLock);
-    LogMessage(
-        "Could not map contract ID '%s' to CID %s because no implementation of "
-        "the CID is registered.",
-        aEntry->contractid, AutoIDString(*aEntry->cid).get());
-
-    return;
-  }
-
-  mContractIDs.InsertOrUpdate(AsLiteralCString(aEntry->contractid), f);
-}
-
-static void CutExtension(nsCString& aPath) {
-  int32_t dotPos = aPath.RFindChar('.');
-  if (kNotFound == dotPos) {
-    aPath.Truncate();
-  } else {
-    aPath.Cut(0, dotPos + 1);
-  }
-}
-
 static void DoRegisterManifest(NSLocationType aType, FileLocation& aFile,
                                bool aChromeOnly) {
   auto result = URLPreloader::Read(aFile);
@@ -704,80 +512,6 @@ void nsComponentManagerImpl::ManifestManifest(ManifestProcessingContext& aCx,
   RegisterManifest(aCx.mType, f, aCx.mChromeOnly);
 }
 
-void nsComponentManagerImpl::ManifestComponent(ManifestProcessingContext& aCx,
-                                               int aLineNo,
-                                               char* const* aArgv) {
-  mLock.AssertNotCurrentThreadOwns();
-
-  char* id = aArgv[0];
-  char* file = aArgv[1];
-
-  nsID cid;
-  if (!cid.Parse(id)) {
-    LogMessageWithContext(aCx.mFile, aLineNo, "Malformed CID: '%s'.", id);
-    return;
-  }
-
-  // Precompute the hash/file data outside of the lock
-  FileLocation fl(aCx.mFile, file);
-  nsCString hash;
-  fl.GetURIString(hash);
-
-  Maybe<MonitorAutoLock> lock(std::in_place, mLock);
-  if (Maybe<EntryWrapper> f = LookupByCID(*lock, cid)) {
-    nsCString existing(f->ModuleDescription());
-
-    lock.reset();
-
-    LogMessageWithContext(
-        aCx.mFile, aLineNo,
-        "Trying to re-register CID '%s' already registered by %s.",
-        AutoIDString(cid).get(), existing.get());
-    return;
-  }
-
-  KnownModule* const km = mKnownModules.GetOrInsertNew(hash, fl);
-
-  void* place = mArena.Allocate(sizeof(nsCID));
-  nsID* permanentCID = static_cast<nsID*>(place);
-  *permanentCID = cid;
-
-  place = mArena.Allocate(sizeof(mozilla::Module::CIDEntry));
-  auto* e = new (KnownNotNull, place) mozilla::Module::CIDEntry();
-  e->cid = permanentCID;
-
-  mFactories.InsertOrUpdate(permanentCID, new nsFactoryEntry(e, km));
-}
-
-void nsComponentManagerImpl::ManifestContract(ManifestProcessingContext& aCx,
-                                              int aLineNo, char* const* aArgv) {
-  mLock.AssertNotCurrentThreadOwns();
-
-  char* contract = aArgv[0];
-  char* id = aArgv[1];
-
-  nsID cid;
-  if (!cid.Parse(id)) {
-    LogMessageWithContext(aCx.mFile, aLineNo, "Malformed CID: '%s'.", id);
-    return;
-  }
-
-  Maybe<MonitorAutoLock> lock(std::in_place, mLock);
-  nsFactoryEntry* f = mFactories.Get(&cid);
-  if (!f) {
-    lock.reset();
-    LogMessageWithContext(aCx.mFile, aLineNo,
-                          "Could not map contract ID '%s' to CID %s because no "
-                          "implementation of the CID is registered.",
-                          contract, id);
-    return;
-  }
-
-  nsDependentCString contractString(contract);
-  StaticComponents::InvalidateContractID(nsDependentCString(contractString));
-  mContractIDs.InsertOrUpdate(contractString, f);
-}
-
 void nsComponentManagerImpl::ManifestCategory(ManifestProcessingContext& aCx,
                                               int aLineNo, char* const* aArgv) {
   char* category = aArgv[0];
@@ -801,49 +535,6 @@ void nsComponentManagerImpl::RereadChromeManifests(bool aChromeOnly) {
   }
 }
 
-bool nsComponentManagerImpl::KnownModule::Load() {
-  if (mFailed) {
-    return false;
-  }
-  if (!mModule) {
-    nsCString extension;
-    mFile.GetURIString(extension);
-    CutExtension(extension);
-    if (!extension.Equals("js")) {
-      return false;
-    }
-
-    RefPtr<mozJSComponentLoader> loader = mozJSComponentLoader::Get();
-    mModule = loader->LoadModule(mFile);
-
-    if (!mModule) {
-      mFailed = true;
-      return false;
-    }
-  }
-  if (!mLoaded) {
-    if (mModule->loadProc) {
-      nsresult rv = mModule->loadProc();
-      if (NS_FAILED(rv)) {
-        mFailed = true;
-        return false;
-      }
-    }
-    mLoaded = true;
-  }
-  return true;
-}
-
-nsCString nsComponentManagerImpl::KnownModule::Description() const {
-  nsCString s;
-  if (mFile) {
-    mFile.GetURIString(s);
-  } else {
-    s = "<static module>";
-  }
-  return s;
-}
-
 nsresult nsComponentManagerImpl::Shutdown(void) {
   MOZ_ASSERT(NORMAL == mStatus);
 
@@ -858,12 +549,9 @@ nsresult nsComponentManagerImpl::Shutdown(void) {
   // Release all cached factories
   mContractIDs.Clear();
   mFactories.Clear();  // XXX release the objects, don't just clear
-  mKnownModules.Clear();
-  mKnownStaticModules.Clear();
 
   StaticComponents::Shutdown();
 
-  delete sExtraStaticModules;
   delete sModuleLocations;
 
   mStatus = SHUTDOWN_COMPLETE;
@@ -929,7 +617,7 @@ Maybe<EntryWrapper> nsComponentManagerImpl::LookupByContractID(
     // UnregisterFactory might have left a stale nsFactoryEntry in
     // mContractIDs, so we should check to see whether this entry has
     // anything useful.
-    if (entry->mModule || entry->mFactory || entry->mServiceObject) {
+    if (entry->mFactory || entry->mServiceObject) {
       return Some(EntryWrapper(entry));
     }
   }
@@ -969,11 +657,9 @@ nsComponentManagerImpl::GetClassObject(const nsCID& aClass, const nsIID& aIID,
   nsresult rv;
 
   if (MOZ_LOG_TEST(nsComponentManagerLog, LogLevel::Debug)) {
-    char* buf = aClass.ToString();
+    char buf[NSID_LENGTH];
+    aClass.ToProvidedString(buf);
     PR_LogPrint("nsComponentManager: GetClassObject(%s)", buf);
-    if (buf) {
-      free(buf);
-    }
   }
 
   MOZ_ASSERT(aResult != nullptr);
@@ -1027,9 +713,8 @@ nsComponentManagerImpl::GetClassObjectByContractID(const char* aContractID,
  * released and not held onto for any longer.
  */
 NS_IMETHODIMP
-nsComponentManagerImpl::CreateInstance(const nsCID& aClass,
-                                       nsISupports* aDelegate,
-                                       const nsIID& aIID, void** aResult) {
+nsComponentManagerImpl::CreateInstance(const nsCID& aClass, const nsIID& aIID,
+                                       void** aResult) {
   // test this first, since there's no point in creating a component during
   // shutdown -- whether it's available or not would depend on the order it
   // occurs in the list
@@ -1067,7 +752,7 @@ nsComponentManagerImpl::CreateInstance(const nsCID& aClass,
   nsresult rv;
   nsCOMPtr<nsIFactory> factory = entry->GetFactory();
   if (factory) {
-    rv = factory->CreateInstance(aDelegate, aIID, aResult);
+    rv = factory->CreateInstance(aIID, aResult);
     if (NS_SUCCEEDED(rv) && !*aResult) {
       NS_ERROR("Factory did not return an object but returned success!");
       rv = NS_ERROR_SERVICE_NOT_AVAILABLE;
@@ -1078,13 +763,11 @@ nsComponentManagerImpl::CreateInstance(const nsCID& aClass,
   }
 
   if (MOZ_LOG_TEST(nsComponentManagerLog, LogLevel::Warning)) {
-    char* buf = aClass.ToString();
+    char buf[NSID_LENGTH];
+    aClass.ToProvidedString(buf);
     MOZ_LOG(nsComponentManagerLog, LogLevel::Warning,
             ("nsComponentManager: CreateInstance(%s) %s", buf,
              NS_SUCCEEDED(rv) ? "succeeded" : "FAILED"));
-    if (buf) {
-      free(buf);
-    }
   }
 
   return rv;
@@ -1102,7 +785,6 @@ nsComponentManagerImpl::CreateInstance(const nsCID& aClass,
  */
 NS_IMETHODIMP
 nsComponentManagerImpl::CreateInstanceByContractID(const char* aContractID,
-                                                   nsISupports* aDelegate,
                                                    const nsIID& aIID,
                                                    void** aResult) {
   if (NS_WARN_IF(!aContractID)) {
@@ -1151,7 +833,7 @@ nsComponentManagerImpl::CreateInstanceByContractID(const char* aContractID,
   nsresult rv;
   nsCOMPtr<nsIFactory> factory = entry->GetFactory();
   if (factory) {
-    rv = factory->CreateInstance(aDelegate, aIID, aResult);
+    rv = factory->CreateInstance(aIID, aResult);
     if (NS_SUCCEEDED(rv) && !*aResult) {
       NS_ERROR("Factory did not return an object but returned success!");
       rv = NS_ERROR_SERVICE_NOT_AVAILABLE;
@@ -1280,12 +962,13 @@ nsresult nsComponentManagerImpl::GetServiceLocked(Maybe<MonitorAutoLock>& aLock,
     }
   });
   nsresult rv;
+  mLock.AssertCurrentThreadOwns();
   {
     MonitorAutoUnlock unlock(mLock);
     AUTO_PROFILER_MARKER_TEXT(
         "GetService", OTHER, MarkerStack::Capture(),
         nsDependentCString(nsIDToCString(aEntry.CID()).get()));
-    rv = aEntry.CreateInstance(nullptr, aIID, getter_AddRefs(service));
+    rv = aEntry.CreateInstance(aIID, getter_AddRefs(service));
   }
   if (NS_SUCCEEDED(rv) && !service) {
     NS_ERROR("Factory did not return an object but returned success");
@@ -1513,11 +1196,11 @@ nsComponentManagerImpl::RegisterFactory(const nsCID& aClass, const char* aName,
   auto f = MakeUnique<nsFactoryEntry>(aClass, aFactory);
 
   MonitorAutoLock lock(mLock);
-  return mFactories.WithEntryHandle(f->mCIDEntry->cid, [&](auto&& entry) {
+  return mFactories.WithEntryHandle(&f->mCID, [&](auto&& entry) {
     if (entry) {
       return NS_ERROR_FACTORY_EXISTS;
     }
-    if (StaticComponents::LookupByCID(*f->mCIDEntry->cid)) {
+    if (StaticComponents::LookupByCID(f->mCID)) {
       return NS_ERROR_FACTORY_EXISTS;
     }
     if (aContractID) {
@@ -1569,27 +1252,6 @@ nsComponentManagerImpl::AutoRegister(nsIFile* aLocation) {
 }
 
 NS_IMETHODIMP
-nsComponentManagerImpl::AutoUnregister(nsIFile* aLocation) {
-  NS_ERROR("AutoUnregister not implemented.");
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-nsComponentManagerImpl::RegisterFactoryLocation(
-    const nsCID& aCID, const char* aClassName, const char* aContractID,
-    nsIFile* aFile, const char* aLoaderStr, const char* aType) {
-  NS_ERROR("RegisterFactoryLocation not implemented.");
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-nsComponentManagerImpl::UnregisterFactoryLocation(const nsCID& aCID,
-                                                  nsIFile* aFile) {
-  NS_ERROR("UnregisterFactoryLocation not implemented.");
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
 nsComponentManagerImpl::IsCIDRegistered(const nsCID& aClass, bool* aResult) {
   *aResult = LookupByCID(aClass).isSome();
   return NS_OK;
@@ -1619,12 +1281,6 @@ nsComponentManagerImpl::GetContractIDs(nsTArray<nsCString>& aResult) {
   }
 
   return NS_OK;
-}
-
-NS_IMETHODIMP
-nsComponentManagerImpl::CIDToContractID(const nsCID& aClass, char** aResult) {
-  NS_ERROR("CIDTOContractID not implemented");
-  return NS_ERROR_FACTORY_NOT_REGISTERED;
 }
 
 NS_IMETHODIMP
@@ -1672,15 +1328,9 @@ size_t nsComponentManagerImpl::SizeOfIncludingThis(
     n += key.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
   }
 
-  n += sExtraStaticModules->ShallowSizeOfIncludingThis(aMallocSizeOf);
   if (sModuleLocations) {
     n += sModuleLocations->ShallowSizeOfIncludingThis(aMallocSizeOf);
   }
-
-  n += mKnownStaticModules.ShallowSizeOfExcludingThis(aMallocSizeOf);
-  n += mKnownModules.ShallowSizeOfExcludingThis(aMallocSizeOf);
-
-  n += mArena.SizeOfExcludingThis(aMallocSizeOf);
 
   n += mPendingServices.ShallowSizeOfExcludingThis(aMallocSizeOf);
 
@@ -1688,8 +1338,6 @@ size_t nsComponentManagerImpl::SizeOfIncludingThis(
   // worthwhile:
   // - mMon
   // - sModuleLocations' entries
-  // - mKnownStaticModules' entries?
-  // - mKnownModules' keys and values?
 
   return n;
 }
@@ -1698,72 +1346,20 @@ size_t nsComponentManagerImpl::SizeOfIncludingThis(
 // nsFactoryEntry
 ////////////////////////////////////////////////////////////////////////////////
 
-nsFactoryEntry::nsFactoryEntry(const mozilla::Module::CIDEntry* aEntry,
-                               nsComponentManagerImpl::KnownModule* aModule)
-    : mCIDEntry(aEntry), mModule(aModule) {}
-
 nsFactoryEntry::nsFactoryEntry(const nsCID& aCID, nsIFactory* aFactory)
-    : mCIDEntry(nullptr), mModule(nullptr), mFactory(aFactory) {
-  auto* e = new mozilla::Module::CIDEntry();
-  auto* cid = new nsCID;
-  *cid = aCID;
-  e->cid = cid;
-  mCIDEntry = e;
-}
-
-nsFactoryEntry::~nsFactoryEntry() {
-  // If this was a RegisterFactory entry, we own the CIDEntry/CID
-  if (!mModule) {
-    delete mCIDEntry->cid;
-    delete mCIDEntry;
-  }
-}
+    : mCID(aCID), mFactory(aFactory) {}
 
 already_AddRefed<nsIFactory> nsFactoryEntry::GetFactory() {
   nsComponentManagerImpl::gComponentManager->mLock.AssertNotCurrentThreadOwns();
 
-  if (!mFactory) {
-    // RegisterFactory then UnregisterFactory can leave an entry in mContractIDs
-    // pointing to an unusable nsFactoryEntry.
-    if (!mModule) {
-      return nullptr;
-    }
-
-    if (!mModule->Load()) {
-      return nullptr;
-    }
-
-    // Don't set mFactory directly, it needs to be locked
-    nsCOMPtr<nsIFactory> factory;
-
-    if (mModule->Module()->getFactoryProc) {
-      factory =
-          mModule->Module()->getFactoryProc(*mModule->Module(), *mCIDEntry);
-    } else if (mCIDEntry->getFactoryProc) {
-      factory = mCIDEntry->getFactoryProc(*mModule->Module(), *mCIDEntry);
-    } else {
-      NS_ASSERTION(mCIDEntry->constructorProc, "no getfactory or constructor");
-      factory = new mozilla::GenericFactory(mCIDEntry->constructorProc);
-    }
-    if (!factory) {
-      return nullptr;
-    }
-
-    MonitorAutoLock lock(nsComponentManagerImpl::gComponentManager->mLock);
-    // Threads can race to set mFactory
-    if (!mFactory) {
-      factory.swap(mFactory);
-    }
-  }
   nsCOMPtr<nsIFactory> factory = mFactory;
   return factory.forget();
 }
 
-nsresult nsFactoryEntry::CreateInstance(nsISupports* aOuter, const nsIID& aIID,
-                                        void** aResult) {
+nsresult nsFactoryEntry::CreateInstance(const nsIID& aIID, void** aResult) {
   nsCOMPtr<nsIFactory> factory = GetFactory();
   NS_ENSURE_TRUE(factory, NS_ERROR_FAILURE);
-  return factory->CreateInstance(aOuter, aIID, aResult);
+  return factory->CreateInstance(aIID, aResult);
 }
 
 size_t nsFactoryEntry::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) {
@@ -1771,8 +1367,7 @@ size_t nsFactoryEntry::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) {
 
   // Measurement of the following members may be added later if DMD finds it is
   // worthwhile:
-  // - mCIDEntry;
-  // - mModule;
+  // - mCID;
   // - mFactory;
   // - mServiceObject;
 
@@ -1807,20 +1402,6 @@ nsresult NS_GetComponentRegistrar(nsIComponentRegistrar** aResult) {
   }
 
   NS_ADDREF(*aResult = nsComponentManagerImpl::gComponentManager);
-  return NS_OK;
-}
-
-EXPORT_XPCOM_API(nsresult)
-XRE_AddStaticComponent(const mozilla::Module* aComponent) {
-  nsComponentManagerImpl::InitializeStaticModules();
-  sExtraStaticModules->AppendElement(aComponent);
-
-  if (nsComponentManagerImpl::gComponentManager &&
-      nsComponentManagerImpl::NORMAL ==
-          nsComponentManagerImpl::gComponentManager->mStatus) {
-    nsComponentManagerImpl::gComponentManager->RegisterModule(aComponent);
-  }
-
   return NS_OK;
 }
 
@@ -1880,6 +1461,15 @@ nsComponentManagerImpl::GetComponentJSMs(nsIUTF8StringEnumerator** aJSMs) {
   nsCOMPtr<nsIUTF8StringEnumerator> result =
       StaticComponents::GetComponentJSMs();
   result.forget(aJSMs);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsComponentManagerImpl::GetComponentESModules(
+    nsIUTF8StringEnumerator** aESModules) {
+  nsCOMPtr<nsIUTF8StringEnumerator> result =
+      StaticComponents::GetComponentESModules();
+  result.forget(aESModules);
   return NS_OK;
 }
 
@@ -1962,5 +1552,24 @@ const nsIServiceManager* Gecko_GetServiceManager() {
 
 const nsIComponentRegistrar* Gecko_GetComponentRegistrar() {
   return nsComponentManagerImpl::gComponentManager;
+}
+
+// FFI-compatible version of `GetServiceHelper::operator()`.
+nsresult Gecko_GetServiceByModuleID(ModuleID aId, const nsIID* aIID,
+                                    void** aResult) {
+  return nsComponentManagerImpl::gComponentManager->GetService(aId, *aIID,
+                                                               aResult);
+}
+
+// FFI-compatible version of `CreateInstanceHelper::operator()`.
+nsresult Gecko_CreateInstanceByModuleID(ModuleID aId, const nsIID* aIID,
+                                        void** aResult) {
+  const auto& entry = gStaticModules[size_t(aId)];
+  if (!entry.Active()) {
+    return NS_ERROR_FACTORY_NOT_REGISTERED;
+  }
+
+  nsresult rv = entry.CreateInstance(*aIID, aResult);
+  return rv;
 }
 }

@@ -1,13 +1,13 @@
 "use strict";
-/* eslint-env mozilla/frame-script */
 
-const { XPCShellContentUtils } = ChromeUtils.import(
-  "resource://testing-common/XPCShellContentUtils.jsm"
+const { XPCShellContentUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/XPCShellContentUtils.sys.mjs"
 );
 
 XPCShellContentUtils.init(this);
 
 function childFrameScript() {
+  /* eslint-env mozilla/frame-script */
   "use strict";
 
   const messageName = "test:blob-slice-test";

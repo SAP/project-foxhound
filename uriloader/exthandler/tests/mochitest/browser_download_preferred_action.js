@@ -3,11 +3,11 @@
 
 "use strict";
 
-const { DownloadIntegration } = ChromeUtils.import(
-  "resource://gre/modules/DownloadIntegration.jsm"
+const { DownloadIntegration } = ChromeUtils.importESModule(
+  "resource://gre/modules/DownloadIntegration.sys.mjs"
 );
-const { FileTestUtils } = ChromeUtils.import(
-  "resource://testing-common/FileTestUtils.jsm"
+const { FileTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/FileTestUtils.sys.mjs"
 );
 const gHandlerService = Cc[
   "@mozilla.org/uriloader/handler-service;1"
@@ -157,7 +157,7 @@ async function createDownloadTest(
   let downloadFinishedPromise = skipDownload
     ? null
     : promiseDownloadFinished(downloadList);
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, file.url);
+  BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, file.url);
   if (action.id === Ci.nsIHandlerInfo.alwaysAsk) {
     info("Check Always Ask dialog.");
     let dialogWindow = await dialogWindowPromise;
@@ -246,7 +246,10 @@ add_task(async function test_download_preferred_action() {
     Services.prefs.clearUserPref(
       "browser.download.improvements_to_download_panel"
     );
-    BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:home");
+    Services.prefs.clearUserPref(
+      "browser.download.always_ask_before_handling_new_types"
+    );
+    BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, "about:home");
     for (const index in FILE_TYPES_TO_TEST) {
       let file = FILE_TYPES_TO_TEST[index];
       let mimeSettings = gMIMEService.getFromTypeAndExtension(
@@ -261,7 +264,10 @@ add_task(async function test_download_preferred_action() {
     }
   });
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.download.improvements_to_download_panel", true]],
+    set: [
+      ["browser.download.improvements_to_download_panel", true],
+      ["browser.download.always_ask_before_handling_new_types", false],
+    ],
   });
   let launcherPath = FileTestUtils.getTempFile("app-launcher").path;
   let localHandlerApp = localHandlerAppFactory.createInstance(
@@ -273,8 +279,6 @@ add_task(async function test_download_preferred_action() {
   for (const file of FILE_TYPES_TO_TEST) {
     // The CD header specifies the download file extension on download
     let fileNoHeader = file;
-    // Disabling eslint for structuredClone use, see Bug 1745030
-    // eslint-disable-next-line no-undef
     let fileWithHeader = structuredClone(file);
     fileWithHeader.url += "&withHeader";
     for (const action of PREFERRED_ACTIONS) {
@@ -282,7 +286,6 @@ add_task(async function test_download_preferred_action() {
       await createDownloadTest(
         downloadList,
         localHandlerApp,
-        // eslint-disable-next-line no-undef
         structuredClone(fileWithHeader),
         action,
         true
@@ -290,7 +293,6 @@ add_task(async function test_download_preferred_action() {
       await createDownloadTest(
         downloadList,
         localHandlerApp,
-        // eslint-disable-next-line no-undef
         structuredClone(fileNoHeader),
         action,
         false

@@ -5,29 +5,13 @@
  * Tests that preferences are properly set by distribution.ini
  */
 
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
-);
-
-// This test causes BrowserGlue to start but not fully initialise, when the
-// AddonManager shuts down BrowserGlue will then try to uninit which will
-// cause AutoComplete.jsm to throw an error.
-// TODO: Fix in https://bugzilla.mozilla.org/show_bug.cgi?id=1543112.
-PromiseTestUtils.allowMatchingRejectionsGlobally(/A request was aborted/);
-PromiseTestUtils.allowMatchingRejectionsGlobally(
-  /The operation failed for reasons unrelated/
-);
-
 const TOPICDATA_DISTRIBUTION_CUSTOMIZATION = "force-distribution-customization";
 const TOPIC_BROWSERGLUE_TEST = "browser-glue-test";
 
 registerCleanupFunction(async function() {
   // Remove the distribution dir, even if the test failed, otherwise all
   // next tests will use it.
-  let folderPath = PathUtils.join(
-    await PathUtils.getProfileDir(),
-    "distribution"
-  );
+  let folderPath = PathUtils.join(PathUtils.profileDir, "distribution");
   await IOUtils.remove(folderPath, { ignoreAbsent: true, recursive: true });
   Assert.ok(!(await IOUtils.exists(folderPath)));
   Services.prefs.clearUserPref("distribution.testing.loadFromProfile");
@@ -214,4 +198,5 @@ add_task(async function() {
     ).data,
     "Language Set"
   );
+  Assert.equal(defaultBranch.getCharPref("intl.locale.requested"), "en-US");
 });

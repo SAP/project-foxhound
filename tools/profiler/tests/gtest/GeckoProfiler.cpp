@@ -22,6 +22,7 @@
 #include "prthread.h"
 
 #include "gtest/gtest.h"
+#include "mozilla/gtest/MozAssertions.h"
 
 #include <thread>
 
@@ -40,6 +41,7 @@
 #  include "NetworkMarker.h"
 #  include "platform.h"
 #  include "ProfileBuffer.h"
+#  include "ProfilerControl.h"
 
 #  include "js/Initialization.h"
 #  include "js/Printf.h"
@@ -139,7 +141,13 @@ TEST(GeckoProfiler, ThreadRegistrationInfo)
     EXPECT_STREQ(trInfoHere.Name(), "Here");
     EXPECT_NE(trInfoHere.Name(), "Here")
         << "ThreadRegistrationInfo should keep its own copy of the name";
-    EXPECT_GT(trInfoHere.RegisterTime(), ts);
+    TimeStamp baseRegistrationTime =
+        baseprofiler::detail::GetThreadRegistrationTime();
+    if (baseRegistrationTime) {
+      EXPECT_EQ(trInfoHere.RegisterTime(), baseRegistrationTime);
+    } else {
+      EXPECT_GT(trInfoHere.RegisterTime(), ts);
+    }
     EXPECT_EQ(trInfoHere.ThreadId(), profiler_current_thread_id());
     EXPECT_EQ(trInfoHere.ThreadId(), profiler_main_thread_id())
         << "Gtests are assumed to run on the main thread";
@@ -1055,7 +1063,8 @@ TEST(GeckoProfiler, ThreadRegistry_DataAccess)
       ranTest = 0;
       EXPECT_FALSE(TRy::IsRegistryMutexLockedOnCurrentThread());
       for (TRy::OffThreadRef offThreadRef : TRy::LockedRegistry{}) {
-        EXPECT_TRUE(TRy::IsRegistryMutexLockedOnCurrentThread());
+        EXPECT_TRUE(TRy::IsRegistryMutexLockedOnCurrentThread() ||
+                    !TR::IsRegistered());
         if (offThreadRef.UnlockedConstReaderCRef().Info().ThreadId() ==
             testThreadId) {
           TestOffThreadRef(offThreadRef);
@@ -1069,7 +1078,8 @@ TEST(GeckoProfiler, ThreadRegistry_DataAccess)
         ranTest = 0;
         EXPECT_FALSE(TRy::IsRegistryMutexLockedOnCurrentThread());
         TRy::LockedRegistry lockedRegistry{};
-        EXPECT_TRUE(TRy::IsRegistryMutexLockedOnCurrentThread());
+        EXPECT_TRUE(TRy::IsRegistryMutexLockedOnCurrentThread() ||
+                    !TR::IsRegistered());
         for (TRy::OffThreadRef offThreadRef : lockedRegistry) {
           if (offThreadRef.UnlockedConstReaderCRef().Info().ThreadId() ==
               testThreadId) {
@@ -1243,6 +1253,46 @@ TEST(BaseProfiler, BlocksRingBuffer)
 
 // Common JSON checks.
 
+// Check that the given JSON string include no JSON whitespace characters
+// (excluding those in property names and strings).
+void JSONWhitespaceCheck(const char* aOutput) {
+  ASSERT_NE(aOutput, nullptr);
+
+  enum class State { Data, String, StringEscaped };
+  State state = State::Data;
+  size_t length = 0;
+  size_t whitespaces = 0;
+  for (const char* p = aOutput; *p != '\0'; ++p) {
+    ++length;
+    const char c = *p;
+
+    switch (state) {
+      case State::Data:
+        if (c == '\n' || c == '\r' || c == ' ' || c == '\t') {
+          ++whitespaces;
+        } else if (c == '"') {
+          state = State::String;
+        }
+        break;
+
+      case State::String:
+        if (c == '"') {
+          state = State::Data;
+        } else if (c == '\\') {
+          state = State::StringEscaped;
+        }
+        break;
+
+      case State::StringEscaped:
+        state = State::String;
+        break;
+    }
+  }
+
+  EXPECT_EQ(whitespaces, 0u);
+  EXPECT_GT(length, 0u);
+}
+
 // Does the GETTER return a non-null TYPE? (Non-critical)
 #  define EXPECT_HAS_JSON(GETTER, TYPE)              \
     do {                                             \
@@ -1335,6 +1385,30 @@ TEST(BaseProfiler, BlocksRingBuffer)
       }                                                                       \
     } while (false)
 
+#  define EXPECT_JSON_ARRAY_EXCLUDES(GETTER, TYPE, VALUE)               \
+    do {                                                                \
+      if ((GETTER).isNull()) {                                          \
+        EXPECT_FALSE((GETTER).isNull())                                 \
+            << #GETTER " doesn't exist or is null";                     \
+      } else if (!(GETTER).isArray()) {                                 \
+        EXPECT_TRUE((GETTER).is##TYPE()) << #GETTER " is not an array"; \
+      } else {                                                          \
+        const Json::ArrayIndex size = (GETTER).size();                  \
+        for (Json::ArrayIndex i = 0; i < size; ++i) {                   \
+          if (!(GETTER)[i].is##TYPE()) {                                \
+            EXPECT_TRUE((GETTER)[i].is##TYPE())                         \
+                << #GETTER "[" << i << "] is not " #TYPE;               \
+            break;                                                      \
+          }                                                             \
+          if ((GETTER)[i].as##TYPE() == (VALUE)) {                      \
+            EXPECT_TRUE((GETTER)[i].as##TYPE() != (VALUE))              \
+                << #GETTER " contains " #VALUE;                         \
+            break;                                                      \
+          }                                                             \
+        }                                                               \
+      }                                                                 \
+    } while (false)
+
 // Check that the given process root contains all the expected properties.
 static void JSONRootCheck(const Json::Value& aRoot,
                           bool aWithMainThread = true) {
@@ -1345,6 +1419,9 @@ static void JSONRootCheck(const Json::Value& aRoot,
   GET_JSON(meta, aRoot["meta"], Object);
   EXPECT_HAS_JSON(meta["version"], UInt);
   EXPECT_HAS_JSON(meta["startTime"], Double);
+  EXPECT_HAS_JSON(meta["profilingStartTime"], Double);
+  EXPECT_HAS_JSON(meta["contentEarliestTime"], Double);
+  EXPECT_HAS_JSON(meta["profilingEndTime"], Double);
 
   EXPECT_HAS_JSON(aRoot["pages"], Array);
 
@@ -1469,6 +1546,22 @@ static void JSONRootCheck(const Json::Value& aRoot,
       JSONRootCheck(process, aWithMainThread);
     }
   }
+
+  GET_JSON(profilingLog, aRoot["profilingLog"], Object);
+  EXPECT_EQ(profilingLog.size(), 1u);
+  for (auto it = profilingLog.begin(); it != profilingLog.end(); ++it) {
+    // The key should be a pid.
+    const auto key = it.name();
+    for (const auto letter : key) {
+      EXPECT_GE(letter, '0');
+      EXPECT_LE(letter, '9');
+    }
+    // And the value should be an object.
+    GET_JSON(logForPid, profilingLog[key], Object);
+    // Its content is not defined, but we expect at least these:
+    EXPECT_HAS_JSON(logForPid["profilingLogBegin_TSms"], Double);
+    EXPECT_HAS_JSON(logForPid["profilingLogEnd_TSms"], Double);
+  }
 }
 
 // Check that various expected top properties are in the JSON, and then call the
@@ -1477,6 +1570,8 @@ template <typename JSONCheckFunction>
 void JSONOutputCheck(const char* aOutput,
                      JSONCheckFunction&& aJSONCheckFunction) {
   ASSERT_NE(aOutput, nullptr);
+
+  JSONWhitespaceCheck(aOutput);
 
   // Extract JSON.
   Json::Value parsedRoot;
@@ -1565,6 +1660,7 @@ TEST(GeckoProfiler, FeaturesAndParams)
     uint32_t features = ProfilerFeature::JS;
     const char* filters[] = {"GeckoMain", "Compositor"};
 
+#  define PROFILER_DEFAULT_DURATION 20 /* seconds, for tests only */
     profiler_start(PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL,
                    features, filters, MOZ_ARRAY_LENGTH(filters), 100,
                    Some(PROFILER_DEFAULT_DURATION));
@@ -1733,7 +1829,7 @@ TEST(GeckoProfiler, EnsureStarted)
     // Call profiler_ensure_started with a different feature set than the one
     // it's currently running with. This is supposed to stop and restart the
     // profiler, thereby discarding the buffer contents.
-    uint32_t differentFeatures = features | ProfilerFeature::Leaf;
+    uint32_t differentFeatures = features | ProfilerFeature::CPUUtilization;
     profiler_ensure_started(PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL,
                             differentFeatures, filters,
                             MOZ_ARRAY_LENGTH(filters), 0);
@@ -1813,7 +1909,7 @@ TEST(GeckoProfiler, DifferentThreads)
 
   nsCOMPtr<nsIThread> thread;
   nsresult rv = NS_NewNamedThread("GeckoProfGTest", getter_AddRefs(thread));
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   // Control the profiler on a background thread and verify flags on the
   // main thread.
@@ -2646,14 +2742,23 @@ TEST(GeckoProfiler, Markers)
                                   geckoprofiler::markers::TextMarker{},
                                   "Text text"));
 
+  // Ensure that we evaluate to false for markers with very long texts by
+  // testing against a ~3mb string. A string of this size should exceed the
+  // available buffer chunks (max: 2) that are available and be discarded.
+  EXPECT_FALSE(profiler_add_marker("Text", geckoprofiler::category::OTHER, {},
+                                   geckoprofiler::markers::TextMarker{},
+                                   std::string(3 * 1024 * 1024, 'x')));
+
   EXPECT_TRUE(profiler_add_marker(
       "MediaSample", geckoprofiler::category::OTHER, {},
-      geckoprofiler::markers::MediaSampleMarker{}, 123, 456));
+      geckoprofiler::markers::MediaSampleMarker{}, 123, 456, 789));
 
-  SpliceableChunkedJSONWriter w;
+  SpliceableChunkedJSONWriter w{FailureLatchInfallibleSource::Singleton()};
   w.Start();
   EXPECT_TRUE(::profiler_stream_json_for_this_process(w));
   w.End();
+
+  EXPECT_FALSE(w.Failed());
 
   UniquePtr<char[]> profile = w.ChunkedWriteFunc().CopyData();
   ASSERT_TRUE(!!profile.get());
@@ -3245,7 +3350,7 @@ TEST(GeckoProfiler, Markers)
             EXPECT_EQ(display[0u].asString(), "marker-chart");
             EXPECT_EQ(display[1u].asString(), "marker-table");
 
-            ASSERT_EQ(data.size(), 2u);
+            ASSERT_EQ(data.size(), 3u);
 
             ASSERT_TRUE(data[0u].isObject());
             EXPECT_EQ_JSON(data[0u]["key"], String, "sampleStartTimeUs");
@@ -3255,6 +3360,28 @@ TEST(GeckoProfiler, Markers)
             ASSERT_TRUE(data[1u].isObject());
             EXPECT_EQ_JSON(data[1u]["key"], String, "sampleEndTimeUs");
             EXPECT_EQ_JSON(data[1u]["label"], String, "Sample end time");
+            EXPECT_EQ_JSON(data[1u]["format"], String, "microseconds");
+
+            ASSERT_TRUE(data[2u].isObject());
+            EXPECT_EQ_JSON(data[2u]["key"], String, "queueLength");
+            EXPECT_EQ_JSON(data[2u]["label"], String, "Queue length");
+            EXPECT_EQ_JSON(data[2u]["format"], String, "integer");
+
+          } else if (nameString == "VideoFallingBehind") {
+            EXPECT_EQ(display.size(), 2u);
+            EXPECT_EQ(display[0u].asString(), "marker-chart");
+            EXPECT_EQ(display[1u].asString(), "marker-table");
+
+            ASSERT_EQ(data.size(), 2u);
+
+            ASSERT_TRUE(data[0u].isObject());
+            EXPECT_EQ_JSON(data[0u]["key"], String, "videoFrameStartTimeUs");
+            EXPECT_EQ_JSON(data[0u]["label"], String, "Video frame start time");
+            EXPECT_EQ_JSON(data[0u]["format"], String, "microseconds");
+
+            ASSERT_TRUE(data[1u].isObject());
+            EXPECT_EQ_JSON(data[1u]["key"], String, "mediaCurrentTimeUs");
+            EXPECT_EQ_JSON(data[1u]["label"], String, "Media current time");
             EXPECT_EQ_JSON(data[1u]["format"], String, "microseconds");
 
           } else if (nameString == "Budget") {
@@ -3425,11 +3552,12 @@ TEST(GeckoProfiler, Markers)
                  filters, MOZ_ARRAY_LENGTH(filters), 0);
 
   // This last marker shouldn't get streamed.
-  SpliceableChunkedJSONWriter w2;
+  SpliceableChunkedJSONWriter w2{FailureLatchInfallibleSource::Singleton()};
   w2.Start();
   EXPECT_TRUE(::profiler_stream_json_for_this_process(w2));
   w2.End();
-  UniquePtr<char[]> profile2 = w.ChunkedWriteFunc().CopyData();
+  EXPECT_FALSE(w2.Failed());
+  UniquePtr<char[]> profile2 = w2.ChunkedWriteFunc().CopyData();
   ASSERT_TRUE(!!profile2.get());
   EXPECT_TRUE(
       std::string_view(profile2.get()).find("marker after profiler_stop") ==
@@ -3460,8 +3588,9 @@ TEST(GeckoProfiler, Counters)
   };
 
   int64_t testCounters[] = {10, 7, -17};
-  NumberAndCount expectedTestCounters[] = {{1u, 10}, {0u, 0},   {1u, 7},
-                                           {0u, 0},  {1u, -17}, {0u, 0}};
+  NumberAndCount expectedTestCounters[] = {{1u, 10}, {0u, 0}, {1u, 7},
+                                           {0u, 0},  {0u, 0}, {1u, -17},
+                                           {0u, 0},  {0u, 0}};
   constexpr size_t expectedTestCountersCount =
       MOZ_ARRAY_LENGTH(expectedTestCounters);
 
@@ -3647,8 +3776,28 @@ TEST(GeckoProfiler, StreamJSONForThisProcess)
   uint32_t features = ProfilerFeature::StackWalk;
   const char* filters[] = {"GeckoMain"};
 
-  SpliceableChunkedJSONWriter w;
+  SpliceableChunkedJSONWriter w{FailureLatchInfallibleSource::Singleton()};
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().Fallible());
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().Failed());
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().GetFailure());
+  MOZ_RELEASE_ASSERT(&w.ChunkedWriteFunc().SourceFailureLatch() ==
+                     &mozilla::FailureLatchInfallibleSource::Singleton());
+  MOZ_RELEASE_ASSERT(
+      &std::as_const(w.ChunkedWriteFunc()).SourceFailureLatch() ==
+      &mozilla::FailureLatchInfallibleSource::Singleton());
+  MOZ_RELEASE_ASSERT(!w.Fallible());
+  MOZ_RELEASE_ASSERT(!w.Failed());
+  MOZ_RELEASE_ASSERT(!w.GetFailure());
+  MOZ_RELEASE_ASSERT(&w.SourceFailureLatch() ==
+                     &mozilla::FailureLatchInfallibleSource::Singleton());
+  MOZ_RELEASE_ASSERT(&std::as_const(w).SourceFailureLatch() ==
+                     &mozilla::FailureLatchInfallibleSource::Singleton());
+
   ASSERT_TRUE(!::profiler_stream_json_for_this_process(w));
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().Failed());
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().GetFailure());
+  MOZ_RELEASE_ASSERT(!w.Failed());
+  MOZ_RELEASE_ASSERT(!w.GetFailure());
 
   profiler_start(PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL, features,
                  filters, MOZ_ARRAY_LENGTH(filters), 0);
@@ -3656,6 +3805,11 @@ TEST(GeckoProfiler, StreamJSONForThisProcess)
   w.Start();
   ASSERT_TRUE(::profiler_stream_json_for_this_process(w));
   w.End();
+
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().Failed());
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().GetFailure());
+  MOZ_RELEASE_ASSERT(!w.Failed());
+  MOZ_RELEASE_ASSERT(!w.GetFailure());
 
   UniquePtr<char[]> profile = w.ChunkedWriteFunc().CopyData();
 
@@ -3679,13 +3833,33 @@ TEST(GeckoProfiler, StreamJSONForThisProcessThreaded)
   // Same as the previous test, but calling some things on background threads.
   nsCOMPtr<nsIThread> thread;
   nsresult rv = NS_NewNamedThread("GeckoProfGTest", getter_AddRefs(thread));
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   uint32_t features = ProfilerFeature::StackWalk;
   const char* filters[] = {"GeckoMain"};
 
-  SpliceableChunkedJSONWriter w;
+  SpliceableChunkedJSONWriter w{FailureLatchInfallibleSource::Singleton()};
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().Fallible());
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().Failed());
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().GetFailure());
+  MOZ_RELEASE_ASSERT(&w.ChunkedWriteFunc().SourceFailureLatch() ==
+                     &mozilla::FailureLatchInfallibleSource::Singleton());
+  MOZ_RELEASE_ASSERT(
+      &std::as_const(w.ChunkedWriteFunc()).SourceFailureLatch() ==
+      &mozilla::FailureLatchInfallibleSource::Singleton());
+  MOZ_RELEASE_ASSERT(!w.Fallible());
+  MOZ_RELEASE_ASSERT(!w.Failed());
+  MOZ_RELEASE_ASSERT(!w.GetFailure());
+  MOZ_RELEASE_ASSERT(&w.SourceFailureLatch() ==
+                     &mozilla::FailureLatchInfallibleSource::Singleton());
+  MOZ_RELEASE_ASSERT(&std::as_const(w).SourceFailureLatch() ==
+                     &mozilla::FailureLatchInfallibleSource::Singleton());
+
   ASSERT_TRUE(!::profiler_stream_json_for_this_process(w));
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().Failed());
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().GetFailure());
+  MOZ_RELEASE_ASSERT(!w.Failed());
+  MOZ_RELEASE_ASSERT(!w.GetFailure());
 
   // Start the profiler on the main thread.
   profiler_start(PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL, features,
@@ -3705,6 +3879,11 @@ TEST(GeckoProfiler, StreamJSONForThisProcessThreaded)
             w.End();
           }),
       NS_DISPATCH_SYNC);
+
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().Failed());
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().GetFailure());
+  MOZ_RELEASE_ASSERT(!w.Failed());
+  MOZ_RELEASE_ASSERT(!w.GetFailure());
 
   UniquePtr<char[]> profile = w.ChunkedWriteFunc().CopyData();
 
@@ -3804,7 +3983,7 @@ void DoSuspendAndSample(ProfilerThreadId aTidToSample,
       NS_NewRunnableFunction(
           "GeckoProfiler_SuspendAndSample_Test::TestBody",
           [&]() {
-            uint32_t features = ProfilerFeature::Leaf;
+            uint32_t features = ProfilerFeature::CPUUtilization;
             GTestStackCollector collector;
             profiler_suspend_and_sample_thread(aTidToSample, features,
                                                collector,
@@ -3821,7 +4000,7 @@ TEST(GeckoProfiler, SuspendAndSample)
 {
   nsCOMPtr<nsIThread> thread;
   nsresult rv = NS_NewNamedThread("GeckoProfGTest", getter_AddRefs(thread));
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   ProfilerThreadId tid = profiler_current_thread_id();
 
@@ -4038,6 +4217,9 @@ TEST(GeckoProfiler, BaseProfilerHandOff)
   ASSERT_TRUE(!baseprofiler::profiler_is_active());
   ASSERT_TRUE(!profiler_is_active());
 
+  BASE_PROFILER_MARKER_UNTYPED("Base marker before base profiler", OTHER, {});
+  PROFILER_MARKER_UNTYPED("Gecko marker before base profiler", OTHER, {});
+
   // Start the Base Profiler.
   baseprofiler::profiler_start(
       PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL,
@@ -4049,10 +4231,12 @@ TEST(GeckoProfiler, BaseProfilerHandOff)
   // Add at least a marker, which should go straight into the buffer.
   Maybe<baseprofiler::ProfilerBufferInfo> info0 =
       baseprofiler::profiler_get_buffer_info();
-  BASE_PROFILER_MARKER_UNTYPED("Marker from base profiler", OTHER, {});
+  BASE_PROFILER_MARKER_UNTYPED("Base marker during base profiler", OTHER, {});
   Maybe<baseprofiler::ProfilerBufferInfo> info1 =
       baseprofiler::profiler_get_buffer_info();
   ASSERT_GT(info1->mRangeEnd, info0->mRangeEnd);
+
+  PROFILER_MARKER_UNTYPED("Gecko marker during base profiler", OTHER, {});
 
   // Start the Gecko Profiler, which should grab the Base Profiler profile and
   // stop it.
@@ -4063,12 +4247,22 @@ TEST(GeckoProfiler, BaseProfilerHandOff)
   ASSERT_TRUE(!baseprofiler::profiler_is_active());
   ASSERT_TRUE(profiler_is_active());
 
+  BASE_PROFILER_MARKER_UNTYPED("Base marker during gecko profiler", OTHER, {});
+  PROFILER_MARKER_UNTYPED("Gecko marker during gecko profiler", OTHER, {});
+
   // Write some Gecko Profiler samples.
   ASSERT_EQ(WaitForSamplingState(), SamplingState::SamplingCompleted);
 
   // Check that the Gecko Profiler profile contains at least the Base Profiler
   // main thread samples.
   UniquePtr<char[]> profile = profiler_get_profile();
+
+  profiler_stop();
+  ASSERT_TRUE(!profiler_is_active());
+
+  BASE_PROFILER_MARKER_UNTYPED("Base marker after gecko profiler", OTHER, {});
+  PROFILER_MARKER_UNTYPED("Gecko marker after gecko profiler", OTHER, {});
+
   JSONOutputCheck(profile.get(), [](const Json::Value& aRoot) {
     GET_JSON(threads, aRoot["threads"], Array);
     {
@@ -4076,19 +4270,30 @@ TEST(GeckoProfiler, BaseProfilerHandOff)
       for (const Json::Value& thread : threads) {
         ASSERT_TRUE(thread.isObject());
         GET_JSON(name, thread["name"], String);
-        if (name.asString() == "GeckoMain (pre-xul)") {
+        if (name.asString() == "GeckoMain") {
           found = true;
+          EXPECT_JSON_ARRAY_EXCLUDES(thread["stringTable"], String,
+                                     "Base marker before base profiler");
+          EXPECT_JSON_ARRAY_EXCLUDES(thread["stringTable"], String,
+                                     "Gecko marker before base profiler");
           EXPECT_JSON_ARRAY_CONTAINS(thread["stringTable"], String,
-                                     "Marker from base profiler");
+                                     "Base marker during base profiler");
+          EXPECT_JSON_ARRAY_EXCLUDES(thread["stringTable"], String,
+                                     "Gecko marker during base profiler");
+          EXPECT_JSON_ARRAY_CONTAINS(thread["stringTable"], String,
+                                     "Base marker during gecko profiler");
+          EXPECT_JSON_ARRAY_CONTAINS(thread["stringTable"], String,
+                                     "Gecko marker during gecko profiler");
+          EXPECT_JSON_ARRAY_EXCLUDES(thread["stringTable"], String,
+                                     "Base marker after gecko profiler");
+          EXPECT_JSON_ARRAY_EXCLUDES(thread["stringTable"], String,
+                                     "Gecko marker after gecko profiler");
           break;
         }
       }
       EXPECT_TRUE(found);
     }
   });
-
-  profiler_stop();
-  ASSERT_TRUE(!profiler_is_active());
 }
 
 static std::string_view GetFeatureName(uint32_t feature) {
@@ -4705,6 +4910,72 @@ TEST(GeckoProfiler, AllThreads)
       }
     });
   }
+}
+
+TEST(GeckoProfiler, FailureHandling)
+{
+  profiler_init_main_thread_id();
+  ASSERT_TRUE(profiler_is_main_thread())
+  << "This test assumes it runs on the main thread";
+
+  uint32_t features = ProfilerFeature::StackWalk;
+  const char* filters[] = {"GeckoMain"};
+  profiler_start(PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL, features,
+                 filters, MOZ_ARRAY_LENGTH(filters), 0);
+
+  ASSERT_EQ(WaitForSamplingState(), SamplingState::SamplingCompleted);
+
+  // User-defined marker type that generates a failure when streaming JSON.
+  struct GtestFailingMarker {
+    static constexpr Span<const char> MarkerTypeName() {
+      return MakeStringSpan("markers-gtest-failing");
+    }
+    static void StreamJSONMarkerData(
+        mozilla::baseprofiler::SpliceableJSONWriter& aWriter) {
+      aWriter.SetFailure("boom!");
+    }
+    static mozilla::MarkerSchema MarkerTypeDisplay() {
+      return mozilla::MarkerSchema::SpecialFrontendLocation{};
+    }
+  };
+  EXPECT_TRUE(profiler_add_marker("Gtest failing marker",
+                                  geckoprofiler::category::OTHER, {},
+                                  GtestFailingMarker{}));
+
+  ASSERT_EQ(WaitForSamplingState(), SamplingState::SamplingCompleted);
+  profiler_pause();
+
+  FailureLatchSource failureLatch;
+  SpliceableChunkedJSONWriter w{failureLatch};
+  EXPECT_FALSE(w.Failed());
+  ASSERT_FALSE(w.GetFailure());
+
+  w.Start();
+  EXPECT_FALSE(w.Failed());
+  ASSERT_FALSE(w.GetFailure());
+
+  // The marker will cause a failure during this function call.
+  EXPECT_FALSE(::profiler_stream_json_for_this_process(w));
+  EXPECT_TRUE(w.Failed());
+  ASSERT_TRUE(w.GetFailure());
+  EXPECT_EQ(strcmp(w.GetFailure(), "boom!"), 0);
+
+  // Already failed, check that we don't crash or reset the failure.
+  EXPECT_FALSE(::profiler_stream_json_for_this_process(w));
+  EXPECT_TRUE(w.Failed());
+  ASSERT_TRUE(w.GetFailure());
+  EXPECT_EQ(strcmp(w.GetFailure(), "boom!"), 0);
+
+  w.End();
+
+  profiler_stop();
+
+  EXPECT_TRUE(w.Failed());
+  ASSERT_TRUE(w.GetFailure());
+  EXPECT_EQ(strcmp(w.GetFailure(), "boom!"), 0);
+
+  UniquePtr<char[]> profile = w.ChunkedWriteFunc().CopyData();
+  ASSERT_EQ(profile.get(), nullptr);
 }
 
 #endif  // MOZ_GECKO_PROFILER

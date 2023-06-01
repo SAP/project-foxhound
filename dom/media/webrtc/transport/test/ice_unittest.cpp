@@ -47,8 +47,7 @@ extern "C" {
 #include "stunserver.h"
 #include "nr_socket_prsock.h"
 #include "test_nr_socket.h"
-#include "ice_ctx.h"
-#include "stun_socket_filter.h"
+#include "nsISocketFilter.h"
 #include "mozilla/net/DNS.h"
 
 #define GTEST_HAS_RTTI 0
@@ -359,7 +358,7 @@ class IceTestPeer : public sigslot::has_slots<> {
   IceTestPeer(const std::string& name, MtransportTestUtils* utils, bool offerer,
               const NrIceCtx::Config& config)
       : name_(name),
-        ice_ctx_(NrIceCtx::Create(name, config)),
+        ice_ctx_(NrIceCtx::Create(name)),
         offerer_(offerer),
         candidates_(),
         stream_counter_(0),
@@ -386,6 +385,8 @@ class IceTestPeer : public sigslot::has_slots<> {
         this, &IceTestPeer::GatheringStateChange);
     ice_ctx_->SignalConnectionStateChange.connect(
         this, &IceTestPeer::ConnectionStateChange);
+
+    ice_ctx_->SetIceConfig(config);
 
     consent_timestamp_.tv_sec = 0;
     consent_timestamp_.tv_usec = 0;
@@ -522,12 +523,13 @@ class IceTestPeer : public sigslot::has_slots<> {
         NS_SUCCEEDED(ice_ctx_->SetResolver(dns_resolver_->AllocateResolver())));
   }
 
-  void Gather(bool default_route_only = false) {
+  void Gather(bool default_route_only = false,
+              bool obfuscate_host_addresses = false) {
     nsresult res;
 
     test_utils_->sts_target()->Dispatch(
         WrapRunnableRet(&res, ice_ctx_, &NrIceCtx::StartGathering,
-                        default_route_only, false),
+                        default_route_only, obfuscate_host_addresses),
         NS_DISPATCH_SYNC);
 
     ASSERT_TRUE(NS_SUCCEEDED(res));
@@ -1415,13 +1417,14 @@ class WebRtcIceGatherTest : public StunTest {
     if (!peer_) {
       peer_ =
           MakeUnique<IceTestPeer>("P1", test_utils_, true, NrIceCtx::Config());
-      peer_->AddStream(1);
     }
   }
 
-  void Gather(unsigned int waitTime = kDefaultTimeout) {
+  void Gather(unsigned int waitTime = kDefaultTimeout,
+              bool default_route_only = false,
+              bool obfuscate_host_addresses = false) {
     EnsurePeer();
-    peer_->Gather();
+    peer_->Gather(default_route_only, obfuscate_host_addresses);
 
     if (waitTime) {
       WaitForGather(waitTime);
@@ -1934,7 +1937,7 @@ class WebRtcIcePacketFilterTest : public StunTest {
     NrIceCtx::InitializeGlobals(NrIceCtx::GlobalConfig());
 
     // Set up enough of the ICE ctx to allow the packet filter to work
-    ice_ctx_ = NrIceCtx::Create("test", NrIceCtx::Config());
+    ice_ctx_ = NrIceCtx::Create("test");
 
     nsCOMPtr<nsISocketFilterHandler> udp_handler =
         do_GetService(NS_STUN_UDP_SOCKET_FILTER_HANDLER_CONTRACTID);
@@ -2050,6 +2053,7 @@ TEST_F(WebRtcIceGatherTest, TestGatherFakeStunServerHostnameNoResolver) {
   NrIceCtx::InitializeGlobals(config);
   EnsurePeer();
   peer_->SetStunServer(stun_server_hostname_, kDefaultStunServerPort);
+  peer_->AddStream(1);
   Gather();
 }
 
@@ -2066,6 +2070,7 @@ TEST_F(WebRtcIceGatherTest,
   EnsurePeer();
   peer_->SetStunServer(stun_server_hostname_, kDefaultStunServerPort,
                        kNrIceTransportTcp);
+  peer_->AddStream(1);
   Gather();
   ASSERT_TRUE(StreamHasMatchingCandidate(0, " TCP "));
 }
@@ -2081,6 +2086,7 @@ TEST_F(WebRtcIceGatherTest, TestGatherFakeStunServerIpAddress) {
   EnsurePeer();
   peer_->SetStunServer(stun_server_address_, kDefaultStunServerPort);
   peer_->SetFakeResolver(stun_server_address_, stun_server_hostname_);
+  peer_->AddStream(1);
   Gather();
 }
 
@@ -2116,6 +2122,7 @@ TEST_F(WebRtcIceGatherTest, TestGatherFakeStunServerHostname) {
   EnsurePeer();
   peer_->SetStunServer(stun_server_hostname_, kDefaultStunServerPort);
   peer_->SetFakeResolver(stun_server_address_, stun_server_hostname_);
+  peer_->AddStream(1);
   Gather();
 }
 
@@ -2126,6 +2133,7 @@ TEST_F(WebRtcIceGatherTest, TestGatherFakeStunBogusHostname) {
   EnsurePeer();
   peer_->SetStunServer(kBogusStunServerHostname, kDefaultStunServerPort);
   peer_->SetFakeResolver(stun_server_address_, stun_server_hostname_);
+  peer_->AddStream(1);
   Gather();
 }
 
@@ -2134,12 +2142,24 @@ TEST_F(WebRtcIceGatherTest, TestGatherDNSStunServerIpAddress) {
     return;
   }
 
-  NrIceCtx::GlobalConfig config;
-  config.mTcpEnabled = false;
-  NrIceCtx::InitializeGlobals(config);
-  EnsurePeer();
+  {
+    NrIceCtx::GlobalConfig config;
+    config.mTcpEnabled = false;
+    NrIceCtx::InitializeGlobals(config);
+  }
+
+  // A srflx candidate is considered redundant and discarded if its address
+  // equals that of a host candidate. (Frequently, a srflx candidate and a host
+  // candidate have equal addresses when the agent is not behind a NAT.) So set
+  // ICE_POLICY_NO_HOST here to ensure that a srflx candidate is not falsely
+  // discarded in this test.
+  NrIceCtx::Config config;
+  config.mPolicy = NrIceCtx::ICE_POLICY_NO_HOST;
+  peer_ = MakeUnique<IceTestPeer>("P1", test_utils_, true, config);
+
   peer_->SetStunServer(stun_server_address_, kDefaultStunServerPort);
   peer_->SetDNSResolver();
+  peer_->AddStream(1);
   Gather();
   ASSERT_TRUE(StreamHasMatchingCandidate(0, " UDP "));
   ASSERT_TRUE(StreamHasMatchingCandidate(0, "typ srflx raddr"));
@@ -2158,6 +2178,7 @@ TEST_F(WebRtcIceGatherTest, DISABLED_TestGatherDNSStunServerIpAddressTcp) {
   peer_->SetStunServer(stun_server_address_, kDefaultStunServerPort,
                        kNrIceTransportTcp);
   peer_->SetDNSResolver();
+  peer_->AddStream(1);
   Gather();
   ASSERT_TRUE(StreamHasMatchingCandidate(0, "tcptype passive"));
   ASSERT_FALSE(StreamHasMatchingCandidate(0, "tcptype passive", " 9 "));
@@ -2171,12 +2192,24 @@ TEST_F(WebRtcIceGatherTest, TestGatherDNSStunServerHostname) {
     return;
   }
 
-  NrIceCtx::GlobalConfig config;
-  config.mTcpEnabled = false;
-  NrIceCtx::InitializeGlobals(config);
-  EnsurePeer();
+  {
+    NrIceCtx::GlobalConfig config;
+    config.mTcpEnabled = false;
+    NrIceCtx::InitializeGlobals(config);
+  }
+
+  // A srflx candidate is considered redundant and discarded if its address
+  // equals that of a host candidate. (Frequently, a srflx candidate and a host
+  // candidate have equal addresses when the agent is not behind a NAT.) So set
+  // ICE_POLICY_NO_HOST here to ensure that a srflx candidate is not falsely
+  // discarded in this test.
+  NrIceCtx::Config config;
+  config.mPolicy = NrIceCtx::ICE_POLICY_NO_HOST;
+  peer_ = MakeUnique<IceTestPeer>("P1", test_utils_, true, config);
+
   peer_->SetStunServer(stun_server_hostname_, kDefaultStunServerPort);
   peer_->SetDNSResolver();
+  peer_->AddStream(1);
   Gather();
   ASSERT_TRUE(StreamHasMatchingCandidate(0, " UDP "));
   ASSERT_TRUE(StreamHasMatchingCandidate(0, "typ srflx raddr"));
@@ -2191,6 +2224,7 @@ TEST_F(WebRtcIceGatherTest, DISABLED_TestGatherDNSStunServerHostnameTcp) {
   peer_->SetStunServer(stun_server_hostname_, kDefaultStunServerPort,
                        kNrIceTransportTcp);
   peer_->SetDNSResolver();
+  peer_->AddStream(1);
   Gather();
   ASSERT_TRUE(StreamHasMatchingCandidate(0, "tcptype passive"));
   ASSERT_FALSE(StreamHasMatchingCandidate(0, "tcptype passive", " 9 "));
@@ -2218,6 +2252,7 @@ TEST_F(WebRtcIceGatherTest,
       stun_server_hostname_, kDefaultStunServerPort, kNrIceTransportTcp));
   peer_->SetStunServers(stun_servers);
   peer_->SetDNSResolver();
+  peer_->AddStream(1);
   Gather();
   ASSERT_TRUE(StreamHasMatchingCandidate(0, " UDP "));
   ASSERT_TRUE(StreamHasMatchingCandidate(0, " TCP "));
@@ -2242,6 +2277,7 @@ TEST_F(WebRtcIceGatherTest,
       stun_server_address_, kDefaultStunServerPort, kNrIceTransportTcp));
   peer_->SetStunServers(stun_servers);
   peer_->SetDNSResolver();
+  peer_->AddStream(1);
   Gather();
   ASSERT_TRUE(StreamHasMatchingCandidate(0, " UDP "));
   ASSERT_TRUE(StreamHasMatchingCandidate(0, " TCP "));
@@ -2254,6 +2290,7 @@ TEST_F(WebRtcIceGatherTest, TestGatherDNSStunBogusHostname) {
   EnsurePeer();
   peer_->SetStunServer(kBogusStunServerHostname, kDefaultStunServerPort);
   peer_->SetDNSResolver();
+  peer_->AddStream(1);
   Gather();
   ASSERT_TRUE(StreamHasMatchingCandidate(0, " UDP "));
 }
@@ -2267,6 +2304,7 @@ TEST_F(WebRtcIceGatherTest, DISABLED_TestGatherDNSStunBogusHostnameTcp) {
   peer_->SetStunServer(kBogusStunServerHostname, kDefaultStunServerPort,
                        kNrIceTransportTcp);
   peer_->SetDNSResolver();
+  peer_->AddStream(1);
   Gather();
   ASSERT_TRUE(StreamHasMatchingCandidate(0, " TCP "));
 }
@@ -2277,6 +2315,7 @@ TEST_F(WebRtcIceGatherTest, TestDefaultCandidate) {
   NrIceCtx::InitializeGlobals(config);
   EnsurePeer();
   peer_->SetStunServer(stun_server_hostname_, kDefaultStunServerPort);
+  peer_->AddStream(1);
   Gather();
   NrIceCandidate default_candidate;
   ASSERT_TRUE(NS_SUCCEEDED(peer_->GetDefaultCandidate(0, &default_candidate)));
@@ -2290,6 +2329,7 @@ TEST_F(WebRtcIceGatherTest, TestGatherTurn) {
   if (turn_server_.empty()) return;
   peer_->SetTurnServer(turn_server_, kDefaultStunServerPort, turn_user_,
                        turn_password_, kNrIceTransportUdp);
+  peer_->AddStream(1);
   Gather();
 }
 
@@ -2301,6 +2341,7 @@ TEST_F(WebRtcIceGatherTest, TestGatherTurnTcp) {
   if (turn_server_.empty()) return;
   peer_->SetTurnServer(turn_server_, kDefaultStunServerPort, turn_user_,
                        turn_password_, kNrIceTransportTcp);
+  peer_->AddStream(1);
   Gather();
 }
 
@@ -2314,6 +2355,7 @@ TEST_F(WebRtcIceGatherTest, TestGatherDisableComponent) {
   NrIceCtx::InitializeGlobals(config);
   EnsurePeer();
   peer_->SetStunServer(stun_server_hostname_, kDefaultStunServerPort);
+  peer_->AddStream(1);
   peer_->AddStream(2);
   peer_->DisableComponent(1, 2);
   Gather();
@@ -2331,6 +2373,8 @@ TEST_F(WebRtcIceGatherTest, TestGatherVerifyNoLoopback) {
   NrIceCtx::GlobalConfig config;
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
+  EnsurePeer();
+  peer_->AddStream(1);
   Gather();
   ASSERT_FALSE(StreamHasMatchingCandidate(0, "127.0.0.1"));
 }
@@ -2353,6 +2397,7 @@ TEST_F(WebRtcIceGatherTest, TestGatherTcpDisabledNoStun) {
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
   EnsurePeer();
+  peer_->AddStream(1);
   Gather();
   ASSERT_FALSE(StreamHasMatchingCandidate(0, " TCP "));
   ASSERT_TRUE(StreamHasMatchingCandidate(0, " UDP "));
@@ -2363,6 +2408,7 @@ TEST_F(WebRtcIceGatherTest, VerifyTestStunServer) {
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
   UseFakeStunUdpServerWithResponse("192.0.2.133", 3333);
+  peer_->AddStream(1);
   Gather();
   ASSERT_TRUE(StreamHasMatchingCandidate(0, " 192.0.2.133 3333 "));
 }
@@ -2372,6 +2418,7 @@ TEST_F(WebRtcIceGatherTest, VerifyTestStunTcpServer) {
   config.mTcpEnabled = true;
   NrIceCtx::InitializeGlobals(config);
   UseFakeStunTcpServerWithResponse("192.0.2.233", 3333);
+  peer_->AddStream(1);
   Gather();
   ASSERT_TRUE(StreamHasMatchingCandidate(0, " 192.0.2.233 3333 typ srflx",
                                          " tcptype "));
@@ -2386,6 +2433,7 @@ TEST_F(WebRtcIceGatherTest, VerifyTestStunServerV6) {
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
   UseFakeStunUdpServerWithResponse("beef::", 3333);
+  peer_->AddStream(1);
   Gather();
   ASSERT_TRUE(StreamHasMatchingCandidate(0, " beef:: 3333 "));
 }
@@ -2395,6 +2443,7 @@ TEST_F(WebRtcIceGatherTest, VerifyTestStunServerFQDN) {
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
   UseFakeStunUdpServerWithResponse("192.0.2.133", 3333, "stun.example.com");
+  peer_->AddStream(1);
   Gather();
   ASSERT_TRUE(StreamHasMatchingCandidate(0, " 192.0.2.133 3333 "));
 }
@@ -2408,6 +2457,7 @@ TEST_F(WebRtcIceGatherTest, VerifyTestStunServerV6FQDN) {
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
   UseFakeStunUdpServerWithResponse("beef::", 3333, "stun.example.com");
+  peer_->AddStream(1);
   Gather();
   ASSERT_TRUE(StreamHasMatchingCandidate(0, " beef:: 3333 "));
 }
@@ -2417,6 +2467,7 @@ TEST_F(WebRtcIceGatherTest, TestStunServerReturnsWildcardAddr) {
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
   UseFakeStunUdpServerWithResponse("0.0.0.0", 3333);
+  peer_->AddStream(1);
   Gather(kDefaultTimeout * 3);
   ASSERT_FALSE(StreamHasMatchingCandidate(0, " 0.0.0.0 "));
 }
@@ -2430,6 +2481,7 @@ TEST_F(WebRtcIceGatherTest, TestStunServerReturnsWildcardAddrV6) {
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
   UseFakeStunUdpServerWithResponse("::", 3333);
+  peer_->AddStream(1);
   Gather(kDefaultTimeout * 3);
   ASSERT_FALSE(StreamHasMatchingCandidate(0, " :: "));
 }
@@ -2439,6 +2491,7 @@ TEST_F(WebRtcIceGatherTest, TestStunServerReturnsPort0) {
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
   UseFakeStunUdpServerWithResponse("192.0.2.133", 0);
+  peer_->AddStream(1);
   Gather(kDefaultTimeout * 3);
   ASSERT_FALSE(StreamHasMatchingCandidate(0, " 192.0.2.133 0 "));
 }
@@ -2448,6 +2501,7 @@ TEST_F(WebRtcIceGatherTest, TestStunServerReturnsLoopbackAddr) {
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
   UseFakeStunUdpServerWithResponse("127.0.0.133", 3333);
+  peer_->AddStream(1);
   Gather(kDefaultTimeout * 3);
   ASSERT_FALSE(StreamHasMatchingCandidate(0, " 127.0.0.133 "));
 }
@@ -2461,6 +2515,7 @@ TEST_F(WebRtcIceGatherTest, TestStunServerReturnsLoopbackAddrV6) {
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
   UseFakeStunUdpServerWithResponse("::1", 3333);
+  peer_->AddStream(1);
   Gather(kDefaultTimeout * 3);
   ASSERT_FALSE(StreamHasMatchingCandidate(0, " ::1 "));
 }
@@ -2470,6 +2525,7 @@ TEST_F(WebRtcIceGatherTest, TestStunServerTrickle) {
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
   UseFakeStunUdpServerWithResponse("192.0.2.1", 3333);
+  peer_->AddStream(1);
   TestStunServer::GetInstance(AF_INET)->SetDropInitialPackets(3);
   Gather(0);
   ASSERT_FALSE(StreamHasMatchingCandidate(0, "192.0.2.1"));
@@ -2488,8 +2544,8 @@ TEST_F(WebRtcIceGatherTest, TestFakeStunServerNatedNoHost) {
   NrIceCtx::Config config;
   config.mPolicy = NrIceCtx::ICE_POLICY_NO_HOST;
   peer_ = MakeUnique<IceTestPeer>("P1", test_utils_, true, config);
-  peer_->AddStream(1);
   UseFakeStunUdpServerWithResponse("192.0.2.1", 3333);
+  peer_->AddStream(1);
   Gather(0);
   WaitForGather();
   DumpAttributes(0);
@@ -2513,13 +2569,55 @@ TEST_F(WebRtcIceGatherTest, TestFakeStunServerNoNatNoHost) {
   NrIceCtx::Config config;
   config.mPolicy = NrIceCtx::ICE_POLICY_NO_HOST;
   peer_ = MakeUnique<IceTestPeer>("P1", test_utils_, true, config);
-  peer_->AddStream(1);
   UseTestStunServer();
+  peer_->AddStream(1);
   Gather(0);
   WaitForGather();
   DumpAttributes(0);
   ASSERT_FALSE(StreamHasMatchingCandidate(0, "host"));
   ASSERT_TRUE(StreamHasMatchingCandidate(0, "srflx"));
+}
+
+// Test that srflx candidate is discarded in non-NATted environment if host
+// address obfuscation is not enabled.
+TEST_F(WebRtcIceGatherTest,
+       TestSrflxCandidateDiscardedWithObfuscateHostAddressesNotEnabled) {
+  {
+    NrIceCtx::GlobalConfig config;
+    config.mTcpEnabled = false;
+    NrIceCtx::InitializeGlobals(config);
+  }
+
+  NrIceCtx::Config config;
+  peer_ = MakeUnique<IceTestPeer>("P1", test_utils_, true, config);
+  UseTestStunServer();
+  peer_->AddStream(1);
+  Gather(0, false, false);
+  WaitForGather();
+  DumpAttributes(0);
+  EXPECT_TRUE(StreamHasMatchingCandidate(0, "host"));
+  EXPECT_FALSE(StreamHasMatchingCandidate(0, "srflx"));
+}
+
+// Test that srflx candidate is generated in non-NATted environment if host
+// address obfuscation is enabled.
+TEST_F(WebRtcIceGatherTest,
+       TestSrflxCandidateGeneratedWithObfuscateHostAddressesEnabled) {
+  {
+    NrIceCtx::GlobalConfig config;
+    config.mTcpEnabled = false;
+    NrIceCtx::InitializeGlobals(config);
+  }
+
+  NrIceCtx::Config config;
+  peer_ = MakeUnique<IceTestPeer>("P1", test_utils_, true, config);
+  UseTestStunServer();
+  peer_->AddStream(1);
+  Gather(0, false, true);
+  WaitForGather();
+  DumpAttributes(0);
+  EXPECT_TRUE(StreamHasMatchingCandidate(0, "host"));
+  EXPECT_TRUE(StreamHasMatchingCandidate(0, "srflx"));
 }
 
 TEST_F(WebRtcIceGatherTest, TestStunTcpServerTrickle) {
@@ -2528,6 +2626,7 @@ TEST_F(WebRtcIceGatherTest, TestStunTcpServerTrickle) {
   NrIceCtx::InitializeGlobals(config);
   UseFakeStunTcpServerWithResponse("192.0.3.1", 3333);
   TestStunTcpServer::GetInstance(AF_INET)->SetDelay(500);
+  peer_->AddStream(1);
   Gather(0);
   ASSERT_FALSE(StreamHasMatchingCandidate(0, " 192.0.3.1 ", " tcptype "));
   WaitForGather();
@@ -2541,6 +2640,7 @@ TEST_F(WebRtcIceGatherTest, TestStunTcpAndUdpServerTrickle) {
   UseFakeStunUdpTcpServersWithResponse("192.0.2.1", 3333, "192.0.3.1", 3333);
   TestStunServer::GetInstance(AF_INET)->SetDropInitialPackets(3);
   TestStunTcpServer::GetInstance(AF_INET)->SetDelay(500);
+  peer_->AddStream(1);
   Gather(0);
   ASSERT_FALSE(StreamHasMatchingCandidate(0, "192.0.2.1", "UDP"));
   ASSERT_FALSE(StreamHasMatchingCandidate(0, " 192.0.3.1 ", " tcptype "));
@@ -2554,6 +2654,7 @@ TEST_F(WebRtcIceGatherTest, TestSetIceControlling) {
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
   EnsurePeer();
+  peer_->AddStream(1);
   peer_->SetControlling(NrIceCtx::ICE_CONTROLLING);
   NrIceCtx::Controlling controlling = peer_->GetControlling();
   ASSERT_EQ(NrIceCtx::ICE_CONTROLLING, controlling);
@@ -2568,6 +2669,7 @@ TEST_F(WebRtcIceGatherTest, TestSetIceControlled) {
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
   EnsurePeer();
+  peer_->AddStream(1);
   peer_->SetControlling(NrIceCtx::ICE_CONTROLLED);
   NrIceCtx::Controlling controlling = peer_->GetControlling();
   ASSERT_EQ(NrIceCtx::ICE_CONTROLLED, controlling);
@@ -2941,13 +3043,13 @@ TEST_F(WebRtcIceConnectTest, TestConnectNoNatNoHost) {
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
   Init(false, NrIceCtx::ICE_POLICY_NO_HOST);
-  AddStream(1);
   UseTestStunServer();
   // Because we are connecting from our host candidate to the
   // other side's apparent srflx (which is also their host)
   // we see a host/srflx pair.
   SetExpectedTypes(NrIceCandidate::Type::ICE_HOST,
                    NrIceCandidate::Type::ICE_SERVER_REFLEXIVE);
+  AddStream(1);
   ASSERT_TRUE(Gather());
   Connect();
 }
@@ -2958,10 +3060,10 @@ TEST_F(WebRtcIceConnectTest, TestConnectFullConeNoHost) {
   NrIceCtx::InitializeGlobals(config);
   UseNat();
   Init(false, NrIceCtx::ICE_POLICY_NO_HOST);
-  AddStream(1);
   UseTestStunServer();
   SetExpectedTypes(NrIceCandidate::Type::ICE_SERVER_REFLEXIVE,
                    NrIceCandidate::Type::ICE_SERVER_REFLEXIVE);
+  AddStream(1);
   ASSERT_TRUE(Gather());
   Connect();
 }
@@ -3036,13 +3138,13 @@ TEST_F(WebRtcIceConnectTest, TestConnectSymmetricNat) {
   UseNat();
   SetFilteringType(TestNat::PORT_DEPENDENT);
   SetMappingType(TestNat::PORT_DEPENDENT);
-  AddStream(1);
   p1_->SetExpectedTypes(NrIceCandidate::Type::ICE_RELAYED,
                         NrIceCandidate::Type::ICE_RELAYED);
   p2_->SetExpectedTypes(NrIceCandidate::Type::ICE_RELAYED,
                         NrIceCandidate::Type::ICE_RELAYED);
   SetTurnServer(turn_server_, kDefaultStunServerPort, turn_user_,
                 turn_password_);
+  AddStream(1);
   ASSERT_TRUE(Gather());
   Connect();
 }
@@ -3080,7 +3182,6 @@ TEST_F(WebRtcIceConnectTest, TestGatherNatBlocksUDP) {
   NrIceCtx::InitializeGlobals(config);
   UseNat();
   BlockUdp();
-  AddStream(1);
   std::vector<NrIceTurnServer> turn_servers;
   std::vector<unsigned char> password_vec(turn_password_.begin(),
                                           turn_password_.end());
@@ -3091,6 +3192,7 @@ TEST_F(WebRtcIceConnectTest, TestGatherNatBlocksUDP) {
       *NrIceTurnServer::Create(turn_server_, kDefaultStunServerPort, turn_user_,
                                password_vec, kNrIceTransportUdp));
   SetTurnServers(turn_servers);
+  AddStream(1);
   // We have to wait for the UDP-based stuff to time out.
   ASSERT_TRUE(Gather(kDefaultTimeout * 3));
 }
@@ -3103,7 +3205,6 @@ TEST_F(WebRtcIceConnectTest, TestConnectNatBlocksUDP) {
   NrIceCtx::InitializeGlobals(config);
   UseNat();
   BlockUdp();
-  AddStream(1);
   std::vector<NrIceTurnServer> turn_servers;
   std::vector<unsigned char> password_vec(turn_password_.begin(),
                                           turn_password_.end());
@@ -3118,6 +3219,7 @@ TEST_F(WebRtcIceConnectTest, TestConnectNatBlocksUDP) {
                         NrIceCandidate::Type::ICE_RELAYED, kNrIceTransportTcp);
   p2_->SetExpectedTypes(NrIceCandidate::Type::ICE_RELAYED,
                         NrIceCandidate::Type::ICE_RELAYED, kNrIceTransportTcp);
+  AddStream(1);
   ASSERT_TRUE(Gather(kDefaultTimeout * 3));
   Connect();
 }
@@ -3636,9 +3738,9 @@ TEST_F(WebRtcIceConnectTest, TestConnectTurn) {
   NrIceCtx::GlobalConfig config;
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
-  AddStream(1);
   SetTurnServer(turn_server_, kDefaultStunServerPort, turn_user_,
                 turn_password_);
+  AddStream(1);
   ASSERT_TRUE(Gather());
   Connect();
 }
@@ -3649,10 +3751,10 @@ TEST_F(WebRtcIceConnectTest, TestConnectTurnWithDelay) {
   NrIceCtx::GlobalConfig config;
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
-  AddStream(1);
   SetTurnServer(turn_server_, kDefaultStunServerPort, turn_user_,
                 turn_password_);
   SetCandidateFilter(SabotageHostCandidateAndDropReflexive);
+  AddStream(1);
   p1_->Gather();
   PR_Sleep(500);
   p2_->Gather();
@@ -3667,9 +3769,9 @@ TEST_F(WebRtcIceConnectTest, TestConnectTurnWithNormalTrickleDelay) {
   NrIceCtx::GlobalConfig config;
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
-  AddStream(1);
   SetTurnServer(turn_server_, kDefaultStunServerPort, turn_user_,
                 turn_password_);
+  AddStream(1);
   ASSERT_TRUE(Gather());
   ConnectTrickle();
   RealisticTrickleDelay(p1_->ControlTrickle(0));
@@ -3685,9 +3787,9 @@ TEST_F(WebRtcIceConnectTest, TestConnectTurnWithNormalTrickleDelayOneSided) {
   NrIceCtx::GlobalConfig config;
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
-  AddStream(1);
   SetTurnServer(turn_server_, kDefaultStunServerPort, turn_user_,
                 turn_password_);
+  AddStream(1);
   ASSERT_TRUE(Gather());
   ConnectTrickle();
   RealisticTrickleDelay(p1_->ControlTrickle(0));
@@ -3703,10 +3805,10 @@ TEST_F(WebRtcIceConnectTest, TestConnectTurnWithLargeTrickleDelay) {
   NrIceCtx::GlobalConfig config;
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
-  AddStream(1);
   SetTurnServer(turn_server_, kDefaultStunServerPort, turn_user_,
                 turn_password_);
   SetCandidateFilter(SabotageHostCandidateAndDropReflexive);
+  AddStream(1);
   ASSERT_TRUE(Gather());
   ConnectTrickle();
   // Trickle host candidates immediately, but delay relay candidates
@@ -3723,9 +3825,9 @@ TEST_F(WebRtcIceConnectTest, TestConnectTurnTcp) {
   NrIceCtx::GlobalConfig config;
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
-  AddStream(1);
   SetTurnServer(turn_server_, kDefaultStunServerPort, turn_user_,
                 turn_password_, kNrIceTransportTcp);
+  AddStream(1);
   ASSERT_TRUE(Gather());
   Connect();
 }
@@ -3736,9 +3838,9 @@ TEST_F(WebRtcIceConnectTest, TestConnectTurnOnly) {
   NrIceCtx::GlobalConfig config;
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
-  AddStream(1);
   SetTurnServer(turn_server_, kDefaultStunServerPort, turn_user_,
                 turn_password_);
+  AddStream(1);
   ASSERT_TRUE(Gather());
   SetCandidateFilter(IsRelayCandidate);
   SetExpectedTypes(NrIceCandidate::Type::ICE_RELAYED,
@@ -3752,9 +3854,9 @@ TEST_F(WebRtcIceConnectTest, TestConnectTurnTcpOnly) {
   NrIceCtx::GlobalConfig config;
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
-  AddStream(1);
   SetTurnServer(turn_server_, kDefaultStunServerPort, turn_user_,
                 turn_password_, kNrIceTransportTcp);
+  AddStream(1);
   ASSERT_TRUE(Gather());
   SetCandidateFilter(IsRelayCandidate);
   SetExpectedTypes(NrIceCandidate::Type::ICE_RELAYED,
@@ -3768,9 +3870,9 @@ TEST_F(WebRtcIceConnectTest, TestSendReceiveTurnOnly) {
   NrIceCtx::GlobalConfig config;
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
-  AddStream(1);
   SetTurnServer(turn_server_, kDefaultStunServerPort, turn_user_,
                 turn_password_);
+  AddStream(1);
   ASSERT_TRUE(Gather());
   SetCandidateFilter(IsRelayCandidate);
   SetExpectedTypes(NrIceCandidate::Type::ICE_RELAYED,
@@ -3785,9 +3887,9 @@ TEST_F(WebRtcIceConnectTest, TestSendReceiveTurnTcpOnly) {
   NrIceCtx::GlobalConfig config;
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
-  AddStream(1);
   SetTurnServer(turn_server_, kDefaultStunServerPort, turn_user_,
                 turn_password_, kNrIceTransportTcp);
+  AddStream(1);
   ASSERT_TRUE(Gather());
   SetCandidateFilter(IsRelayCandidate);
   SetExpectedTypes(NrIceCandidate::Type::ICE_RELAYED,
@@ -3802,7 +3904,6 @@ TEST_F(WebRtcIceConnectTest, TestSendReceiveTurnBothOnly) {
   NrIceCtx::GlobalConfig config;
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
-  AddStream(1);
   std::vector<NrIceTurnServer> turn_servers;
   std::vector<unsigned char> password_vec(turn_password_.begin(),
                                           turn_password_.end());
@@ -3813,6 +3914,7 @@ TEST_F(WebRtcIceConnectTest, TestSendReceiveTurnBothOnly) {
       *NrIceTurnServer::Create(turn_server_, kDefaultStunServerPort, turn_user_,
                                password_vec, kNrIceTransportUdp));
   SetTurnServers(turn_servers);
+  AddStream(1);
   ASSERT_TRUE(Gather());
   SetCandidateFilter(IsRelayCandidate);
   // UDP is preferred.

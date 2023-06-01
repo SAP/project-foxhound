@@ -16,6 +16,7 @@
 
 #include "absl/strings/match.h"
 #include "api/transport/field_trial_based_config.h"
+#include "api/units/timestamp.h"
 #include "logging/rtc_event_log/events/rtc_event_rtp_packet_outgoing.h"
 #include "modules/remote_bitrate_estimator/test/bwe_test_logging.h"
 #include "rtc_base/logging.h"
@@ -27,23 +28,32 @@ constexpr int kSendSideDelayWindowMs = 1000;
 constexpr int kBitrateStatisticsWindowMs = 1000;
 constexpr size_t kRtpSequenceNumberMapMaxEntries = 1 << 13;
 
-bool IsEnabled(absl::string_view name,
-               const WebRtcKeyValueConfig* field_trials) {
+bool IsDisabled(absl::string_view name, const FieldTrialsView* field_trials) {
   FieldTrialBasedConfig default_trials;
   auto& trials = field_trials ? *field_trials : default_trials;
-  return absl::StartsWith(trials.Lookup(name), "Enabled");
+  return absl::StartsWith(trials.Lookup(name), "Disabled");
 }
 }  // namespace
 
 DEPRECATED_RtpSenderEgress::NonPacedPacketSender::NonPacedPacketSender(
-    DEPRECATED_RtpSenderEgress* sender)
-    : transport_sequence_number_(0), sender_(sender) {}
+    DEPRECATED_RtpSenderEgress* sender,
+    PacketSequencer* sequence_number_assigner)
+    : transport_sequence_number_(0),
+      sender_(sender),
+      sequence_number_assigner_(sequence_number_assigner) {
+  RTC_DCHECK(sequence_number_assigner_);
+}
 DEPRECATED_RtpSenderEgress::NonPacedPacketSender::~NonPacedPacketSender() =
     default;
 
 void DEPRECATED_RtpSenderEgress::NonPacedPacketSender::EnqueuePackets(
     std::vector<std::unique_ptr<RtpPacketToSend>> packets) {
   for (auto& packet : packets) {
+    // Assign sequence numbers, but not for flexfec which is already running on
+    // an internally maintained sequence number series.
+    if (packet->Ssrc() != sender_->FlexFecSsrc()) {
+      sequence_number_assigner_->Sequence(*packet);
+    }
     if (!packet->SetExtension<TransportSequenceNumber>(
             ++transport_sequence_number_)) {
       --transport_sequence_number_;
@@ -63,7 +73,7 @@ DEPRECATED_RtpSenderEgress::DEPRECATED_RtpSenderEgress(
                                          : absl::nullopt),
       populate_network2_timestamp_(config.populate_network2_timestamp),
       send_side_bwe_with_overhead_(
-          IsEnabled("WebRTC-SendSideBwe-WithOverhead", config.field_trials)),
+          !IsDisabled("WebRTC-SendSideBwe-WithOverhead", config.field_trials)),
       clock_(config.clock),
       packet_history_(packet_history),
       transport_(config.outgoing_transport),
@@ -96,7 +106,8 @@ void DEPRECATED_RtpSenderEgress::SendPacket(
   const uint32_t packet_ssrc = packet->Ssrc();
   RTC_DCHECK(packet->packet_type().has_value());
   RTC_DCHECK(HasCorrectSsrc(*packet));
-  int64_t now_ms = clock_->TimeInMilliseconds();
+  Timestamp now = clock_->CurrentTime();
+  int64_t now_ms = now.ms();
 
   if (is_audio_) {
 #if BWE_TEST_LOGGING_COMPILE_TIME_ENABLE
@@ -146,20 +157,19 @@ void DEPRECATED_RtpSenderEgress::SendPacket(
   // In case of VideoTimingExtension, since it's present not in every packet,
   // data after rtp header may be corrupted if these packets are protected by
   // the FEC.
-  int64_t diff_ms = now_ms - packet->capture_time_ms();
+  int64_t diff_ms = now_ms - packet->capture_time().ms();
   if (packet->HasExtension<TransmissionOffset>()) {
     packet->SetExtension<TransmissionOffset>(kTimestampTicksPerMs * diff_ms);
   }
   if (packet->HasExtension<AbsoluteSendTime>()) {
-    packet->SetExtension<AbsoluteSendTime>(
-        AbsoluteSendTime::MsTo24Bits(now_ms));
+    packet->SetExtension<AbsoluteSendTime>(AbsoluteSendTime::To24Bits(now));
   }
 
   if (packet->HasExtension<VideoTimingExtension>()) {
     if (populate_network2_timestamp_) {
-      packet->set_network2_time_ms(now_ms);
+      packet->set_network2_time(now);
     } else {
-      packet->set_pacer_exit_time_ms(now_ms);
+      packet->set_pacer_exit_time(now);
     }
   }
 
@@ -176,13 +186,12 @@ void DEPRECATED_RtpSenderEgress::SendPacket(
     AddPacketToTransportFeedback(*packet_id, *packet, pacing_info);
   }
 
-  options.application_data.assign(packet->application_data().begin(),
-                                  packet->application_data().end());
+  options.additional_data = packet->additional_data();
 
   if (packet->packet_type() != RtpPacketMediaType::kPadding &&
       packet->packet_type() != RtpPacketMediaType::kRetransmission) {
-    UpdateDelayStatistics(packet->capture_time_ms(), now_ms, packet_ssrc);
-    UpdateOnSendPacket(options.packet_id, packet->capture_time_ms(),
+    UpdateDelayStatistics(packet->capture_time().ms(), now_ms, packet_ssrc);
+    UpdateOnSendPacket(options.packet_id, packet->capture_time().ms(),
                        packet_ssrc);
   }
 
@@ -192,7 +201,7 @@ void DEPRECATED_RtpSenderEgress::SendPacket(
   // actual sending fails.
   if (is_media && packet->allow_retransmission()) {
     packet_history_->PutRtpPacket(std::make_unique<RtpPacketToSend>(*packet),
-                                  now_ms);
+                                  now);
   } else if (packet->retransmitted_sequence_number()) {
     packet_history_->MarkPacketAsSent(*packet->retransmitted_sequence_number());
   }
@@ -314,7 +323,7 @@ void DEPRECATED_RtpSenderEgress::AddPacketToTransportFeedback(
     }
 
     RtpPacketSendInfo packet_info;
-    packet_info.ssrc = ssrc_;
+    packet_info.media_ssrc = ssrc_;
     packet_info.transport_sequence_number = packet_id;
     packet_info.rtp_sequence_number = packet.SequenceNumber();
     packet_info.length = packet_size;

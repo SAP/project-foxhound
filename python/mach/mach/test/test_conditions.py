@@ -2,18 +2,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-from __future__ import unicode_literals
-
 from pathlib import Path
 
 from buildconfig import topsrcdir
+from mozunit import main
+
 from mach.base import MachError
 from mach.main import Mach
 from mach.registrar import Registrar
-from mach.test.conftest import TestBase, PROVIDER_DIR
-
-from mozunit import main
+from mach.test.conftest import PROVIDER_DIR, TestBase
 
 
 def _make_populate_context(include_extra_attributes):
@@ -51,8 +48,8 @@ class TestConditions(TestBase):
     def test_conditions_pass(self):
         """Test that a command which passes its conditions is runnable."""
 
-        self.assertEquals((0, "", ""), self._run(["cmd_condition_true"]))
-        self.assertEquals((0, "", ""), self._run(["cmd_foo_ctx"], _populate_context))
+        self.assertEqual((0, "", ""), self._run(["cmd_condition_true"]))
+        self.assertEqual((0, "", ""), self._run(["cmd_foo_ctx"], _populate_context))
 
     def test_invalid_context_message(self):
         """Test that commands which do not pass all their conditions
@@ -65,17 +62,17 @@ class TestConditions(TestBase):
 
         for name in ("cmd_condition_false", "cmd_condition_true_and_false"):
             result, stdout, stderr = self._run([name])
-            self.assertEquals(1, result)
+            self.assertEqual(1, result)
 
             fail_msg = Registrar._condition_failed_message(name, fail_conditions)
-            self.assertEquals(fail_msg.rstrip(), stdout.rstrip())
+            self.assertEqual(fail_msg.rstrip(), stdout.rstrip())
 
         for name in ("cmd_bar_ctx", "cmd_foobar_ctx"):
             result, stdout, stderr = self._run([name], _populate_context)
-            self.assertEquals(1, result)
+            self.assertEqual(1, result)
 
             fail_msg = Registrar._condition_failed_message(name, fail_conditions)
-            self.assertEquals(fail_msg.rstrip(), stdout.rstrip())
+            self.assertEqual(fail_msg.rstrip(), stdout.rstrip())
 
     def test_invalid_type(self):
         """Test that a condition which is not callable raises an exception."""

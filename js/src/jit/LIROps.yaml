@@ -4,15 +4,15 @@
 
 # [SMDOC] LIR Opcodes
 # =======================
-# This file defines all LIR opcodes as well as LIR opcode class 
-# definitions. It is parsed by GenerateLIRFiles.py at build time to 
-# create LIROpsGenerated.h. Each opcode consists of a 
+# This file defines all LIR opcodes as well as LIR opcode class
+# definitions. It is parsed by GenerateLIRFiles.py at build time to
+# create LIROpsGenerated.h. Each opcode consists of a
 # name and a set of attributes that are described below. Unless
 # marked as required, attributes are optional.
 #
 # name [required]
 # ====
-# Opcode name. 
+# Opcode name.
 # Possible values:
 #   - opcode string: used as the name for LIR opcode.
 #
@@ -34,10 +34,10 @@
 # operands
 # ========
 # A list of operands to the LIR node. Each operand will be
-# passed into and set in the instruction's constructor. A simple getter 
-# will also be auto generated for the operand. Each operand in the 
+# passed into and set in the instruction's constructor. A simple getter
+# will also be auto generated for the operand. Each operand in the
 # following list is defined by its name and an type.
-# The type can be WordSized, BoxedValue, or Int64. 
+# The type can be WordSized, BoxedValue, or Int64.
 #
 #   For example:
 #     operands:
@@ -53,7 +53,7 @@
 #     const LAllocation* rhs() { return getOperand(0); }
 #
 #     static const size_t lhsIndex = 0;
-#     static const size_t rhsIndex = BOX_PIECES; 
+#     static const size_t rhsIndex = BOX_PIECES;
 #
 #   - attribute not specified (default): no code generated
 #   - list of operand names with their types: operand getters and setters
@@ -62,10 +62,10 @@
 # arguments
 # =========
 # A list of non-LIR node arguments to the LIR op class constructor
-# that are passed along with the operands. The arguments require 
+# that are passed along with the operands. The arguments require
 # both a name and a full type signature for each item in the list.
-# 
-# For example: 
+#
+# For example:
 #   offset: size_t
 #   type: MIRType
 #
@@ -73,7 +73,7 @@
 # in the LIR op class, as well as simple accessor for that variable. The
 # above arguments list will result in the following declarations and
 # accessors:
-#   
+#
 #   size_t offset_;
 #   MIRType type_;
 #
@@ -85,21 +85,21 @@
 #
 # num_temps
 # ========
-# Specifies the number of temporary virtual registers, LDefinitions, used by 
+# Specifies the number of temporary virtual registers, LDefinitions, used by
 # this LIR op.
 #   - attribute not specified (default): number of temps is set to 0
 #   - number of LDefinition temps: sets number of temps max 15
 #
 # call_instruction
 # ================
-# Used to define call instructions. 
+# Used to define call instructions.
 #   - attribute not specified (default): no code generated
 #   - true: generates a call to setIsCall in the op's constructor
 #
 # mir_op
 # ======
-# If a LIR instruction corresponds one-to-one with a particular MIR 
-# instruction, this will generate a method that returns that MIR 
+# If a LIR instruction corresponds one-to-one with a particular MIR
+# instruction, this will generate a method that returns that MIR
 # instruction.
 #   - attribute not specified (default): no code generated
 #   - true: generates a method to return MIR instruction
@@ -284,6 +284,17 @@
 - name: WasmTrap
   mir_op: true
 
+- name: WasmGcObjectIsSubtypeOf
+  mir_op: true
+  operands:
+    object: WordSized
+    superTypeDef: WordSized
+  result_type: WordSized
+  num_temps: 2
+
+- name: WasmGcObjectIsSubtypeOfAndBranch
+  gen_boilerplate: false
+
 - name: WasmReinterpret
   gen_boilerplate: false
 
@@ -304,7 +315,7 @@
 
 - name: WasmInterruptCheck
   operands:
-    tlsPtr: WordSized
+    instance: WordSized
   mir_op: true
 
 - name: TypeOfV
@@ -653,7 +664,6 @@
   operands:
     left: WordSized
     right: WordSized
-  num_temps: 1
   call_instruction: true
   mir_op: Compare
 
@@ -675,7 +685,7 @@
   result_type: WordSized
   operands:
     value: BoxedValue
-  num_temps: 2
+  num_temps: 1
   mir_op: Compare
 
 # Takes an object pointer and tests whether it is an object that emulates
@@ -686,10 +696,30 @@
     input: WordSized
   mir_op: Compare
 
+# Takes a value and tests whether it is null.
+- name: IsNull
+  result_type: WordSized
+  operands:
+    value: BoxedValue
+  mir_op: Compare
+
+# Takes a value and tests whether it is undefined.
+- name: IsUndefined
+  result_type: WordSized
+  operands:
+    value: BoxedValue
+  mir_op: Compare
+
 - name: IsNullOrLikeUndefinedAndBranchV
   gen_boilerplate: false
 
 - name: IsNullOrLikeUndefinedAndBranchT
+  gen_boilerplate: false
+
+- name: IsNullAndBranch
+  gen_boilerplate: false
+
+- name: IsUndefinedAndBranch
   gen_boilerplate: false
 
 - name: SameValueDouble
@@ -704,7 +734,7 @@
   operands:
     lhs: BoxedValue
     rhs: BoxedValue
- 
+
 # Not operation on an integer.
 - name: NotI
   result_type: WordSized
@@ -750,7 +780,7 @@
   result_type: WordSized
   operands:
     input: BoxedValue
-  num_temps: 3
+  num_temps: 2
   mir_op: Not
 
 - name: BitNotI
@@ -922,7 +952,6 @@
   operands:
     value: WordSized
     power: WordSized
-  num_temps: 1
   call_instruction: true
 
 # Integer raised to an integer power.
@@ -940,7 +969,6 @@
   operands:
     value: WordSized
     power: WordSized
-  num_temps: 1
   call_instruction: true
 
 # Constant of a power of two raised to an integer power.
@@ -1008,7 +1036,7 @@
   operands:
     lhs: WordSized
     rhs: WordSized
-    tls: WordSized
+    instance: WordSized
   call_instruction: true
   mir_op: true
 
@@ -1057,6 +1085,30 @@
 - name: BigIntBitNot
   gen_boilerplate: false
 
+- name: Int32ToStringWithBase
+  result_type: WordSized
+  operands:
+    input: WordSized
+    base: WordSized
+  num_temps: 2
+  mir_op: true
+
+- name: NumberParseInt
+  result_type: BoxedValue
+  operands:
+    string: WordSized
+    radix: WordSized
+  num_temps: 1
+  call_instruction: true
+  mir_op: true
+
+- name: DoubleParseInt
+  result_type: WordSized
+  operands:
+    number: WordSized
+  num_temps: 1
+  mir_op: true
+
 # Adds two string, returning a string.
 - name: Concat
   result_type: WordSized
@@ -1065,13 +1117,38 @@
     rhs: WordSized
   num_temps: 5
 
+# Linearize a string before a character access.
+- name: LinearizeForCharAccess
+  result_type: WordSized
+  operands:
+    str: WordSized
+    index: WordSized
+  mir_op: true
+
 # Get uint16 character code from a string.
 - name: CharCodeAt
   result_type: WordSized
   operands:
     str: WordSized
     index: WordSized
-  num_temps: 1
+  num_temps: 2
+
+# Get uint16 character code from a string. Return NaN on out-of-bounds.
+- name: CharCodeAtMaybeOutOfBounds
+  result_type: BoxedValue
+  operands:
+    str: WordSized
+    index: WordSized
+  num_temps: 2
+
+# Get uint16 character code from a string and convert it to a string. Return
+# the empty string on out-of-bounds.
+- name: CharAtMaybeOutOfBounds
+  result_type: WordSized
+  operands:
+    str: WordSized
+    index: WordSized
+  num_temps: 2
 
 # Convert uint16 character code to a string.
 - name: FromCharCode
@@ -1086,13 +1163,64 @@
     codePoint: WordSized
   num_temps: 2
 
-# Calls the ToLowerCase or ToUpperCase case conversion function.
-- name: StringConvertCase
+# Search for the first index of the search string.
+- name: StringIndexOf
+  result_type: WordSized
+  operands:
+    string: WordSized
+    searchString: WordSized
+  call_instruction: true
+
+# Test if a string starts with the search string
+- name: StringStartsWith
+  result_type: WordSized
+  operands:
+    string: WordSized
+    searchString: WordSized
+  call_instruction: true
+
+# Test if a string starts with the constant search string
+- name: StringStartsWithInline
+  result_type: WordSized
+  operands:
+    string: WordSized
+  arguments:
+    searchString: JSLinearString*
+  num_temps: 1
+
+# Test if a string ends with the search string
+- name: StringEndsWith
+  result_type: WordSized
+  operands:
+    string: WordSized
+    searchString: WordSized
+  call_instruction: true
+
+# Test if a string ends with the constant search string
+- name: StringEndsWithInline
+  result_type: WordSized
+  operands:
+    string: WordSized
+  arguments:
+    searchString: JSLinearString*
+  num_temps: 1
+
+# Calls the ToLowerCase case conversion function. Inlines the case conversion
+# when possible.
+- name: StringToLowerCase
+  result_type: WordSized
+  operands:
+    string: WordSized
+  num_temps: 5
+  mir_op: StringConvertCase
+
+# Calls the ToUpperCase case conversion function.
+- name: StringToUpperCase
   result_type: WordSized
   operands:
     string: WordSized
   call_instruction: true
-  mir_op: true
+  mir_op: StringConvertCase
 
 - name: StringSplit
   result_type: WordSized
@@ -1207,13 +1335,13 @@
   num_temps: 1
   mir_op: TruncateToInt32
 
-# Convert a double to a truncated int32 with tls offset because we need it for
-# the slow ool path.
+# Convert a double to a truncated int32 with instance offset because we need it
+# for the slow ool path.
 - name: WasmBuiltinTruncateDToInt32
   result_type: WordSized
   operands:
     in: WordSized
-    tls: WordSized
+    instance: WordSized
   num_temps: 1
   mir_op: WasmBuiltinTruncateToInt32
 
@@ -1227,13 +1355,13 @@
   num_temps: 1
   mir_op: TruncateToInt32
 
-# Convert a float32 to a truncated int32 with tls offset because we need it for
-# the slow ool path.
+# Convert a float32 to a truncated int32 with instance offset because we need
+# it for the slow ool path.
 - name: WasmBuiltinTruncateFToInt32
   result_type: WordSized
   operands:
     in: WordSized
-    tls: WordSized
+    instance: WordSized
   num_temps: 1
   mir_op: WasmBuiltinTruncateToInt32
 
@@ -1435,14 +1563,6 @@
   num_temps: 1
   mir_op: true
 
-- name: LambdaArrow
-  result_type: WordSized
-  operands:
-    environmentChain: WordSized
-    newTarget: BoxedValue
-  num_temps: 1
-  mir_op: true
-
 - name: FunctionWithProto
   result_type: WordSized
   operands:
@@ -1462,6 +1582,12 @@
 - name: KeepAliveObject
   operands:
     object: WordSized
+
+- name: DebugEnterGCUnsafeRegion
+  num_temps: 1
+
+- name: DebugLeaveGCUnsafeRegion
+  num_temps: 1
 
 # Load the "slots" member out of a JSObject.
 #   Input: JSObject pointer
@@ -1662,6 +1788,34 @@
     end: WordSized
   num_temps: 2
   call_instruction: true
+  mir_op: true
+
+- name: ArgumentsSlice
+  result_type: WordSized
+  operands:
+    object: WordSized
+    begin: WordSized
+    end: WordSized
+  num_temps: 2
+  call_instruction: true
+  mir_op: true
+
+- name: FrameArgumentsSlice
+  result_type: WordSized
+  operands:
+    begin: WordSized
+    count: WordSized
+  num_temps: 1
+  mir_op: true
+
+- name: InlineArgumentsSlice
+  gen_boilerplate: false
+
+- name: NormalizeSliceTerm
+  result_type: WordSized
+  operands:
+    value: WordSized
+    length: WordSized
   mir_op: true
 
 - name: ArrayJoin
@@ -2021,30 +2175,33 @@
 
 - name: NewLexicalEnvironmentObject
   result_type: WordSized
-  operands:
-    enclosing: WordSized
-  call_instruction: true
-  mir_op: true
-
-- name: CopyLexicalEnvironmentObject
-  result_type: WordSized
-  operands:
-    env: WordSized
-  call_instruction: true
+  num_temps: 1
   mir_op: true
 
 - name: NewClassBodyEnvironmentObject
   result_type: WordSized
-  operands:
-    enclosing: WordSized
-  call_instruction: true
+  num_temps: 1
   mir_op: true
 
-- name: CallSetElement
+- name: NewVarEnvironmentObject
+  result_type: WordSized
+  num_temps: 1
+  mir_op: true
+
+- name: MegamorphicSetElement
   operands:
     object: WordSized
     index: BoxedValue
     value: BoxedValue
+  # On x86 we do not have enough registers to use 3 temps for this *and* take
+  # five words worth of operands. Since it's 32-bit, though, we get two
+  # registers from pushing `value`, which doesn't get used until the end
+  # anyway. This is somewhat klunky, but oh well.
+#ifdef JS_CODEGEN_X86
+  num_temps: 1
+#else
+  num_temps: 3
+#endif
   call_instruction: true
   mir_op: true
 
@@ -2063,12 +2220,30 @@
   call_instruction: true
   mir_op: DeleteElement
 
+- name: ObjectToIterator
+  result_type: WordSized
+  operands:
+    object: WordSized
+  num_temps: 3
+  mir_op: true
+
 - name: ValueToIterator
   result_type: WordSized
   operands:
     value: BoxedValue
   call_instruction: true
   mir_op: ValueToIterator
+
+- name: IteratorHasIndicesAndBranch
+  gen_boilerplate: false
+
+- name: LoadSlotByIteratorIndex
+  result_type: BoxedValue
+  operands:
+    object: WordSized
+    iterator: WordSized
+
+  num_temps: 2
 
 # Patchable jump to stubs generated for a SetProperty cache.
 - name: SetPropertyCache
@@ -2109,6 +2284,12 @@
   operands:
     object: WordSized
   num_temps: 3
+  mir_op: true
+
+- name: CloseIterCache
+  operands:
+    iter: WordSized
+  num_temps: 1
   mir_op: true
 
 # Read the number of actual arguments.
@@ -2271,6 +2452,13 @@
   num_temps: 1
   mir_op: PostWriteElementBarrier
 
+# Assert in debug mode that a post write barrier can be elided.
+- name: AssertCanElidePostWriteBarrier
+  operands:
+    object: WordSized
+    value: BoxedValue
+  num_temps: 1
+
 # Guard against an object's identity.
 - name: GuardObjectIdentity
   operands:
@@ -2295,6 +2483,11 @@
     symbol: WordSized
   mir_op: true
 
+- name: GuardSpecificInt32
+  operands:
+    num: WordSized
+  mir_op: true
+
 - name: GuardStringToIndex
   result_type: WordSized
   operands:
@@ -2317,6 +2510,14 @@
   operands:
     in: WordSized
   num_temps: 1
+  mir_op: true
+
+- name: GuardMultipleShapes
+  result_type: WordSized
+  operands:
+    object: WordSized
+    shapeList: WordSized
+  num_temps: 4
   mir_op: true
 
 - name: GuardProto
@@ -2409,7 +2610,7 @@
   operands:
     object: WordSized
     id: BoxedValue
-  num_temps: 2
+  num_temps: 3
   call_instruction: true
   mir_op: true
 
@@ -2427,7 +2628,7 @@
   operands:
     object: WordSized
     id: BoxedValue
-  num_temps: 2
+  num_temps: 3
   call_instruction: true
   mir_op: true
 
@@ -2632,22 +2833,22 @@
     ptr: Int64
   mir_op: WasmAlignmentCheck
 
-- name: WasmLoadTls
+- name: WasmLoadInstance
   result_type: WordSized
   operands:
-    tlsPtr: WordSized
+    instance: WordSized
   mir_op: true
 
-- name: WasmLoadTls64
+- name: WasmLoadInstance64
   result_type: Int64
   operands:
-    tlsPtr: WordSized
-  mir_op: WasmLoadTls
+    instance: WordSized
+  mir_op: WasmLoadInstance
 
 - name: WasmHeapBase
   result_type: WordSized
   operands:
-    tlsPtr: WordSized
+    instance: WordSized
   mir_op: true
 
 - name: WasmLoad
@@ -2700,6 +2901,8 @@
   arguments:
     offset: size_t
     type: MIRType
+    wideningOp: MWideningOp
+    maybeTrap: MaybeTrapSiteInfo
 
 - name: WasmLoadSlotI64
   result_type: Int64
@@ -2707,6 +2910,7 @@
     containerRef: WordSized
   arguments:
     offset: size_t
+    maybeTrap: MaybeTrapSiteInfo
 
 - name: WasmStoreSlot
   operands:
@@ -2715,6 +2919,8 @@
   arguments:
     offset: size_t
     type: MIRType
+    narrowingOp: MNarrowingOp
+    maybeTrap: MaybeTrapSiteInfo
 
 - name: WasmStoreSlotI64
   operands:
@@ -2722,15 +2928,27 @@
     containerRef: WordSized
   arguments:
     offset: size_t
+    maybeTrap: MaybeTrapSiteInfo
+
+- name: WasmLoadTableElement
+  result_type: WordSized
+  operands:
+    elements: WordSized
+    index: WordSized
 
 - name: WasmDerivedPointer
   gen_boilerplate: false
 
+- name: WasmDerivedIndexPointer
+  gen_boilerplate: false
+
 - name: WasmStoreRef
   operands:
-    tls: WordSized
-    valueAddr: WordSized
+    instance: WordSized
+    valueBase: WordSized
     value: WordSized
+  arguments:
+    offset: uint32_t
   num_temps: 1
   mir_op: true
 
@@ -2743,12 +2961,12 @@
 - name: WasmReturn
   operands:
     rval: WordSized
-    tls: WordSized
+    instance: WordSized
 
 - name: WasmReturnI64
   operands:
     rval: Int64
-    tls: WordSized
+    instance: WordSized
 
 - name: WasmReturnVoid
   operands:
@@ -2767,8 +2985,14 @@
 - name: WasmNullConstant
   result_type: WordSized
 
+- name: WasmCallIndirectAdjunctSafepoint
+  gen_boilerplate: false
+
 - name: WasmCall
   gen_boilerplate: false
+
+- name: WasmCallLandingPrePad
+  mir_op: true
 
 - name: WasmRegisterResult
   gen_boilerplate: false
@@ -2809,14 +3033,6 @@
   operands:
     input: WordSized
   mir_op: true
-
-- name: AssertResultT
-  operands:
-    input: WordSized
-
-- name: AssertResultV
-  operands:
-    input: BoxedValue
 
 - name: GuardValue
   operands:
@@ -2878,16 +3094,11 @@
   gen_boilerplate: false
 
 - name: Debugger
-  num_temps: 2
+  num_temps: 1
   call_instruction: true
 
 - name: NewTarget
   result_type: BoxedValue
-
-- name: ArrowNewTarget
-  result_type: BoxedValue
-  operands:
-    callee: WordSized
 
 - name: Random
   gen_boilerplate: false
@@ -2987,7 +3198,7 @@
 
 - name: GetPrototypeOf
   result_type: BoxedValue
-  operands: 
+  operands:
     target: WordSized
 
 - name: ObjectWithProto
@@ -3054,7 +3265,12 @@
   operands:
     index: WordSized
 
-- name: GuardIndexGreaterThanDenseInitLength
+- name: GuardInt32Range
+  operands:
+    input: WordSized
+  mir_op: true
+
+- name: GuardIndexIsNotDenseElement
   operands:
     object: WordSized
     index: WordSized
@@ -3086,6 +3302,14 @@
   operands:
     object: WordSized
     index: WordSized
+  call_instruction: true
+
+- name: CallNativeGetElementSuper
+  result_type: BoxedValue
+  operands:
+    object: WordSized
+    index: WordSized
+    receiver: BoxedValue
   call_instruction: true
 
 - name: CallObjectHasSparseElement
@@ -3198,6 +3422,11 @@
     setObject: WordSized
     input: BoxedValue
 
+- name: SetObjectSize
+  result_type: WordSized
+  operands:
+    setObject: WordSized
+
 - name: MapObjectHasNonBigInt
   result_type: WordSized
   operands:
@@ -3259,6 +3488,11 @@
   operands:
     mapObject: WordSized
     input: BoxedValue
+
+- name: MapObjectSize
+  result_type: WordSized
+  operands:
+    mapObject: WordSized
 
 - name: BigIntAsUintN
   result_type: WordSized
@@ -3383,15 +3617,6 @@
   gen_boilerplate: false
 
 - name: MulI
-  gen_boilerplate: false
-
-- name: WasmExceptionDataPointer
-  gen_boilerplate: false
-
-- name: WasmExceptionRefsPointer
-  gen_boilerplate: false
-
-- name: WasmLoadExceptionRefsValue
   gen_boilerplate: false
 
 #ifdef JS_CODEGEN_X86
@@ -3535,7 +3760,7 @@
 
 - name: Int64ToFloatingPoint
   gen_boilerplate: false
-#endif  
+#endif
 
 #ifdef JS_CODEGEN_MIPS32
 - name: BoxFloatingPoint
@@ -3626,4 +3851,73 @@
 
 - name: WasmAtomicExchangeI64
   gen_boilerplate: false
-#endif  
+#endif
+
+#ifdef JS_CODEGEN_LOONG64
+- name: DivOrModI64
+  gen_boilerplate: false
+
+- name: UDivOrMod
+  gen_boilerplate: false
+
+- name: UDivOrModI64
+  gen_boilerplate: false
+
+- name: ModMaskI
+  gen_boilerplate: false
+
+- name: WasmTruncateToInt64
+  gen_boilerplate: false
+
+- name: Int64ToFloatingPoint
+  gen_boilerplate: false
+
+- name: WasmCompareExchangeI64
+  gen_boilerplate: false
+
+- name: WasmAtomicBinopI64
+  gen_boilerplate: false
+
+- name: WasmAtomicExchangeI64
+  gen_boilerplate: false
+#endif
+
+#ifdef JS_CODEGEN_RISCV64
+- name: DivOrModI64
+  gen_boilerplate: false
+
+- name: UDivOrMod
+  gen_boilerplate: false
+
+- name: UDivOrModI64
+  gen_boilerplate: false
+
+- name: ModMaskI
+  gen_boilerplate: false
+
+- name: WasmTruncateToInt64
+  gen_boilerplate: false
+
+- name: Int64ToFloatingPoint
+  gen_boilerplate: false
+
+- name: WasmCompareExchangeI64
+  gen_boilerplate: false
+
+- name: WasmAtomicBinopI64
+  gen_boilerplate: false
+
+- name: WasmAtomicExchangeI64
+  gen_boilerplate: false
+#endif
+
+#ifdef FUZZING_JS_FUZZILLI
+- name: FuzzilliHashT
+  gen_boilerplate: false
+
+- name: FuzzilliHashV
+  gen_boilerplate: false
+
+- name: FuzzilliHashStore
+  gen_boilerplate: false
+#endif

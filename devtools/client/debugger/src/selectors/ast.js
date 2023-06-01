@@ -12,23 +12,12 @@ export function getSymbols(state, source) {
   return state.ast.symbols[source.id] || null;
 }
 
-export function hasSymbols(state, source) {
-  const symbols = getSymbols(state, source);
-
-  if (!symbols) {
-    return false;
+export function getSourceActorForSymbols(state, source) {
+  if (!source) {
+    return null;
   }
 
-  return !symbols.loading;
-}
-
-export function isSymbolsLoading(state, source) {
-  const symbols = getSymbols(state, source);
-  if (!symbols) {
-    return false;
-  }
-
-  return symbols.loading;
+  return state.ast.actors[source.id] || null;
 }
 
 export function getInScopeLines(state, location) {

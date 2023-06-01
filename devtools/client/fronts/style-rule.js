@@ -7,13 +7,15 @@
 const {
   FrontClassWithSpec,
   registerFront,
-} = require("devtools/shared/protocol");
-const { styleRuleSpec } = require("devtools/shared/specs/style-rule");
+} = require("resource://devtools/shared/protocol.js");
+const {
+  styleRuleSpec,
+} = require("resource://devtools/shared/specs/style-rule.js");
 
 loader.lazyRequireGetter(
   this,
   "RuleRewriter",
-  "devtools/client/fronts/inspector/rule-rewriter"
+  "resource://devtools/client/fronts/inspector/rule-rewriter.js"
 );
 
 /**
@@ -30,12 +32,6 @@ class StyleRuleFront extends FrontClassWithSpec(styleRuleSpec) {
     this.actorID = form.actor;
     this._form = form;
     this.traits = form.traits || {};
-    // @backward-compat { version 98 }
-    // This property isn't used anymore except when debugging older servers.
-    // This can be removed when 98 is in release
-    if (this._mediaText) {
-      this._mediaText = null;
-    }
   }
 
   /**
@@ -92,40 +88,13 @@ class StyleRuleFront extends FrontClassWithSpec(styleRuleSpec) {
   get selectors() {
     return this._form.selectors;
   }
-  // @backward-compat { version 98 }
-  // This getter isn't used anymore except when debugging older servers. This can be
-  // removed when 98 is in release.
-  get media() {
-    return this._form.media;
-  }
-  // @backward-compat { version 98 }
-  // This getter isn't used anymore except when debugging older servers. This can be
-  // removed when 98 is in release.
-  get mediaText() {
-    if (!this._form.media) {
-      return null;
-    }
-    if (this._mediaText) {
-      return this._mediaText;
-    }
-    this._mediaText = this.media.join(", ");
-    return this._mediaText;
-  }
 
   get parentStyleSheet() {
     const resourceCommand = this.targetFront.commands.resourceCommand;
-    if (
-      resourceCommand?.hasResourceCommandSupport(
-        resourceCommand.TYPES.STYLESHEET
-      )
-    ) {
-      return resourceCommand.getResourceById(
-        resourceCommand.TYPES.STYLESHEET,
-        this._form.parentStyleSheet
-      );
-    }
-
-    return this.conn.getFrontByID(this._form.parentStyleSheet);
+    return resourceCommand.getResourceById(
+      resourceCommand.TYPES.STYLESHEET,
+      this._form.parentStyleSheet
+    );
   }
 
   get element() {
@@ -159,14 +128,6 @@ class StyleRuleFront extends FrontClassWithSpec(styleRuleSpec) {
   }
 
   get ancestorData() {
-    // @backward-compat { version 98 }
-    // ancestorData was added to the actor form in 98, so for older servers, we need to
-    // return a similar structure, with `mediaText` info in it. (@layer information was
-    // also added in 98, so older server won't have this data)
-    if (typeof this._form.ancestorData === "undefined") {
-      return this.mediaText ? [{ type: "media", value: this.mediaText }] : [];
-    }
-
     return this._form.ancestorData;
   }
 

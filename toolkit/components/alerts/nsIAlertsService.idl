@@ -35,6 +35,43 @@ interface nsIAlertNotificationImageListener : nsISupports
   void onImageMissing(in nsISupports aUserData);
 };
 
+[scriptable, uuid(a054c2c9-2787-4686-859c-45609d790056)]
+interface nsIAlertAction : nsISupports
+{
+  /**
+   * Returns a string identifying a user action to be displayed on the alert.
+   *
+   * This string is an opaque identifier that identifies an action in potential
+   * callbacks; it is not displayed to the user.
+   */
+  readonly attribute AString action;
+
+  /**
+   * Returns a string containing action text to be shown to the user.
+   */
+  readonly attribute AString title;
+
+  /**
+   * Returns a string containing the URL of an icon to display with the action.
+   */
+  readonly attribute AString iconURL;
+
+  /**
+   * On Windows, chrome-privileged notifications -- i.e., those with a
+   * non-actionable principal -- can have actions that are activated by Windows
+   * and not processed by Firefox.  When `windowsSystemActivationType` is true,
+   * we request Windows to process `action`.  At the time of writing, Windows
+   * recognizes the following actions:
+   *
+   * - `action="dismiss"` dismisses the alert entirely.
+   * - `action="snooze"` snoozes the alert, generally making it disappear before
+   *   reappearing a Windows-determined amount of time later.
+   *
+   * On non-Windows, this field is ignored.
+   */
+  readonly attribute boolean windowsSystemActivationType;
+};
+
 [scriptable, uuid(cf2e4cb6-4b8f-4eca-aea9-d51a8f9f7a50)]
 interface nsIAlertNotification : nsISupports
 {
@@ -55,9 +92,9 @@ interface nsIAlertNotification : nsISupports
             [optional] in Array<uint32_t> aVibrate);
 
   /**
-   * The name of the notification. On Android, the name is hashed and used as
-   * a notification ID. Notifications will replace previous notifications with
-   * the same name.
+   * The name of the notification. On Windows and Android, the name is hashed
+   * and used as a notification ID. Notifications will replace previous
+   * notifications with the same name.
    */
   readonly attribute AString name;
 
@@ -145,6 +182,14 @@ interface nsIAlertNotification : nsISupports
   readonly attribute Array<uint32_t> vibrate;
 
   /**
+   * Actions available for users to choose from for interacting with
+   * the notification.
+   *
+   * Implemented only for the system backend on Windows.
+   */
+  attribute Array<nsIAlertAction> actions;
+
+  /**
    * Indicates whether this alert should show the source string and action
    * buttons. False for system alerts (which can omit the principal), or
    * expanded, system, and null principals.
@@ -156,6 +201,12 @@ interface nsIAlertNotification : nsISupports
    * is not actionable.
    */
   readonly attribute AString source;
+
+  /**
+   * A URL to navigate to if the application is relaunched in to complete
+   * interaction with this alert.
+   */
+  attribute AString launchURL;
 
   /**
    * Loads the image associated with this alert.
@@ -226,8 +277,12 @@ interface nsIAlertsService : nsISupports
    * @param aName          The name of the notification to close. If no name
    *                       is provided then only a notification created with
    *                       no name (if any) will be closed.
+   * @param aContextClosed The notification was implicitly closed, e.g. by tab
+   *                       or window closure. This is necessary to track as some
+   *                       platforms intentionally leave the notification visible
+   *                       unless explicitly closed, e.g. by notification.close().
    */
-  void closeAlert([optional] in AString aName);
+  void closeAlert([optional] in AString aName, [optional] in boolean aContextClosed);
 
 };
 

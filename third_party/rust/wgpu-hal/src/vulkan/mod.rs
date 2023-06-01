@@ -31,7 +31,7 @@ mod conv;
 mod device;
 mod instance;
 
-use std::{borrow::Borrow, ffi::CStr, num::NonZeroU32, sync::Arc};
+use std::{borrow::Borrow, ffi::CStr, fmt, num::NonZeroU32, sync::Arc};
 
 use arrayvec::ArrayVec;
 use ash::{
@@ -41,9 +41,7 @@ use ash::{
 use parking_lot::Mutex;
 
 const MILLIS_TO_NANOS: u64 = 1_000_000;
-const MAX_TOTAL_ATTACHMENTS: usize = crate::MAX_COLOR_TARGETS * 2 + 1;
-
-pub type DropGuard = Box<dyn std::any::Any + Send + Sync>;
+const MAX_TOTAL_ATTACHMENTS: usize = crate::MAX_COLOR_ATTACHMENTS * 2 + 1;
 
 #[derive(Clone)]
 pub struct Api;
@@ -79,19 +77,21 @@ struct DebugUtils {
     messenger: vk::DebugUtilsMessengerEXT,
 }
 
-struct InstanceShared {
+pub struct InstanceShared {
     raw: ash::Instance,
-    drop_guard: Option<DropGuard>,
+    extensions: Vec<&'static CStr>,
+    drop_guard: Option<crate::DropGuard>,
     flags: crate::InstanceFlags,
     debug_utils: Option<DebugUtils>,
     get_physical_device_properties: Option<khr::GetPhysicalDeviceProperties2>,
     entry: ash::Entry,
     has_nv_optimus: bool,
+    android_sdk_version: u32,
+    driver_api_version: u32,
 }
 
 pub struct Instance {
     shared: Arc<InstanceShared>,
-    extensions: Vec<&'static CStr>,
 }
 
 struct Swapchain {
@@ -143,7 +143,7 @@ enum ExtensionFn<T> {
 }
 
 struct DeviceExtensionFunctions {
-    draw_indirect_count: Option<ExtensionFn<khr::DrawIndirectCount>>,
+    draw_indirect_count: Option<khr::DrawIndirectCount>,
     timeline_semaphore: Option<ExtensionFn<khr::TimelineSemaphore>>,
 }
 
@@ -160,11 +160,13 @@ struct PrivateCapabilities {
     timeline_semaphores: bool,
     texture_d24: bool,
     texture_d24_s8: bool,
+    texture_s8: bool,
     /// Ability to present contents to any screen. Only needed to work around broken platform configurations.
     can_present: bool,
     non_coherent_map_mask: wgt::BufferAddress,
     robust_buffer_access: bool,
     robust_image_access: bool,
+    zero_initialize_workgroup_memory: bool,
 }
 
 bitflags::bitflags!(
@@ -210,7 +212,7 @@ struct DepthStencilAttachmentKey {
 
 #[derive(Clone, Eq, Default, Hash, PartialEq)]
 struct RenderPassKey {
-    colors: ArrayVec<ColorAttachmentKey, { crate::MAX_COLOR_TARGETS }>,
+    colors: ArrayVec<Option<ColorAttachmentKey>, { crate::MAX_COLOR_ATTACHMENTS }>,
     depth_stencil: Option<DepthStencilAttachmentKey>,
     sample_count: u32,
     multiview: Option<NonZeroU32>,
@@ -232,90 +234,18 @@ struct FramebufferKey {
     sample_count: u32,
 }
 
-bitflags::bitflags! {
-    pub struct UpdateAfterBindTypes: u8 {
-        const UNIFORM_BUFFER = 0x1;
-        const STORAGE_BUFFER = 0x2;
-        const SAMPLED_TEXTURE = 0x4;
-        const STORAGE_TEXTURE = 0x8;
-    }
-}
-
-impl UpdateAfterBindTypes {
-    pub fn from_limits(limits: &wgt::Limits, phd_limits: &vk::PhysicalDeviceLimits) -> Self {
-        let mut uab_types = UpdateAfterBindTypes::empty();
-        uab_types.set(
-            UpdateAfterBindTypes::UNIFORM_BUFFER,
-            limits.max_uniform_buffers_per_shader_stage
-                > phd_limits.max_per_stage_descriptor_uniform_buffers,
-        );
-        uab_types.set(
-            UpdateAfterBindTypes::STORAGE_BUFFER,
-            limits.max_storage_buffers_per_shader_stage
-                > phd_limits.max_per_stage_descriptor_storage_buffers,
-        );
-        uab_types.set(
-            UpdateAfterBindTypes::SAMPLED_TEXTURE,
-            limits.max_sampled_textures_per_shader_stage
-                > phd_limits.max_per_stage_descriptor_sampled_images,
-        );
-        uab_types.set(
-            UpdateAfterBindTypes::STORAGE_TEXTURE,
-            limits.max_storage_textures_per_shader_stage
-                > phd_limits.max_per_stage_descriptor_storage_images,
-        );
-        uab_types
-    }
-
-    fn from_features(features: &adapter::PhysicalDeviceFeatures) -> Self {
-        let mut uab_types = UpdateAfterBindTypes::empty();
-        if let Some(vk_12) = features.vulkan_1_2 {
-            uab_types.set(
-                UpdateAfterBindTypes::UNIFORM_BUFFER,
-                vk_12.descriptor_binding_uniform_buffer_update_after_bind != 0,
-            );
-            uab_types.set(
-                UpdateAfterBindTypes::STORAGE_BUFFER,
-                vk_12.descriptor_binding_storage_buffer_update_after_bind != 0,
-            );
-            uab_types.set(
-                UpdateAfterBindTypes::SAMPLED_TEXTURE,
-                vk_12.descriptor_binding_sampled_image_update_after_bind != 0,
-            );
-            uab_types.set(
-                UpdateAfterBindTypes::STORAGE_TEXTURE,
-                vk_12.descriptor_binding_storage_image_update_after_bind != 0,
-            );
-        } else if let Some(di) = features.descriptor_indexing {
-            uab_types.set(
-                UpdateAfterBindTypes::UNIFORM_BUFFER,
-                di.descriptor_binding_uniform_buffer_update_after_bind != 0,
-            );
-            uab_types.set(
-                UpdateAfterBindTypes::STORAGE_BUFFER,
-                di.descriptor_binding_storage_buffer_update_after_bind != 0,
-            );
-            uab_types.set(
-                UpdateAfterBindTypes::SAMPLED_TEXTURE,
-                di.descriptor_binding_sampled_image_update_after_bind != 0,
-            );
-            uab_types.set(
-                UpdateAfterBindTypes::STORAGE_TEXTURE,
-                di.descriptor_binding_storage_image_update_after_bind != 0,
-            );
-        }
-        uab_types
-    }
-}
-
 struct DeviceShared {
     raw: ash::Device,
+    family_index: u32,
+    queue_index: u32,
+    raw_queue: ash::vk::Queue,
     handle_is_owned: bool,
     instance: Arc<InstanceShared>,
+    physical_device: ash::vk::PhysicalDevice,
+    enabled_extensions: Vec<&'static CStr>,
     extension_fns: DeviceExtensionFunctions,
     vendor_id: u32,
     timestamp_period: f32,
-    uab_types: UpdateAfterBindTypes,
     downlevel_flags: wgt::DownlevelFlags,
     private_caps: PrivateCapabilities,
     workarounds: Workarounds,
@@ -343,7 +273,7 @@ pub struct Queue {
     /// from submissions to the last present, since it's required by the
     /// specification.
     /// It would be correct to use a single semaphore there, but
-    /// https://gitlab.freedesktop.org/mesa/mesa/-/issues/5508
+    /// [Intel hangs in `anv_queue_finish`](https://gitlab.freedesktop.org/mesa/mesa/-/issues/5508).
     relay_semaphores: [vk::Semaphore; 2],
     relay_index: Option<usize>,
 }
@@ -357,7 +287,7 @@ pub struct Buffer {
 #[derive(Debug)]
 pub struct Texture {
     raw: vk::Image,
-    drop_guard: Option<DropGuard>,
+    drop_guard: Option<crate::DropGuard>,
     block: Option<gpu_alloc::MemoryBlock<vk::DeviceMemory>>,
     usage: crate::TextureUses,
     aspects: crate::FormatAspects,
@@ -398,12 +328,14 @@ pub struct BindGroupLayout {
     raw: vk::DescriptorSetLayout,
     desc_count: gpu_descriptor::DescriptorTotalCount,
     types: Box<[(vk::DescriptorType, u32)]>,
-    requires_update_after_bind: bool,
+    /// Map of binding index to size,
+    binding_arrays: Vec<(u32, NonZeroU32)>,
 }
 
 #[derive(Debug)]
 pub struct PipelineLayout {
     raw: vk::PipelineLayout,
+    binding_arrays: naga::back::spv::BindingMap,
 }
 
 #[derive(Debug)]
@@ -450,6 +382,15 @@ pub struct CommandEncoder {
     rpass_debug_marker_active: bool,
 }
 
+impl fmt::Debug for CommandEncoder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CommandEncoder")
+            .field("raw", &self.raw)
+            .finish()
+    }
+}
+
+#[derive(Debug)]
 pub struct CommandBuffer {
     raw: vk::CommandBuffer,
 }
@@ -589,10 +530,11 @@ impl crate::Queue<Api> for Queue {
                 } => {
                     fence_raw = match free.pop() {
                         Some(raw) => raw,
-                        None => self
-                            .device
-                            .raw
-                            .create_fence(&vk::FenceCreateInfo::builder(), None)?,
+                        None => unsafe {
+                            self.device
+                                .raw
+                                .create_fence(&vk::FenceCreateInfo::builder(), None)?
+                        },
                     };
                     active.push((value, fence_raw));
                 }
@@ -620,9 +562,11 @@ impl crate::Queue<Api> for Queue {
         vk_info = vk_info.signal_semaphores(&signal_semaphores[..signal_count]);
 
         profiling::scope!("vkQueueSubmit");
-        self.device
-            .raw
-            .queue_submit(self.raw, &[vk_info.build()], fence_raw)?;
+        unsafe {
+            self.device
+                .raw
+                .queue_submit(self.raw, &[vk_info.build()], fence_raw)?
+        };
         Ok(())
     }
 
@@ -645,13 +589,13 @@ impl crate::Queue<Api> for Queue {
 
         let suboptimal = {
             profiling::scope!("vkQueuePresentKHR");
-            self.swapchain_fn
-                .queue_present(self.raw, &vk_info)
-                .map_err(|error| match error {
+            unsafe { self.swapchain_fn.queue_present(self.raw, &vk_info) }.map_err(|error| {
+                match error {
                     vk::Result::ERROR_OUT_OF_DATE_KHR => crate::SurfaceError::Outdated,
                     vk::Result::ERROR_SURFACE_LOST_KHR => crate::SurfaceError::Lost,
                     _ => crate::DeviceError::from(error).into(),
-                })?
+                }
+            })?
         };
         if suboptimal {
             log::warn!("Suboptimal present of frame {}", texture.index);

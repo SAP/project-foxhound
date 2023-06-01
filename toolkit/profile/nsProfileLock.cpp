@@ -307,6 +307,16 @@ nsresult nsProfileLock::LockWithSymlink(nsIFile* aLockFile,
   struct in_addr inaddr;
   inaddr.s_addr = htonl(INADDR_LOOPBACK);
 
+  // We still have not loaded the profile, so we may not have proxy information.
+  // Avoiding a DNS lookup in this stage makes sure any proxy is not bypassed.
+  // By default, the lookup is enabled, but when it is not, we use 127.0.0.1
+  // for the IP address portion of the lock signature.
+  // However, this may cause the browser to refuse to start in the rare case
+  // that all of the following conditions are met:
+  //   1. The browser profile is on a network file system.
+  //   2. The file system does not support fcntl() locking.
+  //   3. The browser is run from two different computers at the same time.
+#  ifndef MOZ_PROXY_BYPASS_PROTECTION
   char hostname[256];
   PRStatus status = PR_GetSystemInfo(PR_SI_HOSTNAME, hostname, sizeof hostname);
   if (status == PR_SUCCESS) {
@@ -315,6 +325,7 @@ nsresult nsProfileLock::LockWithSymlink(nsIFile* aLockFile,
     status = PR_GetHostByName(hostname, netdbbuf, sizeof netdbbuf, &hostent);
     if (status == PR_SUCCESS) memcpy(&inaddr, hostent.h_addr, sizeof inaddr);
   }
+#  endif
 
   mozilla::SmprintfPointer signature =
       mozilla::Smprintf("%s:%s%lu", inet_ntoa(inaddr),
@@ -452,48 +463,6 @@ nsresult nsProfileLock::Lock(nsIFile* aProfileDir,
     // If that failed for any reason other than NS_ERROR_FILE_ACCESS_DENIED,
     // assume we tried an NFS that does not support it. Now, try with symlink.
     rv = LockWithSymlink(lockFile, false);
-  }
-
-  if (NS_SUCCEEDED(rv)) {
-    // Check for the old-style lock used by pre-mozilla 1.3 builds.
-    // Those builds used an earlier check to prevent the application
-    // from launching if another instance was already running. Because
-    // of that, we don't need to create an old-style lock as well.
-    struct LockProcessInfo {
-      ProcessSerialNumber psn;
-      unsigned long launchDate;
-    };
-
-    PRFileDesc* fd = nullptr;
-    int32_t ioBytes;
-    ProcessInfoRec processInfo;
-    LockProcessInfo lockProcessInfo;
-
-    rv = lockFile->SetLeafName(OLD_LOCKFILE_NAME);
-    if (NS_FAILED(rv)) return rv;
-    rv = lockFile->OpenNSPRFileDesc(PR_RDONLY, 0, &fd);
-    if (NS_SUCCEEDED(rv)) {
-      ioBytes = PR_Read(fd, &lockProcessInfo, sizeof(LockProcessInfo));
-      PR_Close(fd);
-
-      if (ioBytes == sizeof(LockProcessInfo)) {
-#  ifdef __LP64__
-        processInfo.processAppRef = nullptr;
-#  else
-        processInfo.processAppSpec = nullptr;
-#  endif
-        processInfo.processName = nullptr;
-        processInfo.processInfoLength = sizeof(ProcessInfoRec);
-        if (::GetProcessInformation(&lockProcessInfo.psn, &processInfo) ==
-                noErr &&
-            processInfo.processLaunchDate == lockProcessInfo.launchDate) {
-          return NS_ERROR_FILE_ACCESS_DENIED;
-        }
-      } else {
-        NS_WARNING("Could not read lock file - ignoring lock");
-      }
-    }
-    rv = NS_OK;  // Don't propagate error from OpenNSPRFileDesc.
   }
 #elif defined(XP_UNIX)
   // Get the old lockfile name

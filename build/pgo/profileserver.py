@@ -4,19 +4,19 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import glob
 import json
 import os
-import sys
-import glob
 import subprocess
+import sys
 
 import mozcrash
-from mozbuild.base import MozbuildObject, BinaryNotFoundException
+from mozbuild.base import BinaryNotFoundException, MozbuildObject
 from mozfile import TemporaryDirectory
 from mozhttpd import MozHttpd
 from mozprofile import FirefoxProfile, Preferences
 from mozprofile.permissions import ServerLocations
-from mozrunner import FirefoxRunner, CLI
+from mozrunner import CLI, FirefoxRunner
 from six import string_types
 
 PORT = 8888
@@ -43,7 +43,7 @@ def get_crashreports(directory, name=None):
                 "$MOZ_FETCHES_DIR is not set in the environment"
             )
         stackwalk_binary = os.path.join(
-            fetches_dir, "minidump_stackwalk", "minidump_stackwalk"
+            fetches_dir, "minidump-stackwalk", "minidump-stackwalk"
         )
         if sys.platform == "win32":
             stackwalk_binary += ".exe"
@@ -131,6 +131,7 @@ if __name__ == "__main__":
 
         env = os.environ.copy()
         env["MOZ_CRASHREPORTER_NO_REPORT"] = "1"
+        env["MOZ_CRASHREPORTER_SHUTDOWN"] = "1"
         env["XPCOM_DEBUG_BREAK"] = "warn"
         # We disable sandboxing to make writing profiling data actually work
         # Bug 1553850 considers fixing this.

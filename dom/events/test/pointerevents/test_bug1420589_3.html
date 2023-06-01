@@ -59,7 +59,7 @@ function withoutImplicitlyPointerCaptureForTouch() {
     ok(expectedEvents.includes(e.data), " don't expect " + e.data);
     expectedEvents = expectedEvents.filter(item => item !== e.data);
     if (e.data == "iframe1 touchend") {
-      ok(expectedEvents.length == 0, " expect " + expectedEvents);
+      ok(!expectedEvents.length, " expect " + expectedEvents);
       SimpleTest.finish();
     }
   })
@@ -89,17 +89,20 @@ function withoutImplicitlyPointerCaptureForTouch() {
   var utils = SpecialPowers.getDOMWindowUtils(window);
   utils.sendTouchEvent('touchstart', [test1PointerId, test2PointerId],
                        [left1, left2], [top1, top2], [rx, rx], [ry, ry],
-                       [angle, angle], [force, force], modifiers);
+                       [angle, angle], [force, force], [0, 0], [0, 0],
+                       [0, 0], modifiers);
 
   // Move the touch pointers so that we dispatch all of them to content.
   left1++;
   left2++;
   utils.sendTouchEvent('touchmove', [test1PointerId, test2PointerId],
                        [left1, left2], [top1, top2], [rx, rx], [ry, ry],
-                       [angle, angle], [force, force], modifiers);
+                       [angle, angle], [force, force], [0, 0], [0, 0],
+                       [0, 0], modifiers);
   utils.sendTouchEvent('touchend', [test1PointerId, test2PointerId],
                        [left1, left2], [top1, top2], [rx, rx], [ry, ry],
-                       [angle, angle], [force, force], modifiers);
+                       [angle, angle], [force, force], [0, 0], [0, 0],
+                       [0, 0], modifiers);
 }
 
 SimpleTest.waitForFocus(() => {

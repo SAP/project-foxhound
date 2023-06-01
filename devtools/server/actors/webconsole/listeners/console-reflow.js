@@ -4,9 +4,6 @@
 
 "use strict";
 
-const { components } = require("chrome");
-const ChromeUtils = require("ChromeUtils");
-
 /**
  * A ReflowObserver that listens for reflow events from the page.
  * Implements nsIReflowObserver.
@@ -42,8 +39,8 @@ ConsoleReflowListener.prototype = {
    * @param DOMHighResTimeStamp end
    * @param boolean interruptible
    */
-  sendReflow: function(start, end, interruptible) {
-    const frame = components.stack.caller.caller;
+  sendReflow(start, end, interruptible) {
+    const frame = Components.stack.caller.caller;
 
     let filename = frame ? frame.filename : null;
 
@@ -54,9 +51,9 @@ ConsoleReflowListener.prototype = {
     }
 
     this.listener.onReflowActivity({
-      interruptible: interruptible,
-      start: start,
-      end: end,
+      interruptible,
+      start,
+      end,
       sourceURL: filename,
       sourceLine: frame ? frame.lineNumber : null,
       functionName: frame ? frame.name : null,
@@ -69,7 +66,7 @@ ConsoleReflowListener.prototype = {
    * @param DOMHighResTimeStamp start
    * @param DOMHighResTimeStamp end
    */
-  reflow: function(start, end) {
+  reflow(start, end) {
     this.sendReflow(start, end, false);
   },
 
@@ -79,14 +76,14 @@ ConsoleReflowListener.prototype = {
    * @param DOMHighResTimeStamp start
    * @param DOMHighResTimeStamp end
    */
-  reflowInterruptible: function(start, end) {
+  reflowInterruptible(start, end) {
     this.sendReflow(start, end, true);
   },
 
   /**
    * Unregister listener.
    */
-  destroy: function() {
+  destroy() {
     this.docshell.removeWeakReflowObserver(this);
     this.listener = this.docshell = null;
   },

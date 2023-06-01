@@ -1,3 +1,5 @@
+# mypy: allow-untyped-defs
+
 from .base import cmd_arg, require_arg
 from .base import WebDriverBrowser
 from .base import get_timeout_multiplier   # noqa: F401
@@ -67,6 +69,9 @@ def executor_kwargs(logger, test_type, test_environment, run_info_data,
         if "--headless" not in capabilities["ms:edgeOptions"]["args"]:
             capabilities["ms:edgeOptions"]["args"].append("--headless")
         capabilities["ms:edgeOptions"]["args"].append("--use-fake-device-for-media-stream")
+
+    if kwargs["enable_experimental"]:
+        capabilities["ms:edgeOptions"]["args"].append("--enable-experimental-web-platform-features")
 
     executor_kwargs["capabilities"] = capabilities
 

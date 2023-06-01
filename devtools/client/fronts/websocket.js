@@ -7,12 +7,17 @@
 const {
   FrontClassWithSpec,
   registerFront,
-} = require("devtools/shared/protocol");
-const { webSocketSpec } = require("devtools/shared/specs/websocket");
+} = require("resource://devtools/shared/protocol.js");
+const {
+  webSocketSpec,
+} = require("resource://devtools/shared/specs/websocket.js");
 
 /**
  * A WebSocketFront is used as a front end for the WebSocketActor that is
  * created on the server, hiding implementation details.
+ *
+ * @backward-compat { version 111 } This front can be deleted when 111 is
+ * on the release channel.
  */
 class WebSocketFront extends FrontClassWithSpec(webSocketSpec) {
   constructor(client, targetFront, parentFront) {

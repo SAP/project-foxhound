@@ -9,12 +9,6 @@
 
 const EXPORTED_SYMBOLS = ["NewPasswordModel"];
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "fathom",
-  "resource://gre/modules/third_party/fathom/fathom.jsm"
-);
-
 const {
   dom,
   element,
@@ -25,7 +19,9 @@ const {
   type,
   utils: { identity, isVisible, min, setDefault },
   clusters: { euclidean },
-} = fathom;
+} = ChromeUtils.importESModule(
+  "resource://gre/modules/third_party/fathom/fathom.mjs"
+);
 
 /**
  * ----- Start of model -----
@@ -667,7 +663,7 @@ function makeRuleset(coeffs, biases) {
  * ----- End of model -----
  */
 
-this.NewPasswordModel = {
+const NewPasswordModel = {
   type: "new",
   rules: makeRuleset([...coefficients.new], biases),
 };

@@ -6,16 +6,10 @@
 
 var EXPORTED_SYMBOLS = ["WindowsVersionInfo"];
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppConstants",
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "ctypes",
-  "resource://gre/modules/ctypes.jsm"
-);
+const { ctypes } = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
 
 const BYTE = ctypes.uint8_t;
 const WORD = ctypes.uint16_t;
@@ -48,7 +42,7 @@ var WindowsVersionInfo = {
       if (throwOnError) {
         throw err;
       }
-      Cu.reportError(err);
+      console.error(err);
       return WindowsVersionInfo.UNKNOWN_VERSION_INFO;
     }
 

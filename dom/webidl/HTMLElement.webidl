@@ -21,7 +21,8 @@ interface HTMLElement : Element {
            attribute DOMString title;
   [CEReactions]
            attribute DOMString lang;
-  //         attribute boolean translate;
+  [CEReactions, SetterThrows, Pure]
+           attribute boolean translate;
   [CEReactions, SetterThrows, Pure]
            attribute DOMString dir;
 
@@ -36,7 +37,7 @@ interface HTMLElement : Element {
   [CEReactions, SetterThrows, Pure, Pref="html5.inert.enabled"]
            attribute boolean inert;
   [NeedsCallerType]
-  void click();
+  undefined click();
   [CEReactions, SetterThrows, Pure]
            attribute DOMString accessKey;
   [Pure]
@@ -48,8 +49,6 @@ interface HTMLElement : Element {
            attribute DOMString contentEditable;
   [Pure]
   readonly attribute boolean isContentEditable;
-  [Pure, Pref="dom.menuitem.enabled"]
-  readonly attribute HTMLMenuElement? contextMenu;
   [CEReactions, SetterThrows, Pure]
            attribute boolean spellcheck;
   [CEReactions, Pure, SetterThrows, Pref="dom.forms.inputmode"]
@@ -70,7 +69,7 @@ interface HTMLElement : Element {
   //readonly attribute boolean? commandChecked;
 
   // https://html.spec.whatwg.org/multipage/custom-elements.html#dom-attachinternals
-  [Pref="dom.webcomponents.elementInternals.enabled", Throws]
+  [Throws]
   ElementInternals attachInternals();
 };
 
@@ -105,7 +104,6 @@ interface mixin TouchEventHandlers {
 
 HTMLElement includes GlobalEventHandlers;
 HTMLElement includes HTMLOrForeignElement;
-HTMLElement includes DocumentAndElementEventHandlers;
 HTMLElement includes ElementCSSInlineStyle;
 HTMLElement includes TouchEventHandlers;
 HTMLElement includes OnErrorEventHandlerForNodes;

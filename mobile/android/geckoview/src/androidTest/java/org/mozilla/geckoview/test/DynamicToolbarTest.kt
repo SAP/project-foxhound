@@ -4,13 +4,17 @@
 
 package org.mozilla.geckoview.test
 
-import android.graphics.*
+import android.graphics.* // ktlint-disable no-wildcard-imports
 import android.graphics.Bitmap
-import androidx.test.filters.MediumTest
-import androidx.test.ext.junit.runners.AndroidJUnit4
+import android.os.SystemClock
 import android.util.Base64
-import java.io.ByteArrayOutputStream
-import org.hamcrest.Matchers.*
+import android.view.MotionEvent
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.MediumTest
+import org.hamcrest.Matchers.* // ktlint-disable no-wildcard-imports
+import org.hamcrest.Matchers.closeTo
+import org.hamcrest.Matchers.equalTo
+import org.junit.Assume.assumeThat
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.geckoview.GeckoResult
@@ -19,8 +23,7 @@ import org.mozilla.geckoview.GeckoSession.ContentDelegate
 import org.mozilla.geckoview.GeckoSession.ScrollDelegate
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.AssertCalled
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDisplay
-import org.hamcrest.Matchers.closeTo
-import org.hamcrest.Matchers.equalTo
+import java.io.ByteArrayOutputStream
 
 private const val SCREEN_WIDTH = 100
 private const val SCREEN_HEIGHT = 200
@@ -28,9 +31,9 @@ private const val SCREEN_HEIGHT = 200
 @RunWith(AndroidJUnit4::class)
 @MediumTest
 class DynamicToolbarTest : BaseSessionTest() {
+    // Makes sure we can load a page when the dynamic toolbar is bigger than the whole content
     @WithDisplay(height = SCREEN_HEIGHT, width = SCREEN_WIDTH)
     @Test
-    // Makes sure we can load a page when the dynamic toolbar is bigger than the whole content
     fun outOfRangeValue() {
         val dynamicToolbarMaxHeight = SCREEN_HEIGHT + 1
         sessionRule.display?.run { setDynamicToolbarMaxHeight(dynamicToolbarMaxHeight) }
@@ -42,26 +45,28 @@ class DynamicToolbarTest : BaseSessionTest() {
         mainSession.waitForPageStop()
     }
 
-
     private fun assertScreenshotResult(result: GeckoResult<Bitmap>, comparisonImage: Bitmap) {
         sessionRule.waitForResult(result).let {
-            assertThat("Screenshot is not null",
-                    it, notNullValue())
+            assertThat(
+                "Screenshot is not null",
+                it,
+                notNullValue()
+            )
             assertThat("Widths are the same", comparisonImage.width, equalTo(it.width))
             assertThat("Heights are the same", comparisonImage.height, equalTo(it.height))
             assertThat("Byte counts are the same", comparisonImage.byteCount, equalTo(it.byteCount))
             assertThat("Configs are the same", comparisonImage.config, equalTo(it.config))
 
             if (!comparisonImage.sameAs(it)) {
-              val outputForComparison = ByteArrayOutputStream()
-              comparisonImage.compress(Bitmap.CompressFormat.PNG, 100, outputForComparison)
+                val outputForComparison = ByteArrayOutputStream()
+                comparisonImage.compress(Bitmap.CompressFormat.PNG, 100, outputForComparison)
 
-              val outputForActual = ByteArrayOutputStream()
-              it.compress(Bitmap.CompressFormat.PNG, 100, outputForActual)
-              val actualString: String = Base64.encodeToString(outputForActual.toByteArray(), Base64.DEFAULT)
-              val comparisonString: String = Base64.encodeToString(outputForComparison.toByteArray(), Base64.DEFAULT)
+                val outputForActual = ByteArrayOutputStream()
+                it.compress(Bitmap.CompressFormat.PNG, 100, outputForActual)
+                val actualString: String = Base64.encodeToString(outputForActual.toByteArray(), Base64.DEFAULT)
+                val comparisonString: String = Base64.encodeToString(outputForComparison.toByteArray(), Base64.DEFAULT)
 
-              assertThat("Encoded strings are the same", comparisonString, equalTo(actualString))
+                assertThat("Encoded strings are the same", comparisonString, equalTo(actualString))
             }
 
             assertThat("Bytes are the same", comparisonImage.sameAs(it), equalTo(true))
@@ -156,18 +161,23 @@ class DynamicToolbarTest : BaseSessionTest() {
         val scale = mainSession.evaluateJS("window.visualViewport.scale") as Double
 
         for (i in 1..dynamicToolbarMaxHeight) {
-          // Simulate the dynamic toolbar is going to be hidden.
-          sessionRule.display?.run { setVerticalClipping(-i) }
+            // Simulate the dynamic toolbar is going to be hidden.
+            sessionRule.display?.run { setVerticalClipping(-i) }
 
-          val expectedViewportHeight = (SCREEN_HEIGHT - dynamicToolbarMaxHeight + i) / scale / pixelRatio
-          val promise = mainSession.evaluatePromiseJS("""
+            val expectedViewportHeight = (SCREEN_HEIGHT - dynamicToolbarMaxHeight + i) / scale / pixelRatio
+            val promise = mainSession.evaluatePromiseJS(
+                """
              new Promise(resolve => {
                window.visualViewport.addEventListener('resize', resolve(window.visualViewport.height));
              });
-          """.trimIndent())
+                """.trimIndent()
+            )
 
-          assertThat("The visual viewport height should be changed in response to the dynamc toolbar transition",
-                     promise.value as Double, closeTo(expectedViewportHeight, .01))
+            assertThat(
+                "The visual viewport height should be changed in response to the dynamc toolbar transition",
+                promise.value as Double,
+                closeTo(expectedViewportHeight, .01)
+            )
         }
     }
 
@@ -183,30 +193,42 @@ class DynamicToolbarTest : BaseSessionTest() {
         mainSession.loadTestPath(BaseSessionTest.FIXED_PERCENT)
         mainSession.waitForPageStop()
 
-        val originalHeight = mainSession.evaluateJS("""
+        val originalHeight = mainSession.evaluateJS(
+            """
             getComputedStyle(document.querySelector('#fixed-element')).height
-        """.trimIndent()) as String
+            """.trimIndent()
+        ) as String
 
         // Set the vertical clipping value to the middle of toolbar transition.
         sessionRule.display?.run { setVerticalClipping(-dynamicToolbarMaxHeight / 2) }
 
-        var height = mainSession.evaluateJS("""
+        var height = mainSession.evaluateJS(
+            """
             getComputedStyle(document.querySelector('#fixed-element')).height
-        """.trimIndent()) as String
+            """.trimIndent()
+        ) as String
 
-        assertThat("The %-based height should be the static in the middle of toolbar tansition",
-                   height, equalTo(originalHeight))
+        assertThat(
+            "The %-based height should be the static in the middle of toolbar tansition",
+            height,
+            equalTo(originalHeight)
+        )
 
         // Set the vertical clipping value to hide the toolbar completely.
         sessionRule.display?.run { setVerticalClipping(-dynamicToolbarMaxHeight) }
-        height = mainSession.evaluateJS("""
+        height = mainSession.evaluateJS(
+            """
             getComputedStyle(document.querySelector('#fixed-element')).height
-        """.trimIndent()) as String
+            """.trimIndent()
+        ) as String
 
         val scale = mainSession.evaluateJS("window.visualViewport.scale") as Double
         val expectedHeight = (SCREEN_HEIGHT / scale).toInt()
-        assertThat("The %-based height should be now recomputed based on the screen height",
-                   height, equalTo(expectedHeight.toString() + "px"))
+        assertThat(
+            "The %-based height should be now recomputed based on the screen height",
+            height,
+            equalTo(expectedHeight.toString() + "px")
+        )
     }
 
     @WithDisplay(height = SCREEN_HEIGHT, width = SCREEN_WIDTH)
@@ -222,7 +244,8 @@ class DynamicToolbarTest : BaseSessionTest() {
         mainSession.waitForPageStop()
 
         for (i in 1..dynamicToolbarMaxHeight - 1) {
-            val promise = mainSession.evaluatePromiseJS("""
+            val promise = mainSession.evaluatePromiseJS(
+                """
                 new Promise(resolve => {
                     let fired = false;
                     window.addEventListener('resize', () => { fired = true; }, { once: true });
@@ -231,23 +254,32 @@ class DynamicToolbarTest : BaseSessionTest() {
                     // unexpected resize event(s) will be caught in the next loop.
                     requestAnimationFrame(() => { resolve(fired); });
                 });
-            """.trimIndent())
+                """.trimIndent()
+            )
 
             // Simulate the dynamic toolbar is going to be hidden.
             sessionRule.display?.run { setVerticalClipping(-i) }
-            assertThat("'resize' event on window should not be fired in response to the dynamc toolbar transition",
-                       promise.value as Boolean, equalTo(false));
+            assertThat(
+                "'resize' event on window should not be fired in response to the dynamc toolbar transition",
+                promise.value as Boolean,
+                equalTo(false)
+            )
         }
 
-        val promise = mainSession.evaluatePromiseJS("""
+        val promise = mainSession.evaluatePromiseJS(
+            """
             new Promise(resolve => {
                 window.addEventListener('resize', () => { resolve(true); }, { once: true });
             });
-        """.trimIndent())
+            """.trimIndent()
+        )
 
         sessionRule.display?.run { setVerticalClipping(-dynamicToolbarMaxHeight) }
-        assertThat("'resize' event on window should be fired when the dynamc toolbar is completely hidden",
-                   promise.value as Boolean, equalTo(true))
+        assertThat(
+            "'resize' event on window should be fired when the dynamc toolbar is completely hidden",
+            promise.value as Boolean,
+            equalTo(true)
+        )
     }
 
     @WithDisplay(height = SCREEN_HEIGHT, width = SCREEN_WIDTH)
@@ -268,27 +300,37 @@ class DynamicToolbarTest : BaseSessionTest() {
         val pixelRatio = mainSession.evaluateJS("window.devicePixelRatio") as Double
 
         for (i in 1..dynamicToolbarMaxHeight - 1) {
-            val promise = mainSession.evaluatePromiseJS("""
+            val promise = mainSession.evaluatePromiseJS(
+                """
                new Promise(resolve => {
                  window.visualViewport.addEventListener('resize', resolve(window.innerHeight));
                });
-            """.trimIndent())
+                """.trimIndent()
+            )
 
             // Simulate the dynamic toolbar is going to be hidden.
             sessionRule.display?.run { setVerticalClipping(-i) }
-            assertThat("window.innerHeight should not be changed in response to the dynamc toolbar transition",
-                       promise.value as Double, closeTo(SCREEN_HEIGHT / 2 / pixelRatio, .01))
+            assertThat(
+                "window.innerHeight should not be changed in response to the dynamc toolbar transition",
+                promise.value as Double,
+                closeTo(SCREEN_HEIGHT / 2 / pixelRatio, .01)
+            )
         }
 
-        val promise = mainSession.evaluatePromiseJS("""
+        val promise = mainSession.evaluatePromiseJS(
+            """
             new Promise(resolve => {
                 window.addEventListener('resize', () => { resolve(window.innerHeight); }, { once: true });
             });
-        """.trimIndent())
+            """.trimIndent()
+        )
 
         sessionRule.display?.run { setVerticalClipping(-dynamicToolbarMaxHeight) }
-        assertThat("window.innerHeight should be changed when the dynamc toolbar is completely hidden",
-                   promise.value as Double, closeTo(SCREEN_HEIGHT / pixelRatio, .01))
+        assertThat(
+            "window.innerHeight should be changed when the dynamc toolbar is completely hidden",
+            promise.value as Double,
+            closeTo(SCREEN_HEIGHT / pixelRatio, .01)
+        )
     }
 
     @WithDisplay(height = SCREEN_HEIGHT, width = SCREEN_WIDTH)
@@ -303,9 +345,11 @@ class DynamicToolbarTest : BaseSessionTest() {
         mainSession.loadTestPath(BaseSessionTest.FIXED_VH)
         mainSession.waitForPageStop()
 
-        val promise = mainSession.evaluatePromiseJS("""
+        val promise = mainSession.evaluatePromiseJS(
+            """
             new Promise(resolve => window.addEventListener('resize', () => resolve(true)));
-        """.trimIndent())
+            """.trimIndent()
+        )
 
         // Do some setVerticalClipping calls that we might try to queue two window resize events.
         sessionRule.display?.run { setVerticalClipping(-dynamicToolbarMaxHeight) }
@@ -316,7 +360,8 @@ class DynamicToolbarTest : BaseSessionTest() {
     }
 
     @WithDisplay(height = SCREEN_HEIGHT, width = SCREEN_WIDTH)
-    @Test fun showDynamicToolbar() {
+    @Test
+    fun showDynamicToolbar() {
         val dynamicToolbarMaxHeight = SCREEN_HEIGHT / 2
         sessionRule.display?.run { setDynamicToolbarMaxHeight(dynamicToolbarMaxHeight) }
 
@@ -345,7 +390,8 @@ class DynamicToolbarTest : BaseSessionTest() {
     }
 
     @WithDisplay(height = SCREEN_HEIGHT, width = SCREEN_WIDTH)
-    @Test fun showDynamicToolbarOnOverflowHidden() {
+    @Test
+    fun showDynamicToolbarOnOverflowHidden() {
         val dynamicToolbarMaxHeight = SCREEN_HEIGHT / 2
         sessionRule.display?.run { setDynamicToolbarMaxHeight(dynamicToolbarMaxHeight) }
 
@@ -371,5 +417,168 @@ class DynamicToolbarTest : BaseSessionTest() {
             override fun onShowDynamicToolbar(session: GeckoSession) {
             }
         })
+    }
+
+    private fun getComputedViewportHeight(style: String): Double {
+        val viewportHeight = mainSession.evaluateJS(
+            """
+            const target = document.createElement('div');
+            target.style.height = '$style';
+            document.body.appendChild(target);
+            parseFloat(getComputedStyle(target).height);
+            """.trimIndent()
+        ) as Double
+
+        return viewportHeight
+    }
+
+    @WithDisplay(height = SCREEN_HEIGHT, width = SCREEN_WIDTH)
+    @Test
+    fun viewportVariants() {
+        val dynamicToolbarMaxHeight = SCREEN_HEIGHT / 2
+        sessionRule.display?.run { setDynamicToolbarMaxHeight(dynamicToolbarMaxHeight) }
+
+        // Set active since setVerticalClipping call affects only for forground tab.
+        mainSession.setActive(true)
+
+        mainSession.loadTestPath(BaseSessionTest.VIEWPORT_PATH)
+        mainSession.waitForPageStop()
+
+        val pixelRatio = mainSession.evaluateJS("window.devicePixelRatio") as Double
+        val scale = mainSession.evaluateJS("window.visualViewport.scale") as Double
+
+        var smallViewportHeight = getComputedViewportHeight("100svh")
+        assertThat(
+            "svh value at the initial state",
+            smallViewportHeight,
+            closeTo((SCREEN_HEIGHT - dynamicToolbarMaxHeight) / scale / pixelRatio, 0.1)
+        )
+
+        var largeViewportHeight = getComputedViewportHeight("100lvh")
+        assertThat(
+            "lvh value at the initial state",
+            largeViewportHeight,
+            closeTo(SCREEN_HEIGHT / scale / pixelRatio, 0.1)
+        )
+
+        var dynamicViewportHeight = getComputedViewportHeight("100dvh")
+        assertThat(
+            "dvh value at the initial state",
+            dynamicViewportHeight,
+            closeTo((SCREEN_HEIGHT - dynamicToolbarMaxHeight) / scale / pixelRatio, 0.1)
+        )
+
+        // Move down the toolbar at a fourth of its position.
+        sessionRule.display?.run { setVerticalClipping(-dynamicToolbarMaxHeight / 4) }
+
+        smallViewportHeight = getComputedViewportHeight("100svh")
+        assertThat(
+            "svh value during toolbar transition",
+            smallViewportHeight,
+            closeTo((SCREEN_HEIGHT - dynamicToolbarMaxHeight) / scale / pixelRatio, 0.1)
+        )
+
+        largeViewportHeight = getComputedViewportHeight("100lvh")
+        assertThat(
+            "lvh value during toolbar transition",
+            largeViewportHeight,
+            closeTo(SCREEN_HEIGHT / scale / pixelRatio, 0.1)
+        )
+
+        dynamicViewportHeight = getComputedViewportHeight("100dvh")
+        assertThat(
+            "dvh value during toolbar transition",
+            dynamicViewportHeight,
+            closeTo((SCREEN_HEIGHT - dynamicToolbarMaxHeight + dynamicToolbarMaxHeight / 4) / scale / pixelRatio, 0.1)
+        )
+    }
+
+    // With dynamic toolbar, there was a floating point rounding error in Gecko layout side.
+    // The error was appeared by user interactive async scrolling, not by programatic async
+    // scrolling, e.g. scrollTo() method. If the error happens there will appear 1px gap
+    // between <body> and an element which covers up the <body> element.
+    // This test simulates the situation.
+    @WithDisplay(height = SCREEN_HEIGHT, width = SCREEN_WIDTH)
+    @Test
+    fun noGapAppearsBetweenBodyAndElementFullyCoveringBody() {
+        // Bug 1764219 - disable the test to reduce intermittent failure rate
+        assumeThat(sessionRule.env.isDebugBuild, equalTo(false))
+        val dynamicToolbarMaxHeight = SCREEN_HEIGHT / 2
+        sessionRule.display?.run { setDynamicToolbarMaxHeight(dynamicToolbarMaxHeight) }
+
+        // Set active since setVerticalClipping call affects only for forground tab.
+        mainSession.setActive(true)
+
+        val reference = getComparisonScreenshot(SCREEN_WIDTH, SCREEN_HEIGHT)
+
+        mainSession.loadTestPath(BaseSessionTest.BODY_FULLY_COVERED_BY_GREEN_ELEMENT)
+        mainSession.waitForPageStop()
+        mainSession.flushApzRepaints()
+
+        // Scrolling down by touch events.
+        var downTime = SystemClock.uptimeMillis()
+        var down = MotionEvent.obtain(
+            downTime,
+            SystemClock.uptimeMillis(),
+            MotionEvent.ACTION_DOWN,
+            50f,
+            70f,
+            0
+        )
+        mainSession.panZoomController.onTouchEvent(down)
+        var move = MotionEvent.obtain(
+            downTime,
+            SystemClock.uptimeMillis(),
+            MotionEvent.ACTION_MOVE,
+            50f,
+            30f,
+            0
+        )
+        mainSession.panZoomController.onTouchEvent(move)
+        var up = MotionEvent.obtain(
+            downTime,
+            SystemClock.uptimeMillis(),
+            MotionEvent.ACTION_UP,
+            50f,
+            10f,
+            0
+        )
+        mainSession.panZoomController.onTouchEvent(up)
+        mainSession.flushApzRepaints()
+
+        // Scrolling up by touch events to restore the original position.
+        downTime = SystemClock.uptimeMillis()
+        down = MotionEvent.obtain(
+            downTime,
+            SystemClock.uptimeMillis(),
+            MotionEvent.ACTION_DOWN,
+            50f,
+            10f,
+            0
+        )
+        mainSession.panZoomController.onTouchEvent(down)
+        move = MotionEvent.obtain(
+            downTime,
+            SystemClock.uptimeMillis(),
+            MotionEvent.ACTION_MOVE,
+            50f,
+            30f,
+            0
+        )
+        mainSession.panZoomController.onTouchEvent(move)
+        up = MotionEvent.obtain(
+            downTime,
+            SystemClock.uptimeMillis(),
+            MotionEvent.ACTION_UP,
+            50f,
+            70f,
+            0
+        )
+        mainSession.panZoomController.onTouchEvent(up)
+        mainSession.flushApzRepaints()
+
+        sessionRule.display?.let {
+            assertScreenshotResult(it.capturePixels(), reference)
+        }
     }
 }

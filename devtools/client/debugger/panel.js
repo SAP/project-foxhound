@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
+"use strict";
+
 const { MultiLocalizationHelper } = require("devtools/shared/l10n");
 const {
   FluentL10n,
@@ -10,19 +12,19 @@ const {
 loader.lazyRequireGetter(
   this,
   "openContentLink",
-  "devtools/client/shared/link",
+  "resource://devtools/client/shared/link.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "features",
-  "devtools/client/debugger/src/utils/prefs",
+  "resource://devtools/client/debugger/src/utils/prefs.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "registerStoreObserver",
-  "devtools/client/shared/redux/subscriber",
+  "resource://devtools/client/shared/redux/subscriber.js",
   true
 );
 
@@ -68,8 +70,8 @@ class DebuggerPanel {
       fluentBundles: fluentL10n.getBundles(),
       resourceCommand: this.toolbox.resourceCommand,
       workers: {
-        sourceMaps: this.toolbox.sourceMapService,
-        evaluationsParser: this.toolbox.parserService,
+        sourceMapLoader: this.toolbox.sourceMapLoader,
+        parserWorker: this.toolbox.parserWorker,
       },
       panel: this,
     });
@@ -158,36 +160,26 @@ class DebuggerPanel {
 
   unHighlightDomElement() {
     if (!this._unhighlight) {
-      return;
+      return Promise.resolve();
     }
 
     return this._unhighlight();
   }
 
-  getFrames() {
+  /**
+   * Return the Frame Actor ID of the currently selected frame,
+   * or null if the debugger isn't paused.
+   */
+  getSelectedFrameActorID() {
     const thread = this._selectors.getCurrentThread(this._getState());
-    const frames = this._selectors.getFrames(this._getState(), thread);
-
-    // Frames is null when the debugger is not paused.
-    if (!frames) {
-      return {
-        frames: [],
-        selected: -1,
-      };
-    }
-
     const selectedFrame = this._selectors.getSelectedFrame(
       this._getState(),
       thread
     );
-    const selected = frames.findIndex(frame => frame.id == selectedFrame.id);
-
-    frames.forEach(frame => {
-      frame.actor = frame.id;
-    });
-    const target = this._client.lookupTarget(thread);
-
-    return { frames, selected, target };
+    if (selectedFrame) {
+      return selectedFrame.id;
+    }
+    return null;
   }
 
   getMappedExpression(expression) {
@@ -241,7 +233,12 @@ class DebuggerPanel {
 
     // select worker's source
     const source = this.getSourceByURL(workerDescriptorFront._url);
-    await this.selectSource(source.id, 1, 1);
+    const sourceActor = this._selectors.getFirstSourceActorForGeneratedSource(
+      this._getState(),
+      source.id,
+      threadActorID
+    );
+    await this.selectSource(source.id, sourceActor.actor, 1, 1);
   }
 
   selectThread(threadActorID) {
@@ -249,19 +246,11 @@ class DebuggerPanel {
     this._actions.selectThread(cx, threadActorID);
   }
 
-  previewPausedLocation(location) {
-    return this._actions.previewPausedLocation(location);
-  }
-
-  clearPreviewPausedLocation() {
-    return this._actions.clearPreviewPausedLocation();
-  }
-
-  async selectSource(sourceId, line, column) {
+  async selectSource(sourceId, sourceActorId, line, column) {
     const cx = this._selectors.getContext(this._getState());
     const location = { sourceId, line, column };
 
-    await this._actions.selectSource(cx, sourceId, location);
+    await this._actions.selectSource(cx, sourceId, sourceActorId, location);
     if (this._selectors.hasLogpoint(this._getState(), location)) {
       this._actions.openConditionalPanel(location, true);
     }
@@ -281,6 +270,10 @@ class DebuggerPanel {
 
   getSource(sourceId) {
     return this._selectors.getSource(this._getState(), sourceId);
+  }
+
+  getLocationSource(location) {
+    return this._selectors.getLocationSource(this._getState(), location);
   }
 
   destroy() {

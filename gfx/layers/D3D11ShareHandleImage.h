@@ -28,21 +28,30 @@ class D3D11RecycleAllocator final : public TextureClientRecycleAllocator {
                         gfx::SurfaceFormat aPreferredFormat);
 
   already_AddRefed<TextureClient> CreateOrRecycleClient(
-      gfx::YUVColorSpace aColorSpace, gfx::ColorRange aColorRange,
+      gfx::ColorSpace2 aColorSpace, gfx::ColorRange aColorRange,
       const gfx::IntSize& aSize);
 
   void SetPreferredSurfaceFormat(gfx::SurfaceFormat aPreferredFormat);
+  gfx::SurfaceFormat GetUsableSurfaceFormat() const {
+    return mUsableSurfaceFormat;
+  }
 
- private:
+  RefPtr<ID3D11Texture2D> GetStagingTextureNV12(gfx::IntSize aSize);
+
   const RefPtr<ID3D11Device> mDevice;
   const bool mCanUseNV12;
   const bool mCanUseP010;
   const bool mCanUseP016;
+
+ private:
   /**
    * Used for checking if CompositorDevice/ContentDevice is updated.
    */
   RefPtr<ID3D11Device> mImageDevice;
   gfx::SurfaceFormat mUsableSurfaceFormat;
+
+  RefPtr<ID3D11Texture2D> mStagingTexture;
+  gfx::IntSize mStagingTextureSize;
 };
 
 // Image class that wraps a ID3D11Texture2D. This class copies the image
@@ -51,8 +60,12 @@ class D3D11RecycleAllocator final : public TextureClientRecycleAllocator {
 // resource is ready to use.
 class D3D11ShareHandleImage final : public Image {
  public:
+  static RefPtr<D3D11ShareHandleImage> MaybeCreateNV12ImageAndSetData(
+      KnowsCompositor* aAllocator, ImageContainer* aContainer,
+      const PlanarYCbCrData& aData);
+
   D3D11ShareHandleImage(const gfx::IntSize& aSize, const gfx::IntRect& aRect,
-                        gfx::YUVColorSpace aColorSpace,
+                        gfx::ColorSpace2 aColorSpace,
                         gfx::ColorRange aColorRange);
   virtual ~D3D11ShareHandleImage() = default;
 
@@ -66,7 +79,6 @@ class D3D11ShareHandleImage final : public Image {
 
   ID3D11Texture2D* GetTexture() const;
 
-  gfx::YUVColorSpace GetYUVColorSpace() const { return mYUVColorSpace; }
   gfx::ColorRange GetColorRange() const { return mColorRange; }
 
  private:
@@ -80,7 +92,11 @@ class D3D11ShareHandleImage final : public Image {
 
   gfx::IntSize mSize;
   gfx::IntRect mPictureRect;
-  gfx::YUVColorSpace mYUVColorSpace;
+
+ public:
+  const gfx::ColorSpace2 mColorSpace;
+
+ private:
   gfx::ColorRange mColorRange;
   RefPtr<TextureClient> mTextureClient;
   RefPtr<ID3D11Texture2D> mTexture;

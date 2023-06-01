@@ -6,9 +6,12 @@
 
 const {
   TYPES: { SOURCE },
-} = require("devtools/server/actors/resources/index");
+} = require("resource://devtools/server/actors/resources/index.js");
+const Targets = require("resource://devtools/server/actors/targets/index.js");
 
-const { STATES: THREAD_STATES } = require("devtools/server/actors/thread");
+const {
+  STATES: THREAD_STATES,
+} = require("resource://devtools/server/actors/thread.js");
 
 /**
  * Start watching for all JS sources related to a given Target Actor.
@@ -27,6 +30,16 @@ class SourceWatcher {
   }
 
   async watch(targetActor, { onAvailable }) {
+    // When debugging the whole browser, we instantiate both content process and browsing context targets.
+    // But sources will only be debugged the content process target, even browsing context sources.
+    if (
+      targetActor.sessionContext.type == "all" &&
+      targetActor.targetType === Targets.TYPES.FRAME &&
+      targetActor.typeName != "parentProcessTarget"
+    ) {
+      return;
+    }
+
     const { threadActor } = targetActor;
     this.sourcesManager = targetActor.sourcesManager;
     this.onAvailable = onAvailable;
@@ -42,6 +55,9 @@ class SourceWatcher {
     // Otherwise it would not notify about future sources.
     // However, do not attach the thread actor for Workers. They use a codepath
     // which releases the worker on `attach`. For them, the client will call `attach`. (bug 1691986)
+    // Content process targets don't have attach method or sequence.
+    // Instead their thread actor is instantiated immediately, when generating their
+    // form. Which is called immediately when we notify the target actor to the TargetList.
     const isTargetCreation = threadActor.state == THREAD_STATES.DETACHED;
     if (isTargetCreation && !targetActor.targetType.endsWith("worker")) {
       await threadActor.attach({});
@@ -66,7 +82,9 @@ class SourceWatcher {
    * Stop watching for sources
    */
   destroy() {
-    this.sourcesManager.off("newSource", this.onNewSource);
+    if (this.sourcesManager) {
+      this.sourcesManager.off("newSource", this.onNewSource);
+    }
   }
 
   onNewSource(source) {

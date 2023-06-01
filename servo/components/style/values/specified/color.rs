@@ -5,9 +5,13 @@
 //! Specified color values.
 
 use super::AllowQuirks;
+use crate::color::ColorComponents;
+use crate::media_queries::Device;
 use crate::parser::{Parse, ParserContext};
 use crate::values::computed::{Color as ComputedColor, Context, ToComputedValue};
-use crate::values::generics::color::{GenericCaretColor, GenericColorOrAuto};
+use crate::values::generics::color::{
+    ColorInterpolationMethod, GenericCaretColor, GenericColorMix, GenericColorOrAuto,
+};
 use crate::values::specified::calc::CalcNode;
 use crate::values::specified::Percentage;
 use crate::values::CustomIdent;
@@ -19,61 +23,14 @@ use std::io::Write as IoWrite;
 use style_traits::{CssType, CssWriter, KeywordsCollectFn, ParseError, StyleParseErrorKind};
 use style_traits::{SpecifiedValueInfo, ToCss, ValueParseErrorKind};
 
-/// A color space as defined in [1].
-///
-/// [1]: https://drafts.csswg.org/css-color-5/#typedef-colorspace
-#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, Parse, PartialEq, ToCss, ToShmem)]
-pub enum ColorSpaceKind {
-    /// The sRGB color space.
-    Srgb,
-    /// The CIEXYZ color space.
-    Xyz,
-    /// The CIELAB color space.
-    Lab,
-    /// The CIELAB color space, expressed in cylindrical coordinates.
-    Lch,
-}
+/// A specified color-mix().
+pub type ColorMix = GenericColorMix<Color, Percentage>;
 
-/// A hue adjuster as defined in [1].
-///
-/// [1]: https://drafts.csswg.org/css-color-5/#typedef-hue-adjuster
-#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, Parse, PartialEq, ToCss, ToShmem)]
-pub enum HueAdjuster {
-    /// The "shorter" angle adjustment.
-    Shorter,
-    /// The "longer" angle adjustment.
-    Longer,
-    /// The "increasing" angle adjustment.
-    Increasing,
-    /// The "decreasing" angle adjustment.
-    Decreasing,
-    /// The "specified" angle adjustment.
-    Specified,
-}
-
-/// A restricted version of the css `color-mix()` function, which only supports
-/// percentages.
-///
-/// https://drafts.csswg.org/css-color-5/#color-mix
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToShmem)]
-#[allow(missing_docs)]
-pub struct ColorMix {
-    pub color_space: ColorSpaceKind,
-    pub left: Color,
-    pub left_percentage: Percentage,
-    pub right: Color,
-    pub right_percentage: Percentage,
-    pub hue_adjuster: HueAdjuster,
-}
-
-// NOTE(emilio): Syntax is still a bit in-flux, since [1] doesn't seem
-// particularly complete, and disagrees with the examples.
-//
-// [1]: https://github.com/w3c/csswg-drafts/commit/a4316446112f9e814668c2caff7f826f512f8fed
-impl Parse for ColorMix {
+impl ColorMix {
     fn parse<'i, 't>(
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
+        preserve_authored: PreserveAuthored,
     ) -> Result<Self, ParseError<'i>> {
         let enabled =
             context.chrome_rules_enabled() || static_prefs::pref!("layout.css.color-mix.enabled");
@@ -82,97 +39,375 @@ impl Parse for ColorMix {
             return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
         }
 
-        let color_spaces_enabled = context.chrome_rules_enabled() ||
-            static_prefs::pref!("layout.css.color-mix.color-spaces.enabled");
-
         input.expect_function_matching("color-mix")?;
 
-        // NOTE(emilio): This implements the syntax described here for now,
-        // might need to get updated in the future.
-        //
-        // https://github.com/w3c/csswg-drafts/issues/6066#issuecomment-789836765
         input.parse_nested_block(|input| {
-            input.expect_ident_matching("in")?;
-            let color_space = if color_spaces_enabled {
-                ColorSpaceKind::parse(input)?
-            } else {
-                input.expect_ident_matching("srgb")?;
-                ColorSpaceKind::Srgb
+            let interpolation = ColorInterpolationMethod::parse(context, input)?;
+            input.expect_comma()?;
+
+            let try_parse_percentage = |input: &mut Parser| -> Option<Percentage> {
+                input
+                    .try_parse(|input| Percentage::parse_zero_to_a_hundred(context, input))
+                    .ok()
             };
+
+            let mut left_percentage = try_parse_percentage(input);
+
+            let left = Color::parse_internal(context, input, preserve_authored)?;
+            if left_percentage.is_none() {
+                left_percentage = try_parse_percentage(input);
+            }
+
             input.expect_comma()?;
 
-            let left = Color::parse(context, input)?;
-            let left_percentage = input
-                .try_parse(|input| Percentage::parse(context, input))
-                .ok();
-
-            input.expect_comma()?;
+            let mut right_percentage = try_parse_percentage(input);
 
             let right = Color::parse(context, input)?;
-            let right_percentage = input
-                .try_parse(|input| Percentage::parse(context, input))
-                .unwrap_or_else(|_| {
-                    Percentage::new(1.0 - left_percentage.map_or(0.5, |p| p.get()))
-                });
+
+            if right_percentage.is_none() {
+                right_percentage = try_parse_percentage(input);
+            }
+
+            let right_percentage = right_percentage
+                .unwrap_or_else(|| Percentage::new(1.0 - left_percentage.map_or(0.5, |p| p.get())));
 
             let left_percentage =
                 left_percentage.unwrap_or_else(|| Percentage::new(1.0 - right_percentage.get()));
 
-            let hue_adjuster = input
-                .try_parse(|input| HueAdjuster::parse(input))
-                .unwrap_or(HueAdjuster::Shorter);
+            if left_percentage.get() + right_percentage.get() <= 0.0 {
+                // If the percentages sum to zero, the function is invalid.
+                return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+            }
 
             Ok(ColorMix {
-                color_space,
+                interpolation,
                 left,
                 left_percentage,
                 right,
                 right_percentage,
-                hue_adjuster,
+                normalize_weights: true,
             })
         })
     }
 }
 
-impl ToCss for ColorMix {
+/// A color space representation in the CSS specification.
+///
+/// https://w3c.github.io/csswg-drafts/css-color-4/#color-type
+#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, ToShmem)]
+#[repr(u8)]
+pub enum ColorSpace {
+    /// A color specified in the Lab color format, e.g.
+    /// "lab(29.2345% 39.3825 20.0664)".
+    /// https://w3c.github.io/csswg-drafts/css-color-4/#lab-colors
+    Lab,
+    /// A color specified in the Lch color format, e.g.
+    /// "lch(29.2345% 44.2 27)".
+    /// https://w3c.github.io/csswg-drafts/css-color-4/#lch-colors
+    Lch,
+    /// A color specified in the Oklab color format, e.g.
+    /// "oklab(40.101% 0.1147 0.0453)".
+    /// https://w3c.github.io/csswg-drafts/css-color-4/#lab-colors
+    Oklab,
+    /// A color specified in the Oklch color format, e.g.
+    /// "oklch(40.101% 0.12332 21.555)".
+    /// https://w3c.github.io/csswg-drafts/css-color-4/#lch-colors
+    Oklch,
+    /// A color specified with the color(..) function and the "srgb" color
+    /// space, e.g. "color(srgb 0.691 0.139 0.259)".
+    Srgb,
+    /// A color specified with the color(..) function and the "srgb-linear"
+    /// color space, e.g. "color(srgb-linear 0.435 0.017 0.055)".
+    SrgbLinear,
+    /// A color specified with the color(..) function and the "display-p3"
+    /// color space, e.g. "color(display-p3 0.84 0.19 0.72)".
+    DisplayP3,
+    /// A color specified with the color(..) function and the "a98-rgb" color
+    /// space, e.g. "color(a98-rgb 0.44091 0.49971 0.37408)".
+    A98Rgb,
+    /// A color specified with the color(..) function and the "prophoto-rgb"
+    /// color space, e.g. "color(prophoto-rgb 0.36589 0.41717 0.31333)".
+    ProphotoRgb,
+    /// A color specified with the color(..) function and the "rec2020" color
+    /// space, e.g. "color(rec2020 0.42210 0.47580 0.35605)".
+    Rec2020,
+    /// A color specified with the color(..) function and the "xyz-d50" color
+    /// space, e.g. "color(xyz-d50 0.2005 0.14089 0.4472)".
+    XyzD50,
+    /// A color specified with the color(..) function and the "xyz-d65" or "xyz"
+    /// color space, e.g. "color(xyz-d65 0.21661 0.14602 0.59452)".
+    XyzD65,
+}
+
+bitflags! {
+    #[derive(Default, MallocSizeOf, ToShmem)]
+    #[repr(C)]
+    struct SerializationFlags : u8 {
+        const AS_COLOR_FUNCTION = 0x01;
+    }
+}
+
+/// An absolutely specified color, using either rgb(), rgba(), lab(), lch(),
+/// oklab(), oklch() or color().
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToShmem)]
+#[repr(C)]
+pub struct AbsoluteColor {
+    components: ColorComponents,
+    alpha: f32,
+    color_space: ColorSpace,
+    flags: SerializationFlags,
+}
+
+macro_rules! color_components_as {
+    ($c:expr, $t:ty) => {{
+        // This macro is not an inline function, because we can't use the
+        // generic  type ($t) in a constant expression as per:
+        // https://github.com/rust-lang/rust/issues/76560
+        const_assert_eq!(std::mem::size_of::<$t>(), std::mem::size_of::<[f32; 4]>());
+        const_assert_eq!(std::mem::align_of::<$t>(), std::mem::align_of::<[f32; 4]>());
+        const_assert!(std::mem::size_of::<AbsoluteColor>() >= std::mem::size_of::<$t>());
+        const_assert_eq!(
+            std::mem::align_of::<AbsoluteColor>(),
+            std::mem::align_of::<$t>()
+        );
+
+        std::mem::transmute::<&ColorComponents, &$t>(&$c.components)
+    }};
+}
+
+impl AbsoluteColor {
+    /// Create a new [AbsoluteColor] with the given [ColorSpace] and components.
+    pub fn new(color_space: ColorSpace, components: ColorComponents, alpha: f32) -> Self {
+        Self {
+            components,
+            alpha,
+            color_space,
+            flags: SerializationFlags::empty(),
+        }
+    }
+
+    /// Convenience function to create a color in the sRGB color space.
+    pub fn from_rgba(rgba: RGBA) -> Self {
+        let red = rgba.red as f32 / 255.0;
+        let green = rgba.green as f32 / 255.0;
+        let blue = rgba.blue as f32 / 255.0;
+
+        Self::new(
+            ColorSpace::Srgb,
+            ColorComponents(red, green, blue),
+            rgba.alpha,
+        )
+    }
+
+    /// Return the alpha component.
+    #[inline]
+    pub fn alpha(&self) -> f32 {
+        self.alpha
+    }
+
+    /// Convert the color to sRGB color space and return it in the RGBA struct.
+    pub fn to_rgba(&self) -> RGBA {
+        let rgba = self.to_color_space(ColorSpace::Srgb);
+
+        let red = (rgba.components.0 * 255.0).round() as u8;
+        let green = (rgba.components.1 * 255.0).round() as u8;
+        let blue = (rgba.components.2 * 255.0).round() as u8;
+
+        RGBA::new(red, green, blue, rgba.alpha)
+    }
+
+    /// Convert this color to the specified color space.
+    pub fn to_color_space(&self, color_space: ColorSpace) -> Self {
+        use crate::color::convert;
+        use ColorSpace::*;
+
+        if self.color_space == color_space {
+            return self.clone();
+        }
+
+        let (xyz, white_point) = match self.color_space {
+            Lab => convert::to_xyz::<convert::Lab>(&self.components),
+            Lch => convert::to_xyz::<convert::Lch>(&self.components),
+            Oklab => convert::to_xyz::<convert::Oklab>(&self.components),
+            Oklch => convert::to_xyz::<convert::Oklch>(&self.components),
+            Srgb => convert::to_xyz::<convert::Srgb>(&self.components),
+            SrgbLinear => convert::to_xyz::<convert::SrgbLinear>(&self.components),
+            DisplayP3 => convert::to_xyz::<convert::DisplayP3>(&self.components),
+            A98Rgb => convert::to_xyz::<convert::A98Rgb>(&self.components),
+            ProphotoRgb => convert::to_xyz::<convert::ProphotoRgb>(&self.components),
+            Rec2020 => convert::to_xyz::<convert::Rec2020>(&self.components),
+            XyzD50 => convert::to_xyz::<convert::XyzD50>(&self.components),
+            XyzD65 => convert::to_xyz::<convert::XyzD65>(&self.components),
+        };
+
+        let result = match color_space {
+            Lab => convert::from_xyz::<convert::Lab>(&xyz, white_point),
+            Lch => convert::from_xyz::<convert::Lch>(&xyz, white_point),
+            Oklab => convert::from_xyz::<convert::Oklab>(&xyz, white_point),
+            Oklch => convert::from_xyz::<convert::Oklch>(&xyz, white_point),
+            Srgb => convert::from_xyz::<convert::Srgb>(&xyz, white_point),
+            SrgbLinear => convert::from_xyz::<convert::SrgbLinear>(&xyz, white_point),
+            DisplayP3 => convert::from_xyz::<convert::DisplayP3>(&xyz, white_point),
+            A98Rgb => convert::from_xyz::<convert::A98Rgb>(&xyz, white_point),
+            ProphotoRgb => convert::from_xyz::<convert::ProphotoRgb>(&xyz, white_point),
+            Rec2020 => convert::from_xyz::<convert::Rec2020>(&xyz, white_point),
+            XyzD50 => convert::from_xyz::<convert::XyzD50>(&xyz, white_point),
+            XyzD65 => convert::from_xyz::<convert::XyzD65>(&xyz, white_point),
+        };
+
+        Self::new(color_space, result, self.alpha)
+    }
+}
+
+impl From<cssparser::PredefinedColorSpace> for ColorSpace {
+    fn from(value: cssparser::PredefinedColorSpace) -> Self {
+        match value {
+            cssparser::PredefinedColorSpace::Srgb => ColorSpace::Srgb,
+            cssparser::PredefinedColorSpace::SrgbLinear => ColorSpace::SrgbLinear,
+            cssparser::PredefinedColorSpace::DisplayP3 => ColorSpace::DisplayP3,
+            cssparser::PredefinedColorSpace::A98Rgb => ColorSpace::A98Rgb,
+            cssparser::PredefinedColorSpace::ProphotoRgb => ColorSpace::ProphotoRgb,
+            cssparser::PredefinedColorSpace::Rec2020 => ColorSpace::Rec2020,
+            cssparser::PredefinedColorSpace::XyzD50 => ColorSpace::XyzD50,
+            cssparser::PredefinedColorSpace::XyzD65 => ColorSpace::XyzD65,
+        }
+    }
+}
+
+impl From<cssparser::AbsoluteColor> for AbsoluteColor {
+    fn from(f: cssparser::AbsoluteColor) -> Self {
+        match f {
+            cssparser::AbsoluteColor::Rgba(rgba) => Self::from_rgba(rgba),
+
+            cssparser::AbsoluteColor::Lab(lab) => Self::new(
+                ColorSpace::Lab,
+                ColorComponents(lab.lightness, lab.a, lab.b),
+                lab.alpha,
+            ),
+
+            cssparser::AbsoluteColor::Lch(lch) => Self::new(
+                ColorSpace::Lch,
+                ColorComponents(lch.lightness, lch.chroma, lch.hue),
+                lch.alpha,
+            ),
+
+            cssparser::AbsoluteColor::Oklab(oklab) => Self::new(
+                ColorSpace::Oklab,
+                ColorComponents(oklab.lightness, oklab.a, oklab.b),
+                oklab.alpha,
+            ),
+
+            cssparser::AbsoluteColor::Oklch(oklch) => Self::new(
+                ColorSpace::Oklch,
+                ColorComponents(oklch.lightness, oklch.chroma, oklch.hue),
+                oklch.alpha,
+            ),
+
+            cssparser::AbsoluteColor::ColorFunction(c) => {
+                let mut result = AbsoluteColor::new(
+                    c.color_space.into(),
+                    ColorComponents(c.c1, c.c2, c.c3),
+                    c.alpha,
+                );
+
+                if matches!(c.color_space, cssparser::PredefinedColorSpace::Srgb) {
+                    result.flags |= SerializationFlags::AS_COLOR_FUNCTION;
+                }
+
+                result
+            },
+        }
+    }
+}
+
+impl ToCss for AbsoluteColor {
     fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
     where
         W: Write,
     {
-        fn can_omit(percent: &Percentage, other: &Percentage, is_left: bool) -> bool {
-            if percent.is_calc() {
-                return false;
-            }
-            if percent.get() == 0.5 {
-                return other.get() == 0.5;
-            }
-            if is_left {
-                return false;
-            }
-            (1.0 - percent.get() - other.get()).abs() <= f32::EPSILON
-        }
+        match self.color_space {
+            ColorSpace::Srgb if !self.flags.contains(SerializationFlags::AS_COLOR_FUNCTION) => {
+                cssparser::ToCss::to_css(
+                    &cssparser::RGBA::from_floats(
+                        self.components.0,
+                        self.components.1,
+                        self.components.2,
+                        self.alpha(),
+                    ),
+                    dest,
+                )
+            },
+            ColorSpace::Lab => cssparser::ToCss::to_css(
+                unsafe { color_components_as!(self, cssparser::Lab) },
+                dest,
+            ),
+            ColorSpace::Lch => cssparser::ToCss::to_css(
+                unsafe { color_components_as!(self, cssparser::Lch) },
+                dest,
+            ),
+            ColorSpace::Oklab => cssparser::ToCss::to_css(
+                unsafe { color_components_as!(self, cssparser::Oklab) },
+                dest,
+            ),
+            ColorSpace::Oklch => cssparser::ToCss::to_css(
+                unsafe { color_components_as!(self, cssparser::Oklch) },
+                dest,
+            ),
+            _ => {
+                let color_space = match self.color_space {
+                    ColorSpace::Lab | ColorSpace::Lch | ColorSpace::Oklab | ColorSpace::Oklch => {
+                        unreachable!("Handle these in the wrapping match case!!")
+                    },
+                    ColorSpace::Srgb => {
+                        debug_assert!(
+                            self.flags.contains(SerializationFlags::AS_COLOR_FUNCTION),
+                             "The case without this flag should be handled in the wrapping match case!!"
+                          );
 
-        dest.write_str("color-mix(in ")?;
-        self.color_space.to_css(dest)?;
-        dest.write_str(", ")?;
-        self.left.to_css(dest)?;
-        if !can_omit(&self.left_percentage, &self.right_percentage, true) {
-            dest.write_str(" ")?;
-            self.left_percentage.to_css(dest)?;
-        }
-        dest.write_str(", ")?;
-        self.right.to_css(dest)?;
-        if !can_omit(&self.right_percentage, &self.left_percentage, false) {
-            dest.write_str(" ")?;
-            self.right_percentage.to_css(dest)?;
-        }
+                        cssparser::PredefinedColorSpace::Srgb
+                    },
+                    ColorSpace::SrgbLinear => cssparser::PredefinedColorSpace::SrgbLinear,
+                    ColorSpace::DisplayP3 => cssparser::PredefinedColorSpace::DisplayP3,
+                    ColorSpace::A98Rgb => cssparser::PredefinedColorSpace::A98Rgb,
+                    ColorSpace::ProphotoRgb => cssparser::PredefinedColorSpace::ProphotoRgb,
+                    ColorSpace::Rec2020 => cssparser::PredefinedColorSpace::Rec2020,
+                    ColorSpace::XyzD50 => cssparser::PredefinedColorSpace::XyzD50,
+                    ColorSpace::XyzD65 => cssparser::PredefinedColorSpace::XyzD65,
+                };
 
-        if self.hue_adjuster != HueAdjuster::Shorter {
-            dest.write_str(" ")?;
-            self.hue_adjuster.to_css(dest)?;
+                let color_function = cssparser::ColorFunction {
+                    color_space,
+                    c1: self.components.0,
+                    c2: self.components.1,
+                    c3: self.components.2,
+                    alpha: self.alpha,
+                };
+                let color = cssparser::AbsoluteColor::ColorFunction(color_function);
+                cssparser::ToCss::to_css(&color, dest)
+            },
         }
+    }
+}
 
-        dest.write_str(")")
+/// Container holding an absolute color and the text specified by an author.
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToShmem)]
+pub struct Absolute {
+    /// The specified color.
+    pub color: AbsoluteColor,
+    /// Authored representation.
+    pub authored: Option<Box<str>>,
+}
+
+impl ToCss for Absolute {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        if let Some(ref authored) = self.authored {
+            dest.write_str(authored)
+        } else {
+            self.color.to_css(dest)
+        }
     }
 }
 
@@ -181,15 +416,9 @@ impl ToCss for ColorMix {
 pub enum Color {
     /// The 'currentColor' keyword
     CurrentColor,
-    /// A specific RGBA color
-    Numeric {
-        /// Parsed RGBA color
-        parsed: RGBA,
-        /// Authored representation
-        authored: Option<Box<str>>,
-    },
-    /// A complex color value from computed value
-    Complex(ComputedColor),
+    /// An absolute color.
+    /// https://w3c.github.io/csswg-drafts/css-color-4/#typedef-absolute-color-function
+    Absolute(Box<Absolute>),
     /// A system color.
     #[cfg(feature = "gecko")]
     System(SystemColor),
@@ -213,6 +442,177 @@ pub enum Color {
 #[derive(Clone, Copy, Debug, MallocSizeOf, Parse, PartialEq, ToCss, ToShmem)]
 #[repr(u8)]
 pub enum SystemColor {
+    Activeborder,
+    /// Background in the (active) titlebar.
+    Activecaption,
+    Appworkspace,
+    Background,
+    Buttonface,
+    Buttonhighlight,
+    Buttonshadow,
+    Buttontext,
+    Buttonborder,
+    /// Text color in the (active) titlebar.
+    Captiontext,
+    #[parse(aliases = "-moz-field")]
+    Field,
+    /// Used for disabled field backgrounds.
+    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    MozDisabledfield,
+    #[parse(aliases = "-moz-fieldtext")]
+    Fieldtext,
+
+    Mark,
+    Marktext,
+
+    /// Combobox widgets
+    MozComboboxtext,
+    MozCombobox,
+
+    Graytext,
+    Highlight,
+    Highlighttext,
+    Inactiveborder,
+    /// Background in the (inactive) titlebar.
+    Inactivecaption,
+    /// Text color in the (inactive) titlebar.
+    Inactivecaptiontext,
+    Infobackground,
+    Infotext,
+    Menu,
+    Menutext,
+    Scrollbar,
+    Threeddarkshadow,
+    Threedface,
+    Threedhighlight,
+    Threedlightshadow,
+    Threedshadow,
+    Window,
+    Windowframe,
+    Windowtext,
+    MozButtondefault,
+    #[parse(aliases = "-moz-default-color")]
+    Canvastext,
+    #[parse(aliases = "-moz-default-background-color")]
+    Canvas,
+    MozDialog,
+    MozDialogtext,
+    /// Used to highlight valid regions to drop something onto.
+    MozDragtargetzone,
+    /// Used for selected but not focused cell backgrounds.
+    #[parse(aliases = "-moz-html-cellhighlight")]
+    MozCellhighlight,
+    /// Used for selected but not focused cell text.
+    #[parse(aliases = "-moz-html-cellhighlighttext")]
+    MozCellhighlighttext,
+    /// Used for selected and focused html cell backgrounds.
+    Selecteditem,
+    /// Used for selected and focused html cell text.
+    Selecteditemtext,
+    /// Used to button text background when hovered.
+    MozButtonhoverface,
+    /// Used to button text color when hovered.
+    MozButtonhovertext,
+    /// Used for menu item backgrounds when hovered.
+    MozMenuhover,
+    /// Used for menu item backgrounds when hovered and disabled.
+    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    MozMenuhoverdisabled,
+    /// Used for menu item text when hovered.
+    MozMenuhovertext,
+    /// Used for menubar item text.
+    MozMenubartext,
+    /// Used for menubar item text when hovered.
+    MozMenubarhovertext,
+
+    /// On platforms where these colors are the same as -moz-field, use
+    /// -moz-fieldtext as foreground color
+    MozEventreerow,
+    MozOddtreerow,
+
+    /// Used for button text when pressed.
+    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    MozButtonactivetext,
+
+    /// Used for button background when pressed.
+    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    MozButtonactiveface,
+
+    /// Used for button background when disabled.
+    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    MozButtondisabledface,
+
+    /// Background color of chrome toolbars in active windows.
+    MozMacChromeActive,
+    /// Background color of chrome toolbars in inactive windows.
+    MozMacChromeInactive,
+    /// Foreground color of default buttons.
+    MozMacDefaultbuttontext,
+    /// Ring color around text fields and lists.
+    MozMacFocusring,
+    /// Color used when mouse is over a menu item.
+    MozMacMenuselect,
+    /// Color used to do shadows on menu items.
+    MozMacMenushadow,
+    /// Color used to display text for disabled menu items.
+    MozMacMenutextdisable,
+    /// Color used to display text while mouse is over a menu item.
+    MozMacMenutextselect,
+    /// Text color of disabled text on toolbars.
+    MozMacDisabledtoolbartext,
+    /// Inactive light hightlight
+    MozMacSecondaryhighlight,
+
+    MozMacMenupopup,
+    MozMacMenuitem,
+    MozMacActiveMenuitem,
+    MozMacSourceList,
+    MozMacSourceListSelection,
+    MozMacActiveSourceListSelection,
+    MozMacTooltip,
+
+    /// Theme accent color.
+    /// https://drafts.csswg.org/css-color-4/#valdef-system-color-accentcolor
+    Accentcolor,
+
+    /// Foreground for the accent color.
+    /// https://drafts.csswg.org/css-color-4/#valdef-system-color-accentcolortext
+    Accentcolortext,
+
+    /// The background-color for :autofill-ed inputs.
+    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    MozAutofillBackground,
+
+    /// Media rebar text.
+    MozWinMediatext,
+    /// Communications rebar text.
+    MozWinCommunicationstext,
+
+    /// Hyperlink color extracted from the system, not affected by the
+    /// browser.anchor_color user pref.
+    ///
+    /// There is no OS-specified safe background color for this text, but it is
+    /// used regularly within Windows and the Gnome DE on Dialog and Window
+    /// colors.
+    MozNativehyperlinktext,
+
+    /// As above, but visited link color.
+    #[css(skip)]
+    MozNativevisitedhyperlinktext,
+
+    #[parse(aliases = "-moz-hyperlinktext")]
+    Linktext,
+    #[parse(aliases = "-moz-activehyperlinktext")]
+    Activetext,
+    #[parse(aliases = "-moz-visitedhyperlinktext")]
+    Visitedtext,
+
+    /// Color of tree column headers
+    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    MozColheadertext,
+    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    MozColheaderhovertext,
+
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     TextSelectDisabledBackground,
     #[css(skip)]
@@ -261,173 +661,6 @@ pub enum SystemColor {
     ThemedScrollbarThumbActive,
     #[css(skip)]
     ThemedScrollbarThumbInactive,
-    Activeborder,
-    /// Background in the (active) titlebar.
-    Activecaption,
-    Appworkspace,
-    Background,
-    Buttonface,
-    Buttonhighlight,
-    Buttonshadow,
-    Buttontext,
-    /// Text color in the (active) titlebar.
-    Captiontext,
-    #[parse(aliases = "-moz-field")]
-    Field,
-    /// Used for disabled field backgrounds.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozDisabledfield,
-    #[parse(aliases = "-moz-fieldtext")]
-    Fieldtext,
-
-    Graytext,
-    Highlight,
-    Highlighttext,
-    Inactiveborder,
-    /// Background in the (inactive) titlebar.
-    Inactivecaption,
-    /// Text color in the (inactive) titlebar.
-    Inactivecaptiontext,
-    Infobackground,
-    Infotext,
-    Menu,
-    Menutext,
-    Scrollbar,
-    Threeddarkshadow,
-    Threedface,
-    Threedhighlight,
-    Threedlightshadow,
-    Threedshadow,
-    Window,
-    Windowframe,
-    Windowtext,
-    MozButtondefault,
-    #[parse(aliases = "-moz-default-color")]
-    Canvastext,
-    #[parse(aliases = "-moz-default-background-color")]
-    Canvas,
-    MozDialog,
-    MozDialogtext,
-    /// Used to highlight valid regions to drop something onto.
-    MozDragtargetzone,
-    /// Used for selected but not focused cell backgrounds.
-    #[parse(aliases = "-moz-html-cellhighlight")]
-    MozCellhighlight,
-    /// Used for selected but not focused cell text.
-    #[parse(aliases = "-moz-html-cellhighlighttext")]
-    MozCellhighlighttext,
-    /// Used for selected and focused html cell backgrounds.
-    Selecteditem,
-    /// Used for selected and focused html cell text.
-    Selecteditemtext,
-    /// Used to button text background when hovered.
-    MozButtonhoverface,
-    /// Used to button text color when hovered.
-    MozButtonhovertext,
-    /// Used for menu item backgrounds when hovered.
-    MozMenuhover,
-    /// Used for menu item text when hovered.
-    MozMenuhovertext,
-    /// Used for menubar item text.
-    MozMenubartext,
-    /// Used for menubar item text when hovered.
-    MozMenubarhovertext,
-
-    /// On platforms where these colors are the same as -moz-field, use
-    /// -moz-fieldtext as foreground color
-    MozEventreerow,
-    MozOddtreerow,
-
-    /// Used for button text when pressed.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozButtonactivetext,
-
-    /// Used for button background when pressed.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozButtonactiveface,
-
-    /// Used for button background when disabled.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozButtondisabledface,
-
-    /// Background color of chrome toolbars in active windows.
-    MozMacChromeActive,
-    /// Background color of chrome toolbars in inactive windows.
-    MozMacChromeInactive,
-    /// Foreground color of default buttons.
-    MozMacDefaultbuttontext,
-    /// Ring color around text fields and lists.
-    MozMacFocusring,
-    /// Color used when mouse is over a menu item.
-    MozMacMenuselect,
-    /// Color used to do shadows on menu items.
-    MozMacMenushadow,
-    /// Color used to display text for disabled menu items.
-    MozMacMenutextdisable,
-    /// Color used to display text while mouse is over a menu item.
-    MozMacMenutextselect,
-    /// Text color of disabled text on toolbars.
-    MozMacDisabledtoolbartext,
-    /// Inactive light hightlight
-    MozMacSecondaryhighlight,
-
-    /// Font smoothing background colors needed by the Mac OS X theme, based on
-    /// -moz-appearance names.
-    MozMacVibrantTitlebarLight,
-    MozMacVibrantTitlebarDark,
-    MozMacMenupopup,
-    MozMacMenuitem,
-    MozMacActiveMenuitem,
-    MozMacSourceList,
-    MozMacSourceListSelection,
-    MozMacActiveSourceListSelection,
-    MozMacTooltip,
-
-    /// Theme accent color.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozAccentColor,
-
-    /// Foreground for the accent color.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozAccentColorForeground,
-
-    /// The background-color for :autofill-ed inputs.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozAutofillBackground,
-
-    /// Media rebar text.
-    MozWinMediatext,
-    /// Communications rebar text.
-    MozWinCommunicationstext,
-
-    /// Hyperlink color extracted from the system, not affected by the
-    /// browser.anchor_color user pref.
-    ///
-    /// There is no OS-specified safe background color for this text, but it is
-    /// used regularly within Windows and the Gnome DE on Dialog and Window
-    /// colors.
-    MozNativehyperlinktext,
-
-    /// As above, but visited link color.
-    #[css(skip)]
-    MozNativevisitedhyperlinktext,
-
-    #[parse(aliases = "-moz-hyperlinktext")]
-    Linktext,
-    #[parse(aliases = "-moz-activehyperlinktext")]
-    Activetext,
-    #[parse(aliases = "-moz-visitedhyperlinktext")]
-    Visitedtext,
-
-    /// Combobox widgets
-    MozComboboxtext,
-    MozCombobox,
-
-    /// Color of tree column headers
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozColheadertext,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozColheaderhovertext,
 
     #[css(skip)]
     End, // Just for array-indexing purposes.
@@ -521,25 +754,56 @@ impl<'a, 'b: 'a, 'i: 'a> ::cssparser::ColorComponentParser<'i> for ColorComponen
     }
 }
 
+/// Whether to preserve authored colors during parsing. That's useful only if we
+/// plan to serialize the color back.
+enum PreserveAuthored {
+    No,
+    Yes,
+}
+
 impl Parse for Color {
     fn parse<'i, 't>(
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
     ) -> Result<Self, ParseError<'i>> {
-        // Currently we only store authored value for color keywords,
-        // because all browsers serialize those values as keywords for
-        // specified value.
-        let start = input.state();
-        let authored = input.expect_ident_cloned().ok();
-        input.reset(&start);
+        Self::parse_internal(context, input, PreserveAuthored::Yes)
+    }
+}
+
+impl Color {
+    fn parse_internal<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+        preserve_authored: PreserveAuthored,
+    ) -> Result<Self, ParseError<'i>> {
+        let authored = match preserve_authored {
+            PreserveAuthored::No => None,
+            PreserveAuthored::Yes => {
+                // Currently we only store authored value for color keywords,
+                // because all browsers serialize those values as keywords for
+                // specified value.
+                let start = input.state();
+                let authored = input.expect_ident_cloned().ok();
+                input.reset(&start);
+                authored
+            },
+        };
 
         let compontent_parser = ColorComponentParser(&*context);
         match input.try_parse(|i| CSSParserColor::parse_with(&compontent_parser, i)) {
             Ok(value) => Ok(match value {
                 CSSParserColor::CurrentColor => Color::CurrentColor,
-                CSSParserColor::RGBA(rgba) => Color::Numeric {
-                    parsed: rgba,
-                    authored: authored.map(|s| s.to_ascii_lowercase().into_boxed_str()),
+                CSSParserColor::Absolute(absolute) => {
+                    let enabled = matches!(absolute, cssparser::AbsoluteColor::Rgba(_)) ||
+                        static_prefs::pref!("layout.css.more_color_4.enabled");
+                    if !enabled {
+                        return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+                    }
+
+                    Color::Absolute(Box::new(Absolute {
+                        color: absolute.into(),
+                        authored: authored.map(|s| s.to_ascii_lowercase().into_boxed_str()),
+                    }))
                 },
             }),
             Err(e) => {
@@ -550,7 +814,8 @@ impl Parse for Color {
                     }
                 }
 
-                if let Ok(mix) = input.try_parse(|i| ColorMix::parse(context, i)) {
+                if let Ok(mix) = input.try_parse(|i| ColorMix::parse(context, i, preserve_authored))
+                {
                     return Ok(Color::ColorMix(Box::new(mix)));
                 }
 
@@ -565,6 +830,56 @@ impl Parse for Color {
             },
         }
     }
+
+    /// Returns whether a given color is valid for authors.
+    pub fn is_valid(context: &ParserContext, input: &mut Parser) -> bool {
+        input
+            .parse_entirely(|input| Self::parse_internal(context, input, PreserveAuthored::No))
+            .is_ok()
+    }
+
+    /// Tries to parse a color and compute it with a given device.
+    pub fn parse_and_compute(
+        context: &ParserContext,
+        input: &mut Parser,
+        device: Option<&Device>,
+    ) -> Option<ComputedColor> {
+        use crate::error_reporting::ContextualParseError;
+        let start = input.position();
+        let result = input
+            .parse_entirely(|input| Self::parse_internal(context, input, PreserveAuthored::No));
+
+        let specified = match result {
+            Ok(s) => s,
+            Err(e) => {
+                if !context.error_reporting_enabled() {
+                    return None;
+                }
+                // Ignore other kinds of errors that might be reported, such as
+                // ParseErrorKind::Basic(BasicParseErrorKind::UnexpectedToken),
+                // since Gecko didn't use to report those to the error console.
+                //
+                // TODO(emilio): Revise whether we want to keep this at all, we
+                // use this only for canvas, this warnings are disabled by
+                // default and not available on OffscreenCanvas anyways...
+                if let ParseErrorKind::Custom(StyleParseErrorKind::ValueError(..)) = e.kind {
+                    let location = e.location.clone();
+                    let error = ContextualParseError::UnsupportedValue(input.slice_from(start), e);
+                    context.log_css_error(location, error);
+                }
+                return None;
+            },
+        };
+
+        match device {
+            Some(device) => {
+                Context::for_media_query_evaluation(device, device.quirks_mode(), |context| {
+                    specified.to_computed_color(Some(&context))
+                })
+            },
+            None => specified.to_computed_color(None),
+        }
+    }
 }
 
 impl ToCss for Color {
@@ -573,16 +888,8 @@ impl ToCss for Color {
         W: Write,
     {
         match *self {
-            Color::CurrentColor => CSSParserColor::CurrentColor.to_css(dest),
-            Color::Numeric {
-                authored: Some(ref authored),
-                ..
-            } => dest.write_str(authored),
-            Color::Numeric {
-                parsed: ref rgba, ..
-            } => rgba.to_css(dest),
-            // TODO: Could represent this as a color-mix() instead.
-            Color::Complex(_) => Ok(()),
+            Color::CurrentColor => cssparser::ToCss::to_css(&CSSParserColor::CurrentColor, dest),
+            Color::Absolute(ref absolute) => absolute.to_css(dest),
             Color::ColorMix(ref mix) => mix.to_css(dest),
             #[cfg(feature = "gecko")]
             Color::System(system) => system.to_css(dest),
@@ -592,22 +899,18 @@ impl ToCss for Color {
     }
 }
 
-/// A wrapper of cssparser::Color::parse_hash.
-///
-/// That function should never return CurrentColor, so it makes no sense to
-/// handle a cssparser::Color here. This should really be done in cssparser
-/// directly rather than here.
-fn parse_hash_color(value: &[u8]) -> Result<RGBA, ()> {
-    CSSParserColor::parse_hash(value).map(|color| match color {
-        CSSParserColor::RGBA(rgba) => rgba,
-        CSSParserColor::CurrentColor => unreachable!("parse_hash should never return currentcolor"),
-    })
-}
-
 impl Color {
-    /// Returns whether this color is a system color.
-    pub fn is_system(&self) -> bool {
-        matches!(self, Color::System(..))
+    /// Returns whether this color is allowed in forced-colors mode.
+    pub fn honored_in_forced_colors_mode(&self, allow_transparent: bool) -> bool {
+        match *self {
+            Color::InheritFromBodyQuirk => false,
+            Color::CurrentColor | Color::System(..) => true,
+            Color::Absolute(ref absolute) => allow_transparent && absolute.color.alpha() == 0.0,
+            Color::ColorMix(ref mix) => {
+                mix.left.honored_in_forced_colors_mode(allow_transparent) &&
+                    mix.right.honored_in_forced_colors_mode(allow_transparent)
+            },
+        }
     }
 
     /// Returns currentcolor value.
@@ -623,13 +926,13 @@ impl Color {
         Color::rgba(RGBA::transparent())
     }
 
-    /// Returns a numeric RGBA color value.
+    /// Returns an absolute RGBA color value.
     #[inline]
     pub fn rgba(rgba: RGBA) -> Self {
-        Color::Numeric {
-            parsed: rgba,
+        Color::Absolute(Box::new(Absolute {
+            color: AbsoluteColor::from_rgba(rgba),
             authored: None,
-        }
+        }))
     }
 
     /// Parse a color, with quirks.
@@ -669,7 +972,7 @@ impl Color {
                 if ident.len() != 3 && ident.len() != 6 {
                     return Err(location.new_custom_error(StyleParseErrorKind::UnspecifiedError));
                 }
-                return parse_hash_color(ident.as_bytes()).map_err(|()| {
+                return RGBA::parse_hash(ident.as_bytes()).map_err(|()| {
                     location.new_custom_error(StyleParseErrorKind::UnspecifiedError)
                 });
             },
@@ -702,14 +1005,19 @@ impl Color {
         let mut serialization = [b'0'; 6];
         let space_padding = 6 - total;
         let mut written = space_padding;
-        written += itoa::write(&mut serialization[written..], value).unwrap();
+        let mut buf = itoa::Buffer::new();
+        let s = buf.format(value);
+        (&mut serialization[written..])
+            .write_all(s.as_bytes())
+            .unwrap();
+        written += s.len();
         if let Some(unit) = unit {
             written += (&mut serialization[written..])
                 .write(unit.as_bytes())
                 .unwrap();
         }
         debug_assert_eq!(written, 6);
-        parse_hash_color(&serialization)
+        RGBA::parse_hash(&serialization)
             .map_err(|()| location.new_custom_error(StyleParseErrorKind::UnspecifiedError))
     }
 }
@@ -721,23 +1029,23 @@ impl Color {
     /// the context to resolve, then `None` is returned.
     pub fn to_computed_color(&self, context: Option<&Context>) -> Option<ComputedColor> {
         Some(match *self {
-            Color::CurrentColor => ComputedColor::currentcolor(),
-            Color::Numeric { ref parsed, .. } => ComputedColor::rgba(*parsed),
-            Color::Complex(ref complex) => *complex,
+            Color::CurrentColor => ComputedColor::CurrentColor,
+            Color::Absolute(ref absolute) => ComputedColor::Numeric(absolute.color.to_rgba()),
             Color::ColorMix(ref mix) => {
-                use crate::values::animated::color::Color as AnimatedColor;
-                use crate::values::animated::ToAnimatedValue;
+                use crate::values::computed::percentage::Percentage;
 
-                let left = mix.left.to_computed_color(context)?.to_animated_value();
-                let right = mix.right.to_computed_color(context)?.to_animated_value();
-                ToAnimatedValue::from_animated_value(AnimatedColor::mix(
-                    mix.color_space,
-                    &left,
-                    mix.left_percentage.get(),
-                    &right,
-                    mix.right_percentage.get(),
-                    mix.hue_adjuster,
-                ))
+                let left = mix.left.to_computed_color(context)?;
+                let right = mix.right.to_computed_color(context)?;
+                let mut color = ComputedColor::ColorMix(Box::new(GenericColorMix {
+                    interpolation: mix.interpolation,
+                    left,
+                    left_percentage: Percentage(mix.left_percentage.get()),
+                    right,
+                    right_percentage: Percentage(mix.right_percentage.get()),
+                    normalize_weights: mix.normalize_weights,
+                }));
+                color.simplify(None);
+                color
             },
             #[cfg(feature = "gecko")]
             Color::System(system) => system.compute(context?),
@@ -755,13 +1063,13 @@ impl ToComputedValue for Color {
     }
 
     fn from_computed_value(computed: &ComputedColor) -> Self {
-        if computed.is_numeric() {
-            return Color::rgba(computed.color);
+        match *computed {
+            ComputedColor::Numeric(ref color) => Color::rgba(*color),
+            ComputedColor::CurrentColor => Color::CurrentColor,
+            ComputedColor::ColorMix(ref mix) => {
+                Color::ColorMix(Box::new(ToComputedValue::from_computed_value(&**mix)))
+            },
         }
-        if computed.is_currentcolor() {
-            return Color::currentcolor();
-        }
-        Color::Complex(*computed)
     }
 }
 
@@ -789,7 +1097,7 @@ impl ToComputedValue for MozFontSmoothingBackgroundColor {
     fn to_computed_value(&self, context: &Context) -> RGBA {
         self.0
             .to_computed_value(context)
-            .to_rgba(RGBA::transparent())
+            .into_rgba(RGBA::transparent())
     }
 
     fn from_computed_value(computed: &RGBA) -> Self {
@@ -806,7 +1114,21 @@ impl SpecifiedValueInfo for Color {
         // should probably be handled that way as well.
         // XXX `currentColor` should really be `currentcolor`. But let's
         // keep it consistent with the old system for now.
-        f(&["rgb", "rgba", "hsl", "hsla", "hwb", "currentColor", "transparent"]);
+        f(&[
+            "rgb",
+            "rgba",
+            "hsl",
+            "hsla",
+            "hwb",
+            "currentColor",
+            "transparent",
+        ]);
+        if static_prefs::pref!("layout.css.color-mix.enabled") {
+            f(&["color-mix"]);
+        }
+        if static_prefs::pref!("layout.css.more_color_4.enabled") {
+            f(&["color", "lab", "lch", "oklab", "oklch"]);
+        }
     }
 }
 
@@ -823,7 +1145,7 @@ impl ToComputedValue for ColorPropertyValue {
     fn to_computed_value(&self, context: &Context) -> RGBA {
         self.0
             .to_computed_value(context)
-            .to_rgba(context.builder.get_parent_inherited_text().clone_color())
+            .into_rgba(context.builder.get_parent_inherited_text().clone_color())
     }
 
     #[inline]
@@ -985,7 +1307,19 @@ impl ToCss for ColorScheme {
 }
 
 /// https://drafts.csswg.org/css-color-adjust/#print-color-adjust
-#[derive(Clone, Copy, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToCss, ToComputedValue, ToResolvedValue, ToShmem)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToCss,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
+)]
 #[repr(u8)]
 pub enum PrintColorAdjust {
     /// Ignore backgrounds and darken text.

@@ -2,16 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppMenuNotifications",
-  "resource://gre/modules/AppMenuNotifications.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "NewTabUtils",
-  "resource://gre/modules/NewTabUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  AppMenuNotifications: "resource://gre/modules/AppMenuNotifications.sys.mjs",
+  NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
   this,
   "PanelMultiView",
@@ -103,7 +97,7 @@ const PanelUI = {
     this.overflowFixedList.hidden = false;
     // Also unhide the separator. We use CSS to hide/show it based on the panel's content.
     this.overflowFixedList.previousElementSibling.hidden = false;
-    CustomizableUI.registerMenuPanel(
+    CustomizableUI.registerPanelNode(
       this.overflowFixedList,
       CustomizableUI.AREA_FIXED_OVERFLOW_PANEL
     );
@@ -234,7 +228,7 @@ const PanelUI = {
       await PanelMultiView.openPopup(this.panel, anchor, {
         triggerEvent: domEvent,
       });
-    })().catch(Cu.reportError);
+    })().catch(console.error);
   },
 
   /**
@@ -391,7 +385,6 @@ const PanelUI = {
    * @param aEvent the event triggering the view showing.
    */
   async showSubView(aViewId, aAnchor, aEvent) {
-    let domEvent = null;
     if (aEvent) {
       // On Mac, ctrl-click will send a context menu event from the widget, so
       // we don't want to bring up the panel when ctrl key is pressed.
@@ -409,44 +402,20 @@ const PanelUI = {
       ) {
         return;
       }
-      if (aEvent.type == "command" && aEvent.inputSource != null) {
-        // Synthesize a new DOM mouse event to pass on the inputSource.
-        domEvent = document.createEvent("MouseEvent");
-        domEvent.initNSMouseEvent(
-          "click",
-          true,
-          true,
-          null,
-          0,
-          aEvent.screenX,
-          aEvent.screenY,
-          0,
-          0,
-          false,
-          false,
-          false,
-          false,
-          0,
-          aEvent.target,
-          0,
-          aEvent.inputSource
-        );
-      } else if (aEvent.mozInputSource != null || aEvent.type == "keypress") {
-        domEvent = aEvent;
-      }
     }
 
     this._ensureEventListenersAdded();
 
     let viewNode = PanelMultiView.getViewNode(document, aViewId);
     if (!viewNode) {
-      Cu.reportError("Could not show panel subview with id: " + aViewId);
+      console.error("Could not show panel subview with id: ", aViewId);
       return;
     }
 
     if (!aAnchor) {
-      Cu.reportError(
-        "Expected an anchor when opening subview with id: " + aViewId
+      console.error(
+        "Expected an anchor when opening subview with id: ",
+        aViewId
       );
       return;
     }
@@ -455,7 +424,7 @@ const PanelUI = {
     this.ensurePanicViewInitialized(viewNode);
 
     let container = aAnchor.closest("panelmultiview");
-    if (container) {
+    if (container && !viewNode.hasAttribute("disallowSubView")) {
       container.showSubView(aViewId, aAnchor);
     } else if (!aAnchor.open) {
       aAnchor.open = true;
@@ -515,11 +484,11 @@ const PanelUI = {
 
       try {
         viewShown = await PanelMultiView.openPopup(tempPanel, anchor, {
-          position: "bottomcenter topright",
-          triggerEvent: domEvent,
+          position: "bottomright topright",
+          triggerEvent: aEvent,
         });
       } catch (ex) {
-        Cu.reportError(ex);
+        console.error(ex);
       }
 
       if (viewShown) {
@@ -881,7 +850,7 @@ const PanelUI = {
         el.removeAttribute("data-lazy-l10n-id");
       });
 
-    this.notificationPanel.openPopup(anchor, "bottomcenter topright");
+    this.notificationPanel.openPopup(anchor, "bottomright topright");
   },
 
   _clearNotificationPanel() {
@@ -1067,25 +1036,8 @@ const PanelUI = {
     return iconAnchor || candidate;
   },
 
-  _addedShortcuts: false,
-  _formatPrintButtonShortcuts() {
-    let printButton = this.mainView.querySelector("#appMenu-print-button2");
-    if (printButton) {
-      if (!printButton.hasAttribute("shortcut")) {
-        printButton.setAttribute(
-          "shortcut",
-          ShortcutUtils.prettifyShortcut(
-            document.getElementById(printButton.getAttribute("key"))
-          )
-        );
-      }
-    }
-  },
   _ensureShortcutsShown(view = this.mainView) {
     if (view.hasAttribute("added-shortcuts")) {
-      // The print button shorcut visibility can change depending on the pref value,
-      // so we need to check this each time, even if we've already added shortcuts.
-      this._formatPrintButtonShortcuts();
       return;
     }
     view.setAttribute("added-shortcuts", "true");
@@ -1097,7 +1049,6 @@ const PanelUI = {
       }
       button.setAttribute("shortcut", ShortcutUtils.prettifyShortcut(key));
     }
-    this._formatPrintButtonShortcuts();
   },
 };
 

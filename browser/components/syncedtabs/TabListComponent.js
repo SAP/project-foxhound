@@ -4,17 +4,17 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-let log = ChromeUtils.import(
-  "resource://gre/modules/Log.jsm",
-  {}
+let log = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
 ).Log.repository.getLogger("Sync.RemoteTabs");
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   OpenInTabsUtils: "resource:///modules/OpenInTabsUtils.jsm",
 });
 
@@ -115,7 +115,7 @@ TabListComponent.prototype = {
 
   onBookmarkTab(uri, title) {
     this._window.top.PlacesCommandHook.bookmarkLink(uri, title).catch(
-      Cu.reportError
+      console.error
     );
   },
 
@@ -124,7 +124,7 @@ TabListComponent.prototype = {
   },
 
   onOpenTabs(urls, where) {
-    if (!OpenInTabsUtils.confirmOpenInTabs(urls.length, this._window)) {
+    if (!lazy.OpenInTabsUtils.confirmOpenInTabs(urls.length, this._window)) {
       return;
     }
     if (where == "window") {

@@ -32,11 +32,12 @@ const { HAWKAuthenticatedRESTRequest } = ChromeUtils.import(
 const { Observers } = ChromeUtils.import(
   "resource://services-common/observers.js"
 );
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
 
 // log.appender.dump should be one of "Fatal", "Error", "Warn", "Info", "Config",
 // "Debug", "Trace" or "All". If none is specified, "Error" will be used by
@@ -50,7 +51,9 @@ const PREF_LOG_LEVEL = "services.common.hawk.log.appender.dump";
 // identifiable info, credentials, etc) will be logged.
 const PREF_LOG_SENSITIVE_DETAILS = "services.common.hawk.log.sensitive";
 
-XPCOMUtils.defineLazyGetter(this, "log", function() {
+const lazy = {};
+
+XPCOMUtils.defineLazyGetter(lazy, "log", function() {
   let log = Log.repository.getLogger("Hawk");
   // We set the log itself to "debug" and set the level from the preference to
   // the appender.  This allows other things to send the logs to different
@@ -74,7 +77,7 @@ XPCOMUtils.defineLazyGetter(this, "log", function() {
 
 // A boolean to indicate if personally identifiable information (or anything
 // else sensitive, such as credentials) should be logged.
-XPCOMUtils.defineLazyGetter(this, "logPII", function() {
+XPCOMUtils.defineLazyGetter(lazy, "logPII", function() {
   try {
     return Services.prefs.getBoolPref(PREF_LOG_SENSITIVE_DETAILS);
   } catch (_) {
@@ -101,7 +104,7 @@ var HawkClient = function(host) {
   this._localtimeOffsetMsec = 0;
 };
 
-this.HawkClient.prototype = {
+HawkClient.prototype = {
   /*
    * Construct an error message for a response.  Private.
    *
@@ -158,11 +161,11 @@ this.HawkClient.prototype = {
     try {
       let serverDateMsec = Date.parse(dateString);
       this._localtimeOffsetMsec = serverDateMsec - this.now();
-      log.debug(
+      lazy.log.debug(
         "Clock offset vs " + this.host + ": " + this._localtimeOffsetMsec
       );
     } catch (err) {
-      log.warn("Bad date header in server response: " + dateString);
+      lazy.log.warn("Bad date header in server response: " + dateString);
     }
   },
 
@@ -227,7 +230,7 @@ this.HawkClient.prototype = {
       // Keep a reference to the error, log a message about it, and return the
       // response anyway.
       error = e;
-      log.warn("hawk request error", error);
+      lazy.log.warn("hawk request error", error);
       return request.response;
     });
 
@@ -238,7 +241,7 @@ this.HawkClient.prototype = {
 
     let status = restResponse.status;
 
-    log.debug(
+    lazy.log.debug(
       "(Response) " +
         path +
         ": code: " +
@@ -246,8 +249,8 @@ this.HawkClient.prototype = {
         " - Status text: " +
         restResponse.statusText
     );
-    if (logPII) {
-      log.debug("Response text", restResponse.body);
+    if (lazy.logPII) {
+      lazy.log.debug("Response text", restResponse.body);
     }
 
     // All responses may have backoff headers, which are a server-side safety
@@ -266,7 +269,7 @@ this.HawkClient.prototype = {
     if (status === 401 && retryOK && !("retry-after" in restResponse.headers)) {
       // Retry once if we were rejected due to a bad timestamp.
       // Clock offset is adjusted already in the top of this function.
-      log.debug("Received 401 for " + path + ": retrying");
+      lazy.log.debug("Received 401 for " + path + ": retrying");
       return this.request(
         path,
         method,
@@ -324,7 +327,7 @@ this.HawkClient.prototype = {
     try {
       backoffInterval = parseInt(headerVal, 10);
     } catch (ex) {
-      log.error(
+      lazy.log.error(
         "hawkclient response had invalid backoff value in '" +
           headerName +
           "' header: " +

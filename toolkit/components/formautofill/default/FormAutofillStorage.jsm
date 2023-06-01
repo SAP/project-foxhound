@@ -10,13 +10,11 @@
 
 // We expose a singleton from this module. Some tests may import the
 // constructor via a backstage pass.
-this.EXPORTED_SYMBOLS = ["formAutofillStorage", "FormAutofillStorage"];
+const EXPORTED_SYMBOLS = ["formAutofillStorage", "FormAutofillStorage"];
 
 const { FormAutofill } = ChromeUtils.import(
   "resource://autofill/FormAutofill.jsm"
 );
-
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 const {
   FormAutofillStorageBase,
@@ -24,29 +22,21 @@ const {
   AddressesBase,
 } = ChromeUtils.import("resource://autofill/FormAutofillStorageBase.jsm");
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "JSONFile",
-  "resource://gre/modules/JSONFile.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "OSKeyStore",
-  "resource://gre/modules/OSKeyStore.jsm"
-);
+const lazy = {};
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "CreditCard",
-  "resource://gre/modules/CreditCard.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  CreditCard: "resource://gre/modules/CreditCard.sys.mjs",
+  JSONFile: "resource://gre/modules/JSONFile.sys.mjs",
+  OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
+});
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "FormAutofillUtils",
-  "resource://autofill/FormAutofillUtils.jsm"
-);
+XPCOMUtils.defineLazyModuleGetters(lazy, {
+  FormAutofillUtils: "resource://autofill/FormAutofillUtils.jsm",
+});
 
 const PROFILE_JSON_FILE_NAME = "autofill-profiles.json";
 
@@ -56,7 +46,7 @@ class Addresses extends AddressesBase {
    *
    * @param  {string} guid
    *         Indicates which address to merge.
-   * @param  {Object} address
+   * @param  {object} address
    *         The new address used to merge into the old one.
    * @param  {boolean} strict
    *         In strict merge mode, we'll treat the subset record with empty field
@@ -65,7 +55,7 @@ class Addresses extends AddressesBase {
    *          Return true if address is merged into target with specific guid or false if not.
    */
   async mergeIfPossible(guid, address, strict) {
-    this.log.debug("mergeIfPossible:", guid, address);
+    this.log.debug(`mergeIfPossible: ${guid}`);
 
     let addressFound = this._findByGUID(guid);
     if (!addressFound) {
@@ -80,7 +70,7 @@ class Addresses extends AddressesBase {
       addressFound.country ||
       addressToMerge.country ||
       FormAutofill.DEFAULT_REGION;
-    let collators = FormAutofillUtils.getSearchCollators(country);
+    let collators = lazy.FormAutofillUtils.getSearchCollators(country);
     for (let field of this.VALID_FIELDS) {
       let existingField = addressFound[field];
       let incomingField = addressToMerge[field];
@@ -90,7 +80,7 @@ class Addresses extends AddressesBase {
           // match each other.
           if (
             field == "street-address" &&
-            FormAutofillUtils.compareStreetAddress(
+            lazy.FormAutofillUtils.compareStreetAddress(
               existingField,
               incomingField,
               collators
@@ -108,7 +98,7 @@ class Addresses extends AddressesBase {
             }
           } else if (
             field != "street-address" &&
-            FormAutofillUtils.strCompare(
+            lazy.FormAutofillUtils.strCompare(
               existingField,
               incomingField,
               collators
@@ -163,15 +153,19 @@ class CreditCards extends CreditCardsBase {
     if (!("cc-number-encrypted" in creditCard)) {
       if ("cc-number" in creditCard) {
         let ccNumber = creditCard["cc-number"];
-        if (CreditCard.isValidNumber(ccNumber)) {
-          creditCard["cc-number"] = CreditCard.getLongMaskedNumber(ccNumber);
+        if (lazy.CreditCard.isValidNumber(ccNumber)) {
+          creditCard["cc-number"] = lazy.CreditCard.getLongMaskedNumber(
+            ccNumber
+          );
         } else {
           // Credit card numbers can be entered on versions of Firefox that don't validate
           // the number and then synced to this version of Firefox. Therefore, mask the
           // full number if the number is invalid on this version.
           creditCard["cc-number"] = "*".repeat(ccNumber.length);
         }
-        creditCard["cc-number-encrypted"] = await OSKeyStore.encrypt(ccNumber);
+        creditCard["cc-number-encrypted"] = await lazy.OSKeyStore.encrypt(
+          ccNumber
+        );
       } else {
         creditCard["cc-number-encrypted"] = "";
       }
@@ -184,13 +178,13 @@ class CreditCards extends CreditCardsBase {
    *
    * @param  {string} guid
    *         Indicates which credit card to merge.
-   * @param  {Object} creditCard
+   * @param  {object} creditCard
    *         The new credit card used to merge into the old one.
    * @returns {boolean}
    *          Return true if credit card is merged into target with specific guid or false if not.
    */
   async mergeIfPossible(guid, creditCard) {
-    this.log.debug("mergeIfPossible:", guid, creditCard);
+    this.log.debug(`mergeIfPossible: ${guid}`);
 
     // Credit card number is required since it also must match.
     if (!creditCard["cc-number"]) {
@@ -266,11 +260,12 @@ class FormAutofillStorage extends FormAutofillStorageBase {
 
   /**
    * Loads the profile data from file to memory.
+   *
    * @returns {JSONFile}
    *          The JSONFile store.
    */
   _initializeStore() {
-    return new JSONFile({
+    return new lazy.JSONFile({
       path: this._path,
       dataPostProcessor: this._dataPostProcessor.bind(this),
     });
@@ -289,6 +284,6 @@ class FormAutofillStorage extends FormAutofillStorageBase {
 }
 
 // The singleton exposed by this module.
-this.formAutofillStorage = new FormAutofillStorage(
-  OS.Path.join(OS.Constants.Path.profileDir, PROFILE_JSON_FILE_NAME)
+const formAutofillStorage = new FormAutofillStorage(
+  PathUtils.join(PathUtils.profileDir, PROFILE_JSON_FILE_NAME)
 );

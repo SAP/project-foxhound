@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* import-globals-from head.js */
-
 // Basic test to assert that the storage tree and table corresponding to each
 // item in the storage tree is correctly displayed
 
@@ -31,6 +29,11 @@ add_task(async function() {
   await pushPref(
     "network.cookie.cookieBehavior",
     Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN
+  );
+
+  await pushPref(
+    "privacy.partition.always_partition_third_party_non_cookie_storage",
+    false
   );
 
   registerCleanupFunction(SiteDataTestUtils.clear);

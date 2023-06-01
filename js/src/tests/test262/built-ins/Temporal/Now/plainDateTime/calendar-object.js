@@ -5,50 +5,31 @@
 /*---
 esid: sec-temporal.now.plaindatetime
 description: Observable interactions with the provided calendar-like object
-includes: [compareArray.js]
+includes: [compareArray.js, temporalHelpers.js]
 features: [Proxy, Temporal]
 ---*/
 
 const actual = [];
-const expected = [
+const expectedWithout = [
+  'has calendar.calendar',
+  'get calendar.calendar',
+  'has nestedCalendar.calendar'
+];
+const expectedWith = [
   'has calendar.calendar',
   'get calendar.calendar',
   'has nestedCalendar.calendar',
-  'get nestedCalendar.Symbol(Symbol.toPrimitive)',
+  'get nestedCalendar[Symbol.toPrimitive]',
   'get nestedCalendar.toString',
   'call nestedCalendar.toString'
 ];
-const nestedCalendar = new Proxy({
-  toString: function() {
-    actual.push('call nestedCalendar.toString');
-    return 'iso8601';
-  }
-}, {
-  has(target, property) {
-    actual.push(`has nestedCalendar.${String(property)}`);
-    return property in target;
-  },
-  get(target, property) {
-    actual.push(`get nestedCalendar.${String(property)}`);
-    return target[property];
-  },
+const nestedCalendar = TemporalHelpers.calendarObserver(actual, "nestedCalendar", {
+  toString: "iso8601",
 });
-const calendar = new Proxy({
-  calendar: nestedCalendar,
-  toString: function() {
-    actual.push('call calendar.toString');
-    return 'iso8601';
-  },
-}, {
-  has(target, property) {
-    actual.push(`has calendar.${String(property)}`);
-    return property in target;
-  },
-  get(target, property) {
-    actual.push(`get calendar.${String(property)}`);
-    return target[property];
-  },
+const calendar = TemporalHelpers.calendarObserver(actual, "calendar", {
+  toString: "iso8601",
 });
+calendar.calendar = nestedCalendar;
 
 Object.defineProperty(Temporal.Calendar, 'from', {
   get() {
@@ -59,6 +40,13 @@ Object.defineProperty(Temporal.Calendar, 'from', {
 
 Temporal.Now.plainDateTime(calendar);
 
-assert.compareArray(actual, expected, 'The value of actual is expected to equal the value of expected');
+assert.compareArray(actual, expectedWithout, 'Observable interactions without `calendar` property');
+
+actual.length = 0;
+nestedCalendar.calendar = null;
+
+Temporal.Now.plainDateTime(calendar);
+
+assert.compareArray(actual, expectedWith, 'Observable interactions with `calendar` property');
 
 reportCompare(0, 0);

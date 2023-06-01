@@ -5,10 +5,8 @@
 import { clearDocuments } from "../utils/editor";
 import sourceQueue from "../utils/source-queue";
 
-import { evaluateExpressions } from "./expressions";
-
 import { clearWasmStates } from "../utils/wasm";
-import { getMainThread, getThreadContext } from "../selectors";
+import { getMainThread } from "../selectors";
 
 /**
  * Redux actions for the navigation state
@@ -20,31 +18,24 @@ import { getMainThread, getThreadContext } from "../selectors";
  * @static
  */
 export function willNavigate(event) {
-  return async function({ dispatch, getState, client, sourceMaps, parser }) {
+  return async function({
+    dispatch,
+    getState,
+    client,
+    sourceMapLoader,
+    parserWorker,
+  }) {
     sourceQueue.clear();
-    sourceMaps.clearSourceMaps();
+    sourceMapLoader.clearSourceMaps();
     clearWasmStates();
     clearDocuments();
-    parser.clear();
+    parserWorker.clear();
     const thread = getMainThread(getState());
 
     dispatch({
       type: "NAVIGATE",
       mainThread: { ...thread, url: event.url },
     });
-  };
-}
-
-export function connect(url, actor, isWebExtension) {
-  return async function({ dispatch, getState }) {
-    await dispatch({
-      type: "CONNECT",
-      mainThreadActorID: actor,
-      isWebExtension,
-    });
-
-    const cx = getThreadContext(getState());
-    dispatch(evaluateExpressions(cx));
   };
 }
 

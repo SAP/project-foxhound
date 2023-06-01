@@ -3,8 +3,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import print_function, unicode_literals
-
 import math
 import os
 import platform
@@ -13,7 +11,6 @@ import shlex
 import subprocess
 import sys
 import traceback
-
 
 read_input = input
 if sys.version_info.major == 2:
@@ -31,14 +28,14 @@ def add_tests_dir_to_path():
 add_tests_dir_to_path()
 
 from lib import jittests
+from lib.tempfile import TemporaryDirectory
 from lib.tests import (
-    get_jitflags,
-    valid_jitflags,
+    change_env,
     get_cpu_count,
     get_environment_overlay,
-    change_env,
+    get_jitflags,
+    valid_jitflags,
 )
-from lib.tempfile import TemporaryDirectory
 
 
 def which(name):
@@ -519,7 +516,7 @@ def main(argv):
     if options.remote:
         prologue = posixpath.join(options.remote_test_root, "lib", "prologue.js")
 
-    prefix += ["-f", prologue]
+    prefix += ["-p", prologue]
 
     if options.debugger:
         if job_count > 1:

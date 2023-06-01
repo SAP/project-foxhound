@@ -68,6 +68,8 @@ this.ui = (function() {
     el.style.margin = "0";
     el.scrolling = "no";
     el.style.clip = "auto";
+    el.style.backgroundColor = "transparent";
+    el.style.colorScheme = "light";
     return el;
   }
 
@@ -88,8 +90,9 @@ this.ui = (function() {
           this.element = initializeIframe();
           this.element.id = "firefox-screenshots-selection-iframe";
           this.element.style.display = "none";
+          this.element.style.setProperty("max-width", "none", "important");
+          this.element.style.setProperty("max-height", "none", "important");
           this.element.style.setProperty("position", "absolute", "important");
-          this.element.style.setProperty("background-color", "transparent");
           this.element.setAttribute("role", "dialog");
           this.updateElementSize();
           this.element.addEventListener(
@@ -134,9 +137,6 @@ this.ui = (function() {
     unhide() {
       this.updateElementSize();
       this.element.style.display = "block";
-      catcher.watchPromise(
-        callBackground("sendEvent", "internal", "unhide-selection-frame")
-      );
       this.initSizeWatch();
       this.element.focus();
     },
@@ -244,9 +244,10 @@ this.ui = (function() {
           this.element = initializeIframe();
           this.element.id = "firefox-screenshots-preselection-iframe";
           this.element.style.setProperty("position", "fixed", "important");
-          this.element.style.setProperty("background-color", "transparent");
           this.element.style.width = "100%";
           this.element.style.height = "100%";
+          this.element.style.setProperty("max-width", "none", "important");
+          this.element.style.setProperty("max-height", "none", "important");
           this.element.setAttribute("role", "dialog");
           this.element.addEventListener(
             "load",
@@ -343,9 +344,6 @@ this.ui = (function() {
       );
       window.addEventListener("resize", this.onResize, true);
       this.element.style.display = "block";
-      catcher.watchPromise(
-        callBackground("sendEvent", "internal", "unhide-preselection-frame")
-      );
       this.element.focus();
     },
 
@@ -390,9 +388,10 @@ this.ui = (function() {
           this.element.id = "firefox-screenshots-preview-iframe";
           this.element.style.display = "none";
           this.element.style.setProperty("position", "fixed", "important");
-          this.element.style.setProperty("background-color", "transparent");
           this.element.style.height = "100%";
           this.element.style.width = "100%";
+          this.element.style.setProperty("max-width", "none", "important");
+          this.element.style.setProperty("max-height", "none", "important");
           this.element.setAttribute("role", "dialog");
           this.element.onload = watchFunction(() => {
             msgsPromise.then(([cancelTitle, copyTitle, downloadTitle]) => {
@@ -481,9 +480,6 @@ this.ui = (function() {
 
     unhide() {
       this.element.style.display = "block";
-      catcher.watchPromise(
-        callBackground("sendEvent", "internal", "unhide-preview-frame")
-      );
       this.element.focus();
     },
 

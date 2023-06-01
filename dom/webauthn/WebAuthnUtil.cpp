@@ -12,11 +12,9 @@
 #include "nsNetUtil.h"
 #include "mozpkix/pkixutil.h"
 #include "nsHTMLDocument.h"
-#include "nsICryptoHash.h"
 #include "hasht.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // Bug #1436078 - Permit Google Accounts. Remove in Bug #1436085 in Jan 2023.
 constexpr auto kGoogleAccountsAppId1 =
@@ -459,5 +457,4 @@ nsresult BuildTransactionHashes(const nsCString& aRpId,
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -39,6 +39,8 @@ LAllocation LIRGeneratorARM64::useByteOpRegisterOrNonDoubleConstant(
   return useRegisterOrNonDoubleConstant(mir);
 }
 
+LDefinition LIRGeneratorARM64::tempByteOpRegister() { return temp(); }
+
 LDefinition LIRGeneratorARM64::tempToUnbox() { return temp(); }
 
 void LIRGenerator::visitBox(MBox* box) {
@@ -220,14 +222,14 @@ void LIRGeneratorARM64::lowerWasmBuiltinTruncateToInt32(
 
   if (opd->type() == MIRType::Double) {
     define(new (alloc()) LWasmBuiltinTruncateDToInt32(
-               useRegister(opd), useFixed(ins->tls(), WasmTlsReg),
+               useRegister(opd), useFixed(ins->instance(), InstanceReg),
                LDefinition::BogusTemp()),
            ins);
     return;
   }
 
   define(new (alloc()) LWasmBuiltinTruncateFToInt32(
-             useRegister(opd), useFixed(ins->tls(), WasmTlsReg),
+             useRegister(opd), useFixed(ins->instance(), InstanceReg),
              LDefinition::BogusTemp()),
          ins);
 }
@@ -983,8 +985,12 @@ void LIRGenerator::visitCopySign(MCopySign* ins) {
   }
 
   lir->setOperand(0, useRegisterAtStart(lhs));
-  lir->setOperand(1, useRegisterAtStart(rhs));
-  define(lir, ins);
+  lir->setOperand(1, willHaveDifferentLIRNodes(lhs, rhs)
+                         ? useRegister(rhs)
+                         : useRegisterAtStart(rhs));
+  // The copySignDouble and copySignFloat32 are optimized for lhs == output.
+  // It also prevents rhs == output when lhs != output, avoids clobbering.
+  defineReuseInput(lir, ins, 0);
 }
 
 void LIRGenerator::visitExtendInt32ToInt64(MExtendInt32ToInt64* ins) {
@@ -1015,22 +1021,36 @@ void LIRGenerator::visitWasmTernarySimd128(MWasmTernarySimd128* ins) {
       break;
     }
     case wasm::SimdOp::F32x4RelaxedFma:
-    case wasm::SimdOp::F32x4RelaxedFms:
+    case wasm::SimdOp::F32x4RelaxedFnma:
     case wasm::SimdOp::F64x2RelaxedFma:
-    case wasm::SimdOp::F64x2RelaxedFms: {
-      auto* lir = new (alloc())
-          LWasmTernarySimd128(ins->simdOp(), useRegisterAtStart(ins->v0()),
-                              useRegister(ins->v1()), useRegister(ins->v2()));
-      defineReuseInput(lir, ins, LWasmTernarySimd128::V0);
-      break;
-    }
-    case wasm::SimdOp::I8x16LaneSelect:
-    case wasm::SimdOp::I16x8LaneSelect:
-    case wasm::SimdOp::I32x4LaneSelect:
-    case wasm::SimdOp::I64x2LaneSelect: {
+    case wasm::SimdOp::F64x2RelaxedFnma: {
       auto* lir = new (alloc()) LWasmTernarySimd128(
           ins->simdOp(), useRegister(ins->v0()), useRegister(ins->v1()),
           useRegisterAtStart(ins->v2()));
+      defineReuseInput(lir, ins, LWasmTernarySimd128::V2);
+      break;
+    }
+    case wasm::SimdOp::I32x4DotI8x16I7x16AddS: {
+      auto* lir = new (alloc()) LWasmTernarySimd128(
+          ins->simdOp(), useRegister(ins->v0()), useRegister(ins->v1()),
+          useRegisterAtStart(ins->v2()), tempSimd128());
+      defineReuseInput(lir, ins, LWasmTernarySimd128::V2);
+      break;
+    }
+    case wasm::SimdOp::I8x16RelaxedLaneSelect:
+    case wasm::SimdOp::I16x8RelaxedLaneSelect:
+    case wasm::SimdOp::I32x4RelaxedLaneSelect:
+    case wasm::SimdOp::I64x2RelaxedLaneSelect: {
+      auto* lir = new (alloc()) LWasmTernarySimd128(
+          ins->simdOp(), useRegister(ins->v0()), useRegister(ins->v1()),
+          useRegisterAtStart(ins->v2()));
+      defineReuseInput(lir, ins, LWasmTernarySimd128::V2);
+      break;
+    }
+    case wasm::SimdOp::F32x4RelaxedDotBF16x8AddF32x4: {
+      auto* lir = new (alloc()) LWasmTernarySimd128(
+          ins->simdOp(), useRegister(ins->v0()), useRegister(ins->v1()),
+          useRegisterAtStart(ins->v2()), tempSimd128());
       defineReuseInput(lir, ins, LWasmTernarySimd128::V2);
       break;
     }
@@ -1073,6 +1093,9 @@ bool MWasmTernarySimd128::specializeBitselectConstantMaskAsShuffle(
     int8_t shuffle[16]) {
   return false;
 }
+bool MWasmTernarySimd128::canRelaxBitselect() { return false; }
+
+bool MWasmBinarySimd128::canPmaddubsw() { return false; }
 #endif
 
 bool MWasmBinarySimd128::specializeForConstantRhs() {

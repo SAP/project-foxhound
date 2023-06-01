@@ -3,11 +3,9 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.sys.mjs",
 });
-
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const CONFIG = [
   {
@@ -66,14 +64,6 @@ const CONFIG = [
   },
 ];
 
-function fetchWithConfig(name, version) {
-  Services.appinfo = { name, version };
-  return engineSelector.fetchEngineConfiguration({
-    locale: "default",
-    region: "default",
-  });
-}
-
 const engineSelector = new SearchEngineSelector();
 
 const tests = [
@@ -119,10 +109,11 @@ add_task(async function setup() {
 
 add_task(async function test_application_name() {
   for (const { name, version, expected } of tests) {
-    Services.appinfo = { name, version };
     let { engines } = await engineSelector.fetchEngineConfiguration({
       locale: "default",
       region: "default",
+      name,
+      version,
     });
     const engineIds = engines.map(obj => obj.webExtension.id);
     Assert.deepEqual(

@@ -2,17 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-
-import os
-import logging
-
-from taskgraph.config import GraphConfig
-from taskgraph.util.yaml import load_yaml
-from voluptuous import Required, Optional, Any
-
-from .util.schema import validate_schema, Schema, optionally_keyed_by
-
-logger = logging.getLogger(__name__)
+from taskgraph.util.schema import Schema, optionally_keyed_by
+from voluptuous import Any, Optional, Required
 
 graph_config_schema = Schema(
     {
@@ -108,7 +99,7 @@ graph_config_schema = Schema(
                     Required("implementation"): str,
                     Required("os"): str,
                     Required("worker-type"): optionally_keyed_by(
-                        "level", "release-level", str
+                        "level", "release-level", "project", str
                     ),
                 }
             },
@@ -131,21 +122,6 @@ graph_config_schema = Schema(
             ): str,
             Optional("decision-parameters"): str,
         },
+        Required("expiration-policy"): optionally_keyed_by("project", {str: str}),
     }
 )
-
-
-def validate_graph_config(config):
-    validate_schema(graph_config_schema, config, "Invalid graph configuration:")
-
-
-def load_graph_config(root_dir):
-    config_yml = os.path.join(root_dir, "config.yml")
-    if not os.path.exists(config_yml):
-        raise Exception(f"Couldn't find taskgraph configuration: {config_yml}")
-
-    logger.debug(f"loading config from `{config_yml}`")
-    config = load_yaml(config_yml)
-    logger.debug("validating the graph config.")
-    validate_graph_config(config)
-    return GraphConfig(config=config, root_dir=root_dir)

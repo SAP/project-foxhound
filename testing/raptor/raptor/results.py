@@ -4,17 +4,18 @@
 
 # class to process, format, and report raptor test results
 # received from the raptor control server
-from __future__ import absolute_import
-
 import json
 import os
+import pathlib
 import shutil
 from abc import ABCMeta, abstractmethod
+from collections.abc import Iterable
 from io import open
 
 import six
 from logger.logger import RaptorLogger
-from output import RaptorOutput, BrowsertimeOutput
+from output import BrowsertimeOutput, RaptorOutput
+from utils import flatten
 
 LOG = RaptorLogger(component="perftest-results-handler")
 KNOWN_TEST_MODIFIERS = [
@@ -24,7 +25,11 @@ KNOWN_TEST_MODIFIERS = [
     "gecko-profile",
     "cold",
     "webrender",
+    "bytecode-cached",
 ]
+NON_FIREFOX_OPTS = ("webrender", "bytecode-cached", "fission")
+NON_FIREFOX_BROWSERS = ("chrome", "chromium", "safari")
+NON_FIREFOX_BROWSERS_MOBILE = ("chrome-m",)
 
 
 @six.add_metaclass(ABCMeta)
@@ -42,6 +47,10 @@ class PerftestResultsHandler(object):
         conditioned_profile=None,
         cold=False,
         chimera=False,
+        fission=True,
+        perfstats=False,
+        test_bytecode_cache=False,
+        extra_summary_methods=[],
         **kwargs
     ):
         self.gecko_profile = gecko_profile
@@ -55,17 +64,22 @@ class PerftestResultsHandler(object):
         self.page_timeout_list = []
         self.images = []
         self.supporting_data = None
-        self.fission_enabled = kwargs.get("extra_prefs", {}).get(
-            "fission.autostart", False
-        )
+        self.fission_enabled = fission
         self.browser_version = None
         self.browser_name = None
         self.cold = cold
         self.chimera = chimera
+        self.perfstats = perfstats
+        self.test_bytecode_cache = test_bytecode_cache
+        self.existing_results = None
+        self.extra_summary_methods = extra_summary_methods
 
     @abstractmethod
     def add(self, new_result_json):
         raise NotImplementedError()
+
+    def result_dir(self):
+        return None
 
     def build_extra_options(self, modifiers=None):
         extra_options = []
@@ -89,6 +103,8 @@ class PerftestResultsHandler(object):
                 extra_options.append("gecko-profile")
             if self.cold:
                 extra_options.append("cold")
+            if self.test_bytecode_cache:
+                extra_options.append("bytecode-cached")
             extra_options.append("webrender")
         else:
             for modifier, name in modifiers:
@@ -102,14 +118,17 @@ class PerftestResultsHandler(object):
                         % name
                     )
 
-        if self.app.lower() in (
-            "chrome",
-            "chrome-m",
-            "chromium",
-        ):
-            extra_options.remove("webrender")
+        # Bug 1770225: Make this more dynamic, this will fail us again in the future
+        self._clean_up_browser_options(extra_options=extra_options)
 
         return extra_options
+
+    def _clean_up_browser_options(self, extra_options):
+        """Remove certain firefox specific options from different browsers"""
+        if self.app.lower() in NON_FIREFOX_BROWSERS + NON_FIREFOX_BROWSERS_MOBILE:
+            for opts in NON_FIREFOX_OPTS:
+                if opts in extra_options:
+                    extra_options.remove(opts)
 
     def add_browser_meta(self, browser_name, browser_version):
         # sets the browser metadata for the perfherder data
@@ -164,6 +183,9 @@ class PerftestResultsHandler(object):
         if self.supporting_data is None:
             self.supporting_data = []
         self.supporting_data.append(supporting_data)
+
+    def use_existing_results(self, directory):
+        self.existing_results = directory
 
     def _get_expected_perfherder(self, output):
         def is_resource_test():
@@ -273,7 +295,7 @@ class RaptorResultsHandler(PerftestResultsHandler):
         output = RaptorOutput(
             self.results,
             self.supporting_data,
-            test_config["subtest_alert_on"],
+            test_config.get("subtest_alert_on", []),
             self.app,
         )
         output.set_browser_meta(self.browser_name, self.browser_version)
@@ -310,6 +332,7 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
         super(BrowsertimeResultsHandler, self).__init__(**config)
         self._root_results_dir = root_results_dir
         self.browsertime_visualmetrics = False
+        self.failed_vismets = []
         if not os.path.exists(self._root_results_dir):
             os.mkdir(self._root_results_dir)
 
@@ -317,13 +340,23 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
         return self._root_results_dir
 
     def result_dir_for_test(self, test):
-        return os.path.join(self._root_results_dir, test["name"])
+        if self.existing_results is None:
+            results_root = self._root_results_dir
+        else:
+            results_root = self.existing_results
+        return os.path.join(results_root, test["name"])
 
     def remove_result_dir_for_test(self, test):
         test_result_dir = self.result_dir_for_test(test)
         if os.path.exists(test_result_dir):
             shutil.rmtree(test_result_dir)
         return test_result_dir
+
+    def result_dir_for_test_profiling(self, test):
+        profiling_dir = os.path.join(self.result_dir_for_test(test), "profiling")
+        if not os.path.exists(profiling_dir):
+            os.mkdir(profiling_dir)
+        return profiling_dir
 
     def add(self, new_result_json):
         # not using control server with bt
@@ -350,6 +383,11 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
         measure,
         page_count,
         test_name,
+        accept_zero_vismet,
+        load_existing,
+        test_summary,
+        subtest_name_filters,
+        handle_custom_data,
     ):
         """
         Receive a json blob that contains the results direct from the browsertime tool. Parse
@@ -433,7 +471,17 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                   "max": 864
                 },
               }
-            }
+            },
+            "geckoPerfStats": [
+              {
+                "Compositing": 71,
+                "MajorGC": 144
+              },
+              {
+                "Compositing": 13,
+                "MajorGC": 126
+              }
+            ]
           }
         ]
 
@@ -507,6 +555,8 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                 raise MissingResultsError(
                     "Missing results for all cold browser cycles."
                 )
+        elif load_existing:
+            pass  # Use whatever is there.
         else:
             if len(raw_btresults) != int(page_cycles):
                 raise MissingResultsError(
@@ -564,44 +614,56 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                 ]
                 results.append(power_result)
 
-            if self.browsertime_visualmetrics:
-                vismet_result = {
-                    "bt_ver": bt_ver,
-                    "browser": bt_browser,
-                    "url": bt_url,
-                    "name": "%s%s" % (test_name, extra),
-                    "measurements": {},
-                    "statistics": {},
-                }
-                for cycle in raw_result["visualMetrics"]:
-                    for metric in cycle:
-                        if "progress" in metric.lower():
-                            # Bug 1665750 - Determine if we should display progress
-                            continue
-                        vismet_result["measurements"].setdefault(metric, []).append(
-                            cycle[metric]
-                        )
-                vismet_result["statistics"] = raw_result["statistics"]["visualMetrics"]
-                results.append(vismet_result)
-
             custom_types = raw_result["extras"][0]
             if custom_types:
                 for custom_type in custom_types:
-                    for k, v in custom_types[custom_type].items():
-                        bt_result["measurements"].setdefault(k, []).append(v)
+                    data = custom_types[custom_type]
+                    if handle_custom_data:
+                        if test_summary in ("flatten",):
+                            data = flatten(data, ())
+                        for k, v in data.items():
+
+                            def _ignore_metric(*args):
+                                if any(type(arg) not in (int, float) for arg in args):
+                                    return True
+                                return False
+
+                            # Ignore any non-numerical results
+                            if _ignore_metric(v) and _ignore_metric(*v):
+                                continue
+
+                            # Clean up the name if requested
+                            for name_filter in subtest_name_filters.split(","):
+                                k = k.replace(name_filter, "")
+
+                            if isinstance(v, Iterable):
+                                bt_result["measurements"].setdefault(k, []).extend(v)
+                            else:
+                                bt_result["measurements"].setdefault(k, []).append(v)
+                        bt_result["custom_data"] = True
+                    else:
+                        for k, v in data.items():
+                            bt_result["measurements"].setdefault(k, []).append(v)
+                if self.perfstats:
+                    for cycle in raw_result["geckoPerfStats"]:
+                        for metric in cycle:
+                            bt_result["measurements"].setdefault(
+                                "perfstat-" + metric, []
+                            ).append(cycle[metric])
             else:
                 # extracting values from browserScripts and statistics
                 for bt, raptor in conversion:
                     if measure is not None and bt not in measure:
                         continue
-                    # chrome we just measure fcp and loadtime; skip fnbpaint and dcf
+                    # chrome and safari we just measure fcp and loadtime; skip fnbpaint and dcf
                     if (
                         self.app
-                        and (
-                            "chrome" in self.app.lower()
-                            or "chromium" in self.app.lower()
+                        and self.app.lower() in NON_FIREFOX_BROWSERS
+                        and bt
+                        in (
+                            "fnbpaint",
+                            "dcf",
                         )
-                        and bt in ("fnbpaint", "dcf")
                     ):
                         continue
 
@@ -632,6 +694,43 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                         raw_result["statistics"]["timings"], raptor, retval={}
                     )
 
+                # Bug 1806402 - Handle chrome cpu data properly
+                cpu_vals = raw_result.get("cpu", None)
+                if (
+                    cpu_vals
+                    and self.app
+                    not in NON_FIREFOX_BROWSERS + NON_FIREFOX_BROWSERS_MOBILE
+                ):
+                    bt_result["measurements"].setdefault("cpuTime", []).extend(cpu_vals)
+
+                if self.perfstats:
+                    for cycle in raw_result["geckoPerfStats"]:
+                        for metric in cycle:
+                            bt_result["measurements"].setdefault(
+                                "perfstat-" + metric, []
+                            ).append(cycle[metric])
+
+                if self.browsertime_visualmetrics:
+                    for cycle in raw_result["visualMetrics"]:
+                        for metric in cycle:
+                            if "progress" in metric.lower():
+                                # Bug 1665750 - Determine if we should display progress
+                                continue
+
+                            if metric not in measure:
+                                continue
+
+                            val = cycle[metric]
+                            if not accept_zero_vismet:
+                                if val == 0:
+                                    self.failed_vismets.append(metric)
+                                    continue
+
+                            bt_result["measurements"].setdefault(metric, []).append(val)
+                            bt_result["statistics"][metric] = raw_result["statistics"][
+                                "visualMetrics"
+                            ][metric]
+
             results.append(bt_result)
 
         return results
@@ -660,6 +759,24 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
             "extra_options": extra_options,
             "accept_zero_vismet": accept_zero_vismet,
         }
+
+    def _label_video_folder(self, result_data, base_dir, kind="warm"):
+        for filetype in result_data["files"]:
+            for idx, data in enumerate(result_data["files"][filetype]):
+                parts = list(pathlib.Path(data).parts)
+                lable_idx = parts.index("data")
+                if "query-" in parts[lable_idx - 1]:
+                    lable_idx -= 1
+
+                src_dir = pathlib.Path(base_dir).joinpath(*parts[: lable_idx + 1])
+                parts.insert(lable_idx, kind)
+                dst_dir = pathlib.Path(base_dir).joinpath(*parts[: lable_idx + 1])
+
+                if src_dir.exists() and not dst_dir.exists():
+                    pathlib.Path(dst_dir).mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(src_dir), str(dst_dir))
+
+                result_data["files"][filetype][idx] = str(pathlib.Path(*parts[:]))
 
     def summarize_and_output(self, test_config, tests, test_names):
         """
@@ -715,21 +832,66 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                 raise
 
             # Split the chimera videos here for local testing
-            cold_path = None
-            warm_path = None
-            if self.chimera:
+            def split_browsertime_results(result_json_path, raw_btresults):
                 # First result is cold, second is warm
                 cold_data = raw_btresults[0]
                 warm_data = raw_btresults[1]
 
-                dirpath = os.path.dirname(os.path.abspath(bt_res_json))
-                cold_path = os.path.join(dirpath, "cold-browsertime.json")
-                warm_path = os.path.join(dirpath, "warm-browsertime.json")
+                dirpath = os.path.dirname(os.path.abspath(result_json_path))
+                _cold_path = os.path.join(dirpath, "cold-browsertime.json")
+                _warm_path = os.path.join(dirpath, "warm-browsertime.json")
 
-                with open(cold_path, "w") as f:
+                self._label_video_folder(cold_data, dirpath, "cold")
+                self._label_video_folder(warm_data, dirpath, "warm")
+
+                with open(_cold_path, "w") as f:
                     json.dump([cold_data], f)
-                with open(warm_path, "w") as f:
+                with open(_warm_path, "w") as f:
                     json.dump([warm_data], f)
+
+                raw_btresults[0] = cold_data
+                raw_btresults[1] = warm_data
+
+                return _cold_path, _warm_path
+
+            cold_path = None
+            warm_path = None
+            if self.chimera:
+                cold_path, warm_path = split_browsertime_results(
+                    bt_res_json, raw_btresults
+                )
+
+                # Overwrite the contents of the browsertime.json file
+                # to update it with the new file paths
+                try:
+                    with open(bt_res_json, "w", encoding="utf8") as f:
+                        json.dump(raw_btresults, f)
+                except Exception as e:
+                    LOG.error("Exception reading %s" % bt_res_json)
+                    # XXX this should be replaced by a traceback call
+                    LOG.error("Exception: %s %s" % (type(e).__name__, str(e)))
+                    raise
+
+                # If extra profiler run is enabled, split its browsertime.json
+                # file to cold and warm json files as well.
+                bt_profiling_res_json = os.path.join(
+                    self.result_dir_for_test_profiling(test), "browsertime.json"
+                )
+                has_extra_profiler_run = test_config.get(
+                    "extra_profiler_run", False
+                ) and os.path.exists(bt_profiling_res_json)
+                if has_extra_profiler_run:
+                    try:
+                        with open(bt_profiling_res_json, "r", encoding="utf8") as f:
+                            raw_profiling_btresults = json.load(f)
+                            split_browsertime_results(
+                                bt_profiling_res_json, raw_profiling_btresults
+                            )
+                    except Exception as e:
+                        LOG.info(
+                            "Exception reading and writing %s" % bt_profiling_res_json
+                        )
+                        LOG.info("Exception: %s %s" % (type(e).__name__, str(e)))
 
             if not run_local:
                 extra_options = self.build_extra_options()
@@ -781,6 +943,11 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                 test.get("measure"),
                 test_config.get("page_count", []),
                 test["name"],
+                accept_zero_vismet,
+                self.existing_results is not None,
+                test.get("test_summary", "pageload"),
+                test.get("subtest_name_filters", ""),
+                test.get("custom_data", False) == "true",
             ):
 
                 def _new_standard_result(new_result, subtest_unit="ms"):
@@ -795,6 +962,10 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                         if field in new_result:
                             continue
                         new_result[field] = test[field]
+
+                    new_result["min_back_window"] = test.get("min_back_window", None)
+                    new_result["max_back_window"] = test.get("max_back_window", None)
+                    new_result["fore_window"] = test.get("fore_window", None)
 
                     # All Browsertime measurements are elapsed times in milliseconds.
                     new_result["subtest_lower_is_better"] = test.get(
@@ -869,12 +1040,19 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
         output = BrowsertimeOutput(
             self.results,
             self.supporting_data,
-            test_config["subtest_alert_on"],
+            test_config.get("subtest_alert_on", []),
             self.app,
+            self.extra_summary_methods,
         )
         output.set_browser_meta(self.browser_name, self.browser_version)
         output.summarize(test_names)
         success, out_perfdata = output.output(test_names)
+
+        if len(self.failed_vismets) > 0:
+            LOG.critical(
+                "TEST-UNEXPECTED-FAIL | Some visual metrics have an erroneous value of 0."
+            )
+            LOG.info("Visual metric tests failed: %s" % str(self.failed_vismets))
 
         validate_success = True
         if not self.gecko_profile:
@@ -901,7 +1079,7 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
             with open(jobs_file, "w") as f:
                 f.write(json.dumps(jobs_json))
 
-        return success and validate_success
+        return (success and validate_success) and len(self.failed_vismets) == 0
 
 
 class MissingResultsError(Exception):

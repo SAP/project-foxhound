@@ -5,17 +5,13 @@
 
 /* eslint no-unused-vars: ["error", {vars: "local", args: "none"}] */
 
-var { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
-var tmp = {};
-ChromeUtils.import("resource://gre/modules/AddonManager.jsm", tmp);
-ChromeUtils.import("resource://gre/modules/Log.jsm", tmp);
-var AddonManager = tmp.AddonManager;
-var AddonManagerPrivate = tmp.AddonManagerPrivate;
-var Log = tmp.Log;
+let { AddonManagerPrivate } = ChromeUtils.import(
+  "resource://gre/modules/AddonManager.jsm"
+);
 
 var pathParts = gTestPath.split("/");
 // Drop the test filename
@@ -440,16 +436,6 @@ function wait_for_window_open(aCallback) {
   return log_callback(p, aCallback);
 }
 
-function get_string(aName, ...aArgs) {
-  var bundle = Services.strings.createBundle(
-    "chrome://mozapps/locale/extensions/extensions.properties"
-  );
-  if (!aArgs.length) {
-    return bundle.GetStringFromName(aName);
-  }
-  return bundle.formatStringFromName(aName, aArgs);
-}
-
 function formatDate(aDate) {
   const dtOptions = { year: "numeric", month: "long", day: "numeric" };
   return aDate.toLocaleDateString(undefined, dtOptions);
@@ -601,16 +587,14 @@ CategoryUtilities.prototype = {
 
 // Returns a promise that will resolve when the certificate error override has been added, or reject
 // if there is some failure.
-function addCertOverride(host, bits) {
+function addCertOverride(host) {
   return new Promise((resolve, reject) => {
     let req = new XMLHttpRequest();
     req.open("GET", "https://" + host + "/");
     req.onload = reject;
     req.onerror = () => {
       if (req.channel && req.channel.securityInfo) {
-        let securityInfo = req.channel.securityInfo.QueryInterface(
-          Ci.nsITransportSecurityInfo
-        );
+        let securityInfo = req.channel.securityInfo;
         if (securityInfo.serverCert) {
           let cos = Cc["@mozilla.org/security/certoverride;1"].getService(
             Ci.nsICertOverrideService
@@ -620,7 +604,6 @@ function addCertOverride(host, bits) {
             -1,
             {},
             securityInfo.serverCert,
-            bits,
             false
           );
           resolve();
@@ -636,31 +619,19 @@ function addCertOverride(host, bits) {
 // Returns a promise that will resolve when the necessary certificate overrides have been added.
 function addCertOverrides() {
   return Promise.all([
-    addCertOverride(
-      "nocert.example.com",
-      Ci.nsICertOverrideService.ERROR_MISMATCH
-    ),
-    addCertOverride(
-      "self-signed.example.com",
-      Ci.nsICertOverrideService.ERROR_UNTRUSTED
-    ),
-    addCertOverride(
-      "untrusted.example.com",
-      Ci.nsICertOverrideService.ERROR_UNTRUSTED
-    ),
-    addCertOverride(
-      "expired.example.com",
-      Ci.nsICertOverrideService.ERROR_TIME
-    ),
+    addCertOverride("nocert.example.com"),
+    addCertOverride("self-signed.example.com"),
+    addCertOverride("untrusted.example.com"),
+    addCertOverride("expired.example.com"),
   ]);
 }
 
 /** *** Mock Provider *****/
 
-function MockProvider() {
+function MockProvider(addonTypes) {
   this.addons = [];
   this.installs = [];
-  this.addonTypes = ["extension"];
+  this.addonTypes = addonTypes ?? ["extension"];
 
   var self = this;
   registerCleanupFunction(function() {
@@ -1490,8 +1461,8 @@ function waitAppMenuNotificationShown(
   accept = false,
   win = window
 ) {
-  const { AppMenuNotifications } = ChromeUtils.import(
-    "resource://gre/modules/AppMenuNotifications.jsm"
+  const { AppMenuNotifications } = ChromeUtils.importESModule(
+    "resource://gre/modules/AppMenuNotifications.sys.mjs"
   );
   return new Promise(resolve => {
     let { document, PanelUI } = win;
@@ -1593,13 +1564,8 @@ async function loadInitialView(type, opts) {
   return win;
 }
 
-function getSection(doc, type) {
-  const SECTION_INDEXES = {
-    enabled: 0,
-    disabled: 1,
-    colorway: 2,
-  };
-  return doc.querySelector(`section[section="${SECTION_INDEXES[type]}"]`);
+function getSection(doc, className) {
+  return doc.querySelector(`section.${className}`);
 }
 
 function waitForViewLoad(win) {

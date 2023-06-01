@@ -4,9 +4,11 @@
 
 "use strict";
 
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 
 // Prevent test failures due to the unhandled rejections in this test file.

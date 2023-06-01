@@ -9,9 +9,9 @@ if (System.properties['os.name'].toLowerCase().contains('windows')) {
     // gradle is called before parsing config.status, we cannot use PYTHON
     // value.
     if (System.env.MOZILLABUILD) {
-        def mozillabuild = System.env.MOZILLABUILD
+        def mozillabuild = System.env.MOZILLABUILD.toLowerCase()
         if (mozillabuild) {
-            commandLine.addAll(0, ["${mozillabuild}/python3/python.exe"])
+            commandLine.addAll(0, ["${mozillabuild}/python3/python3.exe"])
         }
     }
 }
@@ -63,6 +63,11 @@ project(':geckoview_example').projectDir = new File("${json.topsrcdir}/mobile/an
 project(':test_runner').projectDir = new File("${json.topsrcdir}/mobile/android/test_runner")
 project(':exoplayer2').projectDir = new File("${json.topsrcdir}/mobile/android/exoplayer2")
 project(':omnijar').projectDir = new File("${json.topsrcdir}/mobile/android/app/omnijar")
+
+if (hasProperty("androidFormatLintTest")) {
+    include ':androidFormatLintTest'
+    project(':androidFormatLintTest').projectDir = new File("${json.topsrcdir}/tools/lint/test/files/android-format")
+}
 
 // The Gradle instance is shared between settings.gradle and all the
 // other build.gradle files (see

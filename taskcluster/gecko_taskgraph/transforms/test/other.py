@@ -8,25 +8,15 @@ import re
 
 from mozbuild.schedules import INCLUSIVE_COMPONENTS
 from mozbuild.util import ReadOnlyDict
-from voluptuous import (
-    Any,
-    Optional,
-    Required,
-)
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.attributes import keymatch
+from taskgraph.util.keyed_by import evaluate_keyed_by
+from taskgraph.util.schema import Schema, resolve_keyed_by
+from taskgraph.util.taskcluster import get_artifact_path, get_index_url
+from voluptuous import Any, Optional, Required
 
-from gecko_taskgraph.transforms.base import TransformSequence
 from gecko_taskgraph.transforms.test.variant import TEST_VARIANTS
-from gecko_taskgraph.util.attributes import keymatch
-from gecko_taskgraph.util.keyed_by import evaluate_keyed_by
-from gecko_taskgraph.util.taskcluster import (
-    get_artifact_path,
-    get_index_url,
-)
 from gecko_taskgraph.util.platforms import platform_family
-from gecko_taskgraph.util.schema import (
-    resolve_keyed_by,
-    Schema,
-)
 
 transforms = TransformSequence()
 
@@ -96,6 +86,9 @@ def setup_talos(config, tasks):
             extra_options.append("--add-option")
             extra_options.append("--setpref,gfx.direct2d.disabled=true")
 
+        if config.params.get("project", None):
+            extra_options.append("--project=%s" % config.params["project"])
+
         yield task
 
 
@@ -112,7 +105,7 @@ def setup_browsertime_flag(config, tasks):
 
         if task["treeherder-symbol"].startswith("Rap"):
             # The Rap group is subdivided as Rap{-fenix,-refbrow(...),
-            # so `gecko_taskgraph.util.treeherder.replace_group` isn't appropriate.
+            # so `taskgraph.util.treeherder.replace_group` isn't appropriate.
             task["treeherder-symbol"] = task["treeherder-symbol"].replace(
                 "Rap", "Btime", 1
             )
@@ -133,37 +126,6 @@ def handle_artifact_prefix(config, tasks):
             task.setdefault("attributes", {}).setdefault(
                 "artifact_prefix", task["build-attributes"]["artifact_prefix"]
             )
-        yield task
-
-
-@transforms.add
-def set_target(config, tasks):
-    for task in tasks:
-        build_platform = task["build-platform"]
-        target = None
-        if "target" in task:
-            resolve_keyed_by(
-                task, "target", item_name=task["test-name"], enforce_single_match=False
-            )
-            target = task["target"]
-        if not target:
-            if build_platform.startswith("macosx"):
-                target = "target.dmg"
-            elif build_platform.startswith("android"):
-                target = "target.apk"
-            elif build_platform.startswith("win"):
-                target = "target.zip"
-            else:
-                target = "target.tar.bz2"
-
-        if isinstance(target, dict):
-            # TODO Remove hardcoded mobile artifact prefix
-            index_url = get_index_url(target["index"])
-            installer_url = "{}/artifacts/public/{}".format(index_url, target["name"])
-            task["mozharness"]["installer-url"] = installer_url
-        else:
-            task["mozharness"]["build-artifact-name"] = get_artifact_path(task, target)
-
         yield task
 
 
@@ -242,11 +204,7 @@ def set_download_symbols(config, tasks):
     for task in tasks:
         if task["test-platform"].split("/")[-1] == "debug":
             task["mozharness"]["download-symbols"] = True
-        elif (
-            task["build-platform"] == "linux64-asan/opt"
-            or task["build-platform"] == "linux64-asan-qr/opt"
-            or task["build-platform"] == "windows10-64-asan-qr/opt"
-        ):
+        elif "asan" in task["build-platform"] or "tsan" in task["build-platform"]:
             if "download-symbols" in task["mozharness"]:
                 del task["mozharness"]["download-symbols"]
         else:
@@ -273,6 +231,8 @@ def handle_keyed_by(config, tasks):
         "fetches.toolchain",
         "target",
         "webrender-run-on-projects",
+        "mozharness.requires-signed-builds",
+        "build-signing-label",
     ]
     for task in tasks:
         for field in fields:
@@ -284,6 +244,34 @@ def handle_keyed_by(config, tasks):
                 project=config.params["project"],
                 variant=task["attributes"].get("unittest_variant"),
             )
+        yield task
+
+
+@transforms.add
+def set_target(config, tasks):
+    for task in tasks:
+        build_platform = task["build-platform"]
+        target = None
+        if "target" in task:
+            target = task["target"]
+        if not target:
+            if build_platform.startswith("macosx"):
+                target = "target.dmg"
+            elif build_platform.startswith("android"):
+                target = "target.apk"
+            elif build_platform.startswith("win"):
+                target = "target.zip"
+            else:
+                target = "target.tar.bz2"
+
+        if isinstance(target, dict):
+            # TODO Remove hardcoded mobile artifact prefix
+            index_url = get_index_url(target["index"])
+            installer_url = "{}/artifacts/public/{}".format(index_url, target["name"])
+            task["mozharness"]["installer-url"] = installer_url
+        else:
+            task["mozharness"]["build-artifact-name"] = get_artifact_path(task, target)
+
         yield task
 
 
@@ -302,22 +290,22 @@ def setup_browsertime(config, tasks):
         # files, the transition is straight-forward.
         extra_options = task.get("mozharness", {}).get("extra-options", [])
 
-        if task["suite"] != "raptor" or "--browsertime" not in extra_options:
+        if task["suite"] != "raptor" or "--webext" in extra_options:
             yield task
             continue
 
         ts = {
             "by-test-platform": {
-                "android.*": ["browsertime", "linux64-geckodriver", "linux64-node"],
-                "linux.*": ["browsertime", "linux64-geckodriver", "linux64-node"],
-                "macosx.*": ["browsertime", "macosx64-geckodriver", "macosx64-node"],
+                "android.*": ["browsertime", "linux64-geckodriver", "linux64-node-16"],
+                "linux.*": ["browsertime", "linux64-geckodriver", "linux64-node-16"],
+                "macosx.*": ["browsertime", "macosx64-geckodriver", "macosx64-node-16"],
                 "windows.*aarch64.*": [
                     "browsertime",
                     "win32-geckodriver",
-                    "win32-node",
+                    "win32-node-16",
                 ],
-                "windows.*-32.*": ["browsertime", "win32-geckodriver", "win32-node"],
-                "windows.*-64.*": ["browsertime", "win64-geckodriver", "win64-node"],
+                "windows.*-32.*": ["browsertime", "win32-geckodriver", "win32-node-16"],
+                "windows.*-64.*": ["browsertime", "win64-geckodriver", "win64-node-16"],
             },
         }
 
@@ -327,12 +315,12 @@ def setup_browsertime(config, tasks):
 
         fs = {
             "by-test-platform": {
-                "android.*": ["linux64-ffmpeg-4.1.4"],
-                "linux.*": ["linux64-ffmpeg-4.1.4"],
-                "macosx.*": ["mac64-ffmpeg-4.1.1"],
-                "windows.*aarch64.*": ["win64-ffmpeg-4.1.1"],
-                "windows.*-32.*": ["win64-ffmpeg-4.1.1"],
-                "windows.*-64.*": ["win64-ffmpeg-4.1.1"],
+                "android.*": ["linux64-ffmpeg-4.4.1"],
+                "linux.*": ["linux64-ffmpeg-4.4.1"],
+                "macosx.*": ["mac64-ffmpeg-4.4.1"],
+                "windows.*aarch64.*": ["win64-ffmpeg-4.4.1"],
+                "windows.*-32.*": ["win64-ffmpeg-4.4.1"],
+                "windows.*-64.*": ["win64-ffmpeg-4.4.1"],
             },
         }
 
@@ -341,29 +329,29 @@ def setup_browsertime(config, tasks):
                 "linux64-chromedriver-87",
             ],
             "linux.*": [
-                "linux64-chromedriver-95",
-                "linux64-chromedriver-96",
-                "linux64-chromedriver-97",
+                "linux64-chromedriver-108",
+                "linux64-chromedriver-109",
+                "linux64-chromedriver-110",
             ],
             "macosx.*": [
-                "mac64-chromedriver-95",
-                "mac64-chromedriver-96",
-                "mac64-chromedriver-97",
+                "mac64-chromedriver-108",
+                "mac64-chromedriver-109",
+                "mac64-chromedriver-110",
             ],
             "windows.*aarch64.*": [
-                "win32-chromedriver-95",
-                "win32-chromedriver-96",
-                "win32-chromedriver-97",
+                "win32-chromedriver-108",
+                "win32-chromedriver-109",
+                "win32-chromedriver-110",
             ],
             "windows.*-32.*": [
-                "win32-chromedriver-95",
-                "win32-chromedriver-96",
-                "win32-chromedriver-97",
+                "win32-chromedriver-108",
+                "win32-chromedriver-109",
+                "win32-chromedriver-110",
             ],
             "windows.*-64.*": [
-                "win32-chromedriver-95",
-                "win32-chromedriver-96",
-                "win32-chromedriver-97",
+                "win32-chromedriver-108",
+                "win32-chromedriver-109",
+                "win32-chromedriver-110",
             ],
         }
 
@@ -423,7 +411,7 @@ def setup_browsertime(config, tasks):
                     "--browsertime-chromedriver",
                     "$MOZ_FETCHES_DIR/" + cd_extracted_name["windows"],
                     "--browsertime-ffmpeg",
-                    "$MOZ_FETCHES_DIR/ffmpeg-4.1.1-win64-static/bin/ffmpeg.exe",
+                    "$MOZ_FETCHES_DIR/ffmpeg-4.4.1-full_build/bin/ffmpeg.exe",
                 ],
                 "macosx.*": [
                     "--browsertime-node",
@@ -433,7 +421,7 @@ def setup_browsertime(config, tasks):
                     "--browsertime-chromedriver",
                     "$MOZ_FETCHES_DIR/" + cd_extracted_name["mac"],
                     "--browsertime-ffmpeg",
-                    "$MOZ_FETCHES_DIR/ffmpeg-4.1.1-macos64-static/bin/ffmpeg",
+                    "$MOZ_FETCHES_DIR/ffmpeg-macos/ffmpeg",
                 ],
                 "default": [
                     "--browsertime-node",
@@ -443,7 +431,7 @@ def setup_browsertime(config, tasks):
                     "--browsertime-chromedriver",
                     "$MOZ_FETCHES_DIR/" + cd_extracted_name["default"],
                     "--browsertime-ffmpeg",
-                    "$MOZ_FETCHES_DIR/ffmpeg-4.1.4-i686-static/ffmpeg",
+                    "$MOZ_FETCHES_DIR/ffmpeg-4.4.1-i686-static/ffmpeg",
                 ],
             }
         }
@@ -542,7 +530,7 @@ def enable_code_coverage(config, tasks):
             if "linux" in task["build-platform"]:
                 task["fetches"]["toolchain"].append("linux64-grcov")
             elif "osx" in task["build-platform"]:
-                task["fetches"]["fetch"].append("grcov-osx-x86_64")
+                task["fetches"]["toolchain"].append("macosx64-grcov")
             elif "win" in task["build-platform"]:
                 task["fetches"]["toolchain"].append("win64-grcov")
 
@@ -672,7 +660,6 @@ def handle_tier(config, tasks):
                 "android-em-7.0-x86_64-shippable-lite/opt",
                 "android-em-7.0-x86_64/debug",
                 "android-em-7.0-x86_64/debug-isolated-process",
-                "android-em-7.0-x86_64-lite/debug",
                 "android-em-7.0-x86_64/opt",
                 "android-em-7.0-x86_64-lite/opt",
                 "android-em-7.0-x86-shippable/opt",
@@ -696,6 +683,11 @@ def handle_tier(config, tasks):
 def apply_raptor_tier_optimization(config, tasks):
     for task in tasks:
         if task["suite"] != "raptor":
+            yield task
+            continue
+
+        if "regression-tests" in task["test-name"]:
+            # Don't optimize the regression tests
             yield task
             continue
 
@@ -723,18 +715,11 @@ def disable_try_only_platforms(config, tasks):
 def ensure_spi_disabled_on_all_but_spi(config, tasks):
     for task in tasks:
         variant = task["attributes"].get("unittest_variant", "")
-        has_setpref = (
-            "gtest" not in task["suite"]
-            and "cppunit" not in task["suite"]
-            and "jittest" not in task["suite"]
-            and "junit" not in task["suite"]
-            and "raptor" not in task["suite"]
-        )
+        has_no_setpref = ("gtest", "cppunit", "jittest", "junit", "raptor")
 
         if (
-            has_setpref
-            and variant != "socketprocess"
-            and variant != "socketprocess_networking"
+            all(s not in task["suite"] for s in has_no_setpref)
+            and "socketprocess" not in variant
         ):
             task["mozharness"]["extra-options"].append(
                 "--setpref=media.peerconnection.mtransport_process=false"
@@ -970,7 +955,8 @@ def set_retry_exit_status(config, tasks):
     """Set the retry exit status to TBPL_RETRY, the value returned by mozharness
     scripts to indicate a transient failure that should be retried."""
     for task in tasks:
-        task["retry-exit-status"] = [4]
+        # add in 137 as it is an error with GCP workers
+        task["retry-exit-status"] = [4, 137]
         yield task
 
 
@@ -1055,4 +1041,19 @@ def set_schedules_components(config, tasks):
         schedules.add(platform_family(task["build-platform"]))
 
         task["schedules-component"] = sorted(schedules)
+        yield task
+
+
+@transforms.add
+def enable_parallel_marking_in_tsan_tests(config, tasks):
+    """Enable parallel marking in TSAN tests"""
+    skip_list = ["cppunittest", "gtest"]
+    for task in tasks:
+        if "-tsan-" in task["test-platform"]:
+            if task["suite"] not in skip_list:
+                extra_options = task["mozharness"].setdefault("extra-options", [])
+                extra_options.append(
+                    "--setpref=javascript.options.mem.gc_parallel_marking=true"
+                )
+
         yield task

@@ -177,14 +177,37 @@ MockCubebStream::MockCubebStream(cubeb* aContext, cubeb_devid aInputDevice,
 MockCubebStream::~MockCubebStream() = default;
 
 int MockCubebStream::Start() {
-  mStateCallback(AsCubebStream(), mUserPtr, CUBEB_STATE_STARTED);
+  NotifyStateChanged(CUBEB_STATE_STARTED);
   mStreamStop = false;
-  MonitorAutoLock lock(mFrozenStartMonitor);
   if (mFrozenStart) {
+    // We need to grab mFrozenStartMonitor before returning to avoid races in
+    // the calling code -- it controls when to mFrozenStartMonitor.Notify().
+    // TempData helps facilitate this by holding what's needed to block the
+    // calling thread until the background thread has grabbed the lock.
+    struct TempData {
+      NS_INLINE_DECL_THREADSAFE_REFCOUNTING(TempData)
+      static_assert(HasThreadSafeRefCnt::value,
+                    "Silence a -Wunused-local-typedef warning");
+      Monitor mMonitor{"MockCubebStream::Start::TempData::mMonitor"};
+      bool mFinished = false;
+
+     private:
+      ~TempData() = default;
+    };
+    auto temp = MakeRefPtr<TempData>();
+    MonitorAutoLock lock(temp->mMonitor);
     NS_DispatchBackgroundTask(NS_NewRunnableFunction(
         "MockCubebStream::WaitForThawBeforeStart",
-        [this, self = RefPtr<SmartMockCubebStream>(mSelf)] {
+        [temp, this, self = RefPtr<SmartMockCubebStream>(mSelf)]() mutable {
           MonitorAutoLock lock(mFrozenStartMonitor);
+          {
+            // Unblock MockCubebStream::Start now that we have locked the frozen
+            // start monitor.
+            MonitorAutoLock tempLock(temp->mMonitor);
+            temp->mFinished = true;
+            temp->mMonitor.Notify();
+            temp = nullptr;
+          }
           while (mFrozenStart) {
             mFrozenStartMonitor.Wait();
           }
@@ -192,6 +215,9 @@ int MockCubebStream::Start() {
             MockCubeb::AsMock(context)->StartStream(mSelf);
           }
         }));
+    while (!temp->mFinished) {
+      temp->mMonitor.Wait();
+    }
     return CUBEB_OK;
   }
   MockCubeb::AsMock(context)->StartStream(this);
@@ -205,9 +231,18 @@ int MockCubebStream::Stop() {
   int rv = MockCubeb::AsMock(context)->StopStream(this);
   mStreamStop = true;
   if (rv == CUBEB_OK) {
-    mStateCallback(AsCubebStream(), mUserPtr, CUBEB_STATE_STOPPED);
+    NotifyStateChanged(CUBEB_STATE_STOPPED);
   }
   return rv;
+}
+
+int MockCubebStream::RegisterDeviceChangedCallback(
+    cubeb_device_changed_callback aDeviceChangedCallback) {
+  if (mDeviceChangedCallback && aDeviceChangedCallback) {
+    return CUBEB_ERROR_INVALID_PARAMETER;
+  }
+  mDeviceChangedCallback = aDeviceChangedCallback;
+  return CUBEB_OK;
 }
 
 cubeb_stream* MockCubebStream::AsCubebStream() {
@@ -244,11 +279,17 @@ nsTArray<AudioDataValue>&& MockCubebStream::TakeRecordedOutput() {
   return std::move(mRecordedOutput);
 }
 
+nsTArray<AudioDataValue>&& MockCubebStream::TakeRecordedInput() {
+  return std::move(mRecordedInput);
+}
+
 void MockCubebStream::SetDriftFactor(float aDriftFactor) {
   mDriftFactor = aDriftFactor;
 }
 
 void MockCubebStream::ForceError() { mForceErrorState = true; }
+
+void MockCubebStream::ForceDeviceChanged() { mForceDeviceChanged = true; };
 
 void MockCubebStream::Thaw() {
   MonitorAutoLock l(mFrozenStartMonitor);
@@ -258,6 +299,14 @@ void MockCubebStream::Thaw() {
 
 void MockCubebStream::SetOutputRecordingEnabled(bool aEnabled) {
   mOutputRecordingEnabled = aEnabled;
+}
+
+void MockCubebStream::SetInputRecordingEnabled(bool aEnabled) {
+  mInputRecordingEnabled = aEnabled;
+}
+
+MediaEventSource<cubeb_state>& MockCubebStream::StateEvent() {
+  return mStateEvent;
 }
 
 MediaEventSource<uint32_t>& MockCubebStream::FramesProcessedEvent() {
@@ -277,6 +326,14 @@ MediaEventSource<void>& MockCubebStream::ErrorForcedEvent() {
   return mErrorForcedEvent;
 }
 
+MediaEventSource<void>& MockCubebStream::ErrorStoppedEvent() {
+  return mErrorStoppedEvent;
+}
+
+MediaEventSource<void>& MockCubebStream::DeviceChangeForcedEvent() {
+  return mDeviceChangedForcedEvent;
+}
+
 void MockCubebStream::Process10Ms() {
   if (mStreamStop) {
     return;
@@ -294,6 +351,9 @@ void MockCubebStream::Process10Ms() {
       mDataCallback(stream, mUserPtr, mHasInput ? mInputBuffer : nullptr,
                     mHasOutput ? mOutputBuffer : nullptr, nrFrames);
 
+  if (mInputRecordingEnabled && mHasInput) {
+    mRecordedInput.AppendElements(mInputBuffer, outframes * InputChannels());
+  }
   if (mOutputRecordingEnabled && mHasOutput) {
     mRecordedOutput.AppendElements(mOutputBuffer, outframes * OutputChannels());
   }
@@ -306,7 +366,7 @@ void MockCubebStream::Process10Ms() {
   }
 
   if (outframes < nrFrames) {
-    mStateCallback(stream, mUserPtr, CUBEB_STATE_DRAINED);
+    NotifyStateChanged(CUBEB_STATE_DRAINED);
     mStreamStop = true;
     return;
   }
@@ -314,14 +374,34 @@ void MockCubebStream::Process10Ms() {
     mForceErrorState = false;
     // Let the audio thread (this thread!) run to completion before
     // being released, by joining and releasing on main.
-    NS_DispatchBackgroundTask(
-        NS_NewRunnableFunction(__func__, [cubeb = MockCubeb::AsMock(context),
-                                          this] { cubeb->StopStream(this); }));
-    mStateCallback(stream, mUserPtr, CUBEB_STATE_ERROR);
+    NS_DispatchBackgroundTask(NS_NewRunnableFunction(
+        __func__, [cubeb = MockCubeb::AsMock(context), this,
+                   self = RefPtr<SmartMockCubebStream>(mSelf)] {
+          cubeb->StopStream(this);
+          self->mErrorStoppedEvent.Notify();
+        }));
+    NotifyStateChanged(CUBEB_STATE_ERROR);
     mErrorForcedEvent.Notify();
     mStreamStop = true;
     return;
   }
+  if (mForceDeviceChanged) {
+    mForceDeviceChanged = false;
+    // The device-changed callback is not necessary to be run in the
+    // audio-callback thread. It's up to the platform APIs. We don't have any
+    // control over them. Fire the device-changed callback in another thread to
+    // simulate this.
+    NS_DispatchBackgroundTask(NS_NewRunnableFunction(
+        __func__, [this, self = RefPtr<SmartMockCubebStream>(mSelf)] {
+          mDeviceChangedCallback(this->mUserPtr);
+          mDeviceChangedForcedEvent.Notify();
+        }));
+  }
+}
+
+void MockCubebStream::NotifyStateChanged(cubeb_state aState) {
+  mStateCallback(AsCubebStream(), mUserPtr, aState);
+  mStateEvent.Notify(aState);
 }
 
 MockCubeb::MockCubeb() : ops(&mock_ops) {}

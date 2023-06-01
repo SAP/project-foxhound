@@ -4,24 +4,23 @@
  */
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 const { ctypes } = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
 const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-const { MockRegistrar } = ChromeUtils.import(
-  "resource://testing-common/MockRegistrar.jsm"
+const { MockRegistrar } = ChromeUtils.importESModule(
+  "resource://testing-common/MockRegistrar.sys.mjs"
 );
 const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const { X509 } = ChromeUtils.import("resource://gre/modules/psm/X509.jsm");
@@ -129,6 +128,7 @@ const NO_FLAGS = 0;
 const CRLiteModeDisabledPrefValue = 0;
 const CRLiteModeTelemetryOnlyPrefValue = 1;
 const CRLiteModeEnforcePrefValue = 2;
+const CRLiteModeConfirmRevocationsValue = 3;
 
 // Convert a string to an array of bytes consisting of the char code at each
 // index.
@@ -473,7 +473,7 @@ function add_tls_server_setup(serverBinName, certsPath, addDefaultRoot = true) {
 /**
  * Add a TLS connection test case.
  *
- * @param {String} aHost
+ * @param {string} aHost
  *   The hostname to pass in the SNI TLS extension; this should unambiguously
  *   identify which test is being run.
  * @param {PRErrorCode} aExpectedResult
@@ -617,7 +617,7 @@ async function asyncConnectTo(
     return connection.go();
   }
 
-  return connectTo(aHost).then(function(conn) {
+  return connectTo(aHost).then(async function(conn) {
     info("handling " + aHost);
     let expectedNSResult =
       aExpectedResult == PRErrorCodeSuccess
@@ -630,7 +630,7 @@ async function asyncConnectTo(
     );
     if (aWithSecurityInfo) {
       aWithSecurityInfo(
-        conn.transport.securityInfo.QueryInterface(Ci.nsITransportSecurityInfo)
+        await conn.transport.tlsSocketControl.asyncGetSecurityInfo()
       );
     }
   });
@@ -686,16 +686,13 @@ async function asyncStartTLSTestServer(
 
   const CALLBACK_PORT = 8444;
 
-  let envSvc = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
   let greBinDir = Services.dirsvc.get("GreBinD", Ci.nsIFile);
-  envSvc.set("DYLD_LIBRARY_PATH", greBinDir.path);
+  Services.env.set("DYLD_LIBRARY_PATH", greBinDir.path);
   // TODO(bug 1107794): Android libraries are in /data/local/xpcb, but "GreBinD"
   // does not return this path on Android, so hard code it here.
-  envSvc.set("LD_LIBRARY_PATH", greBinDir.path + ":/data/local/xpcb");
-  envSvc.set("MOZ_TLS_SERVER_DEBUG_LEVEL", "3");
-  envSvc.set("MOZ_TLS_SERVER_CALLBACK_PORT", CALLBACK_PORT);
+  Services.env.set("LD_LIBRARY_PATH", greBinDir.path + ":/data/local/xpcb");
+  Services.env.set("MOZ_TLS_SERVER_DEBUG_LEVEL", "3");
+  Services.env.set("MOZ_TLS_SERVER_CALLBACK_PORT", CALLBACK_PORT);
 
   let httpServer = new HttpServer();
   let serverReady = new Promise(resolve => {
@@ -907,47 +904,23 @@ function stopOCSPResponder(responder) {
 
 // Helper function for add_cert_override_test. Probably doesn't need to be
 // called directly.
-function add_cert_override(aHost, aExpectedBits, aSecurityInfo) {
-  let bits =
-    (aSecurityInfo.isUntrusted
-      ? Ci.nsICertOverrideService.ERROR_UNTRUSTED
-      : 0) |
-    (aSecurityInfo.isDomainMismatch
-      ? Ci.nsICertOverrideService.ERROR_MISMATCH
-      : 0) |
-    (aSecurityInfo.isNotValidAtThisTime
-      ? Ci.nsICertOverrideService.ERROR_TIME
-      : 0);
-
-  Assert.equal(
-    bits,
-    aExpectedBits,
-    "Actual and expected override bits should match"
-  );
+function add_cert_override(aHost, aSecurityInfo) {
   let cert = aSecurityInfo.serverCert;
   let certOverrideService = Cc[
     "@mozilla.org/security/certoverride;1"
   ].getService(Ci.nsICertOverrideService);
-  certOverrideService.rememberValidityOverride(
-    aHost,
-    8443,
-    {},
-    cert,
-    aExpectedBits,
-    true
-  );
+  certOverrideService.rememberValidityOverride(aHost, 8443, {}, cert, true);
 }
 
-// Given a host, expected error bits (see nsICertOverrideService.idl), and an
-// expected error code, tests that an initial connection to the host fails
-// with the expected errors and that adding an override results in a subsequent
-// connection succeeding.
-function add_cert_override_test(aHost, aExpectedBits, aExpectedError) {
+// Given a host and an expected error code, tests that an initial connection to
+// the host fails with the expected error and that adding an override results
+// in a subsequent connection succeeding.
+function add_cert_override_test(aHost, aExpectedError) {
   add_connection_test(
     aHost,
     aExpectedError,
     null,
-    add_cert_override.bind(this, aHost, aExpectedBits)
+    add_cert_override.bind(this, aHost)
   );
   add_connection_test(aHost, PRErrorCodeSuccess, null, aSecurityInfo => {
     Assert.ok(
@@ -962,54 +935,28 @@ function add_cert_override_test(aHost, aExpectedBits, aExpectedError) {
 // add_cert_override except it may not be the case that the connection has an
 // SecInfo set on it. In this case, the error was not overridable anyway, so
 // we consider it a success.
-function attempt_adding_cert_override(aHost, aExpectedBits, aSecurityInfo) {
+function attempt_adding_cert_override(aHost, aSecurityInfo) {
   if (aSecurityInfo.serverCert) {
-    let bits =
-      (aSecurityInfo.isUntrusted
-        ? Ci.nsICertOverrideService.ERROR_UNTRUSTED
-        : 0) |
-      (aSecurityInfo.isDomainMismatch
-        ? Ci.nsICertOverrideService.ERROR_MISMATCH
-        : 0) |
-      (aSecurityInfo.isNotValidAtThisTime
-        ? Ci.nsICertOverrideService.ERROR_TIME
-        : 0);
-    Assert.equal(
-      bits,
-      aExpectedBits,
-      "Actual and expected override bits should match"
-    );
     let cert = aSecurityInfo.serverCert;
     let certOverrideService = Cc[
       "@mozilla.org/security/certoverride;1"
     ].getService(Ci.nsICertOverrideService);
-    certOverrideService.rememberValidityOverride(
-      aHost,
-      8443,
-      {},
-      cert,
-      aExpectedBits,
-      true
-    );
+    certOverrideService.rememberValidityOverride(aHost, 8443, {}, cert, true);
   }
 }
 
-// Given a host, expected error bits (see nsICertOverrideService.idl), and
-// an expected error code, tests that an initial connection to the host fails
-// with the expected errors and that adding an override does not result in a
-// subsequent connection succeeding (i.e. the same error code is encountered).
+// Given a host and an expected error code, tests that an initial connection to
+// the host fails with the expected error and that adding an override does not
+// result in a subsequent connection succeeding (i.e. the same error code is
+// encountered).
 // The idea here is that for HSTS hosts or hosts with key pins, no error is
 // overridable, even if an entry is added to the override service.
-function add_prevented_cert_override_test(
-  aHost,
-  aExpectedBits,
-  aExpectedError
-) {
+function add_prevented_cert_override_test(aHost, aExpectedError) {
   add_connection_test(
     aHost,
     aExpectedError,
     null,
-    attempt_adding_cert_override.bind(this, aHost, aExpectedBits)
+    attempt_adding_cert_override.bind(this, aHost)
   );
   add_connection_test(aHost, aExpectedError);
 }
@@ -1052,10 +999,10 @@ class CertVerificationResult {
  *   The certificate database to use to verify the certificate.
  * @param {nsIX509Cert} cert
  *   The certificate to be verified.
- * @param {Number[]} expectedUsages
+ * @param {number[]} expectedUsages
  *   A list of usages (as their integer values) that are expected to verify
  *   successfully.
- * @return {Promise}
+ * @returns {Promise}
  *   A promise that will resolve with no value when all asynchronous operations
  *   have completed.
  */
@@ -1087,9 +1034,9 @@ function asyncTestCertificateUsages(certdb, cert, expectedUsages) {
  * @param {nsIFile} libraryFile
  *                  The dynamic library file that implements the module to
  *                  load.
- * @param {String} moduleName
+ * @param {string} moduleName
  *                 What to call the module.
- * @param {Boolean} expectModuleUnloadToFail
+ * @param {boolean} expectModuleUnloadToFail
  *                  Should be set to true for tests that manually unload the
  *                  test module, so the attempt to auto unload the test module
  *                  doesn't cause a test failure. Should be set to false
@@ -1116,8 +1063,8 @@ function loadPKCS11Module(libraryFile, moduleName, expectModuleUnloadToFail) {
 }
 
 /**
- * @param {String} data
- * @returns {String}
+ * @param {string} data
+ * @returns {string}
  */
 function hexify(data) {
   // |slice(-2)| chomps off the last two characters of a string.
@@ -1130,7 +1077,7 @@ function hexify(data) {
 }
 
 /**
- * @param {String[]} lines
+ * @param {string[]} lines
  *        Lines to write. Each line automatically has "\n" appended to it when
  *        being written.
  * @param {nsIFileOutputStream} outputStream
@@ -1144,9 +1091,9 @@ function writeLinesAndClose(lines, outputStream) {
 }
 
 /**
- * @param {String} moduleName
+ * @param {string} moduleName
  *        The name of the module that should not be loaded.
- * @param {String} libraryName
+ * @param {string} libraryName
  *        A unique substring of name of the dynamic library file of the module
  *        that should not be loaded.
  */
@@ -1176,9 +1123,9 @@ function checkPKCS11ModuleNotPresent(moduleName, libraryName) {
  * Checks that the test module exists in the module list.
  * Also checks various attributes of the test module for correctness.
  *
- * @param {String} moduleName
+ * @param {string} moduleName
  *                 The name of the module that should be present.
- * @param {String} libraryName
+ * @param {string} libraryName
  *                 A unique substring of the name of the dynamic library file
  *                 of the module that should be loaded.
  * @returns {nsIPKCS11Module}
@@ -1223,14 +1170,11 @@ function getSubjectAndSPKIHash(nsCert) {
 }
 
 function run_certutil_on_directory(directory, args, expectSuccess = true) {
-  let envSvc = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
   let greBinDir = Services.dirsvc.get("GreBinD", Ci.nsIFile);
-  envSvc.set("DYLD_LIBRARY_PATH", greBinDir.path);
+  Services.env.set("DYLD_LIBRARY_PATH", greBinDir.path);
   // TODO(bug 1107794): Android libraries are in /data/local/xpcb, but "GreBinD"
   // does not return this path on Android, so hard code it here.
-  envSvc.set("LD_LIBRARY_PATH", greBinDir.path + ":/data/local/xpcb");
+  Services.env.set("LD_LIBRARY_PATH", greBinDir.path + ":/data/local/xpcb");
   let certutilBin = _getBinaryUtil("certutil");
   let process = Cc["@mozilla.org/process/util;1"].createInstance(Ci.nsIProcess);
   process.init(certutilBin);

@@ -6,7 +6,9 @@
 #include "TextUpdater.h"
 
 #include "LocalAccessible-inl.h"
+#include "CacheConstants.h"
 #include "DocAccessible-inl.h"
+#include "nsAccessibilityService.h"
 #include "TextLeafAccessible.h"
 #include <algorithm>
 
@@ -30,6 +32,7 @@ void TextUpdater::Run(DocAccessible* aDocument, TextLeafAccessible* aTextLeaf,
   if (skipStart != minLen || oldLen != newLen) {
     TextUpdater updater(aDocument, aTextLeaf);
     updater.DoUpdate(aNewText, oldText, skipStart);
+    aDocument->QueueCacheUpdate(aTextLeaf, CacheDomain::Text);
   }
 }
 
@@ -47,6 +50,30 @@ void TextUpdater::DoUpdate(const nsAString& aNewText, const nsAString& aOldText,
   // Get the text leaf accessible offset and invalidate cached offsets after it.
   mTextOffset = mHyperText->GetChildOffset(mTextLeaf, true);
   NS_ASSERTION(mTextOffset != -1, "Text leaf hasn't offset within hyper text!");
+
+  // Don't bother diffing if the hypertext isn't editable. Diffing non-editable
+  // text can lead to weird screen reader results with live regions, e.g.,
+  // changing "text" to "testing" might read the diff "s ing" when we'd really
+  // just like to hear "testing."
+  if (!mHyperText->IsEditable()) {
+    // Fire text change event for removal.
+    RefPtr<AccEvent> textRemoveEvent =
+        new AccTextChangeEvent(mHyperText, mTextOffset, aOldText, false);
+    mDocument->FireDelayedEvent(textRemoveEvent);
+
+    // Fire text change event for insertion if there's text to insert.
+    if (!aNewText.IsEmpty()) {
+      RefPtr<AccEvent> textInsertEvent =
+          new AccTextChangeEvent(mHyperText, mTextOffset, aNewText, true);
+      mDocument->FireDelayedEvent(textInsertEvent);
+    }
+
+    mDocument->MaybeNotifyOfValueChange(mHyperText);
+
+    // Update the text.
+    mTextLeaf->SetText(aNewText);
+    return;
+  }
 
   uint32_t oldLen = aOldText.Length(), newLen = aNewText.Length();
   uint32_t minLen = std::min(oldLen, newLen);

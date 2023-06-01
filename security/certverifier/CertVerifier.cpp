@@ -8,10 +8,10 @@
 
 #include <stdint.h>
 
+#include "AppTrustDomain.h"
 #include "CTDiversityPolicy.h"
 #include "CTKnownLogs.h"
 #include "CTLogVerifier.h"
-#include "CSTrustDomain.h"
 #include "ExtendedValidation.h"
 #include "MultiLogCTVerifier.h"
 #include "NSSCertDBTrustDomain.h"
@@ -104,8 +104,7 @@ void CertificateTransparencyInfo::Reset() {
 CertVerifier::CertVerifier(OcspDownloadConfig odc, OcspStrictConfig osc,
                            mozilla::TimeDuration ocspTimeoutSoft,
                            mozilla::TimeDuration ocspTimeoutHard,
-                           uint32_t certShortLifetimeInDays, SHA1Mode sha1Mode,
-                           BRNameMatchingPolicy::Mode nameMatchingMode,
+                           uint32_t certShortLifetimeInDays,
                            NetscapeStepUpPolicy netscapeStepUpPolicy,
                            CertificateTransparencyMode ctMode,
                            CRLiteMode crliteMode,
@@ -115,8 +114,6 @@ CertVerifier::CertVerifier(OcspDownloadConfig odc, OcspStrictConfig osc,
       mOCSPTimeoutSoft(ocspTimeoutSoft),
       mOCSPTimeoutHard(ocspTimeoutHard),
       mCertShortLifetimeInDays(certShortLifetimeInDays),
-      mSHA1Mode(sha1Mode),
-      mNameMatchingMode(nameMatchingMode),
       mNetscapeStepUpPolicy(netscapeStepUpPolicy),
       mCTMode(ctMode),
       mCRLiteMode(crliteMode) {
@@ -165,39 +162,28 @@ Result IsDelegatedCredentialAcceptable(const DelegatedCredentialInfo& dcInfo) {
 // has been added to the NSS trust store, because it has been approved
 // for inclusion according to the Mozilla CA policy, and might be accepted
 // by Mozilla applications as an issuer for certificates seen on the public web.
-// Ideally this would only be called from the socket thread. In the context of
-// TLS server certificate verification, IsCertBuiltInRootWithSyncDispatch
-// ensures this function is only called from the socket thread. However, there
-// are other code paths that reach this function that do not run on the socket
-// thread. None of these code paths should be reachable during TLS server
-// certificate verification.
 Result IsCertBuiltInRoot(Input certInput, bool& result) {
+  result = false;
+
   if (NS_FAILED(BlockUntilLoadableCertsLoaded())) {
     return Result::FATAL_ERROR_LIBRARY_FAILURE;
   }
 
-  CERTCertDBHandle* certDB(CERT_GetDefaultCertDB());
-  SECItem certDER(UnsafeMapInputToSECItem(certInput));
-  UniqueCERTCertificate cert(
-      CERT_NewTempCertificate(certDB, &certDER, nullptr, false, true));
-  if (!cert) {
-    return Result::FATAL_ERROR_LIBRARY_FAILURE;
-  }
-
-  result = false;
 #ifdef DEBUG
   nsCOMPtr<nsINSSComponent> component(do_GetService(PSM_COMPONENT_CONTRACTID));
   if (!component) {
     return Result::FATAL_ERROR_LIBRARY_FAILURE;
   }
-  nsresult rv = component->IsCertTestBuiltInRoot(cert.get(), &result);
-  if (NS_FAILED(rv)) {
+  nsTArray<uint8_t> certBytes;
+  certBytes.AppendElements(certInput.UnsafeGetData(), certInput.GetLength());
+  if (NS_FAILED(component->IsCertTestBuiltInRoot(certBytes, &result))) {
     return Result::FATAL_ERROR_LIBRARY_FAILURE;
   }
   if (result) {
     return Success;
   }
 #endif  // DEBUG
+  SECItem certItem(UnsafeMapInputToSECItem(certInput));
   AutoSECMODListReadLock lock;
   for (SECMODModuleList* list = SECMOD_GetDefaultModuleList(); list;
        list = list->next) {
@@ -216,16 +202,19 @@ Result IsCertBuiltInRoot(Input certInput, bool& result) {
       // is expected to comply with additional requirements.
       // If the certificate has attribute CKA_NSS_MOZILLA_CA_POLICY set to true,
       // then we treat it as a "builtin root".
-      if (PK11_IsPresent(slot) && PK11_HasRootCerts(slot)) {
-        CK_OBJECT_HANDLE handle =
-            PK11_FindCertInSlot(slot, cert.get(), nullptr);
-        if (handle != CK_INVALID_HANDLE &&
-            PK11_HasAttributeSet(slot, handle, CKA_NSS_MOZILLA_CA_POLICY,
-                                 false)) {
-          // Attribute was found, and is set to true
-          result = true;
-          break;
-        }
+      if (!PK11_IsPresent(slot) || !PK11_HasRootCerts(slot)) {
+        continue;
+      }
+      CK_OBJECT_HANDLE handle =
+          PK11_FindEncodedCertInSlot(slot, &certItem, nullptr);
+      if (handle == CK_INVALID_HANDLE) {
+        continue;
+      }
+      if (PK11_HasAttributeSet(slot, handle, CKA_NSS_MOZILLA_CA_POLICY,
+                               false)) {
+        // Attribute was found, and is set to true
+        result = true;
+        break;
       }
     }
   }
@@ -456,24 +445,6 @@ Result CertVerifier::VerifyCertificateTransparencyPolicy(
   return Success;
 }
 
-bool CertVerifier::SHA1ModeMoreRestrictiveThanGivenMode(SHA1Mode mode) {
-  switch (mSHA1Mode) {
-    case SHA1Mode::Forbidden:
-      return mode != SHA1Mode::Forbidden;
-    case SHA1Mode::ImportedRoot:
-      return mode != SHA1Mode::Forbidden && mode != SHA1Mode::ImportedRoot;
-    case SHA1Mode::ImportedRootOrBefore2016:
-      return mode == SHA1Mode::Allowed;
-    case SHA1Mode::Allowed:
-      return false;
-    // MSVC warns unless we explicitly handle this now-unused option.
-    case SHA1Mode::UsedToBeBefore2016ButNowIsForbidden:
-    default:
-      MOZ_ASSERT(false, "unexpected SHA1Mode type");
-      return true;
-  }
-}
-
 Result CertVerifier::VerifyCert(
     const nsTArray<uint8_t>& certBytes, SECCertificateUsage usage, Time time,
     void* pinArg, const char* hostname,
@@ -486,15 +457,14 @@ Result CertVerifier::VerifyCert(
     /*optional out*/ EVStatus* evStatus,
     /*optional out*/ OCSPStaplingStatus* ocspStaplingStatus,
     /*optional out*/ KeySizeStatus* keySizeStatus,
-    /*optional out*/ SHA1ModeResult* sha1ModeResult,
     /*optional out*/ PinningTelemetryInfo* pinningTelemetryInfo,
     /*optional out*/ CertificateTransparencyInfo* ctInfo,
-    /*optional out*/ bool* isBuiltChainRootBuiltInRoot) {
+    /*optional out*/ bool* isBuiltChainRootBuiltInRoot,
+    /*optional out*/ bool* madeOCSPRequests) {
   MOZ_LOG(gCertVerifierLog, LogLevel::Debug, ("Top of VerifyCert\n"));
 
   MOZ_ASSERT(usage == certificateUsageSSLServer || !(flags & FLAG_MUST_BE_EV));
   MOZ_ASSERT(usage == certificateUsageSSLServer || !keySizeStatus);
-  MOZ_ASSERT(usage == certificateUsageSSLServer || !sha1ModeResult);
 
   if (NS_FAILED(BlockUntilLoadableCertsLoaded())) {
     return Result::FATAL_ERROR_LIBRARY_FAILURE;
@@ -520,19 +490,16 @@ Result CertVerifier::VerifyCert(
     *keySizeStatus = KeySizeStatus::NeverChecked;
   }
 
-  if (sha1ModeResult) {
-    if (usage != certificateUsageSSLServer) {
-      return Result::FATAL_ERROR_INVALID_ARGS;
-    }
-    *sha1ModeResult = SHA1ModeResult::NeverChecked;
-  }
-
   if (usage != certificateUsageSSLServer && (flags & FLAG_MUST_BE_EV)) {
     return Result::FATAL_ERROR_INVALID_ARGS;
   }
 
   if (isBuiltChainRootBuiltInRoot) {
     *isBuiltChainRootBuiltInRoot = false;
+  }
+
+  if (madeOCSPRequests) {
+    *madeOCSPRequests = false;
   }
 
   Input certDER;
@@ -577,14 +544,18 @@ Result CertVerifier::VerifyCert(
       NSSCertDBTrustDomain trustDomain(
           trustEmail, defaultOCSPFetching, mOCSPCache, pinArg, mOCSPTimeoutSoft,
           mOCSPTimeoutHard, mCertShortLifetimeInDays, MIN_RSA_BITS_WEAK,
-          ValidityCheckingMode::CheckingOff, SHA1Mode::Allowed,
-          NetscapeStepUpPolicy::NeverMatch, mCRLiteMode, originAttributes,
-          mThirdPartyRootInputs, mThirdPartyIntermediateInputs,
-          extraCertificates, builtChain, nullptr, nullptr);
+          ValidityCheckingMode::CheckingOff, NetscapeStepUpPolicy::NeverMatch,
+          mCRLiteMode, originAttributes, mThirdPartyRootInputs,
+          mThirdPartyIntermediateInputs, extraCertificates, builtChain, nullptr,
+          nullptr);
       rv = BuildCertChain(
           trustDomain, certDER, time, EndEntityOrCA::MustBeEndEntity,
           KeyUsage::digitalSignature, KeyPurposeId::id_kp_clientAuth,
           CertPolicyId::anyPolicy, stapledOCSPResponse);
+      if (madeOCSPRequests) {
+        *madeOCSPRequests |=
+            trustDomain.GetOCSPFetchStatus() == OCSPFetchStatus::Fetched;
+      }
       break;
     }
 
@@ -593,65 +564,23 @@ Result CertVerifier::VerifyCert(
       // restrict the acceptable key usage based on the key exchange method
       // chosen by the server.
 
-      // These configurations are in order of most restrictive to least
-      // restrictive. This enables us to gather telemetry on the expected
-      // results of setting the default policy to a particular configuration.
-      SHA1Mode sha1ModeConfigurations[] = {
-          SHA1Mode::Forbidden,
-          SHA1Mode::ImportedRoot,
-          SHA1Mode::ImportedRootOrBefore2016,
-          SHA1Mode::Allowed,
-      };
-
-      SHA1ModeResult sha1ModeResults[] = {
-          SHA1ModeResult::SucceededWithoutSHA1,
-          SHA1ModeResult::SucceededWithImportedRoot,
-          SHA1ModeResult::SucceededWithImportedRootOrSHA1Before2016,
-          SHA1ModeResult::SucceededWithSHA1,
-      };
-
-      size_t sha1ModeConfigurationsCount =
-          MOZ_ARRAY_LENGTH(sha1ModeConfigurations);
-
-      static_assert(MOZ_ARRAY_LENGTH(sha1ModeConfigurations) ==
-                        MOZ_ARRAY_LENGTH(sha1ModeResults),
-                    "digestAlgorithm array lengths differ");
-
       // Try to validate for EV first.
       NSSCertDBTrustDomain::OCSPFetching evOCSPFetching =
           (mOCSPDownloadConfig == ocspOff) || (flags & FLAG_LOCAL_ONLY)
               ? NSSCertDBTrustDomain::LocalOnlyOCSPForEV
               : NSSCertDBTrustDomain::FetchOCSPForEV;
 
-      CertPolicyId evPolicy;
-      bool foundEVPolicy = GetFirstEVPolicy(certBytes, evPolicy);
+      nsTArray<CertPolicyId> evPolicies;
+      GetKnownEVPolicies(certBytes, evPolicies);
       rv = Result::ERROR_UNKNOWN_ERROR;
-      for (size_t i = 0;
-           i < sha1ModeConfigurationsCount && rv != Success && foundEVPolicy;
-           i++) {
-        // Don't attempt verification if the SHA1 mode set by preferences
-        // (mSHA1Mode) is more restrictive than the SHA1 mode option we're on.
-        // (To put it another way, only attempt verification if the SHA1 mode
-        // option we're on is as restrictive or more restrictive than
-        // mSHA1Mode.) This allows us to gather telemetry information while
-        // still enforcing the mode set by preferences.
-        if (SHA1ModeMoreRestrictiveThanGivenMode(sha1ModeConfigurations[i])) {
-          continue;
-        }
-
-        // Because of the try-strict and fallback approach, we have to clear any
-        // previously noted telemetry information.
-        if (pinningTelemetryInfo) {
-          pinningTelemetryInfo->Reset();
-        }
-
+      for (const auto& evPolicy : evPolicies) {
         NSSCertDBTrustDomain trustDomain(
             trustSSL, evOCSPFetching, mOCSPCache, pinArg, mOCSPTimeoutSoft,
             mOCSPTimeoutHard, mCertShortLifetimeInDays, MIN_RSA_BITS,
-            ValidityCheckingMode::CheckForEV, sha1ModeConfigurations[i],
-            mNetscapeStepUpPolicy, mCRLiteMode, originAttributes,
-            mThirdPartyRootInputs, mThirdPartyIntermediateInputs,
-            extraCertificates, builtChain, pinningTelemetryInfo, hostname);
+            ValidityCheckingMode::CheckForEV, mNetscapeStepUpPolicy,
+            mCRLiteMode, originAttributes, mThirdPartyRootInputs,
+            mThirdPartyIntermediateInputs, extraCertificates, builtChain,
+            pinningTelemetryInfo, hostname);
         rv = BuildCertChainForOneKeyUsage(
             trustDomain, certDER, time,
             KeyUsage::digitalSignature,  // (EC)DHE
@@ -659,36 +588,28 @@ Result CertVerifier::VerifyCert(
             KeyUsage::keyAgreement,      // (EC)DH
             KeyPurposeId::id_kp_serverAuth, evPolicy, stapledOCSPResponse,
             ocspStaplingStatus);
-        if (rv == Success &&
-            sha1ModeConfigurations[i] == SHA1Mode::ImportedRoot &&
-            trustDomain.GetIsBuiltChainRootBuiltInRoot()) {
-          rv = Result::ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED;
+        if (madeOCSPRequests) {
+          *madeOCSPRequests |=
+              trustDomain.GetOCSPFetchStatus() == OCSPFetchStatus::Fetched;
         }
         if (rv == Success) {
-          MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
-                  ("cert is EV with status %i\n",
-                   static_cast<int>(sha1ModeResults[i])));
-          if (evStatus) {
-            *evStatus = foundEVPolicy ? EVStatus::EV : EVStatus::NotEV;
-          }
-          if (sha1ModeResult) {
-            *sha1ModeResult = sha1ModeResults[i];
-          }
           rv = VerifyCertificateTransparencyPolicy(
               trustDomain, builtChain, sctsFromTLSInput, time, ctInfo);
-          if (rv != Success) {
-            break;
+        }
+        if (rv == Success) {
+          if (evStatus) {
+            *evStatus = EVStatus::EV;
           }
           if (isBuiltChainRootBuiltInRoot) {
             *isBuiltChainRootBuiltInRoot =
                 trustDomain.GetIsBuiltChainRootBuiltInRoot();
           }
+          break;
         }
       }
       if (rv == Success) {
         break;
       }
-
       if (flags & FLAG_MUST_BE_EV) {
         rv = Result::ERROR_POLICY_VALIDATION_FAILED;
         break;
@@ -707,85 +628,56 @@ Result CertVerifier::VerifyCert(
       size_t keySizeOptionsCount = MOZ_ARRAY_LENGTH(keySizeStatuses);
 
       for (size_t i = 0; i < keySizeOptionsCount && rv != Success; i++) {
-        for (size_t j = 0; j < sha1ModeConfigurationsCount && rv != Success;
-             j++) {
-          // Don't attempt verification if the SHA1 mode set by preferences
-          // (mSHA1Mode) is more restrictive than the SHA1 mode option we're on.
-          // (To put it another way, only attempt verification if the SHA1 mode
-          // option we're on is as restrictive or more restrictive than
-          // mSHA1Mode.) This allows us to gather telemetry information while
-          // still enforcing the mode set by preferences.
-          if (SHA1ModeMoreRestrictiveThanGivenMode(sha1ModeConfigurations[j])) {
-            continue;
-          }
+        // invalidate any telemetry info relating to failed chains
+        if (pinningTelemetryInfo) {
+          pinningTelemetryInfo->Reset();
+        }
 
-          // invalidate any telemetry info relating to failed chains
-          if (pinningTelemetryInfo) {
-            pinningTelemetryInfo->Reset();
+        NSSCertDBTrustDomain trustDomain(
+            trustSSL, defaultOCSPFetching, mOCSPCache, pinArg, mOCSPTimeoutSoft,
+            mOCSPTimeoutHard, mCertShortLifetimeInDays, keySizeOptions[i],
+            ValidityCheckingMode::CheckingOff, mNetscapeStepUpPolicy,
+            mCRLiteMode, originAttributes, mThirdPartyRootInputs,
+            mThirdPartyIntermediateInputs, extraCertificates, builtChain,
+            pinningTelemetryInfo, hostname);
+        rv = BuildCertChainForOneKeyUsage(
+            trustDomain, certDER, time,
+            KeyUsage::digitalSignature,  //(EC)DHE
+            KeyUsage::keyEncipherment,   // RSA
+            KeyUsage::keyAgreement,      //(EC)DH
+            KeyPurposeId::id_kp_serverAuth, CertPolicyId::anyPolicy,
+            stapledOCSPResponse, ocspStaplingStatus);
+        if (madeOCSPRequests) {
+          *madeOCSPRequests |=
+              trustDomain.GetOCSPFetchStatus() == OCSPFetchStatus::Fetched;
+        }
+        if (rv != Success && !IsFatalError(rv) &&
+            rv != Result::ERROR_REVOKED_CERTIFICATE &&
+            trustDomain.GetIsErrorDueToDistrustedCAPolicy()) {
+          // Bug 1444440 - If there are multiple paths, at least one to a CA
+          // distrusted-by-policy, and none of them ending in a trusted root,
+          // then we might show a different error (UNKNOWN_ISSUER) than we
+          // intend, confusing users.
+          rv = Result::ERROR_ADDITIONAL_POLICY_CONSTRAINT_FAILED;
+        }
+        if (rv == Success) {
+          rv = VerifyCertificateTransparencyPolicy(
+              trustDomain, builtChain, sctsFromTLSInput, time, ctInfo);
+        }
+        if (rv == Success) {
+          if (keySizeStatus) {
+            *keySizeStatus = keySizeStatuses[i];
           }
-
-          NSSCertDBTrustDomain trustDomain(
-              trustSSL, defaultOCSPFetching, mOCSPCache, pinArg,
-              mOCSPTimeoutSoft, mOCSPTimeoutHard, mCertShortLifetimeInDays,
-              keySizeOptions[i], ValidityCheckingMode::CheckingOff,
-              sha1ModeConfigurations[j], mNetscapeStepUpPolicy, mCRLiteMode,
-              originAttributes, mThirdPartyRootInputs,
-              mThirdPartyIntermediateInputs, extraCertificates, builtChain,
-              pinningTelemetryInfo, hostname);
-          rv = BuildCertChainForOneKeyUsage(
-              trustDomain, certDER, time,
-              KeyUsage::digitalSignature,  //(EC)DHE
-              KeyUsage::keyEncipherment,   // RSA
-              KeyUsage::keyAgreement,      //(EC)DH
-              KeyPurposeId::id_kp_serverAuth, CertPolicyId::anyPolicy,
-              stapledOCSPResponse, ocspStaplingStatus);
-          if (rv != Success && !IsFatalError(rv) &&
-              rv != Result::ERROR_REVOKED_CERTIFICATE &&
-              trustDomain.GetIsErrorDueToDistrustedCAPolicy()) {
-            // Bug 1444440 - If there are multiple paths, at least one to a CA
-            // distrusted-by-policy, and none of them ending in a trusted root,
-            // then we might show a different error (UNKNOWN_ISSUER) than we
-            // intend, confusing users.
-            rv = Result::ERROR_ADDITIONAL_POLICY_CONSTRAINT_FAILED;
+          if (isBuiltChainRootBuiltInRoot) {
+            *isBuiltChainRootBuiltInRoot =
+                trustDomain.GetIsBuiltChainRootBuiltInRoot();
           }
-          if (rv == Success &&
-              sha1ModeConfigurations[j] == SHA1Mode::ImportedRoot &&
-              trustDomain.GetIsBuiltChainRootBuiltInRoot()) {
-            rv = Result::ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED;
-          }
-          if (rv == Success) {
-            if (keySizeStatus) {
-              *keySizeStatus = keySizeStatuses[i];
-            }
-            if (sha1ModeResult) {
-              *sha1ModeResult = sha1ModeResults[j];
-            }
-            rv = VerifyCertificateTransparencyPolicy(
-                trustDomain, builtChain, sctsFromTLSInput, time, ctInfo);
-            if (rv != Success) {
-              break;
-            }
-            if (isBuiltChainRootBuiltInRoot) {
-              *isBuiltChainRootBuiltInRoot =
-                  trustDomain.GetIsBuiltChainRootBuiltInRoot();
-            }
-          }
+          break;
         }
       }
 
-      if (rv == Success) {
-        break;
-      }
-
-      if (keySizeStatus) {
+      if (rv != Success && keySizeStatus) {
         *keySizeStatus = KeySizeStatus::AlreadyBad;
-      }
-      // The telemetry probe CERT_CHAIN_SHA1_POLICY_STATUS gives us feedback on
-      // the result of setting a specific policy. However, we don't want noise
-      // from users who have manually set the policy to something other than the
-      // default, so we only collect for ImportedRoot (which is the default).
-      if (sha1ModeResult && mSHA1Mode == SHA1Mode::ImportedRoot) {
-        *sha1ModeResult = SHA1ModeResult::Failed;
       }
 
       break;
@@ -795,13 +687,17 @@ Result CertVerifier::VerifyCert(
       NSSCertDBTrustDomain trustDomain(
           trustSSL, defaultOCSPFetching, mOCSPCache, pinArg, mOCSPTimeoutSoft,
           mOCSPTimeoutHard, mCertShortLifetimeInDays, MIN_RSA_BITS_WEAK,
-          ValidityCheckingMode::CheckingOff, SHA1Mode::Allowed,
-          mNetscapeStepUpPolicy, mCRLiteMode, originAttributes,
-          mThirdPartyRootInputs, mThirdPartyIntermediateInputs,
-          extraCertificates, builtChain, nullptr, nullptr);
+          ValidityCheckingMode::CheckingOff, mNetscapeStepUpPolicy, mCRLiteMode,
+          originAttributes, mThirdPartyRootInputs,
+          mThirdPartyIntermediateInputs, extraCertificates, builtChain, nullptr,
+          nullptr);
       rv = BuildCertChain(trustDomain, certDER, time, EndEntityOrCA::MustBeCA,
                           KeyUsage::keyCertSign, KeyPurposeId::id_kp_serverAuth,
                           CertPolicyId::anyPolicy, stapledOCSPResponse);
+      if (madeOCSPRequests) {
+        *madeOCSPRequests |=
+            trustDomain.GetOCSPFetchStatus() == OCSPFetchStatus::Fetched;
+      }
       break;
     }
 
@@ -809,10 +705,10 @@ Result CertVerifier::VerifyCert(
       NSSCertDBTrustDomain trustDomain(
           trustEmail, defaultOCSPFetching, mOCSPCache, pinArg, mOCSPTimeoutSoft,
           mOCSPTimeoutHard, mCertShortLifetimeInDays, MIN_RSA_BITS_WEAK,
-          ValidityCheckingMode::CheckingOff, SHA1Mode::Allowed,
-          NetscapeStepUpPolicy::NeverMatch, mCRLiteMode, originAttributes,
-          mThirdPartyRootInputs, mThirdPartyIntermediateInputs,
-          extraCertificates, builtChain, nullptr, nullptr);
+          ValidityCheckingMode::CheckingOff, NetscapeStepUpPolicy::NeverMatch,
+          mCRLiteMode, originAttributes, mThirdPartyRootInputs,
+          mThirdPartyIntermediateInputs, extraCertificates, builtChain, nullptr,
+          nullptr);
       rv = BuildCertChain(
           trustDomain, certDER, time, EndEntityOrCA::MustBeEndEntity,
           KeyUsage::digitalSignature, KeyPurposeId::id_kp_emailProtection,
@@ -822,6 +718,10 @@ Result CertVerifier::VerifyCert(
             trustDomain, certDER, time, EndEntityOrCA::MustBeEndEntity,
             KeyUsage::nonRepudiation, KeyPurposeId::id_kp_emailProtection,
             CertPolicyId::anyPolicy, stapledOCSPResponse);
+      }
+      if (madeOCSPRequests) {
+        *madeOCSPRequests |=
+            trustDomain.GetOCSPFetchStatus() == OCSPFetchStatus::Fetched;
       }
       break;
     }
@@ -833,10 +733,10 @@ Result CertVerifier::VerifyCert(
       NSSCertDBTrustDomain trustDomain(
           trustEmail, defaultOCSPFetching, mOCSPCache, pinArg, mOCSPTimeoutSoft,
           mOCSPTimeoutHard, mCertShortLifetimeInDays, MIN_RSA_BITS_WEAK,
-          ValidityCheckingMode::CheckingOff, SHA1Mode::Allowed,
-          NetscapeStepUpPolicy::NeverMatch, mCRLiteMode, originAttributes,
-          mThirdPartyRootInputs, mThirdPartyIntermediateInputs,
-          extraCertificates, builtChain, nullptr, nullptr);
+          ValidityCheckingMode::CheckingOff, NetscapeStepUpPolicy::NeverMatch,
+          mCRLiteMode, originAttributes, mThirdPartyRootInputs,
+          mThirdPartyIntermediateInputs, extraCertificates, builtChain, nullptr,
+          nullptr);
       rv = BuildCertChain(trustDomain, certDER, time,
                           EndEntityOrCA::MustBeEndEntity,
                           KeyUsage::keyEncipherment,  // RSA
@@ -848,6 +748,10 @@ Result CertVerifier::VerifyCert(
                             KeyUsage::keyAgreement,  // ECDH/DH
                             KeyPurposeId::id_kp_emailProtection,
                             CertPolicyId::anyPolicy, stapledOCSPResponse);
+      }
+      if (madeOCSPRequests) {
+        *madeOCSPRequests |=
+            trustDomain.GetOCSPFetchStatus() == OCSPFetchStatus::Fetched;
       }
       break;
     }
@@ -868,12 +772,31 @@ static bool CertIsSelfSigned(const BackCert& backCert, void* pinarg) {
     return false;
   }
 
-  nsTArray<nsTArray<uint8_t>> emptyCertList;
-  // CSTrustDomain is only used for the signature verification callbacks
-  mozilla::psm::CSTrustDomain trustDomain(emptyCertList);
+  nsTArray<Span<const uint8_t>> emptyCertList;
+  // AppTrustDomain is only used for its signature verification callbacks
+  // (AppTrustDomain::Verify{ECDSA,RSAPKCS1,RSAPSS}SignedData).
+  mozilla::psm::AppTrustDomain trustDomain(std::move(emptyCertList));
   Result rv = VerifySignedData(trustDomain, backCert.GetSignedData(),
                                backCert.GetSubjectPublicKeyInfo());
   return rv == Success;
+}
+
+static Result CheckCertHostnameHelper(Input peerCertInput,
+                                      const nsACString& hostname) {
+  Input hostnameInput;
+  Result rv = hostnameInput.Init(
+      BitwiseCast<const uint8_t*, const char*>(hostname.BeginReading()),
+      hostname.Length());
+  if (rv != Success) {
+    return Result::FATAL_ERROR_INVALID_ARGS;
+  }
+
+  rv = CheckCertHostname(peerCertInput, hostnameInput);
+  // Treat malformed name information as a domain mismatch.
+  if (rv == Result::ERROR_BAD_DER) {
+    return Result::ERROR_BAD_CERT_DOMAIN;
+  }
+  return rv;
 }
 
 Result CertVerifier::VerifySSLServerCert(
@@ -889,10 +812,10 @@ Result CertVerifier::VerifySSLServerCert(
     /*optional out*/ EVStatus* evStatus,
     /*optional out*/ OCSPStaplingStatus* ocspStaplingStatus,
     /*optional out*/ KeySizeStatus* keySizeStatus,
-    /*optional out*/ SHA1ModeResult* sha1ModeResult,
     /*optional out*/ PinningTelemetryInfo* pinningTelemetryInfo,
     /*optional out*/ CertificateTransparencyInfo* ctInfo,
-    /*optional out*/ bool* isBuiltChainRootBuiltInRoot) {
+    /*optional out*/ bool* isBuiltChainRootBuiltInRoot,
+    /*optional out*/ bool* madeOCSPRequests) {
   // XXX: MOZ_ASSERT(pinarg);
   MOZ_ASSERT(!hostname.IsEmpty());
 
@@ -921,8 +844,8 @@ Result CertVerifier::VerifySSLServerCert(
                   PromiseFlatCString(hostname).get(), builtChain, flags,
                   extraCertificates, stapledOCSPResponse, sctsFromTLS,
                   originAttributes, evStatus, ocspStaplingStatus, keySizeStatus,
-                  sha1ModeResult, pinningTelemetryInfo, ctInfo,
-                  &isBuiltChainRootBuiltInRootLocal);
+                  pinningTelemetryInfo, ctInfo,
+                  &isBuiltChainRootBuiltInRootLocal, madeOCSPRequests);
   if (rv != Success) {
     // we don't use the certificate for path building, so this parameter doesn't
     // matter
@@ -961,6 +884,17 @@ Result CertVerifier::VerifySSLServerCert(
         return Result::ERROR_MITM_DETECTED;
       }
     }
+    // If the certificate is expired or not yet valid, first check whether or
+    // not it is valid for the indicated hostname, because that would be a more
+    // serious error.
+    if (rv == Result::ERROR_EXPIRED_CERTIFICATE ||
+        rv == Result::ERROR_NOT_YET_VALID_CERTIFICATE ||
+        rv == Result::ERROR_INVALID_DER_TIME) {
+      Result hostnameResult = CheckCertHostnameHelper(peerCertInput, hostname);
+      if (hostnameResult != Success) {
+        return hostnameResult;
+      }
+    }
     return rv;
   }
 
@@ -990,25 +924,8 @@ Result CertVerifier::VerifySSLServerCert(
     }
   }
 
-  Input hostnameInput;
-  rv = hostnameInput.Init(
-      BitwiseCast<const uint8_t*, const char*>(hostname.BeginReading()),
-      hostname.Length());
+  rv = CheckCertHostnameHelper(peerCertInput, hostname);
   if (rv != Success) {
-    return Result::FATAL_ERROR_INVALID_ARGS;
-  }
-
-  BRNameMatchingPolicy nameMatchingPolicy(
-      isBuiltChainRootBuiltInRootLocal
-          ? mNameMatchingMode
-          : BRNameMatchingPolicy::Mode::DoNotEnforce);
-  rv = CheckCertHostname(peerCertInput, hostnameInput, nameMatchingPolicy);
-  if (rv != Success) {
-    // Treat malformed name information as a domain mismatch.
-    if (rv == Result::ERROR_BAD_DER) {
-      return Result::ERROR_BAD_CERT_DOMAIN;
-    }
-
     return rv;
   }
 

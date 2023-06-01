@@ -4,15 +4,9 @@
 
 // tests the translation infobar, using a fake 'Translation' implementation.
 
-var tmp = {};
-ChromeUtils.import(
-  "resource:///modules/translation/TranslationParent.jsm",
-  tmp
-);
 const { PermissionTestUtils } = ChromeUtils.import(
   "resource://testing-common/PermissionTestUtils.jsm"
 );
-var { Translation } = tmp;
 
 const kLanguagesPref = "browser.translation.neverForLanguages";
 const kShowUIPref = "browser.translation.ui.show";
@@ -42,7 +36,10 @@ function test() {
     });
   });
 
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "http://example.com/");
+  BrowserTestUtils.loadURIString(
+    gBrowser.selectedBrowser,
+    "http://example.com/"
+  );
 }
 
 function getLanguageExceptions() {

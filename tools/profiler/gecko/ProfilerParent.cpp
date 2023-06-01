@@ -7,11 +7,13 @@
 #include "ProfilerParent.h"
 
 #ifdef MOZ_GECKO_PROFILER
-#  include "GeckoProfiler.h"
 #  include "nsProfiler.h"
+#  include "platform.h"
 #endif
 
 #include "GeckoProfiler.h"
+#include "ProfilerControl.h"
+#include "mozilla/BaseAndGeckoProfilerDetail.h"
 #include "mozilla/BaseProfilerDetail.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/DataMutex.h"
@@ -76,6 +78,16 @@ class ProfileBufferGlobalController final {
   static bool IsLockedOnCurrentThread();
 
  private:
+  // Calls aF(Json::Value&).
+  template <typename F>
+  void Log(F&& aF);
+
+  static void LogUpdateChunks(Json::Value& updates, base::ProcessId aProcessId,
+                              const TimeStamp& aTimeStamp, int aChunkDiff);
+  void LogUpdate(base::ProcessId aProcessId,
+                 const ProfileBufferControlledChunkManager::Update& aUpdate);
+  void LogDeletion(base::ProcessId aProcessId, const TimeStamp& aTimeStamp);
+
   void HandleChunkManagerNonFinalUpdate(
       base::ProcessId aProcessId,
       ProfileBufferControlledChunkManager::Update&& aUpdate,
@@ -195,10 +207,74 @@ class ProfilerParentTracker final {
   Maybe<ProfileBufferGlobalController> mMaybeController;
 };
 
+static const Json::StaticString logRoot{"bufferGlobalController"};
+
+template <typename F>
+void ProfileBufferGlobalController::Log(F&& aF) {
+  ProfilingLog::Access([&](Json::Value& aLog) {
+    Json::Value& root = aLog[logRoot];
+    if (!root.isObject()) {
+      root = Json::Value(Json::objectValue);
+      root[Json::StaticString{"logBegin" TIMESTAMP_JSON_SUFFIX}] =
+          ProfilingLog::Timestamp();
+    }
+    std::forward<F>(aF)(root);
+  });
+}
+
+/* static */
+void ProfileBufferGlobalController::LogUpdateChunks(Json::Value& updates,
+                                                    base::ProcessId aProcessId,
+                                                    const TimeStamp& aTimeStamp,
+                                                    int aChunkDiff) {
+  MOZ_ASSERT(updates.isArray());
+  Json::Value row{Json::arrayValue};
+  row.append(Json::Value{Json::UInt64(aProcessId)});
+  row.append(ProfilingLog::Timestamp(aTimeStamp));
+  row.append(Json::Value{Json::Int(aChunkDiff)});
+  updates.append(std::move(row));
+}
+
+void ProfileBufferGlobalController::LogUpdate(
+    base::ProcessId aProcessId,
+    const ProfileBufferControlledChunkManager::Update& aUpdate) {
+  Log([&](Json::Value& aRoot) {
+    Json::Value& updates = aRoot[Json::StaticString{"updates"}];
+    if (!updates.isArray()) {
+      aRoot[Json::StaticString{"updatesSchema"}] =
+          Json::StaticString{"0: pid, 1: chunkRelease_TSms, 3: chunkDiff"};
+      updates = Json::Value{Json::arrayValue};
+    }
+    if (aUpdate.IsFinal()) {
+      LogUpdateChunks(updates, aProcessId, TimeStamp{}, 0);
+    } else if (!aUpdate.IsNotUpdate()) {
+      for (const auto& chunk : aUpdate.NewlyReleasedChunksRef()) {
+        LogUpdateChunks(updates, aProcessId, chunk.mDoneTimeStamp, 1);
+      }
+    }
+  });
+}
+
+void ProfileBufferGlobalController::LogDeletion(base::ProcessId aProcessId,
+                                                const TimeStamp& aTimeStamp) {
+  Log([&](Json::Value& aRoot) {
+    Json::Value& updates = aRoot[Json::StaticString{"updates"}];
+    if (!updates.isArray()) {
+      updates = Json::Value{Json::arrayValue};
+    }
+    LogUpdateChunks(updates, aProcessId, aTimeStamp, -1);
+  });
+}
+
 ProfileBufferGlobalController::ProfileBufferGlobalController(
     size_t aMaximumBytes)
     : mMaximumBytes(aMaximumBytes) {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
+
+  Log([](Json::Value& aRoot) {
+    aRoot[Json::StaticString{"controllerCreationTime" TIMESTAMP_JSON_SUFFIX}] =
+        ProfilingLog::Timestamp();
+  });
 
   // This is the local chunk manager for this parent process, so updates can be
   // handled here.
@@ -206,6 +282,10 @@ ProfileBufferGlobalController::ProfileBufferGlobalController(
       profiler_get_controlled_chunk_manager();
 
   if (NS_WARN_IF(!parentChunkManager)) {
+    Log([](Json::Value& aRoot) {
+      aRoot[Json::StaticString{"controllerCreationFailureReason"}] =
+          "No parent chunk manager";
+    });
     return;
   }
 
@@ -288,6 +368,7 @@ void ProfileBufferGlobalController::HandleChildChunkManagerUpdate(
 
   if (aUpdate.IsFinal()) {
     // Final update in a child process, remove all traces of that process.
+    LogUpdate(aProcessId, aUpdate);
     size_t index = mUnreleasedBytesByPid.BinaryIndexOf(aProcessId);
     if (index != PidAndBytesArray::NoIndex) {
       // We already have a value for this pid.
@@ -343,6 +424,7 @@ void ProfileBufferGlobalController::HandleChunkManagerNonFinalUpdate(
     ProfileBufferControlledChunkManager::Update&& aUpdate,
     ProfileBufferControlledChunkManager& aParentChunkManager) {
   MOZ_ASSERT(!aUpdate.IsFinal());
+  LogUpdate(aProcessId, aUpdate);
 
   size_t index = mUnreleasedBytesByPid.BinaryIndexOf(aProcessId);
   if (index != PidAndBytesArray::NoIndex) {
@@ -404,6 +486,7 @@ void ProfileBufferGlobalController::HandleChunkManagerNonFinalUpdate(
     // We have reached the global memory limit, and there *are* released chunks
     // that can be destroyed. Start with the first one, which is the oldest.
     const TimeStampAndBytesAndPid& oldest = mReleasedChunksByTime[0];
+    LogDeletion(oldest.mProcessId, oldest.mTimeStamp);
     mReleasedTotalBytes -= oldest.mBytes;
     if (oldest.mProcessId == mParentProcessId) {
       aParentChunkManager.DestroyChunksAtOrBefore(oldest.mTimeStamp);
@@ -626,15 +709,22 @@ void ProfilerParent::Init() {
     ipcParams.features() = features;
     ipcParams.activeTabID() = activeTabID;
 
-    for (uint32_t i = 0; i < filters.length(); ++i) {
-      ipcParams.filters().AppendElement(filters[i]);
-    }
+    // If the filters exclude our pid, make sure it's stopped, otherwise
+    // continue with starting it.
+    if (!profiler::detail::FiltersExcludePid(
+            filters, ProfilerProcessId::FromNumber(mChildPid))) {
+      ipcParams.filters().SetCapacity(filters.length());
+      for (const char* filter : filters) {
+        ipcParams.filters().AppendElement(filter);
+      }
 
-    Unused << SendEnsureStarted(ipcParams);
-    RequestChunkManagerUpdate();
-  } else {
-    Unused << SendStop();
+      Unused << SendEnsureStarted(ipcParams);
+      RequestChunkManagerUpdate();
+      return;
+    }
   }
+
+  Unused << SendStop();
 }
 
 ProfilerParent::~ProfilerParent() {
@@ -734,10 +824,72 @@ void ProfilerParent::RequestChunkManagerUpdate() {
       });
 }
 
-/* static */
-void ProfilerParent::ProfilerStarted(nsIProfilerStartParams* aParams) {
+// Ref-counted class that resolves a promise on destruction.
+// Usage:
+// RefPtr<GenericPromise> f() {
+//   return PromiseResolverOnDestruction::RunTask(
+//     [](RefPtr<PromiseResolverOnDestruction> aPromiseResolver){
+//       // Give *copies* of aPromiseResolver to asynchronous sub-tasks, the
+//       // last remaining RefPtr destruction will resolve the promise.
+//     });
+// }
+class PromiseResolverOnDestruction {
+ public:
+  NS_INLINE_DECL_REFCOUNTING(PromiseResolverOnDestruction)
+
+  template <typename TaskFunction>
+  static RefPtr<GenericPromise> RunTask(TaskFunction&& aTaskFunction) {
+    RefPtr<PromiseResolverOnDestruction> promiseResolver =
+        new PromiseResolverOnDestruction();
+    RefPtr<GenericPromise> promise =
+        promiseResolver->mPromiseHolder.Ensure(__func__);
+    std::forward<TaskFunction>(aTaskFunction)(std::move(promiseResolver));
+    return promise;
+  }
+
+ private:
+  PromiseResolverOnDestruction() = default;
+
+  ~PromiseResolverOnDestruction() {
+    mPromiseHolder.ResolveIfExists(/* unused */ true, __func__);
+  }
+
+  MozPromiseHolder<GenericPromise> mPromiseHolder;
+};
+
+// Given a ProfilerParentSendFunction: (ProfilerParent*) -> some MozPromise,
+// run the function on all live ProfilerParents and return a GenericPromise, and
+// when their promise gets resolve, resolve our Generic promise.
+template <typename ProfilerParentSendFunction>
+static RefPtr<GenericPromise> SendAndConvertPromise(
+    ProfilerParentSendFunction&& aProfilerParentSendFunction) {
   if (!NS_IsMainThread()) {
-    return;
+    return GenericPromise::CreateAndResolve(/* unused */ true, __func__);
+  }
+
+  return PromiseResolverOnDestruction::RunTask(
+      [&](RefPtr<PromiseResolverOnDestruction> aPromiseResolver) {
+        ProfilerParentTracker::Enumerate([&](ProfilerParent* profilerParent) {
+          std::forward<ProfilerParentSendFunction>(aProfilerParentSendFunction)(
+              profilerParent)
+              ->Then(GetMainThreadSerialEventTarget(), __func__,
+                     [aPromiseResolver](
+                         typename std::remove_reference_t<
+                             decltype(*std::forward<ProfilerParentSendFunction>(
+                                 aProfilerParentSendFunction)(
+                                 profilerParent))>::ResolveOrRejectValue&&) {
+                       // Whatever the resolution/rejection is, do nothing.
+                       // The lambda aPromiseResolver ref-count will decrease.
+                     });
+        });
+      });
+}
+
+/* static */
+RefPtr<GenericPromise> ProfilerParent::ProfilerStarted(
+    nsIProfilerStartParams* aParams) {
+  if (!NS_IsMainThread()) {
+    return GenericPromise::CreateAndResolve(/* unused */ true, __func__);
   }
 
   ProfilerInitParams ipcParams;
@@ -753,12 +905,26 @@ void ProfilerParent::ProfilerStarted(nsIProfilerStartParams* aParams) {
   aParams->GetInterval(&ipcParams.interval());
   aParams->GetFeatures(&ipcParams.features());
   ipcParams.filters() = aParams->GetFilters().Clone();
+  // We need filters as a Span<const char*> to test pids in the lambda below.
+  auto filtersCStrings = nsTArray<const char*>{aParams->GetFilters().Length()};
+  for (const auto& filter : aParams->GetFilters()) {
+    filtersCStrings.AppendElement(filter.Data());
+  }
   aParams->GetActiveTabID(&ipcParams.activeTabID());
 
   ProfilerParentTracker::ProfilerStarted(ipcParams.entries());
-  ProfilerParentTracker::Enumerate([&](ProfilerParent* profilerParent) {
-    Unused << profilerParent->SendStart(ipcParams);
+
+  return SendAndConvertPromise([&](ProfilerParent* profilerParent) {
+    if (profiler::detail::FiltersExcludePid(
+            filtersCStrings,
+            ProfilerProcessId::FromNumber(profilerParent->mChildPid))) {
+      // This pid is excluded, don't start the profiler at all.
+      return PProfilerParent::StartPromise::CreateAndResolve(/* unused */ true,
+                                                             __func__);
+    }
+    auto promise = profilerParent->SendStart(ipcParams);
     profilerParent->RequestChunkManagerUpdate();
+    return promise;
   });
 }
 
@@ -772,57 +938,37 @@ void ProfilerParent::ProfilerWillStopIfStarted() {
 }
 
 /* static */
-void ProfilerParent::ProfilerStopped() {
-  if (!NS_IsMainThread()) {
-    return;
-  }
-
-  ProfilerParentTracker::Enumerate([](ProfilerParent* profilerParent) {
-    Unused << profilerParent->SendStop();
+RefPtr<GenericPromise> ProfilerParent::ProfilerStopped() {
+  return SendAndConvertPromise([](ProfilerParent* profilerParent) {
+    return profilerParent->SendStop();
   });
 }
 
 /* static */
-void ProfilerParent::ProfilerPaused() {
-  if (!NS_IsMainThread()) {
-    return;
-  }
-
-  ProfilerParentTracker::Enumerate([](ProfilerParent* profilerParent) {
-    Unused << profilerParent->SendPause();
+RefPtr<GenericPromise> ProfilerParent::ProfilerPaused() {
+  return SendAndConvertPromise([](ProfilerParent* profilerParent) {
+    return profilerParent->SendPause();
   });
 }
 
 /* static */
-void ProfilerParent::ProfilerResumed() {
-  if (!NS_IsMainThread()) {
-    return;
-  }
-
-  ProfilerParentTracker::Enumerate([](ProfilerParent* profilerParent) {
-    Unused << profilerParent->SendResume();
+RefPtr<GenericPromise> ProfilerParent::ProfilerResumed() {
+  return SendAndConvertPromise([](ProfilerParent* profilerParent) {
+    return profilerParent->SendResume();
   });
 }
 
 /* static */
-void ProfilerParent::ProfilerPausedSampling() {
-  if (!NS_IsMainThread()) {
-    return;
-  }
-
-  ProfilerParentTracker::Enumerate([](ProfilerParent* profilerParent) {
-    Unused << profilerParent->SendPauseSampling();
+RefPtr<GenericPromise> ProfilerParent::ProfilerPausedSampling() {
+  return SendAndConvertPromise([](ProfilerParent* profilerParent) {
+    return profilerParent->SendPauseSampling();
   });
 }
 
 /* static */
-void ProfilerParent::ProfilerResumedSampling() {
-  if (!NS_IsMainThread()) {
-    return;
-  }
-
-  ProfilerParentTracker::Enumerate([](ProfilerParent* profilerParent) {
-    Unused << profilerParent->SendResumeSampling();
+RefPtr<GenericPromise> ProfilerParent::ProfilerResumedSampling() {
+  return SendAndConvertPromise([](ProfilerParent* profilerParent) {
+    return profilerParent->SendResumeSampling();
   });
 }
 
@@ -834,6 +980,13 @@ void ProfilerParent::ClearAllPages() {
 
   ProfilerParentTracker::Enumerate([](ProfilerParent* profilerParent) {
     Unused << profilerParent->SendClearAllPages();
+  });
+}
+
+/* static */
+RefPtr<GenericPromise> ProfilerParent::WaitOnePeriodicSampling() {
+  return SendAndConvertPromise([](ProfilerParent* profilerParent) {
+    return profilerParent->SendWaitOnePeriodicSampling();
   });
 }
 

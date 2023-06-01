@@ -3,17 +3,16 @@
 
 const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-
 const { AddonTestUtils } = ChromeUtils.import(
   "resource://testing-common/AddonTestUtils.jsm"
 );
 
+ChromeUtils.defineESModuleGetters(this, {
+  BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
-  BuiltInThemes: "resource:///modules/BuiltInThemes.jsm",
 });
 
 const kLushSoftID = "lush-soft-colorway@mozilla.org";
@@ -29,16 +28,16 @@ add_task(async function retainExpiredActiveTheme() {
     [
       kLushSoftID,
       {
-        version: "1.0",
-        path: "resource://builtin-themes/monochromatic/lush/soft/",
+        version: "1.1",
+        path: "resource://builtin-themes/colorways/2021lush/soft/",
         expiry: tomorrow,
       },
     ],
     [
       kLushBoldID,
       {
-        version: "1.0",
-        path: "resource://builtin-themes/monochromatic/lush/bold/",
+        version: "1.1",
+        path: "resource://builtin-themes/colorways/2021lush/bold/",
         expiry: tomorrow,
       },
     ],

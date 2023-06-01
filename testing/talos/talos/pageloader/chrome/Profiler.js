@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* eslint-env mozilla/frame-script */
+
 // - NOTE: This file is duplicated verbatim at:
 //         - talos/pageloader/chrome/Profiler.js
 //         - talos/tests/tart/addon/content/Profiler.js
@@ -37,7 +39,6 @@ var Profiler;
     profiler_featuresArray,
     profiler_dir;
 
-  /* eslint-disable mozilla/use-chromeutils-import */
   try {
     // eslint-disable-next-line mozilla/use-services
     _profiler = Cc["@mozilla.org/tools/profiler;1"].getService(Ci.nsIProfiler);
@@ -127,9 +128,11 @@ var Profiler;
           profile => {
             let profileFile = profiler_dir + "/" + currentTest + ".profile";
 
-            const { NetUtil } = Cu.import("resource://gre/modules/NetUtil.jsm");
-            const { FileUtils } = Cu.import(
-              "resource://gre/modules/FileUtils.jsm"
+            const { NetUtil } = ChromeUtils.import(
+              "resource://gre/modules/NetUtil.jsm"
+            );
+            const { FileUtils } = ChromeUtils.importESModule(
+              "resource://gre/modules/FileUtils.sys.mjs"
             );
 
             var file = Cc["@mozilla.org/file/local;1"].createInstance(
@@ -158,7 +161,7 @@ var Profiler;
             });
           },
           error => {
-            Cu.reportError("Failed to gather profile: " + error);
+            console.error("Failed to gather profile: " + error);
             reject();
           }
         );
@@ -177,14 +180,16 @@ var Profiler;
           _profiler.ResumeSampling();
         }
         ChromeUtils.addProfilerMarker(
-          explicit ? name : 'Start of test "' + (name || test_name) + '"'
+          explicit ? name : 'Start of test "' + (name || test_name) + '"',
+          { category: "Test" }
         );
       }
     },
     pause: function Profiler__pause(name, explicit) {
       if (_profiler) {
         ChromeUtils.addProfilerMarker(
-          explicit ? name : 'End of test "' + (name || test_name) + '"'
+          explicit ? name : 'End of test "' + (name || test_name) + '"',
+          { category: "Test" }
         );
         _profiler.PauseSampling();
       }
@@ -192,7 +197,8 @@ var Profiler;
     mark: function Profiler__mark(marker, explicit) {
       if (_profiler) {
         ChromeUtils.addProfilerMarker(
-          explicit ? marker : 'Profiler: "' + (marker || test_name) + '"'
+          explicit ? marker : 'Profiler: "' + (marker || test_name) + '"',
+          { category: "Test" }
         );
       }
     },

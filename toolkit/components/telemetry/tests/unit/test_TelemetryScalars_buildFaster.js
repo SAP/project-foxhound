@@ -2,15 +2,6 @@
    http://creativecommons.org/publicdomain/zero/1.0/
 */
 
-const UINT_SCALAR = "telemetry.test.unsigned_int_kind";
-const STRING_SCALAR = "telemetry.test.string_kind";
-const BOOLEAN_SCALAR = "telemetry.test.boolean_kind";
-const KEYED_UINT_SCALAR = "telemetry.test.keyed_unsigned_int";
-
-const { CommonUtils } = ChromeUtils.import(
-  "resource://services-common/utils.js"
-);
-
 /**
  * Return the path to the definitions file for the scalars.
  */
@@ -103,7 +94,7 @@ add_task(
     // Let's write to the definition file to also cover the file
     // loading part.
     const FILE_PATH = getDefinitionsPath();
-    await CommonUtils.writeJSON(DYNAMIC_SCALAR_SPEC, FILE_PATH);
+    await IOUtils.writeJSON(FILE_PATH, DYNAMIC_SCALAR_SPEC);
 
     // Start TelemetryController to trigger loading the specs.
     await TelemetryController.testReset();

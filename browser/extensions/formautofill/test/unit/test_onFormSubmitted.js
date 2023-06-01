@@ -1,7 +1,7 @@
 "use strict";
 
 var FormAutofillContent;
-add_task(async function setup() {
+add_setup(async () => {
   ({ FormAutofillContent } = ChromeUtils.import(
     "resource://autofill/FormAutofillContent.jsm"
   ));
@@ -788,6 +788,10 @@ TESTCASES.forEach(testcase => {
       for (let ccRecord of FormAutofillContent._onFormSubmit.args[0][0]
         .creditCard) {
         delete ccRecord.flowId;
+      }
+      for (let addrRecord of FormAutofillContent._onFormSubmit.args[0][0]
+        .address) {
+        delete addrRecord.flowId;
       }
 
       Assert.deepEqual(

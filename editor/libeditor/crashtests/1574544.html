@@ -3,10 +3,15 @@
 body { display: contents }
 </style>
 <script>
-function go() {
-  document.execCommand("enableInlineTableEditing", false)
+function onLoad() {
+  // For emulating the traditional behavior, collapse Selection to end of the
+  // text node in the <th> which is the deepest last child of the <body>.
+  const th =  document.querySelector("th");
+  getSelection().collapse(th.lastChild, th.lastChild.length);
+  document.execCommand("enableInlineTableEditing");
 }
 </script>
-<body onload=go()>
-<table contenteditable="true">
+<body onload="onLoad()">
+<table contenteditable>
 <th>
+</th></table></body>

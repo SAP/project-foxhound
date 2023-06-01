@@ -10,11 +10,8 @@
  * <http://developer.android.com/reference/android/util/Log.html>.
  *
  * // Import it as a JSM:
- * let Log = Cu.import("resource://gre/modules/AndroidLog.jsm", {}).AndroidLog;
- *
- * // Or require it in a chrome worker:
- * importScripts("resource://gre/modules/workers/require.js");
- * let Log = require("resource://gre/modules/AndroidLog.jsm");
+ * let Log = ChromeUtils.import("resource://gre/modules/AndroidLog.jsm")
+ *   .AndroidLog;
  *
  * // Use Log.i, Log.v, Log.d, Log.w, and Log.e to log verbose, debug, info,
  * // warning, and error messages, respectively.
@@ -39,11 +36,8 @@
  * truncates tags longer than MAX_TAG_LENGTH characters (not including "Gecko").
  */
 
-if (typeof Components != "undefined") {
-  // Specify exported symbols for JSM module loader.
-  this.EXPORTED_SYMBOLS = ["AndroidLog"];
-  var { ctypes } = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
-}
+const EXPORTED_SYMBOLS = ["AndroidLog"];
+const { ctypes } = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
 
 // From <https://android.googlesource.com/platform/system/core/+/master/include/android/log.h>.
 const ANDROID_LOG_VERBOSE = 2;

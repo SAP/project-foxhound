@@ -1,6 +1,7 @@
 /* eslint-disable mozilla/no-arbitrary-setTimeout */
-XPCOMUtils.defineLazyModuleGetters(this, {
-  FormHistoryTestUtils: "resource://testing-common/FormHistoryTestUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  FormHistoryTestUtils:
+    "resource://testing-common/FormHistoryTestUtils.sys.mjs",
 });
 
 function expectedURL(aSearchTerms) {
@@ -246,7 +247,7 @@ add_task(async function testShiftMiddleClick() {
 
 add_task(async function testRightClick() {
   preTabNo = gBrowser.tabs.length;
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:blank", {
+  BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, "about:blank", {
     triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
   });
   await new Promise(resolve => {
@@ -317,7 +318,7 @@ add_task(async function asyncCleanup() {
   while (gBrowser.tabs.length != 1) {
     gBrowser.removeTab(gBrowser.tabs[0], { animate: false });
   }
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:blank", {
+  BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, "about:blank", {
     triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
   });
   await promiseRemoveEngine();

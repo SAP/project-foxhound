@@ -1,10 +1,11 @@
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
-  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.jsm",
-  UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.jsm",
-  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+  UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.sys.mjs",
+  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.sys.mjs",
 });
 
 async function loadTipExtension(options = {}) {
@@ -64,7 +65,8 @@ async function loadTipExtension(options = {}) {
 
 /**
  * Updates the Top Sites feed.
- * @param {function} condition
+ *
+ * @param {Function} condition
  *   A callback that returns true after Top Sites are successfully updated.
  * @param {boolean} searchShortcuts
  *   True if Top Sites search shortcuts should be enabled.
@@ -89,7 +91,13 @@ async function updateTopSites(condition, searchShortcuts = false) {
   }, "Waiting for top sites to be updated");
 }
 
-add_task(async function setUp() {
+add_setup(async function() {
+  UrlbarTestUtils.init(this);
+  Services.prefs.setBoolPref("browser.urlbar.suggest.quickactions", false);
+  registerCleanupFunction(async () => {
+    UrlbarTestUtils.uninit();
+    Services.prefs.clearUserPref("browser.urlbar.suggest.quickactions");
+  });
   // Set the notification timeout to a really high value to avoid intermittent
   // failures due to the mock extensions not responding in time.
   await SpecialPowers.pushPrefEnv({
@@ -119,7 +127,7 @@ add_task(async function tip_onResultPicked_mainButton_noURL_mouse() {
     waitForFocus,
     value: "test",
   });
-  let mainButton = gURLBar.querySelector(".urlbarView-tip-button");
+  let mainButton = gURLBar.querySelector(".urlbarView-button-tip");
   Assert.ok(mainButton);
   EventUtils.synthesizeMouseAtCenter(mainButton, {});
   await ext.awaitMessage("onResultPicked received");
@@ -158,7 +166,7 @@ add_task(async function tip_onResultPicked_mainButton_url_mouse() {
       waitForFocus,
       value: "test",
     });
-    let mainButton = gURLBar.querySelector(".urlbarView-tip-button");
+    let mainButton = gURLBar.querySelector(".urlbarView-button-tip");
     Assert.ok(mainButton);
     let loadedPromise = BrowserTestUtils.browserLoaded(
       gBrowser.selectedBrowser
@@ -183,16 +191,27 @@ add_task(async function tip_onResultPicked_helpButton_url_enter() {
       waitForFocus,
       value: "test",
     });
-    let loadedPromise = BrowserTestUtils.browserLoaded(
-      gBrowser.selectedBrowser
-    );
     ext.onMessage("onResultPicked received", () => {
       Assert.ok(false, "onResultPicked should not be called");
     });
-    EventUtils.synthesizeKey("KEY_ArrowDown");
-    EventUtils.synthesizeKey("KEY_Enter");
-    await loadedPromise;
-    Assert.equal(gBrowser.currentURI.spec, "http://example.com/");
+    if (UrlbarPrefs.get("resultMenu")) {
+      let tabOpenPromise = BrowserTestUtils.waitForNewTab(
+        gBrowser,
+        "http://example.com/"
+      );
+      await UrlbarTestUtils.openResultMenuAndPressAccesskey(window, "h");
+      info("Waiting for help URL to load in a new tab");
+      await tabOpenPromise;
+      gBrowser.removeCurrentTab();
+    } else {
+      let loadedPromise = BrowserTestUtils.browserLoaded(
+        gBrowser.selectedBrowser
+      );
+      EventUtils.synthesizeKey("KEY_Tab");
+      EventUtils.synthesizeKey("KEY_Enter");
+      await loadedPromise;
+      Assert.equal(gBrowser.currentURI.spec, "http://example.com/");
+    }
   });
   await ext.unload();
 });
@@ -206,17 +225,30 @@ add_task(async function tip_onResultPicked_helpButton_url_mouse() {
       waitForFocus,
       value: "test",
     });
-    let helpButton = gURLBar.querySelector(".urlbarView-help");
-    Assert.ok(helpButton);
-    let loadedPromise = BrowserTestUtils.browserLoaded(
-      gBrowser.selectedBrowser
-    );
     ext.onMessage("onResultPicked received", () => {
       Assert.ok(false, "onResultPicked should not be called");
     });
-    EventUtils.synthesizeMouseAtCenter(helpButton, {});
-    await loadedPromise;
-    Assert.equal(gBrowser.currentURI.spec, "http://example.com/");
+    if (UrlbarPrefs.get("resultMenu")) {
+      let tabOpenPromise = BrowserTestUtils.waitForNewTab(
+        gBrowser,
+        "http://example.com/"
+      );
+      await UrlbarTestUtils.openResultMenuAndPressAccesskey(window, "h", {
+        openByMouse: true,
+      });
+      info("Waiting for help URL to load in a new tab");
+      await tabOpenPromise;
+      gBrowser.removeCurrentTab();
+    } else {
+      let loadedPromise = BrowserTestUtils.browserLoaded(
+        gBrowser.selectedBrowser
+      );
+      let helpButton = gURLBar.querySelector(".urlbarView-button-help");
+      Assert.ok(helpButton);
+      EventUtils.synthesizeMouseAtCenter(helpButton, {});
+      await loadedPromise;
+      Assert.equal(gBrowser.currentURI.spec, "http://example.com/");
+    }
   });
   await ext.unload();
 });

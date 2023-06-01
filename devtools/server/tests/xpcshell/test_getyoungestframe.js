@@ -4,10 +4,10 @@ function run_test() {
   registerCleanupFunction(() => {
     Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
   });
-  const { addDebuggerToGlobal } = ChromeUtils.import(
-    "resource://gre/modules/jsdebugger.jsm"
+  const { addDebuggerToGlobal } = ChromeUtils.importESModule(
+    "resource://gre/modules/jsdebugger.sys.mjs"
   );
-  addDebuggerToGlobal(this);
+  addDebuggerToGlobal(globalThis);
   const xpcInspector = Cc["@mozilla.org/jsinspector;1"].getService(
     Ci.nsIJSInspector
   );

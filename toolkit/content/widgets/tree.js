@@ -9,8 +9,8 @@
 // This is loaded into all XUL windows. Wrap in a block to prevent
 // leaking to window scope.
 {
-  const { AppConstants } = ChromeUtils.import(
-    "resource://gre/modules/AppConstants.jsm"
+  const { AppConstants } = ChromeUtils.importESModule(
+    "resource://gre/modules/AppConstants.sys.mjs"
   );
 
   class MozTreeChildren extends MozElements.BaseControl {
@@ -198,44 +198,19 @@
   customElements.define("treechildren", MozTreeChildren);
 
   class MozTreecolPicker extends MozElements.BaseControl {
-    static get entities() {
-      return ["chrome://global/locale/tree.dtd"];
-    }
-
     static get markup() {
       return `
-      <image class="tree-columnpicker-icon"></image>
+      <button class="tree-columnpicker-button"/>
       <menupopup anonid="popup">
-        <menuseparator anonid="menuseparator"></menuseparator>
-        <menuitem anonid="menuitem" label="&restoreColumnOrder.label;"></menuitem>
+        <menuseparator anonid="menuseparator"/>
+        <menuitem anonid="menuitem" data-l10n-id="tree-columnpicker-restore-order"/>
       </menupopup>
       `;
     }
     constructor() {
       super();
 
-      this.addEventListener("command", event => {
-        if (event.originalTarget == this) {
-          var popup = this.querySelector('[anonid="popup"]');
-          this.buildPopup(popup);
-          popup.openPopup(this, "after_end");
-        } else {
-          var tree = this.parentNode.parentNode;
-          tree.stopEditing(true);
-          var menuitem = this.querySelector('[anonid="menuitem"]');
-          if (event.originalTarget == menuitem) {
-            this.style.MozBoxOrdinalGroup = "";
-            tree._ensureColumnOrder(tree.NATURAL_ORDER);
-          } else {
-            var colindex = event.originalTarget.getAttribute("colindex");
-            var column = tree.columns[colindex];
-            if (column) {
-              var element = column.element;
-              element.hidden = !element.hidden;
-            }
-          }
-        }
-      });
+      window.MozXULElement.insertFTLIfNeeded("toolkit/global/tree.ftl");
     }
 
     connectedCallback() {
@@ -245,6 +220,24 @@
 
       this.textContent = "";
       this.appendChild(this.constructor.fragment);
+
+      let button = this.querySelector(".tree-columnpicker-button");
+      let popup = this.querySelector('[anonid="popup"]');
+      let menuitem = this.querySelector('[anonid="menuitem"]');
+
+      button.addEventListener("command", e => {
+        this.buildPopup(popup);
+        popup.openPopup(this, "after_end");
+        e.preventDefault();
+      });
+
+      menuitem.addEventListener("command", e => {
+        let tree = this.parentNode.parentNode;
+        tree.stopEditing(true);
+        this.style.MozBoxOrdinalGroup = "";
+        tree._ensureColumnOrder(tree.NATURAL_ORDER);
+        e.preventDefault();
+      });
     }
 
     buildPopup(aPopup) {
@@ -285,6 +278,16 @@
               currElement.getAttribute("closemenu")
             );
           }
+
+          popupChild.addEventListener("command", function() {
+            let colindex = this.getAttribute("colindex");
+            let column = tree.columns[colindex];
+            if (column) {
+              var element = column.element;
+              element.hidden = !element.hidden;
+            }
+          });
+
           aPopup.insertBefore(popupChild, refChild);
         }
       }
@@ -308,7 +311,7 @@
 
     static get markup() {
       return `
-        <label class="treecol-text" flex="1" crop="right"></label>
+        <label class="treecol-text" flex="1" crop="end"></label>
         <image class="treecol-sortdirection"></image>
       `;
     }
@@ -558,7 +561,7 @@
 
     static get markup() {
       return `
-      <treecolpicker class="treecol-image" fixed="true"></treecolpicker>
+      <treecolpicker fixed="true"></treecolpicker>
       `;
     }
 
@@ -1337,11 +1340,14 @@
       // The leftside of the textbox is aligned to the left side of the text
       // in LTR mode, and left side of the cell in RTL mode.
       let left = style.direction == "rtl" ? cellRect.x : textRect.x;
+      let scrollbarWidth = window.windowUtils.getBoundsWithoutFlushing(
+        this.shadowRoot.querySelector("scrollbar[orient='vertical']")
+      ).width;
       // Note: this won't be quite right in RTL for trees using twisties
       // or indentation. bug 1708159 tracks fixing the implementation
       // of getCoordsForCellItem which we called above so it provides
       // better numbers in those cases.
-      let widthdiff = Math.abs(textRect.x - cellRect.x);
+      let widthdiff = Math.abs(textRect.x - cellRect.x) - scrollbarWidth;
 
       input.style.left = `${left}px`;
       input.style.height = `${textRect.height +

@@ -270,12 +270,24 @@ definitions:
               metric expires. For example, `2019-03-13`. This date is checked at
               build time. Except in special cases, this form should be used so
               that the metric automatically "sunsets" after a period of time.
+            - `<major version>`: An integer greater than 0 representing the
+              major version the metric expires in. For example, `11`. The
+              version is checked at build time against the major provided to the
+              glean_parser and is only valid if a major version is provided at
+              built time. If no major version is provided at build time and
+              expiration by major version is used for a metric, an error is
+              raised.
+              Note that mixing expiration by date and version is not allowed
+              within a product.
             - `never`: This metric never expires.
             - `expired`: This metric is manually expired.
 
           The default may be overriden in certain applications by the
           `custom_validate_expires` and `custom_is_expired` configs.
-        type: string
+        oneOf:
+          - type: string
+          - type: integer
+            minimum: 1
 
       version:
         title: Metric version
@@ -348,7 +360,7 @@ definitions:
             uniqueItems: true
             items:
               $ref: "#/definitions/labeled_metric_id"
-            maxItems: 100
+            maxItems: 4096
           - type: "null"
 
       extra_keys:
@@ -356,7 +368,7 @@ definitions:
         description: |
           The acceptable keys on the "extra" object sent with events. This is an
           object mapping the key to an object containing metadata about the key.
-          A maximum of 10 extra keys is allowed.
+          A maximum of 15 extra keys is allowed.
           This metadata object has the following keys:
 
             - `description`: **Required.** A description of the key.
@@ -378,7 +390,7 @@ definitions:
                 - quantity
           required:
             - description
-        maxProperties: 10
+        maxProperties: 15
         default: {}
 
       gecko_datapoint:

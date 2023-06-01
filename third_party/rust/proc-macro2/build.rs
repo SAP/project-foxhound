@@ -41,7 +41,6 @@
 //     1.57+.
 
 use std::env;
-use std::iter;
 use std::process::{self, Command};
 use std::str;
 
@@ -85,6 +84,10 @@ fn main() {
         println!("cargo:rustc-cfg=no_hygiene");
     }
 
+    if version.minor < 47 {
+        println!("cargo:rustc-cfg=no_ident_new_raw");
+    }
+
     if version.minor < 54 {
         println!("cargo:rustc-cfg=no_literal_from_str");
     }
@@ -108,7 +111,10 @@ fn main() {
         println!("cargo:rustc-cfg=wrap_proc_macro");
     }
 
-    if version.nightly && feature_allowed("proc_macro_span") {
+    if version.nightly
+        && feature_allowed("proc_macro_span")
+        && feature_allowed("proc_macro_span_shrink")
+    {
         println!("cargo:rustc-cfg=proc_macro_span");
     }
 
@@ -154,23 +160,13 @@ fn feature_allowed(feature: &str) -> bool {
 
     let flags_var;
     let flags_var_string;
-    let mut flags_var_split;
-    let mut flags_none;
-    let flags: &mut dyn Iterator<Item = &str> =
-        if let Some(encoded_rustflags) = env::var_os("CARGO_ENCODED_RUSTFLAGS") {
-            flags_var = encoded_rustflags;
-            flags_var_string = flags_var.to_string_lossy();
-            flags_var_split = flags_var_string.split('\x1f');
-            &mut flags_var_split
-        } else if let Some(rustflags) = env::var_os("RUSTFLAGS") {
-            flags_var = rustflags;
-            flags_var_string = flags_var.to_string_lossy();
-            flags_var_split = flags_var_string.split(' ');
-            &mut flags_var_split
-        } else {
-            flags_none = iter::empty();
-            &mut flags_none
-        };
+    let flags = if let Some(encoded_rustflags) = env::var_os("CARGO_ENCODED_RUSTFLAGS") {
+        flags_var = encoded_rustflags;
+        flags_var_string = flags_var.to_string_lossy();
+        flags_var_string.split('\x1f')
+    } else {
+        return true;
+    };
 
     for mut flag in flags {
         if flag.starts_with("-Z") {

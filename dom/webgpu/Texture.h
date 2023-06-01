@@ -10,13 +10,12 @@
 #include "nsWrapperCache.h"
 #include "ObjectModel.h"
 #include "mozilla/webgpu/WebGPUTypes.h"
-#include "mozilla/WeakPtr.h"
 
 namespace mozilla {
 namespace dom {
 struct GPUTextureDescriptor;
 struct GPUTextureViewDescriptor;
-class HTMLCanvasElement;
+enum class GPUTextureFormat : uint8_t;
 }  // namespace dom
 
 namespace webgpu {
@@ -24,6 +23,7 @@ namespace ffi {
 struct WGPUTextureViewDescriptor;
 }  // namespace ffi
 
+class CanvasContext;
 class Device;
 class TextureView;
 
@@ -36,9 +36,10 @@ class Texture final : public ObjectBase, public ChildOf<Device> {
           const dom::GPUTextureDescriptor& aDesc);
   Device* GetParentDevice() { return mParent; }
   const RawId mId;
+  const dom::GPUTextureFormat mFormat;
   const Maybe<uint8_t> mBytesPerBlock;
 
-  WeakPtr<dom::HTMLCanvasElement> mTargetCanvasElement;
+  WeakPtr<CanvasContext> mTargetContext;
 
  private:
   virtual ~Texture();

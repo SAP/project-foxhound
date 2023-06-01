@@ -311,12 +311,12 @@ interface nsINavHistoryResultObserver : nsISupports
   /**
    * Whether the observer is interested into history details changes.
    * Those include visits additions and removals. If the observer doesn't
-   * provide this attribute, it will default to true.
+   * provide this attribute, it will default to false.
    * In practice, the observer won't receive nodeHistoryDetailsChanged.
    * Note: this is only read when the observer is added, it cannot be changed
    * dynamically.
    */
-  readonly attribute boolean observeHistoryDetails;
+  readonly attribute boolean skipHistoryDetailsNotifications;
 
   /**
    * Called when 'aItem' is inserted into 'aParent' at index 'aNewIndex'.
@@ -1023,6 +1023,26 @@ interface nsINavHistoryService : nsISupports
   const unsigned short DATABASE_STATUS_LOCKED = 4;
 
   /**
+   * Insert this value into moz_historyvisits if the visit source is organic.
+   */
+  const unsigned short VISIT_SOURCE_ORGANIC = 0;
+
+  /**
+   * Insert this value into moz_historyvisits if the visit source is sponsored.
+   */
+  const unsigned short VISIT_SOURCE_SPONSORED = 1;
+
+  /**
+   * Insert this value into moz_historyvisits if the visit source is bookmarked.
+   */
+  const unsigned short VISIT_SOURCE_BOOKMARKED = 2;
+
+  /**
+   * Insert this value into moz_historyvisits if the visit source is searched.
+   */
+  const unsigned short VISIT_SOURCE_SEARCHED = 3;
+
+  /**
    * Returns the current database status
    */
   readonly attribute unsigned short databaseStatus;
@@ -1128,6 +1148,19 @@ interface nsINavHistoryService : nsISupports
   void recalculateOriginFrecencyStats([optional] in nsIObserver aCallback);
 
   /**
+   * Whether frecency is in the process of being decayed. The value can also
+   * be read through the is_frecency_decaying() SQL function exposed by Places
+   * database connections.
+   */
+  attribute boolean isFrecencyDecaying;
+
+  /**
+   * This is set to true when a frecency is invalidated and can be polled
+   * periodically to start recalculation tasks.
+   */
+  attribute boolean shouldStartFrecencyRecalculation;
+
+  /**
    * The database connection used by Places.
    */
   readonly attribute mozIStorageConnection DBConnection;
@@ -1162,10 +1195,4 @@ interface nsINavHistoryService : nsISupports
    * May be null if it's too late to get one.
    */
   readonly attribute nsIAsyncShutdownClient connectionShutdownClient;
-
-  /**
-   * Asynchronously recalculates frecency for all pages where frecency < 0, then
-   * decays frecency and inputhistory values.
-   */
-   void decayFrecency();
 };

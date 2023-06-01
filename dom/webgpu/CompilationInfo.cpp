@@ -8,8 +8,7 @@
 #include "ShaderModule.h"
 #include "mozilla/dom/WebGPUBinding.h"
 
-namespace mozilla {
-namespace webgpu {
+namespace mozilla::webgpu {
 
 GPU_IMPL_CYCLE_COLLECTION(CompilationInfo, mParent)
 GPU_IMPL_JS_WRAP(CompilationInfo)
@@ -17,5 +16,19 @@ GPU_IMPL_JS_WRAP(CompilationInfo)
 CompilationInfo::CompilationInfo(ShaderModule* const aParent)
     : ChildOf(aParent) {}
 
-}  // namespace webgpu
-}  // namespace mozilla
+void CompilationInfo::SetMessages(
+    nsTArray<mozilla::webgpu::WebGPUCompilationMessage>& aMessages) {
+  for (auto& msg : aMessages) {
+    mMessages.AppendElement(MakeAndAddRef<mozilla::webgpu::CompilationMessage>(
+        this, msg.lineNum, msg.linePos, msg.offset, std::move(msg.message)));
+  }
+}
+
+void CompilationInfo::GetMessages(
+    nsTArray<RefPtr<mozilla::webgpu::CompilationMessage>>& aMessages) {
+  for (auto& msg : mMessages) {
+    aMessages.AppendElement(msg);
+  }
+}
+
+}  // namespace mozilla::webgpu

@@ -8,7 +8,6 @@
 
 #include "AutoplayPolicy.h"
 #include "nsContentUtils.h"
-#include "mozJSComponentLoader.h"
 #include "mozilla/Components.h"
 #include "mozilla/ContentBlockingAllowList.h"
 #include "mozilla/Logging.h"
@@ -105,7 +104,7 @@ WindowGlobalInit WindowGlobalActor::WindowInitializer(
 
   // Initialze permission fields
   fields.mAutoplayPermission =
-      AutoplayPolicy::GetSiteAutoplayPermission(init.principal());
+      media::AutoplayPolicy::GetSiteAutoplayPermission(init.principal());
   fields.mPopupPermission = PopupBlocker::GetPopupPermission(init.principal());
 
   // Initialize top level permission fields
@@ -140,9 +139,7 @@ WindowGlobalInit WindowGlobalActor::WindowInitializer(
     nsCOMPtr<nsILoadInfo> loadInfo(channel->LoadInfo());
     fields.mIsOriginalFrameSource = loadInfo->GetOriginalFrameSrcLoad();
 
-    nsCOMPtr<nsISupports> securityInfoSupports;
-    channel->GetSecurityInfo(getter_AddRefs(securityInfoSupports));
-    securityInfo = do_QueryInterface(securityInfoSupports);
+    channel->GetSecurityInfo(getter_AddRefs(securityInfo));
   }
   init.securityInfo() = securityInfo;
 

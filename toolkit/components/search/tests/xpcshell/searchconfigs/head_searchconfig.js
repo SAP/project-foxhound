@@ -3,32 +3,33 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
+
+ChromeUtils.defineESModuleGetters(this, {
+  Region: "resource://gre/modules/Region.sys.mjs",
+  SearchEngine: "resource://gre/modules/SearchEngine.sys.mjs",
+  SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.sys.mjs",
+  SearchTestUtils: "resource://testing-common/SearchTestUtils.sys.mjs",
+  SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AddonTestUtils: "resource://testing-common/AddonTestUtils.jsm",
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
   ObjectUtils: "resource://gre/modules/ObjectUtils.jsm",
-  Region: "resource://gre/modules/Region.jsm",
   RemoteSettings: "resource://services-settings/remote-settings.js",
-  SearchEngine: "resource://gre/modules/SearchEngine.jsm",
-  SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.jsm",
-  SearchTestUtils: "resource://testing-common/SearchTestUtils.jsm",
-  SearchUtils: "resource://gre/modules/SearchUtils.jsm",
-  Services: "resource://gre/modules/Services.jsm",
   sinon: "resource://testing-common/Sinon.jsm",
-});
-
-XPCOMUtils.defineLazyServiceGetters(this, {
-  gEnvironment: ["@mozilla.org/process/environment;1", "nsIEnvironment"],
 });
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
 
 const GLOBAL_SCOPE = this;
-const TEST_DEBUG = gEnvironment.get("TEST_DEBUG");
+const TEST_DEBUG = Services.env.get("TEST_DEBUG");
 
 const URLTYPE_SUGGEST_JSON = "application/x-suggestions+json";
 const URLTYPE_SEARCH_HTML = "text/html";
@@ -48,7 +49,7 @@ let engineSelector;
  * against a remote server.
  */
 async function maybeSetupConfig() {
-  const SEARCH_CONFIG = gEnvironment.get("SEARCH_CONFIG");
+  const SEARCH_CONFIG = Services.env.get("SEARCH_CONFIG");
   if (SEARCH_CONFIG) {
     if (!(SEARCH_CONFIG in SearchUtils.ENGINES_URLS)) {
       throw new Error(`Invalid value for SEARCH_CONFIG`);
@@ -189,7 +190,7 @@ class SearchConfigTest {
         : AppConstants.MOZ_UPDATE_CHANNEL,
     });
     for (let config of configs.engines) {
-      let engine = await Services.search.wrappedJSObject.makeEngineFromConfig(
+      let engine = await Services.search.wrappedJSObject._makeEngineFromConfig(
         config
       );
       engines.push(engine);
@@ -212,7 +213,7 @@ class SearchConfigTest {
   }
 
   /**
-   * @returns {array} the list of locales for the tests to run with.
+   * @returns {Array} the list of locales for the tests to run with.
    */
   async _getLocales() {
     if (TEST_DEBUG) {
@@ -237,9 +238,10 @@ class SearchConfigTest {
    * Determines if a locale matches with a locales section in the configuration.
    *
    * @param {object} locales
-   * @param {array} [locales.matches]
+   *   The config locales config, containing the locals to match against.
+   * @param {Array} [locales.matches]
    *   Array of locale names to match exactly.
-   * @param {array} [locales.startsWith]
+   * @param {Array} [locales.startsWith]
    *   Array of locale names to match the start.
    * @param {string} locale
    *   The two-letter locale code.
@@ -373,7 +375,7 @@ class SearchConfigTest {
    */
   _assertDefaultEngines(region, locale) {
     this._assertEngineRules(
-      [Services.search.originalDefaultEngine],
+      [Services.search.appDefaultEngine],
       region,
       locale,
       "default"
@@ -381,7 +383,7 @@ class SearchConfigTest {
     // At the moment, this uses the same section as the normal default, as
     // we don't set this differently for any region/locale.
     this._assertEngineRules(
-      [Services.search.originalPrivateDefaultEngine],
+      [Services.search.appPrivateDefaultEngine],
       region,
       locale,
       "default"
@@ -395,7 +397,7 @@ class SearchConfigTest {
    *   The two-letter region code.
    * @param {string} locale
    *   The two-letter locale code.
-   * @param {array} engines
+   * @param {Array} engines
    *   The current visible engines.
    * @returns {boolean}
    *   Returns true if the engine is expected to be present, false otherwise.
@@ -411,7 +413,7 @@ class SearchConfigTest {
    *   The two-letter region code.
    * @param {string} locale
    *   The two-letter locale code.
-   * @param {array} engines
+   * @param {Array} engines
    *   The current visible engines.
    */
   _assertEngineDetails(region, locale, engines) {

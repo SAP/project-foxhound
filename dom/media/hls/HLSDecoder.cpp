@@ -6,6 +6,7 @@
 
 #include "HLSDecoder.h"
 #include "AndroidBridge.h"
+#include "base/process_util.h"
 #include "DecoderTraits.h"
 #include "HLSDemuxer.h"
 #include "HLSUtils.h"
@@ -44,7 +45,7 @@ class HLSResourceCallbacksSupport
 
  private:
   ~HLSResourceCallbacksSupport() {}
-  Mutex mMutex;
+  Mutex mMutex MOZ_UNANNOTATED;
   HLSDecoder* mDecoder;
 };
 
@@ -131,7 +132,8 @@ HLSDecoder::~HLSDecoder() {
   HLS_DEBUG("HLSDecoder", "~HLSDecoder(): allocated=%zu", sAllocatedInstances);
 }
 
-MediaDecoderStateMachine* HLSDecoder::CreateStateMachine() {
+MediaDecoderStateMachineBase* HLSDecoder::CreateStateMachine(
+    bool aDisableExternalEngine) {
   MOZ_ASSERT(NS_IsMainThread());
 
   MediaFormatReaderInit init;
@@ -140,6 +142,10 @@ MediaDecoderStateMachine* HLSDecoder::CreateStateMachine() {
   init.mCrashHelper = GetOwner()->CreateGMPCrashHelper();
   init.mFrameStats = mFrameStats;
   init.mMediaDecoderOwnerID = mOwner;
+  static Atomic<uint32_t> sTrackingIdCounter(0);
+  init.mTrackingId =
+      Some(TrackingId(TrackingId::Source::HLSDecoder, sTrackingIdCounter++,
+                      TrackingId::TrackAcrossProcesses::Yes));
   mReader = new MediaFormatReader(
       init, new HLSDemuxer(mHLSResourceWrapper->GetPlayerId()));
 
@@ -178,13 +184,7 @@ nsresult HLSDecoder::Load(nsIChannel* aChannel) {
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
-
-  SetStateMachine(CreateStateMachine());
-  NS_ENSURE_TRUE(GetStateMachine(), NS_ERROR_FAILURE);
-
-  GetStateMachine()->DispatchIsLiveStream(false);
-
-  return InitializeStateMachine();
+  return CreateAndInitStateMachine(false);
 }
 
 void HLSDecoder::AddSizeOfResources(ResourceSizes* aSizes) {

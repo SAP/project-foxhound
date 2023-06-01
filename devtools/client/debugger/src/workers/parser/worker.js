@@ -7,12 +7,10 @@ import { clearASTs } from "./utils/ast";
 import getScopes, { clearScopes } from "./getScopes";
 import { setSource, clearSources } from "./sources";
 import findOutOfScopeLocations from "./findOutOfScopeLocations";
-import { getNextStep } from "./steps";
 import { hasSyntaxError } from "./validate";
 import mapExpression from "./mapExpression";
 
-import { workerUtils } from "devtools-utils";
-const { workerHandler } = workerUtils;
+import { workerHandler } from "devtools/client/shared/worker-utils";
 
 function clearState() {
   clearASTs();
@@ -26,7 +24,6 @@ self.onmessage = workerHandler({
   getSymbols,
   getScopes,
   clearState,
-  getNextStep,
   hasSyntaxError,
   mapExpression,
   setSource,

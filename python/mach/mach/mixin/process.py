@@ -4,20 +4,17 @@
 
 # This module provides mixins to perform process execution.
 
-from __future__ import absolute_import, unicode_literals
-
 import logging
 import os
 import signal
 import subprocess
 import sys
 from pathlib import Path
-
 from typing import Optional
+
 from mozprocess.processhandler import ProcessHandlerMixin
 
 from .logging import LoggingMixin
-
 
 # Perform detection of operating system environment. This is used by command
 # execution. We only do this once to save redundancy. Yes, this can fail module
@@ -40,7 +37,10 @@ else:
 
 _in_msys = False
 
-if os.environ.get("MSYSTEM", None) in ("MINGW32", "MINGW64"):
+if (
+    os.environ.get("MSYSTEM", None) in ("MINGW32", "MINGW64")
+    or "MOZILLABUILD" in os.environ
+):
     _in_msys = True
 
     if not _current_shell.lower().endswith(".exe"):

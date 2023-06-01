@@ -31,14 +31,6 @@ MFBT_API ProfileChunkedBuffer& profiler_get_core_buffer();
 
 namespace mozilla::base_profiler_markers_detail {
 
-// Get the core buffer from the profiler, and cache it in a
-// non-templated-function static reference.
-inline ProfileChunkedBuffer& CachedBaseCoreBuffer() {
-  static ProfileChunkedBuffer& coreBuffer =
-      baseprofiler::profiler_get_core_buffer();
-  return coreBuffer;
-}
-
 struct Streaming {
   // A `MarkerDataDeserializer` is a free function that can read a serialized
   // payload from an `EntryReader` and streams it as JSON object properties.
@@ -80,7 +72,23 @@ struct Streaming {
       DeserializerTag aTag);
 
   // Retrieve all MarkerTypeFunctions's.
-  MFBT_API static Span<const MarkerTypeFunctions> MarkerTypeFunctionsArray();
+  // While this object lives, no other operations can happen on this list.
+  class LockedMarkerTypeFunctionsList {
+   public:
+    MFBT_API LockedMarkerTypeFunctionsList();
+    MFBT_API ~LockedMarkerTypeFunctionsList();
+
+    LockedMarkerTypeFunctionsList(const LockedMarkerTypeFunctionsList&) =
+        delete;
+    LockedMarkerTypeFunctionsList& operator=(
+        const LockedMarkerTypeFunctionsList&) = delete;
+
+    auto begin() const { return mMarkerTypeFunctionsSpan.begin(); }
+    auto end() const { return mMarkerTypeFunctionsSpan.end(); }
+
+   private:
+    Span<const MarkerTypeFunctions> mMarkerTypeFunctionsSpan;
+  };
 };
 
 // This helper will examine a marker type's `StreamJSONMarkerData` function, see
@@ -369,7 +377,7 @@ void DeserializeAfterKindAndStream(
             aEntryReader.ReadObject<mozilla::base_profiler_markers_detail::
                                         Streaming::DeserializerTag>();
         tag != 0) {
-      writer->StartObjectElement(JSONWriter::SingleLineStyle);
+      writer->StartObjectElement();
       {
         // Stream "common props".
 

@@ -3,9 +3,9 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.jsm",
-  SearchService: "resource://gre/modules/SearchService.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.sys.mjs",
+  SearchService: "resource://gre/modules/SearchService.sys.mjs",
 });
 
 const tests = [];
@@ -18,35 +18,17 @@ for (let [locale, region] of [
   ["ru", "RU"],
   ["zh-CN", "CN"],
 ]) {
-  tests.push({
-    distribution: "acer-001",
-    locale,
-    region,
-    test: engines =>
-      hasParams(engines, "Bing", "searchbar", "pc=MOZD") &&
-      hasDefault(engines, "Bing") &&
-      hasEnginesFirst(engines, ["Bing"]),
-  });
-
-  tests.push({
-    distribution: "acer-002",
-    locale,
-    region,
-    test: engines =>
-      hasParams(engines, "Bing", "searchbar", "pc=MOZD") &&
-      hasDefault(engines, "Bing") &&
-      hasEnginesFirst(engines, ["Bing"]),
-  });
-
-  tests.push({
-    distribution: "acer-g-003",
-    locale,
-    region,
-    test: engines =>
-      hasParams(engines, "Bing", "searchbar", "pc=MOZE") &&
-      hasDefault(engines, "Bing") &&
-      hasEnginesFirst(engines, ["Bing"]),
-  });
+  for (let distribution of ["acer-003", "acer-004"]) {
+    tests.push({
+      distribution,
+      locale,
+      region,
+      test: engines =>
+        hasParams(engines, "Bing", "searchbar", "pc=MOZX") &&
+        hasDefault(engines, "Bing") &&
+        hasEnginesFirst(engines, ["Bing"]),
+    });
+  }
 }
 
 for (let canonicalId of ["canonical", "canonical-001", "canonical-002"]) {
@@ -323,6 +305,7 @@ tests.push({
   region: "US",
   distribution: "mint-001",
   test: engines =>
+    hasParams(engines, "DuckDuckGo", "searchbar", "t=lm") &&
     hasParams(engines, "Google", "searchbar", "client=firefox-b-1-lm") &&
     hasDefault(engines, "Google") &&
     hasEnginesFirst(engines, ["Google"]) &&
@@ -334,6 +317,7 @@ tests.push({
   region: "GB",
   distribution: "mint-001",
   test: engines =>
+    hasParams(engines, "DuckDuckGo", "searchbar", "t=lm") &&
     hasParams(engines, "Google", "searchbar", "client=firefox-b-lm") &&
     hasDefault(engines, "Google") &&
     hasEnginesFirst(engines, ["Google"]) &&

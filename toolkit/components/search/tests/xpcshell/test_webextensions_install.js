@@ -3,16 +3,7 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  AddonManager: "resource://gre/modules/AddonManager.jsm",
-  ExtensionTestUtils: "resource://testing-common/ExtensionXPCShellUtils.jsm",
-});
-
-const {
-  promiseRestartManager,
-  promiseShutdownManager,
-  promiseStartupManager,
-} = AddonTestUtils;
+const { promiseShutdownManager, promiseStartupManager } = AddonTestUtils;
 
 async function getEngineNames() {
   let engines = await Services.search.getEngines();
@@ -48,7 +39,7 @@ add_task(async function basic_install_test() {
     {
       encoding: "windows-1252",
     },
-    true
+    { skipUnload: true }
   );
   Assert.deepEqual((await getEngineNames()).sort(), [
     "Example",
@@ -71,12 +62,13 @@ add_task(async function basic_install_test() {
 });
 
 add_task(async function test_install_duplicate_engine() {
+  consoleAllowList.push("An engine with that name already exists");
   let extension = await SearchTestUtils.installSearchExtension(
     {
       name: "Plain",
       search_url: "https://example.com/plain",
     },
-    true
+    { skipUnload: true }
   );
 
   let engine = await Services.search.getEngineByName("Plain");
@@ -130,7 +122,7 @@ add_task(async function test_manifest_selection() {
 });
 
 add_task(async function test_load_favicon_invalid() {
-  let observed = TestUtils.topicObserved("console-api-log-event", msg => {
+  let observed = TestUtils.consoleMessageObserved(msg => {
     return msg.wrappedJSObject.arguments[0].includes(
       "Content type does not match expected"
     );
@@ -141,7 +133,7 @@ add_task(async function test_load_favicon_invalid() {
     {
       favicon_url: `${gDataUrl}engine.xml`,
     },
-    true
+    { skipUnload: true }
   );
 
   await observed;
@@ -156,7 +148,7 @@ add_task(async function test_load_favicon_invalid() {
 });
 
 add_task(async function test_load_favicon_invalid_redirect() {
-  let observed = TestUtils.topicObserved("console-api-log-event", msg => {
+  let observed = TestUtils.consoleMessageObserved(msg => {
     return msg.wrappedJSObject.arguments[0].includes(
       "Content type does not match expected"
     );
@@ -167,7 +159,7 @@ add_task(async function test_load_favicon_invalid_redirect() {
     {
       favicon_url: `${gDataUrl}/iconsRedirect.sjs?type=invalid`,
     },
-    true
+    { skipUnload: true }
   );
 
   await observed;
@@ -192,7 +184,7 @@ add_task(async function test_load_favicon_redirect() {
     {
       favicon_url: `${gDataUrl}/iconsRedirect.sjs`,
     },
-    true
+    { skipUnload: true }
   );
 
   let engine = await Services.search.getEngineByName("Example");

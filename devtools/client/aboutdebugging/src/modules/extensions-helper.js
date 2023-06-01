@@ -4,28 +4,27 @@
 
 "use strict";
 
-const { Cc, Ci } = require("chrome");
-const Services = require("Services");
-loader.lazyImporter(
-  this,
+const lazy = {};
+
+ChromeUtils.defineModuleGetter(
+  lazy,
   "AddonManager",
   "resource://gre/modules/AddonManager.jsm"
 );
-loader.lazyRequireGetter(
-  this,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm",
-  true
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+});
 
-const { PREFERENCES } = require("devtools/client/aboutdebugging/src/constants");
+const {
+  PREFERENCES,
+} = require("resource://devtools/client/aboutdebugging/src/constants.js");
 
 /**
  * Uninstall the addon with the provided id.
  * Resolves when the addon shutdown has completed.
  */
 exports.uninstallAddon = async function(addonID) {
-  const addon = await AddonManager.getAddonByID(addonID);
+  const addon = await lazy.AddonManager.getAddonByID(addonID);
   return addon && addon.uninstall();
 };
 
@@ -74,7 +73,7 @@ exports.openTemporaryExtension = function(win, message) {
         PREFERENCES.TEMPORARY_EXTENSION_PATH,
         ""
       );
-      const lastDir = new FileUtils.File(lastDirPath);
+      const lastDir = new lazy.FileUtils.File(lastDirPath);
       fp.displayDirectory = lastDir;
     } catch (e) {
       // Empty or invalid value, nothing to handle.

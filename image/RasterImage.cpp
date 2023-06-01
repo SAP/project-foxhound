@@ -19,7 +19,6 @@
 #include "IDecodingTask.h"
 #include "ImageLogging.h"
 #include "ImageRegion.h"
-#include "Layers.h"
 #include "LookupResult.h"
 #include "OrientedImage.h"
 #include "SourceBuffer.h"
@@ -205,7 +204,11 @@ RasterImage::GetHeight(int32_t* aHeight) {
 }
 
 //******************************************************************************
-nsresult RasterImage::GetNativeSizes(nsTArray<IntSize>& aNativeSizes) const {
+void RasterImage::MediaFeatureValuesChangedAllDocuments(
+    const mozilla::MediaFeatureChange& aChange) {}
+
+//******************************************************************************
+nsresult RasterImage::GetNativeSizes(nsTArray<IntSize>& aNativeSizes) {
   if (mError) {
     return NS_ERROR_FAILURE;
   }
@@ -224,7 +227,7 @@ nsresult RasterImage::GetNativeSizes(nsTArray<IntSize>& aNativeSizes) const {
 }
 
 //******************************************************************************
-size_t RasterImage::GetNativeSizesLength() const {
+size_t RasterImage::GetNativeSizesLength() {
   if (mError || !LoadHasSize()) {
     return 0;
   }
@@ -339,12 +342,25 @@ LookupResult RasterImage::LookupFrame(const OrientedIntSize& aSize,
     return LookupResult(MatchType::NOT_FOUND);
   }
 
+  // We want to trigger a decode if and only if:
+  // 1) There is no pending decode
+  // 2) There is no acceptable size decoded
+  // 3) The pending decode has not produced a frame yet, a sync decode is
+  // requested, and we have all the source data. Without the source data, we
+  // will just trigger another async decode anyways.
+  //
+  // TODO(aosmond): We should better handle case 3. We should actually return
+  // TEMPORARY_ERROR or NOT_READY if we don't have all the source data and a
+  // sync decode is requested. If there is a pending decode and we have all the
+  // source data, we should always be able to block on the frame's monitor --
+  // perhaps this could be accomplished by preallocating the first frame buffer
+  // when we create the decoder.
   const bool syncDecode = aFlags & FLAG_SYNC_DECODE;
   const bool avoidRedecode = aFlags & FLAG_AVOID_REDECODE_FOR_SIZE;
   if (result.Type() == MatchType::NOT_FOUND ||
       (result.Type() == MatchType::SUBSTITUTE_BECAUSE_NOT_FOUND &&
        !avoidRedecode) ||
-      (syncDecode && !avoidRedecode && !result)) {
+      (syncDecode && !avoidRedecode && !result && LoadAllSourceData())) {
     // We don't have a copy of this frame, and there's no decoder working on
     // one. (Or we're sync decoding and the existing decoder hasn't even started
     // yet.) Trigger decoding so it'll be available next time.
@@ -580,7 +596,7 @@ RasterImage::IsImageContainerAvailable(WindowRenderer* aRenderer,
 NS_IMETHODIMP_(ImgDrawResult)
 RasterImage::GetImageProvider(WindowRenderer* aRenderer,
                               const gfx::IntSize& aSize,
-                              const Maybe<SVGImageContext>& aSVGContext,
+                              const SVGImageContext& aSVGContext,
                               const Maybe<ImageIntRegion>& aRegion,
                               uint32_t aFlags,
                               WebRenderImageProvider** aProvider) {
@@ -727,8 +743,8 @@ bool RasterImage::SetMetadata(const ImageMetadata& aMetadata,
     MOZ_ASSERT(mOrientation.IsIdentity(), "Would need to orient hotspot point");
 
     auto hotspot = aMetadata.GetHotspot();
-    mHotspot.x = std::max(std::min(hotspot.x, mSize.width - 1), 0);
-    mHotspot.y = std::max(std::min(hotspot.y, mSize.height - 1), 0);
+    mHotspot.x = std::max(std::min(hotspot.x.value, mSize.width - 1), 0);
+    mHotspot.y = std::max(std::min(hotspot.y.value, mSize.height - 1), 0);
   }
 
   return true;
@@ -1024,6 +1040,21 @@ bool RasterImage::StartDecodingWithResult(uint32_t aFlags,
   LookupResult result = RequestDecodeForSizeInternal(mSize, flags, aWhichFrame);
   DrawableSurface surface = std::move(result.Surface());
   return surface && surface->IsFinished();
+}
+
+bool RasterImage::HasDecodedPixels() {
+  LookupResult result = SurfaceCache::LookupBestMatch(
+      ImageKey(this),
+      RasterSurfaceKey(mSize.ToUnknownSize(), DefaultSurfaceFlags(),
+                       PlaybackType::eStatic),
+      /* aMarkUsed = */ false);
+  MatchType matchType = result.Type();
+  if (matchType == MatchType::NOT_FOUND || matchType == MatchType::PENDING ||
+      !bool(result.Surface())) {
+    return false;
+  }
+
+  return !result.Surface()->GetDecodedRect().IsEmpty();
 }
 
 imgIContainer::DecodeResult RasterImage::RequestDecodeWithResult(
@@ -1323,10 +1354,10 @@ ImgDrawResult RasterImage::DrawInternal(DrawableSurface&& aSurface,
   IntSize finalSize = aSurface->GetSize();
   bool couldRedecodeForBetterFrame = false;
   if (finalSize != aSize.ToUnknownSize()) {
-    gfx::Size scale(double(aSize.width) / finalSize.width,
-                    double(aSize.height) / finalSize.height);
-    aContext->Multiply(gfxMatrix::Scaling(scale.width, scale.height));
-    region.Scale(1.0 / scale.width, 1.0 / scale.height);
+    gfx::MatrixScales scale(double(aSize.width) / finalSize.width,
+                            double(aSize.height) / finalSize.height);
+    aContext->Multiply(gfx::Matrix::Scaling(scale));
+    region.Scale(1.0 / scale.xScale, 1.0 / scale.yScale);
 
     couldRedecodeForBetterFrame = CanDownscaleDuringDecode(aSize, aFlags);
   }
@@ -1349,7 +1380,7 @@ NS_IMETHODIMP_(ImgDrawResult)
 RasterImage::Draw(gfxContext* aContext, const IntSize& aSize,
                   const ImageRegion& aRegion, uint32_t aWhichFrame,
                   SamplingFilter aSamplingFilter,
-                  const Maybe<SVGImageContext>& /*aSVGContext - ignored*/,
+                  const SVGImageContext& /*aSVGContext - ignored*/,
                   uint32_t aFlags, float aOpacity) {
   if (aWhichFrame > FRAME_MAX_VALUE) {
     return ImgDrawResult::BAD_ARGS;
@@ -1679,9 +1710,11 @@ void RasterImage::NotifyDecodeComplete(
     // If we were a metadata decode and a full decode was requested, do it.
     if (LoadWantFullDecode()) {
       StoreWantFullDecode(false);
-      RequestDecodeForSizeInternal(
-          mSize, DECODE_FLAGS_DEFAULT | FLAG_HIGH_QUALITY_SCALING,
-          FRAME_CURRENT);
+      RequestDecodeForSizeInternal(mSize,
+                                   DECODE_FLAGS_DEFAULT |
+                                       FLAG_HIGH_QUALITY_SCALING |
+                                       FLAG_AVOID_REDECODE_FOR_SIZE,
+                                   FRAME_CURRENT);
     }
   }
 }

@@ -334,7 +334,7 @@ nsresult PrototypeDocumentContentSink::PrepareToWalk() {
 
   // TODO(emilio): Should this really notify? We don't notify of appends anyhow,
   // and we just appended the root so no styles can possibly depend on it.
-  mDocument->UpdateDocumentStates(NS_DOCUMENT_STATE_RTL_LOCALE, true);
+  mDocument->UpdateDocumentStates(DocumentState::RTL_LOCALE, true);
 
   nsContentUtils::AddScriptRunner(
       new nsDocElementCreatedNotificationRunner(mDocument));
@@ -671,7 +671,8 @@ nsresult PrototypeDocumentContentSink::DoneWalking() {
   if (IsChromeURI(mDocumentURI) &&
       nsXULPrototypeCache::GetInstance()->IsEnabled()) {
     bool isCachedOnDisk;
-    nsXULPrototypeCache::GetInstance()->HasData(mDocumentURI, &isCachedOnDisk);
+    nsXULPrototypeCache::GetInstance()->HasPrototype(mDocumentURI,
+                                                     &isCachedOnDisk);
     if (!isCachedOnDisk) {
       nsXULPrototypeCache::GetInstance()->WritePrototype(mCurrentPrototype);
     }
@@ -853,14 +854,14 @@ PrototypeDocumentContentSink::OnStreamComplete(nsIStreamLoader* aLoader,
                                         !mOffThreadCompileStringBuf),
                "PrototypeDocument can't load multiple scripts at once");
 
-    rv = ScriptLoader::ConvertToUTF16(channel, string, stringLen, u""_ns,
-                                      mDocument, mOffThreadCompileStringBuf,
-                                      mOffThreadCompileStringLength);
+    rv = ScriptLoader::ConvertToUTF8(channel, string, stringLen, u""_ns,
+                                     mDocument, mOffThreadCompileStringBuf,
+                                     mOffThreadCompileStringLength);
     if (NS_SUCCEEDED(rv)) {
       // Pass ownership of the buffer, carefully emptying the existing
       // fields in the process.  Note that the |Compile| function called
       // below always takes ownership of the buffer.
-      char16_t* units = nullptr;
+      Utf8Unit* units = nullptr;
       size_t unitsLength = 0;
 
       std::swap(units, mOffThreadCompileStringBuf);
@@ -1025,7 +1026,7 @@ nsresult PrototypeDocumentContentSink::ExecuteScript(
 
   // On failure, ~AutoScriptEntry will handle exceptions, so
   // there is no need to manually check the return value.
-  JS::RootedValue rval(cx);
+  JS::Rooted<JS::Value> rval(cx);
   Unused << JS_ExecuteScript(cx, scriptObject, &rval);
 
   return NS_OK;

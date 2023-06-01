@@ -16,8 +16,6 @@ const { ContentTask } = ChromeUtils.import("resource://testing-common/ContentTas
 function dropOnRemoteBrowserAsync(browser, data, shouldExpectStateChange) {
   ContentTask.setTestScope(window); // Need this so is/isnot/ok are available inside the contenttask
   return ContentTask.spawn(browser, {data, shouldExpectStateChange}, async function({data, shouldExpectStateChange}) {
-    const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
     if (!content.document.documentElement) {
       // Wait until the testing document gets loaded.
       await new Promise(resolve => {
@@ -47,7 +45,7 @@ function dropOnRemoteBrowserAsync(browser, data, shouldExpectStateChange) {
     } catch (ex) {
       if (shouldExpectStateChange) {
         ok(false, "Should not have gotten an exception from the dropped link handler, but got: " + ex);
-        Cu.reportError(ex);
+        console.error(ex);
       }
     }
 
@@ -236,15 +234,14 @@ function ok(v, n) { window.arguments[0].SimpleTest.ok(v,n); }
    * Without this there's one subtest that fails, but the browser
    * elements were zero-sized before so... */
   browser {
-    width: 0;
-    height: 0;
+    min-width: 0;
+    min-height: 0;
   }
 </html:style>
 
 <browser id="chromechild" src="about:blank"/>
-<browser id="contentchild" type="content" width="100" height="100"
+<browser id="contentchild" type="content" style="width: 100px; height: 100px"
          src="data:text/html,&lt;html draggable='true'&gt;&lt;body draggable='true' style='width: 100px; height: 100px;' ondragover='event.preventDefault()' ondrop='if (window.stopMode) event.stopPropagation(); if (window.cancelMode) event.preventDefault();'&gt;&lt;/body&gt;&lt;/html&gt;"/>
-
-<browser id="remote-contentchild" type="content" width="100" height="100" remote="true"
+<browser id="remote-contentchild" type="content" remote="true" style="width: 100px; height: 100px"
          src="data:text/html,&lt;html draggable='true'&gt;&lt;body draggable='true' style='width: 100px; height: 100px;' ondragover='event.preventDefault()' ondrop='if (window.stopMode) event.stopPropagation(); if (window.cancelMode) event.preventDefault();'&gt;&lt;/body&gt;&lt;/html&gt;"/>
 </window>

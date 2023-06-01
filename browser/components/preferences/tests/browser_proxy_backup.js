@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 function test() {
   waitForExplicitFinish();
 
@@ -13,7 +11,6 @@ function test() {
   let oldNetworkProxyType = Services.prefs.getIntPref("network.proxy.type");
   registerCleanupFunction(function() {
     Services.prefs.setIntPref("network.proxy.type", oldNetworkProxyType);
-    Services.prefs.clearUserPref("browser.preferences.instantApply");
     Services.prefs.clearUserPref("network.proxy.share_proxy_settings");
     for (let proxyType of ["http", "ssl", "socks"]) {
       Services.prefs.clearUserPref("network.proxy." + proxyType);

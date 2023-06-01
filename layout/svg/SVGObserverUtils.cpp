@@ -304,8 +304,14 @@ void SVGRenderingObserver::ContentRemoved(nsIContent* aChild,
  */
 class SVGIDRenderingObserver : public SVGRenderingObserver {
  public:
-  SVGIDRenderingObserver(URLAndReferrerInfo* aURI,
-                         nsIContent* aObservingContent, bool aReferenceImage);
+  // Callback for checking if the element being observed is valid for this
+  // observer. Note that this may be called during construction, before the
+  // deriving class is fully constructed.
+  using TargetIsValidCallback = bool (*)(const Element&);
+  SVGIDRenderingObserver(
+      URLAndReferrerInfo* aURI, nsIContent* aObservingContent,
+      bool aReferenceImage,
+      TargetIsValidCallback aTargetIsValidCallback = nullptr);
 
  protected:
   virtual ~SVGIDRenderingObserver() {
@@ -329,6 +335,9 @@ class SVGIDRenderingObserver : public SVGRenderingObserver {
           nsContentUtils::ContentIsHostIncludingDescendantOf(mObservingContent,
                                                              observed)) {
         return false;
+      }
+      if (mTargetIsValidCallback) {
+        return mTargetIsValidCallback(*observed);
       }
       return true;
     }());
@@ -375,6 +384,7 @@ class SVGIDRenderingObserver : public SVGRenderingObserver {
   ElementTracker mObservedElementTracker;
   RefPtr<Element> mObservingContent;
   bool mTargetIsValid = false;
+  TargetIsValidCallback mTargetIsValidCallback;
 };
 
 /**
@@ -393,11 +403,12 @@ class SVGIDRenderingObserver : public SVGRenderingObserver {
  * XXX: it would be nice to have a clear and concise executive summary of the
  * benefits/necessity of maintaining a second observer list.
  */
-SVGIDRenderingObserver::SVGIDRenderingObserver(URLAndReferrerInfo* aURI,
-                                               nsIContent* aObservingContent,
-                                               bool aReferenceImage)
+SVGIDRenderingObserver::SVGIDRenderingObserver(
+    URLAndReferrerInfo* aURI, nsIContent* aObservingContent,
+    bool aReferenceImage, TargetIsValidCallback aTargetIsValidCallback)
     : mObservedElementTracker(this),
-      mObservingContent(aObservingContent->AsElement()) {
+      mObservingContent(aObservingContent->AsElement()),
+      mTargetIsValidCallback(aTargetIsValidCallback) {
   // Start watching the target element
   nsIURI* uri = nullptr;
   nsIReferrerInfo* referrerInfo = nullptr;
@@ -493,8 +504,7 @@ void SVGTextPathObserver::OnRenderingChange() {
       nsLayoutUtils::GetClosestFrameOfType(frame, LayoutFrameType::SVGText));
   MOZ_ASSERT(text, "expected to find an ancestor SVGTextFrame");
   if (text) {
-    text->AddStateBits(NS_STATE_SVG_TEXT_CORRESPONDENCE_DIRTY |
-                       NS_STATE_SVG_POSITIONING_DIRTY);
+    text->AddStateBits(NS_STATE_SVG_POSITIONING_DIRTY);
 
     if (SVGUtils::AnyOuterSVGIsCallingReflowSVG(text)) {
       text->AddStateBits(NS_FRAME_IS_DIRTY | NS_FRAME_HAS_DIRTY_CHILDREN);
@@ -530,6 +540,9 @@ void SVGMarkerObserver::OnRenderingChange() {
   MOZ_ASSERT(frame->IsFrameOfType(nsIFrame::eSVG), "SVG frame expected");
 
   // Don't need to request ReflowFrame if we're being reflowed.
+  // Because mRect for SVG frames includes the bounds of any markers
+  // (see the comment for nsIFrame::GetRect), the referencing frame must be
+  // reflowed for any marker changes.
   if (!frame->HasAnyStateBits(NS_FRAME_IN_REFLOW)) {
     // XXXjwatt: We need to unify SVG into standard reflow so we can just use
     // nsChangeHint_NeedReflow | nsChangeHint_NeedDirtyReflow here.
@@ -569,6 +582,8 @@ void SVGPaintingProperty::OnRenderingChange() {
   }
 }
 
+// Observer for -moz-element(#element). Note that the observed element does not
+// have to be an SVG element.
 class SVGMozElementObserver final : public SVGPaintingProperty {
  public:
   SVGMozElementObserver(URLAndReferrerInfo* aURI, nsIFrame* aFrame,
@@ -634,6 +649,10 @@ void BackgroundClipRenderingObserver::OnRenderingChange() {
   }
 }
 
+static bool IsSVGFilterElement(const Element& aObserved) {
+  return aObserved.IsSVGElement(nsGkAtoms::filter);
+}
+
 /**
  * In a filter chain, there can be multiple SVG reference filters.
  * e.g. filter: url(#svg-filter-1) blur(10px) url(#svg-filter-2);
@@ -650,7 +669,8 @@ class SVGFilterObserver final : public SVGIDRenderingObserver {
  public:
   SVGFilterObserver(URLAndReferrerInfo* aURI, nsIContent* aObservingContent,
                     SVGFilterObserverList* aFilterChainObserver)
-      : SVGIDRenderingObserver(aURI, aObservingContent, false),
+      : SVGIDRenderingObserver(aURI, aObservingContent, false,
+                               IsSVGFilterElement),
         mFilterObserverList(aFilterChainObserver) {}
 
   void DetachFromChainObserver() { mFilterObserverList = nullptr; }
@@ -864,7 +884,10 @@ class SVGFilterObserverListForCanvasContext final
 
 void SVGFilterObserverListForCanvasContext::OnRenderingChange() {
   if (!mContext) {
-    MOZ_CRASH("GFX: This should never be called without a context");
+    NS_WARNING(
+        "GFX: This should never be called without a context, except during "
+        "cycle collection (when DetachFromContext has been called)");
+    return;
   }
   // Refresh the cached FilterDescription in mContext->CurrentState().filter.
   // If this filter is not at the top of the state stack, we'll refresh the
@@ -1460,10 +1483,14 @@ nsIFrame* SVGObserverUtils::GetAndObserveTemplate(
 
     // Convert href to an nsIURI
     nsIContent* content = aFrame->GetContent();
+
+    nsCOMPtr<nsIURI> baseURI = content->GetBaseURI();
+    if (nsContentUtils::IsLocalRefURL(href)) {
+      baseURI = GetBaseURLForLocalRef(content, baseURI);
+    }
     nsCOMPtr<nsIURI> targetURI;
-    nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(targetURI), href,
-                                              content->GetUncomposedDoc(),
-                                              content->GetBaseURI());
+    nsContentUtils::NewURIWithDocumentCharset(
+        getter_AddRefs(targetURI), href, content->GetUncomposedDoc(), baseURI);
 
     // There's no clear refererer policy spec about non-CSS SVG resource
     // references.  Bug 1415044 to investigate which referrer we should use.
@@ -1729,7 +1756,8 @@ already_AddRefed<nsIURI> SVGObserverUtils::GetBaseURLForLocalRef(
 already_AddRefed<URLAndReferrerInfo> SVGObserverUtils::GetFilterURI(
     nsIFrame* aFrame, const StyleFilter& aFilter) {
   MOZ_ASSERT(!aFrame->StyleEffects()->mFilters.IsEmpty() ||
-             !aFrame->StyleEffects()->mBackdropFilters.IsEmpty());
+             !aFrame->StyleEffects()->mBackdropFilters.IsEmpty() ||
+             !aFrame->GetContent()->GetParent());
   MOZ_ASSERT(aFilter.IsUrl());
   return ResolveURLUsingLocalRef(aFrame, aFilter.AsUrl());
 }

@@ -9,16 +9,20 @@
 
 var EXPORTED_SYMBOLS = ["NewTabPagePreloading"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   AboutNewTab: "resource:///modules/AboutNewTab.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
 });
 
 let NewTabPagePreloading = {
@@ -36,7 +40,9 @@ let NewTabPagePreloading = {
 
   get enabled() {
     return (
-      this.prefEnabled && this.newTabEnabled && !AboutNewTab.newTabURLOverridden
+      this.prefEnabled &&
+      this.newTabEnabled &&
+      !lazy.AboutNewTab.newTabURLOverridden
     );
   },
 
@@ -51,13 +57,13 @@ let NewTabPagePreloading = {
       BROWSER_NEW_TAB_URL,
     } = win;
 
-    let oa = E10SUtils.predictOriginAttributes({ window: win });
+    let oa = lazy.E10SUtils.predictOriginAttributes({ window: win });
 
-    let remoteType = E10SUtils.getRemoteTypeForURI(
+    let remoteType = lazy.E10SUtils.getRemoteTypeForURI(
       BROWSER_NEW_TAB_URL,
       gMultiProcessBrowser,
       gFissionBrowser,
-      E10SUtils.DEFAULT_REMOTE_TYPE,
+      lazy.E10SUtils.DEFAULT_REMOTE_TYPE,
       null,
       oa
     );
@@ -77,12 +83,12 @@ let NewTabPagePreloading = {
    * Move the contents of a preload browser across to a different window.
    */
   _adoptBrowserFromOtherWindow(window) {
-    let winPrivate = PrivateBrowsingUtils.isWindowPrivate(window);
+    let winPrivate = lazy.PrivateBrowsingUtils.isWindowPrivate(window);
     // Grab the least-recently-focused window with a preloaded browser:
-    let oldWin = BrowserWindowTracker.orderedWindows
+    let oldWin = lazy.BrowserWindowTracker.orderedWindows
       .filter(w => {
         return (
-          winPrivate == PrivateBrowsingUtils.isWindowPrivate(w) &&
+          winPrivate == lazy.PrivateBrowsingUtils.isWindowPrivate(w) &&
           w.gBrowser &&
           w.gBrowser.preloadedBrowser
         );
@@ -113,17 +119,16 @@ let NewTabPagePreloading = {
       !this.enabled ||
       window.gBrowser.preloadedBrowser ||
       !window.toolbar.visible ||
-      window.windowState == window.STATE_MINIMIZED ||
-      window.isFullyOccluded
+      window.document.hidden
     ) {
       return;
     }
 
     // Don't bother creating a preload browser if we're not in the top set of windows:
-    let windowPrivate = PrivateBrowsingUtils.isWindowPrivate(window);
+    let windowPrivate = lazy.PrivateBrowsingUtils.isWindowPrivate(window);
     let countKey = windowPrivate ? "private" : "normal";
-    let topWindows = BrowserWindowTracker.orderedWindows.filter(
-      w => PrivateBrowsingUtils.isWindowPrivate(w) == windowPrivate
+    let topWindows = lazy.BrowserWindowTracker.orderedWindows.filter(
+      w => lazy.PrivateBrowsingUtils.isWindowPrivate(w) == windowPrivate
     );
     if (topWindows.indexOf(window) >= this.MAX_COUNT) {
       return;
@@ -173,7 +178,7 @@ let NewTabPagePreloading = {
     // in the case that the browser is remote, as remote browsers take
     // care of that themselves.
     if (browser) {
-      let countKey = PrivateBrowsingUtils.isWindowPrivate(window)
+      let countKey = lazy.PrivateBrowsingUtils.isWindowPrivate(window)
         ? "private"
         : "normal";
       this.browserCounts[countKey]--;

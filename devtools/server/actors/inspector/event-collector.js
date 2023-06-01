@@ -7,18 +7,16 @@
 
 "use strict";
 
-const { Cu } = require("chrome");
-const Services = require("Services");
 const {
   isAfterPseudoElement,
   isBeforePseudoElement,
   isMarkerPseudoElement,
   isNativeAnonymous,
-} = require("devtools/shared/layout/utils");
+} = require("resource://devtools/shared/layout/utils.js");
 const Debugger = require("Debugger");
 const {
   EXCLUDED_LISTENER,
-} = require("devtools/server/actors/inspector/constants");
+} = require("resource://devtools/server/actors/inspector/constants.js");
 
 // eslint-disable-next-line
 const JQUERY_LIVE_REGEX = /return typeof \w+.*.event\.triggered[\s\S]*\.event\.(dispatch|handle).*arguments/;
@@ -388,7 +386,7 @@ class DOMEventCollector extends MainEventCollector {
         nsIEventListenerInfo: listener,
         capturing: listener.capturing,
         type: listener.type,
-        handler: handler,
+        handler,
         enabled: listener.enabled,
       };
 
@@ -481,8 +479,8 @@ class JQueryEventCollector extends MainEventCollector {
             }
 
             const eventInfo = {
-              type: type,
-              handler: handler,
+              type,
+              handler,
               tags: "jQuery",
               hide: {
                 capturing: true,
@@ -575,7 +573,7 @@ class JQueryLiveEventCollector extends MainEventCollector {
               }
               const eventInfo = {
                 type: event.origType || event.type.substr(selector.length + 1),
-                handler: handler,
+                handler,
                 tags: "jQuery,Live",
                 hide: {
                   capturing: true,
@@ -1005,7 +1003,7 @@ class EventCollector {
       // Arrow function text always contains the parameters. Function
       // parameters are often missing e.g. if Array.sort is used as a handler.
       // If they are missing we provide the parameters ourselves.
-      if (parameterNames && parameterNames.length > 0) {
+      if (parameterNames && parameterNames.length) {
         const prefix = "function " + name + "()";
         const paramString = parameterNames.join(", ");
 

@@ -20,7 +20,28 @@
 #include "mozilla/Variant.h"
 #include "mozilla/Vector.h"
 
+/*
+ * To work around webcompat problems caused by Narrow No-Break Space in
+ * formatted date/time output, where existing code on the web naively
+ * assumes there will be a normal Space, we replace any occurrences of
+ * U+202F in the formatted results with U+0020.
+ *
+ * The intention is to undo this hack once other major browsers are also
+ * ready to ship with the updated (ICU72) i18n data that uses NNBSP.
+ *
+ * See https://bugzilla.mozilla.org/show_bug.cgi?id=1806042 for details,
+ * and see DateIntervalFormat.cpp for the other piece of this hack.
+ */
+#define DATE_TIME_FORMAT_REPLACE_SPECIAL_SPACES 1
+
 namespace mozilla::intl {
+
+#if DATE_TIME_FORMAT_REPLACE_SPECIAL_SPACES
+static inline bool IsSpecialSpace(char16_t c) {
+  // NARROW NO-BREAK SPACE and THIN SPACE
+  return c == 0x202F || c == 0x2009;
+}
+#endif
 
 class Calendar;
 
@@ -36,8 +57,7 @@ class Calendar;
  * of the DateTimeFormat operation. DateTimeFormat::TryFormat should be
  * relatively inexpensive after the initial construction.
  *
- * This class supports creating from Styles (a fixed set of options), from
- * Skeletons (a list of fields and field widths to include), and from a
+ * This class supports creating from Styles (a fixed set of options) and from a
  * components bag (a list of components and their lengths).
  *
  * This API serves to back the ECMA-402 Intl.DateTimeFormat API.
@@ -252,6 +272,7 @@ class DateTimeFormat final {
       DateTimePatternGenerator* aDateTimePatternGenerator,
       Maybe<Span<const char16_t>> aTimeZoneOverride = Nothing{});
 
+ private:
   /**
    * Create a DateTimeFormat from a UTF-16 skeleton.
    *
@@ -267,20 +288,10 @@ class DateTimeFormat final {
   static Result<UniquePtr<DateTimeFormat>, ICUError> TryCreateFromSkeleton(
       Span<const char> aLocale, Span<const char16_t> aSkeleton,
       DateTimePatternGenerator* aDateTimePatternGenerator,
-      Maybe<DateTimeFormat::HourCycle> aHourCycle = Nothing{},
-      Maybe<Span<const char16_t>> aTimeZoneOverride = Nothing{});
+      Maybe<DateTimeFormat::HourCycle> aHourCycle,
+      Maybe<Span<const char16_t>> aTimeZoneOverride);
 
-  /**
-   * Create a DateTimeFormat from a UTF-8 skeleton.
-   *
-   * See the TryCreateFromSkeleton for const char16_t for documentation.
-   */
-  static Result<UniquePtr<DateTimeFormat>, ICUError> TryCreateFromSkeleton(
-      Span<const char> aLocale, Span<const char> aSkeleton,
-      DateTimePatternGenerator* aDateTimePatternGenerator,
-      Maybe<DateTimeFormat::HourCycle> aHourCycle = Nothing{},
-      Maybe<Span<const char>> aTimeZoneOverride = Nothing{});
-
+ public:
   /**
    * Create a DateTimeFormat from a ComponentsBag.
    *
@@ -339,6 +350,14 @@ class DateTimeFormat final {
         return result;
       }
 
+#if DATE_TIME_FORMAT_REPLACE_SPECIAL_SPACES
+      for (auto& c : u16Vec) {
+        if (IsSpecialSpace(c)) {
+          c = ' ';
+        }
+      }
+#endif
+
       if (!FillBuffer(u16Vec, aBuffer)) {
         return Err(ICUError::OutOfMemory);
       }
@@ -347,11 +366,24 @@ class DateTimeFormat final {
       static_assert(std::is_same_v<typename B::CharType, char16_t>);
 
       // The output buffer is UTF-16. ICU can output directly into this buffer.
-      return FillBufferWithICUCall(
+      auto result = FillBufferWithICUCall(
           aBuffer, [&](UChar* target, int32_t length, UErrorCode* status) {
             return udat_format(mDateFormat, aUnixEpoch, target, length, nullptr,
                                status);
           });
+      if (result.isErr()) {
+        return result;
+      }
+
+#if DATE_TIME_FORMAT_REPLACE_SPECIAL_SPACES
+      for (auto& c : Span(aBuffer.data(), aBuffer.length())) {
+        if (IsSpecialSpace(c)) {
+          c = ' ';
+        }
+      }
+#endif
+
+      return Ok{};
     }
   };
 
@@ -390,6 +422,14 @@ class DateTimeFormat final {
       return result.propagateErr();
     }
 
+#if DATE_TIME_FORMAT_REPLACE_SPECIAL_SPACES
+    for (auto& c : Span(aBuffer.data(), aBuffer.length())) {
+      if (IsSpecialSpace(c)) {
+        c = ' ';
+      }
+    }
+#endif
+
     return TryFormatToParts(fpositer, aBuffer.length(), aParts);
   }
 
@@ -419,8 +459,7 @@ class DateTimeFormat final {
    * plan to remove it.
    */
   template <typename B>
-  ICUResult GetOriginalSkeleton(B& aBuffer,
-                                Maybe<HourCycle> aHourCycle = Nothing()) {
+  ICUResult GetOriginalSkeleton(B& aBuffer) {
     static_assert(std::is_same_v<typename B::CharType, char16_t>);
     if (mOriginalSkeleton.length() == 0) {
       // Generate a skeleton from the resolved pattern, there was no originally
@@ -435,10 +474,6 @@ class DateTimeFormat final {
 
     if (!FillBuffer(mOriginalSkeleton, aBuffer)) {
       return Err(ICUError::OutOfMemory);
-    }
-    if (aHourCycle) {
-      DateTimeFormat::ReplaceHourSymbol(Span(aBuffer.data(), aBuffer.length()),
-                                        *aHourCycle);
     }
     return Ok();
   }

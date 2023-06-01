@@ -8,14 +8,13 @@
  */
 
 import { isFulfilled } from "../utils/async-value";
-import { findSourceMatches } from "../workers/search";
 import {
-  getSource,
-  hasPrettySource,
+  getFirstSourceActorForGeneratedSource,
   getSourceList,
-  getSourceContent,
+  getSettledSourceTextContent,
+  isSourceBlackBoxed,
 } from "../selectors";
-import { isThirdParty } from "../utils/source";
+import { createLocation } from "../utils/location";
 import { loadSourceText } from "./sources/loadSourceText";
 import {
   getTextSearchOperation,
@@ -79,21 +78,48 @@ export function searchSources(cx, query) {
     await dispatch(clearSearchResults(cx));
     await dispatch(addSearchQuery(cx, query));
     dispatch(updateSearchStatus(cx, statusType.fetching));
-    let validSources = getSourceList(getState()).filter(
-      source => !hasPrettySource(getState(), source.id) && !isThirdParty(source)
+    const validSources = getSourceList(getState()).filter(
+      source => !isSourceBlackBoxed(getState(), source)
     );
     // Sort original entries first so that search results are more useful.
-    // See bug 1642778.
-    validSources = [
-      ...validSources.filter(x => x.isOriginal),
-      ...validSources.filter(x => !x.isOriginal),
-    ];
+    // Deprioritize third-party scripts, so their results show last.
+    validSources.sort((a, b) => {
+      function isThirdParty(source) {
+        return (
+          source?.url &&
+          (source.url.includes("node_modules") ||
+            source.url.includes("bower_components"))
+        );
+      }
+
+      if (a.isOriginal && !isThirdParty(a)) {
+        return -1;
+      }
+
+      if (b.isOriginal && !isThirdParty(b)) {
+        return 1;
+      }
+
+      if (!isThirdParty(a) && isThirdParty(b)) {
+        return -1;
+      }
+      if (isThirdParty(a) && !isThirdParty(b)) {
+        return 1;
+      }
+      return 0;
+    });
+
     for (const source of validSources) {
       if (cancelled) {
         return;
       }
-      await dispatch(loadSourceText({ cx, source }));
-      await dispatch(searchSource(cx, source.id, query));
+
+      const sourceActor = getFirstSourceActorForGeneratedSource(
+        getState(),
+        source.id
+      );
+      await dispatch(loadSourceText(cx, source, sourceActor));
+      await dispatch(searchSource(cx, source, sourceActor, query));
     }
     dispatch(updateSearchStatus(cx, statusType.done));
   };
@@ -105,17 +131,23 @@ export function searchSources(cx, query) {
   return search;
 }
 
-export function searchSource(cx, sourceId, query) {
-  return async ({ dispatch, getState }) => {
-    const source = getSource(getState(), sourceId);
+export function searchSource(cx, source, sourceActor, query) {
+  return async ({ dispatch, getState, searchWorker }) => {
     if (!source) {
       return;
     }
-
-    const content = getSourceContent(getState(), source.id);
+    const location = createLocation({
+      sourceId: source.id,
+      sourceActorId: sourceActor ? sourceActor.actor : null,
+    });
+    const content = getSettledSourceTextContent(getState(), location);
     let matches = [];
     if (content && isFulfilled(content) && content.value.type === "text") {
-      matches = await findSourceMatches(source.id, content.value, query);
+      matches = await searchWorker.findSourceMatches(
+        source.id,
+        content.value,
+        query
+      );
     }
     if (!matches.length) {
       return;

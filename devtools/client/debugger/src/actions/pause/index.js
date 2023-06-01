@@ -21,6 +21,7 @@ export { paused } from "./paused";
 export { resumed } from "./resumed";
 export { continueToHere } from "./continueToHere";
 export { breakOnNext } from "./breakOnNext";
+export { resetBreakpointsPaneState } from "./resetBreakpointsPaneState";
 export { mapFrames } from "./mapFrames";
 export { mapDisplayNames } from "./mapDisplayNames";
 export { pauseOnExceptions } from "./pauseOnExceptions";
@@ -30,7 +31,3 @@ export { toggleMapScopes } from "./mapScopes";
 export { setExpandedScope } from "./expandScopes";
 export { generateInlinePreview } from "./inlinePreview";
 export { highlightCalls, unhighlightCalls } from "./highlightCalls";
-export {
-  previewPausedLocation,
-  clearPreviewPausedLocation,
-} from "./previewPausedLocation";

@@ -1,20 +1,28 @@
 use std::convert::TryInto;
 #[cfg(feature = "debug")]
 use std::fmt;
+use std::mem;
 
 use crate::vk;
 pub type VkResult<T> = Result<T, vk::Result>;
 
 impl vk::Result {
+    #[inline]
     pub fn result(self) -> VkResult<()> {
         self.result_with_success(())
     }
 
+    #[inline]
     pub fn result_with_success<T>(self, v: T) -> VkResult<T> {
         match self {
             Self::SUCCESS => Ok(v),
             _ => Err(self),
         }
+    }
+
+    #[inline]
+    pub unsafe fn assume_init_on_success<T>(self, v: mem::MaybeUninit<T>) -> VkResult<T> {
+        self.result().map(move |()| v.assume_init())
     }
 }
 
@@ -26,7 +34,7 @@ impl vk::Result {
 /// increased (and the vector is not large enough after querying the initial size),
 /// requiring Ash to try again.
 ///
-/// [`vkEnumerateInstanceExtensionProperties`]: https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/vkEnumerateInstanceExtensionProperties.html
+/// [`vkEnumerateInstanceExtensionProperties`]: https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkEnumerateInstanceExtensionProperties.html
 pub(crate) unsafe fn read_into_uninitialized_vector<N: Copy + Default + TryInto<usize>, T>(
     f: impl Fn(&mut N, *mut T) -> vk::Result,
 ) -> VkResult<Vec<T>>
@@ -41,8 +49,9 @@ where
 
         let err_code = f(&mut count, data.as_mut_ptr());
         if err_code != vk::Result::INCOMPLETE {
+            err_code.result()?;
             data.set_len(count.try_into().expect("`N` failed to convert to `usize`"));
-            break err_code.result_with_success(data);
+            break Ok(data);
         }
     }
 }
@@ -60,7 +69,7 @@ where
 /// increased (and the vector is not large enough after querying the initial size),
 /// requiring Ash to try again.
 ///
-/// [`vkEnumerateInstanceExtensionProperties`]: https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/vkEnumerateInstanceExtensionProperties.html
+/// [`vkEnumerateInstanceExtensionProperties`]: https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkEnumerateInstanceExtensionProperties.html
 pub(crate) unsafe fn read_into_defaulted_vector<
     N: Copy + Default + TryInto<usize>,
     T: Default + Clone,

@@ -30,7 +30,8 @@ class StyleInfo {
   CSSCoord MarginBottom() { return Margin(eSideBottom); }
 
   static void FormatColor(const nscolor& aValue, nsAString& aFormattedValue);
-  static already_AddRefed<nsAtom> TextDecorationStyleToAtom(uint8_t aValue);
+  static already_AddRefed<nsAtom> TextDecorationStyleToAtom(
+      StyleTextDecorationStyle aValue);
 
  private:
   StyleInfo() = delete;
@@ -40,7 +41,7 @@ class StyleInfo {
   CSSCoord Margin(Side aSide);
 
   dom::Element* mElement;
-  RefPtr<ComputedStyle> mComputedStyle;
+  RefPtr<const ComputedStyle> mComputedStyle;
 };
 
 }  // namespace a11y

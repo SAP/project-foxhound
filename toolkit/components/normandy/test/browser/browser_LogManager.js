@@ -1,6 +1,5 @@
 "use strict";
 
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
 const { LogManager } = ChromeUtils.import(
   "resource://normandy/lib/LogManager.jsm"
 );

@@ -1,9 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-let syncService = {};
-ChromeUtils.import("resource://services-sync/service.js", syncService);
-const service = syncService.Service;
 const { UIState } = ChromeUtils.import("resource://services-sync/UIState.jsm");
 
 function mockState(state) {
@@ -15,7 +12,7 @@ function mockState(state) {
   });
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   let aboutLoginsTab = await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
     url: "about:logins",
@@ -34,13 +31,17 @@ add_task(async function test_logged_out() {
   let browser = gBrowser.selectedBrowser;
   await SpecialPowers.spawn(browser, [], async () => {
     let fxAccountsButton = content.document.querySelector("fxaccounts-button");
-    ok(fxAccountsButton, "fxAccountsButton should exist");
+    Assert.ok(fxAccountsButton, "fxAccountsButton should exist");
     fxAccountsButton = Cu.waiveXrays(fxAccountsButton);
     await ContentTaskUtils.waitForCondition(
       () => fxAccountsButton._loggedIn === false,
       "waiting for _loggedIn to strictly equal false"
     );
-    is(fxAccountsButton._loggedIn, false, "state should reflect not logged in");
+    Assert.equal(
+      fxAccountsButton._loggedIn,
+      false,
+      "state should reflect not logged in"
+    );
   });
 });
 
@@ -66,15 +67,23 @@ add_task(async function test_login_syncing_enabled() {
       let fxAccountsButton = content.document.querySelector(
         "fxaccounts-button"
       );
-      ok(fxAccountsButton, "fxAccountsButton should exist");
+      Assert.ok(fxAccountsButton, "fxAccountsButton should exist");
       fxAccountsButton = Cu.waiveXrays(fxAccountsButton);
       await ContentTaskUtils.waitForCondition(
         () => fxAccountsButton._email === expectedEmail,
         "waiting for _email to strictly equal expectedEmail"
       );
-      is(fxAccountsButton._loggedIn, true, "state should reflect logged in");
-      is(fxAccountsButton._email, expectedEmail, "state should have email set");
-      is(
+      Assert.equal(
+        fxAccountsButton._loggedIn,
+        true,
+        "state should reflect logged in"
+      );
+      Assert.equal(
+        fxAccountsButton._email,
+        expectedEmail,
+        "state should have email set"
+      );
+      Assert.equal(
         fxAccountsButton._avatarURL,
         expectedAvatarURL,
         "state should have avatarURL set"

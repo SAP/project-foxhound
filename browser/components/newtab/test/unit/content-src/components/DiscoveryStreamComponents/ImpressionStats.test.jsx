@@ -4,7 +4,7 @@ import {
   ImpressionStats,
   INTERSECTION_RATIO,
 } from "content-src/components/DiscoveryStreamImpressionStats/ImpressionStats";
-import { actionTypes as at } from "common/Actions.jsm";
+import { actionTypes as at } from "common/Actions.sys.mjs";
 import React from "react";
 import { shallow } from "enzyme";
 
@@ -131,9 +131,9 @@ describe("<ImpressionStats>", () => {
     assert.equal(action.type, at.DISCOVERY_STREAM_IMPRESSION_STATS);
     assert.equal(action.data.source, SOURCE);
     assert.deepEqual(action.data.tiles, [
-      { id: 1, pos: 0 },
-      { id: 2, pos: 1 },
-      { id: 3, pos: 2 },
+      { id: 1, pos: 0, type: "organic" },
+      { id: 2, pos: 1, type: "organic" },
+      { id: 3, pos: 2, type: "organic" },
     ]);
   });
   it("should send a DISCOVERY_STREAM_SPOC_IMPRESSION when the wrapped item has a flightId", () => {
@@ -142,16 +142,43 @@ describe("<ImpressionStats>", () => {
     const props = {
       dispatch,
       flightId,
+      rows: [{ id: 1, pos: 1, advertiser: "test advertiser" }],
+      source: "TOP_SITES",
       IntersectionObserver: buildIntersectionObserver(FullIntersectEntries),
     };
     renderImpressionStats(props);
 
-    // Loaded content + DISCOVERY_STREAM_SPOC_IMPRESSION + impression
-    assert.calledThrice(dispatch);
+    // Loaded content + DISCOVERY_STREAM_SPOC_IMPRESSION + TOP_SITES_IMPRESSION_STATS + impression
+    assert.callCount(dispatch, 4);
 
     const [action] = dispatch.secondCall.args;
     assert.equal(action.type, at.DISCOVERY_STREAM_SPOC_IMPRESSION);
     assert.deepEqual(action.data, { flightId });
+  });
+  it("should send a TOP_SITES_IMPRESSION_STATS when the wrapped item has a flightId", () => {
+    const dispatch = sinon.spy();
+    const flightId = "a_flight_id";
+    const props = {
+      dispatch,
+      flightId,
+      rows: [{ id: 1, pos: 1, advertiser: "test advertiser" }],
+      source: "TOP_SITES",
+      IntersectionObserver: buildIntersectionObserver(FullIntersectEntries),
+    };
+    renderImpressionStats(props);
+
+    // Loaded content + DISCOVERY_STREAM_SPOC_IMPRESSION + TOP_SITES_IMPRESSION_STATS + impression
+    assert.callCount(dispatch, 4);
+
+    const [action] = dispatch.getCall(2).args;
+    assert.equal(action.type, at.TOP_SITES_IMPRESSION_STATS);
+    assert.deepEqual(action.data, {
+      type: "impression",
+      tile_id: 1,
+      source: "newtab",
+      advertiser: "test advertiser",
+      position: 2,
+    });
   });
   it("should send an impression when the wrapped item transiting from invisible to visible", () => {
     const dispatch = sinon.spy();
@@ -182,9 +209,9 @@ describe("<ImpressionStats>", () => {
     [action] = dispatch.firstCall.args;
     assert.equal(action.type, at.DISCOVERY_STREAM_IMPRESSION_STATS);
     assert.deepEqual(action.data.tiles, [
-      { id: 1, pos: 0 },
-      { id: 2, pos: 1 },
-      { id: 3, pos: 2 },
+      { id: 1, pos: 0, type: "organic" },
+      { id: 2, pos: 1, type: "organic" },
+      { id: 3, pos: 2, type: "organic" },
     ]);
   });
   it("should remove visibility change listener when the wrapper is removed", () => {

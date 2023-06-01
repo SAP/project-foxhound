@@ -10,8 +10,7 @@
 #include "mozilla/Attributes.h"
 #include "nsGenericHTMLElement.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class HTMLMetaElement final : public nsGenericHTMLElement {
  public:
@@ -54,9 +53,12 @@ class HTMLMetaElement final : public nsGenericHTMLElement {
   void SetScheme(const nsAString& aScheme, ErrorResult& aRv) {
     SetHTMLAttr(nsGkAtoms::scheme, aScheme, aRv);
   }
+  void GetMedia(nsAString& aValue) { GetHTMLAttr(nsGkAtoms::media, aValue); }
+  void SetMedia(const nsAString& aMedia, ErrorResult& aRv) {
+    SetHTMLAttr(nsGkAtoms::media, aMedia, aRv);
+  }
 
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
 
  protected:
   virtual ~HTMLMetaElement();
@@ -69,7 +71,6 @@ class HTMLMetaElement final : public nsGenericHTMLElement {
                           ChangeKind aChangeKind);
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_HTMLMetaElement_h

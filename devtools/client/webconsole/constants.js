@@ -13,6 +13,7 @@ const actionTypes = {
   AUTOCOMPLETE_TOGGLE: "AUTOCOMPLETE_TOGGLE",
   BATCH_ACTIONS: "BATCH_ACTIONS",
   CLEAR_HISTORY: "CLEAR_HISTORY",
+  ENABLE_NETWORK_MONITORING: "ENABLE_NETWORK_MONITORING",
   EDITOR_TOGGLE: "EDITOR_TOGGLE",
   EDITOR_ONBOARDING_DISMISS: "EDITOR_ONBOARDING_DISMISS",
   EDITOR_PRETTY_PRINT: "EDITOR_PRETTY_PRINT",
@@ -27,10 +28,11 @@ const actionTypes = {
   INITIALIZE: "INITIALIZE",
   MESSAGE_CLOSE: "MESSAGE_CLOSE",
   MESSAGE_OPEN: "MESSAGE_OPEN",
-  MESSAGE_UPDATE_PAYLOAD: "MESSAGE_UPDATE_PAYLOAD",
+  CSS_MESSAGE_ADD_MATCHING_ELEMENTS: "CSS_MESSAGE_ADD_MATCHING_ELEMENTS",
   MESSAGE_REMOVE: "MESSAGE_REMOVE",
   MESSAGES_ADD: "MESSAGES_ADD",
   MESSAGES_CLEAR: "MESSAGES_CLEAR",
+  MESSAGES_DISABLE: "MESSAGES_DISABLE",
   NETWORK_MESSAGES_UPDATE: "NETWORK_MESSAGES_UPDATE",
   NETWORK_UPDATES_REQUEST: "NETWORK_UPDATES_REQUEST",
   PERSIST_TOGGLE: "PERSIST_TOGGLE",
@@ -40,9 +42,9 @@ const actionTypes = {
   REVERSE_SEARCH_INPUT_TOGGLE: "REVERSE_SEARCH_INPUT_TOGGLE",
   SELECT_NETWORK_MESSAGE_TAB: "SELECT_NETWORK_MESSAGE_TAB",
   SHOW_OBJECT_IN_SIDEBAR: "SHOW_OBJECT_IN_SIDEBAR",
-  SHOW_CONTENT_MESSAGES_TOGGLE: "SHOW_CONTENT_MESSAGES_TOGGLE",
   SIDEBAR_CLOSE: "SIDEBAR_CLOSE",
   SPLIT_CONSOLE_CLOSE_BUTTON_TOGGLE: "SPLIT_CONSOLE_CLOSE_BUTTON_TOGGLE",
+  TARGET_MESSAGES_REMOVE: "TARGET_MESSAGES_REMOVE",
   TIMESTAMPS_TOGGLE: "TIMESTAMPS_TOGGLE",
   UPDATE_HISTORY_POSITION: "UPDATE_HISTORY_POSITION",
   REVERSE_SEARCH_INPUT_CHANGE: "REVERSE_SEARCH_INPUT_CHANGE",
@@ -52,7 +54,6 @@ const actionTypes = {
   WARNING_GROUPS_TOGGLE: "WARNING_GROUPS_TOGGLE",
   WILL_NAVIGATE: "WILL_NAVIGATE",
   EDITOR_SET_WIDTH: "EDITOR_SET_WIDTH",
-  TARGET_AVAILABLE: "TARGET_AVAILABLE",
 };
 
 const prefs = {
@@ -76,8 +77,6 @@ const prefs = {
       INPUT_HISTORY_COUNT: "devtools.webconsole.inputHistoryCount",
       // Is editor mode enabled.
       EDITOR: "input.editor",
-      // Display content messages in the browser console.
-      CONTENT_MESSAGES: "devtools.browserconsole.contentMessages",
       // Display timestamp in messages.
       MESSAGE_TIMESTAMP: "devtools.webconsole.timestampMessages",
       // Store the editor width.
@@ -86,6 +85,9 @@ const prefs = {
       EDITOR_ONBOARDING: "devtools.webconsole.input.editorOnboarding",
       // Show the Input Context the selector
       CONTEXT_SELECTOR: "devtools.webconsole.input.context",
+      // Persist the "enable network monitoring" option
+      ENABLE_NETWORK_MONITORING:
+        "devtools.browserconsole.enableNetworkMonitoring",
     },
     FEATURES: {
       // We use the same pref to enable the sidebar on webconsole and browser console.
@@ -93,7 +95,6 @@ const prefs = {
       AUTOCOMPLETE: "devtools.webconsole.input.autocomplete",
       EAGER_EVALUATION: "devtools.webconsole.input.eagerEvaluation",
       GROUP_WARNINGS: "devtools.webconsole.groupWarningMessages",
-      BROWSER_TOOLBOX_FISSION: "devtools.browsertoolbox.fission",
     },
   },
 };

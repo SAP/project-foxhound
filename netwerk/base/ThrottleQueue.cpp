@@ -9,6 +9,7 @@
 #include "nsISeekableStream.h"
 #include "nsIAsyncInputStream.h"
 #include "nsIOService.h"
+#include "nsSocketTransportService2.h"
 #include "nsStreamUtils.h"
 #include "nsNetUtil.h"
 
@@ -110,6 +111,7 @@ ThrottleInputStream::ReadSegments(nsWriteSegmentFun aWriter, void* aClosure,
   if (NS_FAILED(rv)) {
     return rv;
   }
+  MOZ_ASSERT(realCount <= aCount);
 
   if (realCount == 0) {
     return NS_BASE_STREAM_WOULD_BLOCK;
@@ -291,7 +293,7 @@ ThrottleQueue::Available(uint32_t aRemaining, uint32_t* aAvailable) {
   if (totalBytes >= thisSliceBytes) {
     *aAvailable = 0;
   } else {
-    *aAvailable = thisSliceBytes;
+    *aAvailable = std::min(thisSliceBytes, aRemaining);
   }
   return NS_OK;
 }

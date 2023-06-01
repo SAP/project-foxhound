@@ -9,7 +9,6 @@
 
 #include "builtin/SelfHostingDefines.h"
 #include "js/Class.h"
-#include "js/RootingAPI.h"
 #include "vm/NativeObject.h"
 
 namespace mozilla::intl {
@@ -53,7 +52,7 @@ class PluralRulesObject : public NativeObject {
   static const JSClassOps classOps_;
   static const ClassSpec classSpec_;
 
-  static void finalize(JSFreeOp* fop, JSObject* obj);
+  static void finalize(JS::GCContext* gcx, JSObject* obj);
 };
 
 /**

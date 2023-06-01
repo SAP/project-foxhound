@@ -13,11 +13,6 @@ load 582138-1.xhtml
 load 633709.xhtml
 load 639736-1.xhtml
 load 713427-2.xhtml
-needs-focus load 745494.html
-load 759748.html
-load 761861.html
-load 762183.html
-load 766305.html
 load 766360.html
 load 766387.html
 load 766413.html
@@ -63,7 +58,7 @@ load 1393171.html
 needs-focus load 1402196.html
 load 1402469.html
 load 1402526.html
-pref(dom.document.exec_command.nested_calls_allowed,true) asserts(1) load 1402904.html # assertion is that mutation event listener caused by execCommand calls another execCommand
+pref(dom.document.exec_command.nested_calls_allowed,true) asserts(2) load 1402904.html # assertion is that mutation event listener caused by execCommand calls another execCommand
 pref(dom.document.exec_command.nested_calls_allowed,true) asserts(1) load 1405747.html # assertion is that mutation event listener caused by execCommand calls another execCommand
 load 1405897.html
 load 1408170.html

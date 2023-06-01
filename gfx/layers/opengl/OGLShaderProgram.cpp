@@ -11,7 +11,6 @@
 #include <sstream>  // for std::ostringstream
 
 #include "GLContext.h"
-#include "Layers.h"
 #include "gfxEnv.h"
 #include "gfxRect.h"  // for gfxRect
 #include "gfxUtils.h"
@@ -899,7 +898,7 @@ GLint ShaderProgramOGL::CreateShader(GLenum aShaderType,
    */
   if (!success
 #ifdef DEBUG
-      || (len > 10 && gfxEnv::DebugShaders())
+      || (len > 10 && gfxEnv::MOZ_DEBUG_SHADERS())
 #endif
   ) {
     nsAutoCString log;
@@ -954,7 +953,7 @@ bool ShaderProgramOGL::CreateProgram(const char* aVertexShaderString,
    */
   if (!success
 #ifdef DEBUG
-      || (len > 10 && gfxEnv::DebugShaders())
+      || (len > 10 && gfxEnv::MOZ_DEBUG_SHADERS())
 #endif
   ) {
     nsAutoCString log;

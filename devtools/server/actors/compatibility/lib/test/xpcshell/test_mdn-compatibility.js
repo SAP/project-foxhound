@@ -4,9 +4,11 @@
 
 // Test for the MDN compatibility diagnosis module.
 
-const { COMPATIBILITY_ISSUE_TYPE } = require("devtools/shared/constants");
-const MDNCompatibility = require("devtools/server/actors/compatibility/lib/MDNCompatibility");
-const cssPropertiesCompatData = require("devtools/shared/compatibility/dataset/css-properties.json");
+const {
+  COMPATIBILITY_ISSUE_TYPE,
+} = require("resource://devtools/shared/constants.js");
+const MDNCompatibility = require("resource://devtools/server/actors/compatibility/lib/MDNCompatibility.js");
+const cssPropertiesCompatData = require("resource://devtools/shared/compatibility/dataset/css-properties.json");
 
 const mdnCompatibility = new MDNCompatibility(cssPropertiesCompatData);
 
@@ -86,16 +88,15 @@ const TEST_DATA = [
   },
   {
     description: "Test for a property having some issues",
-    declarations: [{ name: "font-variant-alternates" }],
+    declarations: [{ name: "ruby-align" }],
     browsers: [FIREFOX_1],
     expectedIssues: [
       {
         type: COMPATIBILITY_ISSUE_TYPE.CSS_PROPERTY,
-        property: "font-variant-alternates",
-        url:
-          "https://developer.mozilla.org/docs/Web/CSS/font-variant-alternates",
-        deprecated: true,
-        experimental: false,
+        property: "ruby-align",
+        url: "https://developer.mozilla.org/docs/Web/CSS/ruby-align",
+        deprecated: false,
+        experimental: true,
         unsupportedBrowsers: [FIREFOX_1],
       },
     ],

@@ -10,7 +10,7 @@ const finalURL =
 var observer;
 var visitSavedPromise;
 
-add_task(async function setup() {
+add_setup(async function() {
   visitSavedPromise = new Promise(resolve => {
     observer = {
       observe(subject, topic, data) {
@@ -58,6 +58,6 @@ async function testLoadInWindow(options, url) {
   let loadedPromise = BrowserTestUtils.browserLoaded(
     win.gBrowser.selectedBrowser
   );
-  BrowserTestUtils.loadURI(win.gBrowser.selectedBrowser, url);
+  BrowserTestUtils.loadURIString(win.gBrowser.selectedBrowser, url);
   await loadedPromise;
 }

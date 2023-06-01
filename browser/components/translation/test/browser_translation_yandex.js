@@ -11,8 +11,8 @@
 //
 // NOTE: Allowing a whole class of rejections should be avoided. Normally you
 //       should use "expectUncaughtRejection" to flag individual failures.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 PromiseTestUtils.allowMatchingRejectionsGlobally(/NS_ERROR_ILLEGAL_VALUE/);
 
@@ -21,11 +21,7 @@ const kApiKeyPref = "browser.translation.yandex.apiKeyOverride";
 const kDetectLanguagePref = "browser.translation.detectLanguage";
 const kShowUIPref = "browser.translation.ui.show";
 
-const { Translation } = ChromeUtils.import(
-  "resource:///modules/translation/TranslationParent.jsm"
-);
-
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       [kEnginePref, "Yandex"],

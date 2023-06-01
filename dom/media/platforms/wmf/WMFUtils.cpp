@@ -5,7 +5,21 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WMFUtils.h"
+
+#include <mfidl.h>
+#include <shlobj.h>
+#include <shlwapi.h>
+#include <initguid.h>
+#include <stdint.h>
+
+#ifdef MOZ_AV1
+#  include "AOMDecoder.h"
+#endif
+#include "MP4Decoder.h"
+#include "OpusDecoder.h"
 #include "VideoUtils.h"
+#include "VorbisDecoder.h"
+#include "VPXDecoder.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Logging.h"
@@ -14,23 +28,98 @@
 #include "nsThreadUtils.h"
 #include "nsWindowsHelpers.h"
 #include "prenv.h"
-#include <shlobj.h>
-#include <shlwapi.h>
-#include <initguid.h>
-#include <stdint.h>
 #include "mozilla/mscom/EnsureMTA.h"
 #include "mozilla/WindowsVersion.h"
 
-#ifdef WMF_MUST_DEFINE_AAC_MFT_CLSID
-// Some SDK versions don't define the AAC decoder CLSID.
-// {32D186A7-218F-4C75-8876-DD77273A8999}
-DEFINE_GUID(CLSID_CMSAACDecMFT, 0x32D186A7, 0x218F, 0x4C75, 0x88, 0x76, 0xDD,
-            0x77, 0x27, 0x3A, 0x89, 0x99);
+#ifndef WAVE_FORMAT_OPUS
+#  define WAVE_FORMAT_OPUS 0x704F
 #endif
+DEFINE_GUID(MEDIASUBTYPE_OPUS, WAVE_FORMAT_OPUS, 0x000, 0x0010, 0x80, 0x00,
+            0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71);
 
 namespace mozilla {
 
 using media::TimeUnit;
+
+bool StreamTypeIsVideo(const WMFStreamType& aType) {
+  switch (aType) {
+    case WMFStreamType::H264:
+    case WMFStreamType::VP8:
+    case WMFStreamType::VP9:
+    case WMFStreamType::AV1:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool StreamTypeIsAudio(const WMFStreamType& aType) {
+  switch (aType) {
+    case WMFStreamType::MP3:
+    case WMFStreamType::AAC:
+    case WMFStreamType::OPUS:
+    case WMFStreamType::VORBIS:
+      return true;
+    default:
+      return false;
+  }
+}
+
+// Get a string representation of the stream type. Useful for logging.
+const char* StreamTypeToString(WMFStreamType aStreamType) {
+  switch (aStreamType) {
+    case WMFStreamType::H264:
+      return "H264";
+    case WMFStreamType::VP8:
+      return "VP8";
+    case WMFStreamType::VP9:
+      return "VP9";
+    case WMFStreamType::AV1:
+      return "AV1";
+    case WMFStreamType::MP3:
+      return "MP3";
+    case WMFStreamType::AAC:
+      return "AAC";
+    case WMFStreamType::OPUS:
+      return "OPUS";
+    case WMFStreamType::VORBIS:
+      return "VORBIS";
+    default:
+      MOZ_ASSERT(aStreamType == WMFStreamType::Unknown);
+      return "Unknown";
+  }
+}
+
+WMFStreamType GetStreamTypeFromMimeType(const nsCString& aMimeType) {
+  if (MP4Decoder::IsH264(aMimeType)) {
+    return WMFStreamType::H264;
+  }
+  if (VPXDecoder::IsVP8(aMimeType)) {
+    return WMFStreamType::VP8;
+  }
+  if (VPXDecoder::IsVP9(aMimeType)) {
+    return WMFStreamType::VP9;
+  }
+#ifdef MOZ_AV1
+  if (AOMDecoder::IsAV1(aMimeType)) {
+    return WMFStreamType::AV1;
+  }
+#endif
+  if (aMimeType.EqualsLiteral("audio/mp4a-latm") ||
+      aMimeType.EqualsLiteral("audio/mp4")) {
+    return WMFStreamType::AAC;
+  }
+  if (aMimeType.EqualsLiteral("audio/mpeg")) {
+    return WMFStreamType::MP3;
+  }
+  if (OpusDataDecoder::IsOpus(aMimeType)) {
+    return WMFStreamType::OPUS;
+  }
+  if (VorbisDataDecoder::IsVorbis(aMimeType)) {
+    return WMFStreamType::VORBIS;
+  }
+  return WMFStreamType::Unknown;
+}
 
 HRESULT
 HNsToFrames(int64_t aHNs, uint32_t aRate, int64_t* aOutFrames) {
@@ -208,6 +297,98 @@ const char* MFTMessageTypeToStr(MFT_MESSAGE_TYPE aMsg) {
   }
 }
 
+GUID AudioMimeTypeToMediaFoundationSubtype(const nsACString& aMimeType) {
+  if (aMimeType.EqualsLiteral("audio/mpeg")) {
+    return MFAudioFormat_MP3;
+  } else if (MP4Decoder::IsAAC(aMimeType)) {
+    return MFAudioFormat_AAC;
+  } else if (VorbisDataDecoder::IsVorbis(aMimeType)) {
+    return MFAudioFormat_Vorbis;
+  } else if (OpusDataDecoder::IsOpus(aMimeType)) {
+    return MFAudioFormat_Opus;
+  }
+  NS_WARNING("Unsupport audio mimetype");
+  return GUID_NULL;
+}
+
+GUID VideoMimeTypeToMediaFoundationSubtype(const nsACString& aMimeType) {
+  if (MP4Decoder::IsH264(aMimeType)) {
+    return MFVideoFormat_H264;
+  } else if (VPXDecoder::IsVP8(aMimeType)) {
+    return MFVideoFormat_VP80;
+  } else if (VPXDecoder::IsVP9(aMimeType)) {
+    return MFVideoFormat_VP90;
+  }
+#ifdef MOZ_AV1
+  else if (AOMDecoder::IsAV1(aMimeType)) {
+    return MFVideoFormat_AV1;
+  }
+#endif
+  NS_WARNING("Unsupport video mimetype");
+  return GUID_NULL;
+}
+
+void AACAudioSpecificConfigToUserData(uint8_t aAACProfileLevelIndication,
+                                      const uint8_t* aAudioSpecConfig,
+                                      uint32_t aConfigLength,
+                                      nsTArray<BYTE>& aOutUserData) {
+  MOZ_ASSERT(aOutUserData.IsEmpty());
+
+  // The MF_MT_USER_DATA for AAC is defined here:
+  // http://msdn.microsoft.com/en-us/library/windows/desktop/dd742784%28v=vs.85%29.aspx
+  //
+  // For MFAudioFormat_AAC, MF_MT_USER_DATA contains the portion of
+  // the HEAACWAVEINFO structure that appears after the WAVEFORMATEX
+  // structure (that is, after the wfx member). This is followed by
+  // the AudioSpecificConfig() data, as defined by ISO/IEC 14496-3.
+  // [...]
+  // The length of the AudioSpecificConfig() data is 2 bytes for AAC-LC
+  // or HE-AAC with implicit signaling of SBR/PS. It is more than 2 bytes
+  // for HE-AAC with explicit signaling of SBR/PS.
+  //
+  // The value of audioObjectType as defined in AudioSpecificConfig()
+  // must be 2, indicating AAC-LC. The value of extensionAudioObjectType
+  // must be 5 for SBR or 29 for PS.
+  //
+  // HEAACWAVEINFO structure:
+  //    typedef struct heaacwaveinfo_tag {
+  //      WAVEFORMATEX wfx;
+  //      WORD         wPayloadType;
+  //      WORD         wAudioProfileLevelIndication;
+  //      WORD         wStructType;
+  //      WORD         wReserved1;
+  //      DWORD        dwReserved2;
+  //    }
+  const UINT32 heeInfoLen = 4 * sizeof(WORD) + sizeof(DWORD);
+
+  // The HEAACWAVEINFO must have payload and profile set,
+  // the rest can be all 0x00.
+  BYTE heeInfo[heeInfoLen] = {0};
+  WORD* w = (WORD*)heeInfo;
+  w[0] = 0x0;  // Payload type raw AAC packet
+  w[1] = aAACProfileLevelIndication;
+
+  aOutUserData.AppendElements(heeInfo, heeInfoLen);
+
+  if (aAACProfileLevelIndication == 2 && aConfigLength > 2) {
+    // The AudioSpecificConfig is TTTTTFFF|FCCCCGGG
+    // (T=ObjectType, F=Frequency, C=Channel, G=GASpecificConfig)
+    // If frequency = 0xf, then the frequency is explicitly defined on 24 bits.
+    int8_t frequency =
+        (aAudioSpecConfig[0] & 0x7) << 1 | (aAudioSpecConfig[1] & 0x80) >> 7;
+    int8_t channels = (aAudioSpecConfig[1] & 0x78) >> 3;
+    int8_t gasc = aAudioSpecConfig[1] & 0x7;
+    if (frequency != 0xf && channels && !gasc) {
+      // We enter this condition if the AudioSpecificConfig should theorically
+      // be 2 bytes long but it's not.
+      // The WMF AAC decoder will error if unknown extensions are found,
+      // so remove them.
+      aConfigLength = 2;
+    }
+  }
+  aOutUserData.AppendElements(aAudioSpecConfig, aConfigLength);
+}
+
 namespace wmf {
 
 static const wchar_t* sDLLs[] = {
@@ -270,7 +451,7 @@ LoadDLLs() {
   typedef HRESULT(STDMETHODCALLTYPE* FunctionName##Ptr_t)(__VA_ARGS__)
 
 HRESULT
-MFStartup() {
+MediaFoundationInitializer::MFStartup() {
   if (IsWin7AndPre2000Compatible()) {
     /*
      * Specific exclude the usage of WMF on Win 7 with compatibility mode
@@ -299,7 +480,7 @@ MFStartup() {
 }
 
 HRESULT
-MFShutdown() {
+MediaFoundationInitializer::MFShutdown() {
   ENSURE_FUNCTION_PTR(MFShutdown, Mfplat.dll)
   HRESULT hr = E_FAIL;
   mozilla::mscom::EnsureMTA([&]() -> void { hr = (MFShutdownPtr)(); });
@@ -378,6 +559,64 @@ HRESULT MFTGetInfo(CLSID clsidMFT, LPWSTR* pszName,
   ENSURE_FUNCTION_PTR(MFTGetInfo, mfplat.dll)
   return (MFTGetInfoPtr)(clsidMFT, pszName, ppInputTypes, pcInputTypes,
                          ppOutputTypes, pcOutputTypes, ppAttributes);
+}
+
+HRESULT
+MFCreateAttributes(IMFAttributes** ppMFAttributes, UINT32 cInitialSize) {
+  ENSURE_FUNCTION_PTR(MFCreateAttributes, mfplat.dll)
+  return (MFCreateAttributesPtr)(ppMFAttributes, cInitialSize);
+}
+
+HRESULT MFCreateEventQueue(IMFMediaEventQueue** ppMediaEventQueue) {
+  ENSURE_FUNCTION_PTR(MFCreateEventQueue, mfplat.dll)
+  return (MFCreateEventQueuePtr)(ppMediaEventQueue);
+}
+
+HRESULT MFCreateStreamDescriptor(DWORD dwStreamIdentifier, DWORD cMediaTypes,
+                                 IMFMediaType** apMediaTypes,
+                                 IMFStreamDescriptor** ppDescriptor) {
+  ENSURE_FUNCTION_PTR(MFCreateStreamDescriptor, mfplat.dll)
+  return (MFCreateStreamDescriptorPtr)(dwStreamIdentifier, cMediaTypes,
+                                       apMediaTypes, ppDescriptor);
+}
+
+HRESULT MFCreateAsyncResult(IUnknown* punkObject, IMFAsyncCallback* pCallback,
+                            IUnknown* punkState,
+                            IMFAsyncResult** ppAsyncResult) {
+  ENSURE_FUNCTION_PTR(MFCreateAsyncResult, mfplat.dll)
+  return (MFCreateAsyncResultPtr)(punkObject, pCallback, punkState,
+                                  ppAsyncResult);
+}
+
+HRESULT MFCreatePresentationDescriptor(
+    DWORD cStreamDescriptors, IMFStreamDescriptor** apStreamDescriptors,
+    IMFPresentationDescriptor** ppPresentationDescriptor) {
+  ENSURE_FUNCTION_PTR(MFCreatePresentationDescriptor, mfplat.dll)
+  return (MFCreatePresentationDescriptorPtr)(cStreamDescriptors,
+                                             apStreamDescriptors,
+                                             ppPresentationDescriptor);
+}
+
+HRESULT MFCreateMemoryBuffer(DWORD cbMaxLength, IMFMediaBuffer** ppBuffer) {
+  ENSURE_FUNCTION_PTR(MFCreateMemoryBuffer, mfplat.dll);
+  return (MFCreateMemoryBufferPtr)(cbMaxLength, ppBuffer);
+}
+
+HRESULT MFLockDXGIDeviceManager(UINT* pResetToken,
+                                IMFDXGIDeviceManager** ppManager) {
+  ENSURE_FUNCTION_PTR(MFLockDXGIDeviceManager, mfplat.dll);
+  return (MFLockDXGIDeviceManagerPtr)(pResetToken, ppManager);
+}
+
+HRESULT MFUnlockDXGIDeviceManager() {
+  ENSURE_FUNCTION_PTR(MFUnlockDXGIDeviceManager, mfplat.dll);
+  return (MFUnlockDXGIDeviceManagerPtr)();
+}
+
+HRESULT MFPutWorkItem(DWORD dwQueue, IMFAsyncCallback* pCallback,
+                      IUnknown* pState) {
+  ENSURE_FUNCTION_PTR(MFPutWorkItem, mfplat.dll);
+  return (MFPutWorkItemPtr)(dwQueue, pCallback, pState);
 }
 
 }  // end namespace wmf

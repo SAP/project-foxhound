@@ -5,27 +5,27 @@
 
 var EXPORTED_SYMBOLS = ["ColorPickerDelegate"];
 
-const { GeckoViewUtils } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewUtils.jsm"
+const { GeckoViewUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewUtils.sys.mjs"
 );
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
+const lazy = {};
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  GeckoViewPrompter: "resource://gre/modules/GeckoViewPrompter.jsm",
+ChromeUtils.defineESModuleGetters(lazy, {
+  GeckoViewPrompter: "resource://gre/modules/GeckoViewPrompter.sys.mjs",
 });
 
 const { debug, warn } = GeckoViewUtils.initLogging("ColorPickerDelegate");
 
 class ColorPickerDelegate {
-  init(aParent, aTitle, aInitialColor) {
-    this._prompt = new GeckoViewPrompter(aParent);
+  // TODO(bug 1805397): Implement default colors
+  init(aParent, aTitle, aInitialColor, aDefaultColors) {
+    this._prompt = new lazy.GeckoViewPrompter(aParent);
     this._msg = {
       type: "color",
       title: aTitle,
       value: aInitialColor,
+      predefinedValues: aDefaultColors,
     };
   }
 
@@ -38,9 +38,6 @@ class ColorPickerDelegate {
   }
 }
 
-ColorPickerDelegate.prototype.classID = Components.ID(
-  "{aa0dd6fc-73dd-4621-8385-c0b377e02cee}"
-);
 ColorPickerDelegate.prototype.QueryInterface = ChromeUtils.generateQI([
   "nsIColorPicker",
 ]);

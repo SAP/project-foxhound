@@ -4,12 +4,12 @@
 
 var EXPORTED_SYMBOLS = ["CommonUtils"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
-ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
+);
 
 var CommonUtils = {
   /*
@@ -421,33 +421,6 @@ var CommonUtils = {
     let len = b64.length;
     let over = len % 4;
     return over ? atob(b64.substr(0, len - over)) : atob(b64);
-  },
-
-  /**
-   * Parses a JSON file from disk using OS.File and promises.
-   *
-   * @param path the file to read. Will be passed to `OS.File.read()`.
-   * @return a promise that resolves to the JSON contents of the named file.
-   */
-  readJSON(path) {
-    return OS.File.read(path, { encoding: "utf-8" }).then(data => {
-      return JSON.parse(data);
-    });
-  },
-
-  /**
-   * Write a JSON object to the named file using OS.File and promises.
-   *
-   * @param contents a JS object. Will be serialized.
-   * @param path the path of the file to write.
-   * @return a promise, as produced by OS.File.writeAtomic.
-   */
-  writeJSON(contents, path) {
-    let data = JSON.stringify(contents);
-    return OS.File.writeAtomic(path, data, {
-      encoding: "utf-8",
-      tmpPath: path + ".tmp",
-    });
   },
 
   /**

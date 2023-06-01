@@ -21,6 +21,11 @@ enum IonRegisterAllocator {
   RegisterAllocator_Testbed,
 };
 
+// Which register to use as base register to access stack slots: frame pointer,
+// stack pointer, or whichever is the default for this platform. See comment
+// for baseRegForLocals in JitOptions.cpp for more information.
+enum class BaseRegForAddress { Default, FP, SP };
+
 static inline mozilla::Maybe<IonRegisterAllocator> LookupRegisterAllocator(
     const char* name) {
   if (!strcmp(name, "backtracking")) {
@@ -48,6 +53,7 @@ struct DefaultJitOptions {
   bool disableLicm;
   bool disablePruning;
   bool disableInstructionReordering;
+  bool disableIteratorIndices;
   bool disableRangeAnalysis;
   bool disableRecoverIns;
   bool disableScalarReplacement;
@@ -58,8 +64,6 @@ struct DefaultJitOptions {
   bool baselineInterpreter;
   bool baselineJit;
   bool ion;
-  bool warpAsync;
-  bool warpGenerator;
   bool jitForTrustedPrincipals;
   bool nativeRegExp;
   bool forceInlineCaches;
@@ -69,14 +73,8 @@ struct DefaultJitOptions {
   bool osr;
   bool wasmFoldOffsets;
   bool wasmDelayTier2;
-#ifdef JS_TRACE_LOGGING
-  bool enableTraceLogger;
-#endif
-  bool traceRegExpParser;
-  bool traceRegExpAssembler;
-  bool traceRegExpInterpreter;
-  bool traceRegExpPeephole;
   bool lessDebugCode;
+  bool enableWatchtowerMegamorphic;
   bool enableWasmJitExit;
   bool enableWasmJitEntry;
   bool enableWasmIonFastCalls;
@@ -108,7 +106,6 @@ struct DefaultJitOptions {
   uint32_t ionMaxLocalsAndArgsMainThread;
   uint32_t wasmBatchBaselineThreshold;
   uint32_t wasmBatchIonThreshold;
-  uint32_t wasmBatchCraneliftThreshold;
   mozilla::Maybe<IonRegisterAllocator> forcedRegisterAllocator;
 
   // Spectre mitigation flags. Each mitigation has its own flag in order to
@@ -121,6 +118,19 @@ struct DefaultJitOptions {
   bool spectreJitToCxxCalls;
 
   bool supportsUnalignedAccesses;
+  BaseRegForAddress baseRegForLocals;
+
+  // Irregexp shim flags
+  bool correctness_fuzzer_suppressions;
+  bool enable_regexp_unaligned_accesses;
+  bool regexp_possessive_quantifier;
+  bool regexp_optimization;
+  bool regexp_peephole_optimization;
+  bool regexp_tier_up;
+  bool trace_regexp_assembler;
+  bool trace_regexp_bytecodes;
+  bool trace_regexp_parser;
+  bool trace_regexp_peephole_optimization;
 
   DefaultJitOptions();
   bool isSmallFunction(JSScript* script) const;
@@ -146,6 +156,10 @@ inline bool HasJitBackend() {
 
 inline bool IsBaselineInterpreterEnabled() {
   return HasJitBackend() && JitOptions.baselineInterpreter;
+}
+
+inline bool TooManyActualArguments(size_t nargs) {
+  return nargs > JitOptions.maxStackArgs;
 }
 
 }  // namespace jit

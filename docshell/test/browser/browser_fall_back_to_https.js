@@ -17,13 +17,14 @@
  * https://secureonly.example.com:443 instead.
  */
 
-const { UrlbarTestUtils } = ChromeUtils.import(
-  "resource://testing-common/UrlbarTestUtils.jsm"
+const { UrlbarTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/UrlbarTestUtils.sys.mjs"
 );
 
 const bug1002724_tests = [
   {
     original: "example.com",
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     expected: "http://example.com",
     explanation: "Should load HTTP version of example.com",
   },

@@ -5,8 +5,6 @@
 # This file contains miscellaneous utility functions that don't belong anywhere
 # in particular.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import argparse
 import collections
 import collections.abc
@@ -26,8 +24,10 @@ import sys
 import time
 from collections import OrderedDict
 from io import BytesIO, StringIO
+from pathlib import Path
 
 import six
+from packaging.version import Version
 
 MOZBUILD_METRICS_PATH = os.path.abspath(
     os.path.join(__file__, "..", "..", "metrics.yaml")
@@ -236,7 +236,7 @@ class FileAvoidWrite(BytesIO):
     still occur, as well as diff capture if requested.
     """
 
-    def __init__(self, filename, capture_diff=False, dry_run=False, readmode="rU"):
+    def __init__(self, filename, capture_diff=False, dry_run=False, readmode="r"):
         BytesIO.__init__(self)
         self.name = filename
         assert type(capture_diff) == bool
@@ -1205,9 +1205,6 @@ def group_unified_files(files, unified_prefix, unified_suffix, files_per_unified
     files, and determining which original source files go in which unified
     file."""
 
-    # Make sure the input list is sorted. If it's not, bad things could happen!
-    files = sorted(files)
-
     # Our last returned list of source filenames may be short, and we
     # don't want the fill value inserted by zip_longest to be an
     # issue.  So we do a little dance to filter it out ourselves.
@@ -1461,3 +1458,18 @@ def hexdump(buf):
         line += "|\n"
         lines.append(line)
     return lines
+
+
+def mozilla_build_version():
+    mozilla_build = os.environ.get("MOZILLABUILD")
+
+    version_file = Path(mozilla_build) / "VERSION"
+
+    assert version_file.exists(), (
+        f'The MozillaBuild VERSION file was not found at "{version_file}".\n'
+        "Please check if MozillaBuild is installed correctly and that the"
+        "`MOZILLABUILD` environment variable is to the correct path."
+    )
+
+    with version_file.open() as file:
+        return Version(file.readline().rstrip("\n"))

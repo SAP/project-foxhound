@@ -16,12 +16,20 @@
  * transport types.
  */
 
-namespace mozilla {
-namespace dom {
+struct rust_ctap2_status_update_res;
+
+namespace mozilla::dom {
+
+class WebAuthnGetAssertionResultWrapper {
+ public:
+  WebAuthnGetAssertionResult assertion;
+  mozilla::Maybe<nsCString> username;
+};
 
 typedef MozPromise<WebAuthnMakeCredentialResult, nsresult, true>
     U2FRegisterPromise;
-typedef MozPromise<WebAuthnGetAssertionResult, nsresult, true> U2FSignPromise;
+typedef MozPromise<nsTArray<WebAuthnGetAssertionResultWrapper>, nsresult, true>
+    U2FSignPromise;
 
 class U2FTokenTransport {
  public:
@@ -29,10 +37,12 @@ class U2FTokenTransport {
   U2FTokenTransport() = default;
 
   virtual RefPtr<U2FRegisterPromise> Register(
-      const WebAuthnMakeCredentialInfo& aInfo, bool aForceNoneAttestation) = 0;
+      const WebAuthnMakeCredentialInfo& aInfo, bool aForceNoneAttestation,
+      void status_callback(rust_ctap2_status_update_res*)) = 0;
 
   virtual RefPtr<U2FSignPromise> Sign(
-      const WebAuthnGetAssertionInfo& aInfo) = 0;
+      const WebAuthnGetAssertionInfo& aInfo,
+      void status_callback(rust_ctap2_status_update_res*)) = 0;
 
   virtual void Cancel() = 0;
 
@@ -42,7 +52,6 @@ class U2FTokenTransport {
   virtual ~U2FTokenTransport() = default;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_U2FTokenTransport_h

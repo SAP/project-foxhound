@@ -69,6 +69,8 @@ union Utf8Unit;
 
 namespace JS {
 
+class JS_PUBLIC_API AutoStableStringChars;
+
 namespace detail {
 
 MOZ_COLD extern JS_PUBLIC_API void ReportSourceTooLong(JSContext* cx);
@@ -151,6 +153,7 @@ class SourceText final : public TaintableString {
    */
   [[nodiscard]] MOZ_IS_CLASS_INIT bool init(JSContext* cx, const Unit* units,
                                             size_t unitsLength,
+                                            const StringTaint& taint,
                                             SourceOwnership ownership) {
     MOZ_ASSERT_IF(units == nullptr, unitsLength == 0);
 
@@ -179,17 +182,15 @@ class SourceText final : public TaintableString {
       return false;
     }
 
+    setTaint(taint);
+
     return true;
   }
 
-  /**
-   * Taintfox: init with additional taint information
-   */
   [[nodiscard]] MOZ_IS_CLASS_INIT bool init(JSContext* cx, const Unit* units,
-                                           size_t unitsLength, StringTaint taint,
-                                           SourceOwnership ownership) {
-    setTaint(taint);
-    return init(cx, units, unitsLength, ownership);
+                                            size_t unitsLength,
+                                            SourceOwnership ownership) {
+    return init(cx, units, unitsLength, EmptyTaint, ownership);
   }
 
   /**
@@ -205,22 +206,20 @@ class SourceText final : public TaintableString {
                                         !std::is_same_v<Char, Unit>>>
   [[nodiscard]] MOZ_IS_CLASS_INIT bool init(JSContext* cx, const Char* chars,
                                             size_t charsLength,
+                                            const StringTaint& taint,
                                             SourceOwnership ownership) {
     return init(cx, reinterpret_cast<const Unit*>(chars), charsLength,
-                ownership);
+                taint, ownership);
   }
 
-  /**
-   * Taintfox: init with additional taint information
-   */
-  template <typename Char, typename = typename std::enable_if<
-                               std::is_same<Char, CharT>::value &&
-                               !std::is_same<Char, Unit>::value>::type>
+    template <typename Char,
+            typename = std::enable_if_t<std::is_same_v<Char, CharT> &&
+                                        !std::is_same_v<Char, Unit>>>
   [[nodiscard]] MOZ_IS_CLASS_INIT bool init(JSContext* cx, const Char* chars,
-                                           size_t charsLength, StringTaint taint,
-                                           SourceOwnership ownership) {
-    setTaint(taint);
-    return init(cx, chars, charsLength, ownership);
+                                            size_t charsLength,
+                                            SourceOwnership ownership) {
+    return init(cx, reinterpret_cast<const Unit*>(chars), charsLength,
+                EmptyTaint, ownership);
   }
 
   /**
@@ -228,8 +227,15 @@ class SourceText final : public TaintableString {
    */
   [[nodiscard]] bool init(JSContext* cx,
                           js::UniquePtr<Unit[], JS::FreePolicy> data,
+                          size_t dataLength,
+                          const StringTaint& taint) {
+    return init(cx, data.release(), dataLength, taint, SourceOwnership::TakeOwnership);
+  }
+
+    [[nodiscard]] bool init(JSContext* cx,
+                          js::UniquePtr<Unit[], JS::FreePolicy> data,
                           size_t dataLength) {
-    return init(cx, data.release(), dataLength, SourceOwnership::TakeOwnership);
+    return init(cx, data.release(), dataLength, EmptyTaint, SourceOwnership::TakeOwnership);
   }
 
   /**
@@ -246,8 +252,34 @@ class SourceText final : public TaintableString {
                                         !std::is_same_v<Char, Unit>>>
   [[nodiscard]] bool init(JSContext* cx,
                           js::UniquePtr<Char[], JS::FreePolicy> data,
+                          size_t dataLength,
+                          const StringTaint& taint) {
+    return init(cx, data.release(), dataLength, taint, SourceOwnership::TakeOwnership);
+  }
+
+  template <typename Char,
+            typename = std::enable_if_t<std::is_same_v<Char, CharT> &&
+                                        !std::is_same_v<Char, Unit>>>
+  [[nodiscard]] bool init(JSContext* cx,
+                          js::UniquePtr<Char[], JS::FreePolicy> data,
                           size_t dataLength) {
-    return init(cx, data.release(), dataLength, SourceOwnership::TakeOwnership);
+    return init(cx, data.release(), dataLength, EmptyTaint, SourceOwnership::TakeOwnership);
+  }
+
+  /**
+   * Initialize this using an AutoStableStringChars. Transfers the code units if
+   * they are owned by the AutoStableStringChars, otherwise borrow directly from
+   * the underlying JSString. The AutoStableStringChars must outlive this
+   * SourceText and must be explicitly configured to the same unit type as this
+   * SourceText.
+   */
+  [[nodiscard]] bool initMaybeBorrowed(JSContext* cx,
+                                       AutoStableStringChars& linearChars,
+                                       const StringTaint& taint);
+
+  [[nodiscard]] bool initMaybeBorrowed(JSContext* cx,
+                                       AutoStableStringChars& linearChars) {
+    return initMaybeBorrowed(cx, linearChars, EmptyTaint);
   }
 
   /**

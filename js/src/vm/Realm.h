@@ -7,12 +7,10 @@
 #ifndef vm_Realm_h
 #define vm_Realm_h
 
-#include "mozilla/Atomics.h"
-#include "mozilla/LinkedList.h"
+#include "mozilla/Array.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/Tuple.h"
 #include "mozilla/Variant.h"
 #include "mozilla/XorShift128PlusRNG.h"
 
@@ -21,16 +19,14 @@
 #include "builtin/Array.h"
 #include "gc/Barrier.h"
 #include "js/GCVariant.h"
+#include "js/RealmOptions.h"
 #include "js/TelemetryTimers.h"
 #include "js/UniquePtr.h"
 #include "vm/ArrayBufferObject.h"
-#include "vm/Compartment.h"
-#include "vm/NativeObject.h"
-#include "vm/PlainObject.h"    // js::PlainObject
+#include "vm/JSContext.h"
 #include "vm/PromiseLookup.h"  // js::PromiseLookup
 #include "vm/RegExpShared.h"
 #include "vm/SavedStacks.h"
-#include "vm/Time.h"
 #include "wasm/WasmRealm.h"
 
 namespace js {
@@ -44,13 +40,12 @@ class JitRealm;
 }  // namespace jit
 
 class AutoRestoreRealmDebugMode;
+class Debugger;
 class GlobalObject;
 class GlobalObjectData;
 class GlobalLexicalEnvironmentObject;
-class MapObject;
 class NonSyntacticLexicalEnvironmentObject;
-class ScriptSourceObject;
-class SetObject;
+struct IdValuePair;
 struct NativeIterator;
 
 /*
@@ -61,22 +56,22 @@ struct NativeIterator;
  * is erroneously included in the measurement; see bug 562553.
  */
 class DtoaCache {
-  double d;
+  double dbl;
   int base;
-  JSLinearString* s;  // if s==nullptr, d and base are not valid
+  JSLinearString* str;  // if str==nullptr, dbl and base are not valid
 
  public:
-  DtoaCache() : s(nullptr) {}
-  void purge() { s = nullptr; }
+  DtoaCache() : str(nullptr) {}
+  void purge() { str = nullptr; }
 
-  JSLinearString* lookup(int base, double d) {
-    return this->s && base == this->base && d == this->d ? this->s : nullptr;
+  JSLinearString* lookup(int b, double d) {
+    return str && b == base && d == dbl ? str : nullptr;
   }
 
-  void cache(int base, double d, JSLinearString* s) {
-    this->base = base;
-    this->d = d;
-    this->s = s;
+  void cache(int b, double d, JSLinearString* s) {
+    base = b;
+    dbl = d;
+    str = s;
   }
 
 #ifdef JSGC_HASH_TABLE_CHECKS
@@ -125,6 +120,25 @@ class NewProxyCache {
     entries_[0].shape = shape;
   }
   void purge() { entries_.reset(); }
+};
+
+// Cache for NewPlainObjectWithProperties. When the list of properties matches
+// a recently created object's shape, we can use this shape directly.
+class NewPlainObjectWithPropsCache {
+  static const size_t NumEntries = 4;
+  mozilla::Array<SharedShape*, NumEntries> entries_;
+
+ public:
+  NewPlainObjectWithPropsCache() { purge(); }
+
+  SharedShape* lookup(IdValuePair* properties, size_t nproperties) const;
+  void add(SharedShape* shape);
+
+  void purge() {
+    for (size_t i = 0; i < NumEntries; i++) {
+      entries_[i] = nullptr;
+    }
+  }
 };
 
 // [SMDOC] Object MetadataBuilder API
@@ -221,16 +235,11 @@ struct IteratorHashPolicy {
 
 class DebugEnvironments;
 class ObjectWeakMap;
-class WeakMapBase;
 
 // ObjectRealm stores various tables and other state associated with particular
 // objects in a realm. To make sure the correct ObjectRealm is used for an
 // object, use of the ObjectRealm::get(obj) static method is required.
 class ObjectRealm {
-  using NativeIteratorSentinel =
-      js::UniquePtr<js::NativeIterator, JS::FreePolicy>;
-  NativeIteratorSentinel iteratorSentinel_;
-
   // All non-syntactic lexical environments in the realm. These are kept in a
   // map because when loading scripts into a non-syntactic environment, we
   // need to use the same lexical environment to persist lexical bindings.
@@ -240,10 +249,6 @@ class ObjectRealm {
   void operator=(const ObjectRealm&) = delete;
 
  public:
-  // List of potentially active iterators that may need deleted property
-  // suppression.
-  js::NativeIterator* enumerators = nullptr;
-
   // Map from array buffers to views sharing that storage.
   JS::WeakCache<js::InnerViewTable> innerViews;
 
@@ -259,21 +264,15 @@ class ObjectRealm {
   static inline ObjectRealm& get(const JSObject* obj);
 
   explicit ObjectRealm(JS::Zone* zone);
-  ~ObjectRealm();
-
-  [[nodiscard]] bool init(JSContext* cx);
 
   void finishRoots();
   void trace(JSTracer* trc);
   void sweepAfterMinorGC(JSTracer* trc);
-  void traceWeakNativeIterators(JSTracer* trc);
 
   void addSizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf,
                               size_t* innerViewsArg,
                               size_t* objectMetadataTablesArg,
                               size_t* nonSyntacticLexicalEnvironmentsArg);
-
-  MOZ_ALWAYS_INLINE bool objectMaybeInIteration(JSObject* obj);
 
   js::NonSyntacticLexicalEnvironmentObject*
   getOrCreateNonSyntacticLexicalEnvironment(JSContext* cx,
@@ -306,7 +305,7 @@ class JS::Realm : public JS::shadow::Realm {
   JS::RealmBehaviors behaviors_;
 
   friend struct ::JSContext;
-  js::WeakHeapPtrGlobalObject global_;
+  js::WeakHeapPtr<js::GlobalObject*> global_;
 
   // Note: this is private to enforce use of ObjectRealm::get(obj).
   js::ObjectRealm objects_;
@@ -387,11 +386,14 @@ class JS::Realm : public JS::shadow::Realm {
     DebuggerObservesAllExecution = 1 << 1,
     DebuggerObservesAsmJS = 1 << 2,
     DebuggerObservesCoverage = 1 << 3,
+    DebuggerObservesWasm = 1 << 4,
   };
   unsigned debugModeBits_ = 0;
   friend class js::AutoRestoreRealmDebugMode;
 
   bool isSystem_ = false;
+  bool allocatedDuringIncrementalGC_;
+  bool initializingGlobal_ = true;
 
   js::UniquePtr<js::coverage::LCovRealm> lcovRealm_ = nullptr;
 
@@ -403,6 +405,7 @@ class JS::Realm : public JS::shadow::Realm {
 
   js::DtoaCache dtoaCache;
   js::NewProxyCache newProxyCache;
+  js::NewPlainObjectWithPropsCache newPlainObjectWithPropsCache;
   js::ArraySpeciesLookup arraySpeciesLookup;
   js::PromiseLookup promiseLookup;
 
@@ -430,6 +433,17 @@ class JS::Realm : public JS::shadow::Realm {
   // This prevents us from creating new wrappers for the compartment.
   bool nukedIncomingWrappers = false;
 
+  // Enable async stack capturing for this realm even if
+  // JS::ContextOptions::asyncStackCaptureDebuggeeOnly_ is true.
+  //
+  // No-op when JS::ContextOptions::asyncStack_ is false, or
+  // JS::ContextOptions::asyncStackCaptureDebuggeeOnly_ is false.
+  //
+  // This can be used as a lightweight alternative for making the global
+  // debuggee, if the async stack capturing is necessary but no other debugging
+  // features are used.
+  bool isAsyncStackCapturingEnabled = false;
+
  private:
   void updateDebuggerObservesFlag(unsigned flag);
 
@@ -440,8 +454,8 @@ class JS::Realm : public JS::shadow::Realm {
   Realm(JS::Compartment* comp, const JS::RealmOptions& options);
   ~Realm();
 
-  [[nodiscard]] bool init(JSContext* cx, JSPrincipals* principals);
-  void destroy(JSFreeOp* fop);
+  void init(JSContext* cx, JSPrincipals* principals);
+  void destroy(JS::GCContext* gcx);
 
   void addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
                               size_t* realmObject, size_t* realmTables,
@@ -496,7 +510,11 @@ class JS::Realm : public JS::shadow::Realm {
   /* True if a global exists and it's not being collected. */
   inline bool hasLiveGlobal() const;
 
+  /* True if a global exists and has been successfully initialized. */
+  inline bool hasInitializedGlobal() const;
+
   inline void initGlobal(js::GlobalObject& global);
+  void clearInitializingGlobal() { initializingGlobal_ = false; }
 
   /*
    * This method traces data that is live iff we know that this realm's
@@ -519,7 +537,6 @@ class JS::Realm : public JS::shadow::Realm {
 
   void sweepAfterMinorGC(JSTracer* trc);
   void traceWeakDebugEnvironmentEdges(JSTracer* trc);
-  void traceWeakObjectRealm(JSTracer* trc);
   void traceWeakRegExps(JSTracer* trc);
 
   void clearScriptCounts();
@@ -563,11 +580,9 @@ class JS::Realm : public JS::shadow::Realm {
     return objectMetadataState_.is<js::PendingMetadata>();
   }
   void setObjectPendingMetadata(JSContext* cx, JSObject* obj) {
-    if (!cx->isHelperThreadContext()) {
-      MOZ_ASSERT(objectMetadataState_.is<js::DelayMetadata>());
-      objectMetadataState_ =
-          js::NewObjectMetadataState(js::PendingMetadata(obj));
-    }
+    MOZ_ASSERT(cx->isMainThreadContext());
+    MOZ_ASSERT(objectMetadataState_.is<js::DelayMetadata>());
+    objectMetadataState_ = js::NewObjectMetadataState(js::PendingMetadata(obj));
   }
 
   void* realmPrivate() const { return realmPrivate_; }
@@ -591,6 +606,7 @@ class JS::Realm : public JS::shadow::Realm {
   }
 
   inline bool marked() const;
+  void clearAllocatedDuringGC() { allocatedDuringIncrementalGC_ = false; }
 
   /*
    * The principals associated with this realm. Note that the same several
@@ -659,16 +675,26 @@ class JS::Realm : public JS::shadow::Realm {
 
   // True if this realm's global is a debuggee of some Debugger object
   // whose allowUnobservedAsmJS flag is false.
-  //
-  // Note that since AOT wasm functions cannot bail out, this flag really
-  // means "observe wasm from this point forward". We cannot make
-  // already-compiled wasm code observable to Debugger.
   bool debuggerObservesAsmJS() const {
     static const unsigned Mask = IsDebuggee | DebuggerObservesAsmJS;
     return (debugModeBits_ & Mask) == Mask;
   }
   void updateDebuggerObservesAsmJS() {
     updateDebuggerObservesFlag(DebuggerObservesAsmJS);
+  }
+
+  // True if this realm's global is a debuggee of some Debugger object
+  // whose allowUnobservedWasm flag is false.
+  //
+  // Note that since AOT wasm functions cannot bail out, this flag really
+  // means "observe wasm from this point forward". We cannot make
+  // already-compiled wasm code observable to Debugger.
+  bool debuggerObservesWasm() const {
+    static const unsigned Mask = IsDebuggee | DebuggerObservesWasm;
+    return (debugModeBits_ & Mask) == Mask;
+  }
+  void updateDebuggerObservesWasm() {
+    updateDebuggerObservesFlag(DebuggerObservesWasm);
   }
 
   // True if this realm's global is a debuggee of some Debugger object
@@ -737,6 +763,9 @@ class JS::Realm : public JS::shadow::Realm {
                   "JIT code assumes field is pointer-sized");
     return offsetof(JS::Realm, global_);
   }
+
+ private:
+  void purgeForOfPicChain();
 };
 
 inline js::Handle<js::GlobalObject*> JSContext::global() const {

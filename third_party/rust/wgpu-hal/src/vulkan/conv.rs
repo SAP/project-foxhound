@@ -1,10 +1,10 @@
 use ash::vk;
-use std::num::NonZeroU32;
 
 impl super::PrivateCapabilities {
     pub fn map_texture_format(&self, format: wgt::TextureFormat) -> vk::Format {
         use ash::vk::Format as F;
         use wgt::TextureFormat as Tf;
+        use wgt::{AstcBlock, AstcChannel};
         match format {
             Tf::R8Unorm => F::R8_UNORM,
             Tf::R8Snorm => F::R8_SNORM,
@@ -48,6 +48,7 @@ impl super::PrivateCapabilities {
             Tf::Rgba32Sint => F::R32G32B32A32_SINT,
             Tf::Rgba32Float => F::R32G32B32A32_SFLOAT,
             Tf::Depth32Float => F::D32_SFLOAT,
+            Tf::Depth32FloatStencil8 => F::D32_SFLOAT_S8_UINT,
             Tf::Depth24Plus => {
                 if self.texture_d24 {
                     F::X8_D24_UNORM_PACK32
@@ -62,6 +63,16 @@ impl super::PrivateCapabilities {
                     F::D32_SFLOAT_S8_UINT
                 }
             }
+            Tf::Stencil8 => {
+                if self.texture_s8 {
+                    F::S8_UINT
+                } else if self.texture_d24_s8 {
+                    F::D24_UNORM_S8_UINT
+                } else {
+                    F::D32_SFLOAT_S8_UINT
+                }
+            }
+            Tf::Depth16Unorm => F::D16_UNORM,
             Tf::Rgb9e5Ufloat => F::E5B9G9R9_UFLOAT_PACK32,
             Tf::Bc1RgbaUnorm => F::BC1_RGBA_UNORM_BLOCK,
             Tf::Bc1RgbaUnormSrgb => F::BC1_RGBA_SRGB_BLOCK,
@@ -87,36 +98,82 @@ impl super::PrivateCapabilities {
             Tf::EacR11Snorm => F::EAC_R11_SNORM_BLOCK,
             Tf::EacRg11Unorm => F::EAC_R11G11_UNORM_BLOCK,
             Tf::EacRg11Snorm => F::EAC_R11G11_SNORM_BLOCK,
-            Tf::Astc4x4RgbaUnorm => F::ASTC_4X4_UNORM_BLOCK,
-            Tf::Astc4x4RgbaUnormSrgb => F::ASTC_4X4_SRGB_BLOCK,
-            Tf::Astc5x4RgbaUnorm => F::ASTC_5X4_UNORM_BLOCK,
-            Tf::Astc5x4RgbaUnormSrgb => F::ASTC_5X4_SRGB_BLOCK,
-            Tf::Astc5x5RgbaUnorm => F::ASTC_5X5_UNORM_BLOCK,
-            Tf::Astc5x5RgbaUnormSrgb => F::ASTC_5X5_SRGB_BLOCK,
-            Tf::Astc6x5RgbaUnorm => F::ASTC_6X5_UNORM_BLOCK,
-            Tf::Astc6x5RgbaUnormSrgb => F::ASTC_6X5_SRGB_BLOCK,
-            Tf::Astc6x6RgbaUnorm => F::ASTC_6X6_UNORM_BLOCK,
-            Tf::Astc6x6RgbaUnormSrgb => F::ASTC_6X6_SRGB_BLOCK,
-            Tf::Astc8x5RgbaUnorm => F::ASTC_8X5_UNORM_BLOCK,
-            Tf::Astc8x5RgbaUnormSrgb => F::ASTC_8X5_SRGB_BLOCK,
-            Tf::Astc8x6RgbaUnorm => F::ASTC_8X6_UNORM_BLOCK,
-            Tf::Astc8x6RgbaUnormSrgb => F::ASTC_8X6_SRGB_BLOCK,
-            Tf::Astc10x5RgbaUnorm => F::ASTC_8X8_UNORM_BLOCK,
-            Tf::Astc10x5RgbaUnormSrgb => F::ASTC_8X8_SRGB_BLOCK,
-            Tf::Astc10x6RgbaUnorm => F::ASTC_10X5_UNORM_BLOCK,
-            Tf::Astc10x6RgbaUnormSrgb => F::ASTC_10X5_SRGB_BLOCK,
-            Tf::Astc8x8RgbaUnorm => F::ASTC_10X6_UNORM_BLOCK,
-            Tf::Astc8x8RgbaUnormSrgb => F::ASTC_10X6_SRGB_BLOCK,
-            Tf::Astc10x8RgbaUnorm => F::ASTC_10X8_UNORM_BLOCK,
-            Tf::Astc10x8RgbaUnormSrgb => F::ASTC_10X8_SRGB_BLOCK,
-            Tf::Astc10x10RgbaUnorm => F::ASTC_10X10_UNORM_BLOCK,
-            Tf::Astc10x10RgbaUnormSrgb => F::ASTC_10X10_SRGB_BLOCK,
-            Tf::Astc12x10RgbaUnorm => F::ASTC_12X10_UNORM_BLOCK,
-            Tf::Astc12x10RgbaUnormSrgb => F::ASTC_12X10_SRGB_BLOCK,
-            Tf::Astc12x12RgbaUnorm => F::ASTC_12X12_UNORM_BLOCK,
-            Tf::Astc12x12RgbaUnormSrgb => F::ASTC_12X12_SRGB_BLOCK,
+            Tf::Astc { block, channel } => match channel {
+                AstcChannel::Unorm => match block {
+                    AstcBlock::B4x4 => F::ASTC_4X4_UNORM_BLOCK,
+                    AstcBlock::B5x4 => F::ASTC_5X4_UNORM_BLOCK,
+                    AstcBlock::B5x5 => F::ASTC_5X5_UNORM_BLOCK,
+                    AstcBlock::B6x5 => F::ASTC_6X5_UNORM_BLOCK,
+                    AstcBlock::B6x6 => F::ASTC_6X6_UNORM_BLOCK,
+                    AstcBlock::B8x5 => F::ASTC_8X5_UNORM_BLOCK,
+                    AstcBlock::B8x6 => F::ASTC_8X6_UNORM_BLOCK,
+                    AstcBlock::B8x8 => F::ASTC_8X8_UNORM_BLOCK,
+                    AstcBlock::B10x5 => F::ASTC_10X5_UNORM_BLOCK,
+                    AstcBlock::B10x6 => F::ASTC_10X6_UNORM_BLOCK,
+                    AstcBlock::B10x8 => F::ASTC_10X8_UNORM_BLOCK,
+                    AstcBlock::B10x10 => F::ASTC_10X10_UNORM_BLOCK,
+                    AstcBlock::B12x10 => F::ASTC_12X10_UNORM_BLOCK,
+                    AstcBlock::B12x12 => F::ASTC_12X12_UNORM_BLOCK,
+                },
+                AstcChannel::UnormSrgb => match block {
+                    AstcBlock::B4x4 => F::ASTC_4X4_SRGB_BLOCK,
+                    AstcBlock::B5x4 => F::ASTC_5X4_SRGB_BLOCK,
+                    AstcBlock::B5x5 => F::ASTC_5X5_SRGB_BLOCK,
+                    AstcBlock::B6x5 => F::ASTC_6X5_SRGB_BLOCK,
+                    AstcBlock::B6x6 => F::ASTC_6X6_SRGB_BLOCK,
+                    AstcBlock::B8x5 => F::ASTC_8X5_SRGB_BLOCK,
+                    AstcBlock::B8x6 => F::ASTC_8X6_SRGB_BLOCK,
+                    AstcBlock::B8x8 => F::ASTC_8X8_SRGB_BLOCK,
+                    AstcBlock::B10x5 => F::ASTC_10X5_SRGB_BLOCK,
+                    AstcBlock::B10x6 => F::ASTC_10X6_SRGB_BLOCK,
+                    AstcBlock::B10x8 => F::ASTC_10X8_SRGB_BLOCK,
+                    AstcBlock::B10x10 => F::ASTC_10X10_SRGB_BLOCK,
+                    AstcBlock::B12x10 => F::ASTC_12X10_SRGB_BLOCK,
+                    AstcBlock::B12x12 => F::ASTC_12X12_SRGB_BLOCK,
+                },
+                AstcChannel::Hdr => match block {
+                    AstcBlock::B4x4 => F::ASTC_4X4_SFLOAT_BLOCK_EXT,
+                    AstcBlock::B5x4 => F::ASTC_5X4_SFLOAT_BLOCK_EXT,
+                    AstcBlock::B5x5 => F::ASTC_5X5_SFLOAT_BLOCK_EXT,
+                    AstcBlock::B6x5 => F::ASTC_6X5_SFLOAT_BLOCK_EXT,
+                    AstcBlock::B6x6 => F::ASTC_6X6_SFLOAT_BLOCK_EXT,
+                    AstcBlock::B8x5 => F::ASTC_8X5_SFLOAT_BLOCK_EXT,
+                    AstcBlock::B8x6 => F::ASTC_8X6_SFLOAT_BLOCK_EXT,
+                    AstcBlock::B8x8 => F::ASTC_8X8_SFLOAT_BLOCK_EXT,
+                    AstcBlock::B10x5 => F::ASTC_10X5_SFLOAT_BLOCK_EXT,
+                    AstcBlock::B10x6 => F::ASTC_10X6_SFLOAT_BLOCK_EXT,
+                    AstcBlock::B10x8 => F::ASTC_10X8_SFLOAT_BLOCK_EXT,
+                    AstcBlock::B10x10 => F::ASTC_10X10_SFLOAT_BLOCK_EXT,
+                    AstcBlock::B12x10 => F::ASTC_12X10_SFLOAT_BLOCK_EXT,
+                    AstcBlock::B12x12 => F::ASTC_12X12_SFLOAT_BLOCK_EXT,
+                },
+            },
         }
     }
+}
+
+pub fn map_vk_surface_formats(sf: vk::SurfaceFormatKHR) -> Option<wgt::TextureFormat> {
+    use ash::vk::Format as F;
+    use wgt::TextureFormat as Tf;
+    // List we care about pulled from https://vulkan.gpuinfo.org/listsurfaceformats.php
+    Some(match sf.color_space {
+        vk::ColorSpaceKHR::SRGB_NONLINEAR => match sf.format {
+            F::B8G8R8A8_UNORM => Tf::Bgra8Unorm,
+            F::B8G8R8A8_SRGB => Tf::Bgra8UnormSrgb,
+            F::R8G8B8A8_SNORM => Tf::Rgba8Snorm,
+            F::R8G8B8A8_UNORM => Tf::Rgba8Unorm,
+            F::R8G8B8A8_SRGB => Tf::Rgba8UnormSrgb,
+            _ => return None,
+        },
+        vk::ColorSpaceKHR::EXTENDED_SRGB_LINEAR_EXT => match sf.format {
+            F::R16G16B16A16_SFLOAT => Tf::Rgba16Float,
+            F::R16G16B16A16_SNORM => Tf::Rgba16Snorm,
+            F::R16G16B16A16_UNORM => Tf::Rgba16Unorm,
+            F::A2B10G10R10_UNORM_PACK32 => Tf::Rgb10a2Unorm,
+            _ => return None,
+        },
+        _ => return None,
+    })
 }
 
 impl crate::Attachment<'_, super::Api> {
@@ -145,17 +202,16 @@ impl crate::ColorAttachment<'_, super::Api> {
             .describe()
             .sample_type
         {
-            wgt::TextureSampleType::Float { .. } | wgt::TextureSampleType::Depth => {
-                vk::ClearColorValue {
-                    float32: [cv.r as f32, cv.g as f32, cv.b as f32, cv.a as f32],
-                }
-            }
+            wgt::TextureSampleType::Float { .. } => vk::ClearColorValue {
+                float32: [cv.r as f32, cv.g as f32, cv.b as f32, cv.a as f32],
+            },
             wgt::TextureSampleType::Sint => vk::ClearColorValue {
                 int32: [cv.r as i32, cv.g as i32, cv.b as i32, cv.a as i32],
             },
             wgt::TextureSampleType::Uint => vk::ClearColorValue {
                 uint32: [cv.r as u32, cv.g as u32, cv.b as u32, cv.a as u32],
             },
+            wgt::TextureSampleType::Depth => unreachable!(),
         }
     }
 }
@@ -176,7 +232,7 @@ pub fn derive_image_layout(
             vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
         }
         _ => {
-            if usage.is_empty() {
+            if usage == crate::TextureUses::PRESENT {
                 vk::ImageLayout::PRESENT_SRC_KHR
             } else if is_color {
                 vk::ImageLayout::GENERAL
@@ -206,7 +262,7 @@ pub fn map_texture_usage(usage: crate::TextureUses) -> vk::ImageUsageFlags {
     ) {
         flags |= vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT;
     }
-    if usage.intersects(crate::TextureUses::STORAGE_READ | crate::TextureUses::STORAGE_WRITE) {
+    if usage.intersects(crate::TextureUses::STORAGE_READ | crate::TextureUses::STORAGE_READ_WRITE) {
         flags |= vk::ImageUsageFlags::STORAGE;
     }
     flags
@@ -252,12 +308,12 @@ pub fn map_texture_usage_to_barrier(
         stages |= shader_stages;
         access |= vk::AccessFlags::SHADER_READ;
     }
-    if usage.contains(crate::TextureUses::STORAGE_WRITE) {
+    if usage.contains(crate::TextureUses::STORAGE_READ_WRITE) {
         stages |= shader_stages;
-        access |= vk::AccessFlags::SHADER_WRITE;
+        access |= vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE;
     }
 
-    if usage == crate::TextureUses::UNINITIALIZED || usage.is_empty() {
+    if usage == crate::TextureUses::UNINITIALIZED || usage == crate::TextureUses::PRESENT {
         (
             vk::PipelineStageFlags::TOP_OF_PIPE,
             vk::AccessFlags::empty(),
@@ -285,7 +341,7 @@ pub fn map_vk_image_usage(usage: vk::ImageUsageFlags) -> crate::TextureUses {
         bits |= crate::TextureUses::DEPTH_STENCIL_READ | crate::TextureUses::DEPTH_STENCIL_WRITE;
     }
     if usage.contains(vk::ImageUsageFlags::STORAGE) {
-        bits |= crate::TextureUses::STORAGE_READ | crate::TextureUses::STORAGE_WRITE;
+        bits |= crate::TextureUses::STORAGE_READ | crate::TextureUses::STORAGE_READ_WRITE;
     }
     bits
 }
@@ -380,7 +436,10 @@ pub fn map_present_mode(mode: wgt::PresentMode) -> vk::PresentModeKHR {
         wgt::PresentMode::Immediate => vk::PresentModeKHR::IMMEDIATE,
         wgt::PresentMode::Mailbox => vk::PresentModeKHR::MAILBOX,
         wgt::PresentMode::Fifo => vk::PresentModeKHR::FIFO,
-        //wgt::PresentMode::Relaxed => vk::PresentModeKHR::FIFO_RELAXED,
+        wgt::PresentMode::FifoRelaxed => vk::PresentModeKHR::FIFO_RELAXED,
+        wgt::PresentMode::AutoNoVsync | wgt::PresentMode::AutoVsync => {
+            unreachable!("Cannot create swapchain with Auto PresentationMode")
+        }
     }
 }
 
@@ -400,24 +459,29 @@ pub fn map_vk_present_mode(mode: vk::PresentModeKHR) -> Option<wgt::PresentMode>
     }
 }
 
-pub fn map_composite_alpha_mode(mode: crate::CompositeAlphaMode) -> vk::CompositeAlphaFlagsKHR {
+pub fn map_composite_alpha_mode(mode: wgt::CompositeAlphaMode) -> vk::CompositeAlphaFlagsKHR {
     match mode {
-        crate::CompositeAlphaMode::Opaque => vk::CompositeAlphaFlagsKHR::OPAQUE,
-        crate::CompositeAlphaMode::PostMultiplied => vk::CompositeAlphaFlagsKHR::POST_MULTIPLIED,
-        crate::CompositeAlphaMode::PreMultiplied => vk::CompositeAlphaFlagsKHR::PRE_MULTIPLIED,
+        wgt::CompositeAlphaMode::Opaque => vk::CompositeAlphaFlagsKHR::OPAQUE,
+        wgt::CompositeAlphaMode::PreMultiplied => vk::CompositeAlphaFlagsKHR::PRE_MULTIPLIED,
+        wgt::CompositeAlphaMode::PostMultiplied => vk::CompositeAlphaFlagsKHR::POST_MULTIPLIED,
+        wgt::CompositeAlphaMode::Inherit => vk::CompositeAlphaFlagsKHR::INHERIT,
+        wgt::CompositeAlphaMode::Auto => unreachable!(),
     }
 }
 
-pub fn map_vk_composite_alpha(flags: vk::CompositeAlphaFlagsKHR) -> Vec<crate::CompositeAlphaMode> {
+pub fn map_vk_composite_alpha(flags: vk::CompositeAlphaFlagsKHR) -> Vec<wgt::CompositeAlphaMode> {
     let mut modes = Vec::new();
     if flags.contains(vk::CompositeAlphaFlagsKHR::OPAQUE) {
-        modes.push(crate::CompositeAlphaMode::Opaque);
-    }
-    if flags.contains(vk::CompositeAlphaFlagsKHR::POST_MULTIPLIED) {
-        modes.push(crate::CompositeAlphaMode::PostMultiplied);
+        modes.push(wgt::CompositeAlphaMode::Opaque);
     }
     if flags.contains(vk::CompositeAlphaFlagsKHR::PRE_MULTIPLIED) {
-        modes.push(crate::CompositeAlphaMode::PreMultiplied);
+        modes.push(wgt::CompositeAlphaMode::PreMultiplied);
+    }
+    if flags.contains(vk::CompositeAlphaFlagsKHR::POST_MULTIPLIED) {
+        modes.push(wgt::CompositeAlphaMode::PostMultiplied);
+    }
+    if flags.contains(vk::CompositeAlphaFlagsKHR::INHERIT) {
+        modes.push(wgt::CompositeAlphaMode::Inherit);
     }
     modes
 }
@@ -433,7 +497,7 @@ pub fn map_buffer_usage(usage: crate::BufferUses) -> vk::BufferUsageFlags {
     if usage.contains(crate::BufferUses::UNIFORM) {
         flags |= vk::BufferUsageFlags::UNIFORM_BUFFER;
     }
-    if usage.intersects(crate::BufferUses::STORAGE_READ | crate::BufferUses::STORAGE_WRITE) {
+    if usage.intersects(crate::BufferUses::STORAGE_READ | crate::BufferUses::STORAGE_READ_WRITE) {
         flags |= vk::BufferUsageFlags::STORAGE_BUFFER;
     }
     if usage.contains(crate::BufferUses::INDEX) {
@@ -481,9 +545,9 @@ pub fn map_buffer_usage_to_barrier(
         stages |= shader_stages;
         access |= vk::AccessFlags::SHADER_READ;
     }
-    if usage.intersects(crate::BufferUses::STORAGE_WRITE) {
+    if usage.intersects(crate::BufferUses::STORAGE_READ_WRITE) {
         stages |= shader_stages;
-        access |= vk::AccessFlags::SHADER_WRITE;
+        access |= vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE;
     }
     if usage.contains(crate::BufferUses::INDEX) {
         stages |= vk::PipelineStageFlags::VERTEX_INPUT;
@@ -520,20 +584,6 @@ pub fn map_copy_extent(extent: &crate::CopyExtent) -> vk::Extent3D {
     }
 }
 
-pub fn map_extent_to_copy_size(
-    extent: &wgt::Extent3d,
-    dim: wgt::TextureDimension,
-) -> crate::CopyExtent {
-    crate::CopyExtent {
-        width: extent.width,
-        height: extent.height,
-        depth: match dim {
-            wgt::TextureDimension::D1 | wgt::TextureDimension::D2 => 1,
-            wgt::TextureDimension::D3 => extent.depth_or_array_layers,
-        },
-    }
-}
-
 pub fn map_subresource_range(
     range: &wgt::ImageSubresourceRange,
     texture_aspect: crate::FormatAspects,
@@ -541,13 +591,11 @@ pub fn map_subresource_range(
     vk::ImageSubresourceRange {
         aspect_mask: map_aspects(crate::FormatAspects::from(range.aspect) & texture_aspect),
         base_mip_level: range.base_mip_level,
-        level_count: range
-            .mip_level_count
-            .map_or(vk::REMAINING_MIP_LEVELS, NonZeroU32::get),
+        level_count: range.mip_level_count.unwrap_or(vk::REMAINING_MIP_LEVELS),
         base_array_layer: range.base_array_layer,
         layer_count: range
             .array_layer_count
-            .map_or(vk::REMAINING_ARRAY_LAYERS, NonZeroU32::get),
+            .unwrap_or(vk::REMAINING_ARRAY_LAYERS),
     }
 }
 
@@ -589,13 +637,15 @@ pub fn map_address_mode(mode: wgt::AddressMode) -> vk::SamplerAddressMode {
         wgt::AddressMode::Repeat => vk::SamplerAddressMode::REPEAT,
         wgt::AddressMode::MirrorRepeat => vk::SamplerAddressMode::MIRRORED_REPEAT,
         wgt::AddressMode::ClampToBorder => vk::SamplerAddressMode::CLAMP_TO_BORDER,
-        //wgt::AddressMode::MirrorClamp => vk::SamplerAddressMode::MIRROR_CLAMP_TO_EDGE,
+        // wgt::AddressMode::MirrorClamp => vk::SamplerAddressMode::MIRROR_CLAMP_TO_EDGE,
     }
 }
 
 pub fn map_border_color(border_color: wgt::SamplerBorderColor) -> vk::BorderColor {
     match border_color {
-        wgt::SamplerBorderColor::TransparentBlack => vk::BorderColor::FLOAT_TRANSPARENT_BLACK,
+        wgt::SamplerBorderColor::TransparentBlack | wgt::SamplerBorderColor::Zero => {
+            vk::BorderColor::FLOAT_TRANSPARENT_BLACK
+        }
         wgt::SamplerBorderColor::OpaqueBlack => vk::BorderColor::FLOAT_OPAQUE_BLACK,
         wgt::SamplerBorderColor::OpaqueWhite => vk::BorderColor::FLOAT_OPAQUE_WHITE,
     }

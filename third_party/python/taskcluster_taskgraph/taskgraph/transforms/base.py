@@ -8,11 +8,10 @@ from typing import AnyStr
 
 import attr
 
-
 from ..config import GraphConfig
 from ..parameters import Parameters
-from ..util.schema import Schema, validate_schema
 from ..util.memoize import memoize
+from ..util.schema import Schema, validate_schema
 
 
 @attr.s(frozen=True)
@@ -47,9 +46,9 @@ class TransformConfig:
     # the parameters for this task-graph generation run
     params = attr.ib(type=Parameters)
 
-    # a list of all the tasks associated with the kind dependencies of the
+    # a dict of all the tasks associated with the kind dependencies of the
     # current kind
-    kind_dependencies_tasks = attr.ib()
+    kind_dependencies_tasks = attr.ib(type=dict)
 
     # Global configuration of the taskgraph
     graph_config = attr.ib(type=GraphConfig)

@@ -6,8 +6,8 @@
 /**
  * Tests the log persistence telemetry event
  */
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 function togglePersistLogsOption(monitor) {
@@ -28,6 +28,8 @@ add_task(async function() {
   const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
 
   store.dispatch(Actions.batchEnable(false));
+
+  await waitForAllNetworkUpdateEvents();
 
   // Clear all events
   Services.telemetry.clearEvents();
@@ -68,6 +70,7 @@ add_task(async function() {
     object: "netmonitor",
   };
 
+  await waitForAllNetworkUpdateEvents();
   // Will compare filtered events to event list above
   await TelemetryTestUtils.assertEvents(expectedEvents, filter);
 

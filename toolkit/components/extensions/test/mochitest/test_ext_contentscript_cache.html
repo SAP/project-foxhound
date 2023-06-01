@@ -13,7 +13,6 @@
 "use strict";
 
 // This file defines content scripts.
-/* eslint-env mozilla/frame-script */
 
 const BASE = "http://mochi.test:8888/tests/toolkit/components/extensions/test/mochitest";
 
@@ -48,7 +47,7 @@ add_task(async function test_contentscript_cache() {
   let origin = await extension.awaitMessage("origin");
   let scriptUrl = `${origin}/content_script.js`;
 
-  const { ExtensionProcessScript } = SpecialPowers.Cu.import(
+  const { ExtensionProcessScript } = SpecialPowers.ChromeUtils.import(
     "resource://gre/modules/ExtensionProcessScript.jsm"
   );
   let ext = ExtensionProcessScript.getExtensionChild(extension.id);
@@ -69,6 +68,7 @@ add_task(async function test_contentscript_cache() {
   if (appinfo.processType === appinfo.PROCESS_TYPE_CONTENT) {
     /* globals addMessageListener, assert */
     chromeScript = SpecialPowers.loadChromeScript(() => {
+      /* eslint-env mozilla/chrome-script */
       addMessageListener("check-script-cache", extensionId => {
         const { ExtensionProcessScript } = ChromeUtils.import(
           "resource://gre/modules/ExtensionProcessScript.jsm"

@@ -47,7 +47,7 @@ DOM4_MSG_DEF(ConstraintError, "A mutation operation in the transaction failed be
 DOM4_MSG_DEF(ConstraintError, "Object store renamed to an already existing object store.", NS_ERROR_DOM_INDEXEDDB_RENAME_OBJECT_STORE_ERR)
 DOM4_MSG_DEF(ConstraintError, "Index already exists and a new one was being attempted to be created.", NS_ERROR_DOM_INDEXEDDB_RENAME_INDEX_ERR)
 DOM4_MSG_DEF(DataError, "Data provided to an operation does not meet requirements.", NS_ERROR_DOM_INDEXEDDB_DATA_ERR)
-DOM4_MSG_DEF(DataError, "No key or key range specified.", NS_ERROR_DOM_INDEXEDDB_KEY_ERR)
+DOM4_MSG_DEF(DataError, "No valid key or key range specified.", NS_ERROR_DOM_INDEXEDDB_KEY_ERR)
 DOM4_MSG_DEF(TransactionInactiveError, "A request was placed against a transaction which is currently not active, or which is finished.", NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR)
 DOM4_MSG_DEF(ReadOnlyError, "A mutation operation was attempted in a READ_ONLY transaction.", NS_ERROR_DOM_INDEXEDDB_READ_ONLY_ERR)
 DOM4_MSG_DEF(VersionError, "The operation failed because the stored database is a higher version than the version requested.", NS_ERROR_DOM_INDEXEDDB_VERSION_ERR)
@@ -55,11 +55,7 @@ DOM4_MSG_DEF(VersionError, "The operation failed because the stored database is 
 DOM4_MSG_DEF(NotFoundError, "The operation failed because the requested database object could not be found. For example, an object store did not exist but was being opened.", NS_ERROR_DOM_INDEXEDDB_NOT_FOUND_ERR)
 DOM4_MSG_DEF(InvalidStateError, "A mutation operation was attempted on a database that did not allow mutations.", NS_ERROR_DOM_INDEXEDDB_NOT_ALLOWED_ERR)
 DOM4_MSG_DEF(AbortError, "A request was aborted, for example through a call to IDBTransaction.abort.", NS_ERROR_DOM_INDEXEDDB_ABORT_ERR)
-DOM4_MSG_DEF(TimeoutError, "A lock for the transaction could not be obtained in a reasonable time.", NS_ERROR_DOM_INDEXEDDB_TIMEOUT_ERR)
 DOM4_MSG_DEF(QuotaExceededError, "The current transaction exceeded its quota limitations.", NS_ERROR_DOM_INDEXEDDB_QUOTA_ERR)
-
-/* A Non-standard IndexedDB error */
-DOM_MSG_DEF(NS_ERROR_DOM_INDEXEDDB_RECOVERABLE_ERR, "The operation failed because the database was prevented from taking an action. The operation might be able to succeed if the application performs some recovery steps and retries the entire transaction. For example, there was not enough remaining storage space, or the storage quota was reached and the user declined to give more space to the database.")
 
 /* FileSystem DOM errors. */
 DOM4_MSG_DEF(InvalidAccessError, "Invalid file system path.", NS_ERROR_DOM_FILESYSTEM_INVALID_PATH_ERR)
@@ -71,15 +67,8 @@ DOM4_MSG_DEF(UnknownError, "The operation failed for reasons unrelated to the fi
 
 /* DOM error codes defined by us */
 
-/* XXX string should be specified by norris */
-DOM_MSG_DEF(NS_ERROR_DOM_SECMAN_ERR, "Unable to obtain security manager")
 DOM_MSG_DEF(NS_ERROR_DOM_WRONG_TYPE_ERR, "Object is of wrong type")
-DOM_MSG_DEF(NS_ERROR_DOM_NOT_OBJECT_ERR, "Parameter is not an object")
-DOM_MSG_DEF(NS_ERROR_DOM_NOT_XPC_OBJECT_ERR, "Parameter is not a XPConnect object")
 DOM_MSG_DEF(NS_ERROR_DOM_NOT_NUMBER_ERR, "Parameter is not a number")
-DOM_MSG_DEF(NS_ERROR_DOM_NOT_BOOLEAN_ERR, "Parameter is not a boolean")
-DOM_MSG_DEF(NS_ERROR_DOM_NOT_FUNCTION_ERR, "Parameter is not a Function")
-DOM_MSG_DEF(NS_ERROR_DOM_TOO_FEW_PARAMETERS_ERR, "Too few parameters to method")
 DOM_MSG_DEF(NS_ERROR_DOM_PROP_ACCESS_DENIED, "Access to property denied")
 DOM_MSG_DEF(NS_ERROR_DOM_XPCONNECT_ACCESS_DENIED, "Access to XPConnect service denied")
 DOM_MSG_DEF(NS_ERROR_DOM_BAD_URI, "Access to restricted URI denied")
@@ -104,7 +93,6 @@ DOM_MSG_DEF(NS_ERROR_UNEXPECTED                    , "Unexpected error")
 DOM_MSG_DEF(NS_ERROR_OUT_OF_MEMORY                 , "Out of Memory")
 DOM_MSG_DEF(NS_ERROR_ILLEGAL_VALUE                 , "Illegal value")
 DOM_MSG_DEF(NS_ERROR_INVALID_ARG                   , "Invalid argument")
-DOM_MSG_DEF(NS_ERROR_NO_AGGREGATION                , "Component does not support aggregation")
 DOM_MSG_DEF(NS_ERROR_NOT_AVAILABLE                 , "Component is not available")
 DOM_MSG_DEF(NS_ERROR_FACTORY_NOT_REGISTERED        , "Factory not registered")
 DOM_MSG_DEF(NS_ERROR_FACTORY_NOT_LOADED            , "Factory not loaded")
@@ -120,13 +108,11 @@ DOM4_MSG_DEF(AbortError, "A request was aborted, for example through a call to F
 DOM4_MSG_DEF(QuotaExceededError, "The current file handle exceeded its quota limitations.", NS_ERROR_DOM_FILEHANDLE_QUOTA_ERR)
 
 /* Push API errors. */
-DOM4_MSG_DEF(InvalidStateError, "Invalid service worker registration.", NS_ERROR_DOM_PUSH_INVALID_REGISTRATION_ERR)
 DOM4_MSG_DEF(NotAllowedError, "User denied permission to use the Push API.", NS_ERROR_DOM_PUSH_DENIED_ERR)
 DOM4_MSG_DEF(AbortError, "Error retrieving push subscription.", NS_ERROR_DOM_PUSH_ABORT_ERR)
 DOM4_MSG_DEF(NetworkError, "Push service unreachable.", NS_ERROR_DOM_PUSH_SERVICE_UNREACHABLE)
 DOM4_MSG_DEF(InvalidAccessError, "Invalid raw ECDSA P-256 public key.", NS_ERROR_DOM_PUSH_INVALID_KEY_ERR)
 DOM4_MSG_DEF(InvalidStateError, "A subscription with a different application server key already exists.", NS_ERROR_DOM_PUSH_MISMATCHED_KEY_ERR)
-DOM4_MSG_DEF(InvalidStateError, "GCM service disabled.", NS_ERROR_DOM_PUSH_GCM_DISABLED)
 
 /* Media errors */
 DOM4_MSG_DEF(AbortError,        "The fetching process for the media resource was aborted by the user agent at the user's request.", NS_ERROR_DOM_MEDIA_ABORT_ERR)

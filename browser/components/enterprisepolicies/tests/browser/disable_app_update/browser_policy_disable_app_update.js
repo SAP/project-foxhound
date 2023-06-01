@@ -3,8 +3,8 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.sys.mjs",
 });
 
 var updateService = Cc["@mozilla.org/updates/update-service;1"].getService(
@@ -55,6 +55,15 @@ add_task(async function test_update_about_ui() {
     aboutDialog.gAppUpdater.selectedPanel.id,
     panelId,
     "The About Dialog panel Id should equal " + panelId
+  );
+
+  // Make sure that we still remain on the "disabled by policy" panel after
+  // `AppUpdater.stop()` is called.
+  aboutDialog.gAppUpdater._appUpdater.stop();
+  is(
+    aboutDialog.gAppUpdater.selectedPanel.id,
+    panelId,
+    "The About Dialog panel Id should still equal " + panelId
   );
 
   aboutDialog.close();

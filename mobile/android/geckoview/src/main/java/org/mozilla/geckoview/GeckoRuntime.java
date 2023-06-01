@@ -23,6 +23,7 @@ import android.os.Parcel;
 import android.os.Parcelable;
 import android.os.Process;
 import android.provider.Settings;
+import android.text.format.DateFormat;
 import android.util.Log;
 import androidx.annotation.AnyThread;
 import androidx.annotation.NonNull;
@@ -96,19 +97,6 @@ public final class GeckoRuntime implements Parcelable {
   public static final String EXTRA_EXTRAS_PATH = "extrasPath";
 
   /**
-   * This is a key for extra data sent with {@link #ACTION_CRASHED}. The value is a boolean
-   * indicating whether or not the crash was fatal or not. If true, the main application process was
-   * affected by the crash. If false, only an internal process used by Gecko has crashed and the
-   * application may be able to recover.
-   *
-   * @see GeckoSession.ContentDelegate#onCrash(GeckoSession)
-   * @deprecated use {@link #EXTRA_CRASH_PROCESS_TYPE} instead.
-   */
-  @Deprecated
-  @DeprecationSchedule(id = "crashreporter-fatal", version = 100)
-  public static final String EXTRA_CRASH_FATAL = "fatal";
-
-  /**
    * This is a key for extra data sent with {@link #ACTION_CRASHED}. The value is a String matching
    * one of the `CRASHED_PROCESS_TYPE_*` constants, describing what type of process the crash
    * occurred in.
@@ -172,15 +160,23 @@ public final class GeckoRuntime implements Parcelable {
         GeckoThread.onResume();
       }
       mPaused = false;
+      // Can resume location services, checks if was in use before going to background
+      GeckoAppShell.resumeLocation();
       // Monitor network status and send change notifications to Gecko
       // while active.
       GeckoNetworkManager.getInstance().start(GeckoAppShell.getApplicationContext());
+
+      // Set settings that may have changed between last app opening
+      GeckoAppShell.setIs24HourFormat(
+          DateFormat.is24HourFormat(GeckoAppShell.getApplicationContext()));
     }
 
     @OnLifecycleEvent(Lifecycle.Event.ON_PAUSE)
     void onPause() {
       Log.d(LOGTAG, "Lifecycle: onPause");
       mPaused = true;
+      // Pause listening for locations when in background
+      GeckoAppShell.pauseLocation();
       // Stop monitoring network status while inactive.
       GeckoNetworkManager.getInstance().stop();
       GeckoThread.onPause();
@@ -259,6 +255,7 @@ public final class GeckoRuntime implements Parcelable {
    * @param url validated Url being requested to be opened in a new window.
    * @return SessionID to use for the request.
    */
+  @SuppressLint("WrongThread") // for .isOpen() which is called on the UI thread
   @WrapForJNI(calledFrom = "gecko")
   private static @NonNull GeckoResult<String> serviceWorkerOpenWindow(final @NonNull String url) {
     if (sRuntime != null && sRuntime.mServiceWorkerDelegate != null) {
@@ -273,12 +270,10 @@ public final class GeckoRuntime implements Parcelable {
                     session -> {
                       if (session != null) {
                         if (!session.isOpen()) {
-                          result.completeExceptionally(
-                              new RuntimeException("Returned GeckoSession must be open."));
-                        } else {
-                          session.loadUri(url);
-                          result.complete(session.getId());
+                          session.open(sRuntime);
                         }
+                        session.loadUri(url);
+                        result.complete(session.getId());
                       } else {
                         result.complete(null);
                       }
@@ -319,12 +314,26 @@ public final class GeckoRuntime implements Parcelable {
             mDelegate.onShutdown();
             EventDispatcher.getInstance()
                 .unregisterUiThreadListener(mEventListener, "Gecko:Exited");
+          } else if ("GeckoView:Test:NewTab".equals(event)) {
+            final String url = message.getString("url", "about:blank");
+            serviceWorkerOpenWindow(url)
+                .then(
+                    (GeckoResult.OnValueListener<String, Void>)
+                        value -> {
+                          callback.sendSuccess(value);
+                          return null;
+                        })
+                .exceptionally(
+                    (GeckoResult.OnExceptionListener<Void>)
+                        error -> {
+                          callback.sendError(error + " Could not open tab.");
+                          return null;
+                        });
           } else if ("GeckoView:ChildCrashReport".equals(event) && crashHandler != null) {
             final Context context = GeckoAppShell.getApplicationContext();
             final Intent i = new Intent(ACTION_CRASHED, null, context, crashHandler);
             i.putExtra(EXTRA_MINIDUMP_PATH, message.getString(EXTRA_MINIDUMP_PATH));
             i.putExtra(EXTRA_EXTRAS_PATH, message.getString(EXTRA_EXTRAS_PATH));
-            i.putExtra(EXTRA_CRASH_FATAL, message.getBoolean(EXTRA_CRASH_FATAL, true));
             i.putExtra(EXTRA_CRASH_PROCESS_TYPE, message.getString(EXTRA_CRASH_PROCESS_TYPE));
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -430,9 +439,8 @@ public final class GeckoRuntime implements Parcelable {
             .build();
 
     if (info.xpcshell
-        && (!BuildConfig.DEBUG
-            || !"org.mozilla.geckoview.test_runner"
-                .equals(context.getApplicationContext().getPackageName()))) {
+        && !"org.mozilla.geckoview.test_runner"
+            .equals(context.getApplicationContext().getPackageName())) {
       throw new IllegalArgumentException("Only the test app can run -xpcshell.");
     }
 
@@ -454,7 +462,8 @@ public final class GeckoRuntime implements Parcelable {
     mSettings = settings;
 
     // Bug 1453062 -- the EventDispatcher should really live here (or in GeckoThread)
-    EventDispatcher.getInstance().registerUiThreadListener(mEventListener, "Gecko:Exited");
+    EventDispatcher.getInstance()
+        .registerUiThreadListener(mEventListener, "Gecko:Exited", "GeckoView:Test:NewTab");
 
     // Attach and commit settings.
     mSettings.attachTo(this);
@@ -919,16 +928,18 @@ public final class GeckoRuntime implements Parcelable {
           final OrientationController.OrientationDelegate delegate =
               getOrientationController().getDelegate();
           if (delegate == null) {
-            res.complete(false);
-          } else {
-            final GeckoResult<AllowOrDeny> response =
-                delegate.onOrientationLock(toAndroidOrientation(aOrientation));
-            if (response == null) {
-              res.complete(false);
-            } else {
-              res.completeFrom(response.map(v -> v == AllowOrDeny.ALLOW));
-            }
+            // Delegate is not set
+            res.completeExceptionally(new Exception("Not supported"));
+            return;
           }
+          final GeckoResult<AllowOrDeny> response =
+              delegate.onOrientationLock(toAndroidOrientation(aOrientation));
+          if (response == null) {
+            // Delegate is default. So lock orientation is not implemented
+            res.completeExceptionally(new Exception("Not supported"));
+            return;
+          }
+          res.completeFrom(response.map(v -> v == AllowOrDeny.ALLOW));
         });
     return res;
   }

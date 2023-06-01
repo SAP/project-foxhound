@@ -21,8 +21,11 @@
 #include "gc/Heap-inl.h"
 
 #include "gc/GCLock.h"
+#include "gc/Memory.h"
 #include "jit/Assembler.h"
+#include "vm/BigIntType.h"
 #include "vm/RegExpShared.h"
+#include "vm/Scope.h"
 
 #include "gc/ArenaList-inl.h"
 #include "gc/PrivateIterators-inl.h"
@@ -190,14 +193,10 @@ FreeLists::FreeLists() {
 
 ArenaLists::ArenaLists(Zone* zone)
     : zone_(zone),
-      freeLists_(zone),
-      arenaLists_(zone),
-      collectingArenaLists_(zone),
-      incrementalSweptArenaKind(zone, AllocKind::LIMIT),
-      incrementalSweptArenas(zone),
-      gcCompactPropMapArenasToUpdate(zone, nullptr),
-      gcNormalPropMapArenasToUpdate(zone, nullptr),
-      savedEmptyArenas(zone, nullptr) {
+      incrementalSweptArenaKind(AllocKind::LIMIT),
+      gcCompactPropMapArenasToUpdate(nullptr),
+      gcNormalPropMapArenasToUpdate(nullptr),
+      savedEmptyArenas(nullptr) {
   for (auto i : AllAllocKinds()) {
     concurrentUse(i) = ConcurrentUse::None;
   }

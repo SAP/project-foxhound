@@ -21,11 +21,9 @@ class CompositorWidget;
 }  // namespace widget
 namespace gl {
 
-RefPtr<GLLibraryEGL> DefaultEglLibrary(nsACString* const out_failureId);
-
 inline std::shared_ptr<EglDisplay> DefaultEglDisplay(
     nsACString* const out_failureId) {
-  const auto lib = DefaultEglLibrary(out_failureId);
+  const auto lib = GLLibraryEGL::Get(out_failureId);
   if (!lib) {
     return nullptr;
   }
@@ -39,12 +37,13 @@ class GLContextEGL final : public GLContext {
   MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(GLContextEGL, override)
 
   static RefPtr<GLContextEGL> CreateGLContext(
-      std::shared_ptr<EglDisplay>, const GLContextDesc&, EGLConfig config,
-      EGLSurface surface, const bool useGles, nsACString* const out_failureId);
+      std::shared_ptr<EglDisplay>, const GLContextDesc&,
+      EGLConfig surfaceConfig, EGLSurface surface, const bool useGles,
+      EGLConfig contextConfig, nsACString* const out_failureId);
 
  private:
   GLContextEGL(std::shared_ptr<EglDisplay>, const GLContextDesc&,
-               EGLConfig config, EGLSurface surface, EGLContext context);
+               EGLConfig surfaceConfig, EGLSurface surface, EGLContext context);
   ~GLContextEGL();
 
  public:
@@ -102,12 +101,12 @@ class GLContextEGL final : public GLContext {
 
   void Destroy();
 
-  static RefPtr<GLContextEGL> CreateEGLPBufferOffscreenContext(
+  static RefPtr<GLContextEGL> CreateWithoutSurface(
       std::shared_ptr<EglDisplay>, const GLContextCreateDesc&,
-      const gfx::IntSize& size, nsACString* const out_FailureId);
-  static RefPtr<GLContextEGL> CreateEGLPBufferOffscreenContextImpl(
-      std::shared_ptr<EglDisplay>, const GLContextCreateDesc&,
-      const gfx::IntSize& size, bool aUseGles, nsACString* const out_FailureId);
+      nsACString* const out_FailureId);
+  static RefPtr<GLContextEGL> CreateEGLSurfacelessContext(
+      const std::shared_ptr<EglDisplay> display,
+      const GLContextCreateDesc& desc, nsACString* const out_failureId);
 
   static EGLSurface CreateEGLSurfaceForCompositorWidget(
       widget::CompositorWidget* aCompositorWidget, const EGLConfig aConfig);
@@ -124,7 +123,7 @@ class GLContextEGL final : public GLContext {
 
  public:
   const std::shared_ptr<EglDisplay> mEgl;
-  const EGLConfig mConfig;
+  const EGLConfig mSurfaceConfig;
   const EGLContext mContext;
 
  protected:
@@ -146,8 +145,10 @@ class GLContextEGL final : public GLContext {
       EglDisplay&, EGLConfig, EGLenum bindToTextureFormat,
       gfx::IntSize& pbsize);
 
+#ifdef MOZ_WAYLAND
   static EGLSurface CreateWaylandBufferSurface(EglDisplay&, EGLConfig,
                                                gfx::IntSize& pbsize);
+#endif
 
  public:
   EGLSurface CreateCompatibleSurface(void* aWindow) const;

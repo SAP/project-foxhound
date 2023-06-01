@@ -6,6 +6,8 @@
 
 "use strict";
 
+/* global workerHelper */
+/* exported workerHelper */
 (function(root, factory) {
   if (typeof define === "function" && define.amd) {
     define(factory);
@@ -132,5 +134,5 @@
     };
   }
 
-  return { createTask: createTask };
+  return { createTask };
 });

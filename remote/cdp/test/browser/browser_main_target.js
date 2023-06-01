@@ -27,10 +27,22 @@ add_task(async function({ CDP }) {
     const { isHeadless } = Cc["@mozilla.org/gfx/info;1"].getService(
       Ci.nsIGfxInfo
     );
-    const expectedProduct = isHeadless
-      ? "Headless Firefox"
-      : Services.appinfo.name;
+    const expectedProduct =
+      (isHeadless ? "Headless" : "") +
+      `${Services.appinfo.name}/${Services.appinfo.version}`;
     is(version.product, expectedProduct, "Browser.getVersion works");
+
+    is(
+      version.revision,
+      Services.appinfo.sourceURL.split("/").pop(),
+      "Browser.getVersion().revision is correct"
+    );
+
+    is(
+      version.jsVersion,
+      Services.appinfo.version,
+      "Browser.getVersion().jsVersion is correct"
+    );
 
     const { webSocketDebuggerUrl } = await CDP.Version();
     is(

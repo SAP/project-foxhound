@@ -42,12 +42,11 @@ Defaults to 120 (activity), 1200 (inactivity).
 
 `MOZ_GLEAN_ANDROID`
 
-If set, recording Glean metrics are a no-op. Glean will not be initialized.
-Only set on Android.
-This define will be removed after we sort out how Android and Geckoview will work
-(see [bug 1670261](https://bugzilla.mozilla.org/show_bug.cgi?id=1670261)).
-It can be queried in C++ via `#ifndef MOZ_GLEAN_ANDROID`,
-and in JS via `AppConstants.MOZ_GLEAN_ANDROID`.
+If set, the Glean SDK is assumed to be managed by something other than FOG, meaning:
+* [GIFFT][gifft] is disabled.
+* Custom Pings cannot be submitted via C++ or JS
+* FOG doesn't initialize Glean
+* FOG doesn't relay (in)activity or experiment annotations to Glean
 
 `MOZILLA_OFFICIAL`
 
@@ -64,7 +63,28 @@ This mode can be overridden at runtime in two ways:
   then pings are sent to a server operating locally at that port
   (even if the ping has a Debug Tag), to enable testing.
 
+Also, if set, [JOG](./jog) is disabled.
+Artifact builds will not exhibit changes to their Glean metrics.
+
 `MOZILLA_OFFICIAL` tends to be set on most builds released to users,
 including builds distributed by Linux distributions.
 It tends to not be set on local developer builds.
 See [bug 1680025](https://bugzilla.mozilla.org/show_bug.cgi?id=1680025) for details.
+
+`COMPILE_ENVIRONMENT`
+
+If `COMPILE_ENVIRONMENT` isn't set in the build config,
+[JOG](./jog) will generate a file for the runtime-registration of metrics and pings.
+This is to support [Artifact Builds](/contributing/build/artifact_builds).
+
+`OS_TARGET`
+
+If not set to `'Android'` we set a `glean_million_queue` Rust feature
+([see gkrust-features.mozbuild][gkrust-features])
+which, when passed to the Glean SDK,
+opts us into a preinit queue that doesn't discard tasks until there are 10^6 of them.
+
+See [bug 1797494](https://bugzilla.mozilla.org/show_bug.cgi?id=1797494) for details.
+
+[gkrust-features]: https://searchfox.org/mozilla-central/source/toolkit/library/rust/gkrust-features.mozbuild
+[gifft]: ../user/gifft

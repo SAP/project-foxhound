@@ -20,7 +20,8 @@ class MozlintParser(ArgumentParser):
                 "default": None,
                 "help": "Paths to file or directories to lint, like "
                 "'browser/components/loop' or 'mobile/android'. "
-                "Defaults to the current directory if not given.",
+                "If not provided, defaults to the files changed according "
+                "to --outgoing and --workdir.",
             },
         ],
         [
@@ -45,10 +46,13 @@ class MozlintParser(ArgumentParser):
         [
             ["-W", "--warnings"],
             {
+                "const": True,
+                "nargs": "?",
+                "choices": ["soft"],
                 "dest": "show_warnings",
-                "default": False,
-                "action": "store_true",
-                "help": "Display and fail on warnings in addition to errors.",
+                "help": "Display and fail on warnings in addition to errors. "
+                "--warnings=soft can be used to report warnings but only fail "
+                "on errors.",
             },
         ],
         [
@@ -322,6 +326,7 @@ def run(
     list_linters=False,
     num_procs=None,
     virtualenv_manager=None,
+    setupargs=None,
     **lintargs
 ):
     from mozlint import LintRoller, formatters
@@ -346,7 +351,7 @@ def run(
         )
         return 0
 
-    lint = LintRoller(**lintargs)
+    lint = LintRoller(setupargs=setupargs or {}, **lintargs)
     linters_info = find_linters(lintargs["config_paths"], linters)
 
     result = None
@@ -419,6 +424,9 @@ def run(
                 fh.buffer.flush()
             else:
                 print(out, file=fh)
+
+            if path:
+                fh.close()
 
     return result.returncode
 

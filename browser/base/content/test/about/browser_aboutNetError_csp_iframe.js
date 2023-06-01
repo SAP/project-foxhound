@@ -4,6 +4,7 @@
 "use strict";
 
 const BLOCKED_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.org:8000/browser/browser/base/content/test/about/csp_iframe.sjs";
 
 add_task(async function test_csp() {
@@ -38,6 +39,7 @@ async function setupPage(htmlPageName, blockedPage) {
   let iFramePage =
     getRootDirectory(gTestPath).replace(
       "chrome://mochitests/content",
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
       "http://example.com"
     ) + htmlPageName;
 
@@ -72,7 +74,7 @@ async function setupPage(htmlPageName, blockedPage) {
     true
   );
 
-  BrowserTestUtils.loadURI(browser, iFramePage);
+  BrowserTestUtils.loadURIString(browser, iFramePage);
   await browserLoaded;
   info("The error page has loaded!");
 
@@ -95,8 +97,8 @@ async function setupPage(htmlPageName, blockedPage) {
   await SpecialPowers.spawn(iframe, [], async function() {
     let doc = content.document;
 
-    // aboutNetError.js is using async localization to format several messages
-    // and in result the translation may be applied later.
+    // aboutNetError.mjs is using async localization to format several
+    // messages and in result the translation may be applied later.
     // We want to return the textContent of the element only after
     // the translation completes, so let's wait for it here.
     let elements = [

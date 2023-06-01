@@ -59,7 +59,14 @@ bool RDDChild::Init() {
 
   nsTArray<GfxVarUpdate> updates = gfxVars::FetchNonDefaultVars();
 
-  SendInit(updates, brokerFd, Telemetry::CanRecordReleaseData());
+  bool isReadyForBackgroundProcessing = false;
+#if defined(XP_WIN)
+  RefPtr<DllServices> dllSvc(DllServices::Get());
+  isReadyForBackgroundProcessing = dllSvc->IsReadyForBackgroundProcessing();
+#endif
+
+  SendInit(updates, brokerFd, Telemetry::CanRecordReleaseData(),
+           isReadyForBackgroundProcessing);
 
   Unused << SendInitProfiler(ProfilerParent::CreateForProcess(OtherPid()));
 
@@ -135,7 +142,7 @@ mozilla::ipc::IPCResult RDDChild::RecvGetModulesTrust(
 #endif  // defined(XP_WIN)
 
 mozilla::ipc::IPCResult RDDChild::RecvUpdateMediaCodecsSupported(
-    const PDMFactory::MediaCodecsSupported& aSupported) {
+    const media::MediaCodecsSupported& aSupported) {
   dom::ContentParent::BroadcastMediaCodecsSupportedUpdate(
       RemoteDecodeIn::RddProcess, aSupported);
   return IPC_OK();

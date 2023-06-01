@@ -9,6 +9,7 @@ async function testAction(manifest_version) {
       manifest_version,
       [action]: {
         default_popup: "popup.html",
+        default_area: "navbar",
         unrecognized_property: "with-a-random-value",
       },
       icons: { 32: "icon.png" },
@@ -67,12 +68,15 @@ async function testAction(manifest_version) {
   await extension.startup();
   ExtensionTestUtils.failOnSchemaWarnings(true);
 
+  let widgetGroup = getBrowserActionWidget(extension);
+  ok(widgetGroup.webExtension, "The extension property was set.");
+
   // Do this a few times to make sure the pop-up is reloaded each time.
   for (let i = 0; i < 3; i++) {
     clickBrowserAction(extension);
 
-    let widget = getBrowserActionWidget(extension).forWindow(window);
-    let image = getComputedStyle(widget.node).listStyleImage;
+    let widget = widgetGroup.forWindow(window);
+    let image = getComputedStyle(widget.node.firstElementChild).listStyleImage;
 
     ok(image.includes("/icon.png"), "The extension's icon is used");
     await extension.awaitMessage("popup");
@@ -86,7 +90,7 @@ async function testAction(manifest_version) {
   await waitForConsole;
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [["extensions.manifestV3.enabled", true]],
   });

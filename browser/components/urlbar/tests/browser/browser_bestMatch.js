@@ -1,7 +1,13 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-// Tests best match rows in the view.
+// Tests best match rows in the view. See also:
+//
+// browser_quicksuggest_bestMatch.js
+//   UI test for quick suggest best matches specifically
+// test_quicksuggest_bestMatch.js
+//   Tests triggering quick suggest best matches and things that don't depend on
+//   the view
 
 "use strict";
 
@@ -26,7 +32,7 @@ add_task(async function nonsponsoredHelpButton() {
       window,
       value: "test",
     });
-    await checkBestMatchRow({ result, hasHelpButton: true });
+    await checkBestMatchRow({ result, hasHelpUrl: true });
     await UrlbarTestUtils.promisePopupClose(window);
   });
 });
@@ -55,7 +61,69 @@ add_task(async function sponsoredHelpButton() {
       window,
       value: "test",
     });
-    await checkBestMatchRow({ result, isSponsored: true, hasHelpButton: true });
+    await checkBestMatchRow({ result, isSponsored: true, hasHelpUrl: true });
+    await UrlbarTestUtils.promisePopupClose(window);
+  });
+});
+
+// Tests keyboard selection.
+add_task(async function keySelection() {
+  let result = makeBestMatchResult({
+    isSponsored: true,
+    helpUrl: "https://example.com/help",
+  });
+
+  await withProvider(result, async () => {
+    // Ordered list of class names of the elements that should be selected.
+    let expectedClassNames = [
+      "urlbarView-row-inner",
+      UrlbarPrefs.get("resultMenu")
+        ? "urlbarView-button-menu"
+        : "urlbarView-button-help",
+    ];
+
+    await UrlbarTestUtils.promiseAutocompleteResultPopup({
+      window,
+      value: "test",
+    });
+    await checkBestMatchRow({
+      result,
+      isSponsored: true,
+      hasHelpUrl: true,
+    });
+
+    // Test with the tab key in order vs. reverse order.
+    for (let reverse of [false, true]) {
+      info("Doing TAB key selection: " + JSON.stringify({ reverse }));
+
+      let classNames = [...expectedClassNames];
+      if (reverse) {
+        classNames.reverse();
+      }
+
+      let sendKey = () => {
+        EventUtils.synthesizeKey("KEY_Tab", { shiftKey: reverse });
+      };
+
+      // Move selection through each expected element.
+      for (let className of classNames) {
+        info("Expecting selection: " + className);
+        sendKey();
+        Assert.ok(gURLBar.view.isOpen, "View remains open");
+        let { selectedElement } = gURLBar.view;
+        Assert.ok(selectedElement, "Selected element exists");
+        Assert.ok(
+          selectedElement.classList.contains(className),
+          "Expected element is selected"
+        );
+      }
+      sendKey();
+      Assert.ok(
+        gURLBar.view.isOpen,
+        "View remains open after keying through best match row"
+      );
+    }
+
     await UrlbarTestUtils.promisePopupClose(window);
   });
 });
@@ -63,7 +131,7 @@ add_task(async function sponsoredHelpButton() {
 async function checkBestMatchRow({
   result,
   isSponsored = false,
-  hasHelpButton = false,
+  hasHelpUrl = false,
 }) {
   Assert.equal(
     UrlbarTestUtils.getResultCount(window),
@@ -114,16 +182,21 @@ async function checkBestMatchRow({
     );
   }
 
-  let helpButton = row._elements.get("helpButton");
+  let button = row._buttons.get(
+    UrlbarPrefs.get("resultMenu") ? "menu" : "help"
+  );
   Assert.equal(
     !!result.payload.helpUrl,
-    hasHelpButton,
-    "Sanity check: Row's expected hasHelpButton matches result"
+    hasHelpUrl,
+    "Sanity check: Row's expected hasHelpUrl matches result"
   );
-  if (hasHelpButton) {
-    Assert.ok(helpButton, "Row with helpUrl has a helpButton");
+  if (hasHelpUrl) {
+    Assert.ok(button, "Row with helpUrl has a help or menu button");
   } else {
-    Assert.ok(!helpButton, "Row without helpUrl does not have a helpButton");
+    Assert.ok(
+      !button,
+      "Row without helpUrl does not have a help or menu button"
+    );
   }
 }
 

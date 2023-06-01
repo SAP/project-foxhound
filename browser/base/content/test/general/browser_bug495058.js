@@ -13,7 +13,7 @@ const URIS = [
 add_task(async function() {
   for (let uri of URIS) {
     let tab = BrowserTestUtils.addTab(gBrowser);
-    BrowserTestUtils.loadURI(tab.linkedBrowser, uri);
+    BrowserTestUtils.loadURIString(tab.linkedBrowser, uri);
     await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
     let win = gBrowser.replaceTabWithWindow(tab);
@@ -47,7 +47,7 @@ add_task(async function() {
     Assert.equal(
       win.document.activeElement,
       expectedActiveElement,
-      uri + ": the active element is expected"
+      `${uri}: the active element is expected: ${win.document.activeElement?.nodeName}`
     );
     Assert.equal(win.gURLBar.value, "", uri + ": urlbar is empty");
     Assert.ok(win.gURLBar.placeholder, uri + ": placeholder text is present");

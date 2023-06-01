@@ -2,25 +2,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import argparse
 import logging
 import os
-import sys
 import subprocess
+import sys
 
-from mach.decorators import (
-    CommandArgument,
-    Command,
-    SettingsProvider,
-    SubCommand,
-)
-
-from mozbuild.base import (
-    BuildEnvironmentNotFoundException,
-    MachCommandConditions as conditions,
-)
+import requests
+from mach.decorators import Command, CommandArgument, SettingsProvider, SubCommand
+from mozbuild.base import BuildEnvironmentNotFoundException
+from mozbuild.base import MachCommandConditions as conditions
 
 UNKNOWN_TEST = """
 I was unable to find tests from the given argument(s).
@@ -173,8 +164,9 @@ def addtest(
     editor=MISSING_ARG,
     **kwargs,
 ):
-    import addtest
     import io
+
+    import addtest
     from moztest.resolve import TEST_SUITES
 
     if not suite and not test:
@@ -381,10 +373,13 @@ def test(command_context, what, extra_args, **log_args):
     Do not forget the - (minus sign) after --log-grouped!
 
     `./mach test --log-grouped - devtools/client/shared/redux/middleware/xpcshell/`
+
+    To learn more about arguments for each test type/flavor/harness, please run
+    `./mach <test-harness> --help`. For example, `./mach mochitest --help`.
     """
     from mozlog.commandline import setup_logging
     from mozlog.handlers import StreamHandler
-    from moztest.resolve import get_suite_definition, TestResolver, TEST_SUITES
+    from moztest.resolve import TEST_SUITES, TestResolver, get_suite_definition
 
     resolver = command_context._spawn(TestResolver)
     run_suites, run_tests = resolver.resolve_metadata(what)
@@ -505,8 +500,8 @@ def run_cppunit_test(command_context, **params):
 
     if conditions.is_android(command_context):
         from mozrunner.devices.android_device import (
-            verify_android_device,
             InstallIntent,
+            verify_android_device,
         )
 
         verify_android_device(command_context, install=InstallIntent.NO)
@@ -582,6 +577,7 @@ def executable_name(name):
     "jstests",
     category="testing",
     description="Run SpiderMonkey JS tests in the JS shell.",
+    ok_if_tests_disabled=True,
 )
 @CommandArgument("--shell", help="The shell to be used")
 @CommandArgument(
@@ -696,7 +692,6 @@ def get_jsshell_parser():
     description="Run benchmarks in the SpiderMonkey JS shell.",
 )
 def run_jsshelltests(command_context, **kwargs):
-    command_context.activate_virtualenv()
     from jsshell import benchmark
 
     return benchmark.run(**kwargs)
@@ -849,6 +844,11 @@ def test_info_tests(
     help="Include list of manifest annotation conditions in report.",
 )
 @CommandArgument(
+    "--show-testruns",
+    action="store_true",
+    help="Include total number of runs the test has if there are failures.",
+)
+@CommandArgument(
     "--filter-values",
     help="Comma-separated list of value regular expressions to filter on; "
     "displayed tests contain all specified values.",
@@ -868,6 +868,14 @@ def test_info_tests(
 )
 @CommandArgument("--output-file", help="Path to report file.")
 @CommandArgument("--verbose", action="store_true", help="Enable debug logging.")
+@CommandArgument(
+    "--start",
+    default=(date.today() - timedelta(30)).strftime("%Y-%m-%d"),
+    help="Start date (YYYY-MM-DD)",
+)
+@CommandArgument(
+    "--end", default=date.today().strftime("%Y-%m-%d"), help="End date (YYYY-MM-DD)"
+)
 def test_report(
     command_context,
     components,
@@ -883,6 +891,9 @@ def test_report(
     show_components,
     output_file,
     verbose,
+    start,
+    end,
+    show_testruns,
 ):
     import testinfo
     from mozbuild import build_commands
@@ -907,6 +918,9 @@ def test_report(
         filter_keys,
         show_components,
         output_file,
+        start,
+        end,
+        show_testruns,
     )
 
 
@@ -934,6 +948,195 @@ def test_report_diff(command_context, before, after, output_file, verbose):
 
     ti = testinfo.TestInfoReport(verbose)
     ti.report_diff(before, after, output_file)
+
+
+@SubCommand(
+    "test-info",
+    "testrun-report",
+    description="Generate report of number of runs for each test group (manifest)",
+)
+@CommandArgument("--output-file", help="Path to report file.")
+def test_info_testrun_report(command_context, output_file):
+    import json
+
+    import testinfo
+
+    ti = testinfo.TestInfoReport(verbose=True)
+    runcounts = ti.get_runcounts()
+    if output_file:
+        output_file = os.path.abspath(output_file)
+        output_dir = os.path.dirname(output_file)
+        if not os.path.isdir(output_dir):
+            os.makedirs(output_dir)
+        with open(output_file, "w") as f:
+            json.dump(runcounts, f)
+    else:
+        print(runcounts)
+
+
+@SubCommand(
+    "test-info",
+    "failure-report",
+    description="Display failure line groupings and frequencies for "
+    "single tracking intermittent bugs.",
+)
+@CommandArgument(
+    "--start",
+    default=(date.today() - timedelta(30)).strftime("%Y-%m-%d"),
+    help="Start date (YYYY-MM-DD)",
+)
+@CommandArgument(
+    "--end", default=date.today().strftime("%Y-%m-%d"), help="End date (YYYY-MM-DD)"
+)
+@CommandArgument(
+    "--bugid",
+    default=None,
+    help="bugid for treeherder intermittent failures data query.",
+)
+def test_info_failures(
+    command_context,
+    start,
+    end,
+    bugid,
+):
+    # bugid comes in as a string, we need an int:
+    try:
+        bugid = int(bugid)
+    except ValueError:
+        bugid = None
+    if not bugid:
+        print("Please enter a valid bugid (i.e. '1760132')")
+        return
+
+    # get bug info
+    url = (
+        "https://bugzilla.mozilla.org/rest/bug?include_fields=summary,depends_on&id=%s"
+        % bugid
+    )
+    r = requests.get(url, headers={"User-agent": "mach-test-info/1.0"})
+    if r.status_code != 200:
+        print("%s error retrieving url: %s" % (r.status_code, url))
+
+    data = r.json()
+    if not data:
+        print("unable to get bugzilla information for %s" % bugid)
+        return
+
+    summary = data["bugs"][0]["summary"]
+    parts = summary.split("|")
+    if not summary.endswith("single tracking bug") or len(parts) != 2:
+        print("this query only works with single tracking bugs")
+        return
+
+    # get depends_on bugs:
+    buglist = [bugid]
+    if "depends_on" in data["bugs"][0]:
+        buglist.extend(data["bugs"][0]["depends_on"])
+
+    testname = parts[0].strip().split(" ")[-1]
+
+    # now query treeherder to get details about annotations
+    data = []
+    for b in buglist:
+        url = "https://treeherder.mozilla.org/api/failuresbybug/"
+        url += "?startday=%s&endday=%s&tree=trunk&bug=%s" % (start, end, b)
+        r = requests.get(url, headers={"User-agent": "mach-test-info/1.0"})
+        r.raise_for_status()
+
+        bdata = r.json()
+        data.extend(bdata)
+
+    if len(data) == 0:
+        print("no failures were found for given bugid, please ensure bug is")
+        print("accessible via: https://treeherder.mozilla.org/intermittent-failures")
+        return
+
+    # query VCS to get current list of variants:
+    import yaml
+
+    url = "https://hg.mozilla.org/mozilla-central/raw-file/tip/taskcluster/ci/test/variants.yml"
+    r = requests.get(url, headers={"User-agent": "mach-test-info/1.0"})
+    variants = yaml.safe_load(r.text)
+
+    print(
+        "\nQuerying data for bug %s annotated from %s to %s on trunk.\n\n"
+        % (buglist, start, end)
+    )
+    jobs = {}
+    lines = {}
+    for failure in data:
+        # config = platform/buildtype
+        # testsuite (<suite>[-variant][-<chunk>])
+        # lines - group by patterns that contain test name
+        config = "%s/%s" % (failure["platform"], failure["build_type"])
+
+        variant = ""
+        suite = ""
+        varpos = len(failure["test_suite"])
+        for v in variants.keys():
+            var = "-%s" % variants[v]["suffix"]
+            if var in failure["test_suite"]:
+                if failure["test_suite"].find(var) < varpos:
+                    variant = var
+
+        if variant:
+            suite = failure["test_suite"].split(variant)[0]
+
+        parts = failure["test_suite"].split("-")
+        try:
+            int(parts[-1])
+            suite = "-".join(parts[:-1])
+        except ValueError:
+            pass  # if this works, then the last '-X' is a number :)
+
+        if suite == "":
+            print("Error: failure to find variant in %s" % failure["test_suite"])
+
+        job = "%s-%s%s" % (config, suite, variant)
+        if job not in jobs.keys():
+            jobs[job] = 0
+        jobs[job] += 1
+
+        # lines - sum(hash) of all lines where we match testname
+        hvalue = 0
+        for line in failure["lines"]:
+            if len(line.split(testname)) <= 1:
+                continue
+            # strip off timestamp and mozharness status
+            parts = line.split("TEST-UNEXPECTED")
+            l = "TEST-UNEXPECTED%s" % parts[-1]
+
+            # only keep 25 characters of the failure, often longer is random numbers
+            parts = l.split(testname)
+            l = "%s%s%s" % (parts[0], testname, parts[1][:25])
+
+            hvalue += hash(l)
+
+        if not failure["lines"]:
+            hvalue = 1
+
+        if not hvalue:
+            continue
+
+        if hvalue not in lines.keys():
+            lines[hvalue] = {"lines": failure["lines"], "config": []}
+        lines[hvalue]["config"].append(job)
+
+    for h in lines.keys():
+        print("%s errors with:" % (len(lines[h]["config"])))
+        for l in lines[h]["lines"]:
+            print(l)
+        else:
+            print(
+                "... no failure lines recorded in"
+                " https://treeherder.mozilla.org/intermittent-failures ..."
+            )
+
+        for job in jobs:
+            count = len([x for x in lines[h]["config"] if x == job])
+            if count > 0:
+                print("  %s: %s" % (job, count))
+        print("")
 
 
 @Command(

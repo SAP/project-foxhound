@@ -19,8 +19,8 @@ const { AddonManager } = ChromeUtils.import(
 const { AddonStudies } = ChromeUtils.import(
   "resource://normandy/lib/AddonStudies.jsm"
 );
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
 
 /* import-globals-from utils.js */
@@ -58,7 +58,7 @@ decorate_task(
       manifest: {
         version: "1.0",
 
-        applications: {
+        browser_specific_settings: {
           gecko: { id: ID },
         },
 
@@ -227,7 +227,7 @@ decorate_task(
       manifest: {
         version: "1.0",
 
-        applications: {
+        browser_specific_settings: {
           gecko: { id: ID },
         },
       },

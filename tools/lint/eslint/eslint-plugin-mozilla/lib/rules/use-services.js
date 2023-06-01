@@ -11,13 +11,17 @@ const helpers = require("../helpers");
 
 let servicesInterfaceMap = helpers.servicesData;
 
-// -----------------------------------------------------------------------------
-// Rule Definition
-// -----------------------------------------------------------------------------
 module.exports = {
   meta: {
+    docs: {
+      url:
+        "https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint-plugin-mozilla/use-services.html",
+    },
     // fixable: "code",
+    schema: [],
+    type: "suggestion",
   },
+
   create(context) {
     return {
       CallExpression(node) {
@@ -34,10 +38,10 @@ module.exports = {
         ) {
           let serviceName = servicesInterfaceMap[node.arguments[3].value];
 
-          context.report(
+          context.report({
             node,
-            `Use Services.${serviceName} rather than defineLazyServiceGetter.`
-          );
+            message: `Use Services.${serviceName} rather than defineLazyServiceGetter.`,
+          });
           return;
         }
 
@@ -56,10 +60,10 @@ module.exports = {
               let serviceName =
                 servicesInterfaceMap[property.value.elements[1].value];
 
-              context.report(
-                property.value,
-                `Use Services.${serviceName} rather than defineLazyServiceGetters.`
-              );
+              context.report({
+                node: property.value,
+                message: `Use Services.${serviceName} rather than defineLazyServiceGetters.`,
+              });
             }
           }
           return;

@@ -28,6 +28,7 @@
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/SyncRunnable.h"
+#include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsComponentManagerUtils.h"
@@ -46,8 +47,6 @@
 #ifdef DEBUG
 #  include "mozilla/dom/MediaKeys.h"  // MediaKeys::kMediaKeysRequestTopic
 #endif
-
-using mozilla::ipc::Transport;
 
 namespace mozilla::gmp {
 
@@ -346,7 +345,7 @@ RefPtr<GenericPromise> GeckoMediaPluginServiceParent::EnsureInitialized() {
 RefPtr<GetGMPContentParentPromise>
 GeckoMediaPluginServiceParent::GetContentParent(
     GMPCrashHelper* aHelper, const NodeIdVariant& aNodeIdVariant,
-    const nsCString& aAPI, const nsTArray<nsCString>& aTags) {
+    const nsACString& aAPI, const nsTArray<nsCString>& aTags) {
   AssertOnGMPThread();
 
   nsCOMPtr<nsISerialEventTarget> thread(GetGMPThread());
@@ -554,12 +553,14 @@ GeckoMediaPluginServiceParent::PathRunnable::Run() {
   return NS_OK;
 }
 
-void GeckoMediaPluginServiceParent::UpdateContentProcessGMPCapabilities() {
+void GeckoMediaPluginServiceParent::UpdateContentProcessGMPCapabilities(
+    ContentParent* aContentProcess) {
   if (!NS_IsMainThread()) {
-    nsCOMPtr<nsIRunnable> task = NewRunnableMethod(
+    nsCOMPtr<nsIRunnable> task = NewRunnableMethod<ContentParent*>(
         "GeckoMediaPluginServiceParent::UpdateContentProcessGMPCapabilities",
         this,
-        &GeckoMediaPluginServiceParent::UpdateContentProcessGMPCapabilities);
+        &GeckoMediaPluginServiceParent::UpdateContentProcessGMPCapabilities,
+        aContentProcess);
     mMainThread->Dispatch(task.forget());
     return;
   }
@@ -568,6 +569,20 @@ void GeckoMediaPluginServiceParent::UpdateContentProcessGMPCapabilities() {
   typedef mozilla::dom::GMPAPITags GMPAPITags;
   typedef mozilla::dom::ContentParent ContentParent;
 
+  const uint32_t NO_H264 = 0;
+  const uint32_t HAS_H264 = 1;
+  const uint32_t NO_H264_1_DIR = 2;
+  const uint32_t NO_H264_2_PLUS_DIRS = 3;
+  const uint32_t NO_H264_DIR_IN_PROGRESS = 4;
+  uint32_t hasH264 = NO_H264;
+  if (mDirectoriesAdded == 1) {
+    hasH264 = NO_H264_1_DIR;
+  } else if (mDirectoriesAdded > 1) {
+    hasH264 = NO_H264_2_PLUS_DIRS;
+  }
+  if (mDirectoriesInProgress) {
+    hasH264 = NO_H264_DIR_IN_PROGRESS;
+  }
   nsTArray<GMPCapabilityData> caps;
   {
     MutexAutoLock lock(mMutex);
@@ -591,10 +606,23 @@ void GeckoMediaPluginServiceParent::UpdateContentProcessGMPCapabilities() {
       x.version() = gmp->GetVersion();
       for (const GMPCapability& tag : gmp->GetCapabilities()) {
         x.capabilities().AppendElement(GMPAPITags(tag.mAPIName, tag.mAPITags));
+        if (tag.mAPIName == nsLiteralCString(GMP_API_VIDEO_ENCODER) &&
+            tag.mAPITags.Contains("h264"_ns)) {
+          hasH264 = HAS_H264;
+        }
       }
       caps.AppendElement(std::move(x));
     }
   }
+
+  Telemetry::Accumulate(Telemetry::MEDIA_GMP_UPDATE_CONTENT_PROCESS_HAS_H264,
+                        hasH264);
+
+  if (aContentProcess) {
+    Unused << aContentProcess->SendGMPsChanged(caps);
+    return;
+  }
+
   for (auto* cp : ContentParent::AllProcesses(ContentParent::eLive)) {
     Unused << cp->SendGMPsChanged(caps);
   }
@@ -698,6 +726,9 @@ RefPtr<GenericPromise> GeckoMediaPluginServiceParent::AsyncAddPluginDirectory(
     return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
   }
 
+  mDirectoriesAdded++;
+  mDirectoriesInProgress++;
+
   nsString dir(aDirectory);
   RefPtr<GeckoMediaPluginServiceParent> self = this;
   return InvokeAsync(thread, this, __func__,
@@ -710,14 +741,16 @@ RefPtr<GenericPromise> GeckoMediaPluginServiceParent::AsyncAddPluginDirectory(
                 "succeeded",
                 NS_ConvertUTF16toUTF8(dir).get());
             MOZ_ASSERT(NS_IsMainThread());
+            self->mDirectoriesInProgress--;
             self->UpdateContentProcessGMPCapabilities();
             return GenericPromise::CreateAndResolve(aVal, __func__);
           },
-          [dir](nsresult aResult) {
+          [dir, self](nsresult aResult) {
             GMP_LOG_DEBUG(
                 "GeckoMediaPluginServiceParent::AsyncAddPluginDirectory %s "
                 "failed",
                 NS_ConvertUTF16toUTF8(dir).get());
+            self->mDirectoriesInProgress--;
             return GenericPromise::CreateAndReject(aResult, __func__);
           });
 }
@@ -790,7 +823,7 @@ nsresult GeckoMediaPluginServiceParent::EnsurePluginsOnDiskScanned() {
 }
 
 already_AddRefed<GMPParent> GeckoMediaPluginServiceParent::FindPluginForAPIFrom(
-    size_t aSearchStartIndex, const nsCString& aAPI,
+    size_t aSearchStartIndex, const nsACString& aAPI,
     const nsTArray<nsCString>& aTags, size_t* aOutPluginIndex) {
   mMutex.AssertCurrentThreadOwns();
   for (size_t i = aSearchStartIndex; i < mPlugins.Length(); i++) {
@@ -807,7 +840,7 @@ already_AddRefed<GMPParent> GeckoMediaPluginServiceParent::FindPluginForAPIFrom(
 }
 
 already_AddRefed<GMPParent> GeckoMediaPluginServiceParent::SelectPluginForAPI(
-    const nsACString& aNodeId, const nsCString& aAPI,
+    const nsACString& aNodeId, const nsACString& aAPI,
     const nsTArray<nsCString>& aTags) {
   AssertOnGMPThread();
 
@@ -1068,8 +1101,8 @@ GeckoMediaPluginServiceParent::GetStorageDir(nsIFile** aOutFile) {
   return mStorageBaseDir->Clone(aOutFile);
 }
 
-nsresult WriteToFile(nsIFile* aPath, const nsCString& aFileName,
-                     const nsCString& aData) {
+nsresult WriteToFile(nsIFile* aPath, const nsACString& aFileName,
+                     const nsACString& aData) {
   nsCOMPtr<nsIFile> path;
   nsresult rv = aPath->Clone(getter_AddRefs(path));
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -1087,7 +1120,7 @@ nsresult WriteToFile(nsIFile* aPath, const nsCString& aFileName,
     return rv;
   }
 
-  int32_t len = PR_Write(f, aData.get(), aData.Length());
+  int32_t len = PR_Write(f, aData.BeginReading(), aData.Length());
   PR_Close(f);
   if (NS_WARN_IF(len < 0 || (size_t)len != aData.Length())) {
     return NS_ERROR_FAILURE;
@@ -1390,7 +1423,7 @@ bool MatchBaseDomain(nsIFile* aPath, const nsACString& aBaseDomain) {
       return false;
     }
     bool success;
-    rv = NS_HasRootDomain(originHostname, aBaseDomain, &success);
+    rv = net::HasRootDomain(originHostname, aBaseDomain, &success);
     if (NS_SUCCEEDED(rv) && success) {
       return true;
     }
@@ -1489,7 +1522,7 @@ void GeckoMediaPluginServiceParent::ClearNodeIdAndPlugin(
     return;
   }
 
-  for (const nsCString& nodeId : nodeIDsToClear) {
+  for (const nsACString& nodeId : nodeIDsToClear) {
     nsCOMPtr<nsIFile> dirEntry;
     nsresult rv = path->Clone(getter_AddRefs(dirEntry));
     if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -1754,7 +1787,7 @@ GMPServiceParent::~GMPServiceParent() {
 }
 
 mozilla::ipc::IPCResult GMPServiceParent::RecvLaunchGMP(
-    const NodeIdVariant& aNodeIdVariant, const nsCString& aAPI,
+    const NodeIdVariant& aNodeIdVariant, const nsACString& aAPI,
     nsTArray<nsCString>&& aTags, nsTArray<ProcessId>&& aAlreadyBridgedTo,
     uint32_t* aOutPluginId, ProcessId* aOutProcessId,
     nsCString* aOutDisplayName, Endpoint<PGMPContentParent>* aOutEndpoint,
@@ -1822,8 +1855,8 @@ mozilla::ipc::IPCResult GMPServiceParent::RecvLaunchGMP(
 }
 
 mozilla::ipc::IPCResult GMPServiceParent::RecvGetGMPNodeId(
-    const nsString& aOrigin, const nsString& aTopLevelOrigin,
-    const nsString& aGMPName, nsCString* aID) {
+    const nsAString& aOrigin, const nsAString& aTopLevelOrigin,
+    const nsAString& aGMPName, nsCString* aID) {
   nsresult rv = mService->GetNodeId(aOrigin, aTopLevelOrigin, aGMPName, *aID);
   if (!NS_SUCCEEDED(rv)) {
     return IPC_FAIL(

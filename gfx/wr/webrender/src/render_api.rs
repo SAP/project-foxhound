@@ -14,7 +14,7 @@ use time::precise_time_ns;
 //use crate::api::peek_poke::PeekPoke;
 use crate::api::channel::{Sender, single_msg_channel, unbounded_channel};
 use crate::api::{ColorF, BuiltDisplayList, IdNamespace, ExternalScrollId, Parameter, BoolParameter};
-use crate::api::{SharedFontInstanceMap, FontKey, FontInstanceKey, NativeFontHandle};
+use crate::api::{FontKey, FontInstanceKey, NativeFontHandle};
 use crate::api::{BlobImageData, BlobImageKey, ImageData, ImageDescriptor, ImageKey, Epoch, QualitySettings};
 use crate::api::{BlobImageParams, BlobImageRequest, BlobImageResult, AsyncBlobImageRasterizer, BlobImageHandler};
 use crate::api::{DocumentId, PipelineId, PropertyBindingId, PropertyBindingKey, ExternalEvent};
@@ -25,6 +25,7 @@ use crate::api::{FontInstanceOptions, FontInstancePlatformOptions, FontVariation
 use crate::api::DEFAULT_TILE_SIZE;
 use crate::api::units::*;
 use crate::api_resources::ApiResources;
+use glyph_rasterizer::SharedFontResources;
 use crate::scene_builder_thread::{SceneBuilderRequest, SceneBuilderResult};
 use crate::intern::InterningMemoryReport;
 use crate::profiler::{self, TransactionProfile};
@@ -169,6 +170,9 @@ pub struct Transaction {
     /// generate_frame().
     generate_frame: GenerateFrame,
 
+    /// Time when this transaction was constructed.
+    creation_time: u64,
+
     /// Set to true in order to force re-rendering even if WebRender can't internally
     /// detect that something has changed.
     pub invalidate_rendered_frame: bool,
@@ -189,6 +193,7 @@ impl Transaction {
             notifications: Vec::new(),
             use_scene_builder_thread: true,
             generate_frame: GenerateFrame::No,
+            creation_time: precise_time_ns(),
             invalidate_rendered_frame: false,
             low_priority: false,
             render_reasons: RenderReasons::empty(),
@@ -403,6 +408,7 @@ impl Transaction {
             notifications: self.notifications,
             use_scene_builder_thread: self.use_scene_builder_thread,
             generate_frame: self.generate_frame,
+            creation_time: Some(self.creation_time),
             invalidate_rendered_frame: self.invalidate_rendered_frame,
             low_priority: self.low_priority,
             blob_rasterizer: None,
@@ -577,6 +583,8 @@ pub struct TransactionMsg {
     pub resource_updates: Vec<ResourceUpdate>,
     /// Whether to trigger frame building and rendering if something has changed.
     pub generate_frame: GenerateFrame,
+    /// Creation time of this transaction.
+    pub creation_time: Option<u64>,
     /// Whether to force frame building and rendering even if no changes are internally
     /// observed.
     pub invalidate_rendered_frame: bool,
@@ -880,8 +888,6 @@ pub struct CapturedDocument {
 pub enum DebugCommand {
     /// Sets the provided debug flags.
     SetFlags(DebugFlags),
-    /// Configure if dual-source blending is used, if available.
-    EnableDualSourceBlending(bool),
     /// Save a capture of all the documents state.
     SaveCapture(PathBuf, CaptureBits),
     /// Load a capture of all the documents state.
@@ -903,6 +909,8 @@ pub enum DebugCommand {
     SimulateLongSceneBuild(u32),
     /// Set an override tile size to use for picture caches
     SetPictureTileSize(Option<DeviceIntSize>),
+    /// Set an override for max off-screen surface size
+    SetMaximumSurfaceSize(Option<usize>),
 }
 
 /// Message sent by the `RenderApi` to the render backend thread.
@@ -949,7 +957,7 @@ pub struct RenderApiSender {
     scene_sender: Sender<SceneBuilderRequest>,
     low_priority_scene_sender: Sender<SceneBuilderRequest>,
     blob_image_handler: Option<Box<dyn BlobImageHandler>>,
-    shared_font_instances: SharedFontInstanceMap,
+    fonts: SharedFontResources,
 }
 
 impl RenderApiSender {
@@ -959,14 +967,14 @@ impl RenderApiSender {
         scene_sender: Sender<SceneBuilderRequest>,
         low_priority_scene_sender: Sender<SceneBuilderRequest>,
         blob_image_handler: Option<Box<dyn BlobImageHandler>>,
-        shared_font_instances: SharedFontInstanceMap,
+        fonts: SharedFontResources,
     ) -> Self {
         RenderApiSender {
             api_sender,
             scene_sender,
             low_priority_scene_sender,
             blob_image_handler,
-            shared_font_instances,
+            fonts,
         }
     }
 
@@ -984,7 +992,7 @@ impl RenderApiSender {
             next_id: Cell::new(ResourceId(0)),
             resources: ApiResources::new(
                 self.blob_image_handler.as_ref().map(|handler| handler.create_similar()),
-                self.shared_font_instances.clone(),
+                self.fonts.clone(),
             ),
         }
     }
@@ -992,7 +1000,7 @@ impl RenderApiSender {
     /// Creates a new resource API object with a dedicated namespace.
     /// Namespace id is allocated by client.
     ///
-    /// The function could be used only when RendererOptions::namespace_alloc_by_client is true.
+    /// The function could be used only when WebRenderOptions::namespace_alloc_by_client is true.
     /// When the option is true, create_api() could not be used to prevent namespace id conflict.
     pub fn create_api_by_client(&self, namespace_id: IdNamespace) -> RenderApi {
         let msg = ApiMsg::CloneApiByClient(namespace_id);
@@ -1005,7 +1013,7 @@ impl RenderApiSender {
             next_id: Cell::new(ResourceId(0)),
             resources: ApiResources::new(
                 self.blob_image_handler.as_ref().map(|handler| handler.create_similar()),
-                self.shared_font_instances.clone(),
+                self.fonts.clone(),
             ),
         }
     }
@@ -1034,7 +1042,7 @@ impl RenderApi {
             self.scene_sender.clone(),
             self.low_priority_scene_sender.clone(),
             self.resources.blob_image_handler.as_ref().map(|handler| handler.create_similar()),
-            self.resources.get_shared_font_instances(),
+            self.resources.get_fonts(),
         )
     }
 
@@ -1212,6 +1220,7 @@ impl RenderApi {
             resource_updates: Vec::new(),
             notifications: Vec::new(),
             generate_frame: GenerateFrame::No,
+            creation_time: None,
             invalidate_rendered_frame: false,
             use_scene_builder_thread: false,
             low_priority: false,
@@ -1251,9 +1260,11 @@ impl RenderApi {
                 &mut self.scene_sender
             };
 
-            sender.send(SceneBuilderRequest::Transactions(vec![transaction])).unwrap();
+            sender.send(SceneBuilderRequest::Transactions(vec![transaction]))
+                .expect("send by scene sender failed");
         } else {
-            self.api_sender.send(ApiMsg::UpdateDocuments(vec![transaction])).unwrap();
+            self.api_sender.send(ApiMsg::UpdateDocuments(vec![transaction]))
+                .expect("send by api sender failed");
         }
     }
 

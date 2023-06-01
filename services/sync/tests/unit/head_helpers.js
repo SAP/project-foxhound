@@ -15,21 +15,21 @@ var { AddonTestUtils, MockAsyncShutdown } = ChromeUtils.import(
 );
 var { Async } = ChromeUtils.import("resource://services-common/async.js");
 var { CommonUtils } = ChromeUtils.import("resource://services-common/utils.js");
-var { PlacesTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PlacesTestUtils.jsm"
+var { PlacesTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PlacesTestUtils.sys.mjs"
 );
 var { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
 var { SerializableSet, Svc, Utils, getChromeWindow } = ChromeUtils.import(
   "resource://services-sync/util.js"
 );
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-var { PlacesUtils } = ChromeUtils.import(
-  "resource://gre/modules/PlacesUtils.jsm"
+var { PlacesUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PlacesUtils.sys.mjs"
 );
-var { PlacesSyncUtils } = ChromeUtils.import(
-  "resource://gre/modules/PlacesSyncUtils.jsm"
+var { PlacesSyncUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PlacesSyncUtils.sys.mjs"
 );
 var { ObjectUtils } = ChromeUtils.import(
   "resource://gre/modules/ObjectUtils.jsm"
@@ -56,7 +56,7 @@ ChromeUtils.defineModuleGetter(
   "resource://gre/modules/AddonManager.jsm"
 );
 
-add_task(async function head_setup() {
+add_setup(async function head_setup() {
   // Initialize logging. This will sometimes be reset by a pref reset,
   // so it's also called as part of SyncTestingInfrastructure().
   syncTestLogging();
@@ -67,23 +67,19 @@ add_task(async function head_setup() {
 });
 
 XPCOMUtils.defineLazyGetter(this, "SyncPingSchema", function() {
-  let ns = {};
-  ChromeUtils.import("resource://gre/modules/FileUtils.jsm", ns);
-  ChromeUtils.import("resource://gre/modules/NetUtil.jsm", ns);
+  let { FileUtils } = ChromeUtils.importESModule(
+    "resource://gre/modules/FileUtils.sys.mjs"
+  );
+  let { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
   let stream = Cc["@mozilla.org/network/file-input-stream;1"].createInstance(
     Ci.nsIFileInputStream
   );
   let schema;
   try {
     let schemaFile = do_get_file("sync_ping_schema.json");
-    stream.init(
-      schemaFile,
-      ns.FileUtils.MODE_RDONLY,
-      ns.FileUtils.PERMS_FILE,
-      0
-    );
+    stream.init(schemaFile, FileUtils.MODE_RDONLY, FileUtils.PERMS_FILE, 0);
 
-    let bytes = ns.NetUtil.readInputStream(stream, stream.available());
+    let bytes = NetUtil.readInputStream(stream, stream.available());
     schema = JSON.parse(new TextDecoder().decode(bytes));
   } finally {
     stream.close();
@@ -96,10 +92,10 @@ XPCOMUtils.defineLazyGetter(this, "SyncPingSchema", function() {
 });
 
 XPCOMUtils.defineLazyGetter(this, "SyncPingValidator", function() {
-  let ns = {};
-  ChromeUtils.import("resource://testing-common/ajv-6.12.6.js", ns);
-  let ajv = new ns.Ajv({ async: "co*" });
-  return ajv.compile(SyncPingSchema);
+  const { JsonSchema } = ChromeUtils.importESModule(
+    "resource://gre/modules/JsonSchema.sys.mjs"
+  );
+  return new JsonSchema.Validator(SyncPingSchema);
 });
 
 // This is needed for loadAddonTestFunctions().
@@ -212,16 +208,10 @@ function mockGetTabState(tab) {
   return tab;
 }
 
-function mockGetWindowEnumerator(url, numWindows, numTabs, indexes, moreURLs) {
+function mockGetWindowEnumerator(urls) {
   let elements = [];
 
-  function url2entry(urlToConvert) {
-    return {
-      url: typeof urlToConvert == "function" ? urlToConvert() : urlToConvert,
-      title: "title",
-    };
-  }
-
+  const numWindows = 1;
   for (let w = 0; w < numWindows; ++w) {
     let tabs = [];
     let win = {
@@ -233,22 +223,16 @@ function mockGetWindowEnumerator(url, numWindows, numTabs, indexes, moreURLs) {
     };
     elements.push(win);
 
-    for (let t = 0; t < numTabs; ++t) {
-      tabs.push(
-        Cu.cloneInto(
-          {
-            index: indexes ? indexes() : 1,
-            entries: (moreURLs ? [url].concat(moreURLs()) : [url]).map(
-              url2entry
-            ),
-            attributes: {
-              image: "image",
-            },
-            lastAccessed: 1499,
-          },
-          {}
-        )
-      );
+    let lastAccessed = 2000;
+    for (let url of urls) {
+      tabs.push({
+        linkedBrowser: {
+          currentURI: Services.io.newURI(url),
+          contentTitle: "title",
+        },
+        lastAccessed,
+      });
+      lastAccessed += 1000;
     }
   }
 
@@ -275,25 +259,31 @@ function mockGetWindowEnumerator(url, numWindows, numTabs, indexes, moreURLs) {
 // Helper function to get the sync telemetry and add the typically used test
 // engine names to its list of allowed engines.
 function get_sync_test_telemetry() {
-  let ns = {};
-  ChromeUtils.import("resource://services-sync/telemetry.js", ns);
-  ns.SyncTelemetry.tryRefreshDevices = function() {};
+  let { SyncTelemetry } = ChromeUtils.import(
+    "resource://services-sync/telemetry.js"
+  );
+  SyncTelemetry.tryRefreshDevices = function() {};
   let testEngines = ["rotary", "steam", "sterling", "catapult", "nineties"];
   for (let engineName of testEngines) {
-    ns.SyncTelemetry.allowedEngines.add(engineName);
+    SyncTelemetry.allowedEngines.add(engineName);
   }
-  ns.SyncTelemetry.submissionInterval = -1;
-  return ns.SyncTelemetry;
+  SyncTelemetry.submissionInterval = -1;
+  return SyncTelemetry;
 }
 
 function assert_valid_ping(record) {
+  // Our JSON validator does not like `undefined` values, even though they will
+  // be skipped when we serialize to JSON.
+  record = JSON.parse(JSON.stringify(record));
+
   // This is called as the test harness tears down due to shutdown. This
   // will typically have no recorded syncs, and the validator complains about
   // it. So ignore such records (but only ignore when *both* shutdown and
   // no Syncs - either of them not being true might be an actual problem)
-  if (record && (record.why != "shutdown" || record.syncs.length != 0)) {
-    if (!SyncPingValidator(record)) {
-      if (SyncPingValidator.errors.length) {
+  if (record && (record.why != "shutdown" || !!record.syncs.length)) {
+    const result = SyncPingValidator.validate(record);
+    if (!result.valid) {
+      if (result.errors.length) {
         // validation failed - using a simple |deepEqual([], errors)| tends to
         // truncate the validation errors in the output and doesn't show that
         // the ping actually was - so be helpful.
@@ -301,7 +291,7 @@ function assert_valid_ping(record) {
         info("the ping data is: " + JSON.stringify(record, undefined, 2));
         info(
           "the validation failures: " +
-            JSON.stringify(SyncPingValidator.errors, undefined, 2)
+            JSON.stringify(result.errors, undefined, 2)
         );
         ok(
           false,
@@ -440,10 +430,9 @@ async function sync_engine_and_validate_telem(
   let caughtError = null;
   // Clear out status, so failures from previous syncs won't show up in the
   // telemetry ping.
-  let ns = {};
-  ChromeUtils.import("resource://services-sync/status.js", ns);
-  ns.Status._engines = {};
-  ns.Status.partial = false;
+  let { Status } = ChromeUtils.import("resource://services-sync/status.js");
+  Status._engines = {};
+  Status.partial = false;
   // Ideally we'd clear these out like we do with engines, (probably via
   // Status.resetSync()), but this causes *numerous* tests to fail, so we just
   // assume that if no failureReason or engine failures are set, and the
@@ -451,8 +440,8 @@ async function sync_engine_and_validate_telem(
   // a leftover.
   // This is only an issue since we're triggering the sync of just one engine,
   // without doing any other parts of the sync.
-  let initialServiceStatus = ns.Status._service;
-  let initialSyncStatus = ns.Status._sync;
+  let initialServiceStatus = Status._service;
+  let initialSyncStatus = Status._sync;
 
   let oldSubmit = telem.submit;
   let submitPromise = new Promise((resolve, reject) => {

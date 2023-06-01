@@ -31,8 +31,7 @@
 //! for Serde by the community.
 //!
 //! - [JSON], the ubiquitous JavaScript Object Notation used by many HTTP APIs.
-//! - [Bincode], a compact binary format
-//!   used for IPC within the Servo rendering engine.
+//! - [Postcard], a no\_std and embedded-systems friendly compact binary format.
 //! - [CBOR], a Concise Binary Object Representation designed for small message
 //!   size without the need for version negotiation.
 //! - [YAML], a self-proclaimed human-friendly configuration language that ain't
@@ -45,7 +44,6 @@
 //! - [Avro], a binary format used within Apache Hadoop, with support for schema
 //!   definition.
 //! - [JSON5], a superset of JSON including some productions from ES5.
-//! - [Postcard], a no\_std and embedded-systems friendly compact binary format.
 //! - [URL] query strings, in the x-www-form-urlencoded format.
 //! - [Envy], a way to deserialize environment variables into Rust structs.
 //!   *(deserialization only)*
@@ -54,44 +52,52 @@
 //! - [S-expressions], the textual representation of code and data used by the
 //!   Lisp language family.
 //! - [D-Bus]'s binary wire format.
-//! - [FlexBuffers], the schemaless cousin of Google's FlatBuffers zero-copy serialization format.
+//! - [FlexBuffers], the schemaless cousin of Google's FlatBuffers zero-copy
+//!   serialization format.
+//! - [Bencode], a simple binary format used in the BitTorrent protocol.
+//! - [Token streams], for processing Rust procedural macro input.
+//!   *(deserialization only)*
 //! - [DynamoDB Items], the format used by [rusoto_dynamodb] to transfer data to
 //!   and from DynamoDB.
+//! - [Hjson], a syntax extension to JSON designed around human reading and
+//!   editing. *(deserialization only)*
 //!
 //! [JSON]: https://github.com/serde-rs/json
-//! [Bincode]: https://github.com/servo/bincode
+//! [Postcard]: https://github.com/jamesmunns/postcard
 //! [CBOR]: https://github.com/enarx/ciborium
 //! [YAML]: https://github.com/dtolnay/serde-yaml
 //! [MessagePack]: https://github.com/3Hren/msgpack-rust
-//! [TOML]: https://github.com/alexcrichton/toml-rs
+//! [TOML]: https://docs.rs/toml
 //! [Pickle]: https://github.com/birkenfeld/serde-pickle
 //! [RON]: https://github.com/ron-rs/ron
-//! [BSON]: https://github.com/zonyitoo/bson-rs
-//! [Avro]: https://github.com/flavray/avro-rs
+//! [BSON]: https://github.com/mongodb/bson-rust
+//! [Avro]: https://docs.rs/apache-avro
 //! [JSON5]: https://github.com/callum-oakley/json5-rs
-//! [Postcard]: https://github.com/jamesmunns/postcard
 //! [URL]: https://docs.rs/serde_qs
 //! [Envy]: https://github.com/softprops/envy
 //! [Envy Store]: https://github.com/softprops/envy-store
 //! [Cargo]: https://doc.rust-lang.org/cargo/reference/manifest.html
-//! [AWS Parameter Store]: https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-paramstore.html
+//! [AWS Parameter Store]: https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-parameter-store.html
 //! [S-expressions]: https://github.com/rotty/lexpr-rs
 //! [D-Bus]: https://docs.rs/zvariant
 //! [FlexBuffers]: https://github.com/google/flatbuffers/tree/master/rust/flexbuffers
+//! [Bencode]: https://github.com/P3KI/bendy
+//! [Token streams]: https://github.com/oxidecomputer/serde_tokenstream
 //! [DynamoDB Items]: https://docs.rs/serde_dynamo
 //! [rusoto_dynamodb]: https://docs.rs/rusoto_dynamodb
+//! [Hjson]: https://github.com/Canop/deser-hjson
 
 ////////////////////////////////////////////////////////////////////////////////
 
 // Serde types in rustdoc of other crates get linked to here.
-#![doc(html_root_url = "https://docs.rs/serde/1.0.133")]
+#![doc(html_root_url = "https://docs.rs/serde/1.0.152")]
 // Support using Serde without the standard library!
 #![cfg_attr(not(feature = "std"), no_std)]
 // Unstable functionality only if the user asks for it. For tracking and
 // discussion of these features please refer to this issue:
 //
 //    https://github.com/serde-rs/serde/issues/812
-#![cfg_attr(feature = "unstable", feature(never_type))]
+#![cfg_attr(feature = "unstable", feature(error_in_core, never_type))]
 #![allow(unknown_lints, bare_trait_objects, deprecated)]
 #![cfg_attr(feature = "cargo-clippy", allow(renamed_and_removed_lints))]
 // Ignored clippy and clippy_pedantic lints
@@ -103,10 +109,8 @@
         // clippy bug: https://github.com/rust-lang/rust-clippy/issues/7768
         semicolon_if_nothing_returned,
         // not available in our oldest supported compiler
-        checked_conversions,
         empty_enum,
-        redundant_field_names,
-        redundant_static_lifetimes,
+        type_repetition_in_bounds, // https://github.com/rust-lang/rust-clippy/issues/8772
         // integer and float ser/de requires these sorts of casts
         cast_possible_truncation,
         cast_possible_wrap,
@@ -120,9 +124,11 @@
         use_self,
         zero_prefixed_literal,
         // correctly used
+        derive_partial_eq_without_eq,
         enum_glob_use,
-        let_underscore_drop,
+        explicit_auto_deref,
         map_err_ignore,
+        new_without_default,
         result_unit_err,
         wildcard_imports,
         // not practical
@@ -227,28 +233,54 @@ mod lib {
     #[cfg(feature = "std")]
     pub use std::time::{SystemTime, UNIX_EPOCH};
 
-    #[cfg(all(feature = "std", collections_bound))]
+    #[cfg(all(feature = "std", not(no_collections_bound), no_ops_bound))]
     pub use std::collections::Bound;
 
-    #[cfg(core_reverse)]
+    #[cfg(not(no_core_reverse))]
     pub use self::core::cmp::Reverse;
 
-    #[cfg(ops_bound)]
+    #[cfg(not(no_ops_bound))]
     pub use self::core::ops::Bound;
 
-    #[cfg(range_inclusive)]
+    #[cfg(not(no_range_inclusive))]
     pub use self::core::ops::RangeInclusive;
 
-    #[cfg(all(feature = "std", std_atomic))]
+    #[cfg(all(feature = "std", no_target_has_atomic, not(no_std_atomic)))]
     pub use std::sync::atomic::{
         AtomicBool, AtomicI16, AtomicI32, AtomicI8, AtomicIsize, AtomicU16, AtomicU32, AtomicU8,
         AtomicUsize, Ordering,
     };
-    #[cfg(all(feature = "std", std_atomic64))]
+    #[cfg(all(feature = "std", no_target_has_atomic, not(no_std_atomic64)))]
     pub use std::sync::atomic::{AtomicI64, AtomicU64};
 
-    #[cfg(any(core_duration, feature = "std"))]
+    #[cfg(all(feature = "std", not(no_target_has_atomic)))]
+    pub use std::sync::atomic::Ordering;
+    #[cfg(all(feature = "std", not(no_target_has_atomic), target_has_atomic = "8"))]
+    pub use std::sync::atomic::{AtomicBool, AtomicI8, AtomicU8};
+    #[cfg(all(feature = "std", not(no_target_has_atomic), target_has_atomic = "16"))]
+    pub use std::sync::atomic::{AtomicI16, AtomicU16};
+    #[cfg(all(feature = "std", not(no_target_has_atomic), target_has_atomic = "32"))]
+    pub use std::sync::atomic::{AtomicI32, AtomicU32};
+    #[cfg(all(feature = "std", not(no_target_has_atomic), target_has_atomic = "64"))]
+    pub use std::sync::atomic::{AtomicI64, AtomicU64};
+    #[cfg(all(feature = "std", not(no_target_has_atomic), target_has_atomic = "ptr"))]
+    pub use std::sync::atomic::{AtomicIsize, AtomicUsize};
+
+    #[cfg(any(feature = "std", not(no_core_duration)))]
     pub use self::core::time::Duration;
+}
+
+// None of this crate's error handling needs the `From::from` error conversion
+// performed implicitly by the `?` operator or the standard library's `try!`
+// macro. This simplified macro gives a 5.5% improvement in compile time
+// compared to standard `try!`, and 9% improvement compared to `?`.
+macro_rules! try {
+    ($expr:expr) => {
+        match $expr {
+            Ok(val) => val,
+            Err(err) => return Err(err),
+        }
+    };
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -280,7 +312,7 @@ use self::__private as private;
 #[path = "de/seed.rs"]
 mod seed;
 
-#[cfg(not(feature = "std"))]
+#[cfg(not(any(feature = "std", feature = "unstable")))]
 mod std_error;
 
 // Re-export #[derive(Serialize, Deserialize)].
@@ -296,7 +328,7 @@ extern crate serde_derive;
 #[doc(hidden)]
 pub use serde_derive::*;
 
-#[cfg(all(serde_derive, any(feature = "std", feature = "alloc")))]
+#[cfg(all(not(no_serde_derive), any(feature = "std", feature = "alloc")))]
 mod actually_private {
     pub struct T;
 }

@@ -15,10 +15,10 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "PdfStreamConverter",
   "resource://pdf.js/PdfStreamConverter.jsm"
 );
@@ -26,7 +26,7 @@ ChromeUtils.defineModuleGetter(
 // Register/unregister a constructor as a factory.
 function StreamConverterFactory() {
   if (!Services.prefs.getBoolPref("pdfjs.disabled", false)) {
-    return new PdfStreamConverter();
+    return new lazy.PdfStreamConverter();
   }
   throw Components.Exception("", Cr.NS_ERROR_FACTORY_NOT_REGISTERED);
 }

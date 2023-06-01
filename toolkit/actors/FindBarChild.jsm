@@ -6,16 +6,15 @@
 
 var EXPORTED_SYMBOLS = ["FindBarChild"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "BrowserUtils",
-  "resource://gre/modules/BrowserUtils.jsm"
-);
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
+});
 
 class FindBarChild extends JSWindowActorChild {
   constructor() {
@@ -27,9 +26,10 @@ class FindBarChild extends JSWindowActorChild {
       this,
       "FindBarContent",
       () => {
-        let tmp = {};
-        ChromeUtils.import("resource://gre/modules/FindBarContent.jsm", tmp);
-        return new tmp.FindBarContent(this);
+        const { FindBarContent } = ChromeUtils.importESModule(
+          "resource://gre/modules/FindBarContent.sys.mjs"
+        );
+        return new FindBarContent(this);
       },
       { inQuickFind: false, inPassThrough: false }
     );
@@ -87,8 +87,8 @@ class FindBarChild extends JSWindowActorChild {
       event.altKey ||
       event.metaKey ||
       event.defaultPrevented ||
-      !BrowserUtils.mimeTypeIsTextBased(this.document.contentType) ||
-      !BrowserUtils.canFindInPage(location)
+      !lazy.BrowserUtils.mimeTypeIsTextBased(this.document.contentType) ||
+      !lazy.BrowserUtils.canFindInPage(location)
     ) {
       return null;
     }
@@ -118,7 +118,7 @@ class FindBarChild extends JSWindowActorChild {
   shouldFastFind(elt) {
     if (elt) {
       let win = elt.ownerGlobal;
-      if (elt instanceof win.HTMLInputElement && elt.mozIsTextField(false)) {
+      if (win.HTMLInputElement.isInstance(elt) && elt.mozIsTextField(false)) {
         return false;
       }
 
@@ -127,15 +127,15 @@ class FindBarChild extends JSWindowActorChild {
       }
 
       if (
-        elt instanceof win.HTMLTextAreaElement ||
-        elt instanceof win.HTMLSelectElement ||
-        elt instanceof win.HTMLObjectElement ||
-        elt instanceof win.HTMLEmbedElement
+        win.HTMLTextAreaElement.isInstance(elt) ||
+        win.HTMLSelectElement.isInstance(elt) ||
+        win.HTMLObjectElement.isInstance(elt) ||
+        win.HTMLEmbedElement.isInstance(elt)
       ) {
         return false;
       }
 
-      if (elt instanceof win.HTMLIFrameElement && elt.mozbrowser) {
+      if (win.HTMLIFrameElement.isInstance(elt) && elt.mozbrowser) {
         // If we're targeting a mozbrowser iframe, it should be allowed to
         // handle FastFind itself.
         return false;

@@ -34,8 +34,7 @@ class RemotePrintJobParent final : public PRemotePrintJobParent {
 
   void ActorDestroy(ActorDestroyReason aWhy) final;
 
-  mozilla::ipc::IPCResult RecvInitializePrint(const nsString& aDocumentTitle,
-                                              const nsString& aPrintToFile,
+  mozilla::ipc::IPCResult RecvInitializePrint(const nsAString& aDocumentTitle,
                                               const int32_t& aStartPage,
                                               const int32_t& aEndPage) final;
 
@@ -44,9 +43,6 @@ class RemotePrintJobParent final : public PRemotePrintJobParent {
   mozilla::ipc::IPCResult RecvFinalizePrint() final;
 
   mozilla::ipc::IPCResult RecvAbortPrint(const nsresult& aRv) final;
-
-  mozilla::ipc::IPCResult RecvStateChange(const long& aStateFlags,
-                                          const nsresult& aStatus) final;
 
   mozilla::ipc::IPCResult RecvProgressChange(
       const long& aCurSelfProgress, const long& aMaxSelfProgress,
@@ -69,8 +65,7 @@ class RemotePrintJobParent final : public PRemotePrintJobParent {
  private:
   ~RemotePrintJobParent() final;
 
-  nsresult InitializePrintDevice(const nsString& aDocumentTitle,
-                                 const nsString& aPrintToFile,
+  nsresult InitializePrintDevice(const nsAString& aDocumentTitle,
                                  const int32_t& aStartPage,
                                  const int32_t& aEndPage);
 
@@ -94,6 +89,7 @@ class RemotePrintJobParent final : public PRemotePrintJobParent {
   nsCOMArray<nsIWebProgressListener> mPrintProgressListeners;
   PRFileDescStream mCurrentPageStream;
   bool mIsDoingPrinting;
+  nsresult mStatus;
 };
 
 }  // namespace layout

@@ -38,7 +38,6 @@ namespace mozilla {
 
 class EditorBase;
 class EnterLeaveDispatcher;
-class EventStates;
 class IMEContentObserver;
 class ScrollbarsForWheel;
 class TextControlElement;
@@ -80,6 +79,8 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   friend class mozilla::EnterLeaveDispatcher;
   friend class mozilla::ScrollbarsForWheel;
   friend class mozilla::WheelTransaction;
+
+  using ElementState = dom::ElementState;
 
   virtual ~EventStateManager();
 
@@ -130,7 +131,11 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void DispatchLegacyMouseScrollEvents(
       nsIFrame* aTargetFrame, WidgetWheelEvent* aEvent, nsEventStatus* aStatus);
 
-  void NotifyDestroyPresContext(nsPresContext* aPresContext);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void NotifyDestroyPresContext(
+      nsPresContext* aPresContext);
+
+  void ResetHoverState();
+
   void SetPresContext(nsPresContext* aPresContext);
   void ClearFrameRefs(nsIFrame* aFrame);
 
@@ -138,16 +143,16 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   already_AddRefed<nsIContent> GetEventTargetContent(WidgetEvent* aEvent);
 
   // We manage 4 states here: ACTIVE, HOVER, DRAGOVER, URLTARGET
-  static bool ManagesState(EventStates aState) {
-    return aState == NS_EVENT_STATE_ACTIVE || aState == NS_EVENT_STATE_HOVER ||
-           aState == NS_EVENT_STATE_DRAGOVER ||
-           aState == NS_EVENT_STATE_URLTARGET;
+  static bool ManagesState(ElementState aState) {
+    return aState == ElementState::ACTIVE || aState == ElementState::HOVER ||
+           aState == ElementState::DRAGOVER ||
+           aState == ElementState::URLTARGET;
   }
 
   /**
-   * Notify that the given NS_EVENT_STATE_* bit has changed for this content.
+   * Notify that the given ElementState::* bit has changed for this content.
    * @param aContent Content which has changed states
-   * @param aState   Corresponding state flags such as NS_EVENT_STATE_FOCUS
+   * @param aState   Corresponding state flags such as ElementState::FOCUS
    * @return  Whether the content was able to change all states. Returns false
    *                  if a resulting DOM event causes the content node passed in
    *                  to not change states. Note, the frame for the content may
@@ -155,10 +160,13 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
    *                  frame reconstructions that may occur, but this does not
    *                  affect the return value.
    */
-  bool SetContentState(nsIContent* aContent, EventStates aState);
+  bool SetContentState(nsIContent* aContent, ElementState aState);
+
+  nsIContent* GetActiveContent() const { return mActiveContent; }
 
   void NativeAnonymousContentRemoved(nsIContent* aAnonContent);
-  void ContentRemoved(dom::Document* aDocument, nsIContent* aContent);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void ContentRemoved(dom::Document* aDocument,
+                                                  nsIContent* aContent);
 
   /**
    * Called when a native anonymous <div> element which is root element of
@@ -190,6 +198,8 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
    * asynchronously.
    */
   void TryToFlushPendingNotificationsToIME();
+
+  static bool IsKeyboardEventUserActivity(WidgetEvent* aEvent);
 
   /**
    * Register accesskey on the given element. When accesskey is activated then
@@ -284,9 +294,6 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   static void SetActiveManager(EventStateManager* aNewESM,
                                nsIContent* aContent);
 
-  // Sets the fullscreen event state on aElement to aIsFullscreen.
-  static void SetFullscreenState(dom::Element* aElement, bool aIsFullscreen);
-
   static bool IsRemoteTarget(nsIContent* target);
 
   static bool IsTopLevelRemoteTarget(nsIContent* aTarget);
@@ -337,7 +344,8 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
    * larger than this value, the computed scroll amount isn't rounded down to
    * the page width or height.
    */
-  enum { MIN_MULTIPLIER_VALUE_ALLOWING_OVER_ONE_PAGE_SCROLL = 1000 };
+  static constexpr double MIN_MULTIPLIER_VALUE_ALLOWING_OVER_ONE_PAGE_SCROLL =
+      1000.0;
 
   /**
    * HandleMiddleClickPaste() handles middle mouse button event as pasting
@@ -1101,17 +1109,17 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   //
   // Only meant to be called from ContentRemoved and
   // NativeAnonymousContentRemoved.
-  void RemoveNodeFromChainIfNeeded(EventStates aState,
+  void RemoveNodeFromChainIfNeeded(ElementState aState,
                                    nsIContent* aContentRemoved, bool aNotify);
 
   bool IsEventOutsideDragThreshold(WidgetInputEvent* aEvent) const;
 
-  static inline void DoStateChange(dom::Element* aElement, EventStates aState,
+  static inline void DoStateChange(dom::Element* aElement, ElementState aState,
                                    bool aAddState);
-  static inline void DoStateChange(nsIContent* aContent, EventStates aState,
+  static inline void DoStateChange(nsIContent* aContent, ElementState aState,
                                    bool aAddState);
   static void UpdateAncestorState(nsIContent* aStartNode,
-                                  nsIContent* aStopBefore, EventStates aState,
+                                  nsIContent* aStopBefore, ElementState aState,
                                   bool aAddState);
   static void ResetLastOverForContent(
       const uint32_t& aIdx, const RefPtr<OverOutElementsWrapper>& aChunk,
@@ -1240,10 +1248,9 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
 
 // Click and double-click events need to be handled even for content that
 // has no frame. This is required for Web compatibility.
-#define NS_EVENT_NEEDS_FRAME(event)               \
-  (!(event)->HasPluginActivationEventMessage() && \
-   (event)->mMessage != eMouseClick &&            \
-   (event)->mMessage != eMouseDoubleClick &&      \
+#define NS_EVENT_NEEDS_FRAME(event)          \
+  ((event)->mMessage != eMouseClick &&       \
+   (event)->mMessage != eMouseDoubleClick && \
    (event)->mMessage != eMouseAuxClick)
 
 #endif  // mozilla_EventStateManager_h_

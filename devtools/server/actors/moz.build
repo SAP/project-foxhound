@@ -36,20 +36,16 @@ DevToolsModules(
     "environment.js",
     "errordocs.js",
     "frame.js",
-    "framerate.js",
     "heap-snapshot-file.js",
     "highlighters.css",
     "highlighters.js",
     "layout.js",
     "manifest.js",
-    "media-rule.js",
     "memory.js",
     "object.js",
     "page-style.js",
     "pause-scoped.js",
     "perf.js",
-    "performance-recording.js",
-    "performance.js",
     "preference.js",
     "process.js",
     "reflow.js",
@@ -57,10 +53,8 @@ DevToolsModules(
     "screenshot-content.js",
     "screenshot.js",
     "source.js",
-    "storage.js",
     "string.js",
     "style-rule.js",
-    "style-sheet.js",
     "style-sheets.js",
     "target-configuration.js",
     "thread-configuration.js",
@@ -87,9 +81,6 @@ with Files("performance*"):
 
 with Files("source.js"):
     BUG_COMPONENT = ("DevTools", "Debugger")
-
-with Files("storage.js"):
-    BUG_COMPONENT = ("DevTools", "Storage Inspector")
 
 with Files("stylesheets.js"):
     BUG_COMPONENT = ("DevTools", "Style Editor")

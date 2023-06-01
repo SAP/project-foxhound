@@ -724,7 +724,10 @@ where
             Component::Slotted(ref selector) | Component::Host(Some(ref selector)) => {
                 selector.size_of(ops)
             },
-            Component::Is(ref list) | Component::Where(ref list) => list.size_of(ops),
+            Component::Is(ref list) |
+            Component::Where(ref list) |
+            Component::Has(ref list) => list.size_of(ops),
+            Component::NthOf(ref nth_of_data) => nth_of_data.size_of(ops),
             Component::PseudoElement(ref pseudo) => (*pseudo).size_of(ops),
             Component::Combinator(..) |
             Component::ExplicitAnyNamespace |
@@ -738,19 +741,11 @@ where
             Component::Class(..) |
             Component::AttributeInNoNamespaceExists { .. } |
             Component::AttributeInNoNamespace { .. } |
-            Component::FirstChild |
-            Component::LastChild |
-            Component::OnlyChild |
             Component::Root |
             Component::Empty |
             Component::Scope |
-            Component::NthChild(..) |
-            Component::NthLastChild(..) |
-            Component::NthOfType(..) |
-            Component::NthLastOfType(..) |
-            Component::FirstOfType |
-            Component::LastOfType |
-            Component::OnlyOfType |
+            Component::ParentSelector |
+            Component::Nth(..) |
             Component::Host(None) => 0,
         }
     }
@@ -819,6 +814,8 @@ malloc_size_of_is_0!(Range<f32>, Range<f64>);
 malloc_size_of_is_0!(app_units::Au);
 
 malloc_size_of_is_0!(cssparser::RGBA, cssparser::TokenSerializationType);
+
+malloc_size_of_is_0!(dom::ElementState, dom::DocumentState);
 
 #[cfg(feature = "servo")]
 malloc_size_of_is_0!(csp::Destination);

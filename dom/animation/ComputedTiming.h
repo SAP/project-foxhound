@@ -9,7 +9,6 @@
 
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/StickyTimeDuration.h"
-#include "mozilla/ComputedTimingFunction.h"
 
 #include "mozilla/dom/AnimationEffectBinding.h"  // FillMode
 
@@ -64,8 +63,7 @@ struct ComputedTiming {
   };
   AnimationPhase mPhase = AnimationPhase::Idle;
 
-  ComputedTimingFunction::BeforeFlag mBeforeFlag =
-      ComputedTimingFunction::BeforeFlag::Unset;
+  bool mBeforeFlag = false;
 };
 
 }  // namespace mozilla

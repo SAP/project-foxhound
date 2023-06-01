@@ -25,7 +25,7 @@
 #include "jsfriendapi.h"
 #include "jstypes.h"
 
-#include "gc/Rooting.h"
+#include "frontend/FrontendContext.h"  // AutoReportFrontendContext
 #include "js/CharacterEncoding.h"
 #include "js/Class.h"
 #include "js/Conversions.h"
@@ -58,6 +58,7 @@
 #include "vm/StringType.h"
 #include "vm/SymbolType.h"
 #include "vm/WellKnownAtom.h"  // js_*_str
+#include "wasm/WasmJS.h"       // WasmExceptionObject
 
 #include "vm/Compartment-inl.h"
 #include "vm/ErrorObject-inl.h"
@@ -266,12 +267,18 @@ JSErrorReport* js::ErrorFromException(JSContext* cx, HandleObject objArg) {
 }
 
 JS_PUBLIC_API JSObject* JS::ExceptionStackOrNull(HandleObject objArg) {
-  ErrorObject* obj = objArg->maybeUnwrapIf<ErrorObject>();
-  if (!obj) {
-    return nullptr;
+  ErrorObject* errorObject = objArg->maybeUnwrapIf<ErrorObject>();
+  if (errorObject) {
+    return errorObject->stack();
   }
 
-  return obj->stack();
+  WasmExceptionObject* wasmObject =
+      objArg->maybeUnwrapIf<WasmExceptionObject>();
+  if (wasmObject) {
+    return wasmObject->stack();
+  }
+
+  return nullptr;
 }
 
 JS_PUBLIC_API JSLinearString* js::GetErrorTypeName(JSContext* cx,
@@ -347,7 +354,7 @@ void js::ErrorToException(JSContext* cx, JSErrorReport* reportp,
 
   // Throw it.
   RootedValue errValue(cx, ObjectValue(*errObject));
-  RootedSavedFrame nstack(cx);
+  Rooted<SavedFrame*> nstack(cx);
   if (stack) {
     nstack = &stack->as<SavedFrame>();
   }
@@ -392,7 +399,7 @@ static bool IsDuckTypedErrorObject(JSContext* cx, HandleObject exnObject,
 
 static bool GetPropertyNoException(JSContext* cx, HandleObject obj,
                                    SniffingBehavior behavior,
-                                   HandlePropertyName name,
+                                   Handle<PropertyName*> name,
                                    MutableHandleValue vp) {
   // This function has no side-effects so always use it.
   if (GetPropertyPure(cx, obj, NameToId(name), vp.address())) {
@@ -647,7 +654,7 @@ bool JS::ErrorReportBuilder::populateUncaughtExceptionReportUTF8VA(
   ownedReport.errorNumber = JSMSG_UNCAUGHT_EXCEPTION;
 
   bool skippedAsync;
-  RootedSavedFrame frame(
+  Rooted<SavedFrame*> frame(
       cx, UnwrapSavedFrame(cx, cx->realm()->principals(), stack,
                            SavedFrameSelfHosted::Exclude, skippedAsync));
   if (frame) {
@@ -678,7 +685,8 @@ bool JS::ErrorReportBuilder::populateUncaughtExceptionReportUTF8VA(
     }
   }
 
-  if (!ExpandErrorArgumentsVA(cx, GetErrorMessage, nullptr,
+  AutoReportFrontendContext fc(cx);
+  if (!ExpandErrorArgumentsVA(&fc, GetErrorMessage, nullptr,
                               JSMSG_UNCAUGHT_EXCEPTION, ArgumentsAreUTF8,
                               &ownedReport, ap)) {
     return false;
@@ -709,6 +717,11 @@ JSObject* js::CopyErrorObject(JSContext* cx, Handle<ErrorObject*> err) {
   RootedObject stack(cx, err->stack());
   if (!cx->compartment()->wrap(cx, &stack)) {
     return nullptr;
+  }
+  if (stack && JS_IsDeadWrapper(stack)) {
+    // ErrorObject::create expects |stack| to be either nullptr or a (possibly
+    // wrapped) SavedFrame instance.
+    stack = nullptr;
   }
   Rooted<mozilla::Maybe<Value>> cause(cx, mozilla::Nothing());
   if (auto maybeCause = err->getCause()) {

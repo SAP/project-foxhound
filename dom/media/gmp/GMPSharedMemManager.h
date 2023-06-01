@@ -9,8 +9,7 @@
 #include "mozilla/ipc/Shmem.h"
 #include "nsTArray.h"
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
 class GMPSharedMemManager;
 
@@ -53,9 +52,7 @@ class GMPSharedMemManager {
   virtual ~GMPSharedMemManager() = default;
 
   virtual bool MgrAllocShmem(GMPSharedMem::GMPMemoryClasses aClass,
-                             size_t aSize,
-                             ipc::Shmem::SharedMemory::SharedMemoryType aType,
-                             ipc::Shmem* aMem);
+                             size_t aSize, ipc::Shmem* aMem);
   virtual bool MgrDeallocShmem(GMPSharedMem::GMPMemoryClasses aClass,
                                ipc::Shmem& aMem);
 
@@ -65,9 +62,7 @@ class GMPSharedMemManager {
 
   // These have to be implemented using the AllocShmem/etc provided by the
   // IPDL-generated interfaces, so have the Parent/Child implement them.
-  virtual bool Alloc(size_t aSize,
-                     ipc::Shmem::SharedMemory::SharedMemoryType aType,
-                     ipc::Shmem* aMem) = 0;
+  virtual bool Alloc(size_t aSize, ipc::Shmem* aMem) = 0;
   virtual void Dealloc(ipc::Shmem&& aMem) = 0;
 
  private:
@@ -78,7 +73,6 @@ class GMPSharedMemManager {
   GMPSharedMem* mData;
 };
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp
 
 #endif  // GMPSharedMemManager_h_

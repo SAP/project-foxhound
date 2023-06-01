@@ -5,7 +5,7 @@ add_task(async function test() {
   ChromeUtils.registerWindowActor(ACTOR, {
     allFrames: true,
     child: {
-      moduleURI: `${base}/Bug1622420Child.jsm`,
+      esModuleURI: `${base}/Bug1622420Child.sys.mjs`,
     },
   });
 
@@ -17,6 +17,7 @@ add_task(async function test() {
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.org/browser/docshell/test/browser/file_bug1622420.html"
   );
   let childBC = tab.linkedBrowser.browsingContext.children[0];

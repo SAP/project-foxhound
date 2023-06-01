@@ -25,7 +25,14 @@ const bookmarksInfo = [
  */
 
 // Setup.
-add_task(async function setup() {
+add_setup(async function() {
+  // Disable window occlusion. See bug 1733955 / bug 1779559.
+  if (navigator.platform.indexOf("Win") == 0) {
+    await SpecialPowers.pushPrefEnv({
+      set: [["widget.windows.window_occlusion_tracking.enabled", false]],
+    });
+  }
+
   let toolbar = document.getElementById("PersonalToolbar");
   let wasCollapsed = toolbar.collapsed;
 
@@ -518,6 +525,7 @@ async function closeToolbarContextMenu() {
  * Other Bookmarks folder testable.
  *
  * @param {object} [win]
+ *   The window object to use.
  */
 async function setupBookmarksToolbar(win = window) {
   let toolbar = win.document.getElementById("PersonalToolbar");

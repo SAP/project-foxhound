@@ -50,10 +50,6 @@ class nsPageFrame final : public nsContainerFrame {
   void SetSharedPageData(nsSharedPageData* aPD);
   nsSharedPageData* GetSharedPageData() const { return mPD; }
 
-  // We must allow Print Preview UI to have a background, no matter what the
-  // user's settings
-  bool HonorPrintBackgroundSettings() const override { return false; }
-
   void PaintHeaderFooter(gfxContext& aRenderingContext, nsPoint aPt,
                          bool aSubpixelAA);
 
@@ -71,6 +67,22 @@ class nsPageFrame final : public nsContainerFrame {
   nsPageContentFrame* PageContentFrame() const;
 
   nsSize ComputePageSize() const;
+
+  // Computes the scaling factor caused by a CSS page-size that is to large to
+  // fit on the paper we are printing to.
+  // Callers that have already computed the page size with ComputePageSize
+  // should use the first version of the function, which avoids recomputing it.
+  float ComputePageSizeScale(const nsSize aContentPageSize) const;
+  inline float ComputePageSizeScale() const {
+    return ComputePageSizeScale(ComputePageSize());
+  }
+
+  // The default implementation of FirstContinuation in nsSplittableFrame is
+  // implemented in linear time, walking back through the linked list of
+  // continuations via mPrevContinuation.
+  // For nsPageFrames, we can find the first continuation through the frame
+  // tree structure in constant time.
+  nsIFrame* FirstContinuation() const final;
 
  protected:
   explicit nsPageFrame(ComputedStyle* aStyle, nsPresContext* aPresContext);
@@ -112,6 +124,26 @@ class nsPageFrame final : public nsContainerFrame {
   // nsPageSequenceFrame, which outlives us.
   nsSharedPageData* mPD = nullptr;
 
+  // Computed page content margins.
+  //
+  // This is the amount of space from the edges of the content to the edges,
+  // measured in the content coordinate space. This is as opposed to the
+  // coordinate space of the physical paper. This might be different due to
+  // a CSS page-size that is too large to fit on the paper, causing content to
+  // be scaled to fit.
+  //
+  // These margins take into account:
+  //    * CSS-defined margins (content units)
+  //    * User-supplied margins (physical units)
+  //    * Unwriteable-supplied margins (physical units)
+  //
+  // When computing these margins, all physical units have the inverse of the
+  // scaling factor caused by CSS page-size downscaling applied. This ensures
+  // that even if the content will be downscaled, it will respect the (now
+  // upscaled) physical unwriteable margins required by the printer.
+  // For user-supplied margins, it isn't immediately obvious to the user what
+  // the intended page-size of the document is, so we consider these margins to
+  // be in the physical space of the paper.
   nsMargin mPageContentMargin;
 };
 
@@ -132,8 +164,6 @@ class nsPageBreakFrame final : public nsLeafFrame {
  protected:
   nscoord GetIntrinsicISize() override;
   nscoord GetIntrinsicBSize() override;
-
-  bool mHaveReflowed;
 
   friend nsIFrame* NS_NewPageBreakFrame(mozilla::PresShell* aPresShell,
                                         ComputedStyle* aStyle);

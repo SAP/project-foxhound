@@ -7,8 +7,6 @@
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 
   <script class="testbody" type="text/javascript">
-  /* sendAsyncMessage isn't actually a global - this just mollifies eslint */
-  /* global sendAsyncMessage */
   "use strict";
 
   // We want to start this test from an insecure context
@@ -18,7 +16,7 @@
 
   async function runTest() {
     let script = SpecialPowers.loadChromeScript(function() {
-      const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+      /* eslint-env mozilla/chrome-script */
       // Force download to be w/o user assistance for our testing mime type
       const mimeSvc = Cc["@mozilla.org/mime;1"].getService(Ci.nsIMIMEService);
       let handlerInfo =
@@ -53,7 +51,7 @@
           },
         });
         sendAsyncMessage("navigate", "download.auto");
-      }).catch(Cu.reportError);
+      }).catch(console.error);
     });
     script.addMessageListener("navigate", function(url) {
       window.location = url;
@@ -64,7 +62,6 @@
 
   testCleanUp = function cleanup() {
     SpecialPowers.loadChromeScript(function() {
-      const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
       const mimeSvc = Cc["@mozilla.org/mime;1"].getService(Ci.nsIMIMEService);
       let handlerInfo =
         mimeSvc.getFromTypeAndExtension("application/x-auto-download", "auto");

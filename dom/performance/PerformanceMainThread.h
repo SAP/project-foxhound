@@ -10,8 +10,7 @@
 #include "Performance.h"
 #include "PerformanceStorage.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class PerformanceNavigationTiming;
 class PerformanceEventTiming;
@@ -21,7 +20,7 @@ class PerformanceMainThread final : public Performance,
  public:
   PerformanceMainThread(nsPIDOMWindowInner* aWindow,
                         nsDOMNavigationTiming* aDOMTiming,
-                        nsITimedChannel* aChannel, bool aPrincipal);
+                        nsITimedChannel* aChannel);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(PerformanceMainThread,
@@ -89,8 +88,6 @@ class PerformanceMainThread final : public Performance,
   void UpdateNavigationTimingEntry() override;
   void QueueNavigationTimingEntry() override;
 
-  bool CrossOriginIsolated() const override;
-
   size_t SizeOfEventEntries(mozilla::MallocSizeOf aMallocSizeOf) const override;
 
   static constexpr uint32_t kDefaultEventTimingBufferSize = 150;
@@ -99,14 +96,14 @@ class PerformanceMainThread final : public Performance,
 
   class EventCounts* EventCounts() override;
 
+  bool IsGlobalObjectWindow() const override { return true; };
+
  protected:
   ~PerformanceMainThread();
 
   void CreateNavigationTimingEntry();
 
   void InsertUserEntry(PerformanceEntry* aEntry) override;
-
-  bool IsPerformanceTimingAttribute(const nsAString& aName) override;
 
   DOMHighResTimeStamp GetPerformanceTimingFromString(
       const nsAString& aTimingName) override;
@@ -120,8 +117,6 @@ class PerformanceMainThread final : public Performance,
   RefPtr<PerformanceNavigation> mNavigation;
   RefPtr<PerformancePaintTiming> mFCPTiming;
   JS::Heap<JSObject*> mMozMemory;
-
-  const bool mCrossOriginIsolated;
 
   nsTArray<RefPtr<PerformanceEventTiming>> mEventTimingEntries;
 
@@ -141,7 +136,6 @@ class PerformanceMainThread final : public Performance,
   PresShell* GetPresShell();
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_PerformanceMainThread_h

@@ -11,8 +11,9 @@
 
 var EXPORTED_SYMBOLS = ["Doctor"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
+);
 const { Async } = ChromeUtils.import("resource://services-common/async.js");
 const { Observers } = ChromeUtils.import(
   "resource://services-common/observers.js"
@@ -20,7 +21,7 @@ const { Observers } = ChromeUtils.import(
 const { Service } = ChromeUtils.import("resource://services-sync/service.js");
 const { Resource } = ChromeUtils.import("resource://services-sync/resource.js");
 
-const { Svc, Utils } = ChromeUtils.import("resource://services-sync/util.js");
+const { Svc } = ChromeUtils.import("resource://services-sync/util.js");
 
 const log = Log.repository.getLogger("Sync.Doctor");
 
@@ -85,14 +86,12 @@ var Doctor = {
   },
 
   async _runValidators(engineInfos) {
-    if (Object.keys(engineInfos).length == 0) {
+    if (!Object.keys(engineInfos).length) {
       log.info("Skipping validation: no engines qualify");
       return;
     }
 
-    if (
-      Object.values(engineInfos).filter(i => i.maxRecords != -1).length != 0
-    ) {
+    if (Object.values(engineInfos).filter(i => i.maxRecords != -1).length) {
       // at least some of the engines have maxRecord restrictions which require
       // us to ask the server for the counts.
       let countInfo = await this._fetchCollectionCounts();

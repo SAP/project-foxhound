@@ -91,7 +91,7 @@ class GPUProcessHost final : public mozilla::ipc::GeckoChildProcessHost {
   // past or future instance of GPUProcessHost.
   uint64_t GetProcessToken() const;
 
-  bool IsConnected() const { return !!mGPUChild && mChildProcessHandle != 0; }
+  bool IsConnected() const { return !!mGPUChild; }
 
   // Return the time stamp for when we tried to launch the GPU process. This is
   // currently used for Telemetry so that we can determine how long GPU
@@ -100,7 +100,7 @@ class GPUProcessHost final : public mozilla::ipc::GeckoChildProcessHost {
   TimeStamp GetLaunchTime() const { return mLaunchTime; }
 
   // Called on the IO thread.
-  void OnChannelConnected(int32_t peer_pid) override;
+  void OnChannelConnected(base::ProcessId peer_pid) override;
   void OnChannelError() override;
 
   void SetListener(Listener* aListener);

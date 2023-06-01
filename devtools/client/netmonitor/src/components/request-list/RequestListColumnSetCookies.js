@@ -4,12 +4,14 @@
 
 "use strict";
 
-const { Component } = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+const {
+  Component,
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 const {
   fetchNetworkUpdatePacket,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 
 class RequestListColumnSetCookies extends Component {
   static get propTypes() {
@@ -24,7 +26,8 @@ class RequestListColumnSetCookies extends Component {
     fetchNetworkUpdatePacket(connector.requestData, item, ["responseCookies"]);
   }
 
-  componentWillReceiveProps(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
     const { item, connector } = nextProps;
     fetchNetworkUpdatePacket(connector.requestData, item, ["responseCookies"]);
   }
@@ -44,8 +47,9 @@ class RequestListColumnSetCookies extends Component {
   render() {
     let { responseCookies = { cookies: [] } } = this.props.item;
     responseCookies = responseCookies.cookies || responseCookies;
-    const responseCookiesLength =
-      responseCookies.length > 0 ? responseCookies.length : "";
+    const responseCookiesLength = responseCookies.length
+      ? responseCookies.length
+      : "";
     return dom.td(
       {
         className: "requests-list-column requests-list-set-cookies",

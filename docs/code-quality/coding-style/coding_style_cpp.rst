@@ -297,7 +297,7 @@ Literals
 ~~~~~~~~
 
 Use ``\uXXXX`` unicode escapes for non-ASCII characters. The character
-set for XUL, DTD, script, and properties files is UTF-8, which is not easily
+set for XUL, script, and properties files is UTF-8, which is not easily
 readable.
 
 
@@ -384,7 +384,7 @@ C/C++ practices
    `DebugOnly<T> <https://developer.mozilla.org/docs/Mozilla/Debugging/DebugOnly%3CT%3E>`__
    helper when declaring them.
 -  You should `use the static preference
-   API <https://developer.mozilla.org/docs/Mozilla/Preferences/Using_preferences_from_application_code>`__ for
+   API <https://firefox-source-docs.mozilla.org/modules/libpref/index.html>`__ for
    working with preferences.
 -  One-argument constructors, that are not copy or move constructors,
    should generally be marked explicit. Exceptions should be annotated
@@ -694,14 +694,13 @@ COM and pointers
    "Should I be using ``nsCOMPtr`` here?". Generally the only valid use
    of ``NS_RELEASE`` is when you are storing refcounted pointers in a
    long-lived datastructure.
--  Declare new XPCOM interfaces using `XPIDL <https://developer.mozilla.org/docs/Mozilla/Tech/XPIDL>`__, so they
+-  Declare new XPCOM interfaces using :doc:`XPIDL </xpcom/xpidl>`, so they
    will be scriptable.
--  Use `nsCOMPtr <https://developer.mozilla.org/docs/Mozilla/Tech/XPCOM/Reference/Glue_classes/nsCOMPtr>`__ for strong references, and
-   `nsWeakPtr <https://developer.mozilla.org/docs/Mozilla/Tech/XPCOM/Weak_reference>`__ for weak references.
+-  Use :doc:`nsCOMPtr </xpcom/refptr>` for strong references, and
+   ``nsWeakPtr`` for weak references.
 -  Don't use ``QueryInterface`` directly. Use ``CallQueryInterface`` or
    ``do_QueryInterface`` instead.
--  Use `Contract
-   IDs <news://news.mozilla.org/3994AE3E.D96EF810@netscape.com>`__,
+-  Use :ref:`Contract IDs <contract_ids>`,
    instead of CIDs with ``do_CreateInstance``/``do_GetService``.
 -  Use pointers, instead of references for function out parameters, even
    for primitive types.
@@ -963,7 +962,7 @@ Strings
 .. note::
 
    This section overlaps with the more verbose advice given in
-   `Internal strings <https://wiki.developer.mozilla.org/en-US/docs/Mozilla/Tech/XPCOM/Guide/Internal_strings>`__.
+   :doc:`String guide </xpcom/stringguide>`.
    These should eventually be merged. For now, please refer to that guide for
    more advice.
 
@@ -1143,3 +1142,9 @@ been replaced with ``mozilla::Abs`` calls, in `bug
 code in ``Firefox/core/toolkit`` needs to ``#include "nsAlgorithm.h"`` and
 use the ``NS_foo`` variants instead of ``PR_foo``, or
 ``#include "mozilla/MathAlgorithms.h"`` for ``mozilla::Abs``.
+
+Use of SpiderMonkey rooting typedefs
+------------------------------------
+The rooting typedefs in ``js/public/TypeDecls.h``, such as ``HandleObject`` and
+``RootedObject``, are deprecated both in and outside of SpiderMonkey. They will
+eventually be removed and should not be used in new code.

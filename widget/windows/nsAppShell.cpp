@@ -31,6 +31,10 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/WindowsProcessMitigations.h"
 
+#ifdef MOZ_BACKGROUNDTASKS
+#  include "mozilla/BackgroundTasks.h"
+#endif
+
 #if defined(ACCESSIBILITY)
 #  include "mozilla/a11y/Compatibility.h"
 #  include "mozilla/a11y/Platform.h"
@@ -97,7 +101,7 @@ class WinWakeLockListener final : public nsIDOMMozWakeLockListener {
     context.Reason.SimpleReasonString = RequestTypeLPWSTR(aType);
     HANDLE handle = PowerCreateRequest(&context);
     if (!handle) {
-      WAKE_LOCK_LOG("Failed to create handle for %s, error=%d",
+      WAKE_LOCK_LOG("Failed to create handle for %s, error=%lu",
                     RequestTypeStr(aType), GetLastError());
       return nullptr;
     }
@@ -146,7 +150,7 @@ class WinWakeLockListener final : public nsIDOMMozWakeLockListener {
     if (PowerSetRequest(handle, aType)) {
       WAKE_LOCK_LOG("Requested %s lock", RequestTypeStr(aType));
     } else {
-      WAKE_LOCK_LOG("Failed to request %s lock, error=%d",
+      WAKE_LOCK_LOG("Failed to request %s lock, error=%lu",
                     RequestTypeStr(aType), GetLastError());
       SetHandle(nullptr, aType);
     }
@@ -160,7 +164,7 @@ class WinWakeLockListener final : public nsIDOMMozWakeLockListener {
 
     WAKE_LOCK_LOG("Prepare to release wakelock for %s", RequestTypeStr(aType));
     if (!PowerClearRequest(GetHandle(aType), aType)) {
-      WAKE_LOCK_LOG("Failed to release %s lock, error=%d",
+      WAKE_LOCK_LOG("Failed to release %s lock, error=%lu",
                     RequestTypeStr(aType), GetLastError());
       return;
     }
@@ -580,25 +584,30 @@ nsresult nsAppShell::Init() {
 #endif  // defined(ACCESSIBILITY)
   }
 
+  if (!WinUtils::GetTimezoneName(mTimezoneName)) {
+    NS_WARNING("Unable to get system timezone name, timezone may be invalid\n");
+  }
+
   return nsBaseAppShell::Init();
 }
 
 NS_IMETHODIMP
 nsAppShell::Run(void) {
-  // Content processes initialize audio later through PContent using audio
-  // tray id information pulled from the browser process AudioSession. This
-  // way the two share a single volume control.
-  // Note StopAudioSession() is called from nsAppRunner.cpp after xpcom is torn
-  // down to insure the browser shuts down after child processes.
+  bool wantAudio = true;
   if (XRE_IsParentProcess()) {
-    mozilla::widget::StartAudioSession();
-  }
+#ifdef MOZ_BACKGROUNDTASKS
+    if (BackgroundTasks::IsBackgroundTaskMode()) {
+      wantAudio = false;
+    }
+#endif
+    if (MOZ_LIKELY(wantAudio)) {
+      mozilla::widget::StartAudioSession();
+    }
 
-  // Add an observer that disables the screen saver when requested by Gecko.
-  // For example when we're playing video in the foreground tab. Whole firefox
-  // only needs one wakelock instance, so we would only create one listener in
-  // chrome process to prevent requesting unnecessary wakelock.
-  if (XRE_IsParentProcess()) {
+    // Add an observer that disables the screen saver when requested by Gecko.
+    // For example when we're playing video in the foreground tab. Whole firefox
+    // only needs one wakelock instance, so we would only create one listener in
+    // chrome process to prevent requesting unnecessary wakelock.
     AddScreenWakeLockListener();
   }
 
@@ -606,6 +615,10 @@ nsAppShell::Run(void) {
 
   if (XRE_IsParentProcess()) {
     RemoveScreenWakeLockListener();
+
+    if (MOZ_LIKELY(wantAudio)) {
+      mozilla::widget::StopAudioSession();
+    }
   }
 
   return rv;
@@ -729,6 +742,24 @@ bool nsAppShell::ProcessNextNativeEvent(bool mayWait) {
           continue;
         }
 #endif
+
+        // Windows documentation suggets that WM_SETTINGSCHANGE is the message
+        // to watch for timezone changes, but experimentation showed that it
+        // doesn't fire on changing the timezone, but that WM_TIMECHANGE does,
+        // even if there's no immediate effect on the clock (e.g., changing
+        // from Pacific Daylight at UTC-7 to Arizona at UTC-7).
+        if (msg.message == WM_TIMECHANGE) {
+          // The message may not give us sufficient information to determine
+          // if the timezone changed, so keep track of it ourselves.
+          wchar_t systemTimezone[128];
+          bool getSystemTimeSucceeded =
+              WinUtils::GetTimezoneName(systemTimezone);
+          if (getSystemTimeSucceeded && wcscmp(systemTimezone, mTimezoneName)) {
+            nsBaseAppShell::OnSystemTimezoneChange();
+
+            wcscpy_s(mTimezoneName, 128, systemTimezone);
+          }
+        }
 
         ::TranslateMessage(&msg);
         ::DispatchMessageW(&msg);

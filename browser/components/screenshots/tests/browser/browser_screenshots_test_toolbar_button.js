@@ -6,11 +6,6 @@
 add_task(async function testScreenshotButtonDisabled() {
   info("Test the Screenshots button in the panel");
 
-  CustomizableUI.addWidgetToArea(
-    "screenshot-button",
-    CustomizableUI.AREA_NAVBAR
-  );
-
   let screenshotBtn = document.getElementById("screenshot-button");
   Assert.ok(screenshotBtn, "The screenshots button was added to the nav bar");
 
@@ -24,8 +19,8 @@ add_task(async function testScreenshotButtonDisabled() {
   await BrowserTestUtils.withNewTab("about:home", () => {
     Assert.equal(
       screenshotBtn.disabled,
-      true,
-      "Screenshots button is now disabled"
+      false,
+      "Screenshots button is still enabled on about pages"
     );
   });
 });

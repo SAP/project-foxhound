@@ -17,8 +17,6 @@
 <script class="testbody" type="application/javascript">
 <![CDATA[
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 const ACR = Ci.nsIAutoCompleteResult;
 
 // This result can't be constructed in-line, because otherwise we leak memory.
@@ -52,7 +50,7 @@ var autoCompleteSimpleName = "@mozilla.org/autocomplete/search;1?name=simple"
 var autoCompleteSimple = {
   QueryInterface: ChromeUtils.generateQI(["nsIFactory", "nsIAutoCompleteSearch"]),
 
-  createInstance(outer, iid) {
+  createInstance(iid) {
     return this.QueryInterface(iid);
   },
 

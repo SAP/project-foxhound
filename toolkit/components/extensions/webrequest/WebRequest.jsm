@@ -12,12 +12,14 @@ const EXPORTED_SYMBOLS = ["WebRequest"];
 
 const { nsIHttpActivityObserver, nsISocketTransport } = Ci;
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
+  ExtensionDNR: "resource://gre/modules/ExtensionDNR.jsm",
   ExtensionParent: "resource://gre/modules/ExtensionParent.jsm",
   ExtensionUtils: "resource://gre/modules/ExtensionUtils.jsm",
   WebRequestUpload: "resource://gre/modules/WebRequestUpload.jsm",
@@ -26,17 +28,28 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 
 // WebRequest.jsm's only consumer is ext-webRequest.js, so we can depend on
 // the apiManager.global being initialized.
-XPCOMUtils.defineLazyGetter(this, "tabTracker", () => {
-  return ExtensionParent.apiManager.global.tabTracker;
+XPCOMUtils.defineLazyGetter(lazy, "tabTracker", () => {
+  return lazy.ExtensionParent.apiManager.global.tabTracker;
 });
-XPCOMUtils.defineLazyGetter(this, "getCookieStoreIdForOriginAttributes", () => {
-  return ExtensionParent.apiManager.global.getCookieStoreIdForOriginAttributes;
+XPCOMUtils.defineLazyGetter(lazy, "getCookieStoreIdForOriginAttributes", () => {
+  return lazy.ExtensionParent.apiManager.global
+    .getCookieStoreIdForOriginAttributes;
 });
 
 // URI schemes that service workers are allowed to load scripts from (any other
 // scheme is not allowed by the specs and it is not expected by the service workers
 // internals neither, which would likely trigger unexpected behaviors).
 const ALLOWED_SERVICEWORKER_SCHEMES = ["https", "http", "moz-extension"];
+
+// Response HTTP Headers matching the following patterns are restricted for changes
+// applied by MV3 extensions.
+const MV3_RESTRICTED_HEADERS_PATTERNS = [
+  /^cross-origin-embedder-policy$/,
+  /^cross-origin-opener-policy$/,
+  /^cross-origin-resource-policy$/,
+  /^x-frame-options$/,
+  /^access-control-/,
+];
 
 // Classes of requests that should be sent immediately instead of batched.
 // Covers basically anything that can delay first paint or DOMContentLoaded:
@@ -69,7 +82,7 @@ function parseExtra(extra, allowed = [], optionsObj = {}) {
   if (extra) {
     for (let ex of extra) {
       if (!allowed.includes(ex)) {
-        throw new ExtensionUtils.ExtensionError(`Invalid option ${ex}`);
+        throw new lazy.ExtensionUtils.ExtensionError(`Invalid option ${ex}`);
       }
     }
   }
@@ -103,8 +116,10 @@ function verifyRedirect(channel, redirectUri, finalUrl, addonId) {
 
   if (
     isServiceWorkerScript &&
-    channel.loadInfo?.internalContentPolicyType ===
-      Ci.nsIContentPolicy.TYPE_INTERNAL_WORKER_IMPORT_SCRIPTS &&
+    (channel.loadInfo?.internalContentPolicyType ===
+      Ci.nsIContentPolicy.TYPE_INTERNAL_WORKER_IMPORT_SCRIPTS ||
+      channel.loadInfo?.internalContentPolicyType ===
+        Ci.nsIContentPolicy.TYPE_INTERNAL_WORKER_STATIC_MODULE) &&
     !ALLOWED_SERVICEWORKER_SCHEMES.includes(redirectUri?.scheme)
   ) {
     throw new Error(
@@ -246,13 +261,52 @@ class ResponseHeaderChanger extends HeaderChanger {
       if (value) {
         merge = merge || this.didModifyCSP;
       }
+
+      // For manifest_version 3 extension, we are currently only allowing to
+      // merge additional CSP strings to the existing ones, which will be initially
+      // stricter than currently allowed to manifest_version 2 extensions, then
+      // following up with either a new permission and/or some more changes to the
+      // APIs (and possibly making the behavior more deterministic than it is for
+      // manifest_version 2 at the moment).
+      if (opts.policy.manifestVersion > 2) {
+        if (value) {
+          // If the given CSP header value is non empty, then it should be
+          // merged to the existing one.
+          merge = true;
+        } else {
+          // If the given CSP header value is empty (which would be clearing the
+          // CSP header), it should be considered a no-op and this.didModifyCSP
+          // shouldn't be changed to true.
+          return;
+        }
+      }
+
       this.didModifyCSP = true;
+    } else if (
+      opts.policy.manifestVersion > 2 &&
+      this.isResponseHeaderRestricted(lowerCaseName)
+    ) {
+      // TODO (Bug 1787155 and Bug 1273281) open this up to MV3 extensions,
+      // locked behind manifest.json declarative permission and a separate
+      // explicit user-controlled permission (and ideally also check for
+      // changes that would lead to security downgrades).
+      Cu.reportError(
+        `Disallowed change restricted response header ${name} on ${this.channel.finalURL} from ${opts.policy.debugName}`
+      );
+      return;
     }
+
     try {
       this.channel.setResponseHeader(name, value, merge);
     } catch (e) {
       Cu.reportError(new Error(`Error setting response header ${name}: ${e}`));
     }
+  }
+
+  isResponseHeaderRestricted(lowerCaseHeaderName) {
+    return MV3_RESTRICTED_HEADERS_PATTERNS.some(regex =>
+      regex.test(lowerCaseHeaderName)
+    );
   }
 
   readHeaders() {
@@ -379,10 +433,7 @@ var ChannelEventSink = {
   },
 
   // nsIFactory implementation
-  createInstance(outer, iid) {
-    if (outer) {
-      throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
-    }
+  createInstance(iid) {
     return this.QueryInterface(iid);
   },
 };
@@ -571,6 +622,9 @@ HttpObserverManager = {
     onErrorOccurred: new Map(),
     onCompleted: new Map(),
   },
+  // Whether there are any registered declarativeNetRequest rules. These DNR
+  // rules may match new requests and result in request modifications.
+  dnrActive: false,
 
   openingInitialized: false,
   beforeConnectInitialized: false,
@@ -612,10 +666,11 @@ HttpObserverManager = {
   // webRequest listeners and removing those that are no longer needed if
   // there are no more listeners for corresponding webRequest events.
   addOrRemove() {
-    let needOpening = this.listeners.onBeforeRequest.size;
+    let needOpening = this.listeners.onBeforeRequest.size || this.dnrActive;
     let needBeforeConnect =
       this.listeners.onBeforeSendHeaders.size ||
-      this.listeners.onSendHeaders.size;
+      this.listeners.onSendHeaders.size ||
+      this.dnrActive;
     if (needOpening && !this.openingInitialized) {
       this.openingInitialized = true;
       Services.obs.addObserver(this, "http-on-modify-request");
@@ -644,7 +699,8 @@ HttpObserverManager = {
     let needExamine =
       this.needTracing ||
       this.listeners.onHeadersReceived.size ||
-      this.listeners.onAuthRequired.size;
+      this.listeners.onAuthRequired.size ||
+      this.dnrActive;
 
     if (needExamine && !this.examineInitialized) {
       this.examineInitialized = true;
@@ -689,6 +745,11 @@ HttpObserverManager = {
 
   removeListener(kind, callback) {
     this.listeners[kind].delete(callback);
+    this.addOrRemove();
+  },
+
+  setDNRHandlingEnabled(dnrActive) {
+    this.dnrActive = dnrActive;
     this.addOrRemove();
   },
 
@@ -748,17 +809,19 @@ HttpObserverManager = {
       // errorCheck is called in ChannelWrapper::onStartRequest, we should check
       // the errorString after onStartRequest to make sure errors have a chance
       // to be processed before we fall back to a generic error string.
-      let onStart = function() {
-        channel.removeEventListener("start", onStart);
-        if (!channel.errorString) {
-          this.runChannelListener(channel, "onErrorOccurred", {
-            error:
-              this.activityErrorsMap.get(lastActivity) ||
-              `NS_ERROR_NET_UNKNOWN_${lastActivity}`,
-          });
-        }
-      };
-      channel.addEventListener("start", onStart);
+      channel.addEventListener(
+        "start",
+        () => {
+          if (!channel.errorString) {
+            this.runChannelListener(channel, "onErrorOccurred", {
+              error:
+                this.activityErrorsMap.get(lastActivity) ||
+                `NS_ERROR_NET_UNKNOWN_${lastActivity}`,
+            });
+          }
+        },
+        { once: true }
+      );
     } else if (
       lastActivity !== this.GOOD_LAST_ACTIVITY &&
       lastActivity !==
@@ -804,7 +867,7 @@ HttpObserverManager = {
     };
 
     if (originAttributes) {
-      data.cookieStoreId = getCookieStoreIdForOriginAttributes(
+      data.cookieStoreId = lazy.getCookieStoreIdForOriginAttributes(
         originAttributes
       );
     }
@@ -849,7 +912,7 @@ HttpObserverManager = {
     let browserData = wrapper._browserData;
     if (!browserData) {
       if (wrapper.browserElement) {
-        browserData = tabTracker.getBrowserData(wrapper.browserElement);
+        browserData = lazy.tabTracker.getBrowserData(wrapper.browserElement);
       } else {
         browserData = { tabId: -1, windowId: -1 };
       }
@@ -866,6 +929,10 @@ HttpObserverManager = {
     try {
       if (kind !== "onErrorOccurred" && channel.errorString) {
         return;
+      }
+      if (this.dnrActive) {
+        // DNR may modify (but not cancel) the request at this stage.
+        lazy.ExtensionDNR.beforeWebRequestEvent(channel, kind);
       }
 
       let registerFilter = this.FILTER_TYPES.has(kind);
@@ -937,7 +1004,8 @@ HttpObserverManager = {
 
         if (opts.requestBody && channel.canModify) {
           requestBody =
-            requestBody || WebRequestUpload.createRequestBody(channel.channel);
+            requestBody ||
+            lazy.WebRequestUpload.createRequestBody(channel.channel);
           data.requestBody = requestBody;
         }
 
@@ -959,6 +1027,10 @@ HttpObserverManager = {
       });
     } catch (e) {
       Cu.reportError(e);
+    }
+
+    if (this.dnrActive && lazy.ExtensionDNR.handleRequest(channel, kind)) {
+      return;
     }
 
     return this.applyChanges(
@@ -1164,7 +1236,7 @@ HttpObserverManager = {
   },
 
   examine(channel, topic, data) {
-    if (this.listeners.onHeadersReceived.size) {
+    if (this.listeners.onHeadersReceived.size || this.dnrActive) {
       this.runChannelListener(channel, "onHeadersReceived");
     }
 
@@ -1236,6 +1308,18 @@ var onCompleted = new HttpEvent("onCompleted", ["responseHeaders"]);
 var onErrorOccurred = new HttpEvent("onErrorOccurred");
 
 var WebRequest = {
+  setDNRHandlingEnabled: dnrActive => {
+    HttpObserverManager.setDNRHandlingEnabled(dnrActive);
+  },
+  getTabIdForChannelWrapper: channel => {
+    // Warning: This method should only be called after the initialization of
+    // ExtensionParent.apiManager.global. Generally, this means that this method
+    // should only be used by implementations of extension API methods (which
+    // themselves are loaded in ExtensionParent.apiManager.global and therefore
+    // imply the initialization of ExtensionParent.apiManager.global).
+    return HttpObserverManager.getBrowserData(channel).tabId;
+  },
+
   onBeforeRequest,
   onBeforeSendHeaders,
   onSendHeaders,
@@ -1253,7 +1337,10 @@ var WebRequest = {
       details.remoteTab
     );
     if (channel) {
-      return SecurityInfo.getSecurityInfo(channel.channel, details.options);
+      return lazy.SecurityInfo.getSecurityInfo(
+        channel.channel,
+        details.options
+      );
     }
   },
 };

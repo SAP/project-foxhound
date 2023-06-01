@@ -9,7 +9,7 @@
 const {
   logEvent,
   getThrownMessage,
-} = require("devtools/server/actors/utils/logEvent");
+} = require("resource://devtools/server/actors/utils/logEvent.js");
 
 /**
  * Set breakpoints on all the given entry points with the given
@@ -34,17 +34,17 @@ exports.setBreakpointAtEntryPoints = setBreakpointAtEntryPoints;
  * client directly, but encapsulate the DebuggerScript locations where the
  * breakpoint is installed.
  */
-function BreakpointActor(threadActor, location) {
-  // A map from Debugger.Script instances to the offsets which the breakpoint
-  // has been set for in that script.
-  this.scripts = new Map();
+class BreakpointActor {
+  constructor(threadActor, location) {
+    // A map from Debugger.Script instances to the offsets which the breakpoint
+    // has been set for in that script.
+    this.scripts = new Map();
 
-  this.threadActor = threadActor;
-  this.location = location;
-  this.options = null;
-}
+    this.threadActor = threadActor;
+    this.location = location;
+    this.options = null;
+  }
 
-BreakpointActor.prototype = {
   setOptions(options) {
     const oldOptions = this.options;
     this.options = options;
@@ -52,16 +52,16 @@ BreakpointActor.prototype = {
     for (const [script, offsets] of this.scripts) {
       this._newOffsetsOrOptions(script, offsets, oldOptions);
     }
-  },
+  }
 
-  destroy: function() {
+  destroy() {
     this.removeScripts();
     this.options = null;
-  },
+  }
 
-  hasScript: function(script) {
+  hasScript(script) {
     return this.scripts.has(script);
-  },
+  }
 
   /**
    * Called when this same breakpoint is added to another Debugger.Script
@@ -72,20 +72,20 @@ BreakpointActor.prototype = {
    * @param offsets Array
    *        Any offsets in the script the breakpoint is associated with.
    */
-  addScript: function(script, offsets) {
+  addScript(script, offsets) {
     this.scripts.set(script, offsets.concat(this.scripts.get(offsets) || []));
     this._newOffsetsOrOptions(script, offsets, null);
-  },
+  }
 
   /**
    * Remove the breakpoints from associated scripts and clear the script cache.
    */
-  removeScripts: function() {
+  removeScripts() {
     for (const [script] of this.scripts) {
       script.clearBreakpoint(this);
     }
     this.scripts.clear();
-  },
+  }
 
   /**
    * Called on changes to this breakpoint's script offsets or options.
@@ -101,7 +101,7 @@ BreakpointActor.prototype = {
     for (const offset of offsets) {
       script.setBreakpoint(offset, this);
     }
-  },
+  }
 
   /**
    * Check if this breakpoint has a condition that doesn't error and
@@ -117,8 +117,8 @@ BreakpointActor.prototype = {
    *          - message: string
    *            If the condition throws, this is the thrown message.
    */
-  checkCondition: function(frame, condition) {
-    const completion = frame.eval(condition);
+  checkCondition(frame, condition) {
+    const completion = frame.eval(condition, { hideFromDebugger: true });
     if (completion) {
       if (completion.throw) {
         // The evaluation failed and threw
@@ -134,7 +134,7 @@ BreakpointActor.prototype = {
     }
     // The evaluation was killed (possibly by the slow script dialog)
     return { result: undefined };
-  },
+  }
 
   /**
    * A function that the engine calls when a breakpoint has been hit.
@@ -143,7 +143,7 @@ BreakpointActor.prototype = {
    *        The stack frame that contained the breakpoint.
    */
   // eslint-disable-next-line complexity
-  hit: function(frame) {
+  hit(frame) {
     // Don't pause if we are currently stepping (in or over) or the frame is
     // black-boxed.
     const location = this.threadActor.sourcesManager.getFrameLocation(frame);
@@ -202,15 +202,15 @@ BreakpointActor.prototype = {
     }
 
     return this.threadActor._pauseAndRespond(frame, reason);
-  },
+  }
 
-  delete: function() {
+  delete() {
     // Remove from the breakpoint store.
     this.threadActor.breakpointActorMap.deleteActor(this.location);
     // Remove the actual breakpoint from the associated scripts.
     this.removeScripts();
     this.destroy();
-  },
-};
+  }
+}
 
 exports.BreakpointActor = BreakpointActor;

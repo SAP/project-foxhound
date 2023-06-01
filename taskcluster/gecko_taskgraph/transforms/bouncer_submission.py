@@ -10,11 +10,11 @@ import copy
 import logging
 
 import attr
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.schema import resolve_keyed_by
 
-from gecko_taskgraph.transforms.base import TransformSequence
 from gecko_taskgraph.transforms.l10n import parse_locales_file
 from gecko_taskgraph.util.attributes import release_level
-from gecko_taskgraph.util.schema import resolve_keyed_by
 from gecko_taskgraph.util.scriptworker import get_release_config
 
 logger = logging.getLogger(__name__)
@@ -109,6 +109,11 @@ CONFIG_PER_BOUNCER_PRODUCT = {
         "file_names": {
             "osx": "{pretty_product}%20{version}.pkg",
         },
+    },
+    "langpack": {
+        "name_postfix": "-langpack-SSL",
+        "path_template": RELEASES_PATH_TEMPLATE.replace(":lang", "xpi"),
+        "file_names": {"default": ":lang.xpi"},
     },
 }
 CONFIG_PER_BOUNCER_PRODUCT["installer-ssl"] = copy.deepcopy(
@@ -327,5 +332,4 @@ def craft_ssl_only(bouncer_product, project):
 def split_build_data(version):
     if version and "build" in version:
         return version.split("build")
-    else:
-        return version, InvalidSubstitution("k")
+    return version, InvalidSubstitution("k")

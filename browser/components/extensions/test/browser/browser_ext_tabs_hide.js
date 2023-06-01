@@ -1,23 +1,15 @@
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "SessionStore",
-  "resource:///modules/sessionstore/SessionStore.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "TabStateFlusher",
-  "resource:///modules/sessionstore/TabStateFlusher.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
+  TabStateFlusher: "resource:///modules/sessionstore/TabStateFlusher.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
   this,
   "ExtensionControlledPopup",
   "resource:///modules/ExtensionControlledPopup.jsm"
 );
-const { E10SUtils } = ChromeUtils.import(
-  "resource://gre/modules/E10SUtils.jsm"
-);
+
 const triggeringPrincipal_base64 = E10SUtils.SERIALIZED_SYSTEMPRINCIPAL;
 
 async function doorhangerTest(testFn) {
@@ -238,13 +230,15 @@ add_task(async function test_tabs_showhide() {
   SessionStore.setBrowserState(JSON.stringify(sessData));
   await restored;
 
-  for (let win of BrowserWindowIterator()) {
-    let allTabsButton = win.document.getElementById("alltabs-button");
-    is(
-      getComputedStyle(allTabsButton).display,
-      "none",
-      "The all tabs button is hidden"
-    );
+  if (!Services.prefs.getBoolPref("browser.tabs.tabmanager.enabled")) {
+    for (let win of BrowserWindowIterator()) {
+      let allTabsButton = win.document.getElementById("alltabs-button");
+      is(
+        getComputedStyle(allTabsButton).display,
+        "none",
+        "The all tabs button is hidden"
+      );
+    }
   }
 
   // Attempt to hide all the tabs, however the active tab in each window cannot

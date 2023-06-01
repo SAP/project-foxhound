@@ -5,9 +5,9 @@
 
 #include "gfxFontInfoLoader.h"
 #include "mozilla/gfx/Logging.h"
+#include "mozilla/AppShutdown.h"
 #include "nsCRT.h"
 #include "nsIObserverService.h"
-#include "nsXPCOM.h"        // for gXPCOMThreadsShutDown
 #include "nsThreadUtils.h"  // for nsRunnable
 #include "gfxPlatformFontList.h"
 
@@ -113,8 +113,6 @@ nsresult AsyncFontInfoLoader::Run() {
 
 NS_IMPL_ISUPPORTS(gfxFontInfoLoader::ShutdownObserver, nsIObserver)
 
-static bool sFontLoaderShutdownObserved = false;
-
 NS_IMETHODIMP
 gfxFontInfoLoader::ShutdownObserver::Observe(nsISupports* aSubject,
                                              const char* aTopic,
@@ -122,7 +120,6 @@ gfxFontInfoLoader::ShutdownObserver::Observe(nsISupports* aSubject,
   if (!nsCRT::strcmp(aTopic, "quit-application") ||
       !nsCRT::strcmp(aTopic, "xpcom-shutdown")) {
     mLoader->CancelLoader();
-    sFontLoaderShutdownObserved = true;
   } else {
     MOZ_ASSERT_UNREACHABLE("unexpected notification topic");
   }
@@ -143,7 +140,11 @@ void gfxFontInfoLoader::StartLoader(uint32_t aDelay) {
     return;
   }
 
-  NS_ASSERTION(!mFontInfo, "fontinfo should be null when starting font loader");
+  // We observe for "quit-application" above, so avoid initialization after it.
+  if (NS_WARN_IF(AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdown))) {
+    MOZ_ASSERT(!aDelay, "Delayed gfxFontInfoLoader startup after AppShutdown?");
+    return;
+  }
 
   // sanity check
   if (mState != stateInitial && mState != stateTimerOff &&
@@ -151,16 +152,22 @@ void gfxFontInfoLoader::StartLoader(uint32_t aDelay) {
     CancelLoader();
   }
 
+  // Create mFontInfo when we're initially called to set up the delay, rather
+  // than when called by the DelayedStartCallback, because on the initial call
+  // we know we'll be holding the gfxPlatformFontList lock.
+  if (!mFontInfo) {
+    mFontInfo = CreateFontInfoData();
+    if (!mFontInfo) {
+      // The platform doesn't want anything loaded, so just bail out.
+      mState = stateTimerOff;
+      return;
+    }
+  }
+
   AddShutdownObserver();
 
   // Caller asked for a delay? ==> start async thread after a delay
   if (aDelay) {
-    NS_ASSERTION(!sFontLoaderShutdownObserved,
-                 "Bug 1508626 - Setting delay timer for font loader after "
-                 "shutdown observed");
-    NS_ASSERTION(!gXPCOMThreadsShutDown,
-                 "Bug 1508626 - Setting delay timer for font loader after "
-                 "shutdown but before observer");
     // Set up delay timer, or if there is already a timer in place, just
     // leave it to do its thing. (This can happen if a StartLoader runnable
     // was posted to the main thread from the InitFontList thread, but then
@@ -186,20 +193,6 @@ void gfxFontInfoLoader::StartLoader(uint32_t aDelay) {
   if (mTimer) {
     mTimer->Cancel();
     mTimer = nullptr;
-  }
-
-  NS_ASSERTION(
-      !sFontLoaderShutdownObserved,
-      "Bug 1508626 - Initializing font loader after shutdown observed");
-  NS_ASSERTION(!gXPCOMThreadsShutDown,
-               "Bug 1508626 - Initializing font loader after shutdown but "
-               "before observer");
-
-  mFontInfo = CreateFontInfoData();
-  if (!mFontInfo) {
-    // The platform doesn't want anything loaded, so just bail out.
-    mState = stateTimerOff;
-    return;
   }
 
   // initialize

@@ -19,8 +19,14 @@ const NON_CONTENT_ACCESSIBLE_VALUES = {
     "-moz-autofill-background",
   ],
   "display": [
-    "-moz-deck",
-    "-moz-popup",
+    "-moz-box",
+    "-moz-inline-box",
+  ],
+  "font": [
+      "-moz-pull-down-menu",
+      "-moz-button",
+      "-moz-list",
+      "-moz-field",
   ],
   "-moz-appearance": [
     "button-arrow-down",
@@ -89,7 +95,6 @@ const NON_CONTENT_ACCESSIBLE_VALUES = {
     "-moz-win-communications-toolbox",
     "-moz-win-media-toolbox",
     "-moz-win-browsertabbar-toolbox",
-    "-moz-win-glass",
     "-moz-win-borderless-glass",
     "-moz-win-exclude-glass",
     "-moz-mac-help-button",
@@ -99,9 +104,6 @@ const NON_CONTENT_ACCESSIBLE_VALUES = {
     "-moz-window-button-maximize",
     "-moz-window-button-minimize",
     "-moz-window-button-restore",
-    "-moz-window-frame-bottom",
-    "-moz-window-frame-left",
-    "-moz-window-frame-right",
     "-moz-window-titlebar",
     "-moz-window-titlebar-maximized",
     "-moz-mac-active-source-list-selection",
@@ -109,8 +111,6 @@ const NON_CONTENT_ACCESSIBLE_VALUES = {
     "-moz-mac-disclosure-button-open",
     "-moz-mac-source-list",
     "-moz-mac-source-list-selection",
-    "-moz-mac-vibrant-titlebar-dark",
-    "-moz-mac-vibrant-titlebar-light",
 
     "button-bevel",
     "caret",
@@ -124,11 +124,10 @@ const NON_CONTENT_ACCESSIBLE_VALUES = {
   "line-height": [
     "-moz-block-height",
   ],
+  "text-align": [
+    "-moz-center-or-inherit",
+  ],
 };
-
-if (!SpecialPowers.getBoolPref("layout.css.xul-box-display-values.content.enabled")) {
-  NON_CONTENT_ACCESSIBLE_VALUES.display.push("-moz-box", "-moz-inline-box");
-}
 
 const sheet = document.getElementById("sheet");
 const div = document.querySelector("div");

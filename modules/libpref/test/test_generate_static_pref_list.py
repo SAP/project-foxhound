@@ -2,14 +2,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
+import sys
+import unittest
+from os import path
 
 import mozpack.path as mozpath
 import mozunit
-import sys
-import unittest
 import yaml
-from os import path
 
 try:
     from StringIO import StringIO
@@ -68,6 +67,12 @@ good_input = """
   value: true
   mirror: always
   rust: true
+
+# A comment.
+- name: my.datamutex.string
+  type: DataMutexString
+  value: "foobar"    # This string is quoted.
+  mirror: always
 
 # YAML+Python interprets `10 + 10 * 20` as a string, and so it is printed
 # unchanged.
@@ -150,6 +155,13 @@ ALWAYS_PREF(
    my_atomic_bool,
    my_atomic_bool,
   RelaxedAtomicBool, true
+)
+
+ALWAYS_DATAMUTEX_PREF(
+  "my.datamutex.string",
+   my_datamutex_string,
+   my_datamutex_string,
+  DataMutexString, "foobar"_ns
 )
 
 ALWAYS_PREF(

@@ -1,8 +1,5 @@
 "use strict";
 
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
-);
 const { NormandyAddonManager } = ChromeUtils.import(
   "resource://normandy/lib/NormandyAddonManager.jsm"
 );

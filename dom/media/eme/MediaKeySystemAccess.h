@@ -27,7 +27,7 @@ namespace dom {
 class MediaKeySystemAccess final : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(MediaKeySystemAccess)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(MediaKeySystemAccess)
 
  public:
   explicit MediaKeySystemAccess(nsPIDOMWindowInner* aParent,
@@ -51,10 +51,6 @@ class MediaKeySystemAccess final : public nsISupports, public nsWrapperCache {
 
   static MediaKeySystemStatus GetKeySystemStatus(
       const nsAString& aKeySystem, nsACString& aOutExceptionMessage);
-
-  static bool IsSupported(const nsAString& aKeySystem,
-                          const Sequence<MediaKeySystemConfiguration>& aConfigs,
-                          DecoderDoctorDiagnostics* aDiagnostics);
 
   static void NotifyObservers(nsPIDOMWindowInner* aWindow,
                               const nsAString& aKeySystem,

@@ -42,17 +42,10 @@ namespace mozilla {
 
 struct StaticXREAppData;
 
-#if defined(XP_WIN) && defined(MOZ_SANDBOX)
-namespace sandboxing {
-class PermissionsService;
-}
-#endif
-
 struct BootstrapConfig {
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
   /* Chromium sandbox BrokerServices. */
   sandbox::BrokerServices* sandboxBrokerServices;
-  sandboxing::PermissionsService* sandboxPermissionsService;
 #endif
   /* Pointer to static XRE AppData from application.ini.h */
   const StaticXREAppData* appData;
@@ -133,10 +126,6 @@ class Bootstrap {
 
 #ifdef LIBFUZZER
   virtual void XRE_LibFuzzerSetDriver(LibFuzzerDriver aDriver) = 0;
-#endif
-
-#ifdef MOZ_IPDL_TESTS
-  virtual int XRE_RunIPDLTest(int argc, char** argv) = 0;
 #endif
 
 #ifdef MOZ_ENABLE_FORKSERVER

@@ -20,14 +20,8 @@ const categoryName = "net-channel-event-sinks";
  */
 var eventsink = {
   QueryInterface: ChromeUtils.generateQI(["nsIFactory", "nsIChannelEventSink"]),
-  createInstance: function eventsink_ci(outer, iid) {
-    if (outer) {
-      throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
-    }
+  createInstance: function eventsink_ci(iid) {
     return this.QueryInterface(iid);
-  },
-  lockFactory: function eventsink_lockf(lock) {
-    throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
   },
 
   asyncOnChannelRedirect: function eventsink_onredir(
@@ -140,7 +134,7 @@ function run_test_continued() {
   var chan;
   if (listener._iteration == 1) {
     // Step 2: Category entry
-    Services.catMan.nsICategoryManager.addCategoryEntry(
+    Services.catMan.addCategoryEntry(
       categoryName,
       "unit test",
       sinkContract,
@@ -150,11 +144,7 @@ function run_test_continued() {
     chan = makeChan(URL + "/redirect");
   } else {
     // Step 3: Global contract id
-    Services.catMan.nsICategoryManager.deleteCategoryEntry(
-      categoryName,
-      "unit test",
-      false
-    );
+    Services.catMan.deleteCategoryEntry(categoryName, "unit test", false);
     listener.expectSinkCall = false;
     chan = makeChan(URL + "/redirectfile");
   }

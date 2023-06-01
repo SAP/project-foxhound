@@ -7,9 +7,10 @@
 #include "mozilla/layers/APZInputBridge.h"
 
 #include "AsyncPanZoomController.h"
-#include "InputData.h"                      // for MouseInput, etc
-#include "InputBlockState.h"                // for InputBlockState
-#include "OverscrollHandoffState.h"         // for OverscrollHandoffState
+#include "InputData.h"               // for MouseInput, etc
+#include "InputBlockState.h"         // for InputBlockState
+#include "OverscrollHandoffState.h"  // for OverscrollHandoffState
+#include "mozilla/EventForwards.h"
 #include "mozilla/dom/WheelEventBinding.h"  // for WheelEvent constants
 #include "mozilla/EventStateManager.h"      // for EventStateManager
 #include "mozilla/layers/APZThreadUtils.h"  // for AssertOnControllerThread, etc
@@ -69,15 +70,41 @@ void APZEventResult::SetStatusAsConsumeDoDefault(
                : APZHandledResult{APZHandledPlace::HandledByContent, aTarget});
 }
 
-void APZEventResult::SetStatusAsConsumeDoDefaultWithTargetConfirmationFlags(
+void APZEventResult::SetStatusForTouchEvent(
     const InputBlockState& aBlock, TargetConfirmationFlags aFlags,
-    const AsyncPanZoomController& aTarget) {
-  mStatus = nsEventStatus_eConsumeDoDefault;
+    PointerEventsConsumableFlags aConsumableFlags,
+    const AsyncPanZoomController* aTarget) {
+  // Note, we need to continue setting mStatus to eIgnore in the {mHasRoom=true,
+  // mAllowedByTouchAction=false} case because this is the behaviour expected by
+  // APZEventState::ProcessTouchEvent() when it determines when to send a
+  // `pointercancel` event. TODO: Use something more descriptive than
+  // nsEventStatus for this purpose.
+  bool consumable = aConsumableFlags.IsConsumable();
+  mStatus =
+      consumable ? nsEventStatus_eConsumeDoDefault : nsEventStatus_eIgnore;
 
-  if (!aTarget.IsRootContent()) {
+  // If the touch event's effect is disallowed by touch-action, treat it as if
+  // a touch event listener had preventDefault()-ed it (i.e. return
+  // HandledByContent, except we can do it eagerly rather than having to wait
+  // for the listener to run).
+  if (!aConsumableFlags.mAllowedByTouchAction) {
+    mHandledResult =
+        Some(APZHandledResult{APZHandledPlace::HandledByContent, aTarget});
+    return;
+  }
+
+  if (mHandledResult && !aFlags.mDispatchToContent &&
+      !aConsumableFlags.mHasRoom) {
+    // Set result to Unhandled if we have no room to scroll, unless it
+    // was HandledByContent because we're over a dispatch-to-content region,
+    // in which case it should remain HandledByContent.
+    mHandledResult->mPlace = APZHandledPlace::Unhandled;
+  }
+
+  if (aTarget && !aTarget->IsRootContent()) {
     auto [result, rootApzc] =
         aBlock.GetOverscrollHandoffChain()->ScrollingDownWillMoveDynamicToolbar(
-            &aTarget);
+            aTarget);
     if (result) {
       MOZ_ASSERT(rootApzc && rootApzc->IsRootContent());
       // The event is actually consumed by a non-root APZC but scroll
@@ -93,7 +120,9 @@ void APZEventResult::SetStatusAsConsumeDoDefaultWithTargetConfirmationFlags(
       mHandledResult = aFlags.mDispatchToContent
                            ? Nothing()
                            : Some(APZHandledResult{
-                                 APZHandledPlace::HandledByRoot, rootApzc});
+                                 consumable ? APZHandledPlace::HandledByRoot
+                                            : APZHandledPlace::Unhandled,
+                                 rootApzc});
     }
   }
 }
@@ -116,7 +145,8 @@ Maybe<APZWheelAction> APZInputBridge::ActionForWheelEvent(
   return EventStateManager::APZWheelActionFor(aEvent);
 }
 
-APZEventResult APZInputBridge::ReceiveInputEvent(WidgetInputEvent& aEvent) {
+APZEventResult APZInputBridge::ReceiveInputEvent(
+    WidgetInputEvent& aEvent, InputBlockCallback&& aCallback) {
   APZThreadUtils::AssertOnControllerThread();
 
   APZEventResult result;
@@ -130,10 +160,11 @@ APZEventResult APZInputBridge::ReceiveInputEvent(WidgetInputEvent& aEvent) {
         input.mOrigin =
             ScreenPoint(mouseEvent.mRefPoint.x, mouseEvent.mRefPoint.y);
 
-        result = ReceiveInputEvent(input);
+        result = ReceiveInputEvent(input, std::move(aCallback));
 
-        mouseEvent.mRefPoint.x = input.mOrigin.x;
-        mouseEvent.mRefPoint.y = input.mOrigin.y;
+        mouseEvent.mRefPoint = TruncatedToInt(ViewAs<LayoutDevicePixel>(
+            input.mOrigin,
+            PixelCastJustification::LayoutDeviceIsScreenForUntransformedEvent));
         mouseEvent.mFlags.mHandledByAPZ = input.mHandledByAPZ;
         mouseEvent.mFocusSequenceNumber = input.mFocusSequenceNumber;
 #ifdef XP_MACOSX
@@ -175,7 +206,7 @@ APZEventResult APZInputBridge::ReceiveInputEvent(WidgetInputEvent& aEvent) {
     case eTouchEventClass: {
       WidgetTouchEvent& touchEvent = *aEvent.AsTouchEvent();
       MultiTouchInput touchInput(touchEvent);
-      result = ReceiveInputEvent(touchInput);
+      result = ReceiveInputEvent(touchInput, std::move(aCallback));
       // touchInput was modified in-place to possibly remove some
       // touch points (if we are overscrolled), and the coordinates were
       // modified using the APZ untransform. We need to copy these changes
@@ -224,7 +255,7 @@ APZEventResult APZInputBridge::ReceiveInputEvent(WidgetInputEvent& aEvent) {
         if (wheelEvent.mDeltaX || wheelEvent.mDeltaY) {
           ScreenPoint origin(wheelEvent.mRefPoint.x, wheelEvent.mRefPoint.y);
           ScrollWheelInput input(
-              wheelEvent.mTime, wheelEvent.mTimeStamp, 0, scrollMode,
+              wheelEvent.mTimeStamp, 0, scrollMode,
               ScrollWheelInput::DeltaTypeForDeltaMode(wheelEvent.mDeltaMode),
               origin, wheelEvent.mDeltaX, wheelEvent.mDeltaY,
               wheelEvent.mAllowToOverrideSystemScrollSpeed, strategy);
@@ -241,9 +272,10 @@ APZEventResult APZInputBridge::ReceiveInputEvent(WidgetInputEvent& aEvent) {
               &wheelEvent, &input.mUserDeltaMultiplierX,
               &input.mUserDeltaMultiplierY);
 
-          result = ReceiveInputEvent(input);
-          wheelEvent.mRefPoint.x = input.mOrigin.x;
-          wheelEvent.mRefPoint.y = input.mOrigin.y;
+          result = ReceiveInputEvent(input, std::move(aCallback));
+          wheelEvent.mRefPoint = TruncatedToInt(ViewAs<LayoutDevicePixel>(
+              input.mOrigin, PixelCastJustification::
+                                 LayoutDeviceIsScreenForUntransformedEvent));
           wheelEvent.mFlags.mHandledByAPZ = input.mHandledByAPZ;
           wheelEvent.mFocusSequenceNumber = input.mFocusSequenceNumber;
           aEvent.mLayersId = input.mLayersId;
@@ -263,7 +295,7 @@ APZEventResult APZInputBridge::ReceiveInputEvent(WidgetInputEvent& aEvent) {
 
       KeyboardInput input(keyboardEvent);
 
-      result = ReceiveInputEvent(input);
+      result = ReceiveInputEvent(input, std::move(aCallback));
 
       keyboardEvent.mFlags.mHandledByAPZ = input.mHandledByAPZ;
       keyboardEvent.mFocusSequenceNumber = input.mFocusSequenceNumber;

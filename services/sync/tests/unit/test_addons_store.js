@@ -3,15 +3,15 @@
 
 "use strict";
 
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 const { AddonsEngine } = ChromeUtils.import(
   "resource://services-sync/engines/addons.js"
 );
 const { Service } = ChromeUtils.import("resource://services-sync/service.js");
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
 
 const HTTP_PORT = 8888;
@@ -51,7 +51,7 @@ add_task(async function setupSystemAddon() {
 
   let xpi = await AddonTestUtils.createTempWebExtensionFile({
     manifest: {
-      applications: { gecko: { id: SYSTEM_ADDON_ID } },
+      browser_specific_settings: { gecko: { id: SYSTEM_ADDON_ID } },
     },
   });
 
@@ -68,7 +68,7 @@ const ID3 = "addon3@tests.mozilla.org";
 const ADDONS = {
   test_addon1: {
     manifest: {
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: ID1,
           update_url: "http://example.com/data/test_install.json",
@@ -79,13 +79,13 @@ const ADDONS = {
 
   test_addon2: {
     manifest: {
-      applications: { gecko: { id: ID2 } },
+      browser_specific_settings: { gecko: { id: ID2 } },
     },
   },
 
   test_addon3: {
     manifest: {
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: ID3,
           strict_max_version: "0",
@@ -144,7 +144,6 @@ for (let [name, files] of Object.entries(ADDONS)) {
 }
 
 let engine;
-let tracker;
 let store;
 let reconciler;
 
@@ -242,7 +241,6 @@ async function checkReconcilerUpToDate(addon) {
 add_task(async function setup() {
   await Service.engineManager.register(AddonsEngine);
   engine = Service.engineManager.get("addons");
-  tracker = engine._tracker;
   store = engine._store;
   reconciler = engine._reconciler;
 

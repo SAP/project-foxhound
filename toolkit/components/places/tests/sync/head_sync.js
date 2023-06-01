@@ -1,8 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 // Import common head.
 {
   /* import-globals-from ../head_common.js */
@@ -16,19 +14,19 @@ var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 var { CanonicalJSON } = ChromeUtils.import(
   "resource://gre/modules/CanonicalJSON.jsm"
 );
-var { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+var { Log } = ChromeUtils.importESModule("resource://gre/modules/Log.sys.mjs");
 var { ObjectUtils } = ChromeUtils.import(
   "resource://gre/modules/ObjectUtils.jsm"
 );
-var { PlacesSyncUtils } = ChromeUtils.import(
-  "resource://gre/modules/PlacesSyncUtils.jsm"
+var { PlacesSyncUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PlacesSyncUtils.sys.mjs"
 );
-var { SyncedBookmarksMirror } = ChromeUtils.import(
-  "resource://gre/modules/SyncedBookmarksMirror.jsm"
+var { SyncedBookmarksMirror } = ChromeUtils.importESModule(
+  "resource://gre/modules/SyncedBookmarksMirror.sys.mjs"
 );
 var { CommonUtils } = ChromeUtils.import("resource://services-common/utils.js");
-var { FileTestUtils } = ChromeUtils.import(
-  "resource://testing-common/FileTestUtils.jsm"
+var { FileTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/FileTestUtils.sys.mjs"
 );
 var {
   HTTP_400,
@@ -337,6 +335,7 @@ BookmarkObserver.prototype = {
             index: event.index,
             type: event.itemType,
             urlHref: event.url || null,
+            title: event.title,
             guid: event.guid,
             parentGuid: event.parentGuid,
             source: event.source,

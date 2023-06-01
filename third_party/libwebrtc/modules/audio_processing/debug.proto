@@ -35,7 +35,7 @@ message Stream {
 
   optional int32 delay = 3;
   optional sint32 drift = 4;
-  optional int32 level = 5;
+  optional int32 applied_input_volume = 5;
   optional bool keypress = 6;
 
   // float deinterleaved data, where each repeated element points to a single
@@ -92,6 +92,7 @@ message RuntimeSetting {
   optional int32 playout_volume_change = 4;
   optional PlayoutAudioDeviceInfo playout_audio_device_change = 5;
   optional bool capture_output_used = 6;
+  optional float capture_post_gain = 7;
 }
 
 message Event {

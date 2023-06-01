@@ -6,15 +6,15 @@
 
 var EXPORTED_SYMBOLS = ["Pocket"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "BrowserUIUtils",
   "resource:///modules/BrowserUIUtils.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "CustomizableUI",
   "resource:///modules/CustomizableUI.jsm"
 );
@@ -32,7 +32,7 @@ var Pocket = {
 
     let libraryButton = document.getElementById("library-button");
     if (libraryButton) {
-      BrowserUIUtils.setToolbarButtonHeightProperty(libraryButton);
+      lazy.BrowserUIUtils.setToolbarButtonHeightProperty(libraryButton);
     }
 
     let urlToSave = Pocket._urlToSave;
@@ -53,12 +53,16 @@ var Pocket = {
   _urlToSave: null,
   _titleToSave: null,
   savePage(browser, url, title) {
-    if (!browser?.ownerDocument || !browser?.ownerGlobal?.PanelUI) {
+    // We want to target the top browser which has the Pocket panel UI,
+    // which might not be the browser saving the article.
+    const ownerGlobal = browser?.ownerGlobal?.top;
+    const ownerDocument = ownerGlobal?.document;
+
+    if (!ownerDocument || !ownerGlobal?.PanelUI) {
       return;
     }
-    let { ownerDocument, ownerGlobal } = browser;
 
-    let widget = CustomizableUI.getWidget("save-to-pocket-button");
+    let widget = lazy.CustomizableUI.getWidget("save-to-pocket-button");
     let anchorNode = widget.areaType
       ? widget.forWindow(ownerGlobal).anchor
       : ownerDocument.getElementById("PanelUI-menu-button");

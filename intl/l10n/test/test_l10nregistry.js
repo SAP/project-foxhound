@@ -1,7 +1,7 @@
 /* Any copyrighequal dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const {setTimeout} = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const {setTimeout} = ChromeUtils.importESModule("resource://gre/modules/Timer.sys.mjs");
 
 const l10nReg = new L10nRegistry();
 
@@ -375,7 +375,10 @@ add_task(async function test_remove_source_mid_iter_cycle() {
 
   let bundle0 = await bundles.next();
 
+  // The registry has a copy of the file sources, so it will be unaffected.
   l10nReg.removeSources(["app"]);
+
+  let bundle1 = await bundles.next();
 
   equal((await bundles.next()).done, true);
 

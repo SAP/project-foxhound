@@ -12,9 +12,9 @@ use crate::invalidation::element::invalidator::{DescendantInvalidationLists, Inv
 use crate::invalidation::element::invalidator::{InvalidationProcessor, InvalidationVector};
 use crate::values::AtomIdent;
 use selectors::attr::CaseSensitivity;
-use selectors::matching::{self, MatchingContext, MatchingMode};
+use selectors::matching::{self, MatchingContext, MatchingMode, NeedsSelectorFlags};
 use selectors::parser::{Combinator, Component, LocalName, SelectorImpl};
-use selectors::{Element, NthIndexCache, SelectorList};
+use selectors::{Element, SelectorList};
 use smallvec::SmallVec;
 
 /// <https://dom.spec.whatwg.org/#dom-element-matches>
@@ -26,7 +26,15 @@ pub fn element_matches<E>(
 where
     E: Element,
 {
-    let mut context = MatchingContext::new(MatchingMode::Normal, None, None, quirks_mode);
+    let mut nth_index_cache = Default::default();
+
+    let mut context = MatchingContext::new(
+        MatchingMode::Normal,
+        None,
+        &mut nth_index_cache,
+        quirks_mode,
+        NeedsSelectorFlags::No,
+    );
     context.scope_element = Some(element.opaque());
     context.current_host = element.containing_shadow_host().map(|e| e.opaque());
     matching::matches_selector_list(selector_list, element, &mut context)
@@ -41,13 +49,14 @@ pub fn element_closest<E>(
 where
     E: Element,
 {
-    let mut nth_index_cache = NthIndexCache::default();
+    let mut nth_index_cache = Default::default();
 
     let mut context = MatchingContext::new(
         MatchingMode::Normal,
         None,
-        Some(&mut nth_index_cache),
+        &mut nth_index_cache,
         quirks_mode,
+        NeedsSelectorFlags::No,
     );
     context.scope_element = Some(element.opaque());
     context.current_host = element.containing_shadow_host().map(|e| e.opaque());
@@ -205,6 +214,10 @@ where
         Q::append_element(self.results, e);
     }
 
+    fn invalidated_sibling(&mut self, e: E, _of: E) {
+        Q::append_element(self.results, e);
+    }
+
     fn recursion_limit_exceeded(&mut self, _e: E) {}
     fn invalidated_descendants(&mut self, _e: E, _child: E) {}
 }
@@ -354,7 +367,7 @@ where
         ref lower_name,
     } = *local_name;
 
-    let chosen_name = if element.is_html_element_in_html_document() {
+    let chosen_name = if name == lower_name || element.is_html_element_in_html_document() {
         lower_name
     } else {
         name
@@ -610,16 +623,16 @@ pub fn query_selector<E, Q>(
 {
     use crate::invalidation::element::invalidator::TreeStyleInvalidator;
 
+    let mut nth_index_cache = Default::default();
     let quirks_mode = root.owner_doc().quirks_mode();
 
-    let mut nth_index_cache = NthIndexCache::default();
     let mut matching_context = MatchingContext::new(
         MatchingMode::Normal,
         None,
-        Some(&mut nth_index_cache),
+        &mut nth_index_cache,
         quirks_mode,
+        NeedsSelectorFlags::No,
     );
-
     let root_element = root.as_element();
     matching_context.scope_element = root_element.map(|e| e.opaque());
     matching_context.current_host = match root_element {

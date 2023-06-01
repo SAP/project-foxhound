@@ -16,7 +16,6 @@
 #include "nsComponentManagerUtils.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
-#include "nsIPrintSession.h"
 #include "nsIPrintSettings.h"
 #include "private/pprio.h"
 
@@ -27,41 +26,20 @@ using namespace mozilla::gfx;
 
 NS_IMPL_ISUPPORTS(nsDeviceContextSpecProxy, nsIDeviceContextSpec)
 
-nsDeviceContextSpecProxy::nsDeviceContextSpecProxy() = default;
+nsDeviceContextSpecProxy::nsDeviceContextSpecProxy(
+    RemotePrintJobChild* aRemotePrintJob)
+    : mRemotePrintJob(aRemotePrintJob) {}
 nsDeviceContextSpecProxy::~nsDeviceContextSpecProxy() = default;
 
 NS_IMETHODIMP
-nsDeviceContextSpecProxy::Init(nsIWidget* aWidget,
-                               nsIPrintSettings* aPrintSettings,
+nsDeviceContextSpecProxy::Init(nsIPrintSettings* aPrintSettings,
                                bool aIsPrintPreview) {
-  nsresult rv;
-  mRealDeviceContextSpec =
-      do_CreateInstance("@mozilla.org/gfx/devicecontextspec;1", &rv);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  mRealDeviceContextSpec->Init(nullptr, aPrintSettings, aIsPrintPreview);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    mRealDeviceContextSpec = nullptr;
-    return rv;
-  }
-
   mPrintSettings = aPrintSettings;
 
   if (aIsPrintPreview) {
     return NS_OK;
   }
 
-  // nsIPrintSettings only has a weak reference to nsIPrintSession, so we hold
-  // it to make sure it's available for the lifetime of the print.
-  rv = mPrintSettings->GetPrintSession(getter_AddRefs(mPrintSession));
-  if (NS_FAILED(rv) || !mPrintSession) {
-    NS_WARNING("We can't print via the parent without an nsIPrintSession.");
-    return NS_ERROR_FAILURE;
-  }
-
-  mRemotePrintJob = mPrintSession->GetRemotePrintJob();
   if (!mRemotePrintJob) {
     NS_WARNING("We can't print via the parent without a RemotePrintJobChild.");
     return NS_ERROR_FAILURE;
@@ -71,8 +49,6 @@ nsDeviceContextSpecProxy::Init(nsIWidget* aWidget,
 }
 
 already_AddRefed<PrintTarget> nsDeviceContextSpecProxy::MakePrintTarget() {
-  MOZ_ASSERT(mRealDeviceContextSpec);
-
   double width, height;
   mPrintSettings->GetEffectiveSheetSize(&width, &height);
   if (width <= 0 || height <= 0) {
@@ -117,24 +93,6 @@ nsDeviceContextSpecProxy::GetDrawEventRecorder(
   return NS_OK;
 }
 
-float nsDeviceContextSpecProxy::GetDPI() {
-  MOZ_ASSERT(mRealDeviceContextSpec);
-
-  return mRealDeviceContextSpec->GetDPI();
-}
-
-float nsDeviceContextSpecProxy::GetPrintingScale() {
-  MOZ_ASSERT(mRealDeviceContextSpec);
-
-  return mRealDeviceContextSpec->GetPrintingScale();
-}
-
-gfxPoint nsDeviceContextSpecProxy::GetPrintingTranslate() {
-  MOZ_ASSERT(mRealDeviceContextSpec);
-
-  return mRealDeviceContextSpec->GetPrintingTranslate();
-}
-
 NS_IMETHODIMP
 nsDeviceContextSpecProxy::BeginDocument(const nsAString& aTitle,
                                         const nsAString& aPrintToFileName,
@@ -145,8 +103,8 @@ nsDeviceContextSpecProxy::BeginDocument(const nsAString& aTitle,
   }
 
   mRecorder = new mozilla::layout::DrawEventRecorderPRFileDesc();
-  nsresult rv = mRemotePrintJob->InitializePrint(
-      nsString(aTitle), nsString(aPrintToFileName), aStartPage, aEndPage);
+  nsresult rv =
+      mRemotePrintJob->InitializePrint(nsString(aTitle), aStartPage, aEndPage);
   if (NS_FAILED(rv)) {
     // The parent process will send a 'delete' message to tell this process to
     // delete our RemotePrintJobChild.  As soon as we return to the event loop
@@ -157,28 +115,18 @@ nsDeviceContextSpecProxy::BeginDocument(const nsAString& aTitle,
   return rv;
 }
 
-NS_IMETHODIMP
+RefPtr<mozilla::gfx::PrintEndDocumentPromise>
 nsDeviceContextSpecProxy::EndDocument() {
   if (!mRemotePrintJob || mRemotePrintJob->IsDestroyed()) {
     mRemotePrintJob = nullptr;
-    return NS_ERROR_NOT_AVAILABLE;
+    return mozilla::gfx::PrintEndDocumentPromise::CreateAndReject(
+        NS_ERROR_NOT_AVAILABLE, __func__);
   }
 
   Unused << mRemotePrintJob->SendFinalizePrint();
 
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDeviceContextSpecProxy::AbortDocument() {
-  if (!mRemotePrintJob || mRemotePrintJob->IsDestroyed()) {
-    mRemotePrintJob = nullptr;
-    return NS_ERROR_NOT_AVAILABLE;
-  }
-
-  Unused << mRemotePrintJob->SendAbortPrint(NS_OK);
-
-  return NS_OK;
+  return mozilla::gfx::PrintEndDocumentPromise::CreateAndResolve(true,
+                                                                 __func__);
 }
 
 NS_IMETHODIMP

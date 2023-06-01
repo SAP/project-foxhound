@@ -9,16 +9,19 @@
 
 #include "mojo/core/ports/node.h"
 #include "mojo/core/ports/node_delegate.h"
+#include "base/process.h"
 #include "chrome/common/ipc_message.h"
 #include "chrome/common/ipc_channel.h"
 #include "mozilla/ipc/ProtocolUtils.h"
-#include "mozilla/ipc/AutoTransportDescriptor.h"
-#include "mozilla/ipc/Transport.h"
 #include "nsISupports.h"
 #include "nsTHashMap.h"
 #include "mozilla/Queue.h"
 #include "mozilla/DataMutex.h"
 #include "mozilla/UniquePtr.h"
+
+#ifdef FUZZING_SNAPSHOT
+#  include "mozilla/fuzzing/IPCFuzzController.h"
+#endif
 
 namespace mozilla::ipc {
 
@@ -32,15 +35,20 @@ class NodeChannel final : public IPC::Channel::Listener {
   using NodeName = mojo::core::ports::NodeName;
   using PortName = mojo::core::ports::PortName;
 
+#ifdef FUZZING_SNAPSHOT
+  // Required because IPCFuzzController calls OnMessageReceived.
+  friend class mozilla::fuzzing::IPCFuzzController;
+#endif
+
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING_WITH_DESTROY(NodeChannel, Destroy())
 
   struct Introduction {
     NodeName mName;
-    AutoTransportDescriptor mTransport;
-    Transport::Mode mMode;
-    int32_t mMyPid = -1;
-    int32_t mOtherPid = -1;
+    IPC::Channel::ChannelHandle mHandle;
+    IPC::Channel::Mode mMode;
+    base::ProcessId mMyPid = base::kInvalidProcessId;
+    base::ProcessId mOtherPid = base::kInvalidProcessId;
   };
 
   class Listener {
@@ -64,7 +72,8 @@ class NodeChannel final : public IPC::Channel::Listener {
   };
 
   NodeChannel(const NodeName& aName, UniquePtr<IPC::Channel> aChannel,
-              Listener* aListener, int32_t aPid = -1);
+              Listener* aListener,
+              base::ProcessId aPid = base::kInvalidProcessId);
 
   // Send the given message over this peer channel link. May be called from any
   // thread.
@@ -84,7 +93,7 @@ class NodeChannel final : public IPC::Channel::Listener {
   void AcceptInvite(const NodeName& aRealName, const PortName& aInitialPort);
 
   // The PID of the remote process, once known. May be called from any thread.
-  int32_t OtherPid() const { return mOtherPid; }
+  base::ProcessId OtherPid() const { return mOtherPid; }
 
   // Start communicating with the remote process using this NodeChannel. MUST BE
   // CALLED FROM THE IO THREAD.
@@ -97,6 +106,11 @@ class NodeChannel final : public IPC::Channel::Listener {
   // Only ever called by NodeController to update the name after an invite has
   // completed. MUST BE CALLED FROM THE IO THREAD.
   void SetName(const NodeName& aNewName) { mName = aNewName; }
+
+#ifdef FUZZING_SNAPSHOT
+  // MUST BE CALLED FROM THE IO THREAD.
+  const NodeName& GetName() { return mName; }
+#endif
 
 #ifdef XP_MACOSX
   // Called by the GeckoChildProcessHost to provide the task_t for the peer
@@ -111,14 +125,13 @@ class NodeChannel final : public IPC::Channel::Listener {
   void FinalDestroy();
 
   // Update the known PID for the remote process. IO THREAD ONLY
-  void SetOtherPid(int32_t aNewPid);
+  void SetOtherPid(base::ProcessId aNewPid);
 
   void SendMessage(UniquePtr<IPC::Message> aMessage);
-  void DoSendMessage(UniquePtr<IPC::Message> aMessage);
 
   // IPC::Channel::Listener implementation
-  void OnMessageReceived(IPC::Message&& aMessage) override;
-  void OnChannelConnected(int32_t aPeerPid) override;
+  void OnMessageReceived(UniquePtr<IPC::Message> aMessage) override;
+  void OnChannelConnected(base::ProcessId aPeerPid) override;
   void OnChannelError() override;
 
   // NOTE: This strong reference will create a reference cycle between the
@@ -135,13 +148,23 @@ class NodeChannel final : public IPC::Channel::Listener {
   // NOTE: This won't change once the connection has been established, but may
   // be `-1` until then. This will only be written to on the IO thread, but may
   // be read from other threads.
-  std::atomic<int32_t> mOtherPid;
+  std::atomic<base::ProcessId> mOtherPid;
 
-  // WARNING: This must only be accessed on the IO thread.
-  mozilla::UniquePtr<IPC::Channel> mChannel;
+  // WARNING: Most methods on the IPC::Channel are only safe to call on the IO
+  // thread, however it is safe to call `Send()` and `IsClosed()` from other
+  // threads. See IPC::Channel's documentation for details.
+  const mozilla::UniquePtr<IPC::Channel> mChannel;
 
-  // WARNING: This must only be accessed on the IO thread.
-  bool mClosed = false;
+  // The state will start out as `State::Active`, and will only transition to
+  // `State::Closed` on the IO thread. If a Send fails, the state will
+  // transition to `State::Closing`, and a runnable will be dispatched to the
+  // I/O thread to notify callbacks.
+  enum class State { Active, Closing, Closed };
+  std::atomic<State> mState = State::Active;
+
+#ifdef FUZZING_SNAPSHOT
+  std::atomic<bool> mBlockSendRecv = false;
+#endif
 
   // WARNING: Must only be accessed on the IO thread.
   WeakPtr<IPC::Channel::Listener> mExistingListener;

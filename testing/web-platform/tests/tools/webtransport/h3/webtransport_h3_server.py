@@ -1,3 +1,5 @@
+# mypy: allow-subclassing-any, no-warn-return-any
+
 import asyncio
 import logging
 import os
@@ -14,7 +16,8 @@ from aioquic.asyncio.client import connect  # type: ignore
 from aioquic.h3.connection import H3_ALPN, FrameType, H3Connection, ProtocolError, Setting  # type: ignore
 from aioquic.h3.events import H3Event, HeadersReceived, WebTransportStreamDataReceived, DatagramReceived, DataReceived  # type: ignore
 from aioquic.quic.configuration import QuicConfiguration  # type: ignore
-from aioquic.quic.connection import stream_is_unidirectional  # type: ignore
+from aioquic.quic.connection import logger as quic_connection_logger  # type: ignore
+from aioquic.quic.connection import stream_is_unidirectional
 from aioquic.quic.events import QuicEvent, ProtocolNegotiated, ConnectionTerminated, StreamReset  # type: ignore
 from aioquic.tls import SessionTicket  # type: ignore
 
@@ -34,6 +37,10 @@ SERVER_NAME = 'webtransport-h3-server'
 
 _logger: logging.Logger = logging.getLogger(__name__)
 _doc_root: str = ""
+
+# Set aioquic's log level to WARNING to suppress some INFO logs which are
+# recorded every connection close.
+quic_connection_logger.setLevel(logging.WARNING)
 
 
 class H3ConnectionWithDatagram04(H3Connection):
@@ -143,7 +150,7 @@ class WebTransportH3Protocol(QuicConnectionProtocol):
                                 CapsuleType.REGISTER_DATAGRAM_CONTEXT,
                                 CapsuleType.CLOSE_DATAGRAM_CONTEXT}:
                 raise ProtocolError(
-                    "Unimplemented capsule type: {}".format(capsule.type))
+                    f"Unimplemented capsule type: {capsule.type}")
             if capsule.type in {CapsuleType.REGISTER_DATAGRAM_NO_CONTEXT,
                                 CapsuleType.CLOSE_WEBTRANSPORT_SESSION}:
                 # We'll handle this case below.
@@ -179,8 +186,8 @@ class WebTransportH3Protocol(QuicConnectionProtocol):
 
     def _send_error_response(self, stream_id: int, status_code: int) -> None:
         assert self._http is not None
-        headers = [(b"server", SERVER_NAME.encode()),
-                   (b":status", str(status_code).encode())]
+        headers = [(b":status", str(status_code).encode()),
+                   (b"server", SERVER_NAME.encode())]
         self._http.send_headers(stream_id=stream_id,
                                 headers=headers,
                                 end_stream=True)
@@ -200,7 +207,7 @@ class WebTransportH3Protocol(QuicConnectionProtocol):
                 session_id=event.stream_id,
                 path=path,
                 request_headers=event.headers)
-        except IOError:
+        except OSError:
             self._send_error_response(event.stream_id, 404)
             return
 
@@ -214,9 +221,11 @@ class WebTransportH3Protocol(QuicConnectionProtocol):
         for name, value in response_headers:
             if name == b":status":
                 status_code = value
+                response_headers.remove((b":status", status_code))
+                response_headers.insert(0, (b":status", status_code))
                 break
         if not status_code:
-            response_headers.append((b":status", b"200"))
+            response_headers.insert(0, (b":status", b"200"))
         self._http.send_headers(stream_id=event.stream_id,
                                 headers=response_headers)
 

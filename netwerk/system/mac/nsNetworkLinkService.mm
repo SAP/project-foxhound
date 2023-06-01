@@ -247,11 +247,14 @@ static bool scanArp(char* ip, char* mac, size_t maclen) {
     if (st == 0 || errno != ENOMEM) {
       break;
     }
-    needed += needed / 8;
 
-    auto tmp = MakeUnique<char[]>(needed);
+    size_t increased = needed;
+    increased += increased / 8;
+
+    auto tmp = MakeUnique<char[]>(increased);
     memcpy(&tmp[0], &buf[0], needed);
     buf = std::move(tmp);
+    needed = increased;
   }
   if (st == -1) {
     return false;
@@ -692,10 +695,19 @@ void nsNetworkLinkService::DNSConfigChanged(uint32_t aDelayMs) {
     return;
   }
   if (aDelayMs) {
-    MOZ_ALWAYS_SUCCEEDS(target->DelayedDispatch(
-        NS_NewRunnableFunction("nsNetworkLinkService::GetDnsSuffixListInternal",
-                               [self = RefPtr{this}]() { self->GetDnsSuffixListInternal(); }),
-        aDelayMs));
+    MutexAutoLock lock(mMutex);
+    nsCOMPtr<nsITimer> timer;
+    MOZ_ALWAYS_SUCCEEDS(NS_NewTimerWithCallback(
+        getter_AddRefs(timer),
+        [self = RefPtr{this}](nsITimer* aTimer) {
+          self->GetDnsSuffixListInternal();
+
+          MutexAutoLock lock(self->mMutex);
+          self->mDNSConfigChangedTimers.RemoveElement(aTimer);
+        },
+        TimeDuration::FromMilliseconds(aDelayMs), nsITimer::TYPE_ONE_SHOT,
+        "nsNetworkLinkService::GetDnsSuffixListInternal", target));
+    mDNSConfigChangedTimers.AppendElement(timer);
   } else {
     MOZ_ALWAYS_SUCCEEDS(target->Dispatch(
         NS_NewRunnableFunction("nsNetworkLinkService::GetDnsSuffixListInternal",
@@ -847,6 +859,16 @@ nsresult nsNetworkLinkService::Shutdown() {
   if (mNetworkIdTimer) {
     mNetworkIdTimer->Cancel();
     mNetworkIdTimer = nullptr;
+  }
+
+  nsTArray<nsCOMPtr<nsITimer>> dnsConfigChangedTimers;
+  {
+    MutexAutoLock lock(mMutex);
+    dnsConfigChangedTimers = std::move(mDNSConfigChangedTimers);
+    mDNSConfigChangedTimers.Clear();
+  }
+  for (const auto& timer : dnsConfigChangedTimers) {
+    timer->Cancel();
   }
 
   return NS_OK;

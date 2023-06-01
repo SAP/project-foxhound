@@ -8,18 +8,18 @@
 // This is defined in browser.js and only used in the star UI.
 /* global setToolbarVisibility */
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesTransactions: "resource://gre/modules/PlacesTransactions.sys.mjs",
+  PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+});
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   CustomizableUI: "resource:///modules/CustomizableUI.jsm",
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
-  PlacesUIUtils: "resource:///modules/PlacesUIUtils.jsm",
-  PlacesTransactions: "resource://gre/modules/PlacesTransactions.jsm",
-  browser: "chrome://remote/content/marionette/browser.js",
 });
 
 var gEditItemOverlay = {
@@ -229,6 +229,7 @@ var gEditItemOverlay = {
    * Initialize the panel.
    *
    * @param {object} aInfo
+   *   The initialization info.
    * @param {object} [aInfo.node]
    *   If aInfo.uris is not specified, this must be specified.
    *   Either a result node or a node-like object representing the item to be edited.
@@ -238,11 +239,11 @@ var gEditItemOverlay = {
    * @param {nsIURI[]} [aInfo.uris]
    *   If aInfo.node is not specified, this must be specified.
    *   An array of uris for bulk tagging.
-   * @param {string[]} [hiddenRows]
+   * @param {string[]} [aInfo.hiddenRows]
    *   List of rows to be hidden regardless of the item edited. Possible values:
    *   "title", "location", "keyword", "folderPicker".
    */
-  initPanel(aInfo) {
+  async initPanel(aInfo) {
     if (typeof aInfo != "object" || aInfo === null) {
       throw new Error("aInfo must be an object.");
     }
@@ -280,6 +281,12 @@ var gEditItemOverlay = {
       onPanelReady,
     } = this._setPaneInfo(aInfo);
 
+    // initPanel can be called multiple times in a row,
+    // and awaits Promises. If the reference to `instance`
+    // changes, it must mean another caller has called
+    // initPanel again, so bail out of the initialization.
+    let instance = (this._instance = {});
+
     // If we're creating a new item on the toolbar, show it:
     if (
       aInfo.isNewBookmark &&
@@ -300,7 +307,11 @@ var gEditItemOverlay = {
       if (visible) {
         visibleRows.add(rowId);
       }
-      return !(this._element(rowId).collapsed = !visible);
+      const cells = document.getElementsByClassName("editBMPanel_" + rowId);
+      for (const cell of cells) {
+        cell.hidden = !visible;
+      }
+      return visible;
     };
 
     if (showOrCollapse("nameRow", !bulkTagging, "name")) {
@@ -317,15 +328,20 @@ var gEditItemOverlay = {
     }
 
     if (showOrCollapse("keywordRow", isBookmark, "keyword")) {
-      this._initKeywordField().catch(Cu.reportError);
+      await this._initKeywordField().catch(console.error);
+      // paneInfo can be null if paneInfo is uninitialized while
+      // the process above is awaiting initialization
+      if (instance != this._instance || this._paneInfo == null) {
+        return;
+      }
       this._keywordField.readOnly = this.readOnly;
     }
 
     // Collapse the tag selector if the item does not accept tags.
     if (showOrCollapse("tagsRow", isURI || bulkTagging, "tags")) {
       this._initTagsField();
-    } else if (!this._element("tagsSelectorRow").collapsed) {
-      this.toggleTagsSelector().catch(Cu.reportError);
+    } else if (!this._element("tagsSelectorRow").hidden) {
+      this.toggleTagsSelector().catch(console.error);
     }
 
     // Folder picker.
@@ -333,7 +349,10 @@ var gEditItemOverlay = {
     // not cheap (we don't always have the parent), and there's no use case for
     // this (it's only the Star UI that shows the folderPicker)
     if (showOrCollapse("folderRow", isItem, "folderPicker")) {
-      this._initFolderMenuList(parentGuid).catch(Cu.reportError);
+      await this._initFolderMenuList(parentGuid).catch(console.error);
+      if (instance != this._instance || this._paneInfo == null) {
+        return;
+      }
     }
 
     // Selection count.
@@ -349,11 +368,11 @@ var gEditItemOverlay = {
 
     // Observe changes.
     if (!this._observersAdded) {
-      PlacesUtils.bookmarks.addObserver(this);
       this.handlePlacesEvents = this.handlePlacesEvents.bind(this);
       PlacesUtils.observers.addListener(
         [
           "bookmark-moved",
+          "bookmark-keyword-changed",
           "bookmark-tags-changed",
           "bookmark-title-changed",
           "bookmark-url-changed",
@@ -368,8 +387,8 @@ var gEditItemOverlay = {
       // The focusedElement possible values are:
       //  * preferred: focus the field that the user touched first the last
       //    time the pane was shown (either namePicker or tagsField)
-      //  * first: focus the first non collapsed input
-      // Note: since all controls are collapsed by default, we don't get the
+      //  * first: focus the first non hidden input
+      // Note: since all controls are hidden by default, we don't get the
       // default XUL dialog behavior, that selects the first control, so we set
       // the focus explicitly.
       let elt;
@@ -380,7 +399,7 @@ var gEditItemOverlay = {
           )
         );
       } else if (focusedElement === "first") {
-        elt = document.querySelector("vbox:not([collapsed=true]) > input");
+        elt = document.querySelector('input:not([hidden="true"])');
       }
       if (elt) {
         elt.focus({ preventScroll: true });
@@ -431,22 +450,8 @@ var gEditItemOverlay = {
       aElement.value = aValue;
 
       // Clear the editor's undo stack
-      let transactionManager;
-      try {
-        transactionManager = aElement.editor.transactionManager;
-      } catch (e) {
-        // When retrieving the transaction manager, editor may be null resulting
-        // in a TypeError. Additionally, the transaction manager may not
-        // exist yet, which causes access to it to throw NS_ERROR_FAILURE.
-        // In either event, the transaction manager doesn't exist it, so we
-        // don't need to worry about clearing it.
-        if (!(e instanceof TypeError) && e.result != Cr.NS_ERROR_FAILURE) {
-          throw e;
-        }
-      }
-      if (transactionManager) {
-        transactionManager.clear();
-      }
+      // FYI: editor may be null.
+      aElement.editor?.clearUndoRedo();
     }
   },
 
@@ -555,8 +560,6 @@ var gEditItemOverlay = {
     }
   },
 
-  QueryInterface: ChromeUtils.generateQI(["nsINavBookmarkObserver"]),
-
   _element(aID) {
     return document.getElementById("editBMPanel_" + aID);
   },
@@ -565,22 +568,22 @@ var gEditItemOverlay = {
     if (aHideCollapsibleElements) {
       // Hide the folder tree if it was previously visible.
       var folderTreeRow = this._element("folderTreeRow");
-      if (!folderTreeRow.collapsed) {
+      if (!folderTreeRow.hidden) {
         this.toggleFolderTreeVisibility();
       }
 
       // Hide the tag selector if it was previously visible.
       var tagsSelectorRow = this._element("tagsSelectorRow");
-      if (!tagsSelectorRow.collapsed) {
-        this.toggleTagsSelector().catch(Cu.reportError);
+      if (!tagsSelectorRow.hidden) {
+        this.toggleTagsSelector().catch(console.error);
       }
     }
 
     if (this._observersAdded) {
-      PlacesUtils.bookmarks.removeObserver(this);
       PlacesUtils.observers.removeListener(
         [
           "bookmark-moved",
+          "bookmark-keyword-changed",
           "bookmark-tags-changed",
           "bookmark-title-changed",
           "bookmark-url-changed",
@@ -621,7 +624,7 @@ var gEditItemOverlay = {
         if (anyChanges && this._paneInfo) {
           this._mayUpdateFirstEditField("tagsField");
         }
-      }, Cu.reportError);
+      }, console.error);
     }
   },
 
@@ -674,14 +677,14 @@ var gEditItemOverlay = {
           tags: removedTags,
         })
           .transact()
-          .catch(Cu.reportError);
+          .catch(console.error);
         this.transactionPromises.push(promise);
         promises.push(promise);
       }
       if (newTags.length) {
         let promise = PlacesTransactions.Tag({ urls: aURIs, tags: newTags })
           .transact()
-          .catch(Cu.reportError);
+          .catch(console.error);
         this.transactionPromises.push(promise);
         promises.push(promise);
       }
@@ -773,7 +776,7 @@ var gEditItemOverlay = {
         this._paneInfo.title = tag;
       }
       let promise = PlacesTransactions.RenameTag({ oldTag, tag }).transact();
-      this.transactionPromises.push(promise.catch(Cu.reportError));
+      this.transactionPromises.push(promise.catch(console.error));
       await promise;
       return;
     }
@@ -783,7 +786,7 @@ var gEditItemOverlay = {
       guid: this._paneInfo.itemGuid,
       title: this._namePicker.value,
     }).transact();
-    this.transactionPromises.push(promise.catch(Cu.reportError));
+    this.transactionPromises.push(promise.catch(console.error));
     await promise;
   },
 
@@ -809,7 +812,7 @@ var gEditItemOverlay = {
     this.transactionPromises.push(
       PlacesTransactions.EditUrl({ guid, url: newURI })
         .transact()
-        .catch(Cu.reportError)
+        .catch(console.error)
     );
   },
 
@@ -825,22 +828,22 @@ var gEditItemOverlay = {
     this.transactionPromises.push(
       PlacesTransactions.EditKeyword({ guid, keyword, postData, oldKeyword })
         .transact()
-        .catch(Cu.reportError)
+        .catch(console.error)
     );
   },
 
   toggleFolderTreeVisibility() {
     let expander = this._element("foldersExpander");
     let folderTreeRow = this._element("folderTreeRow");
-    let wasCollapsed = folderTreeRow.collapsed;
-    expander.classList.toggle("expander-up", wasCollapsed);
-    expander.classList.toggle("expander-down", !wasCollapsed);
-    if (!wasCollapsed) {
+    let wasHidden = folderTreeRow.hidden;
+    expander.classList.toggle("expander-up", wasHidden);
+    expander.classList.toggle("expander-down", !wasHidden);
+    if (!wasHidden) {
       expander.setAttribute(
         "tooltiptext",
         expander.getAttribute("tooltiptextdown")
       );
-      folderTreeRow.collapsed = true;
+      folderTreeRow.hidden = true;
       this._element("chooseFolderSeparator").hidden = this._element(
         "chooseFolderMenuItem"
       ).hidden = false;
@@ -855,10 +858,10 @@ var gEditItemOverlay = {
         "tooltiptext",
         expander.getAttribute("tooltiptextup")
       );
-      folderTreeRow.collapsed = false;
+      folderTreeRow.hidden = false;
 
       // XXXmano: Ideally we would only do this once, but for some odd reason,
-      // the editable mode set on this tree, together with its collapsed state
+      // the editable mode set on this tree, together with its hidden state
       // breaks the view.
       const FOLDER_TREE_PLACE_URI =
         "place:excludeItems=1&excludeQueries=1&type=" +
@@ -936,7 +939,7 @@ var gEditItemOverlay = {
         guid: this._paneInfo.itemGuid,
         newParentGuid: containerGuid,
       }).transact();
-      this.transactionPromises.push(promise.catch(Cu.reportError));
+      this.transactionPromises.push(promise.catch(console.error));
       await promise;
 
       // Auto-show the bookmarks toolbar when adding / moving an item there.
@@ -951,7 +954,7 @@ var gEditItemOverlay = {
 
     // Update folder-tree selection
     var folderTreeRow = this._element("folderTreeRow");
-    if (!folderTreeRow.collapsed) {
+    if (!folderTreeRow.hidden) {
       var selectedNode = this._folderTree.selectedNode;
       if (
         !selectedNode ||
@@ -986,7 +989,7 @@ var gEditItemOverlay = {
   onFolderTreeSelect() {
     // Ignore this event when the folder tree is hidden, even if the tree is
     // alive, it's clearly not a user activated action.
-    if (this._element("folderTreeRow").collapsed) {
+    if (this._element("folderTreeRow").hidden) {
       return;
     }
 
@@ -1013,7 +1016,7 @@ var gEditItemOverlay = {
   async _rebuildTagsSelectorList() {
     let tagsSelector = this._element("tagsSelector");
     let tagsSelectorRow = this._element("tagsSelectorRow");
-    if (tagsSelectorRow.collapsed) {
+    if (tagsSelectorRow.hidden) {
       return;
     }
 
@@ -1060,14 +1063,14 @@ var gEditItemOverlay = {
     var tagsSelector = this._element("tagsSelector");
     var tagsSelectorRow = this._element("tagsSelectorRow");
     var expander = this._element("tagsSelectorExpander");
-    expander.classList.toggle("expander-up", tagsSelectorRow.collapsed);
-    expander.classList.toggle("expander-down", !tagsSelectorRow.collapsed);
-    if (tagsSelectorRow.collapsed) {
+    expander.classList.toggle("expander-up", tagsSelectorRow.hidden);
+    expander.classList.toggle("expander-down", !tagsSelectorRow.hidden);
+    if (tagsSelectorRow.hidden) {
       expander.setAttribute(
         "tooltiptext",
         expander.getAttribute("tooltiptextup")
       );
-      tagsSelectorRow.collapsed = false;
+      tagsSelectorRow.hidden = false;
       await this._rebuildTagsSelectorList();
 
       // This is a no-op if we've added the listener.
@@ -1078,7 +1081,7 @@ var gEditItemOverlay = {
         "tooltiptext",
         expander.getAttribute("tooltiptextdown")
       );
-      tagsSelectorRow.collapsed = true;
+      tagsSelectorRow.hidden = true;
 
       // This is a no-op if we've removed the listener.
       tagsSelector.removeEventListener("mousedown", this);
@@ -1106,7 +1109,6 @@ var gEditItemOverlay = {
     // default to the bookmarks menu folder
     if (!ip) {
       ip = new PlacesInsertionPoint({
-        parentId: PlacesUtils.bookmarksMenuFolderId,
         parentGuid: PlacesUtils.bookmarks.menuGuid,
       });
     }
@@ -1118,7 +1120,7 @@ var gEditItemOverlay = {
       title,
       index: await ip.getIndex(),
     }).transact();
-    this.transactionPromises.push(promise.catch(Cu.reportError));
+    this.transactionPromises.push(promise.catch(console.error));
     let guid = await promise;
 
     this._folderTree.focus();
@@ -1185,9 +1187,18 @@ var gEditItemOverlay = {
             bm.title
           );
           break;
+        case "bookmark-keyword-changed":
+          if (!this._paneInfo.isItem || this._paneInfo.itemId != event.id) {
+            return;
+          }
+
+          if (this._paneInfo.visibleRows.has("keywordRow")) {
+            this._initKeywordField(event.keyword).catch(console.error);
+          }
+          break;
         case "bookmark-tags-changed":
           if (this._paneInfo.visibleRows.has("tagsRow")) {
-            this._onTagsChange(event.guid).catch(Cu.reportError);
+            this._onTagsChange(event.guid).catch(console.error);
           }
           break;
         case "bookmark-title-changed":
@@ -1210,7 +1221,7 @@ var gEditItemOverlay = {
 
             if (this._paneInfo.visibleRows.has("tagsRow")) {
               delete this._paneInfo._cachedCommonTags;
-              this._onTagsChange(event.guid, newURI).catch(Cu.reportError);
+              this._onTagsChange(event.guid, newURI).catch(console.error);
             }
           }
           break;
@@ -1316,28 +1327,14 @@ var gEditItemOverlay = {
     }
   },
 
-  // nsINavBookmarkObserver
-  onItemChanged(
-    aItemId,
-    aProperty,
-    aIsAnnotationProperty,
-    aValue,
-    aLastModified,
-    aItemType,
-    aParentId,
-    aGuid
-  ) {
-    if (!this._paneInfo.isItem || this._paneInfo.itemId != aItemId) {
-      return;
-    }
-
-    switch (aProperty) {
-      case "keyword":
-        if (this._paneInfo.visibleRows.has("keywordRow")) {
-          this._initKeywordField(aValue).catch(Cu.reportError);
-        }
-        break;
-    }
+  /**
+   * Flag which signals to consumers that this script is loaded, thus instant
+   * apply logic should be used.
+   *
+   * @returns {boolean} Always false.
+   */
+  get delayedApplyEnabled() {
+    return false;
   },
 };
 
@@ -1354,8 +1351,6 @@ XPCOMUtils.defineLazyGetter(gEditItemOverlay, "_folderTree", () => {
           flex="1"
           class="placesTree"
           is="places-tree"
-          height="150"
-          minheight="150"
           editable="true"
           onselect="gEditItemOverlay.onFolderTreeSelect();"
           disableUserActions="true"

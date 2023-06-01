@@ -18,12 +18,13 @@ const { CollectionProblemData, CollectionValidator } = ChromeUtils.import(
   "resource://services-sync/collection_validator.js"
 );
 const { Async } = ChromeUtils.import("resource://services-common/async.js");
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
-  "FormHistory",
-  "resource://gre/modules/FormHistory.jsm"
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
 );
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
+});
 
 const FORMS_TTL = 3 * 365 * 24 * 60 * 60; // Three years in seconds.
 
@@ -31,10 +32,10 @@ function FormRec(collection, id) {
   CryptoWrapper.call(this, collection, id);
 }
 FormRec.prototype = {
-  __proto__: CryptoWrapper.prototype,
   _logName: "Sync.Record.Form",
   ttl: FORMS_TTL,
 };
+Object.setPrototypeOf(FormRec.prototype, CryptoWrapper.prototype);
 
 Utils.deferGetSet(FormRec, "cleartext", ["name", "value"]);
 
@@ -44,33 +45,15 @@ var FormWrapper = {
   _getEntryCols: ["fieldname", "value"],
   _guidCols: ["guid"],
 
-  async _search(terms, searchData) {
-    return new Promise(resolve => {
-      let results = [];
-      let callbacks = {
-        handleResult(result) {
-          results.push(result);
-        },
-        handleCompletion(reason) {
-          resolve(results);
-        },
-      };
-      FormHistory.search(terms, searchData, callbacks);
-    });
+  _search(terms, searchData) {
+    return lazy.FormHistory.search(terms, searchData);
   },
 
   async _update(changes) {
-    if (!FormHistory.enabled) {
+    if (!lazy.FormHistory.enabled) {
       return; // update isn't going to do anything.
     }
-    await new Promise(resolve => {
-      let callbacks = {
-        handleCompletion(reason) {
-          resolve();
-        },
-      };
-      FormHistory.update(changes, callbacks);
-    });
+    await lazy.FormHistory.update(changes).catch(console.error);
   },
 
   async getEntry(guid) {
@@ -91,7 +74,7 @@ var FormWrapper = {
   async hasGUID(guid) {
     // We could probably use a count function here, but search exists...
     let results = await this._search(this._guidCols, { guid });
-    return results.length != 0;
+    return !!results.length;
   },
 
   async replaceGUID(oldGUID, newGUID) {
@@ -108,7 +91,6 @@ function FormEngine(service) {
   SyncEngine.call(this, "Forms", service);
 }
 FormEngine.prototype = {
-  __proto__: SyncEngine.prototype,
   _storeObj: FormStore,
   _trackerObj: FormTracker,
   _recordObj: FormRec,
@@ -123,13 +105,12 @@ FormEngine.prototype = {
     return FormWrapper.getGUID(item.name, item.value);
   },
 };
+Object.setPrototypeOf(FormEngine.prototype, SyncEngine.prototype);
 
 function FormStore(name, engine) {
   Store.call(this, name, engine);
 }
 FormStore.prototype = {
-  __proto__: Store.prototype,
-
   async _processChange(change) {
     // If this._changes is defined, then we are applying a batch, so we
     // can defer it.
@@ -214,13 +195,12 @@ FormStore.prototype = {
     await FormWrapper._update(change);
   },
 };
+Object.setPrototypeOf(FormStore.prototype, Store.prototype);
 
 function FormTracker(name, engine) {
   LegacyTracker.call(this, name, engine);
 }
 FormTracker.prototype = {
-  __proto__: LegacyTracker.prototype,
-
   QueryInterface: ChromeUtils.generateQI([
     "nsIObserver",
     "nsISupportsWeakReference",
@@ -255,6 +235,7 @@ FormTracker.prototype = {
     }
   },
 };
+Object.setPrototypeOf(FormTracker.prototype, LegacyTracker.prototype);
 
 class FormsProblemData extends CollectionProblemData {
   getSummary() {

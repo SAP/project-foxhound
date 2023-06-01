@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { ExtensionSearchHandler } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionSearchHandler.jsm"
+const { ExtensionSearchHandler } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionSearchHandler.sys.mjs"
 );
 
 let controller = Cc["@mozilla.org/autocomplete/controller;1"].getService(
@@ -330,6 +330,51 @@ add_task(async function test_extension_private_browsing() {
       ),
     /There is no active input session/
   );
+
+  ExtensionSearchHandler.unregisterKeyword(keyword);
+  await cleanup();
+});
+
+add_task(async function test_extension_private_browsing_allowed() {
+  let extensionName = "Foo Bar";
+  let mockExtension = {
+    name: extensionName,
+    emit: (message, text, id) => {
+      if (message === ExtensionSearchHandler.MSG_INPUT_CHANGED) {
+        ExtensionSearchHandler.addSuggestions(keyword, id, [
+          { content: "foo", description: "first suggestion" },
+          { content: "foobar", description: "second suggestion" },
+        ]);
+        // The API doesn't have a way to notify when addition is complete.
+        do_timeout(1000, () => {
+          controller.stopSearch();
+        });
+      }
+    },
+    privateBrowsingAllowed: true,
+  };
+
+  let keyword = "foo";
+  ExtensionSearchHandler.registerKeyword(keyword, mockExtension);
+
+  let query = `${keyword} foo`;
+  let context = createContext(query, { isPrivate: true });
+  await check_results({
+    context,
+    matches: [
+      makeOmniboxResult(context, {
+        heuristic: true,
+        keyword,
+        description: extensionName,
+        content: query,
+      }),
+      makeOmniboxResult(context, {
+        keyword,
+        content: `${keyword} foobar`,
+        description: "second suggestion",
+      }),
+    ],
+  });
 
   ExtensionSearchHandler.unregisterKeyword(keyword);
   await cleanup();
@@ -673,6 +718,8 @@ add_task(async function test_maximum_number_of_suggestions_is_enforced() {
           { content: "h", description: "eigth suggestion" },
           { content: "i", description: "ninth suggestion" },
           { content: "j", description: "tenth suggestion" },
+          { content: "k", description: "eleventh suggestion" },
+          { content: "l", description: "twelfth suggestion" },
         ]);
         // The API doesn't have a way to notify when addition is complete.
         do_timeout(1000, () => {
@@ -726,6 +773,26 @@ add_task(async function test_maximum_number_of_suggestions_is_enforced() {
         content: `${keyword} e`,
         description: "fifth suggestion",
       }),
+      makeOmniboxResult(context, {
+        keyword,
+        content: `${keyword} f`,
+        description: "sixth suggestion",
+      }),
+      makeOmniboxResult(context, {
+        keyword,
+        content: `${keyword} g`,
+        description: "seventh suggestion",
+      }),
+      makeOmniboxResult(context, {
+        keyword,
+        content: `${keyword} h`,
+        description: "eigth suggestion",
+      }),
+      makeOmniboxResult(context, {
+        keyword,
+        content: `${keyword} i`,
+        description: "ninth suggestion",
+      }),
     ],
   });
 
@@ -741,7 +808,7 @@ add_task(async function conflicting_alias() {
   let keyword = "test";
   engine.alias = keyword;
   let oldDefaultEngine = await Services.search.getDefault();
-  Services.search.setDefault(engine);
+  Services.search.setDefault(engine, Ci.nsISearchService.CHANGE_REASON_UNKNOWN);
 
   let extensionName = "Omnibox Example";
 
@@ -810,7 +877,10 @@ add_task(async function conflicting_alias() {
     ],
   });
 
-  Services.search.setDefault(oldDefaultEngine);
+  Services.search.setDefault(
+    oldDefaultEngine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
   Services.prefs.setBoolPref(SUGGEST_PREF, false);
   Services.prefs.setBoolPref(SUGGEST_ENABLED_PREF, false);
   await cleanup();

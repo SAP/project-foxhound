@@ -1,4 +1,5 @@
 #![deny(clippy::use_self)]
+#![warn(trivial_casts, trivial_numeric_casts)]
 #![allow(
     clippy::too_many_arguments,
     clippy::missing_safety_doc,
@@ -7,7 +8,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 //! # Vulkan API
 //!
-//! <https://www.khronos.org/registry/vulkan/specs/1.2-extensions/html/index.html>
+//! <https://www.khronos.org/registry/vulkan/specs/1.3-extensions/html/index.html>
 //!
 //! ## Examples
 //!
@@ -32,6 +33,12 @@
 //! Load the Vulkan library linked at compile time using [`Entry::linked()`], or load it at runtime
 //! using [`Entry::load()`], which uses `libloading`. If you want to perform entry point loading
 //! yourself, call [`Entry::from_static_fn()`].
+//!
+//! ## Crate features
+//!
+//! * **debug** (default): Whether Vulkan structs should implement `Debug`.
+//! * **loaded** (default): Support searching for the Vulkan loader manually at runtime.
+//! * **linked**: Link the Vulkan loader at compile time.
 
 pub use crate::device::Device;
 pub use crate::entry::Entry;
@@ -59,11 +66,111 @@ pub trait RawPtr<T> {
 impl<'r, T> RawPtr<T> for Option<&'r T> {
     fn as_raw_ptr(&self) -> *const T {
         match *self {
-            Some(inner) => inner as *const T,
-
+            Some(inner) => inner,
             _ => ::std::ptr::null(),
         }
     }
+}
+
+/// Given a mutable raw pointer to a type with an `s_type` member such as [`vk::BaseOutStructure`],
+/// match on a set of Vulkan structures. The struct will be rebound to the given variable of the
+/// type of the given Vulkan structure.
+///
+/// Note that all match bodies have to be enclosed by curly braces due to macro parsing limitations.
+/// It is unfortunately not possible to write `x @ ash::vk::SomeStruct => one_line_expression(),`.
+///
+/// ```
+/// let mut info = ash::vk::DeviceCreateInfo::default();
+/// let info: *mut ash::vk::BaseOutStructure = <*mut _>::cast(&mut info);
+/// unsafe {
+///     ash::match_out_struct!(match info {
+///         info @ ash::vk::DeviceQueueCreateInfo => {
+///             dbg!(&info); // Unreachable
+///         }
+///         info @ ash::vk::DeviceCreateInfo => {
+///             dbg!(&info);
+///         }
+///     })
+/// }
+/// ```
+///
+/// In addition this macro propagates implicit return values just like normal `match` blocks, as
+/// long as a default value or expression is provided in the "any" match arm
+/// (`_ => { some_value() }`). For the time being said arm must be wrapped in curly braces; an
+/// expression like `_ => None` is not yet supported.
+///
+/// ```
+/// # let mut info = ash::vk::DeviceCreateInfo::default();
+/// # let info: *mut ash::vk::BaseOutStructure = <*mut _>::cast(&mut info);
+/// let device_create_flags: Option<ash::vk::DeviceCreateFlags> = unsafe {
+///     ash::match_out_struct!(match info {
+///         info @ ash::vk::DeviceQueueCreateInfo => {
+///             dbg!(&info); // Unreachable
+///             Some(ash::vk::DeviceCreateFlags::empty())
+///         }
+///         info @ ash::vk::DeviceCreateInfo => {
+///             dbg!(&info);
+///             Some(info.flags)
+///         }
+///         _ => {
+///             None
+///         }
+///     })
+/// };
+/// ```
+#[macro_export]
+macro_rules! match_out_struct {
+    (match $p:ident { $($bind:ident @ $ty:path => $body:block $(,)?)+ $(_ => $any:block $(,)?)? }) => {
+        match std::ptr::addr_of!((*$p).s_type).read() {
+            $(<$ty as $crate::vk::TaggedStructure>::STRUCTURE_TYPE => {
+                let $bind = $p
+                    .cast::<$ty>()
+                    .as_mut()
+                    .unwrap();
+                $body
+            }),+
+            _ => { $($any)? }
+        }
+    };
+}
+
+/// Given an immutable raw pointer to a type with an `s_type` member such as [`vk::BaseInStructure`],
+/// match on a set of Vulkan structures. The struct will be rebound to the given variable of the
+/// type of the given Vulkan structure.
+///
+/// Note that all match bodies have to be enclosed by curly braces due to macro parsing limitations.
+/// It is unfortunately not possible to write `x @ ash::vk::SomeStruct => one_line_expression(),`.
+///
+/// ```
+/// let info = ash::vk::DeviceCreateInfo::default();
+/// let info: *const ash::vk::BaseInStructure = <*const _>::cast(&info);
+/// unsafe {
+///     ash::match_in_struct!(match info {
+///         info @ ash::vk::DeviceQueueCreateInfo => {
+///             dbg!(&info); // Unreachable
+///         }
+///         info @ ash::vk::DeviceCreateInfo => {
+///             dbg!(&info);
+///         }
+///     })
+/// }
+/// ```
+///
+/// See the [`match_out_struct!`] documentation for an example with implicit return values.
+#[macro_export]
+macro_rules! match_in_struct {
+    (match $p:ident { $($bind:ident @ $ty:path => $body:block $(,)?)+ $(_ => $any:block $(,)?)? }) => {
+        match std::ptr::addr_of!((*$p).s_type).read() {
+            $(<$ty as $crate::vk::TaggedStructure>::STRUCTURE_TYPE => {
+                let $bind = $p
+                    .cast::<$ty>()
+                    .as_ref()
+                    .unwrap();
+                $body
+            }),+
+            _ => { $($any)? }
+        }
+    };
 }
 
 #[cfg(test)]
@@ -74,16 +181,15 @@ mod tests {
         let mut variable_pointers = vk::PhysicalDeviceVariablePointerFeatures::builder();
         let mut corner = vk::PhysicalDeviceCornerSampledImageFeaturesNV::builder();
         let chain = vec![
-            &variable_pointers as *const _ as usize,
-            &corner as *const _ as usize,
+            <*mut _>::cast(&mut variable_pointers),
+            <*mut _>::cast(&mut corner),
         ];
         let mut device_create_info = vk::DeviceCreateInfo::builder()
             .push_next(&mut corner)
             .push_next(&mut variable_pointers);
-        let chain2: Vec<usize> = unsafe {
+        let chain2: Vec<*mut vk::BaseOutStructure> = unsafe {
             vk::ptr_chain_iter(&mut device_create_info)
                 .skip(1)
-                .map(|ptr| ptr as usize)
                 .collect()
         };
         assert_eq!(chain, chain2);

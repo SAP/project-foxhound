@@ -7,23 +7,21 @@
 
 "use strict";
 
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { TelemetrySend } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetrySend.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { TelemetrySend } = ChromeUtils.import(
-  "resource://gre/modules/TelemetrySend.jsm"
+const { TelemetryStorage } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryStorage.sys.mjs"
 );
-const { TelemetryStorage } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryStorage.jsm"
+const { TelemetryUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryUtils.sys.mjs"
 );
-const { TelemetryUtils } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryUtils.jsm"
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
 );
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
 function generateTestPingData() {
   return {
@@ -88,7 +86,7 @@ add_task(async function setup() {
   PingServer.start();
 });
 
-add_task(async function test_pingSender() {
+async function test_pingSender(version = "1.0") {
   // Generate a new ping and save it among the pending pings.
   const data = generateTestPingData();
   await TelemetryStorage.savePing(data, true);
@@ -135,12 +133,12 @@ add_task(async function test_pingSender() {
 
   Assert.equal(
     req.getHeader("User-Agent"),
-    "pingsender/1.0",
+    `pingsender/${version}`,
     "Should have received the correct user agent string."
   );
   Assert.equal(
     req.getHeader("X-PingSender-Version"),
-    "1.0",
+    version,
     "Should have received the correct PingSender version string."
   );
   Assert.equal(
@@ -166,6 +164,44 @@ add_task(async function test_pingSender() {
 
   // Shut down the failing server.
   await new Promise(r => failingServer.stop(r));
+}
+
+add_task(async function test_pingsender1() {
+  let orig = Services.prefs.getBoolPref(
+    "toolkit.telemetry.shutdownPingSender.backgroundtask.enabled",
+    false
+  );
+  try {
+    Services.prefs.setBoolPref(
+      "toolkit.telemetry.shutdownPingSender.backgroundtask.enabled",
+      false
+    );
+    await test_pingSender("1.0");
+  } finally {
+    Services.prefs.setBoolPref(
+      "toolkit.telemetry.shutdownPingSender.backgroundtask.enabled",
+      orig
+    );
+  }
+});
+
+add_task(async function test_pingsender2() {
+  let orig = Services.prefs.getBoolPref(
+    "toolkit.telemetry.shutdownPingSender.backgroundtask.enabled",
+    false
+  );
+  try {
+    Services.prefs.setBoolPref(
+      "toolkit.telemetry.shutdownPingSender.backgroundtask.enabled",
+      true
+    );
+    await test_pingSender("2.0");
+  } finally {
+    Services.prefs.setBoolPref(
+      "toolkit.telemetry.shutdownPingSender.backgroundtask.enabled",
+      orig
+    );
+  }
 });
 
 add_task(async function test_bannedDomains() {

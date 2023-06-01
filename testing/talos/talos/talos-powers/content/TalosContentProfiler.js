@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* eslint-env mozilla/frame-script */
+
 /**
  * This utility script is for instrumenting your Talos test for
  * performance profiles while running within content. If your test
@@ -204,8 +206,8 @@ var TalosContentProfiler;
      */
     finishTest() {
       if (initted) {
-        let profileFile = profileDir + "/" + currentTest + ".profile";
-        return sendEventAndWait("Profiler:Finish", { profileFile });
+        let profileFile = `${currentTest}.profile`;
+        return sendEventAndWait("Profiler:Finish", { profileDir, profileFile });
       }
       return Promise.resolve();
     },
@@ -221,8 +223,8 @@ var TalosContentProfiler;
      */
     finishStartupProfiling() {
       if (initted) {
-        let profileFile = profileDir + "/startup.profile";
-        return sendEventAndWait("Profiler:Finish", { profileFile });
+        let profileFile = "startup.profile";
+        return sendEventAndWait("Profiler:Finish", { profileDir, profileFile });
       }
       return Promise.resolve();
     },

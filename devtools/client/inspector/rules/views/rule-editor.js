@@ -4,39 +4,45 @@
 
 "use strict";
 
-const { l10n } = require("devtools/shared/inspector/css-logic");
-const { PSEUDO_CLASSES } = require("devtools/shared/css/constants");
+const { l10n } = require("resource://devtools/shared/inspector/css-logic.js");
+const {
+  PSEUDO_CLASSES,
+} = require("resource://devtools/shared/css/constants.js");
 const {
   style: { ELEMENT_STYLE },
-} = require("devtools/shared/constants");
-const Rule = require("devtools/client/inspector/rules/models/rule");
+} = require("resource://devtools/shared/constants.js");
+const Rule = require("resource://devtools/client/inspector/rules/models/rule.js");
 const {
   InplaceEditor,
   editableField,
   editableItem,
-} = require("devtools/client/shared/inplace-editor");
-const TextPropertyEditor = require("devtools/client/inspector/rules/views/text-property-editor");
+} = require("resource://devtools/client/shared/inplace-editor.js");
+const TextPropertyEditor = require("resource://devtools/client/inspector/rules/views/text-property-editor.js");
 const {
   createChild,
   blurOnMultipleProperties,
   promiseWarn,
-} = require("devtools/client/inspector/shared/utils");
+} = require("resource://devtools/client/inspector/shared/utils.js");
 const {
   parseNamedDeclarations,
   parsePseudoClassesAndAttributes,
   SELECTOR_ATTRIBUTE,
   SELECTOR_ELEMENT,
   SELECTOR_PSEUDO_CLASS,
-} = require("devtools/shared/css/parsing-utils");
-const Services = require("Services");
-const EventEmitter = require("devtools/shared/event-emitter");
-const CssLogic = require("devtools/shared/inspector/css-logic");
+} = require("resource://devtools/shared/css/parsing-utils.js");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
+const CssLogic = require("resource://devtools/shared/inspector/css-logic.js");
 
-loader.lazyRequireGetter(this, "Tools", "devtools/client/definitions", true);
+loader.lazyRequireGetter(
+  this,
+  "Tools",
+  "resource://devtools/client/definitions.js",
+  true
+);
 
 const STYLE_INSPECTOR_PROPERTIES =
   "devtools/shared/locales/styleinspector.properties";
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const STYLE_INSPECTOR_L10N = new LocalizationHelper(STYLE_INSPECTOR_PROPERTIES);
 
 /**
@@ -81,7 +87,7 @@ function RuleEditor(ruleView, rule) {
 }
 
 RuleEditor.prototype = {
-  destroy: function() {
+  destroy() {
     this.rule.domRule.off("location-changed");
     this.toolbox.off("tool-registered", this._onToolChanged);
     this.toolbox.off("tool-unregistered", this._onToolChanged);
@@ -111,7 +117,7 @@ RuleEditor.prototype = {
     return trait && !this.rule.elementStyle.element.isAnonymous;
   },
 
-  _create: function() {
+  _create() {
     this.element = this.doc.createElement("div");
     this.element.className = "ruleview-rule devtools-monospace";
     this.element.dataset.ruleId = this.rule.domRule.actorID;
@@ -135,35 +141,111 @@ RuleEditor.prototype = {
 
     this.updateSourceLink();
 
-    if (this.rule.domRule.ancestorData.length > 0) {
-      const parts = this.rule.domRule.ancestorData.map(ancestorData => {
-        if (ancestorData.type == "layer") {
-          return `@layer${ancestorData.value ? " " + ancestorData.value : ""}`;
-        }
-        if (ancestorData.type == "media") {
-          return `@media ${ancestorData.value}`;
-        }
-        // We shouldn't get here as `type` can only be set to "layer" or "media", but just
-        // in case, let's return an empty string.
-        console.warn("Unknown ancestor data type:", ancestorData.type);
-        return ``;
-      });
+    if (this.rule.domRule.ancestorData.length) {
+      const parts = this.rule.domRule.ancestorData.map(
+        (ancestorData, index) => {
+          if (ancestorData.type == "container") {
+            const container = this.doc.createElement("li");
+            container.classList.add("container-query");
+            container.setAttribute("data-ancestor-index", index);
 
-      // We force the string to be LTR in CSS, but as @ is listed as having neutral
-      // directionality and starting a string with this char would default to RTL for that
-      // character (when in RTL locale), and then the next char (`m` of `media`, or `l` of `layer`)
-      // would start a new LTR visual run, since it is strongly LTR (through `direction` CSS property).
-      // To have the `@` properly displayed, we force LTR with \u202A
-      const title = `${parts.join("\n").replaceAll("@", "\u202A@")}`;
+            createChild(container, "span", {
+              class: "container-query-declaration",
+              textContent: `@container${
+                ancestorData.containerName
+                  ? " " + ancestorData.containerName
+                  : ""
+              }`,
+            });
+
+            container.classList.add("has-tooltip");
+
+            const jumpToNodeButton = createChild(container, "button", {
+              class: "open-inspector",
+              title: l10n("rule.containerQuery.selectContainerButton.tooltip"),
+            });
+
+            let containerNodeFront;
+            const getNodeFront = async () => {
+              if (!containerNodeFront) {
+                const res = await this.rule.domRule.getQueryContainerForNode(
+                  index,
+                  this.rule.inherited ||
+                    this.ruleView.inspector.selection.nodeFront
+                );
+                containerNodeFront = res.node;
+              }
+              return containerNodeFront;
+            };
+
+            jumpToNodeButton.addEventListener("click", async () => {
+              const front = await getNodeFront();
+              if (!front) {
+                return;
+              }
+              this.ruleView.inspector.selection.setNodeFront(front);
+              await this.ruleView.inspector.highlighters.hideHighlighterType(
+                this.ruleView.inspector.highlighters.TYPES.BOXMODEL
+              );
+            });
+            container.append(jumpToNodeButton);
+
+            container.addEventListener("mouseenter", async () => {
+              const front = await getNodeFront();
+              if (!front) {
+                return;
+              }
+
+              await this.ruleView.inspector.highlighters.showHighlighterTypeForNode(
+                this.ruleView.inspector.highlighters.TYPES.BOXMODEL,
+                front
+              );
+            });
+            container.addEventListener("mouseleave", async () => {
+              await this.ruleView.inspector.highlighters.hideHighlighterType(
+                this.ruleView.inspector.highlighters.TYPES.BOXMODEL
+              );
+            });
+
+            createChild(container, "span", {
+              // Add a space between the container name (or @container if there's no name)
+              // and the query so the title, which is computed from the DOM, displays correctly.
+              textContent: " " + ancestorData.containerQuery,
+            });
+            return container;
+          }
+          if (ancestorData.type == "layer") {
+            return `@layer${
+              ancestorData.value ? " " + ancestorData.value : ""
+            }`;
+          }
+          if (ancestorData.type == "media") {
+            return `@media ${ancestorData.value}`;
+          }
+
+          if (ancestorData.type == "supports") {
+            return `@supports ${ancestorData.conditionText}`;
+          }
+          // We shouldn't get here as `type` can only be set to "container", "layer", "media"
+          // or "supports" (see devtools/server/actors/style-rule form()),
+          // but just in case, let's return an empty string.
+          console.warn("Unknown ancestor data type:", ancestorData.type);
+          return ``;
+        }
+      );
 
       this.ancestorDataEl = createChild(this.element, "ul", {
         class: "ruleview-rule-ancestor-data theme-link",
-        title,
       });
+
       for (const part of parts) {
-        createChild(this.ancestorDataEl, "li", {
-          textContent: part,
-        });
+        if (typeof part == "string") {
+          createChild(this.ancestorDataEl, "li", {
+            textContent: part,
+          });
+        } else {
+          this.ancestorDataEl.append(part);
+        }
       }
     }
 
@@ -192,36 +274,23 @@ RuleEditor.prototype = {
     }
 
     if (this.rule.domRule.type !== CSSRule.KEYFRAME_RULE) {
-      // FIXME: Avoid having this as a nested async operation. (Bug 1664511)
-      (async function() {
-        let selector;
-
-        if (this.rule.domRule.selectors) {
-          // This is a "normal" rule with a selector.
-          selector = this.rule.domRule.selectors.join(", ");
-        } else if (this.rule.inherited) {
-          // This is an inline style from an inherited rule. Need to resolve the unique
-          // selector from the node which rule this is inherited from.
-          selector = await this.rule.inherited.getUniqueSelector();
-        } else {
-          // This is an inline style from the current node.
-          selector = await this.ruleView.inspector.selection.nodeFront.getUniqueSelector();
-        }
-
-        const isHighlighted = this.ruleView.isSelectorHighlighted(selector);
-        // Handling of click events is delegated to CssRuleView.handleEvent()
-        createChild(header, "span", {
-          class:
-            "ruleview-selectorhighlighter js-toggle-selector-highlighter" +
-            (isHighlighted ? " highlighted" : ""),
-          "data-selector": selector,
-          title: l10n("rule.selectorHighlighter.tooltip"),
-        });
+      let selector = "";
+      if (this.rule.domRule.selectors) {
+        // This is a "normal" rule with a selector.
+        selector = this.rule.domRule.selectors.join(", ");
+        // Otherwise, the rule is either inherited or inline, and selectors will
+        // be computed on demand when the highlighter is requested.
       }
-        .bind(this)()
-        .catch(error => {
-          console.error("Exception while getting unique selector", error);
-        }));
+
+      const isHighlighted = this.ruleView.isSelectorHighlighted(selector);
+      // Handling of click events is delegated to CssRuleView.handleEvent()
+      createChild(header, "span", {
+        class:
+          "ruleview-selectorhighlighter js-toggle-selector-highlighter" +
+          (isHighlighted ? " highlighted" : ""),
+        "data-selector": selector,
+        title: l10n("rule.selectorHighlighter.tooltip"),
+      });
     }
 
     this.openBrace = createChild(header, "span", {
@@ -274,7 +343,7 @@ RuleEditor.prototype = {
   /**
    * Called when a tool is registered or unregistered.
    */
-  _onToolChanged: function() {
+  _onToolChanged() {
     // When the source editor is registered, update the source links
     // to be clickable; and if it is unregistered, update the links to
     // be unclickable.  However, some links are never clickable, so
@@ -292,19 +361,18 @@ RuleEditor.prototype = {
    * Event handler called when a property changes on the
    * StyleRuleActor.
    */
-  _locationChanged: function() {
+  _locationChanged() {
     this.updateSourceLink();
   },
 
-  _onSourceClick: function() {
+  _onSourceClick() {
     if (this.source.hasAttribute("unselectable")) {
       return;
     }
 
     const { inspector } = this.ruleView;
-    const target = inspector.currentTarget;
-    if (Tools.styleEditor.isTargetSupported(target)) {
-      inspector.toolbox.viewSourceInStyleEditorByFront(
+    if (Tools.styleEditor.isToolSupported(inspector.toolbox)) {
+      inspector.toolbox.viewSourceInStyleEditorByResource(
         this.rule.sheet,
         this.rule.ruleLine,
         this.rule.ruleColumn
@@ -320,15 +388,19 @@ RuleEditor.prototype = {
    * @param {Object | null} originalLocation
    *        The original position object (url/line/column) or null.
    */
-  _updateLocation: function(originalLocation) {
-    let displayURL = this.rule.sheet ? this.rule.sheet.href : null;
+  _updateLocation(originalLocation) {
+    let displayURL = this.rule.sheet?.href;
+    const constructed = this.rule.sheet?.constructed;
     let line = this.rule.ruleLine;
     if (originalLocation) {
       displayURL = originalLocation.url;
       line = originalLocation.line;
     }
 
-    let sourceTextContent = CssLogic.shortSource({ href: displayURL });
+    let sourceTextContent = CssLogic.shortSource({
+      constructed,
+      href: displayURL,
+    });
     let title = displayURL ? displayURL : sourceTextContent;
     if (line > 0) {
       sourceTextContent += ":" + line;
@@ -342,14 +414,13 @@ RuleEditor.prototype = {
     sourceLabel.textContent = sourceTextContent;
   },
 
-  updateSourceLink: function() {
+  updateSourceLink() {
     if (this.rule.isSystem) {
       const sourceLabel = this.element.querySelector(
         ".ruleview-rule-source-label"
       );
       const title = this.rule.title;
-      const sourceHref =
-        this.rule.sheet && this.rule.sheet.href ? this.rule.sheet.href : title;
+      const sourceHref = this.rule.sheet?.href || title;
 
       const uaLabel = STYLE_INSPECTOR_L10N.getStr("rule.userAgentStyles");
       sourceLabel.textContent = uaLabel + " " + title;
@@ -377,7 +448,7 @@ RuleEditor.prototype = {
         this._unsubscribeSourceMap();
       }
       this._unsubscribeSourceMap = this.sourceMapURLService.subscribeByID(
-        this.rule.sheet.resourceId || this.rule.sheet.actorID,
+        this.rule.sheet.resourceId,
         this.rule.ruleLine,
         this.rule.ruleColumn,
         this._updateLocation
@@ -402,7 +473,7 @@ RuleEditor.prototype = {
    * @param {Boolean} reset
    *        True to completely reset the rule editor before populating.
    */
-  populate: function(reset) {
+  populate(reset) {
     // Clear out existing viewers.
     while (this.selectorText.hasChildNodes()) {
       this.selectorText.removeChild(this.selectorText.lastChild);
@@ -497,7 +568,7 @@ RuleEditor.prototype = {
    * @return {TextProperty}
    *        The new property
    */
-  addProperty: function(name, value, priority, enabled, siblingProp) {
+  addProperty(name, value, priority, enabled, siblingProp) {
     const prop = this.rule.createProperty(
       name,
       value,
@@ -536,7 +607,7 @@ RuleEditor.prototype = {
    * @param {TextProperty} siblingProp
    *        Optional, the property next to which all new props should be added.
    */
-  addProperties: function(properties, siblingProp) {
+  addProperties(properties, siblingProp) {
     if (!properties || !properties.length) {
       return;
     }
@@ -567,7 +638,7 @@ RuleEditor.prototype = {
    * name is given, we'll create a real TextProperty and add it to the
    * rule.
    */
-  newProperty: function() {
+  newProperty() {
     // If we're already creating a new property, ignore this.
     if (!this.closeBrace.hasAttribute("tabindex")) {
       return;
@@ -614,7 +685,7 @@ RuleEditor.prototype = {
    * @param {Boolean} commit
    *        True if the value should be committed.
    */
-  _onNewProperty: function(value, commit) {
+  _onNewProperty(value, commit) {
     if (!value || !commit) {
       return;
     }
@@ -632,9 +703,7 @@ RuleEditor.prototype = {
     // the field gets destroyed (see _newPropertyDestroy)
     this.editor.input.blur();
 
-    this.telemetry.recordEvent("edit_rule", "ruleview", null, {
-      session_id: this.toolbox.sessionId,
-    });
+    this.telemetry.recordEvent("edit_rule", "ruleview");
   },
 
   /**
@@ -643,7 +712,7 @@ RuleEditor.prototype = {
    * added, since we want to wait until after the inplace editor `destroy`
    * event has been fired to keep consistent UI state.
    */
-  _newPropertyDestroy: function() {
+  _newPropertyDestroy() {
     // We're done, make the close brace focusable again.
     this.closeBrace.setAttribute("tabindex", "0");
 
@@ -753,12 +822,12 @@ RuleEditor.prototype = {
    * @param {Number} direction
    *        The move focus direction number.
    */
-  _moveSelectorFocus: function(direction) {
+  _moveSelectorFocus(direction) {
     if (!direction || direction === Services.focus.MOVEFOCUS_BACKWARD) {
       return;
     }
 
-    if (this.rule.textProps.length > 0) {
+    if (this.rule.textProps.length) {
       this.rule.textProps[0].editor.nameSpan.click();
     } else {
       this.propertyList.click();

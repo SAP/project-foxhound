@@ -48,6 +48,12 @@
     -moz-control-character-visibility: initial;
     -moz-font-smoothing-background-color: initial;
     -moz-min-font-size-ratio: initial;
+
+    /* -moz-box-layout: initial; is not included in 'all' but it's not needed,
+     * because we explicitly specify it below for the top level scrollbar parts
+     * (and it inherits through to the rest).
+     */
+
     math-depth: initial;
     /* As long as inert implies pointer-events: none as it does now, we're
      * good. */
@@ -91,14 +97,26 @@
     box-sizing: border-box;
   }
 
-  /* There are other rules that set direction and cursor on scrollbar,
-   * expecting them to inherit into its children.  Explicitly inherit those,
-   * overriding the 'all: initial; direction: ltr;' declarations above.
+  /* There are other rules that set the cursor on the scrollbar, expecting them
+   * to inherit into its children. Explicitly inherit it, overriding the
+   * 'all: initial;' declaration above.
    */
   :is(scrollbarbutton, slider, thumb):where(:-moz-native-anonymous) {
-    direction: inherit;
     cursor: inherit;
   }
+}
+
+scrollbar,
+scrollcorner,
+resizer {
+  /* Force legacy XUL layout for now on scrollbars / resizers and descendants,
+   * as ScrollFrameHelper relies on that (and nsScrollbarFrame is a XUL frame
+   * anyways).
+   *
+   * TODO: Eventually we should rewrite scrollbars so that they don't use XUL
+   * layout.
+   */
+  -moz-box-layout: legacy;
 }
 
 scrollbar[orient="vertical"],
@@ -177,6 +195,7 @@ resizer[dir="topright"] {
 /********** scrollbar **********/
 
 thumb {
+  -moz-box-flex: 1;
   display: -moz-box !important;
 }
 
@@ -187,14 +206,6 @@ thumb[collapsed="true"] {
 
 scrollbar, scrollbarbutton, scrollcorner, slider, thumb {
   user-select: none;
-}
-
-scrollcorner {
-  display: -moz-box !important;
-}
-
-scrollcorner[hidden="true"] {
-  display: none !important;
 }
 
 scrollbar[value="hidden"] {
@@ -222,11 +233,5 @@ scrollbar[value="hidden"] {
 @media (-moz-scrollbar-end-forward: 0) {
   scrollbarbutton[sbattr="scrollbar-down-bottom"] {
     display: none;
-  }
-}
-
-@media (-moz-scrollbar-thumb-proportional) {
-  thumb {
-    -moz-box-flex: 1;
   }
 }

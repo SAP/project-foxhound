@@ -3,26 +3,23 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict;";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(this, "Log", "resource://gre/modules/Log.jsm");
-ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
-  "CommonUtils",
-  "resource://services-common/utils.js"
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
 );
 
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+});
+ChromeUtils.defineModuleGetter(
+  lazy,
+  "NetUtil",
+  "resource://gre/modules/NetUtil.jsm"
+);
+
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 
 var EXPORTED_SYMBOLS = ["LogManager"];
@@ -189,45 +186,26 @@ class FlushableStorageAppender extends StorageStreamAppender {
    * Returns a promise that is resolved on completion or rejected with an error.
    */
   async _copyStreamToFile(inputStream, subdirArray, outputFileName, log) {
-    // The log data could be large, so we don't want to pass it all in a single
-    // message, so use BUFFER_SIZE chunks.
-    const BUFFER_SIZE = 8192;
+    let outputDirectory = PathUtils.join(PathUtils.profileDir, ...subdirArray);
+    await IOUtils.makeDirectory(outputDirectory);
+    let fullOutputFileName = PathUtils.join(outputDirectory, outputFileName);
 
-    // get a binary stream
-    let binaryStream = Cc["@mozilla.org/binaryinputstream;1"].createInstance(
-      Ci.nsIBinaryInputStream
-    );
-    binaryStream.setInputStream(inputStream);
+    let outputStream = Cc[
+      "@mozilla.org/network/file-output-stream;1"
+    ].createInstance(Ci.nsIFileOutputStream);
 
-    let outputDirectory = OS.Path.join(
-      OS.Constants.Path.profileDir,
-      ...subdirArray
+    outputStream.init(
+      new lazy.FileUtils.File(fullOutputFileName),
+      -1,
+      -1,
+      Ci.nsIFileOutputStream.DEFER_OPEN
     );
-    await OS.File.makeDir(outputDirectory, {
-      ignoreExisting: true,
-      from: OS.Constants.Path.profileDir,
-    });
-    let fullOutputFileName = OS.Path.join(outputDirectory, outputFileName);
-    let output = await OS.File.open(fullOutputFileName, { write: true });
-    try {
-      while (true) {
-        let available = binaryStream.available();
-        if (!available) {
-          break;
-        }
-        let chunk = binaryStream.readByteArray(
-          Math.min(available, BUFFER_SIZE)
-        );
-        await output.write(new Uint8Array(chunk));
-      }
-    } finally {
-      try {
-        binaryStream.close(); // inputStream is closed by the binaryStream
-        await output.close();
-      } catch (ex) {
-        log.error("Failed to close the input stream", ex);
-      }
-    }
+
+    await new Promise(resolve =>
+      lazy.NetUtil.asyncCopy(inputStream, outputStream, () => resolve())
+    );
+
+    outputStream.close();
     log.trace("finished copy to", fullOutputFileName);
   }
 }
@@ -427,7 +405,7 @@ LogManager.prototype = {
     this._log.debug("Log cleanup threshold time: " + threshold);
 
     let shouldDelete = fileInfo => {
-      return fileInfo.lastModificationDate.getTime() < threshold;
+      return fileInfo.lastModified < threshold;
     };
     return this._deleteLogFiles(shouldDelete);
   },
@@ -443,47 +421,32 @@ LogManager.prototype = {
   // determine if that file should be removed.
   async _deleteLogFiles(cbShouldDelete) {
     this._cleaningUpFileLogs = true;
-    let logDir = FileUtils.getDir("ProfD", this._logFileSubDirectoryEntries);
-    let iterator = new OS.File.DirectoryIterator(logDir.path);
+    let logDir = lazy.FileUtils.getDir(
+      "ProfD",
+      this._logFileSubDirectoryEntries
+    );
+    for (const path of await IOUtils.getChildren(logDir.path)) {
+      const name = PathUtils.filename(path);
 
-    await iterator.forEach(async entry => {
-      // Note that we don't check this.logFilePrefix is in the name - we cleanup
-      // all files in this directory regardless of that prefix so old logfiles
-      // for prefixes no longer in use are still cleaned up. See bug 1279145.
-      if (
-        !entry.name.startsWith("error-") &&
-        !entry.name.startsWith("success-")
-      ) {
-        return;
+      if (!name.startsWith("error-") && !name.startsWith("success-")) {
+        continue;
       }
+
       try {
-        // need to call .stat() as the enumerator doesn't give that to us on *nix.
-        let info = await OS.File.stat(entry.path);
+        const info = await IOUtils.stat(path);
         if (!cbShouldDelete(info)) {
-          return;
+          continue;
         }
-        this._log.trace(
-          " > Cleanup removing " +
-            entry.name +
-            " (" +
-            info.lastModificationDate.getTime() +
-            ")"
-        );
-        await OS.File.remove(entry.path);
-        this._log.trace("Deleted " + entry.name);
+
+        this._log.trace(` > Cleanup removing ${name} (${info.lastModified})`);
+        await IOUtils.remove(path);
+        this._log.trace(`Deleted ${name}`);
       } catch (ex) {
         this._log.debug(
-          "Encountered error trying to clean up old log file " + entry.name,
+          `Encountered error trying to clean up old log file ${name}`,
           ex
         );
       }
-    });
-    // Wait for this to close if we need to (but it might fail if OS.File has
-    // shut down)
-    try {
-      await iterator.close();
-    } catch (e) {
-      this._log.warn("Failed to close directory iterator", e);
     }
     this._cleaningUpFileLogs = false;
     this._log.debug("Done deleting files.");

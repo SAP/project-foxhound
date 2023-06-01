@@ -89,8 +89,7 @@ class nsISerialEventTarget;
 class nsITimer;
 class nsRange;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // Number of milliseconds between timeupdate events as defined by spec
 #define TIMEUPDATE_MS 250
@@ -321,13 +320,16 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   nsresult DispatchPendingMediaEvents();
 
   // Return true if we can activate autoplay assuming enough data has arrived.
-  bool CanActivateAutoplay();
+  // https://html.spec.whatwg.org/multipage/media.html#eligible-for-autoplay
+  bool IsEligibleForAutoplay();
 
   // Notify that state has changed that might cause an autoplay element to
   // start playing.
   // If the element is 'autoplay' and is ready to play back (not paused,
   // autoplay pref enabled, etc), it should start playing back.
   void CheckAutoplayDataReady();
+
+  void RunAutoplay();
 
   // Check if the media element had crossorigin set when loading started
   bool ShouldCheckAllowOrigin();
@@ -423,7 +425,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
    * current when they were enqueued, and if it has changed when they come to
    * fire, they consider themselves cancelled, and don't fire.
    */
-  uint32_t GetCurrentLoadID() { return mCurrentLoadID; }
+  uint32_t GetCurrentLoadID() const { return mCurrentLoadID; }
 
   /**
    * Returns the load group for this media element's owner document.
@@ -659,6 +661,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // These functions return accumulated time, which are used for the telemetry
   // usage. Return -1 for error.
   double TotalVideoPlayTime() const;
+  double TotalVideoHDRPlayTime() const;
   double VisiblePlayTime() const;
   double InvisiblePlayTime() const;
   double VideoDecodeSuspendedTime() const;
@@ -685,8 +688,8 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   void SetSrcObject(DOMMediaStream& aValue);
   void SetSrcObject(DOMMediaStream* aValue);
 
-  bool MozPreservesPitch() const { return mPreservesPitch; }
-  void SetMozPreservesPitch(bool aPreservesPitch);
+  bool PreservesPitch() const { return mPreservesPitch; }
+  void SetPreservesPitch(bool aPreservesPitch);
 
   MediaKeys* GetMediaKeys() const;
 
@@ -704,7 +707,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 
   bool IsEventAttributeNameInternal(nsAtom* aName) override;
 
-  bool ContainsRestrictedContent();
+  bool ContainsRestrictedContent() const;
 
   void NotifyWaitingForKey() override;
 
@@ -770,7 +773,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // that will soon be gone.
   bool IsBeingDestroyed();
 
-  void OnVisibilityChange(Visibility aNewVisibility);
+  virtual void OnVisibilityChange(Visibility aNewVisibility);
 
   // Begin testing only methods
   float ComputedVolume() const;
@@ -791,16 +794,18 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 
   AbstractThread* AbstractMainThread() const final;
 
-  // Telemetry: to record the usage of a {visible / invisible} video element as
+  // Log the usage of a {visible / invisible} video element as
   // the source of {drawImage(), createPattern(), createImageBitmap() and
-  // captureStream()} APIs.
+  // captureStream()} APIs. This function can be used to collect telemetries for
+  // bug 1352007.
   enum class CallerAPI {
     DRAW_IMAGE,
     CREATE_PATTERN,
     CREATE_IMAGEBITMAP,
     CAPTURE_STREAM,
+    CREATE_VIDEOFRAME,
   };
-  void MarkAsContentSource(CallerAPI aAPI);
+  void LogVisibility(CallerAPI aAPI);
 
   Document* GetDocument() const override;
 
@@ -816,7 +821,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
                                       ErrorResult& aRv);
   // Get the sink id of the device that audio is being played. Initial value is
   // empty and the default device is being used.
-  void GetSinkId(nsString& aSinkId) {
+  void GetSinkId(nsString& aSinkId) const {
     MOZ_ASSERT(NS_IsMainThread());
     aSinkId = mSink.first;
   }
@@ -1638,16 +1643,10 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // True if loadeddata has been fired.
   bool mLoadedDataFired = false;
 
-  // Indicates whether current playback is a result of user action
-  // (ie. calling of the Play method), or automatic playback due to
-  // the 'autoplay' attribute being set. A true value indicates the
-  // latter case.
-  // The 'autoplay' HTML attribute indicates that the video should
-  // start playing when loaded. The 'autoplay' attribute of the object
-  // is a mirror of the HTML attribute. These are different from this
-  // 'mAutoplaying' flag, which indicates whether the current playback
-  // is a result of the autoplay attribute.
-  bool mAutoplaying = true;
+  // One of the factors determines whether a media element with 'autoplay'
+  // attribute is allowed to start playing.
+  // https://html.spec.whatwg.org/multipage/media.html#can-autoplay-flag
+  bool mCanAutoplayFlag = true;
 
   // Playback of the video is paused either due to calling the
   // 'Pause' method, or playback not yet having started.
@@ -1941,7 +1940,6 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 // Check if the context is chrome or has the debugger or tabs permission
 bool HasDebuggerOrTabsPrivilege(JSContext* aCx, JSObject* aObj);
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_HTMLMediaElement_h

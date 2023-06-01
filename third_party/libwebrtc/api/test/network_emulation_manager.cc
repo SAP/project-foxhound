@@ -7,12 +7,39 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
+#include "api/test/network_emulation_manager.h"
+
 #include <utility>
 
-#include "api/test/network_emulation_manager.h"
 #include "call/simulated_network.h"
+#include "rtc_base/checks.h"
 
 namespace webrtc {
+
+bool AbslParseFlag(absl::string_view text, TimeMode* mode, std::string* error) {
+  if (text == "realtime") {
+    *mode = TimeMode::kRealTime;
+    return true;
+  }
+  if (text == "simulated") {
+    *mode = TimeMode::kSimulated;
+    return true;
+  }
+  *error =
+      "Unknown value for TimeMode enum. Options are 'realtime' or 'simulated'";
+  return false;
+}
+
+std::string AbslUnparseFlag(TimeMode mode) {
+  switch (mode) {
+    case TimeMode::kRealTime:
+      return "realtime";
+    case TimeMode::kSimulated:
+      return "simulated";
+  }
+  RTC_CHECK_NOTREACHED();
+  return "unknown";
+}
 
 NetworkEmulationManager::SimulatedNetworkNode::Builder&
 NetworkEmulationManager::SimulatedNetworkNode::Builder::config(
@@ -56,18 +83,20 @@ NetworkEmulationManager::SimulatedNetworkNode::Builder::packet_queue_length(
 }
 
 NetworkEmulationManager::SimulatedNetworkNode
-NetworkEmulationManager::SimulatedNetworkNode::Builder::Build() const {
+NetworkEmulationManager::SimulatedNetworkNode::Builder::Build(
+    uint64_t random_seed) const {
   RTC_CHECK(net_);
-  return Build(net_);
+  return Build(net_, random_seed);
 }
 
 NetworkEmulationManager::SimulatedNetworkNode
 NetworkEmulationManager::SimulatedNetworkNode::Builder::Build(
-    NetworkEmulationManager* net) const {
+    NetworkEmulationManager* net,
+    uint64_t random_seed) const {
   RTC_CHECK(net);
   RTC_CHECK(net_ == nullptr || net_ == net);
   SimulatedNetworkNode res;
-  auto behavior = std::make_unique<SimulatedNetwork>(config_);
+  auto behavior = std::make_unique<SimulatedNetwork>(config_, random_seed);
   res.simulation = behavior.get();
   res.node = net->CreateEmulatedNode(std::move(behavior));
   return res;

@@ -43,7 +43,7 @@ enum class JSActorMessageKind {
 class JSActor : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(JSActor)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(JSActor)
 
   explicit JSActor(nsISupports* aGlobal = nullptr);
 
@@ -68,11 +68,6 @@ class JSActor : public nsISupports, public nsWrapperCache {
                               Maybe<ipc::StructuredCloneData>&& aData,
                               Maybe<ipc::StructuredCloneData>&& aStack,
                               ErrorResult& aRv) = 0;
-
-  // Check if a message is so large that IPC will probably crash if we try to
-  // send it. If it is too large, record telemetry about the message.
-  static bool AllowMessage(const JSActorMessageMeta& aMetadata,
-                           size_t aDataLength);
 
   // Helper method to send an in-process raw message.
   using OtherSideCallback = std::function<already_AddRefed<JSActorManager>()>;

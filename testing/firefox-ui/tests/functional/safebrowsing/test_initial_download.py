@@ -2,10 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import os
-
 from functools import reduce
 
 from marionette_driver import Wait
@@ -109,7 +106,7 @@ class TestSafeBrowsingInitialDownload(MarionetteTestCase):
     def tearDown(self):
         try:
             # Restart with a fresh profile
-            self.marionette.restart(clean=True)
+            self.marionette.restart(in_app=False, clean=True)
         finally:
             super(TestSafeBrowsingInitialDownload, self).tearDown()
 

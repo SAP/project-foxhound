@@ -3,17 +3,26 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
 );
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
+);
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  TelemetryUtils: "resource://gre/modules/TelemetryUtils.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonRollouts: "resource://normandy/lib/AddonRollouts.jsm",
   AddonStudies: "resource://normandy/lib/AddonStudies.jsm",
   CleanupManager: "resource://normandy/lib/CleanupManager.jsm",
@@ -23,7 +32,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   PreferenceRollouts: "resource://normandy/lib/PreferenceRollouts.jsm",
   RecipeRunner: "resource://normandy/lib/RecipeRunner.jsm",
   ShieldPreferences: "resource://normandy/lib/ShieldPreferences.jsm",
-  TelemetryUtils: "resource://gre/modules/TelemetryUtils.jsm",
   TelemetryEvents: "resource://normandy/lib/TelemetryEvents.jsm",
   ExperimentManager: "resource://nimbus/lib/ExperimentManager.jsm",
   RemoteSettingsExperimentLoader:
@@ -60,7 +68,7 @@ var Normandy = {
     // Listen for when Telemetry is disabled or re-enabled.
     Services.obs.addObserver(
       this,
-      TelemetryUtils.TELEMETRY_UPLOAD_DISABLED_TOPIC
+      lazy.TelemetryUtils.TELEMETRY_UPLOAD_DISABLED_TOPIC
     );
 
     // It is important this happens before the first `await`. Note that this
@@ -73,12 +81,12 @@ var Normandy = {
     );
     this.defaultPrefsHaveBeenApplied.resolve();
 
-    await NormandyMigrations.applyAll();
+    await lazy.NormandyMigrations.applyAll();
 
     // Wait for the UI to be ready, or time out after 5 minutes.
     if (runAsync) {
       await Promise.race([
-        this.uiAvailableNotificationObserved,
+        this.uiAvailableNotificationObserved.promise,
         new Promise(resolve => setTimeout(resolve, 5 * 60 * 1000)),
       ]);
     }
@@ -96,13 +104,13 @@ var Normandy = {
     if (topic === UI_AVAILABLE_NOTIFICATION) {
       Services.obs.removeObserver(this, UI_AVAILABLE_NOTIFICATION);
       this.uiAvailableNotificationObserved.resolve();
-    } else if (topic === TelemetryUtils.TELEMETRY_UPLOAD_DISABLED_TOPIC) {
+    } else if (topic === lazy.TelemetryUtils.TELEMETRY_UPLOAD_DISABLED_TOPIC) {
       await Promise.all(
         [
-          PreferenceExperiments,
-          PreferenceRollouts,
-          AddonStudies,
-          AddonRollouts,
+          lazy.PreferenceExperiments,
+          lazy.PreferenceRollouts,
+          lazy.AddonStudies,
+          lazy.AddonRollouts,
         ].map(service => service.onTelemetryDisabled())
       );
     }
@@ -110,76 +118,86 @@ var Normandy = {
 
   async finishInit() {
     try {
-      TelemetryEvents.init();
+      lazy.TelemetryEvents.init();
     } catch (err) {
       log.error("Failed to initialize telemetry events:", err);
     }
 
-    await PreferenceRollouts.recordOriginalValues(this.rolloutPrefsChanged);
-    await PreferenceExperiments.recordOriginalValues(this.studyPrefsChanged);
+    await lazy.PreferenceRollouts.recordOriginalValues(
+      this.rolloutPrefsChanged
+    );
+    await lazy.PreferenceExperiments.recordOriginalValues(
+      this.studyPrefsChanged
+    );
 
     // Setup logging and listen for changes to logging prefs
-    LogManager.configure(
+    lazy.LogManager.configure(
       Services.prefs.getIntPref(PREF_LOGGING_LEVEL, Log.Level.Warn)
     );
-    Services.prefs.addObserver(PREF_LOGGING_LEVEL, LogManager.configure);
-    CleanupManager.addCleanupHandler(() =>
-      Services.prefs.removeObserver(PREF_LOGGING_LEVEL, LogManager.configure)
+    Services.prefs.addObserver(PREF_LOGGING_LEVEL, lazy.LogManager.configure);
+    lazy.CleanupManager.addCleanupHandler(() =>
+      Services.prefs.removeObserver(
+        PREF_LOGGING_LEVEL,
+        lazy.LogManager.configure
+      )
     );
 
     try {
-      await ExperimentManager.onStartup();
+      await lazy.ExperimentManager.onStartup();
     } catch (err) {
       log.error("Failed to initialize ExperimentManager:", err);
     }
 
     try {
-      await RemoteSettingsExperimentLoader.init();
+      await lazy.RemoteSettingsExperimentLoader.init();
     } catch (err) {
       log.error("Failed to initialize RemoteSettingsExperimentLoader:", err);
     }
 
     try {
-      await AddonStudies.init();
+      await lazy.AddonStudies.init();
     } catch (err) {
       log.error("Failed to initialize addon studies:", err);
     }
 
     try {
-      await PreferenceRollouts.init();
+      await lazy.PreferenceRollouts.init();
     } catch (err) {
       log.error("Failed to initialize preference rollouts:", err);
     }
 
     try {
-      await AddonRollouts.init();
+      await lazy.AddonRollouts.init();
     } catch (err) {
       log.error("Failed to initialize addon rollouts:", err);
     }
 
     try {
-      await PreferenceExperiments.init();
+      await lazy.PreferenceExperiments.init();
     } catch (err) {
       log.error("Failed to initialize preference experiments:", err);
     }
 
     try {
-      ShieldPreferences.init();
+      lazy.ShieldPreferences.init();
     } catch (err) {
       log.error("Failed to initialize preferences UI:", err);
     }
 
-    await RecipeRunner.init();
+    await lazy.RecipeRunner.init();
     Services.obs.notifyObservers(null, SHIELD_INIT_NOTIFICATION);
   },
 
   async uninit() {
-    await CleanupManager.cleanup();
+    await lazy.CleanupManager.cleanup();
     // Note that Service.pref.removeObserver and Service.obs.removeObserver have
     // oppositely ordered parameters.
-    Services.prefs.removeObserver(PREF_LOGGING_LEVEL, LogManager.configure);
+    Services.prefs.removeObserver(
+      PREF_LOGGING_LEVEL,
+      lazy.LogManager.configure
+    );
     for (const topic of [
-      TelemetryUtils.TELEMETRY_UPLOAD_DISABLED_TOPIC,
+      lazy.TelemetryUtils.TELEMETRY_UPLOAD_DISABLED_TOPIC,
       UI_AVAILABLE_NOTIFICATION,
     ]) {
       try {
@@ -216,7 +234,7 @@ var Normandy = {
         targetPrefType !== Services.prefs.PREF_INVALID &&
         targetPrefType !== sourcePrefType
       ) {
-        Cu.reportError(
+        console.error(
           new Error(
             `Error setting startup pref ${prefName}; pref type does not match.`
           )
@@ -256,7 +274,7 @@ var Normandy = {
           originalValues[prefName] = null;
         } else {
           // Unexpected error, report it and move on
-          Cu.reportError(e);
+          console.error(e);
           continue;
         }
       }
@@ -283,7 +301,7 @@ var Normandy = {
         }
         default: {
           // This should never happen.
-          Cu.reportError(
+          console.error(
             new Error(
               `Error getting startup pref ${prefName}; unexpected value type ${sourcePrefType}.`
             )

@@ -208,11 +208,11 @@ bool MediaDecodeTask::Init() {
       TaskCategory::Other);
 
   mPSupervisorTaskQueue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::SUPERVISOR),
-                    "MediaBufferDecoder::mPSupervisorTaskQueue");
+      TaskQueue::Create(GetMediaThreadPool(MediaThreadType::SUPERVISOR),
+                        "MediaBufferDecoder::mPSupervisorTaskQueue");
   mPDecoderTaskQueue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
-                    "MediaBufferDecoder::mPDecoderTaskQueue");
+      TaskQueue::Create(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
+                        "MediaBufferDecoder::mPDecoderTaskQueue");
 
   // If you change this list to add support for new decoders, please consider
   // updating HTMLMediaElement::CreateDecoder as well.
@@ -265,7 +265,8 @@ void MediaDecodeTask::OnInitDemuxerCompleted() {
     UniquePtr<TrackInfo> audioInfo = mTrackDemuxer->GetInfo();
     // We actively ignore audio tracks that we know we can't play.
     if (audioInfo && audioInfo->IsValid() &&
-        platform->SupportsMimeType(audioInfo->mMimeType)) {
+        platform->SupportsMimeType(audioInfo->mMimeType) !=
+            media::DecodeSupport::Unsupported) {
       mMediaInfo.mAudio = *audioInfo->GetAsAudioInfo();
     }
   }

@@ -9,6 +9,11 @@ const TEST_ROOT = getRootDirectory(gTestPath).replace(
 );
 
 const TEST_PAGE = TEST_ROOT + "test-page.html";
+const SHORT_TEST_PAGE = TEST_ROOT + "short-test-page.html";
+const LARGE_TEST_PAGE = TEST_ROOT + "large-test-page.html";
+
+const MAX_CAPTURE_DIMENSION = 32767;
+const MAX_CAPTURE_AREA = 124925329;
 
 const gScreenshotUISelectors = {
   panelButtons: "#screenshotsPagePanel",
@@ -16,6 +21,28 @@ const gScreenshotUISelectors = {
   visiblePageButton: "button.visible-page",
   copyButton: "button.highlight-button-copy",
 };
+
+// MouseEvents is for the mouse events on the Anonymous content
+const MouseEvents = {
+  mouse: new Proxy(
+    {},
+    {
+      get: (target, name) =>
+        async function(x, y, selector = ":root") {
+          if (name === "click") {
+            this.down(x, y);
+            this.up(x, y);
+          } else {
+            await safeSynthesizeMouseEventInContentPage(selector, x, y, {
+              type: "mouse" + name,
+            });
+          }
+        },
+    }
+  ),
+};
+
+const { mouse } = MouseEvents;
 
 class ScreenshotsHelper {
   constructor(browser) {
@@ -39,6 +66,173 @@ class ScreenshotsHelper {
     button.click();
   }
 
+  async waitForPanel() {
+    return BrowserTestUtils.waitForCondition(async () => {
+      return gBrowser.selectedBrowser.ownerDocument.querySelector(
+        "#screenshotsPagePanel"
+      );
+    });
+  }
+
+  async waitForOverlay() {
+    let panel = gBrowser.selectedBrowser.ownerDocument.querySelector(
+      "#screenshotsPagePanel"
+    );
+    if (!panel) {
+      panel = await this.waitForPanel();
+    }
+    await BrowserTestUtils.waitForMutationCondition(
+      panel,
+      { attributes: true },
+      () => {
+        return BrowserTestUtils.is_visible(panel);
+      }
+    );
+    ok(BrowserTestUtils.is_visible(panel), "Panel buttons are visible");
+
+    await BrowserTestUtils.waitForCondition(async () => {
+      let init = await this.isOverlayInitialized();
+      return init;
+    });
+    info("Overlay is visible");
+  }
+
+  async waitForOverlayClosed() {
+    let panel = gBrowser.selectedBrowser.ownerDocument.querySelector(
+      "#screenshotsPagePanel"
+    );
+    if (!panel) {
+      panel = await this.waitForPanel();
+    }
+    await BrowserTestUtils.waitForMutationCondition(
+      panel,
+      { attributes: true },
+      () => {
+        return BrowserTestUtils.is_hidden(panel);
+      }
+    );
+    ok(BrowserTestUtils.is_hidden(panel), "Panel buttons are hidden");
+
+    await BrowserTestUtils.waitForCondition(async () => {
+      let init = !(await this.isOverlayInitialized());
+      info("Is overlay initialized: " + !init);
+      return init;
+    });
+    info("Overlay is not visible");
+  }
+
+  async isOverlayInitialized() {
+    return SpecialPowers.spawn(this.browser, [], () => {
+      let screenshotsChild = content.windowGlobalChild.getActor(
+        "ScreenshotsComponent"
+      );
+      return screenshotsChild?._overlay?._initialized;
+    });
+  }
+
+  async getOverlayState() {
+    return ContentTask.spawn(this.browser, null, async () => {
+      let screenshotsChild = content.windowGlobalChild.getActor(
+        "ScreenshotsComponent"
+      );
+      return screenshotsChild._overlay.stateHandler.getState();
+    });
+  }
+
+  async waitForStateChange(newState) {
+    await BrowserTestUtils.waitForCondition(async () => {
+      let state = await this.getOverlayState();
+      return state === newState;
+    });
+  }
+
+  async waitForSelectionBoxSizeChange(currentWidth) {
+    await ContentTask.spawn(
+      this.browser,
+      [currentWidth],
+      async ([currWidth]) => {
+        let screenshotsChild = content.windowGlobalChild.getActor(
+          "ScreenshotsComponent"
+        );
+
+        let dimensions = screenshotsChild._overlay.screenshotsContainer.getSelectionLayerDimensions();
+        // return dimensions.boxWidth;
+        await ContentTaskUtils.waitForCondition(() => {
+          dimensions = screenshotsChild._overlay.screenshotsContainer.getSelectionLayerDimensions();
+          return dimensions.boxWidth !== currWidth;
+        }, "Wait for selection box width change");
+      }
+    );
+  }
+
+  async dragOverlay(startX, startY, endX, endY) {
+    await this.waitForStateChange("crosshairs");
+    let state = await this.getOverlayState();
+    Assert.equal(state, "crosshairs", "The overlay is in the crosshairs state");
+
+    mouse.down(startX, startY);
+
+    await this.waitForStateChange("draggingReady");
+    state = await this.getOverlayState();
+    Assert.equal(
+      state,
+      "draggingReady",
+      "The overlay is in the draggingReady state"
+    );
+
+    mouse.move(endX, endY);
+
+    await this.waitForStateChange("dragging");
+    state = await this.getOverlayState();
+    Assert.equal(state, "dragging", "The overlay is in the dragging state");
+
+    mouse.up(endX, endY);
+
+    await this.waitForStateChange("selected");
+    state = await this.getOverlayState();
+    Assert.equal(state, "selected", "The overlay is in the selected state");
+
+    this.endX = endX;
+    this.endY = endY;
+  }
+
+  async scrollContentWindow(x, y) {
+    await ContentTask.spawn(this.browser, [x, y], async ([xPos, yPos]) => {
+      content.window.scroll(xPos, yPos);
+    });
+  }
+
+  clickDownloadButton() {
+    mouse.click(this.endX - 60, this.endY + 30);
+  }
+
+  clickCopyButton(overrideX = null, overrideY = null) {
+    // click copy button with last x and y position from dragOverlay
+    // the middle of the copy button is last X - 163 and last Y + 30.
+    // Ex. 500, 500 would be 336, 530
+    if (overrideX && overrideY) {
+      mouse.click(overrideX - 166, overrideY + 30);
+    } else {
+      mouse.click(this.endX - 166, this.endY + 30);
+    }
+  }
+
+  clickCancelButton() {
+    // click copy button with last x and y position from dragOverlay
+    // the middle of the copy button is last X - 230 and last Y + 30.
+    // Ex. 500, 500 would be 270, 530
+    mouse.click(this.endX - 230, this.endY + 30);
+  }
+
+  async zoomBrowser(zoom) {
+    await SpecialPowers.spawn(this.browser, [zoom], zoomLevel => {
+      const { Layout } = ChromeUtils.import(
+        "chrome://mochitests/content/browser/accessible/tests/browser/Layout.jsm"
+      );
+      Layout.zoomDocument(content.document, zoomLevel);
+    });
+  }
+
   /**
    * Gets the dialog box
    * @returns The dialog box
@@ -50,6 +244,26 @@ class ScreenshotsHelper {
     return dialogs[0];
   }
 
+  assertPanelVisible() {
+    let panel = gBrowser.selectedBrowser.ownerDocument.querySelector(
+      "#screenshotsPagePanel"
+    );
+    Assert.ok(
+      BrowserTestUtils.is_visible(panel),
+      "Screenshots panel is visible"
+    );
+  }
+
+  assertPanelNotVisible() {
+    let panel = gBrowser.selectedBrowser.ownerDocument.querySelector(
+      "#screenshotsPagePanel"
+    );
+    Assert.ok(
+      BrowserTestUtils.is_hidden(panel),
+      "Screenshots panel is not visible"
+    );
+  }
+
   /**
    * Copied from screenshots extension
    * Returns a promise that resolves when the clipboard data has changed
@@ -59,7 +273,7 @@ class ScreenshotsHelper {
     const initialClipboardData = Date.now().toString();
     SpecialPowers.clipboardCopyString(initialClipboardData);
 
-    let promiseChanged = BrowserTestUtils.waitForCondition(() => {
+    let promiseChanged = TestUtils.waitForCondition(() => {
       let data;
       try {
         data = getRawClipboardData("image/png");
@@ -83,13 +297,34 @@ class ScreenshotsHelper {
   getContentDimensions() {
     return SpecialPowers.spawn(this.browser, [], async function() {
       let doc = content.document.documentElement;
-      // let rect = doc.documentElement.getBoundingClientRect();
       return {
         clientHeight: doc.clientHeight,
         clientWidth: doc.clientWidth,
         scrollHeight: doc.scrollHeight,
         scrollWidth: doc.scrollWidth,
       };
+    });
+  }
+
+  getSelectionLayerDimensions() {
+    return ContentTask.spawn(this.browser, null, async () => {
+      let screenshotsChild = content.windowGlobalChild.getActor(
+        "ScreenshotsComponent"
+      );
+      Assert.ok(screenshotsChild._overlay._initialized, "The overlay exists");
+
+      return screenshotsChild._overlay.screenshotsContainer.getSelectionLayerDimensions();
+    });
+  }
+
+  getSelectionBoxDimensions() {
+    return ContentTask.spawn(this.browser, null, async () => {
+      let screenshotsChild = content.windowGlobalChild.getActor(
+        "ScreenshotsComponent"
+      );
+      Assert.ok(screenshotsChild._overlay._initialized, "The overlay exists");
+
+      return screenshotsChild._overlay.screenshotsContainer.getSelectionLayerBoxDimensions();
     });
   }
 
@@ -228,4 +463,38 @@ function getRawClipboardData(flavor) {
   }
   data = data.value || null;
   return data;
+}
+
+/**
+ * Synthesize a mouse event on an element, after ensuring that it is visible
+ * in the viewport.
+ *
+ * @param {String} selector: The node selector to get the node target for the event.
+ * @param {number} x
+ * @param {number} y
+ * @param {object} options: Options that will be passed to BrowserTestUtils.synthesizeMouse
+ */
+async function safeSynthesizeMouseEventInContentPage(
+  selector,
+  x,
+  y,
+  options = {}
+) {
+  let context = gBrowser.selectedBrowser.browsingContext;
+  BrowserTestUtils.synthesizeMouse(selector, x, y, options, context);
+}
+
+add_setup(async () => {
+  CustomizableUI.addWidgetToArea(
+    "screenshot-button",
+    CustomizableUI.AREA_NAVBAR
+  );
+  let screenshotBtn = document.getElementById("screenshot-button");
+  Assert.ok(screenshotBtn, "The screenshots button was added to the nav bar");
+});
+
+function getContentDevicePixelRatio(browser) {
+  return SpecialPowers.spawn(browser, [], async function() {
+    return content.window.devicePixelRatio;
+  });
 }

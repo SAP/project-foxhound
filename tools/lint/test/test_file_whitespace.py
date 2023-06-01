@@ -1,7 +1,4 @@
-from __future__ import absolute_import, print_function
-
 import mozunit
-
 
 LINTER = "file-whitespace"
 fixed = 0

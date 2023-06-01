@@ -16,7 +16,9 @@ var EXPORTED_SYMBOLS = [
 const CRYPTO_COLLECTION = "crypto";
 const KEYS_WBO = "keys";
 
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
+);
 const {
   DEFAULT_DOWNLOAD_BATCH_SIZE,
   DEFAULT_KEYBUNDLE_NAME,
@@ -30,6 +32,9 @@ const { Utils } = ChromeUtils.import("resource://services-sync/util.js");
 const { Async } = ChromeUtils.import("resource://services-common/async.js");
 const { CommonUtils } = ChromeUtils.import(
   "resource://services-common/utils.js"
+);
+const { CryptoUtils } = ChromeUtils.import(
+  "resource://services-crypto/utils.js"
 );
 
 /**
@@ -170,7 +175,6 @@ function RawCryptoWrapper(collection, id) {
   this.ciphertext = null;
 }
 RawCryptoWrapper.prototype = {
-  __proto__: WBORecord.prototype,
   _logName: "Sync.Record.RawCryptoWrapper",
 
   /**
@@ -209,13 +213,17 @@ RawCryptoWrapper.prototype = {
     throw new TypeError("Override to parse incoming records");
   },
 
-  ciphertextHMAC: function ciphertextHMAC(keyBundle) {
-    let hasher = keyBundle.sha256HMACHasher;
-    if (!hasher) {
+  ciphertextHMAC: async function ciphertextHMAC(keyBundle) {
+    let hmacKeyByteString = keyBundle.hmacKey;
+    if (!hmacKeyByteString) {
       throw new Error("Cannot compute HMAC without an HMAC key.");
     }
-
-    return CommonUtils.bytesAsHex(Utils.digestBytes(this.ciphertext, hasher));
+    let hmacKey = CommonUtils.byteStringToArrayBuffer(hmacKeyByteString);
+    // NB: this.ciphertext is a base64-encoded string. For some reason this
+    // implementation computes the HMAC on the encoded value.
+    let data = CommonUtils.byteStringToArrayBuffer(this.ciphertext);
+    let hmac = await CryptoUtils.hmac("SHA-256", hmacKey, data);
+    return CommonUtils.bytesAsHex(CommonUtils.arrayBufferToByteString(hmac));
   },
 
   /*
@@ -238,7 +246,7 @@ RawCryptoWrapper.prototype = {
       keyBundle.encryptionKeyB64,
       this.IV
     );
-    this.hmac = this.ciphertextHMAC(keyBundle);
+    this.hmac = await this.ciphertextHMAC(keyBundle);
     this.cleartext = null;
   },
 
@@ -253,7 +261,7 @@ RawCryptoWrapper.prototype = {
     }
 
     // Authenticate the encrypted blob with the expected HMAC
-    let computedHMAC = this.ciphertextHMAC(keyBundle);
+    let computedHMAC = await this.ciphertextHMAC(keyBundle);
 
     if (computedHMAC != this.hmac) {
       Utils.throwHMACMismatch(this.hmac, computedHMAC);
@@ -271,6 +279,8 @@ RawCryptoWrapper.prototype = {
   },
 };
 
+Object.setPrototypeOf(RawCryptoWrapper.prototype, WBORecord.prototype);
+
 Utils.deferGetSet(RawCryptoWrapper, "payload", ["ciphertext", "IV", "hmac"]);
 
 /**
@@ -285,7 +295,6 @@ function CryptoWrapper(collection, id) {
   RawCryptoWrapper.call(this, collection, id);
 }
 CryptoWrapper.prototype = {
-  __proto__: RawCryptoWrapper.prototype,
   _logName: "Sync.Record.CryptoWrapper",
 
   defaultCleartext() {
@@ -306,8 +315,8 @@ CryptoWrapper.prototype = {
       );
     }
 
-    // Verify that the encrypted id matches the requested record's id.
-    if (json_result.id != this.id) {
+    // If the payload has an encrypted id ensure it matches the requested record's id.
+    if (json_result.id && json_result.id != this.id) {
       throw new Error(`Record id mismatch: ${json_result.id} != ${this.id}`);
     }
 
@@ -355,6 +364,8 @@ CryptoWrapper.prototype = {
     this.cleartext.id = val;
   },
 };
+
+Object.setPrototypeOf(CryptoWrapper.prototype, RawCryptoWrapper.prototype);
 
 Utils.deferGetSet(CryptoWrapper, "cleartext", "deleted");
 
@@ -484,7 +495,7 @@ CollectionKeyManager.prototype = {
     changed.sort();
     let last;
     changed = changed.filter(x => x != last && (last = x));
-    return { same: changed.length == 0, changed };
+    return { same: !changed.length, changed };
   },
 
   get isClear() {
@@ -770,7 +781,6 @@ function Collection(uri, recordObj, service) {
   this._offset = null;
 }
 Collection.prototype = {
-  __proto__: Resource.prototype,
   _logName: "Sync.Collection",
 
   _rebuildURL: function Coll__rebuildURL() {
@@ -808,7 +818,7 @@ Collection.prototype = {
 
     this.uri = this.uri
       .mutate()
-      .setQuery(args.length > 0 ? "?" + args.join("&") : "")
+      .setQuery(args.length ? "?" + args.join("&") : "")
       .finalize();
   },
 
@@ -1000,6 +1010,8 @@ Collection.prototype = {
     );
   },
 };
+
+Object.setPrototypeOf(Collection.prototype, Resource.prototype);
 
 // These are limits for requests provided by the server at the
 // info/configuration endpoint -- server documentation is available here:

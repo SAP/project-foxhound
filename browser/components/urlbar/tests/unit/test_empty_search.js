@@ -11,8 +11,10 @@ testEngine_setup();
 
 add_task(async function test_empty_search() {
   Services.prefs.setBoolPref("browser.urlbar.suggest.searches", false);
+  Services.prefs.setBoolPref("browser.urlbar.suggest.quickactions", false);
   registerCleanupFunction(() => {
     Services.prefs.clearUserPref("browser.urlbar.suggest.searches");
+    Services.prefs.clearUserPref("browser.urlbar.suggest.quickactions");
   });
 
   let uri1 = Services.io.newURI("http://t.foo/1");
@@ -41,6 +43,8 @@ add_task(async function test_empty_search() {
 
   // Now remove page 6 from history, so it is an unvisited bookmark.
   await PlacesUtils.history.remove(uri6);
+
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   // With the changes above, the sites in descending order of frecency are:
   // uri2

@@ -2,7 +2,6 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
-/* import-globals-from ../../../rules/test/head.js */
 
 // Import the rule view's head.js first (which itself imports inspector's head.js and shared-head.js).
 Services.scriptloader.loadSubScript(
@@ -13,11 +12,11 @@ Services.scriptloader.loadSubScript(
 const {
   COMPATIBILITY_UPDATE_SELECTED_NODE_COMPLETE,
   COMPATIBILITY_UPDATE_TOP_LEVEL_TARGET_COMPLETE,
-} = require("devtools/client/inspector/compatibility/actions/index");
+} = require("resource://devtools/client/inspector/compatibility/actions/index.js");
 
 const {
   toCamelCase,
-} = require("devtools/client/inspector/compatibility/utils/cases");
+} = require("resource://devtools/client/inspector/compatibility/utils/cases.js");
 
 async function openCompatibilityView() {
   info("Open the compatibility view");

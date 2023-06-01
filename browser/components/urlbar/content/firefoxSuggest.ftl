@@ -11,13 +11,62 @@
 
 ## These strings are used in the urlbar panel.
 
-# A label shown above the best match group in the urlbar results.
+# A label shown above the top pick group in the urlbar results.
 urlbar-group-best-match =
-  .label = { -firefox-suggest-brand-name } · Best Match
+  .label = Top pick
+
+# Tooltip text for the block button shown in top pick rows.
+firefox-suggest-urlbar-block =
+  .title = Dismiss this suggestion
+
+# Block menu item shown in the result menu of top pick and quick suggest
+# results.
+urlbar-result-menu-dismiss-firefox-suggest =
+    .label = Dismiss this suggestion
+    .accesskey = D
 
 # Tooltip text for the help button shown in Firefox Suggest urlbar results.
 firefox-suggest-urlbar-learn-more =
   .title = Learn more about { -firefox-suggest-brand-name }
+
+# Learn More menu item shown in the result menu of Firefox Suggest results.
+urlbar-result-menu-learn-more-about-firefox-suggest =
+    .label = Learn more about { -firefox-suggest-brand-name }
+    .accesskey = L
+
+## These strings are used for weather suggestions in the urlbar.
+
+# This string is displayed above the current temperature
+firefox-suggest-weather-currently = Currently
+
+# This string displays the current temperature value and unit
+# Variables:
+#   $value (number) - The temperature value
+#   $unit (String) - The unit for the temperature
+firefox-suggest-weather-temperature = { $value }°{ $unit }
+
+# This string is the title of the weather summary
+# Variables:
+#   $city (String) - The name of the city the weather data is for
+firefox-suggest-weather-title = Weather for { $city }
+
+# This string displays the weather summary
+# Variables:
+#   $currentConditions (String) - The current weather conditions summary
+#   $forecast (String) - The forecast weather conditions summary
+firefox-suggest-weather-summary-text = { $currentConditions }; { $forecast }
+
+# This string displays the high and low temperatures
+# Variables:
+#   $high (number) - The number for the high temperature
+#   $unit (String) - The unit for the temperature
+#   $low (number) - The number for the low temperature
+firefox-suggest-weather-high-low = High: { $high }°{ $unit } · Low: { $low }°{ $unit }
+
+# This string displays the name of the weather provider
+# Variables:
+#   $provider (String) - The name of the weather provider
+firefox-suggest-weather-sponsored = { $provider } · Sponsored
 
 ## These strings are used in the preferences UI (about:preferences). Their names
 ## follow the naming conventions of other strings used in the preferences UI.
@@ -32,20 +81,29 @@ addressbar-header-firefox-suggest = Address Bar — { -firefox-suggest-brand-nam
 # the address bar section in the preferences UI.
 addressbar-suggest-firefox-suggest = Choose the type of suggestions that appear in the address bar:
 
+# The best match checkbox label. This toggle controls best match suggestions
+# related to the user's search string.
+addressbar-firefox-suggest-best-match-option =
+  .label = Top pick
+addressbar-best-match-learn-more = Learn more
+
 # First Firefox Suggest toggle button main label and description. This toggle
 # controls non-sponsored suggestions related to the user's search string.
-addressbar-firefox-suggest-nonsponsored = Suggestions from the web
-addressbar-firefox-suggest-nonsponsored-description = Get suggestions from { -brand-product-name } related to your search.
+addressbar-firefox-suggest-nonsponsored =
+  .label = Suggestions from the web
+  .description = Get suggestions from { -brand-product-name } related to your search.
 
 # Second Firefox Suggest toggle button main label and description. This toggle
 # controls sponsored suggestions related to the user's search string.
-addressbar-firefox-suggest-sponsored = Suggestions from sponsors
-addressbar-firefox-suggest-sponsored-description = Support the development of { -brand-short-name } with occasional sponsored suggestions.
+addressbar-firefox-suggest-sponsored =
+  .label = Suggestions from sponsors
+  .description = Support the development of { -brand-short-name } with occasional sponsored suggestions.
 
 # Third Firefox Suggest toggle button main label and description. This toggle
 # controls data collection related to the user's search string.
-addressbar-firefox-suggest-data-collection = Improve the { -firefox-suggest-brand-name } experience
-addressbar-firefox-suggest-data-collection-description = Help create a richer search experience by allowing { -vendor-short-name } to process your search queries.
+addressbar-firefox-suggest-data-collection =
+  .label = Improve the { -firefox-suggest-brand-name } experience
+  .description = Help create a richer search experience by allowing { -vendor-short-name } to process your search queries.
 
 # The "Learn more" link shown in the Firefox Suggest preferences UI.
 addressbar-locbar-firefox-suggest-learn-more = Learn more
@@ -119,6 +177,7 @@ firefox-suggest-onboarding-introduction-close-button =
 
 firefox-suggest-onboarding-introduction-next-button-1 = Find out how
 firefox-suggest-onboarding-introduction-next-button-2 = Find out more
+firefox-suggest-onboarding-introduction-next-button-3 = Show me how
 
 ## Used as title on the main pane. The text can be formatted to span
 ## multiple lines as needed (line breaks are significant).
@@ -143,6 +202,8 @@ firefox-suggest-onboarding-main-title-7 =
 firefox-suggest-onboarding-main-title-8 =
   Finding the best of the web should be
   simpler and more secure.
+firefox-suggest-onboarding-main-title-9 =
+  Find the best of the web, faster
 
 ##
 
@@ -154,18 +215,25 @@ firefox-suggest-onboarding-main-description-5 = Allowing { -vendor-short-name } 
 firefox-suggest-onboarding-main-description-6 = Allowing { -vendor-short-name } to process your search queries will help us create more relevant search suggestions. We’re building { -firefox-suggest-brand-name } to help you get where you’re going on the Internet while keeping your privacy in mind.
 firefox-suggest-onboarding-main-description-7 = Allowing { -vendor-short-name } to process your search queries helps us create more relevant search suggestions.
 firefox-suggest-onboarding-main-description-8 = Allowing { -vendor-short-name } to process your search queries helps us provide more relevant search suggestions. We don’t use this data to profile you on the web.
+firefox-suggest-onboarding-main-description-9 =
+  We’re building a better search experience. When you allow { -vendor-short-name } to process your search queries, we can create more relevant search suggestions for you.
+  <a data-l10n-name="learn-more-link">Learn more</a>
 
 firefox-suggest-onboarding-main-privacy-first = No user profiling. Privacy-first, always.
 
 firefox-suggest-onboarding-main-accept-option-label = Allow. <a data-l10n-name="learn-more-link">Learn more</a>
+firefox-suggest-onboarding-main-accept-option-label-2 = Enable
 
 firefox-suggest-onboarding-main-accept-option-description-1 = Help improve the { -firefox-suggest-brand-name } feature with more relevant suggestions. Your search queries will be processed.
 firefox-suggest-onboarding-main-accept-option-description-2 = Recommended for people who support improving the { -firefox-suggest-brand-name } feature.  Your search queries will be processed.
+firefox-suggest-onboarding-main-accept-option-description-3 = Help improve the { -firefox-suggest-brand-name } experience. Your search queries will be processed.
 
 firefox-suggest-onboarding-main-reject-option-label = Don’t allow.
+firefox-suggest-onboarding-main-reject-option-label-2 = Keep disabled
 
 firefox-suggest-onboarding-main-reject-option-description-1 = Keep the default { -firefox-suggest-brand-name } experience with the strictest data-sharing controls.
 firefox-suggest-onboarding-main-reject-option-description-2 = Recommended for people who prefer the strictest data-sharing controls. Keep the default experience.
+firefox-suggest-onboarding-main-reject-option-description-3 = Leave the default { -firefox-suggest-brand-name } experience with the strictest data-sharing controls.
 
 firefox-suggest-onboarding-main-submit-button = Save preferences
 firefox-suggest-onboarding-main-skip-link = Not now

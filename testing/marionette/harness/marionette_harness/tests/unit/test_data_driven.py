@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import six
 
 from marionette_harness.marionette_test import (
@@ -38,7 +36,7 @@ class TestDataDriven(MarionetteTestCase):
         test.test_1()
         test.test_2()
 
-        self.assertEquals(test.parameters, [("thing", 43), ("thing2", None)])
+        self.assertEqual(test.parameters, [("thing", 43), ("thing2", None)])
 
     def test_with_parameters(self):
         DATA = [("1", ("thing",), {"named": 43}), ("2", ("thing2",), {"named": None})]
@@ -59,7 +57,7 @@ class TestDataDriven(MarionetteTestCase):
         test.test_1()
         test.test_2()
 
-        self.assertEquals(test.parameters, [("thing", 43), ("thing2", None)])
+        self.assertEqual(test.parameters, [("thing", 43), ("thing2", None)])
 
     def test_parameterized_same_name_raises_error(self):
         with self.assertRaises(KeyError):

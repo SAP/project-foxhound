@@ -46,11 +46,16 @@ enum PlaneType {
 enum PictureFlags {
     PICTURE_FLAG_NEW_SEQUENCE =       1 << 0,
     PICTURE_FLAG_NEW_OP_PARAMS_INFO = 1 << 1,
+    PICTURE_FLAG_NEW_TEMPORAL_UNIT  = 1 << 2,
 };
 
 typedef struct Dav1dThreadPicture {
     Dav1dPicture p;
     int visible;
+    // This can be set for inter frames, non-key intra frames, or for invisible
+    // keyframes that have not yet been made visible using the show-existing-frame
+    // mechanism.
+    int showable;
     enum PictureFlags flags;
     // [0] block data (including segmentation map and motion vectors)
     // [1] pixel data
@@ -83,6 +88,8 @@ int dav1d_picture_alloc_copy(Dav1dContext *c, Dav1dPicture *dst, const int w,
 void dav1d_picture_ref(Dav1dPicture *dst, const Dav1dPicture *src);
 void dav1d_thread_picture_ref(Dav1dThreadPicture *dst,
                               const Dav1dThreadPicture *src);
+void dav1d_thread_picture_move_ref(Dav1dThreadPicture *dst,
+                                   Dav1dThreadPicture *src);
 void dav1d_thread_picture_unref(Dav1dThreadPicture *p);
 
 /**

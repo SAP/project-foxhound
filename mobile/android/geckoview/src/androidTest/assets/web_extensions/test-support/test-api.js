@@ -6,13 +6,15 @@
 
 /* globals Services */
 
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-const { E10SUtils } = ChromeUtils.import(
-  "resource://gre/modules/E10SUtils.jsm"
+const { E10SUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/E10SUtils.sys.mjs"
 );
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
+
+// eslint-disable-next-line mozilla/reject-importGlobalProperties
+Cu.importGlobalProperties(["PathUtils"]);
 
 this.test = class extends ExtensionAPI {
   onStartup() {
@@ -143,7 +145,7 @@ this.test = class extends ExtensionAPI {
         },
 
         async getProfilePath() {
-          return OS.Constants.Path.profileDir;
+          return PathUtils.profileDir;
         },
 
         async flushApzRepaints(tabId) {
@@ -179,6 +181,13 @@ this.test = class extends ExtensionAPI {
             Ci.nsIGfxInfo
           );
           return gfxInfo.crashGPUProcessForTests();
+        },
+
+        async clearHSTSState() {
+          const sss = Cc["@mozilla.org/ssservice;1"].getService(
+            Ci.nsISiteSecurityService
+          );
+          return sss.clearAll();
         },
       },
     };

@@ -4,16 +4,8 @@
 "use strict";
 
 // Load the shared test helpers into this compartment.
-/* import-globals-from ../../../shared/test/shared-head.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/shared/test/shared-head.js",
-  this
-);
-
-// Load the shared Redux helpers into this compartment.
-/* import-globals-from ../../../shared/test/shared-redux-head.js */
-Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/shared/test/shared-redux-head.js",
   this
 );
 
@@ -21,8 +13,8 @@ var {
   censusDisplays,
   censusState,
   snapshotState: states,
-} = require("devtools/client/memory/constants");
-var { L10N } = require("devtools/client/memory/utils");
+} = require("resource://devtools/client/memory/constants.js");
+var { L10N } = require("resource://devtools/client/memory/utils.js");
 
 Services.prefs.setBoolPref("devtools.memory.enabled", true);
 
@@ -146,7 +138,7 @@ function setCensusDisplay(window, display) {
   // fire the onChange event, so just change it in the store.
   // window.document.querySelector(`.select-display`).value = type;
   gStore.dispatch(
-    require("devtools/client/memory/actions/census-display").setCensusDisplayAndRefresh(
+    require("resource://devtools/client/memory/actions/census-display.js").setCensusDisplayAndRefresh(
       gHeapAnalysesClient,
       display
     )

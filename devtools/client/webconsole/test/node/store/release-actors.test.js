@@ -6,21 +6,21 @@ const {
   getFirstMessage,
   setupActions,
   setupStore,
-} = require("devtools/client/webconsole/test/node/helpers");
+} = require("resource://devtools/client/webconsole/test/node/helpers.js");
 
 const {
   stubPackets,
-} = require("devtools/client/webconsole/test/node/fixtures/stubs/index");
+} = require("resource://devtools/client/webconsole/test/node/fixtures/stubs/index.js");
 const expect = require("expect");
 
 describe("Release actor enhancer:", () => {
   let actions;
 
-  before(() => {
+  beforeAll(() => {
     actions = setupActions();
   });
 
-  describe("Client proxy", () => {
+  describe("release", () => {
     it("releases backend actors when limit reached adding a single message", () => {
       const logLimit = 100;
       const releasedActors = [];

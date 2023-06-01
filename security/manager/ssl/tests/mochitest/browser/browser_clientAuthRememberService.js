@@ -5,7 +5,8 @@
 
 /**
  * Test certificate (i.e. build/pgo/certs/mochitest.client).
- * @type nsIX509Cert
+ *
+ * @type {nsIX509Cert}
  */
 var cert;
 var cert2;
@@ -18,8 +19,8 @@ var certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(
 
 var deleted = false;
 
-const { MockRegistrar } = ChromeUtils.import(
-  "resource://testing-common/MockRegistrar.jsm"
+const { MockRegistrar } = ChromeUtils.importESModule(
+  "resource://testing-common/MockRegistrar.sys.mjs"
 );
 
 function findCertByCommonName(commonName) {
@@ -38,7 +39,7 @@ async function testHelper(connectURL, expectedURL) {
     set: [["security.default_personal_cert", "Ask Every Time"]],
   });
 
-  BrowserTestUtils.loadURI(win.gBrowser.selectedBrowser, connectURL);
+  BrowserTestUtils.loadURIString(win.gBrowser.selectedBrowser, connectURL);
 
   await BrowserTestUtils.browserLoaded(
     win.gBrowser.selectedBrowser,
@@ -188,7 +189,7 @@ add_task(async function testRememberedDecisionsUI() {
   );
 
   await BrowserTestUtils.waitForCondition(
-    () => labels[10].textContent.length > 0,
+    () => !!labels[10].textContent.length,
     "Localized label is populated"
   );
 

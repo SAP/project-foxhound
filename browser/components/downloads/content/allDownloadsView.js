@@ -3,19 +3,21 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 /* eslint-env mozilla/browser-window */
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+ChromeUtils.defineESModuleGetters(this, {
+  Downloads: "resource://gre/modules/Downloads.sys.mjs",
+  DownloadsCommon: "resource:///modules/DownloadsCommon.sys.mjs",
+  DownloadsViewUI: "resource:///modules/DownloadsViewUI.sys.mjs",
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+});
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  Downloads: "resource://gre/modules/Downloads.jsm",
-  DownloadsCommon: "resource:///modules/DownloadsCommon.jsm",
-  DownloadsViewUI: "resource:///modules/DownloadsViewUI.jsm",
-  FileUtils: "resource://gre/modules/FileUtils.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
 });
 
 /**
@@ -47,8 +49,6 @@ function HistoryDownloadElementShell(download) {
 }
 
 HistoryDownloadElementShell.prototype = {
-  __proto__: DownloadsViewUI.DownloadElementShell.prototype,
-
   /**
    * Overrides the base getter to return the Download or HistoryDownload object
    * for displaying information and executing commands in the user interface.
@@ -125,7 +125,9 @@ HistoryDownloadElementShell.prototype = {
     let displayName = DownloadsViewUI.getDisplayName(this.download);
     return (
       displayName.toLowerCase().includes(aTerm) ||
-      this.download.source.url.toLowerCase().includes(aTerm)
+      (this.download.source.originalUrl || this.download.source.url)
+        .toLowerCase()
+        .includes(aTerm)
     );
   },
 
@@ -176,7 +178,7 @@ HistoryDownloadElementShell.prototype = {
     if (!this._targetFileChecked) {
       this.download
         .refresh()
-        .catch(Cu.reportError)
+        .catch(console.error)
         .then(() => {
           // Do not try to check for existence again even if this failed.
           this._targetFileChecked = true;
@@ -184,6 +186,10 @@ HistoryDownloadElementShell.prototype = {
     }
   },
 };
+Object.setPrototypeOf(
+  HistoryDownloadElementShell.prototype,
+  DownloadsViewUI.DownloadElementShell.prototype
+);
 
 /**
  * Relays commands from the download.xml binding to the selected items.
@@ -264,8 +270,6 @@ function DownloadsPlacesView(
 }
 
 DownloadsPlacesView.prototype = {
-  __proto__: DownloadsViewUI.BaseView.prototype,
-
   get associatedElement() {
     return this._richlistbox;
   },
@@ -596,7 +600,10 @@ DownloadsPlacesView.prototype = {
       case "cmd_copy":
         return Array.prototype.some.call(
           this._richlistbox.selectedItems,
-          element => !!element._shell.download.source?.url
+          element => {
+            const { source } = element._shell.download;
+            return !!(source?.originalUrl || source?.url);
+          }
         );
       case "downloadsCmd_openReferrer":
       case "downloadShowMenuItem":
@@ -616,10 +623,10 @@ DownloadsPlacesView.prototype = {
   },
 
   _copySelectedDownloadsToClipboard() {
-    let urls = Array.from(
-      this._richlistbox.selectedItems,
-      element => element._shell.download.source?.url
-    ).filter(Boolean);
+    let urls = Array.from(this._richlistbox.selectedItems, element => {
+      const { source } = element._shell.download;
+      return source?.originalUrl || source?.url;
+    }).filter(Boolean);
 
     Cc["@mozilla.org/widget/clipboardhelper;1"]
       .getService(Ci.nsIClipboardHelper)
@@ -632,7 +639,7 @@ DownloadsPlacesView.prototype = {
     );
     trans.init(null);
 
-    let flavors = ["text/x-moz-url", "text/unicode"];
+    let flavors = ["text/x-moz-url", "text/plain"];
     flavors.forEach(trans.addDataFlavor);
 
     Services.clipboard.getData(trans, Services.clipboard.kGlobalClipboard);
@@ -725,7 +732,7 @@ DownloadsPlacesView.prototype = {
         .removeVisitsByFilter({
           transition: PlacesUtils.history.TRANSITIONS.DOWNLOAD,
         })
-        .catch(Cu.reportError);
+        .catch(console.error);
     }
     // There may be no selection or focus change as a result
     // of these change, and we want the command updated immediately.
@@ -882,6 +889,10 @@ DownloadsPlacesView.prototype = {
     }
   },
 };
+Object.setPrototypeOf(
+  DownloadsPlacesView.prototype,
+  DownloadsViewUI.BaseView.prototype
+);
 
 for (let methodName of ["load", "applyFilter", "selectNode", "selectItems"]) {
   DownloadsPlacesView.prototype[methodName] = function() {

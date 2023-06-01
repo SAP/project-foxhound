@@ -1,5 +1,5 @@
-commit a6aa6e4d73f284d5cc6452980e62f7acccb1a67f
-Author: Yoshito Umaoka <y.umaoka@gmail.com>
-Date:   Mon Oct 25 09:42:41 2021 -0400
+commit 02968a65f05cb5403bc2fa3d41d0a6d60f90d5e4
+Author: yumaoka <y.umaoka@gmail.com>
+Date:   Wed Nov 30 14:10:34 2022 -0500
 
-    ICU-21811 TZ data update 2021a3 (2021e)
+    ICU-22217 TZ Database 2022g updates

@@ -9,15 +9,15 @@
 
 #include "mozilla/dom/SafeRefPtr.h"
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 class CacheWorkerRef;
 
 class ActorChild {
  public:
   virtual void StartDestroy() = 0;
+  virtual void NoteDeletedActor() { /*no-op*/
+  }
 
   void SetWorkerRef(SafeRefPtr<CacheWorkerRef> aWorkerRef);
 
@@ -35,8 +35,6 @@ class ActorChild {
   SafeRefPtr<CacheWorkerRef> mWorkerRef;
 };
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache
 
 #endif  // mozilla_dom_cache_ActioChild_h

@@ -8,6 +8,10 @@ add_task(async function test_unsigned() {
     set: [
       ["extensions.webapi.testing", true],
       ["extensions.install.requireBuiltInCerts", false],
+      ["extensions.InstallTrigger.enabled", true],
+      ["extensions.InstallTriggerImpl.enabled", true],
+      // Relax the user input requirements while running this test.
+      ["xpinstall.userActivation.required", false],
     ],
   });
 
@@ -17,7 +21,7 @@ add_task(async function test_unsigned() {
 
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
 
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.loadURIString(
     gBrowser.selectedBrowser,
     `${BASE}/file_install_extensions.html`
   );

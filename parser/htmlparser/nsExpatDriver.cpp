@@ -6,7 +6,6 @@
 #include "nsExpatDriver.h"
 #include "mozilla/fallible.h"
 #include "nsCOMPtr.h"
-#include "nsParserCIID.h"
 #include "CParserContext.h"
 #include "nsIExpatSink.h"
 #include "nsIContentSink.h"
@@ -351,9 +350,8 @@ static void GetLocalDTDURI(const nsCatalogData* aCatalogData, nsIURI* aDTD,
 /***************************** END CATALOG UTILS *****************************/
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsExpatDriver)
-  NS_INTERFACE_MAP_ENTRY(nsITokenizer)
   NS_INTERFACE_MAP_ENTRY(nsIDTD)
-  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDTD)
+  NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsExpatDriver)
@@ -368,7 +366,6 @@ nsExpatDriver::nsExpatDriver()
       mInExternalDTD(false),
       mMadeFinalCallToExpat(false),
       mInParser(false),
-      mIsFinalChunk(false),
       mInternalState(NS_OK),
       mExpatBuffered(0),
       mTagDepth(0),
@@ -1141,16 +1138,17 @@ nsresult nsExpatDriver::HandleError() {
 void nsExpatDriver::ChunkAndParseBuffer(const char16_t* aBuffer,
                                         uint32_t aLength, bool aIsFinal,
                                         uint32_t* aPassedToExpat,
-                                        uint32_t* aConsumed) {
+                                        uint32_t* aConsumed,
+                                        XML_Size* aLastLineLength) {
   *aConsumed = 0;
+  *aLastLineLength = 0;
 
   uint32_t remainder = aLength;
   while (remainder > sMaxChunkLength) {
-    uint32_t consumed = 0;
-    ParseBuffer(aBuffer, sMaxChunkLength, /* aIsFinal = */ false, &consumed);
+    ParseChunk(aBuffer, sMaxChunkLength, ChunkOrBufferIsFinal::None, aConsumed,
+               aLastLineLength);
     aBuffer += sMaxChunkLength;
     remainder -= sMaxChunkLength;
-    *aConsumed += consumed;
     if (NS_FAILED(mInternalState)) {
       // Stop parsing if there's an error (including if we're blocked or
       // interrupted).
@@ -1159,16 +1157,20 @@ void nsExpatDriver::ChunkAndParseBuffer(const char16_t* aBuffer,
     }
   }
 
-  uint32_t consumed = 0;
-  ParseBuffer(aBuffer, remainder, aIsFinal, &consumed);
-  *aConsumed += consumed;
+  ParseChunk(aBuffer, remainder,
+             aIsFinal ? ChunkOrBufferIsFinal::FinalChunkAndBuffer
+                      : ChunkOrBufferIsFinal::FinalChunk,
+             aConsumed, aLastLineLength);
   *aPassedToExpat = aLength;
 }
 
-void nsExpatDriver::ParseBuffer(const char16_t* aBuffer, uint32_t aLength,
-                                bool aIsFinal, uint32_t* aConsumed) {
+void nsExpatDriver::ParseChunk(const char16_t* aBuffer, uint32_t aLength,
+                               ChunkOrBufferIsFinal aIsFinal,
+                               uint32_t* aConsumed, XML_Size* aLastLineLength) {
   NS_ASSERTION((aBuffer && aLength != 0) || (!aBuffer && aLength == 0), "?");
-  NS_ASSERTION(mInternalState != NS_OK || aIsFinal || aBuffer,
+  NS_ASSERTION(mInternalState != NS_OK ||
+                   (aIsFinal == ChunkOrBufferIsFinal::FinalChunkAndBuffer) ||
+                   aBuffer,
                "Useless call, we won't call Expat");
   MOZ_ASSERT(!BlockedOrInterrupted() || !aBuffer,
              "Non-null buffer when resuming");
@@ -1183,52 +1185,59 @@ void nsExpatDriver::ParseBuffer(const char16_t* aBuffer, uint32_t aLength,
   int32_t parserBytesBefore = RLBOX_EXPAT_SAFE_MCALL(
       XML_GetCurrentByteIndex, parserBytesBefore_verifier);
 
-  if (mInternalState == NS_OK || BlockedOrInterrupted()) {
-    XML_Status status;
-    bool inParser = mInParser;  // Save in-parser status
-    mInParser = true;
-    if (BlockedOrInterrupted()) {
-      mInternalState = NS_OK;  // Resume in case we're blocked.
-      status = RLBOX_EXPAT_SAFE_MCALL(MOZ_XML_ResumeParser, status_verifier);
-    } else {
-      auto buffer = TransferBuffer<char16_t>(Sandbox(), aBuffer, aLength);
-      MOZ_RELEASE_ASSERT(!aBuffer || !!*buffer,
-                         "Chunking should avoid OOM in ParseBuffer");
+  if (mInternalState != NS_OK && !BlockedOrInterrupted()) {
+    return;
+  }
 
-      status = RLBOX_EXPAT_SAFE_MCALL(
-          MOZ_XML_Parse, status_verifier,
-          rlbox::sandbox_reinterpret_cast<const char*>(*buffer),
-          aLength * sizeof(char16_t), aIsFinal);
-    }
-    mInParser = inParser;  // Restore in-parser status
-
-    auto parserBytesConsumed_verifier = [&](auto parserBytesConsumed) {
-      MOZ_RELEASE_ASSERT(parserBytesConsumed >= 0, "Unexpected value");
-      MOZ_RELEASE_ASSERT(parserBytesConsumed >= parserBytesBefore,
-                         "How'd this happen?");
-      MOZ_RELEASE_ASSERT(parserBytesConsumed % sizeof(char16_t) == 0,
-                         "Consumed part of a char16_t?");
-      return parserBytesConsumed;
-    };
-    int32_t parserBytesConsumed = RLBOX_EXPAT_SAFE_MCALL(
-        XML_GetCurrentByteIndex, parserBytesConsumed_verifier);
-
-    // Consumed something.
-    *aConsumed = (parserBytesConsumed - parserBytesBefore) / sizeof(char16_t);
-
-    NS_ASSERTION(status != XML_STATUS_SUSPENDED || BlockedOrInterrupted(),
-                 "Inconsistent expat suspension state.");
-
-    if (status == XML_STATUS_ERROR) {
-      mInternalState = NS_ERROR_HTMLPARSER_STOPPARSING;
-    }
+  XML_Status status;
+  bool inParser = mInParser;  // Save in-parser status
+  mInParser = true;
+  Maybe<TransferBuffer<char16_t>> buffer;
+  if (BlockedOrInterrupted()) {
+    mInternalState = NS_OK;  // Resume in case we're blocked.
+    status = RLBOX_EXPAT_SAFE_MCALL(MOZ_XML_ResumeParser, status_verifier);
   } else {
-    *aConsumed = 0;
+    buffer.emplace(Sandbox(), aBuffer, aLength);
+    MOZ_RELEASE_ASSERT(!aBuffer || !!*buffer.ref(),
+                       "Chunking should avoid OOM in ParseBuffer");
+
+    status = RLBOX_EXPAT_SAFE_MCALL(
+        MOZ_XML_Parse, status_verifier,
+        rlbox::sandbox_reinterpret_cast<const char*>(*buffer.ref()),
+        aLength * sizeof(char16_t),
+        aIsFinal == ChunkOrBufferIsFinal::FinalChunkAndBuffer);
+  }
+  mInParser = inParser;  // Restore in-parser status
+
+  auto parserBytesConsumed_verifier = [&](auto parserBytesConsumed) {
+    MOZ_RELEASE_ASSERT(parserBytesConsumed >= 0, "Unexpected value");
+    MOZ_RELEASE_ASSERT(parserBytesConsumed >= parserBytesBefore,
+                       "How'd this happen?");
+    MOZ_RELEASE_ASSERT(parserBytesConsumed % sizeof(char16_t) == 0,
+                       "Consumed part of a char16_t?");
+    return parserBytesConsumed;
+  };
+  int32_t parserBytesConsumed = RLBOX_EXPAT_SAFE_MCALL(
+      XML_GetCurrentByteIndex, parserBytesConsumed_verifier);
+
+  // Consumed something.
+  *aConsumed += (parserBytesConsumed - parserBytesBefore) / sizeof(char16_t);
+
+  NS_ASSERTION(status != XML_STATUS_SUSPENDED || BlockedOrInterrupted(),
+               "Inconsistent expat suspension state.");
+
+  if (status == XML_STATUS_ERROR) {
+    mInternalState = NS_ERROR_HTMLPARSER_STOPPARSING;
+  }
+
+  if (*aConsumed > 0 &&
+      (aIsFinal != ChunkOrBufferIsFinal::None || NS_FAILED(mInternalState))) {
+    *aLastLineLength = RLBOX_EXPAT_SAFE_MCALL(MOZ_XML_GetCurrentColumnNumber,
+                                              safe_unverified<XML_Size>);
   }
 }
 
-NS_IMETHODIMP
-nsExpatDriver::ConsumeToken(nsScanner& aScanner, bool& aFlushTokens) {
+nsresult nsExpatDriver::ResumeParse(nsScanner& aScanner, bool aIsFinalChunk) {
   // We keep the scanner pointing to the position where Expat will start
   // parsing.
   nsScannerIterator currentExpatPosition;
@@ -1250,9 +1259,9 @@ nsExpatDriver::ConsumeToken(nsScanner& aScanner, bool& aFlushTokens) {
   // We want to call Expat if we have more buffers, or if we know there won't
   // be more buffers (and so we want to flush the remaining data), or if we're
   // currently blocked and there's data in Expat's buffer.
-  while (start != end || (mIsFinalChunk && !mMadeFinalCallToExpat) ||
+  while (start != end || (aIsFinalChunk && !mMadeFinalCallToExpat) ||
          (BlockedOrInterrupted() && mExpatBuffered > 0)) {
-    bool noMoreBuffers = start == end && mIsFinalChunk;
+    bool noMoreBuffers = start == end && aIsFinalChunk;
     bool blocked = BlockedOrInterrupted();
 
     const char16_t* buffer;
@@ -1295,8 +1304,9 @@ nsExpatDriver::ConsumeToken(nsScanner& aScanner, bool& aFlushTokens) {
 
     uint32_t passedToExpat;
     uint32_t consumed;
+    XML_Size lastLineLength;
     ChunkAndParseBuffer(buffer, length, noMoreBuffers, &passedToExpat,
-                        &consumed);
+                        &consumed, &lastLineLength);
     MOZ_ASSERT_IF(passedToExpat != length, NS_FAILED(mInternalState));
     MOZ_ASSERT(consumed <= passedToExpat + mExpatBuffered);
     if (consumed > 0) {
@@ -1306,10 +1316,6 @@ nsExpatDriver::ConsumeToken(nsScanner& aScanner, bool& aFlushTokens) {
       // We consumed some data, we want to store the last line of data that
       // was consumed in case we run into an error (to show the line in which
       // the error occurred).
-
-      // The length of the last line that Expat has parsed.
-      XML_Size lastLineLength = RLBOX_EXPAT_SAFE_MCALL(
-          XML_GetCurrentColumnNumber, safe_unverified<XML_Size>);
 
       if (lastLineLength <= consumed) {
         // The length of the last line was less than what expat consumed, so
@@ -1503,9 +1509,7 @@ RLBoxExpatSandboxData::~RLBoxExpatSandboxData() {
   MOZ_COUNT_DTOR(RLBoxExpatSandboxData);
 }
 
-NS_IMETHODIMP
-nsExpatDriver::WillBuildModel(const CParserContext& aParserContext,
-                              nsITokenizer* aTokenizer, nsIContentSink* aSink) {
+nsresult nsExpatDriver::Initialize(nsIURI* aURI, nsIContentSink* aSink) {
   mSink = do_QueryInterface(aSink);
   if (!mSink) {
     NS_ERROR("nsExpatDriver didn't get an nsIExpatSink");
@@ -1576,7 +1580,7 @@ nsExpatDriver::WillBuildModel(const CParserContext& aParserContext,
                     XML_PARAM_ENTITY_PARSING_ALWAYS);
 #endif
 
-  auto baseURI = GetExpatBaseURI(aParserContext.mScanner->GetURI());
+  auto baseURI = GetExpatBaseURI(aURI);
   auto uri =
       TransferBuffer<XML_Char>(Sandbox(), &baseURI[0], ArrayLength(baseURI));
   RLBOX_EXPAT_MCALL(MOZ_XML_SetBase, *uri);
@@ -1610,12 +1614,9 @@ nsExpatDriver::WillBuildModel(const CParserContext& aParserContext,
 }
 
 NS_IMETHODIMP
-nsExpatDriver::BuildModel(nsITokenizer* aTokenizer, nsIContentSink* aSink) {
-  return mInternalState;
-}
+nsExpatDriver::BuildModel(nsIContentSink* aSink) { return mInternalState; }
 
-NS_IMETHODIMP
-nsExpatDriver::DidBuildModel(nsresult anErrorCode) {
+void nsExpatDriver::DidBuildModel() {
   if (!mInParser) {
     // Because nsExpatDriver is cycle-collected, it gets destroyed
     // asynchronously. We want to eagerly release the sandbox back into the
@@ -1625,13 +1626,6 @@ nsExpatDriver::DidBuildModel(nsresult anErrorCode) {
   }
   mOriginalSink = nullptr;
   mSink = nullptr;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsExpatDriver::WillTokenize(bool aIsFinalChunk) {
-  mIsFinalChunk = aIsFinalChunk;
-  return NS_OK;
 }
 
 NS_IMETHODIMP_(void)
@@ -1643,21 +1637,7 @@ nsExpatDriver::Terminate() {
   mInternalState = NS_ERROR_HTMLPARSER_STOPPARSING;
 }
 
-NS_IMETHODIMP_(int32_t)
-nsExpatDriver::GetType() { return NS_IPARSER_FLAG_XML; }
-
-NS_IMETHODIMP_(nsDTDMode)
-nsExpatDriver::GetMode() const { return eDTDMode_full_standards; }
-
 /*************************** Unused methods **********************************/
-
-NS_IMETHODIMP_(bool)
-nsExpatDriver::IsContainer(int32_t aTag) const { return true; }
-
-NS_IMETHODIMP_(bool)
-nsExpatDriver::CanContain(int32_t aParent, int32_t aChild) const {
-  return true;
-}
 
 void nsExpatDriver::MaybeStopParser(nsresult aState) {
   if (NS_FAILED(aState)) {

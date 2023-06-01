@@ -63,7 +63,11 @@ function drag(target, fromX, fromY, toX, toY) {
 }
 
 function resetPrimarySelection(val = "") {
-  if (Services.clipboard.supportsSelectionClipboard()) {
+  if (
+    Services.clipboard.isClipboardTypeSupported(
+      Services.clipboard.kSelectionClipboard
+    )
+  ) {
     // Reset the clipboard.
     clipboardHelper.copyStringToClipboard(
       val,
@@ -73,16 +77,20 @@ function resetPrimarySelection(val = "") {
 }
 
 function checkPrimarySelection(expectedVal = "") {
-  if (Services.clipboard.supportsSelectionClipboard()) {
+  if (
+    Services.clipboard.isClipboardTypeSupported(
+      Services.clipboard.kSelectionClipboard
+    )
+  ) {
     let primaryAsText = SpecialPowers.getClipboardData(
-      "text/unicode",
+      "text/plain",
       SpecialPowers.Ci.nsIClipboard.kSelectionClipboard
     );
     Assert.equal(primaryAsText, expectedVal);
   }
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   // On macOS, we must "warm up" the Urlbar to get the first test to pass.
   gURLBar.value = "";
   await click(gURLBar.inputField);

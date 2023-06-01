@@ -13,11 +13,11 @@
 # The last two are for use when there *is* a content title.
 # Variables:
 #  $content-title (String): the title of the web content.
-browser-main-window =
+browser-main-window-window-titles =
   .data-title-default = { -brand-full-name }
-  .data-title-private = { -brand-full-name } (Private Browsing)
+  .data-title-private = { -brand-full-name } Private Browsing
   .data-content-title-default = { $content-title } — { -brand-full-name }
-  .data-content-title-private = { $content-title } — { -brand-full-name } (Private Browsing)
+  .data-content-title-private = { $content-title } — { -brand-full-name } Private Browsing
 
 # These are the default window titles on macOS. The first two are for use when
 # there is no content title:
@@ -33,17 +33,21 @@ browser-main-window =
 #
 # Variables:
 #  $content-title (String): the title of the web content.
-browser-main-window-mac =
+browser-main-window-mac-window-titles =
   .data-title-default = { -brand-full-name }
-  .data-title-private = { -brand-full-name } — (Private Browsing)
+  .data-title-private = { -brand-full-name } — Private Browsing
   .data-content-title-default = { $content-title }
-  .data-content-title-private = { $content-title } — (Private Browsing)
+  .data-content-title-private = { $content-title } — Private Browsing
 
 # This gets set as the initial title, and is overridden as soon as we start
 # updating the titlebar based on loaded tabs or private browsing state.
 # This should match the `data-title-default` attribute in both
 # `browser-main-window` and `browser-main-window-mac`.
 browser-main-window-title = { -brand-full-name }
+
+# The non-variable portion of this MUST match the translation of
+# "PRIVATE_BROWSING_SHORTCUT_TITLE" in custom.properties
+private-browsing-shortcut-text-2 = { -brand-shortcut-name } Private Browsing
 
 ##
 
@@ -101,11 +105,24 @@ urlbar-addons-notification-anchor =
 urlbar-tip-help-icon =
     .title = Get help
 urlbar-search-tips-confirm = Okay, Got It
+urlbar-search-tips-confirm-short = Got it
 # Read out before Urlbar Tip text content so screenreader users know the
 # subsequent text is a tip offered by the browser. It should end in a colon or
 # localized equivalent.
 urlbar-tip-icon-description =
     .alt = Tip:
+
+urlbar-result-menu-button =
+    .title = Open menu
+urlbar-result-menu-learn-more =
+    .label = Learn more
+    .accesskey = L
+urlbar-result-menu-remove-from-history =
+    .label = Remove from history
+    .accesskey = R
+urlbar-result-menu-tip-get-help =
+    .label = Get help
+    .accesskey = h
 
 ## Prompts users to use the Urlbar when they open a new tab or visit the
 ## homepage of their default search engine.
@@ -114,6 +131,9 @@ urlbar-tip-icon-description =
 
 urlbar-search-tips-onboard = Type less, find more: Search { $engineName } right from your address bar.
 urlbar-search-tips-redirect-2 = Start your search in the address bar to see suggestions from { $engineName } and your browsing history.
+
+# Make sure to match the name of the Search panel in settings.
+urlbar-search-tips-persist = Searching just got simpler. Try making your search more specific here in the address bar. To show the URL instead, visit Search, in settings.
 
 # Prompts users to use the Urlbar when they are typing in the domain of a
 # search engine, e.g. google.com or amazon.com.
@@ -124,6 +144,7 @@ urlbar-tabtosearch-onboard = Select this shortcut to find what you need faster.
 urlbar-search-mode-bookmarks = Bookmarks
 urlbar-search-mode-tabs = Tabs
 urlbar-search-mode-history = History
+urlbar-search-mode-actions = Actions
 
 ##
 
@@ -164,10 +185,12 @@ urlbar-star-add-bookmark =
 
 ## Page Action Context Menu
 
-page-action-manage-extension =
+page-action-manage-extension2 =
     .label = Manage Extension…
-page-action-remove-extension =
+    .accesskey = E
+page-action-remove-extension2 =
     .label = Remove Extension
+    .accesskey = v
 
 ## Auto-hide Context Menu
 
@@ -230,6 +253,84 @@ search-one-offs-tabs =
     .tooltiptext = Tabs ({ $restrict })
 search-one-offs-history =
     .tooltiptext = History ({ $restrict })
+search-one-offs-actions =
+    .tooltiptext = Actions ({ $restrict })
+
+## QuickActions are shown in the urlbar as the user types a matching string
+## The -cmd- strings are comma separated list of keywords that will match
+## the action.
+
+# Opens the about:addons page in the home / recommendations section
+quickactions-addons = View Add-ons
+quickactions-cmd-addons2 = add-ons
+
+# Opens the bookmarks library window
+quickactions-bookmarks2 = Manage bookmarks
+quickactions-cmd-bookmarks = bookmarks
+
+# Opens a SUMO article explaining how to clear history
+quickactions-clearhistory = Clear History
+quickactions-cmd-clearhistory = clear history
+
+# Opens about:downloads page
+quickactions-downloads2 = View downloads
+quickactions-cmd-downloads = downloads
+
+# Opens about:addons page in the extensions section
+quickactions-extensions = Manage extensions
+quickactions-cmd-extensions = extensions
+
+# Opens the devtools web inspector
+quickactions-inspector2 = Open Developer Tools
+quickactions-cmd-inspector = inspector, devtools
+
+# Opens about:logins
+quickactions-logins2 = Manage passwords
+quickactions-cmd-logins = logins, passwords
+
+# Opens about:addons page in the plugins section
+quickactions-plugins = Manage plugins
+quickactions-cmd-plugins = plugins
+
+# Opens the print dialog
+quickactions-print2 = Print page
+quickactions-cmd-print = print
+
+# Opens a new private browsing window
+quickactions-private2 = Open private window
+quickactions-cmd-private = private browsing
+
+# Opens a SUMO article explaining how to refresh
+quickactions-refresh = Refresh { -brand-short-name }
+quickactions-cmd-refresh = refresh
+
+# Restarts the browser
+quickactions-restart = Restart { -brand-short-name }
+quickactions-cmd-restart = restart
+
+# Opens the screenshot tool
+quickactions-screenshot3 = Take a screenshot
+quickactions-cmd-screenshot = screenshot
+
+# Opens about:preferences
+quickactions-settings2 = Manage settings
+quickactions-cmd-settings = settings, preferences, options
+
+# Opens about:addons page in the themes section
+quickactions-themes = Manage themes
+quickactions-cmd-themes = themes
+
+# Opens a SUMO article explaining how to update the browser
+quickactions-update = Update { -brand-short-name }
+quickactions-cmd-update = update
+
+# Opens the view-source UI with current pages source
+quickactions-viewsource2 = View Page Source
+quickactions-cmd-viewsource = view source, source
+
+# Tooltip text for the help button shown in the result.
+quickactions-learn-more =
+    .title = Learn more about Quick actions
 
 ## Bookmark Panel
 
@@ -394,17 +495,10 @@ popup-select-microphone-icon =
     .tooltiptext = Microphone
 popup-select-speaker-icon =
     .tooltiptext = Speakers
+popup-select-window-or-screen =
+    .label = Window or screen:
+    .accesskey = W
 popup-all-windows-shared = All visible windows on your screen will be shared.
-
-popup-screen-sharing-block =
-  .label = Block
-  .accesskey = B
-
-popup-screen-sharing-always-block =
-  .label = Always block
-  .accesskey = w
-
-popup-mute-notifications-checkbox = Mute website notifications while sharing
 
 ## WebRTC window or screen share tab switch warning
 
@@ -417,7 +511,7 @@ sharing-warning-disable-for-session =
 
 ## DevTools F12 popup
 
-enable-devtools-popup-description = To use the F12 shortcut, first open DevTools via the Web Developer menu.
+enable-devtools-popup-description2 = To use the F12 shortcut, first open DevTools via the Browser Tools menu.
 
 ## URL Bar
 
@@ -458,6 +552,11 @@ urlbar-placeholder-search-mode-other-history =
 urlbar-placeholder-search-mode-other-tabs =
   .placeholder = Enter search terms
   .aria-label = Search tabs
+
+# This placeholder is used when searching quick actions.
+urlbar-placeholder-search-mode-other-actions =
+  .placeholder = Enter search terms
+  .aria-label = Search actions
 
 # Variables
 #  $name (String): the name of the user's default search engine
@@ -537,6 +636,7 @@ urlbar-result-action-calculator-result = = { $result }
 urlbar-result-action-search-bookmarks = Search Bookmarks
 urlbar-result-action-search-history = Search History
 urlbar-result-action-search-tabs = Search Tabs
+urlbar-result-action-search-actions = Search Actions
 
 ## Labels shown above groups of urlbar results
 
@@ -551,6 +651,19 @@ urlbar-group-firefox-suggest =
 #  $engine (String): the name of the search engine providing the suggestions
 urlbar-group-search-suggestions =
   .label = { $engine } suggestions
+
+# A label shown above Quick Actions in the urlbar results.
+urlbar-group-quickactions =
+  .label = Quick Actions
+
+## Reader View toolbar buttons
+
+# This should match menu-view-enter-readerview in menubar.ftl
+reader-view-enter-button =
+    .aria-label = Enter Reader View
+# This should match menu-view-close-readerview in menubar.ftl
+reader-view-close-button =
+    .aria-label = Close Reader View
 
 ## Full Screen and Pointer Lock UI
 
@@ -571,20 +684,6 @@ fullscreen-exit-mac-button = Exit Full Screen (esc)
 pointerlock-warning-domain = <span data-l10n-name="domain">{ $domain }</span> has control of your pointer. Press Esc to take back control.
 pointerlock-warning-no-domain = This document has control of your pointer. Press Esc to take back control.
 
-## Subframe crash notification
-
-crashed-subframe-message = <strong>Part of this page crashed.</strong> To let { -brand-product-name } know about this issue and get it fixed faster, please submit a report.
-
-# The string for crashed-subframe-title.title should match crashed-subframe-message,
-# but without any markup.
-crashed-subframe-title =
-  .title = Part of this page crashed. To let { -brand-product-name } know about this issue and get it fixed faster, please submit a report.
-crashed-subframe-learnmore-link =
-  .value = Learn more
-crashed-subframe-submit =
-  .label = Submit report
-  .accesskey = S
-
 ## Bookmarks panels, menus and toolbar
 
 bookmarks-manage-bookmarks =
@@ -600,6 +699,11 @@ bookmarks-other-bookmarks-menu =
   .label = Other bookmarks
 bookmarks-mobile-bookmarks-menu =
   .label = Mobile bookmarks
+
+## Variables:
+##   $isVisible (boolean): if the specific element (e.g. bookmarks sidebar,
+##                         bookmarks toolbar, etc.) is visible or not.
+
 bookmarks-tools-sidebar-visibility =
   .label = { $isVisible ->
      [true] Hide bookmarks sidebar
@@ -620,12 +724,15 @@ bookmarks-tools-menu-button-visibility =
      [true] Remove bookmarks menu from toolbar
     *[other] Add bookmarks menu to toolbar
   }
+
+##
+
 bookmarks-search =
   .label = Search bookmarks
 bookmarks-tools =
   .label = Bookmarking Tools
-bookmarks-bookmark-edit-panel =
-  .label = Edit this bookmark
+bookmarks-subview-edit-bookmark =
+  .label = Edit this bookmark…
 
 # The aria-label is a spoken label that should not include the word "toolbar" or
 # such, because screen readers already know that this container is a toolbar.
@@ -642,8 +749,8 @@ bookmarks-toolbar-placeholder-button =
   .label = Bookmarks toolbar items
 
 # "Bookmark" is a verb, as in "Add current tab to bookmarks".
-bookmarks-current-tab =
-  .label = Bookmark current tab
+bookmarks-subview-bookmark-tab =
+  .label = Bookmark current tab…
 
 ## Library Panel items
 
@@ -665,12 +772,6 @@ repair-text-encoding-button =
   .tooltiptext = Guess correct text encoding from page content
 
 ## Customize Toolbar Buttons
-
-# Variables:
-#  $shortcut (String): keyboard shortcut to open the add-ons manager
-toolbar-addons-themes-button =
-  .label = Add-ons and themes
-  .tooltiptext = Manage your add-ons and themes ({ $shortcut })
 
 # Variables:
 #  $shortcut (String): keyboard shortcut to open settings (only on macOS)
@@ -808,9 +909,6 @@ navbar-library =
 navbar-search =
     .title = Search
 
-navbar-accessibility-indicator =
-    .tooltiptext = Accessibility Features Enabled
-
 # Name for the tabs toolbar as spoken by screen readers. The word
 # "toolbar" is appended automatically and should not be included in
 # in the string
@@ -829,3 +927,47 @@ tabs-toolbar-list-all-tabs =
 # <img data-l10n-name="icon"/> will be replaced by the application menu icon
 restore-session-startup-suggestion-message = <strong>Open previous tabs?</strong> You can restore your previous session from the { -brand-short-name } application menu <img data-l10n-name="icon"/>, under History.
 restore-session-startup-suggestion-button = Show me how
+
+## Mozilla data reporting notification (Telemetry, Firefox Health Report, etc)
+
+data-reporting-notification-message = { -brand-short-name } automatically sends some data to { -vendor-short-name } so that we can improve your experience.
+data-reporting-notification-button =
+    .label = Choose What I Share
+    .accesskey = C
+
+# Label for the indicator shown in the private browsing window titlebar.
+private-browsing-indicator-label = Private browsing
+
+## Unified extensions (toolbar) button
+
+unified-extensions-button =
+    .label = Extensions
+    .tooltiptext = Extensions
+
+## Unified extensions button when permission(s) are needed.
+## Note that the new line is intentionally part of the tooltip.
+
+unified-extensions-button-permissions-needed =
+    .label = Extensions
+    .tooltiptext =
+        Extensions
+        Permissions needed
+
+## Autorefresh blocker
+
+refresh-blocked-refresh-label = { -brand-short-name } prevented this page from automatically reloading.
+refresh-blocked-redirect-label = { -brand-short-name } prevented this page from automatically redirecting to another page.
+
+refresh-blocked-allow =
+    .label = Allow
+    .accesskey = A
+
+## Firefox Relay integration
+
+firefox-relay-offer-why-relay = { -relay-brand-name } masks your true email address to help protect you from data breaches and spam.
+firefox-relay-offer-how-we-integrate = By continuing, you’ll be able to generate new { -relay-brand-short-name } email masks directly from your { -brand-shorter-name } password manager.
+
+# Variables:
+#  $sitename (String): name of the site where user enters their Relay mask
+#  $useremail (String): user email that will receive messages
+firefox-relay-offer-what-relay-does = We’ll forward all emails from <strong>{ $sitename }</strong> to <strong>{ $useremail }</strong>.

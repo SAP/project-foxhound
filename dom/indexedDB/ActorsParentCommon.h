@@ -20,6 +20,7 @@
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/dom/indexedDB/Key.h"
 #include "mozilla/dom/quota/IPCStreamCipherStrategy.h"
+#include "IndexedDBCipherKeyManager.h"
 #include "nscore.h"
 #include "nsISupports.h"
 #include "nsStringFwd.h"
@@ -31,18 +32,13 @@ class mozIStorageConnection;
 class mozIStorageStatement;
 class mozIStorageValueArray;
 
-namespace mozilla {
-namespace dom {
-namespace indexedDB {
+namespace mozilla::dom::indexedDB {
 
 class DatabaseFileManager;
 struct StructuredCloneFileParent;
 struct StructuredCloneReadInfoParent;
 
 extern const nsLiteralString kJournalDirectoryName;
-
-using IndexedDBCipherStrategy = quota::IPCStreamCipherStrategy;
-using CipherKey = IndexedDBCipherStrategy::KeyType;
 
 // At the moment, the encrypted stream block size is assumed to be unchangeable
 // between encrypting and decrypting blobs. This assumptions holds as long as we
@@ -122,8 +118,6 @@ DeserializeStructuredCloneFiles(const DatabaseFileManager& aFileManager,
 nsresult ExecuteSimpleSQLSequence(mozIStorageConnection& aConnection,
                                   Span<const nsLiteralCString> aSQLCommands);
 
-}  // namespace indexedDB
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::indexedDB
 
 #endif  // mozilla_dom_indexeddb_actorsparent_h__

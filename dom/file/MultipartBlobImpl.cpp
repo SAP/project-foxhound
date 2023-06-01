@@ -10,6 +10,7 @@
 #include "mozilla/dom/FileBinding.h"
 #include "mozilla/dom/UnionTypes.h"
 #include "nsComponentManagerUtils.h"
+#include "nsIGlobalObject.h"
 #include "nsIMultiplexInputStream.h"
 #include "nsReadableUtils.h"
 #include "nsRFPService.h"
@@ -25,11 +26,11 @@ using namespace mozilla::dom;
 /* static */
 already_AddRefed<MultipartBlobImpl> MultipartBlobImpl::Create(
     nsTArray<RefPtr<BlobImpl>>&& aBlobImpls, const nsAString& aName,
-    const nsAString& aContentType, bool aCrossOriginIsolated,
+    const nsAString& aContentType, RTPCallerType aRTPCallerType,
     ErrorResult& aRv) {
   RefPtr<MultipartBlobImpl> blobImpl =
       new MultipartBlobImpl(std::move(aBlobImpls), aName, aContentType);
-  blobImpl->SetLengthAndModifiedDate(Some(aCrossOriginIsolated), aRv);
+  blobImpl->SetLengthAndModifiedDate(Some(aRTPCallerType), aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -43,7 +44,7 @@ already_AddRefed<MultipartBlobImpl> MultipartBlobImpl::Create(
     ErrorResult& aRv) {
   RefPtr<MultipartBlobImpl> blobImpl =
       new MultipartBlobImpl(std::move(aBlobImpls), aContentType);
-  blobImpl->SetLengthAndModifiedDate(/* aCrossOriginIsolated */ Nothing(), aRv);
+  blobImpl->SetLengthAndModifiedDate(/* aRTPCallerType */ Nothing(), aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -52,7 +53,7 @@ already_AddRefed<MultipartBlobImpl> MultipartBlobImpl::Create(
 }
 
 void MultipartBlobImpl::CreateInputStream(nsIInputStream** aStream,
-                                          ErrorResult& aRv) {
+                                          ErrorResult& aRv) const {
   *aStream = nullptr;
 
   uint32_t length = mBlobImpls.Length();
@@ -106,7 +107,7 @@ void MultipartBlobImpl::CreateInputStream(nsIInputStream** aStream,
 
 already_AddRefed<BlobImpl> MultipartBlobImpl::CreateSlice(
     uint64_t aStart, uint64_t aLength, const nsAString& aContentType,
-    ErrorResult& aRv) {
+    ErrorResult& aRv) const {
   // If we clamped to nothing we create an empty blob
   nsTArray<RefPtr<BlobImpl>> blobImpls;
 
@@ -177,16 +178,16 @@ already_AddRefed<BlobImpl> MultipartBlobImpl::CreateSlice(
   return impl.forget();
 }
 
-void MultipartBlobImpl::InitializeBlob(bool aCrossOriginIsolated,
+void MultipartBlobImpl::InitializeBlob(RTPCallerType aRTPCallerType,
                                        ErrorResult& aRv) {
-  SetLengthAndModifiedDate(Some(aCrossOriginIsolated), aRv);
+  SetLengthAndModifiedDate(Some(aRTPCallerType), aRv);
   NS_WARNING_ASSERTION(!aRv.Failed(), "SetLengthAndModifiedDate failed");
 }
 
 void MultipartBlobImpl::InitializeBlob(const Sequence<Blob::BlobPart>& aData,
                                        const nsAString& aContentType,
                                        bool aNativeEOL,
-                                       bool aCrossOriginIsolated,
+                                       RTPCallerType aRTPCallerType,
                                        ErrorResult& aRv) {
   mContentType = aContentType;
   BlobSet blobSet;
@@ -202,8 +203,8 @@ void MultipartBlobImpl::InitializeBlob(const Sequence<Blob::BlobPart>& aData,
       }
     }
 
-    else if (data.IsUSVString()) {
-      aRv = blobSet.AppendString(data.GetAsUSVString(), aNativeEOL);
+    else if (data.IsUTF8String()) {
+      aRv = blobSet.AppendUTF8String(data.GetAsUTF8String(), aNativeEOL);
       if (aRv.Failed()) {
         return;
       }
@@ -233,12 +234,12 @@ void MultipartBlobImpl::InitializeBlob(const Sequence<Blob::BlobPart>& aData,
   }
 
   mBlobImpls = blobSet.GetBlobImpls();
-  SetLengthAndModifiedDate(Some(aCrossOriginIsolated), aRv);
+  SetLengthAndModifiedDate(Some(aRTPCallerType), aRv);
   NS_WARNING_ASSERTION(!aRv.Failed(), "SetLengthAndModifiedDate failed");
 }
 
 void MultipartBlobImpl::SetLengthAndModifiedDate(
-    const Maybe<bool>& aCrossOriginIsolated, ErrorResult& aRv) {
+    const Maybe<RTPCallerType>& aRTPCallerType, ErrorResult& aRv) {
   MOZ_ASSERT(mLength == MULTIPARTBLOBIMPL_UNKNOWN_LENGTH);
   MOZ_ASSERT_IF(mIsFile, IsLastModificationDateUnset());
 
@@ -277,13 +278,13 @@ void MultipartBlobImpl::SetLengthAndModifiedDate(
     if (lastModifiedSet) {
       SetLastModificationDatePrecisely(lastModified);
     } else {
-      MOZ_ASSERT(aCrossOriginIsolated.isSome());
+      MOZ_ASSERT(aRTPCallerType.isSome());
 
       // We cannot use PR_Now() because bug 493756 and, for this reason:
       //   var x = new Date(); var f = new File(...);
       //   x.getTime() < f.dateModified.getTime()
       // could fail.
-      SetLastModificationDate(aCrossOriginIsolated.value(), JS_Now());
+      SetLastModificationDate(aRTPCallerType.value(), JS_Now());
     }
   }
 }

@@ -7,8 +7,8 @@
 
 /* globals EventEmitter */
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -30,11 +30,11 @@ var { defineLazyGetter } = ExtensionCommon;
  * The platform-specific type of native tab objects, which are wrapped by
  * TabBase instances.
  *
- * @typedef {Object|XULElement} NativeTab
+ * @typedef {object | XULElement} NativeTab
  */
 
 /**
- * @typedef {Object} MutedInfo
+ * @typedef {object} MutedInfo
  * @property {boolean} muted
  *        True if the tab is currently muted, false otherwise.
  * @property {string} [reason]
@@ -80,7 +80,7 @@ class TabBase {
    *        The extension context for which to perform the capture.
    * @param {number} zoom
    *        The current zoom for the page.
-   * @param {Object} [options]
+   * @param {object} [options]
    *        The options with which to perform the capture.
    * @param {string} [options.format = "png"]
    *        The image format in which to encode the captured data. May be one of
@@ -167,7 +167,8 @@ class TabBase {
    */
   get hasActiveTabPermission() {
     return (
-      this.extension.hasPermission("activeTab") &&
+      (this.extension.originControls ||
+        this.extension.hasPermission("activeTab")) &&
       this.activeTabWindowID != null &&
       this.activeTabWindowID === this.innerWindowID
     );
@@ -618,7 +619,7 @@ class TabBase {
    * of its properties which the extension is permitted to access, in the format
    * required to be returned by WebExtension APIs.
    *
-   * @param {Object} [fallbackTabSize]
+   * @param {object} [fallbackTabSize]
    *        A geometry data if the lazy geometry data for this tab hasn't been
    *        initialized yet.
    * @returns {object}
@@ -1231,7 +1232,7 @@ Object.assign(WindowBase, { WINDOW_ID_NONE, WINDOW_ID_CURRENT });
  * The parameter type of "tab-attached" events, which are emitted when a
  * pre-existing tab is attached to a new window.
  *
- * @typedef {Object} TabAttachedEvent
+ * @typedef {object} TabAttachedEvent
  * @property {NativeTab} tab
  *        The native tab object in the window to which the tab is being
  *        attached. This may be a different object than was used to represent
@@ -1249,7 +1250,7 @@ Object.assign(WindowBase, { WINDOW_ID_NONE, WINDOW_ID_CURRENT });
  * pre-existing tab is detached from a window, in order to be attached to a new
  * window.
  *
- * @typedef {Object} TabDetachedEvent
+ * @typedef {object} TabDetachedEvent
  * @property {NativeTab} tab
  *        The native tab object in the window from which the tab is being
  *        detached. This may be a different object than will be used to
@@ -1271,7 +1272,7 @@ Object.assign(WindowBase, { WINDOW_ID_NONE, WINDOW_ID_CURRENT });
  * The parameter type of "tab-created" events, which are emitted when a
  * new tab is created.
  *
- * @typedef {Object} TabCreatedEvent
+ * @typedef {object} TabCreatedEvent
  * @property {NativeTab} tab
  *        The native tab object for the tab which is being created.
  */
@@ -1280,7 +1281,7 @@ Object.assign(WindowBase, { WINDOW_ID_NONE, WINDOW_ID_CURRENT });
  * The parameter type of "tab-removed" events, which are emitted when a
  * tab is removed and destroyed.
  *
- * @typedef {Object} TabRemovedEvent
+ * @typedef {object} TabRemovedEvent
  * @property {NativeTab} tab
  *        The native tab object for the tab which is being removed.
  * @property {integer} tabId
@@ -1295,7 +1296,7 @@ Object.assign(WindowBase, { WINDOW_ID_NONE, WINDOW_ID_CURRENT });
  * An object containing basic, extension-independent information about the window
  * and tab that a XUL <browser> belongs to.
  *
- * @typedef {Object} BrowserData
+ * @typedef {object} BrowserData
  * @property {integer} tabId
  *        The numeric ID of the tab that a <browser> belongs to, or -1 if it
  *        does not belong to a tab.
@@ -1403,7 +1404,7 @@ class TabTrackerBase extends EventEmitter {
  * A browser progress listener instance which calls a given listener function
  * whenever the status of the given browser changes.
  *
- * @param {function(Object)} listener
+ * @param {function(object)} listener
  *        A function to be called whenever the status of a tab's top-level
  *        browser. It is passed an object with a `browser` property pointing to
  *        the XUL browser, and a `status` property with a string description of
@@ -1760,7 +1761,7 @@ class WindowTrackerBase extends EventEmitter {
    *           window.
    *        - "domwindowopened": Acts as an alias for addOpenListener.
    *        - "domwindowclosed": Acts as an alias for addCloseListener.
-   * @param {function|object} listener
+   * @param {Function | object} listener
    *        The listener to invoke in response to the given events.
    *
    * @returns {undefined}
@@ -1794,7 +1795,7 @@ class WindowTrackerBase extends EventEmitter {
    *
    * @param {string} type
    *        The type of event to stop listening for.
-   * @param {function|object} listener
+   * @param {Function | object} listener
    *        The listener to remove.
    *
    * @returns {undefined}
@@ -1840,7 +1841,7 @@ class WindowTrackerBase extends EventEmitter {
    * @param {string} eventType
    *        The type of DOM event to listen for, or "progress" to add a tab
    *        progress listener.
-   * @param {function|object} listener
+   * @param {Function | object} listener
    *        The listener to add.
    * @private
    */
@@ -1919,12 +1920,16 @@ class TabManagerBase {
    *        The native tab for which to grant permissions.
    */
   addActiveTabPermission(nativeTab) {
-    if (this.extension.hasPermission("activeTab")) {
+    let tab = this.getWrapper(nativeTab);
+    if (
+      this.extension.hasPermission("activeTab") ||
+      (this.extension.originControls &&
+        this.extension.optionalOrigins.matches(tab._uri))
+    ) {
       // Note that, unlike Chrome, we don't currently clear this permission with
       // the tab navigates. If the inner window is revived from BFCache before
       // we've granted this permission to a new inner window, the extension
       // maintains its permissions for it.
-      let tab = this.getWrapper(nativeTab);
       tab.activeTabWindowID = tab.innerWindowID;
     }
   }
@@ -1951,6 +1956,26 @@ class TabManagerBase {
    */
   hasActiveTabPermission(nativeTab) {
     return this.getWrapper(nativeTab).hasActiveTabPermission;
+  }
+
+  /**
+   * Activate MV3 content scripts if the extension has activeTab or an
+   * (ungranted) host permission.
+   *
+   * @param {NativeTab} nativeTab
+   */
+  activateScripts(nativeTab) {
+    let tab = this.getWrapper(nativeTab);
+    if (
+      this.extension.originControls &&
+      !tab.matchesHostPermission &&
+      (this.extension.optionalOrigins.matches(tab._uri) ||
+        this.extension.hasPermission("activeTab")) &&
+      (this.extension.contentScripts.length ||
+        this.extension.registeredContentScripts.size)
+    ) {
+      tab.queryContent("ActivateScripts", { id: this.extension.id });
+    }
   }
 
   /**
@@ -2013,11 +2038,11 @@ class TabManagerBase {
    *
    * @param {NativeTab} nativeTab
    *        The native tab to convert.
-   * @param {Object} [fallbackTabSize]
+   * @param {object} [fallbackTabSize]
    *        A geometry data if the lazy geometry data for this tab hasn't been
    *        initialized yet.
    *
-   * @returns {Object}
+   * @returns {object}
    */
   convert(nativeTab, fallbackTabSize = null) {
     return this.getWrapper(nativeTab).convert(fallbackTabSize);
@@ -2029,7 +2054,7 @@ class TabManagerBase {
   /**
    * Returns an iterator of TabBase objects which match the given query info.
    *
-   * @param {Object|null} [queryInfo = null]
+   * @param {object | null} [queryInfo = null]
    *        An object containing properties on which to filter. May contain any
    *        properties which are recognized by {@link TabBase#matches} or
    *        {@link WindowBase#matches}. Unknown properties will be ignored.
@@ -2096,7 +2121,7 @@ class TabManagerBase {
   /**
    * Returns a TabBase wrapper for the tab with the given ID.
    *
-   * @param {integer} id
+   * @param {integer} tabId
    *        The ID of the tab for which to return a wrapper.
    *
    * @returns {TabBase}
@@ -2147,7 +2172,7 @@ class WindowManagerBase {
    * @param {*} args
    *        Additional arguments to be passed to {@link WindowBase#convert}.
    *
-   * @returns {Object}
+   * @returns {object}
    */
   convert(window, ...args) {
     return this.getWrapper(window).convert(...args);
@@ -2193,7 +2218,7 @@ class WindowManagerBase {
   /**
    * Returns an iterator of WindowBase objects which match the given query info.
    *
-   * @param {Object|null} [queryInfo = null]
+   * @param {object | null} [queryInfo = null]
    *        An object containing properties on which to filter. May contain any
    *        properties which are recognized by {@link WindowBase#matches}.
    *        Unknown properties will be ignored.
@@ -2237,13 +2262,13 @@ class WindowManagerBase {
   /**
    * Returns a WindowBase wrapper for the browser window with the given ID.
    *
-   * @param {integer} id
+   * @param {integer} windowId
    *        The ID of the browser window for which to return a wrapper.
    * @param {BaseContext} context
    *        The extension context for which the matching is being performed.
    *        Used to determine the current window for relevant properties.
    *
-   * @returns{WindowBase}
+   * @returns {WindowBase}
    * @throws {ExtensionError}
    *        If no window exists with the given ID.
    * @abstract

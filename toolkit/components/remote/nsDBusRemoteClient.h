@@ -7,20 +7,20 @@
 #define DBusRemoteClient_h__
 
 #include "nsRemoteClient.h"
-#include "mozilla/StaticPtr.h"
 #include "mozilla/DBusHelpers.h"
-#include "nsString.h"
+#include "mozilla/RefPtr.h"
+#include "nsStringFwd.h"
+#include "nscore.h"
 
 class nsDBusRemoteClient : public nsRemoteClient {
  public:
   nsDBusRemoteClient();
   ~nsDBusRemoteClient();
 
-  virtual nsresult Init() override;
-  virtual nsresult SendCommandLine(const char* aProgram, const char* aProfile,
-                                   int32_t argc, char** argv,
-                                   const char* aDesktopStartupID,
-                                   char** aResponse, bool* aSucceeded) override;
+  nsresult Init() override;
+  nsresult SendCommandLine(const char* aProgram, const char* aProfile,
+                           int32_t argc, char** argv, const char* aStartupToken,
+                           char** aResponse, bool* aSucceeded) override;
   void Shutdown();
 
  private:

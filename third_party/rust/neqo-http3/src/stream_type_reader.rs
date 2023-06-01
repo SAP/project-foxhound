@@ -14,12 +14,12 @@ use neqo_qpack::decoder::QPACK_UNI_STREAM_TYPE_DECODER;
 use neqo_qpack::encoder::QPACK_UNI_STREAM_TYPE_ENCODER;
 use neqo_transport::{Connection, StreamId, StreamType};
 
-pub const HTTP3_UNI_STREAM_TYPE_PUSH: u64 = 0x1;
-pub const WEBTRANSPORT_UNI_STREAM: u64 = 0x54;
-pub const WEBTRANSPORT_STREAM: u64 = 0x41;
+pub(crate) const HTTP3_UNI_STREAM_TYPE_PUSH: u64 = 0x1;
+pub(crate) const WEBTRANSPORT_UNI_STREAM: u64 = 0x54;
+pub(crate) const WEBTRANSPORT_STREAM: u64 = 0x41;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum NewStreamType {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NewStreamType {
     Control,
     Decoder,
     Encoder,
@@ -59,7 +59,6 @@ impl NewStreamType {
             }
             (_, StreamType::BiDi, Role::Server) => Err(Error::HttpFrame),
             (HTTP3_UNI_STREAM_TYPE_PUSH, StreamType::UniDi, Role::Server)
-            | (H3_FRAME_TYPE_HEADERS, StreamType::BiDi, Role::Client)
             | (_, StreamType::BiDi, Role::Client) => Err(Error::HttpStreamCreation),
             _ => Ok(Some(NewStreamType::Unknown)),
         }
@@ -75,7 +74,7 @@ impl NewStreamType {
 ///    the `ReadType` state, `NewStreamHeadReader` changes to `ReadId` state and from there
 ///    to `Done` state
 #[derive(Debug)]
-pub enum NewStreamHeadReader {
+pub(crate) enum NewStreamHeadReader {
     ReadType {
         role: Role,
         reader: IncrementalDecoderUint,
@@ -197,13 +196,13 @@ impl NewStreamHeadReader {
 
     fn map_stream_fin(decoded: Option<NewStreamType>) -> Res<Option<NewStreamType>> {
         match decoded {
-            Some(NewStreamType::Control)
-            | Some(NewStreamType::Encoder)
-            | Some(NewStreamType::Decoder) => Err(Error::HttpClosedCriticalStream),
+            Some(NewStreamType::Control | NewStreamType::Encoder | NewStreamType::Decoder) => {
+                Err(Error::HttpClosedCriticalStream)
+            }
             None => Err(Error::HttpStreamCreation),
             Some(NewStreamType::Http) => Err(Error::HttpFrame),
             Some(NewStreamType::Unknown) => Ok(decoded),
-            Some(NewStreamType::Push(_)) | Some(NewStreamType::WebTransportStream(_)) => {
+            Some(NewStreamType::Push(_) | NewStreamType::WebTransportStream(_)) => {
                 unreachable!("PushStream and WebTransport are mapped to None at this stage.")
             }
         }
@@ -318,7 +317,7 @@ mod tests {
             for i in to_encode {
                 enc.encode_varint(*i);
             }
-            self.decode_buffer(&enc[..], fin, outcome, done);
+            self.decode_buffer(enc.as_ref(), fin, outcome, done);
         }
     }
 

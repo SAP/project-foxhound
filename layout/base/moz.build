@@ -72,6 +72,8 @@ EXPORTS += [
 EXPORTS.mozilla += [
     "AccessibleCaretEventHub.h",
     "ArenaObjectID.h",
+    "ContainStyleScopeManager.h",
+    "DepthOrderedFrameList.h",
     "DisplayPortUtils.h",
     "GeckoMVMContext.h",
     "GeometryUtils.h",
@@ -101,6 +103,8 @@ UNIFIED_SOURCES += [
     "AccessibleCaret.cpp",
     "AccessibleCaretEventHub.cpp",
     "AccessibleCaretManager.cpp",
+    "ContainStyleScopeManager.cpp",
+    "DepthOrderedFrameList.cpp",
     "DisplayPortUtils.cpp",
     "GeckoMVMContext.cpp",
     "GeometryUtils.cpp",

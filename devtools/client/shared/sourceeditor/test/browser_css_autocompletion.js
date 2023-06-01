@@ -3,7 +3,7 @@
 
 "use strict";
 
-const CSSCompleter = require("devtools/client/shared/sourceeditor/css-autocompleter");
+const CSSCompleter = require("resource://devtools/client/shared/sourceeditor/css-autocompleter.js");
 
 const CSS_URI =
   "http://mochi.test:8888/browser/devtools/client/shared/sourceeditor" +
@@ -94,7 +94,7 @@ async function runTests() {
   inspector = await target.getFront("inspector");
   const walker = inspector.walker;
   completer = new CSSCompleter({
-    walker: walker,
+    walker,
     cssProperties: getClientCssProperties(),
   });
   await checkStateAndMoveOn();

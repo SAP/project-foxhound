@@ -106,7 +106,7 @@ TEST_F(RateLimitTest, WindowSizeLimits) {
   EXPECT_FALSE(rate_limiter->SetWindowSize(kWindowSizeMs + 1));
 }
 
-static const int64_t kMaxTimeoutMs = 30000;
+static constexpr TimeDelta kMaxTimeout = TimeDelta::Seconds(30);
 
 class ThreadTask {
  public:
@@ -115,7 +115,7 @@ class ThreadTask {
   virtual ~ThreadTask() {}
 
   void Run() {
-    start_signal_.Wait(kMaxTimeoutMs);
+    start_signal_.Wait(kMaxTimeout);
     DoRun();
     end_signal_.Set();
   }
@@ -126,10 +126,6 @@ class ThreadTask {
   rtc::Event start_signal_;
   rtc::Event end_signal_;
 };
-
-void RunTask(void* thread_task) {
-  reinterpret_cast<ThreadTask*>(thread_task)->Run();
-}
 
 TEST_F(RateLimitTest, MultiThreadedUsage) {
   // Simple sanity test, with different threads calling the various methods.
@@ -149,8 +145,8 @@ TEST_F(RateLimitTest, MultiThreadedUsage) {
       EXPECT_TRUE(rate_limiter_->SetWindowSize(kWindowSizeMs / 2));
     }
   } set_window_size_task(rate_limiter.get());
-  rtc::PlatformThread thread1(RunTask, &set_window_size_task, "Thread1");
-  thread1.Start();
+  auto thread1 = rtc::PlatformThread::SpawnJoinable(
+      [&set_window_size_task] { set_window_size_task.Run(); }, "Thread1");
 
   class SetMaxRateTask : public ThreadTask {
    public:
@@ -160,8 +156,8 @@ TEST_F(RateLimitTest, MultiThreadedUsage) {
 
     void DoRun() override { rate_limiter_->SetMaxRate(kMaxRateBps * 2); }
   } set_max_rate_task(rate_limiter.get());
-  rtc::PlatformThread thread2(RunTask, &set_max_rate_task, "Thread2");
-  thread2.Start();
+  auto thread2 = rtc::PlatformThread::SpawnJoinable(
+      [&set_max_rate_task] { set_max_rate_task.Run(); }, "Thread2");
 
   class UseRateTask : public ThreadTask {
    public:
@@ -177,24 +173,20 @@ TEST_F(RateLimitTest, MultiThreadedUsage) {
 
     SimulatedClock* const clock_;
   } use_rate_task(rate_limiter.get(), &clock_);
-  rtc::PlatformThread thread3(RunTask, &use_rate_task, "Thread3");
-  thread3.Start();
+  auto thread3 = rtc::PlatformThread::SpawnJoinable(
+      [&use_rate_task] { use_rate_task.Run(); }, "Thread3");
 
   set_window_size_task.start_signal_.Set();
-  EXPECT_TRUE(set_window_size_task.end_signal_.Wait(kMaxTimeoutMs));
+  EXPECT_TRUE(set_window_size_task.end_signal_.Wait(kMaxTimeout));
 
   set_max_rate_task.start_signal_.Set();
-  EXPECT_TRUE(set_max_rate_task.end_signal_.Wait(kMaxTimeoutMs));
+  EXPECT_TRUE(set_max_rate_task.end_signal_.Wait(kMaxTimeout));
 
   use_rate_task.start_signal_.Set();
-  EXPECT_TRUE(use_rate_task.end_signal_.Wait(kMaxTimeoutMs));
+  EXPECT_TRUE(use_rate_task.end_signal_.Wait(kMaxTimeout));
 
   // All rate consumed.
   EXPECT_FALSE(rate_limiter->TryUseRate(1));
-
-  thread1.Stop();
-  thread2.Stop();
-  thread3.Stop();
 }
 
 }  // namespace webrtc

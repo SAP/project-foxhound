@@ -8,10 +8,12 @@
  * cancelled. See bug 1653436.
  */
 
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  UrlbarProviderAutofill: "resource:///modules/UrlbarProviderAutofill.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  UrlbarProviderAutofill: "resource:///modules/UrlbarProviderAutofill.sys.mjs",
 });
 
 /**

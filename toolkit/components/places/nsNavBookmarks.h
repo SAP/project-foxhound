@@ -113,8 +113,6 @@ class nsNavBookmarks final : public nsINavBookmarksService,
                    bool aHidden, uint32_t aVisitCount, uint32_t aTyped,
                    const nsAString& aLastKnownTitle);
 
-  nsresult GetBookmarkURI(int64_t aItemId, nsIURI** _URI);
-
   nsresult ResultNodeForContainer(const nsCString& aGUID,
                                   nsNavHistoryQueryOptions* aOptions,
                                   nsNavHistoryResultNode** aNode);
@@ -273,17 +271,6 @@ class nsNavBookmarks final : public nsINavBookmarksService,
   RefPtr<mozilla::places::Database> mDB;
 
   nsMaybeWeakPtrArray<nsINavBookmarkObserver> mObservers;
-
-  int64_t TagsRootId() { return mDB->GetTagsFolderId(); }
-
-  inline bool IsRoot(int64_t aFolderId) {
-    return aFolderId == mDB->GetRootFolderId() ||
-           aFolderId == mDB->GetMenuFolderId() ||
-           aFolderId == mDB->GetTagsFolderId() ||
-           aFolderId == mDB->GetUnfiledFolderId() ||
-           aFolderId == mDB->GetToolbarFolderId() ||
-           aFolderId == mDB->GetMobileFolderId();
-  }
 
   nsresult SetItemDateInternal(enum mozilla::places::BookmarkDate aDateType,
                                int64_t aSyncChangeDelta, int64_t aItemId,

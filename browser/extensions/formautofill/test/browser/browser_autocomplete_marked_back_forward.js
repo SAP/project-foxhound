@@ -21,9 +21,7 @@ function checkPopup(autoCompletePopup) {
 }
 
 add_task(async function setup_storage() {
-  await saveAddress(TEST_ADDRESS_1);
-  await saveAddress(TEST_ADDRESS_2);
-  await saveAddress(TEST_ADDRESS_3);
+  await setStorage(TEST_ADDRESS_1, TEST_ADDRESS_2, TEST_ADDRESS_3);
 });
 
 add_task(async function test_back_forward() {
@@ -38,7 +36,7 @@ add_task(async function test_back_forward() {
 
     // Now navigate forward and make sure autofill autocomplete results are still attached
     let loadPromise = BrowserTestUtils.browserLoaded(browser);
-    BrowserTestUtils.loadURI(browser, `${URL}?load=2`);
+    BrowserTestUtils.loadURIString(browser, `${URL}?load=2`);
     info("expecting browser loaded");
     await loadPromise;
 

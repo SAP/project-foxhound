@@ -9,12 +9,10 @@
 #include "builtin/intl/DateTimeFormat.h"
 
 #include "mozilla/Assertions.h"
-#include "mozilla/EnumSet.h"
 #include "mozilla/intl/Calendar.h"
 #include "mozilla/intl/DateIntervalFormat.h"
 #include "mozilla/intl/DateTimeFormat.h"
 #include "mozilla/intl/DateTimePart.h"
-#include "mozilla/intl/DateTimePatternGenerator.h"
 #include "mozilla/intl/Locale.h"
 #include "mozilla/intl/TimeZone.h"
 #include "mozilla/Range.h"
@@ -25,9 +23,7 @@
 #include "builtin/intl/FormatBuffer.h"
 #include "builtin/intl/LanguageTag.h"
 #include "builtin/intl/SharedIntlData.h"
-#include "builtin/intl/TimeZoneDataGenerated.h"
-#include "gc/FreeOp.h"
-#include "js/CharacterEncoding.h"
+#include "gc/GCContext.h"
 #include "js/Date.h"
 #include "js/experimental/Intl.h"     // JS::AddMozDateTimeFormatConstructor
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
@@ -42,6 +38,7 @@
 #include "vm/Runtime.h"
 #include "vm/WellKnownAtom.h"  // js_*_str
 
+#include "vm/GeckoProfiler-inl.h"
 #include "vm/JSObject-inl.h"
 #include "vm/NativeObject-inl.h"
 
@@ -65,7 +62,6 @@ const JSClassOps DateTimeFormatObject::classOps_ = {
     nullptr,                         // mayResolve
     DateTimeFormatObject::finalize,  // finalize
     nullptr,                         // call
-    nullptr,                         // hasInstance
     nullptr,                         // construct
     nullptr,                         // trace
 };
@@ -125,6 +121,8 @@ const ClassSpec DateTimeFormatObject::classSpec_ = {
  */
 static bool DateTimeFormat(JSContext* cx, const CallArgs& args, bool construct,
                            DateTimeFormatOptions dtfOptions) {
+  AutoJSConstructorProfilerEntry pseudoFrame(cx, "Intl.DateTimeFormat");
+
   // Step 1 (Handled by OrdinaryCreateFromConstructor fallback code).
 
   // Step 2 (Inlined 9.1.14, OrdinaryCreateFromConstructor).
@@ -183,8 +181,8 @@ bool js::intl_DateTimeFormat(JSContext* cx, unsigned argc, Value* vp) {
   return DateTimeFormat(cx, args, true, DateTimeFormatOptions::Standard);
 }
 
-void js::DateTimeFormatObject::finalize(JSFreeOp* fop, JSObject* obj) {
-  MOZ_ASSERT(fop->onMainThread());
+void js::DateTimeFormatObject::finalize(JS::GCContext* gcx, JSObject* obj) {
+  MOZ_ASSERT(gcx->onMainThread());
 
   auto* dateTimeFormat = &obj->as<DateTimeFormatObject>();
   mozilla::intl::DateTimeFormat* df = dateTimeFormat->getDateFormat();
@@ -193,14 +191,14 @@ void js::DateTimeFormatObject::finalize(JSFreeOp* fop, JSObject* obj) {
 
   if (df) {
     intl::RemoveICUCellMemory(
-        fop, obj, DateTimeFormatObject::UDateFormatEstimatedMemoryUse);
+        gcx, obj, DateTimeFormatObject::UDateFormatEstimatedMemoryUse);
 
     delete df;
   }
 
   if (dif) {
     intl::RemoveICUCellMemory(
-        fop, obj, DateTimeFormatObject::UDateIntervalFormatEstimatedMemoryUse);
+        gcx, obj, DateTimeFormatObject::UDateIntervalFormatEstimatedMemoryUse);
 
     delete dif;
   }
@@ -341,7 +339,7 @@ bool js::intl_IsValidTimeZoneName(JSContext* cx, unsigned argc, Value* vp) {
   SharedIntlData& sharedIntlData = cx->runtime()->sharedIntlData.ref();
 
   RootedString timeZone(cx, args[0].toString());
-  RootedAtom validatedTimeZone(cx);
+  Rooted<JSAtom*> validatedTimeZone(cx);
   if (!sharedIntlData.validateTimeZoneName(cx, timeZone, &validatedTimeZone)) {
     return false;
   }
@@ -366,7 +364,7 @@ bool js::intl_canonicalizeTimeZone(JSContext* cx, unsigned argc, Value* vp) {
   // Some time zone names are canonicalized differently by ICU -- handle
   // those first:
   RootedString timeZone(cx, args[0].toString());
-  RootedAtom ianaTimeZone(cx);
+  Rooted<JSAtom*> ianaTimeZone(cx);
   if (!sharedIntlData.tryCanonicalizeTimeZoneConsistentWithIANA(
           cx, timeZone, &ianaTimeZone)) {
     return false;
@@ -517,7 +515,7 @@ static UniqueChars DateTimeFormatLocale(
 
   mozilla::intl::Locale tag;
   {
-    RootedLinearString locale(cx, value.toString()->ensureLinear(cx));
+    Rooted<JSLinearString*> locale(cx, value.toString()->ensureLinear(cx));
     if (!locale) {
       return nullptr;
     }
@@ -599,7 +597,7 @@ static UniqueChars DateTimeFormatLocale(
 }
 
 static bool AssignTextComponent(
-    JSContext* cx, HandleObject internals, HandlePropertyName property,
+    JSContext* cx, HandleObject internals, Handle<PropertyName*> property,
     mozilla::Maybe<mozilla::intl::DateTimeFormat::Text>* text) {
   RootedValue value(cx);
   if (!GetProperty(cx, internals, internals, property, &value)) {
@@ -627,7 +625,7 @@ static bool AssignTextComponent(
 }
 
 static bool AssignNumericComponent(
-    JSContext* cx, HandleObject internals, HandlePropertyName property,
+    JSContext* cx, HandleObject internals, Handle<PropertyName*> property,
     mozilla::Maybe<mozilla::intl::DateTimeFormat::Numeric>* numeric) {
   RootedValue value(cx);
   if (!GetProperty(cx, internals, internals, property, &value)) {
@@ -654,7 +652,7 @@ static bool AssignNumericComponent(
 }
 
 static bool AssignMonthComponent(
-    JSContext* cx, HandleObject internals, HandlePropertyName property,
+    JSContext* cx, HandleObject internals, Handle<PropertyName*> property,
     mozilla::Maybe<mozilla::intl::DateTimeFormat::Month>* month) {
   RootedValue value(cx);
   if (!GetProperty(cx, internals, internals, property, &value)) {
@@ -686,7 +684,7 @@ static bool AssignMonthComponent(
 }
 
 static bool AssignTimeZoneNameComponent(
-    JSContext* cx, HandleObject internals, HandlePropertyName property,
+    JSContext* cx, HandleObject internals, Handle<PropertyName*> property,
     mozilla::Maybe<mozilla::intl::DateTimeFormat::TimeZoneName>* tzName) {
   RootedValue value(cx);
   if (!GetProperty(cx, internals, internals, property, &value)) {
@@ -726,7 +724,7 @@ static bool AssignTimeZoneNameComponent(
 }
 
 static bool AssignHourCycleComponent(
-    JSContext* cx, HandleObject internals, HandlePropertyName property,
+    JSContext* cx, HandleObject internals, Handle<PropertyName*> property,
     mozilla::Maybe<mozilla::intl::DateTimeFormat::HourCycle>* hourCycle) {
   RootedValue value(cx);
   if (!GetProperty(cx, internals, internals, property, &value)) {
@@ -771,7 +769,7 @@ static bool AssignHour12Component(JSContext* cx, HandleObject internals,
 }
 
 static bool AssignDateTimeLength(
-    JSContext* cx, HandleObject internals, HandlePropertyName property,
+    JSContext* cx, HandleObject internals, Handle<PropertyName*> property,
     mozilla::Maybe<mozilla::intl::DateTimeFormat::Style>* style) {
   RootedValue value(cx);
   if (!GetProperty(cx, internals, internals, property, &value)) {
@@ -1003,7 +1001,7 @@ static mozilla::intl::DateTimeFormat* GetOrCreateDateTimeFormat(
 
 template <typename T>
 static bool SetResolvedProperty(JSContext* cx, HandleObject resolved,
-                                HandlePropertyName name,
+                                Handle<PropertyName*> name,
                                 mozilla::Maybe<T> intlProp) {
   if (!intlProp) {
     return true;
@@ -1139,7 +1137,7 @@ static bool intl_FormatDateTime(JSContext* cx,
   return true;
 }
 
-using FieldType = js::ImmutablePropertyNamePtr JSAtomState::*;
+using FieldType = js::ImmutableTenuredPtr<PropertyName*> JSAtomState::*;
 
 static FieldType GetFieldTypeForPartType(mozilla::intl::DateTimePartType type) {
   switch (type) {
@@ -1208,8 +1206,8 @@ static bool CreateDateTimePartArray(
     return false;
   }
 
-  RootedArrayObject partsArray(cx,
-                               NewDenseFullyAllocatedArray(cx, parts.length()));
+  Rooted<ArrayObject*> partsArray(
+      cx, NewDenseFullyAllocatedArray(cx, parts.length()));
   if (!partsArray) {
     return false;
   }
@@ -1336,9 +1334,7 @@ static mozilla::intl::DateIntervalFormat* NewDateIntervalFormat(
     return nullptr;
   }
 
-  // Determine the hour cycle used in the resolved pattern. This is needed to
-  // workaround <https://unicode-org.atlassian.net/browse/ICU-21154> and
-  // <https://unicode-org.atlassian.net/browse/ICU-21155>.
+  // Determine the hour cycle used in the resolved pattern.
   mozilla::Maybe<mozilla::intl::DateTimeFormat::HourCycle> hcPattern =
       mozilla::intl::DateTimeFormat::HourCycleFromPattern(pattern);
 
@@ -1358,7 +1354,7 @@ static mozilla::intl::DateIntervalFormat* NewDateIntervalFormat(
   mozilla::Span<const char16_t> timeZoneChars = timeZone.twoByteRange();
 
   FormatBuffer<char16_t, intl::INITIAL_CHAR_BUFFER_SIZE> skeleton(cx);
-  auto skelResult = mozDtf.GetOriginalSkeleton(skeleton, hcPattern);
+  auto skelResult = mozDtf.GetOriginalSkeleton(skeleton);
   if (skelResult.isErr()) {
     intl::ReportInternalError(cx, skelResult.unwrapErr());
     return nullptr;
@@ -1407,7 +1403,6 @@ static bool PartitionDateTimeRangePattern(
     ClippedTime y, bool* equal) {
   MOZ_ASSERT(x.isValid());
   MOZ_ASSERT(y.isValid());
-  MOZ_ASSERT(x.toDouble() <= y.toDouble());
 
   // We can't access the calendar used by UDateIntervalFormat to change it to a
   // proleptic Gregorian calendar. Instead we need to call a different formatter
@@ -1424,7 +1419,8 @@ static bool PartitionDateTimeRangePattern(
       GregorianChangeDate + msPerDay;
 
   mozilla::intl::ICUResult result = Ok();
-  if (x.toDouble() < GregorianChangeDatePlusOneDay) {
+  if (x.toDouble() < GregorianChangeDatePlusOneDay ||
+      y.toDouble() < GregorianChangeDatePlusOneDay) {
     // Create calendar objects for the start and end date by cloning the date
     // formatter calendar. The date formatter calendar already has the correct
     // time zone set and was changed to use a proleptic Gregorian calendar.
@@ -1564,10 +1560,6 @@ bool js::intl_FormatDateTimeRange(JSContext* cx, unsigned argc, Value* vp) {
         formatToParts ? "formatRangeToParts" : "formatRange");
     return false;
   }
-
-  // Self-hosted code should have checked this condition.
-  MOZ_ASSERT(x.toDouble() <= y.toDouble(),
-             "start date mustn't be after the end date");
 
   mozilla::intl::DateTimeFormat* df =
       GetOrCreateDateTimeFormat(cx, dateTimeFormat);

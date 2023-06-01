@@ -142,12 +142,10 @@ void nsTextControlFrame::DestroyFrom(nsIFrame* aDestructRoot,
 
   // Unbind the text editor state object from the frame.  The editor will live
   // on, but things like controllers will be released.
-  RefPtr<TextControlElement> textControlElement =
-      TextControlElement::FromNode(GetContent());
+  RefPtr textControlElement = TextControlElement::FromNode(GetContent());
   MOZ_ASSERT(textControlElement);
-  textControlElement->UnbindFromFrame(this);
-
   if (mMutationObserver) {
+    textControlElement->UnbindFromFrame(this);
     mRootNode->RemoveMutationObserver(mMutationObserver);
     mMutationObserver = nullptr;
   }
@@ -731,7 +729,6 @@ void nsTextControlFrame::Reflow(nsPresContext* aPresContext,
   FinishAndStoreOverflow(&aDesiredSize);
 
   aStatus.Reset();  // This type of frame can't be split.
-  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aDesiredSize);
 }
 
 void nsTextControlFrame::ReflowTextControlChild(
@@ -924,7 +921,7 @@ already_AddRefed<TextEditor> nsTextControlFrame::GetTextEditor() {
 
 nsresult nsTextControlFrame::SetSelectionInternal(
     nsINode* aStartNode, uint32_t aStartOffset, nsINode* aEndNode,
-    uint32_t aEndOffset, nsITextControlFrame::SelectionDirection aDirection) {
+    uint32_t aEndOffset, SelectionDirection aDirection) {
   // Get the selection, clear it and add the new range to it!
   TextControlElement* textControlElement =
       TextControlElement::FromNode(GetContent());
@@ -937,11 +934,12 @@ nsresult nsTextControlFrame::SetSelectionInternal(
   NS_ENSURE_TRUE(selection, NS_ERROR_FAILURE);
 
   nsDirection direction;
-  if (aDirection == eNone) {
+  if (aDirection == SelectionDirection::None) {
     // Preserve the direction
     direction = selection->GetDirection();
   } else {
-    direction = (aDirection == eBackward) ? eDirPrevious : eDirNext;
+    direction =
+        (aDirection == SelectionDirection::Backward) ? eDirPrevious : eDirNext;
   }
 
   MOZ_TRY(selection->SetStartAndEndInLimiter(*aStartNode, aStartOffset,
@@ -1193,9 +1191,9 @@ static nsIFrame* FindRootNodeFrame(const nsFrameList& aChildList,
 }
 
 void nsTextControlFrame::SetInitialChildList(ChildListID aListID,
-                                             nsFrameList& aChildList) {
-  nsContainerFrame::SetInitialChildList(aListID, aChildList);
-  if (aListID != kPrincipalList) {
+                                             nsFrameList&& aChildList) {
+  nsContainerFrame::SetInitialChildList(aListID, std::move(aChildList));
+  if (aListID != FrameChildListID::Principal) {
     return;
   }
 

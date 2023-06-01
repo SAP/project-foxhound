@@ -43,6 +43,7 @@ This compatibility table explains which Telemetry probe types can be mirrors for
 | [memory_distribution](https://mozilla.github.io/glean/book/user/metrics/memory_distribution.html) | [Histogram of kind "linear" or "exponential"](/toolkit/components/telemetry/collection/histograms.rst#exponential). Samples will be in `memory_unit` units. |
 | [custom_distribution](https://mozilla.github.io/glean/book/user/metrics/custom_distribution.html) | [Histogram of kind "linear" or "exponential"](/toolkit/components/telemetry/collection/histograms.rst#exponential). Samples will be used as is. Ensure the bucket count and range match. |
 | [uuid](https://mozilla.github.io/glean/book/user/metrics/uuid.html) | [Scalar of kind: string](/toolkit/components/telemetry/collection/scalars.rst). Value will be in canonical 8-4-4-4-12 format. Value is not guaranteed to be valid, and invalid values may be present in the mirrored scalar while the uuid metric remains empty. Calling `GenerateAndSet` on the uuid is not mirrored, and will log a warning. |
+| [url](https://mozilla.github.io/glean/book/user/metrics/url.html) | [Scalar of kind: string](/toolkit/components/telemetry/collection/scalars.rst). The stringified Url will be cropped to the maximum length allowed by the legacy type. |
 | [datetime](https://mozilla.github.io/glean/book/user/metrics/datetime.html) | [Scalar of kind: string](/toolkit/components/telemetry/collection/scalars.rst). Value will be in ISO8601 format. |
 | [events](https://mozilla.github.io/glean/book/user/metrics/event.html) | [Events](/toolkit/components/telemetry/collection/events.rst). The `value` field will be left empty.  |
 | [quantity](https://mozilla.github.io/glean/book/user/metrics/quantity.html) | [Scalar of kind: uint](/toolkit/components/telemetry/collection/scalars.rst) |
@@ -50,29 +51,29 @@ This compatibility table explains which Telemetry probe types can be mirrors for
 
 ### The `telemetry_mirror` property in `metrics.yaml`
 
-You must use the C++ enum value of the Histogram, Scalar, or Event being mirrored to.
+You must use the C++ enum identifier of the Histogram, Scalar, or Event being mirrored to:
+* For Histograms, the Telemetry C++ enum identifier is the histogram's name
+    * e.g. The C++ enum identifier for `WR_RENDERER_TIME` is
+      `WR_RENDERER_TIME` (see {searchfox}`gfx/metrics.yaml`)
+* For Scalars, the Telemetry C++ enum identifier is the Scalar category and name in
+  `SCREAMING_SNAKE_CASE` with any `.` replaced with `_`
+    * e.g. The enum identifier for `extensions.startupCache.load_time` is
+      `EXTENSIONS_STARTUPCACHE_LOAD_TIME` (see {searchfox}`toolkit/components/extensions/metrics.yaml`)
+* For Events, the Telemetry C++ enum identifier is the Event category, method, and object
+  rendered in `Snakey_CamelCase`.
+    * e.g. The enum identifier for `page_load.toplevel#content` is
+      `Page_load_Toplevel_Content` (see {searchfox}`dom/metrics.yaml`)
 
-For example, for this Scalar of kind `boolean`:
-```yaml
-category.name:
-  probe_name:
-    kind: boolean
-    ...
-```
+If you use the wrong enum identifier, this will manifest as a build error.
 
-You must provide the following `telemetry_mirror` name for its source
-`boolean` metric's definition:
-
-```yaml
-    telemetry_mirror: CATEGORY_NAME_PROBE_NAME
-```
-
-If you get this wrong it will manifest as a build error.
+If you are having trouble finding the correct conjugation for the mirror Telemetry probe,
+you can find the specific value in the list of all Telemetry C++ enum identifiers in
+`<objdir>/toolkit/components/telemetry/Telemetry{Histogram|Scalar|Event}Enums.h`.
+(Choose the file appropriate to the type of the Telemetry mirror.)
 
 ## Artifact Build Support
 
-Sadly, GIFFT will have no support for Artifact builds even when
-[support is added to FOG](https://bugzilla.mozilla.org/show_bug.cgi?id=1698184).
+Sadly, GIFFT does not support Artifact builds.
 You must build Firefox when you add the mirrored metric so the C++ enum value is present,
 even if you only use the metric from Javascript.
 
@@ -174,7 +175,9 @@ This results in a few notable differences.
 
 `counter`, `labeled_counter`, and `rate` metrics are stored as 32-bit signed values.
 `quantity` metrics are stored as 64-bit signed values.
-All of these Glean numeric metric types saturate at their maximum representable value.
+`timing_distribution` samples can be 64-bit signed values.
+All of these Glean numeric metric types saturate at their maximum representable value,
+or according to the Limits section of the Glean metric type documentation.
 
 Scalars of kind `uint` are stored as 32-bit unsigned values.
 They will overflow if they exceed the value $2^{32} - 1$.
@@ -198,3 +201,23 @@ and keeps the Telemetry mirror's value closer to that of the Glean metric.
 If the number of milliseconds between calls to a
 `timespan` metric's `start()` and `stop()` methods exceeds $2^{32} - 1$,
 the value passed to the metric's Telemetry mirror will be clamped to $2^{32} - 1$.
+
+The same happens for samples in `timing_distribution` metrics:
+values passed to the Telemetry mirror histogram will saturate at $2^{32} - 1$
+until they get past $2^{64}$ when they'll overflow.
+
+### App Shutdown
+
+Telemetry only works up to
+[`ShutdownPhase::AppShutdownTelemetry` aka `profile-before-change-telemetry`][app-shutdown].
+Telemetry data recorded after that phase just aren't persisted.
+
+FOG _presently_ shuts down Glean in a later phase,
+and so is able to collect data deeper into shutdown.
+(The particular phase is not presently something anyone's asked us to guarantee,
+so that's why I'm not being precise.)
+
+What this means is that, for data recorded later in shutdown,
+Glean will report more complete information than Telemetry will.
+
+[app-shutdown]: https://searchfox.org/mozilla-central/source/xpcom/base/AppShutdown.cpp#57

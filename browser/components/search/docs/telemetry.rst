@@ -14,28 +14,53 @@ telemetry is relevant to Firefox as well as other consumers of Toolkit. See
 
    telemetry
 
+Glossary
+--------
+
+SAP
+  Search Access Point, a search that a user performs by visiting
+  via one of Firefox's access points using the associated partner codes.
+
+SERP
+  A search engine results page.
+
+Persisted Search
+  When a user has the following preference values:
+
+    - ``browser.urlbar.showSearchTerms.enabled``: ``true``
+    - ``browser.urlbar.showSearchTerms.featureGate``: ``true``
+    - ``browser.search.widget.inNavBar``: ``false``
+
+  and does the following:
+
+    - Starts a search from the urlbar or context menu.
+    - Loads the default search engine results page.
+
+  the search term will persist in the Urlbar, causing it to enter a Persisted Search state.
+
 Definitions
 -----------
 
-  * ``organic`` is a search that a user performs by visiting a search engine
-    directly.
-  * ``SAP`` (search access point) is a search that a user performs by visiting
-    via one of Firefox's access points, using the associated partner codes.
-  * ``sap-follow-on`` is a SAP search where the user has first accessed the site
-    via a SAP, and then performed an additional search.
-  * ``tagged`` refers to a page that is tagged with an associated partner code.
-    It may or may not have originated via an SAP.
-  * ``SERP`` refers to a search engine result page.
+``organic``
+  A search that a user performs by visiting a search engine directly.
+
+``tagged``
+  Refers to a page that is tagged with an associated partner code.
+  It may or may not have originated via a SAP.
+
+``tagged-follow-on``
+  Refers to a page that is tagged with an associated partner code and has been identified
+  as a follow-on search. It may or may not have originated via a SAP.
 
 Search probes relevant to front-end searches
 --------------------------------------------
 
 The Address Bar is an integral part of search and has `additional telemetry of its own`_.
 
-BrowserSearchTelemetry.jsm
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+BrowserSearchTelemetry.sys.mjs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-This telemetry is handled by `BrowserSearchTelemetry.jsm`_.
+This telemetry is handled by `BrowserSearchTelemetry.sys.mjs`_.
 
 SEARCH_COUNTS - SAP usage
   This histogram tracks search engines and Search Access Points. It is augmented
@@ -56,7 +81,9 @@ SEARCH_COUNTS - SAP usage
     - ``searchbar``
     - ``system``
     - ``urlbar`` Except aliases and search mode.
-    - ``urlbar_handoff`` Used when searching from about:newtab.
+    - ``urlbar-handoff`` Used when searching from about:newtab.
+    - ``urlbar-persisted`` Used when searching from the Urlbar while it
+      was in a Persisted Search state.
     - ``urlbar-searchmode`` Used when the Urlbar is in search mode.
     - ``webextension``
 
@@ -69,6 +96,8 @@ browser.engagement.navigation.*
 
     - ``urlbar``  Except search mode.
     - ``urlbar_handoff`` Used when searching from about:newtab.
+    - ``urlbar_persisted`` Used when searching from the Urlbar while it
+      was in a Persisted Search state.
     - ``urlbar_searchmode``  Used when the Urlbar is in search mode.
     - ``searchbar``
     - ``about_home``
@@ -101,28 +130,21 @@ navigation.search (OBSOLETE)
   it's more or less equivalent to browser.engagement.navigation, but can also
   report the picked search engine.
 
-SearchSERPTelemetry.jsm
-~~~~~~~~~~~~~~~~~~~~~~~
+SearchSERPTelemetry.sys.mjs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-This telemetry is handled by `SearchSERPTelemetry.jsm and the associated parent/child actors`_.
-
-SEARCH_COUNTS - SERP results
-  This histogram records search counts for visits to SERP in-content pages.
-  For in-content searches, the format is
-  ``<provider>.in-content:[sap|sap-follow-on|organic]:[<code>|other|none]``.
-
-  This is obsolete, browser.search.content.* should be preferred.
+This telemetry is handled by `SearchSERPTelemetry.sys.mjs and the associated parent/child actors`_.
 
 browser.search.content.*
   These keyed scalar track counts of SERP page loads. The key format is
   ``<provider>:[tagged|tagged-follow-on|organic]:[<code>|other|none]``.
 
-  These will eventually replace the SEARCH_COUNTS - SERP results.
-
   They are broken down by the originating SAP where known:
 
   - ``urlbar``  Except search mode.
   - ``urlbar_handoff`` Used when searching from about:newtab.
+  - ``urlbar_persisted`` Used when searching from the Urlbar while it
+    was in a Persisted Search state.
   - ``urlbar_searchmode``  Used when the Urlbar is in search mode.
   - ``searchbar``
   - ``about_home``
@@ -145,18 +167,6 @@ browser.search.adclicks.*
   This is the same as ```browser.search.withads.*`` but tracks counts for them
   clicks of adverts on SERP pages.
 
-browser.search.with_ads
-  Obsolete. This is being replaced by ``browser.search.withads.*``.
-
-  This keyed scalar records counts of SERP pages with adverts displayed.
-  The key format is ``<provider>:<sap|organic>``.
-
-browser.search.ad_clicks
-  Obsolete. This is being replaced by ``browser.search.adclicks.*``.
-
-  Records clicks of adverts on SERP pages. The key format is
-  ``<provider>:<sap|organic>``.
-
 .. _additional telemetry of its own: /browser/urlbar/telemetry.html
-.. _SearchSERPTelemetry.jsm and the associated parent/child actors: https://searchfox.org/mozilla-central/search?q=&path=SearchSERPTelemetry*.jsm&case=false&regexp=false
-.. _BrowserSearchTelemetry.jsm: https://searchfox.org/mozilla-central/source/browser/components/search/BrowserSearchTelemetry.jsm
+.. _SearchSERPTelemetry.sys.mjs and the associated parent/child actors: https://searchfox.org/mozilla-central/search?q=&path=SearchSERPTelemetry*.sys.mjs&case=false&regexp=false
+.. _BrowserSearchTelemetry: https://searchfox.org/mozilla-central/source/browser/components/search/BrowserSearchTelemetry.sys.mjs

@@ -12,7 +12,6 @@
 #include "mozilla/dom/CanvasRenderingContextHelper.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/layers/LayersTypes.h"
-#include "mozilla/layers/LayersSurfaces.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
@@ -28,6 +27,7 @@ struct OffscreenCanvasDisplayData final {
   bool mIsOpaque = true;
   bool mIsAlphaPremult = true;
   mozilla::gl::OriginPos mOriginPos = gl::OriginPos::TopLeft;
+  Maybe<layers::RemoteTextureOwnerId> mOwnerId;
 };
 
 class OffscreenCanvasDisplayHelper final {
@@ -54,7 +54,7 @@ class OffscreenCanvasDisplayHelper final {
 
  private:
   ~OffscreenCanvasDisplayHelper();
-  void MaybeQueueInvalidateElement();
+  void MaybeQueueInvalidateElement() MOZ_REQUIRES(mMutex);
   void InvalidateElement();
 
   bool TransformSurface(const gfx::DataSourceSurface::ScopedMap& aSrcMap,
@@ -63,17 +63,18 @@ class OffscreenCanvasDisplayHelper final {
                         bool aNeedsPremult, gl::OriginPos aOriginPos) const;
 
   mutable Mutex mMutex;
-  HTMLCanvasElement* MOZ_NON_OWNING_REF mCanvasElement;
-  RefPtr<layers::ImageContainer> mImageContainer;
-  RefPtr<gfx::SourceSurface> mFrontBufferSurface;
+  HTMLCanvasElement* MOZ_NON_OWNING_REF mCanvasElement MOZ_GUARDED_BY(mMutex);
+  RefPtr<layers::ImageContainer> mImageContainer MOZ_GUARDED_BY(mMutex);
+  RefPtr<gfx::SourceSurface> mFrontBufferSurface MOZ_GUARDED_BY(mMutex);
 
-  OffscreenCanvasDisplayData mData;
-  CanvasContextType mType = CanvasContextType::NoContext;
-  Maybe<uint32_t> mContextManagerId;
-  Maybe<int32_t> mContextChildId;
-  mozilla::layers::ImageContainer::ProducerID mImageProducerID;
-  mozilla::layers::ImageContainer::FrameID mLastFrameID = 0;
-  bool mPendingInvalidate = false;
+  OffscreenCanvasDisplayData mData MOZ_GUARDED_BY(mMutex);
+  CanvasContextType mType MOZ_GUARDED_BY(mMutex) = CanvasContextType::NoContext;
+  Maybe<uint32_t> mContextManagerId MOZ_GUARDED_BY(mMutex);
+  Maybe<int32_t> mContextChildId MOZ_GUARDED_BY(mMutex);
+  const mozilla::layers::ImageContainer::ProducerID mImageProducerID;
+  mozilla::layers::ImageContainer::FrameID mLastFrameID MOZ_GUARDED_BY(mMutex) =
+      0;
+  bool mPendingInvalidate MOZ_GUARDED_BY(mMutex) = false;
 };
 
 }  // namespace mozilla::dom

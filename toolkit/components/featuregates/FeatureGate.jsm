@@ -4,25 +4,22 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppConstants",
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
+const lazy = {};
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "FeatureGateImplementation",
   "resource://featuregates/FeatureGateImplementation.jsm"
 );
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
-
 var EXPORTED_SYMBOLS = ["FeatureGate"];
 
-XPCOMUtils.defineLazyGetter(this, "gFeatureDefinitionsPromise", async () => {
+XPCOMUtils.defineLazyGetter(lazy, "gFeatureDefinitionsPromise", async () => {
   const url = "resource://featuregates/feature_definitions.json";
   return fetchFeatureDefinitions(url);
 });
@@ -39,7 +36,7 @@ function buildFeatureGateImplementation(definition) {
     definition[`${key}OriginalValue`] = definition[key];
     definition[key] = FeatureGate.evaluateTargetedValue(definition[key]);
   }
-  return new FeatureGateImplementation(definition);
+  return new lazy.FeatureGateImplementation(definition);
 }
 
 let featureGatePrefObserver = {
@@ -76,7 +73,7 @@ class FeatureGate {
     if (testDefinitionsUrl) {
       featureDefinitions = await fetchFeatureDefinitions(testDefinitionsUrl);
     } else {
-      featureDefinitions = await gFeatureDefinitionsPromise;
+      featureDefinitions = await lazy.gFeatureDefinitionsPromise;
     }
 
     if (!featureDefinitions.has(id)) {
@@ -98,7 +95,7 @@ class FeatureGate {
     if (testDefinitionsUrl) {
       featureDefinitions = await fetchFeatureDefinitions(testDefinitionsUrl);
     } else {
-      featureDefinitions = await gFeatureDefinitionsPromise;
+      featureDefinitions = await lazy.gFeatureDefinitionsPromise;
     }
 
     let definitions = [];
@@ -126,10 +123,7 @@ class FeatureGate {
   }
 
   static async annotateCrashReporter() {
-    let crashReporter = Cc["@mozilla.org/toolkit/crash-reporter;1"].getService(
-      Ci.nsICrashReporter
-    );
-    if (!crashReporter?.enabled) {
+    if (!Services.appinfo.crashReporterEnabled) {
       return;
     }
     let features = await FeatureGate.all();
@@ -139,7 +133,7 @@ class FeatureGate {
         enabledFeatures.push(feature.preference);
       }
     }
-    crashReporter.annotateCrashReport(
+    Services.appinfo.annotateCrashReport(
       "ExperimentalFeatures",
       enabledFeatures.join(",")
     );
@@ -225,7 +219,10 @@ class FeatureGate {
   }
 
   static targetingFacts = new Map([
-    ["release", AppConstants.MOZ_UPDATE_CHANNEL === "release"],
+    [
+      "release",
+      AppConstants.MOZ_UPDATE_CHANNEL === "release" || AppConstants.IS_ESR,
+    ],
     ["beta", AppConstants.MOZ_UPDATE_CHANNEL === "beta"],
     ["early_beta_or_earlier", AppConstants.EARLY_BETA_OR_EARLIER],
     ["dev-edition", AppConstants.MOZ_DEV_EDITION],
@@ -234,6 +231,7 @@ class FeatureGate {
     ["mac", AppConstants.platform === "macosx"],
     ["linux", AppConstants.platform === "linux"],
     ["android", AppConstants.platform === "android"],
+    ["thunderbird", AppConstants.MOZ_APP_NAME === "thunderbird"],
   ]);
 
   /**

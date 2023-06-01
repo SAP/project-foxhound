@@ -32,7 +32,7 @@ async function setupBackgroundTabs(testFn) {
   // foreground.
   let initialTab = gBrowser.selectedTab;
   let initialBrowser = initialTab.linkedBrowser;
-  BrowserTestUtils.loadURI(initialBrowser, NON_REMOTE_PAGE);
+  BrowserTestUtils.loadURIString(initialBrowser, NON_REMOTE_PAGE);
   await BrowserTestUtils.browserLoaded(initialBrowser);
   // Quick sanity check - the browser should be non remote.
   Assert.ok(
@@ -111,7 +111,7 @@ async function crashBackgroundTabs(tabs) {
   }
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   // We'll simplify by making sure we only ever one content process for this
   // test.
   await SpecialPowers.pushPrefEnv({

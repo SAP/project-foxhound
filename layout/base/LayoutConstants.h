@@ -45,12 +45,9 @@ enum class ComputeSizeFlag : uint8_t {
   ShrinkWrap,
 
   /**
-   * Set if we'd like to compute our 'auto' bsize, regardless of our actual
-   * corresponding computed value. (e.g. to get an intrinsic bsize for flex
-   * items when resolving automatic minimum size in the main axis during flexbox
-   * layout.)
+   * Set if this is a grid measuring reflow, to prevent stretching.
    */
-  UseAutoBSize,
+  IsGridMeasuringReflow,
 
   /**
    * Indicates that we should clamp the margin-box min-size to the given CB
@@ -94,6 +91,18 @@ inline constexpr nsSize kFallbackIntrinsicSize(kFallbackIntrinsicWidth,
  * Declared here so that fewer files need to include nsLayoutUtils.h.
  */
 enum class IntrinsicISizeType { MinISize, PrefISize };
+
+enum class ContentRelevancyReason {
+  // If the content of this Frame is on screen or nearly on screen.
+  Visible,
+
+  // If this Frame's element has focus in its subtree.
+  FocusInSubtree,
+
+  // If this Frame's content is part of a selection.
+  Selected,
+};
+using ContentRelevancy = EnumSet<ContentRelevancyReason, uint8_t>;
 
 }  // namespace mozilla
 

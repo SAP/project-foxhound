@@ -339,7 +339,7 @@ sftkdb_fixupTemplateOut(CK_ATTRIBUTE *template, CK_OBJECT_HANDLE objectID,
 
     if ((keyHandle == NULL) ||
         ((SFTK_GET_SDB(keyHandle)->sdb_flags & SDB_HAS_META) == 0) ||
-        (keyHandle->passwordKey.data == NULL)) {
+        (sftkdb_PWCached(keyHandle) != SECSuccess)) {
         checkSig = PR_FALSE;
     }
 
@@ -1606,10 +1606,14 @@ sftkdb_CloseDB(SFTKDBHandle *handle)
         }
         (*handle->db->sdb_Close)(handle->db);
     }
+    if (handle->passwordLock) {
+        PZ_Lock(handle->passwordLock);
+    }
     if (handle->passwordKey.data) {
         SECITEM_ZfreeItem(&handle->passwordKey, PR_FALSE);
     }
     if (handle->passwordLock) {
+        PZ_Unlock(handle->passwordLock);
         SKIP_AFTER_FORK(PZ_DestroyLock(handle->passwordLock));
     }
     if (handle->updatePasswordKey) {
@@ -2043,11 +2047,10 @@ sftkdb_reconcileTrustEntry(PLArenaPool *arena, CK_ATTRIBUTE *target,
     return SFTKDB_DROP_ATTRIBUTE;
 }
 
-const CK_ATTRIBUTE_TYPE sftkdb_trustList[] =
-    { CKA_TRUST_SERVER_AUTH, CKA_TRUST_CLIENT_AUTH,
-      CKA_TRUST_CODE_SIGNING, CKA_TRUST_EMAIL_PROTECTION,
-      CKA_TRUST_IPSEC_TUNNEL, CKA_TRUST_IPSEC_USER,
-      CKA_TRUST_TIME_STAMPING };
+const CK_ATTRIBUTE_TYPE sftkdb_trustList[] = { CKA_TRUST_SERVER_AUTH, CKA_TRUST_CLIENT_AUTH,
+                                               CKA_TRUST_CODE_SIGNING, CKA_TRUST_EMAIL_PROTECTION,
+                                               CKA_TRUST_IPSEC_TUNNEL, CKA_TRUST_IPSEC_USER,
+                                               CKA_TRUST_TIME_STAMPING };
 
 #define SFTK_TRUST_TEMPLATE_COUNT \
     (sizeof(sftkdb_trustList) / sizeof(sftkdb_trustList[0]))
@@ -2695,10 +2698,12 @@ sftkdb_ResetKeyDB(SFTKDBHandle *handle)
         /* set error */
         return SECFailure;
     }
+    PZ_Lock(handle->passwordLock);
     if (handle->passwordKey.data) {
         SECITEM_ZfreeItem(&handle->passwordKey, PR_FALSE);
         handle->passwordKey.data = NULL;
     }
+    PZ_Unlock(handle->passwordLock);
     return SECSuccess;
 }
 

@@ -15,7 +15,6 @@
 #include "WebGLQuery.h"
 #include "WebGLRenderbuffer.h"
 #include "WebGLTexture.h"
-#include "WebGLExtensions.h"
 #include "WebGLVertexArray.h"
 
 #include "nsDebug.h"
@@ -764,45 +763,47 @@ void WebGLContext::LinkProgram(WebGLProgram& prog) {
 
   prog.LinkProgram();
 
-  if (!prog.IsLinked()) {
-    // If we failed to link, but `prog == mCurrentProgram`, we are *not*
-    // supposed to null out mActiveProgramLinkInfo.
-    return;
-  }
-
   if (&prog == mCurrentProgram) {
-    mActiveProgramLinkInfo = prog.LinkInfo();
-
-    if (gl->WorkAroundDriverBugs() && gl->Vendor() == gl::GLVendor::NVIDIA) {
-      gl->fUseProgram(prog.mGLName);
+    if (!prog.IsLinked()) {
+      // We use to simply early-out here, and preserve the GL behavior that
+      // failed relink doesn't invalidate the current active program link info.
+      // The new behavior was changed for WebGL here:
+      // https://github.com/KhronosGroup/WebGL/pull/3371
+      mActiveProgramLinkInfo = nullptr;
+      gl->fUseProgram(0);  // Shouldn't be needed, but let's be safe.
+      return;
     }
+    mActiveProgramLinkInfo = prog.LinkInfo();
+    gl->fUseProgram(prog.mGLName);  // Uncontionally re-use.
+    // Previously, we needed this re-use on nvidia as a driver workaround,
+    // but we might as well do it unconditionally.
   }
 }
 
-Maybe<webgl::ErrorInfo> SetPixelUnpack(const bool isWebgl2,
-                                       WebGLPixelStore* const unpacking,
-                                       const GLenum pname, const GLint param) {
+Maybe<webgl::ErrorInfo> SetPixelUnpack(
+    const bool isWebgl2, webgl::PixelUnpackStateWebgl* const unpacking,
+    const GLenum pname, const GLint param) {
   if (isWebgl2) {
     uint32_t* pValueSlot = nullptr;
     switch (pname) {
       case LOCAL_GL_UNPACK_IMAGE_HEIGHT:
-        pValueSlot = &unpacking->mUnpackImageHeight;
+        pValueSlot = &unpacking->imageHeight;
         break;
 
       case LOCAL_GL_UNPACK_SKIP_IMAGES:
-        pValueSlot = &unpacking->mUnpackSkipImages;
+        pValueSlot = &unpacking->skipImages;
         break;
 
       case LOCAL_GL_UNPACK_ROW_LENGTH:
-        pValueSlot = &unpacking->mUnpackRowLength;
+        pValueSlot = &unpacking->rowLength;
         break;
 
       case LOCAL_GL_UNPACK_SKIP_ROWS:
-        pValueSlot = &unpacking->mUnpackSkipRows;
+        pValueSlot = &unpacking->skipRows;
         break;
 
       case LOCAL_GL_UNPACK_SKIP_PIXELS:
-        pValueSlot = &unpacking->mUnpackSkipPixels;
+        pValueSlot = &unpacking->skipPixels;
         break;
     }
 
@@ -814,11 +815,11 @@ Maybe<webgl::ErrorInfo> SetPixelUnpack(const bool isWebgl2,
 
   switch (pname) {
     case dom::WebGLRenderingContext_Binding::UNPACK_FLIP_Y_WEBGL:
-      unpacking->mFlipY = bool(param);
+      unpacking->flipY = bool(param);
       return {};
 
     case dom::WebGLRenderingContext_Binding::UNPACK_PREMULTIPLY_ALPHA_WEBGL:
-      unpacking->mPremultiplyAlpha = bool(param);
+      unpacking->premultiplyAlpha = bool(param);
       return {};
 
     case dom::WebGLRenderingContext_Binding::UNPACK_COLORSPACE_CONVERSION_WEBGL:
@@ -833,11 +834,11 @@ Maybe<webgl::ErrorInfo> SetPixelUnpack(const bool isWebgl2,
           return Some(webgl::ErrorInfo{LOCAL_GL_INVALID_VALUE, ToString(text)});
         }
       }
-      unpacking->mColorspaceConversion = param;
+      unpacking->colorspaceConversion = param;
       return {};
 
     case dom::MOZ_debug_Binding::UNPACK_REQUIRE_FASTPATH:
-      unpacking->mRequireFastPath = bool(param);
+      unpacking->requireFastPath = bool(param);
       return {};
 
     case LOCAL_GL_UNPACK_ALIGNMENT:
@@ -854,7 +855,7 @@ Maybe<webgl::ErrorInfo> SetPixelUnpack(const bool isWebgl2,
           return Some(webgl::ErrorInfo{LOCAL_GL_INVALID_VALUE, ToString(text)});
         }
       }
-      unpacking->mUnpackAlignment = param;
+      unpacking->alignmentInTypeElems = param;
       return {};
 
     default:
@@ -906,61 +907,6 @@ bool WebGLContext::DoReadPixelsAndConvert(
   return true;
 }
 
-static bool ValidatePackSize(const WebGLContext& webgl,
-                             const webgl::PixelPackState& packing,
-                             const uvec2& size, uint8_t bytesPerPixel,
-                             uint32_t* const out_rowStride,
-                             uint32_t* const out_endOffset) {
-  const auto alignment = packing.alignment;
-  switch (alignment) {
-    case 1:
-    case 2:
-    case 4:
-    case 8:
-      break;
-    default:
-      MOZ_ASSERT(false);
-      webgl.ErrorImplementationBug("Invalid PACK_ALIGNMENT.");
-      return false;
-  }
-
-  if (!size.x || !size.y) {
-    *out_rowStride = 0;
-    *out_endOffset = 0;
-    return true;
-  }
-
-  // GLES 3.0.4, p116 (PACK_ functions like UNPACK_)
-
-  const auto rowLength = (packing.rowLength ? packing.rowLength : size.x);
-  const auto skipPixels = packing.skipPixels;
-  const auto skipRows = packing.skipRows;
-
-  const auto usedPixelsPerRow = CheckedUint32(skipPixels) + size.x;
-  const auto usedRowsPerImage = CheckedUint32(skipRows) + size.y;
-
-  if (!usedPixelsPerRow.isValid() || usedPixelsPerRow.value() > rowLength) {
-    webgl.ErrorInvalidOperation("SKIP_PIXELS + width > ROW_LENGTH.");
-    return false;
-  }
-
-  const auto rowLengthBytes = CheckedUint32(rowLength) * bytesPerPixel;
-  const auto rowStride = RoundUpToMultipleOf(rowLengthBytes, alignment);
-
-  const auto usedBytesPerRow = usedPixelsPerRow * bytesPerPixel;
-  const auto usedBytesPerImage =
-      (usedRowsPerImage - 1) * rowStride + usedBytesPerRow;
-
-  if (!rowStride.isValid() || !usedBytesPerImage.isValid()) {
-    webgl.ErrorInvalidOperation("Invalid UNPACK_ params.");
-    return false;
-  }
-
-  *out_rowStride = rowStride.value();
-  *out_endOffset = usedBytesPerImage.value();
-  return true;
-}
-
 webgl::ReadPixelsResult WebGLContext::ReadPixelsInto(
     const webgl::ReadPixelsDesc& desc, const Range<uint8_t>& dest) {
   const FuncScope funcScope(*this, "readPixels");
@@ -986,10 +932,19 @@ void WebGLContext::ReadPixelsPbo(const webgl::ReadPixelsDesc& desc,
   //////
 
   {
-    const auto bytesPerType =
-        webgl::BytesPerPixel({LOCAL_GL_RED, desc.pi.type});
+    const auto pii = webgl::PackingInfoInfo::For(desc.pi);
+    if (!pii) {
+      GLenum err = LOCAL_GL_INVALID_OPERATION;
+      if (!desc.pi.format || !desc.pi.type) {
+        err = LOCAL_GL_INVALID_ENUM;
+      }
+      GenerateError(err, "`format` (%s) and/or `type` (%s) not acceptable.",
+                    EnumString(desc.pi.format).c_str(),
+                    EnumString(desc.pi.type).c_str());
+      return;
+    }
 
-    if (offset % bytesPerType != 0) {
+    if (offset % pii->bytesPerElement != 0) {
       ErrorInvalidOperation(
           "`offset` must be divisible by the size of `type`"
           " in bytes.");
@@ -1060,8 +1015,8 @@ static bool ArePossiblePackEnums(const WebGLContext* webgl,
 
   if (pi.type == LOCAL_GL_UNSIGNED_INT_24_8) return false;
 
-  uint8_t bytes;
-  if (!GetBytesPerPixel(pi, &bytes)) return false;
+  const auto pii = webgl::PackingInfoInfo::For(pi);
+  if (!pii) return false;
 
   return true;
 }
@@ -1143,12 +1098,6 @@ webgl::ReadPixelsResult WebGLContext::ReadPixelsImpl(
 
   if (!ValidateReadPixelsFormatAndType(srcFormat, desc.pi, gl, this)) return {};
 
-  uint8_t bytesPerPixel;
-  if (!webgl::GetBytesPerPixel(desc.pi, &bytesPerPixel)) {
-    ErrorInvalidOperation("Unsupported format and type.");
-    return {};
-  }
-
   //////
 
   const auto& srcOffset = desc.srcOffset;
@@ -1160,12 +1109,15 @@ webgl::ReadPixelsResult WebGLContext::ReadPixelsImpl(
   }
 
   const auto& packing = desc.packState;
-  uint32_t rowStride;
-  uint32_t bytesNeeded;
-  if (!ValidatePackSize(*this, packing, size, bytesPerPixel, &rowStride,
-                        &bytesNeeded))
+  const auto explicitPackingRes = webgl::ExplicitPixelPackingState::ForUseWith(
+      packing, LOCAL_GL_TEXTURE_2D, {size.x, size.y, 1}, desc.pi, {});
+  if (!explicitPackingRes.isOk()) {
+    ErrorInvalidOperation("%s", explicitPackingRes.inspectErr().c_str());
     return {};
-
+  }
+  const auto& explicitPacking = explicitPackingRes.inspect();
+  const auto& rowStride = explicitPacking.metrics.bytesPerRowStride;
+  const auto& bytesNeeded = explicitPacking.metrics.totalBytesUsed;
   if (bytesNeeded > availBytes) {
     ErrorInvalidOperation("buffer too small");
     return {};
@@ -1185,7 +1137,7 @@ webgl::ReadPixelsResult WebGLContext::ReadPixelsImpl(
   ////////////////
   // Now that the errors are out of the way, on to actually reading!
 
-  gl->fPixelStorei(LOCAL_GL_PACK_ALIGNMENT, packing.alignment);
+  gl->fPixelStorei(LOCAL_GL_PACK_ALIGNMENT, packing.alignmentInTypeElems);
   if (IsWebGL2()) {
     gl->fPixelStorei(LOCAL_GL_PACK_ROW_LENGTH, packing.rowLength);
     gl->fPixelStorei(LOCAL_GL_PACK_SKIP_PIXELS, packing.skipPixels);
@@ -1243,13 +1195,20 @@ webgl::ReadPixelsResult WebGLContext::ReadPixelsImpl(
     desc2.srcOffset = {readX, readY};
     desc2.size = {rwSize.x, 1};
 
-    auto row = dest + writeX * bytesPerPixel;
-    row += writeY * rowStride;
-    for (const auto j : IntegerRange(size.y)) {
+    const auto skipBytes = writeX * explicitPacking.metrics.bytesPerPixel;
+    const auto usedRowBytes = rwSize.x * explicitPacking.metrics.bytesPerPixel;
+    for (const auto j : IntegerRange(rwSize.y)) {
       desc2.srcOffset.y = readY + j;
-      DoReadPixelsAndConvert(srcFormat->format, desc2, row, bytesNeeded,
-                             rowStride);
-      row += rowStride;
+      const auto destWriteBegin = dest + skipBytes + (writeY + j) * rowStride;
+      MOZ_RELEASE_ASSERT(dest <= destWriteBegin);
+      MOZ_RELEASE_ASSERT(destWriteBegin <= dest + availBytes);
+
+      const auto destWriteEnd = destWriteBegin + usedRowBytes;
+      MOZ_RELEASE_ASSERT(dest <= destWriteEnd);
+      MOZ_RELEASE_ASSERT(destWriteEnd <= dest + availBytes);
+
+      DoReadPixelsAndConvert(srcFormat->format, desc2, destWriteBegin,
+                             destWriteEnd - destWriteBegin, rowStride);
     }
   }
 
@@ -1325,8 +1284,9 @@ void WebGLContext::StencilOpSeparate(GLenum face, GLenum sfail, GLenum dpfail,
 ////////////////////////////////////////////////////////////////////////////////
 // Uniform setters.
 
-void WebGLContext::UniformData(const uint32_t loc, const bool transpose,
-                               const Range<const uint8_t>& data) const {
+void WebGLContext::UniformData(
+    const uint32_t loc, const bool transpose,
+    const Range<const webgl::UniformDataVal>& data) const {
   const FuncScope funcScope(*this, "uniform setter");
 
   if (!IsWebGL2() && transpose) {
@@ -1352,7 +1312,7 @@ void WebGLContext::UniformData(const uint32_t loc, const bool transpose,
 
   // -
 
-  const auto lengthInType = data.length() / sizeof(float);
+  const auto lengthInType = data.length();
   const auto elemCount = lengthInType / channels;
   if (elemCount > 1 && !validationInfo.isArray) {
     GenerateError(
@@ -1393,10 +1353,13 @@ void WebGLContext::UniformData(const uint32_t loc, const bool transpose,
 
     const auto srcBegin = reinterpret_cast<const uint32_t*>(data.begin().get());
     auto destIndex = locInfo->indexIntoUniform;
-    for (const auto& val : Range<const uint32_t>(srcBegin, elemCount)) {
-      if (destIndex >= texUnits.size()) break;
-      texUnits[destIndex] = val;
-      destIndex += 1;
+    if (destIndex < texUnits.length()) {
+      // Only sample as many indexes as available tex units allow.
+      const auto destCount = std::min(elemCount, texUnits.length() - destIndex);
+      for (const auto& val : Range<const uint32_t>(srcBegin, destCount)) {
+        texUnits[destIndex] = AssertedCast<uint8_t>(val);
+        destIndex += 1;
+      }
     }
   }
 }

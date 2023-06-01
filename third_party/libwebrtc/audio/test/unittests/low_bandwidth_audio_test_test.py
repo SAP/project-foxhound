@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright (c) 2017 The WebRTC project authors. All Rights Reserved.
 #
 # Use of this source code is governed by a BSD-style license
@@ -7,10 +7,10 @@
 # in the file PATENTS.  All contributing project authors may
 # be found in the AUTHORS file in the root of the source tree.
 
+from __future__ import absolute_import
 import os
 import unittest
 import sys
-
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PARENT_DIR = os.path.join(SCRIPT_DIR, os.pardir)
@@ -25,7 +25,8 @@ class TestExtractTestRuns(unittest.TestCase):
         expected)
 
   def testLinux(self):
-    self._TestLog(LINUX_LOG,
+    self._TestLog(
+        LINUX_LOG,
         (None, 'GoodNetworkHighBitrate',
          '/webrtc/src/resources/voice_engine/audio_tiny16.wav',
          '/webrtc/src/out/LowBandwidth_GoodNetworkHighBitrate.wav', None),
@@ -42,7 +43,8 @@ class TestExtractTestRuns(unittest.TestCase):
          '/webrtc/src/out/PCLowBandwidth_perf_48.json'))
 
   def testAndroid(self):
-    self._TestLog(ANDROID_LOG,
+    self._TestLog(
+        ANDROID_LOG,
         ('ddfa6149', 'Mobile2GNetwork',
          '/sdcard/chromium_tests_root/resources/voice_engine/audio_tiny16.wav',
          '/sdcard/chromium_tests_root/LowBandwidth_Mobile2GNetwork.wav', None),
@@ -57,7 +59,7 @@ class TestExtractTestRuns(unittest.TestCase):
         ('TA99205CNO', 'PCGoodNetworkHighBitrate',
          '/sdcard/chromium_tests_root/resources/voice_engine/audio_tiny16.wav',
          ('/sdcard/chromium_tests_root/'
-         'PCLowBandwidth_PCGoodNetworkHighBitrate.wav'),
+          'PCLowBandwidth_PCGoodNetworkHighBitrate.wav'),
          '/sdcard/chromium_tests_root/PCLowBandwidth_perf_48.json'))
 
 
@@ -232,7 +234,6 @@ C   16.605s Main  **************************************************************
 I   16.608s tear_down_device(ddfa6149)  Wrote device cache: /webrtc/src/out/debug-android/device_cache_ddea6549.json
 I   16.608s tear_down_device(TA99205CNO)  Wrote device cache: /webrtc/src/out/debug-android/device_cache_TA99305CMO.json
 '''
-
 
 if __name__ == "__main__":
   unittest.main()

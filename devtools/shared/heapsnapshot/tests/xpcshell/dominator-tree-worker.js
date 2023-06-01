@@ -1,6 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+/* eslint-env mozilla/chrome-worker */
+
 "use strict";
 
 console.log("Initializing worker.");
@@ -13,7 +15,7 @@ self.onmessage = e => {
 
     const dominatorTree = snapshot.computeDominatorTree();
     ok(dominatorTree);
-    ok(dominatorTree instanceof DominatorTree);
+    ok(DominatorTree.isInstance(dominatorTree));
 
     let threw = false;
     try {

@@ -14,6 +14,7 @@ ast_enum_of_structs! {
     ///
     /// [syntax tree enum]: Expr#syntax-tree-enums
     #[cfg_attr(doc_cfg, doc(cfg(feature = "full")))]
+    #[cfg_attr(not(syn_no_non_exhaustive), non_exhaustive)]
     pub enum Pat {
         /// A box pattern: `box v`.
         Box(PatBox),
@@ -72,18 +73,17 @@ ast_enum_of_structs! {
         /// A pattern that matches any value: `_`.
         Wild(PatWild),
 
-        // The following is the only supported idiom for exhaustive matching of
-        // this enum.
+        // Not public API.
         //
-        //     match expr {
-        //         Pat::Box(e) => {...}
-        //         Pat::Ident(e) => {...}
+        // For testing exhaustiveness in downstream code, use the following idiom:
+        //
+        //     match pat {
+        //         Pat::Box(pat) => {...}
+        //         Pat::Ident(pat) => {...}
         //         ...
-        //         Pat::Wild(e) => {...}
+        //         Pat::Wild(pat) => {...}
         //
-        //         #[cfg(test)]
-        //         Pat::__TestExhaustive(_) => unimplemented!(),
-        //         #[cfg(not(test))]
+        //         #[cfg_attr(test, deny(non_exhaustive_omitted_patterns))]
         //         _ => { /* some sane fallback */ }
         //     }
         //
@@ -91,12 +91,9 @@ ast_enum_of_structs! {
         // a variant. You will be notified by a test failure when a variant is
         // added, so that you can add code to handle it, but your library will
         // continue to compile and work for downstream users in the interim.
-        //
-        // Once `deny(reachable)` is available in rustc, Pat will be
-        // reimplemented as a non_exhaustive enum.
-        // https://github.com/rust-lang/rust/issues/44109#issuecomment-521781237
+        #[cfg(syn_no_non_exhaustive)]
         #[doc(hidden)]
-        __TestExhaustive(crate::private),
+        __NonExhaustive,
     }
 }
 
@@ -403,11 +400,11 @@ pub mod parsing {
         }
 
         if input.peek(token::Brace) {
-            let pat = pat_struct(input, path)?;
+            let pat = pat_struct(begin.fork(), input, path)?;
             if qself.is_some() {
                 Ok(Pat::Verbatim(verbatim::between(begin, input)))
             } else {
-                Ok(Pat::Struct(pat))
+                Ok(pat)
             }
         } else if input.peek(token::Paren) {
             let pat = pat_tuple_struct(input, path)?;
@@ -468,13 +465,23 @@ pub mod parsing {
         })
     }
 
-    fn pat_struct(input: ParseStream, path: Path) -> Result<PatStruct> {
+    fn pat_struct(begin: ParseBuffer, input: ParseStream, path: Path) -> Result<Pat> {
         let content;
         let brace_token = braced!(content in input);
 
         let mut fields = Punctuated::new();
-        while !content.is_empty() && !content.peek(Token![..]) {
-            let value = content.call(field_pat)?;
+        let mut dot2_token = None;
+        while !content.is_empty() {
+            let attrs = content.call(Attribute::parse_outer)?;
+            if content.peek(Token![..]) {
+                dot2_token = Some(content.parse()?);
+                if !attrs.is_empty() {
+                    return Ok(Pat::Verbatim(verbatim::between(begin, input)));
+                }
+                break;
+            }
+            let mut value = content.call(field_pat)?;
+            value.attrs = attrs;
             fields.push_value(value);
             if content.is_empty() {
                 break;
@@ -483,19 +490,13 @@ pub mod parsing {
             fields.push_punct(punct);
         }
 
-        let dot2_token = if fields.empty_or_trailing() && content.peek(Token![..]) {
-            Some(content.parse()?)
-        } else {
-            None
-        };
-
-        Ok(PatStruct {
+        Ok(Pat::Struct(PatStruct {
             attrs: Vec::new(),
             path,
             brace_token,
             fields,
             dot2_token,
-        })
+        }))
     }
 
     impl Member {
@@ -508,7 +509,6 @@ pub mod parsing {
     }
 
     fn field_pat(input: ParseStream) -> Result<FieldPat> {
-        let attrs = input.call(Attribute::parse_outer)?;
         let boxed: Option<Token![box]> = input.parse()?;
         let by_ref: Option<Token![ref]> = input.parse()?;
         let mutability: Option<Token![mut]> = input.parse()?;
@@ -518,7 +518,7 @@ pub mod parsing {
             || member.is_unnamed()
         {
             return Ok(FieldPat {
-                attrs,
+                attrs: Vec::new(),
                 member,
                 colon_token: input.parse()?,
                 pat: Box::new(multi_pat_with_leading_vert(input)?),
@@ -547,7 +547,7 @@ pub mod parsing {
         }
 
         Ok(FieldPat {
-            attrs,
+            attrs: Vec::new(),
             member: Member::Named(ident),
             colon_token: None,
             pat: Box::new(pat),
@@ -654,7 +654,7 @@ pub mod parsing {
     fn pat_lit_expr(input: ParseStream) -> Result<Option<Box<Expr>>> {
         if input.is_empty()
             || input.peek(Token![|])
-            || input.peek(Token![=>])
+            || input.peek(Token![=])
             || input.peek(Token![:]) && !input.peek(Token![::])
             || input.peek(Token![,])
             || input.peek(Token![;])
@@ -827,7 +827,7 @@ mod printing {
     impl ToTokens for PatPath {
         fn to_tokens(&self, tokens: &mut TokenStream) {
             tokens.append_all(self.attrs.outer());
-            private::print_path(tokens, &self.qself, &self.path);
+            path::printing::print_path(tokens, &self.qself, &self.path);
         }
     }
 
@@ -881,10 +881,7 @@ mod printing {
         fn to_tokens(&self, tokens: &mut TokenStream) {
             tokens.append_all(self.attrs.outer());
             self.lo.to_tokens(tokens);
-            match &self.limits {
-                RangeLimits::HalfOpen(t) => t.to_tokens(tokens),
-                RangeLimits::Closed(t) => t.to_tokens(tokens),
-            }
+            self.limits.to_tokens(tokens);
             self.hi.to_tokens(tokens);
         }
     }

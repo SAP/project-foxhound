@@ -135,9 +135,12 @@ const fetchFromNewSnapshotNewDatastore = async (itemKey, sample) => {
   });
 };
 
-/* eslint no-unused-vars: ["warn", { "varsIgnorePattern": "(testSteps)" }]*/
-async function testSteps() {
+add_task(async function testSteps() {
   /* This test is based on bug 1681300 */
+  Services.prefs.setBoolPref(
+    "dom.storage.enable_unsupported_legacy_implementation",
+    false
+  );
   Services.prefs.setBoolPref("dom.storage.snapshot_reusing", false);
 
   const reportWhat = (testKey, testValue) => {
@@ -199,4 +202,4 @@ async function testSteps() {
     "NewSnapshotNewDatastore",
     fetchFromNewSnapshotNewDatastore
   );
-}
+});

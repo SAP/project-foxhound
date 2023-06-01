@@ -457,6 +457,19 @@ ${helpers.predefined_type(
     engines="gecko servo-2013",
     animation_value_type="ComputedValue",
     spec="https://drafts.csswg.org/css-sizing-4/#aspect-ratio",
-    gecko_pref="layout.css.aspect-ratio.enabled",
     servo_restyle_damage="reflow",
 )}
+
+% for (size, logical) in ALL_SIZES:
+    ${helpers.predefined_type(
+        "contain-intrinsic-" + size,
+        "ContainIntrinsicSize",
+        "computed::ContainIntrinsicSize::None",
+        engines="gecko",
+        logical_group="contain-intrinsic-size",
+        logical=logical,
+        gecko_pref="layout.css.contain-intrinsic-size.enabled",
+        spec="https://drafts.csswg.org/css-sizing-4/#intrinsic-size-override",
+        animation_value_type="NonNegativeLength",
+    )}
+% endfor

@@ -3,8 +3,8 @@
 
 "use strict";
 
-const { SearchSERPTelemetry } = ChromeUtils.import(
-  "resource:///modules/SearchSERPTelemetry.jsm"
+const { SearchSERPTelemetry } = ChromeUtils.importESModule(
+  "resource:///modules/SearchSERPTelemetry.sys.mjs"
 );
 
 const TEST_PROVIDER_INFO = [
@@ -33,7 +33,7 @@ async function waitForIdle() {
   }
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   SearchSERPTelemetry.overrideSearchTelemetryForTests(TEST_PROVIDER_INFO);
   await waitForIdle();
 
@@ -46,23 +46,22 @@ add_task(async function setup() {
     ],
   });
 
-  await SearchTestUtils.installSearchExtension({
-    search_url: getPageUrl(true),
-    search_url_get_params: "s={searchTerms}&abc=ff",
-    suggest_url:
-      "https://example.com/browser/browser/components/search/test/browser/searchSuggestionEngine.sjs",
-    suggest_url_get_params: "query={searchTerms}",
-  });
-  const testEngine = Services.search.getEngineByName("Example");
-  const originalEngine = await Services.search.getDefault();
-  await Services.search.setDefault(testEngine);
+  await SearchTestUtils.installSearchExtension(
+    {
+      search_url: getPageUrl(true),
+      search_url_get_params: "s={searchTerms}&abc=ff",
+      suggest_url:
+        "https://example.com/browser/browser/components/search/test/browser/searchSuggestionEngine.sjs",
+      suggest_url_get_params: "query={searchTerms}",
+    },
+    { setAsDefault: true }
+  );
 
   const oldCanRecord = Services.telemetry.canRecordExtended;
   Services.telemetry.canRecordExtended = true;
   Services.telemetry.setEventRecordingEnabled("navigation", true);
 
   registerCleanupFunction(async function() {
-    await Services.search.setDefault(originalEngine);
     await PlacesUtils.history.clear();
 
     Services.telemetry.canRecordExtended = oldCanRecord;
@@ -86,7 +85,7 @@ add_task(async function test_search() {
   info("Load about:newtab in new window");
   const newtab = "about:newtab";
   const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
-  BrowserTestUtils.loadURI(tab.linkedBrowser, newtab);
+  BrowserTestUtils.loadURIString(tab.linkedBrowser, newtab);
   await BrowserTestUtils.browserStopped(tab.linkedBrowser, newtab);
 
   info("Focus on search input in newtab content");
@@ -102,13 +101,49 @@ add_task(async function test_search() {
   await onLoaded;
 
   info("Check the telemetries");
+  await assertHandoffResult(histogram);
+
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_search_private_mode() {
+  Services.telemetry.clearScalars();
+  Services.telemetry.clearEvents();
+
+  const histogram = TelemetryTestUtils.getAndClearKeyedHistogram(
+    "SEARCH_COUNTS"
+  );
+
+  info("Open private window");
+  let privateWindow = await BrowserTestUtils.openNewBrowserWindow({
+    private: true,
+  });
+  let tab = privateWindow.gBrowser.selectedTab;
+
+  info("Focus on search input in newtab content");
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    const searchInput = content.document.querySelector(".fake-editable");
+    searchInput.click();
+  });
+
+  info("Search and wait the result");
+  const onLoaded = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  EventUtils.synthesizeKey("q", {}, privateWindow);
+  EventUtils.synthesizeKey("VK_RETURN", {}, privateWindow);
+  await onLoaded;
+
+  info("Check the telemetries");
+  await assertHandoffResult(histogram);
+
+  await BrowserTestUtils.closeWindow(privateWindow);
+});
+
+async function assertHandoffResult(histogram) {
   await assertScalars([
     ["browser.engagement.navigation.urlbar_handoff", "search_enter", 1],
+    ["browser.search.content.urlbar_handoff", "example:tagged:ff", 1],
   ]);
-  await assertHistogram(histogram, [
-    ["example.in-content:sap:ff", 1],
-    ["other-Example.urlbar-handoff", 1],
-  ]);
+  await assertHistogram(histogram, [["other-Example.urlbar-handoff", 1]]);
   TelemetryTestUtils.assertEvents(
     [
       [
@@ -121,9 +156,7 @@ add_task(async function test_search() {
     ],
     { category: "navigation", method: "search" }
   );
-
-  BrowserTestUtils.removeTab(tab);
-});
+}
 
 async function assertHistogram(histogram, expectedResults) {
   await TestUtils.waitForCondition(() => {

@@ -9,19 +9,17 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "TelemetryTestUtils",
-  "resource://testing-common/TelemetryTestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
+});
 
 const gTestRoot = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
   "http://mochi.test:8888"
 );
 
-const { TimedPromise } = ChromeUtils.import(
-  "chrome://remote/content/marionette/sync.js"
+const { TimedPromise } = ChromeUtils.importESModule(
+  "chrome://remote/content/marionette/sync.sys.mjs"
 );
 
 async function run_test(count) {

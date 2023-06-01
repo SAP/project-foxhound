@@ -15,8 +15,7 @@
 
 class nsISupports;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 class PerformanceResourceTiming;
 
 // http://www.w3.org/TR/performance-timeline/#performanceentry
@@ -29,7 +28,7 @@ class PerformanceEntry : public nsISupports, public nsWrapperCache {
                    const nsAString& aEntryType);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(PerformanceEntry)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(PerformanceEntry)
 
   nsISupports* GetParentObject() const { return mParent; }
 
@@ -93,7 +92,6 @@ class MOZ_STACK_CLASS PerformanceEntryComparator final {
   }
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_PerformanceEntry_h___ */

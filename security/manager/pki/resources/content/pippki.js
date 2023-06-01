@@ -10,10 +10,6 @@
  * pippki UI js files.
  */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
-
 function setText(id, value) {
   let element = document.getElementById(id);
   if (!element) {
@@ -74,9 +70,7 @@ function alertPromptService(title, message) {
   // XXX Bug 1425832 - Using Services.prompt here causes tests to report memory
   // leaks.
   // eslint-disable-next-line mozilla/use-services
-  var ps = Cc["@mozilla.org/embedcomp/prompt-service;1"].getService(
-    Ci.nsIPromptService
-  );
+  var ps = Cc["@mozilla.org/prompter;1"].getService(Ci.nsIPromptService);
   ps.alert(window, title, message);
 }
 
@@ -88,7 +82,7 @@ const DEFAULT_CERT_EXTENSION = "crt";
  *
  * @param {nsIX509Cert} cert
  *        The cert to generate a filename for.
- * @returns {String}
+ * @returns {string}
  *          Generated filename.
  */
 function certToFilename(cert) {
@@ -161,7 +155,7 @@ async function exportToFile(parent, cert) {
       }
       break;
     case 2:
-      // OS.File.writeAtomic requires a utf-8 string or a typed array.
+      // IOUtils.write requires a typed array.
       // nsIX509Cert.getRawDER() returns an array (not a typed array), so we
       // convert it here.
       content = Uint8Array.from(cert.getRawDER());
@@ -179,8 +173,13 @@ async function exportToFile(parent, cert) {
       content = getPEMString(cert);
       break;
   }
+
+  if (typeof content === "string") {
+    content = new TextEncoder().encode(content);
+  }
+
   try {
-    await OS.File.writeAtomic(fp.file.path, content);
+    await IOUtils.write(fp.file.path, content);
   } catch (ex) {
     let title = await document.l10n.formatValue("write-file-failure");
     alertPromptService(title, ex.toString());
@@ -216,7 +215,7 @@ const certificateUsages = {
  *
  * @param {nsIX509Cert} cert
  *        The certificate to determine valid usages for.
- * @return {Promise}
+ * @returns {Promise}
  *        A promise that will resolve with the results of the verifications.
  */
 function asyncDetermineUsages(cert) {
@@ -258,8 +257,6 @@ function asyncDetermineUsages(cert) {
  *
  * @param {Array} results
  *        An array of results from `asyncDetermineUsages`. See `displayUsages`.
- * @param {Number} usage
- *        A numerical value corresponding to a usage. See `certificateUsages`.
  * @returns {Array} An array of `nsIX509Cert` representing the verified
  *          certificate chain for the given usage, or null if there is none.
  */
@@ -286,7 +283,7 @@ function getBestChain(results) {
  *
  * @param {Array} results
  *        An array of results from `asyncDetermineUsages`. See `displayUsages`.
- * @param {Number} usage
+ * @param {number} usage
  *        A numerical value corresponding to a usage. See `certificateUsages`.
  * @returns {Array} An array of `nsIX509Cert` representing the verified
  *          certificate chain for the given usage, or null if there is none.

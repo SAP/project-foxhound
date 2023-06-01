@@ -19,13 +19,13 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=804630
   <![CDATA[
   /** Test to make sure that COWed objects can't expose properties from their prototypes. **/
   // Set up the sandbox.
-  var sb = new Cu.Sandbox('http://www.example.com');
+  var sb = new Cu.Sandbox("https://www.example.com");
   sb.ok = ok;
   sb.is = is;
 
   // Make a chrome object that tries to expose objects off its prototype.
-  sb.proto = { read: 42, readWrite: 32, __exposedProps__: {} };
-  sb.obj = { __exposedProps__: { read: 'r', readWrite: 'rw' } };
+  sb.proto = { read: 42, readWrite: 32 };
+  sb.obj = {};
   sb.obj.__proto__ = sb.proto;
 
   // Make sure we can't access any of the properties on the prototype directly.

@@ -22,7 +22,6 @@
 #include "mozilla/TaskDispatcher.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
-#include "nsIDelayedRunnableObserver.h"
 #include "nsIDirectTaskDispatcher.h"
 #include "nsIEventTarget.h"
 #include "nsISerialEventTarget.h"
@@ -45,7 +44,6 @@ class Array;
 using mozilla::NotNull;
 
 class nsIRunnable;
-class nsLocalExecutionRecord;
 class nsThreadEnumerator;
 class nsThreadShutdownContext;
 
@@ -156,7 +154,6 @@ class PerformanceCounterState {
 // A native thread
 class nsThread : public nsIThreadInternal,
                  public nsISupportsPriority,
-                 public nsIDelayedRunnableObserver,
                  public nsIDirectTaskDispatcher,
                  private mozilla::LinkedListElement<nsThread> {
   friend mozilla::LinkedList<nsThread>;
@@ -173,7 +170,8 @@ class nsThread : public nsIThreadInternal,
   enum MainThreadFlag { MAIN_THREAD, NOT_MAIN_THREAD };
 
   nsThread(NotNull<mozilla::SynchronizedEventQueue*> aQueue,
-           MainThreadFlag aMainThread, uint32_t aStackSize);
+           MainThreadFlag aMainThread,
+           nsIThreadManager::ThreadCreationOptions aOptions);
 
  private:
   nsThread();
@@ -250,29 +248,10 @@ class nsThread : public nsIThreadInternal,
 
   static nsThreadEnumerator Enumerate();
 
-  // When entering local execution mode a new event queue is created and used as
-  // an event source. This queue is only accessible through an
-  // nsLocalExecutionGuard constructed from the nsLocalExecutionRecord returned
-  // by this function, effectively restricting the events that get run while in
-  // local execution mode to those dispatched by the owner of the guard object.
-  //
-  // Local execution is not nestable. When the nsLocalExecutionGuard is
-  // destructed, the thread exits the local execution mode.
-  //
-  // Note that code run in local execution mode is not considered a task in the
-  // spec sense. Events from the local queue are considered part of the
-  // enclosing task and as such do not trigger profiling hooks, observer
-  // notifications, etc.
-  nsLocalExecutionRecord EnterLocalExecution();
-
   void SetUseHangMonitor(bool aValue) {
     MOZ_ASSERT(IsOnCurrentThread());
     mUseHangMonitor = aValue;
   }
-
-  void OnDelayedRunnableCreated(mozilla::DelayedRunnable* aRunnable) override;
-  void OnDelayedRunnableScheduled(mozilla::DelayedRunnable* aRunnable) override;
-  void OnDelayedRunnableRan(mozilla::DelayedRunnable* aRunnable) override;
 
  private:
   void DoMainThreadSpecificProcessing() const;
@@ -300,7 +279,6 @@ class nsThread : public nsIThreadInternal,
 
   static mozilla::OffTheBooksMutex& ThreadListMutex();
   static mozilla::LinkedList<nsThread>& ThreadList();
-  static void ClearThreadList();
 
   void AddToThreadList();
   void MaybeRemoveFromThreadList();
@@ -342,8 +320,6 @@ class nsThread : public nsIThreadInternal,
   // Set to true if this thread creates a JSRuntime.
   bool mCanInvokeJS;
 
-  bool mHasTLSEntry = false;
-
   // The time the currently running event spent in event queues, and
   // when it started running.  If no event is running, they are
   // TimeDuration() & TimeStamp().
@@ -357,8 +333,6 @@ class nsThread : public nsIThreadInternal,
 #endif
 
   mozilla::PerformanceCounterState mPerformanceCounterState;
-
-  bool mIsInLocalExecutionMode = false;
 
   mozilla::SimpleTaskQueue mDirectTasks;
 };
@@ -377,8 +351,8 @@ class nsThreadShutdownContext final : public nsIThreadShutdown {
                           nsThread* aJoiningThread)
       : mTerminatingThread(aTerminatingThread),
         mTerminatingPRThread(aTerminatingThread->GetPRThread()),
-        mJoiningThread(aJoiningThread,
-                       "nsThreadShutdownContext::mJoiningThread") {}
+        mJoiningThreadMutex("nsThreadShutdownContext::mJoiningThreadMutex"),
+        mJoiningThread(aJoiningThread) {}
 
   ~nsThreadShutdownContext() = default;
 
@@ -396,49 +370,9 @@ class nsThreadShutdownContext final : public nsIThreadShutdown {
   // The thread waiting for this thread to shut down. Will either be cleared by
   // the joining thread if `StopWaitingAndLeakThread` is called or by the
   // terminating thread upon exiting and notifying the joining thread.
-  mozilla::DataMutex<RefPtr<nsThread>> mJoiningThread;
-};
-
-// This RAII class controls the duration of the associated nsThread's local
-// execution mode and provides access to the local event target. (See
-// nsThread::EnterLocalExecution() for details.) It is constructed from an
-// nsLocalExecutionRecord, which can only be constructed by nsThread.
-class MOZ_RAII nsLocalExecutionGuard final {
- public:
-  MOZ_IMPLICIT nsLocalExecutionGuard(
-      nsLocalExecutionRecord&& aLocalExecutionRecord);
-  nsLocalExecutionGuard(const nsLocalExecutionGuard&) = delete;
-  nsLocalExecutionGuard(nsLocalExecutionGuard&&) = delete;
-  ~nsLocalExecutionGuard();
-
-  nsCOMPtr<nsISerialEventTarget> GetEventTarget() const {
-    return mLocalEventTarget;
-  }
-
- private:
-  mozilla::SynchronizedEventQueue& mEventQueueStack;
-  nsCOMPtr<nsISerialEventTarget> mLocalEventTarget;
-  bool& mLocalExecutionFlag;
-};
-
-class MOZ_TEMPORARY_CLASS nsLocalExecutionRecord final {
- private:
-  friend class nsThread;
-  friend class nsLocalExecutionGuard;
-
-  nsLocalExecutionRecord(mozilla::SynchronizedEventQueue& aEventQueueStack,
-                         bool& aLocalExecutionFlag)
-      : mEventQueueStack(aEventQueueStack),
-        mLocalExecutionFlag(aLocalExecutionFlag) {}
-
-  nsLocalExecutionRecord(nsLocalExecutionRecord&&) = default;
-
- public:
-  nsLocalExecutionRecord(const nsLocalExecutionRecord&) = delete;
-
- private:
-  mozilla::SynchronizedEventQueue& mEventQueueStack;
-  bool& mLocalExecutionFlag;
+  mozilla::Mutex mJoiningThreadMutex;
+  RefPtr<nsThread> mJoiningThread MOZ_GUARDED_BY(mJoiningThreadMutex);
+  bool mThreadLeaked MOZ_GUARDED_BY(mJoiningThreadMutex) = false;
 };
 
 class MOZ_STACK_CLASS nsThreadEnumerator final {

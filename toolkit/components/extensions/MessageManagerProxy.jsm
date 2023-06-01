@@ -10,7 +10,6 @@ var EXPORTED_SYMBOLS = ["MessageManagerProxy"];
 const { ExtensionUtils } = ChromeUtils.import(
   "resource://gre/modules/ExtensionUtils.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const { DefaultMap } = ExtensionUtils;
 
@@ -94,7 +93,7 @@ class MessageManagerProxy {
   /**
    * Sends a message on the proxied message manager.
    *
-   * @param {array} args
+   * @param {Array} args
    *        Arguments to be passed verbatim to the underlying
    *        sendAsyncMessage method.
    * @returns {undefined}
@@ -149,8 +148,9 @@ class MessageManagerProxy {
   }
 
   /**
-   * @private
    * Iterates over all of the currently registered message listeners.
+   *
+   * @private
    */
   *iterListeners() {
     for (let [message, listeners] of this.listeners) {
@@ -161,11 +161,11 @@ class MessageManagerProxy {
   }
 
   /**
-   * @private
    * Adds docShell swap listeners to the message manager owner.
    *
    * @param {Element} target
    *        The target element.
+   * @private
    */
   addListeners(target) {
     target.addEventListener("SwapDocShells", this);
@@ -183,11 +183,11 @@ class MessageManagerProxy {
   }
 
   /**
-   * @private
    * Removes docShell swap listeners to the message manager owner.
    *
    * @param {Element} target
    *        The target element.
+   * @private
    */
   removeListeners(target) {
     target.removeEventListener("SwapDocShells", this);

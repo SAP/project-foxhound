@@ -270,13 +270,18 @@ nsresult MemoryTelemetry::GatherReports(
   // asynchronously, on a background thread.
   RefPtr<Runnable> runnable = NS_NewRunnableFunction(
       "MemoryTelemetry::GatherReports", [mgr, completionRunnable]() mutable {
+        Telemetry::AutoTimer<Telemetry::MEMORY_COLLECTION_TIME> autoTimer;
         RECORD(MEMORY_VSIZE, Vsize, UNITS_BYTES);
 #if !defined(HAVE_64BIT_BUILD) || !defined(XP_WIN)
         RECORD(MEMORY_VSIZE_MAX_CONTIGUOUS, VsizeMaxContiguous, UNITS_BYTES);
 #endif
         RECORD(MEMORY_RESIDENT_FAST, ResidentFast, UNITS_BYTES);
         RECORD(MEMORY_RESIDENT_PEAK, ResidentPeak, UNITS_BYTES);
+// Although we can measure unique memory on MacOS we choose not to, because
+// doing so is too slow for telemetry.
+#ifndef XP_MACOSX
         RECORD(MEMORY_UNIQUE, ResidentUnique, UNITS_BYTES);
+#endif
         RECORD(MEMORY_HEAP_ALLOCATED, HeapAllocated, UNITS_BYTES);
         RECORD(MEMORY_HEAP_OVERHEAD_FRACTION, HeapOverheadFraction,
                UNITS_PERCENTAGE);
@@ -367,8 +372,13 @@ void MemoryTelemetry::GatherTotalMemory() {
         // Use our handle for the remote process to collect resident unique set
         // size information for that process.
         for (const auto& info : infos) {
+#ifdef XP_MACOSX
           int64_t memory =
-              nsMemoryReporterManager::ResidentUnique(info.mHandle);
+              nsMemoryReporterManager::PhysicalFootprint(info.mHandle);
+#else
+	  int64_t memory =
+	      nsMemoryReporterManager::ResidentUnique(info.mHandle);
+#endif
           if (memory > 0) {
             childSizes.AppendElement(memory);
             totalMemory += memory;
@@ -394,6 +404,12 @@ nsresult MemoryTelemetry::FinishGatheringTotalMemory(
     int64_t aTotalMemory, const nsTArray<int64_t>& aChildSizes) {
   mGatheringTotalMemory = false;
 
+  // Total memory usage can be difficult to measure both accurately and fast
+  // enough for telemetry (iterating memory maps can jank whole processes on
+  // MacOS).  Therefore this shouldn't be relied on as an absolute measurement
+  // especially on MacOS where it double-counts shared memory.  For a more
+  // detailed explaination see:
+  // https://groups.google.com/a/mozilla.org/g/dev-platform/c/WGNOtjHdsdA
   HandleMemoryReport(Telemetry::MEMORY_TOTAL, nsIMemoryReporter::UNITS_BYTES,
                      aTotalMemory);
 
@@ -468,25 +484,6 @@ nsresult MemoryTelemetry::FinishGatheringTotalMemory(
   }
 
   return total;
-}
-
-void MemoryTelemetry::GetUniqueSetSize(
-    std::function<void(const int64_t&)>&& aCallback) {
-  mThreadPool->Dispatch(
-      NS_NewRunnableFunction(
-          "MemoryTelemetry::GetUniqueSetSize",
-          [callback = std::move(aCallback)]() mutable {
-            RefPtr<nsMemoryReporterManager> mgr =
-                nsMemoryReporterManager::GetOrCreate();
-            MOZ_RELEASE_ASSERT(mgr);
-
-            int64_t uss = mgr->ResidentUnique();
-
-            NS_DispatchToMainThread(NS_NewRunnableFunction(
-                "MemoryTelemetry::GetUniqueSetSizeResult",
-                [uss, callback = std::move(callback)]() { callback(uss); }));
-          }),
-      NS_DISPATCH_NORMAL);
 }
 
 nsresult MemoryTelemetry::Observe(nsISupports* aSubject, const char* aTopic,

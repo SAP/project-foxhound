@@ -10,6 +10,7 @@
 #include "mozilla/BinarySearch.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/ComputedStyleInlines.h"
+#include "mozilla/StaticPrefs_mathml.h"
 #include "mozilla/intl/UnicodeScriptCodes.h"
 
 #include "nsStyleConsts.h"
@@ -458,7 +459,7 @@ void MathMLTextRunFactory::RebuildTextRun(
         uint8_t sstyLevel = 0;
         float scriptScaling =
             pow(styles[0]->mScriptSizeMultiplier, mSSTYScriptLevel);
-        static_assert(NS_MATHML_DEFAULT_SCRIPT_SIZE_MULTIPLIER < 1,
+        static_assert(kMathMLDefaultScriptSizeMultiplier < 1,
                       "Shouldn't it make things smaller?");
         /*
           An SSTY level of 2 is set if the scaling factor is less than or equal
@@ -477,14 +478,14 @@ void MathMLTextRunFactory::RebuildTextRun(
           To opt out of this change, add the following to the stylesheet:
           "font-feature-settings: 'ssty' 0"
         */
-        if (scriptScaling <= (NS_MATHML_DEFAULT_SCRIPT_SIZE_MULTIPLIER +
-                              (NS_MATHML_DEFAULT_SCRIPT_SIZE_MULTIPLIER *
-                               NS_MATHML_DEFAULT_SCRIPT_SIZE_MULTIPLIER)) /
+        if (scriptScaling <= (kMathMLDefaultScriptSizeMultiplier +
+                              (kMathMLDefaultScriptSizeMultiplier *
+                               kMathMLDefaultScriptSizeMultiplier)) /
                                  2) {
           // Currently only the first two ssty settings are used, so two is
           // large as we go
           sstyLevel = 2;
-        } else if (scriptScaling <= NS_MATHML_DEFAULT_SCRIPT_SIZE_MULTIPLIER) {
+        } else if (scriptScaling <= kMathMLDefaultScriptSizeMultiplier) {
           sstyLevel = 1;
         }
         if (sstyLevel) {
@@ -524,23 +525,7 @@ void MathMLTextRunFactory::RebuildTextRun(
     mathVar = styles[i]->mMathVariant;
 
     if (singleCharMI && mathVar == StyleMathVariant::None) {
-      // If the user has explicitly set a non-default value for fontstyle or
-      // fontweight, the italic mathvariant behaviour of <mi> is disabled
-      // This overrides the initial values specified in fontStyle, to avoid
-      // inconsistencies in which attributes allow CSS changes and which do not.
-      if (mFlags & MATH_FONT_WEIGHT_BOLD) {
-        font.weight = FontWeight::Bold();
-        if (mFlags & MATH_FONT_STYLING_NORMAL) {
-          font.style = FontSlantStyle::Normal();
-        } else {
-          font.style = FontSlantStyle::Italic();
-        }
-      } else if (mFlags & MATH_FONT_STYLING_NORMAL) {
-        font.style = FontSlantStyle::Normal();
-        font.weight = FontWeight::Normal();
-      } else {
-        mathVar = StyleMathVariant::Italic;
-      }
+      mathVar = StyleMathVariant::Italic;
     }
 
     uint32_t ch = str[i];
@@ -549,9 +534,10 @@ void MathMLTextRunFactory::RebuildTextRun(
     }
     uint32_t ch2 = MathVariant(ch, mathVar);
 
-    if (mathVar == StyleMathVariant::Bold ||
-        mathVar == StyleMathVariant::BoldItalic ||
-        mathVar == StyleMathVariant::Italic) {
+    if (!StaticPrefs::mathml_mathvariant_styling_fallback_disabled() &&
+        (mathVar == StyleMathVariant::Bold ||
+         mathVar == StyleMathVariant::BoldItalic ||
+         mathVar == StyleMathVariant::Italic)) {
       if (ch == ch2 && ch != 0x20 && ch != 0xA0) {
         // Don't apply the CSS style if a character cannot be
         // transformed. There is an exception for whitespace as it is both
@@ -614,21 +600,18 @@ void MathMLTextRunFactory::RebuildTextRun(
   RefPtr<gfxTextRun> cachedChild;
   gfxTextRun* child;
 
-  if (mathVar == StyleMathVariant::Bold && doMathvariantStyling) {
-    font.style = FontSlantStyle::Normal();
-    font.weight = FontWeight::Bold();
-  } else if (mathVar == StyleMathVariant::Italic && doMathvariantStyling) {
-    font.style = FontSlantStyle::Italic();
-    font.weight = FontWeight::Normal();
-  } else if (mathVar == StyleMathVariant::BoldItalic && doMathvariantStyling) {
-    font.style = FontSlantStyle::Italic();
-    font.weight = FontWeight::Bold();
-  } else if (mathVar != StyleMathVariant::None) {
-    // Mathvariant overrides fontstyle and fontweight
-    // Need to check to see if mathvariant is actually applied as this function
-    // is used for other purposes.
-    font.style = FontSlantStyle::Normal();
-    font.weight = FontWeight::Normal();
+  if (!StaticPrefs::mathml_mathvariant_styling_fallback_disabled() &&
+      doMathvariantStyling) {
+    if (mathVar == StyleMathVariant::Bold) {
+      font.style = FontSlantStyle::NORMAL;
+      font.weight = FontWeight::BOLD;
+    } else if (mathVar == StyleMathVariant::Italic) {
+      font.style = FontSlantStyle::ITALIC;
+      font.weight = FontWeight::NORMAL;
+    } else if (mathVar == StyleMathVariant::BoldItalic) {
+      font.style = FontSlantStyle::ITALIC;
+      font.weight = FontWeight::BOLD;
+    }
   }
   gfxFontGroup* newFontGroup = nullptr;
 

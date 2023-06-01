@@ -6,20 +6,20 @@
 
 var EXPORTED_SYMBOLS = ["AddonUtils"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
 );
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
 const { Svc } = ChromeUtils.import("resource://services-sync/util.js");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "AddonManager",
   "resource://gre/modules/AddonManager.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "AddonRepository",
   "resource://gre/modules/addons/AddonRepository.jsm"
 );
@@ -46,7 +46,7 @@ AddonUtilsInternal.prototype = {
     // reflected in the AddonInstall, so we can't use it. If we ever get rid
     // of sourceURI rewriting, we can avoid having to reconstruct the
     // AddonInstall.
-    return AddonManager.getInstallForURL(addon.sourceURI.spec, {
+    return lazy.AddonManager.getInstallForURL(addon.sourceURI.spec, {
       name: addon.name,
       icons: addon.iconURL,
       version: addon.version,
@@ -157,7 +157,7 @@ AddonUtilsInternal.prototype = {
 
           // For non-restartless add-ons, we issue the callback on uninstalling
           // because we will likely never see the uninstalled event.
-          AddonManager.removeAddonListener(listener);
+          lazy.AddonManager.removeAddonListener(listener);
           res(addon);
         },
         onUninstalled(uninstalled) {
@@ -165,11 +165,11 @@ AddonUtilsInternal.prototype = {
             return;
           }
 
-          AddonManager.removeAddonListener(listener);
+          lazy.AddonManager.removeAddonListener(listener);
           res(addon);
         },
       };
-      AddonManager.addAddonListener(listener);
+      lazy.AddonManager.addAddonListener(listener);
       addon.uninstall();
     });
   },
@@ -210,7 +210,7 @@ AddonUtilsInternal.prototype = {
       ids.push(addon.id);
     }
 
-    let addons = await AddonRepository.getAddonsByIDs(ids);
+    let addons = await lazy.AddonRepository.getAddonsByIDs(ids);
     this._log.info(
       `Found ${addons.length} / ${ids.length}` +
         " add-ons during repository search."
@@ -310,7 +310,7 @@ AddonUtilsInternal.prototype = {
 
     await Promise.all(installPromises);
 
-    if (ourResult.errors.length > 0) {
+    if (ourResult.errors.length) {
       throw new Error("1 or more add-ons failed to install");
     }
     return ourResult;
@@ -398,6 +398,4 @@ AddonUtilsInternal.prototype = {
   },
 };
 
-XPCOMUtils.defineLazyGetter(this, "AddonUtils", function() {
-  return new AddonUtilsInternal();
-});
+const AddonUtils = new AddonUtilsInternal();

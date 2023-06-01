@@ -19,6 +19,7 @@ describe("#CachedTargetingGetter", () => {
   let topsitesCache;
   let globals;
   let doesAppNeedPinStub;
+  let getAddonsByTypesStub;
   beforeEach(() => {
     sandbox = sinon.createSandbox();
     clock = sinon.useFakeTimers();
@@ -26,7 +27,6 @@ describe("#CachedTargetingGetter", () => {
       global.NewTabUtils.activityStreamProvider,
       "getTopFrecentSites"
     );
-    sandbox.stub(global.Cu, "reportError");
     topsitesCache = new CachedTargetingGetter("getTopFrecentSites");
     globals = new GlobalOverrider();
     globals.set(
@@ -42,6 +42,7 @@ describe("#CachedTargetingGetter", () => {
       }
     );
     doesAppNeedPinStub = sandbox.stub().resolves();
+    getAddonsByTypesStub = sandbox.stub().resolves();
   });
 
   afterEach(() => {
@@ -51,28 +52,58 @@ describe("#CachedTargetingGetter", () => {
   });
 
   it("should cache allow for optional getter argument", async () => {
-    let cachedGetter = new CachedTargetingGetter(
+    let pinCachedGetter = new CachedTargetingGetter(
       "doesAppNeedPin",
-      undefined,
+      true,
       undefined,
       { doesAppNeedPin: doesAppNeedPinStub }
     );
     // Need to tick forward because Date.now() is stubbed
     clock.tick(sixHours);
 
-    await cachedGetter.get();
-    await cachedGetter.get();
-    await cachedGetter.get();
+    await pinCachedGetter.get();
+    await pinCachedGetter.get();
+    await pinCachedGetter.get();
 
     // Called once; cached request
     assert.calledOnce(doesAppNeedPinStub);
 
+    // Called with option argument
+    assert.calledWith(doesAppNeedPinStub, true);
+
     // Expire and call again
     clock.tick(sixHours);
-    await cachedGetter.get();
+    await pinCachedGetter.get();
 
     // Call goes through
     assert.calledTwice(doesAppNeedPinStub);
+
+    let themesCachedGetter = new CachedTargetingGetter(
+      "getAddonsByTypes",
+      ["foo"],
+      undefined,
+      { getAddonsByTypes: getAddonsByTypesStub }
+    );
+
+    // Need to tick forward because Date.now() is stubbed
+    clock.tick(sixHours);
+
+    await themesCachedGetter.get();
+    await themesCachedGetter.get();
+    await themesCachedGetter.get();
+
+    // Called once; cached request
+    assert.calledOnce(getAddonsByTypesStub);
+
+    // Called with option argument
+    assert.calledWith(getAddonsByTypesStub, ["foo"]);
+
+    // Expire and call again
+    clock.tick(sixHours);
+    await themesCachedGetter.get();
+
+    // Call goes through
+    assert.calledTwice(getAddonsByTypesStub);
   });
 
   it("should only make a request every 6 hours", async () => {
@@ -269,7 +300,7 @@ describe("#CacheListAttachedOAuthClients", () => {
     globals.set("fxAccounts", fakeFxAccount);
     authClientsCache = QueryCache.queries.ListAttachedOAuthClients;
     sandbox
-      .stub(fxAccounts, "listAttachedOAuthClients")
+      .stub(global.fxAccounts, "listAttachedOAuthClients")
       .returns(Promise.resolve({}));
   });
 
@@ -283,21 +314,21 @@ describe("#CacheListAttachedOAuthClients", () => {
     clock.tick(fourHours);
 
     await authClientsCache.get();
-    assert.calledOnce(fxAccounts.listAttachedOAuthClients);
+    assert.calledOnce(global.fxAccounts.listAttachedOAuthClients);
 
     clock.tick(fourHours);
     await authClientsCache.get();
-    assert.calledTwice(fxAccounts.listAttachedOAuthClients);
+    assert.calledTwice(global.fxAccounts.listAttachedOAuthClients);
   });
 
   it("should not make additional request before 4 hours", async () => {
     clock.tick(fourHours);
 
     await authClientsCache.get();
-    assert.calledOnce(fxAccounts.listAttachedOAuthClients);
+    assert.calledOnce(global.fxAccounts.listAttachedOAuthClients);
 
     await authClientsCache.get();
-    assert.calledOnce(fxAccounts.listAttachedOAuthClients);
+    assert.calledOnce(global.fxAccounts.listAttachedOAuthClients);
   });
 });
 describe("ASRouterTargeting", () => {

@@ -1,5 +1,3 @@
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 const CWD = do_get_cwd();
 function checkOS(os) {
   const nsILocalFile_ = "nsILocalFile" + os;
@@ -13,11 +11,8 @@ function run_test() {
 
   var homeDir = Services.dirsvc.get("Home", Ci.nsIFile);
 
-  var env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
   var expected = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
-  expected.initWithPath(env.get(envVar));
+  expected.initWithPath(Services.env.get(envVar));
 
   Assert.equal(homeDir.path, expected.path);
 }

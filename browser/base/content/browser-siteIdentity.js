@@ -151,20 +151,9 @@ var gIdentityHandler = {
     );
   },
 
-  get _isPDFViewer() {
-    return gBrowser.contentPrincipal?.originNoSuffix == "resource://pdf.js";
-  },
-
   get _isPotentiallyTrustworthy() {
-    // For PDF viewer pages (pdf.js) we can't rely on the isSecureContext
-    // field. The backend will return isSecureContext = true, because the
-    // content principal has a resource:// URI. Since we don't check
-    // isSecureContext for PDF viewer pages anymore, otherwise secure
-    // contexts, such as a localhost, will me marked as insecure when showing
-    // PDFs.
     return (
       !this._isBrokenConnection &&
-      !this._isPDFViewer &&
       (this._isSecureContext ||
         gBrowser.selectedBrowser.documentURI?.scheme == "chrome")
     );
@@ -368,16 +357,6 @@ var gIdentityHandler = {
     );
     return this._httpsOnlyModeEnabledPBM;
   },
-  get _useGrayLockIcon() {
-    delete this._useGrayLockIcon;
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "_useGrayLockIcon",
-      "security.secure_connection_icon_color_gray",
-      false
-    );
-    return this._useGrayLockIcon;
-  },
 
   /**
    * Handles clicks on the "Clear Cookies and Site Data" button.
@@ -470,7 +449,7 @@ var gIdentityHandler = {
 
   removeCertException() {
     if (!this._uriHasHost) {
-      Cu.reportError(
+      console.error(
         "Trying to revoke a cert exception on a URI without a host?"
       );
       return;
@@ -536,7 +515,7 @@ var gIdentityHandler = {
     let principal = gBrowser.contentPrincipal;
     // ...but if we're on the HTTPS-Only error page, the content-principal is
     // for HTTPS but. We always want to set the exception for HTTP. (Code should
-    // be almost identical to the one in AboutHttpsOnlyErrorParent.jsm)
+    // be almost identical to the one in AboutHttpsOnlyErrorParent.sys.mjs)
     let newURI;
     if (this._isAboutHttpsOnlyErrorPage) {
       newURI = gBrowser.currentURI
@@ -629,6 +608,32 @@ var gIdentityHandler = {
     return result;
   },
 
+  _getIsSecureContext() {
+    if (gBrowser.contentPrincipal?.originNoSuffix != "resource://pdf.js") {
+      return gBrowser.securityUI.isSecureContext;
+    }
+
+    // For PDF viewer pages (pdf.js) we can't rely on the isSecureContext field.
+    // The backend will return isSecureContext = true, because the content
+    // principal has a resource:// URI. Instead use the URI of the selected
+    // browser to perform the isPotentiallyTrustWorthy check.
+
+    let principal;
+    try {
+      principal = Services.scriptSecurityManager.createContentPrincipal(
+        gBrowser.selectedBrowser.documentURI,
+        {}
+      );
+      return principal.isOriginPotentiallyTrustworthy;
+    } catch (error) {
+      console.error(
+        "Error while computing isPotentiallyTrustWorthy for pdf viewer page: ",
+        error
+      );
+      return false;
+    }
+  },
+
   /**
    * Update the identity user interface for the page currently being displayed.
    *
@@ -649,7 +654,7 @@ var gIdentityHandler = {
     // the documentation of the individual properties for details.
     this.setURI(uri);
     this._secInfo = gBrowser.securityUI.secInfo;
-    this._isSecureContext = gBrowser.securityUI.isSecureContext;
+    this._isSecureContext = this._getIsSecureContext();
 
     // Then, update the user interface with the available data.
     this.refreshIdentityBlock();
@@ -857,13 +862,6 @@ var gIdentityHandler = {
       );
     }
 
-    // Gray lock icon for secure connections if pref set
-    this._updateAttribute(
-      this._identityIcon,
-      "lock-icon-gray",
-      this._useGrayLockIcon
-    );
-
     // Push the appropriate strings out to the UI
     this._identityIcon.setAttribute("tooltiptext", tooltip);
 
@@ -917,14 +915,14 @@ var gIdentityHandler = {
     // "Clear Site Data" button if the site is storing local data, and
     // if the page is not controlled by a WebExtension.
     this._clearSiteDataFooter.hidden = true;
-    let securityButton = document.getElementById(
-      "identity-popup-security-button"
+    let identityPopupPanelView = document.getElementById(
+      "identity-popup-mainView"
     );
-    securityButton.removeAttribute("footerHidden");
+    identityPopupPanelView.removeAttribute("footerVisible");
     if (this._uriHasHost && !this._pageExtensionPolicy) {
       SiteDataManager.hasSiteData(this._uri.asciiHost).then(hasData => {
         this._clearSiteDataFooter.hidden = !hasData;
-        securityButton.setAttribute("footerHidden", !hasData);
+        identityPopupPanelView.setAttribute("footerVisible", hasData);
       });
     }
 
@@ -1013,13 +1011,6 @@ var gIdentityHandler = {
       ciphers = "weak";
     }
 
-    // Gray lock icon for secure connections if pref set
-    this._updateAttribute(
-      this._identityPopup,
-      "lock-icon-gray",
-      this._useGrayLockIcon
-    );
-
     // If HTTPS-Only Mode is enabled, check the permission status
     const privateBrowsingWindow = PrivateBrowsingUtils.isWindowPrivate(window);
     let httpsOnlyStatus = "";
@@ -1056,7 +1047,10 @@ var gIdentityHandler = {
     }
 
     // Update all elements.
-    let elementIDs = ["identity-popup", "identity-popup-securityView-body"];
+    let elementIDs = [
+      "identity-popup",
+      "identity-popup-securityView-extended-info",
+    ];
 
     for (let id of elementIDs) {
       let element = document.getElementById(id);
@@ -1213,9 +1207,9 @@ var gIdentityHandler = {
 
     // Now open the popup, anchored off the primary chrome element
     PanelMultiView.openPopup(this._identityPopup, this._identityIconBox, {
-      position: "bottomcenter topleft",
+      position: "bottomleft topleft",
       triggerEvent: event,
-    }).catch(Cu.reportError);
+    }).catch(console.error);
   },
 
   onPopupShown(event) {
@@ -1279,8 +1273,7 @@ var gIdentityHandler = {
     let urlString = value + "\n" + gBrowser.contentTitle;
     let htmlString = '<a href="' + value + '">' + value + "</a>";
 
-    let windowUtils = window.windowUtils;
-    let scale = windowUtils.screenPixelsPerCSSPixel / windowUtils.fullZoom;
+    let scale = window.devicePixelRatio;
     let canvas = document.createElementNS(
       "http://www.w3.org/1999/xhtml",
       "canvas"

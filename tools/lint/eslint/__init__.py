@@ -4,8 +4,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
 import json
 import os
 import signal
@@ -14,9 +12,7 @@ import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "eslint"))
 from eslint import setup_helper
-
 from mozbuild.nodeutil import find_node_executable
-
 from mozlint import result
 
 ESLINT_ERROR_MESSAGE = """
@@ -45,7 +41,7 @@ def setup(root, **lintargs):
     return setup_helper.eslint_maybe_setup()
 
 
-def lint(paths, config, binary=None, fix=None, setup=None, **lintargs):
+def lint(paths, config, binary=None, fix=None, rules=[], setup=None, **lintargs):
     """Run eslint."""
     log = lintargs["log"]
     setup_helper.set_project_root(lintargs["root"])
@@ -70,6 +66,9 @@ def lint(paths, config, binary=None, fix=None, setup=None, **lintargs):
             ["--ignore-pattern", os.path.relpath(path, lintargs["root"])]
         )
 
+    for rule in rules:
+        extra_args.extend(["--rule", rule])
+
     cmd_args = (
         [
             binary,
@@ -81,6 +80,7 @@ def lint(paths, config, binary=None, fix=None, setup=None, **lintargs):
             "json",
             "--no-error-on-unmatched-pattern",
         ]
+        + rules
         + extra_args
         + exclude_args
         + paths
@@ -101,7 +101,10 @@ def lint(paths, config, binary=None, fix=None, setup=None, **lintargs):
 def run(cmd_args, config):
 
     shell = False
-    if os.environ.get("MSYSTEM") in ("MINGW32", "MINGW64"):
+    if (
+        os.environ.get("MSYSTEM") in ("MINGW32", "MINGW64")
+        or "MOZILLABUILD" in os.environ
+    ):
         # The eslint binary needs to be run from a shell with msys
         shell = True
     encoding = "utf-8"

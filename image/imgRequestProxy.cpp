@@ -22,7 +22,6 @@
 
 using namespace mozilla;
 using namespace mozilla::image;
-using mozilla::dom::Document;
 
 // The split of imgRequestProxy and imgRequestProxyStatic means that
 // certain overridden functions need to be usable in the destructor.
@@ -109,6 +108,7 @@ imgRequestProxy::imgRequestProxy()
       mLoadFlags(nsIRequest::LOAD_NORMAL),
       mLockCount(0),
       mAnimationConsumers(0),
+      mCancelable(true),
       mCanceled(false),
       mIsInLoadGroup(false),
       mForceDispatchLoadGroup(false),
@@ -233,6 +233,15 @@ nsresult imgRequestProxy::ChangeOwner(imgRequest* aNewOwner) {
   return NS_OK;
 }
 
+NS_IMETHODIMP imgRequestProxy::GetTriggeringPrincipal(
+    nsIPrincipal** aTriggeringPrincipal) {
+  MOZ_ASSERT(GetOwner());
+  nsCOMPtr<nsIPrincipal> triggeringPrincipal =
+      GetOwner()->GetTriggeringPrincipal();
+  triggeringPrincipal.forget(aTriggeringPrincipal);
+  return NS_OK;
+}
+
 void imgRequestProxy::MarkValidating() {
   MOZ_ASSERT(GetValidator());
   mValidating = true;
@@ -254,6 +263,19 @@ void imgRequestProxy::ClearValidating() {
 already_AddRefed<nsIEventTarget> imgRequestProxy::GetEventTarget() const {
   nsCOMPtr<nsIEventTarget> target(mEventTarget);
   return target.forget();
+}
+
+bool imgRequestProxy::HasDecodedPixels() {
+  if (IsValidating()) {
+    return false;
+  }
+
+  RefPtr<Image> image = GetImage();
+  if (image) {
+    return image->HasDecodedPixels();
+  }
+
+  return false;
 }
 
 nsresult imgRequestProxy::DispatchWithTargetIfAvailable(
@@ -427,9 +449,31 @@ imgRequestProxy::GetStatus(nsresult* aStatus) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
+NS_IMETHODIMP imgRequestProxy::SetCanceledReason(const nsACString& aReason) {
+  return SetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP imgRequestProxy::GetCanceledReason(nsACString& aReason) {
+  return GetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP imgRequestProxy::CancelWithReason(nsresult aStatus,
+                                                const nsACString& aReason) {
+  return CancelWithReasonImpl(aStatus, aReason);
+}
+
+void imgRequestProxy::SetCancelable(bool aCancelable) {
+  MOZ_ASSERT(NS_IsMainThread());
+  mCancelable = aCancelable;
+}
+
 NS_IMETHODIMP
 imgRequestProxy::Cancel(nsresult status) {
   if (mCanceled) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (NS_WARN_IF(!mCancelable)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -456,6 +500,13 @@ imgRequestProxy::CancelAndForgetObserver(nsresult aStatus) {
   // RemoveProxy call right now, because we need to deliver the
   // onStopRequest.
   if (mCanceled && !mListener) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (NS_WARN_IF(!mCancelable)) {
+    MOZ_ASSERT(mCancelable,
+               "Shouldn't try to cancel non-cancelable requests via "
+               "CancelAndForgetObserver");
     return NS_ERROR_FAILURE;
   }
 
@@ -744,6 +795,16 @@ imgRequestProxy::GetMimeType(char** aMimeType) {
 
   *aMimeType = NS_xstrdup(type);
 
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+imgRequestProxy::GetFileName(nsACString& aFileName) {
+  if (!GetOwner()) {
+    return NS_ERROR_FAILURE;
+  }
+
+  GetOwner()->GetFileName(aFileName);
   return NS_OK;
 }
 
@@ -1089,8 +1150,9 @@ already_AddRefed<imgRequestProxy> imgRequestProxy::GetStaticRequest(
   GetImagePrincipal(getter_AddRefs(currentPrincipal));
   bool hadCrossOriginRedirects = true;
   GetHadCrossOriginRedirects(&hadCrossOriginRedirects);
+  nsCOMPtr<nsIPrincipal> triggeringPrincipal = GetTriggeringPrincipal();
   RefPtr<imgRequestProxy> req = new imgRequestProxyStatic(
-      frozenImage, currentPrincipal, hadCrossOriginRedirects);
+      frozenImage, currentPrincipal, triggeringPrincipal, hadCrossOriginRedirects);
   req->Init(nullptr, nullptr, aLoadingDocument, mURI, nullptr);
 
   return req.forget();
@@ -1211,21 +1273,27 @@ class StaticBehaviour : public ProxyBehaviour {
 };
 
 imgRequestProxyStatic::imgRequestProxyStatic(mozilla::image::Image* aImage,
-                                             nsIPrincipal* aPrincipal,
+                                             nsIPrincipal* aImagePrincipal,
+                                             nsIPrincipal* aTriggeringPrincipal,
                                              bool aHadCrossOriginRedirects)
-    : mPrincipal(aPrincipal),
+    : mImagePrincipal(aImagePrincipal),
+      mTriggeringPrincipal(aTriggeringPrincipal),
       mHadCrossOriginRedirects(aHadCrossOriginRedirects) {
   mBehaviour = mozilla::MakeUnique<StaticBehaviour>(aImage);
 }
 
 NS_IMETHODIMP
 imgRequestProxyStatic::GetImagePrincipal(nsIPrincipal** aPrincipal) {
-  if (!mPrincipal) {
+  if (!mImagePrincipal) {
     return NS_ERROR_FAILURE;
   }
+  NS_ADDREF(*aPrincipal = mImagePrincipal);
+  return NS_OK;
+}
 
-  NS_ADDREF(*aPrincipal = mPrincipal);
-
+NS_IMETHODIMP
+imgRequestProxyStatic::GetTriggeringPrincipal(nsIPrincipal** aPrincipal) {
+  NS_IF_ADDREF(*aPrincipal = mTriggeringPrincipal);
   return NS_OK;
 }
 
@@ -1239,9 +1307,11 @@ imgRequestProxyStatic::GetHadCrossOriginRedirects(
 imgRequestProxy* imgRequestProxyStatic::NewClonedProxy() {
   nsCOMPtr<nsIPrincipal> currentPrincipal;
   GetImagePrincipal(getter_AddRefs(currentPrincipal));
+  nsCOMPtr<nsIPrincipal> triggeringPrincipal;
+  GetTriggeringPrincipal(getter_AddRefs(triggeringPrincipal));
   bool hadCrossOriginRedirects = true;
   GetHadCrossOriginRedirects(&hadCrossOriginRedirects);
   RefPtr<mozilla::image::Image> image = GetImage();
-  return new imgRequestProxyStatic(image, currentPrincipal,
+  return new imgRequestProxyStatic(image, currentPrincipal, triggeringPrincipal,
                                    hadCrossOriginRedirects);
 }

@@ -7,6 +7,8 @@
 
 ---
 $schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
+$tags:
+  - 'Firefox :: General'
 
 browser.engagement:
   active_ticks:
@@ -20,24 +22,24 @@ browser.engagement:
       the foreground, only if it is receiving these interaction events.
 
       Migrated from Telemetry's `browser.engagement.active_ticks`.
-    metadata: &metadata
-      tags:
-        - "Firefox :: General"
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1376942  # Telemetry
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1545172  # Telemetry
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1741674
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1755050
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1781578
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1545172#c8
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1781578
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1811152#c5
     data_sensitivity:
       - interaction
     notification_emails:
       - loines@mozilla.com
-    expires: "100"
+    expires: never
     send_in_pings:
       - baseline
       - metrics
-    telemetry_mirror: BROWSER_ENGAGEMENT_MIRROR_FOR_ACTIVE_TICKS
     no_lint:
       - BASELINE_PING
 
@@ -50,20 +52,76 @@ browser.engagement:
 
       Migrated from Telemetry's
       `browser.engagement.total_uri_count_normal_and_private_mode`.
-    metadata: *metadata
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1535169  # Telemetry
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1741674
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1755050
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1781578
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1535169#c14
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1781578
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1811152#c5
     data_sensitivity:
       - interaction
     notification_emails:
       - loines@mozilla.com
-    expires: "100"
+    expires: never
     send_in_pings:
       - baseline
       - metrics
-    telemetry_mirror: BROWSER_ENGAGEMENT_MIRROR_FOR_URI_COUNT
     no_lint:
       - BASELINE_PING
+
+ping.centre:
+  send_failures:
+    type: counter
+    description: |
+      The number of PingCentre send failures.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1800079
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1800079
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - chutten@mozilla.com
+    expires: 115
+
+  send_failures_by_namespace:
+    type: labeled_counter
+    description: |
+      The number of PingCentre send failures,
+      broken down by structured ingestion namespace.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1814922
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1814922
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - chutten@mozilla.com
+    expires: 115
+    labels: &structured_ingestion_namespaces
+      - activity_stream
+      - messaging_system
+      - contextual_services
+    no_lint:
+      - COMMON_PREFIX
+
+  send_successes_by_namespace:
+    type: labeled_counter
+    description: |
+      The number of PingCentre send successes,
+      broken down by structured ingestion namespace.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1814922
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1814922
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - chutten@mozilla.com
+    expires: 115
+    labels: *structured_ingestion_namespaces
+    no_lint:
+      - COMMON_PREFIX

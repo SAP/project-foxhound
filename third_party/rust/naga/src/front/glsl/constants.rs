@@ -57,7 +57,7 @@ pub enum ConstantSolvingError {
     SplatScalarOnly,
     #[error("Can only swizzle vector constants")]
     SwizzleVectorOnly,
-    #[error("Not implemented: {0}")]
+    #[error("Not implemented as constant expression: {0}")]
     NotImplemented(String),
 }
 
@@ -164,12 +164,20 @@ impl<'a> ConstantSolver<'a> {
 
                 self.binary_op(op, left_constant, right_constant, span)
             }
-            Expression::Math { fun, arg, arg1, .. } => {
+            Expression::Math {
+                fun,
+                arg,
+                arg1,
+                arg2,
+                ..
+            } => {
                 let arg = self.solve(arg)?;
                 let arg1 = arg1.map(|arg| self.solve(arg)).transpose()?;
+                let arg2 = arg2.map(|arg| self.solve(arg)).transpose()?;
 
                 let const0 = &self.constants[arg].inner;
                 let const1 = arg1.map(|arg| &self.constants[arg].inner);
+                let const2 = arg2.map(|arg| &self.constants[arg].inner);
 
                 match fun {
                     crate::MathFunction::Pow => {
@@ -201,7 +209,47 @@ impl<'a> ConstantSolver<'a> {
                         let inner = ConstantInner::Scalar { width, value };
                         Ok(self.register_constant(inner, span))
                     }
-                    _ => Err(ConstantSolvingError::NotImplemented(format!("{:?}", fun))),
+                    crate::MathFunction::Clamp => {
+                        let (value, width) = match (const0, const1.unwrap(), const2.unwrap()) {
+                            (
+                                &ConstantInner::Scalar {
+                                    width,
+                                    value: value0,
+                                },
+                                &ConstantInner::Scalar { value: value1, .. },
+                                &ConstantInner::Scalar { value: value2, .. },
+                            ) => (
+                                match (value0, value1, value2) {
+                                    (
+                                        ScalarValue::Sint(a),
+                                        ScalarValue::Sint(b),
+                                        ScalarValue::Sint(c),
+                                    ) => ScalarValue::Sint(a.clamp(b, c)),
+                                    (
+                                        ScalarValue::Uint(a),
+                                        ScalarValue::Uint(b),
+                                        ScalarValue::Uint(c),
+                                    ) => ScalarValue::Uint(a.clamp(b, c)),
+                                    (
+                                        ScalarValue::Float(a),
+                                        ScalarValue::Float(b),
+                                        ScalarValue::Float(c),
+                                    ) => ScalarValue::Float(glsl_float_clamp(a, b, c)),
+                                    _ => return Err(ConstantSolvingError::InvalidMathArg),
+                                },
+                                width,
+                            ),
+                            _ => {
+                                return Err(ConstantSolvingError::NotImplemented(format!(
+                                    "{fun:?} applied to vector values"
+                                )))
+                            }
+                        };
+
+                        let inner = ConstantInner::Scalar { width, value };
+                        Ok(self.register_constant(inner, span))
+                    }
+                    _ => Err(ConstantSolvingError::NotImplemented(format!("{fun:?}"))),
                 }
             }
             Expression::As {
@@ -457,7 +505,7 @@ impl<'a> ConstantSolver<'a> {
                                 BinaryOperator::Subtract => a - b,
                                 BinaryOperator::Multiply => a * b,
                                 BinaryOperator::Divide => a / b,
-                                BinaryOperator::Modulo => a % b,
+                                BinaryOperator::Modulo => a - b * (a / b).floor(),
                                 _ => return Err(ConstantSolvingError::InvalidBinaryOpArgs),
                             })
                         }
@@ -506,6 +554,57 @@ impl<'a> ConstantSolver<'a> {
     }
 }
 
+/// Helper function to implement the GLSL `max` function for floats.
+///
+/// While Rust does provide a `f64::max` method, it has a different behavior than the
+/// GLSL `max` for NaNs. In Rust, if any of the arguments is a NaN, then the other
+/// is returned.
+///
+/// This leads to different results in the following example
+/// ```
+/// use std::cmp::max;
+/// std::f64::NAN.max(1.0);
+/// ```
+///
+/// Rust will return `1.0` while GLSL should return NaN.
+fn glsl_float_max(x: f64, y: f64) -> f64 {
+    if x < y {
+        y
+    } else {
+        x
+    }
+}
+
+/// Helper function to implement the GLSL `min` function for floats.
+///
+/// While Rust does provide a `f64::min` method, it has a different behavior than the
+/// GLSL `min` for NaNs. In Rust, if any of the arguments is a NaN, then the other
+/// is returned.
+///
+/// This leads to different results in the following example
+/// ```
+/// use std::cmp::min;
+/// std::f64::NAN.min(1.0);
+/// ```
+///
+/// Rust will return `1.0` while GLSL should return NaN.
+fn glsl_float_min(x: f64, y: f64) -> f64 {
+    if y < x {
+        y
+    } else {
+        x
+    }
+}
+
+/// Helper function to implement the GLSL `clamp` function for floats.
+///
+/// While Rust does provide a `f64::clamp` method, it panics if either
+/// `min` or `max` are `NaN`s which is not the behavior specified by
+/// the glsl specification.
+fn glsl_float_clamp(value: f64, min: f64, max: f64) -> f64 {
+    glsl_float_min(glsl_float_max(value, min), max)
+}
+
 #[cfg(test)]
 mod tests {
     use std::vec;
@@ -516,6 +615,19 @@ mod tests {
     };
 
     use super::ConstantSolver;
+
+    #[test]
+    fn nan_handling() {
+        assert!(super::glsl_float_max(f64::NAN, 2.0).is_nan());
+        assert!(!super::glsl_float_max(2.0, f64::NAN).is_nan());
+
+        assert!(super::glsl_float_min(f64::NAN, 2.0).is_nan());
+        assert!(!super::glsl_float_min(2.0, f64::NAN).is_nan());
+
+        assert!(super::glsl_float_clamp(f64::NAN, 1.0, 2.0).is_nan());
+        assert!(!super::glsl_float_clamp(1.0, f64::NAN, 2.0).is_nan());
+        assert!(!super::glsl_float_clamp(1.0, 2.0, f64::NAN).is_nan());
+    }
 
     #[test]
     fn unary_op() {
@@ -626,8 +738,11 @@ mod tests {
 
         let res3_inner = &constants[res3].inner;
 
-        match res3_inner {
-            ConstantInner::Composite { ty, components } => {
+        match *res3_inner {
+            ConstantInner::Composite {
+                ref ty,
+                ref components,
+            } => {
                 assert_eq!(*ty, vec_ty);
                 let mut components_iter = components.iter().copied();
                 assert_eq!(
@@ -820,8 +935,11 @@ mod tests {
 
         let res1_inner = &constants[res1].inner;
 
-        match res1_inner {
-            ConstantInner::Composite { ty, components } => {
+        match *res1_inner {
+            ConstantInner::Composite {
+                ref ty,
+                ref components,
+            } => {
                 assert_eq!(*ty, vec_ty);
                 let mut components_iter = components.iter().copied();
                 assert_eq!(

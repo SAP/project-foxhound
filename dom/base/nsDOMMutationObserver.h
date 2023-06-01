@@ -57,7 +57,7 @@ class nsDOMMutationRecord final : public nsISupports, public nsWrapperCache {
   }
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(nsDOMMutationRecord)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(nsDOMMutationRecord)
 
   void GetType(mozilla::dom::DOMString& aRetVal) const {
     aRetVal.SetKnownLiveAtom(mType, mozilla::dom::DOMString::eNullNotExpected);
@@ -526,8 +526,6 @@ class nsDOMMutationObserver final : public nsISupports, public nsWrapperCache {
   nsMutationReceiver* GetReceiverFor(nsINode* aNode, bool aMayCreate,
                                      bool aWantsAnimations);
   void RemoveReceiver(nsMutationReceiver* aReceiver);
-
-  already_AddRefed<nsIVariant> TakeRecords();
 
   void GetAllSubtreeObserversFor(nsINode* aNode,
                                  nsTArray<nsMutationReceiver*>& aObservers);

@@ -16,8 +16,6 @@
 <script class="testbody" type="application/javascript">
 <![CDATA[
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 // Set to indicate whether or not we want autoCompleteSimple to return a result
 var returnResult = false;
 
@@ -56,7 +54,7 @@ var autoCompleteSimpleName = "@mozilla.org/autocomplete/search;1?name=simple"
 var autoCompleteSimple = {
   QueryInterface: ChromeUtils.generateQI(["nsIFactory", "nsIAutoCompleteSearch"]),
 
-  createInstance(outer, iid) {
+  createInstance(iid) {
     return this.QueryInterface(iid);
   },
 

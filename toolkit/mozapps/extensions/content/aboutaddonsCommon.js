@@ -15,9 +15,8 @@
 const { AddonSettings } = ChromeUtils.import(
   "resource://gre/modules/addons/AddonSettings.jsm"
 );
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";

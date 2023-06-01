@@ -39,7 +39,9 @@ interface mixin GlobalEventHandlers {
            attribute EventHandler onclick;
            attribute EventHandler onclose;
            attribute EventHandler oncontextmenu;
+           attribute EventHandler oncopy;
            attribute EventHandler oncuechange;
+           attribute EventHandler oncut;
            attribute EventHandler ondblclick;
            attribute EventHandler ondrag;
            attribute EventHandler ondragend;
@@ -62,7 +64,6 @@ interface mixin GlobalEventHandlers {
            attribute EventHandler onload;
            attribute EventHandler onloadeddata;
            attribute EventHandler onloadedmetadata;
-           attribute EventHandler onloadend;
            attribute EventHandler onloadstart;
            attribute EventHandler onmousedown;
   [LegacyLenientThis] attribute EventHandler onmouseenter;
@@ -72,6 +73,7 @@ interface mixin GlobalEventHandlers {
            attribute EventHandler onmouseover;
            attribute EventHandler onmouseup;
            attribute EventHandler onwheel;
+           attribute EventHandler onpaste;
            attribute EventHandler onpause;
            attribute EventHandler onplay;
            attribute EventHandler onplaying;
@@ -80,12 +82,12 @@ interface mixin GlobalEventHandlers {
            attribute EventHandler onreset;
            attribute EventHandler onresize;
            attribute EventHandler onscroll;
+           [Pref="apz.scrollend-event.content.enabled"]
+           attribute EventHandler onscrollend;
            attribute EventHandler onsecuritypolicyviolation;
            attribute EventHandler onseeked;
            attribute EventHandler onseeking;
            attribute EventHandler onselect;
-           [Pref="dom.menuitem.enabled"]
-           attribute EventHandler onshow;
            attribute EventHandler onslotchange;
            //(Not implemented)attribute EventHandler onsort;
            attribute EventHandler onstalled;
@@ -164,12 +166,6 @@ interface mixin WindowEventHandlers {
 partial interface mixin WindowEventHandlers {
   attribute EventHandler ongamepadconnected;
   attribute EventHandler ongamepaddisconnected;
-};
-
-interface mixin DocumentAndElementEventHandlers {
-  attribute EventHandler oncopy;
-  attribute EventHandler oncut;
-  attribute EventHandler onpaste;
 };
 
 // The spec has |attribute OnErrorEventHandler onerror;| on

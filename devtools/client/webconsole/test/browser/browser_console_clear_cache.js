@@ -10,8 +10,7 @@ const TEST_URI =
   "data:text/html;charset=utf8,<!DOCTYPE html>Test browser console clear cache";
 
 add_task(async function() {
-  await pushPref("devtools.browserconsole.contentMessages", true);
-  await pushPref("devtools.browsertoolbox.fission", true);
+  await pushPref("devtools.browsertoolbox.scope", "everything");
 
   await addTab(TEST_URI);
   let hud = await BrowserConsoleManager.toggleBrowserConsole();
@@ -24,7 +23,7 @@ add_task(async function() {
 
   info("Click the clear output button");
   const onBrowserConsoleOutputCleared = waitFor(
-    () => !findMessage(hud, CACHED_MESSAGE)
+    () => !findConsoleAPIMessage(hud, CACHED_MESSAGE)
   );
   hud.ui.window.document.querySelector(".devtools-clear-icon").click();
   await onBrowserConsoleOutputCleared;
@@ -42,14 +41,14 @@ add_task(async function() {
   info("Log a smoke message in order to know that the console is ready");
   await logTextInContentAndWaitForMessage(hud, "Smoke message");
   is(
-    findMessage(hud, CACHED_MESSAGE),
+    findConsoleAPIMessage(hud, CACHED_MESSAGE),
     undefined,
     "The cached message is not visible anymore"
   );
 });
 
 function logTextInContentAndWaitForMessage(hud, text) {
-  const onMessage = waitForMessage(hud, text);
+  const onMessage = waitForMessageByType(hud, text, ".console-api");
   SpecialPowers.spawn(gBrowser.selectedBrowser, [text], function(str) {
     content.wrappedJSObject.console.log(str);
   });

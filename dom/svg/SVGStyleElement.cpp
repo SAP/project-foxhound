@@ -16,8 +16,7 @@
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Style)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* SVGStyleElement::WrapNode(JSContext* aCx,
                                     JS::Handle<JSObject*> aGivenProto) {
@@ -162,6 +161,17 @@ void SVGStyleElement::SetTitle(const nsAString& aTitle, ErrorResult& rv) {
   SetAttr(nsGkAtoms::title, aTitle, rv);
 }
 
+bool SVGStyleElement::Disabled() const {
+  StyleSheet* ss = GetSheet();
+  return ss && ss->Disabled();
+}
+
+void SVGStyleElement::SetDisabled(bool aDisabled) {
+  if (StyleSheet* ss = GetSheet()) {
+    ss->SetDisabled(aDisabled);
+  }
+}
+
 //----------------------------------------------------------------------
 // nsStyleLinkElement methods
 
@@ -197,5 +207,4 @@ Maybe<LinkStyle::SheetInfo> SVGStyleElement::GetStyleSheetInfo() {
   });
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

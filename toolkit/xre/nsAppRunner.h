@@ -55,8 +55,7 @@ extern nsString gAbsoluteArgv0Path;
 extern bool gIsGtest;
 
 namespace mozilla {
-nsresult AppInfoConstructor(nsISupports* aOuter, const nsID& aIID,
-                            void** aResult);
+nsresult AppInfoConstructor(const nsID& aIID, void** aResult);
 }  // namespace mozilla
 
 // Exported for gtests.
@@ -78,10 +77,6 @@ int32_t CompareCompatVersions(const nsACString& aOldCompatVersion,
  */
 nsresult NS_CreateNativeAppSupport(nsINativeAppSupport** aResult);
 already_AddRefed<nsINativeAppSupport> NS_GetNativeAppSupport();
-
-nsresult NS_NewToolkitProfileService(nsIToolkitProfileService** aResult);
-
-nsresult NS_NewToolkitProfileFactory(nsIFactory** aResult);
 
 /**
  * Try to acquire exclusive access to the specified profile directory.
@@ -144,7 +139,7 @@ namespace mozilla {
 namespace startup {
 Result<nsCOMPtr<nsIFile>, nsresult> GetIncompleteStartupFile(nsIFile* aProfLD);
 
-extern GeckoProcessType sChildProcessType;
+void IncreaseDescriptorLimits();
 }  // namespace startup
 
 const char* PlatformBuildID();

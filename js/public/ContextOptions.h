@@ -27,13 +27,11 @@ class JS_PUBLIC_API ContextOptions {
         wasmVerbose_(false),
         wasmBaseline_(true),
         wasmIon_(true),
-        wasmCranelift_(false),
 #define WASM_DEFAULT_FEATURE(NAME, ...) wasm##NAME##_(true),
 #define WASM_EXPERIMENTAL_FEATURE(NAME, ...) wasm##NAME##_(false),
         JS_FOR_WASM_FEATURES(WASM_DEFAULT_FEATURE, WASM_DEFAULT_FEATURE, WASM_EXPERIMENTAL_FEATURE)
 #undef WASM_DEFAULT_FEATURE
 #undef WASM_EXPERIMENTAL_FEATURE
-        wasmSimdWormhole_(false),
         testWasmAwaitTier2_(false),
         throwOnAsmJSValidationFailure_(false),
         disableIon_(false),
@@ -49,16 +47,6 @@ class JS_PUBLIC_API ContextOptions {
         trySmoosh_(false),
 #endif
         fuzzing_(false),
-        privateClassFields_(false),
-        privateClassMethods_(false),
-#ifdef NIGHTLY_BUILD
-        arrayGrouping_(true),
-#endif
-#ifdef ENABLE_CHANGE_ARRAY_BY_COPY
-        changeArrayByCopy_(false),
-#endif
-        ergonomicBrandChecks_(false),
-        classStaticBlocks_(false),
         importAssertions_(false) {
   }
   // clang-format on
@@ -107,10 +95,6 @@ class JS_PUBLIC_API ContextOptions {
     return *this;
   }
 
-  bool wasmCranelift() const { return wasmCranelift_; }
-  // Defined out-of-line because it depends on a compile-time option
-  ContextOptions& setWasmCranelift(bool flag);
-
   bool testWasmAwaitTier2() const { return testWasmAwaitTier2_; }
   ContextOptions& setTestWasmAwaitTier2(bool flag) {
     testWasmAwaitTier2_ = flag;
@@ -125,10 +109,6 @@ class JS_PUBLIC_API ContextOptions {
   }
   JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE)
 #undef WASM_FEATURE
-
-  bool wasmSimdWormhole() const { return wasmSimdWormhole_; }
-  // Defined out-of-line because it depends on a compile-time option
-  ContextOptions& setWasmSimdWormhole(bool flag);
 
   bool throwOnAsmJSValidationFailure() const {
     return throwOnAsmJSValidationFailure_;
@@ -148,46 +128,6 @@ class JS_PUBLIC_API ContextOptions {
   bool disableIon() const { return disableIon_; }
   ContextOptions& setDisableIon() {
     disableIon_ = true;
-    return *this;
-  }
-
-  bool privateClassFields() const { return privateClassFields_; }
-  ContextOptions& setPrivateClassFields(bool enabled) {
-    privateClassFields_ = enabled;
-    return *this;
-  }
-
-  bool privateClassMethods() const { return privateClassMethods_; }
-  ContextOptions& setPrivateClassMethods(bool enabled) {
-    privateClassMethods_ = enabled;
-    return *this;
-  }
-
-  bool ergonomicBrandChecks() const { return ergonomicBrandChecks_; }
-  ContextOptions& setErgnomicBrandChecks(bool enabled) {
-    ergonomicBrandChecks_ = enabled;
-    return *this;
-  }
-
-#ifdef NIGHTLY_BUILD
-  bool arrayGrouping() const { return arrayGrouping_; }
-  ContextOptions& setArrayGrouping(bool enabled) {
-    arrayGrouping_ = enabled;
-    return *this;
-  }
-#endif
-
-#ifdef ENABLE_CHANGE_ARRAY_BY_COPY
-  bool changeArrayByCopy() const { return changeArrayByCopy_; }
-  ContextOptions& setChangeArrayByCopy(bool enabled) {
-    changeArrayByCopy_ = enabled;
-    return *this;
-  }
-#endif
-
-  bool classStaticBlocks() const { return classStaticBlocks_; }
-  ContextOptions& setClassStaticBlocks(bool enabled) {
-    classStaticBlocks_ = enabled;
     return *this;
   }
 
@@ -284,11 +224,9 @@ class JS_PUBLIC_API ContextOptions {
   bool wasmVerbose_ : 1;
   bool wasmBaseline_ : 1;
   bool wasmIon_ : 1;
-  bool wasmCranelift_ : 1;
 #define WASM_FEATURE(NAME, ...) bool wasm##NAME##_ : 1;
   JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE)
 #undef WASM_FEATURE
-  bool wasmSimdWormhole_ : 1;
   bool testWasmAwaitTier2_ : 1;
   bool throwOnAsmJSValidationFailure_ : 1;
   bool disableIon_ : 1;
@@ -304,16 +242,6 @@ class JS_PUBLIC_API ContextOptions {
   bool trySmoosh_ : 1;
 #endif
   bool fuzzing_ : 1;
-  bool privateClassFields_ : 1;
-  bool privateClassMethods_ : 1;
-#ifdef NIGHTLY_BUILD
-  bool arrayGrouping_ : 1;
-#endif
-#ifdef ENABLE_CHANGE_ARRAY_BY_COPY
-  bool changeArrayByCopy_ : 1;
-#endif
-  bool ergonomicBrandChecks_ : 1;
-  bool classStaticBlocks_ : 1;
   bool importAssertions_ : 1;
 };
 

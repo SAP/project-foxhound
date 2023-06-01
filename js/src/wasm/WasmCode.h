@@ -45,6 +45,7 @@
 #include "util/Memory.h"
 #include "vm/MutexIDs.h"
 #include "wasm/WasmBuiltins.h"
+#include "wasm/WasmCodegenConstants.h"
 #include "wasm/WasmCodegenTypes.h"
 #include "wasm/WasmCompileArgs.h"
 #include "wasm/WasmConstants.h"
@@ -72,26 +73,6 @@ class MacroAssembler;
 
 namespace wasm {
 
-struct IndirectStubTarget {
-  uint32_t functionIdx;
-  void* checkedCallEntryAddress;
-  TlsData* tls;
-
-  bool operator==(const IndirectStubTarget& other) const {
-    bool result = functionIdx == other.functionIdx && tls == other.tls;
-    // Code pointers must be equal if function index and tls are equal.  Note
-    // it's possible for code pointers to be equal even if index and tls do not
-    // match, as the code pointer and function index are per-module but the tls
-    // is per-instance.
-    MOZ_ASSERT_IF(result,
-                  (checkedCallEntryAddress == other.checkedCallEntryAddress));
-    return result;
-  }
-};
-
-using VectorOfIndirectStubTarget =
-    Vector<IndirectStubTarget, 8, SystemAllocPolicy>;
-
 struct MetadataTier;
 struct Metadata;
 
@@ -105,12 +86,14 @@ struct Metadata;
 struct LinkDataCacheablePod {
   uint32_t trapOffset = 0;
 
+  WASM_CHECK_CACHEABLE_POD(trapOffset);
+
   LinkDataCacheablePod() = default;
 };
 
-struct LinkData : LinkDataCacheablePod {
-  const Tier tier;
+WASM_DECLARE_CACHEABLE_POD(LinkDataCacheablePod);
 
+struct LinkData : LinkDataCacheablePod {
   explicit LinkData(Tier tier) : tier(tier) {}
 
   LinkDataCacheablePod& pod() { return *this; }
@@ -122,19 +105,27 @@ struct LinkData : LinkDataCacheablePod {
 #ifdef JS_CODELABEL_LINKMODE
     uint32_t mode;
 #endif
+
+    WASM_CHECK_CACHEABLE_POD(patchAtOffset, targetOffset);
+#ifdef JS_CODELABEL_LINKMODE
+    WASM_CHECK_CACHEABLE_POD(mode)
+#endif
   };
   using InternalLinkVector = Vector<InternalLink, 0, SystemAllocPolicy>;
 
   struct SymbolicLinkArray
       : EnumeratedArray<SymbolicAddress, SymbolicAddress::Limit, Uint32Vector> {
-    WASM_DECLARE_SERIALIZABLE(SymbolicLinkArray)
+    size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
   };
 
+  const Tier tier;
   InternalLinkVector internalLinks;
   SymbolicLinkArray symbolicLinks;
 
-  WASM_DECLARE_SERIALIZABLE(LinkData)
+  size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 };
+
+WASM_DECLARE_CACHEABLE_POD(LinkData::InternalLink);
 
 using UniqueLinkData = UniquePtr<LinkData>;
 
@@ -163,8 +154,6 @@ class LazyStubSegment;
 
 class CodeSegment {
  protected:
-  static UniqueCodeBytes AllocateCodeBytes(uint32_t codeLength);
-
   enum class Kind { LazyStubs, Module };
 
   CodeSegment(UniqueCodeBytes bytes, uint32_t length, Kind kind)
@@ -221,8 +210,6 @@ class CodeSegment {
 
 using UniqueModuleSegment = UniquePtr<ModuleSegment>;
 
-enum IsTier2 { Tier2, NotTier2 };
-
 class ModuleSegment : public CodeSegment {
   const Tier tier_;
   uint8_t* const trapCode_;
@@ -236,9 +223,8 @@ class ModuleSegment : public CodeSegment {
   static UniqueModuleSegment create(Tier tier, const Bytes& unlinkedBytes,
                                     const LinkData& linkData);
 
-  bool initialize(IsTier2 isTier2, const CodeTier& codeTier,
-                  const LinkData& linkData, const Metadata& metadata,
-                  const MetadataTier& metadataTier);
+  bool initialize(const CodeTier& codeTier, const LinkData& linkData,
+                  const Metadata& metadata, const MetadataTier& metadataTier);
 
   Tier tier() const { return tier_; }
 
@@ -246,19 +232,17 @@ class ModuleSegment : public CodeSegment {
 
   uint8_t* trapCode() const { return trapCode_; }
 
-  // Structured clone support:
-
-  size_t serializedSize() const;
-  uint8_t* serialize(uint8_t* cursor, const LinkData& linkData) const;
-  static const uint8_t* deserialize(const uint8_t* cursor,
-                                    const LinkData& linkData,
-                                    UniqueModuleSegment* segment);
-
   const CodeRange* lookupRange(const void* pc) const;
 
   void addSizeOfMisc(mozilla::MallocSizeOf mallocSizeOf, size_t* code,
                      size_t* data) const;
+
+  WASM_DECLARE_FRIEND_SERIALIZE(ModuleSegment);
 };
+
+extern UniqueCodeBytes AllocateCodeBytes(uint32_t codeLength);
+extern bool StaticallyLink(const ModuleSegment& ms, const LinkData& linkData);
+extern void StaticallyUnlink(uint8_t* base, const LinkData& linkData);
 
 // A FuncExport represents a single function definition inside a wasm Module
 // that has been exported one or more times. A FuncExport represents an
@@ -268,46 +252,40 @@ class ModuleSegment : public CodeSegment {
 // function definition index.
 
 class FuncExport {
-  FuncType funcType_;
-  MOZ_INIT_OUTSIDE_CTOR struct CacheablePod {
-    uint32_t funcIndex_;
-    uint32_t eagerInterpEntryOffset_;  // Machine code offset
-    bool hasEagerStubs_;
-  } pod;
+  uint32_t typeIndex_;
+  uint32_t funcIndex_;
+  uint32_t eagerInterpEntryOffset_;  // Machine code offset
+  bool hasEagerStubs_;
+
+  WASM_CHECK_CACHEABLE_POD(typeIndex_, funcIndex_, eagerInterpEntryOffset_,
+                           hasEagerStubs_);
 
  public:
   FuncExport() = default;
-  explicit FuncExport(FuncType&& funcType, uint32_t funcIndex,
-                      bool hasEagerStubs)
-      : funcType_(std::move(funcType)) {
-    pod.funcIndex_ = funcIndex;
-    pod.eagerInterpEntryOffset_ = UINT32_MAX;
-    pod.hasEagerStubs_ = hasEagerStubs;
+  explicit FuncExport(uint32_t typeIndex, uint32_t funcIndex,
+                      bool hasEagerStubs) {
+    typeIndex_ = typeIndex;
+    funcIndex_ = funcIndex;
+    eagerInterpEntryOffset_ = UINT32_MAX;
+    hasEagerStubs_ = hasEagerStubs;
   }
   void initEagerInterpEntryOffset(uint32_t entryOffset) {
-    MOZ_ASSERT(pod.eagerInterpEntryOffset_ == UINT32_MAX);
+    MOZ_ASSERT(eagerInterpEntryOffset_ == UINT32_MAX);
     MOZ_ASSERT(hasEagerStubs());
-    pod.eagerInterpEntryOffset_ = entryOffset;
+    eagerInterpEntryOffset_ = entryOffset;
   }
 
-  bool hasEagerStubs() const { return pod.hasEagerStubs_; }
-  const FuncType& funcType() const { return funcType_; }
-  uint32_t funcIndex() const { return pod.funcIndex_; }
+  bool hasEagerStubs() const { return hasEagerStubs_; }
+  uint32_t typeIndex() const { return typeIndex_; }
+  uint32_t funcIndex() const { return funcIndex_; }
   uint32_t eagerInterpEntryOffset() const {
-    MOZ_ASSERT(pod.eagerInterpEntryOffset_ != UINT32_MAX);
+    MOZ_ASSERT(eagerInterpEntryOffset_ != UINT32_MAX);
     MOZ_ASSERT(hasEagerStubs());
-    return pod.eagerInterpEntryOffset_;
+    return eagerInterpEntryOffset_;
   }
-
-  bool canHaveJitEntry() const { return funcType_.canHaveJitEntry(); }
-
-  bool clone(const FuncExport& src) {
-    mozilla::PodAssign(&pod, &src.pod);
-    return funcType_.clone(src.funcType_);
-  }
-
-  WASM_DECLARE_SERIALIZABLE(FuncExport)
 };
+
+WASM_DECLARE_CACHEABLE_POD(FuncExport);
 
 using FuncExportVector = Vector<FuncExport, 0, SystemAllocPolicy>;
 
@@ -318,46 +296,45 @@ using FuncExportVector = Vector<FuncExport, 0, SystemAllocPolicy>;
 // dynamically patched at runtime.
 
 class FuncImport {
-  FuncType funcType_;
-  struct CacheablePod {
-    uint32_t tlsDataOffset_;
-    uint32_t interpExitCodeOffset_;  // Machine code offset
-    uint32_t jitExitCodeOffset_;     // Machine code offset
-  } pod;
+ private:
+  uint32_t typeIndex_;
+  uint32_t instanceOffset_;
+  uint32_t interpExitCodeOffset_;  // Machine code offset
+  uint32_t jitExitCodeOffset_;     // Machine code offset
+
+  WASM_CHECK_CACHEABLE_POD(typeIndex_, instanceOffset_, interpExitCodeOffset_,
+                           jitExitCodeOffset_);
 
  public:
-  FuncImport() { memset(&pod, 0, sizeof(CacheablePod)); }
+  FuncImport()
+      : typeIndex_(0),
+        instanceOffset_(0),
+        interpExitCodeOffset_(0),
+        jitExitCodeOffset_(0) {}
 
-  FuncImport(FuncType&& funcType, uint32_t tlsDataOffset)
-      : funcType_(std::move(funcType)) {
-    pod.tlsDataOffset_ = tlsDataOffset;
-    pod.interpExitCodeOffset_ = 0;
-    pod.jitExitCodeOffset_ = 0;
+  FuncImport(uint32_t typeIndex, uint32_t instanceOffset) {
+    typeIndex_ = typeIndex;
+    instanceOffset_ = instanceOffset;
+    interpExitCodeOffset_ = 0;
+    jitExitCodeOffset_ = 0;
   }
 
   void initInterpExitOffset(uint32_t off) {
-    MOZ_ASSERT(!pod.interpExitCodeOffset_);
-    pod.interpExitCodeOffset_ = off;
+    MOZ_ASSERT(!interpExitCodeOffset_);
+    interpExitCodeOffset_ = off;
   }
   void initJitExitOffset(uint32_t off) {
-    MOZ_ASSERT(!pod.jitExitCodeOffset_);
-    pod.jitExitCodeOffset_ = off;
+    MOZ_ASSERT(!jitExitCodeOffset_);
+    jitExitCodeOffset_ = off;
   }
 
-  const FuncType& funcType() const { return funcType_; }
-  uint32_t tlsDataOffset() const { return pod.tlsDataOffset_; }
-  uint32_t interpExitCodeOffset() const { return pod.interpExitCodeOffset_; }
-  uint32_t jitExitCodeOffset() const { return pod.jitExitCodeOffset_; }
-
-  bool clone(const FuncImport& src) {
-    mozilla::PodAssign(&pod, &src.pod);
-    return funcType_.clone(src.funcType_);
-  }
-
-  bool canHaveJitExit() const { return funcType_.canHaveJitExit(); }
-
-  WASM_DECLARE_SERIALIZABLE(FuncImport)
+  uint32_t typeIndex() const { return typeIndex_; }
+  uint32_t instanceOffset() const { return instanceOffset_; }
+  uint32_t interpExitCodeOffset() const { return interpExitCodeOffset_; }
+  uint32_t jitExitCodeOffset() const { return jitExitCodeOffset_; }
 };
+
+WASM_DECLARE_CACHEABLE_POD(FuncImport)
 
 using FuncImportVector = Vector<FuncImport, 0, SystemAllocPolicy>;
 
@@ -382,6 +359,10 @@ struct MetadataCacheablePod {
   bool filenameIsURL;
   bool omitsBoundsChecks;
 
+  WASM_CHECK_CACHEABLE_POD(kind, memory, globalDataLength, startFuncIndex,
+                           nameCustomSectionIndex, filenameIsURL,
+                           omitsBoundsChecks)
+
   explicit MetadataCacheablePod(ModuleKind kind)
       : kind(kind),
         globalDataLength(0),
@@ -389,18 +370,16 @@ struct MetadataCacheablePod {
         omitsBoundsChecks(false) {}
 };
 
-typedef uint8_t ModuleHash[8];
-using FuncArgTypesVector = Vector<ValTypeVector, 0, SystemAllocPolicy>;
-using FuncReturnTypesVector = Vector<ValTypeVector, 0, SystemAllocPolicy>;
+WASM_DECLARE_CACHEABLE_POD(MetadataCacheablePod)
+
+using ModuleHash = uint8_t[8];
 
 struct Metadata : public ShareableBase<Metadata>, public MetadataCacheablePod {
-  TypeDefWithIdVector types;
-  RenumberVector typesRenumbering;
+  SharedTypeContext types;
+  uint32_t typeIdsOffsetStart;
   GlobalDescVector globals;
   TableDescVector tables;
-#ifdef ENABLE_WASM_EXCEPTIONS
   TagDescVector tags;
-#endif
   CacheableChars filename;
   CacheableChars sourceMapURL;
 
@@ -413,8 +392,7 @@ struct Metadata : public ShareableBase<Metadata>, public MetadataCacheablePod {
 
   // Debug-enabled code is not serialized.
   bool debugEnabled;
-  FuncArgTypesVector debugFuncArgTypes;
-  FuncReturnTypesVector debugFuncReturnTypes;
+  Uint32Vector debugFuncTypeIndices;
   ModuleHash debugHash;
 
   explicit Metadata(ModuleKind kind = ModuleKind::Wasm)
@@ -429,12 +407,18 @@ struct Metadata : public ShareableBase<Metadata>, public MetadataCacheablePod {
     return memory.isSome() && memory->isShared();
   }
 
-  // Invariant: The result of getFuncResultType can only be used as long as
-  // MetaData is live, because the returned ResultType may encode a pointer to
-  // debugFuncReturnTypes.
-  ResultType getFuncResultType(uint32_t funcIndex) const {
-    return ResultType::Vector(debugFuncReturnTypes[funcIndex]);
-  };
+  const FuncType& getFuncImportType(const FuncImport& funcImport) const {
+    return types->type(funcImport.typeIndex()).funcType();
+  }
+  const FuncType& getFuncExportType(const FuncExport& funcExport) const {
+    return types->type(funcExport.typeIndex()).funcType();
+  }
+
+  size_t debugNumFuncs() const { return debugFuncTypeIndices.length(); }
+  const FuncType& debugFuncType(uint32_t funcIndex) const {
+    MOZ_ASSERT(debugEnabled);
+    return types->type(debugFuncTypeIndices[funcIndex]).funcType();
+  }
 
   // AsmJSMetadata derives Metadata iff isAsmJS(). Mostly this distinction is
   // encapsulated within AsmJS.cpp, but the additional virtual functions allow
@@ -467,14 +451,16 @@ struct Metadata : public ShareableBase<Metadata>, public MetadataCacheablePod {
     return getFuncName(NameContext::BeforeLocation, funcIndex, name);
   }
 
-  WASM_DECLARE_SERIALIZABLE(Metadata);
+  size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
+  WASM_DECLARE_FRIEND_SERIALIZE(Metadata);
 };
 
 using MutableMetadata = RefPtr<Metadata>;
 using SharedMetadata = RefPtr<const Metadata>;
 
 struct MetadataTier {
-  explicit MetadataTier(Tier tier) : tier(tier) {}
+  explicit MetadataTier(Tier tier = Tier::Serialized)
+      : tier(tier), debugTrapOffset(0) {}
 
   const Tier tier;
 
@@ -485,12 +471,10 @@ struct MetadataTier {
   FuncImportVector funcImports;
   FuncExportVector funcExports;
   StackMaps stackMaps;
-#ifdef ENABLE_WASM_EXCEPTIONS
-  WasmTryNoteVector tryNotes;
-#endif
+  TryNoteVector tryNotes;
 
   // Debug information, not serialized.
-  Uint32Vector debugTrapFarJumpOffsets;
+  uint32_t debugTrapOffset;
 
   FuncExport& lookupFuncExport(uint32_t funcIndex,
                                size_t* funcExportIndex = nullptr);
@@ -501,15 +485,13 @@ struct MetadataTier {
     return codeRanges[funcToCodeRange[funcExport.funcIndex()]];
   }
 
-  bool clone(const MetadataTier& src);
-
-  WASM_DECLARE_SERIALIZABLE(MetadataTier);
+  size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 };
 
 using UniqueMetadataTier = UniquePtr<MetadataTier>;
 
 // LazyStubSegment is a code segment lazily generated for function entry stubs
-// (both interpreter and jit ones) and for indirect stubs.
+// (both interpreter and jit ones).
 //
 // Because a stub is usually small (a few KiB) and an executable code segment
 // isn't (64KiB), a given stub segment can contain entry stubs of many
@@ -536,18 +518,12 @@ class LazyStubSegment : public CodeSegment {
   }
 
   bool hasSpace(size_t bytes) const;
-  [[nodiscard]] bool addStubs(size_t codeLength,
+  [[nodiscard]] bool addStubs(const Metadata& metadata, size_t codeLength,
                               const Uint32Vector& funcExportIndices,
                               const FuncExportVector& funcExports,
                               const CodeRangeVector& codeRanges,
                               uint8_t** codePtr,
                               size_t* indexFirstInsertedCodeRange);
-
-  [[nodiscard]] bool addIndirectStubs(size_t codeLength,
-                                      const VectorOfIndirectStubTarget& targets,
-                                      const CodeRangeVector& codeRanges,
-                                      uint8_t** codePtr,
-                                      size_t* indexFirstInsertedCodeRange);
 
   const CodeRangeVector& codeRanges() const { return codeRanges_; }
   [[nodiscard]] const CodeRange* lookupRange(const void* pc) const;
@@ -573,51 +549,8 @@ struct LazyFuncExport {
 
 using LazyFuncExportVector = Vector<LazyFuncExport, 0, SystemAllocPolicy>;
 
-// IndirectStub provides a mapping between a function index and an indirect stub
-// code range.
-//
-// The function index is the index of the function *within its defining module*,
-// not necessarily in the module that owns the stub.  That module's and
-// function's instance is provided by the tls field of the IndirectStubTable
-// entry within which this IndirectStub is found.
-
-struct IndirectStub {
-  size_t funcIndex;
-  size_t segmentIndex;
-  size_t codeRangeIndex;
-  IndirectStub(size_t funcIndex, size_t segmentIndex, size_t codeRangeIndex)
-      : funcIndex(funcIndex),
-        segmentIndex(segmentIndex),
-        codeRangeIndex(codeRangeIndex) {}
-};
-
-// IndirectStubVector represents a set of IndirectStubs.  These stubs all belong
-// to the same IndirectStubTable entry, and so all have the same tls value.
-//
-// The IndirectStubVector is ordered by IndirectStubComparator (WasmCode.cpp):
-// the sort key is the funcIndex.  The vector is binary-searched by that
-// predicate when an entry is needed.
-//
-// Creating an indirect stub is not an idempotent operation!  There must be NO
-// duplicate entries in the table, or equivalently, an entry that is in the
-// table must always be found by a binary search.
-
-using IndirectStubVector = Vector<IndirectStub, 0, SystemAllocPolicy>;
-
-// An IndirectStubTable represents a set of indirect stubs belonging to a
-// module.  There table is keyed uniquely by tls and there is one
-// IndirectStubVector per tls value represented in the set.
-//
-// While the set is usually very small, its can grow with the product of the
-// number of instances and the number of threads in a system, and we therefore
-// use a hash table.
-
-using IndirectStubTable =
-    HashMap<void*, IndirectStubVector, DefaultHasher<void*>, SystemAllocPolicy>;
-
 // LazyStubTier contains all the necessary information for lazy function entry
-// stubs and indirect stubs that are generated at runtime.
-// None of its data are ever serialized.
+// stubs that are generated at runtime. None of its data are ever serialized.
 //
 // It must be protected by a lock, because the main thread can both read and
 // write lazy stubs at any time while a background thread can regenerate lazy
@@ -626,12 +559,11 @@ using IndirectStubTable =
 class LazyStubTier {
   LazyStubSegmentVector stubSegments_;
   LazyFuncExportVector exports_;
-  IndirectStubTable indirectStubTable_;
   size_t lastStubSegmentIndex_;
 
   [[nodiscard]] bool createManyEntryStubs(const Uint32Vector& funcExportIndices,
+                                          const Metadata& metadata,
                                           const CodeTier& codeTier,
-                                          bool flushAllThreadsIcaches,
                                           size_t* stubSegmentIndex);
 
  public:
@@ -640,6 +572,7 @@ class LazyStubTier {
   // Creates one lazy stub for the exported function, for which the jit entry
   // will be set to the lazily-generated one.
   [[nodiscard]] bool createOneEntryStub(uint32_t funcExportIndex,
+                                        const Metadata& metadata,
                                         const CodeTier& codeTier);
 
   bool entryStubsEmpty() const { return stubSegments_.empty(); }
@@ -649,20 +582,12 @@ class LazyStubTier {
   // which stubs have been lazily generated.
   [[nodiscard]] void* lookupInterpEntry(uint32_t funcIndex) const;
 
-  // Creates many indirect stubs.
-  [[nodiscard]] bool createManyIndirectStubs(
-      const VectorOfIndirectStubTarget& targets, const CodeTier& codeTier);
-
-  // Returns a pointer to the indirect stub of a given function.
-  [[nodiscard]] void* lookupIndirectStub(uint32_t funcIndex, void* tls) const;
-
-  [[nodiscard]] const CodeRange* lookupRange(const void* pc) const;
-
   // Create one lazy stub for all the functions in funcExportIndices, putting
   // them in a single stub. Jit entries won't be used until
   // setJitEntries() is actually called, after the Code owner has committed
   // tier2.
   [[nodiscard]] bool createTier2(const Uint32Vector& funcExportIndices,
+                                 const Metadata& metadata,
                                  const CodeTier& codeTier,
                                  Maybe<size_t>* stubSegmentIndex);
   void setJitEntries(const Maybe<size_t>& stubSegmentIndex, const Code& code);
@@ -703,7 +628,7 @@ class CodeTier {
         lazyStubs_(mutexForTier(segment_->tier())) {}
 
   bool initialized() const { return !!code_ && segment_->initialized(); }
-  bool initialize(IsTier2 isTier2, const Code& code, const LinkData& linkData,
+  bool initialize(const Code& code, const LinkData& linkData,
                   const Metadata& metadata);
 
   Tier tier() const { return segment_->tier(); }
@@ -716,17 +641,12 @@ class CodeTier {
   }
 
   const CodeRange* lookupRange(const void* pc) const;
-#ifdef ENABLE_WASM_EXCEPTIONS
-  const WasmTryNote* lookupWasmTryNote(const void* pc) const;
-#endif
+  const TryNote* lookupTryNote(const void* pc) const;
 
-  size_t serializedSize() const;
-  uint8_t* serialize(uint8_t* cursor, const LinkData& linkData) const;
-  static const uint8_t* deserialize(const uint8_t* cursor,
-                                    const LinkData& linkData,
-                                    UniqueCodeTier* codeTier);
   void addSizeOfMisc(MallocSizeOf mallocSizeOf, size_t* code,
                      size_t* data) const;
+
+  WASM_DECLARE_FRIEND_SERIALIZE_ARGS(CodeTier, const wasm::LinkData& data);
 };
 
 // Jump tables that implement function tiering and fast js-to-wasm calls.
@@ -768,6 +688,11 @@ class JumpTables {
   TablePointer tiering_;
   TablePointer jit_;
   size_t numFuncs_;
+
+  static_assert(
+      JumpTableJitEntryOffset == 0,
+      "Each jit entry in table must have compatible layout with BaseScript and"
+      "SelfHostedLazyScript");
 
  public:
   bool init(CompileMode mode, const ModuleSegment& ms,
@@ -903,19 +828,10 @@ class Code : public ShareableBase<Code> {
 
   const CallSite* lookupCallSite(void* returnAddress) const;
   const CodeRange* lookupFuncRange(void* pc) const;
-  const CodeRange* lookupIndirectStubRange(void* pc) const;
   const StackMap* lookupStackMap(uint8_t* nextPC) const;
-#ifdef ENABLE_WASM_EXCEPTIONS
-  const WasmTryNote* lookupWasmTryNote(void* pc, Tier* tier) const;
-#endif
+  const TryNote* lookupTryNote(void* pc, Tier* tier) const;
   bool containsCodePC(const void* pc) const;
-  // It is possible for there to be two trap descriptors at the same address in
-  // the corner case when an indirect call which may trap on null is followed
-  // directly by another operation that can trap - the call's trap address is
-  // after the call while the other operation's trap address is at the
-  // operation.  Callers of lookupTrap must deal with this ambiguity.
-  bool lookupTrap(void* pc, Trap* trap1Out, Trap* trap2Out,
-                  BytecodeOffset* bytecode) const;
+  bool lookupTrap(void* pc, Trap* trap, BytecodeOffset* bytecode) const;
 
   // To save memory, profilingLabels_ are generated lazily when profiling mode
   // is enabled.
@@ -935,15 +851,7 @@ class Code : public ShareableBase<Code> {
                               Code::SeenSet* seenCode, size_t* code,
                               size_t* data) const;
 
-  // A Code object is serialized as the length and bytes of the machine code
-  // after statically unlinking it; the Code is then later recreated from the
-  // machine code and other parts.
-
-  size_t serializedSize() const;
-  uint8_t* serialize(uint8_t* cursor, const LinkData& linkData) const;
-  static const uint8_t* deserialize(const uint8_t* cursor,
-                                    const LinkData& linkData,
-                                    Metadata& metadata, SharedCode* out);
+  WASM_DECLARE_FRIEND_SERIALIZE_ARGS(SharedCode, const wasm::LinkData& data);
 };
 
 void PatchDebugSymbolicAccesses(uint8_t* codeBase, jit::MacroAssembler& masm);

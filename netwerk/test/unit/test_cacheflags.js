@@ -1,7 +1,6 @@
 "use strict";
 
 const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var httpserver = new HttpServer();
 httpserver.start(-1);
@@ -9,7 +8,6 @@ httpserver.start(-1);
 // Need to randomize, because apparently no one clears our cache
 var suffix = Math.random();
 var httpBase = "http://localhost:" + httpserver.identity.primaryPort;
-var httpsBase = "http://localhost:4445";
 var shortexpPath = "/shortexp" + suffix;
 var longexpPath = "/longexp/" + suffix;
 var longexp2Path = "/longexp/2/" + suffix;
@@ -360,7 +358,7 @@ var gTests = [
 ];
 
 function run_next_test() {
-  if (gTests.length == 0) {
+  if (!gTests.length) {
     httpserver.stop(do_test_finished);
     return;
   }
@@ -371,10 +369,11 @@ function run_next_test() {
 
 function handler(httpStatus, metadata, response) {
   gHitServer = true;
+  let etag;
   try {
-    var etag = metadata.getHeader("If-None-Match");
+    etag = metadata.getHeader("If-None-Match");
   } catch (ex) {
-    var etag = "";
+    etag = "";
   }
   if (etag == "testtag") {
     // Allow using the cached data

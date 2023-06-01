@@ -26,6 +26,11 @@ function waitForNewWindow() {
     };
 
     Services.wm.addListener(listener);
+    registerCleanupFunction(() => {
+      try {
+        Services.wm.removeListener(listener);
+      } catch (e) {}
+    });
   });
 }
 
@@ -59,36 +64,36 @@ async function testLink(link, name) {
 
   if (
     Services.prefs.getBoolPref(
-      "browser.download.improvements_to_download_panel"
+      "browser.download.always_ask_before_handling_new_types",
+      false
     )
   ) {
-    await waitForFilePickerTest(link, name);
-    return;
-  }
+    let winPromise = waitForNewWindow();
 
-  let winPromise = waitForNewWindow();
+    SpecialPowers.spawn(gBrowser.selectedBrowser, [link], contentLink => {
+      content.document.getElementById(contentLink).click();
+    });
 
-  SpecialPowers.spawn(gBrowser.selectedBrowser, [link], contentLink => {
-    content.document.getElementById(contentLink).click();
-  });
+    let win = await winPromise;
 
-  let win = await winPromise;
+    await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+      Assert.equal(
+        content.document.getElementById("unload-flag").textContent,
+        "Okay",
+        "beforeunload shouldn't have fired"
+      );
+    });
 
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
-    Assert.equal(
-      content.document.getElementById("unload-flag").textContent,
-      "Okay",
-      "beforeunload shouldn't have fired"
+    is(
+      win.document.getElementById("location").value,
+      name,
+      `file name should match (${link})`
     );
-  });
 
-  is(
-    win.document.getElementById("location").value,
-    name,
-    `file name should match (${link})`
-  );
-
-  await BrowserTestUtils.closeWindow(win);
+    await BrowserTestUtils.closeWindow(win);
+  } else {
+    await waitForFilePickerTest(link, name);
+  }
 }
 
 // Cross-origin URL does not trigger a download
@@ -121,6 +126,7 @@ async function runTest(url) {
   await testLink("link9", "download_page_3.txt");
   await testLink("link10", "download_page_4.txt");
   await testLink("link11", "download_page_4.txt");
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   await testLocation("link12", "http://example.com/");
 
   // Check that we enforce the correct extension if the website's
@@ -156,9 +162,8 @@ async function runTest(url) {
 }
 
 async function setDownloadDir() {
-  let tmpDir = await PathUtils.getTempDir();
-  tmpDir = PathUtils.join(
-    tmpDir,
+  let tmpDir = PathUtils.join(
+    PathUtils.tempDir,
     "testsavedir" + Math.floor(Math.random() * 2 ** 32)
   );
   // Create this dir if it doesn't exist (ignores existing dirs)
@@ -167,7 +172,7 @@ async function setDownloadDir() {
     try {
       await IOUtils.remove(tmpDir, { recursive: true });
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
     }
     Services.prefs.clearUserPref("browser.download.folderList");
     Services.prefs.clearUserPref("browser.download.dir");
@@ -182,11 +187,14 @@ add_task(async function() {
 
   await setDownloadDir();
 
-  info("Test with browser.download.improvements_to_download_panel enabled.");
+  info(
+    "Test with browser.download.always_ask_before_handling_new_types enabled."
+  );
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["browser.download.improvements_to_download_panel", true],
-      ["browser.download.useDownloadDir", false],
+      ["browser.download.improvements_to_download_panel", false],
+      ["browser.download.always_ask_before_handling_new_types", true],
+      ["browser.download.useDownloadDir", true],
     ],
   });
 
@@ -197,11 +205,14 @@ add_task(async function() {
     "https://example.com:443/browser/browser/base/content/test/general/download_page.html"
   );
 
-  info("Test with browser.download.improvements_to_download_panel disabled.");
+  info(
+    "Test with browser.download.always_ask_before_handling_new_types disabled."
+  );
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["browser.download.improvements_to_download_panel", false],
-      ["browser.download.useDownloadDir", true],
+      ["browser.download.improvements_to_download_panel", true],
+      ["browser.download.always_ask_before_handling_new_types", false],
+      ["browser.download.useDownloadDir", false],
     ],
   });
 

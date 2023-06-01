@@ -3,11 +3,9 @@
 
 "use strict";
 
-const { ClientID } = ChromeUtils.import("resource://gre/modules/ClientID.jsm");
-const { CommonUtils } = ChromeUtils.import(
-  "resource://services-common/utils.js"
+const { ClientID } = ChromeUtils.importESModule(
+  "resource://gre/modules/ClientID.sys.mjs"
 );
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 const PREF_CACHED_CLIENTID = "toolkit.telemetry.cachedClientID";
 
@@ -17,11 +15,7 @@ const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 
 function run_test() {
   do_get_profile();
-  drsPath = OS.Path.join(
-    OS.Constants.Path.profileDir,
-    "datareporting",
-    "state.json"
-  );
+  drsPath = PathUtils.join(PathUtils.profileDir, "datareporting", "state.json");
 
   Services.prefs.setBoolPref(
     "toolkit.telemetry.testing.overrideProductsCheck",
@@ -29,6 +23,12 @@ function run_test() {
   );
   run_next_test();
 }
+
+add_task(function test_setup() {
+  // FOG needs a profile and to be init.
+  do_get_profile();
+  Services.fog.initializeFOG();
+});
 
 add_task(async function test_client_id() {
   const invalidIDs = [
@@ -47,6 +47,9 @@ add_task(async function test_client_id() {
   let clientID = await ClientID.getClientID();
   Assert.equal(typeof clientID, "string");
   Assert.ok(uuidRegex.test(clientID));
+  if (AppConstants.platform != "android") {
+    Assert.equal(clientID, Glean.legacyTelemetry.clientId.testGetValue());
+  }
 
   // We should be guarded against invalid DRS json.
   await ClientID._reset();
@@ -57,28 +60,40 @@ add_task(async function test_client_id() {
   clientID = await ClientID.getClientID();
   Assert.equal(typeof clientID, "string");
   Assert.ok(uuidRegex.test(clientID));
+  if (AppConstants.platform != "android") {
+    Assert.equal(clientID, Glean.legacyTelemetry.clientId.testGetValue());
+  }
 
   // If the DRS data is broken, we should end up with the cached ID.
   let oldClientID = clientID;
   for (let [invalidID] of invalidIDs) {
     await ClientID._reset();
-    await CommonUtils.writeJSON({ clientID: invalidID }, drsPath);
+    await IOUtils.writeJSON(drsPath, { clientID: invalidID });
     clientID = await ClientID.getClientID();
     Assert.equal(clientID, oldClientID);
+    if (AppConstants.platform != "android") {
+      Assert.equal(clientID, Glean.legacyTelemetry.clientId.testGetValue());
+    }
   }
 
   // Test that valid DRS actually works.
   const validClientID = "5afebd62-a33c-416c-b519-5c60fb988e8e";
   await ClientID._reset();
-  await CommonUtils.writeJSON({ clientID: validClientID }, drsPath);
+  await IOUtils.writeJSON(drsPath, { clientID: validClientID });
   clientID = await ClientID.getClientID();
   Assert.equal(clientID, validClientID);
+  if (AppConstants.platform != "android") {
+    Assert.equal(clientID, Glean.legacyTelemetry.clientId.testGetValue());
+  }
 
   // Test that reloading a valid DRS works.
   await ClientID._reset();
   Services.prefs.clearUserPref(PREF_CACHED_CLIENTID);
   clientID = await ClientID.getClientID();
   Assert.equal(clientID, validClientID);
+  if (AppConstants.platform != "android") {
+    Assert.equal(clientID, Glean.legacyTelemetry.clientId.testGetValue());
+  }
 
   // Assure that cached IDs are being checked for validity.
   for (let [invalidID, prefFunc] of invalidIDs) {
@@ -111,12 +126,18 @@ add_task(async function test_setCanaryClientID() {
   await ClientID.setCanaryClientID();
   let clientID = await ClientID.getClientID();
   Assert.equal(KNOWN_UUID, clientID);
+  if (AppConstants.platform != "android") {
+    Assert.equal(clientID, Glean.legacyTelemetry.clientId.testGetValue());
+  }
 });
 
 add_task(async function test_removeParallelGet() {
   // We should get a valid UUID after reset
   await ClientID.removeClientID();
   let firstClientID = await ClientID.getClientID();
+  if (AppConstants.platform != "android") {
+    Assert.equal(firstClientID, Glean.legacyTelemetry.clientId.testGetValue());
+  }
 
   // We should get the same ID twice when requesting it in parallel to a reset.
   let promiseRemoveClientID = ClientID.removeClientID();
@@ -135,4 +156,7 @@ add_task(async function test_removeParallelGet() {
     otherClientID,
     "Getting the client ID in parallel to a reset should give the same id."
   );
+  if (AppConstants.platform != "android") {
+    Assert.equal(newClientID, Glean.legacyTelemetry.clientId.testGetValue());
+  }
 });

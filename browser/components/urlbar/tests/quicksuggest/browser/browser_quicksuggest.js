@@ -9,7 +9,7 @@
 
 const TEST_URL = "http://example.com/quicksuggest";
 
-const TEST_DATA = [
+const REMOTE_SETTINGS_RESULTS = [
   {
     id: 1,
     url: `${TEST_URL}?q=frabbits`,
@@ -31,12 +31,14 @@ const TEST_DATA = [
   },
 ];
 
-add_task(async function init() {
+add_setup(async function() {
   await PlacesUtils.history.clear();
   await PlacesUtils.bookmarks.eraseEverything();
   await UrlbarTestUtils.formHistory.clear();
 
-  await QuickSuggestTestUtils.ensureQuickSuggestInit(TEST_DATA);
+  await QuickSuggestTestUtils.ensureQuickSuggestInit({
+    remoteSettingsResults: REMOTE_SETTINGS_RESULTS,
+  });
 });
 
 // Tests a sponsored result and keyword highlighting.

@@ -13,6 +13,7 @@
 #ifndef mozilla_dom_SimpleGlobalObject_h__
 #define mozilla_dom_SimpleGlobalObject_h__
 
+#include "nsContentUtils.h"
 #include "nsIGlobalObject.h"
 #include "nsWrapperCache.h"
 #include "js/TypeDecls.h"
@@ -20,8 +21,7 @@
 #include "nsISupportsImpl.h"
 #include "nsCycleCollectionParticipant.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class SimpleGlobalObject : public nsIGlobalObject, public nsWrapperCache {
  public:
@@ -51,8 +51,7 @@ class SimpleGlobalObject : public nsIGlobalObject, public nsWrapperCache {
                                                      JS::UndefinedHandleValue);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(SimpleGlobalObject,
-                                                         nsIGlobalObject)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(SimpleGlobalObject)
 
   // Gets the GlobalType of this SimpleGlobalObject.
   GlobalType Type() const { return mType; }
@@ -67,9 +66,17 @@ class SimpleGlobalObject : public nsIGlobalObject, public nsWrapperCache {
     return GetWrapperPreserveColor();
   }
 
-  virtual JSObject* WrapObject(JSContext* cx,
-                               JS::Handle<JSObject*> aGivenProto) override {
+  OriginTrials Trials() const override { return {}; }
+
+  JSObject* WrapObject(JSContext* cx,
+                       JS::Handle<JSObject*> aGivenProto) override {
     MOZ_CRASH("SimpleGlobalObject doesn't use DOM bindings!");
+  }
+
+  bool ShouldResistFingerprinting() const override {
+    return nsContentUtils::ShouldResistFingerprinting(
+        "Presently we don't have enough context to make an informed decision"
+        "on JS Sandboxes. See 1782853");
   }
 
  private:
@@ -82,7 +89,6 @@ class SimpleGlobalObject : public nsIGlobalObject, public nsWrapperCache {
   const GlobalType mType;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_SimpleGlobalObject_h__ */

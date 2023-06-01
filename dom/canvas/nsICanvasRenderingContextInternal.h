@@ -40,7 +40,6 @@ class PresShell;
 class WebGLFramebufferJS;
 namespace layers {
 class CanvasRenderer;
-class CompositableHandle;
 class Layer;
 class Image;
 class LayerManager;
@@ -49,6 +48,7 @@ class PersistentBufferProvider;
 class WebRenderCanvasData;
 }  // namespace layers
 namespace gfx {
+class DrawTarget;
 class SourceSurface;
 }  // namespace gfx
 }  // namespace mozilla
@@ -126,6 +126,15 @@ class nsICanvasRenderingContextInternal : public nsISupports,
   virtual already_AddRefed<mozilla::gfx::SourceSurface> GetSurfaceSnapshot(
       gfxAlphaType* out_alphaType = nullptr) = 0;
 
+  // Like GetSurfaceSnapshot, but will attempt to optimize the snapshot for the
+  // provided DrawTarget, which may be nullptr. By default, this will defer to
+  // GetSurfaceSnapshot and ignore target-dependent optimization.
+  virtual already_AddRefed<mozilla::gfx::SourceSurface> GetOptimizedSnapshot(
+      mozilla::gfx::DrawTarget* aTarget,
+      gfxAlphaType* out_alphaType = nullptr) {
+    return GetSurfaceSnapshot(out_alphaType);
+  }
+
   virtual RefPtr<mozilla::gfx::SourceSurface> GetFrontBufferSnapshot(bool) {
     return GetSurfaceSnapshot();
   }
@@ -142,9 +151,8 @@ class nsICanvasRenderingContextInternal : public nsISupports,
   // attributes.
   virtual bool GetIsOpaque() = 0;
 
-  // Invalidate this context and release any held resources, in preperation
-  // for possibly reinitializing with SetDimensions/InitializeWithSurface.
-  NS_IMETHOD Reset() = 0;
+  // Clear and/or release backing bitmaps, such as for transferToImageBitmap.
+  virtual void ResetBitmap() = 0;
 
   virtual already_AddRefed<mozilla::layers::Image> GetAsImage() {
     return nullptr;
@@ -179,18 +187,6 @@ class nsICanvasRenderingContextInternal : public nsISupports,
     return NS_OK;
   }
 
-  // return true and fills in the bounding rect if elementis a child and has a
-  // hit region.
-  virtual bool GetHitRegionRect(mozilla::dom::Element* element, nsRect& rect) {
-    return false;
-  }
-
-  // Given a point, return hit region ID if it exists or an empty string if it
-  // doesn't
-  virtual nsString GetHitRegion(const mozilla::gfx::Point& point) {
-    return nsString();
-  }
-
   virtual void OnMemoryPressure() {}
 
   virtual void OnBeforePaintTransaction() {}
@@ -211,15 +207,8 @@ class nsICanvasRenderingContextInternal : public nsISupports,
     return GetFrontBuffer(fb, webvr);
   }
 
-  //
-  // shmem support
-  //
-
-  // If this context can be set to use Mozilla's Shmem segments as its backing
-  // store, this will set it to that state. Note that if you have drawn
-  // anything into this canvas before changing the shmem state, it will be
-  // lost.
-  NS_IMETHOD SetIsIPC(bool isIPC) = 0;
+  void DoSecurityCheck(nsIPrincipal* aPrincipal, bool forceWriteOnly,
+                       bool CORSUsed);
 
  protected:
   RefPtr<mozilla::dom::HTMLCanvasElement> mCanvasElement;

@@ -167,7 +167,15 @@ normalize_path = normalize_path()
 @imports(_from="os", _import="pathsep")
 @imports(_from="os", _import="environ")
 @imports(_from="mozfile", _import="which")
-def find_program(file, paths=None):
+def find_program(file, paths=None, allow_spaces=False):
+    def which_normalize(file, path, exts):
+        path = which(file, path=path, exts=exts)
+        if not path:
+            return None
+        if not allow_spaces:
+            return normalize_path(path)
+        return normsep(path)
+
     # The following snippet comes from `which` itself, with a slight
     # modification to use lowercase extensions, because it's confusing rustup
     # (on top of making results not really appealing to the eye).
@@ -183,8 +191,9 @@ def find_program(file, paths=None):
         exts = None
 
     if is_absolute_or_relative(file):
-        path = which(os.path.basename(file), path=os.path.dirname(file), exts=exts)
-        return normalize_path(path) if path else None
+        return which_normalize(
+            os.path.basename(file), path=os.path.dirname(file), exts=exts
+        )
 
     if paths:
         if not isinstance(paths, (list, tuple)):
@@ -194,8 +203,7 @@ def find_program(file, paths=None):
             )
         paths = pathsep.join(paths)
 
-    path = which(file, path=paths, exts=exts)
-    return normalize_path(path) if path else None
+    return which_normalize(file, path=paths, exts=exts)
 
 
 @imports("os")
@@ -396,16 +404,11 @@ def deprecated_option(*args, **kwargs):
 # The given object can be a literal value, a function that takes no argument,
 # or, for convenience, a @depends function.
 @template
-@imports(_from="inspect", _import="isfunction")
 @imports(_from="mozbuild.configure", _import="SandboxDependsFunction")
 def dependable(obj):
     if isinstance(obj, SandboxDependsFunction):
         return obj
-    if isfunction(obj):
-        return depends(when=True)(obj)
-    # Depend on --help to make lint happy if the dependable is used as an input
-    # to an option().
-    return depends("--help", when=True)(lambda _: obj)
+    return depends(when=True)(obj)
 
 
 always = dependable(True)

@@ -84,8 +84,9 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   }
   void Reflow(nsPresContext*, ReflowOutput&, const ReflowInput&,
               nsReflowStatus&) override;
+  bool IsLeafDynamic() const override;
 
-  nsresult GetContentForEvent(mozilla::WidgetEvent*,
+  nsresult GetContentForEvent(const mozilla::WidgetEvent*,
                               nsIContent** aContent) final;
   nsresult HandleEvent(nsPresContext*, mozilla::WidgetGUIEvent*,
                        nsEventStatus*) override;
@@ -98,8 +99,11 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
       const Maybe<OnNonvisible>& aNonvisibleAction = Nothing()) final;
 
   void ResponsiveContentDensityChanged();
+  void ElementStateChanged(mozilla::dom::ElementState) override;
   void SetupForContentURLRequest();
   bool ShouldShowBrokenImageIcon() const;
+
+  bool IsForElement() const { return mKind == Kind::ImageElement; }
 
   const mozilla::StyleImage* GetImageFromStyle() const;
 
@@ -127,9 +131,6 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
     }
   }
 
-  nsresult RestartAnimation();
-  nsresult StopAnimation();
-
   already_AddRefed<imgIRequest> GetCurrentRequest() const;
   void Notify(imgIRequest*, int32_t aType, const nsIntRect* aData);
 
@@ -137,16 +138,21 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
    * Returns whether we should replace an element with an image corresponding to
    * its 'content' CSS property.
    */
-  static bool ShouldCreateImageFrameForContent(const mozilla::dom::Element&,
-                                               const ComputedStyle&);
+  static bool ShouldCreateImageFrameForContentProperty(
+      const mozilla::dom::Element&, const ComputedStyle&);
 
   /**
    * Function to test whether given an element and its style, that element
-   * should get an image frame.  Note that this method is only used by the
-   * frame constructor; it's only here because it uses gIconLoad for now.
+   * should get an image frame, and if so, which kind of image frame (for
+   * `content`, or for the element itself).
    */
-  static bool ShouldCreateImageFrameFor(const mozilla::dom::Element&,
-                                        const ComputedStyle&);
+  enum class ImageFrameType {
+    ForContentProperty,
+    ForElementRequest,
+    None,
+  };
+  static ImageFrameType ImageFrameTypeFor(const mozilla::dom::Element&,
+                                          const ComputedStyle&);
 
   ImgDrawResult DisplayAltFeedback(gfxContext& aRenderingContext,
                                    const nsRect& aDirtyRect, nsPoint aPt,
@@ -211,6 +217,11 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
       : nsImageFrame(aStyle, aPresContext, kClassID, aKind) {}
 
   nsImageFrame(ComputedStyle*, nsPresContext* aPresContext, ClassID, Kind);
+
+  void ReflowChildren(nsPresContext*, const ReflowInput&,
+                      const mozilla::LogicalSize& aImageSize);
+
+  void UpdateIntrinsicSizeAndRatio();
 
  protected:
   nsImageFrame(ComputedStyle* aStyle, nsPresContext* aPresContext, ClassID aID)
@@ -292,6 +303,13 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   /// Always sync decode our image when painting if @aForce is true.
   void SetForceSyncDecoding(bool aForce) { mForceSyncDecoding = aForce; }
 
+  void AssertSyncDecodingHintIsInSync() const
+#ifndef DEBUG
+      {}
+#else
+      ;
+#endif
+
   /**
    * Computes the predicted dest rect that we'll draw into, in app units, based
    * upon the provided frame content box. (The content box is what
@@ -341,8 +359,8 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   bool IsPendingLoad(imgIRequest*) const;
 
   /**
-   * Updates mImage based on the current image request (cannot be null), and the
-   * image passed in (can be null), and invalidate layout and paint as needed.
+   * Updates mImage based on the current image request, and the image passed in
+   * (both can be null), and invalidate layout and paint as needed.
    */
   void UpdateImage(imgIRequest*, imgIContainer*);
 
@@ -363,6 +381,10 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
    */
   void InvalidateSelf(const nsIntRect* aLayerInvalidRect,
                       const nsRect* aFrameInvalidRect);
+
+  void MaybeSendIntrinsicSizeAndRatioToEmbedder();
+  void MaybeSendIntrinsicSizeAndRatioToEmbedder(Maybe<mozilla::IntrinsicSize>,
+                                                Maybe<mozilla::AspectRatio>);
 
   RefPtr<nsImageMap> mImageMap;
 
@@ -390,6 +412,8 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   bool mFirstFrameComplete;
   bool mReflowCallbackPosted;
   bool mForceSyncDecoding;
+
+  bool mIsInObjectOrEmbed = false;
 
   /* loading / broken image icon support */
 
@@ -468,10 +492,6 @@ class nsDisplayImage final : public nsPaintedDisplayItem {
   }
   ~nsDisplayImage() final { MOZ_COUNT_DTOR(nsDisplayImage); }
 
-  nsDisplayItemGeometry* AllocateGeometry(nsDisplayListBuilder*) final;
-  void ComputeInvalidationRegion(nsDisplayListBuilder*,
-                                 const nsDisplayItemGeometry*,
-                                 nsRegion* aInvalidRegion) const final;
   void Paint(nsDisplayListBuilder*, gfxContext* aCtx) final;
 
   /**

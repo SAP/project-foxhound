@@ -8,11 +8,8 @@ do_get_profile();
 // Ensure PSM is initialized
 Cc["@mozilla.org/psm;1"].getService(Ci.nsISupports);
 
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
-);
-const certService = Cc["@mozilla.org/security/local-cert-service;1"].getService(
-  Ci.nsILocalCertService
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
 const certOverrideService = Cc[
   "@mozilla.org/security/certoverride;1"
@@ -20,20 +17,6 @@ const certOverrideService = Cc[
 const socketTransportService = Cc[
   "@mozilla.org/network/socket-transport-service;1"
 ].getService(Ci.nsISocketTransportService);
-
-function getCert() {
-  return new Promise((resolve, reject) => {
-    certService.getOrCreateCert("tls-test", {
-      handleCert(c, rv) {
-        if (rv) {
-          reject(rv);
-          return;
-        }
-        resolve(c);
-      },
-    });
-  });
-}
 
 function startServer(cert) {
   let tlsServer = Cc["@mozilla.org/network/tls-server-socket;1"].createInstance(
@@ -47,7 +30,7 @@ function startServer(cert) {
   let listener = {
     onSocketAccepted(socket, transport) {
       info("Accept TLS client connection");
-      let connectionInfo = transport.securityInfo.QueryInterface(
+      let connectionInfo = transport.securityCallbacks.getInterface(
         Ci.nsITLSServerConnectionInfo
       );
       connectionInfo.setSecurityObserver(listener);
@@ -79,15 +62,11 @@ function startServer(cert) {
 }
 
 function storeCertOverride(port, cert) {
-  let overrideBits =
-    Ci.nsICertOverrideService.ERROR_UNTRUSTED |
-    Ci.nsICertOverrideService.ERROR_MISMATCH;
   certOverrideService.rememberValidityOverride(
     "127.0.0.1",
     port,
     {},
     cert,
-    overrideBits,
     true
   );
 }
@@ -145,7 +124,7 @@ function startClient(port) {
 }
 
 add_task(async function() {
-  let cert = await getCert();
+  let cert = getTestServerCertificate();
   ok(!!cert, "Got self-signed cert");
   let port = startServer(cert);
   storeCertOverride(port, cert);

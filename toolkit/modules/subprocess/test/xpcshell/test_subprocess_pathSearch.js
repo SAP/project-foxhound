@@ -1,16 +1,12 @@
 "use strict";
 
-let envService = Cc["@mozilla.org/process/environment;1"].getService(
-  Ci.nsIEnvironment
-);
+const PYTHON = Services.env.get("PYTHON");
 
-const PYTHON = envService.get("PYTHON");
+const PYTHON_BIN = PathUtils.filename(PYTHON);
+const PYTHON_DIR = PathUtils.parent(PYTHON);
 
-const PYTHON_BIN = OS.Path.basename(PYTHON);
-const PYTHON_DIR = OS.Path.dirname(PYTHON);
-
-const DOES_NOT_EXIST = OS.Path.join(
-  OS.Constants.Path.tmpDir,
+const DOES_NOT_EXIST = PathUtils.join(
+  PathUtils.osTempDir,
   "ThisPathDoesNotExist"
 );
 

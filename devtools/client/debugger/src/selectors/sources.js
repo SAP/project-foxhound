@@ -3,61 +3,34 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import { createSelector } from "reselect";
+import { shallowEqual } from "../utils/shallow-equal";
 
 import {
   getPrettySourceURL,
-  isDescendantOfRoot,
   isGenerated,
-  getPlainUrl,
   isPretty,
   isJavaScript,
 } from "../utils/source";
-import {
-  hasResource,
-  getResource,
-  getMappedResource,
-  memoizeResourceShallow,
-  makeShallowQuery,
-  makeReduceAllQuery,
-  makeMapWithArgs,
-} from "../utils/resource";
-import { stripQuery } from "../utils/url";
 
 import { findPosition } from "../utils/breakpoint/breakpointPositions";
-import { asSettled, isFulfilled } from "../utils/async-value";
+import { isFulfilled } from "../utils/async-value";
 
-import { originalToGeneratedId } from "devtools-source-map";
+import { originalToGeneratedId } from "devtools/client/shared/source-map-loader/index";
 import { prefs } from "../utils/prefs";
 
 import {
   hasSourceActor,
   getSourceActor,
-  getSourceActors,
-  getAllThreadsBySource,
   getBreakableLinesForSourceActors,
-} from "../selectors/source-actors";
-import { getAllThreads } from "../selectors/threads";
+} from "./source-actors";
+import { getSourceTextContent } from "./sources-content";
 
-// This is used by tabs selectors
-export const resourceAsSourceBase = memoizeResourceShallow(
-  ({ content, ...source }) => source
-);
-
-const resourceAsSourceWithContent = memoizeResourceShallow(
-  ({ content, ...source }) => ({
-    ...source,
-    content: asSettled(content),
-  })
-);
-
-export function getSourceInSources(sources, id) {
-  return hasResource(sources, id)
-    ? getMappedResource(sources, id, resourceAsSourceBase)
-    : null;
+export function hasSource(state, id) {
+  return state.sources.sources.has(id);
 }
 
 export function getSource(state, id) {
-  return getSourceInSources(getSources(state), id);
+  return state.sources.sources.get(id);
 }
 
 export function getSourceFromId(state, id) {
@@ -68,6 +41,10 @@ export function getSourceFromId(state, id) {
   return source;
 }
 
+export function getLocationSource(state, location) {
+  return getSource(state, location.sourceId);
+}
+
 export function getSourceByActorId(state, actorId) {
   if (!hasSourceActor(state, actorId)) {
     return null;
@@ -76,17 +53,12 @@ export function getSourceByActorId(state, actorId) {
   return getSource(state, getSourceActor(state, actorId).source);
 }
 
-function getSourcesByURLInSources(sources, urls, url) {
+function getSourcesByURL(state, url) {
+  const urls = getUrls(state);
   if (!url || !urls[url]) {
     return [];
   }
-  return urls[url].map(id =>
-    getMappedResource(sources, id, resourceAsSourceBase)
-  );
-}
-
-function getSourcesByURL(state, url) {
-  return getSourcesByURLInSources(getSources(state), getUrls(state), url);
+  return urls[url].map(id => getSource(state, id));
 }
 
 export function getSourceByURL(state, url) {
@@ -94,22 +66,13 @@ export function getSourceByURL(state, url) {
   return foundSources ? foundSources[0] : null;
 }
 
-function getSpecificSourceByURLInSources(sources, urls, url, isOriginal) {
-  const foundSources = getSourcesByURLInSources(sources, urls, url);
+// This is used by tabs selectors
+export function getSpecificSourceByURL(state, url, isOriginal) {
+  const foundSources = getSourcesByURL(state, url);
   if (foundSources) {
     return foundSources.find(source => source.isOriginal == isOriginal);
   }
   return null;
-}
-
-// This is used by tabs selectors
-export function getSpecificSourceByURL(state, url, isOriginal) {
-  return getSpecificSourceByURLInSources(
-    getSources(state),
-    getUrls(state),
-    url,
-    isOriginal
-  );
 }
 
 function getOriginalSourceByURL(state, url) {
@@ -138,122 +101,54 @@ export function getPendingSelectedLocation(state) {
 
 export function getPrettySource(state, id) {
   if (!id) {
-    return;
+    return null;
   }
 
   const source = getSource(state, id);
   if (!source) {
-    return;
+    return null;
   }
 
   return getOriginalSourceByURL(state, getPrettySourceURL(source.url));
 }
 
-export function hasPrettySource(state, id) {
-  return !!getPrettySource(state, id);
-}
-
-// This is only used by jest tests
-export function getSourcesUrlsInSources(state, url) {
-  if (!url) {
-    return [];
-  }
-
-  const plainUrl = getPlainUrl(url);
-  return getPlainUrls(state)[plainUrl] || [];
-}
-
-export function getHasSiblingOfSameName(state, source) {
-  if (!source) {
-    return false;
-  }
-
-  return getSourcesUrlsInSources(state, source.url).length > 1;
-}
-
-const querySourceList = makeReduceAllQuery(resourceAsSourceBase, sources =>
-  sources.slice()
-);
-
-// This is only used externaly by tabs selectors
-export function getSources(state) {
+// This is only used externaly by tabs and breakpointSources selectors
+export function getSourcesMap(state) {
   return state.sources.sources;
-}
-
-export function getSourcesEpoch(state) {
-  return state.sources.epoch;
 }
 
 function getUrls(state) {
   return state.sources.urls;
 }
 
-function getPlainUrls(state) {
-  return state.sources.plainUrls;
-}
-
-export function getSourceList(state) {
-  return querySourceList(getSources(state));
-}
-
-export function getDisplayedSourcesList(state) {
-  return Object.values(getDisplayedSources(state)).flatMap(Object.values);
-}
-
-export function getExtensionNameBySourceUrl(state, url) {
-  const match = getSourceList(state).find(
-    source => source.url && source.url.startsWith(url)
-  );
-  if (match && match.extensionName) {
-    return match.extensionName;
-  }
-}
+export const getSourceList = createSelector(
+  getSourcesMap,
+  sourcesMap => {
+    return [...sourcesMap.values()];
+  },
+  { equalityCheck: shallowEqual, resultEqualityCheck: shallowEqual }
+);
 
 // This is only used by tests
 export function getSourceCount(state) {
-  return getSourceList(state).length;
+  return getSourcesMap(state).size;
 }
 
-export const getSelectedLocation = createSelector(
-  state => state.sources,
-  sources => sources.selectedLocation
-);
+export function getSelectedLocation(state) {
+  return state.sources.selectedLocation;
+}
 
 export const getSelectedSource = createSelector(
   getSelectedLocation,
-  getSources,
-  (selectedLocation, sources) => {
+  getSourcesMap,
+  (selectedLocation, sourcesMap) => {
     if (!selectedLocation) {
-      return;
+      return undefined;
     }
 
-    return getSourceInSources(sources, selectedLocation.sourceId);
+    return sourcesMap.get(selectedLocation.sourceId);
   }
 );
-
-export const getSelectedSourceWithContent = createSelector(
-  getSelectedLocation,
-  getSources,
-  (selectedLocation, sources) => {
-    const source =
-      selectedLocation &&
-      getSourceInSources(sources, selectedLocation.sourceId);
-    return source
-      ? getMappedResource(sources, source.id, resourceAsSourceWithContent)
-      : null;
-  }
-);
-export function getSourceWithContent(state, id) {
-  return getMappedResource(
-    state.sources.sources,
-    id,
-    resourceAsSourceWithContent
-  );
-}
-export function getSourceContent(state, id) {
-  const { content } = getResource(state.sources.sources, id);
-  return asSettled(content);
-}
 
 // This is used by tests and pause reducers
 export function getSelectedSourceId(state) {
@@ -261,127 +156,55 @@ export function getSelectedSourceId(state) {
   return source?.id;
 }
 
-export function getProjectDirectoryRoot(state) {
-  return state.sources.projectDirectoryRoot;
-}
-
-export function getProjectDirectoryRootName(state) {
-  return state.sources.projectDirectoryRootName;
-}
-
-const queryAllDisplayedSources = makeShallowQuery({
-  filter: (_, { sourcesWithUrls }) => sourcesWithUrls,
-  map: makeMapWithArgs(
-    (
-      resource,
-      ident,
-      {
-        projectDirectoryRoot,
-        chromeAndExtensionsEnabled,
-        debuggeeIsWebExtension,
-        threads,
-      }
-    ) => ({
-      id: resource.id,
-      displayed:
-        isDescendantOfRoot(resource, projectDirectoryRoot, threads) &&
-        (!resource.isExtension ||
-          chromeAndExtensionsEnabled ||
-          debuggeeIsWebExtension),
-    })
-  ),
-  reduce: items =>
-    items.reduce((acc, { id, displayed }) => {
-      if (displayed) {
-        acc.push(id);
-      }
-      return acc;
-    }, []),
-});
-
-function getAllDisplayedSources(state) {
-  return queryAllDisplayedSources(state.sources.sources, {
-    sourcesWithUrls: state.sources.sourcesWithUrls,
-    projectDirectoryRoot: state.sources.projectDirectoryRoot,
-    chromeAndExtensionsEnabled: state.sources.chromeAndExtensionsEnabled,
-    debuggeeIsWebExtension: state.threads.isWebExtension,
-    threads: getAllThreads(state),
-  });
-}
-
-const getDisplayedSourceIDs = createSelector(
-  getAllThreadsBySource,
-  getAllDisplayedSources,
-  (threadsBySource, displayedSources) => {
-    const sourceIDsByThread = {};
-
-    for (const sourceId of displayedSources) {
-      const threads =
-        threadsBySource[sourceId] ||
-        threadsBySource[originalToGeneratedId(sourceId)] ||
-        [];
-
-      for (const thread of threads) {
-        if (!sourceIDsByThread[thread]) {
-          sourceIDsByThread[thread] = new Set();
-        }
-        sourceIDsByThread[thread].add(sourceId);
-      }
-    }
-    return sourceIDsByThread;
+/**
+ * Gets the first source actor for the source and/or thread
+ * provided.
+ *
+ * @param {Object} state
+ * @param {String} sourceId
+ *         The source used
+ * @param {String} [threadId]
+ *         The thread to check, this is optional.
+ * @param {Object} sourceActor
+ *
+ */
+export function getFirstSourceActorForGeneratedSource(
+  state,
+  sourceId,
+  threadId
+) {
+  let source = getSource(state, sourceId);
+  if (source.isOriginal) {
+    source = getSource(state, originalToGeneratedId(source.id));
   }
-);
-
-export const getDisplayedSources = createSelector(
-  state => state.sources.sources,
-  getDisplayedSourceIDs,
-  (sources, idsByThread) => {
-    const result = {};
-
-    for (const thread of Object.keys(idsByThread)) {
-      const entriesByNoQueryURL = Object.create(null);
-
-      for (const id of idsByThread[thread]) {
-        if (!result[thread]) {
-          result[thread] = {};
-        }
-        const source = getResource(sources, id);
-
-        const entry = {
-          ...source,
-          displayURL: source.url,
-        };
-        result[thread][id] = entry;
-
-        const noQueryURL = stripQuery(entry.displayURL);
-        if (!entriesByNoQueryURL[noQueryURL]) {
-          entriesByNoQueryURL[noQueryURL] = [];
-        }
-        entriesByNoQueryURL[noQueryURL].push(entry);
-      }
-
-      // If the URL does not compete with another without the query string,
-      // we exclude the query string when rendering the source URL to keep the
-      // UI more easily readable.
-      for (const noQueryURL in entriesByNoQueryURL) {
-        const entries = entriesByNoQueryURL[noQueryURL];
-        if (entries.length === 1) {
-          entries[0].displayURL = noQueryURL;
-        }
-      }
-    }
-
-    return result;
+  let actorsInfo = state.sources.actors[source.id];
+  if (!actorsInfo || !actorsInfo.length) {
+    return null;
   }
-);
+  if (threadId) {
+    actorsInfo = actorsInfo.filter(actorInfo => actorInfo.thread == threadId);
+  }
+  return actorsInfo.length ? getSourceActor(state, actorsInfo[0].id) : null;
+}
 
+/**
+ * Get the source actor of the source
+ *
+ * @param {Object} state
+ * @param {String} id
+ *        The source id
+ * @return {Array<Object>}
+ *         List of source actors
+ */
 export function getSourceActorsForSource(state, id) {
-  const actors = state.sources.actors[id];
-  if (!actors) {
+  const actorsInfo = state.sources.actors[id];
+  if (!actorsInfo) {
     return [];
   }
 
-  return getSourceActors(state, actors);
+  return actorsInfo
+    .map(actorInfo => getSourceActor(state, actorInfo.id))
+    .filter(actor => !!actor);
 }
 
 export function isSourceWithMap(state, id) {
@@ -390,25 +213,58 @@ export function isSourceWithMap(state, id) {
   );
 }
 
-export function canPrettyPrintSource(state, id) {
-  const source = getSourceWithContent(state, id);
+export function canPrettyPrintSource(state, location) {
+  const { sourceId } = location;
+  const source = getSource(state, sourceId);
   if (
     !source ||
     isPretty(source) ||
     source.isOriginal ||
-    (prefs.clientSourceMapsEnabled && isSourceWithMap(state, id))
+    (prefs.clientSourceMapsEnabled && isSourceWithMap(state, sourceId))
   ) {
     return false;
   }
 
-  const sourceContent =
-    source.content && isFulfilled(source.content) ? source.content.value : null;
+  const content = getSourceTextContent(state, location);
+  const sourceContent = content && isFulfilled(content) ? content.value : null;
 
   if (!sourceContent || !isJavaScript(source, sourceContent)) {
     return false;
   }
 
   return true;
+}
+
+export function getPrettyPrintMessage(state, location) {
+  const source = getSource(state, location.sourceId);
+  if (!source) {
+    return L10N.getStr("sourceTabs.prettyPrint");
+  }
+
+  if (isPretty(source)) {
+    return L10N.getStr("sourceFooter.prettyPrint.isPrettyPrintedMessage");
+  }
+
+  if (source.isOriginal) {
+    return L10N.getStr("sourceFooter.prettyPrint.isOriginalMessage");
+  }
+
+  if (prefs.clientSourceMapsEnabled && isSourceWithMap(state, source.id)) {
+    return L10N.getStr("sourceFooter.prettyPrint.hasSourceMapMessage");
+  }
+
+  const content = getSourceTextContent(state, location);
+
+  const sourceContent = content && isFulfilled(content) ? content.value : null;
+  if (!sourceContent) {
+    return L10N.getStr("sourceFooter.prettyPrint.noContentMessage");
+  }
+
+  if (!isJavaScript(source, sourceContent)) {
+    return L10N.getStr("sourceFooter.prettyPrint.isNotJavascriptMessage");
+  }
+
+  return L10N.getStr("sourceTabs.prettyPrint");
 }
 
 // Used by visibleColumnBreakpoints selectors
@@ -450,11 +306,17 @@ export function getBreakableLines(state, sourceId) {
     return state.sources.breakableLines[sourceId];
   }
 
+  const sourceActorsInfo = state.sources.actors[sourceId];
+  if (!sourceActorsInfo?.length) {
+    return null;
+  }
+
   // We pull generated file breakable lines directly from the source actors
   // so that breakable lines can be added as new source actors on HTML loads.
   return getBreakableLinesForSourceActors(
-    state.sourceActors,
-    state.sources.actors[sourceId]
+    state,
+    sourceActorsInfo.map(actorInfo => actorInfo.id),
+    source.isHTML
   );
 }
 
@@ -465,12 +327,3 @@ export const getSelectedBreakableLines = createSelector(
   },
   breakableLines => new Set(breakableLines || [])
 );
-
-export function isSourceLoadingOrLoaded(state, sourceId) {
-  const { content } = getResource(state.sources.sources, sourceId);
-  return content !== null;
-}
-
-export function getBlackBoxRanges(state) {
-  return state.sources.blackboxedRanges;
-}

@@ -1,7 +1,10 @@
 "use strict";
 
+ChromeUtils.defineESModuleGetters(this, {
+  MockRegistry: "resource://testing-common/MockRegistry.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(this, {
-  MockRegistry: "resource://testing-common/MockRegistry.jsm",
   OS: "resource://gre/modules/osfile.jsm",
 });
 
@@ -69,7 +72,7 @@ add_task(async function setup() {
 add_task(async function test_storage_managed() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id: MANIFEST.name } },
+      browser_specific_settings: { gecko: { id: MANIFEST.name } },
       permissions: ["storage"],
     },
 
@@ -117,7 +120,7 @@ add_task(async function test_storage_managed() {
 add_task(async function test_storage_managed_from_content_script() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id: MANIFEST.name } },
+      browser_specific_settings: { gecko: { id: MANIFEST.name } },
       permissions: ["storage"],
       content_scripts: [
         {
@@ -167,4 +170,47 @@ add_task(async function test_manifest_not_found() {
   await extension.startup();
   await extension.awaitFinish();
   await extension.unload();
+});
+
+add_task(async function test_manifest_not_found() {
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      permissions: ["storage"],
+    },
+
+    async background() {
+      const dummyListener = () => {};
+      browser.storage.managed.onChanged.addListener(dummyListener);
+      browser.test.assertTrue(
+        browser.storage.managed.onChanged.hasListener(dummyListener),
+        "addListener works according to hasListener"
+      );
+      browser.storage.managed.onChanged.removeListener(dummyListener);
+
+      // We should get a warning for each registration.
+      browser.storage.managed.onChanged.addListener(() => {});
+      browser.storage.managed.onChanged.addListener(() => {});
+      browser.storage.managed.onChanged.addListener(() => {});
+
+      // Invoke the storage.managed API to make sure that we have made a
+      // round trip to the parent process and back. This is because event
+      // registration is async but we cannot await (bug 1300234).
+      await browser.test.assertRejects(
+        browser.storage.managed.get({ a: 1 }),
+        /Managed storage manifest not found/,
+        "browser.storage.managed.get() rejects when without manifest"
+      );
+
+      browser.test.notifyPass();
+    },
+  });
+
+  let { messages } = await promiseConsoleOutput(async () => {
+    await extension.startup();
+    await extension.awaitFinish();
+    await extension.unload();
+  });
+  const UNSUP_EVENT_WARNING = `attempting to use listener "storage.managed.onChanged", which is unimplemented`;
+  messages = messages.filter(msg => msg.message.includes(UNSUP_EVENT_WARNING));
+  Assert.equal(messages.length, 4, "Expected msg for each addListener call");
 });

@@ -16,7 +16,22 @@ namespace ipc {
 // to be updated as well.
 enum SandboxingKind : uint64_t {
 
-  GENERIC_UTILITY = 0x01,
+  GENERIC_UTILITY,
+
+#ifdef MOZ_APPLEMEDIA
+  UTILITY_AUDIO_DECODING_APPLE_MEDIA,
+#endif
+#ifdef XP_WIN
+  UTILITY_AUDIO_DECODING_WMF,
+#endif
+#ifdef MOZ_WMF_MEDIA_ENGINE
+  MF_MEDIA_ENGINE_CDM,
+#endif
+#ifdef XP_WIN
+  WINDOWS_UTILS,
+#endif
+
+  COUNT,
 
 };
 

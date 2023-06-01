@@ -14,8 +14,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/ScriptElement.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class HTMLScriptElement final : public nsGenericHTMLElement,
                                 public ScriptElement {
@@ -35,7 +34,7 @@ class HTMLScriptElement final : public nsGenericHTMLElement,
 
   // nsIScriptElement
   virtual bool GetScriptType(nsAString& type) override;
-  virtual void GetScriptText(nsAString& text) override;
+  virtual void GetScriptText(nsAString& text) const override;
   virtual void GetScriptCharset(nsAString& charset) override;
   virtual void FreezeExecutionAttrs(Document* aOwnerDoc) override;
   virtual CORSMode GetCORSMode() const override;
@@ -61,7 +60,7 @@ class HTMLScriptElement final : public nsGenericHTMLElement,
                                 bool aNotify) override;
 
   // WebIDL
-  void GetText(nsAString& aValue, ErrorResult& aRv);
+  void GetText(nsAString& aValue, ErrorResult& aRv) const;
 
   void SetText(const nsAString& aValue, ErrorResult& aRv);
 
@@ -151,7 +150,6 @@ class HTMLScriptElement final : public nsGenericHTMLElement,
   virtual bool HasScriptContent() override;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_HTMLScriptElement_h

@@ -5,29 +5,20 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import argparse
 import json
 import os
-import sys
 import textwrap
-
-from mach.base import FailedCommandError, MachError
-from mach.decorators import (
-    CommandArgument,
-    Command,
-    SubCommand,
-)
-from mach.registrar import Registrar
-
-from mozbuild.mozconfig import MozconfigLoader
 
 # Command files like this are listed in build/mach_initialize.py in alphabetical
 # order, but we need to access commands earlier in the sorted order to grab
 # their arguments. Force them to load now.
 import mozbuild.artifact_commands  # NOQA: F401
 import mozbuild.build_commands  # NOQA: F401
+from mach.base import FailedCommandError, MachError
+from mach.decorators import Command, CommandArgument, SubCommand
+from mach.registrar import Registrar
+from mozbuild.mozconfig import MozconfigLoader
 
 
 # Use a decorator to copy command arguments off of the named command. Instead
@@ -244,7 +235,6 @@ def gather_hazard_data(command_context, **kwargs):
             source = "{srcdir}"
             sixgill = "{sixgill_dir}/usr/libexec/sixgill"
             sixgill_bin = "{sixgill_dir}/usr/bin"
-            gcc_bin = "{gcc_dir}/bin"
         """
         ).format(
             script_dir=script_dir(command_context),
@@ -264,11 +254,16 @@ def gather_hazard_data(command_context, **kwargs):
         ]
     )
     args = [
-        sys.executable,
-        os.path.join(script_dir(command_context), "analyze.py"),
-        "dbs",
-        "-v",
+        os.path.join(script_dir(command_context), "run_complete"),
+        "--foreground",
+        "--no-logs",
+        "--build-root=" + objdir,
+        "--wrap-dir=" + sixgill_dir() + "/usr/libexec/sixgill/scripts/wrap_gcc",
+        "--work-dir=work",
+        "-b",
+        sixgill_dir() + "/usr/bin",
         "--buildcommand=" + buildscript,
+        ".",
     ]
 
     return command_context.run_process(args=args, cwd=work_dir, pass_thru=True)
@@ -313,12 +308,15 @@ def inner_compile(command_context, **kwargs):
 
     # Validate the mozconfig.
 
-    # Require an explicit --enable-application=APP (even if you just
+    # Require an explicit --enable-project/application=APP (even if you just
     # want to build the default browser application.)
     loader = MozconfigLoader(command_context.topsrcdir)
     mozconfig = loader.read_mozconfig(mozconfig_path)
     configure_args = mozconfig["configure_args"]
-    if "--enable-application=%s" % app not in configure_args:
+    if (
+        "--enable-project=%s" % app not in configure_args
+        and "--enable-application=%s" % app not in configure_args
+    ):
         raise Exception("mozconfig %s builds wrong project" % mozconfig_path)
     if not any("--with-compiler-wrapper" in a for a in configure_args):
         raise Exception("mozconfig must wrap compiles")
@@ -359,11 +357,36 @@ def inner_compile(command_context, **kwargs):
     "--work-dir", default=None, help="Directory for output and working files."
 )
 @CommandArgument(
+    "--jobs", "-j", default=None, type=int, help="Number of parallel analyzers."
+)
+@CommandArgument(
+    "--verbose",
+    "-v",
+    default=False,
+    action="store_true",
+    help="Display executed commands.",
+)
+@CommandArgument(
+    "--from-stage",
+    default=None,
+    help="Stage to begin running at ('list' to see all).",
+)
+@CommandArgument(
     "extra",
     nargs=argparse.REMAINDER,
+    default=(),
     help="Remaining non-optional arguments to analyze.py script",
 )
-def analyze(command_context, application, shell_objdir, work_dir, extra):
+def analyze(
+    command_context,
+    application,
+    shell_objdir,
+    work_dir,
+    jobs,
+    verbose,
+    from_stage,
+    extra,
+):
     """Analyzed gathered data for rooting hazards"""
 
     shell = ensure_shell(command_context, shell_objdir)
@@ -371,15 +394,21 @@ def analyze(command_context, application, shell_objdir, work_dir, extra):
         os.path.join(script_dir(command_context), "analyze.py"),
         "--js",
         shell,
+        *extra,
     ]
-    if extra:
-        args += extra
+
+    if from_stage is None:
+        pass
+    elif from_stage == "list":
+        args.append("--list")
     else:
-        args += [
-            "--first",
-            "gcTypes",
-            "-v",
-        ]
+        args.extend(["--first", from_stage])
+
+    if jobs is not None:
+        args.extend(["-j", jobs])
+
+    if verbose:
+        args.append("-v")
 
     setup_env_for_tools(os.environ)
     setup_env_for_shell(os.environ, shell)

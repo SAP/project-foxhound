@@ -7,9 +7,9 @@
 const {
   createRef,
   PureComponent,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 
 class KeyframesProgressBar extends PureComponent {
   static get propTypes() {
@@ -38,7 +38,8 @@ class KeyframesProgressBar extends PureComponent {
     addAnimationsCurrentTimeListener(this.onCurrentTimeUpdated);
   }
 
-  componentWillReceiveProps(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
     const { animation, getAnimationsCurrentTime, timeScale } = nextProps;
 
     this.setupAnimation(nextProps);

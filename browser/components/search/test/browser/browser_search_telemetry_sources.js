@@ -7,17 +7,14 @@
 
 "use strict";
 
-const { BrowserSearchTelemetry } = ChromeUtils.import(
-  "resource:///modules/BrowserSearchTelemetry.jsm"
+const { SearchSERPTelemetry } = ChromeUtils.importESModule(
+  "resource:///modules/SearchSERPTelemetry.sys.mjs"
 );
-const { SearchSERPTelemetry } = ChromeUtils.import(
-  "resource:///modules/SearchSERPTelemetry.jsm"
+const { UrlbarTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/UrlbarTestUtils.sys.mjs"
 );
-const { UrlbarTestUtils } = ChromeUtils.import(
-  "resource://testing-common/UrlbarTestUtils.jsm"
-);
-const { SearchTestUtils } = ChromeUtils.import(
-  "resource://testing-common/SearchTestUtils.jsm"
+const { SearchTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/SearchTestUtils.sys.mjs"
 );
 
 const TEST_PROVIDER_INFO = [
@@ -68,7 +65,7 @@ async function waitForIdle() {
 SearchTestUtils.init(this);
 UrlbarTestUtils.init(this);
 
-add_task(async function setup() {
+add_setup(async function() {
   SearchSERPTelemetry.overrideSearchTelemetryForTests(TEST_PROVIDER_INFO);
   await waitForIdle();
   await SpecialPowers.pushPrefEnv({
@@ -80,6 +77,7 @@ add_task(async function setup() {
       ],
       // Ensure to add search suggestion telemetry as search_suggestion not search_formhistory.
       ["browser.urlbar.maxHistoricalSearchSuggestions", 0],
+      ["browser.search.serpEventTelemetry.enabled", true],
     ],
   });
   // Enable local telemetry recording for the duration of the tests.
@@ -87,18 +85,16 @@ add_task(async function setup() {
   Services.telemetry.canRecordExtended = true;
   Services.prefs.setBoolPref("browser.search.log", true);
 
-  let currentEngineName = (await Services.search.getDefault()).name;
-
-  await SearchTestUtils.installSearchExtension({
-    search_url: getPageUrl(true),
-    search_url_get_params: "s={searchTerms}&abc=ff",
-    suggest_url:
-      "https://example.com/browser/browser/components/search/test/browser/searchSuggestionEngine.sjs",
-    suggest_url_get_params: "query={searchTerms}",
-  });
-  let engine1 = Services.search.getEngineByName("Example");
-
-  await Services.search.setDefault(engine1);
+  await SearchTestUtils.installSearchExtension(
+    {
+      search_url: getPageUrl(true),
+      search_url_get_params: "s={searchTerms}&abc=ff",
+      suggest_url:
+        "https://example.com/browser/browser/components/search/test/browser/searchSuggestionEngine.sjs",
+      suggest_url_get_params: "query={searchTerms}",
+    },
+    { setAsDefault: true }
+  );
 
   await gCUITestUtils.addSearchBar();
 
@@ -108,9 +104,6 @@ add_task(async function setup() {
     SearchSERPTelemetry.overrideSearchTelemetryForTests();
     Services.telemetry.canRecordExtended = oldCanRecord;
     Services.telemetry.clearScalars();
-    await Services.search.setDefault(
-      Services.search.getEngineByName(currentEngineName)
-    );
   });
 });
 
@@ -124,9 +117,7 @@ async function track_ad_click(
   Services.telemetry.clearScalars();
 
   let expectedContentScalarKey = "example:tagged:ff";
-  let expectedScalarKeyOld = "example:sap";
   let expectedScalarKey = "example:tagged";
-  let expectedHistogramKey = "example.in-content:sap:ff";
   let expectedHistogramSAPSourceKey = `other-Example.${expectedHistogramSource}`;
   let expectedContentScalar = `browser.search.content.${expectedScalarSource}`;
   let expectedWithAdsScalar = `browser.search.withads.${expectedScalarSource}`;
@@ -136,15 +127,22 @@ async function track_ad_click(
 
   await assertSearchSourcesTelemetry(
     {
-      [expectedHistogramKey]: 1,
       [expectedHistogramSAPSourceKey]: 1,
     },
     {
       [expectedContentScalar]: { [expectedContentScalarKey]: 1 },
-      "browser.search.with_ads": { [expectedScalarKeyOld]: 1 },
       [expectedWithAdsScalar]: { [expectedScalarKey]: 1 },
     }
   );
+
+  assertImpressionEvents([
+    {
+      provider: "example",
+      tagged: "true",
+      partner_code: "ff",
+      source: expectedScalarSource,
+    },
+  ]);
 
   let pageLoadPromise = BrowserTestUtils.waitForLocationChange(gBrowser);
   await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
@@ -155,19 +153,27 @@ async function track_ad_click(
 
   await assertSearchSourcesTelemetry(
     {
-      [expectedHistogramKey]: 1,
       [expectedHistogramSAPSourceKey]: 1,
     },
     {
       [expectedContentScalar]: { [expectedContentScalarKey]: 1 },
-      "browser.search.with_ads": { [expectedScalarKeyOld]: 1 },
       [expectedWithAdsScalar]: { [expectedScalarKey]: 1 },
-      "browser.search.ad_clicks": { [expectedScalarKeyOld]: 1 },
       [expectedAdClicksScalar]: { [expectedScalarKey]: 1 },
     }
   );
 
+  assertImpressionEvents([
+    {
+      provider: "example",
+      tagged: "true",
+      partner_code: "ff",
+      source: expectedScalarSource,
+    },
+  ]);
+
   await cleanupFn();
+
+  Services.fog.testResetFOG();
 }
 
 add_task(async function test_source_urlbar() {
@@ -204,8 +210,9 @@ add_task(async function test_source_urlbar_handoff() {
     "urlbar-handoff",
     "urlbar_handoff",
     async () => {
+      Services.fog.testResetFOG();
       tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
-      BrowserTestUtils.loadURI(tab.linkedBrowser, "about:newtab");
+      BrowserTestUtils.loadURIString(tab.linkedBrowser, "about:newtab");
       await BrowserTestUtils.browserStopped(tab.linkedBrowser, "about:newtab");
 
       info("Focus on search input in newtab content");
@@ -237,6 +244,47 @@ add_task(async function test_source_urlbar_handoff() {
       return tab;
     },
     async () => {
+      const issueRecords = Glean.newtabSearch.issued.testGetValue();
+      Assert.ok(!!issueRecords, "Must have recorded a search issuance");
+      Assert.equal(issueRecords.length, 1, "One search, one event");
+      const newtabVisitId = issueRecords[0].extra.newtab_visit_id;
+      Assert.ok(!!newtabVisitId, "Must have a visit id");
+      Assert.deepEqual(
+        {
+          // Yes, this is tautological. But I want to use deepEqual.
+          newtab_visit_id: newtabVisitId,
+          search_access_point: "urlbar_handoff",
+          telemetry_id: "other-Example",
+        },
+        issueRecords[0].extra,
+        "Must have recorded the expected information."
+      );
+      const impRecords = Glean.newtabSearchAd.impression.testGetValue();
+      Assert.equal(impRecords.length, 1, "One impression, one event.");
+      Assert.deepEqual(
+        {
+          newtab_visit_id: newtabVisitId,
+          search_access_point: "urlbar_handoff",
+          telemetry_id: "example",
+          is_tagged: "true",
+          is_follow_on: "false",
+        },
+        impRecords[0].extra,
+        "Must have recorded the expected information."
+      );
+      const clickRecords = Glean.newtabSearchAd.click.testGetValue();
+      Assert.equal(clickRecords.length, 1, "One click, one event.");
+      Assert.deepEqual(
+        {
+          newtab_visit_id: newtabVisitId,
+          search_access_point: "urlbar_handoff",
+          telemetry_id: "example",
+          is_tagged: "true",
+          is_follow_on: "false",
+        },
+        clickRecords[0].extra,
+        "Must have recorded the expected information."
+      );
       BrowserTestUtils.removeTab(tab);
     }
   );
@@ -288,7 +336,7 @@ async function checkAboutPage(
     async () => {
       tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
 
-      BrowserTestUtils.loadURI(tab.linkedBrowser, page);
+      BrowserTestUtils.loadURIString(tab.linkedBrowser, page);
       await BrowserTestUtils.browserStopped(tab.linkedBrowser, page);
 
       // Wait for the full load.
@@ -359,11 +407,46 @@ add_task(async function test_source_system() {
   );
 });
 
-add_task(async function test_source_webextension() {
+add_task(async function test_source_webextension_search() {
   /* global browser */
   async function background(SEARCH_TERM) {
     // Search with no tabId
     browser.search.search({ query: "searchSuggestion", engine: "Example" });
+  }
+
+  let searchExtension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      permissions: ["search", "tabs"],
+    },
+    background,
+    useAddonManager: "temporary",
+  });
+
+  let tab;
+  await track_ad_click(
+    "webextension",
+    "webextension",
+    async () => {
+      let tabPromise = BrowserTestUtils.waitForNewTab(gBrowser, null, true);
+
+      await searchExtension.startup();
+
+      return (tab = await tabPromise);
+    },
+    async () => {
+      await searchExtension.unload();
+      BrowserTestUtils.removeTab(tab);
+    }
+  );
+});
+
+add_task(async function test_source_webextension_query() {
+  async function background(SEARCH_TERM) {
+    // Search with no tabId
+    browser.search.query({
+      text: "searchSuggestion",
+      disposition: "NEW_TAB",
+    });
   }
 
   let searchExtension = ExtensionTestUtils.loadExtension({

@@ -4,12 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/BasePrincipal.h"
-#include "mozilla/ErrorResult.h"
-#include "TCPSocket.h"
 #include "TCPServerSocket.h"
+#include "TCPSocket.h"
 #include "TCPSocketChild.h"
 #include "TCPSocketParent.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/SyncRunnable.h"
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/TCPSocketBinding.h"
@@ -21,24 +22,24 @@
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsIArrayBufferInputStream.h"
-#include "nsISocketTransportService.h"
-#include "nsISocketTransport.h"
-#include "nsIMultiplexInputStream.h"
-#include "nsIAsyncStreamCopier.h"
-#include "nsIInputStream.h"
-#include "nsIInputStreamPump.h"
-#include "nsIBinaryInputStream.h"
-#include "nsIScriptableInputStream.h"
 #include "nsIAsyncInputStream.h"
-#include "nsISupportsPrimitives.h"
-#include "nsITransport.h"
-#include "nsIObserverService.h"
-#include "nsIOutputStream.h"
-#include "nsINSSErrorsService.h"
-#include "nsISSLSocketControl.h"
-#include "nsIProtocolProxyService.h"
+#include "nsIAsyncStreamCopier.h"
+#include "nsIBinaryInputStream.h"
 #include "nsICancelable.h"
 #include "nsIChannel.h"
+#include "nsIInputStream.h"
+#include "nsIInputStreamPump.h"
+#include "nsIMultiplexInputStream.h"
+#include "nsINSSErrorsService.h"
+#include "nsIObserverService.h"
+#include "nsIOutputStream.h"
+#include "nsIProtocolProxyService.h"
+#include "nsIScriptableInputStream.h"
+#include "nsISocketTransport.h"
+#include "nsISocketTransportService.h"
+#include "nsISupportsPrimitives.h"
+#include "nsITLSSocketControl.h"
+#include "nsITransport.h"
 #include "nsIURIMutator.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
@@ -455,11 +456,37 @@ void TCPSocket::NotifyCopyComplete(nsresult aStatus) {
 }
 
 void TCPSocket::ActivateTLS() {
-  nsCOMPtr<nsISupports> securityInfo;
-  mTransport->GetSecurityInfo(getter_AddRefs(securityInfo));
-  nsCOMPtr<nsISSLSocketControl> socketControl = do_QueryInterface(securityInfo);
-  if (socketControl) {
-    socketControl->StartTLS();
+  nsresult rv;
+  nsCOMPtr<nsIEventTarget> socketThread =
+      do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID, &rv);
+  if (NS_FAILED(rv)) {
+    return;
+  }
+
+  bool alreadyOnSTST = false;
+  if (NS_FAILED(socketThread->IsOnCurrentThread(&alreadyOnSTST))) {
+    return;
+  }
+
+  if (alreadyOnSTST) {
+    ActivateTLSHelper();
+    return;
+  }
+
+  auto CallActivateTLS = [sock = RefPtr{this}]() mutable {
+    sock->ActivateTLSHelper();
+  };
+  mozilla::SyncRunnable::DispatchToThread(
+      socketThread,
+      NS_NewRunnableFunction("TCPSocket::UpgradeToSecure->ActivateTLSHelper",
+                             CallActivateTLS));
+}
+
+void TCPSocket::ActivateTLSHelper() {
+  nsCOMPtr<nsITLSSocketControl> tlsSocketControl;
+  mTransport->GetTlsSocketControl(getter_AddRefs(tlsSocketControl));
+  if (tlsSocketControl) {
+    tlsSocketControl->StartTLS();
   }
 }
 
@@ -558,9 +585,9 @@ JSObject* TCPSocket::WrapObject(JSContext* aCx,
 
 void TCPSocket::GetHost(nsAString& aHost) { aHost.Assign(mHost); }
 
-uint32_t TCPSocket::Port() { return mPort; }
+uint32_t TCPSocket::Port() const { return mPort; }
 
-bool TCPSocket::Ssl() { return mSsl; }
+bool TCPSocket::Ssl() const { return mSsl; }
 
 void TCPSocket::Suspend() {
   if (mSocketBridgeChild) {
@@ -846,7 +873,7 @@ bool TCPSocket::Send(nsIInputStream* aStream, uint32_t aByteLength) {
 
 TCPReadyState TCPSocket::ReadyState() { return mReadyState; }
 
-TCPSocketBinaryType TCPSocket::BinaryType() {
+TCPSocketBinaryType TCPSocket::BinaryType() const {
   if (mUseArrayBuffers) {
     return TCPSocketBinaryType::Arraybuffer;
   }
@@ -971,7 +998,7 @@ NS_IMETHODIMP
 TCPSocket::OnTransportStatus(nsITransport* aTransport, nsresult aStatus,
                              int64_t aProgress, int64_t aProgressMax) {
   if (static_cast<uint32_t>(aStatus) !=
-      nsISocketTransport::STATUS_CONNECTED_TO) {
+      static_cast<uint32_t>(nsISocketTransport::STATUS_CONNECTED_TO)) {
     return NS_OK;
   }
 

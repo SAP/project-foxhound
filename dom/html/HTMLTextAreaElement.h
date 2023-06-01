@@ -27,7 +27,6 @@ namespace mozilla {
 
 class EventChainPostVisitor;
 class EventChainPreVisitor;
-class EventStates;
 class PresState;
 
 namespace dom {
@@ -70,7 +69,7 @@ class HTMLTextAreaElement final : public TextControlElement,
 
   virtual void FieldSetDisabledChanged(bool aNotify) override;
 
-  virtual EventStates IntrinsicState() const override;
+  virtual ElementState IntrinsicState() const override;
 
   void SetLastValueChangeWasInteractive(bool);
 
@@ -170,10 +169,6 @@ class HTMLTextAreaElement final : public TextControlElement,
   void SetAutocomplete(const nsAString& aValue, ErrorResult& aRv) {
     SetHTMLAttr(nsGkAtoms::autocomplete, aValue, aRv);
   }
-  bool Autofocus() { return GetBoolAttr(nsGkAtoms::autofocus); }
-  void SetAutofocus(bool aAutoFocus, ErrorResult& aError) {
-    SetHTMLBoolAttr(nsGkAtoms::autofocus, aAutoFocus, aError);
-  }
   uint32_t Cols() { return GetUnsignedIntAttr(nsGkAtoms::cols, DEFAULT_COLS); }
   void SetCols(uint32_t aCols, ErrorResult& aError) {
     uint32_t cols = aCols ? aCols : DEFAULT_COLS;
@@ -218,7 +213,7 @@ class HTMLTextAreaElement final : public TextControlElement,
   void SetReadOnly(bool aReadOnly, ErrorResult& aError) {
     SetHTMLBoolAttr(nsGkAtoms::readonly, aReadOnly, aError);
   }
-  bool Required() const { return State().HasState(NS_EVENT_STATE_REQUIRED); }
+  bool Required() const { return State().HasState(ElementState::REQUIRED); }
 
   MOZ_CAN_RUN_SCRIPT void SetRangeText(const nsAString& aReplacement,
                                        ErrorResult& aRv);
@@ -243,7 +238,7 @@ class HTMLTextAreaElement final : public TextControlElement,
     SetHTMLAttr(nsGkAtoms::wrap, aWrap, aError);
   }
   void GetType(nsAString& aType);
-  void GetDefaultValue(nsAString& aDefaultValue, ErrorResult& aError);
+  void GetDefaultValue(nsAString& aDefaultValue, ErrorResult& aError) const;
   void SetDefaultValue(const nsAString& aDefaultValue, ErrorResult& aError);
   void GetValue(nsAString& aValue);
   /**

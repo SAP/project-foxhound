@@ -25,6 +25,8 @@ EXPORTS.mozilla.dom += [
 
 EXPORTS.mozilla.dom.quota += [
     "ActorsParent.h",
+    "Assertions.h",
+    "AssertionsImpl.h",
     "CachingDatabaseConnection.h",
     "CheckedUnsafePtr.h",
     "CipherStrategy.h",
@@ -32,6 +34,7 @@ EXPORTS.mozilla.dom.quota += [
     "ClientImpl.h",
     "CommonMetadata.h",
     "Config.h",
+    "DebugOnlyMacro.h",
     "DecryptingInputStream.h",
     "DecryptingInputStream_impl.h",
     "DirectoryLock.h",
@@ -45,7 +48,6 @@ EXPORTS.mozilla.dom.quota += [
     "ForwardDecls.h",
     "InitializationTypes.h",
     "IPCStreamCipherStrategy.h",
-    "MemoryOutputStream.h",
     "NSSCipherStrategy.h",
     "OriginScope.h",
     "PersistenceType.h",
@@ -54,6 +56,9 @@ EXPORTS.mozilla.dom.quota += [
     "QuotaManagerImpl.h",
     "QuotaManagerService.h",
     "QuotaObject.h",
+    "RemoteQuotaObjectChild.h",
+    "RemoteQuotaObjectParent.h",
+    "RemoteQuotaObjectParentTracker.h",
     "RemoveParen.h",
     "ResultExtensions.h",
     "ScopedLogExtraInfo.h",
@@ -70,30 +75,40 @@ UNIFIED_SOURCES += [
     "ActorsChild.cpp",
     "ActorsParent.cpp",
     "CachingDatabaseConnection.cpp",
+    "CanonicalQuotaObject.cpp",
     "Client.cpp",
+    "ClientUsageArray.cpp",
     "DecryptingInputStream.cpp",
     "DirectoryLockImpl.cpp",
     "EncryptingOutputStream.cpp",
     "FileStreams.cpp",
+    "GroupInfo.cpp",
+    "GroupInfoPair.cpp",
     "InitializationTypes.cpp",
-    "MemoryOutputStream.cpp",
     "nsIndexedDBProtocolHandler.cpp",
     "NSSCipherStrategy.cpp",
+    "OriginInfo.cpp",
     "PersistenceType.cpp",
     "QMResult.cpp",
     "QuotaCommon.cpp",
     "QuotaManagerService.cpp",
+    "QuotaObject.cpp",
     "QuotaRequests.cpp",
     "QuotaResults.cpp",
+    "RemoteQuotaObject.cpp",
+    "RemoteQuotaObjectChild.cpp",
+    "RemoteQuotaObjectParent.cpp",
     "ScopedLogExtraInfo.cpp",
     "StorageHelpers.cpp",
     "StorageManager.cpp",
 ]
 
 IPDL_SOURCES += [
+    "IPCQuotaObject.ipdlh",
     "PQuota.ipdl",
     "PQuotaRequest.ipdl",
     "PQuotaUsageRequest.ipdl",
+    "PRemoteQuotaObject.ipdl",
 ]
 
 include("/ipc/chromium/chromium-config.mozbuild")
@@ -102,4 +117,5 @@ FINAL_LIBRARY = "xul"
 
 LOCAL_INCLUDES += [
     "/caps",
+    "/dom/fs/include",
 ]

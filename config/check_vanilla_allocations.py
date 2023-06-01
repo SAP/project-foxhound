@@ -38,12 +38,11 @@
 # mismatched alloc/free checking.
 # ----------------------------------------------------------------------------
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import argparse
 import re
 import subprocess
 import sys
+
 import buildconfig
 
 # The obvious way to implement this script is to search for occurrences of
@@ -162,6 +161,10 @@ def main():
 
         # Ignore allocations from the m-c intl/components implementations.
         if "intl_components" in filename:
+            continue
+
+        # Ignore use of std::string in regexp AST debug output.
+        if filename == "regexp-ast.o":
             continue
 
         fn = m.group(2)

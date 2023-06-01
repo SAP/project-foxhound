@@ -6,7 +6,8 @@
 <html xmlns="http://www.w3.org/1999/xhtml"
       xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
       windowtype="Toolkit:PictureInPicture"
-      chromemargin="0,0,0,0">
+      chromemargin="0,0,0,0"
+      >
   <head>
     <meta charset="utf-8"/>
     <link rel="stylesheet" type="text/css"
@@ -23,6 +24,9 @@
     </xul:commandset>
 
     <xul:keyset>
+      <xul:key id="closeShortcut" key="W" modifiers="accel"/>
+      <xul:key id="muteShortcut" key="↓" modifiers="accel"/>
+      <xul:key id="unMuteShortcut" key="↑" modifiers="accel"/>
 #ifndef XP_MACOSX
       <xul:key data-l10n-id="picture-in-picture-toggle-shortcut" command="View:PictureInPicture" modifiers="accel,shift"/>
       <xul:key data-l10n-id="picture-in-picture-toggle-shortcut-alt" command="View:PictureInPicture" modifiers="accel,shift"/>
@@ -35,23 +39,73 @@
     <div class="player-holder">
       <xul:browser type="content" primary="true" remote="true" remoteType="web" id="browser" tabindex="-1"></xul:browser>
     </div>
-    <div id="controls">
+    <div id="controls" dir="ltr">
       <button id="close"
-              class="control-item"
+      class="control-item control-button tooltip-under-controls" data-l10n-attrs="tooltip"
 #ifdef XP_MACOSX
-              mac="true"
+      mac="true"
+      tabindex="8"
+#else
+      tabindex="9"
 #endif
-              data-l10n-id="pictureinpicture-close"
-              tabindex="3"/>
-      <div id="controls-bottom">
-        <button id="unpip" class="control-item" data-l10n-id="pictureinpicture-unpip" tabindex="2"></button>
-        <div class="gap"></div>
-        <button id="playpause" class="control-item" tabindex="1" autofocus="true"
-                data-l10n-id="pictureinpicture-pause"/>
-        <div class="gap" hidden="true"></div>
-        <button id="audio" class="control-item" hidden="true" tabindex="1"
-                data-l10n-id="pictureinpicture-mute"/>
+      />
+      <button id="unpip"
+      class="control-item control-button tooltip-under-controls" data-l10n-id="pictureinpicture-unpip-btn" data-l10n-attrs="tooltip"
+#ifdef XP_MACOSX
+      mac="true"
+      tabindex="9"
+#else
+      tabindex="8"
+#endif
+      />
+    <div id="controls-bottom-gradient" class="control-item"></div>
+    <div id="controls-bottom">
+      <div class="controls-bottom-upper">
+          <div class="scrubber-no-drag">
+            <input id="scrubber" class="control-item" min="0" max="1" step=".001" type="range" tabindex="10" hidden="true"/>
+          </div>
+      </div>
+      <div class="controls-bottom-lower">
+        <div id="timestamp" class="control-item" hidden="true"></div>
+        <button id="seekBackward" class="control-item control-button tooltip-over-controls center-tooltip" hidden="true" data-l10n-id="pictureinpicture-seekbackward-btn" data-l10n-attrs="tooltip" tabindex="11"></button>
+        <button id="playpause" class="control-item control-button tooltip-over-controls center-tooltip" tabindex="1"
+                data-l10n-id="pictureinpicture-pause-btn" data-l10n-attrs="tooltip"/>
+        <button id="seekForward" class="control-item control-button tooltip-over-controls center-tooltip" hidden="true" data-l10n-id="pictureinpicture-seekforward-btn" data-l10n-attrs="tooltip" tabindex="2"></button>
+        <button id="audio" class="control-item control-button tooltip-over-controls center-tooltip" hidden="true" data-l10n-attrs="tooltip" tabindex="3"/>
+        <button id="closed-caption" class="control-item control-button tooltip-over-controls center-tooltip closed-caption" hidden="true" disabled="true" data-l10n-id="pictureinpicture-subtitles-btn" data-l10n-attrs="tooltip" tabindex="4"></button>
+        <div id="settings" class="hide">
+          <div class="panel">
+            <div class="box">
+              <div class="subtitle-grid">
+                <label data-l10n-id="pictureinpicture-subtitles-label" class="bold"></label>
+                <label class="switch">
+                  <input id="subtitles-toggle" type="checkbox" tabindex="5" checked=""/>
+                  <span class="slider" role="presentation"></span>
+                </label>
+              </div>
+              <div class="grey-line"></div>
+              <div class="font-size-selection">
+                <label data-l10n-id="pictureinpicture-font-size-label" class="bold"></label>
+                <label>
+                  <input id="small" type="radio" name="cc-size" tabindex="6"/>
+                  <span data-l10n-id="pictureinpicture-font-size-small"></span>
+                </label>
+                <label>
+                  <input id="medium" type="radio" name="cc-size" tabindex="6"/>
+                  <span data-l10n-id="pictureinpicture-font-size-medium"></span>
+                </label>
+                <label>
+                  <input id="large" type="radio" name="cc-size" tabindex="6"/>
+                  <span data-l10n-id="pictureinpicture-font-size-large"></span>
+                </label>
+              </div>
+            </div>
+            <div class="arrow"></div>
+          </div>
+        </div>
+        <button id="fullscreen" class="control-item control-button tooltip-over-controls inline-end-tooltip" hidden="true" data-l10n-id="pictureinpicture-fullscreen-btn" data-l10n-attrs="tooltip" tabindex="7"></button>
       </div>
     </div>
+  </div>
   </body>
 </html>

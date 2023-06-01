@@ -147,25 +147,23 @@ EXPORTS.mozilla += [
     "ScrollGeneration.h",
     "ScrollOrigin.h",
     "ScrollPositionUpdate.h",
+    "ScrollSnapTargetId.h",
     "ViewportFrame.h",
     "WritingModes.h",
 ]
 
 EXPORTS.mozilla.layout += [
-    "FrameChildList.h",
     "ScrollAnchorContainer.h",
 ]
 
 UNIFIED_SOURCES += [
     "AspectRatio.cpp",
-    "BlockReflowInput.cpp",
+    "BlockReflowState.cpp",
     "BRFrame.cpp",
     "ColumnSetWrapperFrame.cpp",
     "ColumnUtils.cpp",
     "CSSAlignUtils.cpp",
     "CSSOrderAwareFrameIterator.cpp",
-    "DetailsFrame.cpp",
-    "FrameChildList.cpp",
     "MathMLTextRunFactory.cpp",
     "nsAbsoluteContainingBlock.cpp",
     "nsBackdropFrame.cpp",
@@ -186,6 +184,7 @@ UNIFIED_SOURCES += [
     "nsGridContainerFrame.cpp",
     "nsHTMLCanvasFrame.cpp",
     "nsIFrame.cpp",
+    "nsILineIterator.cpp",
     "nsImageFrame.cpp",
     "nsImageMap.cpp",
     "nsInlineFrame.cpp",

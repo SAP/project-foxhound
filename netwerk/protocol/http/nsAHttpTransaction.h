@@ -5,7 +5,6 @@
 #ifndef nsAHttpTransaction_h__
 #define nsAHttpTransaction_h__
 
-#include "nsISupports.h"
 #include "nsTArray.h"
 #include "nsWeakReference.h"
 
@@ -19,9 +18,10 @@ typedef __StatusTmp Status;
 
 class nsIDNSHTTPSSVCRecord;
 class nsIInterfaceRequestor;
-class nsISVCBRecord;
-class nsITransport;
 class nsIRequestContext;
+class nsISVCBRecord;
+class nsITLSSocketControl;
+class nsITransport;
 
 namespace mozilla {
 namespace net {
@@ -33,7 +33,8 @@ class nsHttpTransaction;
 class nsHttpRequestHead;
 class nsHttpConnectionInfo;
 class NullHttpTransaction;
-class SpdyConnectTransaction;
+
+enum class WebSocketSupport { UNSURE, NO_SUPPORT, SUPPORTED };
 
 //----------------------------------------------------------------------------
 // Abstract base class for a HTTP transaction:
@@ -150,13 +151,6 @@ class nsAHttpTransaction : public nsSupportsWeakReference {
   // non nsHttpTransaction implementations of nsAHttpTransaction
   virtual nsHttpTransaction* QueryHttpTransaction() { return nullptr; }
 
-  // If we used rtti this would be the result of doing
-  // dynamic_cast<SpdyConnectTransaction *>(this).. i.e. it can be nullptr for
-  // other types
-  virtual SpdyConnectTransaction* QuerySpdyConnectTransaction() {
-    return nullptr;
-  }
-
   // return the request context associated with the transaction
   virtual nsIRequestContext* RequestContext() { return nullptr; }
 
@@ -167,20 +161,26 @@ class nsAHttpTransaction : public nsSupportsWeakReference {
   virtual bool ResponseTimeoutEnabled() const;
   virtual PRIntervalTime ResponseTimeout();
 
-  // conceptually the security info is part of the connection, but sometimes
+  // conceptually the socket control is part of the connection, but sometimes
   // in the case of TLS tunneled within TLS the transaction might present
-  // a more specific security info that cannot be represented as a layer in
+  // a more specific socket control that cannot be represented as a layer in
   // the connection due to multiplexing. This interface represents such an
   // overload. If it returns NS_FAILURE the connection should be considered
   // authoritative.
-  [[nodiscard]] virtual nsresult GetTransactionSecurityInfo(nsISupports**) {
+  [[nodiscard]] virtual nsresult GetTransactionTLSSocketControl(
+      nsITLSSocketControl**) {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
 
   virtual void DisableSpdy() {}
+  // When called, we disallow to connect through a Http/2 proxy.
+  virtual void DisableHttp2ForProxy() {}
   virtual void DisableHttp3(bool aAllowRetryHTTPSRR) {}
   virtual void MakeNonSticky() {}
+  virtual void MakeRestartable() {}
   virtual void ReuseConnectionOnRestartOK(bool) {}
+  virtual void SetIsHttp2Websocket(bool) {}
+  virtual bool IsHttp2Websocket() { return false; }
 
   // We call this function if we want to use alt-svc host again on the next
   // restart. If this function is not called on the next restart the

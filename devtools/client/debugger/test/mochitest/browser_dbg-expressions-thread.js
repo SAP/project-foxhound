@@ -8,8 +8,7 @@
 
 "use strict";
 
-const TEST_COM_URI =
-  URL_ROOT_COM + "examples/doc_dbg-fission-frame-sources.html";
+const TEST_COM_URI = `${URL_ROOT_COM}examples/doc_dbg-fission-frame-sources.html`;
 
 add_task(async function() {
   // Load a test page with a remote frame and wait for both sources to be visible.
@@ -79,4 +78,21 @@ add_task(async function() {
 
   // close the threads pane so following test don't have it open
   threadsPaneEl.click();
+
+  await navigateToAbsoluteURL(dbg, "data:text/html,<title>foo</title>");
+
+  // TOFIX: Bug 1809168 watch expressions aren't updated on navigation
+  todo_is(
+    getWatchExpressionValue(dbg, 1),
+    `""`,
+    "The location.host expression is updated after a navigaiton"
+  );
+
+  await addExpression(dbg, "document.title");
+
+  is(
+    getWatchExpressionValue(dbg, 2),
+    `"foo"`,
+    "We can add expressions after a navigation"
+  );
 });

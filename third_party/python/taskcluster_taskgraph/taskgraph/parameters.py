@@ -2,38 +2,42 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-
+import gzip
 import hashlib
 import json
 import os
 import time
 from datetime import datetime
+from io import BytesIO
 from pprint import pformat
 from subprocess import CalledProcessError
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
+import mozilla_repo_urls
+from voluptuous import ALLOW_EXTRA, Any, Optional, Required, Schema
+
+from taskgraph.util import yaml
 from taskgraph.util.readonlydict import ReadOnlyDict
 from taskgraph.util.schema import validate_schema
+from taskgraph.util.taskcluster import find_task_id, get_artifact_url
 from taskgraph.util.vcs import get_repository
-from voluptuous import (
-    ALLOW_EXTRA,
-    Required,
-    Optional,
-    Schema,
-)
 
 
 class ParameterMismatch(Exception):
     """Raised when a parameters.yml has extra or missing parameters."""
 
 
-# Please keep this list sorted and in sync with taskcluster/docs/parameters.rst
+# Please keep this list sorted and in sync with docs/reference/parameters.rst
 base_schema = Schema(
     {
         Required("base_repository"): str,
+        Required("base_ref"): str,
+        Required("base_rev"): str,
         Required("build_date"): int,
+        Required("build_number"): int,
         Required("do_not_optimize"): [str],
+        Required("enable_always_target"): bool,
         Required("existing_tasks"): {str: str},
         Required("filters"): [str],
         Required("head_ref"): str,
@@ -42,6 +46,8 @@ base_schema = Schema(
         Required("head_tag"): str,
         Required("level"): str,
         Required("moz_build_date"): str,
+        Required("next_version"): Any(str, None),
+        Required("optimize_strategies"): Any(str, None),
         Required("optimize_target_tasks"): bool,
         Required("owner"): str,
         Required("project"): str,
@@ -52,6 +58,7 @@ base_schema = Schema(
         # used at run-time
         Required("target_tasks_method"): str,
         Required("tasks_for"): str,
+        Required("version"): Any(str, None),
         Optional("code-review"): {
             Required("phabricator-build-target"): str,
         },
@@ -59,27 +66,50 @@ base_schema = Schema(
 )
 
 
+def get_contents(path):
+    with open(path) as fh:
+        contents = fh.readline().rstrip()
+    return contents
+
+
+def get_version(repo_path):
+    version_path = os.path.join(repo_path, "version.txt")
+    return get_contents(version_path) if os.path.isfile(version_path) else None
+
+
 def _get_defaults(repo_root=None):
-    repo = get_repository(repo_root or os.getcwd())
+    repo_path = repo_root or os.getcwd()
+    repo = get_repository(repo_path)
     try:
         repo_url = repo.get_url()
-        project = repo_url.rsplit("/", 1)[1]
-    except CalledProcessError:
+        parsed_url = mozilla_repo_urls.parse(repo_url)
+        project = parsed_url.repo_name
+    except (
+        CalledProcessError,
+        mozilla_repo_urls.errors.InvalidRepoUrlError,
+        mozilla_repo_urls.errors.UnsupportedPlatformError,
+    ):
         repo_url = ""
         project = ""
 
     return {
         "base_repository": repo_url,
+        "base_ref": "",
+        "base_rev": "",
         "build_date": int(time.time()),
+        "build_number": 1,
         "do_not_optimize": [],
+        "enable_always_target": True,
         "existing_tasks": {},
         "filters": ["target_tasks_method"],
-        "head_ref": repo.head_ref,
+        "head_ref": repo.branch or repo.head_rev,
         "head_repository": repo_url,
-        "head_rev": repo.head_ref,
+        "head_rev": repo.head_rev,
         "head_tag": "",
         "level": "3",
         "moz_build_date": datetime.now().strftime("%Y%m%d%H%M%S"),
+        "next_version": None,
+        "optimize_strategies": None,
         "optimize_target_tasks": True,
         "owner": "nobody@mozilla.com",
         "project": project,
@@ -88,6 +118,7 @@ def _get_defaults(repo_root=None):
         "repository_type": repo.tool,
         "target_tasks_method": "default",
         "tasks_for": "",
+        "version": get_version(repo_path),
     }
 
 
@@ -270,8 +301,6 @@ def load_parameters_file(
         task-id=fdtgsD5DQUmAQZEaGMvQ4Q
         project=mozilla-central
     """
-    from taskgraph.util.taskcluster import get_artifact_url, find_task_id
-    from taskgraph.util import yaml
 
     if overrides is None:
         overrides = {}
@@ -303,6 +332,11 @@ def load_parameters_file(
         if task_id:
             spec = get_artifact_url(task_id, "public/parameters.yml")
         f = urlopen(spec)
+
+        # Decompress gzipped parameters.
+        if f.info().get("Content-Encoding") == "gzip":
+            buf = BytesIO(f.read())
+            f = gzip.GzipFile(fileobj=buf)
 
     if spec.endswith(".yml"):
         kwargs = yaml.load_stream(f)

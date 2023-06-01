@@ -745,8 +745,8 @@ static void block_rd_txfm(int plane, int block, int blk_row, int blk_col,
   MODE_INFO *const mi = xd->mi[0];
   int64_t rd1, rd2, rd;
   int rate;
-  int64_t dist;
-  int64_t sse;
+  int64_t dist = INT64_MAX;
+  int64_t sse = INT64_MAX;
   const int coeff_ctx =
       combine_entropy_contexts(args->t_left[blk_row], args->t_above[blk_col]);
   struct buf_2d *recon = args->this_recon;
@@ -799,6 +799,13 @@ static void block_rd_txfm(int plane, int block, int blk_row, int blk_col,
     if (max_txsize_lookup[plane_bsize] == tx_size)
       skip_txfm_flag = x->skip_txfm[(plane << 2) + (block >> (tx_size << 1))];
 
+    // This reduces the risk of bad perceptual quality due to bad prediction.
+    // We always force the encoder to perform transform and quantization.
+    if (!args->cpi->sf.allow_skip_txfm_ac_dc &&
+        skip_txfm_flag == SKIP_TXFM_AC_DC) {
+      skip_txfm_flag = SKIP_TXFM_NONE;
+    }
+
     if (skip_txfm_flag == SKIP_TXFM_NONE ||
         (recon && skip_txfm_flag == SKIP_TXFM_AC_ONLY)) {
       // full forward transform and quantization
@@ -827,17 +834,7 @@ static void block_rd_txfm(int plane, int block, int blk_row, int blk_col,
         dist = VPXMAX(0, sse - dc_correct);
       }
     } else {
-      // SKIP_TXFM_AC_DC
-      // skip forward transform. Because this is handled here, the quantization
-      // does not need to do it.
-      x->plane[plane].eobs[block] = 0;
-      sse = x->bsse[(plane << 2) + (block >> (tx_size << 1))] << 4;
-      dist = sse;
-      if (recon) {
-        uint8_t *rec_ptr = &recon->buf[4 * (blk_row * recon->stride + blk_col)];
-        copy_block_visible(xd, pd, dst, dst_stride, rec_ptr, recon->stride,
-                           blk_row, blk_col, plane_bsize, tx_bsize);
-      }
+      assert(0 && "allow_skip_txfm_ac_dc does not allow SKIP_TXFM_AC_DC.");
     }
   }
 
@@ -1111,6 +1108,8 @@ static int64_t rd_pick_intra4x4block(VP9_COMP *cpi, MACROBLOCK *x, int row,
 
   xd->mi[0]->tx_size = TX_4X4;
 
+  assert(!x->skip_block);
+
 #if CONFIG_VP9_HIGHBITDEPTH
   if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
     for (mode = DC_PRED; mode <= TM_PRED; ++mode) {
@@ -1138,7 +1137,10 @@ static int64_t rd_pick_intra4x4block(VP9_COMP *cpi, MACROBLOCK *x, int row,
           uint16_t *const dst16 = CONVERT_TO_SHORTPTR(dst);
           int16_t *const src_diff =
               vp9_raster_block_offset_int16(BLOCK_8X8, block, p->src_diff);
-          tran_low_t *const coeff = BLOCK_OFFSET(x->plane[0].coeff, block);
+          tran_low_t *const coeff = BLOCK_OFFSET(p->coeff, block);
+          tran_low_t *const qcoeff = BLOCK_OFFSET(p->qcoeff, block);
+          tran_low_t *const dqcoeff = BLOCK_OFFSET(pd->dqcoeff, block);
+          uint16_t *const eob = &p->eobs[block];
           xd->mi[0]->bmi[block].as_mode = mode;
           vp9_predict_intra_block(xd, 1, TX_4X4, mode,
                                   x->skip_encode ? src : dst,
@@ -1151,7 +1153,9 @@ static int64_t rd_pick_intra4x4block(VP9_COMP *cpi, MACROBLOCK *x, int row,
             const int coeff_ctx =
                 combine_entropy_contexts(tempa[idx], templ[idy]);
             vp9_highbd_fwht4x4(src_diff, coeff, 8);
-            vp9_regular_quantize_b_4x4(x, 0, block, so->scan, so->iscan);
+            vpx_highbd_quantize_b(coeff, 4 * 4, p->zbin, p->round, p->quant,
+                                  p->quant_shift, qcoeff, dqcoeff, pd->dequant,
+                                  eob, so->scan, so->iscan);
             ratey += cost_coeffs(x, 0, block, TX_4X4, coeff_ctx, so->scan,
                                  so->neighbors, cpi->sf.use_fast_coef_costing);
             tempa[idx] = templ[idy] = (x->plane[0].eobs[block] > 0 ? 1 : 0);
@@ -1169,7 +1173,9 @@ static int64_t rd_pick_intra4x4block(VP9_COMP *cpi, MACROBLOCK *x, int row,
               vpx_highbd_fdct4x4(src_diff, coeff, 8);
             else
               vp9_highbd_fht4x4(src_diff, coeff, 8, tx_type);
-            vp9_regular_quantize_b_4x4(x, 0, block, so->scan, so->iscan);
+            vpx_highbd_quantize_b(coeff, 4 * 4, p->zbin, p->round, p->quant,
+                                  p->quant_shift, qcoeff, dqcoeff, pd->dequant,
+                                  eob, so->scan, so->iscan);
             ratey += cost_coeffs(x, 0, block, TX_4X4, coeff_ctx, so->scan,
                                  so->neighbors, cpi->sf.use_fast_coef_costing);
             distortion += vp9_highbd_block_error_dispatch(
@@ -1239,7 +1245,10 @@ static int64_t rd_pick_intra4x4block(VP9_COMP *cpi, MACROBLOCK *x, int row,
         uint8_t *const dst = &dst_init[idx * 4 + idy * 4 * dst_stride];
         int16_t *const src_diff =
             vp9_raster_block_offset_int16(BLOCK_8X8, block, p->src_diff);
-        tran_low_t *const coeff = BLOCK_OFFSET(x->plane[0].coeff, block);
+        tran_low_t *const coeff = BLOCK_OFFSET(p->coeff, block);
+        tran_low_t *const qcoeff = BLOCK_OFFSET(p->qcoeff, block);
+        tran_low_t *const dqcoeff = BLOCK_OFFSET(pd->dqcoeff, block);
+        uint16_t *const eob = &p->eobs[block];
         xd->mi[0]->bmi[block].as_mode = mode;
         vp9_predict_intra_block(xd, 1, TX_4X4, mode, x->skip_encode ? src : dst,
                                 x->skip_encode ? src_stride : dst_stride, dst,
@@ -1251,7 +1260,9 @@ static int64_t rd_pick_intra4x4block(VP9_COMP *cpi, MACROBLOCK *x, int row,
           const int coeff_ctx =
               combine_entropy_contexts(tempa[idx], templ[idy]);
           vp9_fwht4x4(src_diff, coeff, 8);
-          vp9_regular_quantize_b_4x4(x, 0, block, so->scan, so->iscan);
+          vpx_quantize_b(coeff, 4 * 4, p->zbin, p->round, p->quant,
+                         p->quant_shift, qcoeff, dqcoeff, pd->dequant, eob,
+                         so->scan, so->iscan);
           ratey += cost_coeffs(x, 0, block, TX_4X4, coeff_ctx, so->scan,
                                so->neighbors, cpi->sf.use_fast_coef_costing);
           tempa[idx] = templ[idy] = (x->plane[0].eobs[block] > 0) ? 1 : 0;
@@ -1266,7 +1277,9 @@ static int64_t rd_pick_intra4x4block(VP9_COMP *cpi, MACROBLOCK *x, int row,
           const int coeff_ctx =
               combine_entropy_contexts(tempa[idx], templ[idy]);
           vp9_fht4x4(src_diff, coeff, 8, tx_type);
-          vp9_regular_quantize_b_4x4(x, 0, block, so->scan, so->iscan);
+          vpx_quantize_b(coeff, 4 * 4, p->zbin, p->round, p->quant,
+                         p->quant_shift, qcoeff, dqcoeff, pd->dequant, eob,
+                         so->scan, so->iscan);
           ratey += cost_coeffs(x, 0, block, TX_4X4, coeff_ctx, so->scan,
                                so->neighbors, cpi->sf.use_fast_coef_costing);
           tempa[idx] = templ[idy] = (x->plane[0].eobs[block] > 0) ? 1 : 0;
@@ -1643,6 +1656,8 @@ static int64_t encode_inter_mb_segment(VP9_COMP *cpi, MACROBLOCK *x,
   const int is_compound = has_second_ref(mi);
   const InterpKernel *kernel = vp9_filter_kernels[mi->interp_filter];
 
+  assert(!x->skip_block);
+
   for (ref = 0; ref < 1 + is_compound; ++ref) {
     const int bw = b_width_log2_lookup[BLOCK_8X8];
     const int h = 4 * (i >> bw);
@@ -1704,18 +1719,27 @@ static int64_t encode_inter_mb_segment(VP9_COMP *cpi, MACROBLOCK *x,
       const int bd = (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) ? xd->bd : 8;
 #endif
       int64_t ssz, rd, rd1, rd2;
-      tran_low_t *coeff;
+      tran_low_t *coeff, *qcoeff, *dqcoeff;
+      uint16_t *eob;
       int coeff_ctx;
       k += (idy * 2 + idx);
       coeff_ctx = combine_entropy_contexts(ta[k & 1], tl[k >> 1]);
       coeff = BLOCK_OFFSET(p->coeff, k);
+      qcoeff = BLOCK_OFFSET(p->qcoeff, k);
+      dqcoeff = BLOCK_OFFSET(pd->dqcoeff, k);
+      eob = &p->eobs[k];
+
       x->fwd_txfm4x4(vp9_raster_block_offset_int16(BLOCK_8X8, k, p->src_diff),
                      coeff, 8);
-      vp9_regular_quantize_b_4x4(x, 0, k, so->scan, so->iscan);
 #if CONFIG_VP9_HIGHBITDEPTH
+      vpx_highbd_quantize_b(coeff, 4 * 4, p->zbin, p->round, p->quant,
+                            p->quant_shift, qcoeff, dqcoeff, pd->dequant, eob,
+                            so->scan, so->iscan);
       thisdistortion += vp9_highbd_block_error_dispatch(
           coeff, BLOCK_OFFSET(pd->dqcoeff, k), 16, &ssz, bd);
 #else
+      vpx_quantize_b(coeff, 4 * 4, p->zbin, p->round, p->quant, p->quant_shift,
+                     qcoeff, dqcoeff, pd->dequant, eob, so->scan, so->iscan);
       thisdistortion +=
           vp9_block_error(coeff, BLOCK_OFFSET(pd->dqcoeff, k), 16, &ssz);
 #endif  // CONFIG_VP9_HIGHBITDEPTH
@@ -3245,6 +3269,7 @@ int vp9_active_h_edge(VP9_COMP *cpi, int mi_row, int mi_step) {
   // For two pass account for any formatting bars detected.
   if (cpi->oxcf.pass == 2) {
     TWO_PASS *twopass = &cpi->twopass;
+    vpx_clear_system_state();
 
     // The inactive region is specified in MBs not mi units.
     // The image edge is in the following MB row.
@@ -3272,6 +3297,7 @@ int vp9_active_v_edge(VP9_COMP *cpi, int mi_col, int mi_step) {
   // For two pass account for any formatting bars detected.
   if (cpi->oxcf.pass == 2) {
     TWO_PASS *twopass = &cpi->twopass;
+    vpx_clear_system_state();
 
     // The inactive region is specified in MBs not mi units.
     // The image edge is in the following MB row.
@@ -3318,8 +3344,6 @@ void vp9_rd_pick_inter_mode_sb(VP9_COMP *cpi, TileDataEnc *tile_data,
   int_mv single_newmv[MAX_REF_FRAMES] = { { 0 } };
   INTERP_FILTER single_inter_filter[MB_MODE_COUNT][MAX_REF_FRAMES];
   int single_skippable[MB_MODE_COUNT][MAX_REF_FRAMES];
-  static const int flag_list[4] = { 0, VP9_LAST_FLAG, VP9_GOLD_FLAG,
-                                    VP9_ALT_FLAG };
   int64_t best_rd = best_rd_so_far;
   int64_t best_pred_diff[REFERENCE_MODES];
   int64_t best_pred_rd[REFERENCE_MODES];
@@ -3395,7 +3419,7 @@ void vp9_rd_pick_inter_mode_sb(VP9_COMP *cpi, TileDataEnc *tile_data,
 
   for (ref_frame = LAST_FRAME; ref_frame <= ALTREF_FRAME; ++ref_frame) {
     x->pred_mv_sad[ref_frame] = INT_MAX;
-    if ((cpi->ref_frame_flags & flag_list[ref_frame]) &&
+    if ((cpi->ref_frame_flags & ref_frame_to_flag(ref_frame)) &&
         !(is_rect_partition && (ctx->skip_ref_frame_mask & (1 << ref_frame)))) {
       assert(get_ref_frame_buffer(cpi, ref_frame) != NULL);
       setup_buffer_inter(cpi, x, ref_frame, bsize, mi_row, mi_col,
@@ -3406,7 +3430,7 @@ void vp9_rd_pick_inter_mode_sb(VP9_COMP *cpi, TileDataEnc *tile_data,
   }
 
   for (ref_frame = LAST_FRAME; ref_frame <= ALTREF_FRAME; ++ref_frame) {
-    if (!(cpi->ref_frame_flags & flag_list[ref_frame])) {
+    if (!(cpi->ref_frame_flags & ref_frame_to_flag(ref_frame))) {
       // Skip checking missing references in both single and compound reference
       // modes. Note that a mode will be skipped if both reference frames
       // are masked out.
@@ -3475,7 +3499,7 @@ void vp9_rd_pick_inter_mode_sb(VP9_COMP *cpi, TileDataEnc *tile_data,
   }
 
   mode_skip_mask[INTRA_FRAME] |=
-      ~(sf->intra_y_mode_mask[max_txsize_lookup[bsize]]);
+      (uint16_t) ~(sf->intra_y_mode_mask[max_txsize_lookup[bsize]]);
 
   for (i = 0; i <= LAST_NEW_MV_INDEX; ++i) mode_threshold[i] = 0;
 
@@ -3612,7 +3636,8 @@ void vp9_rd_pick_inter_mode_sb(VP9_COMP *cpi, TileDataEnc *tile_data,
         continue;
 
       // Skip compound inter modes if ARF is not available.
-      if (!(cpi->ref_frame_flags & flag_list[second_ref_frame])) continue;
+      if (!(cpi->ref_frame_flags & ref_frame_to_flag(second_ref_frame)))
+        continue;
 
       // Do not allow compound prediction if the segment level reference frame
       // feature is in use as in this case there can only be one reference.
@@ -4143,8 +4168,6 @@ void vp9_rd_pick_inter_mode_sub8x8(VP9_COMP *cpi, TileDataEnc *tile_data,
   int comp_pred, i;
   int_mv frame_mv[MB_MODE_COUNT][MAX_REF_FRAMES];
   struct buf_2d yv12_mb[4][MAX_MB_PLANE];
-  static const int flag_list[4] = { 0, VP9_LAST_FLAG, VP9_GOLD_FLAG,
-                                    VP9_ALT_FLAG };
   int64_t best_rd = best_rd_so_far;
   int64_t best_yrd = best_rd_so_far;  // FIXME(rbultje) more precise
   int64_t best_pred_diff[REFERENCE_MODES];
@@ -4194,7 +4217,7 @@ void vp9_rd_pick_inter_mode_sub8x8(VP9_COMP *cpi, TileDataEnc *tile_data,
   rd_cost->rate = INT_MAX;
 
   for (ref_frame = LAST_FRAME; ref_frame <= ALTREF_FRAME; ref_frame++) {
-    if (cpi->ref_frame_flags & flag_list[ref_frame]) {
+    if (cpi->ref_frame_flags & ref_frame_to_flag(ref_frame)) {
       setup_buffer_inter(cpi, x, ref_frame, bsize, mi_row, mi_col,
                          frame_mv[NEARESTMV], frame_mv[NEARMV], yv12_mb);
     } else {
@@ -4279,7 +4302,8 @@ void vp9_rd_pick_inter_mode_sub8x8(VP9_COMP *cpi, TileDataEnc *tile_data,
           cm->ref_frame_sign_bias[second_ref_frame])
         continue;
 
-      if (!(cpi->ref_frame_flags & flag_list[second_ref_frame])) continue;
+      if (!(cpi->ref_frame_flags & ref_frame_to_flag(second_ref_frame)))
+        continue;
       // Do not allow compound prediction if the segment level reference frame
       // feature is in use as in this case there can only be one reference.
       if (segfeature_active(seg, segment_id, SEG_LVL_REF_FRAME)) continue;
@@ -4443,6 +4467,7 @@ void vp9_rd_pick_inter_mode_sub8x8(VP9_COMP *cpi, TileDataEnc *tile_data,
               tmp_best_sse = total_sse;
               tmp_best_skippable = skippable;
               tmp_best_mbmode = *mi;
+              x->sum_y_eobs[TX_4X4] = 0;
               for (i = 0; i < 4; i++) {
                 tmp_best_bmodes[i] = xd->mi[0]->bmi[i];
                 x->zcoeff_blk[TX_4X4][i] = !x->plane[0].eobs[i];
@@ -4476,6 +4501,11 @@ void vp9_rd_pick_inter_mode_sub8x8(VP9_COMP *cpi, TileDataEnc *tile_data,
             &rate, &rate_y, &distortion, &skippable, &total_sse,
             (int)this_rd_thresh, seg_mvs, bsi, 0, mi_row, mi_col);
         if (tmp_rd == INT64_MAX) continue;
+        x->sum_y_eobs[TX_4X4] = 0;
+        for (i = 0; i < 4; i++) {
+          x->zcoeff_blk[TX_4X4][i] = !x->plane[0].eobs[i];
+          x->sum_y_eobs[TX_4X4] += x->plane[0].eobs[i];
+        }
       } else {
         total_sse = tmp_best_sse;
         rate = tmp_best_rate;
@@ -4732,6 +4762,13 @@ void vp9_rd_pick_inter_mode_sub8x8(VP9_COMP *cpi, TileDataEnc *tile_data,
 
     mi->mv[0].as_int = xd->mi[0]->bmi[3].as_mv[0].as_int;
     mi->mv[1].as_int = xd->mi[0]->bmi[3].as_mv[1].as_int;
+  }
+  // If the second reference does not exist, set the corresponding mv to zero.
+  if (mi->ref_frame[1] == NONE) {
+    mi->mv[1].as_int = 0;
+    for (i = 0; i < 4; ++i) {
+      mi->bmi[i].as_mv[1].as_int = 0;
+    }
   }
 
   for (i = 0; i < REFERENCE_MODES; ++i) {

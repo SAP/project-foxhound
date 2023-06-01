@@ -6,17 +6,13 @@
 
 var EXPORTED_SYMBOLS = ["BingTranslator"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
 const { Async } = ChromeUtils.import("resource://services-common/async.js");
-const { httpRequest } = ChromeUtils.import("resource://gre/modules/Http.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { httpRequest } = ChromeUtils.importESModule(
+  "resource://gre/modules/Http.sys.mjs"
 );
-
-XPCOMUtils.defineLazyGlobalGetters(this, ["XMLHttpRequest"]);
 
 // The maximum amount of net data allowed per request on Bing's API.
 const MAX_REQUEST_DATA = 5000; // Documentation says 10000 but anywhere
@@ -143,7 +139,7 @@ BingTranslator.prototype = {
    */
   _chunkFailed(aError) {
     if (
-      aError instanceof XMLHttpRequest &&
+      XMLHttpRequest.isInstance(aError) &&
       [400, 401].includes(aError.status)
     ) {
       let body = aError.responseText;

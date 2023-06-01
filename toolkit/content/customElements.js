@@ -21,16 +21,10 @@
   const MozElements = {};
   window.MozElements = MozElements;
 
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
+  const { AppConstants } = ChromeUtils.importESModule(
+    "resource://gre/modules/AppConstants.sys.mjs"
   );
-  const { AppConstants } = ChromeUtils.import(
-    "resource://gre/modules/AppConstants.jsm"
-  );
-  const env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  const instrumentClasses = env.get("MOZ_INSTRUMENT_CUSTOM_ELEMENTS");
+  const instrumentClasses = Services.env.get("MOZ_INSTRUMENT_CUSTOM_ELEMENTS");
   const instrumentedClasses = instrumentClasses ? new Set() : null;
   const instrumentedBaseClasses = instrumentClasses ? new WeakSet() : null;
 
@@ -483,11 +477,6 @@
        *      return `<hbox class="example"`;
        *    }
        *
-       *    static get entities() {
-       *      // Optional field for parseXULToFragment
-       *      return `["chrome://global/locale/notification.dtd"]`;
-       *    }
-       *
        *    connectedCallback() {
        *      this.appendChild(this.constructor.fragment);
        *    }
@@ -689,7 +678,7 @@
         get(target, prop, receiver) {
           let propOrMethod = target[prop];
           if (typeof propOrMethod == "function") {
-            if (propOrMethod instanceof MozQueryInterface) {
+            if (MozQueryInterface.isInstance(propOrMethod)) {
               return Reflect.get(target, prop, receiver);
             }
             return function(...args) {
@@ -746,14 +735,6 @@
 
       get label() {
         return this.getAttribute("label");
-      }
-
-      set crop(val) {
-        this.setAttribute("crop", val);
-      }
-
-      get crop() {
-        return this.getAttribute("crop");
       }
 
       set image(val) {
@@ -841,6 +822,7 @@
       ["message-bar", "chrome://global/content/elements/message-bar.js"],
       ["named-deck", "chrome://global/content/elements/named-deck.js"],
       ["named-deck-button", "chrome://global/content/elements/named-deck.js"],
+      ["panel-list", "chrome://global/content/elements/panel-list.js"],
       ["search-textbox", "chrome://global/content/elements/search-textbox.js"],
       ["stringbundle", "chrome://global/content/elements/stringbundle.js"],
       [

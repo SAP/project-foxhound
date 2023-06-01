@@ -1,11 +1,9 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Preferences",
-  "resource://gre/modules/Preferences.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
+});
 
 add_task(async function insert_separator_notification() {
   let observer = expectPlacesObserverNotifications(["bookmark-added"]);
@@ -587,6 +585,63 @@ add_task(async function remove_bookmark_tag_notification() {
   ]);
 });
 
+add_task(async function rename_bookmark_tag_notification() {
+  let bm = await PlacesUtils.bookmarks.insert({
+    type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
+    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+    url: new URL("http://renametag.example.com/"),
+  });
+  let itemId = await PlacesUtils.promiseItemId(bm.guid);
+
+  let tagFolder = await PlacesUtils.bookmarks.insert({
+    type: PlacesUtils.bookmarks.TYPE_FOLDER,
+    parentGuid: PlacesUtils.bookmarks.tagsGuid,
+    title: "tag",
+  });
+  let tag = await PlacesUtils.bookmarks.insert({
+    type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
+    parentGuid: tagFolder.guid,
+    url: new URL("http://renametag.example.com/"),
+  });
+  let tagParentId = await PlacesUtils.promiseItemId(tag.parentGuid);
+
+  const observer = expectPlacesObserverNotifications([
+    "bookmark-title-changed",
+    "bookmark-tags-changed",
+  ]);
+  tagFolder = await PlacesUtils.bookmarks.update({
+    guid: tagFolder.guid,
+    title: "renamed",
+  });
+
+  observer.check([
+    {
+      type: "bookmark-title-changed",
+      id: tagParentId,
+      title: "renamed",
+      guid: tagFolder.guid,
+      url: "",
+      lastModified: tagFolder.lastModified,
+      parentGuid: tagFolder.parentGuid,
+      source: Ci.nsINavBookmarksService.SOURCE_DEFAULT,
+      itemType: PlacesUtils.bookmarks.TYPE_FOLDER,
+      isTagging: true,
+    },
+    {
+      type: "bookmark-tags-changed",
+      id: itemId,
+      itemType: bm.type,
+      url: bm.url,
+      guid: bm.guid,
+      parentGuid: bm.parentGuid,
+      tags: ["renamed"],
+      lastModified: bm.lastModified,
+      source: Ci.nsINavBookmarksService.SOURCE_DEFAULT,
+      isTagging: false,
+    },
+  ]);
+});
+
 add_task(async function remove_folder_notification() {
   let folder1 = await PlacesUtils.bookmarks.insert({
     type: PlacesUtils.bookmarks.TYPE_FOLDER,
@@ -974,6 +1029,11 @@ add_task(async function reorder_notification() {
 
   // Randomly reorder the array.
   sorted.sort(() => 0.5 - Math.random());
+  // Ensure there's at least one item out of place, since random does not
+  // necessarily mean they are unordered.
+  if (sorted[0].url == bookmarks[0].url) {
+    sorted.push(sorted.shift());
+  }
 
   const observer = expectPlacesObserverNotifications(["bookmark-moved"]);
   await PlacesUtils.bookmarks.reorder(
@@ -1005,8 +1065,11 @@ add_task(async function reorder_notification() {
 
 add_task(async function update_notitle_notification() {
   let toolbarBmURI = Services.io.newURI("https://example.com");
+  let toolbarItemId = await PlacesUtils.promiseItemId(
+    PlacesUtils.bookmarks.toolbarGuid
+  );
   let toolbarBmId = PlacesUtils.bookmarks.insertBookmark(
-    PlacesUtils.toolbarFolderId,
+    toolbarItemId,
     toolbarBmURI,
     0,
     "Bookmark"

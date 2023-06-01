@@ -16,8 +16,7 @@
 #include "nsIPrincipal.h"
 #include "nsProxyRelease.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // static
 already_AddRefed<SharedWorkerManagerHolder> SharedWorkerManager::Create(
@@ -63,6 +62,12 @@ bool SharedWorkerManager::MaybeCreateRemoteWorker(
     const RemoteWorkerData& aData, uint64_t aWindowID,
     UniqueMessagePortId& aPortIdentifier, base::ProcessId aProcessId) {
   ::mozilla::ipc::AssertIsOnBackgroundThread();
+
+  // Creating remote workers may result in creating new processes, but during
+  // parent shutdown that would add just noise, so better bail out.
+  if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
+    return false;
+  }
 
   if (!mRemoteWorkerController) {
     mRemoteWorkerController =
@@ -314,5 +319,4 @@ SharedWorkerManagerWrapper::~SharedWorkerManagerWrapper() {
                          mHolder.forget());
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

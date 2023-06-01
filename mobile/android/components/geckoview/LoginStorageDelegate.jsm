@@ -5,19 +5,23 @@
 
 var EXPORTED_SYMBOLS = ["LoginStorageDelegate"];
 
-const { GeckoViewUtils } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewUtils.jsm"
+const { GeckoViewUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewUtils.sys.mjs"
 );
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  GeckoViewPrompter: "resource://gre/modules/GeckoViewPrompter.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   GeckoViewAutocomplete: "resource://gre/modules/GeckoViewAutocomplete.jsm",
-  GeckoViewPrompter: "resource://gre/modules/GeckoViewPrompter.jsm",
   LoginEntry: "resource://gre/modules/GeckoViewAutocomplete.jsm",
-  Services: "resource://gre/modules/Services.jsm",
 });
 
 const { debug, warn } = GeckoViewUtils.initLogging("LoginStorageDelegate");
@@ -52,9 +56,11 @@ class LoginStorageDelegate {
     dismissed = false,
     notifySaved = false
   ) {
-    const prompt = new GeckoViewPrompter(aBrowser.ownerGlobal);
+    const prompt = new lazy.GeckoViewPrompter(aBrowser.ownerGlobal);
     prompt.asyncShowPrompt(
-      this._createMessage({ dismissed }, [LoginEntry.fromLoginInfo(aLogin)]),
+      this._createMessage({ dismissed }, [
+        lazy.LoginEntry.fromLoginInfo(aLogin),
+      ]),
       result => {
         const selectedLogin = result?.selection?.value;
 
@@ -62,10 +68,10 @@ class LoginStorageDelegate {
           return;
         }
 
-        const loginInfo = LoginEntry.parse(selectedLogin).toLoginInfo();
+        const loginInfo = lazy.LoginEntry.parse(selectedLogin).toLoginInfo();
         Services.obs.notifyObservers(loginInfo, "passwordmgr-prompt-save");
 
-        GeckoViewAutocomplete.onLoginSave(selectedLogin);
+        lazy.GeckoViewAutocomplete.onLoginSave(selectedLogin);
       }
     );
 
@@ -84,14 +90,14 @@ class LoginStorageDelegate {
     notifySaved = false,
     autoSavedLoginGuid = ""
   ) {
-    const newLogin = LoginEntry.fromLoginInfo(aOldLogin || aNewLogin);
+    const newLogin = lazy.LoginEntry.fromLoginInfo(aOldLogin || aNewLogin);
     const oldGuid = (aOldLogin && newLogin.guid) || null;
     newLogin.origin = aNewLogin.origin;
     newLogin.formActionOrigin = aNewLogin.formActionOrigin;
     newLogin.password = aNewLogin.password;
     newLogin.username = aNewLogin.username;
 
-    const prompt = new GeckoViewPrompter(aBrowser.ownerGlobal);
+    const prompt = new lazy.GeckoViewPrompter(aBrowser.ownerGlobal);
     prompt.asyncShowPrompt(
       this._createMessage({ dismissed, autoSavedLoginGuid }, [newLogin]),
       result => {
@@ -101,9 +107,9 @@ class LoginStorageDelegate {
           return;
         }
 
-        GeckoViewAutocomplete.onLoginSave(selectedLogin);
+        lazy.GeckoViewAutocomplete.onLoginSave(selectedLogin);
 
-        const loginInfo = LoginEntry.parse(selectedLogin).toLoginInfo();
+        const loginInfo = lazy.LoginEntry.parse(selectedLogin).toLoginInfo();
         Services.obs.notifyObservers(
           loginInfo,
           "passwordmgr-prompt-change",

@@ -5,6 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/WritableStream.h"
+
+#include "StreamUtils.h"
 #include "js/Array.h"
 #include "js/PropertyAndElement.h"
 #include "js/TypeDecls.h"
@@ -17,11 +19,10 @@
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/AbortSignal.h"
 #include "mozilla/dom/BindingCallContext.h"
-#include "mozilla/dom/ModuleMapKey.h"
 #include "mozilla/dom/QueueWithSizes.h"
 #include "mozilla/dom/QueuingStrategyBinding.h"
 #include "mozilla/dom/ReadRequest.h"
-#include "mozilla/dom/StreamUtils.h"
+#include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/UnderlyingSinkBinding.h"
 #include "mozilla/dom/WritableStreamBinding.h"
 #include "mozilla/dom/WritableStreamDefaultController.h"
@@ -34,45 +35,45 @@
 
 namespace mozilla::dom {
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(WritableStream)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(WritableStream)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mGlobal, mCloseRequest, mController,
-                                  mInFlightWriteRequest, mInFlightCloseRequest,
-                                  mPendingAbortRequestPromise, mWriter,
-                                  mWriteRequests)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
-  tmp->mPendingAbortRequestReason.setNull();
-  tmp->mStoredError.setNull();
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(WritableStream)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(
-      mGlobal, mCloseRequest, mController, mInFlightWriteRequest,
-      mInFlightCloseRequest, mWriter, mWriteRequests)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+using namespace streams_abstract;
 
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(WritableStream)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mPendingAbortRequestReason)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mStoredError)
-NS_IMPL_CYCLE_COLLECTION_TRACE_END
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_WITH_JS_MEMBERS(
+    WritableStream,
+    (mGlobal, mCloseRequest, mController, mInFlightWriteRequest,
+     mInFlightCloseRequest, mPendingAbortRequestPromise, mWriter,
+     mWriteRequests),
+    (mPendingAbortRequestReason, mStoredError))
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(WritableStream)
-NS_IMPL_CYCLE_COLLECTING_RELEASE(WritableStream)
+NS_IMPL_CYCLE_COLLECTING_RELEASE_WITH_LAST_RELEASE(WritableStream,
+                                                   LastRelease())
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(WritableStream)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-WritableStream::WritableStream(nsIGlobalObject* aGlobal) : mGlobal(aGlobal) {
-  mozilla::HoldJSObjects(this);
+WritableStream::WritableStream(nsIGlobalObject* aGlobal,
+                               HoldDropJSObjectsCaller aHoldDropCaller)
+    : mGlobal(aGlobal), mHoldDropCaller(aHoldDropCaller) {
+  if (mHoldDropCaller == HoldDropJSObjectsCaller::Implicit) {
+    mozilla::HoldJSObjects(this);
+  }
 }
 
-WritableStream::WritableStream(const GlobalObject& aGlobal)
-    : mGlobal(do_QueryInterface(aGlobal.GetAsSupports())) {
-  mozilla::HoldJSObjects(this);
+WritableStream::WritableStream(const GlobalObject& aGlobal,
+                               HoldDropJSObjectsCaller aHoldDropCaller)
+    : mGlobal(do_QueryInterface(aGlobal.GetAsSupports())),
+      mHoldDropCaller(aHoldDropCaller) {
+  if (mHoldDropCaller == HoldDropJSObjectsCaller::Implicit) {
+    mozilla::HoldJSObjects(this);
+  }
 }
 
-WritableStream::~WritableStream() { mozilla::DropJSObjects(this); }
+WritableStream::~WritableStream() {
+  if (mHoldDropCaller == HoldDropJSObjectsCaller::Implicit) {
+    mozilla::DropJSObjects(this);
+  }
+}
 
 JSObject* WritableStream::WrapObject(JSContext* aCx,
                                      JS::Handle<JSObject*> aGivenProto) {
@@ -99,57 +100,6 @@ void WritableStream::DealWithRejection(JSContext* aCx,
   // Step 4. Perform ! WritableStreamFinishErroring(stream).
   FinishErroring(aCx, aRv);
 }
-
-class AbortStepsNativePromiseHandler final : public PromiseNativeHandler {
-  ~AbortStepsNativePromiseHandler() = default;
-
-  RefPtr<WritableStream> mStream;
-  RefPtr<Promise> mAbortRequestPromise;
-
- public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_CLASS(AbortStepsNativePromiseHandler)
-
-  explicit AbortStepsNativePromiseHandler(WritableStream* aStream,
-                                          Promise* aAbortRequestPromise)
-      : PromiseNativeHandler(),
-        mStream(aStream),
-        mAbortRequestPromise(aAbortRequestPromise) {}
-
-  void ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
-                        ErrorResult& aRv) override {
-    // https://streams.spec.whatwg.org/#writable-stream-finish-erroring
-
-    // Step 13. Upon fulfillment of promise,
-    // Step 13.1. Resolve abortRequest’s promise with undefined.
-    mAbortRequestPromise->MaybeResolveWithUndefined();
-
-    // Step 13.2. Perform !
-    // WritableStreamRejectCloseAndClosedPromiseIfNeeded(stream).
-    mStream->RejectCloseAndClosedPromiseIfNeeded();
-  }
-
-  void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
-                        ErrorResult& aRv) override {
-    // https://streams.spec.whatwg.org/#writable-stream-finish-erroring
-
-    // Step 14. Upon rejection of promise with reason reason,
-    // Step 14.1. Reject abortRequest’s promise with reason.
-    mAbortRequestPromise->MaybeReject(aValue);
-
-    // Step 14.2. Perform !
-    // WritableStreamRejectCloseAndClosedPromiseIfNeeded(stream).
-    mStream->RejectCloseAndClosedPromiseIfNeeded();
-  }
-};
-
-NS_IMPL_CYCLE_COLLECTION(AbortStepsNativePromiseHandler, mStream,
-                         mAbortRequestPromise)
-NS_IMPL_CYCLE_COLLECTING_ADDREF(AbortStepsNativePromiseHandler)
-NS_IMPL_CYCLE_COLLECTING_RELEASE(AbortStepsNativePromiseHandler)
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(AbortStepsNativePromiseHandler)
-  NS_INTERFACE_MAP_ENTRY(nsISupports)
-NS_INTERFACE_MAP_END
 
 // https://streams.spec.whatwg.org/#writable-stream-finish-erroring
 void WritableStream::FinishErroring(JSContext* aCx, ErrorResult& aRv) {
@@ -218,8 +168,28 @@ void WritableStream::FinishErroring(JSContext* aCx, ErrorResult& aRv) {
   }
 
   // Step 13 + 14.
-  promise->AppendNativeHandler(
-      new AbortStepsNativePromiseHandler(this, abortPromise));
+  promise->AddCallbacksWithCycleCollectedArgs(
+      [](JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult& aRv,
+         Promise* aAbortRequestPromise, WritableStream* aStream) {
+        // Step 13. Upon fulfillment of promise,
+        // Step 13.1. Resolve abortRequest’s promise with undefined.
+        aAbortRequestPromise->MaybeResolveWithUndefined();
+
+        // Step 13.2. Perform !
+        // WritableStreamRejectCloseAndClosedPromiseIfNeeded(stream).
+        aStream->RejectCloseAndClosedPromiseIfNeeded();
+      },
+      [](JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult& aRv,
+         Promise* aAbortRequestPromise, WritableStream* aStream) {
+        // Step 14. Upon rejection of promise with reason reason,
+        // Step 14.1. Reject abortRequest’s promise with reason.
+        aAbortRequestPromise->MaybeReject(aValue);
+
+        // Step 14.2. Perform !
+        // WritableStreamRejectCloseAndClosedPromiseIfNeeded(stream).
+        aStream->RejectCloseAndClosedPromiseIfNeeded();
+      },
+      RefPtr(abortPromise), RefPtr(this));
 }
 
 // https://streams.spec.whatwg.org/#writable-stream-finish-in-flight-close
@@ -424,10 +394,7 @@ void WritableStream::StartErroring(JSContext* aCx,
   // Step 8. If writer is not undefined, perform !
   // WritableStreamDefaultWriterEnsureReadyPromiseRejected(writer, reason).
   if (writer) {
-    WritableStreamDefaultWriterEnsureReadyPromiseRejected(writer, aReason, aRv);
-    if (aRv.Failed()) {
-      return;
-    }
+    WritableStreamDefaultWriterEnsureReadyPromiseRejected(writer, aReason);
   }
 
   // Step 9. If ! WritableStreamHasOperationMarkedInFlight(stream) is false
@@ -439,7 +406,7 @@ void WritableStream::StartErroring(JSContext* aCx,
 }
 
 // https://streams.spec.whatwg.org/#writable-stream-update-backpressure
-void WritableStream::UpdateBackpressure(bool aBackpressure, ErrorResult& aRv) {
+void WritableStream::UpdateBackpressure(bool aBackpressure) {
   // Step 1. Assert: stream.[[state]] is "writable".
   MOZ_ASSERT(mState == WriterState::Writable);
   // Step 2. Assert: ! WritableStreamCloseQueuedOrInFlight(stream) is false.
@@ -454,10 +421,8 @@ void WritableStream::UpdateBackpressure(bool aBackpressure, ErrorResult& aRv) {
     // Step 4.1. If backpressure is true, set writer.[[readyPromise]] to a new
     // promise.
     if (aBackpressure) {
-      RefPtr<Promise> promise = Promise::Create(writer->GetParentObject(), aRv);
-      if (aRv.Failed()) {
-        return;
-      }
+      RefPtr<Promise> promise =
+          Promise::CreateInfallible(writer->GetParentObject());
       writer->SetReadyPromise(promise);
     } else {
       // Step 4.2. Otherwise,
@@ -483,7 +448,7 @@ already_AddRefed<WritableStream> WritableStream::Constructor(
 
   // Step 2. Let underlyingSinkDict be underlyingSink, converted to
   //         an IDL value of type UnderlyingSink.
-  UnderlyingSink underlyingSinkDict;
+  RootedDictionary<UnderlyingSink> underlyingSinkDict(aGlobal.Context());
   if (underlyingSinkObj) {
     JS::Rooted<JS::Value> objValue(aGlobal.Context(),
                                    JS::ObjectValue(*underlyingSinkObj));
@@ -503,7 +468,8 @@ already_AddRefed<WritableStream> WritableStream::Constructor(
   }
 
   // Step 4. Perform ! InitializeWritableStream(this).
-  RefPtr<WritableStream> writableStream = new WritableStream(aGlobal);
+  RefPtr<WritableStream> writableStream =
+      new WritableStream(aGlobal, HoldDropJSObjectsCaller::Implicit);
 
   // Step 5. Let sizeAlgorithm be ! ExtractSizeAlgorithm(strategy).
   //
@@ -535,6 +501,7 @@ already_AddRefed<WritableStream> WritableStream::Constructor(
   return writableStream.forget();
 }
 
+namespace streams_abstract {
 // https://streams.spec.whatwg.org/#writable-stream-abort
 already_AddRefed<Promise> WritableStreamAbort(JSContext* aCx,
                                               WritableStream* aStream,
@@ -544,10 +511,8 @@ already_AddRefed<Promise> WritableStreamAbort(JSContext* aCx,
   // resolved with undefined.
   if (aStream->State() == WritableStream::WriterState::Closed ||
       aStream->State() == WritableStream::WriterState::Errored) {
-    RefPtr<Promise> promise = Promise::Create(aStream->GetParentObject(), aRv);
-    if (aRv.Failed()) {
-      return nullptr;
-    }
+    RefPtr<Promise> promise =
+        Promise::CreateInfallible(aStream->GetParentObject());
     promise->MaybeResolveWithUndefined();
     return promise.forget();
   }
@@ -564,10 +529,8 @@ already_AddRefed<Promise> WritableStreamAbort(JSContext* aCx,
   // code and that might have changed the state.
   if (aStream->State() == WritableStream::WriterState::Closed ||
       aStream->State() == WritableStream::WriterState::Errored) {
-    RefPtr<Promise> promise = Promise::Create(aStream->GetParentObject(), aRv);
-    if (aRv.Failed()) {
-      return nullptr;
-    }
+    RefPtr<Promise> promise =
+        Promise::CreateInfallible(aStream->GetParentObject());
     promise->MaybeResolveWithUndefined();
     return promise.forget();
   }
@@ -596,10 +559,8 @@ already_AddRefed<Promise> WritableStreamAbort(JSContext* aCx,
   }
 
   // Step 9. Let promise be a new promise.
-  RefPtr<Promise> promise = Promise::Create(aStream->GetParentObject(), aRv);
-  if (aRv.Failed()) {
-    return nullptr;
-  }
+  RefPtr<Promise> promise =
+      Promise::CreateInfallible(aStream->GetParentObject());
 
   // Step 10. Set stream.[[pendingAbortRequest]] to a new pending abort request
   // whose promise is promise, reason is reason, and was already erroring is
@@ -618,6 +579,7 @@ already_AddRefed<Promise> WritableStreamAbort(JSContext* aCx,
   // Step 12. Return promise.
   return promise.forget();
 }
+}  // namespace streams_abstract
 
 // https://streams.spec.whatwg.org/#ws-abort
 already_AddRefed<Promise> WritableStream::Abort(JSContext* aCx,
@@ -626,12 +588,8 @@ already_AddRefed<Promise> WritableStream::Abort(JSContext* aCx,
   // Step 1. If ! IsWritableStreamLocked(this) is true, return a promise
   // rejected with a TypeError exception.
   if (Locked()) {
-    RefPtr<Promise> promise = Promise::Create(GetParentObject(), aRv);
-    if (aRv.Failed()) {
-      return nullptr;
-    }
-    promise->MaybeRejectWithTypeError("Canceled Locked Stream");
-    return promise.forget();
+    return Promise::CreateRejectedWithTypeError(
+        GetParentObject(), "Canceled Locked Stream"_ns, aRv);
   }
 
   // Step 2. Return ! WritableStreamAbort(this, reason).
@@ -639,6 +597,7 @@ already_AddRefed<Promise> WritableStream::Abort(JSContext* aCx,
   return WritableStreamAbort(aCx, thisRefPtr, aReason, aRv);
 }
 
+namespace streams_abstract {
 // https://streams.spec.whatwg.org/#writable-stream-close
 already_AddRefed<Promise> WritableStreamClose(JSContext* aCx,
                                               WritableStream* aStream,
@@ -650,13 +609,9 @@ already_AddRefed<Promise> WritableStreamClose(JSContext* aCx,
   // TypeError exception.
   if (state == WritableStream::WriterState::Closed ||
       state == WritableStream::WriterState::Errored) {
-    RefPtr<Promise> promise = Promise::Create(aStream->GetParentObject(), aRv);
-    if (aRv.Failed()) {
-      return nullptr;
-    }
-    promise->MaybeRejectWithTypeError(
-        "Can not close stream after closing or error");
-    return promise.forget();
+    return Promise::CreateRejectedWithTypeError(
+        aStream->GetParentObject(),
+        "Can not close stream after closing or error"_ns, aRv);
   }
 
   // Step 3. Assert: state is "writable" or "erroring".
@@ -667,10 +622,8 @@ already_AddRefed<Promise> WritableStreamClose(JSContext* aCx,
   MOZ_ASSERT(!aStream->CloseQueuedOrInFlight());
 
   // Step 5. Let promise be a new promise.
-  RefPtr<Promise> promise = Promise::Create(aStream->GetParentObject(), aRv);
-  if (aRv.Failed()) {
-    return nullptr;
-  }
+  RefPtr<Promise> promise =
+      Promise::CreateInfallible(aStream->GetParentObject());
 
   // Step 6. Set stream.[[closeRequest]] to promise.
   aStream->SetCloseRequest(promise);
@@ -696,6 +649,7 @@ already_AddRefed<Promise> WritableStreamClose(JSContext* aCx,
   // Step 10. Return promise.
   return promise.forget();
 }
+}  // namespace streams_abstract
 
 // https://streams.spec.whatwg.org/#ws-close
 already_AddRefed<Promise> WritableStream::Close(JSContext* aCx,
@@ -703,29 +657,23 @@ already_AddRefed<Promise> WritableStream::Close(JSContext* aCx,
   // Step 1. If ! IsWritableStreamLocked(this) is true, return a promise
   // rejected with a TypeError exception.
   if (Locked()) {
-    RefPtr<Promise> promise = Promise::Create(GetParentObject(), aRv);
-    if (aRv.Failed()) {
-      return nullptr;
-    }
-    promise->MaybeRejectWithTypeError("Can not close locked stream");
-    return promise.forget();
+    return Promise::CreateRejectedWithTypeError(
+        GetParentObject(), "Can not close locked stream"_ns, aRv);
   }
 
   // Step 2. If ! WritableStreamCloseQueuedOrInFlight(this) is true, return a
   // promise rejected with a TypeError exception.
   if (CloseQueuedOrInFlight()) {
-    RefPtr<Promise> promise = Promise::Create(GetParentObject(), aRv);
-    if (aRv.Failed()) {
-      return nullptr;
-    }
-    promise->MaybeRejectWithTypeError("Stream is already closing");
-    return promise.forget();
+    return Promise::CreateRejectedWithTypeError(
+        GetParentObject(), "Stream is already closing"_ns, aRv);
   }
 
   // Step 3. Return ! WritableStreamClose(this).
   RefPtr<WritableStream> thisRefPtr = this;
   return WritableStreamClose(aCx, thisRefPtr, aRv);
 }
+
+namespace streams_abstract {
 
 // https://streams.spec.whatwg.org/#acquire-writable-stream-default-writer
 already_AddRefed<WritableStreamDefaultWriter>
@@ -744,14 +692,47 @@ AcquireWritableStreamDefaultWriter(WritableStream* aStream, ErrorResult& aRv) {
   return writer.forget();
 }
 
+// https://streams.spec.whatwg.org/#create-writable-stream
+already_AddRefed<WritableStream> CreateWritableStream(
+    JSContext* aCx, nsIGlobalObject* aGlobal,
+    UnderlyingSinkAlgorithmsBase* aAlgorithms, double aHighWaterMark,
+    QueuingStrategySize* aSizeAlgorithm, ErrorResult& aRv) {
+  // Step 1: Assert: ! IsNonNegativeNumber(highWaterMark) is true.
+  MOZ_ASSERT(IsNonNegativeNumber(aHighWaterMark));
+
+  // Step 2: Let stream be a new WritableStream.
+  // Step 3: Perform ! InitializeWritableStream(stream).
+  auto stream = MakeRefPtr<WritableStream>(
+      aGlobal, WritableStream::HoldDropJSObjectsCaller::Implicit);
+
+  // Step 4: Let controller be a new WritableStreamDefaultController.
+  auto controller =
+      MakeRefPtr<WritableStreamDefaultController>(aGlobal, *stream);
+
+  // Step 5: Perform ? SetUpWritableStreamDefaultController(stream, controller,
+  // startAlgorithm, writeAlgorithm, closeAlgorithm, abortAlgorithm,
+  // highWaterMark, sizeAlgorithm).
+  SetUpWritableStreamDefaultController(aCx, stream, controller, aAlgorithms,
+                                       aHighWaterMark, aSizeAlgorithm, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+
+  // Step 6: Return stream.
+  return stream.forget();
+}
+
+}  // namespace streams_abstract
+
 already_AddRefed<WritableStreamDefaultWriter> WritableStream::GetWriter(
     ErrorResult& aRv) {
   return AcquireWritableStreamDefaultWriter(this, aRv);
 }
 
+namespace streams_abstract {
 // https://streams.spec.whatwg.org/#writable-stream-add-write-request
-already_AddRefed<Promise> WritableStreamAddWriteRequest(WritableStream* aStream,
-                                                        ErrorResult& aRv) {
+already_AddRefed<Promise> WritableStreamAddWriteRequest(
+    WritableStream* aStream) {
   // Step 1. Assert: ! IsWritableStreamLocked(stream) is true.
   MOZ_ASSERT(IsWritableStreamLocked(aStream));
 
@@ -759,16 +740,70 @@ already_AddRefed<Promise> WritableStreamAddWriteRequest(WritableStream* aStream,
   MOZ_ASSERT(aStream->State() == WritableStream::WriterState::Writable);
 
   // Step 3. Let promise be a new promise.
-  RefPtr<Promise> promise = Promise::Create(aStream->GetParentObject(), aRv);
-  if (aRv.Failed()) {
-    return nullptr;
-  }
+  RefPtr<Promise> promise =
+      Promise::CreateInfallible(aStream->GetParentObject());
 
   // Step 4. Append promise to stream.[[writeRequests]].
   aStream->AppendWriteRequest(promise);
 
   // Step 5. Return promise.
   return promise.forget();
+}
+}  // namespace streams_abstract
+
+// https://streams.spec.whatwg.org/#writablestream-set-up
+void WritableStream::SetUpNative(JSContext* aCx,
+                                 UnderlyingSinkAlgorithmsWrapper& aAlgorithms,
+                                 Maybe<double> aHighWaterMark,
+                                 QueuingStrategySize* aSizeAlgorithm,
+                                 ErrorResult& aRv) {
+  // an optional number highWaterMark (default 1)
+  double highWaterMark = aHighWaterMark.valueOr(1);
+  // and if given, highWaterMark must be a non-negative, non-NaN number.
+  MOZ_ASSERT(IsNonNegativeNumber(highWaterMark));
+
+  // Step 1: Let startAlgorithm be an algorithm that returns undefined.
+  // Step 2: Let closeAlgorithmWrapper be an algorithm that runs these steps:
+  // Step 3: Let abortAlgorithmWrapper be an algorithm that runs these steps:
+  // (Covered by UnderlyingSinkAlgorithmsWrapper)
+
+  // Step 4: If sizeAlgorithm was not given, then set it to an algorithm that
+  // returns 1. (Callers will treat nullptr as such, see
+  // WritableStream::Constructor for details)
+
+  // Step 5: Perform ! InitializeWritableStream(stream).
+  // (Covered by the constructor)
+
+  // Step 6: Let controller be a new WritableStreamDefaultController.
+  auto controller =
+      MakeRefPtr<WritableStreamDefaultController>(GetParentObject(), *this);
+
+  // Step 7: Perform ! SetUpWritableStreamDefaultController(stream, controller,
+  // startAlgorithm, writeAlgorithm, closeAlgorithmWrapper,
+  // abortAlgorithmWrapper, highWaterMark, sizeAlgorithm).
+  SetUpWritableStreamDefaultController(aCx, this, controller, &aAlgorithms,
+                                       highWaterMark, aSizeAlgorithm, aRv);
+}
+
+already_AddRefed<WritableStream> WritableStream::CreateNative(
+    JSContext* aCx, nsIGlobalObject& aGlobal,
+    UnderlyingSinkAlgorithmsWrapper& aAlgorithms, Maybe<double> aHighWaterMark,
+    QueuingStrategySize* aSizeAlgorithm, ErrorResult& aRv) {
+  auto stream = MakeRefPtr<WritableStream>(
+      &aGlobal, WritableStream::HoldDropJSObjectsCaller::Implicit);
+  stream->SetUpNative(aCx, aAlgorithms, aHighWaterMark, aSizeAlgorithm, aRv);
+  return stream.forget();
+}
+
+// https://streams.spec.whatwg.org/#writablestream-error
+// To error a WritableStream stream given a JavaScript value e, perform !
+// WritableStreamDefaultControllerErrorIfNeeded(stream.[[controller]], e).
+void WritableStream::ErrorNative(JSContext* aCx, JS::Handle<JS::Value> aError,
+                                 ErrorResult& aRv) {
+  // MOZ_KnownLive here instead of MOZ_KNOWN_LIVE at the field, because
+  // mController is set outside of the constructor
+  WritableStreamDefaultControllerErrorIfNeeded(aCx, MOZ_KnownLive(mController),
+                                               aError, aRv);
 }
 
 }  // namespace mozilla::dom

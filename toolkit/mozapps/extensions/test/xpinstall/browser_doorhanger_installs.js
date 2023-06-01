@@ -2,6 +2,9 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+// TODO(Bug 1789718): adapt to synthetic addon type implemented by the SitePermAddonProvider
+// or remove if redundant, after the deprecated XPIProvider-based implementation is also removed.
+
 const { AddonTestUtils } = ChromeUtils.import(
   "resource://testing-common/AddonTestUtils.jsm"
 );
@@ -61,7 +64,9 @@ function getObserverTopic(aNotificationId) {
 async function waitForProgressNotification(
   aPanelOpen = false,
   aExpectedCount = 1,
-  wantDisabled = true
+  wantDisabled = true,
+  expectedAnchorID = "unified-extensions-button",
+  win = window
 ) {
   let notificationId = PROGRESS_NOTIFICATION;
   info("Waiting for " + notificationId + " notification");
@@ -87,7 +92,7 @@ async function waitForProgressNotification(
     panelEventPromise = Promise.resolve();
   } else {
     panelEventPromise = new Promise(resolve => {
-      PopupNotifications.panel.addEventListener(
+      win.PopupNotifications.panel.addEventListener(
         "popupshowing",
         function() {
           resolve();
@@ -102,14 +107,14 @@ async function waitForProgressNotification(
   await waitForTick();
 
   info("Saw a notification");
-  ok(PopupNotifications.isPanelOpen, "Panel should be open");
+  ok(win.PopupNotifications.isPanelOpen, "Panel should be open");
   is(
-    PopupNotifications.panel.childNodes.length,
+    win.PopupNotifications.panel.childNodes.length,
     aExpectedCount,
     "Should be the right number of notifications"
   );
-  if (PopupNotifications.panel.childNodes.length) {
-    let nodes = Array.from(PopupNotifications.panel.childNodes);
+  if (win.PopupNotifications.panel.childNodes.length) {
+    let nodes = Array.from(win.PopupNotifications.panel.childNodes);
     let notification = nodes.find(
       n => n.id == notificationId + "-notification"
     );
@@ -119,9 +124,16 @@ async function waitForProgressNotification(
       wantDisabled,
       "The install button should be disabled?"
     );
+
+    let n = win.PopupNotifications.getNotification(PROGRESS_NOTIFICATION);
+    is(
+      n?.anchorElement?.id || n?.anchorElement?.parentElement?.id,
+      expectedAnchorID,
+      "expected the right anchor ID"
+    );
   }
 
-  return PopupNotifications.panel;
+  return win.PopupNotifications.panel;
 }
 
 function acceptAppMenuNotificationWhenShown(
@@ -205,7 +217,12 @@ function acceptAppMenuNotificationWhenShown(
   });
 }
 
-async function waitForNotification(aId, aExpectedCount = 1) {
+async function waitForNotification(
+  aId,
+  aExpectedCount = 1,
+  expectedAnchorID = "unified-extensions-button",
+  win = window
+) {
   info("Waiting for " + aId + " notification");
 
   let topic = getObserverTopic(aId);
@@ -228,14 +245,14 @@ async function waitForNotification(aId, aExpectedCount = 1) {
   }
 
   let panelEventPromise = new Promise(resolve => {
-    PopupNotifications.panel.addEventListener(
+    win.PopupNotifications.panel.addEventListener(
       "PanelUpdated",
       function eventListener(e) {
         // Skip notifications that are not the one that we are supposed to be looking for
         if (!e.detail.includes(aId)) {
           return;
         }
-        PopupNotifications.panel.removeEventListener(
+        win.PopupNotifications.panel.removeEventListener(
           "PanelUpdated",
           eventListener
         );
@@ -249,29 +266,36 @@ async function waitForNotification(aId, aExpectedCount = 1) {
   await waitForTick();
 
   info("Saw a " + aId + " notification");
-  ok(PopupNotifications.isPanelOpen, "Panel should be open");
+  ok(win.PopupNotifications.isPanelOpen, "Panel should be open");
   is(
-    PopupNotifications.panel.childNodes.length,
+    win.PopupNotifications.panel.childNodes.length,
     aExpectedCount,
     "Should be the right number of notifications"
   );
-  if (PopupNotifications.panel.childNodes.length) {
-    let nodes = Array.from(PopupNotifications.panel.childNodes);
+  if (win.PopupNotifications.panel.childNodes.length) {
+    let nodes = Array.from(win.PopupNotifications.panel.childNodes);
     let notification = nodes.find(n => n.id == aId + "-notification");
     ok(notification, "Should have seen the " + aId + " notification");
-  }
-  await SimpleTest.promiseFocus(PopupNotifications.window);
 
-  return PopupNotifications.panel;
+    let n = win.PopupNotifications.getNotification(aId);
+    is(
+      n?.anchorElement?.id || n?.anchorElement?.parentElement?.id,
+      expectedAnchorID,
+      "expected the right anchor ID"
+    );
+  }
+  await SimpleTest.promiseFocus(win.PopupNotifications.window);
+
+  return win.PopupNotifications.panel;
 }
 
-function waitForNotificationClose() {
-  if (!PopupNotifications.isPanelOpen) {
+function waitForNotificationClose(win = window) {
+  if (!win.PopupNotifications.isPanelOpen) {
     return Promise.resolve();
   }
   return new Promise(resolve => {
     info("Waiting for notification to close");
-    PopupNotifications.panel.addEventListener(
+    win.PopupNotifications.panel.addEventListener(
       "popuphidden",
       function() {
         resolve();
@@ -320,7 +344,7 @@ function setupRedirect(aSettings) {
 
 var TESTS = [
   async function test_disabledInstall() {
-    SpecialPowers.pushPrefEnv({
+    await SpecialPowers.pushPrefEnv({
       set: [["xpinstall.enabled", false]],
     });
     let notificationPromise = waitForNotification("xpinstall-disabled");
@@ -368,7 +392,7 @@ var TESTS = [
   },
 
   async function test_blockedInstall() {
-    SpecialPowers.pushPrefEnv({
+    await SpecialPowers.pushPrefEnv({
       set: [["extensions.postDownloadThirdPartyPrompt", false]],
     });
 
@@ -389,6 +413,14 @@ var TESTS = [
       notification.button.label,
       "Continue to Installation",
       "Should have seen the right button"
+    );
+    is(
+      notification
+        .querySelector("#addon-install-blocked-info")
+        .getAttribute("href"),
+      Services.urlFormatter.formatURLPref("app.support.baseURL") +
+        "unlisted-extensions-risks",
+      "Got the expected SUMO page as a learn more link in the addon-install-blocked panel"
     );
     let message = panel.ownerDocument.getElementById(
       "addon-install-blocked-message"
@@ -431,10 +463,11 @@ var TESTS = [
     await addon.uninstall();
 
     await BrowserTestUtils.removeTab(gBrowser.selectedTab);
+    await SpecialPowers.popPrefEnv();
   },
 
   async function test_blockedInstallDomain() {
-    SpecialPowers.pushPrefEnv({
+    await SpecialPowers.pushPrefEnv({
       set: [
         ["extensions.postDownloadThirdPartyPrompt", true],
         ["extensions.install_origins.enabled", true],
@@ -467,7 +500,7 @@ var TESTS = [
   },
 
   async function test_allowedInstallDomain() {
-    SpecialPowers.pushPrefEnv({
+    await SpecialPowers.pushPrefEnv({
       set: [
         ["extensions.postDownloadThirdPartyPrompt", true],
         ["extensions.install_origins.enabled", true],
@@ -569,7 +602,7 @@ var TESTS = [
             action: "privateBrowsingAllowed",
             view: "postInstall",
             addonId: addon.id,
-            type: "sitepermission",
+            type: "sitepermission-deprecated",
           },
         },
       ],
@@ -593,7 +626,7 @@ var TESTS = [
   },
 
   async function test_blockedPostDownload() {
-    SpecialPowers.pushPrefEnv({
+    await SpecialPowers.pushPrefEnv({
       set: [["extensions.postDownloadThirdPartyPrompt", true]],
     });
 
@@ -651,7 +684,7 @@ var TESTS = [
   },
 
   async function test_recommendedPostDownload() {
-    SpecialPowers.pushPrefEnv({
+    await SpecialPowers.pushPrefEnv({
       set: [["extensions.postDownloadThirdPartyPrompt", true]],
     });
 
@@ -688,7 +721,7 @@ var TESTS = [
   },
 
   async function test_priviledgedNo3rdPartyPrompt() {
-    SpecialPowers.pushPrefEnv({
+    await SpecialPowers.pushPrefEnv({
       set: [["extensions.postDownloadThirdPartyPrompt", true]],
     });
     AddonManager.checkUpdateSecurity = false;
@@ -984,7 +1017,7 @@ var TESTS = [
     });
     gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, "about:blank");
     await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-    BrowserTestUtils.loadURI(gBrowser, path);
+    BrowserTestUtils.loadURIString(gBrowser, path);
     await failPromise;
 
     // Wait for the browser code to add the failure notification
@@ -1075,12 +1108,12 @@ var TESTS = [
       false,
       requestedUrl
     );
-    BrowserTestUtils.loadURI(gBrowser, TESTROOT2 + "enabled.html");
+    BrowserTestUtils.loadURIString(gBrowser, TESTROOT2 + "enabled.html");
     await loadedPromise;
 
     let progressPromise = waitForProgressNotification();
     let notificationPromise = waitForNotification("addon-install-failed");
-    BrowserTestUtils.loadURI(gBrowser, TESTROOT + "corrupt.xpi");
+    BrowserTestUtils.loadURIString(gBrowser, TESTROOT + "corrupt.xpi");
     await progressPromise;
     let panel = await notificationPromise;
 
@@ -1118,7 +1151,7 @@ var TESTS = [
     await new Promise(resolve => executeSoon(resolve));
 
     notificationPromise = waitForNotification("addon-install-blocked");
-    BrowserTestUtils.loadURI(
+    BrowserTestUtils.loadURIString(
       gBrowser,
       TESTROOT + "installtrigger.html?" + triggers
     );
@@ -1151,13 +1184,7 @@ var TESTS = [
       TESTROOT + "installtrigger.html?" + triggers
     );
     let panel = await notificationPromise;
-
     let notification = panel.childNodes[0];
-    // Close the notification
-    let anchor = document.getElementById("addons-notification-icon");
-    anchor.click();
-    // Reopen the notification
-    anchor.click();
 
     ok(PopupNotifications.isPanelOpen, "Notification should still be open");
     is(
@@ -1165,7 +1192,6 @@ var TESTS = [
       1,
       "Should be only one notification"
     );
-    notification = panel.childNodes[0];
     is(
       notification.id,
       "addon-progress-notification",
@@ -1185,7 +1211,7 @@ var TESTS = [
     EventUtils.synthesizeMouseAtCenter(notification.secondaryButton, {});
     await cancelledPromise;
 
-    await new Promise(resolve => executeSoon(resolve));
+    await waitForTick();
 
     ok(!PopupNotifications.isPanelOpen, "Notification should be closed");
 
@@ -1197,8 +1223,11 @@ var TESTS = [
   },
 
   async function test_failedSecurity() {
-    SpecialPowers.pushPrefEnv({
-      set: [[PREF_INSTALL_REQUIREBUILTINCERTS, false]],
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        [PREF_INSTALL_REQUIREBUILTINCERTS, false],
+        ["extensions.postDownloadThirdPartyPrompt", false],
+      ],
     });
 
     setupRedirect({
@@ -1334,7 +1363,6 @@ var TESTS = [
     await addon.uninstall();
 
     await removeTabAndWaitForNotificationClose();
-    await SpecialPowers.popPrefEnv();
   },
 
   async function test_incognito_checkbox_new_window() {
@@ -1428,8 +1456,118 @@ var TESTS = [
 
     await addon.uninstall();
 
-    await SpecialPowers.popPrefEnv();
     await BrowserTestUtils.closeWindow(win);
+  },
+
+  async function test_blockedInstallDomain_with_unified_extensions() {
+    await SpecialPowers.pushPrefEnv({
+      set: [["extensions.install_origins.enabled", true]],
+    });
+
+    let win = await BrowserTestUtils.openNewBrowserWindow();
+    await SimpleTest.promiseFocus(win);
+
+    let progressPromise = waitForProgressNotification(
+      false,
+      1,
+      true,
+      "unified-extensions-button",
+      win
+    );
+    let notificationPromise = waitForNotification(
+      "addon-install-failed",
+      1,
+      "unified-extensions-button",
+      win
+    );
+    let triggers = encodeURIComponent(
+      JSON.stringify({
+        XPI: TESTROOT2 + "webmidi_permission.xpi",
+      })
+    );
+    await BrowserTestUtils.openNewForegroundTab(
+      win.gBrowser,
+      TESTROOT + "installtrigger.html?" + triggers
+    );
+    await progressPromise;
+    await notificationPromise;
+
+    await BrowserTestUtils.closeWindow(win);
+    await SpecialPowers.popPrefEnv();
+  },
+
+  async function test_mv3_installOrigins_disallowed_with_unified_extensions() {
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        // Disable signature check because we load an unsigned MV3 extension.
+        ["xpinstall.signatures.required", false],
+        ["extensions.install_origins.enabled", true],
+      ],
+    });
+
+    let win = await BrowserTestUtils.openNewBrowserWindow();
+    await SimpleTest.promiseFocus(win);
+
+    let notificationPromise = waitForNotification(
+      "addon-install-failed",
+      1,
+      "unified-extensions-button",
+      win
+    );
+    let triggers = encodeURIComponent(
+      JSON.stringify({
+        // This XPI does not have any `install_origins` in its manifest.
+        XPI: "unsigned_mv3.xpi",
+      })
+    );
+    await BrowserTestUtils.openNewForegroundTab(
+      win.gBrowser,
+      TESTROOT + "installtrigger.html?" + triggers
+    );
+    await notificationPromise;
+
+    await BrowserTestUtils.closeWindow(win);
+    await SpecialPowers.popPrefEnv();
+  },
+
+  async function test_mv3_installOrigins_allowed_with_unified_extensions() {
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        // Disable signature check because we load an unsigned MV3 extension.
+        ["xpinstall.signatures.required", false],
+        // When this pref is disabled, install should be possible.
+        ["extensions.install_origins.enabled", false],
+      ],
+    });
+
+    let win = await BrowserTestUtils.openNewBrowserWindow();
+    await SimpleTest.promiseFocus(win);
+
+    let notificationPromise = waitForNotification(
+      "addon-install-blocked",
+      1,
+      "unified-extensions-button",
+      win
+    );
+    let triggers = encodeURIComponent(
+      JSON.stringify({
+        // This XPI does not have any `install_origins` in its manifest.
+        XPI: "unsigned_mv3.xpi",
+      })
+    );
+    await BrowserTestUtils.openNewForegroundTab(
+      win.gBrowser,
+      TESTROOT + "installtrigger.html?" + triggers
+    );
+    let panel = await notificationPromise;
+
+    let closePromise = waitForNotificationClose(win);
+    // hide the panel (this simulates the user dismissing it)
+    panel.hidePopup();
+    await closePromise;
+
+    await BrowserTestUtils.closeWindow(win);
+    await SpecialPowers.popPrefEnv();
   },
 ];
 
@@ -1455,12 +1593,17 @@ var XPInstallObserver = {
 add_task(async function() {
   requestLongerTimeout(4);
 
-  SpecialPowers.pushPrefEnv({
+  await SpecialPowers.pushPrefEnv({
     set: [
       ["extensions.logging.enabled", true],
       ["extensions.strictCompatibility", true],
       ["extensions.install.requireSecureOrigin", false],
       ["security.dialog_enable_delay", 0],
+      // These tests currently depends on InstallTrigger.install.
+      ["extensions.InstallTrigger.enabled", true],
+      ["extensions.InstallTriggerImpl.enabled", true],
+      // Relax the user input requirements while running this test.
+      ["xpinstall.userActivation.required", false],
     ],
   });
 

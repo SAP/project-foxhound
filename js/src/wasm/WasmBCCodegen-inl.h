@@ -263,15 +263,6 @@ void BaseCompiler::branchTo(Assembler::Condition c, RegRef lhs, ImmWord rhs,
 
 //////////////////////////////////////////////////////////////////////////////
 //
-// Debugger API.
-
-void BaseCompiler::insertBreakablePoint(CallSiteDesc::Kind kind) {
-  fr.loadTlsPtr(WasmTlsReg);
-  masm.nopPatchableToCall(CallSiteDesc(iter_.lastOpcodeOffset(), kind));
-}
-
-//////////////////////////////////////////////////////////////////////////////
-//
 // Templated emitters
 
 template <>
@@ -384,6 +375,19 @@ void BaseCompiler::emitTernary(void (*op)(CompilerType&, ValType src0,
   push(srcDest);
 }
 
+template <typename CompilerType, typename ValType>
+void BaseCompiler::emitTernaryResultLast(void (*op)(CompilerType&, ValType src0,
+                                                    ValType src1,
+                                                    ValType srcDest)) {
+  ValType srcDest = pop<ValType>();
+  ValType src2 = pop<ValType>();
+  ValType src1 = pop<ValType>();
+  op(selectCompiler<CompilerType>(), src1, src2, srcDest);
+  free(src2);
+  free(src1);
+  push(srcDest);
+}
+
 template <typename RhsDestType, typename LhsType>
 void BaseCompiler::emitBinop(void (*op)(MacroAssembler& masm, RhsDestType src,
                                         LhsType srcDest, RhsDestOp)) {
@@ -474,20 +478,18 @@ void BaseCompiler::emitBinop(void (*op)(CompilerType1& compiler, RegType rs,
 template <typename R>
 bool BaseCompiler::emitInstanceCallOp(const SymbolicAddressSignature& fn,
                                       R reader) {
-  uint32_t lineOrBytecode = readCallSiteLineOrBytecode();
   if (!reader()) {
     return false;
   }
   if (deadCode_) {
     return true;
   }
-  return emitInstanceCall(lineOrBytecode, fn);
+  return emitInstanceCall(fn);
 }
 
 template <typename A1, typename R>
 bool BaseCompiler::emitInstanceCallOp(const SymbolicAddressSignature& fn,
                                       R reader) {
-  uint32_t lineOrBytecode = readCallSiteLineOrBytecode();
   A1 arg = 0;
   if (!reader(&arg)) {
     return false;
@@ -496,13 +498,12 @@ bool BaseCompiler::emitInstanceCallOp(const SymbolicAddressSignature& fn,
     return true;
   }
   push(arg);
-  return emitInstanceCall(lineOrBytecode, fn);
+  return emitInstanceCall(fn);
 }
 
 template <typename A1, typename A2, typename R>
 bool BaseCompiler::emitInstanceCallOp(const SymbolicAddressSignature& fn,
                                       R reader) {
-  uint32_t lineOrBytecode = readCallSiteLineOrBytecode();
   A1 arg1 = 0;
   A2 arg2 = 0;
   if (!reader(&arg1, &arg2)) {
@@ -514,7 +515,7 @@ bool BaseCompiler::emitInstanceCallOp(const SymbolicAddressSignature& fn,
   // Note order of arguments must be the same as for the reader.
   push(arg1);
   push(arg2);
-  return emitInstanceCall(lineOrBytecode, fn);
+  return emitInstanceCall(fn);
 }
 
 }  // namespace wasm

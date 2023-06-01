@@ -6,9 +6,16 @@
 #ifndef nsBaseClipboard_h__
 #define nsBaseClipboard_h__
 
+#include "mozilla/Logging.h"
 #include "nsIClipboard.h"
 #include "nsITransferable.h"
 #include "nsCOMPtr.h"
+
+static mozilla::LazyLogModule sWidgetClipboardLog("WidgetClipboard");
+#define CLIPBOARD_LOG(...) \
+  MOZ_LOG(sWidgetClipboardLog, LogLevel::Debug, (__VA_ARGS__))
+#define CLIPBOARD_LOG_ENABLED() \
+  MOZ_LOG_TEST(sWidgetClipboardLog, LogLevel::Debug)
 
 class nsITransferable;
 class nsIClipboardOwner;
@@ -35,10 +42,14 @@ class nsBaseClipboard : public nsIClipboard {
   NS_IMETHOD GetNativeClipboardData(nsITransferable* aTransferable,
                                     int32_t aWhichClipboard) = 0;
 
+  void ClearClipboardCache();
+
   bool mEmptyingForSetData;
-  bool mIgnoreEmptyNotification;
   nsCOMPtr<nsIClipboardOwner> mClipboardOwner;
   nsCOMPtr<nsITransferable> mTransferable;
+
+ private:
+  bool mIgnoreEmptyNotification = false;
 };
 
 #endif  // nsBaseClipboard_h__

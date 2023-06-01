@@ -8,7 +8,6 @@ const XHTML_NS = "http://www.w3.org/1999/xhtml";
 
 const DEBUG_CONTRACTID = "@mozilla.org/xpcom/debug;1";
 const PRINTSETTINGS_CONTRACTID = "@mozilla.org/gfx/printsettings-service;1";
-const ENVIRONMENT_CONTRACTID = "@mozilla.org/process/environment;1";
 const NS_OBSERVER_SERVICE_CONTRACTID = "@mozilla.org/observer-service;1";
 const NS_GFXINFO_CONTRACTID = "@mozilla.org/gfx/info;1";
 const IO_SERVICE_CONTRACTID = "@mozilla.org/network/io-service;1"
@@ -16,12 +15,15 @@ const IO_SERVICE_CONTRACTID = "@mozilla.org/network/io-service;1"
 // "<!--CLEAR-->"
 const BLANK_URL_FOR_CLEARING = "data:text/html;charset=UTF-8,%3C%21%2D%2DCLEAR%2D%2D%3E";
 
-Cu.import("resource://gre/modules/Timer.jsm");
-Cu.import("resource://reftest/AsyncSpellCheckTestHelper.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+const { setTimeout, clearTimeout } = ChromeUtils.importESModule(
+    "resource://gre/modules/Timer.sys.mjs"
+);
+const { onSpellCheck } = ChromeUtils.import(
+    "resource://reftest/AsyncSpellCheckTestHelper.jsm"
+);
 
 // This will load chrome Custom Elements inside chrome documents:
-ChromeUtils.import("resource://gre/modules/CustomElementsListener.jsm", null);
+ChromeUtils.import("resource://gre/modules/CustomElementsListener.jsm");
 
 var gBrowserIsRemote;
 var gHaveCanvasSnapshot = false;
@@ -105,8 +107,7 @@ function OnInitialLoad()
     if (gDebug.isDebugBuild) {
         gAssertionCount = gDebug.assertionCount;
     }
-    var env = Cc[ENVIRONMENT_CONTRACTID].getService(Ci.nsIEnvironment);
-    gVerbose = !!env.get("MOZ_REFTEST_VERBOSE");
+    gVerbose = !!Services.env.get("MOZ_REFTEST_VERBOSE");
 
     RegisterMessageListeners();
 
@@ -194,10 +195,10 @@ function doPrintMode(contentRootElement) {
     }
 }
 
-function setupPrintMode() {
+function setupPrintMode(contentRootElement) {
     var PSSVC =
         Cc[PRINTSETTINGS_CONTRACTID].getService(Ci.nsIPrintSettingsService);
-    var ps = PSSVC.newPrintSettings;
+    var ps = PSSVC.createNewPrintSettings();
     ps.paperWidth = 5;
     ps.paperHeight = 3;
 
@@ -214,8 +215,12 @@ function setupPrintMode() {
     ps.footerStrCenter = "";
     ps.footerStrRight = "";
 
-    ps.printBGColors = true;
-    ps.printBGImages = true;
+    const printBackgrounds = (() => {
+        const attr = contentRootElement.getAttribute("reftest-paged-backgrounds");
+        return !attr || attr != "false";
+    })();
+    ps.printBGColors = printBackgrounds;
+    ps.printBGImages = printBackgrounds;
 
     docShell.contentViewer.setPageModeForTesting(/* aPageMode */ true, ps);
 }
@@ -267,7 +272,7 @@ function setupViewport(contentRootElement) {
 
     // XXX support viewconfig when needed
 }
- 
+
 
 function setupDisplayport(contentRootElement) {
     let promise = content.windowGlobalChild.getActor("ReftestFission").SetupDisplayportRoot();
@@ -736,7 +741,7 @@ function WaitForTestEnd(contentRootElement, inPrintMode, spellCheckedElements, f
 
             if (!inPrintMode && doPrintMode(contentRootElement)) {
                 LogInfo("MakeProgress: setting up print mode");
-                setupPrintMode();
+                setupPrintMode(contentRootElement);
             }
 
             if (hasReftestWait && !shouldWaitForReftestWaitRemoval(contentRootElement)) {
@@ -950,7 +955,7 @@ async function OnDocumentLoad(uri)
         // Ignore load events for previous documents.
         return;
     }
-    
+
     var currentDoc = content && content.document;
 
     // Collect all editable, spell-checked elements.  It may be the case that
@@ -1013,7 +1018,7 @@ async function OnDocumentLoad(uri)
     } else {
         if (doPrintMode(contentRootElement)) {
             LogInfo("OnDocumentLoad setting up print mode");
-            setupPrintMode();
+            setupPrintMode(contentRootElement);
             inPrintMode = true;
         }
 

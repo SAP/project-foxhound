@@ -9,8 +9,6 @@ use crate::applicable_declarations::{
 };
 use crate::context::{CascadeInputs, QuirksMode};
 use crate::dom::{TElement, TShadowRoot};
-use crate::element_state::{DocumentState, ElementState};
-use crate::font_metrics::FontMetricsProvider;
 #[cfg(feature = "gecko")]
 use crate::gecko_bindings::structs::{ServoStyleSetSizes, StyleRuleInclusion};
 use crate::invalidation::element::invalidation_map::InvalidationMap;
@@ -29,20 +27,21 @@ use crate::selector_parser::{PerPseudoElementMap, PseudoElement, SelectorImpl, S
 use crate::shared_lock::{Locked, SharedRwLockReadGuard, StylesheetGuards};
 use crate::stylesheet_set::{DataValidity, DocumentStylesheetSet, SheetRebuildKind};
 use crate::stylesheet_set::{DocumentStylesheetFlusher, SheetCollectionFlusher};
+use crate::stylesheets::container_rule::ContainerCondition;
 use crate::stylesheets::keyframes_rule::KeyframesAnimation;
-use crate::stylesheets::layer_rule::{LayerId, LayerName, LayerOrder};
+use crate::stylesheets::layer_rule::{LayerName, LayerOrder};
 use crate::stylesheets::viewport_rule::{self, MaybeNew, ViewportRule};
 #[cfg(feature = "gecko")]
 use crate::stylesheets::{
-    CounterStyleRule, FontFaceRule, FontFeatureValuesRule, PageRule, ScrollTimelineRule,
+    CounterStyleRule, FontFaceRule, FontFeatureValuesRule, FontPaletteValuesRule, PageRule,
 };
 use crate::stylesheets::{
     CssRule, EffectiveRulesIterator, Origin, OriginSet, PerOrigin, PerOriginIter,
 };
 use crate::stylesheets::{StyleRule, StylesheetContents, StylesheetInDocument};
-use crate::thread_state::{self, ThreadState};
 use crate::AllocErr;
 use crate::{Atom, LocalName, Namespace, ShrinkIfNeeded, WeakAtom};
+use dom::{DocumentState, ElementState};
 use fxhash::FxHashMap;
 use malloc_size_of::MallocSizeOf;
 #[cfg(feature = "gecko")]
@@ -50,7 +49,7 @@ use malloc_size_of::{MallocShallowSizeOf, MallocSizeOfOps, MallocUnconditionalSh
 use selectors::attr::{CaseSensitivity, NamespaceConstraint};
 use selectors::bloom::BloomFilter;
 use selectors::matching::VisitedHandlingMode;
-use selectors::matching::{matches_selector, ElementSelectorFlags, MatchingContext, MatchingMode};
+use selectors::matching::{matches_selector, MatchingContext, MatchingMode, NeedsSelectorFlags};
 use selectors::parser::{AncestorHashes, Combinator, Component, Selector, SelectorIter};
 use selectors::visitor::SelectorVisitor;
 use selectors::NthIndexCache;
@@ -549,6 +548,47 @@ impl From<StyleRuleInclusion> for RuleInclusion {
     }
 }
 
+/// A struct containing state from ancestor rules like @layer / @import /
+/// @container.
+struct ContainingRuleState {
+    layer_name: LayerName,
+    layer_id: LayerId,
+    container_condition_id: ContainerConditionId,
+}
+
+impl Default for ContainingRuleState {
+    fn default() -> Self {
+        Self {
+            layer_name: LayerName::new_empty(),
+            layer_id: LayerId::root(),
+            container_condition_id: ContainerConditionId::none(),
+        }
+    }
+}
+
+struct SavedContainingRuleState {
+    layer_name_len: usize,
+    layer_id: LayerId,
+    container_condition_id: ContainerConditionId,
+}
+
+impl ContainingRuleState {
+    fn save(&self) -> SavedContainingRuleState {
+        SavedContainingRuleState {
+            layer_name_len: self.layer_name.0.len(),
+            layer_id: self.layer_id,
+            container_condition_id: self.container_condition_id,
+        }
+    }
+
+    fn restore(&mut self, saved: &SavedContainingRuleState) {
+        debug_assert!(self.layer_name.0.len() >= saved.layer_name_len);
+        self.layer_name.0.truncate(saved.layer_name_len);
+        self.layer_id = saved.layer_id;
+        self.container_condition_id = saved.container_condition_id;
+    }
+}
+
 impl Stylist {
     /// Construct a new `Stylist`, using given `Device` and `QuirksMode`.
     /// If more members are added here, think about whether they should
@@ -820,7 +860,6 @@ impl Stylist {
         guards: &StylesheetGuards,
         pseudo: &PseudoElement,
         parent: Option<&ComputedValues>,
-        font_metrics: &dyn FontMetricsProvider,
     ) -> Arc<ComputedValues>
     where
         E: TElement,
@@ -829,13 +868,7 @@ impl Stylist {
 
         let rule_node = self.rule_node_for_precomputed_pseudo(guards, pseudo, vec![]);
 
-        self.precomputed_values_for_pseudo_with_rule_node::<E>(
-            guards,
-            pseudo,
-            parent,
-            font_metrics,
-            rule_node,
-        )
+        self.precomputed_values_for_pseudo_with_rule_node::<E>(guards, pseudo, parent, rule_node)
     }
 
     /// Computes the style for a given "precomputed" pseudo-element with
@@ -848,7 +881,6 @@ impl Stylist {
         guards: &StylesheetGuards,
         pseudo: &PseudoElement,
         parent: Option<&ComputedValues>,
-        font_metrics: &dyn FontMetricsProvider,
         rules: StrongRuleNode,
     ) -> Arc<ComputedValues>
     where
@@ -858,12 +890,13 @@ impl Stylist {
             CascadeInputs {
                 rules: Some(rules),
                 visited_rules: None,
+                flags: Default::default(),
             },
             pseudo,
             guards,
+            /* originating_element_style */ None,
             parent,
-            font_metrics,
-            None,
+            /* element */ None,
         )
     }
 
@@ -917,13 +950,7 @@ impl Stylist {
     where
         E: TElement,
     {
-        use crate::font_metrics::ServoMetricsProvider;
-        self.precomputed_values_for_pseudo::<E>(
-            guards,
-            &pseudo,
-            Some(parent_style),
-            &ServoMetricsProvider,
-        )
+        self.precomputed_values_for_pseudo::<E>(guards, &pseudo, Some(parent_style))
     }
 
     /// Computes a pseudo-element style lazily during layout.
@@ -939,9 +966,9 @@ impl Stylist {
         element: E,
         pseudo: &PseudoElement,
         rule_inclusion: RuleInclusion,
-        parent_style: &ComputedValues,
+        originating_element_style: &ComputedValues,
+        parent_style: &Arc<ComputedValues>,
         is_probe: bool,
-        font_metrics: &dyn FontMetricsProvider,
         matching_fn: Option<&dyn Fn(&PseudoElement) -> bool>,
     ) -> Option<Arc<ComputedValues>>
     where
@@ -950,6 +977,7 @@ impl Stylist {
         let cascade_inputs = self.lazy_pseudo_rules(
             guards,
             element,
+            originating_element_style,
             parent_style,
             pseudo,
             is_probe,
@@ -961,8 +989,8 @@ impl Stylist {
             cascade_inputs,
             pseudo,
             guards,
+            Some(originating_element_style),
             Some(parent_style),
-            font_metrics,
             Some(element),
         ))
     }
@@ -976,8 +1004,8 @@ impl Stylist {
         inputs: CascadeInputs,
         pseudo: &PseudoElement,
         guards: &StylesheetGuards,
+        originating_element_style: Option<&ComputedValues>,
         parent_style: Option<&ComputedValues>,
-        font_metrics: &dyn FontMetricsProvider,
         element: Option<E>,
     ) -> Arc<ComputedValues>
     where
@@ -1000,10 +1028,10 @@ impl Stylist {
             Some(pseudo),
             inputs,
             guards,
+            originating_element_style,
             parent_style,
             parent_style,
             parent_style,
-            font_metrics,
             /* rule_cache = */ None,
             &mut RuleCacheConditions::default(),
         )
@@ -1027,10 +1055,10 @@ impl Stylist {
         pseudo: Option<&PseudoElement>,
         inputs: CascadeInputs,
         guards: &StylesheetGuards,
+        originating_element_style: Option<&ComputedValues>,
         parent_style: Option<&ComputedValues>,
         parent_style_ignoring_first_line: Option<&ComputedValues>,
         layout_parent_style: Option<&ComputedValues>,
-        font_metrics: &dyn FontMetricsProvider,
         rule_cache: Option<&RuleCache>,
         rule_cache_conditions: &mut RuleCacheConditions,
     ) -> Arc<ComputedValues>
@@ -1063,11 +1091,12 @@ impl Stylist {
             pseudo,
             inputs.rules.as_ref().unwrap_or(self.rule_tree.root()),
             guards,
+            originating_element_style,
             parent_style,
             parent_style_ignoring_first_line,
             layout_parent_style,
             visited_rules,
-            font_metrics,
+            inputs.flags,
             self.quirks_mode,
             rule_cache,
             rule_cache_conditions,
@@ -1083,7 +1112,8 @@ impl Stylist {
         &self,
         guards: &StylesheetGuards,
         element: E,
-        parent_style: &ComputedValues,
+        originating_element_style: &ComputedValues,
+        parent_style: &Arc<ComputedValues>,
         pseudo: &PseudoElement,
         is_probe: bool,
         rule_inclusion: RuleInclusion,
@@ -1094,49 +1124,27 @@ impl Stylist {
     {
         debug_assert!(pseudo.is_lazy());
 
-        // Apply the selector flags. We should be in sequential mode
-        // already, so we can directly apply the parent flags.
-        let mut set_selector_flags = |element: &E, flags: ElementSelectorFlags| {
-            if cfg!(feature = "servo") {
-                // Servo calls this function from the worker, but only for internal
-                // pseudos, so we should never generate selector flags here.
-                unreachable!("internal pseudo generated slow selector flags?");
-            }
-
-            // No need to bother setting the selector flags when we're computing
-            // default styles.
-            if rule_inclusion == RuleInclusion::DefaultOnly {
-                return;
-            }
-
-            // Gecko calls this from sequential mode, so we can directly apply
-            // the flags.
-            debug_assert_eq!(thread_state::get(), ThreadState::LAYOUT);
-            let self_flags = flags.for_self();
-            if !self_flags.is_empty() {
-                unsafe {
-                    element.set_selector_flags(self_flags);
-                }
-            }
-            let parent_flags = flags.for_parent();
-            if !parent_flags.is_empty() {
-                if let Some(p) = element.parent_element() {
-                    unsafe {
-                        p.set_selector_flags(parent_flags);
-                    }
-                }
-            }
+        let mut nth_index_cache = Default::default();
+        // No need to bother setting the selector flags when we're computing
+        // default styles.
+        let needs_selector_flags = if rule_inclusion == RuleInclusion::DefaultOnly {
+            NeedsSelectorFlags::No
+        } else {
+            NeedsSelectorFlags::Yes
         };
 
         let mut declarations = ApplicableDeclarationList::new();
-        let mut matching_context = MatchingContext::new(
+        let mut matching_context = MatchingContext::<'_, E::Impl>::new(
             MatchingMode::ForStatelessPseudoElement,
             None,
-            None,
+            &mut nth_index_cache,
             self.quirks_mode,
+            needs_selector_flags,
         );
 
         matching_context.pseudo_element_matching_fn = matching_fn;
+        matching_context.extra_data.originating_element_style =
+            Some(originating_element_style);
 
         self.push_applicable_declarations(
             element,
@@ -1147,7 +1155,6 @@ impl Stylist {
             rule_inclusion,
             &mut declarations,
             &mut matching_context,
-            &mut set_selector_flags,
         );
 
         if declarations.is_empty() && is_probe {
@@ -1159,14 +1166,19 @@ impl Stylist {
         let mut visited_rules = None;
         if parent_style.visited_style().is_some() {
             let mut declarations = ApplicableDeclarationList::new();
-            let mut matching_context = MatchingContext::new_for_visited(
+            let mut nth_index_cache = Default::default();
+
+            let mut matching_context = MatchingContext::<'_, E::Impl>::new_for_visited(
                 MatchingMode::ForStatelessPseudoElement,
                 None,
-                None,
+                &mut nth_index_cache,
                 VisitedHandlingMode::RelevantLinkVisited,
                 self.quirks_mode,
+                needs_selector_flags,
             );
             matching_context.pseudo_element_matching_fn = matching_fn;
+            matching_context.extra_data.originating_element_style =
+                Some(originating_element_style);
 
             self.push_applicable_declarations(
                 element,
@@ -1177,7 +1189,6 @@ impl Stylist {
                 rule_inclusion,
                 &mut declarations,
                 &mut matching_context,
-                &mut set_selector_flags,
             );
             if !declarations.is_empty() {
                 let rule_node = self.rule_tree.insert_ordered_rules_with_important(
@@ -1193,6 +1204,7 @@ impl Stylist {
         Some(CascadeInputs {
             rules: Some(rules),
             visited_rules,
+            flags: matching_context.extra_data.cascade_input_flags,
         })
     }
 
@@ -1290,7 +1302,7 @@ impl Stylist {
     }
 
     /// Returns the applicable CSS declarations for the given element.
-    pub fn push_applicable_declarations<E, F>(
+    pub fn push_applicable_declarations<E>(
         &self,
         element: E,
         pseudo_element: Option<&PseudoElement>,
@@ -1300,10 +1312,8 @@ impl Stylist {
         rule_inclusion: RuleInclusion,
         applicable_declarations: &mut ApplicableDeclarationList,
         context: &mut MatchingContext<E::Impl>,
-        flags_setter: &mut F,
     ) where
         E: TElement,
-        F: FnMut(&E, ElementSelectorFlags),
     {
         RuleCollector::new(
             self,
@@ -1315,7 +1325,6 @@ impl Stylist {
             rule_inclusion,
             applicable_declarations,
             context,
-            flags_setter,
         )
         .collect_all();
     }
@@ -1395,24 +1404,24 @@ impl Stylist {
 
     /// Computes the match results of a given element against the set of
     /// revalidation selectors.
-    pub fn match_revalidation_selectors<E, F>(
+    pub fn match_revalidation_selectors<E>(
         &self,
         element: E,
         bloom: Option<&BloomFilter>,
         nth_index_cache: &mut NthIndexCache,
-        flags_setter: &mut F,
+        needs_selector_flags: NeedsSelectorFlags,
     ) -> SmallBitVec
     where
         E: TElement,
-        F: FnMut(&E, ElementSelectorFlags),
     {
         // NB: `MatchingMode` doesn't really matter, given we don't share style
         // between pseudos.
         let mut matching_context = MatchingContext::new(
             MatchingMode::Normal,
             bloom,
-            Some(nth_index_cache),
+            nth_index_cache,
             self.quirks_mode,
+            needs_selector_flags,
         );
 
         // Note that, by the time we're revalidating, we're guaranteed that the
@@ -1435,7 +1444,6 @@ impl Stylist {
                                 Some(&selector_and_hashes.hashes),
                                 &element,
                                 matching_context,
-                                flags_setter,
                             ));
                             true
                         },
@@ -1458,7 +1466,6 @@ impl Stylist {
                         Some(&selector_and_hashes.hashes),
                         &element,
                         &mut matching_context,
-                        flags_setter,
                     ));
                     true
                 },
@@ -1484,10 +1491,7 @@ impl Stylist {
     where
         E: TElement,
     {
-        use crate::font_metrics::get_metrics_provider_for_product;
-
         let block = declarations.read_with(guards.author);
-        let metrics = get_metrics_provider_for_product();
 
         // We don't bother inserting these declarations in the rule tree, since
         // it'd be quite useless and slow.
@@ -1509,13 +1513,14 @@ impl Stylist {
                     ),
                 )
             }),
+            /* originating_element_style */ None,
             Some(parent_style),
             Some(parent_style),
             Some(parent_style),
-            &metrics,
             CascadeMode::Unvisited {
                 visited_rules: None,
             },
+            Default::default(),
             self.quirks_mode,
             /* rule_cache = */ None,
             &mut Default::default(),
@@ -1653,8 +1658,7 @@ pub struct PageRuleData {
 /// named page rules that match a certain page.
 #[derive(Clone, Debug, Deref, MallocSizeOf)]
 pub struct PageRuleDataNoLayer(
-    #[ignore_malloc_size_of = "Arc, stylesheet measures as primary ref"]
-    pub Arc<Locked<PageRule>>,
+    #[ignore_malloc_size_of = "Arc, stylesheet measures as primary ref"] pub Arc<Locked<PageRule>>,
 );
 
 /// Stores page rules indexed by page names.
@@ -1693,6 +1697,10 @@ pub struct ExtraStyleData {
     #[cfg(feature = "gecko")]
     pub font_feature_values: LayerOrderedVec<Arc<Locked<FontFeatureValuesRule>>>,
 
+    /// A list of effective font-palette-values rules.
+    #[cfg(feature = "gecko")]
+    pub font_palette_values: LayerOrderedVec<Arc<Locked<FontPaletteValuesRule>>>,
+
     /// A map of effective counter-style rules.
     #[cfg(feature = "gecko")]
     pub counter_styles: LayerOrderedMap<Arc<Locked<CounterStyleRule>>>,
@@ -1700,10 +1708,6 @@ pub struct ExtraStyleData {
     /// A map of effective page rules.
     #[cfg(feature = "gecko")]
     pub pages: PageRuleMap,
-
-    /// A map of effective scroll-timeline rules.
-    #[cfg(feature = "gecko")]
-    pub scroll_timelines: LayerOrderedMap<Arc<Locked<ScrollTimelineRule>>>,
 }
 
 #[cfg(feature = "gecko")]
@@ -1720,6 +1724,15 @@ impl ExtraStyleData {
         layer: LayerId,
     ) {
         self.font_feature_values.push(rule.clone(), layer);
+    }
+
+    /// Add the given @font-palette-values rule.
+    fn add_font_palette_values(
+        &mut self,
+        rule: &Arc<Locked<FontPaletteValuesRule>>,
+        layer: LayerId,
+    ) {
+        self.font_palette_values.push(rule.clone(), layer);
     }
 
     /// Add the given @counter-style rule.
@@ -1742,36 +1755,30 @@ impl ExtraStyleData {
     ) -> Result<(), AllocErr> {
         let page_rule = rule.read_with(guard);
         if page_rule.selectors.0.is_empty() {
-            self.pages.global.push(PageRuleDataNoLayer(rule.clone()), layer);
+            self.pages
+                .global
+                .push(PageRuleDataNoLayer(rule.clone()), layer);
         } else {
             // TODO: Handle pseudo-classes
             self.pages.named.try_reserve(page_rule.selectors.0.len())?;
             for name in page_rule.selectors.as_slice() {
-                let vec = self.pages.named.entry(name.0.0.clone()).or_default();
+                let vec = self.pages.named.entry(name.0 .0.clone()).or_default();
                 vec.try_reserve(1)?;
-                vec.push(PageRuleData{layer, rule: rule.clone()});
+                vec.push(PageRuleData {
+                    layer,
+                    rule: rule.clone(),
+                });
             }
         }
         Ok(())
     }
 
-    /// Add the given @scroll-timeline rule.
-    fn add_scroll_timeline(
-        &mut self,
-        guard: &SharedRwLockReadGuard,
-        rule: &Arc<Locked<ScrollTimelineRule>>,
-        layer: LayerId,
-    ) -> Result<(), AllocErr> {
-        let name = rule.read_with(guard).name.as_atom().clone();
-        self.scroll_timelines.try_insert(name, rule.clone(), layer)
-    }
-
     fn sort_by_layer(&mut self, layers: &[CascadeLayer]) {
         self.font_faces.sort(layers);
         self.font_feature_values.sort(layers);
+        self.font_palette_values.sort(layers);
         self.counter_styles.sort(layers);
         self.pages.global.sort(layers);
-        self.scroll_timelines.sort(layers);
     }
 
     fn clear(&mut self) {
@@ -1779,9 +1786,9 @@ impl ExtraStyleData {
         {
             self.font_faces.clear();
             self.font_feature_values.clear();
+            self.font_palette_values.clear();
             self.counter_styles.clear();
             self.pages.clear();
-            self.scroll_timelines.clear();
         }
     }
 }
@@ -1816,9 +1823,9 @@ impl MallocSizeOf for ExtraStyleData {
         let mut n = 0;
         n += self.font_faces.shallow_size_of(ops);
         n += self.font_feature_values.shallow_size_of(ops);
+        n += self.font_palette_values.shallow_size_of(ops);
         n += self.counter_styles.shallow_size_of(ops);
         n += self.pages.shallow_size_of(ops);
-        n += self.scroll_timelines.shallow_size_of(ops);
         n
     }
 }
@@ -1909,16 +1916,8 @@ fn component_needs_revalidation(
         Component::AttributeInNoNamespace { .. } |
         Component::AttributeOther(_) |
         Component::Empty |
-        Component::FirstChild |
-        Component::LastChild |
-        Component::OnlyChild |
-        Component::NthChild(..) |
-        Component::NthLastChild(..) |
-        Component::NthOfType(..) |
-        Component::NthLastOfType(..) |
-        Component::FirstOfType |
-        Component::LastOfType |
-        Component::OnlyOfType => true,
+        Component::Nth(_) |
+        Component::NthOf(_) => true,
         Component::NonTSPseudoClass(ref p) => p.needs_cache_revalidation(),
         _ => false,
     }
@@ -2082,6 +2081,17 @@ impl PartElementAndPseudoRules {
     }
 }
 
+/// The id of a given layer, a sequentially-increasing identifier.
+#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, PartialOrd, Ord)]
+pub struct LayerId(u16);
+
+impl LayerId {
+    /// The id of the root layer.
+    pub const fn root() -> Self {
+        Self(0)
+    }
+}
+
 #[derive(Clone, Debug, MallocSizeOf)]
 struct CascadeLayer {
     id: LayerId,
@@ -2095,6 +2105,34 @@ impl CascadeLayer {
             id: LayerId::root(),
             order: LayerOrder::root(),
             children: vec![],
+        }
+    }
+}
+
+/// The id of a given container condition, a sequentially-increasing identifier
+/// for a given style set.
+#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, PartialOrd, Ord)]
+pub struct ContainerConditionId(u16);
+
+impl ContainerConditionId {
+    /// A special id that represents no container rule all.
+    pub const fn none() -> Self {
+        Self(0)
+    }
+}
+
+#[derive(Clone, Debug, MallocSizeOf)]
+struct ContainerConditionReference {
+    parent: ContainerConditionId,
+    #[ignore_malloc_size_of = "Arc"]
+    condition: Option<Arc<ContainerCondition>>,
+}
+
+impl ContainerConditionReference {
+    const fn none() -> Self {
+        Self {
+            parent: ContainerConditionId::none(),
+            condition: None,
         }
     }
 }
@@ -2170,6 +2208,9 @@ pub struct CascadeData {
     /// The list of cascade layers, indexed by their layer id.
     layers: SmallVec<[CascadeLayer; 1]>,
 
+    /// The list of container conditions, indexed by their id.
+    container_conditions: SmallVec<[ContainerConditionReference; 1]>,
+
     /// Effective media query results cached from the last rebuild.
     effective_media_query_results: EffectiveMediaQueryResults,
 
@@ -2212,6 +2253,7 @@ impl CascadeData {
             animations: Default::default(),
             layer_id: Default::default(),
             layers: smallvec::smallvec![CascadeLayer::root()],
+            container_conditions: smallvec::smallvec![ContainerConditionReference::none()],
             extra_data: ExtraStyleData::default(),
             effective_media_query_results: EffectiveMediaQueryResults::new(),
             rules_source_order: 0,
@@ -2326,6 +2368,37 @@ impl CascadeData {
         self.layers[id.0 as usize].order
     }
 
+    pub(crate) fn container_condition_matches<E>(
+        &self,
+        mut id: ContainerConditionId,
+        stylist: &Stylist,
+        element: E,
+        context: &mut MatchingContext<E::Impl>,
+    ) -> bool
+    where
+        E: TElement,
+    {
+        loop {
+            let condition_ref = &self.container_conditions[id.0 as usize];
+            let condition = match condition_ref.condition {
+                None => return true,
+                Some(ref c) => c,
+            };
+            let matches = condition
+                .matches(
+                    stylist.device(),
+                    element,
+                    context.extra_data.originating_element_style,
+                    &mut context.extra_data.cascade_input_flags,
+                )
+                .to_bool(/* unknown = */ false);
+            if !matches {
+                return false;
+            }
+            id = condition_ref.parent;
+        }
+    }
+
     fn did_finish_rebuild(&mut self) {
         self.shrink_maps_if_needed();
         self.compute_layer_order();
@@ -2344,7 +2417,6 @@ impl CascadeData {
         self.mapped_ids.shrink_if_needed();
         self.layer_id.shrink_if_needed();
         self.selectors_for_cache_revalidation.shrink_if_needed();
-
     }
 
     fn compute_layer_order(&mut self) {
@@ -2444,8 +2516,7 @@ impl CascadeData {
         stylesheet: &S,
         guard: &SharedRwLockReadGuard,
         rebuild_kind: SheetRebuildKind,
-        mut current_layer: &mut LayerName,
-        current_layer_id: LayerId,
+        containing_rule_state: &mut ContainingRuleState,
         mut precomputed_pseudo_element_decls: Option<&mut PrecomputedPseudoElementDeclarations>,
     ) -> Result<(), AllocErr>
     where
@@ -2468,7 +2539,7 @@ impl CascadeData {
                             if pseudo.is_precomputed() {
                                 debug_assert!(selector.is_universal());
                                 debug_assert_eq!(stylesheet.contents().origin, Origin::UserAgent);
-                                debug_assert_eq!(current_layer_id, LayerId::root());
+                                debug_assert_eq!(containing_rule_state.layer_id, LayerId::root());
 
                                 precomputed_pseudo_element_decls
                                     .as_mut()
@@ -2495,7 +2566,8 @@ impl CascadeData {
                             hashes,
                             locked.clone(),
                             self.rules_source_order,
-                            current_layer_id,
+                            containing_rule_state.layer_id,
+                            containing_rule_state.container_condition_id,
                         );
 
                         if rebuild_kind.should_rebuild_invalidation() {
@@ -2573,34 +2645,47 @@ impl CascadeData {
                     self.animations.try_insert_with(
                         name,
                         animation,
-                        current_layer_id,
+                        containing_rule_state.layer_id,
                         compare_keyframes_in_same_layer,
                     )?;
                 },
                 #[cfg(feature = "gecko")]
-                CssRule::ScrollTimeline(ref rule) => {
-                    // Note: Bug 1733260: we may drop @scroll-timeline rule once this spec issue
-                    // https://github.com/w3c/csswg-drafts/issues/6674 gets landed.
-                    self.extra_data
-                        .add_scroll_timeline(guard, rule, current_layer_id)?;
-                },
-                #[cfg(feature = "gecko")]
                 CssRule::FontFace(ref rule) => {
-                    self.extra_data.add_font_face(rule, current_layer_id);
+                    // NOTE(emilio): We don't care about container_condition_id
+                    // because:
+                    //
+                    //     Global, name-defining at-rules such as @keyframes or
+                    //     @font-face or @layer that are defined inside container
+                    //     queries are not constrained by the container query
+                    //     conditions.
+                    //
+                    // https://drafts.csswg.org/css-contain-3/#container-rule
+                    // (Same elsewhere)
+                    self.extra_data
+                        .add_font_face(rule, containing_rule_state.layer_id);
                 },
                 #[cfg(feature = "gecko")]
                 CssRule::FontFeatureValues(ref rule) => {
                     self.extra_data
-                        .add_font_feature_values(rule, current_layer_id);
+                        .add_font_feature_values(rule, containing_rule_state.layer_id);
+                },
+                #[cfg(feature = "gecko")]
+                CssRule::FontPaletteValues(ref rule) => {
+                    self.extra_data
+                        .add_font_palette_values(rule, containing_rule_state.layer_id);
                 },
                 #[cfg(feature = "gecko")]
                 CssRule::CounterStyle(ref rule) => {
-                    self.extra_data
-                        .add_counter_style(guard, rule, current_layer_id)?;
+                    self.extra_data.add_counter_style(
+                        guard,
+                        rule,
+                        containing_rule_state.layer_id,
+                    )?;
                 },
                 #[cfg(feature = "gecko")]
                 CssRule::Page(ref rule) => {
-                    self.extra_data.add_page(guard, rule, current_layer_id)?;
+                    self.extra_data
+                        .add_page(guard, rule, containing_rule_state.layer_id)?;
                 },
                 CssRule::Viewport(..) => {},
                 _ => {
@@ -2641,7 +2726,7 @@ impl CascadeData {
                 if let Some(id) = data.layer_id.get(layer) {
                     return *id;
                 }
-                let id = LayerId(data.layers.len() as u32);
+                let id = LayerId(data.layers.len() as u16);
 
                 let parent_layer_id = if layer.layer_names().len() > 1 {
                     let mut parent = layer.clone();
@@ -2672,9 +2757,8 @@ impl CascadeData {
             fn maybe_register_layers(
                 data: &mut CascadeData,
                 name: Option<&LayerName>,
-                current_layer: &mut LayerName,
-                pushed_layers: &mut usize,
-            ) -> LayerId {
+                containing_rule_state: &mut ContainingRuleState,
+            ) {
                 let anon_name;
                 let name = match name {
                     Some(name) => name,
@@ -2683,19 +2767,15 @@ impl CascadeData {
                         &anon_name
                     },
                 };
-
-                let mut id = LayerId::root();
                 for name in name.layer_names() {
-                    current_layer.0.push(name.clone());
-                    id = maybe_register_layer(data, &current_layer);
-                    *pushed_layers += 1;
+                    containing_rule_state.layer_name.0.push(name.clone());
+                    containing_rule_state.layer_id =
+                        maybe_register_layer(data, &containing_rule_state.layer_name);
                 }
-                debug_assert_ne!(id, LayerId::root());
-                id
+                debug_assert_ne!(containing_rule_state.layer_id, LayerId::root());
             }
 
-            let mut layer_names_to_pop = 0;
-            let mut children_layer_id = current_layer_id;
+            let saved_containing_rule_state = containing_rule_state.save();
             match *rule {
                 CssRule::Import(ref lock) => {
                     let import_rule = lock.read_with(guard);
@@ -2704,12 +2784,7 @@ impl CascadeData {
                             .saw_effective(import_rule);
                     }
                     if let Some(ref layer) = import_rule.layer {
-                        children_layer_id = maybe_register_layers(
-                            self,
-                            layer.name.as_ref(),
-                            &mut current_layer,
-                            &mut layer_names_to_pop,
-                        );
+                        maybe_register_layers(self, layer.name.as_ref(), containing_rule_state);
                     }
                 },
                 CssRule::Media(ref lock) => {
@@ -2720,24 +2795,24 @@ impl CascadeData {
                 },
                 CssRule::LayerBlock(ref lock) => {
                     let layer_rule = lock.read_with(guard);
-                    children_layer_id = maybe_register_layers(
-                        self,
-                        layer_rule.name.as_ref(),
-                        &mut current_layer,
-                        &mut layer_names_to_pop,
-                    );
+                    maybe_register_layers(self, layer_rule.name.as_ref(), containing_rule_state);
                 },
                 CssRule::LayerStatement(ref lock) => {
                     let layer_rule = lock.read_with(guard);
                     for name in &*layer_rule.names {
-                        let mut pushed = 0;
-                        // There are no children, so we can ignore the
-                        // return value.
-                        maybe_register_layers(self, Some(name), &mut current_layer, &mut pushed);
-                        for _ in 0..pushed {
-                            current_layer.0.pop();
-                        }
+                        maybe_register_layers(self, Some(name), containing_rule_state);
+                        // Register each layer individually.
+                        containing_rule_state.restore(&saved_containing_rule_state);
                     }
+                },
+                CssRule::Container(ref lock) => {
+                    let container_rule = lock.read_with(guard);
+                    let id = ContainerConditionId(self.container_conditions.len() as u16);
+                    self.container_conditions.push(ContainerConditionReference {
+                        parent: containing_rule_state.container_condition_id,
+                        condition: Some(container_rule.condition.clone()),
+                    });
+                    containing_rule_state.container_condition_id = id;
                 },
                 // We don't care about any other rule.
                 _ => {},
@@ -2751,15 +2826,12 @@ impl CascadeData {
                     stylesheet,
                     guard,
                     rebuild_kind,
-                    current_layer,
-                    children_layer_id,
+                    containing_rule_state,
                     precomputed_pseudo_element_decls.as_deref_mut(),
                 )?;
             }
 
-            for _ in 0..layer_names_to_pop {
-                current_layer.0.pop();
-            }
+            containing_rule_state.restore(&saved_containing_rule_state);
         }
 
         Ok(())
@@ -2788,7 +2860,7 @@ impl CascadeData {
             self.effective_media_query_results.saw_effective(contents);
         }
 
-        let mut current_layer = LayerName::new_empty();
+        let mut state = ContainingRuleState::default();
         self.add_rule_list(
             contents.rules(guard).iter(),
             device,
@@ -2796,8 +2868,7 @@ impl CascadeData {
             stylesheet,
             guard,
             rebuild_kind,
-            &mut current_layer,
-            LayerId::root(),
+            &mut state,
             precomputed_pseudo_element_decls.as_deref_mut(),
         )?;
 
@@ -2845,15 +2916,16 @@ impl CascadeData {
                 CssRule::Style(..) |
                 CssRule::Namespace(..) |
                 CssRule::FontFace(..) |
+                CssRule::Container(..) |
                 CssRule::CounterStyle(..) |
                 CssRule::Supports(..) |
                 CssRule::Keyframes(..) |
-                CssRule::ScrollTimeline(..) |
                 CssRule::Page(..) |
                 CssRule::Viewport(..) |
                 CssRule::Document(..) |
                 CssRule::LayerBlock(..) |
                 CssRule::LayerStatement(..) |
+                CssRule::FontPaletteValues(..) |
                 CssRule::FontFeatureValues(..) => {
                     // Not affected by device changes.
                     continue;
@@ -2922,6 +2994,9 @@ impl CascadeData {
         self.layer_id.clear();
         self.layers.clear();
         self.layers.push(CascadeLayer::root());
+        self.container_conditions.clear();
+        self.container_conditions
+            .push(ContainerConditionReference::none());
         self.extra_data.clear();
         self.rules_source_order = 0;
         self.num_selectors = 0;
@@ -3013,6 +3088,9 @@ pub struct Rule {
     /// The current layer id of this style rule.
     pub layer_id: LayerId,
 
+    /// The current @container rule id.
+    pub container_condition_id: ContainerConditionId,
+
     /// The actual style rule.
     #[cfg_attr(
         feature = "gecko",
@@ -3058,6 +3136,7 @@ impl Rule {
         style_rule: Arc<Locked<StyleRule>>,
         source_order: u32,
         layer_id: LayerId,
+        container_condition_id: ContainerConditionId,
     ) -> Self {
         Rule {
             selector,
@@ -3065,9 +3144,16 @@ impl Rule {
             style_rule,
             source_order,
             layer_id,
+            container_condition_id,
         }
     }
 }
+
+// The size of this is critical to performance on the bloom-basic
+// microbenchmark.
+// When iterating over a large Rule array, we want to be able to fast-reject
+// selectors (with the inline hashes) with as few cache misses as possible.
+size_of_test!(Rule, 40);
 
 /// A function to be able to test the revalidation stuff.
 pub fn needs_revalidation_for_testing(s: &Selector<SelectorImpl>) -> bool {

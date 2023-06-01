@@ -8,6 +8,8 @@
 user_pref("browser.newtabpage.enabled", false);
 // Don't restore the last open set of tabs if the browser has crashed
 user_pref("browser.sessionstore.resume_from_crash", false);
+//  Disable session restore infobar.
+user_pref("browser.startup.couldRestoreSession.count", -1);
 // Don't show the Bookmarks Toolbar on any tab (the above pref that
 // disables the New Tab Page ends up showing the toolbar on about:blank).
 user_pref("browser.toolbars.bookmarks.visibility", "never");
@@ -37,7 +39,6 @@ user_pref("places.history.enabled", false);
 user_pref("toolkit.startup.max_resumed_crashes", -1);
 // Run the font loader task eagerly for more predictable behavior
 user_pref("gfx.font_loader.delay", 0);
-user_pref("gfx.font_loader.interval", 0);
 // Disable antialiasing for the Ahem font.
 user_pref("gfx.font_rendering.ahem_antialias_none", true);
 // Disable antiphishing popup
@@ -68,11 +69,15 @@ user_pref("nglayout.initialpaint.unsuppress_with_no_background", true);
 user_pref("media.block-autoplay-until-in-foreground", false);
 // Enable AppCache globally for now whilst it's being removed in Bug 1584984
 user_pref("browser.cache.offline.enable", true);
-// Enable blocking access to storage from tracking resources by default.
-// We don't want to run WPT using BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN (5 - aka Dynamic First Party Isolation) yet.
-user_pref("network.cookie.cookieBehavior", 4);
 // Force a light color scheme unless explicitly overriden by pref.
 user_pref("layout.css.prefers-color-scheme.content-override", 1);
 // Force OffscreenCanvas support
 user_pref("gfx.offscreencanvas.enabled", true);
 user_pref("dom.workers.requestAnimationFrame", true);
+// A lot of tests use the Reporting API for observing things
+user_pref("dom.reporting.enabled", true);
+user_pref("layout.css.font-loading-api.workers.enabled", true);
+// Enable WebDriver BiDi experimental commands and events during tests.
+user_pref("remote.experimental.enabled", true);
+// Disable always partitioning storage with the Storage Access API
+user_pref("privacy.partition.always_partition_third_party_non_cookie_storage", false);

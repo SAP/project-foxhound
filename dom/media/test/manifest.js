@@ -1,6 +1,5 @@
-const { AppConstants } = SpecialPowers.Cu.import(
-  "resource://gre/modules/AppConstants.jsm",
-  {}
+const { AppConstants } = SpecialPowers.ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
 );
 
 // In each list of tests below, test file types that are not supported should
@@ -176,7 +175,7 @@ var gPlayedTests = [
 
 if (
   manifestNavigator().userAgent.includes("Windows") &&
-  manifestVideo().canPlayType('video/mp4; codecs="avc1.42E01E"')
+  manifestVideo().canPlayType('video/mp4; codecs="avc1.64000c"')
 ) {
   gPlayedTests = gPlayedTests.concat(
     { name: "red-46x48.mp4", type: "video/mp4", duration: 1.0 },
@@ -921,6 +920,8 @@ var gErrorTests = [
   { name: "bug501279.ogg", type: "audio/ogg" },
   { name: "bug603918.webm", type: "video/webm" },
   { name: "bug604067.webm", type: "video/webm" },
+  { name: "bug1535980.webm", type: "video/webm" },
+  { name: "bug1799787.webm", type: "video/webm" },
   { name: "bogus.duh", type: "bogus/duh" },
 ];
 
@@ -993,6 +994,7 @@ function getAndroidVersion() {
 
 // These are files suitable for using with a "new Audio" constructor.
 var gAudioTests = [
+  { name: "adts.aac", type: "audio/mp4", duration: 1.37 },
   { name: "r11025_s16_c1.wav", type: "audio/x-wav", duration: 1.0 },
   { name: "sound.ogg", type: "audio/ogg" },
   { name: "owl.mp3", type: "audio/mpeg", duration: 3.343 },
@@ -1226,7 +1228,7 @@ var gEMETests = [
     tracks: [
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d4015"',
         fragments: [
           "bipbop-cenc-videoinit.mp4",
           "bipbop-cenc-video1.m4s",
@@ -1248,7 +1250,7 @@ var gEMETests = [
     tracks: [
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d4015"',
         fragments: [
           "bipbop-cenc-videoinit.mp4",
           "bipbop-cenc-video1.m4s",
@@ -1281,7 +1283,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d4015"',
         fragments: [
           "bipbop-cenc-videoinit.mp4",
           "bipbop-cenc-video1.m4s",
@@ -1313,7 +1315,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d4015"',
         fragments: [
           "bipbop-cenc-videoinit.mp4",
           "bipbop-cenc-video1.m4s",
@@ -1347,7 +1349,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d4015"',
         fragments: [
           "bipbop_300_215kbps-cenc-video-key1-init.mp4",
           "bipbop_300_215kbps-cenc-video-key1-1.m4s",
@@ -1380,7 +1382,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d401e"',
         fragments: [
           "bipbop_480_624kbps-cenc-video-key1-init.mp4",
           "bipbop_480_624kbps-cenc-video-key1-1.m4s",
@@ -1413,7 +1415,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d401e"',
         fragments: [
           "bipbop_480_959kbps-cenc-video-key1-init.mp4",
           "bipbop_480_959kbps-cenc-video-key1-1.m4s",
@@ -1446,7 +1448,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d401e,avc1.4d4015"',
         fragments: [
           "bipbop_480_624kbps-cenc-video-key1-init.mp4",
           "bipbop_480_624kbps-cenc-video-key1-1.m4s",
@@ -1480,7 +1482,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d401e,avc1.4d4015"',
         fragments: [
           "bipbop_480_624kbps-cenc-video-key2-init.mp4",
           "bipbop_480_624kbps-cenc-video-key2-1.m4s",
@@ -1514,7 +1516,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d401e,avc1.4d4015"',
         fragments: [
           "bipbop_480_624kbps-cenc-video-key1-init.mp4",
           "bipbop_480_624kbps-cenc-video-key1-1.m4s",
@@ -1549,7 +1551,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d4015,avc1.4d401e"',
         fragments: [
           "bipbop_300_215kbps-cenc-video-key1-init.mp4",
           "bipbop_300_215kbps-cenc-video-key1-1.m4s",
@@ -1584,7 +1586,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d401e"',
         fragments: [
           "bipbop_480_959kbps-cenc-video-key1-init.mp4",
           "bipbop_480_959kbps-cenc-video-key1-1.m4s",
@@ -1619,7 +1621,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d401e"',
         fragments: [
           "bipbop_480_624kbps-cenc-video-key1-init.mp4",
           "bipbop_480_624kbps-cenc-video-key1-1.m4s",
@@ -1654,7 +1656,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d4015"',
         fragments: [
           "bipbop_300wp_227kbps-cenc-video-key1-init.mp4",
           "bipbop_300wp_227kbps-cenc-video-key1-1.m4s",
@@ -1687,7 +1689,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d4015"',
         fragments: [
           "bipbop_300_215kbps-cenc-video-key1-init.mp4",
           "bipbop_300_215kbps-cenc-video-key1-1.m4s",
@@ -1753,7 +1755,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.64001e"',
         fragments: [
           "bipbop_360w_253kbps-cenc-video-key1-init.mp4",
           "bipbop_360w_253kbps-cenc-video-key1-1.m4s",
@@ -1785,7 +1787,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.64000d,avc1.64001e"',
         fragments: [
           "bipbop_225w_175kbps-cenc-video-key1-init.mp4",
           "bipbop_225w_175kbps-cenc-video-key1-1.m4s",
@@ -1820,7 +1822,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.64001e,avc1.4d401e"',
         fragments: [
           "bipbop_360w_253kbps-cenc-video-key1-init.mp4",
           "bipbop_360w_253kbps-cenc-video-key1-1.m4s",
@@ -2137,6 +2139,14 @@ var gDecodeSuspendTests = [
   },
 ];
 
+// These are video files with hardware-decodable formats and longer
+// durations that are looped while we check telemetry for macOS video
+// low power mode.
+var gVideoLowPowerTests = [
+  { name: "seek.ogv", type: "video/ogg", duration: 3.966 },
+  { name: "gizmo.mp4", type: "video/mp4", duration: 5.56 },
+];
+
 function checkMetadata(msg, e, test) {
   if (test.width) {
     is(e.videoWidth, test.width, msg + " video width");
@@ -2161,7 +2171,7 @@ function checkMetadata(msg, e, test) {
 // installed video backends.
 function getPlayableVideo(candidates) {
   var resources = getPlayableVideos(candidates);
-  if (resources.length > 0) {
+  if (resources.length) {
     return resources[0];
   }
   return null;
@@ -2179,7 +2189,7 @@ function getPlayableAudio(candidates) {
   var resources = candidates.filter(function(x) {
     return /^audio/.test(x.type) && v.canPlayType(x.type);
   });
-  if (resources.length > 0) {
+  if (resources.length) {
     return resources[0];
   }
   return null;
@@ -2334,7 +2344,7 @@ function MediaTestManager() {
     });
 
     SimpleTest.registerCleanupFunction(() => {
-      if (this.tokens.length > 0) {
+      if (this.tokens.length) {
         info("Test timed out. Remaining tests=" + this.tokens);
       }
       for (var token of this.tokens) {
@@ -2441,7 +2451,7 @@ function MediaTestManager() {
     if (
       this.testNum == this.tests.length &&
       !DEBUG_TEST_LOOP_FOREVER &&
-      this.tokens.length == 0 &&
+      !this.tokens.length &&
       !this.isShutdown
     ) {
       this.isShutdown = true;

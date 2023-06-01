@@ -5,9 +5,11 @@
     "queryParamName",
     "codeParamName",
     "taggedCodes",
+    "expectedOrganicCodes",
     "organicCodes",
     "followOnParamNames",
     "followOnCookies",
-    "extraAdServersRegexps"
+    "extraAdServersRegexps",
+    "adServerAttributes"
   ]
 }

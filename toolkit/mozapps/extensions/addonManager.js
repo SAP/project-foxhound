@@ -10,17 +10,18 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
+const lazy = {};
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "separatePrivilegedMozillaWebContentProcess",
   "browser.tabs.remote.separatePrivilegedMozillaWebContentProcess",
   false
 );
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "extensionsWebAPITesting",
   "extensions.webapi.testing",
   false
@@ -44,10 +45,6 @@ const MSG_INSTALL_EVENT = "WebAPIInstallEvent";
 const MSG_INSTALL_CLEANUP = "WebAPICleanup";
 const MSG_ADDON_EVENT_REQ = "WebAPIAddonEventRequest";
 const MSG_ADDON_EVENT = "WebAPIAddonEvent";
-
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-var gSingleton = null;
 
 var AddonManager, AddonManagerPrivate;
 function amManager() {
@@ -90,6 +87,12 @@ amManager.prototype = {
 
     const { mimetype, triggeringPrincipal, hash, icon, name, uri } = aPayload;
 
+    // NOTE: consider removing this call to isInstallAllowed from here, later it is going to be called
+    // again from inside AddonManager.installAddonFromWebpage as part of the block/allow logic.
+    //
+    // The sole purpose of the call here seems to be "clearing the optional InstallTrigger callback",
+    // which seems to be actually wrong if we are still proceeding to call getInstallForURL and the same
+    // logic used to block the install flow using the exact same method call later on.
     if (!AddonManager.isInstallAllowed(mimetype, triggeringPrincipal)) {
       aCallback = null;
       retval = false;
@@ -115,14 +118,14 @@ amManager.prototype = {
     }).then(aInstall => {
       function callCallback(status) {
         try {
-          aCallback.onInstallEnded(uri, status);
+          aCallback?.onInstallEnded(uri, status);
         } catch (e) {
           Cu.reportError(e);
         }
       }
 
       if (!aInstall) {
-        aCallback.onInstallEnded(uri, UNSUPPORTED_TYPE);
+        callCallback(UNSUPPORTED_TYPE);
         return;
       }
 
@@ -154,7 +157,10 @@ amManager.prototype = {
         mimetype,
         aBrowser,
         triggeringPrincipal,
-        aInstall
+        aInstall,
+        {
+          hasCrossOriginAncestor: aPayload.hasCrossOriginAncestor,
+        }
       );
     });
 
@@ -233,8 +239,8 @@ amManager.prototype = {
 
       case MSG_PROMISE_REQUEST: {
         if (
-          !extensionsWebAPITesting &&
-          separatePrivilegedMozillaWebContentProcess &&
+          !lazy.extensionsWebAPITesting &&
+          lazy.separatePrivilegedMozillaWebContentProcess &&
           aMessage.target &&
           aMessage.target.remoteType != null &&
           aMessage.target.remoteType !== "privilegedmozilla"
@@ -270,8 +276,8 @@ amManager.prototype = {
 
       case MSG_INSTALL_CLEANUP: {
         if (
-          !extensionsWebAPITesting &&
-          separatePrivilegedMozillaWebContentProcess &&
+          !lazy.extensionsWebAPITesting &&
+          lazy.separatePrivilegedMozillaWebContentProcess &&
           aMessage.target &&
           aMessage.target.remoteType != null &&
           aMessage.target.remoteType !== "privilegedmozilla"
@@ -285,8 +291,8 @@ amManager.prototype = {
 
       case MSG_ADDON_EVENT_REQ: {
         if (
-          !extensionsWebAPITesting &&
-          separatePrivilegedMozillaWebContentProcess &&
+          !lazy.extensionsWebAPITesting &&
+          lazy.separatePrivilegedMozillaWebContentProcess &&
           aMessage.target &&
           aMessage.target.remoteType != null &&
           aMessage.target.remoteType !== "privilegedmozilla"
@@ -315,21 +321,6 @@ amManager.prototype = {
   },
 
   classID: Components.ID("{4399533d-08d1-458c-a87a-235f74451cfa}"),
-  _xpcom_factory: {
-    createInstance(aOuter, aIid) {
-      if (aOuter != null) {
-        throw Components.Exception(
-          "Component does not support aggregation",
-          Cr.NS_ERROR_NO_AGGREGATION
-        );
-      }
-
-      if (!gSingleton) {
-        gSingleton = new amManager();
-      }
-      return gSingleton.QueryInterface(aIid);
-    },
-  },
   QueryInterface: ChromeUtils.generateQI([
     "amIAddonManager",
     "nsITimerCallback",
@@ -338,7 +329,7 @@ amManager.prototype = {
 };
 
 const BLOCKLIST_JSM = "resource://gre/modules/Blocklist.jsm";
-ChromeUtils.defineModuleGetter(this, "Blocklist", BLOCKLIST_JSM);
+ChromeUtils.defineModuleGetter(lazy, "Blocklist", BLOCKLIST_JSM);
 
 function BlocklistService() {
   this.wrappedJSObject = this;
@@ -350,15 +341,15 @@ BlocklistService.prototype = {
   STATE_BLOCKED: Ci.nsIBlocklistService.STATE_BLOCKED,
 
   get isLoaded() {
-    return Cu.isModuleLoaded(BLOCKLIST_JSM) && Blocklist.isLoaded;
+    return Cu.isModuleLoaded(BLOCKLIST_JSM) && lazy.Blocklist.isLoaded;
   },
 
   observe(...args) {
-    return Blocklist.observe(...args);
+    return lazy.Blocklist.observe(...args);
   },
 
   notify() {
-    Blocklist.notify();
+    lazy.Blocklist.notify();
   },
 
   classID: Components.ID("{66354bc9-7ed1-4692-ae1d-8da97d6b205e}"),

@@ -6,6 +6,7 @@ General Knowledge
 
 `VSCode <https://code.visualstudio.com/>`__ is a multi-platform open-source programming editor developed by Microsoft and volunteers.
 It has support for many programming languages using extensions.
+This is the recommended editor for Firefox development.
 
 For more general information on the VSCode project see `repo <https://github.com/Microsoft/vscode/>`__.
 
@@ -72,6 +73,9 @@ the terminal:
 
    ./mach ide vscode
 
+After that, subsequent `./mach build` invocations will automatically run
+the `Clangd` integration.
+
 If `VS Code` is already open with a previous configuration generated, please make sure to
 restart `VS Code` otherwise the new configuration will not be used, and the `compile_commands.json`
 needed by `clangd` server will not be refreshed. This is a known `bug <https://github.com/clangd/vscode-clangd/issues/42>`__
@@ -91,6 +95,17 @@ you might find that this isn't working on large source code files, but triggerin
 .. code::
 
    "editor.formatOnSaveTimeout": 5000
+
+When using Mercurial in mozilla-central, VS Code will treat your build directories as ordinary directories by default, causing some undesirable behavior including long indexing times, Go to Definition will open files in the build directory instead of the source tree, and Search Files by Name will find duplicate files from the source tree and the build directory (note: when using Git, VS Code will not do this since it reads ``.gitignore``). You can follow these directions to have VS Code largely ignore your build directories:
+
+#. Go to Preferences -> Settings
+#. Search "exclude" in the Settings
+#. (optional) Select "Workspace" below the search bar to only change this setting for the mozilla-central repository
+#. Under "Files: Exclude", click "Add Pattern", type ``obj-*`` (assuming your build directory names start with the default text, ``obj-``), and click "OK"
+#. Repeat the step above for the "Files: Watcher Exclude" setting
+#. Reload VS Code: the easiest way to do this is to quit and reopen it.
+
+Despite excluding the build directories above, Go to Definition will still correctly open files that only appear in the build directory such as generated source code. See `Bug 1790517 <https://bugzilla.mozilla.org/show_bug.cgi?id=1790517>`_ for our effort to automatically exclude the build directories.
 
 
 Remote Development over SSH

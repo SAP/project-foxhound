@@ -33,6 +33,7 @@
 #include "js/Wrapper.h"           // js::UncheckedUnwrapWithoutExpose
 #include "vm/BigIntType.h"        // JS::BigInt::dump
 #include "vm/FrameIter.h"         // js::AllFramesIter, js::FrameIter
+#include "vm/Interpreter.h"       // GetFunctionThis
 #include "vm/JSContext.h"         // JSContext
 #include "vm/JSFunction.h"        // JSFunction
 #include "vm/JSObject.h"          // JSObject
@@ -536,7 +537,7 @@ struct DumpHeapTracer final : public JS::CallbackTracer, public WeakMapTracer {
             key.asCell(), kdelegate, value.asCell());
   }
 
-  void onChild(JS::GCCellPtr thing) override;
+  void onChild(JS::GCCellPtr thing, const char* name) override;
 };
 
 static char MarkDescriptor(js::gc::Cell* thing) {
@@ -602,13 +603,13 @@ static void DumpHeapVisitCell(JSRuntime* rt, void* data, JS::GCCellPtr cellptr,
   JS::TraceChildren(dtrc, cellptr);
 }
 
-void DumpHeapTracer::onChild(JS::GCCellPtr thing) {
+void DumpHeapTracer::onChild(JS::GCCellPtr thing, const char* name) {
   if (js::gc::IsInsideNursery(thing.asCell())) {
     return;
   }
 
   char buffer[1024];
-  context().getEdgeName(buffer, sizeof(buffer));
+  context().getEdgeName(name, buffer, sizeof(buffer));
   fprintf(output, "%s%p %c %s\n", prefix, thing.asCell(),
           MarkDescriptor(thing.asCell()), buffer);
 }
@@ -635,4 +636,23 @@ void js::DumpHeap(JSContext* cx, FILE* fp,
                          DumpHeapVisitArena, DumpHeapVisitCell);
 
   fflush(dtrc.output);
+}
+
+void DumpFmtV(FILE* fp, const char* fmt, va_list args) {
+  js::Fprinter out(fp);
+  out.vprintf(fmt, args);
+}
+
+void js::DumpFmt(FILE* fp, const char* fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  DumpFmtV(fp, fmt, args);
+  va_end(args);
+}
+
+void js::DumpFmt(const char* fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  DumpFmtV(stderr, fmt, args);
+  va_end(args);
 }

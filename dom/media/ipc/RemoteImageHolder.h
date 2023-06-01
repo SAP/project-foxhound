@@ -28,6 +28,7 @@ class RemoteImageHolder final {
   RemoteImageHolder(layers::IGPUVideoSurfaceManager* aManager,
                     layers::VideoBridgeSource aSource,
                     const gfx::IntSize& aSize,
+                    const gfx::ColorDepth& aColorDepth,
                     const layers::SurfaceDescriptor& aSD);
   RemoteImageHolder(RemoteImageHolder&& aOther);
   // Ensure we never copy this object.
@@ -47,16 +48,17 @@ class RemoteImageHolder final {
   // We need a default for the default constructor, never used in practice.
   layers::VideoBridgeSource mSource = layers::VideoBridgeSource::GpuProcess;
   gfx::IntSize mSize;
+  gfx::ColorDepth mColorDepth = gfx::ColorDepth::COLOR_8;
   Maybe<layers::SurfaceDescriptor> mSD;
   RefPtr<layers::IGPUVideoSurfaceManager> mManager;
 };
 
 template <>
 struct ipc::IPDLParamTraits<RemoteImageHolder> {
-  static void Write(IPC::Message* aMsg, IProtocol* aActor,
+  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
                     RemoteImageHolder&& aParam);
-  static bool Read(const IPC::Message* aMsg, PickleIterator* aIter,
-                   IProtocol* aActor, RemoteImageHolder* aResult);
+  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
+                   RemoteImageHolder* aResult);
 };
 
 }  // namespace mozilla

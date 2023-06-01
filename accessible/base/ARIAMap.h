@@ -14,6 +14,7 @@
 
 #include "nsAtom.h"
 #include "nsIContent.h"
+#include "nsTHashSet.h"
 
 class nsINode;
 
@@ -118,6 +119,11 @@ const uint8_t ATTR_VALTOKEN = 0x1 << 2;
  */
 const uint8_t ATTR_GLOBAL = 0x1 << 3;
 
+/**
+ * Indicates that the attribute should have an integer value.
+ */
+const uint8_t ATTR_VALINT = 0x1 << 4;
+
 ////////////////////////////////////////////////////////////////////////////////
 // State map entry
 
@@ -198,6 +204,8 @@ struct nsRoleMapEntry {
  */
 namespace mozilla {
 namespace a11y {
+class AccAttributes;
+
 namespace aria {
 
 /**
@@ -288,11 +296,15 @@ class AttrIterator {
 
   bool Next();
 
-  void AttrName(nsAString& aAttrName) const;
-
   nsAtom* AttrName() const;
 
   void AttrValue(nsAString& aAttrValue) const;
+
+  /**
+   * Expose this ARIA attribute in a specified AccAttributes. The appropriate
+   * type will be used for the attribute; e.g. an atom for a token value.
+   */
+  bool ExposeAttr(AccAttributes* aTargetAttrs) const;
 
  private:
   AttrIterator() = delete;
@@ -300,9 +312,15 @@ class AttrIterator {
   AttrIterator& operator=(const AttrIterator&) = delete;
 
   dom::Element* mElement;
+
+  bool mIteratingDefaults;
+  nsTHashSet<nsRefPtrHashKey<nsAtom>> mOverriddenAttrs;
+
+  const AttrArray* mAttrs;
   uint32_t mAttrIdx;
   uint32_t mAttrCount;
   RefPtr<nsAtom> mAttrAtom;
+  uint8_t mAttrCharacteristics;
 };
 
 }  // namespace aria

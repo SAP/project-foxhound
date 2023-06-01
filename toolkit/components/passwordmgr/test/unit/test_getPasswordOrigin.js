@@ -7,7 +7,7 @@
 const TESTCASES = [
   ["javascript:void(0);", null],
   ["javascript:void(0);", "javascript:", true],
-  ["chrome://MyAccount", null],
+  ["chrome://MyAccount", "chrome://myaccount"],
   ["data:text/html,example", null],
   [
     "http://username:password@example.com:80/foo?bar=baz#fragment",
@@ -23,6 +23,10 @@ const TESTCASES = [
   ["https://[::1]:443/foo", "https://[::1]"],
   ["https://[::1]:8443/foo", "https://[::1]:8443"],
   ["ftp://username:password@[::1]:2121/foo", "ftp://[::1]:2121"],
+  [
+    "moz-proxy://username:password@123.456.789.123:12345/foo",
+    "moz-proxy://123.456.789.123:12345",
+  ],
 ];
 
 for (let [input, expected, allowJS] of TESTCASES) {

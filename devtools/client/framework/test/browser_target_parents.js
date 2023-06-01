@@ -5,9 +5,15 @@
 
 // Test a given Target's parentFront attribute returns the correct parent front.
 
-const { DevToolsClient } = require("devtools/client/devtools-client");
-const { DevToolsServer } = require("devtools/server/devtools-server");
-const { createCommandsDictionary } = require("devtools/shared/commands/index");
+const {
+  DevToolsClient,
+} = require("resource://devtools/client/devtools-client.js");
+const {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
+const {
+  createCommandsDictionary,
+} = require("resource://devtools/shared/commands/index.js");
 
 const TEST_URL = `data:text/html;charset=utf-8,<div id="test"></div>`;
 
@@ -92,7 +98,7 @@ add_task(async function() {
 
   const { workers } = await mainRoot.listWorkers();
 
-  ok(workers.length > 0, "list workers returned a non-empty list of workers");
+  ok(!!workers.length, "list workers returned a non-empty list of workers");
 
   for (const workerDescriptorFront of workers) {
     const targetFront = await workerDescriptorFront.getTarget();

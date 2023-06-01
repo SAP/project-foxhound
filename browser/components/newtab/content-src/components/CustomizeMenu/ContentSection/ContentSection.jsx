@@ -3,12 +3,16 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import React from "react";
-import { actionCreators as ac } from "common/Actions.jsm";
+import { actionCreators as ac } from "common/Actions.sys.mjs";
 
 export class ContentSection extends React.PureComponent {
   constructor(props) {
     super(props);
     this.onPreferenceSelect = this.onPreferenceSelect.bind(this);
+
+    // Refs are necessary for dynamically measuring drawer heights for slide animations
+    this.topSitesDrawerRef = React.createRef();
+    this.pocketDrawerRef = React.createRef();
   }
 
   inputUserEvent(eventSource, status) {
@@ -23,7 +27,7 @@ export class ContentSection extends React.PureComponent {
 
   onPreferenceSelect(e) {
     let prefName = e.target.getAttribute("preference");
-    const eventSource = e.target.getAttribute("eventSource");
+    const eventSource = e.target.getAttribute("eventSource"); // TOP_SITES, TOP_STORIES, HIGHLIGHTS
     let value;
     if (e.target.nodeName === "SELECT") {
       value = parseInt(e.target.value, 10);
@@ -36,15 +40,67 @@ export class ContentSection extends React.PureComponent {
     this.props.setPref(prefName, value);
   }
 
+  componentDidMount() {
+    this.setDrawerMargins();
+  }
+
+  componentDidUpdate() {
+    this.setDrawerMargins();
+  }
+
+  setDrawerMargins() {
+    this.setDrawerMargin(
+      `TOP_SITES`,
+      this.props.enabledSections.topSitesEnabled
+    );
+    this.setDrawerMargin(
+      `TOP_STORIES`,
+      this.props.enabledSections.pocketEnabled
+    );
+  }
+
+  setDrawerMargin(drawerID, isOpen) {
+    let drawerRef;
+
+    if (drawerID === `TOP_SITES`) {
+      drawerRef = this.topSitesDrawerRef.current;
+    } else if (drawerID === `TOP_STORIES`) {
+      drawerRef = this.pocketDrawerRef.current;
+    } else {
+      return;
+    }
+
+    let drawerHeight;
+
+    if (drawerRef) {
+      drawerHeight = parseFloat(window.getComputedStyle(drawerRef)?.height);
+
+      if (isOpen) {
+        drawerRef.style.marginTop = `0`;
+      } else {
+        drawerRef.style.marginTop = `-${drawerHeight}px`;
+      }
+    }
+  }
+
   render() {
+    const {
+      enabledSections,
+      mayHaveSponsoredTopSites,
+      pocketRegion,
+      mayHaveSponsoredStories,
+      mayHaveRecentSaves,
+      openPreferences,
+    } = this.props;
     const {
       topSitesEnabled,
       pocketEnabled,
       highlightsEnabled,
       showSponsoredTopSitesEnabled,
       showSponsoredPocketEnabled,
+      showRecentSavesEnabled,
       topSitesRowsCount,
-    } = this.props.enabledSections;
+    } = enabledSections;
 
     return (
       <div className="home-section">
@@ -74,16 +130,8 @@ export class ContentSection extends React.PureComponent {
               className="subtitle"
               data-l10n-id="newtab-custom-shortcuts-subtitle"
             ></p>
-            <div
-              className={`more-info-top-wrapper ${
-                topSitesEnabled ? "" : "shrink"
-              }`}
-            >
-              <div
-                className={`more-information ${
-                  topSitesEnabled ? "expand" : "shrink"
-                }`}
-              >
+            <div className="more-info-top-wrapper">
+              <div className="more-information" ref={this.topSitesDrawerRef}>
                 <select
                   id="row-selector"
                   className="selector"
@@ -115,7 +163,7 @@ export class ContentSection extends React.PureComponent {
                     data-l10n-args='{"num": 4}'
                   />
                 </select>
-                {this.props.mayHaveSponsoredTopSites && (
+                {mayHaveSponsoredTopSites && (
                   <div className="check-wrapper" role="presentation">
                     <input
                       id="sponsored-shortcuts"
@@ -139,7 +187,7 @@ export class ContentSection extends React.PureComponent {
           </div>
         </div>
 
-        {this.props.pocketRegion && (
+        {pocketRegion && (
           <div id="pocket-section" className="section">
             <label className="switch">
               <input
@@ -166,34 +214,47 @@ export class ContentSection extends React.PureComponent {
                 className="subtitle"
                 data-l10n-id="newtab-custom-pocket-subtitle"
               />
-              {this.props.mayHaveSponsoredStories && (
-                <div
-                  className={`more-info-pocket-wrapper ${
-                    pocketEnabled ? "" : "shrink"
-                  }`}
-                >
-                  <div
-                    className={`more-information ${
-                      pocketEnabled ? "expand" : "shrink"
-                    }`}
-                  >
-                    <div className="check-wrapper" role="presentation">
-                      <input
-                        id="sponsored-pocket"
-                        className="sponsored-checkbox"
-                        disabled={!pocketEnabled}
-                        checked={showSponsoredPocketEnabled}
-                        type="checkbox"
-                        onChange={this.onPreferenceSelect}
-                        preference="showSponsored"
-                        eventSource="POCKET_SPOCS"
-                      />
-                      <label
-                        className="sponsored"
-                        htmlFor="sponsored-pocket"
-                        data-l10n-id="newtab-custom-pocket-sponsored"
-                      />
-                    </div>
+              {(mayHaveSponsoredStories || mayHaveRecentSaves) && (
+                <div className="more-info-pocket-wrapper">
+                  <div className="more-information" ref={this.pocketDrawerRef}>
+                    {mayHaveSponsoredStories && (
+                      <div className="check-wrapper" role="presentation">
+                        <input
+                          id="sponsored-pocket"
+                          className="sponsored-checkbox"
+                          disabled={!pocketEnabled}
+                          checked={showSponsoredPocketEnabled}
+                          type="checkbox"
+                          onChange={this.onPreferenceSelect}
+                          preference="showSponsored"
+                          eventSource="POCKET_SPOCS"
+                        />
+                        <label
+                          className="sponsored"
+                          htmlFor="sponsored-pocket"
+                          data-l10n-id="newtab-custom-pocket-sponsored"
+                        />
+                      </div>
+                    )}
+                    {mayHaveRecentSaves && (
+                      <div className="check-wrapper" role="presentation">
+                        <input
+                          id="recent-saves-pocket"
+                          className="sponsored-checkbox"
+                          disabled={!pocketEnabled}
+                          checked={showRecentSavesEnabled}
+                          type="checkbox"
+                          onChange={this.onPreferenceSelect}
+                          preference="showRecentSaves"
+                          eventSource="POCKET_RECENT_SAVES"
+                        />
+                        <label
+                          className="sponsored"
+                          htmlFor="recent-saves-pocket"
+                          data-l10n-id="newtab-custom-pocket-show-recent-saves"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -237,7 +298,7 @@ export class ContentSection extends React.PureComponent {
           <button
             id="settings-link"
             className="external-link"
-            onClick={this.props.openPreferences}
+            onClick={openPreferences}
             data-l10n-id="newtab-custom-settings"
           />
         </div>

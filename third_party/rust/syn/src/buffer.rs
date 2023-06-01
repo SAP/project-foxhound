@@ -14,21 +14,20 @@
 use crate::proc_macro as pm;
 use crate::Lifetime;
 use proc_macro2::{Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenStream, TokenTree};
+use std::cmp::Ordering;
 use std::marker::PhantomData;
-use std::ptr;
-use std::slice;
 
 /// Internal type which is used instead of `TokenTree` to represent a token tree
 /// within a `TokenBuffer`.
 enum Entry {
     // Mimicking types from proc-macro.
-    Group(Group, TokenBuffer),
+    // Group entries contain the offset to the matching End entry.
+    Group(Group, usize),
     Ident(Ident),
     Punct(Punct),
     Literal(Literal),
-    // End entries contain a raw pointer to the entry from the containing
-    // token tree, or null if this is the outermost level.
-    End(*const Entry),
+    // End entries contain the offset (negative) to the start of the buffer.
+    End(isize),
 }
 
 /// A buffer that can be efficiently traversed multiple times, unlike
@@ -37,75 +36,28 @@ enum Entry {
 ///
 /// *This type is available only if Syn is built with the `"parsing"` feature.*
 pub struct TokenBuffer {
-    // NOTE: Do not implement clone on this - there are raw pointers inside
-    // these entries which will be messed up. Moving the `TokenBuffer` itself is
-    // safe as the data pointed to won't be moved.
-    ptr: *const Entry,
-    len: usize,
-}
-
-impl Drop for TokenBuffer {
-    fn drop(&mut self) {
-        unsafe {
-            let slice = slice::from_raw_parts_mut(self.ptr as *mut Entry, self.len);
-            let _ = Box::from_raw(slice);
-        }
-    }
+    // NOTE: Do not implement clone on this - while the current design could be
+    // cloned, other designs which could be desirable may not be cloneable.
+    entries: Box<[Entry]>,
 }
 
 impl TokenBuffer {
-    // NOTE: Do not mutate the Vec returned from this function once it returns;
-    // the address of its backing memory must remain stable.
-    fn inner_new(stream: TokenStream, up: *const Entry) -> TokenBuffer {
-        // Build up the entries list, recording the locations of any Groups
-        // in the list to be processed later.
-        let mut entries = Vec::new();
-        let mut groups = Vec::new();
+    fn recursive_new(entries: &mut Vec<Entry>, stream: TokenStream) {
         for tt in stream {
             match tt {
-                TokenTree::Ident(sym) => {
-                    entries.push(Entry::Ident(sym));
-                }
-                TokenTree::Punct(op) => {
-                    entries.push(Entry::Punct(op));
-                }
-                TokenTree::Literal(l) => {
-                    entries.push(Entry::Literal(l));
-                }
-                TokenTree::Group(g) => {
-                    // Record the index of the interesting entry, and store an
-                    // `End(null)` there temporarily.
-                    groups.push((entries.len(), g));
-                    entries.push(Entry::End(ptr::null()));
+                TokenTree::Ident(ident) => entries.push(Entry::Ident(ident)),
+                TokenTree::Punct(punct) => entries.push(Entry::Punct(punct)),
+                TokenTree::Literal(literal) => entries.push(Entry::Literal(literal)),
+                TokenTree::Group(group) => {
+                    let group_start_index = entries.len();
+                    entries.push(Entry::End(0)); // we replace this below
+                    Self::recursive_new(entries, group.stream());
+                    let group_end_index = entries.len();
+                    entries.push(Entry::End(-(group_end_index as isize)));
+                    let group_end_offset = group_end_index - group_start_index;
+                    entries[group_start_index] = Entry::Group(group, group_end_offset);
                 }
             }
-        }
-        // Add an `End` entry to the end with a reference to the enclosing token
-        // stream which was passed in.
-        entries.push(Entry::End(up));
-
-        // NOTE: This is done to ensure that we don't accidentally modify the
-        // length of the backing buffer. The backing buffer must remain at a
-        // constant address after this point, as we are going to store a raw
-        // pointer into it.
-        let mut entries = entries.into_boxed_slice();
-        for (idx, group) in groups {
-            // We know that this index refers to one of the temporary
-            // `End(null)` entries, and we know that the last entry is
-            // `End(up)`, so the next index is also valid.
-            let group_up = unsafe { entries.as_ptr().add(idx + 1) };
-
-            // The end entry stored at the end of this Entry::Group should
-            // point to the Entry which follows the Group in the list.
-            let inner = Self::inner_new(group.stream(), group_up);
-            entries[idx] = Entry::Group(group, inner);
-        }
-
-        let len = entries.len();
-        let ptr = Box::into_raw(entries);
-        TokenBuffer {
-            ptr: ptr as *const Entry,
-            len,
         }
     }
 
@@ -125,13 +77,19 @@ impl TokenBuffer {
     /// Creates a `TokenBuffer` containing all the tokens from the input
     /// `proc_macro2::TokenStream`.
     pub fn new2(stream: TokenStream) -> Self {
-        Self::inner_new(stream, ptr::null())
+        let mut entries = Vec::new();
+        Self::recursive_new(&mut entries, stream);
+        entries.push(Entry::End(-(entries.len() as isize)));
+        Self {
+            entries: entries.into_boxed_slice(),
+        }
     }
 
     /// Creates a cursor referencing the first token in the buffer and able to
     /// traverse until the end of the buffer.
     pub fn begin(&self) -> Cursor {
-        unsafe { Cursor::create(self.ptr, self.ptr.add(self.len - 1)) }
+        let ptr = self.entries.as_ptr();
+        unsafe { Cursor::create(ptr, ptr.add(self.entries.len() - 1)) }
     }
 }
 
@@ -151,7 +109,7 @@ impl TokenBuffer {
 pub struct Cursor<'a> {
     // The current entry which the `Cursor` is pointing at.
     ptr: *const Entry,
-    // This is the only `Entry::End(..)` object which this cursor is allowed to
+    // This is the only `Entry::End` object which this cursor is allowed to
     // point at. All other `End` objects are skipped over in `Cursor::create`.
     scope: *const Entry,
     // Cursor is covariant in 'a. This field ensures that our pointers are still
@@ -171,7 +129,7 @@ impl<'a> Cursor<'a> {
         // object in global storage.
         struct UnsafeSyncEntry(Entry);
         unsafe impl Sync for UnsafeSyncEntry {}
-        static EMPTY_ENTRY: UnsafeSyncEntry = UnsafeSyncEntry(Entry::End(0 as *const Entry));
+        static EMPTY_ENTRY: UnsafeSyncEntry = UnsafeSyncEntry(Entry::End(0));
 
         Cursor {
             ptr: &EMPTY_ENTRY.0,
@@ -184,15 +142,15 @@ impl<'a> Cursor<'a> {
     /// `None`-delimited scopes when the cursor reaches the end of them,
     /// allowing for them to be treated transparently.
     unsafe fn create(mut ptr: *const Entry, scope: *const Entry) -> Self {
-        // NOTE: If we're looking at a `End(..)`, we want to advance the cursor
+        // NOTE: If we're looking at a `End`, we want to advance the cursor
         // past it, unless `ptr == scope`, which means that we're at the edge of
         // our cursor's scope. We should only have `ptr != scope` at the exit
         // from None-delimited groups entered with `ignore_none`.
-        while let Entry::End(exit) = *ptr {
+        while let Entry::End(_) = *ptr {
             if ptr == scope {
                 break;
             }
-            ptr = exit;
+            ptr = ptr.add(1);
         }
 
         Cursor {
@@ -210,7 +168,10 @@ impl<'a> Cursor<'a> {
     /// Bump the cursor to point at the next token after the current one. This
     /// is undefined behavior if the cursor is currently looking at an
     /// `Entry::End`.
-    unsafe fn bump(self) -> Cursor<'a> {
+    ///
+    /// If the cursor is looking at an `Entry::Group`, the bumped cursor will
+    /// point at the first token in the group (with the same scope end).
+    unsafe fn bump_ignore_group(self) -> Cursor<'a> {
         Cursor::create(self.ptr.offset(1), self.scope)
     }
 
@@ -220,14 +181,9 @@ impl<'a> Cursor<'a> {
     ///
     /// WARNING: This mutates its argument.
     fn ignore_none(&mut self) {
-        while let Entry::Group(group, buf) = self.entry() {
+        while let Entry::Group(group, _) = self.entry() {
             if group.delimiter() == Delimiter::None {
-                // NOTE: We call `Cursor::create` here to make sure that
-                // situations where we should immediately exit the span after
-                // entering it are handled correctly.
-                unsafe {
-                    *self = Cursor::create(buf.ptr, self.scope);
-                }
+                unsafe { *self = self.bump_ignore_group() };
             } else {
                 break;
             }
@@ -251,9 +207,12 @@ impl<'a> Cursor<'a> {
             self.ignore_none();
         }
 
-        if let Entry::Group(group, buf) = self.entry() {
+        if let Entry::Group(group, end_offset) = self.entry() {
             if group.delimiter() == delim {
-                return Some((buf.begin(), group.span(), unsafe { self.bump() }));
+                let end_of_group = unsafe { self.ptr.add(*end_offset) };
+                let inside_of_group = unsafe { Cursor::create(self.ptr.add(1), end_of_group) };
+                let after_group = unsafe { Cursor::create(end_of_group, self.scope) };
+                return Some((inside_of_group, group.span(), after_group));
             }
         }
 
@@ -265,7 +224,7 @@ impl<'a> Cursor<'a> {
     pub fn ident(mut self) -> Option<(Ident, Cursor<'a>)> {
         self.ignore_none();
         match self.entry() {
-            Entry::Ident(ident) => Some((ident.clone(), unsafe { self.bump() })),
+            Entry::Ident(ident) => Some((ident.clone(), unsafe { self.bump_ignore_group() })),
             _ => None,
         }
     }
@@ -275,7 +234,9 @@ impl<'a> Cursor<'a> {
     pub fn punct(mut self) -> Option<(Punct, Cursor<'a>)> {
         self.ignore_none();
         match self.entry() {
-            Entry::Punct(op) if op.as_char() != '\'' => Some((op.clone(), unsafe { self.bump() })),
+            Entry::Punct(punct) if punct.as_char() != '\'' => {
+                Some((punct.clone(), unsafe { self.bump_ignore_group() }))
+            }
             _ => None,
         }
     }
@@ -285,7 +246,7 @@ impl<'a> Cursor<'a> {
     pub fn literal(mut self) -> Option<(Literal, Cursor<'a>)> {
         self.ignore_none();
         match self.entry() {
-            Entry::Literal(lit) => Some((lit.clone(), unsafe { self.bump() })),
+            Entry::Literal(literal) => Some((literal.clone(), unsafe { self.bump_ignore_group() })),
             _ => None,
         }
     }
@@ -295,18 +256,14 @@ impl<'a> Cursor<'a> {
     pub fn lifetime(mut self) -> Option<(Lifetime, Cursor<'a>)> {
         self.ignore_none();
         match self.entry() {
-            Entry::Punct(op) if op.as_char() == '\'' && op.spacing() == Spacing::Joint => {
-                let next = unsafe { self.bump() };
-                match next.ident() {
-                    Some((ident, rest)) => {
-                        let lifetime = Lifetime {
-                            apostrophe: op.span(),
-                            ident,
-                        };
-                        Some((lifetime, rest))
-                    }
-                    None => None,
-                }
+            Entry::Punct(punct) if punct.as_char() == '\'' && punct.spacing() == Spacing::Joint => {
+                let next = unsafe { self.bump_ignore_group() };
+                let (ident, rest) = next.ident()?;
+                let lifetime = Lifetime {
+                    apostrophe: punct.span(),
+                    ident,
+                };
+                Some((lifetime, rest))
             }
             _ => None,
         }
@@ -332,15 +289,16 @@ impl<'a> Cursor<'a> {
     /// This method does not treat `None`-delimited groups as transparent, and
     /// will return a `Group(None, ..)` if the cursor is looking at one.
     pub fn token_tree(self) -> Option<(TokenTree, Cursor<'a>)> {
-        let tree = match self.entry() {
-            Entry::Group(group, _) => group.clone().into(),
-            Entry::Literal(lit) => lit.clone().into(),
-            Entry::Ident(ident) => ident.clone().into(),
-            Entry::Punct(op) => op.clone().into(),
-            Entry::End(..) => return None,
+        let (tree, len) = match self.entry() {
+            Entry::Group(group, end_offset) => (group.clone().into(), *end_offset),
+            Entry::Literal(literal) => (literal.clone().into(), 1),
+            Entry::Ident(ident) => (ident.clone().into(), 1),
+            Entry::Punct(punct) => (punct.clone().into(), 1),
+            Entry::End(_) => return None,
         };
 
-        Some((tree, unsafe { self.bump() }))
+        let rest = unsafe { Cursor::create(self.ptr.add(len), self.scope) };
+        Some((tree, rest))
     }
 
     /// Returns the `Span` of the current token, or `Span::call_site()` if this
@@ -348,10 +306,10 @@ impl<'a> Cursor<'a> {
     pub fn span(self) -> Span {
         match self.entry() {
             Entry::Group(group, _) => group.span(),
-            Entry::Literal(l) => l.span(),
-            Entry::Ident(t) => t.span(),
-            Entry::Punct(o) => o.span(),
-            Entry::End(..) => Span::call_site(),
+            Entry::Literal(literal) => literal.span(),
+            Entry::Ident(ident) => ident.span(),
+            Entry::Punct(punct) => punct.span(),
+            Entry::End(_) => Span::call_site(),
         }
     }
 
@@ -360,19 +318,22 @@ impl<'a> Cursor<'a> {
     ///
     /// This method treats `'lifetimes` as a single token.
     pub(crate) fn skip(self) -> Option<Cursor<'a>> {
-        match self.entry() {
-            Entry::End(..) => None,
+        let len = match self.entry() {
+            Entry::End(_) => return None,
 
             // Treat lifetimes as a single tt for the purposes of 'skip'.
-            Entry::Punct(op) if op.as_char() == '\'' && op.spacing() == Spacing::Joint => {
-                let next = unsafe { self.bump() };
-                match next.entry() {
-                    Entry::Ident(_) => Some(unsafe { next.bump() }),
-                    _ => Some(next),
+            Entry::Punct(punct) if punct.as_char() == '\'' && punct.spacing() == Spacing::Joint => {
+                match unsafe { &*self.ptr.add(1) } {
+                    Entry::Ident(_) => 2,
+                    _ => 1,
                 }
             }
-            _ => Some(unsafe { self.bump() }),
-        }
+
+            Entry::Group(_, end_offset) => *end_offset,
+            _ => 1,
+        };
+
+        Some(unsafe { Cursor::create(self.ptr.add(len), self.scope) })
     }
 }
 
@@ -388,14 +349,38 @@ impl<'a> Eq for Cursor<'a> {}
 
 impl<'a> PartialEq for Cursor<'a> {
     fn eq(&self, other: &Self) -> bool {
-        let Cursor { ptr, scope, marker } = self;
-        let _ = marker;
-        *ptr == other.ptr && *scope == other.scope
+        self.ptr == other.ptr
+    }
+}
+
+impl<'a> PartialOrd for Cursor<'a> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        if same_buffer(*self, *other) {
+            Some(self.ptr.cmp(&other.ptr))
+        } else {
+            None
+        }
     }
 }
 
 pub(crate) fn same_scope(a: Cursor, b: Cursor) -> bool {
     a.scope == b.scope
+}
+
+pub(crate) fn same_buffer(a: Cursor, b: Cursor) -> bool {
+    unsafe {
+        match (&*a.scope, &*b.scope) {
+            (Entry::End(a_offset), Entry::End(b_offset)) => {
+                a.scope.offset(*a_offset) == b.scope.offset(*b_offset)
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[cfg(any(feature = "full", feature = "derive"))]
+pub(crate) fn cmp_assuming_same_buffer(a: Cursor, b: Cursor) -> Ordering {
+    a.ptr.cmp(&b.ptr)
 }
 
 pub(crate) fn open_span_of_group(cursor: Cursor) -> Span {

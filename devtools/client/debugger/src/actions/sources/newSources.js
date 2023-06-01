@@ -16,6 +16,7 @@ import {
 } from "../../client/firefox/create";
 import { toggleBlackBox } from "./blackbox";
 import { syncBreakpoint } from "../breakpoints";
+import { createLocation } from "../../utils/location";
 import { loadSourceText } from "./loadSourceText";
 import { togglePrettyPrint } from "./prettyPrint";
 import { selectLocation, setBreakableLines } from "../sources";
@@ -34,7 +35,8 @@ import {
   getPendingSelectedLocation,
   getPendingBreakpointsForSource,
   getContext,
-  isSourceLoadingOrLoaded,
+  getSourceTextContent,
+  getSourceActor,
 } from "../../selectors";
 
 import { prefs } from "../../utils/prefs";
@@ -42,15 +44,18 @@ import sourceQueue from "../../utils/source-queue";
 import { validateNavigateContext, ContextError } from "../../utils/context";
 
 function loadSourceMaps(cx, sources) {
-  return async function({ dispatch, sourceMaps }) {
+  return async function({ dispatch }) {
     try {
       const sourceList = await Promise.all(
         sources.map(async sourceActor => {
-          const originalSources = await dispatch(
+          const originalSourcesInfo = await dispatch(
             loadSourceMap(cx, sourceActor)
           );
-          sourceQueue.queueOriginalSources(originalSources);
-          return originalSources;
+          originalSourcesInfo.forEach(
+            sourcesInfo => (sourcesInfo.sourceActor = sourceActor)
+          );
+          sourceQueue.queueOriginalSources(originalSourcesInfo);
+          return originalSourcesInfo;
         })
       );
 
@@ -62,6 +67,8 @@ function loadSourceMaps(cx, sources) {
         throw error;
       }
     }
+
+    return [];
   };
 }
 
@@ -70,7 +77,7 @@ function loadSourceMaps(cx, sources) {
  * @static
  */
 function loadSourceMap(cx, sourceActor) {
-  return async function({ dispatch, getState, sourceMaps }) {
+  return async function({ dispatch, getState, sourceMapLoader }) {
     if (!prefs.clientSourceMapsEnabled || !sourceActor.sourceMapURL) {
       return [];
     }
@@ -81,7 +88,7 @@ function loadSourceMap(cx, sourceActor) {
       // we currently treat sourcemaps as Source-wide, not SourceActor-specific.
       const source = getSourceByActorId(getState(), sourceActor.id);
       if (source) {
-        data = await sourceMaps.getOriginalURLs({
+        data = await sourceMapLoader.getOriginalURLs({
           // Using source ID here is historical and eventually we'll want to
           // switch to all of this being per-source-actor.
           id: source.id,
@@ -95,12 +102,13 @@ function loadSourceMap(cx, sourceActor) {
       console.error(e);
     }
 
-    if (!data) {
-      // If this source doesn't have a sourcemap, enable it for pretty printing
+    if (!data || !data.length) {
+      // If this source doesn't have a sourcemap or there are no original files
+      // existing, enable it for pretty printing
       dispatch({
         type: "CLEAR_SOURCE_ACTOR_MAP_URL",
         cx,
-        id: sourceActor.id,
+        sourceActorId: sourceActor.id,
       });
       return [];
     }
@@ -133,7 +141,8 @@ function checkSelectedSource(cx, sourceId) {
     if (rawPendingUrl === source.url) {
       if (isPrettyURL(pendingUrl)) {
         const prettySource = await dispatch(togglePrettyPrint(cx, source.id));
-        return dispatch(checkPendingBreakpoints(cx, prettySource.id));
+        dispatch(checkPendingBreakpoints(cx, prettySource.id, null));
+        return;
       }
 
       await dispatch(
@@ -148,7 +157,7 @@ function checkSelectedSource(cx, sourceId) {
   };
 }
 
-function checkPendingBreakpoints(cx, sourceId) {
+function checkPendingBreakpoints(cx, sourceId, sourceActorId) {
   return async ({ dispatch, getState }) => {
     // source may have been modified by selectLocation
     const source = getSource(getState(), sourceId);
@@ -165,9 +174,9 @@ function checkPendingBreakpoints(cx, sourceId) {
       return;
     }
 
+    const sourceActor = getSourceActor(getState(), sourceActorId);
     // load the source text if there is a pending breakpoint for it
-    await dispatch(loadSourceText({ cx, source }));
-
+    await dispatch(loadSourceText(cx, source, sourceActor));
     await dispatch(setBreakableLines(cx, source.id));
 
     await Promise.all(
@@ -182,7 +191,7 @@ function restoreBlackBoxedSources(cx, sources) {
   return async ({ dispatch, getState }) => {
     const currentRanges = getBlackBoxRanges(getState());
 
-    if (Object.keys(currentRanges).length == 0) {
+    if (!Object.keys(currentRanges).length) {
       return;
     }
 
@@ -196,37 +205,56 @@ function restoreBlackBoxedSources(cx, sources) {
   };
 }
 
-// Wrapper around newOriginalSources, only used by tests
-export function newOriginalSource(sourceInfo) {
-  return async ({ dispatch }) => {
-    const sources = await dispatch(newOriginalSources([sourceInfo]));
-    return sources[0];
-  };
-}
-
-export function newOriginalSources(sourceInfo) {
+export function newOriginalSources(originalSourcesInfo) {
   return async ({ dispatch, getState }) => {
     const state = getState();
     const seen = new Set();
-    const sources = [];
 
-    for (const { id, url } of sourceInfo) {
+    const actors = [];
+    const actorsSources = {};
+
+    for (const { id, url, sourceActor } of originalSourcesInfo) {
       if (seen.has(id) || getSource(state, id)) {
         continue;
       }
-
       seen.add(id);
 
-      sources.push(createSourceMapOriginalSource(id, url));
+      if (!actorsSources[sourceActor.actor]) {
+        actors.push(sourceActor);
+        actorsSources[sourceActor.actor] = [];
+      }
+
+      actorsSources[sourceActor.actor].push(
+        createSourceMapOriginalSource(id, url)
+      );
     }
 
     const cx = getContext(state);
-    dispatch(addSources(cx, sources));
+
+    // Add the original sources per the generated source actors that
+    // they are primarily from.
+    actors.forEach(sourceActor => {
+      dispatch({
+        type: "ADD_ORIGINAL_SOURCES",
+        cx,
+        originalSources: actorsSources[sourceActor.actor],
+        generatedSourceActor: sourceActor,
+      });
+    });
+
+    // Accumulate the sources back into one list
+    const actorsSourcesValues = Object.values(actorsSources);
+    let sources = [];
+    if (actorsSourcesValues.length) {
+      sources = actorsSourcesValues.reduce((acc, sourceList) =>
+        acc.concat(sourceList)
+      );
+    }
 
     await dispatch(checkNewSources(cx, sources));
 
     for (const source of sources) {
-      dispatch(checkPendingBreakpoints(cx, source.id));
+      dispatch(checkPendingBreakpoints(cx, source.id, null));
     }
 
     return sources;
@@ -243,7 +271,7 @@ export function newGeneratedSource(sourceInfo) {
 
 export function newGeneratedSources(sourceResources) {
   return async ({ dispatch, getState, client }) => {
-    if (sourceResources.length == 0) {
+    if (!sourceResources.length) {
       return [];
     }
 
@@ -270,7 +298,12 @@ export function newGeneratedSources(sourceResources) {
       // We are sometimes notified about a new source multiple times if we
       // request a new source list and also get a source event from the server.
       if (!hasSourceActor(getState(), actorId)) {
-        newSourceActors.push(createSourceActor(sourceResource));
+        newSourceActors.push(
+          createSourceActor(
+            sourceResource,
+            getSource(getState(), id) || newSourcesObj[id]
+          )
+        );
       }
 
       resultIds.push(id);
@@ -283,11 +316,15 @@ export function newGeneratedSources(sourceResources) {
     dispatch(insertSourceActors(newSourceActors));
 
     for (const newSourceActor of newSourceActors) {
+      const location = createLocation({
+        sourceId: newSourceActor.source.id,
+        sourceActorId: newSourceActor.actor,
+      });
       // Fetch breakable lines for new HTML scripts
       // when the HTML file has started loading
       if (
         isInlineScript(newSourceActor) &&
-        isSourceLoadingOrLoaded(getState(), newSourceActor.source)
+        getSourceTextContent(getState(), location) != null
       ) {
         dispatch(setBreakableLines(cx, newSourceActor.source)).catch(error => {
           if (!(error instanceof ContextError)) {
@@ -304,8 +341,8 @@ export function newGeneratedSources(sourceResources) {
       // We would like to sync breakpoints after we are done
       // loading source maps as sometimes generated and original
       // files share the same paths.
-      for (const { source } of newSourceActors) {
-        dispatch(checkPendingBreakpoints(cx, source));
+      for (const { source, actor } of newSourceActors) {
+        dispatch(checkPendingBreakpoints(cx, source, actor));
       }
     })();
 

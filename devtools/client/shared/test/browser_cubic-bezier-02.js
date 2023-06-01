@@ -7,10 +7,10 @@
 
 const {
   CubicBezierWidget,
-} = require("devtools/client/shared/widgets/CubicBezierWidget");
+} = require("resource://devtools/client/shared/widgets/CubicBezierWidget.js");
 const {
   PREDEFINED,
-} = require("devtools/client/shared/widgets/CubicBezierPresets");
+} = require("resource://devtools/client/shared/widgets/CubicBezierPresets.js");
 
 // In this test we have to use a slightly more complete HTML tree, with <body>
 // in order to remove its margin and prevent shifted positions
@@ -198,8 +198,8 @@ async function pointsCanBeMovedWithKeyboard(widget, win, doc, offsets) {
 
 function getKeyEvent(target, keyCode, shift = false) {
   return {
-    target: target,
-    keyCode: keyCode,
+    target,
+    keyCode,
     shiftKey: shift,
     preventDefault: () => {},
   };

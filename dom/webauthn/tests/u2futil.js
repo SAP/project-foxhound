@@ -16,9 +16,8 @@ const cose_crv_P256 = 1;
 const cose_crv_x = -2;
 const cose_crv_y = -3;
 
-var { AppConstants } = SpecialPowers.Cu.import(
-  "resource://gre/modules/AppConstants.jsm",
-  {}
+var { AppConstants } = SpecialPowers.ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
 );
 
 function handleEventMessage(event) {
@@ -179,7 +178,7 @@ function webAuthnDecodeCBORAttestation(aCborAttBuf) {
   if (attObj.fmt == "fido-u2f" && !hasOnlyKeys(attObj.attStmt, "sig", "x5c")) {
     return Promise.reject("Invalid CBOR Attestation Statement");
   }
-  if (attObj.fmt == "none" && Object.keys(attObj.attStmt).length > 0) {
+  if (attObj.fmt == "none" && Object.keys(attObj.attStmt).length) {
     return Promise.reject("Invalid CBOR Attestation Statement");
   }
 

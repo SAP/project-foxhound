@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 cargo_extra_outputs = {
     "bindgen": ["tests.rs", "host-target.txt"],
     "cssparser": ["tokenizer.rs"],
@@ -83,33 +81,6 @@ cargo_extra_outputs = {
         "libbz2.a",
     ],
     "clang-sys": ["common.rs", "dynamic.rs"],
-    "cranelift-codegen": [
-        "binemit-arm32.rs",
-        "binemit-arm64.rs",
-        "binemit-riscv.rs",
-        "binemit-x86.rs",
-        "encoding-arm32.rs",
-        "encoding-arm64.rs",
-        "encoding-riscv.rs",
-        "encoding-x86.rs",
-        "inst_builder.rs",
-        "legalize-arm32.rs",
-        "legalize-arm64.rs",
-        "legalize-riscv.rs",
-        "legalize-x86.rs",
-        "legalizer.rs",
-        "opcodes.rs",
-        "registers-arm32.rs",
-        "registers-arm64.rs",
-        "registers-riscv.rs",
-        "registers-x86.rs",
-        "settings-arm32.rs",
-        "settings-arm64.rs",
-        "settings-riscv.rs",
-        "settings-x86.rs",
-        "settings.rs",
-        "types.rs",
-    ],
     "target-lexicon": ["host.rs"],
     "baldrdash": ["bindings.rs"],
     "typenum": ["op.rs", "consts.rs"],

@@ -68,7 +68,7 @@ There are a number of additional string classes:
 * ``nsLiteral[C]String`` which should rarely be constructed explicitly but
   usually through the ``""_ns`` and ``u""_ns`` user-defined string literals.
   ``nsLiteral[C]String`` is trivially constructible and destructible, and
-  therefore does not emit construction/destruction code when stored in statics,
+  therefore does not emit construction/destruction code when stored in static,
   as opposed to the other string classes.
 
 The Major String Classes
@@ -300,30 +300,29 @@ back-and-forth sequence resulting from using ``SetLength()`` followed by
 Low-level means that writing via a raw pointer is possible as with
 ``BeginWriting()``.
 
-``BulkWrite()`` takes four arguments: The new capacity (which may be rounded
+``BulkWrite()`` takes three arguments: The new capacity (which may be rounded
 up), the number of code units at the beginning of the string to preserve
-(typically the old logical length), a boolean indicating whether reallocating
-a smaller buffer is OK if the requested capacity would fit in a buffer that's
-smaller than current one, and a reference to an ``nsresult`` for indicating
-failure on OOM. (Don't access the return value if the ``nsresult`` indicates
-failure. Unfortunately ``mozilla::Result`` is not versatile enough to be used
-here.)
+(typically the old logical length), and a boolean indicating whether
+reallocating a smaller buffer is OK if the requested capacity would fit in a
+buffer that's smaller than current one. It returns a ``mozilla::Result`` which
+contains either a usable ``mozilla::BulkWriteHandle<T>`` (where ``T`` is the
+string's ``char_type``) or an ``nsresult`` explaining why none can be had
+(presumably OOM).
 
-``BulkWrite()`` returns a ``mozilla::BulkWriteHandle<T>``, where ``T`` is
-either ``char`` or ``char16_t``. The actual writes are performed through this
-handle. You must not access the string except via the handle until you call
-``Finish()`` on the handle in the success case or you let the handle go out
-of scope without calling ``Finish()`` in the failure case, in which case the
-destructor of the handle puts the string in a mostly harmless but consistent
-state (containing a single REPLACEMENT CHARACTER if a capacity greater than 0
-was requested, or in the ``char`` case if the three-byte UTF-8 representation
-of the REPLACEMENT CHARACTER doesn't fit, an ASCII SUBSTITUTE).
+The actual writes are performed through the returned
+``mozilla::BulkWriteHandle<T>``. You must not access the string except via this
+handle until you call ``Finish()`` on the handle in the success case or you let
+the handle go out of scope without calling ``Finish()`` in the failure case, in
+which case the destructor of the handle puts the string in a mostly harmless but
+consistent state (containing a single REPLACEMENT CHARACTER if a capacity
+greater than 0 was requested, or in the ``char`` case if the three-byte UTF-8
+representation of the REPLACEMENT CHARACTER doesn't fit, an ASCII SUBSTITUTE).
 
 ``mozilla::BulkWriteHandle<T>`` autoconverts to a writable
 ``mozilla::Span<T>`` and also provides explicit access to itself as ``Span``
 (``AsSpan()``) or via component accessors named consistently with those on
-``Span``: ``Elements()`` and ``Length()`` the latter is not the logical
-length of the string but the writable length of the buffer. The buffer
+``Span``: ``Elements()`` and ``Length()``. (The latter is not the logical
+length of the string but the writable length of the buffer.) The buffer
 exposed via these methods includes the prefix that you may have requested to
 be preserved. It's up to you to skip past it so as to not overwrite it.
 
@@ -335,7 +334,7 @@ indicate success or OOM. Calling ``RestartBulkWrite()`` invalidates
 previously-obtained span, raw pointer or length.
 
 Once you are done writing, call ``Finish()``. It takes two arguments: the new
-logical length of the string (which must not exceed the capacity retuned by
+logical length of the string (which must not exceed the capacity returned by
 the ``Length()`` method of the handle) and a boolean indicating whether it's
 OK to attempt to reallocate a smaller buffer in case a smaller mozjemalloc
 bucket could accommodate the new logical length.
@@ -463,7 +462,7 @@ ones are defined in the `Encoding Standard <https://encoding.spec.whatwg.org/>`_
 Conversions from these encodings to
 UTF-8 and UTF-16 are provided by `mozilla::Encoding
 <https://searchfox.org/mozilla-central/source/intl/Encoding.h#109>`_.
-Additonally, on Windows the are some rare cases (e.g. drag&drop) where it's
+Additionally, on Windows the are some rare cases (e.g. drag&drop) where it's
 necessary to call a system API with data encoded in the Windows
 locale-dependent legacy encoding instead of UTF-16. In those rare cases, use
 ``MultiByteToWideChar``/``WideCharToMultiByte`` from kernel32.dll. Do not use
@@ -656,7 +655,7 @@ deal with response bodies.)
 
 .. cpp:function:: NS_ConvertASCIItoUTF16(const nsACString&)
 
-    A ``nsAutoString`` which holds a temproary buffer contianing the value of
+    A ``nsAutoString`` which holds a temporary buffer containing the value of
     the Latin1 to UTF-16 conversion.
 
 .. cpp:function:: void CopyASCIItoUTF16(Span<const char>, nsAString&)

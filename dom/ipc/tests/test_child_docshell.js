@@ -1,8 +1,7 @@
 "use strict";
-/* eslint-env mozilla/frame-script */
 
-const { XPCShellContentUtils } = ChromeUtils.import(
-  "resource://testing-common/XPCShellContentUtils.jsm"
+const { XPCShellContentUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/XPCShellContentUtils.sys.mjs"
 );
 
 XPCShellContentUtils.init(this);
@@ -44,10 +43,7 @@ add_task(async function test() {
 
     // Inject a frame script in the child process:
     page.loadFrameScript(async function() {
-      const { Services } = ChromeUtils.import(
-        "resource://gre/modules/Services.jsm"
-      );
-
+      /* eslint-env mozilla/frame-script */
       var chromeEventHandler = docShell.chromeEventHandler;
       sendAsyncMessage("chromeEventHandler", {
         processType: Services.appinfo.processType,

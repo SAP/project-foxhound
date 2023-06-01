@@ -13,6 +13,7 @@ const { WebRequest } = ChromeUtils.import(
   "resource://gre/modules/WebRequest.jsm"
 );
 
+// eslint-disable-next-line mozilla/reject-importGlobalProperties
 XPCOMUtils.defineLazyGlobalGetters(this, ["ChannelWrapper"]);
 
 XPCOMUtils.defineLazyGetter(this, "searchInitialized", () => {
@@ -89,7 +90,7 @@ this.addonsSearchDetection = class extends ExtensionAPI {
                 });
             });
           } catch (err) {
-            Cu.reportError(err);
+            console.error(err);
           }
 
           return patterns;
@@ -109,7 +110,7 @@ this.addonsSearchDetection = class extends ExtensionAPI {
           try {
             return Services.eTLD.getBaseDomain(Services.io.newURI(url));
           } catch (err) {
-            Cu.reportError(err);
+            console.error(err);
             return null;
           }
         },
@@ -187,7 +188,7 @@ this.addonsSearchDetection = class extends ExtensionAPI {
                   ?.QueryInterface(Ci.nsIPropertyBag)
                   ?.getProperty("redirectedByExtension");
               } catch (err) {
-                Cu.reportError(err);
+                console.error(err);
               }
 
               const firstUrl = this.firstMatchedUrls[requestId];

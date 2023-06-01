@@ -59,9 +59,19 @@ static const wchar_t kUrl[] = TELEMETRY_BASE_URL TELEMETRY_NAMESPACE
 static const uint32_t kGuidCharLenWithNul = 39;
 static const uint32_t kGuidCharLenNoBracesNoNul = 36;
 static const mozilla::StaticXREAppData* gAppData;
+
+// Ordinarily, errors are only reported to the Windows Event Log when they are
+// not reported upstream via telemetry (usually due either to telemetry being
+// disabled or to network failure).
+//
+// If `--log-launcher-error` is given at the command line, launcher errors will
+// always be reported to the Windows Event Log, regardless of whether or not
+// they're sent upstream.
 static bool gForceEventLog = false;
 
 namespace {
+
+constexpr wchar_t kEventSourceName[] = L"" MOZ_APP_DISPLAYNAME " Launcher";
 
 struct EventSourceDeleter {
   using pointer = HANDLE;
@@ -82,7 +92,8 @@ struct SerializedEventData {
 static void PostErrorToLog(const mozilla::LauncherError& aError) {
   // This is very bare-bones; just enough to spit out an HRESULT to the
   // Application event log.
-  EventLog log(::RegisterEventSourceW(nullptr, L"Firefox"));
+  EventLog log(::RegisterEventSourceW(nullptr, kEventSourceName));
+
   if (!log) {
     return;
   }
@@ -141,7 +152,7 @@ class TempFileWriter final : public mozilla::JSONWriteFunc {
 
   explicit operator bool() const { return !mFailed; }
 
-  void Write(const mozilla::Span<const char>& aStr) override {
+  void Write(const mozilla::Span<const char>& aStr) final {
     if (mFailed) {
       return;
     }
@@ -612,12 +623,8 @@ static bool PrepPing(const PingThreadContext& aContext, const std::wstring& aId,
 }
 
 static bool DoSendPing(const PingThreadContext& aContext) {
-  auto writeFunc = mozilla::MakeUnique<TempFileWriter>();
-  if (!(*writeFunc)) {
-    return false;
-  }
-
-  mozilla::JSONWriter json(std::move(writeFunc));
+  TempFileWriter tempFile;
+  mozilla::JSONWriter json(tempFile);
 
   UUID uuid;
   if (::UuidCreate(&uuid) != RPC_S_OK) {
@@ -639,11 +646,6 @@ static bool DoSendPing(const PingThreadContext& aContext) {
   }
 
   // Obtain the name of the temp file that we have written
-  TempFileWriter& tempFile = *static_cast<TempFileWriter*>(json.WriteFunc());
-  if (!tempFile) {
-    return false;
-  }
-
   const std::wstring& fileName = tempFile.GetFileName();
 
   // Using the path to our executable binary, construct the path to
@@ -765,11 +767,10 @@ void HandleLauncherError(const LauncherError& aError,
   Unused << regInfo.DisableDueToFailure();
 #endif  // defined(MOZ_LAUNCHER_PROCESS)
 
-  if (SendPing(aError, aProcessType) && !gForceEventLog) {
-    return;
+  if (!SendPing(aError, aProcessType)) {
+    // couldn't (or shouldn't) send telemetry; fall back to event log
+    PostErrorToLog(aError);
   }
-
-  PostErrorToLog(aError);
 }
 
 void SetLauncherErrorAppData(const StaticXREAppData& aAppData) {

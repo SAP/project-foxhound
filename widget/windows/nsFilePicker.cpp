@@ -34,7 +34,6 @@ UniquePtr<char16_t[], nsFilePicker::FreeDeleter>
     nsFilePicker::sLastUsedUnicodeDirectory;
 
 #define MAX_EXTENSION_LENGTH 10
-#define FILE_BUFFER_SIZE 4096
 
 typedef DWORD FILEOPENDIALOGOPTIONS;
 
@@ -253,7 +252,12 @@ bool nsFilePicker::ShowFilePicker(const nsString& aInitialDir) {
 
   // default filename
   if (!mDefaultFilename.IsEmpty()) {
-    hr = dialog->SetFileName(mDefaultFilename.get());
+    // Prevent the shell from expanding environment variables by removing
+    // the % characters that are used to delimit them.
+    nsAutoString sanitizedFilename(mDefaultFilename);
+    sanitizedFilename.ReplaceChar('%', '_');
+
+    hr = dialog->SetFileName(sanitizedFilename.get());
     if (FAILED(hr)) {
       return false;
     }
@@ -261,7 +265,11 @@ bool nsFilePicker::ShowFilePicker(const nsString& aInitialDir) {
 
   // default extension to append to new files
   if (!mDefaultExtension.IsEmpty()) {
-    hr = dialog->SetDefaultExtension(mDefaultExtension.get());
+    // We don't want environment variables expanded in the extension either.
+    nsAutoString sanitizedExtension(mDefaultExtension);
+    sanitizedExtension.ReplaceChar('%', '_');
+
+    hr = dialog->SetDefaultExtension(sanitizedExtension.get());
     if (FAILED(hr)) {
       return false;
     }
@@ -453,7 +461,7 @@ nsBaseWinFilePicker::SetDefaultString(const nsAString& aString) {
 
   // First, make sure the file name is not too long.
   int32_t nameLength;
-  int32_t nameIndex = mDefaultFilePath.RFind("\\");
+  int32_t nameIndex = mDefaultFilePath.RFind(u"\\");
   if (nameIndex == kNotFound)
     nameIndex = 0;
   else
@@ -462,7 +470,7 @@ nsBaseWinFilePicker::SetDefaultString(const nsAString& aString) {
   mDefaultFilename.Assign(Substring(mDefaultFilePath, nameIndex));
 
   if (nameLength > MAX_PATH) {
-    int32_t extIndex = mDefaultFilePath.RFind(".");
+    int32_t extIndex = mDefaultFilePath.RFind(u".");
     if (extIndex == kNotFound) extIndex = mDefaultFilePath.Length();
 
     // Let's try to shave the needed characters from the name part.
@@ -474,8 +482,8 @@ nsBaseWinFilePicker::SetDefaultString(const nsAString& aString) {
 
   // Then, we need to replace illegal characters. At this stage, we cannot
   // replace the backslash as the string might represent a file path.
-  mDefaultFilePath.ReplaceChar(FILE_ILLEGAL_CHARACTERS, '-');
-  mDefaultFilename.ReplaceChar(FILE_ILLEGAL_CHARACTERS, '-');
+  mDefaultFilePath.ReplaceChar(u"" FILE_ILLEGAL_CHARACTERS, u'-');
+  mDefaultFilename.ReplaceChar(u"" FILE_ILLEGAL_CHARACTERS, u'-');
 
   return NS_OK;
 }
@@ -563,7 +571,7 @@ bool nsFilePicker::IsDefaultPathLink() {
 }
 
 bool nsFilePicker::IsDefaultPathHtml() {
-  int32_t extIndex = mDefaultFilePath.RFind(".");
+  int32_t extIndex = mDefaultFilePath.RFind(u".");
   if (extIndex >= 0) {
     nsAutoString ext;
     mDefaultFilePath.Right(ext, mDefaultFilePath.Length() - extIndex);

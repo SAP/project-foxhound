@@ -2,17 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import PropTypes from "prop-types";
 import React, { Component } from "react";
+import PropTypes from "prop-types";
 import { connect } from "../utils/connect";
 import classnames from "classnames";
 import actions from "../actions";
 
 import { getEditor } from "../utils/editor";
-import { highlightMatches } from "../utils/project-search";
 
 import { statusType } from "../reducers/project-text-search";
-import { getRelativePath } from "../utils/sources-tree";
+import { getRelativePath } from "../utils/sources-tree/utils";
+import { getFormattedSourceId } from "../utils/source";
 import {
   getActiveSearch,
   getTextSearchResults,
@@ -47,6 +47,28 @@ export class ProjectSearch extends Component {
       inputValue: this.props.query || "",
       inputFocused: false,
       focusedItem: null,
+    };
+  }
+
+  static get propTypes() {
+    return {
+      activeSearch: PropTypes.string,
+      clearSearch: PropTypes.func.isRequired,
+      closeProjectSearch: PropTypes.func.isRequired,
+      cx: PropTypes.object.isRequired,
+      doSearchForHighlight: PropTypes.func.isRequired,
+      query: PropTypes.string.isRequired,
+      results: PropTypes.array.isRequired,
+      searchSources: PropTypes.func.isRequired,
+      selectSpecificLocation: PropTypes.func.isRequired,
+      setActiveSearch: PropTypes.func.isRequired,
+      status: PropTypes.oneOf([
+        "INITIAL",
+        "FETCHING",
+        "CANCELED",
+        "DONE",
+        "ERROR",
+      ]).isRequired,
     };
   }
 
@@ -109,6 +131,25 @@ export class ProjectSearch extends Component {
     );
   };
 
+  highlightMatches = lineMatch => {
+    const { value, matchIndex, match } = lineMatch;
+    const len = match.length;
+
+    return (
+      <span className="line-value">
+        <span className="line-match" key={0}>
+          {value.slice(0, matchIndex)}
+        </span>
+        <span className="query-match" key={1}>
+          {value.substr(matchIndex, len)}
+        </span>
+        <span className="line-match" key={2}>
+          {value.slice(matchIndex + len, value.length)}
+        </span>
+      </span>
+    );
+  };
+
   getResultCount = () =>
     this.props.results.reduce((count, file) => count + file.matches.length, 0);
 
@@ -164,7 +205,6 @@ export class ProjectSearch extends Component {
   renderFile = (file, focused, expanded) => {
     const matchesLength = file.matches.length;
     const matches = ` (${matchesLength} match${matchesLength > 1 ? "es" : ""})`;
-
     return (
       <div
         className={classnames("file-result", { focused })}
@@ -172,7 +212,11 @@ export class ProjectSearch extends Component {
       >
         <AccessibleImage className={classnames("arrow", { expanded })} />
         <AccessibleImage className="file" />
-        <span className="file-path">{getRelativePath(file.filepath)}</span>
+        <span className="file-path">
+          {file.filepath
+            ? getRelativePath(file.filepath)
+            : getFormattedSourceId(file.sourceId)}
+        </span>
         <span className="matches-summary">{matches}</span>
       </div>
     );
@@ -187,7 +231,7 @@ export class ProjectSearch extends Component {
         <span className="line-number" key={match.line}>
           {match.line}
         </span>
-        {highlightMatches(match)}
+        {this.highlightMatches(match)}
       </div>
     );
   };
@@ -202,7 +246,7 @@ export class ProjectSearch extends Component {
   renderResults = () => {
     const { status, results } = this.props;
     if (!this.props.query) {
-      return;
+      return null;
     }
     if (results.length) {
       return (
@@ -278,6 +322,7 @@ export class ProjectSearch extends Component {
     );
   }
 }
+
 ProjectSearch.contextTypes = {
   shortcuts: PropTypes.object,
 };

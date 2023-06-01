@@ -85,14 +85,10 @@ inline bool IsIonInlinableGetterOrSetterOp(JSOp op) {
 }
 
 inline bool IsIonInlinableOp(JSOp op) {
-  // JSOp::Call, JSOp::FunCall, JSOp::FunApply, JSOp::Eval,
-  // JSOp::New (Normal Callsites) or an inlinable getter or setter.
+  // JSOp::Call, JSOp::FunCall, JSOp::Eval, JSOp::New (Normal Callsites) or an
+  // inlinable getter or setter.
   return (IsInvokeOp(op) && !IsSpreadOp(op)) ||
          IsIonInlinableGetterOrSetterOp(op);
-}
-
-inline bool TooManyActualArguments(unsigned nargs) {
-  return nargs > JitOptions.maxStackArgs;
 }
 
 inline bool TooManyFormalArguments(unsigned nargs) {

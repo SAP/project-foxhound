@@ -2,6 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
+"use strict";
+
+/* global __dirname */
+
 /**
  * NOTE: This file does not apply to builds in MC. This config is used for
  * our Jest tests and for webpack bundle builds.
@@ -17,6 +21,7 @@ module.exports = {
         /[/\\]node_modules[/\\]devtools-/,
         /[/\\]node_modules[/\\]react-aria-components[/\\]/,
         "../../shared",
+        "../shared/worker-utils.js",
       ],
       presets: [
         "@babel/preset-react",
@@ -48,6 +53,7 @@ module.exports = {
               "devtools/client/shared/vendor/react-prop-types": "prop-types",
               // Map all require("devtools/...") to the real devtools root.
               "^devtools\\/(.*)": `${__dirname}/../../\\1`,
+              "^resource://devtools/(.*)": `${__dirname}/../../\\1`,
             },
           },
         ],

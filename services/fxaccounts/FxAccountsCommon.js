@@ -2,14 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
+);
 const { LogManager } = ChromeUtils.import(
   "resource://services-common/logmanager.js"
 );
@@ -89,6 +90,7 @@ exports.FXA_PUSH_SCOPE_ACCOUNT_UPDATE = "chrome://fxa-device-update";
 exports.ON_PROFILE_CHANGE_NOTIFICATION = "fxaccounts:profilechange"; // WebChannel
 exports.ON_ACCOUNT_STATE_CHANGE_NOTIFICATION = "fxaccounts:statechange";
 exports.ON_NEW_DEVICE_ID = "fxaccounts:new_device_id";
+exports.ON_DEVICELIST_UPDATED = "fxaccounts:devicelist_updated";
 
 // The common prefix for all commands.
 exports.COMMAND_PREFIX = "https://identity.mozilla.com/cmd/";
@@ -141,6 +143,7 @@ exports.COMMAND_SYNC_PREFERENCES = "fxaccounts:sync_preferences";
 exports.COMMAND_CHANGE_PASSWORD = "fxaccounts:change_password";
 exports.COMMAND_FXA_STATUS = "fxaccounts:fxa_status";
 exports.COMMAND_PAIR_PREFERENCES = "fxaccounts:pair_preferences";
+exports.COMMAND_FIREFOX_VIEW = "fxaccounts:firefox_view";
 
 // The pref branch where any prefs which relate to a specific account should
 // be stored. This branch will be reset on account signout and signin.
@@ -302,9 +305,9 @@ exports.FXA_PWDMGR_SECURE_FIELDS = new Set([
   "scopedKeys",
 ]);
 
-// A whitelist of fields that remain in storage when the user needs to
+// An allowlist of fields that remain in storage when the user needs to
 // reauthenticate. All other fields will be removed.
-exports.FXA_PWDMGR_REAUTH_WHITELIST = new Set([
+exports.FXA_PWDMGR_REAUTH_ALLOWLIST = new Set([
   "email",
   "uid",
   "profile",
@@ -327,7 +330,7 @@ for (let id in exports) {
   this[id] = exports[id];
 }
 
-// Allow this file to be imported via Components.utils.import().
+// Allow this file to be imported via ChromeUtils.import().
 var EXPORTED_SYMBOLS = Object.keys(exports);
 
 // Set these up now that everything has been loaded into |this|.

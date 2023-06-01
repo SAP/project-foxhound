@@ -1,13 +1,10 @@
 # coding=UTF-8
 
-from __future__ import absolute_import
-
 import uuid
 
+import mozcrash
 import pytest
 from py._path.common import fspath
-
-import mozcrash
 
 
 @pytest.fixture(scope="session")
@@ -87,7 +84,6 @@ def minidump_files(request, tmpdir):
   "Add-ons":"",
   "CrashTime":"1494582646",
   "UptimeTS":"14.9179586",
-  "ThreadIdNameMapping":"",
   "ContentSandboxEnabled":"1",
   "ProcessType":"content",
   "StartupTime":"1000000000",

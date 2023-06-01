@@ -7,7 +7,6 @@
 #include "StoragePrincipalHelper.h"
 
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "mozilla/ContentBlocking.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_privacy.h"
@@ -31,7 +30,7 @@ bool ShouldPartitionChannel(nsIChannel* aChannel,
   }
 
   uint32_t rejectedReason = 0;
-  if (ContentBlocking::ShouldAllowAccessFor(aChannel, uri, &rejectedReason)) {
+  if (ShouldAllowAccessFor(aChannel, uri, &rejectedReason)) {
     return false;
   }
 
@@ -389,8 +388,10 @@ bool StoragePrincipalHelper::ShouldUsePartitionPrincipalForServiceWorker(
     cookieJarSettings = document->CookieJarSettings();
   } else {
     // If there was no document, we create one cookieJarSettings here in order
-    // to get the cookieBehavior.
-    cookieJarSettings = CookieJarSettings::Create(CookieJarSettings::eRegular);
+    // to get the cookieBehavior.  We don't need a real value for RFP because
+    // we are only using this object to check default cookie behavior.
+    cookieJarSettings = CookieJarSettings::Create(
+        CookieJarSettings::eRegular, /* shouldResistFingerpreinting */ false);
   }
 
   // We only support partitioned service workers when dFPI is enabled.

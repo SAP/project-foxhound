@@ -47,10 +47,17 @@ BlobSurfaceProvider::~BlobSurfaceProvider() {
 /* static */ void BlobSurfaceProvider::DestroyKeys(
     const AutoTArray<BlobImageKeyData, 1>& aKeys) {
   for (const auto& entry : aKeys) {
-    if (!entry.mManager->IsDestroyed()) {
-      entry.mManager->GetRenderRootStateManager()->AddBlobImageKeyForDiscard(
-          entry.mBlobKey);
+    if (entry.mManager->IsDestroyed()) {
+      continue;
     }
+
+    WebRenderBridgeChild* wrBridge = entry.mManager->WrBridge();
+    if (!wrBridge || !wrBridge->MatchesNamespace(entry.mBlobKey)) {
+      continue;
+    }
+
+    entry.mManager->GetRenderRootStateManager()->AddBlobImageKeyForDiscard(
+        entry.mBlobKey);
   }
 }
 
@@ -163,7 +170,7 @@ Maybe<BlobImageKeyData> BlobSurfaceProvider::RecordDrawing(
 
             for (auto& scaled : aScaledFonts) {
               Maybe<wr::FontInstanceKey> key =
-                  wrBridge->GetFontKeyForScaledFont(scaled, &aResources);
+                  wrBridge->GetFontKeyForScaledFont(scaled, aResources);
               if (key.isNothing()) {
                 validFonts = false;
                 break;
@@ -184,19 +191,16 @@ Maybe<BlobImageKeyData> BlobSurfaceProvider::RecordDrawing(
     return Nothing();
   }
 
-  bool contextPaint = svgContext && svgContext->GetContextPaint();
+  bool contextPaint = svgContext.GetContextPaint();
 
   float animTime = (GetSurfaceKey().Playback() == PlaybackType::eStatic)
                        ? 0.0f
                        : mSVGDocumentWrapper->GetCurrentTimeAsFloat();
 
   IntSize viewportSize = size;
-  if (svgContext) {
-    auto cssViewportSize = svgContext->GetViewportSize();
-    if (cssViewportSize) {
-      // XXX losing unit
-      viewportSize.SizeTo(cssViewportSize->width, cssViewportSize->height);
-    }
+  if (auto cssViewportSize = svgContext.GetViewportSize()) {
+    // XXX losing unit
+    viewportSize.SizeTo(cssViewportSize->width, cssViewportSize->height);
   }
 
   {

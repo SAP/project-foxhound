@@ -72,14 +72,27 @@ class Selection final : public nsSupportsWeakReference,
                      nsFrameSelection* aFrameSelection);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Selection)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Selection)
 
-  // match this up with EndbatchChanges. will stop ui updates while multiple
-  // selection methods are called
-  void StartBatchChanges();
+  /**
+   * Match this up with EndbatchChanges. will stop ui updates while multiple
+   * selection methods are called
+   *
+   * @param aDetails string to explian why this is called.  This won't be
+   * stored nor exposed to selection listeners etc.  Just for logging.
+   */
+  void StartBatchChanges(const char* aDetails);
 
-  // match this up with StartBatchChanges
-  void EndBatchChanges(int16_t aReason = nsISelectionListener::NO_REASON);
+  /**
+   * Match this up with StartBatchChanges
+   *
+   * @param aDetails string to explian why this is called.  This won't be
+   * stored nor exposed to selection listeners etc.  Just for logging.
+   * @param aReasons potentially multiple of the reasons defined in
+   * nsISelectionListener.idl
+   */
+  void EndBatchChanges(const char* aDetails,
+                       int16_t aReason = nsISelectionListener::NO_REASON);
 
   /**
    * NotifyAutoCopy() starts to notify AutoCopyListener of selection changes.
@@ -409,8 +422,24 @@ class Selection final : public nsSupportsWeakReference,
                           nsINode& aFocusNode, uint32_t aFocusOffset,
                           mozilla::ErrorResult& aRv);
 
-  bool GetInterlinePosition(mozilla::ErrorResult& aRv);
-  void SetInterlinePosition(bool aValue, mozilla::ErrorResult& aRv);
+  bool GetInterlinePositionJS(mozilla::ErrorResult& aRv) const;
+  void SetInterlinePositionJS(bool aHintRight, mozilla::ErrorResult& aRv);
+
+  enum class InterlinePosition : uint8_t {
+    // Caret should be put at end of line (i.e., before the line break)
+    EndOfLine,
+    // Caret should be put at start of next line (i.e., after the line break)
+    StartOfNextLine,
+    // Undefined means only what is not EndOfLine nor StartOfNextLine.
+    // `SetInterlinePosition` should never be called with this value, and
+    // if `GetInterlinePosition` returns this, it means that the instance has
+    // not been initialized or cleared by the cycle collector or something.
+    // If a method needs to consider whether to call `SetInterlinePosition` or
+    // not call, this value can be used for the latter.
+    Undefined,
+  };
+  InterlinePosition GetInterlinePosition() const;
+  nsresult SetInterlinePosition(InterlinePosition aInterlinePosition);
 
   Nullable<int16_t> GetCaretBidiLevel(mozilla::ErrorResult& aRv) const;
   void SetCaretBidiLevel(const Nullable<int16_t>& aCaretBidiLevel,
@@ -428,6 +457,11 @@ class Selection final : public nsSupportsWeakReference,
   SelectionType Type() const { return mSelectionType; }
 
   /**
+   * @brief Set a highlight name, if this is a highlight selection.
+   */
+  void SetHighlightName(const nsAtom* aHighlightName);
+
+  /**
    * See documentation of `GetRangesForInterval` in Selection.webidl.
    *
    * @param aReturn references, not copies, of the internal ranges.
@@ -436,18 +470,17 @@ class Selection final : public nsSupportsWeakReference,
                             nsINode& aEndNode, uint32_t aEndOffset,
                             bool aAllowAdjacent,
                             nsTArray<RefPtr<nsRange>>& aReturn,
-                            mozilla::ErrorResult& aRv);
+                            ErrorResult& aRv);
 
   MOZ_CAN_RUN_SCRIPT void ScrollIntoView(int16_t aRegion, bool aIsSynchronous,
-                                         WhereToScroll aVPercent,
-                                         WhereToScroll aHPercent,
-                                         mozilla::ErrorResult& aRv);
+                                         int16_t aVPercent, int16_t aHPercent,
+                                         ErrorResult& aRv);
 
   void SetColors(const nsAString& aForeColor, const nsAString& aBackColor,
                  const nsAString& aAltForeColor, const nsAString& aAltBackColor,
-                 mozilla::ErrorResult& aRv);
+                 ErrorResult& aRv);
 
-  void ResetColors(mozilla::ErrorResult& aRv);
+  void ResetColors(ErrorResult& aRv);
 
   /**
    * Non-JS callers should use the following
@@ -910,6 +943,7 @@ class Selection final : public nsSupportsWeakReference,
   CachedOffsetForFrame* mCachedOffsetForFrame;
   nsDirection mDirection;
   const SelectionType mSelectionType;
+  RefPtr<const nsAtom> mHighlightName;
   UniquePtr<SelectionCustomColors> mCustomColors;
 
   // Non-zero if we don't want any changes we make to the selection to be
@@ -938,24 +972,36 @@ class Selection final : public nsSupportsWeakReference,
 // Stack-class to turn on/off selection batching.
 class MOZ_STACK_CLASS SelectionBatcher final {
  private:
-  RefPtr<Selection> mSelection;
-  int16_t mReason;
+  const RefPtr<Selection> mSelection;
+  const int16_t mReasons;
+  const char* const mRequesterFuncName;
 
  public:
-  explicit SelectionBatcher(Selection& aSelectionRef)
-      : SelectionBatcher(&aSelectionRef) {}
+  /**
+   * @param aRequesterFuncName function name which wants the selection batch.
+   * This won't be stored nor exposed to selection listeners etc, used only for
+   * logging.  This MUST be living when the destructor runs.
+   */
+  // TODO: Mark these constructors `MOZ_CAN_RUN_SCRIPT` because the destructor
+  //       may run script via nsISelectionListener.
+  explicit SelectionBatcher(Selection& aSelectionRef,
+                            const char* aRequesterFuncName,
+                            int16_t aReasons = nsISelectionListener::NO_REASON)
+      : SelectionBatcher(&aSelectionRef, aRequesterFuncName, aReasons) {}
   explicit SelectionBatcher(Selection* aSelection,
-                            int16_t aReason = nsISelectionListener::NO_REASON) {
-    mSelection = aSelection;
-    mReason = aReason;
+                            const char* aRequesterFuncName,
+                            int16_t aReasons = nsISelectionListener::NO_REASON)
+      : mSelection(aSelection),
+        mReasons(aReasons),
+        mRequesterFuncName(aRequesterFuncName) {
     if (mSelection) {
-      mSelection->StartBatchChanges();
+      mSelection->StartBatchChanges(mRequesterFuncName);
     }
   }
 
   ~SelectionBatcher() {
     if (mSelection) {
-      mSelection->EndBatchChanges(mReason);
+      mSelection->EndBatchChanges(mRequesterFuncName, mReasons);
     }
   }
 };
@@ -1013,6 +1059,22 @@ inline SelectionTypeMask ToSelectionTypeMask(SelectionType aSelectionType) {
              ? 0
              : static_cast<SelectionTypeMask>(
                    1 << (static_cast<uint8_t>(aSelectionType) - 1));
+}
+
+inline std::ostream& operator<<(
+    std::ostream& aStream, const dom::Selection::InterlinePosition& aPosition) {
+  using InterlinePosition = dom::Selection::InterlinePosition;
+  switch (aPosition) {
+    case InterlinePosition::EndOfLine:
+      return aStream << "InterlinePosition::EndOfLine";
+    case InterlinePosition::StartOfNextLine:
+      return aStream << "InterlinePosition::StartOfNextLine";
+    case InterlinePosition::Undefined:
+      return aStream << "InterlinePosition::Undefined";
+    default:
+      MOZ_ASSERT_UNREACHABLE("Illegal value");
+      return aStream << "<Illegal value>";
+  }
 }
 
 }  // namespace mozilla

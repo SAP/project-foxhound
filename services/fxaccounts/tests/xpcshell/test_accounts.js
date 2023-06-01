@@ -14,7 +14,6 @@ const { FxAccountsClient } = ChromeUtils.import(
 );
 const {
   ERRNO_INVALID_AUTH_TOKEN,
-  ERROR_NETWORK,
   ERROR_NO_ACCOUNT,
   FX_OAUTH_CLIENT_ID,
   ONLOGIN_NOTIFICATION,
@@ -23,8 +22,8 @@ const {
   DEPRECATED_SCOPE_ECOSYSTEM_TELEMETRY,
   PREF_LAST_FXA_USER,
 } = ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js");
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
 
 // We grab some additional stuff via backstage passes.
@@ -32,8 +31,6 @@ var { AccountState } = ChromeUtils.import(
   "resource://gre/modules/FxAccounts.jsm"
 );
 
-const ONE_HOUR_MS = 1000 * 60 * 60;
-const ONE_DAY_MS = ONE_HOUR_MS * 24;
 const MOCK_TOKEN_RESPONSE = {
   access_token:
     "43793fdfffec22eb39fc3c44ed09193a6fde4c24e5d6a73f73178597b268af69",
@@ -181,10 +178,11 @@ function MockFxAccountsClient() {
 
   FxAccountsClient.apply(this);
 }
-MockFxAccountsClient.prototype = {
-  __proto__: FxAccountsClient.prototype,
-};
-
+MockFxAccountsClient.prototype = {};
+Object.setPrototypeOf(
+  MockFxAccountsClient.prototype,
+  FxAccountsClient.prototype
+);
 /*
  * We need to mock the FxAccounts module's interfaces to external
  * services, such as storage and the FxAccounts client.  We also
@@ -211,6 +209,7 @@ function MockFxAccounts(credentials = null) {
     observerPreloads: [],
     device: {
       _registerOrUpdateDevice() {},
+      _checkRemoteCommandsUpdateNeeded: async () => false,
     },
     profile: {
       getProfile() {
@@ -245,10 +244,12 @@ async function MakeFxAccounts({ internal = {}, credentials } = {}) {
   if (internal.device) {
     if (!internal.device._registerOrUpdateDevice) {
       internal.device._registerOrUpdateDevice = () => Promise.resolve();
+      internal.device._checkRemoteCommandsUpdateNeeded = async () => false;
     }
   } else {
     internal.device = {
       _registerOrUpdateDevice() {},
+      _checkRemoteCommandsUpdateNeeded: async () => false,
     };
   }
   if (!internal.observerPreloads) {
@@ -1406,55 +1407,60 @@ add_task(async function test_listAttachedOAuthClients() {
   const ONE_HOUR = 60 * 60 * 1000;
   const ONE_DAY = 24 * ONE_HOUR;
 
+  const timestamp = Date.now();
+
   let fxa = new MockFxAccounts();
   let alice = getTestUser("alice");
   alice.verified = true;
 
   let client = fxa._internal.fxAccountsClient;
   client.attachedClients = async () => {
-    return [
-      // This entry was previously filtered but no longer is!
-      {
-        clientId: "a2270f727f45f648",
-        deviceId: "deadbeef",
-        sessionTokenId: null,
-        name: "Firefox Preview (no session token)",
-        scope: ["profile", "https://identity.mozilla.com/apps/oldsync"],
-        lastAccessTime: Date.now(),
-      },
-      {
-        clientId: "802d56ef2a9af9fa",
-        deviceId: null,
-        sessionTokenId: null,
-        name: "Firefox Monitor",
-        scope: ["profile"],
-        lastAccessTime: Date.now() - ONE_DAY - ONE_HOUR,
-      },
-      {
-        clientId: "1f30e32975ae5112",
-        deviceId: null,
-        sessionTokenId: null,
-        name: "Firefox Send",
-        scope: ["profile", "https://identity.mozilla.com/apps/send"],
-        lastAccessTime: Date.now() - ONE_DAY * 2 - ONE_HOUR,
-      },
-      // One with a future date should be impossible, but having a negative
-      // result here would almost certainly confuse something!
-      {
-        clientId: "future-date",
-        deviceId: null,
-        sessionTokenId: null,
-        name: "Whatever",
-        lastAccessTime: Date.now() + ONE_DAY,
-      },
-      // A missing/null lastAccessTime should end up with a missing lastAccessedDaysAgo
-      {
-        clientId: "missing-date",
-        deviceId: null,
-        sessionTokenId: null,
-        name: "Whatever",
-      },
-    ];
+    return {
+      body: [
+        // This entry was previously filtered but no longer is!
+        {
+          clientId: "a2270f727f45f648",
+          deviceId: "deadbeef",
+          sessionTokenId: null,
+          name: "Firefox Preview (no session token)",
+          scope: ["profile", "https://identity.mozilla.com/apps/oldsync"],
+          lastAccessTime: Date.now(),
+        },
+        {
+          clientId: "802d56ef2a9af9fa",
+          deviceId: null,
+          sessionTokenId: null,
+          name: "Firefox Monitor",
+          scope: ["profile"],
+          lastAccessTime: Date.now() - ONE_DAY - ONE_HOUR,
+        },
+        {
+          clientId: "1f30e32975ae5112",
+          deviceId: null,
+          sessionTokenId: null,
+          name: "Firefox Send",
+          scope: ["profile", "https://identity.mozilla.com/apps/send"],
+          lastAccessTime: Date.now() - ONE_DAY * 2 - ONE_HOUR,
+        },
+        // One with a future date should be impossible, but having a negative
+        // result here would almost certainly confuse something!
+        {
+          clientId: "future-date",
+          deviceId: null,
+          sessionTokenId: null,
+          name: "Whatever",
+          lastAccessTime: Date.now() + ONE_DAY,
+        },
+        // A missing/null lastAccessTime should end up with a missing lastAccessedDaysAgo
+        {
+          clientId: "missing-date",
+          deviceId: null,
+          sessionTokenId: null,
+          name: "Whatever",
+        },
+      ],
+      headers: { "x-timestamp": timestamp.toString() },
+    };
   };
 
   await fxa.setSignedInUser(alice);

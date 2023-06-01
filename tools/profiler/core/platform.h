@@ -31,7 +31,9 @@
 
 #include "PlatformMacros.h"
 
+#include "json/json.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/BaseProfilerDetail.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/ProfileBufferEntrySerialization.h"
@@ -73,6 +75,63 @@ extern mozilla::LazyLogModule gProfilerLog;
 
 typedef uint8_t* Address;
 
+// Stringify the given JSON value, in the most compact format.
+// Note: Numbers are limited to a precision of 6 decimal digits, so that
+// timestamps in ms have a precision in ns.
+Json::String ToCompactString(const Json::Value& aJsonValue);
+
+// Profiling log stored in a Json::Value. The actual log only exists while the
+// profiler is running, and will be inserted at the end of the JSON profile.
+class ProfilingLog {
+ public:
+  // These will be called by ActivePS when the profiler starts/stops.
+  static void Init();
+  static void Destroy();
+
+  // Access the profiling log JSON object, in order to modify it.
+  // Only calls the given function if the profiler is active.
+  // Thread-safe. But `aF` must not call other locking profiler functions.
+  // This is intended to capture some internal logging that doesn't belong in
+  // other places like markers. The log is accessible through the JS console on
+  // profiler.firefox.com, in the `profile.profilingLog` object; the data format
+  // is intentionally not defined, and not intended to be shown in the
+  // front-end.
+  // Please use caution not to output too much data.
+  template <typename F>
+  static void Access(F&& aF) {
+    mozilla::baseprofiler::detail::BaseProfilerAutoLock lock{gMutex};
+    if (gLog) {
+      std::forward<F>(aF)(*gLog);
+    }
+  }
+
+#define DURATION_JSON_SUFFIX "_ms"
+
+  // Convert a TimeDuration to the value to be stored in the log.
+  // Use DURATION_JSON_SUFFIX as suffix in the property name.
+  static Json::Value Duration(const mozilla::TimeDuration& aDuration) {
+    return Json::Value{aDuration.ToMilliseconds()};
+  }
+
+#define TIMESTAMP_JSON_SUFFIX "_TSms"
+
+  // Convert a TimeStamp to the value to be stored in the log.
+  // Use TIMESTAMP_JSON_SUFFIX as suffix in the property name.
+  static Json::Value Timestamp(
+      const mozilla::TimeStamp& aTimestamp = mozilla::TimeStamp::Now()) {
+    if (aTimestamp.IsNull()) {
+      return Json::Value{0.0};
+    }
+    return Duration(aTimestamp - mozilla::TimeStamp::ProcessCreation());
+  }
+
+  static bool IsLockedOnCurrentThread();
+
+ private:
+  static mozilla::baseprofiler::detail::BaseProfilerMutex gMutex;
+  static mozilla::UniquePtr<Json::Value> gLog;
+};
+
 // ----------------------------------------------------------------------------
 // Miscellaneous
 
@@ -92,20 +151,20 @@ uint32_t ParseFeaturesFromStringArray(const char** aFeatures,
                                       uint32_t aFeatureCount,
                                       bool aIsStartup = false);
 
-bool profiler_get_profile_json(
+// Add the begin/end 'Awake' markers for the thread.
+void profiler_mark_thread_awake();
+
+void profiler_mark_thread_asleep();
+
+[[nodiscard]] bool profiler_get_profile_json(
     SpliceableChunkedJSONWriter& aSpliceableChunkedJSONWriter,
     double aSinceTime, bool aIsShuttingDown,
     mozilla::ProgressLogger aProgressLogger);
 
-void profiler_get_profile_json_into_lazily_allocated_buffer(
-    const std::function<char*(size_t)>& aAllocator, double aSinceTime,
-    bool aIsShuttingDown, mozilla::ProgressLogger aProgressLogger);
-
 // Flags to conveniently track various JS instrumentations.
 enum class JSInstrumentationFlags {
   StackSampling = 0x1,
-  TraceLogging = 0x2,
-  Allocations = 0x4,
+  Allocations = 0x2,
 };
 
 // Write out the information of the active profiling configuration.

@@ -8,9 +8,10 @@
 // A helper actor for testing highlighters.
 // ⚠️ This should only be used for getting data for objects using CanvasFrameAnonymousContentHelper,
 // that we can't get directly from tests.
-const { Ci, Cc } = require("chrome");
-const Services = require("Services");
-const { getRect, getAdjustedQuads } = require("devtools/shared/layout/utils");
+const {
+  getRect,
+  getAdjustedQuads,
+} = require("resource://devtools/shared/layout/utils.js");
 
 // Set up a dummy environment so that EventUtils works. We need to be careful to
 // pass a window object into each EventUtils method we call rather than having
@@ -27,12 +28,14 @@ Services.scriptloader.loadSubScript(
   EventUtils
 );
 
-var ChromeUtils = require("ChromeUtils");
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+// We're an actor so we don't run in the browser test environment, so
+// we need to import TestUtils manually despite what the linter thinks.
+// eslint-disable-next-line mozilla/no-redeclare-with-import-autofix
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
-const protocol = require("devtools/shared/protocol");
+const protocol = require("resource://devtools/shared/protocol.js");
 const { Arg, RetVal } = protocol;
 
 const dumpn = msg => {
@@ -62,7 +65,7 @@ function getHighlighterCanvasFrameHelper(conn, actorID) {
   if (
     highlighter._highlighters &&
     Array.isArray(highlighter._highlighters) &&
-    highlighter._highlighters.length > 0
+    highlighter._highlighters.length
   ) {
     highlighter = highlighter._highlighters[0];
   }
@@ -90,6 +93,16 @@ var highlighterTestSpec = protocol.generateActorSpec({
       request: {
         nodeID: Arg(0, "string"),
         name: Arg(1, "string"),
+        actorID: Arg(2, "string"),
+      },
+      response: {
+        value: RetVal("string"),
+      },
+    },
+    getHighlighterComputedStyle: {
+      request: {
+        nodeID: Arg(0, "string"),
+        property: Arg(1, "string"),
         actorID: Arg(2, "string"),
       },
       response: {
@@ -187,7 +200,7 @@ var highlighterTestSpec = protocol.generateActorSpec({
 });
 
 var HighlighterTestActor = protocol.ActorClassWithSpec(highlighterTestSpec, {
-  initialize: function(conn, targetActor, options) {
+  initialize(conn, targetActor, options) {
     protocol.Actor.prototype.initialize.call(this, conn);
     this.conn = conn;
     this.targetActor = targetActor;
@@ -204,7 +217,7 @@ var HighlighterTestActor = protocol.ActorClassWithSpec(highlighterTestSpec, {
    *   are considered matching an iframe, so that we can query element
    *   within deep iframes.
    */
-  _querySelector: function(selector) {
+  _querySelector(selector) {
     let document = this.content.document;
     if (Array.isArray(selector)) {
       const fullSelector = selector.join(" >> ");
@@ -247,13 +260,12 @@ var HighlighterTestActor = protocol.ActorClassWithSpec(highlighterTestSpec, {
   /**
    * Get a value for a given attribute name, on one of the elements of the box
    * model highlighter, given its ID.
-   * @param {Object} msg The msg.data part expects the following properties
-   * - {String} nodeID The full ID of the element to get the attribute for
-   * - {String} name The name of the attribute to get
-   * - {String} actorID The highlighter actor ID
+   * @param {String} nodeID The full ID of the element to get the attribute for
+   * @param {String} name The name of the attribute to get
+   * @param {String} actorID The highlighter actor ID
    * @return {String} The value, if found, null otherwise
    */
-  getHighlighterAttribute: function(nodeID, name, actorID) {
+  getHighlighterAttribute(nodeID, name, actorID) {
     const helper = getHighlighterCanvasFrameHelper(this.conn, actorID);
 
     if (!helper) {
@@ -264,13 +276,31 @@ var HighlighterTestActor = protocol.ActorClassWithSpec(highlighterTestSpec, {
   },
 
   /**
+   * Get the computed style for a given property, on one of the elements of the
+   * box model highlighter, given its ID.
+   * @param {String} nodeID The full ID of the element to get the attribute for
+   * @param {String} property The name of the property
+   * @param {String} actorID The highlighter actor ID
+   * @return {String} The computed style of the property
+   */
+  getHighlighterComputedStyle(nodeID, property, actorID) {
+    const helper = getHighlighterCanvasFrameHelper(this.conn, actorID);
+
+    if (!helper) {
+      throw new Error(`Highlighter not found`);
+    }
+
+    return helper.getElement(nodeID).computedStyle.getPropertyValue(property);
+  },
+
+  /**
    * Get the textcontent of one of the elements of the box model highlighter,
    * given its ID.
    * @param {String} nodeID The full ID of the element to get the attribute for
    * @param {String} actorID The highlighter actor ID
    * @return {String} The textcontent value
    */
-  getHighlighterNodeTextContent: function(nodeID, actorID) {
+  getHighlighterNodeTextContent(nodeID, actorID) {
     let value;
     const helper = getHighlighterCanvasFrameHelper(this.conn, actorID);
     if (helper) {
@@ -285,7 +315,7 @@ var HighlighterTestActor = protocol.ActorClassWithSpec(highlighterTestSpec, {
    * @return {Number} The number of box-model highlighters created, or null if the
    * SelectorHighlighter was not found.
    */
-  getSelectorHighlighterBoxNb: function(actorID) {
+  getSelectorHighlighterBoxNb(actorID) {
     const highlighter = this.conn.getActor(actorID);
     const { _highlighter: h } = highlighter;
     if (!h || !h._highlighters) {
@@ -302,7 +332,7 @@ var HighlighterTestActor = protocol.ActorClassWithSpec(highlighterTestSpec, {
    * @param {String} the new value for the attribute
    * @param {String} actorID The highlighter actor ID
    */
-  changeHighlightedNodeWaitForUpdate: function(name, value, actorID) {
+  changeHighlightedNodeWaitForUpdate(name, value, actorID) {
     return new Promise(resolve => {
       const highlighter = this.conn.getActor(actorID);
       const { _highlighter: h } = highlighter;
@@ -550,6 +580,21 @@ class HighlighterTestFront extends protocol.FrontClassWithSpec(
   }
 
   /**
+   * Get the computed style of a property on one of the highlighter's node.
+   * @param {String} nodeID The Id of the node in the highlighter.
+   * @param {String} property The name of the property.
+   * @param {Object} highlighter Optional custom highlighter to target
+   * @return {String} value
+   */
+  getHighlighterComputedStyle(nodeID, property, highlighter) {
+    return super.getHighlighterComputedStyle(
+      nodeID,
+      property,
+      (highlighter || this.highlighter).actorID
+    );
+  }
+
+  /**
    * Is the highlighter currently visible on the page?
    */
   async isHighlighting() {
@@ -739,10 +784,10 @@ class HighlighterTestFront extends protocol.FrontClassWithSpec(
 
     return {
       visible: !hidden,
-      x1: x1,
-      y1: y1,
-      x2: x2,
-      y2: y2,
+      x1,
+      y1,
+      x2,
+      y2,
     };
   }
 

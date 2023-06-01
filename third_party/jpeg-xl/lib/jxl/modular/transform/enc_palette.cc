@@ -179,7 +179,44 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
     size_t lookup_table_size =
         static_cast<int64_t>(maxval) - static_cast<int64_t>(minval) + 1;
     if (lookup_table_size > palette_internal::kMaxPaletteLookupTableSize) {
-      return false;  // too large lookup table
+      // a lookup table would use too much memory, instead use a slower approach
+      // with std::set
+      std::set<pixel_type> chpalette;
+      pixel_type idx = 0;
+      for (size_t y = 0; y < h; y++) {
+        const pixel_type *p = input.channel[begin_c].Row(y);
+        for (size_t x = 0; x < w; x++) {
+          const bool new_color = chpalette.insert(p[x]).second;
+          if (new_color) {
+            idx++;
+            if (idx > (int)nb_colors) return false;
+          }
+        }
+      }
+      JXL_DEBUG_V(6, "Channel %i uses only %i colors.", begin_c, idx);
+      Channel pch(idx, 1);
+      pch.hshift = -1;
+      pch.vshift = -1;
+      nb_colors = idx;
+      idx = 0;
+      pixel_type *JXL_RESTRICT p_palette = pch.Row(0);
+      for (pixel_type p : chpalette) {
+        p_palette[idx++] = p;
+      }
+      for (size_t y = 0; y < h; y++) {
+        pixel_type *p = input.channel[begin_c].Row(y);
+        for (size_t x = 0; x < w; x++) {
+          for (idx = 0; p[x] != p_palette[idx] && idx < (int)nb_colors; idx++) {
+          }
+          JXL_DASSERT(idx < (int)nb_colors);
+          p[x] = idx;
+        }
+      }
+      predictor = Predictor::Zero;
+      input.nb_meta_channels++;
+      input.channel.insert(input.channel.begin(), std::move(pch));
+
+      return true;
     }
     lookup.resize(lookup_table_size, 0);
     pixel_type idx = 0;
@@ -196,6 +233,7 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
     JXL_DEBUG_V(6, "Channel %i uses only %i colors.", begin_c, idx);
     Channel pch(idx, 1);
     pch.hshift = -1;
+    pch.vshift = -1;
     nb_colors = idx;
     idx = 0;
     pixel_type *JXL_RESTRICT p_palette = pch.Row(0);
@@ -301,10 +339,11 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
 
   Channel pch(nb_colors, nb);
   pch.hshift = -1;
+  pch.vshift = -1;
   pixel_type *JXL_RESTRICT p_palette = pch.Row(0);
   intptr_t onerow = pch.plane.PixelsPerRow();
   intptr_t onerow_image = input.channel[begin_c].plane.PixelsPerRow();
-  const int bit_depth = input.bitdepth;
+  const int bit_depth = std::min(input.bitdepth, 24);
 
   if (lossy) {
     for (uint32_t i = 0; i < nb_deltas; i++) {
@@ -491,14 +530,12 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
                                           {1, 3}, {2, 2}, {1, 0}, {1, 4},
                                           {2, 1}, {2, 3}, {2, 0}, {2, 4}};
           float total_available = 0;
-          int n = 0;
           for (int i = 0; i < 11; ++i) {
             const int row = offsets[i][0];
             const int col = offsets[i][1];
             if (std::signbit(error_row[row][c][x + col]) !=
                 std::signbit(total_error)) {
               total_available += error_row[row][c][x + col];
-              n++;
             }
           }
           float weight =
@@ -552,23 +589,18 @@ Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
                   bool lossy, Predictor &predictor,
                   const weighted::Header &wp_header) {
   PaletteIterationData palette_iteration_data;
-  uint32_t nb = end_c - begin_c + 1;
   uint32_t nb_colors_orig = nb_colors;
   uint32_t nb_deltas_orig = nb_deltas;
-  bool status;
-  if ((lossy || nb != 1) &&
-      input.bitdepth >= 8) {  // if no channel palette special case
-    status = FwdPaletteIteration(input, begin_c, end_c, nb_colors, nb_deltas,
-                                 ordered, lossy, predictor, wp_header,
-                                 palette_iteration_data);
+  // preprocessing pass in case of lossy palette
+  if (lossy && input.bitdepth >= 8) {
+    JXL_RETURN_IF_ERROR(FwdPaletteIteration(
+        input, begin_c, end_c, nb_colors_orig, nb_deltas_orig, ordered, lossy,
+        predictor, wp_header, palette_iteration_data));
   }
   palette_iteration_data.final_run = true;
-  nb_colors = nb_colors_orig;
-  nb_deltas = nb_deltas_orig;
-  status =
-      FwdPaletteIteration(input, begin_c, end_c, nb_colors, nb_deltas, ordered,
-                          lossy, predictor, wp_header, palette_iteration_data);
-  return status;
+  return FwdPaletteIteration(input, begin_c, end_c, nb_colors, nb_deltas,
+                             ordered, lossy, predictor, wp_header,
+                             palette_iteration_data);
 }
 
 }  // namespace jxl

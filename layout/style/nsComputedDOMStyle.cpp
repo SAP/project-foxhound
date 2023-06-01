@@ -364,7 +364,7 @@ nsComputedDOMStyle::~nsComputedDOMStyle() {
              "Should have called ClearComputedStyle() during last release.");
 }
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsComputedDOMStyle)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(nsComputedDOMStyle)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsComputedDOMStyle)
   tmp->ClearComputedStyle();  // remove observer before clearing mElement
@@ -375,8 +375,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsComputedDOMStyle)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mElement)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(nsComputedDOMStyle)
 
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN(nsComputedDOMStyle)
   return tmp->HasKnownLiveWrapper();
@@ -508,7 +506,7 @@ nsresult nsComputedDOMStyle::GetPropertyValue(
 }
 
 /* static */
-already_AddRefed<ComputedStyle> nsComputedDOMStyle::GetComputedStyle(
+already_AddRefed<const ComputedStyle> nsComputedDOMStyle::GetComputedStyle(
     Element* aElement, PseudoStyleType aPseudo, StyleType aStyleType) {
   if (Document* doc = aElement->GetComposedDoc()) {
     doc->FlushPendingNotifications(FlushType::Style);
@@ -524,7 +522,7 @@ already_AddRefed<ComputedStyle> nsComputedDOMStyle::GetComputedStyle(
  * ::first-letter frame, in which case we can't return the frame style, and we
  * need to resolve it. See bug 505515.
  */
-static bool MustReresolveStyle(const mozilla::ComputedStyle* aStyle) {
+static bool MustReresolveStyle(const ComputedStyle* aStyle) {
   MOZ_ASSERT(aStyle);
 
   // TODO(emilio): We may want to avoid re-resolving pseudo-element styles
@@ -549,9 +547,11 @@ static bool IsInFlatTree(const Element& aElement) {
   return root && root->IsDocument();
 }
 
-already_AddRefed<ComputedStyle> nsComputedDOMStyle::DoGetComputedStyleNoFlush(
-    const Element* aElement, PseudoStyleType aPseudo, PresShell* aPresShell,
-    StyleType aStyleType) {
+already_AddRefed<const ComputedStyle>
+nsComputedDOMStyle::DoGetComputedStyleNoFlush(const Element* aElement,
+                                              PseudoStyleType aPseudo,
+                                              PresShell* aPresShell,
+                                              StyleType aStyleType) {
   MOZ_ASSERT(aElement, "NULL element");
 
   // If the content has a pres shell, we must use it.  Otherwise we'd
@@ -588,14 +588,10 @@ already_AddRefed<ComputedStyle> nsComputedDOMStyle::DoGetComputedStyleNoFlush(
   if (inDocWithShell && aStyleType == StyleType::All &&
       !aElement->IsHTMLElement(nsGkAtoms::area)) {
     if (const Element* element = GetRenderedElement(aElement, aPseudo)) {
-      if (nsIFrame* styleFrame = nsLayoutUtils::GetStyleFrame(element)) {
-        ComputedStyle* result = styleFrame->Style();
-        // Don't use the style if it was influenced by pseudo-elements,
-        // since then it's not the primary style for this element / pseudo.
-        if (!MustReresolveStyle(result)) {
-          RefPtr<ComputedStyle> ret = result;
-          return ret.forget();
-        }
+      if (element->HasServoData()) {
+        const ComputedStyle* result =
+            Servo_Element_GetMaybeOutOfDateStyle(element);
+        return do_AddRef(result);
       }
     }
   }
@@ -612,10 +608,11 @@ already_AddRefed<ComputedStyle> nsComputedDOMStyle::DoGetComputedStyleNoFlush(
   return result.forget();
 }
 
-already_AddRefed<ComputedStyle>
+already_AddRefed<const ComputedStyle>
 nsComputedDOMStyle::GetUnanimatedComputedStyleNoFlush(Element* aElement,
                                                       PseudoStyleType aPseudo) {
-  RefPtr<ComputedStyle> style = GetComputedStyleNoFlush(aElement, aPseudo);
+  RefPtr<const ComputedStyle> style =
+      GetComputedStyleNoFlush(aElement, aPseudo);
   if (!style) {
     return nullptr;
   }
@@ -792,7 +789,7 @@ void nsComputedDOMStyle::ClearComputedStyle() {
 }
 
 void nsComputedDOMStyle::SetResolvedComputedStyle(
-    RefPtr<ComputedStyle>&& aContext, uint64_t aGeneration) {
+    RefPtr<const ComputedStyle>&& aContext, uint64_t aGeneration) {
   if (!mResolvedComputedStyle) {
     mResolvedComputedStyle = true;
     mElement->AddMutationObserver(this);
@@ -1087,9 +1084,6 @@ void nsComputedDOMStyle::UpdateCurrentStyleSources(nsCSSPropertyID aPropID) {
   // For undisplayed elements we need to take into account any DOM changes that
   // might cause a restyle, because Servo will not increase the generation for
   // undisplayed elements.
-  // As for Gecko, GetUndisplayedRestyleGeneration is effectively equal to
-  // GetRestyleGeneration, since the generation is incremented whenever we
-  // process restyles.
   uint64_t currentGeneration =
       mPresShell->GetPresContext()->GetUndisplayedRestyleGeneration();
 
@@ -1101,9 +1095,8 @@ void nsComputedDOMStyle::UpdateCurrentStyleSources(nsCSSPropertyID aPropID) {
 
   mComputedStyle = nullptr;
 
-  // XXX the !mElement->IsHTMLElement(nsGkAtoms::area)
-  // check is needed due to bug 135040 (to avoid using
-  // mPrimaryFrame). Remove it once that's fixed.
+  // XXX the !mElement->IsHTMLElement(nsGkAtoms::area) check is needed due to
+  // bug 135040 (to avoid using mPrimaryFrame). Remove it once that's fixed.
   if (mStyleType == StyleType::All &&
       !mElement->IsHTMLElement(nsGkAtoms::area)) {
     mOuterFrame = GetOuterFrame();
@@ -1118,9 +1111,10 @@ void nsComputedDOMStyle::UpdateCurrentStyleSources(nsCSSPropertyID aPropID) {
   if (!mComputedStyle || MustReresolveStyle(mComputedStyle)) {
     PresShell* presShellForContent = mElement->OwnerDoc()->GetPresShell();
     // Need to resolve a style.
-    RefPtr<ComputedStyle> resolvedComputedStyle = DoGetComputedStyleNoFlush(
-        mElement, mPseudo,
-        presShellForContent ? presShellForContent : mPresShell, mStyleType);
+    RefPtr<const ComputedStyle> resolvedComputedStyle =
+        DoGetComputedStyleNoFlush(
+            mElement, mPseudo,
+            presShellForContent ? presShellForContent : mPresShell, mStyleType);
     if (!resolvedComputedStyle) {
       ClearComputedStyle();
       return;
@@ -1232,12 +1226,6 @@ void nsComputedDOMStyle::IndexedGetter(uint32_t aIndex, bool& aFound,
 
 already_AddRefed<CSSValue> nsComputedDOMStyle::DoGetBottom() {
   return GetOffsetWidthFor(eSideBottom);
-}
-
-already_AddRefed<CSSValue> nsComputedDOMStyle::DoGetColumnRuleWidth() {
-  RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-  val->SetAppUnits(StyleColumn()->GetComputedColumnRuleWidth());
-  return val.forget();
 }
 
 static Position MaybeResolvePositionForTransform(const LengthPercentage& aX,
@@ -1855,20 +1843,17 @@ already_AddRefed<CSSValue> nsComputedDOMStyle::DoGetMarginRight() {
 already_AddRefed<CSSValue> nsComputedDOMStyle::DoGetLineHeight() {
   RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
 
-  {
-    nscoord lineHeight;
-    if (GetLineHeightCoord(lineHeight)) {
-      val->SetAppUnits(lineHeight);
-      return val.forget();
-    }
+  nscoord lineHeight;
+  if (GetLineHeightCoord(lineHeight)) {
+    val->SetAppUnits(lineHeight);
+    return val.forget();
   }
 
-  auto& lh = StyleText()->mLineHeight;
-  if (lh.IsLength()) {
-    val->SetPixels(lh.AsLength().ToCSSPixels());
-  } else if (lh.IsNumber()) {
-    val->SetNumber(lh.AsNumber());
-  } else if (lh.IsMozBlockHeight()) {
+  const auto& lh = StyleText()->mLineHeight;
+
+  // Types Length or Number will have been handled by GetLineHeightCoord,
+  // leaving only MozBlockHeight and Normal to consider here.
+  if (lh.IsMozBlockHeight()) {
     val->SetString("-moz-block-height");
   } else {
     MOZ_ASSERT(lh.IsNormal());
@@ -2157,9 +2142,7 @@ already_AddRefed<CSSValue> nsComputedDOMStyle::GetPaddingWidthFor(
 bool nsComputedDOMStyle::GetLineHeightCoord(nscoord& aCoord) {
   nscoord blockHeight = NS_UNCONSTRAINEDSIZE;
   const auto& lh = StyleText()->mLineHeight;
-
-  if (lh.IsNormal() &&
-      StaticPrefs::layout_css_line_height_normal_as_resolved_value_enabled()) {
+  if (lh.IsNormal()) {
     return false;
   }
 

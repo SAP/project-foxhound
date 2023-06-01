@@ -322,6 +322,12 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
    */
   static int32_t DefaultInterval();
 
+  /**
+   * Returns true if a recent vsync interval has been less than a half of
+   * DefaultInterval.
+   */
+  static bool IsInHighRateMode();
+
   bool IsInRefresh() { return mInRefresh; }
 
   void SetIsResizeSuppressed() { mResizeSuppressed = true; }
@@ -359,8 +365,19 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
    *
    * If we're animating and we have skipped paints a time in the past
    * is returned.
+   *
+   * If aCheckType is AllVsyncListeners and we're in the parent process,
+   * which doesn't have a RefreshDriver ticking, but some other process does
+   * have, the return value is
+   * (now + refreshrate - layout.idle_period.time_limit) as an approximation
+   * when something will happen.
+   * This can be useful check when parent process tries to avoid having too
+   * long idle periods for example when it is sending input events to an
+   * active child process.
    */
-  static mozilla::TimeStamp GetIdleDeadlineHint(mozilla::TimeStamp aDefault);
+  enum IdleCheck { OnlyThisProcessRefreshDriver, AllVsyncListeners };
+  static mozilla::TimeStamp GetIdleDeadlineHint(mozilla::TimeStamp aDefault,
+                                                IdleCheck aCheckType);
 
   /**
    * It returns the expected timestamp of the next tick or nothing if the next
@@ -400,6 +417,11 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
     mNeedToUpdateIntersectionObservations = true;
   }
 
+  void EnsureContentRelevancyUpdateHappens() {
+    EnsureTimerStarted();
+    mNeedToUpdateContentRelevancy = true;
+  }
+
   // Register a composition payload that will be forwarded to the layer manager
   // if the current or upcoming refresh tick does a paint.
   // If no paint happens, the payload is discarded.
@@ -412,9 +434,10 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
     eHasObservers = 1 << 0,
     eHasImageRequests = 1 << 1,
     eNeedsToUpdateIntersectionObservations = 1 << 2,
-    eHasVisualViewportResizeEvents = 1 << 3,
-    eHasScrollEvents = 1 << 4,
-    eHasVisualViewportScrollEvents = 1 << 5,
+    eNeedsToUpdateContentRelevancy = 1 << 3,
+    eHasVisualViewportResizeEvents = 1 << 4,
+    eHasScrollEvents = 1 << 5,
+    eHasVisualViewportScrollEvents = 1 << 6,
   };
 
   void AddForceNotifyContentfulPaintPresContext(nsPresContext* aPresContext);
@@ -456,6 +479,7 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   MOZ_CAN_RUN_SCRIPT
   void RunFrameRequestCallbacks(mozilla::TimeStamp aNowTime);
   void UpdateIntersectionObservations(mozilla::TimeStamp aNowTime);
+  void UpdateRelevancyOfContentVisibilityAutoFrames();
 
   enum class IsExtraTick {
     No,
@@ -593,6 +617,10 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   // True if we need to flush in order to update intersection observations in
   // all our documents.
   bool mNeedToUpdateIntersectionObservations : 1;
+
+  // True if we need to update the relevancy of `content-visibility: auto`
+  // elements in our documents.
+  bool mNeedToUpdateContentRelevancy : 1;
 
   // True if we're currently within the scope of Tick() handling a normal
   // (timer-driven) tick.

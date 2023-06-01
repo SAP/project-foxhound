@@ -19,11 +19,11 @@
 
 var EXPORTED_SYMBOLS = ["BasePromiseWorker"];
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "PromiseUtils",
-  "resource://gre/modules/PromiseUtils.jsm"
-);
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
+});
 
 /**
  * An implementation of queues (FIFO).
@@ -325,7 +325,7 @@ BasePromiseWorker.prototype = {
         throw ex;
       }
 
-      let deferred = PromiseUtils.defer();
+      let deferred = lazy.PromiseUtils.defer();
       this._queue.push({ deferred, closure, id });
       this.log("Message posted");
 
@@ -342,7 +342,7 @@ BasePromiseWorker.prototype = {
           throw this.ExceptionHandlers[error.data.exn](error.data);
         }
 
-        if (error instanceof ErrorEvent) {
+        if (ErrorEvent.isInstance(error)) {
           // Other errors get propagated as instances of ErrorEvent
           this.log(
             "Error serialized by DOM",

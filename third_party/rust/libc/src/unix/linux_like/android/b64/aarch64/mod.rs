@@ -48,6 +48,13 @@ s! {
         __unused4: ::c_uint,
         __unused5: ::c_uint,
     }
+
+    pub struct user_regs_struct {
+        pub regs: [u64; 31],
+        pub sp: u64,
+        pub pc: u64,
+        pub pstate: u64,
+    }
 }
 
 pub const O_DIRECT: ::c_int = 0x10000;
@@ -367,11 +374,21 @@ pub const SYS_pwritev2: ::c_long = 287;
 pub const SYS_pkey_mprotect: ::c_long = 288;
 pub const SYS_pkey_alloc: ::c_long = 289;
 pub const SYS_pkey_free: ::c_long = 290;
+pub const SYS_io_uring_setup: ::c_long = 425;
+pub const SYS_io_uring_enter: ::c_long = 426;
+pub const SYS_io_uring_register: ::c_long = 427;
 pub const SYS_syscalls: ::c_long = 436;
 
 cfg_if! {
     if #[cfg(libc_align)] {
         mod align;
         pub use self::align::*;
+    }
+}
+
+cfg_if! {
+    if #[cfg(libc_int128)] {
+        mod int128;
+        pub use self::int128::*;
     }
 }

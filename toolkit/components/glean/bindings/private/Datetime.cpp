@@ -60,7 +60,7 @@ void DatetimeMetric::Set(const PRExplodedTime* aValue) const {
 Result<Maybe<PRExplodedTime>, nsCString> DatetimeMetric::TestGetValue(
     const nsACString& aPingName) const {
   nsCString err;
-  if (fog_datetime_test_get_error(mId, &aPingName, &err)) {
+  if (fog_datetime_test_get_error(mId, &err)) {
     return Err(err);
   }
   if (!fog_datetime_test_has_value(mId, &aPingName)) {
@@ -100,7 +100,7 @@ GleanDatetime::Set(PRTime aValue, uint8_t aOptionalArgc) {
 
 NS_IMETHODIMP
 GleanDatetime::TestGetValue(const nsACString& aStorageName, JSContext* aCx,
-                            JS::MutableHandleValue aResult) {
+                            JS::MutableHandle<JS::Value> aResult) {
   auto result = mDatetime.TestGetValue(aStorageName);
   if (result.isErr()) {
     aResult.set(JS::UndefinedValue());
@@ -114,7 +114,8 @@ GleanDatetime::TestGetValue(const nsACString& aStorageName, JSContext* aCx,
   } else {
     double millis =
         static_cast<double>(PR_ImplodeTime(optresult.ptr())) / PR_USEC_PER_MSEC;
-    JS::RootedObject root(aCx, JS::NewDateObject(aCx, JS::TimeClip(millis)));
+    JS::Rooted<JSObject*> root(aCx,
+                               JS::NewDateObject(aCx, JS::TimeClip(millis)));
     aResult.setObject(*root);
   }
   return NS_OK;

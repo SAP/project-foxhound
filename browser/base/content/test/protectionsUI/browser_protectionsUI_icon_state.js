@@ -7,12 +7,17 @@
 
 const TP_PREF = "privacy.trackingprotection.enabled";
 const TP_PB_PREF = "privacy.trackingprotection.pbmode.enabled";
+const APS_PREF =
+  "privacy.partition.always_partition_third_party_non_cookie_storage";
 const NCB_PREF = "network.cookie.cookieBehavior";
 const BENIGN_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://tracking.example.org/browser/browser/base/content/test/protectionsUI/benignPage.html";
 const TRACKING_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://tracking.example.org/browser/browser/base/content/test/protectionsUI/trackingPage.html";
 const COOKIE_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://tracking.example.org/browser/browser/base/content/test/protectionsUI/cookiePage.html";
 const DTSCBN_PREF = "dom.testing.sync-content-blocking-notifications";
 
@@ -145,6 +150,8 @@ async function testTrackingProtectionIconState(tabbrowser) {
 }
 
 add_task(async function testNormalBrowsing() {
+  await SpecialPowers.pushPrefEnv({ set: [[APS_PREF, false]] });
+
   await UrlClassifierTestUtils.addTestTrackers();
 
   let gProtectionsHandler = gBrowser.ownerGlobal.gProtectionsHandler;
@@ -177,7 +184,10 @@ add_task(async function testNormalBrowsing() {
 
 add_task(async function testPrivateBrowsing() {
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.security.https_first_pbm", false]],
+    set: [
+      [APS_PREF, false],
+      ["dom.security.https_first_pbm", false],
+    ],
   });
 
   let privateWin = await BrowserTestUtils.openNewBrowserWindow({

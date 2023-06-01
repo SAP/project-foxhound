@@ -6,13 +6,6 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-const { Integration } = ChromeUtils.import(
-  "resource://gre/modules/Integration.jsm"
-);
-
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "ContentPermissionPrompt",

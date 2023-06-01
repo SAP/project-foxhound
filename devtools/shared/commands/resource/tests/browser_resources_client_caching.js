@@ -135,9 +135,7 @@ add_task(async function() {
   );
 
   info("Reload the page");
-  const onReloaded = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-  gBrowser.reloadTab(tab);
-  await onReloaded;
+  await BrowserTestUtils.reloadTab(tab);
 
   info("Register second listener");
   const cachedResources = [];
@@ -295,7 +293,7 @@ add_task(async function() {
   let onAvailableCallCount = 0;
   const onAvailable = resources => {
     ok(
-      resources.length > 0,
+      !!resources.length,
       "onAvailable is called with a non empty resources array"
     );
     availableResources.push(...resources);

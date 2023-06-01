@@ -11,10 +11,7 @@ add_task(async function() {
   await testDomCompleteWithOverloadedConsole();
   await testIframeNavigation();
   await testBfCacheNavigation();
-
-  // Enable server side target switching for next test
-  // as the regression it tracks only occurs with server side target switching enabled
-  await pushPref("devtools.target-switching.server.enabled", true);
+  await testDomCompleteWithWindowStop();
   await testCrossOriginNavigation();
 });
 
@@ -238,11 +235,11 @@ async function testIframeNavigation() {
 
   // We are switching to a new target only when fission is enabled...
   if (isFissionEnabled() || isEveryFrameTargetEnabled()) {
-    await waitFor(() => documentEvents.length >= 4);
+    await waitFor(() => documentEvents.length >= 3);
     is(
       documentEvents.length,
-      4,
-      "With fission/EFT, we switch to a new target and get a will-navigate followed by a new set of events: dom-loading, dom-interactive, dom-complete"
+      3,
+      "With fission/EFT, we switch to a new target and get: dom-loading, dom-interactive, dom-complete (but no will-navigate as that's only for the top BrowsingContext)"
     );
     const [, newIframeTarget] = await commands.targetCommand.getAllTargets([
       commands.targetCommand.TYPES.FRAME,
@@ -250,7 +247,7 @@ async function testIframeNavigation() {
     assertEvents({
       commands,
       targetBeforeNavigation: iframeTarget,
-      documentEvents,
+      documentEvents: [null /* no will-navigate */, ...documentEvents],
       expectedTargetFront: newIframeTarget,
       expectedNewURI: secondPageUrl,
     });
@@ -282,7 +279,7 @@ async function testBfCacheNavigation() {
   const secondLocation = "data:text/html,<title>second</title>second page";
   const tab = await addTab(firstLocation);
   const onLoaded = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, secondLocation);
+  BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, secondLocation);
   await onLoaded;
 
   const { commands } = await initResourceCommand(tab);
@@ -424,7 +421,7 @@ async function testCrossOriginNavigation() {
     "https://example.net/document-builder.sjs?html=<head><title>titleNet</title></head>net";
   const onLoaded = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
   const targetBeforeNavigation = commands.targetCommand.targetFront;
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, netUrl);
+  BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, netUrl);
   await onLoaded;
 
   // We are switching to a new target only when fission is enabled...
@@ -535,6 +532,47 @@ async function testDomCompleteWithOverloadedConsole() {
     false,
     "the console object is reported to be overloaded"
   );
+
+  targetCommand.destroy();
+  await client.close();
+}
+
+async function testDomCompleteWithWindowStop() {
+  info("Test dom-complete with a page calling window.stop()");
+
+  const tab = await addTab("data:text/html,foo");
+
+  const {
+    commands,
+    client,
+    resourceCommand,
+    targetCommand,
+  } = await initResourceCommand(tab);
+
+  info("Check that all DOCUMENT_EVENTS are fired for the already loaded page");
+  let documentEvents = [];
+  await resourceCommand.watchResources([resourceCommand.TYPES.DOCUMENT_EVENT], {
+    onAvailable: resources => documentEvents.push(...resources),
+  });
+  is(documentEvents.length, 3, "Existing document events are fired");
+  documentEvents = [];
+
+  const html = `<!DOCTYPE html><html>
+  <head>
+    <title>stopped page</title>
+    <script>window.stop();</script>
+  </head>
+  <body>Page content that shouldn't be displayed</body>
+</html>`;
+  const secondLocation = "data:text/html," + encodeURIComponent(html);
+  const targetBeforeNavigation = commands.targetCommand.targetFront;
+  BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, secondLocation);
+  info(
+    "Wait for will-navigate, dom-loading, dom-interactive and dom-complete events"
+  );
+  await waitFor(() => documentEvents.length === 4);
+
+  assertEvents({ commands, targetBeforeNavigation, documentEvents });
 
   targetCommand.destroy();
   await client.close();

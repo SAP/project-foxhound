@@ -2,12 +2,31 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::error_recording::{record_error, ErrorType};
+use crate::common_metric_data::CommonMetricDataInternal;
+use crate::error_recording::{record_error, test_get_num_recorded_errors, ErrorType};
 use crate::metrics::Metric;
 use crate::metrics::MetricType;
 use crate::storage::StorageManager;
 use crate::CommonMetricData;
 use crate::Glean;
+
+/// A rate value as given by its numerator and denominator.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct Rate {
+    /// A rate's numerator
+    pub numerator: i32,
+    /// A rate's denominator
+    pub denominator: i32,
+}
+
+impl From<(i32, i32)> for Rate {
+    fn from((num, den): (i32, i32)) -> Self {
+        Self {
+            numerator: num,
+            denominator: den,
+        }
+    }
+}
 
 /// A rate metric.
 ///
@@ -18,16 +37,12 @@ use crate::Glean;
 /// Both numerator and denominator can only be incremented, not decremented.
 #[derive(Clone, Debug)]
 pub struct RateMetric {
-    meta: CommonMetricData,
+    meta: CommonMetricDataInternal,
 }
 
 impl MetricType for RateMetric {
-    fn meta(&self) -> &CommonMetricData {
+    fn meta(&self) -> &CommonMetricDataInternal {
         &self.meta
-    }
-
-    fn meta_mut(&mut self) -> &mut CommonMetricData {
-        &mut self.meta
     }
 }
 
@@ -38,7 +53,7 @@ impl MetricType for RateMetric {
 impl RateMetric {
     /// Creates a new rate metric.
     pub fn new(meta: CommonMetricData) -> Self {
-        Self { meta }
+        Self { meta: meta.into() }
     }
 
     /// Increases the numerator by `amount`.
@@ -51,7 +66,13 @@ impl RateMetric {
     /// ## Notes
     ///
     /// Logs an error if the `amount` is negative.
-    pub fn add_to_numerator(&self, glean: &Glean, amount: i32) {
+    pub fn add_to_numerator(&self, amount: i32) {
+        let metric = self.clone();
+        crate::launch_with_glean(move |glean| metric.add_to_numerator_sync(glean, amount))
+    }
+
+    #[doc(hidden)]
+    pub fn add_to_numerator_sync(&self, glean: &Glean, amount: i32) {
         if !self.should_record(glean) {
             return;
         }
@@ -85,7 +106,13 @@ impl RateMetric {
     /// ## Notes
     ///
     /// Logs an error if the `amount` is negative.
-    pub fn add_to_denominator(&self, glean: &Glean, amount: i32) {
+    pub fn add_to_denominator(&self, amount: i32) {
+        let metric = self.clone();
+        crate::launch_with_glean(move |glean| metric.add_to_denominator_sync(glean, amount))
+    }
+
+    #[doc(hidden)]
+    pub fn add_to_denominator_sync(&self, glean: &Glean, amount: i32) {
         if !self.should_record(glean) {
             return;
         }
@@ -114,15 +141,51 @@ impl RateMetric {
     /// Gets the currently stored value as a pair of integers.
     ///
     /// This doesn't clear the stored value.
-    pub fn test_get_value(&self, glean: &Glean, storage_name: &str) -> Option<(i32, i32)> {
+    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<Rate> {
+        crate::block_on_dispatcher();
+        crate::core::with_glean(|glean| self.get_value(glean, ping_name.as_deref()))
+    }
+
+    /// Get current value
+    #[doc(hidden)]
+    pub fn get_value<'a, S: Into<Option<&'a str>>>(
+        &self,
+        glean: &Glean,
+        ping_name: S,
+    ) -> Option<Rate> {
+        let queried_ping_name = ping_name
+            .into()
+            .unwrap_or_else(|| &self.meta().inner.send_in_pings[0]);
+
         match StorageManager.snapshot_metric_for_test(
             glean.storage(),
-            storage_name,
+            queried_ping_name,
             &self.meta.identifier(glean),
-            self.meta.lifetime,
+            self.meta.inner.lifetime,
         ) {
-            Some(Metric::Rate(n, d)) => Some((n, d)),
+            Some(Metric::Rate(n, d)) => Some((n, d).into()),
             _ => None,
         }
+    }
+
+    /// **Exported for test purposes.**
+    ///
+    /// Gets the number of recorded errors for the given metric and error type.
+    ///
+    /// # Arguments
+    ///
+    /// * `error` - The type of error
+    /// * `ping_name` - represents the optional name of the ping to retrieve the
+    ///   metric for. Defaults to the first value in `send_in_pings`.
+    ///
+    /// # Returns
+    ///
+    /// The number of errors reported.
+    pub fn test_get_num_recorded_errors(&self, error: ErrorType) -> i32 {
+        crate::block_on_dispatcher();
+
+        crate::core::with_glean(|glean| {
+            test_get_num_recorded_errors(glean, self.meta(), error).unwrap_or(0)
+        })
     }
 }

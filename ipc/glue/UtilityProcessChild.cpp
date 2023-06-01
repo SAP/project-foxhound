@@ -8,10 +8,13 @@
 #include "mozilla/ipc/UtilityProcessManager.h"
 #include "mozilla/ipc/UtilityProcessSandboxing.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/JSOracleChild.h"
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/ipc/Endpoint.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/RemoteDecoderManagerParent.h"
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
 #  include "mozilla/Sandbox.h"
@@ -25,31 +28,41 @@
 
 #if defined(XP_WIN)
 #  include "mozilla/WinDllServices.h"
+#  include "mozilla/dom/WindowsUtilsChild.h"
 #endif
 
 #include "nsDebugImpl.h"
 #include "nsIXULRuntime.h"
 #include "nsThreadManager.h"
+#include "GeckoProfiler.h"
 
 #include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/FOGIPC.h"
 #include "mozilla/glean/GleanMetrics.h"
 
+#include "mozilla/Services.h"
+
 namespace mozilla::ipc {
 
 using namespace layers;
 
-static StaticRefPtr<UtilityProcessChild> sUtilityProcessChild;
+static StaticMutex sUtilityProcessChildMutex;
+static StaticRefPtr<UtilityProcessChild> sUtilityProcessChild
+    MOZ_GUARDED_BY(sUtilityProcessChildMutex);
 
 UtilityProcessChild::UtilityProcessChild() {
   nsDebugImpl::SetMultiprocessMode("Utility");
-  sUtilityProcessChild = this;
 }
 
 UtilityProcessChild::~UtilityProcessChild() = default;
 
 /* static */
 RefPtr<UtilityProcessChild> UtilityProcessChild::GetSingleton() {
+  MOZ_ASSERT(XRE_IsUtilityProcess());
+  if (AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMShutdownFinal)) {
+    return nullptr;
+  }
+  StaticMutexAutoLock lock(sUtilityProcessChildMutex);
   if (!sUtilityProcessChild) {
     sUtilityProcessChild = new UtilityProcessChild();
   }
@@ -58,13 +71,13 @@ RefPtr<UtilityProcessChild> UtilityProcessChild::GetSingleton() {
 
 /* static */
 RefPtr<UtilityProcessChild> UtilityProcessChild::Get() {
+  StaticMutexAutoLock lock(sUtilityProcessChildMutex);
   return sUtilityProcessChild;
 }
 
-bool UtilityProcessChild::Init(base::ProcessId aParentPid,
+bool UtilityProcessChild::Init(mozilla::ipc::UntypedEndpoint&& aEndpoint,
                                const nsCString& aParentBuildID,
-                               uint64_t aSandboxingKind,
-                               mozilla::ipc::ScopedPort aPort) {
+                               uint64_t aSandboxingKind) {
   MOZ_ASSERT(NS_IsMainThread());
 
   // Initialize the thread manager before starting IPC. Otherwise, messages
@@ -74,7 +87,7 @@ bool UtilityProcessChild::Init(base::ProcessId aParentPid,
   }
 
   // Now it's safe to start IPC.
-  if (NS_WARN_IF(!Open(std::move(aPort), aParentPid))) {
+  if (NS_WARN_IF(!aEndpoint.Bind(this))) {
     return false;
   }
 
@@ -97,7 +110,18 @@ bool UtilityProcessChild::Init(base::ProcessId aParentPid,
 
   mSandbox = (SandboxingKind)aSandboxingKind;
 
-  mozilla::ipc::SetThisProcessName("Utility Process");
+  profiler_set_process_name(nsCString("Utility Process"));
+
+  // Notify the parent process that we have finished our init and that it can
+  // now resolve the pending promise of process startup
+  SendInitCompleted();
+
+  RunOnShutdown(
+      [] {
+        StaticMutexAutoLock lock(sUtilityProcessChildMutex);
+        sUtilityProcessChild = nullptr;
+      },
+      ShutdownPhase::XPCOMShutdownFinal);
 
   return true;
 }
@@ -111,6 +135,10 @@ void CGSShutdownServerConnections();
 mozilla::ipc::IPCResult UtilityProcessChild::RecvInit(
     const Maybe<FileDescriptor>& aBrokerFd,
     const bool& aCanRecordReleaseTelemetry) {
+  // Do this now (before closing WindowServer on macOS) to avoid risking
+  // blocking in GetCurrentProcess() called on that platform
+  mozilla::ipc::SetThisProcessName("Utility Process");
+
 #if defined(MOZ_SANDBOX)
 #  if defined(XP_MACOSX)
   // Close all current connections to the WindowServer. This ensures that the
@@ -132,7 +160,7 @@ mozilla::ipc::IPCResult UtilityProcessChild::RecvInit(
 #if defined(XP_WIN)
   if (aCanRecordReleaseTelemetry) {
     RefPtr<DllServices> dllSvc(DllServices::Get());
-    dllSvc->StartUntrustedModulesProcessor();
+    dllSvc->StartUntrustedModulesProcessor(false);
   }
 #endif  // defined(XP_WIN)
   return IPC_OK();
@@ -154,7 +182,9 @@ mozilla::ipc::IPCResult UtilityProcessChild::RecvRequestMemoryReport(
     const uint32_t& aGeneration, const bool& aAnonymize,
     const bool& aMinimizeMemoryUsage, const Maybe<FileDescriptor>& aDMDFile,
     const RequestMemoryReportResolver& aResolver) {
-  nsPrintfCString processName("Utility (pid %u)", base::GetCurrentProcId());
+  nsPrintfCString processName("Utility (pid: %" PRIPID
+                              ", sandboxingKind: %" PRIu64 ")",
+                              base::GetCurrentProcId(), mSandbox);
 
   mozilla::dom::MemoryReportRequestClient::Start(
       aGeneration, aAnonymize, aMinimizeMemoryUsage, aDMDFile, processName,
@@ -190,6 +220,50 @@ mozilla::ipc::IPCResult UtilityProcessChild::RecvTestTriggerMetrics(
   return IPC_OK();
 }
 
+mozilla::ipc::IPCResult UtilityProcessChild::RecvTestTelemetryProbes() {
+  const uint32_t kExpectedUintValue = 42;
+  Telemetry::ScalarSet(Telemetry::ScalarID::TELEMETRY_TEST_UTILITY_ONLY_UINT,
+                       kExpectedUintValue);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult
+UtilityProcessChild::RecvStartUtilityAudioDecoderService(
+    Endpoint<PUtilityAudioDecoderParent>&& aEndpoint) {
+  mUtilityAudioDecoderInstance = new UtilityAudioDecoderParent();
+  if (!mUtilityAudioDecoderInstance) {
+    return IPC_FAIL(this, "Failing to create UtilityAudioDecoderParent");
+  }
+
+  mUtilityAudioDecoderInstance->Start(std::move(aEndpoint));
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult UtilityProcessChild::RecvStartJSOracleService(
+    Endpoint<PJSOracleChild>&& aEndpoint) {
+  mJSOracleInstance = new mozilla::dom::JSOracleChild();
+  if (!mJSOracleInstance) {
+    return IPC_FAIL(this, "Failing to create JSOracleParent");
+  }
+
+  mJSOracleInstance->Start(std::move(aEndpoint));
+  return IPC_OK();
+}
+
+#ifdef XP_WIN
+mozilla::ipc::IPCResult UtilityProcessChild::RecvStartWindowsUtilsService(
+    Endpoint<dom::PWindowsUtilsChild>&& aEndpoint) {
+  mWindowsUtilsInstance = new dom::WindowsUtilsChild();
+  if (!mWindowsUtilsInstance) {
+    return IPC_FAIL(this, "Failed to create WindowsUtilsChild");
+  }
+
+  [[maybe_unused]] bool ok = std::move(aEndpoint).Bind(mWindowsUtilsInstance);
+  MOZ_ASSERT(ok);
+  return IPC_OK();
+}
+#endif
+
 void UtilityProcessChild::ActorDestroy(ActorDestroyReason aWhy) {
   if (AbnormalShutdown == aWhy) {
     NS_WARNING("Shutting down Utility process early due to a crash!");
@@ -209,19 +283,31 @@ void UtilityProcessChild::ActorDestroy(ActorDestroyReason aWhy) {
     mProfilerController = nullptr;
   }
 
-#  if defined(XP_WIN)
-  {
-    RefPtr<DllServices> dllSvc(DllServices::Get());
-    dllSvc->DisableFull();
+  uint32_t timeout = 0;
+  if (mUtilityAudioDecoderInstance) {
+    mUtilityAudioDecoderInstance = nullptr;
+    timeout = 10 * 1000;
   }
+
+  // Wait until all RemoteDecoderManagerParent have closed.
+  // It is still possible some may not have clean up yet, and we might hit
+  // timeout. Our xpcom-shutdown listener should take care of cleaning the
+  // reference of our singleton.
+  //
+  // FIXME: Should move from using AsyncBlockers to proper
+  // nsIAsyncShutdownService once it is not JS, see bug 1760855
+  mShutdownBlockers.WaitUntilClear(timeout)->Then(
+      GetCurrentSerialEventTarget(), __func__, [&]() {
+#  ifdef XP_WIN
+        {
+          RefPtr<DllServices> dllSvc(DllServices::Get());
+          dllSvc->DisableFull();
+        }
 #  endif  // defined(XP_WIN)
 
-  if (sUtilityProcessChild) {
-    sUtilityProcessChild = nullptr;
-  }
-
-  ipc::CrashReporterClient::DestroySingleton();
-  XRE_ShutdownChildProcess();
+        ipc::CrashReporterClient::DestroySingleton();
+        XRE_ShutdownChildProcess();
+      });
 #endif    // NS_FREE_PERMANENT_DATA
 }
 

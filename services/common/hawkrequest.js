@@ -9,11 +9,12 @@ var EXPORTED_SYMBOLS = [
   "deriveHawkCredentials",
 ];
 
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
+);
 const { RESTRequest } = ChromeUtils.import(
   "resource://services-common/rest.js"
 );
@@ -24,8 +25,10 @@ const { Credentials } = ChromeUtils.import(
   "resource://gre/modules/Credentials.jsm"
 );
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "CryptoUtils",
   "resource://services-crypto/utils.js"
 );
@@ -79,8 +82,6 @@ var HAWKAuthenticatedRESTRequest = function HawkAuthenticatedRESTRequest(
   this._intl = getIntl();
 };
 HAWKAuthenticatedRESTRequest.prototype = {
-  __proto__: RESTRequest.prototype,
-
   async dispatch(method, data) {
     let contentType = "text/plain";
     if (method == "POST" || method == "PUT" || method == "PATCH") {
@@ -94,7 +95,11 @@ HAWKAuthenticatedRESTRequest.prototype = {
         payload: (data && JSON.stringify(data)) || "",
         contentType,
       };
-      let header = await CryptoUtils.computeHAWK(this.uri, method, options);
+      let header = await lazy.CryptoUtils.computeHAWK(
+        this.uri,
+        method,
+        options
+      );
       this.setHeader("Authorization", header.field);
     }
 
@@ -109,6 +114,11 @@ HAWKAuthenticatedRESTRequest.prototype = {
     return super.dispatch(method, data);
   },
 };
+
+Object.setPrototypeOf(
+  HAWKAuthenticatedRESTRequest.prototype,
+  RESTRequest.prototype
+);
 
 /**
  * Generic function to derive Hawk credentials.
@@ -134,7 +144,7 @@ HAWKAuthenticatedRESTRequest.prototype = {
  */
 async function deriveHawkCredentials(tokenHex, context, size = 96) {
   let token = CommonUtils.hexToBytes(tokenHex);
-  let out = await CryptoUtils.hkdfLegacy(
+  let out = await lazy.CryptoUtils.hkdfLegacy(
     token,
     undefined,
     Credentials.keyWord(context),
@@ -163,7 +173,7 @@ function Intl() {
   this.init();
 }
 
-this.Intl.prototype = {
+Intl.prototype = {
   init() {
     Services.prefs.addObserver("intl.accept_languages", this);
   },

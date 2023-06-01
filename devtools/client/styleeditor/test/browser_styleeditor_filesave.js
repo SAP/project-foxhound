@@ -7,10 +7,6 @@
 const TESTCASE_URI_HTML = TEST_BASE_HTTP + "simple.html";
 const TESTCASE_URI_CSS = TEST_BASE_HTTP + "simple.css";
 
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
-);
-
 add_task(async function() {
   const htmlFile = await copy(TESTCASE_URI_HTML, "simple.html");
   await copy(TESTCASE_URI_CSS, "simple.css");
@@ -81,13 +77,7 @@ function read(srcChromeURL) {
 }
 
 function write(data, file, callback) {
-  const converter = Cc[
-    "@mozilla.org/intl/scriptableunicodeconverter"
-  ].createInstance(Ci.nsIScriptableUnicodeConverter);
-
-  converter.charset = "UTF-8";
-
-  const istream = converter.convertToInputStream(data);
+  const istream = getInputStream(data);
   const ostream = FileUtils.openSafeFileOutputStream(file);
 
   NetUtil.asyncCopy(istream, ostream, function(status) {

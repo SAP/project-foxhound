@@ -2,16 +2,36 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var EXPORTED_SYMBOLS = ["PrefsEngine", "PrefRec", "PREFS_GUID"];
+var EXPORTED_SYMBOLS = ["PrefsEngine", "PrefRec", "getPrefsGUIDForTest"];
 
+// Prefs which start with this prefix are our "control" prefs - they indicate
+// which preferences should be synced.
 const PREF_SYNC_PREFS_PREFIX = "services.sync.prefs.sync.";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+// Prefs which have a default value are usually not synced - however, if the
+// preference exists under this prefix and the value is:
+// * `true`, then we do sync default values.
+// * `false`, then as soon as we ever sync a non-default value out, or sync
+//    any value in, then we toggle the value to `true`.
+//
+// We never explicitly set this pref back to false, so it's one-shot.
+// Some preferences which are known to have a different default value on
+// different platforms have this preference with a default value of `false`,
+// so they don't sync until one device changes to the non-default value, then
+// that value forever syncs, even if it gets reset back to the default.
+// Note that preferences handled this way *must also* have the "normal"
+// control pref set.
+// A possible future enhancement would be to sync these prefs so that
+// other distributions can flag them if they change the default, but that
+// doesn't seem worthwhile until we can be confident they'd actually create
+// this special control pref at the same time they flip the default.
+const PREF_SYNC_SEEN_PREFIX = "services.sync.prefs.sync-seen.";
+
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 const { Store, SyncEngine, Tracker } = ChromeUtils.import(
   "resource://services-sync/engines.js"
@@ -27,12 +47,14 @@ const { CommonUtils } = ChromeUtils.import(
   "resource://services-common/utils.js"
 );
 
-XPCOMUtils.defineLazyGetter(this, "PREFS_GUID", () =>
+const lazy = {};
+
+XPCOMUtils.defineLazyGetter(lazy, "PREFS_GUID", () =>
   CommonUtils.encodeBase64URL(Services.appinfo.ID)
 );
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "AddonManager",
   "resource://gre/modules/AddonManager.jsm"
 );
@@ -48,7 +70,7 @@ const PREF_SYNC_PREFS_ARBITRARY =
   "services.sync.prefs.dangerously_allow_arbitrary";
 
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "ALLOW_ARBITRARY",
   PREF_SYNC_PREFS_ARBITRARY
 );
@@ -57,16 +79,16 @@ XPCOMUtils.defineLazyPreferenceGetter(
 // continue to be synced. SUMO have told us that this URL will remain "stable".
 const PREFS_DOC_URL_TEMPLATE =
   "https://support.mozilla.org/1/firefox/%VERSION%/%OS%/%LOCALE%/sync-custom-preferences";
-XPCOMUtils.defineLazyGetter(this, "PREFS_DOC_URL", () =>
+XPCOMUtils.defineLazyGetter(lazy, "PREFS_DOC_URL", () =>
   Services.urlFormatter.formatURL(PREFS_DOC_URL_TEMPLATE)
 );
 
 // Check for a local control pref or PREF_SYNC_PREFS_ARBITRARY
-this.isAllowedPrefName = function(prefName) {
+function isAllowedPrefName(prefName) {
   if (prefName == PREF_SYNC_PREFS_ARBITRARY) {
     return false; // never allow this.
   }
-  if (ALLOW_ARBITRARY) {
+  if (lazy.ALLOW_ARBITRARY) {
     // user has set the "dangerous" pref, so everything is allowed.
     return true;
   }
@@ -80,15 +102,15 @@ this.isAllowedPrefName = function(prefName) {
   } catch (_) {
     return false;
   }
-};
+}
 
 function PrefRec(collection, id) {
   CryptoWrapper.call(this, collection, id);
 }
 PrefRec.prototype = {
-  __proto__: CryptoWrapper.prototype,
   _logName: "Sync.Record.Pref",
 };
+Object.setPrototypeOf(PrefRec.prototype, CryptoWrapper.prototype);
 
 Utils.deferGetSet(PrefRec, "cleartext", ["value"]);
 
@@ -96,7 +118,6 @@ function PrefsEngine(service) {
   SyncEngine.call(this, "Prefs", service);
 }
 PrefsEngine.prototype = {
-  __proto__: SyncEngine.prototype,
   _storeObj: PrefStore,
   _trackerObj: PrefTracker,
   _recordObj: PrefRec,
@@ -109,7 +130,7 @@ PrefsEngine.prototype = {
     // No need for a proper timestamp (no conflict resolution needed).
     let changedIDs = {};
     if (this._tracker.modified) {
-      changedIDs[PREFS_GUID] = 0;
+      changedIDs[lazy.PREFS_GUID] = 0;
     }
     return changedIDs;
   },
@@ -134,12 +155,13 @@ PrefsEngine.prototype = {
     }
   },
 };
+Object.setPrototypeOf(PrefsEngine.prototype, SyncEngine.prototype);
 
-// We don't use services.sync.engine.tabs.filteredUrls since it includes
+// We don't use services.sync.engine.tabs.filteredSchemes since it includes
 // about: pages and the like, which we want to be syncable in preferences.
-// Blob and moz-extension uris are never safe to sync, so we limit our check
-// to those.
-const UNSYNCABLE_URL_REGEXP = /^(moz-extension|blob):/i;
+// Blob, moz-extension, data and file uris are never safe to sync,
+// so we limit our check to those.
+const UNSYNCABLE_URL_REGEXP = /^(moz-extension|blob|data|file):/i;
 function isUnsyncableURLPref(prefName) {
   if (Services.prefs.getPrefType(prefName) != Ci.nsIPrefBranch.PREF_STRING) {
     return false;
@@ -159,8 +181,6 @@ function PrefStore(name, engine) {
   );
 }
 PrefStore.prototype = {
-  __proto__: Store.prototype,
-
   __prefs: null,
   get _prefs() {
     if (!this.__prefs) {
@@ -202,10 +222,20 @@ PrefStore.prototype = {
       // us not to apply (syncable) changes to preferences that are set locally
       // which have unsyncable urls.
       if (this._isSynced(pref) && !isUnsyncableURLPref(pref)) {
-        // Missing and default prefs get the null value.
-        values[pref] = this._prefs.isSet(pref)
-          ? this._prefs.get(pref, null)
-          : null;
+        let isSet = this._prefs.isSet(pref);
+        // Missing and default prefs get the null value, unless that `seen`
+        // pref is set, in which case it always gets the value.
+        let forceValue = this._prefs.get(PREF_SYNC_SEEN_PREFIX + pref, false);
+        values[pref] = isSet || forceValue ? this._prefs.get(pref, null) : null;
+        // If this is a special "sync-seen" pref, and it's not the default value,
+        // set the seen pref to true.
+        if (
+          isSet &&
+          this._prefs.get(PREF_SYNC_SEEN_PREFIX + pref, false) === false
+        ) {
+          this._log.trace(`toggling sync-seen pref for '${pref}' to true`);
+          this._prefs.set(PREF_SYNC_SEEN_PREFIX + pref, true);
+        }
       }
     }
     return values;
@@ -252,7 +282,7 @@ PrefStore.prototype = {
                 `Not syncing the preference '${pref}' because it has no local ` +
                 `control preference (${PREF_SYNC_PREFS_PREFIX}${pref}) and ` +
                 `the preference ${PREF_SYNC_PREFS_ARBITRARY} isn't true. ` +
-                `See ${PREFS_DOC_URL} for more information`;
+                `See ${lazy.PREFS_DOC_URL} for more information`;
               console.warn(msg);
               this._log.warn(msg);
             }
@@ -284,6 +314,12 @@ PrefStore.prototype = {
               this._log.trace(`Failed to set pref: ${pref}`, ex);
             }
           }
+          // If there's a "sync-seen" pref for this it gets toggled to true
+          // regardless of the value.
+          let seenPref = PREF_SYNC_SEEN_PREFIX + pref;
+          if (this._prefs.get(seenPref, undefined) === false) {
+            this._prefs.set(PREF_SYNC_SEEN_PREFIX + pref, true);
+          }
       }
     }
     // Themes are a little messy. Themes which have been installed are handled
@@ -300,7 +336,7 @@ PrefStore.prototype = {
   async _maybeEnableBuiltinTheme(themeId) {
     let addon = null;
     try {
-      addon = await AddonManager.getAddonByID(themeId);
+      addon = await lazy.AddonManager.getAddonByID(themeId);
     } catch (ex) {
       this._log.trace(
         `There's no addon with ID '${themeId} - it can't be a builtin theme`
@@ -320,7 +356,7 @@ PrefStore.prototype = {
   async getAllIDs() {
     /* We store all prefs in just one WBO, with just one GUID */
     let allprefs = {};
-    allprefs[PREFS_GUID] = true;
+    allprefs[lazy.PREFS_GUID] = true;
     return allprefs;
   },
 
@@ -329,13 +365,13 @@ PrefStore.prototype = {
   },
 
   async itemExists(id) {
-    return id === PREFS_GUID;
+    return id === lazy.PREFS_GUID;
   },
 
   async createRecord(id, collection) {
     let record = new PrefRec(collection, id);
 
-    if (id == PREFS_GUID) {
+    if (id == lazy.PREFS_GUID) {
       record.value = this._getAllPrefs();
     } else {
       record.deleted = true;
@@ -354,7 +390,7 @@ PrefStore.prototype = {
 
   async update(record) {
     // Silently ignore pref updates that are for other apps.
-    if (record.id != PREFS_GUID) {
+    if (record.id != lazy.PREFS_GUID) {
       return;
     }
 
@@ -366,6 +402,7 @@ PrefStore.prototype = {
     this._log.trace("Ignoring wipe request");
   },
 };
+Object.setPrototypeOf(PrefStore.prototype, Store.prototype);
 
 function PrefTracker(name, engine) {
   Tracker.call(this, name, engine);
@@ -373,8 +410,6 @@ function PrefTracker(name, engine) {
   Svc.Obs.add("profile-before-change", this.asyncObserver);
 }
 PrefTracker.prototype = {
-  __proto__: Tracker.prototype,
-
   get ignoreAll() {
     return this._ignoreAll;
   },
@@ -434,3 +469,8 @@ PrefTracker.prototype = {
     }
   },
 };
+Object.setPrototypeOf(PrefTracker.prototype, Tracker.prototype);
+
+function getPrefsGUIDForTest() {
+  return lazy.PREFS_GUID;
+}

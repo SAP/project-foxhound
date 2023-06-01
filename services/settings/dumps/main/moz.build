@@ -4,6 +4,9 @@
 
 FINAL_TARGET_FILES.defaults.settings.main += [
     "anti-tracking-url-decoration.json",
+    "cookie-banner-rules-list.json",
+    "devtools-compatibility-browsers.json",
+    "devtools-devices.json",
     "example.json",
     "hijack-blocklists.json",
     "language-dictionaries.json",

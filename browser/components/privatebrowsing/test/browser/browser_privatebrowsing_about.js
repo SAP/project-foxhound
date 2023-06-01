@@ -2,31 +2,33 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyGetter(this, "UrlbarTestUtils", () => {
-  const { UrlbarTestUtils: module } = ChromeUtils.import(
-    "resource://testing-common/UrlbarTestUtils.jsm"
+  const { UrlbarTestUtils: module } = ChromeUtils.importESModule(
+    "resource://testing-common/UrlbarTestUtils.sys.mjs"
   );
   module.init(this);
   return module;
 });
 
 /**
- * Clicks the given link and checks this opens the given URI in the same tab.
+ * Clicks the given link and checks this opens the given URI in the new tab.
  *
  * This function does not return to the previous page.
  */
 async function testLinkOpensUrl({ win, tab, elementId, expectedUrl }) {
-  let loadedPromise = BrowserTestUtils.browserLoaded(tab);
+  let loadedPromise = BrowserTestUtils.waitForNewTab(win.gBrowser, url =>
+    url.startsWith(expectedUrl)
+  );
   await SpecialPowers.spawn(tab, [elementId], async function(elemId) {
     content.document.getElementById(elemId).click();
   });
   await loadedPromise;
   is(
-    tab.currentURI.spec,
+    win.gBrowser.selectedBrowser.currentURI.spec,
     expectedUrl,
     `Clicking ${elementId} opened ${expectedUrl} in the same tab.`
   );
@@ -35,7 +37,7 @@ async function testLinkOpensUrl({ win, tab, elementId, expectedUrl }) {
 let expectedEngineAlias;
 let expectedIconURL;
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.search.separatePrivateDefault", true],
@@ -48,12 +50,18 @@ add_task(async function setup() {
   const originalPrivateDefault = await Services.search.getDefaultPrivate();
   // We have to use a built-in engine as we are currently hard-coding the aliases.
   const privateEngine = await Services.search.getEngineByName("DuckDuckGo");
-  await Services.search.setDefaultPrivate(privateEngine);
+  await Services.search.setDefaultPrivate(
+    privateEngine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
   expectedEngineAlias = privateEngine.aliases[0];
   expectedIconURL = privateEngine.iconURI.spec;
 
   registerCleanupFunction(async () => {
-    await Services.search.setDefaultPrivate(originalPrivateDefault);
+    await Services.search.setDefaultPrivate(
+      originalPrivateDefault,
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    );
   });
 });
 

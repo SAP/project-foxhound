@@ -2,17 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+var { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-var { OS, require } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 function getFiles() {
-  const env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
   // This is the directory where gcov is emitting the gcda files.
-  const jsCoveragePath = env.get("JS_CODE_COVERAGE_OUTPUT_DIR");
+  const jsCoveragePath = Services.env.get("JS_CODE_COVERAGE_OUTPUT_DIR");
 
   const jsCoverageDir = Cc["@mozilla.org/file/local;1"].createInstance(
     Ci.nsIFile
@@ -33,6 +29,8 @@ function diffFiles(files_after, files_before) {
   let files_before_set = new Set(files_before.map(file => file.leafName));
   return files_after.filter(file => !files_before_set.has(file.leafName));
 }
+
+const BASENAME_RE = new RegExp("([^/\\\\]+)$");
 
 function parseRecords(files) {
   let records = new Map();
@@ -74,12 +72,24 @@ function parseRecords(files) {
         }
 
         case "SF": {
-          if (AppConstants.platform == "win") {
-            recordContent = recordContent.replace(/\//g, "\\");
+          if (
+            recordContent.startsWith("resource:") ||
+            recordContent.startsWith("chrome:")
+          ) {
+            recordContent = recordContent.split("/").at(-1);
+          } else {
+            if (AppConstants.platform == "win") {
+              recordContent = recordContent.replace(/\//g, "\\");
+            }
+            const match = BASENAME_RE.exec(recordContent);
+            if (match.length) {
+              recordContent = match[0];
+            }
           }
 
           currentSF = [];
-          records.set(OS.Path.basename(recordContent), currentSF);
+
+          records.set(recordContent, currentSF);
           break;
         }
       }

@@ -14,6 +14,7 @@
 #include <memory>
 #include <string>
 
+#include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "modules/audio_coding/neteq/tools/neteq_test.h"
 #include "test/field_trial.h"
@@ -134,7 +135,7 @@ class NetEqTestFactory {
     bool enable_fast_accelerate = false;
     // Dumps events that describes the simulation on a step-by-step basis.
     bool textlog = false;
-    // If specified and |textlog| is true, the output of |textlog| is written to
+    // If specified and `textlog` is true, the output of `textlog` is written to
     // the specified file name.
     absl::optional<std::string> textlog_filename;
     // Base name for the output script files for plotting the delay profile.
@@ -146,11 +147,11 @@ class NetEqTestFactory {
   };
 
   std::unique_ptr<NetEqTest> InitializeTestFromFile(
-      const std::string& input_filename,
+      absl::string_view input_filename,
       NetEqFactory* neteq_factory,
       const Config& config);
   std::unique_ptr<NetEqTest> InitializeTestFromString(
-      const std::string& input_string,
+      absl::string_view input_string,
       NetEqFactory* neteq_factory,
       const Config& config);
 

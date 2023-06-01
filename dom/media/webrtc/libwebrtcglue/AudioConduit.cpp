@@ -65,7 +65,7 @@ WebrtcAudioConduit::Control::Control(const RefPtr<AbstractThread>& aCallThread)
       INIT_MIRROR(mTransmitting, false),
       INIT_MIRROR(mLocalSsrcs, Ssrcs()),
       INIT_MIRROR(mLocalCname, std::string()),
-      INIT_MIRROR(mLocalMid, std::string()),
+      INIT_MIRROR(mMid, std::string()),
       INIT_MIRROR(mRemoteSsrc, 0),
       INIT_MIRROR(mSyncGroup, std::string()),
       INIT_MIRROR(mLocalRecvRtpExtensions, RtpExtList()),
@@ -83,7 +83,7 @@ RefPtr<GenericPromise> WebrtcAudioConduit::Shutdown() {
                        mControl.mTransmitting.DisconnectIfConnected();
                        mControl.mLocalSsrcs.DisconnectIfConnected();
                        mControl.mLocalCname.DisconnectIfConnected();
-                       mControl.mLocalMid.DisconnectIfConnected();
+                       mControl.mMid.DisconnectIfConnected();
                        mControl.mRemoteSsrc.DisconnectIfConnected();
                        mControl.mSyncGroup.DisconnectIfConnected();
                        mControl.mLocalRecvRtpExtensions.DisconnectIfConnected();
@@ -147,7 +147,7 @@ void WebrtcAudioConduit::InitControl(AudioConduitControlInterface* aControl) {
   CONNECT(aControl->CanonicalTransmitting(), mControl.mTransmitting);
   CONNECT(aControl->CanonicalLocalSsrcs(), mControl.mLocalSsrcs);
   CONNECT(aControl->CanonicalLocalCname(), mControl.mLocalCname);
-  CONNECT(aControl->CanonicalLocalMid(), mControl.mLocalMid);
+  CONNECT(aControl->CanonicalMid(), mControl.mMid);
   CONNECT(aControl->CanonicalRemoteSsrc(), mControl.mRemoteSsrc);
   CONNECT(aControl->CanonicalSyncGroup(), mControl.mSyncGroup);
   CONNECT(aControl->CanonicalLocalRecvRtpExtensions(),
@@ -200,8 +200,8 @@ void WebrtcAudioConduit::OnControlConfigChange() {
     sendStreamReconfigureNeeded = true;
   }
 
-  if (mControl.mLocalMid.Ref() != mSendStreamConfig.rtp.mid) {
-    mSendStreamConfig.rtp.mid = mControl.mLocalMid.Ref();
+  if (mControl.mMid.Ref() != mSendStreamConfig.rtp.mid) {
+    mSendStreamConfig.rtp.mid = mControl.mMid.Ref();
     sendStreamReconfigureNeeded = true;
   }
 
@@ -237,8 +237,27 @@ void WebrtcAudioConduit::OnControlConfigChange() {
   if (auto filteredExtensions = FilterExtensions(
           LocalDirection::kSend, mControl.mLocalSendRtpExtensions);
       filteredExtensions != mSendStreamConfig.rtp.extensions) {
-    mSendStreamConfig.rtp.extensions = std::move(filteredExtensions);
+    // At the very least, we need a reconfigure. Recreation needed if the
+    // extmap for any extension has changed, but not for adding/removing
+    // extensions.
     sendStreamReconfigureNeeded = true;
+
+    for (const auto& newExt : filteredExtensions) {
+      if (sendStreamRecreationNeeded) {
+        break;
+      }
+      for (const auto& oldExt : mSendStreamConfig.rtp.extensions) {
+        if (newExt.uri == oldExt.uri) {
+          if (newExt.id != oldExt.id) {
+            sendStreamRecreationNeeded = true;
+          }
+          // We're done handling newExt, one way or another
+          break;
+        }
+      }
+    }
+
+    mSendStreamConfig.rtp.extensions = std::move(filteredExtensions);
   }
 
   mControl.mSendCodec.Ref().apply([&](const auto& aConfig) {
@@ -312,7 +331,7 @@ void WebrtcAudioConduit::OnControlConfigChange() {
 
   if (mRecvStream && recvStreamReconfigureNeeded) {
     MOZ_ASSERT(!recvStreamRecreationNeeded);
-    mRecvStream->Reconfigure(mRecvStreamConfig);
+    mRecvStream->SetDecoderMap(mRecvStreamConfig.decoder_map);
   }
 
   if (mSendStream && sendStreamReconfigureNeeded) {
@@ -373,8 +392,8 @@ Maybe<Ssrc> WebrtcAudioConduit::GetRemoteSSRC() const {
              : Some(mRecvStreamConfig.rtp.remote_ssrc);
 }
 
-Maybe<webrtc::AudioReceiveStream::Stats> WebrtcAudioConduit::GetReceiverStats()
-    const {
+Maybe<webrtc::AudioReceiveStreamInterface::Stats>
+WebrtcAudioConduit::GetReceiverStats() const {
   MOZ_ASSERT(mCallThread->IsOnCurrentThread());
   if (!mRecvStream) {
     return Nothing();
@@ -391,7 +410,7 @@ Maybe<webrtc::AudioSendStream::Stats> WebrtcAudioConduit::GetSenderStats()
   return Some(mSendStream->GetStats());
 }
 
-Maybe<webrtc::Call::Stats> WebrtcAudioConduit::GetCallStats() const {
+Maybe<webrtc::CallBasicStats> WebrtcAudioConduit::GetCallStats() const {
   MOZ_ASSERT(mCallThread->IsOnCurrentThread());
   if (!mCall->Call()) {
     return Nothing();
@@ -470,7 +489,7 @@ MediaConduitErrorCode WebrtcAudioConduit::GetAudioFrame(
   // only way short of interfacing with a layer above (which mixes all streams,
   // which we don't want) or a layer below (which we try to avoid because it is
   // less stable).
-  auto info = static_cast<webrtc::internal::AudioReceiveStream*>(mRecvStream)
+  auto info = static_cast<webrtc::AudioReceiveStreamImpl*>(mRecvStream)
                   ->GetAudioFrameWithInfo(samplingFreqHz, frame);
 
   if (info == webrtc::AudioMixer::Source::AudioFrameInfo::kError) {
@@ -488,7 +507,7 @@ void WebrtcAudioConduit::OnRtpReceived(MediaPacket&& aPacket,
                                        webrtc::RTPHeader&& aHeader) {
   MOZ_ASSERT(mCallThread->IsOnCurrentThread());
 
-  if (mRecvStreamConfig.rtp.remote_ssrc != aHeader.ssrc) {
+  if (mAllowSsrcChange && mRecvStreamConfig.rtp.remote_ssrc != aHeader.ssrc) {
     CSFLogDebug(LOGTAG, "%s: switching from SSRC %u to %u", __FUNCTION__,
                 mRecvStreamConfig.rtp.remote_ssrc, aHeader.ssrc);
     OverrideRemoteSSRC(aHeader.ssrc);
@@ -744,7 +763,7 @@ RtpExtList WebrtcAudioConduit::FilterExtensions(LocalDirection aDirection,
     }
 
     // csrc-audio-level RTP header extension
-    if (extension.uri == webrtc::RtpExtension::kCsrcAudioLevelUri) {
+    if (extension.uri == webrtc::RtpExtension::kCsrcAudioLevelsUri) {
       if (isSend) {
         continue;
       }

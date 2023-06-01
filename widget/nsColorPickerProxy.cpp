@@ -14,14 +14,15 @@ NS_IMPL_ISUPPORTS(nsColorPickerProxy, nsIColorPicker)
 
 NS_IMETHODIMP
 nsColorPickerProxy::Init(mozIDOMWindowProxy* aParent, const nsAString& aTitle,
-                         const nsAString& aInitialColor) {
+                         const nsAString& aInitialColor,
+                         const nsTArray<nsString>& aDefaultColors) {
   BrowserChild* browserChild = BrowserChild::GetFrom(aParent);
   if (!browserChild) {
     return NS_ERROR_FAILURE;
   }
 
-  browserChild->SendPColorPickerConstructor(this, nsString(aTitle),
-                                            nsString(aInitialColor));
+  browserChild->SendPColorPickerConstructor(this, aTitle, aInitialColor,
+                                            aDefaultColors);
   NS_ADDREF_THIS();
   return NS_OK;
 }
@@ -36,7 +37,8 @@ nsColorPickerProxy::Open(
   return NS_OK;
 }
 
-mozilla::ipc::IPCResult nsColorPickerProxy::RecvUpdate(const nsString& aColor) {
+mozilla::ipc::IPCResult nsColorPickerProxy::RecvUpdate(
+    const nsAString& aColor) {
   if (mCallback) {
     mCallback->Update(aColor);
   }
@@ -44,7 +46,7 @@ mozilla::ipc::IPCResult nsColorPickerProxy::RecvUpdate(const nsString& aColor) {
 }
 
 mozilla::ipc::IPCResult nsColorPickerProxy::Recv__delete__(
-    const nsString& aColor) {
+    const nsAString& aColor) {
   if (mCallback) {
     mCallback->Done(aColor);
     mCallback = nullptr;

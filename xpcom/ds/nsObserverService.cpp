@@ -151,8 +151,7 @@ void nsObserverService::Shutdown() {
   mObserverTopicTable.Clear();
 }
 
-nsresult nsObserverService::Create(nsISupports* aOuter, const nsIID& aIID,
-                                   void** aInstancePtr) {
+nsresult nsObserverService::Create(const nsIID& aIID, void** aInstancePtr) {
   LOG(("nsObserverService::Create()"));
 
   RefPtr<nsObserverService> os = new nsObserverService();
@@ -195,7 +194,7 @@ nsresult nsObserverService::FilterHttpOnTopics(const char* aTopic) {
         do_CreateInstance(NS_SCRIPTERROR_CONTRACTID));
     error->Init(u"http-on-* observers only work in the parent process"_ns,
                 u""_ns, u""_ns, 0, 0, nsIScriptError::warningFlag,
-                "chrome javascript", false /* from private window */,
+                "chrome javascript"_ns, false /* from private window */,
                 true /* from chrome context */);
     console->LogMessage(error);
 
@@ -320,6 +319,10 @@ nsObserverService::UnmarkGrayStrongObservers() {
   return NS_OK;
 }
 
+bool nsObserverService::HasObservers(const char* aTopic) {
+  return mObserverTopicTable.Contains(aTopic);
+}
+
 namespace {
 
 class NotifyWhenScriptSafeRunnable : public mozilla::Runnable {
@@ -337,7 +340,7 @@ class NotifyWhenScriptSafeRunnable : public mozilla::Runnable {
     }
   }
 
-  NS_IMETHOD Run() {
+  NS_IMETHOD Run() override {
     const char16_t* data = mData.IsVoid() ? nullptr : mData.get();
     return mObs->NotifyObservers(mSubject, mTopic.get(), data);
   }

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+ * vim: set ts=8 sts=2 et sw=2 tw=80:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +11,6 @@
 #include "jsapi.h"
 
 #include "gc/Nursery.h"
-#include "gc/Rooting.h"
 #include "js/Array.h"
 #include "js/TypeDecls.h"
 #include "js/Value.h"
@@ -25,6 +24,7 @@
 #include "vm/ObjectFlags.h"
 #include "vm/PropertyInfo.h"
 #include "vm/PropMap.h"
+#include "vm/RecordTupleShared.h"
 #include "vm/StringType.h"
 #include "vm/ToSource.h"
 #include "vm/TupleType.h"
@@ -54,32 +54,72 @@ Shape* RecordType::getInitialShape(JSContext* cx) {
                                       TaggedProto(nullptr), SLOT_COUNT);
 }
 
+bool RecordType::copy(JSContext* cx, Handle<RecordType*> in,
+                      MutableHandle<RecordType*> out) {
+  uint32_t len = in->length();
+  out.set(RecordType::createUninitialized(cx, len));
+  if (!out) {
+    return false;
+  }
+  RootedId k(cx);
+  RootedValue v(cx), vCopy(cx);
+  ArrayObject& sortedKeys = in->getFixedSlot(RecordType::SORTED_KEYS_SLOT)
+                                .toObject()
+                                .as<ArrayObject>();
+  for (uint32_t i = 0; i < len; i++) {
+    // Get the ith record key and convert it to a string, then to an id `k`
+    Value kVal = sortedKeys.getDenseElement(i);
+    MOZ_ASSERT(kVal.isString());
+    k.set(AtomToId(&kVal.toString()->asAtom()));
+    cx->markId(k);
+
+    // Get the value corresponding to `k`
+    MOZ_ALWAYS_TRUE(in->getOwnProperty(cx, k, &v));
+
+    // Copy `v` for the new record
+    if (!CopyRecordTupleElement(cx, v, &vCopy)) {
+      return false;
+    }
+
+    // Set `k` to `v` in the new record
+    if (!out->initializeNextProperty(cx, k, vCopy)) {
+      return false;
+    }
+  }
+  return out->finishInitialization(cx);
+}
+
+uint32_t RecordType::length() {
+  ArrayObject& sortedKeys =
+      getFixedSlot(SORTED_KEYS_SLOT).toObject().as<ArrayObject>();
+
+  return sortedKeys.getDenseInitializedLength();
+}
+
 RecordType* RecordType::createUninitialized(JSContext* cx,
                                             uint32_t initialLength) {
-  RootedShape shape(cx, getInitialShape(cx));
+  Rooted<Shape*> shape(cx, getInitialShape(cx));
   if (!shape) {
     return nullptr;
   }
 
-  JSObject* obj = js::AllocateObject(cx, NewObjectGCKind(), initialLength,
-                                     gc::DefaultHeap, &RecordType::class_);
-  if (!obj) {
+  Rooted<RecordType*> rec(
+      cx, cx->newCell<RecordType>(NewObjectGCKind(), initialLength,
+                                  gc::DefaultHeap, &RecordType::class_));
+  if (!rec) {
     return nullptr;
   }
-  obj->initShape(shape);
-
-  Rooted<RecordType*> rec(cx, static_cast<RecordType*>(obj));
+  rec->initShape(shape);
   rec->setEmptyElements();
   rec->initEmptyDynamicSlots();
   rec->initFixedSlots(SLOT_COUNT);
 
-  RootedArrayObject sortedKeys(cx,
-                               NewDenseFullyAllocatedArray(cx, initialLength));
+  Rooted<ArrayObject*> sortedKeys(
+      cx, NewDenseFullyAllocatedArray(cx, initialLength));
   if (!sortedKeys) {
     return nullptr;
   }
 
-  rec->initFixedSlot(INITIALIZED_LENGTH_SLOT, PrivateUint32Value(0));
   rec->initFixedSlot(SORTED_KEYS_SLOT, ObjectValue(*sortedKeys));
   rec->initFixedSlot(IS_ATOMIZED_SLOT, BooleanValue(false));
 
@@ -124,11 +164,9 @@ bool RecordType::initializeNextProperty(JSContext* cx, HandleId key,
     return false;
   }
 
-  uint32_t initializedLength =
-      getFixedSlot(INITIALIZED_LENGTH_SLOT).toPrivateUint32();
   ArrayObject* sortedKeys =
       &getFixedSlot(SORTED_KEYS_SLOT).toObject().as<ArrayObject>();
-  MOZ_ASSERT(initializedLength == sortedKeys->getDenseInitializedLength());
+  uint32_t initializedLength = sortedKeys->getDenseInitializedLength();
 
   if (!sortedKeys->ensureElements(cx, initializedLength + 1)) {
     return false;
@@ -136,14 +174,11 @@ bool RecordType::initializeNextProperty(JSContext* cx, HandleId key,
   sortedKeys->setDenseInitializedLength(initializedLength + 1);
   sortedKeys->initDenseElement(initializedLength, StringValue(atomKey));
 
-  setFixedSlot(INITIALIZED_LENGTH_SLOT,
-               PrivateUint32Value(initializedLength + 1));
-
   return true;
 }
 
 bool RecordType::finishInitialization(JSContext* cx) {
-  RootedNativeObject obj(cx, this);
+  Rooted<NativeObject*> obj(cx, this);
   if (!JSObject::setFlag(cx, obj, ObjectFlag::NotExtensible)) {
     return false;
   }
@@ -151,10 +186,9 @@ bool RecordType::finishInitialization(JSContext* cx) {
     return false;
   }
 
-  uint32_t length = getFixedSlot(INITIALIZED_LENGTH_SLOT).toPrivateUint32();
   ArrayObject& sortedKeys =
       getFixedSlot(SORTED_KEYS_SLOT).toObject().as<ArrayObject>();
-  MOZ_ASSERT(length == sortedKeys.getDenseInitializedLength());
+  uint32_t length = sortedKeys.getDenseInitializedLength();
 
   Rooted<JSLinearString*> tmpKey(cx);
 
@@ -289,16 +323,16 @@ bool RecordType::sameValueZero(RecordType* lhs, RecordType* rhs) {
     return true;
   }
 
+  uint32_t length = lhs->length();
+
+  if (rhs->length() != length) {
+    return false;
+  }
+
   ArrayObject& lhsSortedKeys =
       lhs->getFixedSlot(SORTED_KEYS_SLOT).toObject().as<ArrayObject>();
   ArrayObject& rhsSortedKeys =
       rhs->getFixedSlot(SORTED_KEYS_SLOT).toObject().as<ArrayObject>();
-
-  uint32_t length = lhsSortedKeys.length();
-
-  if (rhsSortedKeys.length() != length) {
-    return false;
-  }
 
   Value v1, v2;
 
@@ -337,23 +371,21 @@ bool RecordType::sameValueWith(JSContext* cx, RecordType* lhs, RecordType* rhs,
     return true;
   }
 
-  uint32_t length =
-      lhs->getFixedSlot(INITIALIZED_LENGTH_SLOT).toPrivateUint32();
+  uint32_t length = lhs->length();
 
-  if (rhs->getFixedSlot(INITIALIZED_LENGTH_SLOT).toPrivateUint32() != length) {
+  if (rhs->length() != length) {
     *equal = false;
     return true;
   }
 
   *equal = true;
-
   RootedString k1(cx), k2(cx);
   RootedId id(cx);
   RootedValue v1(cx), v2(cx);
 
-  RootedArrayObject sortedKeysLHS(
+  Rooted<ArrayObject*> sortedKeysLHS(
       cx, &lhs->getFixedSlot(SORTED_KEYS_SLOT).toObject().as<ArrayObject>());
-  RootedArrayObject sortedKeysRHS(
+  Rooted<ArrayObject*> sortedKeysRHS(
       cx, &rhs->getFixedSlot(SORTED_KEYS_SLOT).toObject().as<ArrayObject>());
 
   for (uint32_t index = 0; index < length; index++) {

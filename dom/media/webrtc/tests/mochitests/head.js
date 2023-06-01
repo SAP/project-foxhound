@@ -435,7 +435,6 @@ function setupEnvironment() {
       ["media.peerconnection.identity.timeout", 120000],
       ["media.peerconnection.ice.stun_client_maximum_transmits", 14],
       ["media.peerconnection.ice.trickle_grace_period", 30000],
-      ["media.peerconnection.rtpsourcesapi.enabled", true],
       ["media.navigator.permission.disabled", true],
       // If either fake audio or video is desired we enable fake streams.
       // If loopback devices are set they will be chosen instead of fakes in gecko.
@@ -991,6 +990,38 @@ const getTurnHostname = turnUrl => {
   }
   return hostAndMaybePort.split(":")[0];
 };
+
+// Yo dawg I heard you like Proxies
+// Example: let value = await GleanTest.category.metric.testGetValue();
+const GleanTest = new Proxy(
+  {},
+  {
+    get(target, categoryName, receiver) {
+      return new Proxy(
+        {},
+        {
+          get(target, metricName, receiver) {
+            return {
+              // The only API we actually implement right now.
+              async testGetValue() {
+                return SpecialPowers.spawnChrome(
+                  [categoryName, metricName],
+                  async (categoryName, metricName) => {
+                    await Services.fog.testFlushAllChildren();
+                    const window = this.browsingContext.topChromeWindow;
+                    return window.Glean[categoryName][
+                      metricName
+                    ].testGetValue();
+                  }
+                );
+              },
+            };
+          },
+        }
+      );
+    },
+  }
+);
 
 /**
  * This class executes a series of functions in a continuous sequence.

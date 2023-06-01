@@ -2,7 +2,7 @@
 
 const SCALAR_ABOUT_HOME = "browser.engagement.navigation.about_home";
 
-add_task(async function setup() {
+add_setup(async function() {
   // about:home uses IndexedDB. However, the test finishes too quickly and doesn't
   // allow it enougth time to save. So it throws. This disables all the uncaught
   // exception in this file and that's the reason why we split about:home tests
@@ -12,19 +12,17 @@ add_task(async function setup() {
   // Create two new search engines. Mark one as the default engine, so
   // the test don't crash. We need to engines for this test as the searchbar
   // in content doesn't display the default search engine among the one-off engines.
-  await SearchTestUtils.installSearchExtension({
-    name: "MozSearch",
-    keyword: "mozalias",
-  });
+  await SearchTestUtils.installSearchExtension(
+    {
+      name: "MozSearch",
+      keyword: "mozalias",
+    },
+    { setAsDefault: true }
+  );
   await SearchTestUtils.installSearchExtension({
     name: "MozSearch2",
     keyword: "mozalias2",
   });
-
-  // Make the first engine the default search engine.
-  let engineDefault = Services.search.getEngineByName("MozSearch");
-  let originalEngine = await Services.search.getDefault();
-  await Services.search.setDefault(engineDefault);
 
   // Move the second engine at the beginning of the one-off list.
   let engineOneOff = Services.search.getEngineByName("MozSearch2");
@@ -46,9 +44,7 @@ add_task(async function setup() {
     ],
   });
 
-  // Make sure to restore the engine once we're done.
   registerCleanupFunction(async function() {
-    await Services.search.setDefault(originalEngine);
     await PlacesUtils.history.clear();
     Services.telemetry.setEventRecordingEnabled("navigation", false);
     Services.telemetry.canRecordExtended = oldCanRecord;
@@ -59,6 +55,7 @@ add_task(async function test_abouthome_activitystream_simpleQuery() {
   // Let's reset the counts.
   Services.telemetry.clearScalars();
   Services.telemetry.clearEvents();
+  Services.fog.testResetFOG();
   let search_hist = TelemetryTestUtils.getAndClearKeyedHistogram(
     "SEARCH_COUNTS"
   );
@@ -66,7 +63,7 @@ add_task(async function test_abouthome_activitystream_simpleQuery() {
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
 
   info("Load about:home.");
-  BrowserTestUtils.loadURI(tab.linkedBrowser, "about:home");
+  BrowserTestUtils.loadURIString(tab.linkedBrowser, "about:home");
   await BrowserTestUtils.browserStopped(tab.linkedBrowser, "about:home");
 
   info("Wait for ContentSearchUI search provider to initialize.");
@@ -120,6 +117,19 @@ add_task(async function test_abouthome_activitystream_simpleQuery() {
       },
     ],
     { category: "navigation", method: "search" }
+  );
+
+  // Also also check Glean events.
+  const record = Glean.newtabSearch.issued.testGetValue();
+  Assert.ok(!!record, "Must have recorded a search issuance");
+  Assert.equal(record.length, 1, "One search, one event");
+  Assert.deepEqual(
+    {
+      search_access_point: "about_home",
+      telemetry_id: "other-MozSearch",
+    },
+    record[0].extra,
+    "Must have recorded the expected information."
   );
 
   BrowserTestUtils.removeTab(tab);

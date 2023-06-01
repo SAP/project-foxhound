@@ -290,7 +290,10 @@ static already_AddRefed<gfxDrawable> CreateSamplingRestrictedDrawable(
   AUTO_PROFILER_LABEL("CreateSamplingRestrictedDrawable", GRAPHICS);
 
   DrawTarget* destDrawTarget = aContext->GetDrawTarget();
-  if (destDrawTarget->GetBackendType() == BackendType::DIRECT2D1_1) {
+  // We've been not using CreateSamplingRestrictedDrawable in a bunch of places
+  // for a while. Let's disable it everywhere and confirm that it's ok to get
+  // rid of.
+  if (destDrawTarget->GetBackendType() == BackendType::DIRECT2D1_1 || (true)) {
     return nullptr;
   }
 
@@ -425,13 +428,14 @@ static bool PrescaleAndTileDrawable(gfxDrawable* aDrawable,
                                     const SamplingFilter aSamplingFilter,
                                     const SurfaceFormat aFormat,
                                     gfxFloat aOpacity, ExtendMode aExtendMode) {
-  Size scaleFactor = aContext->CurrentMatrix().ScaleFactors();
-  Matrix scaleMatrix = Matrix::Scaling(scaleFactor.width, scaleFactor.height);
+  MatrixScales scaleFactor =
+      aContext->CurrentMatrix().ScaleFactors().ConvertTo<float>();
+  Matrix scaleMatrix = Matrix::Scaling(scaleFactor.xScale, scaleFactor.yScale);
   const float fuzzFactor = 0.01;
 
   // If we aren't scaling or translating, don't go down this path
-  if ((FuzzyEqual(scaleFactor.width, 1.0, fuzzFactor) &&
-       FuzzyEqual(scaleFactor.width, 1.0, fuzzFactor)) ||
+  if ((FuzzyEqual(scaleFactor.xScale, 1.0f, fuzzFactor) &&
+       FuzzyEqual(scaleFactor.yScale, 1.0f, fuzzFactor)) ||
       aContext->CurrentMatrix().HasNonAxisAlignedTransform()) {
     return false;
   }
@@ -489,7 +493,7 @@ static bool PrescaleAndTileDrawable(gfxDrawable* aDrawable,
     DrawTarget* destDrawTarget = aContext->GetDrawTarget();
 
     // The translation still is in scaled units
-    withoutScale.PreScale(1.0 / scaleFactor.width, 1.0 / scaleFactor.height);
+    withoutScale.PreScale(1.0f / scaleFactor.xScale, 1.0f / scaleFactor.yScale);
     aContext->SetMatrix(withoutScale);
 
     DrawOptions drawOptions(aOpacity, aContext->CurrentOp(),
@@ -1381,6 +1385,48 @@ const float kIdentityNarrowYCbCrToRGB_RowMajor[16] = {
   }
 }
 
+// Translate from CICP values to the color primaries we support, or return
+// Nothing() if there is no appropriate match to let the caller choose
+// a default or generate an error.
+//
+// See Rec. ITU-T H.273 (12/2016) for details on CICP
+/* static */ Maybe<gfx::ColorSpace2> gfxUtils::CicpToColorPrimaries(
+    const CICP::ColourPrimaries aColourPrimaries, LazyLogModule& aLogger) {
+  switch (aColourPrimaries) {
+    case CICP::ColourPrimaries::CP_BT709:
+      return Some(gfx::ColorSpace2::BT709);
+    case CICP::ColourPrimaries::CP_BT2020:
+      return Some(gfx::ColorSpace2::BT2020);
+    default:
+      MOZ_LOG(aLogger, LogLevel::Debug,
+              ("Unsupported color primaries value: %hhu", aColourPrimaries));
+      return {};
+  }
+}
+
+// Translate from CICP values to the transfer functions we support, or return
+// Nothing() if there is no appropriate match.
+//
+/* static */ Maybe<gfx::TransferFunction> gfxUtils::CicpToTransferFunction(
+    const CICP::TransferCharacteristics aTransferCharacteristics) {
+  switch (aTransferCharacteristics) {
+    case CICP::TransferCharacteristics::TC_BT709:
+      return Some(gfx::TransferFunction::BT709);
+
+    case CICP::TransferCharacteristics::TC_SRGB:
+      return Some(gfx::TransferFunction::SRGB);
+
+    case CICP::TransferCharacteristics::TC_SMPTE2084:
+      return Some(gfx::TransferFunction::PQ);
+
+    case CICP::TransferCharacteristics::TC_HLG:
+      return Some(gfx::TransferFunction::HLG);
+
+    default:
+      return {};
+  }
+}
+
 /* static */
 void gfxUtils::WriteAsPNG(SourceSurface* aSurface, const nsAString& aFile) {
   WriteAsPNG(aSurface, NS_ConvertUTF16toUTF8(aFile).get());
@@ -1676,6 +1722,22 @@ DeviceColor ToDeviceColor(nscolor aColor) {
 
 DeviceColor ToDeviceColor(const StyleRGBA& aColor) {
   return ToDeviceColor(aColor.ToColor());
+}
+
+sRGBColor ToSRGBColor(const StyleAnimatedRGBA& aColor) {
+  const auto ToComponent = [](float aF) -> float {
+    float component = std::min(std::max(0.0f, aF), 1.0f);
+    if (MOZ_UNLIKELY(!std::isfinite(component))) {
+      return 0.0f;
+    }
+    return component;
+  };
+  return {ToComponent(aColor.red), ToComponent(aColor.green),
+          ToComponent(aColor.blue), ToComponent(aColor.alpha)};
+}
+
+DeviceColor ToDeviceColor(const StyleAnimatedRGBA& aColor) {
+  return ToDeviceColor(ToSRGBColor(aColor));
 }
 
 }  // namespace gfx

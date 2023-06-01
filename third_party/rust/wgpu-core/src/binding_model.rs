@@ -1,10 +1,10 @@
 use crate::{
     device::{DeviceError, MissingDownlevelFlags, MissingFeatures, SHADER_STAGE_COUNT},
     error::{ErrorFormatter, PrettyError},
-    hub::Resource,
-    id::{BindGroupLayoutId, BufferId, DeviceId, SamplerId, TextureViewId, Valid},
+    hub::{HalApi, Resource},
+    id::{BindGroupLayoutId, BufferId, DeviceId, SamplerId, TextureId, TextureViewId, Valid},
     init_tracker::{BufferInitTrackerAction, TextureInitTrackerAction},
-    track::{TrackerSet, UsageConflict, DUMMY_SELECTOR},
+    track::{BindGroupStates, UsageConflict},
     validation::{MissingBufferUsageError, MissingTextureUsageError},
     FastHashMap, Label, LifeGuard, MultiRefCount, Stored,
 };
@@ -16,10 +16,7 @@ use serde::Deserialize;
 #[cfg(feature = "trace")]
 use serde::Serialize;
 
-use std::{
-    borrow::{Borrow, Cow},
-    ops::Range,
-};
+use std::{borrow::Cow, ops::Range};
 
 use thiserror::Error;
 
@@ -27,6 +24,8 @@ use thiserror::Error;
 pub enum BindGroupLayoutEntryError {
     #[error("cube dimension is not expected for texture storage")]
     StorageTextureCube,
+    #[error("Read-write and read-only storage textures are not allowed by webgpu, they require the native only feature TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES")]
+    StorageTextureReadWrite,
     #[error("arrays of bindings unsupported for this type of binding")]
     ArrayUnsupported,
     #[error(transparent)]
@@ -49,6 +48,10 @@ pub enum CreateBindGroupLayoutError {
     },
     #[error(transparent)]
     TooManyBindings(BindingTypeMaxCountError),
+    #[error("Binding index {binding} is greater than the maximum index {maximum}")]
+    InvalidBindingIndex { binding: u32, maximum: u32 },
+    #[error("Invalid visibility {0:?}")]
+    InvalidVisibility(wgt::ShaderStages),
 }
 
 //TODO: refactor this to move out `enum BindingError`.
@@ -63,6 +66,8 @@ pub enum CreateBindGroupError {
     InvalidBuffer(BufferId),
     #[error("texture view {0:?} is invalid")]
     InvalidTextureView(TextureViewId),
+    #[error("texture {0:?} is invalid")]
+    InvalidTexture(TextureId),
     #[error("sampler {0:?} is invalid")]
     InvalidSampler(SamplerId),
     #[error(
@@ -400,7 +405,9 @@ pub struct BindGroupEntry<'a> {
 #[cfg_attr(feature = "trace", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct BindGroupDescriptor<'a> {
-    /// Debug label of the bind group. This will show up in graphics debuggers for easy identification.
+    /// Debug label of the bind group.
+    ///
+    /// This will show up in graphics debuggers for easy identification.
     pub label: Label<'a>,
     /// The [`BindGroupLayout`] that corresponds to this bind group.
     pub layout: BindGroupLayoutId,
@@ -413,7 +420,9 @@ pub struct BindGroupDescriptor<'a> {
 #[cfg_attr(feature = "trace", derive(serde::Serialize))]
 #[cfg_attr(feature = "replay", derive(serde::Deserialize))]
 pub struct BindGroupLayoutDescriptor<'a> {
-    /// Debug label of the bind group layout. This will show up in graphics debuggers for easy identification.
+    /// Debug label of the bind group layout.
+    ///
+    /// This will show up in graphics debuggers for easy identification.
     pub label: Label<'a>,
     /// Array of entries in this BindGroupLayout
     pub entries: Cow<'a, [wgt::BindGroupLayoutEntry]>,
@@ -534,16 +543,20 @@ pub enum PushConstantUploadError {
 #[cfg_attr(feature = "trace", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct PipelineLayoutDescriptor<'a> {
-    /// Debug label of the pipeine layout. This will show up in graphics debuggers for easy identification.
+    /// Debug label of the pipeine layout.
+    ///
+    /// This will show up in graphics debuggers for easy identification.
     pub label: Label<'a>,
     /// Bind groups that this pipeline uses. The first entry will provide all the bindings for
     /// "set = 0", second entry will provide all the bindings for "set = 1" etc.
     pub bind_group_layouts: Cow<'a, [BindGroupLayoutId]>,
-    /// Set of push constant ranges this pipeline uses. Each shader stage that uses push constants
-    /// must define the range in push constant memory that corresponds to its single `layout(push_constant)`
-    /// uniform block.
+    /// Set of push constant ranges this pipeline uses. Each shader stage that
+    /// uses push constants must define the range in push constant memory that
+    /// corresponds to its single `layout(push_constant)` uniform block.
     ///
-    /// If this array is non-empty, the [`Features::PUSH_CONSTANTS`](wgt::Features::PUSH_CONSTANTS) must be enabled.
+    /// If this array is non-empty, the
+    /// [`Features::PUSH_CONSTANTS`](wgt::Features::PUSH_CONSTANTS) feature must
+    /// be enabled.
     pub push_constant_ranges: Cow<'a, [wgt::PushConstantRange]>,
 }
 
@@ -645,7 +658,7 @@ impl<A: hal::Api> Resource for PipelineLayout<A> {
 }
 
 #[repr(C)]
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 #[cfg_attr(feature = "trace", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct BufferBinding {
@@ -670,23 +683,56 @@ pub enum BindingResource<'a> {
 
 #[derive(Clone, Debug, Error)]
 pub enum BindError {
-    #[error("number of dynamic offsets ({actual}) doesn't match the number of dynamic bindings in the bind group layout ({expected})")]
-    MismatchedDynamicOffsetCount { actual: usize, expected: usize },
     #[error(
-        "dynamic binding at index {idx}: offset {offset} does not respect device's requested `{limit_name}` limit {alignment}"
+        "Bind group {group} expects {expected} dynamic offset{s0}. However {actual} dynamic offset{s1} were provided.",
+        s0 = if *.expected >= 2 { "s" } else { "" },
+        s1 = if *.actual >= 2 { "s" } else { "" },
+    )]
+    MismatchedDynamicOffsetCount {
+        group: u8,
+        actual: usize,
+        expected: usize,
+    },
+    #[error(
+        "Dynamic binding index {idx} (targeting bind group {group}, binding {binding}) with value {offset}, does not respect device's requested `{limit_name}` limit: {alignment}"
     )]
     UnalignedDynamicBinding {
         idx: usize,
+        group: u8,
+        binding: u32,
         offset: u32,
         alignment: u32,
         limit_name: &'static str,
     },
-    #[error("dynamic binding at index {idx} with offset {offset} would overrun the buffer (limit: {max})")]
-    DynamicBindingOutOfBounds { idx: usize, offset: u32, max: u64 },
+    #[error(
+        "Dynamic binding offset index {idx} with offset {offset} would overrun the buffer bound to bind group {group} -> binding {binding}. \
+         Buffer size is {buffer_size} bytes, the binding binds bytes {binding_range:?}, meaning the maximum the binding can be offset is {maximum_dynamic_offset} bytes",
+    )]
+    DynamicBindingOutOfBounds {
+        idx: usize,
+        group: u8,
+        binding: u32,
+        offset: u32,
+        buffer_size: wgt::BufferAddress,
+        binding_range: Range<wgt::BufferAddress>,
+        maximum_dynamic_offset: wgt::BufferAddress,
+    },
 }
 
 #[derive(Debug)]
 pub struct BindGroupDynamicBindingData {
+    /// The index of the binding.
+    ///
+    /// Used for more descriptive errors.
+    pub(crate) binding_idx: u32,
+    /// The size of the buffer.
+    ///
+    /// Used for more descriptive errors.
+    pub(crate) buffer_size: wgt::BufferAddress,
+    /// The range that the binding covers.
+    ///
+    /// Used for more descriptive errors.
+    pub(crate) binding_range: Range<wgt::BufferAddress>,
     /// The maximum value the dynamic offset can have before running off the end of the buffer.
     pub(crate) maximum_dynamic_offset: wgt::BufferAddress,
     /// The binding type.
@@ -709,13 +755,12 @@ pub(crate) fn buffer_binding_type_alignment(
     }
 }
 
-#[derive(Debug)]
-pub struct BindGroup<A: hal::Api> {
+pub struct BindGroup<A: HalApi> {
     pub(crate) raw: A::BindGroup,
     pub(crate) device_id: Stored<DeviceId>,
     pub(crate) layout_id: Valid<BindGroupLayoutId>,
     pub(crate) life_guard: LifeGuard,
-    pub(crate) used: TrackerSet,
+    pub(crate) used: BindGroupStates<A>,
     pub(crate) used_buffer_ranges: Vec<BufferInitTrackerAction>,
     pub(crate) used_texture_ranges: Vec<TextureInitTrackerAction>,
     pub(crate) dynamic_binding_info: Vec<BindGroupDynamicBindingData>,
@@ -724,14 +769,16 @@ pub struct BindGroup<A: hal::Api> {
     pub(crate) late_buffer_binding_sizes: Vec<wgt::BufferSize>,
 }
 
-impl<A: hal::Api> BindGroup<A> {
+impl<A: HalApi> BindGroup<A> {
     pub(crate) fn validate_dynamic_bindings(
         &self,
+        bind_group_index: u8,
         offsets: &[wgt::DynamicOffset],
         limits: &wgt::Limits,
     ) -> Result<(), BindError> {
         if self.dynamic_binding_info.len() != offsets.len() {
             return Err(BindError::MismatchedDynamicOffsetCount {
+                group: bind_group_index,
                 expected: self.dynamic_binding_info.len(),
                 actual: offsets.len(),
             });
@@ -746,6 +793,8 @@ impl<A: hal::Api> BindGroup<A> {
             let (alignment, limit_name) = buffer_binding_type_alignment(limits, info.binding_type);
             if offset as wgt::BufferAddress % alignment as u64 != 0 {
                 return Err(BindError::UnalignedDynamicBinding {
+                    group: bind_group_index,
+                    binding: info.binding_idx,
                     idx,
                     offset,
                     alignment,
@@ -755,9 +804,13 @@ impl<A: hal::Api> BindGroup<A> {
 
             if offset as wgt::BufferAddress > info.maximum_dynamic_offset {
                 return Err(BindError::DynamicBindingOutOfBounds {
+                    group: bind_group_index,
+                    binding: info.binding_idx,
                     idx,
                     offset,
-                    max: info.maximum_dynamic_offset,
+                    buffer_size: info.buffer_size,
+                    binding_range: info.binding_range.clone(),
+                    maximum_dynamic_offset: info.maximum_dynamic_offset,
                 });
             }
         }
@@ -766,13 +819,7 @@ impl<A: hal::Api> BindGroup<A> {
     }
 }
 
-impl<A: hal::Api> Borrow<()> for BindGroup<A> {
-    fn borrow(&self) -> &() {
-        &DUMMY_SELECTOR
-    }
-}
-
-impl<A: hal::Api> Resource for BindGroup<A> {
+impl<A: HalApi> Resource for BindGroup<A> {
     const TYPE: &'static str = "BindGroup";
 
     fn life_guard(&self) -> &LifeGuard {
@@ -788,7 +835,7 @@ pub enum GetBindGroupLayoutError {
     InvalidGroupIndex(u32),
 }
 
-#[derive(Clone, Debug, Error, PartialEq)]
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
 #[error("Buffer is bound with size {bound_size} where the shader expects {shader_size} in group[{group_index}] compact index {compact_index}")]
 pub struct LateMinBufferBindingSizeMismatch {
     pub group_index: u32,

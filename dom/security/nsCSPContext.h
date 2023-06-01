@@ -58,6 +58,10 @@ class nsCSPContext : public nsIContentSecurityPolicy {
   // Init a CSP from a different CSP
   nsresult InitFromOther(nsCSPContext* otherContext);
 
+  // Used to suppress errors and warnings produced by the parser.
+  // Use this when doing an one-off parsing of the CSP.
+  void SuppressParserLogMessages() { mSuppressParserLogMessages = true; }
+
   /**
    * SetRequestContextWithDocument() needs to be called before the
    * innerWindowID is initialized on the document. Use this function
@@ -95,9 +99,9 @@ class nsCSPContext : public nsIContentSecurityPolicy {
    */
   nsresult GatherSecurityPolicyViolationEventData(
       nsIURI* aBlockedURI, const nsACString& aBlockedString,
-      nsIURI* aOriginalURI, nsAString& aViolatedDirective,
-      uint32_t aViolatedPolicyIndex, nsAString& aSourceFile,
-      nsAString& aScriptSample, uint32_t aLineNum, uint32_t aColumnNum,
+      nsIURI* aOriginalURI, const nsAString& aViolatedDirective,
+      uint32_t aViolatedPolicyIndex, const nsAString& aSourceFile,
+      const nsAString& aScriptSample, uint32_t aLineNum, uint32_t aColumnNum,
       mozilla::dom::SecurityPolicyViolationEventInit& aViolationEventInit);
 
   nsresult SendReports(
@@ -115,14 +119,16 @@ class nsCSPContext : public nsIContentSecurityPolicy {
     eInline,
     eEval,
     eSelf,
+    eWasmEval,
   };
 
   nsresult AsyncReportViolation(
       mozilla::dom::Element* aTriggeringElement,
       nsICSPEventListener* aCSPEventListener, nsIURI* aBlockedURI,
       BlockedContentSource aBlockedContentSource, nsIURI* aOriginalURI,
-      const nsAString& aViolatedDirective, uint32_t aViolatedPolicyIndex,
-      const nsAString& aObserverSubject, const nsAString& aSourceFile,
+      const nsAString& aViolatedDirective, const nsAString& aEffectiveDirective,
+      uint32_t aViolatedPolicyIndex, const nsAString& aObserverSubject,
+      const nsAString& aSourceFile, bool aReportSample,
       const nsAString& aScriptSample, uint32_t aLineNum, uint32_t aColumnNum);
 
   // Hands off! Don't call this method unless you know what you
@@ -158,8 +164,10 @@ class nsCSPContext : public nsIContentSecurityPolicy {
   void reportInlineViolation(CSPDirective aDirective,
                              mozilla::dom::Element* aTriggeringElement,
                              nsICSPEventListener* aCSPEventListener,
-                             const nsAString& aNonce, const nsAString& aContent,
+                             const nsAString& aNonce, bool aReportSample,
+                             const nsAString& aSample,
                              const nsAString& aViolatedDirective,
+                             const nsAString& aEffectiveDirective,
                              uint32_t aViolatedPolicyIndex,
                              uint32_t aLineNumber, uint32_t aColumnNumber);
 
@@ -177,6 +185,8 @@ class nsCSPContext : public nsIContentSecurityPolicy {
   nsCOMPtr<nsILoadGroup> mCallingChannelLoadGroup;
   nsWeakPtr mLoadingContext;
   nsCOMPtr<nsIPrincipal> mLoadingPrincipal;
+
+  bool mSuppressParserLogMessages = false;
 
   // helper members used to queue up web console messages till
   // the windowID becomes available. see flushConsoleMessages()

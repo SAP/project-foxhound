@@ -26,7 +26,7 @@ class nsINIParserImpl final : public nsIINIParser, public nsIINIParserWriter {
   bool ContainsNull(const nsACString& aStr);
 };
 
-NS_IMPL_ISUPPORTS(nsINIParserFactory, nsIINIParserFactory, nsIFactory)
+NS_IMPL_ISUPPORTS(nsINIParserFactory, nsIINIParserFactory)
 
 NS_IMETHODIMP
 nsINIParserFactory::CreateINIParser(nsIFile* aINIFile, nsIINIParser** aResult) {
@@ -44,20 +44,6 @@ nsINIParserFactory::CreateINIParser(nsIFile* aINIFile, nsIINIParser** aResult) {
   p.forget(aResult);
   return NS_OK;
 }
-
-NS_IMETHODIMP
-nsINIParserFactory::CreateInstance(nsISupports* aOuter, REFNSIID aIID,
-                                   void** aResult) {
-  if (NS_WARN_IF(aOuter)) {
-    return NS_ERROR_NO_AGGREGATION;
-  }
-
-  // We are our own singleton.
-  return QueryInterface(aIID, aResult);
-}
-
-NS_IMETHODIMP
-nsINIParserFactory::LockFactory(bool aLock) { return NS_OK; }
 
 NS_IMPL_ISUPPORTS(nsINIParserImpl, nsIINIParser, nsIINIParserWriter)
 
@@ -127,6 +113,11 @@ nsINIParserImpl::GetString(const nsACString& aSection, const nsACString& aKey,
 }
 
 NS_IMETHODIMP
+nsINIParserImpl::InitFromString(const nsACString& aData) {
+  return mParser.InitFromString(nsCString(aData));
+}
+
+NS_IMETHODIMP
 nsINIParserImpl::SetString(const nsACString& aSection, const nsACString& aKey,
                            const nsACString& aValue) {
   if (ContainsNull(aSection) || ContainsNull(aKey) || ContainsNull(aValue)) {
@@ -141,4 +132,12 @@ nsINIParserImpl::SetString(const nsACString& aSection, const nsACString& aKey,
 NS_IMETHODIMP
 nsINIParserImpl::WriteFile(nsIFile* aINIFile) {
   return mParser.WriteToFile(aINIFile);
+}
+
+NS_IMETHODIMP
+nsINIParserImpl::WriteToString(nsACString& aOutput) {
+  aOutput.Truncate();
+  mParser.WriteToString(aOutput);
+
+  return NS_OK;
 }

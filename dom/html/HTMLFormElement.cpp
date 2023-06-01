@@ -15,7 +15,6 @@
 #include "mozilla/Components.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/EventDispatcher.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BindContext.h"
@@ -78,6 +77,8 @@
 
 #include "nsSandboxFlags.h"
 
+#include "mozilla/dom/HTMLAnchorElement.h"
+
 // images
 #include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/HTMLButtonElement.h"
@@ -120,7 +121,7 @@ HTMLFormElement::HTMLFormElement(
       mIsConstructingEntryList(false),
       mIsFiringSubmissionEvents(false) {
   // We start out valid.
-  AddStatesSilently(NS_EVENT_STATE_VALID);
+  AddStatesSilently(ElementState::VALID);
 }
 
 HTMLFormElement::~HTMLFormElement() {
@@ -140,12 +141,14 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(HTMLFormElement,
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mControls)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mImageNameLookupTable)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPastNameLookupTable)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRelList)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTargetContext)
   RadioGroupManager::Traverse(tmp, cb);
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(HTMLFormElement,
                                                 nsGenericHTMLElement)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mRelList)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mTargetContext)
   RadioGroupManager::Unlink(tmp);
   tmp->Clear();
@@ -163,6 +166,13 @@ void HTMLFormElement::AsyncEventRunning(AsyncEventDispatcher* aEvent) {
   } else if (mFormPossibleUsernameEventDispatcher == aEvent) {
     mFormPossibleUsernameEventDispatcher = nullptr;
   }
+}
+
+nsDOMTokenList* HTMLFormElement::RelList() {
+  if (!mRelList) {
+    mRelList = new nsDOMTokenList(this, nsGkAtoms::rel, sSupportedRelValues);
+  }
+  return mRelList;
 }
 
 NS_IMPL_ELEMENT_CLONE(HTMLFormElement)
@@ -268,18 +278,7 @@ void HTMLFormElement::MaybeReset(Element* aSubmitter) {
   }
 }
 
-void HTMLFormElement::Submit(ErrorResult& aRv) {
-  // Send the submit event
-  if (mPendingSubmission) {
-    // aha, we have a pending submission that was not flushed
-    // (this happens when form.submit() is called twice)
-    // we have to delete it and build a new one since values
-    // might have changed inbetween (we emulate IE here, that's all)
-    mPendingSubmission = nullptr;
-  }
-
-  aRv = DoSubmit();
-}
+void HTMLFormElement::Submit(ErrorResult& aRv) { aRv = DoSubmit(); }
 
 // https://html.spec.whatwg.org/multipage/forms.html#dom-form-requestsubmit
 void HTMLFormElement::RequestSubmit(nsGenericHTMLElement* aSubmitter,
@@ -297,7 +296,7 @@ void HTMLFormElement::RequestSubmit(nsGenericHTMLElement* aSubmitter,
     // 1.2. If submitter's form owner is not this form element, then throw a
     //      "NotFoundError" DOMException.
     if (fc->GetForm() != this) {
-      aRv.Throw(NS_ERROR_DOM_NOT_FOUND_ERR);
+      aRv.ThrowNotFoundError("The submitter is not owned by this form.");
       return;
     }
   }
@@ -705,8 +704,6 @@ nsresult HTMLFormElement::DoSubmit(Event* aEvent) {
 
 nsresult HTMLFormElement::BuildSubmission(HTMLFormSubmission** aFormSubmission,
                                           Event* aEvent) {
-  NS_ASSERTION(!mPendingSubmission, "tried to build two submissions!");
-
   // Get the submitter element
   nsGenericHTMLElement* submitter = nullptr;
   if (aEvent) {
@@ -754,7 +751,8 @@ nsresult HTMLFormElement::BuildSubmission(HTMLFormSubmission** aFormSubmission,
 
 nsresult HTMLFormElement::SubmitSubmission(
     HTMLFormSubmission* aFormSubmission) {
-  nsresult rv;
+  MOZ_ASSERT(!mDeferSubmission);
+  MOZ_ASSERT(!mPendingSubmission);
 
   nsCOMPtr<nsIURI> actionURI = aFormSubmission->GetActionURL();
   if (!actionURI) {
@@ -784,6 +782,7 @@ nsresult HTMLFormElement::SubmitSubmission(
   //
   // Notify observers of submit
   //
+  nsresult rv;
   bool cancelSubmit = false;
   if (mNotifiedObservers) {
     cancelSubmit = mNotifiedObserversResult;
@@ -919,7 +918,7 @@ nsresult HTMLFormElement::DoSecureToInsecureSubmitCheck(nsIURI* aActionURL,
 
   nsresult rv;
   nsCOMPtr<nsIPromptService> promptSvc =
-      do_GetService("@mozilla.org/embedcomp/prompt-service;1", &rv);
+      do_GetService("@mozilla.org/prompter;1", &rv);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -1132,10 +1131,9 @@ int32_t HTMLFormElement::CompareFormControlPosition(Element* aElement1,
 /* static */
 void HTMLFormElement::AssertDocumentOrder(
     const nsTArray<nsGenericHTMLFormElement*>& aControls, nsIContent* aForm) {
-  // TODO: remove the return statement with bug 598468.
+  // TODO: remove the if directive with bug 598468.
   // This is done to prevent asserts in some edge cases.
-  return;
-
+#  if 0
   // Only iterate if aControls is not empty, since otherwise
   // |aControls.Length() - 1| will be a very large unsigned number... not what
   // we want here.
@@ -1146,6 +1144,7 @@ void HTMLFormElement::AssertDocumentOrder(
           "Form controls not ordered correctly");
     }
   }
+#  endif
 }
 
 /**
@@ -1158,10 +1157,9 @@ void HTMLFormElement::AssertDocumentOrder(
 void HTMLFormElement::AssertDocumentOrder(
     const nsTArray<RefPtr<nsGenericHTMLFormElement>>& aControls,
     nsIContent* aForm) {
-  // TODO: remove the return statement with bug 598468.
+  // TODO: remove the if directive with bug 598468.
   // This is done to prevent asserts in some edge cases.
-  return;
-
+#  if 0
   // Only iterate if aControls is not empty, since otherwise
   // |aControls.Length() - 1| will be a very large unsigned number... not what
   // we want here.
@@ -1172,6 +1170,7 @@ void HTMLFormElement::AssertDocumentOrder(
           "Form controls not ordered correctly");
     }
   }
+#  endif
 }
 #endif
 
@@ -1589,6 +1588,8 @@ void HTMLFormElement::OnSubmitClickBegin(Element* aOriginatingElement) {
 void HTMLFormElement::OnSubmitClickEnd() { mDeferSubmission = false; }
 
 void HTMLFormElement::FlushPendingSubmission() {
+  MOZ_ASSERT(!mDeferSubmission);
+
   if (mPendingSubmission) {
     // Transfer owning reference so that the submission doesn't get deleted
     // if we reenter
@@ -1916,7 +1917,7 @@ bool HTMLFormElement::CheckValidFormSubmission() {
           // for the anonymous textnode inside, but not the number control
           // itself.  We can use the focus state, though, because that gets
           // synced to the number control by the anonymous text control.
-          mControls->mElements[i]->State().HasState(NS_EVENT_STATE_FOCUS)) {
+          mControls->mElements[i]->State().HasState(ElementState::FOCUS)) {
         static_cast<HTMLInputElement*>(mControls->mElements[i])
             ->UpdateValidityUIBits(true);
       }
@@ -2034,13 +2035,13 @@ void HTMLFormElement::SetValueMissingState(const nsAString& aName,
   RadioGroupManager::SetValueMissingState(aName, aValue);
 }
 
-EventStates HTMLFormElement::IntrinsicState() const {
-  EventStates state = nsGenericHTMLElement::IntrinsicState();
+ElementState HTMLFormElement::IntrinsicState() const {
+  ElementState state = nsGenericHTMLElement::IntrinsicState();
 
   if (mInvalidElementsCount) {
-    state |= NS_EVENT_STATE_INVALID;
+    state |= ElementState::INVALID;
   } else {
-    state |= NS_EVENT_STATE_VALID;
+    state |= ElementState::VALID;
   }
 
   return state;

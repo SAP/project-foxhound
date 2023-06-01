@@ -6,8 +6,8 @@
 const { AddonTestUtils } = ChromeUtils.import(
   "resource://testing-common/AddonTestUtils.jsm"
 );
-const { SearchTestUtils } = ChromeUtils.import(
-  "resource://testing-common/SearchTestUtils.jsm"
+const { SearchTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/SearchTestUtils.sys.mjs"
 );
 const { NimbusFeatures } = ChromeUtils.import(
   "resource://nimbus/ExperimentAPI.jsm"
@@ -22,9 +22,6 @@ AddonTestUtils.createAppInfo(
   "42",
   "42"
 );
-// Override ExtensionXPCShellUtils.jsm's overriding of the pref as the
-// search service needs it.
-Services.prefs.clearUserPref("services.settings.default_bucket");
 
 let { promiseShutdownManager, promiseStartupManager } = AddonTestUtils;
 
@@ -200,7 +197,7 @@ add_task(async function test_extension_setting_moz_params_fail() {
 
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: {
+      browser_specific_settings: {
         gecko: { id: "test1@mochitest" },
       },
       chrome_settings_overrides: {

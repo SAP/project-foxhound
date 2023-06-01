@@ -1,12 +1,10 @@
-# glean
+# Glean
 
 The `Glean SDK` is a modern approach for a Telemetry library and is part of the [Glean project](https://docs.telemetry.mozilla.org/concepts/glean/glean.html).
 
 ## `glean`
 
 This library provides a Rust language bindings on top of `glean-core`, targeted to Rust consumers.
-
-**Note: `glean` is currently under development and not yet ready for use.**
 
 ## Documentation
 
@@ -16,20 +14,14 @@ All documentation is available online:
 * [API documentation][apidocs]
 
 [book]: https://mozilla.github.io/glean/
-[apidocs]: https://mozilla.github.io/glean/docs/glean_preview/index.html
+[apidocs]: https://mozilla.github.io/glean/docs/glean/index.html
 
 ## Example
 
 ```rust,no_run
-use glean::{Configuration, Error, metrics::*};
+use glean::{ConfigurationBuilder, Error, metrics::*};
 
-let cfg = Configuration {
-    data_path: "/tmp/data".into(),
-    application_id: "org.mozilla.glean_core.example".into(),
-    upload_enabled: true,
-    max_events: None,
-    delay_ping_lifetime_io: false,
-};
+let cfg = ConfigurationBuilder::new(true, "/tmp/data", "org.mozilla.glean_core.example").build();
 glean::initialize(cfg)?;
 
 let prototype_ping = PingType::new("prototype", true, true, vec![]);

@@ -37,6 +37,7 @@ UNIFIED_SOURCES += [
     "EdgeCaseAnalysis.cpp",
     "EffectiveAddressAnalysis.cpp",
     "ExecutableAllocator.cpp",
+    "FlushICache.cpp",
     "FoldLinearArithConstants.cpp",
     "InlinableNatives.cpp",
     "InstructionReordering.cpp",
@@ -68,6 +69,7 @@ UNIFIED_SOURCES += [
     "PerfSpewer.cpp",
     "ProcessExecutableMemory.cpp",
     "RangeAnalysis.cpp",
+    "ReciprocalMulConstants.cpp",
     "Recover.cpp",
     "RegisterAllocator.cpp",
     "RematerializedFrame.cpp",
@@ -82,6 +84,7 @@ UNIFIED_SOURCES += [
     "ShuffleAnalysis.cpp",
     "Sink.cpp",
     "Snapshots.cpp",
+    "Trampoline.cpp",
     "TrialInlining.cpp",
     "TypePolicy.cpp",
     "ValueNumbering.cpp",
@@ -111,7 +114,6 @@ elif CONFIG["JS_CODEGEN_X86"] or CONFIG["JS_CODEGEN_X64"]:
     if CONFIG["JS_CODEGEN_X64"]:
         UNIFIED_SOURCES += [
             "x64/Assembler-x64.cpp",
-            "x64/Bailouts-x64.cpp",
             "x64/CodeGenerator-x64.cpp",
             "x64/Lowering-x64.cpp",
             "x64/MacroAssembler-x64.cpp",
@@ -120,7 +122,6 @@ elif CONFIG["JS_CODEGEN_X86"] or CONFIG["JS_CODEGEN_X64"]:
     else:
         UNIFIED_SOURCES += [
             "x86/Assembler-x86.cpp",
-            "x86/Bailouts-x86.cpp",
             "x86/CodeGenerator-x86.cpp",
             "x86/Lowering-x86.cpp",
             "x86/MacroAssembler-x86.cpp",
@@ -130,7 +131,6 @@ elif CONFIG["JS_CODEGEN_ARM"]:
     UNIFIED_SOURCES += [
         "arm/Architecture-arm.cpp",
         "arm/Assembler-arm.cpp",
-        "arm/Bailouts-arm.cpp",
         "arm/CodeGenerator-arm.cpp",
         "arm/disasm/Constants-arm.cpp",
         "arm/disasm/Disasm-arm.cpp",
@@ -150,7 +150,6 @@ elif CONFIG["JS_CODEGEN_ARM64"]:
     UNIFIED_SOURCES += [
         "arm64/Architecture-arm64.cpp",
         "arm64/Assembler-arm64.cpp",
-        "arm64/Bailouts-arm64.cpp",
         "arm64/CodeGenerator-arm64.cpp",
         "arm64/Lowering-arm64.cpp",
         "arm64/MacroAssembler-arm64.cpp",
@@ -186,7 +185,6 @@ elif CONFIG["JS_CODEGEN_MIPS32"] or CONFIG["JS_CODEGEN_MIPS64"]:
     UNIFIED_SOURCES += [
         "mips-shared/Architecture-mips-shared.cpp",
         "mips-shared/Assembler-mips-shared.cpp",
-        "mips-shared/Bailouts-mips-shared.cpp",
         "mips-shared/CodeGenerator-mips-shared.cpp",
         "mips-shared/Lowering-mips-shared.cpp",
         "mips-shared/MacroAssembler-mips-shared.cpp",
@@ -196,7 +194,6 @@ elif CONFIG["JS_CODEGEN_MIPS32"] or CONFIG["JS_CODEGEN_MIPS64"]:
         UNIFIED_SOURCES += [
             "mips32/Architecture-mips32.cpp",
             "mips32/Assembler-mips32.cpp",
-            "mips32/Bailouts-mips32.cpp",
             "mips32/CodeGenerator-mips32.cpp",
             "mips32/Lowering-mips32.cpp",
             "mips32/MacroAssembler-mips32.cpp",
@@ -209,7 +206,6 @@ elif CONFIG["JS_CODEGEN_MIPS32"] or CONFIG["JS_CODEGEN_MIPS64"]:
         UNIFIED_SOURCES += [
             "mips64/Architecture-mips64.cpp",
             "mips64/Assembler-mips64.cpp",
-            "mips64/Bailouts-mips64.cpp",
             "mips64/CodeGenerator-mips64.cpp",
             "mips64/Lowering-mips64.cpp",
             "mips64/MacroAssembler-mips64.cpp",
@@ -218,7 +214,48 @@ elif CONFIG["JS_CODEGEN_MIPS32"] or CONFIG["JS_CODEGEN_MIPS64"]:
         ]
         if CONFIG["JS_SIMULATOR_MIPS64"]:
             UNIFIED_SOURCES += ["mips64/Simulator-mips64.cpp"]
-
+elif CONFIG["JS_CODEGEN_LOONG64"]:
+    UNIFIED_SOURCES += [
+        "loong64/Architecture-loong64.cpp",
+        "loong64/Assembler-loong64.cpp",
+        "loong64/CodeGenerator-loong64.cpp",
+        "loong64/Lowering-loong64.cpp",
+        "loong64/MacroAssembler-loong64.cpp",
+        "loong64/MoveEmitter-loong64.cpp",
+        "loong64/Trampoline-loong64.cpp",
+    ]
+    if CONFIG["JS_SIMULATOR_LOONG64"]:
+        UNIFIED_SOURCES += ["loong64/Simulator-loong64.cpp"]
+elif CONFIG["JS_CODEGEN_RISCV64"]:
+    UNIFIED_SOURCES += [
+        "riscv64/Architecture-riscv64.cpp",
+        "riscv64/Assembler-riscv64.cpp",
+        "riscv64/CodeGenerator-riscv64.cpp",
+        "riscv64/constant/Base-constant-riscv.cpp",
+        "riscv64/disasm/Disasm-riscv64.cpp",
+        "riscv64/extension/base-assembler-riscv.cc",
+        "riscv64/extension/base-riscv-i.cc",
+        "riscv64/extension/extension-riscv-a.cc",
+        "riscv64/extension/extension-riscv-c.cc",
+        "riscv64/extension/extension-riscv-d.cc",
+        "riscv64/extension/extension-riscv-f.cc",
+        "riscv64/extension/extension-riscv-m.cc",
+        "riscv64/extension/extension-riscv-v.cc",
+        "riscv64/extension/extension-riscv-zicsr.cc",
+        "riscv64/extension/extension-riscv-zifencei.cc",
+        "riscv64/Lowering-riscv64.cpp",
+        "riscv64/MacroAssembler-riscv64.cpp",
+        "riscv64/MoveEmitter-riscv64.cpp",
+        "riscv64/Trampoline-riscv64.cpp",
+    ]
+    if CONFIG["JS_SIMULATOR_RISCV64"]:
+        UNIFIED_SOURCES += ["riscv64/Simulator-riscv64.cpp"]
+elif CONFIG["JS_CODEGEN_WASM32"]:
+    UNIFIED_SOURCES += [
+        "wasm32/CodeGenerator-wasm32.cpp",
+        "wasm32/MacroAssembler-wasm32.cpp",
+        "wasm32/Trampoline-wasm32.cpp",
+    ]
 
 # Generate jit/MIROpsGenerated.h from jit/MIROps.yaml
 GeneratedFile(

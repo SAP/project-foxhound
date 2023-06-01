@@ -6,24 +6,26 @@
 
 const {
   AutoRefreshHighlighter,
-} = require("devtools/server/actors/highlighters/auto-refresh");
+} = require("resource://devtools/server/actors/highlighters/auto-refresh.js");
 const {
   CanvasFrameAnonymousContentHelper,
   getBindingElementAndPseudo,
   hasPseudoClassLock,
   isNodeValid,
   moveInfobar,
-} = require("devtools/server/actors/highlighters/utils/markup");
-const { PSEUDO_CLASSES } = require("devtools/shared/css/constants");
+} = require("resource://devtools/server/actors/highlighters/utils/markup.js");
+const {
+  PSEUDO_CLASSES,
+} = require("resource://devtools/shared/css/constants.js");
 const {
   getCurrentZoom,
   setIgnoreLayoutChanges,
-} = require("devtools/shared/layout/utils");
+} = require("resource://devtools/shared/layout/utils.js");
 const {
   getNodeDisplayName,
   getNodeGridFlexType,
-} = require("devtools/server/actors/inspector/utils");
-const nodeConstants = require("devtools/shared/dom-node-constants");
+} = require("resource://devtools/server/actors/inspector/utils.js");
+const nodeConstants = require("resource://devtools/shared/dom-node-constants.js");
 loader.lazyGetter(this, "HighlightersBundle", () => {
   return new Localization(["devtools/shared/highlighters.ftl"], true);
 });
@@ -585,7 +587,12 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
         "L" +
         p4.x +
         "," +
-        p4.y;
+        p4.y +
+        " " +
+        "L" +
+        p1.x +
+        "," +
+        p1.y;
     } else {
       // Otherwise, just draw the region itself, not a filled rectangle.
       const { p1: np1, p2: np2, p3: np3, p4: np4 } = nextBoxQuad;
@@ -723,7 +730,7 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
     // Move guide into place or hide it if no valid co-ordinate was found.
     this._updateGuide("top", Math.round(toShowY[0]));
     this._updateGuide("right", Math.round(toShowX[1]) - 1);
-    this._updateGuide("bottom", Math.round(toShowY[1] - 1));
+    this._updateGuide("bottom", Math.round(toShowY[1]) - 1);
     this._updateGuide("left", Math.round(toShowX[0]));
   }
 
@@ -742,10 +749,10 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
    * @param  {Integer} point
    *         x or y co-ordinate. If this is undefined we hide the guide.
    */
-  _updateGuide(side, point = -1) {
+  _updateGuide(side, point) {
     const guide = this.getElement("guide-" + side);
 
-    if (point <= 0) {
+    if (!point || point <= 0) {
       guide.setAttribute("hidden", "true");
       return false;
     }

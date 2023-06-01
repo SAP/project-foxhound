@@ -5,15 +5,15 @@
 Transform the repackage signing task into an actual task description.
 """
 
-
 import os
 
+from taskgraph.transforms.base import TransformSequence
+from voluptuous import Optional
+
 from gecko_taskgraph.loader.single_dep import schema
-from gecko_taskgraph.transforms.base import TransformSequence
+from gecko_taskgraph.transforms.task import task_description_schema
 from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 from gecko_taskgraph.util.scriptworker import get_signing_cert_scope_per_platform
-from gecko_taskgraph.transforms.task import task_description_schema
-from voluptuous import Optional
 
 repackage_signing_description_schema = schema.extend(
     {
@@ -25,9 +25,9 @@ repackage_signing_description_schema = schema.extend(
 )
 
 SIGNING_FORMATS = {
-    "target.installer.exe": ["autograph_authenticode_stub"],
-    "target.stub-installer.exe": ["autograph_authenticode_stub"],
-    "target.installer.msi": ["autograph_authenticode"],
+    "target.installer.exe": ["autograph_authenticode_sha2_stub"],
+    "target.stub-installer.exe": ["autograph_authenticode_sha2_stub"],
+    "target.installer.msi": ["autograph_authenticode_sha2"],
     "target.installer.msix": ["autograph_authenticode_sha2"],
 }
 
@@ -105,7 +105,7 @@ def make_repackage_signing_description(config, jobs):
         scopes = [signing_cert_scope]
 
         upstream_artifacts = []
-        for artifact in sorted(dep_job.release_artifacts):
+        for artifact in sorted(dep_job.attributes.get("release_artifacts")):
             basename = os.path.basename(artifact)
             if basename in SIGNING_FORMATS:
                 upstream_artifacts.append(

@@ -404,3 +404,169 @@ promise_test(async t => {
   assert_not_equals(decoder_config.description, null);
   encoder.close();
 }, "Emit decoder config and extra data.");
+
+promise_test(async t => {
+  let sample_rate = 48000;
+  let total_duration_s = 1;
+  let data_count = 100;
+  let init = getDefaultCodecInit(t);
+  init.output = (chunk, metadata) => {}
+
+  let encoder = new AudioEncoder(init);
+
+  // No encodes yet.
+  assert_equals(encoder.encodeQueueSize, 0);
+
+  let config = {
+    codec: 'opus',
+    sampleRate: sample_rate,
+    numberOfChannels: 2,
+    bitrate: 256000 //256kbit
+  };
+  encoder.configure(config);
+
+  // Still no encodes.
+  assert_equals(encoder.encodeQueueSize, 0);
+
+  let datas = [];
+  let timestamp_us = 0;
+  let data_duration_s = total_duration_s / data_count;
+  let data_length = data_duration_s * config.sampleRate;
+  for (let i = 0; i < data_count; i++) {
+    let data = make_audio_data(timestamp_us, config.numberOfChannels,
+      config.sampleRate, data_length);
+    datas.push(data);
+    timestamp_us += data_duration_s * 1_000_000;
+  }
+
+  let lastDequeueSize = Infinity;
+  encoder.ondequeue = () => {
+    assert_greater_than(lastDequeueSize, 0, "Dequeue event after queue empty");
+    assert_greater_than(lastDequeueSize, encoder.encodeQueueSize,
+                        "Dequeue event without decreased queue size");
+    lastDequeueSize = encoder.encodeQueueSize;
+  };
+
+  for (let data of datas)
+    encoder.encode(data);
+
+  assert_greater_than_equal(encoder.encodeQueueSize, 0);
+  assert_less_than_equal(encoder.encodeQueueSize, data_count);
+
+  await encoder.flush();
+  // We can guarantee that all encodes are processed after a flush.
+  assert_equals(encoder.encodeQueueSize, 0);
+  // Last dequeue event should fire when the queue is empty.
+  assert_equals(lastDequeueSize, 0);
+
+  // Reset this to Infinity to track the decline of queue size for this next
+  // batch of encodes.
+  lastDequeueSize = Infinity;
+
+  for (let data of datas) {
+    encoder.encode(data);
+    data.close();
+  }
+
+  assert_greater_than_equal(encoder.encodeQueueSize, 0);
+  encoder.reset();
+  assert_equals(encoder.encodeQueueSize, 0);
+}, 'encodeQueueSize test');
+
+const testOpusEncoderConfigs = [
+  {
+    comment: 'Empty Opus config',
+    opus: {},
+  },
+  {
+    comment: 'Opus with frameDuration',
+    opus: {frameDuration: 2500},
+  },
+  {
+    comment: 'Opus with complexity',
+    opus: {complexity: 10},
+  },
+  {
+    comment: 'Opus with useinbandfec',
+    opus: {
+      packetlossperc: 15,
+      useinbandfec: true,
+    },
+  },
+  {
+    comment: 'Opus with usedtx',
+    opus: {usedtx: true},
+  },
+  {
+    comment: 'Opus mixed parameters',
+    opus: {
+      frameDuration: 40000,
+      complexity: 0,
+      packetlossperc: 10,
+      useinbandfec: true,
+      usedtx: true,
+    },
+  }
+];
+
+testOpusEncoderConfigs.forEach(entry => {
+  promise_test(async t => {
+    let sample_rate = 48000;
+    let total_duration_s = 0.5;
+    let data_count = 10;
+    let outputs = [];
+    let init = {
+      error: e => {
+        assert_unreached('error: ' + e);
+      },
+      output: chunk => {
+        outputs.push(chunk);
+      }
+    };
+
+    let encoder = new AudioEncoder(init);
+
+    assert_equals(encoder.state, 'unconfigured');
+    let config = {
+      codec: 'opus',
+      sampleRate: sample_rate,
+      numberOfChannels: 2,
+      bitrate: 256000,  // 256kbit
+      opus: entry.opus,
+    };
+
+    encoder.configure(config);
+
+    let timestamp_us = 0;
+    let data_duration_s = total_duration_s / data_count;
+    let data_length = data_duration_s * config.sampleRate;
+    for (let i = 0; i < data_count; i++) {
+      let data = make_audio_data(
+          timestamp_us, config.numberOfChannels, config.sampleRate,
+          data_length);
+      encoder.encode(data);
+      data.close();
+      timestamp_us += data_duration_s * 1_000_000;
+    }
+
+    // Encoders might output an extra buffer of silent padding.
+    let padding_us = data_duration_s * 1_000_000;
+
+    await encoder.flush();
+    encoder.close();
+    assert_greater_than_equal(outputs.length, data_count);
+    assert_equals(outputs[0].timestamp, 0, 'first chunk timestamp');
+    let total_encoded_duration = 0
+    for (chunk of outputs) {
+      assert_greater_than(chunk.byteLength, 0, 'chunk byteLength');
+      assert_greater_than_equal(
+          timestamp_us + padding_us, chunk.timestamp, 'chunk timestamp');
+      assert_greater_than(chunk.duration, 0, 'chunk duration');
+      total_encoded_duration += chunk.duration;
+    }
+
+    // The total duration might be padded with silence.
+    assert_greater_than_equal(
+        total_encoded_duration, total_duration_s * 1_000_000);
+  }, 'Test encoding Opus with additional parameters: ' + entry.comment);
+})

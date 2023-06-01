@@ -4,19 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "timecard.h"
-
 #include <string>
-#include <sstream>
 
 #define GTEST_HAS_RTTI 0
 #include "gtest/gtest.h"
 
-#include "nspr.h"
 #include "nss.h"
 #include "ssl.h"
-
-#include "nsThreadUtils.h"
 
 #include "sdp/RsdparsaSdpParser.h"
 #include "sdp/SipccSdpParser.h"
@@ -3391,9 +3385,9 @@ TEST_P(NewSdpTest, NewSctpportSdpParse) {
   ParseSdp(kNewSctpportOfferDraft21, false);
 }
 
-INSTANTIATE_TEST_CASE_P(RoundTripSerialize, NewSdpTest,
-                        ::testing::Combine(::testing::Bool(),
-                                           ::testing::Bool()));
+INSTANTIATE_TEST_SUITE_P(RoundTripSerialize, NewSdpTest,
+                         ::testing::Combine(::testing::Bool(),
+                                            ::testing::Bool()));
 
 const std::string kCandidateInSessionSDP =
     "v=0" CRLF "o=Mozilla-SIPUA-35.0a1 5184 0 IN IP4 0.0.0.0" CRLF
@@ -3740,7 +3734,7 @@ TEST_P(NewSdpTest, ParseInvalidSimulcastNoSuchSendRid) {
   ParseSdp("v=0" CRLF "o=- 4294967296 2 IN IP4 127.0.0.1" CRLF "s=SIP Call" CRLF
            "c=IN IP4 198.51.100.7" CRLF "b=CT:5000" CRLF "t=0 0" CRLF
            "m=video 56436 RTP/SAVPF 120" CRLF "a=rtpmap:120 VP8/90000" CRLF
-           "a=sendrecv" CRLF "a=simulcast: send rid=9" CRLF
+           "a=sendrecv" CRLF "a=simulcast:send 9" CRLF
            "a=rid:9 recv max-width=800;max-height=600" CRLF,
            false);
   ASSERT_NE(0U, ParseErrorCount());
@@ -3750,28 +3744,28 @@ TEST_P(NewSdpTest, ParseInvalidSimulcastNoSuchRecvRid) {
   ParseSdp("v=0" CRLF "o=- 4294967296 2 IN IP4 127.0.0.1" CRLF "s=SIP Call" CRLF
            "c=IN IP4 198.51.100.7" CRLF "b=CT:5000" CRLF "t=0 0" CRLF
            "m=video 56436 RTP/SAVPF 120" CRLF "a=rtpmap:120 VP8/90000" CRLF
-           "a=sendrecv" CRLF "a=simulcast: recv rid=9" CRLF
+           "a=sendrecv" CRLF "a=simulcast:recv 9" CRLF
            "a=rid:9 send max-width=800;max-height=600" CRLF,
            false);
   ASSERT_NE(0U, ParseErrorCount());
 }
 
-TEST_P(NewSdpTest, ParseInvalidSimulcastNotSending) {
+TEST_P(NewSdpTest, ParseSimulcastNotSending) {
   ParseSdp("v=0" CRLF "o=- 4294967296 2 IN IP4 127.0.0.1" CRLF "s=SIP Call" CRLF
            "c=IN IP4 198.51.100.7" CRLF "b=CT:5000" CRLF "t=0 0" CRLF
            "m=video 56436 RTP/SAVPF 120" CRLF "a=rtpmap:120 VP8/90000" CRLF
-           "a=recvonly" CRLF "a=simulcast: send rid=120" CRLF,
+           "a=recvonly" CRLF "a=simulcast:send 120" CRLF "a=rid:120 send" CRLF,
            false);
-  ASSERT_NE(0U, ParseErrorCount());
+  ASSERT_EQ(0U, ParseErrorCount());
 }
 
-TEST_P(NewSdpTest, ParseInvalidSimulcastNotReceiving) {
+TEST_P(NewSdpTest, ParseSimulcastNotReceiving) {
   ParseSdp("v=0" CRLF "o=- 4294967296 2 IN IP4 127.0.0.1" CRLF "s=SIP Call" CRLF
            "c=IN IP4 198.51.100.7" CRLF "b=CT:5000" CRLF "t=0 0" CRLF
            "m=video 56436 RTP/SAVPF 120" CRLF "a=rtpmap:120 VP8/90000" CRLF
-           "a=sendonly" CRLF "a=simulcast: recv rid=120" CRLF,
+           "a=sendonly" CRLF "a=simulcast:recv 120" CRLF "a=rid:120 recv" CRLF,
            false);
-  ASSERT_NE(0U, ParseErrorCount());
+  ASSERT_EQ(0U, ParseErrorCount());
 }
 
 TEST_P(NewSdpTest, ParseInvalidRidNoSuchPt) {
@@ -3779,7 +3773,7 @@ TEST_P(NewSdpTest, ParseInvalidRidNoSuchPt) {
   ParseSdp("v=0" CRLF "o=- 4294967296 2 IN IP4 127.0.0.1" CRLF "s=SIP Call" CRLF
            "c=IN IP4 198.51.100.7" CRLF "b=CT:5000" CRLF "t=0 0" CRLF
            "m=video 56436 RTP/SAVPF 120" CRLF "a=rtpmap:120 VP8/90000" CRLF
-           "a=sendrecv" CRLF "a=simulcast: recv rid=9" CRLF
+           "a=sendrecv" CRLF "a=simulcast:recv rid=9" CRLF
            "a=rid:9 recv pt=101;max-width=800;max-height=600" CRLF,
            false);
   ASSERT_NE(0U, ParseErrorCount());
@@ -5132,7 +5126,7 @@ TEST(NewSdpTestNoFixture, CheckRidValidParse)
     ASSERT_EQ(0U, rid.formats.size());
     ASSERT_EQ(0U, rid.constraints.maxWidth);
     ASSERT_EQ(0U, rid.constraints.maxHeight);
-    ASSERT_EQ(0U, rid.constraints.maxFps);
+    ASSERT_FALSE(rid.constraints.maxFps.isSome());
     ASSERT_EQ(0U, rid.constraints.maxFs);
     ASSERT_EQ(0U, rid.constraints.maxBr);
     ASSERT_EQ(0U, rid.constraints.maxPps);
@@ -5147,7 +5141,7 @@ TEST(NewSdpTestNoFixture, CheckRidValidParse)
     ASSERT_EQ(96U, rid.formats[0]);
     ASSERT_EQ(800U, rid.constraints.maxWidth);
     ASSERT_EQ(0U, rid.constraints.maxHeight);
-    ASSERT_EQ(0U, rid.constraints.maxFps);
+    ASSERT_FALSE(rid.constraints.maxFps.isSome());
     ASSERT_EQ(0U, rid.constraints.maxFs);
     ASSERT_EQ(0U, rid.constraints.maxBr);
     ASSERT_EQ(0U, rid.constraints.maxPps);
@@ -5164,21 +5158,8 @@ TEST(NewSdpTestNoFixture, CheckRidValidParse)
     ASSERT_EQ(98U, rid.formats[2]);
     ASSERT_EQ(800U, rid.constraints.maxWidth);
     ASSERT_EQ(0U, rid.constraints.maxHeight);
-    ASSERT_EQ(0U, rid.constraints.maxFps);
-    ASSERT_EQ(0U, rid.constraints.maxFs);
-    ASSERT_EQ(0U, rid.constraints.maxBr);
-    ASSERT_EQ(0U, rid.constraints.maxPps);
-    ASSERT_EQ(0U, rid.dependIds.size());
-  }
-
-  {
-    SdpRidAttributeList::Rid rid(ParseRid("0123456789az-_ recv max-width=800"));
-    ASSERT_EQ("0123456789az-_", rid.id);
-    ASSERT_EQ(sdp::kRecv, rid.direction);
-    ASSERT_EQ(0U, rid.formats.size());
-    ASSERT_EQ(800U, rid.constraints.maxWidth);
-    ASSERT_EQ(0U, rid.constraints.maxHeight);
-    ASSERT_EQ(0U, rid.constraints.maxFps);
+    ASSERT_FALSE(rid.constraints.maxFps.isSome());
+    ASSERT_FALSE(rid.constraints.maxFps.isSome());
     ASSERT_EQ(0U, rid.constraints.maxFs);
     ASSERT_EQ(0U, rid.constraints.maxBr);
     ASSERT_EQ(0U, rid.constraints.maxPps);
@@ -5190,7 +5171,7 @@ TEST(NewSdpTestNoFixture, CheckRidValidParse)
     ASSERT_EQ(0U, rid.formats.size());
     ASSERT_EQ(0U, rid.constraints.maxWidth);
     ASSERT_EQ(0U, rid.constraints.maxHeight);
-    ASSERT_EQ(0U, rid.constraints.maxFps);
+    ASSERT_FALSE(rid.constraints.maxFps.isSome());
     ASSERT_EQ(0U, rid.constraints.maxFs);
     ASSERT_EQ(0U, rid.constraints.maxBr);
     ASSERT_EQ(0U, rid.constraints.maxPps);
@@ -5203,7 +5184,7 @@ TEST(NewSdpTestNoFixture, CheckRidValidParse)
     ASSERT_EQ(96U, rid.formats[0]);
     ASSERT_EQ(0U, rid.constraints.maxWidth);
     ASSERT_EQ(0U, rid.constraints.maxHeight);
-    ASSERT_EQ(0U, rid.constraints.maxFps);
+    ASSERT_FALSE(rid.constraints.maxFps.isSome());
     ASSERT_EQ(0U, rid.constraints.maxFs);
     ASSERT_EQ(0U, rid.constraints.maxBr);
     ASSERT_EQ(0U, rid.constraints.maxPps);
@@ -5219,7 +5200,7 @@ TEST(NewSdpTestNoFixture, CheckRidValidParse)
     ASSERT_EQ(96U, rid.formats[0]);
     ASSERT_EQ(0U, rid.constraints.maxWidth);
     ASSERT_EQ(0U, rid.constraints.maxHeight);
-    ASSERT_EQ(0U, rid.constraints.maxFps);
+    ASSERT_FALSE(rid.constraints.maxFps.isSome());
     ASSERT_EQ(0U, rid.constraints.maxFs);
     ASSERT_EQ(30000U, rid.constraints.maxBr);
     ASSERT_EQ(0U, rid.constraints.maxPps);
@@ -5234,7 +5215,7 @@ TEST(NewSdpTestNoFixture, CheckRidValidParse)
     ASSERT_EQ(98U, rid.formats[2]);
     ASSERT_EQ(0U, rid.constraints.maxWidth);
     ASSERT_EQ(0U, rid.constraints.maxHeight);
-    ASSERT_EQ(0U, rid.constraints.maxFps);
+    ASSERT_FALSE(rid.constraints.maxFps.isSome());
     ASSERT_EQ(0U, rid.constraints.maxFs);
     ASSERT_EQ(0U, rid.constraints.maxBr);
     ASSERT_EQ(0U, rid.constraints.maxPps);
@@ -5246,7 +5227,7 @@ TEST(NewSdpTestNoFixture, CheckRidValidParse)
     ASSERT_EQ(0U, rid.formats.size());
     ASSERT_EQ(800U, rid.constraints.maxWidth);
     ASSERT_EQ(0U, rid.constraints.maxHeight);
-    ASSERT_EQ(0U, rid.constraints.maxFps);
+    ASSERT_FALSE(rid.constraints.maxFps.isSome());
     ASSERT_EQ(0U, rid.constraints.maxFs);
     ASSERT_EQ(0U, rid.constraints.maxBr);
     ASSERT_EQ(0U, rid.constraints.maxPps);
@@ -5258,7 +5239,7 @@ TEST(NewSdpTestNoFixture, CheckRidValidParse)
     ASSERT_EQ(0U, rid.formats.size());
     ASSERT_EQ(0U, rid.constraints.maxWidth);
     ASSERT_EQ(640U, rid.constraints.maxHeight);
-    ASSERT_EQ(0U, rid.constraints.maxFps);
+    ASSERT_FALSE(rid.constraints.maxFps.isSome());
     ASSERT_EQ(0U, rid.constraints.maxFs);
     ASSERT_EQ(0U, rid.constraints.maxBr);
     ASSERT_EQ(0U, rid.constraints.maxPps);
@@ -5270,7 +5251,7 @@ TEST(NewSdpTestNoFixture, CheckRidValidParse)
     ASSERT_EQ(0U, rid.formats.size());
     ASSERT_EQ(0U, rid.constraints.maxWidth);
     ASSERT_EQ(0U, rid.constraints.maxHeight);
-    ASSERT_EQ(30U, rid.constraints.maxFps);
+    ASSERT_EQ(30.0, *rid.constraints.maxFps);
     ASSERT_EQ(0U, rid.constraints.maxFs);
     ASSERT_EQ(0U, rid.constraints.maxBr);
     ASSERT_EQ(0U, rid.constraints.maxPps);
@@ -5282,7 +5263,7 @@ TEST(NewSdpTestNoFixture, CheckRidValidParse)
     ASSERT_EQ(0U, rid.formats.size());
     ASSERT_EQ(0U, rid.constraints.maxWidth);
     ASSERT_EQ(0U, rid.constraints.maxHeight);
-    ASSERT_EQ(0U, rid.constraints.maxFps);
+    ASSERT_FALSE(rid.constraints.maxFps.isSome());
     ASSERT_EQ(3600U, rid.constraints.maxFs);
     ASSERT_EQ(0U, rid.constraints.maxBr);
     ASSERT_EQ(0U, rid.constraints.maxPps);
@@ -5294,7 +5275,7 @@ TEST(NewSdpTestNoFixture, CheckRidValidParse)
     ASSERT_EQ(0U, rid.formats.size());
     ASSERT_EQ(0U, rid.constraints.maxWidth);
     ASSERT_EQ(0U, rid.constraints.maxHeight);
-    ASSERT_EQ(0U, rid.constraints.maxFps);
+    ASSERT_FALSE(rid.constraints.maxFps.isSome());
     ASSERT_EQ(0U, rid.constraints.maxFs);
     ASSERT_EQ(30000U, rid.constraints.maxBr);
     ASSERT_EQ(0U, rid.constraints.maxPps);
@@ -5306,7 +5287,7 @@ TEST(NewSdpTestNoFixture, CheckRidValidParse)
     ASSERT_EQ(0U, rid.formats.size());
     ASSERT_EQ(0U, rid.constraints.maxWidth);
     ASSERT_EQ(0U, rid.constraints.maxHeight);
-    ASSERT_EQ(0U, rid.constraints.maxFps);
+    ASSERT_FALSE(rid.constraints.maxFps.isSome());
     ASSERT_EQ(0U, rid.constraints.maxFs);
     ASSERT_EQ(0U, rid.constraints.maxBr);
     ASSERT_EQ(9216000U, rid.constraints.maxPps);
@@ -5318,7 +5299,7 @@ TEST(NewSdpTestNoFixture, CheckRidValidParse)
     ASSERT_EQ(0U, rid.formats.size());
     ASSERT_EQ(0U, rid.constraints.maxWidth);
     ASSERT_EQ(0U, rid.constraints.maxHeight);
-    ASSERT_EQ(0U, rid.constraints.maxFps);
+    ASSERT_FALSE(rid.constraints.maxFps.isSome());
     ASSERT_EQ(0U, rid.constraints.maxFs);
     ASSERT_EQ(0U, rid.constraints.maxBr);
     ASSERT_EQ(0U, rid.constraints.maxPps);
@@ -5331,7 +5312,7 @@ TEST(NewSdpTestNoFixture, CheckRidValidParse)
     ASSERT_EQ(0U, rid.formats.size());
     ASSERT_EQ(0U, rid.constraints.maxWidth);
     ASSERT_EQ(0U, rid.constraints.maxHeight);
-    ASSERT_EQ(0U, rid.constraints.maxFps);
+    ASSERT_FALSE(rid.constraints.maxFps.isSome());
     ASSERT_EQ(0U, rid.constraints.maxFs);
     ASSERT_EQ(0U, rid.constraints.maxBr);
     ASSERT_EQ(0U, rid.constraints.maxPps);
@@ -5343,7 +5324,7 @@ TEST(NewSdpTestNoFixture, CheckRidValidParse)
     ASSERT_EQ(0U, rid.formats.size());
     ASSERT_EQ(0U, rid.constraints.maxWidth);
     ASSERT_EQ(0U, rid.constraints.maxHeight);
-    ASSERT_EQ(0U, rid.constraints.maxFps);
+    ASSERT_FALSE(rid.constraints.maxFps.isSome());
     ASSERT_EQ(0U, rid.constraints.maxFs);
     ASSERT_EQ(0U, rid.constraints.maxBr);
     ASSERT_EQ(0U, rid.constraints.maxPps);
@@ -5358,7 +5339,7 @@ TEST(NewSdpTestNoFixture, CheckRidValidParse)
     ASSERT_EQ(0U, rid.formats.size());
     ASSERT_EQ(800U, rid.constraints.maxWidth);
     ASSERT_EQ(600U, rid.constraints.maxHeight);
-    ASSERT_EQ(0U, rid.constraints.maxFps);
+    ASSERT_FALSE(rid.constraints.maxFps.isSome());
     ASSERT_EQ(0U, rid.constraints.maxFs);
     ASSERT_EQ(0U, rid.constraints.maxBr);
     ASSERT_EQ(0U, rid.constraints.maxPps);
@@ -5373,7 +5354,7 @@ TEST(NewSdpTestNoFixture, CheckRidValidParse)
     ASSERT_EQ(97U, rid.formats[1]);
     ASSERT_EQ(800U, rid.constraints.maxWidth);
     ASSERT_EQ(600U, rid.constraints.maxHeight);
-    ASSERT_EQ(0U, rid.constraints.maxFps);
+    ASSERT_FALSE(rid.constraints.maxFps.isSome());
     ASSERT_EQ(0U, rid.constraints.maxFs);
     ASSERT_EQ(0U, rid.constraints.maxBr);
     ASSERT_EQ(0U, rid.constraints.maxPps);
@@ -5386,7 +5367,7 @@ TEST(NewSdpTestNoFixture, CheckRidValidParse)
     ASSERT_EQ(0U, rid.formats.size());
     ASSERT_EQ(800U, rid.constraints.maxWidth);
     ASSERT_EQ(600U, rid.constraints.maxHeight);
-    ASSERT_EQ(0U, rid.constraints.maxFps);
+    ASSERT_FALSE(rid.constraints.maxFps.isSome());
     ASSERT_EQ(0U, rid.constraints.maxFs);
     ASSERT_EQ(0U, rid.constraints.maxBr);
     ASSERT_EQ(0U, rid.constraints.maxPps);
@@ -5401,7 +5382,7 @@ TEST(NewSdpTestNoFixture, CheckRidValidParse)
     ASSERT_EQ(0U, rid.formats.size());
     ASSERT_EQ(800U, rid.constraints.maxWidth);
     ASSERT_EQ(600U, rid.constraints.maxHeight);
-    ASSERT_EQ(0U, rid.constraints.maxFps);
+    ASSERT_FALSE(rid.constraints.maxFps.isSome());
     ASSERT_EQ(0U, rid.constraints.maxFs);
     ASSERT_EQ(0U, rid.constraints.maxBr);
     ASSERT_EQ(0U, rid.constraints.maxPps);
@@ -5435,6 +5416,7 @@ TEST(NewSdpTestNoFixture, CheckRidInvalidParse)
   ParseInvalid<SdpRidAttributeList::Rid>("foo send depend=", 16);
   ParseInvalid<SdpRidAttributeList::Rid>("foo send depend=,", 16);
   ParseInvalid<SdpRidAttributeList::Rid>("foo send depend=1,", 18);
+  ParseInvalid<SdpRidAttributeList::Rid>("0123456789az-_", 14);
 }
 
 TEST(NewSdpTestNoFixture, CheckRidSerialize)
@@ -5502,7 +5484,7 @@ TEST(NewSdpTestNoFixture, CheckRidSerialize)
     SdpRidAttributeList::Rid rid;
     rid.id = "foo";
     rid.direction = sdp::kSend;
-    rid.constraints.maxFps = 30;
+    rid.constraints.maxFps = Some(30);
     std::ostringstream os;
     rid.Serialize(os);
     ASSERT_EQ("foo send max-fps=30", os.str());

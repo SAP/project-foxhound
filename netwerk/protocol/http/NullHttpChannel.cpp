@@ -83,12 +83,6 @@ NullHttpChannel::SetTopBrowsingContextId(uint64_t) {
 }
 
 NS_IMETHODIMP
-NullHttpChannel::GetFlashPluginState(
-    nsIHttpChannel::FlashPluginState* aResult) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
 NullHttpChannel::GetTransferSize(uint64_t* aTransferSize) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -160,16 +154,6 @@ NullHttpChannel::VisitRequestHeaders(nsIHttpHeaderVisitor* aVisitor) {
 
 NS_IMETHODIMP
 NullHttpChannel::VisitNonDefaultRequestHeaders(nsIHttpHeaderVisitor* aVisitor) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-NullHttpChannel::GetAllowPipelining(bool* aAllowPipelining) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-NullHttpChannel::SetAllowPipelining(bool aAllowPipelining) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -286,6 +270,9 @@ NullHttpChannel::GetEncodedBodySize(uint64_t* aEncodedBodySize) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
+void NullHttpChannel::SetSource(
+    mozilla::UniquePtr<mozilla::ProfileChunkedBuffer> aSource) {}
+
 //-----------------------------------------------------------------------------
 // NullHttpChannel::nsIChannel
 //-----------------------------------------------------------------------------
@@ -331,7 +318,7 @@ NullHttpChannel::SetNotificationCallbacks(
 }
 
 NS_IMETHODIMP
-NullHttpChannel::GetSecurityInfo(nsISupports** aSecurityInfo) {
+NullHttpChannel::GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -434,6 +421,19 @@ NullHttpChannel::IsPending(bool* _retval) { return NS_ERROR_NOT_IMPLEMENTED; }
 
 NS_IMETHODIMP
 NullHttpChannel::GetStatus(nsresult* aStatus) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP NullHttpChannel::SetCanceledReason(const nsACString& aReason) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP NullHttpChannel::GetCanceledReason(nsACString& aReason) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP NullHttpChannel::CancelWithReason(nsresult aStatus,
+                                                const nsACString& aReason) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -737,31 +737,6 @@ NullHttpChannel::SetAllRedirectsPassTimingAllowCheck(
 
 NS_IMETHODIMP
 NullHttpChannel::TimingAllowCheck(nsIPrincipal* aOrigin, bool* _retval) {
-  if (!mResourcePrincipal || !aOrigin) {
-    *_retval = false;
-    return NS_OK;
-  }
-
-  bool sameOrigin = false;
-  nsresult rv = mResourcePrincipal->Equals(aOrigin, &sameOrigin);
-  if (NS_SUCCEEDED(rv) && sameOrigin) {
-    *_retval = true;
-    return NS_OK;
-  }
-
-  if (mTimingAllowOriginHeader == "*") {
-    *_retval = true;
-    return NS_OK;
-  }
-
-  nsAutoCString origin;
-  aOrigin->GetAsciiOrigin(origin);
-
-  if (mTimingAllowOriginHeader == origin) {
-    *_retval = true;
-    return NS_OK;
-  }
-
   *_retval = false;
   return NS_OK;
 }
@@ -775,6 +750,12 @@ NullHttpChannel::GetCacheReadStart(mozilla::TimeStamp* aCacheReadStart) {
 NS_IMETHODIMP
 NullHttpChannel::GetCacheReadEnd(mozilla::TimeStamp* aCacheReadEnd) {
   *aCacheReadEnd = mAsyncOpenTime;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+NullHttpChannel::GetTransactionPending(mozilla::TimeStamp* aRetVal) {
+  *aRetVal = mAsyncOpenTime;
   return NS_OK;
 }
 
@@ -859,6 +840,7 @@ IMPL_TIMING_ATTR(CacheReadStart)
 IMPL_TIMING_ATTR(CacheReadEnd)
 IMPL_TIMING_ATTR(RedirectStart)
 IMPL_TIMING_ATTR(RedirectEnd)
+IMPL_TIMING_ATTR(TransactionPending)
 
 #undef IMPL_TIMING_ATTR
 

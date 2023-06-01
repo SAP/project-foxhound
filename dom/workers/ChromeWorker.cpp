@@ -6,12 +6,12 @@
 
 #include "ChromeWorker.h"
 
+#include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/WorkerBinding.h"
 #include "nsContentUtils.h"
 #include "WorkerPrivate.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /* static */
 already_AddRefed<ChromeWorker> ChromeWorker::Constructor(
@@ -20,8 +20,9 @@ already_AddRefed<ChromeWorker> ChromeWorker::Constructor(
   JSContext* cx = aGlobal.Context();
 
   RefPtr<WorkerPrivate> workerPrivate = WorkerPrivate::Constructor(
-      cx, aScriptURL, true /* aIsChromeWorker */, WorkerKindDedicated, u""_ns,
-      VoidCString(), nullptr /*aLoadInfo */, aRv);
+      cx, aScriptURL, true /* aIsChromeWorker */, WorkerKindDedicated,
+      RequestCredentials::Omit, WorkerType::Classic, u""_ns, VoidCString(),
+      nullptr /*aLoadInfo */, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -69,5 +70,4 @@ JSObject* ChromeWorker::WrapObject(JSContext* aCx,
   return wrapper;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

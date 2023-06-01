@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 var httpServer = new HttpServer();
@@ -14,7 +13,6 @@ var principal;
 
 const REPORT_SERVER_PORT = httpServer.identity.primaryPort;
 const REPORT_SERVER_URI = "http://localhost";
-const REPORT_SERVER_PATH = "/report";
 
 /**
  * Construct a callback that listens to a report submission and either passes
@@ -119,22 +117,32 @@ function run_test() {
   );
 
   // test that inline script violations cause a report.
-  makeTest(0, { "blocked-uri": "inline" }, false, function(csp) {
-    let inlineOK = true;
-    inlineOK = csp.getAllowsInline(
-      Ci.nsIContentSecurityPolicy.SCRIPT_SRC_DIRECTIVE,
-      "", // aNonce
-      false, // aParserCreated
-      null, // aTriggeringElement
-      null, // nsICSPEventListener
-      "", // aContentOfPseudoScript
-      0, // aLineNumber
-      0
-    ); // aColumnNumber
+  makeTest(
+    0,
+    {
+      "blocked-uri": "inline",
+      "effective-directive": "script-src-elem",
+      disposition: "enforce",
+    },
+    false,
+    function(csp) {
+      let inlineOK = true;
+      inlineOK = csp.getAllowsInline(
+        Ci.nsIContentSecurityPolicy.SCRIPT_SRC_ELEM_DIRECTIVE,
+        false, // aHasUnsafeHash
+        "", // aNonce
+        false, // aParserCreated
+        null, // aTriggeringElement
+        null, // nsICSPEventListener
+        "", // aContentOfPseudoScript
+        0, // aLineNumber
+        0
+      ); // aColumnNumber
 
-    // this is not a report only policy, so it better block inline scripts
-    Assert.ok(!inlineOK);
-  });
+      // this is not a report only policy, so it better block inline scripts
+      Assert.ok(!inlineOK);
+    }
+  );
 
   // test that eval violations cause a report.
   makeTest(
@@ -191,25 +199,31 @@ function run_test() {
   });
 
   // test that inline script violations cause a report in report-only policy
-  makeTest(3, { "blocked-uri": "inline" }, true, function(csp) {
-    let inlineOK = true;
-    inlineOK = csp.getAllowsInline(
-      Ci.nsIContentSecurityPolicy.SCRIPT_SRC_DIRECTIVE,
-      "", // aNonce
-      false, // aParserCreated
-      null, // aTriggeringElement
-      null, // nsICSPEventListener
-      "", // aContentOfPseudoScript
-      0, // aLineNumber
-      0
-    ); // aColumnNumber
+  makeTest(
+    3,
+    { "blocked-uri": "inline", disposition: "report" },
+    true,
+    function(csp) {
+      let inlineOK = true;
+      inlineOK = csp.getAllowsInline(
+        Ci.nsIContentSecurityPolicy.SCRIPT_SRC_ELEM_DIRECTIVE,
+        false, // aHasUnsafeHash
+        "", // aNonce
+        false, // aParserCreated
+        null, // aTriggeringElement
+        null, // nsICSPEventListener
+        "", // aContentOfPseudoScript
+        0, // aLineNumber
+        0
+      ); // aColumnNumber
 
-    // this is a report only policy, so it better allow inline scripts
-    Assert.ok(inlineOK);
-  });
+      // this is a report only policy, so it better allow inline scripts
+      Assert.ok(inlineOK);
+    }
+  );
 
   // test that eval violations cause a report in report-only policy
-  makeTest(4, { "blocked-uri": "inline" }, true, function(csp) {
+  makeTest(4, { "blocked-uri": "eval" }, true, function(csp) {
     let evalOK = true,
       oReportViolation = { value: false };
     evalOK = csp.getAllowsEval(oReportViolation);
@@ -222,7 +236,7 @@ function run_test() {
     if (oReportViolation.value) {
       // force the logging, since the getter doesn't.
       csp.logViolationDetails(
-        Ci.nsIContentSecurityPolicy.VIOLATION_TYPE_INLINE_SCRIPT,
+        Ci.nsIContentSecurityPolicy.VIOLATION_TYPE_EVAL,
         null, // aTriggeringElement
         null, // nsICSPEventListener
         selfuri.asciiSpec,

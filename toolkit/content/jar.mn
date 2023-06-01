@@ -2,15 +2,14 @@ toolkit.jar:
 %  content global %content/global/ contentaccessible=yes
 *  content/global/license.html
    content/global/minimal-xul.css
-*  content/global/xul.css
+   content/global/xul.css
    content/global/autocomplete.css
    content/global/aboutAbout.js
    content/global/aboutAbout.html
-#ifdef MOZILLA_OFFICIAL
-   content/global/aboutRights.xhtml
-#else
-   content/global/aboutRights.xhtml           (aboutRights-unbranded.xhtml)
-#endif
+   content/global/aboutLogging.js
+   content/global/aboutLogging.html
+   content/global/aboutNetError.mjs
+   content/global/aboutNetError.xhtml
    content/global/aboutNetworking.js
    content/global/aboutNetworking.html
 #ifndef ANDROID
@@ -18,6 +17,11 @@ toolkit.jar:
    content/global/aboutProfiles.xhtml
 #endif
    content/global/aboutRights.js
+#ifdef MOZILLA_OFFICIAL
+   content/global/aboutRights.xhtml
+#else
+   content/global/aboutRights.xhtml           (aboutRights-unbranded.xhtml)
+#endif
    content/global/aboutServiceWorkers.js
    content/global/aboutServiceWorkers.xhtml
    content/global/aboutwebrtc/aboutWebrtc.css   (aboutwebrtc/aboutWebrtc.css)
@@ -88,10 +92,18 @@ toolkit.jar:
    content/global/elements/message-bar.js      (widgets/message-bar.js)
    content/global/elements/menu.js             (widgets/menu.js)
    content/global/elements/menupopup.js        (widgets/menupopup.js)
+   content/global/elements/moz-button-group.css    (widgets/moz-button-group/moz-button-group.css)
+   content/global/elements/moz-button-group.mjs    (widgets/moz-button-group/moz-button-group.mjs)
    content/global/elements/moz-input-box.js    (widgets/moz-input-box.js)
+   content/global/elements/moz-support-link.mjs    (widgets/moz-support-link/moz-support-link.mjs)
+   content/global/elements/moz-toggle.css      (widgets/moz-toggle/moz-toggle.css)
+   content/global/elements/moz-toggle.mjs      (widgets/moz-toggle/moz-toggle.mjs)
    content/global/elements/named-deck.js       (widgets/named-deck.js)
    content/global/elements/notificationbox.js  (widgets/notificationbox.js)
    content/global/elements/panel.js            (widgets/panel.js)
+   content/global/elements/panel-item.css      (widgets/panel-item.css)
+   content/global/elements/panel-list.css      (widgets/panel-list.css)
+   content/global/elements/panel-list.js       (widgets/panel-list.js)
    content/global/elements/radio.js            (widgets/radio.js)
    content/global/elements/richlistbox.js      (widgets/richlistbox.js)
    content/global/elements/marquee.css         (widgets/marquee.css)
@@ -103,10 +115,16 @@ toolkit.jar:
    content/global/elements/stringbundle.js     (widgets/stringbundle.js)
    content/global/elements/tabbox.js           (widgets/tabbox.js)
    content/global/elements/text.js             (widgets/text.js)
+   content/global/elements/textrecognition.js  (widgets/textrecognition.js)
    content/global/elements/toolbarbutton.js    (widgets/toolbarbutton.js)
    content/global/elements/videocontrols.js    (widgets/videocontrols.js)
    content/global/elements/tree.js             (widgets/tree.js)
    content/global/elements/wizard.js           (widgets/wizard.js)
+   content/global/vendor/lit.all.mjs           (widgets/vendor/lit.all.mjs)
+   content/global/lit-utils.mjs                (widgets/lit-utils.mjs)
+   content/global/neterror/aboutNetErrorCodes.js                    (neterror/aboutNetErrorCodes.js)
+   content/global/neterror/supportpages/connection-not-secure.html  (neterror/supportpages/connection-not-secure.html)
+   content/global/neterror/supportpages/time-errors.html            (neterror/supportpages/time-errors.html)
 #ifdef XP_MACOSX
    content/global/macWindowMenu.js
 #endif
@@ -114,4 +132,5 @@ toolkit.jar:
    content/global/gmp-sources/widevinecdm.json (gmp-sources/widevinecdm.json)
 
 # Third party files
-   content/global/third_party/d3/d3.js         (/third_party/js/d3/d3.js)
+   content/global/third_party/d3/d3.js                (/third_party/js/d3/d3.js)
+   content/global/third_party/cfworker/json-schema.js (/third_party/js/cfworker/json-schema.js)

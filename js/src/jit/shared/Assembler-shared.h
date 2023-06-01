@@ -24,14 +24,17 @@
 #include "wasm/WasmCodegenTypes.h"
 #include "wasm/WasmConstants.h"
 
-#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) || \
-    defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64)
+#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) ||      \
+    defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64) ||  \
+    defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_WASM32) || \
+    defined(JS_CODEGEN_RISCV64)
 // Push return addresses callee-side.
 #  define JS_USE_LINK_REGISTER
 #endif
 
 #if defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64) || \
-    defined(JS_CODEGEN_ARM64)
+    defined(JS_CODEGEN_ARM64) || defined(JS_CODEGEN_LOONG64) || \
+    defined(JS_CODEGEN_RISCV64)
 // JS_CODELABEL_LINKMODE gives labels additional metadata
 // describing how Bind() should patch them.
 #  define JS_CODELABEL_LINKMODE
@@ -41,6 +44,7 @@ namespace js {
 namespace jit {
 
 enum class FrameType;
+enum class ExceptionResumeKind : int32_t;
 
 namespace Disassembler {
 class HeapAccess;
@@ -97,6 +101,7 @@ struct Imm32 {
 
   explicit Imm32(int32_t value) : value(value) {}
   explicit Imm32(FrameType type) : Imm32(int32_t(type)) {}
+  explicit Imm32(ExceptionResumeKind kind) : Imm32(int32_t(kind)) {}
 
   static inline Imm32 ShiftOf(enum Scale s) {
     switch (s) {
@@ -149,6 +154,11 @@ struct ImmPtr {
   void* value;
 
   struct NoCheckToken {};
+
+  explicit constexpr ImmPtr(std::nullptr_t) : value(nullptr) {
+    // Explicit constructor for nullptr. This ensures ImmPtr(0) can't be called.
+    // Either use ImmPtr(nullptr) or ImmWord(0).
+  }
 
   explicit ImmPtr(void* value, NoCheckToken) : value(value) {
     // A special unchecked variant for contexts where we know it is safe to
@@ -588,9 +598,7 @@ class AssemblerShared {
   wasm::CallSiteTargetVector callSiteTargets_;
   wasm::TrapSiteVectorArray trapSites_;
   wasm::SymbolicAccessVector symbolicAccesses_;
-#ifdef ENABLE_WASM_EXCEPTIONS
-  wasm::WasmTryNoteVector tryNotes_;
-#endif
+  wasm::TryNoteVector tryNotes_;
 #ifdef DEBUG
   // To facilitate figuring out which part of SM created each instruction as
   // shown by IONFLAGS=codegen, this maintains a stack of (notionally)
@@ -659,8 +667,7 @@ class AssemblerShared {
   }
   // This one returns an index as the try note so that it can be looked up
   // later to add the end point and stack position of the try block.
-#ifdef ENABLE_WASM_EXCEPTIONS
-  [[nodiscard]] bool append(wasm::WasmTryNote tryNote, size_t* tryNoteIndex) {
+  [[nodiscard]] bool append(wasm::TryNote tryNote, size_t* tryNoteIndex) {
     if (!tryNotes_.append(tryNote)) {
       enoughMemory_ = false;
       return false;
@@ -668,15 +675,12 @@ class AssemblerShared {
     *tryNoteIndex = tryNotes_.length() - 1;
     return true;
   }
-#endif
 
   wasm::CallSiteVector& callSites() { return callSites_; }
   wasm::CallSiteTargetVector& callSiteTargets() { return callSiteTargets_; }
   wasm::TrapSiteVectorArray& trapSites() { return trapSites_; }
   wasm::SymbolicAccessVector& symbolicAccesses() { return symbolicAccesses_; }
-#ifdef ENABLE_WASM_EXCEPTIONS
-  wasm::WasmTryNoteVector& tryNotes() { return tryNotes_; }
-#endif
+  wasm::TryNoteVector& tryNotes() { return tryNotes_; }
 };
 
 // AutoCreatedBy pushes and later pops a who-created-these-insns? tag into the

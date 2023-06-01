@@ -17,10 +17,13 @@ class NeqoHttp3Conn final {
                        const NetAddr& aLocalAddr, const NetAddr& aRemoteAddr,
                        uint32_t aMaxTableSize, uint16_t aMaxBlockedStreams,
                        uint64_t aMaxData, uint64_t aMaxStreamData,
-                       const nsACString& aQlogDir, NeqoHttp3Conn** aConn) {
+                       bool aVersionNegotiation, bool aWebTransport,
+                       const nsACString& aQlogDir, uint32_t aDatagramSize,
+                       NeqoHttp3Conn** aConn) {
     return neqo_http3conn_new(&aOrigin, &aAlpn, &aLocalAddr, &aRemoteAddr,
                               aMaxTableSize, aMaxBlockedStreams, aMaxData,
-                              aMaxStreamData, &aQlogDir,
+                              aMaxStreamData, aVersionNegotiation,
+                              aWebTransport, &aQlogDir, aDatagramSize,
                               (const mozilla::net::NeqoHttp3Conn**)aConn);
   }
 
@@ -89,6 +92,14 @@ class NeqoHttp3Conn final {
     neqo_http3conn_cancel_fetch(this, aStreamId, aError);
   }
 
+  void ResetStream(uint64_t aStreamId, uint64_t aError) {
+    neqo_http3conn_reset_stream(this, aStreamId, aError);
+  }
+
+  void StreamStopSending(uint64_t aStreamId, uint64_t aError) {
+    neqo_http3conn_stream_stop_sending(this, aStreamId, aError);
+  }
+
   void SetResumptionToken(nsTArray<uint8_t>& aToken) {
     neqo_http3conn_set_resumption_token(this, &aToken);
   }
@@ -99,11 +110,43 @@ class NeqoHttp3Conn final {
 
   bool IsZeroRtt() { return neqo_http3conn_is_zero_rtt(this); }
 
-  nsrefcnt AddRef() { return neqo_http3conn_addref(this); }
-  nsrefcnt Release() { return neqo_http3conn_release(this); }
+  void AddRef() { neqo_http3conn_addref(this); }
+  void Release() { neqo_http3conn_release(this); }
 
   void GetStats(Http3Stats* aStats) {
     return neqo_http3conn_get_stats(this, aStats);
+  }
+
+  nsresult CreateWebTransport(const nsACString& aHost, const nsACString& aPath,
+                              const nsACString& aHeaders,
+                              uint64_t* aSessionId) {
+    return neqo_http3conn_webtransport_create_session(this, &aHost, &aPath,
+                                                      &aHeaders, aSessionId);
+  }
+
+  nsresult CloseWebTransport(uint64_t aSessionId, uint32_t aError,
+                             const nsACString& aMessage) {
+    return neqo_http3conn_webtransport_close_session(this, aSessionId, aError,
+                                                     &aMessage);
+  }
+
+  nsresult CreateWebTransportStream(uint64_t aSessionId,
+                                    WebTransportStreamType aStreamType,
+                                    uint64_t* aStreamId) {
+    return neqo_http3conn_webtransport_create_stream(this, aSessionId,
+                                                     aStreamType, aStreamId);
+  }
+
+  nsresult WebTransportSendDatagram(uint64_t aSessionId,
+                                    nsTArray<uint8_t>& aData,
+                                    uint64_t aTrackingId) {
+    return neqo_http3conn_webtransport_send_datagram(this, aSessionId, &aData,
+                                                     aTrackingId);
+  }
+
+  nsresult WebTransportMaxDatagramSize(uint64_t aSessionId, uint64_t* aResult) {
+    return neqo_http3conn_webtransport_max_datagram_size(this, aSessionId,
+                                                         aResult);
   }
 
  private:

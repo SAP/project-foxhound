@@ -22,7 +22,7 @@ option(env="CBINDGEN", nargs=1, when=cbindgen_is_needed, help="Path to cbindgen"
 def check_cbindgen_version(cbindgen, fatal=False):
     log.debug("trying cbindgen: %s" % cbindgen)
 
-    cbindgen_min_version = Version("0.19.0")
+    cbindgen_min_version = Version("0.24.3")
 
     # cbindgen x.y.z
     version = Version(check_cmd_output(cbindgen, "--version").strip().split(" ")[1])
@@ -166,6 +166,13 @@ def bindgen_clang_compiler(
     if sysroot_path:
         flags.extend(("--sysroot", sysroot_path))
     info = check_compiler([clang_path] + flags, "C++", target)
+    # Usually, one check_compiler pass would be enough, but when cross-compiling
+    # and the host and target don't use the same default C++ standard, we don't
+    # get the --std flag, so try again. This is the same thing as valid_compiler()
+    # does in toolchain.configure.
+    if info.flags:
+        flags += info.flags
+        info = check_compiler([clang_path] + flags, "C++", target)
     return namespace(
         path=clang_path,
         flags=flags + info.flags,

@@ -2,11 +2,20 @@
 name = "error-support"
 version = "0.1.0"
 authors = ["Thom Chiovoloni <tchiovoloni@mozilla.com>"]
-edition = "2018"
+edition = "2021"
 license = "MPL-2.0"
+autotests = false
 
 [dependencies]
+log = "0.4"
+lazy_static = { version = "1.4" }
+parking_lot = { version = ">=0.11,<=0.12" }
+uniffi = "0.23"
+error-support-macros = { path = "macros" }
 
 [dependencies.backtrace]
 optional = true
 version = "0.3"
+
+[build-dependencies]
+uniffi = { version = "0.23", features = ["build"] }

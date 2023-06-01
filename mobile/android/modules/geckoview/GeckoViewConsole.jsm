@@ -5,20 +5,11 @@
 
 var EXPORTED_SYMBOLS = ["GeckoViewConsole"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { GeckoViewUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewUtils.sys.mjs"
 );
-const { GeckoViewUtils } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewUtils.jsm"
-);
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  Services: "resource://gre/modules/Services.jsm",
-});
 
 const { debug, warn } = GeckoViewUtils.initLogging("Console");
-
-const LOG_EVENT_TOPIC = "console-api-log-event";
 
 var GeckoViewConsole = {
   _isEnabled: false,
@@ -34,21 +25,24 @@ var GeckoViewConsole = {
     }
 
     this._isEnabled = !!aVal;
+    const ConsoleAPIStorage = Cc[
+      "@mozilla.org/consoleAPI-storage;1"
+    ].getService(Ci.nsIConsoleAPIStorage);
     if (this._isEnabled) {
-      Services.obs.addObserver(this, LOG_EVENT_TOPIC);
-    } else {
-      Services.obs.removeObserver(this, LOG_EVENT_TOPIC);
+      this._consoleMessageListener = this._handleConsoleMessage.bind(this);
+      ConsoleAPIStorage.addLogEventListener(
+        this._consoleMessageListener,
+        Cc["@mozilla.org/systemprincipal;1"].createInstance(Ci.nsIPrincipal)
+      );
+    } else if (this._consoleMessageListener) {
+      ConsoleAPIStorage.removeLogEventListener(this._consoleMessageListener);
+      delete this._consoleMessageListener;
     }
   },
 
   observe(aSubject, aTopic, aData) {
-    switch (aTopic) {
-      case "nsPref:changed":
-        this.enabled = Services.prefs.getBoolPref(aData, false);
-        break;
-      case LOG_EVENT_TOPIC:
-        this._handleConsoleMessage(aSubject);
-        break;
+    if (aTopic == "nsPref:changed") {
+      this.enabled = Services.prefs.getBoolPref(aData, false);
     }
   },
 
@@ -85,11 +79,12 @@ var GeckoViewConsole = {
         "chrome://browser/locale/browser.properties"
       );
       const args = aMessage.arguments;
-      const filename = this.abbreviateSourceURL(args[0].filename);
+      const msgDetails = args[0] ?? aMessage;
+      const filename = this.abbreviateSourceURL(msgDetails.filename);
       const functionName =
-        args[0].functionName ||
+        msgDetails.functionName ||
         bundle.GetStringFromName("stacktrace.anonymousFunction");
-      const lineNumber = args[0].lineNumber;
+      const lineNumber = msgDetails.lineNumber;
 
       let body = bundle.formatStringFromName("stacktrace.outputMessage", [
         filename,

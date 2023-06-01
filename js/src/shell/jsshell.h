@@ -12,6 +12,7 @@
 #include "mozilla/TimeStamp.h"
 
 #include "builtin/MapObject.h"
+#include "js/CompileOptions.h"
 #include "js/GCVector.h"
 #include "shell/ModuleLoader.h"
 #include "threading/ConditionVariable.h"
@@ -105,6 +106,7 @@ extern bool encodeSelfHostedCode;
 extern bool enableCodeCoverage;
 extern bool enableDisassemblyDumps;
 extern bool offthreadCompilation;
+extern JS::DelazificationOption defaultDelazificationMode;
 extern bool enableAsmJS;
 extern bool enableWasm;
 extern bool enableSharedMemory;
@@ -115,27 +117,20 @@ extern bool enableWasmOptimizing;
 JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE);
 #undef WASM_FEATURE
 
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-extern bool enableWasmSimdWormhole;
-#endif
 extern bool enableWasmVerbose;
 extern bool enableTestWasmAwaitTier2;
 extern bool enableSourcePragmas;
 extern bool enableAsyncStacks;
 extern bool enableAsyncStackCaptureDebuggeeOnly;
-extern bool enableStreams;
-extern bool enableReadableByteStreams;
-extern bool enableBYOBStreamReaders;
-extern bool enableWritableStreams;
-extern bool enableReadableStreamPipeTo;
 extern bool enableWeakRefs;
 extern bool enableToSource;
 extern bool enablePropertyErrorMessageFix;
 extern bool enableIteratorHelpers;
+extern bool enableShadowRealms;
 extern bool enableArrayGrouping;
+extern bool enableArrayFromAsync;
 extern bool enablePrivateClassFields;
 extern bool enablePrivateClassMethods;
-extern bool enableErgonomicBrandChecks;
 #ifdef ENABLE_CHANGE_ARRAY_BY_COPY
 extern bool enableChangeArrayByCopy;
 #endif
@@ -177,13 +172,11 @@ extern UniqueChars processWideModuleLoadPath;
 bool CreateAlias(JSContext* cx, const char* dstName,
                  JS::HandleObject namespaceObj, const char* srcName);
 
-enum class OffThreadJobKind { CompileScript, CompileModule, Decode };
-
 class NonshrinkingGCObjectVector
-    : public GCVector<HeapPtrObject, 0, SystemAllocPolicy> {
+    : public GCVector<HeapPtr<JSObject*>, 0, SystemAllocPolicy> {
  public:
   bool traceWeak(JSTracer* trc) {
-    for (HeapPtrObject& obj : *this) {
+    for (HeapPtr<JSObject*>& obj : *this) {
       TraceWeakEdge(trc, &obj, "NonshrinkingGCObjectVector element");
     }
     return true;
@@ -229,7 +222,7 @@ struct ShellContext {
   /*
    * Watchdog thread state.
    */
-  js::Mutex watchdogLock;
+  js::Mutex watchdogLock MOZ_UNANNOTATED;
   js::ConditionVariable watchdogWakeup;
   mozilla::Maybe<js::Thread> watchdogThread;
   mozilla::Maybe<mozilla::TimeStamp> watchdogTimeout;
@@ -252,7 +245,7 @@ struct ShellContext {
   UniquePtr<MarkBitObservers> markObservers;
 
   // Off-thread parse state.
-  js::Monitor offThreadMonitor;
+  js::Monitor offThreadMonitor MOZ_UNANNOTATED;
   Vector<OffThreadJob*, 0, SystemAllocPolicy> offThreadJobs;
 
   // Queued finalization registry cleanup jobs.

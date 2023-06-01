@@ -43,8 +43,8 @@ class TRRQuery : public AHostResolver {
       uint32_t aTtl, bool pb) override;
   virtual nsresult GetHostRecord(const nsACString& host,
                                  const nsACString& aTrrServer, uint16_t type,
-                                 uint16_t flags, uint16_t af, bool pb,
-                                 const nsCString& originSuffix,
+                                 nsIDNSService::DNSFlags flags, uint16_t af,
+                                 bool pb, const nsCString& originSuffix,
                                  nsHostRecord** result) override {
     if (!mHostResolver) {
       return NS_ERROR_FAILURE;
@@ -83,7 +83,8 @@ class TRRQuery : public AHostResolver {
   RefPtr<nsHostResolver> mHostResolver;
   RefPtr<nsHostRecord> mRecord;
 
-  Mutex mTrrLock;  // lock when accessing the mTrrA[AAA] pointers
+  Mutex mTrrLock
+      MOZ_UNANNOTATED;  // lock when accessing the mTrrA[AAA] pointers
   RefPtr<mozilla::net::TRR> mTrrA;
   RefPtr<mozilla::net::TRR> mTrrAAAA;
   RefPtr<mozilla::net::TRR> mTrrByType;

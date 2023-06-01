@@ -4,20 +4,26 @@
 const { AddonTestUtils } = ChromeUtils.import(
   "resource://testing-common/AddonTestUtils.jsm"
 );
-const { BuiltInThemes } = ChromeUtils.import(
-  "resource:///modules/BuiltInThemes.jsm"
+const { BuiltInThemes } = ChromeUtils.importESModule(
+  "resource:///modules/BuiltInThemes.sys.mjs"
 );
 
-AddonTestUtils.initMochitest(this);
-
 const kTestThemeId = "test-colorway@mozilla.org";
+
+add_setup(async function setup() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.theme.colorway-closet", false]],
+  });
+
+  AddonTestUtils.initMochitest(this);
+});
 
 add_task(async function testMonochromaticList() {
   // Install test theme before loading view.
   const themeXpi = AddonTestUtils.createTempWebExtensionFile({
     manifest: {
       name: "Monochromatic Theme",
-      applications: { gecko: { id: kTestThemeId } },
+      browser_specific_settings: { gecko: { id: kTestThemeId } },
       theme: {},
     },
   });
@@ -93,7 +99,7 @@ add_task(async function testMonochromaticList() {
 
   // Check that the test theme is in the enabled section.
   let addon = await AddonManager.getAddonByID("test-colorway@mozilla.org");
-  let enabledSection = getSection(doc, "enabled");
+  let enabledSection = getSection(doc, "theme-enabled-section");
   let mutationPromise = BrowserTestUtils.waitForMutationCondition(
     enabledSection,
     { childList: true },
@@ -140,7 +146,7 @@ add_task(async function testExpiredThemes() {
   const themeXpi = AddonTestUtils.createTempWebExtensionFile({
     manifest: {
       name: "Monochromatic Theme",
-      applications: { gecko: { id: kTestThemeId } },
+      browser_specific_settings: { gecko: { id: kTestThemeId } },
       theme: {},
     },
   });
@@ -198,7 +204,7 @@ add_task(async function testExpiredThemes() {
     );
   }
 
-  let disabledSection = getSection(doc, "disabled");
+  let disabledSection = getSection(doc, "theme-disabled-section");
   let card = disabledSection.querySelector(
     `addon-card[addon-id='${kTestThemeId}']`
   );

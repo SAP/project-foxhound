@@ -18,7 +18,6 @@
 #include "mozilla/FilePreferences.h"
 #include "prtime.h"
 
-#include <sys/fcntl.h>
 #include <sys/select.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -26,10 +25,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
-#include <utime.h>
 #include <dirent.h>
-#include <ctype.h>
-#include <locale.h>
 
 #if defined(XP_MACOSX)
 #  include <sys/xattr.h>
@@ -45,13 +41,9 @@
 #endif
 
 #include "nsDirectoryServiceDefs.h"
-#include "nsCRT.h"
 #include "nsCOMPtr.h"
-#include "nsMemory.h"
 #include "nsIFile.h"
 #include "nsString.h"
-#include "nsReadableUtils.h"
-#include "prproces.h"
 #include "nsIDirectoryEnumerator.h"
 #include "nsSimpleEnumerator.h"
 #include "private/pprio.h"
@@ -78,7 +70,6 @@ static nsresult MacErrorMapper(OSErr inErr);
 
 #include "nsNativeCharsetUtils.h"
 #include "nsTraceRefcnt.h"
-#include "nsHashKeys.h"
 
 /**
  *  we need these for statfs()
@@ -96,11 +87,6 @@ extern "C" int statvfs(const char*, struct statvfs*);
 
 #ifdef HAVE_SYS_VFS_H
 #  include <sys/vfs.h>
-#endif
-
-#ifdef HAVE_SYS_MOUNT_H
-#  include <sys/param.h>
-#  include <sys/mount.h>
 #endif
 
 #if defined(HAVE_STATVFS64) && (!defined(LINUX) && !defined(__osf__))
@@ -284,14 +270,10 @@ NS_IMPL_ISUPPORTS(nsLocalFile, nsILocalFileMac, nsIFile)
 NS_IMPL_ISUPPORTS(nsLocalFile, nsIFile)
 #endif
 
-nsresult nsLocalFile::nsLocalFileConstructor(nsISupports* aOuter,
-                                             const nsIID& aIID,
+nsresult nsLocalFile::nsLocalFileConstructor(const nsIID& aIID,
                                              void** aInstancePtr) {
   if (NS_WARN_IF(!aInstancePtr)) {
     return NS_ERROR_INVALID_ARG;
-  }
-  if (NS_WARN_IF(aOuter)) {
-    return NS_ERROR_NO_AGGREGATION;
   }
 
   *aInstancePtr = nullptr;
@@ -560,9 +542,10 @@ nsLocalFile::AppendNative(const nsACString& aFragment) {
     return NS_OK;
   }
 
-  // only one component of path can be appended
+  // only one component of path can be appended and cannot append ".."
   nsACString::const_iterator begin, end;
-  if (FindCharInReadable('/', aFragment.BeginReading(begin),
+  if (aFragment.EqualsASCII("..") ||
+      FindCharInReadable('/', aFragment.BeginReading(begin),
                          aFragment.EndReading(end))) {
     return NS_ERROR_FILE_UNRECOGNIZED_PATH;
   }
@@ -576,9 +559,33 @@ nsLocalFile::AppendRelativeNativePath(const nsACString& aFragment) {
     return NS_OK;
   }
 
-  // No leading '/'
-  if (aFragment.First() == '/') {
+  // No leading '/' and cannot be ".."
+  if (aFragment.First() == '/' || aFragment.EqualsASCII("..")) {
     return NS_ERROR_FILE_UNRECOGNIZED_PATH;
+  }
+
+  if (aFragment.Contains('/')) {
+    // can't contain .. as a path component. Ensure that the valid components
+    // "foo..foo", "..foo", and "foo.." are not falsely detected,
+    // but the invalid paths "../", "foo/..", "foo/../foo",
+    // "../foo", etc are.
+    constexpr auto doubleDot = "/.."_ns;
+    nsACString::const_iterator start, end, offset;
+    aFragment.BeginReading(start);
+    aFragment.EndReading(end);
+    offset = end;
+    while (FindInReadable(doubleDot, start, offset)) {
+      if (offset == end || *offset == '/') {
+        return NS_ERROR_FILE_UNRECOGNIZED_PATH;
+      }
+      start = offset;
+      offset = end;
+    }
+
+    // catches the remaining cases of prefixes
+    if (StringBeginsWith(aFragment, "../"_ns)) {
+      return NS_ERROR_FILE_UNRECOGNIZED_PATH;
+    }
   }
 
   if (!mPath.EqualsLiteral("/")) {
@@ -643,6 +650,11 @@ nsLocalFile::SetNativeLeafName(const nsACString& aLeafName) {
   LocateNativeLeafName(begin, end);
   mPath.Replace(begin.get() - mPath.get(), Distance(begin, end), aLeafName);
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsLocalFile::GetDisplayName(nsAString& aLeafName) {
+  return GetLeafName(aLeafName);
 }
 
 nsCString nsLocalFile::NativePath() { return mPath; }
@@ -1089,7 +1101,7 @@ nsLocalFile::MoveToFollowingLinksNative(nsIFile* aNewParent,
 }
 
 NS_IMETHODIMP
-nsLocalFile::Remove(bool aRecursive) {
+nsLocalFile::Remove(bool aRecursive, uint32_t* aRemoveCount) {
   CHECK_mPath();
   ENSURE_STAT_CACHE();
 
@@ -1101,7 +1113,11 @@ nsLocalFile::Remove(bool aRecursive) {
   }
 
   if (isSymLink || !S_ISDIR(mCachedStat.st_mode)) {
-    return NSRESULT_FOR_RETURN(unlink(mPath.get()));
+    rv = NSRESULT_FOR_RETURN(unlink(mPath.get()));
+    if (NS_SUCCEEDED(rv) && aRemoveCount) {
+      *aRemoveCount += 1;
+    }
+    return rv;
   }
 
   if (aRecursive) {
@@ -1126,11 +1142,13 @@ nsLocalFile::Remove(bool aRecursive) {
       if (NS_FAILED(rv)) {
         return NS_ERROR_FAILURE;
       }
-      rv = file->Remove(aRecursive);
+      // XXX: We care the result of the removal here while
+      // nsLocalFileWin does not. We should align the behavior. (bug 1779696)
+      rv = file->Remove(aRecursive, aRemoveCount);
 
 #ifdef ANDROID
       // See bug 580434 - Bionic gives us just deleted files
-      if (rv == NS_ERROR_FILE_TARGET_DOES_NOT_EXIST) {
+      if (rv == NS_ERROR_FILE_NOT_FOUND) {
         continue;
       }
 #endif
@@ -1140,13 +1158,18 @@ nsLocalFile::Remove(bool aRecursive) {
     }
   }
 
-  return NSRESULT_FOR_RETURN(rmdir(mPath.get()));
+  rv = NSRESULT_FOR_RETURN(rmdir(mPath.get()));
+  if (NS_SUCCEEDED(rv) && aRemoveCount) {
+    *aRemoveCount += 1;
+  }
+  return rv;
 }
 
-nsresult nsLocalFile::GetLastModifiedTimeImpl(PRTime* aLastModTime,
-                                              bool aFollowLinks) {
+nsresult nsLocalFile::GetTimeImpl(PRTime* aTime,
+                                  nsLocalFile::TimeField aTimeField,
+                                  bool aFollowLinks) {
   CHECK_mPath();
-  if (NS_WARN_IF(!aLastModTime)) {
+  if (NS_WARN_IF(!aTime)) {
     return NS_ERROR_INVALID_ARG;
   }
 
@@ -1158,17 +1181,36 @@ nsresult nsLocalFile::GetLastModifiedTimeImpl(PRTime* aLastModTime,
     return NSRESULT_FOR_ERRNO();
   }
 
+  struct timespec* timespec;
+  switch (aTimeField) {
+    case TimeField::AccessedTime:
 #if (defined(__APPLE__) && defined(__MACH__))
-  *aLastModTime = TimespecToMillis(fileStats.st_mtimespec);
+      timespec = &fileStats.st_atimespec;
 #else
-  *aLastModTime = TimespecToMillis(fileStats.st_mtim);
+      timespec = &fileStats.st_atim;
 #endif
+      break;
+
+    case TimeField::ModifiedTime:
+#if (defined(__APPLE__) && defined(__MACH__))
+      timespec = &fileStats.st_mtimespec;
+#else
+      timespec = &fileStats.st_mtim;
+#endif
+      break;
+
+    default:
+      MOZ_CRASH("Unknown TimeField");
+  }
+
+  *aTime = TimespecToMillis(*timespec);
 
   return NS_OK;
 }
 
-nsresult nsLocalFile::SetLastModifiedTimeImpl(PRTime aLastModTime,
-                                              bool aFollowLinks) {
+nsresult nsLocalFile::SetTimeImpl(PRTime aTime,
+                                  nsLocalFile::TimeField aTimeField,
+                                  bool aFollowLinks) {
   CHECK_mPath();
 
   using UtimesFn = int (*)(const char*, const timeval*);
@@ -1180,49 +1222,92 @@ nsresult nsLocalFile::SetLastModifiedTimeImpl(PRTime aLastModTime,
   }
 #endif
 
-  int result;
-  if (aLastModTime != 0) {
-    ENSURE_STAT_CACHE();
-    timeval access{};
-#if (defined(__APPLE__) && defined(__MACH__))
-    access.tv_sec = mCachedStat.st_atimespec.tv_sec;
-    access.tv_usec = mCachedStat.st_atimespec.tv_nsec / 1000;
-#else
-    access.tv_sec = mCachedStat.st_atim.tv_sec;
-    access.tv_usec = mCachedStat.st_atim.tv_nsec / 1000;
-#endif
-    timeval modification{};
-    modification.tv_sec = aLastModTime / PR_MSEC_PER_SEC;
-    modification.tv_usec = (aLastModTime % PR_MSEC_PER_SEC) * PR_USEC_PER_MSEC;
+  ENSURE_STAT_CACHE();
 
-    timeval times[2];
-    times[0] = access;
-    times[1] = modification;
-    result = utimesFn(mPath.get(), times);
-  } else {
-    result = utimesFn(mPath.get(), nullptr);
+  if (aTime == 0) {
+    aTime = PR_Now();
   }
+
+  // We only want to write to a single field (accessed time or modified time),
+  // but utimes() doesn't let you omit one. If you do, it will set that field to
+  // the current time, which is not what we want.
+  //
+  // So what we do is write to both fields, but copy one of the fields from our
+  // cached stat structure.
+  //
+  // If we are writing to the accessed time field, then we want to copy the
+  // modified time and vice versa.
+
+  timeval times[2];
+
+  const size_t writeIndex = aTimeField == TimeField::AccessedTime ? 0 : 1;
+  const size_t copyIndex = aTimeField == TimeField::AccessedTime ? 1 : 0;
+
+#if (defined(__APPLE__) && defined(__MACH__))
+  auto* copyFrom = aTimeField == TimeField::AccessedTime
+                       ? &mCachedStat.st_mtimespec
+                       : &mCachedStat.st_atimespec;
+#else
+  auto* copyFrom = aTimeField == TimeField::AccessedTime ? &mCachedStat.st_mtim
+                                                         : &mCachedStat.st_atim;
+#endif
+
+  times[copyIndex].tv_sec = copyFrom->tv_sec;
+  times[copyIndex].tv_usec = copyFrom->tv_nsec / 1000;
+
+  times[writeIndex].tv_sec = aTime / PR_MSEC_PER_SEC;
+  times[writeIndex].tv_usec = (aTime % PR_MSEC_PER_SEC) * PR_USEC_PER_MSEC;
+
+  int result = utimesFn(mPath.get(), times);
   return NSRESULT_FOR_RETURN(result);
 }
 
 NS_IMETHODIMP
+nsLocalFile::GetLastAccessedTime(PRTime* aLastAccessedTime) {
+  return GetTimeImpl(aLastAccessedTime, TimeField::AccessedTime,
+                     /* follow links? */ true);
+}
+
+NS_IMETHODIMP
+nsLocalFile::SetLastAccessedTime(PRTime aLastAccessedTime) {
+  return SetTimeImpl(aLastAccessedTime, TimeField::AccessedTime,
+                     /* follow links? */ true);
+}
+
+NS_IMETHODIMP
+nsLocalFile::GetLastAccessedTimeOfLink(PRTime* aLastAccessedTime) {
+  return GetTimeImpl(aLastAccessedTime, TimeField::AccessedTime,
+                     /* follow links? */ false);
+}
+
+NS_IMETHODIMP
+nsLocalFile::SetLastAccessedTimeOfLink(PRTime aLastAccessedTime) {
+  return SetTimeImpl(aLastAccessedTime, TimeField::AccessedTime,
+                     /* follow links? */ false);
+}
+
+NS_IMETHODIMP
 nsLocalFile::GetLastModifiedTime(PRTime* aLastModTime) {
-  return GetLastModifiedTimeImpl(aLastModTime, /* follow links? */ true);
+  return GetTimeImpl(aLastModTime, TimeField::ModifiedTime,
+                     /* follow links? */ true);
 }
 
 NS_IMETHODIMP
 nsLocalFile::SetLastModifiedTime(PRTime aLastModTime) {
-  return SetLastModifiedTimeImpl(aLastModTime, /* follow links ? */ true);
+  return SetTimeImpl(aLastModTime, TimeField::ModifiedTime,
+                     /* follow links ? */ true);
 }
 
 NS_IMETHODIMP
 nsLocalFile::GetLastModifiedTimeOfLink(PRTime* aLastModTimeOfLink) {
-  return GetLastModifiedTimeImpl(aLastModTimeOfLink, /* follow link? */ false);
+  return GetTimeImpl(aLastModTimeOfLink, TimeField::ModifiedTime,
+                     /* follow link? */ false);
 }
 
 NS_IMETHODIMP
 nsLocalFile::SetLastModifiedTimeOfLink(PRTime aLastModTimeOfLink) {
-  return SetLastModifiedTimeImpl(aLastModTimeOfLink, /* follow links? */ false);
+  return SetTimeImpl(aLastModTimeOfLink, TimeField::ModifiedTime,
+                     /* follow links? */ false);
 }
 
 NS_IMETHODIMP
@@ -1476,29 +1561,25 @@ nsresult nsLocalFile::GetDiskInfo(StatInfoFunc&& aStatInfoFunc,
     return NS_ERROR_FAILURE;
   }
 
-  CheckedInt64 checkedResult;
-
-  checkedResult = std::forward<StatInfoFunc>(aStatInfoFunc)(fs_buf);
-  if (!checkedResult.isValid()) {
-    return NS_ERROR_FAILURE;
+  CheckedInt64 statfsResult = std::forward<StatInfoFunc>(aStatInfoFunc)(fs_buf);
+  if (!statfsResult.isValid()) {
+    return NS_ERROR_CANNOT_CONVERT_DATA;
   }
 
-  *aResult = checkedResult.value();
-
-#  ifdef DEBUG_DISK_SPACE
-  printf("DiskInfo: %lu bytes\n", *aResult);
-#  endif
+  // Assign statfsResult to *aResult in case one of the quota calls fails.
+  *aResult = statfsResult.value();
 
 #  if defined(USE_LINUX_QUOTACTL)
 
   if (!FillStatCache()) {
-    // Return info from statfs
+    // Returns info from statfs
     return NS_OK;
   }
 
-  nsCString deviceName;
+  nsAutoCString deviceName;
   if (!GetDeviceName(major(mCachedStat.st_dev), minor(mCachedStat.st_dev),
                      deviceName)) {
+    // Returns info from statfs
     return NS_OK;
   }
 
@@ -1509,20 +1590,25 @@ nsresult nsLocalFile::GetDiskInfo(StatInfoFunc&& aStatInfoFunc,
       && dq.dqb_valid & QIF_BLIMITS
 #    endif
       && dq.dqb_bhardlimit) {
-    checkedResult = std::forward<QuotaInfoFunc>(aQuotaInfoFunc)(dq);
-    if (!checkedResult.isValid()) {
-      return NS_ERROR_FAILURE;
+    CheckedInt64 quotaResult = std::forward<QuotaInfoFunc>(aQuotaInfoFunc)(dq);
+    if (!quotaResult.isValid()) {
+      // Returns info from statfs
+      return NS_OK;
     }
 
-    if (checkedResult.value() < *aResult) {
-      *aResult = checkedResult.value();
+    if (quotaResult.value() < *aResult) {
+      *aResult = quotaResult.value();
     }
   }
+#  endif  // defined(USE_LINUX_QUOTACTL)
+
+#  ifdef DEBUG_DISK_SPACE
+  printf("DiskInfo: %lu bytes\n", *aResult);
 #  endif
 
   return NS_OK;
 
-#else
+#else  // STATFS
   /*
    * This platform doesn't have statfs or statvfs.  I'm sure that there's
    * a way to check for free disk space and disk capacity on platforms that
@@ -1536,7 +1622,7 @@ nsresult nsLocalFile::GetDiskInfo(StatInfoFunc&& aStatInfoFunc,
 #  endif
   return NS_ERROR_NOT_IMPLEMENTED;
 
-#endif /* STATFS */
+#endif  // STATFS
 }
 
 NS_IMETHODIMP
@@ -1698,10 +1784,15 @@ nsLocalFile::IsExecutable(bool* aResult) {
 
     // Search for any of the set of executable extensions.
     static const char* const executableExts[] = {
+#ifdef MOZ_WIDGET_COCOA
+        "afploc",  // Can point to other files.
+#endif
         "air",  // Adobe AIR installer
 #ifdef MOZ_WIDGET_COCOA
+        "atloc",    // Can point to other files.
         "fileloc",  // File location files can be used to point to other
                     // files.
+        "ftploc",   // Can point to other files.
         "inetloc",  // Shouldn't be able to do the same, but can, due to
                     // macOS vulnerabilities.
 #endif
@@ -1899,9 +1990,13 @@ nsLocalFile::GetNativeTarget(nsACString& aResult) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  if (readlink(mPath.get(), target.BeginWriting(), (size_t)size) < 0) {
+  ssize_t written = readlink(mPath.get(), target.BeginWriting(), size_t(size));
+  if (written < 0) {
     return NSRESULT_FOR_ERRNO();
   }
+  // Target might have changed since the lstat call, or lstat might lie, see bug
+  // 1791029.
+  target.Truncate(written);
 
   nsresult rv = NS_OK;
   nsCOMPtr<nsIFile> self(this);
@@ -1949,12 +2044,13 @@ nsLocalFile::GetNativeTarget(nsACString& aResult) {
       break;
     }
 
-    int32_t linkLen =
+    ssize_t linkLen =
         readlink(flatRetval.get(), newTarget.BeginWriting(), size);
     if (linkLen == -1) {
       rv = NSRESULT_FOR_ERRNO();
       break;
     }
+    newTarget.Truncate(linkLen);
     target = newTarget;
   }
 
@@ -2080,28 +2176,7 @@ nsLocalFile::Reveal() {
   if (!giovfs) {
     return NS_ERROR_FAILURE;
   }
-
-  bool isDirectory;
-  if (NS_FAILED(IsDirectory(&isDirectory))) {
-    return NS_ERROR_FAILURE;
-  }
-
-  if (isDirectory) {
-    return giovfs->ShowURIForInput(mPath);
-  }
-  if (NS_SUCCEEDED(giovfs->OrgFreedesktopFileManager1ShowItems(mPath))) {
-    return NS_OK;
-  }
-  nsCOMPtr<nsIFile> parentDir;
-  nsAutoCString dirPath;
-  if (NS_FAILED(GetParent(getter_AddRefs(parentDir)))) {
-    return NS_ERROR_FAILURE;
-  }
-  if (NS_FAILED(parentDir->GetNativePath(dirPath))) {
-    return NS_ERROR_FAILURE;
-  }
-
-  return giovfs->ShowURIForInput(dirPath);
+  return giovfs->RevealFile(this);
 #elif defined(MOZ_WIDGET_COCOA)
   CFURLRef url;
   if (NS_SUCCEEDED(GetCFURL(&url))) {
@@ -2127,7 +2202,7 @@ nsLocalFile::Launch() {
     return NS_ERROR_FAILURE;
   }
 
-  return giovfs->ShowURIForInput(mPath);
+  return giovfs->LaunchFile(mPath);
 #elif defined(MOZ_WIDGET_ANDROID)
   // Not supported on GeckoView
   return NS_ERROR_NOT_IMPLEMENTED;

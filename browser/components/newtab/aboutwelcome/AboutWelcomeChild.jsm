@@ -6,11 +6,13 @@
 
 const EXPORTED_SYMBOLS = ["AboutWelcomeChild"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   DEFAULT_SITES: "resource://activity-stream/lib/DefaultSites.jsm",
   ExperimentAPI: "resource://nimbus/ExperimentAPI.jsm",
   shortURL: "resource://activity-stream/lib/ShortURL.jsm",
@@ -20,16 +22,16 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
 });
 
-XPCOMUtils.defineLazyGetter(this, "log", () => {
+XPCOMUtils.defineLazyGetter(lazy, "log", () => {
   const { Logger } = ChromeUtils.import(
     "resource://messaging-system/lib/Logger.jsm"
   );
   return new Logger("AboutWelcomeChild");
 });
 
-XPCOMUtils.defineLazyGetter(this, "tippyTopProvider", () =>
+XPCOMUtils.defineLazyGetter(lazy, "tippyTopProvider", () =>
   (async () => {
-    const provider = new TippyTopProvider();
+    const provider = new lazy.TippyTopProvider();
     await provider.init();
     return provider;
   })()
@@ -38,7 +40,7 @@ XPCOMUtils.defineLazyGetter(this, "tippyTopProvider", () =>
 const SEARCH_REGION_PREF = "browser.search.region";
 
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "searchRegion",
   SEARCH_REGION_PREF,
   ""
@@ -52,7 +54,7 @@ function getImportableSites(child) {
     getImportableSites.cache ??
     (getImportableSites.cache = (async () => {
       // Use tippy top to get packaged rich icons
-      const tippyTop = await tippyTopProvider;
+      const tippyTop = await lazy.tippyTopProvider;
       // Remove duplicate entries if they would appear the same
       return `[${[
         ...new Set(
@@ -62,7 +64,7 @@ function getImportableSites(child) {
             tippyTop.processSite(site, "*");
             return JSON.stringify({
               icon: site.tippyTopIcon,
-              label: shortURL(site),
+              label: lazy.shortURL(site),
             });
           })
         ),
@@ -73,18 +75,18 @@ function getImportableSites(child) {
 
 async function getDefaultSites(child) {
   // Get default TopSites by region
-  let sites = DEFAULT_SITES.get(
-    DEFAULT_SITES.has(searchRegion) ? searchRegion : ""
+  let sites = lazy.DEFAULT_SITES.get(
+    lazy.DEFAULT_SITES.has(lazy.searchRegion) ? lazy.searchRegion : ""
   );
 
   // Use tippy top to get packaged rich icons
-  const tippyTop = await tippyTopProvider;
+  const tippyTop = await lazy.tippyTopProvider;
   let defaultSites = sites.split(",").map(link => {
     let site = { url: link };
     tippyTop.processSite(site);
     return {
       icon: site.tippyTopIcon,
-      title: shortURL(site),
+      title: lazy.shortURL(site),
     };
   });
   return Cu.cloneInto(defaultSites, child.contentWindow);
@@ -105,7 +107,7 @@ class AboutWelcomeChild extends JSWindowActorChild {
    * @param {{type: string, data?: any}} action
    */
   sendToPage(action) {
-    log.debug(`Sending to page: ${action.type}`);
+    lazy.log.debug(`Sending to page: ${action.type}`);
     const win = this.document.defaultView;
     const event = new win.CustomEvent("AboutWelcomeChromeToContent", {
       detail: Cu.cloneInto(action, win),
@@ -158,6 +160,34 @@ class AboutWelcomeChild extends JSWindowActorChild {
     Cu.exportFunction(this.AWWaitForMigrationClose.bind(this), window, {
       defineAs: "AWWaitForMigrationClose",
     });
+
+    Cu.exportFunction(this.AWFinish.bind(this), window, {
+      defineAs: "AWFinish",
+    });
+
+    Cu.exportFunction(this.AWEnsureLangPackInstalled.bind(this), window, {
+      defineAs: "AWEnsureLangPackInstalled",
+    });
+
+    Cu.exportFunction(
+      this.AWNegotiateLangPackForLanguageMismatch.bind(this),
+      window,
+      {
+        defineAs: "AWNegotiateLangPackForLanguageMismatch",
+      }
+    );
+
+    Cu.exportFunction(this.AWSetRequestedLocales.bind(this), window, {
+      defineAs: "AWSetRequestedLocales",
+    });
+
+    Cu.exportFunction(this.AWSendToDeviceEmailsSupported.bind(this), window, {
+      defineAs: "AWSendToDeviceEmailsSupported",
+    });
+
+    Cu.exportFunction(this.AWNewScreen.bind(this), window, {
+      defineAs: "AWNewScreen",
+    });
   }
 
   /**
@@ -166,6 +196,20 @@ class AboutWelcomeChild extends JSWindowActorChild {
   wrapPromise(promise) {
     return new this.contentWindow.Promise((resolve, reject) =>
       promise.then(resolve, reject)
+    );
+  }
+
+  /**
+   * Clones the result of the query into the content window.
+   */
+  sendQueryAndCloneForContent(...sendQueryArgs) {
+    return this.wrapPromise(
+      (async () => {
+        return Cu.cloneInto(
+          await this.sendQuery(...sendQueryArgs),
+          this.contentWindow
+        );
+      })()
     );
   }
 
@@ -183,39 +227,46 @@ class AboutWelcomeChild extends JSWindowActorChild {
 
     // Return to AMO gets returned early.
     if (attributionData?.template) {
-      log.debug("Loading about:welcome with RTAMO attribution data");
+      lazy.log.debug("Loading about:welcome with RTAMO attribution data");
       return Cu.cloneInto(attributionData, this.contentWindow);
     } else if (attributionData?.ua) {
-      log.debug("Loading about:welcome with UA attribution");
+      lazy.log.debug("Loading about:welcome with UA attribution");
     }
 
     let experimentMetadata =
-      ExperimentAPI.getExperimentMetaData({
+      lazy.ExperimentAPI.getExperimentMetaData({
         featureId: "aboutwelcome",
       }) || {};
 
-    log.debug(
+    lazy.log.debug(
       `Loading about:welcome with ${experimentMetadata?.slug ??
         "no"} experiment`
     );
 
-    let featureConfig = NimbusFeatures.aboutwelcome.getAllVariables();
+    let featureConfig = lazy.NimbusFeatures.aboutwelcome.getAllVariables();
     featureConfig.needDefault = await this.sendQuery("AWPage:NEED_DEFAULT");
     featureConfig.needPin = await this.sendQuery("AWPage:DOES_APP_NEED_PIN");
-    let defaults = AboutWelcomeDefaults.getDefaults();
-    // FeatureConfig (from prefs or experiments) has higher precendence
+    if (featureConfig.languageMismatchEnabled) {
+      featureConfig.appAndSystemLocaleInfo = await this.sendQuery(
+        "AWPage:GET_APP_AND_SYSTEM_LOCALE_INFO"
+      );
+    }
+
+    // FeatureConfig (from experiments) has higher precendence
     // to defaults. But the `screens` property isn't defined we shouldn't
     // override the default with `null`
-    return Cu.cloneInto(
-      await AboutWelcomeDefaults.prepareContentForReact({
-        ...attributionData,
-        ...experimentMetadata,
-        ...defaults,
-        ...featureConfig,
-        screens: featureConfig.screens ?? defaults.screens,
-      }),
-      this.contentWindow
-    );
+    let defaults = lazy.AboutWelcomeDefaults.getDefaults();
+
+    const content = await lazy.AboutWelcomeDefaults.prepareContentForReact({
+      ...attributionData,
+      ...experimentMetadata,
+      ...defaults,
+      ...featureConfig,
+      screens: featureConfig.screens ?? defaults.screens,
+      backdrop: featureConfig.backdrop ?? defaults.backdrop,
+    });
+
+    return Cu.cloneInto(content, this.contentWindow);
   }
 
   AWGetFeatureConfig() {
@@ -247,7 +298,6 @@ class AboutWelcomeChild extends JSWindowActorChild {
       ...eventData,
       event_context: {
         ...eventData.event_context,
-        page: "about:welcome",
       },
     });
   }
@@ -269,11 +319,85 @@ class AboutWelcomeChild extends JSWindowActorChild {
     return this.wrapPromise(this.sendQuery("AWPage:GET_REGION"));
   }
 
+  AWFinish() {
+    this.contentWindow.location.href = "about:home";
+  }
+
+  AWEnsureLangPackInstalled(negotiated, screenContent) {
+    const content = Cu.cloneInto(screenContent, {});
+    return this.wrapPromise(
+      this.sendQuery(
+        "AWPage:ENSURE_LANG_PACK_INSTALLED",
+        negotiated.langPack
+      ).then(() => {
+        const formatting = [];
+        const l10n = new Localization(
+          ["branding/brand.ftl", "browser/newtab/onboarding.ftl"],
+          false,
+          undefined,
+          // Use the system-ish then app then default locale.
+          [...negotiated.requestSystemLocales, "en-US"]
+        );
+
+        // Add the negotiated language name as args.
+        function addMessageArgsAndUseLangPack(obj) {
+          for (const value of Object.values(obj)) {
+            if (value?.string_id) {
+              value.args = {
+                ...value.args,
+                negotiatedLanguage: negotiated.langPackDisplayName,
+              };
+
+              // Expose fluent strings wanting lang pack as raw.
+              if (value.useLangPack) {
+                formatting.push(
+                  l10n.formatValue(value.string_id, value.args).then(raw => {
+                    delete value.string_id;
+                    value.raw = raw;
+                  })
+                );
+              }
+            }
+          }
+        }
+        addMessageArgsAndUseLangPack(content.languageSwitcher);
+        addMessageArgsAndUseLangPack(content);
+        return Promise.all(formatting).then(() =>
+          Cu.cloneInto(content, this.contentWindow)
+        );
+      })
+    );
+  }
+
+  AWSetRequestedLocales(requestSystemLocales) {
+    return this.sendQueryAndCloneForContent(
+      "AWPage:SET_REQUESTED_LOCALES",
+      requestSystemLocales
+    );
+  }
+
+  AWNegotiateLangPackForLanguageMismatch(appAndSystemLocaleInfo) {
+    return this.sendQueryAndCloneForContent(
+      "AWPage:NEGOTIATE_LANGPACK",
+      appAndSystemLocaleInfo
+    );
+  }
+
+  AWSendToDeviceEmailsSupported() {
+    return this.wrapPromise(
+      this.sendQuery("AWPage:SEND_TO_DEVICE_EMAILS_SUPPORTED")
+    );
+  }
+
+  AWNewScreen(screenId) {
+    return this.wrapPromise(this.sendQuery("AWPage:NEW_SCREEN", screenId));
+  }
+
   /**
    * @param {{type: string, detail?: any}} event
    * @override
    */
   handleEvent(event) {
-    log.debug(`Received page event ${event.type}`);
+    lazy.log.debug(`Received page event ${event.type}`);
   }
 }

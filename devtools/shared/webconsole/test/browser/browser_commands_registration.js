@@ -13,12 +13,12 @@ add_task(async function() {
 
   // Fetch WebConsoleCommands so that it is available for next Content Tasks
   await ContentTask.spawn(gBrowser.selectedBrowser, null, function() {
-    const { require } = ChromeUtils.import(
-      "resource://devtools/shared/loader/Loader.jsm"
+    const { require } = ChromeUtils.importESModule(
+      "resource://devtools/shared/loader/Loader.sys.mjs"
     );
     const {
       WebConsoleCommands,
-    } = require("devtools/server/actors/webconsole/utils");
+    } = require("resource://devtools/server/actors/webconsole/utils.js");
 
     // Bind the symbol on this in order to make it available for next tasks
     this.WebConsoleCommands = WebConsoleCommands;

@@ -21,6 +21,9 @@ if (this.Components) {
     loaded: null,
   };
 
+  // NOTE: osfile.jsm imports require.js
+  /* import-globals-from /toolkit/components/workerloader/require.js */
+  /* import-globals-from /toolkit/components/osfile/osfile.jsm */
   importScripts("resource://gre/modules/osfile.jsm");
 
   let PromiseWorker = require("resource://gre/modules/workers/PromiseWorker.js");
@@ -155,7 +158,8 @@ if (this.Components) {
     }
     if (!(file instanceof File.DirectoryIterator)) {
       throw new Error(
-        "file is not a directory iterator " + file.__proto__.toSource()
+        "file is not a directory iterator " +
+          Object.getPrototypeOf(file).toSource()
       );
     }
     return f.call(file);
@@ -220,9 +224,6 @@ if (this.Components) {
     },
     getCurrentDirectory: function getCurrentDirectory() {
       return exports.OS.Shared.Type.path.toMsg(File.getCurrentDirectory());
-    },
-    setCurrentDirectory: function setCurrentDirectory(path) {
-      File.setCurrentDirectory(exports.OS.Shared.Type.path.fromMsg(path));
     },
     copy: function copy(sourcePath, destPath, options) {
       return File.copy(

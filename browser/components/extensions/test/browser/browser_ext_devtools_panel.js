@@ -8,11 +8,9 @@ requestLongerTimeout(4);
 
 loadTestSubscript("head_devtools.js");
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Preferences",
-  "resource://gre/modules/Preferences.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
+});
 
 const DEVTOOLS_THEME_PREF = "devtools.theme";
 
@@ -253,7 +251,7 @@ add_task(async function test_devtools_page_panels_create() {
     useAddonManager: "temporary",
     manifest: {
       devtools_page: "devtools_page.html",
-      applications: {
+      browser_specific_settings: {
         gecko: { id: EXTENSION_ID },
       },
     },

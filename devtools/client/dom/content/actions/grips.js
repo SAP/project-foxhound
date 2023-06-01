@@ -4,14 +4,14 @@
 /* globals DomProvider */
 "use strict";
 
-const constants = require("devtools/client/dom/content/constants");
+const constants = require("resource://devtools/client/dom/content/constants.js");
 
 /**
  * Used to fetch grip prototype and properties from the backend.
  */
 function requestProperties(grip) {
   return {
-    grip: grip,
+    grip,
     type: constants.FETCH_PROPERTIES,
     status: "start",
     error: false,
@@ -23,11 +23,11 @@ function requestProperties(grip) {
  */
 function receiveProperties(grip, response, error) {
   return {
-    grip: grip,
+    grip,
     type: constants.FETCH_PROPERTIES,
     status: "done",
-    response: response,
-    error: error,
+    response,
+    error,
   };
 }
 

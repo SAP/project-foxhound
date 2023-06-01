@@ -582,12 +582,13 @@ class TestInterface : public nsISupports, public nsWrapperCache {
       TestNullableTypedArrayReturn&, TestSequenceReturn&,
       TestNullableSequenceReturn&, TestIntegerArguments&,
       TestInterfaceArguments&, TestStringEnumArguments&, TestObjectArguments&,
-      TestOptionalArguments&, TestVoidConstruction&, TestIntegerConstruction&,
-      TestBooleanConstruction&, TestFloatConstruction&, TestStringConstruction&,
-      TestEnumConstruction&, TestInterfaceConstruction&,
-      TestExternalInterfaceConstruction&, TestCallbackInterfaceConstruction&,
-      TestCallbackConstruction&, TestObjectConstruction&,
-      TestTypedArrayConstruction&, TestSequenceConstruction&);
+      TestOptionalArguments&, TestUndefinedConstruction&,
+      TestIntegerConstruction&, TestBooleanConstruction&,
+      TestFloatConstruction&, TestStringConstruction&, TestEnumConstruction&,
+      TestInterfaceConstruction&, TestExternalInterfaceConstruction&,
+      TestCallbackInterfaceConstruction&, TestCallbackConstruction&,
+      TestObjectConstruction&, TestTypedArrayConstruction&,
+      TestSequenceConstruction&);
 
   // Any types
   void PassAny(JSContext*, JS::Handle<JS::Value>);
@@ -826,11 +827,24 @@ class TestInterface : public nsISupports, public nsWrapperCache {
   void PassRecordOfUnions2(JSContext*,
                            const Record<nsString, OwningObjectOrLong>&);
 
+  void PassUnionWithSequenceOfUnions(
+      const StringOrOnlyForUseInInnerUnionOrCanvasPatternSequence& arg);
+  void PassUnionWithRecordOfUnions(
+      const LongSequenceOrStringOnlyForUseInInnerUnionOrLongSequenceRecord&
+          arg);
+
   void ReceiveUnion(OwningCanvasPatternOrCanvasGradient&);
   void ReceiveUnion2(JSContext*, OwningObjectOrLong&);
   void ReceiveUnionContainingNull(OwningCanvasPatternOrNullOrCanvasGradient&);
   void ReceiveNullableUnion(Nullable<OwningCanvasPatternOrCanvasGradient>&);
   void ReceiveNullableUnion2(JSContext*, Nullable<OwningObjectOrLong>&);
+  void ReceiveUnionWithUndefined(OwningUndefinedOrCanvasPattern&);
+  void ReceiveUnionWithNullableUndefined(OwningUndefinedOrNullOrCanvasPattern&);
+  void ReceiveUnionWithUndefinedAndNullable(
+      OwningUndefinedOrCanvasPatternOrNull&);
+  void ReceiveNullableUnionWithUndefined(
+      Nullable<OwningUndefinedOrCanvasPattern>&);
+
   void GetWritableUnion(OwningCanvasPatternOrCanvasGradient&);
   void SetWritableUnion(const CanvasPatternOrCanvasGradient&);
   void GetWritableUnionContainingNull(
@@ -839,6 +853,20 @@ class TestInterface : public nsISupports, public nsWrapperCache {
       const CanvasPatternOrNullOrCanvasGradient&);
   void GetWritableNullableUnion(Nullable<OwningCanvasPatternOrCanvasGradient>&);
   void SetWritableNullableUnion(const Nullable<CanvasPatternOrCanvasGradient>&);
+  void GetWritableUnionWithUndefined(OwningUndefinedOrCanvasPattern&);
+  void SetWritableUnionWithUndefined(const UndefinedOrCanvasPattern&);
+  void GetWritableUnionWithNullableUndefined(
+      OwningUndefinedOrNullOrCanvasPattern&);
+  void SetWritableUnionWithNullableUndefined(
+      const UndefinedOrNullOrCanvasPattern&);
+  void GetWritableUnionWithUndefinedAndNullable(
+      OwningUndefinedOrCanvasPatternOrNull&);
+  void SetWritableUnionWithUndefinedAndNullable(
+      const UndefinedOrCanvasPatternOrNull&);
+  void GetWritableNullableUnionWithUndefined(
+      Nullable<OwningUndefinedOrCanvasPattern>&);
+  void SetWritableNullableUnionWithUndefined(
+      const Nullable<UndefinedOrCanvasPattern>&);
 
   // Promise types
   void PassPromise(Promise&);
@@ -847,6 +875,24 @@ class TestInterface : public nsISupports, public nsWrapperCache {
   void PassPromiseRecord(const Record<nsString, RefPtr<Promise>>&);
   Promise* ReceivePromise();
   already_AddRefed<Promise> ReceiveAddrefedPromise();
+
+  // ObservableArray types
+  void OnDeleteBooleanObservableArray(bool, uint32_t, ErrorResult&);
+  void OnSetBooleanObservableArray(bool, uint32_t, ErrorResult&);
+  void OnDeleteObjectObservableArray(JSContext*, JS::Handle<JSObject*>,
+                                     uint32_t, ErrorResult&);
+  void OnSetObjectObservableArray(JSContext*, JS::Handle<JSObject*>, uint32_t,
+                                  ErrorResult&);
+  void OnDeleteAnyObservableArray(JSContext*, JS::Handle<JS::Value>, uint32_t,
+                                  ErrorResult&);
+  void OnSetAnyObservableArray(JSContext*, JS::Handle<JS::Value>, uint32_t,
+                               ErrorResult&);
+  void OnDeleteInterfaceObservableArray(TestInterface*, uint32_t, ErrorResult&);
+  void OnSetInterfaceObservableArray(TestInterface*, uint32_t, ErrorResult&);
+  void OnDeleteNullableObservableArray(const Nullable<int>&, uint32_t,
+                                       ErrorResult&);
+  void OnSetNullableObservableArray(const Nullable<int>&, uint32_t,
+                                    ErrorResult&);
 
   // binaryNames tests
   void MethodRenamedTo();
@@ -989,6 +1035,9 @@ class TestInterface : public nsISupports, public nsWrapperCache {
   void ConditionalOnSecureContext6();
   void ConditionalOnSecureContext7();
   void ConditionalOnSecureContext8();
+
+  bool ConditionalOnSecureContext9();
+  void ConditionalOnSecureContext10();
 
   // Miscellania
   int32_t AttrWithLenientThis();

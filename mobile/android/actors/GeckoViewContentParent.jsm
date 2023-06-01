@@ -5,13 +5,19 @@
 
 var EXPORTED_SYMBOLS = ["GeckoViewContentParent"];
 
-const { GeckoViewUtils } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewUtils.jsm"
+const { GeckoViewUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewUtils.sys.mjs"
 );
 
-const { GeckoViewActorParent } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewActorParent.jsm"
+const { GeckoViewActorParent } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewActorParent.sys.mjs"
 );
+
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  SessionHistory: "resource://gre/modules/sessionstore/SessionHistory.sys.mjs",
+});
 
 const { debug, warn } = GeckoViewUtils.initLogging("GeckoViewContentParent");
 
@@ -20,7 +26,25 @@ class GeckoViewContentParent extends GeckoViewActorParent {
     return this.sendQuery("CollectSessionState");
   }
 
+  async containsFormData() {
+    return this.sendQuery("ContainsFormData");
+  }
+
   restoreState({ history, switchId, formdata, scrolldata }) {
+    if (Services.appinfo.sessionHistoryInParent) {
+      const { browsingContext } = this.browser;
+      lazy.SessionHistory.restoreFromParent(
+        browsingContext.sessionHistory,
+        history
+      );
+
+      // TODO Bug 1648158 this should include scroll, form history, etc
+      return SessionStoreUtils.initializeRestore(
+        browsingContext,
+        SessionStoreUtils.constructSessionStoreRestoreData()
+      );
+    }
+
     // Restoring is made of two parts. First we need to restore the history
     // of the tab and navigating to the current page, after the page
     // navigates to the current page we need to restore the state of the
@@ -35,7 +59,7 @@ class GeckoViewContentParent extends GeckoViewActorParent {
     });
 
     if (!formdata && !scrolldata) {
-      return;
+      return null;
     }
 
     const progressFilter = Cc[
@@ -63,5 +87,6 @@ class GeckoViewContentParent extends GeckoViewActorParent {
     const flags = Ci.nsIWebProgress.NOTIFY_LOCATION;
     progressFilter.addProgressListener(progressListener, flags);
     browser.addProgressListener(progressFilter, flags);
+    return null;
   }
 }

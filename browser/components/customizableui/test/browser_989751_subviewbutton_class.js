@@ -19,9 +19,8 @@ function checkSubviewButtonClass(menuId, buttonId, subviewId) {
   return async function() {
     // Initialize DevTools before starting the test in order to create menuitems in
     // menuWebDeveloperPopup.
-    ChromeUtils.import(
-      "resource://devtools/shared/loader/Loader.jsm",
-      {}
+    ChromeUtils.importESModule(
+      "resource://devtools/shared/loader/Loader.sys.mjs"
     ).require("devtools/client/framework/devtools-browser");
 
     info(

@@ -10,7 +10,6 @@
 var gFetchCount = 0;
 var gGoodOCSPResponse = null;
 var gResponsePattern = [];
-var gMessage = "";
 
 function respondWithGoodOCSP(request, response) {
   info("returning 200 OK");
@@ -56,18 +55,10 @@ function add_ocsp_test(
       clearSessionCache();
       gFetchCount = 0;
       gResponsePattern = aResponses;
-      gMessage = aMessage;
     },
     function() {
       // check the number of requests matches the size of aResponses
-      equal(
-        gFetchCount,
-        aResponses.length,
-        "should have made " +
-          aResponses.length +
-          " OCSP request" +
-          (aResponses.length == 1 ? "" : "s")
-      );
+      equal(gFetchCount, aResponses.length, aMessage);
     },
     null,
     aOriginAttributes
@@ -78,7 +69,6 @@ function run_test() {
   do_get_profile();
   Services.prefs.setBoolPref("security.ssl.enable_ocsp_stapling", true);
   Services.prefs.setIntPref("security.OCSP.enabled", 1);
-  Services.prefs.setIntPref("security.pki.sha1_enforcement_level", 4);
   add_tls_server_setup("OCSPStaplingServer", "ocsp_certs");
 
   let ocspResponder = new HttpServer();
@@ -163,14 +153,7 @@ function add_tests() {
   add_ocsp_test(
     "ocsp-stapling-none.example.com",
     SEC_ERROR_OCSP_UNKNOWN_CERT,
-    [
-      respondWithError,
-      respondWithError,
-      respondWithError,
-      respondWithError,
-      respondWithError,
-      respondWithError,
-    ],
+    [respondWithError, respondWithError],
     "No stapled response -> a fetch should have been attempted"
   );
 
@@ -251,9 +234,9 @@ function add_tests() {
 
   add_ocsp_test(
     "ocsp-stapling-none.example.com",
-    PRErrorCodeSuccess,
+    SEC_ERROR_OCSP_INVALID_SIGNING_CERT,
     [respondWithSHA1OCSP],
-    "signing cert is good (though sha1) - should succeed"
+    "OCSP signing cert was issued with sha1 - should fail"
   );
 
   add_test(function() {

@@ -57,7 +57,6 @@ void GPUChild::Init() {
   devicePrefs.oglCompositing() =
       gfxConfig::GetValue(Feature::OPENGL_COMPOSITING);
   devicePrefs.useD2D1() = gfxConfig::GetValue(Feature::DIRECT2D);
-  devicePrefs.webGPU() = gfxConfig::GetValue(Feature::WEBGPU);
   devicePrefs.d3d11HwAngle() = gfxConfig::GetValue(Feature::D3D11_HW_ANGLE);
 
   nsTArray<LayerTreeIdMapping> mappings;
@@ -73,7 +72,8 @@ void GPUChild::Init() {
     features = gfxInfoRaw->GetAllFeatures();
   }
 
-  SendInit(updates, devicePrefs, mappings, features);
+  SendInit(updates, devicePrefs, mappings, features,
+           GPUProcessManager::Get()->AllocateNamespace());
 
   gfxVars::AddReceiver(this);
 
@@ -83,7 +83,11 @@ void GPUChild::Init() {
 void GPUChild::OnVarChanged(const GfxVarUpdate& aVar) { SendUpdateVar(aVar); }
 
 bool GPUChild::EnsureGPUReady() {
-  if (mGPUReady) {
+  // On our initial process launch, we want to block on the GetDeviceStatus
+  // message. Additionally, we may have updated our compositor configuration
+  // through the gfxVars after fallback, in which case we want to ensure the
+  // GPU process has handled any updates before creating compositor sessions.
+  if (mGPUReady && !mWaitForVarUpdate) {
     return true;
   }
 
@@ -92,10 +96,15 @@ bool GPUChild::EnsureGPUReady() {
     return false;
   }
 
-  gfxPlatform::GetPlatform()->ImportGPUDeviceData(data);
-  Telemetry::AccumulateTimeDelta(Telemetry::GPU_PROCESS_LAUNCH_TIME_MS_2,
-                                 mHost->GetLaunchTime());
-  mGPUReady = true;
+  // Only import and collect telemetry for the initial GPU process launch.
+  if (!mGPUReady) {
+    gfxPlatform::GetPlatform()->ImportGPUDeviceData(data);
+    Telemetry::AccumulateTimeDelta(Telemetry::GPU_PROCESS_LAUNCH_TIME_MS_2,
+                                   mHost->GetLaunchTime());
+    mGPUReady = true;
+  }
+
+  mWaitForVarUpdate = false;
   return true;
 }
 
@@ -221,6 +230,18 @@ mozilla::ipc::IPCResult GPUChild::RecvNotifyDeviceReset(
   return IPC_OK();
 }
 
+mozilla::ipc::IPCResult GPUChild::RecvNotifyOverlayInfo(
+    const OverlayInfo aInfo) {
+  gfxPlatform::GetPlatform()->SetOverlayInfo(aInfo);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult GPUChild::RecvNotifySwapChainInfo(
+    const SwapChainInfo aInfo) {
+  gfxPlatform::GetPlatform()->SetSwapChainInfo(aInfo);
+  return IPC_OK();
+}
+
 mozilla::ipc::IPCResult GPUChild::RecvFlushMemory(const nsString& aReason) {
   nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
   if (os) {
@@ -320,7 +341,7 @@ mozilla::ipc::IPCResult GPUChild::RecvBHRThreadHang(
 }
 
 mozilla::ipc::IPCResult GPUChild::RecvUpdateMediaCodecsSupported(
-    const PDMFactory::MediaCodecsSupported& aSupported) {
+    const media::MediaCodecsSupported& aSupported) {
   dom::ContentParent::BroadcastMediaCodecsSupportedUpdate(
       RemoteDecodeIn::GpuProcess, aSupported);
   return IPC_OK();

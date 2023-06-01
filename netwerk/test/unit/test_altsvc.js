@@ -4,7 +4,6 @@ const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 var h2Port;
 var prefs;
-var spdypref;
 var http2pref;
 var altsvcpref1;
 var altsvcpref2;
@@ -25,10 +24,7 @@ var httpBarOrigin; // http://bar.example.com:PORT/
 var httpsBarOrigin; // https://bar.example.com:PORT/
 
 function run_test() {
-  var env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  h2Port = env.get("MOZHTTP2_PORT");
+  h2Port = Services.env.get("MOZHTTP2_PORT");
   Assert.notEqual(h2Port, null);
   Assert.notEqual(h2Port, "");
 
@@ -36,13 +32,11 @@ function run_test() {
   do_get_profile();
   prefs = Services.prefs;
 
-  spdypref = prefs.getBoolPref("network.http.spdy.enabled");
-  http2pref = prefs.getBoolPref("network.http.spdy.enabled.http2");
+  http2pref = prefs.getBoolPref("network.http.http2.enabled");
   altsvcpref1 = prefs.getBoolPref("network.http.altsvc.enabled");
   altsvcpref2 = prefs.getBoolPref("network.http.altsvc.oe", true);
 
-  prefs.setBoolPref("network.http.spdy.enabled", true);
-  prefs.setBoolPref("network.http.spdy.enabled.http2", true);
+  prefs.setBoolPref("network.http.http2.enabled", true);
   prefs.setBoolPref("network.http.altsvc.enabled", true);
   prefs.setBoolPref("network.http.altsvc.oe", true);
   prefs.setCharPref(
@@ -136,8 +130,7 @@ function h1ServerWK(metadata, response) {
 }
 
 function resetPrefs() {
-  prefs.setBoolPref("network.http.spdy.enabled", spdypref);
-  prefs.setBoolPref("network.http.spdy.enabled.http2", http2pref);
+  prefs.setBoolPref("network.http.http2.enabled", http2pref);
   prefs.setBoolPref("network.http.altsvc.enabled", altsvcpref1);
   prefs.setBoolPref("network.http.altsvc.oe", altsvcpref2);
   prefs.clearUserPref("network.dns.localDomains");
@@ -153,7 +146,6 @@ function makeChan(origin) {
 
 var origin;
 var xaltsvc;
-var retryCounter = 0;
 var loadWithoutClearingMappings = false;
 var disallowH3 = false;
 var disallowH2 = false;

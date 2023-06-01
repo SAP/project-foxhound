@@ -84,6 +84,8 @@ public final class SessionTextInput {
     void postToInputConnection(@NonNull Runnable runnable);
 
     void requestCursorUpdates(@CursorMonitorMode int requestMode);
+
+    void insertImage(@NonNull byte[] data, @NonNull String mimeType);
   }
 
   // Interface to access GeckoInputConnection from GeckoEditable.
@@ -147,7 +149,7 @@ public final class SessionTextInput {
 
     void onDefaultKeyEvent(KeyEvent event);
 
-    void updateCompositionRects(final RectF[] aRects);
+    void updateCompositionRects(final RectF[] aRects, final RectF aCaretRect);
   }
 
   private static final class DefaultDelegate implements GeckoSession.TextInputDelegate {

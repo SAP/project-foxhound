@@ -58,9 +58,6 @@ LONGHANDS_NOT_SERIALIZED_WITH_SERVO = [
     # Servo serializes one value when both are the same, a few tests expect two.
     "border-spacing",
 
-    # Resolved value should be zero when the column-rule-style is none.
-    "column-rule-width",
-
     # These resolve auto to zero in a few cases, but not all.
     "max-height",
     "max-width",
@@ -98,7 +95,7 @@ LONGHANDS_NOT_SERIALIZED_WITH_SERVO = [
 ]
 
 def serialized_by_servo(prop):
-    if prop.type() == "shorthand":
+    if prop.type() == "shorthand" or prop.type() == "alias":
         return True
     # Keywords are all fine, except -moz-osx-font-smoothing, which does
     # resistfingerprinting stuff.
@@ -158,6 +155,6 @@ data = [
     % endfor
 
     % for prop in data.all_aliases():
-    Alias("${prop.name}", "${prop.camel_case}", "${prop.ident}", "${prop.original.ident}", [${rules(prop)}], [], ${pref(prop)}),
+    Alias("${prop.name}", "${prop.camel_case}", "${prop.ident}", "${prop.original.ident}", [${rules(prop)}], [${flags(prop)}], ${pref(prop)}),
     % endfor
 ]

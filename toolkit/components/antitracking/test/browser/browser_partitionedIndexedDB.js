@@ -1,5 +1,3 @@
-/* import-globals-from partitionedstorage_head.js */
-
 PartitionedStorageHelper.runTest(
   "IndexedDB",
   async (win3rdParty, win1stParty, allowed) => {
@@ -28,12 +26,7 @@ PartitionedStorageHelper.runTest(
       a.onsuccess = e => {
         let db = e.target.result;
 
-        if (allowed) {
-          is(db.objectStoreNames.length, 1, "We have 1 objectStore");
-          is(db.objectStoreNames[0], "foobar", "We have 'foobar' objectStore");
-        } else {
-          is(db.objectStoreNames.length, 0, "We have 0 objectStore");
-        }
+        is(db.objectStoreNames.length, 0, "We have 0 objectStore");
         resolve();
       };
     });

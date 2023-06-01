@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var { WebChannel } = ChromeUtils.import(
-  "resource://gre/modules/WebChannel.jsm"
+var { WebChannel } = ChromeUtils.importESModule(
+  "resource://gre/modules/WebChannel.sys.mjs"
 );
 const { PermissionTestUtils } = ChromeUtils.import(
   "resource://testing-common/PermissionTestUtils.jsm"
@@ -35,7 +35,7 @@ function promiseNewChannelResponse(uri) {
     "test-remote-troubleshooting-backchannel",
     uri
   );
-  let tab = gBrowser.loadOneTab(uri.spec, {
+  let tab = gBrowser.addTab(uri.spec, {
     inBackground: false,
     triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
   });
@@ -82,9 +82,8 @@ add_task(async function() {
 
   let updateChannel = null;
   try {
-    updateChannel = ChromeUtils.import(
-      "resource://gre/modules/UpdateUtils.jsm",
-      {}
+    updateChannel = ChromeUtils.importESModule(
+      "resource://gre/modules/UpdateUtils.sys.mjs"
     ).UpdateUtils.UpdateChannel;
   } catch (ex) {}
   if (!updateChannel) {

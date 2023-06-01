@@ -95,6 +95,7 @@ static void FlushLayoutForWholeBrowsingContextTree(Document& aDoc) {
 }
 
 void ResizeObserverController::Notify() {
+  mResizeObserverNotificationHelper->Unregister();
   if (mResizeObservers.IsEmpty()) {
     return;
   }
@@ -115,15 +116,7 @@ void ResizeObserverController::Notify() {
   RefPtr<Document> doc(mDocument);
 
   uint32_t shallowestTargetDepth = 0;
-
-  GatherAllActiveObservations(shallowestTargetDepth);
-
-  while (HasAnyActiveObservations()) {
-    DebugOnly<uint32_t> oldShallowestTargetDepth = shallowestTargetDepth;
-    shallowestTargetDepth = BroadcastAllActiveObservations();
-    NS_ASSERTION(oldShallowestTargetDepth < shallowestTargetDepth,
-                 "shallowestTargetDepth should be getting strictly deeper");
-
+  while (true) {
     // Flush layout, so that any callback functions' style changes / resizes
     // get a chance to take effect. The callback functions may do changes in its
     // sub-documents or ancestors, so flushing layout for the whole browsing
@@ -134,9 +127,16 @@ void ResizeObserverController::Notify() {
     // that have the depth of observed target element more than current
     // shallowestTargetDepth.
     GatherAllActiveObservations(shallowestTargetDepth);
-  }
 
-  mResizeObserverNotificationHelper->Unregister();
+    if (!HasAnyActiveObservations()) {
+      break;
+    }
+
+    DebugOnly<uint32_t> oldShallowestTargetDepth = shallowestTargetDepth;
+    shallowestTargetDepth = BroadcastAllActiveObservations();
+    NS_ASSERTION(oldShallowestTargetDepth < shallowestTargetDepth,
+                 "shallowestTargetDepth should be getting strictly deeper");
+  }
 
   if (HasAnySkippedObservations()) {
     // Per spec, we deliver an error if the document has any skipped

@@ -141,6 +141,7 @@ const ALL_FEATURES = [
   'anchors',
   'depth-sensing',
   'secondary-views',
+  'camera-access',
 ];
 
 const TRACKED_IMMERSIVE_DEVICE = {
@@ -193,4 +194,11 @@ const SCREEN_CONTROLLER = {
     targetRayMode: "screen",
     pointerOrigin: VALID_POINTER_TRANSFORM,
     profiles: []
+};
+
+// From: https://immersive-web.github.io/webxr/#default-features
+const DEFAULT_FEATURES = {
+  "inline": ["viewer"],
+  "immersive-vr": ["viewer", "local"],
+  "immersive-ar": ["viewer", "local"],
 };

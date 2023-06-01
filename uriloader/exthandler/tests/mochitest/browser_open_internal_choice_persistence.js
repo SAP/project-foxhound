@@ -3,11 +3,11 @@
 
 "use strict";
 
-const { Downloads } = ChromeUtils.import(
-  "resource://gre/modules/Downloads.jsm"
+const { Downloads } = ChromeUtils.importESModule(
+  "resource://gre/modules/Downloads.sys.mjs"
 );
-const { DownloadIntegration } = ChromeUtils.import(
-  "resource://gre/modules/DownloadIntegration.jsm"
+const { DownloadIntegration } = ChromeUtils.importESModule(
+  "resource://gre/modules/DownloadIntegration.sys.mjs"
 );
 
 const TEST_PATH = getRootDirectory(gTestPath).replace(
@@ -32,12 +32,14 @@ function waitForAcceptButtonToGetEnabled(doc) {
   );
 }
 
-add_task(async function setup() {
-  // Remove the security delay for the dialog during the test.
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
+      // Remove the security delay for the dialog during the test.
       ["security.dialog_enable_delay", 0],
       ["browser.helperApps.showOpenOptionForViewableInternally", true],
+      // Make sure we don't open a file picker dialog somehow.
+      ["browser.download.useDownloadDir", true],
     ],
   });
 
@@ -161,7 +163,10 @@ function ensureMIMEState({ preferredAction, alwaysAskBeforeHandling }) {
 add_task(async function test_check_saving_handler_choices() {
   let publicList = await Downloads.getList(Downloads.PUBLIC);
   SpecialPowers.pushPrefEnv({
-    set: [["browser.download.improvements_to_download_panel", false]],
+    set: [
+      ["browser.download.improvements_to_download_panel", false],
+      ["browser.download.always_ask_before_handling_new_types", true],
+    ],
   });
   registerCleanupFunction(async () => {
     await publicList.removeFinished();
@@ -370,7 +375,10 @@ const kTestCasesPrefEnabled = [
 add_task(
   async function test_check_saving_handler_choices_with_downloads_pref_enabled() {
     SpecialPowers.pushPrefEnv({
-      set: [["browser.download.improvements_to_download_panel", true]],
+      set: [
+        ["browser.download.improvements_to_download_panel", true],
+        ["browser.download.always_ask_before_handling_new_types", false],
+      ],
     });
 
     let publicList = await Downloads.getList(Downloads.PUBLIC);

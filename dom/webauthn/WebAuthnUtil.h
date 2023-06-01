@@ -16,8 +16,7 @@
 #include "mozilla/dom/WebAuthenticationBinding.h"
 #include "ipc/IPCMessageUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 enum class U2FOperation { Register, Sign };
 
@@ -61,32 +60,6 @@ nsresult BuildTransactionHashes(const nsCString& aRpId,
                                 /* out */ CryptoBuffer& aRpIdHash,
                                 /* out */ CryptoBuffer& aClientDataHash);
 
-}  // namespace dom
-}  // namespace mozilla
-
-namespace IPC {
-
-template <>
-struct ParamTraits<mozilla::dom::AuthenticatorAttachment>
-    : public ContiguousEnumSerializer<
-          mozilla::dom::AuthenticatorAttachment,
-          mozilla::dom::AuthenticatorAttachment::Platform,
-          mozilla::dom::AuthenticatorAttachment::EndGuard_> {};
-
-template <>
-struct ParamTraits<mozilla::dom::UserVerificationRequirement>
-    : public ContiguousEnumSerializer<
-          mozilla::dom::UserVerificationRequirement,
-          mozilla::dom::UserVerificationRequirement::Required,
-          mozilla::dom::UserVerificationRequirement::EndGuard_> {};
-
-template <>
-struct ParamTraits<mozilla::dom::AttestationConveyancePreference>
-    : public ContiguousEnumSerializer<
-          mozilla::dom::AttestationConveyancePreference,
-          mozilla::dom::AttestationConveyancePreference::None,
-          mozilla::dom::AttestationConveyancePreference::EndGuard_> {};
-
-}  // namespace IPC
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_WebAuthnUtil_h

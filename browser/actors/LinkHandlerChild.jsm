@@ -6,10 +6,10 @@
 
 const EXPORTED_SYMBOLS = ["LinkHandlerChild"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "FaviconLoader",
   "resource:///modules/FaviconLoader.jsm"
 );
@@ -24,7 +24,7 @@ class LinkHandlerChild extends JSWindowActorChild {
 
   get iconLoader() {
     if (!this._iconLoader) {
-      this._iconLoader = new FaviconLoader(this);
+      this._iconLoader = new lazy.FaviconLoader(this);
     }
     return this._iconLoader;
   }
@@ -157,7 +157,6 @@ class LinkHandlerChild extends JSWindowActorChild {
               let engine = { title: link.title, href: link.href };
               this.sendAsyncMessage("Link:AddSearch", {
                 engine,
-                url: link.ownerDocument.documentURI,
               });
               searchAdded = true;
             }

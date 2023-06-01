@@ -8,6 +8,9 @@ places-open =
 places-open-in-tab =
   .label = Open in New Tab
   .accesskey = w
+places-open-in-container-tab =
+  .label = Open in New Container Tab
+  .accesskey = i
 places-open-all-bookmarks =
   .label = Open All Bookmarks
   .accesskey = O
@@ -69,13 +72,15 @@ places-sortby-name =
 # places-edit-bookmark and places-edit-generic will show one or the other and can have the same access key.
 places-edit-bookmark =
   .label = Edit Bookmark…
-  .accesskey = i
+  .accesskey = E
 places-edit-generic =
   .label = Edit…
-  .accesskey = i
+  .accesskey = E
 places-edit-folder2 =
   .label = Edit Folder…
-  .accesskey = i
+  .accesskey = E
+# Variables
+#   $count (number) - Number of folders to delete
 places-delete-folder =
   .label =
       { $count ->
@@ -109,6 +114,10 @@ places-delete-bookmark =
       }
   .accesskey = D
 
+places-untag-bookmark =
+  .label = Remove Tag
+  .accesskey = R
+
 places-manage-bookmarks =
   .label = Manage Bookmarks
   .accesskey = M
@@ -118,14 +127,13 @@ places-forget-about-this-site-confirmation-title =
 
 # Variables:
 # $hostOrBaseDomain (string) - The base domain (or host in case there is no base domain) for which data is being removed
-places-forget-about-this-site-confirmation-message =
-  This action will remove all data related to { $hostOrBaseDomain } including history, passwords, cookies, cache and content preferences. Are you sure you want to proceed?
+places-forget-about-this-site-confirmation-msg =
+  This action will remove data related to { $hostOrBaseDomain } including history, cookies, cache and content preferences. Related bookmarks and passwords will not be removed. Are you sure you want to proceed?
 
 places-forget-about-this-site-forget = Forget
 
-places-library =
+places-library3 =
   .title = Library
-  .style = width:700px; height:500px;
 
 places-organize-button =
   .label = Organize

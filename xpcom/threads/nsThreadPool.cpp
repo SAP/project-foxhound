@@ -10,7 +10,6 @@
 #include "ThreadDelay.h"
 #include "nsThreadManager.h"
 #include "nsThread.h"
-#include "nsMemory.h"
 #include "nsThreadUtils.h"
 #include "prinrval.h"
 #include "mozilla/Logging.h"
@@ -33,6 +32,8 @@ static LazyLogModule sThreadPoolLog("nsThreadPool");
 
 static MOZ_THREAD_LOCAL(nsThreadPool*) gCurrentThreadPool;
 
+void nsThreadPool::InitTLS() { gCurrentThreadPool.infallibleInit(); }
+
 // DESIGN:
 //  o  Allocate anonymous threads.
 //  o  Use nsThreadPool::Run as the main routine for each thread.
@@ -46,6 +47,10 @@ static MOZ_THREAD_LOCAL(nsThreadPool*) gCurrentThreadPool;
 NS_IMPL_ISUPPORTS_INHERITED(nsThreadPool, Runnable, nsIThreadPool,
                             nsIEventTarget)
 
+nsThreadPool* nsThreadPool::GetCurrentThreadPool() {
+  return gCurrentThreadPool.get();
+}
+
 nsThreadPool::nsThreadPool()
     : Runnable("nsThreadPool"),
       mMutex("[nsThreadPool.mMutex]"),
@@ -54,13 +59,11 @@ nsThreadPool::nsThreadPool()
       mIdleThreadLimit(DEFAULT_IDLE_THREAD_LIMIT),
       mIdleThreadTimeout(DEFAULT_IDLE_THREAD_TIMEOUT),
       mIdleCount(0),
+      mQoSPriority(nsIThread::QOS_PRIORITY_NORMAL),
       mStackSize(nsIThreadManager::DEFAULT_STACK_SIZE),
       mShutdown(false),
       mRegressiveMaxIdleTime(false),
       mIsAPoolThreadFree(true) {
-  static std::once_flag flag;
-  std::call_once(flag, [] { gCurrentThreadPool.infallibleInit(); });
-
   LOG(("THRD-P(%p) constructor!!!\n", this));
 }
 
@@ -81,6 +84,7 @@ nsresult nsThreadPool::PutEvent(already_AddRefed<nsIRunnable> aEvent,
 
   bool spawnThread = false;
   uint32_t stackSize = 0;
+  nsCString name;
   {
     MutexAutoLock lock(mMutex);
 
@@ -105,6 +109,7 @@ nsresult nsThreadPool::PutEvent(already_AddRefed<nsIRunnable> aEvent,
     mEvents.PutEvent(event.forget(), EventQueuePriority::Normal, lock);
     mEventsAvailable.Notify();
     stackSize = mStackSize;
+    name = mName;
   }
 
   auto delay = MakeScopeExit([&]() {
@@ -118,8 +123,9 @@ nsresult nsThreadPool::PutEvent(already_AddRefed<nsIRunnable> aEvent,
   }
 
   nsCOMPtr<nsIThread> thread;
-  nsresult rv = NS_NewNamedThread(mThreadNaming.GetNextThreadName(mName),
-                                  getter_AddRefs(thread), nullptr, stackSize);
+  nsresult rv = NS_NewNamedThread(
+      mThreadNaming.GetNextThreadName(name), getter_AddRefs(thread), nullptr,
+      {.stackSize = stackSize, .blockDispatch = true});
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return NS_ERROR_UNEXPECTED;
   }
@@ -145,7 +151,7 @@ nsresult nsThreadPool::PutEvent(already_AddRefed<nsIRunnable> aEvent,
     // asynchronously without worrying about anything.
     ShutdownThread(thread);
   } else {
-    thread->Dispatch(this, NS_DISPATCH_NORMAL);
+    thread->Dispatch(this, NS_DISPATCH_IGNORE_BLOCK_DISPATCH);
   }
 
   return NS_OK;
@@ -168,6 +174,18 @@ void nsThreadPool::ShutdownThread(nsIThread* aThread) {
       TaskCategory::Other,
       NewRunnableMethod("nsIThread::AsyncShutdown", aThread,
                         &nsIThread::AsyncShutdown));
+}
+
+NS_IMETHODIMP
+nsThreadPool::SetQoSForThreads(nsIThread::QoSPriority aPriority) {
+  MutexAutoLock lock(mMutex);
+  mQoSPriority = aPriority;
+
+  // We don't notify threads here to observe the change, because we don't want
+  // to create spurious wakeups during idle. Rather, we want threads to simply
+  // observe the change on their own if they wake up to do some task.
+
+  return NS_OK;
 }
 
 // This event 'runs' for the lifetime of the worker thread.  The actual
@@ -201,8 +219,6 @@ void nsThreadPool::ShutdownThread(nsIThread* aThread) {
 
 NS_IMETHODIMP
 nsThreadPool::Run() {
-  LOG(("THRD-P(%p) enter %s\n", this, mName.BeginReading()));
-
   nsCOMPtr<nsIThread> current;
   nsThreadManager::get().GetCurrentThread(getter_AddRefs(current));
 
@@ -210,6 +226,7 @@ nsThreadPool::Run() {
   bool exitThread = false;
   bool wasIdle = false;
   TimeStamp idleSince;
+  nsIThread::QoSPriority threadPriority = nsIThread::QOS_PRIORITY_NORMAL;
 
   // This thread is an nsThread created below with NS_NewNamedThread()
   static_cast<nsThread*>(current.get())
@@ -219,6 +236,14 @@ nsThreadPool::Run() {
   {
     MutexAutoLock lock(mMutex);
     listener = mListener;
+    LOG(("THRD-P(%p) enter %s\n", this, mName.BeginReading()));
+
+    // Go ahead and check for thread priority. If priority is normal, do nothing
+    // because threads are created with default priority.
+    if (threadPriority != mQoSPriority) {
+      current->SetThreadQoS(threadPriority);
+      threadPriority = mQoSPriority;
+    }
   }
 
   if (listener) {
@@ -234,6 +259,12 @@ nsThreadPool::Run() {
     {
       MutexAutoLock lock(mMutex);
 
+      // Before getting the next event, we can adjust priority as needed.
+      if (threadPriority != mQoSPriority) {
+        current->SetThreadQoS(threadPriority);
+        threadPriority = mQoSPriority;
+      }
+
       event = mEvents.GetEvent(lock, &delay);
       if (!event) {
         TimeStamp now = TimeStamp::Now();
@@ -242,7 +273,7 @@ nsThreadPool::Run() {
         TimeDuration timeout = TimeDuration::FromMilliseconds(
             static_cast<double>(mIdleThreadTimeout) / idleTimeoutDivider);
 
-        // If we are shutting down, then don't keep any idle threads
+        // If we are shutting down, then don't keep any idle threads.
         if (mShutdown) {
           exitThread = true;
         } else {
@@ -290,8 +321,11 @@ nsThreadPool::Run() {
       }
     }
     if (event) {
-      LOG(("THRD-P(%p) %s running [%p]\n", this, mName.BeginReading(),
-           event.get()));
+      if (MOZ_LOG_TEST(sThreadPoolLog, mozilla::LogLevel::Debug)) {
+        MutexAutoLock lock(mMutex);
+        LOG(("THRD-P(%p) %s running [%p]\n", this, mName.BeginReading(),
+             event.get()));
+      }
 
       // Delay event processing to encourage whoever dispatched this event
       // to run.
@@ -362,6 +396,16 @@ nsThreadPool::Dispatch(already_AddRefed<nsIRunnable> aEvent, uint32_t aFlags) {
 
 NS_IMETHODIMP
 nsThreadPool::DelayedDispatch(already_AddRefed<nsIRunnable>, uint32_t) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+nsThreadPool::RegisterShutdownTask(nsITargetShutdownTask*) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+nsThreadPool::UnregisterShutdownTask(nsITargetShutdownTask*) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -451,6 +495,7 @@ nsThreadPool::ShutdownWithTimeout(int32_t aTimeoutMs) {
 
 NS_IMETHODIMP
 nsThreadPool::GetThreadLimit(uint32_t* aValue) {
+  MutexAutoLock lock(mMutex);
   *aValue = mThreadLimit;
   return NS_OK;
 }
@@ -473,6 +518,7 @@ nsThreadPool::SetThreadLimit(uint32_t aValue) {
 
 NS_IMETHODIMP
 nsThreadPool::GetIdleThreadLimit(uint32_t* aValue) {
+  MutexAutoLock lock(mMutex);
   *aValue = mIdleThreadLimit;
   return NS_OK;
 }
@@ -496,6 +542,7 @@ nsThreadPool::SetIdleThreadLimit(uint32_t aValue) {
 
 NS_IMETHODIMP
 nsThreadPool::GetIdleThreadTimeout(uint32_t* aValue) {
+  MutexAutoLock lock(mMutex);
   *aValue = mIdleThreadTimeout;
   return NS_OK;
 }
@@ -516,6 +563,7 @@ nsThreadPool::SetIdleThreadTimeout(uint32_t aValue) {
 
 NS_IMETHODIMP
 nsThreadPool::GetIdleThreadTimeoutRegressive(bool* aValue) {
+  MutexAutoLock lock(mMutex);
   *aValue = mRegressiveMaxIdleTime;
   return NS_OK;
 }
@@ -567,13 +615,10 @@ nsThreadPool::SetListener(nsIThreadPoolListener* aListener) {
 
 NS_IMETHODIMP
 nsThreadPool::SetName(const nsACString& aName) {
-  {
-    MutexAutoLock lock(mMutex);
-    if (mThreads.Count()) {
-      return NS_ERROR_NOT_AVAILABLE;
-    }
+  MutexAutoLock lock(mMutex);
+  if (mThreads.Count()) {
+    return NS_ERROR_NOT_AVAILABLE;
   }
-
   mName = aName;
   return NS_OK;
 }

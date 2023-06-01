@@ -7,7 +7,7 @@
 #define WinIMEHandler_h_
 
 #include "nscore.h"
-#include "nsWindowBase.h"
+#include "nsWindow.h"
 #include "npapi.h"
 #include <windows.h>
 #include <inputscope.h>
@@ -144,7 +144,7 @@ class IMEHandler final {
   /**
    * Associate or disassociate IME context to/from the aWindowBase.
    */
-  static void AssociateIMEContext(nsWindowBase* aWindowBase, bool aEnable);
+  static void AssociateIMEContext(nsWindow* aWindowBase, bool aEnable);
 
   /**
    * Called when the window is created.
@@ -166,7 +166,7 @@ class IMEHandler final {
   /**
    * Append InputScope values from inputmode string.
    */
-  static void AppendInputScopeFromInputmode(const nsAString& aInputmode,
+  static void AppendInputScopeFromInputMode(const nsAString& aHTMLInputMode,
                                             nsTArray<InputScope>& aScopes);
 
   /**
@@ -196,13 +196,12 @@ class IMEHandler final {
   static decltype(SetInputScopes)* sSetInputScopes;
   static void SetInputScopeForIMM32(nsWindow* aWindow,
                                     const nsAString& aHTMLInputType,
-                                    const nsAString& aHTMLInputInputmode,
+                                    const nsAString& aHTMLInputMode,
                                     bool aInPrivateBrowsing);
   static bool sIsInTSFMode;
   // If sIMMEnabled is false, any IME messages are not handled in TSF mode.
   // Additionally, IME context is always disassociated from focused window.
   static bool sIsIMMEnabled;
-  static bool sAssociateIMCOnlyWhenIMM_IMEActive;
 
   static bool IsTSFAvailable() { return sIsInTSFMode; }
   static bool IsIMMActive();

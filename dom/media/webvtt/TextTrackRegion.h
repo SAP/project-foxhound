@@ -15,8 +15,7 @@
 #include "mozilla/dom/VTTRegionBinding.h"
 #include "mozilla/Preferences.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class GlobalObject;
 class TextTrack;
@@ -24,7 +23,7 @@ class TextTrack;
 class TextTrackRegion final : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(TextTrackRegion)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(TextTrackRegion)
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
@@ -134,7 +133,6 @@ class TextTrackRegion final : public nsISupports, public nsWrapperCache {
   }
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_TextTrackRegion_h

@@ -19,8 +19,7 @@
 
 class nsIContent;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class WebVTTListener;
 class WindowDestroyObserver;
@@ -139,7 +138,6 @@ class HTMLTrackElement final : public nsGenericHTMLElement {
   RefPtr<WindowDestroyObserver> mWindowDestroyObserver;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_HTMLTrackElement_h

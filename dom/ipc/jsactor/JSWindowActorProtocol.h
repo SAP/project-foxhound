@@ -24,6 +24,7 @@ namespace dom {
 struct WindowActorOptions;
 class JSWindowActorInfo;
 class EventTarget;
+class JSActorProtocolUtils;
 
 /**
  * Object corresponding to a single window actor protocol. This object acts as
@@ -76,7 +77,7 @@ class JSWindowActorProtocol final : public JSActorProtocol,
 
  private:
   explicit JSWindowActorProtocol(const nsACString& aName) : mName(aName) {}
-  extensions::MatchPatternSet* GetURIMatcher();
+  extensions::MatchPatternSetCore* GetURIMatcher();
   bool RemoteTypePrefixMatches(const nsDependentCSubstring& aRemoteType);
   bool MessageManagerGroupMatches(BrowsingContext* aBrowsingContext);
   ~JSWindowActorProtocol() = default;
@@ -88,10 +89,12 @@ class JSWindowActorProtocol final : public JSActorProtocol,
   nsTArray<nsCString> mRemoteTypes;
   nsTArray<nsString> mMessageManagerGroups;
 
+  friend class JSActorProtocolUtils;
+
   ParentSide mParent;
   ChildSide mChild;
 
-  RefPtr<extensions::MatchPatternSet> mURIMatcher;
+  RefPtr<extensions::MatchPatternSetCore> mURIMatcher;
 };
 
 }  // namespace dom

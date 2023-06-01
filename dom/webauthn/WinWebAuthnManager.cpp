@@ -11,11 +11,11 @@
 #include "mozilla/Unused.h"
 #include "nsTextFormatter.h"
 #include "nsWindowsHelpers.h"
+#include "WebAuthnEnumStrings.h"
 #include "winwebauthn/webauthn.h"
 #include "WinWebAuthnManager.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 static mozilla::LazyLogModule gWinWebAuthnManagerLog("winwebauthnkeymanager");
@@ -232,65 +232,69 @@ void WinWebAuthnManager::Register(
 
     const auto& sel = extra.AuthenticatorSelection();
 
-    UserVerificationRequirement userVerificationReq =
+    const nsString& userVerificationRequirement =
         sel.userVerificationRequirement();
-    switch (userVerificationReq) {
-      case UserVerificationRequirement::Required:
-        winUserVerificationReq =
-            WEBAUTHN_USER_VERIFICATION_REQUIREMENT_REQUIRED;
-        break;
-      case UserVerificationRequirement::Preferred:
-        winUserVerificationReq =
-            WEBAUTHN_USER_VERIFICATION_REQUIREMENT_PREFERRED;
-        break;
-      case UserVerificationRequirement::Discouraged:
-        winUserVerificationReq =
-            WEBAUTHN_USER_VERIFICATION_REQUIREMENT_DISCOURAGED;
-        break;
-      default:
-        winUserVerificationReq = WEBAUTHN_USER_VERIFICATION_REQUIREMENT_ANY;
-        break;
+    // This mapping needs to be reviewed if values are added to the
+    // UserVerificationRequirement enum.
+    static_assert(MOZ_WEBAUTHN_ENUM_STRINGS_VERSION == 2);
+    if (userVerificationRequirement.EqualsLiteral(
+            MOZ_WEBAUTHN_USER_VERIFICATION_REQUIREMENT_REQUIRED)) {
+      winUserVerificationReq = WEBAUTHN_USER_VERIFICATION_REQUIREMENT_REQUIRED;
+    } else if (userVerificationRequirement.EqualsLiteral(
+                   MOZ_WEBAUTHN_USER_VERIFICATION_REQUIREMENT_PREFERRED)) {
+      winUserVerificationReq = WEBAUTHN_USER_VERIFICATION_REQUIREMENT_PREFERRED;
+    } else if (userVerificationRequirement.EqualsLiteral(
+                   MOZ_WEBAUTHN_RESIDENT_KEY_REQUIREMENT_DISCOURAGED)) {
+      winUserVerificationReq =
+          WEBAUTHN_USER_VERIFICATION_REQUIREMENT_DISCOURAGED;
+    } else {
+      winUserVerificationReq = WEBAUTHN_USER_VERIFICATION_REQUIREMENT_ANY;
     }
 
     if (sel.authenticatorAttachment().isSome()) {
-      const AuthenticatorAttachment authenticatorAttachment =
+      const nsString& authenticatorAttachment =
           sel.authenticatorAttachment().value();
-      switch (authenticatorAttachment) {
-        case AuthenticatorAttachment::Platform:
-          winAttachment = WEBAUTHN_AUTHENTICATOR_ATTACHMENT_PLATFORM;
-          break;
-        case AuthenticatorAttachment::Cross_platform:
-          winAttachment = WEBAUTHN_AUTHENTICATOR_ATTACHMENT_CROSS_PLATFORM;
-          break;
-        default:
-          break;
+      // This mapping needs to be reviewed if values are added to the
+      // AuthenticatorAttachement enum.
+      static_assert(MOZ_WEBAUTHN_ENUM_STRINGS_VERSION == 2);
+      if (authenticatorAttachment.EqualsLiteral(
+              MOZ_WEBAUTHN_AUTHENTICATOR_ATTACHMENT_PLATFORM)) {
+        winAttachment = WEBAUTHN_AUTHENTICATOR_ATTACHMENT_PLATFORM;
+      } else if (authenticatorAttachment.EqualsLiteral(
+                     MOZ_WEBAUTHN_AUTHENTICATOR_ATTACHMENT_CROSS_PLATFORM)) {
+        winAttachment = WEBAUTHN_AUTHENTICATOR_ATTACHMENT_CROSS_PLATFORM;
+      } else {
+        winAttachment = WEBAUTHN_AUTHENTICATOR_ATTACHMENT_ANY;
       }
     }
 
     winRequireResidentKey = sel.requireResidentKey();
 
     // AttestationConveyance
-    AttestationConveyancePreference attestation =
-        extra.attestationConveyancePreference();
-    switch (attestation) {
-      case AttestationConveyancePreference::Direct:
-        winAttestation = WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_DIRECT;
-        break;
-      case AttestationConveyancePreference::Indirect:
-        winAttestation = WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_INDIRECT;
-        break;
-      case AttestationConveyancePreference::None:
-        winAttestation = WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_NONE;
-        break;
-      default:
-        winAttestation = WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_ANY;
-        break;
+    const nsString& attestation = extra.attestationConveyancePreference();
+    // This mapping needs to be reviewed if values are added to the
+    // AttestationConveyancePreference enum.
+    static_assert(MOZ_WEBAUTHN_ENUM_STRINGS_VERSION == 2);
+    if (attestation.EqualsLiteral(
+            MOZ_WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_NONE)) {
+      winAttestation = WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_NONE;
+    } else if (attestation.EqualsLiteral(
+                   MOZ_WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_INDIRECT)) {
+      winAttestation = WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_INDIRECT;
+    } else if (attestation.EqualsLiteral(
+                   MOZ_WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_DIRECT)) {
+      winAttestation = WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_DIRECT;
+    } else {
+      winAttestation = WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_ANY;
     }
 
+    if (extra.Extensions().Length() >
+        (int)(sizeof(rgExtension) / sizeof(rgExtension[0]))) {
+      nsresult aError = NS_ERROR_DOM_INVALID_STATE_ERR;
+      MaybeAbortRegister(aTransactionId, aError);
+      return;
+    }
     for (const WebAuthnExtension& ext : extra.Extensions()) {
-      MOZ_ASSERT(cExtensions <
-                 (int)(sizeof(rgExtension) / sizeof(rgExtension[0])));
-
       if (ext.type() == WebAuthnExtension::TWebAuthnExtensionHmacSecret) {
         HmacCreateSecret =
             ext.get_WebAuthnExtensionHmacSecret().hmacCreateSecret() == true;
@@ -455,8 +459,9 @@ void WinWebAuthnManager::Register(
     nsTArray<uint8_t> attObject;
     if (winAttestation == WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_NONE) {
       // Zero AAGuid
+      const uint8_t zeroGuid[16] = {0};
       authenticatorData.ReplaceElementsAt(32 + 1 + 4 /*AAGuid offset*/, 16,
-                                          0x0);
+                                          zeroGuid, 16);
 
       CryptoBuffer authData;
       authData.Assign(authenticatorData);
@@ -571,25 +576,22 @@ void WinWebAuthnManager::Sign(PWebAuthnTransactionParent* aTransactionParent,
     rpID = aInfo.RpId().get();
 
     // User Verification Requirement
-    UserVerificationRequirement userVerificationReq =
-        extra.userVerificationRequirement();
-
-    switch (userVerificationReq) {
-      case UserVerificationRequirement::Required:
-        winUserVerificationReq =
-            WEBAUTHN_USER_VERIFICATION_REQUIREMENT_REQUIRED;
-        break;
-      case UserVerificationRequirement::Preferred:
-        winUserVerificationReq =
-            WEBAUTHN_USER_VERIFICATION_REQUIREMENT_PREFERRED;
-        break;
-      case UserVerificationRequirement::Discouraged:
-        winUserVerificationReq =
-            WEBAUTHN_USER_VERIFICATION_REQUIREMENT_DISCOURAGED;
-        break;
-      default:
-        winUserVerificationReq = WEBAUTHN_USER_VERIFICATION_REQUIREMENT_ANY;
-        break;
+    const nsString& userVerificationReq = extra.userVerificationRequirement();
+    // This mapping needs to be reviewed if values are added to the
+    // UserVerificationRequirement enum.
+    static_assert(MOZ_WEBAUTHN_ENUM_STRINGS_VERSION == 2);
+    if (userVerificationReq.EqualsLiteral(
+            MOZ_WEBAUTHN_USER_VERIFICATION_REQUIREMENT_REQUIRED)) {
+      winUserVerificationReq = WEBAUTHN_USER_VERIFICATION_REQUIREMENT_REQUIRED;
+    } else if (userVerificationReq.EqualsLiteral(
+                   MOZ_WEBAUTHN_USER_VERIFICATION_REQUIREMENT_PREFERRED)) {
+      winUserVerificationReq = WEBAUTHN_USER_VERIFICATION_REQUIREMENT_PREFERRED;
+    } else if (userVerificationReq.EqualsLiteral(
+                   MOZ_WEBAUTHN_RESIDENT_KEY_REQUIREMENT_DISCOURAGED)) {
+      winUserVerificationReq =
+          WEBAUTHN_USER_VERIFICATION_REQUIREMENT_DISCOURAGED;
+    } else {
+      winUserVerificationReq = WEBAUTHN_USER_VERIFICATION_REQUIREMENT_ANY;
     }
   } else {
     rpID = aInfo.Origin().get();
@@ -763,5 +765,4 @@ void WinWebAuthnManager::Cancel(PWebAuthnTransactionParent* aParent,
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

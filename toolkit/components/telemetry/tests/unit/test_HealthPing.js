@@ -6,15 +6,9 @@
 
 "use strict";
 
-const { TelemetryArchiveTesting } = ChromeUtils.import(
-  "resource://testing-common/TelemetryArchiveTesting.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "TelemetryHealthPing",
-  "resource://gre/modules/HealthPing.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  TelemetryHealthPing: "resource://gre/modules/HealthPing.sys.mjs",
+});
 
 function checkHealthPingStructure(ping, expectedFailuresDict) {
   let payload = ping.payload;
@@ -34,32 +28,11 @@ function checkHealthPingStructure(ping, expectedFailuresDict) {
 }
 
 function fakeHealthSchedulerTimer(set, clear) {
-  let { Policy } = ChromeUtils.import("resource://gre/modules/HealthPing.jsm");
+  let { Policy } = ChromeUtils.importESModule(
+    "resource://gre/modules/HealthPing.sys.mjs"
+  );
   Policy.setSchedulerTickTimeout = set;
   Policy.clearSchedulerTickTimeout = clear;
-}
-
-async function waitForConditionWithPromise(
-  promiseFn,
-  timeoutMsg,
-  tryCount = 30
-) {
-  const SINGLE_TRY_TIMEOUT = 100;
-  let tries = 0;
-  do {
-    try {
-      return await promiseFn();
-    } catch (ex) {}
-    await new Promise(resolve => do_timeout(SINGLE_TRY_TIMEOUT, resolve));
-  } while (++tries <= tryCount);
-  throw new Error(timeoutMsg);
-}
-
-function fakeSendSubmissionTimeout(timeOut) {
-  let { Policy } = ChromeUtils.import(
-    "resource://gre/modules/TelemetrySend.jsm"
-  );
-  Policy.pingSubmissionTimeout = () => timeOut;
 }
 
 add_task(async function setup() {
@@ -148,61 +121,6 @@ add_task(async function test_sendOverSizedPing() {
     os: TelemetryHealthPing.OsInfo,
     reason: TelemetryHealthPing.Reason.IMMEDIATE,
   });
-});
-
-add_task(async function test_sendOnTimeout() {
-  TelemetryHealthPing.testReset();
-  await TelemetrySend.reset();
-  PingServer.clearRequests();
-  let PING_TYPE = "ping-on-timeout";
-
-  // Disable send retry to make this test more deterministic.
-  fakePingSendTimer(
-    () => {},
-    () => {}
-  );
-
-  // Set up small ping submission timeout to always have timeout error.
-  fakeSendSubmissionTimeout(2);
-
-  await TelemetryController.submitExternalPing(PING_TYPE, {});
-
-  let response;
-  PingServer.registerPingHandler((req, res) => {
-    PingServer.resetPingHandler();
-    // We don't finish the response yet to make sure to trigger a timeout.
-    res.processAsync();
-    response = res;
-  });
-
-  // Wait for health ping.
-  let ac = new TelemetryArchiveTesting.Checker();
-  await ac.promiseInit();
-  await waitForConditionWithPromise(() => {
-    ac.promiseFindPing("health", []);
-  }, "Failed to find health ping");
-
-  if (response) {
-    response.finish();
-  }
-
-  let { PING_SUBMIT_TIMEOUT_MS } = ChromeUtils.import(
-    "resource://gre/modules/TelemetrySend.jsm"
-  );
-  fakeSendSubmissionTimeout(PING_SUBMIT_TIMEOUT_MS);
-  PingServer.resetPingHandler();
-  TelemetrySend.notifyCanUpload();
-
-  let pings = await PingServer.promiseNextPings(2);
-  let healthPing = pings.find(ping => ping.type === "health");
-  checkHealthPingStructure(healthPing, {
-    [TelemetryHealthPing.FailureType.SEND_FAILURE]: {
-      timeout: 1,
-    },
-    os: TelemetryHealthPing.OsInfo,
-    reason: TelemetryHealthPing.Reason.IMMEDIATE,
-  });
-  await TelemetryStorage.testClearPendingPings();
 });
 
 add_task(async function test_sendOnlyTopTenDiscardedPings() {

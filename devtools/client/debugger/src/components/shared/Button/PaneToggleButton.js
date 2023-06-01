@@ -3,6 +3,7 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import React, { PureComponent } from "react";
+import PropTypes from "prop-types";
 import classnames from "classnames";
 import AccessibleImage from "../AccessibleImage";
 import { CommandBarButton } from "./";
@@ -14,6 +15,15 @@ class PaneToggleButton extends PureComponent {
     position: "start",
   };
 
+  static get propTypes() {
+    return {
+      collapsed: PropTypes.bool.isRequired,
+      handleClick: PropTypes.func.isRequired,
+      horizontal: PropTypes.bool.isRequired,
+      position: PropTypes.oneOf(["start", "end"]).isRequired,
+    };
+  }
+
   label(position, collapsed) {
     switch (position) {
       case "start":
@@ -23,6 +33,7 @@ class PaneToggleButton extends PureComponent {
           collapsed ? "expandBreakpoints" : "collapseBreakpoints"
         );
     }
+    return null;
   }
 
   render() {

@@ -1,25 +1,22 @@
 reject-chromeutils-import-params
 ================================
 
-``ChromeUtils.import`` can be called with two arguments, however these are now
-largely deprecated.
-
-The use of object destructuring is preferred over the second parameter being
-``this``.
-
-Using explicit exports is preferred over the second parameter being ``null``.
+``ChromeUtils.import`` used to be able to be called with two arguments, however
+the second argument is no longer supported. Exports from modules should now be
+explicit, and the imported symbols being accessed from the returned object.
 
 Examples of incorrect code for this rule:
 -----------------------------------------
 
 .. code-block:: js
 
-    ChromeUtils.import("resource://gre/modules/Services.jsm", this);
-    ChromeUtils.import("resource://gre/modules/Services.jsm", null);
+    ChromeUtils.import("resource://gre/modules/AppConstants.jsm", this);
+    ChromeUtils.import("resource://gre/modules/AppConstants.jsm", null);
+    ChromeUtils.import("resource://gre/modules/AppConstants.jsm", {});
 
 Examples of correct code for this rule:
 ---------------------------------------
 
 .. code-block:: js
 
-    const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+    const { AppConstants } = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");

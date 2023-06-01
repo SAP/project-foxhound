@@ -1,55 +1,61 @@
 "use strict";
 
-var { MigrationUtils, MigratorPrototype } = ChromeUtils.import(
-  "resource:///modules/MigrationUtils.jsm"
+var { MigrationUtils } = ChromeUtils.importESModule(
+  "resource:///modules/MigrationUtils.sys.mjs"
 );
 var { LoginHelper } = ChromeUtils.import(
   "resource://gre/modules/LoginHelper.jsm"
 );
 var { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-var { PlacesUtils } = ChromeUtils.import(
-  "resource://gre/modules/PlacesUtils.jsm"
+var { PlacesUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PlacesUtils.sys.mjs"
 );
-var { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+var { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
-var { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+var { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-var { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+var { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
-var { PlacesTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PlacesTestUtils.jsm"
+var { PlacesTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PlacesTestUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Sqlite",
-  "resource://gre/modules/Sqlite.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  Sqlite: "resource://gre/modules/Sqlite.sys.mjs",
+});
 
 // Initialize profile.
 var gProfD = do_get_profile();
 
-var { getAppInfo, newAppInfo, updateAppInfo } = ChromeUtils.import(
-  "resource://testing-common/AppInfo.jsm"
+var { getAppInfo, newAppInfo, updateAppInfo } = ChromeUtils.importESModule(
+  "resource://testing-common/AppInfo.sys.mjs"
 );
 updateAppInfo();
 
 /**
  * Migrates the requested resource and waits for the migration to be complete.
+ *
+ * @param {MigratorBase} migrator
+ *   The migrator being used to migrate the data.
+ * @param {number} resourceType
+ *   This is a bitfield with bits from nsIBrowserProfileMigrator flipped to indicate what
+ *   resources should be migrated.
+ * @param {object|string|null} [aProfile=null]
+ *   The profile to be migrated. If set to null, the default profile will be
+ *   migrated.
+ * @param {boolean} succeeds
+ *   True if this migration is expected to succeed.
+ * @returns {Promise<Array<string[]>>}
+ *   An array of the results from each nsIObserver topics being observed to
+ *   verify if the migration succeeded or failed. Those results are 2-element
+ *   arrays of [subject, data].
  */
 async function promiseMigration(
   migrator,
@@ -83,6 +89,15 @@ async function promiseMigration(
 
 /**
  * Replaces a directory service entry with a given nsIFile.
+ *
+ * @param {string} key
+ *   The nsIDirectoryService directory key to register a fake path for.
+ *   For example: "AppData", "ULibDir".
+ * @param {nsIFile} file
+ *   The nsIFile to map the key to. Note that this nsIFile should represent
+ *   a directory and not an individual file.
+ * @see nsDirectoryServiceDefs.h for the list of directories that can be
+ *   overridden.
  */
 function registerFakePath(key, file) {
   let dirsvc = Services.dirsvc.QueryInterface(Ci.nsIProperties);

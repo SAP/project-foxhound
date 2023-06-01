@@ -1,4 +1,5 @@
-/* -*- Mode: c++; tab-width: 2; indent-tabs-mode: nil; -*- */
+/* -*- tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,9 +31,10 @@
 #include "nsToolkit.h"
 #include "TextInputHandler.h"
 #include "mozilla/BackgroundHangMonitor.h"
-#include "GeckoProfiler.h"
 #include "ScreenHelperCocoa.h"
 #include "mozilla/Hal.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerThreadSleep.h"
 #include "mozilla/widget/ScreenManager.h"
 #include "HeadlessScreenHelper.h"
 #include "MOZMenuOpeningCoordinator.h"
@@ -194,6 +196,8 @@ void OnUncaughtException(NSException* aException) {
 
 - (id)initWithAppShell:(nsAppShell*)aAppShell;
 - (void)applicationWillTerminate:(NSNotification*)aNotification;
+- (BOOL)shouldSaveApplicationState:(NSCoder*)coder;
+- (BOOL)shouldRestoreApplicationState:(NSCoder*)coder;
 @end
 
 // nsAppShell implementation
@@ -313,11 +317,13 @@ void nsAppShell::OnRunLoopActivityChanged(CFRunLoopActivity aActivity) {
       uint8_t variableOnStack = 0;
       profilingStack.pushLabelFrame("Native event loop idle", nullptr, &variableOnStack,
                                     JS::ProfilingCategoryPair::IDLE, 0);
+      profiler_thread_sleep();
     });
   } else {
     if (mProfilingStackWhileWaiting) {
       mProfilingStackWhileWaiting->pop();
       mProfilingStackWhileWaiting = nullptr;
+      profiler_thread_wake();
     }
   }
 }
@@ -977,6 +983,10 @@ void nsAppShell::OnMemoryPressureChanged(dispatch_source_memorypressure_flags_t 
                                              selector:@selector(applicationDidBecomeActive:)
                                                  name:NSApplicationDidBecomeActiveNotification
                                                object:NSApp];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(timezoneChanged:)
+                                                 name:NSSystemTimeZoneDidChangeNotification
+                                               object:nil];
   }
 
   return self;
@@ -1027,6 +1037,22 @@ void nsAppShell::OnMemoryPressureChanged(dispatch_source_memorypressure_flags_t 
   }
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
+}
+
+- (void)timezoneChanged:(NSNotification*)aNotification {
+  NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
+
+  nsBaseAppShell::OnSystemTimezoneChange();
+
+  NS_OBJC_END_TRY_IGNORE_BLOCK;
+}
+
+- (BOOL)shouldSaveApplicationState:(NSCoder*)coder {
+  return YES;
+}
+
+- (BOOL)shouldRestoreApplicationState:(NSCoder*)coder {
+  return YES;
 }
 
 @end

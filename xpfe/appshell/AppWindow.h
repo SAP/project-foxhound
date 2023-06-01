@@ -20,6 +20,7 @@
 #include "nsDocShell.h"
 #include "nsRect.h"
 #include "Units.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/Mutex.h"
 
 // Interfaces needed
@@ -35,25 +36,21 @@
 #include "nsIRemoteTab.h"
 #include "nsIWebProgressListener.h"
 #include "nsITimer.h"
-
-#ifndef MOZ_NEW_XULSTORE
-#  include "nsIXULStore.h"
-#endif
-
-namespace mozilla {
-namespace dom {
-class Element;
-}  // namespace dom
-}  // namespace mozilla
+#include "nsIXULStore.h"
 
 class nsAtom;
 class nsXULTooltipListener;
-struct nsWidgetInitData;
 
 namespace mozilla {
 class PresShell;
 class AppWindowTimerCallback;
 class L10nReadyPromiseHandler;
+namespace dom {
+class Element;
+}  // namespace dom
+namespace widget {
+struct InitData;
+}  // namespace widget
 }  // namespace mozilla
 
 // AppWindow
@@ -91,7 +88,8 @@ class AppWindow final : public nsIBaseWindow,
     MOZ_CAN_RUN_SCRIPT_BOUNDARY
     virtual mozilla::PresShell* GetPresShell() override;
     MOZ_CAN_RUN_SCRIPT_BOUNDARY
-    virtual bool WindowMoved(nsIWidget* aWidget, int32_t x, int32_t y) override;
+    virtual bool WindowMoved(nsIWidget* aWidget, int32_t x, int32_t y,
+                             ByMoveToRect) override;
     MOZ_CAN_RUN_SCRIPT_BOUNDARY
     virtual bool WindowResized(nsIWidget* aWidget, int32_t aWidth,
                                int32_t aHeight) override;
@@ -140,10 +138,13 @@ class AppWindow final : public nsIBaseWindow,
   void IgnoreXULSizeMode(bool aEnable) { mIgnoreXULSizeMode = aEnable; }
   void WasRegistered() { mRegistered = true; }
 
+  using nsIBaseWindow::GetPositionAndSize;
+  using nsIBaseWindow::GetSize;
+
   // AppWindow methods...
   nsresult Initialize(nsIAppWindow* aParent, nsIAppWindow* aOpener,
                       int32_t aInitialWidth, int32_t aInitialHeight,
-                      bool aIsHiddenWindow, nsWidgetInitData& widgetInitData);
+                      bool aIsHiddenWindow, widget::InitData& widgetInitData);
 
   nsDocShell* GetDocShell() { return mDocShell; }
 
@@ -167,6 +168,7 @@ class AppWindow final : public nsIBaseWindow,
   MOZ_CAN_RUN_SCRIPT void MacFullscreenMenubarOverlapChanged(
       mozilla::DesktopCoord aOverlapAmount);
   MOZ_CAN_RUN_SCRIPT void OcclusionStateChanged(bool aIsFullyOccluded);
+  void RecomputeBrowsingContextVisibility();
   MOZ_CAN_RUN_SCRIPT void OSToolbarButtonPressed();
   MOZ_CAN_RUN_SCRIPT
   bool ZLevelChanged(bool aImmediate, nsWindowZ* aPlacement,
@@ -177,11 +179,17 @@ class AppWindow final : public nsIBaseWindow,
   explicit AppWindow(uint32_t aChromeFlags);
 
  protected:
-  enum persistentAttributes {
-    PAD_MISC = 0x1,
-    PAD_POSITION = 0x2,
-    PAD_SIZE = 0x4
+  enum class PersistentAttribute : uint8_t {
+    Position,
+    Size,
+    Misc,
   };
+  using PersistentAttributes = EnumSet<PersistentAttribute>;
+
+  static PersistentAttributes AllPersistentAttributes() {
+    return {PersistentAttribute::Position, PersistentAttribute::Size,
+            PersistentAttribute::Misc};
+  }
 
   virtual ~AppWindow();
 
@@ -213,7 +221,18 @@ class AppWindow final : public nsIBaseWindow,
   void SetSpecifiedSize(int32_t aSpecWidth, int32_t aSpecHeight);
   bool UpdateWindowStateFromMiscXULAttributes();
   void SyncAttributesToWidget();
-  NS_IMETHOD SavePersistentAttributes();
+  void SavePersistentAttributes(PersistentAttributes);
+  void MaybeSavePersistentPositionAndSize(PersistentAttributes,
+                                          dom::Element& aRootElement,
+                                          const nsAString& aPersistString,
+                                          bool aShouldPersist);
+  void MaybeSavePersistentMiscAttributes(PersistentAttributes,
+                                         dom::Element& aRootElement,
+                                         const nsAString& aPersistString,
+                                         bool aShouldPersist);
+  void SavePersistentAttributes() {
+    SavePersistentAttributes(mPersistentAttributesDirty);
+  }
 
   bool NeedsTooltipListener();
   void AddTooltipSupport();
@@ -246,7 +265,10 @@ class AppWindow final : public nsIBaseWindow,
   void PlaceWindowLayersBehind(uint32_t aLowLevel, uint32_t aHighLevel,
                                nsIAppWindow* aBehind);
   void SetContentScrollbarVisibility(bool aVisible);
-  void PersistentAttributesDirty(uint32_t aDirtyFlags);
+
+  enum PersistentAttributeUpdate { Sync, Async };
+  void PersistentAttributesDirty(PersistentAttributes,
+                                 PersistentAttributeUpdate);
   nsresult GetTabCount(uint32_t* aResult);
 
   void LoadPersistentWindowState();
@@ -334,20 +356,25 @@ class AppWindow final : public nsIBaseWindow,
   // otherwise happen due to script running as we tear down various things.
   bool mDestroying;
   bool mRegistered;
-  uint32_t mPersistentAttributesDirty;  // persistentAttributes
-  uint32_t mPersistentAttributesMask;
+  PersistentAttributes mPersistentAttributesDirty;
+  PersistentAttributes mPersistentAttributesMask;
   uint32_t mChromeFlags;
   nsCOMPtr<nsIOpenWindowInfo> mInitialOpenWindowInfo;
   nsString mTitle;
-  nsIntRect mOpenerScreenRect;  // the screen rect of the opener
+
+  // The screen rect of the opener.
+  mozilla::DesktopIntRect mOpenerScreenRect;
 
   nsCOMPtr<nsIRemoteTab> mPrimaryBrowserParent;
 
   nsCOMPtr<nsITimer> mSPTimer;
-  mozilla::Mutex mSPTimerLock;
   WidgetListenerDelegate mWidgetListenerDelegate;
 
  private:
+  MOZ_CAN_RUN_SCRIPT void IntrinsicallySizeShell(const CSSIntSize& aWindowDiff,
+                                                 int32_t& aSpecWidth,
+                                                 int32_t& aSpecHeight);
+
   // GetPrimaryBrowserParentSize is called from xpidl methods and we don't have
   // a good way to annotate those with MOZ_CAN_RUN_SCRIPT yet.  It takes no
   // refcounted args other than "this", and the "this" uses seem ok.
@@ -355,9 +382,13 @@ class AppWindow final : public nsIBaseWindow,
   GetPrimaryRemoteTabSize(int32_t* aWidth, int32_t* aHeight);
   nsresult GetPrimaryContentShellSize(int32_t* aWidth, int32_t* aHeight);
   nsresult SetPrimaryRemoteTabSize(int32_t aWidth, int32_t aHeight);
-#ifndef MOZ_NEW_XULSTORE
+  void SizeShellToWithLimit(int32_t aDesiredWidth, int32_t aDesiredHeight,
+                            int32_t shellItemWidth, int32_t shellItemHeight);
+  nsresult MoveResize(const Maybe<LayoutDeviceIntPoint>& aPosition,
+                      const Maybe<LayoutDeviceIntSize>& aSize, bool aRepaint);
+  nsresult MoveResize(const Maybe<DesktopPoint>& aPosition,
+                      const Maybe<DesktopSize>& aSize, bool aRepaint);
   nsCOMPtr<nsIXULStore> mLocalStore;
-#endif
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(AppWindow, NS_APPWINDOW_IMPL_CID)

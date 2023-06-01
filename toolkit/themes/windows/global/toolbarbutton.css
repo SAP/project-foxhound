@@ -11,19 +11,12 @@
 toolbarbutton {
   appearance: auto;
   -moz-default-appearance: toolbarbutton;
-  -moz-box-align: center;
-  -moz-box-pack: center;
   margin: 0;
   padding: 3px;
 }
 
 .toolbarbutton-text {
   margin: 0;
-  text-align: center;
-}
-
-toolbarbutton.tabbable {
-  -moz-user-focus: normal !important;
 }
 
 toolbarbutton:-moz-focusring {
@@ -31,18 +24,18 @@ toolbarbutton:-moz-focusring {
   outline-offset: calc(-1 * var(--default-focusring-width) - 1px);
 }
 
-toolbarbutton[disabled="true"] {
+toolbarbutton:where([disabled="true"]) {
   color: GrayText;
   text-shadow: none;
 }
 
 @media (-moz-windows-classic) {
   @media not (prefers-contrast) {
-    toolbarbutton[disabled="true"] {
+    toolbarbutton:where([disabled="true"]) {
       text-shadow: 1px 1px ThreeDHighlight;
     }
   }
-  toolbarbutton[disabled="true"] {
+  toolbarbutton:where([disabled="true"]) {
     color: ThreeDShadow;
   }
 }

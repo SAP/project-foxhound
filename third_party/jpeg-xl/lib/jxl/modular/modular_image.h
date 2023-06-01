@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -97,10 +98,19 @@ class Image {
   Image& operator=(Image&& other) noexcept;
   Image(Image&& other) noexcept = default;
 
+  bool empty() const {
+    for (const auto& ch : channel) {
+      if (ch.w && ch.h) return false;
+    }
+    return true;
+  }
+
   Image clone();
 
   void undo_transforms(const weighted::Header& wp_header,
                        jxl::ThreadPool* pool = nullptr);
+
+  std::string DebugString() const;
 };
 
 }  // namespace jxl

@@ -13,15 +13,19 @@ const { ExperimentAPI } = ChromeUtils.import(
 const { ExperimentFakes, ExperimentTestUtils } = ChromeUtils.import(
   "resource://testing-common/NimbusTestUtils.jsm"
 );
+const { ExperimentManager } = ChromeUtils.import(
+  "resource://nimbus/lib/ExperimentManager.jsm"
+);
 const { TelemetryFeed } = ChromeUtils.import(
   "resource://activity-stream/lib/TelemetryFeed.jsm"
 );
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 const MESSAGE_CONTENT = {
   id: "xman_test_message",
+  groups: [],
   content: {
     text: "This is a test CFR",
     addon: {
@@ -41,7 +45,7 @@ const MESSAGE_CONTENT = {
         },
         action: {
           data: {
-            url: null,
+            url: "about:blank",
           },
           type: "INSTALL_ADDON_FROM_URL",
         },
@@ -75,6 +79,7 @@ const MESSAGE_CONTENT = {
       ],
     },
     category: "cfrAddons",
+    layout: "short_message",
     bucket_id: "CFR_M1",
     info_icon: {
       label: {
@@ -108,12 +113,12 @@ const MESSAGE_CONTENT = {
   targeting: "true",
 };
 
-const getCFRExperiment = async () => {
+const getExperiment = async feature => {
   let recipe = ExperimentFakes.recipe(
     // In tests by default studies/experiments are turned off. We turn them on
     // to run the test and rollback at the end. Cleanup causes unenrollment so
     // for cases where the test runs multiple times we need unique ids.
-    `test_xman_cfr_${Date.now()}`,
+    `test_xman_${feature}_${Date.now()}`,
     {
       id: "xman_test_message",
       bucketConfig: {
@@ -125,13 +130,17 @@ const getCFRExperiment = async () => {
       },
     }
   );
-  recipe.branches[0].features[0].featureId = "cfr";
+  recipe.branches[0].features[0].featureId = feature;
   recipe.branches[0].features[0].value = MESSAGE_CONTENT;
-  recipe.branches[1].features[0].featureId = "cfr";
+  recipe.branches[1].features[0].featureId = feature;
   recipe.branches[1].features[0].value = MESSAGE_CONTENT;
-  recipe.featureIds = ["cfr"];
+  recipe.featureIds = [feature];
   await ExperimentTestUtils.validateExperiment(recipe);
   return recipe;
+};
+
+const getCFRExperiment = async () => {
+  return getExperiment("cfr");
 };
 
 const getLegacyCFRExperiment = async () => {
@@ -150,12 +159,10 @@ const getLegacyCFRExperiment = async () => {
   delete recipe.branches[1].features;
   recipe.branches[0].feature = {
     featureId: "cfr",
-    enabled: true,
     value: MESSAGE_CONTENT,
   };
   recipe.branches[1].feature = {
     featureId: "cfr",
-    enabled: true,
     value: MESSAGE_CONTENT,
   };
   return recipe;
@@ -166,17 +173,18 @@ const client = RemoteSettings("nimbus-desktop-experiments");
 // no `add_task` because we want to run this setup before each test not before
 // the entire test suite.
 async function setup(experiment) {
+  // Store the experiment in RS local db to bypass synchronization.
+  await client.db.importChanges({}, Date.now(), [experiment], { clear: true });
   await SpecialPowers.pushPrefEnv({
     set: [
       ["app.shield.optoutstudies.enabled", true],
+      ["datareporting.healthreport.uploadEnabled", true],
       [
         "browser.newtabpage.activity-stream.asrouter.providers.messaging-experiments",
-        `{"id":"messaging-experiments","enabled":true,"type":"remote-experiments","messageGroups":["cfr","spotlight","infobar","aboutwelcome"],"updateCycleInMs":0}`,
+        `{"id":"messaging-experiments","enabled":true,"type":"remote-experiments","updateCycleInMs":0}`,
       ],
     ],
   });
-
-  await client.db.importChanges({}, 42, [experiment], { clear: true });
 }
 
 async function cleanup() {
@@ -200,6 +208,29 @@ add_task(async function test_loading_experimentsAPI() {
   Assert.ok(
     telemetryFeedInstance.isInCFRCohort,
     "Telemetry should return true"
+  );
+
+  // Reload the provider
+  await ASRouter._updateMessageProviders();
+  // Wait to load the messages from the messaging-experiments provider
+  await ASRouter.loadMessagesFromAllProviders();
+
+  Assert.ok(
+    ASRouter.state.messages.find(m => m.id === "xman_test_message"),
+    "Experiment message found in ASRouter state"
+  );
+
+  await cleanup();
+});
+
+add_task(async function test_loading_fxms_message_1_feature() {
+  let experiment = await getExperiment("fxms-message-1");
+  await setup(experiment);
+  // Fetch the new recipe from RS
+  await RemoteSettingsExperimentLoader.updateRecipes();
+  await BrowserTestUtils.waitForCondition(
+    () => ExperimentAPI.getExperiment({ featureId: "fxms-message-1" }),
+    "ExperimentAPI should return an experiment"
   );
 
   // Reload the provider
@@ -239,6 +270,28 @@ add_task(async function test_loading_experimentsAPI_legacy() {
   Assert.ok(
     ASRouter.state.messages.find(m => m.id === "xman_test_message"),
     "Experiment message found in ASRouter state"
+  );
+
+  await cleanup();
+});
+
+add_task(async function test_loading_experimentsAPI_rollout() {
+  const rollout = await getCFRExperiment();
+  rollout.isRollout = true;
+  rollout.branches.pop();
+
+  await setup(rollout);
+  await RemoteSettingsExperimentLoader.updateRecipes();
+  await BrowserTestUtils.waitForCondition(() =>
+    ExperimentAPI.getRolloutMetaData({ featureId: "cfr" })
+  );
+
+  await ASRouter._updateMessageProviders();
+  await ASRouter.loadMessagesFromAllProviders();
+
+  Assert.ok(
+    ASRouter.state.messages.find(m => m.id === "xman_test_message"),
+    "Found rollout message in ASRouter state"
   );
 
   await cleanup();
@@ -334,18 +387,90 @@ add_task(async function test_exposure_ping_legacy() {
   await cleanup();
 });
 
-add_task(async function test_featureless_experiment() {
-  let experiment = await getCFRExperiment();
-  // Remove the feature property from the branch
-  experiment.branches.forEach(branch => delete branch.features);
-  Assert.ok(ExperimentAPI._store.getAllActive().length === 0, "Empty store");
+add_task(async function test_forceEnrollUpdatesMessages() {
+  const experiment = await getCFRExperiment();
+
   await setup(experiment);
-  // Fetch the new recipe from RS
-  await RemoteSettingsExperimentLoader.updateRecipes();
-  // Enrollment was successful; featureless experiments shouldn't break anything
+  await SpecialPowers.pushPrefEnv({
+    set: [["nimbus.debug", true]],
+  });
+
+  Assert.equal(
+    ASRouter.state.messages.filter(m => m.id === "xman_test_message").length,
+    0,
+    "Experiment message should not be found until we opt in"
+  );
+
+  await RemoteSettingsExperimentLoader.optInToExperiment({
+    slug: experiment.slug,
+    branch: experiment.branches[0].slug,
+  });
+
   await BrowserTestUtils.waitForCondition(
-    () => ExperimentAPI._store.getAllActive().length === 1,
+    () =>
+      !!ASRouter.state.messages.filter(m => m.id === "xman_test_message")
+        .length,
+    "waiting for ASRouter to update messages"
+  );
+
+  Assert.equal(
+    ASRouter.state.messages.filter(m => m.id === "xman_test_message").length,
+    1,
+    "Experiment message should be found after opt in"
+  );
+
+  await ExperimentManager.unenroll(`optin-${experiment.slug}`, "cleanup");
+  await SpecialPowers.popPrefEnv();
+  await cleanup();
+});
+
+add_task(async function test_emptyMessage() {
+  const experiment = ExperimentFakes.recipe("empty", {
+    branches: [
+      {
+        slug: "a",
+        ratio: 1,
+        features: [
+          {
+            featureId: "cfr",
+            value: {},
+          },
+        ],
+      },
+    ],
+    bucketConfig: {
+      start: 0,
+      count: 100,
+      total: 100,
+      namespace: "mochitest",
+      randomizationUnit: "normandy_id",
+    },
+  });
+
+  await setup(experiment);
+  await RemoteSettingsExperimentLoader.updateRecipes();
+  await BrowserTestUtils.waitForCondition(
+    () => ExperimentAPI.getExperiment({ featureId: "cfr" }),
     "ExperimentAPI should return an experiment"
+  );
+
+  await ASRouter._updateMessageProviders();
+
+  const experimentsProvider = ASRouter.state.providers.find(
+    p => p.id === "messaging-experiments"
+  );
+
+  // Clear all messages
+  ASRouter.setState(state => ({
+    messages: [],
+  }));
+
+  await ASRouter.loadMessagesFromAllProviders([experimentsProvider]);
+
+  Assert.deepEqual(
+    ASRouter.state.messages,
+    [],
+    "ASRouter should have loaded zero messages"
   );
 
   await cleanup();

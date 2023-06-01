@@ -4,7 +4,10 @@
 
 "use strict";
 
-const { reloadPageAndLog } = require("damp-test/tests/head");
+const {
+  reloadPageAndLog,
+  waitForDOMPredicate,
+} = require("damp-test/tests/head");
 
 /**
  * @param {String} label: The name of the test.
@@ -15,6 +18,7 @@ const { reloadPageAndLog } = require("damp-test/tests/head");
  *          - {String} text: A string that should be in the message.
  *          - {Number} count: If > 1, indicate how many messages with this text should be
  *                            in the output.
+ *          - {Boolean} stacktrace: If true, wait for a stacktrace element to be rendered.
  */
 exports.reloadConsoleAndLog = async function(label, toolbox, expectedMessages) {
   const onReload = async function() {
@@ -36,11 +40,14 @@ exports.reloadConsoleAndLog = async function(label, toolbox, expectedMessages) {
       const messages = Array.from(consoleOutputEl.querySelectorAll(".message"));
       const missing = new Map(expected.map(e => [e.text, e.count || 1]));
 
-      for (const { text, count = 1 } of expected) {
+      for (const { text, count = 1, stacktrace } of expected) {
         let found = 0;
         for (const message of messages) {
           const messageText = message.querySelector(".message-body").innerText;
-          if (messageText.includes(text)) {
+          if (
+            messageText.includes(text) &&
+            (!stacktrace || message.querySelector(".frames .frame"))
+          ) {
             const repeat = message
               .querySelector(".message-repeats")
               ?.innerText?.trim();
@@ -87,17 +94,13 @@ exports.reloadConsoleAndLog = async function(label, toolbox, expectedMessages) {
  *                              when it returns `true`.
  */
 async function waitForConsoleOutputChildListChange(hud, predicate) {
-  const { window, document } = hud.ui;
+  const { document } = hud.ui;
   const webConsoleOutputEl = document.querySelector(".webconsole-output");
 
-  await new Promise(resolve => {
-    const observer = new window.MutationObserver((mutationsList, observer) => {
-      if (predicate(webConsoleOutputEl)) {
-        observer.disconnect();
-        resolve();
-      }
-    });
-    observer.observe(webConsoleOutputEl, { childList: true });
-  });
+  await waitForDOMPredicate(
+    webConsoleOutputEl,
+    () => predicate(webConsoleOutputEl),
+    { childList: true, subtree: true }
+  );
 }
 exports.waitForConsoleOutputChildListChange = waitForConsoleOutputChildListChange;

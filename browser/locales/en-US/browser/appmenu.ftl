@@ -50,10 +50,10 @@ appmenuitem-exit2 =
            *[other] Exit
         }
 appmenu-menu-button-closed2 =
-    .tooltiptext = Open Application Menu
+    .tooltiptext = Open application menu
     .label = { -brand-short-name }
 appmenu-menu-button-opened2 =
-    .tooltiptext = Close Application Menu
+    .tooltiptext = Close application menu
     .label = { -brand-short-name }
 
 # Settings is now used to access the browser settings across all platforms,
@@ -143,8 +143,7 @@ profiler-popup-button-capturing =
   .label = Profiler
   .tooltiptext = The profiler is capturing a profile
 
-profiler-popup-title =
-  .value = { -profiler-brand-name }
+profiler-popup-header-text = { -profiler-brand-name }
 
 profiler-popup-reveal-description-button =
   .aria-label = Reveal more information
@@ -215,6 +214,11 @@ profiler-popup-presets-networking-description = Preset for investigating network
 profiler-popup-presets-networking-label =
   .label = Networking
 
+profiler-popup-presets-power-description = Preset for investigating power use bugs in { -brand-shorter-name }, with low overhead.
+# "Power" is used in the sense of energy (electricity used by the computer).
+profiler-popup-presets-power-label =
+  .label = Power
+
 profiler-popup-presets-custom-label =
   .label = Custom
 
@@ -249,8 +253,8 @@ appmenu-help-more-troubleshooting-info =
     .accesskey = t
 appmenu-help-report-site-issue =
     .label = Report site issue…
-appmenu-help-feedback-page =
-    .label = Submit feedback…
+appmenu-help-share-ideas =
+    .label = Share ideas and feedback…
     .accesskey = S
 
 ## appmenu-help-enter-troubleshoot-mode and appmenu-help-exit-troubleshoot-mode

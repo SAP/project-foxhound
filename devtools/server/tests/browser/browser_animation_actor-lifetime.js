@@ -5,7 +5,7 @@
 
 // Test for Bug 1247243
 
-add_task(async function setup() {
+add_task(async function() {
   info("Setting up inspector and animation actors.");
   const { animations, walker } = await initAnimationsFrontForUrl(
     MAIN_DOMAIN + "animation-data.html"
@@ -58,10 +58,12 @@ add_task(async function setup() {
       gBrowser.selectedBrowser,
       [[animations.actorID]],
       function(actorID) {
-        const { require } = ChromeUtils.import(
-          "resource://devtools/shared/loader/Loader.jsm"
+        const { require } = ChromeUtils.importESModule(
+          "resource://devtools/shared/loader/Loader.sys.mjs"
         );
-        const { DevToolsServer } = require("devtools/server/devtools-server");
+        const {
+          DevToolsServer,
+        } = require("resource://devtools/server/devtools-server.js");
         // Convert actorID to current compartment string otherwise
         // searchAllConnectionsForActor is confused and won't find the actor.
         actorID = String(actorID);

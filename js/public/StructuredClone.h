@@ -19,7 +19,6 @@
 #include "js/AllocPolicy.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
-#include "js/Value.h"
 #include "js/Vector.h"
 
 /*
@@ -179,29 +178,38 @@ enum class StructuredCloneScope : uint32_t {
   UnknownDestination,
 };
 
+/** Values used to describe the ownership individual Transferables.
+ *
+ * Note that these *can* show up in DifferentProcess clones, since
+ * DifferentProcess ArrayBuffers can be Transferred. In that case, this will
+ * distinguish the specific ownership mechanism: is it a malloc pointer or a
+ * memory mapping? */
 enum TransferableOwnership {
-  /** Transferable data has not been filled in yet */
+  /** Transferable data has not been filled in yet. */
   SCTAG_TMO_UNFILLED = 0,
 
-  /** Structured clone buffer does not yet own the data */
+  /** Structured clone buffer does not yet own the data. */
   SCTAG_TMO_UNOWNED = 1,
 
-  /** All values at least this large are owned by the clone buffer */
+  /** All enum values at least this large are owned by the clone buffer. */
   SCTAG_TMO_FIRST_OWNED = 2,
 
-  /** Data is a pointer that can be freed */
-  SCTAG_TMO_ALLOC_DATA = 2,
+  /** Data is a pointer that can be freed. */
+  SCTAG_TMO_ALLOC_DATA = SCTAG_TMO_FIRST_OWNED,
 
-  /** Data is a memory mapped pointer */
+  /** Data is a memory mapped pointer. */
   SCTAG_TMO_MAPPED_DATA = 3,
 
   /**
    * Data is embedding-specific. The engine can free it by calling the
-   * freeTransfer op. The embedding can also use SCTAG_TMO_USER_MIN and
-   * greater, up to 32 bits, to distinguish specific ownership variants.
-   */
+   * freeTransfer op. */
   SCTAG_TMO_CUSTOM = 4,
 
+  /**
+   * Same as SCTAG_TMO_CUSTOM, but the embedding can also use
+   * SCTAG_TMO_USER_MIN and greater, up to 2^32-1, to distinguish specific
+   * ownership variants.
+   */
   SCTAG_TMO_USER_MIN
 };
 
@@ -225,13 +233,11 @@ class CloneDataPolicy {
   void allowIntraClusterClonableSharedObjects() {
     allowIntraClusterClonableSharedObjects_ = true;
   }
-
   bool areIntraClusterClonableSharedObjectsAllowed() const {
     return allowIntraClusterClonableSharedObjects_;
   }
 
   void allowSharedMemoryObjects() { allowSharedMemoryObjects_ = true; }
-
   bool areSharedMemoryObjectsAllowed() const {
     return allowSharedMemoryObjects_;
   }
@@ -314,9 +320,22 @@ typedef bool (*TransferStructuredCloneOp)(JSContext* cx,
                                           void** content, uint64_t* extraData);
 
 /**
- * Called when freeing an unknown transferable object. Note that it
+ * Called when freeing a transferable handled by the embedding. Note that it
  * should never trigger a garbage collection (and will assert in a
  * debug build if it does.)
+ *
+ * This callback will be used to release ownership in three situations:
+ *
+ * 1. During serialization: an object is Transferred from, then an error is
+ *    encountered later and the incomplete serialization is discarded.
+ *
+ * 2. During deserialization: before an object is Transferred to, an error
+ *    is encountered and the incompletely deserialized clone is discarded.
+ *
+ * 3. Serialized data that includes Transferring is never deserialized (eg when
+ *    the receiver disappears before reading in the message), and the clone data
+ * is destroyed.
+ *
  */
 typedef void (*FreeTransferStructuredCloneOp)(
     uint32_t tag, JS::TransferableOwnership ownership, void* content,
@@ -364,7 +383,7 @@ enum OwnTransferablePolicy {
 
   /**
    * Do not free any Transferables within this buffer when deleting it. This
-   * is used to mark as clone buffer as containing data from another process,
+   * is used to mark a clone buffer as containing data from another process,
    * and so it can't legitimately contain pointers. If the buffer claims to
    * have transferables, it's a bug or an attack. This is also used for
    * abandon(), where a buffer still contains raw data but the ownership has
@@ -662,21 +681,10 @@ class JS_PUBLIC_API JSAutoStructuredCloneBuffer {
              void* closure = nullptr);
 
   /**
-   * Release the buffer and transfer ownership to the caller.
+   * Release ownership of the buffer and assign it and ownership of it to
+   * `data`.
    */
-  void steal(JSStructuredCloneData* data, uint32_t* versionp = nullptr,
-             const JSStructuredCloneCallbacks** callbacks = nullptr,
-             void** closure = nullptr);
-
-  /**
-   * Abandon ownership of any transferable objects stored in the buffer,
-   * without freeing the buffer itself. Useful when copying the data out into
-   * an external container, though note that you will need to use adopt() to
-   * properly release that data eventually.
-   */
-  void abandon() {
-    data_.ownTransferables_ = OwnTransferablePolicy::IgnoreTransferablesIfAny;
-  }
+  void giveTo(JSStructuredCloneData* data);
 
   bool read(JSContext* cx, JS::MutableHandleValue vp,
             const JS::CloneDataPolicy& cloneDataPolicy = JS::CloneDataPolicy(),
@@ -729,6 +737,11 @@ JS_PUBLIC_API bool JS_ReadUint32Pair(JSStructuredCloneReader* r, uint32_t* p1,
 JS_PUBLIC_API bool JS_ReadBytes(JSStructuredCloneReader* r, void* p,
                                 size_t len);
 
+JS_PUBLIC_API bool JS_ReadString(JSStructuredCloneReader* r,
+                                 JS::MutableHandleString str);
+
+JS_PUBLIC_API bool JS_ReadDouble(JSStructuredCloneReader* r, double* v);
+
 JS_PUBLIC_API bool JS_ReadTypedArray(JSStructuredCloneReader* r,
                                      JS::MutableHandleValue vp);
 
@@ -740,6 +753,8 @@ JS_PUBLIC_API bool JS_WriteBytes(JSStructuredCloneWriter* w, const void* p,
 
 JS_PUBLIC_API bool JS_WriteString(JSStructuredCloneWriter* w,
                                   JS::HandleString str);
+
+JS_PUBLIC_API bool JS_WriteDouble(JSStructuredCloneWriter* w, double v);
 
 JS_PUBLIC_API bool JS_WriteTypedArray(JSStructuredCloneWriter* w,
                                       JS::HandleValue v);

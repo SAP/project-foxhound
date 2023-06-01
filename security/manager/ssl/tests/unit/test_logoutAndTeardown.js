@@ -11,21 +11,18 @@
 do_get_profile();
 Cc["@mozilla.org/psm;1"].getService(Ci.nsISupports);
 
-function getCert() {
-  return new Promise((resolve, reject) => {
-    let certService = Cc[
-      "@mozilla.org/security/local-cert-service;1"
-    ].getService(Ci.nsILocalCertService);
-    certService.getOrCreateCert("beConservative-test", {
-      handleCert: (c, rv) => {
-        if (rv) {
-          reject(rv);
-          return;
-        }
-        resolve(c);
-      },
-    });
-  });
+function getTestServerCertificate() {
+  const certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(
+    Ci.nsIX509CertDB
+  );
+  const certFile = do_get_file("test_certDB_import/encrypted_with_aes.p12");
+  certDB.importPKCS12File(certFile, "password");
+  for (const cert of certDB.getCerts()) {
+    if (cert.commonName == "John Doe") {
+      return cert;
+    }
+  }
+  return null;
 }
 
 class InputStreamCallback {
@@ -126,7 +123,7 @@ class ServerSocketListener {
 
   onSocketAccepted(socket, transport) {
     info("accepted TLS client connection");
-    let connectionInfo = transport.securityInfo.QueryInterface(
+    let connectionInfo = transport.securityCallbacks.getInterface(
       Ci.nsITLSServerConnectionInfo
     );
     let input = transport.openInputStream(0, 0, 0);
@@ -163,17 +160,7 @@ function storeCertOverride(port, cert) {
   let certOverrideService = Cc[
     "@mozilla.org/security/certoverride;1"
   ].getService(Ci.nsICertOverrideService);
-  let overrideBits =
-    Ci.nsICertOverrideService.ERROR_UNTRUSTED |
-    Ci.nsICertOverrideService.ERROR_MISMATCH;
-  certOverrideService.rememberValidityOverride(
-    hostname,
-    port,
-    {},
-    cert,
-    overrideBits,
-    true
-  );
+  certOverrideService.rememberValidityOverride(hostname, port, {}, cert, true);
 }
 
 function startClient(port) {
@@ -195,7 +182,7 @@ function startClient(port) {
 
 add_task(async function() {
   Services.prefs.setCharPref("network.dns.localDomains", hostname);
-  let cert = await getCert();
+  let cert = getTestServerCertificate();
 
   let server = getStartedServer(cert);
   storeCertOverride(server.port, cert);

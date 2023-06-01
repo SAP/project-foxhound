@@ -15,10 +15,6 @@
 #include "nsCSSAnonBoxes.h"
 #include "nsFrameManager.h"
 
-bool nsIFrame::IsSVGGeometryFrameOrSubclass() const {
-  return IsSVGGeometryFrame() || IsSVGImageFrame();
-}
-
 bool nsIFrame::IsFlexItem() const {
   return GetParent() && GetParent()->IsFlexContainerFrame() &&
          !HasAnyStateBits(NS_FRAME_OUT_OF_FLOW);
@@ -62,6 +58,10 @@ bool nsIFrame::IsAbsPosContainingBlock() const {
 
 bool nsIFrame::IsFixedPosContainingBlock() const {
   return StyleDisplay()->IsFixedPosContainingBlock(this);
+}
+
+bool nsIFrame::IsRelativelyOrStickyPositioned() const {
+  return StyleDisplay()->IsRelativelyOrStickyPositioned(this);
 }
 
 bool nsIFrame::IsRelativelyPositioned() const {

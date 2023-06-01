@@ -15,18 +15,7 @@ add_task(async function tipIsSecondResult() {
       UrlbarUtils.RESULT_SOURCE.HISTORY,
       { url: "http://mozilla.org/a" }
     ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.TIP,
-      UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-      {
-        icon: "",
-        text: "This is a test intervention.",
-        buttonText: "Done",
-        type: "test",
-        helpUrl: HELP_URL,
-        buttonUrl: TIP_URL,
-      }
-    ),
+    makeTipResult({ buttonUrl: TIP_URL, helpUrl: HELP_URL }),
   ];
 
   let provider = new UrlbarTestUtils.TestProvider({ results, priority: 1 });
@@ -59,32 +48,38 @@ add_task(async function tipIsSecondResult() {
   EventUtils.synthesizeKey("KEY_ArrowDown");
   Assert.ok(
     UrlbarTestUtils.getSelectedElement(window).classList.contains(
-      "urlbarView-tip-button"
+      "urlbarView-button-0"
     ),
     "The selected element should be the tip button."
   );
   Assert.equal(
     UrlbarTestUtils.getSelectedElementIndex(window),
-    1,
-    "The first element should be selected."
+    UrlbarPrefs.get("resultMenu") ? 2 : 1,
+    "Selected element index"
   );
 
-  EventUtils.synthesizeKey("KEY_ArrowDown");
+  EventUtils.synthesizeKey("KEY_Tab");
   Assert.ok(
     UrlbarTestUtils.getSelectedElement(window).classList.contains(
-      "urlbarView-help"
+      UrlbarPrefs.get("resultMenu")
+        ? "urlbarView-button-menu"
+        : "urlbarView-button-help"
     ),
-    "The selected element should be the tip help button."
+    UrlbarPrefs.get("resultMenu")
+      ? "The selected element should be the tip menu button."
+      : "The selected element should be the tip help button."
   );
   Assert.equal(
     UrlbarTestUtils.getSelectedRowIndex(window),
     1,
-    "getSelectedRowIndex should return 1 even though the help button is selected."
+    UrlbarPrefs.get("resultMenu")
+      ? "getSelectedRowIndex should return 1 even though the menu button is selected."
+      : "getSelectedRowIndex should return 1 even though the help button is selected."
   );
   Assert.equal(
     UrlbarTestUtils.getSelectedElementIndex(window),
-    2,
-    "The third element should be selected."
+    UrlbarPrefs.get("resultMenu") ? 3 : 2,
+    "Selected element index"
   );
 
   // If this test is running alone, the one-offs will rebuild themselves when
@@ -109,12 +104,16 @@ add_task(async function tipIsSecondResult() {
     "No results should be selected."
   );
 
-  EventUtils.synthesizeKey("KEY_ArrowUp");
+  EventUtils.synthesizeKey("KEY_Tab", { shiftKey: true });
   Assert.ok(
     UrlbarTestUtils.getSelectedElement(window).classList.contains(
-      "urlbarView-help"
+      UrlbarPrefs.get("resultMenu")
+        ? "urlbarView-button-menu"
+        : "urlbarView-button-help"
     ),
-    "The selected element should be the tip help button."
+    UrlbarPrefs.get("resultMenu")
+      ? "The selected element should be the tip menu button."
+      : "The selected element should be the tip help button."
   );
 
   gURLBar.view.close();
@@ -122,20 +121,7 @@ add_task(async function tipIsSecondResult() {
 });
 
 add_task(async function tipIsOnlyResult() {
-  let results = [
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.TIP,
-      UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-      {
-        icon: "",
-        text: "This is a test intervention.",
-        buttonText: "Done",
-        type: "test",
-        helpUrl:
-          "https://support.mozilla.org/en-US/kb/delete-browsing-search-download-history-firefox",
-      }
-    ),
-  ];
+  let results = [makeTipResult({ buttonUrl: TIP_URL, helpUrl: HELP_URL })];
 
   let provider = new UrlbarTestUtils.TestProvider({ results, priority: 1 });
   UrlbarProvidersManager.registerProvider(provider);
@@ -157,10 +143,10 @@ add_task(async function tipIsOnlyResult() {
     "The first and only result should be a tip."
   );
 
-  EventUtils.synthesizeKey("KEY_ArrowDown");
+  EventUtils.synthesizeKey("KEY_Tab");
   Assert.ok(
     UrlbarTestUtils.getSelectedElement(window).classList.contains(
-      "urlbarView-tip-button"
+      "urlbarView-button-0"
     ),
     "The selected element should be the tip button."
   );
@@ -170,12 +156,16 @@ add_task(async function tipIsOnlyResult() {
     "The first element should be selected."
   );
 
-  EventUtils.synthesizeKey("KEY_ArrowDown");
+  EventUtils.synthesizeKey("KEY_Tab");
   Assert.ok(
     UrlbarTestUtils.getSelectedElement(window).classList.contains(
-      "urlbarView-help"
+      UrlbarPrefs.get("resultMenu")
+        ? "urlbarView-button-menu"
+        : "urlbarView-button-help"
     ),
-    "The selected element should be the tip help button."
+    UrlbarPrefs.get("resultMenu")
+      ? "The selected element should be the tip menu button."
+      : "The selected element should be the tip help button."
   );
   Assert.equal(
     UrlbarTestUtils.getSelectedElementIndex(window),
@@ -190,12 +180,16 @@ add_task(async function tipIsOnlyResult() {
     "There should be no selection."
   );
 
-  EventUtils.synthesizeKey("KEY_ArrowUp");
+  EventUtils.synthesizeKey("KEY_Tab", { shiftKey: true });
   Assert.ok(
     UrlbarTestUtils.getSelectedElement(window).classList.contains(
-      "urlbarView-help"
+      UrlbarPrefs.get("resultMenu")
+        ? "urlbarView-button-menu"
+        : "urlbarView-button-help"
     ),
-    "The selected element should be the tip help button."
+    UrlbarPrefs.get("resultMenu")
+      ? "The selected element should be the tip menu button."
+      : "The selected element should be the tip help button."
   );
 
   gURLBar.view.close();
@@ -209,16 +203,7 @@ add_task(async function tipHasNoHelpButton() {
       UrlbarUtils.RESULT_SOURCE.HISTORY,
       { url: "http://mozilla.org/a" }
     ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.TIP,
-      UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-      {
-        icon: "",
-        text: "This is a test intervention.",
-        buttonText: "Done",
-        type: "test",
-      }
-    ),
+    makeTipResult({ buttonUrl: TIP_URL }),
   ];
 
   let provider = new UrlbarTestUtils.TestProvider({ results, priority: 1 });
@@ -251,14 +236,14 @@ add_task(async function tipHasNoHelpButton() {
   EventUtils.synthesizeKey("KEY_ArrowDown");
   Assert.ok(
     UrlbarTestUtils.getSelectedElement(window).classList.contains(
-      "urlbarView-tip-button"
+      "urlbarView-button-0"
     ),
     "The selected element should be the tip button."
   );
   Assert.equal(
     UrlbarTestUtils.getSelectedElementIndex(window),
-    1,
-    "The first element should be selected."
+    UrlbarPrefs.get("resultMenu") ? 2 : 1,
+    "Selected element index"
   );
 
   EventUtils.synthesizeKey("KEY_ArrowDown");
@@ -274,7 +259,7 @@ add_task(async function tipHasNoHelpButton() {
   EventUtils.synthesizeKey("KEY_ArrowUp");
   Assert.ok(
     UrlbarTestUtils.getSelectedElement(window).classList.contains(
-      "urlbarView-tip-button"
+      "urlbarView-button-0"
     ),
     "The selected element should be the tip button."
   );

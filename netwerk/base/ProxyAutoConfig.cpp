@@ -73,6 +73,8 @@ static ProxyAutoConfig* GetRunning() {
 
 static void SetRunning(ProxyAutoConfig* arg) {
   MOZ_ASSERT(RunningIndex() != 0xdeadbeef);
+  MOZ_DIAGNOSTIC_ASSERT_IF(!arg, GetRunning() != nullptr);
+  MOZ_DIAGNOSTIC_ASSERT_IF(arg, GetRunning() == nullptr);
   PR_SetThreadPrivate(RunningIndex(), arg);
 }
 
@@ -132,7 +134,7 @@ class PACResolver final : public nsIDNSListener,
   nsCOMPtr<nsIDNSRecord> mResponse;
   nsCOMPtr<nsITimer> mTimer;
   nsCOMPtr<nsIEventTarget> mMainThreadEventTarget;
-  Mutex mMutex;
+  Mutex mMutex MOZ_UNANNOTATED;
 
  private:
   ~PACResolver() = default;
@@ -210,7 +212,7 @@ class MOZ_STACK_CLASS AutoPACErrorReporter {
 
 // timeout of 0 means the normal necko timeout strategy, otherwise the dns
 // request will be canceled after aTimeout milliseconds
-static bool PACResolve(const nsCString& aHostName, NetAddr* aNetAddr,
+static bool PACResolve(const nsACString& aHostName, NetAddr* aNetAddr,
                        unsigned int aTimeout) {
   if (!GetRunning()) {
     NS_WARNING("PACResolve without a running ProxyAutoConfig object");
@@ -226,7 +228,7 @@ ProxyAutoConfig::ProxyAutoConfig()
   MOZ_COUNT_CTOR(ProxyAutoConfig);
 }
 
-bool ProxyAutoConfig::ResolveAddress(const nsCString& aHostName,
+bool ProxyAutoConfig::ResolveAddress(const nsACString& aHostName,
                                      NetAddr* aNetAddr, unsigned int aTimeout) {
   nsCOMPtr<nsIDNSService> dns = do_GetService(NS_DNSSERVICE_CONTRACTID);
   if (!dns) return false;
@@ -237,13 +239,13 @@ bool ProxyAutoConfig::ResolveAddress(const nsCString& aHostName,
   // When the PAC script attempts to resolve a domain, we must make sure we
   // don't use TRR, otherwise the TRR channel might also attempt to resolve
   // a name and we'll have a deadlock.
-  uint32_t flags =
+  nsIDNSService::DNSFlags flags =
       nsIDNSService::RESOLVE_PRIORITY_MEDIUM |
       nsIDNSService::GetFlagsFromTRRMode(nsIRequest::TRR_DISABLED_MODE);
 
   if (NS_FAILED(dns->AsyncResolveNative(
           aHostName, nsIDNSService::RESOLVE_TYPE_DEFAULT, flags, nullptr,
-          helper, GetCurrentEventTarget(), attrs,
+          helper, GetCurrentSerialEventTarget(), attrs,
           getter_AddRefs(helper->mRequest)))) {
     return false;
   }
@@ -257,25 +259,20 @@ bool ProxyAutoConfig::ResolveAddress(const nsCString& aHostName,
     }
   }
 
-  mWaitingForDNSResolve = true;
   // Spin the event loop of the pac thread until lookup is complete.
   // nsPACman is responsible for keeping a queue and only allowing
   // one PAC execution at a time even when it is called re-entrantly.
   SpinEventLoopUntil("ProxyAutoConfig::ResolveAddress"_ns, [&, helper, this]() {
     if (!helper->mRequest) {
-      mWaitingForDNSResolve = false;
       return true;
     }
     if (this->mShutdown) {
       NS_WARNING("mShutdown set with PAC request not cancelled");
       MOZ_ASSERT(NS_FAILED(helper->mStatus));
-      mWaitingForDNSResolve = false;
       return true;
     }
     return false;
   });
-
-  MaybeInvokeDNSResolveCallbacks();
 
   if (NS_FAILED(helper->mStatus)) {
     return false;
@@ -285,7 +282,7 @@ bool ProxyAutoConfig::ResolveAddress(const nsCString& aHostName,
   return !(!rec || NS_FAILED(rec->GetNextAddr(0, aNetAddr)));
 }
 
-static bool PACResolveToString(const nsCString& aHostName,
+static bool PACResolveToString(const nsACString& aHostName,
                                nsCString& aDottedDecimal,
                                unsigned int aTimeout) {
   NetAddr netAddr;
@@ -320,7 +317,7 @@ static bool PACDnsResolve(JSContext* cx, unsigned int argc, JS::Value* vp) {
     return true;
   }
 
-  JS::RootedString arg1(cx);
+  JS::Rooted<JSString*> arg1(cx);
   arg1 = args[0].toString();
 
   nsAutoJSString hostName;
@@ -487,8 +484,8 @@ void ProxyAutoConfig::SetThreadLocalIndex(uint32_t index) {
   RunningIndex() = index;
 }
 
-nsresult ProxyAutoConfig::ConfigurePAC(const nsCString& aPACURI,
-                                       const nsCString& aPACScriptData,
+nsresult ProxyAutoConfig::ConfigurePAC(const nsACString& aPACURI,
+                                       const nsACString& aPACScriptData,
                                        bool aIncludePath,
                                        uint32_t aExtraHeapSize,
                                        nsIEventTarget* aEventTarget) {
@@ -509,7 +506,9 @@ nsresult ProxyAutoConfig::ConfigurePAC(const nsCString& aPACURI,
   // PAC scripts be both UTF-8- and Latin-1-compatible: that is, they must be
   // ASCII.
   mConcatenatedPACData = sAsciiPacUtils;
-  mConcatenatedPACData.Append(aPACScriptData);
+  if (!mConcatenatedPACData.Append(aPACScriptData, mozilla::fallible)) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
 
   mIncludePath = aIncludePath;
   mExtraHeapSize = aExtraHeapSize;
@@ -523,7 +522,10 @@ nsresult ProxyAutoConfig::ConfigurePAC(const nsCString& aPACURI,
 
 nsresult ProxyAutoConfig::SetupJS() {
   mJSNeedsSetup = false;
-  MOZ_ASSERT(!GetRunning(), "JIT is running");
+  MOZ_DIAGNOSTIC_ASSERT(!GetRunning(), "JIT is running");
+  if (GetRunning()) {
+    return NS_ERROR_ALREADY_INITIALIZED;
+  }
 
 #if defined(XP_MACOSX)
   nsMacUtilsImpl::EnableTCSMIfAvailable();
@@ -612,33 +614,11 @@ nsresult ProxyAutoConfig::SetupJS() {
   mConcatenatedPACData.Truncate();
   mPACURI.Truncate();
 
-  MaybeInvokeDNSResolveCallbacks();
   return NS_OK;
 }
 
-void ProxyAutoConfig::MaybeInvokeDNSResolveCallbacks() {
-  if (mDNSResolveCallbacks.IsEmpty()) {
-    return;
-  }
-
-  // This function could be called in the middle of SetupJS(). If this is the
-  // case, we should wait until mJSContext is ready to use. Otherwise,
-  // GetProxyForURI() would fail.
-  if (!mJSContext || !mJSContext->IsOK()) {
-    return;
-  }
-
-  NS_DispatchToCurrentThread(
-      NS_NewRunnableFunction("InvokeDNSResolveCallback",
-                             [callbacks{std::move(mDNSResolveCallbacks)}]() {
-                               for (auto& callback : callbacks) {
-                                 callback();
-                               }
-                             }));
-}
-
 void ProxyAutoConfig::GetProxyForURIWithCallback(
-    const nsCString& aTestURI, const nsCString& aTestHost,
+    const nsACString& aTestURI, const nsACString& aTestHost,
     std::function<void(nsresult aStatus, const nsACString& aResult)>&&
         aCallback) {
   nsAutoCString result;
@@ -646,8 +626,8 @@ void ProxyAutoConfig::GetProxyForURIWithCallback(
   aCallback(status, result);
 }
 
-nsresult ProxyAutoConfig::GetProxyForURI(const nsCString& aTestURI,
-                                         const nsCString& aTestHost,
+nsresult ProxyAutoConfig::GetProxyForURI(const nsACString& aTestURI,
+                                         const nsACString& aTestHost,
                                          nsACString& result) {
   if (mJSNeedsSetup) SetupJS();
 
@@ -663,7 +643,7 @@ nsresult ProxyAutoConfig::GetProxyForURI(const nsCString& aTestURI,
   mRunningHost = aTestHost;
 
   nsresult rv = NS_ERROR_FAILURE;
-  nsCString clensedURI = aTestURI;
+  nsCString clensedURI(aTestURI);
 
   if (!mIncludePath) {
     nsCOMPtr<nsIURLParser> urlParser =
@@ -675,9 +655,9 @@ nsresult ProxyAutoConfig::GetProxyForURI(const nsCString& aTestURI,
       uint32_t authorityPos;
       int32_t authorityLen;
       uint32_t pathPos;
-      rv = urlParser->ParseURL(aTestURI.get(), aTestURI.Length(), &schemePos,
-                               &schemeLen, &authorityPos, &authorityLen,
-                               &pathPos, &pathLen);
+      rv = urlParser->ParseURL(aTestURI.BeginReading(), aTestURI.Length(),
+                               &schemePos, &schemeLen, &authorityPos,
+                               &authorityLen, &pathPos, &pathLen);
     }
     if (NS_SUCCEEDED(rv)) {
       if (pathLen) {
@@ -688,8 +668,11 @@ nsresult ProxyAutoConfig::GetProxyForURI(const nsCString& aTestURI,
     }
   }
 
-  JS::RootedString uriString(cx, JS_NewStringCopyZ(cx, clensedURI.get()));
-  JS::RootedString hostString(cx, JS_NewStringCopyZ(cx, aTestHost.get()));
+  JS::Rooted<JSString*> uriString(
+      cx,
+      JS_NewStringCopyN(cx, clensedURI.BeginReading(), clensedURI.Length()));
+  JS::Rooted<JSString*> hostString(
+      cx, JS_NewStringCopyN(cx, aTestHost.BeginReading(), aTestHost.Length()));
 
   if (uriString && hostString) {
     JS::RootedValueArray<2> args(cx);
@@ -739,7 +722,6 @@ void ProxyAutoConfig::Shutdown() {
   mShutdown = true;
   delete mJSContext;
   mJSContext = nullptr;
-  mDNSResolveCallbacks.Clear();
 }
 
 bool ProxyAutoConfig::SrcAddress(const NetAddr* remoteAddress,
@@ -778,7 +760,7 @@ bool ProxyAutoConfig::SrcAddress(const NetAddr* remoteAddress,
 // to the result. If that all works, the local IP address of the socket is
 // returned to the javascript caller and |*aResult| is set to true. Otherwise
 // |*aResult| is set to false.
-bool ProxyAutoConfig::MyIPAddressTryHost(const nsCString& hostName,
+bool ProxyAutoConfig::MyIPAddressTryHost(const nsACString& hostName,
                                          unsigned int timeout,
                                          const JS::CallArgs& aArgs,
                                          bool* aResult) {
@@ -806,7 +788,7 @@ bool ProxyAutoConfig::MyIPAddress(const JS::CallArgs& aArgs) {
   nsAutoCString remoteDottedDecimal;
   nsAutoCString localDottedDecimal;
   JSContext* cx = mJSContext->Context();
-  JS::RootedValue v(cx);
+  JS::Rooted<JS::Value> v(cx);
   JS::Rooted<JSObject*> global(cx, mJSContext->Global());
 
   bool useMultihomedDNS =
@@ -918,8 +900,8 @@ nsresult RemoteProxyAutoConfig::Init(nsIThread* aPACThread) {
                              }));
 }
 
-nsresult RemoteProxyAutoConfig::ConfigurePAC(const nsCString& aPACURI,
-                                             const nsCString& aPACScriptData,
+nsresult RemoteProxyAutoConfig::ConfigurePAC(const nsACString& aPACURI,
+                                             const nsACString& aPACScriptData,
                                              bool aIncludePath,
                                              uint32_t aExtraHeapSize,
                                              nsIEventTarget*) {
@@ -930,10 +912,13 @@ nsresult RemoteProxyAutoConfig::ConfigurePAC(const nsCString& aPACURI,
 
 void RemoteProxyAutoConfig::Shutdown() { mProxyAutoConfigParent->Close(); }
 
-void RemoteProxyAutoConfig::GC() { Unused << mProxyAutoConfigParent->SendGC(); }
+void RemoteProxyAutoConfig::GC() {
+  // Do nothing. GC would be performed when there is not pending query in socket
+  // process.
+}
 
 void RemoteProxyAutoConfig::GetProxyForURIWithCallback(
-    const nsCString& aTestURI, const nsCString& aTestHost,
+    const nsACString& aTestURI, const nsACString& aTestHost,
     std::function<void(nsresult aStatus, const nsACString& aResult)>&&
         aCallback) {
   if (!mProxyAutoConfigParent->CanSend()) {

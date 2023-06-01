@@ -47,7 +47,7 @@ with Files("test/pageinfo/**"):
     BUG_COMPONENT = ("Firefox", "Page Info Window")
 
 with Files("test/performance/**"):
-    BUG_COMPONENT = ("Firefox", "General")
+    BUG_COMPONENT = ("Toolkit", "Performance Monitoring")
 
 with Files("test/performance/browser_appmenu.js"):
     BUG_COMPONENT = ("Firefox", "Menus")
@@ -56,7 +56,7 @@ with Files("test/permissions/**"):
     BUG_COMPONENT = ("Firefox", "Site Permissions")
 
 with Files("test/plugins/**"):
-    BUG_COMPONENT = ("Core", "Plug-ins")
+    BUG_COMPONENT = ("Core", "Audio/Video: GMP")
 
 with Files("test/popupNotifications/**"):
     BUG_COMPONENT = ("Toolkit", "Notifications and Alerts")
@@ -121,9 +121,6 @@ with Files("test/webrtc/**"):
 with Files("test/zoom/**"):
     BUG_COMPONENT = ("Firefox", "General")
 
-with Files("aboutNetError.xhtml"):
-    BUG_COMPONENT = ("Firefox", "Security")
-
 with Files("test/caps/**"):
     BUG_COMPONENT = ("Firefox", "Security")
 
@@ -131,6 +128,9 @@ with Files("blockedSite.xhtml"):
     BUG_COMPONENT = ("Toolkit", "Safe Browsing")
 
 with Files("browser-addons.js"):
+    BUG_COMPONENT = ("Toolkit", "Add-ons Manager")
+
+with Files("browser-unified-extensions.js"):
     BUG_COMPONENT = ("Toolkit", "Add-ons Manager")
 
 with Files("*menu*"):

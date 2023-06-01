@@ -20,7 +20,7 @@ Opening the Browser Console
 
 You can open the Browser Console in one of two ways:
 
-1. from the menu: select "Browser Console" from the Web Developer submenu in the Firefox Menu (or Tools menu if you display the menu bar or are on macOS).
+1. from the menu: select "Browser Console" from the Browser Tools submenu in the Firefox Menu (or Tools menu if you display the menu bar or are on macOS).
 
 2. from the keyboard: press :kbd:`Ctrl` + :kbd:`Shift` + :kbd:`J` (or :kbd:`Cmd` + :kbd:`Shift` + :kbd:`J` on a Mac).
 
@@ -29,7 +29,7 @@ You can also start the Browser Console by launching Firefox from the command lin
 
 .. code-block::
 
-  /Applications/FirefoxAurora.app/Contents/MacOS/firefox-bin -jsconsole</pre>
+  /Applications/FirefoxAurora.app/Contents/MacOS/firefox-bin -jsconsole
 
 The Browser Console looks like this:
 
@@ -73,22 +73,22 @@ Messages from add-ons
 
 The Browser Console displays messages logged by all Firefox add-ons.
 
-Console.jsm
-~~~~~~~~~~~
+Console.sys.mjs
+~~~~~~~~~~~~~~~
 
 To use the console API from a traditional or bootstrapped add-on, get it from the Console module.
 
-One exported symbol from ``Console.jsm`` is ``console``. Below is an example of how to access it, which adds a message to the Browser Console.
+One exported symbol from ``Console.sys.mjs`` is ``console``. Below is an example of how to access it, which adds a message to the Browser Console.
 
 .. code-block:: JavaScript
 
-  Components.utils.import("resource://gre/modules/Console.jsm");
-  console.log("Hello from Firefox code"); //output messages to the console</pre>
+  const { console } = ChromeUtils.importESModule("resource://gre/modules/Console.sys.mjs");
+  console.log("Hello from Firefox code"); //output messages to the console
 
 Learn more:
 
 - `Console API reference <https://developer.mozilla.org/en-US/docs/Web/API/console>`_
-- `Console.jsm source code in the Mozilla DXR <https://dxr.mozilla.org/mozilla-central/source/toolkit/modules/Console.jsm>`_
+- :searchfox:`Console.sys.mjs source code <toolkit/modules/Console.sys.mjs>`
 
 
 Browser Console command line

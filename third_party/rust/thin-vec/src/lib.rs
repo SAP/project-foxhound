@@ -29,7 +29,7 @@
 //! transferred across the FFI boundary (**IF YOU ARE CAREFUL, SEE BELOW!!**).
 //!
 //! While this feature is handy, it is also inherently dangerous to use because Rust and C++ do not
-//! know about eachother. Specifically, this can be an issue with non-POD types (types which
+//! know about each other. Specifically, this can be an issue with non-POD types (types which
 //! have destructors, move constructors, or are `!Copy`).
 //!
 //! ## Do Not Pass By Value
@@ -247,9 +247,22 @@ mod impl_details {
     }
 }
 
-/// The header of a ThinVec.
-///
-/// The _cap can be a bitfield, so use accessors to avoid trouble.
+// The header of a ThinVec.
+//
+// The _cap can be a bitfield, so use accessors to avoid trouble.
+//
+// In "real" gecko-ffi mode, the empty singleton will be aligned
+// to 8 by gecko. But in tests we have to provide the singleton
+// ourselves, and Rust makes it hard to "just" align a static.
+// To avoid messing around with a wrapper type around the
+// singleton *just* for tests, we just force all headers to be
+// aligned to 8 in this weird "zombie" gecko mode.
+//
+// This shouldn't affect runtime layout (padding), but it will
+// result in us asking the allocator to needlessly overalign
+// non-empty ThinVecs containing align < 8 types in
+// zombie-mode, but not in "real" geck-ffi mode. Minor.
+#[cfg_attr(all(feature = "gecko-ffi", any(test, miri)), repr(align(8)))]
 #[repr(C)]
 struct Header {
     _len: SizeType,
@@ -263,23 +276,6 @@ impl Header {
 
     fn set_len(&mut self, len: usize) {
         self._len = assert_size(len);
-    }
-
-    fn data<T>(&self) -> *mut T {
-        let header_size = mem::size_of::<Header>();
-        let padding = padding::<T>();
-
-        let ptr = self as *const Header as *mut Header as *mut u8;
-
-        unsafe {
-            if padding > 0 && self.cap() == 0 {
-                // The empty header isn't well-aligned, just make an aligned one up
-                NonNull::dangling().as_ptr()
-            } else {
-                // This could technically result in overflow, but padding would have to be absurdly large for this to occur.
-                ptr.add(header_size + padding) as *mut T
-            }
-        }
     }
 }
 
@@ -321,10 +317,10 @@ impl Header {
 /// optimize everything to not do that (basically, make ptr == len and branch
 /// on size == 0 in every method), but it's a bunch of work for something that
 /// doesn't matter much.
-#[cfg(any(not(feature = "gecko-ffi"), test))]
+#[cfg(any(not(feature = "gecko-ffi"), test, miri))]
 static EMPTY_HEADER: Header = Header { _len: 0, _cap: 0 };
 
-#[cfg(all(feature = "gecko-ffi", not(test)))]
+#[cfg(all(feature = "gecko-ffi", not(test), not(miri)))]
 extern "C" {
     #[link_name = "sEmptyTArrayHeader"]
     static EMPTY_HEADER: Header;
@@ -442,17 +438,26 @@ macro_rules! thin_vec {
 
 impl<T> ThinVec<T> {
     pub fn new() -> ThinVec<T> {
-        unsafe {
-            ThinVec {
-                ptr: NonNull::new_unchecked(&EMPTY_HEADER as *const Header as *mut Header),
-                boo: PhantomData,
-            }
-        }
+        ThinVec::with_capacity(0)
     }
 
     pub fn with_capacity(cap: usize) -> ThinVec<T> {
+        // `padding` contains ~static assertions against types that are
+        // incompatible with the current feature flags. We also call it to
+        // invoke these assertions when getting a pointer to the `ThinVec`
+        // contents, but since we also get a pointer to the contents in the
+        // `Drop` impl, trippng an assertion along that code path causes a
+        // double panic. We duplicate the assertion here so that it is
+        // testable,
+        let _ = padding::<T>();
+
         if cap == 0 {
-            ThinVec::new()
+            unsafe {
+                ThinVec {
+                    ptr: NonNull::new_unchecked(&EMPTY_HEADER as *const Header as *mut Header),
+                    boo: PhantomData,
+                }
+            }
         } else {
             ThinVec {
                 ptr: header_with_capacity::<T>(cap),
@@ -470,7 +475,47 @@ impl<T> ThinVec<T> {
         unsafe { self.ptr.as_ref() }
     }
     fn data_raw(&self) -> *mut T {
-        self.header().data()
+        // `padding` contains ~static assertions against types that are
+        // incompatible with the current feature flags. Even if we don't
+        // care about its result, we should always call it before getting
+        // a data pointer to guard against invalid types!
+        let padding = padding::<T>();
+
+        // Although we ensure the data array is aligned when we allocate,
+        // we can't do that with the empty singleton. So when it might not
+        // be properly aligned, we substitute in the NonNull::dangling
+        // which *is* aligned.
+        //
+        // To minimize dynamic branches on `cap` for all accesses
+        // to the data, we include this guard which should only involve
+        // compile-time constants. Ideally this should result in the branch
+        // only be included for types with excessive alignment.
+        let empty_header_is_aligned = if cfg!(feature = "gecko-ffi") {
+            // in gecko-ffi mode `padding` will ensure this under
+            // the assumption that the header has size 8 and the
+            // static empty singleton is aligned to 8.
+            true
+        } else {
+            // In non-gecko-ffi mode, the empty singleton is just
+            // naturally aligned to the Header. If the Header is at
+            // least as aligned as T *and* the padding would have
+            // been 0, then one-past-the-end of the empty singleton
+            // *is* a valid data pointer and we can remove the
+            // `dangling` special case.
+            mem::align_of::<Header>() >= mem::align_of::<T>() && padding == 0
+        };
+
+        unsafe {
+            if !empty_header_is_aligned && self.header().cap() == 0 {
+                NonNull::dangling().as_ptr()
+            } else {
+                // This could technically result in overflow, but padding
+                // would have to be absurdly large for this to occur.
+                let header_size = mem::size_of::<Header>();
+                let ptr = self.ptr.as_ptr() as *mut u8;
+                ptr.add(header_size + padding) as *mut T
+            }
+        }
     }
 
     // This is unsafe when the header is EMPTY_HEADER.
@@ -489,6 +534,17 @@ impl<T> ThinVec<T> {
     }
 
     pub unsafe fn set_len(&mut self, len: usize) {
+        if self.is_singleton() {
+            // A prerequisite of `Vec::set_len` is that `new_len` must be
+            // less than or equal to capacity(). The same applies here.
+            assert!(len == 0, "invalid set_len({}) on empty ThinVec", len);
+        } else {
+            self.header_mut().set_len(len)
+        }
+    }
+
+    // For internal use only, when setting the length and it's known to be the non-singleton.
+    unsafe fn set_len_non_singleton(&mut self, len: usize) {
         self.header_mut().set_len(len)
     }
 
@@ -499,7 +555,7 @@ impl<T> ThinVec<T> {
         }
         unsafe {
             ptr::write(self.data_raw().add(old_len), val);
-            self.set_len(old_len + 1);
+            self.set_len_non_singleton(old_len + 1);
         }
     }
 
@@ -510,7 +566,7 @@ impl<T> ThinVec<T> {
         }
 
         unsafe {
-            self.set_len(old_len - 1);
+            self.set_len_non_singleton(old_len - 1);
             Some(ptr::read(self.data_raw().add(old_len - 1)))
         }
     }
@@ -526,7 +582,7 @@ impl<T> ThinVec<T> {
             let ptr = self.data_raw();
             ptr::copy(ptr.add(idx), ptr.add(idx + 1), old_len - idx);
             ptr::write(ptr.add(idx), elem);
-            self.set_len(old_len + 1);
+            self.set_len_non_singleton(old_len + 1);
         }
     }
 
@@ -536,7 +592,7 @@ impl<T> ThinVec<T> {
         assert!(idx < old_len, "Index out of bounds");
 
         unsafe {
-            self.set_len(old_len - 1);
+            self.set_len_non_singleton(old_len - 1);
             let ptr = self.data_raw();
             let val = ptr::read(self.data_raw().add(idx));
             ptr::copy(ptr.add(idx + 1), ptr.add(idx), old_len - idx - 1);
@@ -552,7 +608,7 @@ impl<T> ThinVec<T> {
         unsafe {
             let ptr = self.data_raw();
             ptr::swap(ptr.add(idx), ptr.add(old_len - 1));
-            self.set_len(old_len - 1);
+            self.set_len_non_singleton(old_len - 1);
             ptr::read(ptr.add(old_len - 1))
         }
     }
@@ -564,8 +620,8 @@ impl<T> ThinVec<T> {
                 // decrement len before the drop_in_place(), so a panic on Drop
                 // doesn't re-drop the just-failed value.
                 let new_len = self.len() - 1;
-                self.set_len(new_len);
-                ptr::drop_in_place(self.get_unchecked_mut(new_len));
+                self.set_len_non_singleton(new_len);
+                ptr::drop_in_place(self.data_raw().add(new_len));
             }
         }
     }
@@ -573,11 +629,7 @@ impl<T> ThinVec<T> {
     pub fn clear(&mut self) {
         unsafe {
             ptr::drop_in_place(&mut self[..]);
-
-            // Don't mutate the empty singleton!
-            if !self.is_empty() {
-                self.set_len(0);
-            }
+            self.set_len(0); // could be the singleton
         }
     }
 
@@ -793,6 +845,7 @@ impl<T> ThinVec<T> {
     /// assert_eq!(vec, ["foo", "bar", "baz", "bar"]);
     /// # }
     /// ```
+    #[allow(clippy::swap_ptr_to_ref)]
     pub fn dedup_by<F>(&mut self, mut same_bucket: F)
     where
         F: FnMut(&mut T, &mut T) -> bool,
@@ -837,14 +890,8 @@ impl<T> ThinVec<T> {
 
             ptr::copy_nonoverlapping(self.data_raw().add(at), new_vec.data_raw(), new_vec_len);
 
-            // Don't mutate the empty singleton!
-            if new_vec_len != 0 {
-                new_vec.set_len(new_vec_len);
-            }
-
-            if old_len != 0 {
-                self.set_len(at);
-            }
+            new_vec.set_len(new_vec_len); // could be the singleton
+            self.set_len(at); // could be the singleton
 
             new_vec
         }
@@ -854,7 +901,7 @@ impl<T> ThinVec<T> {
         self.extend(other.drain(..))
     }
 
-    pub fn drain<R>(&mut self, range: R) -> Drain<T>
+    pub fn drain<R>(&mut self, range: R) -> Drain<'_, T>
     where
         R: RangeBounds<usize>,
     {
@@ -874,10 +921,7 @@ impl<T> ThinVec<T> {
 
         unsafe {
             // Set our length to the start bound
-            // Don't mutate the empty singleton!
-            if len != 0 {
-                self.set_len(start);
-            }
+            self.set_len(start); // could be the singleton
 
             let iter =
                 slice::from_raw_parts_mut(self.data_raw().add(start), end - start).iter_mut();
@@ -915,7 +959,7 @@ impl<T> ThinVec<T> {
             (*ptr).set_cap(new_cap);
             self.ptr = NonNull::new_unchecked(ptr);
         } else {
-            let mut new_header = header_with_capacity::<T>(new_cap);
+            let new_header = header_with_capacity::<T>(new_cap);
 
             // If we get here and have a non-zero len, then we must be handling
             // a gecko auto array, and we have items in a stack buffer. We shouldn't
@@ -931,10 +975,11 @@ impl<T> ThinVec<T> {
             let len = self.len();
             if cfg!(feature = "gecko-ffi") && len > 0 {
                 new_header
-                    .as_mut()
-                    .data::<T>()
+                    .as_ptr()
+                    .add(1)
+                    .cast::<T>()
                     .copy_from_nonoverlapping(self.data_raw(), len);
-                self.set_len(0);
+                self.set_len_non_singleton(0);
             }
 
             self.ptr = new_header;
@@ -943,17 +988,26 @@ impl<T> ThinVec<T> {
 
     #[cfg(feature = "gecko-ffi")]
     #[inline]
+    fn is_singleton(&self) -> bool {
+        unsafe { self.ptr.as_ptr() as *const Header == &EMPTY_HEADER }
+    }
+
+    #[cfg(not(feature = "gecko-ffi"))]
+    #[inline]
+    fn is_singleton(&self) -> bool {
+        self.ptr.as_ptr() as *const Header == &EMPTY_HEADER
+    }
+
+    #[cfg(feature = "gecko-ffi")]
+    #[inline]
     fn has_allocation(&self) -> bool {
-        unsafe {
-            self.ptr.as_ptr() as *const Header != &EMPTY_HEADER
-                && !self.ptr.as_ref().uses_stack_allocated_buffer()
-        }
+        unsafe { !self.is_singleton() && !self.ptr.as_ref().uses_stack_allocated_buffer() }
     }
 
     #[cfg(not(feature = "gecko-ffi"))]
     #[inline]
     fn has_allocation(&self) -> bool {
-        self.ptr.as_ptr() as *const Header != &EMPTY_HEADER
+        !self.is_singleton()
     }
 }
 
@@ -1065,6 +1119,7 @@ impl<T> AsRef<[T]> for ThinVec<T> {
 }
 
 impl<T> Extend<T> for ThinVec<T> {
+    #[inline]
     fn extend<I>(&mut self, iter: I)
     where
         I: IntoIterator<Item = T>,
@@ -1078,7 +1133,7 @@ impl<T> Extend<T> for ThinVec<T> {
 }
 
 impl<T: fmt::Debug> fmt::Debug for ThinVec<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
 }
@@ -1155,6 +1210,57 @@ where
     }
 }
 
+// Serde impls based on
+// https://github.com/bluss/arrayvec/blob/67ec907a98c0f40c4b76066fed3c1af59d35cf6a/src/arrayvec.rs#L1222-L1267
+#[cfg(feature = "serde")]
+impl<T: serde::Serialize> serde::Serialize for ThinVec<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.collect_seq(self.as_slice())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for ThinVec<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::{SeqAccess, Visitor};
+        use serde::Deserialize;
+
+        struct ThinVecVisitor<T>(PhantomData<T>);
+
+        impl<'de, T: Deserialize<'de>> Visitor<'de> for ThinVecVisitor<T> {
+            type Value = ThinVec<T>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "a sequence")
+            }
+
+            fn visit_seq<SA>(self, mut seq: SA) -> Result<Self::Value, SA::Error>
+            where
+                SA: SeqAccess<'de>,
+            {
+                // Same policy as
+                // https://github.com/serde-rs/serde/blob/ce0844b9ecc32377b5e4545d759d385a8c46bc6a/serde/src/private/size_hint.rs#L13
+                let initial_capacity = seq.size_hint().unwrap_or_default().min(4096);
+                let mut values = ThinVec::<T>::with_capacity(initial_capacity);
+
+                while let Some(value) = seq.next_element()? {
+                    values.push(value);
+                }
+
+                Ok(values)
+            }
+        }
+
+        deserializer.deserialize_seq(ThinVecVisitor::<T>(PhantomData))
+    }
+}
+
 macro_rules! array_impls {
     ($($N:expr)*) => {$(
         impl<A, B> PartialEq<[B; $N]> for ThinVec<A> where A: PartialEq<B> {
@@ -1213,8 +1319,18 @@ where
     T: Clone,
 {
     fn clone(&self) -> ThinVec<T> {
-        let mut new_vec = ThinVec::with_capacity(self.len());
-        new_vec.extend(self.iter().cloned());
+        let len = self.len();
+        let mut new_vec = ThinVec::<T>::with_capacity(len);
+        let mut data_raw = new_vec.data_raw();
+        for x in self.iter() {
+            unsafe {
+                ptr::write(data_raw, x.clone());
+                data_raw = data_raw.add(1);
+            }
+        }
+        unsafe {
+            new_vec.set_len(len); // could be the singleton
+        }
         new_vec
     }
 }
@@ -1239,7 +1355,7 @@ pub struct IntoIter<T> {
     start: usize,
 }
 
-pub struct Drain<'a, T: 'a> {
+pub struct Drain<'a, T> {
     iter: IterMut<'a, T>,
     vec: *mut ThinVec<T>,
     end: usize,
@@ -1280,14 +1396,9 @@ impl<T> DoubleEndedIterator for IntoIter<T> {
 impl<T> Drop for IntoIter<T> {
     fn drop(&mut self) {
         unsafe {
-            let old_len = self.vec.len();
             let mut vec = mem::replace(&mut self.vec, ThinVec::new());
             ptr::drop_in_place(&mut vec[self.start..]);
-
-            // Don't mutate the empty singleton!
-            if old_len != 0 {
-                vec.set_len(0)
-            }
+            vec.set_len(0) // could be the singleton
         }
     }
 }
@@ -1321,12 +1432,12 @@ impl<'a, T> Drop for Drain<'a, T> {
             let vec = &mut *self.vec;
 
             // Don't mutate the empty singleton!
-            if vec.has_allocation() {
+            if !vec.is_singleton() {
                 let old_len = vec.len();
                 let start = vec.data_raw().add(old_len);
                 let end = vec.data_raw().add(self.end);
                 ptr::copy(end, start, self.tail);
-                vec.set_len(old_len + self.tail);
+                vec.set_len_non_singleton(old_len + self.tail);
             }
         }
     }
@@ -1371,6 +1482,28 @@ mod tests {
     #[test]
     fn test_drop_empty() {
         ThinVec::<u8>::new();
+    }
+
+    #[test]
+    fn test_data_ptr_alignment() {
+        let v = ThinVec::<u16>::new();
+        assert!(v.data_raw() as usize % 2 == 0);
+
+        let v = ThinVec::<u32>::new();
+        assert!(v.data_raw() as usize % 4 == 0);
+
+        let v = ThinVec::<u64>::new();
+        assert!(v.data_raw() as usize % 8 == 0);
+    }
+
+    #[test]
+    #[cfg_attr(feature = "gecko-ffi", should_panic)]
+    fn test_overaligned_type_is_rejected_for_gecko_ffi_mode() {
+        #[repr(align(16))]
+        struct Align16(u8);
+
+        let v = ThinVec::<Align16>::new();
+        assert!(v.data_raw() as usize % 16 == 0);
     }
 
     #[test]
@@ -1465,6 +1598,203 @@ mod tests {
         }
         for _ in v.drain(MAX_CAP - 1..) {}
         assert_eq!(v.len(), MAX_CAP - 1);
+    }
+
+    #[test]
+    fn test_clear() {
+        let mut v = ThinVec::<i32>::new();
+        assert_eq!(v.len(), 0);
+        assert_eq!(v.capacity(), 0);
+        assert_eq!(&v[..], &[]);
+
+        v.clear();
+        assert_eq!(v.len(), 0);
+        assert_eq!(v.capacity(), 0);
+        assert_eq!(&v[..], &[]);
+
+        v.push(1);
+        v.push(2);
+        assert_eq!(v.len(), 2);
+        assert!(v.capacity() >= 2);
+        assert_eq!(&v[..], &[1, 2]);
+
+        v.clear();
+        assert_eq!(v.len(), 0);
+        assert!(v.capacity() >= 2);
+        assert_eq!(&v[..], &[]);
+
+        v.push(3);
+        v.push(4);
+        assert_eq!(v.len(), 2);
+        assert!(v.capacity() >= 2);
+        assert_eq!(&v[..], &[3, 4]);
+
+        v.clear();
+        assert_eq!(v.len(), 0);
+        assert!(v.capacity() >= 2);
+        assert_eq!(&v[..], &[]);
+
+        v.clear();
+        assert_eq!(v.len(), 0);
+        assert!(v.capacity() >= 2);
+        assert_eq!(&v[..], &[]);
+    }
+
+    #[test]
+    fn test_empty_singleton_torture() {
+        {
+            let mut v = ThinVec::<i32>::new();
+            assert_eq!(v.len(), 0);
+            assert_eq!(v.capacity(), 0);
+            assert!(v.is_empty());
+            assert_eq!(&v[..], &[]);
+            assert_eq!(&mut v[..], &mut []);
+
+            assert_eq!(v.pop(), None);
+            assert_eq!(v.len(), 0);
+            assert_eq!(v.capacity(), 0);
+            assert_eq!(&v[..], &[]);
+        }
+
+        {
+            let v = ThinVec::<i32>::new();
+            assert_eq!(v.into_iter().count(), 0);
+
+            let v = ThinVec::<i32>::new();
+            for _ in v.into_iter() {
+                unreachable!();
+            }
+        }
+
+        {
+            let mut v = ThinVec::<i32>::new();
+            assert_eq!(v.drain(..).len(), 0);
+
+            for _ in v.drain(..) {
+                unreachable!()
+            }
+
+            assert_eq!(v.len(), 0);
+            assert_eq!(v.capacity(), 0);
+            assert_eq!(&v[..], &[]);
+        }
+
+        {
+            let mut v = ThinVec::<i32>::new();
+            v.truncate(1);
+            assert_eq!(v.len(), 0);
+            assert_eq!(v.capacity(), 0);
+            assert_eq!(&v[..], &[]);
+
+            v.truncate(0);
+            assert_eq!(v.len(), 0);
+            assert_eq!(v.capacity(), 0);
+            assert_eq!(&v[..], &[]);
+        }
+
+        {
+            let mut v = ThinVec::<i32>::new();
+            v.shrink_to_fit();
+            assert_eq!(v.len(), 0);
+            assert_eq!(v.capacity(), 0);
+            assert_eq!(&v[..], &[]);
+        }
+
+        {
+            let mut v = ThinVec::<i32>::new();
+            let new = v.split_off(0);
+            assert_eq!(v.len(), 0);
+            assert_eq!(v.capacity(), 0);
+            assert_eq!(&v[..], &[]);
+
+            assert_eq!(new.len(), 0);
+            assert_eq!(new.capacity(), 0);
+            assert_eq!(&new[..], &[]);
+        }
+
+        {
+            let mut v = ThinVec::<i32>::new();
+            let mut other = ThinVec::<i32>::new();
+            v.append(&mut other);
+
+            assert_eq!(v.len(), 0);
+            assert_eq!(v.capacity(), 0);
+            assert_eq!(&v[..], &[]);
+
+            assert_eq!(other.len(), 0);
+            assert_eq!(other.capacity(), 0);
+            assert_eq!(&other[..], &[]);
+        }
+
+        {
+            let mut v = ThinVec::<i32>::new();
+            v.reserve(0);
+
+            assert_eq!(v.len(), 0);
+            assert_eq!(v.capacity(), 0);
+            assert_eq!(&v[..], &[]);
+        }
+
+        {
+            let mut v = ThinVec::<i32>::new();
+            v.reserve_exact(0);
+
+            assert_eq!(v.len(), 0);
+            assert_eq!(v.capacity(), 0);
+            assert_eq!(&v[..], &[]);
+        }
+
+        {
+            let mut v = ThinVec::<i32>::new();
+            v.reserve(0);
+
+            assert_eq!(v.len(), 0);
+            assert_eq!(v.capacity(), 0);
+            assert_eq!(&v[..], &[]);
+        }
+
+        {
+            let v = ThinVec::<i32>::with_capacity(0);
+
+            assert_eq!(v.len(), 0);
+            assert_eq!(v.capacity(), 0);
+            assert_eq!(&v[..], &[]);
+        }
+
+        {
+            let v = ThinVec::<i32>::default();
+
+            assert_eq!(v.len(), 0);
+            assert_eq!(v.capacity(), 0);
+            assert_eq!(&v[..], &[]);
+        }
+
+        {
+            let mut v = ThinVec::<i32>::new();
+            v.retain(|_| unreachable!());
+
+            assert_eq!(v.len(), 0);
+            assert_eq!(v.capacity(), 0);
+            assert_eq!(&v[..], &[]);
+        }
+
+        {
+            let mut v = ThinVec::<i32>::new();
+            v.dedup_by_key(|x| *x);
+
+            assert_eq!(v.len(), 0);
+            assert_eq!(v.capacity(), 0);
+            assert_eq!(&v[..], &[]);
+        }
+
+        {
+            let mut v = ThinVec::<i32>::new();
+            v.dedup_by(|_, _| unreachable!());
+
+            assert_eq!(v.len(), 0);
+            assert_eq!(v.capacity(), 0);
+            assert_eq!(&v[..], &[]);
+        }
     }
 }
 
@@ -2654,9 +2984,9 @@ mod std_tests {
         macro_rules! assert_aligned_head_ptr {
             ($typename:ty) => {{
                 let v: ThinVec<$typename> = ThinVec::with_capacity(1 /* ensure allocation */);
-                let head_ptr: *mut $typename = v.header().data::<$typename>();
+                let head_ptr: *mut $typename = v.data_raw();
                 assert_eq!(
-                    head_ptr.align_offset(std::mem::align_of::<$typename>()),
+                    head_ptr as usize % std::mem::align_of::<$typename>(),
                     0,
                     "expected Header::data<{}> to be aligned",
                     stringify!($typename)
@@ -2680,5 +3010,53 @@ mod std_tests {
 
         assert_eq!(padding::<Funky<[*mut usize; 1024]>>(), 128 - HEADER_SIZE);
         assert_aligned_head_ptr!(Funky<[*mut usize; 1024]>);
+    }
+
+    #[cfg(feature = "serde")]
+    use serde_test::{assert_tokens, Token};
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn test_ser_de_empty() {
+        let vec = ThinVec::<u32>::new();
+
+        assert_tokens(&vec, &[Token::Seq { len: Some(0) }, Token::SeqEnd]);
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn test_ser_de() {
+        let mut vec = ThinVec::<u32>::new();
+        vec.push(20);
+        vec.push(55);
+        vec.push(123);
+
+        assert_tokens(
+            &vec,
+            &[
+                Token::Seq { len: Some(3) },
+                Token::U32(20),
+                Token::U32(55),
+                Token::U32(123),
+                Token::SeqEnd,
+            ],
+        );
+    }
+
+    #[test]
+    fn test_set_len() {
+        let mut vec: ThinVec<u32> = thin_vec![];
+        unsafe {
+            vec.set_len(0); // at one point this caused a crash
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid set_len(1) on empty ThinVec")]
+    fn test_set_len_invalid() {
+        let mut vec: ThinVec<u32> = thin_vec![];
+        unsafe {
+            vec.set_len(1);
+        }
     }
 }

@@ -1,6 +1,7 @@
 # Activity Stream Pings
 
 The Activity Stream system add-on sends various types of pings to the backend (HTTPS POST) [Onyx server](https://github.com/mozilla/onyx) :
+
 - a `health` ping that reports whether or not a user has a custom about:home or about:newtab page
 - a `session` ping that describes the ending of an Activity Stream session (a new tab is closed or refreshed), and
 - an `event` ping that records specific data about individual user interactions while interacting with Activity Stream
@@ -44,7 +45,7 @@ Schema definitions/validations that can be used for tests can be found in `syste
   "user_prefs": 7
 
   // These fields are generated on the server
-  "date": "2016-03-07",
+ "date": "2016-03-07",
   "ip": "10.192.171.13",
   "ua": "python-requests/2.9.1",
   "receive_at": 1457396660000
@@ -86,7 +87,9 @@ Schema definitions/validations that can be used for tests can be found in `syste
   "source": "pocket",
   "page": ["about:newtab" | "about:home" | "about:welcome" | "unknown"]
   "tiles": [{"id": 10000}, {"id": 10001}, {"id": 10002}]
-  "user_prefs": 7
+  "user_prefs": 7,
+  "window_inner_width": 1000,
+  "window_inner_height" 900
 }
 ```
 
@@ -98,6 +101,8 @@ Schema definitions/validations that can be used for tests can be found in `syste
   "source": "pocket",
   "page": "unknown",
   "user_prefs": 7,
+  "window_inner_width": 1000,
+  "window_inner_height" 900,
 
   // "pos" is the 0-based index to record the tile's position in the Pocket section.
   // "shim" is a base64 encoded shim attached to spocs, unique to the impression from the Ad server.
@@ -125,7 +130,7 @@ Schema definitions/validations that can be used for tests can be found in `syste
 }
 ```
 
-```eval_rst
+```{eval-rst}
 +----------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------+------------------+
 | KEY                        | DESCRIPTION                                                                                                                                          |                  |
 +============================+======================================================================================================================================================+==================+
@@ -200,7 +205,7 @@ Schema definitions/validations that can be used for tests can be found in `syste
 +----------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------+------------------+
 | ``url``                    | [Optional] The URL of the recommendation shown in one of the highlights spots, if any.                                                               | :one:            |
 +----------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------+------------------+
-| ``value`` (event)          | [Optional] An object with keys "icon\_type" and "card\_type" to record the extra information for event ping                                          | :one:            |
+| ``value`` (event)          | [Optional] An object with keys "icon\_type", "card\_type" and "pocket\_logged\_in\_status" to record the extra information for event ping            | :one:            |
 +----------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------+------------------+
 | ``ver``                    | [Auto populated by Onyx] The version of the Onyx API the ping was sent to.                                                                           | :one:            |
 +----------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------+------------------+
@@ -240,6 +245,10 @@ Schema definitions/validations that can be used for tests can be found in `syste
 | ``block``                  | [Optional] An integer to record the 0-based index when user blocks a Pocket tile.                                                                    | :one:            |
 +----------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------+------------------+
 | ``pocket``                 | [Optional] An integer to record the 0-based index when user saves a Pocket tile to Pocket.                                                           | :one:            |
++----------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------+------------------+
+| ``window_inner_width``     | [Optional] Amount of vertical space in pixels available to the window.                                                                               | :one:            |
++----------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------+------------------+
+| ``window_inner_height``    | [Optional] Amount of horizontal space in pixels available to the window.                                                                             | :one:            |
 +----------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------+------------------+
 | ``user_prefs``             | [Required] The encoded integer of user's preferences.                                                                                                | :one: & :four:   |
 +----------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------+------------------+
@@ -290,11 +299,10 @@ Schema definitions/validations that can be used for tests can be found in `syste
 
 **Where:**
 
-* :one: Firefox data
-* :two: HTTP protocol data
-* :three: server augmented data
-* :four: User preferences encoding table
-
+- :one: Firefox data
+- :two: HTTP protocol data
+- :three: server augmented data
+- :four: User preferences encoding table
 
 Note: the following session-related fields are not yet implemented in the system-addon,
 but will likely be added in future versions:
@@ -311,7 +319,7 @@ but will likely be added in future versions:
 
 This encoding mapping was defined in `system-addon/lib/TelemetryFeed.jsm`
 
-```eval_rst
+```{eval-rst}
 +-------------------+------------------------+
 | Preference        | Encoded value (binary) |
 +===================+========================+
@@ -339,14 +347,14 @@ Each item above could be combined with other items through bitwise OR (`|`) oper
 
 Examples:
 
-* Everything is on, `user_prefs = 1 | 2 | 4 | 8 | 16 | 32 | 64 | 128 | 256 = 511`
-* Everything is off, `user_prefs = 0`
-* Only show search and Top Stories, `user_prefs = 1 | 4 = 5`
-* Everything except Highlights, `user_prefs = 1 | 2 | 4 | 16 | 32 | 64 | 128 | 256 = 503`
+- Everything is on, `user_prefs = 1 | 2 | 4 | 8 | 16 | 32 | 64 | 128 | 256 = 511`
+- Everything is off, `user_prefs = 0`
+- Only show search and Top Stories, `user_prefs = 1 | 4 = 5`
+- Everything except Highlights, `user_prefs = 1 | 2 | 4 | 16 | 32 | 64 | 128 | 256 = 503`
 
 Likewise, one can use bitwise AND (`&`) for decoding.
 
-* Check if everything is shown, `user_prefs & (1 | 2 | 4 | 8 | 16 | 32 | 64 | 128 | 256)` or `user_prefs == 511`
-* Check if everything is off, `user_prefs == 0`
-* Check if search is shown, `user_prefs & 1`
-* Check if both Top Sites and Top Stories are shown, `(user_prefs & 2) && (user_prefs & 4)`, or  `(user_prefs & (2 | 4)) == (2 | 4)`
+- Check if everything is shown, `user_prefs & (1 | 2 | 4 | 8 | 16 | 32 | 64 | 128 | 256)` or `user_prefs == 511`
+- Check if everything is off, `user_prefs == 0`
+- Check if search is shown, `user_prefs & 1`
+- Check if both Top Sites and Top Stories are shown, `(user_prefs & 2) && (user_prefs & 4)`, or `(user_prefs & (2 | 4)) == (2 | 4)`

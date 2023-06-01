@@ -2,26 +2,27 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import { generatedToOriginalId } from "devtools-source-map";
+import { generatedToOriginalId } from "devtools/client/shared/source-map-loader/index";
 
 import assert from "../../utils/assert";
 import { recordEvent } from "../../utils/telemetry";
-import { remapBreakpoints } from "../breakpoints";
+import { updateBreakpointsForNewPrettyPrintedSource } from "../breakpoints";
 
 import { setSymbols } from "./symbols";
-import { prettyPrint } from "../../workers/pretty-print";
 import {
   getPrettySourceURL,
   isGenerated,
   isJavaScript,
 } from "../../utils/source";
-import { loadSourceText } from "./loadSourceText";
+import { isFulfilled } from "../../utils/async-value";
+import { loadGeneratedSourceText } from "./loadSourceText";
 import { mapFrames } from "../pause";
 import { selectSpecificLocation } from "../sources";
 import { createPrettyPrintOriginalSource } from "../../client/firefox/create";
 
 import {
   getSource,
+  getFirstSourceActorForGeneratedSource,
   getSourceFromId,
   getSourceByURL,
   getSelectedLocation,
@@ -35,27 +36,41 @@ function getPrettyOriginalSourceURL(generatedSource) {
 }
 
 export async function prettyPrintSource(
-  sourceMaps,
+  sourceMapLoader,
+  prettyPrintWorker,
   generatedSource,
   content,
   actors
 ) {
-  if (!isJavaScript(generatedSource, content) || content.type !== "text") {
+  if (!content || !isFulfilled(content)) {
+    throw new Error("Cannot pretty-print a file that has not loaded");
+  }
+
+  const contentValue = content.value;
+  if (
+    !isJavaScript(generatedSource, contentValue) ||
+    contentValue.type !== "text"
+  ) {
     throw new Error("Can't prettify non-javascript files.");
   }
 
   const url = getPrettyOriginalSourceURL(generatedSource);
-  const { code, mappings } = await prettyPrint({
-    text: content.value,
+  const { code, sourceMap } = await prettyPrintWorker.prettyPrint({
+    text: contentValue.value,
     url,
   });
-  await sourceMaps.applySourceMap(generatedSource.id, url, code, mappings);
 
   // The source map URL service used by other devtools listens to changes to
-  // sources based on their actor IDs, so apply the mapping there too.
-  for (const { actor } of actors) {
-    await sourceMaps.applySourceMap(actor, url, code, mappings);
-  }
+  // sources based on their actor IDs, so apply the sourceMap there too.
+  const generatedSourceIds = [
+    generatedSource.id,
+    ...actors.map(item => item.actor),
+  ];
+  await sourceMapLoader.setSourceMapForGeneratedSources(
+    generatedSourceIds,
+    sourceMap
+  );
+
   return {
     text: code,
     contentType: "text/javascript",
@@ -63,13 +78,17 @@ export async function prettyPrintSource(
 }
 
 export function createPrettySource(cx, sourceId) {
-  return async ({ dispatch, getState, sourceMaps }) => {
+  return async ({ dispatch, getState }) => {
     const source = getSourceFromId(getState(), sourceId);
     const url = getPrettyOriginalSourceURL(source);
     const id = generatedToOriginalId(sourceId, url);
     const prettySource = createPrettyPrintOriginalSource(id, url);
 
-    dispatch({ type: "ADD_SOURCE", cx, source: prettySource });
+    dispatch({
+      type: "ADD_ORIGINAL_SOURCES",
+      cx,
+      originalSources: [prettySource],
+    });
 
     await dispatch(selectSource(cx, id));
 
@@ -78,13 +97,13 @@ export function createPrettySource(cx, sourceId) {
 }
 
 function selectPrettyLocation(cx, prettySource, generatedLocation) {
-  return async ({ dispatch, sourceMaps, getState }) => {
+  return async ({ dispatch, sourceMapLoader, getState }) => {
     let location = generatedLocation
       ? generatedLocation
       : getSelectedLocation(getState());
 
     if (location && location.line >= 1) {
-      location = await sourceMaps.getOriginalLocation(location);
+      location = await sourceMapLoader.getOriginalLocation(location);
 
       return dispatch(
         selectSpecificLocation(cx, { ...location, sourceId: prettySource.id })
@@ -108,7 +127,7 @@ function selectPrettyLocation(cx, prettySource, generatedLocation) {
  *          [aSource, error].
  */
 export function togglePrettyPrint(cx, sourceId) {
-  return async ({ dispatch, getState, client, sourceMaps }) => {
+  return async ({ dispatch, getState }) => {
     const source = getSource(getState(), sourceId);
     if (!source) {
       return {};
@@ -118,11 +137,17 @@ export function togglePrettyPrint(cx, sourceId) {
       recordEvent("pretty_print");
     }
 
-    await dispatch(loadSourceText({ cx, source }));
     assert(
       isGenerated(source),
       "Pretty-printing only allowed on generated sources"
     );
+
+    const sourceActor = getFirstSourceActorForGeneratedSource(
+      getState(),
+      source.id
+    );
+
+    await dispatch(loadGeneratedSourceText({ cx, sourceActor }));
 
     const url = getPrettySourceURL(source.url);
     const prettySource = getSourceByURL(getState(), url);
@@ -133,14 +158,14 @@ export function togglePrettyPrint(cx, sourceId) {
 
     const selectedLocation = getSelectedLocation(getState());
     const newPrettySource = await dispatch(createPrettySource(cx, sourceId));
-    dispatch(selectPrettyLocation(cx, newPrettySource, selectedLocation));
+    await dispatch(selectPrettyLocation(cx, newPrettySource, selectedLocation));
 
     const threadcx = getThreadContext(getState());
     await dispatch(mapFrames(threadcx));
 
-    await dispatch(setSymbols({ cx, source: newPrettySource }));
+    await dispatch(setSymbols({ cx, source: newPrettySource, sourceActor }));
 
-    await dispatch(remapBreakpoints(cx, sourceId));
+    await dispatch(updateBreakpointsForNewPrettyPrintedSource(cx, sourceId));
 
     return newPrettySource;
   };

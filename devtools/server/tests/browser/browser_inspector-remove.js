@@ -3,7 +3,6 @@
 
 "use strict";
 
-/* import-globals-from inspector-helpers.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/server/tests/browser/inspector-helpers.js",
   this
@@ -61,10 +60,12 @@ add_task(async function testRemoveSubtree() {
     gBrowser.selectedBrowser,
     [[siblings.previousSibling.actorID, siblings.nextSibling.actorID]],
     function([previousActorID, nextActorID]) {
-      const { require } = ChromeUtils.import(
-        "resource://devtools/shared/loader/Loader.jsm"
+      const { require } = ChromeUtils.importESModule(
+        "resource://devtools/shared/loader/Loader.sys.mjs"
       );
-      const { DevToolsServer } = require("devtools/server/devtools-server");
+      const {
+        DevToolsServer,
+      } = require("resource://devtools/server/devtools-server.js");
 
       // Convert actorID to current compartment string otherwise
       // searchAllConnectionsForActor is confused and won't find the actor.

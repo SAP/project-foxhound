@@ -5,12 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PathSkia.h"
-#include <math.h>
-#include "DrawTargetSkia.h"
-#include "Logging.h"
 #include "HelpersSkia.h"
 #include "PathHelpers.h"
 #include "skia/src/core/SkDraw.h"
+#include "skia/src/core/SkGeometry.h"
 
 namespace mozilla::gfx {
 
@@ -127,6 +125,12 @@ bool PathSkia::ContainsPoint(const Point& aPoint,
   return SkPathContainsPoint(mPath, aPoint, aTransform);
 }
 
+float ComputeResScaleForStroking(const Matrix& aTransform) {
+  SkMatrix skiaMatrix;
+  GfxMatrixToSkiaMatrix(aTransform, skiaMatrix);
+  return SkDraw::ComputeResScaleForStroking(skiaMatrix);
+}
+
 bool PathSkia::StrokeContainsPoint(const StrokeOptions& aStrokeOptions,
                                    const Point& aPoint,
                                    const Matrix& aTransform) const {
@@ -139,11 +143,9 @@ bool PathSkia::StrokeContainsPoint(const StrokeOptions& aStrokeOptions,
     return false;
   }
 
-  SkMatrix skiaMatrix;
-  GfxMatrixToSkiaMatrix(aTransform, skiaMatrix);
   SkPath strokePath;
   paint.getFillPath(mPath, &strokePath, nullptr,
-                    SkDraw::ComputeResScaleForStroking(skiaMatrix));
+                    ComputeResScaleForStroking(aTransform));
 
   return SkPathContainsPoint(strokePath, aPoint, aTransform);
 }
@@ -195,6 +197,20 @@ Rect PathSkia::GetFastBounds(const Matrix& aTransform,
   return aTransform.TransformBounds(SkRectToRect(bounds));
 }
 
+int ConvertConicToQuads(const Point& aP0, const Point& aP1, const Point& aP2,
+                        float aWeight, std::vector<Point>& aQuads) {
+  SkConic conic(PointToSkPoint(aP0), PointToSkPoint(aP1), PointToSkPoint(aP2),
+                aWeight);
+  int pow2 = conic.computeQuadPOW2(0.25f);
+  aQuads.resize(1 + 2 * (1 << pow2));
+  int numQuads =
+      conic.chopIntoQuadsPOW2(reinterpret_cast<SkPoint*>(&aQuads[0]), pow2);
+  if (numQuads < 1 << pow2) {
+    aQuads.resize(1 + 2 * numQuads);
+  }
+  return numQuads;
+}
+
 void PathSkia::StreamToSink(PathSink* aSink) const {
   SkPath::RawIter iter(mPath);
 
@@ -216,6 +232,16 @@ void PathSkia::StreamToSink(PathSink* aSink) const {
         aSink->QuadraticBezierTo(SkPointToPoint(points[1]),
                                  SkPointToPoint(points[2]));
         break;
+      case SkPath::kConic_Verb: {
+        std::vector<Point> quads;
+        int numQuads = ConvertConicToQuads(
+            SkPointToPoint(points[0]), SkPointToPoint(points[1]),
+            SkPointToPoint(points[2]), iter.conicWeight(), quads);
+        for (int i = 0; i < numQuads; i++) {
+          aSink->QuadraticBezierTo(quads[2 * i + 1], quads[2 * i + 2]);
+        }
+        break;
+      }
       case SkPath::kClose_Verb:
         aSink->Close();
         break;
@@ -226,4 +252,11 @@ void PathSkia::StreamToSink(PathSink* aSink) const {
   }
 }
 
+Maybe<Rect> PathSkia::AsRect() const {
+  SkRect rect;
+  if (mPath.isRect(&rect)) {
+    return Some(SkRectToRect(rect));
+  }
+  return Nothing();
+}
 }  // namespace mozilla::gfx

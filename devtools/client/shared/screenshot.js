@@ -4,13 +4,15 @@
 
 "use strict";
 
-const { Cc, Ci } = require("chrome");
-const { LocalizationHelper } = require("devtools/shared/l10n");
-const Services = require("Services");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 
-loader.lazyImporter(this, "Downloads", "resource://gre/modules/Downloads.jsm");
-loader.lazyImporter(this, "OS", "resource://gre/modules/osfile.jsm");
-loader.lazyImporter(this, "FileUtils", "resource://gre/modules/FileUtils.jsm");
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  Downloads: "resource://gre/modules/Downloads.sys.mjs",
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+});
 
 const STRINGS_URI = "devtools/shared/locales/screenshot.properties";
 const L10N = new LocalizationHelper(STRINGS_URI);
@@ -233,7 +235,7 @@ function saveScreenshot(window, args = {}, value) {
   }
 
   simulateCameraShutter(window);
-  return save(args, value);
+  return save(window, args, value);
 }
 
 /**
@@ -254,16 +256,20 @@ function simulateCameraShutter(window) {
 /**
  * Save the captured screenshot to one of several destinations.
  *
+ * @param object window
+ *        The DevTools Client window.
+ *
  * @param object args
  *        The original args with which the screenshot was called.
  *
  * @param object image
  *        The image object that was sent from the server.
  *
+ *
  * @return string[]
  *         Response messages from processing the screenshot.
  */
-async function save(args, image) {
+async function save(window, args, image) {
   const fileNeeded = args.filename || !args.clipboard || args.file;
   const results = [];
 
@@ -273,7 +279,7 @@ async function save(args, image) {
   }
 
   if (fileNeeded) {
-    const result = await saveToFile(image);
+    const result = await saveToFile(window, image);
     results.push(result);
   }
   return results;
@@ -327,13 +333,16 @@ function saveToClipboard(base64URI) {
  * Save the screenshot data to disk, returning a promise which is resolved on
  * completion.
  *
+ * @param object window
+ *        The DevTools Client window.
+ *
  * @param object image
  *        The image object that was sent from the server.
  *
  * @return string
  *         Response message from processing the screenshot.
  */
-async function saveToFile(image) {
+async function saveToFile(window, image) {
   let filename = image.filename;
 
   // Guard against missing image data.
@@ -346,24 +355,35 @@ async function saveToFile(image) {
     filename += ".png";
   }
 
-  const downloadsDir = await Downloads.getPreferredDownloadsDirectory();
-  const downloadsDirExists = await OS.File.exists(downloadsDir);
+  const downloadsDir = await lazy.Downloads.getPreferredDownloadsDirectory();
+  const downloadsDirExists = await IOUtils.exists(downloadsDir);
   if (downloadsDirExists) {
     // If filename is absolute, it will override the downloads directory and
     // still be applied as expected.
-    filename = OS.Path.join(downloadsDir, filename);
+    filename = PathUtils.isAbsolute(filename)
+      ? filename
+      : PathUtils.joinRelative(downloadsDir, filename);
   }
 
-  const sourceURI = Services.io.newURI(image.data);
-  const targetFile = new FileUtils.File(filename);
+  const targetFile = new lazy.FileUtils.File(filename);
 
   // Create download and track its progress.
   try {
-    const download = await Downloads.createDownload({
-      source: sourceURI,
+    const download = await lazy.Downloads.createDownload({
+      source: {
+        url: image.data,
+        // Here we want to know if the window in which the screenshot is taken is private.
+        // We have a ChromeWindow when this is called from Browser Console (:screenshot) and
+        // RDM (screenshot button).
+        isPrivate: window.isChromeWindow
+          ? lazy.PrivateBrowsingUtils.isWindowPrivate(window)
+          : lazy.PrivateBrowsingUtils.isBrowserPrivate(
+              window.browsingContext.embedderElement
+            ),
+      },
       target: targetFile,
     });
-    const list = await Downloads.getList(Downloads.ALL);
+    const list = await lazy.Downloads.getList(lazy.Downloads.ALL);
     // add the download to the download list in the Downloads list in the Browser UI
     list.add(download);
     // Await successful completion of the save via the download manager

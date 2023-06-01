@@ -3,8 +3,7 @@ const { AddonManagerPrivate } = ChromeUtils.import(
 );
 
 const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm",
-  {}
+  "resource://testing-common/AddonTestUtils.jsm"
 );
 
 AddonTestUtils.initMochitest(this);
@@ -21,7 +20,7 @@ function getBadgeStatus() {
 }
 
 // Set some prefs that apply to all the tests in this file
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       // We don't have pre-pinned certificates for the local mochitest server
@@ -34,12 +33,12 @@ add_task(async function setup() {
 
   // Navigate away from the initial page so that about:addons always
   // opens in a new tab during tests
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:robots");
+  BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, "about:robots");
   await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
 
   registerCleanupFunction(async function() {
     // Return to about:blank when we're done
-    BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:blank");
+    BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, "about:blank");
     await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
   });
 });

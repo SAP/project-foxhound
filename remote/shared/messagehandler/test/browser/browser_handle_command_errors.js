@@ -3,11 +3,8 @@
 
 "use strict";
 
-const { RootMessageHandler } = ChromeUtils.import(
-  "chrome://remote/content/shared/messagehandler/RootMessageHandler.jsm"
-);
-const { WindowGlobalMessageHandler } = ChromeUtils.import(
-  "chrome://remote/content/shared/messagehandler/WindowGlobalMessageHandler.jsm"
+const { RootMessageHandler } = ChromeUtils.importESModule(
+  "chrome://remote/content/shared/messagehandler/RootMessageHandler.sys.mjs"
 );
 
 // Check that errors from WindowGlobal modules can be caught by the consumer

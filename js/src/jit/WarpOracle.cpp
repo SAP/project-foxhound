@@ -19,8 +19,10 @@
 #include "jit/JitScript.h"
 #include "jit/JitSpewer.h"
 #include "jit/MIRGenerator.h"
+#include "jit/TrialInlining.h"
 #include "jit/TypeData.h"
 #include "jit/WarpBuilder.h"
+#include "util/DifferentialTesting.h"
 #include "vm/BuiltinObjectKind.h"
 #include "vm/BytecodeIterator.h"
 #include "vm/BytecodeLocation.h"
@@ -57,7 +59,7 @@ class MOZ_STACK_CLASS WarpScriptOracle {
     return oracle_->abort(script_, args...);
   }
 
-  AbortReasonOr<WarpEnvironment> createEnvironment();
+  WarpEnvironment createEnvironment();
   AbortReasonOr<Ok> maybeInlineIC(WarpOpSnapshotList& snapshots,
                                   BytecodeLocation loc);
   AbortReasonOr<bool> maybeInlineCall(WarpOpSnapshotList& snapshots,
@@ -181,12 +183,13 @@ AbortReasonOr<WarpSnapshot*> WarpOracle::createSnapshot() {
   //
   // Note: this assertion catches potential performance issues.
   // Failing this assertion is not a correctness/security problem.
-  // We therefore ignore cases involving OOM, stack overflow, or
-  // stubs purged by GC.
+  // We therefore ignore cases involving resource exhaustion (OOM,
+  // stack overflow, etc), or stubs purged by GC.
   HashNumber hash = icScript->hash();
   if (outerScript_->jitScript()->hasFailedICHash()) {
     HashNumber oldHash = outerScript_->jitScript()->getFailedICHash();
-    MOZ_ASSERT_IF(hash == oldHash, cx_->hadNondeterministicException());
+    MOZ_ASSERT_IF(hash == oldHash && !js::SupportDifferentialTesting(),
+                  cx_->hadResourceExhaustion());
   }
   snapshot->setICHash(hash);
 #endif
@@ -244,7 +247,7 @@ ICEntry& WarpScriptOracle::getICEntryAndFallback(BytecodeLocation loc,
   return icScript_->icEntry(icEntryIndex_ - 1);
 }
 
-AbortReasonOr<WarpEnvironment> WarpScriptOracle::createEnvironment() {
+WarpEnvironment WarpScriptOracle::createEnvironment() {
   // Don't do anything if the script doesn't use the environment chain.
   // Always make an environment chain if the script needs an arguments object
   // because ArgumentsObject construction requires the environment chain to be
@@ -254,7 +257,8 @@ AbortReasonOr<WarpEnvironment> WarpScriptOracle::createEnvironment() {
     return WarpEnvironment(NoEnvironment());
   }
 
-  if (ModuleObject* module = script_->module()) {
+  if (script_->isModule()) {
+    ModuleObject* module = script_->module();
     JSObject* obj = &module->initialEnvironment();
     return WarpEnvironment(ConstantObjectEnvironment(obj));
   }
@@ -267,11 +271,6 @@ AbortReasonOr<WarpEnvironment> WarpScriptOracle::createEnvironment() {
     MOZ_ASSERT(!script_->hasNonSyntacticScope());
     JSObject* obj = &script_->global().lexicalEnvironment();
     return WarpEnvironment(ConstantObjectEnvironment(obj));
-  }
-
-  // Parameter expression-induced extra var environment not yet handled.
-  if (fun->needsExtraBodyVarEnvironment()) {
-    return abort(AbortReason::Disable, "Extra var environment unsupported");
   }
 
   JSObject* templateEnv = script_->jitScript()->templateEnvironment();
@@ -300,10 +299,6 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
     return abort(AbortReason::Error);
   }
 
-  if (script_->jitScript()->hasTryFinally()) {
-    return abort(AbortReason::Disable, "Try-finally not supported");
-  }
-
   if (script_->failedBoundsCheck()) {
     oracle_->bailoutInfo().setFailedBoundsCheck();
   }
@@ -311,8 +306,7 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
     oracle_->bailoutInfo().setFailedLexicalCheck();
   }
 
-  WarpEnvironment environment{NoEnvironment()};
-  MOZ_TRY_VAR(environment, createEnvironment());
+  WarpEnvironment environment = createEnvironment();
 
   // Unfortunately LinkedList<> asserts the list is empty in its destructor.
   // Clear the list if we abort compilation.
@@ -382,7 +376,7 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
         //       way so this is only a temporary problem.
         PropertyName* name = loc.getPropertyName(script_);
         Value val;
-        if (cx_->global()->maybeExistingIntrinsicValue(name, &val) &&
+        if (cx_->global()->maybeGetIntrinsicValue(name, &val, cx_) &&
             JS::GCPolicy<Value>::isTenured(val)) {
           if (!AddOpSnapshot<WarpGetIntrinsic>(alloc_, opSnapshots, offset,
                                                val)) {
@@ -400,14 +394,6 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
         break;
       }
 
-      case JSOp::CallSiteObj: {
-        // Prepare the object so that WarpBuilder can just push it as constant.
-        if (!ProcessCallSiteObjOperation(cx_, script_, loc.toRawBytecode())) {
-          return abort(AbortReason::Error);
-        }
-        break;
-      }
-
       case JSOp::GetImport: {
         PropertyName* name = loc.getPropertyName(script_);
         if (!AddWarpGetImport(alloc_, opSnapshots, offset, script_, name)) {
@@ -416,31 +402,23 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
         break;
       }
 
-      case JSOp::Lambda:
-      case JSOp::LambdaArrow: {
+      case JSOp::Lambda: {
         JSFunction* fun = loc.getFunction(script_);
         if (IsAsmJSModule(fun)) {
           return abort(AbortReason::Disable, "asm.js module function lambda");
-        }
-
-        if (!AddOpSnapshot<WarpLambda>(alloc_, opSnapshots, offset,
-                                       fun->baseScript(), fun->flags(),
-                                       fun->nargs())) {
-          return abort(AbortReason::Alloc);
         }
         break;
       }
 
       case JSOp::GetElemSuper: {
 #if defined(JS_CODEGEN_X86)
-        // x86 does not have enough registers if profiling is enabled.
-        if (mirGen_.instrumentedProfiling()) {
-          return abort(AbortReason::Disable,
-                       "GetElemSuper with profiling is not supported on x86");
-        }
-#endif
+        // x86 does not have enough registers.
+        return abort(AbortReason::Disable,
+                     "GetElemSuper is not supported on x86");
+#else
         MOZ_TRY(maybeInlineIC(opSnapshots, loc));
         break;
+#endif
       }
 
       case JSOp::Rest: {
@@ -454,8 +432,8 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
       }
 
       case JSOp::BindGName: {
-        RootedGlobalObject global(cx_, &script_->global());
-        RootedPropertyName name(cx_, loc.getPropertyName(script_));
+        Rooted<GlobalObject*> global(cx_, &script_->global());
+        Rooted<PropertyName*> name(cx_, loc.getPropertyName(script_));
         if (JSObject* env = MaybeOptimizeBindGlobalName(cx_, global, name)) {
           MOZ_ASSERT(env->isTenured());
           if (!AddOpSnapshot<WarpBindGName>(alloc_, opSnapshots, offset, env)) {
@@ -467,6 +445,61 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
         break;
       }
 
+      case JSOp::PushVarEnv: {
+        Rooted<VarScope*> scope(cx_, &loc.getScope(script_)->as<VarScope>());
+
+        auto* templateObj =
+            VarEnvironmentObject::createTemplateObject(cx_, scope);
+        if (!templateObj) {
+          return abort(AbortReason::Alloc);
+        }
+        MOZ_ASSERT(templateObj->isTenured());
+
+        if (!AddOpSnapshot<WarpVarEnvironment>(alloc_, opSnapshots, offset,
+                                               templateObj)) {
+          return abort(AbortReason::Alloc);
+        }
+        break;
+      }
+
+      case JSOp::PushLexicalEnv:
+      case JSOp::FreshenLexicalEnv:
+      case JSOp::RecreateLexicalEnv: {
+        Rooted<LexicalScope*> scope(cx_,
+                                    &loc.getScope(script_)->as<LexicalScope>());
+
+        auto* templateObj =
+            BlockLexicalEnvironmentObject::createTemplateObject(cx_, scope);
+        if (!templateObj) {
+          return abort(AbortReason::Alloc);
+        }
+        MOZ_ASSERT(templateObj->isTenured());
+
+        if (!AddOpSnapshot<WarpLexicalEnvironment>(alloc_, opSnapshots, offset,
+                                                   templateObj)) {
+          return abort(AbortReason::Alloc);
+        }
+        break;
+      }
+
+      case JSOp::PushClassBodyEnv: {
+        Rooted<ClassBodyScope*> scope(
+            cx_, &loc.getScope(script_)->as<ClassBodyScope>());
+
+        auto* templateObj =
+            ClassBodyLexicalEnvironmentObject::createTemplateObject(cx_, scope);
+        if (!templateObj) {
+          return abort(AbortReason::Alloc);
+        }
+        MOZ_ASSERT(templateObj->isTenured());
+
+        if (!AddOpSnapshot<WarpClassBodyEnvironment>(alloc_, opSnapshots,
+                                                     offset, templateObj)) {
+          return abort(AbortReason::Alloc);
+        }
+        break;
+      }
+
       case JSOp::GetName:
       case JSOp::GetGName:
       case JSOp::GetProp:
@@ -474,11 +507,12 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
       case JSOp::SetProp:
       case JSOp::StrictSetProp:
       case JSOp::Call:
+      case JSOp::CallContent:
       case JSOp::CallIgnoresRv:
       case JSOp::CallIter:
-      case JSOp::FunCall:
-      case JSOp::FunApply:
+      case JSOp::CallContentIter:
       case JSOp::New:
+      case JSOp::NewContent:
       case JSOp::SuperCall:
       case JSOp::SpreadCall:
       case JSOp::SpreadNew:
@@ -521,6 +555,7 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
       case JSOp::InitHiddenProp:
       case JSOp::InitElem:
       case JSOp::InitHiddenElem:
+      case JSOp::InitLockedElem:
       case JSOp::InitElemInc:
       case JSOp::SetName:
       case JSOp::StrictSetName:
@@ -541,6 +576,7 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
       case JSOp::And:
       case JSOp::Or:
       case JSOp::Not:
+      case JSOp::CloseIter:
         MOZ_TRY(maybeInlineIC(opSnapshots, loc));
         break;
 
@@ -564,7 +600,6 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
       case JSOp::Uint24:
       case JSOp::Int32:
       case JSOp::Double:
-      case JSOp::ResumeIndex:
       case JSOp::BigInt:
       case JSOp::String:
       case JSOp::Symbol:
@@ -603,16 +638,13 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
       case JSOp::MoreIter:
       case JSOp::EndIter:
       case JSOp::IsNoIter:
+      case JSOp::IsNullOrUndefined:
       case JSOp::DelProp:
       case JSOp::StrictDelProp:
       case JSOp::DelElem:
       case JSOp::StrictDelElem:
       case JSOp::SetFunName:
-      case JSOp::PushLexicalEnv:
       case JSOp::PopLexicalEnv:
-      case JSOp::FreshenLexicalEnv:
-      case JSOp::RecreateLexicalEnv:
-      case JSOp::PushClassBodyEnv:
       case JSOp::ImplicitThis:
       case JSOp::CheckClassHeritage:
       case JSOp::CheckThis:
@@ -643,6 +675,7 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
       case JSOp::InitHiddenElemSetter:
       case JSOp::NewTarget:
       case JSOp::Object:
+      case JSOp::CallSiteObj:
       case JSOp::CheckIsObj:
       case JSOp::CheckObjCoercible:
       case JSOp::FunWithProto:
@@ -660,6 +693,7 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
       case JSOp::ResumeKind:
       case JSOp::ThrowMsg:
       case JSOp::Try:
+      case JSOp::Finally:
       case JSOp::NewPrivateName:
         // Supported by WarpBuilder. Nothing to do.
         break;

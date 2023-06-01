@@ -19,6 +19,7 @@
 
   /* Toolbar size (excluding borders) */
   --theme-toolbar-height: 24px;
+  --theme-toolbar-tall-height: 28px;
 
   /* For accessibility purposes we want to enhance the focus styling. This
    * should improve keyboard navigation usability. */
@@ -103,6 +104,7 @@
 :root.theme-light {
   --theme-body-background: white;
   --theme-body-emphasized-background: var(--grey-10);
+  --theme-body-alternate-emphasized-background: #f0f9fe;
   --theme-sidebar-background: white;
 
   /* Toolbar */
@@ -113,6 +115,7 @@
   --theme-toolbar-highlighted-color: var(--green-60);
   --theme-toolbar-background-hover: rgba(221, 225, 228, 0.66);
   --theme-toolbar-background-alt: #f5f5f5;
+  --theme-toolbar-background-highlighted: #b9dcff;
   --theme-toolbar-hover: var(--grey-20);
   --theme-toolbar-hover-active: var(--grey-20);
   --theme-toolbar-separator: var(--grey-90-a10);
@@ -157,6 +160,7 @@
   --theme-body-color: var(--grey-70);
   --theme-text-color-alt: var(--grey-50);
   --theme-text-color-inactive: var(--grey-40);
+  --theme-text-color-error: var(--red-60);
   --theme-text-color-strong: var(--grey-90);
   --theme-stack-trace-text: var(--red-70);
 
@@ -177,17 +181,13 @@
    * should improve keyboard navigation usability. */
   --theme-focus-outline-color: #000000;
 
-  /* Colors used in Graphs, like performance tools. Similar colors to Chrome's timeline. */
-  --theme-graphs-green: #85d175;
-  --theme-graphs-blue: #83b7f6;
-  --theme-graphs-bluegrey: #0072ab;
+  /* Colors that were used in Graphs in the old performance tools, which was removed.
+   * They're also used on other panels and should be renamed (See Bug 1767617) */
   --theme-graphs-purple: #b693eb;
   --theme-graphs-yellow: #efc052;
   --theme-graphs-orange: #d97e00;
-  --theme-graphs-red: #e57180;
   --theme-graphs-grey: #cccccc;
   --theme-graphs-full-red: #f00;
-  --theme-graphs-full-blue: #00f;
 
   /* Common popup styles(used by HTMLTooltip and autocomplete) */
   --theme-popup-background: Field;
@@ -231,6 +231,7 @@
 :root.theme-dark {
   --theme-body-background: #232327;
   --theme-body-emphasized-background: var(--grey-70);
+  --theme-body-alternate-emphasized-background: #353b48;
   --theme-sidebar-background: #18181a;
 
   /* Toolbar */
@@ -241,6 +242,7 @@
   --theme-toolbar-highlighted-color: var(--green-50);
   --theme-toolbar-background-hover: #232327;
   --theme-toolbar-background-alt: var(--grey-85);
+  --theme-toolbar-background-highlighted: var(--blue-60);
   --theme-toolbar-hover: #232327;
   --theme-toolbar-hover-active: #252526;
   --theme-toolbar-separator: var(--grey-10-a20);
@@ -285,6 +287,7 @@
   --theme-body-color: var(--grey-40);
   --theme-text-color-alt: var(--grey-45);
   --theme-text-color-inactive: var(--grey-50);
+  --theme-text-color-error: var(--red-40);
   --theme-text-color-strong: var(--grey-30);
   --theme-stack-trace-text: var(--red-50);
 
@@ -305,17 +308,13 @@
    * should improve keyboard navigation usability. */
   --theme-focus-outline-color: #ced3d9;
 
-  /* Colors used in Graphs, like performance tools. Mostly similar to some "highlight-*" colors. */
-  --theme-graphs-green: #70bf53;
-  --theme-graphs-blue: #46afe3;
-  --theme-graphs-bluegrey: #5e88b0;
+    /* Colors that were used in Graphs in the old performance tools, which was removed.
+   * They're also used on other panels and should be renamed (See Bug 1767617) */
   --theme-graphs-purple: #df80ff;
   --theme-graphs-yellow: #d99b28;
   --theme-graphs-orange: #d96629;
-  --theme-graphs-red: #eb5368;
   --theme-graphs-grey: #757873;
   --theme-graphs-full-red: #f00;
-  --theme-graphs-full-blue: #00f;
 
   /* Common popup styles(used by HTMLTooltip and autocomplete) */
   --theme-popup-background: var(--grey-60);

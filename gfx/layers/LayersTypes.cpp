@@ -31,7 +31,6 @@ const char* GetLayersBackendName(LayersBackend aBackend) {
     case LayersBackend::LAYERS_NONE:
       return "none";
     case LayersBackend::LAYERS_WR:
-      MOZ_ASSERT(gfx::gfxVars::UseWebRender());
       if (gfx::gfxVars::UseSoftwareWebRender()) {
 #ifdef XP_WIN
         if (gfx::gfxVars::AllowSoftwareWebRenderD3D11() &&
@@ -50,6 +49,35 @@ const char* GetLayersBackendName(LayersBackend aBackend) {
 
 std::ostream& operator<<(std::ostream& aStream, const LayersId& aId) {
   return aStream << nsPrintfCString("0x%" PRIx64, aId.mId).get();
+}
+
+/* static */
+CompositableHandle CompositableHandle::GetNext() {
+  static std::atomic<uint64_t> sCounter = 0;
+  return CompositableHandle{++sCounter};
+}
+
+/* static */
+RemoteTextureId RemoteTextureId::GetNext() {
+  static std::atomic<uint64_t> sCounter = 0;
+  return RemoteTextureId{++sCounter};
+}
+
+/* static */
+RemoteTextureOwnerId RemoteTextureOwnerId::GetNext() {
+  static std::atomic<uint64_t> sCounter = 0;
+  return RemoteTextureOwnerId{++sCounter};
+}
+
+/* static */
+GpuProcessTextureId GpuProcessTextureId::GetNext() {
+  if (!XRE_IsGPUProcess()) {
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+    return GpuProcessTextureId{};
+  }
+
+  static std::atomic<uint64_t> sCounter = 0;
+  return GpuProcessTextureId{++sCounter};
 }
 
 }  // namespace layers

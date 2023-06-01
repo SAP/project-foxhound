@@ -53,6 +53,7 @@ class DNSPacket {
   virtual ~DNSPacket() = default;
 
   Result<uint8_t, nsresult> GetRCode() const;
+  Result<bool, nsresult> RecursionAvailable() const;
 
   // Called in order to feed data into the buffer.
   nsresult OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInputStream,
@@ -72,6 +73,7 @@ class DNSPacket {
       uint32_t& aTTL);
 
   DNSPacketStatus PacketStatus() const { return mStatus; }
+  void SetOriginHost(const Maybe<nsCString>& aHost) { mOriginHost = aHost; }
 
  protected:
   // Never accept larger DOH responses than this as that would indicate
@@ -101,6 +103,7 @@ class DNSPacket {
   unsigned char mResponse[MAX_SIZE]{};
   unsigned int mBodySize = 0;
   DNSPacketStatus mStatus = DNSPacketStatus::Unknown;
+  Maybe<nsCString> mOriginHost;
 };
 
 class ODoHDNSPacket final : public DNSPacket {

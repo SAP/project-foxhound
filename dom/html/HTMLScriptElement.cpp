@@ -24,8 +24,11 @@
 #include "nsISupportsImpl.h"
 #include "mozilla/dom/HTMLScriptElement.h"
 #include "mozilla/dom/HTMLScriptElementBinding.h"
+#include "mozilla/StaticPrefs_dom.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(Script)
+
+using JS::loader::ScriptKind;
 
 namespace mozilla::dom {
 
@@ -147,7 +150,7 @@ void HTMLScriptElement::SetInnerHTML(const nsAString& aInnerHTML,
   ReportTaintSink(aInnerHTML, "script.innerHTML", id); 
 }
 
-void HTMLScriptElement::GetText(nsAString& aValue, ErrorResult& aRv) {
+void HTMLScriptElement::GetText(nsAString& aValue, ErrorResult& aRv) const {
   if (!nsContentUtils::GetNodeTextContent(this, false, aValue, fallible)) {
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
   }
@@ -179,7 +182,7 @@ bool HTMLScriptElement::GetScriptType(nsAString& aType) {
   return true;
 }
 
-void HTMLScriptElement::GetScriptText(nsAString& text) {
+void HTMLScriptElement::GetScriptText(nsAString& text) const {
   GetText(text, IgnoreErrors());
 }
 
@@ -192,13 +195,28 @@ void HTMLScriptElement::FreezeExecutionAttrs(Document* aOwnerDoc) {
     return;
   }
 
-  MOZ_ASSERT(!mIsModule && !mAsync && !mDefer && !mExternal);
+  MOZ_ASSERT((mKind != ScriptKind::eModule) &&
+             (mKind != ScriptKind::eImportMap) && !mAsync && !mDefer &&
+             !mExternal);
 
-  // Determine whether this is a classic script or a module script.
+  // Determine whether this is a(n) classic/module/importmap script.
   nsAutoString type;
   GetScriptType(type);
-  mIsModule = aOwnerDoc->ModuleScriptsEnabled() && !type.IsEmpty() &&
-              type.LowerCaseEqualsASCII("module");
+  if (!type.IsEmpty()) {
+    if (aOwnerDoc->ModuleScriptsEnabled() &&
+        type.LowerCaseEqualsASCII("module")) {
+      mKind = ScriptKind::eModule;
+    }
+
+    // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+    // Step 11. Otherwise, if the script block's type string is an ASCII
+    // case-insensitive match for the string "importmap", then set el's type to
+    // "importmap".
+    if (aOwnerDoc->ImportMapsEnabled() &&
+        type.LowerCaseEqualsASCII("importmap")) {
+      mKind = ScriptKind::eImportMap;
+    }
+  }
 
   // variation of this code in SVGScriptElement - check if changes
   // need to be transfered when modifying.  Note that we don't use GetSrc here
@@ -231,7 +249,7 @@ void HTMLScriptElement::FreezeExecutionAttrs(Document* aOwnerDoc) {
     mExternal = true;
   }
 
-  bool async = (mExternal || mIsModule) && Async();
+  bool async = (mExternal || mKind == ScriptKind::eModule) && Async();
   bool defer = mExternal && Defer();
 
   mDefer = !async && defer;
@@ -257,7 +275,10 @@ bool HTMLScriptElement::HasScriptContent() {
 /* static */
 bool HTMLScriptElement::Supports(const GlobalObject& aGlobal,
                                  const nsAString& aType) {
-  return aType.EqualsLiteral("classic") || aType.EqualsLiteral("module");
+  nsAutoString type(aType);
+  return aType.EqualsLiteral("classic") || aType.EqualsLiteral("module") ||
+         (StaticPrefs::dom_importMaps_enabled() &&
+          aType.EqualsLiteral("importmap"));
 }
 
 }  // namespace mozilla::dom

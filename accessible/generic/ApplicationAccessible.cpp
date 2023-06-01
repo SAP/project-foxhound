@@ -80,8 +80,8 @@ LocalAccessible* ApplicationAccessible::LocalChildAtPoint(
   return nullptr;
 }
 
-LocalAccessible* ApplicationAccessible::FocusedChild() {
-  LocalAccessible* focus = FocusMgr()->FocusedAccessible();
+Accessible* ApplicationAccessible::FocusedChild() {
+  LocalAccessible* focus = FocusMgr()->FocusedLocalAccessible();
   if (focus && focus->LocalParent() == this) {
     return focus;
   }

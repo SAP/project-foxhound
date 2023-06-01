@@ -10,12 +10,12 @@
 
 use crate::gecko::url::CssUrlData;
 use crate::gecko_bindings::structs::{
-    RawServoAnimationValue, RawServoCounterStyleRule, RawServoCssUrlData, RawServoDeclarationBlock,
-    RawServoFontFaceRule, RawServoFontFeatureValuesRule, RawServoImportRule, RawServoKeyframe,
-    RawServoKeyframesRule, RawServoLayerBlockRule, RawServoLayerStatementRule, RawServoMediaList,
-    RawServoMediaRule, RawServoMozDocumentRule, RawServoNamespaceRule, RawServoPageRule,
-    RawServoScrollTimelineRule, RawServoStyleRule, RawServoStyleSheetContents,
-    RawServoSupportsRule, ServoCssRules,
+    RawServoAnimationValue, RawServoContainerRule, RawServoCounterStyleRule, RawServoCssUrlData,
+    RawServoDeclarationBlock, RawServoFontFaceRule, RawServoFontFeatureValuesRule,
+    RawServoFontPaletteValuesRule, RawServoImportRule, RawServoKeyframe, RawServoKeyframesRule,
+    RawServoLayerBlockRule, RawServoLayerStatementRule, RawServoMediaList, RawServoMediaRule,
+    RawServoMozDocumentRule, RawServoNamespaceRule, RawServoPageRule, RawServoStyleRule,
+    RawServoStyleSheetContents, RawServoSupportsRule, ServoCssRules,
 };
 use crate::gecko_bindings::sugar::ownership::{HasArcFFI, HasFFI, Strong};
 use crate::media_queries::MediaList;
@@ -24,9 +24,9 @@ use crate::properties::{ComputedValues, PropertyDeclarationBlock};
 use crate::shared_lock::Locked;
 use crate::stylesheets::keyframes_rule::Keyframe;
 use crate::stylesheets::{
-    CounterStyleRule, CssRules, DocumentRule, FontFaceRule, FontFeatureValuesRule, ImportRule,
-    KeyframesRule, LayerBlockRule, LayerStatementRule, MediaRule, NamespaceRule, PageRule,
-    ScrollTimelineRule, StyleRule, StylesheetContents, SupportsRule,
+    ContainerRule, CounterStyleRule, CssRules, DocumentRule, FontFaceRule, FontFeatureValuesRule,
+    FontPaletteValuesRule, ImportRule, KeyframesRule, LayerBlockRule, LayerStatementRule,
+    MediaRule, NamespaceRule, PageRule, StyleRule, StylesheetContents, SupportsRule,
 };
 use servo_arc::{Arc, ArcBorrow};
 use std::{mem, ptr};
@@ -92,17 +92,20 @@ impl_arc_ffi!(Locked<NamespaceRule> => RawServoNamespaceRule
 impl_arc_ffi!(Locked<PageRule> => RawServoPageRule
               [Servo_PageRule_AddRef, Servo_PageRule_Release]);
 
-impl_arc_ffi!(Locked<ScrollTimelineRule> => RawServoScrollTimelineRule
-              [Servo_ScrollTimelineRule_AddRef, Servo_ScrollTimelineRule_Release]);
-
 impl_arc_ffi!(Locked<SupportsRule> => RawServoSupportsRule
               [Servo_SupportsRule_AddRef, Servo_SupportsRule_Release]);
+
+impl_arc_ffi!(Locked<ContainerRule> => RawServoContainerRule
+              [Servo_ContainerRule_AddRef, Servo_ContainerRule_Release]);
 
 impl_arc_ffi!(Locked<DocumentRule> => RawServoMozDocumentRule
               [Servo_DocumentRule_AddRef, Servo_DocumentRule_Release]);
 
 impl_arc_ffi!(Locked<FontFeatureValuesRule> => RawServoFontFeatureValuesRule
               [Servo_FontFeatureValuesRule_AddRef, Servo_FontFeatureValuesRule_Release]);
+
+impl_arc_ffi!(Locked<FontPaletteValuesRule> => RawServoFontPaletteValuesRule
+              [Servo_FontPaletteValuesRule_AddRef, Servo_FontPaletteValuesRule_Release]);
 
 impl_arc_ffi!(Locked<FontFaceRule> => RawServoFontFaceRule
               [Servo_FontFaceRule_AddRef, Servo_FontFaceRule_Release]);

@@ -100,8 +100,9 @@ nsresult nsInputStreamPump::EnsureWaiting() {
     // created on main thread.
     if (mState == STATE_STOP && !mOffMainThread) {
       nsCOMPtr<nsIEventTarget> mainThread =
-          mLabeledMainThreadTarget ? mLabeledMainThreadTarget
-                                   : do_AddRef(GetMainThreadEventTarget());
+          mLabeledMainThreadTarget
+              ? mLabeledMainThreadTarget
+              : do_AddRef(GetMainThreadSerialEventTarget());
       if (mTargetThread != mainThread) {
         mTargetThread = mainThread;
       }
@@ -154,7 +155,7 @@ NS_IMETHODIMP
 nsInputStreamPump::IsPending(bool* result) {
   RecursiveMutexAutoLock lock(mMutex);
 
-  *result = (mState != STATE_IDLE);
+  *result = (mState != STATE_IDLE && mState != STATE_DEAD);
   return NS_OK;
 }
 
@@ -164,6 +165,19 @@ nsInputStreamPump::GetStatus(nsresult* status) {
 
   *status = mStatus;
   return NS_OK;
+}
+
+NS_IMETHODIMP nsInputStreamPump::SetCanceledReason(const nsACString& aReason) {
+  return SetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP nsInputStreamPump::GetCanceledReason(nsACString& aReason) {
+  return GetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP nsInputStreamPump::CancelWithReason(nsresult aStatus,
+                                                  const nsACString& aReason) {
+  return CancelWithReasonImpl(aStatus, aReason);
 }
 
 NS_IMETHODIMP
@@ -185,12 +199,31 @@ nsInputStreamPump::Cancel(nsresult status) {
 
   // close input stream
   if (mAsyncStream) {
-    mAsyncStream->CloseWithStatus(status);
-    if (mSuspendCount == 0) EnsureWaiting();
-    // Otherwise, EnsureWaiting will be called by Resume().
+    // If mSuspendCount != 0, EnsureWaiting will be called by Resume().
     // Note that while suspended, OnInputStreamReady will
     // not do anything, and also note that calling asyncWait
     // on a closed stream works and will dispatch an event immediately.
+
+    nsCOMPtr<nsIEventTarget> currentTarget = NS_GetCurrentThread();
+    if (mTargetThread && currentTarget != mTargetThread) {
+      nsresult rv = mTargetThread->Dispatch(NS_NewRunnableFunction(
+          "nsInputStreamPump::Cancel", [self = RefPtr{this}, status] {
+            RecursiveMutexAutoLock lock(self->mMutex);
+            if (!self->mAsyncStream) {
+              return;
+            }
+            self->mAsyncStream->CloseWithStatus(status);
+            if (self->mSuspendCount == 0) {
+              self->EnsureWaiting();
+            }
+          }));
+      NS_ENSURE_SUCCESS(rv, rv);
+    } else {
+      mAsyncStream->CloseWithStatus(status);
+      if (mSuspendCount == 0) {
+        EnsureWaiting();
+      }
+    }
   }
   return NS_OK;
 }
@@ -200,7 +233,8 @@ nsInputStreamPump::Suspend() {
   RecursiveMutexAutoLock lock(mMutex);
 
   LOG(("nsInputStreamPump::Suspend [this=%p]\n", this));
-  NS_ENSURE_TRUE(mState != STATE_IDLE, NS_ERROR_UNEXPECTED);
+  NS_ENSURE_TRUE(mState != STATE_IDLE && mState != STATE_DEAD,
+                 NS_ERROR_UNEXPECTED);
   ++mSuspendCount;
   return NS_OK;
 }
@@ -211,12 +245,15 @@ nsInputStreamPump::Resume() {
 
   LOG(("nsInputStreamPump::Resume [this=%p]\n", this));
   NS_ENSURE_TRUE(mSuspendCount > 0, NS_ERROR_UNEXPECTED);
-  NS_ENSURE_TRUE(mState != STATE_IDLE, NS_ERROR_UNEXPECTED);
+  NS_ENSURE_TRUE(mState != STATE_IDLE && mState != STATE_DEAD,
+                 NS_ERROR_UNEXPECTED);
 
   // There is a brief in-between state when we null out mAsyncStream in
   // OnStateStop() before calling OnStopRequest, and only afterwards set
-  // STATE_IDLE, which we need to handle gracefully.
-  if (--mSuspendCount == 0 && mAsyncStream) EnsureWaiting();
+  // STATE_DEAD, which we need to handle gracefully.
+  if (--mSuspendCount == 0 && mAsyncStream) {
+    EnsureWaiting();
+  }
   return NS_OK;
 }
 
@@ -317,7 +354,7 @@ nsInputStreamPump::AsyncRead(nsIStreamListener* listener) {
   if (NS_IsMainThread() && mLabeledMainThreadTarget) {
     mTargetThread = mLabeledMainThreadTarget;
   } else {
-    mTargetThread = GetCurrentEventTarget();
+    mTargetThread = mozilla::GetCurrentSerialEventTarget();
   }
   NS_ENSURE_STATE(mTargetThread);
 
@@ -359,7 +396,7 @@ nsInputStreamPump::OnInputStreamReady(nsIAsyncInputStream* stream) {
       break;
     }
     mProcessingCallbacks = true;
-    if (mSuspendCount || mState == STATE_IDLE) {
+    if (mSuspendCount || mState == STATE_IDLE || mState == STATE_DEAD) {
       mWaitingForInputStreamReady = false;
       mProcessingCallbacks = false;
       break;
@@ -455,13 +492,15 @@ uint32_t nsInputStreamPump::OnStateStart() {
   }
 
   {
+    nsCOMPtr<nsIStreamListener> listener = mListener;
+    // We're on the writing thread
+    AssertOnThread();
+
     // Note: Must exit mutex for call to OnStartRequest to avoid
     // deadlocks when calls to RetargetDeliveryTo for multiple
     // nsInputStreamPumps are needed (e.g. nsHttpChannel).
     RecursiveMutexAutoUnlock unlock(mMutex);
-    // We're on the writing thread
-    AssertOnThread();
-    rv = mListener->OnStartRequest(this);
+    rv = listener->OnStartRequest(this);
   }
 
   // an error returned from OnStartRequest should cause us to abort; however,
@@ -524,13 +563,6 @@ uint32_t nsInputStreamPump::OnStateTransfer() {
          mStreamOffset, avail, odaAvail));
 
     {
-      // Note: Must exit mutex for call to OnStartRequest to avoid
-      // deadlocks when calls to RetargetDeliveryTo for multiple
-      // nsInputStreamPumps are needed (e.g. nsHttpChannel).
-      RecursiveMutexAutoUnlock unlock(mMutex);
-      // We're on the writing thread for mListener and mAsyncStream.
-      // mStreamOffset is only touched in OnStateTransfer, and AsyncRead
-      // shouldn't be called during OnDataAvailable()
       // We may be called on non-MainThread even if mOffMainThread is
       // false, due to RetargetDeliveryTo(), so don't use AssertOnThread()
       if (mTargetThread) {
@@ -538,8 +570,20 @@ uint32_t nsInputStreamPump::OnStateTransfer() {
       } else {
         MOZ_ASSERT(NS_IsMainThread());
       }
-      rv = mListener->OnDataAvailable(this, mAsyncStream, mStreamOffset,
-                                      odaAvail);
+
+      nsCOMPtr<nsIStreamListener> listener = mListener;
+      // Note: Must exit mutex for call to OnStartRequest to avoid
+      // deadlocks when calls to RetargetDeliveryTo for multiple
+      // nsInputStreamPumps are needed (e.g. nsHttpChannel).
+      RecursiveMutexAutoUnlock unlock(mMutex);
+      // We're on the writing thread for mListener and mAsyncStream.
+      // mStreamOffset is only touched in OnStateTransfer, and AsyncRead
+      // shouldn't be called during OnDataAvailable()
+
+      MOZ_PUSH_IGNORE_THREAD_SAFETY
+      rv = listener->OnDataAvailable(this, mAsyncStream, mStreamOffset,
+                                     odaAvail);
+      MOZ_POP_THREAD_SAFETY
     }
 
     // don't enter this code if ODA failed or called Cancel
@@ -609,8 +653,8 @@ uint32_t nsInputStreamPump::OnStateStop() {
     nsresult rv = mLabeledMainThreadTarget->Dispatch(
         NewRunnableMethod("nsInputStreamPump::CallOnStateStop", this,
                           &nsInputStreamPump::CallOnStateStop));
-    NS_ENSURE_SUCCESS(rv, STATE_IDLE);
-    return STATE_IDLE;
+    NS_ENSURE_SUCCESS(rv, STATE_DEAD);
+    return STATE_DEAD;
   }
 
   AUTO_PROFILER_LABEL("nsInputStreamPump::OnStateStop", NETWORK);
@@ -625,7 +669,7 @@ uint32_t nsInputStreamPump::OnStateStop() {
   if (!mAsyncStream || !mListener) {
     MOZ_ASSERT(mAsyncStream, "null mAsyncStream: OnStateStop called twice?");
     MOZ_ASSERT(mListener, "null mListener: OnStateStop called twice?");
-    return STATE_IDLE;
+    return STATE_DEAD;
   }
 
   if (NS_FAILED(mStatus)) {
@@ -637,21 +681,25 @@ uint32_t nsInputStreamPump::OnStateStop() {
   mAsyncStream = nullptr;
   mIsPending = false;
   {
+    // We're on the writing thread.
+    // We believe that mStatus can't be changed on us here.
+    AssertOnThread();
+
+    nsCOMPtr<nsIStreamListener> listener = mListener;
+    nsresult status = mStatus;
     // Note: Must exit mutex for call to OnStartRequest to avoid
     // deadlocks when calls to RetargetDeliveryTo for multiple
     // nsInputStreamPumps are needed (e.g. nsHttpChannel).
     RecursiveMutexAutoUnlock unlock(mMutex);
-    // We're on the writing thread.
-    // We believe that mStatus can't be changed on us here.
-    AssertOnThread();
-    mListener->OnStopRequest(this, mStatus);
+
+    listener->OnStopRequest(this, status);
   }
   mTargetThread = nullptr;
   mListener = nullptr;
 
   if (mLoadGroup) mLoadGroup->RemoveRequest(this, nullptr, mStatus);
 
-  return STATE_IDLE;
+  return STATE_DEAD;
 }
 
 nsresult nsInputStreamPump::CreateBufferedStreamIfNeeded() {

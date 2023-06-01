@@ -22,8 +22,7 @@
 #include "nsIFile.h"
 #include "mozilla/MozPromise.h"
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
 class GMPCapability {
  public:
@@ -31,16 +30,17 @@ class GMPCapability {
   GMPCapability(GMPCapability&& aOther)
       : mAPIName(std::move(aOther.mAPIName)),
         mAPITags(std::move(aOther.mAPITags)) {}
-  explicit GMPCapability(const nsCString& aAPIName) : mAPIName(aAPIName) {}
+  explicit GMPCapability(const nsACString& aAPIName) : mAPIName(aAPIName) {}
   explicit GMPCapability(const GMPCapability& aOther) = default;
   nsCString mAPIName;
   CopyableTArray<nsCString> mAPITags;
 
   static bool Supports(const nsTArray<GMPCapability>& aCapabilities,
-                       const nsCString& aAPI, const nsTArray<nsCString>& aTags);
+                       const nsACString& aAPI,
+                       const nsTArray<nsCString>& aTags);
 
   static bool Supports(const nsTArray<GMPCapability>& aCapabilities,
-                       const nsCString& aAPI, const nsCString& aTag);
+                       const nsACString& aAPI, const nsCString& aTag);
 };
 
 enum GMPState {
@@ -190,8 +190,8 @@ class GMPParent final
   void PreTranslateBinsWorker();
 #endif
 
-#if defined(XP_MACOSX)
-  nsresult GetPluginFileArch(nsIFile* aPluginDir, nsAutoString& aLeafName,
+#if defined(XP_WIN) || defined(XP_MACOSX)
+  nsresult GetPluginFileArch(nsIFile* aPluginDir, const nsString& aBaseName,
                              uint32_t& aArchSet);
 #endif
 
@@ -234,16 +234,17 @@ class GMPParent final
   // to terminate gracefully.
   bool mHoldingSelfRef;
 
-#if defined(XP_MACOSX) && defined(__aarch64__)
+#ifdef ALLOW_GECKO_CHILD_PROCESS_ARCH
   // The child process architecture to use.
   uint32_t mChildLaunchArch;
+#endif
+#if defined(XP_MACOSX) && defined(__aarch64__)
   nsCString mPluginFilePath;
 #endif
 
   const nsCOMPtr<nsISerialEventTarget> mMainThread;
 };
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp
 
 #endif  // GMPParent_h_

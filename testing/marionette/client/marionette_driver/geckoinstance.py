@@ -4,12 +4,13 @@
 
 # ALL CHANGES TO THIS FILE MUST HAVE REVIEW FROM A MARIONETTE PEER!
 #
+# Please refer to INSTRUCTIONS TO ADD A NEW PREFERENCE in
+# remote/shared/RecommendedPreferences.sys.mjs
+#
 # The Marionette Python client is used out-of-tree with various builds of
 # Firefox. Removing a preference from this file will cause regressions,
 # so please be careful and get review from a Testing :: Marionette peer
 # before you make any changes to this file.
-
-from __future__ import absolute_import
 
 import codecs
 import json
@@ -18,14 +19,12 @@ import sys
 import tempfile
 import time
 import traceback
-
 from copy import deepcopy
 
 import mozversion
-
-from mozprofile import Profile
-from mozrunner import Runner, FennecEmulatorRunner
 import six
+from mozprofile import Profile
+from mozrunner import FennecEmulatorRunner, Runner
 from six import reraise
 
 from . import errors
@@ -69,8 +68,12 @@ class GeckoInstance(object):
         # No slow script dialogs
         "dom.max_chrome_script_run_time": 0,
         "dom.max_script_run_time": 0,
+        # Disable location change rate limitation
+        "dom.navigation.locationChangeRateLimit.count": 0,
         # DOM Push
         "dom.push.connection.enabled": False,
+        # Screen Orientation API
+        "dom.screenorientation.allow-lock": True,
         # Disable dialog abuse if alerts are triggered too quickly
         "dom.successive_dialog_time_limit": 0,
         # Only load extensions from the application and user profile
@@ -141,7 +144,7 @@ class GeckoInstance(object):
         # Tests don't wait for the notification button security delay
         "security.notification_enable_delay": 0,
         # Ensure blocklist updates don't hit the network
-        "services.settings.server": "http://%(server)s/dummy/blocklist/",
+        "services.settings.server": "data:,#remote-settings-dummy/v1",
         # Disable password capture, so that tests that include forms aren"t
         # influenced by the presence of the persistent doorhanger notification
         "signon.rememberSignons": False,
@@ -149,6 +152,8 @@ class GeckoInstance(object):
         "toolkit.startup.max_resumed_crashes": -1,
         # Disable most telemetry pings
         "toolkit.telemetry.server": "https://%(server)s/telemetry-dummy/",
+        # Disable window occlusion on Windows, see Bug 1802473.
+        "widget.windows.window_occlusion_tracking.enabled": False,
     }
 
     def __init__(
@@ -312,6 +317,7 @@ class GeckoInstance(object):
                     "devtools.chrome.enabled": True,
                     "devtools.debugger.prompt-connection": False,
                     "devtools.debugger.remote-enabled": True,
+                    "devtools.testing": True,
                 }
             )
 
@@ -587,6 +593,8 @@ class DesktopInstance(GeckoInstance):
         "browser.sessionstore.resume_from_crash": False,
         # Don't check for the default web browser during startup
         "browser.shell.checkDefaultBrowser": False,
+        # Disable session restore infobar
+        "browser.startup.couldRestoreSession.count": -1,
         # Needed for branded builds to prevent opening a second tab on startup
         "browser.startup.homepage_override.mstone": "ignore",
         # Start with a blank page by default

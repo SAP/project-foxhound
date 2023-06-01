@@ -25,6 +25,11 @@
 :-moz-dir-attr-like-auto:dir(ltr) { direction: ltr; }
 :-moz-dir-attr-like-auto:dir(rtl) { direction: rtl; }
 
+/* https://html.spec.whatwg.org/#bidi-rendering */
+input[type=tel]:dir(ltr) {
+  direction: ltr;
+}
+
 /* To ensure http://www.w3.org/TR/REC-html40/struct/dirlang.html#style-bidi:
  *
  * "When a block element that does not have a dir attribute is transformed to
@@ -485,6 +490,7 @@ th {
   vertical-align: inherit;
   font-weight: bold;
   padding: 1px;
+  text-align: -moz-center-or-inherit;
 }
 
 tr > form:-moz-is-html, tbody > form:-moz-is-html,
@@ -561,8 +567,8 @@ nobr {
 }
 
 mark {
-  background: yellow;
-  color: black;
+  background: Mark;
+  color: MarkText;
 }
 
 /* titles */
@@ -578,12 +584,6 @@ ul, menu, dir {
   margin-block-start: 1em;
   margin-block-end: 1em;
   padding-inline-start: 40px;
-}
-
-@supports -moz-bool-pref("dom.menuitem.enabled") {
-  menu[type="context"] {
-    display: none !important;
-  }
 }
 
 ul, ol, menu {
@@ -631,26 +631,33 @@ li {
 /* leafs */
 
 /* <hr> noshade and color attributes are handled completely by
- * the nsHTMLHRElement attribute mapping code
+ * HTMLHRElement::MapAttributesIntoRule.
+ * https://html.spec.whatwg.org/#the-hr-element-2
  */
 hr {
-  display: block;
-  border: 1px inset;
+  color: gray;
+  border-width: 1px;
+  border-style: inset;
   margin-block-start: 0.5em;
   margin-block-end: 0.5em;
   margin-inline-start: auto;
   margin-inline-end: auto;
-  color: gray;
-  -moz-float-edge: margin-box;
-  box-sizing: content-box;
+  overflow: hidden;
+
+  /* FIXME: This is not really per spec */
+  display: block;
 }
 
 hr[size="1"] {
   border-style: solid none none none;
 }
 
-input:-moz-broken::before,
-img:-moz-broken::before {
+/* Note that we only intend for the alt content to show up if the image is
+ * broken. But non-broken images/inputs will have a replaced box, and thus we
+ * won't we don't generate the pseudo-element anyways. This prevents
+ * unnecessary reframing when images become broken / non-broken. */
+input[type=image]::before,
+img::before {
   content: -moz-alt-content !important;
   unicode-bidi: isolate;
 }
@@ -727,6 +734,24 @@ iframe:fullscreen {
   padding: unset !important;
 }
 
+/* Details and summary
+ * https://html.spec.whatwg.org/#the-details-and-summary-elements
+ *
+ * Note that these rules need to be duplicated in details.css for the anonymous
+ * summary, which wouldn't match otherwise.
+ *
+ * The spec here says something different, see
+ * https://github.com/whatwg/html/issues/8610
+ */
+details > summary:first-of-type {
+  display: list-item;
+  counter-increment: list-item 0;
+  list-style: disclosure-closed inside;
+}
+details[open] > summary:first-of-type {
+  list-style-type: disclosure-open;
+}
+
 /* media elements */
 video {
   object-fit: contain;
@@ -763,41 +788,21 @@ video > .caption-box {
 }
 
 /**
- * The pseudo element won't inheirt CSS styles from its direct parent, `::cue`
- * would acutally inherit styles from video because it's video's pseudo element.
- * Therefore, we have to explicitly set some styles which are aleady defined in
- * its parent element in vtt.jsm.
+ * The pseudo element won't inherit CSS styles from its direct parent, `::cue`
+ * would actually inherit styles from video because it's video's pseudo element.
+ * Therefore, we have to explicitly set some styles which are already defined
+ * in its parent element in vtt.jsm.
  */
 ::cue {
   color: rgba(255, 255, 255, 1);
   white-space: pre-line;
   background-color: rgba(0, 0, 0, 0.8);
-  font: var(--cue-font-size) sans-serif;
+  font: 10px sans-serif;
+  font-size: var(--cue-font-size);
   writing-mode: var(--cue-writing-mode, inherit);
   overflow-wrap: break-word;
   /* TODO : enable unicode-bidi, right now enable it would cause incorrect
             display direction, maybe related with bug 1558431. */
-}
-
-/* details & summary */
-details > summary:-moz-native-anonymous {
-  /* TODO(krosylight): Remove this when fixing bug 1308080 */
-  user-select: none;
-}
-
-details > summary:is(:first-of-type, :-moz-native-anonymous) {
-  display: list-item;
-  counter-increment: list-item 0;
-  list-style: disclosure-closed inside;
-}
-
-details[open] > summary:is(:first-of-type, :-moz-native-anonymous) {
-  list-style-type: disclosure-open;
-}
-
-details > summary:first-of-type > *|* {
-  /* Cancel "list-style-position: inside" inherited from summary. */
-  list-style-position: initial;
 }
 
 /* <dialog> element styles */
@@ -807,14 +812,14 @@ dialog {
   display: block;
   inset-inline-start: 0;
   inset-inline-end: 0;
-  color: black;
   margin: auto;
   border-width: initial;
   border-style: solid;
   border-color: initial;
   border-image: initial;
   padding: 1em;
-  background: white;
+  background-color: Canvas;
+  color: CanvasText;
   width: -moz-fit-content;
   height: -moz-fit-content;
 }
@@ -823,18 +828,11 @@ dialog:not([open]) {
   display: none;
 }
 
-/* This pseudo-class is used to remove the inertness for the topmost modal
- * dialog in top layer.
- *
- * Avoid doing this if the dialog is explicitly inert though. */
-dialog:not([inert]):-moz-topmost-modal-dialog {
-  -moz-inert: none;
-}
-
-dialog:-moz-modal-dialog {
+dialog:modal {
   -moz-top-layer: top !important;
   position: fixed;
   overflow: auto;
+  visibility: visible;
   inset-block-start: 0;
   inset-block-end: 0;
   max-width: calc(100% - 6px - 2em);
@@ -877,12 +875,14 @@ rtc, rt {
   font-size: 50%;
   -moz-min-font-size-ratio: 50%;
   line-height: 1;
-%ifndef XP_WIN
-  /* The widely-used Windows font Meiryo doesn't work fine with this
-   * setting, so disable this on Windows. We should re-enable it once
-   * Microsoft fixes this issue. See bug 1164279. */
-  font-variant-east-asian: ruby;
-%endif
+}
+@media not (-moz-platform: windows) {
+  rtc, rt {
+    /* The widely-used Windows font Meiryo doesn't work fine with this
+    * setting, so disable this on Windows. We should re-enable it once
+    * Microsoft fixes this issue. See bug 1164279. */
+    font-variant-east-asian: ruby;
+  }
 }
 rtc, rt {
   text-emphasis: none;

@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { FormHistory } = ChromeUtils.import(
-  "resource://gre/modules/FormHistory.jsm"
+const { FormHistory } = ChromeUtils.importESModule(
+  "resource://gre/modules/FormHistory.sys.mjs"
 );
 
 add_task(async function test() {
@@ -20,11 +20,7 @@ add_task(async function test() {
       { op: "add", fieldname: "field1", value: "value4" },
     ];
 
-    await new Promise(resolve =>
-      FormHistory.update([{ op: "remove" }, ...mockHistory], {
-        handleCompletion: resolve,
-      })
-    );
+    await FormHistory.update([{ op: "remove" }, ...mockHistory]);
     await SpecialPowers.spawn(browser, [], async function() {
       const input = content.document.querySelector("input");
 
@@ -39,20 +35,32 @@ add_task(async function test() {
     const listItemElems = itemsBox.querySelectorAll(
       ".autocomplete-richlistitem"
     );
-    is(listItemElems.length, mockHistory.length, "ensure result length");
-    is(autoCompletePopup.mousedOverIndex, -1, "mousedOverIndex should be -1");
+    Assert.equal(
+      listItemElems.length,
+      mockHistory.length,
+      "ensure result length"
+    );
+    Assert.equal(
+      autoCompletePopup.mousedOverIndex,
+      -1,
+      "mousedOverIndex should be -1"
+    );
 
     // navigate to the first item
     await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, browser);
-    is(autoCompletePopup.selectedIndex, 0, "selectedIndex should be 0");
+    Assert.equal(
+      autoCompletePopup.selectedIndex,
+      0,
+      "selectedIndex should be 0"
+    );
 
     // mouseover the second item
     EventUtils.synthesizeMouseAtCenter(listItemElems[1], { type: "mouseover" });
     await BrowserTestUtils.waitForCondition(() => {
       return (autoCompletePopup.mousedOverIndex = 1);
     });
-    ok(true, "mousedOverIndex changed");
-    is(
+    Assert.ok(true, "mousedOverIndex changed");
+    Assert.equal(
       autoCompletePopup.selectedIndex,
       0,
       "selectedIndex should not be changed by mouseover"

@@ -9,9 +9,8 @@
 // process, and changes after that point are stored as entries in a dynamic hash
 // table, on top of the snapshot.
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCShellContentUtils } = ChromeUtils.import(
-  "resource://testing-common/XPCShellContentUtils.jsm"
+const { XPCShellContentUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/XPCShellContentUtils.sys.mjs"
 );
 
 XPCShellContentUtils.init(this);
@@ -22,7 +21,6 @@ const { prefs } = Services;
 const defaultPrefs = prefs.getDefaultBranch("");
 
 const FRAME_SCRIPT_INIT = `
-  const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
   var { prefs } = Services;
   var defaultPrefs = prefs.getDefaultBranch("");
 `;

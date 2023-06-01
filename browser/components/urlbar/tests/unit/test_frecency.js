@@ -5,7 +5,7 @@
 /**
  * Test for bug 406358 to make sure frecency works for empty input/search, but
  * this also tests for non-empty inputs as well. Because the interactions among
- * *DIFFERENT* visit counts and visit dates is not well defined, this test
+ * DIFFERENT* visit counts and visit dates is not well defined, this test
  * holds one of the two values constant when modifying the other.
  *
  * Also test bug 419068 to make sure tagged pages don't necessarily have to be
@@ -47,12 +47,6 @@ async function tagURI(uri, tags) {
     title: "bleh",
   });
   PlacesUtils.tagging.tagURI(uri, tags);
-}
-
-async function preSearch() {
-  await PlacesTestUtils.promiseAsyncUpdates();
-  await PlacesUtils.bookmarks.eraseEverything();
-  await PlacesUtils.history.clear();
 }
 
 var uri1 = Services.io.newURI("http://site.tld/1");
@@ -388,13 +382,21 @@ add_task(async function test_frecency() {
   Services.prefs.setBoolPref("browser.urlbar.suggest.openpage", false);
   Services.prefs.setBoolPref("browser.urlbar.suggest.searches", false);
   Services.prefs.setBoolPref("browser.urlbar.suggest.engines", false);
+  Services.prefs.setBoolPref("browser.urlbar.suggest.quickactions", false);
   for (let test of tests) {
     await PlacesUtils.bookmarks.eraseEverything();
     await PlacesUtils.history.clear();
 
     await test();
   }
-  for (let type of ["history", "bookmark", "openpage", "searches", "engines"]) {
+  for (let type of [
+    "history",
+    "bookmark",
+    "openpage",
+    "searches",
+    "engines",
+    "quickactions",
+  ]) {
     Services.prefs.clearUserPref("browser.urlbar.suggest." + type);
     Services.prefs.clearUserPref("browser.urlbar.autoFill");
   }

@@ -3,8 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const Services = require("Services");
-
 const {
   ENABLE,
   RESET,
@@ -13,7 +11,7 @@ const {
   UPDATE_PREF,
   PREF_KEYS,
   UPDATE_DISPLAY_TABBING_ORDER,
-} = require("devtools/client/accessibility/constants");
+} = require("resource://devtools/client/accessibility/constants.js");
 
 /**
  * Reset accessibility panel UI.

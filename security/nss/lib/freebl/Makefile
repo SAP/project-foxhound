@@ -101,6 +101,9 @@ endif
 ifdef NSS_NO_INIT_SUPPORT
     DEFINES += -DNSS_NO_INIT_SUPPORT
 endif
+ifdef NSS_STRICT_INTEGRITY
+    DEFINES += -DNSS_STRICT_INTEGRITY_
+endif
 
 ifdef FREEBL_PRELINK_COMMAND
 	DEFINES +=-DFREEBL_PRELINK_COMMAND=\"$(FREEBL_PRELINK_COMMAND)\"
@@ -173,11 +176,6 @@ endif
             EXTRA_SRCS += aes-armv8.c sha1-armv8.c sha256-armv8.c
         endif
     endif
-endif
-
-ifeq ($(OS_TARGET),OSF1)
-    DEFINES += -DMP_ASSEMBLY_MULTIPLY -DMP_NO_MP_WORD
-    MPI_SRCS += mpvalpha.c
 endif
 
 ifeq (OS2,$(OS_TARGET))
@@ -257,19 +255,6 @@ ifeq ($(CPU_ARCH),x86_64)
     MPI_SRCS += mpi_amd64.c
 endif
 endif
-endif
-endif
-
-ifeq ($(OS_TARGET),IRIX)
-ifeq ($(USE_N32),1)
-    ASFILES  = mpi_mips.s
-    ifeq ($(NS_USE_GCC),1)
-	ASFLAGS = -Wp,-P -Wp,-traditional -O -mips3
-    else
-	ASFLAGS = -O -OPT:Olimit=4000 -dollar -fullwarn -xansi -n32 -mips3
-    endif
-    DEFINES += -DMP_ASSEMBLY_MULTIPLY -DMP_ASSEMBLY_SQUARE
-    DEFINES += -DMP_USE_UINT_DIGIT
 endif
 endif
 
@@ -659,7 +644,7 @@ INCLUDES += -Impi -Iecl -Iverified -Iverified/kremlin/include -Iverified/kremlin
 
 DEFINES += -DMP_API_COMPATIBLE
 
-MPI_USERS = dh.c pqg.c dsa.c rsa.c ec.c
+MPI_USERS = secmpi.c dh.c pqg.c dsa.c rsa.c ec.c
 
 MPI_OBJS = $(addprefix $(OBJDIR)/$(PROG_PREFIX), $(MPI_SRCS:.c=$(OBJ_SUFFIX)))
 MPI_OBJS += $(addprefix $(OBJDIR)/$(PROG_PREFIX), $(MPI_USERS:.c=$(OBJ_SUFFIX)))

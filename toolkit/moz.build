@@ -24,8 +24,12 @@ DIRS += [
     "themes",
 ]
 
-if CONFIG["OS_ARCH"] == "WINNT" and CONFIG["MOZ_DEFAULT_BROWSER_AGENT"]:
-    DIRS += ["mozapps/defaultagent"]
+if CONFIG["OS_ARCH"] == "WINNT":
+    if CONFIG["MOZ_NOTIFICATION_SERVER"]:
+        DIRS += ["mozapps/notificationserver"]
+
+    if CONFIG["MOZ_DEFAULT_BROWSER_AGENT"]:
+        DIRS += ["mozapps/defaultagent"]
 
 if CONFIG["MOZ_UPDATER"] and CONFIG["MOZ_WIDGET_TOOLKIT"] != "android":
     DIRS += ["mozapps/update"]
@@ -45,9 +49,13 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] != "android":
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
     DIRS += ["system/unixproxy"]
 elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
-    DIRS += ["system/osxproxy"]
+    DIRS += [
+        "system/commonproxy",
+        "system/osxproxy",
+    ]
 elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
     DIRS += [
+        "system/commonproxy",
         "system/windowsproxy",
         "system/windowsDHCPClient",
         "system/windowsPackageManager",
@@ -79,3 +87,9 @@ with Files("mozapps/preferences/**"):
 
 with Files("l10n-registry.manifest"):
     BUG_COMPONENT = ("Core", "Localization")
+
+GeneratedFile(
+    "content/neterror/aboutNetErrorCodes.js",
+    script="content/neterror/gen_aboutneterror_codes.py",
+    inputs=["/toolkit/locales/en-US/toolkit/neterror/nsserrors.ftl"],
+)

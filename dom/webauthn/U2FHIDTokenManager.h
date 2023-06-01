@@ -15,8 +15,7 @@
  * for the U2F and WebAuthn APIs, talking to HIDs.
  */
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class U2FAppIds {
  public:
@@ -123,10 +122,13 @@ class U2FHIDTokenManager final : public U2FTokenTransport {
  public:
   explicit U2FHIDTokenManager();
 
-  RefPtr<U2FRegisterPromise> Register(const WebAuthnMakeCredentialInfo& aInfo,
-                                      bool aForceNoneAttestation) override;
+  virtual RefPtr<U2FRegisterPromise> Register(
+      const WebAuthnMakeCredentialInfo& aInfo, bool aForceNoneAttestation,
+      void _status_callback(rust_ctap2_status_update_res*)) override;
 
-  RefPtr<U2FSignPromise> Sign(const WebAuthnGetAssertionInfo& aInfo) override;
+  virtual RefPtr<U2FSignPromise> Sign(
+      const WebAuthnGetAssertionInfo& aInfo,
+      void _status_callback(rust_ctap2_status_update_res*)) override;
 
   void Cancel() override;
   void Drop() override;
@@ -175,13 +177,12 @@ class U2FHIDTokenManager final : public U2FTokenTransport {
     bool mForceNoneAttestation;
   };
 
-  rust_u2f_manager* mU2FManager;
+  rust_ctap_manager* mU2FManager;
   Maybe<Transaction> mTransaction;
   MozPromiseHolder<U2FRegisterPromise> mRegisterPromise;
   MozPromiseHolder<U2FSignPromise> mSignPromise;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_U2FHIDTokenManager_h

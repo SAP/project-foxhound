@@ -14,12 +14,10 @@
 
 class MacOSFontEntry;
 
-class gfxMacFont : public gfxFont {
+class gfxMacFont final : public gfxFont {
  public:
   gfxMacFont(const RefPtr<mozilla::gfx::UnscaledFontMac>& aUnscaledFont, MacOSFontEntry* aFontEntry,
              const gfxFontStyle* aFontStyle);
-
-  virtual ~gfxMacFont();
 
   CGFontRef GetCGFontRef() const { return mCGFont; }
 
@@ -51,6 +49,8 @@ class gfxMacFont : public gfxFont {
 
   FontType GetType() const override { return FONT_TYPE_MAC; }
 
+  bool UseNativeColrFontSupport() const override;
+
   // Helper to create a CTFont from a CGFont, with optional font descriptor
   // (for features), and copying any variations that were set on the CGFont.
   // This is public so that gfxCoreTextShaper can also use it.
@@ -59,7 +59,9 @@ class gfxMacFont : public gfxFont {
                                                         CTFontDescriptorRef aFontDesc = nullptr);
 
  protected:
-  const Metrics& GetHorizontalMetrics() override { return mMetrics; }
+  ~gfxMacFont() override;
+
+  const Metrics& GetHorizontalMetrics() const override { return mMetrics; }
 
   // override to prefer CoreText shaping with fonts that depend on AAT
   bool ShapeText(DrawTarget* aDrawTarget, const char16_t* aText, uint32_t aOffset, uint32_t aLength,

@@ -6,7 +6,6 @@
 
 "use strict";
 
-/* import-globals-from ../../inspector/shared/test/head.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/inspector/shared/test/head.js",
   this
@@ -57,10 +56,23 @@ var reloadPageAndWaitForStyleSheets = async function(ui, editorCount) {
   info("Reloading the page.");
 
   const onClear = ui.once("stylesheets-clear");
+  let count = 0;
+  const onAllEditorAdded = new Promise(res => {
+    const off = ui.on("editor-added", editor => {
+      count++;
+      info(`Received ${editor.friendlyName} (${count}/${editorCount})`);
+      if (count == editorCount) {
+        res();
+        off();
+      }
+    });
+  });
+
   await reloadBrowser();
   await onClear;
 
-  await waitUntil(() => ui.editors.length === editorCount);
+  await onAllEditorAdded;
+  info("All expected editors added");
 };
 
 /**
@@ -75,10 +87,6 @@ var openStyleEditor = async function(tab) {
   });
   const panel = toolbox.getPanel("styleeditor");
   const ui = panel.UI;
-
-  // The stylesheet list appears with an animation. Let this animation finish.
-  const animations = ui._root.getAnimations({ subtree: true });
-  await Promise.all(animations.map(a => a.finished));
 
   return { toolbox, panel, ui };
 };
@@ -118,11 +126,11 @@ var getComputedStyleProperty = async function(args) {
 };
 
 /**
- * Wait for "media-list-changed" events to settle on StyleEditorUI.
+ * Wait for "at-rules-list-changed" events to settle on StyleEditorUI.
  * Returns a promise that resolves the number of events caught while waiting.
  *
  * @param {StyleEditorUI} ui
- *        Current StyleEditorUI on which media-list-changed events should be fired.
+ *        Current StyleEditorUI on which at-rules-list-changed events should be fired.
  * @param {Number} delay
  */
 function waitForManyEvents(ui, delay) {
@@ -136,11 +144,11 @@ function waitForManyEvents(ui, delay) {
       // Wait for some time to catch subsequent events.
       timer = setTimeout(() => {
         // Remove the listener and resolve.
-        ui.off("media-list-changed", onEvent);
+        ui.off("at-rules-list-changed", onEvent);
         resolve(count);
       }, delay);
     };
-    ui.on("media-list-changed", onEvent);
+    ui.on("at-rules-list-changed", onEvent);
   });
 }
 
@@ -170,4 +178,24 @@ function createNewStyleSheet(ui, panelWindow) {
       EventUtils.synthesizeMouseAtCenter(newButton, {}, panelWindow);
     }, panelWindow);
   });
+}
+
+/**
+ * Returns the panel root element (StyleEditorUI._root)
+ *
+ * @param {StyleEditorPanel} panel
+ * @returns {Element}
+ */
+function getRootElement(panel) {
+  return panel.panelWindow.document.getElementById("style-editor-chrome");
+}
+
+/**
+ * Returns the panel context menu element
+ *
+ * @param {StyleEditorPanel} panel
+ * @returns {Element}
+ */
+function getContextMenuElement(panel) {
+  return panel.panelWindow.document.getElementById("sidebar-context");
 }

@@ -84,8 +84,8 @@ class SVGElement : public SVGElementBase  // nsIContent
   virtual ~SVGElement();
 
  public:
-  virtual nsresult Clone(mozilla::dom::NodeInfo*,
-                         nsINode** aResult) const MOZ_MUST_OVERRIDE override;
+  nsresult Clone(mozilla::dom::NodeInfo*,
+                 nsINode** aResult) const MOZ_MUST_OVERRIDE override;
 
   // From Element
   nsresult CopyInnerTo(mozilla::dom::Element* aDest);
@@ -114,18 +114,16 @@ class SVGElement : public SVGElementBase  // nsIContent
 
   // nsIContent interface methods
 
-  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  nsresult BindToTree(BindContext&, nsINode& aParent) override;
 
-  virtual nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
-                                              int32_t aModType) const override;
-
-  virtual bool IsNodeOfType(uint32_t aFlags) const override;
+  nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
+                                      int32_t aModType) const override;
 
   /**
    * We override the default to unschedule computation of Servo declaration
    * blocks when adopted across documents.
    */
-  virtual void NodeInfoChanged(Document* aOldDoc) override;
+  void NodeInfoChanged(Document* aOldDoc) override;
 
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
@@ -349,9 +347,17 @@ class SVGElement : public SVGElementBase  // nsIContent
   void UpdateContentDeclarationBlock();
   const mozilla::DeclarationBlock* GetContentDeclarationBlock() const;
 
+  bool Autofocus() const { return GetBoolAttr(nsGkAtoms::autofocus); }
+  void SetAutofocus(bool aAutofocus, ErrorResult& aRv) {
+    if (aAutofocus) {
+      SetAttr(nsGkAtoms::autofocus, u""_ns, aRv);
+    } else {
+      UnsetAttr(nsGkAtoms::autofocus, aRv);
+    }
+  }
+
  protected:
-  virtual JSObject* WrapNode(JSContext* cx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* cx, JS::Handle<JSObject*> aGivenProto) override;
 
   // We define BeforeSetAttr here and mark it final to ensure it is NOT used
   // by SVG elements.
@@ -360,15 +366,13 @@ class SVGElement : public SVGElementBase  // nsIContent
   // See the comment in SVGElement::WillChangeValue.
   nsresult BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
                          const nsAttrValueOrString* aValue, bool aNotify) final;
-  virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                const nsAttrValue* aValue,
-                                const nsAttrValue* aOldValue,
-                                nsIPrincipal* aSubjectPrincipal,
-                                bool aNotify) override;
-  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
-                              const nsAString& aValue,
-                              nsIPrincipal* aMaybeScriptedPrincipal,
-                              nsAttrValue& aResult) override;
+  nsresult AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                        const nsAttrValue* aValue, const nsAttrValue* aOldValue,
+                        nsIPrincipal* aSubjectPrincipal, bool aNotify) override;
+  bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                      const nsAString& aValue,
+                      nsIPrincipal* aMaybeScriptedPrincipal,
+                      nsAttrValue& aResult) override;
   static nsresult ReportAttributeParseFailure(Document* aDocument,
                                               nsAtom* aAttribute,
                                               const nsAString& aValue);

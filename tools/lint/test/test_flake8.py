@@ -10,7 +10,9 @@ def test_lint_single_file(lint, paths):
     results = lint(paths("bad.py"))
     assert len(results) == 2
     assert results[0].rule == "F401"
+    assert results[0].level == "error"
     assert results[1].rule == "E501"
+    assert results[1].level == "error"
     assert results[1].lineno == 5
 
     # run lint again to make sure the previous results aren't counted twice

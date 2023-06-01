@@ -21,6 +21,7 @@
 #include "mozilla/AppUnits.h"         // for AppUnits
 #include "nsFontMetrics.h"            // for nsFontMetrics::Params
 #include "mozilla/gfx/PrintTarget.h"  // for PrintTarget::PageDoneCallback
+#include "mozilla/gfx/PrintPromise.h"
 
 class gfxContext;
 class gfxTextPerfMetrics;
@@ -33,6 +34,15 @@ class nsIScreenManager;
 class nsIWidget;
 struct nsRect;
 
+namespace mozilla {
+namespace dom {
+enum class ScreenColorGamut : uint8_t;
+}  // namespace dom
+namespace widget {
+class Screen;
+}  // namespace widget
+}  // namespace mozilla
+
 class nsDeviceContext final {
  public:
   typedef mozilla::gfx::PrintTarget PrintTarget;
@@ -44,9 +54,8 @@ class nsDeviceContext final {
   /**
    * Initialize the device context from a widget
    * @param aWidget a widget to initialize the device context from
-   * @return error status
    */
-  nsresult Init(nsIWidget* aWidget);
+  void Init(nsIWidget* aWidget);
 
   /**
    * Initialize the device context from a device context spec
@@ -108,9 +117,20 @@ class nsDeviceContext final {
   }
 
   /**
+   * Get the ratio of app units to dev pixels that would be used in a top-level
+   * chrome page such as browser.xhtml.
+   */
+  int32_t AppUnitsPerDevPixelInTopLevelChromePage() const;
+
+  /**
    * Return the bit depth of the device.
    */
-  nsresult GetDepth(uint32_t& aDepth);
+  uint32_t GetDepth();
+
+  /**
+   * Return the color gamut of the device.
+   */
+  mozilla::dom::ScreenColorGamut GetColorGamut();
 
   /**
    * Get the size of the displayable area of the output device
@@ -173,9 +193,9 @@ class nsDeviceContext final {
    * Inform the output device that output of a document is ending.
    * Used for print related device contexts. Must be matched 1:1 with
    * BeginDocument()
-   * @return error status
+   * @return Promise that can be chained once the operation is complete.
    */
-  nsresult EndDocument();
+  RefPtr<mozilla::gfx::PrintEndDocumentPromise> EndDocument();
 
   /**
    * Inform the output device that output of a document is being aborted.
@@ -202,17 +222,11 @@ class nsDeviceContext final {
 
   /**
    * Check to see if the DPI has changed, or impose a new DPI scale value.
-   * @param  aScale - If non-null, the default (unzoomed) CSS to device pixel
-   *                  scale factor will be returned here; and if it is > 0.0
-   *                  on input, the given value will be used instead of
-   *                  getting it from the widget (if any). This is used to
-   *                  allow subdocument contexts to inherit the resolution
-   *                  setting of their parent.
    * @return whether there was actually a change in the DPI (whether
    *         AppUnitsPerDevPixel() or AppUnitsPerPhysicalInch()
    *         changed)
    */
-  bool CheckDPIChange(double* aScale = nullptr);
+  bool CheckDPIChange();
 
   /**
    * Set the full zoom factor: all lengths are multiplied by this factor
@@ -229,13 +243,9 @@ class nsDeviceContext final {
   /**
    * True if this device context was created for printing.
    */
-  bool IsPrinterContext();
+  bool IsPrinterContext() const { return !!mPrintTarget; }
 
   mozilla::DesktopToLayoutDeviceScale GetDesktopToDeviceScale();
-
-  bool IsSyncPagePrinting() const;
-  void RegisterPageDoneCallback(PrintTarget::PageDoneCallback&& aCallback);
-  void UnregisterPageDoneCallback();
 
  private:
   // Private destructor, to discourage deletion outside of Release():
@@ -248,10 +258,10 @@ class nsDeviceContext final {
   already_AddRefed<gfxContext> CreateRenderingContextCommon(
       bool aWantReferenceContext);
 
-  void SetDPI(double* aScale = nullptr);
+  void SetDPI();
   void ComputeClientRectUsingScreen(nsRect* outRect);
   void ComputeFullAreaUsingScreen(nsRect* outRect);
-  void FindScreen(nsIScreen** outScreen);
+  already_AddRefed<mozilla::widget::Screen> FindScreen();
 
   // Return false if the surface is not right
   bool CalcPrintingSize();
@@ -267,13 +277,10 @@ class nsDeviceContext final {
   gfxPoint mPrintingTranslate;
 
   nsCOMPtr<nsIWidget> mWidget;
-  nsCOMPtr<nsIScreenManager> mScreenManager;
   nsCOMPtr<nsIDeviceContextSpec> mDeviceContextSpec;
   RefPtr<PrintTarget> mPrintTarget;
   bool mIsCurrentlyPrintingDoc;
-#ifdef DEBUG
-  bool mIsInitialized;
-#endif
+  bool mIsInitialized = false;
 };
 
 #endif /* _NS_DEVICECONTEXT_H_ */

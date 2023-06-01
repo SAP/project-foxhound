@@ -97,7 +97,6 @@ class nsIInterfaceRequestor;
 class nsILoadGroup;
 class nsILoadInfo;
 class nsIObserver;
-class nsIParser;
 class nsIPluginTag;
 class nsIPrincipal;
 class nsIReferrerInfo;
@@ -113,8 +112,10 @@ class nsISupports;
 class nsITransferable;
 class nsIURI;
 class nsIWidget;
+class nsIWritableVariant;
 class nsIXPConnect;
 class nsNodeInfoManager;
+class nsParser;
 class nsPIWindowRoot;
 class nsPresContext;
 class nsStringBuffer;
@@ -131,7 +132,9 @@ class nsRefPtrHashKey;
 
 namespace IPC {
 class Message;
-}
+class MessageReader;
+class MessageWriter;
+}  // namespace IPC
 
 namespace JS {
 class Value;
@@ -162,6 +165,7 @@ template <class T>
 class StaticRefPtr;
 
 namespace dom {
+class IPCImage;
 struct AutocompleteInfo;
 class BrowserChild;
 class BrowserParent;
@@ -181,6 +185,7 @@ class Event;
 class EventTarget;
 class HTMLInputElement;
 class IPCDataTransfer;
+class IPCDataTransferImageContainer;
 class IPCDataTransferItem;
 struct LifecycleCallbackArgs;
 class MessageBroadcaster;
@@ -193,8 +198,8 @@ enum class ReferrerPolicy : uint8_t;
 }  // namespace dom
 
 namespace ipc {
-class Shmem;
-class IShmemAllocator;
+class BigBuffer;
+class IProtocol;
 }  // namespace ipc
 
 namespace gfx {
@@ -278,8 +283,6 @@ class nsContentUtils {
   static bool IsCallerChromeOrElementTransformGettersEnabled(JSContext* aCx,
                                                              JSObject*);
 
-  static bool IsCallerChromeOrErrorPage(JSContext*, JSObject*);
-
   // The APIs for checking whether the caller is system (in the sense of system
   // principal) should only be used when the JSContext is known to accurately
   // represent the caller.  In practice, that means you should only use them in
@@ -348,26 +351,38 @@ class nsContentUtils {
   // This function can be called both in the main thread and worker threads.
   static bool ShouldResistFingerprinting();
   static bool ShouldResistFingerprinting(nsIGlobalObject* aGlobalObject);
+  // Similar to the function above, but always allows CallerType::System
+  // callers.
+  static bool ShouldResistFingerprinting(mozilla::dom::CallerType aCallerType,
+                                         nsIGlobalObject* aGlobalObject);
   static bool ShouldResistFingerprinting(nsIDocShell* aDocShell);
-  static bool ShouldResistFingerprinting(nsIPrincipal* aPrincipal);
-  static bool ShouldResistFingerprinting(const Document* aDoc);
+  // These functions are the new, nuanced functions
   static bool ShouldResistFingerprinting(nsIChannel* aChannel);
+  static bool ShouldResistFingerprinting(nsILoadInfo* aPrincipal);
+  // These functions are labeled as dangerous because they will do the wrong
+  // thing in _most_ cases. They should only be used if you don't have a fully
+  // constructed LoadInfo or Document.
+  // A constant string used as justification is required when calling them,
+  // it should explain why a Document, Channel, LoadInfo, or CookieJarSettings
+  // does not exist in this context.
+  // (see below for more on justification strings.)
+  static bool ShouldResistFingerprinting_dangerous(
+      nsIURI* aURI, const mozilla::OriginAttributes& aOriginAttributes,
+      const char* aJustification);
+  static bool ShouldResistFingerprinting_dangerous(nsIPrincipal* aPrincipal,
+                                                   const char* aJustification);
 
   /**
-   *Implement a legacy RFP function to provide an explination as to
-   * why they are using the original RFP call. Given that there is a gradual
-   *carry over of ShouldResistFingerprinting calls to a nuanced API, some
-   *features still require a legacy function. In this case, the context of the
-   *call is not reviewed. The intent of this is to have an explanation as to why
-   *the developer is using the legacy function call over of the nuanced one. The
-   *implementation of this function will include accepting a char* to provide
-   *the explanation o why the developer is using the legacy function as opposed
-   *to nuanced preference.
+   * Implement a RFP function that only checks the pref, and does not take
+   * into account any additional context such as PBM mode or Web Extensions.
+   *
+   * It requires an explanation for why the coarse check is being used instead
+   * of the nuanced check. While there is a gradual cut over of
+   * ShouldResistFingerprinting calls to a nuanced API, some features still
+   * require a legacy function. (Additionally, we sometimes use the coarse
+   * check first, to avoid running additional code to support a nuanced check.)
    */
-  static bool ShouldResistFingerprinting(char* aChar);
-
-  // Prevent system colors from being exposed to CSS or canvas.
-  static bool UseStandinsForNativeColors();
+  static bool ShouldResistFingerprinting(const char* aJustification);
 
   // A helper function to calculate the rounded window size for fingerprinting
   // resistance. The rounded size is based on the chrome UI size and available
@@ -429,6 +444,13 @@ class nsContentUtils {
    * @see https://dom.spec.whatwg.org/#retarget
    */
   static nsINode* Retarget(nsINode* aTargetA, nsINode* aTargetB);
+
+  /**
+   * @see https://wicg.github.io/element-timing/#get-an-element
+   */
+  static nsINode* GetAnElementForTiming(Element* aTarget,
+                                        const Document* aDocument,
+                                        nsIGlobalObject* aGlobal);
 
   /*
    * https://dom.spec.whatwg.org/#concept-tree-inclusive-ancestor.
@@ -902,8 +924,7 @@ class nsContentUtils {
                                   const nsACString& aType);
 
   // Returns true if the pref exists and is not UNKNOWN_ACTION.
-  static bool HasExactSitePerm(nsIPrincipal* aPrincipal,
-                               const nsACString& aType);
+  static bool HasSitePerm(nsIPrincipal* aPrincipal, const nsACString& aType);
 
   // Returns true if aDoc1 and aDoc2 have equal NodePrincipal()s.
   static bool HaveEqualPrincipals(Document* aDoc1, Document* aDoc2);
@@ -1002,7 +1023,8 @@ class nsContentUtils {
       imgRequestProxy** aRequest,
       nsContentPolicyType aContentPolicyType =
           nsIContentPolicy::TYPE_INTERNAL_IMAGE,
-      bool aUseUrgentStartForChannel = false, bool aLinkPreload = false);
+      bool aUseUrgentStartForChannel = false, bool aLinkPreload = false,
+      uint64_t aEarlyHintPreloaderId = 0);
 
   /**
    * Obtain an image loader that respects the given document/channel's privacy
@@ -1119,7 +1141,7 @@ class nsContentUtils {
    *   @param [aErrorFlags] See nsIScriptError.
    */
   static void LogSimpleConsoleError(
-      const nsAString& aErrorText, const char* aCategory,
+      const nsAString& aErrorText, const nsACString& aCategory,
       bool aFromPrivateWindow, bool aFromChromeContext,
       uint32_t aErrorFlags = nsIScriptError::errorFlag);
 
@@ -1392,6 +1414,12 @@ class nsContentUtils {
    */
   static inline ExtContentPolicyType InternalContentPolicyTypeToExternal(
       nsContentPolicyType aType);
+
+  /**
+   * check whether the Link header field applies to the context resource
+   * see <http://tools.ietf.org/html/rfc5988#section-5.2>
+   */
+  static bool LinkContextIsURI(const nsAString& aAnchor, nsIURI* aDocURI);
 
   /**
    * Returns true if the content policy type is any of:
@@ -1931,17 +1959,17 @@ class nsContentUtils {
    * @param aResult the result. Out param.
    * @return false on out of memory errors, true otherwise.
    */
-  [[nodiscard]] static bool GetNodeTextContent(nsINode* aNode, bool aDeep,
+  [[nodiscard]] static bool GetNodeTextContent(const nsINode* aNode, bool aDeep,
                                                nsAString& aResult,
                                                const mozilla::fallible_t&);
 
-  static void GetNodeTextContent(nsINode* aNode, bool aDeep,
+  static void GetNodeTextContent(const nsINode* aNode, bool aDeep,
                                  nsAString& aResult);
 
   /**
    * Same as GetNodeTextContents but appends the result rather than sets it.
    */
-  static bool AppendNodeTextContent(nsINode* aNode, bool aDeep,
+  static bool AppendNodeTextContent(const nsINode* aNode, bool aDeep,
                                     nsAString& aResult,
                                     const mozilla::fallible_t&);
 
@@ -1971,7 +1999,8 @@ class nsContentUtils {
    * closed. At opening, aInstalling should be TRUE, otherwise, it should be
    * FALSE.
    */
-  static void NotifyInstalledMenuKeyboardListener(bool aInstalling);
+  MOZ_CAN_RUN_SCRIPT static void NotifyInstalledMenuKeyboardListener(
+      bool aInstalling);
 
   /**
    * Check whether the nsIURI uses the given scheme.
@@ -2059,7 +2088,8 @@ class nsContentUtils {
    * Hide any XUL popups associated with aDocument, including any documents
    * displayed in child frames. Does nothing if aDocument is null.
    */
-  static void HidePopupsInDocument(Document* aDocument);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY static void HidePopupsInDocument(
+      Document* aDocument);
 
   /**
    * Retrieve the current drag session, or null if no drag is currently occuring
@@ -2410,16 +2440,6 @@ class nsContentUtils {
   static bool IsCutCopyAllowed(Document* aDocument,
                                nsIPrincipal& aSubjectPrincipal);
 
-  /*
-   * Returns true if the browser should attempt to prevent the given caller type
-   * from collecting distinctive information about the browser that could
-   * be used to "fingerprint" and track the user across websites.
-   */
-  static bool ResistFingerprinting(mozilla::dom::CallerType aCallerType) {
-    return aCallerType != mozilla::dom::CallerType::System &&
-           ShouldResistFingerprinting();
-  }
-
   /**
    * Returns true if CSSOM origin check should be skipped for WebDriver
    * based crawl to be able to collect data from cross-origin CSS style
@@ -2458,7 +2478,11 @@ class nsContentUtils {
    * Returns the in-process subtree root document in a document hierarchy.
    * This could be a chrome document.
    */
-  static Document* GetInProcessSubtreeRootDocument(Document* aDoc);
+  static Document* GetInProcessSubtreeRootDocument(Document* aDoc) {
+    return const_cast<Document*>(
+        GetInProcessSubtreeRootDocument(const_cast<const Document*>(aDoc)));
+  }
+  static const Document* GetInProcessSubtreeRootDocument(const Document* aDoc);
 
   static void GetShiftText(nsAString& text);
   static void GetControlText(nsAString& text);
@@ -2466,16 +2490,6 @@ class nsContentUtils {
   static void GetOSText(nsAString& text);
   static void GetAltText(nsAString& text);
   static void GetModifierSeparatorText(nsAString& text);
-
-  /**
-   * Returns if aContent has a tabbable subdocument.
-   * A sub document isn't tabbable when it's a zombie document.
-   *
-   * @param aElement element to test.
-   *
-   * @return Whether the subdocument is tabbable.
-   */
-  static bool IsSubDocumentTabbable(nsIContent* aContent);
 
   /**
    * Returns if aContent has the 'scrollgrab' property.
@@ -2514,9 +2528,9 @@ class nsContentUtils {
   static bool IsPDFJS(nsIPrincipal* aPrincipal);
   /**
    * Same, but from WebIDL bindings. Checks whether the subject principal is for
-   * the internal PDF viewer.
+   * the internal PDF viewer or system JS.
    */
-  static bool IsPDFJS(JSContext*, JSObject*);
+  static bool IsSystemOrPDFJS(JSContext*, JSObject*);
 
   /**
    * Checks if internal SWF player is enabled.
@@ -2544,15 +2558,17 @@ class nsContentUtils {
    *
    * WARNING: This method mutates aPattern and aValue!
    *
-   * @param aValue    the string to check.
-   * @param aPattern  the string defining the pattern.
-   * @param aDocument the owner document of the element.
-   * @result          whether the given string is matches the pattern, or
-   *                  Nothing() if the pattern couldn't be evaluated.
+   * @param aValue       the string to check.
+   * @param aPattern     the string defining the pattern.
+   * @param aDocument    the owner document of the element.
+   * @param aHasMultiple whether or not there are multiple values.
+   * @result             whether the given string is matches the pattern, or
+   *                     Nothing() if the pattern couldn't be evaluated.
    */
   static mozilla::Maybe<bool> IsPatternMatching(nsAString& aValue,
                                                 nsAString& aPattern,
-                                                const Document* aDocument);
+                                                const Document* aDocument,
+                                                bool aHasMultiple = false);
 
   /**
    * Calling this adds support for
@@ -2655,22 +2671,6 @@ class nsContentUtils {
                             nsString& aParams);
 
   /**
-   * Function checks if the user is idle.
-   *
-   * @param aRequestedIdleTimeInMS    The idle observer's requested idle time.
-   * @param aUserIsIdle               boolean indicating if the user
-   *                                  is currently idle or not.
-   * @return NS_OK                    NS_OK returned if the requested idle
-   *                                  service and the current idle time were
-   *                                  successfully obtained.
-   *                                  NS_ERROR_FAILURE returned if the the
-   *                                  requested idle service or the current
-   *                                  idle were not obtained.
-   */
-  static nsresult IsUserIdle(uint32_t aRequestedIdleTimeInMS,
-                             bool* aUserIsIdle);
-
-  /**
    * Takes a selection, and a text control element (<input> or <textarea>), and
    * returns the offsets in the text content corresponding to the selection.
    * The selection's anchor and focus must both be in the root node passed or a
@@ -2752,7 +2752,8 @@ class nsContentUtils {
    * Returns whether a given header is forbidden for an XHR or fetch
    * request.
    */
-  static bool IsForbiddenRequestHeader(const nsACString& aHeader);
+  static bool IsForbiddenRequestHeader(const nsACString& aHeader,
+                                       const nsACString& aValue);
 
   /**
    * Returns whether a given header is forbidden for a system XHR
@@ -2760,6 +2761,14 @@ class nsContentUtils {
    */
   static bool IsForbiddenSystemRequestHeader(const nsACString& aHeader);
 
+  /**
+   * Checks whether the header overrides any http methods
+   */
+  static bool IsOverrideMethodHeader(const nsACString& headerName);
+  /**
+   * Checks whether the  header value contains any forbidden method
+   */
+  static bool ContainsForbiddenMethod(const nsACString& headerValue);
   /**
    * Returns whether a given header has characters that aren't permitted
    */
@@ -2830,37 +2839,12 @@ class nsContentUtils {
       const std::function<mozilla::CallState(mozilla::dom::BrowserParent*)>&
           aCallback);
 
-  /*
-   * Call nsPIDOMWindow::SetKeyboardIndicators all all remote children. This is
-   * in here rather than nsGlobalWindow because BrowserParent indirectly
-   * includes Windows headers which aren't allowed there.
-   */
-  static void SetKeyboardIndicatorsOnRemoteChildren(
-      nsPIDOMWindowOuter* aWindow, UIStateChangeType aShowFocusRings);
-
   /**
-   * Given an nsIFile, attempts to read it into aString.
-   *
-   * Note: Use sparingly! This causes main-thread I/O, which causes jank and all
-   * other bad things.
+   * Given an IPCDataTransferImageContainer construct an imgIContainer for the
+   * image encoded by the transfer item.
    */
-  static nsresult SlurpFileToString(nsIFile* aFile, nsACString& aString);
-
-  /**
-   * Returns true if the mime service thinks this file contains an image.
-   *
-   * The content type is returned in aType.
-   */
-  static bool IsFileImage(nsIFile* aFile, nsACString& aType);
-
-  /**
-   * Given an IPCDataTransferItem that has a flavor for which IsFlavorImage
-   * returns true and whose IPCDataTransferData is of type nsCString (raw image
-   * data), construct an imgIContainer for the image encoded by the transfer
-   * item.
-   */
-  static nsresult DataTransferItemToImage(
-      const mozilla::dom::IPCDataTransferItem& aItem,
+  static nsresult DeserializeDataTransferImageContainer(
+      const mozilla::dom::IPCDataTransferImageContainer& aData,
       imgIContainer** aContainer);
 
   /**
@@ -2869,13 +2853,22 @@ class nsContentUtils {
    */
   static bool IsFlavorImage(const nsACString& aFlavor);
 
+  static bool IPCDataTransferItemHasKnownFlavor(
+      const mozilla::dom::IPCDataTransferItem& aItem);
+
+  static nsresult IPCTransferableToTransferable(
+      const mozilla::dom::IPCDataTransfer& aDataTransfer, bool aAddDataFlavor,
+      nsITransferable* aTransferable, const bool aFilterUnknownFlavors);
+
   static nsresult IPCTransferableToTransferable(
       const mozilla::dom::IPCDataTransfer& aDataTransfer,
       const bool& aIsPrivateData, nsIPrincipal* aRequestingPrincipal,
-      const nsContentPolicyType& aContentPolicyType,
-      nsITransferable* aTransferable,
-      mozilla::dom::ContentParent* aContentParent,
-      mozilla::dom::BrowserChild* aBrowserChild);
+      const nsContentPolicyType& aContentPolicyType, bool aAddDataFlavor,
+      nsITransferable* aTransferable, const bool aFilterUnknownFlavors);
+
+  static nsresult IPCTransferableItemToVariant(
+      const mozilla::dom::IPCDataTransferItem& aDataTransferItem,
+      nsIWritableVariant* aVariant);
 
   static void TransferablesToIPCTransferables(
       nsIArray* aTransferables, nsTArray<mozilla::dom::IPCDataTransfer>& aIPC,
@@ -2888,20 +2881,16 @@ class nsContentUtils {
       mozilla::dom::ContentChild* aChild, mozilla::dom::ContentParent* aParent);
 
   /*
-   * Get the pixel data from the given source surface and return it as a buffer.
-   * The length and stride will be assigned from the surface.
+   * Get the pixel data from the given source surface and return it as a
+   * BigBuffer. The length and stride will be assigned from the surface.
    */
-  static mozilla::UniquePtr<char[]> GetSurfaceData(
-      mozilla::NotNull<mozilla::gfx::DataSourceSurface*> aSurface,
-      size_t* aLength, int32_t* aStride);
+  static mozilla::Maybe<mozilla::ipc::BigBuffer> GetSurfaceData(
+      mozilla::gfx::DataSourceSurface&, size_t* aLength, int32_t* aStride);
 
-  /*
-   * Get the pixel data from the given source surface and fill it in Shmem.
-   * The length and stride will be assigned from the surface.
-   */
-  static mozilla::Maybe<mozilla::ipc::Shmem> GetSurfaceData(
-      mozilla::gfx::DataSourceSurface* aSurface, size_t* aLength,
-      int32_t* aStride, mozilla::ipc::IShmemAllocator* aAlloc);
+  static mozilla::Maybe<mozilla::dom::IPCImage> SurfaceToIPCImage(
+      mozilla::gfx::DataSourceSurface&);
+  static already_AddRefed<mozilla::gfx::DataSourceSurface> IPCImageToSurface(
+      mozilla::dom::IPCImage&&);
 
   // Helpers shared by the implementations of nsContentUtils methods and
   // nsIDOMWindowUtils methods.
@@ -3201,9 +3190,13 @@ class nsContentUtils {
   // Alternate data MIME type used by the ScriptLoader to register and read
   // bytecode out of the nsCacheInfoChannel.
   [[nodiscard]] static bool InitJSBytecodeMimeType();
-  static nsCString& JSBytecodeMimeType() {
-    MOZ_ASSERT(sJSBytecodeMimeType);
-    return *sJSBytecodeMimeType;
+  static nsCString& JSScriptBytecodeMimeType() {
+    MOZ_ASSERT(sJSScriptBytecodeMimeType);
+    return *sJSScriptBytecodeMimeType;
+  }
+  static nsCString& JSModuleBytecodeMimeType() {
+    MOZ_ASSERT(sJSModuleBytecodeMimeType);
+    return *sJSModuleBytecodeMimeType;
   }
 
   /**
@@ -3259,6 +3252,9 @@ class nsContentUtils {
     return sInnerOrOuterWindowCount;
   }
 
+  // Return an anonymized URI so that it can be safely exposed publicly.
+  static nsresult AnonymizeURI(nsIURI* aURI, nsCString& aAnonymizedURI);
+
   /**
    * Serializes a JSON-like JS::Value into a string.
    *
@@ -3277,7 +3273,21 @@ class nsContentUtils {
   static bool HighPriorityEventPendingForTopLevelDocumentBeforeContentfulPaint(
       Document* aDocument);
 
-  static nsGlobalWindowInner* CallerInnerWindow();
+  /**
+   * Get the inner window corresponding to the incumbent global, including
+   * mapping extension content script globals to the attached window.
+   *
+   * Returns null if the incumbent global doesn't correspond to an inner window.
+   */
+  static nsGlobalWindowInner* IncumbentInnerWindow();
+
+  /**
+   * Get the inner window corresponding to the entry global, including mapping
+   * extension content script globals to the attached window.
+   *
+   * Returns null if the entry global doesn't correspond to an inner window.
+   */
+  static nsGlobalWindowInner* EntryInnerWindow();
 
   /*
    * Return safe area insets of window that defines as
@@ -3310,6 +3320,44 @@ class nsContentUtils {
    * Returns an empty string if aURL is null.
    */
   static nsCString TruncatedURLForDisplay(nsIURI* aURL, size_t aMaxLen = 128);
+
+  /**
+   * Anonymize the given id by hashing it with the provided origin. The
+   * resulting id will have the same length as the one that was passed in.
+   */
+  enum class OriginFormat {
+    Base64,
+    Plain,
+  };
+
+  static nsresult AnonymizeId(nsAString& aId, const nsACString& aOriginKey,
+                              OriginFormat aFormat = OriginFormat::Base64);
+
+  /**
+   * Return true if we should hide the synthetic browsing context for <object>
+   * or <embed> images in synthetic documents.
+   */
+  static bool ShouldHideObjectOrEmbedImageDocument();
+
+  /**
+   * Returns the object type that the object loading content will actually use
+   * to load the resource. Used for ORB and loading images into synthetic
+   * documents.
+   */
+  static uint32_t ResolveObjectType(uint32_t aType);
+
+  /**
+   * Create and load the string bundle for the 'aFile'.
+   * This API is used to preload the string bundle on the main thread so later
+   * other thread could access it.
+   */
+  static nsresult EnsureAndLoadStringBundle(PropertiesFile aFile);
+
+  /**
+   * The method asks nsIAppShell to prioritize Gecko's internal tasks over
+   * the OS level tasks for a short period of time.
+   */
+  static void RequestGeckoTaskBurst();
 
  private:
   static bool InitializeEventTable();
@@ -3379,7 +3427,6 @@ class nsContentUtils {
   static nsTArray<RefPtr<nsAtom>>* sUserDefinedEvents;
 
   static nsIStringBundleService* sStringBundleService;
-  static nsIStringBundle* sStringBundles[PropertiesFile_COUNT];
   class nsContentUtilsReporter;
 
   static nsIContentPolicy* sContentPolicyService;
@@ -3411,7 +3458,7 @@ class nsContentUtils {
   static UserInteractionObserver* sUserInteractionObserver;
 
   static nsHtml5StringParser* sHTMLFragmentParser;
-  static nsIParser* sXMLFragmentParser;
+  static nsParser* sXMLFragmentParser;
   static nsIFragmentContentSink* sXMLFragmentSink;
 
   /**
@@ -3426,9 +3473,10 @@ class nsContentUtils {
   static nsString* sAltText;
   static nsString* sModifierSeparator;
 
-  // Alternate data mime type, used by the ScriptLoader to register and read the
-  // bytecode out of the nsCacheInfoChannel.
-  static nsCString* sJSBytecodeMimeType;
+  // Alternate data mime types, used by the ScriptLoader to register and read
+  // the bytecode out of the nsCacheInfoChannel.
+  static nsCString* sJSScriptBytecodeMimeType;
+  static nsCString* sJSModuleBytecodeMimeType;
 
   static mozilla::LazyLogModule gResistFingerprintingLog;
   static mozilla::LazyLogModule sDOMDumpLog;
@@ -3448,6 +3496,7 @@ nsContentUtils::InternalContentPolicyTypeToExternal(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_INTERNAL_SHARED_WORKER:
     case nsIContentPolicy::TYPE_INTERNAL_SERVICE_WORKER:
     case nsIContentPolicy::TYPE_INTERNAL_WORKER_IMPORT_SCRIPTS:
+    case nsIContentPolicy::TYPE_INTERNAL_WORKER_STATIC_MODULE:
     case nsIContentPolicy::TYPE_INTERNAL_AUDIOWORKLET:
     case nsIContentPolicy::TYPE_INTERNAL_PAINTWORKLET:
     case nsIContentPolicy::TYPE_INTERNAL_CHROMEUTILS_COMPILED_SCRIPT:
@@ -3520,8 +3569,7 @@ class MOZ_STACK_CLASS nsAutoScriptBlockerSuppressNodeRemoved
   }
 };
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class TreeOrderComparator {
  public:
@@ -3533,8 +3581,7 @@ class TreeOrderComparator {
   }
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #define NS_INTERFACE_MAP_ENTRY_TEAROFF(_interface, _allocator) \
   if (aIID.Equals(NS_GET_IID(_interface))) {                   \

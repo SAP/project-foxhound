@@ -62,17 +62,22 @@ void ImageBitmapRenderingContext::GetCanvas(
   }
 }
 
-void ImageBitmapRenderingContext::TransferImageBitmap(
-    ImageBitmap& aImageBitmap) {
-  TransferFromImageBitmap(&aImageBitmap);
+void ImageBitmapRenderingContext::TransferImageBitmap(ImageBitmap& aImageBitmap,
+                                                      ErrorResult& aRv) {
+  TransferFromImageBitmap(&aImageBitmap, aRv);
 }
 
 void ImageBitmapRenderingContext::TransferFromImageBitmap(
-    ImageBitmap* aImageBitmap) {
-  Reset();
+    ImageBitmap* aImageBitmap, ErrorResult& aRv) {
+  ResetBitmap();
 
   if (aImageBitmap) {
     mImage = aImageBitmap->TransferAsImage();
+
+    if (!mImage) {
+      aRv.ThrowInvalidStateError("The input ImageBitmap has been detached");
+      return;
+    }
 
     if (aImageBitmap->IsWriteOnly()) {
       if (mCanvasElement) {
@@ -102,6 +107,9 @@ ImageBitmapRenderingContext::InitializeWithDrawTarget(
 already_AddRefed<gfx::DataSourceSurface>
 ImageBitmapRenderingContext::MatchWithIntrinsicSize() {
   RefPtr<gfx::SourceSurface> surface = mImage->GetAsSourceSurface();
+  if (!surface) {
+    return nullptr;
+  }
   RefPtr<gfx::DataSourceSurface> temp = gfx::Factory::CreateDataSourceSurface(
       gfx::IntSize(mWidth, mHeight), surface->GetFormat());
   if (!temp) {
@@ -195,6 +203,10 @@ ImageBitmapRenderingContext::GetSurfaceSnapshot(
   }
 
   RefPtr<gfx::SourceSurface> surface = mImage->GetAsSourceSurface();
+  if (!surface) {
+    return nullptr;
+  }
+
   if (surface->GetSize() != gfx::IntSize(mWidth, mHeight)) {
     return MatchWithIntrinsicSize();
   }
@@ -209,15 +221,13 @@ void ImageBitmapRenderingContext::SetOpaqueValueFromOpaqueAttr(
 
 bool ImageBitmapRenderingContext::GetIsOpaque() { return false; }
 
-NS_IMETHODIMP
-ImageBitmapRenderingContext::Reset() {
+void ImageBitmapRenderingContext::ResetBitmap() {
   if (mCanvasElement) {
     mCanvasElement->InvalidateCanvas();
   }
 
   mImage = nullptr;
   mFrameCaptureState = FrameCaptureState::CLEAN;
-  return NS_OK;
 }
 
 bool ImageBitmapRenderingContext::UpdateWebRenderCanvasData(
@@ -257,9 +267,6 @@ ImageBitmapRenderingContext::Redraw(const gfxRect& aDirty) {
 
   return NS_OK;
 }
-
-NS_IMETHODIMP
-ImageBitmapRenderingContext::SetIsIPC(bool aIsIPC) { return NS_OK; }
 
 void ImageBitmapRenderingContext::DidRefresh() {}
 

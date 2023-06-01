@@ -3,7 +3,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
 import ipaddr
 import socket
 import hmac
@@ -882,6 +881,9 @@ def create_self_signed_cert(name):
     cert.gmtime_adj_notAfter(10 * 365 * 24 * 60 * 60)
     cert.set_issuer(cert.get_subject())
     cert.set_pubkey(k)
+    cert.add_extensions(
+        [crypto.X509Extension(b"subjectAltName", False, f"DNS:{name}".encode())]
+    )
     cert.sign(k, "sha1")
 
     open(CERT_FILE, "wb").write(crypto.dump_certificate(crypto.FILETYPE_PEM, cert))

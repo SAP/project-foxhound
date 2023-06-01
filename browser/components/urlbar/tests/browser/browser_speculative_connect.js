@@ -17,7 +17,7 @@ const serverInfo = {
   port: 20709, // Must be identical to what is in searchSuggestionEngine2.xml
 };
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.urlbar.autoFill", true],
@@ -42,15 +42,12 @@ add_task(async function setup() {
     },
   ]);
 
-  let engine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME
-  );
-  let oldCurrentEngine = Services.search.defaultEngine;
-  Services.search.defaultEngine = engine;
-
+  await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME,
+    setAsDefault: true,
+  });
   registerCleanupFunction(async function() {
     await PlacesUtils.history.clear();
-    Services.search.defaultEngine = oldCurrentEngine;
   });
 });
 

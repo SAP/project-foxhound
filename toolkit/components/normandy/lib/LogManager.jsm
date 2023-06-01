@@ -4,7 +4,9 @@
 
 "use strict";
 
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
+);
 
 var EXPORTED_SYMBOLS = ["LogManager"];
 
@@ -16,7 +18,7 @@ var LogManager = {
    * Configure the root logger for the Recipe Client. Must be called at
    * least once before using any loggers created via getLogger.
    * @param {Number} loggingLevel
-   *        Logging level to use as defined in Log.jsm
+   *        Logging level to use as defined in Log.sys.mjs
    */
   configure(loggingLevel) {
     if (!rootLogger) {

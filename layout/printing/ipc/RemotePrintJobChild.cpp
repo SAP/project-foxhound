@@ -20,13 +20,11 @@ NS_IMPL_ISUPPORTS(RemotePrintJobChild, nsIWebProgressListener)
 RemotePrintJobChild::RemotePrintJobChild() = default;
 
 nsresult RemotePrintJobChild::InitializePrint(const nsString& aDocumentTitle,
-                                              const nsString& aPrintToFile,
                                               const int32_t& aStartPage,
                                               const int32_t& aEndPage) {
   // Print initialization can sometimes display a dialog in the parent, so we
   // need to spin a nested event loop until initialization completes.
-  Unused << SendInitializePrint(aDocumentTitle, aPrintToFile, aStartPage,
-                                aEndPage);
+  Unused << SendInitializePrint(aDocumentTitle, aStartPage, aEndPage);
   mozilla::SpinEventLoopUntil("RemotePrintJobChild::InitializePrint"_ns,
                               [&]() { return mPrintInitialized; });
 
@@ -104,10 +102,9 @@ NS_IMETHODIMP
 RemotePrintJobChild::OnStateChange(nsIWebProgress* aProgress,
                                    nsIRequest* aRequest, uint32_t aStateFlags,
                                    nsresult aStatus) {
-  if (!mDestroyed) {
-    Unused << SendStateChange(aStateFlags, aStatus);
-  }
-
+  // `RemotePrintJobParent` emits its own state change events based on its
+  // own progress & the actor lifecycle, so any forwarded event here would get
+  // ignored.
   return NS_OK;
 }
 

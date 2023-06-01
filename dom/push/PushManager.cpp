@@ -15,6 +15,8 @@
 #include "mozilla/dom/PushSubscription.h"
 #include "mozilla/dom/PushSubscriptionOptionsBinding.h"
 #include "mozilla/dom/PushUtil.h"
+#include "mozilla/dom/RootedDictionary.h"
+#include "mozilla/dom/ServiceWorker.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerScope.h"
 
@@ -30,8 +32,7 @@
 #include "nsContentUtils.h"
 #include "nsServiceManagerUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -409,6 +410,10 @@ already_AddRefed<PushManager> PushManager::Constructor(GlobalObject& aGlobal,
   return ret.forget();
 }
 
+bool PushManager::IsEnabled(JSContext* aCx, JSObject* aGlobal) {
+  return StaticPrefs::dom_push_enabled() && ServiceWorkerVisible(aCx, aGlobal);
+}
+
 already_AddRefed<Promise> PushManager::Subscribe(
     const PushSubscriptionOptionsInit& aOptions, ErrorResult& aRv) {
   if (mImpl) {
@@ -530,5 +535,4 @@ nsresult PushManager::NormalizeAppServerKey(
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

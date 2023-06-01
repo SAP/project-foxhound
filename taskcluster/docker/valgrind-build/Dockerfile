@@ -58,5 +58,9 @@ RUN apt-get update && apt-get install \
     libxrender1-dbgsym \
     libxt6-dbgsym \
     libxxf86vm1-dbg \
-    valgrind-dbg \
+    valgrind-dbgsym \
+    xvfb \
     zlib1g-dbgsym
+
+# %include taskcluster/docker/recipes/xvfb.sh
+COPY topsrcdir/taskcluster/docker/recipes/xvfb.sh /builds/worker/scripts/xvfb.sh

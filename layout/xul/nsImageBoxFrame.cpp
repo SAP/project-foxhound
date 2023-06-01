@@ -141,11 +141,9 @@ nsresult nsImageBoxFrame::AttributeChanged(int32_t aNameSpaceID,
 
   if (aAttribute == nsGkAtoms::src) {
     UpdateImage();
-    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
-                                  NS_FRAME_IS_DIRTY);
-  } else if (aAttribute == nsGkAtoms::validate)
-    UpdateLoadFlags();
-
+    PresShell()->FrameNeedsReflow(
+        this, IntrinsicDirty::FrameAncestorsAndDescendants, NS_FRAME_IS_DIRTY);
+  }
   return rv;
 }
 
@@ -153,7 +151,6 @@ nsImageBoxFrame::nsImageBoxFrame(ComputedStyle* aStyle,
                                  nsPresContext* aPresContext)
     : nsLeafBoxFrame(aStyle, aPresContext, kClassID),
       mIntrinsicSize(0, 0),
-      mLoadFlags(nsIRequest::LOAD_NORMAL),
       mRequestRegistered(false),
       mUseSrcAttr(false),
       mSuppressStyleCheck(false) {
@@ -203,22 +200,7 @@ void nsImageBoxFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   nsLeafBoxFrame::Init(aContent, aParent, aPrevInFlow);
   mSuppressStyleCheck = false;
 
-  UpdateLoadFlags();
   UpdateImage();
-}
-
-void nsImageBoxFrame::RestartAnimation() {
-  if (mImageRequest && !mRequestRegistered) {
-    nsLayoutUtils::RegisterImageRequestIfAnimated(PresContext(), mImageRequest,
-                                                  &mRequestRegistered);
-  }
-}
-
-void nsImageBoxFrame::StopAnimation() {
-  if (mImageRequest && mRequestRegistered) {
-    nsLayoutUtils::DeregisterImageRequest(PresContext(), mImageRequest,
-                                          &mRequestRegistered);
-  }
 }
 
 void nsImageBoxFrame::UpdateImage() {
@@ -256,7 +238,7 @@ void nsImageBoxFrame::UpdateImage() {
       auto referrerInfo = MakeRefPtr<ReferrerInfo>(*mContent->AsElement());
       nsresult rv = nsContentUtils::LoadImage(
           uri, mContent, doc, triggeringPrincipal, requestContextID,
-          referrerInfo, mListener, mLoadFlags, u""_ns,
+          referrerInfo, mListener, nsIRequest::LOAD_NORMAL, u""_ns,
           getter_AddRefs(mImageRequest), contentPolicyType);
 
       if (NS_SUCCEEDED(rv) && mImageRequest) {
@@ -292,23 +274,6 @@ void nsImageBoxFrame::UpdateImage() {
   }
 }
 
-void nsImageBoxFrame::UpdateLoadFlags() {
-  static Element::AttrValuesArray strings[] = {nsGkAtoms::always,
-                                               nsGkAtoms::never, nullptr};
-  switch (mContent->AsElement()->FindAttrValueIn(
-      kNameSpaceID_None, nsGkAtoms::validate, strings, eCaseMatters)) {
-    case 0:
-      mLoadFlags = nsIRequest::VALIDATE_ALWAYS;
-      break;
-    case 1:
-      mLoadFlags = nsIRequest::VALIDATE_NEVER | nsIRequest::LOAD_FROM_CACHE;
-      break;
-    default:
-      mLoadFlags = nsIRequest::LOAD_NORMAL;
-      break;
-  }
-}
-
 void nsImageBoxFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                        const nsDisplayListSet& aLists) {
   nsLeafBoxFrame::BuildDisplayList(aBuilder, aLists);
@@ -330,13 +295,7 @@ void nsImageBoxFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   DisplayListClipState::AutoClipContainingBlockDescendantsToContentBox clip(
       aBuilder, this, clipFlags);
 
-  nsDisplayList list;
-  list.AppendNewToTop<nsDisplayXULImage>(aBuilder, this);
-
-  CreateOwnLayerIfNeeded(aBuilder, &list,
-                         nsDisplayOwnLayer::OwnLayerForImageBoxFrame);
-
-  aLists.Content()->AppendToTop(&list);
+  aLists.Content()->AppendNewToTop<nsDisplayXULImage>(aBuilder, this);
 }
 
 already_AddRefed<imgIContainer> nsImageBoxFrame::GetImageContainerForPainting(
@@ -390,7 +349,7 @@ ImgDrawResult nsImageBoxFrame::PaintImage(gfxContext& aRenderingContext,
 
   bool hasSubRect = !mUseSrcAttr && (mSubRect.width > 0 || mSubRect.height > 0);
 
-  Maybe<SVGImageContext> svgContext;
+  SVGImageContext svgContext;
   SVGImageContext::MaybeStoreContextPaint(svgContext, this, imgCon);
   return nsLayoutUtils::DrawSingleImage(
       aRenderingContext, PresContext(), imgCon,
@@ -422,7 +381,7 @@ ImgDrawResult nsImageBoxFrame::CreateWebRenderCommands(
   LayoutDeviceRect fillRect =
       LayoutDeviceRect::FromAppUnits(dest, appUnitsPerDevPixel);
 
-  Maybe<SVGImageContext> svgContext;
+  SVGImageContext svgContext;
   Maybe<ImageIntRegion> region;
   gfx::IntSize decodeSize =
       nsLayoutUtils::ComputeImageContainerDrawingParameters(
@@ -443,7 +402,8 @@ ImgDrawResult nsImageBoxFrame::CreateWebRenderCommands(
   auto rendering = wr::ToImageRendering(aItem->Frame()->UsedImageRendering());
   wr::LayoutRect fill = wr::ToLayoutRect(fillRect);
 
-  aBuilder.PushImage(fill, fill, !BackfaceIsHidden(), rendering, key.value());
+  aBuilder.PushImage(fill, fill, !BackfaceIsHidden(), false, rendering,
+                     key.value());
   return result;
 }
 
@@ -503,10 +463,8 @@ void nsDisplayXULImage::Paint(nsDisplayListBuilder* aBuilder,
   if (aBuilder->UseHighQualityScaling())
     flags |= imgIContainer::FLAG_HIGH_QUALITY_SCALING;
 
-  ImgDrawResult result = static_cast<nsImageBoxFrame*>(mFrame)->PaintImage(
+  Unused << static_cast<nsImageBoxFrame*>(mFrame)->PaintImage(
       *aCtx, GetPaintRect(aBuilder, aCtx), ToReferenceFrame(), flags);
-
-  nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
 }
 
 bool nsDisplayXULImage::CreateWebRenderCommands(
@@ -539,30 +497,7 @@ bool nsDisplayXULImage::CreateWebRenderCommands(
     return false;
   }
 
-  nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
   return true;
-}
-
-nsDisplayItemGeometry* nsDisplayXULImage::AllocateGeometry(
-    nsDisplayListBuilder* aBuilder) {
-  return new nsDisplayItemGenericImageGeometry(this, aBuilder);
-}
-
-void nsDisplayXULImage::ComputeInvalidationRegion(
-    nsDisplayListBuilder* aBuilder, const nsDisplayItemGeometry* aGeometry,
-    nsRegion* aInvalidRegion) const {
-  auto boxFrame = static_cast<nsImageBoxFrame*>(mFrame);
-  auto geometry =
-      static_cast<const nsDisplayItemGenericImageGeometry*>(aGeometry);
-
-  if (aBuilder->ShouldSyncDecodeImages() && boxFrame->mImageRequest &&
-      geometry->ShouldInvalidateToSyncDecodeImages()) {
-    bool snap;
-    aInvalidRegion->Or(*aInvalidRegion, GetBounds(aBuilder, &snap));
-  }
-
-  nsPaintedDisplayItem::ComputeInvalidationRegion(aBuilder, aGeometry,
-                                                  aInvalidRegion);
 }
 
 bool nsImageBoxFrame::CanOptimizeToImageLayer() {
@@ -787,8 +722,8 @@ void nsImageBoxFrame::OnSizeAvailable(imgIRequest* aRequest,
   GetImageResolution().ApplyTo(mIntrinsicSize.width, mIntrinsicSize.height);
 
   if (!HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
-    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
-                                  NS_FRAME_IS_DIRTY);
+    PresShell()->FrameNeedsReflow(
+        this, IntrinsicDirty::FrameAncestorsAndDescendants, NS_FRAME_IS_DIRTY);
   }
 }
 
@@ -804,8 +739,8 @@ void nsImageBoxFrame::OnLoadComplete(imgIRequest* aRequest, nsresult aStatus) {
   } else {
     // Fire an onerror DOM event.
     mIntrinsicSize.SizeTo(0, 0);
-    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
-                                  NS_FRAME_IS_DIRTY);
+    PresShell()->FrameNeedsReflow(
+        this, IntrinsicDirty::FrameAncestorsAndDescendants, NS_FRAME_IS_DIRTY);
     FireImageDOMEvent(mContent, eLoadError);
   }
 }

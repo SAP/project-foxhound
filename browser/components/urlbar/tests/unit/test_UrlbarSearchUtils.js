@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { UrlbarSearchUtils } = ChromeUtils.import(
-  "resource:///modules/UrlbarSearchUtils.jsm"
+const { UrlbarSearchUtils } = ChromeUtils.importESModule(
+  "resource:///modules/UrlbarSearchUtils.sys.mjs"
 );
 
 let baconEngineExtension;
@@ -15,7 +15,7 @@ add_task(async function() {
   Services.prefs.setCharPref("browser.search.region", "US");
 
   Services.search.restoreDefaultEngines();
-  Services.search.resetToOriginalDefaultEngine();
+  Services.search.resetToAppDefaultEngine();
 });
 
 add_task(async function search_engine_match() {
@@ -54,7 +54,10 @@ add_task(async function hide_search_engine_nomatch() {
     await UrlbarSearchUtils.enginesForDomainPrefix(token)
   )[0];
   Assert.ok(matchedEngine2);
-  await Services.search.setDefault(engine);
+  await Services.search.setDefault(
+    engine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 });
 
 add_task(async function onlyEnabled_option_nomatch() {
@@ -84,7 +87,7 @@ add_task(async function add_search_engine_match() {
       keyword: "pork",
       search_url: "https://www.bacon.moz/",
     },
-    true
+    { skipUnload: true }
   );
   let matchedEngine = (
     await UrlbarSearchUtils.enginesForDomainPrefix("bacon")
@@ -237,7 +240,7 @@ add_task(async function test_get_root_domain_from_engine() {
       name: "TestEngine2",
       search_url: "https://example.com/",
     },
-    true
+    { skipUnload: true }
   );
   let engine = Services.search.getEngineByName("TestEngine2");
   Assert.equal(UrlbarSearchUtils.getRootDomainFromEngine(engine), "example");
@@ -248,7 +251,7 @@ add_task(async function test_get_root_domain_from_engine() {
       name: "TestEngine",
       search_url: "https://www.subdomain.othersubdomain.example.com",
     },
-    true
+    { skipUnload: true }
   );
   engine = Services.search.getEngineByName("TestEngine");
   Assert.equal(UrlbarSearchUtils.getRootDomainFromEngine(engine), "example");
@@ -262,7 +265,7 @@ add_task(async function test_get_root_domain_from_engine() {
       search_url: "https://mochi.test/",
       search_url_get_params: "search={searchTerms}",
     },
-    true
+    { skipUnload: true }
   );
   engine = Services.search.getEngineByName("TestMalformed");
   Assert.equal(UrlbarSearchUtils.getRootDomainFromEngine(engine), "mochi");
@@ -275,13 +278,110 @@ add_task(async function test_get_root_domain_from_engine() {
       search_url: "https://subdomain.foobar/",
       search_url_get_params: "search={searchTerms}",
     },
-    true
+    { skipUnload: true }
   );
   engine = Services.search.getEngineByName("TestMalformed");
   Assert.equal(
     UrlbarSearchUtils.getRootDomainFromEngine(engine),
     "subdomain.foobar"
   );
+  await extension.unload();
+});
+
+// Tests getSearchTermIfDefaultSerpUri() by using a variety of
+// input strings and nsIURI's.
+// Should not throw an error if the consumer passes an input
+// that when accessed, could cause an error.
+add_task(async function get_search_term_if_default_serp_uri() {
+  let testCases = [
+    {
+      url: null,
+      skipUriTest: true,
+    },
+    {
+      url: "",
+      skipUriTest: true,
+    },
+    {
+      url: "about:blank",
+    },
+    {
+      url: "about:home",
+    },
+    {
+      url: "about:newtab",
+    },
+    {
+      url: "not://a/supported/protocol",
+    },
+    {
+      url: "view-source:http://www.example.com/",
+    },
+    {
+      // Not a default engine.
+      url: "http://mochi.test:8888/?q=chocolate&pc=sample_code",
+    },
+    {
+      // Not the correct protocol.
+      url: "http://example.com/?q=chocolate&pc=sample_code",
+    },
+    {
+      // Not the same query param values.
+      url: "https://example.com/?q=chocolate&pc=sample_code2",
+    },
+    {
+      // Not the same query param values.
+      url: "https://example.com/?q=chocolate&pc=sample_code&pc2=sample_code_2",
+    },
+    {
+      url: "https://example.com/?q=chocolate&pc=sample_code",
+      expectedString: "chocolate",
+    },
+    {
+      url: "https://example.com/?q=chocolate+cakes&pc=sample_code",
+      expectedString: "chocolate cakes",
+    },
+  ];
+
+  // Create a specific engine so that the tests are matched
+  // exactly against the query params used.
+  let extension = await SearchTestUtils.installSearchExtension(
+    {
+      name: "TestEngine",
+      search_url: "https://example.com/",
+      search_url_get_params: "?q={searchTerms}&pc=sample_code",
+    },
+    { skipUnload: true }
+  );
+  let engine = Services.search.getEngineByName("TestEngine");
+  let originalDefaultEngine = Services.search.defaultEngine;
+  Services.search.defaultEngine = engine;
+
+  for (let testCase of testCases) {
+    let expectedString = testCase.expectedString ?? "";
+    Assert.equal(
+      UrlbarSearchUtils.getSearchTermIfDefaultSerpUri(testCase.url),
+      expectedString,
+      `Should return ${
+        expectedString == "" ? "an empty string" : "a matching search string"
+      }`
+    );
+    // Convert the string into a nsIURI and then
+    // try the test case with it.
+    if (!testCase.skipUriTest) {
+      Assert.equal(
+        UrlbarSearchUtils.getSearchTermIfDefaultSerpUri(
+          Services.io.newURI(testCase.url)
+        ),
+        expectedString,
+        `Should return ${
+          expectedString == "" ? "an empty string" : "a matching search string"
+        }`
+      );
+    }
+  }
+
+  Services.search.defaultEngine = originalDefaultEngine;
   await extension.unload();
 });
 
@@ -311,7 +411,7 @@ add_task(async function matchAllDomainLevels() {
           name: domain,
           search_url: `https://${domain}/`,
         },
-        true
+        { skipUnload: true }
       );
       extensions.push(ext);
     }

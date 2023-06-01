@@ -16,59 +16,40 @@ module.exports = {
     browser: true,
     es2021: true,
     "mozilla/privileged": true,
+    "mozilla/specific": true,
   },
 
   extends: ["eslint:recommended", "plugin:prettier/recommended"],
 
-  globals: {
-    // These are all specific to Firefox unless otherwise stated.
-    Cc: false,
-    ChromeUtils: false,
-    Ci: false,
-    Components: false,
-    Cr: false,
-    Cu: false,
-    Debugger: false,
-    InstallTrigger: false,
-    // https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/InternalError
-    InternalError: true,
-    // https://developer.mozilla.org/docs/Web/API/Window/dump
-    dump: true,
-    // Override the "browser" env definition of "location" to allow writing as it
-    // is a writeable property.
-    // See https://bugzilla.mozilla.org/show_bug.cgi?id=1509270#c1 for more information.
-    location: true,
-    openDialog: false,
-    // https://developer.mozilla.org/docs/Web/API/Window/sizeToContent
-    sizeToContent: false,
-    // structuredClone is a new global that only Firefox has currently and so isn't
-    // in ESLint's globals yet.
-    // https://developer.mozilla.org/docs/Web/API/structuredClone
-    structuredClone: false,
-    // https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/uneval
-    uneval: false,
-  },
-
   overrides: [
     {
-      // We don't have the general browser environment for jsm files, but we do
-      // have our own special environments for them.
+      // System mjs files and jsm files are not loaded in the browser scope,
+      // so we turn that off for those. Though we do have our own special
+      // environment for them.
       env: {
         browser: false,
         "mozilla/jsm": true,
       },
-      files: ["**/*.jsm", "**/*.jsm.js"],
-      globals: {
-        // Intl is defined in the browser environment, but that's disabled
-        // for jsms, add it here manually.
-        Intl: false,
-      },
+      files: ["**/*.sys.mjs", "**/*.jsm", "**/*.jsm.js"],
       rules: {
-        "mozilla/mark-exported-symbols-as-used": "error",
+        "mozilla/lazy-getter-object-name": "error",
+        "mozilla/reject-eager-module-in-lazy-getter": "error",
+        "mozilla/reject-global-this": "error",
+        "mozilla/reject-globalThis-modification": "error",
+        // For all system modules, we expect no properties to need importing,
+        // hence reject everything.
+        "mozilla/reject-importGlobalProperties": ["error", "everything"],
+        "mozilla/reject-mixing-eager-and-lazy": "error",
+        "mozilla/reject-top-level-await": "error",
         // TODO: Bug 1575506 turn `builtinGlobals` on here.
         // We can enable builtinGlobals for jsms due to their scopes.
         "no-redeclare": ["error", { builtinGlobals: false }],
-        // JSM modules are far easier to check for no-unused-vars on a global scope,
+      },
+    },
+    {
+      files: ["**/*.mjs", "**/*.jsm"],
+      rules: {
+        // Modules are far easier to check for no-unused-vars on a global scope,
         // than our content files. Hence we turn that on here.
         "no-unused-vars": [
           "error",
@@ -80,11 +61,46 @@ module.exports = {
       },
     },
     {
-      // TODO Bug 1501127: sjs files have their own sandbox, and do not inherit
-      // the Window backstage pass directly. Turn this rule off for sjs files for
-      // now until we develop a solution.
+      files: ["**/*.sys.mjs"],
+      rules: {
+        "mozilla/use-static-import": "error",
+      },
+    },
+    {
+      excludedFiles: ["**/*.sys.mjs"],
+      files: ["**/*.mjs"],
+      rules: {
+        "mozilla/reject-import-system-module-from-non-system": "error",
+        "mozilla/reject-lazy-imports-into-globals": "error",
+        "no-shadow": "error",
+      },
+    },
+    {
+      files: ["**/*.mjs"],
+      rules: {
+        "mozilla/use-static-import": "error",
+        // This rule defaults to not allowing "use strict" in module files since
+        // they are always loaded in strict mode.
+        strict: "error",
+      },
+    },
+    {
+      files: ["**/*.jsm", "**/*.jsm.js"],
+      rules: {
+        "mozilla/mark-exported-symbols-as-used": "error",
+      },
+    },
+    {
+      env: {
+        browser: false,
+        "mozilla/privileged": false,
+        "mozilla/sjs": true,
+      },
       files: ["**/*.sjs"],
       rules: {
+        // TODO Bug 1501127: sjs files have their own sandbox, and do not inherit
+        // the Window backstage pass directly. Turn this rule off for sjs files for
+        // now until we develop a solution.
         "mozilla/reject-importGlobalProperties": "off",
       },
     },
@@ -137,6 +153,7 @@ module.exports = {
     "mozilla/import-browser-window-globals": "error",
     "mozilla/import-globals": "error",
     "mozilla/no-compare-against-boolean-literals": "error",
+    "mozilla/no-cu-reportError": "error",
     "mozilla/no-define-cc-etc": "error",
     "mozilla/no-throw-cr-literal": "error",
     "mozilla/no-useless-parameters": "error",
@@ -146,6 +163,7 @@ module.exports = {
     "mozilla/reject-addtask-only": "error",
     "mozilla/reject-chromeutils-import-params": "error",
     "mozilla/reject-importGlobalProperties": ["error", "allownonwebidl"],
+    "mozilla/reject-multiple-getters-calls": "error",
     "mozilla/reject-osfile": "warn",
     "mozilla/reject-scriptableunicodeconverter": "warn",
     "mozilla/rejects-requires-await": "error",
@@ -154,9 +172,12 @@ module.exports = {
     "mozilla/use-chromeutils-import": "error",
     "mozilla/use-default-preference-values": "error",
     "mozilla/use-includes-instead-of-indexOf": "error",
+    "mozilla/use-isInstance": "error",
     "mozilla/use-ownerGlobal": "error",
     "mozilla/use-returnValue": "error",
     "mozilla/use-services": "error",
+    "mozilla/valid-lazy": "error",
+    "mozilla/valid-services": "error",
 
     // Use [] instead of Array()
     "no-array-constructor": "error",
@@ -171,6 +192,9 @@ module.exports = {
     // XXX Bug 1487642 - decide if we want to enable this or not.
     // Disallow the use of console
     "no-console": "off",
+
+    // Disallows expressions where the operation doesn't affect the value.
+    "no-constant-binary-expression": "error",
 
     // XXX Bug 1487642 - decide if we want to enable this or not.
     // Disallow constant expressions in conditions

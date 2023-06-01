@@ -7,18 +7,20 @@
 const {
   Component,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const {
+  L10N,
+} = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 const {
   fetchNetworkUpdatePacket,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 
 // Components
-const TreeViewClass = require("devtools/client/shared/components/tree/TreeView");
+const TreeViewClass = require("resource://devtools/client/shared/components/tree/TreeView.js");
 const PropertiesView = createFactory(
-  require("devtools/client/netmonitor/src/components/request-details/PropertiesView")
+  require("resource://devtools/client/netmonitor/src/components/request-details/PropertiesView.js")
 );
 
 const { div, input } = dom;
@@ -51,7 +53,8 @@ class CachePanel extends Component {
     fetchNetworkUpdatePacket(connector.requestData, request, ["responseCache"]);
   }
 
-  componentWillReceiveProps(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
     const { connector, request } = nextProps;
     fetchNetworkUpdatePacket(connector.requestData, request, ["responseCache"]);
   }
@@ -108,18 +111,19 @@ class CachePanel extends Component {
     if (
       cache.lastFetched ||
       cache.fetchCount ||
-      cache.dataSize ||
-      cache.lastModified | cache.expires ||
-      cache.device
+      cache.storageDataSize ||
+      cache.lastModified ||
+      cache.expirationTime ||
+      cache.deviceID
     ) {
       object = {
         [CACHE]: {
           [LAST_FETCHED]: this.getDate(cache.lastFetched) || NOT_AVAILABLE,
           [FETCH_COUNT]: cache.fetchCount || NOT_AVAILABLE,
-          [DATA_SIZE]: cache.dataSize || NOT_AVAILABLE,
+          [DATA_SIZE]: cache.storageDataSize || NOT_AVAILABLE,
           [LAST_MODIFIED]: this.getDate(cache.lastModified) || NOT_AVAILABLE,
-          [EXPIRES]: this.getDate(cache.expires) || NOT_AVAILABLE,
-          [DEVICE]: cache.device || NOT_AVAILABLE,
+          [EXPIRES]: this.getDate(cache.expirationTime) || NOT_AVAILABLE,
+          [DEVICE]: cache.deviceID || NOT_AVAILABLE,
         },
       };
     } else {

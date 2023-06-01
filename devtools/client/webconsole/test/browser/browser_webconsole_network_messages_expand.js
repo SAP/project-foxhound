@@ -47,7 +47,9 @@ add_task(async function task() {
   const responseTab = messageNode.querySelector("#response-tab");
   ok(responseTab, "Response tab is available");
 
-  const { TEST_EVENTS } = require("devtools/client/netmonitor/src/constants");
+  const {
+    TEST_EVENTS,
+  } = require("resource://devtools/client/netmonitor/src/constants.js");
   const onResponseContent = hud.ui.once(TEST_EVENTS.RECEIVED_RESPONSE_CONTENT);
   // Select Response tab and check the content.
   responseTab.click();
@@ -79,7 +81,7 @@ async function doXhrAndExpand(hud) {
   // Execute XHR and expand it after all network
   // update events are received. Consequently,
   // check out content of all (HTTP details) tabs.
-  const onMessage = waitForMessage(hud, XHR_URL);
+  const onMessage = waitForMessageByType(hud, XHR_URL, ".network");
   const onRequestUpdates = waitForRequestUpdates(hud);
   const onPayloadReady = waitForPayloadReady(hud);
 

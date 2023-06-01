@@ -21,6 +21,7 @@ if CONFIG["MOZ_WEBRTC"]:
     LOCAL_INCLUDES += [
         "/dom/media/webrtc",
         "/media/libyuv/libyuv/include",
+        "/mfbt",
         "/third_party/libwebrtc",
         "/third_party/libwebrtc/third_party/abseil-cpp",
         "/tools/profiler/public",
@@ -35,9 +36,15 @@ if CONFIG["MOZ_WEBRTC"]:
         REQUIRES_UNIFIED_BUILD = True
         UNIFIED_SOURCES += [
             "objc_video_capture/device_info.mm",
+            "objc_video_capture/device_info_avfoundation.mm",
             "objc_video_capture/device_info_objc.mm",
             "objc_video_capture/rtc_video_capture_objc.mm",
             "objc_video_capture/video_capture.mm",
+            "objc_video_capture/video_capture_avfoundation.mm",
+        ]
+        LOCAL_INCLUDES += [
+            "/third_party/libwebrtc/sdk/objc",
+            "/third_party/libwebrtc/sdk/objc/base",
         ]
         CMMFLAGS += [
             "-fobjc-arc",
@@ -54,13 +61,6 @@ if CONFIG["MOZ_WEBRTC"]:
 
 if CONFIG["OS_TARGET"] == "Android":
     DEFINES["WEBRTC_ANDROID"] = True
-
-
-if CONFIG["OS_TARGET"] == "Android":
-    EXPORTS += ["OpenSLESProvider.h"]
-    UNIFIED_SOURCES += [
-        "OpenSLESProvider.cpp",
-    ]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
     UNIFIED_SOURCES += ["OSXRunLoopSingleton.cpp"]
@@ -85,6 +85,7 @@ EXPORTS.mozilla.media += [
     "MediaUtils.h",
 ]
 UNIFIED_SOURCES += [
+    "CamerasTypes.cpp",
     "MediaChild.cpp",
     "MediaParent.cpp",
     "MediaSystemResourceClient.cpp",

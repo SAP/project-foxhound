@@ -162,7 +162,7 @@ class ImageBundle {
 
   // -- ALPHA
 
-  void SetAlpha(ImageF&& alpha, bool alpha_is_premultiplied);
+  void SetAlpha(ImageF&& alpha);
   bool HasAlpha() const {
     return metadata_->Find(ExtraChannel::kAlpha) != nullptr;
   }
@@ -170,14 +170,14 @@ class ImageBundle {
     const ExtraChannelInfo* eci = metadata_->Find(ExtraChannel::kAlpha);
     return (eci == nullptr) ? false : eci->alpha_associated;
   }
-  // Premultiply alpha (if it isn't already premultiplied)
-  void PremultiplyAlpha();
-  // Unpremultiply alpha (if it isn't already non-premultiplied)
-  void UnpremultiplyAlpha();
   const ImageF& alpha() const;
   ImageF* alpha();
 
   // -- EXTRA CHANNELS
+  bool HasBlack() const {
+    return metadata_->Find(ExtraChannel::kBlack) != nullptr;
+  }
+  const ImageF& black() const;
 
   // Extra channels of unknown interpretation (e.g. spot colors).
   void SetExtraChannels(std::vector<ImageF>&& extra_channels);

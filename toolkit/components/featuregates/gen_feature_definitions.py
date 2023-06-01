@@ -4,17 +4,15 @@
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import json
-import pytoml
 import re
 import sys
-
-import six
+import toml
 import voluptuous
 import voluptuous.humanize
 from voluptuous import Schema, Optional, Any, All, Required, Length, Range, Msg, Match
 
 
-Text = Any(six.text_type, six.binary_type)
+Text = Any(str, bytes)
 
 
 id_regex = re.compile(r"^[a-z0-9-]+$")
@@ -79,7 +77,7 @@ class FeatureGateException(Exception):
         if self.filename is None:
             rv.append("unknown file:")
         else:
-            rv.append('file "{}":'.format(self.filename))
+            rv.append('file "{}":\n'.format(self.filename))
         rv.append(message)
         return " ".join(rv)
 
@@ -100,7 +98,7 @@ def process_files(filenames):
     for filename in filenames:
         try:
             with open(filename, "r") as f:
-                feature_data = pytoml.load(f)
+                feature_data = toml.load(f)
 
             voluptuous.humanize.validate_with_humanized_errors(
                 feature_data, feature_schema
@@ -109,12 +107,14 @@ def process_files(filenames):
             for feature_id, feature in feature_data.items():
                 feature["id"] = feature_id
                 features[feature_id] = expand_feature(feature)
-        except (voluptuous.error.Error, IOError, FeatureGateException) as e:
+        except (
+            voluptuous.error.Error,
+            IOError,
+            FeatureGateException,
+            toml.TomlDecodeError,
+        ) as e:
             # Wrap errors in enough information to know which file they came from
             errors.append(FeatureGateException(e, filename))
-        except pytoml.TomlError as e:
-            # Toml errors have file information already
-            errors.append(e)
 
     if errors:
         raise ExceptionGroup(errors)
@@ -193,6 +193,7 @@ def process_configured_value(name, value):
             "release",
             "dev-edition",
             "esr",
+            "thunderbird",
         }
     )
 

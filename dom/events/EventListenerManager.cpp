@@ -10,6 +10,7 @@
 // Microsoft's API Name hackery sucks
 #undef CreateEvent
 
+#include "js/loader/LoadedScript.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
 #include "mozilla/DOMEventTargetHelper.h"
@@ -28,7 +29,6 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/EventTargetBinding.h"
-#include "mozilla/dom/LoadedScript.h"
 #include "mozilla/dom/PopupBlocker.h"
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/ScriptSettings.h"
@@ -155,9 +155,6 @@ void EventListenerManager::RemoveAllListenersSilently() {
   mListeners.Clear();
   mClearingListeners = false;
 }
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(EventListenerManager, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(EventListenerManager, Release)
 
 inline void ImplCycleCollectionTraverse(
     nsCycleCollectionTraversalCallback& aCallback,
@@ -352,7 +349,7 @@ void EventListenerManager::AddEventListenerInternal(
         }
         break;
       case eDeviceOrientation:
-      case eAbsoluteDeviceOrientation:
+      case eDeviceOrientationAbsolute:
       case eUserProximity:
       case eDeviceLight:
       case eDeviceMotion:
@@ -496,7 +493,7 @@ void EventListenerManager::AddEventListenerInternal(
                      nsPrintfCString("resolvedEventMessage=%s",
                                      ToChar(resolvedEventMessage))
                          .get());
-        NS_ASSERTION(aTypeAtom != nsGkAtoms::onabsolutedeviceorientation,
+        NS_ASSERTION(aTypeAtom != nsGkAtoms::ondeviceorientationabsolute,
                      nsPrintfCString("resolvedEventMessage=%s",
                                      ToChar(resolvedEventMessage))
                          .get());
@@ -672,7 +669,7 @@ void EventListenerManager::ProcessApzAwareEventListenerAdd() {
 bool EventListenerManager::IsDeviceType(EventMessage aEventMessage) {
   switch (aEventMessage) {
     case eDeviceOrientation:
-    case eAbsoluteDeviceOrientation:
+    case eDeviceOrientationAbsolute:
     case eDeviceMotion:
     case eDeviceLight:
     case eUserProximity:
@@ -703,7 +700,7 @@ void EventListenerManager::EnableDevice(EventMessage aEventMessage) {
       window->EnableDeviceSensor(SENSOR_ORIENTATION);
 #endif
       break;
-    case eAbsoluteDeviceOrientation:
+    case eDeviceOrientationAbsolute:
 #ifdef MOZ_WIDGET_ANDROID
       // Falls back to SENSOR_ORIENTATION if unavailable on device.
       window->EnableDeviceSensor(SENSOR_ROTATION_VECTOR);
@@ -748,7 +745,7 @@ void EventListenerManager::DisableDevice(EventMessage aEventMessage) {
 #endif
       window->DisableDeviceSensor(SENSOR_ORIENTATION);
       break;
-    case eAbsoluteDeviceOrientation:
+    case eDeviceOrientationAbsolute:
 #ifdef MOZ_WIDGET_ANDROID
       window->DisableDeviceSensor(SENSOR_ROTATION_VECTOR);
 #endif
@@ -1046,7 +1043,8 @@ nsresult EventListenerManager::SetEventHandler(nsAtom* aName,
     if (csp) {
       bool allowsInlineScript = true;
       rv = csp->GetAllowsInline(
-          nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE,
+          nsIContentSecurityPolicy::SCRIPT_SRC_ATTR_DIRECTIVE,
+          true,    // aHasUnsafeHash
           u""_ns,  // aNonce
           true,    // aParserCreated (true because attribute event handler)
           aElement,
@@ -1237,11 +1235,13 @@ nsresult EventListenerManager::CompileEventHandlerInternal(
     return NS_ERROR_FAILURE;
   }
 
-  RefPtr<ScriptFetchOptions> fetchOptions = new ScriptFetchOptions(
-      CORS_NONE, aElement->OwnerDoc()->GetReferrerPolicy(), aElement,
-      aElement->OwnerDoc()->NodePrincipal(), nullptr);
+  RefPtr<JS::loader::ScriptFetchOptions> fetchOptions =
+      new JS::loader::ScriptFetchOptions(
+          CORS_NONE, aElement->OwnerDoc()->GetReferrerPolicy(),
+          aElement->OwnerDoc()->NodePrincipal());
 
-  RefPtr<EventScript> eventScript = new EventScript(fetchOptions, uri);
+  RefPtr<JS::loader::EventScript> eventScript =
+      new JS::loader::EventScript(fetchOptions, uri);
 
   JS::CompileOptions options(cx);
   // Use line 0 to make the function body starts from line 1.
@@ -1467,19 +1467,18 @@ void EventListenerManager::HandleEventInternal(nsPresContext* aPresContext,
             // Maybe add a marker to the docshell's timeline, but only
             // bother with all the logic if some docshell is recording.
             nsCOMPtr<nsIDocShell> docShell;
-            RefPtr<TimelineConsumers> timelines = TimelineConsumers::Get();
             bool needsEndEventMarker = false;
 
             if (mIsMainThreadELM &&
                 listener->mListenerType != Listener::eNativeListener) {
               docShell = nsContentUtils::GetDocShellForEventTarget(mTarget);
               if (docShell) {
-                if (timelines && timelines->HasConsumer(docShell)) {
+                if (TimelineConsumers::HasConsumer(docShell)) {
                   needsEndEventMarker = true;
                   nsAutoString typeStr;
                   (*aDOMEvent)->GetType(typeStr);
                   uint16_t phase = (*aDOMEvent)->EventPhase();
-                  timelines->AddMarkerForDocShell(
+                  TimelineConsumers::AddMarkerForDocShell(
                       docShell, MakeUnique<EventTimelineMarker>(
                                     typeStr, phase, MarkerTracingType::START));
                 }
@@ -1517,8 +1516,8 @@ void EventListenerManager::HandleEventInternal(nsPresContext* aPresContext,
             aEvent->mFlags.mInPassiveListener = false;
 
             if (needsEndEventMarker) {
-              timelines->AddMarkerForDocShell(docShell, "DOMEvent",
-                                              MarkerTracingType::END);
+              TimelineConsumers::AddMarkerForDocShell(docShell, "DOMEvent",
+                                                      MarkerTracingType::END);
             }
           }
         }

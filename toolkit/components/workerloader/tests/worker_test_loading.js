@@ -8,6 +8,7 @@
 importScripts("utils_worker.js"); // Test suite code
 info("Test suite configured");
 
+/* import-globals-from /toolkit/components/workerloader/require.js */
 importScripts("resource://gre/modules/workers/require.js");
 info("Loader imported");
 
@@ -133,6 +134,22 @@ add_test(function test_module_dot_exports() {
     exn instanceof TypeError,
     "Cannot add value to module.exports after export"
   );
+});
+
+// Test relative imports (moduleI-depends.js requires moduleJ-dependency.js)
+add_test(function test_load() {
+  let I = require(PATH + "moduleI-depends.js");
+  ok(true, "Opened module I");
+
+  is(I.I, true, "Module I exported value I");
+  ok(!("J" in I), "Module I did not export value J");
+  is(I.importedFoo, "foo", "Module I re-exported J.foo");
+
+  // re-evaluating moduleJ-dependency.js would cause an error, but re-requiring it shouldn't
+  let J = require(PATH + "moduleJ-dependency.js");
+  ok(true, "Managed to re-require module J");
+  is(J.J, true, "Module J exported value J");
+  is(J.foo, "foo", "Module J exported value foo");
 });
 
 self.onmessage = function(message) {

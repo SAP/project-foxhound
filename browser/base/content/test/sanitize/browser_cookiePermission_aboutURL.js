@@ -1,6 +1,5 @@
-const { Sanitizer } = ChromeUtils.import("resource:///modules/Sanitizer.jsm");
-const { SiteDataTestUtils } = ChromeUtils.import(
-  "resource://testing-common/SiteDataTestUtils.jsm"
+const { SiteDataTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/SiteDataTestUtils.sys.mjs"
 );
 
 function checkDataForAboutURL() {
@@ -30,10 +29,7 @@ add_task(async function deleteStorageInAboutURL() {
   });
 
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["network.cookie.lifetimePolicy", Ci.nsICookieService.ACCEPT_SESSION],
-      ["browser.sanitizer.loglevel", "All"],
-    ],
+    set: [["browser.sanitizer.loglevel", "All"]],
   });
 
   // Let's create a tab with some data.
@@ -69,10 +65,7 @@ add_task(async function deleteStorageOnlyCustomPermissionInAboutURL() {
   });
 
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["network.cookie.lifetimePolicy", Ci.nsICookieService.ACCEPT_NORMALLY],
-      ["browser.sanitizer.loglevel", "All"],
-    ],
+    set: [["browser.sanitizer.loglevel", "All"]],
   });
 
   // Custom permission without considering OriginAttributes

@@ -24,9 +24,6 @@ class nsPersistentProperties final : public nsIPersistentProperties {
   NS_DECL_NSIPROPERTIES
   NS_DECL_NSIPERSISTENTPROPERTIES
 
-  size_t SizeOfIncludingThis(
-      mozilla::MallocSizeOf aMallocSizeOf) const override;
-
  private:
   ~nsPersistentProperties();
 
@@ -47,7 +44,7 @@ class nsPropertyElement final : public nsIPropertyElement {
   NS_DECL_ISUPPORTS
   NS_DECL_NSIPROPERTYELEMENT
 
-  static nsresult Create(nsISupports* aOuter, REFNSIID aIID, void** aResult);
+  static nsresult Create(REFNSIID aIID, void** aResult);
 
  private:
   ~nsPropertyElement() = default;

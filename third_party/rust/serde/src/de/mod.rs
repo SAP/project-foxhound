@@ -30,7 +30,7 @@
 //! # The Deserializer trait
 //!
 //! [`Deserializer`] implementations are provided by third-party crates, for
-//! example [`serde_json`], [`serde_yaml`] and [`bincode`].
+//! example [`serde_json`], [`serde_yaml`] and [`postcard`].
 //!
 //! A partial list of well-maintained formats is given on the [Serde
 //! website][data formats].
@@ -104,7 +104,7 @@
 //! [`Deserialize`]: ../trait.Deserialize.html
 //! [`Deserializer`]: ../trait.Deserializer.html
 //! [`LinkedHashMap<K, V>`]: https://docs.rs/linked-hash-map/*/linked_hash_map/struct.LinkedHashMap.html
-//! [`bincode`]: https://github.com/servo/bincode
+//! [`postcard`]: https://github.com/jamesmunns/postcard
 //! [`linked-hash-map`]: https://crates.io/crates/linked-hash-map
 //! [`serde_derive`]: https://crates.io/crates/serde_derive
 //! [`serde_json`]: https://github.com/serde-rs/json
@@ -118,6 +118,8 @@ use lib::*;
 
 pub mod value;
 
+#[cfg(not(no_integer128))]
+mod format;
 mod ignored_any;
 mod impls;
 mod utf8;
@@ -499,8 +501,8 @@ impl<'a> Display for Expected + 'a {
 /// by Serde.
 ///
 /// Serde provides `Deserialize` implementations for many Rust primitive and
-/// standard library types. The complete list is [here][de]. All of these can
-/// be deserialized using Serde out of the box.
+/// standard library types. The complete list is [here][crate::de]. All of these
+/// can be deserialized using Serde out of the box.
 ///
 /// Additionally, Serde provides a procedural macro called `serde_derive` to
 /// automatically generate `Deserialize` implementations for structs and enums
@@ -516,7 +518,6 @@ impl<'a> Display for Expected + 'a {
 /// `LinkedHashMap<K, V>` type that is deserializable by Serde because the crate
 /// provides an implementation of `Deserialize` for it.
 ///
-/// [de]: https://docs.serde.rs/serde/de/index.html
 /// [derive]: https://serde.rs/derive.html
 /// [impl-deserialize]: https://serde.rs/impl-deserialize.html
 ///
@@ -563,7 +564,7 @@ pub trait Deserialize<'de>: Sized {
         D: Deserializer<'de>,
     {
         // Default implementation just delegates to `deserialize` impl.
-        *place = Deserialize::deserialize(deserializer)?;
+        *place = try!(Deserialize::deserialize(deserializer));
         Ok(())
     }
 }
@@ -706,6 +707,11 @@ impl<T> DeserializeOwned for T where T: for<'de> Deserialize<'de> {}
 ///             where
 ///                 A: SeqAccess<'de>,
 ///             {
+///                 // Decrease the number of reallocations if there are many elements
+///                 if let Some(size_hint) = seq.size_hint() {
+///                    self.0.reserve(size_hint);
+///                 }
+///
 ///                 // Visit each element in the inner array and push it onto
 ///                 // the existing vector.
 ///                 while let Some(elem) = seq.next_element()? {
@@ -855,10 +861,10 @@ where
 /// The `Deserializer` trait supports two entry point styles which enables
 /// different kinds of deserialization.
 ///
-/// 1. The `deserialize` method. Self-describing data formats like JSON are able
-///    to look at the serialized data and tell what it represents. For example
-///    the JSON deserializer may see an opening curly brace (`{`) and know that
-///    it is seeing a map. If the data format supports
+/// 1. The `deserialize_any` method. Self-describing data formats like JSON are
+///    able to look at the serialized data and tell what it represents. For
+///    example the JSON deserializer may see an opening curly brace (`{`) and
+///    know that it is seeing a map. If the data format supports
 ///    `Deserializer::deserialize_any`, it will drive the Visitor using whatever
 ///    type it sees in the input. JSON uses this approach when deserializing
 ///    `serde_json::Value` which is an enum that can represent any JSON
@@ -867,7 +873,7 @@ where
 ///    `Deserializer::deserialize_any`.
 ///
 /// 2. The various `deserialize_*` methods. Non-self-describing formats like
-///    Bincode need to be told what is in the input in order to deserialize it.
+///    Postcard need to be told what is in the input in order to deserialize it.
 ///    The `deserialize_*` methods are hints to the deserializer for how to
 ///    interpret the next piece of input. Non-self-describing formats are not
 ///    able to deserialize something like `serde_json::Value` which relies on
@@ -877,7 +883,7 @@ where
 /// `Deserializer::deserialize_any` unless you need to be told by the
 /// Deserializer what type is in the input. Know that relying on
 /// `Deserializer::deserialize_any` means your data type will be able to
-/// deserialize from self-describing formats only, ruling out Bincode and many
+/// deserialize from self-describing formats only, ruling out Postcard and many
 /// others.
 ///
 /// [Serde data model]: https://serde.rs/data-model.html
@@ -908,7 +914,7 @@ pub trait Deserializer<'de>: Sized {
     /// `Deserializer::deserialize_any` unless you need to be told by the
     /// Deserializer what type is in the input. Know that relying on
     /// `Deserializer::deserialize_any` means your data type will be able to
-    /// deserialize from self-describing formats only, ruling out Bincode and
+    /// deserialize from self-describing formats only, ruling out Postcard and
     /// many others.
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
@@ -1149,7 +1155,7 @@ pub trait Deserializer<'de>: Sized {
     /// Some types have a human-readable form that may be somewhat expensive to
     /// construct, as well as a binary form that is compact and efficient.
     /// Generally text-based formats like JSON and YAML will prefer to use the
-    /// human-readable one and binary formats like Bincode will prefer the
+    /// human-readable one and binary formats like Postcard will prefer the
     /// compact one.
     ///
     /// ```edition2018
@@ -1215,7 +1221,7 @@ pub trait Deserializer<'de>: Sized {
     }
 
     // Not public API.
-    #[cfg(all(serde_derive, any(feature = "std", feature = "alloc")))]
+    #[cfg(all(not(no_serde_derive), any(feature = "std", feature = "alloc")))]
     #[doc(hidden)]
     fn __deserialize_content<V>(
         self,
@@ -1366,8 +1372,10 @@ pub trait Visitor<'de>: Sized {
         where
             E: Error,
         {
-            let _ = v;
-            Err(Error::invalid_type(Unexpected::Other("i128"), &self))
+            let mut buf = [0u8; 58];
+            let mut writer = format::Buf::new(&mut buf);
+            fmt::Write::write_fmt(&mut writer, format_args!("integer `{}` as i128", v)).unwrap();
+            Err(Error::invalid_type(Unexpected::Other(writer.as_str()), &self))
         }
     }
 
@@ -1426,8 +1434,10 @@ pub trait Visitor<'de>: Sized {
         where
             E: Error,
         {
-            let _ = v;
-            Err(Error::invalid_type(Unexpected::Other("u128"), &self))
+            let mut buf = [0u8; 57];
+            let mut writer = format::Buf::new(&mut buf);
+            fmt::Write::write_fmt(&mut writer, format_args!("integer `{}` as u128", v)).unwrap();
+            Err(Error::invalid_type(Unexpected::Other(writer.as_str()), &self))
         }
     }
 
@@ -1549,7 +1559,7 @@ pub trait Visitor<'de>: Sized {
     /// `Deserializer`.
     ///
     /// This enables zero-copy deserialization of bytes in some formats. For
-    /// example Bincode data containing bytes can be deserialized with zero
+    /// example Postcard data containing bytes can be deserialized with zero
     /// copying into a `&'a [u8]` as long as the input data outlives `'a`.
     ///
     /// The default implementation forwards to `visit_bytes`.

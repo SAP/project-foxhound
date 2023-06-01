@@ -12,6 +12,7 @@
 use bindings::{
     gecko_profiler_end_marker, gecko_profiler_start_marker, wr_moz2d_render_cb, ArcVecU8, ByteSlice, MutByteSlice,
 };
+use gecko_profiler::gecko_profiler_label;
 use rayon::prelude::*;
 use rayon::ThreadPool;
 use webrender::api::units::{BlobDirtyRect, BlobToDeviceTranslation, DeviceIntRect};
@@ -32,6 +33,10 @@ use std::sync::Arc;
 #[cfg(target_os = "windows")]
 use dwrote;
 
+#[cfg(target_os = "macos")]
+use core_foundation::string::CFString;
+#[cfg(target_os = "macos")]
+use core_graphics::font::CGFont;
 #[cfg(target_os = "macos")]
 use foreign_types::ForeignType;
 
@@ -527,6 +532,7 @@ impl AsyncBlobImageRasterizer for Moz2dBlobRasterizer {
         low_priority: bool,
     ) -> Vec<(BlobImageRequest, BlobImageResult)> {
         // All we do here is spin up our workers to callback into gecko to replay the drawing commands.
+        gecko_profiler_label!(Graphics, Rasterization);
         let _marker = GeckoProfilerMarker::new("BlobRasterization");
 
         let requests: Vec<Job> = requests
@@ -592,6 +598,7 @@ fn autoreleasepool<T, F: FnOnce() -> T>(f: F) -> T {
 }
 
 fn rasterize_blob(job: Job) -> (BlobImageRequest, BlobImageResult) {
+    gecko_profiler_label!(Graphics, Rasterization);
     let descriptor = job.descriptor;
     let buf_size = (descriptor.rect.area() * descriptor.format.bytes_per_pixel()) as usize;
 
@@ -782,7 +789,19 @@ impl Moz2dBlobImageHandler {
 
         #[cfg(target_os = "macos")]
         fn process_native_font_handle(key: FontKey, handle: &NativeFontHandle) {
-            unsafe { AddNativeFontHandle(key, handle.0.as_ptr() as *mut c_void, 0) };
+            let font = match CGFont::from_name(&CFString::new(&handle.name)) {
+                Ok(font) => font,
+                Err(_) => {
+                    // If for some reason we failed to load a font descriptor, then our
+                    // only options are to either abort or substitute a fallback font.
+                    // It is preferable to use a fallback font instead so that rendering
+                    // can at least still proceed in some fashion without erroring.
+                    // Lucida Grande is the fallback font in Gecko, so use that here.
+                    CGFont::from_name(&CFString::from_static_string("Lucida Grande"))
+                        .expect("Failed reading font descriptor and could not load fallback font")
+                },
+            };
+            unsafe { AddNativeFontHandle(key, font.as_ptr() as *mut c_void, 0) };
         }
 
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -808,7 +827,7 @@ impl Moz2dBlobImageHandler {
                     if !unscaled_fonts.contains(&instance.font_key) {
                         unscaled_fonts.push(instance.font_key);
                         if !unsafe { HasFontData(instance.font_key) } {
-                            let template = resources.get_font_data(instance.font_key);
+                            let template = resources.get_font_data(instance.font_key).unwrap();
                             match template {
                                 FontTemplate::Raw(ref data, ref index) => unsafe {
                                     AddFontData(instance.font_key, data.as_ptr(), data.len(), *index, data);

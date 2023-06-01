@@ -4,11 +4,13 @@
 
 "use strict";
 
-const { formatDisplayName } = require("devtools/server/actors/frame");
+const {
+  formatDisplayName,
+} = require("resource://devtools/server/actors/frame.js");
 const {
   TYPES,
   getResourceWatcher,
-} = require("devtools/server/actors/resources/index");
+} = require("resource://devtools/server/actors/resources/index.js");
 
 // Get a string message to display when a frame evaluation throws.
 function getThrownMessage(completion) {
@@ -45,10 +47,14 @@ function logEvent({ threadActor, frame, level, expression, bindings }) {
     return undefined;
   }
 
-  const completion = frame.evalWithBindings(expression, {
-    displayName,
-    ...bindings,
-  });
+  const completion = frame.evalWithBindings(
+    expression,
+    {
+      displayName,
+      ...bindings,
+    },
+    { hideFromDebugger: true }
+  );
 
   let value;
   if (!completion) {
@@ -65,18 +71,21 @@ function logEvent({ threadActor, frame, level, expression, bindings }) {
     value = value.unsafeDereference();
   }
 
+  const targetActor = threadActor._parent;
   const message = {
     filename: sourceActor.url,
     lineNumber: line,
     columnNumber: column,
     arguments: value,
     level,
+    chromeContext:
+      targetActor.actorID &&
+      /conn\d+\.parentProcessTarget\d+/.test(targetActor.actorID),
     // The 'prepareConsoleMessageForRemote' method in webconsoleActor expects internal source ID,
     // thus we can't set sourceId directly to sourceActorID.
     sourceId: sourceActor.internalSourceId,
   };
 
-  const targetActor = threadActor._parent;
   // Note that only WindowGlobalTarget actor support resource watcher
   // This is still missing for worker and content processes
   const consoleMessageWatcher = getResourceWatcher(

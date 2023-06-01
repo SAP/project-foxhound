@@ -59,6 +59,9 @@ class IOActivityMonitor final : public nsINamed {
 
  private:
   ~IOActivityMonitor() = default;
+
+  static already_AddRefed<IOActivityMonitor> Get();
+
   nsresult InitInternal();
   nsresult ShutdownInternal();
   bool IncrementActivity(const nsACString& location, uint32_t aRx,
@@ -69,7 +72,7 @@ class IOActivityMonitor final : public nsINamed {
 
   Activities mActivities;
   // protects mActivities accesses
-  Mutex mLock;
+  Mutex mLock MOZ_UNANNOTATED;
 };
 
 }  // namespace net

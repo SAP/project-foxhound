@@ -53,7 +53,7 @@ async function testTabConsoleMessagesResources(executeInIframe) {
         "Received a message"
       );
       ok(resource.message, "message is wrapped into a message attribute");
-      const isCachedMessage = expectedExistingCalls.length > 0;
+      const isCachedMessage = !!expectedExistingCalls.length;
       const expected = (isCachedMessage
         ? expectedExistingCalls
         : expectedRuntimeCalls
@@ -65,7 +65,7 @@ async function testTabConsoleMessagesResources(executeInIframe) {
         "isAlreadyExistingResource has the expected value"
       );
 
-      if (expectedRuntimeCalls.length == 0) {
+      if (!expectedRuntimeCalls.length) {
         runtimeDoneResolve();
       }
     }
@@ -214,28 +214,41 @@ function evalInBrowsingContext(browsingContext, script) {
 const EXPECTED_FUNCTION_NAME = "pageScript";
 
 const NUMBER_REGEX = /^\d+$/;
+// timeStamp are the result of a number in microsecond divided by 1000.
+// so we can't expect a precise number of decimals, or even if there would
+// be decimals at all.
+const FRACTIONAL_NUMBER_REGEX = /^\d+(\.\d{1,3})?$/;
 
 function getExpectedExistingConsoleCalls(documentFilename) {
+  const defaultProperties = {
+    filename: documentFilename,
+    columnNumber: NUMBER_REGEX,
+    lineNumber: NUMBER_REGEX,
+    timeStamp: FRACTIONAL_NUMBER_REGEX,
+    innerWindowID: NUMBER_REGEX,
+    chromeContext: undefined,
+    counter: undefined,
+    prefix: undefined,
+    private: undefined,
+    stacktrace: undefined,
+    styles: undefined,
+    timer: undefined,
+  };
+
   return [
     {
+      ...defaultProperties,
       level: "log",
-      filename: documentFilename,
-      functionName: EXPECTED_FUNCTION_NAME,
-      timeStamp: NUMBER_REGEX,
       arguments: ["foobarBaz-log", { type: "undefined" }],
     },
     {
+      ...defaultProperties,
       level: "info",
-      filename: documentFilename,
-      functionName: EXPECTED_FUNCTION_NAME,
-      timeStamp: NUMBER_REGEX,
       arguments: ["foobarBaz-info", { type: "null" }],
     },
     {
+      ...defaultProperties,
       level: "warn",
-      filename: documentFilename,
-      functionName: EXPECTED_FUNCTION_NAME,
-      timeStamp: NUMBER_REGEX,
       arguments: ["foobarBaz-warn", { type: "object", actor: /[a-z]/ }],
     },
   ];
@@ -247,57 +260,71 @@ function getExpectedRuntimeConsoleCalls(documentFilename) {
     // This is the usage of "new " + expr from `evalInBrowsingContext`
     {
       filename: documentFilename,
-      lineNumber: 1,
+      lineNumber: NUMBER_REGEX,
       columnNumber: NUMBER_REGEX,
     },
   ];
 
+  const defaultProperties = {
+    filename: documentFilename,
+    columnNumber: NUMBER_REGEX,
+    lineNumber: NUMBER_REGEX,
+    timeStamp: FRACTIONAL_NUMBER_REGEX,
+    innerWindowID: NUMBER_REGEX,
+    chromeContext: undefined,
+    counter: undefined,
+    prefix: undefined,
+    private: undefined,
+    stacktrace: undefined,
+    styles: undefined,
+    timer: undefined,
+  };
+
   return [
     {
+      ...defaultProperties,
       level: "log",
-      filename: documentFilename,
-      functionName: EXPECTED_FUNCTION_NAME,
-      timeStamp: NUMBER_REGEX,
       arguments: ["foobarBaz-log", { type: "undefined" }],
     },
     {
+      ...defaultProperties,
       level: "log",
       arguments: ["Float from not a number: NaN"],
     },
     {
+      ...defaultProperties,
       level: "log",
       arguments: ["Float from string: 1.200000"],
     },
     {
+      ...defaultProperties,
       level: "log",
       arguments: ["Float from number: 1.300000"],
     },
     {
+      ...defaultProperties,
+      level: "log",
+      arguments: ["message with ", "style"],
+      styles: ["color: blue;", "background: red; font-size: 2em;"],
+    },
+    {
+      ...defaultProperties,
       level: "info",
-      filename: documentFilename,
-      functionName: EXPECTED_FUNCTION_NAME,
-      timeStamp: NUMBER_REGEX,
       arguments: ["foobarBaz-info", { type: "null" }],
     },
     {
+      ...defaultProperties,
       level: "warn",
-      filename: documentFilename,
-      functionName: EXPECTED_FUNCTION_NAME,
-      timeStamp: NUMBER_REGEX,
       arguments: ["foobarBaz-warn", { type: "object", actor: /[a-z]/ }],
     },
     {
+      ...defaultProperties,
       level: "debug",
-      filename: documentFilename,
-      functionName: EXPECTED_FUNCTION_NAME,
-      timeStamp: NUMBER_REGEX,
       arguments: [{ type: "null" }],
     },
     {
+      ...defaultProperties,
       level: "trace",
-      filename: documentFilename,
-      functionName: EXPECTED_FUNCTION_NAME,
-      timeStamp: NUMBER_REGEX,
       stacktrace: [
         {
           filename: documentFilename,
@@ -307,10 +334,8 @@ function getExpectedRuntimeConsoleCalls(documentFilename) {
       ],
     },
     {
+      ...defaultProperties,
       level: "dir",
-      filename: documentFilename,
-      functionName: EXPECTED_FUNCTION_NAME,
-      timeStamp: NUMBER_REGEX,
       arguments: [
         {
           type: "object",
@@ -325,10 +350,8 @@ function getExpectedRuntimeConsoleCalls(documentFilename) {
       ],
     },
     {
+      ...defaultProperties,
       level: "log",
-      filename: documentFilename,
-      functionName: EXPECTED_FUNCTION_NAME,
-      timeStamp: NUMBER_REGEX,
       arguments: [
         "foo",
         {
@@ -343,10 +366,132 @@ function getExpectedRuntimeConsoleCalls(documentFilename) {
       ],
     },
     {
+      ...defaultProperties,
+      level: "count",
+      arguments: ["myCounter"],
+      counter: {
+        count: 1,
+        label: "myCounter",
+      },
+    },
+    {
+      ...defaultProperties,
+      level: "count",
+      arguments: ["myCounter"],
+      counter: {
+        count: 2,
+        label: "myCounter",
+      },
+    },
+    {
+      ...defaultProperties,
+      level: "count",
+      arguments: ["default"],
+      counter: {
+        count: 1,
+        label: "default",
+      },
+    },
+    {
+      ...defaultProperties,
+      level: "countReset",
+      arguments: ["myCounter"],
+      counter: {
+        count: 0,
+        label: "myCounter",
+      },
+    },
+    {
+      ...defaultProperties,
+      level: "countReset",
+      arguments: ["unknownCounter"],
+      counter: {
+        error: "counterDoesntExist",
+        label: "unknownCounter",
+      },
+    },
+    {
+      ...defaultProperties,
+      level: "time",
+      arguments: ["myTimer"],
+      timer: {
+        name: "myTimer",
+      },
+    },
+    {
+      ...defaultProperties,
+      level: "time",
+      arguments: ["myTimer"],
+      timer: {
+        name: "myTimer",
+        error: "timerAlreadyExists",
+      },
+    },
+    {
+      ...defaultProperties,
+      level: "timeLog",
+      arguments: ["myTimer"],
+      timer: {
+        name: "myTimer",
+        duration: NUMBER_REGEX,
+      },
+    },
+    {
+      ...defaultProperties,
+      level: "timeEnd",
+      arguments: ["myTimer"],
+      timer: {
+        name: "myTimer",
+        duration: NUMBER_REGEX,
+      },
+    },
+    {
+      ...defaultProperties,
+      level: "time",
+      arguments: ["default"],
+      timer: {
+        name: "default",
+      },
+    },
+    {
+      ...defaultProperties,
+      level: "timeLog",
+      arguments: ["default"],
+      timer: {
+        name: "default",
+        duration: NUMBER_REGEX,
+      },
+    },
+    {
+      ...defaultProperties,
+      level: "timeEnd",
+      arguments: ["default"],
+      timer: {
+        name: "default",
+        duration: NUMBER_REGEX,
+      },
+    },
+    {
+      ...defaultProperties,
+      level: "timeLog",
+      arguments: ["unknownTimer"],
+      timer: {
+        name: "unknownTimer",
+        error: "timerDoesntExist",
+      },
+    },
+    {
+      ...defaultProperties,
+      level: "timeEnd",
+      arguments: ["unknownTimer"],
+      timer: {
+        name: "unknownTimer",
+        error: "timerDoesntExist",
+      },
+    },
+    {
+      ...defaultProperties,
       level: "error",
-      filename: documentFilename,
-      functionName: "fromAsmJS",
-      timeStamp: NUMBER_REGEX,
       arguments: ["foobarBaz-asmjs-error", { type: "undefined" }],
 
       stacktrace: [
@@ -370,10 +515,10 @@ function getExpectedRuntimeConsoleCalls(documentFilename) {
       ],
     },
     {
+      ...defaultProperties,
       level: "log",
-      filename: gTestPath,
-      functionName: "frameScript",
-      timeStamp: NUMBER_REGEX,
+      filename:
+        "chrome://mochitests/content/browser/devtools/shared/commands/resource/tests/browser_resources_console_messages.js",
       arguments: [
         {
           type: "object",
@@ -381,6 +526,7 @@ function getExpectedRuntimeConsoleCalls(documentFilename) {
           class: "Restricted",
         },
       ],
+      chromeContext: true,
     },
   ];
 }
@@ -409,6 +555,11 @@ async function logRuntimeMessages(browser, executeInIframe) {
     console.log("Float from not a number: %f", "foo");
     console.log("Float from string: %f", "1.2");
     console.log("Float from number: %f", 1.3);
+    console.log(
+      "%cmessage with %cstyle",
+      "color: blue;",
+      "background: red; font-size: 2em;"
+    );
 
     console.info("foobarBaz-info", null);
     console.warn("foobarBaz-warn", document.documentElement);
@@ -416,6 +567,25 @@ async function logRuntimeMessages(browser, executeInIframe) {
     console.trace();
     console.dir(document, location);
     console.log("foo", _longString);
+
+    console.count("myCounter");
+    console.count("myCounter");
+    console.count();
+    console.countReset("myCounter");
+    // will cause warnings because unknownCounter doesn't exist
+    console.countReset("unknownCounter");
+
+    console.time("myTimer");
+    // will cause warning because myTimer already exist
+    console.time("myTimer");
+    console.timeLog("myTimer");
+    console.timeEnd("myTimer");
+    console.time();
+    console.timeLog();
+    console.timeEnd();
+    // // will cause warnings because unknownTimer doesn't exist
+    console.timeLog("unknownTimer");
+    console.timeEnd("unknownTimer");
 
     function fromAsmJS() {
       console.error("foobarBaz-asmjs-error", undefined);
@@ -430,7 +600,7 @@ async function logRuntimeMessages(browser, executeInIframe) {
         inAsmJS2();
       }
       return inAsmJS1;
-    })(null, { fromAsmJS: fromAsmJS })();
+    })(null, { fromAsmJS })();
   });
   await SpecialPowers.spawn(browsingContext, [], function frameScript() {
     const sandbox = new Cu.Sandbox(null, { invisibleToDebugger: true });

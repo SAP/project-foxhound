@@ -64,6 +64,8 @@ const mockCommandClient = {
             contentType: "text/rust",
           });
       }
+
+      return resolve();
     });
   },
   getSourceActorBreakpointPositions: async () => ({}),
@@ -159,14 +161,24 @@ describe("pause", () => {
       const source = await dispatch(
         actions.newGeneratedSource(makeSource("foo"))
       );
-      await dispatch(actions.newOriginalSource(makeOriginalSource(source)));
+      await dispatch(actions.newOriginalSources([makeOriginalSource(source)]));
 
       await dispatch(actions.paused(mockPauseInfo));
       expect(selectors.getFrames(getState(), "FakeThread")).toEqual([
         {
-          generatedLocation: { column: 0, line: 1, sourceId: "foo" },
+          generatedLocation: {
+            column: 0,
+            line: 1,
+            sourceId: "foo",
+            sourceActorId: "foo-1-actor",
+          },
           id: mockFrameId,
-          location: { column: 0, line: 1, sourceId: "foo" },
+          location: {
+            column: 0,
+            line: 1,
+            sourceId: "foo",
+            sourceActorId: "foo-1-actor",
+          },
           originalDisplayName: "foo",
           scope: {
             bindings: {
@@ -212,7 +224,7 @@ describe("pause", () => {
         column: 0,
       };
 
-      const sourceMapsMock = {
+      const sourceMapLoaderMock = {
         getOriginalLocation: () => Promise.resolve(originalLocation),
         getOriginalLocations: async items => items,
         getOriginalSourceText: async () => ({
@@ -223,7 +235,7 @@ describe("pause", () => {
       };
 
       const client = { ...mockCommandClient };
-      const store = createStore(client, {}, sourceMapsMock);
+      const store = createStore(client, {}, sourceMapLoaderMock);
       const { dispatch, getState } = store;
       const mockPauseInfo = createPauseInfo(generatedLocation);
 
@@ -238,7 +250,12 @@ describe("pause", () => {
         {
           generatedLocation: { column: 0, line: 1, sourceId: "foo" },
           id: mockFrameId,
-          location: { column: 0, line: 3, sourceId: "foo-original" },
+          location: {
+            column: 0,
+            line: 3,
+            sourceActorId: "foo-original-1-actor",
+            sourceId: "foo-original",
+          },
           originalDisplayName: "fooOriginal",
           scope: { bindings: { arguments: [], variables: {} } },
           thread: "FakeThread",
@@ -276,7 +293,7 @@ describe("pause", () => {
         },
       ];
 
-      const sourceMapsMock = {
+      const sourceMapLoaderMock = {
         getOriginalStackFrames: loc => Promise.resolve(originStackFrames),
         getOriginalLocation: () => Promise.resolve(originalLocation),
         getOriginalLocations: async items => items,
@@ -288,7 +305,7 @@ describe("pause", () => {
       };
 
       const client = { ...mockCommandClient };
-      const store = createStore(client, {}, sourceMapsMock);
+      const store = createStore(client, {}, sourceMapLoaderMock);
       const { dispatch, getState } = store;
       const mockPauseInfo = createPauseInfo(generatedLocation);
       const { frames } = mockPauseInfo;
@@ -299,7 +316,8 @@ describe("pause", () => {
           makeSource("foo-wasm", { introductionType: "wasm" })
         )
       );
-      await dispatch(actions.newOriginalSource(makeOriginalSource(source)));
+
+      await dispatch(actions.newOriginalSources([makeOriginalSource(source)]));
 
       await dispatch(actions.paused(mockPauseInfo));
       expect(selectors.getFrames(getState(), "FakeThread")).toEqual([
@@ -310,7 +328,12 @@ describe("pause", () => {
           id: "1",
           index: undefined,
           isOriginal: true,
-          location: { column: 1, line: 1, sourceId: "foo-wasm/originalSource" },
+          location: {
+            column: 1,
+            line: 1,
+            sourceActorId: "foo-wasm-1-actor",
+            sourceId: "foo-wasm/originalSource",
+          },
           originalDisplayName: "fooBar",
           originalVariables: undefined,
           scope: { bindings: { arguments: [], variables: {} } },

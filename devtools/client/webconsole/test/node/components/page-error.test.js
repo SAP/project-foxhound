@@ -8,30 +8,36 @@ const { render, mount } = require("enzyme");
 const sinon = require("sinon");
 
 // React
-const { createFactory } = require("devtools/client/shared/vendor/react");
-const Provider = createFactory(require("react-redux").Provider);
+const {
+  createFactory,
+} = require("resource://devtools/client/shared/vendor/react.js");
+const Provider = createFactory(
+  require("resource://devtools/client/shared/vendor/react-redux.js").Provider
+);
 const {
   formatErrorTextWithCausedBy,
   setupStore,
-} = require("devtools/client/webconsole/test/node/helpers");
-const { prepareMessage } = require("devtools/client/webconsole/utils/messages");
+} = require("resource://devtools/client/webconsole/test/node/helpers.js");
+const {
+  prepareMessage,
+} = require("resource://devtools/client/webconsole/utils/messages.js");
 
 // Components under test.
-const PageError = require("devtools/client/webconsole/components/Output/message-types/PageError");
+const PageError = require("resource://devtools/client/webconsole/components/Output/message-types/PageError.js");
 const {
   MESSAGE_OPEN,
   MESSAGE_CLOSE,
-} = require("devtools/client/webconsole/constants");
+} = require("resource://devtools/client/webconsole/constants.js");
 const {
   INDENT_WIDTH,
-} = require("devtools/client/webconsole/components/Output/MessageIndent");
+} = require("resource://devtools/client/webconsole/components/Output/MessageIndent.js");
 
 // Test fakes.
 const {
   stubPackets,
   stubPreparedMessages,
-} = require("devtools/client/webconsole/test/node/fixtures/stubs/index");
-const serviceContainer = require("devtools/client/webconsole/test/node/fixtures/serviceContainer");
+} = require("resource://devtools/client/webconsole/test/node/fixtures/stubs/index.js");
+const serviceContainer = require("resource://devtools/client/webconsole/test/node/fixtures/serviceContainer.js");
 
 describe("PageError component:", () => {
   it("renders", () => {
@@ -47,7 +53,7 @@ describe("PageError component:", () => {
     );
     const {
       timestampString,
-    } = require("devtools/client/webconsole/utils/l10n");
+    } = require("resource://devtools/client/webconsole/utils/l10n.js");
 
     expect(wrapper.find(".timestamp").text()).toBe(
       timestampString(message.timeStamp)
@@ -529,14 +535,14 @@ describe("PageError component:", () => {
         serviceContainer,
       })
     );
-    let indentEl = wrapper.find(".indent");
+    expect(wrapper.prop("data-indent")).toBe(`${indent}`);
+    const indentEl = wrapper.find(".indent");
     expect(indentEl.prop("style").width).toBe(`${indent * INDENT_WIDTH}px`);
-    expect(indentEl.prop("data-indent")).toBe(`${indent}`);
 
     wrapper = render(PageError({ message, serviceContainer }));
-    indentEl = wrapper.find(".indent");
-    expect(indentEl.prop("style").width).toBe(`0`);
-    expect(indentEl.prop("data-indent")).toBe(`0`);
+    expect(wrapper.prop("data-indent")).toBe(`0`);
+    // there's no indent element where the indent is 0
+    expect(wrapper.find(".indent").length).toBe(0);
   });
 
   it("has empty error notes", () => {

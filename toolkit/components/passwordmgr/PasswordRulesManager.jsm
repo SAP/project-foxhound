@@ -4,20 +4,21 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   LoginHelper: "resource://gre/modules/LoginHelper.jsm",
   PasswordGenerator: "resource://gre/modules/PasswordGenerator.jsm",
   PasswordRulesParser: "resource://gre/modules/PasswordRulesParser.jsm",
   RemoteSettings: "resource://services-settings/remote-settings.js",
 });
 
-XPCOMUtils.defineLazyGetter(this, "log", () => {
-  let logger = LoginHelper.createLogger("PasswordRulesManager");
+XPCOMUtils.defineLazyGetter(lazy, "log", () => {
+  let logger = lazy.LoginHelper.createLogger("PasswordRulesManager");
   return logger.log.bind(logger);
 });
 
@@ -42,8 +43,8 @@ class PasswordRulesManagerParent extends JSWindowActorParent {
 
   async initPasswordRulesCollection() {
     if (!this._passwordRulesClient) {
-      this._passwordRulesClient = RemoteSettings(
-        LoginHelper.improvedPasswordRulesCollection
+      this._passwordRulesClient = lazy.RemoteSettings(
+        lazy.LoginHelper.improvedPasswordRulesCollection
       );
     }
   }
@@ -109,22 +110,24 @@ class PasswordRulesManagerParent extends JSWindowActorParent {
     // Otherwise, generate a password using the default rules set.
     if (currentRecord?.Domain) {
       isCustomRule = true;
-      log(
-        `Password rules for origin: ${currentRecord.Domain}, ${currentRecord["password-rules"]}`
+      lazy.log(
+        `Password rules for ${currentRecord.Domain}:  ${currentRecord["password-rules"]}.`
       );
-      let currentRules = PasswordRulesParser.parsePasswordRules(
+      let currentRules = lazy.PasswordRulesParser.parsePasswordRules(
         currentRecord["password-rules"]
       );
       let mapOfRules = this._transformRulesToMap(currentRules);
       Services.telemetry
         .getHistogramById(IMPROVED_PASSWORD_GENERATION_HISTOGRAM)
         .add(isCustomRule);
-      return PasswordGenerator.generatePassword({ rules: mapOfRules });
+      return lazy.PasswordGenerator.generatePassword({ rules: mapOfRules });
     }
-    log(`No password rules for ${uri}, generating standard password.`);
+    lazy.log(
+      `No password rules for specified origin, generating standard password.`
+    );
     Services.telemetry
       .getHistogramById(IMPROVED_PASSWORD_GENERATION_HISTOGRAM)
       .add(isCustomRule);
-    return PasswordGenerator.generatePassword({});
+    return lazy.PasswordGenerator.generatePassword({});
   }
 }

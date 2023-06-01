@@ -6,27 +6,27 @@ Do transforms specific to l10n kind
 """
 
 
-import copy
 import json
 
 from mozbuild.chunkify import chunkify
-from gecko_taskgraph.loader.multi_dep import schema
-from gecko_taskgraph.transforms.base import TransformSequence
-from gecko_taskgraph.util.schema import (
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.schema import (
     optionally_keyed_by,
     resolve_keyed_by,
     taskref_or_string,
 )
-from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
-from gecko_taskgraph.util.taskcluster import get_artifact_prefix
-from gecko_taskgraph.util.treeherder import add_suffix
+from taskgraph.util.taskcluster import get_artifact_prefix
+from taskgraph.util.treeherder import add_suffix
+from voluptuous import Any, Optional, Required
+
+from gecko_taskgraph.loader.multi_dep import schema
 from gecko_taskgraph.transforms.job import job_description_schema
 from gecko_taskgraph.transforms.task import task_description_schema
-from voluptuous import (
-    Any,
-    Optional,
-    Required,
+from gecko_taskgraph.util.attributes import (
+    copy_attributes_from_dependent_job,
+    task_name,
 )
+from gecko_taskgraph.util.copy_task import copy_task
 
 
 def _by_platform(arg):
@@ -159,7 +159,7 @@ def setup_name(config, jobs):
         dep = job["primary-dependency"]
         # Set the name to the same as the dep task, without kind name.
         # Label will get set automatically with this kinds name.
-        job["name"] = job.get("name", dep.name)
+        job["name"] = job.get("name", task_name(dep))
         yield job
 
 
@@ -226,7 +226,7 @@ def handle_keyed_by(config, jobs):
         "when.files-changed",
     ]
     for job in jobs:
-        job = copy.deepcopy(job)  # don't overwrite dict values here
+        job = copy_task(job)  # don't overwrite dict values here
         for field in fields:
             resolve_keyed_by(item=job, field=field, item_name=job["name"])
         yield job
@@ -278,7 +278,7 @@ def chunk_locales(config, jobs):
             if remainder:
                 chunks = int(chunks + 1)
             for this_chunk in range(1, chunks + 1):
-                chunked = copy.deepcopy(job)
+                chunked = copy_task(job)
                 chunked["name"] = chunked["name"].replace("/", f"-{this_chunk}/", 1)
                 chunked["mozharness"]["options"] = chunked["mozharness"].get(
                     "options", []
@@ -383,8 +383,6 @@ def make_job_description(config, jobs):
             job_description["worker"]["os"] = "windows"
             job_description["run"]["use-simple-package"] = False
             job_description["run"]["use-magic-mh-args"] = False
-        else:
-            job_description["run"]["need-xvfb"] = True
 
         if job.get("docker-image"):
             job_description["worker"]["docker-image"] = job["docker-image"]

@@ -15,8 +15,6 @@ var EXPORTED_SYMBOLS = ["NetUtil"];
 
 const PR_UINT32_MAX = 0xffffffff;
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 const BinaryInputStream = Components.Constructor(
   "@mozilla.org/binaryinputstream;1",
   "nsIBinaryInputStream",
@@ -87,7 +85,7 @@ var NetUtil = {
   /**
    * Asynchronously opens a source and fetches the response.  While the fetch
    * is asynchronous, I/O may happen on the main thread.  When reading from
-   * a local file, prefer using "OS.File" methods instead.
+   * a local file, prefer using IOUtils methods instead.
    *
    * @param aSource
    *        This argument can be one of the following:
@@ -320,6 +318,10 @@ var NetUtil = {
       channel.loadInfo.allowDeprecatedSystemRequests = true;
     }
     return channel;
+  },
+
+  newWebTransport: function NetUtil_newWebTransport() {
+    return Services.io.newWebTransport();
   },
 
   /**

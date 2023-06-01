@@ -32,14 +32,6 @@ const SECOND_MS = 1000;
 const MINUTE_MS = SECOND_MS * 60;
 const HOUR_MS = MINUTE_MS * 60;
 
-const MOCK_SCOPED_KEY = {
-  k:
-    "3TVYx0exDTbrc5SGMkNg_C_eoNfjV0elHClP7npHrAtrlJu-esNyTUQaR6UcJBVYilPr8-T4BqWlIp4TOpKavA",
-  kid: "1569964308879-5y6waestOxDDM-Ia4_2u1Q",
-  kty: "oct",
-  scope: "https://identity.mozilla.com/apps/oldsync",
-};
-
 const MOCK_ACCESS_TOKEN =
   "e3c5caf17f27a0d9e351926a928938b3737df43e91d4992a5a5fca9a7bdef8ba";
 
@@ -57,7 +49,6 @@ var MockFxAccountsClient = function() {
   FxAccountsClient.apply(this);
 };
 MockFxAccountsClient.prototype = {
-  __proto__: FxAccountsClient.prototype,
   accountStatus() {
     return Promise.resolve(true);
   },
@@ -72,6 +63,10 @@ MockFxAccountsClient.prototype = {
     });
   },
 };
+Object.setPrototypeOf(
+  MockFxAccountsClient.prototype,
+  FxAccountsClient.prototype
+);
 
 add_test(function test_initial_state() {
   _("Verify initial state");
@@ -158,7 +153,6 @@ add_task(async function test_initialializeWithAuthErrorAndDeletedAccount() {
     FxAccountsClient.apply(this);
   };
   AuthErrorMockFxAClient.prototype = {
-    __proto__: FxAccountsClient.prototype,
     accessTokenWithSessionToken() {
       accessTokenWithSessionTokenCalled = true;
       return Promise.reject({
@@ -175,6 +169,10 @@ add_task(async function test_initialializeWithAuthErrorAndDeletedAccount() {
       return Promise.resolve(false);
     },
   };
+  Object.setPrototypeOf(
+    AuthErrorMockFxAClient.prototype,
+    FxAccountsClient.prototype
+  );
 
   let mockFxAClient = new AuthErrorMockFxAClient();
   syncAuthManager._fxaService._internal._fxAccountsClient = mockFxAClient;
@@ -486,12 +484,15 @@ add_task(async function test_refreshAccessTokenOn401() {
     FxAccountsClient.apply(this);
   };
   CheckSignMockFxAClient.prototype = {
-    __proto__: FxAccountsClient.prototype,
     accessTokenWithSessionToken() {
       ++getTokenCount;
       return Promise.resolve({ access_token: "token" });
     },
   };
+  Object.setPrototypeOf(
+    CheckSignMockFxAClient.prototype,
+    FxAccountsClient.prototype
+  );
 
   let mockFxAClient = new CheckSignMockFxAClient();
   syncAuthManager._fxaService._internal._fxAccountsClient = mockFxAClient;

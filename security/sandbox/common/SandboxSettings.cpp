@@ -79,6 +79,11 @@ const char* ContentWin32kLockdownStateToString(
 
     case nsIXULRuntime::ContentWin32kLockdownState::EnabledByDefault:
       return "Win32k Lockdown enabled -- default value is true";
+
+    case nsIXULRuntime::ContentWin32kLockdownState::
+        IncompatibleMitigationPolicy:
+      return "Win32k Lockdown disabled -- Incompatible Windows Exploit "
+             "Protection policies enabled";
   }
 
   MOZ_CRASH("Should never reach here");
@@ -150,6 +155,10 @@ int GetEffectiveSocketProcessSandboxLevel() {
       StaticPrefs::security_sandbox_socket_process_level_DoNotUseDirectly();
 
   return level;
+}
+
+int GetEffectiveGpuSandboxLevel() {
+  return StaticPrefs::security_sandbox_gpu_level();
 }
 
 #if defined(XP_MACOSX)

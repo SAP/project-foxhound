@@ -19,7 +19,6 @@
 #include "mozilla/dom/Document.h"
 #include "nsNodeInfoManager.h"
 #include "nsCOMPtr.h"
-#include "mozilla/EventStates.h"
 #include "nsContentCreatorFunctions.h"
 #include "mozAutoDocUpdate.h"
 #include "nsTextNode.h"
@@ -39,7 +38,7 @@ HTMLOptionElement::HTMLOptionElement(
       mIsSelected(false),
       mIsInSetDefaultSelected(false) {
   // We start off enabled
-  AddStatesSilently(NS_EVENT_STATE_ENABLED);
+  AddStatesSilently(ElementState::ENABLED);
 }
 
 HTMLOptionElement::~HTMLOptionElement() = default;
@@ -76,15 +75,15 @@ void HTMLOptionElement::UpdateDisabledState(bool aNotify) {
     }
   }
 
-  EventStates disabledStates;
+  ElementState disabledStates;
   if (isDisabled) {
-    disabledStates |= NS_EVENT_STATE_DISABLED;
+    disabledStates |= ElementState::DISABLED;
   } else {
-    disabledStates |= NS_EVENT_STATE_ENABLED;
+    disabledStates |= ElementState::ENABLED;
   }
 
-  EventStates oldDisabledStates = State() & DISABLED_STATES;
-  EventStates changedStates = disabledStates ^ oldDisabledStates;
+  ElementState oldDisabledStates = State() & ElementState::DISABLED_STATES;
+  ElementState changedStates = disabledStates ^ oldDisabledStates;
 
   if (!changedStates.IsEmpty()) {
     ToggleStates(changedStates, aNotify);
@@ -97,9 +96,11 @@ void HTMLOptionElement::SetSelected(bool aValue) {
   HTMLSelectElement* selectInt = GetSelect();
   if (selectInt) {
     int32_t index = Index();
-    uint32_t mask = HTMLSelectElement::SET_DISABLED | HTMLSelectElement::NOTIFY;
+    HTMLSelectElement::OptionFlags mask{
+        HTMLSelectElement::OptionFlag::SetDisabled,
+        HTMLSelectElement::OptionFlag::Notify};
     if (aValue) {
-      mask |= HTMLSelectElement::IS_SELECTED;
+      mask += HTMLSelectElement::OptionFlag::IsSelected;
     }
 
     // This should end up calling SetSelectedInternal
@@ -170,13 +171,14 @@ nsresult HTMLOptionElement::BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
   mIsInSetDefaultSelected = true;
 
   int32_t index = Index();
-  uint32_t mask = HTMLSelectElement::SET_DISABLED;
+  HTMLSelectElement::OptionFlags mask =
+      HTMLSelectElement::OptionFlag::SetDisabled;
   if (aValue) {
-    mask |= HTMLSelectElement::IS_SELECTED;
+    mask += HTMLSelectElement::OptionFlag::IsSelected;
   }
 
   if (aNotify) {
-    mask |= HTMLSelectElement::NOTIFY;
+    mask += HTMLSelectElement::OptionFlag::Notify;
   }
 
   // This can end up calling SetSelectedInternal if our selected state needs to
@@ -263,13 +265,13 @@ void HTMLOptionElement::UnbindFromTree(bool aNullParent) {
   UpdateDisabledState(false);
 }
 
-EventStates HTMLOptionElement::IntrinsicState() const {
-  EventStates state = nsGenericHTMLElement::IntrinsicState();
+ElementState HTMLOptionElement::IntrinsicState() const {
+  ElementState state = nsGenericHTMLElement::IntrinsicState();
   if (Selected()) {
-    state |= NS_EVENT_STATE_CHECKED;
+    state |= ElementState::CHECKED;
   }
   if (DefaultSelected()) {
-    state |= NS_EVENT_STATE_DEFAULT;
+    state |= ElementState::DEFAULT;
   }
 
   return state;

@@ -1,4 +1,5 @@
 // Copyright 2020 Google LLC
+// SPDX-License-Identifier: Apache-2.0
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,15 +13,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#ifndef __STDC_FORMAT_MACROS
+#define __STDC_FORMAT_MACROS  // before inttypes.h
+#endif
+#include <inttypes.h>
 #include <stdio.h>
 
 #include <cfloat>  // FLT_MAX
+#include <cmath>   // std::abs
 #include <type_traits>
 
 // clang-format off
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "hwy/contrib/math/math_test.cc"
-#include "hwy/foreach_target.h"
+#include "hwy/foreach_target.h"  // IWYU pragma: keep
 
 #include "hwy/contrib/math/math-inl.h"
 #include "hwy/tests/test_util-inl.h"
@@ -61,7 +67,7 @@ HWY_NOINLINE void TestMath(const std::string name, T (*fx1)(T),
 
   uint64_t max_ulp = 0;
   // Emulation is slower, so cannot afford as many.
-  constexpr UintT kSamplesPerRange = static_cast<UintT>(AdjustedReps(10000));
+  constexpr UintT kSamplesPerRange = static_cast<UintT>(AdjustedReps(4000));
   for (int range_index = 0; range_index < range_count; ++range_index) {
     const UintT start = ranges[range_index][0];
     const UintT stop = ranges[range_index][1];
@@ -96,23 +102,10 @@ HWY_NOINLINE void TestMath(const std::string name, T (*fx1)(T),
   HWY_ASSERT(max_ulp <= max_error_ulp);
 }
 
-// TODO(janwas): remove once RVV supports fractional LMUL
-#undef DEFINE_MATH_TEST_FUNC
-#if HWY_TARGET == HWY_RVV
-
-#define DEFINE_MATH_TEST_FUNC(NAME)                    \
-  HWY_NOINLINE void TestAll##NAME() {                  \
-    ForFloatTypes(ForShrinkableVectors<Test##NAME>()); \
-  }
-
-#else
-
 #define DEFINE_MATH_TEST_FUNC(NAME)                 \
   HWY_NOINLINE void TestAll##NAME() {               \
     ForFloatTypes(ForPartialVectors<Test##NAME>()); \
   }
-
-#endif
 
 #undef DEFINE_MATH_TEST
 #define DEFINE_MATH_TEST(NAME, F32x1, F32xN, F32_MIN, F32_MAX, F32_ERROR, \
@@ -231,11 +224,5 @@ HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllSin);
 HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllSinh);
 HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllTanh);
 }  // namespace hwy
-
-// Ought not to be necessary, but without this, no tests run on RVV.
-int main(int argc, char **argv) {
-  ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
-}
 
 #endif

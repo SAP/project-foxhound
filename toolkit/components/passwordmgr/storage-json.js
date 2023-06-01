@@ -8,28 +8,17 @@
 
 "use strict";
 
-const { ComponentUtils } = ChromeUtils.import(
-  "resource://gre/modules/ComponentUtils.jsm"
-);
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "LoginHelper",
-  "resource://gre/modules/LoginHelper.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "LoginStore",
-  "resource://gre/modules/LoginStore.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   FXA_PWDMGR_HOST: "resource://gre/modules/FxAccountsCommon.js",
   FXA_PWDMGR_REALM: "resource://gre/modules/FxAccountsCommon.js",
+  LoginHelper: "resource://gre/modules/LoginHelper.jsm",
+  LoginStore: "resource://gre/modules/LoginStore.jsm",
 });
 
 class LoginManagerStorage_json {
@@ -44,12 +33,6 @@ class LoginManagerStorage_json {
 
   get QueryInterface() {
     return ChromeUtils.generateQI(["nsILoginManagerStorage"]);
-  }
-
-  get _xpcom_factory() {
-    return ComponentUtils.generateSingletonFactory(
-      this.LoginManagerStorage_json
-    );
   }
 
   get _crypto() {
@@ -95,15 +78,15 @@ class LoginManagerStorage_json {
       if (loginsBackupEnabled) {
         backupPath = PathUtils.join(profileDir, "logins-backup.json");
       }
-      this._store = new LoginStore(jsonPath, backupPath);
+      this._store = new lazy.LoginStore(jsonPath, backupPath);
 
       return (async () => {
         // Load the data asynchronously.
-        this.log("Opening database at", this._store.path);
+        this.log(`Opening database at ${this._store.path}.`);
         await this._store.load();
-      })().catch(Cu.reportError);
+      })().catch(console.error);
     } catch (e) {
-      this.log("Initialization failed:", e);
+      this.log(`Initialization failed ${e.name}.`);
       throw new Error("Initialization failed");
     }
   }
@@ -120,13 +103,13 @@ class LoginManagerStorage_json {
   /**
    * Returns the "sync id" used by Sync to know whether the store is current with
    * respect to the sync servers. It is stored encrypted, but only so we
-   * can detect failure to decrypt (for example, a "reset" of the master
+   * can detect failure to decrypt (for example, a "reset" of the primary
    * password will leave all logins alone, but they will fail to decrypt. We
    * also want this metadata to be unavailable in that scenario)
    *
    * Returns null if the data doesn't exist or if the data can't be
-   * decrypted (including if the master-password prompt is cancelled). This is
-   * OK for Sync as it can't even begin syncing if the master-password is
+   * decrypted (including if the primary-password prompt is cancelled). This is
+   * OK for Sync as it can't even begin syncing if the primary-password is
    * locked as the sync encrytion keys are stored in this login manager.
    */
   async getSyncID() {
@@ -139,7 +122,7 @@ class LoginManagerStorage_json {
       return raw ? this._crypto.decrypt(raw) : null;
     } catch (e) {
       if (e.result == Cr.NS_ERROR_FAILURE) {
-        this.log("Could not decrypt the syncID - returning null");
+        this.log("Could not decrypt the syncID - returning null.");
         return null;
       }
       // any other errors get re-thrown.
@@ -192,7 +175,7 @@ class LoginManagerStorage_json {
     this._store.ensureDataReady();
 
     // Throws if there are bogus values.
-    LoginHelper.checkLoginValues(login);
+    lazy.LoginHelper.checkLoginValues(login);
 
     let [encUsername, encPassword, encType] = preEncrypted
       ? [login.username, login.password, this._crypto.defaultEncType]
@@ -261,7 +244,7 @@ class LoginManagerStorage_json {
     this._store.saveSoon();
 
     // Send a notification that a login was added.
-    LoginHelper.notifyStorageChanged("addLogin", loginClone);
+    lazy.LoginHelper.notifyStorageChanged("addLogin", loginClone);
     return loginClone;
   }
 
@@ -279,7 +262,7 @@ class LoginManagerStorage_json {
       this._store.saveSoon();
     }
 
-    LoginHelper.notifyStorageChanged("removeLogin", storedLogin);
+    lazy.LoginHelper.notifyStorageChanged("removeLogin", storedLogin);
   }
 
   modifyLogin(oldLogin, newLoginData) {
@@ -290,7 +273,10 @@ class LoginManagerStorage_json {
       throw new Error("No matching logins");
     }
 
-    let newLogin = LoginHelper.buildModifiedLogin(oldStoredLogin, newLoginData);
+    let newLogin = lazy.LoginHelper.buildModifiedLogin(
+      oldStoredLogin,
+      newLoginData
+    );
 
     // Check if the new GUID is duplicate.
     if (
@@ -310,7 +296,9 @@ class LoginManagerStorage_json {
 
       let matchingLogin = logins.find(login => newLogin.matches(login, true));
       if (matchingLogin) {
-        throw LoginHelper.createLoginAlreadyExistsError(matchingLogin.guid);
+        throw lazy.LoginHelper.createLoginAlreadyExistsError(
+          matchingLogin.guid
+        );
       }
     }
 
@@ -337,7 +325,10 @@ class LoginManagerStorage_json {
       }
     }
 
-    LoginHelper.notifyStorageChanged("modifyLogin", [oldStoredLogin, newLogin]);
+    lazy.LoginHelper.notifyStorageChanged("modifyLogin", [
+      oldStoredLogin,
+      newLogin,
+    ]);
   }
 
   recordPasswordUse(login) {
@@ -373,12 +364,12 @@ class LoginManagerStorage_json {
   getAllLogins() {
     this._store.ensureDataReady();
 
-    let [logins, ids] = this._searchLogins({});
+    let [logins] = this._searchLogins({});
 
     // decrypt entries for caller.
     logins = this._decryptLogins(logins);
 
-    this.log("getAllLogins: returning", logins.length, "logins.");
+    this.log(`Returning ${logins.length} logins.`);
     return logins;
   }
 
@@ -392,7 +383,7 @@ class LoginManagerStorage_json {
   async getAllLoginsAsync() {
     this._store.ensureDataReady();
 
-    let [logins, ids] = this._searchLogins({});
+    let [logins] = this._searchLogins({});
     if (!logins.length) {
       return [];
     }
@@ -416,11 +407,12 @@ class LoginManagerStorage_json {
           this._crypto.decrypt(login.password);
         } catch (e) {
           // If decryption failed (corrupt entry?), just skip it.
-          // Rethrow other errors (like canceling entry of a master pw)
+          // Rethrow other errors (like canceling entry of a primary pw)
           if (e.result == Cr.NS_ERROR_FAILURE) {
             this.log(
-              "Could not decrypt login:",
-              login.QueryInterface(Ci.nsILoginMetaInfo).guid
+              `Could not decrypt login: ${
+                login.QueryInterface(Ci.nsILoginMetaInfo).guid
+              }.`
             );
             continue;
           }
@@ -437,8 +429,8 @@ class LoginManagerStorage_json {
   }
 
   async searchLoginsAsync(matchData) {
-    this.log("searchLoginsAsync:", matchData);
-    let result = this.searchLogins(LoginHelper.newPropertyBag(matchData));
+    this.log(`Searching for matching logins for origin ${matchData.origin}.`);
+    let result = this.searchLogins(lazy.LoginHelper.newPropertyBag(matchData));
     // Emulate being async:
     return Promise.resolve(result);
   }
@@ -482,7 +474,7 @@ class LoginManagerStorage_json {
       }
     }
 
-    let [logins, ids] = this._searchLogins(realMatchData, options);
+    let [logins] = this._searchLogins(realMatchData, options);
 
     // Decrypt entries found for the caller.
     logins = this._decryptLogins(logins);
@@ -545,7 +537,7 @@ class LoginManagerStorage_json {
                 break;
               }
               if (
-                !LoginHelper.isOriginMatching(
+                !lazy.LoginHelper.isOriginMatching(
                   aLoginItem[storageFieldName],
                   wantedValue,
                   aOptions
@@ -560,7 +552,7 @@ class LoginManagerStorage_json {
             if (wantedValue != null) {
               // needed for formActionOrigin fall through
               if (
-                !LoginHelper.isOriginMatching(
+                !lazy.LoginHelper.isOriginMatching(
                   aLoginItem[storageFieldName],
                   wantedValue,
                   aOptions
@@ -628,12 +620,7 @@ class LoginManagerStorage_json {
     }
 
     this.log(
-      "_searchLogins: returning",
-      foundLogins.length,
-      "logins for",
-      matchData,
-      "with options",
-      aOptions
+      `Returning ${foundLogins.length} logins for specified origin with options ${aOptions}`
     );
     return [foundLogins, foundIds];
   }
@@ -652,7 +639,7 @@ class LoginManagerStorage_json {
     this._store.data.dismissedBreachAlertsByLoginGUID = {};
     this._store.saveSoon();
 
-    LoginHelper.notifyStorageChanged("removeAllLogins", []);
+    lazy.LoginHelper.notifyStorageChanged("removeAllLogins", []);
   }
 
   /**
@@ -662,13 +649,14 @@ class LoginManagerStorage_json {
    */
   removeAllUserFacingLogins() {
     this._store.ensureDataReady();
-    this.log("Removing all logins");
+    this.log("Removing all logins.");
 
-    let [allLogins, ids] = this._searchLogins({});
+    let [allLogins] = this._searchLogins({});
 
     let fxaKey = this._store.data.logins.find(
       login =>
-        login.hostname == FXA_PWDMGR_HOST && login.httpRealm == FXA_PWDMGR_REALM
+        login.hostname == lazy.FXA_PWDMGR_HOST &&
+        login.httpRealm == lazy.FXA_PWDMGR_REALM
     );
     if (fxaKey) {
       this._store.data.logins = [fxaKey];
@@ -682,7 +670,7 @@ class LoginManagerStorage_json {
     this._store.data.dismissedBreachAlertsByLoginGUID = {};
     this._store.saveSoon();
 
-    LoginHelper.notifyStorageChanged("removeAllLogins", allLogins);
+    lazy.LoginHelper.notifyStorageChanged("removeAllLogins", allLogins);
   }
 
   findLogins(origin, formActionOrigin, httpRealm) {
@@ -699,12 +687,12 @@ class LoginManagerStorage_json {
         matchData[field] = loginData[field];
       }
     }
-    let [logins, ids] = this._searchLogins(matchData);
+    let [logins] = this._searchLogins(matchData);
 
     // Decrypt entries found for the caller.
     logins = this._decryptLogins(logins);
 
-    this.log("_findLogins: returning", logins.length, "logins");
+    this.log(`Returning ${logins.length} logins.`);
     return logins;
   }
 
@@ -722,9 +710,9 @@ class LoginManagerStorage_json {
         matchData[field] = loginData[field];
       }
     }
-    let [logins, ids] = this._searchLogins(matchData);
+    let [logins] = this._searchLogins(matchData);
 
-    this.log("_countLogins: counted logins:", logins.length);
+    this.log(`Counted ${logins.length} logins.`);
     return logins.length;
   }
 
@@ -817,7 +805,7 @@ class LoginManagerStorage_json {
 
   /**
    * Returns the encrypted username, password, and encrypton type for the specified
-   * login. Can throw if the user cancels a master password entry.
+   * login. Can throw if the user cancels a primary password entry.
    */
   _encryptLogin(login) {
     let encUsername = this._crypto.encrypt(login.username);
@@ -836,7 +824,7 @@ class LoginManagerStorage_json {
    * value should be given to external callers (since still-encrypted
    * entries are useless), whereas internal callers generally don't want
    * to lose unencrypted entries (eg, because the user clicked Cancel
-   * instead of entering their master password)
+   * instead of entering their primary password)
    */
   _decryptLogins(logins) {
     let result = [];
@@ -847,7 +835,7 @@ class LoginManagerStorage_json {
         login.password = this._crypto.decrypt(login.password);
       } catch (e) {
         // If decryption failed (corrupt entry?), just skip it.
-        // Rethrow other errors (like canceling entry of a master pw)
+        // Rethrow other errors (like canceling entry of a primary pw)
         if (e.result == Cr.NS_ERROR_FAILURE) {
           continue;
         }
@@ -861,7 +849,7 @@ class LoginManagerStorage_json {
 }
 
 XPCOMUtils.defineLazyGetter(LoginManagerStorage_json.prototype, "log", () => {
-  let logger = LoginHelper.createLogger("Login storage");
+  let logger = lazy.LoginHelper.createLogger("Login storage");
   return logger.log.bind(logger);
 });
 

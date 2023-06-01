@@ -14,7 +14,6 @@
 #include "GLContext.h"
 #include "GLContextProvider.h"
 #include "GLLibraryLoader.h"
-#include "Layers.h"
 #include "nsExceptionHandler.h"
 #include "mozilla/Range.h"
 #include "mozilla/EnumeratedRange.h"
@@ -112,28 +111,6 @@ void* get_proc_address_from_glcontext(void* glcontext_ptr,
 
   const auto ret = loader->GetProcAddress(procname);
   return reinterpret_cast<void*>(ret);
-}
-
-void record_telemetry_time(mozilla::wr::TelemetryProbe aProbe,
-                           uint64_t aTimeNs) {
-  uint32_t time_ms = (uint32_t)(aTimeNs / 1000000);
-  switch (aProbe) {
-    case mozilla::wr::TelemetryProbe::SceneBuildTime:
-      mozilla::Telemetry::Accumulate(mozilla::Telemetry::WR_SCENEBUILD_TIME,
-                                     time_ms);
-      break;
-    case mozilla::wr::TelemetryProbe::SceneSwapTime:
-      mozilla::Telemetry::Accumulate(mozilla::Telemetry::WR_SCENESWAP_TIME,
-                                     time_ms);
-      break;
-    case mozilla::wr::TelemetryProbe::FrameBuildTime:
-      mozilla::Telemetry::Accumulate(mozilla::Telemetry::WR_FRAMEBUILD_TIME,
-                                     time_ms);
-      break;
-    default:
-      MOZ_ASSERT(false);
-      break;
-  }
 }
 
 static CrashReporter::Annotation FromWrCrashAnnotation(
@@ -433,6 +410,9 @@ void WebRenderBridgeParent::Destroy() {
     mWebRenderBridgeRef->Clear();
     mWebRenderBridgeRef = nullptr;
   }
+  for (const auto& entry : mCompositables) {
+    entry.second->OnReleased();
+  }
   mCompositables.clear();
   ClearResources();
 }
@@ -585,12 +565,6 @@ bool WebRenderBridgeParent::UpdateResources(
                                          wr::ToDeviceIntRect(op.area()));
         break;
       }
-      case OpUpdateResource::TOpAddPrivateExternalImage: {
-        const auto& op = cmd.get_OpAddPrivateExternalImage();
-        AddPrivateExternalImage(op.externalImageId(), op.key(), op.descriptor(),
-                                aUpdates);
-        break;
-      }
       case OpUpdateResource::TOpAddSharedExternalImage: {
         const auto& op = cmd.get_OpAddSharedExternalImage();
         // gfxCriticalNote is called on error
@@ -608,12 +582,6 @@ bool WebRenderBridgeParent::UpdateResources(
                                          texture, op.isUpdate(), aUpdates)) {
           success = false;
         }
-        break;
-      }
-      case OpUpdateResource::TOpUpdatePrivateExternalImage: {
-        const auto& op = cmd.get_OpUpdatePrivateExternalImage();
-        UpdatePrivateExternalImage(op.externalImageId(), op.key(),
-                                   op.descriptor(), op.dirtyRect(), aUpdates);
         break;
       }
       case OpUpdateResource::TOpUpdateSharedExternalImage: {
@@ -726,32 +694,6 @@ bool WebRenderBridgeParent::UpdateResources(
 
   MOZ_ASSERT(success);
   return success;
-}
-
-void WebRenderBridgeParent::AddPrivateExternalImage(
-    wr::ExternalImageId aExtId, wr::ImageKey aKey, wr::ImageDescriptor aDesc,
-    wr::TransactionBuilder& aResources) {
-  if (!MatchesNamespace(aKey)) {
-    MOZ_ASSERT_UNREACHABLE("Stale private external image key (add)!");
-    return;
-  }
-
-  aResources.AddExternalImage(aKey, aDesc, aExtId,
-                              wr::ExternalImageType::Buffer(), 0);
-}
-
-void WebRenderBridgeParent::UpdatePrivateExternalImage(
-    wr::ExternalImageId aExtId, wr::ImageKey aKey,
-    const wr::ImageDescriptor& aDesc, const ImageIntRect& aDirtyRect,
-    wr::TransactionBuilder& aResources) {
-  if (!MatchesNamespace(aKey)) {
-    MOZ_ASSERT_UNREACHABLE("Stale private external image key (update)!");
-    return;
-  }
-
-  aResources.UpdateExternalImageWithDirtyRect(
-      aKey, aDesc, aExtId, wr::ExternalImageType::Buffer(),
-      wr::ToDeviceIntRect(aDirtyRect), 0);
 }
 
 bool WebRenderBridgeParent::AddSharedExternalImage(
@@ -1235,7 +1177,7 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvSetDisplayList(
     const uint64_t& aFwdTransactionId, const TransactionId& aTransactionId,
     const bool& aContainsSVGGroup, const VsyncId& aVsyncId,
     const TimeStamp& aVsyncStartTime, const TimeStamp& aRefreshStartTime,
-    const TimeStamp& aTxnStartTime, const nsCString& aTxnURL,
+    const TimeStamp& aTxnStartTime, const nsACString& aTxnURL,
     const TimeStamp& aFwdTime, nsTArray<CompositionPayload>&& aPayloads) {
   if (mDestroyed) {
     for (const auto& op : aToDestroy) {
@@ -1255,7 +1197,10 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvSetDisplayList(
     CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::URL, aTxnURL);
   }
 
-  AUTO_PROFILER_TRACING_MARKER("Paint", "SetDisplayList", GRAPHICS);
+  CompositorBridgeParent* cbp = GetRootCompositorBridgeParent();
+  uint64_t innerWindowId = cbp ? cbp->GetInnerWindowId() : 0;
+  AUTO_PROFILER_TRACING_MARKER_INNERWINDOWID("Paint", "SetDisplayList",
+                                             GRAPHICS, innerWindowId);
   UpdateFwdTransactionId(aFwdTransactionId);
 
   // This ensures that destroy operations are always processed. It is not safe
@@ -1377,7 +1322,7 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvEmptyTransaction(
     nsTArray<OpDestroy>&& aToDestroy, const uint64_t& aFwdTransactionId,
     const TransactionId& aTransactionId, const VsyncId& aVsyncId,
     const TimeStamp& aVsyncStartTime, const TimeStamp& aRefreshStartTime,
-    const TimeStamp& aTxnStartTime, const nsCString& aTxnURL,
+    const TimeStamp& aTxnStartTime, const nsACString& aTxnURL,
     const TimeStamp& aFwdTime, nsTArray<CompositionPayload>&& aPayloads) {
   if (mDestroyed) {
     for (const auto& op : aToDestroy) {
@@ -1513,7 +1458,7 @@ bool WebRenderBridgeParent::ProcessWebRenderParentCommands(
       case WebRenderParentCommand::TOpAddPipelineIdForCompositable: {
         const OpAddPipelineIdForCompositable& op =
             cmd.get_OpAddPipelineIdForCompositable();
-        AddPipelineIdForCompositable(op.pipelineId(), op.handle(), op.isAsync(),
+        AddPipelineIdForCompositable(op.pipelineId(), op.handle(), op.owner(),
                                      aTxn, txnForImageBridge);
         break;
       }
@@ -1624,7 +1569,8 @@ void WebRenderBridgeParent::FlushFrameGeneration(wr::RenderReasons aReasons) {
     mCompositorScheduler->CancelCurrentCompositeTask();
     // Update timestamp of scheduler for APZ and animation.
     mCompositorScheduler->UpdateLastComposeTime();
-    MaybeGenerateFrame(VsyncId(), /* aForceGenerateFrame */ true, aReasons);
+    MaybeGenerateFrame(VsyncId(), /* aForceGenerateFrame */ true,
+                       aReasons | wr::RenderReasons::FLUSH);
   }
 }
 
@@ -1801,7 +1747,7 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvGetSnapshot(
 
 void WebRenderBridgeParent::AddPipelineIdForCompositable(
     const wr::PipelineId& aPipelineId, const CompositableHandle& aHandle,
-    const bool& aAsync, wr::TransactionBuilder& aTxn,
+    const CompositableHandleOwner& aOwner, wr::TransactionBuilder& aTxn,
     wr::TransactionBuilder& aTxnForImageBridge) {
   if (mDestroyed) {
     return;
@@ -1811,16 +1757,21 @@ void WebRenderBridgeParent::AddPipelineIdForCompositable(
              mAsyncCompositables.end());
 
   RefPtr<CompositableHost> host;
-  if (aAsync) {
-    RefPtr<ImageBridgeParent> imageBridge =
-        ImageBridgeParent::GetInstance(OtherPid());
-    if (!imageBridge) {
-      return;
+  switch (aOwner) {
+    case CompositableHandleOwner::WebRenderBridge:
+      host = FindCompositable(aHandle);
+      break;
+    case CompositableHandleOwner::ImageBridge: {
+      RefPtr<ImageBridgeParent> imageBridge =
+          ImageBridgeParent::GetInstance(OtherPid());
+      if (!imageBridge) {
+        return;
+      }
+      host = imageBridge->FindCompositable(aHandle);
+      break;
     }
-    host = imageBridge->FindCompositable(aHandle);
-  } else {
-    host = FindCompositable(aHandle);
   }
+
   if (!host) {
     return;
   }
@@ -1940,6 +1891,14 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvClearCachedResources() {
   return IPC_OK();
 }
 
+mozilla::ipc::IPCResult WebRenderBridgeParent::RecvClearAnimationResources() {
+  if (!mDestroyed) {
+    ClearAnimationResources();
+  }
+
+  return IPC_OK();
+}
+
 wr::Epoch WebRenderBridgeParent::UpdateWebRender(
     CompositorVsyncScheduler* aScheduler, RefPtr<wr::WebRenderAPI>&& aApi,
     AsyncImagePipelineManager* aImageMgr,
@@ -2041,7 +2000,7 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvCapture() {
 }
 
 mozilla::ipc::IPCResult WebRenderBridgeParent::RecvStartCaptureSequence(
-    const nsCString& aPath, const uint32_t& aFlags) {
+    const nsACString& aPath, const uint32_t& aFlags) {
   if (!mDestroyed) {
     mApi->StartCaptureSequence(aPath, aFlags);
   }
@@ -2060,6 +2019,10 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvSyncWithCompositor() {
       " Id %" PRIx64 " root %d",
       wr::AsUint64(mPipelineId), wr::AsUint64(mApi->GetId()),
       IsRootWebRenderBridgeParent());
+
+  if (mDestroyed) {
+    return IPC_OK();
+  }
 
   FlushSceneBuilds();
   if (RefPtr<WebRenderBridgeParent> root = GetRootWebRenderBridgeParent()) {
@@ -2097,6 +2060,10 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvSetConfirmedTargetAPZC(
 
 mozilla::ipc::IPCResult WebRenderBridgeParent::RecvSetTestSampleTime(
     const TimeStamp& aTime) {
+  if (mDestroyed) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+
   if (!mCompositorBridge->SetTestSampleTime(GetLayersId(), aTime)) {
     return IPC_FAIL_NO_REASON(this);
   }
@@ -2170,12 +2137,20 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvFlushApzRepaints() {
 
 mozilla::ipc::IPCResult WebRenderBridgeParent::RecvGetAPZTestData(
     APZTestData* aOutData) {
+  if (mDestroyed) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+
   mCompositorBridge->GetAPZTestData(GetLayersId(), aOutData);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult WebRenderBridgeParent::RecvGetFrameUniformity(
     FrameUniformityData* aOutData) {
+  if (mDestroyed) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+
   mCompositorBridge->GetFrameUniformity(GetLayersId(), aOutData);
   return IPC_OK();
 }
@@ -2203,14 +2178,17 @@ void WebRenderBridgeParent::SetOMTASampleTime() {
   }
 }
 
-void WebRenderBridgeParent::CompositeIfNeeded() {
-  if (mSkippedComposite) {
-    mSkippedComposite = false;
-    if (mCompositorScheduler) {
-      mCompositorScheduler->ScheduleComposition(mSkippedCompositeReasons);
-    }
-    mSkippedCompositeReasons = wr::RenderReasons::NONE;
+void WebRenderBridgeParent::RetrySkippedComposite() {
+  if (!mSkippedComposite) {
+    return;
   }
+
+  mSkippedComposite = false;
+  if (mCompositorScheduler) {
+    mCompositorScheduler->ScheduleComposition(mSkippedCompositeReasons |
+                                              RenderReasons::SKIPPED_COMPOSITE);
+  }
+  mSkippedCompositeReasons = wr::RenderReasons::NONE;
 }
 
 void WebRenderBridgeParent::CompositeToTarget(VsyncId aId,
@@ -2230,10 +2208,12 @@ void WebRenderBridgeParent::CompositeToTarget(VsyncId aId,
       wr::AsUint64(mPipelineId), wr::AsUint64(mApi->GetId()),
       IsRootWebRenderBridgeParent());
 
-  AUTO_PROFILER_TRACING_MARKER("Paint", "CompositeToTarget", GRAPHICS);
+  CompositorBridgeParent* cbp = GetRootCompositorBridgeParent();
+  uint64_t innerWindowId = cbp ? cbp->GetInnerWindowId() : 0;
+  AUTO_PROFILER_TRACING_MARKER_INNERWINDOWID("Paint", "CompositeToTarget",
+                                             GRAPHICS, innerWindowId);
 
   bool paused = true;
-  CompositorBridgeParent* cbp = GetRootCompositorBridgeParent();
   if (cbp) {
     paused = cbp->IsPaused();
   }
@@ -2241,13 +2221,16 @@ void WebRenderBridgeParent::CompositeToTarget(VsyncId aId,
   if (paused || !mReceivedDisplayList) {
     ResetPreviousSampleTime();
     mCompositionOpportunityId = mCompositionOpportunityId.Next();
-    PROFILER_MARKER_TEXT("SkippedComposite", GRAPHICS, {},
+    PROFILER_MARKER_TEXT("Discarded composite", GRAPHICS,
+                         MarkerInnerWindowId(innerWindowId),
                          paused ? "Paused"_ns : "No display list"_ns);
     return;
   }
 
-  if (mSkippedComposite ||
-      wr::RenderThread::Get()->TooManyPendingFrames(mApi->GetId())) {
+  mSkippedComposite =
+      wr::RenderThread::Get()->TooManyPendingFrames(mApi->GetId());
+
+  if (mSkippedComposite) {
     // Render thread is busy, try next time.
     mSkippedComposite = true;
     mSkippedCompositeReasons = mSkippedCompositeReasons | aReasons;
@@ -2261,8 +2244,12 @@ void WebRenderBridgeParent::CompositeToTarget(VsyncId aId,
       }
     }
 
-    PROFILER_MARKER_TEXT("SkippedComposite", GRAPHICS, {},
+    PROFILER_MARKER_TEXT("SkippedComposite", GRAPHICS,
+                         MarkerInnerWindowId(innerWindowId),
                          "Too many pending frames");
+
+    Telemetry::ScalarAdd(Telemetry::ScalarID::GFX_SKIPPED_COMPOSITES, 1);
+
     return;
   }
 
@@ -2293,9 +2280,11 @@ void WebRenderBridgeParent::MaybeGenerateFrame(VsyncId aId,
     // Skip WR render during paused state.
     if (cbp->IsPaused()) {
       TimeStamp now = TimeStamp::Now();
-      PROFILER_MARKER_TEXT("SkippedComposite", GRAPHICS,
-                           MarkerTiming::InstantAt(now),
-                           "CompositorBridgeParent is paused");
+      PROFILER_MARKER_TEXT(
+          "SkippedComposite", GRAPHICS,
+          MarkerOptions(MarkerInnerWindowId(cbp->GetInnerWindowId()),
+                        MarkerTiming::InstantAt(now)),
+          "CompositorBridgeParent is paused");
       cbp->NotifyPipelineRendered(mPipelineId, mWrEpoch, VsyncId(), now, now,
                                   now);
       return;
@@ -2321,11 +2310,16 @@ void WebRenderBridgeParent::MaybeGenerateFrame(VsyncId aId,
     // Trigger another CompositeToTarget() call because there might be another
     // frame that we want to generate after this one.
     // It will check if we actually want to generate the frame or not.
-    mCompositorScheduler->ScheduleComposition(aReasons);
+    mCompositorScheduler->ScheduleComposition(
+        wr::RenderReasons::ASYNC_IMAGE_COMPOSITE_UNTIL);
   }
 
-  bool generateFrame = mAsyncImageManager->GetAndResetWillGenerateFrame() ||
-                       !fastTxn.IsEmpty() || aForceGenerateFrame;
+  bool generateFrame = !fastTxn.IsEmpty() || aForceGenerateFrame;
+
+  if (mAsyncImageManager->GetAndResetWillGenerateFrame()) {
+    aReasons |= wr::RenderReasons::ASYNC_IMAGE;
+    generateFrame = true;
+  }
 
   if (!generateFrame) {
     // Could skip generating frame now.
@@ -2345,15 +2339,14 @@ void WebRenderBridgeParent::MaybeGenerateFrame(VsyncId aId,
   SetOMTASampleTime();
   SetAPZSampleTime();
 
-  wr::RenderThread::Get()->IncPendingFrameCount(mApi->GetId(), aId, start);
-
 #if defined(ENABLE_FRAME_LATENCY_LOG)
   auto startTime = TimeStamp::Now();
   mApi->SetFrameStartTime(startTime);
 #endif
 
-  MOZ_ASSERT(generateFrame);
   fastTxn.GenerateFrame(aId, aReasons);
+  wr::RenderThread::Get()->IncPendingFrameCount(mApi->GetId(), aId, start);
+
   mApi->SendTransaction(fastTxn);
 
 #if defined(MOZ_WIDGET_ANDROID)
@@ -2377,7 +2370,7 @@ void WebRenderBridgeParent::HoldPendingTransactionId(
     const wr::Epoch& aWrEpoch, TransactionId aTransactionId,
     bool aContainsSVGGroup, const VsyncId& aVsyncId,
     const TimeStamp& aVsyncStartTime, const TimeStamp& aRefreshStartTime,
-    const TimeStamp& aTxnStartTime, const nsCString& aTxnURL,
+    const TimeStamp& aTxnStartTime, const nsACString& aTxnURL,
     const TimeStamp& aFwdTime, const bool aIsFirstPaint,
     nsTArray<CompositionPayload>&& aPayloads, const bool aUseForTelemetry) {
   MOZ_ASSERT(aTransactionId > LastPendingTransactionId());
@@ -2527,7 +2520,8 @@ void WebRenderBridgeParent::FlushTransactionIdsForEpoch(
 
       RecordPaintPhaseTelemetry(aStats);
 
-      if (contentFrameTime > 200) {
+      if (StaticPrefs::gfx_logging_slow_frames_enabled_AtStartup() &&
+          contentFrameTime > 200) {
         aOutputStats.AppendElement(FrameStats(
             transactionId.mId, aCompositeStartTime, aRenderStartTime, aEndTime,
             contentFrameTime,

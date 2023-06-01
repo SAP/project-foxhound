@@ -105,7 +105,7 @@ class APZCCallbackHelper {
   /* Synthesize a mouse event with the given parameters, and dispatch it
    * via the given widget. */
   static nsEventStatus DispatchSynthesizedMouseEvent(
-      EventMessage aMsg, uint64_t aTime, const LayoutDevicePoint& aRefPoint,
+      EventMessage aMsg, const LayoutDevicePoint& aRefPoint,
       Modifiers aModifiers, int32_t aClickCount, nsIWidget* aWidget);
 
   /* Dispatch a mouse event with the given parameters.
@@ -162,6 +162,8 @@ class APZCCallbackHelper {
       const ScrollableLayerGuid::ViewID& aScrollId);
 
   static void CancelAutoscroll(const ScrollableLayerGuid::ViewID& aScrollId);
+  static void NotifyScaleGestureComplete(const nsCOMPtr<nsIWidget>& aWidget,
+                                         float aScale);
 
   /*
    * Check if the scrollable frame is currently in the middle of a main thread

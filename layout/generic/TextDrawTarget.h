@@ -187,9 +187,9 @@ class TextDrawTarget : public DrawTarget {
     static_assert(
         std::is_same<decltype(aBuffer.mGlyphs[0].mIndex),
                      decltype(glyphs[0].index)>() &&
-            std::is_same<decltype(aBuffer.mGlyphs[0].mPosition.x),
+            std::is_same<decltype(aBuffer.mGlyphs[0].mPosition.x.value),
                          decltype(glyphs[0].point.x)>() &&
-            std::is_same<decltype(aBuffer.mGlyphs[0].mPosition.y),
+            std::is_same<decltype(aBuffer.mGlyphs[0].mPosition.y.value),
                          decltype(glyphs[0].point.y)>() &&
             offsetof(GlyphType, mIndex) == offsetof(wr::GlyphInstance, index) &&
             offsetof(GlyphType, mPosition) ==
@@ -211,9 +211,9 @@ class TextDrawTarget : public DrawTarget {
         wr::ToFontRenderMode(aOptions.mAntialiasMode, GetPermitSubpixelAA());
     glyphOptions.flags = mWRGlyphFlags;
 
-    mManager->WrBridge()->PushGlyphs(mBuilder, glyphs, aFont, color, *mSc,
-                                     mBoundsRect, ClipRect(), mBackfaceVisible,
-                                     &glyphOptions);
+    mManager->WrBridge()->PushGlyphs(mBuilder, *mResources, glyphs, aFont,
+                                     color, *mSc, mBoundsRect, ClipRect(),
+                                     mBackfaceVisible, &glyphOptions);
   }
 
   void PushClipRect(const Rect& aRect) override {
@@ -243,7 +243,7 @@ class TextDrawTarget : public DrawTarget {
                            const DeviceColor& aColor) {
     auto rect = wr::ToLayoutRect(aRect);
     auto color = wr::ToColorF(aColor);
-    mBuilder.PushRect(rect, ClipRect(), mBackfaceVisible, color);
+    mBuilder.PushRect(rect, ClipRect(), mBackfaceVisible, false, false, color);
   }
 
   // This function is basically designed to slide into the decoration drawing
@@ -261,7 +261,8 @@ class TextDrawTarget : public DrawTarget {
   // as the top-left corner of the rect.
   void AppendDecoration(const Point& aStart, const Point& aEnd,
                         const float aThickness, const bool aVertical,
-                        const DeviceColor& aColor, const uint8_t aStyle) {
+                        const DeviceColor& aColor,
+                        const StyleTextDecorationStyle aStyle) {
     auto pos = LayoutDevicePoint::FromUnknownPoint(aStart);
     LayoutDeviceSize size;
 
@@ -281,19 +282,19 @@ class TextDrawTarget : public DrawTarget {
                                        : wr::LineOrientation::Horizontal;
 
     switch (aStyle) {
-      case NS_STYLE_TEXT_DECORATION_STYLE_SOLID:
+      case StyleTextDecorationStyle::Solid:
         decoration.style = wr::LineStyle::Solid;
         break;
-      case NS_STYLE_TEXT_DECORATION_STYLE_DOTTED:
+      case StyleTextDecorationStyle::Dotted:
         decoration.style = wr::LineStyle::Dotted;
         break;
-      case NS_STYLE_TEXT_DECORATION_STYLE_DASHED:
+      case StyleTextDecorationStyle::Dashed:
         decoration.style = wr::LineStyle::Dashed;
         break;
       // Wavy lines should go through AppendWavyDecoration
-      case NS_STYLE_TEXT_DECORATION_STYLE_WAVY:
+      case StyleTextDecorationStyle::Wavy:
       // Double lines should be lowered to two solid lines
-      case NS_STYLE_TEXT_DECORATION_STYLE_DOUBLE:
+      case StyleTextDecorationStyle::Double:
       default:
         MOZ_CRASH("TextDrawTarget received unsupported line style");
     }
@@ -341,7 +342,7 @@ class TextDrawTarget : public DrawTarget {
       return;
     }
     mBuilder.PushImage(wr::ToLayoutRect(aBounds), wr::ToLayoutRect(aClip), true,
-                       aFilter, aKey, true, aColor);
+                       false, aFilter, aKey, true, aColor);
   }
 
  private:
@@ -435,8 +436,8 @@ class TextDrawTarget : public DrawTarget {
   }
 
   void DrawSurfaceWithShadow(SourceSurface* aSurface, const Point& aDest,
-                             const DeviceColor& aColor, const Point& aOffset,
-                             Float aSigma, CompositionOp aOperator) override {
+                             const ShadowOptions& aShadow,
+                             CompositionOp aOperator) override {
     MOZ_CRASH("TextDrawTarget: Method shouldn't be called");
   }
 
@@ -459,7 +460,7 @@ class TextDrawTarget : public DrawTarget {
     auto rect = wr::ToLayoutRect(LayoutDeviceRect::FromUnknownRect(aRect));
     auto color =
         wr::ToColorF(static_cast<const ColorPattern&>(aPattern).mColor);
-    mBuilder.PushRect(rect, ClipRect(), mBackfaceVisible, color);
+    mBuilder.PushRect(rect, ClipRect(), mBackfaceVisible, false, false, color);
   }
 
   void StrokeRect(const Rect& aRect, const Pattern& aPattern,

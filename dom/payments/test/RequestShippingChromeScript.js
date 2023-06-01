@@ -1,10 +1,13 @@
 /* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+
+/* eslint-env mozilla/chrome-script */
+
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const paymentSrv = Cc[
@@ -63,7 +66,7 @@ const NormalUIService = {
     let payRequest = paymentSrv.getPaymentRequestById(requestId);
 
     const shippingOptions = payRequest.paymentDetails.shippingOptions;
-    if (shippingOptions.length != 0) {
+    if (shippingOptions.length) {
       emitTestFail("Wrong length for shippingOptions.");
     }
 

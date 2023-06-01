@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # tooltool is a lookaside cache implemented in Python
 # Copyright (C) 2011 John H. Ford <john@johnford.info>
@@ -22,9 +22,6 @@
 # in which the manifest file resides and it should be called
 # 'manifest.tt'
 
-from __future__ import print_function
-from __future__ import absolute_import
-
 import base64
 import calendar
 import hashlib
@@ -37,22 +34,20 @@ import os
 import pprint
 import re
 import shutil
+import stat
 import sys
 import tarfile
 import tempfile
 import threading
 import time
 import zipfile
-from contextlib import contextmanager, closing
+from contextlib import closing, contextmanager
 from functools import wraps
-
-from io import open
-from io import BytesIO
+from io import BytesIO, open
 from random import random
-from subprocess import PIPE
-from subprocess import Popen
+from subprocess import PIPE, Popen
 
-__version__ = "1"
+__version__ = "1.4.0"
 
 # Allowed request header characters:
 # !#$%&'()*+,-./:;<=>?@[]^_`{|}~ and space, a-z, A-Z, 0-9, \, "
@@ -70,16 +65,16 @@ if PY3:
         str  # Silence `pyflakes` from reporting `undefined name 'unicode'` in Python 3.
     )
     import urllib.request as urllib2
-    from http.client import HTTPSConnection, HTTPConnection
-    from urllib.parse import urlparse, urljoin
-    from urllib.request import Request
+    from http.client import HTTPConnection, HTTPSConnection
     from urllib.error import HTTPError, URLError
+    from urllib.parse import urljoin, urlparse
+    from urllib.request import Request
 else:
     six_binary_type = str
     import urllib2
-    from httplib import HTTPSConnection, HTTPConnection
-    from urllib2 import Request, HTTPError, URLError
-    from urlparse import urlparse, urljoin
+    from httplib import HTTPConnection, HTTPSConnection
+    from urllib2 import HTTPError, Request, URLError
+    from urlparse import urljoin, urlparse
 
 
 log = logging.getLogger(__name__)
@@ -961,6 +956,29 @@ def clean_path(dirname):
 CHECKSUM_SUFFIX = ".checksum"
 
 
+def validate_tar_member(member, path):
+    def _is_within_directory(directory, target):
+        abs_directory = os.path.abspath(directory)
+        abs_target = os.path.abspath(target)
+        prefix = os.path.commonprefix([abs_directory, abs_target])
+        return prefix == abs_directory
+
+    member_path = os.path.join(path, member.name)
+    if not _is_within_directory(path, member_path):
+        raise Exception("Attempted path traversal in tar file: " + member.name)
+    if member.mode & (stat.S_ISUID | stat.S_ISGID):
+        raise Exception("Attempted setuid or setgid in tar file: " + member.name)
+
+
+def safe_extract(tar, path=".", members=None, *, numeric_owner=False):
+    def _files(tar, path):
+        for member in tar:
+            validate_tar_member(member, path)
+            yield member
+
+    tar.extractall(path, members=_files(tar, path), numeric_owner=numeric_owner)
+
+
 def unpack_file(filename):
     """Untar `filename`, assuming it is uncompressed or compressed with bzip2,
     xz, gzip, zst, or unzip a zip file. The file is assumed to contain a single
@@ -971,9 +989,8 @@ def unpack_file(filename):
         base_file, tar_ext = os.path.splitext(tar_file)
         clean_path(base_file)
         log.info('untarring "%s"' % filename)
-        tar = tarfile.open(filename)
-        tar.extractall()
-        tar.close()
+        with tarfile.open(filename) as tar:
+            safe_extract(tar)
     elif os.path.isfile(filename) and filename.endswith(".tar.xz"):
         base_file = filename.replace(".tar.xz", "")
         clean_path(base_file)
@@ -986,9 +1003,8 @@ def unpack_file(filename):
         fileobj = BytesIO()
         fileobj.write(stdout)
         fileobj.seek(0)
-        tar = tarfile.open(fileobj=fileobj, mode="r|")
-        tar.extractall()
-        tar.close()
+        with tarfile.open(fileobj=fileobj, mode="r|") as tar:
+            safe_extract(tar)
     elif os.path.isfile(filename) and filename.endswith(".tar.zst"):
         import zstandard
 
@@ -997,9 +1013,8 @@ def unpack_file(filename):
         log.info('untarring "%s"' % filename)
         dctx = zstandard.ZstdDecompressor()
         with dctx.stream_reader(open(filename, "rb")) as fileobj:
-            tar = tarfile.open(fileobj=fileobj, mode="r|")
-            tar.extractall()
-            tar.close()
+            with tarfile.open(fileobj=fileobj, mode="r|") as tar:
+                safe_extract(tar)
     elif os.path.isfile(filename) and zipfile.is_zipfile(filename):
         base_file = filename.replace(".zip", "")
         clean_path(base_file)
@@ -1240,25 +1255,34 @@ def _log_api_error(e):
 
 
 def _authorize(req, auth_file):
-    if not auth_file:
-        return
-
     is_taskcluster_auth = False
-    with open(auth_file) as f:
-        auth_file_content = f.read().strip()
+
+    if not auth_file:
         try:
-            auth_file_content = json.loads(auth_file_content)
+            taskcluster_env_keys = {
+                "clientId": "TASKCLUSTER_CLIENT_ID",
+                "accessToken": "TASKCLUSTER_ACCESS_TOKEN",
+            }
+            auth_content = {k: os.environ[v] for k, v in taskcluster_env_keys.items()}
             is_taskcluster_auth = True
-        except Exception:
-            pass
+        except KeyError:
+            return
+    else:
+        with open(auth_file) as f:
+            auth_content = f.read().strip()
+            try:
+                auth_content = json.loads(auth_content)
+                is_taskcluster_auth = True
+            except Exception:
+                pass
 
     if is_taskcluster_auth:
-        taskcluster_header = make_taskcluster_header(auth_file_content, req)
+        taskcluster_header = make_taskcluster_header(auth_content, req)
         log.debug("Using taskcluster credentials in %s" % auth_file)
         req.add_unredirected_header("Authorization", taskcluster_header)
     else:
         log.debug("Using Bearer token in %s" % auth_file)
-        req.add_unredirected_header("Authorization", "Bearer %s" % auth_file_content)
+        req.add_unredirected_header("Authorization", "Bearer %s" % auth_content)
 
 
 def _send_batch(base_url, auth_file, batch, region):
@@ -1435,7 +1459,7 @@ def change_visibility(base_urls, digest, visibility, auth_file):
             "visibility": visibility,
         }
     ]
-    return send_operation_on_file(data, base_urls, digest, visibility, auth_file)
+    return send_operation_on_file(data, base_urls, digest, auth_file)
 
 
 def delete_instances(base_urls, digest, auth_file):

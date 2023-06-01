@@ -52,7 +52,12 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-const { TableWidget } = require("devtools/client/shared/widgets/TableWidget");
+const {
+  TableWidget,
+} = require("resource://devtools/client/shared/widgets/TableWidget.js");
+const {
+  LocalTabCommandsFactory,
+} = require("resource://devtools/client/framework/local-tab-commands-factory.js");
 const STORAGE_PREF = "devtools.storage.enabled";
 const DOM_CACHE = "dom.caches.enabled";
 const DUMPEMIT_PREF = "devtools.dump.emit";
@@ -68,7 +73,7 @@ const ALT_DOMAIN = "http://sectest1.example.org/" + PATH;
 const ALT_DOMAIN_SECURED = "https://sectest1.example.org:443/" + PATH;
 
 // GUID to be used as a separator in compound keys. This must match the same
-// constant in devtools/server/actors/storage.js,
+// constant in devtools/server/actors/resources/storage/index.js,
 // devtools/client/storage/ui.js and devtools/server/tests/browser/head.js
 const SEPARATOR_GUID = "{9d414cc5-8319-0a04-0586-c0a6ae01670a}";
 
@@ -146,49 +151,60 @@ async function openTabAndSetupStorage(url, options = {}) {
 }
 
 /**
+ * Open a toolbox with the storage panel opened by default
+ * for a given Web Extension.
+ *
+ * @param {String} addonId
+ *        The ID of the Web Extension to debug.
+ */
+var openStoragePanelForAddon = async function(addonId) {
+  const toolbox = await gDevTools.showToolboxForWebExtension(addonId, {
+    toolId: "storage",
+  });
+
+  info("Making sure that the toolbox's frame is focused");
+  await SimpleTest.promiseFocus(toolbox.win);
+
+  const storage = _setupStoragePanelForTest(toolbox);
+
+  return {
+    toolbox,
+    storage,
+  };
+};
+
+/**
  * Open the toolbox, with the storage tool visible.
  *
  * @param tab {XULTab} Optional, the tab for the toolbox; defaults to selected tab
- * @param descriptor {Object} Optional, the descriptor for the toolbox; defaults to a tab descriptor
+ * @param commands {Object} Optional, the commands for the toolbox; defaults to a tab commands
  * @param hostType {Toolbox.HostType} Optional, type of host that will host the toolbox
  *
  * @return {Promise} a promise that resolves when the storage inspector is ready
  */
-var openStoragePanel = async function({ tab, descriptor, hostType } = {}) {
-  info("Opening the storage inspector");
-  if (!descriptor) {
-    descriptor = await TabDescriptorFactory.createDescriptorForTab(
-      tab || gBrowser.selectedTab
-    );
-  }
+var openStoragePanel = async function({ tab, hostType } = {}) {
+  const toolbox = await openToolboxForTab(
+    tab || gBrowser.selectedTab,
+    "storage",
+    hostType
+  );
 
-  let storage, toolbox;
+  const storage = _setupStoragePanelForTest(toolbox);
 
-  // Checking if the toolbox and the storage are already loaded
-  // The storage-updated event should only be waited for if the storage
-  // isn't loaded yet
-  toolbox = gDevTools.getToolboxForDescriptor(descriptor);
-  if (toolbox) {
-    storage = toolbox.getPanel("storage");
-    if (storage) {
-      gPanelWindow = storage.panelWindow;
-      gUI = storage.UI;
-      gToolbox = toolbox;
-      info("Toolbox and storage already open");
+  return {
+    toolbox,
+    storage,
+  };
+};
 
-      return {
-        toolbox: toolbox,
-        storage: storage,
-      };
-    }
-  }
-
-  info("Opening the toolbox");
-  toolbox = await gDevTools.showToolbox(descriptor, {
-    toolId: "storage",
-    hostType,
-  });
-  storage = toolbox.getPanel("storage");
+/**
+ * Set global variables needed in helper functions
+ *
+ * @param toolbox {Toolbox}
+ * @return {StoragePanel}
+ */
+function _setupStoragePanelForTest(toolbox) {
+  const storage = toolbox.getPanel("storage");
   gPanelWindow = storage.panelWindow;
   gUI = storage.UI;
   gToolbox = toolbox;
@@ -197,27 +213,7 @@ var openStoragePanel = async function({ tab, descriptor, hostType } = {}) {
   // so we disable it
   gUI.animationsEnabled = false;
 
-  await waitForToolboxFrameFocus(toolbox);
-
-  return {
-    toolbox: toolbox,
-    storage: storage,
-  };
-};
-
-/**
- * Wait for the toolbox frame to receive focus after it loads
- *
- * @param toolbox {Toolbox}
- *
- * @return a promise that resolves when focus has been received
- */
-function waitForToolboxFrameFocus(toolbox) {
-  info("Making sure that the toolbox's frame is focused");
-
-  return new Promise(resolve => {
-    waitForFocus(resolve, toolbox.win);
-  });
+  return storage;
 }
 
 /**
@@ -268,7 +264,7 @@ function variablesViewExpandTo(options) {
       const name = expandTo.shift();
       const newProp = prop.get(name);
 
-      if (expandTo.length > 0) {
+      if (expandTo.length) {
         ok(newProp, "found property " + name);
         if (newProp && newProp.expand) {
           newProp.expand();
@@ -817,7 +813,7 @@ function checkCellUneditable(id, column) {
 function showColumn(id, state) {
   const columns = gUI.table.columns;
   const column = columns.get(id);
-  column.wrapper.hidden = !state;
+  column.column.hidden = !state;
 }
 
 /**
@@ -969,10 +965,11 @@ var focusSearchBoxUsingShortcut = async function(panelWin, callback) {
   const focused = once(searchBox, "focus");
 
   panelWin.focus();
-  const strings = Services.strings.createBundle(
-    "chrome://devtools/locale/storage.properties"
+
+  const shortcut = await panelWin.document.l10n.formatValue(
+    "storage-filter-key"
   );
-  synthesizeKeyShortcut(strings.GetStringFromName("storage.filter.key"));
+  synthesizeKeyShortcut(shortcut);
 
   await focused;
 
@@ -1062,14 +1059,14 @@ async function performAdd(store) {
 // Cell css selector that can be used to count or select cells.
 // The selector is restricted to a single column to avoid counting duplicates.
 const CELL_SELECTOR =
-  "#storage-table .table-widget-wrapper:first-child .table-widget-cell";
+  "#storage-table .table-widget-column:first-child .table-widget-cell";
 
 function getCellLength() {
   return gPanelWindow.document.querySelectorAll(CELL_SELECTOR).length;
 }
 
 function checkCellLength(len) {
-  is(getCellLength(), len, `Table should initially display ${len} items`);
+  is(getCellLength(), len, `Table should contain ${len} items`);
 }
 
 async function scroll() {

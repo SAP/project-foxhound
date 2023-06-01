@@ -4,45 +4,59 @@
 
 "use strict";
 
-const { Cu } = require("chrome");
+const { Actor } = require("resource://devtools/shared/protocol.js");
+const { sourceSpec } = require("resource://devtools/shared/specs/source.js");
+
 const {
   setBreakpointAtEntryPoints,
-} = require("devtools/server/actors/breakpoint");
-const { ActorClassWithSpec, Actor } = require("devtools/shared/protocol");
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
-const { assert } = DevToolsUtils;
-const { sourceSpec } = require("devtools/shared/specs/source");
+} = require("resource://devtools/server/actors/breakpoint.js");
 const {
-  resolveSourceURL,
   getSourcemapBaseURL,
-} = require("devtools/server/actors/utils/source-map-utils");
+} = require("resource://devtools/server/actors/utils/source-map-utils.js");
 const {
   getDebuggerSourceURL,
-} = require("devtools/server/actors/utils/source-url");
+} = require("resource://devtools/server/actors/utils/source-url.js");
 
 loader.lazyRequireGetter(
   this,
   "ArrayBufferActor",
-  "devtools/server/actors/array-buffer",
+  "resource://devtools/server/actors/array-buffer.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "LongStringActor",
-  "devtools/server/actors/string",
+  "resource://devtools/server/actors/string.js",
   true
 );
 
-loader.lazyRequireGetter(this, "Services");
-loader.lazyGetter(
+loader.lazyRequireGetter(
   this,
-  "WebExtensionPolicy",
-  () => Cu.getGlobalForObject(Cu).WebExtensionPolicy
+  "DevToolsUtils",
+  "resource://devtools/shared/DevToolsUtils.js"
 );
 
 const windowsDrive = /^([a-zA-Z]:)/;
 
-function getSourceURL(source, window) {
+function resolveSourceURL(sourceURL, targetActor) {
+  if (sourceURL) {
+    try {
+      let baseURL;
+      if (targetActor.window) {
+        baseURL = targetActor.window.location?.href;
+      }
+      // For worker, we don't have easy access to location,
+      // so pull extra information directly from the target actor.
+      if (targetActor.workerUrl) {
+        baseURL = targetActor.workerUrl;
+      }
+      return new URL(sourceURL, baseURL || undefined).href;
+    } catch (err) {}
+  }
+
+  return null;
+}
+function getSourceURL(source, targetActor) {
   // Some eval sources have URLs, but we want to explicitly ignore those because
   // they are generally useless strings like "eval" or "debugger eval code".
   let resourceURL = getDebuggerSourceURL(source) || "";
@@ -62,9 +76,9 @@ function getSourceURL(source, window) {
   // full URL, so that is what we want to use as the base if it is present.
   // If this is not an absolute URL, this will mean the maps in the file
   // will not have a valid base URL, but that is up to tooling that
-  let result = resolveSourceURL(source.displayURL, window);
+  let result = resolveSourceURL(source.displayURL, targetActor);
   if (!result) {
-    result = resolveSourceURL(resourceURL, window) || resourceURL;
+    result = resolveSourceURL(resourceURL, targetActor) || resourceURL;
 
     // In XPCShell tests, the source URL isn't actually a URL, it's a file path.
     // That causes issues because "C:/folder/file.js" is parsed as a URL with
@@ -95,47 +109,50 @@ function getSourceURL(source, window) {
  * @param ThreadActor thread
  *        The current thread actor.
  */
-const SourceActor = ActorClassWithSpec(sourceSpec, {
-  initialize: function({ source, thread }) {
-    Actor.prototype.initialize.call(this, thread.conn);
+class SourceActor extends Actor {
+  constructor({ source, thread }) {
+    super(thread.conn, sourceSpec);
 
     this._threadActor = thread;
     this._url = undefined;
     this._source = source;
     this.__isInlineSource = undefined;
     this._startLineColumnDisplacement = null;
-  },
+  }
 
   get _isInlineSource() {
     const source = this._source;
     if (this.__isInlineSource === undefined) {
       // If the source has a usable displayURL, the source is treated as not
       // inlined because it has its own URL.
+      // Also consider sources loaded from <iframe srcdoc> as independant sources,
+      // because we can't easily fetch the full html content of the srcdoc attribute.
       this.__isInlineSource =
         source.introductionType === "inlineScript" &&
-        !resolveSourceURL(source.displayURL, this.threadActor._parent.window);
+        !resolveSourceURL(source.displayURL, this.threadActor._parent) &&
+        !this.url.startsWith("about:srcdoc");
     }
     return this.__isInlineSource;
-  },
+  }
 
   get threadActor() {
     return this._threadActor;
-  },
+  }
   get sourcesManager() {
     return this._threadActor.sourcesManager;
-  },
+  }
   get dbg() {
     return this.threadActor.dbg;
-  },
+  }
   get breakpointActorMap() {
     return this.threadActor.breakpointActorMap;
-  },
+  }
   get url() {
     if (this._url === undefined) {
-      this._url = getSourceURL(this._source, this.threadActor._parent.window);
+      this._url = getSourceURL(this._source, this.threadActor._parent);
     }
     return this._url;
-  },
+  }
 
   get extensionName() {
     if (this._extensionName === undefined) {
@@ -143,29 +160,27 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
 
       // Cu is not available for workers and so we are not able to get a
       // WebExtensionPolicy object
-      if (!isWorker && this.url) {
+      if (!isWorker && this.url?.startsWith("moz-extension:")) {
         try {
           const extURI = Services.io.newURI(this.url);
-          if (extURI) {
-            const policy = WebExtensionPolicy.getByURI(extURI);
-            if (policy) {
-              this._extensionName = policy.name;
-            }
+          const policy = WebExtensionPolicy.getByURI(extURI);
+          if (policy) {
+            this._extensionName = policy.name;
           }
         } catch (e) {
-          // Ignore
+          console.warn(`Failed to find extension name for ${this.url} : ${e}`);
         }
       }
     }
 
     return this._extensionName;
-  },
+  }
 
   get internalSourceId() {
     return this._source.id;
-  },
+  }
 
-  form: function() {
+  form() {
     const source = this._source;
 
     let introductionType = source.introductionType;
@@ -190,26 +205,27 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
       ),
       sourceMapURL: source.sourceMapURL,
       introductionType,
+      isInlineSource: this._isInlineSource,
     };
-  },
+  }
 
-  destroy: function() {
+  destroy() {
     const parent = this.getParent();
     if (parent && parent.sourceActors) {
       delete parent.sourceActors[this.actorID];
     }
-    Actor.prototype.destroy.call(this);
-  },
+    super.destroy();
+  }
 
   get _isWasm() {
     return this._source.introductionType === "wasm";
-  },
+  }
 
-  _getSourceText: async function() {
+  async _getSourceText() {
     if (this._isWasm) {
       const wasm = this._source.binary;
       const buffer = wasm.buffer;
-      assert(
+      DevToolsUtils.assert(
         wasm.byteOffset === 0 && wasm.byteLength === buffer.byteLength,
         "Typed array from wasm source binary must cover entire buffer"
       );
@@ -224,6 +240,16 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
     // It will be "no source" if the Debugger API wasn't able to load
     // the source because sources were discarded
     // (javascript.options.discardSystemSource == true).
+    //
+    // For inline source, we do something special and ignore individual source content.
+    // Instead, each inline source will return the full HTML page content where
+    // the inline source is (i.e. `<script> js source </script>`).
+    //
+    // When using srcdoc attribute on iframes:
+    //   <iframe srcdoc="<script> js source </script>"></iframe>
+    // The whole iframe source is going to be considered as an inline source because displayURL is null
+    // and introductionType is inlineScript. But Debugger.Source.text is the only way
+    // to retrieve the source content.
     if (this._source.text !== "[no source]" && !this._isInlineSource) {
       return {
         content: this.actualText(),
@@ -236,7 +262,7 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
       /* partial */ false,
       /* canUseCache */ this._isInlineSource
     );
-  },
+  }
 
   // Get the actual text of this source, padded so that line numbers will match
   // up with the source itself.
@@ -251,7 +277,7 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
       ? "\n".repeat(this._source.startLine - 1)
       : "";
     return padding + this._source.text;
-  },
+  }
 
   // Return whether the specified fetched contents includes the actual text of
   // this source in the expected position.
@@ -267,9 +293,9 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
       }
     }
     return true;
-  },
+  }
 
-  getBreakableLines: async function() {
+  async getBreakableLines() {
     const positions = await this.getBreakpointPositions();
     const lines = new Set();
     for (const position of positions) {
@@ -279,7 +305,7 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
     }
 
     return Array.from(lines);
-  },
+  }
 
   // For inline <script> tags in HTML pages, the column numbers of the start
   // line are relative to the column immediately after the opening <script> tag,
@@ -310,13 +336,13 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
       );
     }
     return this._setStartLineColumnDisplacement(fileContents);
-  },
+  }
 
   _setStartLineColumnDisplacement(fileContents) {
     const d = this._calculateStartLineColumnDisplacement(fileContents);
     this._startLineColumnDisplacement = d;
     return d;
-  },
+  }
 
   _calculateStartLineColumnDisplacement(fileContents) {
     const startLine = this._source.startLine;
@@ -346,7 +372,7 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
       return { startLine, column };
     }
     return {};
-  },
+  }
 
   // If a { line, column } location is on the starting line of an inline source,
   // adjust it upwards or downwards (per |upward|) according to the starting
@@ -367,7 +393,7 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
       location,
       upward
     );
-  },
+  }
 
   _adjustInlineScriptLocationFromDisplacement(info, location, upward) {
     const { line, column } = location;
@@ -379,7 +405,7 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
       return { line, column: column + displacement };
     }
     return location;
-  },
+  }
 
   // Get all toplevel scripts in the source. Transitive child scripts must be
   // found by traversing the child script tree.
@@ -407,11 +433,11 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
 
     this._scripts = scripts;
     return scripts;
-  },
+  }
 
   resetDebuggeeScripts() {
     this._scripts = null;
-  },
+  }
 
   // Get toplevel scripts which contain all breakpoint positions for the source.
   // This is different from _scripts if we detected that some scripts have been
@@ -452,7 +478,7 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
 
     this._breakpointPositionScripts = scripts;
     return scripts;
-  },
+  }
 
   // Get all scripts in this source that might include content in the range
   // specified by the given query.
@@ -512,9 +538,9 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
         }
       }
     }
-  },
+  }
 
-  getBreakpointPositions: async function(query) {
+  async getBreakpointPositions(query) {
     const scripts = this._findDebuggeeScripts(
       query,
       /* forBreakpointPositions */ true
@@ -533,7 +559,7 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
           return lineDiff === 0 ? a.column - b.column : lineDiff;
         })
     );
-  },
+  }
 
   async _addScriptBreakpointPositions(query, script, positions) {
     const {
@@ -564,9 +590,9 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
 
       positions.push(position);
     }
-  },
+  }
 
-  getBreakpointPositionsCompressed: async function(query) {
+  async getBreakpointPositionsCompressed(query) {
     const items = await this.getBreakpointPositions(query);
     const compressed = {};
     for (const { line, column } of items) {
@@ -576,7 +602,7 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
       compressed[line].push(column);
     }
     return compressed;
-  },
+  }
 
   /**
    * Handler for the "onSource" packet.
@@ -585,7 +611,7 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
    *         a field `source`. `source` can either be an ArrayBuffer or
    *         a LongString.
    */
-  source: async function() {
+  async source() {
     try {
       const { content, contentType } = await this._getSourceText();
       if (
@@ -605,7 +631,6 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
         contentType,
       };
     } catch (error) {
-      reportError(error, "Got an exception during SA_onSource: ");
       throw new Error(
         "Could not load the source for " +
           this.url +
@@ -613,12 +638,12 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
           DevToolsUtils.safeErrorString(error)
       );
     }
-  },
+  }
 
   /**
    * Handler for the "blackbox" packet.
    */
-  blackbox: function(range) {
+  blackbox(range) {
     this.sourcesManager.blackBox(this.url, range);
     if (
       this.threadActor.state == "paused" &&
@@ -628,14 +653,14 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
       return true;
     }
     return false;
-  },
+  }
 
   /**
    * Handler for the "unblackbox" packet.
    */
-  unblackbox: function(range) {
+  unblackbox(range) {
     this.sourcesManager.unblackBox(this.url, range);
-  },
+  }
 
   /**
    * Handler for the "setPausePoints" packet.
@@ -649,7 +674,7 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
    *          }
    *        }
    */
-  setPausePoints: function(pausePoints) {
+  setPausePoints(pausePoints) {
     const uncompressed = {};
     const points = {
       0: {},
@@ -666,7 +691,7 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
     }
 
     this.pausePoints = uncompressed;
-  },
+  }
 
   /*
    * Ensure the given BreakpointActor is set as a breakpoint handler on all
@@ -677,7 +702,7 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
    *
    * @returns A Promise that resolves to the given BreakpointActor.
    */
-  applyBreakpoint: async function(actor) {
+  async applyBreakpoint(actor) {
     let { line, column } = actor.location;
 
     // Find all entry points that correspond to the given location.
@@ -701,7 +726,7 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
       }
       lineMatches.sort((a, b) => a.columnNumber - b.columnNumber);
 
-      if (lineMatches.length > 0) {
+      if (lineMatches.length) {
         // A single Debugger.Source may have _multiple_ Debugger.Scripts
         // at the same position from multiple evaluations of the source,
         // so we explicitly want to take all of the matches for the matched
@@ -756,7 +781,7 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
     }
 
     setBreakpointAtEntryPoints(actor, entryPoints);
-  },
-});
+  }
+}
 
 exports.SourceActor = SourceActor;

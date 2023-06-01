@@ -5,14 +5,13 @@
 Transform the release-msix-push kind into an actual task description.
 """
 
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.schema import Schema, optionally_keyed_by, resolve_keyed_by
+from voluptuous import Optional, Required
 
-from gecko_taskgraph.transforms.base import TransformSequence
 from gecko_taskgraph.transforms.task import task_description_schema
 from gecko_taskgraph.util.attributes import release_level
-from gecko_taskgraph.util.schema import optionally_keyed_by, resolve_keyed_by, Schema
 from gecko_taskgraph.util.scriptworker import add_scope_prefix
-
-from voluptuous import Optional, Required
 
 push_msix_description_schema = Schema(
     {
@@ -69,6 +68,11 @@ def make_task_description(config, jobs):
                     "microsoftstore:{}".format(job["worker"]["channel"]),
                 )
             )
+
+        # Override shipping-phase for release: push to the Store early to
+        # allow time for certification.
+        if job["worker"]["publish-mode"] == "Manual":
+            job["shipping-phase"] = "promote"
 
         yield job
 

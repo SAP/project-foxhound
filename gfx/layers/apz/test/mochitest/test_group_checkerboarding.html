@@ -13,10 +13,8 @@
 
       var prefs = [
         ["apz.test.logging_enabled", true],
-        ["apz.paint_skipping.enabled", true],
         ["apz.displayport_expiry_ms", 0],
         ["general.smoothScroll", false],
-        ["apz.minimap.enabled", true], // helps to debug these tests
       ];
 
       var px_ratio_1_prefs = [
@@ -27,12 +25,10 @@
       var zoom_and_pan_prefs = [
         ...prefs,
         ...getPrefs("TOUCH_EVENTS:PAN"),
-        ["apz.allow_zooming", true],
       ];
 
       var no_multiplier_prefs = [
         ...zoom_and_pan_prefs,
-        ["layers.low-precision-buffer", false],
         ["apz.x_skate_size_multiplier", "0.0"],
         ["apz.y_skate_size_multiplier", "0.0"],
         ["apz.x_stationary_size_multiplier", "0.0"],

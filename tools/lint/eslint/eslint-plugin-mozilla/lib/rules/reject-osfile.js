@@ -9,30 +9,44 @@
 
 "use strict";
 
-// -----------------------------------------------------------------------------
-// Rule Definition
-// -----------------------------------------------------------------------------
+const { maybeGetMemberPropertyName } = require("../helpers");
 
 function isIdentifier(node, id) {
   return node && node.type === "Identifier" && node.name === id;
 }
 
-module.exports = function(context) {
-  // ---------------------------------------------------------------------------
-  // Public
-  //  --------------------------------------------------------------------------
+function isOSProp(expr, prop) {
+  return (
+    maybeGetMemberPropertyName(expr.object) === "OS" &&
+    isIdentifier(expr.property, prop)
+  );
+}
 
-  return {
-    MemberExpression(node) {
-      if (
-        isIdentifier(node.object, "OS") &&
-        isIdentifier(node.property, "File")
-      ) {
-        context.report(
-          node,
-          "OS.File is deprecated. You should use IOUtils instead."
-        );
-      }
+module.exports = {
+  meta: {
+    docs: {
+      url:
+        "https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint-plugin-mozilla/reject-osfile.html",
     },
-  };
+    schema: [],
+    type: "problem",
+  },
+
+  create(context) {
+    return {
+      MemberExpression(node) {
+        if (isOSProp(node, "File")) {
+          context.report({
+            node,
+            message: "OS.File is deprecated. You should use IOUtils instead.",
+          });
+        } else if (isOSProp(node, "Path")) {
+          context.report({
+            node,
+            message: "OS.Path is deprecated. You should use PathUtils instead.",
+          });
+        }
+      },
+    };
+  },
 };

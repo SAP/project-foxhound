@@ -4,22 +4,24 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Services = object with smart getters for common XPCOM services
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+var { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
+
+ChromeUtils.defineESModuleGetters(this, {
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
+  ContextualIdentityService:
+    "resource://gre/modules/ContextualIdentityService.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+});
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   AboutNewTab: "resource:///modules/AboutNewTab.jsm",
-  BrowserUtils: "resource://gre/modules/BrowserUtils.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  ContextualIdentityService:
-    "resource://gre/modules/ContextualIdentityService.jsm",
   ExtensionSettingsStore: "resource://gre/modules/ExtensionSettingsStore.jsm",
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
   ShellService: "resource:///modules/ShellService.jsm",
 });
 
@@ -77,7 +79,8 @@ function isBlankPageURL(aURL) {
     aURL == "about:blank" ||
     aURL == "about:home" ||
     aURL == "about:welcome" ||
-    aURL == BROWSER_NEW_TAB_URL
+    aURL == BROWSER_NEW_TAB_URL ||
+    aURL == "chrome://browser/content/blanktab.html"
   );
 }
 
@@ -101,13 +104,7 @@ function getTopWin({ skipPopups, forceNonPrivate } = {}) {
 }
 
 function doGetProtocolFlags(aURI) {
-  let handler = Services.io.getProtocolHandler(aURI.scheme);
-  // see DoGetProtocolFlags in nsIProtocolHandler.idl
-  return handler instanceof Ci.nsIProtocolHandlerWithDynamicFlags
-    ? handler
-        .QueryInterface(Ci.nsIProtocolHandlerWithDynamicFlags)
-        .getFlagsForURI(aURI)
-    : handler.protocolFlags;
+  return Services.io.getDynamicProtocolFlags(aURI);
 }
 
 /**
@@ -303,11 +300,13 @@ function openLinkIn(url, where, params) {
   var aPrincipal = params.originPrincipal;
   var aStoragePrincipal = params.originStoragePrincipal;
   var aTriggeringPrincipal = params.triggeringPrincipal;
+  var aTriggeringRemoteType = params.triggeringRemoteType;
   var aCsp = params.csp;
   var aForceAboutBlankViewerInCurrent = params.forceAboutBlankViewerInCurrent;
   var aResolveOnNewTabCreated = params.resolveOnNewTabCreated;
   // This callback will be called with the content browser once it's created.
   var aResolveOnContentBrowserReady = params.resolveOnContentBrowserCreated;
+  var aGlobalHistoryOptions = params.globalHistoryOptions;
 
   if (!aTriggeringPrincipal) {
     throw new Error("Must load with a triggering Principal");
@@ -317,6 +316,7 @@ function openLinkIn(url, where, params) {
     if ("isContentWindowPrivate" in params) {
       saveURL(
         url,
+        null,
         null,
         null,
         true,
@@ -329,13 +329,23 @@ function openLinkIn(url, where, params) {
       );
     } else {
       if (!aInitiatingDoc) {
-        Cu.reportError(
+        console.error(
           "openUILink/openLinkIn was called with " +
             "where == 'save' but without initiatingDoc.  See bug 814264."
         );
         return;
       }
-      saveURL(url, null, null, true, true, aReferrerInfo, null, aInitiatingDoc);
+      saveURL(
+        url,
+        null,
+        null,
+        null,
+        true,
+        true,
+        aReferrerInfo,
+        null,
+        aInitiatingDoc
+      );
     }
     return;
   }
@@ -398,12 +408,38 @@ function openLinkIn(url, where, params) {
     );
     wuri.data = url;
 
-    let charset = null;
-    if (aCharset) {
-      charset = Cc["@mozilla.org/supports-string;1"].createInstance(
-        Ci.nsISupportsString
+    let extraOptions = Cc["@mozilla.org/hash-property-bag;1"].createInstance(
+      Ci.nsIWritablePropertyBag2
+    );
+    if (aTriggeringRemoteType) {
+      extraOptions.setPropertyAsACString(
+        "triggeringRemoteType",
+        aTriggeringRemoteType
       );
-      charset.data = "charset=" + aCharset;
+    }
+    if (params.hasValidUserGestureActivation !== undefined) {
+      extraOptions.setPropertyAsBool(
+        "hasValidUserGestureActivation",
+        params.hasValidUserGestureActivation
+      );
+    }
+    if (aForceAllowDataURI) {
+      extraOptions.setPropertyAsBool("forceAllowDataURI", true);
+    }
+    if (params.fromExternal !== undefined) {
+      extraOptions.setPropertyAsBool("fromExternal", params.fromExternal);
+    }
+    if (aGlobalHistoryOptions?.triggeringSponsoredURL) {
+      extraOptions.setPropertyAsACString(
+        "triggeringSponsoredURL",
+        aGlobalHistoryOptions.triggeringSponsoredURL
+      );
+      if (aGlobalHistoryOptions.triggeringSponsoredURLVisitTimeMS) {
+        extraOptions.setPropertyAsUint64(
+          "triggeringSponsoredURLVisitTimeMS",
+          aGlobalHistoryOptions.triggeringSponsoredURLVisitTimeMS
+        );
+      }
     }
 
     var allowThirdPartyFixupSupports = Cc[
@@ -417,7 +453,7 @@ function openLinkIn(url, where, params) {
     userContextIdSupports.data = aUserContextId;
 
     sa.appendElement(wuri);
-    sa.appendElement(charset);
+    sa.appendElement(extraOptions);
     sa.appendElement(aReferrerInfo);
     sa.appendElement(aPostData);
     sa.appendElement(allowThirdPartyFixupSupports);
@@ -501,14 +537,20 @@ function openLinkIn(url, where, params) {
   if (where == "current") {
     targetBrowser = params.targetBrowser || w.gBrowser.selectedBrowser;
     loadInBackground = false;
-
     try {
       uriObj = Services.io.newURI(url);
     } catch (e) {}
 
-    if (
+    // In certain tabs, we restrict what if anything may replace the loaded
+    // page. If a load request bounces off for the currently selected tab,
+    // we'll open a new tab instead.
+    let tab = w.gBrowser.getTabForBrowser(targetBrowser);
+    if (tab == w.FirefoxViewHandler.tab) {
+      where = "tab";
+      targetBrowser = null;
+    } else if (
       !aAllowPinnedTabHostChange &&
-      w.gBrowser.getTabForBrowser(targetBrowser).pinned &&
+      tab.pinned &&
       url != "about:crashcontent"
     ) {
       try {
@@ -519,15 +561,15 @@ function openLinkIn(url, where, params) {
             targetBrowser.currentURI.host != uriObj.host)
         ) {
           where = "tab";
-          loadInBackground = false;
+          targetBrowser = null;
         }
       } catch (err) {
         where = "tab";
-        loadInBackground = false;
+        targetBrowser = null;
       }
     }
   } else {
-    // 'where' is "tab" or "tabshifted", so we'll load the link in a new tab.
+    // `where` is "tab" or "tabshifted", so we'll load the link in a new tab.
     loadInBackground = aInBackground;
     if (loadInBackground == null) {
       loadInBackground = aFromChrome
@@ -562,6 +604,9 @@ function openLinkIn(url, where, params) {
       if (aForceAllowDataURI) {
         flags |= Ci.nsIWebNavigation.LOAD_FLAGS_FORCE_ALLOW_DATA_URI;
       }
+      if (params.fromExternal) {
+        flags |= Ci.nsIWebNavigation.LOAD_FLAGS_FROM_EXTERNAL;
+      }
 
       let { URI_INHERITS_SECURITY_CONTEXT } = Ci.nsIProtocolHandler;
       if (
@@ -583,6 +628,9 @@ function openLinkIn(url, where, params) {
         referrerInfo: aReferrerInfo,
         postData: aPostData,
         userContextId: aUserContextId,
+        hasValidUserGestureActivation: params.hasValidUserGestureActivation,
+        globalHistoryOptions: aGlobalHistoryOptions,
+        triggeringRemoteType: aTriggeringRemoteType,
       });
       if (aResolveOnContentBrowserReady) {
         aResolveOnContentBrowserReady(targetBrowser);
@@ -603,7 +651,7 @@ function openLinkIn(url, where, params) {
         w.isBlankPageURL(url) &&
         !AboutNewTab.willNotifyUser;
 
-      let tabUsedForLoad = w.gBrowser.loadOneTab(url, {
+      let tabUsedForLoad = w.gBrowser.addTab(url, {
         referrerInfo: aReferrerInfo,
         charset: aCharset,
         postData: aPostData,
@@ -616,9 +664,13 @@ function openLinkIn(url, where, params) {
         originStoragePrincipal: aStoragePrincipal,
         triggeringPrincipal: aTriggeringPrincipal,
         allowInheritPrincipal: aAllowInheritPrincipal,
+        triggeringRemoteType: aTriggeringRemoteType,
         csp: aCsp,
+        forceAllowDataURI: aForceAllowDataURI,
         focusUrlBar,
         openerBrowser: params.openerBrowser,
+        fromExternal: params.fromExternal,
+        globalHistoryOptions: aGlobalHistoryOptions,
       });
       targetBrowser = tabUsedForLoad.linkedBrowser;
 
@@ -874,7 +926,7 @@ function gatherTextUnder(root) {
     if (node.nodeType == Node.TEXT_NODE) {
       // Add this text to our collection.
       text += " " + node.data;
-    } else if (node instanceof HTMLImageElement) {
+    } else if (HTMLImageElement.isInstance(node)) {
       // If it has an "alt" attribute, add that.
       var altText = node.getAttribute("alt");
       if (altText && altText != "") {
@@ -1039,6 +1091,10 @@ function buildHelpMenu() {
   document.getElementById(
     "helpSafeMode"
   ).disabled = !Services.policies.isAllowed("safeMode");
+
+  document.getElementById(
+    "troubleShooting"
+  ).disabled = !Services.policies.isAllowed("aboutSupport");
 
   let supportMenu = Services.policies.getSupportMenu();
   if (supportMenu) {

@@ -5,6 +5,7 @@
 
 #include "HTMLFormControlAccessible.h"
 
+#include "CacheConstants.h"
 #include "DocAccessible-inl.h"
 #include "LocalAccessible-inl.h"
 #include "nsAccUtils.h"
@@ -23,7 +24,6 @@
 #include "mozilla/dom/ScriptSettings.h"
 
 #include "mozilla/EditorBase.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/TextEditor.h"
@@ -40,18 +40,6 @@ role HTMLFormAccessible::NativeRole() const {
   nsAutoString name;
   const_cast<HTMLFormAccessible*>(this)->Name(name);
   return name.IsEmpty() ? roles::FORM : roles::FORM_LANDMARK;
-}
-
-nsAtom* HTMLFormAccessible::LandmarkRole() const {
-  if (!HasOwnContent()) {
-    return nullptr;
-  }
-
-  // Only return xml-roles "form" if the form has an accessible name.
-  nsAutoString name;
-  const_cast<HTMLFormAccessible*>(this)->Name(name);
-  return name.IsEmpty() ? HyperTextAccessibleWrap::LandmarkRole()
-                        : nsGkAtoms::form;
 }
 
 void HTMLFormAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
@@ -101,6 +89,20 @@ uint64_t HTMLRadioButtonAccessible::NativeState() const {
 void HTMLRadioButtonAccessible::GetPositionAndSetSize(int32_t* aPosInSet,
                                                       int32_t* aSetSize) {
   Unused << ComputeGroupAttributes(aPosInSet, aSetSize);
+}
+
+void HTMLRadioButtonAccessible::DOMAttributeChanged(
+    int32_t aNameSpaceID, nsAtom* aAttribute, int32_t aModType,
+    const nsAttrValue* aOldValue, uint64_t aOldState) {
+  if (aAttribute == nsGkAtoms::name) {
+    // If our name changed, it's possible our MEMBER_OF relation
+    // also changed. Push a cache update for Relations.
+    mDoc->QueueCacheUpdate(this, CacheDomain::Relations);
+  } else {
+    // Otherwise, handle this attribute change the way our parent
+    // class wants us to handle it.
+    RadioButtonAccessible::DOMAttributeChanged(aNameSpaceID, aAttribute, aModType, aOldValue, aOldState);
+  }
 }
 
 Relation HTMLRadioButtonAccessible::ComputeGroupAttributes(
@@ -168,17 +170,10 @@ HTMLButtonAccessible::HTMLButtonAccessible(nsIContent* aContent,
   mGenericTypes |= eButton;
 }
 
-uint8_t HTMLButtonAccessible::ActionCount() const { return 1; }
+bool HTMLButtonAccessible::HasPrimaryAction() const { return true; }
 
 void HTMLButtonAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
   if (aIndex == eAction_Click) aName.AssignLiteral("press");
-}
-
-bool HTMLButtonAccessible::DoAction(uint8_t aIndex) const {
-  if (aIndex != eAction_Click) return false;
-
-  DoCommand();
-  return true;
 }
 
 uint64_t HTMLButtonAccessible::State() {
@@ -200,8 +195,8 @@ uint64_t HTMLButtonAccessible::State() {
 uint64_t HTMLButtonAccessible::NativeState() const {
   uint64_t state = HyperTextAccessibleWrap::NativeState();
 
-  EventStates elmState = mContent->AsElement()->State();
-  if (elmState.HasState(NS_EVENT_STATE_DEFAULT)) state |= states::DEFAULT;
+  ElementState elmState = mContent->AsElement()->State();
+  if (elmState.HasState(ElementState::DEFAULT)) state |= states::DEFAULT;
 
   return state;
 }
@@ -248,8 +243,8 @@ void HTMLButtonAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
         (elm->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type, nsGkAtoms::image,
                           eCaseMatters) &&
          !elm->HasAttr(kNameSpaceID_None, nsGkAtoms::alt))) {
-      if (!elm->HasAttr(kNameSpaceID_None, nsGkAtoms::aria_labelledby) &&
-          !elm->HasAttr(kNameSpaceID_None, nsGkAtoms::aria_label)) {
+      if (!nsAccUtils::HasARIAAttr(elm, nsGkAtoms::aria_labelledby) &&
+          !nsAccUtils::HasARIAAttr(elm, nsGkAtoms::aria_label)) {
         mDoc->FireDelayedEvent(nsIAccessibleEvent::EVENT_NAME_CHANGE, this);
       }
     }
@@ -420,7 +415,7 @@ uint64_t HTMLTextFieldAccessible::NativeState() const {
   return state;
 }
 
-uint8_t HTMLTextFieldAccessible::ActionCount() const { return 1; }
+bool HTMLTextFieldAccessible::HasPrimaryAction() const { return true; }
 
 void HTMLTextFieldAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
   if (aIndex == eAction_Click) aName.AssignLiteral("activate");
@@ -614,9 +609,11 @@ double HTMLRangeAccessible::CurValue() const {
 }
 
 bool HTMLRangeAccessible::SetCurValue(double aValue) {
-  ErrorResult er;
-  HTMLInputElement::FromNode(mContent)->SetValueAsNumber(aValue, er);
-  return !er.Failed();
+  nsAutoString strValue;
+  strValue.AppendFloat(aValue);
+  HTMLInputElement::FromNode(mContent)->SetUserInput(
+      strValue, *nsContentUtils::GetSystemPrincipal());
+  return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

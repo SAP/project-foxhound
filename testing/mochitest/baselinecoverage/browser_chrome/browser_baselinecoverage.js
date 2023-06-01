@@ -4,8 +4,6 @@
 
 "use strict";
 
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
-
 add_task(async function() {
   requestLongerTimeout(2);
   ok(true, "Collecting baseline coverage for javascript (.js) file types.");

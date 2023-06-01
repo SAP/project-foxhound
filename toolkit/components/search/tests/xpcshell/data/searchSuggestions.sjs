@@ -1,7 +1,9 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-let { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+let { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 let { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 Cu.importGlobalProperties(["TextEncoder"]);
@@ -35,7 +37,7 @@ function handleRequest(request, response) {
    * suggestions, which do not conform to the object shape sent by
    * writeSuggestions.
    *
-   * @param {array} data
+   * @param {Array} data The data to send as suggestions.
    */
   function writeSuggestionsDirectly(data) {
     let jsonString = JSON.stringify(data);

@@ -1,7 +1,7 @@
 "use strict";
 
-const { PlacesTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PlacesTestUtils.jsm"
+const { PlacesTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PlacesTestUtils.sys.mjs"
 );
 
 const { PermissionTestUtils } = ChromeUtils.import(
@@ -9,6 +9,7 @@ const { PermissionTestUtils } = ChromeUtils.import(
 );
 
 let notificationURL =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.org/browser/browser/base/content/test/alerts/file_dom_notifications.html";
 let oldShowFavicons;
 

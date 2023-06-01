@@ -4,12 +4,14 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
-const { ContentTaskUtils } = ChromeUtils.import(
-  "resource://testing-common/ContentTaskUtils.jsm"
+const { ContentTaskUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/ContentTaskUtils.sys.mjs"
+);
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
 );
 
 var EXPORTED_SYMBOLS = ["NarrateTestUtils"];
@@ -28,12 +30,15 @@ var NarrateTestUtils = {
   FORWARD: ".narrate-skip-next",
 
   isVisible(element) {
-    let style = element.ownerGlobal.getComputedStyle(element);
+    let win = element.ownerGlobal;
+    let style = win.getComputedStyle(element);
     if (style.display == "none") {
       return false;
-    } else if (style.visibility != "visible") {
+    }
+    if (style.visibility != "visible") {
       return false;
-    } else if (style.display == "-moz-popup" && element.state != "open") {
+    }
+    if (win.XULPopupElement.isInstance(element) && element.state != "open") {
       return false;
     }
 
@@ -52,7 +57,7 @@ var NarrateTestUtils = {
     ok(!!$(this.START), "start button is showing");
     ok(!$(this.STOP), "stop button is hidden");
     // This checks for a localized label. Not the best...
-    ok($(this.START).title == "Start", "Button tooltip is correct");
+    ok($(this.START).title == "Start (N)", "Button tooltip is correct");
   },
 
   isStartedState(window, ok) {
@@ -62,7 +67,7 @@ var NarrateTestUtils = {
     ok(!$(this.START), "start button is hidden");
     ok(!!$(this.STOP), "stop button is showing");
     // This checks for a localized label. Not the best...
-    ok($(this.STOP).title == "Stop", "Button tooltip is correct");
+    ok($(this.STOP).title == "Stop (N)", "Button tooltip is correct");
   },
 
   selectVoice(window, voiceUri) {
@@ -85,6 +90,7 @@ var NarrateTestUtils = {
       _EU_Ci: Ci,
       _EU_Cc: Cc,
       window,
+      setTimeout,
       parent: window,
       navigator: window.navigator,
       KeyboardEvent: window.KeyboardEvent,

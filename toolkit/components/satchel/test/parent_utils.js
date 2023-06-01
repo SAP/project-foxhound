@@ -1,16 +1,13 @@
-/* eslint-env mozilla/frame-script */
-// assert is available to chrome scripts loaded via SpecialPowers.loadChromeScript.
-/* global assert */
+/* eslint-env mozilla/chrome-script */
 
-const { FormHistory } = ChromeUtils.import(
-  "resource://gre/modules/FormHistory.jsm"
+const { FormHistory } = ChromeUtils.importESModule(
+  "resource://gre/modules/FormHistory.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { ContentTaskUtils } = ChromeUtils.import(
-  "resource://testing-common/ContentTaskUtils.jsm"
+const { ContentTaskUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/ContentTaskUtils.sys.mjs"
 );
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
 var gAutocompletePopup = Services.ww.activeWindow.document.getElementById(
@@ -28,28 +25,20 @@ var ParentUtils = {
     return entries;
   },
 
-  cleanUpFormHist(callback) {
-    FormHistory.update(
-      { op: "remove" },
-      {
-        handleCompletion: callback,
-      }
-    );
+  cleanUpFormHistory() {
+    return FormHistory.update({ op: "remove" });
   },
 
   updateFormHistory(changes) {
-    let handler = {
-      handleError(error) {
-        assert.ok(false, error);
+    FormHistory.update(changes).then(
+      () => {
+        sendAsyncMessage("formHistoryUpdated", { ok: true });
+      },
+      error => {
         sendAsyncMessage("formHistoryUpdated", { ok: false });
-      },
-      handleCompletion(reason) {
-        if (!reason) {
-          sendAsyncMessage("formHistoryUpdated", { ok: true });
-        }
-      },
-    };
-    FormHistory.update(changes, handler);
+        assert.ok(false, error);
+      }
+    );
   },
 
   popupshownListener() {
@@ -66,23 +55,15 @@ var ParentUtils = {
       obj.value = value;
     }
 
-    let count = 0;
-    let listener = {
-      handleResult(result) {
-        count = result;
+    FormHistory.count(obj).then(
+      count => {
+        sendAsyncMessage("entriesCounted", { ok: true, count });
       },
-      handleError(error) {
+      error => {
         assert.ok(false, error);
         sendAsyncMessage("entriesCounted", { ok: false });
-      },
-      handleCompletion(reason) {
-        if (!reason) {
-          sendAsyncMessage("entriesCounted", { ok: true, count });
-        }
-      },
-    };
-
-    FormHistory.count(obj, listener);
+      }
+    );
   },
 
   checkRowCount(expectedCount, expectedFirstValue = null) {
@@ -160,19 +141,18 @@ var ParentUtils = {
     ).then(reply);
   },
 
-  observe(subject, topic, data) {
-    assert.ok(topic === "satchel-storage-changed");
+  observe(_subject, topic, data) {
+    // This function can be called after SimpleTest.finish().
+    // Do not write assertions here, they will lead to intermittent failures.
     sendAsyncMessage("satchel-storage-changed", { subject: null, topic, data });
   },
 
-  cleanup() {
+  async cleanup() {
     gAutocompletePopup.removeEventListener(
       "popupshown",
       this._popupshownListener
     );
-    this.cleanUpFormHist(() => {
-      sendAsyncMessage("cleanup-done");
-    });
+    await this.cleanUpFormHistory();
   },
 };
 
@@ -183,7 +163,7 @@ gAutocompletePopup.addEventListener(
   "popupshown",
   ParentUtils._popupshownListener
 );
-ParentUtils.cleanUpFormHist();
+ParentUtils.cleanUpFormHistory();
 
 addMessageListener("updateFormHistory", msg => {
   ParentUtils.updateFormHistory(msg.changes);
@@ -218,6 +198,6 @@ addMessageListener("removeObserver", () => {
   Services.obs.removeObserver(ParentUtils, "satchel-storage-changed");
 });
 
-addMessageListener("cleanup", () => {
-  ParentUtils.cleanup();
+addMessageListener("cleanup", async () => {
+  await ParentUtils.cleanup();
 });

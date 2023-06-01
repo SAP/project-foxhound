@@ -22,7 +22,7 @@ const TEST_URL = "data:text/html,<html><body></body></html>";
 
 StarUI._closePanelQuickForTesting = true;
 
-add_task(async function setup() {
+add_setup(async function() {
   bookmarkPanel.setAttribute("animate", false);
   registerCleanupFunction(() => {
     bookmarkPanel.removeAttribute("animate");
@@ -437,8 +437,7 @@ add_task(async function contextmenu_new_bookmark_keypress_no_autoclose() {
         browser
       );
       await awaitPopupShown;
-      document.getElementById("context-bookmarkpage").click();
-      contextMenu.hidePopup();
+      contextMenu.activateItem(document.getElementById("context-bookmarkpage"));
       await awaitPopupHidden;
     },
     popupEditFn() {

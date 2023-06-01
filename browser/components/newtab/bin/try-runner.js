@@ -63,7 +63,7 @@ function checkBundles() {
   let ASbefore = readFileSync(ASbundle, "utf8");
   let AWbefore = readFileSync(AWbundle, "utf8");
 
-  execOut("npm", ["run", "bundle"]);
+  let bundleExitCode = execOut("npm", ["run", "bundle"]).exitCode;
 
   let ASafter = readFileSync(ASbundle, "utf8");
   let AWafter = readFileSync(AWbundle, "utf8");
@@ -74,6 +74,10 @@ function checkBundles() {
 
   if (AWbefore !== AWafter) {
     errors.push("About:welcome bundle out of date");
+  }
+
+  if (bundleExitCode !== 0) {
+    errors.push("npm:bundle did not run successfully");
   }
 
   logErrors("checkBundles", errors);
@@ -128,6 +132,10 @@ function karma() {
   }
 
   logErrors("karma", errors);
+
+  console.log("-----karma stdout below this line---");
+  console.log(out);
+  console.log("-----karma stdout above this line---");
 
   // Pass if there's no detected errors and nothing unexpected.
   return errors.length === 0 && !exitCode;

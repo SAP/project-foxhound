@@ -4,28 +4,19 @@
 
 #include "mozilla/SpinEventLoopUntil.h"
 #include "nsIOService.h"
+#include "nsIPipe.h"
 #include "nsSyncStreamListener.h"
 #include "nsThreadUtils.h"
 #include <algorithm>
 
 using namespace mozilla::net;
 
-nsresult nsSyncStreamListener::Init() {
-  return NS_NewPipe(getter_AddRefs(mPipeIn), getter_AddRefs(mPipeOut),
-                    mozilla::net::nsIOService::gDefaultSegmentSize,
-                    UINT32_MAX,  // no size limit
-                    false, false);
-}
-
-// static
-already_AddRefed<nsISyncStreamListener> nsSyncStreamListener::Create() {
+nsSyncStreamListener::nsSyncStreamListener() {
   MOZ_ASSERT(NS_IsMainThread());
-
-  RefPtr<nsSyncStreamListener> inst = new nsSyncStreamListener();
-  nsresult rv = inst->Init();
-  NS_ENSURE_SUCCESS(rv, nullptr);
-
-  return inst.forget();
+  NS_NewPipe(getter_AddRefs(mPipeIn), getter_AddRefs(mPipeOut),
+             mozilla::net::nsIOService::gDefaultSegmentSize,
+             UINT32_MAX,  // no size limit
+             false, false);
 }
 
 nsresult nsSyncStreamListener::WaitForData() {

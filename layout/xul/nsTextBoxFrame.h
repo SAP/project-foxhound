@@ -62,6 +62,16 @@ class nsTextBoxFrame final : public nsLeafBoxFrame {
 
   virtual void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
 
+  // Helper for GetCroppedTitle, factored out so that we can also use it from
+  // nsTreeBodyFrame::AdjustForCellText.
+  static void CropStringForWidth(nsAString& aText,
+                                 gfxContext& aRenderingContext,
+                                 nsFontMetrics& aFontMetrics, nscoord aWidth,
+                                 CroppingStyle aCropType);
+
+  static bool AlwaysAppendAccessKey();
+  static bool InsertSeparatorBeforeAccessKey();
+
  protected:
   friend class nsAsyncAccesskeyUpdate;
   friend class mozilla::nsDisplayXULTextBox;
@@ -93,9 +103,6 @@ class nsTextBoxFrame final : public nsLeafBoxFrame {
                    nsSize& aSize, nscoord& aAscent);
 
  private:
-  bool AlwaysAppendAccessKey();
-  bool InsertSeparatorBeforeAccessKey();
-
   void DrawText(gfxContext& aRenderingContext, const nsRect& aDirtyRect,
                 const nsRect& aTextRect, const nscolor* aOverrideColor);
 

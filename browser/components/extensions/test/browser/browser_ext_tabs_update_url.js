@@ -2,16 +2,10 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "SessionStore",
-  "resource:///modules/sessionstore/SessionStore.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "TabStateFlusher",
-  "resource:///modules/sessionstore/TabStateFlusher.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
+  TabStateFlusher: "resource:///modules/sessionstore/TabStateFlusher.sys.mjs",
+});
 
 async function testTabsUpdateURL(
   existentTabURL,
@@ -171,7 +165,7 @@ add_task(async function test_update_reload() {
 
   let win = await BrowserTestUtils.openNewBrowserWindow();
   let tabBrowser = win.gBrowser.selectedBrowser;
-  BrowserTestUtils.loadURI(tabBrowser, URL);
+  BrowserTestUtils.loadURIString(tabBrowser, URL);
   await BrowserTestUtils.browserLoaded(tabBrowser, false, URL);
   let tab = win.gBrowser.selectedTab;
 

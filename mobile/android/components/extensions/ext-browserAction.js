@@ -1,5 +1,9 @@
 /* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* vim: set sts=2 sw=2 et tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
 
 // The ext-* files are imported into the same scopes.
@@ -50,9 +54,10 @@ class BrowserAction extends BrowserActionBase {
     });
   }
 
-  openPopup() {
-    const tab = tabTracker.activeTab;
-    const popupUri = this.triggerClickOrPopup(tab);
+  openPopup(tab, openPopupWithoutUserInteraction = false) {
+    const popupUri = openPopupWithoutUserInteraction
+      ? this.getPopupUrl(tab)
+      : this.triggerClickOrPopup(tab);
     const actionObject = this.getContextData(tab);
     const action = this.helper.extractProperties(actionObject);
     this.helper.sendRequest(tab.id, {
@@ -79,7 +84,11 @@ class BrowserAction extends BrowserActionBase {
   }
 }
 
-this.browserAction = class extends ExtensionAPI {
+this.browserAction = class extends ExtensionAPIPersistent {
+  static for(extension) {
+    return GeckoViewWebExtension.browserActions.get(extension);
+  }
+
   async onManifestEntry(entryName) {
     const { extension } = this;
     this.action = new BrowserAction(extension, this);
@@ -101,9 +110,33 @@ this.browserAction = class extends ExtensionAPI {
     this.emit("click", tabTracker.activeTab);
   }
 
+  PERSISTENT_EVENTS = {
+    onClicked({ context, fire }) {
+      const { extension } = this;
+      const { tabManager } = extension;
+      async function listener(_event, tab) {
+        if (fire.wakeup) {
+          await fire.wakeup();
+        }
+        // TODO: we should double-check if the tab is already being closed by the time
+        // the background script got started and we converted the primed listener.
+        fire.sync(tabManager.convert(tab));
+      }
+      this.on("click", listener);
+      return {
+        unregister: () => {
+          this.off("click", listener);
+        },
+        convert(newFire, extContext) {
+          fire = newFire;
+          context = extContext;
+        },
+      };
+    },
+  };
+
   getAPI(context) {
     const { extension } = context;
-    const { tabManager } = extension;
     const { action } = this;
     const namespace =
       extension.manifestVersion < 3 ? "browserAction" : "action";
@@ -114,20 +147,44 @@ this.browserAction = class extends ExtensionAPI {
 
         onClicked: new EventManager({
           context,
-          name: `${namespace}.onClicked`,
-          register: fire => {
-            const listener = (event, tab) => {
-              fire.async(tabManager.convert(tab));
-            };
-            this.on("click", listener);
-            return () => {
-              this.off("click", listener);
-            };
-          },
+          // module name is "browserAction" because it the name used in the
+          // ext-browser.json, independently from the manifest version.
+          module: "browserAction",
+          event: "onClicked",
+          // NOTE: Firefox Desktop event has inputHandling set to true here.
+          // inputHandling: true,
+          extensionApi: this,
         }).api(),
 
-        openPopup: function() {
-          action.openPopup();
+        openPopup: options => {
+          const isHandlingUserInput =
+            context.callContextData?.isHandlingUserInput;
+
+          if (
+            !Services.prefs.getBoolPref(
+              "extensions.openPopupWithoutUserGesture.enabled"
+            ) &&
+            !isHandlingUserInput
+          ) {
+            throw new ExtensionError("openPopup requires a user gesture");
+          }
+
+          const currentWindow = windowTracker.getCurrentWindow(context);
+
+          const window =
+            typeof options?.windowId === "number"
+              ? windowTracker.getWindow(options.windowId, context)
+              : currentWindow;
+
+          if (window !== currentWindow) {
+            throw new ExtensionError(
+              "Only the current window is supported on Android."
+            );
+          }
+
+          if (this.action.getPopupUrl(window.tab, true)) {
+            action.openPopup(window.tab, !isHandlingUserInput);
+          }
         },
       },
     };

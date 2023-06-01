@@ -1,10 +1,11 @@
 "use strict";
 
-const { UrlbarTestUtils } = ChromeUtils.import(
-  "resource://testing-common/UrlbarTestUtils.jsm"
+const { UrlbarTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/UrlbarTestUtils.sys.mjs"
 );
 
 const REDIRECTURL =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://www.example.com/browser/docshell/test/browser/redirect_to_example.sjs";
 
 add_task(async function() {

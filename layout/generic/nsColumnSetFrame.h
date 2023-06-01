@@ -31,11 +31,11 @@ class nsColumnSetFrame final : public nsContainerFrame {
 
 #ifdef DEBUG
   void SetInitialChildList(ChildListID aListID,
-                           nsFrameList& aChildList) override;
-  void AppendFrames(ChildListID aListID, nsFrameList& aFrameList) override;
+                           nsFrameList&& aChildList) override;
+  void AppendFrames(ChildListID aListID, nsFrameList&& aFrameList) override;
   void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                     const nsLineList::iterator* aPrevFrameLine,
-                    nsFrameList& aFrameList) override;
+                    nsFrameList&& aFrameList) override;
   void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
 #endif
 
@@ -108,6 +108,10 @@ class nsColumnSetFrame final : public nsContainerFrame {
     // sequentially.
     bool mForceAuto = false;
 
+    // A boolean indicates whether or not we are in the last attempt to reflow
+    // columns. We set it to true at the end of FindBestBalanceBSize().
+    bool mIsLastBalancingReflow = false;
+
     // The last known column block-size that was 'feasible'. A column bSize is
     // feasible if all child content fits within the specified bSize.
     nscoord mKnownFeasibleBSize = NS_UNCONSTRAINEDSIZE;
@@ -138,11 +142,6 @@ class nsColumnSetFrame final : public nsContainerFrame {
     // column). It can be less than ReflowConfig::mUsedColCount.
     int32_t mColCount = 1;
 
-    // This flag determines whether the last reflow of children exceeded the
-    // computed block-size of the column set frame. If so, we set the bSize to
-    // this maximum allowable bSize, and continue reflow without balancing.
-    bool mHasExcessBSize = false;
-
     // This flag indicates the content that was reflowed fits into the
     // mColMaxBSize in ReflowConfig.
     bool mFeasible = false;
@@ -150,15 +149,9 @@ class nsColumnSetFrame final : public nsContainerFrame {
 
   ColumnBalanceData ReflowColumns(ReflowOutput& aDesiredSize,
                                   const ReflowInput& aReflowInput,
-                                  nsReflowStatus& aReflowStatus,
-                                  ReflowConfig& aConfig,
+                                  nsReflowStatus& aStatus,
+                                  const ReflowConfig& aConfig,
                                   bool aUnboundedLastColumn);
-
-  ColumnBalanceData ReflowChildren(ReflowOutput& aDesiredSize,
-                                   const ReflowInput& aReflowInput,
-                                   nsReflowStatus& aStatus,
-                                   const ReflowConfig& aConfig,
-                                   bool aUnboundedLastColumn);
 
   /**
    * The basic reflow strategy is to call this function repeatedly to

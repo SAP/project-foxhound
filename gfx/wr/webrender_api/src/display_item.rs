@@ -42,16 +42,18 @@ bitflags! {
         const IS_BACKFACE_VISIBLE = 1 << 0;
         /// If set, this primitive represents a scroll bar container
         const IS_SCROLLBAR_CONTAINER = 1 << 1;
-        /// If set, this primitive represents a scroll bar thumb
-        const IS_SCROLLBAR_THUMB = 1 << 2;
         /// This is used as a performance hint - this primitive may be promoted to a native
         /// compositor surface under certain (implementation specific) conditions. This
         /// is typically used for large videos, and canvas elements.
-        const PREFER_COMPOSITOR_SURFACE = 1 << 3;
+        const PREFER_COMPOSITOR_SURFACE = 1 << 2;
         /// If set, this primitive can be passed directly to the compositor via its
         /// ExternalImageId, and the compositor will use the native image directly.
         /// Used as a further extension on top of PREFER_COMPOSITOR_SURFACE.
-        const SUPPORTS_EXTERNAL_COMPOSITOR_SURFACE = 1 << 4;
+        const SUPPORTS_EXTERNAL_COMPOSITOR_SURFACE = 1 << 3;
+        /// This flags disables snapping and forces anti-aliasing even if the primitive is axis-aligned.
+        const ANTIALISED = 1 << 4;
+        /// If true, this primitive is used as a background for checkerboarding
+        const CHECKERBOARD_BACKGROUND = 1 << 5;
     }
 }
 
@@ -70,7 +72,7 @@ pub struct CommonItemProperties {
     /// (solid colors, background-images, gradients, etc).
     pub clip_rect: LayoutRect,
     /// Additional clips
-    pub clip_id: ClipId,
+    pub clip_chain_id: ClipChainId,
     /// The coordinate-space the item is in (yes, it can be really granular)
     pub spatial_id: SpatialId,
     /// Various flags describing properties of this primitive.
@@ -86,7 +88,7 @@ impl CommonItemProperties {
         Self {
             clip_rect,
             spatial_id: space_and_clip.spatial_id,
-            clip_id: space_and_clip.clip_id,
+            clip_chain_id: space_and_clip.clip_chain_id,
             flags: PrimitiveFlags::default(),
         }
     }
@@ -101,7 +103,7 @@ impl CommonItemProperties {
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub struct SpaceAndClipInfo {
     pub spatial_id: SpatialId,
-    pub clip_id: ClipId,
+    pub clip_chain_id: ClipChainId,
 }
 
 impl SpaceAndClipInfo {
@@ -110,7 +112,7 @@ impl SpaceAndClipInfo {
     pub fn root_scroll(pipeline_id: PipelineId) -> Self {
         SpaceAndClipInfo {
             spatial_id: SpatialId::root_scroll_node(pipeline_id),
-            clip_id: ClipId::root(pipeline_id),
+            clip_chain_id: ClipChainId::INVALID,
         }
     }
 }
@@ -237,7 +239,7 @@ pub enum DebugDisplayItem {
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub struct ImageMaskClipDisplayItem {
     pub id: ClipId,
-    pub parent_space_and_clip: SpaceAndClipInfo,
+    pub spatial_id: SpatialId,
     pub image_mask: ImageMask,
     pub fill_rule: FillRule,
 } // IMPLICIT points: Vec<LayoutPoint>
@@ -245,23 +247,16 @@ pub struct ImageMaskClipDisplayItem {
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub struct RectClipDisplayItem {
     pub id: ClipId,
-    pub parent_space_and_clip: SpaceAndClipInfo,
+    pub spatial_id: SpatialId,
     pub clip_rect: LayoutRect,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub struct RoundedRectClipDisplayItem {
     pub id: ClipId,
-    pub parent_space_and_clip: SpaceAndClipInfo,
+    pub spatial_id: SpatialId,
     pub clip: ComplexClipRegion,
 }
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
-pub struct ClipDisplayItem {
-    pub id: ClipId,
-    pub parent_space_and_clip: SpaceAndClipInfo,
-    pub clip_rect: LayoutRect,
-} // IMPLICIT: complex_clips: Vec<ComplexClipRegion>
 
 /// The minimum and maximum allowable offset for a sticky frame in a single dimension.
 #[repr(C)]
@@ -363,7 +358,10 @@ pub struct ClearRectangleDisplayItem {
 /// distinct item also makes it easier to inspect/debug display items.
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub struct HitTestDisplayItem {
-    pub common: CommonItemProperties,
+    pub rect: LayoutRect,
+    pub clip_chain_id: ClipChainId,
+    pub spatial_id: SpatialId,
+    pub flags: PrimitiveFlags,
     pub tag: ItemTag,
 }
 
@@ -877,7 +875,7 @@ pub struct PushStackingContextDisplayItem {
 pub struct StackingContext {
     pub transform_style: TransformStyle,
     pub mix_blend_mode: MixBlendMode,
-    pub clip_id: Option<ClipId>,
+    pub clip_chain_id: Option<ClipChainId>,
     pub raster_space: RasterSpace,
     pub flags: StackingContextFlags,
 }
@@ -940,12 +938,13 @@ bitflags! {
     #[repr(C)]
     #[derive(Deserialize, MallocSizeOf, Serialize, PeekPoke)]
     pub struct StackingContextFlags: u8 {
-        /// If true, this stacking context represents a backdrop root, per the CSS
-        /// filter-effects specification (see https://drafts.fxtf.org/filter-effects-2/#BackdropRoot).
-        const IS_BACKDROP_ROOT = 1 << 0;
         /// If true, this stacking context is a blend container than contains
         /// mix-blend-mode children (and should thus be isolated).
-        const IS_BLEND_CONTAINER = 1 << 1;
+        const IS_BLEND_CONTAINER = 1 << 0;
+        /// If true, this stacking context is a wrapper around a backdrop-filter (e.g. for
+        /// a clip-mask). This is needed to allow the correct selection of a backdrop root
+        /// since a clip-mask stacking context creates a parent surface.
+        const WRAPS_BACKDROP_FILTER = 1 << 1;
     }
 }
 
@@ -974,6 +973,7 @@ pub enum MixBlendMode {
     Saturation = 13,
     Color = 14,
     Luminosity = 15,
+    PlusLighter = 16,
 }
 
 #[repr(C)]
@@ -1433,6 +1433,7 @@ impl YuvColorSpace {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, PeekPoke)]
 pub enum YuvData {
     NV12(ImageKey, ImageKey), // (Y channel, CbCr interleaved channel)
+    P010(ImageKey, ImageKey), // (Y channel, CbCr interleaved channel)
     PlanarYCbCr(ImageKey, ImageKey, ImageKey), // (Y channel, Cb channel, Cr Channel)
     InterleavedYCbCr(ImageKey), // (YCbCr interleaved channel)
 }
@@ -1441,6 +1442,7 @@ impl YuvData {
     pub fn get_format(&self) -> YuvFormat {
         match *self {
             YuvData::NV12(..) => YuvFormat::NV12,
+            YuvData::P010(..) => YuvFormat::P010,
             YuvData::PlanarYCbCr(..) => YuvFormat::PlanarYCbCr,
             YuvData::InterleavedYCbCr(..) => YuvFormat::InterleavedYCbCr,
         }
@@ -1450,14 +1452,15 @@ impl YuvData {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize, PeekPoke)]
 pub enum YuvFormat {
     NV12 = 0,
-    PlanarYCbCr = 1,
-    InterleavedYCbCr = 2,
+    P010 = 1,
+    PlanarYCbCr = 2,
+    InterleavedYCbCr = 3,
 }
 
 impl YuvFormat {
     pub fn get_plane_num(self) -> usize {
         match self {
-            YuvFormat::NV12 => 2,
+            YuvFormat::NV12 | YuvFormat::P010 => 2,
             YuvFormat::PlanarYCbCr => 3,
             YuvFormat::InterleavedYCbCr => 1,
         }
@@ -1469,17 +1472,12 @@ impl YuvFormat {
 pub struct ImageMask {
     pub image: ImageKey,
     pub rect: LayoutRect,
-    pub repeat: bool,
 }
 
 impl ImageMask {
     /// Get a local clipping rect contributed by this mask.
     pub fn get_local_clip_rect(&self) -> Option<LayoutRect> {
-        if self.repeat {
-            None
-        } else {
-            Some(self.rect)
-        }
+        Some(self.rect)
     }
 }
 
@@ -1595,7 +1593,7 @@ impl ComplexClipRegion {
     }
 }
 
-pub const POLYGON_CLIP_VERTEX_MAX: usize = 16;
+pub const POLYGON_CLIP_VERTEX_MAX: usize = 32;
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize, Eq, Hash, PeekPoke)]
@@ -1626,11 +1624,18 @@ impl From<FillRule> for u8 {
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize, PeekPoke)]
 pub struct ClipChainId(pub u64, pub PipelineId);
 
+impl ClipChainId {
+    pub const INVALID: Self = ClipChainId(!0, PipelineId::INVALID);
+}
+
 /// A reference to a clipping node defining how an item is clipped.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, PeekPoke)]
-pub enum ClipId {
-    Clip(usize, PipelineId),
-    ClipChain(ClipChainId),
+pub struct ClipId(pub usize, pub PipelineId);
+
+impl Default for ClipId {
+    fn default() -> Self {
+        ClipId::invalid()
+    }
 }
 
 const ROOT_CLIP_ID: usize = 0;
@@ -1638,33 +1643,30 @@ const ROOT_CLIP_ID: usize = 0;
 impl ClipId {
     /// Return the root clip ID - effectively doing no clipping.
     pub fn root(pipeline_id: PipelineId) -> Self {
-        ClipId::Clip(ROOT_CLIP_ID, pipeline_id)
+        ClipId(ROOT_CLIP_ID, pipeline_id)
     }
 
     /// Return an invalid clip ID - needed in places where we carry
     /// one but need to not attempt to use it.
     pub fn invalid() -> Self {
-        ClipId::Clip(!0, PipelineId::dummy())
+        ClipId(!0, PipelineId::dummy())
     }
 
     pub fn pipeline_id(&self) -> PipelineId {
         match *self {
-            ClipId::Clip(_, pipeline_id) |
-            ClipId::ClipChain(ClipChainId(_, pipeline_id)) => pipeline_id,
+            ClipId(_, pipeline_id) => pipeline_id,
         }
     }
 
     pub fn is_root(&self) -> bool {
         match *self {
-            ClipId::Clip(id, _) => id == ROOT_CLIP_ID,
-            ClipId::ClipChain(_) => false,
+            ClipId(id, _) => id == ROOT_CLIP_ID,
         }
     }
 
     pub fn is_valid(&self) -> bool {
         match *self {
-            ClipId::Clip(id, _) => id != !0,
-            _ => true,
+            ClipId(id, _) => id != !0,
         }
     }
 }
@@ -1781,7 +1783,6 @@ impl_default_for_enums! {
     ComponentTransferFuncType => Identity,
     ClipMode => Clip,
     FillRule => Nonzero,
-    ClipId => ClipId::invalid(),
     ReferenceFrameKind => Transform {
         is_2d_scale_translation: false,
         should_snap: false,

@@ -19,9 +19,9 @@ interface PublicKeyCredential : Credential {
 
 [SecureContext]
 partial interface PublicKeyCredential {
-    static Promise<boolean> isUserVerifyingPlatformAuthenticatorAvailable();
+    [NewObject] static Promise<boolean> isUserVerifyingPlatformAuthenticatorAvailable();
     // isExternalCTAP2SecurityKeySupported is non-standard; see Bug 1526023
-    static Promise<boolean> isExternalCTAP2SecurityKeySupported();
+    [NewObject] static Promise<boolean> isExternalCTAP2SecurityKeySupported();
 };
 
 [SecureContext, Pref="security.webauth.webauthn",
@@ -45,7 +45,7 @@ interface AuthenticatorAssertionResponse : AuthenticatorResponse {
 };
 
 dictionary PublicKeyCredentialParameters {
-    required PublicKeyCredentialType  type;
+    required DOMString                type;
     required COSEAlgorithmIdentifier  alg;
 };
 
@@ -60,7 +60,7 @@ dictionary PublicKeyCredentialCreationOptions {
     sequence<PublicKeyCredentialDescriptor>      excludeCredentials = [];
     // FIXME: bug 1493860: should this "= {}" be here?
     AuthenticatorSelectionCriteria               authenticatorSelection = {};
-    AttestationConveyancePreference              attestation = "none";
+    DOMString                                    attestation = "none";
     // FIXME: bug 1493860: should this "= {}" be here?
     AuthenticationExtensionsClientInputs         extensions = {};
 };
@@ -80,26 +80,9 @@ dictionary PublicKeyCredentialUserEntity : PublicKeyCredentialEntity {
 };
 
 dictionary AuthenticatorSelectionCriteria {
-    AuthenticatorAttachment      authenticatorAttachment;
+    DOMString                    authenticatorAttachment;
     boolean                      requireResidentKey = false;
-    UserVerificationRequirement  userVerification = "preferred";
-};
-
-enum AuthenticatorAttachment {
-    "platform",       // Platform attachment
-    "cross-platform"  // Cross-platform attachment
-};
-
-enum AttestationConveyancePreference {
-    "none",
-    "indirect",
-    "direct"
-};
-
-enum UserVerificationRequirement {
-    "required",
-    "preferred",
-    "discouraged"
+    DOMString                    userVerification = "preferred";
 };
 
 dictionary PublicKeyCredentialRequestOptions {
@@ -107,7 +90,7 @@ dictionary PublicKeyCredentialRequestOptions {
     unsigned long                        timeout;
     USVString                            rpId;
     sequence<PublicKeyCredentialDescriptor> allowCredentials = [];
-    UserVerificationRequirement          userVerification = "preferred";
+    DOMString                            userVerification = "preferred";
     // FIXME: bug 1493860: should this "= {}" be here?
     AuthenticationExtensionsClientInputs extensions = {};
 };
@@ -140,30 +123,20 @@ dictionary CollectedClientData {
     required DOMString           type;
     required DOMString           challenge;
     required DOMString           origin;
-    required DOMString           hashAlgorithm;
-    DOMString                    tokenBindingId;
-    // FIXME: bug 1493860: should this "= {}" be here?
-    AuthenticationExtensionsClientInputs clientExtensions = {};
-    AuthenticationExtensionsAuthenticatorInputs authenticatorExtensions;
+    TokenBinding                 tokenBinding;
 };
 
-enum PublicKeyCredentialType {
-    "public-key"
+dictionary TokenBinding {
+    required DOMString status;
+    DOMString id;
 };
 
 dictionary PublicKeyCredentialDescriptor {
-    required PublicKeyCredentialType      type;
+    required DOMString                    type;
     required BufferSource                 id;
     // Transports is a string that is matched against the AuthenticatorTransport
     // enumeration so that we have forward-compatibility for new transports.
     sequence<DOMString>                   transports;
-};
-
-enum AuthenticatorTransport {
-    "usb",
-    "nfc",
-    "ble",
-    "internal"
 };
 
 typedef long COSEAlgorithmIdentifier;

@@ -428,7 +428,24 @@ var gGestureSupport = {
    *        The direction for the swipe event
    */
   processSwipeEvent: function GS_processSwipeEvent(aEvent, aDir) {
-    this._doAction(aEvent, ["swipe", aDir.toLowerCase()]);
+    let dir = aDir.toLowerCase();
+    // This is a bit of a hack. Ideally we would like our pref names to not
+    // associate a direction (eg left) with a history action (eg back), and
+    // instead name them something like HistoryLeft/Right and then intercept
+    // that in this file and turn it into the back or forward command, but
+    // that involves sending whether we are in LTR or not into _doAction and
+    // _getCommand and then having them recognize that these command needs to
+    // be interpreted differently for rtl/ltr (but not other commands), which
+    // seems more brittle (have to keep all the places in sync) and more code.
+    // So we'll just live with presenting the wrong semantics in the prefs.
+    if (!gHistorySwipeAnimation.isLTR) {
+      if (dir == "right") {
+        dir = "left";
+      } else if (dir == "left") {
+        dir = "right";
+      }
+    }
+    this._doAction(aEvent, ["swipe", dir]);
   },
 
   /**
@@ -484,7 +501,7 @@ var gGestureSupport = {
    *        The MozRotateGestureUpdate event triggering this call
    */
   rotate(aEvent) {
-    if (!(window.content.document instanceof ImageDocument)) {
+    if (!ImageDocument.isInstance(window.content.document)) {
       return;
     }
 
@@ -506,7 +523,7 @@ var gGestureSupport = {
    * Perform a rotation end for ImageDocuments
    */
   rotateEnd() {
-    if (!(window.content.document instanceof ImageDocument)) {
+    if (!ImageDocument.isInstance(window.content.document)) {
       return;
     }
 
@@ -590,7 +607,7 @@ var gGestureSupport = {
       return;
     }
 
-    if (!(window.content.document instanceof ImageDocument)) {
+    if (!ImageDocument.isInstance(window.content.document)) {
       return;
     }
 
@@ -620,7 +637,7 @@ var gGestureSupport = {
   _clearCompleteRotation() {
     let contentElement =
       window.content.document &&
-      window.content.document instanceof ImageDocument &&
+      ImageDocument.isInstance(window.content.document) &&
       window.content.document.body &&
       window.content.document.body.firstElementChild;
     if (!contentElement) {
@@ -645,28 +662,26 @@ var gHistorySwipeAnimation = {
    */
   init: function HSA_init() {
     this.isLTR = document.documentElement.matches(":-moz-locale-dir(ltr)");
+    this._isStoppingAnimation = false;
 
     if (!this._isSupported()) {
       return;
     }
 
-    this._isStoppingAnimation = false;
-    if (
-      !Services.prefs.getBoolPref(
-        "browser.history_swipe_animation.disabled",
-        false
-      )
-    ) {
-      this.active = true;
-    }
+    this._icon = document.getElementById("swipe-nav-icon");
+    this._initPrefValues();
+    this._addPrefObserver();
+    this.active = true;
   },
 
   /**
    * Uninitializes the support for history swipe animations.
    */
   uninit: function HSA_uninit() {
+    this._removePrefObserver();
     this.active = false;
     this.isLTR = false;
+    this._icon = null;
     this._removeBoxes();
   },
 
@@ -677,10 +692,10 @@ var gHistorySwipeAnimation = {
    *        Whether we're dealing with a vertical swipe or not.
    */
   startAnimation: function HSA_startAnimation() {
-    if (this.isAnimationRunning()) {
-      return;
-    }
-
+    // old boxes can still be around (if completing fade out for example), we
+    // always want to remove them and recreate them because they can be
+    // attached to an old browser stack that's no longer in use.
+    this._removeBoxes();
     this._isStoppingAnimation = false;
     this._canGoBack = this.canGoBack();
     this._canGoForward = this.canGoForward();
@@ -694,18 +709,39 @@ var gHistorySwipeAnimation = {
    * Stops the swipe animation.
    */
   stopAnimation: function HSA_stopAnimation() {
-    if (!this.isAnimationRunning()) {
+    if (!this.isAnimationRunning() || this._isStoppingAnimation) {
       return;
     }
-    this._isStoppingAnimation = true;
-    let box = this._prevBox.style.opacity > 0 ? this._prevBox : this._nextBox;
-    if (box.style.opacity > 0) {
-      box.style.transition = "opacity 0.2s cubic-bezier(.07,.95,0,1)";
-      box.addEventListener("transitionend", this._completeFadeOut);
+
+    let box = null;
+    if (!this._prevBox.collapsed) {
+      box = this._prevBox;
+    } else if (!this._nextBox.collapsed) {
+      box = this._nextBox;
+    }
+    if (box != null) {
+      this._isStoppingAnimation = true;
+      box.style.transition = "opacity 0.35s 0.35s cubic-bezier(.25,.1,0.25,1)";
+      box.addEventListener("transitionend", this, true);
       box.style.opacity = 0;
+      window.getComputedStyle(box).opacity;
     } else {
+      this._isStoppingAnimation = false;
       this._removeBoxes();
     }
+  },
+
+  _willGoBack: function HSA_willGoBack(aVal) {
+    return (
+      ((aVal > 0 && this.isLTR) || (aVal < 0 && !this.isLTR)) && this._canGoBack
+    );
+  },
+
+  _willGoForward: function HSA_willGoForward(aVal) {
+    return (
+      ((aVal > 0 && !this.isLTR) || (aVal < 0 && this.isLTR)) &&
+      this._canGoForward
+    );
   },
 
   /**
@@ -713,30 +749,70 @@ var gHistorySwipeAnimation = {
    *
    * @param aVal
    *        A floating point value that represents the progress of the
-   *        swipe gesture.
+   *        swipe gesture. History navigation will be triggered if the absolute
+   *        value of this `aVal` is greater than or equal to 0.25.
    */
   updateAnimation: function HSA_updateAnimation(aVal) {
     if (!this.isAnimationRunning() || this._isStoppingAnimation) {
       return;
     }
 
-    // We use the following value to set the opacity of the swipe arrows. It was
-    // determined experimentally that absolute values of 0.25 (or greater)
-    // trigger history navigation, hence the multiplier 4 to set the arrows to
-    // full opacity at 0.25 or greater.
-    let opacity = Math.abs(aVal) * 4;
-    if ((aVal >= 0 && this.isLTR) || (aVal <= 0 && !this.isLTR)) {
-      // The intention is to go back.
-      if (this._canGoBack) {
-        this._prevBox.collapsed = false;
-        this._nextBox.collapsed = true;
-        this._prevBox.style.opacity = opacity > 1 ? 1 : opacity;
+    // Convert `aVal` into [0, 1] range.
+    // Note that absolute values of 0.25 (or greater) trigger history
+    // navigation, hence we multiply the value by 4 here.
+    const progress = Math.min(Math.abs(aVal) * 4, 1.0);
+
+    // Compute the icon position based on preferences.
+    let translate =
+      this.translateStartPosition +
+      progress * (this.translateEndPosition - this.translateStartPosition);
+    if (!this.isLTR) {
+      translate = -translate;
+    }
+
+    // Compute the icon radius based on preferences.
+    const radius =
+      this.minRadius + progress * (this.maxRadius - this.minRadius);
+    if (this._willGoBack(aVal)) {
+      this._prevBox.collapsed = false;
+      this._nextBox.collapsed = true;
+      this._prevBox.style.translate = `${translate}px 0px`;
+      if (radius >= 0) {
+        this._prevBox
+          .querySelectorAll("circle")[1]
+          .setAttribute("r", `${radius}`);
       }
-    } else if (this._canGoForward) {
+
+      if (Math.abs(aVal) >= 0.25) {
+        // If `aVal` goes above 0.25, it means history navigation will be
+        // triggered once after the user lifts their fingers, it's time to
+        // trigger __indicator__ animations by adding `will-navigate` class.
+        this._prevBox.querySelector("svg").classList.add("will-navigate");
+      } else {
+        this._prevBox.querySelector("svg").classList.remove("will-navigate");
+      }
+    } else if (this._willGoForward(aVal)) {
       // The intention is to go forward.
       this._nextBox.collapsed = false;
       this._prevBox.collapsed = true;
-      this._nextBox.style.opacity = opacity > 1 ? 1 : opacity;
+      this._nextBox.style.translate = `${-translate}px 0px`;
+      if (radius >= 0) {
+        this._nextBox
+          .querySelectorAll("circle")[1]
+          .setAttribute("r", `${radius}`);
+      }
+
+      if (Math.abs(aVal) >= 0.25) {
+        // Same as above "go back" case.
+        this._nextBox.querySelector("svg").classList.add("will-navigate");
+      } else {
+        this._nextBox.querySelector("svg").classList.remove("will-navigate");
+      }
+    } else {
+      this._prevBox.collapsed = true;
+      this._nextBox.collapsed = true;
+      this._prevBox.style.translate = "none";
+      this._nextBox.style.translate = "none";
     }
   },
 
@@ -786,7 +862,21 @@ var gHistorySwipeAnimation = {
     return window.matchMedia("(-moz-swipe-animation-enabled)").matches;
   },
 
+  handleEvent: function HSA_handleEvent(aEvent) {
+    switch (aEvent.type) {
+      case "transitionend":
+        this._completeFadeOut();
+        break;
+    }
+  },
+
   _completeFadeOut: function HSA__completeFadeOut(aEvent) {
+    if (!this._isStoppingAnimation) {
+      // The animation was restarted in the middle of our stopping fade out
+      // tranistion, so don't do anything.
+      return;
+    }
+    this._isStoppingAnimation = false;
     gHistorySwipeAnimation._removeBoxes();
   },
 
@@ -806,16 +896,20 @@ var gHistorySwipeAnimation = {
       "box"
     );
     this._prevBox.collapsed = true;
-    this._prevBox.style.opacity = 0;
     this._container.appendChild(this._prevBox);
+    let icon = this._icon.cloneNode(true);
+    icon.classList.add("swipe-nav-icon");
+    this._prevBox.appendChild(icon);
 
     this._nextBox = this._createElement(
       "historySwipeAnimationNextArrow",
       "box"
     );
     this._nextBox.collapsed = true;
-    this._nextBox.style.opacity = 0;
     this._container.appendChild(this._nextBox);
+    icon = this._icon.cloneNode(true);
+    icon.classList.add("swipe-nav-icon");
+    this._nextBox.appendChild(icon);
   },
 
   /**
@@ -843,5 +937,53 @@ var gHistorySwipeAnimation = {
     let element = document.createXULElement(aTagName);
     element.id = aID;
     return element;
+  },
+
+  observe(subj, topic, data) {
+    switch (topic) {
+      case "nsPref:changed":
+        this._initPrefValues();
+    }
+  },
+
+  _initPrefValues: function HSA__initPrefValues() {
+    this.translateStartPosition = Services.prefs.getIntPref(
+      "browser.swipe.navigation-icon-start-position",
+      0
+    );
+    this.translateEndPosition = Services.prefs.getIntPref(
+      "browser.swipe.navigation-icon-end-position",
+      0
+    );
+    this.minRadius = Services.prefs.getIntPref(
+      "browser.swipe.navigation-icon-min-radius",
+      -1
+    );
+    this.maxRadius = Services.prefs.getIntPref(
+      "browser.swipe.navigation-icon-max-radius",
+      -1
+    );
+  },
+
+  _addPrefObserver: function HSA__addPrefObserver() {
+    [
+      "browser.swipe.navigation-icon-start-position",
+      "browser.swipe.navigation-icon-end-position",
+      "browser.swipe.navigation-icon-min-radius",
+      "browser.swipe.navigation-icon-max-radius",
+    ].forEach(pref => {
+      Services.prefs.addObserver(pref, this);
+    });
+  },
+
+  _removePrefObserver: function HSA__removePrefObserver() {
+    [
+      "browser.swipe.navigation-icon-start-position",
+      "browser.swipe.navigation-icon-end-position",
+      "browser.swipe.navigation-icon-min-radius",
+      "browser.swipe.navigation-icon-max-radius",
+    ].forEach(pref => {
+      Services.prefs.removeObserver(pref, this);
+    });
   },
 };

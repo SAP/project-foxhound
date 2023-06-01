@@ -37,11 +37,11 @@ add_task(async function() {
   for (const tab of tabs) {
     // Open the console in tab${i}.
     const hud = await openConsole(tab);
-    const browser = hud.currentTarget.localTab.linkedBrowser;
+    const browser = hud.commands.descriptorFront.localTab.linkedBrowser;
     const message = "message for tab " + tabs.indexOf(tab);
 
     // Log a message in the newly opened console.
-    const onMessage = waitForMessage(hud, message);
+    const onMessage = waitForMessageByType(hud, message, ".console-api");
     await SpecialPowers.spawn(browser, [message], function(msg) {
       content.console.log(msg);
     });

@@ -13,7 +13,7 @@ set -e
 # Any differences between formatted and unformatted files is printed to stdout to give a hint what's wrong.
 
 # Includes a default set of directories NOT to clang-format on.
-blacklist=(
+blocklist=(
      "./automation" \
      "./coreconf" \
      "./doc" \
@@ -37,8 +37,8 @@ fi
 
 format_folder()
 {
-    for black in "${blacklist[@]}"; do
-        if [[ "$1" == "$black"* ]]; then
+    for block in "${blocklist[@]}"; do
+        if [[ "$1" == "$block"* ]]; then
             echo "skip $1"
             return 1
         fi
@@ -54,7 +54,7 @@ for dir in "${dirs[@]}"; do
         if [ "${#c}" == "1" ]; then
             depth+=(-maxdepth 1)
         fi
-        find "$dir" "${depth[@]}" -type f \( -name '*.[ch]' -o -name '*.cc' \) -exec clang-format -i {} \+
+        find "$dir" "${depth[@]}" -type f \( -name '*.[ch]' -o -name '*.cc' \) -exec clang-format -sort-includes=false -i {} \+
     fi
 done
 

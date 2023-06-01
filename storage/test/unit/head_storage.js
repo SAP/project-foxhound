@@ -2,16 +2,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+var { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+ChromeUtils.defineESModuleGetters(this, {
+  Sqlite: "resource://gre/modules/Sqlite.sys.mjs",
+});
+
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 const OPEN_HISTOGRAM = "SQLITE_STORE_OPEN";
@@ -111,9 +114,9 @@ function asyncCleanup() {
  *
  * @returns the mozIStorageConnection for the file.
  */
-function getOpenedDatabase() {
+function getOpenedDatabase(connectionFlags = 0) {
   if (!gDBConn) {
-    gDBConn = Services.storage.openDatabase(getTestDB());
+    gDBConn = Services.storage.openDatabase(getTestDB(), connectionFlags);
 
     // Clear out counts for any queries that occured while opening the database.
     TelemetryTestUtils.getAndClearKeyedHistogram(OPEN_HISTOGRAM);
@@ -305,24 +308,49 @@ function asyncClose(db) {
   });
 }
 
+function mapOptionsToFlags(aOptions, aMapping) {
+  let result = aMapping.default;
+  Object.entries(aOptions || {}).forEach(([optionName, isTrue]) => {
+    if (aMapping.hasOwnProperty(optionName) && isTrue) {
+      result |= aMapping[optionName];
+    }
+  });
+  return result;
+}
+
+function getOpenFlagsMap() {
+  return {
+    default: Ci.mozIStorageService.OPEN_DEFAULT,
+    shared: Ci.mozIStorageService.OPEN_SHARED,
+    readOnly: Ci.mozIStorageService.OPEN_READONLY,
+    ignoreLockingMode: Ci.mozIStorageService.OPEN_IGNORE_LOCKING_MODE,
+  };
+}
+
+function getConnectionFlagsMap() {
+  return {
+    default: Ci.mozIStorageService.CONNECTION_DEFAULT,
+    interruptible: Ci.mozIStorageService.CONNECTION_INTERRUPTIBLE,
+  };
+}
+
 function openAsyncDatabase(file, options) {
   return new Promise((resolve, reject) => {
-    let properties;
-    if (options) {
-      properties = Cc["@mozilla.org/hash-property-bag;1"].createInstance(
-        Ci.nsIWritablePropertyBag
-      );
-      for (let k in options) {
-        properties.setProperty(k, options[k]);
+    const openFlags = mapOptionsToFlags(options, getOpenFlagsMap());
+    const connectionFlags = mapOptionsToFlags(options, getConnectionFlagsMap());
+
+    Services.storage.openAsyncDatabase(
+      file,
+      openFlags,
+      connectionFlags,
+      function(status, db) {
+        if (Components.isSuccessCode(status)) {
+          resolve(db.QueryInterface(Ci.mozIStorageAsyncConnection));
+        } else {
+          reject(status);
+        }
       }
-    }
-    Services.storage.openAsyncDatabase(file, properties, function(status, db) {
-      if (Components.isSuccessCode(status)) {
-        resolve(db.QueryInterface(Ci.mozIStorageAsyncConnection));
-      } else {
-        reject(status);
-      }
-    });
+    );
   });
 }
 

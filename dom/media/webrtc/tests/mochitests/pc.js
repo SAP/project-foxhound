@@ -287,7 +287,7 @@ PeerConnectionTest.prototype.send = async function(data, options) {
     } else if (d instanceof ArrayBuffer) {
       return d.byteLength;
     } else if (d instanceof String || typeof d === "string") {
-      return new TextEncoder("utf-8").encode(d).length;
+      return new TextEncoder().encode(d).length;
     } else {
       ok(false);
     }
@@ -1626,9 +1626,9 @@ PeerConnectionWrapper.prototype = {
       info(
         this.label + ": iceCandidate = " + JSON.stringify(anEvent.candidate)
       );
-      ok(anEvent.candidate.sdpMid.length > 0, "SDP mid not empty");
+      ok(anEvent.candidate.sdpMid.length, "SDP mid not empty");
       ok(
-        anEvent.candidate.usernameFragment.length > 0,
+        anEvent.candidate.usernameFragment.length,
         "usernameFragment not empty"
       );
 
@@ -2376,6 +2376,14 @@ function loadScript(...scripts) {
 }
 
 // Ensure SimpleTest.js is loaded before other scripts.
+/* import-globals-from /testing/mochitest/tests/SimpleTest/SimpleTest.js */
+/* import-globals-from head.js */
+/* import-globals-from templates.js */
+/* import-globals-from turnConfig.js */
+/* import-globals-from dataChannel.js */
+/* import-globals-from network.js */
+/* import-globals-from sdpUtils.js */
+
 var scriptsReady = loadScript("/tests/SimpleTest/SimpleTest.js").then(() => {
   return loadScript(
     "head.js",
@@ -2469,9 +2477,8 @@ var setupIceServerConfig = useIceServer => {
 };
 
 async function runNetworkTest(testFunction, fixtureOptions = {}) {
-  let { AppConstants } = SpecialPowers.Cu.import(
-    "resource://gre/modules/AppConstants.jsm",
-    {}
+  let { AppConstants } = SpecialPowers.ChromeUtils.import(
+    "resource://gre/modules/AppConstants.jsm"
   );
 
   await scriptsReady;

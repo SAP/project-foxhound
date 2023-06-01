@@ -31,11 +31,9 @@ RUN apt-get update && \
       libmpfr-dev \
       nasm \
       opam \
-      pkg-config \
       patch \
       p7zip-full \
       procps \
-      python2.7 \
       python3-dev \
       rsync \
       screen \

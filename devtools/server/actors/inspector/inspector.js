@@ -50,45 +50,51 @@
  * we connect it up through its parents.
  */
 
-const Services = require("Services");
-const protocol = require("devtools/shared/protocol");
-const { LongStringActor } = require("devtools/server/actors/string");
+const { Actor } = require("resource://devtools/shared/protocol.js");
+const {
+  inspectorSpec,
+} = require("resource://devtools/shared/specs/inspector.js");
 
-const { inspectorSpec } = require("devtools/shared/specs/inspector");
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
+const {
+  LongStringActor,
+} = require("resource://devtools/server/actors/string.js");
 
 loader.lazyRequireGetter(
   this,
   "InspectorActorUtils",
-  "devtools/server/actors/inspector/utils"
+  "resource://devtools/server/actors/inspector/utils.js"
 );
 loader.lazyRequireGetter(
   this,
   "WalkerActor",
-  "devtools/server/actors/inspector/walker",
+  "resource://devtools/server/actors/inspector/walker.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "EyeDropper",
-  "devtools/server/actors/highlighters/eye-dropper",
+  "resource://devtools/server/actors/highlighters/eye-dropper.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "PageStyleActor",
-  "devtools/server/actors/page-style",
+  "resource://devtools/server/actors/page-style.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   ["CustomHighlighterActor", "isTypeRegistered", "HighlighterEnvironment"],
-  "devtools/server/actors/highlighters",
+  "resource://devtools/server/actors/highlighters.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "CompatibilityActor",
-  "devtools/server/actors/compatibility/compatibility",
+  "resource://devtools/server/actors/compatibility/compatibility.js",
   true
 );
 
@@ -99,18 +105,18 @@ const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
  * Server side of the inspector actor, which is used to create
  * inspector-related actors, including the walker.
  */
-exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
-  initialize: function(conn, targetActor) {
-    protocol.Actor.prototype.initialize.call(this, conn);
+class InspectorActor extends Actor {
+  constructor(conn, targetActor) {
+    super(conn, inspectorSpec);
     this.targetActor = targetActor;
 
     this._onColorPicked = this._onColorPicked.bind(this);
     this._onColorPickCanceled = this._onColorPickCanceled.bind(this);
     this.destroyEyeDropper = this.destroyEyeDropper.bind(this);
-  },
+  }
 
-  destroy: function() {
-    protocol.Actor.prototype.destroy.call(this);
+  destroy() {
+    super.destroy();
     this.destroyEyeDropper();
 
     this._compatibility = null;
@@ -118,13 +124,13 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
     this._walkerPromise = null;
     this.walker = null;
     this.targetActor = null;
-  },
+  }
 
   get window() {
     return this.targetActor.window;
-  },
+  }
 
-  getWalker: function(options = {}) {
+  getWalker(options = {}) {
     if (this._walkerPromise) {
       return this._walkerPromise;
     }
@@ -132,7 +138,7 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
     this._walkerPromise = new Promise(resolve => {
       const domReady = () => {
         const targetActor = this.targetActor;
-        this.walker = WalkerActor(this.conn, targetActor, options);
+        this.walker = new WalkerActor(this.conn, targetActor, options);
         this.manage(this.walker);
         this.walker.once("destroyed", () => {
           this._walkerPromise = null;
@@ -142,40 +148,56 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
       };
 
       if (this.window.document.readyState === "loading") {
-        this.window.addEventListener("DOMContentLoaded", domReady, {
-          capture: true,
-          once: true,
-        });
+        // Expose an abort controller for DOMContentLoaded to remove the
+        // listener unconditionally, even if the race hits the timeout.
+        const abortController = new AbortController();
+        Promise.race([
+          new Promise(r => {
+            this.window.addEventListener("DOMContentLoaded", r, {
+              capture: true,
+              once: true,
+              signal: abortController.signal,
+            });
+          }),
+          // The DOMContentLoaded event will never be emitted on documents stuck
+          // in the loading state, for instance if document.write was called
+          // without calling document.close.
+          // TODO: It is not clear why we are waiting for the event overall, see
+          // Bug 1766279 to actually stop listening to the event altogether.
+          new Promise(r => setTimeout(r, 500)),
+        ])
+          .then(domReady)
+          .finally(() => abortController.abort());
       } else {
         domReady();
       }
     });
 
     return this._walkerPromise;
-  },
+  }
 
-  getPageStyle: function() {
+  getPageStyle() {
     if (this._pageStylePromise) {
       return this._pageStylePromise;
     }
 
     this._pageStylePromise = this.getWalker().then(walker => {
-      const pageStyle = PageStyleActor(this);
+      const pageStyle = new PageStyleActor(this);
       this.manage(pageStyle);
       return pageStyle;
     });
     return this._pageStylePromise;
-  },
+  }
 
-  getCompatibility: function() {
+  getCompatibility() {
     if (this._compatibility) {
       return this._compatibility;
     }
 
-    this._compatibility = CompatibilityActor(this);
+    this._compatibility = new CompatibilityActor(this);
     this.manage(this._compatibility);
     return this._compatibility;
-  },
+  }
 
   /**
    * If consumers need to display several highlighters at the same time or
@@ -188,9 +210,9 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
    * @return {Highlighter} The highlighter actor instance or null if the
    * typeName passed doesn't match any available highlighter
    */
-  getHighlighterByType: async function(typeName) {
+  async getHighlighterByType(typeName) {
     if (isTypeRegistered(typeName)) {
-      const highlighterActor = CustomHighlighterActor(this, typeName);
+      const highlighterActor = new CustomHighlighterActor(this, typeName);
       if (highlighterActor.instance.isReady) {
         await highlighterActor.instance.isReady;
       }
@@ -198,7 +220,7 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
       return highlighterActor;
     }
     return null;
-  },
+  }
 
   /**
    * Get the node's image data if any (for canvas and img nodes).
@@ -211,18 +233,18 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
    * is important as the resizing occurs server-side so that image-data being
    * transfered in the longstring back to the client will be that much smaller
    */
-  getImageDataFromURL: function(url, maxDim) {
+  getImageDataFromURL(url, maxDim) {
     const img = new this.window.Image();
     img.src = url;
 
     // imageToImageData waits for the image to load.
     return InspectorActorUtils.imageToImageData(img, maxDim).then(imageData => {
       return {
-        data: LongStringActor(this.conn, imageData.data),
+        data: new LongStringActor(this.conn, imageData.data),
         size: imageData.size,
       };
     });
-  },
+  }
 
   /**
    * Resolve a URL to its absolute form, in the scope of a given content window.
@@ -232,7 +254,7 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
    * used instead.
    * @return {String} url.
    */
-  resolveRelativeURL: function(url, node) {
+  resolveRelativeURL(url, node) {
     const document = InspectorActorUtils.isNodeDead(node)
       ? this.window.document
       : InspectorActorUtils.nodeDocument(node.rawNode);
@@ -243,24 +265,24 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
 
     const baseURI = Services.io.newURI(document.location.href);
     return Services.io.newURI(url, null, baseURI).spec;
-  },
+  }
 
   /**
    * Create an instance of the eye-dropper highlighter and store it on this._eyeDropper.
    * Note that for now, a new instance is created every time to deal with page navigation.
    */
-  createEyeDropper: function() {
+  createEyeDropper() {
     this.destroyEyeDropper();
     this._highlighterEnv = new HighlighterEnvironment();
     this._highlighterEnv.initFromTargetActor(this.targetActor);
     this._eyeDropper = new EyeDropper(this._highlighterEnv);
     return this._eyeDropper.isReady;
-  },
+  }
 
   /**
    * Destroy the current eye-dropper highlighter instance.
    */
-  destroyEyeDropper: function() {
+  destroyEyeDropper() {
     if (this._eyeDropper) {
       this.cancelPickColorFromPage();
       this._eyeDropper.destroy();
@@ -268,7 +290,7 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
       this._highlighterEnv.destroy();
       this._highlighterEnv = null;
     }
-  },
+  }
 
   /**
    * Pick a color from the page using the eye-dropper. This method doesn't return anything
@@ -276,27 +298,27 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
    * cancels the picker.
    * @param {Object} options
    */
-  pickColorFromPage: async function(options) {
+  async pickColorFromPage(options) {
     await this.createEyeDropper();
     this._eyeDropper.show(this.window.document.documentElement, options);
     this._eyeDropper.once("selected", this._onColorPicked);
     this._eyeDropper.once("canceled", this._onColorPickCanceled);
     this.targetActor.once("will-navigate", this.destroyEyeDropper);
-  },
+  }
 
   /**
    * After the pickColorFromPage method is called, the only way to dismiss the eye-dropper
    * highlighter is for the user to click in the page and select a color. If you need to
    * dismiss the eye-dropper programatically instead, use this method.
    */
-  cancelPickColorFromPage: function() {
+  cancelPickColorFromPage() {
     if (this._eyeDropper) {
       this._eyeDropper.hide();
       this._eyeDropper.off("selected", this._onColorPicked);
       this._eyeDropper.off("canceled", this._onColorPickCanceled);
       this.targetActor.off("will-navigate", this.destroyEyeDropper);
     }
-  },
+  }
 
   /**
    * Check if the current document supports highlighters using a canvasFrame anonymous
@@ -304,7 +326,7 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
    * It is impossible to detect the feature programmatically as some document types simply
    * don't render the canvasFrame without throwing any error.
    */
-  supportsHighlighters: function() {
+  supportsHighlighters() {
     const doc = this.targetActor.window.document;
     const ns = doc.documentElement.namespaceURI;
 
@@ -319,13 +341,15 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
     }
 
     return true;
-  },
+  }
 
-  _onColorPicked: function(color) {
+  _onColorPicked(color) {
     this.emit("color-picked", color);
-  },
+  }
 
-  _onColorPickCanceled: function() {
+  _onColorPickCanceled() {
     this.emit("color-pick-canceled");
-  },
-});
+  }
+}
+
+exports.InspectorActor = InspectorActor;

@@ -6026,22 +6026,7 @@ function isSpreadProperty(node, opts) {
 }
 
 /***/ }),
-/* 560 */
-/***/ (function(module, exports, __webpack_require__) {
-
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-const networkRequest = __webpack_require__(567);
-
-const workerUtils = __webpack_require__(568);
-
-module.exports = {
-  networkRequest,
-  workerUtils
-};
-
-/***/ }),
+/* 560 */,
 /* 561 */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -7923,207 +7908,8 @@ exports.compareByGeneratedPositionsInflated = compareByGeneratedPositionsInflate
 
 
 /***/ }),
-/* 567 */
-/***/ (function(module, exports) {
-
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-function networkRequest(url, opts) {
-  return fetch(url, {
-    cache: opts.loadFromCache ? "default" : "no-cache"
-  }).then(res => {
-    if (res.status >= 200 && res.status < 300) {
-      if (res.headers.get("Content-Type") === "application/wasm") {
-        return res.arrayBuffer().then(buffer => ({
-          content: buffer,
-          isDwarf: true
-        }));
-      }
-
-      return res.text().then(text => ({
-        content: text
-      }));
-    }
-
-    return Promise.reject(`request failed with status ${res.status}`);
-  });
-}
-
-module.exports = networkRequest;
-
-/***/ }),
-/* 568 */
-/***/ (function(module, exports) {
-
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-function WorkerDispatcher() {
-  this.msgId = 1;
-  this.worker = null; // Map of message ids -> promise resolution functions, for dispatching worker responses
-
-  this.pendingCalls = new Map();
-  this._onMessage = this._onMessage.bind(this);
-}
-
-WorkerDispatcher.prototype = {
-  start(url, win = window) {
-    this.worker = new win.Worker(url);
-
-    this.worker.onerror = err => {
-      console.error(`Error in worker ${url}`, err.message);
-    };
-
-    this.worker.addEventListener("message", this._onMessage);
-  },
-
-  stop() {
-    if (!this.worker) {
-      return;
-    }
-
-    this.worker.removeEventListener("message", this._onMessage);
-    this.worker.terminate();
-    this.worker = null;
-    this.pendingCalls.clear();
-  },
-
-  task(method, {
-    queue = false
-  } = {}) {
-    const calls = [];
-
-    const push = args => {
-      return new Promise((resolve, reject) => {
-        if (queue && calls.length === 0) {
-          Promise.resolve().then(flush);
-        }
-
-        calls.push({
-          args,
-          resolve,
-          reject
-        });
-
-        if (!queue) {
-          flush();
-        }
-      });
-    };
-
-    const flush = () => {
-      const items = calls.slice();
-      calls.length = 0;
-
-      if (!this.worker) {
-        return;
-      }
-
-      const id = this.msgId++;
-      this.worker.postMessage({
-        id,
-        method,
-        calls: items.map(item => item.args)
-      });
-      this.pendingCalls.set(id, items);
-    };
-
-    return (...args) => push(args);
-  },
-
-  invoke(method, ...args) {
-    return this.task(method)(...args);
-  },
-
-  _onMessage({
-    data: result
-  }) {
-    const items = this.pendingCalls.get(result.id);
-    this.pendingCalls.delete(result.id);
-
-    if (!items) {
-      return;
-    }
-
-    if (!this.worker) {
-      return;
-    }
-
-    result.results.forEach((resultData, i) => {
-      const {
-        resolve,
-        reject
-      } = items[i];
-
-      if (resultData.error) {
-        const err = new Error(resultData.message);
-        err.metadata = resultData.metadata;
-        reject(err);
-      } else {
-        resolve(resultData.response);
-      }
-    });
-  }
-
-};
-
-function workerHandler(publicInterface) {
-  return function (msg) {
-    const {
-      id,
-      method,
-      calls
-    } = msg.data;
-    Promise.all(calls.map(args => {
-      try {
-        const response = publicInterface[method].apply(undefined, args);
-
-        if (response instanceof Promise) {
-          return response.then(val => ({
-            response: val
-          }), err => asErrorMessage(err));
-        }
-
-        return {
-          response
-        };
-      } catch (error) {
-        return asErrorMessage(error);
-      }
-    })).then(results => {
-      globalThis.postMessage({
-        id,
-        results
-      });
-    });
-  };
-}
-
-function asErrorMessage(error) {
-  if (typeof error === "object" && error && "message" in error) {
-    // Error can't be sent via postMessage, so be sure to convert to
-    // string.
-    return {
-      error: true,
-      message: error.message,
-      metadata: error.metadata
-    };
-  }
-
-  return {
-    error: true,
-    message: error == null ? error : error.toString(),
-    metadata: undefined
-  };
-}
-
-module.exports = {
-  WorkerDispatcher,
-  workerHandler
-};
-
-/***/ }),
+/* 567 */,
+/* 568 */,
 /* 569 */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -8557,17 +8343,16 @@ const sourceOptions = {
 };
 
 function parse(text, opts) {
-  let ast;
+  let ast = {};
 
   if (!text) {
-    return;
+    return ast;
   }
 
   try {
     ast = _parse(text, opts);
   } catch (error) {
     console.error(error);
-    ast = {};
   }
 
   return ast;
@@ -8599,7 +8384,7 @@ function vueParser({
 
 function parseVueScript(code) {
   if (typeof code !== "string") {
-    return;
+    return {};
   }
 
   let ast; // .vue files go through several passes, so while there is a
@@ -8679,7 +8464,7 @@ function clearASTs() {
 function traverseAst(sourceId, visitor, state) {
   const ast = getAst(sourceId);
 
-  if (!ast || Object.keys(ast).length == 0) {
+  if (!ast || !Object.keys(ast).length) {
     return null;
   }
 
@@ -12169,6 +11954,8 @@ function getFunctionParameterNames(path) {
       } else if (param.left.type === "Identifier" && param.right.type === "NullLiteral") {
         return `${param.left.name} = null`;
       }
+
+      return null;
     });
   }
 
@@ -14823,43 +14610,30 @@ function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && 
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 let symbolDeclarations = new Map();
 
-function getUniqueIdentifiers(identifiers) {
-  const newIdentifiers = [];
-  const locationKeys = new Set();
+function extractFunctionSymbol(path, state, symbols) {
+  const name = (0, _getFunctionName.default)(path.node, path.parent);
 
-  for (const newId of identifiers) {
-    const key = (0, _helpers.nodeLocationKey)(newId);
-
-    if (!locationKeys.has(key)) {
-      locationKeys.add(key);
-      newIdentifiers.push(newId);
-    }
+  if (!state.fnCounts[name]) {
+    state.fnCounts[name] = 0;
   }
 
-  return newIdentifiers;
-} // eslint-disable-next-line complexity
-
+  const index = state.fnCounts[name]++;
+  symbols.functions.push({
+    name,
+    klass: (0, _inferClassName.inferClassName)(path),
+    location: path.node.loc,
+    parameterNames: (0, _helpers.getFunctionParameterNames)(path),
+    identifier: path.node.id,
+    // indicates the occurence of the function in a file
+    // e.g { name: foo, ... index: 4 } is the 4th foo function
+    // in the file
+    index
+  });
+}
 
 function extractSymbol(path, symbols, state) {
   if ((0, _helpers.isFunction)(path)) {
-    const name = (0, _getFunctionName.default)(path.node, path.parent);
-
-    if (!state.fnCounts[name]) {
-      state.fnCounts[name] = 0;
-    }
-
-    const index = state.fnCounts[name]++;
-    symbols.functions.push({
-      name,
-      klass: (0, _inferClassName.inferClassName)(path),
-      location: path.node.loc,
-      parameterNames: (0, _helpers.getFunctionParameterNames)(path),
-      identifier: path.node.id,
-      // indicates the occurence of the function in a file
-      // e.g { name: foo, ... index: 4 } is the 4th foo function
-      // in the file
-      index
-    });
+    extractFunctionSymbol(path, state, symbols);
   }
 
   if (t.isJSXElement(path)) {
@@ -14871,58 +14645,19 @@ function extractSymbol(path, symbols, state) {
   }
 
   if (t.isClassDeclaration(path)) {
-    const {
-      loc,
-      superClass
-    } = path.node;
-    symbols.classes.push({
-      name: path.node.id.name,
-      parent: superClass ? {
-        name: t.isMemberExpression(superClass) ? (0, _helpers.getCode)(superClass) : superClass.name,
-        location: superClass.loc
-      } : null,
-      location: loc
-    });
+    symbols.classes.push(getClassDeclarationSymbol(path.node));
   }
 
   if (t.isImportDeclaration(path)) {
-    symbols.imports.push({
-      source: path.node.source.value,
-      location: path.node.loc,
-      specifiers: (0, _helpers.getSpecifiers)(path.node.specifiers)
-    });
+    symbols.imports.push(getImportDeclarationSymbol(path.node));
   }
 
   if (t.isObjectProperty(path)) {
-    const {
-      start,
-      end,
-      identifierName
-    } = path.node.key.loc;
-    symbols.objectProperties.push({
-      name: identifierName,
-      location: {
-        start,
-        end
-      },
-      expression: getSnippet(path)
-    });
+    symbols.objectProperties.push(getObjectPropertySymbol(path));
   }
 
   if (t.isMemberExpression(path) || t.isOptionalMemberExpression(path)) {
-    const {
-      start,
-      end
-    } = path.node.property.loc;
-    symbols.memberExpressions.push({
-      name: t.isPrivateName(path.node.property) ? `#${path.node.property.id.name}` : path.node.property.name,
-      location: {
-        start,
-        end
-      },
-      expression: getSnippet(path),
-      computed: path.node.computed
-    });
+    symbols.memberExpressions.push(getMemberExpressionSymbol(path));
   }
 
   if ((t.isStringLiteral(path) || t.isNumericLiteral(path)) && t.isMemberExpression(path.parentPath)) {
@@ -14942,114 +14677,10 @@ function extractSymbol(path, symbols, state) {
   }
 
   if (t.isCallExpression(path)) {
-    const {
-      callee
-    } = path.node;
-    const args = path.node.arguments;
-
-    if (t.isMemberExpression(callee)) {
-      const {
-        property: {
-          name,
-          loc
-        }
-      } = callee;
-      symbols.callExpressions.push({
-        name,
-        values: args.filter(arg => arg.value).map(arg => arg.value),
-        location: loc
-      });
-    } else {
-      const {
-        start,
-        end,
-        identifierName
-      } = callee.loc;
-      symbols.callExpressions.push({
-        name: identifierName,
-        values: args.filter(arg => arg.value).map(arg => arg.value),
-        location: {
-          start,
-          end
-        }
-      });
-    }
+    symbols.callExpressions.push(getCallExpressionSymbol(path.node));
   }
 
-  if (t.isStringLiteral(path) && t.isProperty(path.parentPath)) {
-    const {
-      start,
-      end
-    } = path.node.loc;
-    return symbols.identifiers.push({
-      name: path.node.value,
-      expression: (0, _helpers.getObjectExpressionValue)(path.parent),
-      location: {
-        start,
-        end
-      }
-    });
-  }
-
-  if (t.isIdentifier(path) && !t.isGenericTypeAnnotation(path.parent)) {
-    let {
-      start,
-      end
-    } = path.node.loc; // We want to include function params, but exclude the function name
-
-    if (t.isClassMethod(path.parent) && !path.inList) {
-      return;
-    }
-
-    if (t.isProperty(path.parentPath) && !(0, _helpers.isObjectShorthand)(path.parent)) {
-      return symbols.identifiers.push({
-        name: path.node.name,
-        expression: (0, _helpers.getObjectExpressionValue)(path.parent),
-        location: {
-          start,
-          end
-        }
-      });
-    }
-
-    if (path.node.typeAnnotation) {
-      const {
-        column
-      } = path.node.typeAnnotation.loc.start;
-      end = { ...end,
-        column
-      };
-    }
-
-    symbols.identifiers.push({
-      name: path.node.name,
-      expression: path.node.name,
-      location: {
-        start,
-        end
-      }
-    });
-  }
-
-  if (t.isThisExpression(path.node)) {
-    const {
-      start,
-      end
-    } = path.node.loc;
-    symbols.identifiers.push({
-      name: "this",
-      location: {
-        start,
-        end
-      },
-      expression: "this"
-    });
-  }
-
-  if (t.isVariableDeclarator(path)) {
-    const nodeId = path.node.id;
-    symbols.identifiers.push(...(0, _helpers.getPatternIdentifiers)(nodeId));
-  }
+  symbols.identifiers.push(...getIdentifierSymbols(path));
 }
 
 function extractSymbols(sourceId) {
@@ -15065,7 +14696,6 @@ function extractSymbols(sourceId) {
     literals: [],
     hasJsx: false,
     hasTypes: false,
-    loading: false,
     framework: undefined
   };
   const state = {
@@ -15270,6 +14900,218 @@ function getSymbols(sourceId) {
   const symbols = extractSymbols(sourceId);
   symbolDeclarations.set(sourceId, symbols);
   return symbols;
+}
+
+function getUniqueIdentifiers(identifiers) {
+  const newIdentifiers = [];
+  const locationKeys = new Set();
+
+  for (const newId of identifiers) {
+    const key = (0, _helpers.nodeLocationKey)(newId);
+
+    if (!locationKeys.has(key)) {
+      locationKeys.add(key);
+      newIdentifiers.push(newId);
+    }
+  }
+
+  return newIdentifiers;
+}
+
+function getMemberExpressionSymbol(path) {
+  const {
+    start,
+    end
+  } = path.node.property.loc;
+  return {
+    name: t.isPrivateName(path.node.property) ? `#${path.node.property.id.name}` : path.node.property.name,
+    location: {
+      start,
+      end
+    },
+    expression: getSnippet(path),
+    computed: path.node.computed
+  };
+}
+
+function getImportDeclarationSymbol(node) {
+  return {
+    source: node.source.value,
+    location: node.loc,
+    specifiers: (0, _helpers.getSpecifiers)(node.specifiers)
+  };
+}
+
+function getObjectPropertySymbol(path) {
+  const {
+    start,
+    end,
+    identifierName
+  } = path.node.key.loc;
+  return {
+    name: identifierName,
+    location: {
+      start,
+      end
+    },
+    expression: getSnippet(path)
+  };
+}
+
+function getCallExpressionSymbol(node) {
+  const {
+    callee,
+    arguments: args
+  } = node;
+  const values = args.filter(arg => arg.value).map(arg => arg.value);
+
+  if (t.isMemberExpression(callee)) {
+    const {
+      property: {
+        name,
+        loc
+      }
+    } = callee;
+    return {
+      name,
+      values,
+      location: loc
+    };
+  }
+
+  const {
+    start,
+    end,
+    identifierName
+  } = callee.loc;
+  return {
+    name: identifierName,
+    values,
+    location: {
+      start,
+      end
+    }
+  };
+}
+
+function getClassParentName(superClass) {
+  return t.isMemberExpression(superClass) ? (0, _helpers.getCode)(superClass) : superClass.name;
+}
+
+function getClassParentSymbol(superClass) {
+  if (!superClass) {
+    return null;
+  }
+
+  return {
+    name: getClassParentName(superClass),
+    location: superClass.loc
+  };
+}
+
+function getClassDeclarationSymbol(node) {
+  const {
+    loc,
+    superClass
+  } = node;
+  return {
+    name: node.id.name,
+    parent: getClassParentSymbol(superClass),
+    location: loc
+  };
+}
+/**
+ * Get a list of identifiers that are part of the given path.
+ *
+ * @param {Object} path
+ * @returns {Array.<Object>} a list of identifiers
+ */
+
+
+function getIdentifierSymbols(path) {
+  if (t.isStringLiteral(path) && t.isProperty(path.parentPath)) {
+    const {
+      start,
+      end
+    } = path.node.loc;
+    return [{
+      name: path.node.value,
+      expression: (0, _helpers.getObjectExpressionValue)(path.parent),
+      location: {
+        start,
+        end
+      }
+    }];
+  }
+
+  const identifiers = [];
+
+  if (t.isIdentifier(path) && !t.isGenericTypeAnnotation(path.parent)) {
+    // We want to include function params, but exclude the function name
+    if (t.isClassMethod(path.parent) && !path.inList) {
+      return [];
+    }
+
+    if (t.isProperty(path.parentPath) && !(0, _helpers.isObjectShorthand)(path.parent)) {
+      const {
+        start,
+        end
+      } = path.node.loc;
+      return [{
+        name: path.node.name,
+        expression: (0, _helpers.getObjectExpressionValue)(path.parent),
+        location: {
+          start,
+          end
+        }
+      }];
+    }
+
+    let {
+      start,
+      end
+    } = path.node.loc;
+
+    if (path.node.typeAnnotation) {
+      const {
+        column
+      } = path.node.typeAnnotation.loc.start;
+      end = { ...end,
+        column
+      };
+    }
+
+    identifiers.push({
+      name: path.node.name,
+      expression: path.node.name,
+      location: {
+        start,
+        end
+      }
+    });
+  }
+
+  if (t.isThisExpression(path.node)) {
+    const {
+      start,
+      end
+    } = path.node.loc;
+    identifiers.push({
+      name: "this",
+      location: {
+        start,
+        end
+      },
+      expression: "this"
+    });
+  }
+
+  if (t.isVariableDeclarator(path)) {
+    const nodeId = path.node.id;
+    identifiers.push(...(0, _helpers.getPatternIdentifiers)(nodeId));
+  }
+
+  return identifiers;
 }
 
 /***/ }),
@@ -32160,7 +32002,6 @@ Object.defineProperty(exports, "__esModule", {
 });
 exports.containsPosition = containsPosition;
 exports.containsLocation = containsLocation;
-exports.nodeContainsPosition = nodeContainsPosition;
 
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -32191,10 +32032,6 @@ function containsPosition(a, b) {
 
 function containsLocation(a, b) {
   return containsPosition(a, b.start) && containsPosition(a, b.end);
-}
-
-function nodeContainsPosition(node, position) {
-  return containsPosition(node.loc, position);
 }
 
 /***/ }),
@@ -32233,13 +32070,11 @@ var _sources = __webpack_require__(687);
 
 var _findOutOfScopeLocations = _interopRequireDefault(__webpack_require__(870));
 
-var _steps = __webpack_require__(893);
-
 var _validate = __webpack_require__(895);
 
 var _mapExpression = _interopRequireDefault(__webpack_require__(896));
 
-var _devtoolsUtils = __webpack_require__(560);
+var _workerUtils = __webpack_require__(1059);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -32250,10 +32085,6 @@ function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && 
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-const {
-  workerHandler
-} = _devtoolsUtils.workerUtils;
-
 function clearState() {
   (0, _ast.clearASTs)();
   (0, _getScopes.clearScopes)();
@@ -32261,12 +32092,11 @@ function clearState() {
   (0, _getSymbols.clearSymbols)();
 }
 
-self.onmessage = workerHandler({
+self.onmessage = (0, _workerUtils.workerHandler)({
   findOutOfScopeLocations: _findOutOfScopeLocations.default,
   getSymbols: _getSymbols.getSymbols,
   getScopes: _getScopes.default,
   clearState,
-  getNextStep: _steps.getNextStep,
   hasSyntaxError: _validate.hasSyntaxError,
   mapExpression: _mapExpression.default,
   setSource: _sources.setSource
@@ -46459,6 +46289,8 @@ function getFramework(symbols) {
   if (isVueComponent(symbols)) {
     return "Vue";
   }
+
+  return null;
 }
 
 function isReactComponent({
@@ -46572,7 +46404,7 @@ function isGeneratedId(id) {
 function parseSourceScopes(sourceId) {
   const ast = (0, _ast.getAst)(sourceId);
 
-  if (!ast || Object.keys(ast).length == 0) {
+  if (!ast || !Object.keys(ast).length) {
     return null;
   }
 
@@ -46872,7 +46704,7 @@ const scopeCollectionVisitor = {
         // instead.
         let declStart = node.loc.start;
 
-        if (node.decorators && node.decorators.length > 0) {
+        if (node.decorators && node.decorators.length) {
           // Estimate the location of the "class" keyword since it
           // is unlikely to be a different line than the class name.
           declStart = {
@@ -47253,7 +47085,7 @@ function buildMetaBindings(sourceId, node, ancestors, parentIndex = ancestors.le
 
   if (t.isCallExpression(parent, {
     callee: node
-  }) && parent.arguments.length == 0) {
+  }) && !parent.arguments.length) {
     return {
       type: "call",
       start: fromBabelLocation(parent.loc.start, sourceId),
@@ -47266,7 +47098,7 @@ function buildMetaBindings(sourceId, node, ancestors, parentIndex = ancestors.le
 }
 
 function looksLikeCommonJS(rootScope) {
-  const hasRefs = name => rootScope.bindings[name] && rootScope.bindings[name].refs.length > 0;
+  const hasRefs = name => rootScope.bindings[name] && !!rootScope.bindings[name].refs.length;
 
   return hasRefs("__dirname") || hasRefs("__filename") || hasRefs("require") || hasRefs("exports") || hasRefs("module");
 }
@@ -47400,7 +47232,7 @@ function getInnerLocations(locations, position) {
 
 
 function removeOverlaps(locations) {
-  if (locations.length == 0) {
+  if (!locations.length) {
     return [];
   }
 
@@ -47481,120 +47313,8 @@ exports.default = _default;
 /* 890 */,
 /* 891 */,
 /* 892 */,
-/* 893 */
-/***/ (function(module, exports, __webpack_require__) {
-
-"use strict";
-
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.getNextStep = getNextStep;
-
-var t = _interopRequireWildcard(__webpack_require__(2));
-
-var _closest = __webpack_require__(894);
-
-var _helpers = __webpack_require__(602);
-
-function _getRequireWildcardCache(nodeInterop) { if (typeof WeakMap !== "function") return null; var cacheBabelInterop = new WeakMap(); var cacheNodeInterop = new WeakMap(); return (_getRequireWildcardCache = function (nodeInterop) { return nodeInterop ? cacheNodeInterop : cacheBabelInterop; })(nodeInterop); }
-
-function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(nodeInterop); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (key !== "default" && Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
-
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-function getNextStep(sourceId, pausedPosition) {
-  const currentExpression = getSteppableExpression(sourceId, pausedPosition);
-
-  if (!currentExpression) {
-    return null;
-  }
-
-  const currentStatement = currentExpression.find(p => {
-    return p.inList && t.isStatement(p.node);
-  });
-
-  if (!currentStatement) {
-    throw new Error("Assertion failure - this should always find at least Program");
-  }
-
-  return _getNextStep(currentStatement, sourceId, pausedPosition);
-}
-
-function getSteppableExpression(sourceId, pausedPosition) {
-  const closestPath = (0, _closest.getClosestPath)(sourceId, pausedPosition);
-
-  if (!closestPath) {
-    return null;
-  }
-
-  if ((0, _helpers.isAwaitExpression)(closestPath) || (0, _helpers.isYieldExpression)(closestPath)) {
-    return closestPath;
-  }
-
-  return closestPath.find(p => t.isAwaitExpression(p.node) || t.isYieldExpression(p.node));
-}
-
-function _getNextStep(statement, sourceId, position) {
-  const nextStatement = statement.getSibling(1);
-
-  if (nextStatement) {
-    return { ...nextStatement.node.loc.start,
-      sourceId
-    };
-  }
-
-  return null;
-}
-
-/***/ }),
-/* 894 */
-/***/ (function(module, exports, __webpack_require__) {
-
-"use strict";
-
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.getClosestPath = getClosestPath;
-
-var _simplePath = _interopRequireDefault(__webpack_require__(684));
-
-var _ast = __webpack_require__(572);
-
-var _contains = __webpack_require__(700);
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-function getClosestPath(sourceId, location) {
-  let closestPath = null;
-  (0, _ast.traverseAst)(sourceId, {
-    enter(node, ancestors) {
-      if ((0, _contains.nodeContainsPosition)(node, location)) {
-        const path = (0, _simplePath.default)(ancestors);
-
-        if (path && (!closestPath || path.depth > closestPath.depth)) {
-          closestPath = path;
-        }
-      }
-    }
-
-  });
-
-  if (!closestPath) {
-    throw new Error("Assertion failure - This should always fine a path");
-  }
-
-  return closestPath;
-}
-
-/***/ }),
+/* 893 */,
+/* 894 */,
 /* 895 */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -47724,7 +47444,7 @@ function replaceNode(ancestors, node) {
 function getFirstExpression(ast) {
   const statements = ast.program.body;
 
-  if (statements.length == 0) {
+  if (!statements.length) {
     return null;
   }
 
@@ -47910,7 +47630,8 @@ function mapExpressionBindings(expression, ast, bindings = []) {
       if (t.isIdentifier(node.left) || t.isPattern(node.left)) {
         const newNode = globalizeAssignment(node, bindings);
         isMapped = true;
-        return (0, _ast.replaceNode)(ancestors, newNode);
+        (0, _ast.replaceNode)(ancestors, newNode);
+        return;
       }
 
       return;
@@ -47988,8 +47709,16 @@ function translateDeclarationIntoAssignment(node) {
 
 function addReturnNode(ast) {
   const statements = ast.program.body;
-  const lastStatement = statements[statements.length - 1];
-  return statements.slice(0, -1).concat(t.returnStatement(lastStatement.expression));
+  const lastStatement = statements.pop(); // if the last expression is an awaitExpression, strip the `await` part and directly
+  // return the argument to avoid calling the argument's `then` function twice when the
+  // mapped expression gets evaluated (See Bug 1771428)
+
+  if (t.isAwaitExpression(lastStatement.expression)) {
+    lastStatement.expression = lastStatement.expression.argument;
+  }
+
+  statements.push(t.returnStatement(lastStatement.expression));
+  return statements;
 }
 
 function getDeclarations(node) {
@@ -48062,7 +47791,7 @@ function translateDeclarationsIntoAssignment(ast) {
   t.traverse(ast, (node, ancestors) => {
     const parent = ancestors[ancestors.length - 1];
 
-    if (t.isWithStatement(node) || !(0, _helpers.isTopLevel)(ancestors) || t.isAssignmentExpression(node) || !t.isVariableDeclaration(node) || t.isForStatement(parent.node) || !Array.isArray(node.declarations) || node.declarations.length === 0) {
+    if (t.isWithStatement(node) || !(0, _helpers.isTopLevel)(ancestors) || t.isAssignmentExpression(node) || !t.isVariableDeclaration(node) || t.isForStatement(parent.node) || t.isForXStatement(parent.node) || !Array.isArray(node.declarations) || node.declarations.length === 0) {
       return;
     }
 
@@ -76498,6 +76227,244 @@ exports.parseExpression = parseExpression;
 exports.tokTypes = types;
 //# sourceMappingURL=index.js.map
 
+
+/***/ }),
+/* 1055 */,
+/* 1056 */,
+/* 1057 */,
+/* 1058 */,
+/* 1059 */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
+
+
+function _classPrivateFieldInitSpec(obj, privateMap, value) { _checkPrivateRedeclaration(obj, privateMap); privateMap.set(obj, value); }
+
+function _checkPrivateRedeclaration(obj, privateCollection) { if (privateCollection.has(obj)) { throw new TypeError("Cannot initialize the same private elements twice on an object"); } }
+
+function _classPrivateFieldGet(receiver, privateMap) { var descriptor = _classExtractFieldDescriptor(receiver, privateMap, "get"); return _classApplyDescriptorGet(receiver, descriptor); }
+
+function _classApplyDescriptorGet(receiver, descriptor) { if (descriptor.get) { return descriptor.get.call(receiver); } return descriptor.value; }
+
+function _classPrivateFieldSet(receiver, privateMap, value) { var descriptor = _classExtractFieldDescriptor(receiver, privateMap, "set"); _classApplyDescriptorSet(receiver, descriptor, value); return value; }
+
+function _classExtractFieldDescriptor(receiver, privateMap, action) { if (!privateMap.has(receiver)) { throw new TypeError("attempted to " + action + " private field on non-instance"); } return privateMap.get(receiver); }
+
+function _classApplyDescriptorSet(receiver, descriptor, value) { if (descriptor.set) { descriptor.set.call(receiver, value); } else { if (!descriptor.writable) { throw new TypeError("attempted to set read only private field"); } descriptor.value = value; } }
+
+var _msgId = /*#__PURE__*/new WeakMap();
+
+var _worker = /*#__PURE__*/new WeakMap();
+
+var _pendingCalls = /*#__PURE__*/new WeakMap();
+
+var _url = /*#__PURE__*/new WeakMap();
+
+var _onMessage = /*#__PURE__*/new WeakMap();
+
+class WorkerDispatcher {
+  // Map of message ids -> promise resolution functions, for dispatching worker responses
+  constructor(url) {
+    _classPrivateFieldInitSpec(this, _msgId, {
+      writable: true,
+      value: 1
+    });
+
+    _classPrivateFieldInitSpec(this, _worker, {
+      writable: true,
+      value: null
+    });
+
+    _classPrivateFieldInitSpec(this, _pendingCalls, {
+      writable: true,
+      value: new Map()
+    });
+
+    _classPrivateFieldInitSpec(this, _url, {
+      writable: true,
+      value: ""
+    });
+
+    _classPrivateFieldInitSpec(this, _onMessage, {
+      writable: true,
+      value: ({
+        data: result
+      }) => {
+        const items = _classPrivateFieldGet(this, _pendingCalls).get(result.id);
+
+        _classPrivateFieldGet(this, _pendingCalls).delete(result.id);
+
+        if (!items) {
+          return;
+        }
+
+        if (!_classPrivateFieldGet(this, _worker)) {
+          return;
+        }
+
+        result.results.forEach((resultData, i) => {
+          const {
+            resolve,
+            reject
+          } = items[i];
+
+          if (resultData.error) {
+            const err = new Error(resultData.message);
+            err.metadata = resultData.metadata;
+            reject(err);
+          } else {
+            resolve(resultData.response);
+          }
+        });
+      }
+    });
+
+    _classPrivateFieldSet(this, _url, url);
+  }
+
+  start() {
+    // When running in debugger jest test, we don't have access to ChromeWorker
+    if (typeof ChromeWorker == "function") {
+      _classPrivateFieldSet(this, _worker, new ChromeWorker(_classPrivateFieldGet(this, _url)));
+    } else {
+      _classPrivateFieldSet(this, _worker, new Worker(_classPrivateFieldGet(this, _url)));
+    }
+
+    _classPrivateFieldGet(this, _worker).onerror = err => {
+      console.error(`Error in worker ${_classPrivateFieldGet(this, _url)}`, err.message);
+    };
+
+    _classPrivateFieldGet(this, _worker).addEventListener("message", _classPrivateFieldGet(this, _onMessage));
+  }
+
+  stop() {
+    if (!_classPrivateFieldGet(this, _worker)) {
+      return;
+    }
+
+    _classPrivateFieldGet(this, _worker).removeEventListener("message", _classPrivateFieldGet(this, _onMessage));
+
+    _classPrivateFieldGet(this, _worker).terminate();
+
+    _classPrivateFieldSet(this, _worker, null);
+
+    _classPrivateFieldGet(this, _pendingCalls).clear();
+  }
+
+  task(method, {
+    queue = false
+  } = {}) {
+    const calls = [];
+
+    const push = args => {
+      return new Promise((resolve, reject) => {
+        if (queue && calls.length === 0) {
+          Promise.resolve().then(flush);
+        }
+
+        calls.push({
+          args,
+          resolve,
+          reject
+        });
+
+        if (!queue) {
+          flush();
+        }
+      });
+    };
+
+    const flush = () => {
+      var _this$msgId;
+
+      const items = calls.slice();
+      calls.length = 0;
+
+      if (!_classPrivateFieldGet(this, _worker)) {
+        this.start();
+      }
+
+      const id = (_classPrivateFieldSet(this, _msgId, (_this$msgId = +_classPrivateFieldGet(this, _msgId)) + 1), _this$msgId);
+
+      _classPrivateFieldGet(this, _worker).postMessage({
+        id,
+        method,
+        calls: items.map(item => item.args)
+      });
+
+      _classPrivateFieldGet(this, _pendingCalls).set(id, items);
+    };
+
+    return (...args) => push(args);
+  }
+
+  invoke(method, ...args) {
+    return this.task(method)(...args);
+  }
+
+}
+
+function workerHandler(publicInterface) {
+  return function (msg) {
+    const {
+      id,
+      method,
+      calls
+    } = msg.data;
+    Promise.all(calls.map(args => {
+      try {
+        const response = publicInterface[method].apply(undefined, args);
+
+        if (response instanceof Promise) {
+          return response.then(val => ({
+            response: val
+          }), err => asErrorMessage(err));
+        }
+
+        return {
+          response
+        };
+      } catch (error) {
+        return asErrorMessage(error);
+      }
+    })).then(results => {
+      globalThis.postMessage({
+        id,
+        results
+      });
+    });
+  };
+}
+
+function asErrorMessage(error) {
+  if (typeof error === "object" && error && "message" in error) {
+    // Error can't be sent via postMessage, so be sure to convert to
+    // string.
+    return {
+      error: true,
+      message: error.message,
+      metadata: error.metadata
+    };
+  }
+
+  return {
+    error: true,
+    message: error == null ? error : error.toString(),
+    metadata: undefined
+  };
+} // Might be loaded within a worker thread where `module` isn't available.
+
+
+if (true) {
+  module.exports = {
+    WorkerDispatcher,
+    workerHandler
+  };
+}
 
 /***/ })
 /******/ ]);

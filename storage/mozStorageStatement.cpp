@@ -8,7 +8,6 @@
 #include <stdio.h>
 
 #include "nsError.h"
-#include "nsMemory.h"
 #include "nsThreadUtils.h"
 #include "nsIClassInfoImpl.h"
 #include "Variant.h"
@@ -129,7 +128,7 @@ nsresult Statement::initialize(Connection* aDBConnection,
 
     aDBConnection->RecordQueryStatus(srv);
     mQueryStatusRecorded = true;
-    return NS_ERROR_FAILURE;
+    return convertResultCode(srv);
   }
 
   MOZ_LOG(gStorageLog, LogLevel::Debug,

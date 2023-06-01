@@ -14,17 +14,16 @@
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/IntegerPrintfMacros.h"
 
-namespace mozilla {
-namespace media {
+namespace mozilla::media {
 class TimeIntervals;
-}  // namespace media
-}  // namespace mozilla
+}  // namespace mozilla::media
 // CopyChooser specialization for nsTArray
 template <>
 struct nsTArray_RelocationStrategy<mozilla::media::TimeIntervals> {
-  typedef nsTArray_RelocateUsingMoveConstructor<mozilla::media::TimeIntervals>
-      Type;
+  using Type =
+      nsTArray_RelocateUsingMoveConstructor<mozilla::media::TimeIntervals>;
 };
 
 namespace mozilla {
@@ -39,6 +38,16 @@ namespace media {
 
 // Number of nanoseconds per second. 1e9.
 static const int64_t NSECS_PER_S = 1000000000;
+
+#ifndef PROCESS_DECODE_LOG
+#  define PROCESS_DECODE_LOG(sample)                                   \
+    MOZ_LOG(sPDMLog, mozilla::LogLevel::Verbose,                       \
+            ("ProcessDecode: mDuration=%" PRIu64 "µs ; mTime=%" PRIu64 \
+             "µs ; mTimecode=%" PRIu64 "µs",                           \
+             (sample)->mDuration.ToMicroseconds(),                     \
+             (sample)->mTime.ToMicroseconds(),                         \
+             (sample)->mTimecode.ToMicroseconds()))
+#endif  // PROCESS_DECODE_LOG
 
 // TimeUnit at present uses a CheckedInt64 as storage.
 // INT64_MAX has the special meaning of being +oo.
@@ -57,11 +66,11 @@ class TimeUnit final {
         (aValue <= 0 ? aValue - halfUsec : aValue + halfUsec) * USECS_PER_S;
     if (val >= double(INT64_MAX)) {
       return FromMicroseconds(INT64_MAX);
-    } else if (val <= double(INT64_MIN)) {
-      return FromMicroseconds(INT64_MIN);
-    } else {
-      return FromMicroseconds(int64_t(val));
     }
+    if (val <= double(INT64_MIN)) {
+      return FromMicroseconds(INT64_MIN);
+    }
+    return FromMicroseconds(int64_t(val));
   }
 
   static constexpr TimeUnit FromMicroseconds(int64_t aValue) {

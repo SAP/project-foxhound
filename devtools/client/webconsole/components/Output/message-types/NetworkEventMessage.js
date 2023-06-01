@@ -8,37 +8,38 @@
 const {
   createFactory,
   createElement,
-} = require("devtools/client/shared/vendor/react");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 const Message = createFactory(
-  require("devtools/client/webconsole/components/Output/Message")
+  require("resource://devtools/client/webconsole/components/Output/Message.js")
 );
-const actions = require("devtools/client/webconsole/actions/index");
+const actions = require("resource://devtools/client/webconsole/actions/index.js");
 const {
   isMessageNetworkError,
   l10n,
-} = require("devtools/client/webconsole/utils/messages");
+} = require("resource://devtools/client/webconsole/utils/messages.js");
 
 loader.lazyRequireGetter(
   this,
   "TabboxPanel",
-  "devtools/client/netmonitor/src/components/TabboxPanel"
+  "resource://devtools/client/netmonitor/src/components/TabboxPanel.js"
 );
 const {
   getHTTPStatusCodeURL,
-} = require("devtools/client/netmonitor/src/utils/mdn-utils");
-const { getUnicodeUrl } = require("devtools/client/shared/unicode-url");
+} = require("resource://devtools/client/netmonitor/src/utils/doc-utils.js");
+const {
+  getUnicodeUrl,
+} = require("resource://devtools/client/shared/unicode-url.js");
 loader.lazyRequireGetter(
   this,
   "BLOCKED_REASON_MESSAGES",
-  "devtools/client/netmonitor/src/constants",
+  "resource://devtools/client/netmonitor/src/constants.js",
   true
 );
 
 const LEARN_MORE = l10n.getStr("webConsoleMoreInfoLabel");
 
-const Services = require("Services");
 const isMacOS = Services.appinfo.OS === "Darwin";
 
 NetworkEventMessage.displayName = "NetworkEventMessage";
@@ -74,6 +75,7 @@ function NetworkEventMessage({
   networkMessageActiveTabId,
   dispatch,
   open,
+  disabled,
 }) {
   const {
     id,
@@ -177,8 +179,6 @@ function NetworkEventMessage({
     getLongString: grip => {
       return serviceContainer.getLongString(grip);
     },
-    getTabTarget: () => {},
-    sendHTTPRequest: () => {},
     triggerActivity: () => {},
     requestData: (requestId, dataType) => {
       return serviceContainer.requestData(requestId, dataType);
@@ -186,9 +186,10 @@ function NetworkEventMessage({
   };
 
   // Only render the attachment if the network-event is
-  // actually opened (performance optimization).
+  // actually opened (performance optimization) and its not disabled.
   const attachment =
     open &&
+    !disabled &&
     dom.div(
       {
         className: "network-info network-monitor",
@@ -222,6 +223,7 @@ function NetworkEventMessage({
     indent,
     collapsible: true,
     open,
+    disabled,
     onToggle,
     attachment,
     topLevelClasses,

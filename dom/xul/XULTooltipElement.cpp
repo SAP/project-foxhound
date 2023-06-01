@@ -16,8 +16,7 @@
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 nsXULElement* NS_NewXULTooltipElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo) {
@@ -41,7 +40,6 @@ nsresult XULTooltipElement::Init() {
   NS_ENSURE_SUCCESS(rv, rv);
   description->SetAttr(kNameSpaceID_None, nsGkAtoms::_class,
                        u"tooltip-label"_ns, false);
-  description->SetAttr(kNameSpaceID_None, nsGkAtoms::flex, u"true"_ns, false);
   ErrorResult error;
   AppendChild(*description, error);
 
@@ -103,5 +101,4 @@ nsresult XULTooltipElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -12,43 +12,33 @@
 #include "mozilla/intl/DisplayNames.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/Span.h"
-#include "mozilla/TextUtils.h"
 
 #include <algorithm>
-#include <cstring>
-#include <iterator>
 
 #include "jsnum.h"
 #include "jspubtd.h"
 
 #include "builtin/intl/CommonFunctions.h"
 #include "builtin/intl/FormatBuffer.h"
-#include "builtin/intl/StringAsciiChars.h"
-#include "builtin/String.h"
 #include "gc/AllocKind.h"
-#include "gc/FreeOp.h"
-#include "gc/Rooting.h"
+#include "gc/GCContext.h"
 #include "js/CallArgs.h"
 #include "js/Class.h"
 #include "js/experimental/Intl.h"     // JS::AddMozDisplayNamesConstructor
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
-#include "js/GCVector.h"
-#include "js/PropertyAndElement.h"  // JS_DefineFunctions, JS_DefineProperties
+#include "js/PropertyAndElement.h"    // JS_DefineFunctions, JS_DefineProperties
 #include "js/PropertyDescriptor.h"
 #include "js/PropertySpec.h"
-#include "js/Result.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "js/Utility.h"
 #include "vm/GlobalObject.h"
-#include "vm/JSAtom.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/Printer.h"
 #include "vm/Runtime.h"
 #include "vm/SelfHosting.h"
 #include "vm/Stack.h"
-#include "vm/StaticStrings.h"
 #include "vm/StringType.h"
 #include "vm/WellKnownAtom.h"  // js_*_str
 
@@ -121,7 +111,7 @@ enum class DisplayNamesOptions {
  * function.
  */
 static bool InitializeDisplayNamesObject(JSContext* cx, HandleObject obj,
-                                         HandlePropertyName initializer,
+                                         Handle<PropertyName*> initializer,
                                          HandleValue locales,
                                          HandleValue options,
                                          DisplayNamesOptions dnoptions) {
@@ -198,12 +188,12 @@ static bool MozDisplayNames(JSContext* cx, unsigned argc, Value* vp) {
   return DisplayNames(cx, args, DisplayNamesOptions::EnableMozExtensions);
 }
 
-void js::DisplayNamesObject::finalize(JSFreeOp* fop, JSObject* obj) {
-  MOZ_ASSERT(fop->onMainThread());
+void js::DisplayNamesObject::finalize(JS::GCContext* gcx, JSObject* obj) {
+  MOZ_ASSERT(gcx->onMainThread());
 
   if (mozilla::intl::DisplayNames* displayNames =
           obj->as<DisplayNamesObject>().getDisplayNames()) {
-    intl::RemoveICUCellMemory(fop, obj, DisplayNamesObject::EstimatedMemoryUse);
+    intl::RemoveICUCellMemory(gcx, obj, DisplayNamesObject::EstimatedMemoryUse);
     delete displayNames;
   }
 }
@@ -292,10 +282,10 @@ static void ReportInvalidOptionError(JSContext* cx, const char* type,
 static void ReportInvalidOptionError(JSContext* cx, const char* type,
                                      double option) {
   ToCStringBuf cbuf;
-  if (const char* str = NumberToCString(cx, &cbuf, option)) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_INVALID_DIGITS_VALUE, str);
-  }
+  const char* str = NumberToCString(&cbuf, option);
+  MOZ_ASSERT(str);
+  JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                            JSMSG_INVALID_DIGITS_VALUE, str);
 }
 
 /**
@@ -314,12 +304,12 @@ bool js::intl_ComputeDisplayName(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  RootedLinearString calendar(cx, args[2].toString()->ensureLinear(cx));
+  Rooted<JSLinearString*> calendar(cx, args[2].toString()->ensureLinear(cx));
   if (!calendar) {
     return false;
   }
 
-  RootedLinearString code(cx, args[7].toString()->ensureLinear(cx));
+  Rooted<JSLinearString*> code(cx, args[7].toString()->ensureLinear(cx));
   if (!code) {
     return false;
   }
@@ -374,7 +364,7 @@ bool js::intl_ComputeDisplayName(JSContext* cx, unsigned argc, Value* vp) {
     }
   }
 
-  RootedLinearString type(cx, args[6].toString()->ensureLinear(cx));
+  Rooted<JSLinearString*> type(cx, args[6].toString()->ensureLinear(cx));
   if (!type) {
     return false;
   }
@@ -435,10 +425,7 @@ bool js::intl_ComputeDisplayName(JSContext* cx, unsigned argc, Value* vp) {
   } else if (StringEqualsLiteral(type, "calendar")) {
     result = dn->GetCalendar(buffer, codeSpan, fallback);
   } else if (StringEqualsLiteral(type, "weekday")) {
-    double d;
-    if (!StringToNumber(cx, code, &d)) {
-      return false;
-    }
+    double d = LinearStringToNumber(code);
     if (!IsInteger(d) || d < 1 || d > 7) {
       ReportInvalidOptionError(cx, "weekday", d);
       return false;
@@ -447,11 +434,7 @@ bool js::intl_ComputeDisplayName(JSContext* cx, unsigned argc, Value* vp) {
         dn->GetWeekday(buffer, static_cast<mozilla::intl::Weekday>(d),
                        mozilla::MakeStringSpan(calendarChars.get()), fallback);
   } else if (StringEqualsLiteral(type, "month")) {
-    double d;
-    if (!StringToNumber(cx, code, &d)) {
-      return false;
-    }
-
+    double d = LinearStringToNumber(code);
     if (!IsInteger(d) || d < 1 || d > 13) {
       ReportInvalidOptionError(cx, "month", d);
       return false;
@@ -462,10 +445,7 @@ bool js::intl_ComputeDisplayName(JSContext* cx, unsigned argc, Value* vp) {
                      mozilla::MakeStringSpan(calendarChars.get()), fallback);
 
   } else if (StringEqualsLiteral(type, "quarter")) {
-    double d;
-    if (!StringToNumber(cx, code, &d)) {
-      return false;
-    }
+    double d = LinearStringToNumber(code);
 
     // Inlined implementation of `IsValidQuarterCode ( quarter )`.
     if (!IsInteger(d) || d < 1 || d > 4) {

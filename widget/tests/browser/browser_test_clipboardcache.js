@@ -2,10 +2,6 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
-
 // Note: widget/tests/test_bug1123480.xhtml checks whether nsTransferable behaves
 // as expected with regards to private browsing mode and the clipboard cache,
 // i.e. that the clipboard is not cached to the disk when private browsing mode
@@ -46,8 +42,8 @@ function getClipboardCacheFDCount() {
     // handles, so if FILE_FLAG_DELETE_ON_CLOSE does the thing it promises, the
     // file is actually removed when the handle is closed.
 
-    let { FileUtils } = ChromeUtils.import(
-      "resource://gre/modules/FileUtils.jsm"
+    let { FileUtils } = ChromeUtils.importESModule(
+      "resource://gre/modules/FileUtils.sys.mjs"
     );
     // Path from nsAnonymousTemporaryFile.cpp, GetTempDir.
     dir = FileUtils.getFile("TmpD", ["mozilla-temp-files"]);

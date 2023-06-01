@@ -4,15 +4,13 @@
 
 "use strict";
 
-const { Ci } = require("chrome");
-
 const {
   accessibility: {
     AUDIT_TYPE: { TEXT_LABEL },
     ISSUE_TYPE,
     SCORES: { BEST_PRACTICES, FAIL, WARNING },
   },
-} = require("devtools/shared/constants");
+} = require("resource://devtools/shared/constants.js");
 
 const {
   AREA_NO_NAME_FROM_ALT,
@@ -262,15 +260,21 @@ const internalFrameRule = function(accessible) {
       return title && title === name
         ? null
         : { score: FAIL, issue: IFRAME_NO_NAME_FROM_TITLE };
-    case "OBJECT":
+    case "OBJECT": {
       const type = DOMNode.getAttribute("type");
       if (!type || !type.startsWith("image/")) {
         return null;
       }
 
       return imageRule(accessible);
-    case "EMBED":
-      return mustHaveNonEmptyNameRule(EMBED_NO_NAME, accessible);
+    }
+    case "EMBED": {
+      const type = DOMNode.getAttribute("type");
+      if (!type || !type.startsWith("image/")) {
+        return mustHaveNonEmptyNameRule(EMBED_NO_NAME, accessible);
+      }
+      return imageRule(accessible);
+    }
     default:
       return null;
   }

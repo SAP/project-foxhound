@@ -1,5 +1,10 @@
-use serde::de;
+use serde::de::{
+    self,
+    value::{MapAccessDeserializer, MapDeserializer},
+    IntoDeserializer,
+};
 use std::{
+    array::IntoIter,
     fmt::Display,
     fs::File,
     io::{BufReader, Cursor, Read, Seek},
@@ -9,9 +14,12 @@ use std::{
 };
 
 use crate::{
+    date::serde_impls::DATE_NEWTYPE_STRUCT_NAME,
     error::{self, Error, ErrorKind, EventKind},
-    stream::{self, Event},
+    stream::{self, Event, OwnedEvent},
     u64_to_usize,
+    uid::serde_impls::UID_NEWTYPE_STRUCT_NAME,
+    value::serde_impls::VALUE_NEWTYPE_STRUCT_NAME,
 };
 
 macro_rules! expect {
@@ -53,20 +61,22 @@ enum OptionMode {
 /// A structure that deserializes plist event streams into Rust values.
 pub struct Deserializer<I>
 where
-    I: IntoIterator<Item = Result<Event, Error>>,
+    I: IntoIterator<Item = Result<OwnedEvent, Error>>,
 {
     events: Peekable<<I as IntoIterator>::IntoIter>,
     option_mode: OptionMode,
+    in_plist_value: bool,
 }
 
 impl<I> Deserializer<I>
 where
-    I: IntoIterator<Item = Result<Event, Error>>,
+    I: IntoIterator<Item = Result<OwnedEvent, Error>>,
 {
     pub fn new(iter: I) -> Deserializer<I> {
         Deserializer {
             events: iter.into_iter().peekable(),
             option_mode: OptionMode::Root,
+            in_plist_value: false,
         }
     }
 
@@ -80,11 +90,21 @@ where
         self.option_mode = prev_option_mode;
         ret
     }
+
+    fn enter_plist_value<T, F: FnOnce(&mut Deserializer<I>) -> Result<T, Error>>(
+        &mut self,
+        f: F,
+    ) -> Result<T, Error> {
+        let prev = mem::replace(&mut self.in_plist_value, true);
+        let ret = f(&mut *self);
+        self.in_plist_value = prev;
+        ret
+    }
 }
 
 impl<'de, 'a, I> de::Deserializer<'de> for &'a mut Deserializer<I>
 where
-    I: IntoIterator<Item = Result<Event, Error>>,
+    I: IntoIterator<Item = Result<OwnedEvent, Error>>,
 {
     type Error = Error;
 
@@ -111,7 +131,12 @@ where
             )),
 
             Event::Boolean(v) => visitor.visit_bool(v),
-            Event::Data(v) => visitor.visit_byte_buf(v),
+            Event::Data(v) => visitor.visit_byte_buf(v.into_owned()),
+            Event::Date(v) if self.in_plist_value => {
+                visitor.visit_enum(MapAccessDeserializer::new(MapDeserializer::new(
+                    IntoIter::new([(DATE_NEWTYPE_STRUCT_NAME, v.to_rfc3339())]),
+                )))
+            }
             Event::Date(v) => visitor.visit_string(v.to_rfc3339()),
             Event::Integer(v) => {
                 if let Some(v) = v.as_unsigned() {
@@ -123,10 +148,11 @@ where
                 }
             }
             Event::Real(v) => visitor.visit_f64(v),
-            Event::String(v) => visitor.visit_string(v),
+            Event::String(v) => visitor.visit_string(v.into_owned()),
+            Event::Uid(v) if self.in_plist_value => visitor.visit_enum(MapAccessDeserializer::new(
+                MapDeserializer::new(IntoIter::new([(UID_NEWTYPE_STRUCT_NAME, v.get())])),
+            )),
             Event::Uid(v) => visitor.visit_u64(v.get()),
-
-            Event::__Nonexhaustive => unreachable!(),
         }
     }
 
@@ -181,13 +207,17 @@ where
 
     fn deserialize_newtype_struct<V>(
         self,
-        _name: &'static str,
+        name: &'static str,
         visitor: V,
     ) -> Result<V::Value, Error>
     where
         V: de::Visitor<'de>,
     {
-        visitor.visit_newtype_struct(self)
+        if name == VALUE_NEWTYPE_STRUCT_NAME {
+            self.enter_plist_value(|this| visitor.visit_newtype_struct(this))
+        } else {
+            visitor.visit_newtype_struct(self)
+        }
     }
 
     fn deserialize_struct<V>(
@@ -207,13 +237,21 @@ where
 
     fn deserialize_enum<V>(
         self,
-        _enum: &'static str,
-        _variants: &'static [&'static str],
+        name: &'static str,
+        variants: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Error>
     where
         V: de::Visitor<'de>,
     {
+        // `plist` since v1.1 serialises unit enum variants as plain strings.
+        if let Some(Ok(Event::String(s))) = self.events.peek() {
+            return s
+                .as_ref()
+                .into_deserializer()
+                .deserialize_enum(name, variants, visitor);
+        }
+
         expect!(self.events.next(), EventKind::StartDictionary);
         let ret = visitor.visit_enum(&mut *self)?;
         expect!(self.events.next(), EventKind::EndCollection);
@@ -223,7 +261,7 @@ where
 
 impl<'de, 'a, I> de::EnumAccess<'de> for &'a mut Deserializer<I>
 where
-    I: IntoIterator<Item = Result<Event, Error>>,
+    I: IntoIterator<Item = Result<OwnedEvent, Error>>,
 {
     type Error = Error;
     type Variant = Self;
@@ -238,12 +276,12 @@ where
 
 impl<'de, 'a, I> de::VariantAccess<'de> for &'a mut Deserializer<I>
 where
-    I: IntoIterator<Item = Result<Event, Error>>,
+    I: IntoIterator<Item = Result<OwnedEvent, Error>>,
 {
     type Error = Error;
 
     fn unit_variant(self) -> Result<(), Error> {
-        de::Deserialize::deserialize(self)
+        <() as de::Deserialize>::deserialize(self)
     }
 
     fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value, Error>
@@ -275,7 +313,7 @@ where
 
 struct MapAndSeqAccess<'a, I>
 where
-    I: 'a + IntoIterator<Item = Result<Event, Error>>,
+    I: 'a + IntoIterator<Item = Result<OwnedEvent, Error>>,
 {
     de: &'a mut Deserializer<I>,
     is_struct: bool,
@@ -284,7 +322,7 @@ where
 
 impl<'a, I> MapAndSeqAccess<'a, I>
 where
-    I: 'a + IntoIterator<Item = Result<Event, Error>>,
+    I: 'a + IntoIterator<Item = Result<OwnedEvent, Error>>,
 {
     fn new(
         de: &'a mut Deserializer<I>,
@@ -301,7 +339,7 @@ where
 
 impl<'de, 'a, I> de::SeqAccess<'de> for MapAndSeqAccess<'a, I>
 where
-    I: 'a + IntoIterator<Item = Result<Event, Error>>,
+    I: 'a + IntoIterator<Item = Result<OwnedEvent, Error>>,
 {
     type Error = Error;
 
@@ -326,7 +364,7 @@ where
 
 impl<'de, 'a, I> de::MapAccess<'de> for MapAndSeqAccess<'a, I>
 where
-    I: 'a + IntoIterator<Item = Result<Event, Error>>,
+    I: 'a + IntoIterator<Item = Result<OwnedEvent, Error>>,
 {
     type Error = Error;
 

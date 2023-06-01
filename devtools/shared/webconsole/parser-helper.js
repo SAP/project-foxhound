@@ -3,12 +3,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
-loader.lazyRequireGetter(
-  this,
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
+const lazy = {};
+ChromeUtils.defineModuleGetter(
+  lazy,
   "Reflect",
-  "resource://gre/modules/reflect.jsm",
-  true
+  "resource://gre/modules/reflect.jsm"
 );
 
 /**
@@ -42,7 +42,7 @@ function getSyntaxTrees(source, logExceptions) {
   if (!scriptMatches.length) {
     // Reflect.parse throws when encounters a syntax error.
     try {
-      syntaxTrees.push(Reflect.parse(source));
+      syntaxTrees.push(lazy.Reflect.parse(source));
     } catch (e) {
       if (logExceptions) {
         DevToolsUtils.reportException("Parser:get", e);
@@ -53,7 +53,7 @@ function getSyntaxTrees(source, logExceptions) {
     for (const script of scriptMatches) {
       // Reflect.parse throws when encounters a syntax error.
       try {
-        syntaxTrees.push(Reflect.parse(script));
+        syntaxTrees.push(lazy.Reflect.parse(script));
       } catch (e) {
         if (logExceptions) {
           DevToolsUtils.reportException("Parser:get", e);

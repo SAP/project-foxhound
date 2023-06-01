@@ -9,12 +9,13 @@
  */
 
 #include "api/test/mock_video_decoder.h"
+#include "api/video_codecs/video_decoder.h"
 #include "modules/video_coding/include/video_coding.h"
-#include "modules/video_coding/timing.h"
+#include "modules/video_coding/timing/timing.h"
 #include "modules/video_coding/video_coding_impl.h"
 #include "system_wrappers/include/clock.h"
 #include "test/gtest.h"
-#include "test/video_codec_settings.h"
+#include "test/scoped_key_value_config.h"
 
 using ::testing::_;
 using ::testing::AnyNumber;
@@ -37,10 +38,11 @@ class MockVCMReceiveCallback : public VCMReceiveCallback {
   MockVCMReceiveCallback() {}
   virtual ~MockVCMReceiveCallback() {}
 
-  MOCK_METHOD(int32_t,
-              FrameToRender,
-              (VideoFrame&, absl::optional<uint8_t>, int32_t, VideoContentType),
-              (override));
+  MOCK_METHOD(
+      int32_t,
+      FrameToRender,
+      (VideoFrame&, absl::optional<uint8_t>, TimeDelta, VideoContentType),
+      (override));
   MOCK_METHOD(void, OnIncomingPayloadType, (int), (override));
   MOCK_METHOD(void, OnDecoderImplementationName, (const char*), (override));
 };
@@ -51,14 +53,16 @@ class TestVideoReceiver : public ::testing::Test {
   static const uint16_t kMaxWaitTimeMs = 100;
 
   TestVideoReceiver()
-      : clock_(0), timing_(&clock_), receiver_(&clock_, &timing_) {}
+      : clock_(0),
+        timing_(&clock_, field_trials_),
+        receiver_(&clock_, &timing_, field_trials_) {}
 
   virtual void SetUp() {
     // Register decoder.
     receiver_.RegisterExternalDecoder(&decoder_, kUnusedPayloadType);
-    webrtc::test::CodecSettings(kVideoCodecVP8, &settings_);
-    EXPECT_EQ(
-        0, receiver_.RegisterReceiveCodec(kUnusedPayloadType, &settings_, 1));
+    VideoDecoder::Settings settings;
+    settings.set_codec_type(kVideoCodecVP8);
+    receiver_.RegisterReceiveCodec(kUnusedPayloadType, settings);
 
     // Set protection mode.
     const size_t kMaxNackListSize = 250;
@@ -118,8 +122,8 @@ class TestVideoReceiver : public ::testing::Test {
     EXPECT_EQ(0, receiver_.Decode(kMaxWaitTimeMs));
   }
 
+  test::ScopedKeyValueConfig field_trials_;
   SimulatedClock clock_;
-  VideoCodec settings_;
   NiceMock<MockVideoDecoder> decoder_;
   NiceMock<MockPacketRequestCallback> packet_request_callback_;
   VCMTiming timing_;

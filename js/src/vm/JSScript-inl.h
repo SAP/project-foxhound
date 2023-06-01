@@ -16,9 +16,6 @@
 #include "vm/RegExpObject.h"
 #include "wasm/AsmJS.h"
 
-#include "vm/Realm-inl.h"
-#include "vm/Shape-inl.h"
-
 namespace js {
 
 ScriptCounts::ScriptCounts()
@@ -228,11 +225,11 @@ inline uint32_t JSScript::getWarmUpCount() const {
   return warmUpData_.toJitScript()->warmUpCount();
 }
 
-inline void JSScript::incWarmUpCounter(uint32_t amount) {
+inline void JSScript::incWarmUpCounter() {
   if (warmUpData_.isWarmUpCount()) {
-    warmUpData_.incWarmUpCount(amount);
+    warmUpData_.incWarmUpCount();
   } else {
-    warmUpData_.toJitScript()->incWarmUpCount(amount);
+    warmUpData_.toJitScript()->incWarmUpCount();
   }
 }
 

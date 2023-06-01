@@ -2060,7 +2060,7 @@ var EXPORTED_SYMBOLS = ["Kinto"];
        * @private
        */
       _resolveRaw(conflict, resolution) {
-          const resolved = Object.assign(Object.assign({}, resolution), { 
+          const resolved = Object.assign(Object.assign({}, resolution), {
               // Ensure local record has the latest authoritative timestamp
               last_modified: conflict.remote && conflict.remote.last_modified });
           // If the resolution object is strictly equal to the
@@ -2208,7 +2208,7 @@ var EXPORTED_SYMBOLS = ["Kinto"];
           }, {});
           const newRecords = records.filter(record => {
               const localRecord = existingById[record.id];
-              const shouldKeep = 
+              const shouldKeep =
               // No local record with this id.
               localRecord === undefined ||
                   // Or local record is synced
@@ -2592,10 +2592,12 @@ var EXPORTED_SYMBOLS = ["Kinto"];
    * See the License for the specific language governing permissions and
    * limitations under the License.
    */
-  ChromeUtils.import("resource://gre/modules/Timer.jsm", global);
-  const { XPCOMUtils } = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+  const { setTimeout, clearTimeout } = ChromeUtils.importESModule("resource://gre/modules/Timer.sys.mjs");
+  const { XPCOMUtils } = ChromeUtils.importESModule("resource://gre/modules/XPCOMUtils.sys.mjs");
   XPCOMUtils.defineLazyGlobalGetters(global, ["fetch", "indexedDB"]);
-  ChromeUtils.defineModuleGetter(global, "EventEmitter", "resource://gre/modules/EventEmitter.jsm");
+  ChromeUtils.defineESModuleGetters(global, {
+      EventEmitter: "resource://gre/modules/EventEmitter.sys.mjs"
+  });
   // Use standalone kinto-http module landed in FFx.
   ChromeUtils.defineModuleGetter(global, "KintoHttpClient", "resource://services-common/kinto-http-client.js");
   XPCOMUtils.defineLazyGetter(global, "generateUUID", () => {

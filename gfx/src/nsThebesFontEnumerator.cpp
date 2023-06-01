@@ -14,7 +14,6 @@
 #include "nsError.h"              // for NS_OK, NS_FAILED, nsresult
 #include "nsAtom.h"               // for nsAtom, NS_Atomize
 #include "nsID.h"
-#include "nsMemory.h"  // for nsMemory
 #include "nsString.h"  // for nsAutoCString, nsAutoString, etc
 #include "nsTArray.h"  // for nsTArray, nsTArray_Impl, etc
 #include "nscore.h"    // for char16_t, NS_IMETHODIMP
@@ -133,16 +132,15 @@ class EnumerateFontsTask final : public Runnable {
 };
 
 NS_IMETHODIMP
-nsThebesFontEnumerator::EnumerateAllFontsAsync(JSContext* aCx,
-                                               JS::MutableHandleValue aRval) {
+nsThebesFontEnumerator::EnumerateAllFontsAsync(
+    JSContext* aCx, JS::MutableHandle<JS::Value> aRval) {
   return EnumerateFontsAsync(nullptr, nullptr, aCx, aRval);
 }
 
 NS_IMETHODIMP
-nsThebesFontEnumerator::EnumerateFontsAsync(const char* aLangGroup,
-                                            const char* aGeneric,
-                                            JSContext* aCx,
-                                            JS::MutableHandleValue aRval) {
+nsThebesFontEnumerator::EnumerateFontsAsync(
+    const char* aLangGroup, const char* aGeneric, JSContext* aCx,
+    JS::MutableHandle<JS::Value> aRval) {
   MOZ_ASSERT(NS_IsMainThread());
 
   nsCOMPtr<nsIGlobalObject> global = xpc::CurrentNativeGlobal(aCx);

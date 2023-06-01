@@ -11,8 +11,8 @@ in the prompt service. In the end, the second request will be failed.
 
 const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
-const { MockRegistrar } = ChromeUtils.import(
-  "resource://testing-common/MockRegistrar.jsm"
+const { MockRegistrar } = ChromeUtils.importESModule(
+  "resource://testing-common/MockRegistrar.sys.mjs"
 );
 
 var httpProtocolHandler = Cc[
@@ -40,7 +40,7 @@ const gMockPromptService = {
 };
 
 var gMockPromptServiceCID = MockRegistrar.register(
-  "@mozilla.org/embedcomp/prompt-service;1",
+  "@mozilla.org/prompter;1",
   gMockPromptService
 );
 

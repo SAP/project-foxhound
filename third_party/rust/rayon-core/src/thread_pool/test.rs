@@ -4,8 +4,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 
-#[allow(deprecated)]
-use crate::Configuration;
 use crate::{join, Scope, ScopeFifo, ThreadPool, ThreadPoolBuilder};
 
 #[test]
@@ -28,7 +26,7 @@ fn workers_stop() {
             // do some work on these threads
             join_a_lot(22);
 
-            thread_pool.registry.clone()
+            Arc::clone(&thread_pool.registry)
         });
         assert_eq!(registry.num_threads(), 22);
     }
@@ -53,7 +51,7 @@ fn sleeper_stop() {
     {
         // once we exit this block, thread-pool will be dropped
         let thread_pool = ThreadPoolBuilder::new().num_threads(22).build().unwrap();
-        registry = thread_pool.registry.clone();
+        registry = Arc::clone(&thread_pool.registry);
 
         // Give time for at least some of the thread pool to fall asleep.
         thread::sleep(time::Duration::from_secs(1));
@@ -67,7 +65,7 @@ fn sleeper_stop() {
 /// Creates a start/exit handler that increments an atomic counter.
 fn count_handler() -> (Arc<AtomicUsize>, impl Fn(usize)) {
     let count = Arc::new(AtomicUsize::new(0));
-    (count.clone(), move |_| {
+    (Arc::clone(&count), move |_| {
         count.fetch_add(1, Ordering::SeqCst);
     })
 }
@@ -197,7 +195,7 @@ fn mutual_install_sleepy() {
 #[test]
 #[allow(deprecated)]
 fn check_thread_pool_new() {
-    let pool = ThreadPool::new(Configuration::new().num_threads(22)).unwrap();
+    let pool = ThreadPool::new(crate::Configuration::new().num_threads(22)).unwrap();
     assert_eq!(pool.current_num_threads(), 22);
 }
 

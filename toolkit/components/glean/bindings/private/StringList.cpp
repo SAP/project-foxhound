@@ -40,7 +40,7 @@ void StringListMetric::Set(const nsTArray<nsCString>& aValue) const {
 Result<Maybe<nsTArray<nsCString>>, nsCString> StringListMetric::TestGetValue(
     const nsACString& aPingName) const {
   nsCString err;
-  if (fog_string_list_test_get_error(mId, &aPingName, &err)) {
+  if (fog_string_list_test_get_error(mId, &err)) {
     return Err(err);
   }
   if (!fog_string_list_test_has_value(mId, &aPingName)) {
@@ -70,7 +70,7 @@ GleanStringList::Set(const nsTArray<nsCString>& aValue) {
 
 NS_IMETHODIMP
 GleanStringList::TestGetValue(const nsACString& aStorageName, JSContext* aCx,
-                              JS::MutableHandleValue aResult) {
+                              JS::MutableHandle<JS::Value> aResult) {
   auto result = mStringList.TestGetValue(aStorageName);
   if (result.isErr()) {
     aResult.set(JS::UndefinedValue());

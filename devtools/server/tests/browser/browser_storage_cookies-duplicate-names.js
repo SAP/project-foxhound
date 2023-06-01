@@ -6,11 +6,13 @@
 // Test that the storage panel is able to display multiple cookies with the same
 // name (and different paths).
 
-/* import-globals-from storage-helpers.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/server/tests/browser/storage-helpers.js",
   this
 );
+
+const l10n = new Localization(["devtools/client/storage.ftl"], true);
+const sessionString = l10n.formatValueSync("storage-expires-session");
 
 const TESTDATA = {
   "http://test1.example.org": [
@@ -71,7 +73,7 @@ add_task(async function() {
             data[resourceType].hosts[host].push(...hostValues);
             data[resourceType].dataByHost[
               host
-            ] = await resource.getStoreObjects(host);
+            ] = await resource.getStoreObjects(host, null, { sessionString });
           }
         }
       },

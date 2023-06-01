@@ -70,10 +70,6 @@ class FreetypeReporter final : public nsIMemoryReporter,
 
 NS_IMPL_ISUPPORTS(FreetypeReporter, nsIMemoryReporter)
 
-template <>
-CountingAllocatorBase<FreetypeReporter>::AmountType
-    CountingAllocatorBase<FreetypeReporter>::sAmount(0);
-
 static FT_MemoryRec_ sFreetypeMemoryRecord;
 
 gfxAndroidPlatform::gfxAndroidPlatform() {
@@ -107,22 +103,7 @@ gfxAndroidPlatform::~gfxAndroidPlatform() {
   layers::AndroidHardwareBufferApi::Shutdown();
 }
 
-void gfxAndroidPlatform::InitAcceleration() {
-  gfxPlatform::InitAcceleration();
-  if (XRE_IsParentProcess() && jni::GetAPIVersion() >= 26) {
-    if (StaticPrefs::gfx_use_ahardwarebuffer_content_AtStartup()) {
-      gfxVars::SetUseAHardwareBufferContent(true);
-    }
-    if (StaticPrefs::webgl_enable_ahardwarebuffer()) {
-      gfxVars::SetUseAHardwareBufferSharedSurface(true);
-    }
-  }
-  if (gfx::gfxVars::UseAHardwareBufferContent() ||
-      gfxVars::UseAHardwareBufferSharedSurface()) {
-    layers::AndroidHardwareBufferApi::Init();
-    layers::AndroidHardwareBufferManager::Init();
-  }
-}
+void gfxAndroidPlatform::InitAcceleration() { gfxPlatform::InitAcceleration(); }
 
 already_AddRefed<gfxASurface> gfxAndroidPlatform::CreateOffscreenSurface(
     const IntSize& aSize, gfxImageFormat aFormat) {
@@ -305,75 +286,61 @@ bool gfxAndroidPlatform::RequiresLinearZoom() {
   return gfxPlatform::RequiresLinearZoom();
 }
 
-class AndroidVsyncSource final : public VsyncSource {
+class AndroidVsyncSource final : public VsyncSource,
+                                 public widget::AndroidVsync::Observer {
  public:
-  class Display final : public VsyncSource::Display,
-                        public widget::AndroidVsync::Observer {
-   public:
-    Display() : mAndroidVsync(widget::AndroidVsync::GetInstance()) {}
-    ~Display() { DisableVsync(); }
+  AndroidVsyncSource() : mAndroidVsync(widget::AndroidVsync::GetInstance()) {}
 
-    bool IsVsyncEnabled() override {
-      MOZ_ASSERT(NS_IsMainThread());
-      return mObservingVsync;
+  bool IsVsyncEnabled() override {
+    MOZ_ASSERT(NS_IsMainThread());
+    return mObservingVsync;
+  }
+
+  void EnableVsync() override {
+    MOZ_ASSERT(NS_IsMainThread());
+
+    if (mObservingVsync) {
+      return;
     }
+    mAndroidVsync->RegisterObserver(this, widget::AndroidVsync::RENDER);
+    mObservingVsync = true;
+  }
 
-    void EnableVsync() override {
-      MOZ_ASSERT(NS_IsMainThread());
+  void DisableVsync() override {
+    MOZ_ASSERT(NS_IsMainThread());
 
-      if (mObservingVsync) {
-        return;
-      }
-      mAndroidVsync->RegisterObserver(this, widget::AndroidVsync::RENDER);
-      mObservingVsync = true;
+    if (!mObservingVsync) {
+      return;
     }
+    mAndroidVsync->UnregisterObserver(this, widget::AndroidVsync::RENDER);
+    mObservingVsync = false;
+  }
 
-    void DisableVsync() override {
-      MOZ_ASSERT(NS_IsMainThread());
+  TimeDuration GetVsyncRate() override { return mAndroidVsync->GetVsyncRate(); }
 
-      if (!mObservingVsync) {
-        return;
-      }
-      mAndroidVsync->UnregisterObserver(this, widget::AndroidVsync::RENDER);
-      mObservingVsync = false;
-    }
+  void Shutdown() override { DisableVsync(); }
 
-    TimeDuration GetVsyncRate() override {
-      return mAndroidVsync->GetVsyncRate();
-    }
+  // Override for the widget::AndroidVsync::Observer method
+  void OnVsync(const TimeStamp& aTimeStamp) override {
+    // Use the timebase from the frame callback as the vsync time, unless it
+    // is in the future.
+    TimeStamp now = TimeStamp::Now();
+    TimeStamp vsyncTime = aTimeStamp < now ? aTimeStamp : now;
+    TimeStamp outputTime = vsyncTime + GetVsyncRate();
 
-    void Shutdown() override { DisableVsync(); }
-
-    // Override for the widget::AndroidVsync::Observer method
-    void OnVsync(const TimeStamp& aTimeStamp) override {
-      // Use the timebase from the frame callback as the vsync time, unless it
-      // is in the future.
-      TimeStamp now = TimeStamp::Now();
-      TimeStamp vsyncTime = aTimeStamp < now ? aTimeStamp : now;
-      TimeStamp outputTime = vsyncTime + GetVsyncRate();
-
-      NotifyVsync(vsyncTime, outputTime);
-    }
-
-   private:
-    RefPtr<widget::AndroidVsync> mAndroidVsync;
-    bool mObservingVsync = false;
-    TimeDuration mVsyncDuration;
-  };
-
-  Display& GetGlobalDisplay() final { return GetDisplayInstance(); }
+    NotifyVsync(vsyncTime, outputTime);
+  }
 
  private:
-  virtual ~AndroidVsyncSource() = default;
+  virtual ~AndroidVsyncSource() { DisableVsync(); }
 
-  static Display& GetDisplayInstance() {
-    static RefPtr<Display> globalDisplay = new Display();
-    return *globalDisplay;
-  }
+  RefPtr<widget::AndroidVsync> mAndroidVsync;
+  bool mObservingVsync = false;
+  TimeDuration mVsyncDuration;
 };
 
 already_AddRefed<mozilla::gfx::VsyncSource>
-gfxAndroidPlatform::CreateHardwareVsyncSource() {
+gfxAndroidPlatform::CreateGlobalHardwareVsyncSource() {
   // Vsync was introduced since JB (API 16~18) but inaccurate. Enable only for
   // KK (API 19) and later.
   if (jni::GetAPIVersion() >= 19) {
@@ -382,5 +349,5 @@ gfxAndroidPlatform::CreateHardwareVsyncSource() {
   }
 
   NS_WARNING("Vsync not supported. Falling back to software vsync");
-  return gfxPlatform::CreateHardwareVsyncSource();
+  return GetSoftwareVsyncSource();
 }

@@ -4,8 +4,12 @@
 
 "use strict";
 
+/* import-globals-from ../../mochitest/states.js */
 /* import-globals-from ../../mochitest/value.js */
-loadScripts({ name: "value.js", dir: MOCHITESTS_DIR });
+loadScripts(
+  { name: "states.js", dir: MOCHITESTS_DIR },
+  { name: "value.js", dir: MOCHITESTS_DIR }
+);
 
 /**
  * Test data has the format of:
@@ -30,8 +34,8 @@ const valueTests = [
     async action(browser) {
       await invokeFocus(browser, "select");
       await invokeContentTask(browser, [], () => {
-        const { ContentTaskUtils } = ChromeUtils.import(
-          "resource://testing-common/ContentTaskUtils.jsm"
+        const { ContentTaskUtils } = ChromeUtils.importESModule(
+          "resource://testing-common/ContentTaskUtils.sys.mjs"
         );
         const EventUtils = ContentTaskUtils.getEventUtils(content);
         EventUtils.synthesizeKey("3", {}, content);
@@ -137,8 +141,8 @@ const valueTests = [
     async action(browser) {
       await invokeFocus(browser, "range");
       await invokeContentTask(browser, [], () => {
-        const { ContentTaskUtils } = ChromeUtils.import(
-          "resource://testing-common/ContentTaskUtils.jsm"
+        const { ContentTaskUtils } = ChromeUtils.importESModule(
+          "resource://testing-common/ContentTaskUtils.sys.mjs"
         );
         const EventUtils = ContentTaskUtils.getEventUtils(content);
         EventUtils.synthesizeKey("VK_LEFT", {}, content);
@@ -146,6 +150,24 @@ const valueTests = [
     },
     waitFor: EVENT_VALUE_CHANGE,
     expected: "5",
+  },
+  {
+    desc: "Initially textbox value is text subtree",
+    id: "textbox",
+    expected: "Some rich text",
+  },
+  {
+    desc: "Textbox value changes when subtree changes",
+    id: "textbox",
+    async action(browser) {
+      await invokeContentTask(browser, [], () => {
+        let boldText = content.document.createElement("strong");
+        boldText.textContent = " bold";
+        content.document.getElementById("textbox").appendChild(boldText);
+      });
+    },
+    waitFor: EVENT_TEXT_VALUE_CHANGE,
+    expected: "Some rich text bold",
   },
 ];
 
@@ -163,7 +185,8 @@ addAccessibleTask(
   </select>
   <input id="combobox" role="combobox" aria-autocomplete="inline">
   <progress id="progress" value="22" max="100"></progress>
-  <input type="range" id="range" min="0" max="10" value="6">`,
+  <input type="range" id="range" min="0" max="10" value="6">
+  <div contenteditable="yes" role="textbox" id="textbox">Some <a href="#">rich</a> text</div>`,
   async function(browser, accDoc) {
     for (let { desc, id, action, attrs, expected, waitFor } of valueTests) {
       info(desc);
@@ -192,4 +215,170 @@ addAccessibleTask(
     }
   },
   { iframe: true, remoteIframe: true }
+);
+
+/**
+ * Test caching of link URL values.
+ */
+addAccessibleTask(
+  `<a id="link" href="https://example.com/">Test</a>`,
+  async function(browser, docAcc) {
+    const link = findAccessibleChildByID(docAcc, "link");
+    is(link.value, "https://example.com/", "link initial value correct");
+    const textLeaf = link.firstChild;
+    is(textLeaf.value, "https://example.com/", "link initial value correct");
+
+    info("Changing link href");
+    await invokeSetAttribute(browser, "link", "href", "https://example.net/");
+    await untilCacheIs(
+      () => link.value,
+      "https://example.net/",
+      "link value correct after change"
+    );
+
+    info("Removing link href");
+    await invokeSetAttribute(browser, "link", "href");
+    await untilCacheIs(() => link.value, "", "link value empty after removal");
+
+    info("Setting link href");
+    await invokeSetAttribute(browser, "link", "href", "https://example.com/");
+    await untilCacheIs(
+      () => link.value,
+      "https://example.com/",
+      "link value correct after change"
+    );
+  },
+  { chrome: true, topLevel: true, iframe: true, remoteIframe: true }
+);
+
+/**
+ * Test caching of active state for select options - see bug 1788143.
+ */
+addAccessibleTask(
+  `
+  <select id="select">
+    <option id="first_option">First</option>
+    <option id="second_option">Second</option>
+  </select>`,
+  async function(browser, docAcc) {
+    const select = findAccessibleChildByID(docAcc, "select");
+    is(select.value, "First", "Select initial value correct");
+
+    // Focus the combo box.
+    await invokeFocus(browser, "select");
+
+    // Select the second option (drop-down collapsed).
+    let p = waitForEvents({
+      expected: [
+        [EVENT_SELECTION, "second_option"],
+        [EVENT_TEXT_VALUE_CHANGE, "select"],
+      ],
+      unexpected: [
+        stateChangeEventArgs("second_option", EXT_STATE_ACTIVE, true, true),
+        stateChangeEventArgs("first_option", EXT_STATE_ACTIVE, false, true),
+      ],
+    });
+    await invokeContentTask(browser, [], () => {
+      content.document.getElementById("select").selectedIndex = 1;
+    });
+    await p;
+
+    is(select.value, "Second", "Select value correct after changing option");
+
+    // Expand the combobox dropdown.
+    p = waitForEvent(EVENT_STATE_CHANGE, "ContentSelectDropdown");
+    EventUtils.synthesizeKey("VK_SPACE");
+    await p;
+
+    p = waitForEvents({
+      expected: [
+        [EVENT_SELECTION, "first_option"],
+        [EVENT_TEXT_VALUE_CHANGE, "select"],
+        [EVENT_HIDE, "ContentSelectDropdown"],
+      ],
+      unexpected: [
+        stateChangeEventArgs("first_option", EXT_STATE_ACTIVE, true, true),
+        stateChangeEventArgs("second_option", EXT_STATE_ACTIVE, false, true),
+      ],
+    });
+
+    // Press the up arrow to select the first option (drop-down expanded).
+    // Then, press Enter to confirm the selection and close the dropdown.
+    // We do both of these together to unify testing across platforms, since
+    // events are not entirely consistent on Windows vs. Linux + macOS.
+    EventUtils.synthesizeKey("VK_UP");
+    EventUtils.synthesizeKey("VK_RETURN");
+    await p;
+
+    is(
+      select.value,
+      "First",
+      "Select value correct after changing option back"
+    );
+  },
+  { chrome: true, topLevel: true, iframe: true, remoteIframe: true }
+);
+
+/**
+ * Test combobox values for non-editable comboboxes.
+ */
+addAccessibleTask(
+  `
+  <div id="combo-div-1" role="combobox">value</div>
+  <div id="combo-div-2" role="combobox">
+    <div role="listbox">
+      <div role="option">value</div>
+    </div>
+  </div>
+  <div id="combo-div-3" role="combobox">
+    <div role="group">value</div>
+  </div>
+  <div id="combo-div-4" role="combobox">foo
+    <div role="listbox">
+      <div role="option">bar</div>
+    </div>
+  </div>
+
+  <input id="combo-input-1" role="combobox" value="value" disabled></input>
+  <input id="combo-input-2" role="combobox" value="value" disabled>testing</input>
+
+  <div id="combo-div-selected" role="combobox">
+    <div role="listbox">
+      <div aria-selected="true" role="option">value</div>
+    </div>
+  </div>
+`,
+  async function(browser, docAcc) {
+    const comboDiv1 = findAccessibleChildByID(docAcc, "combo-div-1");
+    const comboDiv2 = findAccessibleChildByID(docAcc, "combo-div-2");
+    const comboDiv3 = findAccessibleChildByID(docAcc, "combo-div-3");
+    const comboDiv4 = findAccessibleChildByID(docAcc, "combo-div-4");
+    const comboInput1 = findAccessibleChildByID(docAcc, "combo-input-1");
+    const comboInput2 = findAccessibleChildByID(docAcc, "combo-input-2");
+    const comboDivSelected = findAccessibleChildByID(
+      docAcc,
+      "combo-div-selected"
+    );
+
+    // Text as a descendant of the combobox: included in the value.
+    is(comboDiv1.value, "value", "Combobox value correct");
+
+    // Text as the descendant of a listbox: excluded from the value.
+    is(comboDiv2.value, "", "Combobox value correct");
+
+    // Text as the descendant of some other role that includes text in name computation.
+    // Here, the group role contains the text node with "value" in it.
+    is(comboDiv3.value, "value", "Combobox value correct");
+
+    // Some descendant text included, but text descendant of a listbox excluded.
+    is(comboDiv4.value, "foo", "Combobox value correct");
+
+    // Combobox inputs with explicit value report that value.
+    is(comboInput1.value, "value", "Combobox value correct");
+    is(comboInput2.value, "value", "Combobox value correct");
+
+    // Combobox role with aria-selected reports correct value.
+    is(comboDivSelected.value, "value", "Combobox value correct");
+  },
+  { chrome: true, iframe: true, remoteIframe: true }
 );

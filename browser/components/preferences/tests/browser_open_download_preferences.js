@@ -3,12 +3,8 @@
 
 "use strict";
 
-const { HandlerServiceTestUtils } = ChromeUtils.import(
-  "resource://testing-common/HandlerServiceTestUtils.jsm"
-);
-
-const { DownloadIntegration } = ChromeUtils.import(
-  "resource://gre/modules/DownloadIntegration.jsm"
+const { HandlerServiceTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/HandlerServiceTestUtils.sys.mjs"
 );
 
 const TEST_PATH = getRootDirectory(gTestPath).replace(
@@ -66,7 +62,7 @@ function downloadHadFinished(publicList) {
 
 async function removeTheFile(download) {
   Assert.ok(
-    await OS.File.exists(download.target.path),
+    await IOUtils.exists(download.target.path),
     "The file should have been downloaded."
   );
 
@@ -86,6 +82,7 @@ add_task(async function alwaysAskPreferenceWorks() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.download.improvements_to_download_panel", true],
+      ["browser.download.always_ask_before_handling_new_types", false],
       ["browser.download.useDownloadDir", true],
     ],
   });
@@ -138,6 +135,7 @@ add_task(async function handleInternallyPreferenceWorks() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.download.improvements_to_download_panel", true],
+      ["browser.download.always_ask_before_handling_new_types", false],
       ["browser.download.useDownloadDir", true],
     ],
   });
@@ -182,6 +180,7 @@ add_task(async function saveToDiskPreferenceWorks() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.download.improvements_to_download_panel", true],
+      ["browser.download.always_ask_before_handling_new_types", false],
       ["browser.download.useDownloadDir", true],
     ],
   });
@@ -226,6 +225,7 @@ add_task(async function useSystemDefaultPreferenceWorks() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.download.improvements_to_download_panel", true],
+      ["browser.download.always_ask_before_handling_new_types", false],
       ["browser.download.useDownloadDir", true],
     ],
   });

@@ -27,8 +27,8 @@ namespace mozilla {
 namespace dom {
 class Document;
 class Element;
-}
-}
+}  // namespace dom
+}  // namespace mozilla
 
 // ApplicationMenuDelegate is used to receive Cocoa notifications.
 @interface ApplicationMenuDelegate : NSObject <NSMenuDelegate> {
@@ -92,6 +92,7 @@ class nsMenuBarX : public nsMenuParentX, public nsChangeObserver, public mozilla
   // We save them here for use in command handling.
   RefPtr<nsIContent> mAboutItemContent;
   RefPtr<nsIContent> mPrefItemContent;
+  RefPtr<nsIContent> mAccountItemContent;
   RefPtr<nsIContent> mQuitItemContent;
 
   // nsChangeObserver

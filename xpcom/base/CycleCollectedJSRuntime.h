@@ -368,14 +368,15 @@ class CycleCollectedJSRuntime {
 
   void RunIdleTimeGCTask() {
     if (HasPendingIdleGCTask()) {
-      JS::RunIdleTimeGCTask(Runtime());
+      JS::MaybeRunNurseryCollection(Runtime(),
+                                    JS::GCReason::EAGER_NURSERY_COLLECTION);
       ClearPendingIdleGCTask();
     }
   }
 
   bool IsIdleGCTaskNeeded() {
     return !HasPendingIdleGCTask() && Runtime() &&
-           JS::IsIdleGCTaskNeeded(Runtime());
+           JS::WantEagerMinorGC(Runtime()) != JS::GCReason::NO_REASON;
   }
 
  public:
@@ -394,14 +395,13 @@ class CycleCollectedJSRuntime {
   void FixWeakMappingGrayBits() const;
   void CheckGrayBits() const;
   bool AreGCGrayBitsValid() const;
-  void GarbageCollect(JS::GCReason aReason) const;
+  void GarbageCollect(JS::GCOptions options, JS::GCReason aReason) const;
 
   // This needs to be an nsWrapperCache, not a JSObject, because we need to know
   // when our object gets moved.  But we can't trace it (and hence update our
   // storage), because we do not want to keep it alive.  nsWrapperCache handles
   // this for us via its "object moved" handling.
   void NurseryWrapperAdded(nsWrapperCache* aCache);
-  void NurseryWrapperPreserved(JSObject* aWrapper);
   void JSObjectsTenured();
 
   void DeferredFinalize(DeferredFinalizeAppendFunction aAppendFunc,
@@ -415,7 +415,7 @@ class CycleCollectedJSRuntime {
     mZonesWaitingForGC.Insert(aZone);
   }
 
-  static void OnZoneDestroyed(JSFreeOp* aFop, JS::Zone* aZone);
+  static void OnZoneDestroyed(JS::GCContext* aGcx, JS::Zone* aZone);
 
   // Prepare any zones for GC that have been passed to AddZoneWaitingForGC()
   // since the last GC or since the last call to PrepareWaitingZonesForGC(),
@@ -465,14 +465,11 @@ class CycleCollectedJSRuntime {
   static const size_t kSegmentSize = 512;
   SegmentedVector<nsWrapperCache*, kSegmentSize, InfallibleAllocPolicy>
       mNurseryObjects;
-  SegmentedVector<JS::PersistentRooted<JSObject*>, kSegmentSize,
-                  InfallibleAllocPolicy>
-      mPreservedNurseryObjects;
 
   nsTHashSet<JS::Zone*> mZonesWaitingForGC;
 
   struct EnvironmentPreparer : public js::ScriptEnvironmentPreparer {
-    void invoke(JS::HandleObject global, Closure& closure) override;
+    void invoke(JS::Handle<JSObject*> global, Closure& closure) override;
   };
   EnvironmentPreparer mEnvironmentPreparer;
 
@@ -485,7 +482,8 @@ class CycleCollectedJSRuntime {
   // Built on nightly only to avoid any possible performance impact on release
 
   struct ErrorInterceptor final : public JSErrorInterceptor {
-    virtual void interceptError(JSContext* cx, JS::HandleValue exn) override;
+    virtual void interceptError(JSContext* cx,
+                                JS::Handle<JS::Value> exn) override;
     void Shutdown(JSRuntime* rt);
 
     // Copy of the details of the exception.

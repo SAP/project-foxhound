@@ -3,20 +3,19 @@
 
 "use strict";
 
-/* import-globals-from ../head.js */
-
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/remote/cdp/test/browser/head.js",
   this
 );
 
-const { Input: I } = ChromeUtils.import(
-  "chrome://remote/content/cdp/domains/parent/Input.jsm"
+const { Input: I } = ChromeUtils.importESModule(
+  "chrome://remote/content/cdp/domains/parent/Input.sys.mjs"
+);
+const { AppInfo } = ChromeUtils.importESModule(
+  "chrome://remote/content/shared/AppInfo.sys.mjs"
 );
 
 const { alt, ctrl, meta, shift } = I.Modifier;
-
-const isMac = Services.appinfo.OS === "Darwin";
 
 // Map of key codes used in Input tests.
 const KEYCODES = {
@@ -105,7 +104,7 @@ function keyForPlatform() {
   // TODO add cases for other key-combinations as the need arises
   let primary = ctrl;
   let primaryKey = "Control";
-  if (isMac) {
+  if (AppInfo.isMac) {
     primary = alt;
     primaryKey = "Alt";
   }

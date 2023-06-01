@@ -2,29 +2,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import { workerUtils } from "devtools-utils";
-const { WorkerDispatcher } = workerUtils;
+import { WorkerDispatcher } from "devtools/client/shared/worker-utils";
+
+const WORKER_URL = "resource://devtools/client/debugger/dist/parser-worker.js";
 
 export class ParserDispatcher extends WorkerDispatcher {
-  async findOutOfScopeLocations(sourceId, position) {
-    return this.invoke("findOutOfScopeLocations", sourceId, position);
+  constructor(jestUrl) {
+    super(jestUrl || WORKER_URL);
   }
 
-  async getNextStep(sourceId, pausedPosition) {
-    return this.invoke("getNextStep", sourceId, pausedPosition);
-  }
+  findOutOfScopeLocations = this.task("findOutOfScopeLocations");
 
-  async clearState() {
-    return this.invoke("clearState");
-  }
+  getScopes = this.task("getScopes");
 
-  async getScopes(location) {
-    return this.invoke("getScopes", location);
-  }
-
-  async getSymbols(sourceId) {
-    return this.invoke("getSymbols", sourceId);
-  }
+  getSymbols = this.task("getSymbols");
 
   async setSource(sourceId, content) {
     const astSource = {
@@ -37,28 +28,9 @@ export class ParserDispatcher extends WorkerDispatcher {
     return this.invoke("setSource", astSource);
   }
 
-  async hasSyntaxError(input) {
-    return this.invoke("hasSyntaxError", input);
-  }
+  hasSyntaxError = this.task("hasSyntaxError");
 
-  async mapExpression(
-    expression,
-    mappings,
-    bindings,
-    shouldMapBindings,
-    shouldMapAwait
-  ) {
-    return this.invoke(
-      "mapExpression",
-      expression,
-      mappings,
-      bindings,
-      shouldMapBindings,
-      shouldMapAwait
-    );
-  }
+  mapExpression = this.task("mapExpression");
 
-  async clear() {
-    await this.clearState();
-  }
+  clear = this.task("clearState");
 }

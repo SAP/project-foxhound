@@ -9,6 +9,7 @@
 #include "nsICanvasRenderingContextInternal.h"
 #include "nsWrapperCache.h"
 #include "ObjectModel.h"
+#include "mozilla/layers/LayersTypes.h"
 #include "mozilla/webrender/WebRenderAPI.h"
 
 namespace mozilla {
@@ -17,9 +18,6 @@ class Promise;
 struct GPUCanvasConfiguration;
 enum class GPUTextureFormat : uint8_t;
 }  // namespace dom
-namespace layers {
-class WebRenderLocalCanvasData;
-};
 namespace webgpu {
 class Adapter;
 class Texture;
@@ -33,21 +31,12 @@ class CanvasContext final : public nsICanvasRenderingContextInternal,
  public:
   // nsISupports interface + CC
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(CanvasContext)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(CanvasContext)
 
   CanvasContext();
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
-
-  Maybe<wr::ImageKey> GetImageKey() const;
-  wr::ImageKey CreateImageKey(layers::RenderRootStateManager* aManager);
-  bool UpdateWebRenderLocalCanvasData(
-      layers::WebRenderLocalCanvasData* aCanvasData);
-
-  wr::ImageDescriptor MakeImageDescriptor() const;
-
-  wr::ExternalImageId mExternalImageId;
 
  public:  // nsICanvasRenderingContextInternal
   int32_t GetWidth() override { return mWidth; }
@@ -63,30 +52,26 @@ class CanvasContext final : public nsICanvasRenderingContextInternal,
     return NS_OK;
   }
 
-  mozilla::UniquePtr<uint8_t[]> GetImageBuffer(int32_t* aFormat) override {
-    MOZ_CRASH("todo");
-  }
+  bool UpdateWebRenderCanvasData(mozilla::nsDisplayListBuilder* aBuilder,
+                                 WebRenderCanvasData* aCanvasData) override;
+
+  bool InitializeCanvasRenderer(nsDisplayListBuilder* aBuilder,
+                                layers::CanvasRenderer* aRenderer) override;
+  mozilla::UniquePtr<uint8_t[]> GetImageBuffer(int32_t* aFormat) override;
   NS_IMETHOD GetInputStream(const char* aMimeType,
                             const nsAString& aEncoderOptions,
-                            nsIInputStream** aStream) override {
-    *aStream = nullptr;
-    return NS_OK;
-  }
-
+                            nsIInputStream** aStream) override;
   already_AddRefed<mozilla::gfx::SourceSurface> GetSurfaceSnapshot(
-      gfxAlphaType* aOutAlphaType) override {
-    return nullptr;
-  }
+      gfxAlphaType* aOutAlphaType) override;
 
   void SetOpaqueValueFromOpaqueAttr(bool aOpaqueAttrValue) override {}
   bool GetIsOpaque() override { return true; }
-  NS_IMETHOD Reset() override { return NS_OK; }
-  bool UpdateWebRenderCanvasData(nsDisplayListBuilder* aBuilder,
-                                 WebRenderCanvasData* aCanvasData) override;
+
+  void ResetBitmap() override { Unconfigure(); }
+
   void MarkContextClean() override {}
 
   NS_IMETHOD Redraw(const gfxRect& aDirty) override { return NS_OK; }
-  NS_IMETHOD SetIsIPC(bool aIsIPC) override { return NS_OK; }
 
   void DidRefresh() override {}
 
@@ -101,16 +86,20 @@ class CanvasContext final : public nsICanvasRenderingContextInternal,
 
   dom::GPUTextureFormat GetPreferredFormat(Adapter& aAdapter) const;
   RefPtr<Texture> GetCurrentTexture(ErrorResult& aRv);
+  void MaybeQueueSwapChainPresent();
+  void SwapChainPresent();
+  void ForceNewFrame();
 
  private:
   uint32_t mWidth = 0, mHeight = 0;
+  bool mPendingSwapChainPresent = false;
 
   RefPtr<WebGPUChild> mBridge;
   RefPtr<Texture> mTexture;
   gfx::SurfaceFormat mGfxFormat = gfx::SurfaceFormat::R8G8B8A8;
-  gfx::IntSize mGfxSize;
-  RefPtr<layers::RenderRootStateManager> mRenderRootStateManager;
-  Maybe<wr::ImageKey> mImageKey;
+
+  Maybe<layers::RemoteTextureId> mLastRemoteTextureId;
+  Maybe<layers::RemoteTextureOwnerId> mRemoteTextureOwnerId;
 };
 
 }  // namespace webgpu

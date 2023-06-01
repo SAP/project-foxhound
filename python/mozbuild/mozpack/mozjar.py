@@ -2,18 +2,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
-from io import BytesIO, UnsupportedOperation
+import os
 import struct
 import zlib
-import os
-import six
-from zipfile import ZIP_STORED, ZIP_DEFLATED
 from collections import OrderedDict
-import mozpack.path as mozpath
-from mozbuild.util import ensure_bytes
+from io import BytesIO, UnsupportedOperation
+from zipfile import ZIP_DEFLATED, ZIP_STORED
 
+import mozpack.path as mozpath
+import six
+
+from mozbuild.util import ensure_bytes
 
 JAR_STORED = ZIP_STORED
 JAR_DEFLATED = ZIP_DEFLATED
@@ -287,11 +286,21 @@ class JarFileReader(object):
         self.compressed = header["compression"] != JAR_STORED
         self.compress = header["compression"]
 
+    def readable(self):
+        return True
+
     def read(self, length=-1):
         """
         Read some amount of uncompressed data.
         """
         return self.uncompressed_data.read(length)
+
+    def readinto(self, b):
+        """
+        Read bytes into a pre-allocated, writable bytes-like object `b` and return
+        the number of bytes read.
+        """
+        return self.uncompressed_data.readinto(b)
 
     def readlines(self):
         """
@@ -318,6 +327,10 @@ class JarFileReader(object):
         Free the uncompressed data buffer.
         """
         self.uncompressed_data.close()
+
+    @property
+    def closed(self):
+        return self.uncompressed_data.closed
 
     @property
     def compressed_data(self):
@@ -611,8 +624,9 @@ class JarWriter(object):
         respectively, to JAR_DEFLATE and JAR_STORED.
         When the data should be compressed, it is only really compressed if
         the compressed size is smaller than the uncompressed size.
-        The mode option gives the unix permissions that should be stored
-        for the jar entry.
+        The mode option gives the unix permissions that should be stored for the
+        jar entry, which defaults to 0o100644 (regular file, u+rw, g+r, o+r) if
+        not specified.
         If a duplicated member is found skip_duplicates will prevent raising
         an exception if set to True.
         The given data may be a buffer, a file-like instance, a Deflater or a
@@ -646,11 +660,16 @@ class JarWriter(object):
         # Fill a central directory entry for this new member.
         entry = JarCdirEntry()
         entry["creator_version"] = 20
-        if mode is not None:
-            # Set creator host system (upper byte of creator_version)
-            # to 3 (Unix) so mode is honored when there is one.
-            entry["creator_version"] |= 3 << 8
-            entry["external_attr"] = (mode & 0xFFFF) << 16
+        if mode is None:
+            # If no mode is given, default to u+rw, g+r, o+r.
+            mode = 0o000644
+        if not mode & 0o777000:
+            # If no file type is given, default to regular file.
+            mode |= 0o100000
+        # Set creator host system (upper byte of creator_version) to 3 (Unix) so
+        # mode is honored when there is one.
+        entry["creator_version"] |= 3 << 8
+        entry["external_attr"] = (mode & 0xFFFF) << 16
         if deflater.compressed:
             entry["min_version"] = 20  # Version 2.0 supports deflated streams
             entry["general_flag"] = 2  # Max compression

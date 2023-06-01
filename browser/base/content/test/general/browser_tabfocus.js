@@ -2,8 +2,6 @@
  * This test checks that focus is adjusted properly when switching tabs.
  */
 
-/* eslint-env mozilla/frame-script */
-
 var testPage1 =
   "<html id='html1'><body id='body1'><button id='button1'>Tab 1</button></body></html>";
 var testPage2 =
@@ -52,10 +50,6 @@ function getFocusedElementForBrowser(browser, dontCheckExtraFocus = false) {
     browser,
     [dontCheckExtraFocus],
     dontCheckExtraFocusChild => {
-      const { Services } = ChromeUtils.import(
-        "resource://gre/modules/Services.jsm"
-      );
-
       let focusedWindow = {};
       let node = Services.focus.getFocusedElementForWindow(
         content,
@@ -573,9 +567,9 @@ function _browser_tabfocus_test_eventOccured(event) {
 
   var id;
 
-  if (event.target instanceof Window) {
+  if (Window.isInstance(event.target)) {
     id = getWindowDocId(event.originalTarget) + "-window";
-  } else if (event.target instanceof Document) {
+  } else if (Document.isInstance(event.target)) {
     id = getWindowDocId(event.originalTarget) + "-document";
   } else if (
     event.target.id == "urlbar" &&

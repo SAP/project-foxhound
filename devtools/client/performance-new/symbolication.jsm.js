@@ -4,6 +4,9 @@
 // @ts-check
 "use strict";
 
+/** @type {any} */
+const lazy = {};
+
 /**
  * @typedef {import("./@types/perf").Library} Library
  * @typedef {import("./@types/perf").PerfFront} PerfFront
@@ -17,19 +20,13 @@
  * @typedef {import("./@types/perf").SymbolicationWorkerReplyData<R>} SymbolicationWorkerReplyData<R>
  */
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "setTimeout",
-  "resource://gre/modules/Timer.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "clearTimeout",
-  "resource://gre/modules/Timer.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
+});
 
 /** @type {any} */
-const global = this;
+const global = globalThis;
 
 // This module obtains symbol tables for binaries.
 // It does so with the help of a WASM module which gets pulled in from the
@@ -45,15 +42,15 @@ const global = this;
 // The hash check ensures that the contents of the wasm module are what we
 // expect them to be.
 // The source code is at https://github.com/mstange/profiler-get-symbols/ .
-// Documentation is at https://docs.rs/profiler-get-symbols/ .
+// Documentation is at https://docs.rs/samply-api/ .
 // The sha384 sum can be computed with the following command (tested on macOS):
 // shasum -b -a 384 profiler_get_symbols_wasm_bg.wasm | awk '{ print $1 }' | xxd -r -p | base64
 
-// Generated from https://github.com/mstange/profiler-get-symbols/commit/b933282e82f871ea76b5373f9fc81800e8550b7b
+// Generated from https://github.com/mstange/profiler-get-symbols/commit/0373708893e45e8299e58ca692764be448e3457d
 const WASM_MODULE_URL =
-  "https://storage.googleapis.com/firefox-profiler-get-symbols/b933282e82f871ea76b5373f9fc81800e8550b7b.wasm";
+  "https://storage.googleapis.com/firefox-profiler-get-symbols/0373708893e45e8299e58ca692764be448e3457d.wasm";
 const WASM_MODULE_INTEGRITY =
-  "sha384-WeRBd3mn0rbs+/DX4NzsNc77ZhZOPuRTPZR9y10xrvQdUY6Dm0o205EDz3GyYSPv";
+  "sha384-rUGgHTg1eAKP2MB4JcX/HGROSBlRUmvpm6FFIihH0gGQ74zfJE2p7P8cxR86faQ7";
 
 const EXPIRY_TIME_IN_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -81,8 +78,8 @@ function getWASMProfilerGetSymbolsModule() {
   }
 
   // Reset expiry timer.
-  clearTimeout(gCachedWASMModuleExpiryTimer);
-  gCachedWASMModuleExpiryTimer = setTimeout(
+  lazy.clearTimeout(gCachedWASMModuleExpiryTimer);
+  gCachedWASMModuleExpiryTimer = lazy.setTimeout(
     clearCachedWASMModule,
     EXPIRY_TIME_IN_MS
   );
@@ -139,7 +136,7 @@ async function getResultFromWorker(workerURL, initialMessageToWorker) {
     worker.onerror = errorEvent => {
       gActiveWorkers.delete(worker);
       worker.terminate();
-      if (errorEvent instanceof ErrorEvent) {
+      if (ErrorEvent.isInstance(errorEvent)) {
         const { message, filename, lineno } = errorEvent;
         const error = new Error(`${message} at ${filename}:${lineno}`);
         error.name = "WorkerError";
@@ -152,17 +149,10 @@ async function getResultFromWorker(workerURL, initialMessageToWorker) {
     // Handle errors from messages that cannot be deserialized. I'm not sure
     // how to get into such a state, but having this handler seems like a good
     // idea.
-    worker.onmessageerror = errorEvent => {
+    worker.onmessageerror = () => {
       gActiveWorkers.delete(worker);
       worker.terminate();
-      if (errorEvent instanceof ErrorEvent) {
-        const { message, filename, lineno } = errorEvent;
-        const error = new Error(`${message} at ${filename}:${lineno}`);
-        error.name = "WorkerMessageError";
-        reject(error);
-      } else {
-        reject(new Error("Error in worker"));
-      }
+      reject(new Error("Error in worker"));
     };
 
     worker.postMessage(initialMessageToWorker);
@@ -362,7 +352,8 @@ function createLocalSymbolicationService(sharedLibraries, objdirs, perfFront) {
 }
 
 // Provide an exports object for the JSM to be properly read by TypeScript.
-/** @type {any} */ (this).module = {};
+/** @type {any} */
+var module = {};
 
 module.exports = {
   createLocalSymbolicationService,

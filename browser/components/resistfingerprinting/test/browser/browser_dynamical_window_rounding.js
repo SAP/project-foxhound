@@ -10,10 +10,6 @@
  * example.
  */
 
-const { RFPHelper } = ChromeUtils.import(
-  "resource://gre/modules/RFPHelper.jsm"
-);
-
 // A set of test cases which defines the width and the height of the outer window.
 const TEST_CASES = [
   { width: 1250, height: 1000 },
@@ -346,7 +342,7 @@ async function test_findbar(aWindow) {
   BrowserTestUtils.removeTab(tab);
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["privacy.resistFingerprinting.letterboxing", true],

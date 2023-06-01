@@ -4,25 +4,29 @@
 
 "use strict";
 
-const { ThreadStateTypes } = require("devtools/client/constants");
+const { ThreadStateTypes } = require("resource://devtools/client/constants.js");
 const {
   FrontClassWithSpec,
   registerFront,
-} = require("devtools/shared/protocol");
+} = require("resource://devtools/shared/protocol.js");
 
-const { threadSpec } = require("devtools/shared/specs/thread");
+const { threadSpec } = require("resource://devtools/shared/specs/thread.js");
 
 loader.lazyRequireGetter(
   this,
   "ObjectFront",
-  "devtools/client/fronts/object",
+  "resource://devtools/client/fronts/object.js",
   true
 );
-loader.lazyRequireGetter(this, "FrameFront", "devtools/client/fronts/frame");
+loader.lazyRequireGetter(
+  this,
+  "FrameFront",
+  "resource://devtools/client/fronts/frame.js"
+);
 loader.lazyRequireGetter(
   this,
   "SourceFront",
-  "devtools/client/fronts/source",
+  "resource://devtools/client/fronts/source.js",
   true
 );
 
@@ -43,13 +47,8 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
     this._threadGrips = {};
     // Note that this isn't matching ThreadActor state field.
     // ThreadFront is only using two values: paused or attached.
-    // @backward-compat { version 86 } ThreadActor.attach no longer pauses the thread,
-    //                                 so that the default state is "attached" by default.
-    if (this.targetFront.getTrait("noPauseOnThreadActorAttach")) {
-      this._state = "attached";
-    } else {
-      this._state = "paused";
-    }
+    this._state = "attached";
+
     this._beforePaused = this._beforePaused.bind(this);
     this._beforeResumed = this._beforeResumed.bind(this);
     this.before("paused", this._beforePaused);
@@ -69,10 +68,6 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
 
   get actor() {
     return this.actorID;
-  }
-
-  getWebconsoleFront() {
-    return this.targetFront.getFront("console");
   }
 
   _assertPaused(command) {
@@ -197,23 +192,6 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
       console.log(`getSources failed. Connection may have closed: ${e}`);
     }
     return { sources };
-  }
-
-  /**
-   * attach to the thread actor.
-   */
-  async attach(options) {
-    const noPauseOnThreadActorAttach = this.targetFront.getTrait(
-      "noPauseOnThreadActorAttach"
-    );
-    const onPaused = noPauseOnThreadActorAttach ? null : this.once("paused");
-    await super.attach(options);
-    // @backward-compat { version 86 } ThreadActor.attach no longer pause the thread,
-    //                                 so that we shouldn't wait for the paused event,
-    //                                 since it won't be emitted anymore.
-    if (!noPauseOnThreadActorAttach) {
-      await onPaused;
-    }
   }
 
   /**

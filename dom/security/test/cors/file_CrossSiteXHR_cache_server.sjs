@@ -1,5 +1,3 @@
-Cu.import("resource://gre/modules/Services.jsm");
-
 function handleRequest(request, response) {
   var query = {};
   request.queryString.split("&").forEach(function(val) {

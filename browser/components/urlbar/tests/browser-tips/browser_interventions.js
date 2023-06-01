@@ -3,12 +3,14 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+ChromeUtils.defineESModuleGetters(this, {
   UrlbarProviderInterventions:
-    "resource:///modules/UrlbarProviderInterventions.jsm",
+    "resource:///modules/UrlbarProviderInterventions.sys.mjs",
 });
 
-add_task(async function init() {
+add_setup(async function() {
+  Services.telemetry.clearEvents();
+  Services.telemetry.clearScalars();
   makeProfileResettable();
 });
 
@@ -238,9 +240,18 @@ add_task(async function pickHelpButton() {
       UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
       {
         type: UrlbarProviderInterventions.TIP_TYPE.CLEAR,
-        text: "This is a test tip.",
-        buttonText: "Done",
+        titleL10n: { id: "intervention-clear-data" },
+        buttons: [
+          {
+            l10n: { id: "intervention-clear-data-confirm" },
+          },
+        ],
         helpUrl,
+        helpL10n: {
+          id: UrlbarPrefs.get("resultMenu")
+            ? "urlbar-result-menu-tip-get-help"
+            : "urlbar-tip-help-icon",
+        },
       }
     ),
   ];
@@ -261,13 +272,38 @@ add_task(async function pickHelpButton() {
       UrlbarProviderInterventions.TIP_TYPE.CLEAR
     );
 
-    let helpButton = element._elements.get("helpButton");
-    Assert.ok(BrowserTestUtils.is_visible(helpButton));
-    EventUtils.synthesizeMouseAtCenter(helpButton, {});
+    if (UrlbarPrefs.get("resultMenu")) {
+      let tabOpenPromise = BrowserTestUtils.waitForNewTab(
+        gBrowser,
+        "http://example.com/"
+      );
+      await UrlbarTestUtils.openResultMenuAndPressAccesskey(window, "h", {
+        openByMouse: true,
+        resultIndex: 1,
+      });
+      info("Waiting for help URL to load in a new tab");
+      await tabOpenPromise;
+      gBrowser.removeCurrentTab();
+    } else {
+      let helpButton = element._buttons.get("help");
+      Assert.ok(helpButton, "Help button exists");
+      Assert.ok(
+        BrowserTestUtils.is_visible(helpButton),
+        "Help button is visible"
+      );
+      EventUtils.synthesizeMouseAtCenter(helpButton, {});
 
-    BrowserTestUtils.loadURI(gBrowser.selectedBrowser, helpUrl);
-    await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+      BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, helpUrl);
+      await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+    }
 
+    if (UrlbarPrefs.get("resultMenu")) {
+      todo(
+        false,
+        "help telemetry for the result menu to be implemented in bug 1790020"
+      );
+      return;
+    }
     const scalars = TelemetryTestUtils.getProcessScalars("parent", true, true);
     TelemetryTestUtils.assertKeyedScalar(
       scalars,

@@ -1,6 +1,8 @@
 const DUMMY_1 =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.org/browser/docshell/test/browser/dummy_page.html";
 const DUMMY_2 =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com/browser/docshell/test/browser/dummy_page.html";
 
 add_task(async function test_backAndReload() {
@@ -10,7 +12,7 @@ add_task(async function test_backAndReload() {
     await BrowserTestUtils.crashFrame(browser);
 
     info("Start second load.");
-    BrowserTestUtils.loadURI(browser, DUMMY_2);
+    BrowserTestUtils.loadURIString(browser, DUMMY_2);
     await BrowserTestUtils.waitForLocationChange(gBrowser, DUMMY_2);
 
     browser.goBack();

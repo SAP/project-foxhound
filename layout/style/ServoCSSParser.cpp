@@ -44,7 +44,7 @@ already_AddRefed<RawServoDeclarationBlock> ServoCSSParser::ParseProperty(
 
 /* static */
 bool ServoCSSParser::ParseEasing(const nsACString& aValue,
-                                 nsTimingFunction& aResult) {
+                                 StyleComputedTimingFunction& aResult) {
   return Servo_ParseEasing(&aValue, &aResult);
 }
 
@@ -59,23 +59,17 @@ bool ServoCSSParser::ParseTransformIntoMatrix(const nsACString& aValue,
 /* static */
 bool ServoCSSParser::ParseFontShorthandForMatching(
     const nsACString& aValue, URLExtraData* aUrl, StyleFontFamilyList& aList,
-    StyleComputedFontStyleDescriptor& aStyle, float& aStretch, float& aWeight) {
+    StyleFontStyle& aStyle, StyleFontStretch& aStretch,
+    StyleFontWeight& aWeight, float* aSize) {
   return Servo_ParseFontShorthandForMatching(&aValue, aUrl, &aList, &aStyle,
-                                             &aStretch, &aWeight);
+                                             &aStretch, &aWeight, aSize);
 }
 
 /* static */
 already_AddRefed<URLExtraData> ServoCSSParser::GetURLExtraData(
     Document* aDocument) {
   MOZ_ASSERT(aDocument);
-
-  nsCOMPtr<nsIReferrerInfo> referrerInfo =
-      ReferrerInfo::CreateForInternalCSSResources(aDocument);
-
-  // FIXME this is using the wrong base uri (bug 1343919)
-  RefPtr<URLExtraData> url = new URLExtraData(
-      aDocument->GetDocumentURI(), referrerInfo, aDocument->NodePrincipal());
-  return url.forget();
+  return do_AddRef(aDocument->DefaultStyleAttrURLData());
 }
 
 /* static */ ServoCSSParser::ParsingEnvironment

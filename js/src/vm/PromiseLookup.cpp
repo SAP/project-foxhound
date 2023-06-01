@@ -8,11 +8,12 @@
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
 
+#include "jspubtd.h"  // JSProto_*
+
 #include "builtin/Promise.h"  // js::Promise_then, js::Promise_static_resolve, js::Promise_static_species
-#include "js/HeapAPI.h"   // js::gc::IsInsideNursery
-#include "js/Id.h"        // SYMBOL_TO_JSID
-#include "js/ProtoKey.h"  // JSProto_*
-#include "js/Value.h"     // JS::Value, JS::ObjectValue
+#include "js/HeapAPI.h"  // js::gc::IsInsideNursery
+#include "js/Id.h"       // SYMBOL_TO_JSID
+#include "js/Value.h"    // JS::Value, JS::ObjectValue
 #include "util/Poison.h"  // js::AlwaysPoison, JS_RESET_VALUE_PATTERN, MemCheckKind
 #include "vm/GlobalObject.h"  // js::GlobalObject
 #include "vm/JSContext.h"     // JSContext
@@ -114,8 +115,8 @@ void js::PromiseLookup::initialize(JSContext* cx) {
 
   // Check condition 4:
   // Look up the '@@species' value on Promise.
-  mozilla::Maybe<PropertyInfo> speciesProp =
-      promiseCtor->lookup(cx, SYMBOL_TO_JSID(cx->wellKnownSymbols().species));
+  mozilla::Maybe<PropertyInfo> speciesProp = promiseCtor->lookup(
+      cx, PropertyKey::Symbol(cx->wellKnownSymbols().species));
   if (speciesProp.isNothing() || !promiseCtor->hasGetter(*speciesProp)) {
     return;
   }

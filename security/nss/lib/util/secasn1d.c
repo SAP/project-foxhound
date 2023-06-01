@@ -149,7 +149,7 @@ static const char *const flag_names[] = {
 };
 
 static int /* bool */
-    formatKind(unsigned long kind, char *buf)
+formatKind(unsigned long kind, char *buf)
 {
     int i;
     unsigned long k = kind & SEC_ASN1_TAGNUM_MASK;
@@ -248,7 +248,7 @@ typedef struct sec_asn1d_state_struct {
 
     PRPackedBool
         allocate,      /* when true, need to allocate the destination */
-        endofcontents, /* this state ended up parsing end-of-contents octets */
+        endofcontents, /* this state ended up parsing its parent's end-of-contents octets */
         explicit,      /* we are handling an explicit header */
         indefinite,    /* the current item has indefinite-length encoding */
         missing,       /* an optional field that was not present */
@@ -363,6 +363,11 @@ sec_asn1d_push_state(SEC_ASN1DecoderContext *cx,
     if (state != NULL) {
         PORT_Assert(state->our_mark == NULL);
         state->our_mark = PORT_ArenaMark(cx->our_pool);
+    }
+
+    if (theTemplate == NULL) {
+        PORT_SetError(SEC_ERROR_BAD_TEMPLATE);
+        goto loser;
     }
 
     new_state = (sec_asn1d_state *)sec_asn1d_zalloc(cx->our_pool,
@@ -1114,7 +1119,7 @@ sec_asn1d_prepare_for_contents(sec_asn1d_state *state)
          * inspection, too) then move this code into the switch statement
          * below under cases SET_OF and SEQUENCE_OF; it will be cleaner.
          */
-        PORT_Assert(state->underlying_kind == SEC_ASN1_SET_OF || state->underlying_kind == SEC_ASN1_SEQUENCE_OF || state->underlying_kind == (SEC_ASN1_SEQUENCE_OF | SEC_ASN1_DYNAMIC) || state->underlying_kind == (SEC_ASN1_SEQUENCE_OF | SEC_ASN1_DYNAMIC));
+        PORT_Assert(state->underlying_kind == SEC_ASN1_SET_OF || state->underlying_kind == SEC_ASN1_SEQUENCE_OF || state->underlying_kind == (SEC_ASN1_SET_OF | SEC_ASN1_DYNAMIC) || state->underlying_kind == (SEC_ASN1_SEQUENCE_OF | SEC_ASN1_DYNAMIC));
         if (state->contents_length != 0 || state->indefinite) {
             const SEC_ASN1Template *subt;
 
@@ -2470,7 +2475,18 @@ sec_asn1d_parse_end_of_contents(sec_asn1d_state *state,
 
     if (state->pending == 0) {
         state->place = afterEndOfContents;
-        state->endofcontents = PR_TRUE;
+        /* These end-of-contents octets either terminate a SEQUENCE, a GROUP,
+         * or a constructed string. The SEQUENCE case is unique in that the
+         * state parses its own end-of-contents octets and therefore should not
+         * have its `endofcontents` flag set. We identify the SEQUENCE case by
+         * checking whether the child state's template is pointing at a
+         * template terminator (see `sec_asn1d_next_in_sequence`).
+         */
+        if (state->child && state->child->theTemplate->kind == 0) {
+            state->endofcontents = PR_FALSE;
+        } else {
+            state->endofcontents = PR_TRUE;
+        }
     }
 
     return len;
@@ -2750,7 +2766,6 @@ SEC_ASN1DecoderUpdate(SEC_ASN1DecoderContext *cx,
     sec_asn1d_state *state = NULL;
     unsigned long consumed;
     SEC_ASN1EncodingPart what;
-    sec_asn1d_state *stateEnd = cx->current;
 
     if (cx->status == needBytes)
         cx->status = keepGoing;
@@ -2939,7 +2954,7 @@ SEC_ASN1DecoderUpdate(SEC_ASN1DecoderContext *cx,
     }
 
     if (cx->status == decodeError) {
-        while (state != NULL && stateEnd->parent != state) {
+        while (state != NULL) {
             sec_asn1d_free_child(state, PR_TRUE);
             state = state->parent;
         }

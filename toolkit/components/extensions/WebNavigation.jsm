@@ -6,35 +6,25 @@
 
 const EXPORTED_SYMBOLS = ["WebNavigation", "WebNavigationManager"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "BrowserWindowTracker",
   "resource:///modules/BrowserWindowTracker.jsm"
 );
+ChromeUtils.defineESModuleGetters(lazy, {
+  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  ClickHandlerParent: "resource:///actors/ClickHandlerParent.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
-  this,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "UrlbarUtils",
-  "resource:///modules/UrlbarUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "WebNavigationFrames",
   "resource://gre/modules/WebNavigationFrames.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "ClickHandlerParent",
-  "resource:///actors/ClickHandlerParent.jsm"
 );
 
 // Maximum amount of time that can be passed and still consider
@@ -60,7 +50,7 @@ var WebNavigationManager = {
     Services.obs.addObserver(this, "webNavigation-createdNavigationTarget");
 
     if (AppConstants.MOZ_BUILD_APP == "browser") {
-      ClickHandlerParent.addContentClickListener(this);
+      lazy.ClickHandlerParent.addContentClickListener(this);
     }
   },
 
@@ -70,22 +60,22 @@ var WebNavigationManager = {
     Services.obs.removeObserver(this, "webNavigation-createdNavigationTarget");
 
     if (AppConstants.MOZ_BUILD_APP == "browser") {
-      ClickHandlerParent.removeContentClickListener(this);
+      lazy.ClickHandlerParent.removeContentClickListener(this);
     }
 
     this.recentTabTransitionData = new WeakMap();
   },
 
-  addListener(type, listener, filters, context) {
+  addListener(type, listener) {
     if (this.listeners.size == 0) {
       this.init();
     }
 
     if (!this.listeners.has(type)) {
-      this.listeners.set(type, new Map());
+      this.listeners.set(type, new Set());
     }
     let listeners = this.listeners.get(type);
-    listeners.set(listener, { filters, context });
+    listeners.add(listener);
   },
 
   removeListener(type, listener) {
@@ -117,9 +107,9 @@ var WebNavigationManager = {
    * Observe webNavigation-createdNavigationTarget (to fire the onCreatedNavigationTarget
    * related to windows or tabs opened from the main process) topics.
    *
-   * @param {nsIAutoCompleteInput|Object} subject
+   * @param {nsIAutoCompleteInput | object} subject
    * @param {string} topic
-   * @param {string|undefined} data
+   * @param {string | undefined} data
    */
   observe: function(subject, topic, data) {
     if (topic == "urlbar-user-start-navigation") {
@@ -166,33 +156,35 @@ var WebNavigationManager = {
       tabTransitionData.typed = true;
     } else {
       switch (acData.result.type) {
-        case UrlbarUtils.RESULT_TYPE.KEYWORD:
+        case lazy.UrlbarUtils.RESULT_TYPE.KEYWORD:
           tabTransitionData.keyword = true;
           break;
-        case UrlbarUtils.RESULT_TYPE.SEARCH:
+        case lazy.UrlbarUtils.RESULT_TYPE.SEARCH:
           tabTransitionData.generated = true;
           break;
-        case UrlbarUtils.RESULT_TYPE.URL:
-          if (acData.result.source == UrlbarUtils.RESULT_SOURCE.BOOKMARKS) {
+        case lazy.UrlbarUtils.RESULT_TYPE.URL:
+          if (
+            acData.result.source == lazy.UrlbarUtils.RESULT_SOURCE.BOOKMARKS
+          ) {
             tabTransitionData.auto_bookmark = true;
           } else {
             tabTransitionData.typed = true;
           }
           break;
-        case UrlbarUtils.RESULT_TYPE.REMOTE_TAB:
+        case lazy.UrlbarUtils.RESULT_TYPE.REMOTE_TAB:
           // Remote tab are autocomplete results related to
           // tab urls from a remote synchronized Firefox.
           tabTransitionData.typed = true;
           break;
-        case UrlbarUtils.RESULT_TYPE.TAB_SWITCH:
+        case lazy.UrlbarUtils.RESULT_TYPE.TAB_SWITCH:
         // This "switchtab" autocompletion should be ignored, because
         // it is not related to a navigation.
         // Fall through.
-        case UrlbarUtils.RESULT_TYPE.OMNIBOX:
+        case lazy.UrlbarUtils.RESULT_TYPE.OMNIBOX:
         // "Omnibox" should be ignored as the add-on may or may not initiate
         // a navigation on the item being selected.
         // Fall through.
-        case UrlbarUtils.RESULT_TYPE.TIP:
+        case lazy.UrlbarUtils.RESULT_TYPE.TIP:
           // "Tip" should be ignored since the tip will only initiate navigation
           // if there is a valid buttonUrl property, which is optional.
           throw new Error(
@@ -223,7 +215,7 @@ var WebNavigationManager = {
    * @param {boolean} [tabTransitionData.typed]
    */
   setRecentTabTransitionData(tabTransitionData) {
-    let window = BrowserWindowTracker.getTopWindow();
+    let window = lazy.BrowserWindowTracker.getTopWindow();
     if (
       window &&
       window.gBrowser &&
@@ -289,7 +281,7 @@ var WebNavigationManager = {
 
     this.fire("onCreatedNavigationTarget", browser, null, {
       sourceTabBrowser: getBrowser(sourceBC),
-      sourceFrameId: WebNavigationFrames.getFrameId(sourceBC),
+      sourceFrameId: lazy.WebNavigationFrames.getFrameId(sourceBC),
       url,
     });
   },
@@ -385,26 +377,16 @@ var WebNavigationManager = {
     };
 
     if (bc) {
-      details.frameId = WebNavigationFrames.getFrameId(bc);
-      details.parentFrameId = WebNavigationFrames.getParentFrameId(bc);
+      details.frameId = lazy.WebNavigationFrames.getFrameId(bc);
+      details.parentFrameId = lazy.WebNavigationFrames.getParentFrameId(bc);
     }
 
     for (let prop in extra) {
       details[prop] = extra[prop];
     }
 
-    for (let [listener, { filters, context }] of listeners) {
-      if (
-        context &&
-        !context.privateBrowsingAllowed &&
-        PrivateBrowsingUtils.isBrowserPrivate(browser)
-      ) {
-        continue;
-      }
-      // Call the listener if the listener has no filter or if its filter matches.
-      if (!filters || filters.matches(extra.url)) {
-        listener(details);
-      }
+    for (let listener of listeners) {
+      listener(details);
     }
   },
 };

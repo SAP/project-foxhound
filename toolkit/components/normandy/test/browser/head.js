@@ -1,11 +1,8 @@
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 const { AddonTestUtils } = ChromeUtils.import(
   "resource://testing-common/AddonTestUtils.jsm"
-);
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
 );
 const { AboutPages } = ChromeUtils.import(
   "resource://normandy-content/AboutPages.jsm"
@@ -19,11 +16,9 @@ const { NormandyApi } = ChromeUtils.import(
 const { TelemetryEvents } = ChromeUtils.import(
   "resource://normandy/lib/TelemetryEvents.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "TelemetryTestUtils",
-  "resource://testing-common/TelemetryTestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
+});
 
 const CryptoHash = Components.Constructor(
   "@mozilla.org/security/hash;1",
@@ -75,7 +70,7 @@ this.withWebExtension = function(
           name: "normandy_fixture",
           version: "1.0",
           description: "Dummy test fixture that's a webextension",
-          applications: {
+          browser_specific_settings: {
             gecko: { id: addonId },
           },
         },

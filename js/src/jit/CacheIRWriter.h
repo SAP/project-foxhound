@@ -37,6 +37,7 @@
 #include "util/Memory.h"
 #include "vm/JSFunction.h"
 #include "vm/JSScript.h"
+#include "vm/List.h"
 #include "vm/Opcodes.h"
 #include "vm/Shape.h"
 #include "wasm/WasmConstants.h"
@@ -100,7 +101,7 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
   // instruction.
   TrialInliningState trialInliningState_ = TrialInliningState::Failure;
 
-  // Basic caching to avoid quadatic lookup behaviour in readStubFieldForIon.
+  // Basic caching to avoid quadatic lookup behaviour in readStubField.
   mutable uint32_t lastOffset_;
   mutable uint32_t lastIndex_;
 
@@ -223,7 +224,7 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     addStubField(uintptr_t(ptr), StubField::Type::RawPointer);
   }
   void writeIdField(jsid id) {
-    addStubField(uintptr_t(JSID_BITS(id)), StubField::Type::Id);
+    addStubField(id.asRawBits(), StubField::Type::Id);
   }
   void writeValueField(const Value& val) {
     addStubField(val.asRawBits(), StubField::Type::Value);
@@ -266,6 +267,11 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     static_assert(sizeof(UnaryMathFunction) == sizeof(uint8_t),
                   "UnaryMathFunction must fit in a byte");
     buffer_.writeByte(uint8_t(fun));
+  }
+  void writeCompletionKindImm(CompletionKind kind) {
+    static_assert(sizeof(CompletionKind) == sizeof(uint8_t),
+                  "CompletionKind must fit in a byte");
+    buffer_.writeByte(uint8_t(kind));
   }
   void writeBoolImm(bool b) { buffer_.writeByte(uint32_t(b)); }
 
@@ -346,6 +352,8 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
   size_t stubDataSize() const { return stubDataSize_; }
   void copyStubData(uint8_t* dest) const;
   bool stubDataEquals(const uint8_t* stubData) const;
+  bool stubDataEqualsIgnoring(const uint8_t* stubData,
+                              uint32_t ignoreOffset) const;
 
   bool operandIsDead(uint32_t operandId, uint32_t currentInstruction) const {
     if (operandId >= operandLastUsed_.length()) {
@@ -371,7 +379,7 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
 
   // This should not be used when compiling Baseline code, as Baseline code
   // shouldn't bake in stub values.
-  StubField readStubFieldForIon(uint32_t offset, StubField::Type type) const;
+  StubField readStubField(uint32_t offset, StubField::Type type) const;
 
   ObjOperandId guardToObject(ValOperandId input) {
     guardToObject_(input);
@@ -477,19 +485,21 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
   }
 
   void callScriptedFunction(ObjOperandId callee, Int32OperandId argc,
-                            CallFlags flags) {
-    callScriptedFunction_(callee, argc, flags);
+                            CallFlags flags, uint32_t argcFixed) {
+    callScriptedFunction_(callee, argc, flags, argcFixed);
     trialInliningState_ = TrialInliningState::Candidate;
   }
 
   void callInlinedFunction(ObjOperandId callee, Int32OperandId argc,
-                           ICScript* icScript, CallFlags flags) {
-    callInlinedFunction_(callee, argc, icScript, flags);
+                           ICScript* icScript, CallFlags flags,
+                           uint32_t argcFixed) {
+    callInlinedFunction_(callee, argc, icScript, flags, argcFixed);
     trialInliningState_ = TrialInliningState::Inlined;
   }
 
   void callNativeFunction(ObjOperandId calleeId, Int32OperandId argc, JSOp op,
-                          JSFunction* calleeFunc, CallFlags flags) {
+                          JSFunction* calleeFunc, CallFlags flags,
+                          uint32_t argcFixed) {
     // Some native functions can be implemented faster if we know that
     // the return value is ignored.
     bool ignoresReturnValue =
@@ -508,28 +518,28 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
                           : calleeFunc->native();
     void* rawPtr = JS_FUNC_TO_DATA_PTR(void*, target);
     void* redirected = Simulator::RedirectNativeFunction(rawPtr, Args_General3);
-    callNativeFunction_(calleeId, argc, flags, redirected);
+    callNativeFunction_(calleeId, argc, flags, argcFixed, redirected);
 #else
     // If we are not running in the simulator, we generate different jitcode
     // to find the ignoresReturnValue version of a native function.
-    callNativeFunction_(calleeId, argc, flags, ignoresReturnValue);
+    callNativeFunction_(calleeId, argc, flags, argcFixed, ignoresReturnValue);
 #endif
   }
 
   void callDOMFunction(ObjOperandId calleeId, Int32OperandId argc,
                        ObjOperandId thisObjId, JSFunction* calleeFunc,
-                       CallFlags flags) {
+                       CallFlags flags, uint32_t argcFixed) {
 #ifdef JS_SIMULATOR
     void* rawPtr = JS_FUNC_TO_DATA_PTR(void*, calleeFunc->native());
     void* redirected = Simulator::RedirectNativeFunction(rawPtr, Args_General3);
-    callDOMFunction_(calleeId, argc, thisObjId, flags, redirected);
+    callDOMFunction_(calleeId, argc, thisObjId, flags, argcFixed, redirected);
 #else
-    callDOMFunction_(calleeId, argc, thisObjId, flags);
+    callDOMFunction_(calleeId, argc, thisObjId, flags, argcFixed);
 #endif
   }
 
   void callAnyNativeFunction(ObjOperandId calleeId, Int32OperandId argc,
-                             CallFlags flags) {
+                             CallFlags flags, uint32_t argcFixed) {
     MOZ_ASSERT(!flags.isSameRealm());
 #ifdef JS_SIMULATOR
     // The simulator requires native calls to be redirected to a
@@ -540,15 +550,15 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     JSNative target = CallAnyNative;
     void* rawPtr = JS_FUNC_TO_DATA_PTR(void*, target);
     void* redirected = Simulator::RedirectNativeFunction(rawPtr, Args_General3);
-    callNativeFunction_(calleeId, argc, flags, redirected);
+    callNativeFunction_(calleeId, argc, flags, argcFixed, redirected);
 #else
-    callNativeFunction_(calleeId, argc, flags,
+    callNativeFunction_(calleeId, argc, flags, argcFixed,
                         /* ignoresReturnValue = */ false);
 #endif
   }
 
   void callClassHook(ObjOperandId calleeId, Int32OperandId argc, JSNative hook,
-                     CallFlags flags) {
+                     CallFlags flags, uint32_t argcFixed) {
     MOZ_ASSERT(!flags.isSameRealm());
     void* target = JS_FUNC_TO_DATA_PTR(void*, hook);
 #ifdef JS_SIMULATOR
@@ -557,7 +567,7 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     // pointer in the stub and use that instead of the original one.
     target = Simulator::RedirectNativeFunction(target, Args_General3);
 #endif
-    callClassHook_(calleeId, argc, flags, target);
+    callClassHook_(calleeId, argc, flags, argcFixed, target);
   }
 
   void callScriptedGetterResult(ValOperandId receiver, JSFunction* getter,
@@ -611,6 +621,12 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
   void metaScriptedThisShape(Shape* thisShape) {
     metaScriptedThisShape_(thisShape);
   }
+
+  void guardMultipleShapes(ObjOperandId obj, ListObject* shapes) {
+    MOZ_ASSERT(shapes->length() > 0);
+    guardMultipleShapes_(obj, shapes);
+  }
+
   friend class CacheIRCloner;
 
   CACHE_IR_WRITER_GENERATED

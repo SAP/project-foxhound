@@ -2,23 +2,21 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
 import argparse
 import hashlib
 import json
 import logging
 import os
 import shutil
-import six
-
 from collections import OrderedDict
 
-from mach.decorators import CommandArgument, Command, SubCommand
+import mozversioncontrol
+import six
+from mach.decorators import Command, CommandArgument, SubCommand
+
 from mozbuild.artifact_builds import JOB_CHOICES
 from mozbuild.base import MachCommandConditions as conditions
 from mozbuild.util import ensureParentDir
-import mozversioncontrol
-
 
 _COULD_NOT_FIND_ARTIFACTS_TEMPLATE = (
     "ERROR!!!!!! Could not find artifacts for a toolchain build named "
@@ -262,13 +260,14 @@ def artifact_toolchain(
     artifact_manifest=None,
 ):
     """Download, cache and install pre-built toolchains."""
-    from mozbuild.artifacts import ArtifactCache
-    from mozbuild.action.tooltool import FileRecord, open_manifest, unpack_file
-    import redo
-    import requests
     import time
 
-    from gecko_taskgraph.util.taskcluster import get_artifact_url
+    import redo
+    import requests
+    from taskgraph.util.taskcluster import get_artifact_url
+
+    from mozbuild.action.tooltool import FileRecord, open_manifest, unpack_file
+    from mozbuild.artifacts import ArtifactCache
 
     start = time.time()
     command_context._set_log_level(verbose)
@@ -375,6 +374,7 @@ def artifact_toolchain(
             )
             return 1
         from gecko_taskgraph.optimize.strategies import IndexSearch
+
         from mozbuild.toolchains import toolchain_task_definitions
 
         tasks = toolchain_task_definitions()
@@ -472,7 +472,7 @@ def artifact_toolchain(
     for f in from_task or ():
         task_id, colon, name = f.partition(":")
         if not colon:
-            self.log(
+            command_context.log(
                 logging.ERROR,
                 "artifact",
                 {},

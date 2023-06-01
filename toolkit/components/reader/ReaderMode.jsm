@@ -31,36 +31,24 @@ const CLASSES_TO_PRESERVE = [
   "wp-smiley",
 ];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["XMLHttpRequest", "XMLSerializer"]);
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
-  "CommonUtils",
-  "resource://services-common/utils.js"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "EventDispatcher",
-  "resource://gre/modules/Messaging.jsm"
-);
-ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "ReaderWorker",
   "resource://gre/modules/reader/ReaderWorker.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "LanguageDetector",
-  "resource:///modules/translation/LanguageDetector.jsm"
+  "resource://gre/modules/translation/LanguageDetector.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "Readerable",
   "resource://gre/modules/Readerable.jsm"
 );
@@ -71,9 +59,6 @@ const gIsFirefoxDesktop =
 Services.telemetry.setEventRecordingEnabled("readermode", true);
 
 var ReaderMode = {
-  // Version of the cache schema.
-  CACHE_VERSION: 1,
-
   DEBUG: 0,
 
   // For time spent telemetry
@@ -135,7 +120,7 @@ var ReaderMode = {
     });
 
     let url = win.document.location.href;
-    let originalURL = ReaderMode.getOriginalUrl(url);
+    let originalURL = this.getOriginalUrl(url);
     let webNav = docShell.QueryInterface(Ci.nsIWebNavigation);
 
     if (!Services.appinfo.sessionHistoryInParent) {
@@ -158,7 +143,7 @@ var ReaderMode = {
         win.document.nodePrincipal.originAttributes
       );
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
       return;
     }
     let loadFlags = webNav.LOAD_FLAGS_DISALLOW_INHERIT_PRINCIPAL;
@@ -219,7 +204,7 @@ var ReaderMode = {
   },
 
   getOriginalUrlObjectForDisplay(url) {
-    let originalUrl = ReaderMode.getOriginalUrl(url);
+    let originalUrl = this.getOriginalUrl(url);
     if (originalUrl) {
       let uriObj;
       try {
@@ -246,8 +231,8 @@ var ReaderMode = {
    */
   parseDocument(doc) {
     if (
-      !Readerable.shouldCheckUri(doc.documentURIObject) ||
-      !Readerable.shouldCheckUri(doc.baseURIObject, true)
+      !lazy.Readerable.shouldCheckUri(doc.documentURIObject) ||
+      !lazy.Readerable.shouldCheckUri(doc.baseURIObject, true)
     ) {
       this.log("Reader mode disabled for URI");
       return null;
@@ -263,29 +248,37 @@ var ReaderMode = {
    * @return {Promise}
    * @resolves JS object representing the article, or null if no article is found.
    */
-  async downloadAndParseDocument(url) {
-    let doc = await this._downloadDocument(url);
-    if (!doc) {
+  async downloadAndParseDocument(url, docContentType = "document") {
+    let result = await this._downloadDocument(url, docContentType);
+    if (!result?.doc) {
       return null;
     }
+    let { doc, newURL } = result;
     if (
-      !Readerable.shouldCheckUri(doc.documentURIObject) ||
-      !Readerable.shouldCheckUri(doc.baseURIObject, true)
+      !lazy.Readerable.shouldCheckUri(doc.documentURIObject) ||
+      !lazy.Readerable.shouldCheckUri(doc.baseURIObject, true)
     ) {
       this.log("Reader mode disabled for URI");
       return null;
     }
 
-    return this._readerParse(doc);
+    let article = await this._readerParse(doc);
+    // If we have to redirect, reject to the caller with the parsed article,
+    // so we can update the URL before displaying it.
+    if (newURL) {
+      return Promise.reject({ newURL, article });
+    }
+    // Otherwise, we can just continue with the article.
+    return article;
   },
 
-  _downloadDocument(url) {
+  _downloadDocument(url, docContentType = "document") {
     try {
-      if (!Readerable.shouldCheckUri(Services.io.newURI(url))) {
+      if (!lazy.Readerable.shouldCheckUri(Services.io.newURI(url))) {
         return null;
       }
     } catch (ex) {
-      Cu.reportError(
+      console.error(
         new Error(`Couldn't create URI from ${url} to download: ${ex}`)
       );
       return null;
@@ -297,7 +290,7 @@ var ReaderMode = {
       let xhr = new XMLHttpRequest();
       xhr.open("GET", url, true);
       xhr.onerror = evt => reject(evt.error);
-      xhr.responseType = "document";
+      xhr.responseType = docContentType === "text/plain" ? "text" : "document";
       xhr.onload = evt => {
         if (xhr.status !== 200) {
           reject("Reader mode XHR failed with status: " + xhr.status);
@@ -305,55 +298,14 @@ var ReaderMode = {
           return;
         }
 
-        let doc = xhr.responseXML;
+        let doc =
+          xhr.responseType === "text" ? xhr.responseText : xhr.responseXML;
         if (!doc) {
           reject("Reader mode XHR didn't return a document");
           histogram.add(DOWNLOAD_ERROR_NO_DOC);
           return;
         }
 
-        // Manually follow a meta refresh tag if one exists.
-        let meta = doc.querySelector("meta[http-equiv=refresh]");
-        if (meta) {
-          let content = meta.getAttribute("content");
-          if (content) {
-            let urlIndex = content.toUpperCase().indexOf("URL=");
-            if (urlIndex > -1) {
-              let baseURI = Services.io.newURI(url);
-              let newURI = Services.io.newURI(
-                content.substring(urlIndex + 4),
-                null,
-                baseURI
-              );
-              let newURL = newURI.spec;
-              let ssm = Services.scriptSecurityManager;
-              let flags =
-                ssm.LOAD_IS_AUTOMATIC_DOCUMENT_REPLACEMENT |
-                ssm.DISALLOW_INHERIT_PRINCIPAL;
-              try {
-                ssm.checkLoadURIStrWithPrincipal(
-                  doc.nodePrincipal,
-                  newURL,
-                  flags
-                );
-              } catch (ex) {
-                let errorMsg =
-                  "Reader mode disallowed meta refresh (reason: " + ex + ").";
-
-                if (Services.prefs.getBoolPref("reader.errors.includeURLs")) {
-                  errorMsg += " Refresh target URI: '" + newURL + "'.";
-                }
-                reject(errorMsg);
-                return;
-              }
-              // Otherwise, pass an object indicating our new URL:
-              if (!baseURI.equalsExceptRef(newURI)) {
-                reject({ newURL });
-                return;
-              }
-            }
-          }
-        }
         let responseURL = xhr.responseURL;
         let givenURL = url;
         // Convert these to real URIs to make sure the escaping (or lack
@@ -369,77 +321,25 @@ var ReaderMode = {
           /* Ignore errors - we'll use what we had before */
         }
 
-        if (responseURL != givenURL) {
-          // We were redirected without a meta refresh tag.
-          // Force redirect to the correct place:
-          reject({ newURL: xhr.responseURL });
-          return;
+        if (xhr.responseType != "document") {
+          let initialText = doc;
+          let parser = new DOMParser();
+          doc = parser.parseFromString(`<pre></pre>`, "text/html");
+          doc.querySelector("pre").textContent = initialText;
         }
-        resolve(doc);
+
+        // We treat redirects as download successes here:
         histogram.add(DOWNLOAD_SUCCESS);
+
+        let result = { doc };
+        if (responseURL != givenURL) {
+          result.newURL = xhr.responseURL;
+        }
+
+        resolve(result);
       };
       xhr.send();
     });
-  },
-
-  /**
-   * Retrieves an article from the cache given an article URI.
-   *
-   * @param url The article URL.
-   * @return {Promise}
-   * @resolves JS object representing the article, or null if no article is found.
-   * @rejects OS.File.Error
-   */
-  async getArticleFromCache(url) {
-    let path = this._toHashedPath(url);
-    try {
-      let array = await OS.File.read(path);
-      return JSON.parse(new TextDecoder().decode(array));
-    } catch (e) {
-      if (!(e instanceof OS.File.Error) || !e.becauseNoSuchFile) {
-        throw e;
-      }
-      return null;
-    }
-  },
-
-  /**
-   * Stores an article in the cache.
-   *
-   * @param article JS object representing article.
-   * @return {Promise}
-   * @resolves When the article is stored.
-   * @rejects OS.File.Error
-   */
-  async storeArticleInCache(article) {
-    let array = new TextEncoder().encode(JSON.stringify(article));
-    let path = this._toHashedPath(article.url);
-    await this._ensureCacheDir();
-    return OS.File.writeAtomic(path, array, { tmpPath: path + ".tmp" }).then(
-      success => {
-        OS.File.stat(path).then(info => {
-          return EventDispatcher.instance.sendRequest({
-            type: "Reader:AddedToCache",
-            url: article.url,
-            size: info.size,
-            path,
-          });
-        });
-      }
-    );
-  },
-
-  /**
-   * Removes an article from the cache given an article URI.
-   *
-   * @param url The article URL.
-   * @return {Promise}
-   * @resolves When the article is removed.
-   * @rejects OS.File.Error
-   */
-  async removeArticleFromCache(url) {
-    let path = this._toHashedPath(url);
-    await OS.File.remove(path);
   },
 
   log(msg) {
@@ -479,13 +379,25 @@ var ReaderMode = {
     // document might be nuked but we will still want the URI.
     let { documentURI } = doc;
 
-    let uriParam = {
+    let uriParam;
+    uriParam = {
       spec: doc.baseURIObject.spec,
-      host: doc.baseURIObject.host,
       prePath: doc.baseURIObject.prePath,
       scheme: doc.baseURIObject.scheme,
-      pathBase: Services.io.newURI(".", null, doc.baseURIObject).spec,
+
+      // Fallback
+      host: documentURI,
+      pathBase: documentURI,
     };
+
+    // nsIURI.host throws an exception if a host doesn't exist.
+    try {
+      uriParam.host = doc.baseURIObject.host;
+      uriParam.pathBase = Services.io.newURI(".", null, doc.baseURIObject).spec;
+    } catch (ex) {
+      // Fall back to the initial values we assigned.
+      console.warn("Error accessing host name: ", ex);
+    }
 
     // convert text/plain document, if any, to XHTML format
     if (this._isDocumentPlainText(doc)) {
@@ -504,13 +416,13 @@ var ReaderMode = {
 
     let article = null;
     try {
-      article = await ReaderWorker.post("parseDocument", [
+      article = await lazy.ReaderWorker.post("parseDocument", [
         uriParam,
         serializedDoc,
         options,
       ]);
     } catch (e) {
-      Cu.reportError("Error in ReaderWorker: " + e);
+      console.error("Error in ReaderWorker: ", e);
       histogram.add(PARSE_ERROR_WORKER);
     }
 
@@ -543,55 +455,6 @@ var ReaderMode = {
     return article;
   },
 
-  get _cryptoHash() {
-    delete this._cryptoHash;
-    return (this._cryptoHash = Cc[
-      "@mozilla.org/security/hash;1"
-    ].createInstance(Ci.nsICryptoHash));
-  },
-
-  get _unicodeConverter() {
-    delete this._unicodeConverter;
-    this._unicodeConverter = Cc[
-      "@mozilla.org/intl/scriptableunicodeconverter"
-    ].createInstance(Ci.nsIScriptableUnicodeConverter);
-    this._unicodeConverter.charset = "utf8";
-    return this._unicodeConverter;
-  },
-
-  /**
-   * Calculate the hashed path for a stripped article URL.
-   *
-   * @param url The article URL. This should have referrers removed.
-   * @return The file path to the cached article.
-   */
-  _toHashedPath(url) {
-    let value = this._unicodeConverter.convertToByteArray(url);
-    this._cryptoHash.init(this._cryptoHash.MD5);
-    this._cryptoHash.update(value, value.length);
-
-    let hash = CommonUtils.encodeBase32(this._cryptoHash.finish(false));
-    let fileName = hash.substring(0, hash.indexOf("=")) + ".json";
-    return OS.Path.join(OS.Constants.Path.profileDir, "readercache", fileName);
-  },
-
-  /**
-   * Ensures the cache directory exists.
-   *
-   * @return Promise
-   * @resolves When the cache directory exists.
-   * @rejects OS.File.Error
-   */
-  _ensureCacheDir() {
-    let dir = OS.Path.join(OS.Constants.Path.profileDir, "readercache");
-    return OS.File.exists(dir).then(exists => {
-      if (!exists) {
-        return OS.File.makeDir(dir);
-      }
-      return undefined;
-    });
-  },
-
   /**
    * Sets a global language string value if the result is confident
    *
@@ -599,9 +462,11 @@ var ReaderMode = {
    * @resolves when the language is detected
    */
   _assignLanguage(article) {
-    return LanguageDetector.detectLanguage(article.textContent).then(result => {
-      article.language = result.confident ? result.language : null;
-    });
+    return lazy.LanguageDetector.detectLanguage(article.textContent).then(
+      result => {
+        article.language = result.confident ? result.language : null;
+      }
+    );
   },
 
   _maybeAssignTextDirection(article) {

@@ -13,16 +13,11 @@
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/linalg.h"
+#include "lib/jxl/matrix_ops.h"
 #include "lib/jxl/opsin_params.h"
 
 namespace jxl {
 namespace {
-
-class OpsinImageTargetTest : public hwy::TestWithParamTarget {};
-HWY_TARGET_INSTANTIATE_TEST_SUITE_P(OpsinImageTargetTest);
-
-TEST_P(OpsinImageTargetTest, MaxCubeRootError) { TestCubeRoot(); }
 
 // Convert a single linear sRGB color to xyb, using the exact image conversion
 // procedure that jpeg xl uses.

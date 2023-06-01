@@ -3,26 +3,37 @@
 
 "use strict";
 
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-
-const { RemoteAgent } = ChromeUtils.import(
-  "chrome://remote/content/components/RemoteAgent.jsm"
+// window.RemoteAgent is a simple object set in browser.js, and importing
+// RemoteAgent conflicts with that.
+// eslint-disable-next-line mozilla/no-redeclare-with-import-autofix
+const { RemoteAgent } = ChromeUtils.importESModule(
+  "chrome://remote/content/components/RemoteAgent.sys.mjs"
 );
-const { RemoteAgentError } = ChromeUtils.import(
-  "chrome://remote/content/cdp/Error.jsm"
+const { RemoteAgentError } = ChromeUtils.importESModule(
+  "chrome://remote/content/cdp/Error.sys.mjs"
+);
+const { TabManager } = ChromeUtils.importESModule(
+  "chrome://remote/content/shared/TabManager.sys.mjs"
+);
+const { Stream } = ChromeUtils.importESModule(
+  "chrome://remote/content/cdp/StreamRegistry.sys.mjs"
 );
 
-const { allowNullOrigin } = ChromeUtils.import(
-  "chrome://remote/content/server/WebSocketHandshake.jsm"
-);
-// The handshake request created by the browser mochitests contains an origin
-// header, which is currently not supported. This origin is a string "null".
-// Explicitly allow such an origin for the duration of the test.
-allowNullOrigin(true);
-registerCleanupFunction(() => allowNullOrigin(false));
-
-const TIMEOUT_MULTIPLIER = SpecialPowers.isDebugBuild ? 4 : 1;
+const TIMEOUT_MULTIPLIER = getTimeoutMultiplier();
 const TIMEOUT_EVENTS = 1000 * TIMEOUT_MULTIPLIER;
+
+function getTimeoutMultiplier() {
+  if (
+    AppConstants.DEBUG ||
+    AppConstants.MOZ_CODE_COVERAGE ||
+    AppConstants.ASAN ||
+    AppConstants.TSAN
+  ) {
+    return 4;
+  }
+
+  return 1;
+}
 
 /*
 add_task() is overriden to setup and teardown a test environment
@@ -48,16 +59,6 @@ setup and teardown described above.
 
 const add_plain_task = add_task.bind(this);
 
-// Start RemoteAgent lazily and reuse it for all the tests in the suite.
-// Starting and stopping RemoteAgent for every test would trigger race conditions
-// in httpd.js. See Bug 1609162.
-async function startRemoteAgent() {
-  if (!RemoteAgent.listening) {
-    await RemoteAgent.listen(Services.io.newURI("http://localhost:9222"));
-    info("Remote agent started");
-  }
-}
-
 this.add_task = function(taskFn, opts = {}) {
   const {
     createTab = true, // By default run each test in its own tab
@@ -66,19 +67,15 @@ this.add_task = function(taskFn, opts = {}) {
   const fn = async function() {
     let client, tab, target;
 
-    await startRemoteAgent();
-
     try {
       const CDP = await getCDP();
 
       if (createTab) {
         tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
-        const browsingContextId = tab.linkedBrowser.browsingContext.id;
+        const tabId = TabManager.getIdForBrowser(tab.linkedBrowser);
 
         const targets = await CDP.List();
-        target = targets.find(
-          target => target.browsingContextId === browsingContextId
-        );
+        target = targets.find(target => target.id === tabId);
       }
 
       client = await CDP({ target });
@@ -157,8 +154,8 @@ async function getCDP() {
   // library in order to do the cross-domain http request, which,
   // in a regular Web page, is impossible.
   window.criRequest = (options, callback) => {
-    const { host, port, path } = options;
-    const url = `http://${host}:${port}${path}`;
+    const { path } = options;
+    const url = `http://${RemoteAgent.host}:${RemoteAgent.port}${path}`;
     const xhr = new XMLHttpRequest();
     xhr.open("GET", url, true);
 
@@ -333,7 +330,7 @@ async function loadURL(url, expectedURL = undefined) {
   const browser = gBrowser.selectedTab.linkedBrowser;
   const loaded = BrowserTestUtils.browserLoaded(browser, true, expectedURL);
 
-  BrowserTestUtils.loadURI(browser, url);
+  BrowserTestUtils.loadURIString(browser, url);
   await loaded;
 }
 
@@ -407,7 +404,7 @@ function fail(message) {
 }
 
 /**
- * Create a file with the specified contents.
+ * Create a stream with the specified contents.
  *
  * @param {string} contents
  *     Contents of the file.
@@ -417,42 +414,26 @@ function fail(message) {
  * @param {boolean=} options.remove
  *     If true, automatically remove the file after the test. Defaults to true.
  *
- * @return {Promise}
- * @resolves {string}
- *     Returns the final path of the created file.
+ * @return {Promise<Stream>}
  */
-async function createFile(contents, options = {}) {
+async function createFileStream(contents, options = {}) {
   let { path = null, remove = true } = options;
 
   if (!path) {
-    const basePath = OS.Path.join(OS.Constants.Path.tmpDir, "remote-agent.txt");
-    const { file, path: tmpPath } = await OS.File.openUnique(basePath, {
-      humanReadable: true,
-    });
-    await file.close();
-    path = tmpPath;
+    path = await IOUtils.createUniqueFile(
+      PathUtils.tempDir,
+      "remote-agent.txt"
+    );
   }
 
-  let encoder = new TextEncoder();
-  let array = encoder.encode(contents);
+  await IOUtils.writeUTF8(path, contents);
 
-  const count = await OS.File.writeAtomic(path, array, {
-    encoding: "utf-8",
-    tmpPath: path + ".tmp",
-  });
-  is(count, contents.length, "All data has been written to file");
-
-  const file = await OS.File.open(path);
-
-  // Automatically remove the file once the test has finished
+  const stream = new Stream(path);
   if (remove) {
-    registerCleanupFunction(async () => {
-      await file.close();
-      await OS.File.remove(path, { ignoreAbsent: true });
-    });
+    registerCleanupFunction(() => stream.destroy());
   }
 
-  return { file, path };
+  return stream;
 }
 
 async function throwScriptError(options = {}) {

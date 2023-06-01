@@ -480,11 +480,9 @@ async function withDevToolsPanel(url, callback, aWindow = window) {
 
   const { gBrowser } = aWindow;
 
-  SpecialPowers.pushPrefEnv({
-    set: [["devtools.performance.new-panel-enabled", "true"]],
-  });
-
-  const { gDevTools } = require("devtools/client/framework/devtools");
+  const {
+    gDevTools,
+  } = require("resource://devtools/client/framework/devtools.js");
 
   info(`Create a new tab with url "${url}".`);
   const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, url);
@@ -819,7 +817,7 @@ function setReactFriendlyInputValue(input, value) {
  * @param {Document} document
  */
 function setupGetRecordingState(document) {
-  const selectors = require("devtools/client/performance-new/store/selectors");
+  const selectors = require("resource://devtools/client/performance-new/store/selectors.js");
   const store = document.defaultView.gStore;
   if (!store) {
     throw new Error("Could not find the redux store on the window object.");

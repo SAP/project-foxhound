@@ -30,14 +30,18 @@ const MAX_TIME_DIFFERENCE = 3000;
 // times are modified (10 hours old).
 const MAKE_FILE_OLD_DIFFERENCE = 10 * 3600 * 1000;
 
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AddonManager, AddonManagerPrivate } = ChromeUtils.import(
+  "resource://gre/modules/AddonManager.jsm"
 );
-var { FileUtils } = ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
+var { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
+var { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
+);
 var { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 var { AddonRepository } = ChromeUtils.import(
   "resource://gre/modules/addons/AddonRepository.jsm"
@@ -73,35 +77,17 @@ ChromeUtils.defineModuleGetter(
   "HttpServer",
   "resource://testing-common/httpd.js"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "MockRegistrar",
-  "resource://testing-common/MockRegistrar.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "MockRegistry",
-  "resource://testing-common/MockRegistry.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PromiseTestUtils",
-  "resource://testing-common/PromiseTestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  MockRegistrar: "resource://testing-common/MockRegistrar.sys.mjs",
+  MockRegistry: "resource://testing-common/MockRegistry.sys.mjs",
+  PromiseTestUtils: "resource://testing-common/PromiseTestUtils.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
+  TestUtils: "resource://testing-common/TestUtils.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
   this,
   "RemoteSettings",
   "resource://services-settings/remote-settings.js"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "TestUtils",
-  "resource://testing-common/TestUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "setTimeout",
-  "resource://gre/modules/Timer.jsm"
 );
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -208,15 +194,9 @@ Object.defineProperty(this, "TEST_UNPACKED", {
   },
 });
 
-// We need some internal bits of AddonManager
-var AMscope = ChromeUtils.import(
-  "resource://gre/modules/AddonManager.jsm",
-  null
-);
-var { AddonManager, AddonManagerInternal, AddonManagerPrivate } = AMscope;
-
 const promiseAddonByID = AddonManager.getAddonByID;
 const promiseAddonsByIDs = AddonManager.getAddonsByIDs;
+const promiseAddonsByTypes = AddonManager.getAddonsByTypes;
 
 var gPort = null;
 
@@ -772,14 +752,15 @@ function isExtensionInBootstrappedList(aDir, aId) {
  *          An optional string to override the default installation aId
  * @return  A file pointing to where the extension was installed
  */
-function promiseWriteWebManifestForExtension(
-  aData,
-  aDir,
-  aId = aData.applications.gecko.id
-) {
+function promiseWriteWebManifestForExtension(aData, aDir, aId) {
   let files = {
     "manifest.json": JSON.stringify(aData),
   };
+  if (!aId) {
+    aId =
+      aData?.browser_specific_settings?.gecko?.id ||
+      aData?.applications?.gecko?.id;
+  }
   return AddonTestUtils.promiseWriteFilesToExtension(aDir.path, aId, files);
 }
 
@@ -1203,10 +1184,9 @@ async function mockGfxBlocklistItems(items) {
   const { BlocklistPrivate } = ChromeUtils.import(
     "resource://gre/modules/Blocklist.jsm"
   );
-  const client = RemoteSettings(
-    Services.prefs.getCharPref("services.blocklist.gfx.collection"),
-    { bucketNamePref: "services.blocklist.bucket" }
-  );
+  const client = RemoteSettings("gfx", {
+    bucketName: "blocklists",
+  });
   const records = items.map(item => {
     if (item.id && item.last_modified) {
       return item;
@@ -1289,7 +1269,9 @@ async function setupBuiltinExtension(extensionData, location = "ext-test") {
 async function installBuiltinExtension(extensionData, waitForStartup = true) {
   await setupBuiltinExtension(extensionData);
 
-  let id = extensionData.manifest.applications.gecko.id;
+  let id =
+    extensionData.manifest?.browser_specific_settings?.gecko?.id ||
+    extensionData.manifest?.applications?.gecko?.id;
   let wrapper = ExtensionTestUtils.expectExtension(id);
   await AddonManager.installBuiltinAddon("resource://ext-test/");
   if (waitForStartup) {

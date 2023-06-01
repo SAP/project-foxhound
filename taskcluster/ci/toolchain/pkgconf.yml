@@ -8,8 +8,7 @@ job-defaults:
     description: "pkgconf toolchain build"
     worker:
         max-run-time: 1800
-    worker-type: b-linux
-    run-on-projects: [trunk]
+    worker-type: b-linux-gcp
     run:
         script: build-pkgconf.sh
         toolchain-artifact: public/build/pkgconf.tar.zst
@@ -35,8 +34,7 @@ macosx64-pkgconf:
     fetches:
         toolchain:
             - linux64-clang-toolchain
-            - linux64-cctools-port
-            - macosx64-sdk-11.0
+            - macosx64-sdk-toolchain
 
 macosx64-aarch64-pkgconf:
     treeherder:
@@ -46,8 +44,7 @@ macosx64-aarch64-pkgconf:
     fetches:
         toolchain:
             - linux64-clang-toolchain
-            - linux64-cctools-port
-            - macosx64-sdk-11.0
+            - macosx64-sdk-toolchain
 
 win64-pkgconf:
     treeherder:

@@ -7,13 +7,14 @@
 members = [
   "js/src/frontend/smoosh",
   "js/src/rust",
-  "js/src/wasm/cranelift",
   "netwerk/test/http3server",
+  "security/manager/ssl/builtins",
   "security/manager/ssl/ipcclientcerts",
   "security/manager/ssl/osclientcerts",
   "testing/geckodriver",
-  "toolkit/crashreporter/rust_minidump_writer_linux",
+  "toolkit/components/uniffi-bindgen-gecko-js",
   "toolkit/crashreporter/mozwer-rust",
+  "toolkit/crashreporter/rust_minidump_writer_linux",
   "toolkit/library/gtest/rust",
   "toolkit/library/rust/",
   "toolkit/mozapps/defaultagent/rust",
@@ -22,9 +23,6 @@ members = [
 # Excluded crates may be built as dependencies, but won't be considered members
 # of the workspace and their dev-dependencies won't be included.
 exclude = [
-  # Excluded because it's for a toolchain task
-  "build/liblowercase",
-
   # Exclude third-party code vendored into mozilla-central.
   "servo",
   "third_party/rust",
@@ -41,11 +39,17 @@ exclude = [
   "xpcom/rust/gkrust_utils",
   "tools/lint/test/files/clippy",
   "tools/fuzzing/rust",
+  "dom/base/rust",
+  "dom/origin-trials/ffi",
 ]
 
 # Use the new dependency resolver to reduce some of the platform-specific dependencies.
 # This is required for 'third_party/rust/wgpu-hal'
 resolver = "2"
+
+[workspace.dependencies]
+# Shared across multiple UniFFI consumers.
+uniffi = "0.23"
 
 # Explicitly specify what our profiles use.  The opt-level setting here is
 # a total fiction; see the setup of MOZ_RUST_DEFAULT_FLAGS for what the
@@ -89,30 +93,95 @@ vcpkg = { path = "build/rust/vcpkg" }
 # Helper crate for integration in the gecko build system.
 mozbuild = { path = "build/rust/mozbuild" }
 
+# Patch cfg-if 0.1 to 1.0
+cfg-if = { path = "build/rust/cfg-if" }
+
+# Patch darling 0.13 to 0.14
+darling = { path = "build/rust/darling" }
+
+# Patch redox_users to an empty crate
+redox_users = { path = "build/rust/redox_users" }
+
+# Patch memmap2 0.2 to 0.3
+memmap2 = { path = "build/rust/memmap2" }
+
+# Patch getrandom 0.7 to 0.8
+rand = { path = "build/rust/rand" }
+
+# Patch env_logger 0.9 to 0.10
+env_logger = { path = "build/rust/env_logger" }
+
+# Patch parking_lot 0.12 down to 0.11, which is compatible for most crates that use it, to avoid
+# dependencies on windows-sys.
+parking_lot = { path = "build/rust/parking_lot" }
+
+# Override tinyvec with smallvec
+tinyvec = { path = "build/rust/tinyvec" }
+
+# Patch wasi 0.10 to 0.11
+wasi = { path = "build/rust/wasi" }
+
+# Patch bindgen 0.59 to 0.63
+bindgen = { path = "build/rust/bindgen" }
+
+# Patch memoffset 0.6 to 0.7
+memoffset = { path = "build/rust/memoffset" }
+
+# Patch nom 6 to 7
+nom = { path = "build/rust/nom" }
+
+# Patch nix 0.24 to 0.25
+nix = { path = "build/rust/nix" }
+
 # Patch autocfg to hide rustc output. Workaround for https://github.com/cuviper/autocfg/issues/30
 autocfg = { path = "third_party/rust/autocfg" }
 
 # The following overrides point to dummy projects, as a temporary measure until this is resolved:
 # https://github.com/rust-lang/cargo/issues/6179
 js-sys = { path = "build/rust/dummy-web/js-sys" }
-slotmap = { path = "build/rust/dummy-web/slotmap" }
 wasm-bindgen = { path = "build/rust/dummy-web/wasm-bindgen" }
 web-sys = { path = "build/rust/dummy-web/web-sys" }
 
 # Overrides to allow easier use of common internal crates.
 moz_asserts = { path = "mozglue/static/rust/moz_asserts" }
 
+# Patch `rure` to disable building the cdylib and staticlib targets
+# Cargo has no way to disable building targets your dependencies provide which
+# you don't depend on, and linking the cdylib breaks during instrumentation
+# builds.
+# Workaround for https://github.com/rust-lang/cargo/issues/11232
+rure = { path = "third_party/rust/rure" }
+
 # Other overrides
-async-task = { git = "https://github.com/smol-rs/async-task", rev="f6488e35beccb26eb6e85847b02aa78a42cd3d0e" }
 chardetng = { git = "https://github.com/hsivonen/chardetng", rev="3484d3e3ebdc8931493aa5df4d7ee9360a90e76b" }
 chardetng_c = { git = "https://github.com/hsivonen/chardetng_c", rev="ed8a4c6f900a90d4dbc1d64b856e61490a1c3570" }
 coremidi = { git = "https://github.com/chris-zen/coremidi.git", rev="fc68464b5445caf111e41f643a2e69ccce0b4f83" }
+firefox-on-glean = { path = "toolkit/components/glean/api" }
 libudev-sys = { path = "dom/webauthn/libudev-sys" }
-packed_simd = { git = "https://github.com/hsivonen/packed_simd", rev="8b4bd7d8229660a749dbe419a57ea01df9de5453" }
-midir = { git = "https://github.com/mozilla/midir.git", rev = "4c11f0ffb5d6a10de4aff40a7b81218b33b94e6f" }
-minidump_writer_linux = { git = "https://github.com/msirringhaus/minidump_writer_linux.git", rev = "029ac0d54b237f27dc7d8d4e51bc0fb076e5e852" }
+packed_simd = { package = "packed_simd_2", git = "https://github.com/hsivonen/packed_simd", rev="412f9a0aa556611de021bde89dee8fefe6e0fbbd" }
+midir = { git = "https://github.com/mozilla/midir.git", rev = "519e651241e867af3391db08f9ae6400bc023e18" }
+minidump-writer = { git = "https://github.com/rust-minidump/minidump-writer.git", rev = "7d76616d27b9dc87fe3a94639b8b4f947d52a6aa" }
+# warp 0.3.3 + https://github.com/seanmonstar/warp/pull/1007
+warp = { git = "https://github.com/glandium/warp", rev = "4af45fae95bc98b0eba1ef0db17e1dac471bb23d" }
+
+cssparser = { git = "https://github.com/servo/rust-cssparser", rev = "d3670a89bae26ba3a8db4758eb7976616113987d" }
+
+# application-services overrides to make updating them all simpler.
+interrupt-support = { git = "https://github.com/bendk/application-services", rev = "ecb35df5fc40357c49922f90e86bf4147fa52953" }
+sql-support = { git = "https://github.com/bendk/application-services", rev = "ecb35df5fc40357c49922f90e86bf4147fa52953" }
+sync15 = { git = "https://github.com/bendk/application-services", rev = "ecb35df5fc40357c49922f90e86bf4147fa52953" }
+tabs = { git = "https://github.com/bendk/application-services", rev = "ecb35df5fc40357c49922f90e86bf4147fa52953" }
+viaduct = { git = "https://github.com/bendk/application-services", rev = "ecb35df5fc40357c49922f90e86bf4147fa52953" }
+webext-storage = { git = "https://github.com/bendk/application-services", rev = "ecb35df5fc40357c49922f90e86bf4147fa52953" }
 
 # Patch mio 0.6 to use winapi 0.3 and miow 0.3, getting rid of winapi 0.2.
 # There is not going to be new version of mio 0.6, mio now being >= 0.7.11.
 [patch.crates-io.mio]
 path = "third_party/rust/mio-0.6.23"
+
+[patch."https://github.com/mozilla/uniffi-rs.git"]
+uniffi = "=0.23.0"
+uniffi_bindgen = "=0.23.0"
+uniffi_build = "=0.23.0"
+uniffi_macros = "=0.23.0"
+weedle2 = "=4.0.0"

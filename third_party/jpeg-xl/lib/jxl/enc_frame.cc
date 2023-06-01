@@ -44,6 +44,7 @@
 #include "lib/jxl/enc_coeff_order.h"
 #include "lib/jxl/enc_context_map.h"
 #include "lib/jxl/enc_entropy_coder.h"
+#include "lib/jxl/enc_gaborish.h"
 #include "lib/jxl/enc_group.h"
 #include "lib/jxl/enc_modular.h"
 #include "lib/jxl/enc_noise.h"
@@ -56,11 +57,11 @@
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/frame_header.h"
-#include "lib/jxl/gaborish.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/loop_filter.h"
+#include "lib/jxl/modular/options.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer.h"
 #include "lib/jxl/splines.h"
@@ -68,6 +69,22 @@
 
 namespace jxl {
 namespace {
+
+PassDefinition progressive_passes_dc_vlf_lf_full_ac[] = {
+    {/*num_coefficients=*/2, /*shift=*/0,
+     /*suitable_for_downsampling_of_at_least=*/4},
+    {/*num_coefficients=*/3, /*shift=*/0,
+     /*suitable_for_downsampling_of_at_least=*/2},
+    {/*num_coefficients=*/8, /*shift=*/0,
+     /*suitable_for_downsampling_of_at_least=*/0},
+};
+
+PassDefinition progressive_passes_dc_quant_ac_full_ac[] = {
+    {/*num_coefficients=*/8, /*shift=*/1,
+     /*suitable_for_downsampling_of_at_least=*/2},
+    {/*num_coefficients=*/8, /*shift=*/0,
+     /*suitable_for_downsampling_of_at_least=*/0},
+};
 
 void ClusterGroups(PassesEncoderState* enc_state) {
   if (enc_state->shared.frame_header.passes.num_passes > 1) {
@@ -114,7 +131,6 @@ void ClusterGroups(PassesEncoderState* enc_state) {
     return token_cost(tokens, num_contexts) - costs[i] - costs[j];
   };
   std::vector<size_t> out{max};
-  std::vector<size_t> old_map(ac.size());
   std::vector<float> dists(ac.size());
   size_t farthest = 0;
   for (size_t i = 0; i < ac.size(); i++) {
@@ -133,7 +149,6 @@ void ClusterGroups(PassesEncoderState* enc_state) {
       float d = dist(out.back(), i);
       if (d < dists[i]) {
         dists[i] = d;
-        old_map[i] = enc_state->histogram_idx[i];
         enc_state->histogram_idx[i] = out.size() - 1;
       }
       if (dists[i] > dists[farthest]) {
@@ -215,7 +230,8 @@ uint64_t FrameFlagsFromParams(const CompressParams& cparams) {
   // noise is stored within the compressed image and adding noise makes things
   // worse.
   if (ApplyOverride(cparams.noise, dist >= kMinButteraugliForNoise) ||
-      cparams.photon_noise_iso > 0) {
+      cparams.photon_noise_iso > 0 ||
+      cparams.manual_noise.size() == NoiseParams::kNumNoisePoints) {
     flags |= FrameHeader::kNoise;
   }
 
@@ -255,10 +271,9 @@ Status LoopFilterFromParams(const CompressParams& cparams,
   }
   // Strength of EPF in modular mode.
   if (frame_header->encoding == FrameEncoding::kModular &&
-      cparams.quality_pair.first < 100) {
+      !cparams.IsLossless()) {
     // TODO(veluca): this formula is nonsense.
-    loop_filter->epf_sigma_for_modular =
-        20.0f * (1.0f - cparams.quality_pair.first / 100);
+    loop_filter->epf_sigma_for_modular = cparams.butteraugli_distance;
   }
   if (frame_header->encoding == FrameEncoding::kModular &&
       cparams.lossy_palette) {
@@ -301,11 +316,18 @@ Status MakeFrameHeader(const CompressParams& cparams,
           "recompressing JPEGs");
     }
   }
+  if (frame_header->color_transform != ColorTransform::kYCbCr &&
+      (frame_header->chroma_subsampling.MaxHShift() != 0 ||
+       frame_header->chroma_subsampling.MaxVShift() != 0)) {
+    return JXL_FAILURE(
+        "Chroma subsampling is not supported when color transform is not "
+        "YCbCr");
+  }
 
   frame_header->flags = FrameFlagsFromParams(cparams);
   // Non-photon noise is not supported in the Modular encoder for now.
   if (frame_header->encoding != FrameEncoding::kVarDCT &&
-      cparams.photon_noise_iso == 0) {
+      cparams.photon_noise_iso == 0 && cparams.manual_noise.empty()) {
     frame_header->UpdateFlag(false, FrameHeader::Flags::kNoise);
   }
 
@@ -499,7 +521,6 @@ class LossyFrameEncoder {
                              Image3F* JXL_RESTRICT opsin,
                              const JxlCmsInterface& cms, ThreadPool* pool,
                              ModularFrameEncoder* modular_frame_encoder,
-                             BitWriter* JXL_RESTRICT writer,
                              FrameHeader* frame_header) {
     PROFILER_ZONE("ComputeEncodingData uninstrumented");
     JXL_ASSERT((opsin->xsize() % kBlockDim) == 0 &&
@@ -507,12 +528,17 @@ class LossyFrameEncoder {
     PassesSharedState& shared = enc_state_->shared;
 
     if (!enc_state_->cparams.max_error_mode) {
-      float x_qm_scale_steps[3] = {0.65f, 1.25f, 9.0f};
-      shared.frame_header.x_qm_scale = 1;
+      float x_qm_scale_steps[2] = {1.25f, 9.0f};
+      shared.frame_header.x_qm_scale = 2;
       for (float x_qm_scale_step : x_qm_scale_steps) {
         if (enc_state_->cparams.butteraugli_distance > x_qm_scale_step) {
           shared.frame_header.x_qm_scale++;
         }
+      }
+      if (enc_state_->cparams.butteraugli_distance < 0.299f) {
+        // Favor chromacity preservation for making images appear more
+        // faithful to original even with extreme (5-10x) zooming.
+        shared.frame_header.x_qm_scale++;
       }
     }
 
@@ -602,7 +628,7 @@ class LossyFrameEncoder {
     std::vector<int> qt(192);
     for (size_t c = 0; c < 3; c++) {
       size_t jpeg_c = jpeg_c_map[c];
-      const int* quant =
+      const int32_t* quant =
           jpeg_data.quant[jpeg_data.components[jpeg_c].quant_idx].values.data();
 
       dcquantization[c] = 255 * 8.0f / quant[0];
@@ -627,7 +653,7 @@ class LossyFrameEncoder {
     shared.quantizer.RecomputeFromGlobalScale();
 
     // Per-block dequant scaling should be 1.
-    FillImage(static_cast<int>(shared.quantizer.InvGlobalScale()),
+    FillImage(static_cast<int32_t>(shared.quantizer.InvGlobalScale()),
               &shared.raw_quant_field);
 
     std::vector<int32_t> scaled_qtable(192);
@@ -933,8 +959,8 @@ class LossyFrameEncoder {
   Status EncodeGlobalACInfo(BitWriter* writer,
                             ModularFrameEncoder* modular_frame_encoder) {
     JXL_RETURN_IF_ERROR(DequantMatricesEncode(&enc_state_->shared.matrices,
-                                              writer, kLayerDequantTables,
-                                              aux_out_, modular_frame_encoder));
+                                              writer, kLayerQuant, aux_out_,
+                                              modular_frame_encoder));
     if (enc_state_->cparams.speed_tier <= SpeedTier::kTortoise) {
       if (!doing_jpeg_recompression) ClusterGroups(enc_state_);
     }
@@ -994,19 +1020,20 @@ class LossyFrameEncoder {
  private:
   void ComputeAllCoeffOrders(const FrameDimensions& frame_dim) {
     PROFILER_FUNC;
+    // No coefficient reordering in Falcon or faster.
+    auto used_orders_info = ComputeUsedOrders(
+        enc_state_->cparams.speed_tier, enc_state_->shared.ac_strategy,
+        Rect(enc_state_->shared.raw_quant_field));
+    enc_state_->used_orders.clear();
     enc_state_->used_orders.resize(
-        enc_state_->progressive_splitter.GetNumPasses());
+        enc_state_->progressive_splitter.GetNumPasses(),
+        used_orders_info.second);
     for (size_t i = 0; i < enc_state_->progressive_splitter.GetNumPasses();
          i++) {
-      // No coefficient reordering in Falcon or faster.
-      if (enc_state_->cparams.speed_tier < SpeedTier::kFalcon) {
-        enc_state_->used_orders[i] = ComputeUsedOrders(
-            enc_state_->cparams.speed_tier, enc_state_->shared.ac_strategy,
-            Rect(enc_state_->shared.raw_quant_field));
-      }
       ComputeCoeffOrder(
           enc_state_->cparams.speed_tier, *enc_state_->coeffs[i],
           enc_state_->shared.ac_strategy, frame_dim, enc_state_->used_orders[i],
+          used_orders_info.first,
           &enc_state_->shared
                .coeff_orders[i * enc_state_->shared.coeff_order_size]);
     }
@@ -1038,16 +1065,173 @@ class LossyFrameEncoder {
   bool doing_jpeg_recompression = false;
 };
 
+Status ParamsPostInit(CompressParams* p) {
+  if (!p->manual_noise.empty() &&
+      p->manual_noise.size() != NoiseParams::kNumNoisePoints) {
+    return JXL_FAILURE("Invalid number of noise lut entries");
+  }
+  if (!p->manual_xyb_factors.empty() && p->manual_xyb_factors.size() != 3) {
+    return JXL_FAILURE("Invalid number of XYB quantization factors");
+  }
+  if (!p->modular_mode && p->butteraugli_distance == 0.0) {
+    p->butteraugli_distance = kMinButteraugliDistance;
+  }
+  if (p->original_butteraugli_distance == -1.0) {
+    p->original_butteraugli_distance = p->butteraugli_distance;
+  }
+  if (p->resampling <= 0) {
+    p->resampling = 1;
+    // For very low bit rates, using 2x2 resampling gives better results on
+    // most photographic images, with an adjusted butteraugli score chosen to
+    // give roughly the same amount of bits per pixel.
+    if (!p->already_downsampled && p->butteraugli_distance >= 20) {
+      p->resampling = 2;
+      p->butteraugli_distance = 6 + ((p->butteraugli_distance - 20) * 0.25);
+    }
+  }
+  if (p->ec_resampling <= 0) {
+    p->ec_resampling = p->resampling;
+  }
+  return true;
+}
+
 Status EncodeFrame(const CompressParams& cparams_orig,
                    const FrameInfo& frame_info, const CodecMetadata* metadata,
                    const ImageBundle& ib, PassesEncoderState* passes_enc_state,
                    const JxlCmsInterface& cms, ThreadPool* pool,
                    BitWriter* writer, AuxOut* aux_out) {
+  CompressParams cparams = cparams_orig;
+  if (cparams.speed_tier == SpeedTier::kGlacier && !cparams.IsLossless()) {
+    cparams.speed_tier = SpeedTier::kTortoise;
+  }
+  if (cparams.speed_tier == SpeedTier::kGlacier) {
+    std::vector<CompressParams> all_params;
+    std::vector<size_t> size;
+
+    CompressParams cparams_attempt = cparams_orig;
+    cparams_attempt.speed_tier = SpeedTier::kTortoise;
+    cparams_attempt.options.max_properties = 4;
+
+    for (float x : {0.0f, 80.f}) {
+      cparams_attempt.channel_colors_percent = x;
+      for (float y : {0.0f, 95.0f}) {
+        cparams_attempt.channel_colors_pre_transform_percent = y;
+        // 70000 ensures that the number of palette colors is representable in
+        // modular headers.
+        for (int K : {0, 1 << 10, 70000}) {
+          cparams_attempt.palette_colors = K;
+          for (int tree_mode : {-1, (int)ModularOptions::TreeMode::kNoWP,
+                                (int)ModularOptions::TreeMode::kDefault}) {
+            if (tree_mode == -1) {
+              // LZ77 only
+              cparams_attempt.options.nb_repeats = 0;
+            } else {
+              cparams_attempt.options.nb_repeats = 1;
+              cparams_attempt.options.wp_tree_mode =
+                  static_cast<ModularOptions::TreeMode>(tree_mode);
+            }
+            for (Predictor pred : {Predictor::Zero, Predictor::Variable}) {
+              cparams_attempt.options.predictor = pred;
+              for (int g : {0, 1, 3}) {
+                cparams_attempt.modular_group_size_shift = g;
+                for (Override patches : {Override::kDefault, Override::kOff}) {
+                  cparams_attempt.patches = patches;
+                  all_params.push_back(cparams_attempt);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    size.resize(all_params.size());
+
+    std::atomic<int> num_errors{0};
+
+    JXL_RETURN_IF_ERROR(RunOnPool(
+        pool, 0, all_params.size(), ThreadPool::NoInit,
+        [&](size_t task, size_t) {
+          BitWriter w;
+          PassesEncoderState state;
+          if (!EncodeFrame(all_params[task], frame_info, metadata, ib, &state,
+                           cms, nullptr, &w, aux_out)) {
+            num_errors.fetch_add(1, std::memory_order_relaxed);
+            return;
+          }
+          size[task] = w.BitsWritten();
+        },
+        "Compress kGlacier"));
+    JXL_RETURN_IF_ERROR(num_errors.load(std::memory_order_relaxed) == 0);
+
+    size_t best_idx = 0;
+    for (size_t i = 1; i < all_params.size(); i++) {
+      if (size[best_idx] > size[i]) {
+        best_idx = i;
+      }
+    }
+    cparams = all_params[best_idx];
+  }
+
+  if (cparams_orig.target_bitrate > 0.0f &&
+      frame_info.frame_type == FrameType::kRegularFrame) {
+    cparams.target_bitrate = 0.0f;
+    const float target_bitrate = cparams_orig.target_bitrate;
+    float bitrate = 0.0f;
+    float prev_bitrate = 0.0f;
+    float rescale = 1.0f;
+    size_t prev_bits = 0;
+    float error = 0.0f;
+    float best_error = 100.0f;
+    float best_rescale = 1.0f;
+    for (size_t i = 0; i < 10; ++i) {
+      std::unique_ptr<PassesEncoderState> state =
+          jxl::make_unique<PassesEncoderState>();
+      BitWriter bw;
+      JXL_CHECK(EncodeFrame(cparams, frame_info, metadata, ib, state.get(), cms,
+                            pool, &bw, nullptr));
+      bitrate = bw.BitsWritten() * 1.0 / (ib.xsize() * ib.ysize());
+      error = target_bitrate / bitrate - 1.0f;
+      if (std::abs(error) < std::abs(best_error)) {
+        best_error = error;
+        best_rescale = cparams.quant_ac_rescale;
+      }
+      if (bw.BitsWritten() == prev_bits || std::abs(error) < 0.0005f) {
+        break;
+      }
+      float lambda = 1.0f;
+      if (i > 0) {
+        lambda = (((bitrate / prev_bitrate) - 1.0f) / (rescale - 1.0f));
+      }
+      rescale = (1.0f + ((target_bitrate / bitrate) - 1.0f) / lambda);
+      if (rescale < 0.0f) {
+        break;
+      }
+      cparams.quant_ac_rescale *= rescale;
+      prev_bitrate = bitrate;
+      prev_bits = bw.BitsWritten();
+    }
+    if (aux_out) {
+      aux_out->max_quant_rescale = best_rescale;
+      aux_out->min_quant_rescale = best_rescale;
+      aux_out->min_bitrate_error = best_error;
+      aux_out->max_bitrate_error = best_error;
+    }
+    cparams.quant_ac_rescale = best_rescale;
+  }
   ib.VerifyMetadata();
 
   passes_enc_state->special_frames.clear();
 
-  CompressParams cparams = cparams_orig;
+  if (cparams.qprogressive_mode) {
+    passes_enc_state->progressive_splitter.SetProgressiveMode(
+        ProgressiveMode{progressive_passes_dc_quant_ac_full_ac});
+  } else if (cparams.progressive_mode) {
+    passes_enc_state->progressive_splitter.SetProgressiveMode(
+        ProgressiveMode{progressive_passes_dc_vlf_lf_full_ac});
+  }
+
+  JXL_RETURN_IF_ERROR(ParamsPostInit(&cparams));
 
   if (cparams.progressive_dc < 0) {
     if (cparams.progressive_dc != -1) {
@@ -1055,16 +1239,13 @@ Status EncodeFrame(const CompressParams& cparams_orig,
                          cparams.progressive_dc);
     }
     cparams.progressive_dc = 0;
-    // Enable progressive_dc for lower qualities.
-    if (cparams.butteraugli_distance >=
-        kMinButteraugliDistanceForProgressiveDc) {
-      cparams.progressive_dc = 1;
-    }
   }
   if (cparams.ec_resampling < cparams.resampling) {
     cparams.ec_resampling = cparams.resampling;
   }
-  if (cparams.resampling > 1) cparams.progressive_dc = 0;
+  if (cparams.resampling > 1 || frame_info.is_preview) {
+    cparams.progressive_dc = 0;
+  }
 
   if (frame_info.dc_level + cparams.progressive_dc > 4) {
     return JXL_FAILURE("Too many levels of progressive DC");
@@ -1074,12 +1255,6 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       cparams.butteraugli_distance < kMinButteraugliDistance) {
     return JXL_FAILURE("Butteraugli distance is too low (%f)",
                        cparams.butteraugli_distance);
-  }
-  if (cparams.butteraugli_distance > 0.9f && cparams.modular_mode == false &&
-      cparams.quality_pair.first == 100) {
-    // in case the color image is lossy, make the alpha slightly lossy too
-    cparams.quality_pair.first =
-        std::max(90.f, 99.f - 0.3f * cparams.butteraugli_distance);
   }
 
   if (ib.IsJPEG()) {
@@ -1198,8 +1373,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
               // input is already in XYB.
       CopyImageTo(ib.color(), &opsin);
     }
-    bool lossless = (frame_header->encoding == FrameEncoding::kModular &&
-                     cparams.quality_pair.first == 100);
+    bool lossless = cparams.IsLossless();
     if (ib.HasAlpha() && !ib.AlphaIsPremultiplied() &&
         frame_header->frame_type == FrameType::kRegularFrame &&
         !ApplyOverride(cparams.keep_invisible, lossless) &&
@@ -1218,7 +1392,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     if (frame_header->encoding == FrameEncoding::kVarDCT) {
       PadImageToBlockMultipleInPlace(&opsin);
       JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeEncodingData(
-          ib_or_linear, &opsin, cms, pool, modular_frame_encoder.get(), writer,
+          ib_or_linear, &opsin, cms, pool, modular_frame_encoder.get(),
           frame_header.get()));
     } else if (frame_header->upsampling != 1 && !cparams.already_downsampled) {
       // In VarDCT mode, LossyFrameHeuristics takes care of running downsampling
@@ -1227,7 +1401,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     }
   } else {
     JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeEncodingData(
-        &ib, &opsin, cms, pool, modular_frame_encoder.get(), writer,
+        &ib, &opsin, cms, pool, modular_frame_encoder.get(),
         frame_header.get()));
   }
   if (cparams.ec_resampling != 1 && !cparams.already_downsampled) {
@@ -1286,6 +1460,12 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     lossy_frame_encoder.State()->shared.image_features.noise_params =
         SimulatePhotonNoise(ib.xsize(), ib.ysize(), cparams.photon_noise_iso);
   }
+  if (cparams.manual_noise.size() == NoiseParams::kNumNoisePoints) {
+    for (size_t i = 0; i < NoiseParams::kNumNoisePoints; i++) {
+      lossy_frame_encoder.State()->shared.image_features.noise_params.lut[i] =
+          cparams.manual_noise[i];
+    }
+  }
   if (frame_header->flags & FrameHeader::kNoise) {
     EncodeNoise(lossy_frame_encoder.State()->shared.image_features.noise_params,
                 get_output(0), kLayerNoise, aux_out);
@@ -1293,7 +1473,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
 
   JXL_RETURN_IF_ERROR(
       DequantMatricesEncodeDC(&lossy_frame_encoder.State()->shared.matrices,
-                              get_output(0), kLayerDequantTables, aux_out));
+                              get_output(0), kLayerQuant, aux_out));
   if (frame_header->encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(
         lossy_frame_encoder.EncodeGlobalDCInfo(*frame_header, get_output(0)));
@@ -1373,7 +1553,9 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   JXL_RETURN_IF_ERROR(num_errors.load(std::memory_order_relaxed) == 0);
 
   for (BitWriter& bw : group_codes) {
+    BitWriter::Allotment allotment(&bw, 8);
     bw.ZeroPadToByte();  // end of group.
+    ReclaimAndCharge(&bw, &allotment, kLayerAC, aux_out);
   }
 
   std::vector<coeff_order_t>* permutation_ptr = nullptr;
@@ -1455,7 +1637,6 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   JXL_RETURN_IF_ERROR(
       WriteGroupOffsets(group_codes, permutation_ptr, writer, aux_out));
   writer->AppendByteAligned(group_codes);
-  writer->ZeroPadToByte();  // end of frame.
 
   return true;
 }

@@ -7,20 +7,26 @@
 #include <jni.h>
 
 #include "AndroidBridge.h"
+#include "AndroidBuild.h"
 #include "AndroidDecoderModule.h"
 #include "EMEDecoderModule.h"
 #include "GLImages.h"
 #include "JavaCallbacksSupport.h"
+#include "MediaCodec.h"
 #include "MediaData.h"
 #include "MediaInfo.h"
+#include "PerformanceRecorder.h"
 #include "SimpleMap.h"
 #include "VPXDecoder.h"
 #include "VideoUtils.h"
+#include "mozilla/gfx/Matrix.h"
+#include "mozilla/gfx/Types.h"
 #include "mozilla/java/CodecProxyWrappers.h"
 #include "mozilla/java/GeckoSurfaceWrappers.h"
 #include "mozilla/java/SampleBufferWrappers.h"
 #include "mozilla/java/SampleWrappers.h"
 #include "mozilla/java/SurfaceAllocatorWrappers.h"
+#include "mozilla/Maybe.h"
 #include "nsPromiseFlatString.h"
 #include "nsThreadUtils.h"
 #include "prlog.h"
@@ -106,6 +112,39 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
       mDecoder->ProcessOutput(std::move(aSample));
     }
 
+    void HandleOutputFormatChanged(
+        java::sdk::MediaFormat::Param aFormat) override {
+      int32_t colorFormat = 0;
+      aFormat->GetInteger(java::sdk::MediaFormat::KEY_COLOR_FORMAT,
+                          &colorFormat);
+      if (colorFormat == 0) {
+        mDecoder->Error(
+            MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                        RESULT_DETAIL("Invalid color format:%d", colorFormat)));
+        return;
+      }
+
+      Maybe<int32_t> colorRange;
+      {
+        int32_t range = 0;
+        if (NS_SUCCEEDED(aFormat->GetInteger(
+                java::sdk::MediaFormat::KEY_COLOR_RANGE, &range))) {
+          colorRange.emplace(range);
+        }
+      }
+
+      Maybe<int32_t> colorSpace;
+      {
+        int32_t space = 0;
+        if (NS_SUCCEEDED(aFormat->GetInteger(
+                java::sdk::MediaFormat::KEY_COLOR_STANDARD, &space))) {
+          colorSpace.emplace(space);
+        }
+      }
+
+      mDecoder->ProcessOutputFormatChange(colorFormat, colorRange, colorSpace);
+    }
+
     void HandleError(const MediaResult& aError) override {
       mDecoder->Error(aError);
     }
@@ -118,10 +157,11 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
 
   RemoteVideoDecoder(const VideoInfo& aConfig,
                      java::sdk::MediaFormat::Param aFormat,
-                     const nsString& aDrmStubId)
+                     const nsString& aDrmStubId, Maybe<TrackingId> aTrackingId)
       : RemoteDataDecoder(MediaData::Type::VIDEO_DATA, aConfig.mMimeType,
                           aFormat, aDrmStubId),
-        mConfig(aConfig) {}
+        mConfig(aConfig),
+        mTrackingId(std::move(aTrackingId)) {}
 
   ~RemoteVideoDecoder() {
     if (mSurface) {
@@ -131,8 +171,9 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
 
   RefPtr<InitPromise> Init() override {
     mThread = GetCurrentSerialEventTarget();
-    java::sdk::BufferInfo::LocalRef bufferInfo;
-    if (NS_FAILED(java::sdk::BufferInfo::New(&bufferInfo)) || !bufferInfo) {
+    java::sdk::MediaCodec::BufferInfo::LocalRef bufferInfo;
+    if (NS_FAILED(java::sdk::MediaCodec::BufferInfo::New(&bufferInfo)) ||
+        !bufferInfo) {
       return InitPromise::CreateAndReject(NS_ERROR_OUT_OF_MEMORY, __func__);
     }
     mInputBufferInfo = bufferInfo;
@@ -168,6 +209,27 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
     mIsCodecSupportAdaptivePlayback =
         mJavaDecoder->IsAdaptivePlaybackSupported();
     mIsHardwareAccelerated = mJavaDecoder->IsHardwareAccelerated();
+
+    // On Mediatek 6735 devices we have observed that the transform obtained
+    // from SurfaceTexture.getTransformMatrix() is incorrect for surfaces
+    // produced by a MediaCodec. We therefore override the transform to be a
+    // simple y-flip to ensure it is rendered correctly.
+    if (java::sdk::Build::HARDWARE()->ToString().EqualsASCII("mt6735")) {
+      mTransformOverride = Some(
+          gfx::Matrix4x4::Scaling(1.0, -1.0, 1.0).PostTranslate(0.0, 1.0, 0.0));
+    }
+
+    mMediaInfoFlag = MediaInfoFlag::None;
+    mMediaInfoFlag |= mIsHardwareAccelerated ? MediaInfoFlag::HardwareDecoding
+                                             : MediaInfoFlag::SoftwareDecoding;
+    if (mMimeType.EqualsLiteral("video/mp4") ||
+        mMimeType.EqualsLiteral("video/avc")) {
+      mMediaInfoFlag |= MediaInfoFlag::VIDEO_H264;
+    } else if (mMimeType.EqualsLiteral("video/vp8")) {
+      mMediaInfoFlag |= MediaInfoFlag::VIDEO_VP8;
+    } else if (mMimeType.EqualsLiteral("video/vp9")) {
+      mMediaInfoFlag |= MediaInfoFlag::VIDEO_VP9;
+    }
     return InitPromise::CreateAndResolve(TrackInfo::kVideoTrack, __func__);
   }
 
@@ -176,6 +238,7 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
     mInputInfos.Clear();
     mSeekTarget.reset();
     mLatestOutputTime.reset();
+    mPerformanceRecorder.Record(std::numeric_limits<int64_t>::max());
     return RemoteDataDecoder::Flush();
   }
 
@@ -191,6 +254,14 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
     const VideoInfo* config =
         aSample->mTrackInfo ? aSample->mTrackInfo->GetAsVideoInfo() : &mConfig;
     MOZ_ASSERT(config);
+
+    mTrackingId.apply([&](const auto& aId) {
+      MediaInfoFlag flag = mMediaInfoFlag;
+      flag |= (aSample->mKeyframe ? MediaInfoFlag::KeyFrame
+                                  : MediaInfoFlag::NonKeyFrame);
+      mPerformanceRecorder.Start(aSample->mTime.ToMicroseconds(),
+                                 "AndroidDecoder"_ns, aId, flag);
+    });
 
     InputInfo info(aSample->mDuration.ToMicroseconds(), config->mImage,
                    config->mDisplay);
@@ -281,7 +352,7 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
       return;
     }
 
-    java::sdk::BufferInfo::LocalRef info = aSample->Info();
+    java::sdk::MediaCodec::BufferInfo::LocalRef info = aSample->Info();
     MOZ_ASSERT(info);
 
     int32_t flags;
@@ -313,7 +384,7 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
     if (ok && (size > 0 || presentationTimeUs >= 0)) {
       RefPtr<layers::Image> img = new layers::SurfaceTextureImage(
           mSurfaceHandle, inputInfo.mImageSize, false /* NOT continuous */,
-          gl::OriginPos::BottomLeft, mConfig.HasAlpha());
+          gl::OriginPos::BottomLeft, mConfig.HasAlpha(), mTransformOverride);
       img->AsSurfaceTextureImage()->RegisterSetCurrentCallback(
           std::move(releaseSample));
 
@@ -324,12 +395,125 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
           !!(flags & java::sdk::MediaCodec::BUFFER_FLAG_SYNC_FRAME),
           TimeUnit::FromMicroseconds(presentationTimeUs));
 
+      mPerformanceRecorder.Record(presentationTimeUs, [&](DecodeStage& aStage) {
+        using Cap = java::sdk::MediaCodecInfo::CodecCapabilities;
+        using Fmt = java::sdk::MediaFormat;
+        mColorFormat.apply([&](int32_t aFormat) {
+          switch (aFormat) {
+            case Cap::COLOR_Format32bitABGR8888:
+            case Cap::COLOR_Format32bitARGB8888:
+            case Cap::COLOR_Format32bitBGRA8888:
+            case Cap::COLOR_FormatRGBAFlexible:
+              aStage.SetImageFormat(DecodeStage::RGBA32);
+              break;
+            case Cap::COLOR_Format24bitBGR888:
+            case Cap::COLOR_Format24bitRGB888:
+            case Cap::COLOR_FormatRGBFlexible:
+              aStage.SetImageFormat(DecodeStage::RGB24);
+              break;
+            case Cap::COLOR_FormatYUV411Planar:
+            case Cap::COLOR_FormatYUV411PackedPlanar:
+            case Cap::COLOR_FormatYUV420Planar:
+            case Cap::COLOR_FormatYUV420PackedPlanar:
+            case Cap::COLOR_FormatYUV420Flexible:
+              aStage.SetImageFormat(DecodeStage::YUV420P);
+              break;
+            case Cap::COLOR_FormatYUV420SemiPlanar:
+            case Cap::COLOR_FormatYUV420PackedSemiPlanar:
+            case Cap::COLOR_QCOM_FormatYUV420SemiPlanar:
+            case Cap::COLOR_TI_FormatYUV420PackedSemiPlanar:
+              aStage.SetImageFormat(DecodeStage::NV12);
+              break;
+            case Cap::COLOR_FormatYCbYCr:
+            case Cap::COLOR_FormatYCrYCb:
+            case Cap::COLOR_FormatCbYCrY:
+            case Cap::COLOR_FormatCrYCbY:
+            case Cap::COLOR_FormatYUV422Planar:
+            case Cap::COLOR_FormatYUV422PackedPlanar:
+            case Cap::COLOR_FormatYUV422Flexible:
+              aStage.SetImageFormat(DecodeStage::YUV422P);
+              break;
+            case Cap::COLOR_FormatYUV444Interleaved:
+            case Cap::COLOR_FormatYUV444Flexible:
+              aStage.SetImageFormat(DecodeStage::YUV444P);
+              break;
+            case Cap::COLOR_FormatSurface:
+              aStage.SetImageFormat(DecodeStage::ANDROID_SURFACE);
+              break;
+            /* Added in API level 33
+            case Cap::COLOR_FormatYUVP010:
+              aStage.SetImageFormat(DecodeStage::P010);
+              break;
+            */
+            default:
+              NS_WARNING(nsPrintfCString("Unhandled color format %d (0x%08x)",
+                                         aFormat, aFormat)
+                             .get());
+          }
+        });
+        mColorRange.apply([&](int32_t aRange) {
+          switch (aRange) {
+            case Fmt::COLOR_RANGE_FULL:
+              aStage.SetColorRange(gfx::ColorRange::FULL);
+              break;
+            case Fmt::COLOR_RANGE_LIMITED:
+              aStage.SetColorRange(gfx::ColorRange::LIMITED);
+              break;
+            default:
+              NS_WARNING(nsPrintfCString("Unhandled color range %d (0x%08x)",
+                                         aRange, aRange)
+                             .get());
+          }
+        });
+        mColorSpace.apply([&](int32_t aSpace) {
+          switch (aSpace) {
+            case Fmt::COLOR_STANDARD_BT2020:
+              aStage.SetYUVColorSpace(gfx::YUVColorSpace::BT2020);
+              break;
+            case Fmt::COLOR_STANDARD_BT601_NTSC:
+            case Fmt::COLOR_STANDARD_BT601_PAL:
+              aStage.SetYUVColorSpace(gfx::YUVColorSpace::BT601);
+              break;
+            case Fmt::COLOR_STANDARD_BT709:
+              aStage.SetYUVColorSpace(gfx::YUVColorSpace::BT709);
+              break;
+            default:
+              NS_WARNING(nsPrintfCString("Unhandled color space %d (0x%08x)",
+                                         aSpace, aSpace)
+                             .get());
+          }
+        });
+        aStage.SetResolution(v->mImage->GetSize().Width(),
+                             v->mImage->GetSize().Height());
+      });
+
       RemoteDataDecoder::UpdateOutputStatus(std::move(v));
     }
 
     if (isEOS) {
       DrainComplete();
     }
+  }
+
+  void ProcessOutputFormatChange(int32_t aColorFormat,
+                                 Maybe<int32_t> aColorRange,
+                                 Maybe<int32_t> aColorSpace) {
+    if (!mThread->IsOnCurrentThread()) {
+      nsresult rv = mThread->Dispatch(
+          NewRunnableMethod<int32_t, Maybe<int32_t>, Maybe<int32_t>>(
+              "RemoteVideoDecoder::ProcessOutputFormatChange", this,
+              &RemoteVideoDecoder::ProcessOutputFormatChange, aColorFormat,
+              aColorRange, aColorSpace));
+      MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
+      Unused << rv;
+      return;
+    }
+
+    AssertOnThread();
+
+    mColorFormat = Some(aColorFormat);
+    mColorRange = aColorRange;
+    mColorSpace = aColorSpace;
   }
 
   bool NeedsNewDecoder() const override {
@@ -339,6 +523,9 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
   const VideoInfo mConfig;
   java::GeckoSurface::GlobalRef mSurface;
   AndroidSurfaceTextureHandle mSurfaceHandle;
+  // Used to override the SurfaceTexture transform on some devices where the
+  // decoder provides a buggy value.
+  Maybe<gfx::Matrix4x4> mTransformOverride;
   // Only accessed on reader's task queue.
   bool mIsCodecSupportAdaptivePlayback = false;
   // Can be accessed on any thread, but only written on during init.
@@ -349,6 +536,18 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
   // Only accessed on mThread.
   Maybe<TimeUnit> mSeekTarget;
   Maybe<TimeUnit> mLatestOutputTime;
+  Maybe<int32_t> mColorFormat;
+  Maybe<int32_t> mColorRange;
+  Maybe<int32_t> mColorSpace;
+  // Only accessed on mThread.
+  // Tracking id for the performance recorder.
+  const Maybe<TrackingId> mTrackingId;
+  // Can be accessed on any thread, but only written during init.
+  // Pre-filled decode info used by the performance recorder.
+  MediaInfoFlag mMediaInfoFlag;
+  // Only accessed on mThread.
+  // Records decode performance to the profiler.
+  PerformanceRecorderMulti<DecodeStage> mPerformanceRecorder;
 };
 
 class RemoteAudioDecoder : public RemoteDataDecoder {
@@ -357,24 +556,32 @@ class RemoteAudioDecoder : public RemoteDataDecoder {
                      java::sdk::MediaFormat::Param aFormat,
                      const nsString& aDrmStubId)
       : RemoteDataDecoder(MediaData::Type::AUDIO_DATA, aConfig.mMimeType,
-                          aFormat, aDrmStubId) {
+                          aFormat, aDrmStubId),
+        mOutputChannels(AssertedCast<int32_t>(aConfig.mChannels)),
+        mOutputSampleRate(AssertedCast<int32_t>(aConfig.mRate)) {
     JNIEnv* const env = jni::GetEnvForThread();
 
     bool formatHasCSD = false;
     NS_ENSURE_SUCCESS_VOID(aFormat->ContainsKey(u"csd-0"_ns, &formatHasCSD));
 
-    if (!formatHasCSD && aConfig.mCodecSpecificConfig->Length() >= 2) {
+    // It would be nice to instead use more specific information here, but
+    // we force a byte buffer for now since this handles arbitrary codecs.
+    // TODO(bug 1768564): implement further type checking for codec data.
+    RefPtr<MediaByteBuffer> audioCodecSpecificBinaryBlob =
+        ForceGetAudioCodecSpecificBlob(aConfig.mCodecSpecificConfig);
+    if (!formatHasCSD && audioCodecSpecificBinaryBlob->Length() >= 2) {
       jni::ByteBuffer::LocalRef buffer(env);
-      buffer = jni::ByteBuffer::New(aConfig.mCodecSpecificConfig->Elements(),
-                                    aConfig.mCodecSpecificConfig->Length());
+      buffer = jni::ByteBuffer::New(audioCodecSpecificBinaryBlob->Elements(),
+                                    audioCodecSpecificBinaryBlob->Length());
       NS_ENSURE_SUCCESS_VOID(aFormat->SetByteBuffer(u"csd-0"_ns, buffer));
     }
   }
 
   RefPtr<InitPromise> Init() override {
     mThread = GetCurrentSerialEventTarget();
-    java::sdk::BufferInfo::LocalRef bufferInfo;
-    if (NS_FAILED(java::sdk::BufferInfo::New(&bufferInfo)) || !bufferInfo) {
+    java::sdk::MediaCodec::BufferInfo::LocalRef bufferInfo;
+    if (NS_FAILED(java::sdk::MediaCodec::BufferInfo::New(&bufferInfo)) ||
+        !bufferInfo) {
       return InitPromise::CreateAndReject(NS_ERROR_OUT_OF_MEMORY, __func__);
     }
     mInputBufferInfo = bufferInfo;
@@ -502,7 +709,7 @@ class RemoteAudioDecoder : public RemoteDataDecoder {
 
     RenderOrReleaseOutput autoRelease(mJavaDecoder, aSample);
 
-    java::sdk::BufferInfo::LocalRef info = aSample->Info();
+    java::sdk::MediaCodec::BufferInfo::LocalRef info = aSample->Info();
     MOZ_ASSERT(info);
 
     int32_t flags = 0;
@@ -604,7 +811,7 @@ already_AddRefed<MediaDataDecoder> RemoteDataDecoder::CreateVideoDecoder(
                     nullptr);
 
   RefPtr<MediaDataDecoder> decoder =
-      new RemoteVideoDecoder(config, format, aDrmStubId);
+      new RemoteVideoDecoder(config, format, aDrmStubId, aParams.mTrackingId);
   if (aProxy) {
     decoder = new EMEMediaDataDecoderProxy(aParams, decoder.forget(), aProxy);
   }
@@ -681,11 +888,12 @@ RefPtr<ShutdownPromise> RemoteDataDecoder::Shutdown() {
   return ShutdownPromise::CreateAndResolve(true, __func__);
 }
 
-using CryptoInfoResult = Result<java::sdk::CryptoInfo::LocalRef, nsresult>;
+using CryptoInfoResult =
+    Result<java::sdk::MediaCodec::CryptoInfo::LocalRef, nsresult>;
 
 static CryptoInfoResult GetCryptoInfoFromSample(const MediaRawData* aSample) {
   auto& cryptoObj = aSample->mCrypto;
-  java::sdk::CryptoInfo::LocalRef cryptoInfo;
+  java::sdk::MediaCodec::CryptoInfo::LocalRef cryptoInfo;
 
   if (!cryptoObj.IsEncrypted()) {
     return CryptoInfoResult(cryptoInfo);
@@ -696,7 +904,7 @@ static CryptoInfoResult GetCryptoInfoFromSample(const MediaRawData* aSample) {
     return CryptoInfoResult(NS_ERROR_DOM_MEDIA_NOT_SUPPORTED_ERR);
   }
 
-  nsresult rv = java::sdk::CryptoInfo::New(&cryptoInfo);
+  nsresult rv = java::sdk::MediaCodec::CryptoInfo::New(&cryptoInfo);
   NS_ENSURE_SUCCESS(rv, CryptoInfoResult(rv));
 
   uint32_t numSubSamples = std::min<uint32_t>(

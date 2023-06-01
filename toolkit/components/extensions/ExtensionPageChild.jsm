@@ -14,15 +14,15 @@ var EXPORTED_SYMBOLS = ["ExtensionPageChild", "getContextChildManagerGetter"];
  * child process.
  */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "ExtensionChildDevToolsUtils",
   "resource://gre/modules/ExtensionChildDevToolsUtils.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "Schemas",
   "resource://gre/modules/Schemas.jsm"
 );
@@ -77,6 +77,29 @@ const initializeBackgroundPage = context => {
     Services.console.logMessage(consoleMsg);
   }
 
+  function ignoredSuspendListener() {
+    logWarningMessage({
+      text:
+        "Background event page was not terminated on idle because a DevTools toolbox is attached to the extension.",
+      filename: context.contentWindow.location.href,
+    });
+  }
+
+  if (!context.extension.manifest.background.persistent) {
+    context.extension.on(
+      "background-script-suspend-ignored",
+      ignoredSuspendListener
+    );
+    context.callOnClose({
+      close: () => {
+        context.extension.off(
+          "background-script-suspend-ignored",
+          ignoredSuspendListener
+        );
+      },
+    });
+  }
+
   let alertOverwrite = text => {
     const { filename, columnNumber, lineNumber } = Components.stack.caller;
 
@@ -106,7 +129,7 @@ const initializeBackgroundPage = context => {
 
 var apiManager = new (class extends SchemaAPIManager {
   constructor() {
-    super("addon", Schemas);
+    super("addon", lazy.Schemas);
     this.initialized = false;
   }
 
@@ -125,7 +148,7 @@ var apiManager = new (class extends SchemaAPIManager {
 
 var devtoolsAPIManager = new (class extends SchemaAPIManager {
   constructor() {
-    super("devtools", Schemas);
+    super("devtools", lazy.Schemas);
     this.initialized = false;
   }
 
@@ -214,13 +237,22 @@ class ExtensionBaseContextChild extends BaseContext {
       });
     }
 
-    Schemas.exportLazyGetter(contentWindow, "browser", () => {
+    defineLazyGetter(this, "browserObj", () => {
       let browserObj = Cu.createObjectIn(contentWindow);
       this.childManager.inject(browserObj);
       return browserObj;
     });
 
-    Schemas.exportLazyGetter(contentWindow, "chrome", () => {
+    lazy.Schemas.exportLazyGetter(contentWindow, "browser", () => {
+      return this.browserObj;
+    });
+
+    lazy.Schemas.exportLazyGetter(contentWindow, "chrome", () => {
+      // For MV3 and later, this is just an alias for browser.
+      if (extension.manifestVersion > 2) {
+        return this.browserObj;
+      }
+      // Chrome compat is only used with MV2
       let chromeApiWrapper = Object.create(this.childManager);
       chromeApiWrapper.isChromeCompat = true;
 
@@ -331,7 +363,7 @@ class DevToolsContextChild extends ExtensionBaseContextChild {
     super(extension, Object.assign(params, { envType: "devtools_child" }));
 
     this.devtoolsToolboxInfo = params.devtoolsToolboxInfo;
-    ExtensionChildDevToolsUtils.initThemeChangeObserver(
+    lazy.ExtensionChildDevToolsUtils.initThemeChangeObserver(
       params.devtoolsToolboxInfo.themeName,
       this
     );

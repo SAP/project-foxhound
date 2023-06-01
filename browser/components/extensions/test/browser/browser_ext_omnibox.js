@@ -2,15 +2,15 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-const { UrlbarTestUtils } = ChromeUtils.import(
-  "resource://testing-common/UrlbarTestUtils.jsm"
+const { UrlbarTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/UrlbarTestUtils.sys.mjs"
 );
+
+const keyword = "VeryUniqueKeywordThatDoesNeverMatchAnyTestUrl";
 
 add_task(async function() {
   // This keyword needs to be unique to prevent history entries from unrelated
   // tests from appearing in the suggestions list.
-  let keyword = "VeryUniqueKeywordThatDoesNeverMatchAnyTestUrl";
-
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       omnibox: {
@@ -45,6 +45,10 @@ add_task(async function() {
           text,
           disposition,
         });
+      });
+
+      browser.omnibox.onDeleteSuggestion.addListener(text => {
+        browser.test.sendMessage("on-delete-suggestion-fired", { text });
       });
 
       browser.test.onMessage.addListener((msg, data) => {
@@ -197,6 +201,28 @@ add_task(async function() {
     await expectEvent("on-input-cancelled-fired");
   }
 
+  async function testSuggestionDeletion() {
+    extension.sendMessage("set-suggestions", {
+      suggestions: [{ content: "a", description: "select a", deletable: true }],
+    });
+    await extension.awaitMessage("suggestions-set");
+
+    gURLBar.focus();
+
+    EventUtils.sendString(keyword);
+    EventUtils.sendString(" select a");
+
+    await expectEvent("on-input-changed-fired");
+
+    // Select the suggestion
+    await EventUtils.synthesizeKey("KEY_ArrowDown");
+
+    // Delete the suggestion
+    await EventUtils.synthesizeKey("KEY_Delete", { shiftKey: true });
+
+    await expectEvent("on-delete-suggestion-fired", { text: "select a" });
+  }
+
   async function testHeuristicResult(expectedText, setDefaultSuggestion) {
     if (setDefaultSuggestion) {
       extension.sendMessage("set-default-suggestion", {
@@ -300,6 +326,8 @@ add_task(async function() {
 
   await testInputEvents();
 
+  await testSuggestionDeletion();
+
   // Test the heuristic result with default suggestions.
   await testHeuristicResult(
     "Generated extension",
@@ -367,4 +395,73 @@ add_task(async function() {
 
   await extension2.unload();
   await extension.unload();
+});
+
+add_task(async function test_omnibox_event_page() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.eventPages.enabled", true]],
+  });
+
+  let extension = ExtensionTestUtils.loadExtension({
+    useAddonManager: "permanent",
+    manifest: {
+      browser_specific_settings: { gecko: { id: "eventpage@omnibox" } },
+      omnibox: {
+        keyword: keyword,
+      },
+      background: { persistent: false },
+    },
+    background() {
+      browser.omnibox.onInputStarted.addListener(() => {
+        browser.test.sendMessage("onInputStarted");
+      });
+      browser.omnibox.onInputEntered.addListener(() => {});
+      browser.omnibox.onInputChanged.addListener(() => {});
+      browser.omnibox.onInputCancelled.addListener(() => {});
+      browser.omnibox.onDeleteSuggestion.addListener(() => {});
+      browser.test.sendMessage("ready");
+    },
+  });
+
+  const EVENTS = [
+    "onInputStarted",
+    "onInputEntered",
+    "onInputChanged",
+    "onInputCancelled",
+    "onDeleteSuggestion",
+  ];
+
+  await extension.startup();
+  await extension.awaitMessage("ready");
+  for (let event of EVENTS) {
+    assertPersistentListeners(extension, "omnibox", event, {
+      primed: false,
+    });
+  }
+
+  // test events waken background
+  await extension.terminateBackground();
+  for (let event of EVENTS) {
+    assertPersistentListeners(extension, "omnibox", event, {
+      primed: true,
+    });
+  }
+
+  // Activate the keyword by typing a space.
+  // Expect onInputStarted to fire.
+  gURLBar.focus();
+  gURLBar.value = keyword;
+  EventUtils.sendString(" ");
+
+  await extension.awaitMessage("ready");
+  await extension.awaitMessage("onInputStarted");
+  ok(true, "persistent event woke background");
+  for (let event of EVENTS) {
+    assertPersistentListeners(extension, "omnibox", event, {
+      primed: false,
+    });
+  }
+
+  await extension.unload();
+  await SpecialPowers.popPrefEnv();
 });

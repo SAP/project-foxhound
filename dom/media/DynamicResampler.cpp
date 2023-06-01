@@ -104,6 +104,9 @@ void DynamicResampler::UpdateResampler(uint32_t aOutRate, uint32_t aChannels) {
   MOZ_ASSERT(aChannels);
 
   if (mChannels != aChannels) {
+    if (mResampler) {
+      speex_resampler_destroy(mResampler);
+    }
     mResampler = speex_resampler_init(aChannels, mInRate, aOutRate,
                                       SPEEX_RESAMPLER_QUALITY_MIN, nullptr);
     MOZ_ASSERT(mResampler);
@@ -249,7 +252,9 @@ uint32_t DynamicResampler::InFramesLeftToBuffer(uint32_t aChannelIndex) const {
   return mInternalInBuffer[aChannelIndex].AvailableWrite();
 }
 
-AudioChunkList::AudioChunkList(uint32_t aTotalDuration, uint32_t aChannels) {
+AudioChunkList::AudioChunkList(uint32_t aTotalDuration, uint32_t aChannels,
+                               const PrincipalHandle& aPrincipalHandle)
+    : mPrincipalHandle(aPrincipalHandle) {
   uint32_t numOfChunks = aTotalDuration / mChunkCapacity;
   if (aTotalDuration % mChunkCapacity) {
     ++numOfChunks;
@@ -333,7 +338,7 @@ AudioChunk& AudioChunkList::GetNext() {
              mSampleFormat == AUDIO_FORMAT_FLOAT32);
   chunk.mDuration = 0;
   chunk.mVolume = 1.0f;
-  chunk.mPrincipalHandle = PRINCIPAL_HANDLE_NONE;
+  chunk.mPrincipalHandle = mPrincipalHandle;
   chunk.mBufferFormat = mSampleFormat;
   IncrementIndex();
   return chunk;
@@ -357,9 +362,10 @@ void AudioChunkList::Update(uint32_t aChannels) {
 }
 
 AudioResampler::AudioResampler(uint32_t aInRate, uint32_t aOutRate,
-                               uint32_t aPreBufferFrames)
+                               uint32_t aPreBufferFrames,
+                               const PrincipalHandle& aPrincipalHandle)
     : mResampler(aInRate, aOutRate, aPreBufferFrames),
-      mOutputChunks(aOutRate / 10, STEREO) {}
+      mOutputChunks(aOutRate / 10, STEREO, aPrincipalHandle) {}
 
 void AudioResampler::AppendInput(const AudioSegment& aInSegment) {
   MOZ_ASSERT(aInSegment.GetDuration());

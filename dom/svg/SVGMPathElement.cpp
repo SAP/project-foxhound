@@ -19,8 +19,7 @@
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(MPath)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* SVGMPathElement::WrapNode(JSContext* aCx,
                                     JS::Handle<JSObject*> aGivenProto) {
@@ -241,14 +240,11 @@ void SVGMPathElement::UnlinkHrefTarget(bool aNotifyParent) {
 }
 
 void SVGMPathElement::NotifyParentOfMpathChange(nsIContent* aParent) {
-  if (aParent && aParent->IsSVGElement(nsGkAtoms::animateMotion)) {
-    SVGAnimateMotionElement* animateMotionParent =
-        static_cast<SVGAnimateMotionElement*>(aParent);
-
+  if (auto* animateMotionParent =
+          SVGAnimateMotionElement::FromNodeOrNull(aParent)) {
     animateMotionParent->MpathChanged();
     AnimationNeedsResample();
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

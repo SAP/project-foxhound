@@ -139,10 +139,30 @@ var runlater = function() {};
 runlater.prototype = {
   req: null,
   resp: null,
+  fin: true,
 
   onTimeout: function onTimeout() {
     this.resp.writeHead(200);
-    this.resp.end("It's all good 750ms.");
+    if (this.fin) {
+      this.resp.end("It's all good 750ms.");
+    }
+  },
+};
+
+var runConnectLater = function() {};
+runConnectLater.prototype = {
+  req: null,
+  resp: null,
+  connect: false,
+
+  onTimeout: function onTimeout() {
+    if (this.connect) {
+      this.resp.writeHead(200);
+      this.connect = true;
+      setTimeout(executeRunLaterCatchError, 50, this);
+    } else {
+      this.resp.end("HTTP/1.1 200\n\r\n\r");
+    }
   },
 };
 
@@ -169,63 +189,8 @@ function executeRunLater(arg) {
   arg.onTimeout();
 }
 
-var Compressor = http2_compression.Compressor;
-var HeaderSetCompressor = http2_compression.HeaderSetCompressor;
-var originalCompressHeaders = Compressor.prototype.compress;
-
-function insertSoftIllegalHpack(headers) {
-  var originalCompressed = originalCompressHeaders.apply(this, headers);
-  var illegalLiteral = Buffer.from([
-    0x00, // Literal, no index
-    0x08, // Name: not huffman encoded, 8 bytes long
-    0x3a,
-    0x69,
-    0x6c,
-    0x6c,
-    0x65,
-    0x67,
-    0x61,
-    0x6c, // :illegal
-    0x10, // Value: not huffman encoded, 16 bytes long
-    // REALLY NOT LEGAL
-    0x52,
-    0x45,
-    0x41,
-    0x4c,
-    0x4c,
-    0x59,
-    0x20,
-    0x4e,
-    0x4f,
-    0x54,
-    0x20,
-    0x4c,
-    0x45,
-    0x47,
-    0x41,
-    0x4c,
-  ]);
-  var newBufferLength = originalCompressed.length + illegalLiteral.length;
-  var concatenated = Buffer.alloc(newBufferLength);
-  originalCompressed.copy(concatenated, 0);
-  illegalLiteral.copy(concatenated, originalCompressed.length);
-  return concatenated;
-}
-
-function insertHardIllegalHpack(headers) {
-  var originalCompressed = originalCompressHeaders.apply(this, headers);
-  // Now we have to add an invalid header
-  var illegalIndexed = HeaderSetCompressor.integer(5000, 7);
-  // The above returns an array of buffers, but there's only one buffer, so
-  // get rid of the array.
-  illegalIndexed = illegalIndexed[0];
-  // Set the first bit to 1 to signal this is an indexed representation
-  illegalIndexed[0] |= 0x80;
-  var newBufferLength = originalCompressed.length + illegalIndexed.length;
-  var concatenated = Buffer.alloc(newBufferLength);
-  originalCompressed.copy(concatenated, 0);
-  illegalIndexed.copy(concatenated, originalCompressed.length);
-  return concatenated;
+function executeRunLaterCatchError(arg) {
+  arg.onTimeout();
 }
 
 var h11required_conn = null;
@@ -236,14 +201,14 @@ var illegalheader_conn = null;
 
 var gDoHPortsLog = [];
 var gDoHNewConnLog = {};
+var gDoHRequestCount = 0;
 
 // eslint-disable-next-line complexity
 function handleRequest(req, res) {
-  // We do this first to ensure nothing goes wonky in our tests that don't want
-  // the headers to have something illegal in them
-  Compressor.prototype.compress = originalCompressHeaders;
-
-  var u = url.parse(req.url, true);
+  var u = "";
+  if (req.url != undefined) {
+    u = url.parse(req.url, true);
+  }
   var content = getHttpContent(u.pathname);
   var push, push1, push1a, push2, push3;
 
@@ -347,7 +312,7 @@ function handleRequest(req, res) {
 
   function responseType(packet, responseIP) {
     if (
-      packet.questions.length > 0 &&
+      !!packet.questions.length &&
       packet.questions[0].name == "confirm.example.com" &&
       packet.questions[0].type == "NS"
     ) {
@@ -378,24 +343,18 @@ function handleRequest(req, res) {
 
   function createDNSAnswer(response, packet, responseIP, requestPayload) {
     // This shuts down the connection so we can test if the client reconnects
-    if (
-      packet.questions.length > 0 &&
-      packet.questions[0].name == "closeme.com"
-    ) {
+    if (packet.questions.length && packet.questions[0].name == "closeme.com") {
       response.stream.connection.close("INTERNAL_ERROR", response.stream.id);
       return null;
     }
 
-    if (
-      packet.questions.length > 0 &&
-      packet.questions[0].name.endsWith(".pd")
-    ) {
+    if (packet.questions.length && packet.questions[0].name.endsWith(".pd")) {
       // Bug 1543811: test edns padding extension. Return whether padding was
       // included via the first half of the ip address (1.1 vs 2.2) and the
       // size of the request in the second half of the ip address allowing to
       // verify that the correct amount of padding was added.
       if (
-        packet.additionals.length > 0 &&
+        !!packet.additionals.length &&
         packet.additionals[0].type == "OPT" &&
         packet.additionals[0].options.some(o => o.type === "PADDING")
       ) {
@@ -417,12 +376,19 @@ function handleRequest(req, res) {
       // DNS response header is 12 bytes, we check for this minimum length
       // at the start of decoding so this is the simplest way to force
       // a decode error.
-      return "<12bytes";
+      return "\xFF\xFF\xFF\xFF";
+    }
+
+    // Because we send two TRR requests (A and AAAA), skip the first two
+    // requests when testing retry.
+    if (u.query.retryOnDecodeFailure && gDoHRequestCount < 2) {
+      gDoHRequestCount++;
+      return "\xFF\xFF\xFF\xFF";
     }
 
     function responseData() {
       if (
-        packet.questions.length > 0 &&
+        !!packet.questions.length &&
         packet.questions[0].name == "confirm.example.com" &&
         packet.questions[0].type == "NS"
       ) {
@@ -521,10 +487,11 @@ function handleRequest(req, res) {
           }
         });
       } else {
-        resp.setHeader("Content-Length", buffer.length);
+        const output = Buffer.from(buffer, "utf-8");
+        resp.setHeader("Content-Length", output.length);
         try {
           resp.writeHead(200);
-          resp.write(buffer);
+          resp.write(output);
           resp.end("");
         } catch (e) {
           // connection was closed by the time we started writing.
@@ -561,10 +528,46 @@ function handleRequest(req, res) {
     process.exit();
   }
 
-  if (u.pathname === "/750ms") {
+  if (req.method == "CONNECT") {
+    if (req.headers.host == "illegalhpacksoft.example.com:80") {
+      illegalheader_conn = req.stream.connection;
+      res.setHeader("Content-Type", "text/html");
+      res.setHeader("x-softillegalhpack", "true");
+      res.writeHead(200);
+      res.end(content);
+      return;
+    } else if (req.headers.host == "illegalhpackhard.example.com:80") {
+      res.setHeader("Content-Type", "text/html");
+      res.setHeader("x-hardillegalhpack", "true");
+      res.writeHead(200);
+      res.end(content);
+      return;
+    } else if (req.headers.host == "750.example.com:80") {
+      // This response will mock a response through a proxy to a HTTP server.
+      // After 750ms , a 200 response for the proxy will be sent then
+      // after additional 50ms a 200 response for the HTTP GET request.
+      let rl = new runConnectLater();
+      rl.req = req;
+      rl.resp = res;
+      setTimeout(executeRunLaterCatchError, 750, rl);
+      return;
+    } else if (req.headers.host == "h11required.com:80") {
+      if (req.httpVersionMajor === 2) {
+        res.stream.reset("HTTP_1_1_REQUIRED");
+      }
+      return;
+    }
+  } else if (u.pathname === "/750ms") {
     let rl = new runlater();
     rl.req = req;
     rl.resp = res;
+    setTimeout(executeRunLater, 750, rl);
+    return;
+  } else if (u.pathname === "/750msNoData") {
+    let rl = new runlater();
+    rl.req = req;
+    rl.resp = res;
+    rl.fin = false;
     setTimeout(executeRunLater, 750, rl);
     return;
   } else if (u.pathname === "/multiplex1" && req.httpVersionMajor === 2) {
@@ -715,11 +718,13 @@ function handleRequest(req, res) {
     }
 
     var post_hash = crypto.createHash("md5");
+    var received_data = false;
     req.on("data", function receivePostData(chunk) {
+      received_data = true;
       post_hash.update(chunk.toString());
     });
     req.on("end", function finishPost() {
-      let md5 = post_hash.digest("hex");
+      let md5 = received_data ? post_hash.digest("hex") : "0";
       res.setHeader("X-Calculated-MD5", md5);
       res.writeHead(200);
       res.end(content);
@@ -900,6 +905,14 @@ function handleRequest(req, res) {
     res.setHeader("Content-Length", rContent.length);
     res.writeHead(400);
     res.end(rContent);
+    return;
+  } else if (u.pathname == "/reset-doh-request-count") {
+    gDoHRequestCount = 0;
+    res.setHeader("Content-Type", "text/plain");
+    res.setHeader("Content-Length", "ok".length);
+    res.writeHead(200);
+    res.write("ok");
+    res.end("");
     return;
   } else if (u.pathname == "/doh") {
     let responseIP = u.query.responseIP;
@@ -1637,13 +1650,19 @@ function handleRequest(req, res) {
     // This will cause the compressor to compress a header that is not legal,
     // but only affects the stream, not the session.
     illegalheader_conn = req.stream.connection;
-    Compressor.prototype.compress = insertSoftIllegalHpack;
-    // Fall through to the default response behavior
+    res.setHeader("Content-Type", "text/html");
+    res.setHeader("x-softillegalhpack", "true");
+    res.writeHead(200);
+    res.end(content);
+    return;
   } else if (u.pathname === "/illegalhpackhard") {
     // This will cause the compressor to insert an HPACK instruction that will
     // cause a session failure.
-    Compressor.prototype.compress = insertHardIllegalHpack;
-    // Fall through to default response behavior
+    res.setHeader("Content-Type", "text/html");
+    res.setHeader("x-hardillegalhpack", "true");
+    res.writeHead(200);
+    res.end(content);
+    return;
   } else if (u.pathname === "/illegalhpack_validate") {
     if (req.stream.connection === illegalheader_conn) {
       res.setHeader("X-Did-Goaway", "no");
@@ -1832,6 +1851,14 @@ function handleRequest(req, res) {
     res.writeHead(200);
     res.end("");
     return;
+  } else if (u.pathname === "/origin_header") {
+    let originHeader = req.headers.origin;
+    res.setHeader("Content-Length", originHeader.length);
+    res.setHeader("Content-Type", "text/plain");
+    res.writeHead(200);
+    res.write(originHeader);
+    res.end();
+    return;
   }
 
   res.setHeader("Content-Type", "text/html");
@@ -1862,6 +1889,13 @@ server.on("connection", function(socket) {
     // by the browser because of an untrusted certificate. And this happens at least once, when
     // the first test case if done.
   });
+});
+
+server.on("connect", function(req, clientSocket, head) {
+  clientSocket.write(
+    "HTTP/1.1 404 Not Found\r\nProxy-agent: Node.js-Proxy\r\n\r\n"
+  );
+  clientSocket.destroy();
 });
 
 function makeid(length) {

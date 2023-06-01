@@ -5,13 +5,11 @@
 
 var EXPORTED_SYMBOLS = ["AutoScrollChild"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const lazy = {};
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "BrowserUtils",
-  "resource://gre/modules/BrowserUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
+});
 
 class AutoScrollChild extends JSWindowActorChild {
   constructor() {
@@ -53,15 +51,16 @@ class AutoScrollChild extends JSWindowActorChild {
     }
 
     // Don't start if we're on a link.
-    let [href] = BrowserUtils.hrefAndLinkNodeForClickEvent(event);
+    let [href] = lazy.BrowserUtils.hrefAndLinkNodeForClickEvent(event);
     if (href) {
       return true;
     }
 
     // Or if we're pasting into an input field of sorts.
+    let closestInput = mmPaste && node.closest("input,textarea");
     if (
-      mmPaste &&
-      node.closest("input,textarea")?.constructor.name.startsWith("HTML")
+      content.HTMLInputElement.isInstance(closestInput) ||
+      content.HTMLTextAreaElement.isInstance(closestInput)
     ) {
       return true;
     }
@@ -69,8 +68,10 @@ class AutoScrollChild extends JSWindowActorChild {
     // Or if we're on a scrollbar or XUL <tree>
     if (
       (mmScrollbarPosition &&
-        node.closest("scrollbar,scrollcorner") instanceof content.XULElement) ||
-      node.closest("treechildren") instanceof content.XULElement
+        content.XULElement.isInstance(
+          node.closest("scrollbar,scrollcorner")
+        )) ||
+      content.XULElement.isInstance(node.closest("treechildren"))
     ) {
       return true;
     }
@@ -79,11 +80,11 @@ class AutoScrollChild extends JSWindowActorChild {
 
   isScrollableElement(aNode) {
     let content = aNode.ownerGlobal;
-    if (aNode instanceof content.HTMLElement) {
-      return !(aNode instanceof content.HTMLSelectElement) || aNode.multiple;
+    if (content.HTMLElement.isInstance(aNode)) {
+      return !content.HTMLSelectElement.isInstance(aNode) || aNode.multiple;
     }
 
-    return aNode instanceof content.XULElement;
+    return content.XULElement.isInstance(aNode);
   }
 
   computeWindowScrollDirection(global) {
@@ -117,13 +118,13 @@ class AutoScrollChild extends JSWindowActorChild {
     // overflow property
     let scrollVert =
       node.scrollTopMax &&
-      (node instanceof global.HTMLSelectElement ||
+      (global.HTMLSelectElement.isInstance(node) ||
         scrollingAllowed.includes(overflowy));
 
     // do not allow horizontal scrolling for select elements, it leads
     // to visual artifacts and is not the expected behavior anyway
     if (
-      !(node instanceof global.HTMLSelectElement) &&
+      !global.HTMLSelectElement.isInstance(node) &&
       node.scrollLeftMin != node.scrollLeftMax &&
       scrollingAllowed.includes(overflowx)
     ) {
@@ -204,8 +205,8 @@ class AutoScrollChild extends JSWindowActorChild {
       "Autoscroll:Start",
       {
         scrolldir: this._scrolldir,
-        screenX: event.screenX,
-        screenY: event.screenY,
+        screenXDevPx: event.screenX * content.devicePixelRatio,
+        screenYDevPx: event.screenY * content.devicePixelRatio,
         scrollId: this._scrollId,
         presShellId,
         browsingContext: this.browsingContext,

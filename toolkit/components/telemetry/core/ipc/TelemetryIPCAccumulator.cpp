@@ -6,18 +6,17 @@
 
 #include "TelemetryIPCAccumulator.h"
 
-#include "core/TelemetryHistogram.h"
 #include "core/TelemetryScalar.h"
+#include "mozilla/TelemetryProcessEnums.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/gfx/GPUParent.h"
-#include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/net/SocketProcessChild.h"
+#include "mozilla/ipc/UtilityProcessChild.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_toolkit.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Unused.h"
-#include "nsComponentManagerUtils.h"
 #include "nsITimer.h"
 #include "nsThreadUtils.h"
 
@@ -72,7 +71,7 @@ StaticAutoPtr<nsTArray<ChildEventData>> gChildEvents;
 // a normal Mutex would show up as a leak in BloatView.  StaticMutex
 // also has the "OffTheBooks" property, so it won't show as a leak
 // in BloatView.
-static StaticMutex gTelemetryIPCAccumulatorMutex;
+static StaticMutex gTelemetryIPCAccumulatorMutex MOZ_UNANNOTATED;
 
 namespace {
 
@@ -315,6 +314,10 @@ void TelemetryIPCAccumulator::IPCTimerFired(nsITimer* aTimer, void* aClosure) {
       break;
     case GeckoProcessType_Socket:
       SendAccumulatedData(mozilla::net::SocketProcessChild::GetSingleton());
+      break;
+    case GeckoProcessType_Utility:
+      SendAccumulatedData(
+          mozilla::ipc::UtilityProcessChild::GetSingleton().get());
       break;
     default:
       MOZ_ASSERT_UNREACHABLE("Unsupported process type");

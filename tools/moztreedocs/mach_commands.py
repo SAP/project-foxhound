@@ -2,10 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
-
 import fnmatch
+import json
 import multiprocessing
 import os
 import re
@@ -13,21 +11,16 @@ import subprocess
 import sys
 import tempfile
 import time
-import yaml
 import uuid
-import mozpack.path as mozpath
-import sentry_sdk
-
 from functools import partial
 from pprint import pprint
 
+import mozpack.path as mozpath
+import sentry_sdk
+import yaml
+from mach.decorators import Command, CommandArgument, SubCommand
 from mach.registrar import Registrar
 from mozbuild.util import memoize
-from mach.decorators import (
-    Command,
-    CommandArgument,
-    SubCommand,
-)
 
 here = os.path.abspath(os.path.dirname(__file__))
 topsrcdir = os.path.abspath(os.path.dirname(os.path.dirname(here)))
@@ -95,6 +88,20 @@ BASE_LINK = "http://gecko-docs.mozilla.org-l1.s3-website.us-west-2.amazonaws.com
 @CommandArgument(
     "--linkcheck", action="store_true", help="Check if the links are still valid"
 )
+@CommandArgument(
+    "--dump-trees", default=None, help="Dump the Sphinx trees to specified file."
+)
+@CommandArgument(
+    "--fatal-warnings",
+    dest="enable_fatal_warnings",
+    action="store_true",
+    help="Enable fatal warnings.",
+)
+@CommandArgument(
+    "--check-num-warnings",
+    action="store_true",
+    help="Check that the upper bound on the number of warnings is respected.",
+)
 @CommandArgument("--verbose", action="store_true", help="Run Sphinx in verbose mode")
 def build_docs(
     command_context,
@@ -109,11 +116,12 @@ def build_docs(
     jobs=None,
     write_url=None,
     linkcheck=None,
+    dump_trees=None,
+    enable_fatal_warnings=False,
+    check_num_warnings=False,
     verbose=None,
 ):
-
     # TODO: Bug 1704891 - move the ESLint setup tools to a shared place.
-    sys.path.append(mozpath.join(command_context.topsrcdir, "tools", "lint", "eslint"))
     import setup_helper
 
     setup_helper.set_project_root(command_context.topsrcdir)
@@ -133,12 +141,8 @@ def build_docs(
         + os.environ["PATH"]
     )
 
-    command_context.activate_virtualenv()
-    command_context.virtualenv_manager.install_pip_requirements(
-        os.path.join(here, "requirements.txt")
-    )
-
     import webbrowser
+
     from livereload import Server
     from moztreedocs.package import create_tarball
 
@@ -171,13 +175,18 @@ def build_docs(
         )
     else:
         print("\nGenerated documentation:\n%s" % savedir)
+    msg = ""
 
-    fatal_warnings = _check_sphinx_warnings(warnings)
-    if fatal_warnings:
-        return die(
-            "failed to generate documentation:\n "
-            f"Got fatal warnings:\n{''.join(fatal_warnings)}"
-        )
+    if enable_fatal_warnings:
+        fatal_warnings = _check_sphinx_fatal_warnings(warnings)
+        if fatal_warnings:
+            msg += f"Error: Got fatal warnings:\n{''.join(fatal_warnings)}"
+    if check_num_warnings:
+        num_new = _check_sphinx_num_warnings(warnings)
+        if num_new:
+            msg += f"Error: {num_new} new warnings"
+    if msg:
+        return die(f"failed to generate documentation:\n {msg}")
 
     # Upload the artifact containing the link to S3
     # This would be used by code-review to post the link to Phabricator
@@ -187,6 +196,13 @@ def build_docs(
             fp.write(unique_link)
             fp.flush()
         print("Generated " + write_url)
+
+    if dump_trees is not None:
+        parent = os.path.dirname(dump_trees)
+        if parent and not os.path.isdir(parent):
+            os.makedirs(parent)
+        with open(dump_trees, "w") as fh:
+            json.dump(manager().trees, fh)
 
     if archive:
         archive_path = os.path.join(outdir, "%s.tar.gz" % project())
@@ -285,10 +301,13 @@ def _run_sphinx(docdir, savedir, config=None, fmt="html", jobs=None, verbose=Non
             warnings = warn_file.readlines()
         return status, warnings
     finally:
-        os.unlink(warn_path)
+        try:
+            os.unlink(warn_path)
+        except Exception as ex:
+            print(ex)
 
 
-def _check_sphinx_warnings(warnings):
+def _check_sphinx_fatal_warnings(warnings):
     with open(os.path.join(DOC_ROOT, "config.yml"), "r") as fh:
         fatal_warnings_src = yaml.safe_load(fh)["fatal warnings"]
     fatal_warnings_regex = [re.compile(item) for item in fatal_warnings_src]
@@ -297,6 +316,16 @@ def _check_sphinx_warnings(warnings):
         if any(item.search(warning) for item in fatal_warnings_regex):
             fatal_warnings.append(warning)
     return fatal_warnings
+
+
+def _check_sphinx_num_warnings(warnings):
+    # warnings file contains other strings as well
+    num_warnings = len([w for w in warnings if "WARNING" in w])
+    with open(os.path.join(DOC_ROOT, "config.yml"), "r") as fh:
+        max_num = yaml.safe_load(fh)["max_num_warnings"]
+    if num_warnings > max_num:
+        return num_warnings - max_num
+    return None
 
 
 def manager():
@@ -353,13 +382,13 @@ def _find_doc_dir(path):
 
 
 def _s3_upload(root, project, unique_id, version=None):
-    from moztreedocs.package import distribution_files
-    from moztreedocs.upload import s3_upload, s3_set_redirects
-
     # Workaround the issue
     # BlockingIOError: [Errno 11] write could not complete without blocking
     # https://github.com/travis-ci/travis-ci/issues/8920
     import fcntl
+
+    from moztreedocs.package import distribution_files
+    from moztreedocs.upload import s3_set_redirects, s3_upload
 
     fcntl.fcntl(1, fcntl.F_SETFL, 0)
 

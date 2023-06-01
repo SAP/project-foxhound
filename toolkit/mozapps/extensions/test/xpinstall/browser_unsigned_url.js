@@ -1,6 +1,19 @@
 // ----------------------------------------------------------------------------
 // Tests installing an unsigned add-on by navigating directly to the url
 function test() {
+  waitForExplicitFinish();
+  SpecialPowers.pushPrefEnv(
+    {
+      set: [
+        // Relax the user input requirements while running this test.
+        ["xpinstall.userActivation.required", false],
+      ],
+    },
+    runTest
+  );
+}
+
+function runTest() {
   Harness.installConfirmCallback = confirm_install;
   Harness.installEndedCallback = install_ended;
   Harness.installsCompletedCallback = finish_test;
@@ -8,7 +21,7 @@ function test() {
 
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, "about:blank");
   BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser).then(() => {
-    BrowserTestUtils.loadURI(gBrowser, TESTROOT + "unsigned.xpi");
+    BrowserTestUtils.loadURIString(gBrowser, TESTROOT + "unsigned.xpi");
   });
 }
 

@@ -13,12 +13,10 @@ use serde_json::{json, Value as JsonValue};
 
 use crate::common_metric_data::{CommonMetricData, Lifetime};
 use crate::metrics::{CounterMetric, DatetimeMetric, Metric, MetricType, PingType, TimeUnit};
-use crate::storage::StorageManager;
+use crate::storage::{StorageManager, INTERNAL_STORAGE};
 use crate::upload::HeaderMap;
 use crate::util::{get_iso_time_string, local_now_with_offset};
-use crate::{
-    Glean, Result, DELETION_REQUEST_PINGS_DIRECTORY, INTERNAL_STORAGE, PENDING_PINGS_DIRECTORY,
-};
+use crate::{Glean, Result, DELETION_REQUEST_PINGS_DIRECTORY, PENDING_PINGS_DIRECTORY};
 
 /// Holds everything you need to store or send a ping.
 pub struct Ping<'a> {
@@ -39,7 +37,7 @@ pub struct PingMaker;
 
 fn merge(a: &mut JsonValue, b: &JsonValue) {
     match (a, b) {
-        (&mut JsonValue::Object(ref mut a), &JsonValue::Object(ref b)) => {
+        (&mut JsonValue::Object(ref mut a), JsonValue::Object(b)) => {
             for (k, v) in b {
                 merge(a.entry(k.clone()).or_insert(JsonValue::Null), v);
             }
@@ -63,9 +61,7 @@ impl PingMaker {
     }
 
     /// Gets, and then increments, the sequence number for a given ping.
-    ///
-    /// This is crate-internal exclusively for enabling the migration tests.
-    pub(super) fn get_ping_seq(&self, glean: &Glean, storage_name: &str) -> usize {
+    fn get_ping_seq(&self, glean: &Glean, storage_name: &str) -> usize {
         // Sequence numbers are stored as a counter under a name that includes the storage name
         let seq = CounterMetric::new(CommonMetricData {
             name: format!("{}#sequence", storage_name),
@@ -80,14 +76,14 @@ impl PingMaker {
             glean.storage(),
             INTERNAL_STORAGE,
             &seq.meta().identifier(glean),
-            seq.meta().lifetime,
+            seq.meta().inner.lifetime,
         ) {
             Some(Metric::Counter(i)) => i,
             _ => 0,
         };
 
         // Increase to next sequence id
-        seq.add(glean, 1);
+        seq.add_sync(glean, 1);
 
         current_seq as usize
     }
@@ -115,7 +111,7 @@ impl PingMaker {
         let end_time_data = local_now_with_offset();
 
         // Update the start time with the current time.
-        start_time.set(glean, Some(end_time_data));
+        start_time.set_sync_chrono(glean, end_time_data);
 
         // Format the times.
         let start_time_data = get_iso_time_string(start_time_data, time_unit);
@@ -224,21 +220,29 @@ impl PingMaker {
         doc_id: &'a str,
         url_path: &'a str,
     ) -> Option<Ping<'a>> {
-        info!("Collecting {}", ping.name);
+        info!("Collecting {}", ping.name());
 
-        let metrics_data = StorageManager.snapshot_as_json(glean.storage(), &ping.name, true);
-        let events_data = glean.event_storage().snapshot_as_json(&ping.name, true);
+        let metrics_data = StorageManager.snapshot_as_json(glean.storage(), ping.name(), true);
+        let events_data = glean
+            .event_storage()
+            .snapshot_as_json(glean, ping.name(), true);
 
         let is_empty = metrics_data.is_none() && events_data.is_none();
-        if !ping.send_if_empty && is_empty {
-            info!("Storage for {} empty. Bailing out.", ping.name);
+        if !ping.send_if_empty() && is_empty {
+            info!("Storage for {} empty. Bailing out.", ping.name());
+            return None;
+        } else if ping.name() == "events" && events_data.is_none() {
+            info!("No events for 'events' ping. Bailing out.");
             return None;
         } else if is_empty {
-            info!("Storage for {} empty. Ping will still be sent.", ping.name);
+            info!(
+                "Storage for {} empty. Ping will still be sent.",
+                ping.name()
+            );
         }
 
-        let ping_info = self.get_ping_info(glean, &ping.name, reason);
-        let client_info = self.get_client_info(glean, ping.include_client_id);
+        let ping_info = self.get_ping_info(glean, ping.name(), reason);
+        let client_info = self.get_client_info(glean, ping.include_client_id());
 
         let mut json = json!({
             "ping_info": ping_info,
@@ -254,7 +258,7 @@ impl PingMaker {
 
         Some(Ping {
             content: json,
-            name: &ping.name,
+            name: ping.name(),
             doc_id,
             url_path,
             headers: self.get_headers(glean),
@@ -354,7 +358,7 @@ impl PingMaker {
     pub fn clear_pending_pings(&self, data_path: &Path) -> Result<()> {
         let pings_dir = self.get_pings_dir(data_path, None)?;
 
-        std::fs::remove_dir_all(&pings_dir)?;
+        remove_dir_all::remove_dir_all(&pings_dir)?;
         create_dir_all(&pings_dir)?;
 
         log::debug!("All pending pings deleted");

@@ -18,6 +18,8 @@
       this.addEventListener("TabAttrModified", this);
       this.addEventListener("TabHide", this);
       this.addEventListener("TabShow", this);
+      this.addEventListener("TabPinned", this);
+      this.addEventListener("TabUnpinned", this);
       this.addEventListener("transitionend", this);
       this.addEventListener("dblclick", this);
       this.addEventListener("click", this);
@@ -32,15 +34,10 @@
 
     init() {
       this.arrowScrollbox = this.querySelector("arrowscrollbox");
+      this.arrowScrollbox.addEventListener("wheel", this, true);
 
       this.baseConnect();
 
-      this._firstTab = null;
-      this._lastTab = null;
-      this._beforeSelectedTab = null;
-      this._beforeHoveredTab = null;
-      this._afterHoveredTab = null;
-      this._hoveredTab = null;
       this._blockDblClick = false;
       this._tabDropIndicator = this.querySelector(".tab-drop-indicator");
       this._dragOverDelay = 350;
@@ -58,14 +55,8 @@
         "browser.tabs.tabClipWidth"
       );
       this._hiddenSoundPlayingTabs = new Set();
-
-      // Normal tab title is used also in the permanent private browsing mode.
-      let strId =
-        PrivateBrowsingUtils.isWindowPrivate(window) &&
-        !Services.prefs.getBoolPref("browser.privatebrowsing.autostart")
-          ? "emptyPrivateTabTitle"
-          : "emptyTabTitle";
-      this.emptyTabTitle = gTabBrowserBundle.GetStringFromName("tabs." + strId);
+      this._allTabs = null;
+      this._visibleTabs = null;
 
       var tab = this.allTabs[0];
       tab.label = this.emptyTabTitle;
@@ -89,8 +80,7 @@
         this._updateCloseButtons();
         this._handleTabSelect(true);
       };
-      this._resizeObserver = new ResizeObserver(handleResize);
-      this._resizeObserver.observe(document.documentElement);
+      window.addEventListener("resize", handleResize);
       this._fullscreenMutationObserver = new MutationObserver(handleResize);
       this._fullscreenMutationObserver.observe(document.documentElement, {
         attributeFilter: ["inFullscreen", "inDOMFullscreen"],
@@ -142,6 +132,14 @@
 
     on_TabAttrModified(event) {
       if (
+        ["soundplaying", "muted", "activemedia-blocked", "sharing"].some(attr =>
+          event.detail.changed.includes(attr)
+        )
+      ) {
+        this.updateTabIndicatorAttr(event.target);
+      }
+
+      if (
         event.detail.changed.includes("soundplaying") &&
         event.target.hidden
       ) {
@@ -159,6 +157,14 @@
       if (event.target.soundPlaying) {
         this._hiddenSoundPlayingStatusChanged(event.target);
       }
+    }
+
+    on_TabPinned(event) {
+      this.updateTabIndicatorAttr(event.target);
+    }
+
+    on_TabUnpinned(event) {
+      this.updateTabIndicatorAttr(event.target);
     }
 
     on_transitionend(event) {
@@ -394,6 +400,10 @@
         return;
       }
 
+      this.startTabDrag(event, tab);
+    }
+
+    startTabDrag(event, tab, { fromTabList = false } = {}) {
       let selectedTabs = gBrowser.selectedTabs;
       let otherSelectedTabs = selectedTabs.filter(
         selectedTab => selectedTab != tab
@@ -432,8 +442,7 @@
       // Until canvas is HiDPI-aware (bug 780362), we need to scale the desired
       // canvas size (in CSS pixels) to the window's backing resolution in order
       // to get a full-resolution drag image for use on HiDPI displays.
-      let windowUtils = window.windowUtils;
-      let scale = windowUtils.screenPixelsPerCSSPixel / windowUtils.fullZoom;
+      let scale = window.devicePixelRatio;
       let canvas = this._dndCanvas;
       if (!canvas) {
         this._dndCanvas = canvas = document.createElementNS(
@@ -488,12 +497,12 @@
         // since we can update the image during the dnd.
         PageThumbs.captureToCanvas(browser, canvas)
           .then(captureListener)
-          .catch(e => Cu.reportError(e));
+          .catch(e => console.error(e));
       } else {
         // For the non e10s case we can just use PageThumbs
         // sync, so let's use the canvas for setDragImage.
         PageThumbs.captureToCanvas(browser, canvas).catch(e =>
-          Cu.reportError(e)
+          console.error(e)
         );
         dragImageOffset = dragImageOffset * scale;
       }
@@ -515,13 +524,21 @@
         movingTabs: (tab.multiselected ? gBrowser.selectedTabs : [tab]).filter(
           t => t.pinned == tab.pinned
         ),
+        fromTabList,
       };
 
       event.stopPropagation();
+
+      if (fromTabList) {
+        Services.telemetry.scalarAdd(
+          "browser.ui.interaction.all_tabs_panel_dragstart_tab_event_count",
+          1
+        );
+      }
     }
 
     on_dragover(event) {
-      var effects = this._getDropEffectForTabDrag(event);
+      var effects = this.getDropEffectForTabDrag(event);
 
       var ind = this._tabDropIndicator;
       if (effects == "" || effects == "none") {
@@ -557,7 +574,8 @@
       let draggedTab = event.dataTransfer.mozGetDataAt(TAB_DROP_TYPE, 0);
       if (
         (effects == "move" || effects == "copy") &&
-        this == draggedTab.container
+        this == draggedTab.container &&
+        !draggedTab._dragData.fromTabList
       ) {
         ind.hidden = true;
 
@@ -611,7 +629,9 @@
         let newIndex = this._getDropIndex(event, effects == "link");
         let children = this.allTabs;
         if (newIndex == children.length) {
-          let tabRect = children[newIndex - 1].getBoundingClientRect();
+          let tabRect = this._getVisibleTabs()
+            .at(-1)
+            .getBoundingClientRect();
           if (RTL_UI) {
             newMargin = rect.right - tabRect.left;
           } else {
@@ -678,9 +698,14 @@
           newTranslateX -= tabWidth;
         }
 
-        let dropIndex =
-          "animDropIndex" in draggedTab._dragData &&
-          draggedTab._dragData.animDropIndex;
+        let dropIndex;
+        if (draggedTab._dragData.fromTabList) {
+          dropIndex = this._getDropIndex(event, false);
+        } else {
+          dropIndex =
+            "animDropIndex" in draggedTab._dragData &&
+            draggedTab._dragData.animDropIndex;
+        }
         let incrementDropIndex = true;
         if (dropIndex && dropIndex > movingTabs[0]._tPos) {
           dropIndex--;
@@ -733,17 +758,39 @@
           }
         }
       } else if (draggedTab) {
-        let newIndex = this._getDropIndex(event, false);
-        let newTabs = [];
-        for (let tab of movingTabs) {
-          let newTab = gBrowser.adoptTab(tab, newIndex++, tab == draggedTab);
-          newTabs.push(newTab);
+        // Move the tabs. To avoid multiple tab-switches in the original window,
+        // the selected tab should be adopted last.
+        const dropIndex = this._getDropIndex(event, false);
+        let newIndex = dropIndex;
+        let selectedTab;
+        let indexForSelectedTab;
+        for (let i = 0; i < movingTabs.length; ++i) {
+          const tab = movingTabs[i];
+          if (tab.selected) {
+            selectedTab = tab;
+            indexForSelectedTab = newIndex;
+          } else {
+            const newTab = gBrowser.adoptTab(tab, newIndex, tab == draggedTab);
+            if (newTab) {
+              ++newIndex;
+            }
+          }
+        }
+        if (selectedTab) {
+          const newTab = gBrowser.adoptTab(
+            selectedTab,
+            indexForSelectedTab,
+            selectedTab == draggedTab
+          );
+          if (newTab) {
+            ++newIndex;
+          }
         }
 
         // Restore tab selection
         gBrowser.addRangeToMultiSelectedTabs(
-          newTabs[0],
-          newTabs[newTabs.length - 1]
+          gBrowser.tabs[dropIndex],
+          gBrowser.tabs[newIndex - 1]
         );
       } else {
         // Pass true to disallow dropping javascript: or data: urls
@@ -768,7 +815,7 @@
         let replace = !!targetTab;
         let newIndex = this._getDropIndex(event, true);
         let urls = links.map(link => link.url);
-        let csp = browserDragAndDrop.getCSP(event);
+        let csp = browserDragAndDrop.getCsp(event);
         let triggeringPrincipal = browserDragAndDrop.getTriggeringPrincipal(
           event
         );
@@ -853,49 +900,63 @@
 
       // screen.availLeft et. al. only check the screen that this window is on,
       // but we want to look at the screen the tab is being dropped onto.
-      var screen = Cc["@mozilla.org/gfx/screenmanager;1"]
-        .getService(Ci.nsIScreenManager)
-        .screenForRect(
-          eX * window.devicePixelRatio,
-          eY * window.devicePixelRatio,
-          1,
-          1
-        );
-      var fullX = {},
-        fullY = {},
-        fullWidth = {},
-        fullHeight = {};
+      var screen = event.screen;
       var availX = {},
         availY = {},
         availWidth = {},
         availHeight = {};
-      // get full screen rect and available rect, both in desktop pix
-      screen.GetRectDisplayPix(fullX, fullY, fullWidth, fullHeight);
+      // Get available rect in desktop pixels.
       screen.GetAvailRectDisplayPix(availX, availY, availWidth, availHeight);
+      availX = availX.value;
+      availY = availY.value;
+      availWidth = availWidth.value;
+      availHeight = availHeight.value;
 
-      // scale factor to convert desktop pixels to CSS px
-      var scaleFactor =
-        screen.contentsScaleFactor / screen.defaultCSSScaleFactor;
-      // synchronize CSS-px top-left coordinates with the screen's desktop-px
-      // coordinates, to ensure uniqueness across multiple screens
-      // (compare the equivalent adjustments in nsGlobalWindow::GetScreenXY()
-      // and related methods)
-      availX.value = (availX.value - fullX.value) * scaleFactor + fullX.value;
-      availY.value = (availY.value - fullY.value) * scaleFactor + fullY.value;
-      availWidth.value *= scaleFactor;
-      availHeight.value *= scaleFactor;
+      // Compute the final window size in desktop pixels ensuring that the new
+      // window entirely fits within `screen`.
+      let ourCssToDesktopScale =
+        window.devicePixelRatio / window.desktopToDeviceScale;
+      let screenCssToDesktopScale =
+        screen.defaultCSSScaleFactor / screen.contentsScaleFactor;
 
-      // ensure new window entirely within screen
-      var winWidth = Math.min(window.outerWidth, availWidth.value);
-      var winHeight = Math.min(window.outerHeight, availHeight.value);
+      // NOTE(emilio): Multiplying the sizes here for screenCssToDesktopScale
+      // means that we'll try to create a window that has the same amount of CSS
+      // pixels than our current window, not the same amount of device pixels.
+      // There are pros and cons of both conversions, though this matches the
+      // pre-existing intended behavior.
+      var winWidth = Math.min(
+        window.outerWidth * screenCssToDesktopScale,
+        availWidth
+      );
+      var winHeight = Math.min(
+        window.outerHeight * screenCssToDesktopScale,
+        availHeight
+      );
+
+      // This is slightly tricky: _dragData.offsetX/Y is an offset in CSS
+      // pixels. Since we're doing the sizing above based on those, we also need
+      // to apply the offset with pixels relative to the screen's scale rather
+      // than our scale.
       var left = Math.min(
-        Math.max(eX - draggedTab._dragData.offsetX, availX.value),
-        availX.value + availWidth.value - winWidth
+        Math.max(
+          eX * ourCssToDesktopScale -
+            draggedTab._dragData.offsetX * screenCssToDesktopScale,
+          availX
+        ),
+        availX + availWidth - winWidth
       );
       var top = Math.min(
-        Math.max(eY - draggedTab._dragData.offsetY, availY.value),
-        availY.value + availHeight.value - winHeight
+        Math.max(
+          eY * ourCssToDesktopScale -
+            draggedTab._dragData.offsetY * screenCssToDesktopScale,
+          availY
+        ),
+        availY + availHeight - winHeight
       );
+
+      // Convert back left and top to our CSS pixel space.
+      left /= ourCssToDesktopScale;
+      top /= ourCssToDesktopScale;
 
       delete draggedTab._dragData;
 
@@ -903,10 +964,23 @@
         // resize _before_ move to ensure the window fits the new screen.  if
         // the window is too large for its screen, the window manager may do
         // automatic repositioning.
+        //
+        // Since we're resizing before moving to our new screen, we need to use
+        // sizes relative to the current screen. If we moved, then resized, then
+        // we could avoid this special-case and share this with the else branch
+        // below...
+        winWidth /= ourCssToDesktopScale;
+        winHeight /= ourCssToDesktopScale;
+
         window.resizeTo(winWidth, winHeight);
         window.moveTo(left, top);
         window.focus();
       } else {
+        // We're opening a new window in a new screen, so make sure to use sizes
+        // relative to the new screen.
+        winWidth /= screenCssToDesktopScale;
+        winHeight /= screenCssToDesktopScale;
+
         let props = { screenX: left, screenY: top, suppressanimation: 1 };
         if (AppConstants.platform != "win") {
           props.outerWidth = winWidth;
@@ -933,6 +1007,24 @@
       event.stopPropagation();
     }
 
+    on_wheel(event) {
+      if (
+        Services.prefs.getBoolPref("toolkit.tabbox.switchByScrolling", false)
+      ) {
+        event.stopImmediatePropagation();
+      }
+    }
+
+    get emptyTabTitle() {
+      // Normal tab title is used also in the permanent private browsing mode.
+      const l10nId =
+        PrivateBrowsingUtils.isWindowPrivate(window) &&
+        !Services.prefs.getBoolPref("browser.privatebrowsing.autostart")
+          ? "tabbrowser-empty-private-tab-title"
+          : "tabbrowser-empty-tab-title";
+      return gBrowser.tabLocalization.formatValueSync(l10nId);
+    }
+
     get tabbox() {
       return document.getElementById("tabbrowser-tabbox");
     }
@@ -941,13 +1033,35 @@
       return this.querySelector("#tabs-newtab-button");
     }
 
-    // Accessor for tabs.  arrowScrollbox has two non-tab elements at the
-    // end, everything else is <tab>s
+    // Accessor for tabs.  arrowScrollbox has a container for non-tab elements
+    // at the end, everything else is <tab>s.
     get allTabs() {
+      if (this._allTabs) {
+        return this._allTabs;
+      }
       let children = Array.from(this.arrowScrollbox.children);
       children.pop();
-      children.pop();
+      this._allTabs = children;
       return children;
+    }
+
+    _getVisibleTabs() {
+      if (!this._visibleTabs) {
+        this._visibleTabs = Array.prototype.filter.call(
+          this.allTabs,
+          tab => !tab.hidden && !tab.closing
+        );
+      }
+      return this._visibleTabs;
+    }
+
+    _invalidateCachedTabs() {
+      this._allTabs = null;
+      this._visibleTabs = null;
+    }
+
+    _invalidateCachedVisibleTabs() {
+      this._visibleTabs = null;
     }
 
     appendChild(tab) {
@@ -961,8 +1075,8 @@
 
       let { arrowScrollbox } = this;
       if (node == null) {
-        // we have a toolbarbutton and a space at the end of the scrollbox
-        node = arrowScrollbox.lastChild.previousSibling;
+        // We have a container for non-tab elements at the end of the scrollbox.
+        node = arrowScrollbox.lastChild;
       }
       return arrowScrollbox.insertBefore(tab, node);
     }
@@ -1007,11 +1121,12 @@
             this._expandSpacerBy(this._scrollButtonWidth);
           }
 
-          for (let tab of Array.from(gBrowser._removingTabs)) {
+          for (let tab of gBrowser._removingTabs) {
             gBrowser.removeTab(tab);
           }
 
           this._positionPinnedTabs();
+          this._updateCloseButtons();
         },
         true
       );
@@ -1029,6 +1144,7 @@
 
         this.setAttribute("overflow", "true");
         this._positionPinnedTabs();
+        this._updateCloseButtons();
         this._handleTabSelect(true);
       });
 
@@ -1108,75 +1224,18 @@
       }
     }
 
-    _getVisibleTabs() {
-      // Cannot access gBrowser before it's initialized.
-      if (!gBrowser) {
-        return this.allTabs[0];
-      }
-
-      return gBrowser.visibleTabs;
-    }
-
     _setPositionalAttributes() {
       let visibleTabs = this._getVisibleTabs();
       if (!visibleTabs.length) {
         return;
       }
-      let selectedTab = this.selectedItem;
-      let selectedIndex = visibleTabs.indexOf(selectedTab);
-      if (this._beforeSelectedTab) {
-        this._beforeSelectedTab.removeAttribute("beforeselected-visible");
-      }
 
-      if (selectedTab.closing || selectedIndex <= 0) {
-        this._beforeSelectedTab = null;
-      } else {
-        let beforeSelectedTab = visibleTabs[selectedIndex - 1];
-        let separatedByScrollButton =
-          this.getAttribute("overflow") == "true" &&
-          beforeSelectedTab.pinned &&
-          !selectedTab.pinned;
-        if (!separatedByScrollButton) {
-          this._beforeSelectedTab = beforeSelectedTab;
-          this._beforeSelectedTab.setAttribute(
-            "beforeselected-visible",
-            "true"
-          );
-        }
-      }
-
-      this._firstTab?.removeAttribute("first-visible-tab");
-      this._firstTab = visibleTabs[0];
-      this._firstTab.setAttribute("first-visible-tab", "true");
-      this._lastTab?.removeAttribute("last-visible-tab");
-      this._lastTab = visibleTabs[visibleTabs.length - 1];
-      this._lastTab.setAttribute("last-visible-tab", "true");
       this._firstUnpinnedTab?.removeAttribute("first-visible-unpinned-tab");
       this._firstUnpinnedTab = visibleTabs.find(t => !t.pinned);
       this._firstUnpinnedTab?.setAttribute(
         "first-visible-unpinned-tab",
         "true"
       );
-
-      let hoveredTab = this._hoveredTab;
-      if (hoveredTab) {
-        hoveredTab._mouseleave();
-      }
-      hoveredTab = this.querySelector("tab:hover");
-      if (hoveredTab) {
-        hoveredTab._mouseenter();
-      }
-
-      // Update before-multiselected attributes.
-      // gBrowser may not be initialized yet, so avoid using it
-      for (let i = 0; i < visibleTabs.length - 1; i++) {
-        let tab = visibleTabs[i];
-        let nextTab = visibleTabs[i + 1];
-        tab.removeAttribute("before-multiselected");
-        if (nextTab.multiselected) {
-          tab.setAttribute("before-multiselected", "true");
-        }
-      }
     }
 
     _updateCloseButtons() {
@@ -1390,7 +1449,10 @@
           );
           tab._pinnedUnscrollable = true;
         }
-        this.style.paddingInlineStart = width + "px";
+        this.style.setProperty(
+          "--tab-overflow-pinned-tabs-width",
+          width + "px"
+        );
       } else {
         this.removeAttribute("positionpinnedtabs");
 
@@ -1400,7 +1462,7 @@
           tab._pinnedUnscrollable = false;
         }
 
-        this.style.paddingInlineStart = "";
+        this.style.removeProperty("--tab-overflow-pinned-tabs-width");
       }
 
       if (this._lastNumPinned != numPinned) {
@@ -1877,8 +1939,9 @@
       if (!RTL_UI) {
         for (let i = tab ? tab._tPos : 0; i < tabs.length; i++) {
           if (
+            !tabs[i].hidden &&
             event.screenX <
-            tabs[i].screenX + tabs[i].getBoundingClientRect().width / 2
+              tabs[i].screenX + tabs[i].getBoundingClientRect().width / 2
           ) {
             return i;
           }
@@ -1886,8 +1949,9 @@
       } else {
         for (let i = tab ? tab._tPos : 0; i < tabs.length; i++) {
           if (
+            !tabs[i].hidden &&
             event.screenX >
-            tabs[i].screenX + tabs[i].getBoundingClientRect().width / 2
+              tabs[i].screenX + tabs[i].getBoundingClientRect().width / 2
           ) {
             return i;
           }
@@ -1896,7 +1960,7 @@
       return tabs.length;
     }
 
-    _getDropEffectForTabDrag(event) {
+    getDropEffectForTabDrag(event) {
       var dt = event.dataTransfer;
 
       let isMovingTabs = dt.mozItemCount > 0;
@@ -1912,7 +1976,7 @@
       if (isMovingTabs) {
         let sourceNode = dt.mozGetDataAt(TAB_DROP_TYPE, 0);
         if (
-          sourceNode instanceof XULElement &&
+          XULElement.isInstance(sourceNode) &&
           sourceNode.localName == "tab" &&
           sourceNode.ownerGlobal.isChromeWindow &&
           sourceNode.ownerDocument.documentElement.getAttribute("windowtype") ==
@@ -2009,7 +2073,10 @@
       // and make it ready to use. We only do this if the tab is selected
       // because otherwise, callers might end up unintentionally binding the
       // browser for lazy background tabs.
-      if (aTab.selected) {
+      if (!aTab.linkedPanel) {
+        if (!aTab.selected) {
+          return null;
+        }
         gBrowser._insertBrowser(aTab);
       }
       return document.getElementById(aTab.linkedPanel);
@@ -2079,8 +2146,23 @@
       if (this.boundObserve) {
         Services.prefs.removeObserver("privacy.userContext", this.boundObserve);
       }
-
       CustomizableUI.removeListener(this);
+    }
+
+    updateTabIndicatorAttr(tab) {
+      const theseAttributes = ["soundplaying", "muted", "activemedia-blocked"];
+      const notTheseAttributes = ["pinned", "sharing", "crashed"];
+
+      if (notTheseAttributes.some(attr => tab.getAttribute(attr))) {
+        tab.removeAttribute("indicator-replaces-favicon");
+        return;
+      }
+
+      if (theseAttributes.some(attr => tab.getAttribute(attr))) {
+        tab.setAttribute("indicator-replaces-favicon", true);
+      } else {
+        tab.removeAttribute("indicator-replaces-favicon");
+      }
     }
   }
 

@@ -44,15 +44,14 @@
 var EXPORTED_SYMBOLS = ["AeroPeek"];
 
 const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { PlacesUtils } = ChromeUtils.import(
-  "resource://gre/modules/PlacesUtils.jsm"
+const { PlacesUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PlacesUtils.sys.mjs"
 );
-const { PrivateBrowsingUtils } = ChromeUtils.import(
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
+const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PrivateBrowsingUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 // Pref to enable/disable preview-per-tab
@@ -64,15 +63,17 @@ const CACHE_EXPIRATION_TIME_PREF_NAME = "browser.taskbar.previews.cachetime";
 
 const WINTASKBAR_CONTRACTID = "@mozilla.org/windows-taskbar;1";
 
+const lazy = {};
+
 // Various utility properties
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "imgTools",
   "@mozilla.org/image/tools;1",
   "imgITools"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "PageThumbs",
   "resource://gre/modules/PageThumbs.jsm"
 );
@@ -114,7 +115,7 @@ function _imageFromURI(uri, privateMode, callback) {
 
     try {
       let threadManager = Cc["@mozilla.org/thread-manager;1"].getService();
-      imgTools.decodeImageAsync(
+      lazy.imgTools.decodeImageAsync(
         inputStream,
         channel.contentType,
         decodeCallback,
@@ -166,7 +167,7 @@ function PreviewController(win, tab) {
   this.tab.addEventListener("TabAttrModified", this);
 
   XPCOMUtils.defineLazyGetter(this, "canvasPreview", function() {
-    let canvas = PageThumbs.createCanvas(this.win.win);
+    let canvas = lazy.PageThumbs.createCanvas(this.win.win);
     canvas.mozOpaque = true;
     return canvas;
   });
@@ -202,20 +203,6 @@ PreviewController.prototype = {
     this.canvasPreview.height = aRequestedHeight;
   },
 
-  get zoom() {
-    // Note that winutils.fullZoom accounts for "quantization" of the zoom factor
-    // from nsIContentViewer due to conversion through appUnits.
-    // We do -not- want screenPixelsPerCSSPixel here, because that would -also-
-    // incorporate any scaling that is applied due to hi-dpi resolution options.
-    return this.tab.linkedBrowser.fullZoom;
-  },
-
-  get screenPixelsPerCSSPixel() {
-    let chromeWin = this.tab.ownerGlobal;
-    let windowUtils = chromeWin.windowUtils;
-    return windowUtils.screenPixelsPerCSSPixel;
-  },
-
   get browserDims() {
     return this.tab.linkedBrowser.getBoundingClientRect();
   },
@@ -240,9 +227,13 @@ PreviewController.prototype = {
     // events don't trigger another invalidation if this tab becomes active.
     this.cacheBrowserDims();
     AeroPeek.resetCacheTimer();
-    return PageThumbs.captureToCanvas(this.linkedBrowser, this.canvasPreview, {
-      fullScale: aFullScale,
-    }).catch(e => Cu.reportError(e));
+    return lazy.PageThumbs.captureToCanvas(
+      this.linkedBrowser,
+      this.canvasPreview,
+      {
+        fullScale: aFullScale,
+      }
+    ).catch(console.error);
     // If we're updating the canvas, then we're in the middle of a peek so
     // don't discard the cache of previews.
   },
@@ -289,13 +280,13 @@ PreviewController.prototype = {
       let winWidth = this.win.width;
       let winHeight = this.win.height;
 
-      let composite = PageThumbs.createCanvas(this.win.win);
+      let composite = lazy.PageThumbs.createCanvas(this.win.win);
 
       // Use transparency, Aero glass is drawn black without it.
       composite.mozOpaque = false;
 
       let ctx = composite.getContext("2d");
-      let scale = this.screenPixelsPerCSSPixel / this.zoom;
+      let scale = this.win.win.devicePixelRatio;
 
       composite.width = winWidth * scale;
       composite.height = winHeight * scale;

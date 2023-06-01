@@ -6,17 +6,16 @@
 "use strict";
 
 /**
- * @fileOverview
+ * @file
  * This module contains utilities for interacting with DevTools
  * from the child process.
  */
 
 var EXPORTED_SYMBOLS = ["ExtensionChildDevToolsUtils"];
 
-const { EventEmitter } = ChromeUtils.import(
-  "resource://gre/modules/EventEmitter.jsm"
+const { EventEmitter } = ChromeUtils.importESModule(
+  "resource://gre/modules/EventEmitter.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // Create a variable to hold the cached ThemeChangeObserver which does not
 // get created until a devtools context has been created.

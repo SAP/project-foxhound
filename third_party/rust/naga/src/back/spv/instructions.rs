@@ -502,7 +502,7 @@ impl super::Instruction {
         instruction
     }
 
-    pub(super) fn function_end() -> Self {
+    pub(super) const fn function_end() -> Self {
         Self::new(Op::FunctionEnd)
     }
 
@@ -906,11 +906,11 @@ impl super::Instruction {
         instruction
     }
 
-    pub(super) fn kill() -> Self {
+    pub(super) const fn kill() -> Self {
         Self::new(Op::Kill)
     }
 
-    pub(super) fn return_void() -> Self {
+    pub(super) const fn return_void() -> Self {
         Self::new(Op::Return)
     }
 
@@ -979,6 +979,12 @@ impl From<crate::StorageFormat> for spirv::ImageFormat {
             Sf::Rgba32Uint => Self::Rgba32ui,
             Sf::Rgba32Sint => Self::Rgba32i,
             Sf::Rgba32Float => Self::Rgba32f,
+            Sf::R16Unorm => Self::R16,
+            Sf::R16Snorm => Self::R16Snorm,
+            Sf::Rg16Unorm => Self::Rg16,
+            Sf::Rg16Snorm => Self::Rg16Snorm,
+            Sf::Rgba16Unorm => Self::Rgba16,
+            Sf::Rgba16Snorm => Self::Rgba16Snorm,
         }
     }
 }

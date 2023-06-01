@@ -56,7 +56,7 @@ with Files("CSS*"):
     BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
 
 with Files("Canvas*"):
-    BUG_COMPONENT = ("Core", "Canvas: 2D")
+    BUG_COMPONENT = ("Core", "Graphics: Canvas2D")
 
 with Files("Caret*"):
     BUG_COMPONENT = ("Core", "DOM: Editor")
@@ -82,6 +82,9 @@ with Files("ConvolverNode.webidl"):
 with Files("GeolocationCoordinates.webidl"):
     BUG_COMPONENT = ("Core", "DOM: Geolocation")
 
+with Files("CredentialManagement.webidl"):
+    BUG_COMPONENT = ("Core", "DOM: Credential Management")
+
 with Files("Crypto.webidl"):
     BUG_COMPONENT = ("Core", "DOM: Security")
 
@@ -105,9 +108,6 @@ with Files("DelayNode.webidl"):
 
 with Files("DynamicsCompressorNode.webidl"):
     BUG_COMPONENT = ("Core", "Web Audio")
-
-with Files("FakePluginTagInit.webidl"):
-    BUG_COMPONENT = ("Core", "Plug-ins")
 
 with Files("FeaturePolicy.webidl"):
     BUG_COMPONENT = ("Core", "DOM: Security")
@@ -151,6 +151,9 @@ with Files("HashChangeEvent.webidl"):
 with Files("IDB*"):
     BUG_COMPONENT = ("Core", "Storage: IndexedDB")
 
+with Files("IdentityCredential.webidl"):
+    BUG_COMPONENT = ("Core", "DOM: Credential Management")
+
 with Files("IIRFilterNode.webidl"):
     BUG_COMPONENT = ("Core", "Web Audio")
 
@@ -158,7 +161,7 @@ with Files("Image*"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
 
 with Files("ImageBitmap*"):
-    BUG_COMPONENT = ("Core", "Canvas: 2D")
+    BUG_COMPONENT = ("Core", "Graphics: Canvas2D")
 
 with Files("ImageCapture*"):
     BUG_COMPONENT = ("Core", "Audio/Video")
@@ -239,10 +242,10 @@ with Files("OfflineAudio*"):
     BUG_COMPONENT = ("Core", "Web Audio")
 
 with Files("OffscreenCanvas.webidl"):
-    BUG_COMPONENT = ("Core", "Canvas: 2D")
+    BUG_COMPONENT = ("Core", "Graphics: Canvas2D")
 
 with Files("OffscreenCanvasRenderingContext2D.webidl"):
-    BUG_COMPONENT = ("Core", "Canvas: 2D")
+    BUG_COMPONENT = ("Core", "Graphics: Canvas2D")
 
 with Files("OscillatorNode.webidl"):
     BUG_COMPONENT = ("Core", "Web Audio")
@@ -356,10 +359,10 @@ with Files("WebAuthentication.webidl"):
     BUG_COMPONENT = ("Core", "DOM: Web Authentication")
 
 with Files("WebGL*"):
-    BUG_COMPONENT = ("Core", "Canvas: WebGL")
+    BUG_COMPONENT = ("Core", "Graphics: CanvasWebGL")
 
 with Files("WebGPU*"):
-    BUG_COMPONENT = ("Core", "Canvas: WebGL")
+    BUG_COMPONENT = ("Core", "Graphics: WebGPU")
 
 with Files("Webrtc*"):
     BUG_COMPONENT = ("Core", "WebRTC")
@@ -385,13 +388,14 @@ with Files("Worker*"):
 with Files("Extension*"):
     BUG_COMPONENT = ("WebExtensions", "General")
 
+with Files("WebTransport*"):
+    BUG_COMPONENT = ("Core", "Networking")
+
 GENERATED_WEBIDL_FILES = [
     "CSS2Properties.webidl",
 ]
 
 PREPROCESSED_WEBIDL_FILES = [
-    "Animation.webidl",
-    "FileSystemFileHandle.webidl",
     "Node.webidl",
     "Window.webidl",
 ]
@@ -405,6 +409,7 @@ WEBIDL_FILES = [
     "AddonManager.webidl",
     "AnalyserNode.webidl",
     "Animatable.webidl",
+    "Animation.webidl",
     "AnimationEffect.webidl",
     "AnimationEvent.webidl",
     "AnimationFrameProvider.webidl",
@@ -475,9 +480,11 @@ WEBIDL_FILES = [
     "CSS.webidl",
     "CSSAnimation.webidl",
     "CSSConditionRule.webidl",
+    "CSSContainerRule.webidl",
     "CSSCounterStyleRule.webidl",
     "CSSFontFaceRule.webidl",
     "CSSFontFeatureValuesRule.webidl",
+    "CSSFontPaletteValuesRule.webidl",
     "CSSGroupingRule.webidl",
     "CSSImportRule.webidl",
     "CSSKeyframeRule.webidl",
@@ -491,7 +498,6 @@ WEBIDL_FILES = [
     "CSSPseudoElement.webidl",
     "CSSRule.webidl",
     "CSSRuleList.webidl",
-    "CSSScrollTimelineRule.webidl",
     "CSSStyleDeclaration.webidl",
     "CSSStyleRule.webidl",
     "CSSStyleSheet.webidl",
@@ -554,6 +560,7 @@ WEBIDL_FILES = [
     "FileSystemDirectoryReader.webidl",
     "FileSystemEntry.webidl",
     "FileSystemFileEntry.webidl",
+    "FileSystemFileHandle.webidl",
     "FileSystemHandle.webidl",
     "FileSystemSyncAccessHandle.webidl",
     "FinalizationRegistry.webidl",
@@ -570,6 +577,7 @@ WEBIDL_FILES = [
     "GamepadPose.webidl",
     "GamepadServiceTest.webidl",
     "GamepadTouch.webidl",
+    "GenericTransformStream.webidl",
     "Geolocation.webidl",
     "GeolocationCoordinates.webidl",
     "GeolocationPosition.webidl",
@@ -578,6 +586,7 @@ WEBIDL_FILES = [
     "GetUserMediaRequest.webidl",
     "Grid.webidl",
     "Headers.webidl",
+    "Highlight.webidl",
     "History.webidl",
     "HTMLAllCollection.webidl",
     "HTMLAnchorElement.webidl",
@@ -621,7 +630,6 @@ WEBIDL_FILES = [
     "HTMLMarqueeElement.webidl",
     "HTMLMediaElement.webidl",
     "HTMLMenuElement.webidl",
-    "HTMLMenuItemElement.webidl",
     "HTMLMetaElement.webidl",
     "HTMLMeterElement.webidl",
     "HTMLModElement.webidl",
@@ -669,6 +677,7 @@ WEBIDL_FILES = [
     "IDBRequest.webidl",
     "IDBTransaction.webidl",
     "IDBVersionChangeEvent.webidl",
+    "IdentityCredential.webidl",
     "IdleDeadline.webidl",
     "IIRFilterNode.webidl",
     "ImageBitmap.webidl",
@@ -812,6 +821,7 @@ WEBIDL_FILES = [
     "ServiceWorkerContainer.webidl",
     "ServiceWorkerGlobalScope.webidl",
     "ServiceWorkerRegistration.webidl",
+    "ShadowRealmGlobalScope.webidl",
     "ShadowRoot.webidl",
     "SharedWorker.webidl",
     "SharedWorkerGlobalScope.webidl",
@@ -824,7 +834,6 @@ WEBIDL_FILES = [
     "Storage.webidl",
     "StorageEvent.webidl",
     "StorageManager.webidl",
-    "StorageType.webidl",
     "StreamFilter.webidl",
     "StreamFilterDataEvent.webidl",
     "StructuredCloneTester.webidl",
@@ -946,7 +955,9 @@ WEBIDL_FILES = [
     "Text.webidl",
     "TextClause.webidl",
     "TextDecoder.webidl",
+    "TextDecoderStream.webidl",
     "TextEncoder.webidl",
+    "TextEncoderStream.webidl",
     "TextTrack.webidl",
     "TextTrackCue.webidl",
     "TextTrackCueList.webidl",
@@ -969,6 +980,8 @@ WEBIDL_FILES = [
     "URL.webidl",
     "URLSearchParams.webidl",
     "ValidityState.webidl",
+    "VideoColorSpace.webidl",
+    "VideoFrame.webidl",
     "VideoPlaybackQuality.webidl",
     "VideoTrack.webidl",
     "VideoTrackList.webidl",
@@ -984,6 +997,11 @@ WEBIDL_FILES = [
     "WebGLRenderingContext.webidl",
     "WebGPU.webidl",
     "WebSocket.webidl",
+    "WebTaskScheduling.webidl",
+    "WebTransport.webidl",
+    "WebTransportDatagramDuplexStream.webidl",
+    "WebTransportError.webidl",
+    "WebTransportSendReceiveStream.webidl",
     "WebXR.webidl",
     "WheelEvent.webidl",
     "WidevineCDMManifest.webidl",
@@ -1010,6 +1028,7 @@ WEBIDL_FILES = [
     "XULCommandEvent.webidl",
     "XULElement.webidl",
     "XULPopupElement.webidl",
+    "XULResizerElement.webidl",
 ]
 
 if CONFIG["MOZ_DOM_STREAMS"]:
@@ -1022,6 +1041,9 @@ if CONFIG["MOZ_DOM_STREAMS"]:
         "ReadableStreamBYOBRequest.webidl",
         "ReadableStreamDefaultController.webidl",
         "ReadableStreamDefaultReader.webidl",
+        "Transformer.webidl",
+        "TransformStream.webidl",
+        "TransformStreamDefaultController.webidl",
         "UnderlyingSink.webidl",
         "UnderlyingSource.webidl",
         "WritableStream.webidl",
@@ -1044,13 +1066,13 @@ if CONFIG["MOZ_WEBRTC"]:
         "RTCIdentityProvider.webidl",
         "RTCPeerConnection.webidl",
         "RTCPeerConnectionStatic.webidl",
+        "RTCRtpParameters.webidl",
         "RTCRtpReceiver.webidl",
         "RTCRtpSender.webidl",
         "RTCRtpSources.webidl",
         "RTCRtpTransceiver.webidl",
         "RTCSessionDescription.webidl",
         "RTCStatsReport.webidl",
-        "TransceiverImpl.webidl",
         "WebrtcDeprecated.webidl",
         "WebrtcGlobalInformation.webidl",
     ]
@@ -1088,11 +1110,17 @@ WEBIDL_FILES += [
 WEBIDL_FILES += [
     "ExtensionAlarms.webidl",
     "ExtensionBrowser.webidl",
+    "ExtensionBrowserSettings.webidl",
+    "ExtensionBrowserSettingsColorManagement.webidl",
+    "ExtensionDns.webidl",
     "ExtensionEventManager.webidl",
     # ExtensionMockAPI is not a real WebExtensions API, and it is only enabled in tests.
     "ExtensionMockAPI.webidl",
     "ExtensionPort.webidl",
+    "ExtensionProxy.webidl",
     "ExtensionRuntime.webidl",
+    "ExtensionScripting.webidl",
+    "ExtensionSetting.webidl",
     "ExtensionTest.webidl",
 ]
 
@@ -1104,6 +1132,10 @@ if CONFIG["MOZ_DEBUG"] and CONFIG["ENABLE_TESTS"]:
         "TestInterfaceJS.webidl",
         "TestInterfaceJSDictionaries.webidl",
         "TestInterfaceJSMaplikeSetlikeIterable.webidl",
+        "TestInterfaceObservableArray.webidl",
+    ]
+    XPCOM_MANIFESTS += [
+        "components.conf",
     ]
 
 WEBIDL_FILES += [
@@ -1121,6 +1153,7 @@ GENERATED_EVENTS_WEBIDL_FILES = [
     "BlobEvent.webidl",
     "CaretStateChangedEvent.webidl",
     "CloseEvent.webidl",
+    "ContentVisibilityAutoStateChangeEvent.webidl",
     "DeviceLightEvent.webidl",
     "DeviceOrientationEvent.webidl",
     "ErrorEvent.webidl",
@@ -1152,6 +1185,7 @@ GENERATED_EVENTS_WEBIDL_FILES = [
     "SecurityPolicyViolationEvent.webidl",
     "StyleSheetApplicableStateChangeEvent.webidl",
     "SubmitEvent.webidl",
+    "TaskPriorityChangeEvent.webidl",
     "TCPServerSocketEvent.webidl",
     "TCPSocketErrorEvent.webidl",
     "TCPSocketEvent.webidl",

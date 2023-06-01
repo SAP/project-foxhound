@@ -14,38 +14,40 @@ const AttributionIOUtils = {
   exists: async path => IOUtils.exists(path),
 };
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppConstants",
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
+const lazy = {};
 ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "MacAttribution",
   "resource:///modules/MacAttribution.jsm"
 );
-XPCOMUtils.defineLazyGetter(this, "log", () => {
-  let ConsoleAPI = ChromeUtils.import("resource://gre/modules/Console.jsm", {})
-    .ConsoleAPI;
+XPCOMUtils.defineLazyGetter(lazy, "log", () => {
+  let { ConsoleAPI } = ChromeUtils.importESModule(
+    "resource://gre/modules/Console.sys.mjs"
+  );
   let consoleOptions = {
-    // tip: set maxLogLevel to "debug" and use log.debug() to create detailed
-    // messages during development. See LOG_LEVELS in Console.jsm for details.
+    // tip: set maxLogLevel to "debug" and use lazy.log.debug() to create
+    // detailed messages during development. See LOG_LEVELS in Console.sys.mjs
+    // for details.
     maxLogLevel: "error",
     maxLogLevelPref: "browser.attribution.loglevel",
     prefix: "AttributionCode",
   };
   return new ConsoleAPI(consoleOptions);
 });
-XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
+// This maximum length was originally based on how much space we have in the PE
+// file header that we store attribution codes in for full and stub installers.
+// Windows Store builds instead use a "Campaign ID" passed through URLs to send
+// attribution information, which Microsoft's documentation claims must be no
+// longer than 100 characters. In our own testing, we've been able to retrieve
+// the first 208 characters of the Campaign ID. Either way, the "max" length
+// for Microsoft Store builds is much lower than this limit implies.
 const ATTR_CODE_MAX_LENGTH = 1010;
 const ATTR_CODE_VALUE_REGEX = /[a-zA-Z0-9_%\\-\\.\\(\\)]*/;
 const ATTR_CODE_FIELD_SEPARATOR = "%26"; // URL-encoded &
@@ -59,11 +61,22 @@ const ATTR_CODE_KEYS = [
   "variation",
   "ua",
   "dltoken",
+  "msstoresignedin",
 ];
 
 let gCachedAttrData = null;
 
 var AttributionCode = {
+  /**
+   * Wrapper to pull campaign IDs from MSIX builds.
+   * This function solely exists to make it easy to mock out for tests.
+   */
+  get msixCampaignId() {
+    return Cc["@mozilla.org/windows-package-manager;1"]
+      .createInstance(Ci.nsIWindowsPackageManager)
+      .getCampaignId();
+  },
+
   /**
    * Returns a platform-specific nsIFile for the file containing the attribution
    * data, or null if the current platform does not support (caching)
@@ -71,10 +84,7 @@ var AttributionCode = {
    */
   get attributionFile() {
     if (AppConstants.platform == "win") {
-      let file = Services.dirsvc.get("LocalAppData", Ci.nsIFile);
-      // appinfo does not exist in xpcshell, so we need defaults.
-      file.append(Services.appinfo.vendor || "mozilla");
-      file.append(AppConstants.MOZ_APP_NAME);
+      let file = Services.dirsvc.get("GreD", Ci.nsIFile);
       file.append("postSigningData");
       return file;
     } else if (AppConstants.platform == "macosx") {
@@ -88,17 +98,14 @@ var AttributionCode = {
       try {
         file = Services.dirsvc.get("UpdRootD", Ci.nsIFile);
       } catch (ex) {
-        let env = Cc["@mozilla.org/process/environment;1"].getService(
-          Ci.nsIEnvironment
-        );
         // It's most common to test for the profile dir, even though we actually
         // are using the temp dir.
         if (
           ex instanceof Ci.nsIException &&
           ex.result == Cr.NS_ERROR_FAILURE &&
-          env.exists("XPCSHELL_TEST_PROFILE_DIR")
+          Services.env.exists("XPCSHELL_TEST_PROFILE_DIR")
         ) {
-          let path = env.get("XPCSHELL_TEST_TEMP_DIR");
+          let path = Services.env.get("XPCSHELL_TEST_TEMP_DIR");
           file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
           file.initWithPath(path);
           file.append("nested_UpdRootD_1");
@@ -119,6 +126,17 @@ var AttributionCode = {
    * @param {String} code to write.
    */
   async writeAttributionFile(code) {
+    // Writing attribution files is only used as part of test code, and Mac
+    // attribution, so bailing here for MSIX builds is no big deal.
+    if (
+      AppConstants.platform === "win" &&
+      Services.sysinfo.getProperty("hasWinPackageId")
+    ) {
+      Services.console.logStringMessage(
+        "Attribution code cannot be written for MSIX builds, aborting."
+      );
+      return;
+    }
     let file = AttributionCode.attributionFile;
     await IOUtils.makeDirectory(file.parent.path);
     let bytes = new TextEncoder().encode(code);
@@ -148,10 +166,20 @@ var AttributionCode = {
       let [key, value] = param.split(ATTR_CODE_KEY_VALUE_SEPARATOR, 2);
       if (key && ATTR_CODE_KEYS.includes(key)) {
         if (value && ATTR_CODE_VALUE_REGEX.test(value)) {
-          parsed[key] = value;
+          if (key === "msstoresignedin") {
+            if (value === "true") {
+              parsed[key] = true;
+            } else if (value === "false") {
+              parsed[key] = false;
+            } else {
+              throw new Error("Couldn't parse msstoresignedin");
+            }
+          } else {
+            parsed[key] = value;
+          }
         }
       } else {
-        log.debug(
+        lazy.log.debug(
           `parseAttributionCode: "${code}" => isValid = false: "${key}", "${value}"`
         );
         isValid = false;
@@ -239,7 +267,7 @@ var AttributionCode = {
    */
   async getAttrDataAsync() {
     if (gCachedAttrData != null) {
-      log.debug(
+      lazy.log.debug(
         `getAttrDataAsync: attribution is cached: ${JSON.stringify(
           gCachedAttrData
         )}`
@@ -251,7 +279,9 @@ var AttributionCode = {
     let attributionFile = this.attributionFile;
     if (!attributionFile) {
       // This platform doesn't support attribution.
-      log.debug(`getAttrDataAsync: no attribution (attributionFile is null)`);
+      lazy.log.debug(
+        `getAttrDataAsync: no attribution (attributionFile is null)`
+      );
       return gCachedAttrData;
     }
 
@@ -259,14 +289,14 @@ var AttributionCode = {
       AppConstants.platform == "macosx" &&
       !(await AttributionIOUtils.exists(attributionFile.path))
     ) {
-      log.debug(
+      lazy.log.debug(
         `getAttrDataAsync: macOS && !exists("${attributionFile.path}")`
       );
 
       // On macOS, we fish the attribution data from the system quarantine DB.
       try {
-        let referrer = await MacAttribution.getReferrerUrl();
-        log.debug(
+        let referrer = await lazy.MacAttribution.getReferrerUrl();
+        lazy.log.debug(
           `getAttrDataAsync: macOS attribution getReferrerUrl: "${referrer}"`
         );
 
@@ -276,7 +306,7 @@ var AttributionCode = {
         gCachedAttrData = {};
 
         // No attributions.  Just `warn` 'cuz this isn't necessarily an error.
-        log.warn("Caught exception fetching macOS attribution codes!", ex);
+        lazy.log.warn("Caught exception fetching macOS attribution codes!", ex);
 
         if (
           ex instanceof Ci.nsIException &&
@@ -289,42 +319,72 @@ var AttributionCode = {
         }
       }
 
-      log.debug(`macOS attribution data is ${JSON.stringify(gCachedAttrData)}`);
+      lazy.log.debug(
+        `macOS attribution data is ${JSON.stringify(gCachedAttrData)}`
+      );
 
       // We only want to try to fetch the referrer from the quarantine
       // database once on macOS.
       try {
         let code = this.serializeAttributionData(gCachedAttrData);
-        log.debug(`macOS attribution data serializes as "${code}"`);
+        lazy.log.debug(`macOS attribution data serializes as "${code}"`);
         await this.writeAttributionFile(code);
       } catch (ex) {
-        log.debug(`Caught exception writing "${attributionFile.path}"`, ex);
+        lazy.log.debug(
+          `Caught exception writing "${attributionFile.path}"`,
+          ex
+        );
         Services.telemetry
           .getHistogramById("BROWSER_ATTRIBUTION_ERRORS")
           .add("write_error");
         return gCachedAttrData;
       }
 
-      log.debug(
+      lazy.log.debug(
         `Returning after successfully writing "${attributionFile.path}"`
       );
       return gCachedAttrData;
     }
 
-    log.debug(`getAttrDataAsync: !macOS || !exists("${attributionFile.path}")`);
+    lazy.log.debug(
+      `getAttrDataAsync: !macOS || !exists("${attributionFile.path}")`
+    );
 
     let bytes;
     try {
-      bytes = await AttributionIOUtils.read(attributionFile.path);
+      if (
+        AppConstants.platform === "win" &&
+        Services.sysinfo.getProperty("hasWinPackageId")
+      ) {
+        // This comes out of windows-package-manager _not_ URL encoded or in an ArrayBuffer,
+        // but the parsing code wants it that way. It's easier to just provide that
+        // than have the parsing code support both.
+        lazy.log.debug(
+          `winPackageFamilyName is: ${Services.sysinfo.getProperty(
+            "winPackageFamilyName"
+          )}`
+        );
+        let encoder = new TextEncoder();
+        bytes = encoder.encode(encodeURIComponent(this.msixCampaignId));
+      } else {
+        bytes = await AttributionIOUtils.read(attributionFile.path);
+      }
     } catch (ex) {
-      if (ex instanceof DOMException && ex.name == "NotFoundError") {
-        log.debug(
+      if (DOMException.isInstance(ex) && ex.name == "NotFoundError") {
+        lazy.log.debug(
           `getAttrDataAsync: !exists("${
             attributionFile.path
           }"), returning ${JSON.stringify(gCachedAttrData)}`
         );
         return gCachedAttrData;
       }
+      lazy.log.debug(
+        `other error trying to read attribution data:
+          attributionFile.path is: ${attributionFile.path}`
+      );
+      lazy.log.debug("Full exception is:");
+      lazy.log.debug(ex);
+
       Services.telemetry
         .getHistogramById("BROWSER_ATTRIBUTION_ERRORS")
         .add("read_error");
@@ -333,8 +393,8 @@ var AttributionCode = {
       try {
         let decoder = new TextDecoder();
         let code = decoder.decode(bytes);
-        log.debug(
-          `getAttrDataAsync: ${attributionFile.path} deserializes to ${code}`
+        lazy.log.debug(
+          `getAttrDataAsync: attribution bytes deserializes to ${code}`
         );
         if (AppConstants.platform == "macosx" && !code) {
           // On macOS, an empty attribution code is fine.  (On Windows, that
@@ -344,7 +404,7 @@ var AttributionCode = {
         }
 
         gCachedAttrData = this.parseAttributionCode(code);
-        log.debug(
+        lazy.log.debug(
           `getAttrDataAsync: ${code} parses to ${JSON.stringify(
             gCachedAttrData
           )}`
@@ -390,10 +450,7 @@ var AttributionCode = {
    * Does nothing if called from outside of an xpcshell test.
    */
   _clearCache() {
-    let env = Cc["@mozilla.org/process/environment;1"].getService(
-      Ci.nsIEnvironment
-    );
-    if (env.exists("XPCSHELL_TEST_PROFILE_DIR")) {
+    if (Services.env.exists("XPCSHELL_TEST_PROFILE_DIR")) {
       gCachedAttrData = null;
     }
   },

@@ -22,10 +22,13 @@ interface nsIBrowserChild : nsISupports
 
   [notxpcom] void sendRequestFocus(in boolean canFocus, in CallerType aCallerType);
 
-  [noscript] void remoteSizeShellTo(in int32_t width, in int32_t height,
-                                    in int32_t shellItemWidth, in int32_t shellItemHeight);
-
   void remoteDropLinks(in Array<nsIDroppedLinkItem> links);
+
+  /**
+   * Resolved after content has received a PBrowser::ChildToParentMatrix.
+   */
+  [implicit_jscontext]
+  Promise contentTransformsReceived();
 
   readonly attribute uint64_t tabId;
 

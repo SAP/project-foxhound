@@ -12,13 +12,15 @@
 #include "plstr.h"
 #include "nsSimpleURI.h"
 #include "mozilla/dom/MimeType.h"
+#include "mozilla/StaticPrefs_network.h"
+
+using namespace mozilla;
 
 ////////////////////////////////////////////////////////////////////////////////
 
 NS_IMPL_ISUPPORTS(nsDataHandler, nsIProtocolHandler, nsISupportsWeakReference)
 
-nsresult nsDataHandler::Create(nsISupports* aOuter, const nsIID& aIID,
-                               void** aResult) {
+nsresult nsDataHandler::Create(const nsIID& aIID, void** aResult) {
   RefPtr<nsDataHandler> ph = new nsDataHandler();
   return ph->QueryInterface(aIID, aResult);
 }
@@ -32,54 +34,31 @@ nsDataHandler::GetScheme(nsACString& result) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsDataHandler::GetDefaultPort(int32_t* result) {
-  // no ports for data protocol
-  *result = -1;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDataHandler::GetProtocolFlags(uint32_t* result) {
-  *result = URI_NORELATIVE | URI_NOAUTH | URI_INHERITS_SECURITY_CONTEXT |
-            URI_LOADABLE_BY_ANYONE | URI_NON_PERSISTABLE |
-            URI_IS_LOCAL_RESOURCE | URI_SYNC_LOAD_IS_OK;
-  return NS_OK;
-}
-
 /* static */ nsresult nsDataHandler::CreateNewURI(const nsACString& aSpec,
                                                   const char* aCharset,
                                                   nsIURI* aBaseURI,
                                                   nsIURI** result) {
-  nsresult rv;
   nsCOMPtr<nsIURI> uri;
+  nsAutoCString contentType;
+  bool base64;
+  MOZ_TRY(ParseURI(aSpec, contentType, /* contentCharset = */ nullptr, base64,
+                   /* dataBuffer = */ nullptr));
 
-  if (aBaseURI && !aSpec.IsEmpty() && aSpec[0] == '#') {
-    // Looks like a reference instead of a fully-specified URI.
-    // --> initialize |uri| as a clone of |aBaseURI|, with ref appended.
-    rv = NS_MutateURI(aBaseURI).SetRef(aSpec).Finalize(uri);
+  // Strip whitespace unless this is text, where whitespace is important
+  // Don't strip escaped whitespace though (bug 391951)
+  nsresult rv;
+  if (base64 || (StaticPrefs::network_url_strip_data_url_whitespace() &&
+                 strncmp(contentType.get(), "text/", 5) != 0 &&
+                 contentType.Find("xml") == kNotFound)) {
+    // it's ascii encoded binary, don't let any spaces in
+    rv = NS_MutateURI(new mozilla::net::nsSimpleURI::Mutator())
+             .Apply(&nsISimpleURIMutator::SetSpecAndFilterWhitespace, aSpec,
+                    nullptr)
+             .Finalize(uri);
   } else {
-    // Otherwise, we'll assume |aSpec| is a fully-specified data URI
-    nsAutoCString contentType;
-    bool base64;
-    rv = ParseURI(aSpec, contentType, /* contentCharset = */ nullptr, base64,
-                  /* dataBuffer = */ nullptr);
-    if (NS_FAILED(rv)) return rv;
-
-    // Strip whitespace unless this is text, where whitespace is important
-    // Don't strip escaped whitespace though (bug 391951)
-    if (base64 || (strncmp(contentType.get(), "text/", 5) != 0 &&
-                   contentType.Find("xml") == kNotFound)) {
-      // it's ascii encoded binary, don't let any spaces in
-      rv = NS_MutateURI(new mozilla::net::nsSimpleURI::Mutator())
-               .Apply(&nsISimpleURIMutator::SetSpecAndFilterWhitespace, aSpec,
-                      nullptr)
-               .Finalize(uri);
-    } else {
-      rv = NS_MutateURI(new mozilla::net::nsSimpleURI::Mutator())
-               .SetSpec(aSpec)
-               .Finalize(uri);
-    }
+    rv = NS_MutateURI(new mozilla::net::nsSimpleURI::Mutator())
+             .SetSpec(aSpec)
+             .Finalize(uri);
   }
 
   if (NS_FAILED(rv)) return rv;

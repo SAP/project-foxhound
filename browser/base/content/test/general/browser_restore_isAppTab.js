@@ -1,13 +1,12 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-/* eslint-env mozilla/frame-script */
-
-const { TabStateFlusher } = ChromeUtils.import(
-  "resource:///modules/sessionstore/TabStateFlusher.jsm"
+const { TabStateFlusher } = ChromeUtils.importESModule(
+  "resource:///modules/sessionstore/TabStateFlusher.sys.mjs"
 );
 
 const DUMMY =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com/browser/browser/base/content/test/general/dummy_page.html";
 
 function isBrowserAppTab(browser) {
@@ -46,7 +45,7 @@ add_task(async function navigate() {
   isAppTab = await isBrowserAppTab(browser);
   ok(isAppTab, "Docshell should think it is an app tab");
 
-  BrowserTestUtils.loadURI(gBrowser, DUMMY);
+  BrowserTestUtils.loadURIString(gBrowser, DUMMY);
   await BrowserTestUtils.browserStopped(gBrowser);
   isAppTab = await isBrowserAppTab(browser);
   ok(isAppTab, "Docshell should think it is an app tab");
@@ -59,7 +58,7 @@ add_task(async function navigate() {
   isAppTab = await isBrowserAppTab(browser);
   ok(isAppTab, "Docshell should think it is an app tab");
 
-  BrowserTestUtils.loadURI(gBrowser, "about:robots");
+  BrowserTestUtils.loadURIString(gBrowser, "about:robots");
   await BrowserTestUtils.browserStopped(gBrowser);
   isAppTab = await isBrowserAppTab(browser);
   ok(isAppTab, "Docshell should think it is an app tab");

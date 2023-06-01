@@ -161,7 +161,7 @@ impl HeaderEncoder {
 impl Deref for HeaderEncoder {
     type Target = [u8];
     fn deref(&self) -> &Self::Target {
-        &*self.buf
+        &self.buf
     }
 }
 
@@ -177,7 +177,7 @@ impl<'a> ::std::fmt::Display for HeaderDecoder<'a> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum HeaderDecoderResult {
     Blocked(u64),
     Headers(Vec<Header>),

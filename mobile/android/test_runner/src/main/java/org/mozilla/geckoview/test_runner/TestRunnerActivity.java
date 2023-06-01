@@ -4,6 +4,7 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 package org.mozilla.geckoview.test_runner;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.SurfaceTexture;
 import android.net.Uri;
@@ -13,6 +14,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import java.util.ArrayDeque;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import org.mozilla.geckoview.AllowOrDeny;
 import org.mozilla.geckoview.ContentBlocking;
 import org.mozilla.geckoview.GeckoDisplay;
@@ -20,6 +23,7 @@ import org.mozilla.geckoview.GeckoResult;
 import org.mozilla.geckoview.GeckoRuntime;
 import org.mozilla.geckoview.GeckoRuntimeSettings;
 import org.mozilla.geckoview.GeckoSession;
+import org.mozilla.geckoview.GeckoSession.PermissionDelegate.ContentPermission;
 import org.mozilla.geckoview.GeckoSessionSettings;
 import org.mozilla.geckoview.GeckoView;
 import org.mozilla.geckoview.OrientationController;
@@ -72,7 +76,8 @@ public class TestRunnerActivity extends Activity {
 
     public void attach(final GeckoSession session) {
       sessionDisplay = session.acquireDisplay();
-      sessionDisplay.surfaceChanged(surface, width, height);
+      sessionDisplay.surfaceChanged(
+          new GeckoDisplay.SurfaceInfo.Builder(surface).size(width, height).build());
     }
 
     public void release(final GeckoSession session) {
@@ -97,10 +102,8 @@ public class TestRunnerActivity extends Activity {
       new GeckoSession.PermissionDelegate() {
         @Override
         public GeckoResult<Integer> onContentPermissionRequest(
-            @NonNull final GeckoSession session,
-            @NonNull GeckoSession.PermissionDelegate.ContentPermission perm) {
-          return GeckoResult.fromValue(
-              GeckoSession.PermissionDelegate.ContentPermission.VALUE_ALLOW);
+            @NonNull final GeckoSession session, @NonNull ContentPermission perm) {
+          return GeckoResult.fromValue(ContentPermission.VALUE_ALLOW);
         }
 
         @Override
@@ -112,10 +115,48 @@ public class TestRunnerActivity extends Activity {
         }
       };
 
+  private GeckoSession.PromptDelegate mPromptDelegate =
+      new GeckoSession.PromptDelegate() {
+        Map<BasePrompt, GeckoResult<PromptResponse>> mPromptResults = new HashMap<>();
+        public GeckoSession.PromptDelegate.PromptInstanceDelegate mPromptInstanceDelegate =
+            new GeckoSession.PromptDelegate.PromptInstanceDelegate() {
+              @Override
+              public void onPromptDismiss(
+                  final @NonNull GeckoSession.PromptDelegate.BasePrompt prompt) {
+                mPromptResults.get(prompt).complete(prompt.dismiss());
+              }
+            };
+
+        @Override
+        public GeckoResult<PromptResponse> onAlertPrompt(
+            @NonNull final GeckoSession session, @NonNull final AlertPrompt prompt) {
+          mPromptResults.put(prompt, new GeckoResult<>());
+          prompt.setDelegate(mPromptInstanceDelegate);
+          return mPromptResults.get(prompt);
+        }
+
+        @Override
+        public GeckoResult<PromptResponse> onButtonPrompt(
+            @NonNull final GeckoSession session, @NonNull final ButtonPrompt prompt) {
+          mPromptResults.put(prompt, new GeckoResult<>());
+          prompt.setDelegate(mPromptInstanceDelegate);
+          return mPromptResults.get(prompt);
+        }
+
+        @Override
+        public GeckoResult<PromptResponse> onTextPrompt(
+            @NonNull final GeckoSession session, @NonNull final TextPrompt prompt) {
+          mPromptResults.put(prompt, new GeckoResult<>());
+          prompt.setDelegate(mPromptInstanceDelegate);
+          return mPromptResults.get(prompt);
+        }
+      };
+
   private GeckoSession.NavigationDelegate mNavigationDelegate =
       new GeckoSession.NavigationDelegate() {
         @Override
-        public void onLocationChange(final GeckoSession session, final String url) {
+        public void onLocationChange(
+            final GeckoSession session, final String url, final List<ContentPermission> perms) {
           getActionBar().setSubtitle(url);
         }
 
@@ -263,6 +304,14 @@ public class TestRunnerActivity extends Activity {
         }
       };
 
+  private class TestRunnerActivityDelegate implements GeckoView.ActivityContextDelegate {
+    public Context getActivityContext() {
+      return TestRunnerActivity.this;
+    }
+  }
+
+  private TestRunnerActivityDelegate mActivityDelegate = new TestRunnerActivityDelegate();
+
   /**
    * Creates a session and adds it to the owned sessions deque.
    *
@@ -292,6 +341,7 @@ public class TestRunnerActivity extends Activity {
     session.setNavigationDelegate(mNavigationDelegate);
     session.setContentDelegate(mContentDelegate);
     session.setPermissionDelegate(mPermissionDelegate);
+    session.setPromptDelegate(mPromptDelegate);
 
     final WebExtension.SessionController sessionController = session.getWebExtensionController();
     for (final ExtensionWrapper wrapper : mExtensions.values()) {
@@ -441,6 +491,16 @@ public class TestRunnerActivity extends Activity {
     mView = new GeckoView(this);
     mView.setSession(mSession);
     setContentView(mView);
+    mView.setActivityContextDelegate(mActivityDelegate);
+
+    sRuntime.setServiceWorkerDelegate(
+        new GeckoRuntime.ServiceWorkerDelegate() {
+          @NonNull
+          @Override
+          public GeckoResult<GeckoSession> onOpenWindow(@NonNull String url) {
+            return mNavigationDelegate.onNewSession(mSession, url);
+          }
+        });
   }
 
   private final TestApiImpl mTestApiImpl = new TestApiImpl();

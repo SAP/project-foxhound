@@ -13,6 +13,7 @@
 #include "nsAttrValue.h"
 #include "nsAttrValueOrString.h"
 #include "nsAttrValueInlines.h"
+#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/CustomElementRegistry.h"
 #include "mozilla/dom/ElementInlines.h"
 #include "mozilla/dom/MutationEventBinding.h"
@@ -210,9 +211,8 @@ void nsStyledElement::ParseStyleAttribute(const nsAString& aValue,
       nsAutoString styleType;
       doc->GetHeaderData(nsGkAtoms::headerContentStyleType, styleType);
       if (!styleType.IsEmpty()) {
-        static const char textCssStr[] = "text/css";
-        isCSS =
-            (styleType.EqualsIgnoreCase(textCssStr, sizeof(textCssStr) - 1));
+        isCSS = StringBeginsWith(styleType, u"text/css"_ns,
+                                 nsASCIICaseInsensitiveStringComparator);
       }
     }
 
@@ -223,4 +223,16 @@ void nsStyledElement::ParseStyleAttribute(const nsAString& aValue,
   }
 
   aResult.SetTo(aValue);
+}
+
+nsresult nsStyledElement::BindToTree(BindContext& aContext, nsINode& aParent) {
+  nsresult rv = nsStyledElementBase::BindToTree(aContext, aParent);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (HasAttr(nsGkAtoms::autofocus) && aContext.AllowsAutoFocus() &&
+      (!IsSVGElement() || IsFocusable())) {
+    aContext.OwnerDoc().SetAutoFocusElement(this);
+  }
+
+  return NS_OK;
 }

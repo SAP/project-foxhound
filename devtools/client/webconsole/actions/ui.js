@@ -4,9 +4,15 @@
 
 "use strict";
 
-const { getAllPrefs } = require("devtools/client/webconsole/selectors/prefs");
-const { getAllUi } = require("devtools/client/webconsole/selectors/ui");
-const { getMessage } = require("devtools/client/webconsole/selectors/messages");
+const {
+  getAllPrefs,
+} = require("resource://devtools/client/webconsole/selectors/prefs.js");
+const {
+  getAllUi,
+} = require("resource://devtools/client/webconsole/selectors/ui.js");
+const {
+  getMessage,
+} = require("resource://devtools/client/webconsole/selectors/messages.js");
 
 const {
   INITIALIZE,
@@ -14,7 +20,6 @@ const {
   PREFS,
   REVERSE_SEARCH_INPUT_TOGGLE,
   SELECT_NETWORK_MESSAGE_TAB,
-  SHOW_CONTENT_MESSAGES_TOGGLE,
   SHOW_OBJECT_IN_SIDEBAR,
   SIDEBAR_CLOSE,
   SPLIT_CONSOLE_CLOSE_BUTTON_TOGGLE,
@@ -26,7 +31,8 @@ const {
   EDITOR_ONBOARDING_DISMISS,
   EAGER_EVALUATION_TOGGLE,
   AUTOCOMPLETE_TOGGLE,
-} = require("devtools/client/webconsole/constants");
+  ENABLE_NETWORK_MONITORING,
+} = require("resource://devtools/client/webconsole/constants.js");
 
 function openLink(url, e) {
   return ({ hud }) => {
@@ -44,16 +50,21 @@ function persistToggle() {
   };
 }
 
-function contentMessagesToggle() {
-  return ({ dispatch, getState, prefsService }) => {
-    dispatch({
-      type: SHOW_CONTENT_MESSAGES_TOGGLE,
-    });
+function networkMonitoringToggle() {
+  return ({ dispatch, getState, prefsService, webConsoleUI }) => {
+    dispatch({ type: ENABLE_NETWORK_MONITORING });
     const uiState = getAllUi(getState());
+
     prefsService.setBoolPref(
-      PREFS.UI.CONTENT_MESSAGES,
-      uiState.showContentMessages
+      PREFS.UI.ENABLE_NETWORK_MONITORING,
+      uiState.enableNetworkMonitoring
     );
+
+    if (uiState.enableNetworkMonitoring) {
+      webConsoleUI.startWatchingNetworkResources();
+    } else {
+      webConsoleUI.stopWatchingNetworkResources();
+    }
   };
 }
 
@@ -214,7 +225,6 @@ function openSidebar(messageId, rootActorId) {
 }
 
 module.exports = {
-  contentMessagesToggle,
   eagerEvaluationToggle,
   editorOnboardingDismiss,
   editorToggle,
@@ -229,6 +239,7 @@ module.exports = {
   sidebarClose,
   splitConsoleCloseButtonToggle,
   timestampsToggle,
+  networkMonitoringToggle,
   warningGroupsToggle,
   openLink,
   openSidebar,

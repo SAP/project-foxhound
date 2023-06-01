@@ -213,8 +213,7 @@ PreventDefaultResult APZEventState::FireContextmenuEvents(
   // Note that we don't need to check whether mousemove event is consumed or
   // not because Chrome also ignores the result.
   APZCCallbackHelper::DispatchSynthesizedMouseEvent(
-      eMouseMove, 0 /* time */, aPoint * aScale, aModifiers, 0 /* clickCount */,
-      aWidget);
+      eMouseMove, aPoint * aScale, aModifiers, 0 /* clickCount */, aWidget);
 
   // Converting the modifiers to DOM format for the DispatchMouseEvent call
   // is the most useless thing ever because nsDOMWindowUtils::SendMouseEvent
@@ -238,7 +237,7 @@ PreventDefaultResult APZEventState::FireContextmenuEvents(
   } else {
     // If the contextmenu wasn't consumed, fire the eMouseLongTap event.
     nsEventStatus status = APZCCallbackHelper::DispatchSynthesizedMouseEvent(
-        eMouseLongTap, /*time*/ 0, aPoint * aScale, aModifiers,
+        eMouseLongTap, aPoint * aScale, aModifiers,
         /*clickCount*/ 1, aWidget);
     if (status == nsEventStatus_eConsumeNoDefault) {
       // Assuming no JS actor listens eMouseLongTap events.
@@ -275,8 +274,7 @@ void APZEventState::ProcessLongTap(PresShell* aPresShell,
   // at this time, because things like text selection or dragging may want
   // to know about it.
   nsEventStatus status = APZCCallbackHelper::DispatchSynthesizedMouseEvent(
-      eMouseLongTap, /*time*/ 0, aPoint * aScale, aModifiers, /*clickCount*/ 1,
-      widget);
+      eMouseLongTap, aPoint * aScale, aModifiers, /*clickCount*/ 1, widget);
 
   PreventDefaultResult preventDefaultResult =
       (status == nsEventStatus_eConsumeNoDefault)
@@ -338,7 +336,8 @@ void APZEventState::ProcessTouchEvent(
     nsEventStatus aContentResponse,
     nsTArray<TouchBehaviorFlags>&& aAllowedTouchBehaviors) {
   if (aEvent.mMessage == eTouchStart && aEvent.mTouches.Length() > 0) {
-    mActiveElementManager->SetTargetElement(aEvent.mTouches[0]->GetTarget());
+    mActiveElementManager->SetTargetElement(
+        aEvent.mTouches[0]->GetOriginalTarget());
     mLastTouchIdentifier = aEvent.mTouches[0]->Identifier();
   }
   if (aEvent.mMessage == eTouchStart) {
@@ -503,10 +502,7 @@ void APZEventState::ProcessAPZStateChange(ViewID aViewId,
       nsIScrollableFrame* sf = nsLayoutUtils::FindScrollableFrameFor(aViewId);
       if (sf) {
         sf->SetTransformingByAPZ(true);
-      }
-      nsIScrollbarMediator* scrollbarMediator = do_QueryFrame(sf);
-      if (scrollbarMediator) {
-        scrollbarMediator->ScrollbarActivityStarted();
+        sf->ScrollbarActivityStarted();
       }
 
       nsIContent* content = nsLayoutUtils::FindContentFor(aViewId);
@@ -522,10 +518,7 @@ void APZEventState::ProcessAPZStateChange(ViewID aViewId,
       nsIScrollableFrame* sf = nsLayoutUtils::FindScrollableFrameFor(aViewId);
       if (sf) {
         sf->SetTransformingByAPZ(false);
-      }
-      nsIScrollbarMediator* scrollbarMediator = do_QueryFrame(sf);
-      if (scrollbarMediator) {
-        scrollbarMediator->ScrollbarActivityStopped();
+        sf->ScrollbarActivityStopped();
       }
 
       nsIContent* content = nsLayoutUtils::FindContentFor(aViewId);

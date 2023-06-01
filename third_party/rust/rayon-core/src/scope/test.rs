@@ -6,7 +6,7 @@ use rand_xorshift::XorShiftRng;
 use std::cmp;
 use std::iter::once;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
+use std::sync::{Barrier, Mutex};
 use std::vec;
 
 #[test]
@@ -42,7 +42,7 @@ fn scope_divide_and_conquer() {
     scope(|s| s.spawn(move |s| divide_and_conquer(s, counter_p, 1024)));
 
     let counter_s = &AtomicUsize::new(0);
-    divide_and_conquer_seq(&counter_s, 1024);
+    divide_and_conquer_seq(counter_s, 1024);
 
     let p = counter_p.load(Ordering::SeqCst);
     let s = counter_s.load(Ordering::SeqCst);
@@ -75,7 +75,7 @@ struct Tree<T: Send> {
 }
 
 impl<T: Send> Tree<T> {
-    fn iter<'s>(&'s self) -> vec::IntoIter<&'s T> {
+    fn iter(&self) -> vec::IntoIter<&T> {
         once(&self.value)
             .chain(self.children.iter().flat_map(Tree::iter))
             .collect::<Vec<_>>() // seems like it shouldn't be needed... but prevents overflow
@@ -245,7 +245,7 @@ fn panic_propagate_still_execute_3() {
     let mut x = false;
     match unwind::halt_unwinding(|| {
         scope(|s| {
-            s.spawn(|_| x = true); // spanwed job should still execute despite later panic
+            s.spawn(|_| x = true); // spawned job should still execute despite later panic
             panic!("Hello, world!");
         });
     }) {
@@ -293,7 +293,7 @@ macro_rules! test_order {
 
 #[test]
 fn lifo_order() {
-    // In the absense of stealing, `scope()` runs its `spawn()` jobs in LIFO order.
+    // In the absence of stealing, `scope()` runs its `spawn()` jobs in LIFO order.
     let vec = test_order!(scope => spawn);
     let expected: Vec<i32> = (0..100).rev().collect(); // LIFO -> reversed
     assert_eq!(vec, expected);
@@ -301,7 +301,7 @@ fn lifo_order() {
 
 #[test]
 fn fifo_order() {
-    // In the absense of stealing, `scope_fifo()` runs its `spawn_fifo()` jobs in FIFO order.
+    // In the absence of stealing, `scope_fifo()` runs its `spawn_fifo()` jobs in FIFO order.
     let vec = test_order!(scope_fifo => spawn_fifo);
     let expected: Vec<i32> = (0..100).collect(); // FIFO -> natural order
     assert_eq!(vec, expected);
@@ -335,7 +335,7 @@ macro_rules! test_nested_order {
 
 #[test]
 fn nested_lifo_order() {
-    // In the absense of stealing, `scope()` runs its `spawn()` jobs in LIFO order.
+    // In the absence of stealing, `scope()` runs its `spawn()` jobs in LIFO order.
     let vec = test_nested_order!(scope => spawn, scope => spawn);
     let expected: Vec<i32> = (0..100).rev().collect(); // LIFO -> reversed
     assert_eq!(vec, expected);
@@ -343,7 +343,7 @@ fn nested_lifo_order() {
 
 #[test]
 fn nested_fifo_order() {
-    // In the absense of stealing, `scope_fifo()` runs its `spawn_fifo()` jobs in FIFO order.
+    // In the absence of stealing, `scope_fifo()` runs its `spawn_fifo()` jobs in FIFO order.
     let vec = test_nested_order!(scope_fifo => spawn_fifo, scope_fifo => spawn_fifo);
     let expected: Vec<i32> = (0..100).collect(); // FIFO -> natural order
     assert_eq!(vec, expected);
@@ -512,4 +512,90 @@ fn mixed_lifetime_scope_fifo() {
     let counter = AtomicUsize::new(0);
     increment(&[&counter; 100]);
     assert_eq!(counter.into_inner(), 100);
+}
+
+#[test]
+fn scope_spawn_broadcast() {
+    let sum = AtomicUsize::new(0);
+    let n = scope(|s| {
+        s.spawn_broadcast(|_, ctx| {
+            sum.fetch_add(ctx.index(), Ordering::Relaxed);
+        });
+        crate::current_num_threads()
+    });
+    assert_eq!(sum.into_inner(), n * (n - 1) / 2);
+}
+
+#[test]
+fn scope_fifo_spawn_broadcast() {
+    let sum = AtomicUsize::new(0);
+    let n = scope_fifo(|s| {
+        s.spawn_broadcast(|_, ctx| {
+            sum.fetch_add(ctx.index(), Ordering::Relaxed);
+        });
+        crate::current_num_threads()
+    });
+    assert_eq!(sum.into_inner(), n * (n - 1) / 2);
+}
+
+#[test]
+fn scope_spawn_broadcast_nested() {
+    let sum = AtomicUsize::new(0);
+    let n = scope(|s| {
+        s.spawn_broadcast(|s, _| {
+            s.spawn_broadcast(|_, ctx| {
+                sum.fetch_add(ctx.index(), Ordering::Relaxed);
+            });
+        });
+        crate::current_num_threads()
+    });
+    assert_eq!(sum.into_inner(), n * n * (n - 1) / 2);
+}
+
+#[test]
+fn scope_spawn_broadcast_barrier() {
+    let barrier = Barrier::new(8);
+    let pool = ThreadPoolBuilder::new().num_threads(7).build().unwrap();
+    pool.in_place_scope(|s| {
+        s.spawn_broadcast(|_, _| {
+            barrier.wait();
+        });
+        barrier.wait();
+    });
+}
+
+#[test]
+fn scope_spawn_broadcast_panic_one() {
+    let count = AtomicUsize::new(0);
+    let pool = ThreadPoolBuilder::new().num_threads(7).build().unwrap();
+    let result = crate::unwind::halt_unwinding(|| {
+        pool.scope(|s| {
+            s.spawn_broadcast(|_, ctx| {
+                count.fetch_add(1, Ordering::Relaxed);
+                if ctx.index() == 3 {
+                    panic!("Hello, world!");
+                }
+            });
+        });
+    });
+    assert_eq!(count.into_inner(), 7);
+    assert!(result.is_err(), "broadcast panic should propagate!");
+}
+
+#[test]
+fn scope_spawn_broadcast_panic_many() {
+    let count = AtomicUsize::new(0);
+    let pool = ThreadPoolBuilder::new().num_threads(7).build().unwrap();
+    let result = crate::unwind::halt_unwinding(|| {
+        pool.scope(|s| {
+            s.spawn_broadcast(|_, ctx| {
+                count.fetch_add(1, Ordering::Relaxed);
+                if ctx.index() % 2 == 0 {
+                    panic!("Hello, world!");
+                }
+            });
+        });
+    });
+    assert_eq!(count.into_inner(), 7);
+    assert!(result.is_err(), "broadcast panic should propagate!");
 }

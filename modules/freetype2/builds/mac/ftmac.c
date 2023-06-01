@@ -5,7 +5,7 @@
 /*    Mac FOND support.  Written by just@letterror.com.                    */
 /*  Heavily Fixed by mpsuzuki, George Williams and Sean McBride            */
 /*                                                                         */
-/*  Copyright (C) 1996-2021 by                                             */
+/*  Copyright (C) 1996-2022 by                                             */
 /*  Just van Rossum, David Turner, Robert Wilhelm, and Werner Lemberg.     */
 /*                                                                         */
 /*  This file is part of the FreeType project, and may only be used,       */
@@ -97,7 +97,7 @@
 
 #define FT_DEPRECATED_ATTRIBUTE
 
-#include FT_MAC_H
+#include <freetype/ftmac.h>
 
   /* undefine blocking-macros in ftmac.h */
 #undef FT_GetFile_From_Mac_Name
@@ -149,14 +149,10 @@
   /* `configure' checks the availability of `ResourceIndex' strictly */
   /* and sets HAVE_TYPE_RESOURCE_INDEX to 1 or 0 always.  If it is   */
   /* not set (e.g., a build without `configure'), the availability   */
-  /* is guessed from the SDK version.                                */
+  /* is guessed from the SDK version. Starting with the 10.6 SDK,    */
+  /* `ResourceIndex` is always 1.                                    */
 #ifndef HAVE_TYPE_RESOURCE_INDEX
-#if !defined( MAC_OS_X_VERSION_10_5 ) || \
-    ( MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_5 )
-#define HAVE_TYPE_RESOURCE_INDEX 0
-#else
 #define HAVE_TYPE_RESOURCE_INDEX 1
-#endif
 #endif /* !HAVE_TYPE_RESOURCE_INDEX */
 
 #if ( HAVE_TYPE_RESOURCE_INDEX == 0 )

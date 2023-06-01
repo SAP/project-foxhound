@@ -24,6 +24,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/Types.h"
 #include "mozjemalloc_types.h"
+#include "stdbool.h"
 
 #ifdef MOZ_MEMORY
 // On OSX, malloc/malloc.h contains the declaration for malloc_good_size,

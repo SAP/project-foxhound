@@ -18,7 +18,7 @@ const {
   getSourceByURL,
 } = selectors;
 import sourceQueue from "../../../utils/source-queue";
-import { generatedToOriginalId } from "devtools-source-map";
+import { generatedToOriginalId } from "devtools/client/shared/source-map-loader/index";
 
 import { mockCommandClient } from "../../tests/helpers/mockCommandClient";
 
@@ -42,8 +42,8 @@ describe("sources - new sources", () => {
       actions.newGeneratedSource(makeSource("base.js"))
     );
 
-    await dispatch(actions.newOriginalSource(makeOriginalSource(generated)));
-    await dispatch(actions.newOriginalSource(makeOriginalSource(generated)));
+    await dispatch(actions.newOriginalSources([makeOriginalSource(generated)]));
+    await dispatch(actions.newOriginalSources([makeOriginalSource(generated)]));
 
     expect(getSourceCount(getState())).toEqual(2);
   });
@@ -169,28 +169,5 @@ describe("sources - new sources", () => {
     expect(barCljs && barCljs.url).toEqual("bar.cljs");
     const bazzCljs = getSourceByURL(getState(), "bazz.cljs");
     expect(bazzCljs && bazzCljs.url).toEqual("bazz.cljs");
-  });
-
-  describe("sources - sources with querystrings", () => {
-    it(`should find two sources when same source with
-      querystring`, async () => {
-      const { getSourcesUrlsInSources } = selectors;
-      const { dispatch, getState } = createStore(mockCommandClient);
-      await dispatch(actions.newGeneratedSource(makeSource("base.js?v=1")));
-      await dispatch(actions.newGeneratedSource(makeSource("base.js?v=2")));
-      await dispatch(actions.newGeneratedSource(makeSource("diff.js?v=1")));
-
-      const base1 = "http://localhost:8000/examples/base.js?v=1";
-      const diff1 = "http://localhost:8000/examples/diff.js?v=1";
-      const diff2 = "http://localhost:8000/examples/diff.js?v=1";
-
-      expect(getSourcesUrlsInSources(getState(), base1)).toHaveLength(2);
-      expect(getSourcesUrlsInSources(getState(), base1)).toMatchSnapshot();
-
-      expect(getSourcesUrlsInSources(getState(), diff1)).toHaveLength(1);
-      await dispatch(actions.newGeneratedSource(makeSource("diff.js?v=2")));
-      expect(getSourcesUrlsInSources(getState(), diff2)).toHaveLength(2);
-      expect(getSourcesUrlsInSources(getState(), diff1)).toHaveLength(2);
-    });
   });
 });

@@ -7,26 +7,25 @@
 #include "js/UbiNode.h"
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Range.h"
 
 #include <algorithm>
 
 #include "debugger/Debugger.h"
+#include "gc/GC.h"
 #include "jit/JitCode.h"
 #include "js/Debug.h"
 #include "js/TracingAPI.h"
 #include "js/TypeDecls.h"
 #include "js/UbiNodeUtils.h"
 #include "js/Utility.h"
-#include "js/Vector.h"
 #include "util/Text.h"
 #include "vm/BigIntType.h"
+#include "vm/Compartment.h"
 #include "vm/EnvironmentObject.h"
 #include "vm/GetterSetter.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
-#include "vm/JSScript.h"
 #include "vm/PropMap.h"
 #include "vm/Scope.h"
 #include "vm/Shape.h"
@@ -197,7 +196,7 @@ class EdgeVectorTracer final : public JS::CallbackTracer {
   // True if we should populate the edge's names.
   bool wantNames;
 
-  void onChild(JS::GCCellPtr thing) override {
+  void onChild(JS::GCCellPtr thing, const char* name) override {
     if (!okay) {
       return;
     }
@@ -215,8 +214,8 @@ class EdgeVectorTracer final : public JS::CallbackTracer {
     if (wantNames) {
       // Ask the tracer to compute an edge name for us.
       char buffer[1024];
-      context().getEdgeName(buffer, sizeof(buffer));
-      const char* name = buffer;
+      context().getEdgeName(name, buffer, sizeof(buffer));
+      name = buffer;
 
       // Convert the name to char16_t characters.
       name16 = js_pod_malloc<char16_t>(strlen(name) + 1);

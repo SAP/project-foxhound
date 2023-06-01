@@ -5,7 +5,7 @@ const kIteratorTimeout = Services.prefs.getIntPref("findbar.iteratorTimeout");
 const kPrefHighlightAll = "findbar.highlightAll";
 const kPrefModalHighlight = "findbar.modalHighlight";
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       [kPrefHighlightAll, true],
@@ -300,7 +300,7 @@ add_task(async function testHideOnLocationChange() {
     insertCalls: [0, 0],
     removeCalls: [1, 2],
   });
-  BrowserTestUtils.loadURI(browser, url);
+  BrowserTestUtils.loadURIString(browser, url);
   await promise;
 
   BrowserTestUtils.removeTab(tab);

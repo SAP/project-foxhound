@@ -12,7 +12,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   SyncedTabs: "resource://services-sync/SyncedTabs.jsm",
 });
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.urlbar.suggest.searches", false],
@@ -26,15 +26,16 @@ add_task(async function setup() {
   await PlacesUtils.history.clear();
   await PlacesUtils.bookmarks.eraseEverything();
 
-  let oldDefaultEngine = await Services.search.getDefault();
   // Note that the result domain is subdomain.example.ca. We still expect to
   // match with example.com results because we ignore subdomains and the public
   // suffix in this check.
-  await SearchTestUtils.installSearchExtension({
-    search_url: "https://subdomain.example.ca/",
-  });
+  await SearchTestUtils.installSearchExtension(
+    {
+      search_url: "https://subdomain.example.ca/",
+    },
+    { setAsDefault: true }
+  );
   let engine = Services.search.getEngineByName("Example");
-  await Services.search.setDefault(engine);
   await Services.search.moveEngine(engine, 0);
 
   const REMOTE_TAB = {
@@ -95,7 +96,6 @@ add_task(async function setup() {
     sandbox.restore();
     weaveXPCService.ready = oldWeaveServiceReady;
     SyncedTabs._internal = originalSyncedTabsInternal;
-    await Services.search.setDefault(oldDefaultEngine);
     await PlacesUtils.history.clear();
   });
 });

@@ -1,62 +1,30 @@
-const { ASRouterTargeting, QueryCache } = ChromeUtils.import(
-  "resource://activity-stream/lib/ASRouterTargeting.jsm"
-);
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
-);
-const { CFRMessageProvider } = ChromeUtils.import(
-  "resource://activity-stream/lib/CFRMessageProvider.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "ProfileAge",
-  "resource://gre/modules/ProfileAge.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "AddonManager",
-  "resource://gre/modules/AddonManager.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "ShellService",
-  "resource:///modules/ShellService.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "NewTabUtils",
-  "resource://gre/modules/NewTabUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesTestUtils",
-  "resource://testing-common/PlacesTestUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "TelemetryEnvironment",
-  "resource://gre/modules/TelemetryEnvironment.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppConstants",
-  "resource://gre/modules/AppConstants.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Region",
-  "resource://gre/modules/Region.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "HomePage",
-  "resource:///modules/HomePage.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "AboutNewTab",
-  "resource:///modules/AboutNewTab.jsm"
-);
+XPCOMUtils.defineLazyModuleGetters(this, {
+  AboutNewTab: "resource:///modules/AboutNewTab.jsm",
+  AddonManager: "resource://gre/modules/AddonManager.jsm",
+  AddonTestUtils: "resource://testing-common/AddonTestUtils.jsm",
+  ASRouterTargeting: "resource://activity-stream/lib/ASRouterTargeting.jsm",
+  AttributionCode: "resource:///modules/AttributionCode.jsm",
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
+  CFRMessageProvider: "resource://activity-stream/lib/CFRMessageProvider.jsm",
+  ExperimentAPI: "resource://nimbus/ExperimentAPI.jsm",
+  ExperimentFakes: "resource://testing-common/NimbusTestUtils.jsm",
+  FxAccounts: "resource://gre/modules/FxAccounts.jsm",
+  HomePage: "resource:///modules/HomePage.jsm",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
+  QueryCache: "resource://activity-stream/lib/ASRouterTargeting.jsm",
+  ShellService: "resource:///modules/ShellService.jsm",
+  TargetingContext: "resource://messaging-system/targeting/Targeting.jsm",
+});
+ChromeUtils.defineESModuleGetters(this, {
+  AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
+  BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
+  NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+  ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
+  Region: "resource://gre/modules/Region.sys.mjs",
+  TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
+  TelemetrySession: "resource://gre/modules/TelemetrySession.sys.mjs",
+});
 
 // ASRouterTargeting.findMatchingMessage
 add_task(async function find_matching_message() {
@@ -253,6 +221,54 @@ add_task(async function check_isFxAEnabled() {
   );
 });
 
+add_task(async function check_isFxASignedIn_false() {
+  await pushPrefs(
+    ["identity.fxaccounts.enabled", true],
+    ["services.sync.username", ""]
+  );
+  const sandbox = sinon.createSandbox();
+  registerCleanupFunction(async () => sandbox.restore());
+  sandbox.stub(FxAccounts.prototype, "getSignedInUser").resolves(null);
+  is(
+    await ASRouterTargeting.Environment.isFxASignedIn,
+    false,
+    "user should not appear signed in"
+  );
+
+  const message = { id: "foo", targeting: "isFxASignedIn" };
+  isnot(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "should not select the message since user is not signed in"
+  );
+
+  sandbox.restore();
+});
+
+add_task(async function check_isFxASignedIn_true() {
+  await pushPrefs(
+    ["identity.fxaccounts.enabled", true],
+    ["services.sync.username", ""]
+  );
+  const sandbox = sinon.createSandbox();
+  registerCleanupFunction(async () => sandbox.restore());
+  sandbox.stub(FxAccounts.prototype, "getSignedInUser").resolves({});
+  is(
+    await ASRouterTargeting.Environment.isFxASignedIn,
+    true,
+    "user should appear signed in"
+  );
+
+  const message = { id: "foo", targeting: "isFxASignedIn" };
+  is(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "should select the correct message"
+  );
+
+  sandbox.restore();
+});
+
 add_task(async function check_totalBookmarksCount() {
   // Make sure we remove default bookmarks so they don't interfere
   await clearHistoryAndBookmarks();
@@ -356,7 +372,7 @@ add_task(async function checksearchEngines() {
 
 add_task(async function checkisDefaultBrowser() {
   const expected = ShellService.isDefaultBrowser();
-  const result = ASRouterTargeting.Environment.isDefaultBrowser;
+  const result = await ASRouterTargeting.Environment.isDefaultBrowser;
   is(typeof result, "boolean", "isDefaultBrowser should be a boolean value");
   is(
     result,
@@ -410,7 +426,7 @@ add_task(async function checkAddonsInfo() {
 
   const xpi = AddonTestUtils.createTempWebExtensionFile({
     manifest: {
-      applications: { gecko: { id: FAKE_ID } },
+      browser_specific_settings: { gecko: { id: FAKE_ID } },
       name: FAKE_NAME,
       version: FAKE_VERSION,
     },
@@ -1111,10 +1127,205 @@ add_task(async function check_userMonthlyActivity() {
   );
 });
 
-add_task(async function check_doesAppNeedPing() {
+add_task(async function check_doesAppNeedPin() {
   is(
     typeof (await ASRouterTargeting.Environment.doesAppNeedPin),
     "boolean",
     "Should return a boolean"
   );
+});
+
+add_task(async function check_doesAppNeedPrivatePin() {
+  is(
+    typeof (await ASRouterTargeting.Environment.doesAppNeedPrivatePin),
+    "boolean",
+    "Should return a boolean"
+  );
+});
+
+add_task(async function check_isBackgroundTaskMode() {
+  if (!AppConstants.MOZ_BACKGROUNDTASKS) {
+    // `mochitest-browser` suite `add_task` does not yet support
+    // `properties.skip_if`.
+    ok(true, "Skipping because !AppConstants.MOZ_BACKGROUNDTASKS");
+    return;
+  }
+
+  const bts = Cc["@mozilla.org/backgroundtasks;1"].getService(
+    Ci.nsIBackgroundTasks
+  );
+
+  // Pretend that this is a background task.
+  bts.overrideBackgroundTaskNameForTesting("taskName");
+  is(
+    await ASRouterTargeting.Environment.isBackgroundTaskMode,
+    true,
+    "Is in background task mode"
+  );
+  is(
+    await ASRouterTargeting.Environment.backgroundTaskName,
+    "taskName",
+    "Has expected background task name"
+  );
+
+  // Unset, so that subsequent test functions don't see background task mode.
+  bts.overrideBackgroundTaskNameForTesting(null);
+  is(
+    await ASRouterTargeting.Environment.isBackgroundTaskMode,
+    false,
+    "Is not in background task mode"
+  );
+  is(
+    await ASRouterTargeting.Environment.backgroundTaskName,
+    null,
+    "Has no background task name"
+  );
+});
+
+add_task(async function check_userPrefersReducedMotion() {
+  is(
+    typeof (await ASRouterTargeting.Environment.userPrefersReducedMotion),
+    "boolean",
+    "Should return a boolean"
+  );
+});
+
+add_task(async function check_colorwaysActive() {
+  is(
+    typeof (await ASRouterTargeting.Environment.colorwaysActive),
+    "boolean",
+    "Should return a boolean"
+  );
+
+  const sandbox = sinon.createSandbox();
+  registerCleanupFunction(async () => {
+    sandbox.restore();
+  });
+
+  let stub = sandbox
+    .stub(BuiltInThemes, "findActiveColorwayCollection")
+    .returns(true);
+
+  ok(
+    await ASRouterTargeting.Environment.colorwaysActive,
+    "returns true when an colorways are active"
+  );
+
+  stub.returns(false);
+
+  ok(
+    !(await ASRouterTargeting.Environment.colorwaysActive),
+    "returns false when an colorways are inactive"
+  );
+});
+
+add_task(async function check_userEnabledActiveColorway() {
+  is(
+    typeof (await ASRouterTargeting.Environment.userEnabledActiveColorway),
+    "boolean",
+    "Should return a boolean"
+  );
+
+  const sandbox = sinon.createSandbox();
+  registerCleanupFunction(async () => {
+    sandbox.restore();
+  });
+
+  let currentCollectionStub = sandbox
+    .stub(BuiltInThemes, "isColorwayFromCurrentCollection")
+    .returns(false);
+
+  ok(
+    !(await ASRouterTargeting.Environment.userEnabledActiveColorway),
+    "returns false when an active colorway is not enabled"
+  );
+
+  currentCollectionStub.returns(true);
+
+  ok(
+    await ASRouterTargeting.Environment.userEnabledActiveColorway,
+    "returns true when an active colorway is enabled"
+  );
+});
+
+add_task(async function test_mr2022Holdback() {
+  await ExperimentAPI.ready();
+
+  ok(
+    !ASRouterTargeting.Environment.inMr2022Holdback,
+    "Should not be in holdback (no experiment)"
+  );
+
+  {
+    const doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+      featureId: "majorRelease2022",
+      value: {
+        onboarding: true,
+      },
+    });
+
+    ok(
+      !ASRouterTargeting.Environment.inMr2022Holdback,
+      "Should not be in holdback (onboarding = true)"
+    );
+
+    await doExperimentCleanup();
+  }
+
+  {
+    const doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+      featureId: "majorRelease2022",
+      value: {
+        onboarding: false,
+      },
+    });
+
+    ok(
+      ASRouterTargeting.Environment.inMr2022Holdback,
+      "Should be in holdback (onboarding = false)"
+    );
+
+    await doExperimentCleanup();
+  }
+});
+
+add_task(async function test_distributionId() {
+  is(
+    ASRouterTargeting.Environment.distributionId,
+    "",
+    "Should return an empty distribution Id"
+  );
+
+  Services.prefs.getDefaultBranch(null).setCharPref("distribution.id", "test");
+
+  is(
+    ASRouterTargeting.Environment.distributionId,
+    "test",
+    "Should return the correct distribution Id"
+  );
+});
+
+add_task(async function test_fxViewButtonAreaType_default() {
+  is(
+    typeof (await ASRouterTargeting.Environment.fxViewButtonAreaType),
+    "string",
+    "Should return a string"
+  );
+
+  is(
+    await ASRouterTargeting.Environment.fxViewButtonAreaType,
+    "toolbar",
+    "Should return name of container if button hasn't been removed"
+  );
+});
+
+add_task(async function test_fxViewButtonAreaType_removed() {
+  CustomizableUI.removeWidgetFromArea("firefox-view-button");
+
+  is(
+    await ASRouterTargeting.Environment.fxViewButtonAreaType,
+    null,
+    "Should return null if button has been removed"
+  );
+  CustomizableUI.reset();
 });

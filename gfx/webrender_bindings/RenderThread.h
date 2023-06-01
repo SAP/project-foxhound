@@ -138,7 +138,7 @@ class RenderThread final {
   static RenderThread* Get();
 
   /// Can only be called from the main thread.
-  static void Start();
+  static void Start(uint32_t aNamespace);
 
   /// Can only be called from the main thread.
   static void ShutDown();
@@ -169,13 +169,14 @@ class RenderThread final {
   /// Automatically forwarded to the render thread. Will trigger a render for
   /// the current pending frame once one call per document in that pending
   /// frame has been received.
-  void HandleFrameOneDoc(wr::WindowId aWindowId, bool aRender);
+  void HandleFrameOneDoc(wr::WindowId aWindowId, bool aRender,
+                         bool aTrackedFrame);
 
   /// Automatically forwarded to the render thread.
   void SetClearColor(wr::WindowId aWindowId, wr::ColorF aColor);
 
   /// Automatically forwarded to the render thread.
-  void SetProfilerUI(wr::WindowId aWindowId, const nsCString& aUI);
+  void SetProfilerUI(wr::WindowId aWindowId, const nsACString& aUI);
 
   /// Automatically forwarded to the render thread.
   void PipelineSizeChanged(wr::WindowId aWindowId, uint64_t aPipelineId,
@@ -232,6 +233,7 @@ class RenderThread final {
                             const TimeStamp& aStartTime);
   /// Can be called from any thread.
   void DecPendingFrameBuildCount(wr::WindowId aWindowId);
+  void DecPendingFrameCount(wr::WindowId aWindowId);
 
   /// Can be called from any thread.
   WebRenderThreadPool& ThreadPool() { return mThreadPool; }
@@ -282,7 +284,8 @@ class RenderThread final {
   /// Can only be called from the render thread.
   bool SyncObjectNeeded();
 
-  size_t RendererCount();
+  size_t RendererCount() const;
+  size_t ActiveRendererCount() const;
 
   void BeginRecordingForWindow(wr::WindowId aWindowId,
                                const TimeStamp& aRecordingStart,
@@ -304,8 +307,11 @@ class RenderThread final {
 
   explicit RenderThread(RefPtr<nsIThread> aThread);
 
+  void HandleFrameOneDocInner(wr::WindowId aWindowId, bool aRender,
+                              bool aTrackedFrame);
+
   void DeferredRenderTextureHostDestroy();
-  void ShutDownTask(layers::SynchronousTask* aTask);
+  void ShutDownTask();
   void InitDeviceTask();
   void PostRunnable(already_AddRefed<nsIRunnable> aRunnable);
 
@@ -345,8 +351,6 @@ class RenderThread final {
 
   struct WindowInfo {
     int64_t PendingCount() { return mPendingFrames.size(); }
-    // If mIsRendering is true, mPendingFrames.front() is currently being
-    // rendered.
     std::queue<PendingFrameInfo> mPendingFrames;
     uint8_t mPendingFrameBuild = 0;
     bool mIsDestroyed = false;
@@ -360,7 +364,7 @@ class RenderThread final {
     }
   };
 
-  Mutex mRenderTextureMapLock;
+  Mutex mRenderTextureMapLock MOZ_UNANNOTATED;
   std::unordered_map<wr::ExternalImageId, RefPtr<RenderTextureHost>,
                      ExternalImageIdHashFn>
       mRenderTextures;

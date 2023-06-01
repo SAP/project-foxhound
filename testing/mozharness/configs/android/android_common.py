@@ -7,9 +7,7 @@
 # This configuration should be combined with platform-specific mozharness
 # configuration such as android-x86_64.py, android_hw, or similar.
 
-from __future__ import absolute_import
 import os
-
 
 NODEJS_PATH = None
 if "MOZ_FETCHES_DIR" in os.environ:
@@ -301,7 +299,6 @@ config = {
                 "--log-raw-level=%(log_raw_level)s",
                 "--log-errorsummary=%(error_summary_file)s",
                 "--log-tbpl-level=%(log_tbpl_level)s",
-                "--test-plugin-path=none",
                 "--threads=4",
                 "--deviceSerial=%(device_serial)s",
                 "%(xpcshell_extra)s",

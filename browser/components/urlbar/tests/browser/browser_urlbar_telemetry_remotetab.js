@@ -10,9 +10,12 @@
 
 const SCALAR_URLBAR = "browser.engagement.navigation.urlbar";
 
+ChromeUtils.defineESModuleGetters(this, {
+  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(this, {
   SyncedTabs: "resource://services-sync/SyncedTabs.jsm",
-  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
 });
 
 function assertSearchTelemetryEmpty(search_hist) {
@@ -53,15 +56,6 @@ function snapshotHistograms() {
   Services.telemetry.clearScalars();
   Services.telemetry.clearEvents();
   return {
-    resultIndexHist: TelemetryTestUtils.getAndClearHistogram(
-      "FX_URLBAR_SELECTED_RESULT_INDEX"
-    ),
-    resultTypeHist: TelemetryTestUtils.getAndClearHistogram(
-      "FX_URLBAR_SELECTED_RESULT_TYPE_2"
-    ),
-    resultIndexByTypeHist: TelemetryTestUtils.getAndClearKeyedHistogram(
-      "FX_URLBAR_SELECTED_RESULT_INDEX_BY_TYPE_2"
-    ),
     resultMethodHist: TelemetryTestUtils.getAndClearHistogram(
       "FX_URLBAR_SELECTED_RESULT_METHOD"
     ),
@@ -70,21 +64,6 @@ function snapshotHistograms() {
 }
 
 function assertTelemetryResults(histograms, type, index, method) {
-  TelemetryTestUtils.assertHistogram(histograms.resultIndexHist, index, 1);
-
-  TelemetryTestUtils.assertHistogram(
-    histograms.resultTypeHist,
-    UrlbarUtils.SELECTED_RESULT_TYPES[type],
-    1
-  );
-
-  TelemetryTestUtils.assertKeyedHistogramValue(
-    histograms.resultIndexByTypeHist,
-    type,
-    index,
-    1
-  );
-
   TelemetryTestUtils.assertHistogram(histograms.resultMethodHist, method, 1);
 
   TelemetryTestUtils.assertKeyedScalar(
@@ -95,7 +74,7 @@ function assertTelemetryResults(histograms, type, index, method) {
   );
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       // Disable search suggestions in the urlbar.

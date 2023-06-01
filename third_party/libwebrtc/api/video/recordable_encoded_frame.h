@@ -17,7 +17,6 @@
 #include "api/video/color_space.h"
 #include "api/video/encoded_image.h"
 #include "api/video/video_codec_type.h"
-#include "rtc_base/ref_count.h"
 
 namespace webrtc {
 
@@ -26,8 +25,10 @@ class RecordableEncodedFrame {
  public:
   // Encoded resolution in pixels
   struct EncodedResolution {
-    unsigned width;
-    unsigned height;
+    bool empty() const { return width == 0 && height == 0; }
+
+    unsigned width = 0;
+    unsigned height = 0;
   };
 
   virtual ~RecordableEncodedFrame() = default;

@@ -42,11 +42,11 @@ class SVGClipPathFrame final : public SVGContainerFrame {
   NS_DECL_FRAMEARENA_HELPERS(SVGClipPathFrame)
 
   // nsIFrame methods:
-  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
-                                const nsDisplayListSet& aLists) override {}
+  void BuildDisplayList(nsDisplayListBuilder* aBuilder,
+                        const nsDisplayListSet& aLists) override {}
 
-  virtual bool IsSVGTransformed(Matrix* aOwnTransforms,
-                                Matrix* aFromParentTransforms) const override;
+  bool IsSVGTransformed(Matrix* aOwnTransforms,
+                        Matrix* aFromParentTransforms) const override;
 
   // SVGClipPathFrame methods:
 
@@ -80,13 +80,10 @@ class SVGClipPathFrame final : public SVGContainerFrame {
    *   current transform.
    * @param [in, optional] aExtraMask An extra surface that the returned
    *   surface should be masked with.
-   * @param [in, optional] aExtraMasksTransform The transform to use with
-   *   aExtraMask. Should be passed when aExtraMask is passed.
    */
   already_AddRefed<SourceSurface> GetClipMask(
       gfxContext& aReferenceContext, nsIFrame* aClippedFrame,
-      const gfxMatrix& aMatrix, SourceSurface* aExtraMask = nullptr,
-      const Matrix& aExtraMasksTransform = Matrix());
+      const gfxMatrix& aMatrix, SourceSurface* aExtraMask = nullptr);
 
   /**
    * Paint mask directly onto a given context(aMaskContext).
@@ -98,12 +95,9 @@ class SVGClipPathFrame final : public SVGContainerFrame {
    *   current transform.
    * @param [in, optional] aExtraMask An extra surface that the returned
    *   surface should be masked with.
-   * @param [in, optional] aExtraMasksTransform The transform to use with
-   *   aExtraMask. Should be passed when aExtraMask is passed.
    */
   void PaintClipMask(gfxContext& aMaskContext, nsIFrame* aClippedFrame,
-                     const gfxMatrix& aMatrix, SourceSurface* aExtraMask,
-                     const Matrix& aExtraMasksTransform);
+                     const gfxMatrix& aMatrix, SourceSurface* aExtraMask);
 
   /**
    * aPoint is expected to be in aClippedFrame's SVG user space.
@@ -118,14 +112,14 @@ class SVGClipPathFrame final : public SVGContainerFrame {
   bool IsValid();
 
   // nsIFrame interface:
-  virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                                    int32_t aModType) override;
+  nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
+                            int32_t aModType) override;
 
-  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
-                    nsIFrame* aPrevInFlow) override;
+  void Init(nsIContent* aContent, nsContainerFrame* aParent,
+            nsIFrame* aPrevInFlow) override;
 
 #ifdef DEBUG_FRAME_DUMP
-  virtual nsresult GetFrameName(nsAString& aResult) const override {
+  nsresult GetFrameName(nsAString& aResult) const override {
     return MakeFrameName(u"SVGClipPath"_ns, aResult);
   }
 #endif
@@ -143,7 +137,7 @@ class SVGClipPathFrame final : public SVGContainerFrame {
 
  private:
   // SVGContainerFrame methods:
-  virtual gfxMatrix GetCanvasTM() override;
+  gfxMatrix GetCanvasTM() override;
 
   already_AddRefed<DrawTarget> CreateClipMask(gfxContext& aReferenceContext,
                                               gfx::IntPoint& aOffset);

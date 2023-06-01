@@ -227,6 +227,9 @@ static INLINE void vpx_filter_block1d16_v8_x_avx2(
     s2[2] = _mm256_unpackhi_epi8(s32b[4], s32b[5]);
   }
 
+  // The output_height is always a multiple of two.
+  assert(!(output_height & 1));
+
   for (i = output_height; i > 1; i -= 2) {
     __m256i srcRegHead2, srcRegHead3;
 
@@ -281,35 +284,6 @@ static INLINE void vpx_filter_block1d16_v8_x_avx2(
     s1[2] = s1[3];
     s2[2] = s2[3];
     srcRegHead1 = srcRegHead3;
-  }
-
-  // if the number of strides is odd.
-  // process only 16 bytes
-  if (i > 0) {
-    // load the last 16 bytes
-    const __m128i srcRegHead2 =
-        _mm_loadu_si128((const __m128i *)(src_ptr + src_pitch * 7));
-
-    // merge the last 2 results together
-    s1[0] = _mm256_castsi128_si256(
-        _mm_unpacklo_epi8(_mm256_castsi256_si128(srcRegHead1), srcRegHead2));
-    s2[0] = _mm256_castsi128_si256(
-        _mm_unpackhi_epi8(_mm256_castsi256_si128(srcRegHead1), srcRegHead2));
-
-    outReg1 = convolve8_8_avx2(s1, f);
-    outReg2 = convolve8_8_avx2(s2, f);
-
-    // shrink to 8 bit each 16 bits, the low and high 64-bits of each lane
-    // contain the first and second convolve result respectively
-    outReg1 = _mm_packus_epi16(outReg1, outReg2);
-
-    // average if necessary
-    if (avg) {
-      outReg1 = _mm_avg_epu8(outReg1, _mm_load_si128((__m128i *)output_ptr));
-    }
-
-    // save 16 bytes
-    _mm_store_si128((__m128i *)output_ptr, outReg1);
   }
 }
 
@@ -798,7 +772,7 @@ static void vpx_filter_block1d4_h4_avx2(const uint8_t *src_ptr,
 
     // Pack to 8-bits
     dst = _mm_packus_epi16(dst, _mm_setzero_si128());
-    *((uint32_t *)(dst_ptr)) = _mm_cvtsi128_si32(dst);
+    *((int *)(dst_ptr)) = _mm_cvtsi128_si32(dst);
   }
 }
 
@@ -969,12 +943,12 @@ filter8_1dfunction vpx_filter_block1d4_h2_avg_ssse3;
 //                                   const InterpKernel *filter, int x0_q4,
 //                                   int32_t x_step_q4, int y0_q4,
 //                                   int y_step_q4, int w, int h);
-FUN_CONV_1D(horiz, x0_q4, x_step_q4, h, src, , avx2, 0);
+FUN_CONV_1D(horiz, x0_q4, x_step_q4, h, src, , avx2, 0)
 FUN_CONV_1D(vert, y0_q4, y_step_q4, v, src - src_stride * (num_taps / 2 - 1), ,
-            avx2, 0);
-FUN_CONV_1D(avg_horiz, x0_q4, x_step_q4, h, src, avg_, avx2, 1);
+            avx2, 0)
+FUN_CONV_1D(avg_horiz, x0_q4, x_step_q4, h, src, avg_, avx2, 1)
 FUN_CONV_1D(avg_vert, y0_q4, y_step_q4, v,
-            src - src_stride * (num_taps / 2 - 1), avg_, avx2, 1);
+            src - src_stride * (num_taps / 2 - 1), avg_, avx2, 1)
 
 // void vpx_convolve8_avx2(const uint8_t *src, ptrdiff_t src_stride,
 //                          uint8_t *dst, ptrdiff_t dst_stride,
@@ -986,6 +960,6 @@ FUN_CONV_1D(avg_vert, y0_q4, y_step_q4, v,
 //                              const InterpKernel *filter, int x0_q4,
 //                              int32_t x_step_q4, int y0_q4, int y_step_q4,
 //                              int w, int h);
-FUN_CONV_2D(, avx2, 0);
-FUN_CONV_2D(avg_, avx2, 1);
+FUN_CONV_2D(, avx2, 0)
+FUN_CONV_2D(avg_, avx2, 1)
 #endif  // HAVE_AX2 && HAVE_SSSE3

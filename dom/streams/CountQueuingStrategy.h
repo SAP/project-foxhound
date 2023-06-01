@@ -17,22 +17,21 @@
 #include "nsWrapperCache.h"
 #include "nsIGlobalObject.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class CountQueuingStrategy final : public BaseQueuingStrategy,
                                    public nsWrapperCache {
  public:
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(CountQueuingStrategy,
-                                                         BaseQueuingStrategy)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS_INHERITED(CountQueuingStrategy,
+                                                        BaseQueuingStrategy)
 
  public:
   explicit CountQueuingStrategy(nsISupports* aGlobal, double aHighWaterMark)
       : BaseQueuingStrategy(aGlobal, aHighWaterMark) {}
 
  protected:
-  ~CountQueuingStrategy() = default;
+  ~CountQueuingStrategy() override = default;
 
  public:
   JSObject* WrapObject(JSContext* aCx,
@@ -44,7 +43,6 @@ class CountQueuingStrategy final : public BaseQueuingStrategy,
   already_AddRefed<Function> GetSize(ErrorResult& aRv);
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_CountQueuingStrategy_h

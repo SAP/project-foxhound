@@ -1,8 +1,8 @@
 .. -*- Mode: rst; fill-column: 80; -*-
 
-===========================
-GeckoView Contributor Guide
-===========================
+=================
+Contributor Guide
+=================
 
 Table of contents
 =================
@@ -52,22 +52,31 @@ If you are on a mac, you will need to have the Xcode build tools
 installed. You can do this by either `installing
 Xcode <https://developer.apple.com/xcode/>`__ or installing only the
 tools from the command line by running ``xcode-select --install`` and
-following the on screen instructions. Use the ``--no-interactive``
-argument to automatically accept any license agreements.
+following the on screen instructions.
+
+You will need to ``bootstrap`` for GeckoView/Firefox for Android. The easiest way is to run the following command:
 
 .. code:: bash
 
-   ./mach [--no-interactive] bootstrap
+   ./mach --no-interactive bootstrap --application-choice="GeckoView/Firefox for Android"
 
--  Choose option \`4. Firefox for Android\` for GeckoView development.
-   This will give you a version of Gecko configured for Android that has
-   not bundled the native code into embedded libraries so you can amend
-   the code.
--  Say Y to all configuration options
--  Once ``mach bootstrap`` is complete, it will automatically write
-   the configuration into a new ``mozconfig`` file. If you already
-   have a ``mozconfig``, ``mach`` will instead output new configuration
-   that you should append to your existing file.
+.. note::
+
+    - The ``--no-interactive`` argument will make ``bootstrap`` run start to finish without requiring any input from you. It will automatically accept any license agreements.
+    - The ``--application-choice="GeckoView/Firefox for Android"`` argument is needed when using ``--no-interactive`` so that "bootstrapping" is done for the correct application (instead of the default).
+
+    If you want to make all the selections yourself and/or read through the license agreements, you can simply run:
+
+    .. code:: bash
+
+         ./mach bootstrap
+
+    Select ``4. GeckoView/Firefox for Android`` when prompted and respond to any subsequent prompts as they appear.
+
+Once ``./mach bootstrap`` is complete, it will automatically write
+the configuration into a new ``mozconfig`` file. If you already
+have a ``mozconfig``, ``mach`` will instead output new configuration
+that you should append to your existing file.
 
 Build from the command line
 ---------------------------
@@ -113,6 +122,10 @@ means you will need to run ``mach build`` yourself to pick up changes to
 native code. `Bug
 1509539 <https://bugzilla.mozilla.org/show_bug.cgi?id=1509539>`_ tracks
 making Android Studio and Gradle do this automatically.
+
+If you want set up code formatting for Kotlin, please reference
+`IntelliJ IDEA configuration
+<https://pinterest.github.io/ktlint/rules/configuration-intellij-idea/>`_.
 
 Custom mozconfig with Android Studio
 ------------------------------------
@@ -205,7 +218,7 @@ number e.g.
      not `about:config` should be available.
      ([bug 1540065]({{bugzilla}}1540065))
 
-   [71.12]: {{javadoc_uri}}/GeckoRuntimeSettings.Builder.html#aboutConfigEnabled-boolean-
+   [71.12]: {{javadoc_uri}}/GeckoRuntimeSettings.Builder.html#aboutConfigEnabled(boolean)
 
 Submitting to the ``try`` server
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

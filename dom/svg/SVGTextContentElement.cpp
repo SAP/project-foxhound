@@ -17,8 +17,7 @@
 #include "nsTextNode.h"
 #include "SVGTextFrame.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using namespace SVGTextContentElement_Binding;
 
@@ -74,7 +73,7 @@ Maybe<int32_t> SVGTextContentElement::GetNonLayoutDependentNumberOfChars() {
   SVGTextFrame* frame = GetSVGTextFrameForNonLayoutDependentQuery();
   if (!frame || frame != GetPrimaryFrame()) {
     // Only support this fast path on <text>, not child <tspan>s, etc.
-    return Some(0);
+    return Nothing();
   }
 
   uint32_t num = 0;
@@ -188,5 +187,4 @@ int32_t SVGTextContentElement::GetCharNumAtPosition(
   return textFrame ? textFrame->GetCharNumAtPosition(this, aPoint) : -1;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

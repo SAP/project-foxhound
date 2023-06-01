@@ -17,8 +17,7 @@
 #include "VideoUtils.h"
 #include "GMPCrashHelperHolder.h"
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
 class GMPContentParent;
 
@@ -54,9 +53,8 @@ class GMPVideoDecoderParent final : public PGMPVideoDecoderParent,
   const nsCString& GetDisplayName() const override;
 
   // GMPSharedMemManager
-  bool Alloc(size_t aSize, Shmem::SharedMemory::SharedMemoryType aType,
-             Shmem* aMem) override {
-    return AllocShmem(aSize, aType, aMem);
+  bool Alloc(size_t aSize, Shmem* aMem) override {
+    return AllocShmem(aSize, aMem);
   }
   void Dealloc(Shmem&& aMem) override { DeallocShmem(aMem); }
 
@@ -98,7 +96,6 @@ class GMPVideoDecoderParent final : public PGMPVideoDecoderParent,
   RefPtr<SimpleTimer> mResetCompleteTimeout;
 };
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp
 
 #endif  // GMPVideoDecoderParent_h_

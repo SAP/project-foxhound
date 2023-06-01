@@ -12,8 +12,7 @@
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/ScopeExit.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using mozilla::ipc::AssertIsOnBackgroundThread;
 
@@ -42,8 +41,8 @@ void ServiceWorkerContainerProxy::RevokeActor(
 }
 
 RefPtr<ServiceWorkerRegistrationPromise> ServiceWorkerContainerProxy::Register(
-    const ClientInfo& aClientInfo, const nsCString& aScopeURL,
-    const nsCString& aScriptURL, ServiceWorkerUpdateViaCache aUpdateViaCache) {
+    const ClientInfo& aClientInfo, const nsACString& aScopeURL,
+    const nsACString& aScriptURL, ServiceWorkerUpdateViaCache aUpdateViaCache) {
   AssertIsOnBackgroundThread();
 
   RefPtr<ServiceWorkerRegistrationPromise::Private> promise =
@@ -51,7 +50,8 @@ RefPtr<ServiceWorkerRegistrationPromise> ServiceWorkerContainerProxy::Register(
 
   nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(
       __func__,
-      [aClientInfo, aScopeURL, aScriptURL, aUpdateViaCache, promise]() mutable {
+      [aClientInfo, aScopeURL = nsCString(aScopeURL),
+       aScriptURL = nsCString(aScriptURL), aUpdateViaCache, promise]() mutable {
         auto scopeExit = MakeScopeExit(
             [&] { promise->Reject(NS_ERROR_DOM_INVALID_STATE_ERR, __func__); });
 
@@ -72,14 +72,14 @@ RefPtr<ServiceWorkerRegistrationPromise> ServiceWorkerContainerProxy::Register(
 
 RefPtr<ServiceWorkerRegistrationPromise>
 ServiceWorkerContainerProxy::GetRegistration(const ClientInfo& aClientInfo,
-                                             const nsCString& aURL) {
+                                             const nsACString& aURL) {
   AssertIsOnBackgroundThread();
 
   RefPtr<ServiceWorkerRegistrationPromise::Private> promise =
       new ServiceWorkerRegistrationPromise::Private(__func__);
 
-  nsCOMPtr<nsIRunnable> r =
-      NS_NewRunnableFunction(__func__, [aClientInfo, aURL, promise]() mutable {
+  nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(
+      __func__, [aClientInfo, aURL = nsCString(aURL), promise]() mutable {
         auto scopeExit = MakeScopeExit(
             [&] { promise->Reject(NS_ERROR_DOM_INVALID_STATE_ERR, __func__); });
 
@@ -150,5 +150,4 @@ RefPtr<ServiceWorkerRegistrationPromise> ServiceWorkerContainerProxy::GetReady(
   return promise;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

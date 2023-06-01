@@ -42,6 +42,7 @@
 #include "nsISupportsImpl.h"
 #include "nsHttpChannel.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/ExpandedPrincipal.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/NullPrincipal.h"
 #include "nsIHttpHeaderVisitor.h"
@@ -50,6 +51,7 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/nsHTTPSOnlyUtils.h"
 #include "mozilla/dom/ReferrerInfo.h"
+#include "mozilla/dom/RequestBinding.h"
 #include <algorithm>
 
 using namespace mozilla;
@@ -393,12 +395,31 @@ void nsCORSListenerProxy::ClearPrivateBrowsingCache() {
   sPreflightCache->PurgePrivateBrowsingEntries();
 }
 
+// Usually, when using an expanded principal, there's no particularly good
+// origin to do the request with. However if the expanded principal only wraps
+// one principal, we can use that one instead.
+//
+// This is needed so that DevTools can still do CORS-enabled requests (since
+// DevTools uses a triggering principal expanding the node principal to bypass
+// CSP checks, see Element::CreateDevToolsPrincipal(), bug 1604562, and bug
+// 1391994).
+static nsIPrincipal* GetOriginHeaderPrincipal(nsIPrincipal* aPrincipal) {
+  while (aPrincipal && aPrincipal->GetIsExpandedPrincipal()) {
+    auto* ep = BasePrincipal::Cast(aPrincipal)->As<ExpandedPrincipal>();
+    if (ep->AllowList().Length() != 1) {
+      break;
+    }
+    aPrincipal = ep->AllowList()[0];
+  }
+  return aPrincipal;
+}
+
 nsCORSListenerProxy::nsCORSListenerProxy(nsIStreamListener* aOuter,
                                          nsIPrincipal* aRequestingPrincipal,
                                          bool aWithCredentials)
     : mOuterListener(aOuter),
       mRequestingPrincipal(aRequestingPrincipal),
-      mOriginHeaderPrincipal(aRequestingPrincipal),
+      mOriginHeaderPrincipal(GetOriginHeaderPrincipal(aRequestingPrincipal)),
       mWithCredentials(aWithCredentials),
       mRequestApproved(false),
       mHasBeenCrossSite(false),
@@ -614,7 +635,7 @@ nsresult nsCORSListenerProxy::CheckRequestApproved(nsIRequest* aRequest) {
   }
 
   if (mWithCredentials || !allowedOriginHeader.EqualsLiteral("*")) {
-    MOZ_ASSERT(!nsContentUtils::IsExpandedPrincipal(mOriginHeaderPrincipal));
+    MOZ_ASSERT(!mOriginHeaderPrincipal->GetIsExpandedPrincipal());
     nsAutoCString origin;
     mOriginHeaderPrincipal->GetAsciiOrigin(origin);
 
@@ -728,6 +749,7 @@ nsCORSListenerProxy::AsyncOnChannelRedirect(
       return rv;
     }
   } else {
+    mIsRedirect = true;
     // A real, external redirect.  Perform CORS checking on new URL.
     rv = CheckRequestApproved(aOldChannel);
     if (NS_FAILED(rv)) {
@@ -775,19 +797,15 @@ nsCORSListenerProxy::AsyncOnChannelRedirect(
         rv = NS_ERROR_OUT_OF_MEMORY;
       }
 
-      if (NS_SUCCEEDED(rv)) {
-        bool equal;
-        rv = oldChannelPrincipal->Equals(newChannelPrincipal, &equal);
-        if (NS_SUCCEEDED(rv) && !equal) {
-          // Spec says to set our source origin to a unique origin.
-          mOriginHeaderPrincipal =
-              NullPrincipal::CreateWithInheritedAttributes(oldChannelPrincipal);
-        }
-      }
-
       if (NS_FAILED(rv)) {
         aOldChannel->Cancel(rv);
         return rv;
+      }
+
+      if (!oldChannelPrincipal->Equals(newChannelPrincipal)) {
+        // Spec says to set our source origin to a unique origin.
+        mOriginHeaderPrincipal =
+            NullPrincipal::CreateWithInheritedAttributes(oldChannelPrincipal);
       }
     }
 
@@ -912,7 +930,7 @@ nsresult nsCORSListenerProxy::UpdateChannel(nsIChannel* aChannel,
   // can't return early on failure.
   nsCOMPtr<nsIHttpChannelInternal> internal = do_QueryInterface(aChannel);
   if (internal) {
-    rv = internal->SetCorsMode(nsIHttpChannelInternal::CORS_MODE_CORS);
+    rv = internal->SetRequestMode(dom::RequestMode::Cors);
     NS_ENSURE_SUCCESS(rv, rv);
     rv = internal->SetCorsIncludeCredentials(mWithCredentials);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -977,9 +995,16 @@ nsresult nsCORSListenerProxy::UpdateChannel(nsIChannel* aChannel,
   // It's a cross site load
   mHasBeenCrossSite = true;
 
-  nsCString userpass;
-  uri->GetUserPass(userpass);
-  NS_ENSURE_TRUE(userpass.IsEmpty(), NS_ERROR_DOM_BAD_URI);
+  if (mIsRedirect || StaticPrefs::network_cors_preflight_block_userpass_uri()) {
+    // https://fetch.spec.whatwg.org/#http-redirect-fetch
+    // Step 9. If request’s mode is "cors", locationURL includes credentials,
+    // and request’s origin is not same origin with locationURL’s origin,
+    // then return a network error.
+
+    nsAutoCString userpass;
+    uri->GetUserPass(userpass);
+    NS_ENSURE_TRUE(userpass.IsEmpty(), NS_ERROR_DOM_BAD_URI);
+  }
 
   // If we have an expanded principal here, we'll reject the CORS request,
   // because we can't send a useful Origin header which is required for CORS.
@@ -1643,13 +1668,12 @@ void nsCORSListenerProxy::LogBlockedCORSRequest(uint64_t aInnerWindowID,
                                               nsIScriptError::errorFlag,
                                               aCategory, aInnerWindowID);
   } else {
-    nsCString category = PromiseFlatCString(aCategory);
     rv = scriptError->Init(aMessage,
                            u""_ns,  // sourceName
                            u""_ns,  // sourceLine
                            0,       // lineNumber
                            0,       // columnNumber
-                           nsIScriptError::errorFlag, category.get(),
+                           nsIScriptError::errorFlag, aCategory,
                            aPrivateBrowsing,
                            aFromChromeContext);  // From chrome context
   }

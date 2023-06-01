@@ -3,6 +3,10 @@
 
 // Ensure that same-origin errors are logged to the console.
 
+// XPCNativeWrapper is not defined globally in ESLint as it may be going away.
+// See bug 1481337.
+/* global XPCNativeWrapper */
+
 "use strict";
 
 const TEST_URI =
@@ -12,7 +16,11 @@ add_task(async function() {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   const targetURL = "http://example.org";
-  const onErrorMessage = waitForMessage(hud, "may not load data");
+  const onErrorMessage = waitForMessageByType(
+    hud,
+    "may not load data",
+    ".error"
+  );
   SpecialPowers.spawn(gBrowser.selectedBrowser, [targetURL], url => {
     XPCNativeWrapper.unwrap(content).testTrack(url);
   });

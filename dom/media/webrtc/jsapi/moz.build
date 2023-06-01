@@ -25,13 +25,14 @@ UNIFIED_SOURCES += [
     "PacketDumper.cpp",
     "PeerConnectionCtx.cpp",
     "PeerConnectionImpl.cpp",
-    "PeerConnectionMedia.cpp",
+    "RemoteTrackSource.cpp",
     "RTCDtlsTransport.cpp",
     "RTCDTMFSender.cpp",
     "RTCRtpReceiver.cpp",
+    "RTCRtpSender.cpp",
+    "RTCRtpTransceiver.cpp",
     "RTCStatsIdGenerator.cpp",
     "RTCStatsReport.cpp",
-    "TransceiverImpl.cpp",
     "WebrtcGlobalInformation.cpp",
 ]
 

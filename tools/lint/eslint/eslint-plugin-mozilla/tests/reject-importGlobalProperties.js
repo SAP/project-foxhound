@@ -25,6 +25,20 @@ ruleTester.run("reject-importGlobalProperties", rule, {
       options: ["allownonwebidl"],
       code: "Cu.importGlobalProperties(['fetch'])",
     },
+    {
+      options: ["allownonwebidl"],
+      code: "XPCOMUtils.defineLazyGlobalGetters(this, ['fetch'])",
+    },
+    {
+      options: ["allownonwebidl"],
+      code: "Cu.importGlobalProperties(['TextEncoder'])",
+      filename: "foo.sjs",
+    },
+    {
+      options: ["allownonwebidl"],
+      code: "XPCOMUtils.defineLazyGlobalGetters(this, ['TextEncoder'])",
+      filename: "foo.sjs",
+    },
   ],
   invalid: [
     {
@@ -33,14 +47,41 @@ ruleTester.run("reject-importGlobalProperties", rule, {
       errors: [{ messageId: "unexpectedCall" }],
     },
     {
+      code: "XPCOMUtils.defineLazyGlobalGetters(this, ['fetch'])",
+      options: ["everything"],
+      errors: [{ messageId: "unexpectedCall" }],
+    },
+    {
       code: "Cu.importGlobalProperties(['TextEncoder'])",
+      options: ["everything"],
+      errors: [{ messageId: "unexpectedCall" }],
+    },
+    {
+      code: "XPCOMUtils.defineLazyGlobalGetters(this, ['TextEncoder'])",
       options: ["everything"],
       errors: [{ messageId: "unexpectedCall" }],
     },
     {
       code: "Cu.importGlobalProperties(['TextEncoder'])",
       options: ["allownonwebidl"],
-      errors: [{ messageId: "unexpectedCallWebIdl" }],
+      errors: [{ messageId: "unexpectedCallCuWebIdl" }],
+    },
+    {
+      code: "XPCOMUtils.defineLazyGlobalGetters(this, ['TextEncoder'])",
+      options: ["allownonwebidl"],
+      errors: [{ messageId: "unexpectedCallXPCOMWebIdl" }],
+    },
+    {
+      options: ["allownonwebidl"],
+      code: "Cu.importGlobalProperties(['TextEncoder'])",
+      errors: [{ messageId: "unexpectedCallCuWebIdl" }],
+      filename: "foo.js",
+    },
+    {
+      options: ["allownonwebidl"],
+      code: "XPCOMUtils.defineLazyGlobalGetters(this, ['TextEncoder'])",
+      errors: [{ messageId: "unexpectedCallXPCOMWebIdl" }],
+      filename: "foo.js",
     },
   ],
 });

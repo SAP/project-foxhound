@@ -2,16 +2,14 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /**
- * This file tests the DeferredTask.jsm module.
+ * This file tests the DeferredTask.sys.mjs module.
  */
 
 // Globals
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "DeferredTask",
-  "resource://gre/modules/DeferredTask.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
+});
 
 /**
  * Due to the nature of this module, most of the tests are time-dependent.  All

@@ -69,7 +69,7 @@ async function checkDoesNotOpenOnFocus(win) {
   await promiseState;
 }
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.urlbar.autoFill", true]],
   });
@@ -268,7 +268,7 @@ add_task(async function test_tabSwitch_pageproxystate() {
   registerCleanupFunction(PlacesUtils.history.clear);
 
   let win = await BrowserTestUtils.openNewBrowserWindow();
-  BrowserTestUtils.loadURI(win.gBrowser.selectedBrowser, "about:robots");
+  BrowserTestUtils.loadURIString(win.gBrowser.selectedBrowser, "about:robots");
   let tab1 = win.gBrowser.selectedTab;
 
   info("Open a new tab and the empty search");

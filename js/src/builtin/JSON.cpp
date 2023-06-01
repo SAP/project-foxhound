@@ -20,8 +20,6 @@
 #include "jstypes.h"
 
 #include "builtin/Array.h"
-#include "builtin/BigInt.h"
-#include "js/CallAndConstruct.h"      // JS::IsCallable
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/friend/StackLimits.h"    // js::AutoCheckRecursionLimit
 #include "js/Object.h"                // JS::GetBuiltinClass
@@ -45,7 +43,7 @@
 #endif
 
 #include "builtin/Array-inl.h"
-#include "builtin/Boolean-inl.h"
+#include "vm/GeckoProfiler-inl.h"
 #include "vm/JSAtom-inl.h"
 #include "vm/NativeObject-inl.h"
 
@@ -700,8 +698,8 @@ static bool JA(JSContext* cx, HandleObject obj, StringifyContext* scx) {
          */
         MOZ_ASSERT(obj->is<ArrayObject>());
         MOZ_ASSERT(obj->is<NativeObject>());
-        RootedNativeObject nativeObj(cx, &obj->as<NativeObject>());
-        if (i <= JSID_INT_MAX) {
+        Rooted<NativeObject*> nativeObj(cx, &obj->as<NativeObject>());
+        if (i <= PropertyKey::IntMax) {
           MOZ_ASSERT(
               nativeObj->containsDenseElement(i) != nativeObj->isIndexed(),
               "the array must either be small enough to remain "
@@ -753,11 +751,6 @@ static bool Str(JSContext* cx, const Value& v, StringifyContext* scx) {
   /* Step 11 must be handled by the caller. */
   MOZ_ASSERT(!IsFilteredValue(v));
 
-  AutoCheckRecursionLimit recursion(cx);
-  if (!recursion.check(cx)) {
-    return false;
-  }
-
   /*
    * This method implements the Str algorithm in ES5 15.12.3, but:
    *
@@ -797,13 +790,18 @@ static bool Str(JSContext* cx, const Value& v, StringifyContext* scx) {
       }
     }
 
-    return NumberValueToStringBuffer(cx, v, scx->sb);
+    return NumberValueToStringBuffer(v, scx->sb);
   }
 
   /* Step 10 in the BigInt proposal. */
   if (v.isBigInt()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_BIGINT_NOT_SERIALIZABLE);
+    return false;
+  }
+
+  AutoCheckRecursionLimit recursion(cx);
+  if (!recursion.check(cx)) {
     return false;
   }
 
@@ -986,7 +984,7 @@ bool js::Stringify(JSContext* cx, MutableHandleValue vp, JSObject* replacer_,
     MOZ_ASSERT(gap.empty());
   }
 
-  RootedPlainObject wrapper(cx);
+  Rooted<PlainObject*> wrapper(cx);
   RootedId emptyId(cx, NameToId(cx->names().empty));
   if (replacer && replacer->isCallable()) {
     // We can skip creating the initial wrapper object if no replacer
@@ -1135,7 +1133,7 @@ static bool Walk(JSContext* cx, HandleObject holder, HandleId name,
 }
 
 static bool Revive(JSContext* cx, HandleValue reviver, MutableHandleValue vp) {
-  RootedPlainObject obj(cx, NewPlainObject(cx));
+  Rooted<PlainObject*> obj(cx, NewPlainObject(cx));
   if (!obj) {
     return false;
   }
@@ -1189,6 +1187,7 @@ static bool json_toSource(JSContext* cx, unsigned argc, Value* vp) {
 
 /* ES5 15.12.2. */
 static bool json_parse(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "JSON", "parse");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   /* Step 1. */
@@ -1236,7 +1235,7 @@ bool BuildImmutableProperty(JSContext* cx, HandleValue value, HandleId name,
 
     // Step 1.a-1.b
     if (value.toObject().is<ArrayObject>()) {
-      RootedArrayObject arr(cx, &value.toObject().as<ArrayObject>());
+      Rooted<ArrayObject*> arr(cx, &value.toObject().as<ArrayObject>());
 
       // Step 1.b.iii
       uint32_t len = arr->length();
@@ -1250,7 +1249,7 @@ bool BuildImmutableProperty(JSContext* cx, HandleValue value, HandleId name,
       // Step 1.b.iv
       for (uint32_t i = 0; i < len; i++) {
         // Step 1.b.iv.1
-        childName.set(INT_TO_JSID(i));
+        childName.set(PropertyKey::Int(i));
 
         // Step 1.b.iv.2
         if (!GetProperty(cx, arr, value, childName, &childValue)) {
@@ -1342,6 +1341,7 @@ bool BuildImmutableProperty(JSContext* cx, HandleValue value, HandleId name,
 }
 
 static bool json_parseImmutable(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "JSON", "parseImmutable");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   /* Step 1. */
@@ -1381,6 +1381,7 @@ static bool json_parseImmutable(JSContext* cx, unsigned argc, Value* vp) {
 
 /* ES6 24.3.2. */
 bool json_stringify(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "JSON", "stringify");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   RootedObject replacer(cx,
@@ -1425,11 +1426,7 @@ static const JSPropertySpec json_static_properties[] = {
     JS_STRING_SYM_PS(toStringTag, "JSON", JSPROP_READONLY), JS_PS_END};
 
 static JSObject* CreateJSONObject(JSContext* cx, JSProtoKey key) {
-  Handle<GlobalObject*> global = cx->global();
-  RootedObject proto(cx, GlobalObject::getOrCreateObjectPrototype(cx, global));
-  if (!proto) {
-    return nullptr;
-  }
+  RootedObject proto(cx, &cx->global()->getObjectPrototype());
   return NewTenuredObjectWithGivenProto(cx, &JSONClass, proto);
 }
 

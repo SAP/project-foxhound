@@ -87,7 +87,7 @@ bool XPCNativeMember::Resolve(XPCCallContext& ccx, XPCNativeInterface* iface,
   JS_MarkCrossZoneId(ccx, name);
 
   JSFunction* fun;
-  if (JSID_IS_STRING(name)) {
+  if (name.isString()) {
     fun = js::NewFunctionByIdWithReserved(ccx, callback, argc, 0, name);
   } else {
     fun = js::NewFunctionWithReserved(ccx, callback, argc, 0, nullptr);
@@ -203,7 +203,7 @@ already_AddRefed<XPCNativeInterface> XPCNativeInterface::NewInstance(
       nsCOMPtr<nsIScriptError> error(
           do_CreateInstance(NS_SCRIPTERROR_CONTRACTID));
       error->Init(NS_ConvertUTF8toUTF16(errorMsg), filename, u""_ns, lineno,
-                  column, nsIScriptError::warningFlag, "chrome javascript",
+                  column, nsIScriptError::warningFlag, "chrome javascript"_ns,
                   false /* from private window */,
                   true /* from chrome context */);
       console->LogMessage(error);
@@ -286,7 +286,7 @@ already_AddRefed<XPCNativeInterface> XPCNativeInterface::NewInstance(
       NS_ERROR("bad constant name");
       return nullptr;
     }
-    jsid name = PropertyKey::fromNonIntAtom(str);
+    jsid name = PropertyKey::NonIntAtom(str);
 
     // XXX need better way to find dups
     // MOZ_ASSERT(!LookupMemberByID(name),"duplicate method/constant name");
@@ -311,7 +311,7 @@ already_AddRefed<XPCNativeInterface> XPCNativeInterface::NewInstance(
     return nullptr;
   }
 
-  RootedId interfaceName(cx, PropertyKey::fromNonIntAtom(str));
+  RootedId interfaceName(cx, PropertyKey::NonIntAtom(str));
 
   // Use placement new to create an object with the right amount of space
   // to hold the members array
@@ -371,7 +371,6 @@ void IID2NativeInterfaceMap::Trace(JSTracer* trc) {
 
 void XPCNativeInterface::DebugDump(int16_t depth) {
 #ifdef DEBUG
-  depth--;
   XPC_LOG_ALWAYS(("XPCNativeInterface @ %p", this));
   XPC_LOG_INDENT();
   XPC_LOG_ALWAYS(("name is %s", GetNameString()));

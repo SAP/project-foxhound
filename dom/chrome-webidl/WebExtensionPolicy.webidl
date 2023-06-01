@@ -15,7 +15,7 @@ callback WebExtensionLocalizeCallback = DOMString (DOMString unlocalizedText);
 interface WebExtensionPolicy {
   [Throws]
   constructor(WebExtensionInit options);
-  
+
   /**
    * The add-on's internal ID, as specified in its manifest.json file or its
    * XPI signature.
@@ -42,6 +42,12 @@ interface WebExtensionPolicy {
    */
   [Constant]
   readonly attribute DOMString name;
+
+  /**
+   * The add-on's internal type as determined by parsing the manifest.json file.
+   */
+  [Constant]
+  readonly attribute DOMString type;
 
   /**
    * Whether the extension has access to privileged features
@@ -170,14 +176,14 @@ interface WebExtensionPolicy {
    * URL root is listed as a web accessible path. Access checks on a path, such
    * as performed in nsScriptSecurityManager, use sourceMayAccessPath below.
    */
-  boolean isWebAccessiblePath(DOMString pathname);
+  boolean isWebAccessiblePath(UTF8String pathname);
 
   /**
    * Returns true if the given path relative to the extension's moz-extension:
    * URL root may be accessed by web content at sourceURI.  For Manifest V2,
    * sourceURI is ignored and the path must merely be listed as web accessible.
    */
-  boolean sourceMayAccessPath(URI sourceURI, DOMString pathname);
+  boolean sourceMayAccessPath(URI sourceURI, UTF8String pathname);
 
   /**
    * Replaces localization placeholders in the given string with localized
@@ -195,19 +201,19 @@ interface WebExtensionPolicy {
    * Register a new content script programmatically.
    */
   [Throws]
-  void registerContentScript(WebExtensionContentScript script);
+  undefined registerContentScript(WebExtensionContentScript script);
 
   /**
    * Unregister a content script.
    */
   [Throws]
-  void unregisterContentScript(WebExtensionContentScript script);
+  undefined unregisterContentScript(WebExtensionContentScript script);
 
   /**
    * Injects the extension's content script into all existing matching windows.
    */
   [Throws]
-  void injectContentScripts();
+  undefined injectContentScripts();
 
   /**
    * Returns the list of currently active extension policies.
@@ -274,7 +280,8 @@ interface WebExtensionPolicy {
 
 dictionary WebAccessibleResourceInit {
   required sequence<MatchGlobOrString> resources;
-  MatchPatternSetOrStringSequence matches;
+  MatchPatternSetOrStringSequence? matches = null;
+  sequence<DOMString>? extension_ids = null;
 };
 
 dictionary WebExtensionInit {
@@ -285,6 +292,8 @@ dictionary WebExtensionInit {
   required DOMString baseURL;
 
   DOMString name = "";
+
+  DOMString type = "";
 
   boolean isPrivileged = false;
 

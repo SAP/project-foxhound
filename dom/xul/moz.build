@@ -22,16 +22,21 @@ EXPORTS += [
 
 EXPORTS.mozilla.dom += [
     "XULBroadcastManager.h",
+    "XULButtonElement.h",
     "XULFrameElement.h",
+    "XULMenuBarElement.h",
     "XULMenuElement.h",
+    "XULMenuParentElement.h",
     "XULPersist.h",
     "XULPopupElement.h",
+    "XULResizerElement.h",
     "XULTextElement.h",
     "XULTooltipElement.h",
     "XULTreeElement.h",
 ]
 
 UNIFIED_SOURCES += [
+    "MenuBarListener.cpp",
     "nsXULCommandDispatcher.cpp",
     "nsXULContentSink.cpp",
     "nsXULContentUtils.cpp",
@@ -41,10 +46,14 @@ UNIFIED_SOURCES += [
     "nsXULPrototypeDocument.cpp",
     "nsXULSortService.cpp",
     "XULBroadcastManager.cpp",
+    "XULButtonElement.cpp",
     "XULFrameElement.cpp",
+    "XULMenuBarElement.cpp",
     "XULMenuElement.cpp",
+    "XULMenuParentElement.cpp",
     "XULPersist.cpp",
     "XULPopupElement.cpp",
+    "XULResizerElement.cpp",
     "XULTextElement.cpp",
     "XULTooltipElement.cpp",
     "XULTreeElement.cpp",

@@ -21,6 +21,15 @@ enum SystemDirectories {
   //   supported getting...
   OS_CurrentWorkingDirectory = 4,
 
+  Mac_SystemDirectory = 101,
+  Mac_UserLibDirectory = 102,
+  Mac_HomeDirectory = 103,
+  Mac_DefaultDownloadDirectory = 104,
+  Mac_UserDesktopDirectory = 105,
+  Mac_LocalApplicationsDirectory = 106,
+  Mac_UserPreferencesDirectory = 107,
+  Mac_PictureDocumentsDirectory = 108,
+
   Win_SystemDirectory = 201,
   Win_WindowsDirectory = 202,
   Win_HomeDirectory = 203,
@@ -41,7 +50,8 @@ enum SystemDirectories {
 
   Unix_HomeDirectory = 303,
   Unix_XDG_Desktop = 304,
-  Unix_XDG_Download = 306
+  Unix_XDG_Download = 306,
+  Unix_SystemConfigDirectory = 307
 };
 
 nsresult GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,

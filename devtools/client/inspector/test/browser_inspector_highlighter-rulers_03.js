@@ -13,7 +13,7 @@ const TEST_URL =
 
 const ID = "rulers-highlighter-";
 
-var { Toolbox } = require("devtools/client/framework/toolbox");
+var { Toolbox } = require("resource://devtools/client/framework/toolbox.js");
 
 add_task(async function() {
   const { inspector, highlighterTestFront } = await openInspectorForURL(
@@ -70,10 +70,12 @@ async function hasRightLabelsContent(highlighterFront, highlighterTestFront) {
     gBrowser.selectedBrowser,
     [],
     () => {
-      const { require } = ChromeUtils.import(
-        "resource://devtools/shared/loader/Loader.jsm"
+      const { require } = ChromeUtils.importESModule(
+        "resource://devtools/shared/loader/Loader.sys.mjs"
       );
-      const { getWindowDimensions } = require("devtools/shared/layout/utils");
+      const {
+        getWindowDimensions,
+      } = require("resource://devtools/shared/layout/utils.js");
       return getWindowDimensions(content);
     }
   );

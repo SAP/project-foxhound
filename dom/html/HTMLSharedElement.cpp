@@ -97,8 +97,7 @@ static void DirectoryMapAttributesIntoRule(
         aDecls.SetKeywordValue(eCSSProperty_list_style_type,
                                value->GetEnumValue());
       } else {
-        aDecls.SetKeywordValue(eCSSProperty_list_style_type,
-                               NS_STYLE_LIST_STYLE_DISC);
+        aDecls.SetKeywordValue(eCSSProperty_list_style_type, ListStyle::Disc);
       }
     }
   }
@@ -155,10 +154,10 @@ static void SetBaseURIUsingFirstBaseWithHref(Document* aDocument,
         // policy - do *not* consult default-src, see:
         // http://www.w3.org/TR/CSP2/#directive-default-src
         bool cspPermitsBaseURI = true;
-        rv = csp->Permits(child->AsElement(), nullptr /* nsICSPEventListener */,
-                          newBaseURI,
-                          nsIContentSecurityPolicy::BASE_URI_DIRECTIVE, true,
-                          &cspPermitsBaseURI);
+        rv = csp->Permits(
+            child->AsElement(), nullptr /* nsICSPEventListener */, newBaseURI,
+            nsIContentSecurityPolicy::BASE_URI_DIRECTIVE, true /* aSpecific */,
+            true /* aSendViolationReports */, &cspPermitsBaseURI);
         if (NS_FAILED(rv) || !cspPermitsBaseURI) {
           newBaseURI = nullptr;
         }

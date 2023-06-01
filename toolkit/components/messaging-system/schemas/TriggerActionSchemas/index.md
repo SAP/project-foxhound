@@ -2,11 +2,6 @@
 
 A set of action listeners that can be used to trigger CFR messages.
 
-## How to update
-
-Make a pull request against [mozilla/nimbus-shared](https://github.com/mozilla/nimbus-shared/) repo with your changes.
-Build and copy over resulting schema from `nimbus-shared/schemas/messaging/` to `toolkit/components/messaging-system/schemas/TriggerActionSchemas.json`.
-
 ## Usage
 
 [As part of the CFR definition](https://searchfox.org/mozilla-central/rev/2bfe3415fb3a2fba9b1c694bc0b376365e086927/browser/components/newtab/lib/CFRMessageProvider.jsm#194) the message can register at most one trigger used to decide when the message is shown.
@@ -95,19 +90,16 @@ let type = "update" | "save";
 
 ### `contentBlocking`
 
-Happens at the and of a document load and for every subsequent content blocked event.
+Happens at the and of a document load and for every subsequent content blocked event, or when the tracking DB service hits a milestone.
+
 Provides a context of the number of pages loaded in the current browsing session that can be used in targeting.
 
 Does not filter by host or patterns.
 
-The event it reports back is a flag or a combination of flags merged together by
-ANDing the various STATE_BLOCKED_* flags.
+The event it reports back is one of two things:
+ * A combination of OR-ed [nsIWebProgressListener](https://searchfox.org/mozilla-central/source/uriloader/base/nsIWebProgressListener.idl) `STATE_BLOCKED_*` flags
+ * A string constants, such as [`"ContentBlockingMilestone"`](https://searchfox.org/mozilla-central/rev/8a2d8d26e25ef70c98c6036612aad534b76b9815/toolkit/components/antitracking/TrackingDBService.jsm#327-334)
 
-```typescript
-// https://searchfox.org/mozilla-central/rev/2fcab997046ba9e068c5391dc7d8848e121d84f8/uriloader/base/nsIWebProgressListener.idl#260
-let event: ContentBlockingEventFlag;
-let pageLoad = number;
-```
 
 ### `defaultBrowserCheck`
 
@@ -135,3 +127,44 @@ Watch for changes on any number of preferences. Runs when a pref is added, remov
   params: ["pref name"]
 }
 ```
+
+### `featureCalloutCheck`
+
+Happens when navigating to about:firefoxview or other about pages with Feature Callout tours enabled
+
+### `nthTabClosed`
+
+Happens when the user closes n or more tabs in a session
+
+```js
+// Register a message with the following trigger and
+// include the tabsClosedCount context variable in the targeting.
+// Here, the message triggers after two or more tabs are closed.
+{
+  trigger: { id: "nthTabClosed" },
+  targeting: "tabsClosedCount >= 2"
+}
+```
+
+### `activityAfterIdle`
+
+Happens when the user resumes activity after n milliseconds of inactivity. Keyboard/mouse interactions and audio playback count as activity. The idle timer is reset when the OS is put to sleep or wakes from sleep.
+
+No params or patterns. The `idleForMilliseconds` context variable is available in targeting. This value represents the number of milliseconds since the last user interaction or audio playback. `60000` is the minimum value for this variable (1 minute). In the following example, the message triggers when the user returns after at least 20 minutes of inactivity.
+
+```js
+// Register a message with the following trigger and include
+// the idleForMilliseconds context variable in the targeting.
+{
+  trigger: { id: "activityAfterIdle" },
+  targeting: "idleForMilliseconds >= 1200000"
+}
+```
+
+### `cookieBannerDetected`
+
+Happens when the `cookiebannerdetected` window event is dispatched. This event is dispatched when the following conditions are true:
+
+1. The user is presented with a cookie consent banner on the webpage they're viewing,
+2. The domain has a valid ruleset for automatically engaging with the consent banner, and
+3. The user has not explicitly opted in or out of the Cookie Banner Handling feature.

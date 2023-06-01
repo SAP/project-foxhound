@@ -2,13 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "LoginHelper",
   "resource://gre/modules/LoginHelper.jsm"
 );
@@ -76,19 +77,19 @@ LoginManagerCrypto_SDR.prototype = {
     let wasLoggedIn = this.isLoggedIn;
     let canceledMP = false;
 
-    this._uiBusy = true;
+    this._uiBusy = !wasLoggedIn;
     try {
       let plainOctet = this._utfConverter.ConvertFromUnicode(plainText);
       plainOctet += this._utfConverter.Finish();
       cipherText = this._decoderRing.encryptString(plainOctet);
     } catch (e) {
-      this.log("Failed to encrypt string. (" + e.name + ")");
+      this.log(`Failed to encrypt string with error ${e.name}.`);
       // If the user clicks Cancel, we get NS_ERROR_FAILURE.
       // (unlike decrypting, which gets NS_ERROR_NOT_AVAILABLE).
       if (e.result == Cr.NS_ERROR_FAILURE) {
         canceledMP = true;
         throw Components.Exception(
-          "User canceled master password entry",
+          "User canceled primary password entry",
           Cr.NS_ERROR_ABORT
         );
       } else {
@@ -99,7 +100,7 @@ LoginManagerCrypto_SDR.prototype = {
       }
     } finally {
       this._uiBusy = false;
-      // If we triggered a master password prompt, notify observers.
+      // If we triggered a primary password prompt, notify observers.
       if (!wasLoggedIn && this.isLoggedIn) {
         this._notifyObservers("passwordmgr-crypto-login");
       } else if (canceledMP) {
@@ -130,17 +131,17 @@ LoginManagerCrypto_SDR.prototype = {
     let wasLoggedIn = this.isLoggedIn;
     let canceledMP = false;
 
-    this._uiBusy = true;
+    this._uiBusy = !wasLoggedIn;
     try {
       cipherTexts = await this._decoderRing.asyncEncryptStrings(plaintexts);
     } catch (e) {
-      this.log("Failed to encrypt strings. (" + e.name + ")");
+      this.log(`Failed to encrypt strings with error ${e.name}.`);
       // If the user clicks Cancel, we get NS_ERROR_FAILURE.
       // (unlike decrypting, which gets NS_ERROR_NOT_AVAILABLE).
       if (e.result == Cr.NS_ERROR_FAILURE) {
         canceledMP = true;
         throw Components.Exception(
-          "User canceled master password entry",
+          "User canceled primary password entry",
           Cr.NS_ERROR_ABORT
         );
       } else {
@@ -151,7 +152,7 @@ LoginManagerCrypto_SDR.prototype = {
       }
     } finally {
       this._uiBusy = false;
-      // If we triggered a master password prompt, notify observers.
+      // If we triggered a primary password prompt, notify observers.
       if (!wasLoggedIn && this.isLoggedIn) {
         this._notifyObservers("passwordmgr-crypto-login");
       } else if (canceledMP) {
@@ -175,13 +176,15 @@ LoginManagerCrypto_SDR.prototype = {
     let wasLoggedIn = this.isLoggedIn;
     let canceledMP = false;
 
-    this._uiBusy = true;
+    this._uiBusy = !wasLoggedIn;
     try {
       let plainOctet;
       plainOctet = this._decoderRing.decryptString(cipherText);
       plainText = this._utfConverter.ConvertToUnicode(plainOctet);
     } catch (e) {
-      this.log("Failed to decrypt string: " + cipherText + " (" + e.name + ")");
+      this.log(
+        `Failed to decrypt cipher text of length ${cipherText.length} with error ${e.name}.`
+      );
 
       // In the unlikely event the converter threw, reset it.
       this._utfConverterReset();
@@ -193,7 +196,7 @@ LoginManagerCrypto_SDR.prototype = {
       if (e.result == Cr.NS_ERROR_NOT_AVAILABLE) {
         canceledMP = true;
         throw Components.Exception(
-          "User canceled master password entry",
+          "User canceled primary password entry",
           Cr.NS_ERROR_ABORT
         );
       } else {
@@ -204,7 +207,7 @@ LoginManagerCrypto_SDR.prototype = {
       }
     } finally {
       this._uiBusy = false;
-      // If we triggered a master password prompt, notify observers.
+      // If we triggered a primary password prompt, notify observers.
       if (!wasLoggedIn && this.isLoggedIn) {
         this._notifyObservers("passwordmgr-crypto-login");
       } else if (canceledMP) {
@@ -237,11 +240,11 @@ LoginManagerCrypto_SDR.prototype = {
     let wasLoggedIn = this.isLoggedIn;
     let canceledMP = false;
 
-    this._uiBusy = true;
+    this._uiBusy = !wasLoggedIn;
     try {
       plainTexts = await this._decoderRing.asyncDecryptStrings(cipherTexts);
     } catch (e) {
-      this.log("Failed to decrypt strings. (" + e.name + ")");
+      this.log(`Failed to decrypt strings with error ${e.name}.`);
       // If the user clicks Cancel, we get NS_ERROR_NOT_AVAILABLE.
       // If the cipherText is bad / wrong key, we get NS_ERROR_FAILURE
       // Wrong passwords are handled by the decoderRing reprompting;
@@ -249,7 +252,7 @@ LoginManagerCrypto_SDR.prototype = {
       if (e.result == Cr.NS_ERROR_NOT_AVAILABLE) {
         canceledMP = true;
         throw Components.Exception(
-          "User canceled master password entry",
+          "User canceled primary password entry",
           Cr.NS_ERROR_ABORT
         );
       } else {
@@ -260,7 +263,7 @@ LoginManagerCrypto_SDR.prototype = {
       }
     } finally {
       this._uiBusy = false;
-      // If we triggered a master password prompt, notify observers.
+      // If we triggered a primary password prompt, notify observers.
       if (!wasLoggedIn && this.isLoggedIn) {
         this._notifyObservers("passwordmgr-crypto-login");
       } else if (canceledMP) {
@@ -299,18 +302,14 @@ LoginManagerCrypto_SDR.prototype = {
    * _notifyObservers
    */
   _notifyObservers(topic) {
-    this.log("Prompted for a master password, notifying for " + topic);
+    this.log(`Prompted for a primary password, notifying for ${topic}`);
     Services.obs.notifyObservers(null, topic);
   },
 }; // end of nsLoginManagerCrypto_SDR implementation
 
-XPCOMUtils.defineLazyGetter(
-  this.LoginManagerCrypto_SDR.prototype,
-  "log",
-  () => {
-    let logger = LoginHelper.createLogger("Login crypto");
-    return logger.log.bind(logger);
-  }
-);
+XPCOMUtils.defineLazyGetter(LoginManagerCrypto_SDR.prototype, "log", () => {
+  let logger = lazy.LoginHelper.createLogger("Login crypto");
+  return logger.log.bind(logger);
+});
 
 const EXPORTED_SYMBOLS = ["LoginManagerCrypto_SDR"];

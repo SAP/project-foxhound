@@ -17,6 +17,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/gfx/ScaleFactors2D.h"
 #include "mozilla/Span.h"
 
 namespace mozilla {
@@ -32,6 +33,12 @@ Span<Point4DTyped<UnknownUnits, F>> IntersectPolygon(
     Span<Point4DTyped<UnknownUnits, F>> aPoints,
     const Point4DTyped<UnknownUnits, F>& aPlaneNormal,
     Span<Point4DTyped<UnknownUnits, F>> aDestBuffer);
+
+template <class T>
+using BaseMatrixScales = BaseScaleFactors2D<UnknownUnits, UnknownUnits, T>;
+
+using MatrixScales = BaseMatrixScales<float>;
+using MatrixScalesDouble = BaseMatrixScales<double>;
 
 template <class T>
 class BaseMatrix {
@@ -193,6 +200,10 @@ class BaseMatrix {
     return BaseMatrix<T>(aScaleX, 0.0f, 0.0f, aScaleY, 0.0f, 0.0f);
   }
 
+  static BaseMatrix<T> Scaling(const BaseMatrixScales<T>& scale) {
+    return Scaling(scale.xScale, scale.yScale);
+  }
+
   /**
    * Similar to PreTranslate, but applies a scale instead of a translation.
    */
@@ -203,6 +214,10 @@ class BaseMatrix {
     _22 *= aY;
 
     return *this;
+  }
+
+  BaseMatrix<T>& PreScale(const BaseMatrixScales<T>& scale) {
+    return PreScale(scale.xScale, scale.yScale);
   }
 
   /**
@@ -444,11 +459,11 @@ class BaseMatrix {
    * The xMajor parameter indicates if the larger scale is
    * to be assumed to be in the X direction or not.
    */
-  MatrixSize ScaleFactors() const {
+  BaseMatrixScales<T> ScaleFactors() const {
     T det = Determinant();
 
     if (det == 0.0) {
-      return MatrixSize(0.0, 0.0);
+      return BaseMatrixScales<T>(0.0, 0.0);
     }
 
     MatrixSize sz = MatrixSize(1.0, 0.0);
@@ -466,7 +481,7 @@ class BaseMatrix {
       minor = det / major;
     }
 
-    return MatrixSize(major, minor);
+    return BaseMatrixScales<T>(major, minor);
   }
 
   /**
@@ -813,10 +828,10 @@ class Matrix4x4Typed {
     F max_x = -std::numeric_limits<F>::max();
     F max_y = -std::numeric_limits<F>::max();
     for (size_t i = 0; i < vertCount; i++) {
-      min_x = std::min(min_x, verts[i].x);
-      max_x = std::max(max_x, verts[i].x);
-      min_y = std::min(min_y, verts[i].y);
-      max_y = std::max(max_y, verts[i].y);
+      min_x = std::min(min_x, verts[i].x.value);
+      max_x = std::max(max_x, verts[i].x.value);
+      min_y = std::min(min_y, verts[i].y.value);
+      max_y = std::max(max_y, verts[i].y.value);
     }
 
     if (max_x < min_x || max_y < min_y) {
@@ -1493,6 +1508,18 @@ class Matrix4x4Typed {
     _24 = UnspecifiedNaN<T>();
     _34 = UnspecifiedNaN<T>();
     _44 = UnspecifiedNaN<T>();
+  }
+
+  // Verifies that the matrix contains no Infs or NaNs
+  bool IsFinite() const {
+    return mozilla::IsFinite(_11) && mozilla::IsFinite(_12) &&
+           mozilla::IsFinite(_13) && mozilla::IsFinite(_14) &&
+           mozilla::IsFinite(_21) && mozilla::IsFinite(_22) &&
+           mozilla::IsFinite(_23) && mozilla::IsFinite(_24) &&
+           mozilla::IsFinite(_31) && mozilla::IsFinite(_32) &&
+           mozilla::IsFinite(_33) && mozilla::IsFinite(_34) &&
+           mozilla::IsFinite(_41) && mozilla::IsFinite(_42) &&
+           mozilla::IsFinite(_43) && mozilla::IsFinite(_44);
   }
 
   void SkewXY(double aXSkew, double aYSkew) {

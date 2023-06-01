@@ -3,17 +3,18 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import { setBreakpointPositions } from "./breakpointPositions";
-import { setSymbols } from "../sources/symbols";
 import {
   assertPendingBreakpoint,
-  findFunctionByName,
   findPosition,
   makeBreakpointLocation,
 } from "../../utils/breakpoint";
 
 import { comparePosition, createLocation } from "../../utils/location";
 
-import { originalToGeneratedId, isOriginalId } from "devtools-source-map";
+import {
+  originalToGeneratedId,
+  isOriginalId,
+} from "devtools/client/shared/source-map-loader/index";
 import { getSource } from "../../selectors";
 import { addBreakpoint, removeBreakpointAtGeneratedLocation } from ".";
 
@@ -24,31 +25,7 @@ async function findBreakpointPosition(cx, { getState, dispatch }, location) {
   );
 
   const position = findPosition(positions, location);
-  return position?.generatedLocation;
-}
-
-async function findNewLocation(
-  cx,
-  { name, offset, index },
-  location,
-  source,
-  thunkArgs
-) {
-  const symbols = await thunkArgs.dispatch(setSymbols({ cx, source }));
-  const func = symbols ? findFunctionByName(symbols, name, index) : null;
-
-  // Fallback onto the location line, if we do not find a function.
-  let { line } = location;
-  if (func) {
-    line = func.location.start.line + offset.line;
-  }
-
-  return {
-    line,
-    column: location.column,
-    sourceUrl: source.url,
-    sourceId: source.id,
-  };
+  return position;
 }
 
 // Breakpoint syncing occurs when a source is found that matches either the
@@ -82,10 +59,10 @@ export function syncBreakpoint(cx, sourceId, pendingBreakpoint) {
     const generatedSource = getSource(getState(), generatedSourceId);
 
     if (!source || !generatedSource) {
-      return;
+      return null;
     }
 
-    const { location, generatedLocation, astLocation } = pendingBreakpoint;
+    const { location, generatedLocation } = pendingBreakpoint;
     const sourceGeneratedLocation = createLocation({
       ...generatedLocation,
       sourceId: generatedSourceId,
@@ -114,22 +91,18 @@ export function syncBreakpoint(cx, sourceId, pendingBreakpoint) {
       );
     }
 
-    const previousLocation = { ...location, sourceId };
+    const originalLocation = createLocation({
+      ...location,
+      sourceId,
+    });
 
-    const newLocation = await findNewLocation(
-      cx,
-      astLocation,
-      previousLocation,
-      source,
-      thunkArgs
-    );
-
-    const newGeneratedLocation = await findBreakpointPosition(
+    const newPosition = await findBreakpointPosition(
       cx,
       thunkArgs,
-      newLocation
+      originalLocation
     );
 
+    const newGeneratedLocation = newPosition?.generatedLocation;
     if (!newGeneratedLocation) {
       // We couldn't find a new mapping for the breakpoint. If there is a source
       // mapping, remove any breakpoints for the generated location, as if the
@@ -140,7 +113,7 @@ export function syncBreakpoint(cx, sourceId, pendingBreakpoint) {
           removeBreakpointAtGeneratedLocation(cx, sourceGeneratedLocation)
         );
       }
-      return;
+      return null;
     }
 
     const isSameLocation = comparePosition(
@@ -160,7 +133,7 @@ export function syncBreakpoint(cx, sourceId, pendingBreakpoint) {
     return dispatch(
       addBreakpoint(
         cx,
-        newLocation,
+        newGeneratedLocation,
         pendingBreakpoint.options,
         pendingBreakpoint.disabled
       )

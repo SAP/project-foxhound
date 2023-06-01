@@ -47,7 +47,7 @@ class ProcessedMediaTrack;
 class FrameStatistics;
 class VideoFrameContainer;
 class MediaFormatReader;
-class MediaDecoderStateMachine;
+class MediaDecoderStateMachineBase;
 struct MediaPlaybackEvent;
 struct SharedDummyTrack;
 
@@ -134,9 +134,6 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   // If aDoFastSeek is true, we'll seek to the sync point/keyframe preceeding
   // the seek target.
   void Seek(double aTime, SeekTarget::Type aSeekType);
-
-  // Initialize state machine and schedule it.
-  nsresult InitializeStateMachine();
 
   // Start playback of a video. 'Load' must have previously been
   // called.
@@ -258,8 +255,8 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   // SetLoadInBackground() on mResource.
   virtual void SetLoadInBackground(bool aLoadInBackground) {}
 
-  MediaDecoderStateMachine* GetStateMachine() const;
-  void SetStateMachine(MediaDecoderStateMachine* aStateMachine);
+  MediaDecoderStateMachineBase* GetStateMachine() const;
+  void SetStateMachine(MediaDecoderStateMachineBase* aStateMachine);
 
   // Constructs the time ranges representing what segments of the media
   // are buffered and playable.
@@ -378,10 +375,6 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   static bool IsWaveEnabled();
   static bool IsWebMEnabled();
 
-#  ifdef MOZ_WMF
-  static bool IsWMFEnabled();
-#  endif
-
   // Return the frame decode/paint related statistics.
   FrameStatistics& GetFrameStatistics() { return *mFrameStats; }
 
@@ -409,7 +402,20 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   virtual void FirstFrameLoaded(UniquePtr<MediaInfo> aInfo,
                                 MediaDecoderEventVisibility aEventVisibility);
 
+  // Return error if fail to init the state machine.
+  nsresult CreateAndInitStateMachine(bool aIsLiveStream,
+                                     bool aDisableExternalEngine = false);
+
+  // Always return a state machine. If the decoder supports using external
+  // engine, `aDisableExternalEngine` can disable the external engine if needed.
+  virtual MediaDecoderStateMachineBase* CreateStateMachine(
+      bool aDisableExternalEngine) MOZ_NONNULL_RETURN = 0;
+
   void SetStateMachineParameters();
+
+  // Disconnect any events before shutting down the state machine.
+  void DisconnectEvents();
+  RefPtr<ShutdownPromise> ShutdownStateMachine();
 
   // Called when MediaDecoder shutdown is finished. Subclasses use this to clean
   // up internal structures, and unregister potential shutdown blockers when
@@ -492,6 +498,9 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
 
   void OnNextFrameStatus(MediaDecoderOwner::NextFrameStatus);
 
+  void OnTrackInfoUpdated(const VideoInfo& aVideoInfo,
+                          const AudioInfo& aAudioInfo);
+
   void OnSecondaryVideoContainerInstalled(
       const RefPtr<VideoFrameContainer>& aSecondaryVideoContainer);
 
@@ -499,7 +508,7 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
 
   void FinishShutdown();
 
-  void ConnectMirrors(MediaDecoderStateMachine* aObject);
+  void ConnectMirrors(MediaDecoderStateMachineBase* aObject);
   void DisconnectMirrors();
 
   virtual bool CanPlayThroughImpl() = 0;
@@ -511,7 +520,7 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   // is safe to access it during this period.
   //
   // Explicitly prievate to force access via accessors.
-  RefPtr<MediaDecoderStateMachine> mDecoderStateMachine;
+  RefPtr<MediaDecoderStateMachineBase> mDecoderStateMachine;
 
  protected:
   void NotifyReaderDataArrived();
@@ -595,6 +604,7 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   MediaEventListener mOnWaitingForKey;
   MediaEventListener mOnDecodeWarning;
   MediaEventListener mOnNextFrameStatus;
+  MediaEventListener mOnTrackInfoUpdated;
   MediaEventListener mOnSecondaryVideoContainerInstalled;
   MediaEventListener mOnStoreDecoderBenchmark;
 
@@ -720,6 +730,7 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
 
   // Those methods exist to report telemetry related metrics.
   double GetTotalVideoPlayTimeInSeconds() const;
+  double GetTotalVideoHDRPlayTimeInSeconds() const;
   double GetVisibleVideoPlayTimeInSeconds() const;
   double GetInvisibleVideoPlayTimeInSeconds() const;
   double GetVideoDecodeSuspendedTimeInSeconds() const;
@@ -757,7 +768,7 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
 typedef MozPromise<mozilla::dom::MediaMemoryInfo, nsresult, true>
     MediaMemoryPromise;
 
-RefPtr<MediaMemoryPromise> GetMediaMemorySizes();
+RefPtr<MediaMemoryPromise> GetMediaMemorySizes(dom::Document* aDoc);
 
 }  // namespace mozilla
 

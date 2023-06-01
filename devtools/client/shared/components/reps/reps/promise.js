@@ -27,8 +27,7 @@ define(function(require, exports, module) {
 
   PromiseRep.propTypes = {
     object: PropTypes.object.isRequired,
-    // @TODO Change this to Object.values when supported in Node's version of V8
-    mode: PropTypes.oneOf(Object.keys(MODE).map(key => MODE[key])),
+    mode: PropTypes.oneOf(Object.values(MODE)),
     onDOMNodeMouseOver: PropTypes.func,
     onDOMNodeMouseOut: PropTypes.func,
     onInspectIconClick: PropTypes.func,
@@ -47,7 +46,7 @@ define(function(require, exports, module) {
       ownProperties["<state>"] = { value: state };
       let ownPropertiesLength = 1;
       if (state == "fulfilled") {
-        ownProperties["<value>"] = { value: value };
+        ownProperties["<value>"] = { value };
         ++ownPropertiesLength;
       } else if (state == "rejected") {
         ownProperties["<reason>"] = { value: reason };

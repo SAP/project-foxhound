@@ -15,7 +15,9 @@ add_task(async function() {
 
   await openDebugger();
   const toolbox = hud.toolbox;
-  await waitFor(() => toolbox.store.getState().targets.targets.length == 2);
+  await waitFor(
+    () => toolbox.commands.targetCommand.store.getState().targets.length == 2
+  );
   const dbg = createDebuggerContext(toolbox);
 
   execute(hud, "pauseInWorker(42)");
@@ -23,6 +25,6 @@ add_task(async function() {
   await waitForPaused(dbg);
   await openConsole();
 
-  await executeAndWaitForMessage(hud, "data", "42", ".result");
+  await executeAndWaitForResultMessage(hud, "data", "42");
   ok(true, "Evaluated console message in worker thread");
 });

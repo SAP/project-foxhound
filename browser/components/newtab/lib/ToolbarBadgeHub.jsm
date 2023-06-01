@@ -3,18 +3,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+  requestIdleCallback: "resource://gre/modules/Timer.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   EveryWindow: "resource:///modules/EveryWindow.jsm",
   ToolbarPanelHub: "resource://activity-stream/lib/ToolbarPanelHub.jsm",
-  Services: "resource://gre/modules/Services.jsm",
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
-  requestIdleCallback: "resource://gre/modules/Timer.jsm",
-  setTimeout: "resource://gre/modules/Timer.jsm",
-  clearTimeout: "resource://gre/modules/Timer.jsm",
 });
 
 let notificationsByWindow = new WeakMap();
@@ -88,15 +92,15 @@ class _ToolbarBadgeHub {
   executeAction({ id, data, message_id }) {
     switch (id) {
       case "show-whatsnew-button":
-        ToolbarPanelHub.enableToolbarButton();
-        ToolbarPanelHub.enableAppmenuButton();
+        lazy.ToolbarPanelHub.enableToolbarButton();
+        lazy.ToolbarPanelHub.enableAppmenuButton();
         break;
     }
   }
 
   _clearBadgeTimeout() {
     if (this.state.showBadgeTimeoutId) {
-      clearTimeout(this.state.showBadgeTimeoutId);
+      lazy.clearTimeout(this.state.showBadgeTimeoutId);
     }
   }
 
@@ -130,7 +134,7 @@ class _ToolbarBadgeHub {
       }
     }
     // Will call uninit on every window
-    EveryWindow.unregisterCallback(this.id);
+    lazy.EveryWindow.unregisterCallback(this.id);
     if (this.state.notification) {
       this._blockMessageById(this.state.notification.id);
     }
@@ -221,7 +225,7 @@ class _ToolbarBadgeHub {
       return;
     }
 
-    EveryWindow.registerCallback(
+    lazy.EveryWindow.registerCallback(
       this.id,
       win => {
         if (notificationsByWindow.has(win)) {
@@ -252,8 +256,8 @@ class _ToolbarBadgeHub {
     }
 
     if (message.content.delay) {
-      this.state.showBadgeTimeoutId = setTimeout(() => {
-        requestIdleCallback(() => this.registerBadgeToAllWindows(message));
+      this.state.showBadgeTimeoutId = lazy.setTimeout(() => {
+        lazy.requestIdleCallback(() => this.registerBadgeToAllWindows(message));
       }, message.content.delay);
     } else {
       this.registerBadgeToAllWindows(message);
@@ -285,7 +289,7 @@ class _ToolbarBadgeHub {
     // Only send pings for non private browsing windows
     if (
       win &&
-      !PrivateBrowsingUtils.isBrowserPrivate(
+      !lazy.PrivateBrowsingUtils.isBrowserPrivate(
         win.ownerGlobal.gBrowser.selectedBrowser
       )
     ) {
@@ -305,12 +309,10 @@ class _ToolbarBadgeHub {
   }
 }
 
-this._ToolbarBadgeHub = _ToolbarBadgeHub;
-
 /**
  * ToolbarBadgeHub - singleton instance of _ToolbarBadgeHub that can initiate
  * message requests and render messages.
  */
-this.ToolbarBadgeHub = new _ToolbarBadgeHub();
+const ToolbarBadgeHub = new _ToolbarBadgeHub();
 
 const EXPORTED_SYMBOLS = ["ToolbarBadgeHub", "_ToolbarBadgeHub"];

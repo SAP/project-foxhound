@@ -3,11 +3,15 @@
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
-add_task(
+const { ContentTaskUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/ContentTaskUtils.sys.mjs"
+);
+
+add_setup(
   /* on Android FOG is set up through head.js */
   { skip_if: () => !runningInParent || AppConstants.platform == "android" },
   function test_setup() {
@@ -34,10 +38,11 @@ add_task(
   async function test_fog_ipc_limit() {
     await run_test_in_child("test_FOGIPCLimit.js");
 
+    await ContentTaskUtils.waitForCondition(() => {
+      return !!Glean.testOnly.badCode.testGetValue();
+    }, "Waiting for IPC.");
+
     // The child exceeded the number of accesses to trigger an IPC flush.
-    // Could potentially intermittently fail if `run_test_in_child` doesn't
-    // wait until the main thread runnable performs the flush.
-    // In practice this seems to reliably succeed, but who knows what the future may hold.
     Assert.greater(
       Glean.testOnly.badCode.testGetValue(),
       FOG_IPC_PAYLOAD_ACCESS_LIMIT
