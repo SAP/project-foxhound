@@ -30,8 +30,10 @@ jobs:
         with:
           name: foxhound-mozbuild
           path: ~/.mozbuild
+
   build_new:
     runs-on: ubuntu-latest
+    needs: boostrap
 
     steps:
       - name: Checkout
