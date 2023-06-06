@@ -44,8 +44,8 @@ jobs:
           name: foxhound-mozbuild
           path: ~/.mozbuild
       - name: Display structure of downloaded files
-          run: ls -R
-          working-directory: ~/.mozbuild
+        run: ls -R
+        working-directory: ~/.mozbuild
 
       - name: Copy configuration
         run: cp taintfox_mozconfig_ubuntu .mozconfig
